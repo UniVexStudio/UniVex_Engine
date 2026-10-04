@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 
 #include "uve/math/ray_uve.h"
 #include "uve/component/entity_uve.h"
@@ -26,6 +27,13 @@ struct RaycastQueryUVE {
     /// CharacterController's ground-check ray doesn't hit its own collider — a near-certain, not
     /// speculative, need; retrofitting this later would mean a breaking signature change.
     Scene::EntityUVE ignoreEntity = Scene::kInvalidEntityUVE;
+
+    /// Further entities to exclude, for callers that have a list rather than one origin to skip
+    /// (RayCast3DComponentUVE's authored `exclusions`). A span, not an owned array: the caller owns
+    /// the storage, the query stays a cheap value to build per cast, and passing only the declared
+    /// prefix means unused slots are never even looked at. An excluded entity is skipped before the
+    /// layer mask is consulted — an exclusion is not a mask, so no layer can bring it back.
+    std::span<const Scene::EntityUVE> excludedEntities{};
 };
 
 } // namespace UVE::Physics

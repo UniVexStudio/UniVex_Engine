@@ -217,16 +217,39 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     entityManager.AddComponentUVE<AreaComponentUVE>(source, area);
     RayCast3DComponentUVE ray;
     ray.length = 42.0F;
-    ray.exclusions[0] = 7U;
-    ray.exclusionCount = 1U;
     entityManager.AddComponentUVE<RayCast3DComponentUVE>(source, ray);
     entityManager.AddComponentUVE<Kinematic3DComponentUVE>(
         source, Kinematic3DComponentUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0.75F, true});
     NavMeshVolume3DComponentUVE navigationRegion;
     navigationRegion.navigationMeshAssetPath = "navigation/courtyard.uvnav";
+    navigationRegion.boundsHalfExtents = Math::Vector3UVE{12.0F, 3.0F, 9.0F};
+    navigationRegion.navigationLayers = 0x5U;
+    navigationRegion.cellSize = 0.25F;
+    navigationRegion.agentRadius = 0.35F;
+    navigationRegion.agentHeight = 1.6F;
+    navigationRegion.maximumSlopeDegrees = 38.0F;
+    navigationRegion.maximumStepHeight = 0.3F;
     entityManager.AddComponentUVE<NavMeshVolume3DComponentUVE>(source, navigationRegion);
     NavSeeker3DComponentUVE navigationAgent;
     navigationAgent.targetPosition = Math::Vector3UVE{8.0F, 0.0F, -4.0F};
+    navigationAgent.radius = 0.35F;
+    navigationAgent.height = 1.6F;
+    navigationAgent.maxSpeed = 5.5F;
+    navigationAgent.acceleration = 12.0F;
+    navigationAgent.pathUpdateInterval = 0.25F;
+    navigationAgent.waypointRadius = 0.6F;
+    navigationAgent.targetTolerance = 1.2F;
+    navigationAgent.slowDownRadius = 2.5F;
+    navigationAgent.avoidanceRadius = 3.5F;
+    navigationAgent.avoidanceEnabled = false;
+    navigationAgent.navigationLayers = 0x5U;
+    // The route state is deliberately left at values the step would never produce: none of it may
+    // reach the file, so what a load brings back has to be the defaults, not these.
+    navigationAgent.nextPathPosition = Math::Vector3UVE{-1.0F, -2.0F, -3.0F};
+    navigationAgent.desiredVelocity = Math::Vector3UVE{7.0F, 7.0F, 7.0F};
+    navigationAgent.pathStatus = NavigationAgentPathStatusUVE::Finished;
+    navigationAgent.pathChanged = true;
+    navigationAgent.targetReached = true;
     entityManager.AddComponentUVE<NavSeeker3DComponentUVE>(source, navigationAgent);
     Skeleton3DComponentUVE skeleton;
     skeleton.bones.push_back(SkeletonBoneUVE{"root", -1, {}, {}, {1.0F, 1.0F, 1.0F}});
@@ -339,9 +362,42 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_FALSE(entityManager.GetComponentUVE<AreaComponentUVE>(restored).monitoring);
     EXPECT_FALSE(entityManager.GetComponentUVE<AreaComponentUVE>(restored).monitorable);
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<RayCast3DComponentUVE>(restored).length, 42.0F);
-    EXPECT_EQ(entityManager.GetComponentUVE<RayCast3DComponentUVE>(restored).exclusions[0], 7U);
-    EXPECT_EQ(entityManager.GetComponentUVE<NavMeshVolume3DComponentUVE>(restored).navigationMeshAssetPath,
-              "navigation/courtyard.uvnav");
+    // Exclusions are entity references and are round-tripped by the tests below, which save the
+    // objects they name alongside the ray. Here the point is that an unauthored list comes back
+    // empty - eight empty slots - rather than as index 0 written out eight times.
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(entityManager.GetComponentUVE<RayCast3DComponentUVE>(restored)), 0U);
+    // Both navigation objects come back whole: the region's bake settings and layers are authored
+    // data, and the agent's are the measurements and schedule the step reads.
+    const NavMeshVolume3DComponentUVE& restoredRegion =
+        entityManager.GetComponentUVE<NavMeshVolume3DComponentUVE>(restored);
+    EXPECT_EQ(restoredRegion.navigationMeshAssetPath, "navigation/courtyard.uvnav");
+    EXPECT_EQ(restoredRegion.boundsHalfExtents, (Math::Vector3UVE{12.0F, 3.0F, 9.0F}));
+    EXPECT_EQ(restoredRegion.navigationLayers, 0x5U);
+    EXPECT_FLOAT_EQ(restoredRegion.cellSize, 0.25F);
+    EXPECT_FLOAT_EQ(restoredRegion.agentRadius, 0.35F);
+    EXPECT_FLOAT_EQ(restoredRegion.agentHeight, 1.6F);
+    EXPECT_FLOAT_EQ(restoredRegion.maximumSlopeDegrees, 38.0F);
+    EXPECT_FLOAT_EQ(restoredRegion.maximumStepHeight, 0.3F);
+    const NavSeeker3DComponentUVE& restoredAgent = entityManager.GetComponentUVE<NavSeeker3DComponentUVE>(restored);
+    EXPECT_EQ(restoredAgent.targetPosition, (Math::Vector3UVE{8.0F, 0.0F, -4.0F}));
+    EXPECT_FLOAT_EQ(restoredAgent.radius, 0.35F);
+    EXPECT_FLOAT_EQ(restoredAgent.height, 1.6F);
+    EXPECT_FLOAT_EQ(restoredAgent.maxSpeed, 5.5F);
+    EXPECT_FLOAT_EQ(restoredAgent.acceleration, 12.0F);
+    EXPECT_FLOAT_EQ(restoredAgent.pathUpdateInterval, 0.25F);
+    EXPECT_FLOAT_EQ(restoredAgent.waypointRadius, 0.6F);
+    EXPECT_FLOAT_EQ(restoredAgent.targetTolerance, 1.2F);
+    EXPECT_FLOAT_EQ(restoredAgent.slowDownRadius, 2.5F);
+    EXPECT_FLOAT_EQ(restoredAgent.avoidanceRadius, 3.5F);
+    EXPECT_FALSE(restoredAgent.avoidanceEnabled);
+    EXPECT_EQ(restoredAgent.navigationLayers, 0x5U);
+    // ...and the route does not: it is what the last step computed, so a load starts from scratch and
+    // the agent finds its own way from its target.
+    EXPECT_TRUE(restoredAgent.nextPathPosition == Math::Vector3UVE{});
+    EXPECT_TRUE(restoredAgent.desiredVelocity == Math::Vector3UVE{});
+    EXPECT_EQ(restoredAgent.pathStatus, NavigationAgentPathStatusUVE::Idle);
+    EXPECT_FALSE(restoredAgent.pathChanged);
+    EXPECT_FALSE(restoredAgent.targetReached);
     EXPECT_EQ(entityManager.GetComponentUVE<Skeleton3DComponentUVE>(restored).bones.size(), 1U);
     EXPECT_EQ(entityManager.GetComponentUVE<Hitbox3DComponentUVE>(restored).damageChannel, "melee");
     EXPECT_EQ(entityManager.GetComponentUVE<InteractionArea3DComponentUVE>(restored).interactionTag, "door");
@@ -364,6 +420,435 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_TRUE(entityManager.HasComponentUVE<VisibilityRegion3DComponentUVE>(restored));
     EXPECT_TRUE(entityManager.HasComponentUVE<WorldPartition3DComponentUVE>(restored));
     EXPECT_TRUE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(restored));
+}
+
+TEST_F(SceneSerializerUVETest, BoneAttachmentSkeletonReferenceRoundTripsThroughTheFileLocalId) {
+    // The skeleton is a real entity reference in the component, and a file has no entities - only
+    // file-local ids. Saved, it goes out as an id and comes back as the RESTORED skeleton, not as the
+    // handle it held when the scene was written, which names a slot in a manager that no longer holds
+    // that entity.
+    const EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    Skeleton3DComponentUVE skeleton;
+    skeleton.skeletonAssetPath = "assets/character.uvskel";
+    skeleton.bones.push_back(SkeletonBoneUVE{"root", -1, {}, {}, {1.0F, 1.0F, 1.0F}});
+    entityManager.AddComponentUVE<Skeleton3DComponentUVE>(skeletonEntity, skeleton);
+    const EntityUVE attachmentEntity = entityManager.CreateEntityUVE();
+    BoneAttachment3DComponentUVE attachment;
+    attachment.skeleton = skeletonEntity;
+    attachment.boneName = "root";
+    attachment.localPosition = Math::Vector3UVE{0.0F, 0.25F, 0.0F};
+    entityManager.AddComponentUVE<BoneAttachment3DComponentUVE>(attachmentEntity, attachment);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {skeletonEntity, attachmentEntity}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE fresh{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(fresh, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 2U);
+
+    EntityUVE restoredSkeleton = kInvalidEntityUVE;
+    EntityUVE restoredAttachment = kInvalidEntityUVE;
+    for (const EntityUVE entity : restoredRoots) {
+        if (fresh.HasComponentUVE<Skeleton3DComponentUVE>(entity)) {
+            restoredSkeleton = entity;
+        }
+        if (fresh.HasComponentUVE<BoneAttachment3DComponentUVE>(entity)) {
+            restoredAttachment = entity;
+        }
+    }
+    ASSERT_NE(restoredSkeleton, kInvalidEntityUVE);
+    ASSERT_NE(restoredAttachment, kInvalidEntityUVE);
+    const BoneAttachment3DComponentUVE restored =
+        fresh.GetComponentUVE<BoneAttachment3DComponentUVE>(restoredAttachment);
+    EXPECT_EQ(restored.skeleton, restoredSkeleton) << "the id in the file is remapped to the restored skeleton";
+    EXPECT_TRUE(fresh.IsAliveUVE(restored.skeleton))
+        << "what the load left behind is a reference that resolves in the loaded scene, not a stale handle";
+    EXPECT_EQ(restored.boneName, "root");
+    EXPECT_FLOAT_EQ(restored.localPosition.y, 0.25F);
+}
+
+TEST_F(SceneSerializerUVETest, BoneAttachmentPointingOutsideTheSavedSetLoadsInert) {
+    // The skeleton was not part of what was saved, so there is no id for it in the file. The
+    // attachment must load pointing at nothing rather than at whichever entity happens to share the
+    // slot it used to occupy.
+    const EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Skeleton3DComponentUVE>(skeletonEntity, Skeleton3DComponentUVE{});
+    const EntityUVE attachmentEntity = entityManager.CreateEntityUVE();
+    BoneAttachment3DComponentUVE attachment;
+    attachment.skeleton = skeletonEntity;
+    attachment.boneName = "root";
+    entityManager.AddComponentUVE<BoneAttachment3DComponentUVE>(attachmentEntity, attachment);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {attachmentEntity}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE fresh{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(fresh, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+    const BoneAttachment3DComponentUVE restored =
+        fresh.GetComponentUVE<BoneAttachment3DComponentUVE>(restoredRoots.front());
+    EXPECT_EQ(restored.skeleton, kInvalidEntityUVE);
+    EXPECT_EQ(restored.boneName, "root");
+    EXPECT_FALSE(IsBoneAttachment3DObjectComponentResolvableUVE(restored))
+        << "an attachment with nowhere to bind is inert, which is what keeps it from teleporting";
+}
+
+TEST_F(SceneSerializerUVETest, LoadUVE_ABoneAttachmentFromBeforeTheReferenceLoadsInertOrBound) {
+    // Documents written while the skeleton was still a bare numeric id keep that key. An id this file
+    // does not contain leaves the attachment inert; one it does contain binds it. Neither may read
+    // the number as an entity slot.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"Skeleton3DComponentUVE":{"skeletonAssetPath":"Hero.fbx","bones":[{"name":"root","parentIndex":-1,"localPosition":[0.0,0.0,0.0],"localRotation":[0.0,0.0,0.0,1.0],"localScale":[1.0,1.0,1.0]}],"enabled":true}}},{"localId":1,"components":{"BoneAttachment3DComponentUVE":{"skeletonLocalId":0,"boneIndex":4294967295,"boneName":"root","localPosition":[0.0,0.1,0.0],"localRotation":[0.0,0.0,0.0,1.0],"localScale":[1.0,1.0,1.0],"enabled":true}}},{"localId":2,"components":{"BoneAttachment3DComponentUVE":{"skeletonLocalId":7,"boneName":"root","localPosition":[0.0,0.0,0.0],"localRotation":[0.0,0.0,0.0,1.0],"localScale":[1.0,1.0,1.0],"enabled":true}}}]})";
+    const auto* const payloadBytesPtr = reinterpret_cast<const std::byte*>(payloadText.data());
+    const std::vector<std::byte> payloadBytes(payloadBytesPtr, payloadBytesPtr + payloadText.size());
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_bone_attachment_legacy_reference.uvscene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(Asset::WriteUveFileUVE(path, SceneAssetTypeUVE::Scene, payloadBytes));
+
+    const std::vector<EntityUVE> roots = serializer.LoadUVE(entityManager, path);
+    ASSERT_EQ(roots.size(), 3U);
+    const EntityUVE skeletonEntity = roots[0];
+    const BoneAttachment3DComponentUVE bound =
+        entityManager.GetComponentUVE<BoneAttachment3DComponentUVE>(roots[1]);
+    EXPECT_EQ(bound.skeleton, skeletonEntity) << "id 0 names the skeleton saved alongside it";
+    EXPECT_EQ(bound.boneName, "root");
+    const BoneAttachment3DComponentUVE dangling =
+        entityManager.GetComponentUVE<BoneAttachment3DComponentUVE>(roots[2]);
+    EXPECT_EQ(dangling.skeleton, kInvalidEntityUVE) << "id 7 names nothing in this file";
+
+    std::filesystem::remove(path);
+}
+
+TEST_F(SceneSerializerUVETest, TwoBoneIKChainReferencesRoundTripThroughTheFileLocalIds) {
+    // Three references, three keys: the skeleton whose pose it corrects, the object it reaches for and
+    // the point that picks which way the joint bends. A file has no entities, only file-local ids, so
+    // every one of them has to come back as the RESTORED entity rather than as the handle it held when
+    // the scene was written.
+    const EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    Skeleton3DComponentUVE skeleton;
+    skeleton.skeletonAssetPath = "assets/archer.uvskel";
+    skeleton.bones.push_back(SkeletonBoneUVE{"UpperArm", -1, {}, {}, {1.0F, 1.0F, 1.0F}});
+    entityManager.AddComponentUVE<Skeleton3DComponentUVE>(skeletonEntity, skeleton);
+    const EntityUVE targetEntity = entityManager.CreateEntityUVE();
+    TransformComponentUVE targetTransform;
+    targetTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    entityManager.AddComponentUVE<TransformComponentUVE>(targetEntity, targetTransform);
+    const EntityUVE poleEntity = entityManager.CreateEntityUVE();
+    TransformComponentUVE poleTransform;
+    poleTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, 2.0F};
+    entityManager.AddComponentUVE<TransformComponentUVE>(poleEntity, poleTransform);
+    const EntityUVE chainEntity = entityManager.CreateEntityUVE();
+    TwoBoneIK3DComponentUVE chain;
+    chain.skeleton = skeletonEntity;
+    chain.rootBoneIndex = 3U;
+    chain.rootBoneName = "UpperArm";
+    chain.middleBoneIndex = 4294967295U;
+    chain.middleBoneName = "Forearm";
+    chain.endBoneName = "Hand";
+    chain.target = targetEntity;
+    chain.targetPosition = Math::Vector3UVE{0.25F, 1.0F, 0.0F};
+    chain.poleTarget = poleEntity;
+    chain.poleDirection = Math::Vector3UVE{0.0F, 0.0F, 1.0F};
+    chain.enabled = false;
+    // Runtime answers on the source: none of them may reach the file - a restored chain has been
+    // solved zero times, and a stale `reached` would have the Inspector report a solve that never ran.
+    chain.solved = true;
+    chain.reached = true;
+    chain.endToTargetDistanceMetres = 0.4F;
+    chain.resolvedRootBoneIndex = 3U;
+    chain.resolvedMiddleBoneIndex = 4U;
+    chain.resolvedEndBoneIndex = 5U;
+    entityManager.AddComponentUVE<TwoBoneIK3DComponentUVE>(chainEntity, chain);
+
+    const std::optional<SceneSnapshotUVE> snapshot = serializer.CaptureUVE(
+        entityManager, {skeletonEntity, targetEntity, poleEntity, chainEntity}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE fresh{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(fresh, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 4U);
+
+    // Named by what each object carries rather than by restore order, so a swapped pair of references
+    // cannot pass by both entities having been restored.
+    EntityUVE restoredSkeleton = kInvalidEntityUVE;
+    EntityUVE restoredTarget = kInvalidEntityUVE;
+    EntityUVE restoredPole = kInvalidEntityUVE;
+    EntityUVE restoredChain = kInvalidEntityUVE;
+    for (const EntityUVE entity : restoredRoots) {
+        if (fresh.HasComponentUVE<Skeleton3DComponentUVE>(entity)) {
+            restoredSkeleton = entity;
+            continue;
+        }
+        if (fresh.HasComponentUVE<TwoBoneIK3DComponentUVE>(entity)) {
+            restoredChain = entity;
+            continue;
+        }
+        const Math::Vector3UVE position = fresh.GetComponentUVE<TransformComponentUVE>(entity).localPosition;
+        if (position.x == 1.0F) {
+            restoredTarget = entity;
+        } else if (position.z == 2.0F) {
+            restoredPole = entity;
+        }
+    }
+    ASSERT_NE(restoredSkeleton, kInvalidEntityUVE);
+    ASSERT_NE(restoredTarget, kInvalidEntityUVE);
+    ASSERT_NE(restoredPole, kInvalidEntityUVE);
+    ASSERT_NE(restoredChain, kInvalidEntityUVE);
+
+    const TwoBoneIK3DComponentUVE restored = fresh.GetComponentUVE<TwoBoneIK3DComponentUVE>(restoredChain);
+    EXPECT_EQ(restored.skeleton, restoredSkeleton) << "id in the file -> restored skeleton";
+    EXPECT_EQ(restored.target, restoredTarget);
+    EXPECT_EQ(restored.poleTarget, restoredPole);
+    EXPECT_NE(restored.target, restoredPole) << "two references that named different objects still do";
+    EXPECT_EQ(restored.rootBoneIndex, 3U);
+    EXPECT_EQ(restored.rootBoneName, "UpperArm");
+    EXPECT_EQ(restored.middleBoneIndex, kInvalidSkeletonBoneIndexUVE);
+    EXPECT_EQ(restored.middleBoneName, "Forearm");
+    EXPECT_EQ(restored.endBoneName, "Hand");
+    EXPECT_FLOAT_EQ(restored.targetPosition.x, 0.25F);
+    EXPECT_FLOAT_EQ(restored.poleDirection.z, 1.0F);
+    EXPECT_FALSE(restored.enabled);
+    EXPECT_FALSE(restored.solved) << "the file carries authored data, never the last frame's answer";
+    EXPECT_FALSE(restored.reached);
+    EXPECT_FLOAT_EQ(restored.endToTargetDistanceMetres, 0.0F);
+    EXPECT_EQ(restored.resolvedRootBoneIndex, kInvalidSkeletonBoneIndexUVE);
+    EXPECT_EQ(restored.resolvedMiddleBoneIndex, kInvalidSkeletonBoneIndexUVE);
+    EXPECT_EQ(restored.resolvedEndBoneIndex, kInvalidSkeletonBoneIndexUVE);
+}
+
+TEST_F(SceneSerializerUVETest, TwoBoneIKPointingOutsideTheSavedSetLoadsInert) {
+    // Nothing the chain names was part of what was saved, so there are no ids for them in the file.
+    // Each reference has to load pointing at nothing rather than at whichever entity happens to share
+    // the slot it used to occupy, and the chain has to be inert rather than aimed somewhere.
+    const EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Skeleton3DComponentUVE>(skeletonEntity, Skeleton3DComponentUVE{});
+    const EntityUVE targetEntity = entityManager.CreateEntityUVE();
+    const EntityUVE chainEntity = entityManager.CreateEntityUVE();
+    TwoBoneIK3DComponentUVE chain;
+    chain.skeleton = skeletonEntity;
+    chain.target = targetEntity;
+    chain.rootBoneName = "UpperArm";
+    chain.middleBoneName = "Forearm";
+    chain.endBoneName = "Hand";
+    entityManager.AddComponentUVE<TwoBoneIK3DComponentUVE>(chainEntity, chain);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {chainEntity}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE fresh{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(fresh, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+    const TwoBoneIK3DComponentUVE restored = fresh.GetComponentUVE<TwoBoneIK3DComponentUVE>(restoredRoots.front());
+    EXPECT_EQ(restored.skeleton, kInvalidEntityUVE);
+    EXPECT_EQ(restored.target, kInvalidEntityUVE);
+    EXPECT_EQ(restored.poleTarget, kInvalidEntityUVE);
+    EXPECT_EQ(restored.rootBoneName, "UpperArm") << "the authored names survive the missing references";
+    EXPECT_FALSE(IsTwoBoneIK3DObjectComponentResolvableUVE(restored))
+        << "a chain with nowhere to bind is inert, which is what keeps it from driving a stranger's bones";
+}
+
+TEST_F(SceneSerializerUVETest, LoadUVE_ATwoBoneIKChainBindsTheIdsTheFileHas) {
+    // The three reference keys as a document spells them, including a pole id that names nothing in
+    // this file: the chain still binds its skeleton and target, and solves toward the authored point
+    // because the pole reference it could not resolve is the sentinel, not a wrong object.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"Skeleton3DComponentUVE":{"skeletonAssetPath":"Archer.fbx","bones":[{"name":"UpperArm","parentIndex":-1,"localPosition":[0.0,0.0,0.0],"localRotation":[0.0,0.0,0.0,1.0],"localScale":[1.0,1.0,1.0]}],"enabled":true}}},{"localId":1,"components":{"TwoBoneIK3DComponentUVE":{"skeletonLocalId":0,"targetLocalId":2,"poleLocalId":9,"rootBoneIndex":4294967295,"rootBoneName":"UpperArm","middleBoneIndex":4294967295,"middleBoneName":"Forearm","endBoneIndex":4294967295,"endBoneName":"Hand","targetPosition":[0.25,1.0,0.0],"poleDirection":[0.0,0.0,1.0],"enabled":true}}},{"localId":2,"components":{}}]})";
+    const auto* const payloadBytesPtr = reinterpret_cast<const std::byte*>(payloadText.data());
+    const std::vector<std::byte> payloadBytes(payloadBytesPtr, payloadBytesPtr + payloadText.size());
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_two_bone_ik_references.uvscene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(Asset::WriteUveFileUVE(path, SceneAssetTypeUVE::Scene, payloadBytes));
+
+    const std::vector<EntityUVE> roots = serializer.LoadUVE(entityManager, path);
+    ASSERT_EQ(roots.size(), 3U);
+    const TwoBoneIK3DComponentUVE chain =
+        entityManager.GetComponentUVE<TwoBoneIK3DComponentUVE>(roots[1]);
+    EXPECT_EQ(chain.skeleton, roots[0]) << "id 0 names the skeleton saved beside it";
+    EXPECT_EQ(chain.target, roots[2]) << "id 2 names the object the chain reaches for";
+    EXPECT_EQ(chain.poleTarget, kInvalidEntityUVE) << "id 9 names nothing in this file";
+    EXPECT_EQ(chain.rootBoneName, "UpperArm");
+    EXPECT_TRUE(IsTwoBoneIK3DObjectComponentResolvableUVE(chain));
+
+    std::filesystem::remove(path);
+}
+
+TEST_F(SceneSerializerUVETest, SpringArmAuthoredFieldsRoundTripAndRuntimeTruthIsReseeded) {
+    // The arm's authored half is saved; its runtime half is not, and must not be: where the boom
+    // happens to be pointing right now is a fact about the frame that saved the scene, not about
+    // the scene. A restored arm starts at its authored reach and the first step resolves the truth.
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    SpringArm3DComponentUVE springArm;
+    springArm.armLength = 6.0F;
+    springArm.margin = 0.25F;
+    springArm.smoothing = 12.0F;
+    springArm.collisionMask = 0x0FU;
+    springArm.currentLength = 2.0F; // retracted against something, at save time
+    springArm.enabled = false;
+    entityManager.AddComponentUVE<SpringArm3DComponentUVE>(source, springArm);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(entityManager, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+
+    const SpringArm3DComponentUVE restored =
+        entityManager.GetComponentUVE<SpringArm3DComponentUVE>(restoredRoots.front());
+    EXPECT_FLOAT_EQ(restored.armLength, 6.0F);
+    EXPECT_FLOAT_EQ(restored.margin, 0.25F);
+    EXPECT_FLOAT_EQ(restored.smoothing, 12.0F);
+    EXPECT_EQ(restored.collisionMask, 0x0FU);
+    EXPECT_FALSE(restored.enabled);
+    EXPECT_FLOAT_EQ(restored.currentLength, restored.armLength)
+        << "runtime truth is re-derived by the next step, so a load must not restore a stale one";
+}
+
+TEST_F(SceneSerializerUVETest, Projectile3DAuthoredHitContractRoundTripsAndTheRuntimeResultIsNotSaved) {
+    // The authored half of the hit contract - the policy and the two coefficients - is scene data
+    // and must survive a save. The runtime half is not: where this projectile last landed and how
+    // many times it bounced are facts about the session that saved the scene, and a restored
+    // projectile starts its life unspent.
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    Projectile3DComponentUVE projectile;
+    projectile.velocity = Math::Vector3UVE{0.0F, 2.0F, 20.0F};
+    projectile.acceleration = Math::Vector3UVE{0.0F, -9.81F, 0.0F};
+    projectile.radius = 0.25F;
+    projectile.maxLifetime = 4.0F;
+    projectile.collisionMask = 0x03U;
+    projectile.active = false;
+    projectile.hitPolicy = Projectile3DHitPolicyUVE::Bounce;
+    projectile.restitution = 0.75F;
+    projectile.friction = 0.1F;
+    // Runtime truth, at save time.
+    projectile.remainingLifetime = 1.5F;
+    projectile.hit = true;
+    projectile.hitEntity = EntityUVE{7U, 1U};
+    projectile.hitPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
+    projectile.hitNormal = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    projectile.impactSpeed = 12.0F;
+    projectile.bounceCount = 3U;
+    entityManager.AddComponentUVE<Projectile3DComponentUVE>(source, projectile);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(entityManager, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+
+    const Projectile3DComponentUVE restored =
+        entityManager.GetComponentUVE<Projectile3DComponentUVE>(restoredRoots.front());
+    EXPECT_EQ(restored.velocity, projectile.velocity);
+    EXPECT_EQ(restored.acceleration, projectile.acceleration);
+    EXPECT_FLOAT_EQ(restored.radius, 0.25F);
+    EXPECT_FLOAT_EQ(restored.maxLifetime, 4.0F);
+    EXPECT_EQ(restored.collisionMask, 0x03U);
+    EXPECT_FALSE(restored.active);
+    EXPECT_EQ(restored.hitPolicy, Projectile3DHitPolicyUVE::Bounce);
+    EXPECT_FLOAT_EQ(restored.restitution, 0.75F);
+    EXPECT_FLOAT_EQ(restored.friction, 0.1F);
+    EXPECT_FLOAT_EQ(restored.remainingLifetime, restored.maxLifetime)
+        << "the countdown is re-armed from the authored lifetime, not restored stale";
+    EXPECT_FALSE(restored.hit);
+    EXPECT_EQ(restored.hitEntity, kInvalidEntityUVE);
+    EXPECT_EQ(restored.hitPosition, Math::Vector3UVE{});
+    EXPECT_EQ(restored.bounceCount, 0U);
+}
+
+TEST_F(SceneSerializerUVETest, LoadUVE_AProjectileFromBeforeTheHitContractLoadsWithAuthoredDefaults) {
+    // A file written before the hit contract existed has no policy and no coefficients, so the
+    // component lands on the authored defaults - Stop, 0.5 and 0.2 - rather than on whatever a
+    // zero-initialized enum happens to mean.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"Projectile3DComponentUVE":{"velocity":[0.0,0.0,20.0],"acceleration":[0.0,-9.81,0.0],"radius":0.25,"maxLifetime":4.0,"collisionMask":4294967295,"active":true}}}]})";
+    const auto* const payloadBytesPtr = reinterpret_cast<const std::byte*>(payloadText.data());
+    const std::vector<std::byte> payloadBytes(payloadBytesPtr, payloadBytesPtr + payloadText.size());
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_projectile_legacy_contract.uvscene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(Asset::WriteUveFileUVE(path, SceneAssetTypeUVE::Scene, payloadBytes));
+
+    const std::vector<EntityUVE> roots = serializer.LoadUVE(entityManager, path);
+    ASSERT_EQ(roots.size(), 1U);
+    const Projectile3DComponentUVE& loaded =
+        entityManager.GetComponentUVE<Projectile3DComponentUVE>(roots[0]);
+    EXPECT_FLOAT_EQ(loaded.radius, 0.25F);
+    EXPECT_FLOAT_EQ(loaded.maxLifetime, 4.0F);
+    EXPECT_EQ(loaded.hitPolicy, Projectile3DHitPolicyUVE::Stop);
+    EXPECT_FLOAT_EQ(loaded.restitution, 0.5F);
+    EXPECT_FLOAT_EQ(loaded.friction, 0.2F);
+    EXPECT_TRUE(loaded.active);
+
+    std::filesystem::remove(path);
+}
+
+TEST_F(SceneSerializerUVETest, LodGroup3DAuthoredLevelsAndBandRoundTripAndTheResolvedAnswerIsNotSaved) {
+    // What the author decided - the thresholds, the per-level meshes and the band - is scene data.
+    // What the renderer resolved from it on the frame that saved the scene is not: currentLevel and
+    // culledByDistance describe where the camera was, and a restored scene resolves them itself.
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    LodGroup3DComponentUVE lod;
+    lod.levelCount = 3U;
+    lod.distanceThresholds[0] = 12.0F;
+    lod.distanceThresholds[1] = 40.0F;
+    lod.distanceThresholds[2] = 90.0F;
+    lod.lodMeshGuids[1] = Asset::AssetGuidUVE{77U};
+    lod.lodMeshGuids[2] = Asset::AssetGuidUVE{88U};
+    lod.hysteresis = 0.15F;
+    // Runtime truth at save time, which must not come back.
+    lod.currentLevel = 2U;
+    lod.culledByDistance = true;
+    entityManager.AddComponentUVE<LodGroup3DComponentUVE>(source, lod);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(entityManager, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+
+    const LodGroup3DComponentUVE restored =
+        entityManager.GetComponentUVE<LodGroup3DComponentUVE>(restoredRoots.front());
+    EXPECT_EQ(restored.levelCount, 3U);
+    EXPECT_FLOAT_EQ(restored.distanceThresholds[0], 12.0F);
+    EXPECT_FLOAT_EQ(restored.distanceThresholds[1], 40.0F);
+    EXPECT_FLOAT_EQ(restored.distanceThresholds[2], 90.0F);
+    EXPECT_FLOAT_EQ(restored.hysteresis, 0.15F) << "the band is authored data";
+    EXPECT_EQ(restored.lodMeshGuids[0], Asset::kInvalidAssetGuidUVE)
+        << "level 0 was never overridden, and must come back unassigned rather than pointing "
+           "anywhere";
+    EXPECT_EQ(restored.lodMeshGuids[1], Asset::AssetGuidUVE{77U});
+    EXPECT_EQ(restored.lodMeshGuids[2], Asset::AssetGuidUVE{88U});
+    EXPECT_EQ(restored.currentLevel, 0U) << "the resolved level is re-derived, not restored";
+    EXPECT_FALSE(restored.culledByDistance);
+}
+
+TEST_F(SceneSerializerUVETest, LoadUVE_AnLodGroupFromBeforePerLevelMeshesLoadsWithNoOverridesAndNoBand) {
+    // A file written before levels could name their own meshes has neither array nor band. It must
+    // load as a group that overrides nothing and bands nothing - exactly what it meant when it was
+    // written - rather than failing validation or inventing a band.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"LodGroup3DComponentUVE":{"distanceThresholds":[12.0,40.0],"levelCount":2,"enabled":true}}}]})";
+    const auto* const payloadBytesPtr = reinterpret_cast<const std::byte*>(payloadText.data());
+    const std::vector<std::byte> payloadBytes(payloadBytesPtr, payloadBytesPtr + payloadText.size());
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_lod_legacy_levels.uvscene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(Asset::WriteUveFileUVE(path, SceneAssetTypeUVE::Scene, payloadBytes));
+
+    const std::vector<EntityUVE> roots = serializer.LoadUVE(entityManager, path);
+    ASSERT_EQ(roots.size(), 1U);
+    const LodGroup3DComponentUVE& loaded =
+        entityManager.GetComponentUVE<LodGroup3DComponentUVE>(roots[0]);
+    EXPECT_EQ(loaded.levelCount, 2U);
+    EXPECT_FLOAT_EQ(loaded.distanceThresholds[0], 12.0F);
+    EXPECT_FLOAT_EQ(loaded.distanceThresholds[1], 40.0F);
+    EXPECT_FLOAT_EQ(loaded.hysteresis, 0.0F);
+    for (std::size_t index = 0U; index < kMaximumLodLevelsUVE; ++index) {
+        EXPECT_EQ(loaded.lodMeshGuids[index], Asset::kInvalidAssetGuidUVE);
+    }
+    EXPECT_TRUE(IsLodGroup3DObjectComponentValidUVE(loaded));
+
+    std::filesystem::remove(path);
 }
 
 TEST_F(SceneSerializerUVETest, SaveUVE_InvalidAuthoredTransformFailsBeforeDestinationPublication) {
@@ -730,6 +1215,116 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     EXPECT_FALSE(restoredManager.HasComponentUVE<TransformComponentUVE>(restoredPlayer));
 }
 
+TEST_F(SceneSerializerUVETest, CaptureThenRestoreUVE_RayCastExclusionsFollowTheObjectsTheyName) {
+    // Two objects in one file: the ray names the other in its exclusions. After the round trip the
+    // reference must point at the RESTORED object, not at a raw index that may now belong to
+    // something else entirely - which is exactly what a saved handle would have meant.
+    const EntityUVE target = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(target, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(target, HierarchyComponentUVE{});
+    const EntityUVE rayEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(rayEntity, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(rayEntity, HierarchyComponentUVE{});
+    RayCast3DComponentUVE ray;
+    ray.length = 12.0F;
+    ray.exclusions[0] = target;
+    entityManager.AddComponentUVE<RayCast3DComponentUVE>(rayEntity, ray);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {rayEntity, target}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE restoredManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(restoredManager, *snapshot);
+    ASSERT_EQ(roots.size(), 2U);
+    const EntityUVE restoredRay = roots[0];
+    const EntityUVE restoredTarget = roots[1];
+    ASSERT_NE(restoredTarget, target);
+    ASSERT_TRUE(restoredManager.HasComponentUVE<RayCast3DComponentUVE>(restoredRay));
+    const RayCast3DComponentUVE& restored =
+        restoredManager.GetComponentUVE<RayCast3DComponentUVE>(restoredRay);
+    EXPECT_FLOAT_EQ(restored.length, 12.0F);
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(restored), 1U);
+    EXPECT_EQ(restored.exclusions[0], restoredTarget);
+
+    // Saving the restored pair again reproduces the same reference, so the remap is stable rather
+    // than correct only once.
+    const std::optional<SceneSnapshotUVE> second =
+        serializer.CaptureUVE(restoredManager, {restoredRay, restoredTarget}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(second.has_value());
+    EntityManagerUVE secondManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    const std::vector<EntityUVE> secondRoots = serializer.RestoreUVE(secondManager, *second);
+    ASSERT_EQ(secondRoots.size(), 2U);
+    const RayCast3DComponentUVE& secondRay =
+        secondManager.GetComponentUVE<RayCast3DComponentUVE>(secondRoots[0]);
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(secondRay), 1U);
+    EXPECT_EQ(secondRay.exclusions[0], secondRoots[1]);
+}
+
+TEST_F(SceneSerializerUVETest, CaptureThenRestoreUVE_AnExclusionOutsideTheSavedSetIsDroppedRatherThanRenumbered) {
+    // The excluded object lives in another part of the level, so this file does not contain it.
+    // Writing its handle out would be writing a number the next load reads as whatever entity
+    // happens to occupy that slot - so the reference is dropped instead, and the ray still loads
+    // with everything else it owns.
+    const EntityUVE outsider = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(outsider, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(outsider, HierarchyComponentUVE{});
+    const EntityUVE rayEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(rayEntity, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(rayEntity, HierarchyComponentUVE{});
+    RayCast3DComponentUVE ray;
+    ray.length = 12.0F;
+    ray.exclusions[0] = outsider;
+    entityManager.AddComponentUVE<RayCast3DComponentUVE>(rayEntity, ray);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {rayEntity}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE restoredManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(restoredManager, *snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    const RayCast3DComponentUVE& restored =
+        restoredManager.GetComponentUVE<RayCast3DComponentUVE>(roots[0]);
+    EXPECT_FLOAT_EQ(restored.length, 12.0F);
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(restored), 0U);
+
+    // Dropped once means dropped for good: a second save of what was restored cannot resurrect a
+    // reference the file never held.
+    const std::optional<SceneSnapshotUVE> second =
+        serializer.CaptureUVE(restoredManager, {roots[0]}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(second.has_value());
+    EntityManagerUVE secondManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    const std::vector<EntityUVE> secondRoots = serializer.RestoreUVE(secondManager, *second);
+    ASSERT_EQ(secondRoots.size(), 1U);
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(
+                  secondManager.GetComponentUVE<RayCast3DComponentUVE>(secondRoots[0])),
+              0U);
+}
+
+TEST_F(SceneSerializerUVETest, LoadUVE_ALegacyRawExclusionListIsDroppedRatherThanMisread) {
+    // Files written while `exclusions` held raw entity indices are still readable - the component
+    // loads with every real field - but the numbers are NOT revived as handles: they were indices
+    // into a pool that no longer exists, and guessing at them would aim a ray at a stranger.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"RayCast3DComponentUVE":{"direction":[0.0,-1.0,0.0],"length":8.0,"collisionMask":4294967295,"enabled":true,"exclusions":[3]}}}]})";
+    const auto* const payloadBytesPtr = reinterpret_cast<const std::byte*>(payloadText.data());
+    const std::vector<std::byte> payloadBytes(payloadBytesPtr, payloadBytesPtr + payloadText.size());
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_raycast_legacy_exclusions.uvscene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(Asset::WriteUveFileUVE(path, SceneAssetTypeUVE::Scene, payloadBytes));
+
+    const std::vector<EntityUVE> roots = serializer.LoadUVE(entityManager, path);
+    ASSERT_EQ(roots.size(), 1U);
+    const RayCast3DComponentUVE& loaded =
+        entityManager.GetComponentUVE<RayCast3DComponentUVE>(roots[0]);
+    EXPECT_FLOAT_EQ(loaded.length, 8.0F);
+    EXPECT_TRUE(loaded.enabled);
+    EXPECT_EQ(loaded.collisionMask, 0xFFFFFFFFU);
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(loaded), 0U);
+
+    std::filesystem::remove(path);
+}
+
 TEST_F(SceneSerializerUVETest, RestoreUVE_TwoClipAnimationGraphBecomesABlendGraph) {
     const std::string payloadText =
         R"({"entities":[{"localId":0,"components":{"AnimationGraphComponentUVE":{"active":true,"clipA":11,"clipB":12,"blend":0.75,"speed":1.5}}}]})";
@@ -1031,6 +1626,60 @@ TEST_F(SceneSerializerUVETest, RoundTripUVE_RenderInstanceFamilyKeepsEveryField)
     EXPECT_EQ(entityManager.GetComponentUVE<FogVolume3DComponentUVE>(roots.front()), fog);
 }
 
+TEST_F(SceneSerializerUVETest, Decal3DLifetimeIsReArmedOnLoadAndTheCountdownIsNotSaved) {
+    // The authored lifetime is scene data. The countdown that was left of it - and the fact that it
+    // had already run out - are facts about the session that saved the scene, so a restored decal
+    // starts its life whole rather than resuming a life that was nearly over. The same rule a
+    // restored projectile's remaining flight follows.
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    Decal3DComponentUVE decal{};
+    decal.materialAssetPath = "materials/scorch.uemat";
+    decal.size = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    decal.lifetime = 3.0F;
+    // Runtime truth at save time.
+    decal.remainingLifetime = 0.25F;
+    decal.expired = true;
+    entityManager.AddComponentUVE<Decal3DComponentUVE>(source, decal);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(entityManager, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+
+    const Decal3DComponentUVE restored =
+        entityManager.GetComponentUVE<Decal3DComponentUVE>(restoredRoots.front());
+    EXPECT_EQ(restored.materialAssetPath, "materials/scorch.uemat");
+    EXPECT_EQ(restored.size, (Math::Vector3UVE{2.0F, 2.0F, 2.0F}));
+    EXPECT_FLOAT_EQ(restored.lifetime, 3.0F);
+    EXPECT_FLOAT_EQ(restored.remainingLifetime, 3.0F) << "a restored decal starts its life whole";
+    EXPECT_FALSE(restored.expired) << "a saved countdown that had run out does not come back spent";
+}
+
+TEST_F(SceneSerializerUVETest, LoadUVE_ADecalFromBeforeTheCountdownLoadsPermanentAndAlive) {
+    // A decal saved before the runtime countdown existed has no lifetime at all, which means the
+    // default: permanent. It must load alive and unarmed rather than expired.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"Decal3DComponentUVE":{"materialAssetPath":"materials/old_mark.uemat","size":[1.0,1.0,1.0],"projection":0}}}]})";
+    const auto* const payloadBytesPtr = reinterpret_cast<const std::byte*>(payloadText.data());
+    const std::vector<std::byte> payloadBytes(payloadBytesPtr, payloadBytesPtr + payloadText.size());
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_decal_legacy_countdown.uvscene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(Asset::WriteUveFileUVE(path, SceneAssetTypeUVE::Scene, payloadBytes));
+
+    const std::vector<EntityUVE> roots = serializer.LoadUVE(entityManager, path);
+    ASSERT_EQ(roots.size(), 1U);
+    const Decal3DComponentUVE& loaded = entityManager.GetComponentUVE<Decal3DComponentUVE>(roots[0]);
+    EXPECT_FLOAT_EQ(loaded.lifetime, 0.0F) << "the default is permanent";
+    EXPECT_FLOAT_EQ(loaded.remainingLifetime, 0.0F);
+    EXPECT_FALSE(loaded.expired);
+    EXPECT_TRUE(IsDecal3DPaintingUVE(loaded));
+    EXPECT_TRUE(IsDecal3DObjectComponentValidUVE(loaded));
+
+    std::filesystem::remove(path);
+}
+
 TEST_F(SceneSerializerUVETest, RestoreUVE_DecalSavedBeforeItsNewFieldsLoadsWithDefaults) {
     const std::string payloadText =
         R"({"entities":[{"localId":0,"components":{"Decal3DComponentUVE":)"
@@ -1047,7 +1696,14 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_DecalSavedBeforeItsNewFieldsLoadsWithD
     expected.size = {2.0F, 1.0F, 2.0F};
     expected.projection = DecalProjectionModeUVE::Cylinder;
     expected.lifetime = 5.0F;
-    EXPECT_EQ(entityManager.GetComponentUVE<Decal3DComponentUVE>(roots.front()), expected);
+    // Loading re-arms the runtime countdown from the authored lifetime, so the whole-component
+    // comparison has to expect a life about to start rather than a life at zero - which is exactly
+    // what a decal that has just been authored or loaded should be.
+    expected.remainingLifetime = 5.0F;
+    EXPECT_FALSE(expected.expired);
+    const Decal3DComponentUVE& restored = entityManager.GetComponentUVE<Decal3DComponentUVE>(roots.front());
+    EXPECT_FLOAT_EQ(restored.remainingLifetime, 5.0F);
+    EXPECT_EQ(restored, expected);
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_MetadataSavedAsPlainStringsLoadsAsStringValues) {
@@ -1211,13 +1867,23 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_CharacterControllerComponentUVE_Roun
     characterController.airControl = 0.25F;
     characterController.coyoteTimeSeconds = 0.2F;
     characterController.jumpBufferSeconds = 0.15F;
+    characterController.floorMaxAngleDegrees = 55.0F;
+    characterController.wallMinSlideAngleDegrees = 20.0F;
+    characterController.safeMargin = 0.004F;
+    characterController.floorStopOnSlope = false;
+    characterController.floorConstantSpeed = true;
     characterController.floorSnapLength = 0.3F;
     characterController.maxStepHeight = 0.45F;
+    characterController.minStepWidth = 0.05F;
+    characterController.floorBlockOnWall = true;
+    characterController.platformOnLeave = CharacterPlatformLeaveModeUVE::AddUpwardVelocity;
+    characterController.maximumPlatformSpeed = 12.0F;
     characterController.slideOnCeiling = false;
     characterController.pushRigidBodies = true;
     characterController.pushStrength = 2.0F;
     characterController.maxPushSpeed = 7.0F;
     characterController.maxSlides = 12U;
+    characterController.maximumContacts = 24U;
     characterController.velocity = Math::Vector3UVE{1.0F, -3.0F, 2.0F};
     characterController.grounded = true;
     entityManager.AddComponentUVE<CharacterControllerComponentUVE>(entity, characterController);
@@ -1241,13 +1907,23 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_CharacterControllerComponentUVE_Roun
     EXPECT_FLOAT_EQ(loadedController.airControl, 0.25F);
     EXPECT_FLOAT_EQ(loadedController.coyoteTimeSeconds, 0.2F);
     EXPECT_FLOAT_EQ(loadedController.jumpBufferSeconds, 0.15F);
+    EXPECT_FLOAT_EQ(loadedController.floorMaxAngleDegrees, 55.0F);
+    EXPECT_FLOAT_EQ(loadedController.wallMinSlideAngleDegrees, 20.0F);
+    EXPECT_FLOAT_EQ(loadedController.safeMargin, 0.004F);
+    EXPECT_FALSE(loadedController.floorStopOnSlope);
+    EXPECT_TRUE(loadedController.floorConstantSpeed);
     EXPECT_FLOAT_EQ(loadedController.floorSnapLength, 0.3F);
     EXPECT_FLOAT_EQ(loadedController.maxStepHeight, 0.45F);
+    EXPECT_FLOAT_EQ(loadedController.minStepWidth, 0.05F);
+    EXPECT_TRUE(loadedController.floorBlockOnWall);
+    EXPECT_EQ(loadedController.platformOnLeave, CharacterPlatformLeaveModeUVE::AddUpwardVelocity);
+    EXPECT_FLOAT_EQ(loadedController.maximumPlatformSpeed, 12.0F);
     EXPECT_FALSE(loadedController.slideOnCeiling);
     EXPECT_TRUE(loadedController.pushRigidBodies);
     EXPECT_FLOAT_EQ(loadedController.pushStrength, 2.0F);
     EXPECT_FLOAT_EQ(loadedController.maxPushSpeed, 7.0F);
     EXPECT_EQ(loadedController.maxSlides, 12U);
+    EXPECT_EQ(loadedController.maximumContacts, 24U);
     EXPECT_EQ(loadedController.velocity, (Math::Vector3UVE{1.0F, -3.0F, 2.0F}));
     EXPECT_TRUE(loadedController.grounded);
 
@@ -1276,7 +1952,12 @@ TEST_F(SceneSerializerUVETest, Load_OlderCharacterControllerPayloadKeepsItsValue
     EXPECT_EQ(loaded.motionMode, defaults.motionMode);
     EXPECT_EQ(loaded.builtInMovement, defaults.builtInMovement);
     EXPECT_FLOAT_EQ(loaded.maxStepHeight, defaults.maxStepHeight);
+    EXPECT_FLOAT_EQ(loaded.floorMaxAngleDegrees, defaults.floorMaxAngleDegrees);
+    EXPECT_FLOAT_EQ(loaded.safeMargin, defaults.safeMargin);
+    EXPECT_FLOAT_EQ(loaded.minStepWidth, defaults.minStepWidth);
+    EXPECT_EQ(loaded.platformOnLeave, defaults.platformOnLeave);
     EXPECT_EQ(loaded.maxSlides, defaults.maxSlides);
+    EXPECT_EQ(loaded.maximumContacts, defaults.maximumContacts);
 }
 
 TEST_F(SceneSerializerUVETest, SaveThenLoad_UIComponentsUVE_RoundTripExactly) {

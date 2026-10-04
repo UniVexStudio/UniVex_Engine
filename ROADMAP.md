@@ -83,8 +83,12 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
 - [ ] Temporal anti-aliasing (and/or a modern upscaling technique)
 - [ ] HDR display output and a real color-grading / LUT pipeline
 - [ ] Order-independent or improved transparency sorting
-- [ ] Decal rendering (the `decal` scene-node kind already exists as a descriptor; no
-  rendering system backs it yet)
+- [x] Decal rendering — the `decal` scene-node kind is real end to end: the lifetime runtime counts
+  down and reports the expiry, the projected-geometry pass clips the receiving surfaces against the
+  box or cylinder volume, and the built-in `decal.glsl` program paints the surviving patches with the
+  material's albedo texture and colour (tinted by `modulate`, plus emissive scaled by
+  `emissionEnergy`, with the texture's alpha joining `albedoMix`) evaluating the authored fades per
+  pixel, back to front
 - [ ] Ray-traced reflections/shadows/GI as an optional high-end path (long-term)
 
 ### 1.2 Scene scale & performance
@@ -129,8 +133,12 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
   would only speed up the cull, which measurement puts at roughly a third of the extraction cost,
   so the honest next win is skipping entities entirely rather than culling them faster.
 - [ ] Occlusion culling (the `occluder` scene-node kind exists as a descriptor only)
-- [ ] Level-of-detail switching (the `LOD group` scene-node kind exists as a descriptor
-  only; no runtime LOD selection system exists)
+- [x] Level-of-detail switching (LODGroup3D): the chain resolves from the camera distance with a
+  hysteresis band (entered past a threshold, left under it, the previous level kept between), the
+  renderer culls past the last threshold, and each level draws its own mesh — `lodMeshGuids[level]`,
+  falling back to the object's own `MeshComponentUVE` mesh for a level that overrides nothing. The
+  whole chain is authored in the Inspector, which also shows the resolved level and the cull verdict
+  during Play.
 - [ ] A world-partition / large-world streaming system (the scene-node kind exists as a
   descriptor only; no streaming, no grid/cell system, no origin rebasing for large worlds)
 - [ ] A terrain system (heightfield or mesh-based, sculpting, texture splatting, LOD)
@@ -322,11 +330,34 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
 - [x] Rigid-body dynamics with angular dynamics, a real narrow-phase collision system, and
   a broad-phase AABB cache
 - [x] Raycasts, shape casts, and a general physics query system
+- [x] Multi-object raycast exclusions (RayCast3D's `exclusions`): a ray refuses a set of authored
+  objects on top of itself, holds them as real entity references that survive a save/load rather
+  than as runtime handles, and checks them before the layer mask — an exclusion is not a mask, so
+  no layer can bring an excluded object back
+- [x] Projectile hit resolution (Projectile3D): each fixed step sweeps the projectile's authored
+  `radius` against the layers its `collisionMask` accepts and resolves the contact through an
+  authored motion policy — Stop halts it at the contact, Bounce reflects it through
+  `restitution`/`friction` — writing the last contact into runtime hit fields and queueing a typed
+  `Projectile3DHitEventUVE`; the engine owns the motion, gameplay owns what a hit means
+- [x] Hitbox/hurtbox strike consequences (Hitbox3D/Hurtbox3D): the pairing the engine already
+  resolved every frame is diffed into real edges — one typed `Hitbox3DStrikeEnteredEventUVE` when a
+  hitbox starts striking a hurtbox and one `Hitbox3DStrikeExitedEventUVE` when it stops, whether by
+  separation or by an authored gate (a disabled box, a layer/mask or channel change, a destroyed
+  entity); each event carries the pair, the penetration depth, the minimum-translation axis and the
+  damage channel, and damage/knockback/i-frames stay gameplay's
 - [x] Trigger volumes with enter/exit lifecycle tracking
 - [x] A constraint system with hinge motors and limits
 - [x] A kinematic character controller with slide/step-up sweep behavior, exposed as a
   real, addable component with gravity/jump/ground-state handling
+- [x] Kinematic bodies driven by an authored target velocity — moving platforms, lifts and doors
+  that go through the world instead of around it: geometry stops them, they cannot tunnel through a
+  thin wall at speed, they push the rigid bodies they meet with the character's own push policy, and
+  the velocity they actually achieved is what carries a character standing on them
 - [x] Configurable per-surface physics materials (friction/restitution)
+- [x] A third-person camera boom (SpringArm3D) that casts along its own axis every fixed step,
+  snaps in behind geometry so a camera never clips through a wall, springs back out at an authored
+  rate once the way is clear, and carries its children by the change in length so authored poses
+  round-trip without drift
 - [ ] Soft-body / cloth simulation
 - [ ] Vehicle physics (wheeled at minimum)
 - [ ] Ragdoll physics (driven skeletal bodies + constraints layered over an animated
@@ -347,15 +378,39 @@ and one of the highest-priority areas below.
 
 - [x] Animation clips, an animation state machine, and a blend-tree style animation graph
 - [x] A shared time/pose data contract used across the animation stack
-- [ ] A real skeletal mesh + bone hierarchy + GPU skinning system (the `skeleton` and `bone
-  attachment` scene-node kinds already exist as descriptors; no skinning/rig runtime backs
-  them yet)
-- [ ] Inverse kinematics (two-bone IK for limbs at minimum; full-body IK as a stretch goal)
-- [ ] Root motion extraction and application
-- [ ] Animation retargeting done properly, as its own scoped system with real bone-mapping
-  validation (a prior, non-functional retargeting attempt was deliberately removed from
-  this codebase rather than kept half-working — see the project's own change history; this
-  is the "do it right" follow-up). Decided shape, to start only when asked:
+- [x] A real skeletal mesh + bone hierarchy + GPU skinning system. Bones are imported from a rigged
+  model (glTF/FBX skeleton readers), the clip pipeline poses them every step, the renderer poses a
+  skinned mesh against the nearest Skeleton3D above it and re-uploads that entity's own vertex buffer
+  every frame (`MeshSkinComputeUVE`), and a BoneAttachment3D object rides a bone through the ordinary
+  transform path (`Scene::SyncBoneAttachment3DObjectsUVE()`). Locked by 17 skinning cases, the
+  resolver cases, 7 pass tests and the serializer's reference round trip.
+- [x] Two-bone inverse kinematics: `TwoBoneIK3D` is a real scene object - an analytic two-circle
+  solve (no iteration, so a limb cannot shiver between two nearly-equal answers) over a
+  root/middle/end bone chain. The target is another object's world position or a point authored in
+  the skeleton's own space; the pole that picks which of the joint's circle of answers is used is
+  either another object or a direction in the skeleton's space, and with neither the chain keeps the
+  bend the pose already has. Reach is respected rather than exceeded - a target out of reach leaves
+  the limb straight, aimed and short, with `reached` false - influence blends the solve over the
+  animation through the shared `BoneModifierComponentUVE`, and the resolved bone indices plus
+  `solved`/`reached`/`endToTargetDistanceMetres` are declared runtime-only so the Inspector shows
+  what a solve did while nothing can save a stale answer.
+  `Scene::SyncTwoBoneIK3DObjectsUVE()` runs inside the animation step, after the drivers that pose
+  skeletons and before the attachment pass, and is gated on the skeletons those drivers posed this
+  pass so a solve is never blended twice. Locked by 9 solver cases (geometry, reach, folding,
+  refusals, blending), 8 pass cases on a real entity manager + scene graph (target/pole resolution,
+  the gate, influence, refusals, index-beats-name, priority ordering), the serializer's
+  three-reference round trip with documents whose ids name nothing, the section's metadata case, and
+  an engine-core tick test that ends with an attachment on the wrist the IK moved.
+- [ ] Full-body IK, as a stretch goal beyond the two-bone object above
+- [x] Root motion extraction and application - `AnimationRootMotionModeUVE`: Off, In Place (the root
+  bone's ground travel is taken out of the pose) and Apply To Target (the target is moved by it, as
+  velocity when it is a Character3D so collision still applies). Locked by the sequencer's travel
+  cases and the engine-core test that runs a character through its skeleton's frame.
+- [x] Animation retargeting done properly, as its own scoped system with real bone-mapping
+  validation. It landed as its own module, `Engine/Runtime/Retarget` - a humanoid reference, bone-name
+  matching, joint checks, A-pose conforming for both the skeleton and the mesh, a playback plan, and
+  the editor's Retarget window on top - locked by the plan, conform and playback tests. The shape it
+  was built to, kept here as the record:
   - The base is a skeleton read from an imported rig (FBX or glTF, through `ReadFbxSkeletonUVE` /
     `ReadGltfSkeletonUVE`), IK bones included - `ik_*` chains are kept, not stripped.
   - When the target rig has no IK bones of its own, they are generated automatically from its
@@ -364,9 +419,12 @@ and one of the highest-priority areas below.
     target authored in different rest poses (A vs T) still line up.
   - Needs a multi-track (per-bone) clip format first: `.uvanim` holds one track today.
 - [ ] Animation compression (both curve compression and a runtime decompression path)
-- [ ] Additive animation layers (e.g. aim offsets, lean, breathing) on top of a base pose
-- [ ] Blend spaces (1D and 2D) for locomotion blending, distinct from the existing blend
-  tree
+- [x] Additive animation layers (e.g. aim offsets, lean, breathing) on top of a base pose - an
+  Additive graph node adds its clip's pose over the base at the parameter's weight, locked by the
+  layer cases in the graph suite.
+- [x] Blend spaces (1D and 2D) for locomotion blending, distinct from the existing blend
+  tree - `AnimationBlendSpace1DWeightsUVE()` / `AnimationBlendSpace2DWeightsUVE()` place the clips
+  around the parameter, with synced points and time scaling locked by their own cases.
 - [ ] Facial animation / morph targets (blend shapes)
 - [ ] Physically-simulated secondary motion (cloth bones, jiggle, spring bones)
 - [ ] A dedicated animation-authoring/preview tool in the editor (a timeline/sequencer for

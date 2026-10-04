@@ -1398,6 +1398,57 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_LodLevelIsResolvedForVisibleEn
     EXPECT_EQ(entityManager.GetComponentUVE<Scene::LodGroup3DComponentUVE>(entity).currentLevel, 2U);
 }
 
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_LodGroupDrawsTheMeshOfTheResolvedLevel) {
+    // The swap itself, end to end. Two meshes: the component's own full-detail mesh and a level 1
+    // override. The entity starts close enough to draw level 0 - its own mesh - then moves past the
+    // first threshold, and the set must resolve, place and bucket the LEVEL 1 mesh instead. Without
+    // this, a resolved level would be a number nothing draws with.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE fullDetailMesh = assetDatabase.RegisterUVE("mesh_renderer_tests_lodswap_full.uvmodel");
+    const Asset::AssetGuidUVE levelOneMesh = assetDatabase.RegisterUVE("mesh_renderer_tests_lodswap_level1.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodswap.uvmat");
+    const Scene::EntityUVE entity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F}, fullDetailMesh, materialGuid);
+    WaitUntilAssetsReadyUVE(fullDetailMesh, materialGuid);
+    WaitUntilAssetsReadyUVE(levelOneMesh, materialGuid);
+
+    Scene::LodGroup3DComponentUVE lod;
+    lod.levelCount = 2U;
+    lod.distanceThresholds[0] = 10.0F;
+    lod.distanceThresholds[1] = 100.0F;
+    lod.lodMeshGuids[1] = levelOneMesh; // level 0 stays on the component's own mesh
+    entityManager.AddComponentUVE<Scene::LodGroup3DComponentUVE>(entity, lod);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::LodGroup3DComponentUVE>(entity).currentLevel, 0U);
+    ASSERT_LT(visibilitySet.candidates[0].assetPairIndex, visibilitySet.assetPairs.size());
+    EXPECT_EQ(visibilitySet.assetPairs[visibilitySet.candidates[0].assetPairIndex].meshHandle.GetGuidUVE(),
+              fullDetailMesh)
+        << "level 0 overrides nothing, so it draws the component's own mesh";
+
+    // Past the first threshold, with the transform moved the way any script would move it.
+    Scene::TransformComponentUVE moved;
+    moved.localPosition = Math::Vector3UVE{0.0F, 0.0F, -40.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, entity, moved);
+    sceneGraph.UpdateUVE(entityManager);
+
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::LodGroup3DComponentUVE>(entity).currentLevel, 1U);
+    ASSERT_LT(visibilitySet.candidates[0].assetPairIndex, visibilitySet.assetPairs.size());
+    EXPECT_EQ(visibilitySet.assetPairs[visibilitySet.candidates[0].assetPairIndex].meshHandle.GetGuidUVE(),
+              levelOneMesh)
+        << "level 1's override is the mesh that gets drawn";
+    EXPECT_EQ(visibilitySet.placementCacheHits, 0U)
+        << "a level change is a different mesh with different bounds: the cached placement must not "
+           "be reused";
+    EXPECT_EQ(visibilitySet.placementCacheMisses, 1U);
+}
+
 TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_TheCameraPositionIsWhatDistanceIsMeasuredFrom) {
     // Distance is from the CAMERA, not from the origin. With the camera moved out to meet it, an
     // object that would otherwise be past the chain is back in range - which is the whole point

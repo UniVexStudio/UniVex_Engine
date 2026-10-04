@@ -56,7 +56,9 @@
 #include "uve/input/i_mobile_gesture_system_uve.h"
 #include "uve/input/i_mobile_input_system_uve.h"
 #include "uve/memory/i_memory_manager_uve.h"
+#include "uve/navigation/navigation_runtime_uve.h"
 #include "uve/physics/area_overlap_lifecycle_tracker_uve.h"
+#include "uve/physics/hitbox_strike_lifecycle_tracker_uve.h"
 #include "uve/physics/collision_lifecycle_tracker_uve.h"
 #include "uve/physics/i_collision_system_uve.h"
 #include "uve/physics/i_physics_system_uve.h"
@@ -467,6 +469,10 @@ private:
     /// Reconciles authored ParticleEmitterComponentUVE values with the existing bounded particle
     /// runtime, simulates one frame under configured gravity, and leaves renderer extraction read-only.
     void SyncParticleRuntimeUVE();
+    /// Ages every decal by the step's simulated seconds and queues one Decal3DExpiredEventUVE per
+    /// decal that runs out. Lifetime is simulation time, so a paused game freezes decals and the
+    /// same scene expires the same decals on the same step.
+    void SyncDecal3DObjectsUVE(float simulatedDeltaSeconds);
 
     /// Ticks UIRuntimeUVE once per real frame (not the fixed-step loop, so UI responsiveness tracks
     /// real input latency): hit-tests every live UIButtonComponentUVE against the real
@@ -490,6 +496,11 @@ private:
     /// Rigid3DComponentUVE isn't kinematic, is skipped - this function never adds or removes
     /// components.
     void SyncCharacterControllersUVE(float fixedDeltaTimeSeconds);
+    /// Moves every Kinematic3D object by its authored target velocity - eased by its interpolation,
+    /// through the world rather than around it, pushing the rigid bodies it walks into. Runs before
+    /// the character step, so a character standing on a platform is carried the same step the
+    /// platform moves.
+    void SyncKinematic3DObjectsUVE(float fixedDeltaTimeSeconds);
 
     /// Plays every AnimationSequencer and evaluates every AnimationGraph whose update runs on this clock
     /// (`physicsStep` true: the fixed step; false: once per frame), writing into each one's target
@@ -497,14 +508,25 @@ private:
     /// asynchronously; until one is ready its player waits. Runs only while the simulation runs.
     void SyncAnimationUVE(float deltaSeconds, bool physicsStep);
 
-    /// Simple kinematic integration for every active Projectile3DComponentUVE entity (that
-    /// also has a TransformComponentUVE): accumulates `velocity` by `acceleration * dt`, moves the
-    /// entity's authored local position by `velocity * dt` via SceneGraphUVE::SetLocalTransformUVE
-    /// (so world-transform propagation stays correct), and counts `remainingLifetime` down to zero,
-    /// clearing `active` once it expires. Deliberately does not perform collision detection or
-    /// destroy the entity itself - `collisionMask` and `radius` are authored but not yet consumed
-    /// by anything, since resolving a projectile hit needs real gameplay decisions (does it stop,
-    /// bounce, apply damage, spawn an effect) this component's own fields don't specify.
+    /// Puts every ticking BoneAttachment3D on its bone, through
+    /// Scene::SyncBoneAttachment3DObjectsUVE() - that function owns the resolution rules (which
+    /// bone, in whose frame, refused when what) and reports what it did.
+    ///
+    /// This seam owns the order the call is made in: after the animation step that posed the
+    /// skeleton, before SceneGraphUVE::UpdateUVE() propagates world transforms, so an attachment
+    /// lands on the bone in the same frame the pose arrives instead of a frame behind its own
+    /// animation.
+    void SyncBoneAttachment3DObjectsUVE();
+
+    /// Steps every live Projectile3DComponentUVE entity (that also has a transform): the motion is
+    /// `Physics::StepProjectile3DUVE()` - `velocity` accumulates `acceleration * dt`, the sphere of
+    /// `radius` is swept along that step in world space against the layers `collisionMask` accepts
+    /// (never its own entity), the contact is resolved through the component's authored `hitPolicy`
+    /// (Stop halts it, Bounce reflects it through `restitution`/`friction`), and `remainingLifetime`
+    /// counts down to clear `active`. The contact is written back into the component's runtime hit
+    /// fields, and every resolved contact is queued as a `Physics::Projectile3DHitEventUVE` with its
+    /// evidence - damage, effects and despawning are gameplay's, and it decides them from that. The
+    /// engine never destroys the entity itself.
     void SyncProjectile3DObjectsUVE(float fixedDeltaTimeSeconds);
 
     /// Diffs a fresh Physics::ICollisionSystemUVE::DetectCollisionsUVE() snapshot against the
@@ -518,48 +540,65 @@ private:
     /// hit/hitPosition/hitNormal/hitEntity - previously this object type existed only as authored
     /// data with nothing evaluating it. The authored `direction` is treated as local-space and
     /// rotated by the entity's world rotation (Math::RotateVectorUVE), matching
-    /// LightSystemUVE's own local-to-world direction convention. `exclusions` is intentionally not
-    /// consumed yet: IRaycastSystemUVE::RaycastUVE() only supports ignoring one entity per query
-    /// (already spent on the ray's own origin entity), and this engine has no persistent,
-    /// save/load-stable way to reference another object yet - a real, separate follow-up, not
-    /// silently faked here.
+    /// LightSystemUVE's own local-to-world direction convention.
+    ///
+    /// Every gate fails closed and clears the WHOLE result, not just the flag: a disabled,
+    /// malformed or unswept ray has no hit, no point, no normal and no entity, so a consumer that
+    /// reads hitEntity without checking hit first can never act on last frame's hit. Malformed
+    /// means the component fails its own validator (a degenerate direction, a non-positive length,
+    /// an exclusion slot that names nothing, a duplicated exclusion).
+    ///
+    /// `exclusions` is consumed: the declared prefix of the authored entity references is handed to
+    /// IRaycastSystemUVE as Physics::RaycastQueryUVE::excludedEntities, where it is checked before
+    /// the layer mask - an exclusion is not a mask, so no layer can bring an excluded entity back.
+    /// Those references are remapped through the scene file's local-id table on load (like the
+    /// visibility parent and hierarchy parent), which is what makes them authored data rather than
+    /// a runtime handle that would mean something else after the next load.
     void SyncRayCast3DObjectsUVE();
 
-    /// Simulates every live, enabled, valid SpringArm3D object, one ray per arm per fixed step:
-    /// casts along the arm's local +Z (behind the pivot - the camera convention looks down -Z)
-    /// with the arm's own mask, resolves the target through Scene::ResolveSpringArm3DTargetUVE
-    /// (full length when unobstructed, hit-distance minus margin otherwise, clamped), and steps
-    /// currentLength through Scene::ResolveSpringArm3DLengthUVE - retraction snaps so a camera
-    /// never clips for one smooth frame's sake, extension blends at the authored `smoothing`
-    /// per second so the camera springs back instead of popping the way Godot's SpringArm3D
-    /// does (Godot ships no smoothing member; `smoothing = 0` restores that exact behaviour).
-    /// Direct children are then shifted along the arm's local Z by the CHANGE in length, so an
-    /// unobstructed arm hands back everything it borrowed and authored poses round-trip without
-    /// drift; children without transforms are skipped, and rotation stays the developer's to
-    /// own, as in the original design. Runs inside the fixed-step loop (with character
-    /// controllers and projectiles) because extension is dt-dependent and the raycast must see
-    /// the same simulated collider poses the physics step just produced. Like the other syncs
-    /// this lives in the engine core tick, not the object module - the Objects/3D layer holds pure
-    /// authoring data plus the two dependency-free resolvers the tests pin directly; the Physics
-    /// include is not part of that layer.
+    /// Simulates every live, enabled, valid SpringArm3D object, one ray per arm per fixed step,
+    /// through Physics::StepSpringArm3DUVE - where the cast along the arm's local +Z, the target
+    /// under its margin, the motion law (retraction snaps so a camera never clips for one smooth
+    /// frame's sake; extension blends at the authored `smoothing` per second so the camera springs
+    /// back instead of popping the way Godot's SpringArm3D does; a disabled arm hands its length
+    /// back) and the children riding the delta all live, together, and are pinned by their own
+    /// tests. This tick only decides which arms run, in what order, and that an arm the step
+    /// refuses keeps the length it had.
+    ///
+    /// Runs inside the fixed-step loop (with character controllers and projectiles) because
+    /// extension is dt-dependent and the raycast must see the same simulated collider poses the
+    /// physics step just produced.
     void SyncSpringArm3DObjectsUVE(float fixedDeltaTimeSeconds);
 
-    /// The combat pairing, new wiring for previously unconsumed authored data: refreshes every
-    /// Hitbox3D object's runtime strike list against every Hurtbox3D object, every frame. The full
-    /// contract: only enabled, valid hitboxes and hurtboxes participate (everything else fails
-    /// closed - a disabled or invalid hitbox ends the frame with zero strikes, never stale
-    /// ones); both volumes are exact oriented boxes (world position/rotation + authored
-    /// halfExtents, world scale intentionally not applied - the ColliderComponentUVE/
-    /// AreaComponentUVE world-shape convention - degenerate rotations fall back to identity);
-    /// a strike requires symmetric layer/mask acceptance (AreaOverlapSystemUVE's rule) and
-    /// equal damage channels; a hitbox never strikes a hurtbox on its own entity; overlap is
-    /// the exact 15-axis oriented-box test from Physics::Detail, and touching boundaries are
-    /// not strikes. Like SyncRayCast3DObjectsUVE()/SyncProjectile3DObjectsUVE(), this lives in the
-    /// engine core tick rather than the object module so objects stay pure authoring data (the
-    /// Physics include the exact test needs is not part of the Objects/3D layer). The bounded
-    /// result list (kMaximumHitbox3DStrikesUVE, deterministic entity order, overflow flagged)
-    /// is runtime-only, never serialized. Applying what a strike means (damage, knockback,
-    /// events) is deliberately not done here - gameplay code no system owns yet.
+    /// Bakes each enabled NavMeshVolume3D's volume into a cached navmesh and steps every ticking
+    /// NavSeeker3D against the mesh under it, once per fixed step.
+    ///
+    /// The tick owns WHAT and WHEN, the runtime owns the rules: which region an agent is standing on
+    /// (its own volume first, else the nearest within the agent's off-mesh tolerance), when a region
+    /// is rasterized or re-rasterized (first sight, a moved or resized volume, changed bake
+    /// settings, or `rebuildRequested`), and every field the agent publishes back into its
+    /// component - `desiredVelocity`, `nextPathPosition`, `pathStatus`, `pathChanged`,
+    /// `targetReached`. That is Navigation::NavigationRuntimeUVE::SyncUVE()'s job, not this
+    /// function's, which is what makes the whole navigation step testable without an EngineCoreUVE.
+    ///
+    /// Runs after the movers in the fixed step, so an agent plans from where the bodies actually are
+    /// this step; the velocity it publishes is what a mover or a script applies on the next one. The
+    /// same Process physicsPriority ordering the other movers use decides which agent steers first,
+    /// and an agent the step skips (Disabled, PausedOnly, no transform) is left exactly as authored.
+    void SyncNavigationUVE(float fixedDeltaTimeSeconds);
+
+    /// The combat pairing, every frame: the scan itself is Physics::SyncHitboxes3DUVE() (the
+    /// hurtbox snapshot and every gate it enforces are documented there and testable on their own),
+    /// and what the tick adds is the consequence contract - the report is diffed against the
+    /// previous tick's through m_hitboxStrikeLifecycleTracker, and each enter/exit transition is
+    /// queued as a typed Physics::Hitbox3DStrikeEnteredEventUVE / Hitbox3DStrikeExitedEventUVE.
+    ///
+    /// So there are two answers, and they are different questions: the per-hitbox strike list is
+    /// STATE ("I am touching these right now" - runtime-only, never serialized, refreshed every
+    /// frame), and the events are the EDGE ("this hit started", "this hit ended"). Damage,
+    /// knockback, i-frames and hit reactions are gameplay's - it decides them from the events, which
+    /// carry what struck what, how deeply, along which axis and on which channel. The engine never
+    /// applies a consequence of its own.
     void SyncHitbox3DObjectsUVE();
 
     /// The interaction scan, new wiring for previously unconsumed authored data (the
@@ -584,10 +623,16 @@ private:
     /// focusedByPrimaryInteractor. Runtime state is never serialized. Acting on the focus
     /// (prompt UI, an "interact" binding, focus enter/exit events) is deliberately not done
     /// here - the gameplay layer no system owns yet; the authored interactionTag is carried
-    /// for that follow-up and intentionally does not filter anything today. Like
-    /// SyncHitbox3DObjectsUVE() this lives in the engine core tick, not the object module: the
-    /// Objects/3D layer holds pure authoring data plus the three dependency-free resolvers the
-    /// tests pin directly.
+    /// for that follow-up and intentionally does not filter anything today.
+    ///
+    /// The contract above is implemented in Physics::SyncInteractionAreasUVE(), which this calls:
+    /// the tick owns WHEN the scan runs (it is in the fixed-step order), the seam owns what the
+    /// scan means - which is what makes every clause of the contract testable without standing up
+    /// an EngineCoreUVE. The Objects/3D layer keeps holding pure authoring data plus the
+    /// dependency-free resolvers; the Physics include the exact overlap test needs never leaks
+    /// into it. The returned InteractionAreaScanResultUVE carries the frame's accounting
+    /// (interactors, areas visited/refreshed/truncated, primary interactor, focused area) for
+    /// callers and tests that want the numbers rather than the area components.
     void SyncInteractionArea3DObjectsUVE();
 
     /// The LevelStreamer3D consumer: pure per-tick streaming verdicts on LevelStreamer3D objects
@@ -741,9 +786,15 @@ private:
     std::unique_ptr<Physics::IPhysicsQuerySystemUVE> m_physicsQuerySystem;
     std::unique_ptr<Physics::IRaycastSystemUVE> m_raycastSystem;
     std::unique_ptr<Scene::ParticleRuntimeUVE> m_particleRuntime;
+
+    /// Baked navmeshes by region entity, and one steering state per agent entity. Owned here so the
+    /// caches live exactly as long as the session that built them; a scene teardown clears them
+    /// through the same object.
+    std::unique_ptr<Navigation::NavigationRuntimeUVE> m_navigationRuntime;
     UI::UIRuntimeUVE m_uiRuntime;
     Localization::LocalizationServiceUVE m_localizationService;
     Physics::AreaOverlapLifecycleTrackerUVE m_areaOverlapLifecycleTracker;
+    Physics::Hitbox3DStrikeLifecycleTrackerUVE m_hitboxStrikeLifecycleTracker;
     Physics::CollisionLifecycleTrackerUVE m_collisionLifecycleTracker;
     Physics::CollisionLifecycleReportUVE m_collisionLifecycleReport;
     std::unique_ptr<Input::IInputSystemUVE> m_inputSystem;

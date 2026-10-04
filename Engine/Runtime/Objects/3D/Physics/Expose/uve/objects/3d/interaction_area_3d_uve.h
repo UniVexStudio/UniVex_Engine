@@ -56,8 +56,10 @@ struct InteractionFocusCandidateUVE final {
 };
 
 // Effective per-tick interactor-list cap for one area: the authored budget, but never more than
-// the fixed storage can hold. An authored 0 is honoured as-is (the area tracks - and therefore
-// can focus - nobody).
+// the fixed storage can hold, so this function folds whatever it is given - including 0 - to a
+// usable cap. Note that a zero never reaches a live scan: IsInteractionArea3DObjectComponentValidUVE
+// refuses `maximumCandidates == 0`, so a zero budget is an invalid component (the area is cleared)
+// rather than an area that tracks nobody; switch the area off for that.
 [[nodiscard]] std::size_t ResolveInteractionAreaCandidateCapUVE(
     std::uint32_t authoredMaximumCandidates, std::size_t storageBound) noexcept;
 

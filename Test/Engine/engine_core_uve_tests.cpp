@@ -55,6 +55,8 @@
 #include "uve/physics/i_collision_system_uve.h"
 #include "uve/physics/i_physics_system_uve.h"
 #include "uve/physics/physics_constraint_system_uve.h"
+#include "uve/physics/projectile_3d_step_uve.h"
+#include "uve/physics/hitbox_strike_events_uve.h"
 #include "uve/physics/i_raycast_system_uve.h"
 #include "uve/platform/platform_uve.h"
 #include "uve/render_systems/i_camera_system_uve.h"
@@ -77,8 +79,14 @@
 #include "uve/scene/scene_serializer_uve.h"
 #include "uve/objects/3d/animation_sequencer_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/bone_attachment_3d_uve.h"
+#include "uve/objects/3d/two_bone_ik_3d_uve.h"
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
+#include "uve/objects/3d/decal_3d_events_uve.h"
+#include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/nav_mesh_volume_3d_uve.h"
+#include "uve/objects/3d/nav_seeker_3d_uve.h"
 #include "uve/objects/3d/interaction_area_3d_uve.h"
 #include "uve/objects/3d/level_streamer_3d_uve.h"
 #include "uve/objects/3d/reflection_probe_3d_uve.h"
@@ -566,6 +574,127 @@ TEST(EngineCoreUVETest, AreaOverlapLifecycle_QueuesEnteredAndExitedEvents) {
     ASSERT_EQ(exited.size(), 1U);
     EXPECT_EQ(exited.front().area, area);
     EXPECT_EQ(exited.front().other, collider);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, Decal3DObject_LifetimeRunsOutOnSimulatedTimeAndReportsTheEdgeOnce) {
+    // The same 1 kHz fixed-update / short real-sleep discipline the physics end-to-end cases use,
+    // because a decal ages on the SIMULATED clock: the test has to actually run simulation time for
+    // a lifetime to be spent, and a test that ran no fixed step would prove nothing about it.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.fixedUpdateFps = 1000.0;
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    auto& services = engine.GetServicesUVE();
+    auto& entityManager = services.GetEntityManagerUVE();
+
+    const Scene::EntityUVE fading = entityManager.CreateEntityUVE();
+    Scene::Decal3DComponentUVE decal;
+    decal.materialAssetPath = "materials/scorch.uemat";
+    decal.lifetime = 0.02F; // 20 ms: a few frames of simulated time
+    entityManager.AddComponentUVE<Scene::Decal3DComponentUVE>(fading, decal);
+
+    // A permanent decal beside it, which must outlive every frame of this test.
+    const Scene::EntityUVE permanent = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Scene::Decal3DComponentUVE>(permanent, Scene::Decal3DComponentUVE{});
+
+    std::vector<Scene::Decal3DExpiredEventUVE> expired;
+    services.GetEventSystemUVE().Subscribe<Scene::Decal3DExpiredEventUVE>(
+        [&expired](const Scene::Decal3DExpiredEventUVE& event) { expired.push_back(event); });
+
+    for (int frame = 0; frame < 30; ++frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        engine.TickFrameUVE();
+    }
+
+    const Scene::Decal3DComponentUVE& faded =
+        entityManager.GetComponentUVE<Scene::Decal3DComponentUVE>(fading);
+    EXPECT_TRUE(faded.expired) << "20 ms of simulated time has certainly passed";
+    EXPECT_FLOAT_EQ(faded.remainingLifetime, 0.0F);
+    EXPECT_FALSE(IsDecal3DPaintingUVE(faded)) << "an expired decal stops painting";
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::Decal3DComponentUVE>(permanent).expired)
+        << "lifetime 0 is permanent, whatever the clock says";
+
+    ASSERT_EQ(expired.size(), 1U) << "one edge per lifetime, not one per frame";
+    EXPECT_EQ(expired[0].decal, fading);
+    EXPECT_EQ(expired[0].materialAssetPath, "materials/scorch.uemat")
+        << "the material travels with the event: a pooled system may not get a second lookup";
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, NavigationRegion_BakesFromItsVolumeAndDrivesASeekerOnTheFixedStep) {
+    // EngineCoreUVE::SyncNavigationUVE() is the wiring that makes NavMeshVolume3D and NavSeeker3D
+    // real: before it, both were authored data with nothing reading them. This runs the whole path
+    // end-to-end on the simulated clock - a region rasterized from its own world volume through the
+    // engine's real raycast system, and an agent stepped against the mesh that came out - because a
+    // unit test can prove the pieces and only this can prove the engine drives them.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.fixedUpdateFps = 1000.0;
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    // Static ground: a box under the origin, top surface at y = 0.
+    const Scene::EntityUVE ground = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE groundTransform;
+    groundTransform.localPosition = Math::Vector3UVE{0.0F, -0.5F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, ground, groundTransform);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        ground, Scene::ColliderComponentUVE{Math::Vector3UVE{10.0F, 0.5F, 10.0F}});
+
+    // The region: a volume over the floor with 3 m of headroom under its own roof.
+    const Scene::EntityUVE region = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE regionTransform;
+    regionTransform.localPosition = Math::Vector3UVE{0.0F, 0.5F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, region, regionTransform);
+    Scene::NavMeshVolume3DComponentUVE regionComponent;
+    regionComponent.boundsHalfExtents = Math::Vector3UVE{8.0F, 2.5F, 8.0F};
+    entityManager.AddComponentUVE<Scene::NavMeshVolume3DComponentUVE>(region, regionComponent);
+
+    // The agent: standing on the floor, asked to walk 5 m along +X. Nothing moves its body here -
+    // what the engine has to prove is that it publishes a velocity for whatever would.
+    const Scene::EntityUVE agent = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, agent, Scene::TransformComponentUVE{});
+    Scene::NavSeeker3DComponentUVE seeker;
+    seeker.targetPosition = Math::Vector3UVE{5.0F, 0.0F, 0.0F};
+    // No velocity ramp: the ramp is the module suite's own subject, and here it would only mean
+    // simulating the four tenths of a second it takes to walk the velocity from +4 to -4.
+    seeker.acceleration = 0.0F;
+    entityManager.AddComponentUVE<Scene::NavSeeker3DComponentUVE>(agent, seeker);
+
+    for (int frame = 0; frame < 40; ++frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        engine.TickFrameUVE();
+    }
+
+    const Scene::NavSeeker3DComponentUVE& walking =
+        entityManager.GetComponentUVE<Scene::NavSeeker3DComponentUVE>(agent);
+    EXPECT_EQ(walking.pathStatus, Scene::NavigationAgentPathStatusUVE::Following)
+        << "the region baked, the agent found a route on it and is walking that route";
+    EXPECT_GT(walking.desiredVelocity.x, 0.0F) << "the target is straight ahead";
+    EXPECT_NEAR(walking.desiredVelocity.y, 0.0F, 1e-3F) << "steering stays in the plane it walks on";
+    EXPECT_NEAR(walking.nextPathPosition.x, 5.0F, 0.5F);
+    EXPECT_FALSE(walking.targetReached) << "the body has not been moved to the target, only asked to";
+
+    // A new target is a new order: the component is the only thing that has to change, and the next
+    // steps route the other way.
+    entityManager.GetComponentUVE<Scene::NavSeeker3DComponentUVE>(agent).targetPosition =
+        Math::Vector3UVE{-5.0F, 0.0F, 0.0F};
+    for (int frame = 0; frame < 10; ++frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        engine.TickFrameUVE();
+    }
+    const Scene::NavSeeker3DComponentUVE& returning =
+        entityManager.GetComponentUVE<Scene::NavSeeker3DComponentUVE>(agent);
+    EXPECT_LT(returning.desiredVelocity.x, 0.0F) << "the agent turned around";
+    EXPECT_NEAR(returning.nextPathPosition.x, -5.0F, 0.5F);
 
     engine.Shutdown();
 }
@@ -1941,6 +2070,227 @@ TEST(EngineCoreUVETest, AnimationSequencer_PosesTheSkeletonInsideTheCharacterWit
     engine.Shutdown();
 }
 
+TEST(EngineCoreUVETest, BoneAttachment3D_RidesThePosedBoneInTheFrameThePoseArrives) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
+
+    // A one-second clip raising "Hand" from the shoulder to a metre above it.
+    Asset::AnimationClipAssetUVE clip;
+    clip.clipId = "salute";
+    clip.durationSeconds = 1.0;
+    Asset::AnimationAssetSampleUVE start;
+    start.pose.position = Math::Vector3UVE{0.5F, 1.0F, 0.0F};
+    Asset::AnimationAssetSampleUVE end;
+    end.timeSeconds = 1.0;
+    end.pose.position = Math::Vector3UVE{0.5F, 2.0F, 0.0F};
+    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hand", {start, end}}};
+    const std::filesystem::path clipPath = "uve_engine_core_tests_salute.uvanim";
+    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
+    const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+
+    // A character at x=10 holding a skeleton, a player that poses it, and an attachment that rides the
+    // hand. The attachment is an ordinary child of the CHARACTER, not of the skeleton: being driven by
+    // a bone must not cost it its place in the hierarchy, or the character could not carry it around.
+    const Scene::EntityUVE character = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE characterTransform;
+    characterTransform.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, character, characterTransform);
+    const Scene::EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    Scene::Skeleton3DObjectDefinitionUVE skeletonDefinition;
+    skeletonDefinition.skeleton.skeletonAssetPath = "Hero.fbx";
+    Scene::SkeletonBoneUVE hips;
+    hips.name = "Hips";
+    Scene::SkeletonBoneUVE hand;
+    hand.name = "Hand";
+    hand.parentIndex = 0;
+    hand.localPosition = Math::Vector3UVE{0.5F, 1.0F, 0.0F};
+    skeletonDefinition.skeleton.bones = {hips, hand};
+    Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skeletonEntity, skeletonDefinition);
+    sceneGraph.SetParentUVE(entityManager, skeletonEntity, character);
+    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+    Scene::AnimationSequencerObjectDefinitionUVE definition;
+    definition.player.clip = guid;
+    definition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
+    Scene::ApplyAnimationSequencerObjectDefinitionUVE(entityManager, player, definition);
+    sceneGraph.SetParentUVE(entityManager, player, character);
+    const Scene::EntityUVE attachment = entityManager.CreateEntityUVE();
+    Scene::BoneAttachment3DComponentUVE attachmentComponent;
+    attachmentComponent.skeleton = skeletonEntity;
+    attachmentComponent.boneName = "Hand";
+    attachmentComponent.localPosition = Math::Vector3UVE{0.0F, 0.1F, 0.0F};
+    entityManager.AddComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment, attachmentComponent);
+    sceneGraph.AttachTransformUVE(entityManager, attachment, Scene::TransformComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, attachment, character);
+
+    const auto startedAt = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
+           !entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        engine.TickFrameUVE();
+    }
+    ASSERT_TRUE(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished);
+
+    const Scene::BoneAttachment3DComponentUVE& resolved =
+        entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment);
+    EXPECT_TRUE(resolved.bound);
+    EXPECT_EQ(resolved.resolvedBoneIndex, 1U) << "bound by name to the hand";
+
+    // The clip's last pose leaves the hand at (0.5, 2, 0) in the character's frame, which is at x=10,
+    // and the attachment sits 10 cm along the bone's own up axis. Asserted on the frame the pose
+    // finished in: the attachment pass runs after the pose and before propagation, so it is on the
+    // bone in that same frame rather than a frame behind its own animation.
+    const Scene::TransformComponentUVE& local = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(attachment);
+    EXPECT_NEAR(local.localPosition.x, 0.5F, 1e-3F) << "the transform written is parent-relative";
+    EXPECT_NEAR(local.localPosition.y, 2.1F, 1e-3F);
+    const Math::Vector3UVE world =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(attachment).worldPosition;
+    EXPECT_NEAR(world.x, 10.5F, 1e-3F);
+    EXPECT_NEAR(world.y, 2.1F, 1e-3F);
+    EXPECT_NEAR(world.z, 0.0F, 1e-3F);
+
+    // Switching the attachment off leaves it where it was: an attachment that is not bound keeps the
+    // transform it had, so turning one off is not a teleport.
+    entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment).enabled = false;
+    engine.TickFrameUVE();
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment).bound);
+    const Math::Vector3UVE stayed =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(attachment).worldPosition;
+    EXPECT_NEAR(stayed.y, 2.1F, 1e-3F);
+
+    std::filesystem::remove(clipPath);
+    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, TwoBoneIK3D_SolvesTheReachingLimbBeforeTheAttachmentFollowsIt) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
+
+    // A one-second clip lifting the hips 20 cm: a real driver poses the skeleton, which is the gate the
+    // IK pass reads - a limb whose pose nothing wrote this frame must not be solved a second time.
+    Asset::AnimationClipAssetUVE clip;
+    clip.clipId = "crouch";
+    clip.durationSeconds = 1.0;
+    Asset::AnimationAssetSampleUVE start;
+    Asset::AnimationAssetSampleUVE end;
+    end.timeSeconds = 1.0;
+    end.pose.position = Math::Vector3UVE{0.0F, 0.2F, 0.0F};
+    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {start, end}}};
+    const std::filesystem::path clipPath = "uve_engine_core_tests_crouch.uvanim";
+    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
+    const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+
+    // A four-bone arm: the shoulder a metre above the hips, the elbow a metre above that, the wrist a
+    // metre above that. The chain solves the two upper bones so the WRIST's own origin reaches the
+    // target, and the hand's rotation is left to the animation.
+    const Scene::EntityUVE character = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, character, Scene::TransformComponentUVE{});
+    const Scene::EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    Scene::Skeleton3DObjectDefinitionUVE skeletonDefinition;
+    skeletonDefinition.skeleton.skeletonAssetPath = "Archer.fbx";
+    Scene::SkeletonBoneUVE hips;
+    hips.name = "Hips";
+    Scene::SkeletonBoneUVE upperArm;
+    upperArm.name = "UpperArm";
+    upperArm.parentIndex = 0;
+    upperArm.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    Scene::SkeletonBoneUVE forearm;
+    forearm.name = "Forearm";
+    forearm.parentIndex = 1;
+    forearm.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    Scene::SkeletonBoneUVE handBone;
+    handBone.name = "Hand";
+    handBone.parentIndex = 2;
+    handBone.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    skeletonDefinition.skeleton.bones = {hips, upperArm, forearm, handBone};
+    Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skeletonEntity, skeletonDefinition);
+    sceneGraph.SetParentUVE(entityManager, skeletonEntity, character);
+
+    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+    Scene::AnimationSequencerObjectDefinitionUVE playerDefinition;
+    playerDefinition.player.clip = guid;
+    playerDefinition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
+    Scene::ApplyAnimationSequencerObjectDefinitionUVE(entityManager, player, playerDefinition);
+    sceneGraph.SetParentUVE(entityManager, player, character);
+
+    const Scene::EntityUVE target = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE targetTransform;
+    targetTransform.localPosition = Math::Vector3UVE{1.0F, 1.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, target, targetTransform);
+    const Scene::EntityUVE pole = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE poleTransform;
+    poleTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, 2.0F};
+    sceneGraph.AttachTransformUVE(entityManager, pole, poleTransform);
+
+    const Scene::EntityUVE chainEntity = entityManager.CreateEntityUVE();
+    Scene::ApplyTwoBoneIK3DObjectDefinitionUVE(entityManager, chainEntity, {});
+    Scene::TwoBoneIK3DComponentUVE& chain = entityManager.GetComponentUVE<Scene::TwoBoneIK3DComponentUVE>(chainEntity);
+    chain.skeleton = skeletonEntity;
+    chain.rootBoneName = "UpperArm";
+    chain.middleBoneName = "Forearm";
+    chain.endBoneName = "Hand";
+    chain.target = target;
+    chain.poleTarget = pole;
+    sceneGraph.SetParentUVE(entityManager, chainEntity, character);
+
+    // Something in the hand: an attachment on the bone the IK drives. It is an ordinary child of the
+    // character, so the frame it ends up in says which pass wrote the bone last.
+    const Scene::EntityUVE attachment = entityManager.CreateEntityUVE();
+    Scene::BoneAttachment3DComponentUVE attachmentComponent;
+    attachmentComponent.skeleton = skeletonEntity;
+    attachmentComponent.boneName = "Hand";
+    entityManager.AddComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment, attachmentComponent);
+    sceneGraph.AttachTransformUVE(entityManager, attachment, Scene::TransformComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, attachment, character);
+
+    const auto startedAt = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
+           !entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        engine.TickFrameUVE();
+    }
+    ASSERT_TRUE(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished);
+
+    const Scene::TwoBoneIK3DComponentUVE& solved =
+        entityManager.GetComponentUVE<Scene::TwoBoneIK3DComponentUVE>(chainEntity);
+    EXPECT_TRUE(solved.solved);
+    EXPECT_TRUE(solved.reached) << "the target is about a metre from the shoulder and the arm is two long";
+    EXPECT_NEAR(solved.endToTargetDistanceMetres, 0.0F, 1e-3F);
+    EXPECT_EQ(solved.resolvedRootBoneIndex, 1U);
+    EXPECT_EQ(solved.resolvedMiddleBoneIndex, 2U);
+    EXPECT_EQ(solved.resolvedEndBoneIndex, 3U);
+
+    // The attachment rides the wrist the IK just moved, in the frame the pose arrived: halfway through
+    // the clip the hand is two metres up the limb, and the only thing that puts it on the target is the
+    // solve that ran before the attachment pass in this same tick.
+    const Scene::BoneAttachment3DComponentUVE& bound =
+        entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment);
+    EXPECT_TRUE(bound.bound);
+    EXPECT_EQ(bound.resolvedBoneIndex, 3U);
+    const Math::Vector3UVE hand =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(attachment).worldPosition;
+    EXPECT_NEAR(hand.x, 1.0F, 1e-3F) << "the wrist is on the target, and the attachment is on the wrist";
+    EXPECT_NEAR(hand.y, 1.0F, 1e-3F);
+    EXPECT_NEAR(hand.z, 0.0F, 1e-3F);
+    EXPECT_GT(std::abs(hand.y - 3.2F), 1.0F)
+        << "the hand is nowhere near where the animation alone would have left it";
+    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(attachment).localPosition.z, 0.0F, 1e-3F);
+
+    std::filesystem::remove(clipPath);
+    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
+    engine.Shutdown();
+}
+
 TEST(EngineCoreUVETest, AnimationSequencer_RootMotionMovesTheCharacterThroughTheSkeletonsFrame) {
     EngineCoreUVE engine(MakeTestConfigUVE());
     engine.Init();
@@ -2116,6 +2466,94 @@ TEST(EngineCoreUVETest, RayCast3DObject_HitsRealGroundColliderExcludesItselfAndM
     engine.Shutdown();
 }
 
+TEST(EngineCoreUVETest, RayCast3DObject_ExclusionsReachTheQueryAndAnInvalidListClearsTheWholeResult) {
+    // The authored exclusions are not decoration: SyncRayCast3DObjectsUVE hands the component's live
+    // prefix to the query as Physics::RaycastQueryUVE::excludedEntities, so naming an object really
+    // does take it out of the cast. A list the component's own rule refuses (a live reference behind
+    // an empty slot) is a gate like any other, and every gate clears the WHOLE result - a consumer
+    // that reads hitEntity without checking hit must never see last frame's object.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    // Two flat blockers under the caster, the nearer one first: tops at y=4.5 and y=3.5.
+    const Scene::EntityUVE nearer = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE nearerTransform;
+    nearerTransform.localPosition = Math::Vector3UVE{0.0F, 4.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, nearer, nearerTransform);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        nearer, Scene::ColliderComponentUVE{Math::Vector3UVE{10.0F, 0.5F, 10.0F}});
+
+    const Scene::EntityUVE farther = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE fartherTransform;
+    fartherTransform.localPosition = Math::Vector3UVE{0.0F, 3.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, farther, fartherTransform);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        farther, Scene::ColliderComponentUVE{Math::Vector3UVE{10.0F, 0.5F, 10.0F}});
+
+    const Scene::EntityUVE caster = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE casterTransform;
+    casterTransform.localPosition = Math::Vector3UVE{0.0F, 5.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, caster, casterTransform);
+    Scene::RayCast3DComponentUVE rayCast;
+    rayCast.direction = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    rayCast.length = 10.0F;
+    entityManager.AddComponentUVE<Scene::RayCast3DComponentUVE>(caster, rayCast);
+
+    engine.TickFrameUVE();
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster).hit);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster).hitEntity, nearer);
+
+    // Naming the nearest blocker moves the ray onto the next one - and the exclusions array is a
+    // prefix, so one live slot is exactly one exclusion.
+    Scene::RayCast3DComponentUVE& live =
+        entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster);
+    live.exclusions[0] = nearer;
+    engine.TickFrameUVE();
+    const Scene::RayCast3DComponentUVE& skippingNearest =
+        entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster);
+    EXPECT_TRUE(skippingNearest.hit);
+    EXPECT_EQ(skippingNearest.hitEntity, farther);
+    EXPECT_NEAR(skippingNearest.hitPosition.y, 3.5F, 0.01F);
+
+    // Both named: nothing is left in the ray's path.
+    live.exclusions[1] = farther;
+    engine.TickFrameUVE();
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster).hit);
+
+    // A hole in the list is refused by the component's validator, which is a gate like any other:
+    // the stale hit is cleared rather than kept.
+    live.exclusions[0] = Scene::kInvalidEntityUVE;
+    engine.TickFrameUVE();
+    const Scene::RayCast3DComponentUVE& invalidList =
+        entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster);
+    EXPECT_FALSE(invalidList.hit);
+    EXPECT_EQ(invalidList.hitEntity, Scene::kInvalidEntityUVE);
+    EXPECT_EQ(invalidList.hitPosition, Math::Vector3UVE{});
+
+    // Switching the ray off clears the whole result too - no hit, no point, no normal, no entity.
+    live.exclusions = Scene::MakeEmptyEntityReferencesUVE<Scene::kMaximumRayCastExclusionsUVE>();
+    live.enabled = false;
+    engine.TickFrameUVE();
+    const Scene::RayCast3DComponentUVE& disabled =
+        entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster);
+    EXPECT_FALSE(disabled.hit);
+    EXPECT_EQ(disabled.hitEntity, Scene::kInvalidEntityUVE);
+    EXPECT_EQ(disabled.hitNormal, Math::Vector3UVE{});
+
+    // And nothing is sticky: an enabled ray with a cleared list finds the nearest blocker again.
+    live.enabled = true;
+    engine.TickFrameUVE();
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster).hit);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster).hitEntity, nearer);
+
+    engine.Shutdown();
+}
+
 TEST(EngineCoreUVETest, Hitbox3DObject_StrikesOverlappingHurtboxAndClearsWhenGatedOrApart) {
     // EngineCoreUVE::SyncHitbox3DObjectsUVE() is new wiring: previously Hitbox3DComponentUVE
     // and Hurtbox3DComponentUVE were pure authored data with nothing evaluating them. This
@@ -2198,6 +2636,92 @@ TEST(EngineCoreUVETest, Hitbox3DObject_StrikesOverlappingHurtboxAndClearsWhenGat
         ASSERT_EQ(afterStrike.strikeCount, 1U);
         EXPECT_EQ(afterStrike.strikes[0U].hurtboxEntity, victim);
     }
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, Hitbox3DObject_StrikeEdgesReachTheEventSystemOnceAndEndWhenGated) {
+    // The component pair above proves the state - "this hitbox is touching this hurtbox right now".
+    // What a gameplay system can actually act on is the edge: this strike started, this strike
+    // ended. The engine owns the diff and queues one typed event per edge, so damage-on-Entered
+    // fires once per hit instead of once per frame, and an exit is reported even when the reason is
+    // a gate rather than the boxes moving apart.
+    //
+    // Queued events surface one TickFrameUVE() later, the same contract
+    // AreaOverlapLifecycle_QueuesEnteredAndExitedEvents locks: QueueEvent()'d events are not
+    // drained until the next frame's DispatchQueuedUVE(). Every observation below therefore
+    // happens on the tick AFTER the one that caused it - which is the contract, not a quirk.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    auto& services = engine.GetServicesUVE();
+    auto& entityManager = services.GetEntityManagerUVE();
+    auto& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE blade = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, blade, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::Hitbox3DComponentUVE>(
+        blade, Scene::Hitbox3DComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+
+    // 1.5 m apart, so the two 1 m half-extent boxes overlap by exactly 0.5 m along X and the
+    // minimum-translation axis is unambiguous - coincident boxes tie on all three axes and their
+    // minimum translation is the full 2 m, which is a much weaker thing to assert.
+    const Scene::EntityUVE victim = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE victimTransform;
+    victimTransform.localPosition = Math::Vector3UVE{1.5F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, victim, victimTransform);
+    entityManager.AddComponentUVE<Scene::Hurtbox3DComponentUVE>(
+        victim, Scene::Hurtbox3DComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+
+    std::vector<Physics::Hitbox3DStrikeEnteredEventUVE> entered;
+    std::vector<Physics::Hitbox3DStrikeExitedEventUVE> exited;
+    services.GetEventSystemUVE().Subscribe<Physics::Hitbox3DStrikeEnteredEventUVE>(
+        [&entered](const Physics::Hitbox3DStrikeEnteredEventUVE& event) { entered.push_back(event); });
+    services.GetEventSystemUVE().Subscribe<Physics::Hitbox3DStrikeExitedEventUVE>(
+        [&exited](const Physics::Hitbox3DStrikeExitedEventUVE& event) { exited.push_back(event); });
+
+    engine.TickFrameUVE();
+    // The pairing is real on this tick and the edge is queued - but not delivered yet.
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(blade).strikeCount, 1U);
+    EXPECT_TRUE(entered.empty());
+    EXPECT_TRUE(exited.empty());
+
+    engine.TickFrameUVE();
+    ASSERT_EQ(entered.size(), 1U) << "a 1 m box and a 1 m box 1.5 m apart overlap by 0.5 m";
+    EXPECT_EQ(entered[0].strike.hitbox, blade);
+    EXPECT_EQ(entered[0].strike.hurtbox, victim);
+    EXPECT_NEAR(entered[0].strike.penetrationDepth, 0.5F, 1.0e-4F);
+    EXPECT_NEAR(entered[0].strike.axis.x, 1.0F, 1.0e-4F)
+        << "a consequence that pushes needs the direction, not only the fact";
+    EXPECT_TRUE(exited.empty());
+
+    // Still overlapping on the next tick: same pair, no second edge, and nothing to deliver.
+    engine.TickFrameUVE();
+    EXPECT_EQ(entered.size(), 1U);
+    EXPECT_TRUE(exited.empty());
+
+    // The hurtbox is switched off without moving: the strike ends because the gate closed, and the
+    // exit is queued on that tick while the volumes still overlap geometrically.
+    entityManager.GetComponentUVE<Scene::Hurtbox3DComponentUVE>(victim).enabled = false;
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(blade).strikeCount, 0U);
+    EXPECT_TRUE(exited.empty());
+    engine.TickFrameUVE();
+    ASSERT_EQ(exited.size(), 1U);
+    EXPECT_EQ(exited[0].strike.hitbox, blade);
+    EXPECT_EQ(exited[0].strike.hurtbox, victim);
+    EXPECT_EQ(entered.size(), 1U);
+
+    // Switched back on while still overlapping: a fresh strike with a fresh edge, because the
+    // previous one was ended by the gate rather than paused by it.
+    entityManager.GetComponentUVE<Scene::Hurtbox3DComponentUVE>(victim).enabled = true;
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(blade).strikeCount, 1U);
+    engine.TickFrameUVE();
+    EXPECT_EQ(entered.size(), 2U);
+    EXPECT_EQ(exited.size(), 1U);
 
     engine.Shutdown();
 }
@@ -2398,6 +2922,123 @@ TEST(EngineCoreUVETest, Hitbox3DObject_HurtboxRotationIsHonoredByExactObbOverlap
         EXPECT_EQ(afterStrike.strikes[0U].hurtboxEntity, victim);
         EXPECT_NEAR(afterStrike.strikes[0U].penetrationDepth, 0.2F, 0.01F);
     }
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, Projectile3DObject_StopsOnAWallAndQueuesTheHitAsATypedEvent) {
+    // The engine's half of the hit decision, end to end: the swept sphere finds the wall, the
+    // authored Stop policy halts the projectile at the contact, and the contact is delivered as a
+    // typed event the gameplay side can subscribe to - nothing here decides what a hit *means*.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.fixedUpdateFps = 1000.0;
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    auto& services = engine.GetServicesUVE();
+    auto& entityManager = services.GetEntityManagerUVE();
+    auto& sceneGraph = services.GetSceneGraphUVE();
+
+    // The wall's near face is at x = 0.5, so a 0.1m sphere touches it when its centre reaches
+    // x = 0.4. The projectile starts 5mm short of that, so the first fixed step is the step that
+    // resolves the contact.
+    const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE wallTransform;
+    wallTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        wall, Scene::ColliderComponentUVE{Math::Vector3UVE{0.5F, 0.5F, 0.5F}});
+
+    const Scene::EntityUVE bullet = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE bulletTransform;
+    bulletTransform.localPosition = Math::Vector3UVE{0.395F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, bullet, bulletTransform);
+    Scene::Projectile3DComponentUVE projectile;
+    projectile.velocity = Math::Vector3UVE{6.0F, 0.0F, 0.0F};
+    projectile.radius = 0.1F;
+    entityManager.AddComponentUVE<Scene::Projectile3DComponentUVE>(bullet, projectile);
+    sceneGraph.UpdateUVE(entityManager);
+
+    std::vector<Physics::Projectile3DHitEventUVE> hits;
+    services.GetEventSystemUVE().Subscribe<Physics::Projectile3DHitEventUVE>(
+        [&hits](const Physics::Projectile3DHitEventUVE& event) { hits.push_back(event); });
+
+    for (int frame = 0; frame < 4; ++frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(3));
+        engine.TickFrameUVE();
+    }
+
+    const Scene::Projectile3DComponentUVE& after =
+        entityManager.GetComponentUVE<Scene::Projectile3DComponentUVE>(bullet);
+    EXPECT_FALSE(after.active);
+    EXPECT_NEAR(after.velocity.x, 0.0F, 1.0e-4F);
+    EXPECT_TRUE(after.hit);
+    EXPECT_EQ(after.hitEntity, wall);
+    EXPECT_NEAR(after.impactSpeed, 6.0F, 1.0e-2F);
+    EXPECT_NEAR(after.hitPosition.x, 0.5F, 1.0e-2F);
+
+    ASSERT_FALSE(hits.empty()) << "the contact has to reach gameplay as an event, not only as state";
+    EXPECT_EQ(hits.front().projectile, bullet);
+    EXPECT_EQ(hits.front().hitEntity, wall);
+    EXPECT_EQ(hits.front().policy, Scene::Projectile3DHitPolicyUVE::Stop);
+    EXPECT_TRUE(hits.front().stopped);
+    EXPECT_NEAR(hits.front().impactSpeed, 6.0F, 1.0e-2F);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, Projectile3DObject_BouncesOffAWallAndReportsThatItSurvivedTheHit) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.fixedUpdateFps = 1000.0;
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    auto& services = engine.GetServicesUVE();
+    auto& entityManager = services.GetEntityManagerUVE();
+    auto& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE wallTransform;
+    wallTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        wall, Scene::ColliderComponentUVE{Math::Vector3UVE{0.5F, 0.5F, 0.5F}});
+
+    const Scene::EntityUVE ball = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE ballTransform;
+    ballTransform.localPosition = Math::Vector3UVE{0.395F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, ball, ballTransform);
+    Scene::Projectile3DComponentUVE projectile;
+    projectile.velocity = Math::Vector3UVE{6.0F, 0.0F, 0.0F};
+    projectile.radius = 0.1F;
+    projectile.hitPolicy = Scene::Projectile3DHitPolicyUVE::Bounce;
+    projectile.restitution = 1.0F;
+    projectile.friction = 0.0F;
+    entityManager.AddComponentUVE<Scene::Projectile3DComponentUVE>(ball, projectile);
+    sceneGraph.UpdateUVE(entityManager);
+
+    std::vector<Physics::Projectile3DHitEventUVE> hits;
+    services.GetEventSystemUVE().Subscribe<Physics::Projectile3DHitEventUVE>(
+        [&hits](const Physics::Projectile3DHitEventUVE& event) { hits.push_back(event); });
+
+    for (int frame = 0; frame < 4; ++frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(3));
+        engine.TickFrameUVE();
+    }
+
+    const Scene::Projectile3DComponentUVE& after =
+        entityManager.GetComponentUVE<Scene::Projectile3DComponentUVE>(ball);
+    EXPECT_TRUE(after.active) << "a bounce keeps flying";
+    EXPECT_EQ(after.bounceCount, 1U);
+    EXPECT_NEAR(after.velocity.x, -6.0F, 1.0e-2F);
+    EXPECT_LT(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(ball).localPosition.x, 0.4F);
+
+    ASSERT_FALSE(hits.empty());
+    EXPECT_EQ(hits.front().policy, Scene::Projectile3DHitPolicyUVE::Bounce);
+    EXPECT_FALSE(hits.front().stopped);
+    EXPECT_EQ(hits.front().bounceCount, 1U);
 
     engine.Shutdown();
 }

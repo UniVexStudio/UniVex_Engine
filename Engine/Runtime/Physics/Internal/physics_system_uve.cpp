@@ -18,6 +18,7 @@
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/transform_component_uve.h"
+#include "uve/objects/3d/abstract_physics_objects_3d_uve.h"
 
 namespace UVE::Physics {
 
@@ -90,20 +91,31 @@ void ResolvePairUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphU
         if (!entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(entity)) {
             return 0.0F;
         }
+        // An object the simulation may not move - a kinematically driven one, a PhysicsObject3D
+        // kept as a static obstacle, or one taken out of the world - has no inverse mass to give
+        // way with, exactly like a static collider.
+        if (!Scene::IsPhysicsObjectSimulatedUVE(entityManager, entity)) {
+            return 0.0F;
+        }
         const Scene::Rigid3DComponentUVE& rigidBody =
             entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity);
         return EffectiveInverseMassUVE(rigidBody.isKinematic, rigidBody.mass);
     };
 
-    const float firstInverseMass = InverseMassOfUVE(pair.first);
-    const float secondInverseMass = InverseMassOfUVE(pair.second);
-    const float totalInverseMass = firstInverseMass + secondInverseMass;
-    if (totalInverseMass <= 0.0F) {
-        return; // Both sides immovable (static/kinematic) — nothing to resolve.
+    // How much of the overlap each side takes: its inverse mass, divided by its authored collision
+    // priority, so heavier bodies and higher priorities yield less. With the default priority of 1
+    // this is the plain inverse-mass split it has always been.
+    const float firstWeight =
+        Scene::GetPhysicsObjectYieldWeightUVE(entityManager, pair.first, InverseMassOfUVE(pair.first));
+    const float secondWeight =
+        Scene::GetPhysicsObjectYieldWeightUVE(entityManager, pair.second, InverseMassOfUVE(pair.second));
+    const float totalWeight = firstWeight + secondWeight;
+    if (totalWeight <= 0.0F) {
+        return; // Both sides immovable (static/kinematic, or never yields) — nothing to resolve.
     }
 
-    const float firstShare = firstInverseMass / totalInverseMass;
-    const float secondShare = secondInverseMass / totalInverseMass;
+    const float firstShare = firstWeight / totalWeight;
+    const float secondShare = secondWeight / totalWeight;
 
     // Both entities in `pair` are guaranteed to have ColliderComponentUVE — DetectCollisionsUVE
     // only ever returns pairs where both sides have one.
@@ -147,6 +159,12 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
                 return;
             }
             if (rigidBody.isKinematic) {
+                return;
+            }
+            // A stopped physics object is either out of the world (its collider never reaches the
+            // broad phase, so it is not here at all) or kept as an immovable obstacle: either way
+            // the simulation does not move it.
+            if (!Scene::IsPhysicsObjectSimulatedUVE(entityManager, entity)) {
                 return;
             }
 

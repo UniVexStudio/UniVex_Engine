@@ -18,12 +18,19 @@ namespace UVE::Scene {
 /// silently dropping the overflow fact.
 inline constexpr std::size_t kMaximumHitbox3DStrikesUVE = 16U;
 
-/// One runtime strike record: which hurtbox this hitbox overlapped this frame, and how deeply.
-/// The depth is the exact oriented-box penetration along the minimum translation axis, in world
-/// units, pointing from the hitbox toward the hurtbox.
+/// One runtime strike record: which hurtbox this hitbox overlapped this frame, and how.
+///
+/// `axis` is the exact oriented-box minimum-translation direction, in world units, pointing from
+/// the hitbox toward the hurtbox - the direction a consequence that pushes (knockback, a shove, a
+/// hit reaction) needs, reported so gameplay never has to recompute it from two poses that have
+/// already moved on by the time it reads the record. `penetrationDepth` is how far the boxes
+/// overlap along that axis; the depth is a scalar and the axis is unit length, so the contact
+/// point this engine did not compute is `hurtbox center - axis * (hurtbox extent along axis -
+/// depth)`, and nothing here pretends otherwise.
 struct Hitbox3DStrikeUVE final {
     EntityUVE hurtboxEntity{};
     float penetrationDepth = 0.0F;
+    Math::Vector3UVE axis{};
 
     [[nodiscard]] bool operator==(const Hitbox3DStrikeUVE&) const noexcept = default;
 };

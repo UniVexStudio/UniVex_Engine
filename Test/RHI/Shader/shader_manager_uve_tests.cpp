@@ -394,6 +394,7 @@ INSTANTIATE_TEST_SUITE_P(
                        std::pair<std::string_view, std::string_view>{"lit_primitive_3d.glsl",
                                                                       BuiltIn::kLitPrimitive3DSource},
                        std::pair<std::string_view, std::string_view>{"particle.glsl", BuiltIn::kParticleSource},
+                       std::pair<std::string_view, std::string_view>{"decal.glsl", BuiltIn::kDecalSource},
                        std::pair<std::string_view, std::string_view>{"particle_simulate.glsl",
                                                                       BuiltIn::kParticleSimulateSource},
                        std::pair<std::string_view, std::string_view>{"frustum_cull.glsl",

@@ -3,7 +3,7 @@
 #include "uve/objects/3d/kinematic_3d_uve.h"
 
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/objects/3d/object_3d_uve.h"
+#include "uve/objects/3d/abstract_physics_objects_3d_uve.h"
 
 namespace UVE::Scene {
 
@@ -21,9 +21,10 @@ bool IsKinematic3DObjectDefinitionValidUVE(const Kinematic3DObjectDefinitionUVE&
 
 void ApplyKinematic3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                                             const Kinematic3DObjectDefinitionUVE& value) {
-    // Kinematic3D is Object3D plus its own components: the shared baseline guarantee comes first,
-    // then this kind's part goes on top.
-    EnsureObject3DBaselineUVE(entityManager, entity, Kinematic3DObjectDefinitionUVE::defaultName);
+    // Object3D > PhysicsObject3D > Kinematic3D. The physics object base is what gives a stopped
+    // platform a meaning - kept in the world as an immovable obstacle, taken out of it, or left
+    // moving - and lets an author weight it against another body in a contact.
+    ApplyPhysicsObject3DBaseUVE(entityManager, entity, Kinematic3DObjectDefinitionUVE::defaultName);
     entityManager.AddComponentUVE<ColliderComponentUVE>(entity, value.collider);
     entityManager.AddComponentUVE<Rigid3DComponentUVE>(entity, value.body);
     entityManager.AddComponentUVE<Kinematic3DComponentUVE>(entity, value.animatableBody);
