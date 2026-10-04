@@ -130,6 +130,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/bone_attachment_pass_uve.h"
+#include "uve/scene/two_bone_ik_pass_uve.h"
 #include "uve/scene/prefab_system_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/scene/scene_serializer_uve.h"
@@ -1036,6 +1037,12 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                                      unrotated.z / safe(parentFrame.scale.z)};
         moved->localPosition = moved->localPosition + local;
     };
+    // The skeletons this pass poses, in the order they were posed. TwoBoneIK3D runs at the end of
+    // this function and only touches these: its result is a rotation blended over the pose the
+    // drivers wrote, so solving a skeleton the drivers did not write this pass would blend the same
+    // solve over its own previous result and let a limb creep toward the target instead of reaching
+    // it. Which skeletons were posed is exactly what the drivers just decided.
+    std::vector<Scene::EntityUVE> posedSkeletons;
     // A player or tree loaded without its mixer (an older save) runs with the mixer's defaults.
     const auto mixerOf = [this](const Scene::EntityUVE entity) {
         return m_entityManager->HasComponentUVE<Scene::AnimationDriverComponentUVE>(entity)
@@ -1097,6 +1104,9 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             }
             const bool posed = Scene::StepSkeletalAnimationSequencerUVE(player, *clip, deltaSeconds * mixer.speedScale,
                                                                      skeleton, mixer);
+            if (posed) {
+                posedSkeletons.push_back(skeletonEntity);
+            }
             raiseAnimationEvents(entity, mixer.target, player.firedEvents);
             if (posed && mixer.rootMotion == Scene::AnimationRootMotionModeUVE::ApplyToTarget) {
                 applyRootMotion(entity, mixer.target, skeletonEntity, player.rootMotionDelta, deltaSeconds);
@@ -1131,6 +1141,9 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                 m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
             const bool posed = Scene::StepSkeletalAnimationGraphUVE(tree, clipFor, deltaSeconds * mixer.speedScale,
                                                                    skeleton, mixer);
+            if (posed) {
+                posedSkeletons.push_back(skeletonEntity);
+            }
             raiseAnimationEvents(entity, mixer.target, tree.firedEvents);
             if (posed && mixer.rootMotion == Scene::AnimationRootMotionModeUVE::ApplyToTarget) {
                 applyRootMotion(entity, mixer.target, skeletonEntity, tree.rootMotionDelta, deltaSeconds);
@@ -1144,6 +1157,12 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             raiseAnimationEvents(entity, mixer.target, tree.firedEvents);
         }
     }
+
+    // Bone modifiers correct the pose the drivers just wrote, in the same pass that wrote it: IK
+    // pulls a limb onto the target its animation cannot know about (a foot on uneven ground, a hand
+    // on a moving prop), and it has to happen before the attachment pass puts anything in that hand.
+    // The report is discarded on purpose - a refused chain recorded why in its own runtime fields.
+    static_cast<void>(Scene::SyncTwoBoneIK3DObjectsUVE(*m_entityManager, *m_sceneGraph, posedSkeletons));
 
     if (!physicsStep) {
 

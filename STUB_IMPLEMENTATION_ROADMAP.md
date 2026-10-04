@@ -630,8 +630,9 @@ this too). **Size: L.**
 never saved), `BoneAttachment3DComponentUVE` (`skeletonLocalId`, `boneIndex`, `boneName`,
 authored local TRS, `enabled`), `AnimationPlayerComponentUVE` (shared component), and
 `AnimationTreeUVE` (Core/Animation module).
-**Deliberately not part of this block:** inverse kinematics is its own `ROADMAP.md` §4 bullet;
-nothing in the pipeline waits on it. **Size: L** (largest item here).
+**Deliberately not part of this block:** inverse kinematics, which now exists as its own object -
+`TwoBoneIK3D` (two-bone, analytic, `ROADMAP.md` §4) - rather than inside this pipeline; nothing in
+the pipeline waited on it. **Size: L** (largest item here).
 
 ### 15. LevelStreamer3D + WorldPartition3D — streaming + cell partitioning (paired) — DONE
 

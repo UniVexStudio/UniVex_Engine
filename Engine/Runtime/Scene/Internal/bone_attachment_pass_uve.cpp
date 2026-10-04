@@ -17,6 +17,7 @@
 #include "uve/objects/3d/bone_attachment_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
+#include "uve/scene/scene_world_frame_uve.h"
 
 namespace UVE::Scene {
 
@@ -62,43 +63,10 @@ BoneAttachmentPassReportUVE SyncBoneAttachment3DObjectsUVE(IEntityManagerUVE& en
     std::stable_sort(ordered.begin(), ordered.end(),
                      [](const auto& left, const auto& right) { return left.first < right.first; });
 
-    // The world frame of an entity as the scene graph will compose it: every local transform up the
-    // chain, outermost first, with `topLevel` cutting the chain and a parent carrying no transform of
-    // its own cutting it too - the two rules SceneGraphUVE::UpdateUVE() composes by. Read from the
-    // LOCAL components rather than the cached world transform because this pass is meant to run
-    // before propagation: a parent that moved this frame has not published a world transform yet,
-    // and the attachment has to land on the bone this frame, not next.
+    // The world frame of an entity as the scene graph will compose it, from the local transforms: see
+    // ComposeSceneObjectWorldFrameUVE(), which the IK pass composes by as well.
     const auto worldFrameOf = [&entityManager](EntityUVE entity) {
-        std::vector<const TransformComponentUVE*> chain;
-        for (int depth = 0; depth < kMaximumHierarchyDepthUVE && entityManager.IsAliveUVE(entity); ++depth) {
-            if (!entityManager.HasComponentUVE<TransformComponentUVE>(entity)) {
-                break;
-            }
-            const TransformComponentUVE& local = entityManager.GetComponentUVE<TransformComponentUVE>(entity);
-            chain.push_back(&local);
-            if (local.topLevel) {
-                break;
-            }
-            const EntityUVE parent = entityManager.HasComponentUVE<HierarchyComponentUVE>(entity)
-                                         ? entityManager.GetComponentUVE<HierarchyComponentUVE>(entity).parent
-                                         : kInvalidEntityUVE;
-            if (parent == kInvalidEntityUVE || !entityManager.HasComponentUVE<TransformComponentUVE>(parent)) {
-                break;
-            }
-            entity = parent;
-        }
-        ObjectWorldFrameUVE frame{};
-        for (std::size_t index = chain.size(); index > 0U; --index) {
-            const TransformComponentUVE& local = *chain[index - 1U];
-            const Math::Vector3UVE scaled{local.localPosition.x * frame.scale.x,
-                                          local.localPosition.y * frame.scale.y,
-                                          local.localPosition.z * frame.scale.z};
-            frame.position = frame.position + Math::RotateVectorUVE(frame.rotation, scaled);
-            frame.rotation = Math::MultiplyUVE(frame.rotation, local.localRotation);
-            frame.scale = Math::Vector3UVE{frame.scale.x * local.localScale.x, frame.scale.y * local.localScale.y,
-                                           frame.scale.z * local.localScale.z};
-        }
-        return frame;
+        return ComposeSceneObjectWorldFrameUVE(entityManager, entity);
     };
     const auto depthOf = [&entityManager](EntityUVE entity) {
         int depth = 0;

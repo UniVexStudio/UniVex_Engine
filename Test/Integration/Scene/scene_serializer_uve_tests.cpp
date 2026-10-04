@@ -520,6 +520,159 @@ TEST_F(SceneSerializerUVETest, LoadUVE_ABoneAttachmentFromBeforeTheReferenceLoad
     std::filesystem::remove(path);
 }
 
+TEST_F(SceneSerializerUVETest, TwoBoneIKChainReferencesRoundTripThroughTheFileLocalIds) {
+    // Three references, three keys: the skeleton whose pose it corrects, the object it reaches for and
+    // the point that picks which way the joint bends. A file has no entities, only file-local ids, so
+    // every one of them has to come back as the RESTORED entity rather than as the handle it held when
+    // the scene was written.
+    const EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    Skeleton3DComponentUVE skeleton;
+    skeleton.skeletonAssetPath = "assets/archer.uvskel";
+    skeleton.bones.push_back(SkeletonBoneUVE{"UpperArm", -1, {}, {}, {1.0F, 1.0F, 1.0F}});
+    entityManager.AddComponentUVE<Skeleton3DComponentUVE>(skeletonEntity, skeleton);
+    const EntityUVE targetEntity = entityManager.CreateEntityUVE();
+    TransformComponentUVE targetTransform;
+    targetTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    entityManager.AddComponentUVE<TransformComponentUVE>(targetEntity, targetTransform);
+    const EntityUVE poleEntity = entityManager.CreateEntityUVE();
+    TransformComponentUVE poleTransform;
+    poleTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, 2.0F};
+    entityManager.AddComponentUVE<TransformComponentUVE>(poleEntity, poleTransform);
+    const EntityUVE chainEntity = entityManager.CreateEntityUVE();
+    TwoBoneIK3DComponentUVE chain;
+    chain.skeleton = skeletonEntity;
+    chain.rootBoneIndex = 3U;
+    chain.rootBoneName = "UpperArm";
+    chain.middleBoneIndex = 4294967295U;
+    chain.middleBoneName = "Forearm";
+    chain.endBoneName = "Hand";
+    chain.target = targetEntity;
+    chain.targetPosition = Math::Vector3UVE{0.25F, 1.0F, 0.0F};
+    chain.poleTarget = poleEntity;
+    chain.poleDirection = Math::Vector3UVE{0.0F, 0.0F, 1.0F};
+    chain.enabled = false;
+    // Runtime answers on the source: none of them may reach the file - a restored chain has been
+    // solved zero times, and a stale `reached` would have the Inspector report a solve that never ran.
+    chain.solved = true;
+    chain.reached = true;
+    chain.endToTargetDistanceMetres = 0.4F;
+    chain.resolvedRootBoneIndex = 3U;
+    chain.resolvedMiddleBoneIndex = 4U;
+    chain.resolvedEndBoneIndex = 5U;
+    entityManager.AddComponentUVE<TwoBoneIK3DComponentUVE>(chainEntity, chain);
+
+    const std::optional<SceneSnapshotUVE> snapshot = serializer.CaptureUVE(
+        entityManager, {skeletonEntity, targetEntity, poleEntity, chainEntity}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE fresh{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(fresh, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 4U);
+
+    // Named by what each object carries rather than by restore order, so a swapped pair of references
+    // cannot pass by both entities having been restored.
+    EntityUVE restoredSkeleton = kInvalidEntityUVE;
+    EntityUVE restoredTarget = kInvalidEntityUVE;
+    EntityUVE restoredPole = kInvalidEntityUVE;
+    EntityUVE restoredChain = kInvalidEntityUVE;
+    for (const EntityUVE entity : restoredRoots) {
+        if (fresh.HasComponentUVE<Skeleton3DComponentUVE>(entity)) {
+            restoredSkeleton = entity;
+            continue;
+        }
+        if (fresh.HasComponentUVE<TwoBoneIK3DComponentUVE>(entity)) {
+            restoredChain = entity;
+            continue;
+        }
+        const Math::Vector3UVE position = fresh.GetComponentUVE<TransformComponentUVE>(entity).localPosition;
+        if (position.x == 1.0F) {
+            restoredTarget = entity;
+        } else if (position.z == 2.0F) {
+            restoredPole = entity;
+        }
+    }
+    ASSERT_NE(restoredSkeleton, kInvalidEntityUVE);
+    ASSERT_NE(restoredTarget, kInvalidEntityUVE);
+    ASSERT_NE(restoredPole, kInvalidEntityUVE);
+    ASSERT_NE(restoredChain, kInvalidEntityUVE);
+
+    const TwoBoneIK3DComponentUVE restored = fresh.GetComponentUVE<TwoBoneIK3DComponentUVE>(restoredChain);
+    EXPECT_EQ(restored.skeleton, restoredSkeleton) << "id in the file -> restored skeleton";
+    EXPECT_EQ(restored.target, restoredTarget);
+    EXPECT_EQ(restored.poleTarget, restoredPole);
+    EXPECT_NE(restored.target, restoredPole) << "two references that named different objects still do";
+    EXPECT_EQ(restored.rootBoneIndex, 3U);
+    EXPECT_EQ(restored.rootBoneName, "UpperArm");
+    EXPECT_EQ(restored.middleBoneIndex, kInvalidSkeletonBoneIndexUVE);
+    EXPECT_EQ(restored.middleBoneName, "Forearm");
+    EXPECT_EQ(restored.endBoneName, "Hand");
+    EXPECT_FLOAT_EQ(restored.targetPosition.x, 0.25F);
+    EXPECT_FLOAT_EQ(restored.poleDirection.z, 1.0F);
+    EXPECT_FALSE(restored.enabled);
+    EXPECT_FALSE(restored.solved) << "the file carries authored data, never the last frame's answer";
+    EXPECT_FALSE(restored.reached);
+    EXPECT_FLOAT_EQ(restored.endToTargetDistanceMetres, 0.0F);
+    EXPECT_EQ(restored.resolvedRootBoneIndex, kInvalidSkeletonBoneIndexUVE);
+    EXPECT_EQ(restored.resolvedMiddleBoneIndex, kInvalidSkeletonBoneIndexUVE);
+    EXPECT_EQ(restored.resolvedEndBoneIndex, kInvalidSkeletonBoneIndexUVE);
+}
+
+TEST_F(SceneSerializerUVETest, TwoBoneIKPointingOutsideTheSavedSetLoadsInert) {
+    // Nothing the chain names was part of what was saved, so there are no ids for them in the file.
+    // Each reference has to load pointing at nothing rather than at whichever entity happens to share
+    // the slot it used to occupy, and the chain has to be inert rather than aimed somewhere.
+    const EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Skeleton3DComponentUVE>(skeletonEntity, Skeleton3DComponentUVE{});
+    const EntityUVE targetEntity = entityManager.CreateEntityUVE();
+    const EntityUVE chainEntity = entityManager.CreateEntityUVE();
+    TwoBoneIK3DComponentUVE chain;
+    chain.skeleton = skeletonEntity;
+    chain.target = targetEntity;
+    chain.rootBoneName = "UpperArm";
+    chain.middleBoneName = "Forearm";
+    chain.endBoneName = "Hand";
+    entityManager.AddComponentUVE<TwoBoneIK3DComponentUVE>(chainEntity, chain);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {chainEntity}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE fresh{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(fresh, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+    const TwoBoneIK3DComponentUVE restored = fresh.GetComponentUVE<TwoBoneIK3DComponentUVE>(restoredRoots.front());
+    EXPECT_EQ(restored.skeleton, kInvalidEntityUVE);
+    EXPECT_EQ(restored.target, kInvalidEntityUVE);
+    EXPECT_EQ(restored.poleTarget, kInvalidEntityUVE);
+    EXPECT_EQ(restored.rootBoneName, "UpperArm") << "the authored names survive the missing references";
+    EXPECT_FALSE(IsTwoBoneIK3DObjectComponentResolvableUVE(restored))
+        << "a chain with nowhere to bind is inert, which is what keeps it from driving a stranger's bones";
+}
+
+TEST_F(SceneSerializerUVETest, LoadUVE_ATwoBoneIKChainBindsTheIdsTheFileHas) {
+    // The three reference keys as a document spells them, including a pole id that names nothing in
+    // this file: the chain still binds its skeleton and target, and solves toward the authored point
+    // because the pole reference it could not resolve is the sentinel, not a wrong object.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"Skeleton3DComponentUVE":{"skeletonAssetPath":"Archer.fbx","bones":[{"name":"UpperArm","parentIndex":-1,"localPosition":[0.0,0.0,0.0],"localRotation":[0.0,0.0,0.0,1.0],"localScale":[1.0,1.0,1.0]}],"enabled":true}}},{"localId":1,"components":{"TwoBoneIK3DComponentUVE":{"skeletonLocalId":0,"targetLocalId":2,"poleLocalId":9,"rootBoneIndex":4294967295,"rootBoneName":"UpperArm","middleBoneIndex":4294967295,"middleBoneName":"Forearm","endBoneIndex":4294967295,"endBoneName":"Hand","targetPosition":[0.25,1.0,0.0],"poleDirection":[0.0,0.0,1.0],"enabled":true}}},{"localId":2,"components":{}}]})";
+    const auto* const payloadBytesPtr = reinterpret_cast<const std::byte*>(payloadText.data());
+    const std::vector<std::byte> payloadBytes(payloadBytesPtr, payloadBytesPtr + payloadText.size());
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_two_bone_ik_references.uvscene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(Asset::WriteUveFileUVE(path, SceneAssetTypeUVE::Scene, payloadBytes));
+
+    const std::vector<EntityUVE> roots = serializer.LoadUVE(entityManager, path);
+    ASSERT_EQ(roots.size(), 3U);
+    const TwoBoneIK3DComponentUVE chain =
+        entityManager.GetComponentUVE<TwoBoneIK3DComponentUVE>(roots[1]);
+    EXPECT_EQ(chain.skeleton, roots[0]) << "id 0 names the skeleton saved beside it";
+    EXPECT_EQ(chain.target, roots[2]) << "id 2 names the object the chain reaches for";
+    EXPECT_EQ(chain.poleTarget, kInvalidEntityUVE) << "id 9 names nothing in this file";
+    EXPECT_EQ(chain.rootBoneName, "UpperArm");
+    EXPECT_TRUE(IsTwoBoneIK3DObjectComponentResolvableUVE(chain));
+
+    std::filesystem::remove(path);
+}
+
 TEST_F(SceneSerializerUVETest, SpringArmAuthoredFieldsRoundTripAndRuntimeTruthIsReseeded) {
     // The arm's authored half is saved; its runtime half is not, and must not be: where the boom
     // happens to be pointing right now is a fact about the frame that saved the scene, not about

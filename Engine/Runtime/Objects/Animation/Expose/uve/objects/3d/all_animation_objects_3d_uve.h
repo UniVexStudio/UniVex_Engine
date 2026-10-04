@@ -7,3 +7,4 @@
 #include "uve/objects/3d/animation_graph_uve.h"
 #include "uve/objects/3d/bone_attachment_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/two_bone_ik_3d_uve.h"

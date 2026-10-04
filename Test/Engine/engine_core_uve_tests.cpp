@@ -80,6 +80,7 @@
 #include "uve/objects/3d/animation_sequencer_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/bone_attachment_3d_uve.h"
+#include "uve/objects/3d/two_bone_ik_3d_uve.h"
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
 #include "uve/objects/3d/decal_3d_events_uve.h"
@@ -2160,6 +2161,130 @@ TEST(EngineCoreUVETest, BoneAttachment3D_RidesThePosedBoneInTheFrameThePoseArriv
     const Math::Vector3UVE stayed =
         entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(attachment).worldPosition;
     EXPECT_NEAR(stayed.y, 2.1F, 1e-3F);
+
+    std::filesystem::remove(clipPath);
+    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, TwoBoneIK3D_SolvesTheReachingLimbBeforeTheAttachmentFollowsIt) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
+
+    // A one-second clip lifting the hips 20 cm: a real driver poses the skeleton, which is the gate the
+    // IK pass reads - a limb whose pose nothing wrote this frame must not be solved a second time.
+    Asset::AnimationClipAssetUVE clip;
+    clip.clipId = "crouch";
+    clip.durationSeconds = 1.0;
+    Asset::AnimationAssetSampleUVE start;
+    Asset::AnimationAssetSampleUVE end;
+    end.timeSeconds = 1.0;
+    end.pose.position = Math::Vector3UVE{0.0F, 0.2F, 0.0F};
+    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {start, end}}};
+    const std::filesystem::path clipPath = "uve_engine_core_tests_crouch.uvanim";
+    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
+    const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+
+    // A four-bone arm: the shoulder a metre above the hips, the elbow a metre above that, the wrist a
+    // metre above that. The chain solves the two upper bones so the WRIST's own origin reaches the
+    // target, and the hand's rotation is left to the animation.
+    const Scene::EntityUVE character = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, character, Scene::TransformComponentUVE{});
+    const Scene::EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    Scene::Skeleton3DObjectDefinitionUVE skeletonDefinition;
+    skeletonDefinition.skeleton.skeletonAssetPath = "Archer.fbx";
+    Scene::SkeletonBoneUVE hips;
+    hips.name = "Hips";
+    Scene::SkeletonBoneUVE upperArm;
+    upperArm.name = "UpperArm";
+    upperArm.parentIndex = 0;
+    upperArm.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    Scene::SkeletonBoneUVE forearm;
+    forearm.name = "Forearm";
+    forearm.parentIndex = 1;
+    forearm.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    Scene::SkeletonBoneUVE handBone;
+    handBone.name = "Hand";
+    handBone.parentIndex = 2;
+    handBone.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    skeletonDefinition.skeleton.bones = {hips, upperArm, forearm, handBone};
+    Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skeletonEntity, skeletonDefinition);
+    sceneGraph.SetParentUVE(entityManager, skeletonEntity, character);
+
+    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+    Scene::AnimationSequencerObjectDefinitionUVE playerDefinition;
+    playerDefinition.player.clip = guid;
+    playerDefinition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
+    Scene::ApplyAnimationSequencerObjectDefinitionUVE(entityManager, player, playerDefinition);
+    sceneGraph.SetParentUVE(entityManager, player, character);
+
+    const Scene::EntityUVE target = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE targetTransform;
+    targetTransform.localPosition = Math::Vector3UVE{1.0F, 1.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, target, targetTransform);
+    const Scene::EntityUVE pole = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE poleTransform;
+    poleTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, 2.0F};
+    sceneGraph.AttachTransformUVE(entityManager, pole, poleTransform);
+
+    const Scene::EntityUVE chainEntity = entityManager.CreateEntityUVE();
+    Scene::ApplyTwoBoneIK3DObjectDefinitionUVE(entityManager, chainEntity, {});
+    Scene::TwoBoneIK3DComponentUVE& chain = entityManager.GetComponentUVE<Scene::TwoBoneIK3DComponentUVE>(chainEntity);
+    chain.skeleton = skeletonEntity;
+    chain.rootBoneName = "UpperArm";
+    chain.middleBoneName = "Forearm";
+    chain.endBoneName = "Hand";
+    chain.target = target;
+    chain.poleTarget = pole;
+    sceneGraph.SetParentUVE(entityManager, chainEntity, character);
+
+    // Something in the hand: an attachment on the bone the IK drives. It is an ordinary child of the
+    // character, so the frame it ends up in says which pass wrote the bone last.
+    const Scene::EntityUVE attachment = entityManager.CreateEntityUVE();
+    Scene::BoneAttachment3DComponentUVE attachmentComponent;
+    attachmentComponent.skeleton = skeletonEntity;
+    attachmentComponent.boneName = "Hand";
+    entityManager.AddComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment, attachmentComponent);
+    sceneGraph.AttachTransformUVE(entityManager, attachment, Scene::TransformComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, attachment, character);
+
+    const auto startedAt = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
+           !entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        engine.TickFrameUVE();
+    }
+    ASSERT_TRUE(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished);
+
+    const Scene::TwoBoneIK3DComponentUVE& solved =
+        entityManager.GetComponentUVE<Scene::TwoBoneIK3DComponentUVE>(chainEntity);
+    EXPECT_TRUE(solved.solved);
+    EXPECT_TRUE(solved.reached) << "the target is about a metre from the shoulder and the arm is two long";
+    EXPECT_NEAR(solved.endToTargetDistanceMetres, 0.0F, 1e-3F);
+    EXPECT_EQ(solved.resolvedRootBoneIndex, 1U);
+    EXPECT_EQ(solved.resolvedMiddleBoneIndex, 2U);
+    EXPECT_EQ(solved.resolvedEndBoneIndex, 3U);
+
+    // The attachment rides the wrist the IK just moved, in the frame the pose arrived: halfway through
+    // the clip the hand is two metres up the limb, and the only thing that puts it on the target is the
+    // solve that ran before the attachment pass in this same tick.
+    const Scene::BoneAttachment3DComponentUVE& bound =
+        entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment);
+    EXPECT_TRUE(bound.bound);
+    EXPECT_EQ(bound.resolvedBoneIndex, 3U);
+    const Math::Vector3UVE hand =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(attachment).worldPosition;
+    EXPECT_NEAR(hand.x, 1.0F, 1e-3F) << "the wrist is on the target, and the attachment is on the wrist";
+    EXPECT_NEAR(hand.y, 1.0F, 1e-3F);
+    EXPECT_NEAR(hand.z, 0.0F, 1e-3F);
+    EXPECT_GT(std::abs(hand.y - 3.2F), 1.0F)
+        << "the hand is nowhere near where the animation alone would have left it";
+    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(attachment).localPosition.z, 0.0F, 1e-3F);
 
     std::filesystem::remove(clipPath);
     std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);

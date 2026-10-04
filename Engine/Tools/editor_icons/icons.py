@@ -357,6 +357,30 @@ def bone_attachment_3d(ic):
     stroke_line(ic, [(36, 26), (40, 36)], "#d9c9ff", 2.4)
 
 
+@scene_object("two_bone_ik_3d", "TwoBoneIK3D", "Animation")
+def two_bone_ik_3d(ic):
+    shadow(ic, 31, 58, 22, 4.5)
+    # The limb the solver drives: two bones meeting at the elbow, drawn bent so the pose reads as
+    # solved-toward-something rather than resting.
+    bone(ic, 10, 50, 30, 31, 6.4)
+    bone(ic, 30, 31, 46, 17, 5.2)
+    sphere(ic, 30, 31, 5.8, IVORY, gloss=0.8)
+    # The target the end effector reaches: a ring and four ticks around the wrist joint, the
+    # reticle every DCC tool draws for the thing an IK chain is aimed at.
+    ring = ic.linear([(0, shade(PURPLE, 0.32)), (1, shade(PURPLE, -0.28))], 0, 0, 1, 1)
+    ic.add(f'<circle cx="47" cy="17" r="9.4" fill="none" stroke="{OUTLINE}" stroke-opacity="0.7" '
+           f'stroke-width="4.4"/>')
+    ic.add(f'<circle cx="47" cy="17" r="9.4" fill="none" stroke="{ring}" stroke-width="2.4" '
+           f'stroke-dasharray="4.6 3"/>')
+    for (tx, ty, dx, dy) in ((56.4, 17, 3.4, 0), (37.6, 17, -3.4, 0), (47, 26.4, 0, 3.4),
+                             (47, 7.6, 0, -3.4)):
+        stroke_line(ic, [(tx, ty), (tx + dx, ty + dy)], shade(PURPLE, 0.1), 2.0)
+    # The pole: the point that picks which of the elbow's circle of solutions is used, joined to the
+    # joint by a dotted line because it steers the bend without being part of the chain.
+    stroke_line(ic, [(27, 27), (15, 13)], "#d9c9ff", 1.8, dash="2.6 3.2")
+    sphere(ic, 14, 12, 3.4, PURPLE, gloss=0.9)
+
+
 @scene_object("animation_sequencer", "AnimationSequencer", "Animation")
 def animation_sequencer(ic):
     shadow(ic, 32, 57, 26, 4.5)

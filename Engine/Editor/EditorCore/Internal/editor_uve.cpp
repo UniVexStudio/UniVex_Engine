@@ -2038,6 +2038,10 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
         case Scene::Objects::SceneObjectKindUVE::BoneAttachment3D:
             entity = createObjectWithComponent(Scene::BoneAttachment3DComponentUVE{});
             break;
+        case Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D:
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::TwoBoneIK3DObjectDefinitionUVE{},
+                                                            Scene::ApplyTwoBoneIK3DObjectDefinitionUVE);
+            break;
         // SpringArm3D carries its own component like its neighbours, but its recipe
         // (Object3D baseline plus seeding currentLength to the authored armLength the same way the
         // deserializer seeds it) is a definition's worth of behaviour, so it reads like the rest.
