@@ -2312,8 +2312,13 @@ TEST(EngineCoreUVETest, Hitbox3DObject_StrikeEdgesReachTheEventSystemOnceAndEndW
     entityManager.AddComponentUVE<Scene::Hitbox3DComponentUVE>(
         blade, Scene::Hitbox3DComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
 
+    // 1.5 m apart, so the two 1 m half-extent boxes overlap by exactly 0.5 m along X and the
+    // minimum-translation axis is unambiguous - coincident boxes would tie on all three axes and
+    // the depth would be the full 2 m, which is a much weaker thing to assert.
     const Scene::EntityUVE victim = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, victim, Scene::TransformComponentUVE{});
+    Scene::TransformComponentUVE victimTransform;
+    victimTransform.localPosition = Math::Vector3UVE{1.5F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, victim, victimTransform);
     entityManager.AddComponentUVE<Scene::Hurtbox3DComponentUVE>(
         victim, Scene::Hurtbox3DComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
 
@@ -2325,10 +2330,10 @@ TEST(EngineCoreUVETest, Hitbox3DObject_StrikeEdgesReachTheEventSystemOnceAndEndW
         [&exited](const Physics::Hitbox3DStrikeExitedEventUVE& event) { exited.push_back(event); });
 
     engine.TickFrameUVE();
-    ASSERT_EQ(entered.size(), 1U) << "the boxes start exactly on top of each other";
+    ASSERT_EQ(entered.size(), 1U) << "a 1 m box and a 1 m box 1.5 m apart overlap by 0.5 m";
     EXPECT_EQ(entered[0].strike.hitbox, blade);
     EXPECT_EQ(entered[0].strike.hurtbox, victim);
-    EXPECT_NEAR(entered[0].strike.penetrationDepth, 1.0F, 1.0e-4F);
+    EXPECT_NEAR(entered[0].strike.penetrationDepth, 0.5F, 1.0e-4F);
     EXPECT_NEAR(entered[0].strike.axis.x, 1.0F, 1.0e-4F)
         << "a consequence that pushes needs the direction, not only the fact";
     EXPECT_TRUE(exited.empty());
