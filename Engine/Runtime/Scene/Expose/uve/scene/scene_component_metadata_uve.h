@@ -35,6 +35,11 @@ inline constexpr std::string_view kPropertyTypeColorUVE = "Color";
 inline constexpr std::string_view kPropertyTypeQuaternionUVE = "Quaternion";
 inline constexpr std::string_view kPropertyTypeEnumUVE = "Enum";
 inline constexpr std::string_view kPropertyTypeEntityUVE = "Entity";
+/// A fixed-capacity list of entity references (RayCast3D's exclusions today). Declared with
+/// TypeMetadataPropertyUVE::elementCount telling a consumer how many slots the value holds; the
+/// accessor reads and writes the whole array at once, so one edit is one write and one history
+/// entry. Drawn by a custom drawer - a list is not one of the scalar row widgets.
+inline constexpr std::string_view kPropertyTypeEntityListUVE = "EntityList";
 inline constexpr std::string_view kPropertyTypeAssetGuidUVE = "AssetGuid";
 
 /// Section sort keys. A component's own section sorts by TypeMetadataEntryUVE::order. The order

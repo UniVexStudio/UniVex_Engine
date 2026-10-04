@@ -322,6 +322,10 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
 - [x] Rigid-body dynamics with angular dynamics, a real narrow-phase collision system, and
   a broad-phase AABB cache
 - [x] Raycasts, shape casts, and a general physics query system
+- [x] Multi-object raycast exclusions (RayCast3D's `exclusions`): a ray refuses a set of authored
+  objects on top of itself, holds them as real entity references that survive a save/load rather
+  than as runtime handles, and checks them before the layer mask — an exclusion is not a mask, so
+  no layer can bring an excluded object back
 - [x] Trigger volumes with enter/exit lifecycle tracking
 - [x] A constraint system with hinge motors and limits
 - [x] A kinematic character controller with slide/step-up sweep behavior, exposed as a

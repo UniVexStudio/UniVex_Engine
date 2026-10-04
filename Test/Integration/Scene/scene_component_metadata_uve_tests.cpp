@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <string>
 #include <typeindex>
@@ -16,6 +17,7 @@
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
+#include "uve/objects/3d/ray_cast_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
 #include "uve/math/vector3_uve.h"
 
@@ -74,10 +76,10 @@ TEST(SceneComponentMetadataUVETest, EveryLayerMaskNamesTheLayersItPicksFrom) {
             render += isRender ? 1U : 0U;
         }
     }
-    // The collider's layer and mask, plus SpringArm3D's collisionMask - the boom casts on the same
-    // layer contract every other physics object uses, so its mask belongs to the same drawer set
-    // rather than a second, hand-drawn one.
-    EXPECT_EQ(physics, 3U);
+    // The collider's layer and mask, SpringArm3D's collisionMask and RayCast3D's collisionMask -
+    // every cast in the engine filters on the same layer contract, so they all belong to the same
+    // drawer set rather than a second, hand-drawn one.
+    EXPECT_EQ(physics, 4U);
     EXPECT_EQ(render, 4U); // mesh, render instance, light and decal
 }
 
@@ -275,5 +277,68 @@ TEST(SceneComponentMetadataUVETest, TheSpawnPointSectionCarriesTheWholeAuthoredC
     EXPECT_FALSE(spawn->isInstanceValid(&notFinite));
 }
 
+
+TEST(SceneComponentMetadataUVETest, TheRayCastSectionCarriesWhatTheRayIsAndWhatItFound) {
+    // A RayCast3D is both authored data (what it is, what it refuses to hit) and runtime state (what
+    // it found). Both halves have to reach the Inspector, and the authored half has to include the
+    // exclusions list - a reference an author cannot pick is a feature no one can use.
+    const TypeMetadataEntryUVE* rayCast =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(RayCast3DComponentUVE)));
+    ASSERT_NE(rayCast, nullptr);
+    EXPECT_EQ(rayCast->typeId, "component.ray_cast_3d");
+    EXPECT_EQ(rayCast->displayName, "RayCast3D");
+
+    for (const char* const name : {"enabled", "direction", "length", "collisionMask", "exclusions"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*rayCast, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+            << name;
+        EXPECT_TRUE(property->IsAuthoringWritableUVE()) << name;
+    }
+
+    const TypeMetadataPropertyUVE* mask = FindPropertyUVE(*rayCast, "collisionMask");
+    ASSERT_NE(mask, nullptr);
+    EXPECT_EQ(mask->typeId, kPropertyTypeBitMask32UVE);
+    EXPECT_EQ(mask->customDrawerId, kLayerMaskDrawerPhysicsUVE);
+
+    // The exclusions are an entity-reference list: a list value with a stated capacity, drawn by
+    // the reference-list drawer, and read/written whole the way every other property is.
+    const TypeMetadataPropertyUVE* exclusions = FindPropertyUVE(*rayCast, "exclusions");
+    ASSERT_NE(exclusions, nullptr);
+    EXPECT_EQ(exclusions->typeId, kPropertyTypeEntityListUVE);
+    EXPECT_EQ(exclusions->customDrawerId, "entity-reference-list");
+    EXPECT_EQ(exclusions->elementCount, kMaximumRayCastExclusionsUVE);
+
+    // A named alias, because the comma in the template argument list would otherwise split the
+    // EXPECT_EQ macro's own argument list.
+    using ExclusionListUVE = std::array<EntityUVE, kMaximumRayCastExclusionsUVE>;
+    RayCast3DComponentUVE component;
+    ExclusionListUVE references = MakeEmptyEntityReferencesUVE<kMaximumRayCastExclusionsUVE>();
+    references[0] = EntityUVE{4U, 2U};
+    references[1] = EntityUVE{9U, 1U};
+    SetPropertyValueUVE(*exclusions, component, references);
+    EXPECT_EQ(component.exclusions[0], (EntityUVE{4U, 2U}));
+    EXPECT_EQ(component.exclusions[1], (EntityUVE{9U, 1U}));
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(component), 2U);
+    EXPECT_EQ(GetPropertyValueUVE<ExclusionListUVE>(*exclusions, component), references);
+
+    // The component's own rule travels with the declaration, so the list control cannot author a
+    // hole: a live reference behind an empty slot is refused by the same validator the engine reads.
+    ASSERT_NE(rayCast->isInstanceValid, nullptr);
+    RayCast3DComponentUVE holed = component;
+    holed.exclusions[0] = kInvalidEntityUVE;
+    EXPECT_FALSE(rayCast->isInstanceValid(&holed));
+
+    // The answer the engine computed is shown, but never authored or persisted.
+    ASSERT_TRUE(rayCast->properties.size() >= 9U);
+    for (const char* const name : {"hit", "hitEntity", "hitPosition", "hitNormal"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*rayCast, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_TRUE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+            << name;
+        EXPECT_FALSE(property->IsAuthoringWritableUVE()) << name;
+        EXPECT_FALSE(property->IsSerializedUVE()) << name;
+    }
+}
 } // namespace
 } // namespace UVE::Scene::Tests

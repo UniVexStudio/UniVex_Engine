@@ -100,10 +100,60 @@ TEST(Expanded3DObjectComponentsUVETest, Hitbox3DStrikeStateIsRuntimeOnlyAndNever
     EXPECT_TRUE(IsHitbox3DObjectComponentValidUVE(hitbox));
 }
 
+TEST(Expanded3DObjectComponentsUVETest, RayCast3DExclusionListIsAPrefixOfRealReferences) {
+    // A freshly authored ray excludes nobody: every slot is the empty sentinel, never index 0 of a
+    // pool that may already hold a live entity - a default EntityUVE is a real handle.
+    RayCast3DComponentUVE ray;
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(ray), 0U);
+    for (const EntityUVE& exclusion : ray.exclusions) {
+        EXPECT_EQ(exclusion, kInvalidEntityUVE);
+    }
+    EXPECT_TRUE(IsRayCast3DObjectComponentValidUVE(ray));
+
+    // Live references count as themselves, in the order they were authored.
+    ray.exclusions[0] = EntityUVE{3U, 1U};
+    ray.exclusions[1] = EntityUVE{7U, 2U};
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(ray), 2U);
+    EXPECT_TRUE(IsRayCast3DObjectComponentValidUVE(ray));
+
+    // The list is a prefix, so a live reference behind an empty slot is refused: no query would
+    // ever reach it, and a ray that silently ignores an authored exclusion is worse than one that
+    // refuses to load. The same rule makes the trailing slots the only place a hole may be.
+    RayCast3DComponentUVE holed = ray;
+    holed.exclusions[0] = kInvalidEntityUVE;
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(holed), 0U);
+    EXPECT_FALSE(IsRayCast3DObjectComponentValidUVE(holed));
+
+    // Duplicates are refused rather than collapsed: two identical slots are an authoring mistake,
+    // and dropping one silently would hide which of the two was meant.
+    RayCast3DComponentUVE duplicated = ray;
+    duplicated.exclusions[1] = duplicated.exclusions[0];
+    EXPECT_FALSE(IsRayCast3DObjectComponentValidUVE(duplicated));
+
+    // All eight slots can be real. The bound is the array, so "the ninth exclusion" is not a value
+    // this component can hold at all.
+    RayCast3DComponentUVE full;
+    for (std::size_t index = 0U; index < kMaximumRayCastExclusionsUVE; ++index) {
+        full.exclusions[index] = EntityUVE{static_cast<std::uint32_t>(index), 1U};
+    }
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(full), kMaximumRayCastExclusionsUVE);
+    EXPECT_TRUE(IsRayCast3DObjectComponentValidUVE(full));
+}
+
 TEST(Expanded3DObjectComponentsUVETest, BoundedContractsRejectUnsafeValues) {
     RayCast3DComponentUVE ray;
-    ray.exclusionCount = static_cast<std::uint8_t>(kMaximumRayCastExclusionsUVE + 1U);
+    // A ray with no usable direction, no reach, or a length nobody can cast is refused outright.
+    ray.direction = Math::Vector3UVE{};
     EXPECT_FALSE(IsRayCast3DObjectComponentValidUVE(ray));
+    ray.direction = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    ray.length = 0.0F;
+    EXPECT_FALSE(IsRayCast3DObjectComponentValidUVE(ray));
+    ray.length = -1.0F;
+    EXPECT_FALSE(IsRayCast3DObjectComponentValidUVE(ray));
+    ray.length = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(IsRayCast3DObjectComponentValidUVE(ray));
+    ray.length = 1.0F;
+    EXPECT_TRUE(IsRayCast3DObjectComponentValidUVE(ray));
 
     Skeleton3DComponentUVE skeleton;
     skeleton.bones.push_back(SkeletonBoneUVE{"root", -1, {}, {}, {1.0F, 1.0F, 1.0F}});

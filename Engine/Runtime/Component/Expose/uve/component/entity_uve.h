@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -33,6 +35,18 @@ inline constexpr EntityUVE kInvalidEntityUVE{};
 
 [[nodiscard]] constexpr bool operator!=(const EntityUVE& lhs, const EntityUVE& rhs) noexcept {
     return !(lhs == rhs);
+}
+
+/// A fixed-size reference array with every slot empty. EntityUVE's own default is index 0 - a real
+/// slot in any entity pool - so a slot an author never touched must be filled explicitly: an
+/// authored component that default-initializes an array of references would otherwise start life
+/// claiming a reference to whatever happens to live at index 0, and an Inspector that draws the
+/// array would show that as a real exclusion.
+template <std::size_t Count>
+[[nodiscard]] constexpr std::array<EntityUVE, Count> MakeEmptyEntityReferencesUVE() noexcept {
+    std::array<EntityUVE, Count> references{};
+    references.fill(kInvalidEntityUVE);
+    return references;
 }
 
 } // namespace UVE::Scene

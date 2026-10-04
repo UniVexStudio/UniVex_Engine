@@ -80,11 +80,12 @@ worse than no checklist.
 - [x] Script — real, ticked by the script VM/runtime, with real input/collision bindings.
 - [x] RayCast3D — real per-frame raycast against the actual RaycastSystemUVE (`direction` is
   local-space, rotated by the entity's world rotation), correctly excludes its own entity, and
-  writes `hit`/`hitPosition`/`hitNormal`/`hitEntity` back every tick. One authored field is still
-  not honored: `exclusions` (skip additional specific entities) does nothing yet - the query API
-  only supports ignoring one entity per call (already spent on self), and this engine has no
-  persistent, save/load-stable way to reference another node to extend that with. Real, separate
-  follow-up, not silently faked.
+  writes `hit`/`hitPosition`/`hitNormal`/`hitEntity` back every tick. Every authored field is
+  honored: `exclusions` names other objects the ray refuses to hit, held as real entity
+  references - remapped by the scene file the way a visibility parent is, so they still point at
+  the same object after a save/load, and dropped rather than renumbered when the object is not in
+  the file - and handed to the query every tick, where they are checked before the layer mask, so
+  no layer can bring an excluded object back.
 - [x] Projectile3D — real per-fixed-step kinematic integration: `velocity` accumulates
   `acceleration`, the entity's authored local position advances by `velocity`, and
   `remainingLifetime` counts down to zero, clearing `active`. Two authored fields are still not
@@ -289,8 +290,9 @@ system behind them.
    component.
 2. **RayCast3D, Projectile3D, and Hitbox3D/Hurtbox3D done** (real per-frame raycast against the
    actual query system with correct self-exclusion; real kinematic integration + lifetime expiry
-   for projectiles; real per-frame hitbox-vs-hurtbox strike pairing — see the entries above for
-   their stated, honest follow-up gaps). Wire up the remaining highest-value already-authored 3D
+   for projectiles; real per-frame hitbox-vs-hurtbox strike pairing — RayCast3D's exclusions gap
+   is now closed too, and the entries above state what Projectile3D and Hitbox3D/Hurtbox3D are
+   still honestly missing). Wire up the remaining highest-value already-authored 3D
    stubs next: Skeleton3D + AnimationSequencer + AnimationGraph (blocked on the same missing
    skinning/clip-sampling pipeline — see `ROADMAP.md`), NavigationRegion3D/NavigationAgent3D
    (needed for any AI movement).

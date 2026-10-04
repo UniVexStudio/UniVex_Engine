@@ -135,7 +135,7 @@ void DrawTooltipUVE(const TypeMetadataPropertyUVE& property) {
 /// Custom drawers that lay out their own rows - a multi-line box, a slot with an action strip, a
 /// list with an add button - rather than filling a value cell. Any other id falls back to the
 /// generic editor for its value type, which is where the rotation and entity-picker ids still go.
-constexpr std::array<std::string_view, 8> kBlockPropertyDrawerIdsUVE{
+constexpr std::array<std::string_view, 9> kBlockPropertyDrawerIdsUVE{
     "animation-parameters",
     "animation-graph",
     "multiline-text",
@@ -144,6 +144,7 @@ constexpr std::array<std::string_view, 8> kBlockPropertyDrawerIdsUVE{
     "object-metadata",
     "skeleton-source",
     "skeleton-bones",
+    "entity-reference-list",
 };
 
 [[nodiscard]] bool IsBlockPropertyDrawerUVE(const std::string& drawerId) noexcept {
@@ -646,12 +647,11 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
             }
         }
     } else if (property.typeId == Scene::kPropertyTypeEntityUVE) {
-        // Same reasoning as an asset guid: an entity reference is picked, not typed. The list is
-        // every document object with a transform - the only objects a reference can act on - in
-        // outliner order, minus the selection itself.
+        // Same reasoning as an asset guid: an entity reference is picked, not typed. The choices
+        // come from GetEntityReferenceCandidatesUVE so this picker and the reference list below
+        // offer exactly the same objects.
         Scene::EntityUVE value = Scene::kInvalidEntityUVE;
         property.getValue(instance, &value);
-        const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
         const bool dangling = value != Scene::kInvalidEntityUVE && !IsDocumentEntityUVE(value);
         const std::string preview = value == Scene::kInvalidEntityUVE ? std::string{"(default)"}
                                     : dangling                        ? std::string{"(missing object)"}
@@ -665,18 +665,7 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
             if (ImGui::IsItemHovered() && !property.tooltip.empty()) {
                 ImGui::SetTooltip("%s", property.tooltip.c_str());
             }
-            std::vector<Scene::EntityUVE> pending = GetDocumentRootsUVE();
-            std::reverse(pending.begin(), pending.end());
-            while (!pending.empty()) {
-                const Scene::EntityUVE candidate = pending.back();
-                pending.pop_back();
-                std::vector<Scene::EntityUVE> children =
-                    m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), candidate);
-                pending.insert(pending.end(), children.rbegin(), children.rend());
-                if (candidate == m_selectedEntity ||
-                    !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(candidate)) {
-                    continue;
-                }
+            for (const Scene::EntityUVE candidate : GetEntityReferenceCandidatesUVE()) {
                 const bool isSelected = candidate == value;
                 const std::string label = GetEntityDisplayLabelUVE(candidate) + "##" +
                                           std::to_string(candidate.index) + "_" +
@@ -805,6 +794,10 @@ bool EditorUVE::DrawCustomPropertyUVE(const TypeMetadataEntryUVE& entry, const T
     }
     if (property.customDrawerId == "skeleton-bones") {
         DrawSkeletonBonesPropertyUVE(entry, property, instance);
+        return true;
+    }
+    if (property.customDrawerId == "entity-reference-list") {
+        DrawEntityReferenceListPropertyUVE(entry, property, instance);
         return true;
     }
     return false;
@@ -1235,6 +1228,173 @@ bool EditorUVE::ApplyComponentPropertySnapshotUVE(const Scene::EntityUVE entity,
     void* const instance = entityManager.GetComponentPointerUVE(entity, metadata->typeIndex);
     metadata->assignInstance(instance, snapshot);
     return true;
+}
+
+std::vector<Scene::EntityUVE> EditorUVE::GetEntityReferenceCandidatesUVE() {
+    // Outliner order, by the same walk the Outliner itself uses: roots reversed onto a stack, then
+    // each object's children pushed in reverse so the next one popped is the next one drawn.
+    std::vector<Scene::EntityUVE> candidates;
+    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    std::vector<Scene::EntityUVE> pending = GetDocumentRootsUVE();
+    std::reverse(pending.begin(), pending.end());
+    while (!pending.empty()) {
+        const Scene::EntityUVE candidate = pending.back();
+        pending.pop_back();
+        std::vector<Scene::EntityUVE> children =
+            m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), candidate);
+        pending.insert(pending.end(), children.rbegin(), children.rend());
+        if (candidate == m_selectedEntity ||
+            !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(candidate)) {
+            continue;
+        }
+        candidates.push_back(candidate);
+    }
+    return candidates;
+}
+
+void EditorUVE::DrawEntityReferenceListPropertyUVE(const TypeMetadataEntryUVE& entry,
+                                                    const TypeMetadataPropertyUVE& property,
+                                                    const void* const instance) {
+    if (property.typeId != Scene::kPropertyTypeEntityListUVE || property.getValue == nullptr ||
+        property.elementCount == 0U) {
+        return;
+    }
+
+    // The value is a fixed-capacity list of references, copied whole by the property's own accessor
+    // - sized from the declaration's element count, and written back as one property write, which
+    // means one undo step and the component's own rule as the last word. An empty slot is
+    // kInvalidEntityUVE and the list is a prefix, so anything that removes a slot compacts what
+    // followed it rather than leaving a hole the component would refuse.
+    std::vector<Scene::EntityUVE> references(property.elementCount, Scene::kInvalidEntityUVE);
+    property.getValue(instance, references.data());
+    std::size_t referenceCount = 0U;
+    for (std::size_t index = 0U; index < references.size(); ++index) {
+        if (references[index] != Scene::kInvalidEntityUVE) {
+            references[referenceCount] = references[index];
+            ++referenceCount;
+        }
+    }
+    for (std::size_t index = referenceCount; index < references.size(); ++index) {
+        references[index] = Scene::kInvalidEntityUVE;
+    }
+
+    const bool writable = property.IsAuthoringWritableUVE() && IsAuthoringCommandAllowedUVE();
+    const std::vector<Scene::EntityUVE> candidates = GetEntityReferenceCandidatesUVE();
+    std::optional<std::size_t> removeIndex;
+    std::optional<std::size_t> replaceIndex;
+    std::optional<Scene::EntityUVE> replaceWith;
+    bool clearAll = false;
+
+    ImGui::BeginDisabled(!writable);
+    {
+        const std::string header =
+            "Exclusions (" + std::to_string(referenceCount) + ")##entity-references";
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(header.c_str());
+        if (ImGui::IsItemHovered()) {
+            DrawTooltipUVE(property);
+        }
+        if (referenceCount != 0U) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Clear")) {
+                clearAll = true;
+            }
+        }
+    }
+    if (BeginPropertyRowsUVE("##entity-references")) {
+        const auto alreadyListed = [&references, referenceCount](const Scene::EntityUVE candidate) {
+            return std::find(references.cbegin(), references.cbegin() + static_cast<std::ptrdiff_t>(referenceCount),
+                             candidate) != references.cbegin() + static_cast<std::ptrdiff_t>(referenceCount);
+        };
+        for (std::size_t index = 0U; index < referenceCount; ++index) {
+            ImGui::PushID(static_cast<int>(index));
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(index == 0U ? "Excludes" : "And");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            const Scene::EntityUVE current = references[index];
+            const std::string preview = IsDocumentEntityUVE(current) ? GetEntityDisplayLabelUVE(current)
+                                                                     : std::string{"(missing object)"};
+            if (ImGui::BeginCombo("##reference", preview.c_str())) {
+                if (ImGui::Selectable("(remove)")) {
+                    removeIndex = index;
+                }
+                for (const Scene::EntityUVE candidate : candidates) {
+                    const bool isSelected = candidate == current;
+                    // An object already on the list is offered once; the component refuses
+                    // duplicates, so a second one would be a write that silently did nothing.
+                    if (alreadyListed(candidate) && !isSelected) {
+                        continue;
+                    }
+                    const std::string label = GetEntityDisplayLabelUVE(candidate) + "##" +
+                                              std::to_string(candidate.index) + "_" +
+                                              std::to_string(candidate.generation);
+                    if (ImGui::Selectable(label.c_str(), isSelected) && !isSelected) {
+                        replaceIndex = index;
+                        replaceWith = candidate;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::PopID();
+        }
+        if (referenceCount < references.size()) {
+            ImGui::PushID("add");
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Add");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::BeginCombo("##reference", "(pick an object)")) {
+                for (const Scene::EntityUVE candidate : candidates) {
+                    if (alreadyListed(candidate)) {
+                        continue;
+                    }
+                    const std::string label = GetEntityDisplayLabelUVE(candidate) + "##" +
+                                              std::to_string(candidate.index) + "_" +
+                                              std::to_string(candidate.generation);
+                    if (ImGui::Selectable(label.c_str())) {
+                        replaceIndex = referenceCount;
+                        replaceWith = candidate;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::PopID();
+        } else {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextDisabled("Full");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextDisabled("All %zu slots are in use.", references.size());
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndDisabled();
+
+    if (!clearAll && !removeIndex.has_value() && !replaceWith.has_value()) {
+        return;
+    }
+    if (replaceIndex.has_value() && replaceWith.has_value()) {
+        references[*replaceIndex] = *replaceWith;
+    }
+    if (removeIndex.has_value()) {
+        references[*removeIndex] = Scene::kInvalidEntityUVE;
+    }
+    std::vector<Scene::EntityUVE> written(property.elementCount, Scene::kInvalidEntityUVE);
+    std::size_t writtenCount = 0U;
+    if (!clearAll) {
+        for (const Scene::EntityUVE reference : references) {
+            if (reference != Scene::kInvalidEntityUVE) {
+                written[writtenCount] = reference;
+                ++writtenCount;
+            }
+        }
+    }
+    static_cast<void>(SetSelectedComponentPropertyUVE(entry, property, written.data()));
 }
 
 bool EditorUVE::ResetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entry,
