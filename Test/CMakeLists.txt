@@ -257,6 +257,7 @@ add_executable(uve_integration_tests
     RHI/RenderSystems/compute_kernel_portability_uve_tests.cpp
     RHI/RenderSystems/compute_workloads_vulkan_uve_tests.cpp
     RHI/RenderSystems/light_system_uve_tests.cpp
+    RHI/RenderSystems/decal_renderer_uve_tests.cpp
     RHI/RenderSystems/mesh_renderer_uve_tests.cpp
     RHI/RenderSystems/mesh_render_eligibility_uve_tests.cpp
     RHI/RenderSystems/primitive_geometry_uve_tests.cpp

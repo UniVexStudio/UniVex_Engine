@@ -83,8 +83,9 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
 - [ ] Temporal anti-aliasing (and/or a modern upscaling technique)
 - [ ] HDR display output and a real color-grading / LUT pipeline
 - [ ] Order-independent or improved transparency sorting
-- [ ] Decal rendering (the `decal` scene-node kind already exists as a descriptor; no
-  rendering system backs it yet)
+- [~] Decal rendering (the `decal` scene-node kind already exists as a descriptor; the lifetime
+  runtime and the projected-geometry pass now exist and the frame reports their draws, patches and
+  triangles — what remains is the decal program that draws those patches)
 - [ ] Ray-traced reflections/shadows/GI as an optional high-end path (long-term)
 
 ### 1.2 Scene scale & performance

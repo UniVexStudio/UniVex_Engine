@@ -39,6 +39,7 @@
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
+#include "uve/render_systems/decal_renderer_uve.h"
 #include "uve/render_systems/i_light_system_uve.h"
 #include "uve/render_systems/particle_draw_command_uve.h"
 #include "uve/render_systems/particle_render_bridge_uve.h"
@@ -286,6 +287,12 @@ constexpr std::uint32_t kAoTextureSlotUVE = 2;
 /// the next slot after the three material texture slots above, following the same fixed-constant
 /// convention.
 constexpr std::uint32_t kShadowMapTextureSlotUVE = 3U;
+
+/// The render layers the main view draws. Every layer, because CameraComponentUVE carries no layer
+/// filter yet - when it grows one, this becomes the camera's mask and the decal pass already tests
+/// its decals against it. Until then a decal whose cullMask omits EVERY layer is the only decal the
+/// main view cannot see, which is exactly what an authored mask that matches nothing means.
+constexpr std::uint32_t kMainViewReceiverLayerMaskUVE = 0xFFFFFFFFU;
 
 // The renderer always clears its scene target. Desktop uses HDR RGBA16F while Android uses the
 // GLES3-safe RGBA8 variant below. This neutral charcoal is the intentional empty-scene environment
@@ -854,6 +861,12 @@ struct Renderer3DUVE::ImplUVE {
     std::unordered_set<Asset::AssetGuidUVE> failedTextureGuids;
     RenderGraphUVE renderGraph;
     RenderQueueUVE frameQueue;
+
+    /// The decal pass and what it published this frame. Held rather than rebuilt per call for the
+    /// same reason the queue is: the vectors keep their capacity, and the pass clears them at the
+    /// top of every build rather than making the allocator do it.
+    DecalRendererUVE decalRenderer;
+    DecalDrawListUVE decalDraws;
     std::array<RenderQueueUVE, kShadowCascadeCountUVE> shadowQueues;
     std::vector<PrimitiveRenderItemUVE> primitiveItems;
 
@@ -2466,6 +2479,18 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         }
     }
     m_impl->meshRenderer.CullVisibilitySetIntoUVE(m_impl->visibilitySet, frustum, queue);
+
+    // The decal pass, run against the same frame data the mesh pass just built: the receiving
+    // surfaces are already resolved, placed and bounds-transformed, so this asks where each decal's
+    // volume lands rather than walking the scene a second time to find out what it landed on.
+    m_impl->decalRenderer.BuildDrawListUVE(entityManager, m_impl->assetManager, m_impl->assetDatabase,
+                                            m_impl->visibilitySet, viewPosition, frustum,
+                                            kMainViewReceiverLayerMaskUVE, m_impl->decalDraws);
+    m_impl->lastFrameDiagnostics.decalsConsidered = m_impl->decalDraws.decalsConsidered;
+    m_impl->lastFrameDiagnostics.decalDrawsExtracted = m_impl->decalDraws.draws.size();
+    m_impl->lastFrameDiagnostics.decalPatchesExtracted = m_impl->decalDraws.GetPatchCountUVE();
+    m_impl->lastFrameDiagnostics.decalTrianglesExtracted = m_impl->decalDraws.GetTriangleCountUVE();
+    m_impl->lastFrameDiagnostics.decalsWithoutReceivers = m_impl->decalDraws.decalsWithoutReceivers;
     if (m_impl->particleRuntimeForFrame != nullptr) {
         const ParticleRenderSnapshotUVE particleSnapshot =
             ParticleRenderBridgeUVE::ExtractUVE(*m_impl->particleRuntimeForFrame);
