@@ -31,9 +31,8 @@ struct Marker3DPoseUVE final {
 /// objectPosition + objectRotation * localPosition, rotation = objectRotation * localRotation; object
 /// scale is deliberately NOT applied (annotation points are placed, not resized - see the spawn
 /// point module for the prefab-scale rationale). Degenerate or non-finite input yields no value
-/// so every caller fails closed. This is the pure half of Marker3D's live consumer - the editor
-/// viewport's fly-to-marker focus - which turns an otherwise inert Godot-style annotation into a
-/// scene-persistent named viewpoint.
+/// so every caller fails closed. The editor's fly-to-marker focus and QueryMarkers3DUVE both
+/// compose through this; a named marker is a scene-persistent viewpoint, not an inert tag.
 [[nodiscard]] std::optional<Marker3DPoseUVE> ComposeMarker3DPoseUVE(
     const Math::Vector3UVE objectPosition, const Math::QuaternionUVE objectRotation,
     const Math::Vector3UVE localPosition, const Math::QuaternionUVE localRotation) noexcept;

@@ -227,6 +227,7 @@ add_executable(uve_integration_tests
     Integration/Scene/particle_runtime_uve_tests.cpp
     Integration/Scene/scene_object_registry_uve_tests.cpp
     Integration/Scene/spawn_point_query_uve_tests.cpp
+    Integration/Scene/marker_3d_query_uve_tests.cpp
     Integration/Animation/time_pose_contract_uve_tests.cpp
     Integration/Animation/animation_clip_uve_tests.cpp
     Integration/Animation/pose_graph_uve_tests.cpp
