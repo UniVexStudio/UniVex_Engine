@@ -16,8 +16,8 @@ enum class PhysicsObjectDisableModeUVE : std::uint8_t {
     KeepActive,
 };
 
-/// The shared state of PhysicsObject3D, the abstract base of every node that takes part in
-/// collision - areas and bodies. No node is a PhysicsObject3D on its own; its kinds carry this
+/// The shared state of PhysicsObject3D, the abstract base of every object that takes part in
+/// collision - areas and bodies. No object is a PhysicsObject3D on its own; its kinds carry this
 /// component and add their own.
 ///
 /// The object's shape and its collision layer and mask are its ColliderComponentUVE, which the

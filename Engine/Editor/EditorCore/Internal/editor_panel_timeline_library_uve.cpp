@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// The Timeline's animation picker: an AnimationPlayer's own list of animations, which one it
+// The Timeline's animation picker: an AnimationSequencer's own list of animations, which one it
 // plays, and the ways to grow the list - a new blank clip, any clip already in the project, or a
 // .uvanim dragged in from Content. Every change to the player is one undo step; clip files are
 // written only by New, Rename and Duplicate, which say so in the status line.
@@ -11,19 +11,21 @@
 #include <cctype>
 #include <cstdio>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #include <imgui.h>
 
 #include "uve/asset/animation_clip_asset_uve.h"
-#include "uve/component/animation_mixer_component_uve.h"
-#include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_driver_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/object/type_metadata_uve.h"
 #include "uve/scene/scene_component_metadata_uve.h"
 
@@ -47,22 +49,22 @@ namespace {
 
 } // namespace
 
-bool EditorUVE::EditAnimationPlayerUVE(const Scene::EntityUVE player,
-                                       const std::function<void(Scene::AnimationPlayerComponentUVE&)>& change) {
+bool EditorUVE::EditAnimationSequencerUVE(const Scene::EntityUVE player,
+                                       const std::function<void(Scene::AnimationSequencerComponentUVE&)>& change) {
     if (!IsAuthoringCommandAllowedUVE()) {
         return false;
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.IsAliveUVE(player) || !entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(player)) {
+    if (!entityManager.IsAliveUVE(player) || !entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(player)) {
         return false;
     }
     const Core::TypeMetadataEntryUVE* const entry = Scene::GetSceneComponentMetadataRegistryUVE().FindTypeByIndexUVE(
-        std::type_index(typeid(Scene::AnimationPlayerComponentUVE)));
+        std::type_index(typeid(Scene::AnimationSequencerComponentUVE)));
     if (entry == nullptr || !entry->HasFactoryUVE()) {
         return false;
     }
-    auto& component = entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player);
-    const Scene::AnimationPlayerComponentUVE original = component;
+    auto& component = entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player);
+    const Scene::AnimationSequencerComponentUVE original = component;
     Core::TypeInstanceUVE before = Core::TypeInstanceUVE::CloneUVE(*entry, &component);
     change(component);
     if (component.HasSameSettingsUVE(original) || !before.IsValidUVE()) {
@@ -82,14 +84,14 @@ bool EditorUVE::EditAnimationPlayerUVE(const Scene::EntityUVE player,
     return true;
 }
 
-bool EditorUVE::AddClipToAnimationPlayerUVE(const Scene::EntityUVE player, const std::filesystem::path& absoluteClip) {
+bool EditorUVE::AddClipToAnimationSequencerUVE(const Scene::EntityUVE player, const std::filesystem::path& absoluteClip) {
     Asset::AnimationClipAssetUVE probe;
     if (!Asset::LoadAnimationClipAssetUVE(absoluteClip, probe)) {
         m_timeline.status = "Not an animation: " + absoluteClip.filename().string();
         return false;
     }
     const Asset::AssetGuidUVE guid = m_services->GetAssetDatabaseUVE().RegisterUVE(absoluteClip);
-    const bool changed = EditAnimationPlayerUVE(player, [guid](Scene::AnimationPlayerComponentUVE& component) {
+    const bool changed = EditAnimationSequencerUVE(player, [guid](Scene::AnimationSequencerComponentUVE& component) {
         if (std::ranges::find(component.library, guid) == component.library.end()) {
             component.library.push_back(guid);
         }
@@ -105,8 +107,8 @@ bool EditorUVE::AddClipToAnimationPlayerUVE(const Scene::EntityUVE player, const
 void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scene::EntityUVE skeletonEntity) {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     Asset::IAssetDatabaseUVE& assetDatabase = m_services->GetAssetDatabaseUVE();
-    const Scene::AnimationPlayerComponentUVE& component =
-        entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player);
+    const Scene::AnimationSequencerComponentUVE& component =
+        entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player);
 
     // The list this player offers: its library, and its clip even when an older save never listed it.
     std::vector<Asset::AssetGuidUVE> list = component.library;
@@ -192,7 +194,7 @@ void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scen
             ImGui::PushID(static_cast<int>(guid.value & 0x7FFFFFFFU));
             const bool isCurrent = guid == component.clip;
             char right[48];
-            std::snprintf(right, sizeof(right), "%s  %.2f s", card.skeletal ? "bones" : "node", card.durationSeconds);
+            std::snprintf(right, sizeof(right), "%s  %.2f s", card.skeletal ? "bones" : "object", card.durationSeconds);
             const float rightWidth = ImGui::CalcTextSize(right).x;
             if (ImGui::Selectable(card.name.c_str(), isCurrent, ImGuiSelectableFlags_AllowOverlap)) {
                 choose = guid;
@@ -257,7 +259,7 @@ void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scen
         // ---- Apply what was picked, after the popup is closed -------------------------------
         if (choose.has_value()) {
             const Asset::AssetGuidUVE guid = *choose;
-            static_cast<void>(EditAnimationPlayerUVE(player, [guid](Scene::AnimationPlayerComponentUVE& p) {
+            static_cast<void>(EditAnimationSequencerUVE(player, [guid](Scene::AnimationSequencerComponentUVE& p) {
                 if (std::ranges::find(p.library, guid) == p.library.end()) {
                     p.library.push_back(guid);
                 }
@@ -266,11 +268,11 @@ void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scen
             ImGui::CloseCurrentPopup();
         }
         if (addPath.has_value()) {
-            static_cast<void>(AddClipToAnimationPlayerUVE(player, *addPath));
+            static_cast<void>(AddClipToAnimationSequencerUVE(player, *addPath));
         }
         if (removeGuid.has_value()) {
             const Asset::AssetGuidUVE guid = *removeGuid;
-            static_cast<void>(EditAnimationPlayerUVE(player, [guid](Scene::AnimationPlayerComponentUVE& p) {
+            static_cast<void>(EditAnimationSequencerUVE(player, [guid](Scene::AnimationSequencerComponentUVE& p) {
                 std::erase(p.library, guid);
                 if (p.clip == guid) {
                     p.clip = p.library.empty() ? Asset::AssetGuidUVE{} : p.library.front();
@@ -285,7 +287,7 @@ void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scen
                 const std::filesystem::path copy = UniqueClipPathUVE(card.path.parent_path(), card.path.stem().string() + "_copy");
                 clip.clipId = copy.stem().string();
                 if (Asset::SaveAnimationClipAssetUVE(clip, copy)) {
-                    static_cast<void>(AddClipToAnimationPlayerUVE(player, copy));
+                    static_cast<void>(AddClipToAnimationSequencerUVE(player, copy));
                     m_timeline.status = "Duplicated to " + copy.filename().string();
                 }
             }
@@ -293,7 +295,7 @@ void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scen
         if (renameGuid.has_value()) {
             if (*renameGuid != component.clip) {
                 const Asset::AssetGuidUVE guid = *renameGuid;
-                static_cast<void>(EditAnimationPlayerUVE(player, [guid](Scene::AnimationPlayerComponentUVE& p) { p.clip = guid; }));
+                static_cast<void>(EditAnimationSequencerUVE(player, [guid](Scene::AnimationSequencerComponentUVE& p) { p.clip = guid; }));
             }
             m_timeline.renameClipRequested = true;
         }
@@ -317,9 +319,9 @@ void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scen
             clip.clipId = path.stem().string();
             clip.durationSeconds = 1.0;
             if (skeletonEntity != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(skeletonEntity) &&
-                entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity)) {
+                entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity)) {
                 for (const Scene::SkeletonBoneUVE& bone :
-                     entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity).bones) {
+                     entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity).bones) {
                     Asset::AnimationAssetSampleUVE rest;
                     rest.pose.position = bone.localPosition;
                     rest.pose.rotation = bone.localRotation;
@@ -335,7 +337,7 @@ void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scen
                 end.timeSeconds = 1.0;
                 clip.samples = {start, end};
             }
-            if (Asset::SaveAnimationClipAssetUVE(clip, path) && AddClipToAnimationPlayerUVE(player, path)) {
+            if (Asset::SaveAnimationClipAssetUVE(clip, path) && AddClipToAnimationSequencerUVE(player, path)) {
                 m_timeline.renameClipRequested = true;
                 m_timeline.status = "New animation for " + owner + ": " + path.filename().string();
             } else {

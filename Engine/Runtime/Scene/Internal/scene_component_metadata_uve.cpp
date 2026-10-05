@@ -6,8 +6,8 @@
 #include <utility>
 #include <vector>
 
-#include "uve/component/animation_player_component_uve.h"
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/auto_translate_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/bone_modifier_component_uve.h"
@@ -21,7 +21,7 @@
 #include "uve/component/light_emitter_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
-#include "uve/component/node_metadata_component_uve.h"
+#include "uve/component/object_metadata_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/process_component_uve.h"
 #include "uve/component/thread_group_component_uve.h"
@@ -30,7 +30,7 @@
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/render_instance_component_uve.h"
 #include "uve/component/solid_body_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/transform_component_uve.h"
@@ -40,11 +40,26 @@
 #include "uve/component/visibility_component_uve.h"
 #include "uve/logging/assert_uve.h"
 #include "uve/logging/logging_macros_uve.h"
-#include "uve/nodes/3d/decal_3d_uve.h"
-#include "uve/nodes/3d/directional_light_3d_uve.h"
-#include "uve/nodes/3d/fog_volume_3d_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
-#include "uve/nodes/3d/world_environment_3d_uve.h"
+#include "uve/objects/3d/abstract_animation_objects_3d_uve.h"
+#include "uve/objects/3d/abstract_objects_3d_uve.h"
+#include "uve/objects/3d/abstract_physics_objects_3d_uve.h"
+#include "uve/objects/3d/bone_attachment_3d_uve.h"
+#include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/directional_light_3d_uve.h"
+#include "uve/objects/3d/fog_volume_3d_uve.h"
+#include "uve/objects/3d/kinematic_3d_uve.h"
+#include "uve/objects/3d/lod_group_3d_uve.h"
+#include "uve/objects/3d/projectile_3d_uve.h"
+#include "uve/objects/3d/hitbox_3d_uve.h"
+#include "uve/objects/3d/hurtbox_3d_uve.h"
+#include "uve/objects/3d/ray_cast_3d_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/nav_mesh_volume_3d_uve.h"
+#include "uve/objects/3d/nav_seeker_3d_uve.h"
+#include "uve/objects/3d/spring_arm_3d_uve.h"
+#include "uve/objects/3d/spawn_point_3d_uve.h"
+#include "uve/objects/3d/two_bone_ik_3d_uve.h"
+#include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
 
 namespace UVE::Scene {
@@ -118,6 +133,14 @@ template <auto MemberPointer>
 [[nodiscard]] TypeMetadataPropertyUVE WithCustomDrawerUVE(TypeMetadataPropertyUVE property,
                                                           std::string drawerId) {
     property.customDrawerId = std::move(drawerId);
+    return property;
+}
+
+/// States how many elements a fixed-capacity list value holds, for the type that has no other way
+/// to say it (see kPropertyTypeEntityListUVE).
+[[nodiscard]] TypeMetadataPropertyUVE WithElementCountUVE(TypeMetadataPropertyUVE property,
+                                                          const std::size_t elementCount) {
+    property.elementCount = elementCount;
     return property;
 }
 
@@ -298,7 +321,7 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                      }));
 
     // One component behind BoxMesh3D, SphereMesh3D and PlaneMesh3D; its section carries the name
-    // of the node it is on.
+    // of the object it is on.
     TypeMetadataEntryUVE primitive =
         MakeEntryUVE("component.primitive_mesh", "PrimitiveMesh3D", kSectionOrderTypeSpecificUVE,
                      {
@@ -320,42 +343,42 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     };
     AddUVE<PrimitiveMeshComponentUVE>(entries, std::move(primitive));
 
-    AddUVE<WorldEnvironment3DNodeComponentUVE>(
+    AddUVE<WorldEnvironment3DComponentUVE>(
         entries,
         MakeEntryUVE(
             "component.world_environment", "WorldEnvironment", kSectionOrderTypeSpecificUVE,
             {
-                DeclareUVE<&WorldEnvironment3DNodeComponentUVE::skyAssetPath>("skyAssetPath", "Sky",
+                DeclareUVE<&WorldEnvironment3DComponentUVE::skyAssetPath>("skyAssetPath", "Sky",
                                                                               kPropertyTypeStringUVE),
-                DeclareUVE<&WorldEnvironment3DNodeComponentUVE::ambientColor>(
+                DeclareUVE<&WorldEnvironment3DComponentUVE::ambientColor>(
                     "ambientColor", "Ambient Color", kPropertyTypeColorUVE),
-                WithRangeUVE(DeclareUVE<&WorldEnvironment3DNodeComponentUVE::ambientEnergy>(
+                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::ambientEnergy>(
                                  "ambientEnergy", "Ambient Energy", kPropertyTypeFloatUVE),
                              0.0, 100.0, 0.05),
-                WithRangeUVE(DeclareUVE<&WorldEnvironment3DNodeComponentUVE::exposure>(
+                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::exposure>(
                                  "exposure", "Exposure", kPropertyTypeFloatUVE),
                              0.0, 100.0, 0.05),
-                DeclareUVE<&WorldEnvironment3DNodeComponentUVE::fogEnabled>("fogEnabled", "Fog Enabled",
+                DeclareUVE<&WorldEnvironment3DComponentUVE::fogEnabled>("fogEnabled", "Fog Enabled",
                                                                             kPropertyTypeBoolUVE),
                 [] {
-                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DNodeComponentUVE::fogColor>(
+                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::fogColor>(
                         "fogColor", "Fog Color", kPropertyTypeColorUVE);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DNodeComponentUVE*>(instance)->fogEnabled;
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
                     };
                     return property;
                 }(),
                 [] {
                     TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DNodeComponentUVE::fogDensity>(
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogDensity>(
                                          "fogDensity", "Fog Density", kPropertyTypeFloatUVE),
                                      0.0, 1.0, 0.001);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DNodeComponentUVE*>(instance)->fogEnabled;
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
                     };
                     return property;
                 }(),
-                DeclareUVE<&WorldEnvironment3DNodeComponentUVE::postProcessingEnabled>(
+                DeclareUVE<&WorldEnvironment3DComponentUVE::postProcessingEnabled>(
                     "postProcessingEnabled", "Post Processing", kPropertyTypeBoolUVE),
             }));
 
@@ -365,6 +388,60 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                               {WithRangeUVE(DeclareUVE<&ParticleEmitterComponentUVE::maxParticles>(
                                                 "maxParticles", "Max Particles", kPropertyTypeUInt32UVE),
                                             0.0, 1000000.0, 1.0)}));
+
+    // LODGroup3D's own section. The chain is declared as a prefix: `levelCount` says how many of
+    // the two lists below are in use, and both lists are drawn by a block drawer that shows exactly
+    // those - a threshold past the last level is a number that does nothing, and an array of eight
+    // rows where three matter reads as eight settings. The resolved level and the cull verdict are
+    // runtime state: they describe the frame the renderer last ran, not the scene.
+    AddValidatedUVE<LodGroup3DComponentUVE, &IsLodGroup3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.lod_group_3d", "LODGroup3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&LodGroup3DComponentUVE::enabled>("enabled", "Enabled",
+                                                                            kPropertyTypeBoolUVE),
+                               "Off, the object draws at level 0 and is never distance-culled - what "
+                               "an author wants while placing it."),
+                WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&LodGroup3DComponentUVE::levelCount>("levelCount", "Levels",
+                                                                                   kPropertyTypeUInt8UVE),
+                                   "How many levels of the chain are in use. Thresholds and level "
+                                   "meshes past this are ignored, so a chain can be shortened "
+                                   "without rewriting the numbers."),
+                    1.0, 8.0, 1.0),
+                WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&LodGroup3DComponentUVE::hysteresis>("hysteresis", "Hysteresis",
+                                                                                  kPropertyTypeFloatUVE),
+                                   "How far past a threshold the object must go before it swaps, as a "
+                                   "fraction of that threshold; it comes back at the same fraction "
+                                   "under. Zero is the plain threshold rule."),
+                    0.0, 0.5, 0.01),
+                WithTooltipUVE(
+                    WithCustomDrawerUVE(
+                        WithElementCountUVE(
+                            DeclareUVE<&LodGroup3DComponentUVE::distanceThresholds>(
+                                "distanceThresholds", "Thresholds", kPropertyTypeFloatListUVE),
+                            kMaximumLodLevelsUVE),
+                        "lod-group-thresholds"),
+                    "The distance each level takes over at, nearest first. Past the last one the "
+                    "object is not drawn at all."),
+                WithTooltipUVE(
+                    WithCustomDrawerUVE(
+                        WithElementCountUVE(
+                            DeclareUVE<&LodGroup3DComponentUVE::lodMeshGuids>("lodMeshGuids", "Level Meshes",
+                                                                              kPropertyTypeAssetGuidListUVE),
+                            kMaximumLodLevelsUVE),
+                        "lod-group-meshes"),
+                    "The mesh drawn at each level. A level with no mesh draws the object's own Mesh "
+                    "component mesh."),
+                InGroupUVE(DeclareRuntimeStateUVE<&LodGroup3DComponentUVE::currentLevel>(
+                               "currentLevel", "Current Level", kPropertyTypeUInt8UVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&LodGroup3DComponentUVE::culledByDistance>(
+                               "culledByDistance", "Distance Culled", kPropertyTypeBoolUVE),
+                           "Result"),
+            }));
 }
 
 void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
@@ -424,38 +501,111 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                         kPropertyTypeFloatUVE),
                              0.0, 10000.0, 0.01),
             });
-    // A collider is always part of some node rather than a feature of its own: the collision a
-    // BoxMesh3D/SphereMesh3D/PlaneMesh3D is created with sits in that node's section, and a body's
+    // A collider is always part of some object rather than a feature of its own: the collision a
+    // BoxMesh3D/SphereMesh3D/PlaneMesh3D is created with sits in that object's section, and a body's
     // or area's shape, layer and mask sit in PhysicsObject3D's.
     collider.nestedUnderTypeIds = {"component.primitive_mesh", "component.physics_object"};
     AddUVE<ColliderComponentUVE>(entries, std::move(collider));
 
-    AddUVE<RigidBodyComponentUVE>(
+    AddUVE<Rigid3DComponentUVE>(
         entries,
         MakeEntryUVE(
             "component.rigid_body", "Rigid Body", kSectionOrderTypeSpecificUVE,
             {
-                WithRangeUVE(DeclareUVE<&RigidBodyComponentUVE::mass>("mass", "Mass",
+                WithRangeUVE(DeclareUVE<&Rigid3DComponentUVE::mass>("mass", "Mass",
                                                                        kPropertyTypeFloatUVE),
                              0.0, 100000.0, 0.01),
-                DeclareUVE<&RigidBodyComponentUVE::isKinematic>("isKinematic", "Kinematic",
+                DeclareUVE<&Rigid3DComponentUVE::isKinematic>("isKinematic", "Kinematic",
                                                                 kPropertyTypeBoolUVE),
-                WithRangeUVE(DeclareUVE<&RigidBodyComponentUVE::drag>("drag", "Drag",
+                WithRangeUVE(DeclareUVE<&Rigid3DComponentUVE::drag>("drag", "Drag",
                                                                        kPropertyTypeFloatUVE),
                              0.0, 100.0, 0.01),
-                WithRangeUVE(DeclareUVE<&RigidBodyComponentUVE::gravityScale>(
+                WithRangeUVE(DeclareUVE<&Rigid3DComponentUVE::gravityScale>(
                                  "gravityScale", "Gravity Scale", kPropertyTypeFloatUVE),
                              -100.0, 100.0, 0.05),
-                DeclareUVE<&RigidBodyComponentUVE::velocity>("velocity", "Velocity",
+                DeclareUVE<&Rigid3DComponentUVE::velocity>("velocity", "Velocity",
                                                              kPropertyTypeVector3UVE),
-                DeclareUVE<&RigidBodyComponentUVE::angularVelocity>("angularVelocity", "Angular Velocity",
+                DeclareUVE<&Rigid3DComponentUVE::angularVelocity>("angularVelocity", "Angular Velocity",
                                                                     kPropertyTypeVector3UVE),
-                DeclareUVE<&RigidBodyComponentUVE::torque>("torque", "Torque", kPropertyTypeVector3UVE),
-                DeclareUVE<&RigidBodyComponentUVE::inverseInertia>("inverseInertia", "Inverse Inertia",
+                DeclareUVE<&Rigid3DComponentUVE::torque>("torque", "Torque", kPropertyTypeVector3UVE),
+                DeclareUVE<&Rigid3DComponentUVE::inverseInertia>("inverseInertia", "Inverse Inertia",
                                                                    kPropertyTypeVector3UVE),
             }));
 
-    // CharacterBody3D's own section. Grouped by what an author is thinking about - how it moves,
+    // Kinematic3D's own section. A platform is authored with two decisions - where it is going, and
+    // how quickly it gets there - so the drawer stays short and honest, and says in the property
+    // help what the mover does with them.
+    // Declared with its own rule: the Inspector refuses an edit that would leave the component past
+    // its contract (a non-finite target, an interpolation outside 0..1) and keeps the last accepted
+    // value, so the mover never has to guess at a value nobody could have meant.
+    AddValidatedUVE<Kinematic3DComponentUVE, &IsKinematic3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.kinematic_3d", "Kinematic Body", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&Kinematic3DComponentUVE::targetVelocity>(
+                                   "targetVelocity", "Target Velocity", kPropertyTypeVector3UVE),
+                               "Where the body is going, in metres per second. The body is driven at "
+                               "this velocity every fixed step - through the world, not around it, so "
+                               "geometry stops it and the bodies it meets get pushed."),
+                WithRangeUVE(WithTooltipUVE(DeclareUVE<&Kinematic3DComponentUVE::interpolation>(
+                                                "interpolation", "Interpolation", kPropertyTypeFloatUVE),
+                                            "How quickly the body gets up to speed: 1 is at speed on "
+                                            "the first step, lower values ease in over about a second, "
+                                            "0 never eases on its own (a script drives the body)."),
+                             0.0, 1.0, 0.01),
+                WithTooltipUVE(DeclareUVE<&Kinematic3DComponentUVE::active>("active", "Active",
+                                                                           kPropertyTypeBoolUVE),
+                               "Off leaves the body where it is and stops it dead, including for "
+                               "anything standing on it."),
+            }));
+
+    // SpringArm3D's own section: the third-person camera boom. The authored half is what the arm
+    // reaches and what it collides with, and it is grouped behind the switch the rest of it depends
+    // on; the runtime half is the one number the arm derives every step.
+    AddValidatedUVE<SpringArm3DComponentUVE, &IsSpringArm3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.spring_arm", "SpringArm3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&SpringArm3DComponentUVE::enabled>("enabled", "Enabled",
+                                                                             kPropertyTypeBoolUVE),
+                               "Off, the arm casts nothing and hands its length back, so whatever it "
+                               "carries returns to the pose it was authored with."),
+                WhenOnUVE<&SpringArm3DComponentUVE::enabled>(WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&SpringArm3DComponentUVE::armLength>(
+                                       "armLength", "Arm Length", kPropertyTypeFloatUVE),
+                                   "How far the arm reaches along its own local +Z, in metres. The "
+                                   "arm casts this far every fixed step and shortens to whatever it "
+                                   "finds, minus the margin."),
+                    0.0, 10000.0, 0.01)),
+                WhenOnUVE<&SpringArm3DComponentUVE::enabled>(WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&SpringArm3DComponentUVE::margin>("margin", "Margin",
+                                                                                kPropertyTypeFloatUVE),
+                                   "How far the arm keeps the thing it carries off the surface it "
+                                   "hit, in metres. This is the camera's skin."),
+                    0.0, 10000.0, 0.01)),
+                WhenOnUVE<&SpringArm3DComponentUVE::enabled>(WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&SpringArm3DComponentUVE::smoothing>("smoothing",
+                                                                                   "Smoothing",
+                                                                                   kPropertyTypeFloatUVE),
+                                   "How fast the arm springs back out once the way is clear, per "
+                                   "second: 0 pops out exactly like Godot's SpringArm3D, higher "
+                                   "values rise sooner. Shortening always snaps - a camera is never "
+                                   "allowed to clip through a wall."),
+                    0.0, 1000.0, 0.1)),
+                WhenOnUVE<&SpringArm3DComponentUVE::enabled>(WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&SpringArm3DComponentUVE::collisionMask>(
+                                       "collisionMask", "Mask", kPropertyTypeBitMask32UVE),
+                                   "What the arm collides with. Leave the layer the rig is on out of "
+                                   "it, or the camera will sit on the character it belongs to."),
+                    std::string(kLayerMaskDrawerPhysicsUVE))),
+                InGroupUVE(DeclareRuntimeStateUVE<&SpringArm3DComponentUVE::currentLength>(
+                               "currentLength", "Current Length", kPropertyTypeFloatUVE),
+                           "State"),
+            }));
+
+    // Character3D's own section. Grouped by what an author is thinking about - how it moves,
     // what it stands on, what it hits - with the state the controller writes each step last, shown
     // only while playing because that is when it describes something real.
     using C = CharacterControllerComponentUVE;
@@ -484,10 +634,14 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         DeclareUVE<&C::maxSlides>("maxSlides", "Max Slides", kPropertyTypeUInt32UVE),
         "How many pieces a move is cut into to follow walls and corners. More is smoother and costs more.");
     maxSlides.range = {true, 1.0, 32.0, 1.0};
+    TypeMetadataPropertyUVE maximumContacts = WithTooltipUVE(
+        DeclareUVE<&C::maximumContacts>("maximumContacts", "Max Contacts", kPropertyTypeUInt32UVE),
+        "The most contacts one move reports, deepest first. Extras are dropped, and the step says so.");
+    maximumContacts.range = {true, 1.0, 64.0, 1.0};
     AddValidatedUVE<CharacterControllerComponentUVE, &IsCharacterControllerComponentValidUVE>(
         entries,
         MakeEntryUVE(
-            "component.character_controller", "CharacterBody3D", kSectionOrderTypeSpecificUVE,
+            "component.character_controller", "Character3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareEnumUVE<&C::motionMode>("motionMode", "Motion Mode",
                                                               {{0, "Grounded"}, {1, "Floating"}}),
@@ -530,12 +684,68 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                "A jump pressed this many seconds before landing happens on landing.")),
                            "Movement"),
                 InGroupUVE(whenGrounded(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::floorMaxAngleDegrees>("floorMaxAngleDegrees", "Floor Angle",
+                                                                                kPropertyTypeFloatUVE),
+                                            0.0, 90.0, 1.0),
+                               "The steepest slope still walked as a floor. Steeper surfaces are walls it slides "
+                               "along.")),
+                           "Floor"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::wallMinSlideAngleDegrees>(
+                                                "wallMinSlideAngleDegrees", "Wall Slide Angle", kPropertyTypeFloatUVE),
+                                            0.0, 90.0, 1.0),
+                               "How far past the floor angle a wall has to lean before the body slides down it "
+                               "instead of being stopped by it.")),
+                           "Floor"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
                                WithRangeUVE(DeclareUVE<&C::floorSnapLength>("floorSnapLength", "Snap Length",
                                                                           kPropertyTypeFloatUVE),
                                             0.0, 10.0, 0.01),
                                "Stays on the floor walking down steps and ledges up to this far below. 0 lets it "
                                "drop off every edge.")),
                            "Floor"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::minStepWidth>("minStepWidth", "Min Step Width",
+                                                                       kPropertyTypeFloatUVE),
+                                            0.0, 1.0, 0.01),
+                               "How much room a step needs on top to be worth climbing. Narrower than this is a "
+                               "wall with a decoration.")),
+                           "Floor"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
+                               DeclareUVE<&C::floorStopOnSlope>("floorStopOnSlope", "Stop On Slope",
+                                                                kPropertyTypeBoolUVE),
+                               "Standing still on a slope stays still instead of creeping downhill.")),
+                           "Floor"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
+                               DeclareUVE<&C::floorConstantSpeed>("floorConstantSpeed", "Constant Speed",
+                                                                  kPropertyTypeBoolUVE),
+                               "Walking up or down a slope keeps the horizontal speed the walk started with.")),
+                           "Floor"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::safeMargin>("safeMargin", "Safe Margin",
+                                                                      kPropertyTypeFloatUVE),
+                                            0.0, 0.25, 0.001),
+                               "How far short of a surface the body stops, so it does not jitter against it.")),
+                           "Floor"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
+                               DeclareUVE<&C::floorBlockOnWall>("floorBlockOnWall", "Block On Wall",
+                                                                kPropertyTypeBoolUVE),
+                               "On the floor, stop at a wall instead of sliding along it - no corner slipping.")),
+                           "Floor"),
+                InGroupUVE(WithTooltipUVE(
+                               DeclareEnumUVE<&C::platformOnLeave>(
+                                   "platformOnLeave", "On Leave Platform",
+                                   {{0, "Keep Velocity"}, {1, "Add Velocity"}, {2, "Add Upward Velocity"}}),
+                               "What a platform gives a body that walks off it: its whole velocity, only the "
+                               "upward part, or nothing."),
+                           "Platforms"),
+                InGroupUVE(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::maximumPlatformSpeed>(
+                                                "maximumPlatformSpeed", "Max Platform Speed", kPropertyTypeFloatUVE),
+                                            0.0, 10000.0, 1.0),
+                               "The fastest platform motion that may carry this body. Past it the platform is "
+                               "treated as standing still, so a teleported platform cannot fling anyone."),
+                           "Platforms"),
                 InGroupUVE(whenGrounded(WithTooltipUVE(
                                WithRangeUVE(DeclareUVE<&C::maxStepHeight>("maxStepHeight", "Step Height",
                                                                         kPropertyTypeFloatUVE),
@@ -561,8 +771,9 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                "The fastest a push may send a body, in metres per second.")),
                            "Pushing"),
                 InGroupUVE(std::move(maxSlides), "Collision"),
+                InGroupUVE(std::move(maximumContacts), "Collision"),
                 InGroupUVE(DeclareRuntimeStateUVE<&C::velocity>("velocity", "Velocity", kPropertyTypeVector3UVE), "State"),
-                InGroupUVE(DeclareRuntimeStateUVE<&C::isOnFloor>("isOnFloor", "On Floor", kPropertyTypeBoolUVE), "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&C::grounded>("grounded", "Grounded", kPropertyTypeBoolUVE), "State"),
                 InGroupUVE(DeclareRuntimeStateUVE<&C::isOnCeiling>("isOnCeiling", "On Ceiling", kPropertyTypeBoolUVE),
                            "State"),
                 InGroupUVE(DeclareRuntimeStateUVE<&C::floorNormal>("floorNormal", "Floor Normal", kPropertyTypeVector3UVE),
@@ -570,22 +781,274 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 }
 
-void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    // AnimationPlayer's own section. Its target is an entity reference: flagged so the serializer
-    // remaps it, and drawn as a node picker. Empty means the player's parent, which is the common
-    // case and needs no picking at all.
-    // AnimationMixer: the base AnimationPlayer and AnimationTree share, shown between their own
-    // section and the Node section. Its target is an entity reference: flagged so the serializer
-    // remaps it, and drawn as a node picker. Empty means the parent, the common case.
-    using M = AnimationMixerComponentUVE;
-    TypeMetadataPropertyUVE mixerTarget = WithTooltipUVE(
-        DeclareUVE<&M::target>("target", "Target", kPropertyTypeEntityUVE),
-        "The node that is moved. Empty means this node's parent.");
-    mixerTarget.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
-    AddValidatedUVE<AnimationMixerComponentUVE, &IsAnimationMixerComponentValidUVE>(
+/// RayCast3D's own section: what the ray is, what it refuses to hit, and what it found. The
+/// exclusions are entity references, so they are drawn by the reference-list drawer and remapped by
+/// the scene serializer like every other reference an author can pick; the result rows are runtime
+/// state, shown so an author can see the answer the engine computed rather than guessing at it.
+void DeclareRayCastUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    AddValidatedUVE<RayCast3DComponentUVE, &IsRayCast3DObjectComponentValidUVE>(
         entries,
         MakeEntryUVE(
-            "component.animation_mixer", "AnimationMixer", kSectionOrderNodeBaseUVE + 20,
+            "component.ray_cast_3d", "RayCast3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(
+                    DeclareUVE<&RayCast3DComponentUVE::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                    "Off, the ray casts nothing and clears its result - no hit, no point, no "
+                    "normal, no entity."),
+                WithTooltipUVE(
+                    DeclareUVE<&RayCast3DComponentUVE::direction>("direction", "Direction",
+                                                                  kPropertyTypeVector3UVE),
+                    "Which way the ray points in this object's own space, rotated by its world "
+                    "rotation every step. Any non-zero length is fine; it is a direction, not a "
+                    "distance - the Length below is the distance."),
+                WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&RayCast3DComponentUVE::length>("length", "Length",
+                                                                             kPropertyTypeFloatUVE),
+                                   "How far the ray reaches along its direction, in metres. It "
+                                   "reports the closest collider it meets inside that distance and "
+                                   "nothing past it."),
+                    0.0, 100000.0, 0.1),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(
+                        DeclareUVE<&RayCast3DComponentUVE::collisionMask>("collisionMask", "Mask",
+                                                                          kPropertyTypeBitMask32UVE),
+                        "Which collision layers the ray is allowed to hit, on the same layer drawer "
+                        "every other physics object uses."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                WithTooltipUVE(
+                    WithCustomDrawerUVE(
+                        WithElementCountUVE(
+                            DeclareUVE<&RayCast3DComponentUVE::exclusions>("exclusions", "Exclusions",
+                                                                           kPropertyTypeEntityListUVE),
+                            kMaximumRayCastExclusionsUVE),
+                        "entity-reference-list"),
+                    "Objects this ray refuses to hit, on top of its own object - a ray never hits "
+                    "the collider it starts inside. An exclusion is not a mask: no layer can bring "
+                    "one back. The ray's own object is always excluded, so listing it changes "
+                    "nothing."),
+                InGroupUVE(DeclareRuntimeStateUVE<&RayCast3DComponentUVE::hit>("hit", "Hit",
+                                                                               kPropertyTypeBoolUVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&RayCast3DComponentUVE::hitEntity>(
+                               "hitEntity", "Hit Entity", kPropertyTypeEntityUVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&RayCast3DComponentUVE::hitPosition>(
+                               "hitPosition", "Hit Position", kPropertyTypeVector3UVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&RayCast3DComponentUVE::hitNormal>(
+                               "hitNormal", "Hit Normal", kPropertyTypeVector3UVE),
+                           "Result"),
+            }));
+}
+
+void DeclareProjectileUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    // Projectile3D's own section. The authored half is the whole flight - where it goes, how fat
+    // it is, how long it lives, what it may hit and what its motion does when it does. The two
+    // bounce coefficients appear only once the policy actually uses them, and the runtime half is
+    // last, under the groups its state and its last contact belong to.
+    // Declared with its own rule for the same reason Kinematic3D's is: the Inspector refuses an
+    // edit that would leave the component past its contract (a policy this engine cannot execute,
+    // a coefficient outside 0..1) and keeps the last accepted value, so the step never has to
+    // guess at a value nobody could have meant.
+    const auto whenBouncing = [](TypeMetadataPropertyUVE property) {
+        property.isVisible = +[](const void* instance) {
+            return static_cast<const Projectile3DComponentUVE*>(instance)->hitPolicy ==
+                   Projectile3DHitPolicyUVE::Bounce;
+        };
+        return property;
+    };
+    AddValidatedUVE<Projectile3DComponentUVE, &IsProjectile3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.projectile_3d", "Projectile3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(
+                    DeclareUVE<&Projectile3DComponentUVE::active>("active", "Active", kPropertyTypeBoolUVE),
+                    "Off stops everything: no motion, no sweep, no countdown. The engine also "
+                    "clears it when the projectile stops on a hit or runs out of lifetime."),
+                WithTooltipUVE(
+                    DeclareUVE<&Projectile3DComponentUVE::velocity>("velocity", "Velocity",
+                                                                    kPropertyTypeVector3UVE),
+                    "Where the projectile is going, in metres per second, in its own axes. It "
+                    "is the state that accumulates Acceleration, so this is the launch velocity "
+                    "and the fixed step keeps it honest."),
+                WithTooltipUVE(
+                    DeclareUVE<&Projectile3DComponentUVE::acceleration>("acceleration", "Acceleration",
+                                                                        kPropertyTypeVector3UVE),
+                    "Added to Velocity every step, in metres per second squared: gravity, drag, a "
+                    "wind volume. Gravity is not implied - a projectile only falls if something "
+                    "here says so."),
+                WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&Projectile3DComponentUVE::radius>("radius", "Radius",
+                                                                                 kPropertyTypeFloatUVE),
+                                   "The sphere the projectile sweeps, in world metres. It is the "
+                                   "size that decides whether it fits through a gap and how far "
+                                   "its centre is held off a surface - a ray is infinitely thin "
+                                   "and misses the hits a fat projectile must not miss."),
+                    0.001, 1000.0, 0.01),
+                WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&Projectile3DComponentUVE::maxLifetime>(
+                                       "maxLifetime", "Max Lifetime", kPropertyTypeFloatUVE),
+                                   "Seconds of flight before the engine clears Active. A bouncing "
+                                   "projectile has no other end, so this is the clock that always "
+                                   "ends one."),
+                    0.01, 3600.0, 0.1),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&Projectile3DComponentUVE::collisionMask>(
+                                       "collisionMask", "Mask", kPropertyTypeBitMask32UVE),
+                                   "Which collision layers this projectile may hit, on the same "
+                                   "layer drawer every other physics object uses."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                WithTooltipUVE(
+                    DeclareEnumUVE<&Projectile3DComponentUVE::hitPolicy>("hitPolicy", "On Hit",
+                                                                         {{0, "Stop"}, {1, "Bounce"}}),
+                    "What this projectile's own motion does when it hits something. The engine "
+                    "owns the motion - Stop halts it at the contact, Bounce reflects it - and "
+                    "gameplay owns the consequences: damage, effects and despawning read the hit "
+                    "event or these result fields."),
+                whenBouncing(WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&Projectile3DComponentUVE::restitution>(
+                                       "restitution", "Restitution", kPropertyTypeFloatUVE),
+                                   "How much of the speed into a surface comes back out of it: 1 "
+                                   "leaves as fast as it arrived, 0 arrives and slides. This is "
+                                   "the projectile's own coefficient - the surface's is reported "
+                                   "with the contact for gameplay to react to."),
+                    0.0, 1.0, 0.01)),
+                whenBouncing(WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&Projectile3DComponentUVE::friction>("friction",
+                                                                                   "Bounce Friction",
+                                                                                   kPropertyTypeFloatUVE),
+                                   "How much of the speed along the surface is lost on each "
+                                   "bounce: 0 keeps all of its sideways motion, 1 keeps none. A "
+                                   "bounce that leaves no motion at all is a stop."),
+                    0.0, 1.0, 0.01)),
+                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::remainingLifetime>(
+                               "remainingLifetime", "Remaining Lifetime", kPropertyTypeFloatUVE),
+                           "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::hit>("hit", "Hit",
+                                                                                  kPropertyTypeBoolUVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::hitEntity>(
+                               "hitEntity", "Hit Entity", kPropertyTypeEntityUVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::hitPosition>(
+                               "hitPosition", "Hit Position", kPropertyTypeVector3UVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::hitNormal>(
+                               "hitNormal", "Hit Normal", kPropertyTypeVector3UVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::impactSpeed>(
+                               "impactSpeed", "Impact Speed", kPropertyTypeFloatUVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::bounceCount>(
+                               "bounceCount", "Bounces", kPropertyTypeUInt32UVE),
+                           "Result"),
+            }));
+}
+
+void DeclareCombatUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    // Hitbox3D and Hurtbox3D, declared together because they are one conversation: a strike needs
+    // both sides to agree about the layer, the mask and the damage channel, and the Inspector is
+    // where that agreement is authored. The world-shape rule both state in their tooltips - exact
+    // oriented box, world position/rotation plus authored half-extents, world SCALE deliberately
+    // not applied - is the same contract ColliderComponentUVE and AreaComponentUVE follow, and it
+    // is said out loud here because a scaled parent silently not scaling a hurtbox is exactly the
+    // kind of thing an author has to know before they debug it.
+    AddValidatedUVE<Hitbox3DComponentUVE, &IsHitbox3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.hitbox_3d", "Hitbox3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(
+                    DeclareUVE<&Hitbox3DComponentUVE::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                    "Off, the hitbox strikes nothing and ends every strike it was in: the engine "
+                    "reports the exit, it does not wait for the boxes to separate."),
+                WithTooltipUVE(
+                    DeclareUVE<&Hitbox3DComponentUVE::halfExtents>("halfExtents", "Half Extents",
+                                                                   kPropertyTypeVector3UVE),
+                    "The exact oriented box this hitbox strikes with: world position and "
+                    "rotation plus these half-extents, with the object's world SCALE deliberately "
+                    "not applied - the collider/area convention, so a scaled art pivot never "
+                    "re-sizes a hurt volume."),
+                WithTooltipUVE(
+                    DeclareUVE<&Hitbox3DComponentUVE::damageChannel>("damageChannel", "Channel",
+                                                                     kPropertyTypeStringUVE),
+                    "What this hitbox is. It only ever strikes a hurtbox authored with the same "
+                    "channel, which is how one character carries a sword hitbox and a punch hitbox "
+                    "without either firing the other's reactions. Up to 256 bytes."),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&Hitbox3DComponentUVE::collisionLayer>(
+                                       "collisionLayer", "Layer", kPropertyTypeBitMask32UVE),
+                                   "The layers this hitbox is on - what a hurtbox has to be "
+                                   "looking for."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&Hitbox3DComponentUVE::collisionMask>(
+                                       "collisionMask", "Mask", kPropertyTypeBitMask32UVE),
+                                   "The layers this hitbox strikes. A strike needs BOTH sides to "
+                                   "accept the other, so a hurtbox can refuse a whole class of "
+                                   "attackers on its own."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                InGroupUVE(DeclareRuntimeStateUVE<&Hitbox3DComponentUVE::strikeCount>(
+                               "strikeCount", "Strikes", kPropertyTypeUInt8UVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Hitbox3DComponentUVE::strikesTruncated>(
+                               "strikesTruncated", "Truncated", kPropertyTypeBoolUVE),
+                           "Result"),
+            }));
+
+    AddValidatedUVE<Hurtbox3DComponentUVE, &IsHurtbox3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.hurtbox_3d", "Hurtbox3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(
+                    DeclareUVE<&Hurtbox3DComponentUVE::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                    "Off, nothing can strike this hurtbox: it is not even a candidate, so every "
+                    "strike it was in ends on this tick's report."),
+                WithTooltipUVE(
+                    DeclareUVE<&Hurtbox3DComponentUVE::halfExtents>("halfExtents", "Half Extents",
+                                                                    kPropertyTypeVector3UVE),
+                    "The exact oriented box this hurtbox is struck on, in world metres: world "
+                    "position and rotation plus these half-extents, with the object's world SCALE "
+                    "deliberately not applied - the collider/area convention."),
+                WithTooltipUVE(
+                    DeclareUVE<&Hurtbox3DComponentUVE::damageChannel>("damageChannel", "Channel",
+                                                                      kPropertyTypeStringUVE),
+                    "What this hurtbox receives. Only a hitbox authored with the same channel can "
+                    "strike it. Up to 256 bytes."),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&Hurtbox3DComponentUVE::collisionLayer>(
+                                       "collisionLayer", "Layer", kPropertyTypeBitMask32UVE),
+                                   "The layers this hurtbox is on - what a hitbox has to be looking "
+                                   "for."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&Hurtbox3DComponentUVE::collisionMask>(
+                                       "collisionMask", "Mask", kPropertyTypeBitMask32UVE),
+                                   "The layers this hurtbox accepts strikes from. A strike needs "
+                                   "BOTH sides to accept the other, which is how a hurtbox refuses "
+                                   "a whole class of attackers without touching any of them."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+            }));
+}
+
+void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    // AnimationSequencer's own section. Its target is an entity reference: flagged so the serializer
+    // remaps it, and drawn as an object picker. Empty means the player's parent, which is the common
+    // case and needs no picking at all.
+    // AnimationDriver: the base AnimationSequencer and AnimationGraph share, shown between their own
+    // section and the Object section. Its target is an entity reference: flagged so the serializer
+    // remaps it, and drawn as an object picker. Empty means the parent, the common case.
+    using M = AnimationDriverComponentUVE;
+    TypeMetadataPropertyUVE mixerTarget = WithTooltipUVE(
+        DeclareUVE<&M::target>("target", "Target", kPropertyTypeEntityUVE),
+        "The object that is moved. Empty means this object's parent.");
+    mixerTarget.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+    AddValidatedUVE<AnimationDriverComponentUVE, &IsAnimationDriverComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.animation_mixer", std::string{AnimationDriverObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 20,
             {
                 WithTooltipUVE(DeclareUVE<&M::active>("active", "Active", kPropertyTypeBoolUVE),
                                "Off, nothing is evaluated and the target is left alone."),
@@ -593,7 +1056,7 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 WithTooltipUVE(WithRangeUVE(DeclareUVE<&M::speedScale>("speedScale", "Speed Scale",
                                                                        kPropertyTypeFloatUVE),
                                             0.0, 100.0, 0.01),
-                               "Multiplies every clock under this node: 0.5 is slow motion, 0 freezes."),
+                               "Multiplies every clock under this object: 0.5 is slow motion, 0 freezes."),
                 WithTooltipUVE(DeclareEnumUVE<&M::processCallback>("processCallback", "Update",
                                                                    {{0, "Every Frame"}, {1, "Physics Step"}}),
                                "Every Frame is smoothest on screen. Physics Step keeps the target in step "
@@ -619,7 +1082,7 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                           {2, "Apply To Target"}}),
                                           "Skeletal clips only. In Place takes the root bone's ground travel "
                                           "out of the pose. Apply To Target also moves the target by it; a "
-                                          "CharacterBody3D gets it as velocity, so walls still stop it."),
+                                          "Character3D gets it as velocity, so walls still stop it."),
                            "Root Motion"),
                 InGroupUVE(WithTooltipUVE(DeclareUVE<&M::rootMotionBone>("rootMotionBone", "Bone",
                                                                          kPropertyTypeStringUVE),
@@ -628,18 +1091,18 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                            "Root Motion"),
             }));
 
-    // AnimationPlayer's own section.
-    using P = AnimationPlayerComponentUVE;
+    // AnimationSequencer's own section.
+    using P = AnimationSequencerComponentUVE;
     const auto whenOnce = [](TypeMetadataPropertyUVE property) {
         property.isVisible = +[](const void* instance) {
             return static_cast<const P*>(instance)->loopMode == AnimationLoopModeUVE::Once;
         };
         return property;
     };
-    AddValidatedUVE<AnimationPlayerComponentUVE, &IsAnimationPlayerComponentValidUVE>(
+    AddValidatedUVE<AnimationSequencerComponentUVE, &IsAnimationSequencerComponentValidUVE>(
         entries,
         MakeEntryUVE(
-            "component.animation_player", "AnimationPlayer", kSectionOrderTypeSpecificUVE,
+            "component.animation_player", "AnimationSequencer", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&P::clip>("clip", "Clip", kPropertyTypeAssetGuidUVE),
                                                    "asset:uvanim"),
@@ -674,7 +1137,7 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                            "Blending"),
                 InGroupUVE(WithTooltipUVE(DeclareUVE<&P::relative>("relative", "Relative", kPropertyTypeBoolUVE),
                                           "Plays the clip's motion on top of where the target already is, so one "
-                                          "clip works on any node wherever it was placed."),
+                                          "clip works on any object wherever it was placed."),
                            "Blending"),
                 InGroupUVE(DeclareRuntimeStateUVE<&P::isPlaying>("isPlaying", "Playing", kPropertyTypeBoolUVE), "State"),
                 InGroupUVE(DeclareRuntimeStateUVE<&P::currentTimeSeconds>("currentTimeSeconds", "Time",
@@ -683,19 +1146,19 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 InGroupUVE(DeclareRuntimeStateUVE<&P::finished>("finished", "Finished", kPropertyTypeBoolUVE), "State"),
             }));
 
-    using T = AnimationTreeComponentUVE;
+    using T = AnimationGraphComponentUVE;
     // The parameters and the graph are lists with their own add, remove and wiring, which a
     // property row cannot express, so each is one custom-drawn block.
-    AddValidatedUVE<AnimationTreeComponentUVE, &IsAnimationTreeComponentValidUVE>(
+    AddValidatedUVE<AnimationGraphComponentUVE, &IsAnimationGraphComponentValidUVE>(
         entries,
         MakeEntryUVE(
-            "component.animation_tree", "AnimationTree", kSectionOrderTypeSpecificUVE,
+            "component.animation_tree", "AnimationGraph", kSectionOrderTypeSpecificUVE,
             {
                 InGroupUVE(WithCustomDrawerUVE(DeclareUVE<&T::parameters>("parameters", "Parameters",
                                                                          "AnimationParameterList"),
                                                "animation-parameters"),
                            "Parameters"),
-                InGroupUVE(WithCustomDrawerUVE(DeclareUVE<&T::nodes>("nodes", "Graph", "AnimationGraphNodeList"),
+                InGroupUVE(WithCustomDrawerUVE(DeclareUVE<&T::nodes>("objects", "Graph", "AnimationGraphObjectList"),
                                                "animation-graph"),
                            "Graph"),
                 InGroupUVE(DeclareRuntimeStateUVE<&T::activeStates>("activeStates", "Active States",
@@ -834,15 +1297,236 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     return property;
 }
 
-/// The common Node section: what every node has regardless of what it is. These sort last, below
-/// whatever the node itself brings, which is where an author expects them - and in a fixed order
+/// The common Object section: what every object has regardless of what it is. These sort last, below
+/// whatever the object itself brings, which is where an author expects them - and in a fixed order
 /// among themselves, because an author finds a setting by where it was last time.
 /// The abstract 3D bases. Their sections appear on every concrete child, between what the child
-/// itself brings and the common Node section.
-void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+/// itself brings and the common Object section.
+// The gameplay-owned authored data: what the scene means to a game rather than to the renderer or
+// the solver. SpawnPoint3D is the first citizen here (Unreal's PlayerStart role - Godot ships no
+// built-in counterpart), and the section is deliberately declarative: the query that consumes it
+// lives in uve_scene, and nothing in this file decides when a point fires.
+void DeclareGameplayUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    AddValidatedUVE<SpawnPoint3DComponentUVE, &IsSpawnPoint3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.spawn_point", "SpawnPoint3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(
+                    DeclareUVE<&SpawnPoint3DComponentUVE::spawnTag>("spawnTag", "Tag",
+                                                                    kPropertyTypeStringUVE),
+                    "What this point is for. An empty-tag query takes the first live point whatever "
+                    "it is called; a respawn screen asks for \"checkpoint\" and a second level "
+                    "entry asks for \"level start\"."),
+                WithTooltipUVE(
+                    DeclareUVE<&SpawnPoint3DComponentUVE::localPosition>(
+                        "localPosition", "Offset Position", kPropertyTypeVector3UVE),
+                    "Where the actor appears relative to this point's own pose, in metres: rotated "
+                    "by the point's rotation, deliberately NOT scaled by its scale - an offset is a "
+                    "distance, not a volume. A point can sit on a floor seam with its actor a step "
+                    "above."),
+                WithTooltipUVE(
+                    DeclareUVE<&SpawnPoint3DComponentUVE::localRotation>(
+                        "localRotation", "Offset Rotation", kPropertyTypeQuaternionUVE),
+                    "Which way the actor faces when it appears, composed onto this point's own "
+                    "rotation."),
+                WithTooltipUVE(DeclareUVE<&SpawnPoint3DComponentUVE::enabled>("enabled", "Enabled",
+                                                                             kPropertyTypeBoolUVE),
+                               "Off, the point is invisible to every spawn query - which is also "
+                               "the state a spent one-shot point is left in."),
+                WithTooltipUVE(
+                    DeclareUVE<&SpawnPoint3DComponentUVE::oneShot>("oneShot", "One Shot",
+                                                                   kPropertyTypeBoolUVE),
+                    "A checkpoint: the first caller that actually spawns from this point spends "
+                    "it, and no later query can use it again this session. The authored value "
+                    "comes back when Play is left, like every other sandboxed edit."),
+            }));
+}
+
+/// The two AI navigation objects: the region that bakes into a navmesh, and the agent that walks it.
+///
+/// A region's properties are the bake's own inputs - the volume, the agent it is baked FOR, and the
+/// layers its polygons carry - because a mesh eroded for one width is not the mesh a wider agent
+/// needs. An agent's are its own measurements plus the route it last published, and the route is
+/// declared as runtime state: written by the navigation step, never authored, never saved, and shown
+/// while the game runs because that is the only time it describes something real.
+void DeclareNavigationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    using R = NavMeshVolume3DComponentUVE;
+    AddValidatedUVE<NavMeshVolume3DComponentUVE, &IsNavMeshVolume3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.nav_mesh_volume_3d", "NavMeshVolume3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&R::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off, the region has no mesh at all: an agent standing on it fails "
+                               "rather than walks ground the author just took away."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&R::boundsHalfExtents>("boundsHalfExtents", "Size",
+                                                                   kPropertyTypeVector3UVE),
+                                 0.001, 100000.0, 0.01),
+                    "The volume baked into a navmesh, centred on the object and aligned to the world "
+                    "axes - the bake's grid is built on the world axes, so where the object is "
+                    "rotated, its unrotated volume is what gets rasterized."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&R::cellSize>("cellSize", "Cell Size", kPropertyTypeFloatUVE),
+                                 0.05, 10.0, 0.05),
+                    "The rasterization grid, in metres. Finer follows geometry more closely and costs "
+                    "more rays; a grid too large for the bake's cell budget is made coarser and says "
+                    "so in the bake's report."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&R::agentRadius>("agentRadius", "Agent Radius",
+                                                             kPropertyTypeFloatUVE),
+                                 0.0, 100.0, 0.01),
+                    "Ground closer than this to a wall, a ledge or the region's edge is eroded away: "
+                    "an agent of this width cannot stand there with its body on the mesh."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&R::agentHeight>("agentHeight", "Agent Height",
+                                                             kPropertyTypeFloatUVE),
+                                 0.01, 1000.0, 0.01),
+                    "How much headroom the ground needs to be walkable. A region shorter than this "
+                    "bakes nothing, which is the honest answer for a crawlspace no agent fits in."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&R::maximumSlopeDegrees>("maximumSlopeDegrees", "Max Slope",
+                                                                     kPropertyTypeFloatUVE),
+                                 0.1, 89.9, 0.1),
+                    "The steepest surface that still counts as ground, in degrees from up. Anything "
+                    "steeper is a wall as far as this navmesh is concerned."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&R::maximumStepHeight>("maximumStepHeight", "Max Step",
+                                                                   kPropertyTypeFloatUVE),
+                                 0.0, 1000.0, 0.01),
+                    "The tallest rise between neighbouring cells that may still be walked, in "
+                    "metres. Taller than this and they are two floors rather than one step."),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&R::navigationLayers>("navigationLayers", "Layers",
+                                                                    kPropertyTypeBitMask32UVE),
+                                   "The layers written into the baked polygons, matched against an "
+                                   "agent's own mask: a path may only use polygons whose layers "
+                                   "intersect it."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                WithTooltipUVE(
+                    DeclareUVE<&R::rebuildRequested>("rebuildRequested", "Rebuild", kPropertyTypeBoolUVE),
+                    "Raise it to re-rasterize a region whose volume did not move but whose "
+                    "surroundings did. The navigation step bakes and then clears it."),
+            }));
+
+    using S = NavSeeker3DComponentUVE;
+    AddValidatedUVE<NavSeeker3DComponentUVE, &IsNavSeeker3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.nav_seeker_3d", "NavSeeker3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&S::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off, the agent publishes nothing - no velocity, no route - and "
+                               "forgets the route it had."),
+                WithTooltipUVE(DeclareUVE<&S::targetPosition>("targetPosition", "Target",
+                                                              kPropertyTypeVector3UVE),
+                               "Where the agent is walking to, in world space. Changing it drops "
+                               "the current route and searches on the next step, whatever the "
+                               "update interval says."),
+                WithTooltipUVE(
+                    DeclareUVE<&S::avoidanceEnabled>("avoidanceEnabled", "Avoidance",
+                                                     kPropertyTypeBoolUVE),
+                    "On, other agents inside the avoidance radius push this one aside so two "
+                    "agents on one route end up beside each other rather than inside each other."),
+                WhenOnUVE<&S::avoidanceEnabled>(WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&S::avoidanceRadius>("avoidanceRadius", "Avoid Radius",
+                                                                   kPropertyTypeFloatUVE),
+                                   "How close another agent's centre may come before it pushes, in "
+                                   "metres. 0 is the same as switching avoidance off."),
+                    0.0, 1000.0, 0.01)),
+                InGroupUVE(WithRangeUVE(DeclareUVE<&S::radius>("radius", "Radius", kPropertyTypeFloatUVE),
+                                        0.01, 1000.0, 0.01),
+                           "Agent"),
+                InGroupUVE(WithRangeUVE(DeclareUVE<&S::height>("height", "Height", kPropertyTypeFloatUVE),
+                                        0.02, 1000.0, 0.01),
+                           "Agent"),
+                InGroupUVE(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::maxSpeed>("maxSpeed", "Max Speed",
+                                                                     kPropertyTypeFloatUVE),
+                                            0.0, 10000.0, 0.1),
+                               "Top speed on a straight leg, in metres per second. What actually "
+                               "moves the body is the mover or script reading this agent's "
+                               "desiredVelocity."),
+                           "Agent"),
+                InGroupUVE(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::acceleration>("acceleration", "Acceleration",
+                                                                         kPropertyTypeFloatUVE),
+                                            0.0, 10000.0, 0.1),
+                               "How hard desiredVelocity may change per second. The velocity is what "
+                               "a mover is handed, and an unbounded step change is a jolt; 0 "
+                               "publishes the wanted velocity immediately."),
+                           "Agent"),
+                InGroupUVE(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::targetTolerance>("targetTolerance", "Target "
+                                                                                           "Tolerance",
+                                                                            kPropertyTypeFloatUVE),
+                                            0.0, 1000.0, 0.01),
+                               "How close to the target counts as arrived. Larger than the waypoint "
+                               "radius on purpose: an agent that had to stop within a metre of a "
+                               "moving target would hunt for it."),
+                           "Agent"),
+                InGroupUVE(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::waypointRadius>("waypointRadius", "Waypoint "
+                                                                                           "Radius",
+                                                                           kPropertyTypeFloatUVE),
+                                            0.0, 1000.0, 0.01),
+                               "How close to a waypoint counts as reached, so the agent turns to the "
+                               "next one instead of walking back for it."),
+                           "Agent"),
+                InGroupUVE(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::slowDownRadius>("slowDownRadius", "Slow Down "
+                                                                                           "Radius",
+                                                                           kPropertyTypeFloatUVE),
+                                            0.0, 1000.0, 0.01),
+                               "Inside this distance from the target the speed is scaled down, so the "
+                               "agent arrives rather than overshoots. 0 keeps full speed until the "
+                               "tolerance stops it."),
+                           "Agent"),
+                InGroupUVE(WithCustomDrawerUVE(
+                               WithTooltipUVE(DeclareUVE<&S::navigationLayers>("navigationLayers",
+                                                                               "Layers",
+                                                                               kPropertyTypeBitMask32UVE),
+                                              "Which polygons this agent may walk: a path may only "
+                                              "cross ground whose layers intersect this mask."),
+                               std::string(kLayerMaskDrawerPhysicsUVE)),
+                           "Agent"),
+                InGroupUVE(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::pathUpdateInterval>("pathUpdateInterval",
+                                                                               "Update Interval",
+                                                                               kPropertyTypeFloatUVE),
+                                            0.01, 10.0, 0.01),
+                               "How often the route is reconsidered, in seconds. Replanning every "
+                               "frame would be correct and wasteful; replanning rarely leaves an "
+                               "agent walking into a door that closed behind it."),
+                           "Route"),
+                // The route the last step produced. Runtime state: written by the navigation step,
+                // never authored, never saved - a loaded agent finds its own way from its target.
+                InGroupUVE(DeclareRuntimeStateUVE<&S::nextPathPosition>("nextPathPosition",
+                                                                        "Next Waypoint",
+                                                                        kPropertyTypeVector3UVE),
+                           "Route"),
+                InGroupUVE(DeclareRuntimeStateUVE<&S::desiredVelocity>("desiredVelocity",
+                                                                       "Desired Velocity",
+                                                                       kPropertyTypeVector3UVE),
+                           "Route"),
+                InGroupUVE(DeclareRuntimeStateEnumUVE<&S::pathStatus>(
+                               "pathStatus", "Status",
+                               {{0, "Idle"}, {1, "Following"}, {2, "Finished"}, {3, "Failed"}}),
+                           "Route"),
+                InGroupUVE(DeclareRuntimeStateUVE<&S::pathChanged>("pathChanged", "Path Changed",
+                                                                   kPropertyTypeBoolUVE),
+                           "Route"),
+                InGroupUVE(DeclareRuntimeStateUVE<&S::targetReached>("targetReached", "Target Reached",
+                                                                     kPropertyTypeBoolUVE),
+                           "Route"),
+            }));
+}
+
+void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddUVE<BoneModifierComponentUVE>(
         entries,
-        MakeEntryUVE("component.bone_modifier", "BoneModifier3D", kSectionOrderNodeBaseUVE,
+        MakeEntryUVE("component.bone_modifier", std::string{BoneModifier3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE,
                      {
                          WithTooltipUVE(DeclareUVE<&BoneModifierComponentUVE::active>("active", "Active",
                                                                                         kPropertyTypeBoolUVE),
@@ -861,7 +1545,7 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddUVE<PhysicsObjectComponentUVE>(
         entries,
         MakeEntryUVE(
-            "component.physics_object", "PhysicsObject3D", kSectionOrderNodeBaseUVE + 1,
+            "component.physics_object", std::string{PhysicsObject3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 1,
             {
                 WithTooltipUVE(DeclareEnumUVE<&PhysicsObjectComponentUVE::disableMode>(
                                    "disableMode", "Disable Mode",
@@ -879,7 +1563,7 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // Sorts before PhysicsObject3D: a base that derives from another is drawn above it.
     AddUVE<SolidBodyComponentUVE>(
         entries,
-        MakeEntryUVE("component.solid_body", "SolidBody3D", kSectionOrderNodeBaseUVE,
+        MakeEntryUVE("component.solid_body", std::string{SolidBody3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE,
                      {
                          InGroupUVE(WithTooltipUVE(DeclareUVE<&SolidBodyComponentUVE::lockMotionX>(
                                                        "lockMotionX", "X", kPropertyTypeBoolUVE),
@@ -897,7 +1581,7 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 
     AddUVE<RenderInstanceComponentUVE>(
         entries,
-        MakeEntryUVE("component.render_instance", "RenderInstance3D", kSectionOrderNodeBaseUVE + 10,
+        MakeEntryUVE("component.render_instance", std::string{RenderInstance3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 10,
                      {
                          WithCustomDrawerUVE(
                              WithTooltipUVE(DeclareUVE<&RenderInstanceComponentUVE::renderLayers>(
@@ -916,7 +1600,7 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddValidatedUVE<SurfaceInstanceComponentUVE, &IsSurfaceInstanceComponentValidUVE>(
         entries,
         MakeEntryUVE(
-            "component.surface_instance", "SurfaceInstance3D", kSectionOrderNodeBaseUVE + 3,
+            "component.surface_instance", std::string{SurfaceInstance3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 3,
             {
                 WithTooltipUVE(DeclareUVE<&S::materialOverridePath>("materialOverridePath", "Override",
                                                                     kPropertyTypeStringUVE),
@@ -981,7 +1665,7 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddValidatedUVE<LightEmitterComponentUVE, &IsLightEmitterComponentValidUVE>(
         entries,
         MakeEntryUVE(
-            "component.light_emitter", "LightEmitter3D", kSectionOrderNodeBaseUVE + 4,
+            "component.light_emitter", std::string{LightEmitter3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 4,
             {
                 DeclareUVE<&L::color>("color", "Color", kPropertyTypeColorUVE),
                 WithTooltipUVE(WithRangeUVE(DeclareUVE<&L::energy>("energy", "Energy", kPropertyTypeFloatUVE), 0.0,
@@ -1044,15 +1728,15 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 }
 
-/// Skeleton3D: a Node3D child. Its bones are read-only here - they come from the rigged model the
+/// Skeleton3D: a Object3D child. Its bones are read-only here - they come from the rigged model the
 /// Source names and change only by re-exporting it - so they are declared for display and saving,
 /// with a drawer that shows the hierarchy instead of a generic editor.
 void DeclareSkeletonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    using K = Skeleton3DNodeComponentUVE;
+    using K = Skeleton3DComponentUVE;
     TypeMetadataPropertyUVE bones = WithCustomDrawerUVE(DeclareUVE<&K::bones>("bones", "Bones", "SkeletonBones"),
                                                         "skeleton-bones");
     bones.flags = TypeMetadataPropertyFlagsUVE::ReadOnly;
-    AddValidatedUVE<Skeleton3DNodeComponentUVE, &IsSkeleton3DNodeComponentValidUVE>(
+    AddValidatedUVE<Skeleton3DComponentUVE, &IsSkeleton3DObjectComponentValidUVE>(
         entries,
         MakeEntryUVE("component.skeleton_3d", "Skeleton3D", kSectionOrderTypeSpecificUVE,
                      {
@@ -1067,9 +1751,154 @@ void DeclareSkeletonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                      }));
 }
 
+/// BoneAttachment3D: a scene object that rides a bone of another object's skeleton instead of the
+/// hierarchy. The skeleton is an entity reference - flagged so the serializer remaps it through its
+/// file-local id table, exactly like the mixer's target and the visibility parent - and the two
+/// runtime answers the engine writes back each frame are declared as runtime state, so an author
+/// can see whether the attachment is on its bone without a debugger.
+void DeclareBoneAttachmentUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    using A = BoneAttachment3DComponentUVE;
+    TypeMetadataPropertyUVE skeleton =
+        WithTooltipUVE(DeclareUVE<&A::skeleton>("skeleton", "Skeleton", kPropertyTypeEntityUVE),
+                       "The object whose skeleton this attachment rides. Empty leaves the object where it "
+                       "was authored.");
+    skeleton.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+    AddValidatedUVE<BoneAttachment3DComponentUVE, &IsBoneAttachment3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.bone_attachment_3d", "BoneAttachment3D", kSectionOrderTypeSpecificUVE,
+            {
+                std::move(skeleton),
+                WithTooltipUVE(DeclareUVE<&A::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off stops following the bone without removing the object - it keeps the "
+                               "transform it has."),
+                WithTooltipUVE(DeclareUVE<&A::boneName>("boneName", "Bone", kPropertyTypeStringUVE),
+                               "The bone to ride, by the name the skeleton asset gives it. Exact and "
+                               "case-sensitive: renaming a bone in the source loses this attachment "
+                               "instead of binding it to whichever bone took the name."),
+                WithTooltipUVE(DeclareUVE<&A::boneIndex>("boneIndex", "Bone Index",
+                                                         kPropertyTypeUInt32UVE),
+                               "The bone's index in the skeleton. 4294967295 means \"bind by the name "
+                               "above\"; any other value wins over the name when it names a real bone."),
+                WithTooltipUVE(DeclareUVE<&A::localPosition>("localPosition", "Position",
+                                                             kPropertyTypeVector3UVE),
+                               "Where the object sits on the bone, in the BONE's own space: 0.1 on Y is "
+                               "10 cm along the bone's up axis, not the world's."),
+                WithTooltipUVE(DeclareUVE<&A::localRotation>("localRotation", "Rotation",
+                                                             kPropertyTypeQuaternionUVE),
+                               "How the object is turned on the bone, applied after the bone's own "
+                               "rotation - so it stays gripped when the arm swings."),
+                WithTooltipUVE(DeclareUVE<&A::localScale>("localScale", "Scale", kPropertyTypeVector3UVE),
+                               "The object's scale on top of the bone chain's, so a scaled rig scales "
+                               "what it carries."),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::bound>("bound", "Bound", kPropertyTypeBoolUVE),
+                           "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::resolvedBoneIndex>("resolvedBoneIndex", "Resolved Bone",
+                                                                         kPropertyTypeUInt32UVE),
+                           "State"),
+            }));
+}
+
+/// TwoBoneIK3D: a limb solved back from a target instead of forward from its joints. The three bone
+/// references are index-or-name pairs - the index is the reference that cannot go stale, the name
+/// the one an author can read in a DCC tool - and the skeleton, target and pole are entity
+/// references, flagged so the serializer remaps them through its file-local id table. The answers
+/// the solver writes back each pass are declared as runtime state, so an author can see whether a
+/// hand actually reached what it was aimed at without a debugger.
+void DeclareTwoBoneIKUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    using A = TwoBoneIK3DComponentUVE;
+    const auto entityReference = [](TypeMetadataPropertyUVE property) {
+        property.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+        return property;
+    };
+    AddValidatedUVE<TwoBoneIK3DComponentUVE, &IsTwoBoneIK3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.two_bone_ik_3d", "TwoBoneIK3D", kSectionOrderTypeSpecificUVE,
+            {
+                entityReference(WithTooltipUVE(DeclareUVE<&A::skeleton>("skeleton", "Skeleton",
+                                                                         kPropertyTypeEntityUVE),
+                                               "The object whose skeleton this chain solves. Empty leaves "
+                                               "the pose exactly as the animation wrote it.")),
+                WithTooltipUVE(DeclareUVE<&A::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off stops solving without removing the object."),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::rootBoneName>("rootBoneName", "Root Bone",
+                                                                        kPropertyTypeStringUVE),
+                                          "The chain's first bone - the shoulder, the hip. Exact and "
+                                          "case-sensitive; renaming a bone in the source loses the chain "
+                                          "instead of driving a different limb."),
+                           "Chain"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::rootBoneIndex>("rootBoneIndex", "Root Index",
+                                                                        kPropertyTypeUInt32UVE),
+                                          "The bone's index in the skeleton. 4294967295 means \"ask the name\"; "
+                                          "any other value wins over it when it names a real bone."),
+                           "Chain"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::middleBoneName>("middleBoneName", "Middle Bone",
+                                                                          kPropertyTypeStringUVE),
+                                          "The bone the chain bends at - the elbow, the knee. Must be a child "
+                                          "of the root bone."),
+                           "Chain"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::middleBoneIndex>("middleBoneIndex", "Middle Index",
+                                                                          kPropertyTypeUInt32UVE),
+                                          "The bend bone by index; the name above is the fallback."),
+                           "Chain"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::endBoneName>("endBoneName", "End Bone",
+                                                                       kPropertyTypeStringUVE),
+                                          "The bone whose origin reaches the target - the wrist, the ankle. "
+                                          "Must be a child of the middle bone; its own rotation is left alone."),
+                           "Chain"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::endBoneIndex>("endBoneIndex", "End Index",
+                                                                       kPropertyTypeUInt32UVE),
+                                          "The effector bone by index; the name above is the fallback."),
+                           "Chain"),
+                InGroupUVE(entityReference(WithTooltipUVE(DeclareUVE<&A::target>("target", "Target",
+                                                                                 kPropertyTypeEntityUVE),
+                                                          "The object whose world position the limb "
+                                                          "reaches for. Empty uses the point below.")),
+                           "Target"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::targetPosition>("targetPosition", "Target Point",
+                                                                         kPropertyTypeVector3UVE),
+                                          "Where the limb should end, in the SKELETON's own space - "
+                                          "scaled and rotated with it. Ignored while a target object "
+                                          "above is set."),
+                           "Target"),
+                InGroupUVE(entityReference(WithTooltipUVE(DeclareUVE<&A::poleTarget>("poleTarget", "Pole",
+                                                                                     kPropertyTypeEntityUVE),
+                                                          "A point the joint bends toward. An elbow has a "
+                                                          "circle of positions that all reach the target; "
+                                                          "this picks one.")),
+                           "Target"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::poleDirection>("poleDirection", "Pole Direction",
+                                                                        kPropertyTypeVector3UVE),
+                                          "The bend direction when no pole object is set, in the "
+                                          "skeleton's own space. Zero keeps the plane the pose is "
+                                          "already in."),
+                           "Target"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::solved>("solved", "Solved", kPropertyTypeBoolUVE), "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::reached>("reached", "Reached", kPropertyTypeBoolUVE),
+                           "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::endToTargetDistanceMetres>("endToTargetDistanceMetres",
+                                                                                 "Distance To Target",
+                                                                                 kPropertyTypeFloatUVE),
+                           "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::resolvedRootBoneIndex>("resolvedRootBoneIndex",
+                                                                             "Resolved Root",
+                                                                             kPropertyTypeUInt32UVE),
+                           "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::resolvedMiddleBoneIndex>("resolvedMiddleBoneIndex",
+                                                                               "Resolved Middle",
+                                                                               kPropertyTypeUInt32UVE),
+                           "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::resolvedEndBoneIndex>("resolvedEndBoneIndex",
+                                                                            "Resolved End",
+                                                                            kPropertyTypeUInt32UVE),
+                           "State"),
+            }));
+}
+
 /// Concrete RenderInstance3D children. Each brings exactly its own section; everything above it
 /// comes from the bases.
-void DeclareRenderInstanceNodesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddValidatedUVE<DirectionalLight3DComponentUVE, &IsDirectionalLight3DComponentValidUVE>(
         entries,
         MakeEntryUVE(
@@ -1089,20 +1918,20 @@ void DeclareRenderInstanceNodesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                            "Shadow"),
             }));
 
-    using D = Decal3DNodeComponentUVE;
-    AddValidatedUVE<Decal3DNodeComponentUVE, &IsDecal3DNodeComponentValidUVE>(
+    using D = Decal3DComponentUVE;
+    AddValidatedUVE<Decal3DComponentUVE, &IsDecal3DObjectComponentValidUVE>(
         entries,
         MakeEntryUVE(
             "component.decal_3d", "Decal3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&D::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
-                               "Off stops projecting without removing the node."),
+                               "Off stops projecting without removing the object."),
                 WithTooltipUVE(DeclareUVE<&D::materialAssetPath>("materialAssetPath", "Material",
                                                                  kPropertyTypeStringUVE),
                                "The decal material to project."),
                 WithTooltipUVE(WithRangeUVE(DeclareUVE<&D::size>("size", "Size", kPropertyTypeVector3UVE), 0.001,
                                             100000.0, 0.01),
-                               "The projection volume, centred on the node; it projects along -Y."),
+                               "The projection volume, centred on the object; it projects along -Y."),
                 DeclareEnumUVE<&D::projection>("projection", "Projection", {{0, "Box"}, {1, "Cylinder"}}),
                 WithTooltipUVE(WithRangeUVE(DeclareUVE<&D::lifetime>("lifetime", "Lifetime", kPropertyTypeFloatUVE),
                                             0.0, 100000.0, 0.1),
@@ -1145,10 +1974,19 @@ void DeclareRenderInstanceNodesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                   kPropertyTypeFloatUVE),
                                0.0, 1000000.0, 0.1)),
                            "Distance Fade"),
+                // The runtime half: how much of the lifetime is left, and whether it has run out.
+                // Shown during Play so an author can watch a decal age, never written by authoring
+                // and never saved - the same treatment Projectile3D's countdown gets, because it is
+                // the same kind of fact.
+                InGroupUVE(DeclareRuntimeStateUVE<&D::remainingLifetime>("remainingLifetime", "Remaining",
+                                                                         kPropertyTypeFloatUVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&D::expired>("expired", "Expired", kPropertyTypeBoolUVE),
+                           "Result"),
             }));
 
-    using F = FogVolume3DNodeComponentUVE;
-    AddValidatedUVE<FogVolume3DNodeComponentUVE, &IsFogVolume3DNodeComponentValidUVE>(
+    using F = FogVolume3DComponentUVE;
+    AddValidatedUVE<FogVolume3DComponentUVE, &IsFogVolume3DObjectComponentValidUVE>(
         entries,
         MakeEntryUVE(
             "component.fog_volume_3d", "FogVolume3D", kSectionOrderTypeSpecificUVE,
@@ -1190,18 +2028,18 @@ void DeclareRenderInstanceNodesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 }
 
-void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // Each of these is declared here and nowhere else, and each appears in the Inspector - with
     // its dropdown, its resolved answer and its place in the section - without a line of Inspector
     // code being written for it. That is the whole point of the declaration being the single
     // source of property truth.
-    constexpr std::int32_t kProcessOrder = kSectionOrderNodeCommonUVE;
-    constexpr std::int32_t kThreadGroupOrder = kSectionOrderNodeCommonUVE + 10;
-    constexpr std::int32_t kPhysicsInterpolationOrder = kSectionOrderNodeCommonUVE + 20;
-    constexpr std::int32_t kAutoTranslateOrder = kSectionOrderNodeCommonUVE + 30;
-    constexpr std::int32_t kEditorDescriptionOrder = kSectionOrderNodeCommonUVE + 40;
-    constexpr std::int32_t kScriptOrder = kSectionOrderNodeCommonUVE + 50;
-    constexpr std::int32_t kMetadataOrder = kSectionOrderNodeCommonUVE + 60;
+    constexpr std::int32_t kProcessOrder = kSectionOrderObjectCommonUVE;
+    constexpr std::int32_t kThreadGroupOrder = kSectionOrderObjectCommonUVE + 10;
+    constexpr std::int32_t kPhysicsInterpolationOrder = kSectionOrderObjectCommonUVE + 20;
+    constexpr std::int32_t kAutoTranslateOrder = kSectionOrderObjectCommonUVE + 30;
+    constexpr std::int32_t kEditorDescriptionOrder = kSectionOrderObjectCommonUVE + 40;
+    constexpr std::int32_t kScriptOrder = kSectionOrderObjectCommonUVE + 50;
+    constexpr std::int32_t kMetadataOrder = kSectionOrderObjectCommonUVE + 60;
 
     AddUVE<ProcessComponentUVE>(
         entries,
@@ -1211,14 +2049,14 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 WithTooltipUVE(
                     ResolvedByUVE(DeclareEnumUVE<&ProcessComponentUVE::mode>("mode", "Mode",
                                                                              {{0, "Inherit"},
-                                                                              {1, "Pausable"},
-                                                                              {2, "When Paused"},
+                                                                              {1, "Running"},
+                                                                              {2, "Paused Only"},
                                                                               {3, "Always"},
-                                                                              {4, "Disabled"}}),
+                                                                              {4, "Never"}}),
                                   "resolvedModeInHierarchy"),
                     "Whether this entity's work runs while paused. Drives scripts and particle "
-                    "emitters; controllers, projectiles and spring arms skip Disabled and When "
-                    "Paused. Inherit takes the parent's answer (Pausable at the top)."),
+                    "emitters; controllers, projectiles and spring arms skip Never and Paused "
+                    "Only. Inherit takes the parent's answer (Running at the top)."),
                 WithTooltipUVE(DeclareUVE<&ProcessComponentUVE::priority>("priority", "Priority",
                                                                            kPropertyTypeInt32UVE),
                                "Script tick order. Lower runs first; equal priorities keep entity "
@@ -1229,7 +2067,7 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                "arms. Lower runs first. Not inherited."),
                 DeclareRuntimeStateEnumUVE<&ProcessComponentUVE::resolvedModeInHierarchy>(
                     "resolvedModeInHierarchy", "Resolved Mode",
-                    {{0, "Inherit"}, {1, "Pausable"}, {2, "When Paused"}, {3, "Always"}, {4, "Disabled"}}),
+                    {{0, "Inherit"}, {1, "Running"}, {2, "Paused Only"}, {3, "Always"}, {4, "Never"}}),
             }));
 
     // A sub-group of Process: which thread the work runs on is a refinement of when it runs.
@@ -1262,7 +2100,7 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         MakeEntryUVE("component.physics_interpolation", "Physics Interpolation", kPhysicsInterpolationOrder,
                      {
                          ResolvedByUVE(DeclareEnumUVE<&PhysicsInterpolationComponentUVE::mode>(
-                                           "mode", "Mode", {{0, "Inherit"}, {1, "On"}, {2, "Off"}}),
+                                           "mode", "Mode", {{0, "Inherit"}, {1, "Blended"}, {2, "Exact"}}),
                                        "interpolatedInHierarchy"),
                          DeclareRuntimeStateUVE<&PhysicsInterpolationComponentUVE::interpolatedInHierarchy>(
                              "interpolatedInHierarchy", "Interpolated In Hierarchy",
@@ -1278,14 +2116,14 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             {
                 WithTooltipUVE(
                     ResolvedByUVE(DeclareEnumUVE<&AutoTranslateComponentUVE::mode>(
-                                      "mode", "Mode", {{0, "Inherit"}, {1, "Always"}, {2, "Disabled"}}),
+                                      "mode", "Mode", {{0, "Inherit"}, {1, "Localized"}, {2, "Literal"}}),
                                   "resolvedModeInHierarchy"),
                     "Whether this entity's UI Text is looked up in the active locale before it is "
                     "drawn. The authored text is its own key. Disable it for debug labels, "
                     "identifiers and player names; a label with no component follows its parent."),
                 DeclareRuntimeStateEnumUVE<&AutoTranslateComponentUVE::resolvedModeInHierarchy>(
                     "resolvedModeInHierarchy", "Resolved Mode",
-                    {{0, "Inherit"}, {1, "Always"}, {2, "Disabled"}}),
+                    {{0, "Inherit"}, {1, "Localized"}, {2, "Literal"}}),
             }));
 
     // A note to the next person, so it gets a box that fits a paragraph rather than one line.
@@ -1306,7 +2144,7 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                               "scriptAssetPath", "Scripting", kPropertyTypeStringUVE),
                                           "script-slot"),
                       // A `.uvs` script's `export` fields, drawn from the script itself; this
-                      // node's values are stored here, so each edit is one undo step.
+                      // object's values are stored here, so each edit is one undo step.
                       WithCustomDrawerUVE(DeclareUVE<&ScriptComponentUVE::exportValues>(
                                               "exportValues", "Exports", "ScriptExportValues"),
                                           "script-exports")});
@@ -1316,12 +2154,12 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // Typed key/value pairs. A list needs add, rename, retype and remove, which a single property
     // row cannot express, so the whole list is one custom-drawn property.
     TypeMetadataEntryUVE metadata = MakeEntryUVE(
-        "component.node_metadata", "Metadata", kMetadataOrder,
-        {WithCustomDrawerUVE(DeclareUVE<&NodeMetadataComponentUVE::entries>("entries", "Metadata",
-                                                                            "NodeMetadataEntryList"),
-                             "node-metadata")});
+        "component.object_metadata", "Metadata", kMetadataOrder,
+        {WithCustomDrawerUVE(DeclareUVE<&ObjectMetadataComponentUVE::entries>("entries", "Metadata",
+                                                                            "ObjectMetadataEntryList"),
+                             "object-metadata")});
     metadata.presentedInline = true;
-    AddUVE<NodeMetadataComponentUVE>(entries, std::move(metadata));
+    AddUVE<ObjectMetadataComponentUVE>(entries, std::move(metadata));
 }
 
 [[nodiscard]] TypeMetadataRegistryUVE BuildRegistryUVE() {
@@ -1329,11 +2167,18 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     DeclareIdentityAndTransformUVE(entries);
     DeclareRenderingUVE(entries);
     DeclarePhysicsUVE(entries);
+    DeclareRayCastUVE(entries);
+    DeclareProjectileUVE(entries);
+    DeclareCombatUVE(entries);
     DeclareMediaAndUIUVE(entries);
-    DeclareNodeBasesUVE(entries);
-    DeclareRenderInstanceNodesUVE(entries);
+    DeclareGameplayUVE(entries);
+    DeclareNavigationUVE(entries);
+    DeclareObjectBasesUVE(entries);
+    DeclareRenderInstanceObjectsUVE(entries);
     DeclareSkeletonUVE(entries);
-    DeclareNodeCommonUVE(entries);
+    DeclareBoneAttachmentUVE(entries);
+    DeclareTwoBoneIKUVE(entries);
+    DeclareObjectCommonUVE(entries);
 
     TypeMetadataRegistryUVE registry;
     for (TypeMetadataEntryUVE& entry : entries) {

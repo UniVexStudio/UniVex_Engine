@@ -90,7 +90,7 @@ TEST(AnimationClipAssetUVETest, SkeletalClipRoundTripsItsBoneTracks) {
     forward.position.z = 0.4F;
     clip.bones = {AnimationAssetBoneTrackUVE{"Hips", {{0.0, rest}, {0.5, forward}}},
                   AnimationAssetBoneTrackUVE{"Spine", {{0.0, rest}}}};
-    ASSERT_TRUE(IsAnimationClipAssetValidUVE(clip)) << "bones alone are enough: no node track needed";
+    ASSERT_TRUE(IsAnimationClipAssetValidUVE(clip)) << "bones alone are enough: no object track needed";
     ASSERT_TRUE(SaveAnimationClipAssetUVE(clip, path));
     AnimationClipAssetUVE loaded;
     ASSERT_TRUE(LoadAnimationClipAssetUVE(path, loaded));
@@ -144,7 +144,7 @@ TEST(AnimationClipAssetUVETest, RestSkeletonMustBeParentsFirstWithUniqueNames) {
     EXPECT_FALSE(IsAnimationClipAssetValidUVE(clip));
 }
 
-TEST(AnimationClipAssetUVETest, BoneTracksAreValidatedLikeTheNodeTrack) {
+TEST(AnimationClipAssetUVETest, BoneTracksAreValidatedLikeTheObjectTrack) {
     AnimationClipAssetUVE clip;
     clip.clipId = "run";
     clip.durationSeconds = 1.0;

@@ -2,7 +2,7 @@
 
 #
 # One real .h + .cpp pair per component — matching the per-file discipline of
-# Engine/Runtime/Nodes/3D. Each component's struct + function declarations live in its own
+# Engine/Runtime/Objects/3D. Each component's struct + function declarations live in its own
 # header under Expose/uve/component; its validators/behavior are defined in a matching .cpp
 # under Internal (pure-data components — Hierarchy, WorldTransform, EditorInternalEntity — get
 # a deliberately-empty .cpp placeholder so every component still has the same pair, ready for
@@ -19,9 +19,9 @@
 # depend on this module without a cycle.
 
 add_library(uve_component STATIC
-    Internal/animation_mixer_component_uve.cpp
-    Internal/animation_player_component_uve.cpp
-    Internal/animation_tree_component_uve.cpp
+    Internal/animation_driver_component_uve.cpp
+    Internal/animation_sequencer_component_uve.cpp
+    Internal/animation_graph_component_uve.cpp
     Internal/area_component_uve.cpp
     Internal/audio_source_component_uve.cpp
     Internal/camera_component_uve.cpp
@@ -38,7 +38,7 @@ add_library(uve_component STATIC
     Internal/physics_interpolation_component_uve.cpp
     Internal/prefab_instance_component_uve.cpp
     Internal/primitive_mesh_component_uve.cpp
-    Internal/rigid_body_component_uve.cpp
+    Internal/rigid_3d_component_uve.cpp
     Internal/script_component_uve.cpp
     Internal/auto_translate_component_uve.cpp
     Internal/bone_modifier_component_uve.cpp
@@ -46,7 +46,7 @@ add_library(uve_component STATIC
     Internal/render_instance_component_uve.cpp
     Internal/surface_instance_component_uve.cpp
     Internal/light_emitter_component_uve.cpp
-    Internal/node_metadata_component_uve.cpp
+    Internal/object_metadata_component_uve.cpp
     Internal/process_component_uve.cpp
     Internal/thread_group_component_uve.cpp
     Internal/transform_component_uve.cpp

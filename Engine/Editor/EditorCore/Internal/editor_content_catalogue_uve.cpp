@@ -8,27 +8,27 @@
 namespace UVE::Editor {
 namespace {
 
-using Kind = Scene::Nodes::SceneNodeKindUVE;
-using Node = ContentCatalogueNodeUVE;
+using Kind = Scene::Objects::SceneObjectKindUVE;
+using Object = ContentCatalogueObjectUVE;
 using Action = ContentCatalogueActionUVE;
 
 template <std::size_t N>
-using Tree = std::array<Node, N>;
+using Tree = std::array<Object, N>;
 
-constexpr Tree<1> kOne(Kind kind) { return {Node{kind, -1, {}}}; }
+constexpr Tree<1> kOne(Kind kind) { return {Object{kind, -1, {}}}; }
 
-// Templates with more than one node. Everything else is a single node of the kind it names.
-constexpr Tree<4> kCharacter{{{Kind::CharacterBody3D, -1, {}},
+// Templates with more than one object. Everything else is a single object of the kind it names.
+constexpr Tree<4> kCharacter{{{Kind::Character3D, -1, {}},
                               {Kind::MeshInstance3D, 0, "Mesh"},
-                              {Kind::AnimationPlayer, 0, "AnimationPlayer"},
-                              {Kind::AnimationTree, 0, "AnimationTree"}}};
-constexpr Tree<3> kProp{{{Kind::StaticBody3D, -1, {}}, {Kind::MeshInstance3D, 0, "Mesh"}, {Kind::Collider3D, 0, "Collider"}}};
+                              {Kind::AnimationSequencer, 0, "AnimationSequencer"},
+                              {Kind::AnimationGraph, 0, "AnimationGraph"}}};
+constexpr Tree<3> kProp{{{Kind::Static3D, -1, {}}, {Kind::MeshInstance3D, 0, "Mesh"}, {Kind::Collider3D, 0, "Collider"}}};
 constexpr Tree<3> kPhysicsProp{
-    {{Kind::RigidBody3D, -1, {}}, {Kind::MeshInstance3D, 0, "Mesh"}, {Kind::Collider3D, 0, "Collider"}}};
+    {{Kind::Rigid3D, -1, {}}, {Kind::MeshInstance3D, 0, "Mesh"}, {Kind::Collider3D, 0, "Collider"}}};
 constexpr Tree<2> kTrigger{{{Kind::Area3D, -1, {}}, {Kind::Collider3D, 0, "Shape"}}};
 constexpr Tree<2> kFollowCamera{{{Kind::SpringArm3D, -1, {}}, {Kind::Camera3D, 0, "Camera"}}};
 
-constexpr Tree<1> kEmpty = kOne(Kind::Node3D);
+constexpr Tree<1> kEmpty = kOne(Kind::Object3D);
 constexpr Tree<1> kViewport = kOne(Kind::Viewport);
 constexpr Tree<1> kSpawner = kOne(Kind::SpawnPoint3D);
 constexpr Tree<1> kBox = kOne(Kind::BoxMesh3D);
@@ -41,19 +41,19 @@ constexpr Tree<1> kProbe = kOne(Kind::ReflectionProbe3D);
 constexpr Tree<1> kFog = kOne(Kind::FogVolume3D);
 constexpr Tree<1> kDecal = kOne(Kind::Decal3D);
 constexpr Tree<1> kCamera = kOne(Kind::Camera3D);
-constexpr Tree<1> kStaticBody = kOne(Kind::StaticBody3D);
-constexpr Tree<1> kRigidBody = kOne(Kind::RigidBody3D);
+constexpr Tree<1> kStaticBody = kOne(Kind::Static3D);
+constexpr Tree<1> kRigid3D = kOne(Kind::Rigid3D);
 constexpr Tree<1> kCollider = kOne(Kind::Collider3D);
 constexpr Tree<1> kArea = kOne(Kind::Area3D);
 constexpr Tree<1> kRayCast = kOne(Kind::RayCast3D);
-constexpr Tree<1> kAnimationPlayer = kOne(Kind::AnimationPlayer);
-constexpr Tree<1> kAnimationTree = kOne(Kind::AnimationTree);
+constexpr Tree<1> kAnimationSequencer = kOne(Kind::AnimationSequencer);
+constexpr Tree<1> kAnimationGraph = kOne(Kind::AnimationGraph);
 constexpr Tree<1> kAudio = kOne(Kind::AudioSource3D);
 constexpr Tree<1> kParticles = kOne(Kind::ParticleEmitter3D);
 constexpr Tree<1> kCanvas = kOne(Kind::Canvas);
 constexpr Tree<1> kLevelStreamer = kOne(Kind::LevelStreamer3D);
 constexpr Tree<1> kWorldPartition = kOne(Kind::WorldPartition3D);
-constexpr Tree<1> kNavigation = kOne(Kind::NavigationRegion3D);
+constexpr Tree<1> kNavigation = kOne(Kind::NavMeshVolume3D);
 constexpr Tree<1> kOccluder = kOne(Kind::Occluder3D);
 
 constexpr std::array<std::string_view, 9> kGroups{"Basic",     "Entity",    "Shapes",     "Lighting", "Camera",
@@ -61,15 +61,15 @@ constexpr std::array<std::string_view, 9> kGroups{"Basic",     "Entity",    "Sha
 
 constexpr std::array<ContentCatalogueItemUVE, 34> kItems{{
     {"folder", "Folder", "Basic", "A new folder here in Content", Action::Folder, {}},
-    {"empty", "Empty Entity", "Basic", "A bare Node3D to build your own tree on", Action::EntityAsset, kEmpty},
+    {"empty", "Empty Entity", "Basic", "A bare Object3D to build your own tree on", Action::EntityAsset, kEmpty},
     {"viewport", "Viewport", "Basic", "A new scene Viewport with an empty World folder", Action::SceneAsset, kViewport},
 
     {"character", "Character", "Entity",
-     "A playable body: CharacterBody3D with a Mesh, an AnimationPlayer and an AnimationTree", Action::EntityAsset,
+     "A playable body: Character3D with a Mesh, an AnimationSequencer and an AnimationGraph", Action::EntityAsset,
      kCharacter},
-    {"prop", "Prop", "Entity", "Something solid to place: StaticBody3D with a Mesh and a Collider",
+    {"prop", "Prop", "Entity", "Something solid to place: Static3D with a Mesh and a Collider",
      Action::EntityAsset, kProp},
-    {"physics-prop", "Physics Prop", "Entity", "A prop that falls and gets pushed: RigidBody3D, Mesh and Collider",
+    {"physics-prop", "Physics Prop", "Entity", "A prop that falls and gets pushed: Rigid3D, Mesh and Collider",
      Action::EntityAsset, kPhysicsProp},
     {"trigger", "Trigger", "Entity", "An Area3D with a shape that reports what enters and leaves it",
      Action::EntityAsset, kTrigger},
@@ -94,20 +94,20 @@ constexpr std::array<ContentCatalogueItemUVE, 34> kItems{{
     {"follow-camera", "Follow Camera", "Camera", "A SpringArm3D holding a Camera3D - pulls in when a wall is behind it",
      Action::EntityAsset, kFollowCamera},
 
-    {"static-body", "Static Body", "Physics", "A StaticBody3D: collides but never moves", Action::EntityAsset,
+    {"static-body", "Static3D", "Physics", "A Static3D: collides but never moves", Action::EntityAsset,
      kStaticBody},
-    {"rigid-body", "Rigid Body", "Physics", "A RigidBody3D: moved by gravity and forces", Action::EntityAsset,
-     kRigidBody},
+    {"rigid-body", "Rigid3D", "Physics", "A Rigid3D: moved by gravity and forces", Action::EntityAsset,
+     kRigid3D},
     {"collider", "Collider", "Physics", "A Collider3D shape for the body it is placed under", Action::EntityAsset,
      kCollider},
     {"area", "Area", "Physics", "An Area3D: detects overlaps without blocking", Action::EntityAsset, kArea},
     {"raycast", "RayCast", "Physics", "A RayCast3D: reports the first thing along a line", Action::EntityAsset,
      kRayCast},
 
-    {"animation-player", "AnimationPlayer", "Animation", "Plays animation clips on its parent", Action::EntityAsset,
-     kAnimationPlayer},
-    {"animation-tree", "AnimationTree", "Animation", "Blends clips with a graph and a state machine",
-     Action::EntityAsset, kAnimationTree},
+    {"animation-player", "AnimationSequencer", "Animation", "Plays animation clips on its parent", Action::EntityAsset,
+     kAnimationSequencer},
+    {"animation-tree", "AnimationGraph", "Animation", "Blends clips with a graph and a state machine",
+     Action::EntityAsset, kAnimationGraph},
 
     {"audio", "Audio Source", "Audio, VFX & UI", "An AudioSource3D that plays a clip in 3D", Action::EntityAsset,
      kAudio},
@@ -194,11 +194,11 @@ int RankContentCatalogueItemUVE(const ContentCatalogueItemUVE& item, const std::
     return ContainsUVE(item.label, word) ? 2 : 1;
 }
 
-Scene::Nodes::SceneNodeKindUVE GetContentCatalogueIconKindUVE(const ContentCatalogueItemUVE& item) noexcept {
-    if (item.action == ContentCatalogueActionUVE::Folder || item.nodes.empty()) {
+Scene::Objects::SceneObjectKindUVE GetContentCatalogueIconKindUVE(const ContentCatalogueItemUVE& item) noexcept {
+    if (item.action == ContentCatalogueActionUVE::Folder || item.objects.empty()) {
         return Kind::Folder;
     }
-    return item.nodes.front().kind;
+    return item.objects.front().kind;
 }
 
 } // namespace UVE::Editor

@@ -26,10 +26,10 @@
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
-#include "uve/nodes/3d/lod_group_3d_uve.h"
-#include "uve/nodes/3d/occluder_3d_uve.h"
-#include "uve/nodes/3d/visibility_region_3d_uve.h"
-#include "uve/nodes/3d/world_partition_3d_uve.h"
+#include "uve/objects/3d/lod_group_3d_uve.h"
+#include "uve/objects/3d/occluder_3d_uve.h"
+#include "uve/objects/3d/visibility_region_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/threading/thread_pool_uve.h"
@@ -1228,7 +1228,7 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InterpolatedPoseIsDrawnBetween
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
     Scene::PhysicsInterpolationComponentUVE interpolation;
-    interpolation.mode = Scene::PhysicsInterpolationModeUVE::On;
+    interpolation.mode = Scene::PoseSmoothingUVE::Blended;
     interpolation.interpolatedInHierarchy = true;
     interpolation.hasPreviousPose = true;
     interpolation.previousPosition = Math::Vector3UVE{0.0F, 0.0F, -10.0F};
@@ -1255,7 +1255,7 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_AlphaZeroDrawsThePreviousPoseA
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
     Scene::PhysicsInterpolationComponentUVE interpolation;
-    interpolation.mode = Scene::PhysicsInterpolationModeUVE::On;
+    interpolation.mode = Scene::PoseSmoothingUVE::Blended;
     interpolation.hasPreviousPose = true;
     interpolation.previousPosition = Math::Vector3UVE{-4.0F, 0.0F, -10.0F};
     interpolation.currentPosition = Math::Vector3UVE{6.0F, 0.0F, -10.0F};
@@ -1304,7 +1304,7 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InterpolationDoesNotDefeatTheP
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
     Scene::PhysicsInterpolationComponentUVE interpolation;
-    interpolation.mode = Scene::PhysicsInterpolationModeUVE::On;
+    interpolation.mode = Scene::PoseSmoothingUVE::Blended;
     interpolation.hasPreviousPose = true;
     interpolation.previousPosition = Math::Vector3UVE{0.0F, 0.0F, -10.0F};
     interpolation.currentPosition = Math::Vector3UVE{1.0F, 0.0F, -10.0F};
@@ -1334,7 +1334,7 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InterpolationOffUsesTheSimulat
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
     Scene::PhysicsInterpolationComponentUVE interpolation;
-    interpolation.mode = Scene::PhysicsInterpolationModeUVE::Off;
+    interpolation.mode = Scene::PoseSmoothingUVE::Exact;
     interpolation.interpolatedInHierarchy = false;
     interpolation.hasPreviousPose = true;
     interpolation.previousPosition = Math::Vector3UVE{-100.0F, 0.0F, -10.0F};
@@ -1363,8 +1363,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_LodGroupPastItsChainIsDroppedB
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
     for (const Scene::EntityUVE entity : {near, far}) {
-        entityManager.AddComponentUVE<Scene::LodGroup3DNodeComponentUVE>(
-            entity, Scene::LodGroup3DNodeComponentUVE{});
+        entityManager.AddComponentUVE<Scene::LodGroup3DComponentUVE>(
+            entity, Scene::LodGroup3DComponentUVE{});
     }
 
     MeshVisibilitySetUVE visibilitySet;
@@ -1386,8 +1386,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_LodLevelIsResolvedForVisibleEn
     // Default chain is 10/25/60/120 - this sits in level 2.
     const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -40.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
-    entityManager.AddComponentUVE<Scene::LodGroup3DNodeComponentUVE>(
-        entity, Scene::LodGroup3DNodeComponentUVE{});
+    entityManager.AddComponentUVE<Scene::LodGroup3DComponentUVE>(
+        entity, Scene::LodGroup3DComponentUVE{});
 
     MeshVisibilitySetUVE visibilitySet;
     visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
@@ -1395,7 +1395,58 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_LodLevelIsResolvedForVisibleEn
 
     ASSERT_EQ(visibilitySet.candidates.size(), 1U);
     EXPECT_EQ(visibilitySet.distanceCulledEntities, 0U);
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::LodGroup3DNodeComponentUVE>(entity).currentLevel, 2U);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::LodGroup3DComponentUVE>(entity).currentLevel, 2U);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_LodGroupDrawsTheMeshOfTheResolvedLevel) {
+    // The swap itself, end to end. Two meshes: the component's own full-detail mesh and a level 1
+    // override. The entity starts close enough to draw level 0 - its own mesh - then moves past the
+    // first threshold, and the set must resolve, place and bucket the LEVEL 1 mesh instead. Without
+    // this, a resolved level would be a number nothing draws with.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE fullDetailMesh = assetDatabase.RegisterUVE("mesh_renderer_tests_lodswap_full.uvmodel");
+    const Asset::AssetGuidUVE levelOneMesh = assetDatabase.RegisterUVE("mesh_renderer_tests_lodswap_level1.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodswap.uvmat");
+    const Scene::EntityUVE entity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F}, fullDetailMesh, materialGuid);
+    WaitUntilAssetsReadyUVE(fullDetailMesh, materialGuid);
+    WaitUntilAssetsReadyUVE(levelOneMesh, materialGuid);
+
+    Scene::LodGroup3DComponentUVE lod;
+    lod.levelCount = 2U;
+    lod.distanceThresholds[0] = 10.0F;
+    lod.distanceThresholds[1] = 100.0F;
+    lod.lodMeshGuids[1] = levelOneMesh; // level 0 stays on the component's own mesh
+    entityManager.AddComponentUVE<Scene::LodGroup3DComponentUVE>(entity, lod);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::LodGroup3DComponentUVE>(entity).currentLevel, 0U);
+    ASSERT_LT(visibilitySet.candidates[0].assetPairIndex, visibilitySet.assetPairs.size());
+    EXPECT_EQ(visibilitySet.assetPairs[visibilitySet.candidates[0].assetPairIndex].meshHandle.GetGuidUVE(),
+              fullDetailMesh)
+        << "level 0 overrides nothing, so it draws the component's own mesh";
+
+    // Past the first threshold, with the transform moved the way any script would move it.
+    Scene::TransformComponentUVE moved;
+    moved.localPosition = Math::Vector3UVE{0.0F, 0.0F, -40.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, entity, moved);
+    sceneGraph.UpdateUVE(entityManager);
+
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::LodGroup3DComponentUVE>(entity).currentLevel, 1U);
+    ASSERT_LT(visibilitySet.candidates[0].assetPairIndex, visibilitySet.assetPairs.size());
+    EXPECT_EQ(visibilitySet.assetPairs[visibilitySet.candidates[0].assetPairIndex].meshHandle.GetGuidUVE(),
+              levelOneMesh)
+        << "level 1's override is the mesh that gets drawn";
+    EXPECT_EQ(visibilitySet.placementCacheHits, 0U)
+        << "a level change is a different mesh with different bounds: the cached placement must not "
+           "be reused";
+    EXPECT_EQ(visibilitySet.placementCacheMisses, 1U);
 }
 
 TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_TheCameraPositionIsWhatDistanceIsMeasuredFrom) {
@@ -1407,8 +1458,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_TheCameraPositionIsWhatDistanc
     const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodcam.uvmat");
     const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -200.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
-    entityManager.AddComponentUVE<Scene::LodGroup3DNodeComponentUVE>(
-        entity, Scene::LodGroup3DNodeComponentUVE{});
+    entityManager.AddComponentUVE<Scene::LodGroup3DComponentUVE>(
+        entity, Scene::LodGroup3DComponentUVE{});
 
     MeshVisibilitySetUVE fromOrigin;
     fromOrigin.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
@@ -1441,7 +1492,7 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_EntitiesWithoutALodGroupAreNev
 
 TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_PartitionCellOutsideTheBudgetIsCulledWithItsOwnCounter) {
     // The rendering half of WorldPartition3D: the membership component is the ONLY runtime state
-    // the render pipeline reads (SyncWorldPartition3DNodesUVE writes it; this test simulates its
+    // the render pipeline reads (SyncWorldPartition3DObjectsUVE writes it; this test simulates its
     // verdict by hand so the gate is measured in isolation). A live-flag true member renders;
     // live=false (the engine put its cell outside the budget) is culled and counted in
     // partitionCulledEntities so authored hiding and partition streaming never blur together.
@@ -1453,11 +1504,11 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_PartitionCellOutsideTheBudgetI
     Scene::TransformComponentUVE partitionTransform;
     partitionTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
     sceneGraph.AttachTransformUVE(entityManager, partition, partitionTransform);
-    Scene::WorldPartition3DNodeComponentUVE partitionComponent;
+    Scene::WorldPartition3DComponentUVE partitionComponent;
     partitionComponent.cellSize = 4.0F;
     partitionComponent.cellCounts = {2U, 1U, 2U};
     partitionComponent.maximumLoadedCells = 1U;
-    entityManager.AddComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition,
+    entityManager.AddComponentUVE<Scene::WorldPartition3DComponentUVE>(partition,
                                                                            partitionComponent);
 
     const Scene::EntityUVE near = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -1.0F},
@@ -1468,7 +1519,7 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_PartitionCellOutsideTheBudgetI
     sceneGraph.SetParentUVE(entityManager, near, partition);
     sceneGraph.SetParentUVE(entityManager, far, partition);
 
-    // What SyncWorldPartition3DNodesUVE writes after admitting only the nearest cell:
+    // What SyncWorldPartition3DObjectsUVE writes after admitting only the nearest cell:
     entityManager.AddComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
         near, Scene::WorldPartition3DMembershipComponentUVE{partition, true});
     entityManager.AddComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
@@ -1497,7 +1548,7 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_PartitionCellOutsideTheBudgetI
 
 TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InactiveRegionSkipsItsInteriorWithItsOwnCounter) {
     // The render half of VisibilityRegion3D: the engine-owned membership is the only runtime
-    // state the pipeline reads (SyncVisibilityRegion3DNodesUVE writes it; this test stamps it by
+    // state the pipeline reads (SyncVisibilityRegion3DObjectsUVE writes it; this test stamps it by
     // hand to isolate the gate). live=false (no viewer inside the room) is culled and counted in
     // regionCulledEntities - "nobody is inside" never blurs with streaming-budget or authored
     // hiding counts.
@@ -1509,10 +1560,10 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InactiveRegionSkipsItsInterior
     Scene::TransformComponentUVE regionTransform;
     regionTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
     sceneGraph.AttachTransformUVE(entityManager, region, regionTransform);
-    Scene::VisibilityRegion3DNodeComponentUVE regionComponent;
+    Scene::VisibilityRegion3DComponentUVE regionComponent;
     regionComponent.halfExtents = Math::Vector3UVE{5.0F, 5.0F, 5.0F};
     regionComponent.active = false; // the engine's verdict: nobody is inside this room
-    entityManager.AddComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(region,
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DComponentUVE>(region,
                                                                              regionComponent);
 
     const Scene::EntityUVE interior = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -2.0F},
@@ -1521,7 +1572,7 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InactiveRegionSkipsItsInterior
                                         meshGuid, materialGuid)); // the corridor mesh
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
-    // What SyncVisibilityRegion3DNodesUVE writes: only the in-room mesh is managed, with the
+    // What SyncVisibilityRegion3DObjectsUVE writes: only the in-room mesh is managed, with the
     // region's inactive verdict; the corridor outside every region carries no membership.
     entityManager.AddComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
         interior, Scene::VisibilityRegion3DMembershipComponentUVE{region, false});
@@ -1560,9 +1611,9 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_MeshBehindAnOccluderIsCulledIn
     Scene::TransformComponentUVE wallTransform;
     wallTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -5.0F};
     sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
-    Scene::Occluder3DNodeComponentUVE wallOccluder;
+    Scene::Occluder3DComponentUVE wallOccluder;
     wallOccluder.halfExtents = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
-    entityManager.AddComponentUVE<Scene::Occluder3DNodeComponentUVE>(wall, wallOccluder);
+    entityManager.AddComponentUVE<Scene::Occluder3DComponentUVE>(wall, wallOccluder);
 
     static_cast<void>(MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -9.0F}, meshGuid,
                                         materialGuid)); // behind the wall
@@ -1595,8 +1646,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_CameraMoveReanswersOcclusionWi
     Scene::TransformComponentUVE wallTransform;
     wallTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -5.0F};
     sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
-    entityManager.AddComponentUVE<Scene::Occluder3DNodeComponentUVE>(
-        wall, Scene::Occluder3DNodeComponentUVE{});
+    entityManager.AddComponentUVE<Scene::Occluder3DComponentUVE>(
+        wall, Scene::Occluder3DComponentUVE{});
 
     static_cast<void>(MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -9.0F}, meshGuid,
                                         materialGuid));
@@ -1627,10 +1678,10 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_DisabledOccluderCoversNothing)
     Scene::TransformComponentUVE wallTransform;
     wallTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -5.0F};
     sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
-    Scene::Occluder3DNodeComponentUVE wallOccluder;
+    Scene::Occluder3DComponentUVE wallOccluder;
     wallOccluder.halfExtents = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
     wallOccluder.enabled = false;
-    entityManager.AddComponentUVE<Scene::Occluder3DNodeComponentUVE>(wall, wallOccluder);
+    entityManager.AddComponentUVE<Scene::Occluder3DComponentUVE>(wall, wallOccluder);
 
     static_cast<void>(MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -9.0F}, meshGuid,
                                         materialGuid));
@@ -1655,8 +1706,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_AnyOfSeveralWallsHidesOnce) {
         Scene::TransformComponentUVE wallTransform;
         wallTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, wallZ};
         sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
-        entityManager.AddComponentUVE<Scene::Occluder3DNodeComponentUVE>(
-            wall, Scene::Occluder3DNodeComponentUVE{});
+        entityManager.AddComponentUVE<Scene::Occluder3DComponentUVE>(
+            wall, Scene::Occluder3DComponentUVE{});
     }
 
     static_cast<void>(MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -9.0F}, meshGuid,

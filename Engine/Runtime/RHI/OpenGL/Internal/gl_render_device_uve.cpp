@@ -3,6 +3,8 @@
 
 #include "uve/rhi_opengl/gl_render_device_uve.h"
 
+#include <algorithm>
+#include <array>
 #include <limits>
 #include <string>
 
@@ -91,20 +93,64 @@ void* GlfwProcAddressBridgeUVE(const char* name) {
     }
 }
 
+// Use the Khronos-assigned tokens directly so the same mapping compiles against desktop GL
+// headers and the smaller Android GLES extension headers, which do not declare desktop-only
+// BC1/BC3/BC7 tokens even though the runtime format list can advertise extensions for them.
+constexpr GLenum kGlNumCompressedTextureFormatsUVE = 0x86A2;
+constexpr GLenum kGlCompressedTextureFormatsUVE = 0x86A3;
+constexpr GLint kGlCompressedRgbS3tcDxt1UVE = 0x83F0;
+constexpr GLint kGlCompressedSrgbS3tcDxt1UVE = 0x8C4C;
+constexpr GLint kGlCompressedRgbaS3tcDxt5UVE = 0x83F3;
+constexpr GLint kGlCompressedSrgbAlphaS3tcDxt5UVE = 0x8C4F;
+constexpr GLint kGlCompressedRgbaBptcUnormUVE = 0x8E8C;
+constexpr GLint kGlCompressedSrgbAlphaBptcUnormUVE = 0x8E8D;
+constexpr GLint kGlCompressedRgb8Etc2UVE = 0x9274;
+constexpr GLint kGlCompressedSrgb8Etc2UVE = 0x9275;
+constexpr GLint kGlCompressedRgba8Etc2EacUVE = 0x9278;
+constexpr GLint kGlCompressedSrgb8Alpha8Etc2EacUVE = 0x9279;
+constexpr GLint kGlCompressedRgbaAstc4x4UVE = 0x93B0;
+constexpr GLint kGlCompressedSrgb8Alpha8Astc4x4UVE = 0x93D0;
+
 struct GlTextureFormatUVE {
     GLint internalFormat;
     GLenum format;
     GLenum type;
 };
 
-[[nodiscard]] GlTextureFormatUVE TextureFormatToGlUVE(TextureFormatUVE format) noexcept {
+[[nodiscard]] GlTextureFormatUVE TextureFormatToGlUVE(TextureFormatUVE format,
+                                                        TextureColorSpaceUVE colorSpace) noexcept {
     switch (format) {
         case TextureFormatUVE::RGBA8Unorm:
-            return {GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE};
+            return {colorSpace == TextureColorSpaceUVE::Srgb ? GL_SRGB8_ALPHA8 : GL_RGBA8,
+                    GL_RGBA, GL_UNSIGNED_BYTE};
         case TextureFormatUVE::RGBA16Float:
             return {GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT};
         case TextureFormatUVE::Depth32Float:
             return {GL_DEPTH_COMPONENT32F, GL_DEPTH_COMPONENT, GL_FLOAT};
+        case TextureFormatUVE::BC1RGB:
+            return {colorSpace == TextureColorSpaceUVE::Srgb ? kGlCompressedSrgbS3tcDxt1UVE
+                                                              : kGlCompressedRgbS3tcDxt1UVE,
+                    0U, 0U};
+        case TextureFormatUVE::BC3RGBA:
+            return {colorSpace == TextureColorSpaceUVE::Srgb ? kGlCompressedSrgbAlphaS3tcDxt5UVE
+                                                              : kGlCompressedRgbaS3tcDxt5UVE,
+                    0U, 0U};
+        case TextureFormatUVE::BC7RGBA:
+            return {colorSpace == TextureColorSpaceUVE::Srgb ? kGlCompressedSrgbAlphaBptcUnormUVE
+                                                              : kGlCompressedRgbaBptcUnormUVE,
+                    0U, 0U};
+        case TextureFormatUVE::ETC2RGB8:
+            return {colorSpace == TextureColorSpaceUVE::Srgb ? kGlCompressedSrgb8Etc2UVE
+                                                              : kGlCompressedRgb8Etc2UVE,
+                    0U, 0U};
+        case TextureFormatUVE::ETC2RGBA8:
+            return {colorSpace == TextureColorSpaceUVE::Srgb ? kGlCompressedSrgb8Alpha8Etc2EacUVE
+                                                              : kGlCompressedRgba8Etc2EacUVE,
+                    0U, 0U};
+        case TextureFormatUVE::ASTC4x4RGBA:
+            return {colorSpace == TextureColorSpaceUVE::Srgb ? kGlCompressedSrgb8Alpha8Astc4x4UVE
+                                                              : kGlCompressedRgbaAstc4x4UVE,
+                    0U, 0U};
     }
     return {GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE};
 }
@@ -283,6 +329,12 @@ GlRenderDeviceUVE::GlRenderDeviceUVE(Window::IWindowManagerUVE& windowManager)
         glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &m_impl->state.maxCombinedTextureImageUnits);
         glGetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &m_impl->state.maxUniformBufferBindings);
         glGetIntegerv(GL_MAX_VERTEX_ATTRIBS, &m_impl->state.maxVertexAttribs);
+        GLint compressedFormatCount = 0;
+        glGetIntegerv(kGlNumCompressedTextureFormatsUVE, &compressedFormatCount);
+        if (compressedFormatCount > 0 && compressedFormatCount <= 4096) {
+            m_impl->state.compressedTextureFormats.resize(static_cast<std::size_t>(compressedFormatCount));
+            glGetIntegerv(kGlCompressedTextureFormatsUVE, m_impl->state.compressedTextureFormats.data());
+        }
 #if !defined(__ANDROID__)
         // GL_MAJOR_VERSION/GL_MINOR_VERSION are valid integer queries from GL 3.0 onward, which
         // this engine's desktop baseline already requires - safe to call unconditionally here.
@@ -469,17 +521,30 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
         UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE received an invalid descriptor or initial upload");
         return kInvalidTextureHandleUVE;
     }
-    if (desc.mipLevels > 1) {
-        UVE_WARNING("GlRenderDeviceUVE: CreateTextureUVE requested {} mip levels - only level 0 is populated",
-                     desc.mipLevels);
+    if (!SupportsTextureFormatUVE(desc.format, desc.colorSpace)) {
+        UVE_ERROR("GlRenderDeviceUVE: requested texture format or color space is unsupported by this context");
+        return kInvalidTextureHandleUVE;
     }
     if (desc.width > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max()) ||
         desc.height > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max())) {
         UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE dimensions exceed the GLsizei range");
         return kInvalidTextureHandleUVE;
     }
+    std::array<GLsizei, 32U> mipImageSizes{};
+    TextureMipExtentUVE mipExtent{desc.width, desc.height};
+    for (std::uint32_t level = 0U; level < desc.mipLevels; ++level) {
+        std::uint64_t levelBytes = 0U;
+        if (!CalculateTextureMipByteCountUVE(desc.format, mipExtent.width, mipExtent.height, levelBytes) ||
+            levelBytes > static_cast<std::uint64_t>(std::numeric_limits<GLsizei>::max())) {
+            UVE_ERROR("GlRenderDeviceUVE: texture mip upload exceeds the GLsizei image-size range");
+            return kInvalidTextureHandleUVE;
+        }
+        mipImageSizes[level] = static_cast<GLsizei>(levelBytes);
+        mipExtent.width = mipExtent.width > 1U ? mipExtent.width / 2U : 1U;
+        mipExtent.height = mipExtent.height > 1U ? mipExtent.height / 2U : 1U;
+    }
 
-    const GlTextureFormatUVE glFormat = TextureFormatToGlUVE(desc.format);
+    const GlTextureFormatUVE glFormat = TextureFormatToGlUVE(desc.format, desc.colorSpace);
     // Texture creation temporarily binds the object on the current active unit. Preserve both
     // pieces of caller/command-buffer state so a live GlCommandBufferUVE texture cache cannot
     // falsely skip a later rebind after a resource is created between draws.
@@ -491,14 +556,32 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
     GLuint glTexture = 0;
     glGenTextures(1, &glTexture);
     glBindTexture(GL_TEXTURE_2D, glTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, glFormat.internalFormat, static_cast<GLsizei>(desc.width),
-                 static_cast<GLsizei>(desc.height), 0, glFormat.format, glFormat.type,
-                 initialData.empty() ? nullptr : initialData.data());
-    UVE_GL_CHECK_ERROR_UVE("CreateTextureUVE");
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    std::size_t dataOffset = 0U;
+    std::uint32_t levelWidth = desc.width;
+    std::uint32_t levelHeight = desc.height;
+    for (std::uint32_t level = 0U; level < desc.mipLevels; ++level) {
+        const std::byte* const levelData = initialData.empty() ? nullptr : initialData.data() + dataOffset;
+        if (IsTextureFormatCompressedUVE(desc.format)) {
+            m_impl->state.gl.glCompressedTexImage2D(
+                GL_TEXTURE_2D, static_cast<GLint>(level), static_cast<GLenum>(glFormat.internalFormat),
+                static_cast<GLsizei>(levelWidth), static_cast<GLsizei>(levelHeight), 0,
+                mipImageSizes[level], levelData);
+        } else {
+            glTexImage2D(GL_TEXTURE_2D, static_cast<GLint>(level), glFormat.internalFormat,
+                         static_cast<GLsizei>(levelWidth), static_cast<GLsizei>(levelHeight), 0,
+                         glFormat.format, glFormat.type, levelData);
+        }
+        dataOffset += static_cast<std::size_t>(mipImageSizes[level]);
+        levelWidth = levelWidth > 1U ? levelWidth / 2U : 1U;
+        levelHeight = levelHeight > 1U ? levelHeight / 2U : 1U;
+    }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                    desc.mipLevels > 1U ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(desc.mipLevels - 1U));
+    UVE_GL_CHECK_ERROR_UVE("CreateTextureUVE mip allocation/upload and sampler state");
 
     m_impl->state.gl.glActiveTexture(static_cast<GLenum>(previousActiveTexture));
     glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
@@ -506,6 +589,34 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
     const std::uint32_t handleValue = m_impl->state.nextTextureHandle++;
     m_impl->state.textures.emplace(handleValue, Detail::GlDeviceStateUVE::TextureRecordUVE{glTexture, desc});
     return TextureHandleUVE{handleValue};
+}
+
+bool GlRenderDeviceUVE::SupportsTextureFormatUVE(const TextureFormatUVE format,
+                                                  const TextureColorSpaceUVE colorSpace) const noexcept {
+    if (!IsUsableUVE() || GetTextureFormatBlockInfoUVE(format).bytes == 0U) {
+        return false;
+    }
+    switch (colorSpace) {
+        case TextureColorSpaceUVE::Linear:
+            break;
+        case TextureColorSpaceUVE::Srgb:
+            if (!IsTextureFormatSrgbCapableUVE(format)) {
+                return false;
+            }
+            break;
+        default:
+            return false;
+    }
+    if (!IsTextureFormatCompressedUVE(format)) {
+        return true;
+    }
+    if (m_impl->state.gl.glCompressedTexImage2D == nullptr) {
+        return false;
+    }
+    const GLint internalFormat = TextureFormatToGlUVE(format, colorSpace).internalFormat;
+    return std::find(m_impl->state.compressedTextureFormats.begin(),
+                     m_impl->state.compressedTextureFormats.end(), internalFormat) !=
+           m_impl->state.compressedTextureFormats.end();
 }
 
 void GlRenderDeviceUVE::DestroyTextureUVE(TextureHandleUVE texture) {

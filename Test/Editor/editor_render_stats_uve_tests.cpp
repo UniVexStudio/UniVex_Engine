@@ -160,5 +160,73 @@ TEST(EditorRenderStatsUVETest, AssetFailuresAreAlwaysFlagged) {
     EXPECT_TRUE(invalid.value().isConcerning);
 }
 
+TEST(EditorRenderStatsUVETest, ADecalFrameReportsWhatThePassBuiltAndFlagsOnlyWhatLandedOnNothing) {
+    // The decal pass counts what it considered, what it drew, what those draws cost in polygons, and
+    // how many decals reached receivers but landed on none of them. A decal that projected onto
+    // nothing is worth a look - it is authored, enabled, in range and still costs the walk - while
+    // the polygon counts are just numbers.
+    Render::Renderer3DFrameDiagnosticsUVE diagnostics{};
+    diagnostics.decalsConsidered = 4U;
+    diagnostics.decalDrawsExtracted = 3U;
+    diagnostics.decalPatchesExtracted = 5U;
+    diagnostics.decalTrianglesExtracted = 9U;
+    diagnostics.decalsWithoutReceivers = 1U;
+    const std::vector<EditorRenderStatRowUVE> rows = BuildEditorRenderStatRowsUVE(diagnostics);
+
+    const std::optional<EditorRenderStatRowUVE> considered = FindRowUVE(rows, "Decals considered");
+    ASSERT_TRUE(considered.has_value());
+    EXPECT_EQ(considered.value().value, "4");
+    EXPECT_FALSE(considered.value().isConcerning);
+
+    const std::optional<EditorRenderStatRowUVE> draws = FindRowUVE(rows, "Decal draws");
+    ASSERT_TRUE(draws.has_value());
+    EXPECT_EQ(draws.value().value, "3");
+    EXPECT_FALSE(draws.value().isConcerning) << "a decal that drew is not a problem to report";
+
+    const std::optional<EditorRenderStatRowUVE> patches = FindRowUVE(rows, "Decal patches");
+    ASSERT_TRUE(patches.has_value());
+    EXPECT_EQ(patches.value().value, "5");
+
+    const std::optional<EditorRenderStatRowUVE> triangles = FindRowUVE(rows, "Decal triangles");
+    ASSERT_TRUE(triangles.has_value());
+    EXPECT_EQ(triangles.value().value, "9");
+
+    const std::optional<EditorRenderStatRowUVE> nothing = FindRowUVE(rows, "Decals on nothing");
+    ASSERT_TRUE(nothing.has_value());
+    EXPECT_EQ(nothing.value().value, "1");
+    EXPECT_TRUE(nothing.value().isConcerning) << "a decal that projected onto nothing is worth a look";
+}
+
+TEST(EditorRenderStatsUVETest, DecalsThatExtractButNeverRecordAreFlagged) {
+    // The frame the two rows exist for: the projection pass found geometry (so every other decal
+    // row reads healthy) and not one draw reached the GPU. That is a decal nobody can see, and no
+    // other row can tell it apart from a frame with no decals at all.
+    Render::Renderer3DFrameDiagnosticsUVE diagnostics{};
+    diagnostics.decalsConsidered = 1U;
+    diagnostics.decalDrawsExtracted = 1U;
+    diagnostics.decalPatchesExtracted = 1U;
+    diagnostics.decalTrianglesExtracted = 2U;
+
+    const std::optional<EditorRenderStatRowUVE> drawCalls =
+        FindRowUVE(BuildEditorRenderStatRowsUVE(diagnostics), "Decal draw calls");
+    ASSERT_TRUE(drawCalls.has_value());
+    EXPECT_TRUE(drawCalls.value().isConcerning);
+
+    // Recorded is the healthy case, and the row is not flagged for it.
+    diagnostics.decalDrawCallsRecorded = 1U;
+    const std::optional<EditorRenderStatRowUVE> recorded =
+        FindRowUVE(BuildEditorRenderStatRowsUVE(diagnostics), "Decal draw calls");
+    ASSERT_TRUE(recorded.has_value());
+    EXPECT_FALSE(recorded.value().isConcerning);
+
+    // Dropped draws are flagged on their own: a decal the plan refused is not the same event as a
+    // decal the pass never extracted, and a scene that hits the frame's budget needs to know.
+    diagnostics.decalDrawsDropped = 3U;
+    const std::optional<EditorRenderStatRowUVE> dropped =
+        FindRowUVE(BuildEditorRenderStatRowsUVE(diagnostics), "Decal draws dropped");
+    ASSERT_TRUE(dropped.has_value());
+    EXPECT_TRUE(dropped.value().isConcerning);
+}
+
 } // namespace
 } // namespace UVE::Editor::Tests

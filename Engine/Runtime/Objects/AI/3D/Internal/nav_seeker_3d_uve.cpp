@@ -1,0 +1,20 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#include "uve/objects/3d/nav_seeker_3d_uve.h"
+
+namespace UVE::Scene {
+
+bool IsNavSeeker3DObjectComponentValidUVE(const NavSeeker3DComponentUVE& value) noexcept {
+    return IsFinite3DObjectVectorUVE(value.targetPosition) && IsFinite3DObjectVectorUVE(value.nextPathPosition) &&
+           IsFinite3DObjectVectorUVE(value.desiredVelocity) && std::isfinite(value.radius) && value.radius > 0.0F &&
+           std::isfinite(value.height) && value.height >= value.radius * 2.0F && std::isfinite(value.maxSpeed) &&
+           value.maxSpeed > 0.0F && std::isfinite(value.pathUpdateInterval) && value.pathUpdateInterval > 0.0F &&
+           value.pathUpdateInterval <= 10.0F && std::isfinite(value.acceleration) &&
+           value.acceleration >= 0.0F && std::isfinite(value.waypointRadius) && value.waypointRadius >= 0.0F &&
+           std::isfinite(value.targetTolerance) && value.targetTolerance >= 0.0F &&
+           std::isfinite(value.slowDownRadius) && value.slowDownRadius >= 0.0F &&
+           std::isfinite(value.avoidanceRadius) && value.avoidanceRadius >= 0.0F &&
+           value.navigationLayers != 0U && value.pathStatus <= NavigationAgentPathStatusUVE::Failed;
+}
+
+} // namespace UVE::Scene

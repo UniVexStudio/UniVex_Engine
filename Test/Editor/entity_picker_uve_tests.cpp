@@ -294,10 +294,10 @@ TEST_F(EntityPickerUVETest, SelectionOutline_IsTheSelectedMeshInWorldSpaceAtFull
     }
 }
 
-TEST_F(EntityPickerUVETest, SelectionOutline_TakesMeshesBelowASelectedNodeAndDimsTheRestOfAMultiSelection) {
+TEST_F(EntityPickerUVETest, SelectionOutline_TakesMeshesBelowASelectedObjectAndDimsTheRestOfAMultiSelection) {
     Core::EngineServicesUVE& services = ServicesUVE();
     Scene::IEntityManagerUVE& entityManager = EntitiesUVE();
-    // A group node with no mesh of its own, holding one cube.
+    // A group object with no mesh of its own, holding one cube.
     const Scene::EntityUVE group = entityManager.CreateEntityUVE();
     services.GetSceneGraphUVE().AttachTransformUVE(entityManager, group, Scene::TransformComponentUVE{});
     const Scene::EntityUVE child =
@@ -323,7 +323,7 @@ TEST_F(EntityPickerUVETest, SelectionOutline_TakesMeshesBelowASelectedNodeAndDim
     }
     EXPECT_EQ(dim, CubeIndexCountUVE());
 
-    // A mesh reached both as the active node's child and as a dimmer selection of its own keeps
+    // A mesh reached both as the active object's child and as a dimmer selection of its own keeps
     // the stronger weight, and is listed once.
     const std::vector<SelectionOutlineVertex> overlap =
         CollectSelectionOutlineTrianglesUVE(entityManager, {child, group}, group);

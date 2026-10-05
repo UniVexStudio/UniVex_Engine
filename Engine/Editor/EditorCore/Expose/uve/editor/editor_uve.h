@@ -47,8 +47,8 @@
 #include "uve/editor/mesh_thumbnail_renderer_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
-#include "uve/component/animation_player_component_uve.h"
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/canvas_component_uve.h"
@@ -56,23 +56,23 @@
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/auto_translate_component_uve.h"
 #include "uve/component/editor_description_component_uve.h"
-#include "uve/component/node_metadata_component_uve.h"
+#include "uve/component/object_metadata_component_uve.h"
 #include "uve/component/process_component_uve.h"
 #include "uve/component/thread_group_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
-#include "uve/nodes/3d/all_nodes_3d_uve.h"
+#include "uve/objects/3d/all_objects_3d_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/ui_image_component_uve.h"
 #include "uve/component/ui_text_component_uve.h"
-#include "uve/scene/nodes/scene_node_registry_uve.h"
+#include "uve/scene/objects/scene_object_registry_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/scene/i_scene_serializer_uve.h"
 #include "uve/uvscript/uvscript_ast_uve.h"
@@ -150,14 +150,14 @@ struct EditorTransformSnappingSettingsUVE final {
     float scaleStep = 0.1F;
 };
 
-/// Where a newly created 3D node appears: at its parent's origin, or at the point the viewport
+/// Where a newly created 3D object appears: at its parent's origin, or at the point the viewport
 /// camera orbits - what the person is looking at.
-enum class EditorNewNodePlacementUVE {
+enum class EditorNewObjectPlacementUVE {
     ParentOrigin,
     ViewFocus,
 };
 
-/// Where a node moves among its siblings: one place up or down, or to either end.
+/// Where an object moves among its siblings: one place up or down, or to either end.
 enum class EditorSiblingMoveUVE {
     Up,
     Down,
@@ -201,11 +201,11 @@ enum class EditorSceneComponentKindUVE : std::uint8_t {
     Mesh,
     Light,
     Collider,
-    RigidBody,
+    Rigid3D,
     AudioSource,
     ParticleEmitter,
     Script,
-    AnimationPlayer,
+    AnimationSequencer,
     WorldEnvironment,
     CharacterController,
     Canvas,
@@ -217,19 +217,19 @@ enum class EditorSceneComponentKindUVE : std::uint8_t {
     Process,
     ThreadGroup,
     AutoTranslate,
-    NodeMetadata,
+    ObjectMetadata,
 };
 
 using EditorSceneComponentValueUVE =
     std::variant<Scene::CameraComponentUVE, Scene::MeshComponentUVE, Scene::LightComponentUVE,
-                 Scene::ColliderComponentUVE, Scene::RigidBodyComponentUVE, Scene::AudioSourceComponentUVE,
+                 Scene::ColliderComponentUVE, Scene::Rigid3DComponentUVE, Scene::AudioSourceComponentUVE,
                  Scene::ParticleEmitterComponentUVE, Scene::ScriptComponentUVE,
-                 Scene::AnimationPlayerComponentUVE, Scene::WorldEnvironment3DNodeComponentUVE,
+                 Scene::AnimationSequencerComponentUVE, Scene::WorldEnvironment3DComponentUVE,
                  Scene::CharacterControllerComponentUVE, Scene::CanvasComponentUVE, Scene::UITextComponentUVE,
                  Scene::UIImageComponentUVE, Scene::UIButtonComponentUVE,
                  Scene::PhysicsInterpolationComponentUVE, Scene::EditorDescriptionComponentUVE, Scene::ProcessComponentUVE,
                  Scene::ThreadGroupComponentUVE, Scene::AutoTranslateComponentUVE,
-                 Scene::NodeMetadataComponentUVE>;
+                 Scene::ObjectMetadataComponentUVE>;
 
 enum class EditorEntityKindUVE {
     Empty,
@@ -389,7 +389,7 @@ public:
         // so picking the same view twice still re-snaps, and nothing has to be "consumed".
         ViewportViewUVE view = ViewportViewUVE::User;
         std::uint32_t viewRequestSerial = 0U;
-        // A request to bring a node into view (F over the viewport, or Focus in Viewport on a
+        // A request to bring an object into view (F over the viewport, or Focus in Viewport on a
         // hierarchy row), applied by the host when the counter changes, like the view request.
         Scene::EntityUVE focusEntity = Scene::kInvalidEntityUVE;
         std::uint32_t focusRequestSerial = 0U;
@@ -493,7 +493,7 @@ public:
     [[nodiscard]] bool SaveSelectedPrefabUVE(const std::filesystem::path& path);
 
     /// Makes what the Content catalogue item `itemId` stands for inside `directory`: a folder, a
-    /// `.uventity` holding the item's node tree, or a `.uvscene` with a SceneRoot, Viewport and
+    /// `.uventity` holding the item's object tree, or a `.uvscene` with a SceneRoot, Viewport and
     /// World folder. Names never collide ("Character", "Character 2", ...). The document is not
     /// touched and no undo step is recorded. Returns the new path, or nothing in Play, for an
     /// unknown item or a failed write.
@@ -501,23 +501,23 @@ public:
         std::string_view itemId, const std::filesystem::path& directory);
 
     /// Brings the entity asset (`.uventity` or `.uvprefab`) at `path` into the scene under
-    /// `parent` - or, when that is invalid, where a new node would go - selects it and records one
+    /// `parent` - or, when that is invalid, where a new object would go - selects it and records one
     /// undo step. Returns the new root, or kInvalidEntityUVE.
     [[nodiscard]] Scene::EntityUVE PlaceEntityAssetUVE(const std::filesystem::path& path,
                                                        Scene::EntityUVE parent = Scene::kInvalidEntityUVE);
-    /// Changes an AnimationPlayer as one undo step (its animation list, its current clip).
-    bool EditAnimationPlayerUVE(Scene::EntityUVE player,
-                                const std::function<void(Scene::AnimationPlayerComponentUVE&)>& change);
+    /// Changes an AnimationSequencer as one undo step (its animation list, its current clip).
+    bool EditAnimationSequencerUVE(Scene::EntityUVE player,
+                                const std::function<void(Scene::AnimationSequencerComponentUVE&)>& change);
     /// Adds a project clip to the player's list and makes it the one playing.
-    bool AddClipToAnimationPlayerUVE(Scene::EntityUVE player, const std::filesystem::path& absoluteClip);
+    bool AddClipToAnimationSequencerUVE(Scene::EntityUVE player, const std::filesystem::path& absoluteClip);
 
     /// Brings a model source (an FBX, glTF or OBJ in Content, by its content-relative path) into the
     /// scene as one undo step and returns its root. A file with bones becomes
-    ///   <File> (Node3D)
-    ///   +- Armature (Node3D)
+    ///   <File> (Object3D)
+    ///   +- Armature (Object3D)
     ///   |  +- Skeleton3D          bound to the file's bones
     ///   |     +- <File> Mesh      (MeshInstance3D, when the file has a mesh)
-    ///   +- AnimationPlayer        playing the file's first take, looping (when it has takes)
+    ///   +- AnimationSequencer        playing the file's first take, looping (when it has takes)
     /// and a file without bones becomes one MeshInstance3D. Refused while the converted mesh a
     /// file needs is not imported yet.
     [[nodiscard]] Scene::EntityUVE PlaceModelSourceUVE(const std::filesystem::path& relativeSource,
@@ -538,10 +538,10 @@ public:
     void CloseRetargetWindowUVE();
     /// The open entity's file, or empty.
     [[nodiscard]] std::filesystem::path GetEntityEditorAssetPathUVE() const;
-    /// The open entity's root node (the one child of the scene root), or kInvalidEntityUVE.
+    /// The open entity's root object (the one child of the scene root), or kInvalidEntityUVE.
     [[nodiscard]] Scene::EntityUVE GetEntityEditorRootUVE();
     /// Writes the entity back to its file. Refused (with a Content status line) when the root is
-    /// gone or other nodes sit beside it: an entity has exactly one root.
+    /// gone or other objects sit beside it: an entity has exactly one root.
     bool SaveEntityEditorUVE();
     /// Throws away the edits and loads the file again.
     bool RevertEntityEditorUVE();
@@ -555,32 +555,32 @@ public:
     std::vector<std::filesystem::path> ImportModelAnimationsUVE(const std::filesystem::path& absoluteSource);
 
     /// The Entity Editor's middle area.
-    enum class EntityEditorTabUVE : std::uint8_t { Viewport, Scripting, Signals };
+    enum class EntityEditorTabUVE : std::uint8_t { Viewport, Scripting, Events };
     /// The Entity Editor's bottom dock.
     enum class EntityEditorDockTabUVE : std::uint8_t { Content, Timeline, AnimGraph };
     [[nodiscard]] EntityEditorTabUVE GetEntityEditorTabUVE() const noexcept;
     void SetEntityEditorTabUVE(EntityEditorTabUVE tab) noexcept;
-    /// One thing Compile found wrong with the open entity. `entity` is the node it belongs to
+    /// One thing Compile found wrong with the open entity. `entity` is the object it belongs to
     /// (kInvalidEntityUVE for a problem with the entity as a whole); `at` is zero when it has no
     /// place in a script.
     struct EntityCompileProblemUVE final {
         Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
-        std::string nodeName;
+        std::string objectName;
         std::string scriptPath;
         UVScript::SourceLocationUVE at;
         std::string message;
     };
-    /// Checks the whole open entity: one root, and every node's `.uvs` script (read from the
-    /// open text editor when it has unsaved text, else from disk) compiled against that node.
+    /// Checks the whole open entity: one root, and every object's `.uvs` script (read from the
+    /// open text editor when it has unsaved text, else from disk) compiled against that object.
     /// Returns the problem count; the list stays until the next Compile, Revert or close.
     std::size_t CompileEntityEditorUVE();
     [[nodiscard]] const std::vector<EntityCompileProblemUVE>& GetEntityEditorProblemsUVE() const noexcept;
     /// False until Compile has run for this session (so "no problems" means something).
     [[nodiscard]] bool HasEntityEditorCompiledUVE() const noexcept;
-    /// One `on <event>` handler in a node's script: what the node answers to.
+    /// One `on <event>` handler in an object's script: what the object answers to.
     struct EntitySignalRowUVE final {
         Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
-        std::string nodeName;
+        std::string objectName;
         std::string scriptPath;
         std::string event;
         /// "(other, impulse)" or empty for a handler without parameters.
@@ -590,7 +590,7 @@ public:
     /// Every handler of every script in the open entity, in tree order then source order.
     [[nodiscard]] std::vector<EntitySignalRowUVE> GetEntityEditorSignalsUVE();
     /// Selects `entity`, opens its script in the Scripting tab and puts the caret on `line`
-    /// (1-based; 0 leaves it). False when the node has no `.uvs` script.
+    /// (1-based; 0 leaves it). False when the object has no `.uvs` script.
     bool GoToEntityScriptUVE(Scene::EntityUVE entity, std::uint32_t line);
     /// Unsaved edits anywhere in the Entity Editor: the tree or the open script.
     [[nodiscard]] bool HasEntityEditorUnsavedChangesUVE() const noexcept;
@@ -668,7 +668,7 @@ public:
     [[nodiscard]] bool ResetSelectedComponentUVE(const Core::TypeMetadataEntryUVE& entry);
     /// The same for the Transform section, which is drawn by hand rather than from metadata. Only
     /// the local pose travels - position, rotation (with its Euler authoring state) and scale; the
-    /// node's own top-level flag stays as it is.
+    /// object's own top-level flag stays as it is.
     [[nodiscard]] bool CopySelectedTransformUVE();
     [[nodiscard]] bool CanPasteSelectedTransformUVE() const noexcept { return m_transformClipboard.has_value(); }
     [[nodiscard]] bool PasteSelectedTransformUVE();
@@ -684,11 +684,11 @@ public:
     /// when editing is not allowed, the entity has no Visibility component, or nothing changes.
     [[nodiscard]] bool SetEntityVisibleUVE(Scene::EntityUVE entity, bool visible);
     /// Asks the viewport to bring `entity` into view: a Marker3D flies into its viewpoint, any
-    /// other node with a world position becomes the orbit pivot. Returns false and requests
+    /// other object with a world position becomes the orbit pivot. Returns false and requests
     /// nothing when CanFocusEntityInViewportUVE() says no.
     [[nodiscard]] bool RequestViewportFocusUVE(Scene::EntityUVE entity);
     /// True for a document entity the viewport can focus: one with a world position or a usable
-    /// Marker3D viewpoint. The scene root and plain Nodes have neither.
+    /// Marker3D viewpoint. The scene root and plain Objects have neither.
     [[nodiscard]] bool CanFocusEntityInViewportUVE(Scene::EntityUVE entity) const;
     [[nodiscard]] std::uint32_t GetViewportFocusRequestSerialUVE() const noexcept {
         return m_viewportOverlayState.focusRequestSerial;
@@ -701,11 +701,11 @@ public:
     /// request until it is next drawn, so reopening the branch later shows it closed. Returns
     /// false for anything that is not a document entity.
     [[nodiscard]] bool SetHierarchyBranchOpenUVE(Scene::EntityUVE entity, bool open);
-    /// The display name of `entity`'s node type ("StaticBody3D"): its stored type, or for a node
+    /// The display name of `entity`'s object type ("Static3D"): its stored type, or for an object
     /// saved before types were stored, the best reading of its components
-    /// (Scene::ResolveSceneNodeKindUVE). Empty for anything that is not a document entity.
-    [[nodiscard]] std::string_view GetNodeTypeNameUVE(Scene::EntityUVE entity) const;
-    /// True when `entity` is a document node that can make `move` among its siblings: not the
+    /// (Scene::ResolveSceneObjectKindUVE). Empty for anything that is not a document entity.
+    [[nodiscard]] std::string_view GetObjectTypeNameUVE(Scene::EntityUVE entity) const;
+    /// True when `entity` is a document object that can make `move` among its siblings: not the
     /// scene root, and not already at the end it would move toward.
     [[nodiscard]] bool CanMoveDocumentEntityUVE(Scene::EntityUVE entity, EditorSiblingMoveUVE move);
     /// Moves `entity` among its siblings, keeping its parent and transform, as one undoable edit.
@@ -717,11 +717,11 @@ public:
     [[nodiscard]] std::optional<bool> GetPendingHierarchyRowOpenUVE(Scene::EntityUVE entity) const;
     /// Problems with how `entity` is set up, one readable sentence each, for the hierarchy's
     /// warning badge: a non-finite transform, a script path that is not a valid project path, a
-    /// mesh node with no mesh or with a mesh/material the project no longer has, a Skeleton3D
+    /// mesh object with no mesh or with a mesh/material the project no longer has, a Skeleton3D
     /// with no source model. Empty when there is nothing to fix.
-    [[nodiscard]] std::vector<std::string> GetNodeWarningsUVE(Scene::EntityUVE entity) const;
+    [[nodiscard]] std::vector<std::string> GetObjectWarningsUVE(Scene::EntityUVE entity) const;
     /// The script attached to `entity`, when it has one (a non-empty script path).
-    [[nodiscard]] std::optional<std::string> GetNodeScriptPathUVE(Scene::EntityUVE entity) const;
+    [[nodiscard]] std::optional<std::string> GetObjectScriptPathUVE(Scene::EntityUVE entity) const;
 
     /// Adds or replaces one supported scene component on the selected document entity using the
     /// value variant matching `kind`. Valid changes are one Undo/Redo transaction; invalid, unchanged,
@@ -816,7 +816,7 @@ public:
     /// Applies `value` to editor setting `id` at once. Refused, changing nothing, for an unknown id
     /// or a value its descriptor does not allow. Stored in the settings file with the session.
     [[nodiscard]] bool SetEditorSettingUVE(std::string_view id, const Config::SettingValueUVE& value);
-    /// The point the viewport camera orbits, reported by the host each frame; new nodes are placed
+    /// The point the viewport camera orbits, reported by the host each frame; new objects are placed
     /// there when their placement preference says so. A non-finite point is ignored.
     void SetViewportCameraFocusUVE(const Math::Vector3UVE& focus) noexcept;
 
@@ -860,9 +860,9 @@ public:
     /// entity handle without mutation when the editor is not running or `kind` is unsupported.
     [[nodiscard]] Scene::EntityUVE CreateDocumentEntityUVE(EditorEntityKindUVE kind);
 
-    /// Creates a user-facing node from the centralized SceneNode registry. Runtime ownership remains
+    /// Creates a user-facing object from the centralized SceneObject registry. Runtime ownership remains
     /// in core/physics/render/audio/scripting; this method only creates the authored scene façade.
-    [[nodiscard]] Scene::EntityUVE CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE kind);
+    [[nodiscard]] Scene::EntityUVE CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE kind);
 
     /// Duplicates the selected live document entity and all descendants under the selected root's
     /// current parent, assigns the duplicate root a deterministic available name when it has name
@@ -896,6 +896,12 @@ public:
 
     [[nodiscard]] std::vector<Scene::EntityUVE> GetDocumentRootsUVE();
 
+    /// The objects an entity reference may name, in Outliner order: every document object with a
+    /// transform, minus the selection itself (a reference an object makes to itself resolves to
+    /// nothing an author could act on). Shared by the single-reference picker and the
+    /// reference-list drawer, so both offer exactly the same choices in the same order.
+    [[nodiscard]] std::vector<Scene::EntityUVE> GetEntityReferenceCandidatesUVE();
+
     /// The document's single scene-root entity (the top of the hierarchy), or invalid when the
     /// document somehow has none. Structural only by design: name + identity transform.
     [[nodiscard]] Scene::EntityUVE GetDocumentSceneRootUVE();
@@ -919,8 +925,8 @@ public:
     [[nodiscard]] bool ClearViewportBookmarkUVE(std::size_t slot) noexcept;
 
     /// Composes the fly-to-marker bookmark for an entity: the entity must carry a valid, enabled
-    /// Marker3DNodeComponentUVE and a world transform; the marker's authored offset+rotation are
-    /// composed under the node's pose (Scene::ComposeMarker3DPoseUVE), the camera eye is placed at
+    /// Marker3DComponentUVE and a world transform; the marker's authored offset+rotation are
+    /// composed under the object's pose (Scene::ComposeMarker3DPoseUVE), the camera eye is placed at
     /// the marker's position looking along its composed -Z (the camera convention), and the orbit
     /// bookmark states that same view as target/yaw/pitch/distance so the host camera applies it
     /// verbatim. Any missing piece answers no value - fail-closed, the caller simply does not
@@ -968,7 +974,7 @@ public:
     /// viewport's entity toolbar uses that to decide whether to offer "Scripting" at all.
     [[nodiscard]] bool OpenScriptGraphForEntityUVE(Scene::EntityUVE entity);
     /// "New UVScript" on the Scripting slot. Writes `scripts/<name>.uvs` (a free name) whose header
-    /// names the node and its kind, points the Script at it as one undoable edit, and opens it in
+    /// names the object and its kind, points the Script at it as one undoable edit, and opens it in
     /// the script text editor. Refuses unless authoring is allowed, exactly one document entity is
     /// selected, it carries a Script component and that Script is still empty.
     [[nodiscard]] bool CreateUVScriptForSelectedEntityUVE();
@@ -976,7 +982,7 @@ public:
     /// A `.uvs` file open in the Scripting workspace's text editor.
     struct UVScriptDocumentUVE final {
         std::string path;
-        /// The node the script is checked against: its components decide which properties exist.
+        /// The object the script is checked against: its components decide which properties exist.
         Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
         std::string text;
         std::string savedText;
@@ -996,20 +1002,20 @@ public:
     /// Closes the text editor (unsaved text is dropped) and returns to the scene.
     void CloseOpenUVScriptUVE();
 
-    /// One `export` field of the selected node's `.uvs` script, as the Inspector shows it.
+    /// One `export` field of the selected object's `.uvs` script, as the Inspector shows it.
     struct ScriptExportRowUVE final {
         std::string name;
         UVScript::TypeUVE type;
         /// The script's own initial value, as UVScript text.
         std::string defaultText;
-        /// What this node runs with: its stored value when it has a valid one, else the default.
+        /// What this object runs with: its stored value when it has a valid one, else the default.
         std::string valueText;
         bool overridden = false;
     };
-    /// The selected node's exported fields, in declaration order. Empty when the node has no
+    /// The selected object's exported fields, in declaration order. Empty when the object has no
     /// `.uvs` script, the file cannot be read, or it does not compile.
     [[nodiscard]] std::vector<ScriptExportRowUVE> GetSelectedScriptExportsUVE();
-    /// Sets the selected node's value for export `name` from UVScript text, or - with no text -
+    /// Sets the selected object's value for export `name` from UVScript text, or - with no text -
     /// goes back to the script's default. One undo step. Refuses a name the script does not
     /// export and text that is not a value of the field's type.
     [[nodiscard]] bool SetSelectedScriptExportUVE(const std::string& name, std::optional<std::string> text);
@@ -1023,19 +1029,19 @@ public:
     /// The script assets Quick Load offers, sorted: every one the document already uses, plus every
     /// `.uvs` file in the project's scripts folder.
     [[nodiscard]] std::vector<std::string> GetKnownScriptAssetPathsUVE() const;
-    /// Metadata on the selected node. Each writes the whole entry list once through the metadata
+    /// Metadata on the selected object. Each writes the whole entry list once through the metadata
     /// property path, so every add, edit, rename, retype or removal is exactly one undo entry.
-    /// New and renamed keys must pass ValidateNodeMetadataKeyUVE.
-    [[nodiscard]] bool AddSelectedNodeMetadataUVE(const std::string& key, const Core::VariantUVE& value);
-    [[nodiscard]] bool SetSelectedNodeMetadataValueUVE(const std::string& key, const Core::VariantUVE& value);
+    /// New and renamed keys must pass ValidateObjectMetadataKeyUVE.
+    [[nodiscard]] bool AddSelectedObjectMetadataUVE(const std::string& key, const Core::VariantUVE& value);
+    [[nodiscard]] bool SetSelectedObjectMetadataValueUVE(const std::string& key, const Core::VariantUVE& value);
     /// The same edit shown at once without history, for a value being dragged: the drag becomes
     /// one undo step when it ends (see PreviewSelectedComponentPropertyUVE).
-    [[nodiscard]] bool PreviewSelectedNodeMetadataValueUVE(const std::string& key, const Core::VariantUVE& value);
-    [[nodiscard]] bool RenameSelectedNodeMetadataUVE(const std::string& key, const std::string& newKey);
+    [[nodiscard]] bool PreviewSelectedObjectMetadataValueUVE(const std::string& key, const Core::VariantUVE& value);
+    [[nodiscard]] bool RenameSelectedObjectMetadataUVE(const std::string& key, const std::string& newKey);
     /// Converts the value to `type`. Refuses a conversion that would lose data unless `allowLoss`.
-    [[nodiscard]] bool ChangeSelectedNodeMetadataTypeUVE(const std::string& key, Core::VariantTypeUVE type,
+    [[nodiscard]] bool ChangeSelectedObjectMetadataTypeUVE(const std::string& key, Core::VariantTypeUVE type,
                                                          bool allowLoss);
-    [[nodiscard]] bool RemoveSelectedNodeMetadataUVE(const std::string& key);
+    [[nodiscard]] bool RemoveSelectedObjectMetadataUVE(const std::string& key);
     /// Arms the entity context toolbar (see ViewportOverlayStateUVE) at the given screen pixel for
     /// `entity`. The caller (main.cpp, which owns viewport picking and the camera the pixel was
     /// projected with) must call this before RenderOverlayUVE runs the same frame.
@@ -1171,7 +1177,7 @@ private:
         /// The window selects `tab` on its next frame (GoTo from a problem or a signal).
         bool forceTab = false;
         EntityEditorDockTabUVE dockTab = EntityEditorDockTabUVE::Content;
-        /// The node the dock last followed: selecting an AnimationPlayer or AnimationTree opens its
+        /// The object the dock last followed: selecting an AnimationSequencer or AnimationGraph opens its
         /// tab once, and the tab stays the user's choice until the selection moves again.
         Scene::EntityUVE dockFollowed = Scene::kInvalidEntityUVE;
         float dockHeight = 220.0F;
@@ -1206,8 +1212,8 @@ private:
     void RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std::filesystem::path& modelFile);
     void DrawRetargetPreviewUVE();
     void DrawRetargetPlaceholderUVE();
-    /// The entity's nodes in tree order (root first). Empty when no entity is open.
-    [[nodiscard]] std::vector<Scene::EntityUVE> CollectEntityEditorNodesUVE();
+    /// The entity's objects in tree order (root first). Empty when no entity is open.
+    [[nodiscard]] std::vector<Scene::EntityUVE> CollectEntityEditorObjectsUVE();
     /// Instantiates the entity asset as the document's only content (below the scene root).
     [[nodiscard]] Scene::EntityUVE LoadEntityIntoDocumentUVE(Asset::AssetGuidUVE guid);
     /// The Entity Editor's own window, and what the main window shows meanwhile.
@@ -1220,7 +1226,7 @@ private:
     /// The character file behind a Retarget target: the `.uvmodel` itself, or a model source's imported model.
     [[nodiscard]] std::filesystem::path ResolveRetargetModelFileUVE(const std::filesystem::path& target) const;
     void DrawEntityEditorPlaceholderUVE();
-    /// The Entity Editor's middle: the Viewport / Scripting / Signals tabs and Compile's problems.
+    /// The Entity Editor's middle: the Viewport / Scripting / Events tabs and Compile's problems.
     void DrawEntityEditorMiddleUVE(EntityEditSessionUVE& session);
     void DrawEntityEditorScriptingTabUVE();
     void DrawEntityEditorDockUVE(EntityEditSessionUVE& session);
@@ -1237,7 +1243,7 @@ private:
 
     /// Play-entry spawn semantics. Called once by EnterPlayModeUVE() after the document snapshot
     /// is captured and the simulation is running: resolves the one spawn point that fires this
-    /// session (deterministic content order over enabled+valid SpawnPoint3D nodes), moves the
+    /// session (deterministic content order over enabled+valid SpawnPoint3D objects), moves the
     /// player entity (the one carrying a CharacterControllerComponentUVE) to the composed spawn
     /// pose via the sweep's exact inverse, and disables the point when it was authored
     /// `oneShot = true`. Every mutation sits inside the snapshot, so StopPlayModeUVE() hands
@@ -1260,7 +1266,7 @@ private:
     enum class EditorRightPanelTabUVE {
         Inspector,
         Import,
-        Signals,
+        Events,
     };
 
     /// Selects one docked lower-workspace panel. FileSystem is the safe default and keeps the
@@ -1386,17 +1392,17 @@ private:
         bool dirtyAfter = false;
     };
 
-    /// A centralized scene node is restored from one complete authored snapshot so compound node
-    /// creation (for example CharacterBody3D plus Collider and kinematic RigidBody) is one history unit.
-    struct SceneNodeCreationHistoryEntryUVE final {
+    /// A centralized scene object is restored from one complete authored snapshot so compound object
+    /// creation (for example Character3D plus Collider and kinematic Rigid3D) is one history unit.
+    struct SceneObjectCreationHistoryEntryUVE final {
         Scene::SceneSnapshotUVE snapshot;
-        Scene::Nodes::SceneNodeKindUVE kind = Scene::Nodes::SceneNodeKindUVE::Node3D;
+        Scene::Objects::SceneObjectKindUVE kind = Scene::Objects::SceneObjectKindUVE::Object3D;
         Scene::EntityUVE activeEntity = Scene::kInvalidEntityUVE;
         EditorSelectionSnapshotUVE selectionBefore;
         EditorSelectionSnapshotUVE selectionAfter;
         bool dirtyBefore = false;
         bool dirtyAfter = false;
-        /// The parent the node was created under; Redo restores the subtree back under it
+        /// The parent the object was created under; Redo restores the subtree back under it
         /// (falling back to the scene root) instead of dropping it to document top level.
         Scene::EntityUVE createdUnderParent = Scene::kInvalidEntityUVE;
     };
@@ -1412,7 +1418,7 @@ private:
         EditorSelectionSnapshotUVE selectionAfter;
         bool dirtyBefore = false;
         bool dirtyAfter = false;
-        /// Where among its siblings the copy stands: just below the node it copies.
+        /// Where among its siblings the copy stands: just below the object it copies.
         std::size_t siblingIndex = 0U;
     };
 
@@ -1449,7 +1455,7 @@ private:
     using HistoryEntryUVE =
         std::variant<TransformHistoryEntryUVE, NameHistoryEntryUVE, PrimitiveAppearanceHistoryEntryUVE,
                      SceneComponentHistoryEntryUVE, ComponentPropertyHistoryEntryUVE,
-                     CreationHistoryEntryUVE, SceneNodeCreationHistoryEntryUVE,
+                     CreationHistoryEntryUVE, SceneObjectCreationHistoryEntryUVE,
                      DuplicationHistoryEntryUVE,
                      DeletionHistoryEntryUVE,
                      ReparentHistoryEntryUVE>;
@@ -1461,15 +1467,15 @@ private:
     /// Reads a project file by the same rule as WriteProjectTextFileUVE.
     [[nodiscard]] std::optional<std::string> ReadProjectTextFileUVE(const std::filesystem::path& path) const;
     [[nodiscard]] bool IsDocumentEntityUVE(Scene::EntityUVE entity) const noexcept;
-    [[nodiscard]] bool HasSceneGraphNodeUVE(Scene::EntityUVE entity) const noexcept;
+    [[nodiscard]] bool HasSceneGraphObjectUVE(Scene::EntityUVE entity) const noexcept;
     /// True for any live document entity in the hierarchy, spatial or not. This, not
-    /// HasSceneGraphNodeUVE, is what a parent needs: a pure Node such as the scene root holds
+    /// HasSceneGraphObjectUVE, is what a parent needs: a pure Object such as the scene root holds
     /// children without having a transform of its own.
-    [[nodiscard]] bool IsReparentableNodeUVE(Scene::EntityUVE entity) const noexcept;
-    [[nodiscard]] bool IsHierarchyNodeUVE(Scene::EntityUVE entity) const noexcept;
+    [[nodiscard]] bool IsReparentableObjectUVE(Scene::EntityUVE entity) const noexcept;
+    [[nodiscard]] bool IsHierarchyObjectUVE(Scene::EntityUVE entity) const noexcept;
     /// The world pose a child of `parent` composes its local transform from, by the rule
     /// SceneGraphUVE::UpdateUVE applies: identity for no parent and for a parent with no transform
-    /// (a pure Node starts its children's transform chains), otherwise the parent's world transform.
+    /// (a pure Object starts its children's transform chains), otherwise the parent's world transform.
     /// Null when `parent` is not a live document entity.
     [[nodiscard]] std::optional<Scene::WorldTransformComponentUVE> TryGetComposingParentWorldUVE(
         Scene::EntityUVE parent) const;
@@ -1563,35 +1569,35 @@ private:
     void CancelHierarchyRenameUVE() noexcept;
     [[nodiscard]] Scene::EntityUVE CreateDocumentEntityInternalUVE(
         EditorEntityKindUVE kind, const std::optional<std::string>& explicitName);
-    /// Creates the document-entity shell every scene node starts from: a live entity with a
+    /// Creates the document-entity shell every scene object starts from: a live entity with a
     /// default TransformComponentUVE and the given (already finalized) NameComponentUVE.
-    /// Node definitions (Engine/Runtime/Nodes/3D) attach their kind-specific components on top.
+    /// Object definitions (Engine/Runtime/Objects/3D) attach their kind-specific components on top.
     [[nodiscard]] Scene::EntityUVE CreateDocumentEntityShellInternalUVE(const std::string_view name);
 
     /// Returns whether `entity` carries the scene-root marker. The root is never deletable,
     /// re-parentable, or duplicable - every one of those commands checks this first.
     [[nodiscard]] bool IsSceneRootEntityUVE(Scene::EntityUVE entity) const;
-    /// A node the tree is built on and that cannot be deleted, duplicated or moved: the scene
+    /// An object the tree is built on and that cannot be deleted, duplicated or moved: the scene
     /// root, and while the Entity Editor is open, the entity's own root.
     [[nodiscard]] bool IsStructuralRootUVE(Scene::EntityUVE entity);
-    /// Gives a node the recipe parts it was saved without - Visibility for a spatial node and the
-    /// common Node section - so its Inspector always shows the full recipe.
+    /// Gives an object the recipe parts it was saved without - Visibility for a spatial object and the
+    /// common Object section - so its Inspector always shows the full recipe.
     void RepairInspectorRecipeUVE(Scene::EntityUVE entity);
     /// Registers the hand-drawn Transform section; called at Transform's place in section order.
     void RegisterTransformInspectorDrawerUVE();
 
     /// Returns the document's scene root when one exists, else creates it (name + transform +
-    /// marker via the SceneRoot NodeDefinition). Idempotent: the one-root invariant every
+    /// marker via the SceneRoot ObjectDefinition). Idempotent: the one-root invariant every
     /// document seam relies on is established or confirmed on every call.
     [[nodiscard]] Scene::EntityUVE EnsureDocumentSceneRootUVE();
-    /// Creates a document entity for one node kind from that kind's NodeDefinition: a
+    /// Creates a document entity for one object kind from that kind's ObjectDefinition: a
     /// uniquely-named entity shell plus the definition's component recipe. Defined in
     /// editor_uve.cpp next to its only call sites.
-    /// A new, typed, unparented node of `kind` with no undo step - the recipe both the Add menus
+    /// A new, typed, unparented object of `kind` with no undo step - the recipe both the Add menus
     /// and the Content catalogue build from.
-    [[nodiscard]] Scene::EntityUVE CreateSceneNodeEntityInternalUVE(Scene::Nodes::SceneNodeKindUVE kind);
+    [[nodiscard]] Scene::EntityUVE CreateSceneObjectEntityInternalUVE(Scene::Objects::SceneObjectKindUVE kind);
     template <typename Definition, typename ApplyFunc>
-    [[nodiscard]] Scene::EntityUVE CreateNodeDefinitionEntityInternalUVE(const Definition& definition,
+    [[nodiscard]] Scene::EntityUVE CreateObjectDefinitionEntityInternalUVE(const Definition& definition,
                                                                          ApplyFunc applyDefinition);
     void RecordHistoryUVE(HistoryEntryUVE entry);
     void ClearHistoryUVE() noexcept;
@@ -1600,6 +1606,9 @@ private:
     void DestroyDocumentSubtreeUVE(Scene::EntityUVE root);
     void ClearDocumentSceneUVE();
     void LoadSessionSettingsUVE();
+    /// Moves the value of every renamed setting id from its old key to its new one, once, when the
+    /// file still carries the old name and the new one holds nothing (see kRenamedSettingIdsUVE).
+    void MigrateRenamedSettingIdsUVE(Config::IConfigManagerUVE& config);
     [[nodiscard]] bool SaveSessionSettingsUVE();
     void ApplyLayoutPresetUVE(EditorLayoutPresetUVE preset) noexcept;
     void DrawMenuBarUVE();
@@ -1687,9 +1696,9 @@ private:
     void DrawHierarchyPanelUVE();
     /// The Scene tree with its "+" and search, filling the rest of the current window.
     void DrawHierarchyBodyUVE();
-    void DrawHierarchyNodeContextMenuUVE(Scene::EntityUVE entity);
-    void DrawNodePickerUVE();
-    // A collapsing header (`asHeader`) or tree node whose open state lives in m_inspectorFoldOpen.
+    void DrawHierarchyObjectContextMenuUVE(Scene::EntityUVE entity);
+    void DrawObjectPickerUVE();
+    // A collapsing header (`asHeader`) or tree object whose open state lives in m_inspectorFoldOpen.
     bool DrawInspectorFoldUVE(const char* label, const std::string& key, bool defaultOpen, bool asHeader,
                               int flags);
     void DrawHierarchyVisibilityToggleUVE(Scene::EntityUVE entity, bool rowHovered);
@@ -1698,7 +1707,7 @@ private:
     void DrawInspectorSectionMenuUVE(const Core::TypeMetadataEntryUVE* entry, const char* sectionName);
     void DrawHierarchyRowBadgesUVE(const std::vector<std::string>& warnings, const std::optional<std::string>& script,
                                    float eyeColumns);
-    void DrawHierarchyNodeUVE(Scene::EntityUVE entity);
+    void DrawHierarchyObjectUVE(Scene::EntityUVE entity);
     void AcceptHierarchyDropTargetUVE(Scene::EntityUVE targetParent);
     void DrawInspectorPanelUVE();
     void DrawInspectorContentUVE();
@@ -1746,17 +1755,17 @@ private:
     /// kInvalidAssetGuidUVE means "(none)" was picked.
     [[nodiscard]] std::optional<Asset::AssetGuidUVE> DrawAssetPickerUVE(const char* id, Asset::AssetGuidUVE value,
                                                                       const std::string& extension);
-    /// AnimationTree's parameter table and its graph (nodes, wiring, transitions). Every edit
+    /// AnimationGraph's parameter table and its graph (objects, wiring, transitions). Every edit
     /// writes the whole list back through SetSelectedComponentPropertyUVE, so it is one undo step
     /// and the graph is re-validated before it lands.
     void DrawAnimationParametersPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                             const Core::TypeMetadataPropertyUVE& property, const void* instance);
     void DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                        const Core::TypeMetadataPropertyUVE& property, const void* instance);
-    /// Queues a parameter rename for the graph block drawn next, so the nodes and transitions that
+    /// Queues a parameter rename for the graph block drawn next, so the objects and transitions that
     /// read the old name follow it.
     void RenameAnimationParameterReferencesUVE(const std::string& from, const std::string& to);
-    void DrawNodeMetadataPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+    void DrawObjectMetadataPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                      const Core::TypeMetadataPropertyUVE& property, const void* instance);
     /// Skeleton3D's Source row: which rigged model its bones come from, with Reload and Clear.
     void DrawSkeletonSourcePropertyUVE(const Core::TypeMetadataEntryUVE& entry,
@@ -1764,6 +1773,21 @@ private:
     /// Skeleton3D's bone hierarchy, read-only: bones are authored in the DCC tool, not here.
     void DrawSkeletonBonesPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                       const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// A fixed-capacity list of entity references (RayCast3D's exclusions): one object picker per
+    /// slot, plus the add/remove rows. Every edit writes the whole list back through
+    /// SetSelectedComponentPropertyUVE, so it is one undo step and the component's own rule
+    /// (dense, no duplicates) is enforced before the write lands.
+    void DrawEntityReferenceListPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                            const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// LODGroup3D's distance chain: one threshold row per level in use, plus the distance the
+    /// object is culled past, which is the rule those thresholds add up to. One write for the whole
+    /// array, so an edit is one undo step.
+    void DrawLodGroupThresholdsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                           const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// LODGroup3D's per-level meshes: one mesh picker per level in use. An unassigned level draws
+    /// the object's own Mesh component mesh, which is what the row shows until it is overridden.
+    void DrawLodGroupMeshesPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                       const Core::TypeMetadataPropertyUVE& property, const void* instance);
     /// Points the selected Skeleton3D at the model source `relativeSource` (content-relative) and
     /// loads its bones; an empty path clears both. One undo step. False, with the reason in
     /// m_skeletonSourceStatus, when the file has no readable skeleton.
@@ -1913,9 +1937,9 @@ private:
     /// The editor's own settings, declared by RegisterEditorSettingsUVE; read and written in the
     /// services' settings store.
     Config::SettingsRegistryUVE m_settingsRegistry;
-    // Node creation preferences (editor_settings_uve.cpp), and the host's latest camera focus.
-    bool m_newNodesUnderSelection = true;
-    EditorNewNodePlacementUVE m_newNodePlacement = EditorNewNodePlacementUVE::ParentOrigin;
+    // Object creation preferences (editor_settings_uve.cpp), and the host's latest camera focus.
+    bool m_newObjectsUnderSelection = true;
+    EditorNewObjectPlacementUVE m_newObjectPlacement = EditorNewObjectPlacementUVE::ParentOrigin;
     std::optional<Math::Vector3UVE> m_viewportCameraFocus;
     // Play mode preferences (editor_settings_uve.cpp).
     bool m_playPauseOnStart = false;
@@ -1932,16 +1956,16 @@ private:
     // (editor_settings_uve.cpp) that loading, saving and the preferences window all use.
     [[nodiscard]] static const std::vector<EditorSettingBindingUVE>& GetSettingBindingsUVE();
     [[nodiscard]] static const EditorSettingBindingUVE* FindSettingBindingUVE(std::string_view id);
-    // Where a new node goes: under the single selection when the preference allows and there is
-    // one, otherwise under the scene root. Then, for a spatial node, where in space.
-    [[nodiscard]] Scene::EntityUVE ResolveNewNodeParentUVE();
-    /// Where a new node of `kind` goes: DirectionalLight3D and WorldEnvironment at the top, a folder
-    /// in the selected folder or the Viewport, anything else in a folder (see ResolveNodeFolderUVE).
-    [[nodiscard]] Scene::EntityUVE ResolveNewNodeParentForUVE(Scene::Nodes::SceneNodeKindUVE kind);
+    // Where a new object goes: under the single selection when the preference allows and there is
+    // one, otherwise under the scene root. Then, for a spatial object, where in space.
+    [[nodiscard]] Scene::EntityUVE ResolveNewObjectParentUVE();
+    /// Where a new object of `kind` goes: DirectionalLight3D and WorldEnvironment at the top, a folder
+    /// in the selected folder or the Viewport, anything else in a folder (see ResolveObjectFolderUVE).
+    [[nodiscard]] Scene::EntityUVE ResolveNewObjectParentForUVE(Scene::Objects::SceneObjectKindUVE kind);
     // ---- The level's Outliner layout ---------------------------------------------------------------
     //   (scene root, not shown)
     //   +- Viewport            folders only
-    //   |  +- Folder ...       any node
+    //   |  +- Folder ...       any object
     //   +- DirectionalLight3D  one at most
     //   +- WorldEnvironment    one at most
     /// Whether the layout applies: the level is the document (no entity, no Retarget preview open).
@@ -1949,17 +1973,17 @@ private:
     /// Builds the layout if missing: the Viewport, a World folder in a fresh level, and anything a
     /// level saved before the layout had at the top moved into World. True when it changed anything.
     bool EnsureDocumentLayoutUVE();
-    /// The folder a new node goes into when none is selected: the last one used, else the Viewport's
+    /// The folder a new object goes into when none is selected: the last one used, else the Viewport's
     /// first, else a new "World".
-    [[nodiscard]] Scene::EntityUVE ResolveNodeFolderUVE();
+    [[nodiscard]] Scene::EntityUVE ResolveObjectFolderUVE();
     /// Whether `entity` may sit under `parent` in the layout.
     [[nodiscard]] bool IsAllowedOutlinerParentUVE(Scene::EntityUVE entity, Scene::EntityUVE parent);
     /// DirectionalLight3D and WorldEnvironment: the level's two top-level singletons.
-    [[nodiscard]] bool IsTopLevelSingletonKindUVE(Scene::Nodes::SceneNodeKindUVE kind) const noexcept;
+    [[nodiscard]] bool IsTopLevelSingletonKindUVE(Scene::Objects::SceneObjectKindUVE kind) const noexcept;
     /// The top-level DirectionalLight3D or WorldEnvironment, when the level has it.
-    [[nodiscard]] Scene::EntityUVE FindTopLevelNodeUVE(Scene::Nodes::SceneNodeKindUVE kind);
+    [[nodiscard]] Scene::EntityUVE FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE kind);
     Scene::EntityUVE m_lastUsedFolder = Scene::kInvalidEntityUVE;
-    void PlaceNewDocumentNodeUVE(Scene::EntityUVE entity);
+    void PlaceNewDocumentObjectUVE(Scene::EntityUVE entity);
     friend bool RegisterEditorSettingsUVE(Config::SettingsRegistryUVE& registry);
     Core::ISimulationControlUVE* m_simulationControl = nullptr;
     EditorStateUVE m_state = EditorStateUVE::Uninitialized;
@@ -2077,7 +2101,7 @@ private:
     std::string m_skeletonSourceStatus;
     /// The bone whose rest pose the Skeleton3D Inspector shows, by name.
     std::string m_selectedSkeletonBone;
-    /// The Entity Editor's Timeline: the AnimationPlayer it shows, that player's clip, and the
+    /// The Entity Editor's Timeline: the AnimationSequencer it shows, that player's clip, and the
     /// preview playhead. Previewing writes the skeleton's runtime pose only, never a saved value.
     struct AnimationTimelineStateUVE final {
         Scene::EntityUVE player = Scene::kInvalidEntityUVE;
@@ -2159,7 +2183,7 @@ private:
     void DrawAnimationPickerUVE(Scene::EntityUVE player, Scene::EntityUVE skeleton);
     /// A .uvanim dragged from Content onto the Timeline joins the player's list.
     void AcceptTimelineClipDropUVE(Scene::EntityUVE player);
-    /// The Entity Editor's Anim Graph: the AnimationTree it shows as boxes and wires, the view
+    /// The Entity Editor's Anim Graph: the AnimationGraph it shows as boxes and wires, the view
     /// onto the canvas, and what the mouse is doing to it.
     struct AnimationGraphViewStateUVE final {
         Scene::EntityUVE tree = Scene::kInvalidEntityUVE;
@@ -2169,16 +2193,16 @@ private:
         float zoom = 1.0F;
         bool framed = false;
         std::vector<std::uint32_t> selected;
-        /// A drag of the selected nodes: the graph before it, restored and re-applied as one
+        /// A drag of the selected objects: the graph before it, restored and re-applied as one
         /// undo step on release.
-        bool draggingNodes = false;
+        bool draggingObjects = false;
         std::vector<Scene::AnimationGraphNodeUVE> dragBefore;
-        /// A wire being drawn from this node's output (0: none).
+        /// A wire being drawn from this object's output (0: none).
         std::uint32_t wireFrom = 0U;
         bool boxSelecting = false;
         float boxFromX = 0.0F;
         float boxFromY = 0.0F;
-        /// Where the Add Node menu will place the node, in canvas units.
+        /// Where the Add Object menu will place the object, in canvas units.
         float addAtX = 0.0F;
         float addAtY = 0.0F;
         std::string addSearch;
@@ -2198,7 +2222,7 @@ private:
             bool stateChange = false;
         };
         std::vector<PreviewLogLineUVE> previewLog;
-        /// Each state machine's active state at the last step, by node id, to see it change.
+        /// Each state machine's active state at the last step, by object id, to see it change.
         std::unordered_map<std::uint32_t, std::uint32_t> previewActive;
         /// Recent values of each Float parameter, oldest first, for its sparkline.
         std::unordered_map<std::string, std::vector<float>> parameterHistory;
@@ -2206,9 +2230,9 @@ private:
         /// A drag in the Blend Space 2D plot: -1 the position, 0.. a point, -2 none; and the tree
         /// before it, restored and re-applied as one undo step on release.
         int plotDrag = -2;
-        Scene::AnimationTreeComponentUVE plotBefore;
+        Scene::AnimationGraphComponentUVE plotBefore;
         std::string boneSearch;
-        /// The node opened in its own editor (a Blend Space or a State Machine), 0 for the graph.
+        /// The object opened in its own editor (a Blend Space or a State Machine), 0 for the graph.
         std::uint32_t focus = 0U;
         /// The State Machine view: its own pan and zoom (framed on first look), what is picked
         /// (a state slot or a transition index, -1 for none), a box being dragged (a state slot,
@@ -2224,16 +2248,16 @@ private:
         int stateDrag = -3;
         int linkFrom = -3;
         bool transitionDragging = false;
-        Scene::AnimationTreeComponentUVE stateBefore;
+        Scene::AnimationGraphComponentUVE stateBefore;
         /// The Blend Space editor's tool (0 select and move, 1 add a point, 2 remove a point), its
         /// snapping, and the point whose animation is being picked (-1: none).
         int spaceTool = 0;
         bool snap = true;
         float snapStep = 0.1F;
         int pickClipForSlot = -1;
-        /// An inline value on a node being dragged: the tree before it, for one undo step.
+        /// An inline value on an object being dragged: the tree before it, for one undo step.
         bool inlineEditing = false;
-        Scene::AnimationTreeComponentUVE inlineBefore;
+        Scene::AnimationGraphComponentUVE inlineBefore;
         /// Clip file names by guid, for labels.
         std::unordered_map<std::uint64_t, std::string> clipNames;
         /// Clips the preview has read, by guid; null for one that could not be read.
@@ -2241,26 +2265,26 @@ private:
     };
     AnimationGraphViewStateUVE m_animGraph;
     /// Notes what the preview's last step did: clip events, state changes, parameter values.
-    void RecordAnimationGraphPreviewUVE(const Scene::AnimationTreeComponentUVE& tree);
+    void RecordAnimationGraphPreviewUVE(const Scene::AnimationGraphComponentUVE& tree);
     /// Puts the previewed skeleton back at rest and the tree back at its start.
     void StopAnimationGraphPreviewUVE();
     /// A Blend Space opened in the Anim Graph's own editor: tools, snapping, the axes' areas, and
     /// points to add (picking their animation at once), move and remove.
-    void DrawBlendSpaceEditorUVE(Scene::EntityUVE tree, std::size_t nodeIndex);
+    void DrawBlendSpaceEditorUVE(Scene::EntityUVE tree, std::size_t objectIndex);
     /// A State Machine opened in the Anim Graph: its states as boxes with Entry and Any, the
     /// transitions as arrows, drawn and edited in place, and what is running shown live.
-    void DrawStateMachineViewUVE(Scene::EntityUVE tree, std::size_t nodeIndex);
+    void DrawStateMachineViewUVE(Scene::EntityUVE tree, std::size_t objectIndex);
     /// The side strip while a State Machine is open: the picked state or transition's settings.
-    void DrawStateMachineSelectionUVE(Scene::EntityUVE tree, std::size_t nodeIndex,
-                                      std::optional<std::function<void(Scene::AnimationTreeComponentUVE&)>>& edit);
+    void DrawStateMachineSelectionUVE(Scene::EntityUVE tree, std::size_t objectIndex,
+                                      std::optional<std::function<void(Scene::AnimationGraphComponentUVE&)>>& edit);
     /// A clip's file name for labels, "" for none.
     [[nodiscard]] const std::string& AnimationClipNameUVE(Asset::AssetGuidUVE clip);
     /// The Anim Graph tab's body.
     void DrawAnimationGraphCanvasUVE();
-    /// Changes the AnimationTree's nodes or parameters as one undo step, like an Inspector edit.
+    /// Changes the AnimationGraph's objects or parameters as one undo step, like an Inspector edit.
     /// False when nothing changed or the result is not a valid graph (the change is dropped).
-    bool EditAnimationTreeUVE(Scene::EntityUVE tree,
-                              const std::function<void(Scene::AnimationTreeComponentUVE&)>& change);
+    bool EditAnimationGraphUVE(Scene::EntityUVE tree,
+                              const std::function<void(Scene::AnimationGraphComponentUVE&)>& change);
     /// In-flight automatic model imports, by content-relative source path.
     std::map<std::string, Asset::AssetImportJobIdUVE> m_modelImportJobs;
     /// Every content-relative model source, as the last project refresh read it.
@@ -2288,7 +2312,7 @@ private:
     std::optional<UVScriptDocumentUVE> m_openUVScript;
     /// A caret move the text editor applies on its next frame (1-based line), set by GoTo.
     std::uint32_t m_uvscriptJumpLine = 0U;
-    /// The export rows the Inspector last drew, reused until the node, its script or its values
+    /// The export rows the Inspector last drew, reused until the object, its script or its values
     /// change, or half a second passes (the file may have been edited).
     struct ScriptExportsCacheUVE final {
         Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
@@ -2309,11 +2333,11 @@ private:
     std::string m_metadataRenameDraft;
     /// A lossy retype awaiting confirmation: key and target type.
     std::optional<std::pair<std::string, Core::VariantTypeUVE>> m_metadataPendingRetype;
-    /// Commits a new entry list for the selected node's metadata: the single write path.
+    /// Commits a new entry list for the selected object's metadata: the single write path.
     /// With `preview`, the list is shown without history, as part of a drag.
-    [[nodiscard]] bool CommitSelectedNodeMetadataUVE(std::vector<Scene::NodeMetadataEntryUVE> entries,
+    [[nodiscard]] bool CommitSelectedObjectMetadataUVE(std::vector<Scene::ObjectMetadataEntryUVE> entries,
                                                      bool preview = false);
-    [[nodiscard]] bool WriteSelectedNodeMetadataValueUVE(const std::string& key, const Core::VariantUVE& value,
+    [[nodiscard]] bool WriteSelectedObjectMetadataValueUVE(const std::string& key, const Core::VariantUVE& value,
                                                          bool preview);
     /// Draws an editor for one Variant; returns true when the value changed and should be committed.
     bool DrawVariantValueEditorUVE(const char* id, Core::VariantUVE& value, int depth);
@@ -2326,14 +2350,14 @@ private:
     std::string m_hierarchyRenameBuffer;
     bool m_hierarchyFilterCacheDirty = true;
     bool m_hierarchyRenameFocusRequested = false;
-    // The Add Node picker: a small floating box with a search field, opened from the Scene panel's
-    // + button and from a row's "Add Child Node". The request is a flag so either caller can ask
+    // The Add Object picker: a small floating box with a search field, opened from the Scene panel's
+    // + button and from a row's "Add Child Object". The request is a flag so either caller can ask
     // for it from inside its own popup and the picker still opens in the panel's ID scope.
-    bool m_nodePickerOpenRequested = false;
+    bool m_objectPickerOpenRequested = false;
     // True while the orthographic projection came from a named view rather than an explicit choice.
     bool m_viewportOrthographicIsAutomatic = false;
     // Reveal-on-select: when the active selection changes, the hierarchy opens the rows above it
-    // and scrolls it into view once, so a node picked in the viewport or just added is never
+    // and scrolls it into view once, so an object picked in the viewport or just added is never
     // hidden in a collapsed branch. Once shown, the user is free to collapse it again.
     Scene::EntityUVE m_hierarchyRevealedEntity = Scene::kInvalidEntityUVE;
     std::vector<Scene::EntityUVE> m_hierarchyRevealAncestors;
@@ -2353,8 +2377,8 @@ private:
     };
     std::optional<ComponentPropertyPreviewUVE> m_componentPropertyPreview;
     std::optional<std::pair<std::string, std::string>> m_pendingAnimationParameterRename;
-    std::string m_nodePickerFilter;
-    std::string m_nodePickerScrolledFilter;
+    std::string m_objectPickerFilter;
+    std::string m_objectPickerScrolledFilter;
     std::optional<Asset::AssetRecordUVE> m_selectedAsset;
     /// Everything picked in Content (Ctrl and Shift click); m_selectedProjectFile is the last one.
     ContentSelectionUVE m_contentSelection;

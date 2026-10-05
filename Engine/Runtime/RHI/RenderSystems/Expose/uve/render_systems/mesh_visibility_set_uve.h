@@ -113,6 +113,10 @@ struct MeshVisibilityCandidateUVE final {
     std::size_t assetPairIndex = 0U;
     MeshRenderPlacementUVE placement;
     bool isTransparent = false;
+    /// The entity this candidate was placed from. Carried because the candidate is what a pass has
+    /// in hand, and some of what a pass needs to decide - the render layers a decal projects onto,
+    /// for one - lives on another component of that entity rather than on the placement.
+    Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
 };
 
 /// This frame's renderable set, built once and then culled against as many frusta as the frame

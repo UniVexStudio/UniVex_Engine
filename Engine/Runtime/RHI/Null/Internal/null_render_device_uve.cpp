@@ -128,6 +128,19 @@ TextureHandleUVE NullRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& des
     return TextureHandleUVE{handleValue};
 }
 
+bool NullRenderDeviceUVE::SupportsTextureFormatUVE(const TextureFormatUVE format,
+                                                        const TextureColorSpaceUVE colorSpace) const noexcept {
+    const bool formatKnown = GetTextureFormatBlockInfoUVE(format).bytes != 0U;
+    switch (colorSpace) {
+        case TextureColorSpaceUVE::Linear:
+            return formatKnown && !IsTextureFormatCompressedUVE(format);
+        case TextureColorSpaceUVE::Srgb:
+            return formatKnown && IsTextureFormatSrgbCapableUVE(format) &&
+                   !IsTextureFormatCompressedUVE(format);
+    }
+    return false;
+}
+
 void NullRenderDeviceUVE::DestroyTextureUVE(TextureHandleUVE texture) {
     if (m_impl->textures.erase(texture.value) == 0) {
         UVE_ERROR("NullRenderDeviceUVE: DestroyTextureUVE called with an unknown or already-destroyed handle ({})",
@@ -276,6 +289,16 @@ const std::vector<RecordedCommandUVE>& NullRenderDeviceUVE::GetLastSubmittedComm
 std::size_t NullRenderDeviceUVE::GetLiveResourceCountUVE() const noexcept {
     return m_impl->buffers.size() + m_impl->textures.size() + m_impl->shaders.size() +
            m_impl->pipelines.size() + m_impl->computePipelines.size();
+}
+
+std::vector<TextureDescUVE> NullRenderDeviceUVE::GetLiveTextureDescsUVE() const {
+    std::vector<TextureDescUVE> descriptors;
+    descriptors.reserve(m_impl->textures.size());
+    for (const auto& [handle, desc] : m_impl->textures) {
+        static_cast<void>(handle);
+        descriptors.push_back(desc);
+    }
+    return descriptors;
 }
 
 std::uint64_t NullRenderDeviceUVE::GetTextureCreateAttemptCountUVE() const noexcept {

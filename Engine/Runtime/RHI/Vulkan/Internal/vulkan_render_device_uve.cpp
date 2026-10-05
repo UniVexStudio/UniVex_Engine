@@ -24,6 +24,7 @@
 #include "uve/rhi_vulkan/vulkan_render_device_uve.h"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cstdint>
 #include <cstring>
@@ -134,8 +135,8 @@ struct StorageSlotRefUVE {
 };
 
 /// One reflected standalone SAMPLER binding (M2f): always written with the device's single
-/// fixed sampler — the RHI exposes exactly one sampler shape (the GL-mirrored
-/// linear/clamp/maxLod-0 parameters every texture record already uses).
+/// fixed sampler — the RHI exposes one linear/trilinear, clamp-to-edge sampling shape; the
+/// sampled image view itself bounds the available mip range.
 struct SamplerSlotRefUVE {
     std::uint32_t binding = 0U;
     VkShaderStageFlags stageFlags = 0U;
@@ -158,6 +159,13 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     std::uint32_t queueFamilyIndex = 0;
     VkQueue presentQueue = VK_NULL_HANDLE; // graphics-capable family also used for present
     VkSurfaceKHR surface = VK_NULL_HANDLE;
+
+    // Vulkan compression capabilities are optional VkPhysicalDeviceFeatures, not implied by
+    // VkFormatProperties. Record the exact feature bits enabled on the logical device so the
+    // RHI only advertises compressed targets that it may legally create and sample.
+    bool textureCompressionBCEnabled = false;
+    bool textureCompressionETC2Enabled = false;
+    bool textureCompressionASTCLdrEnabled = false;
 
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkFormat swapchainFormat = VK_FORMAT_UNDEFINED;
@@ -272,8 +280,8 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     // M5b pool type: storage images (imageLoad/imageStore slots, GENERAL layout).
     static constexpr std::uint32_t kDescriptorPoolStorageImageCapacityUVE = 256U;
 
-    // M2f device-owned descriptor resources: one FIXED sampler (every RHI sampler is the same
-    // GL-mirrored linear/clamp/maxLod-0 shape, so standalone SAMPLER bindings all get this one)
+    // M2f device-owned descriptor resources: one FIXED sampler (standalone SAMPLER bindings use
+    // the shared linear/trilinear, clamp-to-edge shape; each sampled image view bounds its levels)
     // and one zero-filled fallback storage buffer (an unbound or destroyed-after-bind SSBO slot
     // reads deterministic zeros instead of undefined memory — the buffer analogue of the M2c
     // 1x1-white fallback texture; sized for the small metadata-style SSBOs the RHI contract
@@ -488,8 +496,9 @@ struct VulkanRenderDeviceUVE::ImplUVE {
         // with VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT support — and SPIR-V has NO B,G,R,A storage
         // format at all. On devices whose swapchain-format aliasing (M2d policy) made the
         // image B8G8R8A8-family or sRGB, this is a dedicated R8G8B8A8_UNORM alias view (legal:
-        // the image is mutable-format and every 4x8 format shares one compatibility class);
-        // VK_NULL_HANDLE when `view` already IS R8G8B8A8_UNORM (descriptor writes use `view`).
+        // the image is mutable-format and every 4x8 format shares one compatibility class). It
+        // also narrows multi-mip textures to level 0; VK_NULL_HANDLE only when `view` is already
+        // a single-level R8G8B8A8_UNORM view (descriptor writes use `view`).
         VkImageView storageView = VK_NULL_HANDLE;
         VkSampler sampler = VK_NULL_HANDLE;
         VkFormat vkFormat = VK_FORMAT_UNDEFINED; // the IMAGE's format (may be swapchain-typed)
@@ -570,6 +579,7 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     static constexpr std::uint32_t kWarnedStorageImageDepthUVE = 1U << 21U; // M5b
     static constexpr std::uint32_t kWarnedStorageImageTransitionUVE = 1U << 22U; // M5b
     static constexpr std::uint32_t kWarnedIndirectBufferUVE = 1U << 23U; // CS7
+    static constexpr std::uint32_t kWarnedStorageImageCompressedUVE = 1U << 24U; // texture compression
     std::uint32_t replayWarningsEmitted = 0U;
 
     // Replay-local pipeline binding state (valid only inside PresentUVE()'s record window).
@@ -1210,7 +1220,20 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     UVE_INFO("VulkanRenderDeviceUVE: selected physical device \"{}\"", deviceProperties.deviceName);
 
     // --- logical device --------------------------------------------------------------------
-    // M2d probe first: is core dynamic rendering available on this physical device+instance?
+    // Format properties do not enable Vulkan's optional texture-compression features. Query and
+    // enable only the BC/ETC2/ASTC capabilities this physical device actually exposes so the RHI
+    // capability query can truthfully advertise legal compressed-image creation paths.
+    VkPhysicalDeviceFeatures availableFeatures{};
+    vk.vkGetPhysicalDeviceFeatures(physicalDevice, &availableFeatures);
+    VkPhysicalDeviceFeatures enabledFeatures{};
+    enabledFeatures.textureCompressionBC = availableFeatures.textureCompressionBC;
+    enabledFeatures.textureCompressionETC2 = availableFeatures.textureCompressionETC2;
+    enabledFeatures.textureCompressionASTC_LDR = availableFeatures.textureCompressionASTC_LDR;
+    textureCompressionBCEnabled = enabledFeatures.textureCompressionBC == VK_TRUE;
+    textureCompressionETC2Enabled = enabledFeatures.textureCompressionETC2 == VK_TRUE;
+    textureCompressionASTCLdrEnabled = enabledFeatures.textureCompressionASTC_LDR == VK_TRUE;
+
+    // M2d probe: is core dynamic rendering available on this physical device+instance?
     // (Instance apiVersion was already clamped at 1.3 above; the feature query needs the
     // 1.1+ vkGetPhysicalDeviceFeatures2 entry point, resolved optionally at instance load.)
     dynamicRenderingSupported = false;
@@ -1241,6 +1264,7 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     deviceInfo.queueCreateInfoCount = 1U;
     deviceInfo.pQueueCreateInfos = &queueInfo;
+    deviceInfo.pEnabledFeatures = &enabledFeatures;
     deviceInfo.enabledExtensionCount = 1U;
     deviceInfo.ppEnabledExtensionNames = kDeviceExtensions;
     if (dynamicRenderingSupported) {
@@ -1442,18 +1466,18 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     }
 
     // --- M2f device-owned descriptor resources -------------------------------------------
-    // The fixed sampler for standalone SAMPLER bindings: identical parameters to every texture
-    // record's sampler (the RHI's one GL-mirrored sampler shape), created once at bring-up.
+    // Fixed sampler for standalone SAMPLER bindings. It shares the texture samplers' filtering
+    // and address modes, while an open LOD ceiling lets each sampled image view expose its chain.
     VkSamplerCreateInfo fixedSamplerInfo{};
     fixedSamplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     fixedSamplerInfo.magFilter = VK_FILTER_LINEAR;
     fixedSamplerInfo.minFilter = VK_FILTER_LINEAR;
-    fixedSamplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    fixedSamplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     fixedSamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     fixedSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     fixedSamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     fixedSamplerInfo.minLod = 0.0F;
-    fixedSamplerInfo.maxLod = 0.0F;
+    fixedSamplerInfo.maxLod = 32.0F; // dimension-derived RHI mip chains contain at most 32 levels
     fixedSamplerInfo.maxAnisotropy = 1.0F;
     fixedSamplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
     if (vk.vkCreateSampler(device, &fixedSamplerInfo, nullptr, &fixedSampler) != VK_SUCCESS ||
@@ -1528,16 +1552,27 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
 namespace {
 
 /// The unsigned-normalized sibling of an sRGB-typed (or already-unorm) 8-bit RGBA swapchain
-/// format, used as the SAMPLED view format of M2c+: RGBA8 textures are allocated in the
-/// swapchain's exact format so pipelines and dynamic-rendering instances match, while the
-/// sampling view reads raw values (never sRGB-decoded). UNDEFINED for anything outside the
-/// 4x8 family — textures then fall back to their native format and stay sample-only in M2d.
+/// format, used for the SAMPLED view when a texture requests linear sampling. RGBA8 textures
+/// remain allocated in the swapchain's exact format so pipelines and dynamic-rendering instances
+/// match. UNDEFINED for anything outside the 4x8 family.
 [[nodiscard]] VkFormat UnormSiblingFormatUVE(VkFormat format) noexcept {
     switch (format) {
         case VK_FORMAT_B8G8R8A8_SRGB: return VK_FORMAT_B8G8R8A8_UNORM;
         case VK_FORMAT_R8G8B8A8_SRGB: return VK_FORMAT_R8G8B8A8_UNORM;
         case VK_FORMAT_B8G8R8A8_UNORM: return VK_FORMAT_B8G8R8A8_UNORM;
         case VK_FORMAT_R8G8B8A8_UNORM: return VK_FORMAT_R8G8B8A8_UNORM;
+        default: return VK_FORMAT_UNDEFINED;
+    }
+}
+
+/// The sRGB sibling used for a sampled view when the image storage format belongs to the
+/// compatible 8-bit RGBA family. UNDEFINED for formats outside that family.
+[[nodiscard]] VkFormat SrgbSiblingFormatUVE(VkFormat format) noexcept {
+    switch (format) {
+        case VK_FORMAT_B8G8R8A8_SRGB: return VK_FORMAT_B8G8R8A8_SRGB;
+        case VK_FORMAT_R8G8B8A8_SRGB: return VK_FORMAT_R8G8B8A8_SRGB;
+        case VK_FORMAT_B8G8R8A8_UNORM: return VK_FORMAT_B8G8R8A8_SRGB;
+        case VK_FORMAT_R8G8B8A8_UNORM: return VK_FORMAT_R8G8B8A8_SRGB;
         default: return VK_FORMAT_UNDEFINED;
     }
 }
@@ -2151,57 +2186,84 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     if (!ValidateTextureUploadUVE(desc, initialData)) {
         return fail("invalid descriptor or initial upload (rejected by ValidateTextureUploadUVE)");
     }
-    if (desc.mipLevels > 1) {
-        // Mirrors GlRenderDeviceUVE verbatim: only level 0 is populated in this slice.
-        UVE_WARNING("VulkanRenderDeviceUVE::CreateTextureUVE: {} mip levels requested - only level "
-                    "0 is populated (GL backend documents the same policy)", desc.mipLevels);
+    if (!SupportsTextureFormatUVE(desc.format, desc.colorSpace)) {
+        return fail("device does not support the requested texture sampling format/color space");
     }
-    // M2d format policy: every RGBA8 color texture's IMAGE takes the swapchain's exact
-    // format whenever it belongs to the 4x8 RGBA family (sRGB or unorm) — pipelines and
-    // dynamic-rendering instances declare that same format, so every texture can be a legal
-    // render target. The SAMPLED view uses the unnormalized sibling (raw reads, no implicit
-    // sRGB decode); the ATTACHMENT view uses the image-native format. Everything outside the
-    // 4x8 family (and RGBA16Float) keeps its native format: still fully sampleable, but
-    // attaching it to a render pass warns and skips (documented M2d boundary). RGBA8 initial
-    // uploads are swizzled in the staging copy when the image is B,G,R,A-typed (the RHI's
-    // byte-order contract is R,G,B,A), so the stored texels are identical either way.
+    // Every RGBA8 color texture's IMAGE takes the swapchain's exact format whenever it belongs
+    // to the 4x8 RGBA family (sRGB or unorm) — pipelines and dynamic-rendering instances declare
+    // that same format, so every texture can be a legal render target. The SAMPLED view uses the
+    // requested color-space sibling: unorm preserves raw linear values, while sRGB sampling
+    // performs the hardware decode to linear. The ATTACHMENT view remains image-native, and the
+    // dedicated R8G8B8A8_UNORM storage alias remains unchanged. Everything outside the 4x8 family
+    // (and RGBA16Float) keeps its native format: still fully sampleable, but attaching it to a
+    // render pass warns and skips (documented M2d boundary). RGBA8 initial uploads are swizzled
+    // in the staging copy when the image is B,G,R,A-typed (the RHI's byte-order contract is
+    // R,G,B,A), so the stored texels are identical either way.
     VkFormat format = VK_FORMAT_UNDEFINED;
     VkFormat sampledFormat = VK_FORMAT_UNDEFINED;
     VkImageCreateFlags imageFlags = 0U;
-    // M5b fix: every non-depth texture is storage-capable — the unified texture-slot space
-    // lets any color texture bind into a STORAGE_IMAGE slot, and writing a storage descriptor
-    // against an image created WITHOUT VK_IMAGE_USAGE_STORAGE_BIT is undefined behavior (it
-    // crashed lavapipe at execution in the first storage-image pixel proofs). The Depth32Float
-    // arm below reassigns usage without STORAGE: depth images are never storage-bound (the
-    // deterministic black-sink substitution intercepts them at tuple resolution).
-    VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                              VK_IMAGE_USAGE_STORAGE_BIT;
+    // Uncompressed color resources may be storage-bound. Block-compressed textures are sampled
+    // only (Vulkan does not allow compressed formats as storage images or color attachments),
+    // and the depth arm below reassigns usage without STORAGE as well.
+    VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
     VkImageLayout finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    std::uint32_t bytesPerPixel = 0U;
     switch (desc.format) {
         case TextureFormatUVE::RGBA8Unorm: {
-            const VkFormat sibling = UnormSiblingFormatUVE(impl.swapchainFormat);
-            if (sibling != VK_FORMAT_UNDEFINED) {
+            const VkFormat sampledSibling = desc.colorSpace == TextureColorSpaceUVE::Srgb
+                                                ? SrgbSiblingFormatUVE(impl.swapchainFormat)
+                                                : UnormSiblingFormatUVE(impl.swapchainFormat);
+            if (sampledSibling != VK_FORMAT_UNDEFINED) {
                 format = impl.swapchainFormat;
-                sampledFormat = sibling;
+                sampledFormat = sampledSibling;
             } else {
                 format = VK_FORMAT_R8G8B8A8_UNORM;
-                sampledFormat = format;
+                sampledFormat = desc.colorSpace == TextureColorSpaceUVE::Srgb
+                                    ? VK_FORMAT_R8G8B8A8_SRGB
+                                    : format;
             }
             // M5b fix: RGBA8 images are ALWAYS mutable-format — the storage alias view
             // (R8G8B8A8_UNORM over a B,G,R,A-family or sRGB image) needs
             // VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT even when the sampled sibling equals the
             // image format.
             imageFlags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
-            usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-            bytesPerPixel = 4U;
+            usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
             break;
         }
         case TextureFormatUVE::RGBA16Float:
             format = VK_FORMAT_R16G16B16A16_SFLOAT;
             sampledFormat = format;
-            bytesPerPixel = 8U;
+            usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+            break;
+        case TextureFormatUVE::BC1RGB:
+            format = sampledFormat = desc.colorSpace == TextureColorSpaceUVE::Srgb
+                                         ? VK_FORMAT_BC1_RGB_SRGB_BLOCK
+                                         : VK_FORMAT_BC1_RGB_UNORM_BLOCK;
+            break;
+        case TextureFormatUVE::BC3RGBA:
+            format = sampledFormat = desc.colorSpace == TextureColorSpaceUVE::Srgb
+                                         ? VK_FORMAT_BC3_SRGB_BLOCK
+                                         : VK_FORMAT_BC3_UNORM_BLOCK;
+            break;
+        case TextureFormatUVE::BC7RGBA:
+            format = sampledFormat = desc.colorSpace == TextureColorSpaceUVE::Srgb
+                                         ? VK_FORMAT_BC7_SRGB_BLOCK
+                                         : VK_FORMAT_BC7_UNORM_BLOCK;
+            break;
+        case TextureFormatUVE::ETC2RGB8:
+            format = sampledFormat = desc.colorSpace == TextureColorSpaceUVE::Srgb
+                                         ? VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK
+                                         : VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;
+            break;
+        case TextureFormatUVE::ETC2RGBA8:
+            format = sampledFormat = desc.colorSpace == TextureColorSpaceUVE::Srgb
+                                         ? VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK
+                                         : VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK;
+            break;
+        case TextureFormatUVE::ASTC4x4RGBA:
+            format = sampledFormat = desc.colorSpace == TextureColorSpaceUVE::Srgb
+                                         ? VK_FORMAT_ASTC_4x4_SRGB_BLOCK
+                                         : VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
             break;
         case TextureFormatUVE::Depth32Float:
             // Depth textures exist so the render-target milestone can attach them; they are
@@ -2214,7 +2276,6 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
             aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
             usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
             finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            bytesPerPixel = 4U;
             if (!initialData.empty()) {
                 return fail("Depth32Float initial uploads are not supported (attachment-ready "
                             "only; the render-target slice owns population)");
@@ -2229,11 +2290,20 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
                 ? VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
             : (desc.format == TextureFormatUVE::RGBA8Unorm)
                 ? (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
-                   VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)
-            : (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
-               VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT);
+                   VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)
+            : IsTextureFormatCompressedUVE(desc.format)
+                ? (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT)
+                : (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
+                   VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT);
         if ((formatProperties.optimalTilingFeatures & required) != required) {
             return fail("device lacks required format features for the requested texture format");
+        }
+        VkFormatProperties sampledProperties{};
+        impl.vk.vkGetPhysicalDeviceFormatProperties(impl.physicalDevice, sampledFormat, &sampledProperties);
+        constexpr VkFormatFeatureFlags kSampledViewFeaturesUVE =
+            VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+        if ((sampledProperties.optimalTilingFeatures & kSampledViewFeaturesUVE) != kSampledViewFeaturesUVE) {
+            return fail("device lacks sampled-image or linear-filter support for the requested texture view");
         }
         if (desc.format == TextureFormatUVE::RGBA8Unorm) {
             // M5b fix: the storage alias format (R8G8B8A8_UNORM — the ONLY format matching
@@ -2251,6 +2321,20 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
                             "R8G8B8A8_UNORM (storage-image slots need it since M5b)");
             }
         }
+    }
+
+    std::array<VkDeviceSize, 32U> mipUploadOffsets{};
+    TextureMipExtentUVE uploadExtent{desc.width, desc.height};
+    VkDeviceSize uploadOffset = 0U;
+    for (std::uint32_t level = 0U; level < desc.mipLevels; ++level) {
+        std::uint64_t levelBytes = 0U;
+        if (!CalculateTextureMipByteCountUVE(desc.format, uploadExtent.width, uploadExtent.height, levelBytes)) {
+            return fail("could not calculate block-aware mip upload size");
+        }
+        mipUploadOffsets[level] = uploadOffset;
+        uploadOffset += static_cast<VkDeviceSize>(levelBytes);
+        uploadExtent.width = uploadExtent.width > 1U ? uploadExtent.width / 2U : 1U;
+        uploadExtent.height = uploadExtent.height > 1U ? uploadExtent.height / 2U : 1U;
     }
 
     VkImageCreateInfo imageInfo{};
@@ -2297,20 +2381,36 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
 
     // Staging buffer + upload lives entirely inside this call: the documented M2c upload
     // contract is "create/upload synchronously" — a load-time path, never a per-frame one.
+    // The byte span contains every declared mip level in tightly packed level order.
     VkBuffer stagingBuffer = VK_NULL_HANDLE;
     VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
     void* stagingMapped = nullptr;
     const std::uint64_t uploadBytes = initialData.empty()
-        ? 0U : static_cast<std::uint64_t>(desc.width) * desc.height * bytesPerPixel;
-    const auto destroyImageResources = [&]() {
+        ? 0U : static_cast<std::uint64_t>(initialData.size());
+    const auto destroyStagingResources = [&]() {
+        if (stagingMapped != nullptr && stagingMemory != VK_NULL_HANDLE) {
+            impl.vk.vkUnmapMemory(impl.device, stagingMemory);
+            stagingMapped = nullptr;
+        }
         if (stagingBuffer != VK_NULL_HANDLE) {
             impl.vk.vkDestroyBuffer(impl.device, stagingBuffer, nullptr);
+            stagingBuffer = VK_NULL_HANDLE;
         }
         if (stagingMemory != VK_NULL_HANDLE) {
             impl.vk.vkFreeMemory(impl.device, stagingMemory, nullptr);
+            stagingMemory = VK_NULL_HANDLE;
         }
-        impl.vk.vkFreeMemory(impl.device, imageMemory, nullptr);
-        impl.vk.vkDestroyImage(impl.device, image, nullptr);
+    };
+    const auto destroyImageResources = [&]() {
+        destroyStagingResources();
+        if (imageMemory != VK_NULL_HANDLE) {
+            impl.vk.vkFreeMemory(impl.device, imageMemory, nullptr);
+            imageMemory = VK_NULL_HANDLE;
+        }
+        if (image != VK_NULL_HANDLE) {
+            impl.vk.vkDestroyImage(impl.device, image, nullptr);
+            image = VK_NULL_HANDLE;
+        }
     };
     if (uploadBytes != 0U) {
         VkBufferCreateInfo stagingInfo{};
@@ -2400,15 +2500,26 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
         impl.vk.vkCmdPipelineBarrier(transferCommands, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                                      VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, nullptr, 0U, nullptr,
                                      1U, &toTransferDst);
-        VkBufferImageCopy copyRegion{};
-        copyRegion.bufferOffset = 0U;
-        copyRegion.bufferRowLength = 0U;   // tightly packed, matching the upload contract
-        copyRegion.bufferImageHeight = 0U; // (validated to be width*height*bpp exactly)
-        copyRegion.imageSubresource = {aspect, 0U, 0U, 1U};
-        copyRegion.imageOffset = {0, 0, 0};
-        copyRegion.imageExtent = {desc.width, desc.height, 1U};
+        // A 32-bit dimension needs at most 32 mip levels, and the RHI validator guarantees
+        // that bound before allocation. Keep the regions on the stack so upload cannot throw
+        // after image/staging resources have been acquired. Offsets are block-aware for BC,
+        // ETC2, and ASTC uploads as well as texel-based formats.
+        std::array<VkBufferImageCopy, 32U> copyRegions{};
+        TextureMipExtentUVE mipExtent{desc.width, desc.height};
+        for (std::uint32_t level = 0U; level < desc.mipLevels; ++level) {
+            VkBufferImageCopy& copyRegion = copyRegions[level];
+            copyRegion.bufferOffset = mipUploadOffsets[level];
+            copyRegion.bufferRowLength = 0U;   // tightly packed, matching the upload contract
+            copyRegion.bufferImageHeight = 0U; // zero means use the extent/block geometry
+            copyRegion.imageSubresource = {aspect, level, 0U, 1U};
+            copyRegion.imageOffset = {0, 0, 0};
+            copyRegion.imageExtent = {mipExtent.width, mipExtent.height, 1U};
+            mipExtent.width = mipExtent.width > 1U ? mipExtent.width / 2U : 1U;
+            mipExtent.height = mipExtent.height > 1U ? mipExtent.height / 2U : 1U;
+        }
         impl.vk.vkCmdCopyBufferToImage(transferCommands, stagingBuffer, image,
-                                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &copyRegion);
+                                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                       desc.mipLevels, copyRegions.data());
     }
     VkImageMemoryBarrier toFinal{};
     toFinal.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -2426,7 +2537,7 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     toFinal.subresourceRange = {aspect, 0U, desc.mipLevels, 0U, 1U};
     const VkPipelineStageFlags finalStage =
         finalLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-            ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+            ? VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
             : VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     impl.vk.vkCmdPipelineBarrier(transferCommands,
                                  uploadBytes != 0U ? VK_PIPELINE_STAGE_TRANSFER_BIT
@@ -2450,10 +2561,7 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
         destroyImageResources();
         return fail("the one-shot upload submission failed");
     }
-    if (stagingBuffer != VK_NULL_HANDLE) {
-        impl.vk.vkDestroyBuffer(impl.device, stagingBuffer, nullptr);
-        impl.vk.vkFreeMemory(impl.device, stagingMemory, nullptr);
-    }
+    destroyStagingResources();
 
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -2467,49 +2575,56 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
         destroyImageResources();
         return fail("vkCreateImageView failed for the texture");
     }
-    viewInfo.format = format; // image-native: this is the view dynamic rendering attaches
     VkImageView attachmentView = VK_NULL_HANDLE;
-    if (impl.vk.vkCreateImageView(impl.device, &viewInfo, nullptr, &attachmentView) != VK_SUCCESS ||
-        attachmentView == VK_NULL_HANDLE) {
-        impl.vk.vkDestroyImageView(impl.device, view, nullptr);
-        destroyImageResources();
-        return fail("vkCreateImageView failed for the texture's attachment view");
-    }
-    // M5b fix: the storage alias view. STORAGE_IMAGE descriptors need a view format matching
-    // the shader's SPIR-V image-format qualifier (rgba8 ⇒ R8G8B8A8_UNORM, the only 4x8
-    // storage format SPIR-V has) whose format supports VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT.
-    // When swapchain-format aliasing made this image B,G,R,A-family or sRGB, the sampled
-    // sibling view cannot serve storage descriptors (no matching qualifier exists for it, and
-    // B8G8R8A8 formats do not universally advertise storage support) — a dedicated
-    // R8G8B8A8_UNORM alias view over the mutable-format image can, and is component-name
-    // consistent: writes through it land in the same texels the BGRA-named views address by
-    // their own component names. Textures whose sampled view already IS R8G8B8A8_UNORM keep
-    // storageView null (descriptor writes fall back to `view`).
-    VkImageView storageView = VK_NULL_HANDLE;
-    if (desc.format == TextureFormatUVE::RGBA8Unorm &&
-        sampledFormat != VK_FORMAT_R8G8B8A8_UNORM) {
-        viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
-        if (impl.vk.vkCreateImageView(impl.device, &viewInfo, nullptr, &storageView) != VK_SUCCESS ||
-            storageView == VK_NULL_HANDLE) {
-            impl.vk.vkDestroyImageView(impl.device, attachmentView, nullptr);
+    if (!IsTextureFormatCompressedUVE(desc.format)) {
+        viewInfo.format = format; // image-native: this is the view dynamic rendering attaches
+        viewInfo.subresourceRange.levelCount = 1U; // render-target attachment is always level 0
+        if (impl.vk.vkCreateImageView(impl.device, &viewInfo, nullptr, &attachmentView) != VK_SUCCESS ||
+            attachmentView == VK_NULL_HANDLE) {
             impl.vk.vkDestroyImageView(impl.device, view, nullptr);
             destroyImageResources();
-            return fail("vkCreateImageView failed for the texture's storage alias view");
+            return fail("vkCreateImageView failed for the texture's attachment view");
+        }
+    }
+    // Storage-image descriptors address one mip level. RGBA8 uses the R8G8B8A8_UNORM view
+    // required by SPIR-V's rgba8 qualifier; other storage-capable formats use their native
+    // format. Create a dedicated level-0 view when an alias is needed or the sampled view spans
+    // multiple mips, keeping sampled chains intact without exposing a multi-level storage view.
+    VkImageView storageView = VK_NULL_HANDLE;
+    const bool storageViewNeeded =
+        (desc.format == TextureFormatUVE::RGBA8Unorm &&
+         (desc.mipLevels > 1U || sampledFormat != VK_FORMAT_R8G8B8A8_UNORM)) ||
+        (desc.format == TextureFormatUVE::RGBA16Float && desc.mipLevels > 1U);
+    if (storageViewNeeded) {
+        viewInfo.format = desc.format == TextureFormatUVE::RGBA8Unorm
+                              ? VK_FORMAT_R8G8B8A8_UNORM
+                              : format;
+        viewInfo.subresourceRange.levelCount = 1U;
+        if (impl.vk.vkCreateImageView(impl.device, &viewInfo, nullptr, &storageView) != VK_SUCCESS ||
+            storageView == VK_NULL_HANDLE) {
+            if (attachmentView != VK_NULL_HANDLE) {
+                impl.vk.vkDestroyImageView(impl.device, attachmentView, nullptr);
+            }
+            if (view != VK_NULL_HANDLE) {
+                impl.vk.vkDestroyImageView(impl.device, view, nullptr);
+            }
+            destroyImageResources();
+            return fail("vkCreateImageView failed for the texture's level-0 storage view");
         }
     }
 
-    // Sampler state mirrors GlRenderDeviceUVE's fixed parameters exactly: linear/linear,
-    // clamp-to-edge, and effectively no mipmapping (maxLod 0 while only level 0 is populated).
+    // Match OpenGL's linear texel filtering and trilinear mip interpolation; the explicit
+    // maxLod prevents the sampler from addressing levels outside this texture's declared chain.
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     samplerInfo.magFilter = VK_FILTER_LINEAR;
     samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.minLod = 0.0F;
-    samplerInfo.maxLod = 0.0F;
+    samplerInfo.maxLod = static_cast<float>(desc.mipLevels - 1U);
     samplerInfo.maxAnisotropy = 1.0F;
     samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
     VkSampler sampler = VK_NULL_HANDLE;
@@ -2518,8 +2633,12 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
         if (storageView != VK_NULL_HANDLE) {
             impl.vk.vkDestroyImageView(impl.device, storageView, nullptr);
         }
-        impl.vk.vkDestroyImageView(impl.device, attachmentView, nullptr);
-        impl.vk.vkDestroyImageView(impl.device, view, nullptr);
+        if (attachmentView != VK_NULL_HANDLE) {
+            impl.vk.vkDestroyImageView(impl.device, attachmentView, nullptr);
+        }
+        if (view != VK_NULL_HANDLE) {
+            impl.vk.vkDestroyImageView(impl.device, view, nullptr);
+        }
         destroyImageResources();
         return fail("vkCreateSampler failed for the texture");
     }
@@ -2529,6 +2648,93 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
         ImplUVE::TextureRecordUVE{image, imageMemory, view, attachmentView, storageView,
                                   sampler, format, desc, finalLayout});
     return TextureHandleUVE{handleValue};
+}
+
+bool VulkanRenderDeviceUVE::SupportsTextureFormatUVE(const TextureFormatUVE format,
+                                                      const TextureColorSpaceUVE colorSpace) const noexcept {
+    if (m_impl == nullptr || !m_impl->usable || m_impl->physicalDevice == VK_NULL_HANDLE ||
+        GetTextureFormatBlockInfoUVE(format).bytes == 0U) {
+        return false;
+    }
+    switch (colorSpace) {
+        case TextureColorSpaceUVE::Linear:
+            break;
+        case TextureColorSpaceUVE::Srgb:
+            if (!IsTextureFormatSrgbCapableUVE(format)) {
+                return false;
+            }
+            break;
+        default:
+            return false;
+    }
+    if (!IsTextureFormatCompressedUVE(format)) {
+        return true;
+    }
+    switch (format) {
+        case TextureFormatUVE::BC1RGB:
+        case TextureFormatUVE::BC3RGBA:
+        case TextureFormatUVE::BC7RGBA:
+            if (!m_impl->textureCompressionBCEnabled) {
+                return false;
+            }
+            break;
+        case TextureFormatUVE::ETC2RGB8:
+        case TextureFormatUVE::ETC2RGBA8:
+            if (!m_impl->textureCompressionETC2Enabled) {
+                return false;
+            }
+            break;
+        case TextureFormatUVE::ASTC4x4RGBA:
+            if (!m_impl->textureCompressionASTCLdrEnabled) {
+                return false;
+            }
+            break;
+        case TextureFormatUVE::RGBA8Unorm:
+        case TextureFormatUVE::RGBA16Float:
+        case TextureFormatUVE::Depth32Float:
+            return false;
+    }
+
+    VkFormat vkFormat = VK_FORMAT_UNDEFINED;
+    switch (format) {
+        case TextureFormatUVE::BC1RGB:
+            vkFormat = colorSpace == TextureColorSpaceUVE::Srgb ? VK_FORMAT_BC1_RGB_SRGB_BLOCK
+                                                                 : VK_FORMAT_BC1_RGB_UNORM_BLOCK;
+            break;
+        case TextureFormatUVE::BC3RGBA:
+            vkFormat = colorSpace == TextureColorSpaceUVE::Srgb ? VK_FORMAT_BC3_SRGB_BLOCK
+                                                                 : VK_FORMAT_BC3_UNORM_BLOCK;
+            break;
+        case TextureFormatUVE::BC7RGBA:
+            vkFormat = colorSpace == TextureColorSpaceUVE::Srgb ? VK_FORMAT_BC7_SRGB_BLOCK
+                                                                 : VK_FORMAT_BC7_UNORM_BLOCK;
+            break;
+        case TextureFormatUVE::ETC2RGB8:
+            vkFormat = colorSpace == TextureColorSpaceUVE::Srgb ? VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK
+                                                                 : VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;
+            break;
+        case TextureFormatUVE::ETC2RGBA8:
+            vkFormat = colorSpace == TextureColorSpaceUVE::Srgb ? VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK
+                                                                 : VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK;
+            break;
+        case TextureFormatUVE::ASTC4x4RGBA:
+            vkFormat = colorSpace == TextureColorSpaceUVE::Srgb ? VK_FORMAT_ASTC_4x4_SRGB_BLOCK
+                                                                 : VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+            break;
+        case TextureFormatUVE::RGBA8Unorm:
+        case TextureFormatUVE::RGBA16Float:
+        case TextureFormatUVE::Depth32Float:
+            return false;
+    }
+    if (vkFormat == VK_FORMAT_UNDEFINED) {
+        return false;
+    }
+    VkFormatProperties properties{};
+    m_impl->vk.vkGetPhysicalDeviceFormatProperties(m_impl->physicalDevice, vkFormat, &properties);
+    constexpr VkFormatFeatureFlags required = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+                                               VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+                                               VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+    return (properties.optimalTilingFeatures & required) == required;
 }
 
 void VulkanRenderDeviceUVE::DestroyTextureUVE(const TextureHandleUVE texture) {
@@ -3666,7 +3872,8 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
         toGeneral.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         toGeneral.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         toGeneral.image = textureRecord.image;
-        toGeneral.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 1U, 0U, 1U};
+        toGeneral.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0U,
+                                       textureRecord.desc.mipLevels, 0U, 1U};
         impl.vk.vkCmdPipelineBarrier(impl.commandBuffer,
                                      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
                                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -3758,8 +3965,15 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                     value = bound->second; // destroyed-after-bind resolves to the fallback
                 }
                 ImplUVE::TextureRecordUVE& slotRecord = impl.textures.at(value);
-                if (slotRecord.desc.format == TextureFormatUVE::Depth32Float &&
-                    (storageImageSlot || !impl.useDynamicRendering)) {
+                if (storageImageSlot && IsTextureFormatCompressedUVE(slotRecord.desc.format)) {
+                    impl.WarnOnceUVE(
+                        VulkanRenderDeviceUVE::ImplUVE::kWarnedStorageImageCompressedUVE,
+                        "BindTextureUVE: a block-compressed texture was bound to a storage-image "
+                        "slot; compressed formats are sampled-only — the 1x1 black storage sink "
+                        "receives the writes instead");
+                    value = impl.fallbackStorageImageValue;
+                } else if (slotRecord.desc.format == TextureFormatUVE::Depth32Float &&
+                           (storageImageSlot || !impl.useDynamicRendering)) {
                     if (storageImageSlot) {
                         // M5b scope: depth images are never storage-bound (imageStore into a
                         // depth attachment needs a layout/aspect story this slice refuses to
@@ -4125,6 +4339,12 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                                     VulkanRenderDeviceUVE::ImplUVE::kWarnedUnknownHandleUVE,
                                     "BeginRenderPassUVE: unknown color texture handle; "
                                     "submission's draws are skipped");
+                                skipPass = true;
+                            } else if (IsTextureFormatCompressedUVE(foundColor->second.desc.format)) {
+                                impl.WarnOnceUVE(
+                                    VulkanRenderDeviceUVE::ImplUVE::kWarnedOffscreenUnsupportedUVE,
+                                    "BeginRenderPassUVE: block-compressed textures are sampled-only "
+                                    "and cannot be color attachments; submission's draws are skipped");
                                 skipPass = true;
                             } else if (foundColor->second.vkFormat != impl.swapchainFormat) {
                                 // RGBA16Float and RGBA8 textures created while the swapchain

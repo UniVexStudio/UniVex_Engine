@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 // The UVScript text editor: the Scripting workspace while a `.uvs` file is open. The text is
-// checked against the node it belongs to on every edit, so a mistake shows up while typing - by
+// checked against the object it belongs to on every edit, so a mistake shows up while typing - by
 // line and column - rather than when the game runs. Saving writes the file; the running engine
 // notices the new text and restarts that script on its own.
 
@@ -21,7 +21,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
-#include "uve/core/uvscript_node_host_uve.h"
+#include "uve/core/uvscript_object_host_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/uvscript/uvscript_compiler_uve.h"
 #include "uve/uvscript/uvscript_parser_uve.h"
@@ -31,11 +31,11 @@ namespace {
 
 [[nodiscard]] bool IsUVScriptPathUVE(const std::string_view path) noexcept { return path.ends_with(".uvs"); }
 
-/// Every problem in the document's text. Checked against the node while it exists - its
+/// Every problem in the document's text. Checked against the object while it exists - its
 /// components decide which properties are in scope - and only parsed once it is gone.
 void RecheckUVScriptUVE(EditorUVE::UVScriptDocumentUVE& document, Scene::IEntityManagerUVE& entityManager) {
     if (entityManager.IsAliveUVE(document.entity)) {
-        Core::UVScriptNodeHostUVE host(entityManager, nullptr, document.entity);
+        Core::UVScriptObjectHostUVE host(entityManager, nullptr, document.entity);
         document.diagnostics = UVScript::CompileUVScriptSourceUVE(document.text, host).diagnostics;
     } else {
         document.diagnostics = UVScript::ParseUVScriptUVE(document.text).diagnostics;
@@ -236,7 +236,7 @@ bool EditorUVE::OpenUVScriptForEntityUVE(const Scene::EntityUVE entity) {
     if (!IsUVScriptPathUVE(path)) {
         return false;
     }
-    // The same file already open keeps its unsaved text; only the node it is checked against moves.
+    // The same file already open keeps its unsaved text; only the object it is checked against moves.
     if (!m_openUVScript.has_value() || m_openUVScript->path != path) {
         UVScriptDocumentUVE document;
         document.path = path;

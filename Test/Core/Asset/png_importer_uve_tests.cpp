@@ -10,6 +10,8 @@
 
 #include "uve/asset/asset_database_uve.h"
 #include "uve/asset/texture_asset_uve.h"
+#include "uve/asset/texture_import_settings_uve.h"
+#include "uve/asset/texture_compression_uve.h"
 
 namespace UVE::Asset::Tests {
 namespace {
@@ -77,13 +79,81 @@ TEST(PngImporterUVETest, ImportUVE_DecodesPngToTextureEnvelopeAndRegistersGuid) 
     ASSERT_TRUE(LoadTextureAssetUVE(destinationPath, texture));
     EXPECT_EQ(texture.width, 2U);
     EXPECT_EQ(texture.height, 1U);
-    EXPECT_EQ(texture.format, TextureFormatUVE::RGBA8Unorm);
+    EXPECT_EQ(texture.format, TextureAssetFormatUVE::RGBA8Unorm);
+    EXPECT_EQ(texture.colorSpace, TextureAssetColorSpaceUVE::Srgb);
+    EXPECT_EQ(texture.usage, TextureUsageUVE::Color);
+    ASSERT_EQ(texture.mipLevels.size(), 1U);
+    EXPECT_EQ(texture.mipLevels[0].width, 1U);
+    EXPECT_EQ(texture.mipLevels[0].height, 1U);
     EXPECT_EQ(texture.pixels, (std::vector<std::byte>{std::byte{0xFF}, std::byte{0}, std::byte{0}, std::byte{0xFF},
                                                          std::byte{0}, std::byte{0}, std::byte{0xFF}, std::byte{0xFF}}));
 
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
 }
+
+TEST(PngImporterUVETest, ImportUVE_TextureSettingsOverrideSrgbColorDefault) {
+    const std::filesystem::path sourcePath = "uve_png_importer_settings_source.png";
+    const std::filesystem::path destinationPath = "uve_png_importer_settings_destination.uvtex";
+    std::filesystem::remove(sourcePath);
+    std::filesystem::remove(destinationPath);
+    WriteBytesUVE(sourcePath, MakePngTwoByOneRgba8UVE());
+
+    TextureImportSettingsUVE settings;
+    settings.colorSpace = TextureAssetColorSpaceUVE::Linear;
+    settings.usage = TextureUsageUVE::Normal;
+    settings.generateMipmaps = false;
+
+    AssetImporterUVE importer;
+    AssetDatabaseUVE assetDatabase;
+    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase, settings);
+    ASSERT_NE(guid, kInvalidAssetGuidUVE);
+
+    TextureAssetUVE texture;
+    ASSERT_TRUE(LoadTextureAssetUVE(destinationPath, texture));
+    EXPECT_EQ(texture.colorSpace, TextureAssetColorSpaceUVE::Linear);
+    EXPECT_EQ(texture.usage, TextureUsageUVE::Normal);
+    EXPECT_TRUE(texture.mipLevels.empty());
+    EXPECT_EQ(texture.pixels.size(), 8U);
+
+    std::filesystem::remove(sourcePath);
+    std::filesystem::remove(destinationPath);
+}
+
+#if defined(UVE_HAS_BASIS_ENCODER) && UVE_HAS_BASIS_ENCODER
+TEST(PngImporterUVETest, ImportUVE_CompressesDecodedMipChainToPortableBasisKtx2) {
+    const std::filesystem::path sourcePath = "uve_png_importer_compressed_source.png";
+    const std::filesystem::path destinationPath = "uve_png_importer_compressed_destination.uvtex";
+    std::filesystem::remove(sourcePath);
+    std::filesystem::remove(destinationPath);
+    WriteBytesUVE(sourcePath, MakePngTwoByOneRgba8UVE());
+
+    TextureImportSettingsUVE settings;
+    settings.compressionMode = TextureCompressionModeUVE::BasisUASTC;
+    settings.compressionQuality = 60U;
+    settings.compressionEffort = 1U;
+    AssetImporterUVE importer;
+    AssetDatabaseUVE assetDatabase;
+    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase, settings);
+    ASSERT_NE(guid, kInvalidAssetGuidUVE);
+
+    TextureAssetUVE texture;
+    ASSERT_TRUE(LoadTextureAssetUVE(destinationPath, texture));
+    EXPECT_EQ(texture.payloadEncoding, TexturePayloadEncodingUVE::BasisUniversalKtx2);
+    EXPECT_TRUE(texture.pixels.empty());
+    EXPECT_TRUE(texture.mipLevels.empty());
+    EXPECT_EQ(texture.colorSpace, TextureAssetColorSpaceUVE::Srgb);
+    EXPECT_EQ(texture.usage, TextureUsageUVE::Color);
+    TextureCompressionInfoUVE info;
+    ASSERT_TRUE(GetTextureCompressionInfoUVE(texture, info));
+    EXPECT_EQ(info.width, 2U);
+    EXPECT_EQ(info.height, 1U);
+    EXPECT_EQ(info.mipLevels, 2U);
+
+    std::filesystem::remove(sourcePath);
+    std::filesystem::remove(destinationPath);
+}
+#endif
 
 TEST(PngImporterUVETest, ImportUVE_InvalidPngPreservesExistingDestination) {
     const std::filesystem::path sourcePath = "uve_png_importer_invalid_source.png";

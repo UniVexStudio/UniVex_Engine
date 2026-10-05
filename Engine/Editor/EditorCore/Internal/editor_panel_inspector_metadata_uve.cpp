@@ -24,11 +24,14 @@
 #include <array>
 #include <cfloat>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <typeindex>
 #include <utility>
 #include <vector>
@@ -50,6 +53,7 @@
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/objects/3d/lod_group_3d_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -132,15 +136,18 @@ void DrawTooltipUVE(const TypeMetadataPropertyUVE& property) {
 /// Custom drawers that lay out their own rows - a multi-line box, a slot with an action strip, a
 /// list with an add button - rather than filling a value cell. Any other id falls back to the
 /// generic editor for its value type, which is where the rotation and entity-picker ids still go.
-constexpr std::array<std::string_view, 8> kBlockPropertyDrawerIdsUVE{
+constexpr std::array<std::string_view, 11> kBlockPropertyDrawerIdsUVE{
     "animation-parameters",
     "animation-graph",
     "multiline-text",
     "script-slot",
     "script-exports",
-    "node-metadata",
+    "object-metadata",
     "skeleton-source",
     "skeleton-bones",
+    "entity-reference-list",
+    "lod-group-thresholds",
+    "lod-group-meshes",
 };
 
 [[nodiscard]] bool IsBlockPropertyDrawerUVE(const std::string& drawerId) noexcept {
@@ -249,8 +256,8 @@ int TextInputCallbackUVE(ImGuiInputTextCallbackData* const data) {
 
 void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
     // Registration order is the Inspector's section order: by the declared section key, then by
-    // type id for a stable result. That is how the properties every node has in common end up
-    // below whatever the node itself brings, without this loop knowing which are which.
+    // type id for a stable result. That is how the properties every object has in common end up
+    // below whatever the object itself brings, without this loop knowing which are which.
     std::vector<const TypeMetadataEntryUVE*> entries;
     const Core::TypeMetadataRegistryUVE& registry = Scene::GetSceneComponentMetadataRegistryUVE();
     for (const TypeMetadataEntryUVE& snapshotEntry : registry.GetSnapshotUVE().entries) {
@@ -317,13 +324,13 @@ void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
                 DrawMetadataComponentDrawerUVE(entity, *entry, nested);
             },
         }));
-        // The class chain, spelled out: Node3D's own sections under a "Node3D" heading and the
-        // common Node section under "Node", so the Inspector reads as the node's ancestry.
-        if (entry->order >= Scene::kSectionOrderNodeCommonUVE) {
-            static_cast<void>(m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Node"));
+        // The class chain, spelled out: Object3D's own sections under a "Object3D" heading and the
+        // common Object section under "Object", so the Inspector reads as the object's ancestry.
+        if (entry->order >= Scene::kSectionOrderObjectCommonUVE) {
+            static_cast<void>(m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Object"));
         } else if (entry->order >= Scene::kSectionOrderTransformUVE) {
             static_cast<void>(
-                m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Node3D"));
+                m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Object3D"));
         }
     }
     if (!transformRegistered) {
@@ -492,7 +499,7 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
     if (!property.enumEntries.empty()) {
         // Collapsed dropdown - an enum never occupies the section with one row per option. When
         // the choice is resolved against the hierarchy, the answer rides along in the preview:
-        // "Inherit (Pausable)" says what Inherit means here without a second row to read.
+        // "Inherit (Running)" says what Inherit means here without a second row to read.
         std::int64_t current = 0;
         property.getValue(instance, &current);
         std::size_t selected = 0U;
@@ -584,6 +591,17 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
         const bool changed = ImGui::DragInt("##value", &shown, RangeStepUVE(property, 1.0F), minimum, maximum);
         value = static_cast<std::uint32_t>(std::max(0, shown));
         edited = ApplyContinuousPropertyEditUVE(entry, property, changed, &value) || edited;
+    } else if (property.typeId == Scene::kPropertyTypeUInt8UVE) {
+        // Dragged as a signed int (what ImGui offers) and clamped back into a byte, so an author
+        // can never wrap a count past 255 or below zero.
+        std::uint8_t value = 0U;
+        property.getValue(instance, &value);
+        int shown = value;
+        const int minimum = property.range.enabled ? std::max(0, static_cast<int>(property.range.minimum)) : 0;
+        const int maximum = property.range.enabled ? std::min(255, static_cast<int>(property.range.maximum)) : 255;
+        const bool changed = ImGui::DragInt("##value", &shown, RangeStepUVE(property, 1.0F), minimum, maximum);
+        value = static_cast<std::uint8_t>(std::clamp(shown, 0, 255));
+        edited = ApplyContinuousPropertyEditUVE(entry, property, changed, &value) || edited;
     } else if (property.typeId == Scene::kPropertyTypeBitMask32UVE) {
         std::uint32_t value = 0U;
         property.getValue(instance, &value);
@@ -643,15 +661,14 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
             }
         }
     } else if (property.typeId == Scene::kPropertyTypeEntityUVE) {
-        // Same reasoning as an asset guid: an entity reference is picked, not typed. The list is
-        // every document node with a transform - the only nodes a reference can act on - in
-        // outliner order, minus the selection itself.
+        // Same reasoning as an asset guid: an entity reference is picked, not typed. The choices
+        // come from GetEntityReferenceCandidatesUVE so this picker and the reference list below
+        // offer exactly the same objects.
         Scene::EntityUVE value = Scene::kInvalidEntityUVE;
         property.getValue(instance, &value);
-        const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
         const bool dangling = value != Scene::kInvalidEntityUVE && !IsDocumentEntityUVE(value);
         const std::string preview = value == Scene::kInvalidEntityUVE ? std::string{"(default)"}
-                                    : dangling                        ? std::string{"(missing node)"}
+                                    : dangling                        ? std::string{"(missing object)"}
                                                                       : GetEntityDisplayLabelUVE(value);
         if (ImGui::BeginCombo("##value", preview.c_str())) {
             if (ImGui::Selectable("(default)", value == Scene::kInvalidEntityUVE) &&
@@ -662,18 +679,7 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
             if (ImGui::IsItemHovered() && !property.tooltip.empty()) {
                 ImGui::SetTooltip("%s", property.tooltip.c_str());
             }
-            std::vector<Scene::EntityUVE> pending = GetDocumentRootsUVE();
-            std::reverse(pending.begin(), pending.end());
-            while (!pending.empty()) {
-                const Scene::EntityUVE candidate = pending.back();
-                pending.pop_back();
-                std::vector<Scene::EntityUVE> children =
-                    m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), candidate);
-                pending.insert(pending.end(), children.rbegin(), children.rend());
-                if (candidate == m_selectedEntity ||
-                    !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(candidate)) {
-                    continue;
-                }
+            for (const Scene::EntityUVE candidate : GetEntityReferenceCandidatesUVE()) {
                 const bool isSelected = candidate == value;
                 const std::string label = GetEntityDisplayLabelUVE(candidate) + "##" +
                                           std::to_string(candidate.index) + "_" +
@@ -792,8 +798,8 @@ bool EditorUVE::DrawCustomPropertyUVE(const TypeMetadataEntryUVE& entry, const T
         DrawScriptExportsPropertyUVE(entry, property, instance);
         return true;
     }
-    if (property.customDrawerId == "node-metadata") {
-        DrawNodeMetadataPropertyUVE(entry, property, instance);
+    if (property.customDrawerId == "object-metadata") {
+        DrawObjectMetadataPropertyUVE(entry, property, instance);
         return true;
     }
     if (property.customDrawerId == "skeleton-source") {
@@ -802,6 +808,18 @@ bool EditorUVE::DrawCustomPropertyUVE(const TypeMetadataEntryUVE& entry, const T
     }
     if (property.customDrawerId == "skeleton-bones") {
         DrawSkeletonBonesPropertyUVE(entry, property, instance);
+        return true;
+    }
+    if (property.customDrawerId == "entity-reference-list") {
+        DrawEntityReferenceListPropertyUVE(entry, property, instance);
+        return true;
+    }
+    if (property.customDrawerId == "lod-group-thresholds") {
+        DrawLodGroupThresholdsPropertyUVE(entry, property, instance);
+        return true;
+    }
+    if (property.customDrawerId == "lod-group-meshes") {
+        DrawLodGroupMeshesPropertyUVE(entry, property, instance);
         return true;
     }
     return false;
@@ -1234,6 +1252,296 @@ bool EditorUVE::ApplyComponentPropertySnapshotUVE(const Scene::EntityUVE entity,
     return true;
 }
 
+std::vector<Scene::EntityUVE> EditorUVE::GetEntityReferenceCandidatesUVE() {
+    // Outliner order, by the same walk the Outliner itself uses: roots reversed onto a stack, then
+    // each object's children pushed in reverse so the next one popped is the next one drawn.
+    std::vector<Scene::EntityUVE> candidates;
+    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    std::vector<Scene::EntityUVE> pending = GetDocumentRootsUVE();
+    std::reverse(pending.begin(), pending.end());
+    while (!pending.empty()) {
+        const Scene::EntityUVE candidate = pending.back();
+        pending.pop_back();
+        std::vector<Scene::EntityUVE> children =
+            m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), candidate);
+        pending.insert(pending.end(), children.rbegin(), children.rend());
+        if (candidate == m_selectedEntity ||
+            !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(candidate)) {
+            continue;
+        }
+        candidates.push_back(candidate);
+    }
+    return candidates;
+}
+
+void EditorUVE::DrawEntityReferenceListPropertyUVE(const TypeMetadataEntryUVE& entry,
+                                                    const TypeMetadataPropertyUVE& property,
+                                                    const void* const instance) {
+    if (property.typeId != Scene::kPropertyTypeEntityListUVE || property.getValue == nullptr ||
+        property.elementCount == 0U) {
+        return;
+    }
+
+    // The value is a fixed-capacity list of references, copied whole by the property's own accessor
+    // - sized from the declaration's element count, and written back as one property write, which
+    // means one undo step and the component's own rule as the last word. An empty slot is
+    // kInvalidEntityUVE and the list is a prefix, so anything that removes a slot compacts what
+    // followed it rather than leaving a hole the component would refuse.
+    std::vector<Scene::EntityUVE> references(property.elementCount, Scene::kInvalidEntityUVE);
+    property.getValue(instance, references.data());
+    std::size_t referenceCount = 0U;
+    for (std::size_t index = 0U; index < references.size(); ++index) {
+        if (references[index] != Scene::kInvalidEntityUVE) {
+            references[referenceCount] = references[index];
+            ++referenceCount;
+        }
+    }
+    for (std::size_t index = referenceCount; index < references.size(); ++index) {
+        references[index] = Scene::kInvalidEntityUVE;
+    }
+
+    const bool writable = property.IsAuthoringWritableUVE() && IsAuthoringCommandAllowedUVE();
+    const std::vector<Scene::EntityUVE> candidates = GetEntityReferenceCandidatesUVE();
+    std::optional<std::size_t> removeIndex;
+    std::optional<std::size_t> replaceIndex;
+    std::optional<Scene::EntityUVE> replaceWith;
+    bool clearAll = false;
+
+    ImGui::BeginDisabled(!writable);
+    {
+        const std::string header =
+            "Exclusions (" + std::to_string(referenceCount) + ")##entity-references";
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(header.c_str());
+        if (ImGui::IsItemHovered()) {
+            DrawTooltipUVE(property);
+        }
+        if (referenceCount != 0U) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Clear")) {
+                clearAll = true;
+            }
+        }
+    }
+    if (BeginPropertyRowsUVE("##entity-references")) {
+        const auto alreadyListed = [&references, referenceCount](const Scene::EntityUVE candidate) {
+            return std::find(references.cbegin(), references.cbegin() + static_cast<std::ptrdiff_t>(referenceCount),
+                             candidate) != references.cbegin() + static_cast<std::ptrdiff_t>(referenceCount);
+        };
+        for (std::size_t index = 0U; index < referenceCount; ++index) {
+            ImGui::PushID(static_cast<int>(index));
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(index == 0U ? "Excludes" : "And");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            const Scene::EntityUVE current = references[index];
+            const std::string preview = IsDocumentEntityUVE(current) ? GetEntityDisplayLabelUVE(current)
+                                                                     : std::string{"(missing object)"};
+            if (ImGui::BeginCombo("##reference", preview.c_str())) {
+                if (ImGui::Selectable("(remove)")) {
+                    removeIndex = index;
+                }
+                for (const Scene::EntityUVE candidate : candidates) {
+                    const bool isSelected = candidate == current;
+                    // An object already on the list is offered once; the component refuses
+                    // duplicates, so a second one would be a write that silently did nothing.
+                    if (alreadyListed(candidate) && !isSelected) {
+                        continue;
+                    }
+                    const std::string label = GetEntityDisplayLabelUVE(candidate) + "##" +
+                                              std::to_string(candidate.index) + "_" +
+                                              std::to_string(candidate.generation);
+                    if (ImGui::Selectable(label.c_str(), isSelected) && !isSelected) {
+                        replaceIndex = index;
+                        replaceWith = candidate;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::PopID();
+        }
+        if (referenceCount < references.size()) {
+            ImGui::PushID("add");
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Add");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::BeginCombo("##reference", "(pick an object)")) {
+                for (const Scene::EntityUVE candidate : candidates) {
+                    if (alreadyListed(candidate)) {
+                        continue;
+                    }
+                    const std::string label = GetEntityDisplayLabelUVE(candidate) + "##" +
+                                              std::to_string(candidate.index) + "_" +
+                                              std::to_string(candidate.generation);
+                    if (ImGui::Selectable(label.c_str())) {
+                        replaceIndex = referenceCount;
+                        replaceWith = candidate;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::PopID();
+        } else {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextDisabled("Full");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextDisabled("All %zu slots are in use.", references.size());
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndDisabled();
+
+    if (!clearAll && !removeIndex.has_value() && !replaceWith.has_value()) {
+        return;
+    }
+    if (replaceIndex.has_value() && replaceWith.has_value()) {
+        references[*replaceIndex] = *replaceWith;
+    }
+    if (removeIndex.has_value()) {
+        references[*removeIndex] = Scene::kInvalidEntityUVE;
+    }
+    std::vector<Scene::EntityUVE> written(property.elementCount, Scene::kInvalidEntityUVE);
+    std::size_t writtenCount = 0U;
+    if (!clearAll) {
+        for (const Scene::EntityUVE reference : references) {
+            if (reference != Scene::kInvalidEntityUVE) {
+                written[writtenCount] = reference;
+                ++writtenCount;
+            }
+        }
+    }
+    static_cast<void>(SetSelectedComponentPropertyUVE(entry, property, written.data()));
+}
+
+void EditorUVE::DrawLodGroupThresholdsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                                  const Core::TypeMetadataPropertyUVE& property,
+                                                  const void* const instance) {
+    if (property.typeId != Scene::kPropertyTypeFloatListUVE || property.getValue == nullptr ||
+        instance == nullptr || property.elementCount == 0U) {
+        return;
+    }
+
+    // Only the levels in use are shown. `levelCount` is the authority and it is read from the
+    // component itself, so the list can never disagree with the switch that decides it - and the
+    // rows past it, which would do nothing when edited, are simply not offered.
+    const auto* const group = static_cast<const Scene::LodGroup3DComponentUVE*>(instance);
+    std::size_t levelCount = group->levelCount;
+    if (levelCount == 0U || levelCount > property.elementCount) {
+        levelCount = 1U; // A hand-edited component; the validator refuses the write that made it.
+    }
+    std::array<float, Scene::kMaximumLodLevelsUVE> thresholds{};
+    property.getValue(instance, thresholds.data());
+
+    const bool writable = property.IsAuthoringWritableUVE() && IsAuthoringCommandAllowedUVE();
+    bool edited = false;
+    ImGui::BeginDisabled(!writable);
+    if (BeginPropertyRowsUVE("##lod-thresholds")) {
+        const float step = RangeStepUVE(property, 0.5F);
+        const float minimum = RangeMinimumUVE(property);
+        const float maximum = RangeMaximumUVE(property);
+        for (std::size_t level = 0U; level < levelCount; ++level) {
+            ImGui::PushID(static_cast<int>(level));
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            const std::string label = "Level " + std::to_string(level + 1U);
+            ImGui::TextUnformatted(label.c_str());
+            if (ImGui::IsItemHovered()) {
+                DrawTooltipUVE(property);
+            }
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            edited |= ImGui::DragFloat("##threshold", &thresholds[level], step, minimum, maximum, "%.2f m");
+            ImGui::PopID();
+        }
+
+        // The rule the thresholds add up to, stated where they are authored: past the last one the
+        // object is not drawn at all, and the hysteresis band moves that point out by the same
+        // fraction the levels use.
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextDisabled("Culled past");
+        ImGui::TableSetColumnIndex(1);
+        if (!group->enabled) {
+            ImGui::TextDisabled("Never - the group is disabled");
+        } else {
+            const float hysteresis = group->hysteresis > 0.0F ? group->hysteresis : 0.0F;
+            ImGui::Text("%.2f m", thresholds[levelCount - 1U] * (1.0F + hysteresis));
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndDisabled();
+
+    if (edited) {
+        static_cast<void>(SetSelectedComponentPropertyUVE(entry, property, thresholds.data()));
+    }
+}
+
+void EditorUVE::DrawLodGroupMeshesPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                              const Core::TypeMetadataPropertyUVE& property,
+                                              const void* const instance) {
+    if (property.typeId != Scene::kPropertyTypeAssetGuidListUVE || property.getValue == nullptr ||
+        instance == nullptr || property.elementCount == 0U) {
+        return;
+    }
+
+    const auto* const group = static_cast<const Scene::LodGroup3DComponentUVE*>(instance);
+    std::size_t levelCount = group->levelCount;
+    if (levelCount == 0U || levelCount > property.elementCount) {
+        levelCount = 1U;
+    }
+    std::array<Asset::AssetGuidUVE, Scene::kMaximumLodLevelsUVE> meshes{};
+    property.getValue(instance, meshes.data());
+
+    const bool writable = property.IsAuthoringWritableUVE() && IsAuthoringCommandAllowedUVE();
+    std::optional<Asset::AssetGuidUVE> picked;
+    std::size_t pickedLevel = 0U;
+    bool cleared = false;
+    ImGui::BeginDisabled(!writable);
+    if (BeginPropertyRowsUVE("##lod-meshes")) {
+        for (std::size_t level = 0U; level < levelCount; ++level) {
+            ImGui::PushID(static_cast<int>(level));
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            const std::string label = "Level " + std::to_string(level + 1U);
+            ImGui::TextUnformatted(label.c_str());
+            if (ImGui::IsItemHovered()) {
+                DrawTooltipUVE(property);
+            }
+            ImGui::TableSetColumnIndex(1);
+            if (const std::optional<Asset::AssetGuidUVE> chosen =
+                    DrawAssetPickerUVE("##level", meshes[level], ".uvmodel")) {
+                if (*chosen == Asset::kInvalidAssetGuidUVE) {
+                    cleared = true;
+                    pickedLevel = level;
+                } else {
+                    picked = chosen;
+                    pickedLevel = level;
+                }
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndDisabled();
+
+    if (!cleared && !picked.has_value()) {
+        return;
+    }
+    // The whole array is written back either way, so a cleared level and an assigned one are the
+    // same kind of edit: one property write, one undo entry, and the component's own validity rule
+    // as the last word.
+    meshes[pickedLevel] = cleared ? Asset::kInvalidAssetGuidUVE : *picked;
+    static_cast<void>(SetSelectedComponentPropertyUVE(entry, property, meshes.data()));
+}
+
 bool EditorUVE::ResetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entry,
                                                   const TypeMetadataPropertyUVE& property) {
     if (!entry.HasFactoryUVE() || property.getValue == nullptr) {
@@ -1268,6 +1576,7 @@ bool EditorUVE::ResetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& en
                          property.typeId == Scene::kPropertyTypeFloatUVE ||
                          property.typeId == Scene::kPropertyTypeInt32UVE ||
                          property.typeId == Scene::kPropertyTypeUInt32UVE ||
+                         property.typeId == Scene::kPropertyTypeUInt8UVE ||
                          property.typeId == Scene::kPropertyTypeBitMask32UVE ||
                          property.typeId == Scene::kPropertyTypeVector2UVE ||
                          property.typeId == Scene::kPropertyTypeVector3UVE ||

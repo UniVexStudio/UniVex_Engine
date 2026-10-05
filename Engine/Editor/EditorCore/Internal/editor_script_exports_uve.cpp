@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 // The Inspector rows for a `.uvs` script's `export` fields. The script decides which fields exist
-// and their types and defaults; the node stores only the values it changes, as UVScript text in
+// and their types and defaults; the object stores only the values it changes, as UVScript text in
 // its Script component. So each edit is one ordinary undoable property edit, and a script that
 // renames or retypes a field simply stops showing the old value instead of breaking the scene.
 
@@ -22,7 +22,7 @@
 
 #include <imgui.h>
 
-#include "uve/core/uvscript_node_host_uve.h"
+#include "uve/core/uvscript_object_host_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/uvscript/uvscript_compiler_uve.h"
 #include "uve/uvscript/uvscript_instance_uve.h"
@@ -69,7 +69,7 @@ std::vector<EditorUVE::ScriptExportRowUVE> EditorUVE::GetSelectedScriptExportsUV
     if (!source.has_value()) {
         return {};
     }
-    Core::UVScriptNodeHostUVE host(entityManager, nullptr, entity);
+    Core::UVScriptObjectHostUVE host(entityManager, nullptr, entity);
     const UVScript::CompileResultUVE compiled = UVScript::CompileUVScriptSourceUVE(*source, host);
     if (!compiled.IsSuccessUVE()) {
         return {};

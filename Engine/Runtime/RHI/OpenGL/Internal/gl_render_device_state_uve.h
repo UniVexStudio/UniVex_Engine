@@ -47,6 +47,10 @@ struct GlDeviceStateUVE {
     GLint maxCombinedTextureImageUnits = 0;
     GLint maxUniformBufferBindings = 0;
     GLint maxVertexAttribs = 0;
+    // GL_COMPRESSED_TEXTURE_FORMATS is the driver-authoritative list for compressed image
+    // allocation. Keep the queried internal-format tokens so Basis target selection never
+    // requests a format the active context cannot sample/upload.
+    std::vector<GLint> compressedTextureFormats;
 
     /// GL_SHADER_STORAGE_BUFFER_BINDINGS, queried only when supportsComputeShadersUVE (SSBOs
     /// share compute's GL 4.3 core floor; M2f binds them from GRAPHICS-stage shaders). Stays 0

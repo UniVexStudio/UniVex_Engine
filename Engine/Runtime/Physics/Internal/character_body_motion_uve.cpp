@@ -19,7 +19,7 @@ bool StepCharacterIntentUVE(Scene::CharacterControllerComponentUVE& c, const Cha
     const float gravity = floating ? 0.0F : gravityY * c.gravityScale;
     bool jumped = false;
     if (c.builtInMovement) {
-        const float steering = floating || c.isOnFloor ? 1.0F : c.airControl;
+        const float steering = floating || c.grounded ? 1.0F : c.airControl;
         c.velocity.x += (input.move.x * c.moveSpeed - c.velocity.x) * steering;
         c.velocity.z += (input.move.z * c.moveSpeed - c.velocity.z) * steering;
         if (floating) {
@@ -31,12 +31,12 @@ bool StepCharacterIntentUVE(Scene::CharacterControllerComponentUVE& c, const Cha
             if (input.jumpPressed) {
                 c.jumpBufferRemaining = std::max(c.jumpBufferSeconds, deltaTimeSeconds);
             }
-            const bool canJump = c.isOnFloor || c.timeSinceOnFloor <= c.coyoteTimeSeconds;
+            const bool canJump = c.grounded || c.timeSinceOnFloor <= c.coyoteTimeSeconds;
             if (c.jumpBufferRemaining > 0.0F && canJump && gravity < 0.0F) {
                 c.velocity.y = std::sqrt(2.0F * -gravity * c.jumpHeight);
                 jumped = true;
                 c.jumpBufferRemaining = 0.0F;
-                c.isOnFloor = false;
+                c.grounded = false;
                 // Spent: walking off a ledge gives one coyote jump, not one per step of the window.
                 c.timeSinceOnFloor = c.coyoteTimeSeconds + deltaTimeSeconds;
             } else {
@@ -46,7 +46,7 @@ bool StepCharacterIntentUVE(Scene::CharacterControllerComponentUVE& c, const Cha
     }
     // Standing on the floor cancels gravity rather than pressing into the floor every step.
     if (!floating && !jumped) {
-        if (c.isOnFloor && c.velocity.y <= 0.0F) {
+        if (c.grounded && c.velocity.y <= 0.0F) {
             c.velocity.y = 0.0F;
         } else {
             c.velocity.y += gravity * deltaTimeSeconds;
@@ -65,7 +65,7 @@ void FinishCharacterStepUVE(Scene::CharacterControllerComponentUVE& c, const Cha
             c.velocity.z = 0.0F;
         }
     }
-    c.isOnFloor = outcome.onFloor;
+    c.grounded = outcome.onFloor;
     c.floorNormal = outcome.onFloor ? outcome.floorNormal : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
     if (outcome.onFloor) {
         c.timeSinceOnFloor = 0.0F;

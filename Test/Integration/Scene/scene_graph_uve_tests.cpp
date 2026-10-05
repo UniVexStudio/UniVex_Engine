@@ -549,7 +549,7 @@ TEST_F(SceneGraphUVETest, UpdateUVE_ShowingAParentDoesNotShowAnIndependentlyHidd
 }
 
 TEST_F(SceneGraphUVETest, UpdateUVE_AnEntityWithoutTheComponentPassesVisibilityThrough) {
-    // The component is optional, so most entities will not have one. An intermediate node without
+    // The component is optional, so most entities will not have one. An intermediate object without
     // it must not break the chain: hiding the grandparent still has to hide the grandchild.
     const EntityUVE grandparent = entityManager.CreateEntityUVE();
     const EntityUVE middle = entityManager.CreateEntityUVE();
@@ -567,11 +567,11 @@ TEST_F(SceneGraphUVETest, UpdateUVE_AnEntityWithoutTheComponentPassesVisibilityT
     sceneGraph.UpdateUVE(entityManager);
 
     EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(grandchild).visibleInHierarchy)
-        << "a node without the component must pass its parent's state through, not reset it";
+        << "an object without the component must pass its parent's state through, not reset it";
 }
 
-TEST_F(SceneGraphUVETest, UpdateUVE_ResolvesProcessModeThroughANodeThatDoesNotCarryTheComponent) {
-    // Same rule visibility follows: an intermediate node that never opted in must pass its
+TEST_F(SceneGraphUVETest, UpdateUVE_ResolvesTickModeThroughAObjectThatDoesNotCarryTheComponent) {
+    // Same rule visibility follows: an intermediate object that never opted in must pass its
     // parent's answer through rather than resetting the chain.
     const EntityUVE root = entityManager.CreateEntityUVE();
     const EntityUVE middle = entityManager.CreateEntityUVE();
@@ -584,23 +584,23 @@ TEST_F(SceneGraphUVETest, UpdateUVE_ResolvesProcessModeThroughANodeThatDoesNotCa
     sceneGraph.SetParentUVE(entityManager, middle, root);
     sceneGraph.SetParentUVE(entityManager, leaf, middle);
 
-    entityManager.GetComponentUVE<ProcessComponentUVE>(root).mode = ProcessModeUVE::Disabled;
+    entityManager.GetComponentUVE<ProcessComponentUVE>(root).mode = TickModeUVE::Never;
     sceneGraph.UpdateUVE(entityManager);
 
     EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).resolvedModeInHierarchy,
-              ProcessModeUVE::Disabled);
-    EXPECT_FALSE(IsProcessingUVE(
+              TickModeUVE::Never);
+    EXPECT_FALSE(IsTickingUVE(
         entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).resolvedModeInHierarchy,
         /*simulationPaused=*/false));
 
-    // A pause menu under a Pausable parent has to be able to say Always and be believed, which is
+    // A pause menu under a Running parent has to be able to say Always and be believed, which is
     // the whole reason the mode is authored per entity.
-    entityManager.GetComponentUVE<ProcessComponentUVE>(root).mode = ProcessModeUVE::Pausable;
-    entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).mode = ProcessModeUVE::Always;
+    entityManager.GetComponentUVE<ProcessComponentUVE>(root).mode = TickModeUVE::Running;
+    entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).mode = TickModeUVE::Always;
     sceneGraph.UpdateUVE(entityManager);
     EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).resolvedModeInHierarchy,
-              ProcessModeUVE::Always);
-    EXPECT_TRUE(IsProcessingUVE(
+              TickModeUVE::Always);
+    EXPECT_TRUE(IsTickingUVE(
         entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).resolvedModeInHierarchy,
         /*simulationPaused=*/true));
 }
@@ -628,7 +628,7 @@ TEST_F(SceneGraphUVETest, UpdateUVE_AChildCannotEscapeAMainThreadAncestor) {
               ThreadGroupModeUVE::SubThread);
 }
 
-TEST_F(SceneGraphUVETest, UpdateUVE_TopLevelStillInheritsTheCommonNodeModes) {
+TEST_F(SceneGraphUVETest, UpdateUVE_TopLevelStillInheritsTheCommonObjectModes) {
     // topLevel cuts the transform chain only. A top-level child is still paused with its parent and
     // still translated with the menu it belongs to - the same reasoning that keeps visibility
     // inherited across it.
@@ -642,14 +642,14 @@ TEST_F(SceneGraphUVETest, UpdateUVE_TopLevelStillInheritsTheCommonNodeModes) {
     sceneGraph.SetParentUVE(entityManager, child, root);
     entityManager.GetComponentUVE<TransformComponentUVE>(child).topLevel = true;
 
-    entityManager.GetComponentUVE<ProcessComponentUVE>(root).mode = ProcessModeUVE::WhenPaused;
-    entityManager.GetComponentUVE<AutoTranslateComponentUVE>(root).mode = AutoTranslateModeUVE::Disabled;
+    entityManager.GetComponentUVE<ProcessComponentUVE>(root).mode = TickModeUVE::PausedOnly;
+    entityManager.GetComponentUVE<AutoTranslateComponentUVE>(root).mode = LocalizeModeUVE::Literal;
     sceneGraph.UpdateUVE(entityManager);
 
     EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(child).resolvedModeInHierarchy,
-              ProcessModeUVE::WhenPaused);
+              TickModeUVE::PausedOnly);
     EXPECT_EQ(entityManager.GetComponentUVE<AutoTranslateComponentUVE>(child).resolvedModeInHierarchy,
-              AutoTranslateModeUVE::Disabled);
+              LocalizeModeUVE::Literal);
 }
 
 TEST_F(SceneGraphUVETest, UpdateUVE_ARootWithNoAncestorsResolvesToTheHierarchyDefaults) {
@@ -663,14 +663,14 @@ TEST_F(SceneGraphUVETest, UpdateUVE_ARootWithNoAncestorsResolvesToTheHierarchyDe
 
     // Inherit at the top of a hierarchy means the default, not "unanswered".
     EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(root).resolvedModeInHierarchy,
-              ProcessModeUVE::Pausable);
+              TickModeUVE::Running);
     EXPECT_EQ(entityManager.GetComponentUVE<ThreadGroupComponentUVE>(root).resolvedModeInHierarchy,
               ThreadGroupModeUVE::MainThread);
     EXPECT_EQ(entityManager.GetComponentUVE<AutoTranslateComponentUVE>(root).resolvedModeInHierarchy,
-              AutoTranslateModeUVE::Always);
+              LocalizeModeUVE::Localized);
 }
 
-TEST_F(SceneGraphUVETest, TryGetResolvedNodeModesUVE_AnswersForANodeThatCarriesNoComponent) {
+TEST_F(SceneGraphUVETest, TryGetResolvedObjectModesUVE_AnswersForAObjectThatCarriesNoComponent) {
     // The case the query exists for. The resolved mode is written onto a component only when the
     // entity carries one, so a consumer that read the component alone would translate a label
     // with no Auto Translate component sitting under a Disabled menu. The query answers for it.
@@ -681,56 +681,56 @@ TEST_F(SceneGraphUVETest, TryGetResolvedNodeModesUVE_AnswersForANodeThatCarriesN
     }
     sceneGraph.SetParentUVE(entityManager, label, menu);
     AutoTranslateComponentUVE disabled{};
-    disabled.mode = AutoTranslateModeUVE::Disabled;
+    disabled.mode = LocalizeModeUVE::Literal;
     entityManager.AddComponentUVE<AutoTranslateComponentUVE>(menu, disabled);
     ProcessComponentUVE always{};
-    always.mode = ProcessModeUVE::Always;
+    always.mode = TickModeUVE::Always;
     entityManager.AddComponentUVE<ProcessComponentUVE>(menu, always);
 
     sceneGraph.UpdateUVE(entityManager);
 
     ASSERT_FALSE(entityManager.HasComponentUVE<AutoTranslateComponentUVE>(label));
-    const std::optional<ResolvedNodeModesUVE> resolved = sceneGraph.TryGetResolvedNodeModesUVE(label);
+    const std::optional<ResolvedObjectModesUVE> resolved = sceneGraph.TryGetResolvedObjectModesUVE(label);
     ASSERT_TRUE(resolved.has_value());
-    EXPECT_EQ(resolved->autoTranslate, AutoTranslateModeUVE::Disabled);
-    EXPECT_EQ(resolved->process, ProcessModeUVE::Always);
+    EXPECT_EQ(resolved->autoTranslate, LocalizeModeUVE::Literal);
+    EXPECT_EQ(resolved->process, TickModeUVE::Always);
     EXPECT_EQ(resolved->threadGroup, ThreadGroupModeUVE::MainThread);
 }
 
-TEST_F(SceneGraphUVETest, TryGetResolvedNodeModesUVE_IsEmptyForAnEntityTheUpdateNeverSaw) {
-    // Not a scene-graph node at all, and a node created after the last update: in both cases
+TEST_F(SceneGraphUVETest, TryGetResolvedObjectModesUVE_IsEmptyForAnEntityTheUpdateNeverSaw) {
+    // Not a scene-graph object at all, and an object created after the last update: in both cases
     // there is no answer yet, and saying so is better than inventing the default.
     const EntityUVE bare = entityManager.CreateEntityUVE();
     sceneGraph.UpdateUVE(entityManager);
-    EXPECT_FALSE(sceneGraph.TryGetResolvedNodeModesUVE(bare).has_value());
+    EXPECT_FALSE(sceneGraph.TryGetResolvedObjectModesUVE(bare).has_value());
 
     const EntityUVE late = entityManager.CreateEntityUVE();
     sceneGraph.AttachTransformUVE(entityManager, late, TransformComponentUVE{});
-    EXPECT_FALSE(sceneGraph.TryGetResolvedNodeModesUVE(late).has_value());
+    EXPECT_FALSE(sceneGraph.TryGetResolvedObjectModesUVE(late).has_value());
     sceneGraph.UpdateUVE(entityManager);
-    ASSERT_TRUE(sceneGraph.TryGetResolvedNodeModesUVE(late).has_value());
+    ASSERT_TRUE(sceneGraph.TryGetResolvedObjectModesUVE(late).has_value());
     // A root that opted into nothing resolves to the hierarchy defaults, never to Inherit.
-    EXPECT_EQ(*sceneGraph.TryGetResolvedNodeModesUVE(late), ResolvedNodeModesUVE{});
+    EXPECT_EQ(*sceneGraph.TryGetResolvedObjectModesUVE(late), ResolvedObjectModesUVE{});
 }
 
-// A pure Node is in the hierarchy with no transform of its own - the scene root is one. The rule
-// these lock: it passes the modes and visibility down like any node, and it cuts the transform
+// A pure Object is in the hierarchy with no transform of its own - the scene root is one. The rule
+// these lock: it passes the modes and visibility down like any object, and it cuts the transform
 // chain, because there is no transform on it to compose from.
 
-[[nodiscard]] EntityUVE CreatePureNodeUVE(EntityManagerUVE& entityManager) {
+[[nodiscard]] EntityUVE CreatePureObjectUVE(EntityManagerUVE& entityManager) {
     const EntityUVE entity = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<HierarchyComponentUVE>(entity, HierarchyComponentUVE{});
     return entity;
 }
 
-TEST_F(SceneGraphUVETest, UpdateUVE_AChildOfAPureNodeStartsItsOwnTransformChain) {
-    const EntityUVE node = CreatePureNodeUVE(entityManager);
+TEST_F(SceneGraphUVETest, UpdateUVE_AChildOfAPureObjectStartsItsOwnTransformChain) {
+    const EntityUVE object = CreatePureObjectUVE(entityManager);
     const EntityUVE child = entityManager.CreateEntityUVE();
     TransformComponentUVE local{};
     local.localPosition = Math::Vector3UVE{3.0F, 4.0F, 5.0F};
     local.localScale = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
     sceneGraph.AttachTransformUVE(entityManager, child, local);
-    sceneGraph.SetParentUVE(entityManager, child, node);
+    sceneGraph.SetParentUVE(entityManager, child, object);
 
     sceneGraph.UpdateUVE(entityManager);
 
@@ -738,37 +738,37 @@ TEST_F(SceneGraphUVETest, UpdateUVE_AChildOfAPureNodeStartsItsOwnTransformChain)
     EXPECT_FALSE(world.dirty);
     EXPECT_EQ(world.worldPosition, local.localPosition);
     EXPECT_EQ(world.worldScale, local.localScale);
-    // The pure Node gained nothing: the sweep never gives it a transform.
-    EXPECT_FALSE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(node));
+    // The pure Object gained nothing: the sweep never gives it a transform.
+    EXPECT_FALSE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(object));
 }
 
-TEST_F(SceneGraphUVETest, UpdateUVE_APureNodeBetweenSpatialNodesCutsTheChainButNotTheModes) {
+TEST_F(SceneGraphUVETest, UpdateUVE_APureObjectBetweenSpatialObjectsCutsTheChainButNotTheModes) {
     // Spatial -> pure -> spatial. The grandchild must not compose from the spatial grandparent:
-    // the node in between has no transform, so the chain restarts there. The modes and
+    // the object in between has no transform, so the chain restarts there. The modes and
     // visibility, which do not depend on a transform, still reach it.
     const EntityUVE grandparent = entityManager.CreateEntityUVE();
     TransformComponentUVE moved{};
     moved.localPosition = Math::Vector3UVE{100.0F, 0.0F, 0.0F};
     sceneGraph.AttachTransformUVE(entityManager, grandparent, moved);
     ProcessComponentUVE always{};
-    always.mode = ProcessModeUVE::Always;
+    always.mode = TickModeUVE::Always;
     entityManager.AddComponentUVE<ProcessComponentUVE>(grandparent, always);
     VisibilityComponentUVE hidden{};
     hidden.visible = false;
     entityManager.AddComponentUVE<VisibilityComponentUVE>(grandparent, hidden);
 
-    const EntityUVE node = CreatePureNodeUVE(entityManager);
-    // SetParentUVE is for spatial children; a pure Node's parent is authored directly.
-    entityManager.GetComponentUVE<HierarchyComponentUVE>(node).parent = grandparent;
+    const EntityUVE object = CreatePureObjectUVE(entityManager);
+    // SetParentUVE is for spatial children; a pure Object's parent is authored directly.
+    entityManager.GetComponentUVE<HierarchyComponentUVE>(object).parent = grandparent;
     AutoTranslateComponentUVE disabled{};
-    disabled.mode = AutoTranslateModeUVE::Disabled;
-    entityManager.AddComponentUVE<AutoTranslateComponentUVE>(node, disabled);
+    disabled.mode = LocalizeModeUVE::Literal;
+    entityManager.AddComponentUVE<AutoTranslateComponentUVE>(object, disabled);
 
     const EntityUVE grandchild = entityManager.CreateEntityUVE();
     TransformComponentUVE local{};
     local.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
     sceneGraph.AttachTransformUVE(entityManager, grandchild, local);
-    sceneGraph.SetParentUVE(entityManager, grandchild, node);
+    sceneGraph.SetParentUVE(entityManager, grandchild, object);
     entityManager.AddComponentUVE<VisibilityComponentUVE>(grandchild, VisibilityComponentUVE{});
 
     sceneGraph.UpdateUVE(entityManager);
@@ -777,18 +777,18 @@ TEST_F(SceneGraphUVETest, UpdateUVE_APureNodeBetweenSpatialNodesCutsTheChainButN
               local.localPosition);
     EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(grandchild).visibleInHierarchy);
 
-    const std::optional<ResolvedNodeModesUVE> resolved = sceneGraph.TryGetResolvedNodeModesUVE(grandchild);
+    const std::optional<ResolvedObjectModesUVE> resolved = sceneGraph.TryGetResolvedObjectModesUVE(grandchild);
     ASSERT_TRUE(resolved.has_value());
-    EXPECT_EQ(resolved->process, ProcessModeUVE::Always);
-    EXPECT_EQ(resolved->autoTranslate, AutoTranslateModeUVE::Disabled);
+    EXPECT_EQ(resolved->process, TickModeUVE::Always);
+    EXPECT_EQ(resolved->autoTranslate, LocalizeModeUVE::Literal);
 }
 
-TEST_F(SceneGraphUVETest, TryGetResolvedNodeModesUVE_AnswersForThePureNodeItself) {
+TEST_F(SceneGraphUVETest, TryGetResolvedObjectModesUVE_AnswersForThePureObjectItself) {
     // The scene root's own Process and Thread Group settings are what its whole scene inherits, so
-    // the pure Node carrying them must have an answer of its own, published to its components.
-    const EntityUVE root = CreatePureNodeUVE(entityManager);
+    // the pure Object carrying them must have an answer of its own, published to its components.
+    const EntityUVE root = CreatePureObjectUVE(entityManager);
     ProcessComponentUVE whenPaused{};
-    whenPaused.mode = ProcessModeUVE::WhenPaused;
+    whenPaused.mode = TickModeUVE::PausedOnly;
     entityManager.AddComponentUVE<ProcessComponentUVE>(root, whenPaused);
     ThreadGroupComponentUVE subThread{};
     subThread.mode = ThreadGroupModeUVE::SubThread;
@@ -800,21 +800,21 @@ TEST_F(SceneGraphUVETest, TryGetResolvedNodeModesUVE_AnswersForThePureNodeItself
 
     sceneGraph.UpdateUVE(entityManager);
 
-    const std::optional<ResolvedNodeModesUVE> own = sceneGraph.TryGetResolvedNodeModesUVE(root);
+    const std::optional<ResolvedObjectModesUVE> own = sceneGraph.TryGetResolvedObjectModesUVE(root);
     ASSERT_TRUE(own.has_value());
-    EXPECT_EQ(own->process, ProcessModeUVE::WhenPaused);
+    EXPECT_EQ(own->process, TickModeUVE::PausedOnly);
     EXPECT_EQ(own->threadGroup, ThreadGroupModeUVE::SubThread);
     EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(root).resolvedModeInHierarchy,
-              ProcessModeUVE::WhenPaused);
+              TickModeUVE::PausedOnly);
 
-    const std::optional<ResolvedNodeModesUVE> inherited = sceneGraph.TryGetResolvedNodeModesUVE(child);
+    const std::optional<ResolvedObjectModesUVE> inherited = sceneGraph.TryGetResolvedObjectModesUVE(child);
     ASSERT_TRUE(inherited.has_value());
-    EXPECT_EQ(inherited->process, ProcessModeUVE::WhenPaused);
+    EXPECT_EQ(inherited->process, TickModeUVE::PausedOnly);
     EXPECT_EQ(inherited->threadGroup, ThreadGroupModeUVE::SubThread);
 }
 
 TEST_F(SceneGraphUVETest, UpdateUVE_ReparentingRecomputesInheritedVisibility) {
-    // Moving a node between a hidden and a visible parent has to change its answer. Nothing else
+    // Moving an object between a hidden and a visible parent has to change its answer. Nothing else
     // in the sweep is keyed on the old parent, so a cached result would survive the move.
     const EntityUVE hiddenParent = entityManager.CreateEntityUVE();
     const EntityUVE shownParent = entityManager.CreateEntityUVE();
@@ -1127,7 +1127,7 @@ TEST_F(SceneGraphUVETest, UpdateUVE_ClearingTopLevelReattachesToTheParentTransfo
 TEST_F(SceneGraphUVETest, UpdateUVE_TopLevelBecomesTheOriginForItsOwnChildren) {
     // A top-level entity is a root for the subtree BELOW it: its children compose from it as
     // normal. If they did not, the flag would flatten a whole branch instead of detaching one
-    // node, and a detached rig would come apart.
+    // object, and a detached rig would come apart.
     const EntityUVE grandparent = entityManager.CreateEntityUVE();
     const EntityUVE detached = entityManager.CreateEntityUVE();
     const EntityUVE grandchild = entityManager.CreateEntityUVE();
@@ -1153,12 +1153,12 @@ TEST_F(SceneGraphUVETest, UpdateUVE_TopLevelBecomesTheOriginForItsOwnChildren) {
 
     EXPECT_NEAR(entityManager.GetComponentUVE<WorldTransformComponentUVE>(detached).worldPosition.x, 5.0F, kEpsilon);
     EXPECT_NEAR(entityManager.GetComponentUVE<WorldTransformComponentUVE>(grandchild).worldPosition.x, 7.0F, kEpsilon)
-        << "the grandchild composes from the detached node, not from the grandparent";
+        << "the grandchild composes from the detached object, not from the grandparent";
 }
 
 TEST_F(SceneGraphUVETest, UpdateUVE_TopLevelOnARootEntityChangesNothing) {
     // A root has no parent to ignore. Setting the flag there must be a no-op rather than an edge
-    // case - the Inspector shows the checkbox on every node, including roots.
+    // case - the Inspector shows the checkbox on every object, including roots.
     const EntityUVE root = entityManager.CreateEntityUVE();
     sceneGraph.AttachTransformUVE(entityManager, root, TransformComponentUVE{});
     TransformComponentUVE local;
@@ -1237,7 +1237,7 @@ TEST_F(SceneGraphUVETest, UpdateUVE_RedirectsFollowAChainOfRedirects) {
 }
 
 TEST_F(SceneGraphUVETest, UpdateUVE_ARedirectCycleFallsBackInsteadOfHanging) {
-    // Nothing prevents an author pointing two nodes at each other, and a .uvscene can be
+    // Nothing prevents an author pointing two objects at each other, and a .uvscene can be
     // hand-edited into one. The resolver must terminate and must not pick an arbitrary winner:
     // falling back to the transform-parent answer leaves the entities visible and predictable.
     const EntityUVE first = entityManager.CreateEntityUVE();
@@ -1376,9 +1376,9 @@ TEST_F(SceneGraphUVETest, UpdateUVE_InterpolationModeOffIsHonouredAndInherited) 
     sceneGraph.SetParentUVE(entityManager, explicitlyOff, parent);
 
     entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(parent).mode =
-        PhysicsInterpolationModeUVE::Off;
+        PoseSmoothingUVE::Exact;
     entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(explicitlyOff).mode =
-        PhysicsInterpolationModeUVE::On;
+        PoseSmoothingUVE::Blended;
     sceneGraph.UpdateUVE(entityManager);
 
     EXPECT_FALSE(entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(parent).interpolatedInHierarchy);
@@ -1389,7 +1389,7 @@ TEST_F(SceneGraphUVETest, UpdateUVE_InterpolationModeOffIsHonouredAndInherited) 
 }
 
 TEST_F(SceneGraphUVETest, UpdateUVE_AnEntityWithoutTheComponentPassesInterpolationThrough) {
-    // The component is optional, so an intermediate node usually will not have one. It must not
+    // The component is optional, so an intermediate object usually will not have one. It must not
     // break the chain - the same rule visibility follows.
     const EntityUVE grandparent = entityManager.CreateEntityUVE();
     const EntityUVE middle = entityManager.CreateEntityUVE();
@@ -1405,12 +1405,12 @@ TEST_F(SceneGraphUVETest, UpdateUVE_AnEntityWithoutTheComponentPassesInterpolati
     sceneGraph.SetParentUVE(entityManager, grandchild, middle);
 
     entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(grandparent).mode =
-        PhysicsInterpolationModeUVE::Off;
+        PoseSmoothingUVE::Exact;
     sceneGraph.UpdateUVE(entityManager);
 
     EXPECT_FALSE(
         entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(grandchild).interpolatedInHierarchy)
-        << "a node without the component must pass the parent's setting through";
+        << "an object without the component must pass the parent's setting through";
 }
 
 TEST_F(SceneGraphUVETest, UpdateUVE_ANonFiniteTransformDoesNotRecordAPoseToBlendTowards) {

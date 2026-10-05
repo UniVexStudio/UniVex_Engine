@@ -11,7 +11,7 @@
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/physics/collision_system_uve.h"
 #include "uve/component/collider_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
@@ -57,8 +57,8 @@ protected:
                                               std::uint32_t layer = 1U,
                                               std::uint32_t mask = 0xFFFFFFFFU) {
         const Scene::EntityUVE entity = MakeColliderEntityUVE(position, halfExtents, layer, mask);
-        entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(
-            entity, Scene::RigidBodyComponentUVE{1.0F, true});
+        entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(
+            entity, Scene::Rigid3DComponentUVE{1.0F, true});
         return entity;
     }
 
@@ -316,7 +316,7 @@ TEST_F(CharacterControllerUVETest, MoveUVE_ClampsInvalidGroundSlopeWithoutReject
 TEST_F(CharacterControllerUVETest, MoveUVE_OptInPushesDynamicTargetWithBoundedNormalSpeed) {
     const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
     const Scene::EntityUVE target = MakeColliderEntityUVE({2.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(target, Scene::RigidBodyComponentUVE{});
+    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(target, Scene::Rigid3DComponentUVE{});
 
     const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveUVE(
         entityManager, sceneGraph, collisionSystem,
@@ -327,8 +327,8 @@ TEST_F(CharacterControllerUVETest, MoveUVE_OptInPushesDynamicTargetWithBoundedNo
     EXPECT_TRUE(result.blocked);
     EXPECT_EQ(result.pushedBodyCount, 1U);
     EXPECT_FALSE(result.dynamicBodyPushClamped);
-    const Scene::RigidBodyComponentUVE& pushedBody =
-        entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(target);
+    const Scene::Rigid3DComponentUVE& pushedBody =
+        entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(target);
     EXPECT_NEAR(pushedBody.velocity.x, 5.0F, 1.0e-4F);
     EXPECT_NEAR(pushedBody.velocity.y, 0.0F, 1.0e-4F);
 }
@@ -336,7 +336,7 @@ TEST_F(CharacterControllerUVETest, MoveUVE_OptInPushesDynamicTargetWithBoundedNo
 TEST_F(CharacterControllerUVETest, MoveUVE_DefaultPushPolicyLeavesDynamicTargetUnchanged) {
     const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
     const Scene::EntityUVE target = MakeColliderEntityUVE({2.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(target, Scene::RigidBodyComponentUVE{});
+    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(target, Scene::Rigid3DComponentUVE{});
 
     const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveUVE(
         entityManager, sceneGraph, collisionSystem,
@@ -344,13 +344,13 @@ TEST_F(CharacterControllerUVETest, MoveUVE_DefaultPushPolicyLeavesDynamicTargetU
 
     ASSERT_TRUE(result.IsAcceptedUVE());
     EXPECT_EQ(result.pushedBodyCount, 0U);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(target).velocity.x, 0.0F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(target).velocity.x, 0.0F);
 }
 
 TEST_F(CharacterControllerUVETest, MoveUVE_DoesNotPushKinematicTargetAndClampsInvalidPushPolicy) {
     const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
     const Scene::EntityUVE target = MakeColliderEntityUVE({2.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(target, Scene::RigidBodyComponentUVE{1.0F, true});
+    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(target, Scene::Rigid3DComponentUVE{1.0F, true});
 
     const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveUVE(
         entityManager, sceneGraph, collisionSystem,
@@ -360,12 +360,12 @@ TEST_F(CharacterControllerUVETest, MoveUVE_DoesNotPushKinematicTargetAndClampsIn
     ASSERT_TRUE(result.IsAcceptedUVE());
     EXPECT_TRUE(result.dynamicBodyPushClamped);
     EXPECT_EQ(result.pushedBodyCount, 0U);
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(target).isKinematic);
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(target).isKinematic);
 }
 
 TEST_F(CharacterControllerUVETest, MoveUVE_RejectsDynamicBodyAndClampsInvalidBudget) {
     const Scene::EntityUVE dynamic = MakeColliderEntityUVE({5.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(dynamic, Scene::RigidBodyComponentUVE{});
+    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(dynamic, Scene::Rigid3DComponentUVE{});
     const CharacterControllerMoveResultUVE rejected = CharacterControllerUVE::MoveUVE(
         entityManager, sceneGraph, collisionSystem,
         CharacterControllerInputUVE{dynamic, {1.0F, 0.0F, 0.0F}, 8U, 0.25F});

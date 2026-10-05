@@ -1,9 +1,9 @@
-# Scene Nodes Roadmap
+# Scene Objects Roadmap
 
 A detailed, node-by-node checklist of every placeable scene node / UI element / AI element this
 engine should eventually offer, grouped by domain (3D, 2D, CanvasLayer/UI, AI). This is a companion
 to the top-level `ROADMAP.md` — that file tracks whole engine systems; this file tracks individual
-node types specifically, since "the node exists in the Add-Node list" and "the node actually does
+node types specifically, since "the object exists in the Add-Object list" and "the object actually does
 something at runtime" are two different, easily-confused claims.
 
 No third-party engine or product name appears anywhere in this document — node names below are
@@ -37,7 +37,7 @@ worse than no checklist.
 
 ---
 
-## 3D Nodes
+## 3D Objects
 
 ### Working today
 
@@ -53,9 +53,26 @@ worse than no checklist.
 - [x] BoxMesh3D / SphereMesh3D / PlaneMesh3D — primitive mesh shapes, real rendering.
 - [x] Light3D (Directional / Point / Spot) — real, shades meshes.
 - [x] Collider3D — real collision shape, used by the physics/collision systems.
-- [x] StaticBody3D — real, non-moving collidable body.
-- [x] RigidBody3D — real, physics-simulated body (gravity, collision response).
-- [x] CharacterBody3D — real kinematic character controller (move/jump/ground state).
+- [x] Static3D — real, non-moving collidable body.
+- [x] Rigid3D — real, physics-simulated body (gravity, collision response).
+- [x] Character3D — real kinematic character controller (move/jump/ground state).
+- [x] SpringArm3D — real camera-boom behaviour (`EngineCoreUVE::SyncSpringArm3DObjectsUVE()` →
+  `Physics::StepSpringArm3DUVE()`): a ray per arm per fixed step along the arm's own local +Z, the
+  target length under the authored `margin`, and a motion law where retraction snaps (a camera never
+  clips through a wall for one smooth frame's sake) while extension springs back at `smoothing`/s
+  and `smoothing = 0` reproduces Godot's snap-both-ways. Every direct child rides the change in
+  length, so obstruct-then-clear restores the authored pose exactly; the arm is switched off by
+  handing its length back rather than freezing in a wall. Locked by 17 dedicated step tests
+  (`Test/Physics/spring_arm_uve_tests.cpp`) plus the seven resolver cases and the runtime-truth
+  round-trip rule.
+- [x] Kinematic3D — real kinematic body driver (`EngineCoreUVE::SyncKinematic3DObjectsUVE()`, run
+  before the character step): every Kinematic3D moves by its authored `targetVelocity`, eased by
+  `interpolation` on a per-second curve, through the same swept kinematic move the character
+  controller uses — a wall stops it, a thin wall cannot be tunnelled through, and the rigid bodies
+  it walks into are pushed with the character's own push policy. The velocity it actually achieved
+  is written back to its body, which is what a rider standing on it reads; `active` and the
+  object's PhysicsObject3D participation leave it exactly where it is, with no velocity to hand
+  anyone. Locked by 29 dedicated tests (`Test/Physics/kinematic_body_uve_tests.cpp`).
 - [x] AudioSource3D — real, plays positional audio.
 - [x] ParticleEmitter3D — real, ticked particle simulation.
 - [x] Area3D — real overlap-detection trigger volume.
@@ -63,18 +80,22 @@ worse than no checklist.
 - [x] Script — real, ticked by the script VM/runtime, with real input/collision bindings.
 - [x] RayCast3D — real per-frame raycast against the actual RaycastSystemUVE (`direction` is
   local-space, rotated by the entity's world rotation), correctly excludes its own entity, and
-  writes `hit`/`hitPosition`/`hitNormal`/`hitEntity` back every tick. One authored field is still
-  not honored: `exclusions` (skip additional specific entities) does nothing yet - the query API
-  only supports ignoring one entity per call (already spent on self), and this engine has no
-  persistent, save/load-stable way to reference another node to extend that with. Real, separate
-  follow-up, not silently faked.
-- [x] Projectile3D — real per-fixed-step kinematic integration: `velocity` accumulates
-  `acceleration`, the entity's authored local position advances by `velocity`, and
-  `remainingLifetime` counts down to zero, clearing `active`. Two authored fields are still not
-  honored: `radius` and `collisionMask` — this component has no hit-result field of its own (unlike
-  RayCast3D), so resolving what a projectile hits and what should happen (stop, bounce, apply
-  damage, spawn an effect) needs real gameplay decisions this struct doesn't specify. Real,
-  separate follow-up.
+  writes `hit`/`hitPosition`/`hitNormal`/`hitEntity` back every tick. Every authored field is
+  honored: `exclusions` names other objects the ray refuses to hit, held as real entity
+  references - remapped by the scene file the way a visibility parent is, so they still point at
+  the same object after a save/load, and dropped rather than renumbered when the object is not in
+  the file - and handed to the query every tick, where they are checked before the layer mask, so
+  no layer can bring an excluded object back.
+- [x] Projectile3D — real per-fixed-step kinematic integration *and* real hit resolution. The
+  engine sweeps the authored `radius` along each step's motion against the layers `collisionMask`
+  accepts (never the projectile's own entity) and resolves the contact through an authored
+  `hitPolicy`: Stop halts it at the contact and clears `active`, Bounce reflects it through
+  `restitution`/`friction`. Every authored field is honored, the last contact lands in the
+  component's runtime hit fields (`hitEntity`/`hitPosition`/`hitNormal`/`impactSpeed`/`bounceCount`),
+  `remainingLifetime` still counts down to clear `active`, and every resolved contact is queued as
+  a typed `Physics::Projectile3DHitEventUVE` - damage, effects and despawning stay with gameplay,
+  which is what the event is for. An overlap the step begins inside is not a contact: a projectile
+  fired from inside a launcher's own volume is allowed to leave.
 - [x] LevelStreamer3D — real per-frame system (`EngineCoreUVE::SyncLevelStreamer3DNodesUVE()`):
   `loadDistance`/`unloadDistance` against the nearest viewer drive `loaded` through a hysteresis
   band, `loadRequested` forces a manual load, a failed load latches closed and never retries in
@@ -100,52 +121,124 @@ worse than no checklist.
   dedicated tests. The renderer-side sampling half of this feature (feeding the captured cubemap
   into ambient/reflection shading) is a separate, real gap — see `ROADMAP.md`.
 
-### Wired to a real system, not yet verified by dedicated tests
-
-- [/] SpringArm3D — `EngineCoreUVE::SyncSpringArm3DNodesUVE()` raycasts from the arm's origin every
-  fixed tick, clamps `currentLength` to the hit distance minus `margin`, and applies `smoothing`
-  as an exponential approach — confirmed by reading the sync function, called every fixed tick
-  from the main loop. No test exercises the raycast-clamp/smoothing/mask behavior yet (existing
-  tests only cover construction and scene-serialization round-trips of `currentLength`), so this
-  stays short of `[x]` until one does.
-- [/] InteractionArea3D — `EngineCoreUVE::SyncInteractionArea3DNodesUVE()` refreshes a bounded
-  candidate list every frame from real overlap queries, gated by tag and symmetric layer/mask, and
-  focuses the nearest candidate. One dedicated test exists
-  (`InteractionArea3DNode_TracksInteractorsFocusesTheNearestAndClearsWhenGated`) but the edge
-  cases `STUB_IMPLEMENTATION_ROADMAP.md` calls out (bound-respected + overflow-flagged,
-  disabled-clears-stale-candidates as separate cases) aren't separately locked yet.
-- [/] Occluder3D — wired into the render queue (`RHI::RenderSystems`'s mesh-culling pass calls
-  `ResolveOccluder3DFullyHiddenUVE()` against every occluder every frame). The pure geometry
-  function itself is thoroughly tested (13+ cases: fully hidden, edge cases fail open, degenerate
-  box, never false-culls), but no test exercises the render-queue integration end to end, so the
-  wiring itself is unverified.
+- [x] InteractionArea3D — the whole per-frame contract now lives in one callable seam,
+  `Physics::SyncInteractionAreasUVE()`, which the tick calls: interactor snapshot (character
+  controllers with a valid collider and a world pose), per-area refresh behind every fail-closed
+  gate, symmetric layer/mask acceptance, the exact oriented-box overlap (touching boundaries do not
+  count), a bounded candidate list that reports its own overflow, and exactly one focused area -
+  nearest to the PRIMARY interactor, ties by (index, generation). Locked by 16 dedicated tests
+  (`Test/Physics/interaction_area_uve_tests.cpp`) plus the engine-core tick test, and by the
+  contract an authored `maximumCandidates` of 0 is refused as an invalid component rather than read
+  as a zero budget.
+- [x] Occluder3D — wired into the render queue's visibility build (`MeshRendererUVE` asks
+  `ResolveOccluder3DFullyHiddenUVE()` against every occluder for every candidate and counts what it
+  hides in `occlusionCulledEntities`). The pure geometry is covered by its own suite (13+ cases:
+  fully hidden, edge cases fail open, degenerate box, never false-culls) and the render-queue
+  integration by four `MeshRendererUVETest.BuildVisibilitySetUVE_*` cases - hidden-behind-a-wall,
+  camera-move-re-answers (no state), disabled occluder covers nothing, and any-of-several-walls
+  hides once. All 56 tests in that suite were run headlessly against the null RHI for this entry.
 
 ### Authored data only, not yet wired to a system
 
-- [~] AnimatableBody3D — target-velocity fields exist, no system drives a kinematic body from them.
-- [~] NavigationRegion3D — bounds + navmesh path fields exist, no navmesh baking/pathfinding system exists yet.
-- [~] NavigationAgent3D — target/path fields exist, no pathfinding/steering system exists yet.
-- [~] Skeleton3D — bone hierarchy data exists, no skinning/animation system reads it.
-- [~] BoneAttachment3D — attach-to-bone fields exist, nothing resolves/follows a bone transform.
+A row's marker is the verdict, checked against the code rather than inherited: `[x]` means the system
+that consumes the object exists and is tested, `[~]` means it is still authored data waiting for one.
+Several rows below were corrected in BOTH directions once the systems landed (or were found already
+there).
+
+- [x] NavigationRegion3D — it bakes. `Navigation::BakeNavmeshUVE()` rasterizes the region's own world
+  volume through `IRaycastSystemUVE` - ground rays, slope and headroom gates, agent-radius erosion,
+  merged polygons and the shared-edge portals between them - so what the navmesh believes is walkable
+  is exactly what a body standing there collides with. `NavigationRuntimeUVE` keeps one mesh per
+  region and re-bakes it on first sight, after a moved or resized volume, after changed bake
+  settings, or when `rebuildRequested` asks; the request is cleared once the bake has run. The mesh
+  records the agent it was baked for, so an agent wider than that radius is visibly a different
+  question rather than a silent one.
+- [x] NavigationAgent3D — it walks. `Navigation::FindNavPathUVE()` A*s the polygon graph under the
+  request's `navigationLayers` and string-pulls the chain into the corners a body actually walks;
+  `NavAgentUVE` follows that route, skipping waypoints it has passed, easing the published velocity
+  through its acceleration limit, slowing into the target and pushing aside the agents inside its
+  avoidance radius. `EngineCoreUVE::SyncNavigationUVE()` drives it on the fixed step and writes
+  `desiredVelocity`, `nextPathPosition`, `pathStatus`, `pathChanged` and `targetReached` back into
+  `NavSeeker3DComponentUVE` on that agent's own `pathUpdateInterval`.
+- [x] Skeleton3D — real bones, posed and skinned. A rigged model's hierarchy is imported (glTF/FBX
+  skeleton readers, with their own tests), the clip pipeline writes the runtime `pose` per bone every
+  step, and the renderer poses a skinned mesh against the nearest Skeleton3D above it and re-uploads
+  that entity's own vertex buffer every frame (`MeshSkinComputeUVE`, locked by 17 skinning cases).
+  Reading a bone's world frame is a public resolver (`Scene::TryResolveSkeletonBoneWorldFrameUVE()`,
+  chain composed root-down, posed value where the runtime has one and the rest pose otherwise).
+- [x] BoneAttachment3D — the real thing: `Scene::SyncBoneAttachment3DObjectsUVE()` runs every frame
+  after the animation step that posed the skeleton and before world-transform propagation, so an
+  attachment is on the bone in the same frame the pose arrives. It resolves the skeleton entity
+  reference, the bone (by index when that names a real bone, else by exact name), the bone's world
+  frame and writes the object's LOCAL transform so the scene graph's own propagation lands it exactly
+  on the bone - parents-first, so an attachment riding another attachment is composed after the one
+  it hangs off, and tick modes are respected like every other system. A reference that names nothing,
+  a bone the skeleton no longer has, a skeleton switched off or a parent frame that cannot be
+  inverted leaves the object where it was authored and records itself unbound (`bound` and
+  `resolvedBoneIndex`, runtime-only, both shown in the Inspector). Locked by 7 pass tests on a real
+  entity manager + scene graph, 5 resolver cases, the serializer's reference round trip (including
+  documents written while the skeleton was still a bare numeric id) and an engine-core tick test.
+- [x] TwoBoneIK3D — a limb solved back from where it should end, which is what foot planting and hand
+  placement actually are: `Scene::SyncTwoBoneIK3DObjectsUVE()` runs inside the animation step after the
+  drivers pose a skeleton and before the attachment pass, so a weapon in a hand follows the hand the IK
+  moved in the same frame. The chain is three successive bones and the END bone's own origin is the
+  effector; the solve is analytic (the intersection of two circles in the plane the pole defines), so
+  it costs no iterations and returns the same answer every time, the pole is another object's position
+  seen from the chain's root or an authored direction in the skeleton's space, and a target beyond the
+  chain's own length leaves the limb straight and aimed rather than stretched. Influence comes from the
+  shared `BoneModifierComponentUVE`, so an arm can ease onto a prop instead of snapping to it; the
+  answers (`solved`, `reached`, `endToTargetDistanceMetres`, the resolved indices) are runtime-only and
+  shown in the Inspector. Locked by 9 solver cases, 8 pass cases, the serializer's reference round trip
+  and an engine-core tick test.
 - [~] Marker3D — a plain position/orientation hint, has no behavior by design (this one may never need a "system" — it's meant to be read by other tools/scripts, not ticked itself).
-- [x] Hitbox3D — real per-frame strike detection: `EngineCoreUVE::SyncHitbox3DNodesUVE()`
+- [x] Hitbox3D — real per-frame strike detection: `EngineCoreUVE::SyncHitbox3DObjectsUVE()`
   (the same engine-core home the RayCast3D/Projectile3D syncs use) pairs every enabled hitbox
   against every enabled Hurtbox3D with an exact 15-axis oriented-box-vs-oriented-box test (the
   same public Physics::Detail helper AreaOverlapSystemUVE uses), symmetric layer/mask
   acceptance, damage-channel equality, and self-exclusion, writing a bounded runtime-only
-  strike list (hurtbox entity + penetration depth, overflow flagged) back into the component
-  every frame.
-  One honest gap remains by design: applying what a strike *means* (damage, knockback,
-  i-frames, events) is gameplay code no system owns yet — real, separate follow-up.
+  strike list (hurtbox entity + penetration depth + minimum-translation axis, overflow flagged)
+  back into the component every frame.
+  The consequence contract is real too: `Physics::SyncHitboxes3DUVE()` owns the scan and
+  `Physics::Hitbox3DStrikeLifecycleTrackerUVE` diffs it against the previous report, so a strike
+  start and a strike end each reach gameplay as one typed event
+  (`Hitbox3DStrikeEnteredEventUVE` / `Hitbox3DStrikeExitedEventUVE`, carrying the pair, the depth,
+  the axis and the damage channel) - including the exit an authored gate causes, not only the one
+  separation causes. What a strike *means* (damage numbers, knockback, i-frames, hit reactions)
+  stays gameplay code by design; the engine reports the edge and never invents the consequence.
 - [x] Hurtbox3D — the receiving side of that same pairing: its extents/layer/mask/channel
   genuinely gate which hitboxes can strike it every frame (locked by engine-core tests on both
-  sides of every gate); consequences of being struck are the same gameplay follow-up as
-  Hitbox3D's.
-- [~] Decal3D — material/size/lifetime fields exist, no decal-projection rendering exists.
-- [~] LODGroup3D — distance-threshold fields exist, no LOD-switching system exists.
-- [~] SpawnPoint3D — tag/one-shot fields exist, no spawn system reads it.
-- [~] AnimationPlayer — clip/speed/loop fields exist, nothing decodes a clip or evaluates a pose (see `ROADMAP.md`'s Animation section for the real gap: no skeleton/skinning/clip-sampling pipeline exists).
-- [~] AnimationTree — not even creatable yet in the editor (registry marks it `libraryCreatable = false`); depends on the same missing animation pipeline as AnimationPlayer.
+  sides of every gate), and switching it off now ends every live strike on that tick with a real
+  exit event instead of leaving a strike nothing can end. What being struck *means* is the same
+  gameplay-owned consequence as Hitbox3D's.
+- [x] SpawnPoint3D — the real thing: `Scene::QuerySpawnPointsUVE()` (bounded, overflow-flagged
+  result list in (index, generation) order) filters by enabled/validator/world-transform/tag,
+  composes each point's world pose with its authored offset, and spends one-shot points only when
+  asked (`query.consumeOneShot`, or `Scene::ConsumeSpawnPointUVE` for a single point after a spawn
+  that succeeded). The editor's play-entry spawn is now a caller of it rather than a second copy of
+  its rules, and it is locked by 12 dedicated query tests plus the editor's own play-mode cases.
+  Acting on a spawn (respawn flow, teams, per-player tags) is still the gameplay layer no system
+  owns yet - the tag is carried precisely so that layer has something to ask with.
+- [x] Decal3D — it draws. The lifetime runtime counts down and reports the expiry, the pass clips
+  the receiving surfaces against the box or cylinder volume and publishes the surviving polygons, and
+  the frame now paints them: `decal.glsl` (a built-in program) projects each patch, evaluates the
+  authored fades per pixel against the SAME world-to-unit matrix the CPU clipped in, and blends the
+  material's albedo texture and colour - tinted by `modulate`, plus its emissive scaled by
+  `emissionEnergy`, with the texture's alpha joining `albedoMix` - over the surface, back to front. Each decal draws from its own vertex/index buffers, created
+  the first frame it paints and released once it stops - the same lifetime rule the skinned-mesh
+  buffers follow - and the F1 panel reports both the draws extracted and the draw calls recorded, so
+  a decal whose geometry never reaches the GPU is visible as its own failure.
+- [x] LODGroup3D — the chain is real: `Scene::ResolveLodGroup3DLevelUVE()` selects the level from the camera distance with a configurable hysteresis band (entered past a threshold, left under it, the previous level kept in the band), the renderer culls past the last threshold and draws `lodMeshGuids[level]` — falling back to the object's own `MeshComponentUVE` mesh for a level that overrides nothing — and a scene written before per-level meshes still loads unchanged. The Inspector authors the chain (levels, thresholds, band, per-level meshes) and shows the resolved level during Play.
+- [x] AnimationSequencer — clips really decode and play: `.uvanim` assets load through the asset
+  manager, `StepAnimationSequencerUVE()` samples a clip at the playhead with Once/Loop/Ping-Pong,
+  blend-in, relative mode, start offset and speed (negative plays backwards), per-channel masks leave
+  the channels an author did not ask for alone, skeletal clips pose the skeleton's bones by name,
+  clip events reach the target's script, and root motion can be left out, kept in place, or applied
+  to the target - as velocity when the target is a Character3D, so walls still stop it.
+- [x] AnimationGraph — creatable in the editor (the registry descriptor's `libraryCreatable` is true
+  and the graph panel authors states, transitions and blend spaces) and evaluated every fixed step by
+  `EngineCoreUVE::SyncAnimationUVE()`: state machine with conditions/triggers/leave-after, blend tree,
+  1D and 2D blend spaces, additive layers, one-shots and time scaling, all locked by the pose-graph
+  and state-machine suites.
 
 ### Missing entirely
 
@@ -174,7 +267,7 @@ worse than no checklist.
 
 ---
 
-## 2D Nodes
+## 2D Objects
 
 Nothing in this section exists yet — this engine currently has no 2D rendering/physics/nav
 pipeline at all.
@@ -209,7 +302,7 @@ pipeline at all.
 
 ---
 
-## CanvasLayer / UI Nodes
+## CanvasLayer / UI Objects
 
 ### Working today (Inspector-addable components, not yet promoted to the Scene node registry)
 
@@ -236,7 +329,7 @@ point.
 
 ---
 
-## AI Nodes / Components
+## AI Objects / Components
 
 Nothing placeable exists yet. `NavigationAgent3D`/`NavigationRegion3D` (listed above, 3D section)
 are the closest existing pieces, and they are themselves still data-only stubs with no pathfinding
@@ -255,33 +348,32 @@ system behind them.
 
 ## Suggested near-term order
 
-1. **Done**: every 3D node's data definition now has its own real `.h`+`.cpp` under
-   `Engine/Runtime/Nodes/3D` (moved out of one shared header; the old thin compatibility-alias
-   facade layer in `Engine/Runtime/Scene` was also removed once confirmed nothing used it) — so
-   future systems have a clean, discoverable home to attach real behavior to. This was purely a
-   structural move: no `[~]` entry above changed status from it, since organizing where a stub's
-   data lives is not the same as giving it a real backing system. Follow-up, also done: the 17
-   kinds whose authored data already lives in a shared component (Empty, Camera3D, Light3D, the
-   three primitive meshes, the physics bodies, Area3D, AudioSource3D, ParticleEmitter3D, Script,
-   AnimationPlayer, AnimationTree) each got their own `NodeDefinition` `.h`+`.cpp` in the same
-   folder — the kind's creation recipe (components to attach, authored defaults, default entity
-   name) — and the editor's creation switch now sources every one of those recipes from those
-   files instead of hardcoding them inline. Still purely structural: no `[~]` entry changed
-   status, and the save format is untouched (a definition is a recipe, never a serialized
-   component).
+1. **Done**: every scene-node kind has its own `.h`+`.cpp` home under `Engine/Runtime/Objects`,
+   grouped by domain: general 3D nodes under `3D`, physics-dependent 3D nodes under `3D/Physics`,
+   AI/navigation nodes under `AI/3D`, and animation nodes under `Animation`. This grew out of
+   splitting one shared node header; the old thin compatibility-alias facade layer in
+   `Engine/Runtime/Scene` was also removed once confirmed nothing used it. This is purely
+   structural: no `[~]` entry above changed status, since organizing a stub's data is not giving it
+   a backing system. The 17 kinds whose authored data already lives in a shared component (Empty,
+   Camera3D, Light3D, the three primitive meshes, physics bodies, Area3D, AudioSource3D,
+   ParticleEmitter3D, Script, AnimationSequencer, AnimationGraph) each have their own `*ObjectDefinitionUVE`
+   recipe in the owning folder, and the editor's creation switch sources those recipes instead of
+   hardcoding them. The save format is untouched: a definition is a recipe, never a serialized
+   component.
 2. **RayCast3D, Projectile3D, and Hitbox3D/Hurtbox3D done** (real per-frame raycast against the
-   actual query system with correct self-exclusion; real kinematic integration + lifetime expiry
-   for projectiles; real per-frame hitbox-vs-hurtbox strike pairing — see the entries above for
-   their stated, honest follow-up gaps). Wire up the remaining highest-value already-authored 3D
-   stubs next: Skeleton3D + AnimationPlayer + AnimationTree (blocked on the same missing
-   skinning/clip-sampling pipeline — see `ROADMAP.md`), NavigationRegion3D/NavigationAgent3D
-   (needed for any AI movement).
+   actual query system with correct self-exclusion and authored exclusions; real kinematic
+   integration, lifetime expiry *and* swept-sphere hit resolution with an authored stop/bounce
+   motion policy for projectiles; real per-frame hitbox-vs-hurtbox strike pairing whose every
+   start and end now leaves the engine as one typed edge event, so gameplay acts on the strike
+   rather than re-deriving it from the per-frame list).
+   Both pairs this step named have since landed: the animation pipeline
+   (Skeleton3D + AnimationSequencer + AnimationGraph) and NavigationRegion3D/NavigationAgent3D.
 3. Only after 3D nodes are in good shape, start a real 2D pipeline (rendering + physics + nav) —
    right now 2D is 100% unstarted, not partially built.
 4. **Done**: Canvas/UI Text/UI Image/UI Button are promoted into the Scene node registry
-   (`canvas`/`ui_text`/`ui_image`/`ui_button`, category "UI"), each with a NodeDefinition
-   `.h`+`.cpp` in `Engine/Runtime/Nodes/CanvasLayer` following the Nodes/3D convention — 2D/UI
-   authoring now has the same single Add-Node entry point, and the Add-Component path still
+   (`canvas`/`ui_text`/`ui_image`/`ui_button`, category "UI"), each with a `*ObjectDefinitionUVE`
+   `.h`+`.cpp` in `Engine/Runtime/Objects/UI` following the Objects/3D convention — 2D/UI
+   authoring now has the same single Add-Object entry point, and the Add-Component path still
    works for adding these components to existing entities.
 5. AI nodes come last — they need real navigation (item 2/3) and real gameplay systems to act on
    before a behavior tree/blackboard has anything meaningful to drive.

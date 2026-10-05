@@ -13,6 +13,8 @@
 
 #include "uve/asset/bmp_metadata_uve.h"
 #include "uve/asset/texture_asset_uve.h"
+#include "uve/asset/texture_import_settings_uve.h"
+#include "uve/asset/texture_mipmap_uve.h"
 #include "uve/logging/logging_macros_uve.h"
 
 namespace UVE::Asset {
@@ -24,7 +26,7 @@ constexpr std::string_view kBmpTemporarySuffixUVE = ".uve_bmp_tmp";
 
 [[nodiscard]] bool ImportBmpSourceUVE(const std::filesystem::path& sourcePath,
                                       const std::filesystem::path& destinationPath,
-                                      const AssetImportSettingsUVE& /*settings*/) {
+                                      const AssetImportSettingsUVE& settings) {
     if (destinationPath.extension() != ".uvtex") {
         UVE_ERROR("BmpImporterUVE: destination \"{}\" must use the .uvtex extension", destinationPath.string());
         return false;
@@ -42,8 +44,16 @@ constexpr std::string_view kBmpTemporarySuffixUVE = ".uve_bmp_tmp";
     TextureAssetUVE texture;
     texture.width = decoded.width;
     texture.height = decoded.height;
-    texture.format = TextureFormatUVE::RGBA8Unorm;
+    texture.format = TextureAssetFormatUVE::RGBA8Unorm;
+    const TextureImportSettingsUVE importSettings = ResolveTextureImportSettingsUVE(settings);
+    texture.colorSpace = importSettings.colorSpace;
+    texture.usage = importSettings.usage;
     texture.pixels = std::move(decoded.pixels);
+    if (!Detail::PrepareTextureForImportUVE(texture, importSettings)) {
+        UVE_ERROR("BmpImporterUVE: failed to prepare mip chain or compress texture for \"{}\"",
+                  sourcePath.string());
+        return false;
+    }
     return Detail::PublishAssetAtomicallyUVE(
         destinationPath, kBmpImporterNameUVE, kBmpTemporarySuffixUVE,
         [&texture](const std::filesystem::path& temporaryPath) { return SaveTextureAssetUVE(texture, temporaryPath); });

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// The Entity Editor's Anim Graph tab: an AnimationTree as boxes and wires on a canvas. Nodes are
+// The Entity Editor's Anim Graph tab: an AnimationGraph as boxes and wires on a canvas. Objects are
 // added from a searchable menu where the right-click was, wired by dragging from an output to an
 // input, and moved, duplicated and deleted in place. A strip on the right edits the parameters and
 // the selected node; a bar along the bottom holds the view controls and what is wrong with the
@@ -14,6 +14,8 @@
 #include <cctype>
 #include <cfloat>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -22,6 +24,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <imgui.h>
@@ -29,12 +32,12 @@
 #include "editor_animation_graph_widgets_uve.h"
 
 #include "uve/asset/animation_clip_asset_uve.h"
-#include "uve/component/animation_mixer_component_uve.h"
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_driver_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"
-#include "uve/nodes/3d/animation_tree_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/animation_graph_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/object/type_metadata_uve.h"
 #include "uve/scene/scene_component_metadata_uve.h"
 
@@ -46,7 +49,7 @@ using Scene::AnimationGraphNodeUVE;
 using Scene::AnimationParameterTypeUVE;
 using Scene::AnimationParameterUVE;
 
-constexpr float kNodeWidthUVE = 176.0F;
+constexpr float kObjectWidthUVE = 176.0F;
 constexpr float kHeaderHeightUVE = 24.0F;
 constexpr float kSlotHeightUVE = 20.0F;
 constexpr float kBodyPaddingUVE = 6.0F;
@@ -79,7 +82,7 @@ constexpr std::array<Kind, 11> kAddableKindsUVE{Kind::Clip,         Kind::Blend2
     return 0U;
 }
 
-[[nodiscard]] float NodeHeightUVE(const AnimationGraphNodeUVE& node) {
+[[nodiscard]] float ObjectHeightUVE(const AnimationGraphNodeUVE& node) {
     // Its inputs' rows under its inline values; a node with neither still shows one row.
     const std::size_t rows = node.inputs.size() + InlineRowsUVE(node.kind);
     return kHeaderHeightUVE + static_cast<float>(std::max<std::size_t>(rows, 1U)) * kSlotHeightUVE + kBodyPaddingUVE;
@@ -91,7 +94,7 @@ constexpr std::array<Kind, 11> kAddableKindsUVE{Kind::Clip,         Kind::Blend2
 }
 
 /// One line under a node's title: what it reads, so the graph explains itself without a click.
-[[nodiscard]] std::string NodeSummaryUVE(const AnimationGraphNodeUVE& node) {
+[[nodiscard]] std::string ObjectSummaryUVE(const AnimationGraphNodeUVE& node) {
     char text[96];
     switch (node.kind) {
         case Kind::Clip:
@@ -200,7 +203,7 @@ void DrawBlendSpaceSettingsUVE(const AnimationGraphNodeUVE& node,
             edit([value](AnimationGraphNodeUVE& n) { n.fadeSeconds = value; });
         }
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("How long one point hands over to the next: inertialized or crossfaded, as the mixer's\n"
+            ImGui::SetTooltip("How long one point hands over to the next: inertialized or crossfaded, as the driver's\n"
                               "transitions are set.");
         }
     }
@@ -216,22 +219,22 @@ const std::string& EditorUVE::AnimationClipNameUVE(const Asset::AssetGuidUVE cli
     return it->second;
 }
 
-void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::size_t nodeIndex) {
+void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::size_t objectIndex) {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    auto& live = entityManager.GetComponentUVE<Scene::AnimationTreeComponentUVE>(tree);
-    if (nodeIndex >= live.nodes.size()) {
+    auto& live = entityManager.GetComponentUVE<Scene::AnimationGraphComponentUVE>(tree);
+    if (objectIndex >= live.nodes.size()) {
         return;
     }
     AnimationGraphViewStateUVE& view = m_animGraph;
-    const AnimationGraphNodeUVE node = live.nodes[nodeIndex];
+    const AnimationGraphNodeUVE node = live.nodes[objectIndex];
     const bool twoD = node.kind == Kind::BlendSpace2D;
     const std::uint32_t spaceId = node.id;
     const bool writable = IsAuthoringCommandAllowedUVE();
     const ImGuiStyle& style = ImGui::GetStyle();
-    std::optional<std::function<void(Scene::AnimationTreeComponentUVE&)>> edit;
+    std::optional<std::function<void(Scene::AnimationGraphComponentUVE&)>> edit;
     const auto addedSlot = std::make_shared<std::optional<std::size_t>>();
     const auto editSpace = [&edit, spaceId](std::function<void(AnimationGraphNodeUVE&)> change) {
-        edit = [spaceId, change = std::move(change)](Scene::AnimationTreeComponentUVE& t) {
+        edit = [spaceId, change = std::move(change)](Scene::AnimationGraphComponentUVE& t) {
             const auto it = std::ranges::find(t.nodes, spaceId, &AnimationGraphNodeUVE::id);
             if (it != t.nodes.end()) {
                 change(*it);
@@ -433,9 +436,9 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
     const std::vector<std::array<std::uint32_t, 3>> triangles =
         twoD ? Scene::TriangulateBlendSpaceUVE(positions) : std::vector<std::array<std::uint32_t, 3>>{};
     const Scene::AnimationGraphNodeStateUVE* const running =
-        live.nodeStates.size() == live.nodes.size() && live.nodeStates[nodeIndex].blendAtSet &&
-                live.nodeStates[nodeIndex].pointWeights.size() == pointCount
-            ? &live.nodeStates[nodeIndex]
+        live.nodeStates.size() == live.nodes.size() && live.nodeStates[objectIndex].blendAtSet &&
+                live.nodeStates[objectIndex].pointWeights.size() == pointCount
+            ? &live.nodeStates[objectIndex]
             : nullptr;
     const Math::Vector2UVE blendAt = running != nullptr ? Math::Vector2UVE{running->blendAt.x, twoD ? running->blendAt.y : 0.0F} : cursor;
     std::vector<float> weights;
@@ -574,12 +577,12 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
         if (view.spaceTool == 1 && hoveredPoint < 0) {
             const Math::Vector2UVE at = toArea(mouse);
             // The new point's index, known once the edit runs; then its animation is asked for.
-            edit = [spaceId, at, addedSlot](Scene::AnimationTreeComponentUVE& t) {
+            edit = [spaceId, at, addedSlot](Scene::AnimationGraphComponentUVE& t) {
                 *addedSlot = AddBlendSpacePointUVE(t.nodes, spaceId, at, Asset::AssetGuidUVE{});
             };
         } else if (view.spaceTool == 2 && hoveredPoint >= 0) {
             const auto slot = static_cast<std::size_t>(hoveredPoint);
-            edit = [spaceId, slot](Scene::AnimationTreeComponentUVE& t) {
+            edit = [spaceId, slot](Scene::AnimationGraphComponentUVE& t) {
                 static_cast<void>(RemoveBlendSpacePointUVE(t.nodes, spaceId, slot));
             };
         } else if (view.spaceTool == 0) {
@@ -592,7 +595,7 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
         if (view.plotDrag >= 0) {
             static_cast<void>(MoveBlendSpacePointUVE(live.nodes, spaceId, static_cast<std::size_t>(view.plotDrag), at));
         } else {
-            AnimationGraphNodeUVE& edited = live.nodes[nodeIndex];
+            AnimationGraphNodeUVE& edited = live.nodes[objectIndex];
             const Math::Vector2UVE raw = toArea(mouse);
             const auto write = [&live](const std::string& name, float& fixed, const float value) {
                 const auto found = std::ranges::find(live.parameters, name, &AnimationParameterUVE::name);
@@ -609,10 +612,10 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
         }
     }
     if (view.plotDrag != -2 && ImGui::IsItemDeactivated()) {
-        const Scene::AnimationTreeComponentUVE after = live;
+        const Scene::AnimationGraphComponentUVE after = live;
         live = view.plotBefore;
         view.plotDrag = -2;
-        edit = [after](Scene::AnimationTreeComponentUVE& t) {
+        edit = [after](Scene::AnimationGraphComponentUVE& t) {
             t.parameters = after.parameters;
             t.nodes = after.nodes;
         };
@@ -650,7 +653,7 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
     // ---- A point's own settings (after Add, or from its right-click menu) -----------------------------
     if (ImGui::BeginPopup("##point-menu")) {
         const auto slot = static_cast<std::size_t>(std::max(view.pickClipForSlot, 0));
-        const AnimationGraphNodeUVE& current = live.nodes[nodeIndex];
+        const AnimationGraphNodeUVE& current = live.nodes[objectIndex];
         if (slot < current.blendPoints.size()) {
             const Scene::AnimationBlendPointUVE point = current.blendPoints[slot];
             const auto editPoint = [&editSpace, slot](std::function<void(Scene::AnimationBlendPointUVE&)> change) {
@@ -685,7 +688,7 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Remove Point")) {
-                edit = [spaceId, slot](Scene::AnimationTreeComponentUVE& t) {
+                edit = [spaceId, slot](Scene::AnimationGraphComponentUVE& t) {
                     static_cast<void>(RemoveBlendSpacePointUVE(t.nodes, spaceId, slot));
                 };
                 ImGui::CloseCurrentPopup();
@@ -697,7 +700,7 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
     }
 
     if (edit.has_value()) {
-        static_cast<void>(EditAnimationTreeUVE(tree, *edit));
+        static_cast<void>(EditAnimationGraphUVE(tree, *edit));
         if (addedSlot->has_value()) {
             // The point just added: straight to its animation.
             view.pickClipForSlot = static_cast<int>(**addedSlot);
@@ -706,7 +709,7 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
     }
 }
 
-void EditorUVE::RecordAnimationGraphPreviewUVE(const Scene::AnimationTreeComponentUVE& tree) {
+void EditorUVE::RecordAnimationGraphPreviewUVE(const Scene::AnimationGraphComponentUVE& tree) {
     AnimationGraphViewStateUVE& view = m_animGraph;
     constexpr std::size_t kLogLinesUVE = 80U;
     constexpr std::size_t kHistorySamplesUVE = 180U;
@@ -761,33 +764,33 @@ void EditorUVE::RecordAnimationGraphPreviewUVE(const Scene::AnimationTreeCompone
 void EditorUVE::StopAnimationGraphPreviewUVE() {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     if (m_animGraph.previewSkeleton != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(m_animGraph.previewSkeleton) &&
-        entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(m_animGraph.previewSkeleton)) {
-        entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(m_animGraph.previewSkeleton).pose.clear();
+        entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(m_animGraph.previewSkeleton)) {
+        entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(m_animGraph.previewSkeleton).pose.clear();
     }
     m_animGraph.previewSkeleton = Scene::kInvalidEntityUVE;
     if (m_animGraph.tree != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(m_animGraph.tree) &&
-        entityManager.HasComponentUVE<Scene::AnimationTreeComponentUVE>(m_animGraph.tree)) {
+        entityManager.HasComponentUVE<Scene::AnimationGraphComponentUVE>(m_animGraph.tree)) {
         // Back to the start, so the next preview (and Play) begins from the entry state.
-        entityManager.GetComponentUVE<Scene::AnimationTreeComponentUVE>(m_animGraph.tree).nodeStates.clear();
+        entityManager.GetComponentUVE<Scene::AnimationGraphComponentUVE>(m_animGraph.tree).nodeStates.clear();
     }
 }
 
-bool EditorUVE::EditAnimationTreeUVE(const Scene::EntityUVE tree,
-                                     const std::function<void(Scene::AnimationTreeComponentUVE&)>& change) {
+bool EditorUVE::EditAnimationGraphUVE(const Scene::EntityUVE tree,
+                                     const std::function<void(Scene::AnimationGraphComponentUVE&)>& change) {
     if (!IsAuthoringCommandAllowedUVE()) {
         return false;
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.IsAliveUVE(tree) || !entityManager.HasComponentUVE<Scene::AnimationTreeComponentUVE>(tree)) {
+    if (!entityManager.IsAliveUVE(tree) || !entityManager.HasComponentUVE<Scene::AnimationGraphComponentUVE>(tree)) {
         return false;
     }
     const Core::TypeMetadataEntryUVE* const entry = Scene::GetSceneComponentMetadataRegistryUVE().FindTypeByIndexUVE(
-        std::type_index(typeid(Scene::AnimationTreeComponentUVE)));
+        std::type_index(typeid(Scene::AnimationGraphComponentUVE)));
     if (entry == nullptr || !entry->HasFactoryUVE()) {
         return false;
     }
-    auto& component = entityManager.GetComponentUVE<Scene::AnimationTreeComponentUVE>(tree);
-    const Scene::AnimationTreeComponentUVE original = component;
+    auto& component = entityManager.GetComponentUVE<Scene::AnimationGraphComponentUVE>(tree);
+    const Scene::AnimationGraphComponentUVE original = component;
     Core::TypeInstanceUVE before = Core::TypeInstanceUVE::CloneUVE(*entry, &component);
     change(component);
     if (component.HasSameSettingsUVE(original) || !before.IsValidUVE()) {
@@ -818,11 +821,11 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     // entity's first.
     const auto isTree = [&entityManager](const Scene::EntityUVE entity) {
         return entity != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(entity) &&
-               entityManager.HasComponentUVE<Scene::AnimationTreeComponentUVE>(entity);
+               entityManager.HasComponentUVE<Scene::AnimationGraphComponentUVE>(entity);
     };
-    const std::vector<Scene::EntityUVE> entityNodes = CollectEntityEditorNodesUVE();
-    const auto inEntity = [&entityNodes](const Scene::EntityUVE entity) {
-        return std::ranges::find(entityNodes, entity) != entityNodes.end();
+    const std::vector<Scene::EntityUVE> entityObjects = CollectEntityEditorObjectsUVE();
+    const auto inEntity = [&entityObjects](const Scene::EntityUVE entity) {
+        return std::ranges::find(entityObjects, entity) != entityObjects.end();
     };
     Scene::EntityUVE tree = Scene::kInvalidEntityUVE;
     if (isTree(m_selectedEntity) && inEntity(m_selectedEntity)) {
@@ -830,7 +833,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     } else if (isTree(view.tree) && inEntity(view.tree)) {
         tree = view.tree;
     } else {
-        for (const Scene::EntityUVE node : entityNodes) {
+        for (const Scene::EntityUVE node : entityObjects) {
             if (isTree(node)) {
                 tree = node;
                 break;
@@ -847,17 +850,17 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         view.clips = std::move(clips);
     }
     if (tree == Scene::kInvalidEntityUVE) {
-        ImGui::TextDisabled("This entity has no AnimationTree.");
+        ImGui::TextDisabled("This entity has no AnimationGraph.");
         return;
     }
-    // ---- Preview: the tree runs on the entity's skeleton, the mixer's target or else the tree's
+    // ---- Preview: the tree runs on the entity's skeleton, the driver's target or else the tree's
     // parent, searched down. Only the skeleton's runtime pose changes; nothing is saved.
     Scene::EntityUVE skeletonEntity = Scene::kInvalidEntityUVE;
-    const Scene::AnimationMixerComponentUVE mixer = entityManager.HasComponentUVE<Scene::AnimationMixerComponentUVE>(tree)
-                                                        ? entityManager.GetComponentUVE<Scene::AnimationMixerComponentUVE>(tree)
-                                                        : Scene::AnimationMixerComponentUVE{};
+    const Scene::AnimationDriverComponentUVE driver = entityManager.HasComponentUVE<Scene::AnimationDriverComponentUVE>(tree)
+                                                        ? entityManager.GetComponentUVE<Scene::AnimationDriverComponentUVE>(tree)
+                                                        : Scene::AnimationDriverComponentUVE{};
     {
-        Scene::EntityUVE root = mixer.target;
+        Scene::EntityUVE root = driver.target;
         if (root == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(root)) {
             root = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(tree)
                        ? entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(tree).parent
@@ -869,7 +872,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         }
         Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
         for (std::size_t next = 0U; next < queue.size() && next < 4096U; ++next) {
-            if (entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(queue[next])) {
+            if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(queue[next])) {
                 skeletonEntity = queue[next];
                 break;
             }
@@ -877,7 +880,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
             queue.insert(queue.end(), children.begin(), children.end());
         }
     }
-    if (view.previewing && skeletonEntity != Scene::kInvalidEntityUVE && !view.draggingNodes) {
+    if (view.previewing && skeletonEntity != Scene::kInvalidEntityUVE && !view.draggingObjects) {
         const Scene::AnimationClipResolverUVE clipFor = [this](const Asset::AssetGuidUVE guid)
             -> const Asset::AnimationClipAssetUVE* {
             if (guid == Asset::AssetGuidUVE{}) {
@@ -897,17 +900,17 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
             StopAnimationGraphPreviewUVE();
             view.previewSkeleton = skeletonEntity;
         }
-        auto& live = entityManager.GetComponentUVE<Scene::AnimationTreeComponentUVE>(tree);
-        auto& skeleton = entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity);
-        Scene::AnimationMixerComponentUVE previewMixer = mixer;
+        auto& live = entityManager.GetComponentUVE<Scene::AnimationGraphComponentUVE>(tree);
+        auto& skeleton = entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
+        Scene::AnimationDriverComponentUVE previewMixer = driver;
         previewMixer.active = true;
         // Held: only a frame asked for moves it, and then by one sixtieth of a second.
         const float frame = view.previewPaused ? (view.previewStepOnce ? 1.0F / 60.0F : 0.0F)
                                                : std::clamp(ImGui::GetIO().DeltaTime, 0.0F, 0.1F) * view.previewRate;
         view.previewStepOnce = false;
         if (frame > 0.0F) {
-            const float step = frame * mixer.speedScale;
-            static_cast<void>(Scene::StepSkeletalAnimationTreeUVE(live, clipFor, step, skeleton, previewMixer));
+            const float step = frame * driver.speedScale;
+            static_cast<void>(Scene::StepSkeletalAnimationGraphUVE(live, clipFor, step, skeleton, previewMixer));
             view.previewClock += static_cast<double>(frame);
             RecordAnimationGraphPreviewUVE(live);
         }
@@ -919,7 +922,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         return found != m_animGraph.clips.end() && found->second != nullptr ? found->second->durationSeconds : 0.0;
     };
 
-    const Scene::AnimationTreeComponentUVE& component = entityManager.GetComponentUVE<Scene::AnimationTreeComponentUVE>(tree);
+    const Scene::AnimationGraphComponentUVE& component = entityManager.GetComponentUVE<Scene::AnimationGraphComponentUVE>(tree);
     // A copy: edits below replace the component, and this frame keeps drawing what it started with.
     const std::vector<AnimationGraphNodeUVE> nodes = component.nodes;
     const std::vector<Scene::AnimationGraphNodeStateUVE> states =
@@ -935,7 +938,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     const float canvasWidth = std::max(120.0F, area.x - kSideStripWidthUVE - style.ItemSpacing.x);
     const float canvasHeight = std::max(80.0F, area.y - barHeight - style.ItemSpacing.y);
 
-    std::optional<std::function<void(Scene::AnimationTreeComponentUVE&)>> edit;
+    std::optional<std::function<void(Scene::AnimationGraphComponentUVE&)>> edit;
     std::unordered_map<std::uint32_t, std::size_t> indexById;
     for (std::size_t index = 0U; index < nodes.size(); ++index) {
         indexById.emplace(nodes[index].id, index);
@@ -1002,8 +1005,8 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         for (const AnimationGraphNodeUVE& node : nodes) {
             minX = std::min(minX, node.position.x);
             minY = std::min(minY, node.position.y);
-            maxX = std::max(maxX, node.position.x + kNodeWidthUVE);
-            maxY = std::max(maxY, node.position.y + NodeHeightUVE(node));
+            maxX = std::max(maxX, node.position.x + kObjectWidthUVE);
+            maxY = std::max(maxY, node.position.y + ObjectHeightUVE(node));
         }
         constexpr float kMarginUVE = 48.0F;
         const float zoomX = size.x / std::max(1.0F, maxX - minX + kMarginUVE * 2.0F);
@@ -1056,12 +1059,12 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     }
 
     // Geometry of each node on screen, for drawing and hit tests.
-    const auto nodeMin = [&](const AnimationGraphNodeUVE& node) { return toScreen(node.position.x, node.position.y); };
-    const auto nodeMax = [&](const AnimationGraphNodeUVE& node) {
-        return toScreen(node.position.x + kNodeWidthUVE, node.position.y + NodeHeightUVE(node));
+    const auto objectMin = [&](const AnimationGraphNodeUVE& node) { return toScreen(node.position.x, node.position.y); };
+    const auto objectMax = [&](const AnimationGraphNodeUVE& node) {
+        return toScreen(node.position.x + kObjectWidthUVE, node.position.y + ObjectHeightUVE(node));
     };
     const auto outputPin = [&](const AnimationGraphNodeUVE& node) {
-        return toScreen(node.position.x + kNodeWidthUVE, node.position.y + kHeaderHeightUVE * 0.5F);
+        return toScreen(node.position.x + kObjectWidthUVE, node.position.y + kHeaderHeightUVE * 0.5F);
     };
     const auto inputPin = [&](const AnimationGraphNodeUVE& node, const std::size_t slot) {
         const auto row = static_cast<float>(InlineRowsUVE(node.kind) + slot);
@@ -1079,7 +1082,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     };
     std::optional<SlotHitUVE> hoveredSlot;
     std::uint32_t hoveredOutput = 0U;
-    std::uint32_t hoveredNode = 0U;
+    std::uint32_t hoveredObject = 0U;
     if (hovered) {
         for (const AnimationGraphNodeUVE& node : nodes) {
             if (node.kind != Kind::Output && near(mouse, outputPin(node))) {
@@ -1090,10 +1093,10 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                     hoveredSlot = SlotHitUVE{node.id, slot};
                 }
             }
-            const ImVec2 lo = nodeMin(node);
-            const ImVec2 hi = nodeMax(node);
+            const ImVec2 lo = objectMin(node);
+            const ImVec2 hi = objectMax(node);
             if (mouse.x >= lo.x && mouse.x <= hi.x && mouse.y >= lo.y && mouse.y <= hi.y) {
-                hoveredNode = node.id;
+                hoveredObject = node.id;
             }
         }
     }
@@ -1158,14 +1161,14 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         }
     }
 
-    // Nodes.
+    // Objects.
     const float fontScale = std::clamp(view.zoom, 0.6F, 1.4F);
     const float fontSize = ImGui::GetFontSize() * fontScale;
     ImFont* const font = ImGui::GetFont();
     for (std::size_t index = 0U; index < nodes.size(); ++index) {
         const AnimationGraphNodeUVE& node = nodes[index];
-        const ImVec2 lo = nodeMin(node);
-        const ImVec2 hi = nodeMax(node);
+        const ImVec2 lo = objectMin(node);
+        const ImVec2 hi = objectMax(node);
         if (hi.x < origin.x || lo.x > origin.x + size.x || hi.y < origin.y || lo.y > origin.y + size.y) {
             continue;
         }
@@ -1177,7 +1180,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         draw->AddRectFilled(lo, hi, kBodyUVE, rounding);
         draw->AddRectFilled(lo, ImVec2{hi.x, lo.y + header}, KindColourUVE(node.kind), rounding,
                             ImDrawFlags_RoundCornersTop);
-        draw->AddRect(lo, hi, selected ? kSelectedUVE : (node.id == hoveredNode ? IM_COL32(110, 118, 132, 255) : kBorderUVE),
+        draw->AddRect(lo, hi, selected ? kSelectedUVE : (node.id == hoveredObject ? IM_COL32(110, 118, 132, 255) : kBorderUVE),
                       rounding, 0, selected ? 2.0F : 1.0F);
         const std::string title = node.name.empty() ? std::string{AnimationGraphKindLabelUVE(node.kind)} : node.name;
         const float textY = lo.y + (header - fontSize) * 0.5F;
@@ -1228,15 +1231,15 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         const std::size_t inlineRows = InlineRowsUVE(node.kind);
         if (inlineRows > 0U && view.zoom >= 0.7F) {
             // Values edited right on the node: drag to tune, one undo step per drag.
-            auto& liveTree = entityManager.GetComponentUVE<Scene::AnimationTreeComponentUVE>(tree);
-            const std::uint32_t nodeId = node.id;
+            auto& liveTree = entityManager.GetComponentUVE<Scene::AnimationGraphComponentUVE>(tree);
+            const std::uint32_t objectId = node.id;
             const float rowHeight = kSlotHeightUVE * view.zoom;
             const float inset = 8.0F * view.zoom;
             const float rowWidth = (hi.x - lo.x) - inset * 2.0F;
             const auto rowAt = [&](const std::size_t row) {
                 return ImVec2{lo.x + inset, lo.y + header + static_cast<float>(row) * rowHeight + 2.0F * view.zoom};
             };
-            ImGui::PushID(static_cast<int>(nodeId));
+            ImGui::PushID(static_cast<int>(objectId));
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                                 ImVec2{4.0F, std::max(0.0F, (rowHeight - ImGui::GetFontSize()) * 0.5F - 2.0F)});
             ImGui::BeginDisabled(!writable);
@@ -1247,7 +1250,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
             };
             const auto inlineDrag = [&](const char* id, const char* format, const float shown, const float speed,
                                         const float minimum, const float maximum,
-                                        const std::function<void(Scene::AnimationTreeComponentUVE&, float)>& apply,
+                                        const std::function<void(Scene::AnimationGraphComponentUVE&, float)>& apply,
                                         const std::size_t row) {
                 ImGui::SetCursorScreenPos(rowAt(row));
                 ImGui::SetNextItemWidth(rowWidth);
@@ -1261,22 +1264,22 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 }
                 if (ImGui::IsItemDeactivated() && view.inlineEditing) {
                     view.inlineEditing = false;
-                    const Scene::AnimationTreeComponentUVE after = liveTree;
+                    const Scene::AnimationGraphComponentUVE after = liveTree;
                     liveTree = view.inlineBefore;
-                    edit = [after](Scene::AnimationTreeComponentUVE& t) {
+                    edit = [after](Scene::AnimationGraphComponentUVE& t) {
                         t.parameters = after.parameters;
                         t.nodes = after.nodes;
                     };
                 }
             };
-            const auto nodeField = [nodeId](float AnimationGraphNodeUVE::*field, const std::string parameterName) {
-                return [nodeId, field, parameterName](Scene::AnimationTreeComponentUVE& t, const float value) {
+            const auto objectField = [objectId](float AnimationGraphNodeUVE::*field, const std::string parameterName) {
+                return [objectId, field, parameterName](Scene::AnimationGraphComponentUVE& t, const float value) {
                     const auto found = std::ranges::find(t.parameters, parameterName, &AnimationParameterUVE::name);
                     if (!parameterName.empty() && found != t.parameters.end()) {
                         found->value = value;
                         return;
                     }
-                    const auto it = std::ranges::find(t.nodes, nodeId, &AnimationGraphNodeUVE::id);
+                    const auto it = std::ranges::find(t.nodes, objectId, &AnimationGraphNodeUVE::id);
                     if (it != t.nodes.end()) {
                         (*it).*field = value;
                     }
@@ -1291,8 +1294,8 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                     if (const std::optional<Asset::AssetGuidUVE> picked = DrawAssetPickerUVE("##clip", node.clip, ".uvanim")) {
                         const Asset::AssetGuidUVE guid = *picked;
                         const std::string clipName = AnimationClipNameUVE(guid);
-                        edit = [nodeId, guid, clipName](Scene::AnimationTreeComponentUVE& t) {
-                            const auto it = std::ranges::find(t.nodes, nodeId, &AnimationGraphNodeUVE::id);
+                        edit = [objectId, guid, clipName](Scene::AnimationGraphComponentUVE& t) {
+                            const auto it = std::ranges::find(t.nodes, objectId, &AnimationGraphNodeUVE::id);
                             if (it != t.nodes.end()) {
                                 it->clip = guid;
                                 // A clip node still named for its kind takes its animation's name.
@@ -1308,38 +1311,38 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 case Kind::Additive:
                 case Kind::LayeredBlend:
                     inlineDrag("##weight", weightFormat.c_str(), readValue(node.parameter, node.value), 0.01F, 0.0F, 1.0F,
-                               nodeField(&AnimationGraphNodeUVE::value, node.parameter), 0U);
+                               objectField(&AnimationGraphNodeUVE::value, node.parameter), 0U);
                     break;
                 case Kind::Select:
                     inlineDrag("##option", node.parameter.empty() ? "option %.0f" : (node.parameter + " %.0f").c_str(),
                                readValue(node.parameter, node.value), 0.05F, 0.0F,
                                static_cast<float>(std::max<std::size_t>(node.inputs.size(), 1U) - 1U),
-                               nodeField(&AnimationGraphNodeUVE::value, node.parameter), 0U);
+                               objectField(&AnimationGraphNodeUVE::value, node.parameter), 0U);
                     break;
                 case Kind::TimeScale:
                     inlineDrag("##rate", node.parameter.empty() ? "rate x%.2f" : (node.parameter + " x%.2f").c_str(),
                                readValue(node.parameter, node.speed), 0.01F, -100.0F, 100.0F,
-                               nodeField(&AnimationGraphNodeUVE::speed, node.parameter), 0U);
+                               objectField(&AnimationGraphNodeUVE::speed, node.parameter), 0U);
                     break;
                 case Kind::TimeSeek:
                     inlineDrag("##seek", "to %.2fs", node.value, 0.01F, 0.0F, 3600.0F,
-                               nodeField(&AnimationGraphNodeUVE::value, std::string{}), 0U);
+                               objectField(&AnimationGraphNodeUVE::value, std::string{}), 0U);
                     break;
                 case Kind::BlendSpace1D:
                 case Kind::BlendSpace2D: {
                     inlineDrag("##x", xFormat.c_str(), readValue(node.parameter, node.value), 0.01F, 0.0F, 0.0F,
-                               nodeField(&AnimationGraphNodeUVE::value, node.parameter), 0U);
+                               objectField(&AnimationGraphNodeUVE::value, node.parameter), 0U);
                     std::size_t next = 1U;
                     if (node.kind == Kind::BlendSpace2D) {
                         const std::string yFormat = node.parameterY.empty() ? std::string{"y %.2f"} : node.parameterY + " %.2f";
                         inlineDrag("##y", yFormat.c_str(), readValue(node.parameterY, node.valueY), 0.01F, 0.0F, 0.0F,
-                                   nodeField(&AnimationGraphNodeUVE::valueY, node.parameterY), 1U);
+                                   objectField(&AnimationGraphNodeUVE::valueY, node.parameterY), 1U);
                         next = 2U;
                     }
                     ImGui::SetCursorScreenPos(rowAt(next));
                     ImGui::EndDisabled();
                     if (ImGui::Button("Open Editor", ImVec2{rowWidth, 0.0F})) {
-                        view.focus = nodeId;
+                        view.focus = objectId;
                     }
                     ImGui::BeginDisabled(!writable);
                     break;
@@ -1348,7 +1351,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                     ImGui::SetCursorScreenPos(rowAt(0U));
                     ImGui::EndDisabled();
                     if (ImGui::Button("Open States", ImVec2{rowWidth, 0.0F})) {
-                        view.focus = nodeId;
+                        view.focus = objectId;
                     }
                     ImGui::BeginDisabled(!writable);
                     break;
@@ -1360,15 +1363,15 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
             ImGui::PopStyleVar();
             ImGui::PopID();
         } else if (inlineRows > 0U) {
-            const std::string summary = NodeSummaryUVE(node);
+            const std::string summary = ObjectSummaryUVE(node);
             draw->AddText(font, fontSize, ImVec2{lo.x + 8.0F * view.zoom, lo.y + header + 3.0F * view.zoom}, kTextDimUVE,
                           summary.c_str());
         } else if (node.inputs.empty()) {
-            const std::string summary = node.kind == Kind::Output ? std::string{} : NodeSummaryUVE(node);
+            const std::string summary = node.kind == Kind::Output ? std::string{} : ObjectSummaryUVE(node);
             draw->AddText(font, fontSize, ImVec2{lo.x + 8.0F * view.zoom, lo.y + header + 3.0F * view.zoom}, kTextDimUVE,
                           summary.c_str());
         } else if (view.zoom >= 0.8F) {
-            const std::string summary = NodeSummaryUVE(node);
+            const std::string summary = ObjectSummaryUVE(node);
             const float width = font->CalcTextSizeA(fontSize * 0.85F, FLT_MAX, 0.0F, summary.c_str()).x;
             draw->AddText(font, fontSize * 0.85F, ImVec2{hi.x - width - 8.0F * view.zoom, lo.y + header + 3.0F * view.zoom},
                           IM_COL32(150, 156, 166, 170), summary.c_str());
@@ -1407,27 +1410,27 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
             if (source != 0U) {
                 view.wireFrom = source;
                 const SlotHitUVE hit = *hoveredSlot;
-                edit = [hit](Scene::AnimationTreeComponentUVE& t) {
+                edit = [hit](Scene::AnimationGraphComponentUVE& t) {
                     static_cast<void>(DisconnectAnimationGraphInputUVE(t.nodes, hit.node, hit.slot));
                 };
             }
-        } else if (hoveredNode != 0U && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) &&
-                   (nodes[indexById.at(hoveredNode)].kind == Kind::BlendSpace1D ||
-                    nodes[indexById.at(hoveredNode)].kind == Kind::BlendSpace2D ||
-                    nodes[indexById.at(hoveredNode)].kind == Kind::StateMachine)) {
-            view.focus = hoveredNode;
-        } else if (hoveredNode != 0U) {
-            const bool selected = std::ranges::find(view.selected, hoveredNode) != view.selected.end();
+        } else if (hoveredObject != 0U && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) &&
+                   (nodes[indexById.at(hoveredObject)].kind == Kind::BlendSpace1D ||
+                    nodes[indexById.at(hoveredObject)].kind == Kind::BlendSpace2D ||
+                    nodes[indexById.at(hoveredObject)].kind == Kind::StateMachine)) {
+            view.focus = hoveredObject;
+        } else if (hoveredObject != 0U) {
+            const bool selected = std::ranges::find(view.selected, hoveredObject) != view.selected.end();
             if (io.KeyCtrl || io.KeyShift) {
                 if (selected) {
-                    std::erase(view.selected, hoveredNode);
+                    std::erase(view.selected, hoveredObject);
                 } else {
-                    view.selected.push_back(hoveredNode);
+                    view.selected.push_back(hoveredObject);
                 }
             } else if (!selected) {
-                view.selected = {hoveredNode};
+                view.selected = {hoveredObject};
             }
-            view.draggingNodes = std::ranges::find(view.selected, hoveredNode) != view.selected.end();
+            view.draggingObjects = std::ranges::find(view.selected, hoveredObject) != view.selected.end();
             view.dragBefore = nodes;
         } else {
             if (!io.KeyCtrl && !io.KeyShift) {
@@ -1440,8 +1443,8 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     }
 
     // Dragging nodes moves them live without history; release records the whole move once.
-    if (view.draggingNodes) {
-        auto& live = entityManager.GetComponentUVE<Scene::AnimationTreeComponentUVE>(tree);
+    if (view.draggingObjects) {
+        auto& live = entityManager.GetComponentUVE<Scene::AnimationGraphComponentUVE>(tree);
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
             const ImVec2 delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0F);
             if (live.nodes.size() == view.dragBefore.size()) {
@@ -1453,11 +1456,11 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 }
             }
         } else {
-            view.draggingNodes = false;
+            view.draggingObjects = false;
             std::vector<AnimationGraphNodeUVE> moved = live.nodes;
             live.nodes = view.dragBefore;
             view.dragBefore.clear();
-            edit = [moved = std::move(moved)](Scene::AnimationTreeComponentUVE& t) { t.nodes = moved; };
+            edit = [moved = std::move(moved)](Scene::AnimationGraphComponentUVE& t) { t.nodes = moved; };
         }
     }
 
@@ -1481,7 +1484,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 const SlotHitUVE hit = *hoveredSlot;
                 if (CanConnectAnimationGraphNodesUVE(nodes, hit.node, hit.slot, source)) {
                     auto previous = std::move(edit);
-                    edit = [hit, source, previous](Scene::AnimationTreeComponentUVE& t) {
+                    edit = [hit, source, previous](Scene::AnimationGraphComponentUVE& t) {
                         if (previous.has_value()) {
                             (*previous)(t);
                         }
@@ -1490,7 +1493,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 } else {
                     view.status = "That wire would loop back on itself.";
                 }
-            } else if (hovered && hoveredNode == 0U) {
+            } else if (hovered && hoveredObject == 0U) {
                 // Dropped on empty canvas: offer a node to plug it into, right there.
                 view.addAtX = toCanvas(mouse).x;
                 view.addAtY = toCanvas(mouse).y;
@@ -1512,8 +1515,8 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
             view.boxSelecting = false;
             for (const AnimationGraphNodeUVE& node : nodes) {
-                const ImVec2 lo = nodeMin(node);
-                const ImVec2 hi = nodeMax(node);
+                const ImVec2 lo = objectMin(node);
+                const ImVec2 hi = objectMax(node);
                 if (lo.x < b.x && hi.x > a.x && lo.y < b.y && hi.y > a.y &&
                     std::ranges::find(view.selected, node.id) == view.selected.end()) {
                     view.selected.push_back(node.id);
@@ -1522,12 +1525,12 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         }
     }
 
-    // Right-click: a node's menu, or Add Node where the click was.
+    // Right-click: a node's menu, or Add Object where the click was.
     if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
         ImGui::GetMouseDragDelta(ImGuiMouseButton_Right).x == 0.0F) {
-        if (hoveredNode != 0U) {
-            if (std::ranges::find(view.selected, hoveredNode) == view.selected.end()) {
-                view.selected = {hoveredNode};
+        if (hoveredObject != 0U) {
+            if (std::ranges::find(view.selected, hoveredObject) == view.selected.end()) {
+                view.selected = {hoveredObject};
             }
             ImGui::OpenPopup("##graph-node");
         } else {
@@ -1539,7 +1542,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     }
     draw->PopClipRect();
 
-    // The Add Node menu opens up and to the left when the click was near the bottom or right edge,
+    // The Add Object menu opens up and to the left when the click was near the bottom or right edge,
     // so it always fits inside the dock.
     const auto placePopup = [&](const ImVec2 popupSize) {
         ImVec2 at = mouse;
@@ -1591,7 +1594,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         if (picked.has_value()) {
             const Kind kind = *picked;
             const Math::Vector2UVE at{view.addAtX, view.addAtY};
-            edit = [kind, at, this](Scene::AnimationTreeComponentUVE& t) {
+            edit = [kind, at, this](Scene::AnimationGraphComponentUVE& t) {
                 const std::uint32_t id = AddAnimationGraphNodeUVE(t.nodes, kind, at);
                 if (id != 0U) {
                     m_animGraph.selected = {id};
@@ -1604,11 +1607,11 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
 
     const auto deleteSelected = [&]() {
         const std::vector<std::uint32_t> ids = view.selected;
-        edit = [ids](Scene::AnimationTreeComponentUVE& t) { static_cast<void>(DeleteAnimationGraphNodesUVE(t.nodes, ids)); };
+        edit = [ids](Scene::AnimationGraphComponentUVE& t) { static_cast<void>(DeleteAnimationGraphNodesUVE(t.nodes, ids)); };
     };
     const auto duplicateSelected = [&]() {
         const std::vector<std::uint32_t> ids = view.selected;
-        edit = [ids, this](Scene::AnimationTreeComponentUVE& t) {
+        edit = [ids, this](Scene::AnimationGraphComponentUVE& t) {
             m_animGraph.selected = DuplicateAnimationGraphNodesUVE(t.nodes, ids, Math::Vector2UVE{32.0F, 32.0F});
         };
     };
@@ -1623,7 +1626,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         }
         if (ImGui::MenuItem("Disconnect Inputs", nullptr, false, writable)) {
             const std::vector<std::uint32_t> ids = view.selected;
-            edit = [ids](Scene::AnimationTreeComponentUVE& t) {
+            edit = [ids](Scene::AnimationGraphComponentUVE& t) {
                 for (AnimationGraphNodeUVE& node : t.nodes) {
                     if (std::ranges::find(ids, node.id) != ids.end()) {
                         std::ranges::fill(node.inputs, 0U);
@@ -1677,7 +1680,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     ImGui::TextUnformatted("Parameters");
     ImGui::SameLine();
     if (ImGui::SmallButton("+##param") && component.parameters.size() < Scene::kMaximumAnimationParametersUVE) {
-        edit = [](Scene::AnimationTreeComponentUVE& t) {
+        edit = [](Scene::AnimationGraphComponentUVE& t) {
             std::string name = "param";
             for (int suffix = 1; std::ranges::any_of(t.parameters, [&name](const AnimationParameterUVE& p) {
                      return p.name == name;
@@ -1702,7 +1705,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         std::string renamed;
         if (EditNameUVE("##name", parameter.name, renamed) && !renamed.empty()) {
             const std::string from = parameter.name;
-            edit = [index, from, renamed](Scene::AnimationTreeComponentUVE& t) {
+            edit = [index, from, renamed](Scene::AnimationGraphComponentUVE& t) {
                 t.parameters[index].name = renamed;
                 for (AnimationGraphNodeUVE& node : t.nodes) {
                     for (std::string* const reads : {&node.parameter, &node.parameterY}) {
@@ -1710,7 +1713,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                             *reads = renamed;
                         }
                     }
-                    for (Scene::AnimationTransitionUVE& transition : node.transitions) {
+                    for (Scene::AnimationGraphTransitionUVE& transition : node.transitions) {
                         for (Scene::AnimationTransitionConditionUVE& test : transition.conditions) {
                             if (test.parameter == from) {
                                 test.parameter = renamed;
@@ -1724,7 +1727,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         ImGui::SetNextItemWidth(width * 0.28F);
         int type = static_cast<int>(parameter.type);
         if (ImGui::Combo("##type", &type, "Float\0Bool\0Trigger\0")) {
-            edit = [index, type](Scene::AnimationTreeComponentUVE& t) {
+            edit = [index, type](Scene::AnimationGraphComponentUVE& t) {
                 t.parameters[index].type = static_cast<AnimationParameterTypeUVE>(type);
                 t.parameters[index].value = 0.0F;
             };
@@ -1735,13 +1738,13 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         if (parameter.type == AnimationParameterTypeUVE::Float) {
             ImGui::DragFloat("##value", &value, 0.01F, 0.0F, 0.0F, "%.2f");
             if (ImGui::IsItemDeactivatedAfterEdit()) {
-                edit = [index, value](Scene::AnimationTreeComponentUVE& t) { t.parameters[index].value = value; };
+                edit = [index, value](Scene::AnimationGraphComponentUVE& t) { t.parameters[index].value = value; };
             }
         } else if (parameter.type == AnimationParameterTypeUVE::Trigger) {
             // A trigger is an event, not a setting: fire it into the running preview only.
             ImGui::BeginDisabled(!view.previewing);
             if (ImGui::SmallButton(value >= 0.5F ? "Armed" : "Fire")) {
-                entityManager.GetComponentUVE<Scene::AnimationTreeComponentUVE>(tree).parameters[index].value = 1.0F;
+                entityManager.GetComponentUVE<Scene::AnimationGraphComponentUVE>(tree).parameters[index].value = 1.0F;
             }
             ImGui::EndDisabled();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -1750,12 +1753,12 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         } else {
             bool on = value >= 0.5F;
             if (ImGui::Checkbox("##value", &on)) {
-                edit = [index, on](Scene::AnimationTreeComponentUVE& t) { t.parameters[index].value = on ? 1.0F : 0.0F; };
+                edit = [index, on](Scene::AnimationGraphComponentUVE& t) { t.parameters[index].value = on ? 1.0F : 0.0F; };
             }
         }
         ImGui::SameLine();
         if (ImGui::SmallButton("x")) {
-            edit = [index](Scene::AnimationTreeComponentUVE& t) {
+            edit = [index](Scene::AnimationGraphComponentUVE& t) {
                 t.parameters.erase(t.parameters.begin() + static_cast<std::ptrdiff_t>(index));
             };
         }
@@ -1812,8 +1815,8 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         ImGui::TextDisabled(view.selected.empty() ? "Select a node to edit it." : "%zu nodes selected.",
                             view.selected.size());
     } else {
-        const std::size_t nodeIndex = indexById.at(view.selected.front());
-        const AnimationGraphNodeUVE& node = nodes[nodeIndex];
+        const std::size_t objectIndex = indexById.at(view.selected.front());
+        const AnimationGraphNodeUVE& node = nodes[objectIndex];
         const std::uint32_t id = node.id;
         // The kind, with what it does on hover: the strip's height goes to the settings.
         ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(KindColourUVE(node.kind) | IM_COL32(50, 50, 50, 0)), "%s",
@@ -1826,8 +1829,8 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("%s", AnimationGraphKindHelpUVE(node.kind));
         }
-        const auto editNode = [&edit, id](std::function<void(AnimationGraphNodeUVE&)> change) {
-            edit = [id, change = std::move(change)](Scene::AnimationTreeComponentUVE& t) {
+        const auto editObject = [&edit, id](std::function<void(AnimationGraphNodeUVE&)> change) {
+            edit = [id, change = std::move(change)](Scene::AnimationGraphComponentUVE& t) {
                 const auto it = std::ranges::find(t.nodes, id, &AnimationGraphNodeUVE::id);
                 if (it != t.nodes.end()) {
                     change(*it);
@@ -1847,7 +1850,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
             const std::string widgetId = std::string{"##"} + label;
             ImGui::DragFloat(widgetId.c_str(), &value, speed, minimum, maximum, "%.2f");
             if (ImGui::IsItemDeactivatedAfterEdit()) {
-                editNode([field, value](AnimationGraphNodeUVE& n) { n.*field = value; });
+                editObject([field, value](AnimationGraphNodeUVE& n) { n.*field = value; });
             }
         };
         const auto parameterRow = [&](const char* const label, std::initializer_list<AnimationParameterTypeUVE> types,
@@ -1855,14 +1858,14 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
             row(label);
             std::string name = node.parameter;
             if (PickParameterUVE("##parameter", component.parameters, types, none, name)) {
-                editNode([name](AnimationGraphNodeUVE& n) { n.parameter = name; });
+                editObject([name](AnimationGraphNodeUVE& n) { n.parameter = name; });
             }
         };
         const auto syncRow = [&]() {
             row("Sync");
             bool sync = node.sync;
             if (ImGui::Checkbox("##sync", &sync)) {
-                editNode([sync](AnimationGraphNodeUVE& n) { n.sync = sync; });
+                editObject([sync](AnimationGraphNodeUVE& n) { n.sync = sync; });
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Keep the inputs in step: the heaviest leads and the others play at its phase,\n"
@@ -1877,7 +1880,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 for (std::size_t option = 0U; option < kModes.size(); ++option) {
                     if (ImGui::Selectable(kModes[option], option == mode)) {
                         const auto picked = static_cast<Scene::AnimationBlendModeUVE>(option);
-                        editNode([picked](AnimationGraphNodeUVE& n) { n.blendMode = picked; });
+                        editObject([picked](AnimationGraphNodeUVE& n) { n.blendMode = picked; });
                     }
                 }
                 ImGui::EndCombo();
@@ -1890,19 +1893,19 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         row("Name");
         std::string renamed;
         if (EditNameUVE("##node-name", node.name, renamed)) {
-            editNode([renamed](AnimationGraphNodeUVE& n) { n.name = renamed; });
+            editObject([renamed](AnimationGraphNodeUVE& n) { n.name = renamed; });
         }
         switch (node.kind) {
             case Kind::Clip: {
                 row("Clip");
                 if (const std::optional<Asset::AssetGuidUVE> picked = DrawAssetPickerUVE("##clip", node.clip, ".uvanim")) {
                     const Asset::AssetGuidUVE guid = *picked;
-                    editNode([guid](AnimationGraphNodeUVE& n) { n.clip = guid; });
+                    editObject([guid](AnimationGraphNodeUVE& n) { n.clip = guid; });
                 }
                 row("Loop");
                 bool loop = node.loop;
                 if (ImGui::Checkbox("##loop", &loop)) {
-                    editNode([loop](AnimationGraphNodeUVE& n) { n.loop = loop; });
+                    editObject([loop](AnimationGraphNodeUVE& n) { n.loop = loop; });
                 }
                 dragRow("Speed", node.speed, 0.01F, -100.0F, 100.0F, &AnimationGraphNodeUVE::speed);
                 break;
@@ -1942,7 +1945,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 {
                     std::string name = node.parameterY;
                     if (PickParameterUVE("##parameter-y", component.parameters, {AnimationParameterTypeUVE::Float}, "(fixed)", name)) {
-                        editNode([name](AnimationGraphNodeUVE& n) { n.parameterY = name; });
+                        editObject([name](AnimationGraphNodeUVE& n) { n.parameterY = name; });
                     }
                 }
                 blendModeRows();
@@ -1958,7 +1961,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                     row("Option");
                     int option = static_cast<int>(std::lround(node.value));
                     if (ImGui::SliderInt("##option", &option, 0, static_cast<int>(node.inputs.size()) - 1)) {
-                        editNode([option](AnimationGraphNodeUVE& n) { n.value = static_cast<float>(option); });
+                        editObject([option](AnimationGraphNodeUVE& n) { n.value = static_cast<float>(option); });
                     }
                 }
                 dragRow("Fade", node.fadeSeconds, 0.01F, 0.0F, 10.0F, &AnimationGraphNodeUVE::fadeSeconds);
@@ -1966,7 +1969,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 {
                     bool restart = node.restart;
                     if (ImGui::Checkbox("##restart", &restart)) {
-                        editNode([restart](AnimationGraphNodeUVE& n) { n.restart = restart; });
+                        editObject([restart](AnimationGraphNodeUVE& n) { n.restart = restart; });
                     }
                     if (ImGui::IsItemHovered()) {
                         ImGui::SetTooltip("Start the picked input from its beginning each time it is picked.");
@@ -1985,7 +1988,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                     ImGui::PushID(static_cast<int>(bone) + 9000);
                     if (ImGui::SmallButton("x")) {
                         const std::string name = node.bones[bone];
-                        editNode([name](AnimationGraphNodeUVE& n) { std::erase(n.bones, name); });
+                        editObject([name](AnimationGraphNodeUVE& n) { std::erase(n.bones, name); });
                     }
                     ImGui::SameLine();
                     ImGui::TextUnformatted(node.bones[bone].c_str());
@@ -1995,7 +1998,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 std::vector<std::string> boneNames;
                 if (skeletonEntity != Scene::kInvalidEntityUVE) {
                     for (const Scene::SkeletonBoneUVE& bone :
-                         entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity).bones) {
+                         entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity).bones) {
                         boneNames.push_back(bone.name);
                     }
                 }
@@ -2020,7 +2023,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                             continue;
                         }
                         if (ImGui::Selectable(name.c_str())) {
-                            editNode([name](AnimationGraphNodeUVE& n) {
+                            editObject([name](AnimationGraphNodeUVE& n) {
                                 if (n.bones.size() < Scene::kMaximumAnimationLayerBonesUVE) {
                                     n.bones.push_back(name);
                                 }
@@ -2041,7 +2044,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 if (ImGui::BeginCombo("##entry", entry.c_str())) {
                     for (std::uint32_t slot = 0U; slot < node.inputs.size(); ++slot) {
                         if (ImGui::Selectable(AnimationGraphSlotLabelUVE(node.kind, slot).c_str(), slot == node.entryState)) {
-                            editNode([slot](AnimationGraphNodeUVE& n) { n.entryState = slot; });
+                            editObject([slot](AnimationGraphNodeUVE& n) { n.entryState = slot; });
                         }
                     }
                     ImGui::EndCombo();
@@ -2060,12 +2063,12 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         }
         if (node.kind == Kind::Select || node.kind == Kind::StateMachine) {
             if (ImGui::Button(node.kind == Kind::StateMachine ? "+ State" : "+ Option")) {
-                edit = [id](Scene::AnimationTreeComponentUVE& t) { static_cast<void>(AddAnimationGraphInputSlotUVE(t.nodes, id)); };
+                edit = [id](Scene::AnimationGraphComponentUVE& t) { static_cast<void>(AddAnimationGraphInputSlotUVE(t.nodes, id)); };
             }
             ImGui::SameLine();
             if (ImGui::Button("- Last") && node.inputs.size() > 1U) {
                 const std::size_t last = node.inputs.size() - 1U;
-                edit = [id, last](Scene::AnimationTreeComponentUVE& t) {
+                edit = [id, last](Scene::AnimationGraphComponentUVE& t) {
                     static_cast<void>(RemoveAnimationGraphInputSlotUVE(t.nodes, id, last));
                 };
             }
@@ -2084,7 +2087,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     } else {
         const std::string name = entityManager.HasComponentUVE<Scene::NameComponentUVE>(tree)
                                      ? entityManager.GetComponentUVE<Scene::NameComponentUVE>(tree).name
-                                     : std::string{"AnimationTree"};
+                                     : std::string{"AnimationGraph"};
         ImGui::TextDisabled("%s  -  %zu nodes, %zu parameters%s%s", name.c_str(), nodes.size(), component.parameters.size(),
                             component.activeStates.empty() ? "" : "  -  ", component.activeStates.c_str());
     }
@@ -2166,7 +2169,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
 
     if (edit.has_value()) {
         view.status.clear();
-        static_cast<void>(EditAnimationTreeUVE(tree, *edit));
+        static_cast<void>(EditAnimationGraphUVE(tree, *edit));
     }
 }
 
