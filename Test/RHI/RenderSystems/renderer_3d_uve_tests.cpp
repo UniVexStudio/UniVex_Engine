@@ -895,6 +895,116 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_MaterialWithoutTextures_UsesFallbackTex
     EXPECT_NE(textureBinds[1].texture, kInvalidTextureHandleUVE);
 }
 
+TEST_F(Renderer3DUVETest, RenderFrameUVE_MaterialSettings_PushUvEmissiveNormalAoUnshadedCutoffAndPackedMaps) {
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
+        [vertexGuid = vertexShaderGuid, fragmentGuid = fragmentShaderGuid](const std::filesystem::path&,
+                                                                             Asset::MaterialAssetUVE& material) {
+            material.vertexShader = vertexGuid;
+            material.fragmentShader = fragmentGuid;
+            material.albedoColor = Math::Vector3UVE{0.2F, 0.4F, 0.6F};
+            material.metallic = 0.25F;
+            material.roughness = 0.75F;
+            material.emissiveColor = Math::Vector3UVE{0.1F, 0.0F, 0.0F};
+            material.emissiveEnergy = 3.0F;
+            material.normalScale = 0.5F;
+            material.occlusionStrength = 0.25F;
+            material.uvScale = Math::Vector2UVE{2.0F, 4.0F};
+            material.uvOffset = Math::Vector2UVE{0.25F, 0.5F};
+            material.unshaded = true;
+            material.alphaCutoff = 0.4F;
+            return true;
+        });
+
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_material_settings_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid =
+        assetDatabase.RegisterUVE("renderer3d_tests_material_settings.uvmat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    bool foundEmissiveEnergy = false;
+    bool foundNormalScale = false;
+    bool foundOcclusionStrength = false;
+    bool foundAlphaCutoff = false;
+    bool foundUnshaded = false;
+    bool foundUvScale = false;
+    bool foundUvOffset = false;
+    bool foundMetallicRoughnessSlot = false;
+    bool foundEmissiveSlot = false;
+    bool boundMetallicRoughness = false;
+    bool boundEmissive = false;
+    for (const RecordedCommandUVE& command : commands) {
+        if (const auto* const uniform = std::get_if<SetUniformFloatCommandUVE>(&command)) {
+            if (uniform->name == "uEmissiveEnergy") {
+                EXPECT_FLOAT_EQ(uniform->value, 3.0F);
+                foundEmissiveEnergy = true;
+            }
+            if (uniform->name == "uNormalScale") {
+                EXPECT_FLOAT_EQ(uniform->value, 0.5F);
+                foundNormalScale = true;
+            }
+            if (uniform->name == "uOcclusionStrength") {
+                EXPECT_FLOAT_EQ(uniform->value, 0.25F);
+                foundOcclusionStrength = true;
+            }
+            if (uniform->name == "uAlphaCutoff") {
+                EXPECT_FLOAT_EQ(uniform->value, 0.4F);
+                foundAlphaCutoff = true;
+            }
+        }
+        if (const auto* const uniform = std::get_if<SetUniformIntCommandUVE>(&command)) {
+            if (uniform->name == "uUnshaded") {
+                EXPECT_EQ(uniform->value, 1);
+                foundUnshaded = true;
+            }
+            if (uniform->name == "uMetallicRoughnessTexture") {
+                EXPECT_EQ(uniform->value, 12);
+                foundMetallicRoughnessSlot = true;
+            }
+            if (uniform->name == "uEmissiveTexture") {
+                EXPECT_EQ(uniform->value, 13);
+                foundEmissiveSlot = true;
+            }
+        }
+        if (const auto* const uniform = std::get_if<SetUniformVector3CommandUVE>(&command)) {
+            if (uniform->name == "uUvScale") {
+                EXPECT_FLOAT_EQ(uniform->value.x, 2.0F);
+                EXPECT_FLOAT_EQ(uniform->value.y, 4.0F);
+                foundUvScale = true;
+            }
+            if (uniform->name == "uUvOffset") {
+                EXPECT_FLOAT_EQ(uniform->value.x, 0.25F);
+                EXPECT_FLOAT_EQ(uniform->value.y, 0.5F);
+                foundUvOffset = true;
+            }
+        }
+        if (const auto* const bind = std::get_if<BindTextureCommandUVE>(&command)) {
+            if (bind->slot == 12U) {
+                EXPECT_NE(bind->texture, kInvalidTextureHandleUVE);
+                boundMetallicRoughness = true;
+            }
+            if (bind->slot == 13U) {
+                EXPECT_NE(bind->texture, kInvalidTextureHandleUVE);
+                boundEmissive = true;
+            }
+        }
+    }
+    EXPECT_TRUE(foundEmissiveEnergy);
+    EXPECT_TRUE(foundNormalScale);
+    EXPECT_TRUE(foundOcclusionStrength);
+    EXPECT_TRUE(foundAlphaCutoff);
+    EXPECT_TRUE(foundUnshaded);
+    EXPECT_TRUE(foundUvScale);
+    EXPECT_TRUE(foundUvOffset);
+    EXPECT_TRUE(foundMetallicRoughnessSlot);
+    EXPECT_TRUE(foundEmissiveSlot);
+    EXPECT_TRUE(boundMetallicRoughness);
+    EXPECT_TRUE(boundEmissive);
+}
+
 TEST_F(Renderer3DUVETest, RenderFrameUVE_ReadyEmptyMeshSkipsInvalidGpuBuffers) {
     assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>(
         [](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
@@ -1585,7 +1695,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidShadowTargetsSkipShadowPassSafel
     EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*cascadeCount).value, 0);
     EXPECT_FALSE(std::any_of(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
         return std::holds_alternative<BindTextureCommandUVE>(command) &&
-               std::get<BindTextureCommandUVE>(command).slot >= 3U;
+               std::get<BindTextureCommandUVE>(command).slot >= 3U &&
+               std::get<BindTextureCommandUVE>(command).slot < 12U;
     }));
 }
 

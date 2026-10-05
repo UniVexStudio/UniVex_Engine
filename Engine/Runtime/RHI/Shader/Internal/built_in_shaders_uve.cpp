@@ -697,6 +697,15 @@ uniform vec3 uEmissiveColor;
 uniform sampler2D uAlbedoTexture;
 uniform sampler2D uNormalTexture;
 uniform sampler2D uAOTexture;
+uniform sampler2D uMetallicRoughnessTexture;
+uniform sampler2D uEmissiveTexture;
+uniform float uEmissiveEnergy = 1.0;
+uniform float uNormalScale = 1.0;
+uniform float uOcclusionStrength = 1.0;
+uniform vec3 uUvScale = vec3(1.0, 1.0, 0.0);
+uniform vec3 uUvOffset = vec3(0.0, 0.0, 0.0);
+uniform int uUnshaded = 0;
+uniform float uAlphaCutoff = 0.0;
 // Legacy Increment 27 pair retained for project-authored shaders and direct single-map tests.
 uniform sampler2D uShadowMapTexture;
 uniform mat4 uLightSpaceMatrix;
@@ -987,8 +996,18 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
 }
 
 void main() {
-    vec3 albedo = texture(uAlbedoTexture, vTexCoord).rgb * uAlbedoColor;
-    float ambientOcclusion = texture(uAOTexture, vTexCoord).r;
+    vec2 uv = vTexCoord * uUvScale.xy + uUvOffset.xy;
+    vec4 albedoSample = texture(uAlbedoTexture, uv);
+    if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
+        discard;
+    }
+    vec3 albedo = albedoSample.rgb * uAlbedoColor;
+    float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0);
+    if (uUnshaded != 0) {
+        FragColor = vec4(albedo, surfaceOpacity);
+        return;
+    }
+    float ambientOcclusion = mix(1.0, texture(uAOTexture, uv).r, clamp(uOcclusionStrength, 0.0, 1.0));
     vec3 normal = SafeNormalizeUVE(vWorldNormal);
     vec3 tangent = vWorldTangent - normal * dot(normal, vWorldTangent);
     if (dot(tangent, tangent) <= 0.00000001) {
@@ -998,11 +1017,13 @@ void main() {
     tangent = SafeNormalizeUVE(tangent);
     vec3 bitangent = SafeNormalizeUVE(cross(normal, tangent));
     bitangent *= vTangentHandedness < 0.0 ? -1.0 : 1.0;
-    vec3 tangentSpaceNormal = texture(uNormalTexture, vTexCoord).xyz * 2.0 - 1.0;
+    vec3 tangentSpaceNormal = texture(uNormalTexture, uv).xyz * 2.0 - 1.0;
+    tangentSpaceNormal.xy *= uNormalScale;
     normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
     vec3 viewDirection = SafeNormalizeUVE(uViewPosition - vWorldPosition);
-    float metallic = clamp(uMetallic, 0.0, 1.0);
-    float roughness = clamp(uRoughness, 0.04, 1.0);
+    vec3 metallicRoughnessSample = texture(uMetallicRoughnessTexture, uv).rgb;
+    float metallic = clamp(uMetallic * metallicRoughnessSample.b, 0.0, 1.0);
+    float roughness = clamp(uRoughness * metallicRoughnessSample.g, 0.04, 1.0);
     // Ambient, split into diffuse and specular exactly as the direct term is.
     //
     // The old ambient was purely diffuse: albedo * ambient * ao. For a dielectric that is roughly
@@ -1040,7 +1061,8 @@ void main() {
     vec3 ambientSpecular = ambientFresnel * specEnv;
     // AO occludes both terms. Applying it to the diffuse alone is a common shortcut, but a crevice
     // does not stop reflecting light in a way the sky can reach either.
-    vec3 lighting = (ambientDiffuse + ambientSpecular) * ambientOcclusion + uEmissiveColor;
+    vec3 lighting = (ambientDiffuse + ambientSpecular) * ambientOcclusion +
+                    uEmissiveColor * max(uEmissiveEnergy, 0.0) * texture(uEmissiveTexture, uv).rgb;
 
     for (int lightIndex = 0; lightIndex < 4; ++lightIndex) {
         LightUVE light = uLights[lightIndex];
@@ -1109,7 +1131,7 @@ void main() {
         lighting += directContribution;
     }
 
-    FragColor = vec4(lighting, clamp(uSurfaceOpacity, 0.0, 1.0));
+    FragColor = vec4(lighting, surfaceOpacity);
 }
 #endif
 )GLSLSRC";
