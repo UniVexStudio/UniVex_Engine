@@ -31,6 +31,7 @@
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 #include "uve/logging/assert_uve.h"
 #include "uve/logging/logging_macros_uve.h"
 #include "uve/math/aabb_uve.h"
@@ -310,6 +311,7 @@ constexpr TextureFormatUVE kSceneColorTargetFormatUVE = TextureFormatUVE::RGBA16
 #endif
 constexpr std::size_t kShadowCascadeCountUVE = 3;
 constexpr std::uint32_t kShadowCascadeFirstTextureSlotUVE = kShadowMapTextureSlotUVE;
+constexpr std::uint32_t kReflectionProbeFirstTextureSlotUVE = 6U;
 
 // Phase 2b post-process tuning. Not currently exposed as public API - PostProcessSettingsUVE only
 // asks for an enabled/disabled toggle per effect, not per-parameter tuning - but kept as named
@@ -337,13 +339,30 @@ struct LightUniformNamesUVE {
     std::string spotAngleDegrees;
 };
 
+struct FogVolumeUniformNamesUVE {
+    std::string position;
+    std::string axisX;
+    std::string axisY;
+    std::string axisZ;
+    std::string scale;
+    std::string size;
+    std::string albedo;
+    std::string emission;
+    std::string density;
+    std::string heightFalloff;
+    std::string edgeFade;
+    std::string shape;
+};
+
 struct RendererUniformNamesUVE {
     std::array<LightUniformNamesUVE, kMaxLightsUVE> lights{};
+    std::array<FogVolumeUniformNamesUVE, Scene::kMaximumFogVolumesPerFrameUVE> fogVolumes{};
     std::string legacyLightSpaceMatrix;
     std::array<std::string, kShadowCascadeCountUVE> lightSpaceMatrices{};
     std::array<std::string, kShadowCascadeCountUVE> shadowCascadeSplits{};
     std::array<std::string, kShadowCascadeCountUVE> shadowMapTextures{};
     std::array<std::string, kShadowCascadeCountUVE> shadowPasses{};
+    std::array<std::string, Scene::kReflectionProbeCubemapFaceCountUVE> reflectionProbeFaces{};
 
     RendererUniformNamesUVE() : legacyLightSpaceMatrix("uLightSpaceMatrix") {
         for (std::size_t lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
@@ -352,12 +371,22 @@ struct RendererUniformNamesUVE {
                 prefix + "type", prefix + "position", prefix + "direction", prefix + "color",
                 prefix + "intensity", prefix + "range", prefix + "spotAngleDegrees"};
         }
+        for (std::size_t volumeIndex = 0; volumeIndex < Scene::kMaximumFogVolumesPerFrameUVE; ++volumeIndex) {
+            const std::string prefix = "uFogVolumes[" + std::to_string(volumeIndex) + "].";
+            fogVolumes[volumeIndex] = FogVolumeUniformNamesUVE{
+                prefix + "position", prefix + "axisX", prefix + "axisY", prefix + "axisZ", prefix + "scale",
+                prefix + "size", prefix + "albedo", prefix + "emission", prefix + "density",
+                prefix + "heightFalloff", prefix + "edgeFade", prefix + "shape"};
+        }
         for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCountUVE; ++cascadeIndex) {
             const std::string index = std::to_string(cascadeIndex);
             lightSpaceMatrices[cascadeIndex] = "uLightSpaceMatrices[" + index + "]";
             shadowCascadeSplits[cascadeIndex] = "uShadowCascadeSplits[" + index + "]";
             shadowMapTextures[cascadeIndex] = "uShadowMapTextures[" + index + "]";
             shadowPasses[cascadeIndex] = "DirectionalShadowCascade" + index;
+        }
+        for (std::size_t faceIndex = 0; faceIndex < Scene::kReflectionProbeCubemapFaceCountUVE; ++faceIndex) {
+            reflectionProbeFaces[faceIndex] = "uReflectionProbeFaces[" + std::to_string(faceIndex) + "]";
         }
     }
 };
@@ -762,6 +791,111 @@ struct Renderer3DUVE::ImplUVE {
     Math::Vector3UVE sunDirection{0.0F, 1.0F, 0.0F};
     Math::Vector3UVE sunColor{1.0F, 1.0F, 1.0F};
     float sunEnergy = 0.0F;
+    std::array<Scene::FogVolume3DFrameUVE, Scene::kMaximumFogVolumesPerFrameUVE> fogVolumes{};
+    std::size_t fogVolumeCount = 0;
+
+    struct ReflectionProbeGpuCacheUVE {
+        std::array<TextureHandleUVE, Scene::kReflectionProbeCubemapFaceCountUVE> faces{};
+        std::uint32_t captureGeneration = 0;
+        bool ready = false;
+    };
+    std::unordered_map<Scene::EntityUVE, ReflectionProbeGpuCacheUVE> reflectionProbeCaptures;
+    TextureHandleUVE reflectionProbeCaptureDepth = kInvalidTextureHandleUVE;
+    bool probeCaptureViewActive = false;
+    Math::Vector3UVE probeCapturePosition{};
+    Math::QuaternionUVE probeCaptureRotation{};
+    float probeCaptureNear = 0.05F;
+    float probeCaptureFar = 50.0F;
+    int reflectionProbeEnabled = 0;
+    Math::Vector3UVE reflectionProbePosition{};
+    Math::Vector3UVE reflectionProbeAxisX{1.0F, 0.0F, 0.0F};
+    Math::Vector3UVE reflectionProbeAxisY{0.0F, 1.0F, 0.0F};
+    Math::Vector3UVE reflectionProbeAxisZ{0.0F, 0.0F, 1.0F};
+    Math::Vector3UVE reflectionProbeHalfExtents{};
+    std::array<TextureHandleUVE, Scene::kReflectionProbeCubemapFaceCountUVE> reflectionProbeFaces{};
+
+    void DestroyReflectionProbeGpuCacheUVE(ReflectionProbeGpuCacheUVE& cache) {
+        for (TextureHandleUVE& face : cache.faces) {
+            DestroyTextureIfValidUVE(renderDevice, face);
+            face = kInvalidTextureHandleUVE;
+        }
+        cache.captureGeneration = 0;
+        cache.ready = false;
+    }
+
+    [[nodiscard]] bool EnsureReflectionProbeFacesUVE(ReflectionProbeGpuCacheUVE& cache) {
+        bool ok = true;
+        for (TextureHandleUVE& face : cache.faces) {
+            if (face == kInvalidTextureHandleUVE) {
+                face = renderDevice.CreateTextureUVE(TextureDescUVE{Scene::kReflectionProbeCaptureResolutionUVE,
+                                                                   Scene::kReflectionProbeCaptureResolutionUVE,
+                                                                   TextureFormatUVE::RGBA8Unorm, 1});
+            }
+            if (face == kInvalidTextureHandleUVE) {
+                ok = false;
+            }
+        }
+        if (!ok) {
+            DestroyReflectionProbeGpuCacheUVE(cache);
+        }
+        return ok;
+    }
+
+    [[nodiscard]] bool EnsureReflectionProbeCaptureDepthUVE() {
+        if (reflectionProbeCaptureDepth != kInvalidTextureHandleUVE) {
+            return true;
+        }
+        reflectionProbeCaptureDepth = renderDevice.CreateTextureUVE(
+            TextureDescUVE{Scene::kReflectionProbeCaptureResolutionUVE, Scene::kReflectionProbeCaptureResolutionUVE,
+                           TextureFormatUVE::Depth32Float, 1});
+        return reflectionProbeCaptureDepth != kInvalidTextureHandleUVE;
+    }
+
+    void ClearBoundReflectionProbeUVE() {
+        reflectionProbeEnabled = 0;
+        reflectionProbePosition = {};
+        reflectionProbeAxisX = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+        reflectionProbeAxisY = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+        reflectionProbeAxisZ = Math::Vector3UVE{0.0F, 0.0F, 1.0F};
+        reflectionProbeHalfExtents = {};
+        reflectionProbeFaces.fill(kInvalidTextureHandleUVE);
+    }
+
+    void EvictDeadReflectionProbeCapturesUVE(Scene::IEntityManagerUVE& entityManager) {
+        for (auto it = reflectionProbeCaptures.begin(); it != reflectionProbeCaptures.end();) {
+            if (!entityManager.IsAliveUVE(it->first) ||
+                !entityManager.HasComponentUVE<Scene::ReflectionProbe3DComponentUVE>(it->first)) {
+                DestroyReflectionProbeGpuCacheUVE(it->second);
+                it = reflectionProbeCaptures.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    void BindReflectionProbeForViewUVE(Scene::IEntityManagerUVE& entityManager, const Math::Vector3UVE& viewPosition) {
+        ClearBoundReflectionProbeUVE();
+        std::array<Scene::ReflectionProbe3DFrameUVE, Scene::kMaximumReflectionProbesPerFrameUVE> frames{};
+        const std::size_t count = Scene::CollectReflectionProbe3DFramesUVE(entityManager, viewPosition, frames);
+        for (std::size_t i = 0; i < count; ++i) {
+            const Scene::ReflectionProbe3DFrameUVE& frame = frames[i];
+            if (!frame.capturedOnce || frame.entity == Scene::kInvalidEntityUVE) {
+                continue;
+            }
+            const auto cacheIt = reflectionProbeCaptures.find(frame.entity);
+            if (cacheIt == reflectionProbeCaptures.end() || !cacheIt->second.ready) {
+                continue;
+            }
+            reflectionProbeEnabled = 1;
+            reflectionProbePosition = frame.worldPosition;
+            reflectionProbeAxisX = frame.axisX;
+            reflectionProbeAxisY = frame.axisY;
+            reflectionProbeAxisZ = frame.axisZ;
+            reflectionProbeHalfExtents = frame.halfExtents;
+            reflectionProbeFaces = cacheIt->second.faces;
+            break;
+        }
+    }
 
     /// Bloom intermediate targets, at half the main color target's resolution (a standard
     /// perf/quality tradeoff for a blurred, low-frequency effect) and the same HDR-capable format
@@ -1563,17 +1697,19 @@ struct Renderer3DUVE::ImplUVE {
                                           std::vector<PrimitiveRenderItemUVE>& outItems) {
         static constexpr Math::Vector3UVE kUnmaterialedColor{0.72F, 0.72F, 0.74F};
         std::unordered_map<Asset::AssetGuidUVE, bool> named;
-        // Skinned buffers nobody drew last frame belong to entities that are gone or hidden.
-        for (auto it = skinnedMeshCache.begin(); it != skinnedMeshCache.end();) {
-            if (it->second.frame != skinnedFrame) {
-                DestroyBufferIfValidUVE(renderDevice, it->second.resources.vertexBuffer);
-                it = skinnedMeshCache.erase(it);
-            } else {
-                ++it;
+        if (!probeCaptureViewActive) {
+            // Skinned buffers nobody drew last frame belong to entities that are gone or hidden.
+            for (auto it = skinnedMeshCache.begin(); it != skinnedMeshCache.end();) {
+                if (it->second.frame != skinnedFrame) {
+                    DestroyBufferIfValidUVE(renderDevice, it->second.resources.vertexBuffer);
+                    it = skinnedMeshCache.erase(it);
+                } else {
+                    ++it;
+                }
             }
+            ++skinnedFrame;
+            skinnedMeshesThisFrame = 0U;
         }
-        ++skinnedFrame;
-        skinnedMeshesThisFrame = 0U;
         entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
             [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
                 const Scene::MeshComponentUVE& meshComponent) {
@@ -1843,6 +1979,17 @@ struct Renderer3DUVE::ImplUVE {
         program.SetIntUVE("uAlbedoTexture", static_cast<std::int32_t>(kAlbedoTextureSlotUVE));
         program.SetIntUVE("uNormalTexture", static_cast<std::int32_t>(kNormalTextureSlotUVE));
         program.SetIntUVE("uAOTexture", static_cast<std::int32_t>(kAoTextureSlotUVE));
+        program.SetIntUVE("uReflectionProbeEnabled", reflectionProbeEnabled);
+        program.SetVector3UVE("uReflectionProbePosition", reflectionProbePosition);
+        program.SetVector3UVE("uReflectionProbeAxisX", reflectionProbeAxisX);
+        program.SetVector3UVE("uReflectionProbeAxisY", reflectionProbeAxisY);
+        program.SetVector3UVE("uReflectionProbeAxisZ", reflectionProbeAxisZ);
+        program.SetVector3UVE("uReflectionProbeHalfExtents", reflectionProbeHalfExtents);
+        for (std::size_t faceIndex = 0; faceIndex < Scene::kReflectionProbeCubemapFaceCountUVE; ++faceIndex) {
+            program.SetIntUVE(uniformNames.reflectionProbeFaces[faceIndex],
+                              static_cast<std::int32_t>(kReflectionProbeFirstTextureSlotUVE +
+                                                        static_cast<std::uint32_t>(faceIndex)));
+        }
     }
 
     /// Binds the shadow cascades and the material's three textures - also shared by both paths.
@@ -1860,6 +2007,15 @@ struct Renderer3DUVE::ImplUVE {
         commandBuffer.BindTextureUVE(materialResources.albedoTexture, kAlbedoTextureSlotUVE);
         commandBuffer.BindTextureUVE(materialResources.normalTexture, kNormalTextureSlotUVE);
         commandBuffer.BindTextureUVE(materialResources.aoTexture, kAoTextureSlotUVE);
+        if (reflectionProbeEnabled != 0) {
+            for (std::size_t faceIndex = 0; faceIndex < Scene::kReflectionProbeCubemapFaceCountUVE; ++faceIndex) {
+                const TextureHandleUVE face = reflectionProbeFaces[faceIndex] != kInvalidTextureHandleUVE
+                                                  ? reflectionProbeFaces[faceIndex]
+                                                  : fallbackWhiteTexture;
+                commandBuffer.BindTextureUVE(face, kReflectionProbeFirstTextureSlotUVE +
+                                                       static_cast<std::uint32_t>(faceIndex));
+            }
+        }
     }
 
     /// Records `items` as instanced draws where the material supports it, falling back to the
@@ -2435,6 +2591,13 @@ Renderer3DUVE::~Renderer3DUVE() {
     m_impl->bloomBlurTargetA = kInvalidTextureHandleUVE;
     m_impl->bloomBlurTargetB = kInvalidTextureHandleUVE;
     m_impl->ssaoTarget = kInvalidTextureHandleUVE;
+    for (auto& [entity, cache] : m_impl->reflectionProbeCaptures) {
+        static_cast<void>(entity);
+        m_impl->DestroyReflectionProbeGpuCacheUVE(cache);
+    }
+    m_impl->reflectionProbeCaptures.clear();
+    DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->reflectionProbeCaptureDepth);
+    m_impl->reflectionProbeCaptureDepth = kInvalidTextureHandleUVE;
     DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->fallbackWhiteTexture);
     DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->fallbackNormalTexture);
     for (const TextureHandleUVE shadowMapTarget : m_impl->shadowMapTargets) {
@@ -2449,13 +2612,102 @@ bool Renderer3DUVE::ResizeTargetsUVE(const std::uint32_t width, const std::uint3
     return m_impl->ResizeTargetsUVE(width, height);
 }
 
+void Renderer3DUVE::CaptureDueReflectionProbesUVE(Scene::IEntityManagerUVE& entityManager,
+                                                 const Scene::EntityUVE cameraEntity) {
+    m_impl->EvictDeadReflectionProbeCapturesUVE(entityManager);
+    struct DueUVE final {
+        Scene::EntityUVE entity;
+        Scene::ReflectionProbe3DFrameUVE frame;
+        std::uint32_t generation = 0;
+    };
+    std::vector<DueUVE> due;
+    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::ReflectionProbe3DComponentUVE>(
+        [this, &due](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& world,
+                     const Scene::ReflectionProbe3DComponentUVE& probe) {
+            if (world.dirty || !probe.enabled || !probe.capturedOnce ||
+                !Scene::IsReflectionProbe3DObjectComponentValidUVE(probe)) {
+                return;
+            }
+            Scene::ReflectionProbe3DFrameUVE frame{};
+            if (!Scene::TryMakeReflectionProbe3DFrameUVE(probe, world.worldPosition, world.worldRotation, frame)) {
+                return;
+            }
+            frame.entity = entity;
+            const auto cacheIt = m_impl->reflectionProbeCaptures.find(entity);
+            if (cacheIt != m_impl->reflectionProbeCaptures.end() && cacheIt->second.ready &&
+                cacheIt->second.captureGeneration == probe.captureGeneration) {
+                return;
+            }
+            due.push_back(DueUVE{entity, frame, probe.captureGeneration});
+        });
+    if (due.empty()) {
+        return;
+    }
+    const std::uint32_t savedWidth = m_impl->targetWidth;
+    const std::uint32_t savedHeight = m_impl->targetHeight;
+    if (!m_impl->ResizeTargetsUVE(Scene::kReflectionProbeCaptureResolutionUVE,
+                                  Scene::kReflectionProbeCaptureResolutionUVE)) {
+        return;
+    }
+    if (!m_impl->EnsureReflectionProbeCaptureDepthUVE()) {
+        static_cast<void>(m_impl->ResizeTargetsUVE(savedWidth, savedHeight));
+        return;
+    }
+    m_impl->probeCaptureViewActive = true;
+    std::size_t captured = 0;
+    for (DueUVE& candidate : due) {
+        if (captured >= Scene::kMaximumReflectionProbeCapturesPerTickUVE) {
+            break;
+        }
+        ImplUVE::ReflectionProbeGpuCacheUVE& cache = m_impl->reflectionProbeCaptures[candidate.entity];
+        if (!m_impl->EnsureReflectionProbeFacesUVE(cache)) {
+            m_impl->reflectionProbeCaptures.erase(candidate.entity);
+            continue;
+        }
+        const float maxHalf = std::fmax(candidate.frame.halfExtents.x,
+                                        std::fmax(candidate.frame.halfExtents.y, candidate.frame.halfExtents.z));
+        m_impl->probeCapturePosition = candidate.frame.worldPosition;
+        m_impl->probeCaptureNear = 0.05F;
+        m_impl->probeCaptureFar = std::fmax(50.0F, maxHalf * 8.0F);
+        if (!(m_impl->probeCaptureFar > m_impl->probeCaptureNear)) {
+            continue;
+        }
+        bool facesOk = true;
+        for (std::size_t faceIndex = 0; faceIndex < Scene::kReflectionProbeCubemapFaceCountUVE; ++faceIndex) {
+            Math::QuaternionUVE rotation{};
+            if (!Scene::TryMakeCubemapFaceCameraRotationUVE(static_cast<Scene::CubemapFaceUVE>(faceIndex),
+                                                            rotation)) {
+                facesOk = false;
+                break;
+            }
+            m_impl->probeCaptureRotation = rotation;
+            RenderFrameToTargetUVE(entityManager, cameraEntity, cache.faces[faceIndex],
+                                   m_impl->reflectionProbeCaptureDepth, Scene::kReflectionProbeCaptureResolutionUVE,
+                                   Scene::kReflectionProbeCaptureResolutionUVE);
+        }
+        if (facesOk) {
+            cache.captureGeneration = candidate.generation;
+            cache.ready = true;
+            ++captured;
+        } else {
+            m_impl->DestroyReflectionProbeGpuCacheUVE(cache);
+            m_impl->reflectionProbeCaptures.erase(candidate.entity);
+        }
+    }
+    m_impl->probeCaptureViewActive = false;
+    static_cast<void>(m_impl->ResizeTargetsUVE(savedWidth, savedHeight));
+}
+
 void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity) {
-    m_impl->lastFrameDiagnostics = Renderer3DFrameDiagnosticsUVE{};
-    // Reset here, not beside the main pass: the shadow cascades are recorded BEFORE it, so a reset
-    // at the main pass would discard the count this counter exists to report.
-    m_impl->shadowInstancedDrawCallsThisFrame = 0U;
-    m_impl->lastFrameDiagnostics.renderTargetWidth = m_impl->targetWidth;
-    m_impl->lastFrameDiagnostics.renderTargetHeight = m_impl->targetHeight;
+    const bool capturingProbe = m_impl->probeCaptureViewActive;
+    if (!capturingProbe) {
+        m_impl->lastFrameDiagnostics = Renderer3DFrameDiagnosticsUVE{};
+        // Reset here, not beside the main pass: the shadow cascades are recorded BEFORE it, so a reset
+        // at the main pass would discard the count this counter exists to report.
+        m_impl->shadowInstancedDrawCallsThisFrame = 0U;
+        m_impl->lastFrameDiagnostics.renderTargetWidth = m_impl->targetWidth;
+        m_impl->lastFrameDiagnostics.renderTargetHeight = m_impl->targetHeight;
+    }
     if (m_impl->colorTarget == kInvalidTextureHandleUVE || m_impl->depthTarget == kInvalidTextureHandleUVE) {
         return;
     }
@@ -2482,6 +2734,15 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         UVE_ERROR("Renderer3DUVE: RenderFrameUVE cannot render to a zero-sized target");
         return;
     }
+    if (!capturingProbe) {
+        CaptureDueReflectionProbesUVE(entityManager, cameraEntity);
+        m_impl->lastFrameDiagnostics = Renderer3DFrameDiagnosticsUVE{};
+        m_impl->shadowInstancedDrawCallsThisFrame = 0U;
+        m_impl->lastFrameDiagnostics.renderTargetWidth = m_impl->targetWidth;
+        m_impl->lastFrameDiagnostics.renderTargetHeight = m_impl->targetHeight;
+    } else {
+        m_impl->ClearBoundReflectionProbeUVE();
+    }
     const float aspectRatio = static_cast<float>(m_impl->targetWidth) / static_cast<float>(m_impl->targetHeight);
     const bool aspectRatioValid = std::isfinite(aspectRatio) && aspectRatio > 0.0F;
     UVE_ASSERT(aspectRatioValid);
@@ -2489,29 +2750,48 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         UVE_ERROR("Renderer3DUVE: RenderFrameUVE computed an invalid target aspect ratio");
         return;
     }
-    m_impl->humanEyeEnabled = camera.projection == Scene::CameraProjectionModeUVE::HumanEye;
-    m_impl->humanEyeCenterScale =
-        m_impl->humanEyeEnabled ? Scene::HumanEyeCenterScaleUVE(aspectRatio) : 1.0F;
+    m_impl->environmentFrame = Scene::ResolveWorldEnvironmentFrameUVE(entityManager, m_impl->ambientColor);
+    Math::Matrix4x4UVE viewProjection{};
+    Math::Vector3UVE viewPosition{};
+    Math::QuaternionUVE viewRotation = normalizedCameraRotation;
+    if (capturingProbe) {
+        if (!Math::TryNormalizeUVE(m_impl->probeCaptureRotation, viewRotation)) {
+            UVE_ERROR("Renderer3DUVE: probe capture rotation is invalid");
+            return;
+        }
+        viewPosition = m_impl->probeCapturePosition;
+        m_impl->humanEyeEnabled = false;
+        m_impl->humanEyeCenterScale = 1.0F;
+        m_impl->environmentCameraNear = m_impl->probeCaptureNear;
+        m_impl->environmentCameraFar = m_impl->probeCaptureFar;
+        constexpr float kHalfPiUVE = 3.14159265358979323846F * 0.5F;
+        viewProjection = Math::Matrix4x4UVE::PerspectiveUVE(kHalfPiUVE, aspectRatio, m_impl->probeCaptureNear,
+                                                            m_impl->probeCaptureFar) *
+                         Math::Matrix4x4UVE::ViewFromPositionAndRotationUVE(viewPosition, viewRotation);
+        m_impl->skyTanHalfFov = 1.0F;
+    } else {
+        m_impl->humanEyeEnabled = camera.projection == Scene::CameraProjectionModeUVE::HumanEye;
+        m_impl->humanEyeCenterScale =
+            m_impl->humanEyeEnabled ? Scene::HumanEyeCenterScaleUVE(aspectRatio) : 1.0F;
+        m_impl->environmentCameraNear = camera.nearPlane;
+        m_impl->environmentCameraFar = camera.farPlane;
+        viewProjection = m_impl->cameraSystem.ComputeViewProjectionUVE(entityManager, cameraEntity, aspectRatio);
+        viewPosition = m_impl->cameraSystem.GetWorldPositionUVE(entityManager, cameraEntity);
+        const float skyFovY = camera.projection == Scene::CameraProjectionModeUVE::Orthographic
+                                  ? 60.0F
+                                  : Scene::VerticalFieldOfViewDegreesUVE(camera, aspectRatio);
+        m_impl->skyTanHalfFov = std::tan(skyFovY * (3.14159265358979323846F / 360.0F));
+    }
     m_impl->humanEyeTexelX = 1.0F / static_cast<float>(m_impl->targetWidth);
     m_impl->humanEyeTexelY = 1.0F / static_cast<float>(m_impl->targetHeight);
-    m_impl->environmentFrame = Scene::ResolveWorldEnvironmentFrameUVE(entityManager, m_impl->ambientColor);
-    m_impl->environmentCameraNear = camera.nearPlane;
-    m_impl->environmentCameraFar = camera.farPlane;
     m_impl->environmentAspect = aspectRatio;
-    m_impl->skyCameraRight = Math::RotateVectorUVE(normalizedCameraRotation, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
-    m_impl->skyCameraUp = Math::RotateVectorUVE(normalizedCameraRotation, Math::Vector3UVE{0.0F, 1.0F, 0.0F});
-    m_impl->skyCameraForward = Math::RotateVectorUVE(normalizedCameraRotation, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
-    const float skyFovY =
-        camera.projection == Scene::CameraProjectionModeUVE::Orthographic
-            ? 60.0F
-            : Scene::VerticalFieldOfViewDegreesUVE(camera, aspectRatio);
-    m_impl->skyTanHalfFov = std::tan(skyFovY * (3.14159265358979323846F / 360.0F));
+    m_impl->skyCameraRight = Math::RotateVectorUVE(viewRotation, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+    m_impl->skyCameraUp = Math::RotateVectorUVE(viewRotation, Math::Vector3UVE{0.0F, 1.0F, 0.0F});
+    m_impl->skyCameraForward = Math::RotateVectorUVE(viewRotation, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
     m_impl->lastFrameDiagnostics.primitiveProgramReady = m_impl->primitiveProgram->IsValidUVE();
     m_impl->lastFrameDiagnostics.particleProgramReady = m_impl->particleProgram->IsValidUVE();
     m_impl->lastFrameDiagnostics.toneMappingProgramReady = m_impl->toneMappingProgram->IsValidUVE();
 
-    const Math::Matrix4x4UVE viewProjection =
-        m_impl->cameraSystem.ComputeViewProjectionUVE(entityManager, cameraEntity, aspectRatio);
     const Math::FrustumUVE frustum = m_impl->cameraSystem.ExtractFrustumUVE(viewProjection);
     // SSAO reconstructs view-space position from depth using only the projection step (see
     // ssao.glsl's doc comment) - a singular projection (never expected in practice for a valid
@@ -2520,7 +2800,6 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         m_impl->cameraSystem.ComputeProjectionMatrixUVE(entityManager, cameraEntity, aspectRatio);
     Math::Matrix4x4UVE inverseProjection{};
     const bool projectionInvertible = Math::TryInverseUVE(projection, inverseProjection);
-    const Math::Vector3UVE viewPosition = m_impl->cameraSystem.GetWorldPositionUVE(entityManager, cameraEntity);
     // Selected by contribution at the camera, not by whichever four the ECS happened to visit
     // first. The old order was not merely arbitrary - it could change when an unrelated entity was
     // created or destroyed, so a light could vanish from the player's face for no visible reason.
@@ -2545,6 +2824,11 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     }
     Scene::ApplySunToWorldEnvironmentFrameUVE(m_impl->environmentFrame, m_impl->sunDirection, m_impl->sunColor,
                                               m_impl->sunEnergy);
+    m_impl->fogVolumeCount =
+        Scene::CollectFogVolume3DFramesUVE(entityManager, viewPosition, m_impl->fogVolumes);
+    if (!capturingProbe) {
+        m_impl->BindReflectionProbeForViewUVE(entityManager, viewPosition);
+    }
     const Math::Vector3UVE ambientColor = m_impl->environmentFrame.ambientColor;
 
     // Built ONCE for the whole frame, then culled against each of the four frusta below. Before
@@ -2562,7 +2846,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->lastFrameDiagnostics.distanceCulledEntities = m_impl->visibilitySet.distanceCulledEntities;
 
     const LightDataUVE* const shadowCaster = FindShadowCasterUVE(lights);
-    bool shadowsReady = shadowCaster != nullptr && m_impl->shadowProgram->IsValidUVE() &&
+    bool shadowsReady = !capturingProbe && shadowCaster != nullptr && m_impl->shadowProgram->IsValidUVE() &&
                         AreShadowMapTargetsValidUVE(m_impl->shadowMapTargets);
     ShadowCascadeMatricesUVE lightSpaceMatrices{};
     ShadowCascadeSplitsUVE cascadeSplits{};
@@ -2658,33 +2942,35 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     // The decal pass, run against the same frame data the mesh pass just built: the receiving
     // surfaces are already resolved, placed and bounds-transformed, so this asks where each decal's
     // volume lands rather than walking the scene a second time to find out what it landed on.
-    m_impl->decalRenderer.BuildDrawListUVE(entityManager, m_impl->assetManager, m_impl->assetDatabase,
-                                            m_impl->visibilitySet, viewPosition, frustum,
-                                            kMainViewReceiverLayerMaskUVE, m_impl->decalDraws);
-    BuildDecalDrawPlanUVE(m_impl->decalDraws, m_impl->decalPlan);
-    // A decal buffer the plan did not touch this frame belongs to a decal that is gone, hidden or
-    // no longer painting - the same lifetime rule the skinned-mesh cache applies to its own.
-    for (auto it = m_impl->decalBuffers.begin(); it != m_impl->decalBuffers.end();) {
-        if (it->second.frame != m_impl->decalFrame) {
-            DestroyBufferIfValidUVE(m_impl->renderDevice, it->second.vertexBuffer);
-            DestroyBufferIfValidUVE(m_impl->renderDevice, it->second.indexBuffer);
-            it = m_impl->decalBuffers.erase(it);
-        } else {
-            ++it;
+    if (!capturingProbe) {
+        m_impl->decalRenderer.BuildDrawListUVE(entityManager, m_impl->assetManager, m_impl->assetDatabase,
+                                                m_impl->visibilitySet, viewPosition, frustum,
+                                                kMainViewReceiverLayerMaskUVE, m_impl->decalDraws);
+        BuildDecalDrawPlanUVE(m_impl->decalDraws, m_impl->decalPlan);
+        // A decal buffer the plan did not touch this frame belongs to a decal that is gone, hidden or
+        // no longer painting - the same lifetime rule the skinned-mesh cache applies to its own.
+        for (auto it = m_impl->decalBuffers.begin(); it != m_impl->decalBuffers.end();) {
+            if (it->second.frame != m_impl->decalFrame) {
+                DestroyBufferIfValidUVE(m_impl->renderDevice, it->second.vertexBuffer);
+                DestroyBufferIfValidUVE(m_impl->renderDevice, it->second.indexBuffer);
+                it = m_impl->decalBuffers.erase(it);
+            } else {
+                ++it;
+            }
         }
+        ++m_impl->decalFrame;
+        m_impl->lastFrameDiagnostics.decalsConsidered = m_impl->decalDraws.decalsConsidered;
+        m_impl->lastFrameDiagnostics.decalDrawsExtracted = m_impl->decalDraws.draws.size();
+        m_impl->lastFrameDiagnostics.decalPatchesExtracted = m_impl->decalDraws.GetPatchCountUVE();
+        m_impl->lastFrameDiagnostics.decalTrianglesExtracted = m_impl->decalDraws.GetTriangleCountUVE();
+        m_impl->lastFrameDiagnostics.decalsWithoutReceivers = m_impl->decalDraws.decalsWithoutReceivers;
+        m_impl->lastFrameDiagnostics.decalDrawsDropped = m_impl->decalPlan.drawsTruncated +
+                                                         m_impl->decalPlan.drawsWithoutMaterial +
+                                                         m_impl->decalPlan.drawsWithoutGeometry +
+                                                         m_impl->decalPlan.drawsWithoutInverse +
+                                                         m_impl->decalPlan.drawsWithoutPaint;
     }
-    ++m_impl->decalFrame;
-    m_impl->lastFrameDiagnostics.decalsConsidered = m_impl->decalDraws.decalsConsidered;
-    m_impl->lastFrameDiagnostics.decalDrawsExtracted = m_impl->decalDraws.draws.size();
-    m_impl->lastFrameDiagnostics.decalPatchesExtracted = m_impl->decalDraws.GetPatchCountUVE();
-    m_impl->lastFrameDiagnostics.decalTrianglesExtracted = m_impl->decalDraws.GetTriangleCountUVE();
-    m_impl->lastFrameDiagnostics.decalsWithoutReceivers = m_impl->decalDraws.decalsWithoutReceivers;
-    m_impl->lastFrameDiagnostics.decalDrawsDropped = m_impl->decalPlan.drawsTruncated +
-                                                     m_impl->decalPlan.drawsWithoutMaterial +
-                                                     m_impl->decalPlan.drawsWithoutGeometry +
-                                                     m_impl->decalPlan.drawsWithoutInverse +
-                                                     m_impl->decalPlan.drawsWithoutPaint;
-    if (m_impl->particleRuntimeForFrame != nullptr) {
+    if (m_impl->particleRuntimeForFrame != nullptr && !capturingProbe) {
         const ParticleRenderSnapshotUVE particleSnapshot =
             ParticleRenderBridgeUVE::ExtractUVE(*m_impl->particleRuntimeForFrame);
         queue.AppendParticleSnapshotUVE(particleSnapshot);
@@ -2773,9 +3059,13 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->lastFrameDiagnostics.shadowInstancedDrawCallsRecorded =
                 m_impl->shadowInstancedDrawCallsThisFrame;
             m_impl->lastFrameDiagnostics.decalDrawCallsRecorded =
-                m_impl->RecordDecalItemsUVE(m_impl->decalPlan, frameUniforms, commandBuffer);
+                m_impl->probeCaptureViewActive
+                    ? 0U
+                    : m_impl->RecordDecalItemsUVE(m_impl->decalPlan, frameUniforms, commandBuffer);
             m_impl->lastFrameDiagnostics.particleDrawCommandsSubmitted =
-                m_impl->RecordParticleItemsUVE(m_impl->particleDrawRecording, frameUniforms, commandBuffer);
+                m_impl->probeCaptureViewActive
+                    ? 0U
+                    : m_impl->RecordParticleItemsUVE(m_impl->particleDrawRecording, frameUniforms, commandBuffer);
             m_impl->lastFrameDiagnostics.particleDrawCallsRecorded =
                 m_impl->lastFrameDiagnostics.particleDrawCommandsSubmitted > 0U ? 1U : 0U;
             m_impl->lastFrameDiagnostics.primitiveDrawCallsRecorded +=
@@ -2832,11 +3122,13 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                                        m_impl->environmentFrame.postProcessingEnabled;
     const bool environmentBloom = !m_impl->environmentFrame.hasEnvironment || m_impl->environmentFrame.bloomEnabled;
     const bool environmentSsao = !m_impl->environmentFrame.hasEnvironment || m_impl->environmentFrame.ssaoEnabled;
-    const bool ssaoActive = environmentAllowsPost && environmentSsao && m_impl->postProcessSettings.ssaoEnabledUVE &&
+    const bool ssaoActive = !capturingProbe && environmentAllowsPost && environmentSsao &&
+                             m_impl->postProcessSettings.ssaoEnabledUVE &&
                              m_impl->ssaoTarget != kInvalidTextureHandleUVE && projectionInvertible &&
                              m_impl->ssaoProgram->IsValidUVE() && m_impl->ssaoCompositeProgram->IsValidUVE();
-    const bool bloomActive = environmentAllowsPost && environmentBloom && m_impl->postProcessSettings.bloomEnabledUVE &&
-                              bloomTargetsValid && m_impl->bloomBrightPassProgram->IsValidUVE() &&
+    const bool bloomActive = !capturingProbe && environmentAllowsPost && environmentBloom &&
+                              m_impl->postProcessSettings.bloomEnabledUVE && bloomTargetsValid &&
+                              m_impl->bloomBrightPassProgram->IsValidUVE() &&
                               m_impl->bloomBlurProgram->IsValidUVE() && m_impl->bloomCompositeProgram->IsValidUVE();
 
     if (ssaoActive) {
@@ -3054,6 +3346,26 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->toneMappingProgram->SetFloatUVE("uFogHeight", m_impl->environmentFrame.fogHeight);
             m_impl->toneMappingProgram->SetFloatUVE("uFogHeightFalloff", m_impl->environmentFrame.fogHeightFalloff);
             m_impl->toneMappingProgram->SetFloatUVE("uFogSunScatter", m_impl->environmentFrame.fogSunScatter);
+            m_impl->toneMappingProgram->SetIntUVE("uFogVolumeCount",
+                                                   static_cast<std::int32_t>(m_impl->fogVolumeCount));
+            const auto& fogNames = GetRendererUniformNamesUVE().fogVolumes;
+            for (std::size_t volumeIndex = 0; volumeIndex < Scene::kMaximumFogVolumesPerFrameUVE; ++volumeIndex) {
+                const Scene::FogVolume3DFrameUVE volume =
+                    volumeIndex < m_impl->fogVolumeCount ? m_impl->fogVolumes[volumeIndex] : Scene::FogVolume3DFrameUVE{};
+                const FogVolumeUniformNamesUVE& names = fogNames[volumeIndex];
+                m_impl->toneMappingProgram->SetVector3UVE(names.position, volume.worldPosition);
+                m_impl->toneMappingProgram->SetVector3UVE(names.axisX, volume.axisX);
+                m_impl->toneMappingProgram->SetVector3UVE(names.axisY, volume.axisY);
+                m_impl->toneMappingProgram->SetVector3UVE(names.axisZ, volume.axisZ);
+                m_impl->toneMappingProgram->SetVector3UVE(names.scale, volume.worldScale);
+                m_impl->toneMappingProgram->SetVector3UVE(names.size, volume.size);
+                m_impl->toneMappingProgram->SetVector3UVE(names.albedo, volume.albedo);
+                m_impl->toneMappingProgram->SetVector3UVE(names.emission, volume.emission);
+                m_impl->toneMappingProgram->SetFloatUVE(names.density, volume.density);
+                m_impl->toneMappingProgram->SetFloatUVE(names.heightFalloff, volume.heightFalloff);
+                m_impl->toneMappingProgram->SetFloatUVE(names.edgeFade, volume.edgeFade);
+                m_impl->toneMappingProgram->SetIntUVE(names.shape, static_cast<std::int32_t>(volume.shape));
+            }
             m_impl->toneMappingProgram->ApplyToUVE(commandBuffer);
             commandBuffer.BindTextureUVE(m_impl->colorTarget, 0U);
             commandBuffer.BindTextureUVE(m_impl->depthTarget, 1U);
@@ -3066,7 +3378,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     // (Phase U3b) a RenderFrameToTargetUVE() caller-supplied texture whose size it passed directly
     // (destinationTextureSizeOverride) - TextureHandleUVE itself has no queryable size on
     // IRenderDeviceUVE, which is why that call must supply it explicitly.
-    if (m_impl->uiRuntimeForFrame != nullptr) {
+    if (m_impl->uiRuntimeForFrame != nullptr && !capturingProbe) {
         const std::uint32_t uiWidth = m_impl->destinationTextureSizeOverride.has_value()
                                            ? m_impl->destinationTextureSizeOverride->first
                                        : m_impl->destinationViewportOverride.has_value()

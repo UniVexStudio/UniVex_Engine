@@ -665,10 +665,9 @@ private:
     /// under continuous demand - with camera distance (squared, no sqrt) and (index,generation)
     /// as the tie-breaks. Stragglers age their captureWaitTicks and re-request on the next tick.
     /// A serviced capture flips capturedOnce, clears the
-    /// OnDemand latch, and bumps captureGeneration - the runtime contract a future shading pass
-    /// binds against. Honest boundary: no cubemap GPU capture exists in this engine yet, so the
-    /// sync owns the deterministic scheduler and the measurable blend weights; the imagery side
-    /// lands with the reflection BRDF pass.
+    /// OnDemand latch, and bumps captureGeneration - the runtime contract Renderer3DUVE binds
+    /// against when it renders six 2D cubemap faces. This sync stays CPU-only: engine tests must
+    /// still pass without a GPU. The imagery lives in the renderer, not in the generation counter.
     void SyncReflectionProbe3DObjectsUVE();
 
     /// The WorldPartition3D consumer: cell-based visibility for a partition's own subtree

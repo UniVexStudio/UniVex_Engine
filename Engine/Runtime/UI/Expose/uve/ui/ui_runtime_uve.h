@@ -24,13 +24,9 @@ struct UITextLocalizationUVE final {
     std::function<bool(Scene::EntityUVE)> isAutoTranslated;
 };
 
-/// Per-frame reconciliation of authored screen-space UI (Canvas/UIText/UIImage/UIButton) into two
-/// things: real button hit-testing against the actual mouse state (writing `isHovered`/
-/// `wasClickedThisFrame` back onto UIButtonComponentUVE, the same "runtime state written by a
-/// Sync* system" convention CharacterControllerComponentUVE::isGrounded already established), and
-/// a plain-data UIDrawBatchUVE snapshot a renderer can later turn into pixels (Phase U3 - no GPU
-/// resource is touched here). Ticked once per real frame (not the fixed-step loop), since UI
-/// responsiveness should track real input latency, not simulation steps.
+/// Per-frame reconciliation of authored screen-space UI (Canvas/UIText/UIImage/UIButton) into
+/// button hit-testing and a UIDrawBatchUVE. CanvasComponentUVE on an ancestor hides widgets and
+/// orders canvases by sortOrder. Widgets without a canvas still draw. No GPU work here.
 /// Thread-safety: not thread-safe; owned and ticked from the scene/runtime thread.
 class UIRuntimeUVE final {
 public:

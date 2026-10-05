@@ -113,6 +113,13 @@ uniform float uShadowCascadeSplits[3];
 uniform int uShadowCascadeCount;
 // Increment 31: fraction of each non-final cascade depth interval used to cross-fade into the next.
 uniform float uShadowCascadeBlendRatio;
+uniform int uReflectionProbeEnabled;
+uniform vec3 uReflectionProbePosition;
+uniform vec3 uReflectionProbeAxisX;
+uniform vec3 uReflectionProbeAxisY;
+uniform vec3 uReflectionProbeAxisZ;
+uniform vec3 uReflectionProbeHalfExtents;
+uniform sampler2D uReflectionProbeFaces[6];
 
 const float kPiUVE = 3.14159265359;
 const float kBrdfEpsilonUVE = 0.0001;
@@ -131,6 +138,124 @@ vec3 HemisphereAmbientUVE(vec3 normal) {
     }
     float hemi = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
     return mix(uGroundAmbient, uSkyAmbient, hemi);
+}
+
+int SelectCubemapFaceUVE(vec3 direction) {
+    vec3 a = abs(direction);
+    if (a.x >= a.y && a.x >= a.z) {
+        return direction.x >= 0.0 ? 0 : 1;
+    }
+    if (a.y >= a.z) {
+        return direction.y >= 0.0 ? 2 : 3;
+    }
+    return direction.z >= 0.0 ? 4 : 5;
+}
+
+vec3 CubemapFaceForwardUVE(int face) {
+    if (face == 0) {
+        return vec3(1.0, 0.0, 0.0);
+    }
+    if (face == 1) {
+        return vec3(-1.0, 0.0, 0.0);
+    }
+    if (face == 2) {
+        return vec3(0.0, 1.0, 0.0);
+    }
+    if (face == 3) {
+        return vec3(0.0, -1.0, 0.0);
+    }
+    if (face == 4) {
+        return vec3(0.0, 0.0, 1.0);
+    }
+    return vec3(0.0, 0.0, -1.0);
+}
+
+vec3 CubemapFaceUpUVE(int face) {
+    if (face == 2) {
+        return vec3(0.0, 0.0, -1.0);
+    }
+    if (face == 3) {
+        return vec3(0.0, 0.0, 1.0);
+    }
+    return vec3(0.0, 1.0, 0.0);
+}
+
+vec3 SampleReflectionProbeFaceUVE(int face, vec2 uv) {
+    if (face == 0) {
+        return texture(uReflectionProbeFaces[0], uv).rgb;
+    }
+    if (face == 1) {
+        return texture(uReflectionProbeFaces[1], uv).rgb;
+    }
+    if (face == 2) {
+        return texture(uReflectionProbeFaces[2], uv).rgb;
+    }
+    if (face == 3) {
+        return texture(uReflectionProbeFaces[3], uv).rgb;
+    }
+    if (face == 4) {
+        return texture(uReflectionProbeFaces[4], uv).rgb;
+    }
+    return texture(uReflectionProbeFaces[5], uv).rgb;
+}
+
+vec3 SampleReflectionProbeUVE(vec3 direction) {
+    int face = SelectCubemapFaceUVE(direction);
+    vec3 forward = CubemapFaceForwardUVE(face);
+    vec3 right = SafeNormalizeUVE(cross(forward, CubemapFaceUpUVE(face)));
+    vec3 cameraUp = cross(-forward, right);
+    float denom = max(dot(direction, forward), kBrdfEpsilonUVE);
+    vec2 uv = vec2(dot(direction, right), dot(direction, cameraUp)) / denom * 0.5 + 0.5;
+    return SampleReflectionProbeFaceUVE(face, uv);
+}
+
+float ReflectionProbeInfluenceUVE(vec3 worldPoint) {
+    vec3 halfExtents = uReflectionProbeHalfExtents;
+    if (halfExtents.x <= 0.0 || halfExtents.y <= 0.0 || halfExtents.z <= 0.0) {
+        return 0.0;
+    }
+    vec3 delta = worldPoint - uReflectionProbePosition;
+    vec3 localPoint = vec3(dot(delta, uReflectionProbeAxisX), dot(delta, uReflectionProbeAxisY),
+                           dot(delta, uReflectionProbeAxisZ));
+    float normalizedDistance = max(max(abs(localPoint.x) / halfExtents.x, abs(localPoint.y) / halfExtents.y),
+                                   abs(localPoint.z) / halfExtents.z);
+    if (normalizedDistance >= 1.0) {
+        return 0.0;
+    }
+    return 1.0 - normalizedDistance;
+}
+
+vec3 ReflectionProbeBoxProjectUVE(vec3 worldOrigin, vec3 worldDirection) {
+    vec3 halfExtents = uReflectionProbeHalfExtents;
+    vec3 delta = worldOrigin - uReflectionProbePosition;
+    vec3 localOrigin = vec3(dot(delta, uReflectionProbeAxisX), dot(delta, uReflectionProbeAxisY),
+                            dot(delta, uReflectionProbeAxisZ));
+    vec3 localDirection = vec3(dot(worldDirection, uReflectionProbeAxisX),
+                               dot(worldDirection, uReflectionProbeAxisY),
+                               dot(worldDirection, uReflectionProbeAxisZ));
+    float tFar = 1.0e20;
+    for (int axis = 0; axis < 3; ++axis) {
+        float origin = axis == 0 ? localOrigin.x : (axis == 1 ? localOrigin.y : localOrigin.z);
+        float dir = axis == 0 ? localDirection.x : (axis == 1 ? localDirection.y : localDirection.z);
+        float halfExtent = axis == 0 ? halfExtents.x : (axis == 1 ? halfExtents.y : halfExtents.z);
+        if (abs(dir) < kBrdfEpsilonUVE) {
+            if (origin < -halfExtent || origin > halfExtent) {
+                return worldDirection;
+            }
+            continue;
+        }
+        float inv = 1.0 / dir;
+        float t1 = (-halfExtent - origin) * inv;
+        float t2 = (halfExtent - origin) * inv;
+        tFar = min(tFar, max(t1, t2));
+    }
+    if (!(tFar > kBrdfEpsilonUVE)) {
+        return worldDirection;
+    }
+    vec3 localHit = localOrigin + localDirection * tFar;
+    vec3 worldHit = uReflectionProbePosition + uReflectionProbeAxisX * localHit.x +
+                    uReflectionProbeAxisY * localHit.y + uReflectionProbeAxisZ * localHit.z;
+    return worldHit - uReflectionProbePosition;
 }
 
 float DistributionGgxUVE(float normalDotHalf, float roughness) {
@@ -286,11 +411,9 @@ void main() {
     // single most visible way a correct BRDF still looks wrong, and it is why "the PBR looks
     // broken" usually means "there is no ambient specular".
     //
-    // This is not image-based lighting: there is no environment cubemap here, so the ambient
-    // colour stands in for the environment's average radiance. What it does buy is the right
-    // ENERGY SPLIT - a metal reflects the ambient tinted by its own albedo, a dielectric reflects
-    // about 4% of it untinted, and both lose energy to roughness. A real IBL probe replaces the
-    // source of that radiance later without changing this structure.
+    // Specular ambient comes from the strongest captured ReflectionProbe3D at the eye (six 2D
+    // faces, box-projected). Diffuse ambient stays the hemisphere - a 128 LDR capture is a poor
+    // irradiance map. Disabled probes leave this path identical to hemisphere-only.
     vec3 ambientBaseReflectance = mix(vec3(0.04), albedo, metallic);
     float normalDotViewAmbient = max(dot(normal, viewDirection), 0.0);
     // Roughness-aware Fresnel: the standard Schlick term goes to white at grazing angles, which on
@@ -303,8 +426,18 @@ void main() {
             pow(1.0 - normalDotViewAmbient, 5.0);
     vec3 ambientDiffuseWeight = (vec3(1.0) - ambientFresnel) * (1.0 - metallic);
     vec3 ambientColor = HemisphereAmbientUVE(normal);
+    vec3 specEnv = ambientColor;
+    if (uReflectionProbeEnabled != 0) {
+        float probeWeight = ReflectionProbeInfluenceUVE(vWorldPosition);
+        if (probeWeight > 0.0) {
+            vec3 reflection = reflect(-viewDirection, normal);
+            vec3 sampleDir = ReflectionProbeBoxProjectUVE(vWorldPosition, reflection);
+            vec3 captured = SampleReflectionProbeUVE(sampleDir);
+            specEnv = mix(ambientColor, captured, probeWeight * (1.0 - roughness * roughness));
+        }
+    }
     vec3 ambientDiffuse = ambientDiffuseWeight * albedo * ambientColor;
-    vec3 ambientSpecular = ambientFresnel * ambientColor;
+    vec3 ambientSpecular = ambientFresnel * specEnv;
     // AO occludes both terms. Applying it to the diffuse alone is a common shortcut, but a crevice
     // does not stop reflecting light in a way the sky can reach either.
     vec3 lighting = (ambientDiffuse + ambientSpecular) * ambientOcclusion + uEmissiveColor;
