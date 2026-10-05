@@ -273,14 +273,14 @@ struct MaterialGpuResourcesUVE {
     TextureHandleUVE albedoTexture;
     TextureHandleUVE normalTexture;
     TextureHandleUVE aoTexture;
-    /// Depth-write off, source-alpha blend. Used when SurfaceInstance3D fades the mesh; the
-    /// ordinary program stays opaque so solid draws keep early-z.
+    /// Depth-write off, source-alpha blend. Used when SurfaceInstance3D fades the mesh or draws
+    /// an overlay; the ordinary program stays opaque so solid draws keep early-z.
     std::shared_ptr<Shader::ShaderProgramUVE> blendedProgram;
 };
 
 [[nodiscard]] Shader::ShaderProgramUVE* MeshColorProgramUVE(const MaterialGpuResourcesUVE& resources,
                                                            const RenderItemUVE& item) noexcept {
-    if (item.opacity < 1.0F) {
+    if (item.opacity < 1.0F || item.overlay) {
         if (resources.blendedProgram == nullptr || !resources.blendedProgram->IsValidUVE()) {
             return nullptr;
         }

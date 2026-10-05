@@ -450,7 +450,31 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             const bool isTransparent = material->isTransparent || opacity < 1.0F;
             outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
                 assetPairIndex, candidatePlacement, isTransparent, entity, renderLayers, sortingOffset,
-                sortingUseAabbCenter, castsShadow, drawsInView, opacity});
+                sortingUseAabbCenter, castsShadow, drawsInView, opacity, false});
+
+            if (surface == nullptr || !drawsInView || !Scene::SurfaceInstance3DHasOverlayUVE(*surface)) {
+                return;
+            }
+            Asset::AssetGuidUVE overlayGuid = Asset::kInvalidAssetGuidUVE;
+            if (!TryResolveMaterialOverridePathUVE(surface->materialOverlayPath, assetDatabase,
+                                                   materialOverridePathIndex, materialOverridePathIndexBuilt,
+                                                   overlayGuid)) {
+                ++outVisibilitySet.invalidAssetReferences;
+                return;
+            }
+            const ResolvedAssetUVE<Asset::MaterialAssetUVE>& resolvedOverlay =
+                ResolveOnceUVE(resolvedMaterials, overlayGuid, assetManager, assetDatabase);
+            outVisibilitySet.failedAssetLoads += static_cast<std::size_t>(resolvedOverlay.failed);
+            outVisibilitySet.pendingAssetLoads += static_cast<std::size_t>(resolvedOverlay.pending);
+            if (!resolvedOverlay.IsUsableUVE()) {
+                return;
+            }
+            const std::size_t overlayPairIndex = ResolveAssetPairIndexUVE(
+                assetPairSlots, outVisibilitySet.assetPairs, effectiveMeshGuid, overlayGuid, resolvedMesh.handle,
+                resolvedOverlay.handle);
+            outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
+                overlayPairIndex, candidatePlacement, true, entity, renderLayers, sortingOffset,
+                sortingUseAabbCenter, false, true, opacity, true});
         });
 
     // Bound the cache. Without this it retains an entry for every entity the scene has ever had,
@@ -517,11 +541,14 @@ void MeshRendererUVE::CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visib
                 sortDepth = cullFrustum.planes[kNearPlaneIndexUVE].GetSignedDistanceUVE(origin);
             }
             sortDepth = Scene::ApplyRenderInstance3DSortingOffsetUVE(sortDepth, candidate.sortingOffset);
+            if (candidate.overlay) {
+                sortDepth = Scene::ApplySurfaceInstance3DOverlaySortBiasUVE(sortDepth);
+            }
             if (!std::isfinite(sortDepth)) {
                 continue;
             }
             RenderItemUVE item{eligibility.worldMatrix, assetPair.meshHandle, assetPair.materialHandle, sortDepth,
-                               candidate.renderLayers, candidate.opacity};
+                               candidate.renderLayers, candidate.opacity, candidate.overlay};
             // Shadow cascades write depth only and consume opaqueItems. A faded or material-
             // transparent caster still belongs there; the colour view is what sorts it back-to-front.
             if (!visibilitySet.shadowPass && candidate.isTransparent) {

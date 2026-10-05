@@ -2157,5 +2157,103 @@ TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_FullyTransparentSurfaceIsDropp
     static_cast<void>(solid);
 }
 
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_OverlayAddsASecondColourPassThatDoesNotCast) {
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>([](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+        mesh.localBounds =
+            Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+        return true;
+    });
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>([](const std::filesystem::path&,
+                                                              Asset::MaterialAssetUVE&) { return true; });
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_overlay.uvmodel");
+    const Asset::AssetGuidUVE baseMaterial = assetDatabase.RegisterUVE("mesh_renderer_tests_si_overlay_base.uvmat");
+    const Asset::AssetGuidUVE overlayMaterial =
+        assetDatabase.RegisterUVE("mesh_renderer_tests_si_overlay_flash.uvmat");
+    const Scene::EntityUVE entity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, baseMaterial);
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.materialOverlayPath = "mesh_renderer_tests_si_overlay_flash.uvmat";
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+    WaitUntilAssetsReadyUVE(meshGuid, baseMaterial);
+    WaitUntilAssetsReadyUVE(meshGuid, overlayMaterial);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 2U);
+    std::size_t overlays = 0U;
+    for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
+        if (candidate.overlay) {
+            ++overlays;
+            EXPECT_FALSE(candidate.castsShadow);
+            EXPECT_TRUE(candidate.isTransparent);
+            EXPECT_TRUE(candidate.drawsInView);
+        }
+    }
+    EXPECT_EQ(overlays, 1U);
+
+    RenderQueueUVE colour;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), colour);
+    ASSERT_EQ(colour.opaqueItems.size(), 1U);
+    ASSERT_EQ(colour.transparentItems.size(), 1U);
+    EXPECT_FALSE(colour.opaqueItems[0].overlay);
+    EXPECT_TRUE(colour.transparentItems[0].overlay);
+    EXPECT_EQ(colour.transparentItems[0].materialHandle.GetGuidUVE(), overlayMaterial);
+
+    visibilitySet.shadowPass = true;
+    RenderQueueUVE shadow;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), shadow);
+    ASSERT_EQ(shadow.opaqueItems.size(), 1U);
+    EXPECT_FALSE(shadow.opaqueItems[0].overlay);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_MissingOverlayKeepsTheBaseMesh) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_overlay_miss.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_overlay_miss.uvmat");
+    const Scene::EntityUVE entity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.materialOverlayPath = "does_not_exist_overlay.uvmat";
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_FALSE(visibilitySet.candidates[0].overlay);
+    EXPECT_GE(visibilitySet.invalidAssetReferences, 1U);
+}
+
+TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_OverlaySortsCloserThanItsHost) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/true);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_overlay_sort.uvmodel");
+    const Asset::AssetGuidUVE baseMaterial = assetDatabase.RegisterUVE("mesh_renderer_tests_si_overlay_sort_base.uvmat");
+    const Asset::AssetGuidUVE overlayMaterial =
+        assetDatabase.RegisterUVE("mesh_renderer_tests_si_overlay_sort_flash.uvmat");
+    const Scene::EntityUVE entity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, baseMaterial);
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.materialOverlayPath = "mesh_renderer_tests_si_overlay_sort_flash.uvmat";
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+    WaitUntilAssetsReadyUVE(meshGuid, baseMaterial);
+    WaitUntilAssetsReadyUVE(meshGuid, overlayMaterial);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    RenderQueueUVE queue;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), queue);
+    ASSERT_EQ(queue.transparentItems.size(), 2U);
+    float hostDepth = 0.0F;
+    float overlayDepth = 0.0F;
+    for (const RenderItemUVE& item : queue.transparentItems) {
+        if (item.overlay) {
+            overlayDepth = item.sortDepth;
+        } else {
+            hostDepth = item.sortDepth;
+        }
+    }
+    EXPECT_LT(overlayDepth, hostDepth);
+}
+
 } // namespace
 } // namespace UVE::Render::Tests

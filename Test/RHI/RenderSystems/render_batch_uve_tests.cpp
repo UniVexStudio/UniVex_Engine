@@ -109,6 +109,18 @@ TEST_F(RenderBatchUVETest, BuildRenderBatchesUVE_IdenticalAdjacentItems_Collapse
     EXPECT_FLOAT_EQ(batches.instanceMatrices[2].m[0][3], 3.0F);
 }
 
+TEST_F(RenderBatchUVETest, BuildRenderBatchesUVE_SameMeshOverlayDoesNotBatchWithTheHost) {
+    std::vector<RenderItemUVE> items;
+    items.push_back(MakeItemUVE("cube", "stone", 1.0F));
+    items.push_back(MakeItemUVE("cube", "stone", 2.0F));
+    items.back().overlay = true;
+
+    RenderBatchSetUVE batches;
+    BuildRenderBatchesUVE(items, batches);
+
+    ASSERT_EQ(batches.batches.size(), 2U);
+}
+
 TEST_F(RenderBatchUVETest, BuildRenderBatchesUVE_SameMeshDifferentOpacity_DoesNotBatch) {
     std::vector<RenderItemUVE> items;
     items.push_back(MakeItemUVE("cube", "stone", 1.0F));
