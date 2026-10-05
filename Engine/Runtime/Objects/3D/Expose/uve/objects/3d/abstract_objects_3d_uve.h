@@ -77,6 +77,11 @@ void ExpandSurfaceInstance3DCullBoundsUVE(const SurfaceInstanceComponentUVE& sur
 /// True when this surface is drawn in the colour view. ShadowsOnly is a caster only, so it is not.
 [[nodiscard]] bool SurfaceInstance3DDrawsInViewUVE(const SurfaceInstanceComponentUVE& surface) noexcept;
 
+/// Opacity in [0, 1]: 1 fully solid, 0 invisible. The authored field is the inverse (0 opaque,
+/// 1 invisible). Non-finite transparency is treated as fully solid so a broken value cannot
+/// blank the object.
+[[nodiscard]] float SurfaceInstance3DOpacityUVE(const SurfaceInstanceComponentUVE& surface) noexcept;
+
 // =================================================================================================
 // What RenderInstance3D means to the draw list.
 // =================================================================================================

@@ -127,6 +127,8 @@ struct MeshVisibilityCandidateUVE final {
     /// SurfaceInstance3D shadow mode. No surface, and On / DoubleSided, both cast and draw.
     bool castsShadow = true;
     bool drawsInView = true;
+    /// 1 fully solid, 0 invisible. SurfaceInstance3D transparency inverted; 1 when there is no surface.
+    float opacity = 1.0F;
 };
 
 /// This frame's renderable set, built once and then culled against as many frusta as the frame

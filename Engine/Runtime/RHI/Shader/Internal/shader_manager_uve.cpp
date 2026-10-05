@@ -196,6 +196,7 @@ namespace {
     request.topology = desc.topology;
     request.depthTestEnabled = desc.depthTestEnabled;
     request.depthWriteEnabled = desc.depthWriteEnabled;
+    request.blendMode = desc.blendMode;
     request.hotReloadEnabledUVE = desc.hotReloadEnabledUVE;
     return request;
 }

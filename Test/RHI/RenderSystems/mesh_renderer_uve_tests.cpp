@@ -2111,5 +2111,51 @@ TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_ShadowsOnlyIsDroppedFromThe
     EXPECT_EQ(shadow.opaqueItems.size(), 2U);
 }
 
+TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_SurfaceTransparencyMovesAnOpaqueMaterialToTheTransparentBucket) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_fade.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_fade.uvmat");
+    const Scene::EntityUVE faded =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.transparency = 0.4F;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(faded, surface);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    const RenderQueueUVE queue =
+        meshRenderer.ExtractRenderQueueUVE(entityManager, assetManager, assetDatabase, MakeTestFrustumUVE());
+    EXPECT_TRUE(queue.opaqueItems.empty());
+    ASSERT_EQ(queue.transparentItems.size(), 1U);
+    EXPECT_FLOAT_EQ(queue.transparentItems[0].opacity, 0.6F);
+}
+
+TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_FullyTransparentSurfaceIsDroppedFromTheColourView) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_invisible.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_invisible.uvmat");
+    const Scene::EntityUVE invisible =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    const Scene::EntityUVE solid =
+        MakeMeshEntityUVE(Math::Vector3UVE{1.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.transparency = 1.0F;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(invisible, surface);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 2U);
+    RenderQueueUVE colour;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), colour);
+    ASSERT_EQ(colour.opaqueItems.size(), 1U);
+    EXPECT_FLOAT_EQ(colour.opaqueItems[0].opacity, 1.0F);
+
+    visibilitySet.shadowPass = true;
+    RenderQueueUVE shadow;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), shadow);
+    EXPECT_EQ(shadow.opaqueItems.size(), 2U);
+    static_cast<void>(solid);
+}
+
 } // namespace
 } // namespace UVE::Render::Tests

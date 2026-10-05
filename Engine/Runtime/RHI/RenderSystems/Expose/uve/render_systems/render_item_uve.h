@@ -29,6 +29,8 @@ struct RenderItemUVE {
     float sortDepth = 0.0F;
     /// RenderInstance layers this item is on; 1 when the entity has no RenderInstance.
     std::uint32_t renderLayers = 1U;
+    /// SurfaceInstance opacity: 1 solid, 0 invisible. 1 when the entity has no surface.
+    float opacity = 1.0F;
 };
 
 } // namespace UVE::Render

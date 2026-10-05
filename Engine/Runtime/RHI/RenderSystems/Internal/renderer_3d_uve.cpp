@@ -273,7 +273,24 @@ struct MaterialGpuResourcesUVE {
     TextureHandleUVE albedoTexture;
     TextureHandleUVE normalTexture;
     TextureHandleUVE aoTexture;
+    /// Depth-write off, source-alpha blend. Used when SurfaceInstance3D fades the mesh; the
+    /// ordinary program stays opaque so solid draws keep early-z.
+    std::shared_ptr<Shader::ShaderProgramUVE> blendedProgram;
 };
+
+[[nodiscard]] Shader::ShaderProgramUVE* MeshColorProgramUVE(const MaterialGpuResourcesUVE& resources,
+                                                           const RenderItemUVE& item) noexcept {
+    if (item.opacity < 1.0F) {
+        if (resources.blendedProgram == nullptr || !resources.blendedProgram->IsValidUVE()) {
+            return nullptr;
+        }
+        return resources.blendedProgram.get();
+    }
+    if (resources.program == nullptr || !resources.program->IsValidUVE()) {
+        return nullptr;
+    }
+    return resources.program.get();
+}
 
 /// Fixed texture-unit slots RecordItemsUVE() binds every material's three textures to, and the
 /// matching sampler uniform names a material's fragment shader is expected to declare (a
@@ -1513,13 +1530,19 @@ struct Renderer3DUVE::ImplUVE {
         programDesc.depthWriteEnabled = !material->isTransparent;
         programDesc.debugNameUVE = "Material " + assetDatabase.ResolveUVE(guid).string();
         const std::shared_ptr<Shader::ShaderProgramUVE> program = shaderManager.CreateProgramFromStagesUVE(programDesc);
+        Shader::ShaderProgramStagesDescUVE blendedDesc = programDesc;
+        blendedDesc.depthWriteEnabled = false;
+        blendedDesc.blendMode = PipelineBlendModeUVE::SourceAlphaOver;
+        blendedDesc.debugNameUVE = programDesc.debugNameUVE + " blended";
+        const std::shared_ptr<Shader::ShaderProgramUVE> blendedProgram =
+            shaderManager.CreateProgramFromStagesUVE(blendedDesc);
 
         const auto insertResult = materialCache.emplace(
             guid, MaterialGpuResourcesUVE{program,
                                           VertexSourceSupportsInstancingUVE(vertexShaderAsset->sourceCode),
                                           material->vertexShader, material->fragmentShader,
                                           material->albedoTexture, material->normalTexture, material->aoTexture,
-                                          *albedoTexture, *normalTexture, *aoTexture});
+                                          *albedoTexture, *normalTexture, *aoTexture, blendedProgram});
         return &insertResult.first->second;
     }
 
@@ -2107,6 +2130,7 @@ struct Renderer3DUVE::ImplUVE {
 
             ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms);
             program->SetIntUVE("uMeshRenderLayers", static_cast<std::int32_t>(representative.renderLayers));
+            program->SetFloatUVE("uSurfaceOpacity", representative.opacity);
             program->ApplyToUVE(commandBuffer);
             BindMaterialTexturesUVE(*materialResources, frameUniforms, commandBuffer);
             commandBuffer.BindStorageBufferUVE(instanceTransformBuffer, kInstanceTransformSlotUVE);
@@ -2149,8 +2173,8 @@ struct Renderer3DUVE::ImplUVE {
                 continue;
             }
             const Asset::MaterialAssetUVE* const material = item.materialHandle.TryGetUVE();
-            const std::shared_ptr<Shader::ShaderProgramUVE>& program = materialResources->program;
-            if (!program->IsValidUVE()) {
+            Shader::ShaderProgramUVE* const program = MeshColorProgramUVE(*materialResources, item);
+            if (material == nullptr || program == nullptr) {
                 continue; // Still compiling or invalid: never bind a stale raw material pipeline.
             }
 
@@ -2160,6 +2184,7 @@ struct Renderer3DUVE::ImplUVE {
             program->SetMatrix4x4UVE("uNormalMatrix", ComputeNormalMatrixUVE(item.worldMatrix));
             ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms);
             program->SetIntUVE("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
+            program->SetFloatUVE("uSurfaceOpacity", item.opacity);
             program->ApplyToUVE(commandBuffer);
             BindMaterialTexturesUVE(*materialResources, frameUniforms, commandBuffer);
             commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);

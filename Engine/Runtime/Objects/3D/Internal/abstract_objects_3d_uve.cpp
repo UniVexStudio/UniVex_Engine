@@ -99,6 +99,16 @@ bool SurfaceInstance3DDrawsInViewUVE(const SurfaceInstanceComponentUVE& surface)
     return surface.castShadow != SurfaceShadowModeUVE::ShadowsOnly;
 }
 
+float SurfaceInstance3DOpacityUVE(const SurfaceInstanceComponentUVE& surface) noexcept {
+    if (!std::isfinite(surface.transparency) || surface.transparency <= 0.0F) {
+        return 1.0F;
+    }
+    if (surface.transparency >= 1.0F) {
+        return 0.0F;
+    }
+    return 1.0F - surface.transparency;
+}
+
 bool IsRenderInstance3DOnViewLayersUVE(const std::uint32_t renderLayers,
                                        const std::uint32_t viewLayerMask) noexcept {
     return (renderLayers & viewLayerMask) != 0U;

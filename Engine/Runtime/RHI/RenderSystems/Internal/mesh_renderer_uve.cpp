@@ -410,7 +410,7 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             }
 
             // Bucketing is decided here, not per frustum: transparency is a property of the
-            // material, and no frustum can change it.
+            // material and of SurfaceInstance3D, and no frustum can change it.
             //
             // The candidate stores an INDEX, not a pair of handles. The set holds one reference
             // per distinct mesh+material pair and that is what keeps the assets alive across the
@@ -438,13 +438,19 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             }
             bool castsShadow = true;
             bool drawsInView = true;
+            float opacity = 1.0F;
             if (surface != nullptr) {
                 castsShadow = Scene::SurfaceInstance3DCastsShadowUVE(*surface);
                 drawsInView = Scene::SurfaceInstance3DDrawsInViewUVE(*surface);
+                opacity = Scene::SurfaceInstance3DOpacityUVE(*surface);
+                if (opacity <= 0.0F) {
+                    drawsInView = false;
+                }
             }
+            const bool isTransparent = material->isTransparent || opacity < 1.0F;
             outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
-                assetPairIndex, candidatePlacement, material->isTransparent, entity, renderLayers, sortingOffset,
-                sortingUseAabbCenter, castsShadow, drawsInView});
+                assetPairIndex, candidatePlacement, isTransparent, entity, renderLayers, sortingOffset,
+                sortingUseAabbCenter, castsShadow, drawsInView, opacity});
         });
 
     // Bound the cache. Without this it retains an entry for every entity the scene has ever had,
@@ -515,8 +521,10 @@ void MeshRendererUVE::CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visib
                 continue;
             }
             RenderItemUVE item{eligibility.worldMatrix, assetPair.meshHandle, assetPair.materialHandle, sortDepth,
-                               candidate.renderLayers};
-            if (candidate.isTransparent) {
+                               candidate.renderLayers, candidate.opacity};
+            // Shadow cascades write depth only and consume opaqueItems. A faded or material-
+            // transparent caster still belongs there; the colour view is what sorts it back-to-front.
+            if (!visibilitySet.shadowPass && candidate.isTransparent) {
                 outQueue.transparentItems.push_back(std::move(item));
             } else {
                 outQueue.opaqueItems.push_back(std::move(item));
