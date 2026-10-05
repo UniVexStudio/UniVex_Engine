@@ -93,6 +93,8 @@ struct LightUVE {
 
 uniform LightUVE uLights[4];
 uniform vec3 uAmbientColor;
+uniform vec3 uSkyAmbient;
+uniform vec3 uGroundAmbient;
 uniform vec3 uViewPosition;
 uniform vec3 uAlbedoColor;
 uniform float uMetallic;
@@ -121,6 +123,14 @@ const float kSpotInnerConeRatioUVE = 0.85;
 
 vec3 SafeNormalizeUVE(vec3 value) {
     return value / max(length(value), kBrdfEpsilonUVE);
+}
+
+vec3 HemisphereAmbientUVE(vec3 normal) {
+    if (dot(uSkyAmbient, uSkyAmbient) + dot(uGroundAmbient, uGroundAmbient) < 1.0e-10) {
+        return uAmbientColor;
+    }
+    float hemi = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
+    return mix(uGroundAmbient, uSkyAmbient, hemi);
 }
 
 float DistributionGgxUVE(float normalDotHalf, float roughness) {
@@ -292,8 +302,9 @@ void main() {
         (max(vec3(1.0 - roughness), ambientBaseReflectance) - ambientBaseReflectance) *
             pow(1.0 - normalDotViewAmbient, 5.0);
     vec3 ambientDiffuseWeight = (vec3(1.0) - ambientFresnel) * (1.0 - metallic);
-    vec3 ambientDiffuse = ambientDiffuseWeight * albedo * uAmbientColor;
-    vec3 ambientSpecular = ambientFresnel * uAmbientColor;
+    vec3 ambientColor = HemisphereAmbientUVE(normal);
+    vec3 ambientDiffuse = ambientDiffuseWeight * albedo * ambientColor;
+    vec3 ambientSpecular = ambientFresnel * ambientColor;
     // AO occludes both terms. Applying it to the diffuse alone is a common shortcut, but a crevice
     // does not stop reflecting light in a way the sky can reach either.
     vec3 lighting = (ambientDiffuse + ambientSpecular) * ambientOcclusion + uEmissiveColor;

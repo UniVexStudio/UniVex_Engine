@@ -3,9 +3,11 @@
 #pragma once
 
 #include <string_view>
+#include <vector>
 
 #include "uve/component/entity_uve.h"
 #include "uve/component/light_emitter_component_uve.h"
+#include "uve/math/vector3_uve.h"
 
 namespace UVE::Scene {
 
@@ -40,5 +42,13 @@ struct DirectionalLight3DObjectDefinitionUVE final {
 /// Components already on the entity keep their values.
 void ApplyDirectionalLight3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                               const DirectionalLight3DObjectDefinitionUVE& value);
+
+struct LightDirectionGizmoUVE final {
+    Math::Vector3UVE origin{};
+    Math::Vector3UVE direction{0.0F, 0.0F, -1.0F};
+    Math::Vector3UVE color{1.0F, 1.0F, 1.0F};
+};
+
+void CollectLightDirectionGizmosUVE(IEntityManagerUVE& entityManager, std::vector<LightDirectionGizmoUVE>& out);
 
 } // namespace UVE::Scene

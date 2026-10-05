@@ -27,6 +27,7 @@
 #include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
+#include "uve/objects/3d/health_uve.h"
 #include "uve/objects/3d/player_3d_uve.h"
 #include "uve/objects/3d/two_bone_ik_3d_uve.h"
 #include "uve/math/vector3_uve.h"
@@ -258,6 +259,19 @@ TEST(SceneComponentMetadataUVETest, ThePlayerSectionCarriesPossessAndLook) {
     const TypeMetadataPropertyUVE* pitch = FindPropertyUVE(*player, "pitchDegrees");
     ASSERT_NE(pitch, nullptr);
     EXPECT_TRUE(HasPropertyFlagUVE(pitch->flags, TypeMetadataPropertyFlagsUVE::RuntimeState));
+}
+
+TEST(SceneComponentMetadataUVETest, TheHealthSectionCarriesMaxInvulnerableAndRuntimeHealth) {
+    const TypeMetadataEntryUVE* health =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(HealthComponentUVE)));
+    ASSERT_NE(health, nullptr);
+    EXPECT_EQ(health->typeId, "component.health");
+    EXPECT_EQ(health->displayName, "Health");
+    ASSERT_NE(FindPropertyUVE(*health, "maxHealth"), nullptr);
+    ASSERT_NE(FindPropertyUVE(*health, "invulnerable"), nullptr);
+    const TypeMetadataPropertyUVE* current = FindPropertyUVE(*health, "health");
+    ASSERT_NE(current, nullptr);
+    EXPECT_TRUE(HasPropertyFlagUVE(current->flags, TypeMetadataPropertyFlagsUVE::RuntimeState));
 }
 
 TEST(SceneComponentMetadataUVETest, TheSpawnPointSectionCarriesTheWholeAuthoredContract) {

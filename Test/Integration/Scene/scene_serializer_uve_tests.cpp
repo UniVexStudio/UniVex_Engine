@@ -294,6 +294,11 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     PlayerComponentUVE player;
     player.lookSensitivity = 0.2F;
     entityManager.AddComponentUVE<PlayerComponentUVE>(source, player);
+    HealthComponentUVE health;
+    health.maxHealth = 75.0F;
+    health.health = 12.0F;
+    health.invulnerable = true;
+    entityManager.AddComponentUVE<HealthComponentUVE>(source, health);
     LevelStreamer3DComponentUVE streamer;
     streamer.levelPath = "levels/courtyard.uvscene";
     streamer.enabled = true;
@@ -410,6 +415,10 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
               "materials/warning.uemat");
     EXPECT_EQ(entityManager.GetComponentUVE<SpawnPoint3DComponentUVE>(restored).spawnTag, "player_start");
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<PlayerComponentUVE>(restored).lookSensitivity, 0.2F);
+    ASSERT_TRUE(entityManager.HasComponentUVE<HealthComponentUVE>(restored));
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<HealthComponentUVE>(restored).maxHealth, 75.0F);
+    EXPECT_TRUE(entityManager.GetComponentUVE<HealthComponentUVE>(restored).invulnerable);
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<HealthComponentUVE>(restored).health, 75.0F);
     EXPECT_TRUE(entityManager.GetComponentUVE<LevelStreamer3DComponentUVE>(restored).enabled);
     EXPECT_TRUE(entityManager.HasComponentUVE<Kinematic3DComponentUVE>(restored));
     EXPECT_TRUE(entityManager.HasComponentUVE<NavSeeker3DComponentUVE>(restored));

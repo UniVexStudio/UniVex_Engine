@@ -35,6 +35,7 @@ TEST(Expanded3DObjectComponentsUVETest, DefaultContractsAreValid) {
     EXPECT_TRUE(IsVisibilityRegion3DObjectComponentValidUVE(VisibilityRegion3DComponentUVE{}));
     EXPECT_TRUE(IsSpawnPoint3DObjectComponentValidUVE(SpawnPoint3DComponentUVE{}));
     EXPECT_TRUE(IsPlayer3DObjectComponentValidUVE(PlayerComponentUVE{}));
+    EXPECT_TRUE(IsHealthComponentValidUVE(HealthComponentUVE{}));
     EXPECT_TRUE(IsLevelStreamer3DObjectComponentValidUVE(LevelStreamer3DComponentUVE{}));
     EXPECT_TRUE(IsWorldPartition3DObjectComponentValidUVE(WorldPartition3DComponentUVE{}));
 }

@@ -310,6 +310,8 @@ TEST_F(Object3DDefinitionsUVETest, Player3DIsACharacterMarkedAsThePossessedBody)
     EXPECT_TRUE(entityManager.HasComponentUVE<CharacterControllerComponentUVE>(entity));
     ASSERT_TRUE(entityManager.HasComponentUVE<PlayerComponentUVE>(entity));
     EXPECT_TRUE(entityManager.GetComponentUVE<PlayerComponentUVE>(entity).possessOnPlay);
+    ASSERT_TRUE(entityManager.HasComponentUVE<HealthComponentUVE>(entity));
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<HealthComponentUVE>(entity).maxHealth, 100.0F);
     EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, entity), Objects::SceneObjectKindUVE::Player3D);
 }
 

@@ -13,6 +13,7 @@
 #include "uve/component/name_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/quaternion_uve.h"
+#include "uve/objects/3d/camera_3d_uve.h"
 #include "uve/objects/3d/interaction_area_3d_uve.h"
 #include "uve/objects/3d/spring_arm_3d_uve.h"
 
@@ -52,7 +53,7 @@ bool IsPlayer3DObjectComponentValidUVE(const PlayerComponentUVE& value) noexcept
 bool IsPlayer3DObjectDefinitionValidUVE(const Player3DObjectDefinitionUVE& value) noexcept {
     return IsColliderComponentValidUVE(value.collider) &&
            IsCharacterControllerComponentValidUVE(value.controller) &&
-           IsPlayer3DObjectComponentValidUVE(value.player);
+           IsPlayer3DObjectComponentValidUVE(value.player) && IsHealthComponentValidUVE(value.health);
 }
 
 void ApplyPlayer3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
@@ -73,6 +74,9 @@ void ApplyPlayer3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const En
     if (!entityManager.HasComponentUVE<PlayerComponentUVE>(entity)) {
         entityManager.AddComponentUVE<PlayerComponentUVE>(entity, value.player);
     }
+    if (!entityManager.HasComponentUVE<HealthComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<HealthComponentUVE>(entity, value.health);
+    }
 }
 
 EntityUVE ResolvePossessedPlayerUVE(IEntityManagerUVE& entityManager) {
@@ -90,6 +94,68 @@ EntityUVE ResolvePossessedPlayerUVE(IEntityManagerUVE& entityManager) {
             }
         });
     return best;
+}
+
+EntityUVE ResolvePlayCharacterUVE(IEntityManagerUVE& entityManager) {
+    const EntityUVE possessed = ResolvePossessedPlayerUVE(entityManager);
+    if (possessed != kInvalidEntityUVE) {
+        return possessed;
+    }
+    EntityUVE player = kInvalidEntityUVE;
+    entityManager.ForEachUVE<CharacterControllerComponentUVE>(
+        [&entityManager, &player](const EntityUVE entity, CharacterControllerComponentUVE&) {
+            if (player == kInvalidEntityUVE && entityManager.HasComponentUVE<TransformComponentUVE>(entity) &&
+                entityManager.HasComponentUVE<HierarchyComponentUVE>(entity)) {
+                player = entity;
+            }
+        });
+    return player;
+}
+
+EntityUVE FindPlayerCameraUVE(IEntityManagerUVE& entityManager, const EntityUVE player) {
+    if (!entityManager.IsAliveUVE(player)) {
+        return kInvalidEntityUVE;
+    }
+    if (entityManager.HasComponentUVE<CameraComponentUVE>(player)) {
+        return player;
+    }
+    EntityUVE best = kInvalidEntityUVE;
+    entityManager.ForEachUVE<CameraComponentUVE>([&entityManager, player, &best](const EntityUVE entity,
+                                                                                CameraComponentUVE&) {
+        if (entity == player) {
+            return;
+        }
+        EntityUVE cursor = entity;
+        bool underPlayer = false;
+        while (entityManager.IsAliveUVE(cursor)) {
+            if (!entityManager.HasComponentUVE<HierarchyComponentUVE>(cursor)) {
+                break;
+            }
+            const EntityUVE parent = entityManager.GetComponentUVE<HierarchyComponentUVE>(cursor).parent;
+            if (parent == player) {
+                underPlayer = true;
+                break;
+            }
+            if (parent == cursor || parent == kInvalidEntityUVE) {
+                break;
+            }
+            cursor = parent;
+        }
+        if (!underPlayer) {
+            return;
+        }
+        if (best == kInvalidEntityUVE || IsEarlierEntityUVE(entity, best)) {
+            best = entity;
+        }
+    });
+    return best;
+}
+
+void MakePlayerCameraCurrentUVE(IEntityManagerUVE& entityManager, const EntityUVE player) {
+    const EntityUVE camera = FindPlayerCameraUVE(entityManager, player);
+    if (camera != kInvalidEntityUVE) {
+        MakeCameraCurrentUVE(entityManager, camera);
+    }
 }
 
 EntityUVE FindPlayerLookTargetUVE(IEntityManagerUVE& entityManager, const EntityUVE player) {

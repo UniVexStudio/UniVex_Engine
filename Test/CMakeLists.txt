@@ -187,6 +187,9 @@ add_executable(uve_integration_tests
     Objects/3D/objects_3d_uve_tests.cpp
     Objects/3D/object_definitions_3d_uve_tests.cpp
     Objects/3D/player_3d_uve_tests.cpp
+    Objects/3D/health_uve_tests.cpp
+    Objects/3D/world_environment_uve_tests.cpp
+    Objects/3D/directional_light_3d_uve_tests.cpp
     Objects/3D/animation_objects_uve_tests.cpp
     Objects/3D/conformed_playback_uve_tests.cpp
     Objects/3D/two_bone_ik_3d_uve_tests.cpp
