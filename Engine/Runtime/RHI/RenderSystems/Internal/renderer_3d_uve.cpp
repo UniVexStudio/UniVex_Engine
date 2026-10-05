@@ -765,6 +765,10 @@ struct Renderer3DUVE::ImplUVE {
     /// RenderFrameUVE()) - disabling either skips that group of passes entirely, not just their
     /// visual contribution.
     PostProcessSettingsUVE postProcessSettings{};
+    bool humanEyeEnabled = false;
+    float humanEyeCenterScale = 1.0F;
+    float humanEyeTexelX = 0.0F;
+    float humanEyeTexelY = 0.0F;
 
     /// Bloom intermediate targets, at half the main color target's resolution (a standard
     /// perf/quality tradeoff for a blurred, low-frequency effect) and the same HDR-capable format
@@ -2482,6 +2486,11 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         UVE_ERROR("Renderer3DUVE: RenderFrameUVE computed an invalid target aspect ratio");
         return;
     }
+    m_impl->humanEyeEnabled = camera.projection == Scene::CameraProjectionModeUVE::HumanEye;
+    m_impl->humanEyeCenterScale =
+        m_impl->humanEyeEnabled ? Scene::HumanEyeCenterScaleUVE(aspectRatio) : 1.0F;
+    m_impl->humanEyeTexelX = 1.0F / static_cast<float>(m_impl->targetWidth);
+    m_impl->humanEyeTexelY = 1.0F / static_cast<float>(m_impl->targetHeight);
     m_impl->lastFrameDiagnostics.primitiveProgramReady = m_impl->primitiveProgram->IsValidUVE();
     m_impl->lastFrameDiagnostics.particleProgramReady = m_impl->particleProgram->IsValidUVE();
     m_impl->lastFrameDiagnostics.toneMappingProgramReady = m_impl->toneMappingProgram->IsValidUVE();
@@ -2930,6 +2939,10 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->toneMappingProgram->SetIntUVE("uSceneDepthTexture", 1);
             m_impl->toneMappingProgram->SetIntUVE("uWriteCoverageAlpha",
                                                    m_impl->destinationTextureOverride.has_value() ? 1 : 0);
+            m_impl->toneMappingProgram->SetIntUVE("uHumanEye", m_impl->humanEyeEnabled ? 1 : 0);
+            m_impl->toneMappingProgram->SetFloatUVE("uHumanEyeCenterScale", m_impl->humanEyeCenterScale);
+            m_impl->toneMappingProgram->SetFloatUVE("uHumanEyeTexelX", m_impl->humanEyeTexelX);
+            m_impl->toneMappingProgram->SetFloatUVE("uHumanEyeTexelY", m_impl->humanEyeTexelY);
             m_impl->toneMappingProgram->ApplyToUVE(commandBuffer);
             commandBuffer.BindTextureUVE(m_impl->colorTarget, 0U);
             commandBuffer.BindTextureUVE(m_impl->depthTarget, 1U);

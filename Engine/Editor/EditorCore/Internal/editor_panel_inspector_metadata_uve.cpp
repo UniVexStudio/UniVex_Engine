@@ -45,9 +45,11 @@
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/asset/i_asset_database_uve.h"
 #include "uve/asset/i_project_file_index_uve.h"
+#include "uve/component/camera_component_uve.h"
 #include "uve/component/editor_description_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/component/transform_component_uve.h"
+#include "uve/objects/3d/camera_3d_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/core/engine_project_settings_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
@@ -367,6 +369,16 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
     DrawInspectorSectionMenuUVE(&entry, sectionTitle.c_str());
     if (sectionOpen) {
         DrawMetadataPropertyRowsUVE(entry, instance);
+        if (entry.typeIndex == std::type_index(typeid(Scene::CameraComponentUVE))) {
+            bool preview = GetPreviewCameraUVE() == entity;
+            if (ImGui::Checkbox("Preview", &preview)) {
+                if (preview) {
+                    SetPreviewCameraUVE(entity);
+                } else {
+                    ClearPreviewCameraUVE();
+                }
+            }
+        }
         for (const NestedMetadataSectionUVE& section : nested) {
             const TypeMetadataEntryUVE* const child = section.entry;
             if (!entityManager.HasComponentUVE(entity, child->typeIndex) ||
@@ -1125,6 +1137,12 @@ bool EditorUVE::SetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entr
     RecordHistoryUVE(ComponentPropertyHistoryEntryUVE{m_selectedEntity, &entry, std::move(before),
                                                       std::move(after), selectionBefore,
                                                       CaptureSelectionSnapshotUVE(), dirtyBefore, true});
+    if (entry.typeIndex == std::type_index(typeid(Scene::CameraComponentUVE))) {
+        const auto* const camera = static_cast<const Scene::CameraComponentUVE*>(instance);
+        if (camera != nullptr && camera->current) {
+            Scene::MakeCameraCurrentUVE(entityManager, m_selectedEntity);
+        }
+    }
     return true;
 }
 

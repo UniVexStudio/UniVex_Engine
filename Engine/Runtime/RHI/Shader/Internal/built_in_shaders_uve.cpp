@@ -127,6 +127,10 @@ uniform sampler2D uSceneDepthTexture;
 // 1 while rendering into a caller-supplied texture, 0 for the presentation surface - whose
 // alpha must stay opaque, since some window visuals composite it.
 uniform int uWriteCoverageAlpha;
+uniform int uHumanEye;
+uniform float uHumanEyeCenterScale;
+uniform float uHumanEyeTexelX;
+uniform float uHumanEyeTexelY;
 
 vec3 AcesToneMapUVE(vec3 color) {
     const float a = 2.51;
@@ -137,9 +141,44 @@ vec3 AcesToneMapUVE(vec3 color) {
     return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
 }
 
+vec2 HumanEyeSourceUVUVE(vec2 uv) {
+    vec2 ndc = uv * 2.0 - 1.0;
+    float k0 = uHumanEyeCenterScale;
+    vec2 sampleNdc = ndc * (vec2(k0) + (1.0 - k0) * ndc * ndc);
+    return sampleNdc * 0.5 + 0.5;
+}
+
+vec3 SampleHdrUVE(vec2 uv) {
+    return max(texture(uSourceTexture, uv).rgb, vec3(0.0));
+}
+
 void main() {
-    vec3 hdrColor = max(texture(uSourceTexture, vTexCoord).rgb, vec3(0.0));
-    float covered = texture(uSceneDepthTexture, vTexCoord).r < 1.0 ? 1.0 : 0.0;
+    vec2 sourceUV = vTexCoord;
+    float periphery = 0.0;
+    if (uHumanEye != 0) {
+        vec2 ndc = vTexCoord * 2.0 - 1.0;
+        periphery = smoothstep(0.55, 1.2, length(ndc));
+        sourceUV = HumanEyeSourceUVUVE(vTexCoord);
+    }
+    vec3 hdrColor = SampleHdrUVE(sourceUV);
+    if (periphery > 0.0) {
+        vec2 px = vec2(uHumanEyeTexelX, uHumanEyeTexelY) * (1.5 + 4.0 * periphery);
+        vec3 blur = hdrColor;
+        blur += SampleHdrUVE(HumanEyeSourceUVUVE(vTexCoord + vec2(px.x, 0.0)));
+        blur += SampleHdrUVE(HumanEyeSourceUVUVE(vTexCoord + vec2(-px.x, 0.0)));
+        blur += SampleHdrUVE(HumanEyeSourceUVUVE(vTexCoord + vec2(0.0, px.y)));
+        blur += SampleHdrUVE(HumanEyeSourceUVUVE(vTexCoord + vec2(0.0, -px.y)));
+        vec2 diagonal = px * 0.7;
+        blur += SampleHdrUVE(HumanEyeSourceUVUVE(vTexCoord + vec2(diagonal.x, diagonal.y)));
+        blur += SampleHdrUVE(HumanEyeSourceUVUVE(vTexCoord + vec2(-diagonal.x, diagonal.y)));
+        blur += SampleHdrUVE(HumanEyeSourceUVUVE(vTexCoord + vec2(diagonal.x, -diagonal.y)));
+        blur += SampleHdrUVE(HumanEyeSourceUVUVE(vTexCoord + vec2(-diagonal.x, -diagonal.y)));
+        blur *= 1.0 / 9.0;
+        hdrColor = mix(hdrColor, blur, periphery * 0.7);
+        float grey = dot(hdrColor, vec3(0.2126, 0.7152, 0.0722));
+        hdrColor = mix(hdrColor, vec3(grey), periphery * 0.2);
+    }
+    float covered = texture(uSceneDepthTexture, sourceUV).r < 1.0 ? 1.0 : 0.0;
     float alpha = uWriteCoverageAlpha != 0 ? covered : 1.0;
     FragColor = vec4(AcesToneMapUVE(hdrColor), alpha);
 }

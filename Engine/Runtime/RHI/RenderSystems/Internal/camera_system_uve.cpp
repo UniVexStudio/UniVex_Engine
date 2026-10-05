@@ -54,7 +54,14 @@ Math::Matrix4x4UVE CameraSystemUVE::ComputeProjectionMatrixUVE(const Scene::IEnt
         UVE_ERROR("CameraSystemUVE: ComputeProjectionMatrixUVE received an invalid aspect ratio");
         return Math::Matrix4x4UVE::IdentityUVE();
     }
-    const float fovYRadians = camera.fieldOfViewDegrees * (std::numbers::pi_v<float> / 180.0F);
+    if (camera.projection == Scene::CameraProjectionModeUVE::Orthographic) {
+        const float halfHeight = camera.orthographicSize;
+        const float halfWidth = halfHeight * aspectRatio;
+        return Math::Matrix4x4UVE::OrthographicUVE(-halfWidth, halfWidth, -halfHeight, halfHeight, camera.nearPlane,
+                                                   camera.farPlane);
+    }
+    const float fovYRadians =
+        Scene::VerticalFieldOfViewDegreesUVE(camera, aspectRatio) * (std::numbers::pi_v<float> / 180.0F);
     return Math::Matrix4x4UVE::PerspectiveUVE(fovYRadians, aspectRatio, camera.nearPlane, camera.farPlane);
 }
 
@@ -94,11 +101,18 @@ CameraFrustumCornersUVE CameraSystemUVE::ComputeFrustumCornersUVE(const Scene::I
         UVE_ERROR("CameraSystemUVE: ComputeFrustumCornersUVE received an invalid aspect ratio");
         return CameraFrustumCornersUVE{};
     }
-    const float tangent = std::tan(camera.fieldOfViewDegrees * (std::numbers::pi_v<float> / 360.0F));
-    const float nearHalfHeight = camera.nearPlane * tangent;
-    const float nearHalfWidth = nearHalfHeight * aspectRatio;
-    const float farHalfHeight = camera.farPlane * tangent;
-    const float farHalfWidth = farHalfHeight * aspectRatio;
+    float nearHalfHeight = camera.orthographicSize;
+    float nearHalfWidth = nearHalfHeight * aspectRatio;
+    float farHalfHeight = nearHalfHeight;
+    float farHalfWidth = nearHalfWidth;
+    if (camera.projection != Scene::CameraProjectionModeUVE::Orthographic) {
+        const float tangent = std::tan(Scene::VerticalFieldOfViewDegreesUVE(camera, aspectRatio) *
+                                       (std::numbers::pi_v<float> / 360.0F));
+        nearHalfHeight = camera.nearPlane * tangent;
+        nearHalfWidth = nearHalfHeight * aspectRatio;
+        farHalfHeight = camera.farPlane * tangent;
+        farHalfWidth = farHalfHeight * aspectRatio;
+    }
 
     const Math::Vector3UVE forward = Math::RotateVectorUVE(normalizedRotation, {0.0F, 0.0F, -1.0F});
     const Math::Vector3UVE right = Math::RotateVectorUVE(normalizedRotation, {1.0F, 0.0F, 0.0F});
@@ -125,15 +139,22 @@ CameraFrustumCornersUVE CameraSystemUVE::ComputeFrustumCornersUVE(const Scene::I
         return floatCorners;
     }
 
-    const double tangentWide = std::tan(static_cast<double>(camera.fieldOfViewDegrees) *
-                                        (static_cast<double>(std::numbers::pi_v<float>) / 360.0));
     const double nearPlaneWide = static_cast<double>(camera.nearPlane);
     const double farPlaneWide = static_cast<double>(camera.farPlane);
     const double aspectWide = static_cast<double>(aspectRatio);
-    const double nearHalfHeightWide = nearPlaneWide * tangentWide;
-    const double nearHalfWidthWide = nearHalfHeightWide * aspectWide;
-    const double farHalfHeightWide = farPlaneWide * tangentWide;
-    const double farHalfWidthWide = farHalfHeightWide * aspectWide;
+    double nearHalfHeightWide = static_cast<double>(camera.orthographicSize);
+    double nearHalfWidthWide = nearHalfHeightWide * aspectWide;
+    double farHalfHeightWide = nearHalfHeightWide;
+    double farHalfWidthWide = nearHalfWidthWide;
+    if (camera.projection != Scene::CameraProjectionModeUVE::Orthographic) {
+        const double tangentWide =
+            std::tan(static_cast<double>(Scene::VerticalFieldOfViewDegreesUVE(camera, aspectRatio)) *
+                     (static_cast<double>(std::numbers::pi_v<float>) / 360.0));
+        nearHalfHeightWide = nearPlaneWide * tangentWide;
+        nearHalfWidthWide = nearHalfHeightWide * aspectWide;
+        farHalfHeightWide = farPlaneWide * tangentWide;
+        farHalfWidthWide = farHalfHeightWide * aspectWide;
+    }
     const double positionX = static_cast<double>(worldTransform.worldPosition.x);
     const double positionY = static_cast<double>(worldTransform.worldPosition.y);
     const double positionZ = static_cast<double>(worldTransform.worldPosition.z);

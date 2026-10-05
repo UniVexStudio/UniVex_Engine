@@ -904,6 +904,10 @@ public:
     [[nodiscard]] Scene::EntityUVE GetDocumentViewportUVE();
     [[nodiscard]] EditorStateUVE GetStateUVE() const noexcept;
     [[nodiscard]] Scene::EntityUVE GetSelectedEntityUVE() const noexcept;
+
+    [[nodiscard]] Scene::EntityUVE GetPreviewCameraUVE() const noexcept;
+    void SetPreviewCameraUVE(Scene::EntityUVE entity);
+    void ClearPreviewCameraUVE() noexcept;
     /// Returns editor-only 2D canvas state for screen-space authoring. It is not scene data.
     [[nodiscard]] Editor2DCanvasStateUVE Get2DCanvasStateUVE() const noexcept;
 
@@ -2421,6 +2425,7 @@ private:
     bool m_viewportPanelVisible = true;
     ViewportPanelRendererUVE m_viewportPanelRenderer;
     ViewportOverlayStateUVE m_viewportOverlayState;
+    Scene::EntityUVE m_previewCamera = Scene::kInvalidEntityUVE;
     bool m_sceneDirty = false;
     bool m_uiInitialized = false;
     EditorUiAssetsUVE m_uiAssets;

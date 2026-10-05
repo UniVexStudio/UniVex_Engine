@@ -219,6 +219,25 @@ void ViewportRenderPass::DrawBackground() const {
     if (hadBlend == GL_TRUE) glEnable(GL_BLEND);
 }
 
+void ViewportRenderPass::DrawCameraFrustums(const OrbitCamera& camera, int width, int height) const {
+    if (cameraFrustumMesh_.Empty()) {
+        return;
+    }
+    const Vec3 viewDirection = Normalize(camera.Target() - camera.Eye());
+    GizmoDrawParams params;
+    params.viewProjection = camera.ViewProjection(static_cast<float>(width) / static_cast<float>(height));
+    params.origin = Vec3{0.f, 0.f, 0.f};
+    params.scale = 1.f;
+    params.viewDirection = viewDirection;
+    params.viewportWidth = static_cast<float>(width);
+    params.viewportHeight = static_cast<float>(height);
+    glDepthMask(GL_TRUE);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    params.depthTest = true;
+    params.depthWrite = true;
+    gizmos_.Draw(cameraFrustumMesh_, params);
+}
+
 void ViewportRenderPass::DrawBones(const OrbitCamera& camera, int width, int height) const {
     const Vec3 viewDirection = Normalize(camera.Target() - camera.Eye());
     const univex::gizmo::GizmoMesh mesh = univex::gizmo::BuildBoneMeshUVE(bones_, viewDirection);
@@ -346,6 +365,7 @@ void ViewportRenderPass::RenderOverlayUVE(const OrbitCamera& camera,
     if (!bones_.empty()) {
         DrawBones(camera, framebufferWidth, framebufferHeight);
     }
+    DrawCameraFrustums(camera, framebufferWidth, framebufferHeight);
     // Last pass of the frame - see DrawTransformGizmo on why that matters.
     if (settings_.viewTransformGizmo && gizmoMode_ != GizmoMode::Select) {
         DrawTransformGizmo(camera, framebufferWidth, framebufferHeight);

@@ -78,6 +78,71 @@ TEST_F(CameraSystemUVETest, ComputeProjectionMatrixUVE_MapsNearAndFarPlanesToExp
     EXPECT_NEAR(clipZ(-100.0F) / clipW(-100.0F), 1.0F, kEpsilon);
 }
 
+TEST_F(CameraSystemUVETest, ComputeProjectionMatrixUVE_OrthographicMatchesBox) {
+    Scene::CameraComponentUVE camera;
+    camera.projection = Scene::CameraProjectionModeUVE::Orthographic;
+    camera.orthographicSize = 10.0F;
+    camera.nearPlane = 1.0F;
+    camera.farPlane = 100.0F;
+    const Scene::EntityUVE cameraEntity =
+        MakeCameraEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{}, camera);
+
+    const Math::Matrix4x4UVE projection = cameraSystem.ComputeProjectionMatrixUVE(entityManager, cameraEntity, 2.0F);
+    const Math::Matrix4x4UVE expected =
+        Math::Matrix4x4UVE::OrthographicUVE(-20.0F, 20.0F, -10.0F, 10.0F, 1.0F, 100.0F);
+    EXPECT_EQ(projection, expected);
+}
+
+TEST_F(CameraSystemUVETest, ComputeProjectionMatrixUVE_HumanEyeIgnoresAuthoredFov) {
+    Scene::CameraComponentUVE humanEye;
+    humanEye.projection = Scene::CameraProjectionModeUVE::HumanEye;
+    humanEye.fieldOfViewDegrees = 30.0F;
+    humanEye.nearPlane = 1.0F;
+    humanEye.farPlane = 100.0F;
+    const float aspect = 16.0F / 9.0F;
+    const Scene::EntityUVE humanEyeEntity =
+        MakeCameraEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{}, humanEye);
+
+    Scene::CameraComponentUVE matchingPerspective;
+    matchingPerspective.fieldOfViewDegrees = Scene::HumanEyeVerticalFieldOfViewDegreesUVE(aspect);
+    matchingPerspective.nearPlane = 1.0F;
+    matchingPerspective.farPlane = 100.0F;
+    const Scene::EntityUVE perspectiveEntity =
+        MakeCameraEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{}, matchingPerspective);
+
+    Scene::CameraComponentUVE authoredThirty;
+    authoredThirty.fieldOfViewDegrees = 30.0F;
+    authoredThirty.nearPlane = 1.0F;
+    authoredThirty.farPlane = 100.0F;
+    const Scene::EntityUVE thirtyEntity =
+        MakeCameraEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{}, authoredThirty);
+
+    const Math::Matrix4x4UVE humanEyeProjection =
+        cameraSystem.ComputeProjectionMatrixUVE(entityManager, humanEyeEntity, aspect);
+    const Math::Matrix4x4UVE matchingProjection =
+        cameraSystem.ComputeProjectionMatrixUVE(entityManager, perspectiveEntity, aspect);
+    const Math::Matrix4x4UVE thirtyProjection =
+        cameraSystem.ComputeProjectionMatrixUVE(entityManager, thirtyEntity, aspect);
+    EXPECT_EQ(humanEyeProjection, matchingProjection);
+    EXPECT_NE(humanEyeProjection, thirtyProjection);
+}
+
+TEST_F(CameraSystemUVETest, ComputeFrustumCornersUVE_OrthographicKeepsNearAndFarTheSameSize) {
+    Scene::CameraComponentUVE camera;
+    camera.projection = Scene::CameraProjectionModeUVE::Orthographic;
+    camera.orthographicSize = 1.0F;
+    camera.nearPlane = 1.0F;
+    camera.farPlane = 3.0F;
+    const Scene::EntityUVE cameraEntity =
+        MakeCameraEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{}, camera);
+
+    const CameraFrustumCornersUVE corners = cameraSystem.ComputeFrustumCornersUVE(entityManager, cameraEntity, 2.0F);
+    EXPECT_EQ(corners[0], (Math::Vector3UVE{-2.0F, -1.0F, -1.0F}));
+    EXPECT_EQ(corners[3], (Math::Vector3UVE{2.0F, 1.0F, -1.0F}));
+    EXPECT_EQ(corners[4], (Math::Vector3UVE{-2.0F, -1.0F, -3.0F}));
+    EXPECT_EQ(corners[7], (Math::Vector3UVE{2.0F, 1.0F, -3.0F}));
+}
+
 TEST_F(CameraSystemUVETest, ComputeViewProjectionUVE_EqualsProjectionTimesView) {
     Scene::CameraComponentUVE camera;
     camera.fieldOfViewDegrees = 60.0F;
@@ -182,6 +247,36 @@ TEST(CameraComponentUVETest, IsCameraComponentValidUVE_RejectsProjectionUnsafeVa
     invalidPlanes = {};
     invalidPlanes.farPlane = std::numeric_limits<float>::infinity();
     EXPECT_FALSE(Scene::IsCameraComponentValidUVE(invalidPlanes));
+
+    Scene::CameraComponentUVE invalidSize = {};
+    invalidSize.orthographicSize = 0.0F;
+    EXPECT_FALSE(Scene::IsCameraComponentValidUVE(invalidSize));
+    invalidSize.orthographicSize = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(Scene::IsCameraComponentValidUVE(invalidSize));
+
+    Scene::CameraComponentUVE invalidMode = {};
+    invalidMode.projection = static_cast<Scene::CameraProjectionModeUVE>(99);
+    EXPECT_FALSE(Scene::IsCameraComponentValidUVE(invalidMode));
+}
+
+TEST(CameraComponentUVETest, HumanEyeVerticalFieldIgnoresAuthoredFovAndLocksHorizontal) {
+    const float aspect = 16.0F / 9.0F;
+    const float humanEyeFovY = Scene::HumanEyeVerticalFieldOfViewDegreesUVE(aspect);
+    EXPECT_GT(humanEyeFovY, 60.0F);
+    EXPECT_LT(humanEyeFovY, 120.0F);
+
+    Scene::CameraComponentUVE humanEye{};
+    humanEye.projection = Scene::CameraProjectionModeUVE::HumanEye;
+    humanEye.fieldOfViewDegrees = 30.0F;
+    EXPECT_NEAR(Scene::VerticalFieldOfViewDegreesUVE(humanEye, aspect), humanEyeFovY, 1.0e-4F);
+
+    Scene::CameraComponentUVE perspective{};
+    perspective.fieldOfViewDegrees = 30.0F;
+    EXPECT_NEAR(Scene::VerticalFieldOfViewDegreesUVE(perspective, aspect), 30.0F, 1.0e-4F);
+
+    EXPECT_LT(Scene::HumanEyeCenterScaleUVE(aspect), 1.0F);
+    EXPECT_GT(Scene::HumanEyeCenterScaleUVE(aspect), 0.0F);
+    EXPECT_NEAR(Scene::HumanEyeCenterScaleUVE(4.0F), 1.0F, 1.0e-4F);
 }
 
 #if UVE_DEBUG
