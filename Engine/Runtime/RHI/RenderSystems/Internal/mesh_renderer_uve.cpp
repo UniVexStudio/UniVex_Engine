@@ -13,7 +13,11 @@
 #include <vector>
 
 #include "uve/asset/asset_guid_uve.h"
+#include "uve/asset/material_asset_uve.h"
 #include "uve/logging/assert_uve.h"
+#include "uve/math/aabb_uve.h"
+#include "uve/math/quaternion_uve.h"
+#include "uve/math/vector3_uve.h"
 #include "uve/render_systems/mesh_render_eligibility_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
@@ -172,6 +176,47 @@ struct AssetPairKeyHashUVE final {
     }
     outGuid = found->second;
     return true;
+}
+
+[[nodiscard]] Math::Vector3UVE TranslationFromWorldMatrixUVE(const Math::Matrix4x4UVE& matrix) noexcept {
+    return Math::Vector3UVE{matrix.m[0][3], matrix.m[1][3], matrix.m[2][3]};
+}
+
+[[nodiscard]] Math::Vector3UVE ScaleFromWorldMatrixUVE(const Math::Matrix4x4UVE& matrix) noexcept {
+    const Math::Vector3UVE axisX{matrix.m[0][0], matrix.m[1][0], matrix.m[2][0]};
+    const Math::Vector3UVE axisY{matrix.m[0][1], matrix.m[1][1], matrix.m[2][1]};
+    const Math::Vector3UVE axisZ{matrix.m[0][2], matrix.m[1][2], matrix.m[2][2]};
+    return Math::Vector3UVE{Math::LengthUVE(axisX), Math::LengthUVE(axisY), Math::LengthUVE(axisZ)};
+}
+
+/// Rewrites `placement` so local +Z faces the camera. Disabled, a degenerate look, or a
+/// non-finite rewrite leaves it unchanged.
+void ApplyMaterialBillboardToPlacementUVE(const Asset::MaterialBillboardModeUVE mode,
+                                          const Math::Vector3UVE& cameraWorldPosition,
+                                          const Math::AabbUVE& localBounds,
+                                          MeshRenderPlacementUVE& placement) noexcept {
+    if (mode == Asset::MaterialBillboardModeUVE::Disabled || !placement.IsPlacedUVE()) {
+        return;
+    }
+    const Math::Vector3UVE position = TranslationFromWorldMatrixUVE(placement.worldMatrix);
+    const Math::Vector3UVE scale = ScaleFromWorldMatrixUVE(placement.worldMatrix);
+    if (!Math::IsFiniteUVE(position) || !Math::IsFiniteUVE(scale) || scale.x <= 0.0F || scale.y <= 0.0F ||
+        scale.z <= 0.0F) {
+        return;
+    }
+    Math::QuaternionUVE rotation{};
+    if (!Asset::TryMakeMaterialBillboardRotationUVE(mode, position, cameraWorldPosition, rotation)) {
+        return;
+    }
+    const Math::Matrix4x4UVE worldMatrix = Math::Matrix4x4UVE::ComposeTrsUVE(position, rotation, scale);
+    const Math::AabbUVE worldBounds = localBounds.TransformUVE(worldMatrix);
+    if (!Math::IsFiniteUVE(worldBounds.min) || !Math::IsFiniteUVE(worldBounds.max) ||
+        worldBounds.min.x > worldBounds.max.x || worldBounds.min.y > worldBounds.max.y ||
+        worldBounds.min.z > worldBounds.max.z) {
+        return;
+    }
+    placement.worldMatrix = worldMatrix;
+    placement.worldBounds = worldBounds;
 }
 
 } // namespace
@@ -428,11 +473,14 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             // transform) stays cached against the simulated pose, and only the cheap part - a
             // position lerp and a rotation slerp - is redone per frame. Measured at 15.6x cheaper
             // than recomputing the placement.
-            MeshRenderPlacementUVE candidatePlacement = placement;
+            MeshRenderPlacementUVE posedPlacement = placement;
             if (ApplyInterpolatedPoseUVE(entityManager, entity, outVisibilitySet.physicsInterpolationAlpha,
-                                         *mesh, candidatePlacement)) {
+                                         *mesh, posedPlacement)) {
                 ++outVisibilitySet.interpolatedCandidates;
             }
+            MeshRenderPlacementUVE candidatePlacement = posedPlacement;
+            ApplyMaterialBillboardToPlacementUVE(material->billboardMode, outVisibilitySet.cameraWorldPosition,
+                                                 mesh->localBounds, candidatePlacement);
             if (surface != nullptr) {
                 Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, candidatePlacement.worldBounds);
             }
@@ -472,11 +520,18 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             if (!resolvedOverlay.IsUsableUVE()) {
                 return;
             }
+            MeshRenderPlacementUVE overlayPlacement = posedPlacement;
+            ApplyMaterialBillboardToPlacementUVE(resolvedOverlay.value->billboardMode,
+                                                 outVisibilitySet.cameraWorldPosition, mesh->localBounds,
+                                                 overlayPlacement);
+            if (surface != nullptr) {
+                Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, overlayPlacement.worldBounds);
+            }
             const std::size_t overlayPairIndex = ResolveAssetPairIndexUVE(
                 assetPairSlots, outVisibilitySet.assetPairs, effectiveMeshGuid, overlayGuid, resolvedMesh.handle,
                 resolvedOverlay.handle);
             outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
-                overlayPairIndex, candidatePlacement, true, entity, renderLayers, sortingOffset,
+                overlayPairIndex, overlayPlacement, true, entity, renderLayers, sortingOffset,
                 sortingUseAabbCenter, false, true, opacity, true});
         });
 

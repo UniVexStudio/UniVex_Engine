@@ -3,12 +3,23 @@
 
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 
 #include "uve/asset/asset_guid_uve.h"
+#include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
 
 namespace UVE::Asset {
+
+/// How a material turns its mesh to face the camera. Disabled keeps the authored pose.
+enum class MaterialBillboardModeUVE : std::uint8_t {
+    Disabled = 0,
+    /// Local +Z faces the camera.
+    Enabled,
+    /// Local +Z faces the camera around world Y only.
+    Y,
+};
 
 /// The CPU-side, engine-native representation of a `.uvmat` asset (Part 2's file-format table):
 /// a PBR material — Albedo, Normal, Metallic, Roughness, AO, Emissive (Part 7.2's
@@ -33,12 +44,23 @@ struct MaterialAssetUVE {
     /// Drives `RenderQueueUVE`'s opaque/transparent bucketing (Increment 13) — not consumed by
     /// anything yet.
     bool isTransparent = false;
+    /// Appended: Disabled keeps the authored pose. Enabled / Y rewrite it at draw so a textured
+    /// card faces the camera.
+    MaterialBillboardModeUVE billboardMode = MaterialBillboardModeUVE::Disabled;
 };
 
 /// Validates the CPU material descriptor before persistence or renderer handoff. Albedo channels and
 /// metallic/roughness are finite in [0,1]; emissive channels are finite and nonnegative; GUID
-/// references may be invalid to represent an intentionally unset texture or shader.
+/// references may be invalid to represent an intentionally unset texture or shader. Billboard is a
+/// known enumerator.
 [[nodiscard]] bool IsMaterialAssetValidUVE(const MaterialAssetUVE& material) noexcept;
+
+/// Writes a rotation that points local +Z at the camera. Disabled, a degenerate view, or
+/// non-finite inputs return false and leave `outRotation` untouched.
+[[nodiscard]] bool TryMakeMaterialBillboardRotationUVE(MaterialBillboardModeUVE mode,
+                                                       const Math::Vector3UVE& objectPosition,
+                                                       const Math::Vector3UVE& cameraPosition,
+                                                       Math::QuaternionUVE& outRotation) noexcept;
 
 /// Loads `path` as a `.uve*` envelope with `AssetKindUVE::Material`, filling `outMaterial`.
 /// Returns false (logging the reason) if the file is missing/malformed, isn't actually a
