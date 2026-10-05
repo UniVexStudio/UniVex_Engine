@@ -14,7 +14,7 @@ class IEntityManagerUVE;
 
 /// Authoring definition for the BoxMesh3D scene object: the component set and defaults a freshly
 /// created BoxMesh3D entity attaches — a cube primitive mesh plus a matching box collider. This
-/// recipe (including the exact editor-orange base color) used to be hardcoded in EditorUVE's
+/// recipe (including its neutral white base color) used to be hardcoded in EditorUVE's
 /// creation switch behind the legacy EditorEntityKindUVE::Cube case; it now has the same per-file
 /// home every other object kind has, so the object's look and collision defaults are customized in
 /// exactly one discoverable place. Per Engine/Runtime/Scene/README.md's "one truth per concept"
@@ -25,8 +25,8 @@ struct BoxMesh3DObjectDefinitionUVE final {
     /// the exact name the legacy editor entity kind has always produced.
     static constexpr std::string_view defaultName = "Cube";
 
-    /// Cube primitive authored defaults (editor-orange base color, matching the legacy recipe).
-    PrimitiveMeshComponentUVE mesh{PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.73F, 0.48F, 0.21F}};
+    /// Cube primitive authored defaults (neutral white; materials/colors can be authored later).
+    PrimitiveMeshComponentUVE mesh{PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{1.0F, 1.0F, 1.0F}};
     /// Unit-cube collision authored defaults (0.5 half-extents per axis).
     ColliderComponentUVE collider{Math::Vector3UVE{0.5F, 0.5F, 0.5F}};
 };

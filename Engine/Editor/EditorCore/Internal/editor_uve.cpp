@@ -646,6 +646,27 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
         }
         return folder;
     }
+    if (item->action == ContentCatalogueActionUVE::SceneAsset) {
+        const std::filesystem::path path = MakeUniqueContentPathUVE(directory, item->label, ".uvscene");
+        Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+        Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+        const Scene::EntityUVE root = CreateDocumentEntityInternalUVE(Scene::SceneRootObjectDefinitionUVE{}, std::nullopt);
+        const Scene::EntityUVE viewport = CreateDocumentEntityInternalUVE(Scene::ViewportObjectDefinitionUVE{}, std::nullopt);
+        const Scene::EntityUVE world = CreateDocumentEntityInternalUVE(Scene::FolderObjectDefinitionUVE{}, std::nullopt);
+        if (root == Scene::kInvalidEntityUVE || viewport == Scene::kInvalidEntityUVE || world == Scene::kInvalidEntityUVE) {
+            if (root != Scene::kInvalidEntityUVE) DestroyDocumentSubtreeUVE(root);
+            if (viewport != Scene::kInvalidEntityUVE) DestroyDocumentSubtreeUVE(viewport);
+            if (world != Scene::kInvalidEntityUVE) DestroyDocumentSubtreeUVE(world);
+            return std::nullopt;
+        }
+        sceneGraph.SetParentUVE(entityManager, viewport, root);
+        sceneGraph.SetParentUVE(entityManager, world, viewport);
+        const bool saved = m_services->GetSceneSerializerUVE().SaveUVE(entityManager, {root}, path, Scene::SceneAssetTypeUVE::Scene);
+        DestroyDocumentSubtreeUVE(root);
+        InvalidateHierarchyFilterCacheUVE();
+        return saved ? std::optional<std::filesystem::path>{path} : std::nullopt;
+    }
+
     if (item->objects.empty()) {
         return std::nullopt;
     }
@@ -884,6 +905,21 @@ bool EditorUVE::LoadSceneUVE() {
     m_sceneDirty = migrated; // a wrapped legacy file no longer matches its bytes on disk
     InvalidateHierarchyFilterCacheUVE();
     return true;
+}
+
+bool EditorUVE::OpenSceneAssetUVE(const std::filesystem::path& path) {
+    std::error_code error;
+    if (!IsAuthoringCommandAllowedUVE() || path.empty() || path.extension() != ".uvscene" ||
+        !std::filesystem::is_regular_file(path, error)) {
+        return false;
+    }
+    const std::filesystem::path previous = m_activeScenePath;
+    m_activeScenePath = path;
+    if (LoadSceneUVE()) {
+        return true;
+    }
+    m_activeScenePath = previous;
+    return false;
 }
 
 void EditorUVE::SelectEntityUVE(const Scene::EntityUVE entity) noexcept {
