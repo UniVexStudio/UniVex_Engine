@@ -36,6 +36,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/events/event_system_uve.h"
+#include "uve/math/aabb_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
@@ -603,6 +604,32 @@ TEST_F(Object3DDefinitionsUVETest, RenderInstanceFamilyComponentsRejectValuesThe
     surface.visibilityRangeBegin = 10.0F;
     surface.visibilityRangeEnd = 5.0F;
     EXPECT_FALSE(IsSurfaceInstanceComponentValidUVE(surface));
+
+    EXPECT_FALSE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(SurfaceInstanceComponentUVE{}, 0.0F));
+    EXPECT_FALSE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(SurfaceInstanceComponentUVE{}, 1000.0F));
+    SurfaceInstanceComponentUVE ranged{};
+    ranged.visibilityRangeBegin = 5.0F;
+    ranged.visibilityRangeEnd = 20.0F;
+    EXPECT_TRUE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(ranged, 4.9F));
+    EXPECT_FALSE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(ranged, 5.0F));
+    EXPECT_FALSE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(ranged, 20.0F));
+    EXPECT_TRUE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(ranged, 20.1F));
+    EXPECT_TRUE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(ranged, std::numeric_limits<float>::quiet_NaN()));
+    SurfaceInstanceComponentUVE invalidRange{};
+    invalidRange.transparency = 2.0F;
+    EXPECT_TRUE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(invalidRange, 1.0F));
+
+    Math::AabbUVE bounds = Math::AabbUVE::FromCenterExtentsUVE({0.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    ExpandSurfaceInstance3DCullBoundsUVE(SurfaceInstanceComponentUVE{}, bounds);
+    EXPECT_NEAR(bounds.min.x, -0.5F, 1.0e-6F);
+    EXPECT_NEAR(bounds.max.x, 0.5F, 1.0e-6F);
+    SurfaceInstanceComponentUVE padded{};
+    padded.extraCullMargin = 2.0F;
+    ExpandSurfaceInstance3DCullBoundsUVE(padded, bounds);
+    EXPECT_NEAR(bounds.min.x, -2.5F, 1.0e-6F);
+    EXPECT_NEAR(bounds.max.x, 2.5F, 1.0e-6F);
+    EXPECT_NEAR(bounds.min.y, -2.5F, 1.0e-6F);
+    EXPECT_NEAR(bounds.max.z, 2.5F, 1.0e-6F);
 
     EXPECT_TRUE(IsLightEmitterComponentValidUVE(LightEmitterComponentUVE{}));
     LightEmitterComponentUVE light{};

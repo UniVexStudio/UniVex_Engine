@@ -3,20 +3,22 @@
 #include "uve/render_systems/mesh_renderer_uve.h"
 
 #include <cmath>
-
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include <utility>
 
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/logging/assert_uve.h"
 #include "uve/render_systems/mesh_render_eligibility_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
+#include "uve/component/surface_instance_component_uve.h"
+#include "uve/objects/3d/abstract_objects_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
 #include "uve/objects/3d/occluder_3d_uve.h"
 #include "uve/objects/3d/visibility_region_3d_uve.h"
@@ -143,6 +145,32 @@ struct AssetPairKeyHashUVE final {
     return index;
 }
 
+/// Resolves a SurfaceInstance3D material override path to a loadable material GUID.
+/// Built once per walk, only if a surface actually names an override: a scene with none pays
+/// nothing. Empty path is "no override", not a failed lookup.
+[[nodiscard]] bool TryResolveMaterialOverridePathUVE(
+    const std::string& materialOverridePath, Asset::IAssetDatabaseUVE& assetDatabase,
+    std::unordered_map<std::string, Asset::AssetGuidUVE>& pathToGuidIndex, bool& indexBuilt,
+    Asset::AssetGuidUVE& outGuid) noexcept {
+    if (materialOverridePath.empty()) {
+        return false;
+    }
+    if (!indexBuilt) {
+        pathToGuidIndex.clear();
+        for (const Asset::AssetRecordUVE& record : assetDatabase.GetRegisteredAssetsUVE()) {
+            pathToGuidIndex.emplace(record.path.lexically_normal().generic_string(), record.guid);
+        }
+        indexBuilt = true;
+    }
+    const std::string wanted = std::filesystem::path(materialOverridePath).lexically_normal().generic_string();
+    const auto found = pathToGuidIndex.find(wanted);
+    if (found == pathToGuidIndex.end()) {
+        return false;
+    }
+    outGuid = found->second;
+    return true;
+}
+
 } // namespace
 
 
@@ -184,6 +212,9 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
     std::vector<Scene::Occluder3DSnapshotUVE> occluders;
     Scene::CollectOccluder3DSnapshotsUVE(entityManager, occluders);
 
+    std::unordered_map<std::string, Asset::AssetGuidUVE> materialOverridePathIndex;
+    bool materialOverridePathIndexBuilt = false;
+
     entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
         [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
             const Scene::MeshComponentUVE& meshComponent) {
@@ -201,6 +232,17 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                 !entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity).visibleInHierarchy) {
                 ++outVisibilitySet.hiddenEntities;
                 return;
+            }
+
+            const Scene::SurfaceInstanceComponentUVE* surface = nullptr;
+            if (entityManager.HasComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity)) {
+                const Scene::SurfaceInstanceComponentUVE& surfaceComponent =
+                    entityManager.GetComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity);
+                if (!Scene::IsSurfaceInstanceComponentValidUVE(surfaceComponent)) {
+                    ++outVisibilitySet.invalidRenderEligibility;
+                    return;
+                }
+                surface = &surfaceComponent;
             }
 
             // Distance detail, resolved before anything is loaded or computed. A LodGroup3D past
@@ -245,25 +287,46 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                 return;
             }
 
+            if (surface != nullptr) {
+                const Math::Vector3UVE toCamera =
+                    worldTransform.worldPosition - outVisibilitySet.cameraWorldPosition;
+                if (Scene::IsSurfaceInstance3DOutsideVisibilityRangeUVE(*surface, Math::LengthUVE(toCamera))) {
+                    ++outVisibilitySet.rangeCulledEntities;
+                    return;
+                }
+            }
+
+            Asset::AssetGuidUVE effectiveMaterialGuid = meshComponent.materialGuid;
+            if (surface != nullptr && !surface->materialOverridePath.empty()) {
+                Asset::AssetGuidUVE overrideGuid = Asset::kInvalidAssetGuidUVE;
+                if (!TryResolveMaterialOverridePathUVE(surface->materialOverridePath, assetDatabase,
+                                                       materialOverridePathIndex, materialOverridePathIndexBuilt,
+                                                       overrideGuid)) {
+                    ++outVisibilitySet.invalidAssetReferences;
+                    return;
+                }
+                effectiveMaterialGuid = overrideGuid;
+            }
+
             if (effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
                 ++outVisibilitySet.invalidAssetReferences;
             }
             // A mesh with no material is not a broken reference: the renderer draws it with the
             // built-in lit shader (Renderer3DUVE's unmaterialed path), so only an unassigned pair
-            // counts its material as missing.
-            if (meshComponent.materialGuid == Asset::kInvalidAssetGuidUVE &&
+            // counts its material as missing. An override path that resolved is a material.
+            if (effectiveMaterialGuid == Asset::kInvalidAssetGuidUVE &&
                 effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
                 ++outVisibilitySet.invalidAssetReferences;
             }
             if (effectiveMeshGuid == Asset::kInvalidAssetGuidUVE ||
-                meshComponent.materialGuid == Asset::kInvalidAssetGuidUVE) {
+                effectiveMaterialGuid == Asset::kInvalidAssetGuidUVE) {
                 return;
             }
 
             const ResolvedAssetUVE<Asset::MeshAssetUVE>& resolvedMesh =
                 ResolveOnceUVE(resolvedMeshes, effectiveMeshGuid, assetManager, assetDatabase);
             const ResolvedAssetUVE<Asset::MaterialAssetUVE>& resolvedMaterial =
-                ResolveOnceUVE(resolvedMaterials, meshComponent.materialGuid, assetManager, assetDatabase);
+                ResolveOnceUVE(resolvedMaterials, effectiveMaterialGuid, assetManager, assetDatabase);
 
             // Counted per ENTITY, not per resolution. Sharing the resolution is an implementation
             // detail of how the answer was obtained; the diagnostic answers "how many entities
@@ -294,8 +357,11 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             } else {
                 ++outVisibilitySet.placementCacheMisses;
                 cacheEntry.key = key;
+                Scene::MeshComponentUVE placementMesh = meshComponent;
+                placementMesh.meshGuid = effectiveMeshGuid;
+                placementMesh.materialGuid = effectiveMaterialGuid;
                 static_cast<void>(
-                    EvaluateMeshRenderPlacementUVE(meshComponent, worldTransform, *mesh, cacheEntry.placement));
+                    EvaluateMeshRenderPlacementUVE(placementMesh, worldTransform, *mesh, cacheEntry.placement));
             }
             // Stamped on hit as well as miss: the stamp records "seen this frame", which is what
             // the prune reads. Only stamping misses would evict every stationary object.
@@ -310,8 +376,13 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                 return;
             }
 
-            if (Scene::IsOccluder3DAabbDrawHiddenUVE(occluders, outVisibilitySet.cameraWorldPosition,
-                                                     placement.worldBounds)) {
+            Math::AabbUVE occlusionBounds = placement.worldBounds;
+            if (surface != nullptr) {
+                Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, occlusionBounds);
+            }
+            if (!(surface != nullptr && surface->ignoreOcclusionCulling) &&
+                Scene::IsOccluder3DAabbDrawHiddenUVE(occluders, outVisibilitySet.cameraWorldPosition,
+                                                     occlusionBounds)) {
                 ++outVisibilitySet.occlusionCulledEntities;
                 return;
             }
@@ -324,8 +395,8 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             // frame; a reference per entity would be the same two records counted thousands of
             // times, at a mutex and a hash each way.
             const std::size_t assetPairIndex = ResolveAssetPairIndexUVE(
-                assetPairSlots, outVisibilitySet.assetPairs, effectiveMeshGuid,
-                meshComponent.materialGuid, resolvedMesh.handle, resolvedMaterial.handle);
+                assetPairSlots, outVisibilitySet.assetPairs, effectiveMeshGuid, effectiveMaterialGuid,
+                resolvedMesh.handle, resolvedMaterial.handle);
             // Physics interpolation, applied to the CANDIDATE rather than to the cached placement.
             //
             // The placement cache is keyed on the simulated world transform, which changes once
@@ -339,6 +410,9 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             if (ApplyInterpolatedPoseUVE(entityManager, entity, outVisibilitySet.physicsInterpolationAlpha,
                                          *mesh, candidatePlacement)) {
                 ++outVisibilitySet.interpolatedCandidates;
+            }
+            if (surface != nullptr) {
+                Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, candidatePlacement.worldBounds);
             }
             outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
                 assetPairIndex, candidatePlacement, material->isTransparent, entity});
