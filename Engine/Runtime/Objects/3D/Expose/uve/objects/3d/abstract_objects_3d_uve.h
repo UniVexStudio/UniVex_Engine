@@ -70,6 +70,13 @@ void ApplyLightEmitter3DBaseUVE(IEntityManagerUVE& entityManager, EntityUVE enti
 void ExpandSurfaceInstance3DCullBoundsUVE(const SurfaceInstanceComponentUVE& surface,
                                           Math::AabbUVE& bounds) noexcept;
 
+/// True when this surface writes the shadow maps. Off does not. On, DoubleSided and ShadowsOnly
+/// do. DoubleSided is the same caster as On: the depth pass already rasterizes both faces.
+[[nodiscard]] bool SurfaceInstance3DCastsShadowUVE(const SurfaceInstanceComponentUVE& surface) noexcept;
+
+/// True when this surface is drawn in the colour view. ShadowsOnly is a caster only, so it is not.
+[[nodiscard]] bool SurfaceInstance3DDrawsInViewUVE(const SurfaceInstanceComponentUVE& surface) noexcept;
+
 // =================================================================================================
 // What RenderInstance3D means to the draw list.
 // =================================================================================================

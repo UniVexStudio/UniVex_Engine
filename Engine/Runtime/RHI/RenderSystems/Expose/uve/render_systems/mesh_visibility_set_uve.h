@@ -124,6 +124,9 @@ struct MeshVisibilityCandidateUVE final {
     float sortingOffset = 0.0F;
     /// When false, sort depth is the object's origin rather than the centre of its bounds.
     bool sortingUseAabbCenter = true;
+    /// SurfaceInstance3D shadow mode. No surface, and On / DoubleSided, both cast and draw.
+    bool castsShadow = true;
+    bool drawsInView = true;
 };
 
 /// This frame's renderable set, built once and then culled against as many frusta as the frame
@@ -246,6 +249,11 @@ struct MeshVisibilitySetUVE final {
     /// camera position. Default is every layer, so a caller that has never heard of layers sees
     /// every mesh - including every existing test.
     std::uint32_t viewLayerMask = 0xFFFFFFFFU;
+
+    /// When true, this cull is a shadow cascade: keep casters (including ShadowsOnly) and drop
+    /// Off. Default false is the colour view: ShadowsOnly is omitted, Off still draws. Not cleared
+    /// with the candidates - the caller sets it before each cull, like viewLayerMask.
+    bool shadowPass = false;
 
     /// Monotonic frame stamp, incremented by each build, used to tell touched entries from stale
     /// ones without a second pass to reset flags.

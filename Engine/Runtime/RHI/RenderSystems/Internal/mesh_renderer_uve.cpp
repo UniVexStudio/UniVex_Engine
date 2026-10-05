@@ -436,9 +436,15 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             if (surface != nullptr) {
                 Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, candidatePlacement.worldBounds);
             }
+            bool castsShadow = true;
+            bool drawsInView = true;
+            if (surface != nullptr) {
+                castsShadow = Scene::SurfaceInstance3DCastsShadowUVE(*surface);
+                drawsInView = Scene::SurfaceInstance3DDrawsInViewUVE(*surface);
+            }
             outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
                 assetPairIndex, candidatePlacement, material->isTransparent, entity, renderLayers, sortingOffset,
-                sortingUseAabbCenter});
+                sortingUseAabbCenter, castsShadow, drawsInView});
         });
 
     // Bound the cache. Without this it retains an entry for every entity the scene has ever had,
@@ -477,6 +483,13 @@ void MeshRendererUVE::CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visib
         for (std::size_t index = first; index < first + count; ++index) {
             const MeshVisibilityCandidateUVE& candidate = visibilitySet.candidates[index];
             MeshRenderEligibilityUVE eligibility;
+            if (visibilitySet.shadowPass) {
+                if (!candidate.castsShadow) {
+                    continue;
+                }
+            } else if (!candidate.drawsInView) {
+                continue;
+            }
             if (!TestMeshRenderVisibilityUVE(candidate.placement, cullFrustum, eligibility)) {
                 continue;
             }
