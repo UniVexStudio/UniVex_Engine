@@ -631,6 +631,21 @@ TEST_F(Object3DDefinitionsUVETest, RenderInstanceFamilyComponentsRejectValuesThe
     EXPECT_NEAR(bounds.min.y, -2.5F, 1.0e-6F);
     EXPECT_NEAR(bounds.max.z, 2.5F, 1.0e-6F);
 
+    EXPECT_TRUE(SurfaceInstance3DCastsShadowUVE(SurfaceInstanceComponentUVE{}));
+    EXPECT_TRUE(SurfaceInstance3DDrawsInViewUVE(SurfaceInstanceComponentUVE{}));
+    SurfaceInstanceComponentUVE shadowOff{};
+    shadowOff.castShadow = SurfaceShadowModeUVE::Off;
+    EXPECT_FALSE(SurfaceInstance3DCastsShadowUVE(shadowOff));
+    EXPECT_TRUE(SurfaceInstance3DDrawsInViewUVE(shadowOff));
+    SurfaceInstanceComponentUVE shadowsOnly{};
+    shadowsOnly.castShadow = SurfaceShadowModeUVE::ShadowsOnly;
+    EXPECT_TRUE(SurfaceInstance3DCastsShadowUVE(shadowsOnly));
+    EXPECT_FALSE(SurfaceInstance3DDrawsInViewUVE(shadowsOnly));
+    SurfaceInstanceComponentUVE doubleSided{};
+    doubleSided.castShadow = SurfaceShadowModeUVE::DoubleSided;
+    EXPECT_TRUE(SurfaceInstance3DCastsShadowUVE(doubleSided));
+    EXPECT_TRUE(SurfaceInstance3DDrawsInViewUVE(doubleSided));
+
     EXPECT_TRUE(IsRenderInstance3DOnViewLayersUVE(0x00000001U, 0xFFFFFFFFU));
     EXPECT_TRUE(IsRenderInstance3DOnViewLayersUVE(0x00000002U, 0x00000002U));
     EXPECT_FALSE(IsRenderInstance3DOnViewLayersUVE(0x00000001U, 0x00000002U));

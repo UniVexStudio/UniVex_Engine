@@ -91,6 +91,14 @@ void ExpandSurfaceInstance3DCullBoundsUVE(const SurfaceInstanceComponentUVE& sur
     bounds.max.z += margin;
 }
 
+bool SurfaceInstance3DCastsShadowUVE(const SurfaceInstanceComponentUVE& surface) noexcept {
+    return surface.castShadow != SurfaceShadowModeUVE::Off;
+}
+
+bool SurfaceInstance3DDrawsInViewUVE(const SurfaceInstanceComponentUVE& surface) noexcept {
+    return surface.castShadow != SurfaceShadowModeUVE::ShadowsOnly;
+}
+
 bool IsRenderInstance3DOnViewLayersUVE(const std::uint32_t renderLayers,
                                        const std::uint32_t viewLayerMask) noexcept {
     return (renderLayers & viewLayerMask) != 0U;

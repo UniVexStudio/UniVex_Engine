@@ -2941,6 +2941,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             }
             const Math::FrustumUVE lightFrustum =
                 m_impl->cameraSystem.ExtractFrustumUVE(lightSpaceMatrices[cascadeIndex]);
+            m_impl->visibilitySet.shadowPass = true;
             m_impl->meshRenderer.CullVisibilitySetIntoUVE(m_impl->visibilitySet, lightFrustum,
                                                           m_impl->shadowQueues[cascadeIndex]);
             // Mesh order, not depth order: this cascade renders depth only, and the shadow
@@ -2985,6 +2986,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             ++m_impl->lastFrameDiagnostics.visibilityClustersRejected;
         }
     }
+    m_impl->visibilitySet.shadowPass = false;
     m_impl->meshRenderer.CullVisibilitySetIntoUVE(m_impl->visibilitySet, frustum, queue);
 
     // The decal pass, run against the same frame data the mesh pass just built: the receiving

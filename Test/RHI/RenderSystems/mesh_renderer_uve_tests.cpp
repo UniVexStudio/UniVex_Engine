@@ -2021,5 +2021,95 @@ TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_RenderItemCarriesTheInstanceLa
     EXPECT_EQ(queue.opaqueItems[0].renderLayers, 0x8U);
 }
 
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_ShadowModeIsCarriedOnTheCandidate) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_shadow.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_shadow.uvmat");
+    const Scene::EntityUVE off =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    const Scene::EntityUVE only =
+        MakeMeshEntityUVE(Math::Vector3UVE{1.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    const Scene::EntityUVE none =
+        MakeMeshEntityUVE(Math::Vector3UVE{2.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Scene::SurfaceInstanceComponentUVE offSurface{};
+    offSurface.castShadow = Scene::SurfaceShadowModeUVE::Off;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(off, offSurface);
+    Scene::SurfaceInstanceComponentUVE onlySurface{};
+    onlySurface.castShadow = Scene::SurfaceShadowModeUVE::ShadowsOnly;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(only, onlySurface);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 3U);
+    for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
+        if (candidate.entity == off) {
+            EXPECT_FALSE(candidate.castsShadow);
+            EXPECT_TRUE(candidate.drawsInView);
+        } else if (candidate.entity == only) {
+            EXPECT_TRUE(candidate.castsShadow);
+            EXPECT_FALSE(candidate.drawsInView);
+        } else if (candidate.entity == none) {
+            EXPECT_TRUE(candidate.castsShadow);
+            EXPECT_TRUE(candidate.drawsInView);
+        }
+    }
+}
+
+TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_OffIsDroppedFromTheShadowPass) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_shadow_off.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_shadow_off.uvmat");
+    const Scene::EntityUVE off =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    const Scene::EntityUVE on =
+        MakeMeshEntityUVE(Math::Vector3UVE{1.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Scene::SurfaceInstanceComponentUVE offSurface{};
+    offSurface.castShadow = Scene::SurfaceShadowModeUVE::Off;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(off, offSurface);
+    Scene::SurfaceInstanceComponentUVE onSurface{};
+    onSurface.castShadow = Scene::SurfaceShadowModeUVE::On;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(on, onSurface);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    RenderQueueUVE colour;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), colour);
+    EXPECT_EQ(colour.opaqueItems.size(), 2U);
+
+    visibilitySet.shadowPass = true;
+    RenderQueueUVE shadow;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), shadow);
+    ASSERT_EQ(shadow.opaqueItems.size(), 1U);
+}
+
+TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_ShadowsOnlyIsDroppedFromTheColourView) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_shadow_only.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_shadow_only.uvmat");
+    const Scene::EntityUVE only =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    const Scene::EntityUVE on =
+        MakeMeshEntityUVE(Math::Vector3UVE{1.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Scene::SurfaceInstanceComponentUVE onlySurface{};
+    onlySurface.castShadow = Scene::SurfaceShadowModeUVE::ShadowsOnly;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(only, onlySurface);
+    Scene::SurfaceInstanceComponentUVE onSurface{};
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(on, onSurface);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    RenderQueueUVE colour;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), colour);
+    ASSERT_EQ(colour.opaqueItems.size(), 1U);
+
+    visibilitySet.shadowPass = true;
+    RenderQueueUVE shadow;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), shadow);
+    EXPECT_EQ(shadow.opaqueItems.size(), 2U);
+}
+
 } // namespace
 } // namespace UVE::Render::Tests
