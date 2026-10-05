@@ -63,6 +63,7 @@
 #include "uve/objects/3d/health_uve.h"
 #include "uve/objects/3d/player_3d_uve.h"
 #include "uve/objects/3d/two_bone_ik_3d_uve.h"
+#include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
@@ -2478,6 +2479,30 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
                     "How many occupied cells stay drawn. Farther cells skip their draws."),
                 InGroupUVE(DeclareRuntimeStateUVE<&P::loadedCellCount>("loadedCellCount", "Live Cells",
                                                                        kPropertyTypeUInt32UVE),
+                           "Result"),
+            }));
+
+    using V = VisibilityRegion3DComponentUVE;
+    AddValidatedUVE<VisibilityRegion3DComponentUVE, &IsVisibilityRegion3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.visibility_region_3d", "VisibilityRegion3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&V::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off, every member draws. On, interior drawables skip while no viewer "
+                               "stands inside the box."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&V::halfExtents>("halfExtents", "Half Extents",
+                                                             kPropertyTypeVector3UVE),
+                                 0.001, 100000.0, 0.01),
+                    "The room box, centred on this object and aligned to the world axes."),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&V::visibilityLayers>("visibilityLayers", "Visibility Layers",
+                                                                    kPropertyTypeBitMask32UVE),
+                                   "Which mesh layers this room manages. A zero mask manages nothing. "
+                                   "Primitives, decals, particles and fog use layer 0."),
+                    std::string(kLayerMaskDrawerRenderUVE)),
+                InGroupUVE(DeclareRuntimeStateUVE<&V::active>("active", "Active", kPropertyTypeBoolUVE),
                            "Result"),
             }));
 }

@@ -49,6 +49,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
@@ -516,6 +517,29 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_PartitionHiddenPrimitiveIsNotACandidate
         hidden, Scene::WorldPartition3DMembershipComponentUVE{partition, false});
     entityManager.AddComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
         shown, Scene::WorldPartition3DMembershipComponentUVE{partition, true});
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveCandidates, 1U);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveItemsExtracted, 1U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_RegionHiddenPrimitiveIsNotACandidate) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE region = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, region, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DComponentUVE>(region);
+    sceneGraph.UpdateUVE(entityManager);
+
+    const Scene::EntityUVE hidden = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.8F, 0.2F, 0.1F}});
+    const Scene::EntityUVE shown = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{1.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.2F, 0.8F, 0.1F}});
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        hidden, Scene::VisibilityRegion3DMembershipComponentUVE{region, false});
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        shown, Scene::VisibilityRegion3DMembershipComponentUVE{region, true});
 
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
     EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveCandidates, 1U);

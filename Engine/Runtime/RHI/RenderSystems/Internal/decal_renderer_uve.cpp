@@ -12,6 +12,7 @@
 #include "uve/component/render_instance_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
 
 namespace UVE::Render {
@@ -288,7 +289,8 @@ void DecalRendererUVE::BuildDrawListUVE(Scene::IEntityManagerUVE& entityManager,
     entityManager.ForEachUVE<Scene::Decal3DComponentUVE, Scene::WorldTransformComponentUVE>(
         [&](const Scene::EntityUVE entity, const Scene::Decal3DComponentUVE& decal,
             const Scene::WorldTransformComponentUVE& worldTransform) {
-            if (Scene::IsWorldPartition3DDrawHiddenUVE(entityManager, entity)) {
+            if (Scene::IsWorldPartition3DDrawHiddenUVE(entityManager, entity) ||
+                Scene::IsVisibilityRegion3DDrawHiddenUVE(entityManager, entity)) {
                 return;
             }
             ++outDrawList.decalsConsidered;

@@ -4789,6 +4789,17 @@ TEST(EngineCoreUVETest, VisibilityRegion3D_CameraOutsideTheRoomSkipsItsInteriorC
                                                   0xFFFFFFFFU));
     const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
         entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::EntityUVE primitive = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE primitiveTransform;
+    primitiveTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, primitive, primitiveTransform);
+    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(primitive,
+                                                                   Scene::PrimitiveMeshComponentUVE{});
+    const Scene::EntityUVE light = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE lightTransform;
+    lightTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, light, lightTransform);
+    entityManager.AddComponentUVE<Scene::LightComponentUVE>(light, Scene::LightComponentUVE{});
     const Scene::EntityUVE outside = CreateStandaloneMeshAtUVE(
         entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F}, 0x00000001U);
     const Scene::EntityUVE camera =
@@ -4804,6 +4815,15 @@ TEST(EngineCoreUVETest, VisibilityRegion3D_CameraOutsideTheRoomSkipsItsInteriorC
         << "camera outside: interior content is skipped with zero render work";
     EXPECT_FALSE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
         outside)) << "content outside every region is not a member of anything";
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        primitive))
+        << "a primitive mesh inside the room is a drawable the region can skip";
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                     primitive)
+                     .live);
+    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        light))
+        << "lights are not region drawables";
 
     Scene::TransformComponentUVE enterTransform;
     enterTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};

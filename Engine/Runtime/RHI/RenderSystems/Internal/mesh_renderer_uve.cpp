@@ -257,23 +257,11 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                 return;
             }
 
-            // Visibility region, same shape as the partition gate: a dead region fails open via
-            // the pure resolver, so its last verdict can never outlive it.
-            if (entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
-                    entity)) {
-                const Scene::VisibilityRegion3DMembershipComponentUVE& membership =
-                    entityManager
-                        .GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(entity);
-                const bool ownerAlive =
-                    membership.region != Scene::kInvalidEntityUVE &&
-                    entityManager.IsAliveUVE(membership.region) &&
-                    entityManager.HasComponentUVE<Scene::VisibilityRegion3DComponentUVE>(
-                        membership.region);
-                if (!Scene::ResolveVisibilityRegion3DMembershipLiveUVE(ownerAlive,
-                                                                       membership.live)) {
-                    ++outVisibilitySet.regionCulledEntities;
-                    return;
-                }
+            // Visibility region room box: an inactive room skips this draw. A dead region fails
+            // open so a residual opinion cannot hide content forever.
+            if (Scene::IsVisibilityRegion3DDrawHiddenUVE(entityManager, entity)) {
+                ++outVisibilitySet.regionCulledEntities;
+                return;
             }
 
             // Occluders, composed as a plain OR over the build's snapshot: any strict cover on
