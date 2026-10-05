@@ -24,6 +24,7 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/render_systems/decal_draw_command_uve.h"
@@ -240,6 +241,18 @@ TEST_F(DecalRendererUVETest, BuildDrawListUVE_PartitionHiddenDecalIsNotConsidere
     entityManager.AddComponentUVE<Scene::WorldPartition3DComponentUVE>(partition);
     entityManager.AddComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
         scene.decal, Scene::WorldPartition3DMembershipComponentUVE{partition, false});
+    BuildFrameUVE(Math::Vector3UVE{});
+    EXPECT_EQ(drawList.decalsConsidered, 0U);
+    EXPECT_TRUE(drawList.draws.empty());
+}
+
+TEST_F(DecalRendererUVETest, BuildDrawListUVE_RegionHiddenDecalIsNotConsidered) {
+    const WallAndDecalUVE scene = MakeWallAndDecalUVE();
+    const Scene::EntityUVE region = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, region, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DComponentUVE>(region);
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        scene.decal, Scene::VisibilityRegion3DMembershipComponentUVE{region, false});
     BuildFrameUVE(Math::Vector3UVE{});
     EXPECT_EQ(drawList.decalsConsidered, 0U);
     EXPECT_TRUE(drawList.draws.empty());

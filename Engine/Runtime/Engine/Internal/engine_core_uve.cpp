@@ -1911,12 +1911,11 @@ void EngineCoreUVE::SyncVisibilityRegion3DObjectsUVE() {
                 : Math::Vector3UVE{};
         const bool stillManaged =
             ownerConfig.enabled && Scene::IsVisibilityRegion3DObjectComponentValidUVE(ownerConfig) &&
-            m_entityManager->HasComponentUVE<Scene::MeshComponentUVE>(member.entity) &&
+            Scene::CarriesVisibilityRegion3DDrawableUVE(*m_entityManager, member.entity) &&
             m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(member.entity) &&
             Scene::ResolveVisibilityRegion3DLayerGateUVE(
                 ownerConfig.visibilityLayers,
-                m_entityManager->GetComponentUVE<Scene::MeshComponentUVE>(member.entity)
-                    .visibilityLayers) &&
+                Scene::ResolveVisibilityRegion3DDrawableLayersUVE(*m_entityManager, member.entity)) &&
             Scene::ResolveVisibilityRegion3DContainsPointUVE(
                 ownerConfig, ownerOrigin,
                 m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(member.entity)
@@ -1926,15 +1925,17 @@ void EngineCoreUVE::SyncVisibilityRegion3DObjectsUVE() {
         membership.live = !stillManaged || ownerConfig.active;
     }
 
-    // Pass 2: discovery. An un-owned mesh (never stamped, or Pass 1 rebranded it to kInvalid on
-    // a dead owner) inside an enabled region whose layer gate passes becomes its member. With
-    // overlapping regions the mesh stamps the NEAREST one's center; ties resolve in the
+    // Pass 2: discovery. An un-owned drawable (never stamped, or Pass 1 rebranded it to kInvalid
+    // on a dead owner) inside an enabled region whose layer gate passes becomes its member. With
+    // overlapping regions the drawable stamps the NEAREST one's center; ties resolve in the
     // iteration order the ECS hands regions over, which is ascending entity id - deterministic
     // for content that does not overlap rooms halfway.
-    std::vector<Scene::EntityUVE> meshes;
-    m_entityManager->ForEachUVE<Scene::MeshComponentUVE, Scene::WorldTransformComponentUVE>(
-        [this, &meshes](const Scene::EntityUVE entity, const Scene::MeshComponentUVE&,
-                        const Scene::WorldTransformComponentUVE&) {
+    std::vector<Scene::EntityUVE> drawables;
+    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE>(
+        [this, &drawables](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE&) {
+            if (!Scene::CarriesVisibilityRegion3DDrawableUVE(*m_entityManager, entity)) {
+                return;
+            }
             const bool unowned =
                 !m_entityManager->HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
                     entity) ||
@@ -1942,15 +1943,15 @@ void EngineCoreUVE::SyncVisibilityRegion3DObjectsUVE() {
                         ->GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(entity)
                         .region == Scene::kInvalidEntityUVE;
             if (unowned) {
-                meshes.push_back(entity);
+                drawables.push_back(entity);
             }
         });
-    for (const Scene::EntityUVE mesh : meshes) {
+    for (const Scene::EntityUVE drawable : drawables) {
         const Math::Vector3UVE position =
-            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(mesh)
+            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(drawable)
                 .worldPosition;
         const std::uint32_t meshLayers =
-            m_entityManager->GetComponentUVE<Scene::MeshComponentUVE>(mesh).visibilityLayers;
+            Scene::ResolveVisibilityRegion3DDrawableLayersUVE(*m_entityManager, drawable);
         float bestDistanceSquared = std::numeric_limits<float>::max();
         Scene::EntityUVE bestRegion = Scene::kInvalidEntityUVE;
         for (const RegionSnapshotUVE& region : regions) {
@@ -1974,19 +1975,19 @@ void EngineCoreUVE::SyncVisibilityRegion3DObjectsUVE() {
             }
         }
         if (bestRegion == Scene::kInvalidEntityUVE) {
-            continue; // outside every region: the mesh stays unmanaged and renders as ever
+            continue; // outside every region: the drawable stays unmanaged and renders as ever
         }
         const bool activeNow =
             m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DComponentUVE>(bestRegion)
                 .active;
         if (!m_entityManager->HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
-                mesh)) {
+                drawable)) {
             m_entityManager->AddComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
-                mesh, Scene::VisibilityRegion3DMembershipComponentUVE{});
+                drawable, Scene::VisibilityRegion3DMembershipComponentUVE{});
         }
         auto& membership =
             m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
-                mesh);
+                drawable);
         membership.region = bestRegion;
         membership.live = activeNow;
     }

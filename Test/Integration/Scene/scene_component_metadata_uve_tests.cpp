@@ -24,6 +24,7 @@
 #include "uve/objects/3d/interaction_area_3d_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
+#include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
@@ -428,6 +429,36 @@ TEST(SceneComponentMetadataUVETest, TheWorldPartitionSectionCarriesTheVisBudgetA
     WorldPartition3DComponentUVE broken = valid;
     broken.cellSize = 0.0F;
     EXPECT_FALSE(partition->isInstanceValid(&broken));
+}
+
+TEST(SceneComponentMetadataUVETest, TheVisibilityRegionSectionCarriesTheRoomBoxAndTheActiveFlag) {
+    const TypeMetadataEntryUVE* region =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(VisibilityRegion3DComponentUVE)));
+    ASSERT_NE(region, nullptr);
+    EXPECT_EQ(region->typeId, "component.visibility_region_3d");
+    EXPECT_EQ(region->displayName, "VisibilityRegion3D");
+
+    for (const char* const name : {"enabled", "halfExtents", "visibilityLayers"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*region, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+            << name;
+        EXPECT_TRUE(property->IsAuthoringWritableUVE()) << name;
+    }
+
+    const TypeMetadataPropertyUVE* active = FindPropertyUVE(*region, "active");
+    ASSERT_NE(active, nullptr);
+    EXPECT_TRUE(HasPropertyFlagUVE(active->flags, TypeMetadataPropertyFlagsUVE::RuntimeState));
+    EXPECT_FALSE(active->IsAuthoringWritableUVE());
+    EXPECT_FALSE(active->IsSerializedUVE());
+    EXPECT_EQ(active->section, "Result");
+
+    ASSERT_NE(region->isInstanceValid, nullptr);
+    const VisibilityRegion3DComponentUVE valid{};
+    EXPECT_TRUE(region->isInstanceValid(&valid));
+    VisibilityRegion3DComponentUVE broken = valid;
+    broken.halfExtents.x = 0.0F;
+    EXPECT_FALSE(region->isInstanceValid(&broken));
 }
 
 TEST(SceneComponentMetadataUVETest, TheBoneAttachmentSectionDeclaresTheReferenceTheBoneAndTheAnswer) {
