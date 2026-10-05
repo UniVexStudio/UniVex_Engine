@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "uve/objects/3d/fog_volume_3d_uve.h"
+#include "uve/objects/3d/occluder_3d_uve.h"
 #include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
 
@@ -168,6 +169,26 @@ TEST_F(FogVolume3DUVETest, CollectSkipsAPartitionHiddenVolume) {
     entityManager.AddComponentUVE<WorldPartition3DComponentUVE>(partition);
     entityManager.AddComponentUVE<WorldPartition3DMembershipComponentUVE>(
         volume, WorldPartition3DMembershipComponentUVE{partition, false});
+    sceneGraph.UpdateUVE(entityManager);
+
+    std::array<FogVolume3DFrameUVE, kMaximumFogVolumesPerFrameUVE> frames{};
+    EXPECT_EQ(CollectFogVolume3DFramesUVE(entityManager, Math::Vector3UVE{}, frames), 0U);
+}
+
+TEST_F(FogVolume3DUVETest, CollectSkipsAnOccludedVolume) {
+    FogVolume3DComponentUVE fog{};
+    fog.edgeFade = 0.0F;
+    TransformComponentUVE fogTransform{};
+    fogTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -10.0F};
+    PlaceFogUVE(fog, fogTransform);
+
+    const EntityUVE wall = entityManager.CreateEntityUVE();
+    TransformComponentUVE wallTransform{};
+    wallTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -5.0F};
+    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
+    Occluder3DComponentUVE wallOccluder;
+    wallOccluder.halfExtents = Math::Vector3UVE{4.0F, 4.0F, 2.0F};
+    entityManager.AddComponentUVE<Occluder3DComponentUVE>(wall, wallOccluder);
     sceneGraph.UpdateUVE(entityManager);
 
     std::array<FogVolume3DFrameUVE, kMaximumFogVolumesPerFrameUVE> frames{};

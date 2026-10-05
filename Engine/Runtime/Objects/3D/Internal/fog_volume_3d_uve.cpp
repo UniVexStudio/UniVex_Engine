@@ -9,8 +9,10 @@
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/math/aabb_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/objects/3d/abstract_objects_3d_uve.h"
+#include "uve/objects/3d/occluder_3d_uve.h"
 #include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
 
@@ -314,9 +316,12 @@ std::size_t CollectFogVolume3DFramesUVE(IEntityManagerUVE& entityManager, const 
         std::uint32_t generation = 0;
     };
     std::vector<RankedUVE> ranked;
+    std::vector<Occluder3DSnapshotUVE> occluders;
+    CollectOccluder3DSnapshotsUVE(entityManager, occluders);
     entityManager.ForEachUVE<WorldTransformComponentUVE, FogVolume3DComponentUVE>(
-        [&entityManager, &viewPosition, &ranked](const EntityUVE entity, const WorldTransformComponentUVE& world,
-                                                 const FogVolume3DComponentUVE& fog) {
+        [&entityManager, &viewPosition, &ranked, &occluders](const EntityUVE entity,
+                                                             const WorldTransformComponentUVE& world,
+                                                             const FogVolume3DComponentUVE& fog) {
             if (world.dirty || !IsFogVolume3DObjectComponentValidUVE(fog)) {
                 return;
             }
@@ -334,6 +339,15 @@ std::size_t CollectFogVolume3DFramesUVE(IEntityManagerUVE& entityManager, const 
             FogVolume3DFrameUVE frame{};
             if (!TryMakeFogVolume3DFrameUVE(fog, world.worldPosition, world.worldRotation, world.worldScale, frame)) {
                 return;
+            }
+            if (fog.shape != FogVolumeShapeUVE::World) {
+                const Math::Vector3UVE half{std::abs(frame.worldScale.x) * frame.size.x * 0.5F,
+                                            std::abs(frame.worldScale.y) * frame.size.y * 0.5F,
+                                            std::abs(frame.worldScale.z) * frame.size.z * 0.5F};
+                const Math::AabbUVE bounds = Math::AabbUVE::FromCenterExtentsUVE(frame.worldPosition, half);
+                if (IsOccluder3DAabbDrawHiddenUVE(occluders, viewPosition, bounds)) {
+                    return;
+                }
             }
             const Math::Vector3UVE offset = world.worldPosition - viewPosition;
             ranked.push_back(RankedUVE{frame, Math::LengthSquaredUVE(offset),
