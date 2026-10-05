@@ -82,6 +82,12 @@ void ExpandSurfaceInstance3DCullBoundsUVE(const SurfaceInstanceComponentUVE& sur
 /// blank the object.
 [[nodiscard]] float SurfaceInstance3DOpacityUVE(const SurfaceInstanceComponentUVE& surface) noexcept;
 
+/// Weight in [0, 1] for a Self fade across the begin/end margins. Disabled and Dependencies are
+/// 1 inside the hard range: Dependencies fades stand-ins, which this draw does not own. Non-finite
+/// or out of range is 0.
+[[nodiscard]] float SurfaceInstance3DVisibilityFadeWeightUVE(const SurfaceInstanceComponentUVE& surface,
+                                                            float cameraDistance) noexcept;
+
 /// True when the surface names an overlay material. Empty is none.
 [[nodiscard]] bool SurfaceInstance3DHasOverlayUVE(const SurfaceInstanceComponentUVE& surface) noexcept;
 

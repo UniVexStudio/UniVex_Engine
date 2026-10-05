@@ -68,12 +68,26 @@ bool IsSurfaceInstance3DOutsideVisibilityRangeUVE(const SurfaceInstanceComponent
     if (!IsSurfaceInstanceComponentValidUVE(surface) || !std::isfinite(cameraDistance) || cameraDistance < 0.0F) {
         return true;
     }
-    if (cameraDistance < surface.visibilityRangeBegin) {
+    const bool fadeSelf = surface.visibilityRangeFadeMode == SurfaceFadeModeUVE::Self;
+    float nearLimit = surface.visibilityRangeBegin;
+    if (fadeSelf) {
+        nearLimit = surface.visibilityRangeBegin - surface.visibilityRangeBeginMargin;
+        if (nearLimit < 0.0F) {
+            nearLimit = 0.0F;
+        }
+    }
+    if (cameraDistance < nearLimit) {
         return true;
     }
     // End 0 is "no far limit". Inclusive on both ends: a camera sitting exactly on Begin or End
-    // still sees the object, so the boundary is not a flicker seam.
-    return surface.visibilityRangeEnd > 0.0F && cameraDistance > surface.visibilityRangeEnd;
+    // still sees the object, so the boundary is not a flicker seam. Self extends that far end by
+    // the fade margin so the ramp has somewhere to live.
+    if (surface.visibilityRangeEnd <= 0.0F) {
+        return false;
+    }
+    const float farLimit =
+        fadeSelf ? surface.visibilityRangeEnd + surface.visibilityRangeEndMargin : surface.visibilityRangeEnd;
+    return cameraDistance > farLimit;
 }
 
 void ExpandSurfaceInstance3DCullBoundsUVE(const SurfaceInstanceComponentUVE& surface, Math::AabbUVE& bounds) noexcept {
@@ -107,6 +121,49 @@ float SurfaceInstance3DOpacityUVE(const SurfaceInstanceComponentUVE& surface) no
         return 0.0F;
     }
     return 1.0F - surface.transparency;
+}
+
+float SurfaceInstance3DVisibilityFadeWeightUVE(const SurfaceInstanceComponentUVE& surface,
+                                              const float cameraDistance) noexcept {
+    if (IsSurfaceInstance3DOutsideVisibilityRangeUVE(surface, cameraDistance)) {
+        return 0.0F;
+    }
+    if (surface.visibilityRangeFadeMode != SurfaceFadeModeUVE::Self) {
+        return 1.0F;
+    }
+    const float begin = surface.visibilityRangeBegin;
+    const float beginMargin = surface.visibilityRangeBeginMargin;
+    if (beginMargin > 0.0F && cameraDistance < begin) {
+        float nearStart = begin - beginMargin;
+        if (nearStart < 0.0F) {
+            nearStart = 0.0F;
+        }
+        const float span = begin - nearStart;
+        if (span <= 0.0F) {
+            return 1.0F;
+        }
+        const float t = (cameraDistance - nearStart) / span;
+        if (t <= 0.0F) {
+            return 0.0F;
+        }
+        if (t >= 1.0F) {
+            return 1.0F;
+        }
+        return t;
+    }
+    const float end = surface.visibilityRangeEnd;
+    const float endMargin = surface.visibilityRangeEndMargin;
+    if (end > 0.0F && endMargin > 0.0F && cameraDistance > end) {
+        const float t = (cameraDistance - end) / endMargin;
+        if (t >= 1.0F) {
+            return 0.0F;
+        }
+        if (t <= 0.0F) {
+            return 1.0F;
+        }
+        return 1.0F - t;
+    }
+    return 1.0F;
 }
 
 bool SurfaceInstance3DHasOverlayUVE(const SurfaceInstanceComponentUVE& surface) noexcept {
