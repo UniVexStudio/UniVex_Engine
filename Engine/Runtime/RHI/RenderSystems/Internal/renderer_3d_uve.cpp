@@ -149,6 +149,8 @@ struct PrimitiveRenderItemUVE {
     Scene::PrimitiveMeshKindUVE kind = Scene::PrimitiveMeshKindUVE::Cube;
     Math::Vector3UVE baseColor{};
     float sortDepth = 0.0F;
+    /// 1 solid, 0 invisible. SurfaceInstance transparency inverted, times a Self fade.
+    float opacity = 1.0F;
     /// Set for an imported mesh drawn without a material (see ExtractUnmaterialedMeshItemsUVE):
     /// the geometry then comes from that mesh asset instead of the built-in `kind`. The mesh stays
     /// loaded through `unmaterialedMeshHandles` for as long as an item can name it.
@@ -987,6 +989,9 @@ struct Renderer3DUVE::ImplUVE {
     /// view-projection, and authored base-color uniforms; primitives intentionally do not bind
     /// material, texture, light, or shadow state.
     std::shared_ptr<Shader::ShaderProgramUVE> primitiveProgram;
+    /// Depth-write off, source-alpha blend. Used when SurfaceInstance3D fades or transparents a
+    /// primitive; the ordinary program stays opaque so solid cubes keep early-z.
+    std::shared_ptr<Shader::ShaderProgramUVE> primitiveBlendedProgram;
 
     /// A 1x1 opaque-white texture, used whenever a material leaves albedoTexture/aoTexture unset
     /// (kInvalidAssetGuidUVE) — sampling it always yields {1,1,1,1}, so
@@ -1830,6 +1835,11 @@ struct Renderer3DUVE::ImplUVE {
         }
         std::sort(outItems.begin(), outItems.end(),
                   [](const PrimitiveRenderItemUVE& lhs, const PrimitiveRenderItemUVE& rhs) {
+                      const bool lhsTransparent = lhs.opacity < 1.0F;
+                      const bool rhsTransparent = rhs.opacity < 1.0F;
+                      if (lhsTransparent != rhsTransparent) {
+                          return !lhsTransparent;
+                      }
                       return lhs.sortDepth < rhs.sortDepth;
                   });
     }
@@ -1853,6 +1863,17 @@ struct Renderer3DUVE::ImplUVE {
                     // a placement nobody can use.
                     return;
                 }
+
+                const Scene::SurfaceInstanceComponentUVE* surface = nullptr;
+                if (entityManager.HasComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity)) {
+                    const Scene::SurfaceInstanceComponentUVE& surfaceComponent =
+                        entityManager.GetComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity);
+                    if (!Scene::IsSurfaceInstanceComponentValidUVE(surfaceComponent)) {
+                        return;
+                    }
+                    surface = &surfaceComponent;
+                }
+
                 ++lastFrameDiagnostics.primitiveCandidates;
 
                 const PrimitivePlacementKeyUVE key{worldTransform.worldPosition, worldTransform.worldRotation,
@@ -1876,17 +1897,39 @@ struct Renderer3DUVE::ImplUVE {
                     return;
                 }
 
-                // View-dependent from here down. Never cached.
-                if (!frustum.IntersectsUVE(cacheEntry.worldBounds) ||
-                    Scene::IsOccluder3DAabbDrawHiddenUVE(occluders, viewPosition, cacheEntry.worldBounds)) {
+                float opacity = 1.0F;
+                if (surface != nullptr) {
+                    const float cameraDistance = Math::LengthUVE(worldTransform.worldPosition - viewPosition);
+                    if (Scene::IsSurfaceInstance3DOutsideVisibilityRangeUVE(*surface, cameraDistance) ||
+                        !Scene::SurfaceInstance3DDrawsInViewUVE(*surface)) {
+                        return;
+                    }
+                    opacity = Scene::SurfaceInstance3DOpacityUVE(*surface) *
+                              Scene::SurfaceInstance3DVisibilityFadeWeightUVE(*surface, cameraDistance);
+                    if (opacity <= 0.0F) {
+                        return;
+                    }
+                }
+
+                // View-dependent from here down. Never cached. Extra cull grows the tests, not the
+                // placement: a shader that moves vertices still sits at the same authored pose.
+                Math::AabbUVE cullBounds = cacheEntry.worldBounds;
+                if (surface != nullptr) {
+                    Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, cullBounds);
+                }
+                if (!frustum.IntersectsUVE(cullBounds)) {
+                    return;
+                }
+                if (!(surface != nullptr && surface->ignoreOcclusionCulling) &&
+                    Scene::IsOccluder3DAabbDrawHiddenUVE(occluders, viewPosition, cullBounds)) {
                     return;
                 }
                 const float sortDepth = frustum.planes[4U].GetSignedDistanceUVE(cacheEntry.worldBounds.GetCenterUVE());
                 if (!std::isfinite(sortDepth)) {
                     return;
                 }
-                outItems.push_back(
-                    PrimitiveRenderItemUVE{cacheEntry.worldMatrix, primitive.kind, primitive.baseColor, sortDepth});
+                outItems.push_back(PrimitiveRenderItemUVE{cacheEntry.worldMatrix, primitive.kind, primitive.baseColor,
+                                                          sortDepth, opacity});
             });
 
         // Erase-while-iterating over an unordered_map, safe for the erased element only, so the
@@ -1902,6 +1945,11 @@ struct Renderer3DUVE::ImplUVE {
 
         std::sort(outItems.begin(), outItems.end(),
                   [](const PrimitiveRenderItemUVE& lhs, const PrimitiveRenderItemUVE& rhs) {
+                      const bool lhsTransparent = lhs.opacity < 1.0F;
+                      const bool rhsTransparent = rhs.opacity < 1.0F;
+                      if (lhsTransparent != rhsTransparent) {
+                          return !lhsTransparent;
+                      }
                       return lhs.sortDepth < rhs.sortDepth;
                   });
     }
@@ -2373,13 +2421,19 @@ struct Renderer3DUVE::ImplUVE {
             if (!IsValidMeshGpuResourcesUVE(meshResources)) {
                 continue;
             }
-            primitiveProgram->SetMatrix4x4UVE("uModel", item.worldMatrix);
+            Shader::ShaderProgramUVE* const program =
+                item.opacity < 1.0F ? primitiveBlendedProgram.get() : primitiveProgram.get();
+            if (program == nullptr || !program->IsValidUVE()) {
+                continue;
+            }
+            program->SetMatrix4x4UVE("uModel", item.worldMatrix);
             // Normal matrix = transpose(inverse(model)); see ComputeNormalMatrixUVE, shared with
             // the lit mesh path so the two cannot disagree under non-uniform scale.
-            primitiveProgram->SetMatrix4x4UVE("uNormalMatrix", ComputeNormalMatrixUVE(item.worldMatrix));
-            primitiveProgram->SetVector3UVE("uColor", item.baseColor);
-            ApplyLightingUniformsUVE(*primitiveProgram, frameUniforms);
-            primitiveProgram->ApplyToUVE(commandBuffer);
+            program->SetMatrix4x4UVE("uNormalMatrix", ComputeNormalMatrixUVE(item.worldMatrix));
+            program->SetVector3UVE("uColor", item.baseColor);
+            program->SetFloatUVE("uSurfaceOpacity", item.opacity);
+            ApplyLightingUniformsUVE(*program, frameUniforms);
+            program->ApplyToUVE(commandBuffer);
             commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
             commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
             commandBuffer.DrawIndexedUVE(meshResources.indexCount);
@@ -2615,6 +2669,11 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     primitiveProgramDesc.depthWriteEnabled = true;
     primitiveProgramDesc.debugNameUVE = "BuiltInPrimitiveVisual";
     m_impl->primitiveProgram = shaderManager.CreateProgramUVE(primitiveProgramDesc);
+    Shader::ShaderProgramDescUVE primitiveBlendedDesc = primitiveProgramDesc;
+    primitiveBlendedDesc.depthWriteEnabled = false;
+    primitiveBlendedDesc.blendMode = PipelineBlendModeUVE::SourceAlphaOver;
+    primitiveBlendedDesc.debugNameUVE = "BuiltInPrimitiveVisual blended";
+    m_impl->primitiveBlendedProgram = shaderManager.CreateProgramUVE(primitiveBlendedDesc);
 
     Shader::ShaderProgramDescUVE uiOverlayProgramDesc;
     uiOverlayProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kUIOverlayVirtualPath);
