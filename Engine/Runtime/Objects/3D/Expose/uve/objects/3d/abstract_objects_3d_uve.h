@@ -83,4 +83,16 @@ void ExpandSurfaceInstance3DCullBoundsUVE(const SurfaceInstanceComponentUVE& sur
 /// unchanged so a broken offset cannot poison the queue.
 [[nodiscard]] float ApplyRenderInstance3DSortingOffsetUVE(float baseDepth, float sortingOffset) noexcept;
 
+// =================================================================================================
+// What LightEmitter3D means to the light list.
+// =================================================================================================
+
+/// True when this light's cull mask overlaps the receiver's render layers. A light with no bits
+/// set, or a receiver on no layers, is unlit by it.
+[[nodiscard]] bool IsLightEmitter3DLightingLayersUVE(std::uint32_t cullMask, std::uint32_t renderLayers) noexcept;
+
+/// Weight in [0, 1] for a distance fade that begins at `begin` and reaches zero over `length`.
+/// A zero length is a hard cut at `begin`. Non-finite inputs fail closed (weight 0).
+[[nodiscard]] float LightEmitter3DDistanceFadeWeightUVE(float distance, float begin, float length) noexcept;
+
 } // namespace UVE::Scene

@@ -2004,5 +2004,22 @@ TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_SortByOriginUsesTheObjectOrigi
     static_cast<void>(byCenter);
 }
 
+TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_RenderItemCarriesTheInstanceLayers) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_ri_item_layers.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_ri_item_layers.uvmat");
+    const Scene::EntityUVE entity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Scene::RenderInstanceComponentUVE instance{};
+    instance.renderLayers = 0x8U;
+    entityManager.AddComponentUVE<Scene::RenderInstanceComponentUVE>(entity, instance);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    const RenderQueueUVE queue =
+        meshRenderer.ExtractRenderQueueUVE(entityManager, assetManager, assetDatabase, MakeTestFrustumUVE());
+    ASSERT_EQ(queue.opaqueItems.size(), 1U);
+    EXPECT_EQ(queue.opaqueItems[0].renderLayers, 0x8U);
+}
+
 } // namespace
 } // namespace UVE::Render::Tests

@@ -640,6 +640,18 @@ TEST_F(Object3DDefinitionsUVETest, RenderInstanceFamilyComponentsRejectValuesThe
     EXPECT_FLOAT_EQ(ApplyRenderInstance3DSortingOffsetUVE(4.0F, -1.0F), 3.0F);
     EXPECT_FLOAT_EQ(ApplyRenderInstance3DSortingOffsetUVE(4.0F, std::numeric_limits<float>::quiet_NaN()), 4.0F);
 
+    EXPECT_TRUE(IsLightEmitter3DLightingLayersUVE(0xFFFFFFFFU, 1U));
+    EXPECT_TRUE(IsLightEmitter3DLightingLayersUVE(0x2U, 0x2U));
+    EXPECT_FALSE(IsLightEmitter3DLightingLayersUVE(0x1U, 0x2U));
+    EXPECT_FALSE(IsLightEmitter3DLightingLayersUVE(0U, 0xFFFFFFFFU));
+    EXPECT_FLOAT_EQ(LightEmitter3DDistanceFadeWeightUVE(0.0F, 40.0F, 10.0F), 1.0F);
+    EXPECT_FLOAT_EQ(LightEmitter3DDistanceFadeWeightUVE(40.0F, 40.0F, 10.0F), 1.0F);
+    EXPECT_FLOAT_EQ(LightEmitter3DDistanceFadeWeightUVE(45.0F, 40.0F, 10.0F), 0.5F);
+    EXPECT_FLOAT_EQ(LightEmitter3DDistanceFadeWeightUVE(50.0F, 40.0F, 10.0F), 0.0F);
+    EXPECT_FLOAT_EQ(LightEmitter3DDistanceFadeWeightUVE(41.0F, 40.0F, 0.0F), 0.0F);
+    EXPECT_FLOAT_EQ(LightEmitter3DDistanceFadeWeightUVE(40.0F, 40.0F, 0.0F), 1.0F);
+    EXPECT_FLOAT_EQ(LightEmitter3DDistanceFadeWeightUVE(std::numeric_limits<float>::quiet_NaN(), 40.0F, 10.0F), 0.0F);
+
     EXPECT_TRUE(IsLightEmitterComponentValidUVE(LightEmitterComponentUVE{}));
     LightEmitterComponentUVE light{};
     light.shadowOpacity = 2.0F;

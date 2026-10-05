@@ -103,4 +103,26 @@ float ApplyRenderInstance3DSortingOffsetUVE(const float baseDepth, const float s
     return baseDepth + sortingOffset;
 }
 
+bool IsLightEmitter3DLightingLayersUVE(const std::uint32_t cullMask, const std::uint32_t renderLayers) noexcept {
+    return (cullMask & renderLayers) != 0U;
+}
+
+float LightEmitter3DDistanceFadeWeightUVE(const float distance, const float begin, const float length) noexcept {
+    if (!std::isfinite(distance) || distance < 0.0F || !std::isfinite(begin) || begin < 0.0F ||
+        !std::isfinite(length) || length < 0.0F) {
+        return 0.0F;
+    }
+    if (length > 0.0F) {
+        const float t = (distance - begin) / length;
+        if (!std::isfinite(t) || t >= 1.0F) {
+            return 0.0F;
+        }
+        if (t <= 0.0F) {
+            return 1.0F;
+        }
+        return 1.0F - t;
+    }
+    return distance <= begin ? 1.0F : 0.0F;
+}
+
 } // namespace UVE::Scene

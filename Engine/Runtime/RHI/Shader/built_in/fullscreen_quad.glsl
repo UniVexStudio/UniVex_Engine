@@ -58,6 +58,7 @@ uniform float uSunEnergy;
 uniform float uFogHeight;
 uniform float uFogHeightFalloff;
 uniform float uFogSunScatter;
+uniform float uLightVolumetricFogEnergy;
 uniform int uFogVolumeCount;
 
 struct FogVolumeUVE {
@@ -312,7 +313,8 @@ void main() {
         float towardSun = pow(max(dot(viewDir, sunDir), 0.0), 8.0);
         float day = smoothstep(-0.08, 0.18, sunDir.y);
         vec3 globalInscatter = max(uFogColor, vec3(0.0));
-        globalInscatter = mix(globalInscatter, max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0),
+        globalInscatter = mix(globalInscatter, max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0) *
+                                                   max(uLightVolumetricFogEnergy, 0.0),
                               clamp(uFogSunScatter, 0.0, 1.0) * towardSun * day);
         vec3 volumeColor = localOccupancyMass > 0.0 ? localColorMass / localOccupancyMass : globalInscatter;
         float posGlobal = max(globalTau, 0.0);

@@ -89,6 +89,8 @@ struct LightUVE {
     float intensity;
     float range;
     float spotAngleDegrees;
+    int cullMask;
+    float specular;
 };
 
 uniform LightUVE uLights[4];
@@ -113,6 +115,10 @@ uniform float uShadowCascadeSplits[3];
 uniform int uShadowCascadeCount;
 // Increment 31: fraction of each non-final cascade depth interval used to cross-fade into the next.
 uniform float uShadowCascadeBlendRatio;
+uniform int uMeshRenderLayers;
+uniform float uShadowBias;
+uniform float uShadowNormalBias;
+uniform float uShadowOpacity;
 uniform int uReflectionProbeEnabled;
 uniform vec3 uReflectionProbePosition;
 uniform vec3 uReflectionProbeAxisX;
@@ -327,7 +333,8 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
     vec2 texelSize = cascadeIndex < 0 ? 1.0 / vec2(textureSize(uShadowMapTexture, 0))
                                       : CascadeTexelSizeUVE(cascadeIndex);
     float currentDepth = projected.z;
-    float bias = max(0.0025 * (1.0 - max(dot(normal, lightDirection), 0.0)), 0.0005);
+    float bias = max(uShadowBias * (1.0 - max(dot(normal, lightDirection), 0.0)) * max(uShadowNormalBias, 0.0),
+                     uShadowBias * 0.2);
     float visibleSamples = 0.0;
     int sampleCount = 0;
 
@@ -344,7 +351,7 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
         }
     }
 
-    return visibleSamples / float(sampleCount);
+    return mix(1.0, visibleSamples / float(sampleCount), clamp(uShadowOpacity, 0.0, 1.0));
 }
 
 float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
@@ -447,6 +454,9 @@ void main() {
         if (light.intensity <= 0.0) {
             continue;
         }
+        if ((light.cullMask & uMeshRenderLayers) == 0) {
+            continue;
+        }
 
         vec3 lightDirection;
         float attenuation = 1.0;
@@ -494,7 +504,7 @@ void main() {
         float distribution = DistributionGgxUVE(normalDotHalf, roughness);
         float geometry = GeometrySmithUVE(normalDotView, normalDotLight, roughness);
         vec3 specular = (distribution * geometry * fresnel) /
-                        max(4.0 * normalDotView * normalDotLight, kBrdfEpsilonUVE);
+                        max(4.0 * normalDotView * normalDotLight, kBrdfEpsilonUVE) * max(light.specular, 0.0);
         vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
         vec3 diffuse = diffuseWeight * albedo / kPiUVE;
         vec3 radiance = light.color * light.intensity * attenuation;

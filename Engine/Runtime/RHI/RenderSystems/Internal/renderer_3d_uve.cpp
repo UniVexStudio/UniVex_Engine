@@ -338,6 +338,8 @@ struct LightUniformNamesUVE {
     std::string intensity;
     std::string range;
     std::string spotAngleDegrees;
+    std::string cullMask;
+    std::string specular;
 };
 
 struct FogVolumeUniformNamesUVE {
@@ -370,7 +372,8 @@ struct RendererUniformNamesUVE {
             const std::string prefix = "uLights[" + std::to_string(lightIndex) + "].";
             lights[lightIndex] = LightUniformNamesUVE{
                 prefix + "type", prefix + "position", prefix + "direction", prefix + "color",
-                prefix + "intensity", prefix + "range", prefix + "spotAngleDegrees"};
+                prefix + "intensity", prefix + "range", prefix + "spotAngleDegrees",
+                prefix + "cullMask", prefix + "specular"};
         }
         for (std::size_t volumeIndex = 0; volumeIndex < Scene::kMaximumFogVolumesPerFrameUVE; ++volumeIndex) {
             const std::string prefix = "uFogVolumes[" + std::to_string(volumeIndex) + "].";
@@ -672,6 +675,10 @@ struct FrameUniformsUVE {
     ShadowCascadeSplitsUVE cascadeSplits{};
     std::int32_t cascadeCount = 0;
     float cascadeBlendRatio = 0.0F;
+    float shadowBias = 0.0025F;
+    float shadowNormalBias = 1.0F;
+    float shadowOpacity = 1.0F;
+    std::int32_t shadowPcfKernelRadius = 0;
 };
 
 } // namespace
@@ -793,6 +800,7 @@ struct Renderer3DUVE::ImplUVE {
     Math::Vector3UVE sunDirection{0.0F, 1.0F, 0.0F};
     Math::Vector3UVE sunColor{1.0F, 1.0F, 1.0F};
     float sunEnergy = 0.0F;
+    float sunVolumetricFogEnergy = 1.0F;
     std::array<Scene::FogVolume3DFrameUVE, Scene::kMaximumFogVolumesPerFrameUVE> fogVolumes{};
     std::size_t fogVolumeCount = 0;
 
@@ -1966,6 +1974,8 @@ struct Renderer3DUVE::ImplUVE {
             program.SetFloatUVE(names.intensity, light.intensity);
             program.SetFloatUVE(names.range, light.range);
             program.SetFloatUVE(names.spotAngleDegrees, light.spotAngleDegrees);
+            program.SetIntUVE(names.cullMask, static_cast<std::int32_t>(light.cullMask));
+            program.SetFloatUVE(names.specular, light.specular);
         }
     }
 
@@ -1988,7 +1998,10 @@ struct Renderer3DUVE::ImplUVE {
             program.SetIntUVE(uniformNames.shadowMapTextures[cascadeIndex],
                               static_cast<std::int32_t>(textureSlot));
         }
-        program.SetIntUVE("uShadowPcfKernelRadius", shadowPcfKernelRadius);
+        program.SetIntUVE("uShadowPcfKernelRadius", frameUniforms.shadowPcfKernelRadius);
+        program.SetFloatUVE("uShadowBias", frameUniforms.shadowBias);
+        program.SetFloatUVE("uShadowNormalBias", frameUniforms.shadowNormalBias);
+        program.SetFloatUVE("uShadowOpacity", frameUniforms.shadowOpacity);
         program.SetVector3UVE("uAlbedoColor", material.albedoColor);
         program.SetFloatUVE("uMetallic", material.metallic);
         program.SetFloatUVE("uRoughness", material.roughness);
@@ -2093,6 +2106,7 @@ struct Renderer3DUVE::ImplUVE {
             }
 
             ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms);
+            program->SetIntUVE("uMeshRenderLayers", static_cast<std::int32_t>(representative.renderLayers));
             program->ApplyToUVE(commandBuffer);
             BindMaterialTexturesUVE(*materialResources, frameUniforms, commandBuffer);
             commandBuffer.BindStorageBufferUVE(instanceTransformBuffer, kInstanceTransformSlotUVE);
@@ -2145,6 +2159,7 @@ struct Renderer3DUVE::ImplUVE {
             // instanced path shares so the two cannot disagree about how a normal is transformed.
             program->SetMatrix4x4UVE("uNormalMatrix", ComputeNormalMatrixUVE(item.worldMatrix));
             ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms);
+            program->SetIntUVE("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
             program->ApplyToUVE(commandBuffer);
             BindMaterialTexturesUVE(*materialResources, frameUniforms, commandBuffer);
             commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
@@ -2824,6 +2839,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         m_impl->lightSystem.ExtractActiveLightsForViewUVE(entityManager, viewPosition);
     m_impl->environmentCameraPosition = viewPosition;
     m_impl->sunEnergy = 0.0F;
+    m_impl->sunVolumetricFogEnergy = 1.0F;
     m_impl->sunDirection = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
     m_impl->sunColor = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
     for (const LightDataUVE& light : lights) {
@@ -2837,6 +2853,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         m_impl->sunDirection = Math::NormalizeUVE(incoming);
         m_impl->sunColor = light.color;
         m_impl->sunEnergy = light.intensity;
+        m_impl->sunVolumetricFogEnergy = light.volumetricFogEnergy;
         break;
     }
     Scene::ApplySunToWorldEnvironmentFrameUVE(m_impl->environmentFrame, m_impl->sunDirection, m_impl->sunColor,
@@ -2940,10 +2957,24 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         }
     }
 
+    float shadowBias = 0.0025F;
+    float shadowNormalBias = 1.0F;
+    float shadowOpacity = 1.0F;
+    std::int32_t shadowPcfKernelRadius = m_impl->shadowPcfKernelRadius;
+    if (shadowCaster != nullptr) {
+        shadowBias = shadowCaster->shadowBias;
+        shadowNormalBias = shadowCaster->shadowNormalBias;
+        shadowOpacity = shadowCaster->shadowOpacity;
+        if (shadowCaster->shadowBlur >= 0.0F && std::isfinite(shadowCaster->shadowBlur)) {
+            shadowPcfKernelRadius =
+                static_cast<std::int32_t>(std::clamp(std::lround(shadowCaster->shadowBlur), 0L, 2L));
+        }
+    }
     const FrameUniformsUVE frameUniforms{viewProjection, viewPosition, lights, ambientColor,
                                           m_impl->environmentFrame.skyAmbient, m_impl->environmentFrame.groundAmbient,
                                           lightSpaceMatrices, cascadeSplits, cascadeCount,
-                                          m_impl->shadowCascadeBlendRatio};
+                                          m_impl->shadowCascadeBlendRatio, shadowBias, shadowNormalBias, shadowOpacity,
+                                          shadowPcfKernelRadius};
 
     RenderQueueUVE& queue = m_impl->frameQueue;
     // Counted before the cull rather than inside it: CullVisibilitySetIntoUVE runs four times a
@@ -3393,6 +3424,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->toneMappingProgram->SetFloatUVE("uFogHeight", m_impl->environmentFrame.fogHeight);
             m_impl->toneMappingProgram->SetFloatUVE("uFogHeightFalloff", m_impl->environmentFrame.fogHeightFalloff);
             m_impl->toneMappingProgram->SetFloatUVE("uFogSunScatter", m_impl->environmentFrame.fogSunScatter);
+            m_impl->toneMappingProgram->SetFloatUVE("uLightVolumetricFogEnergy", m_impl->sunVolumetricFogEnergy);
             m_impl->toneMappingProgram->SetIntUVE("uFogVolumeCount",
                                                    static_cast<std::int32_t>(m_impl->fogVolumeCount));
             const auto& fogNames = GetRendererUniformNamesUVE().fogVolumes;
