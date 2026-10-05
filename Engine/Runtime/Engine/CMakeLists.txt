@@ -28,6 +28,11 @@
 # ShaderManagerUVE - hence uve_rhi, uve_rhi_shader, uve_rhi_opengl, uve_rhi_null, and
 # uve_render_systems all replace the reference's single uve_render dependency.
 
+if(NOT UVE_HAS_DESKTOP_GL)
+    add_library(uve_core INTERFACE)
+    return()
+endif()
+
 add_library(uve_core STATIC
     Internal/version_uve.cpp
     Internal/engine_services_uve.cpp

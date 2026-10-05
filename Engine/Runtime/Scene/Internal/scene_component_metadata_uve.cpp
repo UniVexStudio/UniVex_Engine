@@ -2433,7 +2433,7 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
                 }(),
                 WithTooltipUVE(DeclareUVE<&F::materialAssetPath>("materialAssetPath", "Material",
                                                                  kPropertyTypeStringUVE),
-                               "An optional fog material. When set it replaces the values below."),
+                               "Reserved for a custom fog material. Until one is assigned, Density, Albedo and Emission drive the volume."),
                 InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&F::density>("density", "Density",
                                                                                kPropertyTypeFloatUVE),
                                                        -1024.0, 1024.0, 0.01),

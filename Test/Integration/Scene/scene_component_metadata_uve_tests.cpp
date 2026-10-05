@@ -92,7 +92,7 @@ TEST(SceneComponentMetadataUVETest, EveryLayerMaskNamesTheLayersItPicksFrom) {
     // layer and mask, and the navigation region/agent layers - every cast, every swept body,
     // every strike, every interact volume and every path in the engine filters on the same
     // layer contract, so they all belong to the same drawer set rather than a second, hand-drawn one.
-    EXPECT_EQ(physics, 13U);
+    EXPECT_EQ(physics, 15U);
     EXPECT_EQ(render, 4U); // mesh, render instance, light and decal
 }
 
