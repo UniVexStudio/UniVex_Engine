@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <string>
 #include <thread>
@@ -38,6 +39,15 @@ namespace {
     material.fragmentShader = AssetGuidUVE{555};
     material.isTransparent = true;
     material.billboardMode = MaterialBillboardModeUVE::Y;
+    material.metallicRoughnessTexture = AssetGuidUVE{666};
+    material.emissiveTexture = AssetGuidUVE{777};
+    material.emissiveEnergy = 2.5F;
+    material.normalScale = 0.75F;
+    material.occlusionStrength = 0.4F;
+    material.uvScale = Math::Vector2UVE{2.0F, 3.0F};
+    material.uvOffset = Math::Vector2UVE{0.1F, 0.2F};
+    material.unshaded = true;
+    material.alphaCutoff = 0.35F;
     return material;
 }
 
@@ -52,6 +62,15 @@ TEST(MaterialAssetUVETest, DefaultConstruction_HasSensibleDefaults) {
     EXPECT_EQ(material.roughness, 0.5F);
     EXPECT_FALSE(material.isTransparent);
     EXPECT_EQ(material.billboardMode, MaterialBillboardModeUVE::Disabled);
+    EXPECT_EQ(material.metallicRoughnessTexture, kInvalidAssetGuidUVE);
+    EXPECT_EQ(material.emissiveTexture, kInvalidAssetGuidUVE);
+    EXPECT_EQ(material.emissiveEnergy, 1.0F);
+    EXPECT_EQ(material.normalScale, 1.0F);
+    EXPECT_EQ(material.occlusionStrength, 1.0F);
+    EXPECT_EQ(material.uvScale, (Math::Vector2UVE{1.0F, 1.0F}));
+    EXPECT_EQ(material.uvOffset, (Math::Vector2UVE{0.0F, 0.0F}));
+    EXPECT_FALSE(material.unshaded);
+    EXPECT_EQ(material.alphaCutoff, 0.0F);
 }
 
 TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsFieldExact) {
@@ -74,6 +93,15 @@ TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsFieldExact) {
     EXPECT_EQ(loaded.fragmentShader, original.fragmentShader);
     EXPECT_EQ(loaded.isTransparent, original.isTransparent);
     EXPECT_EQ(loaded.billboardMode, original.billboardMode);
+    EXPECT_EQ(loaded.metallicRoughnessTexture, original.metallicRoughnessTexture);
+    EXPECT_EQ(loaded.emissiveTexture, original.emissiveTexture);
+    EXPECT_EQ(loaded.emissiveEnergy, original.emissiveEnergy);
+    EXPECT_EQ(loaded.normalScale, original.normalScale);
+    EXPECT_EQ(loaded.occlusionStrength, original.occlusionStrength);
+    EXPECT_EQ(loaded.uvScale, original.uvScale);
+    EXPECT_EQ(loaded.uvOffset, original.uvOffset);
+    EXPECT_EQ(loaded.unshaded, original.unshaded);
+    EXPECT_EQ(loaded.alphaCutoff, original.alphaCutoff);
 
     std::filesystem::remove(path);
 }
@@ -92,6 +120,21 @@ TEST(MaterialAssetUVETest, SaveMaterialAssetUVE_RejectsInvalidValuesBeforeReplac
     EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
     invalid = original;
     invalid.emissiveColor.x = -1.0F;
+    EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
+    invalid = original;
+    invalid.emissiveEnergy = -0.1F;
+    EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
+    invalid = original;
+    invalid.normalScale = std::numeric_limits<float>::infinity();
+    EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
+    invalid = original;
+    invalid.occlusionStrength = 1.5F;
+    EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
+    invalid = original;
+    invalid.uvScale.x = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
+    invalid = original;
+    invalid.alphaCutoff = 2.0F;
     EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
 
     MaterialAssetUVE loaded;
@@ -227,6 +270,15 @@ TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_MissingBillboardMode_DefaultsToD
     loaded.billboardMode = MaterialBillboardModeUVE::Enabled;
     ASSERT_TRUE(LoadMaterialAssetUVE(path, loaded));
     EXPECT_EQ(loaded.billboardMode, MaterialBillboardModeUVE::Disabled);
+    EXPECT_EQ(loaded.metallicRoughnessTexture, kInvalidAssetGuidUVE);
+    EXPECT_EQ(loaded.emissiveTexture, kInvalidAssetGuidUVE);
+    EXPECT_EQ(loaded.emissiveEnergy, 1.0F);
+    EXPECT_EQ(loaded.normalScale, 1.0F);
+    EXPECT_EQ(loaded.occlusionStrength, 1.0F);
+    EXPECT_EQ(loaded.uvScale, (Math::Vector2UVE{1.0F, 1.0F}));
+    EXPECT_EQ(loaded.uvOffset, (Math::Vector2UVE{0.0F, 0.0F}));
+    EXPECT_FALSE(loaded.unshaded);
+    EXPECT_EQ(loaded.alphaCutoff, 0.0F);
     std::filesystem::remove(path);
 }
 

@@ -253,9 +253,9 @@ inline constexpr std::size_t kUIVerticesPerQuadUVE = 6U;
 /// MaterialAssetUVE's AssetGuidUVE. `program` owns its linked pipeline through ShaderManagerUVE;
 /// Renderer3DUVE only retains a shared reference and must never destroy that pipeline directly.
 /// The source GUIDs let AssetReloaded events invalidate exactly the materials that reference a
-/// changed vertex or fragment shader. `albedoTexture`/`normalTexture`/`aoTexture` are never
-/// kInvalidTextureHandleUVE once cached — an unset MaterialAssetUVE texture GUID resolves to one
-/// of Renderer3DUVE's two fallback textures (see ResolveTextureGpuHandleUVE()'s doc comment).
+/// changed vertex or fragment shader. Texture handles are never kInvalidTextureHandleUVE once
+/// cached — an unset MaterialAssetUVE texture GUID resolves to one of Renderer3DUVE's two
+/// fallback textures (see ResolveTextureGpuHandleUVE()'s doc comment).
 struct MaterialGpuResourcesUVE {
     std::shared_ptr<Shader::ShaderProgramUVE> program;
     /// True only when this material's own vertex source actually declares the instancing
@@ -270,9 +270,13 @@ struct MaterialGpuResourcesUVE {
     Asset::AssetGuidUVE albedoTextureGuid;
     Asset::AssetGuidUVE normalTextureGuid;
     Asset::AssetGuidUVE aoTextureGuid;
+    Asset::AssetGuidUVE metallicRoughnessTextureGuid;
+    Asset::AssetGuidUVE emissiveTextureGuid;
     TextureHandleUVE albedoTexture;
     TextureHandleUVE normalTexture;
     TextureHandleUVE aoTexture;
+    TextureHandleUVE metallicRoughnessTexture;
+    TextureHandleUVE emissiveTexture;
     /// Depth-write off, source-alpha blend. Used when SurfaceInstance3D fades the mesh or draws
     /// an overlay; the ordinary program stays opaque so solid draws keep early-z.
     std::shared_ptr<Shader::ShaderProgramUVE> blendedProgram;
@@ -292,15 +296,18 @@ struct MaterialGpuResourcesUVE {
     return resources.program.get();
 }
 
-/// Fixed texture-unit slots RecordItemsUVE() binds every material's three textures to, and the
-/// matching sampler uniform names a material's fragment shader is expected to declare (a
-/// sampler2D uniform is just an int uniform holding a texture unit index in GL — SetUniformIntUVE
-/// is reused for this, no new RHI needed). A material shader that doesn't declare one of these
-/// samplers simply never reads the corresponding bind (SetUniformIntUVE's own documented
-/// safe-no-op contract for an unknown/optimized-out uniform name).
+/// Fixed texture-unit slots RecordItemsUVE() binds every material's textures to, and the matching
+/// sampler uniform names a material's fragment shader is expected to declare (a sampler2D uniform
+/// is just an int uniform holding a texture unit index in GL — SetUniformIntUVE is reused for
+/// this, no new RHI needed). A material shader that doesn't declare one of these samplers simply
+/// never reads the corresponding bind (SetUniformIntUVE's own documented safe-no-op contract for
+/// an unknown/optimized-out uniform name). Metallic-roughness and emissive sit after the shadow
+/// cascades (3-5) and probe faces (6-11).
 constexpr std::uint32_t kAlbedoTextureSlotUVE = 0;
 constexpr std::uint32_t kNormalTextureSlotUVE = 1;
 constexpr std::uint32_t kAoTextureSlotUVE = 2;
+constexpr std::uint32_t kMetallicRoughnessTextureSlotUVE = 12;
+constexpr std::uint32_t kEmissiveTextureSlotUVE = 13;
 
 /// Slot the directional-light shadow map is bound to for the main color pass (Increment 26) —
 /// the next slot after the three material texture slots above, following the same fixed-constant
@@ -1259,6 +1266,12 @@ struct Renderer3DUVE::ImplUVE {
             if (resources.aoTextureGuid != Asset::kInvalidAssetGuidUVE) {
                 referencedTextureGuids.insert(resources.aoTextureGuid);
             }
+            if (resources.metallicRoughnessTextureGuid != Asset::kInvalidAssetGuidUVE) {
+                referencedTextureGuids.insert(resources.metallicRoughnessTextureGuid);
+            }
+            if (resources.emissiveTextureGuid != Asset::kInvalidAssetGuidUVE) {
+                referencedTextureGuids.insert(resources.emissiveTextureGuid);
+            }
         }
         if (skyTextureGuid != Asset::kInvalidAssetGuidUVE) {
             referencedTextureGuids.insert(skyTextureGuid);
@@ -1502,7 +1515,12 @@ struct Renderer3DUVE::ImplUVE {
             ResolveTextureGpuHandleUVE(material->normalTexture, fallbackNormalTexture);
         const std::optional<TextureHandleUVE> aoTexture =
             ResolveTextureGpuHandleUVE(material->aoTexture, fallbackWhiteTexture);
-        if (!albedoTexture.has_value() || !normalTexture.has_value() || !aoTexture.has_value()) {
+        const std::optional<TextureHandleUVE> metallicRoughnessTexture =
+            ResolveTextureGpuHandleUVE(material->metallicRoughnessTexture, fallbackWhiteTexture);
+        const std::optional<TextureHandleUVE> emissiveTexture =
+            ResolveTextureGpuHandleUVE(material->emissiveTexture, fallbackWhiteTexture);
+        if (!albedoTexture.has_value() || !normalTexture.has_value() || !aoTexture.has_value() ||
+            !metallicRoughnessTexture.has_value() || !emissiveTexture.has_value()) {
             return nullptr;
         }
 
@@ -1542,7 +1560,9 @@ struct Renderer3DUVE::ImplUVE {
                                           VertexSourceSupportsInstancingUVE(vertexShaderAsset->sourceCode),
                                           material->vertexShader, material->fragmentShader,
                                           material->albedoTexture, material->normalTexture, material->aoTexture,
-                                          *albedoTexture, *normalTexture, *aoTexture, blendedProgram});
+                                          material->metallicRoughnessTexture, material->emissiveTexture,
+                                          *albedoTexture, *normalTexture, *aoTexture,
+                                          *metallicRoughnessTexture, *emissiveTexture, blendedProgram});
         return &insertResult.first->second;
     }
 
@@ -2029,9 +2049,19 @@ struct Renderer3DUVE::ImplUVE {
         program.SetFloatUVE("uMetallic", material.metallic);
         program.SetFloatUVE("uRoughness", material.roughness);
         program.SetVector3UVE("uEmissiveColor", material.emissiveColor);
+        program.SetFloatUVE("uEmissiveEnergy", material.emissiveEnergy);
+        program.SetFloatUVE("uNormalScale", material.normalScale);
+        program.SetFloatUVE("uOcclusionStrength", material.occlusionStrength);
+        program.SetVector3UVE("uUvScale", Math::Vector3UVE{material.uvScale.x, material.uvScale.y, 0.0F});
+        program.SetVector3UVE("uUvOffset", Math::Vector3UVE{material.uvOffset.x, material.uvOffset.y, 0.0F});
+        program.SetIntUVE("uUnshaded", material.unshaded ? 1 : 0);
+        program.SetFloatUVE("uAlphaCutoff", material.alphaCutoff);
         program.SetIntUVE("uAlbedoTexture", static_cast<std::int32_t>(kAlbedoTextureSlotUVE));
         program.SetIntUVE("uNormalTexture", static_cast<std::int32_t>(kNormalTextureSlotUVE));
         program.SetIntUVE("uAOTexture", static_cast<std::int32_t>(kAoTextureSlotUVE));
+        program.SetIntUVE("uMetallicRoughnessTexture",
+                          static_cast<std::int32_t>(kMetallicRoughnessTextureSlotUVE));
+        program.SetIntUVE("uEmissiveTexture", static_cast<std::int32_t>(kEmissiveTextureSlotUVE));
         program.SetIntUVE("uReflectionProbeEnabled", reflectionProbeEnabled);
         program.SetVector3UVE("uReflectionProbePosition", reflectionProbePosition);
         program.SetVector3UVE("uReflectionProbeAxisX", reflectionProbeAxisX);
@@ -2045,7 +2075,7 @@ struct Renderer3DUVE::ImplUVE {
         }
     }
 
-    /// Binds the shadow cascades and the material's three textures - also shared by both paths.
+    /// Binds the shadow cascades and the material's textures - also shared by both paths.
     void BindMaterialTexturesUVE(const MaterialGpuResourcesUVE& materialResources,
                                  const FrameUniformsUVE& frameUniforms,
                                  ICommandBufferUVE& commandBuffer) {
@@ -2060,6 +2090,9 @@ struct Renderer3DUVE::ImplUVE {
         commandBuffer.BindTextureUVE(materialResources.albedoTexture, kAlbedoTextureSlotUVE);
         commandBuffer.BindTextureUVE(materialResources.normalTexture, kNormalTextureSlotUVE);
         commandBuffer.BindTextureUVE(materialResources.aoTexture, kAoTextureSlotUVE);
+        commandBuffer.BindTextureUVE(materialResources.metallicRoughnessTexture,
+                                     kMetallicRoughnessTextureSlotUVE);
+        commandBuffer.BindTextureUVE(materialResources.emissiveTexture, kEmissiveTextureSlotUVE);
         if (reflectionProbeEnabled != 0) {
             for (std::size_t faceIndex = 0; faceIndex < Scene::kReflectionProbeCubemapFaceCountUVE; ++faceIndex) {
                 const TextureHandleUVE face = reflectionProbeFaces[faceIndex] != kInvalidTextureHandleUVE
