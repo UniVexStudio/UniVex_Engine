@@ -10,15 +10,15 @@
 namespace UVE::Scene {
 
 /// Whether an entity's rendered pose is smoothed between fixed physics steps.
-enum class PhysicsInterpolationModeUVE : std::uint8_t {
-    /// Take the parent's answer, or On at the top of the hierarchy. The default, so a whole rig
+enum class PoseSmoothingUVE : std::uint8_t {
+    /// Take the parent's answer, or Blended at the top of the hierarchy. The default, so a whole rig
     /// can be switched with one toggle instead of one per bone.
     Inherit = 0,
     /// Blend between the last two simulated poses when drawing.
-    On,
+    Blended,
     /// Draw the simulated pose exactly. The right answer for anything whose exact position is
     /// the point - a physics debug view, a teleport, a placement gizmo.
-    Off,
+    Exact,
 };
 
 /// The two most recent simulated world poses of an entity, kept so the renderer can draw
@@ -46,7 +46,7 @@ enum class PhysicsInterpolationModeUVE : std::uint8_t {
 /// things that actually move on the fixed step need it.
 struct PhysicsInterpolationComponentUVE final {
     /// The authored switch.
-    PhysicsInterpolationModeUVE mode = PhysicsInterpolationModeUVE::Inherit;
+    PoseSmoothingUVE mode = PoseSmoothingUVE::Inherit;
 
     /// Resolved from `mode` and the entity's ancestors, the same way visibility is. Written by
     /// SceneGraphUVE::UpdateUVE, read when drawing.

@@ -16,8 +16,9 @@
 #include "uve/physics/collision_pair_uve.h"
 #include "uve/physics/physics_material_uve.h"
 #include "uve/component/collider_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/transform_component_uve.h"
+#include "uve/objects/3d/abstract_physics_objects_3d_uve.h"
 
 namespace UVE::Physics {
 
@@ -28,7 +29,7 @@ namespace {
 }
 
 /// 0 for a kinematic or non-positive-mass body — the "infinite mass" case (immovable). Computed
-/// on demand rather than stored on RigidBodyComponentUVE, so mass/inverseMass can never desync.
+/// on demand rather than stored on Rigid3DComponentUVE, so mass/inverseMass can never desync.
 [[nodiscard]] float EffectiveInverseMassUVE(bool isKinematic, float mass) noexcept {
     return (isKinematic || mass <= 0.0F) ? 0.0F : 1.0F / mass;
 }
@@ -51,7 +52,7 @@ namespace {
 }
 
 /// Moves `entity` by `positionDelta` (via SetLocalTransformUVE, so dirty-flag propagation stays
-/// correct) and, if it has a non-kinematic RigidBodyComponentUVE, applies `material`'s combined
+/// correct) and, if it has a non-kinematic Rigid3DComponentUVE, applies `material`'s combined
 /// friction/restitution to the velocity component pointing toward `towardOtherBody`: the
 /// tangential (sliding) component is damped by `1 - friction`, and the into-surface component is
 /// reflected and scaled by `restitution` rather than simply zeroed. With `friction = 0,
@@ -65,10 +66,10 @@ void MoveAndDeflectUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGra
     transform.localPosition += positionDelta;
     sceneGraph.SetLocalTransformUVE(entityManager, entity, transform);
 
-    if (!entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(entity)) {
+    if (!entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(entity)) {
         return;
     }
-    Scene::RigidBodyComponentUVE& rigidBody = entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(entity);
+    Scene::Rigid3DComponentUVE& rigidBody = entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity);
     if (rigidBody.isKinematic) {
         return;
     }
@@ -87,23 +88,34 @@ void MoveAndDeflectUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGra
 void ResolvePairUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
                     const CollisionPairUVE& pair) {
     const auto InverseMassOfUVE = [&entityManager](Scene::EntityUVE entity) {
-        if (!entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(entity)) {
+        if (!entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(entity)) {
             return 0.0F;
         }
-        const Scene::RigidBodyComponentUVE& rigidBody =
-            entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(entity);
+        // An object the simulation may not move - a kinematically driven one, a PhysicsObject3D
+        // kept as a static obstacle, or one taken out of the world - has no inverse mass to give
+        // way with, exactly like a static collider.
+        if (!Scene::IsPhysicsObjectSimulatedUVE(entityManager, entity)) {
+            return 0.0F;
+        }
+        const Scene::Rigid3DComponentUVE& rigidBody =
+            entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity);
         return EffectiveInverseMassUVE(rigidBody.isKinematic, rigidBody.mass);
     };
 
-    const float firstInverseMass = InverseMassOfUVE(pair.first);
-    const float secondInverseMass = InverseMassOfUVE(pair.second);
-    const float totalInverseMass = firstInverseMass + secondInverseMass;
-    if (totalInverseMass <= 0.0F) {
-        return; // Both sides immovable (static/kinematic) — nothing to resolve.
+    // How much of the overlap each side takes: its inverse mass, divided by its authored collision
+    // priority, so heavier bodies and higher priorities yield less. With the default priority of 1
+    // this is the plain inverse-mass split it has always been.
+    const float firstWeight =
+        Scene::GetPhysicsObjectYieldWeightUVE(entityManager, pair.first, InverseMassOfUVE(pair.first));
+    const float secondWeight =
+        Scene::GetPhysicsObjectYieldWeightUVE(entityManager, pair.second, InverseMassOfUVE(pair.second));
+    const float totalWeight = firstWeight + secondWeight;
+    if (totalWeight <= 0.0F) {
+        return; // Both sides immovable (static/kinematic, or never yields) — nothing to resolve.
     }
 
-    const float firstShare = firstInverseMass / totalInverseMass;
-    const float secondShare = secondInverseMass / totalInverseMass;
+    const float firstShare = firstWeight / totalWeight;
+    const float secondShare = secondWeight / totalWeight;
 
     // Both entities in `pair` are guaranteed to have ColliderComponentUVE — DetectCollisionsUVE
     // only ever returns pairs where both sides have one.
@@ -138,15 +150,21 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
         !std::isfinite(m_gravity.x) || !std::isfinite(m_gravity.y) || !std::isfinite(m_gravity.z)) {
         return;
     }
-    entityManager.ForEachUVE<Scene::TransformComponentUVE, Scene::RigidBodyComponentUVE>(
+    entityManager.ForEachUVE<Scene::TransformComponentUVE, Scene::Rigid3DComponentUVE>(
         [&entityManager, &sceneGraph, this, fixedDeltaTimeSeconds](
             Scene::EntityUVE entity, const Scene::TransformComponentUVE& transform,
-            Scene::RigidBodyComponentUVE& rigidBody) {
-            if (!Scene::IsRigidBodyComponentValidUVE(rigidBody)) {
-                UVE_ASSERT(Scene::IsRigidBodyComponentValidUVE(rigidBody));
+            Scene::Rigid3DComponentUVE& rigidBody) {
+            if (!Scene::IsRigid3DComponentValidUVE(rigidBody)) {
+                UVE_ASSERT(Scene::IsRigid3DComponentValidUVE(rigidBody));
                 return;
             }
             if (rigidBody.isKinematic) {
+                return;
+            }
+            // A stopped physics object is either out of the world (its collider never reaches the
+            // broad phase, so it is not here at all) or kept as an immovable obstacle: either way
+            // the simulation does not move it.
+            if (!Scene::IsPhysicsObjectSimulatedUVE(entityManager, entity)) {
                 return;
             }
 

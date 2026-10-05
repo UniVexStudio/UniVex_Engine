@@ -12,7 +12,7 @@
 namespace UVE::Scene {
 
 /// The authored, parent-relative (local) position/rotation/scale of a scene-graph entity —
-/// exactly what a Node3D "requires" per the master spec (Position, Rotation, Scale). Attach via
+/// exactly what a Object3D "requires" per the master spec (Position, Rotation, Scale). Attach via
 /// SceneGraphUVE::AttachTransformUVE() rather than directly, so the paired
 /// WorldTransformComponentUVE/HierarchyComponentUVE are never forgotten. Setting this directly
 /// via IEntityManagerUVE::GetComponentUVE() does NOT mark the entity dirty — use

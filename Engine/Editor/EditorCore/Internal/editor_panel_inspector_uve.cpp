@@ -37,10 +37,10 @@
 #include "editor_chrome_layout_uve.h"
 #include "editor_fonts_uve.h"
 #include "editor_entity_label_uve.h"
-#include "editor_node_icons_uve.h"
+#include "editor_object_icons_uve.h"
 
 #include "uve/asset/asset_import_queue_uve.h"
-#include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/canvas_component_uve.h"
@@ -52,7 +52,7 @@
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
@@ -60,7 +60,7 @@
 #include "uve/component/ui_text_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/nodes/3d/world_environment_3d_uve.h"
+#include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 
 namespace UVE::Editor {
@@ -99,7 +99,7 @@ constexpr const char* kPanelLabelInspectorUVE = "\xEE\xA8\x83 Inspector##right-p
 }
 
 
-/// A class-chain heading ("Node3D", "Node"): the ancestor the sections below it come from. A
+/// A class-chain heading ("Object3D", "Object"): the ancestor the sections below it come from. A
 /// quiet label with a rule to the edge, so it groups without competing with the section headers.
 void DrawInspectorChainHeaderUVE(const std::string& label) {
     ImGui::Dummy(ImVec2(0.0F, 4.0F));
@@ -117,7 +117,7 @@ void DrawInspectorChainHeaderUVE(const std::string& label) {
 } // namespace
 
 void EditorUVE::DrawInspectorPanelUVE() {
-    // A colour edit whose node is no longer the one selected - picked elsewhere while its picker
+    // A colour edit whose object is no longer the one selected - picked elsewhere while its picker
     // was open - is finished as it stands rather than left waiting for a picker nobody can see.
     if (m_componentPropertyPreview.has_value() &&
         (m_componentPropertyPreview->entity != m_selectedEntity || !HasSingleDocumentSelectionUVE())) {
@@ -131,7 +131,7 @@ void EditorUVE::DrawInspectorPanelUVE() {
     // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change.
     ImGui::SetNextWindowPos(layout.inspectorPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.inspectorSize, ImGuiCond_Always);
-    // No title row: the Inspector / Import / Signals tabs are the panel's top edge, so the name is
+    // No title row: the Inspector / Import / Events tabs are the panel's top edge, so the name is
     // not said twice. The panel is fixed in the layout, so there is nothing to drag it by anyway.
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
     ImGui::Begin(kPanelLabelInspectorUVE, nullptr, flags);
@@ -153,7 +153,7 @@ void EditorUVE::DrawInspectorPanelUVE() {
         };
         drawTab("Inspector", EditorRightPanelTabUVE::Inspector);
         drawTab("Import", EditorRightPanelTabUVE::Import);
-        drawTab("Signals", EditorRightPanelTabUVE::Signals);
+        drawTab("Events", EditorRightPanelTabUVE::Events);
         ImGui::EndTabBar();
     }
     m_drawnRightPanelTab = m_activeRightPanelTab;
@@ -165,9 +165,9 @@ void EditorUVE::DrawInspectorPanelUVE() {
         case EditorRightPanelTabUVE::Import:
             DrawImportQueueMonitorUVE();
             break;
-        case EditorRightPanelTabUVE::Signals:
-            ImGui::TextUnformatted("Signals");
-            ImGui::TextDisabled("Signal bindings remain unavailable until the scripting runtime is added.");
+        case EditorRightPanelTabUVE::Events:
+            ImGui::TextUnformatted("Events");
+            ImGui::TextDisabled("Event bindings remain unavailable until the scripting runtime is added.");
             break;
     }
     ImGui::End();
@@ -237,8 +237,8 @@ void EditorUVE::DrawInspectorContentUVE() {
 
     ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
     ImGui::Text("%s", GetEntityDisplayLabelUVE(m_selectedEntity).c_str());
-    // Every Inspector is its node's recipe and nothing else: the node's own section, its bases,
-    // Node3D's Transform and Visibility, then the common Node section. Nodes are renamed and
+    // Every Inspector is its object's recipe and nothing else: the object's own section, its bases,
+    // Object3D's Transform and Visibility, then the common Object section. Objects are renamed and
     // reparented from the Scene panel and get their parts from their recipe, so there is no name
     // field, hierarchy block, search box, Add Component or Remove here.
     RepairInspectorRecipeUVE(m_selectedEntity);
@@ -256,11 +256,11 @@ void EditorUVE::RegisterTransformInspectorDrawerUVE() {
         },
         [this](const Scene::EntityUVE entity) { DrawTransformInspectorDrawerUVE(entity); },
     }));
-    static_cast<void>(m_inspectorDrawerRegistry.SetDrawerGroupUVE("transform", "Node3D"));
+    static_cast<void>(m_inspectorDrawerRegistry.SetDrawerGroupUVE("transform", "Object3D"));
 }
 
 void EditorUVE::RepairInspectorRecipeUVE(const Scene::EntityUVE entity) {
-    // A node saved before its recipe included Visibility and the Node section is given them here,
+    // An object saved before its recipe included Visibility and the Object section is given them here,
     // where they are first needed. Every default is Inherit or empty, so this changes nothing
     // about how the scene runs.
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
@@ -271,7 +271,7 @@ void EditorUVE::RepairInspectorRecipeUVE(const Scene::EntityUVE entity) {
         !entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity)) {
         entityManager.AddComponentUVE<Scene::VisibilityComponentUVE>(entity, Scene::VisibilityComponentUVE{});
     }
-    Scene::EnsureCommonNodeSectionUVE(entityManager, entity);
+    Scene::EnsureCommonObjectSectionUVE(entityManager, entity);
 }
 
 void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {

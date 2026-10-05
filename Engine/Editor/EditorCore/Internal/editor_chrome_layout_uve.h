@@ -62,8 +62,8 @@ constexpr const char* kContentEntityPayloadUVE = "UVE_CONTENT_ENTITY_ASSET";
 constexpr const char* kContentItemPayloadUVE = "UVE_CONTENT_ITEM";
 constexpr const char* kPanelLabelSceneUVE = "\xEF\xAB\xBA Outliner##scene-panel";
 constexpr std::size_t kMaximumEntityNameBytesUVE = 96U;
-// A node icon is 16 px: its texture is 64 px, so 16 is an exact mip level and draws crisp.
-constexpr float kHierarchyNodeIconSizeUVE = 16.0F;
+// An object icon is 16 px: its texture is 64 px, so 16 is an exact mip level and draws crisp.
+constexpr float kHierarchyObjectIconSizeUVE = 16.0F;
 
 constexpr float kMinimumViewportWidthUVE = 64.0F;
 constexpr float kMinimumViewportHeightUVE = 64.0F;

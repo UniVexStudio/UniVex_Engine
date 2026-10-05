@@ -1,4 +1,4 @@
-"""The UniVex editor icon set: scene nodes, node-palette categories and content-browser assets."""
+"""The UniVex editor icon set: scene objects, object-palette categories and content-browser assets."""
 
 import math
 import os
@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from kit import (Icon, OUTLINE, arrow, arrow_head, box, cylinder, faceted_sphere, figure, glass_box, glow,
                  glyph, iso, page, pts, shade, shadow, slab, sphere, stroke_line, tile, tones, wire_box)
 
-# One hue per family, so a row's colour already says what kind of node it is.
+# One hue per family, so a row's colour already says what kind of object it is.
 STEEL = "#7f93ad"      # scene structure
 AMBER = "#f0962e"      # geometry
 TEAL = "#24b3ad"       # cameras
@@ -32,9 +32,9 @@ AXIS_X, AXIS_Y, AXIS_Z = "#f0514d", "#72d94c", "#4d8ef0"
 COS = math.cos(math.radians(30))
 
 # The three icon groups, each one directory under Engine/Editor/EditorCore/assets/icons/. An icon's
-# id is its file stem and the name the editor looks it up by: a node's registry typeId, a palette
+# id is its file stem and the name the editor looks it up by: an object's registry typeId, a palette
 # category in lower case, a content browser type label in lower case.
-NODES, NODE_CATEGORIES, CONTENT_TYPES = "nodes", "node_categories", "content_types"
+OBJECTS, OBJECT_CATEGORIES, CONTENT_TYPES = "objects", "object_categories", "content_types"
 
 ICONS = {}   # (group, id) -> (title, section, draw function), in registration order
 
@@ -49,8 +49,8 @@ def _register(group, icon_id, title, section):
     return register
 
 
-def scene_node(type_id, title, section):
-    return _register(NODES, type_id, title, section)
+def scene_object(type_id, title, section):
+    return _register(OBJECTS, type_id, title, section)
 
 
 def content_type(icon_id, title):
@@ -64,7 +64,7 @@ def build(key):
     return ic.svg()
 
 
-def node(ic, cx, cy, r, colour):
+def dot(ic, cx, cy, r, colour):
     sphere(ic, cx, cy, r, colour)
 
 
@@ -105,18 +105,18 @@ def axes(ic, ox, oy, length=20, width=4.4, head=10.5):
     arrow(ic, (ox, oy), iso(ox, oy, 0, length, 0), AXIS_Y, width, head)
 
 
-@scene_node("scene_root", "SceneRoot", "Scene")
+@scene_object("scene_root", "SceneRoot", "Scene")
 def scene_root(ic):
     shadow(ic, 32, 56, 26, 6)
     slab(ic, 32, 50, 40, 40, 5, shade(STEEL, -0.12))
     link(ic, (32, 17), (19, 34))
     link(ic, (32, 17), (45, 34))
-    node(ic, 19, 34, 6, shade(STEEL, 0.05))
-    node(ic, 45, 34, 6, shade(STEEL, 0.05))
-    node(ic, 32, 16, 8, "#9fb4cf")
+    dot(ic, 19, 34, 6, shade(STEEL, 0.05))
+    dot(ic, 45, 34, 6, shade(STEEL, 0.05))
+    dot(ic, 32, 16, 8, "#9fb4cf")
 
 
-@scene_node("viewport", "Viewport", "Scene")
+@scene_object("viewport", "Viewport", "Scene")
 def viewport(ic):
     # The level seen through the editor's view: a screen frame looking at sky, ground and a
     # perspective floor grid.
@@ -139,14 +139,14 @@ def viewport(ic):
            f'stroke-opacity="0.7" stroke-width="1.2"/>')
 
 
-@scene_node("node_3d", "Node3D", "Scene")
-def node_3d(ic):
+@scene_object("object_3d", "Object3D", "Scene")
+def object_3d(ic):
     shadow(ic, 30, 54, 22, 6)
     axes(ic, 29, 41, 27)
     sphere(ic, 29, 41, 8.5, STEEL)
 
 
-@scene_node("marker_3d", "Marker3D", "Scene")
+@scene_object("marker_3d", "Marker3D", "Scene")
 def marker_3d(ic):
     shadow(ic, 32, 54, 14, 4.5, 0.5)
     pin = "#ef5b3d"
@@ -159,7 +159,7 @@ def marker_3d(ic):
     ic.add(f'<ellipse cx="24.5" cy="15.5" rx="4.5" ry="3" fill="{spec}" transform="rotate(-35 24.5 15.5)"/>')
 
 
-@scene_node("spawn_point_3d", "SpawnPoint3D", "Gameplay")
+@scene_object("spawn_point_3d", "SpawnPoint3D", "Gameplay")
 def spawn_point_3d(ic):
     shadow(ic, 32, 58, 25, 4.5)
     cylinder(ic, 32, 56, 24, 4, shade(GOLD, -0.12), ry=8.5)
@@ -169,8 +169,8 @@ def spawn_point_3d(ic):
     figure(ic, "stand", GOLD, dy=-3, scale=0.86)
 
 
-@scene_node("script", "Script", "Logic")
-def script_node(ic):
+@scene_object("script", "Script", "Logic")
+def script_object(ic):
     shadow(ic, 33, 57, 21, 4.5)
     page(ic, 12, 6, 38, 48, CODE, fold=11)
     brace = "M 26 19 q -5 0 -5 5 v 3 q 0 3 -3 3 q 3 0 3 3 v 3 q 0 5 5 5"
@@ -184,7 +184,7 @@ def script_node(ic):
 # Physics
 # =============================================================================================
 
-@scene_node("area_3d", "Area3D", "Physics")
+@scene_object("area_3d", "Area3D", "Physics")
 def area_3d(ic):
     zone = "#4ec3f2"
     shadow(ic, 32, 56, 24, 5, 0.25)
@@ -201,7 +201,7 @@ def area_3d(ic):
         arrow(ic, (x, 22), (x, 38), "#e6f8ff", 2.2, 6)
 
 
-@scene_node("ray_cast_3d", "RayCast3D", "Physics")
+@scene_object("ray_cast_3d", "RayCast3D", "Physics")
 def ray_cast_3d(ic):
     shadow(ic, 44, 56, 16, 4.5)
     slab(ic, 44, 52, 22, 22, 3, shade(STEEL, -0.1))
@@ -212,8 +212,8 @@ def ray_cast_3d(ic):
     sphere(ic, 15, 15, 7.5, BLUE)
 
 
-@scene_node("static_body_3d", "StaticBody3D", "Physics")
-def static_body_3d(ic):
+@scene_object("static_3d", "Static3D", "Physics")
+def static_3d(ic):
     shadow(ic, 32, 57, 27, 6)
     box(ic, 32, 51, 34, 18, 34, "#6a86ad")
     # a bolt on the top face says "fixed in place"
@@ -221,8 +221,8 @@ def static_body_3d(ic):
     cylinder(ic, cx, cy + 1, 4.2, 5, "#c7d2df", ry=2.2)
 
 
-@scene_node("animatable_body_3d", "AnimatableBody3D", "Physics")
-def animatable_body_3d(ic):
+@scene_object("kinematic_3d", "Kinematic3D", "Physics")
+def kinematic_3d(ic):
     shadow(ic, 32, 55, 22, 4.5)
     slab(ic, 32, 45, 30, 20, 6, BLUE)
     left, right = iso(32, 45, -30, 3, 0), iso(32, 45, 30, 3, 0)
@@ -235,8 +235,8 @@ def animatable_body_3d(ic):
     box(ic, 30, 36, 9, 9, 9, shade(STEEL, 0.05))
 
 
-@scene_node("character_body_3d", "CharacterBody3D", "Physics")
-def character_body_3d(ic):
+@scene_object("character_3d", "Character3D", "Physics")
+def character_3d(ic):
     shadow(ic, 31, 57, 20, 4.5)
     # the body's collision capsule, drawn around the runner
     ic.add(f'<rect x="14" y="3" width="36" height="55" rx="18" fill="{BLUE}" fill-opacity="0.1" stroke="{MINT}" '
@@ -244,15 +244,15 @@ def character_body_3d(ic):
     figure(ic, "run", BLUE)
 
 
-@scene_node("collider_3d", "Collider3D", "Physics")
+@scene_object("collider_3d", "Collider3D", "Physics")
 def collider_3d(ic):
     shadow(ic, 32, 56, 22, 5, 0.3)
     faceted_sphere(ic, 32, 38, 15, "#8f98a4", detail=0, rot=(32, 12))
     wire_box(ic, 32, 51, 27, 28, 27, MINT, dash="3 2.2", width=2.2)
 
 
-@scene_node("rigid_body_3d", "RigidBody3D", "Physics")
-def rigid_body_3d(ic):
+@scene_object("rigid_3d", "Rigid3D", "Physics")
+def rigid_3d(ic):
     wood = "#bf8a52"
     shadow(ic, 34, 58, 17, 4)
     for i, (x, y) in enumerate(((13, 10), (8, 20), (12, 30))):
@@ -274,7 +274,7 @@ def rigid_body_3d(ic):
 # Navigation
 # =============================================================================================
 
-@scene_node("navigation_region_3d", "NavigationRegion3D", "Navigation")
+@scene_object("navigation_region_3d", "NavigationRegion3D", "Navigation")
 def navigation_region_3d(ic):
     shadow(ic, 32, 55, 27, 5.5)
     top, _, _ = slab(ic, 32, 50, 42, 42, 4, NAV)
@@ -289,7 +289,7 @@ def navigation_region_3d(ic):
         ic.add(f'<circle cx="{p[0]:.2f}" cy="{p[1]:.2f}" r="1.9" fill="#ffffff"/>')
 
 
-@scene_node("navigation_agent_3d", "NavigationAgent3D", "Navigation")
+@scene_object("navigation_agent_3d", "NavigationAgent3D", "Navigation")
 def navigation_agent_3d(ic):
     shadow(ic, 22, 58, 12, 3.5)
     stroke_line(ic, [(29, 57), (41, 53), (50, 56)], "#d4f7c4", 2.6, dash="3.5 3")
@@ -336,7 +336,7 @@ def bone(ic, x1, y1, x2, y2, r, colour=IVORY):
     ic.add(f'<polygon points="{pts(shaft)}" fill="{fill}"/>')
 
 
-@scene_node("skeleton_3d", "Skeleton3D", "Animation")
+@scene_object("skeleton_3d", "Skeleton3D", "Animation")
 def skeleton_3d(ic):
     shadow(ic, 32, 58, 22, 4)
     joints = [(10, 50), (27, 33), (47, 30), (56, 14)]
@@ -346,7 +346,7 @@ def skeleton_3d(ic):
         sphere(ic, x, y, 5.2 if i < 3 else 4.2, PURPLE)
 
 
-@scene_node("bone_attachment_3d", "BoneAttachment3D", "Animation")
+@scene_object("bone_attachment_3d", "BoneAttachment3D", "Animation")
 def bone_attachment_3d(ic):
     shadow(ic, 30, 57, 22, 4.5)
     bone(ic, 12, 40, 36, 17, 7)
@@ -357,8 +357,32 @@ def bone_attachment_3d(ic):
     stroke_line(ic, [(36, 26), (40, 36)], "#d9c9ff", 2.4)
 
 
-@scene_node("animation_player", "AnimationPlayer", "Animation")
-def animation_player(ic):
+@scene_object("two_bone_ik_3d", "TwoBoneIK3D", "Animation")
+def two_bone_ik_3d(ic):
+    shadow(ic, 31, 58, 22, 4.5)
+    # The limb the solver drives: two bones meeting at the elbow, drawn bent so the pose reads as
+    # solved-toward-something rather than resting.
+    bone(ic, 10, 50, 30, 31, 6.4)
+    bone(ic, 30, 31, 46, 17, 5.2)
+    sphere(ic, 30, 31, 5.8, IVORY, gloss=0.8)
+    # The target the end effector reaches: a ring and four ticks around the wrist joint, the
+    # reticle every DCC tool draws for the thing an IK chain is aimed at.
+    ring = ic.linear([(0, shade(PURPLE, 0.32)), (1, shade(PURPLE, -0.28))], 0, 0, 1, 1)
+    ic.add(f'<circle cx="47" cy="17" r="9.4" fill="none" stroke="{OUTLINE}" stroke-opacity="0.7" '
+           f'stroke-width="4.4"/>')
+    ic.add(f'<circle cx="47" cy="17" r="9.4" fill="none" stroke="{ring}" stroke-width="2.4" '
+           f'stroke-dasharray="4.6 3"/>')
+    for (tx, ty, dx, dy) in ((56.4, 17, 3.4, 0), (37.6, 17, -3.4, 0), (47, 26.4, 0, 3.4),
+                             (47, 7.6, 0, -3.4)):
+        stroke_line(ic, [(tx, ty), (tx + dx, ty + dy)], shade(PURPLE, 0.1), 2.0)
+    # The pole: the point that picks which of the elbow's circle of solutions is used, joined to the
+    # joint by a dotted line because it steers the bend without being part of the chain.
+    stroke_line(ic, [(27, 27), (15, 13)], "#d9c9ff", 1.8, dash="2.6 3.2")
+    sphere(ic, 14, 12, 3.4, PURPLE, gloss=0.9)
+
+
+@scene_object("animation_sequencer", "AnimationSequencer", "Animation")
+def animation_sequencer(ic):
     shadow(ic, 32, 57, 26, 4.5)
     strip = "#3a3446"
     fill = ic.linear([(0, shade(strip, 0.1)), (1, shade(strip, -0.08))], 0, 0, 0, 1)
@@ -374,8 +398,8 @@ def animation_player(ic):
     ic.add('<path d="M 27 24.5 L 38.5 31.4" stroke="#fff" stroke-opacity="0.7" stroke-width="1.5" stroke-linecap="round"/>')
 
 
-@scene_node("animation_tree", "AnimationTree", "Animation")
-def animation_tree(ic):
+@scene_object("animation_graph", "AnimationGraph", "Animation")
+def animation_graph(ic):
     shadow(ic, 32, 58, 26, 3.5)
     def state(x, y, w, h, colour):
         ic.add(f'<rect x="{x + 1.5}" y="{y + 2.5}" width="{w}" height="{h}" rx="5" fill="{shade(colour, -0.35)}"/>')
@@ -423,13 +447,13 @@ def movie_camera(ic, ox, oy, s, lens_colour=TEAL):
     ic.add(f'<circle cx="{X(14.4):.2f}" cy="{Y(10.2):.2f}" r="{1.8 * s:.2f}" fill="#fff" fill-opacity="0.9"/>')
 
 
-@scene_node("camera_3d", "Camera3D", "Camera")
+@scene_object("camera_3d", "Camera3D", "Camera")
 def camera_3d(ic):
     shadow(ic, 32, 56, 24, 5.5)
     movie_camera(ic, 8, 24, 1.0)
 
 
-@scene_node("spring_arm_3d", "SpringArm3D", "Camera")
+@scene_object("spring_arm_3d", "SpringArm3D", "Camera")
 def spring_arm_3d(ic):
     shadow(ic, 30, 58, 24, 4)
     sphere(ic, 10, 52, 6, STEEL)
@@ -449,7 +473,7 @@ def spring_arm_3d(ic):
 # Combat
 # =============================================================================================
 
-@scene_node("hitbox_3d", "Hitbox3D", "Combat")
+@scene_object("hitbox_3d", "Hitbox3D", "Combat")
 def hitbox_3d(ic):
     shadow(ic, 30, 58, 20, 3.5)
     # the hit volume around the blade's striking end
@@ -474,7 +498,7 @@ def heart_path(cx, cy, s):
             f"C {cx + 11 * s} {cy - 10 * s} {cx + 14 * s} {cy} {cx} {cy + 9 * s} Z")
 
 
-@scene_node("hurtbox_3d", "Hurtbox3D", "Combat")
+@scene_object("hurtbox_3d", "Hurtbox3D", "Combat")
 def hurtbox_3d(ic):
     shadow(ic, 32, 58, 17, 4)
     fill = ic.radial([(0, shade(RED, 0.3)), (0.6, RED), (1, shade(RED, -0.25))], cx=0.35, cy=0.3, r=0.75)
@@ -487,7 +511,7 @@ def hurtbox_3d(ic):
         stroke_line(ic, [a, b], "#ffd24a", 2.4)
 
 
-@scene_node("projectile_3d", "Projectile3D", "Combat")
+@scene_object("projectile_3d", "Projectile3D", "Combat")
 def projectile_3d(ic):
     shadow(ic, 36, 57, 20, 4)
     for i, off in enumerate((0, 6, 12)):
@@ -507,7 +531,7 @@ def projectile_3d(ic):
 # Gameplay
 # =============================================================================================
 
-@scene_node("interaction_area_3d", "InteractionArea3D", "Gameplay")
+@scene_object("interaction_area_3d", "InteractionArea3D", "Gameplay")
 def interaction_area_3d(ic):
     ic.add(f'<ellipse cx="32" cy="50" rx="28" ry="11" fill="{GOLD}" fill-opacity="0.16" stroke="{GOLD}" '
            f'stroke-width="2.4" stroke-dasharray="5 3.5"/>')
@@ -528,7 +552,7 @@ def interaction_area_3d(ic):
 # Rendering
 # =============================================================================================
 
-@scene_node("mesh_instance_3d", "MeshInstance3D", "Rendering")
+@scene_object("mesh_instance_3d", "MeshInstance3D", "Rendering")
 def mesh_instance_3d(ic):
     shadow(ic, 32, 57, 20, 5)
     faceted_sphere(ic, 34, 29, 20, AMBER, detail=0)
@@ -536,25 +560,25 @@ def mesh_instance_3d(ic):
     axes(ic, 14, 52, 11, 2.8, 6)
 
 
-@scene_node("box_mesh_3d", "BoxMesh3D", "Rendering")
+@scene_object("box_mesh_3d", "BoxMesh3D", "Rendering")
 def box_mesh_3d(ic):
     shadow(ic, 32, 56, 24, 7)
     box(ic, 32, 47, 26, 26, 26, AMBER)
 
 
-@scene_node("sphere_mesh_3d", "SphereMesh3D", "Rendering")
+@scene_object("sphere_mesh_3d", "SphereMesh3D", "Rendering")
 def sphere_mesh_3d(ic):
     shadow(ic, 32, 56, 19, 6)
     sphere(ic, 32, 31, 21, AMBER)
 
 
-@scene_node("plane_mesh_3d", "PlaneMesh3D", "Rendering")
+@scene_object("plane_mesh_3d", "PlaneMesh3D", "Rendering")
 def plane_mesh_3d(ic):
     shadow(ic, 32, 52, 29, 7)
     slab(ic, 32, 46, 42, 42, 6, shade(AMBER, -0.06))
 
 
-@scene_node("light_3d", "Light3D", "Rendering")
+@scene_object("light_3d", "Light3D", "Rendering")
 def light_3d(ic):
     glow(ic, 32, 31, 30, SUN, 0.5)
     for i in range(8):
@@ -570,7 +594,7 @@ def light_3d(ic):
     sphere(ic, 32, 31, 14, SUN)
 
 
-@scene_node("directional_light_3d", "DirectionalLight3D", "Rendering")
+@scene_object("directional_light_3d", "DirectionalLight3D", "Rendering")
 def directional_light_3d(ic):
     # The sun from far away: a disc and parallel rays falling one way, not radiating.
     glow(ic, 22, 20, 20, SUN, 0.45)
@@ -583,7 +607,7 @@ def directional_light_3d(ic):
                f'stroke-width="1" stroke-linecap="round"/>')
 
 
-@scene_node("world_environment_3d", "WorldEnvironment", "Rendering")
+@scene_object("world_environment_3d", "WorldEnvironment", "Rendering")
 def world_environment_3d(ic):
     shadow(ic, 32, 57, 27, 4)
     ground = ic.linear([(0, "#7cc45d"), (1, "#356e2a")], 0, 0, 0, 1)
@@ -598,7 +622,7 @@ def world_environment_3d(ic):
     ic.add(f'<path d="M 13 42 A 21 37 0 0 1 26 13" fill="none" stroke="{spec}" stroke-width="2.6" stroke-linecap="round"/>')
 
 
-@scene_node("reflection_probe_3d", "ReflectionProbe3D", "Rendering")
+@scene_object("reflection_probe_3d", "ReflectionProbe3D", "Rendering")
 def reflection_probe_3d(ic):
     shadow(ic, 32, 59, 18, 3.5)
     for a, b in (((32, 40), (18, 58)), ((32, 40), (46, 58)), ((32, 40), (32, 60))):
@@ -612,7 +636,7 @@ def reflection_probe_3d(ic):
     ic.add(f'<circle cx="32" cy="24" r="19" fill="none" stroke="{OUTLINE}" stroke-opacity="0.7" stroke-width="1.4"/>')
 
 
-@scene_node("decal_3d", "Decal3D", "Rendering")
+@scene_object("decal_3d", "Decal3D", "Rendering")
 def decal_3d(ic):
     shadow(ic, 32, 56, 27, 5)
     top, _, _ = slab(ic, 32, 51, 40, 40, 4, "#8c96a3")
@@ -629,7 +653,7 @@ def decal_3d(ic):
     sphere(ic, *iso(32, 51, 0, 30, 0), 4.5, MAGENTA)
 
 
-@scene_node("fog_volume_3d", "FogVolume3D", "Rendering")
+@scene_object("fog_volume_3d", "FogVolume3D", "Rendering")
 def fog_volume_3d(ic):
     shadow(ic, 32, 55, 26, 4, 0.25)
     for y, w, a in ((49, 44, 0.55), (43, 40, 0.75)):
@@ -647,7 +671,7 @@ def fog_volume_3d(ic):
 # Optimisation
 # =============================================================================================
 
-@scene_node("lod_group_3d", "LODGroup3D", "Optimization")
+@scene_object("lod_group_3d", "LODGroup3D", "Optimization")
 def lod_group_3d(ic):
     shadow(ic, 32, 54, 28, 4)
     sphere(ic, 13, 42, 9.5, SLATE)
@@ -655,14 +679,14 @@ def lod_group_3d(ic):
     faceted_sphere(ic, 52, 45, 7.5, SLATE, detail=-1, rot=(25, 35))
 
 
-@scene_node("occluder_3d", "Occluder3D", "Optimization")
+@scene_object("occluder_3d", "Occluder3D", "Optimization")
 def occluder_3d(ic):
     shadow(ic, 32, 57, 22, 4.5)
     box(ic, 32, 53, 30, 36, 8, "#4d5f75")
     eye(ic, 30, 30, 24, SLATE, slashed=True)
 
 
-@scene_node("visibility_region_3d", "VisibilityRegion3D", "Optimization")
+@scene_object("visibility_region_3d", "VisibilityRegion3D", "Optimization")
 def visibility_region_3d(ic):
     shadow(ic, 34, 57, 24, 4, 0.25)
     cone = ic.linear([(0, SLATE, 0.45), (1, SLATE, 0.08)], 0, 0, 1, 0)
@@ -678,7 +702,7 @@ def visibility_region_3d(ic):
 # World
 # =============================================================================================
 
-@scene_node("level_streamer_3d", "LevelStreamer3D", "World")
+@scene_object("level_streamer_3d", "LevelStreamer3D", "World")
 def level_streamer_3d(ic):
     shadow(ic, 32, 59, 25, 4)
     slab(ic, 32, 55, 32, 32, 6, WORLD)
@@ -687,7 +711,7 @@ def level_streamer_3d(ic):
     arrow(ic, (32, 14), (32, 44), "#ffffff", 4, 11)
 
 
-@scene_node("world_partition_3d", "WorldPartition3D", "World")
+@scene_object("world_partition_3d", "WorldPartition3D", "World")
 def world_partition_3d(ic):
     shadow(ic, 32, 58, 28, 5)
     size, gap = 12, 1.8
@@ -704,7 +728,7 @@ def world_partition_3d(ic):
 # Audio, effects
 # =============================================================================================
 
-@scene_node("audio_source_3d", "AudioSource3D", "Audio")
+@scene_object("audio_source_3d", "AudioSource3D", "Audio")
 def audio_source_3d(ic):
     shadow(ic, 26, 57, 18, 4.5)
     box(ic, 22, 53, 16, 32, 20, "#3b4454")
@@ -719,7 +743,7 @@ def audio_source_3d(ic):
                f'stroke="{shade(PINK, 0.12)}" stroke-width="3.2" stroke-linecap="round" transform="translate({i * 3} {8 - i * 2})"/>')
 
 
-@scene_node("particle_emitter_3d", "ParticleEmitter3D", "VFX")
+@scene_object("particle_emitter_3d", "ParticleEmitter3D", "VFX")
 def particle_emitter_3d(ic):
     shadow(ic, 32, 59, 16, 3.5)
     particles = ((32, 42, 3.4), (29, 33, 3.8), (35, 25, 4.4), (26, 18, 4.2), (40, 14, 3.6), (19, 27, 3.2),
@@ -749,8 +773,8 @@ def panel(ic, x, y, w, h, base, r=6, inner=None):
                f'stroke="{OUTLINE}" stroke-opacity="0.45" stroke-width="1"/>')
 
 
-@scene_node("canvas", "Canvas", "UI")
-def canvas_node(ic):
+@scene_object("canvas", "Canvas", "UI")
+def canvas_object(ic):
     panel(ic, 6, 9, 50, 44, LIME, 7, (11, 20, 40, 28, "#26331b"))
     for i, (w, c) in enumerate(((22, "#cdf59a"), (30, "#89c152"), (16, "#89c152"))):
         ic.add(f'<rect x="15" y="{25 + i * 7}" width="{w}" height="3.2" rx="1.6" fill="{c}"/>')
@@ -758,14 +782,14 @@ def canvas_node(ic):
         ic.add(f'<circle cx="{14 + i * 5}" cy="15" r="1.6" fill="#26331b" fill-opacity="0.6"/>')
 
 
-@scene_node("ui_text", "UIText", "UI")
+@scene_object("ui_text", "UIText", "UI")
 def ui_text(ic):
     shadow(ic, 32, 57, 20, 4.5)
     box(ic, 32, 50, 9, 30, 9, LIME)
     box(ic, 32, 25, 34, 8, 9, shade(LIME, 0.05))
 
 
-@scene_node("ui_image", "UIImage", "UI")
+@scene_object("ui_image", "UIImage", "UI")
 def ui_image(ic):
     panel(ic, 6, 10, 50, 42, LIME, 5, (11, 15, 40, 32, "#9ed2ff"))
     ic.add('<clipPath id="pic"><rect x="11" y="15" width="40" height="32" rx="2"/></clipPath>')
@@ -776,7 +800,7 @@ def ui_image(ic):
            f'<circle cx="41" cy="22" r="4" fill="#fff3a6"/></g>')
 
 
-@scene_node("ui_button", "UIButton", "UI")
+@scene_object("ui_button", "UIButton", "UI")
 def ui_button(ic):
     shadow(ic, 30, 50, 25, 5)
     ic.add(f'<rect x="6" y="24" width="48" height="22" rx="11" fill="{shade(LIME, -0.32)}"/>')
@@ -791,7 +815,7 @@ def ui_button(ic):
 
 
 # =============================================================================================
-# Node palette categories: a bevelled tile in the family colour with a white glyph
+# Object palette categories: a bevelled tile in the family colour with a white glyph
 # =============================================================================================
 
 CATEGORIES = [
@@ -835,7 +859,7 @@ def _category(name, colour, path, dots):
 
 
 for _name, _colour, _path, _dots in CATEGORIES:
-    _register(NODE_CATEGORIES, _name.lower(), _name, "Node categories")(_category(_name, _colour, _path, _dots))
+    _register(OBJECT_CATEGORIES, _name.lower(), _name, "Object categories")(_category(_name, _colour, _path, _dots))
 
 
 # =============================================================================================
@@ -864,8 +888,8 @@ def folder_asset(ic):
     ic.add(f'<path d="M 7.5 26.5 h 50" stroke="{shade(GOLD, 0.34)}" stroke-width="1.3" stroke-linecap="round"/>')
 
 
-@scene_node("folder", "Folder", "Scene")
-def folder_node(ic):
+@scene_object("folder", "Folder", "Scene")
+def folder_object(ic):
     # The Scene panel's Folder looks like the Content Browser's: the same thing, organising.
     folder_asset(ic)
 
@@ -897,8 +921,8 @@ def prefab_asset(ic):
 
 @content_type("entity", "Entity")
 def entity_asset(ic):
-    # An entity asset is a ready-made node tree - drawn as the character body it usually holds.
-    character_body_3d(ic)
+    # An entity asset is a ready-made object tree - drawn as the character body it usually holds.
+    character_3d(ic)
 
 
 @content_type("bundle", "Bundle")

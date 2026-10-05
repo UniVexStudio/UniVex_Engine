@@ -255,7 +255,7 @@ float GizmoRenderer::ScaleForPixelRadius(const univex::camera::OrbitCamera& came
     if (framebufferHeight <= 0) return 1.f;
 
     // World units per pixel at the PIVOT's depth (orthographic handled inside), so the widget
-    // holds its on-screen size wherever the selected node happens to be relative to the camera's
+    // holds its on-screen size wherever the selected object happens to be relative to the camera's
     // orbit target.
     const float worldPerPixel =
         univex::camera::WorldPerPixelAtPointUVE(camera, framebufferHeight, pivot);

@@ -80,8 +80,8 @@ public:
     // outermost handle sits at ~1.9 units from the pivot.
     //
     // The pivot is a parameter rather than an assumption because it is routinely not the camera's
-    // orbit target: the transform gizmo sits on the selected node, and orbiting the view leaves
-    // that node wherever it was. Sizing from the orbit distance instead made the widget grow and
+    // orbit target: the transform gizmo sits on the selected object, and orbiting the view leaves
+    // that object wherever it was. Sizing from the orbit distance instead made the widget grow and
     // shrink with the camera rather than with its own depth.
     [[nodiscard]] static float ScaleForPixelRadius(const univex::camera::OrbitCamera& camera,
                                                    int framebufferHeight,

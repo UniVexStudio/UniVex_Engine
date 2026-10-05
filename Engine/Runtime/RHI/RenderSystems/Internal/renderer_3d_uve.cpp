@@ -24,6 +24,7 @@
 #include "uve/asset/mesh_skinning_uve.h"
 #include "uve/asset/shader_asset_uve.h"
 #include "uve/asset/texture_asset_uve.h"
+#include "uve/asset/texture_compression_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
@@ -37,7 +38,9 @@
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
-#include "uve/nodes/3d/all_nodes_3d_uve.h"
+#include "uve/objects/3d/all_objects_3d_uve.h"
+#include "uve/render_systems/decal_draw_command_uve.h"
+#include "uve/render_systems/decal_renderer_uve.h"
 #include "uve/render_systems/i_light_system_uve.h"
 #include "uve/render_systems/particle_draw_command_uve.h"
 #include "uve/render_systems/particle_render_bridge_uve.h"
@@ -286,6 +289,12 @@ constexpr std::uint32_t kAoTextureSlotUVE = 2;
 /// convention.
 constexpr std::uint32_t kShadowMapTextureSlotUVE = 3U;
 
+/// The render layers the main view draws. Every layer, because CameraComponentUVE carries no layer
+/// filter yet - when it grows one, this becomes the camera's mask and the decal pass already tests
+/// its decals against it. Until then a decal whose cullMask omits EVERY layer is the only decal the
+/// main view cannot see, which is exactly what an authored mask that matches nothing means.
+constexpr std::uint32_t kMainViewReceiverLayerMaskUVE = 0xFFFFFFFFU;
+
 // The renderer always clears its scene target. Desktop uses HDR RGBA16F while Android uses the
 // GLES3-safe RGBA8 variant below. This neutral charcoal is the intentional empty-scene environment
 // baseline; it is not an editor overlay and never counts as primitive presentation evidence in the
@@ -433,18 +442,136 @@ constexpr std::array<std::uint8_t, 4> kWhitePixelUVE{0xFF, 0xFF, 0xFF, 0xFF};
 constexpr std::array<std::uint8_t, 4> kFlatNormalPixelUVE{0x80, 0x80, 0xFF, 0xFF};
 
 /// Translates a loaded TextureAssetUVE's format into the RHI's own TextureFormatUVE (a
-/// deliberately separate enum — see Asset::TextureFormatUVE's own doc comment for why). Asset
+/// deliberately separate enum — see Asset::TextureAssetFormatUVE's own doc comment for why). Asset
 /// textures never use Depth32Float (that's only ever created directly as a GPU render target), so
-/// this mapping is exhaustive over Asset::TextureFormatUVE's two enumerators.
-[[nodiscard]] TextureFormatUVE ToRenderTextureFormatUVE(Asset::TextureFormatUVE format) noexcept {
+/// this mapping is exhaustive over Asset::TextureAssetFormatUVE's two enumerators.
+[[nodiscard]] TextureFormatUVE ToRenderTextureFormatUVE(Asset::TextureAssetFormatUVE format) noexcept {
     switch (format) {
-        case Asset::TextureFormatUVE::RGBA8Unorm:
+        case Asset::TextureAssetFormatUVE::RGBA8Unorm:
             return TextureFormatUVE::RGBA8Unorm;
-        case Asset::TextureFormatUVE::RGBA16Float:
+        case Asset::TextureAssetFormatUVE::RGBA16Float:
             return TextureFormatUVE::RGBA16Float;
     }
-    UVE_ASSERT(false && "Unhandled Asset::TextureFormatUVE");
+    UVE_ASSERT(false && "Unhandled Asset::TextureAssetFormatUVE");
     return TextureFormatUVE::RGBA8Unorm;
+}
+
+[[nodiscard]] TextureColorSpaceUVE ToRenderTextureColorSpaceUVE(
+    Asset::TextureAssetColorSpaceUVE colorSpace) noexcept {
+    switch (colorSpace) {
+        case Asset::TextureAssetColorSpaceUVE::Linear:
+            return TextureColorSpaceUVE::Linear;
+        case Asset::TextureAssetColorSpaceUVE::Srgb:
+            return TextureColorSpaceUVE::Srgb;
+    }
+    UVE_ASSERT(false && "Unhandled Asset::TextureAssetColorSpaceUVE");
+    return TextureColorSpaceUVE::Linear;
+}
+
+[[nodiscard]] std::optional<TextureFormatUVE> ToRenderTranscodeFormatUVE(
+    const Asset::TextureTranscodeTargetUVE target) noexcept {
+    switch (target) {
+        case Asset::TextureTranscodeTargetUVE::Rgba8Unorm:
+            return TextureFormatUVE::RGBA8Unorm;
+        case Asset::TextureTranscodeTargetUVE::Bc1Rgb:
+            return TextureFormatUVE::BC1RGB;
+        case Asset::TextureTranscodeTargetUVE::Bc3Rgba:
+            return TextureFormatUVE::BC3RGBA;
+        case Asset::TextureTranscodeTargetUVE::Bc7Rgba:
+            return TextureFormatUVE::BC7RGBA;
+        case Asset::TextureTranscodeTargetUVE::Etc2Rgb:
+            return TextureFormatUVE::ETC2RGB8;
+        case Asset::TextureTranscodeTargetUVE::Etc2Rgba:
+            return TextureFormatUVE::ETC2RGBA8;
+        case Asset::TextureTranscodeTargetUVE::Astc4x4Rgba:
+            return TextureFormatUVE::ASTC4x4RGBA;
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] bool BuildTextureAssetUploadUVE(const Asset::TextureAssetUVE& textureAsset,
+                                               IRenderDeviceUVE& renderDevice,
+                                               TextureDescUVE& outDesc,
+                                               std::vector<std::byte>& outUploadData) {
+    const TextureColorSpaceUVE colorSpace = ToRenderTextureColorSpaceUVE(textureAsset.colorSpace);
+    if (textureAsset.payloadEncoding == Asset::TexturePayloadEncodingUVE::RawPixels) {
+        std::size_t uploadByteCount = textureAsset.pixels.size();
+        const std::size_t maximumUploadBytes = std::vector<std::byte>{}.max_size();
+        for (const Asset::TextureMipLevelUVE& mipLevel : textureAsset.mipLevels) {
+            if (mipLevel.pixels.size() > maximumUploadBytes - uploadByteCount) {
+                return false;
+            }
+            uploadByteCount += mipLevel.pixels.size();
+        }
+        std::vector<std::byte> uploadData;
+        uploadData.reserve(uploadByteCount);
+        uploadData.insert(uploadData.end(), textureAsset.pixels.begin(), textureAsset.pixels.end());
+        for (const Asset::TextureMipLevelUVE& mipLevel : textureAsset.mipLevels) {
+            uploadData.insert(uploadData.end(), mipLevel.pixels.begin(), mipLevel.pixels.end());
+        }
+        const TextureDescUVE desc{textureAsset.width, textureAsset.height,
+                                  ToRenderTextureFormatUVE(textureAsset.format),
+                                  static_cast<std::uint32_t>(textureAsset.mipLevels.size() + 1U), colorSpace};
+        if (!ValidateTextureUploadUVE(desc, uploadData)) {
+            return false;
+        }
+        outDesc = desc;
+        outUploadData = std::move(uploadData);
+        return true;
+    }
+    if (textureAsset.payloadEncoding != Asset::TexturePayloadEncodingUVE::BasisUniversalKtx2) {
+        return false;
+    }
+
+    Asset::TextureCompressionInfoUVE compressionInfo;
+    if (!Asset::GetTextureCompressionInfoUVE(textureAsset, compressionInfo)) {
+        return false;
+    }
+    const std::array<Asset::TextureTranscodeTargetUVE, 5U> opaqueTargets{
+        Asset::TextureTranscodeTargetUVE::Bc7Rgba,
+        Asset::TextureTranscodeTargetUVE::Bc1Rgb,
+        Asset::TextureTranscodeTargetUVE::Bc3Rgba,
+        Asset::TextureTranscodeTargetUVE::Etc2Rgb,
+        Asset::TextureTranscodeTargetUVE::Astc4x4Rgba};
+    const std::array<Asset::TextureTranscodeTargetUVE, 4U> alphaTargets{
+        Asset::TextureTranscodeTargetUVE::Bc7Rgba,
+        Asset::TextureTranscodeTargetUVE::Bc3Rgba,
+        Asset::TextureTranscodeTargetUVE::Astc4x4Rgba,
+        Asset::TextureTranscodeTargetUVE::Etc2Rgba};
+    const auto tryTarget = [&](const Asset::TextureTranscodeTargetUVE target) {
+        const std::optional<TextureFormatUVE> format = ToRenderTranscodeFormatUVE(target);
+        if (!format.has_value() || !renderDevice.SupportsTextureFormatUVE(*format, colorSpace)) {
+            return false;
+        }
+        Asset::TextureTranscodedMipChainUVE transcoded;
+        if (!Asset::TranscodeTextureAssetUVE(textureAsset, target, transcoded)) {
+            return false;
+        }
+        const TextureDescUVE desc{transcoded.width, transcoded.height, *format, transcoded.mipLevels, colorSpace};
+        if (!ValidateTextureUploadUVE(desc, transcoded.pixels)) {
+            return false;
+        }
+        outDesc = desc;
+        outUploadData = std::move(transcoded.pixels);
+        return true;
+    };
+    if (compressionInfo.hasAlpha) {
+        for (const Asset::TextureTranscodeTargetUVE target : alphaTargets) {
+            if (tryTarget(target)) {
+                return true;
+            }
+        }
+    } else {
+        for (const Asset::TextureTranscodeTargetUVE target : opaqueTargets) {
+            if (tryTarget(target)) {
+                return true;
+            }
+        }
+    }
+
+    // Portable data is useful on every backend, even when that backend has no block-compressed
+    // target. Keep all KTX2 mip levels and let the regular RGBA upload path provide the fallback.
+    return tryTarget(Asset::TextureTranscodeTargetUVE::Rgba8Unorm);
 }
 
 /// Finds the first active Directional light in `lights` for the shadow depth pre-pass (Increment
@@ -465,10 +592,10 @@ constexpr std::array<std::uint8_t, 4> kFlatNormalPixelUVE{0x80, 0x80, 0xFF, 0xFF
     Scene::IEntityManagerUVE& entityManager, const Math::Vector3UVE fallbackAmbient) noexcept {
     Math::Vector3UVE ambient = fallbackAmbient;
     bool environmentFound = false;
-    entityManager.ForEachUVE<Scene::WorldEnvironment3DNodeComponentUVE>(
+    entityManager.ForEachUVE<Scene::WorldEnvironment3DComponentUVE>(
         [&ambient, &environmentFound](Scene::EntityUVE,
-                                      const Scene::WorldEnvironment3DNodeComponentUVE& environment) {
-            if (environmentFound || !Scene::IsWorldEnvironment3DNodeComponentValidUVE(environment)) {
+                                      const Scene::WorldEnvironment3DComponentUVE& environment) {
+            if (environmentFound || !Scene::IsWorldEnvironment3DObjectComponentValidUVE(environment)) {
                 return;
             }
             const Math::Vector3UVE resolved{environment.ambientColor.x * environment.ambientEnergy,
@@ -735,6 +862,31 @@ struct Renderer3DUVE::ImplUVE {
     std::unordered_set<Asset::AssetGuidUVE> failedTextureGuids;
     RenderGraphUVE renderGraph;
     RenderQueueUVE frameQueue;
+
+    /// The decal pass and what it published this frame. Held rather than rebuilt per call for the
+    /// same reason the queue is: the vectors keep their capacity, and the pass clears them at the
+    /// top of every build rather than making the allocator do it.
+    DecalRendererUVE decalRenderer;
+    DecalDrawListUVE decalDraws;
+    /// This frame's decal geometry and the commands that draw it, built from decalDraws in the same
+    /// frame step and consumed by the MainColor pass.
+    DecalDrawPlanUVE decalPlan;
+    /// The program Decal3D's patches are painted with - unlit paint blended over the shaded surface,
+    /// so a decal needs no material shader to be visible.
+    std::shared_ptr<Shader::ShaderProgramUVE> decalProgram;
+    /// Per-decal vertex and index buffers, re-uploaded every frame because the patches are rebuilt
+    /// every frame - a receiver can move, and so can the decal. Mirrors skinnedMeshCache below it:
+    /// keyed by entity, sized to the geometry it currently holds, and entries no plan touched are
+    /// released at the next one.
+    struct DecalGpuUVE final {
+        BufferHandleUVE vertexBuffer = kInvalidBufferHandleUVE;
+        BufferHandleUVE indexBuffer = kInvalidBufferHandleUVE;
+        std::size_t vertexBytes = 0U;
+        std::size_t indexBytes = 0U;
+        std::uint64_t frame = 0U;
+    };
+    std::unordered_map<std::uint64_t, DecalGpuUVE> decalBuffers;
+    std::uint64_t decalFrame = 0U;
     std::array<RenderQueueUVE, kShadowCascadeCountUVE> shadowQueues;
     std::vector<PrimitiveRenderItemUVE> primitiveItems;
 
@@ -1123,19 +1275,28 @@ struct Renderer3DUVE::ImplUVE {
             UVE_ERROR("Renderer3DUVE: ready texture handle has no payload - falling back to the default texture");
             return fallbackHandle;
         }
-        const bool textureFormatValid = textureAsset->format == Asset::TextureFormatUVE::RGBA8Unorm ||
-                                        textureAsset->format == Asset::TextureFormatUVE::RGBA16Float;
-        UVE_ASSERT(textureFormatValid);
-        if (!textureFormatValid) {
+        // Asset payloads can come from disk, custom loaders, or hot reload. Treat malformed texture
+        // contents as a recoverable load/upload failure rather than an assertion on a render thread.
+        const bool textureAssetValid = Asset::IsTextureAssetValidUVE(*textureAsset);
+        if (!textureAssetValid) {
             failedTextureGuids.insert(textureGuid);
             ++lastFrameDiagnostics.textureFallbacks;
-            UVE_ERROR("Renderer3DUVE: ready texture payload has an unknown format - falling back to the default texture");
+            UVE_ERROR("Renderer3DUVE: ready texture payload has an invalid format, sampling metadata, "
+                      "base image, or mip chain - falling back to the default texture");
             return fallbackHandle;
         }
-        const TextureDescUVE desc{textureAsset->width, textureAsset->height,
-                                   ToRenderTextureFormatUVE(textureAsset->format), 1};
+
+        TextureDescUVE desc;
+        std::vector<std::byte> uploadData;
+        if (!BuildTextureAssetUploadUVE(*textureAsset, renderDevice, desc, uploadData)) {
+            failedTextureGuids.insert(textureGuid);
+            ++lastFrameDiagnostics.textureFallbacks;
+            UVE_ERROR("Renderer3DUVE: texture could not be staged or transcoded for this device - "
+                      "falling back to the default texture");
+            return fallbackHandle;
+        }
         const TextureHandleUVE handle =
-            renderDevice.CreateTextureUVE(desc, std::as_bytes(std::span(textureAsset->pixels)));
+            renderDevice.CreateTextureUVE(desc, std::span<const std::byte>(uploadData));
         if (handle == kInvalidTextureHandleUVE) {
             failedTextureGuids.insert(textureGuid);
             ++lastFrameDiagnostics.textureFallbacks;
@@ -1330,11 +1491,11 @@ struct Renderer3DUVE::ImplUVE {
                                                               const Scene::EntityUVE entity,
                                                               const Asset::AssetGuidUVE guid,
                                                               const Asset::MeshAssetUVE& mesh, Math::AabbUVE& outBounds) {
-        const Scene::Skeleton3DNodeComponentUVE* skeleton = nullptr;
+        const Scene::Skeleton3DComponentUVE* skeleton = nullptr;
         Scene::EntityUVE cursor = entity;
         for (std::size_t depth = 0U; depth < 256U && cursor != Scene::kInvalidEntityUVE; ++depth) {
-            if (entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(cursor)) {
-                skeleton = &entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(cursor);
+            if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(cursor)) {
+                skeleton = &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(cursor);
                 break;
             }
             cursor = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(cursor)
@@ -1822,6 +1983,98 @@ struct Renderer3DUVE::ImplUVE {
         return drawCalls;
     }
 
+    /// Uploads one decal command's window of the plan into that decal's own buffers, creating them
+    /// the first time it paints and re-uploading afterwards. Returns nullptr when the device refuses
+    /// the upload, in which case the decal is skipped rather than drawn from stale geometry.
+    [[nodiscard]] const DecalGpuUVE* UploadDecalGeometryUVE(const DecalDrawCommandUVE& command,
+                                                            const std::span<const Asset::MeshVertexUVE> vertices,
+                                                            const std::span<const std::uint32_t> indices) {
+        const std::uint64_t key = (static_cast<std::uint64_t>(command.decal.generation) << 32U) |
+                                  static_cast<std::uint64_t>(command.decal.index);
+        DecalGpuUVE& entry = decalBuffers[key];
+        const std::span<const std::byte> vertexBytes = std::as_bytes(vertices);
+        const std::span<const std::byte> indexBytes = std::as_bytes(indices);
+
+        if (entry.vertexBuffer == kInvalidBufferHandleUVE || entry.vertexBytes != vertexBytes.size()) {
+            DestroyBufferIfValidUVE(renderDevice, entry.vertexBuffer);
+            entry.vertexBuffer = renderDevice.CreateBufferUVE(
+                BufferDescUVE{vertexBytes.size(), BufferUsageUVE::Vertex}, vertexBytes);
+            entry.vertexBytes = vertexBytes.size();
+        } else if (!renderDevice.UpdateBufferUVE(entry.vertexBuffer, vertexBytes)) {
+            return nullptr;
+        }
+        if (entry.indexBuffer == kInvalidBufferHandleUVE || entry.indexBytes != indexBytes.size()) {
+            DestroyBufferIfValidUVE(renderDevice, entry.indexBuffer);
+            entry.indexBuffer = renderDevice.CreateBufferUVE(
+                BufferDescUVE{indexBytes.size(), BufferUsageUVE::Index}, indexBytes);
+            entry.indexBytes = indexBytes.size();
+        } else if (!renderDevice.UpdateBufferUVE(entry.indexBuffer, indexBytes)) {
+            return nullptr;
+        }
+        if (entry.vertexBuffer == kInvalidBufferHandleUVE || entry.indexBuffer == kInvalidBufferHandleUVE) {
+            return nullptr;
+        }
+        entry.frame = decalFrame;
+        return &entry;
+    }
+
+    /// Records this frame's decal patches, one draw per decal, in the plan's own (back-to-front)
+    /// order so overlapping decals blend in the order the artist sees them. Returns the number of
+    /// draw calls recorded.
+    ///
+    /// The pass runs inside the main color pass, after the meshes it paints over and before the
+    /// effects that sit on top of them: a decal is blended into the shaded surface it landed on, so
+    /// it has to be recorded once that surface exists.
+    [[nodiscard]] std::size_t RecordDecalItemsUVE(const DecalDrawPlanUVE& plan,
+                                                  const FrameUniformsUVE& frameUniforms,
+                                                  ICommandBufferUVE& commandBuffer) {
+        if (!decalProgram->IsValidUVE() || plan.commands.empty()) {
+            return 0U;
+        }
+        // Frame constants once: the per-decal values below overwrite only their own names, and
+        // ApplyToUVE() flushes the whole pending set on every draw.
+        decalProgram->SetMatrix4x4UVE("uViewProjection", frameUniforms.viewProjection);
+        decalProgram->SetVector3UVE("uViewPosition", frameUniforms.viewPosition);
+
+        std::size_t drawCalls = 0U;
+        for (const DecalDrawCommandUVE& command : plan.commands) {
+            const std::span<const Asset::MeshVertexUVE> vertices(plan.vertices.data() + command.firstVertex,
+                                                                 command.vertexCount);
+            const std::span<const std::uint32_t> indices(plan.indices.data() + command.firstIndex,
+                                                         command.indexCount);
+            const DecalGpuUVE* const geometry = UploadDecalGeometryUVE(command, vertices, indices);
+            if (geometry == nullptr) {
+                continue;
+            }
+
+            // The material's texture, resolved exactly as the mesh path resolves one: a GUID that
+            // is unset, still loading or failed gets the 1x1 white fallback, which leaves the flat
+            // colour and the full alpha intact rather than dropping the decal for the frame.
+            const TextureHandleUVE albedoTexture =
+                ResolveTextureGpuHandleUVE(command.albedoTextureGuid, fallbackWhiteTexture)
+                    .value_or(fallbackWhiteTexture);
+            decalProgram->SetIntUVE("uAlbedoTexture", static_cast<std::int32_t>(kAlbedoTextureSlotUVE));
+            decalProgram->SetMatrix4x4UVE("uWorldToUnit", command.worldToUnit);
+            decalProgram->SetVector3UVE("uProjectionDirection", command.projectionDirection);
+            decalProgram->SetVector3UVE("uBaseColor", command.baseColor);
+            decalProgram->SetVector3UVE("uEmissionColor", command.emissionColor);
+            decalProgram->SetFloatUVE("uAlphaScale", command.alphaScale);
+            decalProgram->SetFloatUVE("uNormalFade", command.normalFade);
+            decalProgram->SetFloatUVE("uUpperFade", command.upperFade);
+            decalProgram->SetFloatUVE("uLowerFade", command.lowerFade);
+            decalProgram->SetFloatUVE("uDistanceFadeEnabled", command.distanceFadeEnabled ? 1.0F : 0.0F);
+            decalProgram->SetFloatUVE("uDistanceFadeBegin", command.distanceFadeBegin);
+            decalProgram->SetFloatUVE("uDistanceFadeLength", command.distanceFadeLength);
+            decalProgram->ApplyToUVE(commandBuffer);
+            commandBuffer.BindTextureUVE(albedoTexture, kAlbedoTextureSlotUVE);
+            commandBuffer.BindVertexBufferUVE(geometry->vertexBuffer);
+            commandBuffer.BindIndexBufferUVE(geometry->indexBuffer);
+            commandBuffer.DrawIndexedUVE(command.indexCount);
+            ++drawCalls;
+        }
+        return drawCalls;
+    }
+
     [[nodiscard]] std::size_t RecordParticleItemsUVE(const ParticleDrawRecordingUVE& recording,
                                                        const FrameUniformsUVE& frameUniforms,
                                                        ICommandBufferUVE& commandBuffer) {
@@ -2086,6 +2339,20 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
         BufferDescUVE{sizeof(ParticleVertexUVE) * kMaximumParticleGpuDrawCommandsUVE * kParticleVerticesPerCommandUVE,
                       BufferUsageUVE::Vertex});
 
+    Shader::ShaderProgramDescUVE decalProgramDesc;
+    decalProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kDecalVirtualPath);
+    decalProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kDecalSource);
+    decalProgramDesc.vertexLayout = MeshVertexLayoutUVE();
+    decalProgramDesc.vertexStride = static_cast<std::uint32_t>(sizeof(Asset::MeshVertexUVE));
+    decalProgramDesc.depthTestEnabled = true;
+    // Paint, not geometry: a decal is blended into the surface it landed on, so it must not stop the
+    // surface behind it from being drawn - and it must not write depth either, or the next decal in
+    // the same frame would be depth-rejected by one that is merely in front of it.
+    decalProgramDesc.depthWriteEnabled = false;
+    decalProgramDesc.blendMode = PipelineBlendModeUVE::SourceAlphaOver;
+    decalProgramDesc.debugNameUVE = "Decal";
+    m_impl->decalProgram = shaderManager.CreateProgramUVE(decalProgramDesc);
+
     Shader::ShaderProgramDescUVE primitiveProgramDesc;
     primitiveProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kLitPrimitive3DVirtualPath);
     primitiveProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kLitPrimitive3DSource);
@@ -2131,6 +2398,11 @@ Renderer3DUVE::~Renderer3DUVE() {
     for (const auto& [kind, meshResources] : m_impl->primitiveMeshCache) {
         DestroyBufferIfValidUVE(m_impl->renderDevice, meshResources.vertexBuffer);
         DestroyBufferIfValidUVE(m_impl->renderDevice, meshResources.indexBuffer);
+    }
+    for (const auto& [key, decalResources] : m_impl->decalBuffers) {
+        static_cast<void>(key);
+        DestroyBufferIfValidUVE(m_impl->renderDevice, decalResources.vertexBuffer);
+        DestroyBufferIfValidUVE(m_impl->renderDevice, decalResources.indexBuffer);
     }
     // MaterialGpuResourcesUVE holds shared ShaderProgramUVE references only. Releasing the cache
     // lets ShaderManagerUVE-owned program deleters retire their pipelines exactly once.
@@ -2338,6 +2610,36 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         }
     }
     m_impl->meshRenderer.CullVisibilitySetIntoUVE(m_impl->visibilitySet, frustum, queue);
+
+    // The decal pass, run against the same frame data the mesh pass just built: the receiving
+    // surfaces are already resolved, placed and bounds-transformed, so this asks where each decal's
+    // volume lands rather than walking the scene a second time to find out what it landed on.
+    m_impl->decalRenderer.BuildDrawListUVE(entityManager, m_impl->assetManager, m_impl->assetDatabase,
+                                            m_impl->visibilitySet, viewPosition, frustum,
+                                            kMainViewReceiverLayerMaskUVE, m_impl->decalDraws);
+    BuildDecalDrawPlanUVE(m_impl->decalDraws, m_impl->decalPlan);
+    // A decal buffer the plan did not touch this frame belongs to a decal that is gone, hidden or
+    // no longer painting - the same lifetime rule the skinned-mesh cache applies to its own.
+    for (auto it = m_impl->decalBuffers.begin(); it != m_impl->decalBuffers.end();) {
+        if (it->second.frame != m_impl->decalFrame) {
+            DestroyBufferIfValidUVE(m_impl->renderDevice, it->second.vertexBuffer);
+            DestroyBufferIfValidUVE(m_impl->renderDevice, it->second.indexBuffer);
+            it = m_impl->decalBuffers.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    ++m_impl->decalFrame;
+    m_impl->lastFrameDiagnostics.decalsConsidered = m_impl->decalDraws.decalsConsidered;
+    m_impl->lastFrameDiagnostics.decalDrawsExtracted = m_impl->decalDraws.draws.size();
+    m_impl->lastFrameDiagnostics.decalPatchesExtracted = m_impl->decalDraws.GetPatchCountUVE();
+    m_impl->lastFrameDiagnostics.decalTrianglesExtracted = m_impl->decalDraws.GetTriangleCountUVE();
+    m_impl->lastFrameDiagnostics.decalsWithoutReceivers = m_impl->decalDraws.decalsWithoutReceivers;
+    m_impl->lastFrameDiagnostics.decalDrawsDropped = m_impl->decalPlan.drawsTruncated +
+                                                     m_impl->decalPlan.drawsWithoutMaterial +
+                                                     m_impl->decalPlan.drawsWithoutGeometry +
+                                                     m_impl->decalPlan.drawsWithoutInverse +
+                                                     m_impl->decalPlan.drawsWithoutPaint;
     if (m_impl->particleRuntimeForFrame != nullptr) {
         const ParticleRenderSnapshotUVE particleSnapshot =
             ParticleRenderBridgeUVE::ExtractUVE(*m_impl->particleRuntimeForFrame);
@@ -2422,6 +2724,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->lastFrameDiagnostics.instancedObjectsRecorded = m_impl->instancedObjectsThisFrame;
             m_impl->lastFrameDiagnostics.shadowInstancedDrawCallsRecorded =
                 m_impl->shadowInstancedDrawCallsThisFrame;
+            m_impl->lastFrameDiagnostics.decalDrawCallsRecorded =
+                m_impl->RecordDecalItemsUVE(m_impl->decalPlan, frameUniforms, commandBuffer);
             m_impl->lastFrameDiagnostics.particleDrawCommandsSubmitted =
                 m_impl->RecordParticleItemsUVE(m_impl->particleDrawRecording, frameUniforms, commandBuffer);
             m_impl->lastFrameDiagnostics.particleDrawCallsRecorded =
@@ -2432,7 +2736,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->lastFrameDiagnostics.glDrawCallsIssued =
                     m_impl->lastFrameDiagnostics.meshDrawCallsRecorded +
                     m_impl->lastFrameDiagnostics.primitiveDrawCallsRecorded +
-                    m_impl->lastFrameDiagnostics.particleDrawCallsRecorded;
+                    m_impl->lastFrameDiagnostics.particleDrawCallsRecorded +
+                    m_impl->lastFrameDiagnostics.decalDrawCallsRecorded;
             }
             commandBuffer.EndRenderPassUVE();
         });

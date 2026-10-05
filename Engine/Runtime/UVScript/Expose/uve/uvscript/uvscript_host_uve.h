@@ -22,7 +22,7 @@ struct HostFunctionUVE final {
     TypeUVE result;
 };
 
-/// What a script can reach on the node it drives. The engine implements it per node kind; the
+/// What a script can reach on the object it drives. The engine implements it per object kind; the
 /// compiler asks the Describe* questions, a running script the others.
 ///
 /// A name may be dotted ("input.axis") - `input.axis(...)` in a script is looked up whole.
@@ -34,7 +34,7 @@ public:
 
     [[nodiscard]] virtual std::optional<HostPropertyUVE> DescribePropertyUVE(std::string_view name) const = 0;
     [[nodiscard]] virtual std::optional<HostFunctionUVE> DescribeFunctionUVE(std::string_view name) const = 0;
-    /// The parameters of `on <event>`. Nothing when the node kind has no such event.
+    /// The parameters of `on <event>`. Nothing when the object kind has no such event.
     [[nodiscard]] virtual std::optional<std::vector<TypeUVE>> DescribeEventUVE(std::string_view event) const = 0;
 
     // ---- run time. Only called with names and values the compiler accepted.

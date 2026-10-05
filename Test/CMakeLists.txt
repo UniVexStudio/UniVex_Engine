@@ -165,7 +165,7 @@ target_include_directories(uve_core_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Run
 # The UVScript native tests run each script both interpreted and as C++ that uvsc generated from it
 # at build time, and compare the two.
 uve_add_uvscript_native(uve_core_tests
-    HOST UVScript/native/fake_node.uvhost
+    HOST UVScript/native/fake_object.uvhost
     SCRIPTS UVScript/native/player.uvs UVScript/native/math.uvs UVScript/native/waits.uvs
             UVScript/native/errors.uvs)
 target_compile_definitions(uve_core_tests PRIVATE
@@ -182,28 +182,32 @@ gtest_discover_tests(uve_core_tests)
 
 add_executable(uve_integration_tests
     Support/test_scratch_uve.cpp
-    Nodes/3D/nodes_3d_uve_tests.cpp
-    Nodes/3D/node_definitions_3d_uve_tests.cpp
-    Nodes/3D/animation_nodes_uve_tests.cpp
-    Nodes/3D/conformed_playback_uve_tests.cpp
-    Nodes/CanvasLayer/node_definitions_canvas_layer_uve_tests.cpp
+    Objects/3D/objects_3d_uve_tests.cpp
+    Objects/3D/object_definitions_3d_uve_tests.cpp
+    Objects/3D/animation_objects_uve_tests.cpp
+    Objects/3D/conformed_playback_uve_tests.cpp
+    Objects/3D/two_bone_ik_3d_uve_tests.cpp
+    Objects/UI/object_definitions_canvas_uve_tests.cpp
     Integration/Entity/archetype_uve_tests.cpp
-    Integration/Entity/chunk_uve_tests.cpp
+    Integration/Entity/archetype_chunk_uve_tests.cpp
     Integration/Entity/entity_manager_uve_tests.cpp
     Integration/Localization/localization_uve_tests.cpp
     Integration/Scene/scene_graph_uve_tests.cpp
-    Integration/Scene/node_common_components_uve_tests.cpp
+    Integration/Scene/bone_attachment_pass_uve_tests.cpp
+    Integration/Scene/two_bone_ik_pass_uve_tests.cpp
+    Integration/Scene/object_common_components_uve_tests.cpp
     Integration/Scene/scene_component_metadata_uve_tests.cpp
     Integration/Scene/scene_serializer_uve_tests.cpp
-    Integration/Scene/scene_node_type_uve_tests.cpp
+    Integration/Scene/scene_object_type_uve_tests.cpp
     Integration/Scene/prefab_system_uve_tests.cpp
     Integration/Scene/prefab_maturity_uve_tests.cpp
     Integration/Scene/prefab_revision_policy_uve_tests.cpp
     Integration/Scene/particle_runtime_uve_tests.cpp
-    Integration/Scene/scene_node_registry_uve_tests.cpp
+    Integration/Scene/scene_object_registry_uve_tests.cpp
+    Integration/Scene/spawn_point_query_uve_tests.cpp
     Integration/Animation/time_pose_contract_uve_tests.cpp
     Integration/Animation/animation_clip_uve_tests.cpp
-    Integration/Animation/animation_tree_uve_tests.cpp
+    Integration/Animation/pose_graph_uve_tests.cpp
     Integration/Animation/animation_state_machine_uve_tests.cpp
     Integration/World/world_uve_tests.cpp
     Integration/Object/type_metadata_uve_tests.cpp
@@ -215,16 +219,28 @@ add_executable(uve_integration_tests
     Physics/area_overlap_system_uve_tests.cpp
     Physics/character_controller_uve_tests.cpp
     Physics/character_body_motion_uve_tests.cpp
+    Physics/character_3d_uve_tests.cpp
     Physics/collider_shape_uve_tests.cpp
     Physics/collision_lifecycle_tracker_uve_tests.cpp
     Physics/collision_system_uve_tests.cpp
     Physics/hinge_motor_limit_uve_tests.cpp
+    Physics/hitbox_strike_uve_tests.cpp
+    Physics/interaction_area_uve_tests.cpp
+    Physics/kinematic_body_uve_tests.cpp
     Physics/physics_constraint_system_uve_tests.cpp
     Physics/physics_material_uve_tests.cpp
     Physics/physics_query_system_uve_tests.cpp
     Physics/physics_system_uve_tests.cpp
     Physics/raycast_system_uve_tests.cpp
+    Physics/projectile_3d_step_uve_tests.cpp
     Physics/shape_cast_system_uve_tests.cpp
+    Physics/spring_arm_uve_tests.cpp
+    Navigation/navmesh_uve_tests.cpp
+    Navigation/navmesh_bake_uve_tests.cpp
+    Navigation/nav_path_uve_tests.cpp
+    Navigation/nav_path_quality_uve_tests.cpp
+    Navigation/navmesh_agent_uve_tests.cpp
+    Navigation/navigation_runtime_uve_tests.cpp
     Save/checkpoint_manager_uve_tests.cpp
     Save/save_game_system_uve_tests.cpp
     Save/save_payload_compression_uve_tests.cpp
@@ -250,6 +266,7 @@ add_executable(uve_integration_tests
     RHI/RenderSystems/compute_kernel_portability_uve_tests.cpp
     RHI/RenderSystems/compute_workloads_vulkan_uve_tests.cpp
     RHI/RenderSystems/light_system_uve_tests.cpp
+    RHI/RenderSystems/decal_renderer_uve_tests.cpp
     RHI/RenderSystems/mesh_renderer_uve_tests.cpp
     RHI/RenderSystems/mesh_render_eligibility_uve_tests.cpp
     RHI/RenderSystems/primitive_geometry_uve_tests.cpp
@@ -265,6 +282,7 @@ add_executable(uve_integration_tests
 )
 target_link_libraries(uve_integration_tests PRIVATE
     uve_retarget
+    uve_navigation
     uve_localization
     nlohmann_json::nlohmann_json
     uve_component
@@ -306,8 +324,8 @@ uve_set_warnings(uve_integration_tests)
 # so they are reached as "Support/<name>.h" from any subdirectory.
 target_include_directories(uve_integration_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-# archetype_uve_tests.cpp and chunk_uve_tests.cpp unit-test the module-private
-# ArchetypeUVE/ChunkUVE Detail:: classes directly - this include path exposes only those
+# archetype_uve_tests.cpp and archetype_chunk_uve_tests.cpp unit-test the module-private
+# ArchetypeUVE/ArchetypeChunkUVE Detail:: classes directly - this include path exposes only those
 # module-private headers, never anything from Engine/Runtime/Entity/Internal as part of uve_entity's
 # own public interface.
 target_include_directories(uve_integration_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Runtime/Entity/Internal)
@@ -399,7 +417,7 @@ add_executable(uve_editor_tests
     Editor/animation_clip_editing_uve_tests.cpp
     Editor/animation_graph_editing_uve_tests.cpp
     Editor/scene_component_authoring_uve_tests.cpp
-    Editor/scene_node_editor_uve_tests.cpp
+    Editor/scene_object_editor_uve_tests.cpp
 )
 target_link_libraries(uve_editor_tests PRIVATE
     nlohmann_json::nlohmann_json

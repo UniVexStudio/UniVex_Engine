@@ -21,7 +21,7 @@
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
@@ -515,7 +515,7 @@ TEST_F(PrefabSystemUVETest, InstantiateWithRevisionUVE_StampsRevisionAndRejectsZ
 
 TEST_F(PrefabSystemUVETest, InstantiateTwice_ProducesIndependentEntities) {
     const EntityUVE source = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<RigidBodyComponentUVE>(source, RigidBodyComponentUVE{1.0F, false});
+    entityManager.AddComponentUVE<Rigid3DComponentUVE>(source, Rigid3DComponentUVE{1.0F, false});
 
     const std::filesystem::path prefabPath = "uve_prefab_tests_independent.uvprefab";
     std::filesystem::remove(prefabPath);
@@ -527,8 +527,8 @@ TEST_F(PrefabSystemUVETest, InstantiateTwice_ProducesIndependentEntities) {
         prefabSystem.InstantiateUVE(entityManager, sceneGraph, assetDatabase, guid, kInvalidEntityUVE);
     ASSERT_NE(instanceA, instanceB);
 
-    entityManager.GetComponentUVE<RigidBodyComponentUVE>(instanceA).mass = 99.0F;
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<RigidBodyComponentUVE>(instanceB).mass, 1.0F);
+    entityManager.GetComponentUVE<Rigid3DComponentUVE>(instanceA).mass = 99.0F;
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(instanceB).mass, 1.0F);
 
     std::filesystem::remove(prefabPath);
 }

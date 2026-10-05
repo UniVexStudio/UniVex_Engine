@@ -21,7 +21,7 @@
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_serializer_uve.h"
 
@@ -34,7 +34,7 @@ using Scene::HierarchyComponentUVE;
 using Scene::kInvalidEntityUVE;
 using Scene::LightComponentUVE;
 using Scene::MeshComponentUVE;
-using Scene::RigidBodyComponentUVE;
+using Scene::Rigid3DComponentUVE;
 using Scene::SceneSerializerUVE;
 
 class CountingSceneSerializerUVE final : public Scene::ISceneSerializerUVE {
@@ -183,18 +183,18 @@ TEST_F(SaveGameSystemUVETest, LoadUVE_RejectsTrailingWorldSection) {
 
 TEST_F(SaveGameSystemUVETest, SaveUVE_OverwritesExistingSlot) {
     const EntityUVE firstEntity = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<RigidBodyComponentUVE>(firstEntity, RigidBodyComponentUVE{1.0F, false});
+    entityManager.AddComponentUVE<Rigid3DComponentUVE>(firstEntity, Rigid3DComponentUVE{1.0F, false});
     ASSERT_TRUE(saveGameSystem.SaveUVE(2, entityManager, {firstEntity}, GameStateMetadataUVE{}));
 
     const EntityUVE secondEntity = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<RigidBodyComponentUVE>(secondEntity, RigidBodyComponentUVE{9.0F, true});
+    entityManager.AddComponentUVE<Rigid3DComponentUVE>(secondEntity, Rigid3DComponentUVE{9.0F, true});
     ASSERT_TRUE(saveGameSystem.SaveUVE(2, entityManager, {secondEntity}, GameStateMetadataUVE{}));
 
     EntityManagerUVE loadedManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
     const std::vector<EntityUVE> roots = saveGameSystem.LoadUVE(2, loadedManager);
     ASSERT_EQ(roots.size(), 1U);
-    EXPECT_FLOAT_EQ(loadedManager.GetComponentUVE<RigidBodyComponentUVE>(roots[0]).mass, 9.0F);
-    EXPECT_TRUE(loadedManager.GetComponentUVE<RigidBodyComponentUVE>(roots[0]).isKinematic);
+    EXPECT_FLOAT_EQ(loadedManager.GetComponentUVE<Rigid3DComponentUVE>(roots[0]).mass, 9.0F);
+    EXPECT_TRUE(loadedManager.GetComponentUVE<Rigid3DComponentUVE>(roots[0]).isKinematic);
 }
 
 TEST_F(SaveGameSystemUVETest, HasSaveUVE_ReflectsPresenceAfterSaveAndDelete) {
@@ -364,32 +364,32 @@ TEST_F(SaveGameSystemUVETest, LoadUVE_MissingSlot_ReturnsEmptyVector) {
 
 TEST_F(SaveGameSystemUVETest, SaveUVE_ReservedSlots_RoundTripIndependentlyOfNumberedSlots) {
     const EntityUVE numberedEntity = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<RigidBodyComponentUVE>(numberedEntity, RigidBodyComponentUVE{1.0F, false});
+    entityManager.AddComponentUVE<Rigid3DComponentUVE>(numberedEntity, Rigid3DComponentUVE{1.0F, false});
     ASSERT_TRUE(saveGameSystem.SaveUVE(0, entityManager, {numberedEntity}, GameStateMetadataUVE{}));
 
     const EntityUVE autoSaveEntity = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<RigidBodyComponentUVE>(autoSaveEntity, RigidBodyComponentUVE{5.0F, true});
+    entityManager.AddComponentUVE<Rigid3DComponentUVE>(autoSaveEntity, Rigid3DComponentUVE{5.0F, true});
     ASSERT_TRUE(saveGameSystem.SaveUVE(kAutoSaveSlotIndexUVE, entityManager, {autoSaveEntity}, GameStateMetadataUVE{}));
 
     const EntityUVE manualCheckpointEntity = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<RigidBodyComponentUVE>(manualCheckpointEntity, RigidBodyComponentUVE{9.0F, true});
+    entityManager.AddComponentUVE<Rigid3DComponentUVE>(manualCheckpointEntity, Rigid3DComponentUVE{9.0F, true});
     ASSERT_TRUE(saveGameSystem.SaveUVE(kManualCheckpointSlotIndexUVE, entityManager, {manualCheckpointEntity},
                                        GameStateMetadataUVE{}));
 
     EntityManagerUVE loadedManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
     const std::vector<EntityUVE> numberedRoots = saveGameSystem.LoadUVE(0, loadedManager);
     ASSERT_EQ(numberedRoots.size(), 1U);
-    EXPECT_FLOAT_EQ(loadedManager.GetComponentUVE<RigidBodyComponentUVE>(numberedRoots[0]).mass, 1.0F);
+    EXPECT_FLOAT_EQ(loadedManager.GetComponentUVE<Rigid3DComponentUVE>(numberedRoots[0]).mass, 1.0F);
 
     EntityManagerUVE loadedAutoSaveManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
     const std::vector<EntityUVE> autoSaveRoots = saveGameSystem.LoadUVE(kAutoSaveSlotIndexUVE, loadedAutoSaveManager);
     ASSERT_EQ(autoSaveRoots.size(), 1U);
-    EXPECT_FLOAT_EQ(loadedAutoSaveManager.GetComponentUVE<RigidBodyComponentUVE>(autoSaveRoots[0]).mass, 5.0F);
+    EXPECT_FLOAT_EQ(loadedAutoSaveManager.GetComponentUVE<Rigid3DComponentUVE>(autoSaveRoots[0]).mass, 5.0F);
 
     EntityManagerUVE loadedManualManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
     const std::vector<EntityUVE> manualRoots = saveGameSystem.LoadUVE(kManualCheckpointSlotIndexUVE, loadedManualManager);
     ASSERT_EQ(manualRoots.size(), 1U);
-    EXPECT_FLOAT_EQ(loadedManualManager.GetComponentUVE<RigidBodyComponentUVE>(manualRoots[0]).mass, 9.0F);
+    EXPECT_FLOAT_EQ(loadedManualManager.GetComponentUVE<Rigid3DComponentUVE>(manualRoots[0]).mass, 9.0F);
 
     EXPECT_EQ(saveGameSystem.ListUsedSlotsUVE(), (std::vector<int>{0}));
 }

@@ -10,7 +10,7 @@
 namespace UVE::Asset {
 namespace {
 
-// A Blender-style export: an Armature node that is not a bone, holding Hips > Spine > Head, with
+// A Blender-style export: an Armature object that is not a bone, holding Hips > Spine > Head, with
 // the skin listing the joints child-first to prove the reader orders them parent-first.
 constexpr const char* kArmatureGltfUVE = R"({
   "asset":{"version":"2.0"},
@@ -54,7 +54,7 @@ TEST(GltfSkeletonUVETest, ParseGltfSkeletonUVE_MakesDuplicateBoneNamesUnique) {
 TEST(GltfSkeletonUVETest, ParseGltfSkeletonUVE_RejectsWhatItCannotRepresent) {
     // No skin: a static mesh has no skeleton.
     EXPECT_FALSE(ParseGltfSkeletonUVE(R"({"asset":{"version":"2.0"},"nodes":[{}]})", 256U).has_value());
-    // A joint naming a node that does not exist.
+    // A joint naming an object that does not exist.
     EXPECT_FALSE(ParseGltfSkeletonUVE(R"({"asset":{"version":"2.0"},"nodes":[{}],"skins":[{"joints":[4]}]})", 256U)
                      .has_value());
     // Over the bone budget.

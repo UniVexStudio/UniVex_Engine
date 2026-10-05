@@ -212,6 +212,7 @@ TEST(NullRenderDeviceUVETest, CreateTextureUVE_ReturnsUniqueHandles) {
 
 TEST(NullRenderDeviceUVETest, CreateTextureUVE_InvalidDescriptorOrUpload_ReturnsInvalidBeforeAllocation) {
     NullRenderDeviceUVE device;
+    EXPECT_EQ(TextureDescUVE{}.colorSpace, TextureColorSpaceUVE::Linear);
     const std::array<std::byte, 3> incompleteData{};
     const std::array<std::byte, 4> validData{};
 
@@ -223,6 +224,73 @@ TEST(NullRenderDeviceUVETest, CreateTextureUVE_InvalidDescriptorOrUpload_Returns
         device.CreateTextureUVE(TextureDescUVE{1U, 1U, TextureFormatUVE::RGBA8Unorm, 1U}, validData);
     EXPECT_EQ(valid.value, 1U);
     EXPECT_NE(valid, kInvalidTextureHandleUVE);
+
+    const TextureHandleUVE srgb = device.CreateTextureUVE(
+        TextureDescUVE{1U, 1U, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Srgb}, validData);
+    EXPECT_NE(srgb, kInvalidTextureHandleUVE);
+    EXPECT_EQ(device.CreateTextureUVE(
+                  TextureDescUVE{1U, 1U, TextureFormatUVE::RGBA16Float, 1U, TextureColorSpaceUVE::Srgb}),
+              kInvalidTextureHandleUVE);
+    EXPECT_EQ(device.CreateTextureUVE(
+                  TextureDescUVE{1U, 1U, TextureFormatUVE::RGBA8Unorm, 1U,
+                                 static_cast<TextureColorSpaceUVE>(99U)}),
+              kInvalidTextureHandleUVE);
+
+    device.DestroyTextureUVE(srgb);
+}
+
+TEST(NullRenderDeviceUVETest, CreateTextureUVE_ValidatesAndRetainsCompleteMipChain) {
+    NullRenderDeviceUVE device;
+    const TextureDescUVE desc{2U, 2U, TextureFormatUVE::RGBA8Unorm, 2U};
+    std::array<std::byte, 20U> pixels{}; // 2x2 level 0 (16 bytes) + 1x1 level 1 (4 bytes)
+    std::uint64_t expectedBytes = 0U;
+    ASSERT_TRUE(CalculateTextureUploadByteCountUVE(desc, expectedBytes));
+    EXPECT_EQ(expectedBytes, pixels.size());
+    EXPECT_EQ(MaximumTextureMipLevelCountUVE(desc.width, desc.height), 2U);
+    EXPECT_EQ(GetTextureMipExtentUVE(desc.width, desc.height, 1U).width, 1U);
+    EXPECT_EQ(GetTextureMipExtentUVE(desc.width, desc.height, 1U).height, 1U);
+    EXPECT_TRUE(ValidateTextureUploadUVE(desc, pixels));
+    EXPECT_FALSE(ValidateTextureUploadUVE(desc, std::span<const std::byte>(pixels.data(), pixels.size() - 1U)));
+    EXPECT_FALSE(ValidateTextureUploadUVE(desc, {})) << "declared mip chains must provide every level";
+
+    TextureDescUVE tooManyLevels = desc;
+    tooManyLevels.mipLevels = 3U;
+    EXPECT_FALSE(CalculateTextureUploadByteCountUVE(tooManyLevels, expectedBytes));
+    EXPECT_FALSE(ValidateTextureUploadUVE(tooManyLevels, pixels));
+    EXPECT_FALSE(ValidateTextureUploadUVE(
+        TextureDescUVE{2U, 2U, TextureFormatUVE::Depth32Float, 2U}, pixels));
+
+    const TextureHandleUVE texture = device.CreateTextureUVE(desc, pixels);
+    ASSERT_NE(texture, kInvalidTextureHandleUVE);
+    const std::vector<TextureDescUVE> liveDescs = device.GetLiveTextureDescsUVE();
+    ASSERT_EQ(liveDescs.size(), 1U);
+    EXPECT_EQ(liveDescs.front().mipLevels, 2U);
+    device.DestroyTextureUVE(texture);
+}
+
+TEST(NullRenderDeviceUVETest, CompressedTextureUploadsUseBlockAwareMipSizesWithoutAdvertisingSupport) {
+    NullRenderDeviceUVE device;
+    const TextureDescUVE bc1Desc{7U, 5U, TextureFormatUVE::BC1RGB, 2U, TextureColorSpaceUVE::Srgb};
+    std::uint64_t expectedBytes = 0U;
+    ASSERT_TRUE(CalculateTextureUploadByteCountUVE(bc1Desc, expectedBytes));
+    EXPECT_EQ(expectedBytes, 40U); // 4 base blocks + 1 3x2 mip block, 8 bytes each
+    EXPECT_FALSE(ValidateTextureUploadUVE(bc1Desc, {})); // compressed textures are not render targets
+    EXPECT_FALSE(device.SupportsTextureFormatUVE(TextureFormatUVE::BC1RGB, TextureColorSpaceUVE::Srgb));
+
+    std::array<std::byte, 40U> bc1Blocks{};
+    EXPECT_FALSE(ValidateTextureUploadUVE(
+        bc1Desc, std::span<const std::byte>(bc1Blocks.data(), bc1Blocks.size() - 1U)));
+    EXPECT_TRUE(ValidateTextureUploadUVE(bc1Desc, bc1Blocks));
+    const TextureHandleUVE texture = device.CreateTextureUVE(bc1Desc, bc1Blocks);
+    ASSERT_NE(texture, kInvalidTextureHandleUVE);
+    device.DestroyTextureUVE(texture);
+
+    const TextureDescUVE etc2AlphaDesc{7U, 5U, TextureFormatUVE::ETC2RGBA8, 2U};
+    ASSERT_TRUE(CalculateTextureUploadByteCountUVE(etc2AlphaDesc, expectedBytes));
+    EXPECT_EQ(expectedBytes, 80U); // 4 base blocks + 1 mip block, 16 bytes each
+    EXPECT_FALSE(device.SupportsTextureFormatUVE(TextureFormatUVE::ETC2RGBA8));
+    EXPECT_TRUE(device.SupportsTextureFormatUVE(TextureFormatUVE::RGBA8Unorm,
+                                                TextureColorSpaceUVE::Srgb));
 }
 
 TEST(NullRenderDeviceUVETest, CreateShaderUVE_UnknownStage_ReturnsInvalidBeforeAllocation) {

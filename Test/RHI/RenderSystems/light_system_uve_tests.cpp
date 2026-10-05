@@ -16,7 +16,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
-#include "uve/nodes/3d/directional_light_3d_uve.h"
+#include "uve/objects/3d/directional_light_3d_uve.h"
 
 namespace UVE::Render::Tests {
 namespace {
@@ -79,12 +79,12 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_NoLightEntities_AllSlotsReturn
 TEST_F(LightSystemUVETest, DirectionalLight3DUVE_LightsTheFrameFromItsEmitterAndCarriesItsShadowSettings) {
     const Scene::EntityUVE sun = entityManager.CreateEntityUVE();
     sceneGraph.AttachTransformUVE(entityManager, sun, Scene::TransformComponentUVE{});
-    Scene::DirectionalLight3DNodeDefinitionUVE definition;
+    Scene::DirectionalLight3DObjectDefinitionUVE definition;
     definition.emitter.color = Math::Vector3UVE{1.0F, 0.9F, 0.8F};
     definition.emitter.energy = 3.0F;
     definition.light.shadowMaxDistance = 40.0F;
     definition.light.shadowSplitBlend = 0.25F;
-    Scene::ApplyDirectionalLight3DNodeDefinitionUVE(entityManager, sun, definition);
+    Scene::ApplyDirectionalLight3DObjectDefinitionUVE(entityManager, sun, definition);
     sceneGraph.UpdateUVE(entityManager);
 
     const LightListUVE lights = lightSystem.ExtractActiveLightsUVE(entityManager);

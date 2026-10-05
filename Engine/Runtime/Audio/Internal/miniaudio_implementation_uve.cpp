@@ -6,7 +6,7 @@
 // treat-our-code-strictly policy does not get imposed on vendored code (guarded pragmas below).
 //
 // Feature trims keep the build lean: this engine decodes WAV through its own pipeline
-// (wav_pcm16_decoder_uve), so miniaudio's decoding/encoding/resource-manager/node-graph/engine
+// (wav_pcm16_decoder_uve), so miniaudio's decoding/encoding/resource-manager/object-graph/engine
 // helper layers are all compiled out — only the device/{context,thread} plumbing is used.
 #define MINIAUDIO_IMPLEMENTATION
 #define MA_NO_DECODING

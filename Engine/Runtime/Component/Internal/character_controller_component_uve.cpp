@@ -23,6 +23,13 @@ bool IsCharacterControllerComponentValidUVE(const CharacterControllerComponentUV
            IsNonNegativeUVE(c.moveSpeed) && IsNonNegativeUVE(c.jumpHeight) && IsNonNegativeUVE(c.airControl) &&
            c.airControl <= 1.0F && IsNonNegativeUVE(c.coyoteTimeSeconds) && IsNonNegativeUVE(c.jumpBufferSeconds) &&
            IsNonNegativeUVE(c.floorSnapLength) && IsNonNegativeUVE(c.maxStepHeight) &&
+           IsNonNegativeUVE(c.minStepWidth) && c.minStepWidth <= 1.0F &&
+           IsNonNegativeUVE(c.floorMaxAngleDegrees) && c.floorMaxAngleDegrees <= 90.0F &&
+           IsNonNegativeUVE(c.wallMinSlideAngleDegrees) && c.wallMinSlideAngleDegrees <= 90.0F &&
+           IsNonNegativeUVE(c.safeMargin) && c.safeMargin <= 0.25F &&
+           IsNonNegativeUVE(c.maximumPlatformSpeed) &&
+           c.platformOnLeave <= CharacterPlatformLeaveModeUVE::AddUpwardVelocity &&
+           c.maximumContacts >= 1U && c.maximumContacts <= 64U &&
            IsNonNegativeUVE(c.pushStrength) && IsNonNegativeUVE(c.maxPushSpeed) && c.maxSlides >= 1U &&
            c.maxSlides <= 32U && IsFiniteVectorUVE(c.velocity) && IsFiniteVectorUVE(c.floorNormal) &&
            IsNonNegativeUVE(c.timeSinceOnFloor) && IsNonNegativeUVE(c.jumpBufferRemaining);

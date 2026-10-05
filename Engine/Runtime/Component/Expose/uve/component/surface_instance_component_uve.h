@@ -30,12 +30,12 @@ enum class SurfaceFadeModeUVE : std::uint8_t {
     Disabled = 0,
     /// Fades itself across the margins.
     Self,
-    /// Fades the nodes that stand in for it at other ranges.
+    /// Fades the objects that stand in for it at other ranges.
     Dependencies,
 };
 
 /// The shared state of SurfaceInstance3D, the abstract base (under RenderInstance3D) of every
-/// node that draws geometry - meshes, primitives, particles. No node is a SurfaceInstance3D on its
+/// object that draws geometry - meshes, primitives, particles. No object is a SurfaceInstance3D on its
 /// own; its kinds carry this component and add their own.
 struct SurfaceInstanceComponentUVE final {
     /// Replaces every surface's material when set. Project-relative, empty for none.

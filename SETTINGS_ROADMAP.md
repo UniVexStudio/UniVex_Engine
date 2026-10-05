@@ -622,12 +622,12 @@ already built in, but none of them is a setting yet - each is fixed in code.
 - [ ] Persist expansion state per scene across sessions.
 - [~] Row height, indent width, and whether indent guides are drawn. Indent Width (12-40 px)
       and Tree Lines (none, to each child, full height) are preferences; missing: row height.
-- [~] Node-type icons: show, hide, or colour-code by type. Every row draws an icon for its node
+- [~] Object-type icons: show, hide, or colour-code by type. Every row draws an icon for its object
       kind (mesh, camera, light, environment, physics, audio, particle, script, plain node), and
-      Node Icons hides them; missing: recolouring.
+      Object Icons hides them; missing: recolouring.
 - [x] Show node type name alongside the node name. Every node now stores the type it was made
       as (saved by its stable id), and nodes from older scenes are read from their components.
-      Node Type Names writes the type after the name, dimmed, when all of it fits and the name
+      Object Type Names writes the type after the name, dimmed, when all of it fits and the name
       is not already the type; otherwise the row's tooltip carries it. The icon and the `type:`
       filter use the same type.
 - [~] Show component badges on the row (script attached, visibility off, locked). A script badge
@@ -639,7 +639,7 @@ already built in, but none of them is a setting yet - each is fixed in code.
       Hover (a hidden node keeps its closed eye) or Hidden (the badges take the freed column).
 - [ ] Lock / unselectable column.
 - [~] Filter behaviour: match name only, or name plus type plus component; case sensitivity;
-      whether ancestors of a match are kept visible. The Search Nodes box already matches the
+      whether ancestors of a match are kept visible. The Search Objects box already matches the
       name case-insensitively, `type:` filters by node type, `root` lists the roots, ancestors of
       a match stay visible and the tree opens while a filter is active; missing: component
       matching and a setting to choose the mode.
@@ -673,7 +673,7 @@ settings question.
 
 - [ ] Which actions appear, and in what order — user-reorderable.
 - [~] Add child node, add sibling node, instantiate scene as child. Each hierarchy row has a
-      right-click menu with Add Child Node (the full node library); missing: add sibling and
+      right-click menu with Add Child Object (the full object library); missing: add sibling and
       instantiate scene.
 - [ ] Attach / detach / open script.
 - [ ] Add component, remove component, copy component values, paste component values.
@@ -693,7 +693,7 @@ settings question.
       Viewport is in the row's menu and on F over the viewport, both through one request the host
       applies: the node becomes the orbit pivot, and a Marker3D flies the camera into its
       viewpoint; it is disabled, with a tooltip, for a node with no position (the scene root, a
-      plain Node); missing: framing by bounds, and the two align commands.
+      plain Object); missing: framing by bounds, and the two align commands.
 - [~] Lock / unlock, show / hide, toggle selectable. Hide / Show is in the row's menu, the same
       undoable edit as the row's eye; missing: lock and selectable.
 - [ ] Copy node path, copy node identifier.
@@ -813,7 +813,7 @@ The group with the most real backing today.
 - [ ] Open resources in a sub-inspector vs. a new panel.
 - [ ] Auto-refresh rate while the game is running.
 - [x] Section ordering, with the universal node section last. The node's own section comes
-      first, then its bases, then Transform and Visibility, then the Node section; editor tests
+      first, then its bases, then Transform and Visibility, then the Object section; editor tests
       assert the exact order for each node kind. Missing only: user reordering.
 - Add Component search: the Add Component control was removed from the Inspector on purpose -
       a node's components come from its type. Not planned in this form.
@@ -1134,8 +1134,6 @@ is no sidecar file to persist a choice in. Part 5.1 covers the sidecar mechanism
 - [ ] Compression quality and per-format selection (block compression family, ASTC block size).
 - [ ] Compress only on specific platforms.
 - [ ] High-quality compression toggle, with the build-time cost noted.
-- [ ] Mipmaps: generate, mip filter, and mip count limit.
-- [ ] Mipmap generation in linear vs. sRGB space.
 - [ ] Alpha handling: premultiply, keep, discard; and whether to detect a fully-opaque alpha and
       drop it.
 - [ ] Normal-map flag, which changes both compression format and mip filtering.
@@ -1339,16 +1337,16 @@ constantly and they belong in the same inventory.
 - [ ] A default environment used when a scene has none, and a separate editor preview environment
       (Part 2.6).
 
-## 6.7 Node and component defaults
+## 6.7 Object and component defaults
 
 - [ ] Default property values for newly created nodes of each type, editable as a setting.
-- [~] Node creation defaults: where a new node is placed (origin, camera focus, ground plane under
-      the cursor), and whether it is parented to the selection. Editor Preferences > Nodes:
+- [~] Object creation defaults: where a new node is placed (origin, camera focus, ground plane under
+      the cursor), and whether it is parented to the selection. Editor Preferences > Objects:
       **Placement** (Parent's Origin, or View Focus - the point the viewport camera orbits, taken
       into the parent's space) and **Add Under Selection**. The ground plane under the cursor is
       open.
 - [~] Default component set for each node type. Each node type's recipe attaches its
-      components (its own, its bases', and Node3D's); missing: editing that set as a setting.
+      components (its own, its bases', and Object3D's); missing: editing that set as a setting.
 - [ ] A "save current node as the default" action.
 - [ ] Per-project node templates.
 

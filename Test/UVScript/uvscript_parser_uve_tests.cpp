@@ -9,7 +9,7 @@
 namespace UVE::UVScript::Tests {
 namespace {
 
-constexpr const char* kPlayerUVE = R"(entity Player : CharacterBody3D
+constexpr const char* kPlayerUVE = R"(entity Player : Character3D
 
 # fields
 export speed: float = 6.0
@@ -23,15 +23,15 @@ on ready:
 on tick(dt):
     let move = input.axis("left", "right")
     velocity.x = move * speed
-    if is_on_floor and input.pressed("jump"):
+    if grounded and input.pressed("jump"):
         velocity.y = sqrt(2.0 * gravity * jump_height)
         jumps += 1
-    elif not is_on_floor:
+    elif not grounded:
         pass
     else:
         jumps = 0
 
-on body_entered(other: Node3D):
+on body_entered(other: Object3D):
     wait 0.5 s
     other.hide()
 
@@ -51,7 +51,7 @@ TEST(UVScriptParserUVETest, ParsesAWholeEntityScript) {
     const FileUVE& file = result.file;
     ASSERT_TRUE(file.header.has_value());
     EXPECT_EQ(file.header->name, "Player");
-    EXPECT_EQ(file.header->baseKind, "CharacterBody3D");
+    EXPECT_EQ(file.header->baseKind, "Character3D");
 
     ASSERT_EQ(file.fields.size(), 4U);
     EXPECT_EQ(file.fields[0].kind, FieldKindUVE::Export);
@@ -65,7 +65,7 @@ TEST(UVScriptParserUVETest, ParsesAWholeEntityScript) {
     ASSERT_EQ(file.handlers.size(), 3U);
     EXPECT_EQ(file.handlers[0].event, "ready");
     EXPECT_EQ(file.handlers[1].params[0].name, "dt");
-    EXPECT_EQ(file.handlers[2].params[0].type->name, "Node3D");
+    EXPECT_EQ(file.handlers[2].params[0].type->name, "Object3D");
 
     const BlockUVE& tick = file.handlers[1].body;
     ASSERT_EQ(tick.size(), 3U);

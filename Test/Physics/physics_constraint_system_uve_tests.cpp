@@ -12,7 +12,7 @@
 #include "uve/physics/collision_system_uve.h"
 #include "uve/physics/physics_system_uve.h"
 #include "uve/component/collider_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
@@ -38,8 +38,8 @@ protected:
         transform.localPosition = position;
         sceneGraph.AttachTransformUVE(entityManager, entity, transform);
         sceneGraph.UpdateUVE(entityManager);
-        entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(entity,
-                                                                     Scene::RigidBodyComponentUVE{mass, false});
+        entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(entity,
+                                                                     Scene::Rigid3DComponentUVE{mass, false});
         return entity;
     }
 

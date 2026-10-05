@@ -27,7 +27,7 @@ constexpr const char* kSessionCategoryUVE = "Editor/Session";
 constexpr const char* kSnappingCategoryUVE = "Editor/Viewport/Snapping";
 constexpr const char* kGridCategoryUVE = "Editor/Viewport/Grid";
 constexpr const char* kOutlineCategoryUVE = "Editor/Viewport/Selection Outline";
-constexpr const char* kNodesCategoryUVE = "Editor/Nodes";
+constexpr const char* kObjectsCategoryUVE = "Editor/Objects";
 constexpr const char* kPlayCategoryUVE = "Editor/Play Mode";
 constexpr const char* kHierarchyCategoryUVE = "Editor/Hierarchy";
 
@@ -147,7 +147,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
         {HiddenUVE(Config::MakeEnumSettingUVE(
              IdUVE(Id::kActiveRightPanelTabUVE), static_cast<std::int64_t>(RightTab::Inspector),
              {EntryUVE(RightTab::Inspector, "Inspector"), EntryUVE(RightTab::Import, "Import"),
-              EntryUVE(RightTab::Signals, "Signals")},
+              EntryUVE(RightTab::Events, "Events")},
              "Right Panel Tab", kSessionCategoryUVE)),
          [](const EditorUVE& editor) -> SettingValueUVE {
              return static_cast<std::int64_t>(editor.m_activeRightPanelTab);
@@ -285,27 +285,27 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
                                                          FloatUVE(value));
          }},
 
-        // New nodes.
-        {Config::MakeBoolSettingUVE(IdUVE(Id::kNewNodesUnderSelectionUVE), true, "Add Under Selection",
-                                    kNodesCategoryUVE,
-                                    "A new node goes under the selected node. Off, it always goes under the scene root."),
-         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_newNodesUnderSelection; },
+        // New objects.
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kNewObjectsUnderSelectionUVE), true, "Add Under Selection",
+                                    kObjectsCategoryUVE,
+                                    "A new object goes under the selected object. Off, it always goes under the scene root."),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_newObjectsUnderSelection; },
          [](EditorUVE& editor, const SettingValueUVE& value) {
-             editor.m_newNodesUnderSelection = std::get<bool>(value);
+             editor.m_newObjectsUnderSelection = std::get<bool>(value);
              return true;
          }},
-        {Config::MakeEnumSettingUVE(IdUVE(Id::kNewNodePlacementUVE),
-                                    static_cast<std::int64_t>(EditorNewNodePlacementUVE::ParentOrigin),
-                                    {EntryUVE(EditorNewNodePlacementUVE::ParentOrigin, "Parent's Origin"),
-                                     EntryUVE(EditorNewNodePlacementUVE::ViewFocus, "View Focus")},
-                                    "Placement", kNodesCategoryUVE,
-                                    "Where a new 3D node appears: at its parent's origin, or at the point the "
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kNewObjectPlacementUVE),
+                                    static_cast<std::int64_t>(EditorNewObjectPlacementUVE::ParentOrigin),
+                                    {EntryUVE(EditorNewObjectPlacementUVE::ParentOrigin, "Parent's Origin"),
+                                     EntryUVE(EditorNewObjectPlacementUVE::ViewFocus, "View Focus")},
+                                    "Placement", kObjectsCategoryUVE,
+                                    "Where a new 3D object appears: at its parent's origin, or at the point the "
                                     "viewport camera orbits - where you are looking."),
          [](const EditorUVE& editor) -> SettingValueUVE {
-             return static_cast<std::int64_t>(editor.m_newNodePlacement);
+             return static_cast<std::int64_t>(editor.m_newObjectPlacement);
          },
          [](EditorUVE& editor, const SettingValueUVE& value) {
-             editor.m_newNodePlacement = static_cast<EditorNewNodePlacementUVE>(std::get<std::int64_t>(value));
+             editor.m_newObjectPlacement = static_cast<EditorNewObjectPlacementUVE>(std::get<std::int64_t>(value));
              return true;
          }},
 
@@ -371,16 +371,16 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              editor.m_hierarchyView.revealSelection = std::get<bool>(value);
              return true;
          }},
-        {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyShowIconsUVE), hierarchy.showIcons, "Node Icons",
-                                    kHierarchyCategoryUVE, "Draw each node's type icon before its name."),
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyShowIconsUVE), hierarchy.showIcons, "Object Icons",
+                                    kHierarchyCategoryUVE, "Draw each object's type icon before its name."),
          [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_hierarchyView.showIcons; },
          [](EditorUVE& editor, const SettingValueUVE& value) {
              editor.m_hierarchyView.showIcons = std::get<bool>(value);
              return true;
          }},
-        {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyShowTypeNameUVE), hierarchy.showTypeName, "Node Type Names",
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyShowTypeNameUVE), hierarchy.showTypeName, "Object Type Names",
                                     kHierarchyCategoryUVE,
-                                    "Write each node's type after its name, dimmed, when the name is not already the "
+                                    "Write each object's type after its name, dimmed, when the name is not already the "
                                     "type and there is room."),
          [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_hierarchyView.showTypeName; },
          [](EditorUVE& editor, const SettingValueUVE& value) {
@@ -393,8 +393,8 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
                                      EntryUVE(HierarchyVisibilityColumnUVE::OnHover, "On Hover"),
                                      EntryUVE(HierarchyVisibilityColumnUVE::Hidden, "Hidden")},
                                     "Visibility Toggles", kHierarchyCategoryUVE,
-                                    "When a row shows its eye. On Hover still shows it on every hidden node, so a "
-                                    "hidden node never looks shown."),
+                                    "When a row shows its eye. On Hover still shows it on every hidden object, so a "
+                                    "hidden object never looks shown."),
          [](const EditorUVE& editor) -> SettingValueUVE {
              return static_cast<std::int64_t>(editor.m_hierarchyView.visibilityColumn);
          },
@@ -418,7 +418,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
          }},
         {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyDragToReparentUVE), hierarchy.dragToReparent,
                                     "Drag to Reparent", kHierarchyCategoryUVE,
-                                    "Drag a row onto another to move it under that node. Off, rows stay put when "
+                                    "Drag a row onto another to move it under that object. Off, rows stay put when "
                                     "dragged."),
          [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_hierarchyView.dragToReparent; },
          [](EditorUVE& editor, const SettingValueUVE& value) {
@@ -486,16 +486,16 @@ namespace {
                        [&lower](const char a, const char b) { return lower(a) == lower(b); }) != text.end();
 }
 
-struct CategoryTreeNodeUVE final {
+struct CategoryTreeObjectUVE final {
     std::string path;
-    std::vector<std::unique_ptr<CategoryTreeNodeUVE>> children;
+    std::vector<std::unique_ptr<CategoryTreeObjectUVE>> children;
 };
 
-void FlattenCategoryTreeUVE(const CategoryTreeNodeUVE& node, const int depth,
-                            std::vector<SettingCategoryNodeUVE>& out) {
-    for (const auto& child : node.children) {
+void FlattenCategoryTreeUVE(const CategoryTreeObjectUVE& object, const int depth,
+                            std::vector<SettingCategoryObjectUVE>& out) {
+    for (const auto& child : object.children) {
         const std::size_t slash = child->path.rfind('/');
-        out.push_back(SettingCategoryNodeUVE{
+        out.push_back(SettingCategoryObjectUVE{
             child->path, slash == std::string::npos ? child->path : child->path.substr(slash + 1U), depth});
         FlattenCategoryTreeUVE(*child, depth + 1, out);
     }
@@ -523,30 +523,30 @@ bool IsInSettingCategoryUVE(const std::string_view category, const std::string_v
     return category.starts_with(path) && (category.size() == path.size() || category[path.size()] == '/');
 }
 
-std::vector<SettingCategoryNodeUVE> BuildSettingCategoryTreeUVE(
+std::vector<SettingCategoryObjectUVE> BuildSettingCategoryTreeUVE(
     const std::vector<const Config::SettingDescriptorUVE*>& descriptors) {
-    CategoryTreeNodeUVE root;
+    CategoryTreeObjectUVE root;
     for (const Config::SettingDescriptorUVE* descriptor : descriptors) {
         const std::string& category = descriptor->category;
         if (category.empty()) {
             continue;
         }
         // Walk down "Editor", "Editor/Viewport", "Editor/Viewport/Grid", adding what is missing.
-        CategoryTreeNodeUVE* node = &root;
+        CategoryTreeObjectUVE* object = &root;
         for (std::size_t slash = category.find('/');; slash = category.find('/', slash + 1U)) {
             std::string path = category.substr(0U, slash);
-            const auto found = std::find_if(node->children.begin(), node->children.end(),
+            const auto found = std::find_if(object->children.begin(), object->children.end(),
                                             [&path](const auto& child) { return child->path == path; });
-            node = found != node->children.end()
+            object = found != object->children.end()
                        ? found->get()
-                       : node->children.emplace_back(std::make_unique<CategoryTreeNodeUVE>()).get();
-            node->path = std::move(path);
+                       : object->children.emplace_back(std::make_unique<CategoryTreeObjectUVE>()).get();
+            object->path = std::move(path);
             if (slash == std::string::npos) {
                 break;
             }
         }
     }
-    std::vector<SettingCategoryNodeUVE> flattened;
+    std::vector<SettingCategoryObjectUVE> flattened;
     FlattenCategoryTreeUVE(root, 0, flattened);
     return flattened;
 }
@@ -581,10 +581,37 @@ std::string FormatSettingValueUVE(const Config::SettingDescriptorUVE& descriptor
     return text != nullptr ? *text : std::string{};
 }
 
+namespace {
+
+/// The old name of a renamed setting, declared as an alias of the setting that replaced it: same
+/// type, bounds and enum entries, so a value stored under the old name is read exactly as the new
+/// one validates. Hidden, so the preferences window never offers a name the editor no longer
+/// uses, and Deprecated, so a save never writes it back - the rename is one-way, and the alias
+/// exists only for files written before it.
+[[nodiscard]] Config::SettingDescriptorUVE MakeRenamedSettingAliasUVE(const Config::SettingDescriptorUVE& current,
+                                                                     const RenamedSettingIdUVE& renamed) {
+    Config::SettingDescriptorUVE alias = current;
+    alias.id = std::string(renamed.oldId);
+    alias.flags |= Config::kSettingFlagHiddenUVE | Config::kSettingFlagDeprecatedUVE;
+    return alias;
+}
+
+} // namespace
+
 bool RegisterEditorSettingsUVE(Config::SettingsRegistryUVE& registry) {
+    const std::vector<EditorSettingBindingUVE>& bindings = EditorUVE::GetSettingBindingsUVE();
     bool allRegistered = true;
-    for (const EditorSettingBindingUVE& binding : EditorUVE::GetSettingBindingsUVE()) {
+    for (const EditorSettingBindingUVE& binding : bindings) {
         allRegistered = registry.RegisterUVE(binding.descriptor) && allRegistered;
+    }
+    for (const RenamedSettingIdUVE& renamed : kRenamedSettingIdsUVE) {
+        const auto binding = std::find_if(bindings.cbegin(), bindings.cend(), [&renamed](const EditorSettingBindingUVE& candidate) {
+            return candidate.descriptor.id == renamed.newId;
+        });
+        // A rename that names a setting nobody declares is a programming error, not a runtime
+        // condition: fail registration so the editor's settings test catches it.
+        allRegistered = binding != bindings.cend() &&
+                        registry.RegisterUVE(MakeRenamedSettingAliasUVE(binding->descriptor, renamed)) && allRegistered;
     }
     return allRegistered;
 }

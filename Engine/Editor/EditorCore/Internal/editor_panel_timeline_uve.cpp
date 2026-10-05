@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// The Entity Editor's Timeline tab: the clip of the entity's AnimationPlayer as a dope sheet - one
+// The Entity Editor's Timeline tab: the clip of the entity's AnimationSequencer as a dope sheet - one
 // row per bone with its keys - under a ruler with a playhead, and a transport that previews the
 // clip on the entity's skeleton while the tab is open. The preview writes the skeleton's runtime
 // pose only, so it never dirties the entity or reaches its file.
@@ -10,27 +10,29 @@
 #include "editor_chrome_layout_uve.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cctype>
+#include <cmath>
+#include <cstddef>
 #include <cstdio>
-#include <limits>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <imgui.h>
 #include <imgui_internal.h>
 
 #include "uve/asset/animation_clip_asset_uve.h"
-#include "uve/component/animation_mixer_component_uve.h"
-#include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_driver_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"
-#include "uve/nodes/3d/animation_player_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/animation_sequencer_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -128,8 +130,8 @@ void EditorUVE::StopAnimationTimelinePreviewUVE() {
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     if (entityManager.IsAliveUVE(m_timeline.previewSkeleton) &&
-        entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(m_timeline.previewSkeleton)) {
-        entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(m_timeline.previewSkeleton).pose.clear();
+        entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(m_timeline.previewSkeleton)) {
+        entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(m_timeline.previewSkeleton).pose.clear();
     }
     m_timeline.previewSkeleton = Scene::kInvalidEntityUVE;
 }
@@ -142,14 +144,14 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     const auto nameOf = [&entityManager](const Scene::EntityUVE entity) {
         return entityManager.HasComponentUVE<Scene::NameComponentUVE>(entity)
                    ? entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name
-                   : std::string{"AnimationPlayer"};
+                   : std::string{"AnimationSequencer"};
     };
 
     // ---- Which player: the selected one, else the one shown last, else the entity's first -------
     std::vector<Scene::EntityUVE> players;
-    for (const Scene::EntityUVE node : CollectEntityEditorNodesUVE()) {
-        if (entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(node)) {
-            players.push_back(node);
+    for (const Scene::EntityUVE object : CollectEntityEditorObjectsUVE()) {
+        if (entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(object)) {
+            players.push_back(object);
         }
     }
     if (players.empty()) {
@@ -162,7 +164,7 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         // The first one with a clip: an entity's own empty player should not hide a working one.
         m_timeline.player = players.front();
         for (const Scene::EntityUVE candidate : players) {
-            if (entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(candidate).clip !=
+            if (entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(candidate).clip !=
                 Asset::AssetGuidUVE{}) {
                 m_timeline.player = candidate;
                 break;
@@ -170,12 +172,12 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         }
     }
     const Scene::EntityUVE playerEntity = m_timeline.player;
-    const Scene::AnimationPlayerComponentUVE& player =
-        entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(playerEntity);
-    const Scene::AnimationMixerComponentUVE mixer =
-        entityManager.HasComponentUVE<Scene::AnimationMixerComponentUVE>(playerEntity)
-            ? entityManager.GetComponentUVE<Scene::AnimationMixerComponentUVE>(playerEntity)
-            : Scene::AnimationMixerComponentUVE{};
+    const Scene::AnimationSequencerComponentUVE& player =
+        entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(playerEntity);
+    const Scene::AnimationDriverComponentUVE driver =
+        entityManager.HasComponentUVE<Scene::AnimationDriverComponentUVE>(playerEntity)
+            ? entityManager.GetComponentUVE<Scene::AnimationDriverComponentUVE>(playerEntity)
+            : Scene::AnimationDriverComponentUVE{};
 
     // ---- The clip, reloaded when the player's clip changes ----------------------------------------
     if (player.clip != m_timeline.clipGuid) {
@@ -210,10 +212,10 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         }
     }
 
-    // ---- The skeleton it previews on: the mixer's target, else the player's parent, searched down -
+    // ---- The skeleton it previews on: the driver's target, else the player's parent, searched down -
     Scene::EntityUVE skeletonEntity = Scene::kInvalidEntityUVE;
     {
-        Scene::EntityUVE root = mixer.target;
+        Scene::EntityUVE root = driver.target;
         if (root == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(root)) {
             root = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(playerEntity)
                        ? entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(playerEntity).parent
@@ -224,7 +226,7 @@ void EditorUVE::DrawAnimationTimelineUVE() {
             queue.push_back(root);
         }
         for (std::size_t next = 0U; next < queue.size() && next < 4096U; ++next) {
-            if (entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(queue[next])) {
+            if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(queue[next])) {
                 skeletonEntity = queue[next];
                 break;
             }
@@ -279,7 +281,7 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         if (m_timeline.clip == nullptr) {
             return;
         }
-        // The selected bone's track, else the clip's own node track.
+        // The selected bone's track, else the clip's own object track.
         std::optional<std::string> chosen;
         if (FindClipTrackSamplesUVE(*m_timeline.clip, m_selectedSkeletonBone) != nullptr) {
             chosen = m_selectedSkeletonBone;
@@ -329,7 +331,7 @@ void EditorUVE::DrawAnimationTimelineUVE() {
             ImGui::EndCombo();
         }
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("The AnimationPlayer this Timeline shows. Selecting a player in the tree picks it too.");
+            ImGui::SetTooltip("The AnimationSequencer this Timeline shows. Selecting a player in the tree picks it too.");
         }
         ImGui::SameLine();
     }
@@ -436,7 +438,7 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     // ---- Advance the preview -----------------------------------------------------------------------
     if (m_timeline.playing) {
         const double speed = std::isfinite(player.speed) && player.speed != 0.0F ? player.speed : 1.0;
-        m_timeline.timeSeconds += static_cast<double>(ImGui::GetIO().DeltaTime) * speed * mixer.speedScale;
+        m_timeline.timeSeconds += static_cast<double>(ImGui::GetIO().DeltaTime) * speed * driver.speedScale;
         if (m_timeline.loop) {
             m_timeline.timeSeconds = std::fmod(m_timeline.timeSeconds, duration);
             if (m_timeline.timeSeconds < 0.0) {
@@ -494,9 +496,9 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         };
         return lower(label).find(lower(m_timeline.filter)) != std::string::npos;
     };
-    const Scene::Skeleton3DNodeComponentUVE* const skeleton =
+    const Scene::Skeleton3DComponentUVE* const skeleton =
         skeletonEntity != Scene::kInvalidEntityUVE
-            ? &entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity)
+            ? &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity)
             : nullptr;
     if (skeleton != nullptr) {
         std::vector<int> depth(skeleton->bones.size(), 0);
@@ -523,8 +525,8 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         StopAnimationTimelinePreviewUVE();
     }
     if (clip->IsSkeletalUVE() && skeletonEntity != Scene::kInvalidEntityUVE) {
-        auto& posed = entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity);
-        if (Scene::PoseSkeletonAtTimeUVE(*clip, m_timeline.timeSeconds, posed, mixer)) {
+        auto& posed = entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
+        if (Scene::PoseSkeletonAtTimeUVE(*clip, m_timeline.timeSeconds, posed, driver)) {
             m_timeline.previewSkeleton = skeletonEntity;
         }
     }
@@ -1353,7 +1355,7 @@ void EditorUVE::AcceptTimelineClipDropUVE(const Scene::EntityUVE player) {
             std::string(static_cast<const char*>(payload->Data), static_cast<std::size_t>(payload->DataSize - 1))};
         if (relative.extension() == ".uvanim") {
             const std::filesystem::path root = m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
-            static_cast<void>(AddClipToAnimationPlayerUVE(player, root / relative));
+            static_cast<void>(AddClipToAnimationSequencerUVE(player, root / relative));
         } else {
             m_timeline.status = "Only .uvanim clips can be dropped on the Timeline";
         }

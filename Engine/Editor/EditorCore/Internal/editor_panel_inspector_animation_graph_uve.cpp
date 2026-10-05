@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// AnimationTree's Inspector blocks: the parameter table and the graph itself. The graph is shown
+// AnimationGraph's Inspector blocks: the parameter table and the graph itself. The graph is shown
 // as the tree it is - Output at the top, each node's inputs indented under it - with nodes nothing
 // uses yet listed after, so a graph can be built piece by piece and wired up as it grows.
 
@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <array>
 #include <cfloat>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <functional>
@@ -16,13 +18,14 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <imgui.h>
 
 #include "editor_animation_graph_widgets_uve.h"
 
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 #include "uve/editor/animation_graph_editing_uve.h"
 
 namespace UVE::Editor {
@@ -32,7 +35,7 @@ using Kind = Scene::AnimationGraphNodeKindUVE;
 using Scene::AnimationGraphNodeUVE;
 using Scene::AnimationParameterTypeUVE;
 using Scene::AnimationParameterUVE;
-using Scene::AnimationTransitionUVE;
+using Scene::AnimationGraphTransitionUVE;
 
 constexpr std::array<Kind, 11> kAddableKindsUVE{Kind::Clip,         Kind::Blend2,       Kind::BlendSpace1D, Kind::BlendSpace2D,
                                                 Kind::Select,       Kind::Additive,     Kind::LayeredBlend, Kind::OneShot,
@@ -44,7 +47,7 @@ constexpr std::array<Kind, 11> kAddableKindsUVE{Kind::Clip,         Kind::Blend2
     return AnimationGraphSlotLabelUVE(kind, slot);
 }
 
-[[nodiscard]] std::string NodeLabelUVE(const AnimationGraphNodeUVE& node) {
+[[nodiscard]] std::string ObjectLabelUVE(const AnimationGraphNodeUVE& node) {
     const std::string name = node.name.empty() ? std::string{KindLabelUVE(node.kind)} : node.name;
     return name + "  #" + std::to_string(node.id);
 }
@@ -77,7 +80,7 @@ void RowUVE(const char* const label) {
 void EditorUVE::DrawAnimationParametersPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                                    const Core::TypeMetadataPropertyUVE& property,
                                                    const void* const instance) {
-    const auto& tree = *static_cast<const Scene::AnimationTreeComponentUVE*>(instance);
+    const auto& tree = *static_cast<const Scene::AnimationGraphComponentUVE*>(instance);
     const bool writable = IsAuthoringCommandAllowedUVE();
     ImGui::BeginDisabled(!writable);
     std::vector<AnimationParameterUVE> parameters = tree.parameters;
@@ -98,7 +101,7 @@ void EditorUVE::DrawAnimationParametersPropertyUVE(const Core::TypeMetadataEntry
             ImGui::SetNextItemWidth(-FLT_MIN);
             std::string renamed;
             if (EditTextUVE("##name", parameter.name, renamed) && !renamed.empty()) {
-                // Nodes and transitions reading the old name follow it, as a second step.
+                // Objects and transitions reading the old name follow it, as a second step.
                 RenameAnimationParameterReferencesUVE(parameter.name, renamed);
                 parameter.name = renamed;
                 changed = true;
@@ -172,7 +175,7 @@ void EditorUVE::RenameAnimationParameterReferencesUVE(const std::string& from, c
 void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                               const Core::TypeMetadataPropertyUVE& property,
                                               const void* const instance) {
-    const auto& tree = *static_cast<const Scene::AnimationTreeComponentUVE*>(instance);
+    const auto& tree = *static_cast<const Scene::AnimationGraphComponentUVE*>(instance);
     const bool writable = IsAuthoringCommandAllowedUVE();
     std::vector<AnimationGraphNodeUVE> nodes = tree.nodes;
     bool changed = false;
@@ -189,7 +192,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                     changed = true;
                 }
             }
-            for (AnimationTransitionUVE& transition : node.transitions) {
+            for (AnimationGraphTransitionUVE& transition : node.transitions) {
                 for (Scene::AnimationTransitionConditionUVE& test : transition.conditions) {
                     if (test.parameter == from) {
                         test.parameter = to;
@@ -469,7 +472,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                     const std::uint32_t current = node.inputs[slot];
                     const auto currentIt = indexById.find(current);
                     const std::string preview =
-                        currentIt == indexById.end() ? std::string{"(empty)"} : NodeLabelUVE(nodes[currentIt->second]);
+                        currentIt == indexById.end() ? std::string{"(empty)"} : ObjectLabelUVE(nodes[currentIt->second]);
                     const bool removable = node.kind == Kind::Select || node.kind == Kind::StateMachine;
                     if (removable) {
                         ImGui::SetNextItemWidth(-ImGui::GetFrameHeight() - ImGui::GetStyle().ItemSpacing.x);
@@ -484,7 +487,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                                 (used.contains(candidate.id) && candidate.id != current)) {
                                 continue;
                             }
-                            if (ImGui::Selectable(NodeLabelUVE(candidate).c_str(), candidate.id == current) &&
+                            if (ImGui::Selectable(ObjectLabelUVE(candidate).c_str(), candidate.id == current) &&
                                 candidate.id != current) {
                                 node.inputs[slot] = candidate.id;
                                 changed = true;
@@ -592,7 +595,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                                                                  : SlotLabelUVE(Kind::StateMachine, state);
                 };
                 for (std::size_t t = 0U; t < node.transitions.size(); ++t) {
-                    AnimationTransitionUVE& transition = node.transitions[t];
+                    AnimationGraphTransitionUVE& transition = node.transitions[t];
                     ImGui::PushID(static_cast<int>(t) + 5000);
                     const float width = ImGui::GetContentRegionAvail().x - ImGui::GetFrameHeight() * 3.0F;
                     ImGui::SetNextItemWidth(width * 0.38F);
@@ -665,7 +668,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                 }
                 if (ImGui::SmallButton("+ Transition") && !node.inputs.empty() &&
                     node.transitions.size() < Scene::kMaximumAnimationTransitionsUVE) {
-                    AnimationTransitionUVE transition;
+                    AnimationGraphTransitionUVE transition;
                     transition.fromState = 0U;
                     transition.toState = node.inputs.size() > 1U ? 1U : 0U;
                     node.transitions.push_back(transition);
@@ -687,7 +690,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
     }
 
     ImGui::Spacing();
-    if (ImGui::Button("+ Node")) {
+    if (ImGui::Button("+ Object")) {
         ImGui::OpenPopup("##add-node");
     }
     if (ImGui::BeginPopup("##add-node")) {

@@ -125,47 +125,47 @@ struct CornerKeyHashUVE final {
 
 
 /// One bone of the file, in the order the skeleton lists them: parents first.
-struct FbxBoneNodeUVE final {
-    const ufbx_node* node = nullptr;
+struct FbxBoneObjectUVE final {
+    const ufbx_node* object = nullptr;
     std::string name;
     std::int32_t parentIndex = -1;
-    /// The nodes between this bone and its parent bone (or the root), nearest first: a group or
+    /// The objects between this bone and its parent bone (or the root), nearest first: a group or
     /// null an exporter put in the chain. Their transforms are folded into the bone's local pose.
     std::vector<const ufbx_node*> between;
 };
 
-/// Every bone node, depth first from the root, with unique names - the one walk both the skeleton
+/// Every bone object, depth first from the root, with unique names - the one walk both the skeleton
 /// and its clips use, so a clip's track names always match the skeleton's bones. Empty optional
 /// when there are more than `maximumBones`.
-[[nodiscard]] std::optional<std::vector<FbxBoneNodeUVE>> CollectFbxBonesUVE(const ufbx_scene& scene,
+[[nodiscard]] std::optional<std::vector<FbxBoneObjectUVE>> CollectFbxBonesUVE(const ufbx_scene& scene,
                                                                              const std::size_t maximumBones) {
-    std::vector<FbxBoneNodeUVE> bones;
-    std::unordered_map<const ufbx_node*, std::int32_t> boneOfNode;
+    std::vector<FbxBoneObjectUVE> bones;
+    std::unordered_map<const ufbx_node*, std::int32_t> boneOfObject;
     std::set<std::string> usedNames;
     std::vector<const ufbx_node*> pending{scene.root_node};
     while (!pending.empty()) {
-        const ufbx_node* const node = pending.back();
+        const ufbx_node* const object = pending.back();
         pending.pop_back();
-        for (std::size_t child = node->children.count; child > 0U; --child) {
-            pending.push_back(node->children.data[child - 1U]);
+        for (std::size_t child = object->children.count; child > 0U; --child) {
+            pending.push_back(object->children.data[child - 1U]);
         }
-        if (node->bone == nullptr) {
+        if (object->bone == nullptr) {
             continue;
         }
         if (bones.size() >= maximumBones) {
             UVE_ERROR("FbxMeshConverterUVE: more than {} bones", maximumBones);
             return std::nullopt;
         }
-        FbxBoneNodeUVE bone;
-        bone.node = node;
-        for (const ufbx_node* ancestor = node->parent; ancestor != nullptr; ancestor = ancestor->parent) {
-            if (const auto found = boneOfNode.find(ancestor); found != boneOfNode.end()) {
+        FbxBoneObjectUVE bone;
+        bone.object = object;
+        for (const ufbx_node* ancestor = object->parent; ancestor != nullptr; ancestor = ancestor->parent) {
+            if (const auto found = boneOfObject.find(ancestor); found != boneOfObject.end()) {
                 bone.parentIndex = found->second;
                 break;
             }
             bone.between.push_back(ancestor);
         }
-        const std::string name(node->name.data, node->name.length);
+        const std::string name(object->name.data, object->name.length);
         std::string unique = name.empty() ? std::string("Bone") : name;
         const std::string stem = unique;
         for (int suffix = 1; usedNames.count(unique) != 0U; ++suffix) {
@@ -173,7 +173,7 @@ struct FbxBoneNodeUVE final {
         }
         usedNames.insert(unique);
         bone.name = std::move(unique);
-        boneOfNode.emplace(node, static_cast<std::int32_t>(bones.size()));
+        boneOfObject.emplace(object, static_cast<std::int32_t>(bones.size()));
         bones.push_back(std::move(bone));
     }
     return bones;
@@ -209,23 +209,23 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
 
         // A skinned file keeps its skin: every bone becomes a joint (the same bones, order and
         // names the skeleton and its clips use), and each corner its strongest four influences.
-        std::unordered_map<const ufbx_node*, std::uint32_t> jointOfNode;
+        std::unordered_map<const ufbx_node*, std::uint32_t> jointOfObject;
         const bool skinned = scene->skin_deformers.count > 0U;
         if (skinned) {
-            const std::optional<std::vector<FbxBoneNodeUVE>> bones =
+            const std::optional<std::vector<FbxBoneObjectUVE>> bones =
                 CollectFbxBonesUVE(*scene, kMaximumAnimationAssetBonesUVE);
             if (!bones.has_value() || bones->empty()) {
                 return false;
             }
-            for (const FbxBoneNodeUVE& bone : *bones) {
+            for (const FbxBoneObjectUVE& bone : *bones) {
                 MeshJointUVE joint;
                 joint.name = bone.name;
                 joint.parentIndex = bone.parentIndex < 0 ? kInvalidJointParentUVE
                                                          : static_cast<std::uint32_t>(bone.parentIndex);
                 // A bone no cluster binds keeps its current pose as its bind pose.
-                const ufbx_matrix inverse = ufbx_matrix_invert(&bone.node->node_to_world);
+                const ufbx_matrix inverse = ufbx_matrix_invert(&bone.object->node_to_world);
                 joint.inverseBindMatrix = ToMatrixUVE(inverse);
-                jointOfNode.emplace(bone.node, static_cast<std::uint32_t>(candidate.joints.size()));
+                jointOfObject.emplace(bone.object, static_cast<std::uint32_t>(candidate.joints.size()));
                 candidate.joints.push_back(std::move(joint));
             }
             for (const ufbx_skin_deformer* const skin : scene->skin_deformers) {
@@ -233,7 +233,7 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
                     if (cluster->bone_node == nullptr) {
                         continue;
                     }
-                    if (const auto found = jointOfNode.find(cluster->bone_node); found != jointOfNode.end()) {
+                    if (const auto found = jointOfObject.find(cluster->bone_node); found != jointOfObject.end()) {
                         const ufbx_matrix inverse = ufbx_matrix_invert(&cluster->bind_to_world);
                         candidate.joints[found->second].inverseBindMatrix = ToMatrixUVE(inverse);
                     }
@@ -250,16 +250,16 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
             triangle.assign(mesh->max_face_triangles * 3U, 0U);
             const ufbx_skin_deformer* const skin =
                 skinned && mesh->skin_deformers.count > 0U ? mesh->skin_deformers.data[0] : nullptr;
-            for (const ufbx_node* const node : mesh->instances) {
+            for (const ufbx_node* const object : mesh->instances) {
                 // A part with no skin of its own rides the nearest bone above it (or the first).
                 std::uint32_t rigidJoint = 0U;
-                for (const ufbx_node* ancestor = node; skinned && ancestor != nullptr; ancestor = ancestor->parent) {
-                    if (const auto found = jointOfNode.find(ancestor); found != jointOfNode.end()) {
+                for (const ufbx_node* ancestor = object; skinned && ancestor != nullptr; ancestor = ancestor->parent) {
+                    if (const auto found = jointOfObject.find(ancestor); found != jointOfObject.end()) {
                         rigidJoint = found->second;
                         break;
                     }
                 }
-                const ufbx_matrix toWorld = node->geometry_to_world;
+                const ufbx_matrix toWorld = object->geometry_to_world;
                 const ufbx_matrix normalToWorld = ufbx_matrix_for_normals(&toWorld);
                 // A mirrored instance (negative scale) turns its triangles inside out; swapping two
                 // corners keeps them facing the way the surface does.
@@ -315,10 +315,10 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
                                 for (std::uint32_t w = 0U; w < weights.num_weights && slot < kMaxJointInfluencesUVE; ++w) {
                                     const ufbx_skin_weight& weight = skin->weights.data[weights.weight_begin + w];
                                     const ufbx_skin_cluster* const cluster = skin->clusters.data[weight.cluster_index];
-                                    const auto joint = cluster->bone_node != nullptr ? jointOfNode.find(cluster->bone_node)
-                                                                                      : jointOfNode.end();
+                                    const auto joint = cluster->bone_node != nullptr ? jointOfObject.find(cluster->bone_node)
+                                                                                      : jointOfObject.end();
                                     const float value = static_cast<float>(weight.weight);
-                                    if (joint == jointOfNode.end() || !std::isfinite(value) || value <= 0.0F) {
+                                    if (joint == jointOfObject.end() || !std::isfinite(value) || value <= 0.0F) {
                                         continue;
                                     }
                                     picked.joints[slot] = joint->second;
@@ -422,16 +422,16 @@ std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(const std::span<const std::byt
         if (!scene) {
             return std::nullopt;
         }
-        const std::optional<std::vector<FbxBoneNodeUVE>> bones = CollectFbxBonesUVE(*scene, maximumJoints);
+        const std::optional<std::vector<FbxBoneObjectUVE>> bones = CollectFbxBonesUVE(*scene, maximumJoints);
         if (!bones.has_value() || bones->empty()) {
             return std::nullopt;
         }
         GltfSkeletonUVE skeleton;
         skeleton.skinCount = scene->skin_deformers.count;
-        for (const FbxBoneNodeUVE& bone : *bones) {
+        for (const FbxBoneObjectUVE& bone : *bones) {
             // The pose relative to the nearest bone above it: everything between is folded in, so
             // the chain still meets up.
-            ufbx_matrix local = bone.node->node_to_parent;
+            ufbx_matrix local = bone.object->node_to_parent;
             for (const ufbx_node* const between : bone.between) {
                 local = ufbx_matrix_mul(&between->node_to_parent, &local);
             }
@@ -462,7 +462,7 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
         if (!scene) {
             return clips;
         }
-        const std::optional<std::vector<FbxBoneNodeUVE>> bones = CollectFbxBonesUVE(*scene, maximumBones);
+        const std::optional<std::vector<FbxBoneObjectUVE>> bones = CollectFbxBonesUVE(*scene, maximumBones);
         if (!bones.has_value() || bones->empty()) {
             return clips;
         }
@@ -472,8 +472,8 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
                 : 30.0;
         // The skeleton every take was made for, the same rest pose ReadFbxSkeletonUVE gives.
         std::vector<AnimationAssetRestBoneUVE> rest;
-        for (const FbxBoneNodeUVE& bone : *bones) {
-            ufbx_matrix local = bone.node->node_to_parent;
+        for (const FbxBoneObjectUVE& bone : *bones) {
+            ufbx_matrix local = bone.object->node_to_parent;
             for (const ufbx_node* const between : bone.between) {
                 local = ufbx_matrix_mul(&between->node_to_parent, &local);
             }
@@ -518,14 +518,14 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
             clip.rest = rest;
             clip.bones.reserve(bones->size());
             bool valid = true;
-            for (const FbxBoneNodeUVE& bone : *bones) {
+            for (const FbxBoneObjectUVE& bone : *bones) {
                 AnimationAssetBoneTrackUVE track;
                 track.bone = bone.name;
                 track.samples.reserve(count);
                 for (std::size_t frame = 0U; frame < count && valid; ++frame) {
                     const double local = frame + 1U == count ? duration : static_cast<double>(frame) * step;
                     const double time = begin + local;
-                    ufbx_transform evaluated = ufbx_evaluate_transform(stack->anim, bone.node, time);
+                    ufbx_transform evaluated = ufbx_evaluate_transform(stack->anim, bone.object, time);
                     ufbx_matrix matrix = ufbx_transform_to_matrix(&evaluated);
                     for (const ufbx_node* const between : bone.between) {
                         ufbx_transform betweenPose = ufbx_evaluate_transform(stack->anim, between, time);

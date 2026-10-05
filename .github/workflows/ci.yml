@@ -45,6 +45,17 @@ jobs:
       - name: Math boundary check
         run: python3 Engine/Tools/check_math_boundary.py
 
+      - name: Engine vocabulary check
+        # Ratchet on the vocabulary renames: a name this engine has retired cannot come back.
+        # See the module docstring in the script and GODOT_STYLE_AUDIT.md for the policy.
+        run: python3 Engine/Tools/check_engine_vocabulary.py
+
+      - name: Panel include check
+        # Every editor panel TU must include a standard header for each std:: facility it names,
+        # instead of borrowing one transitively through imgui.h or a component header. Was 26
+        # violations deep; triaged and clean, so it is enforced now.
+        run: bash Engine/Tools/check_panel_includes.sh
+
       - name: Configure
         run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DUVE_BUILD_TESTS=ON
 
@@ -56,7 +67,38 @@ jobs:
         # working directory from Test/Support/test_scratch_uve.h, and ThreadPoolUVE now releases
         # a job's captured state before signalling completion, so a drained WaitUVE() no longer
         # leaves a worker holding the last reference to something it is about to outlive.
-        run: xvfb-run -a ctest --test-dir build --output-on-failure -j"$(nproc)"
+        #
+        # On failure the failing case names are echoed as an annotation. The full story stays in
+        # the job log and in the ctest-log artifact; the annotation exists because a failing check
+        # should say WHAT broke without either being opened, and because annotations are readable
+        # on restricted networks where the artifact/log blob host is not reachable.
+        run: |
+          set -o pipefail
+          status=0
+          xvfb-run -a ctest --test-dir build --output-on-failure -j"$(nproc)" 2>&1 | tee build/ctest-output.txt || status=$?
+          if [ "$status" -eq 0 ]; then
+            exit 0
+          fi
+          # The summary block is the reliable source: it lists every failing case whatever the
+          # failure mode (Failed, Timeout, Exception, Subprocess aborted). The progress-line
+          # markers are the fallback for a run that never reached the summary.
+          awk '/^The following tests FAILED:/{flag=1; next} flag && /^[[:space:]]*[0-9]+ - /{print}' \
+            build/ctest-output.txt \
+            | sed -E 's/^[[:space:]]*[0-9]+ - //; s/[[:space:]]*\([^()]*\)[[:space:]]*$//' > build/failed-tests.txt
+          if [ ! -s build/failed-tests.txt ]; then
+            grep -E '\*\*\*(Failed|Timeout|Exception|Subprocess aborted)' build/ctest-output.txt \
+              | sed -E 's/^[[:space:]]*[0-9]+\/[0-9]+[[:space:]]+Test[[:space:]]+#[0-9]+:[[:space:]]*//; s/[[:space:]]*\*\*\*.*$//; s/[.]+$//; s/[[:space:]]+$//' \
+              > build/failed-tests.txt || true
+          fi
+          sort -u -o build/failed-tests.txt build/failed-tests.txt
+          count=$(( $(wc -l < build/failed-tests.txt) + 0 ))
+          summary=$(paste -sd'; ' build/failed-tests.txt | cut -c1-900)
+          if [ "$count" -eq 0 ]; then
+            echo "::error title=ctest failed (exit $status)::No '***Failed' line found in the ctest output; see the job log."
+          else
+            echo "::error title=$count failing test case(s)::${summary}"
+          fi
+          exit "$status"
 
       - name: Verify the Vulkan device tests actually ran
         # These cases skip themselves when no Vulkan device is present, which would leave

@@ -6,8 +6,8 @@
 
 namespace UVE::Scene {
 
-/// The shared state of RenderInstance3D, the abstract base of every node that is drawn - meshes,
-/// lights, decals, particles. No node is a RenderInstance3D on its own; its kinds carry this
+/// The shared state of RenderInstance3D, the abstract base of every object that is drawn - meshes,
+/// lights, decals, particles. No object is a RenderInstance3D on its own; its kinds carry this
 /// component and add their own.
 struct RenderInstanceComponentUVE final {
     /// The render layers this instance is on. A camera draws it only when their layers overlap.

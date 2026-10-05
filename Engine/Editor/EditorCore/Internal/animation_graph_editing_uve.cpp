@@ -251,7 +251,7 @@ std::vector<std::uint32_t> DuplicateAnimationGraphNodesUVE(std::vector<Animation
 bool AddAnimationGraphInputSlotUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t target) {
     AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, target);
     if (node == nullptr || !HasVariableSlotsUVE(node->kind) ||
-        node->inputs.size() >= Scene::kMaximumAnimationNodeInputsUVE) {
+        node->inputs.size() >= Scene::kMaximumAnimationObjectInputsUVE) {
         return false;
     }
     node->inputs.push_back(0U);
@@ -268,10 +268,10 @@ bool RemoveAnimationGraphInputSlotUVE(std::vector<AnimationGraphNodeUVE>& nodes,
     node->inputs.erase(node->inputs.begin() + static_cast<std::ptrdiff_t>(slot));
     if (node->kind == Kind::StateMachine) {
         const auto state = static_cast<std::uint32_t>(slot);
-        std::erase_if(node->transitions, [state](const Scene::AnimationTransitionUVE& transition) {
+        std::erase_if(node->transitions, [state](const Scene::AnimationGraphTransitionUVE& transition) {
             return transition.fromState == state || transition.toState == state;
         });
-        for (Scene::AnimationTransitionUVE& transition : node->transitions) {
+        for (Scene::AnimationGraphTransitionUVE& transition : node->transitions) {
             if (transition.fromState != Scene::kAnyAnimationStateUVE && transition.fromState > state) {
                 --transition.fromState;
             }
@@ -315,7 +315,7 @@ bool SetAnimationStatePositionUVE(std::vector<AnimationGraphNodeUVE>& nodes, con
 std::optional<std::size_t> AddAnimationStateUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t machine,
                                                 const Math::Vector2UVE position) {
     AnimationGraphNodeUVE* node = FindNodeUVE(nodes, machine);
-    if (node == nullptr || node->kind != Kind::StateMachine || node->inputs.size() >= Scene::kMaximumAnimationNodeInputsUVE ||
+    if (node == nullptr || node->kind != Kind::StateMachine || node->inputs.size() >= Scene::kMaximumAnimationObjectInputsUVE ||
         nodes.size() >= Scene::kMaximumAnimationGraphNodesUVE) {
         return std::nullopt;
     }
@@ -348,7 +348,7 @@ std::optional<std::size_t> AddAnimationTransitionUVE(std::vector<AnimationGraphN
         node->transitions.size() >= Scene::kMaximumAnimationTransitionsUVE) {
         return std::nullopt;
     }
-    Scene::AnimationTransitionUVE transition;
+    Scene::AnimationGraphTransitionUVE transition;
     transition.fromState = from;
     transition.toState = to;
     node->transitions.push_back(transition);
@@ -372,13 +372,13 @@ bool MoveAnimationTransitionUVE(std::vector<AnimationGraphNodeUVE>& nodes, const
         newIndex >= node->transitions.size() || index == newIndex) {
         return false;
     }
-    const Scene::AnimationTransitionUVE moved = node->transitions[index];
+    const Scene::AnimationGraphTransitionUVE moved = node->transitions[index];
     node->transitions.erase(node->transitions.begin() + static_cast<std::ptrdiff_t>(index));
     node->transitions.insert(node->transitions.begin() + static_cast<std::ptrdiff_t>(newIndex), moved);
     return true;
 }
 
-std::string DescribeAnimationTransitionUVE(const Scene::AnimationTransitionUVE& transition) {
+std::string DescribeAnimationTransitionUVE(const Scene::AnimationGraphTransitionUVE& transition) {
     using Condition = Scene::AnimationConditionUVE;
     std::string text;
     const auto name = [](const std::string& parameter) { return parameter.empty() ? std::string{"?"} : parameter; };
@@ -417,7 +417,7 @@ std::optional<std::size_t> AddBlendSpacePointUVE(std::vector<AnimationGraphNodeU
                                                  const Math::Vector2UVE position, const Asset::AssetGuidUVE clip) {
     AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, space);
     if (node == nullptr || (node->kind != Kind::BlendSpace1D && node->kind != Kind::BlendSpace2D) ||
-        node->blendPoints.size() >= Scene::kMaximumAnimationNodeInputsUVE || !std::isfinite(position.x) ||
+        node->blendPoints.size() >= Scene::kMaximumAnimationObjectInputsUVE || !std::isfinite(position.x) ||
         !std::isfinite(position.y)) {
         return std::nullopt;
     }

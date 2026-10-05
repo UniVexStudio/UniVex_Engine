@@ -4,7 +4,7 @@
 // holds, so the preview works the way the Entity Editor does: the scene is captured and put
 // aside, a small world stands in its place (a sun, the humanoid and the character side by side),
 // and closing the window brings the scene back untouched. The sky, the ground and the floor with
-// its fog are the viewport's studio view (ViewportOverlayStateUVE::studioView), not nodes.
+// its fog are the viewport's studio view (ViewportOverlayStateUVE::studioView), not objects.
 
 #include <array>
 #include <cmath>
@@ -23,15 +23,15 @@
 #include "uve/editor/editor_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/quaternion_uve.h"
-#include "uve/nodes/3d/mesh_instance_3d_uve.h"
-#include "uve/nodes/3d/node_3d_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/mesh_instance_3d_uve.h"
+#include "uve/objects/3d/object_3d_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/retarget/retarget_conform_uve.h"
 #include "uve/retarget/retarget_humanoid_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 #include "uve/scene/i_scene_serializer_uve.h"
-#include "uve/scene/nodes/scene_node_type_uve.h"
-#include "uve/scene/nodes/scene_node_uve.h"
+#include "uve/scene/objects/scene_object_type_uve.h"
+#include "uve/scene/objects/scene_object_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -156,7 +156,7 @@ void EditorUVE::RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std
     if (sceneRoot == Scene::kInvalidEntityUVE) {
         return;
     }
-    using Kind = Scene::Nodes::SceneNodeKindUVE;
+    using Kind = Scene::Objects::SceneObjectKindUVE;
     const auto place = [&](const Scene::EntityUVE entity, const std::string& name, const Kind kind, const Scene::EntityUVE parent,
                            const Math::Vector3UVE position = {}, const Math::QuaternionUVE rotation = {},
                            const Math::Vector3UVE scale = {1.0F, 1.0F, 1.0F}) {
@@ -164,7 +164,7 @@ void EditorUVE::RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std
             return entity;
         }
         entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name = name;
-        Scene::SetSceneNodeKindUVE(entityManager, entity, kind);
+        Scene::SetSceneObjectKindUVE(entityManager, entity, kind);
         sceneGraph.SetParentUVE(entityManager, entity, parent);
         Scene::TransformComponentUVE transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
         transform.localPosition = position;
@@ -175,28 +175,28 @@ void EditorUVE::RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std
     };
     const auto shell = [&](const std::string& name) { return CreateDocumentEntityShellInternalUVE(name); };
 
-    preview.frameRoot = place(CreateSceneNodeEntityInternalUVE(Kind::Node3D), "Retarget Preview", Kind::Node3D, sceneRoot);
+    preview.frameRoot = place(CreateSceneObjectEntityInternalUVE(Kind::Object3D), "Retarget Preview", Kind::Object3D, sceneRoot);
     if (preview.frameRoot == Scene::kInvalidEntityUVE) {
         return;
     }
     // The sun leans over one shoulder, so the figures are shaded rather than flat.
-    place(CreateSceneNodeEntityInternalUVE(Kind::Light3D), "Sun", Kind::Light3D, preview.frameRoot, Math::Vector3UVE{0.0F, 4.0F, 0.0F},
+    place(CreateSceneObjectEntityInternalUVE(Kind::Light3D), "Sun", Kind::Light3D, preview.frameRoot, Math::Vector3UVE{0.0F, 4.0F, 0.0F},
           EulerUVE(-0.95F, 0.55F, 0.0F));
 
     // The viewport frames the figures, not the floor under them.
-    const Scene::EntityUVE figures = place(CreateSceneNodeEntityInternalUVE(Kind::Node3D), "Figures", Kind::Node3D, preview.frameRoot);
+    const Scene::EntityUVE figures = place(CreateSceneObjectEntityInternalUVE(Kind::Object3D), "Figures", Kind::Object3D, preview.frameRoot);
     preview.figures = figures;
 
     // ---- The humanoid, on the left ---------------------------------------------------------------
     const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
     {
         const Scene::EntityUVE figure = shell("Humanoid");
-        Scene::ApplyNode3DNodeDefinitionUVE(entityManager, figure, Scene::Node3DNodeDefinitionUVE{});
-        place(figure, "Humanoid", Kind::Node3D, figures, Math::Vector3UVE{-kFigureOffsetUVE, 0.0F, 0.0F});
-        Scene::Skeleton3DNodeDefinitionUVE definition;
+        Scene::ApplyObject3DObjectDefinitionUVE(entityManager, figure, Scene::Object3DObjectDefinitionUVE{});
+        place(figure, "Humanoid", Kind::Object3D, figures, Math::Vector3UVE{-kFigureOffsetUVE, 0.0F, 0.0F});
+        Scene::Skeleton3DObjectDefinitionUVE definition;
         definition.skeleton.bones = BonesOfUVE(reference.skeleton);
         const Scene::EntityUVE skeleton = shell("Humanoid Skeleton");
-        Scene::ApplySkeleton3DNodeDefinitionUVE(entityManager, skeleton, definition);
+        Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skeleton, definition);
         preview.sourceSkeleton = place(skeleton, "Humanoid Skeleton", Kind::Skeleton3D, figure);
     }
     preview.sourceColours.assign(reference.skeleton.bones.size(), GetRetargetStatusColourUVE(Retarget::JointStatusUVE::Missing));
@@ -213,22 +213,22 @@ void EditorUVE::RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std
     std::error_code error;
     if (!modelFile.empty() && std::filesystem::is_regular_file(modelFile, error) && Asset::LoadMeshAssetUVE(modelFile, mesh)) {
         const Scene::EntityUVE figure = shell("Character");
-        Scene::ApplyNode3DNodeDefinitionUVE(entityManager, figure, Scene::Node3DNodeDefinitionUVE{});
-        place(figure, "Character", Kind::Node3D, figures, Math::Vector3UVE{kFigureOffsetUVE, 0.0F, 0.0F});
+        Scene::ApplyObject3DObjectDefinitionUVE(entityManager, figure, Scene::Object3DObjectDefinitionUVE{});
+        place(figure, "Character", Kind::Object3D, figures, Math::Vector3UVE{kFigureOffsetUVE, 0.0F, 0.0F});
         Scene::EntityUVE meshParent = figure;
         if (const std::optional<Retarget::RetargetSkeletonUVE> rig = Retarget::RigFromMeshUVE(mesh);
             rig.has_value() && rig->bones.size() <= Scene::kMaximumSkeletonBonesUVE) {
-            Scene::Skeleton3DNodeDefinitionUVE definition;
+            Scene::Skeleton3DObjectDefinitionUVE definition;
             definition.skeleton.bones = BonesOfUVE(*rig);
             const Scene::EntityUVE skeleton = shell("Character Skeleton");
-            Scene::ApplySkeleton3DNodeDefinitionUVE(entityManager, skeleton, definition);
+            Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skeleton, definition);
             preview.targetSkeleton = place(skeleton, "Character Skeleton", Kind::Skeleton3D, figure);
             meshParent = preview.targetSkeleton;
         }
-        Scene::MeshInstance3DNodeDefinitionUVE meshDefinition;
+        Scene::MeshInstance3DObjectDefinitionUVE meshDefinition;
         meshDefinition.mesh.meshGuid = m_services->GetAssetDatabaseUVE().RegisterUVE(modelFile);
         const Scene::EntityUVE meshEntity = shell("Character Mesh");
-        Scene::ApplyMeshInstance3DNodeDefinitionUVE(entityManager, meshEntity, meshDefinition);
+        Scene::ApplyMeshInstance3DObjectDefinitionUVE(entityManager, meshEntity, meshDefinition);
         place(meshEntity, "Character Mesh", Kind::MeshInstance3D, meshParent);
     }
     ClearHistoryUVE();

@@ -12,8 +12,8 @@ TEST(TypeMetadataRegistryUVETest, RegisterTypeUVE_OrdersCopiedSnapshotAndAdvance
     TypeMetadataRegistryUVE registry;
     ASSERT_TRUE(registry.RegisterTypeUVE(TypeMetadataEntryUVE{
         TypeMetadataKindUVE::InspectorTarget,
-        "node.zeta",
-        "Zeta Node",
+        "object.zeta",
+        "Zeta Object",
         1U,
         {{"Value", "Value", "Number", true}},
         {{"Execute", "Execute", 1U}},
@@ -31,7 +31,7 @@ TEST(TypeMetadataRegistryUVETest, RegisterTypeUVE_OrdersCopiedSnapshotAndAdvance
     ASSERT_EQ(snapshot.entries.size(), 2U);
     EXPECT_EQ(snapshot.generation, 2U);
     EXPECT_EQ(snapshot.entries[0].typeId, "component.transform");
-    EXPECT_EQ(snapshot.entries[1].typeId, "node.zeta");
+    EXPECT_EQ(snapshot.entries[1].typeId, "object.zeta");
     EXPECT_TRUE(snapshot.entries[1].properties[0].editable);
     EXPECT_EQ(snapshot.entries[1].methods[0].name, "Execute");
 }
@@ -63,8 +63,8 @@ TEST(TypeMetadataRegistryUVETest, RegisterTypeUVE_RejectsDuplicateAndMalformedMe
 TEST(TypeMetadataRegistryUVETest, RegisterTypeUVE_RejectsOversizedMemberCollectionsBeforeMutation) {
     TypeMetadataRegistryUVE registry;
     TypeMetadataEntryUVE oversized{TypeMetadataKindUVE::InspectorTarget,
-                                   "node.oversized",
-                                   "Oversized Node",
+                                   "object.oversized",
+                                   "Oversized Object",
                                    1U,
                                    std::vector<TypeMetadataPropertyUVE>(
                                        TypeMetadataRegistryUVE::kMaximumMembersPerTypeUVE + 1U),

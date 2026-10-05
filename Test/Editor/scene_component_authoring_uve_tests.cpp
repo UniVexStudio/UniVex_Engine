@@ -10,7 +10,7 @@
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/core/engine_core_uve.h"
 #include "uve/editor/editor_uve.h"
-#include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
@@ -18,7 +18,7 @@
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/canvas_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
@@ -75,12 +75,12 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_AddsAllSupport
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(entity).shapeType,
                   Scene::ColliderShapeTypeUVE::Capsule);
 
-        Scene::RigidBodyComponentUVE rigidBody{};
+        Scene::Rigid3DComponentUVE rigidBody{};
         rigidBody.isKinematic = true;
         rigidBody.mass = 2.0F;
         rigidBody.gravityScale = 0.0F;
-        ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::RigidBody, rigidBody));
-        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(entity).isKinematic);
+        ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Rigid3D, rigidBody));
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity).isKinematic);
 
         Scene::AudioSourceComponentUVE audio{};
         audio.audioAssetPath = "audio/impact.wav";
@@ -99,19 +99,19 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_AddsAllSupport
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath,
                   "scripts/player.uvs");
 
-        Scene::AnimationPlayerComponentUVE animation;
+        Scene::AnimationSequencerComponentUVE animation;
         animation.clip = Asset::AssetGuidUVE{77U};
         animation.speed = 1.25F;
-        ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::AnimationPlayer, animation));
-        EXPECT_EQ(entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(entity).clip.value, 77U);
+        ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::AnimationSequencer, animation));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(entity).clip.value, 77U);
 
-        ASSERT_TRUE(editor.RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::AnimationPlayer));
-        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(entity));
+        ASSERT_TRUE(editor.RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::AnimationSequencer));
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(entity));
         ASSERT_TRUE(editor.UndoUVE());
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(entity));
-        EXPECT_EQ(entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(entity).speed, 1.25F);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(entity));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(entity).speed, 1.25F);
         ASSERT_TRUE(editor.RedoUVE());
-        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(entity));
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(entity));
 
         editor.ShutdownUVE();
     }
@@ -236,10 +236,10 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_RejectsInvalid
         EXPECT_FALSE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Script, invalidScript));
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity));
 
-        Scene::AnimationPlayerComponentUVE invalidAnimation;
+        Scene::AnimationSequencerComponentUVE invalidAnimation;
         invalidAnimation.speed = std::numeric_limits<float>::quiet_NaN();
-        EXPECT_FALSE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::AnimationPlayer, invalidAnimation));
-        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(entity));
+        EXPECT_FALSE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::AnimationSequencer, invalidAnimation));
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(entity));
 
         editor.ShutdownUVE();
     }

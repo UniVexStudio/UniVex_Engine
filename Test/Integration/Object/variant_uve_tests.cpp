@@ -4,8 +4,10 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <set>
 #include <string>
+#include <utility>
 
 namespace UVE::Core::Tests {
 namespace {
@@ -24,14 +26,40 @@ TEST(VariantUVETest, EveryTypeHasADistinctStableNameThatParsesBack) {
     EXPECT_FALSE(TryParseVariantTypeNameUVE("NotAType").has_value());
 }
 
-TEST(VariantUVETest, MakeDefaultUVE_StoresTheTypeItWasAskedForWithAMatchingValue) {
-    for (const VariantTypeUVE type : GetAllVariantTypesUVE()) {
+// A scene file stores a variant's type BY NAME, so a renamed type has to stay readable under the
+// name it was written with. Every retired name goes here the same commit it is retired - this is
+// what makes the vocabulary pass a rename rather than a format break.
+TEST(VariantUVETest, RetiredTypeNamesStillParseButAreNeverWritten) {
+    constexpr std::array<std::pair<std::string_view, VariantTypeUVE>, 12U> kRetired{{
+        {"NodePath", VariantTypeUVE::ObjectPath},
+        {"Node", VariantTypeUVE::Object},
+        {"PackedByteArray", VariantTypeUVE::ByteArray},
+        {"PackedInt32Array", VariantTypeUVE::Int32Array},
+        {"PackedInt64Array", VariantTypeUVE::Int64Array},
+        {"PackedFloat32Array", VariantTypeUVE::Float32Array},
+        {"PackedFloat64Array", VariantTypeUVE::Float64Array},
+        {"PackedStringArray", VariantTypeUVE::StringArray},
+        {"PackedVector2Array", VariantTypeUVE::Vector2Array},
+        {"PackedVector3Array", VariantTypeUVE::Vector3Array},
+        {"PackedColorArray", VariantTypeUVE::ColorArray},
+        {"StringName", VariantTypeUVE::InternedString},
+    }};
+    for (const auto& [retired, current] : kRetired) {
+        // Reads: an old document loads as the type it always meant.
+        EXPECT_EQ(TryParseVariantTypeNameUVE(retired), current) << retired;
+        // Writes: the current name, never the retired one - otherwise the alias would never stop
+        // being needed and the old name would creep back into new documents.
+        EXPECT_NE(GetVariantTypeNameUVE(current), retired) << retired;
+    }
+}
+
+TEST(VariantUVETest, MakeDefaultUVE_StoresTheTypeItWasAskedForWithAMatchingValue) {    for (const VariantTypeUVE type : GetAllVariantTypesUVE()) {
         const VariantUVE value = VariantUVE::MakeDefaultUVE(type);
         EXPECT_EQ(value.GetTypeUVE(), type) << GetVariantTypeNameUVE(type);
         EXPECT_TRUE(IsVariantWithinBoundsUVE(value));
     }
-    // Types that share a representation stay distinct: a node reference is not a plain string.
-    EXPECT_NE(VariantUVE::MakeTextUVE(VariantTypeUVE::Node, "Player"),
+    // Types that share a representation stay distinct: an object reference is not a plain string.
+    EXPECT_NE(VariantUVE::MakeTextUVE(VariantTypeUVE::Object, "Player"),
               VariantUVE::MakeTextUVE(VariantTypeUVE::String, "Player"));
     EXPECT_EQ(VariantUVE::MakeDefaultUVE(VariantTypeUVE::Quaternion).TryGetUVE<Math::QuaternionUVE>()->w, 1.0F);
     EXPECT_EQ(VariantUVE::MakeDefaultUVE(VariantTypeUVE::Color).TryGetUVE<VariantColorUVE>()->a, 1.0F);
@@ -72,16 +100,16 @@ TEST(VariantUVETest, TryConvertVariantUVE_ReportsWhetherAnythingWasLost) {
     EXPECT_EQ(result.value.TryGetUVE<VariantColorUVE>()->a, 1.0F); // Opaque unless the source said otherwise.
 
     // Arrays convert element by element; a byte that does not fit is reported, not wrapped.
-    VariantUVE packed = VariantUVE::MakeDefaultUVE(VariantTypeUVE::PackedInt32Array);
+    VariantUVE packed = VariantUVE::MakeDefaultUVE(VariantTypeUVE::Int32Array);
     *packed.TryGetMutableUVE<std::vector<std::int32_t>>() = {1, 2, 300};
     result = convert(packed, VariantTypeUVE::Array);
     EXPECT_TRUE(result.lossless);
     EXPECT_EQ(result.value.TryGetUVE<std::vector<VariantUVE>>()->size(), 3U);
-    result = convert(packed, VariantTypeUVE::PackedByteArray);
+    result = convert(packed, VariantTypeUVE::ByteArray);
     EXPECT_FALSE(result.lossless);
 
     // Some pairs have no meaningful conversion at all, and say so instead of inventing one.
-    EXPECT_FALSE(TryConvertVariantUVE(VariantUVE::MakeDefaultUVE(VariantTypeUVE::Color), VariantTypeUVE::NodePath)
+    EXPECT_FALSE(TryConvertVariantUVE(VariantUVE::MakeDefaultUVE(VariantTypeUVE::Color), VariantTypeUVE::ObjectPath)
                      .has_value());
     EXPECT_FALSE(TryConvertVariantUVE(VariantUVE::MakeDefaultUVE(VariantTypeUVE::Dictionary), VariantTypeUVE::Int)
                      .has_value());
