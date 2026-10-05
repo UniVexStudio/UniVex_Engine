@@ -207,6 +207,7 @@ void MeshVisibilitySetUVE::ClearUVE() noexcept {
     regionCulledEntities = 0U;
     occlusionCulledEntities = 0U;
     rangeCulledEntities = 0U;
+    layerCulledEntities = 0U;
     invalidAssetReferences = 0U;
     pendingAssetLoads = 0U;
     failedAssetLoads = 0U;

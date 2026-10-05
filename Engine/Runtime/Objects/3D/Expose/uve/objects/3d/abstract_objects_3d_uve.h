@@ -2,9 +2,11 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string_view>
 
 #include "uve/component/entity_uve.h"
+#include "uve/component/render_instance_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
 #include "uve/math/aabb_uve.h"
 
@@ -67,5 +69,18 @@ void ApplyLightEmitter3DBaseUVE(IEntityManagerUVE& entityManager, EntityUVE enti
 /// non-finite bounds: left unchanged.
 void ExpandSurfaceInstance3DCullBoundsUVE(const SurfaceInstanceComponentUVE& surface,
                                           Math::AabbUVE& bounds) noexcept;
+
+// =================================================================================================
+// What RenderInstance3D means to the draw list.
+// =================================================================================================
+
+/// True when this instance's layers overlap `viewLayerMask`. A view mask of 0, or an instance on
+/// no layers, is off the view. An entity with no RenderInstance component is treated as layer 1.
+[[nodiscard]] bool IsRenderInstance3DOnViewLayersUVE(std::uint32_t renderLayers,
+                                                     std::uint32_t viewLayerMask) noexcept;
+
+/// Adds `sortingOffset` to the frustum-derived depth. Non-finite offset leaves `baseDepth`
+/// unchanged so a broken offset cannot poison the queue.
+[[nodiscard]] float ApplyRenderInstance3DSortingOffsetUVE(float baseDepth, float sortingOffset) noexcept;
 
 } // namespace UVE::Scene

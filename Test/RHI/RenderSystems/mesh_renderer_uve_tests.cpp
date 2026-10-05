@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <limits>
 #include <numbers>
 #include <string>
@@ -26,6 +27,7 @@
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
+#include "uve/component/render_instance_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
 #include "uve/objects/3d/abstract_objects_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
@@ -1894,6 +1896,112 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_MissingMaterialOverrideDoesNot
     meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
     EXPECT_TRUE(visibilitySet.candidates.empty());
     EXPECT_GE(visibilitySet.invalidAssetReferences, 1U);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_OffLayerMeshesAreCulledInTheirOwnCounter) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_ri_layer.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_ri_layer.uvmat");
+    const Scene::EntityUVE onLayer =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    const Scene::EntityUVE offLayer =
+        MakeMeshEntityUVE(Math::Vector3UVE{1.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Scene::RenderInstanceComponentUVE layerTwo{};
+    layerTwo.renderLayers = 0x2U;
+    entityManager.AddComponentUVE<Scene::RenderInstanceComponentUVE>(onLayer, layerTwo);
+    Scene::RenderInstanceComponentUVE layerOne{};
+    layerOne.renderLayers = 0x1U;
+    entityManager.AddComponentUVE<Scene::RenderInstanceComponentUVE>(offLayer, layerOne);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.viewLayerMask = 0x2U;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(visibilitySet.candidates[0].entity, onLayer);
+    EXPECT_EQ(visibilitySet.candidates[0].renderLayers, 0x2U);
+    EXPECT_EQ(visibilitySet.layerCulledEntities, 1U);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_DefaultLayerOneDrawsOnAnUnfilteredView) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_ri_default.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_ri_default.uvmat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(visibilitySet.candidates[0].renderLayers, 1U);
+    EXPECT_EQ(visibilitySet.layerCulledEntities, 0U);
+
+    visibilitySet.viewLayerMask = 0x2U;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    EXPECT_TRUE(visibilitySet.candidates.empty());
+    EXPECT_EQ(visibilitySet.layerCulledEntities, 1U);
+}
+
+TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_SortingOffsetPushesTransparentDepthBack) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/true);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_ri_sort.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_ri_sort.uvmat");
+    const Scene::EntityUVE plain =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    const Scene::EntityUVE pushed =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Scene::RenderInstanceComponentUVE offset{};
+    offset.sortingOffset = 4.0F;
+    entityManager.AddComponentUVE<Scene::RenderInstanceComponentUVE>(pushed, offset);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 2U);
+    RenderQueueUVE queue;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), queue);
+    ASSERT_EQ(queue.transparentItems.size(), 2U);
+    for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
+        if (candidate.entity == plain) {
+            EXPECT_FLOAT_EQ(candidate.sortingOffset, 0.0F);
+        }
+        if (candidate.entity == pushed) {
+            EXPECT_FLOAT_EQ(candidate.sortingOffset, 4.0F);
+        }
+    }
+    EXPECT_NEAR(std::fabs(queue.transparentItems[0].sortDepth - queue.transparentItems[1].sortDepth), 4.0F,
+                1.0e-3F);
+}
+
+TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_SortByOriginUsesTheObjectOriginNotTheBoundsCenter) {
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>([](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+        mesh.localBounds = Math::AabbUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.5F, 0.5F, 4.0F}};
+        return true;
+    });
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>([](const std::filesystem::path&,
+                                                              Asset::MaterialAssetUVE& material) {
+        material.isTransparent = false;
+        return true;
+    });
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_ri_origin.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_ri_origin.uvmat");
+    const Scene::EntityUVE byCenter =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    const Scene::EntityUVE byOrigin =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Scene::RenderInstanceComponentUVE originSort{};
+    originSort.sortingUseAabbCenter = false;
+    entityManager.AddComponentUVE<Scene::RenderInstanceComponentUVE>(byOrigin, originSort);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    RenderQueueUVE queue;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), queue);
+    ASSERT_EQ(queue.opaqueItems.size(), 2U);
+    EXPECT_NE(queue.opaqueItems[0].sortDepth, queue.opaqueItems[1].sortDepth)
+        << "bounds centre and origin must produce different depths on an offset AABB";
+    static_cast<void>(byCenter);
 }
 
 } // namespace

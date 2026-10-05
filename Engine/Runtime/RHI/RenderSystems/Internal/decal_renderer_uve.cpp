@@ -202,19 +202,14 @@ void BuildBoxFaceQuadUVE(const Math::AabbUVE& bounds, const std::size_t faceInde
 /// Builds this frame's receiver list out of the visibility set. Entities without a render instance
 /// component carry the documented layer-1 default rather than being skipped, which is what makes a
 /// decal whose cullMask includes layer 1 project onto ordinary scene meshes.
-void BuildReceiversUVE(Scene::IEntityManagerUVE& entityManager, const MeshVisibilitySetUVE& visibilitySet,
-                       std::vector<DecalReceiverUVE>& outReceivers) {
+void BuildReceiversUVE(const MeshVisibilitySetUVE& visibilitySet, std::vector<DecalReceiverUVE>& outReceivers) {
     outReceivers.clear();
     outReceivers.reserve(visibilitySet.candidates.size());
     for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
         DecalReceiverUVE receiver{};
         receiver.entity = candidate.entity;
         receiver.worldBounds = candidate.placement.worldBounds;
-        if (candidate.entity != Scene::kInvalidEntityUVE &&
-            entityManager.HasComponentUVE<Scene::RenderInstanceComponentUVE>(candidate.entity)) {
-            receiver.renderLayers =
-                entityManager.GetComponentUVE<Scene::RenderInstanceComponentUVE>(candidate.entity).renderLayers;
-        }
+        receiver.renderLayers = candidate.renderLayers;
         outReceivers.push_back(receiver);
     }
 }
@@ -279,7 +274,7 @@ void DecalRendererUVE::BuildDrawListUVE(Scene::IEntityManagerUVE& entityManager,
     outDrawList.ClearUVE();
 
     std::vector<DecalReceiverUVE> receivers;
-    BuildReceiversUVE(entityManager, visibilitySet, receivers);
+    BuildReceiversUVE(visibilitySet, receivers);
 
     // Built lazily, on the first decal that gets far enough to need a material, and shared by every
     // decal after it.
