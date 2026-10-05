@@ -2,11 +2,13 @@
 
 #pragma once
 
+#include <optional>
 #include <string_view>
 
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/component/rigid_3d_component_uve.h"
+#include "uve/math/vector3_uve.h"
 
 namespace UVE::Scene {
 
@@ -41,5 +43,20 @@ struct Rigid3DObjectDefinitionUVE final {
 /// Hierarchy/Name) through EnsureObject3DBaselineUVE - this kind is Object3D plus its recipe.
 void ApplyRigid3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                        const Rigid3DObjectDefinitionUVE& value);
+
+class Rigid3DUVE final {
+public:
+    [[nodiscard]] static bool IsDynamicUVE(const Rigid3DComponentUVE& rigidBody) noexcept;
+
+    [[nodiscard]] static float InverseMassUVE(const Rigid3DComponentUVE& rigidBody) noexcept;
+
+    [[nodiscard]] static std::optional<Math::Vector3UVE> IntegrateLinearVelocityUVE(
+        const Math::Vector3UVE& velocity, const Math::Vector3UVE& gravity, float gravityScale,
+        float linearDamp, float deltaTimeSeconds) noexcept;
+
+    [[nodiscard]] static Math::Vector3UVE DeflectVelocityUVE(const Math::Vector3UVE& velocity,
+                                                             const Math::Vector3UVE& towardOtherBody,
+                                                             float friction, float restitution) noexcept;
+};
 
 } // namespace UVE::Scene

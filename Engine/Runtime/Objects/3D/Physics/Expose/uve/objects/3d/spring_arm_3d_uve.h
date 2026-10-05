@@ -87,4 +87,19 @@ inline constexpr float kSpringArm3DCompletionToleranceUVE = 1.0e-3F;
 [[nodiscard]] float ResolveSpringArm3DLengthUVE(float currentLength, float targetLength,
                                                 float smoothing, float dtSeconds) noexcept;
 
+class SpringArm3DUVE final {
+public:
+    static constexpr Math::Vector3UVE kArmAxisUVE{0.0F, 0.0F, 1.0F};
+
+    [[nodiscard]] static bool IsCastingUVE(const SpringArm3DComponentUVE& springArm) noexcept;
+
+    [[nodiscard]] static Math::Vector3UVE ResolveWorldAxisUVE(const Math::QuaternionUVE& worldRotation) noexcept;
+
+    [[nodiscard]] static float ResolveTargetUVE(std::optional<float> hitDistance, float margin,
+                                                float armLength) noexcept;
+
+    [[nodiscard]] static float ResolveLengthUVE(float currentLength, float targetLength, float smoothing,
+                                                float dtSeconds) noexcept;
+};
+
 } // namespace UVE::Scene

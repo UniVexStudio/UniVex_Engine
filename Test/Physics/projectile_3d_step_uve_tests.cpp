@@ -211,6 +211,40 @@ TEST_F(Projectile3DStepUVETest, TheMaskDecidesWhichLayersCanBeHit) {
     EXPECT_FALSE(StepUVE(blindEntity, kContactStep).hasHit);
 }
 
+TEST_F(Projectile3DStepUVETest, NeverHitsTheIgnoreEntity) {
+    Projectile3DComponentUVE projectile;
+    projectile.velocity = Math::Vector3UVE{6.0F, 0.0F, 0.0F};
+    projectile.radius = 0.1F;
+    const EntityUVE owner = MakeColliderUVE({1.0F, 0.0F, 0.0F});
+    projectile.ignoreEntity = owner;
+    const EntityUVE entity = MakeProjectileUVE({}, projectile);
+
+    const Projectile3DStepResultUVE result = StepUVE(entity, kContactStep);
+
+    EXPECT_FALSE(result.hasHit);
+    EXPECT_TRUE(result.IsSteppedUVE());
+    EXPECT_NEAR(LocalPositionUVE(entity).x, 0.6F, kEpsilon);
+    EXPECT_TRUE(ComponentUVE(entity).active);
+}
+
+TEST_F(Projectile3DStepUVETest, HitsTheWallPastTheIgnoredOwner) {
+    Projectile3DComponentUVE projectile;
+    projectile.velocity = Math::Vector3UVE{6.0F, 0.0F, 0.0F};
+    projectile.radius = 0.1F;
+    const EntityUVE owner = MakeColliderUVE({0.3F, 0.0F, 0.0F}, {0.1F, 0.5F, 0.5F});
+    const EntityUVE wall = MakeColliderUVE({1.0F, 0.0F, 0.0F});
+    projectile.ignoreEntity = owner;
+    const EntityUVE entity = MakeProjectileUVE({}, projectile);
+
+    const Projectile3DStepResultUVE result = StepUVE(entity, kContactStep);
+
+    EXPECT_TRUE(result.StoppedUVE());
+    EXPECT_TRUE(result.hasHit);
+    EXPECT_EQ(result.hitEntity, wall);
+    EXPECT_NE(result.hitEntity, owner);
+    EXPECT_NEAR(LocalPositionUVE(entity).x, 0.4F, kEpsilon);
+}
+
 TEST_F(Projectile3DStepUVETest, NeverHitsTheEntityItIsAttachedTo) {
     Projectile3DComponentUVE projectile;
     projectile.velocity = Math::Vector3UVE{6.0F, 0.0F, 0.0F};

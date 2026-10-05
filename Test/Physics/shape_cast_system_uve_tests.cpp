@@ -156,6 +156,23 @@ TEST_F(ShapeCastSystemUVETest, SphereCastUVE_LayerAndIgnoreFiltersAreApplied) {
     EXPECT_NE(hit->entity, ignored);
 }
 
+TEST_F(ShapeCastSystemUVETest, SphereCastUVE_AlsoIgnoreSkipsASecondEntity) {
+    const Scene::EntityUVE first =
+        MakeColliderEntityUVE(Math::Vector3UVE{}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    const Scene::EntityUVE second =
+        MakeColliderEntityUVE(Math::Vector3UVE{4.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+
+    SphereCastQueryUVE query = MakeXAxisQueryUVE(-10.0F, 0.5F);
+    query.ignoreEntity = first;
+    query.alsoIgnoreEntity = second;
+    EXPECT_FALSE(ShapeCastSystemUVE::SphereCastUVE(entityManager, query).has_value());
+
+    query.alsoIgnoreEntity = {};
+    const std::optional<SphereCastHitUVE> hit = ShapeCastSystemUVE::SphereCastUVE(entityManager, query);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, second);
+}
+
 TEST_F(ShapeCastSystemUVETest, BoxCastUVE_ExpandsTargetByMoverHalfExtentsAndReportsCenter) {
     const Scene::EntityUVE entity = MakeColliderEntityUVE(Math::Vector3UVE{}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
     BoxCastQueryUVE query;

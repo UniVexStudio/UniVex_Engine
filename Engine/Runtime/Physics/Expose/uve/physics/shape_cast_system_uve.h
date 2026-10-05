@@ -25,6 +25,7 @@ struct SphereCastQueryUVE final {
     float maxDistance = 0.0F;
     std::uint32_t layerMask = 0xFFFFFFFFU;
     Scene::EntityUVE ignoreEntity{};
+    Scene::EntityUVE alsoIgnoreEntity{};
 };
 
 struct BoxCastQueryUVE final {

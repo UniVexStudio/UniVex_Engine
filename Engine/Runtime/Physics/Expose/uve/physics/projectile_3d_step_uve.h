@@ -127,12 +127,11 @@ struct Projectile3DHitEventUVE final {
 ///      accumulates, exactly as the pre-sweep engine-core tick documented);
 ///   3. sweeps the sphere of `radius` along this step's motion - in *world* space, from the
 ///      world position along the world-normalized velocity, because that is the space colliders
-///      live in. `collisionMask` selects the obstacle layers and the projectile's own entity is
-///      ignored;
-///   4. resolves the contact through the component's authored policy: Stop halts at the contact,
-///      Bounce reflects through `Scene::ResolveProjectile3DBounceVelocityUVE` and leaves the
-///      sphere one contact-skin off the surface so the next sweep starts outside it. A bounce
-///      that leaves no motion at all is a stop;
+///      live in. `collisionMask` selects the obstacle layers; the projectile's own entity and
+///      `ignoreEntity` are skipped;
+///   4. resolves the contact through `Scene::Projectile3DUVE`: Stop halts at the contact, Bounce
+///      reflects and leaves the sphere one contact-skin off the surface so the next sweep starts
+///      outside it. A bounce that leaves no motion at all is a stop;
 ///   5. counts `remainingLifetime` down and clears `active` when it reaches zero.
 ///
 /// A sweep that starts already overlapping an obstacle reports distance zero and no normal. That

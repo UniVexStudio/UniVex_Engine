@@ -23,14 +23,6 @@ namespace {
 /// which is the same job the character mover's safe margin does for a body against a floor.
 constexpr float kProjectile3DBounceSkinUVE = 1.0e-3F;
 
-/// True for a vector long enough and finite enough to be a direction. The threshold is squared
-/// length, so it is a length of about 1e-6 - far below any authored metre value and far above the
-/// noise a denormal would bring.
-[[nodiscard]] bool IsUsableDirectionUVE(const Math::Vector3UVE& value) noexcept {
-    const float lengthSquared = Math::LengthSquaredUVE(value);
-    return Math::IsFiniteUVE(value) && std::isfinite(lengthSquared) && lengthSquared > 1.0e-12F;
-}
-
 [[nodiscard]] Projectile3DStepResultUVE RefuseUVE(const Projectile3DStepCodeUVE code,
                                                          const Scene::Projectile3DComponentUVE* const projectile) {
     Projectile3DStepResultUVE result;
@@ -69,27 +61,25 @@ Projectile3DStepResultUVE StepProjectile3DUVE(Scene::IEntityManagerUVE& entityMa
     if (!Scene::IsProjectile3DObjectComponentValidUVE(projectile)) {
         return RefuseUVE(Projectile3DStepCodeUVE::InvalidComponent, &projectile);
     }
-    if (!projectile.active) {
+    if (!Scene::Projectile3DUVE::IsFlyingUVE(projectile)) {
         return RefuseUVE(Projectile3DStepCodeUVE::Disabled, &projectile);
     }
 
     // ---- Integrate, then describe the step's motion in the space the colliders live in ----------
-    const Math::Vector3UVE velocity =
-        projectile.velocity + projectile.acceleration * deltaTimeSeconds;
+    const Math::Vector3UVE velocity = Scene::Projectile3DUVE::IntegrateVelocityUVE(
+        projectile.velocity, projectile.acceleration, deltaTimeSeconds);
     if (!Scene::IsFinite3DObjectVectorUVE(velocity)) {
         return RefuseUVE(Projectile3DStepCodeUVE::InvalidComponent, &projectile);
     }
 
     const Scene::WorldTransformComponentUVE& worldTransform =
         entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
-    // A degenerate rotation would send the projectile along a garbage axis; fall back to the
-    // identity rather than refuse a body whose pose the scene graph could not resolve, the same
-    // way the spring arm and the hitbox sync read it.
+    const Math::Vector3UVE worldVelocity =
+        Scene::Projectile3DUVE::ResolveWorldVelocityUVE(velocity, worldTransform.worldRotation);
     Math::QuaternionUVE worldRotation{};
     if (!Math::TryNormalizeUVE(worldTransform.worldRotation, worldRotation)) {
         worldRotation = {};
     }
-    const Math::Vector3UVE worldVelocity = Math::RotateVectorUVE(worldRotation, velocity);
     const float speed = Math::LengthUVE(worldVelocity);
     const float stepDistance = speed * deltaTimeSeconds;
     if (!Math::IsFiniteUVE(worldTransform.worldPosition) || !Math::IsFiniteUVE(worldVelocity) ||
@@ -112,12 +102,13 @@ Projectile3DStepResultUVE StepProjectile3DUVE(Scene::IEntityManagerUVE& entityMa
         query.maxDistance = stepDistance;
         query.layerMask = projectile.collisionMask;
         query.ignoreEntity = entity;
+        query.alsoIgnoreEntity = projectile.ignoreEntity;
         contact = ShapeCastSystemUVE::SphereCastUVE(entityManager, query);
         // An overlap the step *begins* inside reports distance zero and no normal: there is no
         // direction to resolve and no surface to have touched, so it is not a contact and the
         // projectile keeps its motion. A projectile fired from inside a launcher volume, or one
         // that has just bounced off the surface it is standing on, is allowed to leave.
-        if (contact.has_value() && !IsUsableDirectionUVE(contact->normal)) {
+        if (contact.has_value() && !Scene::Projectile3DUVE::IsUsableMotionUVE(contact->normal)) {
             contact.reset();
         }
     }
@@ -126,7 +117,6 @@ Projectile3DStepResultUVE StepProjectile3DUVE(Scene::IEntityManagerUVE& entityMa
     Scene::TransformComponentUVE localTransform =
         entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
     Math::Vector3UVE committedVelocity = velocity;
-    bool expired = false;
 
     if (!contact.has_value()) {
         localTransform.localPosition += committedVelocity * deltaTimeSeconds;
@@ -157,27 +147,15 @@ Projectile3DStepResultUVE StepProjectile3DUVE(Scene::IEntityManagerUVE& entityMa
         result.impactSpeed = std::max(0.0F, -Math::DotUVE(worldVelocity, unitNormal));
         result.movedDistance = stepDistance * fraction;
 
-        if (projectile.hitPolicy == Scene::Projectile3DHitPolicyUVE::Bounce) {
-            const Math::Vector3UVE reflected = Scene::ResolveProjectile3DBounceVelocityUVE(
-                committedVelocity, localNormal, projectile.restitution, projectile.friction);
-            if (IsUsableDirectionUVE(reflected)) {
-                committedVelocity = reflected;
-                // Leave the surface by the contact skin, along the surface normal, so the next
-                // sweep starts outside the obstacle instead of inside it.
-                localTransform.localPosition += localNormal * kProjectile3DBounceSkinUVE;
-                result.bounced = true;
-                result.bounceCount = projectile.bounceCount + 1U;
-                result.code = Projectile3DStepCodeUVE::Bounced;
-            } else {
-                // A bounce that leaves nothing to fly with is a stop: a projectile resting on a
-                // wall is not a projectile flying, and hovering there until its lifetime ends
-                // would only hide the decision.
-                committedVelocity = {};
-                result.stoppedOnHit = true;
-                result.code = Projectile3DStepCodeUVE::Stopped;
-            }
+        const Scene::Projectile3DUVE::ContactMotionUVE motion = Scene::Projectile3DUVE::ResolveContactUVE(
+            projectile, committedVelocity, localNormal);
+        committedVelocity = motion.velocity;
+        if (motion.bounced) {
+            localTransform.localPosition += localNormal * kProjectile3DBounceSkinUVE;
+            result.bounced = true;
+            result.bounceCount = projectile.bounceCount + 1U;
+            result.code = Projectile3DStepCodeUVE::Bounced;
         } else {
-            committedVelocity = {};
             result.stoppedOnHit = true;
             result.code = Projectile3DStepCodeUVE::Stopped;
         }
@@ -185,10 +163,11 @@ Projectile3DStepResultUVE StepProjectile3DUVE(Scene::IEntityManagerUVE& entityMa
     }
 
     // ---- Lifetime, then the one write-back -------------------------------------------------------
-    float remainingLifetime = projectile.remainingLifetime - deltaTimeSeconds;
-    if (remainingLifetime <= 0.0F) {
+    float remainingLifetime =
+        Scene::Projectile3DUVE::TickLifetimeUVE(projectile.remainingLifetime, deltaTimeSeconds);
+    const bool expired = Scene::Projectile3DUVE::HasExpiredUVE(remainingLifetime);
+    if (expired) {
         remainingLifetime = 0.0F;
-        expired = true;
     }
     if (expired && !result.stoppedOnHit) {
         result.code = Projectile3DStepCodeUVE::Expired;
@@ -201,13 +180,8 @@ Projectile3DStepResultUVE StepProjectile3DUVE(Scene::IEntityManagerUVE& entityMa
     live.active = !expired && !result.stoppedOnHit;
     live.bounceCount = result.bounceCount;
     if (result.hasHit) {
-        // Sticky by contract: the last resolved contact is what gameplay reads after the fact, so
-        // it is written here and left alone by every step that does not resolve a contact.
-        live.hit = true;
-        live.hitEntity = result.hitEntity;
-        live.hitPosition = result.hitPosition;
-        live.hitNormal = result.hitNormal;
-        live.impactSpeed = result.impactSpeed;
+        Scene::Projectile3DUVE::RecordHitUVE(live, result.hitEntity, result.hitPosition, result.hitNormal,
+                                             result.impactSpeed);
     }
 
     result.velocity = committedVelocity;

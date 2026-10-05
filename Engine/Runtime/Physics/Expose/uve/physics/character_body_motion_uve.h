@@ -21,8 +21,9 @@ struct CharacterMotionInputUVE final {
 /// steering (full on the floor or while floating, Air Control of it in the air), jumping (with the
 /// Jump Buffer and Coyote Time windows) and gravity. Updates `c.velocity`, the buffer and the
 /// coyote clock; returns true when it jumped this step. `gravityY` is the world's gravity along Y,
-/// negative for down. Without built-in movement only gravity touches the velocity, so a script's
-/// velocity is kept as it was set.
+/// negative for down; jump, gravity and the floor/ceiling cancels are applied along the body's
+/// own `upDirection` (world +Y by default). Without built-in movement only gravity touches the
+/// velocity, so a script's velocity is kept as it was set.
 ///
 /// Kept apart from the move itself so the feel of the controls can be tested exactly, step by
 /// step, with no world and no clock.
@@ -36,7 +37,7 @@ struct CharacterMoveOutcomeUVE final {
     bool hitCeiling = false;
 };
 
-/// The part of a step after the move: records the floor and ceiling, stops the upward velocity at
+/// The part of a step after the move: records the floor and ceiling, stops the along-up velocity at
 /// a ceiling (and all of it when Slide On Ceiling is off), stops the fall on the floor, and runs
 /// the coyote clock while off the floor.
 void FinishCharacterStepUVE(Scene::CharacterControllerComponentUVE& c, const CharacterMoveOutcomeUVE& outcome,

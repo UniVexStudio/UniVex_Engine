@@ -10,6 +10,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/objects/3d/abstract_physics_objects_3d_uve.h"
+#include "uve/objects/3d/collider_3d_uve.h"
 #include "uve/objects/3d/kinematic_3d_uve.h"
 #include "uve/physics/character_controller_uve.h"
 
@@ -63,24 +64,7 @@ void ClearBodyVelocityUVE(Scene::IEntityManagerUVE& entityManager, const Scene::
 } // namespace
 
 float KinematicEaseBlendUVE(const float interpolation, const float deltaTimeSeconds) noexcept {
-    // Zero means the gap never closes - the body keeps whatever velocity it already has, which for
-    // every body that has not been given one is standing still. Useful as an explicit "do not
-    // ease, do not start" without deleting the body, and the only value below 1 that does not have
-    // to be a curve.
-    if (!std::isfinite(interpolation) || interpolation <= 0.0F) {
-        return 0.0F;
-    }
-    // 1 is the default and the crisp case: the body is at its target speed this step, no curve at
-    // all. Checked before the power so the common path never calls into the maths library.
-    if (interpolation >= 1.0F) {
-        return 1.0F;
-    }
-    if (!std::isfinite(deltaTimeSeconds) || deltaTimeSeconds <= 0.0F) {
-        return 0.0F;
-    }
-    // A share of the *remaining gap per second*, so the curve is a property of the author's value
-    // and not of the frame rate the game happens to run at.
-    return 1.0F - std::pow(1.0F - interpolation, deltaTimeSeconds);
+    return Scene::Kinematic3DUVE::EaseBlendUVE(interpolation, deltaTimeSeconds);
 }
 
 KinematicBodyPushPolicyUVE DefaultKinematicBodyPushPolicyUVE() noexcept {
@@ -135,42 +119,31 @@ KinematicBodyStepResultUVE StepKinematicBodyUVE(Scene::IEntityManagerUVE& entity
         const Scene::ColliderComponentUVE& collider =
             entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(entity);
         const Math::Vector3UVE halfExtents = Scene::GetColliderLocalHalfExtentsUVE(collider);
-        if (!Scene::IsColliderComponentValidUVE(collider) || !IsUsableUVE(halfExtents) ||
+        if (!Scene::Collider3DUVE::IsParticipatingUVE(collider) || !IsUsableUVE(halfExtents) ||
             halfExtents.x <= 0.0F || halfExtents.y <= 0.0F || halfExtents.z <= 0.0F) {
             result.code = KinematicBodyStepCodeUVE::InvalidWorld;
             return result;
         }
     }
 
-    // An authored target the mover cannot honour is a body standing still, not a body moving at
-    // whatever the nan was in. The component's own validator rejects it on save and on the
-    // Inspector; a script can still write one at runtime, and this is where that stops.
     result.targetVelocity = IsUsableUVE(kinematic.targetVelocity) ? kinematic.targetVelocity
                                                                   : Math::Vector3UVE{};
 
-    // ---- Is this body moving at all? ------------------------------------------------------------
-    // Two separate switches, read in one place because they mean the same thing to the world: the
-    // component's own `active` flag, and the object's participation - a body whose object is
-    // stopped and whose disable mode keeps it out of the simulation, or keeps it as an immovable
-    // obstacle, does not move. Both leave it exactly where it is.
-    if (!kinematic.active || !Scene::IsPhysicsObjectSimulatedUVE(entityManager, entity)) {
+    if (!Scene::Kinematic3DUVE::IsDrivingUVE(kinematic) ||
+        !Scene::IsPhysicsObjectSimulatedUVE(entityManager, entity)) {
         ClearBodyVelocityUVE(entityManager, entity);
         result.code = KinematicBodyStepCodeUVE::Idle;
         return result;
     }
 
-    // ---- Ease toward the target ----------------------------------------------------------------
+    const Scene::WorldTransformComponentUVE& worldTransform =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    const Math::Vector3UVE worldTarget =
+        Scene::Kinematic3DUVE::ResolveWorldTargetUVE(result.targetVelocity, worldTransform.worldRotation);
+
     Scene::Rigid3DComponentUVE& body = entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity);
-    Math::Vector3UVE velocity = IsUsableUVE(body.velocity) ? body.velocity : Math::Vector3UVE{};
-    const float blend = KinematicEaseBlendUVE(kinematic.interpolation, deltaTimeSeconds);
-    if (blend >= 1.0F) {
-        velocity = result.targetVelocity;
-    } else if (blend > 0.0F) {
-        velocity += (result.targetVelocity - velocity) * blend;
-    }
-    if (!IsUsableUVE(velocity)) {
-        velocity = Math::Vector3UVE{};
-    }
+    Math::Vector3UVE velocity = Scene::Kinematic3DUVE::EaseVelocityUVE(
+        body.velocity, worldTarget, kinematic.interpolation, deltaTimeSeconds);
     result.velocity = velocity;
 
     // ---- Move, through the world ---------------------------------------------------------------

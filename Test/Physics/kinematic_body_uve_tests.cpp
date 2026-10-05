@@ -33,6 +33,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/events/event_system_uve.h"
+#include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/abstract_physics_objects_3d_uve.h"
@@ -177,6 +178,38 @@ TEST_F(KinematicBodyUVETest, TheBodyIsAtItsTargetSpeedOnTheVeryFirstStep) {
     ASSERT_TRUE(report.IsSteppedUVE());
     EXPECT_NEAR(report.appliedMotion.x, 2.0F * kDeltaTimeUVE, 1.0e-6F);
     EXPECT_NEAR(PositionUVE(platform).x, 2.0F * kDeltaTimeUVE, 1.0e-6F);
+}
+
+TEST_F(KinematicBodyUVETest, TheAuthoredTargetIsTakenInLocalAxes) {
+    const Scene::EntityUVE platform = MakeKinematicUVE({0.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F},
+                                                       Kinematic3DComponentUVE{{1.0F, 0.0F, 0.0F}, 1.0F, true});
+    Math::QuaternionUVE quarterTurn{};
+    ASSERT_TRUE(Math::TryMakeAxisAngleUVE({0.0F, 1.0F, 0.0F}, 1.5707963F, quarterTurn));
+    Scene::TransformComponentUVE transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(platform);
+    transform.localRotation = quarterTurn;
+    sceneGraph.SetLocalTransformUVE(entityManager, platform, transform);
+    sceneGraph.UpdateUVE(entityManager);
+
+    const KinematicBodyStepResultUVE report = StepUVE(platform);
+    ASSERT_TRUE(report.IsSteppedUVE());
+    const Math::Vector3UVE expected = Math::RotateVectorUVE(quarterTurn, Math::Vector3UVE{1.0F, 0.0F, 0.0F}) *
+                                      kDeltaTimeUVE;
+    EXPECT_NEAR(report.appliedMotion.x, expected.x, 1.0e-4F);
+    EXPECT_NEAR(report.appliedMotion.y, expected.y, 1.0e-4F);
+    EXPECT_NEAR(report.appliedMotion.z, expected.z, 1.0e-4F);
+    EXPECT_NEAR(PositionUVE(platform).x, expected.x, 1.0e-4F);
+    EXPECT_NEAR(PositionUVE(platform).z, expected.z, 1.0e-4F);
+}
+
+TEST_F(KinematicBodyUVETest, ADisabledColliderIsNotAWorldTheMoverCanDrive) {
+    const Scene::EntityUVE platform = MakeKinematicUVE({1.0F, 2.0F, 3.0F}, {0.5F, 0.5F, 0.5F},
+                                                       Kinematic3DComponentUVE{{1.0F, 0.0F, 0.0F}, 1.0F, true});
+    entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(platform).disabled = true;
+    const KinematicBodyStepResultUVE report = StepUVE(platform);
+    EXPECT_EQ(report.code, KinematicBodyStepCodeUVE::InvalidWorld);
+    EXPECT_NEAR(PositionUVE(platform).x, 1.0F, 1.0e-6F);
+    EXPECT_NEAR(PositionUVE(platform).y, 2.0F, 1.0e-6F);
+    EXPECT_NEAR(PositionUVE(platform).z, 3.0F, 1.0e-6F);
 }
 
 TEST_F(KinematicBodyUVETest, TheBodyCanBeAuthoredToMoveInAnyDirection) {
