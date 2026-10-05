@@ -177,6 +177,18 @@ float ApplySurfaceInstance3DOverlaySortBiasUVE(const float baseDepth) noexcept {
     return baseDepth - 0.001F;
 }
 
+float SurfaceInstance3DLodDistanceUVE(const SurfaceInstanceComponentUVE& surface,
+                                      const float cameraDistance) noexcept {
+    if (!std::isfinite(cameraDistance)) {
+        return cameraDistance;
+    }
+    const float bias = surface.lodBias;
+    if (!std::isfinite(bias) || bias <= 0.0F || bias == 1.0F) {
+        return cameraDistance;
+    }
+    return cameraDistance / bias;
+}
+
 bool IsRenderInstance3DOnViewLayersUVE(const std::uint32_t renderLayers,
                                        const std::uint32_t viewLayerMask) noexcept {
     return (renderLayers & viewLayerMask) != 0U;

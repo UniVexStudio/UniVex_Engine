@@ -684,6 +684,17 @@ TEST_F(Object3DDefinitionsUVETest, RenderInstanceFamilyComponentsRejectValuesThe
     EXPECT_TRUE(SurfaceInstance3DHasOverlayUVE(overlay));
     EXPECT_FLOAT_EQ(ApplySurfaceInstance3DOverlaySortBiasUVE(4.0F), 3.999F);
     EXPECT_TRUE(std::isnan(ApplySurfaceInstance3DOverlaySortBiasUVE(std::numeric_limits<float>::quiet_NaN())));
+    EXPECT_FLOAT_EQ(SurfaceInstance3DLodDistanceUVE(SurfaceInstanceComponentUVE{}, 40.0F), 40.0F);
+    SurfaceInstanceComponentUVE keepDetail{};
+    keepDetail.lodBias = 2.0F;
+    EXPECT_FLOAT_EQ(SurfaceInstance3DLodDistanceUVE(keepDetail, 40.0F), 20.0F);
+    SurfaceInstanceComponentUVE dropSooner{};
+    dropSooner.lodBias = 0.5F;
+    EXPECT_FLOAT_EQ(SurfaceInstance3DLodDistanceUVE(dropSooner, 40.0F), 80.0F);
+    dropSooner.lodBias = 0.0F;
+    EXPECT_FLOAT_EQ(SurfaceInstance3DLodDistanceUVE(dropSooner, 40.0F), 40.0F);
+    EXPECT_TRUE(std::isnan(
+        SurfaceInstance3DLodDistanceUVE(SurfaceInstanceComponentUVE{}, std::numeric_limits<float>::quiet_NaN())));
 
     EXPECT_TRUE(IsRenderInstance3DOnViewLayersUVE(0x00000001U, 0xFFFFFFFFU));
     EXPECT_TRUE(IsRenderInstance3DOnViewLayersUVE(0x00000002U, 0x00000002U));

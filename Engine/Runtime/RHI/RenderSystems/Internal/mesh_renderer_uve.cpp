@@ -332,7 +332,11 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                     entityManager.GetComponentUVE<Scene::LodGroup3DComponentUVE>(entity);
                 const Math::Vector3UVE toCamera =
                     worldTransform.worldPosition - outVisibilitySet.cameraWorldPosition;
-                Scene::ResolveLodGroup3DLevelUVE(lodGroup, Math::LengthUVE(toCamera));
+                float lodDistance = Math::LengthUVE(toCamera);
+                if (surface != nullptr) {
+                    lodDistance = Scene::SurfaceInstance3DLodDistanceUVE(*surface, lodDistance);
+                }
+                Scene::ResolveLodGroup3DLevelUVE(lodGroup, lodDistance);
                 if (lodGroup.culledByDistance) {
                     ++outVisibilitySet.distanceCulledEntities;
                     return;
