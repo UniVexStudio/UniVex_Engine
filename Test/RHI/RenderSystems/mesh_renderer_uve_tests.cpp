@@ -1455,6 +1455,33 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_LodGroupDrawsTheMeshOfTheResol
     EXPECT_EQ(visibilitySet.placementCacheMisses, 1U);
 }
 
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_LodBiasKeepsDetailFurtherAndDropsItSooner) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodbias.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodbias.uvmat");
+    // Default chain last threshold is 120 m. 200 m is past it; bias 2 makes it look like 100 m.
+    const Scene::EntityUVE keep = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -200.0F}, meshGuid, materialGuid);
+    const Scene::EntityUVE drop = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -80.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    entityManager.AddComponentUVE<Scene::LodGroup3DComponentUVE>(keep, Scene::LodGroup3DComponentUVE{});
+    entityManager.AddComponentUVE<Scene::LodGroup3DComponentUVE>(drop, Scene::LodGroup3DComponentUVE{});
+    Scene::SurfaceInstanceComponentUVE keepSurface{};
+    keepSurface.lodBias = 2.0F;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(keep, keepSurface);
+    Scene::SurfaceInstanceComponentUVE dropSurface{};
+    dropSurface.lodBias = 0.5F;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(drop, dropSurface);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    EXPECT_EQ(visibilitySet.distanceCulledEntities, 1U);
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(visibilitySet.candidates[0U].entity, keep);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::LodGroup3DComponentUVE>(keep).currentLevel, 3U);
+}
+
 TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_TheCameraPositionIsWhatDistanceIsMeasuredFrom) {
     // Distance is from the CAMERA, not from the origin. With the camera moved out to meet it, an
     // object that would otherwise be past the chain is back in range - which is the whole point

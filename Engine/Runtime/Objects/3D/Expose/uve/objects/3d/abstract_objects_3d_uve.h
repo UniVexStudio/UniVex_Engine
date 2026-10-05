@@ -95,6 +95,12 @@ void ExpandSurfaceInstance3DCullBoundsUVE(const SurfaceInstanceComponentUVE& sur
 /// Non-finite depth is left unchanged.
 [[nodiscard]] float ApplySurfaceInstance3DOverlaySortBiasUVE(float baseDepth) noexcept;
 
+/// Distance LodGroup3D should resolve against after `lodBias`. Above 1 keeps detailed levels
+/// longer (the camera looks closer); below 1 drops them sooner. Bias 1, non-finite, or not
+/// positive leaves `cameraDistance` unchanged. Non-finite distance is returned as-is.
+[[nodiscard]] float SurfaceInstance3DLodDistanceUVE(const SurfaceInstanceComponentUVE& surface,
+                                                    float cameraDistance) noexcept;
+
 // =================================================================================================
 // What RenderInstance3D means to the draw list.
 // =================================================================================================
