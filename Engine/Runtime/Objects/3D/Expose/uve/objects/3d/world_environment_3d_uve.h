@@ -7,6 +7,7 @@
 
 #include "uve/component/entity_uve.h"
 
+#include "uve/math/vector2_uve.h"
 #include "uve/objects/3d/object_3d_common_uve.h"
 
 namespace UVE::Scene {
@@ -75,7 +76,10 @@ struct WorldEnvironmentFrameUVE final {
     bool bloomEnabled = true;
     bool ssaoEnabled = true;
     bool hasEnvironment = false;
+    std::string skyAssetPath;
 };
+
+[[nodiscard]] bool TryMakeSkyEquirectUvUVE(const Math::Vector3UVE& direction, Math::Vector2UVE& outUv) noexcept;
 
 [[nodiscard]] WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(
     IEntityManagerUVE& entityManager, const Math::Vector3UVE& fallbackAmbient) noexcept;
