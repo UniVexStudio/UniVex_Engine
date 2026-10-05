@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "uve/objects/3d/fog_volume_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
 
 #include <array>
 #include <cmath>
@@ -155,6 +156,21 @@ TEST_F(FogVolume3DUVETest, RayThatMissesIsEmpty) {
                                    Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 8.0F);
     EXPECT_EQ(sample.opticalDepth, 0.0F);
     EXPECT_EQ(sample.scatterWeight, 0.0F);
+}
+
+TEST_F(FogVolume3DUVETest, CollectSkipsAPartitionHiddenVolume) {
+    FogVolume3DComponentUVE fog{};
+    fog.edgeFade = 0.0F;
+    const EntityUVE volume = PlaceFogUVE(fog);
+    const EntityUVE partition = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, partition, TransformComponentUVE{});
+    entityManager.AddComponentUVE<WorldPartition3DComponentUVE>(partition);
+    entityManager.AddComponentUVE<WorldPartition3DMembershipComponentUVE>(
+        volume, WorldPartition3DMembershipComponentUVE{partition, false});
+    sceneGraph.UpdateUVE(entityManager);
+
+    std::array<FogVolume3DFrameUVE, kMaximumFogVolumesPerFrameUVE> frames{};
+    EXPECT_EQ(CollectFogVolume3DFramesUVE(entityManager, Math::Vector3UVE{}, frames), 0U);
 }
 
 TEST_F(FogVolume3DUVETest, CollectKeepsTheNearestAndDropsHidden) {

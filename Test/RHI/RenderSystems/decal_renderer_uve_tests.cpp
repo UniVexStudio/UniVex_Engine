@@ -24,6 +24,7 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/render_systems/decal_draw_command_uve.h"
 #include "uve/render_systems/decal_draw_data_uve.h"
@@ -231,6 +232,18 @@ protected:
         return result;
     }
 };
+
+TEST_F(DecalRendererUVETest, BuildDrawListUVE_PartitionHiddenDecalIsNotConsidered) {
+    const WallAndDecalUVE scene = MakeWallAndDecalUVE();
+    const Scene::EntityUVE partition = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, partition, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::WorldPartition3DComponentUVE>(partition);
+    entityManager.AddComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        scene.decal, Scene::WorldPartition3DMembershipComponentUVE{partition, false});
+    BuildFrameUVE(Math::Vector3UVE{});
+    EXPECT_EQ(drawList.decalsConsidered, 0U);
+    EXPECT_TRUE(drawList.draws.empty());
+}
 
 TEST_F(DecalRendererUVETest, BuildDrawListUVE_ADecalOnAFlatWallProducesAPatchWithUnitCoordinates) {
     const WallAndDecalUVE scene = MakeWallAndDecalUVE();

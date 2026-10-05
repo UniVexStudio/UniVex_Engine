@@ -94,6 +94,7 @@
 #include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
+#include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
@@ -4509,11 +4510,11 @@ Scene::EntityUVE CreatePartitionChildAtUVE(Scene::IEntityManagerUVE& entityManag
 
 } // namespace
 
-TEST(EngineCoreUVETest, WorldPartition3D_MembershipAttachesOnlyToMeshesAndOutsideStaysUnmanaged) {
-    // The engine-owned runtime state attaches to mesh-carrying descendants only (a transform-only
-    // child must stay clean), the partition beyond its volume is nobody's business (membership
-    // there exists but its live verdict is always true - volume-rejection must never hide
-    // geometry), and loadedCellCount only counts cells actually inside the volume.
+TEST(EngineCoreUVETest, WorldPartition3D_MembershipAttachesToDrawablesAndOutsideStaysUnmanaged) {
+    // The engine-owned runtime state attaches to drawable descendants (mesh and primitive mesh
+    // here; a transform-only child and a light stay clean). The partition beyond its volume is
+    // nobody's business (membership there exists but its live verdict is always true), and
+    // loadedCellCount only counts cells actually inside the volume.
     EngineConfigUVE config = MakeTestConfigUVE();
     EngineCoreUVE engine(config);
     engine.Init();
@@ -4529,6 +4530,15 @@ TEST(EngineCoreUVETest, WorldPartition3D_MembershipAttachesOnlyToMeshesAndOutsid
     const Scene::EntityUVE meshlessChild =
         CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
                                   Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
+    const Scene::EntityUVE primitiveChild =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
+    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(primitiveChild,
+                                                                   Scene::PrimitiveMeshComponentUVE{});
+    const Scene::EntityUVE lightChild =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
+    entityManager.AddComponentUVE<Scene::LightComponentUVE>(lightChild, Scene::LightComponentUVE{});
     const Scene::EntityUVE outsideMesh =
         CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
                                   Math::Vector3UVE{500.0F, 0.0F, 500.0F}, /*withMesh=*/true);
@@ -4546,7 +4556,13 @@ TEST(EngineCoreUVETest, WorldPartition3D_MembershipAttachesOnlyToMeshesAndOutsid
     EXPECT_EQ(insideMembership.partition, partition) << "the engine stamps the deciding owner";
 
     EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
-        meshlessChild)) << "no mesh, no membership - authoritatively not every descendant";
+        meshlessChild)) << "no drawable, no membership - authoritatively not every descendant";
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        primitiveChild))
+        << "a primitive mesh is a drawable the vis-budget can skip";
+    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        lightChild))
+        << "lights are not partition drawables";
 
     ASSERT_TRUE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
         outsideMesh));

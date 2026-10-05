@@ -46,6 +46,7 @@
 #include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/objects/3d/fog_volume_3d_uve.h"
 #include "uve/objects/3d/reflection_probe_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/render_systems/camera_system_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 #include "univex/gizmo/GizmoGeometry.h"
@@ -324,6 +325,69 @@ void AppendReflectionProbeGizmoUVE(univex::gizmo::GizmoMesh& mesh, const UVE::Sc
     return mesh;
 }
 
+void AppendWorldPartitionGizmoUVE(univex::gizmo::GizmoMesh& mesh, const UVE::Scene::WorldPartition3DGizmoUVE& gizmo) {
+    using univex::math::Vec3;
+    const Vec3 origin = univex::integration::FromUveVector3UVE(gizmo.origin);
+    const Vec3 size = univex::integration::FromUveVector3UVE(gizmo.size);
+    const Vec3 color = univex::integration::FromUveVector3UVE(gizmo.color);
+    const auto add = [&](const Vec3& a, const Vec3& b, const float width) {
+        mesh.lines.push_back(univex::gizmo::GizmoLine{a, b, color, width});
+    };
+    const Vec3 x{size.x, 0.0F, 0.0F};
+    const Vec3 y{0.0F, size.y, 0.0F};
+    const Vec3 z{0.0F, 0.0F, size.z};
+    add(origin, origin + x, 1.6F);
+    add(origin + x, origin + x + z, 1.6F);
+    add(origin + x + z, origin + z, 1.6F);
+    add(origin + z, origin, 1.6F);
+    add(origin + y, origin + y + x, 1.6F);
+    add(origin + y + x, origin + y + x + z, 1.6F);
+    add(origin + y + x + z, origin + y + z, 1.6F);
+    add(origin + y + z, origin + y, 1.6F);
+    add(origin, origin + y, 1.6F);
+    add(origin + x, origin + y + x, 1.6F);
+    add(origin + x + z, origin + y + x + z, 1.6F);
+    add(origin + z, origin + y + z, 1.6F);
+
+    constexpr std::uint32_t kMaximumInteriorDivisionsUVE = 32U;
+    const std::uint32_t countX = gizmo.cellCounts[0U];
+    const std::uint32_t countY = gizmo.cellCounts[1U];
+    const std::uint32_t countZ = gizmo.cellCounts[2U];
+    if (countX > 1U && countX <= kMaximumInteriorDivisionsUVE && size.x > 0.0F) {
+        for (std::uint32_t i = 1U; i < countX; ++i) {
+            const float t = size.x * (static_cast<float>(i) / static_cast<float>(countX));
+            add(origin + Vec3{t, 0.0F, 0.0F}, origin + Vec3{t, 0.0F, size.z}, 1.0F);
+            add(origin + Vec3{t, size.y, 0.0F}, origin + Vec3{t, size.y, size.z}, 1.0F);
+        }
+    }
+    if (countZ > 1U && countZ <= kMaximumInteriorDivisionsUVE && size.z > 0.0F) {
+        for (std::uint32_t i = 1U; i < countZ; ++i) {
+            const float t = size.z * (static_cast<float>(i) / static_cast<float>(countZ));
+            add(origin + Vec3{0.0F, 0.0F, t}, origin + Vec3{size.x, 0.0F, t}, 1.0F);
+            add(origin + Vec3{0.0F, size.y, t}, origin + Vec3{size.x, size.y, t}, 1.0F);
+        }
+    }
+    if (countY > 1U && countY <= kMaximumInteriorDivisionsUVE && size.y > 0.0F) {
+        for (std::uint32_t i = 1U; i < countY; ++i) {
+            const float t = size.y * (static_cast<float>(i) / static_cast<float>(countY));
+            add(origin + Vec3{0.0F, t, 0.0F}, origin + Vec3{size.x, t, 0.0F}, 1.0F);
+            add(origin + Vec3{size.x, t, 0.0F}, origin + Vec3{size.x, t, size.z}, 1.0F);
+            add(origin + Vec3{size.x, t, size.z}, origin + Vec3{0.0F, t, size.z}, 1.0F);
+            add(origin + Vec3{0.0F, t, size.z}, origin + Vec3{0.0F, t, 0.0F}, 1.0F);
+        }
+    }
+}
+
+[[nodiscard]] univex::gizmo::GizmoMesh BuildWorldPartitionMeshUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
+    univex::gizmo::GizmoMesh mesh;
+    std::vector<UVE::Scene::WorldPartition3DGizmoUVE> gizmos;
+    UVE::Scene::CollectWorldPartition3DGizmosUVE(entityManager, gizmos);
+    for (const UVE::Scene::WorldPartition3DGizmoUVE& gizmo : gizmos) {
+        AppendWorldPartitionGizmoUVE(mesh, gizmo);
+    }
+    return mesh;
+}
+
 // Bridges Engine/Editor/Viewport's real GL renderer (grid + orbit camera + transform/orientation
 // gizmos + one proxy cube per live scene entity) into EditorUVE's generic, viewport-agnostic
 // "Viewport" panel hook (EditorUVE::SetViewportPanelRendererUVE) - see that method's own doc
@@ -448,6 +512,9 @@ public:
             univex::gizmo::GizmoMesh probes = BuildReflectionProbeMeshUVE(entityManager_);
             overlay.lines.insert(overlay.lines.end(), probes.lines.begin(), probes.lines.end());
             overlay.triangles.insert(overlay.triangles.end(), probes.triangles.begin(), probes.triangles.end());
+            univex::gizmo::GizmoMesh partitions = BuildWorldPartitionMeshUVE(entityManager_);
+            overlay.lines.insert(overlay.lines.end(), partitions.lines.begin(), partitions.lines.end());
+            overlay.triangles.insert(overlay.triangles.end(), partitions.triangles.begin(), partitions.triangles.end());
             renderPass_->SetCameraFrustumMeshUVE(std::move(overlay));
         } else {
             renderPass_->SetCameraFrustumMeshUVE({});

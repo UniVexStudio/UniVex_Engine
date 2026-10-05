@@ -250,24 +250,11 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                 effectiveMeshGuid = Scene::ResolveLodGroup3DMeshGuidUVE(lodGroup, meshComponent.meshGuid);
             }
 
-            // World partition, in the same cheap-before-expensive order as the gates above. A
-            // membership entry whose owner was destroyed fails open via the pure resolver -
-            // residual partition opinions must never hide content forever.
-            if (entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
-                    entity)) {
-                const Scene::WorldPartition3DMembershipComponentUVE& membership =
-                    entityManager
-                        .GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(entity);
-                const bool ownerAlive =
-                    membership.partition != Scene::kInvalidEntityUVE &&
-                    entityManager.IsAliveUVE(membership.partition) &&
-                    entityManager.HasComponentUVE<Scene::WorldPartition3DComponentUVE>(
-                        membership.partition);
-                if (!Scene::ResolveWorldPartition3DMembershipLiveUVE(ownerAlive,
-                                                                     membership.live)) {
-                    ++outVisibilitySet.partitionCulledEntities;
-                    return;
-                }
+            // World partition vis-budget: a faded cell skips this draw. A membership whose owner
+            // was destroyed fails open so a residual opinion cannot hide content forever.
+            if (Scene::IsWorldPartition3DDrawHiddenUVE(entityManager, entity)) {
+                ++outVisibilitySet.partitionCulledEntities;
+                return;
             }
 
             // Visibility region, same shape as the partition gate: a dead region fails open via

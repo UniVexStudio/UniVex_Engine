@@ -1705,9 +1705,10 @@ void EngineCoreUVE::SyncWorldPartition3DObjectsUVE() {
             m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(partition)
                 .worldPosition;
 
-        // Breadth-first member collection: all descendants that carry a mesh. Nested partitions
-        // stop the walk - a partition deep inside another's volume self-manages, so only the
-        // closest owning partition ever stamps a membership it does not understand.
+        // Breadth-first member collection: all descendants that carry a drawable the vis-budget
+        // can skip. Nested partitions stop the walk - a partition deep inside another's volume
+        // self-manages, so only the closest owning partition ever stamps a membership it does
+        // not understand.
         struct MemberSnapshotUVE final {
             Scene::EntityUVE entity;
             Math::Vector3UVE worldPosition;
@@ -1732,7 +1733,7 @@ void EngineCoreUVE::SyncWorldPartition3DObjectsUVE() {
                         child)) {
                     continue; // closest-ancestor-wins: the inner partition claims its subtree
                 }
-                if (m_entityManager->HasComponentUVE<Scene::MeshComponentUVE>(child) &&
+                if (Scene::CarriesWorldPartition3DDrawableUVE(*m_entityManager, child) &&
                     m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(child)) {
                     const Scene::WorldTransformComponentUVE& world =
                         m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(child);
@@ -1746,9 +1747,9 @@ void EngineCoreUVE::SyncWorldPartition3DObjectsUVE() {
         }
 
         // Membership attachment is idempotent: the engine owns this runtime component on every
-        // mesh-carrying descendant, attaches when absent, and re-stamps the owner when an entity
-        // has moved between partitions between ticks. AddComponentUVE mutates the ECS, but the
-        // member list was snapshotted above, so nothing being iterated here can be invalidated.
+        // drawable descendant, attaches when absent, and re-stamps the owner when an entity has
+        // moved between partitions between ticks. AddComponentUVE mutates the ECS, but the member
+        // list was snapshotted above, so nothing being iterated here can be invalidated.
         for (const MemberSnapshotUVE& member : members) {
             if (!m_entityManager->HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
                     member.entity)) {
@@ -1774,14 +1775,9 @@ void EngineCoreUVE::SyncWorldPartition3DObjectsUVE() {
             continue;
         }
 
-        // Pass over occupied cells: priority = nearest member's squared distance to the nearest
-        // viewer; a cell with no members cannot exist here by construction. The first
-        // maximumLoadedCells are live - the budget acceptance is EXACT, members past it fade.
-        struct OccupiedCellUVE final {
-            Scene::WorldPartition3DCellIdUVE id;
-            float nearestDistanceSquared = std::numeric_limits<float>::max();
-        };
-        std::vector<OccupiedCellUVE> occupied;
+        // Occupied cells: priority = nearest member's squared distance to the nearest viewer.
+        // The first maximumLoadedCells stay drawn - this is a vis-budget, not a file load.
+        std::vector<Scene::WorldPartition3DOccupiedCellUVE> occupied;
         std::vector<float> memberDistances;
         memberDistances.reserve(members.size());
         for (const MemberSnapshotUVE& member : members) {
@@ -1795,40 +1791,26 @@ void EngineCoreUVE::SyncWorldPartition3DObjectsUVE() {
                 continue; // outside the partitioned volume: unmanaged, always renders
             }
             auto found = std::find_if(occupied.begin(), occupied.end(),
-                                      [&members, i](const OccupiedCellUVE& cell) {
+                                      [&members, i](const Scene::WorldPartition3DOccupiedCellUVE& cell) {
                                           return cell.id == *members[i].cell;
                                       });
             if (found == occupied.end()) {
-                occupied.push_back(OccupiedCellUVE{*members[i].cell, memberDistances[i]});
+                occupied.push_back(
+                    Scene::WorldPartition3DOccupiedCellUVE{*members[i].cell, memberDistances[i]});
             } else if (memberDistances[i] < found->nearestDistanceSquared) {
                 found->nearestDistanceSquared = memberDistances[i];
             }
         }
-        std::sort(occupied.begin(), occupied.end(),
-                  [&config](const OccupiedCellUVE& lhs, const OccupiedCellUVE& rhs) {
-                      if (lhs.nearestDistanceSquared != rhs.nearestDistanceSquared) {
-                          return lhs.nearestDistanceSquared < rhs.nearestDistanceSquared;
-                      }
-                      return Scene::ResolveWorldPartition3DCellLinearIndexUVE(
-                                 lhs.id, config.cellCounts) <
-                             Scene::ResolveWorldPartition3DCellLinearIndexUVE(
-                                 rhs.id, config.cellCounts);
-                  });
-        const std::size_t liveCells =
-            std::min<std::size_t>(occupied.size(), config.maximumLoadedCells);
+        Scene::SortWorldPartition3DOccupiedCellsUVE(occupied, config.cellCounts);
+        const std::size_t liveCells = Scene::CountWorldPartition3DAdmittedCellsUVE(
+            occupied.size(), config.maximumLoadedCells);
         // Admission wholly-cellular: every member of an admitted cell goes live together, and
         // every member outside it fades together. Unmanaged members never join the verdict.
         for (std::size_t i = 0U; i < members.size(); ++i) {
-            bool live = true;
-            if (members[i].cell.has_value()) {
-                live = false;
-                for (std::size_t c = 0U; c < liveCells; ++c) {
-                    if (occupied[c].id == *members[i].cell) {
-                        live = true;
-                        break;
-                    }
-                }
-            }
+            const bool live =
+                !members[i].cell.has_value() ||
+                Scene::IsWorldPartition3DCellAdmittedUVE(*members[i].cell, occupied,
+                                                         config.maximumLoadedCells);
             auto& membership =
                 m_entityManager->GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
                     members[i].entity);

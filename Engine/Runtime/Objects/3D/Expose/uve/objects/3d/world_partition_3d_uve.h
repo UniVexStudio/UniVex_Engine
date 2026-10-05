@@ -6,12 +6,16 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
+#include <vector>
 
 #include "uve/component/entity_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/objects/3d/object_3d_common_uve.h"
 
 namespace UVE::Scene {
+
+class IEntityManagerUVE;
 
 inline constexpr std::size_t kMaximumStreamedCellsUVE = 4096U;
 
@@ -29,13 +33,11 @@ struct WorldPartition3DComponentUVE final {
 [[nodiscard]] bool IsWorldPartition3DObjectComponentValidUVE(const WorldPartition3DComponentUVE& value) noexcept;
 
 // Runtime-only cell membership, owned by EngineCoreUVE::SyncWorldPartition3DObjectsUVE() and
-// ATTACHED BY THE ENGINE to mesh-carrying descendants of a world partition. Two invariants make
-// this different from an authoring component like VisibilityComponentUVE: it is never authored
-// (a scene file cannot carry it - the serializer never registered it, and only meshes get it so
-// gameplay transforms stay clean), and its owner writes it every tick via the partition's
-// engine sync. `partition` is the deciding partition; `live` is this tick's verdict: false only
-// when the cell landed outside the budget. The MeshRendererUVE candidate walk consults this
-// through ResolveWorldPartition3DMembershipLiveUVE() below.
+// ATTACHED BY THE ENGINE to drawable descendants of a world partition (mesh, primitive mesh,
+// decal, particle emitter, fog volume - not lights). Never authored, never saved. `live` is this
+// tick's vis-budget verdict: false only when the cell landed outside maximumLoadedCells. Draw
+// paths consult this through IsWorldPartition3DDrawHiddenUVE(). This does not load or unload
+// files; LevelStreamer3D is the file streamer.
 struct WorldPartition3DMembershipComponentUVE final {
     Scene::EntityUVE partition = Scene::kInvalidEntityUVE;
     bool live = true;
@@ -86,5 +88,40 @@ ResolveWorldPartition3DCellLinearIndexUVE(const WorldPartition3DCellIdUVE& cell,
     bool partitionOwnerAlive, bool live) noexcept {
     return live || !partitionOwnerAlive;
 }
+
+// One occupied cell waiting to be ranked for the vis-budget. `nearestDistanceSquared` is the
+// closest drawable in that cell to any viewer.
+struct WorldPartition3DOccupiedCellUVE final {
+    WorldPartition3DCellIdUVE id{};
+    float nearestDistanceSquared = 0.0F;
+};
+
+void SortWorldPartition3DOccupiedCellsUVE(std::span<WorldPartition3DOccupiedCellUVE> occupied,
+                                          const std::array<std::uint32_t, 3U>& cellCounts);
+
+[[nodiscard]] std::size_t CountWorldPartition3DAdmittedCellsUVE(std::size_t occupiedCount,
+                                                                std::uint32_t maximumLoadedCells) noexcept;
+
+[[nodiscard]] bool IsWorldPartition3DCellAdmittedUVE(
+    const WorldPartition3DCellIdUVE& cell, std::span<const WorldPartition3DOccupiedCellUVE> rankedNearestFirst,
+    std::uint32_t maximumLoadedCells) noexcept;
+
+[[nodiscard]] Math::Vector3UVE
+ResolveWorldPartition3DVolumeSizeUVE(const WorldPartition3DComponentUVE& config) noexcept;
+
+[[nodiscard]] bool CarriesWorldPartition3DDrawableUVE(IEntityManagerUVE& entityManager, EntityUVE entity);
+
+[[nodiscard]] bool IsWorldPartition3DDrawHiddenUVE(IEntityManagerUVE& entityManager, EntityUVE entity);
+
+struct WorldPartition3DGizmoUVE final {
+    Math::Vector3UVE origin{};
+    Math::Vector3UVE size{};
+    Math::Vector3UVE color{0.28F, 0.72F, 1.0F};
+    float cellSize = 128.0F;
+    std::array<std::uint32_t, 3U> cellCounts{16U, 1U, 16U};
+    bool enabled = true;
+};
+
+void CollectWorldPartition3DGizmosUVE(IEntityManagerUVE& entityManager, std::vector<WorldPartition3DGizmoUVE>& out);
 
 } // namespace UVE::Scene

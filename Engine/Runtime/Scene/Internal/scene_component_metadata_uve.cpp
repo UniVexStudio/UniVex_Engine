@@ -64,6 +64,7 @@
 #include "uve/objects/3d/player_3d_uve.h"
 #include "uve/objects/3d/two_bone_ik_3d_uve.h"
 #include "uve/objects/3d/world_environment_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
 
 namespace UVE::Scene {
@@ -2454,6 +2455,30 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
                                                        0.0, 1.0, 0.01),
                                           "Softens the volume's boundary. 0 is a hard edge."),
                            "Fog"),
+            }));
+
+    using P = WorldPartition3DComponentUVE;
+    AddValidatedUVE<WorldPartition3DComponentUVE, &IsWorldPartition3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.world_partition_3d", "WorldPartition3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&P::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off, every member draws. On, only the nearest occupied cells up to the "
+                               "budget draw. This does not load files."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&P::cellSize>("cellSize", "Cell Size", kPropertyTypeFloatUVE),
+                                 0.001, 100000.0, 0.01),
+                    "Metres along one cell edge. The volume starts at this object's position and "
+                    "covers Cell Size times the saved cell counts along X, Y and Z."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&P::maximumLoadedCells>("maximumLoadedCells", "Loaded Cells",
+                                                                    kPropertyTypeUInt32UVE),
+                                 1.0, static_cast<double>(kMaximumStreamedCellsUVE), 1.0),
+                    "How many occupied cells stay drawn. Farther cells skip their draws."),
+                InGroupUVE(DeclareRuntimeStateUVE<&P::loadedCellCount>("loadedCellCount", "Live Cells",
+                                                                       kPropertyTypeUInt32UVE),
+                           "Result"),
             }));
 }
 
