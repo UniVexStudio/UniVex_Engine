@@ -501,7 +501,8 @@ void MeshRendererUVE::CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visib
             if (!std::isfinite(sortDepth)) {
                 continue;
             }
-            RenderItemUVE item{eligibility.worldMatrix, assetPair.meshHandle, assetPair.materialHandle, sortDepth};
+            RenderItemUVE item{eligibility.worldMatrix, assetPair.meshHandle, assetPair.materialHandle, sortDepth,
+                               candidate.renderLayers};
             if (candidate.isTransparent) {
                 outQueue.transparentItems.push_back(std::move(item));
             } else {
