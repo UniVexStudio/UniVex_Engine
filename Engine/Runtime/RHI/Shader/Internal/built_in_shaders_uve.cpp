@@ -1793,6 +1793,7 @@ uniform vec3 uAmbientColor;
 uniform vec3 uSkyAmbient;
 uniform vec3 uGroundAmbient;
 uniform vec3 uColor;
+uniform float uSurfaceOpacity = 1.0;
 
 vec3 SafeNormalizeUVE(vec3 value) {
     float lengthValue = length(value);
@@ -1840,7 +1841,7 @@ void main() {
         accumulated += uColor * light.color * (light.intensity * attenuation * diffuse);
     }
 
-    FragColor = vec4(accumulated, 1.0);
+    FragColor = vec4(accumulated, clamp(uSurfaceOpacity, 0.0, 1.0));
 }
 #endif
 )GLSLSRC";

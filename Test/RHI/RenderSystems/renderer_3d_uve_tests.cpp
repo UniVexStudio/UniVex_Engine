@@ -44,6 +44,7 @@
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
+#include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
@@ -541,6 +542,85 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_OccludedPrimitiveIsNotExtracted) {
 
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
     EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveItemsExtracted, 0U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SurfaceInstanceRangeHidesAPrimitive) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE entity = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.8F, 0.2F, 0.1F}});
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.visibilityRangeEnd = 5.0F;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveCandidates, 1U);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveItemsExtracted, 0U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SurfaceInstanceShadowsOnlyDoesNotDrawAPrimitive) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE entity = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.8F, 0.2F, 0.1F}});
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.castShadow = Scene::SurfaceShadowModeUVE::ShadowsOnly;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveCandidates, 1U);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveItemsExtracted, 0U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SurfaceInstanceIgnoreOcclusionKeepsACoveredPrimitive) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE wallTransform;
+    wallTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -5.0F};
+    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
+    Scene::Occluder3DComponentUVE wallOccluder;
+    wallOccluder.halfExtents = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    entityManager.AddComponentUVE<Scene::Occluder3DComponentUVE>(wall, wallOccluder);
+    sceneGraph.UpdateUVE(entityManager);
+
+    const Scene::EntityUVE entity = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.8F, 0.2F, 0.1F}});
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.ignoreOcclusionCulling = true;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveItemsExtracted, 1U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SurfaceInstanceTransparencyPushesPrimitiveOpacity) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE entity = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.15F, 0.45F, 0.85F}});
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.transparency = 0.25F;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
+        shaderManager.UpdateUVE(0.0);
+        if (shaderManager.GetPendingJobCountUVE() == 0U) {
+            break;
+        }
+        std::this_thread::yield();
+    }
+    ASSERT_EQ(shaderManager.GetPendingJobCountUVE(), 0U);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto opacity = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformFloatCommandUVE>(command) &&
+               std::get<SetUniformFloatCommandUVE>(command).name == "uSurfaceOpacity";
+    });
+    ASSERT_NE(opacity, commands.cend());
+    EXPECT_FLOAT_EQ(std::get<SetUniformFloatCommandUVE>(*opacity).value, 0.75F);
 }
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_RegionHiddenPrimitiveIsNotACandidate) {
