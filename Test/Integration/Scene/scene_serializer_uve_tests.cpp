@@ -1648,6 +1648,40 @@ TEST(ParticleEmitterComponentUVE, IsParticleEmitterComponentValidUVE_EnforcesBou
         ParticleEmitterComponentUVE{kMaximumParticleEmitterParticlesUVE + 1U}));
 }
 
+TEST(ParticleEmitterComponentUVE, IsParticleEmitterComponentValidUVE_EnforcesRateAndLifetime) {
+    ParticleEmitterComponentUVE component{};
+    component.maxParticles = 8U;
+    EXPECT_TRUE(IsParticleEmitterComponentValidUVE(component));
+    component.emissionRate = -1.0F;
+    EXPECT_FALSE(IsParticleEmitterComponentValidUVE(component));
+    component.emissionRate = 10.0F;
+    component.lifetimeSeconds = 0.0F;
+    EXPECT_FALSE(IsParticleEmitterComponentValidUVE(component));
+    component.lifetimeSeconds = kMaximumParticleEmitterLifetimeSecondsUVE + 1.0F;
+    EXPECT_FALSE(IsParticleEmitterComponentValidUVE(component));
+}
+
+TEST(ParticleEmitterComponentUVE, ConsumeParticleEmitterAutoEmitCountUVE_SpendsRateAcrossFrames) {
+    ParticleEmitterComponentUVE component{};
+    component.maxParticles = 8U;
+    component.emissionRate = 10.0F;
+    float remainder = 0.0F;
+    EXPECT_EQ(ConsumeParticleEmitterAutoEmitCountUVE(remainder, component, 0.05F, 0U), 0U);
+    EXPECT_EQ(ConsumeParticleEmitterAutoEmitCountUVE(remainder, component, 0.05F, 0U), 1U);
+    EXPECT_NEAR(remainder, 0.0F, 1.0e-5F);
+    component.emitting = false;
+    EXPECT_EQ(ConsumeParticleEmitterAutoEmitCountUVE(remainder, component, 1.0F, 0U), 0U);
+}
+
+TEST(ParticleEmitterComponentUVE, ConsumeParticleEmitterAutoEmitCountUVE_StopsAtTheBudget) {
+    ParticleEmitterComponentUVE component{};
+    component.maxParticles = 2U;
+    component.emissionRate = 100.0F;
+    float remainder = 0.0F;
+    EXPECT_EQ(ConsumeParticleEmitterAutoEmitCountUVE(remainder, component, 1.0F, 0U), 2U);
+    EXPECT_EQ(ConsumeParticleEmitterAutoEmitCountUVE(remainder, component, 1.0F, 2U), 0U);
+}
+
 TEST_F(SceneSerializerUVETest, RestoreUVE_ScriptSavedBeforeExportValuesLoadsWithNone) {
     const std::string payloadText =
         R"({"entities":[{"localId":0,"components":{"ScriptComponentUVE":{"scriptAssetPath":"scripts/a.uvs"}}}]})";
@@ -1683,6 +1717,24 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidScriptPayload_RollsBackCreatedE
     EXPECT_TRUE(roots.empty());
     EXPECT_TRUE(entityManager.IsAliveUVE(existing));
     EXPECT_EQ(entityManager.GetEntityCountUVE(), entityCountBefore);
+}
+
+TEST_F(SceneSerializerUVETest, RestoreUVE_ParticleEmitterSavedBeforeAutoEmitLoadsDefaults) {
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"ParticleEmitterComponentUVE":{"maxParticles":128}}}]})";
+    const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
+    const SceneSnapshotUVE snapshot{
+        Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
+                                        std::vector<std::byte>{payloadBytes, payloadBytes + payloadText.size()}),
+        SceneAssetTypeUVE::Scene};
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    const ParticleEmitterComponentUVE& restored =
+        entityManager.GetComponentUVE<ParticleEmitterComponentUVE>(roots.front());
+    EXPECT_EQ(restored.maxParticles, 128U);
+    EXPECT_TRUE(restored.emitting);
+    EXPECT_FLOAT_EQ(restored.emissionRate, ParticleEmitterComponentUVE{}.emissionRate);
+    EXPECT_FLOAT_EQ(restored.lifetimeSeconds, ParticleEmitterComponentUVE{}.lifetimeSeconds);
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidParticlePayload_RollsBackCreatedEntities) {

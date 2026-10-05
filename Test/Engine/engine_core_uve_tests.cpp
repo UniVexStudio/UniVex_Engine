@@ -238,6 +238,61 @@ TEST(EngineCoreUVETest, ParticleEmitterComponents_ReconcileWithRuntimeAcrossFram
     EXPECT_EQ(engine.GetParticleRuntimeSnapshotUVE().instanceCount, 0U);
 }
 
+TEST(EngineCoreUVETest, ParticleEmitter_AutoEmitsFromTheWorldPose) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform{};
+    transform.localPosition = Math::Vector3UVE{0.0F, 4.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, entity, transform);
+    Scene::ParticleEmitterComponentUVE emitter{};
+    emitter.maxParticles = 32U;
+    emitter.emissionRate = 1'000'000.0F;
+    emitter.lifetimeSeconds = 2.0F;
+    entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(entity, emitter);
+
+    engine.TickFrameUVE();
+    const Scene::ParticleRuntimeSnapshotUVE snapshot = engine.GetParticleRuntimeSnapshotUVE();
+    ASSERT_EQ(snapshot.instances.size(), 1U);
+    EXPECT_GT(snapshot.instances.front().liveParticles, 0U);
+    const std::optional<Scene::ParticleStateSnapshotUVE> particles =
+        services.GetParticleRuntimeUVE().GetParticleSnapshotUVE(entity);
+    ASSERT_TRUE(particles.has_value());
+    ASSERT_FALSE(particles->particles.empty());
+    EXPECT_NEAR(particles->particles.front().position.x, 0.0F, 1.0F);
+    EXPECT_NEAR(particles->particles.front().position.y, 4.0F, 2.0F);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, ParticleEmitter_EmittingOffDoesNotAutoEmit) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+    Scene::ParticleEmitterComponentUVE emitter{};
+    emitter.maxParticles = 32U;
+    emitter.emitting = false;
+    emitter.emissionRate = 1'000'000.0F;
+    entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(entity, emitter);
+
+    engine.TickFrameUVE();
+    ASSERT_EQ(engine.GetParticleRuntimeSnapshotUVE().instances.size(), 1U);
+    EXPECT_EQ(engine.GetParticleRuntimeSnapshotUVE().instances.front().liveParticles, 0U);
+
+    engine.Shutdown();
+}
+
 TEST(EngineCoreUVETest, TickMode_GatesParticleEmittersAgainstThePausedState) {
     EngineCoreUVE engine(MakeTestConfigUVE());
     engine.Init();
