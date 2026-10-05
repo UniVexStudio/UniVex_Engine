@@ -86,6 +86,7 @@ add_executable(uve_core_tests
     Plugins/plugin_registry_uve_tests.cpp
     ProjectCheck/project_checker_uve_tests.cpp
     Input/input_system_uve_tests.cpp
+    Gameplay/gameplay_input_uve_tests.cpp
     Input/input_names_uve_tests.cpp
     Input/mobile_input_system_uve_tests.cpp
     Input/mobile_gesture_system_uve_tests.cpp
@@ -133,6 +134,7 @@ target_link_libraries(uve_core_tests PRIVATE
     uve_events
     uve_asset
     uve_input
+    uve_gameplay
     uve_window
     uve_rhi
     uve_rhi_opengl
@@ -184,6 +186,7 @@ add_executable(uve_integration_tests
     Support/test_scratch_uve.cpp
     Objects/3D/objects_3d_uve_tests.cpp
     Objects/3D/object_definitions_3d_uve_tests.cpp
+    Objects/3D/player_3d_uve_tests.cpp
     Objects/3D/animation_objects_uve_tests.cpp
     Objects/3D/conformed_playback_uve_tests.cpp
     Objects/3D/two_bone_ik_3d_uve_tests.cpp

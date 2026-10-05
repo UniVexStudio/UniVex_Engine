@@ -845,6 +845,7 @@ public:
     [[nodiscard]] bool IsActionHeldUVE(std::string_view) const override { return false; }
     [[nodiscard]] bool IsActionReleasedUVE(std::string_view) const override { return false; }
     [[nodiscard]] float GetAxisValueUVE(std::string_view) const override { return 0.0F; }
+    [[nodiscard]] bool HasActionUVE(std::string_view) const override { return false; }
 
     int updateCallCount = 0;
 };

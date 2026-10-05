@@ -604,9 +604,9 @@ private:
     /// The interaction scan, new wiring for previously unconsumed authored data (the
     /// Unreal-Lyra-style interactor/focus loop Godot leaves every game to hand-roll out of
     /// Area3D signals): every frame, every character-controller entity that has a
-    /// ColliderComponentUVE and a world transform is an interactor, the first one in
-    /// (index,generation) order is the PRIMARY interactor (Scene::ResolvePrimaryInteractorUVE,
-    /// the same decision SpawnPoint3D selection makes), and every InteractionArea3D object's
+    /// ColliderComponentUVE and a world transform is an interactor, a possessed Player3D is the
+    /// PRIMARY interactor when one exists (else the first in (index,generation) order via
+    /// Scene::ResolvePrimaryInteractorUVE), and every InteractionArea3D object's
     /// runtime state is refreshed against them. The full contract: only enabled, valid areas
     /// participate (everything else fails closed - a disabled or invalid area ends the frame
     /// with zero interactors, never stale ones, SyncHitbox3DObjectsUVE's discipline); both
@@ -620,10 +620,10 @@ private:
     /// kMaximumInteractionAreaCandidatesUVE by Scene::ResolveInteractionAreaCandidateCapUVE,
     /// overflow flagged) and exactly one area - the one nearest the primary interactor,
     /// ties broken by (index,generation) via Scene::ResolveInteractionFocusUVE - is marked
-    /// focusedByPrimaryInteractor. Runtime state is never serialized. Acting on the focus
-    /// (prompt UI, an "interact" binding, focus enter/exit events) is deliberately not done
-    /// here - the gameplay layer no system owns yet; the authored interactionTag is carried
-    /// for that follow-up and intentionally does not filter anything today.
+    /// focusedByPrimaryInteractor. Runtime state is never serialized. Interact (the Interact
+    /// action or E) queues Gameplay::InteractRequestedEventUVE for the possessed player when
+    /// they are in the focused area. Prompt UI is still gameplay. interactionTag does not
+    /// filter the scan.
     ///
     /// The contract above is implemented in Physics::SyncInteractionAreasUVE(), which this calls:
     /// the tick owns WHEN the scan runs (it is in the fixed-step order), the seam owns what the

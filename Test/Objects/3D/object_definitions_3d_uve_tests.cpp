@@ -54,6 +54,7 @@ static_assert(std::is_class_v<Object3DObjectDefinitionUVE>);            // Objec
 static_assert(std::is_class_v<Area3DObjectDefinitionUVE>);           // Area3D
 static_assert(std::is_class_v<Static3DObjectDefinitionUVE>);     // Static3D
 static_assert(std::is_class_v<Character3DObjectDefinitionUVE>);  // Character3D
+static_assert(std::is_class_v<Player3DObjectDefinitionUVE>);     // Player3D
 static_assert(std::is_class_v<Camera3DObjectDefinitionUVE>);         // Camera3D
 static_assert(std::is_class_v<MeshInstance3DObjectDefinitionUVE>);   // MeshInstance3D
 static_assert(std::is_class_v<BoxMesh3DObjectDefinitionUVE>);        // BoxMesh3D
@@ -109,6 +110,7 @@ TEST_F(Object3DDefinitionsUVETest, AllDefinitionDefaultsAreValid) {
     EXPECT_TRUE(IsArea3DObjectDefinitionValidUVE(Area3DObjectDefinitionUVE{}));
     EXPECT_TRUE(IsStatic3DObjectDefinitionValidUVE(Static3DObjectDefinitionUVE{}));
     EXPECT_TRUE(IsCharacter3DObjectDefinitionValidUVE(Character3DObjectDefinitionUVE{}));
+    EXPECT_TRUE(IsPlayer3DObjectDefinitionValidUVE(Player3DObjectDefinitionUVE{}));
     EXPECT_TRUE(IsCamera3DObjectDefinitionValidUVE(Camera3DObjectDefinitionUVE{}));
     EXPECT_TRUE(IsMeshInstance3DObjectDefinitionValidUVE(MeshInstance3DObjectDefinitionUVE{}));
     EXPECT_TRUE(IsBoxMesh3DObjectDefinitionValidUVE(BoxMesh3DObjectDefinitionUVE{}));
@@ -299,6 +301,16 @@ TEST_F(Object3DDefinitionsUVETest, PrimitiveMeshRecipesKeepTheirDistinctShapesCo
         EXPECT_EQ(entityManager.GetComponentUVE<ColliderComponentUVE>(entity).halfExtents,
                   (Math::Vector3UVE{0.5F, 0.025F, 0.5F}));
     }
+}
+
+TEST_F(Object3DDefinitionsUVETest, Player3DIsACharacterMarkedAsThePossessedBody) {
+    const EntityUVE entity = CreateEntityUVE();
+    ApplyPlayer3DObjectDefinitionUVE(entityManager, entity, Player3DObjectDefinitionUVE{});
+    ExpectObject3DBaselineUVE(entityManager, entity, Player3DObjectDefinitionUVE::defaultName);
+    EXPECT_TRUE(entityManager.HasComponentUVE<CharacterControllerComponentUVE>(entity));
+    ASSERT_TRUE(entityManager.HasComponentUVE<PlayerComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.GetComponentUVE<PlayerComponentUVE>(entity).possessOnPlay);
+    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, entity), Objects::SceneObjectKindUVE::Player3D);
 }
 
 TEST_F(Object3DDefinitionsUVETest, CharacterBodyIsItsChainPlusAReadyToWalkCapsule) {
@@ -1196,6 +1208,10 @@ TEST_F(Object3DDefinitionsUVETest, BodyKindsWithShapesAreToldApartByTheirControl
     const EntityUVE character = entityManager.CreateEntityUVE();
     ApplyCharacter3DObjectDefinitionUVE(entityManager, character, Character3DObjectDefinitionUVE{});
     EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, character), Objects::SceneObjectKindUVE::Character3D);
+
+    const EntityUVE player = entityManager.CreateEntityUVE();
+    ApplyPlayer3DObjectDefinitionUVE(entityManager, player, Player3DObjectDefinitionUVE{});
+    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, player), Objects::SceneObjectKindUVE::Player3D);
 }
 
 TEST_F(PhysicsObjectParticipationUVETest, AnEntityThatIsNotAPhysicsObjectIsLeftAlone) {

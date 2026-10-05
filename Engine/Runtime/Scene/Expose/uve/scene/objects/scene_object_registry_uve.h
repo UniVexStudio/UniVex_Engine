@@ -66,6 +66,8 @@ enum class SceneObjectKindUVE : std::uint8_t {
     Viewport,
     /// A limb solved back from a target rather than forward from its joints.
     TwoBoneIK3D,
+    /// Character3D marked as the possessed player. Appended so no existing kind's value moves.
+    Player3D,
 };
 
 struct SceneObjectDescriptorUVE final {

@@ -1554,6 +1554,26 @@ template <typename VectorT>
                                         json.value("oneShot", false)};
 }
 
+[[nodiscard]] nlohmann::json ToJsonUVE(const PlayerComponentUVE& value) {
+    return {{"possessOnPlay", value.possessOnPlay},
+            {"lookEnabled", value.lookEnabled},
+            {"lookSensitivity", value.lookSensitivity},
+            {"lookStickSpeedDegrees", value.lookStickSpeedDegrees},
+            {"minPitchDegrees", value.minPitchDegrees},
+            {"maxPitchDegrees", value.maxPitchDegrees}};
+}
+
+[[nodiscard]] PlayerComponentUVE Player3DObjectFromJsonUVE(const nlohmann::json& json) {
+    PlayerComponentUVE value{};
+    value.possessOnPlay = json.value("possessOnPlay", value.possessOnPlay);
+    value.lookEnabled = json.value("lookEnabled", value.lookEnabled);
+    value.lookSensitivity = json.value("lookSensitivity", value.lookSensitivity);
+    value.lookStickSpeedDegrees = json.value("lookStickSpeedDegrees", value.lookStickSpeedDegrees);
+    value.minPitchDegrees = json.value("minPitchDegrees", value.minPitchDegrees);
+    value.maxPitchDegrees = json.value("maxPitchDegrees", value.maxPitchDegrees);
+    return value;
+}
+
 [[nodiscard]] nlohmann::json ToJsonUVE(const LevelStreamer3DComponentUVE& value) {
     return {{"levelPath", value.levelPath},
             {"loadDistance", value.loadDistance},
@@ -2125,6 +2145,14 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 }
                 return value;
             }, IsSpawnPoint3DObjectComponentValidUVE));
+        table.emplace("PlayerComponentUVE", MakeRegistrationUVE<PlayerComponentUVE>(
+            [](const nlohmann::json& json) {
+                const PlayerComponentUVE value = Player3DObjectFromJsonUVE(json);
+                if (!IsPlayer3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid PlayerComponentUVE payload");
+                }
+                return value;
+            }, IsPlayer3DObjectComponentValidUVE));
         table.emplace("LevelStreamer3DComponentUVE", MakeRegistrationUVE<LevelStreamer3DComponentUVE>(
             [](const nlohmann::json& json) {
                 const LevelStreamer3DComponentUVE value = LevelStreamer3DObjectFromJsonUVE(json);

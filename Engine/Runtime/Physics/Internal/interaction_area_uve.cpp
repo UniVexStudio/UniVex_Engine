@@ -14,6 +14,7 @@
 #include "uve/math/vector3_uve.h"
 #include "uve/objects/3d/collider_3d_uve.h"
 #include "uve/objects/3d/interaction_area_3d_uve.h"
+#include "uve/objects/3d/player_3d_uve.h"
 #include "uve/physics/detail/shape_narrow_phase_uve.h"
 
 namespace UVE::Physics {
@@ -57,8 +58,27 @@ InteractionAreaScanResultUVE SyncInteractionAreasUVE(Scene::IEntityManagerUVE& e
             interactors.push_back(std::move(snapshot));
         });
     result.interactorCount = interactors.size();
+    Scene::EntityUVE possessed = Scene::kInvalidEntityUVE;
+    for (const InteractorSnapshotUVE& snapshot : interactors) {
+        if (!entityManager.HasComponentUVE<Scene::PlayerComponentUVE>(snapshot.entity)) {
+            continue;
+        }
+        const Scene::PlayerComponentUVE& player =
+            entityManager.GetComponentUVE<Scene::PlayerComponentUVE>(snapshot.entity);
+        if (!player.possessOnPlay) {
+            continue;
+        }
+        if (possessed == Scene::kInvalidEntityUVE ||
+            snapshot.entity.index < possessed.index ||
+            (snapshot.entity.index == possessed.index && snapshot.entity.generation < possessed.generation)) {
+            possessed = snapshot.entity;
+        }
+    }
     result.primaryInteractor =
-        Scene::InteractionArea3DUVE::ResolvePrimaryInteractorUVE(interactorEntities).value_or(Scene::kInvalidEntityUVE);
+        possessed != Scene::kInvalidEntityUVE
+            ? possessed
+            : Scene::InteractionArea3DUVE::ResolvePrimaryInteractorUVE(interactorEntities)
+                  .value_or(Scene::kInvalidEntityUVE);
     const Scene::EntityUVE primaryEntity = result.primaryInteractor;
 
     std::vector<Scene::InteractionFocusCandidateUVE> focusCandidates;

@@ -60,6 +60,7 @@
 #include "uve/objects/3d/nav_seeker_3d_uve.h"
 #include "uve/objects/3d/spring_arm_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
+#include "uve/objects/3d/player_3d_uve.h"
 #include "uve/objects/3d/two_bone_ik_3d_uve.h"
 #include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
@@ -1510,6 +1511,39 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 // built-in counterpart), and the section is deliberately declarative: the query that consumes it
 // lives in uve_scene, and nothing in this file decides when a point fires.
 void DeclareGameplayUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    AddValidatedUVE<PlayerComponentUVE, &IsPlayer3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.player", "Player3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::possessOnPlay>(
+                                   "possessOnPlay", "Possess On Play", kPropertyTypeBoolUVE),
+                               "This body receives move, look, jump and interact. Off, it is an NPC."),
+                WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::lookEnabled>("lookEnabled", "Look",
+                                                                            kPropertyTypeBoolUVE),
+                               "Mouse and look-stick rotate this body (yaw) and its camera or spring arm (pitch)."),
+                WithRangeUVE(WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::lookSensitivity>(
+                                                "lookSensitivity", "Look Sensitivity", kPropertyTypeFloatUVE),
+                                            "Degrees per mouse pixel."),
+                             0.0, 10.0, 0.01),
+                WithRangeUVE(WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::lookStickSpeedDegrees>(
+                                                "lookStickSpeedDegrees", "Stick Look Speed",
+                                                kPropertyTypeFloatUVE),
+                                            "Degrees per second at full stick."),
+                             0.0, 720.0, 1.0),
+                WithRangeUVE(WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::minPitchDegrees>(
+                                                "minPitchDegrees", "Min Pitch", kPropertyTypeFloatUVE),
+                                            "Lowest look pitch, in degrees."),
+                             -89.0, 89.0, 1.0),
+                WithRangeUVE(WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::maxPitchDegrees>(
+                                                "maxPitchDegrees", "Max Pitch", kPropertyTypeFloatUVE),
+                                            "Highest look pitch, in degrees."),
+                             -89.0, 89.0, 1.0),
+                InGroupUVE(DeclareRuntimeStateUVE<&PlayerComponentUVE::pitchDegrees>(
+                               "pitchDegrees", "Pitch", kPropertyTypeFloatUVE),
+                           "State"),
+            }));
+
     AddValidatedUVE<SpawnPoint3DComponentUVE, &IsSpawnPoint3DObjectComponentValidUVE>(
         entries,
         MakeEntryUVE(
