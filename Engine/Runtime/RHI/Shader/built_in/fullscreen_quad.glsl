@@ -34,6 +34,30 @@ uniform int uHumanEye;
 uniform float uHumanEyeCenterScale;
 uniform float uHumanEyeTexelX;
 uniform float uHumanEyeTexelY;
+uniform float uExposure;
+uniform int uFogEnabled;
+uniform vec3 uFogColor;
+uniform float uFogDensity;
+uniform float uCameraNear;
+uniform float uCameraFar;
+uniform float uFogSkyAffect;
+uniform int uSkyCovers;
+uniform float uBrightness;
+uniform float uContrast;
+uniform float uSaturation;
+uniform vec3 uColorFilter;
+uniform vec3 uCameraPosition;
+uniform vec3 uCameraRight;
+uniform vec3 uCameraUp;
+uniform vec3 uCameraForward;
+uniform float uTanHalfFov;
+uniform float uAspect;
+uniform vec3 uSunDirection;
+uniform vec3 uSunColor;
+uniform float uSunEnergy;
+uniform float uFogHeight;
+uniform float uFogHeightFalloff;
+uniform float uFogSunScatter;
 
 vec3 AcesToneMapUVE(vec3 color) {
     const float a = 2.51;
@@ -81,8 +105,43 @@ void main() {
         float grey = dot(hdrColor, vec3(0.2126, 0.7152, 0.0722));
         hdrColor = mix(hdrColor, vec3(grey), periphery * 0.2);
     }
-    float covered = texture(uSceneDepthTexture, sourceUV).r < 1.0 ? 1.0 : 0.0;
+    float exposure = uExposure > 0.0 ? uExposure : 1.0;
+    hdrColor *= exposure;
+    float depth = texture(uSceneDepthTexture, sourceUV).r;
+    if (uFogEnabled != 0) {
+        vec2 ndc = sourceUV * 2.0 - 1.0;
+        vec3 view = vec3(ndc.x * max(uTanHalfFov, 0.0) * max(uAspect, 0.0001), ndc.y * max(uTanHalfFov, 0.0), -1.0);
+        vec3 viewDir = normalize(uCameraRight * view.x + uCameraUp * view.y + uCameraForward);
+        float fogFactor = clamp(uFogSkyAffect, 0.0, 1.0);
+        if (depth < 1.0) {
+            float viewDistance = mix(max(uCameraNear, 0.0), max(uCameraFar, 0.0), clamp(depth, 0.0, 1.0));
+            vec3 worldPos = uCameraPosition + viewDir * viewDistance;
+            float heightTerm = exp(-max(worldPos.y - uFogHeight, 0.0) / max(uFogHeightFalloff, 0.01));
+            float density = max(uFogDensity, 0.0) * mix(1.0, heightTerm, 0.85);
+            fogFactor = 1.0 - exp(-density * viewDistance);
+            fogFactor = clamp(fogFactor, 0.0, 1.0);
+        }
+        vec3 sunDir = length(uSunDirection) > 1.0e-5 ? normalize(uSunDirection) : vec3(0.0, 1.0, 0.0);
+        float towardSun = pow(max(dot(viewDir, sunDir), 0.0), 8.0);
+        float day = smoothstep(-0.08, 0.18, sunDir.y);
+        vec3 inscatter = max(uFogColor, vec3(0.0));
+        inscatter = mix(inscatter, max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0),
+                        clamp(uFogSunScatter, 0.0, 1.0) * towardSun * day);
+        hdrColor = mix(hdrColor, inscatter * exposure, fogFactor);
+    }
+    vec3 ldr = AcesToneMapUVE(hdrColor);
+    if (uContrast > 0.0 || uSaturation > 0.0 || uBrightness != 0.0 || any(greaterThan(uColorFilter, vec3(0.0)))) {
+        float contrast = uContrast > 0.0 ? uContrast : 1.0;
+        float saturation = uSaturation > 0.0 ? uSaturation : 1.0;
+        vec3 filterColor = any(greaterThan(uColorFilter, vec3(0.0))) ? uColorFilter : vec3(1.0);
+        ldr = (ldr - vec3(0.5)) * contrast + vec3(0.5) + vec3(uBrightness);
+        float grey = dot(ldr, vec3(0.2126, 0.7152, 0.0722));
+        ldr = mix(vec3(grey), ldr, saturation);
+        ldr *= max(filterColor, vec3(0.0));
+        ldr = clamp(ldr, 0.0, 1.0);
+    }
+    float covered = (depth < 1.0 || uSkyCovers != 0) ? 1.0 : 0.0;
     float alpha = uWriteCoverageAlpha != 0 ? covered : 1.0;
-    FragColor = vec4(AcesToneMapUVE(hdrColor), alpha);
+    FragColor = vec4(ldr, alpha);
 }
 #endif

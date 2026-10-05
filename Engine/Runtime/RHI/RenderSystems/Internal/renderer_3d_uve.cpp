@@ -588,28 +588,6 @@ constexpr std::array<std::uint8_t, 4> kFlatNormalPixelUVE{0x80, 0x80, 0xFF, 0xFF
     return nullptr;
 }
 
-[[nodiscard]] Math::Vector3UVE ResolveWorldEnvironmentAmbientUVE(
-    Scene::IEntityManagerUVE& entityManager, const Math::Vector3UVE fallbackAmbient) noexcept {
-    Math::Vector3UVE ambient = fallbackAmbient;
-    bool environmentFound = false;
-    entityManager.ForEachUVE<Scene::WorldEnvironment3DComponentUVE>(
-        [&ambient, &environmentFound](Scene::EntityUVE,
-                                      const Scene::WorldEnvironment3DComponentUVE& environment) {
-            if (environmentFound || !Scene::IsWorldEnvironment3DObjectComponentValidUVE(environment)) {
-                return;
-            }
-            const Math::Vector3UVE resolved{environment.ambientColor.x * environment.ambientEnergy,
-                                            environment.ambientColor.y * environment.ambientEnergy,
-                                            environment.ambientColor.z * environment.ambientEnergy};
-            if (!Math::IsFiniteUVE(resolved)) {
-                return;
-            }
-            ambient = resolved;
-            environmentFound = true;
-        });
-    return Math::IsFiniteUVE(ambient) ? ambient : Math::Vector3UVE{};
-}
-
 [[nodiscard]] bool AreShadowMapTargetsValidUVE(
     const std::array<TextureHandleUVE, kShadowCascadeCountUVE>& shadowMapTargets) noexcept {
     return std::all_of(shadowMapTargets.cbegin(), shadowMapTargets.cend(),
@@ -655,6 +633,8 @@ struct FrameUniformsUVE {
     Math::Vector3UVE viewPosition;
     LightListUVE lights;
     Math::Vector3UVE ambientColor;
+    Math::Vector3UVE skyAmbient;
+    Math::Vector3UVE groundAmbient;
 
     /// Fixed three-cascade directional-shadow contract. A zero cascadeCount is the no-directional
     /// light sentinel; all maps remain cleared to 1.0 and material shaders naturally evaluate lit.
@@ -760,6 +740,7 @@ struct Renderer3DUVE::ImplUVE {
     /// vector is not reallocated every frame.
     MeshVisibilitySetUVE visibilitySet;
     std::shared_ptr<Shader::ShaderProgramUVE> toneMappingProgram;
+    std::shared_ptr<Shader::ShaderProgramUVE> proceduralSkyProgram;
 
     /// Phase 2b post-process toggles, consulted while building each frame's render graph (see
     /// RenderFrameUVE()) - disabling either skips that group of passes entirely, not just their
@@ -769,6 +750,18 @@ struct Renderer3DUVE::ImplUVE {
     float humanEyeCenterScale = 1.0F;
     float humanEyeTexelX = 0.0F;
     float humanEyeTexelY = 0.0F;
+    Scene::WorldEnvironmentFrameUVE environmentFrame{};
+    float environmentCameraNear = 0.1F;
+    float environmentCameraFar = 250.0F;
+    float environmentAspect = 1.0F;
+    Math::Vector3UVE environmentCameraPosition{};
+    float skyTanHalfFov = 0.57735026919F;
+    Math::Vector3UVE skyCameraRight{1.0F, 0.0F, 0.0F};
+    Math::Vector3UVE skyCameraUp{0.0F, 1.0F, 0.0F};
+    Math::Vector3UVE skyCameraForward{0.0F, 0.0F, -1.0F};
+    Math::Vector3UVE sunDirection{0.0F, 1.0F, 0.0F};
+    Math::Vector3UVE sunColor{1.0F, 1.0F, 1.0F};
+    float sunEnergy = 0.0F;
 
     /// Bloom intermediate targets, at half the main color target's resolution (a standard
     /// perf/quality tradeoff for a blurred, low-frequency effect) and the same HDR-capable format
@@ -1808,6 +1801,8 @@ struct Renderer3DUVE::ImplUVE {
     void ApplyLightingUniformsUVE(Shader::ShaderProgramUVE& program, const FrameUniformsUVE& frameUniforms) {
         program.SetMatrix4x4UVE("uViewProjection", frameUniforms.viewProjection);
         program.SetVector3UVE("uAmbientColor", frameUniforms.ambientColor);
+        program.SetVector3UVE("uSkyAmbient", frameUniforms.skyAmbient);
+        program.SetVector3UVE("uGroundAmbient", frameUniforms.groundAmbient);
         for (std::size_t lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
             const LightDataUVE& light = frameUniforms.lights[lightIndex];
             const LightUniformNamesUVE& names = uniformNames.lights[lightIndex];
@@ -2283,6 +2278,14 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     toneMappingProgramDesc.debugNameUVE = "ToneMapping";
     m_impl->toneMappingProgram = shaderManager.CreateProgramUVE(toneMappingProgramDesc);
 
+    Shader::ShaderProgramDescUVE proceduralSkyProgramDesc;
+    proceduralSkyProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kProceduralSkyVirtualPath);
+    proceduralSkyProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kProceduralSkySource);
+    proceduralSkyProgramDesc.depthTestEnabled = false;
+    proceduralSkyProgramDesc.depthWriteEnabled = false;
+    proceduralSkyProgramDesc.debugNameUVE = "ProceduralSky";
+    m_impl->proceduralSkyProgram = shaderManager.CreateProgramUVE(proceduralSkyProgramDesc);
+
     Shader::ShaderProgramDescUVE bloomBrightPassProgramDesc;
     bloomBrightPassProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kBloomBrightPassVirtualPath);
     bloomBrightPassProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kBloomBrightPassSource);
@@ -2491,6 +2494,18 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         m_impl->humanEyeEnabled ? Scene::HumanEyeCenterScaleUVE(aspectRatio) : 1.0F;
     m_impl->humanEyeTexelX = 1.0F / static_cast<float>(m_impl->targetWidth);
     m_impl->humanEyeTexelY = 1.0F / static_cast<float>(m_impl->targetHeight);
+    m_impl->environmentFrame = Scene::ResolveWorldEnvironmentFrameUVE(entityManager, m_impl->ambientColor);
+    m_impl->environmentCameraNear = camera.nearPlane;
+    m_impl->environmentCameraFar = camera.farPlane;
+    m_impl->environmentAspect = aspectRatio;
+    m_impl->skyCameraRight = Math::RotateVectorUVE(normalizedCameraRotation, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+    m_impl->skyCameraUp = Math::RotateVectorUVE(normalizedCameraRotation, Math::Vector3UVE{0.0F, 1.0F, 0.0F});
+    m_impl->skyCameraForward = Math::RotateVectorUVE(normalizedCameraRotation, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+    const float skyFovY =
+        camera.projection == Scene::CameraProjectionModeUVE::Orthographic
+            ? 60.0F
+            : Scene::VerticalFieldOfViewDegreesUVE(camera, aspectRatio);
+    m_impl->skyTanHalfFov = std::tan(skyFovY * (3.14159265358979323846F / 360.0F));
     m_impl->lastFrameDiagnostics.primitiveProgramReady = m_impl->primitiveProgram->IsValidUVE();
     m_impl->lastFrameDiagnostics.particleProgramReady = m_impl->particleProgram->IsValidUVE();
     m_impl->lastFrameDiagnostics.toneMappingProgramReady = m_impl->toneMappingProgram->IsValidUVE();
@@ -2511,7 +2526,26 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     // created or destroyed, so a light could vanish from the player's face for no visible reason.
     const LightListUVE lights =
         m_impl->lightSystem.ExtractActiveLightsForViewUVE(entityManager, viewPosition);
-    const Math::Vector3UVE ambientColor = ResolveWorldEnvironmentAmbientUVE(entityManager, m_impl->ambientColor);
+    m_impl->environmentCameraPosition = viewPosition;
+    m_impl->sunEnergy = 0.0F;
+    m_impl->sunDirection = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    m_impl->sunColor = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+    for (const LightDataUVE& light : lights) {
+        if (light.type != Scene::LightTypeUVE::Directional || light.intensity <= 0.0F) {
+            continue;
+        }
+        const Math::Vector3UVE incoming = Math::Vector3UVE{-light.direction.x, -light.direction.y, -light.direction.z};
+        if (!Math::IsFiniteUVE(incoming) || Math::LengthSquaredUVE(incoming) < 1.0e-8F) {
+            continue;
+        }
+        m_impl->sunDirection = Math::NormalizeUVE(incoming);
+        m_impl->sunColor = light.color;
+        m_impl->sunEnergy = light.intensity;
+        break;
+    }
+    Scene::ApplySunToWorldEnvironmentFrameUVE(m_impl->environmentFrame, m_impl->sunDirection, m_impl->sunColor,
+                                              m_impl->sunEnergy);
+    const Math::Vector3UVE ambientColor = m_impl->environmentFrame.ambientColor;
 
     // Built ONCE for the whole frame, then culled against each of the four frusta below. Before
     // this, the full extraction walk ran per frustum - three shadow cascades plus the main view -
@@ -2606,6 +2640,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     }
 
     const FrameUniformsUVE frameUniforms{viewProjection, viewPosition, lights, ambientColor,
+                                          m_impl->environmentFrame.skyAmbient, m_impl->environmentFrame.groundAmbient,
                                           lightSpaceMatrices, cascadeSplits, cascadeCount,
                                           m_impl->shadowCascadeBlendRatio};
 
@@ -2721,6 +2756,10 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             passDesc.depthAttachment = m_impl->depthTarget;
             passDesc.colorLoadOp = LoadOpUVE::Clear;
             passDesc.clearColor = kDefaultSceneClearColorUVE;
+            if (m_impl->environmentFrame.hasEnvironment) {
+                const Math::Vector3UVE& horizon = m_impl->environmentFrame.horizonColor;
+                passDesc.clearColor = {horizon.x, horizon.y, horizon.z, 1.0F};
+            }
             m_impl->lastFrameDiagnostics.mainPassRecorded = true;
             commandBuffer.BeginRenderPassUVE(passDesc);
             m_impl->instancedDrawCallsThisFrame = 0U;
@@ -2751,19 +2790,54 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             commandBuffer.EndRenderPassUVE();
         });
 
-    // Phase 2b post-process: SSAO first (darkens colorTarget before bloom's bright-pass threshold
-    // reads it, so occluded creases correctly don't bloom), then bloom. Both are pure additions to
-    // the existing MainColor -> ToneMapping flow - ToneMapping still just reads colorTarget, now
-    // possibly modulated by SSAO and/or bloom before it runs.
+    const bool skyActive = m_impl->environmentFrame.hasEnvironment && m_impl->proceduralSkyProgram &&
+                           m_impl->proceduralSkyProgram->IsValidUVE();
+    if (skyActive) {
+        const std::array<RenderGraphResourceUseUVE, 2U> skyResources{
+            RenderGraphResourceUseUVE{depthResource, RenderGraphResourceAccessUVE::Read},
+            RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Write}};
+        renderGraph.AddPassUVE(
+            "ProceduralSky", skyResources,
+            [this](ICommandBufferUVE& commandBuffer) {
+                RenderPassDescUVE passDesc;
+                passDesc.colorAttachment = m_impl->colorTarget;
+                passDesc.depthAttachment = kInvalidTextureHandleUVE;
+                passDesc.colorLoadOp = LoadOpUVE::Load;
+                commandBuffer.BeginRenderPassUVE(passDesc);
+                m_impl->proceduralSkyProgram->SetIntUVE("uSceneDepthTexture", 0);
+                m_impl->proceduralSkyProgram->SetVector3UVE("uCameraRight", m_impl->skyCameraRight);
+                m_impl->proceduralSkyProgram->SetVector3UVE("uCameraUp", m_impl->skyCameraUp);
+                m_impl->proceduralSkyProgram->SetVector3UVE("uCameraForward", m_impl->skyCameraForward);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uTanHalfFov", m_impl->skyTanHalfFov);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uAspect", m_impl->environmentAspect);
+                m_impl->proceduralSkyProgram->SetVector3UVE("uSkyColor", m_impl->environmentFrame.skyColor);
+                m_impl->proceduralSkyProgram->SetVector3UVE("uHorizonColor", m_impl->environmentFrame.horizonColor);
+                m_impl->proceduralSkyProgram->SetVector3UVE("uGroundColor", m_impl->environmentFrame.groundColor);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uSkyCurve", m_impl->environmentFrame.skyCurve);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uGroundCurve", m_impl->environmentFrame.groundCurve);
+                m_impl->proceduralSkyProgram->SetVector3UVE("uSunDirection", m_impl->sunDirection);
+                m_impl->proceduralSkyProgram->SetVector3UVE("uSunColor", m_impl->sunColor);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uSunEnergy", m_impl->sunEnergy);
+                m_impl->proceduralSkyProgram->ApplyToUVE(commandBuffer);
+                commandBuffer.BindTextureUVE(m_impl->depthTarget, 0U);
+                commandBuffer.DrawUVE(3);
+                commandBuffer.EndRenderPassUVE();
+            });
+    }
+
     const bool bloomTargetsValid = m_impl->bloomBrightTarget != kInvalidTextureHandleUVE &&
                                     m_impl->bloomBlurTargetA != kInvalidTextureHandleUVE &&
                                     m_impl->bloomBlurTargetB != kInvalidTextureHandleUVE;
-    const bool ssaoActive = m_impl->postProcessSettings.ssaoEnabledUVE &&
+    const bool environmentAllowsPost = !m_impl->environmentFrame.hasEnvironment ||
+                                       m_impl->environmentFrame.postProcessingEnabled;
+    const bool environmentBloom = !m_impl->environmentFrame.hasEnvironment || m_impl->environmentFrame.bloomEnabled;
+    const bool environmentSsao = !m_impl->environmentFrame.hasEnvironment || m_impl->environmentFrame.ssaoEnabled;
+    const bool ssaoActive = environmentAllowsPost && environmentSsao && m_impl->postProcessSettings.ssaoEnabledUVE &&
                              m_impl->ssaoTarget != kInvalidTextureHandleUVE && projectionInvertible &&
                              m_impl->ssaoProgram->IsValidUVE() && m_impl->ssaoCompositeProgram->IsValidUVE();
-    const bool bloomActive = m_impl->postProcessSettings.bloomEnabledUVE && bloomTargetsValid &&
-                              m_impl->bloomBrightPassProgram->IsValidUVE() && m_impl->bloomBlurProgram->IsValidUVE() &&
-                              m_impl->bloomCompositeProgram->IsValidUVE();
+    const bool bloomActive = environmentAllowsPost && environmentBloom && m_impl->postProcessSettings.bloomEnabledUVE &&
+                              bloomTargetsValid && m_impl->bloomBrightPassProgram->IsValidUVE() &&
+                              m_impl->bloomBlurProgram->IsValidUVE() && m_impl->bloomCompositeProgram->IsValidUVE();
 
     if (ssaoActive) {
         m_impl->lastFrameDiagnostics.ssaoPassRecorded = true;
@@ -2782,9 +2856,15 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->ssaoProgram->SetIntUVE("uDepthTexture", 0);
                 m_impl->ssaoProgram->SetMatrix4x4UVE("uInverseProjection", inverseProjection);
                 m_impl->ssaoProgram->SetMatrix4x4UVE("uProjection", projection);
-                m_impl->ssaoProgram->SetFloatUVE("uRadius", kSsaoRadiusUVE);
+                const float ssaoRadius = m_impl->environmentFrame.hasEnvironment
+                                             ? m_impl->environmentFrame.ssaoRadius
+                                             : kSsaoRadiusUVE;
+                const float ssaoIntensity = m_impl->environmentFrame.hasEnvironment
+                                                ? m_impl->environmentFrame.ssaoIntensity
+                                                : kSsaoIntensityUVE;
+                m_impl->ssaoProgram->SetFloatUVE("uRadius", ssaoRadius);
                 m_impl->ssaoProgram->SetFloatUVE("uBias", kSsaoBiasUVE);
-                m_impl->ssaoProgram->SetFloatUVE("uIntensity", kSsaoIntensityUVE);
+                m_impl->ssaoProgram->SetFloatUVE("uIntensity", ssaoIntensity);
                 m_impl->ssaoProgram->ApplyToUVE(commandBuffer);
                 commandBuffer.BindTextureUVE(m_impl->depthTarget, 0U);
                 commandBuffer.DrawUVE(3);
@@ -2833,8 +2913,15 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 passDesc.depthAttachment = kInvalidTextureHandleUVE;
                 passDesc.colorLoadOp = LoadOpUVE::DontCare;
                 commandBuffer.BeginRenderPassUVE(passDesc);
+                const float bloomThreshold = m_impl->environmentFrame.hasEnvironment
+                                                 ? m_impl->environmentFrame.bloomThreshold
+                                                 : kBloomThresholdUVE;
+                const float bloomIntensity = m_impl->environmentFrame.hasEnvironment
+                                                 ? m_impl->environmentFrame.bloomIntensity
+                                                 : 1.0F;
                 m_impl->bloomBrightPassProgram->SetIntUVE("uSourceTexture", 0);
-                m_impl->bloomBrightPassProgram->SetFloatUVE("uBloomThreshold", kBloomThresholdUVE);
+                m_impl->bloomBrightPassProgram->SetFloatUVE("uBloomThreshold", bloomThreshold);
+                m_impl->bloomBrightPassProgram->SetFloatUVE("uBloomIntensity", bloomIntensity);
                 m_impl->bloomBrightPassProgram->ApplyToUVE(commandBuffer);
                 commandBuffer.BindTextureUVE(m_impl->colorTarget, 0U);
                 commandBuffer.DrawUVE(3);
@@ -2943,6 +3030,30 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->toneMappingProgram->SetFloatUVE("uHumanEyeCenterScale", m_impl->humanEyeCenterScale);
             m_impl->toneMappingProgram->SetFloatUVE("uHumanEyeTexelX", m_impl->humanEyeTexelX);
             m_impl->toneMappingProgram->SetFloatUVE("uHumanEyeTexelY", m_impl->humanEyeTexelY);
+            m_impl->toneMappingProgram->SetFloatUVE("uExposure", m_impl->environmentFrame.exposure);
+            m_impl->toneMappingProgram->SetIntUVE("uFogEnabled", m_impl->environmentFrame.fogEnabled ? 1 : 0);
+            m_impl->toneMappingProgram->SetVector3UVE("uFogColor", m_impl->environmentFrame.fogColor);
+            m_impl->toneMappingProgram->SetFloatUVE("uFogDensity", m_impl->environmentFrame.fogDensity);
+            m_impl->toneMappingProgram->SetFloatUVE("uCameraNear", m_impl->environmentCameraNear);
+            m_impl->toneMappingProgram->SetFloatUVE("uCameraFar", m_impl->environmentCameraFar);
+            m_impl->toneMappingProgram->SetFloatUVE("uFogSkyAffect", m_impl->environmentFrame.fogSkyAffect);
+            m_impl->toneMappingProgram->SetIntUVE("uSkyCovers", m_impl->environmentFrame.hasEnvironment ? 1 : 0);
+            m_impl->toneMappingProgram->SetFloatUVE("uBrightness", m_impl->environmentFrame.brightness);
+            m_impl->toneMappingProgram->SetFloatUVE("uContrast", m_impl->environmentFrame.contrast);
+            m_impl->toneMappingProgram->SetFloatUVE("uSaturation", m_impl->environmentFrame.saturation);
+            m_impl->toneMappingProgram->SetVector3UVE("uColorFilter", m_impl->environmentFrame.colorFilter);
+            m_impl->toneMappingProgram->SetVector3UVE("uCameraPosition", m_impl->environmentCameraPosition);
+            m_impl->toneMappingProgram->SetVector3UVE("uCameraRight", m_impl->skyCameraRight);
+            m_impl->toneMappingProgram->SetVector3UVE("uCameraUp", m_impl->skyCameraUp);
+            m_impl->toneMappingProgram->SetVector3UVE("uCameraForward", m_impl->skyCameraForward);
+            m_impl->toneMappingProgram->SetFloatUVE("uTanHalfFov", m_impl->skyTanHalfFov);
+            m_impl->toneMappingProgram->SetFloatUVE("uAspect", m_impl->environmentAspect);
+            m_impl->toneMappingProgram->SetVector3UVE("uSunDirection", m_impl->sunDirection);
+            m_impl->toneMappingProgram->SetVector3UVE("uSunColor", m_impl->sunColor);
+            m_impl->toneMappingProgram->SetFloatUVE("uSunEnergy", m_impl->sunEnergy);
+            m_impl->toneMappingProgram->SetFloatUVE("uFogHeight", m_impl->environmentFrame.fogHeight);
+            m_impl->toneMappingProgram->SetFloatUVE("uFogHeightFalloff", m_impl->environmentFrame.fogHeightFalloff);
+            m_impl->toneMappingProgram->SetFloatUVE("uFogSunScatter", m_impl->environmentFrame.fogSunScatter);
             m_impl->toneMappingProgram->ApplyToUVE(commandBuffer);
             commandBuffer.BindTextureUVE(m_impl->colorTarget, 0U);
             commandBuffer.BindTextureUVE(m_impl->depthTarget, 1U);

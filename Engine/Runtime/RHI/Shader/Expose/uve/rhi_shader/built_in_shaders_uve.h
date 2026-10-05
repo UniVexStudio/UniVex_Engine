@@ -28,6 +28,9 @@ extern const std::string_view kBasic3DTexturedSource;
 inline constexpr std::string_view kFullscreenQuadVirtualPath = "shaders/fullscreen_quad.glsl";
 extern const std::string_view kFullscreenQuadSource;
 
+inline constexpr std::string_view kProceduralSkyVirtualPath = "shaders/procedural_sky.glsl";
+extern const std::string_view kProceduralSkySource;
+
 inline constexpr std::string_view kShadowDepthVirtualPath = "shaders/shadow_depth.glsl";
 extern const std::string_view kShadowDepthSource;
 

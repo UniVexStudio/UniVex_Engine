@@ -11,6 +11,7 @@
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/objects/3d/character_3d_uve.h"
+#include "uve/objects/3d/health_uve.h"
 
 namespace UVE::Scene {
 
@@ -35,6 +36,7 @@ struct Player3DObjectDefinitionUVE final {
     ColliderComponentUVE collider = Character3DObjectDefinitionUVE::MakeDefaultColliderUVE();
     CharacterControllerComponentUVE controller{};
     PlayerComponentUVE player{};
+    HealthComponentUVE health{};
 };
 
 [[nodiscard]] bool IsPlayer3DObjectDefinitionValidUVE(const Player3DObjectDefinitionUVE& value) noexcept;
@@ -44,7 +46,13 @@ void ApplyPlayer3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUV
 
 [[nodiscard]] EntityUVE ResolvePossessedPlayerUVE(IEntityManagerUVE& entityManager);
 
+[[nodiscard]] EntityUVE ResolvePlayCharacterUVE(IEntityManagerUVE& entityManager);
+
 [[nodiscard]] EntityUVE FindPlayerLookTargetUVE(IEntityManagerUVE& entityManager, EntityUVE player);
+
+[[nodiscard]] EntityUVE FindPlayerCameraUVE(IEntityManagerUVE& entityManager, EntityUVE player);
+
+void MakePlayerCameraCurrentUVE(IEntityManagerUVE& entityManager, EntityUVE player);
 
 [[nodiscard]] Math::Vector3UVE FaceMoveFromLookUVE(const Math::QuaternionUVE& yawRotation,
                                                    const Math::Vector3UVE& move) noexcept;

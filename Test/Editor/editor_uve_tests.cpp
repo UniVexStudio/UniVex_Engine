@@ -46,6 +46,7 @@
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
+#include "uve/objects/3d/camera_3d_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/fog_volume_3d_uve.h"
 #include "uve/objects/3d/marker_3d_uve.h"
@@ -4372,6 +4373,70 @@ TEST(EditorUVETest, PlayModeSandbox_PlayerWithNoSpawnPointKeepsItsAuthoredPose) 
         EXPECT_EQ(during.localPosition.x, 1.0F);
         EXPECT_EQ(during.localPosition.y, 2.0F);
         ASSERT_TRUE(editor.StopPlayModeUVE());
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, PlayModeSandbox_InstantiatesDefaultPlayerAndUsesItsCamera) {
+    const std::filesystem::path scratch = ::UVE::Tests::MakeTestCaseDirectoryUVE("play_default_player");
+    const std::filesystem::path content = scratch / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    config.projectContentRootUVE = content;
+    config.projectSettingsFilePath = scratch / "project.uvsettings";
+    config.assetDatabaseFilePath = scratch / "assets.json";
+    config.logFilePath = scratch / "log.txt";
+    config.settingsFilePath = scratch / "settings.json";
+    config.inputMapFilePath = scratch / "input_map.json";
+    config.saveDirectoryPath = scratch / "saves";
+    config.shaderCachePath = scratch / "shader_cache";
+
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scratch / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+
+        const auto created = editor.CreateContentCatalogueItemUVE("player", content);
+        ASSERT_TRUE(created.has_value());
+        ASSERT_TRUE(editor.SetDefaultPlayerEntityUVE(created->filename()));
+
+        const Scene::EntityUVE spawn = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE spawnTransform{};
+        spawnTransform.localPosition = Math::Vector3UVE{5.0F, 1.0F, -2.0F};
+        AttachRootUVE(engine, spawn, spawnTransform);
+        entityManager.AddComponentUVE<Scene::SpawnPoint3DComponentUVE>(spawn, Scene::SpawnPoint3DComponentUVE{});
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+
+        EXPECT_EQ(Scene::ResolvePossessedPlayerUVE(entityManager), Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(editor.EnterPlayModeUVE());
+
+        const Scene::EntityUVE player = Scene::ResolvePossessedPlayerUVE(entityManager);
+        ASSERT_NE(player, Scene::kInvalidEntityUVE);
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+        const Scene::WorldTransformComponentUVE& played =
+            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(player);
+        EXPECT_NEAR(played.worldPosition.x, 5.0F, 1.0e-4F);
+        EXPECT_NEAR(played.worldPosition.y, 1.0F, 1.0e-4F);
+        EXPECT_NEAR(played.worldPosition.z, -2.0F, 1.0e-4F);
+
+        const Scene::EntityUVE camera = Scene::FindPlayerCameraUVE(entityManager, player);
+        ASSERT_NE(camera, Scene::kInvalidEntityUVE);
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::CameraComponentUVE>(camera).current);
+        const std::optional<Scene::EntityUVE> current = Scene::FindCurrentCameraEntityUVE(entityManager);
+        ASSERT_TRUE(current.has_value());
+        EXPECT_EQ(*current, camera);
+
+        ASSERT_TRUE(editor.StopPlayModeUVE());
+        EXPECT_EQ(Scene::ResolvePossessedPlayerUVE(entityManager), Scene::kInvalidEntityUVE);
 
         editor.ShutdownUVE();
     }

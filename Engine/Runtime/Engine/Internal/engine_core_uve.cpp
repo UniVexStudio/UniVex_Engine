@@ -64,6 +64,7 @@
 #include "uve/input/gamepad_input_system_uve.h"
 #include "uve/input/input_system_uve.h"
 #include "uve/gameplay/gameplay_input_uve.h"
+#include "uve/gameplay/health_events_uve.h"
 #include "uve/gameplay/interact_requested_event_uve.h"
 #include "uve/input/mobile_gesture_system_uve.h"
 #include "uve/input/mobile_input_system_uve.h"
@@ -88,6 +89,7 @@
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
 #include "uve/objects/3d/interaction_area_3d_uve.h"
+#include "uve/objects/3d/health_uve.h"
 #include "uve/objects/3d/player_3d_uve.h"
 #include "uve/objects/3d/kinematic_3d_uve.h"
 #include "uve/objects/3d/level_streamer_3d_uve.h"
@@ -590,8 +592,8 @@ void EngineCoreUVE::Init() {
         UVE_WARNING("EngineCoreUVE: input map \"{}\" could not be read; no project actions are registered",
                     m_config.inputMapFilePath.string());
     }
-    m_inputMap.ApplyUVE(*m_inputSystem);
     Gameplay::RegisterDefaultGameplayActionsUVE(*m_inputSystem);
+    m_inputMap.ApplyUVE(*m_inputSystem);
     m_windowManager->AttachInputSystemUVE(m_inputSystem.get());
 
     // AudioDevice twenty-ninth: no dependencies of its own. Prefers the real miniaudio backend;
@@ -1356,6 +1358,16 @@ void EngineCoreUVE::SyncHitbox3DObjectsUVE() {
     for (const Physics::Hitbox3DStrikeTransitionUVE& transition : lifecycle.transitions) {
         if (transition.kind == Physics::Hitbox3DStrikeTransitionKindUVE::Entered) {
             m_eventSystem->QueueEvent(Physics::Hitbox3DStrikeEnteredEventUVE{transition.strike});
+            const Scene::HealthDamageResultUVE damage =
+                Scene::ApplyHitboxStrikeToHealthUVE(*m_entityManager, transition.strike.hurtbox);
+            if (damage.applied) {
+                m_eventSystem->QueueEvent(Gameplay::HealthDamagedEventUVE{
+                    damage.entity, transition.strike.hitbox, transition.strike.hurtbox, damage.amount,
+                    damage.remaining});
+                if (damage.depleted) {
+                    m_eventSystem->QueueEvent(Gameplay::HealthDepletedEventUVE{damage.entity});
+                }
+            }
         } else {
             m_eventSystem->QueueEvent(Physics::Hitbox3DStrikeExitedEventUVE{transition.strike});
         }

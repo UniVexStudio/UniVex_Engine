@@ -43,6 +43,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/objects/3d/camera_3d_uve.h"
+#include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/render_systems/camera_system_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 #include "univex/gizmo/GizmoGeometry.h"
@@ -134,6 +135,51 @@ void main() {
             addLine(2, 6);
             addLine(3, 7);
         });
+    return mesh;
+}
+
+void AppendLightDirectionGizmoUVE(univex::gizmo::GizmoMesh& mesh, const UVE::Scene::LightDirectionGizmoUVE& gizmo) {
+    using univex::math::Cross;
+    using univex::math::Dot;
+    using univex::math::Normalize;
+    using univex::math::Vec3;
+    const Vec3 origin = univex::integration::FromUveVector3UVE(gizmo.origin);
+    const Vec3 direction = Normalize(univex::integration::FromUveVector3UVE(gizmo.direction));
+    if (Dot(direction, direction) < 1.0e-8F) {
+        return;
+    }
+    const Vec3 color = univex::integration::FromUveVector3UVE(gizmo.color);
+    constexpr float kLength = 2.4F;
+    constexpr float kHead = 0.45F;
+    constexpr float kRay = 0.9F;
+    constexpr float kOffset = 0.18F;
+    const Vec3 tip = origin + direction * kLength;
+    const Vec3 neck = origin + direction * (kLength - kHead);
+    const auto addLine = [&](const Vec3& a, const Vec3& b, const float width) {
+        mesh.lines.push_back(univex::gizmo::GizmoLine{a, b, color, width});
+    };
+    addLine(origin, tip, 2.4F);
+    const Vec3 upHint = std::fabs(direction.y) < 0.92F ? Vec3{0.0F, 1.0F, 0.0F} : Vec3{1.0F, 0.0F, 0.0F};
+    const Vec3 right = Normalize(Cross(direction, upHint));
+    const Vec3 up = Normalize(Cross(right, direction));
+    addLine(tip, neck + right * (kHead * 0.45F), 2.0F);
+    addLine(tip, neck - right * (kHead * 0.45F), 2.0F);
+    addLine(tip, neck + up * (kHead * 0.45F), 2.0F);
+    addLine(tip, neck - up * (kHead * 0.45F), 2.0F);
+    const Vec3 offsets[4] = {right * kOffset, right * -kOffset, up * kOffset, up * -kOffset};
+    for (const Vec3& offset : offsets) {
+        const Vec3 start = origin + direction * 0.35F + offset;
+        addLine(start, start + direction * kRay, 1.4F);
+    }
+}
+
+[[nodiscard]] univex::gizmo::GizmoMesh BuildLightDirectionMeshUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
+    univex::gizmo::GizmoMesh mesh;
+    std::vector<UVE::Scene::LightDirectionGizmoUVE> gizmos;
+    UVE::Scene::CollectLightDirectionGizmosUVE(entityManager, gizmos);
+    for (const UVE::Scene::LightDirectionGizmoUVE& gizmo : gizmos) {
+        AppendLightDirectionGizmoUVE(mesh, gizmo);
+    }
     return mesh;
 }
 
@@ -250,8 +296,12 @@ public:
             camera_, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), lookThroughCamera);
         if (!gameWorkspaceActive_ && !studioView_) {
             const float aspect = static_cast<float>(width) / static_cast<float>(height);
-            renderPass_->SetCameraFrustumMeshUVE(BuildCameraFrustumMeshUVE(
-                entityManager_, lookThroughCamera.value_or(UVE::Scene::kInvalidEntityUVE), aspect));
+            univex::gizmo::GizmoMesh overlay = BuildCameraFrustumMeshUVE(
+                entityManager_, lookThroughCamera.value_or(UVE::Scene::kInvalidEntityUVE), aspect);
+            univex::gizmo::GizmoMesh lights = BuildLightDirectionMeshUVE(entityManager_);
+            overlay.lines.insert(overlay.lines.end(), lights.lines.begin(), lights.lines.end());
+            overlay.triangles.insert(overlay.triangles.end(), lights.triangles.begin(), lights.triangles.end());
+            renderPass_->SetCameraFrustumMeshUVE(std::move(overlay));
         } else {
             renderPass_->SetCameraFrustumMeshUVE({});
         }

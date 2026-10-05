@@ -13,6 +13,9 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/memory/memory_manager_uve.h"
+#include "uve/objects/3d/camera_3d_uve.h"
+#include "uve/objects/3d/character_3d_uve.h"
+#include "uve/objects/3d/spring_arm_3d_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 
 namespace UVE::Scene::Tests {
@@ -64,6 +67,42 @@ TEST_F(Player3DUVETest, LookYawsTheBodyAndPitchesAChildCamera) {
     EXPECT_LT(state.pitchDegrees, 0.0F);
     EXPECT_NE(body.localRotation, Math::QuaternionUVE{});
     EXPECT_NE(look.localRotation, Math::QuaternionUVE{});
+}
+
+TEST_F(Player3DUVETest, ResolvePlayCharacterFallsBackToTheFirstController) {
+    const EntityUVE body = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, body, TransformComponentUVE{});
+    ApplyCharacter3DObjectDefinitionUVE(entityManager, body, Character3DObjectDefinitionUVE{});
+    EXPECT_EQ(ResolvePossessedPlayerUVE(entityManager), kInvalidEntityUVE);
+    EXPECT_EQ(ResolvePlayCharacterUVE(entityManager), body);
+}
+
+TEST_F(Player3DUVETest, FindPlayerCameraWalksPastTheSpringArm) {
+    const EntityUVE player = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, player, TransformComponentUVE{});
+    ApplyPlayer3DObjectDefinitionUVE(entityManager, player, Player3DObjectDefinitionUVE{});
+
+    const EntityUVE springArm = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, springArm, TransformComponentUVE{});
+    ApplySpringArm3DObjectDefinitionUVE(entityManager, springArm, SpringArm3DObjectDefinitionUVE{});
+    sceneGraph.SetParentUVE(entityManager, springArm, player);
+
+    const EntityUVE camera = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, camera, TransformComponentUVE{});
+    entityManager.AddComponentUVE<CameraComponentUVE>(camera, CameraComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, camera, springArm);
+
+    EXPECT_EQ(FindPlayerLookTargetUVE(entityManager, player), springArm);
+    EXPECT_EQ(FindPlayerCameraUVE(entityManager, player), camera);
+
+    const EntityUVE other = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, other, TransformComponentUVE{});
+    CameraComponentUVE otherCamera{};
+    otherCamera.current = true;
+    entityManager.AddComponentUVE<CameraComponentUVE>(other, otherCamera);
+    MakePlayerCameraCurrentUVE(entityManager, player);
+    EXPECT_TRUE(entityManager.GetComponentUVE<CameraComponentUVE>(camera).current);
+    EXPECT_FALSE(entityManager.GetComponentUVE<CameraComponentUVE>(other).current);
 }
 
 TEST_F(Player3DUVETest, InvalidLookSettingsAreRefused) {

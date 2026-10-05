@@ -416,26 +416,35 @@ bool EditorUVE::EnterPlayModeUVE() {
 
 bool EditorUVE::ApplyPlayEntrySpawnUVE() {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
 
-    // The player: the entity carrying the character controller. A scene with several is a
-    // split-screen/multiplayer question this v1 deliberately does not answer - the first in
-    // pool order is the only deterministic honest pick, and any gameplay layer that wants
-    // richer selection lands its rule in ResolveSpawnPoint3DSelectionUVE, not here.
     Scene::EntityUVE player = Scene::ResolvePossessedPlayerUVE(entityManager);
     if (player == Scene::kInvalidEntityUVE) {
-        entityManager.ForEachUVE<Scene::CharacterControllerComponentUVE>(
-            [&entityManager, &player](const Scene::EntityUVE entity,
-                                      Scene::CharacterControllerComponentUVE&) {
-                if (player == Scene::kInvalidEntityUVE &&
-                    entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity) &&
-                    entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
-                    player = entity;
+        const std::string relative = GetDefaultPlayerEntityUVE();
+        if (!relative.empty()) {
+            const std::filesystem::path absolute =
+                m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot /
+                std::filesystem::path{relative};
+            std::error_code error;
+            if (std::filesystem::is_regular_file(absolute, error)) {
+                const Asset::AssetGuidUVE guid = m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
+                if (guid != Asset::kInvalidAssetGuidUVE) {
+                    static_cast<void>(m_services->GetPrefabSystemUVE().InstantiateUVE(
+                        entityManager, sceneGraph, m_services->GetAssetDatabaseUVE(), guid,
+                        GetDocumentSceneRootUVE()));
+                    sceneGraph.UpdateUVE(entityManager);
+                    player = Scene::ResolvePossessedPlayerUVE(entityManager);
                 }
-            });
+            }
+        }
+    }
+    if (player == Scene::kInvalidEntityUVE) {
+        player = Scene::ResolvePlayCharacterUVE(entityManager);
     }
     if (player == Scene::kInvalidEntityUVE) {
         return false;
     }
+    Scene::MakePlayerCameraCurrentUVE(entityManager, player);
 
     // The candidates come from the shared spawn query - enabled, valid, world-posed, in stable
     // content order - rather than from a second copy of those rules living here. The tag is left

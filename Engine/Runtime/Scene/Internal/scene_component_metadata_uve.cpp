@@ -60,6 +60,7 @@
 #include "uve/objects/3d/nav_seeker_3d_uve.h"
 #include "uve/objects/3d/spring_arm_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
+#include "uve/objects/3d/health_uve.h"
 #include "uve/objects/3d/player_3d_uve.h"
 #include "uve/objects/3d/two_bone_ik_3d_uve.h"
 #include "uve/objects/3d/world_environment_3d_uve.h"
@@ -375,17 +376,27 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         MakeEntryUVE(
             "component.world_environment", "WorldEnvironment", kSectionOrderTypeSpecificUVE,
             {
-                DeclareUVE<&WorldEnvironment3DComponentUVE::skyAssetPath>("skyAssetPath", "Sky",
-                                                                              kPropertyTypeStringUVE),
+                DeclareUVE<&WorldEnvironment3DComponentUVE::skyColor>("skyColor", "Sky Color",
+                                                                          kPropertyTypeColorUVE),
+                DeclareUVE<&WorldEnvironment3DComponentUVE::horizonColor>(
+                    "horizonColor", "Horizon Color", kPropertyTypeColorUVE),
+                DeclareUVE<&WorldEnvironment3DComponentUVE::groundColor>(
+                    "groundColor", "Ground Color", kPropertyTypeColorUVE),
+                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::skyCurve>(
+                                 "skyCurve", "Sky Curve", kPropertyTypeFloatUVE),
+                             0.001, 4.0, 0.01),
+                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::groundCurve>(
+                                 "groundCurve", "Ground Curve", kPropertyTypeFloatUVE),
+                             0.001, 4.0, 0.01),
                 DeclareUVE<&WorldEnvironment3DComponentUVE::ambientColor>(
-                    "ambientColor", "Ambient Color", kPropertyTypeColorUVE),
+                    "ambientColor", "Ambient Tint", kPropertyTypeColorUVE),
                 WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::ambientEnergy>(
                                  "ambientEnergy", "Ambient Energy", kPropertyTypeFloatUVE),
                              0.0, 100.0, 0.05),
                 WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::exposure>(
                                  "exposure", "Exposure", kPropertyTypeFloatUVE),
                              0.0, 100.0, 0.05),
-                DeclareUVE<&WorldEnvironment3DComponentUVE::fogEnabled>("fogEnabled", "Fog Enabled",
+                DeclareUVE<&WorldEnvironment3DComponentUVE::fogEnabled>("fogEnabled", "Fog",
                                                                             kPropertyTypeBoolUVE),
                 [] {
                     TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::fogColor>(
@@ -405,8 +416,121 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                     };
                     return property;
                 }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogSkyAffect>(
+                                         "fogSkyAffect", "Fog Sky", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogHeight>(
+                                         "fogHeight", "Fog Height", kPropertyTypeFloatUVE),
+                                     -1000.0, 10000.0, 0.5);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogHeightFalloff>(
+                                         "fogHeightFalloff", "Fog Falloff", kPropertyTypeFloatUVE),
+                                     0.1, 10000.0, 1.0);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogSunScatter>(
+                                         "fogSunScatter", "Fog Sun Scatter", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
+                    };
+                    return property;
+                }(),
                 DeclareUVE<&WorldEnvironment3DComponentUVE::postProcessingEnabled>(
                     "postProcessingEnabled", "Post Processing", kPropertyTypeBoolUVE),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::bloomEnabled>(
+                        "bloomEnabled", "Bloom", kPropertyTypeBoolUVE);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::bloomIntensity>(
+                                         "bloomIntensity", "Bloom Intensity", kPropertyTypeFloatUVE),
+                                     0.0, 8.0, 0.01);
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->bloomEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::bloomThreshold>(
+                                         "bloomThreshold", "Bloom Threshold", kPropertyTypeFloatUVE),
+                                     0.0, 8.0, 0.05);
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->bloomEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::ssaoEnabled>(
+                        "ssaoEnabled", "SSAO", kPropertyTypeBoolUVE);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::ssaoIntensity>(
+                                         "ssaoIntensity", "SSAO Intensity", kPropertyTypeFloatUVE),
+                                     0.0, 4.0, 0.05);
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->ssaoEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::ssaoRadius>(
+                                         "ssaoRadius", "SSAO Radius", kPropertyTypeFloatUVE),
+                                     0.05, 4.0, 0.05);
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->ssaoEnabled;
+                    };
+                    return property;
+                }(),
+                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::brightness>(
+                                 "brightness", "Brightness", kPropertyTypeFloatUVE),
+                             -1.0, 1.0, 0.01),
+                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::contrast>(
+                                 "contrast", "Contrast", kPropertyTypeFloatUVE),
+                             0.0, 2.0, 0.01),
+                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::saturation>(
+                                 "saturation", "Saturation", kPropertyTypeFloatUVE),
+                             0.0, 2.0, 0.01),
+                DeclareUVE<&WorldEnvironment3DComponentUVE::colorFilter>(
+                    "colorFilter", "Color Filter", kPropertyTypeColorUVE),
+                DeclareUVE<&WorldEnvironment3DComponentUVE::skyAssetPath>("skyAssetPath", "Sky Asset",
+                                                                              kPropertyTypeStringUVE),
             }));
 
     AddUVE<ParticleEmitterComponentUVE>(
@@ -1541,6 +1665,23 @@ void DeclareGameplayUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                              -89.0, 89.0, 1.0),
                 InGroupUVE(DeclareRuntimeStateUVE<&PlayerComponentUVE::pitchDegrees>(
                                "pitchDegrees", "Pitch", kPropertyTypeFloatUVE),
+                           "State"),
+            }));
+
+    AddValidatedUVE<HealthComponentUVE, &IsHealthComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.health", "Health", kSectionOrderTypeSpecificUVE,
+            {
+                WithRangeUVE(WithTooltipUVE(DeclareUVE<&HealthComponentUVE::maxHealth>(
+                                                "maxHealth", "Max Health", kPropertyTypeFloatUVE),
+                                            "Hit points at spawn."),
+                             1.0, 10000.0, 1.0),
+                WithTooltipUVE(DeclareUVE<&HealthComponentUVE::invulnerable>("invulnerable", "Invulnerable",
+                                                                            kPropertyTypeBoolUVE),
+                               "Strikes do not reduce health."),
+                InGroupUVE(DeclareRuntimeStateUVE<&HealthComponentUVE::health>("health", "Health",
+                                                                              kPropertyTypeFloatUVE),
                            "State"),
             }));
 

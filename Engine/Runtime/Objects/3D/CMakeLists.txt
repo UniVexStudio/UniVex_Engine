@@ -47,6 +47,7 @@ add_library(uve_objects_3d STATIC
     Internal/occluder_3d_uve.cpp
     Internal/visibility_region_3d_uve.cpp
     Internal/spawn_point_3d_uve.cpp
+    Internal/health_uve.cpp
     Internal/player_3d_uve.cpp
     Internal/level_streamer_3d_uve.cpp
     Internal/world_partition_3d_uve.cpp
