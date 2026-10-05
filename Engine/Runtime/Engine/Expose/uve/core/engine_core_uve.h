@@ -711,9 +711,6 @@ private:
     /// transactionally resizes Renderer3DUVE before the frame's scene work begins.
     void SyncAdaptiveRenderResolutionUVE();
 
-    /// Queries the bounded area-overlap snapshot, advances the copied lifecycle baseline, and queues
-    /// typed Entered/Exited DTOs in the tracker-provided deterministic order. Truncated snapshots
-    /// intentionally produce no inferred exits, and this seam does not mutate ECS/physics state.
     void PublishAreaOverlapLifecycleEventsUVE();
 
     /// Recomputes FrameStatsUVE::fps (an exponential moving average of

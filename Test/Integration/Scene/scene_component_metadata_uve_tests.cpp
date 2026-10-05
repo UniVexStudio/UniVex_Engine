@@ -11,6 +11,7 @@
 #include <typeindex>
 #include <vector>
 
+#include "uve/component/area_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
@@ -20,6 +21,7 @@
 #include "uve/objects/3d/bone_attachment_3d_uve.h"
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
+#include "uve/objects/3d/interaction_area_3d_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
@@ -84,11 +86,11 @@ TEST(SceneComponentMetadataUVETest, EveryLayerMaskNamesTheLayersItPicksFrom) {
         }
     }
     // The collider's layer and mask, SpringArm3D's collisionMask, RayCast3D's collisionMask,
-    // Projectile3D's collisionMask, Hitbox3D/Hurtbox3D's layer and mask, and the navigation
-    // region/agent layers - every cast, every swept body, every strike and every path in the engine
-    // filters on the same layer contract, so they all belong to the same drawer set rather than a
-    // second, hand-drawn one.
-    EXPECT_EQ(physics, 11U);
+    // Projectile3D's collisionMask, Hitbox3D/Hurtbox3D's layer and mask, InteractionArea3D's
+    // layer and mask, and the navigation region/agent layers - every cast, every swept body,
+    // every strike, every interact volume and every path in the engine filters on the same
+    // layer contract, so they all belong to the same drawer set rather than a second, hand-drawn one.
+    EXPECT_EQ(physics, 13U);
     EXPECT_EQ(render, 4U); // mesh, render instance, light and decal
 }
 
@@ -580,8 +582,8 @@ TEST(SceneComponentMetadataUVETest, TheProjectileSectionCarriesItsHitContractAnd
     EXPECT_EQ(projectile->displayName, "Projectile3D");
 
     for (const char* const name :
-         {"active", "velocity", "acceleration", "radius", "maxLifetime", "collisionMask", "hitPolicy",
-          "restitution", "friction"}) {
+         {"active", "velocity", "acceleration", "radius", "maxLifetime", "collisionMask", "ignoreEntity",
+          "hitPolicy", "restitution", "friction"}) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*projectile, name);
         ASSERT_NE(property, nullptr) << name;
         EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
@@ -593,6 +595,12 @@ TEST(SceneComponentMetadataUVETest, TheProjectileSectionCarriesItsHitContractAnd
     ASSERT_NE(mask, nullptr);
     EXPECT_EQ(mask->typeId, kPropertyTypeBitMask32UVE);
     EXPECT_EQ(mask->customDrawerId, kLayerMaskDrawerPhysicsUVE);
+
+    const TypeMetadataPropertyUVE* ignoreEntity = FindPropertyUVE(*projectile, "ignoreEntity");
+    ASSERT_NE(ignoreEntity, nullptr);
+    EXPECT_EQ(ignoreEntity->typeId, kPropertyTypeEntityUVE);
+    EXPECT_TRUE(HasPropertyFlagUVE(ignoreEntity->flags, TypeMetadataPropertyFlagsUVE::EntityReference));
+    EXPECT_TRUE(ignoreEntity->IsAuthoringWritableUVE());
 
     // The policy is an enum with exactly the two motions the engine can execute, and a generic
     // consumer authors it the way it authors LightTypeUVE - through int64, never the enum type.
@@ -685,8 +693,6 @@ TEST(SceneComponentMetadataUVETest, TheCombatSectionsCarryTheStrikeContractAndIt
         }
     }
 
-    // The result of the strike scan lives on the hitbox only: a hurtbox has no strike list of its
-    // own, so declaring one there would draw a field nothing ever writes.
     const TypeMetadataPropertyUVE* count = FindPropertyUVE(*hitbox, "strikeCount");
     ASSERT_NE(count, nullptr);
     EXPECT_EQ(count->typeId, kPropertyTypeUInt8UVE);
@@ -695,8 +701,34 @@ TEST(SceneComponentMetadataUVETest, TheCombatSectionsCarryTheStrikeContractAndIt
     ASSERT_NE(truncated, nullptr);
     EXPECT_EQ(truncated->typeId, kPropertyTypeBoolUVE);
     EXPECT_EQ(truncated->section, "Result");
+    for (const TypeMetadataEntryUVE* const entry : {hitbox, hurtbox}) {
+        const TypeMetadataPropertyUVE* ignoreEntity = FindPropertyUVE(*entry, "ignoreEntity");
+        ASSERT_NE(ignoreEntity, nullptr) << entry->typeId;
+        EXPECT_EQ(ignoreEntity->typeId, kPropertyTypeEntityUVE);
+        EXPECT_TRUE(HasPropertyFlagUVE(ignoreEntity->flags, TypeMetadataPropertyFlagsUVE::EntityReference));
+        EXPECT_TRUE(ignoreEntity->IsAuthoringWritableUVE());
+    }
+
+    const TypeMetadataPropertyUVE* landed = FindPropertyUVE(*hitbox, "struckCount");
+    ASSERT_NE(landed, nullptr);
+    EXPECT_EQ(landed->typeId, kPropertyTypeUInt8UVE);
+    EXPECT_EQ(landed->section, "Result");
     for (const TypeMetadataPropertyUVE& property : hitbox->properties) {
-        if (property.name == "strikeCount" || property.name == "strikesTruncated") {
+        if (property.name == "strikeCount" || property.name == "strikesTruncated" ||
+            property.name == "struckCount") {
+            EXPECT_TRUE(HasPropertyFlagUVE(property.flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+                << property.name;
+            EXPECT_FALSE(property.IsAuthoringWritableUVE()) << property.name;
+            EXPECT_FALSE(property.IsSerializedUVE()) << property.name;
+        }
+    }
+    const TypeMetadataPropertyUVE* hits = FindPropertyUVE(*hurtbox, "hitCount");
+    ASSERT_NE(hits, nullptr);
+    EXPECT_EQ(hits->typeId, kPropertyTypeUInt8UVE);
+    EXPECT_EQ(hits->section, "Result");
+    for (const TypeMetadataPropertyUVE& property : hurtbox->properties) {
+        if (property.name == "hitCount" || property.name == "hitsTruncated" ||
+            property.name == "receivedCount") {
             EXPECT_TRUE(HasPropertyFlagUVE(property.flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
                 << property.name;
             EXPECT_FALSE(property.IsAuthoringWritableUVE()) << property.name;
@@ -704,7 +736,7 @@ TEST(SceneComponentMetadataUVETest, TheCombatSectionsCarryTheStrikeContractAndIt
         }
     }
     EXPECT_EQ(FindPropertyUVE(*hurtbox, "strikeCount"), nullptr);
-    EXPECT_EQ(FindPropertyUVE(*hurtbox, "strikesTruncated"), nullptr);
+    EXPECT_EQ(FindPropertyUVE(*hitbox, "hitCount"), nullptr);
 
     // The one-byte count is declared as one byte wide, and the component's own rule travels with
     // both declarations so no generic edit can author a box that cannot strike or receive.
@@ -727,6 +759,78 @@ TEST(SceneComponentMetadataUVETest, TheCombatSectionsCarryTheStrikeContractAndIt
     Hurtbox3DComponentUVE overlongChannel;
     overlongChannel.damageChannel = std::string(300U, 'x');
     EXPECT_FALSE(hurtbox->isInstanceValid(&overlongChannel));
+}
+
+TEST(SceneComponentMetadataUVETest, TheInteractionAreaSectionCarriesIgnoreAndRuntimeOccupancy) {
+    const TypeMetadataEntryUVE* area =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(InteractionArea3DComponentUVE)));
+    ASSERT_NE(area, nullptr);
+    EXPECT_EQ(area->typeId, "component.interaction_area_3d");
+    EXPECT_EQ(area->displayName, "InteractionArea3D");
+
+    for (const char* const name :
+         {"enabled", "halfExtents", "interactionTag", "maximumCandidates", "collisionLayer", "collisionMask",
+          "ignoreEntity"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*area, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_TRUE(property->IsAuthoringWritableUVE()) << name;
+    }
+    const TypeMetadataPropertyUVE* ignoreEntity = FindPropertyUVE(*area, "ignoreEntity");
+    ASSERT_NE(ignoreEntity, nullptr);
+    EXPECT_TRUE(HasPropertyFlagUVE(ignoreEntity->flags, TypeMetadataPropertyFlagsUVE::EntityReference));
+    for (const char* const name : {"interactorCount", "interactorsTruncated", "focusedByPrimaryInteractor"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*area, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_TRUE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
+        EXPECT_FALSE(property->IsAuthoringWritableUVE()) << name;
+        EXPECT_EQ(property->section, "Result");
+    }
+    ASSERT_NE(area->isInstanceValid, nullptr);
+    InteractionArea3DComponentUVE value;
+    EXPECT_TRUE(area->isInstanceValid(&value));
+    value.maximumCandidates = 0U;
+    EXPECT_FALSE(area->isInstanceValid(&value));
+}
+
+TEST(SceneComponentMetadataUVETest, TheArea3DSectionCarriesSpaceOverrideAndOccupancy) {
+    const TypeMetadataEntryUVE* area = FindSceneComponentMetadataUVE(std::type_index(typeid(AreaComponentUVE)));
+    ASSERT_NE(area, nullptr);
+    EXPECT_EQ(area->typeId, "component.area");
+    EXPECT_EQ(area->displayName, "Area3D");
+
+    for (const char* const name :
+         {"halfExtents", "collisionLayer", "collisionMask", "monitoring", "monitorable", "priority",
+          "gravityOverride", "gravityPoint", "gravityDirection", "gravityMagnitude",
+          "gravityPointOffset", "gravityPointUnitDistance", "linearDampOverride", "linearDamp",
+          "angularDampOverride", "angularDamp"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*area, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+            << name;
+        EXPECT_TRUE(property->IsAuthoringWritableUVE()) << name;
+    }
+    for (const char* const name : {"collisionLayer", "collisionMask"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*area, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_EQ(property->typeId, kPropertyTypeBitMask32UVE) << name;
+        EXPECT_EQ(property->customDrawerId, kLayerMaskDrawerPhysicsUVE) << name;
+    }
+    for (const char* const name :
+         {"overlappingBodyCount", "overlappingBodiesTruncated", "overlappingAreaCount",
+          "overlappingAreasTruncated"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*area, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_TRUE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+            << name;
+        EXPECT_FALSE(property->IsAuthoringWritableUVE()) << name;
+    }
+
+    ASSERT_NE(area->isInstanceValid, nullptr);
+    AreaComponentUVE valid{};
+    EXPECT_TRUE(area->isInstanceValid(&valid));
+    AreaComponentUVE unknownMode{};
+    unknownMode.gravityOverride = static_cast<AreaSpaceOverrideModeUVE>(9U);
+    EXPECT_FALSE(area->isInstanceValid(&unknownMode));
 }
 
 } // namespace

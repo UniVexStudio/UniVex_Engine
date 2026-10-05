@@ -65,6 +65,7 @@
 #include "uve/input/input_system_uve.h"
 #include "uve/input/mobile_gesture_system_uve.h"
 #include "uve/input/mobile_input_system_uve.h"
+#include "uve/physics/area_3d_runtime_uve.h"
 #include "uve/physics/area_overlap_events_uve.h"
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
@@ -100,6 +101,7 @@
 #include "uve/physics/interaction_area_uve.h"
 #include "uve/physics/kinematic_body_uve.h"
 #include "uve/physics/projectile_3d_step_uve.h"
+#include "uve/physics/ray_cast_3d_step_uve.h"
 #include "uve/physics/hitbox_strike_events_uve.h"
 #include "uve/physics/hitbox_strike_uve.h"
 #include "uve/physics/hitbox_strike_lifecycle_tracker_uve.h"
@@ -1306,46 +1308,8 @@ void EngineCoreUVE::SyncCollisionLifecycleUVE() {
 
 void EngineCoreUVE::SyncRayCast3DObjectsUVE() {
     m_entityManager->ForEachUVE<Scene::RayCast3DComponentUVE>(
-        [this](const Scene::EntityUVE entity, Scene::RayCast3DComponentUVE& rayCast) {
-            // Every gate fails closed, and it clears the WHOLE result rather than just the flag: a
-            // disabled, malformed or unswept ray has no hit, no point, no normal and no entity.
-            // Leaving last frame's numbers behind a false `hit` is how a consumer that reads
-            // hitEntity without checking hit first ends up acting on a ray that is not there.
-            const auto clearResult = [&rayCast]() {
-                rayCast.hit = false;
-                rayCast.hitPosition = {};
-                rayCast.hitNormal = {};
-                rayCast.hitEntity = Scene::kInvalidEntityUVE;
-            };
-            if (!rayCast.enabled || !Scene::IsRayCast3DObjectComponentValidUVE(rayCast) ||
-                !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
-                clearResult();
-                return;
-            }
-
-            const auto& worldTransform = m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
-            Physics::RaycastQueryUVE query{};
-            query.ray.origin = worldTransform.worldPosition;
-            query.ray.direction = Math::RotateVectorUVE(worldTransform.worldRotation, rayCast.direction);
-            query.maxDistance = rayCast.length;
-            query.layerMask = rayCast.collisionMask;
-            query.ignoreEntity = entity;
-            // The authored exclusions - the component's live prefix, in the order they were
-            // authored. They are entity references, remapped by the serializer on load, not raw
-            // handles that would break the first time the pool handed the index to someone else.
-            query.excludedEntities = std::span<const Scene::EntityUVE>(
-                rayCast.exclusions.data(), Scene::CountRayCast3DExclusionsUVE(rayCast));
-
-            const std::optional<Physics::RaycastHitUVE> result = m_raycastSystem->RaycastUVE(*m_entityManager, query);
-            if (!result.has_value()) {
-                clearResult();
-                return;
-            }
-
-            rayCast.hit = true;
-            rayCast.hitPosition = result->point;
-            rayCast.hitNormal = result->normal;
-            rayCast.hitEntity = result->entity;
+        [this](const Scene::EntityUVE entity, Scene::RayCast3DComponentUVE&) {
+            static_cast<void>(Physics::StepRayCast3DUVE(*m_entityManager, *m_raycastSystem, entity));
         });
 }
 
@@ -2193,6 +2157,7 @@ void EngineCoreUVE::Update() {
 void EngineCoreUVE::PublishAreaOverlapLifecycleEventsUVE() {
     const Physics::AreaOverlapQueryResultUVE snapshot =
         Physics::AreaOverlapSystemUVE::QueryUVE(*m_entityManager);
+    static_cast<void>(Physics::ApplyArea3DOccupancyUVE(*m_entityManager, snapshot));
     const Physics::AreaOverlapLifecycleReportUVE report =
         m_areaOverlapLifecycleTracker.UpdateUVE(snapshot);
 

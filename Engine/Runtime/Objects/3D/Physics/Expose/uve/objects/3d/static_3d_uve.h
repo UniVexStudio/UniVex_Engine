@@ -37,4 +37,11 @@ struct Static3DObjectDefinitionUVE final {
 void ApplyStatic3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                         const Static3DObjectDefinitionUVE& value);
 
+class Static3DUVE final {
+public:
+    [[nodiscard]] static bool IsImmovableUVE() noexcept;
+    [[nodiscard]] static float InverseMassUVE() noexcept;
+    [[nodiscard]] static bool IsWorldGeometryUVE(const IEntityManagerUVE& entityManager, EntityUVE entity) noexcept;
+};
+
 } // namespace UVE::Scene

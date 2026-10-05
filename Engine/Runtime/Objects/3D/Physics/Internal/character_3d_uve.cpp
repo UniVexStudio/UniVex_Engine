@@ -79,6 +79,13 @@ constexpr float kFloorProbeLiftMarginFactorUVE = 2.0F;
     return value - axis * along;
 }
 
+/// The signed length of `value` along a unit axis. Non-finite dots read as zero so a caller never
+/// has to special-case NaN on top of "no component along this".
+[[nodiscard]] float AlongUnitUVE(const Math::Vector3UVE& value, const Math::Vector3UVE& unitAxis) noexcept {
+    const float along = Math::DotUVE(value, unitAxis);
+    return std::isfinite(along) ? along : 0.0F;
+}
+
 [[nodiscard]] bool IsFiniteStateUVE(const CharacterMotionStateUVE& state) noexcept {
     return IsUsableVectorUVE(state.velocity) && IsUsableVectorUVE(state.floorNormal) &&
            IsUsableVectorUVE(state.wallNormal) && IsUsableVectorUVE(state.ceilingNormal) &&
@@ -232,8 +239,6 @@ struct MoveContextUVE final {
     CharacterMotionResultUVE result{};
     Math::Vector3UVE center{};
     Math::Vector3UVE remaining{};
-    /// The horizontal speed the move set out with, which Floor Constant Speed holds the body to.
-    float targetHorizontalSpeed = 0.0F;
     EntityUVE floorEntity = kInvalidEntityUVE;
 };
 
@@ -342,56 +347,68 @@ void DepenetrateUVE(MoveContextUVE& context) {
         // "depenetrate until touching".
         return;
     }
-    const std::vector<CharacterSlideCollisionUVE> overlaps = context.world->GetOverlapsUVE();
-    if (overlaps.empty()) {
-        return;
-    }
 
-    std::vector<std::size_t> order;
-    order.reserve(overlaps.size());
-    for (std::size_t index = 0U; index < overlaps.size(); ++index) {
-        order.push_back(index);
-    }
-    // Deepest first, ties broken by entity index: the same world pushes the same way every run.
-    std::stable_sort(order.begin(), order.end(),
-                     [&overlaps](const std::size_t lhs, const std::size_t rhs) {
-                         if (overlaps[lhs].depth != overlaps[rhs].depth) {
-                             return overlaps[lhs].depth > overlaps[rhs].depth;
-                         }
-                         return overlaps[lhs].entity.index < overlaps[rhs].entity.index;
-                     });
-
-    Math::Vector3UVE totalPush{};
-    const std::size_t passCount = std::min(order.size(), kMaximumDepenetrationPassesUVE);
-    for (std::size_t pass = 0U; pass < passCount; ++pass) {
-        const CharacterSlideCollisionUVE& overlap = overlaps[order[pass]];
-        const std::optional<Math::Vector3UVE> direction = TryNormalizeUVE(overlap.normal);
-        if (!direction.has_value() || !std::isfinite(overlap.depth) || overlap.depth <= 0.0F) {
-            continue;
+    // Each pass asks the world about the working center, pushes the deepest overlap there, and
+    // asks again. Ghost contacts from the pose we just left cannot keep pushing: that is what
+    // GetOverlapsAtUVE is for, and why a snapshot of the start pose is not enough.
+    float remainingBudget = Character3DUVE::kMaximumSingleDepenetrationDistanceUVE;
+    for (std::size_t pass = 0U; pass < kMaximumDepenetrationPassesUVE; ++pass) {
+        if (remainingBudget <= Character3DUVE::kMinimumMotionDistanceUVE) {
+            break;
         }
-        const float pushDistance =
-            std::min(overlap.depth + context.config.safeMargin,
-                     Character3DUVE::kMaximumSingleDepenetrationDistanceUVE);
-        if (!std::isfinite(pushDistance) || pushDistance <= 0.0F) {
-            continue;
+        const std::vector<CharacterSlideCollisionUVE> overlaps =
+            context.world->GetOverlapsAtUVE(context.center);
+        if (overlaps.empty()) {
+            break;
         }
-        const Math::Vector3UVE push = *direction * pushDistance;
-        const Math::Vector3UVE remainder = totalPush;
-        totalPush += push;
-        ++context.result.depenetrationPasses;
-        RecordSurfaceContactUVE(context, overlap, Math::Vector3UVE{}, remainder, 0.0F, overlap.depth,
-                                false);
-    }
 
-    const float pushLength = VectorLengthUVE(totalPush);
-    if (pushLength <= 0.0F) {
-        return;
+        std::vector<std::size_t> order;
+        order.reserve(overlaps.size());
+        for (std::size_t index = 0U; index < overlaps.size(); ++index) {
+            order.push_back(index);
+        }
+        std::stable_sort(order.begin(), order.end(),
+                         [&overlaps](const std::size_t lhs, const std::size_t rhs) {
+                             if (overlaps[lhs].depth != overlaps[rhs].depth) {
+                                 return overlaps[lhs].depth > overlaps[rhs].depth;
+                             }
+                             return overlaps[lhs].entity.index < overlaps[rhs].entity.index;
+                         });
+
+        bool pushed = false;
+        for (const std::size_t index : order) {
+            const CharacterSlideCollisionUVE& overlap = overlaps[index];
+            const std::optional<Math::Vector3UVE> direction = TryNormalizeUVE(overlap.normal);
+            if (!direction.has_value() || !std::isfinite(overlap.depth) || overlap.depth <= 0.0F) {
+                continue;
+            }
+            const Math::Vector3UVE remainder = context.result.depenetrationMotion;
+            if (!pushed) {
+                const float wanted = overlap.depth + context.config.safeMargin;
+                if (!std::isfinite(wanted) || wanted <= 0.0F) {
+                    continue;
+                }
+                const float pushDistance = std::min(wanted, remainingBudget);
+                if (!std::isfinite(pushDistance) || pushDistance <= 0.0F) {
+                    continue;
+                }
+                const Math::Vector3UVE push = *direction * pushDistance;
+                ApplyMotionUVE(context, push, context.result.depenetrationMotion);
+                remainingBudget -= pushDistance;
+                ++context.result.depenetrationPasses;
+                context.result.depenetrated = true;
+                RecordSurfaceContactUVE(context, overlap, push, remainder, 0.0F, overlap.depth,
+                                        false);
+                pushed = true;
+            } else {
+                RecordSurfaceContactUVE(context, overlap, Math::Vector3UVE{}, remainder, 0.0F,
+                                        overlap.depth, false);
+            }
+        }
+        if (!pushed) {
+            break;
+        }
     }
-    if (pushLength > Character3DUVE::kMaximumSingleDepenetrationDistanceUVE) {
-        totalPush *= Character3DUVE::kMaximumSingleDepenetrationDistanceUVE / pushLength;
-    }
-    context.result.depenetrated = true;
-    ApplyMotionUVE(context, totalPush, context.result.depenetrationMotion);
 }
 
 // =================================================================================================
@@ -433,8 +450,19 @@ struct StepResultUVE final {
     // the lift, and a step too tall to clear is refused by the forward probe below.
     const std::optional<CharacterSlideCollisionUVE> liftHit = context.world->SweepUVE(
         context.center, up * (stepHeight + config.safeMargin), config.safeMargin);
-    if (liftHit.has_value() && liftHit->entity != wallHit.entity) {
-        return std::nullopt;
+    if (liftHit.has_value()) {
+        if (liftHit->entity != wallHit.entity) {
+            return std::nullopt;
+        }
+        // Same body: the riser we are climbing is not in the way of its own lift. Its underside
+        // is - a doorway lintel on the same mesh, a shelf that is this wall's own top - and a
+        // ceiling-class hit is that underside. Honouring it is what stops a step from standing
+        // the body up through a roof that happens to share an entity with the stair.
+        float liftAngleDegrees = 0.0F;
+        if (ClassifyNormalUVE(up, config, liftHit->normal, liftAngleDegrees) ==
+            CharacterSurfaceKindUVE::Ceiling) {
+            return std::nullopt;
+        }
     }
     const Math::Vector3UVE liftedCenter = context.center + up * stepHeight;
 
@@ -480,7 +508,6 @@ struct StepResultUVE final {
     step.motion = step.center - context.center;
     step.landing = *dropHit;
     step.leftoverHorizontal = std::max(0.0F, horizontalLength - reach);
-    static_cast<void>(wallHit);
     return step;
 }
 
@@ -491,9 +518,13 @@ struct StepResultUVE final {
 // rather than an assumption.
 // =================================================================================================
 
+[[nodiscard]] float FloorProbeLiftFromMarginUVE(const float safeMargin) noexcept {
+    const float margin = std::max(0.0F, FiniteOrZeroUVE(safeMargin));
+    return margin * kFloorProbeLiftMarginFactorUVE + Character3DUVE::kMinimumMotionDistanceUVE;
+}
+
 [[nodiscard]] float FloorProbeLiftUVE(const ResolvedConfigUVE& config) noexcept {
-    return config.safeMargin * kFloorProbeLiftMarginFactorUVE +
-           Character3DUVE::kMinimumMotionDistanceUVE;
+    return FloorProbeLiftFromMarginUVE(config.safeMargin);
 }
 
 void SnapToFloorUVE(MoveContextUVE& context) {
@@ -501,7 +532,7 @@ void SnapToFloorUVE(MoveContextUVE& context) {
     if (context.result.onFloor || !config.detectFloor || !context.moved.grounded) {
         return;
     }
-    if (config.jumpedThisStep || context.moved.velocity.y > 0.0F) {
+    if (config.jumpedThisStep || AlongUnitUVE(context.moved.velocity, config.upDirection) > 0.0F) {
         // A jump is a decision to leave the floor, and a body on its way up is already gone.
         return;
     }
@@ -521,15 +552,18 @@ void SnapToFloorUVE(MoveContextUVE& context) {
 
     const float lift = FloorProbeLiftUVE(config);
     const float gap = std::max(0.0F, hit->travel - lift);
-    if (gap <= Character3DUVE::kMinimumMotionDistanceUVE) {
-        // Already resting against the floor: the probe answered "there is one", and there is
-        // nothing to move the body by.
-        return;
+    Math::Vector3UVE snap{};
+    float snapDistance = 0.0F;
+    if (gap > Character3DUVE::kMinimumMotionDistanceUVE) {
+        snapDistance = std::min(gap, probeDistance);
+        snap = -config.upDirection * snapDistance;
+        ApplyMotionUVE(context, snap, context.result.snapMotion);
+        context.result.snapUsed = true;
     }
-    const float snapDistance = std::min(gap, probeDistance);
-    const Math::Vector3UVE snap = -config.upDirection * snapDistance;
-    ApplyMotionUVE(context, snap, context.result.snapMotion);
-    context.result.snapUsed = true;
+    // The probe answered "this is the floor" whether or not there was a gap to close. A script
+    // reading collisions after a follow-down has to see that floor, not an empty list that looks
+    // like "nothing underfoot".
+    RecordSurfaceContactUVE(context, *hit, snap, context.remaining, snapDistance, 0.0F, false);
 }
 
 /// The floor probe itself, shared by the snap above and by anything that just wants to ask "what is
@@ -547,8 +581,7 @@ void SnapToFloorUVE(MoveContextUVE& context) {
     probeConfig.upDirection = *up;
     probeConfig.floorMaxAngleDegrees = std::clamp(FiniteOrZeroUVE(floorMaxAngleDegrees), 0.0F, 90.0F);
 
-    const float lift = std::max(safeMargin * kFloorProbeLiftMarginFactorUVE,
-                                Character3DUVE::kMinimumMotionDistanceUVE);
+    const float lift = FloorProbeLiftFromMarginUVE(safeMargin);
     const float sweepLength = probeDistance + lift;
     if (sweepLength <= Character3DUVE::kMinimumMotionDistanceUVE) {
         return std::nullopt;
@@ -680,7 +713,7 @@ void SlideUVE(MoveContextUVE& context) {
         const bool canStep = kind == CharacterSurfaceKindUVE::Wall &&
                              config.maxStepHeight > Character3DUVE::kMinimumMotionDistanceUVE &&
                              context.moved.grounded && !config.jumpedThisStep &&
-                             context.moved.velocity.y <= 0.0F;
+                             AlongUnitUVE(context.moved.velocity, config.upDirection) <= 0.0F;
         if (canStep) {
             if (const std::optional<StepResultUVE> step = TryStepUpUVE(context, stepReach, *hit);
                 step.has_value()) {
@@ -739,10 +772,16 @@ void SlideUVE(MoveContextUVE& context) {
             Character3DUVE::SlideMotionUVE(context.remaining, hit->normal);
 
         if (config.floorConstantSpeed && kind == CharacterSurfaceKindUVE::Floor) {
-            // Floor Constant Speed: a walk up a slope keeps the horizontal speed it began with
-            // instead of slowing down, and a walk down one does not speed up.
-            const float horizontalBefore = VectorLengthUVE(PerpendicularUVE(context.remaining, config.upDirection));
-            const float horizontalAfter = VectorLengthUVE(PerpendicularUVE(projected, config.upDirection));
+            // Floor Constant Speed: this contact's remaining horizontal is restored after the
+            // slope projects it, so a walk up a slope keeps the metres of the walk not yet spent
+            // instead of slowing down, and a walk down one does not speed up. Restoring against
+            // the original full-step horizontal would invent metres already travelled getting
+            // here; restoring against this remaining is what keeps the whole step's horizontal
+            // equal to the walk.
+            const float horizontalBefore =
+                VectorLengthUVE(PerpendicularUVE(context.remaining, config.upDirection));
+            const float horizontalAfter =
+                VectorLengthUVE(PerpendicularUVE(projected, config.upDirection));
             if (horizontalBefore > Character3DUVE::kMinimumMotionDistanceUVE &&
                 horizontalAfter > Character3DUVE::kMinimumMotionDistanceUVE &&
                 horizontalAfter < horizontalBefore) {
@@ -780,7 +819,8 @@ void ApplySurfaceVelocityRulesUVE(MoveContextUVE& context) {
     const float standingSpeed = HorizontalSpeedUVE(context, context.moved.velocity);
     if (!config.floorStopOnSlope || context.result.floorAngleDegrees <= 0.01F ||
         standingSpeed > Character3DUVE::kStandingSpeedUVE ||
-        context.moved.velocity.y > Character3DUVE::kMinimumMotionDistanceUVE) {
+        AlongUnitUVE(context.moved.velocity, config.upDirection) >
+            Character3DUVE::kMinimumMotionDistanceUVE) {
         return;
     }
     // A body standing on a slope stays standing there. Its gravity is re-applied every step by the
@@ -964,13 +1004,15 @@ CharacterMotionResultUVE Character3DUVE::MoveAndSlideUVE(const ICharacterWorldQu
     }
 
     const Math::Vector3UVE motion = desiredMotion + carry;
-    context.targetHorizontalSpeed = HorizontalSpeedUVE(context, motion) * (1.0F / deltaTimeSeconds);
 
     // ---- Push out of anything the body started inside of, then walk it ---------------------------
     DepenetrateUVE(context);
     context.remaining = motion;
     SlideUVE(context);
     SnapToFloorUVE(context);
+    // Numerical overlap after a slide or a snap is the same question as the one at the start of
+    // the step, asked of the pose we actually ended in - not of the pose we started in.
+    DepenetrateUVE(context);
     ApplySurfaceVelocityRulesUVE(context);
     FinishPlatformUVE(context, previousPlatform, platformVelocity, wasOnFloor);
 
@@ -1027,7 +1069,7 @@ void StoreCharacterMotionStateUVE(CharacterControllerComponentUVE& controller,
 CharacterMotionConfigUVE MakeCharacterMotionConfigUVE(
     const CharacterControllerComponentUVE& controller) noexcept {
     CharacterMotionConfigUVE config;
-    config.upDirection = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    config.upDirection = controller.upDirection;
     config.floorMaxAngleDegrees = controller.floorMaxAngleDegrees;
     config.wallMinSlideAngleDegrees = controller.wallMinSlideAngleDegrees;
     config.safeMargin = controller.safeMargin;
@@ -1037,6 +1079,7 @@ CharacterMotionConfigUVE MakeCharacterMotionConfigUVE(
     config.minStepWidth = controller.minStepWidth;
     config.maximumContacts = static_cast<std::size_t>(controller.maximumContacts);
     config.floorBlockOnWall = controller.floorBlockOnWall;
+    config.slideOnCeiling = controller.slideOnCeiling;
     config.floorStopOnSlope = controller.floorStopOnSlope;
     config.floorConstantSpeed = controller.floorConstantSpeed;
     config.platformOnLeave = controller.platformOnLeave;

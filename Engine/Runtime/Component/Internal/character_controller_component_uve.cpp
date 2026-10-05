@@ -19,7 +19,11 @@ namespace {
 
 bool IsCharacterControllerComponentValidUVE(const CharacterControllerComponentUVE& characterController) noexcept {
     const CharacterControllerComponentUVE& c = characterController;
-    return c.motionMode <= CharacterMotionModeUVE::Floating && IsNonNegativeUVE(c.gravityScale) &&
+    return c.motionMode <= CharacterMotionModeUVE::Floating && IsFiniteVectorUVE(c.upDirection) &&
+           (c.upDirection.x * c.upDirection.x + c.upDirection.y * c.upDirection.y +
+                c.upDirection.z * c.upDirection.z >
+            0.0F) &&
+           IsNonNegativeUVE(c.gravityScale) &&
            IsNonNegativeUVE(c.moveSpeed) && IsNonNegativeUVE(c.jumpHeight) && IsNonNegativeUVE(c.airControl) &&
            c.airControl <= 1.0F && IsNonNegativeUVE(c.coyoteTimeSeconds) && IsNonNegativeUVE(c.jumpBufferSeconds) &&
            IsNonNegativeUVE(c.floorSnapLength) && IsNonNegativeUVE(c.maxStepHeight) &&

@@ -63,7 +63,7 @@ void ApplyCharacter3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, Entit
 // they belong to the node that represents the character, exactly as CharacterBody3D's rules
 // belong to the node and not to the physics server behind it.
 //
-// The seam between the two is ICharacterWorldQueryUVE below: the mover asks the world exactly four
+// The seam between the two is ICharacterWorldQueryUVE below: the mover asks the world a handful of
 // questions and never learns how they are answered. Engine/Runtime/Physics answers them over the
 // collision system (Physics::CharacterWorldQueryUVE); a test answers them over hand-written boxes;
 // a future backend answers them over whatever replaces both, and this file does not change.
@@ -90,8 +90,8 @@ enum class CharacterSurfaceKindUVE : std::uint8_t {
 /// up axis: a normal within it is a floor, a normal within it of *straight down* is a ceiling, and
 /// everything between is a wall. `outAngleDegrees` receives the angle between the normal and the
 /// up axis (0 = flat floor, 90 = vertical wall, 180 = flat ceiling). Returns
-/// CharacterSurfaceKindUVE::Invalid for a normal that cannot be classified, leaving
-/// `outAngleDegrees` untouched.
+/// CharacterSurfaceKindUVE::Invalid for a normal that cannot be classified, and writes 0 into
+/// `outAngleDegrees` so a caller never reads a stale angle as if it belonged to this surface.
 [[nodiscard]] CharacterSurfaceKindUVE ClassifyCharacterSurfaceUVE(
     const Math::Vector3UVE& surfaceNormal, const Math::Vector3UVE& upDirection,
     float floorMaxAngleDegrees, float& outAngleDegrees) noexcept;
@@ -120,7 +120,7 @@ struct CharacterMotionConfigUVE final {
     /// How many pieces one move is cut into at corners and walls. More is smoother and costs more.
     std::size_t maxSlides = 8U;
     /// Cap on the collision records kept for one move; the move still resolves, it just stops
-    /// recording. Reported as CharacterMotionResultUVE::contactsTruncatedUVE.
+    /// recording. Reported as CharacterMotionResultUVE::contactsTruncated.
     std::size_t maximumContacts = 64U;
     /// How far below its feet a body that was just standing looks for the floor again, so walking
     /// down a step follows it instead of launching the body off the edge. 0 disables the probe
@@ -137,8 +137,9 @@ struct CharacterMotionConfigUVE final {
     /// slipping. Godot's Floor Block On Wall.
     bool floorBlockOnWall = false;
     /// Standing still on a slope stays standing still instead of creeping downhill. Godot's Floor
-    /// Stop On Slope.
-    bool floorStopOnSlope = false;
+    /// Stop On Slope. Defaults on, matching CharacterControllerComponentUVE, so a body dropped
+    /// onto a hill does not creep unless the author asked it to.
+    bool floorStopOnSlope = true;
     /// Walking up or down a slope keeps the horizontal speed the walk started with, instead of
     /// slowing uphill and speeding downhill as the slope projects the motion. Godot's Floor
     /// Constant Speed.
@@ -163,9 +164,10 @@ struct CharacterMotionConfigUVE final {
 /// (its runtime-state block), and MakeCharacterMotionStateUVE/StoreCharacterMotionStateUVE bridge
 /// the two - the component is storage, this is the value the mover works on.
 struct CharacterMotionStateUVE final {
-    /// Metres per second, world space. Read and written: the mover removes the components that the
-    /// surfaces it met make physically impossible (sliding down a slope while standing still,
-    /// speeding up downhill under Floor Constant Speed) and leaves the rest to the caller.
+    /// Metres per second, world space. The mover writes this only for Floor Stop On Slope (a
+    /// standing body is stopped) and for platform leave (the platform's gift). Floor Constant
+    /// Speed reshapes this step's remaining motion, not the stored velocity; everything else is
+    /// the caller's.
     Math::Vector3UVE velocity{};
     /// Standing on a floor-like surface after the last move.
     bool grounded = false;
@@ -321,14 +323,15 @@ struct CharacterMotionResultUVE final {
     }
 };
 
-/// The world, as far as a character is concerned. Deliberately four questions - where am I, what am
-/// I inside of, what do I hit if I move, and how is that thing moving - because those are the only
-/// facts a kinematic character needs, and every physics backend can answer them.
+/// The world, as far as a character is concerned. Deliberately a handful of questions - where am
+/// I, what am I inside of at a pose, what do I hit if I move, and how is that thing moving -
+/// because those are the only facts a kinematic character needs, and every physics backend can
+/// answer them.
 ///
 /// Implementations must be side-effect free with respect to the world: a query describes it, it
 /// never moves anything. Sweeps are conservative (they may report a hit the exact shape would
-/// miss, which costs a slide, never a tunnel); overlaps are exact (they are what pushes a body out
-/// of geometry it is genuinely inside).
+/// miss, which costs a slide, never a tunnel). Overlaps at a pose use the same shape the sweep
+/// uses, so a recovery and a sweep cannot disagree about whether that pose is free.
 class ICharacterWorldQueryUVE {
 public:
     virtual ~ICharacterWorldQueryUVE() = default;
@@ -336,9 +339,17 @@ public:
     /// Where the body is now, at the center of its collision shape.
     [[nodiscard]] virtual Math::Vector3UVE GetCenterUVE() const = 0;
 
-    /// Everything the body's exact shape currently penetrates, with the surface normal pointing
-    /// toward the body and the depth it is inside by. Empty when the body is free-standing.
-    [[nodiscard]] virtual std::vector<CharacterSlideCollisionUVE> GetOverlapsUVE() const = 0;
+    /// Everything the body's shape would penetrate if its center were `center`, with the surface
+    /// normal pointing toward the body and the depth it would be inside by. Empty when that pose
+    /// is free-standing. This is the question depenetration asks after a push, when the working
+    /// center has left the pose `GetCenterUVE()` names.
+    [[nodiscard]] virtual std::vector<CharacterSlideCollisionUVE> GetOverlapsAtUVE(
+        const Math::Vector3UVE& center) const = 0;
+
+    /// `GetOverlapsAtUVE(GetCenterUVE())`: what the body is inside of where it is now.
+    [[nodiscard]] std::vector<CharacterSlideCollisionUVE> GetOverlapsUVE() const {
+        return GetOverlapsAtUVE(GetCenterUVE());
+    }
 
     /// The earliest hit of the body's shape swept from `center` along `motion`, or nothing when
     /// the path is clear. `margin` is the skin to keep: an implementation stops the reported hit

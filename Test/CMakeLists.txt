@@ -215,26 +215,38 @@ add_executable(uve_integration_tests
     Integration/Object/type_metadata_bridge_uve_tests.cpp
     Integration/Object/variant_uve_tests.cpp
     Physics/angular_dynamics_uve_tests.cpp
+    Physics/area_3d_uve_tests.cpp
     Physics/area_overlap_lifecycle_tracker_uve_tests.cpp
     Physics/area_overlap_system_uve_tests.cpp
     Physics/character_controller_uve_tests.cpp
     Physics/character_body_motion_uve_tests.cpp
     Physics/character_3d_uve_tests.cpp
+    Physics/collider_3d_uve_tests.cpp
     Physics/collider_shape_uve_tests.cpp
     Physics/collision_lifecycle_tracker_uve_tests.cpp
     Physics/collision_system_uve_tests.cpp
     Physics/hinge_motor_limit_uve_tests.cpp
+    Physics/hitbox_3d_uve_tests.cpp
     Physics/hitbox_strike_uve_tests.cpp
+    Physics/hurtbox_3d_uve_tests.cpp
+    Physics/interaction_area_3d_uve_tests.cpp
     Physics/interaction_area_uve_tests.cpp
+    Physics/kinematic_3d_uve_tests.cpp
     Physics/kinematic_body_uve_tests.cpp
+    Physics/projectile_3d_uve_tests.cpp
     Physics/physics_constraint_system_uve_tests.cpp
     Physics/physics_material_uve_tests.cpp
     Physics/physics_query_system_uve_tests.cpp
     Physics/physics_system_uve_tests.cpp
+    Physics/ray_cast_3d_uve_tests.cpp
+    Physics/ray_cast_3d_step_uve_tests.cpp
     Physics/raycast_system_uve_tests.cpp
+    Physics/rigid_3d_uve_tests.cpp
     Physics/projectile_3d_step_uve_tests.cpp
     Physics/shape_cast_system_uve_tests.cpp
+    Physics/spring_arm_3d_uve_tests.cpp
     Physics/spring_arm_uve_tests.cpp
+    Physics/static_3d_uve_tests.cpp
     Navigation/navmesh_uve_tests.cpp
     Navigation/navmesh_bake_uve_tests.cpp
     Navigation/nav_path_uve_tests.cpp

@@ -32,8 +32,20 @@ void ApplySpringArm3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const
     entityManager.AddComponentUVE<SpringArm3DComponentUVE>(entity, springArm);
 }
 
-float ResolveSpringArm3DTargetUVE(const std::optional<float> hitDistance, const float margin,
-                                  const float armLength) noexcept {
+bool SpringArm3DUVE::IsCastingUVE(const SpringArm3DComponentUVE& springArm) noexcept {
+    return springArm.enabled;
+}
+
+Math::Vector3UVE SpringArm3DUVE::ResolveWorldAxisUVE(const Math::QuaternionUVE& worldRotation) noexcept {
+    Math::QuaternionUVE rotation{};
+    if (!Math::TryNormalizeUVE(worldRotation, rotation)) {
+        rotation = {};
+    }
+    return Math::RotateVectorUVE(rotation, kArmAxisUVE);
+}
+
+float SpringArm3DUVE::ResolveTargetUVE(const std::optional<float> hitDistance, const float margin,
+                                       const float armLength) noexcept {
     if (!hitDistance.has_value() || !std::isfinite(*hitDistance) || !std::isfinite(armLength) ||
         armLength <= 0.0F || !std::isfinite(margin) || margin < 0.0F) {
         return armLength;
@@ -41,14 +53,12 @@ float ResolveSpringArm3DTargetUVE(const std::optional<float> hitDistance, const 
     return std::clamp(*hitDistance - margin, 0.0F, armLength);
 }
 
-float ResolveSpringArm3DLengthUVE(const float currentLength, const float targetLength,
-                                  const float smoothing, const float dtSeconds) noexcept {
+float SpringArm3DUVE::ResolveLengthUVE(const float currentLength, const float targetLength,
+                                       const float smoothing, const float dtSeconds) noexcept {
     if (!std::isfinite(currentLength) || !std::isfinite(targetLength) || !std::isfinite(smoothing) ||
         !std::isfinite(dtSeconds) || dtSeconds <= 0.0F) {
         return currentLength;
     }
-    // Retraction is a snap: blending INTO a wall is what "camera collision with smoothing"
-    // ships as clipping in other engines. Extension blends out.
     if (targetLength <= currentLength || smoothing <= 0.0F) {
         return targetLength;
     }
@@ -58,6 +68,16 @@ float ResolveSpringArm3DLengthUVE(const float currentLength, const float targetL
         return targetLength;
     }
     return resolved;
+}
+
+float ResolveSpringArm3DTargetUVE(const std::optional<float> hitDistance, const float margin,
+                                  const float armLength) noexcept {
+    return SpringArm3DUVE::ResolveTargetUVE(hitDistance, margin, armLength);
+}
+
+float ResolveSpringArm3DLengthUVE(const float currentLength, const float targetLength,
+                                  const float smoothing, const float dtSeconds) noexcept {
+    return SpringArm3DUVE::ResolveLengthUVE(currentLength, targetLength, smoothing, dtSeconds);
 }
 
 } // namespace UVE::Scene
