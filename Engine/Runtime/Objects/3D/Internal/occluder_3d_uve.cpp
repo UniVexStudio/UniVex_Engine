@@ -8,6 +8,7 @@
 #include "uve/component/editor_internal_entity_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/objects/3d/abstract_objects_3d_uve.h"
 
 namespace UVE::Scene {
 
@@ -15,6 +16,14 @@ bool IsOccluder3DObjectComponentValidUVE(const Occluder3DComponentUVE& value) no
     return IsFinite3DObjectVectorUVE(value.halfExtents) && value.halfExtents.x > 0.0F &&
            value.halfExtents.y > 0.0F && value.halfExtents.z > 0.0F &&
            value.mode == Occluder3DObjectModeUVE::ConservativeBox;
+}
+
+void ApplyOccluder3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                        const Occluder3DObjectDefinitionUVE& value) {
+    ApplyObject3DRecipeUVE(entityManager, entity, Occluder3DObjectDefinitionUVE::defaultName);
+    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<Occluder3DComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<Occluder3DComponentUVE>(entity, value.occluder);
+    }
 }
 
 bool ResolveOccluder3DFullyHiddenUVE(const Occluder3DComponentUVE& config,

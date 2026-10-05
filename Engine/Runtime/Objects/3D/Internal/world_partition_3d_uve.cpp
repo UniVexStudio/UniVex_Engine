@@ -11,6 +11,7 @@
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/objects/3d/abstract_objects_3d_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/fog_volume_3d_uve.h"
 
@@ -27,6 +28,15 @@ bool IsWorldPartition3DObjectComponentValidUVE(const WorldPartition3DComponentUV
         }
     }
     return true;
+}
+
+void ApplyWorldPartition3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                              const WorldPartition3DObjectDefinitionUVE& value) {
+    ApplyObject3DRecipeUVE(entityManager, entity, WorldPartition3DObjectDefinitionUVE::defaultName);
+    if (entityManager.IsAliveUVE(entity) &&
+        !entityManager.HasComponentUVE<WorldPartition3DComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<WorldPartition3DComponentUVE>(entity, value.partition);
+    }
 }
 
 std::optional<WorldPartition3DCellIdUVE> ResolveWorldPartition3DCellIdForPositionUVE(

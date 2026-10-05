@@ -11,6 +11,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/quaternion_uve.h"
+#include "uve/objects/3d/abstract_objects_3d_uve.h"
 
 namespace UVE::Scene {
 namespace {
@@ -23,6 +24,15 @@ constexpr float kBoxRayEpsilonUVE = 1.0e-8F;
 bool IsReflectionProbe3DObjectComponentValidUVE(const ReflectionProbe3DComponentUVE& value) noexcept {
     return IsFinite3DObjectVectorUVE(value.size) && value.size.x > 0.0F && value.size.y > 0.0F &&
            value.size.z > 0.0F && value.updateMode <= ReflectionProbeUpdateModeUVE::OnDemand;
+}
+
+void ApplyReflectionProbe3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                               const ReflectionProbe3DObjectDefinitionUVE& value) {
+    ApplyObject3DRecipeUVE(entityManager, entity, ReflectionProbe3DObjectDefinitionUVE::defaultName);
+    if (entityManager.IsAliveUVE(entity) &&
+        !entityManager.HasComponentUVE<ReflectionProbe3DComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<ReflectionProbe3DComponentUVE>(entity, value.probe);
+    }
 }
 
 float ResolveReflectionProbe3DInfluenceWeightUVE(

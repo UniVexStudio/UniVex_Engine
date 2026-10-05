@@ -10,6 +10,7 @@
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/objects/3d/abstract_objects_3d_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/fog_volume_3d_uve.h"
 
@@ -18,6 +19,15 @@ namespace UVE::Scene {
 bool IsVisibilityRegion3DObjectComponentValidUVE(const VisibilityRegion3DComponentUVE& value) noexcept {
     return IsFinite3DObjectVectorUVE(value.halfExtents) && value.halfExtents.x > 0.0F &&
            value.halfExtents.y > 0.0F && value.halfExtents.z > 0.0F;
+}
+
+void ApplyVisibilityRegion3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                                const VisibilityRegion3DObjectDefinitionUVE& value) {
+    ApplyObject3DRecipeUVE(entityManager, entity, VisibilityRegion3DObjectDefinitionUVE::defaultName);
+    if (entityManager.IsAliveUVE(entity) &&
+        !entityManager.HasComponentUVE<VisibilityRegion3DComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<VisibilityRegion3DComponentUVE>(entity, value.region);
+    }
 }
 
 bool ResolveVisibilityRegion3DContainsPointUVE(const VisibilityRegion3DComponentUVE& config,

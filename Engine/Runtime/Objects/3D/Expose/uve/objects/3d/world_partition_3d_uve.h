@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "uve/component/entity_uve.h"
@@ -31,6 +32,14 @@ struct WorldPartition3DComponentUVE final {
 };
 
 [[nodiscard]] bool IsWorldPartition3DObjectComponentValidUVE(const WorldPartition3DComponentUVE& value) noexcept;
+
+struct WorldPartition3DObjectDefinitionUVE final {
+    static constexpr std::string_view defaultName = "WorldPartition3D";
+    WorldPartition3DComponentUVE partition{};
+};
+
+void ApplyWorldPartition3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                              const WorldPartition3DObjectDefinitionUVE& value);
 
 // Runtime-only cell membership, owned by EngineCoreUVE::SyncWorldPartition3DObjectsUVE() and
 // ATTACHED BY THE ENGINE to drawable descendants of a world partition (mesh, primitive mesh,

@@ -559,6 +559,38 @@ TEST_F(Object3DDefinitionsUVETest, Decal3DAndFogVolume3DAreRenderInstancesPlusTh
     EXPECT_EQ(entityManager.GetComponentUVE<FogVolume3DComponentUVE>(fog).density, -0.5F);
 }
 
+TEST_F(Object3DDefinitionsUVETest, OptimizationVolumesAreObject3DNotRenderInstances) {
+    const EntityUVE occluder = CreateEntityUVE();
+    const EntityUVE region = CreateEntityUVE();
+    const EntityUVE partition = CreateEntityUVE();
+    const EntityUVE lod = CreateEntityUVE();
+    const EntityUVE probe = CreateEntityUVE();
+    ApplyOccluder3DObjectDefinitionUVE(entityManager, occluder, Occluder3DObjectDefinitionUVE{});
+    ApplyVisibilityRegion3DObjectDefinitionUVE(entityManager, region, VisibilityRegion3DObjectDefinitionUVE{});
+    ApplyWorldPartition3DObjectDefinitionUVE(entityManager, partition, WorldPartition3DObjectDefinitionUVE{});
+    ApplyLodGroup3DObjectDefinitionUVE(entityManager, lod, LodGroup3DObjectDefinitionUVE{});
+    ApplyReflectionProbe3DObjectDefinitionUVE(entityManager, probe, ReflectionProbe3DObjectDefinitionUVE{});
+    ExpectObject3DBaselineUVE(entityManager, occluder, "Occluder3D");
+    ExpectObject3DBaselineUVE(entityManager, region, "VisibilityRegion3D");
+    ExpectObject3DBaselineUVE(entityManager, partition, "WorldPartition3D");
+    ExpectObject3DBaselineUVE(entityManager, lod, "LODGroup3D");
+    ExpectObject3DBaselineUVE(entityManager, probe, "ReflectionProbe3D");
+    for (const EntityUVE entity : {occluder, region, partition, lod, probe}) {
+        EXPECT_TRUE(entityManager.HasComponentUVE<VisibilityComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<ProcessComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<ObjectMetadataComponentUVE>(entity));
+        EXPECT_FALSE(entityManager.HasComponentUVE<RenderInstanceComponentUVE>(entity));
+        EXPECT_FALSE(entityManager.HasComponentUVE<SurfaceInstanceComponentUVE>(entity));
+        EXPECT_FALSE(entityManager.HasComponentUVE<LightEmitterComponentUVE>(entity));
+        EXPECT_FALSE(entityManager.HasComponentUVE<PhysicsObjectComponentUVE>(entity));
+    }
+    EXPECT_TRUE(entityManager.HasComponentUVE<Occluder3DComponentUVE>(occluder));
+    EXPECT_TRUE(entityManager.HasComponentUVE<VisibilityRegion3DComponentUVE>(region));
+    EXPECT_TRUE(entityManager.HasComponentUVE<WorldPartition3DComponentUVE>(partition));
+    EXPECT_TRUE(entityManager.HasComponentUVE<LodGroup3DComponentUVE>(lod));
+    EXPECT_TRUE(entityManager.HasComponentUVE<ReflectionProbe3DComponentUVE>(probe));
+}
+
 TEST_F(Object3DDefinitionsUVETest, RenderInstanceFamilyComponentsRejectValuesTheySaveBadly) {
     EXPECT_TRUE(IsSurfaceInstanceComponentValidUVE(SurfaceInstanceComponentUVE{}));
     SurfaceInstanceComponentUVE surface{};
