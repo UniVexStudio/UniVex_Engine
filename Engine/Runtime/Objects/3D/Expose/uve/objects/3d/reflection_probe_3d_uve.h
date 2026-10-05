@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "uve/component/entity_uve.h"
@@ -57,6 +58,14 @@ struct ReflectionProbe3DComponentUVE final {
 };
 
 [[nodiscard]] bool IsReflectionProbe3DObjectComponentValidUVE(const ReflectionProbe3DComponentUVE& value) noexcept;
+
+struct ReflectionProbe3DObjectDefinitionUVE final {
+    static constexpr std::string_view defaultName = "ReflectionProbe3D";
+    ReflectionProbe3DComponentUVE probe{};
+};
+
+void ApplyReflectionProbe3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                               const ReflectionProbe3DObjectDefinitionUVE& value);
 
 // The budget of probe captures serviced per tick. A cubemap capture costs six scene passes -
 // Godot's Always mode re-renders EVERY probe every frame, and Unreal blocks on capture; time-

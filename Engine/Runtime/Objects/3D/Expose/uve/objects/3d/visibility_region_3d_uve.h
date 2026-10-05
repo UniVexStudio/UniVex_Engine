@@ -3,12 +3,15 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 #include "uve/component/entity_uve.h"
 #include "uve/objects/3d/object_3d_common_uve.h"
 
 namespace UVE::Scene {
+
+class IEntityManagerUVE;
 
 /// A VisibilityRegion3D: an authored axis-aligned box (halfExtents around the object's world
 /// position) that owns the interior culling verdict for the meshes inside it - Godot has no
@@ -40,6 +43,14 @@ struct VisibilityRegion3DComponentUVE final {
 };
 
 [[nodiscard]] bool IsVisibilityRegion3DObjectComponentValidUVE(const VisibilityRegion3DComponentUVE& value) noexcept;
+
+struct VisibilityRegion3DObjectDefinitionUVE final {
+    static constexpr std::string_view defaultName = "VisibilityRegion3D";
+    VisibilityRegion3DComponentUVE region{};
+};
+
+void ApplyVisibilityRegion3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                                const VisibilityRegion3DObjectDefinitionUVE& value);
 
 // Runtime-only membership, owned by EngineCoreUVE::SyncVisibilityRegion3DObjectsUVE() and
 // ATTACHED BY THE ENGINE to drawables inside a region the layer gate lets it manage (mesh,
@@ -83,8 +94,6 @@ struct VisibilityRegion3DMembershipComponentUVE final {
     bool regionOwnerAlive, bool live) noexcept {
     return live || !regionOwnerAlive;
 }
-
-class IEntityManagerUVE;
 
 inline constexpr std::uint32_t kDefaultVisibilityRegionDrawableLayersUVE = 0x00000001U;
 

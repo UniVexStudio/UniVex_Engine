@@ -2099,7 +2099,8 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
                                                             Scene::ApplyDirectionalLight3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::ReflectionProbe3D:
-            entity = createObjectWithComponent(Scene::ReflectionProbe3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::ReflectionProbe3DObjectDefinitionUVE{},
+                                                            Scene::ApplyReflectionProbe3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::Decal3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::Decal3DObjectDefinitionUVE{},
@@ -2110,13 +2111,16 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
                                                             Scene::ApplyFogVolume3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::LODGroup3D:
-            entity = createObjectWithComponent(Scene::LodGroup3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::LodGroup3DObjectDefinitionUVE{},
+                                                            Scene::ApplyLodGroup3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::Occluder3D:
-            entity = createObjectWithComponent(Scene::Occluder3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::Occluder3DObjectDefinitionUVE{},
+                                                            Scene::ApplyOccluder3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::VisibilityRegion3D:
-            entity = createObjectWithComponent(Scene::VisibilityRegion3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::VisibilityRegion3DObjectDefinitionUVE{},
+                                                            Scene::ApplyVisibilityRegion3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::SpawnPoint3D:
             entity = createObjectWithComponent(Scene::SpawnPoint3DComponentUVE{});
@@ -2125,7 +2129,8 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
             entity = createObjectWithComponent(Scene::LevelStreamer3DComponentUVE{});
             break;
         case Scene::Objects::SceneObjectKindUVE::WorldPartition3D:
-            entity = createObjectWithComponent(Scene::WorldPartition3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::WorldPartition3DObjectDefinitionUVE{},
+                                                            Scene::ApplyWorldPartition3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::AnimationGraph:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::AnimationGraphObjectDefinitionUVE{},

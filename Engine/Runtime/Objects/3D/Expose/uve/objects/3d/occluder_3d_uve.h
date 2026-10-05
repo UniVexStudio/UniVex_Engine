@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "uve/component/entity_uve.h"
@@ -29,6 +30,14 @@ struct Occluder3DComponentUVE final {
 };
 
 [[nodiscard]] bool IsOccluder3DObjectComponentValidUVE(const Occluder3DComponentUVE& value) noexcept;
+
+struct Occluder3DObjectDefinitionUVE final {
+    static constexpr std::string_view defaultName = "Occluder3D";
+    Occluder3DComponentUVE occluder{};
+};
+
+void ApplyOccluder3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                        const Occluder3DObjectDefinitionUVE& value);
 
 // One occluder against one candidate point. Invalid config, a non-finite pose, the viewer or
 // the point inside the box, or a grazing touch: NOT hidden.
