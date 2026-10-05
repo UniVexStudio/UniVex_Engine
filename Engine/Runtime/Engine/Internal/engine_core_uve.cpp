@@ -63,6 +63,8 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/input/gamepad_input_system_uve.h"
 #include "uve/input/input_system_uve.h"
+#include "uve/gameplay/gameplay_input_uve.h"
+#include "uve/gameplay/interact_requested_event_uve.h"
 #include "uve/input/mobile_gesture_system_uve.h"
 #include "uve/input/mobile_input_system_uve.h"
 #include "uve/physics/area_3d_runtime_uve.h"
@@ -86,6 +88,7 @@
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
 #include "uve/objects/3d/interaction_area_3d_uve.h"
+#include "uve/objects/3d/player_3d_uve.h"
 #include "uve/objects/3d/kinematic_3d_uve.h"
 #include "uve/objects/3d/level_streamer_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
@@ -588,6 +591,7 @@ void EngineCoreUVE::Init() {
                     m_config.inputMapFilePath.string());
     }
     m_inputMap.ApplyUVE(*m_inputSystem);
+    Gameplay::RegisterDefaultGameplayActionsUVE(*m_inputSystem);
     m_windowManager->AttachInputSystemUVE(m_inputSystem.get());
 
     // AudioDevice twenty-ninth: no dependencies of its own. Prefers the real miniaudio backend;
@@ -1221,42 +1225,31 @@ void EngineCoreUVE::SyncCharacterControllersUVE(const float fixedDeltaTimeSecond
         return;
     }
 
-    Math::Vector3UVE horizontalInput{};
-    if (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::W)) {
-        horizontalInput.z -= 1.0F;
-    }
-    if (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::S)) {
-        horizontalInput.z += 1.0F;
-    }
-    if (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::A)) {
-        horizontalInput.x -= 1.0F;
-    }
-    if (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::D)) {
-        horizontalInput.x += 1.0F;
-    }
-    const float horizontalInputLengthSquared =
-        horizontalInput.x * horizontalInput.x + horizontalInput.z * horizontalInput.z;
-    if (horizontalInputLengthSquared > 1.0F) {
-        const float inverseLength = 1.0F / std::sqrt(horizontalInputLengthSquared);
-        horizontalInput.x *= inverseLength;
-        horizontalInput.z *= inverseLength;
-    }
-    const bool jumpPressed = m_inputSystem->WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Space);
-    const float riseInput = (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::Space) ? 1.0F : 0.0F) -
-                            (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::LeftCtrl) ? 1.0F : 0.0F);
+    const Gameplay::GameplayInputUVE gameplayInput = Gameplay::CollectGameplayInputUVE(*m_inputSystem);
+    const Scene::EntityUVE possessed = Scene::ResolvePossessedPlayerUVE(*m_entityManager);
     // Collected and ordered rather than iterated in place: two characters can push the same body,
     // and the order they meet it in changes the outcome, so physicsPriority is how an author
     // decides that instead of archetype storage order deciding it for them.
     for (const Scene::EntityUVE entity :
          CollectFixedStepOrderUVE<Scene::CharacterControllerComponentUVE>(*m_entityManager, *m_sceneGraph)) {
+        Physics::CharacterMotionInputUVE motion{};
+        if (possessed == Scene::kInvalidEntityUVE || entity == possessed) {
+            motion.move = gameplayInput.move;
+            motion.rise = gameplayInput.rise;
+            motion.jumpPressed = gameplayInput.jumpPressed;
+            if (entity == possessed && m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+                motion.move = Scene::FaceMoveFromLookUVE(
+                    m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(entity).localRotation,
+                    gameplayInput.move);
+            }
+        }
         // One call takes the body from intent to moved-and-written-back: built-in movement (or,
         // with that off, the velocity a script set), gravity, the move through the world with its
         // step-up, floor snap and platform carry, and the state the next step reads. The bridge
         // refuses a body it cannot step rather than half-moving it, so a refusal is simply a body
         // that stays where it is.
         const Physics::Character3DStepResultUVE report = Physics::StepCharacter3DUVE(
-            *m_entityManager, *m_sceneGraph, *m_collisionSystem, entity,
-            Physics::CharacterMotionInputUVE{horizontalInput, riseInput, jumpPressed}, m_config.gravity.y,
+            *m_entityManager, *m_sceneGraph, *m_collisionSystem, entity, motion, m_config.gravity.y,
             fixedDeltaTimeSeconds);
         if (!report.stepped) {
             continue;
@@ -2069,6 +2062,33 @@ void EngineCoreUVE::Update() {
     m_mobileInputSystem->UpdateUVE();
     m_mobileGestureSystem->UpdateUVE(static_cast<float>(m_timer->GetDeltaTimeUVE()));
     m_inputSystem->UpdateUVE();
+    if (m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
+        const Gameplay::GameplayInputUVE gameplayInput = Gameplay::CollectGameplayInputUVE(*m_inputSystem);
+        const Scene::EntityUVE player = Scene::ResolvePossessedPlayerUVE(*m_entityManager);
+        if (player != Scene::kInvalidEntityUVE &&
+            m_entityManager->HasComponentUVE<Scene::PlayerComponentUVE>(player) &&
+            m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(player)) {
+            Scene::PlayerComponentUVE& playerState =
+                m_entityManager->GetComponentUVE<Scene::PlayerComponentUVE>(player);
+            Scene::TransformComponentUVE body =
+                m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(player);
+            const Scene::EntityUVE lookTarget = Scene::FindPlayerLookTargetUVE(*m_entityManager, player);
+            Scene::TransformComponentUVE lookTransform{};
+            Scene::TransformComponentUVE* lookPointer = nullptr;
+            if (lookTarget != Scene::kInvalidEntityUVE &&
+                m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(lookTarget)) {
+                lookTransform = m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(lookTarget);
+                lookPointer = &lookTransform;
+            }
+            Scene::ApplyPlayerLookUVE(playerState, body, lookPointer, gameplayInput.lookPointer,
+                                      gameplayInput.lookStick,
+                                      static_cast<float>(m_timer->GetDeltaTimeUVE()));
+            m_sceneGraph->SetLocalTransformUVE(*m_entityManager, player, body);
+            if (lookPointer != nullptr) {
+                m_sceneGraph->SetLocalTransformUVE(*m_entityManager, lookTarget, lookTransform);
+            }
+        }
+    }
     if (m_windowManager->IsCloseRequestedUVE()) {
         RequestQuitUVE();
     }
@@ -2121,6 +2141,19 @@ void EngineCoreUVE::Update() {
     SyncRayCast3DObjectsUVE();
     SyncHitbox3DObjectsUVE();
     SyncInteractionArea3DObjectsUVE();
+    if (m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
+        const Gameplay::GameplayInputUVE gameplayInput = Gameplay::CollectGameplayInputUVE(*m_inputSystem);
+        if (gameplayInput.interactPressed) {
+            const Scene::EntityUVE player = Scene::ResolvePossessedPlayerUVE(*m_entityManager);
+            const Scene::EntityUVE area = Scene::FindFocusedInteractionAreaUVE(*m_entityManager);
+            if (player != Scene::kInvalidEntityUVE && area != Scene::kInvalidEntityUVE &&
+                m_entityManager->HasComponentUVE<Scene::InteractionArea3DComponentUVE>(area) &&
+                Scene::InteractionArea3DUVE::HasInteractorUVE(
+                    m_entityManager->GetComponentUVE<Scene::InteractionArea3DComponentUVE>(area), player)) {
+                m_eventSystem->QueueEvent(Gameplay::InteractRequestedEventUVE{player, area});
+            }
+        }
+    }
     SyncLevelStreamer3DObjectsUVE();
     SyncReflectionProbe3DObjectsUVE();
     SyncWorldPartition3DObjectsUVE();

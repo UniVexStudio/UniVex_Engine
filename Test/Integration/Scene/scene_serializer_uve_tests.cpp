@@ -291,6 +291,9 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     SpawnPoint3DComponentUVE spawn;
     spawn.spawnTag = "player_start";
     entityManager.AddComponentUVE<SpawnPoint3DComponentUVE>(source, spawn);
+    PlayerComponentUVE player;
+    player.lookSensitivity = 0.2F;
+    entityManager.AddComponentUVE<PlayerComponentUVE>(source, player);
     LevelStreamer3DComponentUVE streamer;
     streamer.levelPath = "levels/courtyard.uvscene";
     streamer.enabled = true;
@@ -406,6 +409,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_EQ(entityManager.GetComponentUVE<Decal3DComponentUVE>(restored).materialAssetPath,
               "materials/warning.uemat");
     EXPECT_EQ(entityManager.GetComponentUVE<SpawnPoint3DComponentUVE>(restored).spawnTag, "player_start");
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<PlayerComponentUVE>(restored).lookSensitivity, 0.2F);
     EXPECT_TRUE(entityManager.GetComponentUVE<LevelStreamer3DComponentUVE>(restored).enabled);
     EXPECT_TRUE(entityManager.HasComponentUVE<Kinematic3DComponentUVE>(restored));
     EXPECT_TRUE(entityManager.HasComponentUVE<NavSeeker3DComponentUVE>(restored));

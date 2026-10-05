@@ -14,7 +14,7 @@ namespace {
 
 TEST(SceneObjectRegistryUVETest, BuiltInDescriptorsUVE_AreStableUniqueAndRuntimeBound) {
     const std::span<const SceneObjectDescriptorUVE> descriptors = GetSceneObjectDescriptorsUVE();
-    ASSERT_EQ(descriptors.size(), 48U);
+    ASSERT_EQ(descriptors.size(), 49U);
 
     std::unordered_set<std::string_view> ids;
     for (const SceneObjectDescriptorUVE& descriptor : descriptors) {
@@ -66,6 +66,7 @@ TEST(SceneObjectRegistryUVETest, RealObjectTypesUVE_AreReachableFromTheAggregate
     static_assert(std::is_class_v<Occluder3DComponentUVE>);                // Occluder3D
     static_assert(std::is_class_v<VisibilityRegion3DComponentUVE>);        // VisibilityRegion3D
     static_assert(std::is_class_v<SpawnPoint3DComponentUVE>);              // SpawnPoint3D
+    static_assert(std::is_class_v<PlayerComponentUVE>);                    // Player3D
     static_assert(std::is_class_v<LevelStreamer3DComponentUVE>);           // LevelStreamer3D
     static_assert(std::is_class_v<WorldPartition3DComponentUVE>);          // WorldPartition3D
     // Was Core::AnimationGraphUVE, which is not what backs this kind: the registry's own runtimeOwner
@@ -97,6 +98,7 @@ TEST(SceneObjectRegistryUVETest, PlacementSeparatesTheLevelFromEntityParts) {
     EXPECT_EQ(GetSceneObjectPlacementUVE(SceneObjectKindUVE::BoxMesh3D), SceneObjectPlacementUVE::World);
     EXPECT_EQ(GetSceneObjectPlacementUVE(SceneObjectKindUVE::WorldEnvironment3D), SceneObjectPlacementUVE::World);
     EXPECT_EQ(GetSceneObjectPlacementUVE(SceneObjectKindUVE::Character3D), SceneObjectPlacementUVE::Entity);
+    EXPECT_EQ(GetSceneObjectPlacementUVE(SceneObjectKindUVE::Player3D), SceneObjectPlacementUVE::Entity);
     EXPECT_EQ(GetSceneObjectPlacementUVE(SceneObjectKindUVE::AnimationGraph), SceneObjectPlacementUVE::Entity);
     EXPECT_EQ(GetSceneObjectPlacementUVE(SceneObjectKindUVE::Hitbox3D), SceneObjectPlacementUVE::Entity);
 }

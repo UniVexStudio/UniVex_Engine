@@ -10,6 +10,8 @@ constexpr std::array<std::string_view, 1U> kAnimationGraphContracts{"AnimationGr
 constexpr std::array<std::string_view, 1U> kAnimationSequencerContracts{"AnimationSequencerComponentUVE"};
 constexpr std::array<std::string_view, 2U> kCharacterContracts{
     "TransformComponentUVE", "ColliderComponentUVE"};
+constexpr std::array<std::string_view, 3U> kPlayerContracts{
+    "TransformComponentUVE", "ColliderComponentUVE", "PlayerComponentUVE"};
 constexpr std::array<std::string_view, 1U> kCameraContracts{"CameraComponentUVE"};
 constexpr std::array<std::string_view, 1U> kMeshContracts{"MeshComponentUVE"};
 constexpr std::array<std::string_view, 1U> kLightContracts{"LightComponentUVE"};
@@ -49,7 +51,7 @@ constexpr std::array<std::string_view, 1U> kUITextContracts{"UITextComponentUVE"
 constexpr std::array<std::string_view, 1U> kUIImageContracts{"UIImageComponentUVE"};
 constexpr std::array<std::string_view, 1U> kUIButtonContracts{"UIButtonComponentUVE"};
 
-constexpr std::array<SceneObjectDescriptorUVE, 48U> kDescriptors{
+constexpr std::array<SceneObjectDescriptorUVE, 49U> kDescriptors{
     // The document's structural root: created by the document lifecycle (new document,
     // load-time migration), never through the Add-Object library - libraryCreatable is false.
     SceneObjectDescriptorUVE{SceneObjectKindUVE::SceneRoot, "scene_root", "SceneRoot", "Scene", "Scene/SceneRootObjectDefinitionUVE", kNoContracts, false},
@@ -103,6 +105,7 @@ constexpr std::array<SceneObjectDescriptorUVE, 48U> kDescriptors{
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Folder, "folder", "Folder", "Scene", "Scene/Editor", kNoContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::DirectionalLight3D, "directional_light_3d", "DirectionalLight3D", "Rendering", "Render/LightSystemUVE", kDirectionalLightContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Viewport, "viewport", "Viewport", "Scene", "Scene/Editor", kNoContracts, false},
+    SceneObjectDescriptorUVE{SceneObjectKindUVE::Player3D, "player_3d", "Player3D", "Gameplay", "Scene/Player3DObjectDefinitionUVE", kPlayerContracts, true},
 };
 
 } // namespace
@@ -166,6 +169,7 @@ std::string_view GetSceneObjectTypeIdUVE(const SceneObjectKindUVE kind) noexcept
 SceneObjectPlacementUVE GetSceneObjectPlacementUVE(const SceneObjectKindUVE kind) noexcept {
     switch (kind) {
         case SceneObjectKindUVE::Character3D:
+        case SceneObjectKindUVE::Player3D:
         case SceneObjectKindUVE::AnimationSequencer:
         case SceneObjectKindUVE::AnimationGraph:
         case SceneObjectKindUVE::Skeleton3D:

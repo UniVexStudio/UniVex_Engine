@@ -13,6 +13,7 @@
 #include "uve/objects/3d/occluder_3d_uve.h"
 #include "uve/objects/3d/reflection_probe_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
+#include "uve/objects/3d/player_3d_uve.h"
 #include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"

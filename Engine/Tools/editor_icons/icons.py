@@ -244,6 +244,14 @@ def character_3d(ic):
     figure(ic, "run", BLUE)
 
 
+@scene_object("player_3d", "Player3D", "Gameplay")
+def player_3d(ic):
+    shadow(ic, 31, 57, 20, 4.5)
+    ic.add(f'<rect x="14" y="3" width="36" height="55" rx="18" fill="{GOLD}" fill-opacity="0.12" stroke="{GOLD}" '
+           f'stroke-width="1.8" stroke-dasharray="4 3"/>')
+    figure(ic, "run", GOLD)
+
+
 @scene_object("collider_3d", "Collider3D", "Physics")
 def collider_3d(ic):
     shadow(ic, 32, 56, 22, 5, 0.3)

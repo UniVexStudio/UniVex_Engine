@@ -331,6 +331,10 @@ bool InputSystemUVE::IsActionReleasedUVE(std::string_view actionName) const {
     return !isDownNow && wasDownBefore;
 }
 
+bool InputSystemUVE::HasActionUVE(std::string_view actionName) const {
+    return m_actions.find(std::string(actionName)) != m_actions.end();
+}
+
 float InputSystemUVE::GetAxisValueUVE(std::string_view actionName) const {
     const auto it = m_actions.find(std::string(actionName));
     if (it == m_actions.end()) {

@@ -27,6 +27,7 @@
 #include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
+#include "uve/objects/3d/player_3d_uve.h"
 #include "uve/objects/3d/two_bone_ik_3d_uve.h"
 #include "uve/math/vector3_uve.h"
 
@@ -244,6 +245,19 @@ TEST(SceneComponentMetadataUVETest, TheFactoryAnswersWhatAPropertysDefaultValueI
     float defaultDensity = 0.0F;
     density->getValue(defaults.GetUVE(), &defaultDensity);
     EXPECT_FLOAT_EQ(defaultDensity, ColliderComponentUVE{}.density);
+}
+
+TEST(SceneComponentMetadataUVETest, ThePlayerSectionCarriesPossessAndLook) {
+    const TypeMetadataEntryUVE* player =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(PlayerComponentUVE)));
+    ASSERT_NE(player, nullptr);
+    EXPECT_EQ(player->typeId, "component.player");
+    EXPECT_EQ(player->displayName, "Player3D");
+    ASSERT_NE(FindPropertyUVE(*player, "possessOnPlay"), nullptr);
+    ASSERT_NE(FindPropertyUVE(*player, "lookEnabled"), nullptr);
+    const TypeMetadataPropertyUVE* pitch = FindPropertyUVE(*player, "pitchDegrees");
+    ASSERT_NE(pitch, nullptr);
+    EXPECT_TRUE(HasPropertyFlagUVE(pitch->flags, TypeMetadataPropertyFlagsUVE::RuntimeState));
 }
 
 TEST(SceneComponentMetadataUVETest, TheSpawnPointSectionCarriesTheWholeAuthoredContract) {

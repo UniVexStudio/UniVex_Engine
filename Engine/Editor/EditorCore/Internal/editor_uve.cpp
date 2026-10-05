@@ -421,16 +421,18 @@ bool EditorUVE::ApplyPlayEntrySpawnUVE() {
     // split-screen/multiplayer question this v1 deliberately does not answer - the first in
     // pool order is the only deterministic honest pick, and any gameplay layer that wants
     // richer selection lands its rule in ResolveSpawnPoint3DSelectionUVE, not here.
-    Scene::EntityUVE player = Scene::kInvalidEntityUVE;
-    entityManager.ForEachUVE<Scene::CharacterControllerComponentUVE>(
-        [&entityManager, &player](const Scene::EntityUVE entity,
-                                  Scene::CharacterControllerComponentUVE&) {
-            if (player == Scene::kInvalidEntityUVE &&
-                entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity) &&
-                entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
-                player = entity;
-            }
-        });
+    Scene::EntityUVE player = Scene::ResolvePossessedPlayerUVE(entityManager);
+    if (player == Scene::kInvalidEntityUVE) {
+        entityManager.ForEachUVE<Scene::CharacterControllerComponentUVE>(
+            [&entityManager, &player](const Scene::EntityUVE entity,
+                                      Scene::CharacterControllerComponentUVE&) {
+                if (player == Scene::kInvalidEntityUVE &&
+                    entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity) &&
+                    entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
+                    player = entity;
+                }
+            });
+    }
     if (player == Scene::kInvalidEntityUVE) {
         return false;
     }
@@ -1981,6 +1983,10 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
         case Scene::Objects::SceneObjectKindUVE::Character3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::Character3DObjectDefinitionUVE{},
                                                             Scene::ApplyCharacter3DObjectDefinitionUVE);
+            break;
+        case Scene::Objects::SceneObjectKindUVE::Player3D:
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::Player3DObjectDefinitionUVE{},
+                                                            Scene::ApplyPlayer3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::Rigid3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::Rigid3DObjectDefinitionUVE{},

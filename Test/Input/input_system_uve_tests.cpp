@@ -281,6 +281,14 @@ TEST_F(InputSystemUVETest, UnregisteredActionName_ReturnsFalseOrZeroWithoutAsser
     EXPECT_FALSE(inputSystem.IsActionHeldUVE("DoesNotExist"));
     EXPECT_FALSE(inputSystem.IsActionReleasedUVE("DoesNotExist"));
     EXPECT_NEAR(inputSystem.GetAxisValueUVE("DoesNotExist"), 0.0F, kEpsilon);
+    EXPECT_FALSE(inputSystem.HasActionUVE("DoesNotExist"));
+}
+
+TEST_F(InputSystemUVETest, HasActionUVE_IsTrueAfterRegister) {
+    EXPECT_FALSE(inputSystem.HasActionUVE("Jump"));
+    inputSystem.RegisterActionUVE(
+        InputActionUVE{"Jump", InputActionTypeUVE::Button, {KeyBindingUVE(KeyCodeUVE::Space)}, {}});
+    EXPECT_TRUE(inputSystem.HasActionUVE("Jump"));
 }
 
 TEST_F(InputSystemUVETest, UnregisterActionUVE_RemovesActionAndReportsWhetherItExisted) {
