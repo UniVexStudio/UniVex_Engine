@@ -37,6 +37,7 @@ namespace {
     material.vertexShader = AssetGuidUVE{444};
     material.fragmentShader = AssetGuidUVE{555};
     material.isTransparent = true;
+    material.billboardMode = MaterialBillboardModeUVE::Y;
     return material;
 }
 
@@ -50,6 +51,7 @@ TEST(MaterialAssetUVETest, DefaultConstruction_HasSensibleDefaults) {
     EXPECT_EQ(material.metallic, 0.0F);
     EXPECT_EQ(material.roughness, 0.5F);
     EXPECT_FALSE(material.isTransparent);
+    EXPECT_EQ(material.billboardMode, MaterialBillboardModeUVE::Disabled);
 }
 
 TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsFieldExact) {
@@ -71,6 +73,7 @@ TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsFieldExact) {
     EXPECT_EQ(loaded.vertexShader, original.vertexShader);
     EXPECT_EQ(loaded.fragmentShader, original.fragmentShader);
     EXPECT_EQ(loaded.isTransparent, original.isTransparent);
+    EXPECT_EQ(loaded.billboardMode, original.billboardMode);
 
     std::filesystem::remove(path);
 }
@@ -206,8 +209,63 @@ TEST(MaterialAssetUVETest, EndToEnd_RegisterLoaderThenLoadUVE_ReachesLoadedWithM
     ASSERT_NE(loaded, nullptr);
     EXPECT_EQ(loaded->albedoTexture, original.albedoTexture);
     EXPECT_EQ(loaded->isTransparent, original.isTransparent);
+    EXPECT_EQ(loaded->billboardMode, original.billboardMode);
 
     std::filesystem::remove(path);
+}
+
+TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_MissingBillboardMode_DefaultsToDisabled) {
+    const std::filesystem::path path = "uve_material_asset_tests_legacy_billboard.uvmat";
+    std::filesystem::remove(path);
+    const std::string legacyJson =
+        R"({"albedoColor":{"x":1.0,"y":1.0,"z":1.0},"albedoTexture":0,"normalTexture":0,"metallic":0.0,"roughness":0.5,"aoTexture":0,"emissiveColor":{"x":0.0,"y":0.0,"z":0.0},"vertexShader":0,"fragmentShader":0,"isTransparent":false})";
+    const auto* const jsonBytes = reinterpret_cast<const std::byte*>(legacyJson.data());
+    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Material,
+                                 std::vector<std::byte>(jsonBytes, jsonBytes + legacyJson.size())));
+
+    MaterialAssetUVE loaded;
+    loaded.billboardMode = MaterialBillboardModeUVE::Enabled;
+    ASSERT_TRUE(LoadMaterialAssetUVE(path, loaded));
+    EXPECT_EQ(loaded.billboardMode, MaterialBillboardModeUVE::Disabled);
+    std::filesystem::remove(path);
+}
+
+TEST(MaterialAssetUVETest, IsMaterialAssetValidUVE_RejectsUnknownBillboardMode) {
+    MaterialAssetUVE material = MakeTestMaterialUVE();
+    material.billboardMode = static_cast<MaterialBillboardModeUVE>(9U);
+    EXPECT_FALSE(IsMaterialAssetValidUVE(material));
+}
+
+TEST(MaterialAssetUVETest, TryMakeMaterialBillboardRotationUVE_DisabledLeavesTheRotation) {
+    Math::QuaternionUVE rotation{0.1F, 0.2F, 0.3F, 0.4F};
+    EXPECT_FALSE(TryMakeMaterialBillboardRotationUVE(MaterialBillboardModeUVE::Disabled,
+                                                     Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+                                                     Math::Vector3UVE{0.0F, 0.0F, 0.0F}, rotation));
+    EXPECT_EQ(rotation.x, 0.1F);
+    EXPECT_EQ(rotation.y, 0.2F);
+    EXPECT_EQ(rotation.z, 0.3F);
+    EXPECT_EQ(rotation.w, 0.4F);
+}
+
+TEST(MaterialAssetUVETest, TryMakeMaterialBillboardRotationUVE_EnabledPointsLocalZAtTheCamera) {
+    Math::QuaternionUVE rotation{};
+    ASSERT_TRUE(TryMakeMaterialBillboardRotationUVE(MaterialBillboardModeUVE::Enabled,
+                                                   Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+                                                   Math::Vector3UVE{0.0F, 0.0F, 0.0F}, rotation));
+    const Math::Vector3UVE localZ = Math::RotateVectorUVE(rotation, Math::Vector3UVE{0.0F, 0.0F, 1.0F});
+    EXPECT_NEAR(localZ.x, 0.0F, 1.0e-4F);
+    EXPECT_NEAR(localZ.y, 0.0F, 1.0e-4F);
+    EXPECT_NEAR(localZ.z, 1.0F, 1.0e-4F);
+}
+
+TEST(MaterialAssetUVETest, TryMakeMaterialBillboardRotationUVE_YIgnoresCameraHeight) {
+    Math::QuaternionUVE rotation{};
+    ASSERT_TRUE(TryMakeMaterialBillboardRotationUVE(MaterialBillboardModeUVE::Y, Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+                                                   Math::Vector3UVE{10.0F, 50.0F, 0.0F}, rotation));
+    const Math::Vector3UVE localZ = Math::RotateVectorUVE(rotation, Math::Vector3UVE{0.0F, 0.0F, 1.0F});
+    EXPECT_NEAR(localZ.x, 1.0F, 1.0e-4F);
+    EXPECT_NEAR(localZ.y, 0.0F, 1.0e-4F);
+    EXPECT_NEAR(localZ.z, 0.0F, 1.0e-4F);
 }
 
 } // namespace

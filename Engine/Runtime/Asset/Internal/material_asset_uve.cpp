@@ -9,6 +9,7 @@
 
 #include "uve/asset/uve_file_envelope_uve.h"
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/math/vector3_uve.h"
 
 namespace UVE::Asset {
 
@@ -38,7 +39,28 @@ bool IsMaterialAssetValidUVE(const MaterialAssetUVE& material) noexcept {
            IsFiniteUnitIntervalUVE(material.albedoColor.y) &&
            IsFiniteUnitIntervalUVE(material.albedoColor.z) &&
            IsFiniteUnitIntervalUVE(material.metallic) && IsFiniteUnitIntervalUVE(material.roughness) &&
-           IsFiniteNonNegativeVectorUVE(material.emissiveColor);
+           IsFiniteNonNegativeVectorUVE(material.emissiveColor) &&
+           material.billboardMode <= MaterialBillboardModeUVE::Y;
+}
+
+bool TryMakeMaterialBillboardRotationUVE(const MaterialBillboardModeUVE mode,
+                                         const Math::Vector3UVE& objectPosition,
+                                         const Math::Vector3UVE& cameraPosition,
+                                         Math::QuaternionUVE& outRotation) noexcept {
+    if (mode == MaterialBillboardModeUVE::Disabled || mode > MaterialBillboardModeUVE::Y) {
+        return false;
+    }
+    if (!Math::IsFiniteUVE(objectPosition) || !Math::IsFiniteUVE(cameraPosition)) {
+        return false;
+    }
+    Math::Vector3UVE toCamera = cameraPosition - objectPosition;
+    if (mode == MaterialBillboardModeUVE::Y) {
+        toCamera.y = 0.0F;
+    }
+    if (!Math::IsFiniteUVE(toCamera) || Math::LengthSquaredUVE(toCamera) <= 1.0e-12F) {
+        return false;
+    }
+    return Math::TryMakeLookAtUVE(toCamera, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, outRotation);
 }
 
 bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& outMaterial) {
@@ -75,6 +97,10 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
         material.vertexShader = AssetGuidUVE{payload.at("vertexShader").get<std::uint64_t>()};
         material.fragmentShader = AssetGuidUVE{payload.at("fragmentShader").get<std::uint64_t>()};
         material.isTransparent = payload.at("isTransparent").get<bool>();
+        if (payload.contains("billboardMode")) {
+            material.billboardMode =
+                static_cast<MaterialBillboardModeUVE>(payload.at("billboardMode").get<std::uint8_t>());
+        }
     } catch (const nlohmann::json::exception& fieldError) {
         UVE_ERROR("MaterialAssetUVE: \"{}\" is missing an expected field: {}", path.string(), fieldError.what());
         return false;
@@ -104,6 +130,7 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     payload["vertexShader"] = material.vertexShader.value;
     payload["fragmentShader"] = material.fragmentShader.value;
     payload["isTransparent"] = material.isTransparent;
+    payload["billboardMode"] = static_cast<std::uint8_t>(material.billboardMode);
 
     const std::string payloadText = payload.dump();
     const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());

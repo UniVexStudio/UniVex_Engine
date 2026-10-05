@@ -27,8 +27,10 @@
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
+#include "uve/component/transform_component_uve.h"
 #include "uve/component/render_instance_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
+#include "uve/math/quaternion_uve.h"
 #include "uve/objects/3d/abstract_objects_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
 #include "uve/objects/3d/occluder_3d_uve.h"
@@ -2299,6 +2301,104 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_DisabledFadeStillHardCutsAtThe
     meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
     EXPECT_TRUE(visibilitySet.candidates.empty());
     EXPECT_EQ(visibilitySet.rangeCulledEntities, 1U);
+}
+
+[[nodiscard]] Math::Vector3UVE MatrixAxisZUVE(const Math::Matrix4x4UVE& matrix) noexcept {
+    const Math::Vector3UVE axis{matrix.m[0][2], matrix.m[1][2], matrix.m[2][2]};
+    return Math::NormalizeUVE(axis);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_DisabledBillboardKeepsTheAuthoredPose) {
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>([](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+        mesh.localBounds =
+            Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+        return true;
+    });
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>([](const std::filesystem::path&,
+                                                              Asset::MaterialAssetUVE&) { return true; });
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_billboard_off.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_billboard_off.uvmat");
+    const Scene::EntityUVE entity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Math::QuaternionUVE yaw{};
+    ASSERT_TRUE(Math::TryMakeEulerUVE(Math::Vector3UVE{0.0F, std::numbers::pi_v<float> * 0.5F, 0.0F}, yaw));
+    Scene::TransformComponentUVE turned;
+    turned.localPosition = Math::Vector3UVE{0.0F, 0.0F, -10.0F};
+    turned.localRotation = yaw;
+    sceneGraph.SetLocalTransformUVE(entityManager, entity, turned);
+    sceneGraph.UpdateUVE(entityManager);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    const Math::Vector3UVE axisZ = MatrixAxisZUVE(visibilitySet.candidates[0].placement.worldMatrix);
+    EXPECT_NEAR(std::fabs(axisZ.x), 1.0F, 1.0e-3F);
+    EXPECT_NEAR(axisZ.z, 0.0F, 1.0e-3F);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_EnabledBillboardPointsLocalZAtTheCamera) {
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>([](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+        mesh.localBounds =
+            Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+        return true;
+    });
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>([](const std::filesystem::path&,
+                                                              Asset::MaterialAssetUVE& material) {
+        material.billboardMode = Asset::MaterialBillboardModeUVE::Enabled;
+        return true;
+    });
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_billboard_on.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_billboard_on.uvmat");
+    const Scene::EntityUVE entity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Math::QuaternionUVE yaw{};
+    ASSERT_TRUE(Math::TryMakeEulerUVE(Math::Vector3UVE{0.0F, std::numbers::pi_v<float> * 0.5F, 0.0F}, yaw));
+    Scene::TransformComponentUVE turned;
+    turned.localPosition = Math::Vector3UVE{0.0F, 0.0F, -10.0F};
+    turned.localRotation = yaw;
+    sceneGraph.SetLocalTransformUVE(entityManager, entity, turned);
+    sceneGraph.UpdateUVE(entityManager);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    const Math::Vector3UVE axisZ = MatrixAxisZUVE(visibilitySet.candidates[0].placement.worldMatrix);
+    EXPECT_NEAR(axisZ.x, 0.0F, 1.0e-3F);
+    EXPECT_NEAR(axisZ.y, 0.0F, 1.0e-3F);
+    EXPECT_NEAR(axisZ.z, 1.0F, 1.0e-3F);
+    EXPECT_NEAR(visibilitySet.candidates[0].placement.worldMatrix.m[0][3], 0.0F, 1.0e-4F);
+    EXPECT_NEAR(visibilitySet.candidates[0].placement.worldMatrix.m[1][3], 0.0F, 1.0e-4F);
+    EXPECT_NEAR(visibilitySet.candidates[0].placement.worldMatrix.m[2][3], -10.0F, 1.0e-4F);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_YBillboardIgnoresCameraHeight) {
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>([](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+        mesh.localBounds =
+            Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+        return true;
+    });
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>([](const std::filesystem::path&,
+                                                              Asset::MaterialAssetUVE& material) {
+        material.billboardMode = Asset::MaterialBillboardModeUVE::Y;
+        return true;
+    });
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_billboard_y.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_billboard_y.uvmat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{10.0F, 40.0F, -10.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    const Math::Vector3UVE axisZ = MatrixAxisZUVE(visibilitySet.candidates[0].placement.worldMatrix);
+    EXPECT_NEAR(axisZ.x, 1.0F, 1.0e-3F);
+    EXPECT_NEAR(axisZ.y, 0.0F, 1.0e-3F);
+    EXPECT_NEAR(axisZ.z, 0.0F, 1.0e-3F);
 }
 
 } // namespace
