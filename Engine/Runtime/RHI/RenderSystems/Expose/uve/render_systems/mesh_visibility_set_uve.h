@@ -129,6 +129,8 @@ struct MeshVisibilityCandidateUVE final {
     bool drawsInView = true;
     /// 1 fully solid, 0 invisible. SurfaceInstance3D transparency inverted; 1 when there is no surface.
     float opacity = 1.0F;
+    /// Second colour pass with materialOverlayPath. Never writes the shadow maps.
+    bool overlay = false;
 };
 
 /// This frame's renderable set, built once and then culled against as many frusta as the frame

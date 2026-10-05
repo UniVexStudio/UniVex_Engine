@@ -109,6 +109,17 @@ float SurfaceInstance3DOpacityUVE(const SurfaceInstanceComponentUVE& surface) no
     return 1.0F - surface.transparency;
 }
 
+bool SurfaceInstance3DHasOverlayUVE(const SurfaceInstanceComponentUVE& surface) noexcept {
+    return !surface.materialOverlayPath.empty();
+}
+
+float ApplySurfaceInstance3DOverlaySortBiasUVE(const float baseDepth) noexcept {
+    if (!std::isfinite(baseDepth)) {
+        return baseDepth;
+    }
+    return baseDepth - 0.001F;
+}
+
 bool IsRenderInstance3DOnViewLayersUVE(const std::uint32_t renderLayers,
                                        const std::uint32_t viewLayerMask) noexcept {
     return (renderLayers & viewLayerMask) != 0U;

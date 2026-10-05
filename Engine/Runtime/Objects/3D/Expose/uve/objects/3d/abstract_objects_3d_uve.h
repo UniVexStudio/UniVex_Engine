@@ -82,6 +82,13 @@ void ExpandSurfaceInstance3DCullBoundsUVE(const SurfaceInstanceComponentUVE& sur
 /// blank the object.
 [[nodiscard]] float SurfaceInstance3DOpacityUVE(const SurfaceInstanceComponentUVE& surface) noexcept;
 
+/// True when the surface names an overlay material. Empty is none.
+[[nodiscard]] bool SurfaceInstance3DHasOverlayUVE(const SurfaceInstanceComponentUVE& surface) noexcept;
+
+/// Pulls an overlay pass slightly closer than its host so back-to-front order paints it on top.
+/// Non-finite depth is left unchanged.
+[[nodiscard]] float ApplySurfaceInstance3DOverlaySortBiasUVE(float baseDepth) noexcept;
+
 // =================================================================================================
 // What RenderInstance3D means to the draw list.
 // =================================================================================================

@@ -653,6 +653,12 @@ TEST_F(Object3DDefinitionsUVETest, RenderInstanceFamilyComponentsRejectValuesThe
     EXPECT_FLOAT_EQ(SurfaceInstance3DOpacityUVE(faded), 0.0F);
     faded.transparency = std::numeric_limits<float>::quiet_NaN();
     EXPECT_FLOAT_EQ(SurfaceInstance3DOpacityUVE(faded), 1.0F);
+    EXPECT_FALSE(SurfaceInstance3DHasOverlayUVE(SurfaceInstanceComponentUVE{}));
+    SurfaceInstanceComponentUVE overlay{};
+    overlay.materialOverlayPath = "flash.uvmat";
+    EXPECT_TRUE(SurfaceInstance3DHasOverlayUVE(overlay));
+    EXPECT_FLOAT_EQ(ApplySurfaceInstance3DOverlaySortBiasUVE(4.0F), 3.999F);
+    EXPECT_TRUE(std::isnan(ApplySurfaceInstance3DOverlaySortBiasUVE(std::numeric_limits<float>::quiet_NaN())));
 
     EXPECT_TRUE(IsRenderInstance3DOnViewLayersUVE(0x00000001U, 0xFFFFFFFFU));
     EXPECT_TRUE(IsRenderInstance3DOnViewLayersUVE(0x00000002U, 0x00000002U));

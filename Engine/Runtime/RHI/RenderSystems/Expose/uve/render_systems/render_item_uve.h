@@ -31,6 +31,8 @@ struct RenderItemUVE {
     std::uint32_t renderLayers = 1U;
     /// SurfaceInstance opacity: 1 solid, 0 invisible. 1 when the entity has no surface.
     float opacity = 1.0F;
+    /// Second colour pass (SurfaceInstance overlay). Drawn blended, never a shadow caster.
+    bool overlay = false;
 };
 
 } // namespace UVE::Render
