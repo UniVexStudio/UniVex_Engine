@@ -11,6 +11,7 @@
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/objects/3d/abstract_objects_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
 
 namespace UVE::Scene {
 namespace {
@@ -320,6 +321,9 @@ std::size_t CollectFogVolume3DFramesUVE(IEntityManagerUVE& entityManager, const 
             }
             if (entityManager.HasComponentUVE<VisibilityComponentUVE>(entity) &&
                 !entityManager.GetComponentUVE<VisibilityComponentUVE>(entity).visibleInHierarchy) {
+                return;
+            }
+            if (IsWorldPartition3DDrawHiddenUVE(entityManager, entity)) {
                 return;
             }
             if (fog.density == 0.0F && Math::LengthSquaredUVE(fog.emission) <= 1.0e-12F) {

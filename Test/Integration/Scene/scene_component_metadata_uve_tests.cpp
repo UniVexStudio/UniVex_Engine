@@ -24,6 +24,7 @@
 #include "uve/objects/3d/interaction_area_3d_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
@@ -397,6 +398,36 @@ TEST(SceneComponentMetadataUVETest, TheLodGroupSectionCarriesTheChainTheMeshesAn
     outOfRange.hysteresis = kMaximumLodHysteresisUVE + 0.1F;
     EXPECT_FALSE(lod->isInstanceValid(&outOfRange));
     EXPECT_TRUE(lod->isInstanceValid(&component));
+}
+
+TEST(SceneComponentMetadataUVETest, TheWorldPartitionSectionCarriesTheVisBudgetAndTheLiveCount) {
+    const TypeMetadataEntryUVE* partition =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(WorldPartition3DComponentUVE)));
+    ASSERT_NE(partition, nullptr);
+    EXPECT_EQ(partition->typeId, "component.world_partition_3d");
+    EXPECT_EQ(partition->displayName, "WorldPartition3D");
+
+    for (const char* const name : {"enabled", "cellSize", "maximumLoadedCells"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*partition, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+            << name;
+        EXPECT_TRUE(property->IsAuthoringWritableUVE()) << name;
+    }
+
+    const TypeMetadataPropertyUVE* live = FindPropertyUVE(*partition, "loadedCellCount");
+    ASSERT_NE(live, nullptr);
+    EXPECT_TRUE(HasPropertyFlagUVE(live->flags, TypeMetadataPropertyFlagsUVE::RuntimeState));
+    EXPECT_FALSE(live->IsAuthoringWritableUVE());
+    EXPECT_FALSE(live->IsSerializedUVE());
+    EXPECT_EQ(live->section, "Result");
+
+    ASSERT_NE(partition->isInstanceValid, nullptr);
+    const WorldPartition3DComponentUVE valid{};
+    EXPECT_TRUE(partition->isInstanceValid(&valid));
+    WorldPartition3DComponentUVE broken = valid;
+    broken.cellSize = 0.0F;
+    EXPECT_FALSE(partition->isInstanceValid(&broken));
 }
 
 TEST(SceneComponentMetadataUVETest, TheBoneAttachmentSectionDeclaresTheReferenceTheBoneAndTheAnswer) {

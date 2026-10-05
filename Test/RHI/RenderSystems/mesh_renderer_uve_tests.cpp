@@ -1495,7 +1495,7 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_PartitionCellOutsideTheBudgetI
     // the render pipeline reads (SyncWorldPartition3DObjectsUVE writes it; this test simulates its
     // verdict by hand so the gate is measured in isolation). A live-flag true member renders;
     // live=false (the engine put its cell outside the budget) is culled and counted in
-    // partitionCulledEntities so authored hiding and partition streaming never blur together.
+    // partitionCulledEntities so authored hiding and the vis-budget never blur together.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
     const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_wp.uvmodel");
     const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_wp.uvmat");

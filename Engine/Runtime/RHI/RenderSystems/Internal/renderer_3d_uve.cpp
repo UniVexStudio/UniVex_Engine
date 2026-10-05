@@ -1720,7 +1720,8 @@ struct Renderer3DUVE::ImplUVE {
                 const Scene::MeshComponentUVE& meshComponent) {
                 if (meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE ||
                     meshComponent.materialGuid != Asset::kInvalidAssetGuidUVE || worldTransform.dirty ||
-                    IsHiddenInHierarchyUVE(entityManager, entity)) {
+                    IsHiddenInHierarchyUVE(entityManager, entity) ||
+                    Scene::IsWorldPartition3DDrawHiddenUVE(entityManager, entity)) {
                     return;
                 }
                 named[meshComponent.meshGuid] = true;
@@ -1785,7 +1786,8 @@ struct Renderer3DUVE::ImplUVE {
             [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
                 const Scene::PrimitiveMeshComponentUVE& primitive) {
                 if (worldTransform.dirty || !Scene::IsPrimitiveMeshComponentValidUVE(primitive) ||
-                    IsHiddenInHierarchyUVE(entityManager, entity)) {
+                    IsHiddenInHierarchyUVE(entityManager, entity) ||
+                    Scene::IsWorldPartition3DDrawHiddenUVE(entityManager, entity)) {
                     // Returning before the cache is touched leaves any existing entry unstamped,
                     // so an entity that stays dirty or invalid is pruned rather than kept alive by
                     // a placement nobody can use.
@@ -2976,8 +2978,15 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                                                          m_impl->decalPlan.drawsWithoutPaint;
     }
     if (m_impl->particleRuntimeForFrame != nullptr && !capturingProbe) {
-        const ParticleRenderSnapshotUVE particleSnapshot =
+        ParticleRenderSnapshotUVE particleSnapshot =
             ParticleRenderBridgeUVE::ExtractUVE(*m_impl->particleRuntimeForFrame);
+        const std::size_t extracted = particleSnapshot.items.size();
+        std::erase_if(particleSnapshot.items, [&entityManager](const ParticleRenderItemUVE& item) {
+            return Scene::IsWorldPartition3DDrawHiddenUVE(entityManager, item.entity);
+        });
+        if (particleSnapshot.items.size() != extracted && !particleSnapshot.truncated) {
+            particleSnapshot.sourceParticleCount = particleSnapshot.items.size();
+        }
         queue.AppendParticleSnapshotUVE(particleSnapshot);
         m_impl->lastFrameDiagnostics.particleItemsExtracted = particleSnapshot.items.size();
         m_impl->lastFrameDiagnostics.particleItemsTruncated = particleSnapshot.truncated;

@@ -50,6 +50,7 @@
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/world_environment_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/threading/thread_pool_uve.h"
@@ -496,6 +497,29 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_FiniteExtremePrimitiveTransformIsReject
     EXPECT_EQ(diagnostics.primitiveCandidates, 1U);
     EXPECT_EQ(diagnostics.primitiveItemsExtracted, 0U);
     EXPECT_EQ(diagnostics.primitiveDrawCallsRecorded, 0U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_PartitionHiddenPrimitiveIsNotACandidate) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE partition = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, partition, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::WorldPartition3DComponentUVE>(partition);
+    sceneGraph.UpdateUVE(entityManager);
+
+    const Scene::EntityUVE hidden = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.8F, 0.2F, 0.1F}});
+    const Scene::EntityUVE shown = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{1.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.2F, 0.8F, 0.1F}});
+    entityManager.AddComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        hidden, Scene::WorldPartition3DMembershipComponentUVE{partition, false});
+    entityManager.AddComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        shown, Scene::WorldPartition3DMembershipComponentUVE{partition, true});
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveCandidates, 1U);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveItemsExtracted, 1U);
 }
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_VisiblePrimitive_ReportsEvidenceSpecificDiagnostics) {
