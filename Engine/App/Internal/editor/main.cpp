@@ -42,7 +42,10 @@
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/objects/3d/camera_3d_uve.h"
+#include "uve/render_systems/camera_system_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
+#include "univex/gizmo/GizmoGeometry.h"
 
 namespace {
 
@@ -86,24 +89,52 @@ void main() {
 }
 )";
 
-// Chooses "the" scene camera to render through while the Game workspace tab is active - a player
-// preview, per UpdateSelectionGizmoUVE/ApplyOverlayStateUVE's own established "what a player would
-// see" convention for that state. CameraComponentUVE (Component/include/.../camera_component_uve.h)
-// has no priority/"main camera" tag of any kind yet, so this is deliberately the simplest honest
-// rule - the first entity found (stable ECS storage order) carrying both a real world transform and
-// a camera - documented here rather than silently assumed; a future increment can add a real
-// "main camera" flag once more than one scene camera is a real authoring scenario.
 [[nodiscard]] std::optional<UVE::Scene::EntityUVE> FindGameCameraEntityUVE(
     UVE::Scene::IEntityManagerUVE& entityManager) {
-    std::optional<UVE::Scene::EntityUVE> found;
+    return UVE::Scene::FindCurrentCameraEntityUVE(entityManager);
+}
+
+[[nodiscard]] univex::gizmo::GizmoMesh BuildCameraFrustumMeshUVE(
+    UVE::Scene::IEntityManagerUVE& entityManager, const UVE::Scene::EntityUVE hideEntity, const float aspectRatio) {
+    univex::gizmo::GizmoMesh mesh;
+    if (!(std::isfinite(aspectRatio) && aspectRatio > 0.0F)) {
+        return mesh;
+    }
+    UVE::Render::CameraSystemUVE cameras;
     entityManager.ForEachUVE<UVE::Scene::WorldTransformComponentUVE, UVE::Scene::CameraComponentUVE>(
-        [&found](const UVE::Scene::EntityUVE entity, const UVE::Scene::WorldTransformComponentUVE&,
-                 const UVE::Scene::CameraComponentUVE&) {
-            if (!found.has_value()) {
-                found = entity;
+        [&](const UVE::Scene::EntityUVE entity, const UVE::Scene::WorldTransformComponentUVE&,
+            const UVE::Scene::CameraComponentUVE& camera) {
+            if (entity == hideEntity || !UVE::Scene::IsDocumentCameraEntityUVE(entityManager, entity) ||
+                !UVE::Scene::IsCameraComponentValidUVE(camera)) {
+                return;
             }
+            const UVE::Render::CameraFrustumCornersUVE corners =
+                cameras.ComputeFrustumCornersUVE(entityManager, entity, aspectRatio);
+            const univex::math::Vec3 color =
+                camera.current ? univex::math::Vec3{0.55F, 0.92F, 1.0F} : univex::math::Vec3{0.35F, 0.72F, 0.95F};
+            const float widthPx = camera.current ? 2.0F : 1.5F;
+            const auto addLine = [&](const int a, const int b) {
+                mesh.lines.push_back(univex::gizmo::GizmoLine{
+                    univex::math::Vec3{corners[static_cast<std::size_t>(a)].x, corners[static_cast<std::size_t>(a)].y,
+                                       corners[static_cast<std::size_t>(a)].z},
+                    univex::math::Vec3{corners[static_cast<std::size_t>(b)].x, corners[static_cast<std::size_t>(b)].y,
+                                       corners[static_cast<std::size_t>(b)].z},
+                    color, widthPx});
+            };
+            addLine(0, 1);
+            addLine(1, 3);
+            addLine(3, 2);
+            addLine(2, 0);
+            addLine(4, 5);
+            addLine(5, 7);
+            addLine(7, 6);
+            addLine(6, 4);
+            addLine(0, 4);
+            addLine(1, 5);
+            addLine(2, 6);
+            addLine(3, 7);
         });
-    return found;
+    return mesh;
 }
 
 // Bridges Engine/Editor/Viewport's real GL renderer (grid + orbit camera + transform/orientation
@@ -150,6 +181,25 @@ public:
         }
 
         ApplyOverlayStateUVE(overlayState);
+        const UVE::Scene::EntityUVE previewCamera = editor_.GetPreviewCameraUVE();
+        const bool wantPreview =
+            !gameWorkspaceActive_ && !studioView_ && previewCamera != UVE::Scene::kInvalidEntityUVE;
+        if (wantPreview && !previewing_) {
+            poseBeforePreview_ = CameraPoseUVE{camera_.Target(), camera_.Yaw(), camera_.Pitch(), camera_.Distance(),
+                                               camera_.IsOrthographic()};
+            previewing_ = true;
+        } else if (!wantPreview && previewing_) {
+            if (poseBeforePreview_.has_value()) {
+                camera_.CancelAnimation();
+                camera_.SetTarget(poseBeforePreview_->target);
+                camera_.SetYawPitch(poseBeforePreview_->yaw, poseBeforePreview_->pitch);
+                camera_.SetDistance(poseBeforePreview_->distance);
+                camera_.SetOrthographic(poseBeforePreview_->orthographic);
+                poseBeforePreview_.reset();
+            }
+            previewing_ = false;
+        }
+        renderPass_->Settings().viewGizmos = !studioView_ && !gameWorkspaceActive_ && !previewing_;
         if (studioView_) {
             // Looked at, not edited: nothing is selected or moved, and the view does not turn.
             renderPass_->Settings().viewTransformGizmo = false;
@@ -158,16 +208,19 @@ public:
             }
         } else {
             UpdateSelectionGizmoUVE();
-            const bool navGizmoOwnsGesture = UpdateNavGizmoInteractionUVE(width, height);
+            const bool navGizmoOwnsGesture =
+                previewing_ ? false : UpdateNavGizmoInteractionUVE(width, height);
             // A handle drag outranks both: grabbing an arrow must not also orbit the camera or, on
             // release, register as a click that selects whatever is behind the gizmo.
             const bool gizmoOwnsGesture = !navGizmoOwnsGesture && UpdateGizmoDragUVE(width, height);
             const bool pointerTaken = navGizmoOwnsGesture || gizmoOwnsGesture;
             UpdateSelectionFromMouseUVE(width, height, pointerTaken);
             UpdateEntityContextToolbarFromMouseUVE(width, height, pointerTaken);
-            UpdateCameraFromMouseUVE(height, pointerTaken);
-            UpdateViewportViewHotkeysUVE();
-            UpdateViewportBookmarkHotkeysUVE();
+            if (!previewing_) {
+                UpdateCameraFromMouseUVE(height, pointerTaken);
+                UpdateViewportViewHotkeysUVE();
+                UpdateViewportBookmarkHotkeysUVE();
+            }
         }
         // Advances the eased snap-to-axis animation SnapToDirection() starts (a manual orbit/pan
         // cancels it instead - see OrbitCamera.cpp) - without this the camera would flag itself
@@ -187,10 +240,21 @@ public:
         // comment for the "first camera found" convention; EditorMeshLayerUVE itself falls back to
         // the OrbitCamera-synced view if the scene has no usable camera, so a Play session with no
         // authored camera still shows something instead of a blank panel.
-        const std::optional<UVE::Scene::EntityUVE> gameCameraOverride =
-            gameWorkspaceActive_ ? FindGameCameraEntityUVE(entityManager_) : std::nullopt;
+        std::optional<UVE::Scene::EntityUVE> lookThroughCamera;
+        if (gameWorkspaceActive_) {
+            lookThroughCamera = FindGameCameraEntityUVE(entityManager_);
+        } else if (wantPreview) {
+            lookThroughCamera = previewCamera;
+        }
         const univex::integration::EditorMeshLayerResultUVE meshResult = meshLayer_.RenderUVE(
-            camera_, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), gameCameraOverride);
+            camera_, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), lookThroughCamera);
+        if (!gameWorkspaceActive_ && !studioView_) {
+            const float aspect = static_cast<float>(width) / static_cast<float>(height);
+            renderPass_->SetCameraFrustumMeshUVE(BuildCameraFrustumMeshUVE(
+                entityManager_, lookThroughCamera.value_or(UVE::Scene::kInvalidEntityUVE), aspect));
+        } else {
+            renderPass_->SetCameraFrustumMeshUVE({});
+        }
         outUsedSize = UVE::Math::Vector2UVE{static_cast<float>(width), static_cast<float>(height)};
 
         // One framebuffer, one depth buffer, drawn back to front: backdrop, then the engine's
@@ -1319,6 +1383,8 @@ private:
         bool orthographic = false;
     };
     std::optional<CameraPoseUVE> poseBeforeStudio_;
+    std::optional<CameraPoseUVE> poseBeforePreview_;
+    bool previewing_ = false;
     // Set each frame by ApplyOverlayStateUVE(), read by UpdateSelectionGizmoUVE() so it can force
     // the transform gizmo off while the Game workspace tab is active (see ApplyOverlayStateUVE's
     // own comment - it already forces the grid off directly, but the gizmo's visibility is decided

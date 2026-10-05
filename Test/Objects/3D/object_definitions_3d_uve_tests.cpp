@@ -19,6 +19,7 @@
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/editor_description_component_uve.h"
+#include "uve/component/editor_internal_entity_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
@@ -192,6 +193,7 @@ TEST_F(Object3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
         ApplyCamera3DObjectDefinitionUVE(entityManager, entity, Camera3DObjectDefinitionUVE{});
         ExpectObject3DBaselineUVE(entityManager, entity, Camera3DObjectDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<CameraComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.GetComponentUVE<CameraComponentUVE>(entity).current);
     }
     {
         const EntityUVE entity = CreateEntityUVE();
@@ -1076,6 +1078,31 @@ TEST_F(Object3DDefinitionsUVETest, AnimationGraphIsCreatableAndValidatesItsBlend
         Objects::FindSceneObjectDescriptorUVE(Objects::SceneObjectKindUVE::AnimationGraph);
     ASSERT_NE(descriptor, nullptr);
     EXPECT_TRUE(descriptor->libraryCreatable);
+}
+
+TEST_F(Object3DDefinitionsUVETest, CameraCurrentIsExclusiveAndSkipsEditorInternal) {
+    const EntityUVE first = CreateEntityUVE();
+    ApplyCamera3DObjectDefinitionUVE(entityManager, first, Camera3DObjectDefinitionUVE{});
+    const EntityUVE second = CreateEntityUVE();
+    ApplyCamera3DObjectDefinitionUVE(entityManager, second, Camera3DObjectDefinitionUVE{});
+    EXPECT_TRUE(entityManager.GetComponentUVE<CameraComponentUVE>(first).current);
+    EXPECT_FALSE(entityManager.GetComponentUVE<CameraComponentUVE>(second).current);
+    ASSERT_TRUE(FindCurrentCameraEntityUVE(entityManager).has_value());
+    EXPECT_EQ(*FindCurrentCameraEntityUVE(entityManager), first);
+
+    MakeCameraCurrentUVE(entityManager, second);
+    EXPECT_FALSE(entityManager.GetComponentUVE<CameraComponentUVE>(first).current);
+    EXPECT_TRUE(entityManager.GetComponentUVE<CameraComponentUVE>(second).current);
+    ASSERT_TRUE(FindCurrentCameraEntityUVE(entityManager).has_value());
+    EXPECT_EQ(*FindCurrentCameraEntityUVE(entityManager), second);
+
+    const EntityUVE internal = CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, internal, TransformComponentUVE{});
+    entityManager.AddComponentUVE<CameraComponentUVE>(internal);
+    entityManager.AddComponentUVE<EditorInternalEntityComponentUVE>(internal);
+    ASSERT_TRUE(FindCurrentCameraEntityUVE(entityManager).has_value());
+    EXPECT_EQ(*FindCurrentCameraEntityUVE(entityManager), second);
+    EXPECT_FALSE(IsDocumentCameraEntityUVE(entityManager, internal));
 }
 
 } // namespace

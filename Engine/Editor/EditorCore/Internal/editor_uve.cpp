@@ -1066,7 +1066,8 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
                 return false;
             } else if constexpr (std::is_same_v<LeftType, Scene::CameraComponentUVE>) {
                 return left.fieldOfViewDegrees == right.fieldOfViewDegrees && left.nearPlane == right.nearPlane &&
-                       left.farPlane == right.farPlane;
+                       left.farPlane == right.farPlane && left.projection == right.projection &&
+                       left.orthographicSize == right.orthographicSize && left.current == right.current;
             } else if constexpr (std::is_same_v<LeftType, Scene::MeshComponentUVE>) {
                 return left.meshGuid == right.meshGuid && left.materialGuid == right.materialGuid;
             } else if constexpr (std::is_same_v<LeftType, Scene::LightComponentUVE>) {
@@ -1076,7 +1077,8 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
                 return left.halfExtents == right.halfExtents && left.collisionLayer == right.collisionLayer &&
                        left.collisionMask == right.collisionMask && left.friction == right.friction &&
                        left.restitution == right.restitution && left.density == right.density &&
-                       left.shapeType == right.shapeType && left.radius == right.radius && left.height == right.height;
+                       left.shapeType == right.shapeType && left.radius == right.radius &&
+                       left.height == right.height && left.disabled == right.disabled;
             } else if constexpr (std::is_same_v<LeftType, Scene::Rigid3DComponentUVE>) {
                 return left.mass == right.mass && left.isKinematic == right.isKinematic &&
                        left.velocity == right.velocity && left.angularVelocity == right.angularVelocity &&
@@ -1160,8 +1162,17 @@ bool EditorUVE::ApplySceneComponentStateUVE(
     };
 
     switch (kind) {
-        case EditorSceneComponentKindUVE::Camera:
-            return apply.template operator()<Scene::CameraComponentUVE>();
+        case EditorSceneComponentKindUVE::Camera: {
+            const bool applied = apply.template operator()<Scene::CameraComponentUVE>();
+            if (applied && value.has_value()) {
+                Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+                if (entityManager.HasComponentUVE<Scene::CameraComponentUVE>(entity) &&
+                    entityManager.GetComponentUVE<Scene::CameraComponentUVE>(entity).current) {
+                    Scene::MakeCameraCurrentUVE(entityManager, entity);
+                }
+            }
+            return applied;
+        }
         case EditorSceneComponentKindUVE::Mesh:
             return apply.template operator()<Scene::MeshComponentUVE>();
         case EditorSceneComponentKindUVE::Light:
@@ -3606,6 +3617,27 @@ EditorStateUVE EditorUVE::GetStateUVE() const noexcept {
 
 Scene::EntityUVE EditorUVE::GetSelectedEntityUVE() const noexcept {
     return m_selectedEntity;
+}
+
+Scene::EntityUVE EditorUVE::GetPreviewCameraUVE() const noexcept {
+    if (m_previewCamera == Scene::kInvalidEntityUVE || m_services == nullptr) {
+        return Scene::kInvalidEntityUVE;
+    }
+    if (!Scene::IsDocumentCameraEntityUVE(m_services->GetEntityManagerUVE(), m_previewCamera)) {
+        return Scene::kInvalidEntityUVE;
+    }
+    return m_previewCamera;
+}
+
+void EditorUVE::SetPreviewCameraUVE(const Scene::EntityUVE entity) {
+    if (m_services == nullptr || !Scene::IsDocumentCameraEntityUVE(m_services->GetEntityManagerUVE(), entity)) {
+        return;
+    }
+    m_previewCamera = entity;
+}
+
+void EditorUVE::ClearPreviewCameraUVE() noexcept {
+    m_previewCamera = Scene::kInvalidEntityUVE;
 }
 
 namespace {
