@@ -58,7 +58,12 @@ TEST(ContentCatalogueUVETest, EveryItemIsCreatableAndGroupsAreInOrder) {
             const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
                 Scene::Objects::FindSceneObjectDescriptorUVE(object.kind);
             ASSERT_NE(descriptor, nullptr) << item.id;
-            EXPECT_TRUE(descriptor->libraryCreatable) << item.id;
+            // Structural objects such as a scene's Viewport are valid scene-asset roots but are
+            // intentionally not standalone library objects.
+            EXPECT_TRUE(descriptor->libraryCreatable ||
+                        (item.action == ContentCatalogueActionUVE::SceneAsset &&
+                         object.kind == Scene::Objects::SceneObjectKindUVE::Viewport))
+                << item.id;
         }
     }
     for (const std::string_view group : groups) {
