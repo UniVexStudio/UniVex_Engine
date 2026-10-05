@@ -492,10 +492,11 @@ public:
     /// GUID through the existing PrefabSystemUVE. This command never runs during Play or a viewport gesture.
     [[nodiscard]] bool SaveSelectedPrefabUVE(const std::filesystem::path& path);
 
-    /// Makes what the Content catalogue item `itemId` stands for inside `directory`: a folder, or a
-    /// `.uventity` holding the item's object tree with its root named after the file. Names never
-    /// collide ("Character", "Character 2", ...). The document is not touched and no undo step is
-    /// recorded. Returns the new path, or nothing in Play, for an unknown item or a failed write.
+    /// Makes what the Content catalogue item `itemId` stands for inside `directory`: a folder, a
+    /// `.uventity` holding the item's object tree, or a `.uvscene` with a SceneRoot, Viewport and
+    /// World folder. Names never collide ("Character", "Character 2", ...). The document is not
+    /// touched and no undo step is recorded. Returns the new path, or nothing in Play, for an
+    /// unknown item or a failed write.
     [[nodiscard]] std::optional<std::filesystem::path> CreateContentCatalogueItemUVE(
         std::string_view itemId, const std::filesystem::path& directory);
 
@@ -633,6 +634,11 @@ public:
     /// created before destructive mutation and restored if deserialization fails; the editor camera
     /// remains outside the document root set.
     [[nodiscard]] bool LoadSceneUVE();
+
+    /// Makes a Content Browser `.uvscene` the active scene and loads it. The caller supplies an
+    /// existing regular scene file; the current document is recovered by LoadSceneUVE() if the
+    /// replacement fails.
+    [[nodiscard]] bool OpenSceneAssetUVE(const std::filesystem::path& path);
 
     /// Makes entity the sole ordered hierarchy/inspector selection when it is live; invalid or
     /// deleted handles clear the selection instead of exposing stale ECS state.

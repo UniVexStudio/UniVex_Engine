@@ -267,7 +267,7 @@ TEST_F(Object3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
     }
 }
 
-TEST_F(Object3DDefinitionsUVETest, PrimitiveMeshRecipesKeepTheirDistinctShapesColorsAndColliders) {
+TEST_F(Object3DDefinitionsUVETest, PrimitiveMeshRecipesKeepTheirDistinctShapesWhiteDefaultsAndColliders) {
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyBoxMesh3DObjectDefinitionUVE(entityManager, entity, BoxMesh3DObjectDefinitionUVE{});
@@ -275,7 +275,7 @@ TEST_F(Object3DDefinitionsUVETest, PrimitiveMeshRecipesKeepTheirDistinctShapesCo
         ASSERT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
         const PrimitiveMeshComponentUVE& mesh = entityManager.GetComponentUVE<PrimitiveMeshComponentUVE>(entity);
         EXPECT_EQ(mesh.kind, PrimitiveMeshKindUVE::Cube);
-        EXPECT_EQ(mesh.baseColor, (Math::Vector3UVE{0.73F, 0.48F, 0.21F}));
+        EXPECT_EQ(mesh.baseColor, (Math::Vector3UVE{1.0F, 1.0F, 1.0F}));
         EXPECT_EQ(entityManager.GetComponentUVE<ColliderComponentUVE>(entity).halfExtents,
                   (Math::Vector3UVE{0.5F, 0.5F, 0.5F}));
     }
@@ -286,7 +286,7 @@ TEST_F(Object3DDefinitionsUVETest, PrimitiveMeshRecipesKeepTheirDistinctShapesCo
         ASSERT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
         const PrimitiveMeshComponentUVE& mesh = entityManager.GetComponentUVE<PrimitiveMeshComponentUVE>(entity);
         EXPECT_EQ(mesh.kind, PrimitiveMeshKindUVE::UVSphere);
-        EXPECT_EQ(mesh.baseColor, (Math::Vector3UVE{0.22F, 0.55F, 0.88F}));
+        EXPECT_EQ(mesh.baseColor, (Math::Vector3UVE{1.0F, 1.0F, 1.0F}));
         EXPECT_EQ(entityManager.GetComponentUVE<ColliderComponentUVE>(entity).halfExtents,
                   (Math::Vector3UVE{0.5F, 0.5F, 0.5F}));
     }
@@ -297,7 +297,7 @@ TEST_F(Object3DDefinitionsUVETest, PrimitiveMeshRecipesKeepTheirDistinctShapesCo
         ASSERT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
         const PrimitiveMeshComponentUVE& mesh = entityManager.GetComponentUVE<PrimitiveMeshComponentUVE>(entity);
         EXPECT_EQ(mesh.kind, PrimitiveMeshKindUVE::Plane);
-        EXPECT_EQ(mesh.baseColor, (Math::Vector3UVE{0.32F, 0.38F, 0.30F}));
+        EXPECT_EQ(mesh.baseColor, (Math::Vector3UVE{1.0F, 1.0F, 1.0F}));
         // The plane's collider is a thin floor slab, not a full-height box.
         EXPECT_EQ(entityManager.GetComponentUVE<ColliderComponentUVE>(entity).halfExtents,
                   (Math::Vector3UVE{0.5F, 0.025F, 0.5F}));
