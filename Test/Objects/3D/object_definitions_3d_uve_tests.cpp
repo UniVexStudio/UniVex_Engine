@@ -631,6 +631,15 @@ TEST_F(Object3DDefinitionsUVETest, RenderInstanceFamilyComponentsRejectValuesThe
     EXPECT_NEAR(bounds.min.y, -2.5F, 1.0e-6F);
     EXPECT_NEAR(bounds.max.z, 2.5F, 1.0e-6F);
 
+    EXPECT_TRUE(IsRenderInstance3DOnViewLayersUVE(0x00000001U, 0xFFFFFFFFU));
+    EXPECT_TRUE(IsRenderInstance3DOnViewLayersUVE(0x00000002U, 0x00000002U));
+    EXPECT_FALSE(IsRenderInstance3DOnViewLayersUVE(0x00000001U, 0x00000002U));
+    EXPECT_FALSE(IsRenderInstance3DOnViewLayersUVE(0x00000001U, 0U));
+    EXPECT_FALSE(IsRenderInstance3DOnViewLayersUVE(0U, 0xFFFFFFFFU));
+    EXPECT_FLOAT_EQ(ApplyRenderInstance3DSortingOffsetUVE(4.0F, 1.5F), 5.5F);
+    EXPECT_FLOAT_EQ(ApplyRenderInstance3DSortingOffsetUVE(4.0F, -1.0F), 3.0F);
+    EXPECT_FLOAT_EQ(ApplyRenderInstance3DSortingOffsetUVE(4.0F, std::numeric_limits<float>::quiet_NaN()), 4.0F);
+
     EXPECT_TRUE(IsLightEmitterComponentValidUVE(LightEmitterComponentUVE{}));
     LightEmitterComponentUVE light{};
     light.shadowOpacity = 2.0F;

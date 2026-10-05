@@ -17,6 +17,7 @@
 #include "uve/render_systems/mesh_render_eligibility_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
+#include "uve/component/render_instance_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
 #include "uve/objects/3d/abstract_objects_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
@@ -29,6 +30,8 @@
 namespace UVE::Render {
 
 namespace {
+
+constexpr std::size_t kNearPlaneIndexUVE = 4U;
 
 /// Resolves `guid` once per walk, returning the shared entry on every subsequent call for the same
 /// GUID. Separate from the lambda so the mesh and material paths cannot drift into resolving or
@@ -245,6 +248,25 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                 surface = &surfaceComponent;
             }
 
+            std::uint32_t renderLayers = 1U;
+            float sortingOffset = 0.0F;
+            bool sortingUseAabbCenter = true;
+            if (entityManager.HasComponentUVE<Scene::RenderInstanceComponentUVE>(entity)) {
+                const Scene::RenderInstanceComponentUVE& instance =
+                    entityManager.GetComponentUVE<Scene::RenderInstanceComponentUVE>(entity);
+                if (!Scene::IsRenderInstanceComponentValidUVE(instance)) {
+                    ++outVisibilitySet.invalidRenderEligibility;
+                    return;
+                }
+                renderLayers = instance.renderLayers;
+                sortingOffset = instance.sortingOffset;
+                sortingUseAabbCenter = instance.sortingUseAabbCenter;
+            }
+            if (!Scene::IsRenderInstance3DOnViewLayersUVE(renderLayers, outVisibilitySet.viewLayerMask)) {
+                ++outVisibilitySet.layerCulledEntities;
+                return;
+            }
+
             // Distance detail, resolved before anything is loaded or computed. A LodGroup3D past
             // the end of its chain costs a subtraction and a length here, and nothing else - no
             // asset resolution, no placement, no plane test, no draw call. Measured on a
@@ -415,7 +437,8 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                 Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, candidatePlacement.worldBounds);
             }
             outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
-                assetPairIndex, candidatePlacement, material->isTransparent, entity});
+                assetPairIndex, candidatePlacement, material->isTransparent, entity, renderLayers, sortingOffset,
+                sortingUseAabbCenter});
         });
 
     // Bound the cache. Without this it retains an entry for every entity the scene has ever had,
@@ -468,8 +491,17 @@ void MeshRendererUVE::CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visib
             // is genuinely load-bearing, and it is paid only for candidates that survived culling
             // rather than for every candidate in the scene.
             const MeshVisibilityAssetPairUVE& assetPair = visibilitySet.assetPairs[candidate.assetPairIndex];
-            RenderItemUVE item{eligibility.worldMatrix, assetPair.meshHandle, assetPair.materialHandle,
-                               eligibility.sortDepth};
+            float sortDepth = eligibility.sortDepth;
+            if (!candidate.sortingUseAabbCenter) {
+                const Math::Vector3UVE origin{eligibility.worldMatrix.m[0][3], eligibility.worldMatrix.m[1][3],
+                                              eligibility.worldMatrix.m[2][3]};
+                sortDepth = cullFrustum.planes[kNearPlaneIndexUVE].GetSignedDistanceUVE(origin);
+            }
+            sortDepth = Scene::ApplyRenderInstance3DSortingOffsetUVE(sortDepth, candidate.sortingOffset);
+            if (!std::isfinite(sortDepth)) {
+                continue;
+            }
+            RenderItemUVE item{eligibility.worldMatrix, assetPair.meshHandle, assetPair.materialHandle, sortDepth};
             if (candidate.isTransparent) {
                 outQueue.transparentItems.push_back(std::move(item));
             } else {

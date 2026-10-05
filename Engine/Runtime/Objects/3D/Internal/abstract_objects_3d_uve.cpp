@@ -91,4 +91,16 @@ void ExpandSurfaceInstance3DCullBoundsUVE(const SurfaceInstanceComponentUVE& sur
     bounds.max.z += margin;
 }
 
+bool IsRenderInstance3DOnViewLayersUVE(const std::uint32_t renderLayers,
+                                       const std::uint32_t viewLayerMask) noexcept {
+    return (renderLayers & viewLayerMask) != 0U;
+}
+
+float ApplyRenderInstance3DSortingOffsetUVE(const float baseDepth, const float sortingOffset) noexcept {
+    if (!std::isfinite(sortingOffset)) {
+        return baseDepth;
+    }
+    return baseDepth + sortingOffset;
+}
+
 } // namespace UVE::Scene
