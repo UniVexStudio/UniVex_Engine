@@ -26,6 +26,8 @@ enum class ContentCatalogueActionUVE : std::uint8_t {
     Folder = 0,
     /// A `.uventity` asset holding `objects`.
     EntityAsset,
+    /// A `.uvscene` asset with a complete scene root and nodes beneath its Viewport.
+    SceneAsset,
 };
 
 /// An entry of the Content "+ Add" / right-click menu.

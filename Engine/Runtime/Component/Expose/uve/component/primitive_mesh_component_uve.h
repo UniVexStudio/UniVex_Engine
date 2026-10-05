@@ -23,7 +23,8 @@ enum class PrimitiveMeshKindUVE : std::uint8_t {
 /// asset and therefore does not imply texture, normal-map, or PBR authoring support.
 struct PrimitiveMeshComponentUVE final {
     PrimitiveMeshKindUVE kind = PrimitiveMeshKindUVE::Cube;
-    Math::Vector3UVE baseColor{0.72F, 0.72F, 0.72F};
+    /// New primitives start neutral white; authored materials/colors can override this explicitly.
+    Math::Vector3UVE baseColor{1.0F, 1.0F, 1.0F};
 };
 
 [[nodiscard]] bool IsPrimitiveMeshKindValidUVE(const PrimitiveMeshKindUVE kind) noexcept;
