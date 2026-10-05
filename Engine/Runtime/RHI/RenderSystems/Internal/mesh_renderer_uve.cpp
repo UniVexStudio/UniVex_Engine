@@ -443,6 +443,9 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                 castsShadow = Scene::SurfaceInstance3DCastsShadowUVE(*surface);
                 drawsInView = Scene::SurfaceInstance3DDrawsInViewUVE(*surface);
                 opacity = Scene::SurfaceInstance3DOpacityUVE(*surface);
+                const Math::Vector3UVE toCamera =
+                    worldTransform.worldPosition - outVisibilitySet.cameraWorldPosition;
+                opacity *= Scene::SurfaceInstance3DVisibilityFadeWeightUVE(*surface, Math::LengthUVE(toCamera));
                 if (opacity <= 0.0F) {
                     drawsInView = false;
                 }

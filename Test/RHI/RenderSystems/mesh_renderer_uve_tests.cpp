@@ -2255,5 +2255,51 @@ TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_OverlaySortsCloserThanItsHo
     EXPECT_LT(overlayDepth, hostDepth);
 }
 
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_SelfFadeKeepsAMeshInTheMarginAndScalesOpacity) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_fade_range.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_fade_range.uvmat");
+    const Scene::EntityUVE entity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.visibilityRangeEnd = 8.0F;
+    surface.visibilityRangeEndMargin = 4.0F;
+    surface.visibilityRangeFadeMode = Scene::SurfaceFadeModeUVE::Self;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(visibilitySet.rangeCulledEntities, 0U);
+    EXPECT_FLOAT_EQ(visibilitySet.candidates[0].opacity, 0.5F);
+    EXPECT_TRUE(visibilitySet.candidates[0].isTransparent);
+
+    RenderQueueUVE queue;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), queue);
+    ASSERT_EQ(queue.transparentItems.size(), 1U);
+    EXPECT_FLOAT_EQ(queue.transparentItems[0].opacity, 0.5F);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_DisabledFadeStillHardCutsAtTheRangeEnd) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_fade_off.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_si_fade_off.uvmat");
+    const Scene::EntityUVE entity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.visibilityRangeEnd = 8.0F;
+    surface.visibilityRangeEndMargin = 4.0F;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    EXPECT_TRUE(visibilitySet.candidates.empty());
+    EXPECT_EQ(visibilitySet.rangeCulledEntities, 1U);
+}
+
 } // namespace
 } // namespace UVE::Render::Tests
