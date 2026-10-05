@@ -28,6 +28,8 @@ uniform float uGroundCurve;
 uniform vec3 uSunDirection;
 uniform vec3 uSunColor;
 uniform float uSunEnergy;
+uniform sampler2D uSkyTexture;
+uniform int uSkyTextureEnabled;
 
 vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
     float mu = clamp(dot(dir, sun), -1.0, 1.0);
@@ -79,6 +81,17 @@ vec3 ProceduralSkyUVE(vec3 viewDir) {
     return mix(horizon, ground, groundT);
 }
 
+vec2 SkyEquirectUvUVE(vec3 dir) {
+    vec3 d = normalize(dir);
+    float longitude = 0.0;
+    if (abs(d.x) + abs(d.z) >= 1.0e-8) {
+        longitude = atan(d.z, d.x);
+    }
+    float latitude = asin(clamp(d.y, -1.0, 1.0));
+    return vec2(longitude * (1.0 / (2.0 * 3.14159265358979323846)) + 0.5,
+                latitude * (1.0 / 3.14159265358979323846) + 0.5);
+}
+
 void main() {
     if (texture(uSceneDepthTexture, vTexCoord).r < 1.0) {
         discard;
@@ -86,6 +99,10 @@ void main() {
     vec2 ndc = vTexCoord * 2.0 - 1.0;
     vec3 view = vec3(ndc.x * max(uTanHalfFov, 0.0) * max(uAspect, 0.0001), ndc.y * max(uTanHalfFov, 0.0), -1.0);
     vec3 worldDir = normalize(uCameraRight * view.x + uCameraUp * view.y + uCameraForward);
-    FragColor = vec4(ProceduralSkyUVE(worldDir), 1.0);
+    vec3 color = ProceduralSkyUVE(worldDir);
+    if (uSkyTextureEnabled != 0) {
+        color = texture(uSkyTexture, SkyEquirectUvUVE(worldDir)).rgb;
+    }
+    FragColor = vec4(max(color, vec3(0.0)), 1.0);
 }
 #endif

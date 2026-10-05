@@ -91,8 +91,31 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
             frame.colorFilter = environment.colorFilter;
             frame.backgroundColor = environment.horizonColor;
             frame.hasEnvironment = true;
+            frame.skyAssetPath = environment.skyAssetPath;
         });
     return frame;
+}
+
+bool TryMakeSkyEquirectUvUVE(const Math::Vector3UVE& direction, Math::Vector2UVE& outUv) noexcept {
+    outUv = Math::Vector2UVE{};
+    if (!Math::IsFiniteUVE(direction) || Math::LengthSquaredUVE(direction) < 1.0e-20F) {
+        return false;
+    }
+    const Math::Vector3UVE n = Math::NormalizeUVE(direction);
+    if (!Math::IsFiniteUVE(n)) {
+        return false;
+    }
+    constexpr float kPiUVE = 3.14159265358979323846F;
+    float longitude = 0.0F;
+    if (std::fabs(n.x) + std::fabs(n.z) >= 1.0e-8F) {
+        longitude = std::atan2(n.z, n.x);
+    }
+    const float latitude = std::asin(std::clamp(n.y, -1.0F, 1.0F));
+    if (!std::isfinite(longitude) || !std::isfinite(latitude)) {
+        return false;
+    }
+    outUv = Math::Vector2UVE{longitude / (2.0F * kPiUVE) + 0.5F, latitude / kPiUVE + 0.5F};
+    return std::isfinite(outUv.x) && std::isfinite(outUv.y);
 }
 
 void ApplySunToWorldEnvironmentFrameUVE(WorldEnvironmentFrameUVE& frame, const Math::Vector3UVE& sunDirection,

@@ -49,6 +49,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/threading/thread_pool_uve.h"
@@ -2263,6 +2264,90 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ASkinnedMeshUnderASkeletonIsDrawnInTheS
     sceneGraph.UpdateUVE(entityManager);
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
     EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().skinnedMeshesDrawn, 0U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_EmptySkyAssetKeepsProceduralSky) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE environment = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environment,
+                                                                        Scene::WorldEnvironment3DComponentUVE{});
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto enabled = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uSkyTextureEnabled";
+    });
+    ASSERT_NE(enabled, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*enabled).value, 0);
+    bool skyPassBoundSlot1 = false;
+    for (auto it = enabled; it != commands.cend(); ++it) {
+        if (std::holds_alternative<EndRenderPassCommandUVE>(*it)) {
+            break;
+        }
+        if (std::holds_alternative<BindTextureCommandUVE>(*it) &&
+            std::get<BindTextureCommandUVE>(*it).slot == 1U) {
+            skyPassBoundSlot1 = true;
+        }
+    }
+    EXPECT_FALSE(skyPassBoundSlot1);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SkyAssetBindsTheEquirectTexture) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const std::filesystem::path skyPath{"environment/day.hdr"};
+    const Asset::AssetGuidUVE skyGuid = assetDatabase.RegisterUVE(skyPath);
+    WaitUntilTextureReadyUVE(skyGuid);
+
+    Scene::WorldEnvironment3DComponentUVE environment{};
+    environment.skyAssetPath = skyPath.string();
+    const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
+
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto enabled = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uSkyTextureEnabled";
+    });
+    ASSERT_NE(enabled, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*enabled).value, 1);
+    bool skyPassBoundSlot1 = false;
+    for (auto it = enabled; it != commands.cend(); ++it) {
+        if (std::holds_alternative<EndRenderPassCommandUVE>(*it)) {
+            break;
+        }
+        if (std::holds_alternative<BindTextureCommandUVE>(*it) &&
+            std::get<BindTextureCommandUVE>(*it).slot == 1U &&
+            std::get<BindTextureCommandUVE>(*it).texture != kInvalidTextureHandleUVE) {
+            skyPassBoundSlot1 = true;
+        }
+    }
+    EXPECT_TRUE(skyPassBoundSlot1);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_MissingSkyAssetStaysProcedural) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    assetManager.RegisterLoaderUVE<Asset::TextureAssetUVE>(
+        [](const std::filesystem::path&, Asset::TextureAssetUVE&) { return false; });
+    Scene::WorldEnvironment3DComponentUVE environment{};
+    environment.skyAssetPath = "environment/missing.hdr";
+    const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
+
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto enabled = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uSkyTextureEnabled";
+    });
+    ASSERT_NE(enabled, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*enabled).value, 0);
 }
 
 } // namespace UVE::Render::Tests

@@ -94,6 +94,19 @@ TEST_F(WorldEnvironmentUVETest, FirstValidEnvironmentDrivesSkyGroundFogBloomAndG
     EXPECT_FLOAT_EQ(frame.contrast, 1.1F);
     EXPECT_EQ(frame.colorFilter, authored.colorFilter);
     EXPECT_EQ(frame.backgroundColor, authored.horizonColor);
+    EXPECT_TRUE(frame.skyAssetPath.empty());
+}
+
+TEST_F(WorldEnvironmentUVETest, SkyAssetPathCopiesOntoTheFrame) {
+    const EntityUVE environment = entityManager.CreateEntityUVE();
+    WorldEnvironment3DComponentUVE authored{};
+    authored.skyAssetPath = "environment/day.hdr";
+    entityManager.AddComponentUVE<WorldEnvironment3DComponentUVE>(environment, authored);
+
+    const WorldEnvironmentFrameUVE frame =
+        ResolveWorldEnvironmentFrameUVE(entityManager, Math::Vector3UVE{0.1F, 0.1F, 0.1F});
+    EXPECT_TRUE(frame.hasEnvironment);
+    EXPECT_EQ(frame.skyAssetPath, authored.skyAssetPath);
 }
 
 TEST_F(WorldEnvironmentUVETest, InvalidEnvironmentIsSkipped) {
@@ -150,6 +163,29 @@ TEST(WorldEnvironmentSunUVETest, NoonKeepsAmbientAndNightDarkens) {
                                        1.0F);
     EXPECT_NEAR(noon.skyAmbient.z, 0.5F, 0.02F);
     EXPECT_LT(night.skyAmbient.z, noon.skyAmbient.z * 0.2F);
+}
+
+TEST(SkyEquirectUVETest, AxisDirectionsMapToStableUv) {
+    Math::Vector2UVE uv{};
+    ASSERT_TRUE(TryMakeSkyEquirectUvUVE(Math::Vector3UVE{1.0F, 0.0F, 0.0F}, uv));
+    EXPECT_NEAR(uv.x, 0.5F, 1.0e-5F);
+    EXPECT_NEAR(uv.y, 0.5F, 1.0e-5F);
+    ASSERT_TRUE(TryMakeSkyEquirectUvUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, uv));
+    EXPECT_NEAR(uv.x, 0.5F, 1.0e-5F);
+    EXPECT_NEAR(uv.y, 1.0F, 1.0e-5F);
+    ASSERT_TRUE(TryMakeSkyEquirectUvUVE(Math::Vector3UVE{0.0F, -1.0F, 0.0F}, uv));
+    EXPECT_NEAR(uv.x, 0.5F, 1.0e-5F);
+    EXPECT_NEAR(uv.y, 0.0F, 1.0e-5F);
+    ASSERT_TRUE(TryMakeSkyEquirectUvUVE(Math::Vector3UVE{0.0F, 0.0F, 1.0F}, uv));
+    EXPECT_NEAR(uv.x, 0.75F, 1.0e-5F);
+    EXPECT_NEAR(uv.y, 0.5F, 1.0e-5F);
+}
+
+TEST(SkyEquirectUVETest, ZeroAndNonFiniteDirectionsFailClosed) {
+    Math::Vector2UVE uv{1.0F, 1.0F};
+    EXPECT_FALSE(TryMakeSkyEquirectUvUVE(Math::Vector3UVE{}, uv));
+    EXPECT_EQ(uv, (Math::Vector2UVE{}));
+    EXPECT_FALSE(TryMakeSkyEquirectUvUVE(Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F}, uv));
 }
 
 TEST(WorldEnvironmentSunUVETest, HorizonSunWarmsTheGround) {

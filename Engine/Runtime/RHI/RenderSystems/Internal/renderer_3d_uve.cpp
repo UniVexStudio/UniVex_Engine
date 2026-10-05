@@ -312,6 +312,7 @@ constexpr TextureFormatUVE kSceneColorTargetFormatUVE = TextureFormatUVE::RGBA16
 constexpr std::size_t kShadowCascadeCountUVE = 3;
 constexpr std::uint32_t kShadowCascadeFirstTextureSlotUVE = kShadowMapTextureSlotUVE;
 constexpr std::uint32_t kReflectionProbeFirstTextureSlotUVE = 6U;
+constexpr std::uint32_t kSkyTextureSlotUVE = 1U;
 
 // Phase 2b post-process tuning. Not currently exposed as public API - PostProcessSettingsUVE only
 // asks for an enabled/disabled toggle per effect, not per-parameter tuning - but kept as named
@@ -780,6 +781,7 @@ struct Renderer3DUVE::ImplUVE {
     float humanEyeTexelX = 0.0F;
     float humanEyeTexelY = 0.0F;
     Scene::WorldEnvironmentFrameUVE environmentFrame{};
+    Asset::AssetGuidUVE skyTextureGuid{};
     float environmentCameraNear = 0.1F;
     float environmentCameraFar = 250.0F;
     float environmentAspect = 1.0F;
@@ -1232,6 +1234,9 @@ struct Renderer3DUVE::ImplUVE {
             if (resources.aoTextureGuid != Asset::kInvalidAssetGuidUVE) {
                 referencedTextureGuids.insert(resources.aoTextureGuid);
             }
+        }
+        if (skyTextureGuid != Asset::kInvalidAssetGuidUVE) {
+            referencedTextureGuids.insert(skyTextureGuid);
         }
         for (auto textureIt = textureCache.begin(); textureIt != textureCache.end();) {
             if (!referencedTextureGuids.contains(textureIt->first)) {
@@ -3108,8 +3113,26 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->proceduralSkyProgram->SetVector3UVE("uSunDirection", m_impl->sunDirection);
                 m_impl->proceduralSkyProgram->SetVector3UVE("uSunColor", m_impl->sunColor);
                 m_impl->proceduralSkyProgram->SetFloatUVE("uSunEnergy", m_impl->sunEnergy);
+                TextureHandleUVE skyTexture = kInvalidTextureHandleUVE;
+                int skyTextureEnabled = 0;
+                if (!m_impl->environmentFrame.skyAssetPath.empty()) {
+                    m_impl->skyTextureGuid = m_impl->assetDatabase.RegisterUVE(m_impl->environmentFrame.skyAssetPath);
+                    const std::optional<TextureHandleUVE> resolved =
+                        m_impl->ResolveTextureGpuHandleUVE(m_impl->skyTextureGuid, kInvalidTextureHandleUVE);
+                    if (resolved.has_value() && *resolved != kInvalidTextureHandleUVE) {
+                        skyTexture = *resolved;
+                        skyTextureEnabled = 1;
+                    }
+                } else {
+                    m_impl->skyTextureGuid = Asset::kInvalidAssetGuidUVE;
+                }
+                m_impl->proceduralSkyProgram->SetIntUVE("uSkyTexture", static_cast<std::int32_t>(kSkyTextureSlotUVE));
+                m_impl->proceduralSkyProgram->SetIntUVE("uSkyTextureEnabled", skyTextureEnabled);
                 m_impl->proceduralSkyProgram->ApplyToUVE(commandBuffer);
                 commandBuffer.BindTextureUVE(m_impl->depthTarget, 0U);
+                if (skyTextureEnabled != 0) {
+                    commandBuffer.BindTextureUVE(skyTexture, kSkyTextureSlotUVE);
+                }
                 commandBuffer.DrawUVE(3);
                 commandBuffer.EndRenderPassUVE();
             });

@@ -529,8 +529,9 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                              0.0, 2.0, 0.01),
                 DeclareUVE<&WorldEnvironment3DComponentUVE::colorFilter>(
                     "colorFilter", "Color Filter", kPropertyTypeColorUVE),
-                DeclareUVE<&WorldEnvironment3DComponentUVE::skyAssetPath>("skyAssetPath", "Sky Asset",
-                                                                              kPropertyTypeStringUVE),
+                WithTooltipUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::skyAssetPath>(
+                                   "skyAssetPath", "Sky Asset", kPropertyTypeStringUVE),
+                               "Equirectangular sky texture. Empty keeps the procedural sky."),
             }));
 
     AddUVE<ParticleEmitterComponentUVE>(
