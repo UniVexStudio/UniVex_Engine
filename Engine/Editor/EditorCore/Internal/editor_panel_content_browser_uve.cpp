@@ -176,12 +176,13 @@ void ToolbarRuleUVE() {
 
 /// A sidebar section title: a full-width row that folds the section, with the name in small
 /// capitals, a count, and room left at the right for the caller's own buttons. Returns whether
-/// the section is open; the state lives in ImGui's storage for the session.
+/// the section is open; the state lives in ImGui's storage for the session, seeded on first draw
+/// from `defaultOpen`.
 bool SidebarSectionUVE(const char* id, const char* icon, const std::string& title, const std::size_t count,
-                       const float trailingWidth) {
+                       const float trailingWidth, const bool defaultOpen = true) {
     ImGuiStorage& storage = *ImGui::GetStateStorage();
     const ImGuiID key = ImGui::GetID(id);
-    bool open = storage.GetBool(key, true);
+    bool open = storage.GetBool(key, defaultOpen);
     const float height = ImGui::GetFrameHeight();
     const float width = std::max(1.0F, ImGui::GetContentRegionAvail().x);
     const ImVec2 min = ImGui::GetCursorScreenPos();
@@ -611,7 +612,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                 pinned.push_back(&*it);
             }
         }
-        if (SidebarSectionUVE("##section-pinned", kIconStarUVE, "Pinned", pinned.size(), 0.0F)) {
+        if (SidebarSectionUVE("##section-pinned", kIconStarUVE, "Pinned", pinned.size(), 0.0F, false)) {
             if (pinned.empty()) {
                 ImGui::Indent(8.0F);
                 ImGui::TextDisabled("Right-click a file or folder > Pin");
@@ -766,7 +767,8 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
         // Shelves: hand-picked groups of files from anywhere, shown together in the items area.
         // The team's come first and are saved in the project; the rest are this person's.
         const float addButtonWidth = ImGui::GetFrameHeight();
-        const bool shelvesSectionOpen = SidebarSectionUVE("##section-shelves", nullptr, "Shelves", shelves.size(), addButtonWidth);
+        const bool shelvesSectionOpen =
+            SidebarSectionUVE("##section-shelves", nullptr, "Shelves", shelves.size(), addButtonWidth, false);
         ImGui::SameLine(0.0F, 0.0F);
         if (GlyphButtonUVE("##shelf-add", GlyphUVE::Plus, shelves.size() < ContentShelvesUVE::kMaxShelvesUVE,
                            "New shelf")) {
@@ -1132,6 +1134,9 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                     } else if (look.type == ContentBrowserItemTypeUVE::Entity &&
                                !OpenEntityEditorUVE(snapshot.contentRoot / entry.relativePath)) {
                         m_contentStatusMessage = "Could not open " + entry.relativePath.filename().string() + " in the Entity Editor.";
+                    } else if (look.type == ContentBrowserItemTypeUVE::Scene &&
+                               !OpenSceneAssetUVE(snapshot.contentRoot / entry.relativePath)) {
+                        m_contentStatusMessage = "Could not open " + entry.relativePath.filename().string() + " as a scene.";
                     }
                 }
             }
