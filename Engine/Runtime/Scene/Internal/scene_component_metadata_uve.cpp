@@ -58,6 +58,7 @@
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/nav_mesh_volume_3d_uve.h"
 #include "uve/objects/3d/nav_seeker_3d_uve.h"
+#include "uve/objects/3d/occluder_3d_uve.h"
 #include "uve/objects/3d/spring_arm_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
 #include "uve/objects/3d/health_uve.h"
@@ -2504,6 +2505,24 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
                     std::string(kLayerMaskDrawerRenderUVE)),
                 InGroupUVE(DeclareRuntimeStateUVE<&V::active>("active", "Active", kPropertyTypeBoolUVE),
                            "Result"),
+            }));
+
+    using O = Occluder3DComponentUVE;
+    AddValidatedUVE<Occluder3DComponentUVE, &IsOccluder3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.occluder_3d", "Occluder3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&O::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off, the box covers nothing. On, drawables whose whole bounds sit "
+                               "behind it skip."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&O::halfExtents>("halfExtents", "Half Extents",
+                                                             kPropertyTypeVector3UVE),
+                                 0.001, 100000.0, 0.01),
+                    "The cover box, centred on this object and aligned to the world axes."),
+                WithTooltipUVE(DeclareEnumUVE<&O::mode>("mode", "Mode", {{0, "Conservative Box"}}),
+                               "Hides a drawable only when every corner of its bounds is behind the box."),
             }));
 }
 

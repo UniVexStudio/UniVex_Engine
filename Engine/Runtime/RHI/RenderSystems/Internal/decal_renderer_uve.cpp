@@ -12,6 +12,7 @@
 #include "uve/component/render_instance_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/occluder_3d_uve.h"
 #include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
 
@@ -285,6 +286,8 @@ void DecalRendererUVE::BuildDrawListUVE(Scene::IEntityManagerUVE& entityManager,
     std::unordered_map<std::string, Asset::AssetGuidUVE> pathToGuidIndex;
     bool pathIndexBuilt = false;
     std::unordered_map<std::uint64_t, std::size_t> materialSlots;
+    std::vector<Scene::Occluder3DSnapshotUVE> occluders;
+    Scene::CollectOccluder3DSnapshotsUVE(entityManager, occluders);
 
     entityManager.ForEachUVE<Scene::Decal3DComponentUVE, Scene::WorldTransformComponentUVE>(
         [&](const Scene::EntityUVE entity, const Scene::Decal3DComponentUVE& decal,
@@ -321,9 +324,13 @@ void DecalRendererUVE::BuildDrawListUVE(Scene::IEntityManagerUVE& entityManager,
                 return;
             }
 
-            if (!viewFrustum.IntersectsUVE(Math::AabbUVE::FromCenterExtentsUVE(projection.worldPosition,
-                                                                                projection.halfExtents))) {
+            const Math::AabbUVE projectionBounds =
+                Math::AabbUVE::FromCenterExtentsUVE(projection.worldPosition, projection.halfExtents);
+            if (!viewFrustum.IntersectsUVE(projectionBounds)) {
                 ++outDrawList.decalsOutsideView;
+                return;
+            }
+            if (Scene::IsOccluder3DAabbDrawHiddenUVE(occluders, cameraWorldPosition, projectionBounds)) {
                 return;
             }
 

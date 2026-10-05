@@ -24,6 +24,7 @@
 #include "uve/objects/3d/interaction_area_3d_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
+#include "uve/objects/3d/occluder_3d_uve.h"
 #include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
@@ -459,6 +460,27 @@ TEST(SceneComponentMetadataUVETest, TheVisibilityRegionSectionCarriesTheRoomBoxA
     VisibilityRegion3DComponentUVE broken = valid;
     broken.halfExtents.x = 0.0F;
     EXPECT_FALSE(region->isInstanceValid(&broken));
+}
+
+TEST(SceneComponentMetadataUVETest, TheOccluderSectionCarriesTheCoverBox) {
+    const TypeMetadataEntryUVE* occluder =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(Occluder3DComponentUVE)));
+    ASSERT_NE(occluder, nullptr);
+    EXPECT_EQ(occluder->typeId, "component.occluder_3d");
+    EXPECT_EQ(occluder->displayName, "Occluder3D");
+
+    for (const char* const name : {"enabled", "halfExtents", "mode"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*occluder, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_TRUE(property->IsAuthoringWritableUVE()) << name;
+    }
+
+    ASSERT_NE(occluder->isInstanceValid, nullptr);
+    const Occluder3DComponentUVE valid{};
+    EXPECT_TRUE(occluder->isInstanceValid(&valid));
+    Occluder3DComponentUVE broken = valid;
+    broken.halfExtents.x = 0.0F;
+    EXPECT_FALSE(occluder->isInstanceValid(&broken));
 }
 
 TEST(SceneComponentMetadataUVETest, TheBoneAttachmentSectionDeclaresTheReferenceTheBoneAndTheAnswer) {

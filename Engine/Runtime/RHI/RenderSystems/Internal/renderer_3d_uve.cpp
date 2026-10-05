@@ -1699,6 +1699,7 @@ struct Renderer3DUVE::ImplUVE {
     }
 
     void ExtractUnmaterialedMeshItemsUVE(Scene::IEntityManagerUVE& entityManager, const Math::FrustumUVE& frustum,
+                                          const Math::Vector3UVE& viewPosition,
                                           std::vector<PrimitiveRenderItemUVE>& outItems) {
         static constexpr Math::Vector3UVE kUnmaterialedColor{0.72F, 0.72F, 0.74F};
         std::unordered_map<Asset::AssetGuidUVE, bool> named;
@@ -1715,6 +1716,8 @@ struct Renderer3DUVE::ImplUVE {
             ++skinnedFrame;
             skinnedMeshesThisFrame = 0U;
         }
+        std::vector<Scene::Occluder3DSnapshotUVE> occluders;
+        Scene::CollectOccluder3DSnapshotsUVE(entityManager, occluders);
         entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
             [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
                 const Scene::MeshComponentUVE& meshComponent) {
@@ -1753,7 +1756,8 @@ struct Renderer3DUVE::ImplUVE {
                         ? SkinForEntityUVE(entityManager, entity, meshComponent.meshGuid, *mesh, localBounds)
                         : nullptr;
                 const Math::AabbUVE worldBounds = localBounds.TransformUVE(worldMatrix);
-                if (!IsOrderedFiniteAabbUVE(worldBounds) || !frustum.IntersectsUVE(worldBounds)) {
+                if (!IsOrderedFiniteAabbUVE(worldBounds) || !frustum.IntersectsUVE(worldBounds) ||
+                    Scene::IsOccluder3DAabbDrawHiddenUVE(occluders, viewPosition, worldBounds)) {
                     return;
                 }
                 const float sortDepth = frustum.planes[4U].GetSignedDistanceUVE(worldBounds.GetCenterUVE());
@@ -1780,9 +1784,12 @@ struct Renderer3DUVE::ImplUVE {
     }
 
     void ExtractPrimitiveItemsUVE(Scene::IEntityManagerUVE& entityManager, const Math::FrustumUVE& frustum,
+                                   const Math::Vector3UVE& viewPosition,
                                    std::vector<PrimitiveRenderItemUVE>& outItems) {
         outItems.clear();
         ++primitiveFrameIndex;
+        std::vector<Scene::Occluder3DSnapshotUVE> occluders;
+        Scene::CollectOccluder3DSnapshotsUVE(entityManager, occluders);
         entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::PrimitiveMeshComponentUVE>(
             [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
                 const Scene::PrimitiveMeshComponentUVE& primitive) {
@@ -1819,7 +1826,8 @@ struct Renderer3DUVE::ImplUVE {
                 }
 
                 // View-dependent from here down. Never cached.
-                if (!frustum.IntersectsUVE(cacheEntry.worldBounds)) {
+                if (!frustum.IntersectsUVE(cacheEntry.worldBounds) ||
+                    Scene::IsOccluder3DAabbDrawHiddenUVE(occluders, viewPosition, cacheEntry.worldBounds)) {
                     return;
                 }
                 const float sortDepth = frustum.planes[4U].GetSignedDistanceUVE(cacheEntry.worldBounds.GetCenterUVE());
@@ -2983,9 +2991,13 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         ParticleRenderSnapshotUVE particleSnapshot =
             ParticleRenderBridgeUVE::ExtractUVE(*m_impl->particleRuntimeForFrame);
         const std::size_t extracted = particleSnapshot.items.size();
-        std::erase_if(particleSnapshot.items, [&entityManager](const ParticleRenderItemUVE& item) {
+        std::vector<Scene::Occluder3DSnapshotUVE> occluders;
+        Scene::CollectOccluder3DSnapshotsUVE(entityManager, occluders);
+        std::erase_if(particleSnapshot.items, [&entityManager, &occluders, &viewPosition](
+                                                  const ParticleRenderItemUVE& item) {
             return Scene::IsWorldPartition3DDrawHiddenUVE(entityManager, item.entity) ||
-                   Scene::IsVisibilityRegion3DDrawHiddenUVE(entityManager, item.entity);
+                   Scene::IsVisibilityRegion3DDrawHiddenUVE(entityManager, item.entity) ||
+                   Scene::IsOccluder3DPointDrawHiddenUVE(occluders, viewPosition, item.position);
         });
         if (particleSnapshot.items.size() != extracted && !particleSnapshot.truncated) {
             particleSnapshot.sourceParticleCount = particleSnapshot.items.size();
@@ -3004,8 +3016,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->lastFrameDiagnostics.invalidAssetReferences = queue.invalidAssetReferences;
     m_impl->lastFrameDiagnostics.pendingAssetLoads = queue.pendingAssetLoads;
     m_impl->lastFrameDiagnostics.failedAssetLoads = queue.failedAssetLoads;
-    m_impl->ExtractPrimitiveItemsUVE(entityManager, frustum, m_impl->primitiveItems);
-    m_impl->ExtractUnmaterialedMeshItemsUVE(entityManager, frustum, m_impl->primitiveItems);
+    m_impl->ExtractPrimitiveItemsUVE(entityManager, frustum, viewPosition, m_impl->primitiveItems);
+    m_impl->ExtractUnmaterialedMeshItemsUVE(entityManager, frustum, viewPosition, m_impl->primitiveItems);
     m_impl->lastFrameDiagnostics.primitiveItemsExtracted = m_impl->primitiveItems.size();
     m_impl->lastFrameDiagnostics.skinnedMeshesDrawn = m_impl->skinnedMeshesThisFrame;
 

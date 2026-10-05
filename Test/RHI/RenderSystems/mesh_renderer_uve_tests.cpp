@@ -1599,6 +1599,35 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InactiveRegionSkipsItsInterior
     EXPECT_EQ(awake.regionCulledEntities, 0U);
 }
 
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_AMeshThatPeeksAroundTheWallStillDraws) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>([](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+        mesh.localBounds =
+            Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{8.0F, 0.5F, 0.5F});
+        return true;
+    });
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ_peek.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ_peek.uvmat");
+
+    const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE wallTransform;
+    wallTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -5.0F};
+    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
+    Scene::Occluder3DComponentUVE wallOccluder;
+    wallOccluder.halfExtents = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    entityManager.AddComponentUVE<Scene::Occluder3DComponentUVE>(wall, wallOccluder);
+
+    static_cast<void>(MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -9.0F}, meshGuid, materialGuid));
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    EXPECT_EQ(visibilitySet.candidates.size(), 1U)
+        << "the origin sits behind the wall but a corner peeks: conservative cover must not cull";
+    EXPECT_EQ(visibilitySet.occlusionCulledEntities, 0U);
+}
+
 TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_MeshBehindAnOccluderIsCulledInItsOwnCounter) {
     // The wall claim, end to end: a mesh dead-center behind the wall costs one slab test and
     // lands in occlusionCulledEntities, while its twin off the silhouette still draws - hiding

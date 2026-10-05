@@ -24,6 +24,7 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/occluder_3d_uve.h"
 #include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/entity/entity_manager_uve.h"
@@ -243,6 +244,19 @@ TEST_F(DecalRendererUVETest, BuildDrawListUVE_PartitionHiddenDecalIsNotConsidere
         scene.decal, Scene::WorldPartition3DMembershipComponentUVE{partition, false});
     BuildFrameUVE(Math::Vector3UVE{});
     EXPECT_EQ(drawList.decalsConsidered, 0U);
+    EXPECT_TRUE(drawList.draws.empty());
+}
+
+TEST_F(DecalRendererUVETest, BuildDrawListUVE_OccludedDecalIsNotDrawn) {
+    static_cast<void>(MakeWallAndDecalUVE());
+    const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE wallTransform;
+    wallTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -2.0F};
+    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
+    Scene::Occluder3DComponentUVE wallOccluder;
+    wallOccluder.halfExtents = Math::Vector3UVE{4.0F, 4.0F, 1.0F};
+    entityManager.AddComponentUVE<Scene::Occluder3DComponentUVE>(wall, wallOccluder);
+    BuildFrameUVE(Math::Vector3UVE{});
     EXPECT_TRUE(drawList.draws.empty());
 }
 

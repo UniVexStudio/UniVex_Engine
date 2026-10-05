@@ -181,27 +181,8 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
     // it describes this walk only.
     std::unordered_map<AssetPairKeyUVE, std::size_t, AssetPairKeyHashUVE> assetPairSlots;
 
-    // Occluder snapshot, captured once per build: hiding is a per-FRAME verdict against the
-    // live camera, never persisted state, so the walk re-derives it from the authored objects as
-    // they exist right now. Disabled or transform-less occluder objects simply do not cover
-    // anything - fail open on every honest ambiguity, by the resolver's own contract.
-    struct OccluderSnapshotUVE final {
-        Scene::Occluder3DComponentUVE config;
-        Math::Vector3UVE worldPosition;
-    };
-    std::vector<OccluderSnapshotUVE> occluders;
-    entityManager.ForEachUVE<Scene::Occluder3DComponentUVE>(
-        [&occluders, &entityManager](const Scene::EntityUVE entity,
-                                     const Scene::Occluder3DComponentUVE& config) {
-            if (!config.enabled ||
-                !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
-                return;
-            }
-            occluders.push_back(OccluderSnapshotUVE{
-                config,
-                entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity)
-                    .worldPosition});
-        });
+    std::vector<Scene::Occluder3DSnapshotUVE> occluders;
+    Scene::CollectOccluder3DSnapshotsUVE(entityManager, occluders);
 
     entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
         [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
@@ -262,25 +243,6 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             if (Scene::IsVisibilityRegion3DDrawHiddenUVE(entityManager, entity)) {
                 ++outVisibilitySet.regionCulledEntities;
                 return;
-            }
-
-            // Occluders, composed as a plain OR over the build's snapshot: any strict cover on
-            // the viewer->entity segment hides it. The gate sits right after the other cheap
-            // gates, ahead of asset resolution, so a hidden courtyard costs one slab test.
-            if (!occluders.empty()) {
-                bool occluded = false;
-                for (const OccluderSnapshotUVE& occluder : occluders) {
-                    if (Scene::ResolveOccluder3DFullyHiddenUVE(
-                            occluder.config, occluder.worldPosition,
-                            outVisibilitySet.cameraWorldPosition, worldTransform.worldPosition)) {
-                        occluded = true;
-                        break;
-                    }
-                }
-                if (occluded) {
-                    ++outVisibilitySet.occlusionCulledEntities;
-                    return;
-                }
             }
 
             if (effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
@@ -345,6 +307,12 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                     placement.reason == MeshRenderEligibilityReasonUVE::InvalidLocalBounds) {
                     ++outVisibilitySet.invalidRenderEligibility;
                 }
+                return;
+            }
+
+            if (Scene::IsOccluder3DAabbDrawHiddenUVE(occluders, outVisibilitySet.cameraWorldPosition,
+                                                     placement.worldBounds)) {
+                ++outVisibilitySet.occlusionCulledEntities;
                 return;
             }
 

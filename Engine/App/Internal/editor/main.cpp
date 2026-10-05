@@ -45,6 +45,7 @@
 #include "uve/objects/3d/camera_3d_uve.h"
 #include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/objects/3d/fog_volume_3d_uve.h"
+#include "uve/objects/3d/occluder_3d_uve.h"
 #include "uve/objects/3d/reflection_probe_3d_uve.h"
 #include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
@@ -426,6 +427,42 @@ void AppendVisibilityRegionGizmoUVE(univex::gizmo::GizmoMesh& mesh,
     return mesh;
 }
 
+void AppendOccluderGizmoUVE(univex::gizmo::GizmoMesh& mesh, const UVE::Scene::Occluder3DGizmoUVE& gizmo) {
+    using univex::math::Vec3;
+    const Vec3 origin = univex::integration::FromUveVector3UVE(gizmo.origin);
+    const Vec3 color = univex::integration::FromUveVector3UVE(gizmo.color);
+    const float hx = gizmo.halfExtents.x;
+    const float hy = gizmo.halfExtents.y;
+    const float hz = gizmo.halfExtents.z;
+    const auto add = [&](const float ax, const float ay, const float az, const float bx, const float by,
+                         const float bz) {
+        mesh.lines.push_back(univex::gizmo::GizmoLine{origin + Vec3{ax, ay, az}, origin + Vec3{bx, by, bz},
+                                                      color, 1.6F});
+    };
+    add(-hx, -hy, -hz, hx, -hy, -hz);
+    add(hx, -hy, -hz, hx, -hy, hz);
+    add(hx, -hy, hz, -hx, -hy, hz);
+    add(-hx, -hy, hz, -hx, -hy, -hz);
+    add(-hx, hy, -hz, hx, hy, -hz);
+    add(hx, hy, -hz, hx, hy, hz);
+    add(hx, hy, hz, -hx, hy, hz);
+    add(-hx, hy, hz, -hx, hy, -hz);
+    add(-hx, -hy, -hz, -hx, hy, -hz);
+    add(hx, -hy, -hz, hx, hy, -hz);
+    add(hx, -hy, hz, hx, hy, hz);
+    add(-hx, -hy, hz, -hx, hy, hz);
+}
+
+[[nodiscard]] univex::gizmo::GizmoMesh BuildOccluderMeshUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
+    univex::gizmo::GizmoMesh mesh;
+    std::vector<UVE::Scene::Occluder3DGizmoUVE> gizmos;
+    UVE::Scene::CollectOccluder3DGizmosUVE(entityManager, gizmos);
+    for (const UVE::Scene::Occluder3DGizmoUVE& gizmo : gizmos) {
+        AppendOccluderGizmoUVE(mesh, gizmo);
+    }
+    return mesh;
+}
+
 // Bridges Engine/Editor/Viewport's real GL renderer (grid + orbit camera + transform/orientation
 // gizmos + one proxy cube per live scene entity) into EditorUVE's generic, viewport-agnostic
 // "Viewport" panel hook (EditorUVE::SetViewportPanelRendererUVE) - see that method's own doc
@@ -556,6 +593,9 @@ public:
             univex::gizmo::GizmoMesh regions = BuildVisibilityRegionMeshUVE(entityManager_);
             overlay.lines.insert(overlay.lines.end(), regions.lines.begin(), regions.lines.end());
             overlay.triangles.insert(overlay.triangles.end(), regions.triangles.begin(), regions.triangles.end());
+            univex::gizmo::GizmoMesh occluders = BuildOccluderMeshUVE(entityManager_);
+            overlay.lines.insert(overlay.lines.end(), occluders.lines.begin(), occluders.lines.end());
+            overlay.triangles.insert(overlay.triangles.end(), occluders.triangles.begin(), occluders.triangles.end());
             renderPass_->SetCameraFrustumMeshUVE(std::move(overlay));
         } else {
             renderPass_->SetCameraFrustumMeshUVE({});
