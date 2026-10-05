@@ -542,7 +542,16 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                               kSectionOrderTypeSpecificUVE,
                               {WithRangeUVE(DeclareUVE<&ParticleEmitterComponentUVE::maxParticles>(
                                                 "maxParticles", "Max Particles", kPropertyTypeUInt32UVE),
-                                            0.0, 1000000.0, 1.0)}));
+                                            0.0, 1000000.0, 1.0),
+                               WithTooltipUVE(DeclareUVE<&ParticleEmitterComponentUVE::emitting>(
+                                                  "emitting", "Emitting", kPropertyTypeBoolUVE),
+                                              "Off, live particles stay but none spawn."),
+                               WithRangeUVE(DeclareUVE<&ParticleEmitterComponentUVE::emissionRate>(
+                                                "emissionRate", "Emission Rate", kPropertyTypeFloatUVE),
+                                            0.0, 1000000.0, 0.1),
+                               WithRangeUVE(DeclareUVE<&ParticleEmitterComponentUVE::lifetimeSeconds>(
+                                                "lifetimeSeconds", "Lifetime", kPropertyTypeFloatUVE),
+                                            0.01, 3600.0, 0.01)}));
 
     // LODGroup3D's own section. The chain is declared as a prefix: `levelCount` says how many of
     // the two lists below are in use, and both lists are drawn by a block drawer that shows exactly

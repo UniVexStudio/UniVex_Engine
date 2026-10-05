@@ -593,7 +593,10 @@ namespace {
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const ParticleEmitterComponentUVE& component) {
-    return {{"maxParticles", component.maxParticles}};
+    return {{"maxParticles", component.maxParticles},
+            {"emitting", component.emitting},
+            {"emissionRate", component.emissionRate},
+            {"lifetimeSeconds", component.lifetimeSeconds}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const PhysicsInterpolationComponentUVE& component) {
@@ -2404,7 +2407,12 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                       }, IsScriptComponentValidUVE));
         table.emplace("ParticleEmitterComponentUVE",
                       MakeRegistrationUVE<ParticleEmitterComponentUVE>([](const nlohmann::json& json) {
-                          const ParticleEmitterComponentUVE emitter{json.at("maxParticles").get<std::uint32_t>()};
+                          const ParticleEmitterComponentUVE defaults{};
+                          ParticleEmitterComponentUVE emitter{};
+                          emitter.maxParticles = json.at("maxParticles").get<std::uint32_t>();
+                          emitter.emitting = json.value("emitting", defaults.emitting);
+                          emitter.emissionRate = json.value("emissionRate", defaults.emissionRate);
+                          emitter.lifetimeSeconds = json.value("lifetimeSeconds", defaults.lifetimeSeconds);
                           if (!IsParticleEmitterComponentValidUVE(emitter)) {
                               throw std::runtime_error("Invalid ParticleEmitterComponentUVE payload");
                           }

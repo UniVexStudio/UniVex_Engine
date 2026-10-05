@@ -733,11 +733,63 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
         if (!m_entityManager->IsAliveUVE(instance.entity) ||
             std::find(authoredEmitters.begin(), authoredEmitters.end(), instance.entity) == authoredEmitters.end()) {
             static_cast<void>(m_particleRuntime->DetachDetailedUVE(instance.entity));
+            m_particleEmitRemainder.erase(instance.entity);
         }
     }
 
     const float deltaSeconds = static_cast<float>(m_timer->GetDeltaTimeUVE());
     if (deltaSeconds > 0.0F) {
+        const Scene::ParticleRuntimeSnapshotUVE emitSnapshot = m_particleRuntime->GetSnapshotUVE();
+        for (const Scene::EntityUVE entity : authoredEmitters) {
+            if (!m_entityManager->IsAliveUVE(entity) ||
+                !m_entityManager->HasComponentUVE<Scene::ParticleEmitterComponentUVE>(entity)) {
+                m_particleEmitRemainder.erase(entity);
+                continue;
+            }
+            const Scene::ParticleEmitterComponentUVE& component =
+                m_entityManager->GetComponentUVE<Scene::ParticleEmitterComponentUVE>(entity);
+            if (!Scene::IsParticleEmitterComponentValidUVE(component)) {
+                m_particleEmitRemainder.erase(entity);
+                continue;
+            }
+            const bool ticking =
+                Scene::IsTickingUVE(ResolvedTickModeUVE(*m_sceneGraph, entity), simulationPaused);
+            if (!ticking || !component.emitting) {
+                m_particleEmitRemainder.erase(entity);
+                continue;
+            }
+            if (!m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+                continue;
+            }
+            const Scene::WorldTransformComponentUVE& worldTransform =
+                m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+            if (worldTransform.dirty || !Math::IsFiniteUVE(worldTransform.worldPosition)) {
+                continue;
+            }
+
+            std::uint32_t liveParticles = 0U;
+            bool enabled = false;
+            for (const Scene::ParticleRuntimeInstanceSnapshotUVE& instance : emitSnapshot.instances) {
+                if (instance.entity == entity) {
+                    liveParticles = instance.liveParticles;
+                    enabled = instance.enabled;
+                    break;
+                }
+            }
+            if (!enabled) {
+                m_particleEmitRemainder.erase(entity);
+                continue;
+            }
+
+            const std::uint32_t count = Scene::ConsumeParticleEmitterAutoEmitCountUVE(
+                m_particleEmitRemainder[entity], component, deltaSeconds, liveParticles);
+            if (count == 0U) {
+                continue;
+            }
+            static_cast<void>(m_particleRuntime->EmitDetailedUVE(
+                entity, Scene::ParticleEmissionUVE{count, worldTransform.worldPosition, Math::Vector3UVE{},
+                                                   component.lifetimeSeconds}));
+        }
         static_cast<void>(m_particleRuntime->SimulateDetailedUVE(deltaSeconds, m_config.gravity, m_threadPool.get()));
     }
 }

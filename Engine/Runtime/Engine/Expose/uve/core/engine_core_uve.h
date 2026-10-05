@@ -467,7 +467,8 @@ private:
     /// backend reports unusable so no follow-up GL call is issued.
     void Update();
     /// Reconciles authored ParticleEmitterComponentUVE values with the existing bounded particle
-    /// runtime, simulates one frame under configured gravity, and leaves renderer extraction read-only.
+    /// runtime, auto-emits from each ticking emitter's world pose, simulates one frame under
+    /// configured gravity, and leaves renderer extraction read-only.
     void SyncParticleRuntimeUVE();
     /// Ages every decal by the step's simulated seconds and queues one Decal3DExpiredEventUVE per
     /// decal that runs out. Lifetime is simulation time, so a paused game freezes decals and the
@@ -782,6 +783,8 @@ private:
     std::unique_ptr<Physics::IPhysicsQuerySystemUVE> m_physicsQuerySystem;
     std::unique_ptr<Physics::IRaycastSystemUVE> m_raycastSystem;
     std::unique_ptr<Scene::ParticleRuntimeUVE> m_particleRuntime;
+    /// Unused fraction of a particle per emitter, so a rate below the frame rate still emits.
+    std::unordered_map<Scene::EntityUVE, float> m_particleEmitRemainder;
 
     /// Baked navmeshes by region entity, and one steering state per agent entity. Owned here so the
     /// caches live exactly as long as the session that built them; a scene teardown clears them
