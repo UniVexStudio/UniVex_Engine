@@ -650,9 +650,12 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
         const std::filesystem::path path = MakeUniqueContentPathUVE(directory, item->label, ".uvscene");
         Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
         Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
-        const Scene::EntityUVE root = CreateDocumentEntityInternalUVE(Scene::SceneRootObjectDefinitionUVE{}, std::nullopt);
-        const Scene::EntityUVE viewport = CreateDocumentEntityInternalUVE(Scene::ViewportObjectDefinitionUVE{}, std::nullopt);
-        const Scene::EntityUVE world = CreateDocumentEntityInternalUVE(Scene::FolderObjectDefinitionUVE{}, std::nullopt);
+        const Scene::EntityUVE root = CreateObjectDefinitionEntityInternalUVE(
+            Scene::SceneRootObjectDefinitionUVE{}, Scene::ApplySceneRootObjectDefinitionUVE);
+        const Scene::EntityUVE viewport = CreateObjectDefinitionEntityInternalUVE(
+            Scene::ViewportObjectDefinitionUVE{}, Scene::ApplyViewportObjectDefinitionUVE);
+        const Scene::EntityUVE world = CreateObjectDefinitionEntityInternalUVE(
+            Scene::FolderObjectDefinitionUVE{}, Scene::ApplyFolderObjectDefinitionUVE);
         if (root == Scene::kInvalidEntityUVE || viewport == Scene::kInvalidEntityUVE || world == Scene::kInvalidEntityUVE) {
             if (root != Scene::kInvalidEntityUVE) DestroyDocumentSubtreeUVE(root);
             if (viewport != Scene::kInvalidEntityUVE) DestroyDocumentSubtreeUVE(viewport);
