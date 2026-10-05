@@ -5425,13 +5425,29 @@ TEST(EditorUVETest, InspectorHeadersUVE_SpellOutTheClassChain) {
             editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AnimationSequencer);
         ASSERT_NE(body, Scene::kInvalidEntityUVE);
         ASSERT_NE(player, Scene::kInvalidEntityUVE);
-        // Transform and Visibility sit under Object3D, the common section under Object.
         EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, body),
-                  (std::vector<std::string>{"Object3D", "Object"}));
-        // A pure Object has no Object3D part to name.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, player), (std::vector<std::string>{"Object"}));
+                  (std::vector<std::string>{"Character3D", "SolidBody3D", "PhysicsObject3D", "Object3D", "Object"}));
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, player),
+                  (std::vector<std::string>{"AnimationSequencer", "AnimationDriver", "Object"}));
         EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, editor.GetDocumentSceneRootUVE()),
                   (std::vector<std::string>{"Object"}));
+
+        const Scene::EntityUVE occluder =
+            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Occluder3D);
+        const Scene::EntityUVE fog =
+            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::FogVolume3D);
+        const Scene::EntityUVE sun =
+            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
+        ASSERT_NE(occluder, Scene::kInvalidEntityUVE);
+        ASSERT_NE(fog, Scene::kInvalidEntityUVE);
+        ASSERT_NE(sun, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, occluder),
+                  (std::vector<std::string>{"Occluder3D", "Object3D", "Object"}));
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, fog),
+                  (std::vector<std::string>{"FogVolume3D", "RenderInstance3D", "Object3D", "Object"}));
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, sun),
+                  (std::vector<std::string>{"DirectionalLight3D", "LightEmitter3D", "RenderInstance3D", "Object3D",
+                                            "Object"}));
         editor.ShutdownUVE();
     }
     engine.Shutdown();

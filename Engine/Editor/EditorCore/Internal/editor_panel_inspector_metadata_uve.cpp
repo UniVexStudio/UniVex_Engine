@@ -326,13 +326,19 @@ void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
                 DrawMetadataComponentDrawerUVE(entity, *entry, nested);
             },
         }));
-        // The class chain, spelled out: Object3D's own sections under a "Object3D" heading and the
-        // common Object section under "Object", so the Inspector reads as the object's ancestry.
+        // One heading per ancestor, most-derived first: the object's own section, then each
+        // abstract base, then Object3D, then Object.
+        std::string group;
         if (entry->order >= Scene::kSectionOrderObjectCommonUVE) {
-            static_cast<void>(m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Object"));
+            group = "Object";
         } else if (entry->order >= Scene::kSectionOrderTransformUVE) {
+            group = "Object3D";
+        } else if (entry->order >= Scene::kSectionOrderTypeSpecificUVE) {
+            group = entry->displayName;
+        }
+        if (!group.empty()) {
             static_cast<void>(
-                m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Object3D"));
+                m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), std::move(group)));
         }
     }
     if (!transformRegistered) {
