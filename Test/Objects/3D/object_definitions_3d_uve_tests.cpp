@@ -645,6 +645,14 @@ TEST_F(Object3DDefinitionsUVETest, RenderInstanceFamilyComponentsRejectValuesThe
     doubleSided.castShadow = SurfaceShadowModeUVE::DoubleSided;
     EXPECT_TRUE(SurfaceInstance3DCastsShadowUVE(doubleSided));
     EXPECT_TRUE(SurfaceInstance3DDrawsInViewUVE(doubleSided));
+    EXPECT_FLOAT_EQ(SurfaceInstance3DOpacityUVE(SurfaceInstanceComponentUVE{}), 1.0F);
+    SurfaceInstanceComponentUVE faded{};
+    faded.transparency = 0.25F;
+    EXPECT_FLOAT_EQ(SurfaceInstance3DOpacityUVE(faded), 0.75F);
+    faded.transparency = 1.0F;
+    EXPECT_FLOAT_EQ(SurfaceInstance3DOpacityUVE(faded), 0.0F);
+    faded.transparency = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FLOAT_EQ(SurfaceInstance3DOpacityUVE(faded), 1.0F);
 
     EXPECT_TRUE(IsRenderInstance3DOnViewLayersUVE(0x00000001U, 0xFFFFFFFFU));
     EXPECT_TRUE(IsRenderInstance3DOnViewLayersUVE(0x00000002U, 0x00000002U));

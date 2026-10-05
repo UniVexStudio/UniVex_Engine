@@ -708,6 +708,7 @@ uniform int uShadowCascadeCount;
 // Increment 31: fraction of each non-final cascade depth interval used to cross-fade into the next.
 uniform float uShadowCascadeBlendRatio;
 uniform int uMeshRenderLayers;
+uniform float uSurfaceOpacity;
 uniform float uShadowBias;
 uniform float uShadowNormalBias;
 uniform float uShadowOpacity;
@@ -1108,7 +1109,7 @@ void main() {
         lighting += directContribution;
     }
 
-    FragColor = vec4(lighting, 1.0);
+    FragColor = vec4(lighting, clamp(uSurfaceOpacity, 0.0, 1.0));
 }
 #endif
 )GLSLSRC";
