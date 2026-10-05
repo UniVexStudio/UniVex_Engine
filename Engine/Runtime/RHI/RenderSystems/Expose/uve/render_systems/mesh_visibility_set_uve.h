@@ -197,6 +197,12 @@ struct MeshVisibilitySetUVE final {
     /// behind a wall" says nothing about streaming or room design.
     std::size_t occlusionCulledEntities = 0U;
 
+    /// Entities skipped because a SurfaceInstance3D visibility range put the camera too near or
+    /// too far. Separate from LodGroup3D's distanceCulledEntities: one is a per-object draw
+    /// distance, the other is a mesh-swap chain, and a scene that is mostly the first wants its
+    /// SurfaceInstance ranges looked at, not its LOD groups.
+    std::size_t rangeCulledEntities = 0U;
+
     std::size_t invalidAssetReferences = 0U;
     std::size_t pendingAssetLoads = 0U;
     std::size_t failedAssetLoads = 0U;
