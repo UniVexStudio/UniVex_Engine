@@ -623,6 +623,48 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_SurfaceInstanceTransparencyPushesPrimit
     EXPECT_FLOAT_EQ(std::get<SetUniformFloatCommandUVE>(*opacity).value, 0.75F);
 }
 
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SurfaceInstanceTransparencyBindsABlendedMeshPipeline) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_si_blend_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_si_blend_material.uvmat");
+    MakeMeshEntityUVE(Math::Vector3UVE{-1.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    const Scene::EntityUVE faded =
+        MakeMeshEntityUVE(Math::Vector3UVE{1.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.transparency = 0.25F;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(faded, surface);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const auto pipelineBoundForOpacity = [](const std::vector<RecordedCommandUVE>& commands,
+                                            const float opacity) -> PipelineHandleUVE {
+        for (std::size_t index = 0U; index < commands.size(); ++index) {
+            if (!std::holds_alternative<SetUniformFloatCommandUVE>(commands[index])) {
+                continue;
+            }
+            const SetUniformFloatCommandUVE& uniform = std::get<SetUniformFloatCommandUVE>(commands[index]);
+            if (uniform.name != "uSurfaceOpacity" || uniform.value != opacity) {
+                continue;
+            }
+            for (std::size_t lookback = index; lookback > 0U; --lookback) {
+                const RecordedCommandUVE& previous = commands[lookback - 1U];
+                if (std::holds_alternative<BindPipelineCommandUVE>(previous)) {
+                    return std::get<BindPipelineCommandUVE>(previous).pipeline;
+                }
+            }
+        }
+        return kInvalidPipelineHandleUVE;
+    };
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const PipelineHandleUVE opaque = pipelineBoundForOpacity(commands, 1.0F);
+    const PipelineHandleUVE blended = pipelineBoundForOpacity(commands, 0.75F);
+    ASSERT_NE(opaque, kInvalidPipelineHandleUVE);
+    ASSERT_NE(blended, kInvalidPipelineHandleUVE);
+    EXPECT_NE(opaque, blended);
+}
+
 TEST_F(Renderer3DUVETest, RenderFrameUVE_RegionHiddenPrimitiveIsNotACandidate) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     const Scene::EntityUVE region = entityManager.CreateEntityUVE();
