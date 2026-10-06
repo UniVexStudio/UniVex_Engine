@@ -62,7 +62,7 @@ constexpr Tree<1> kOccluder = kOne(Kind::Occluder3D);
 constexpr std::array<std::string_view, 9> kGroups{"Basic",     "Entity",    "Shapes",     "Lighting", "Camera",
                                                   "Physics",   "Animation", "Audio, VFX & UI", "World"};
 
-constexpr std::array<ContentCatalogueItemUVE, 34> kItems{{
+constexpr std::array<ContentCatalogueItemUVE, 35> kItems{{
     {"folder", "Folder", "Basic", "A new folder here in Content", Action::Folder, {}},
     {"empty", "Empty Entity", "Basic", "A bare Object3D to build your own tree on", Action::EntityAsset, kEmpty},
     {"viewport", "Viewport", "Basic", "A new scene Viewport with an empty World folder", Action::SceneAsset, kViewport},
