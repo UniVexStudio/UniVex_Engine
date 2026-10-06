@@ -32,6 +32,7 @@ struct ColliderComponentUVE final {
     ColliderShapeTypeUVE shapeType = ColliderShapeTypeUVE::Box;
     float radius = 0.5F;
     float height = 1.0F;
+    bool disabled = false;
 };
 
 /// Returns conservative local half-extents for the supported descriptors. Collision and raycast

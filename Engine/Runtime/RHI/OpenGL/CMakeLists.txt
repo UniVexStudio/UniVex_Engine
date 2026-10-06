@@ -19,6 +19,11 @@
 # Engine/Editor/Viewport's own (different) GL renderer, but has no automated test of its own in
 # this repo yet - a real, acknowledged gap, not a hidden one.
 
+if(NOT UVE_HAS_DESKTOP_GL)
+    add_library(uve_rhi_opengl INTERFACE)
+    return()
+endif()
+
 find_package(OpenGL REQUIRED)
 
 add_library(uve_rhi_opengl STATIC

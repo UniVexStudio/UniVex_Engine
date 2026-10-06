@@ -63,8 +63,12 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/input/gamepad_input_system_uve.h"
 #include "uve/input/input_system_uve.h"
+#include "uve/gameplay/gameplay_input_uve.h"
+#include "uve/gameplay/health_events_uve.h"
+#include "uve/gameplay/interact_requested_event_uve.h"
 #include "uve/input/mobile_gesture_system_uve.h"
 #include "uve/input/mobile_input_system_uve.h"
+#include "uve/physics/area_3d_runtime_uve.h"
 #include "uve/physics/area_overlap_events_uve.h"
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
@@ -85,6 +89,8 @@
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
 #include "uve/objects/3d/interaction_area_3d_uve.h"
+#include "uve/objects/3d/health_uve.h"
+#include "uve/objects/3d/player_3d_uve.h"
 #include "uve/objects/3d/kinematic_3d_uve.h"
 #include "uve/objects/3d/level_streamer_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
@@ -100,6 +106,7 @@
 #include "uve/physics/interaction_area_uve.h"
 #include "uve/physics/kinematic_body_uve.h"
 #include "uve/physics/projectile_3d_step_uve.h"
+#include "uve/physics/ray_cast_3d_step_uve.h"
 #include "uve/physics/hitbox_strike_events_uve.h"
 #include "uve/physics/hitbox_strike_uve.h"
 #include "uve/physics/hitbox_strike_lifecycle_tracker_uve.h"
@@ -585,6 +592,7 @@ void EngineCoreUVE::Init() {
         UVE_WARNING("EngineCoreUVE: input map \"{}\" could not be read; no project actions are registered",
                     m_config.inputMapFilePath.string());
     }
+    Gameplay::RegisterDefaultGameplayActionsUVE(*m_inputSystem);
     m_inputMap.ApplyUVE(*m_inputSystem);
     m_windowManager->AttachInputSystemUVE(m_inputSystem.get());
 
@@ -706,6 +714,7 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
                 static_cast<void>(m_particleRuntime->AttachDetailedUVE(entity, component));
             } else if (!budgetMatches) {
                 static_cast<void>(m_particleRuntime->DetachDetailedUVE(entity));
+                m_particleEmitRemainder.erase(entity);
                 static_cast<void>(m_particleRuntime->AttachDetailedUVE(entity, component));
             }
             // Same rule as scripts: a Running emitter freezes mid-flight while the simulation is
@@ -725,11 +734,64 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
         if (!m_entityManager->IsAliveUVE(instance.entity) ||
             std::find(authoredEmitters.begin(), authoredEmitters.end(), instance.entity) == authoredEmitters.end()) {
             static_cast<void>(m_particleRuntime->DetachDetailedUVE(instance.entity));
+            m_particleEmitRemainder.erase(instance.entity);
         }
     }
 
     const float deltaSeconds = static_cast<float>(m_timer->GetDeltaTimeUVE());
     if (deltaSeconds > 0.0F) {
+        const Scene::ParticleRuntimeSnapshotUVE emitSnapshot = m_particleRuntime->GetSnapshotUVE();
+        for (const Scene::EntityUVE entity : authoredEmitters) {
+            if (!m_entityManager->IsAliveUVE(entity) ||
+                !m_entityManager->HasComponentUVE<Scene::ParticleEmitterComponentUVE>(entity)) {
+                m_particleEmitRemainder.erase(entity);
+                continue;
+            }
+            const Scene::ParticleEmitterComponentUVE& component =
+                m_entityManager->GetComponentUVE<Scene::ParticleEmitterComponentUVE>(entity);
+            if (!Scene::IsParticleEmitterComponentValidUVE(component)) {
+                m_particleEmitRemainder.erase(entity);
+                continue;
+            }
+            const bool ticking =
+                Scene::IsTickingUVE(ResolvedTickModeUVE(*m_sceneGraph, entity), simulationPaused);
+            if (!ticking || !component.emitting) {
+                m_particleEmitRemainder.erase(entity);
+                continue;
+            }
+            if (!m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+                m_particleEmitRemainder.erase(entity);
+                continue;
+            }
+            const Scene::WorldTransformComponentUVE& worldTransform =
+                m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+            if (worldTransform.dirty || !Math::IsFiniteUVE(worldTransform.worldPosition)) {
+                continue;
+            }
+
+            std::uint32_t liveParticles = 0U;
+            bool enabled = false;
+            for (const Scene::ParticleRuntimeInstanceSnapshotUVE& instance : emitSnapshot.instances) {
+                if (instance.entity == entity) {
+                    liveParticles = instance.liveParticles;
+                    enabled = instance.enabled;
+                    break;
+                }
+            }
+            if (!enabled) {
+                m_particleEmitRemainder.erase(entity);
+                continue;
+            }
+
+            const std::uint32_t count = Scene::ConsumeParticleEmitterAutoEmitCountUVE(
+                m_particleEmitRemainder[entity], component, deltaSeconds, liveParticles);
+            if (count == 0U) {
+                continue;
+            }
+            static_cast<void>(m_particleRuntime->EmitDetailedUVE(
+                entity, Scene::ParticleEmissionUVE{count, worldTransform.worldPosition, Math::Vector3UVE{},
+                                                   component.lifetimeSeconds}));
+        }
         static_cast<void>(m_particleRuntime->SimulateDetailedUVE(deltaSeconds, m_config.gravity, m_threadPool.get()));
     }
 }
@@ -1219,42 +1281,31 @@ void EngineCoreUVE::SyncCharacterControllersUVE(const float fixedDeltaTimeSecond
         return;
     }
 
-    Math::Vector3UVE horizontalInput{};
-    if (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::W)) {
-        horizontalInput.z -= 1.0F;
-    }
-    if (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::S)) {
-        horizontalInput.z += 1.0F;
-    }
-    if (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::A)) {
-        horizontalInput.x -= 1.0F;
-    }
-    if (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::D)) {
-        horizontalInput.x += 1.0F;
-    }
-    const float horizontalInputLengthSquared =
-        horizontalInput.x * horizontalInput.x + horizontalInput.z * horizontalInput.z;
-    if (horizontalInputLengthSquared > 1.0F) {
-        const float inverseLength = 1.0F / std::sqrt(horizontalInputLengthSquared);
-        horizontalInput.x *= inverseLength;
-        horizontalInput.z *= inverseLength;
-    }
-    const bool jumpPressed = m_inputSystem->WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Space);
-    const float riseInput = (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::Space) ? 1.0F : 0.0F) -
-                            (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::LeftCtrl) ? 1.0F : 0.0F);
+    const Gameplay::GameplayInputUVE gameplayInput = Gameplay::CollectGameplayInputUVE(*m_inputSystem);
+    const Scene::EntityUVE possessed = Scene::ResolvePossessedPlayerUVE(*m_entityManager);
     // Collected and ordered rather than iterated in place: two characters can push the same body,
     // and the order they meet it in changes the outcome, so physicsPriority is how an author
     // decides that instead of archetype storage order deciding it for them.
     for (const Scene::EntityUVE entity :
          CollectFixedStepOrderUVE<Scene::CharacterControllerComponentUVE>(*m_entityManager, *m_sceneGraph)) {
+        Physics::CharacterMotionInputUVE motion{};
+        if (possessed == Scene::kInvalidEntityUVE || entity == possessed) {
+            motion.move = gameplayInput.move;
+            motion.rise = gameplayInput.rise;
+            motion.jumpPressed = gameplayInput.jumpPressed;
+            if (entity == possessed && m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+                motion.move = Scene::FaceMoveFromLookUVE(
+                    m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(entity).localRotation,
+                    gameplayInput.move);
+            }
+        }
         // One call takes the body from intent to moved-and-written-back: built-in movement (or,
         // with that off, the velocity a script set), gravity, the move through the world with its
         // step-up, floor snap and platform carry, and the state the next step reads. The bridge
         // refuses a body it cannot step rather than half-moving it, so a refusal is simply a body
         // that stays where it is.
         const Physics::Character3DStepResultUVE report = Physics::StepCharacter3DUVE(
-            *m_entityManager, *m_sceneGraph, *m_collisionSystem, entity,
-            Physics::CharacterMotionInputUVE{horizontalInput, riseInput, jumpPressed}, m_config.gravity.y,
+            *m_entityManager, *m_sceneGraph, *m_collisionSystem, entity, motion, m_config.gravity.y,
             fixedDeltaTimeSeconds);
         if (!report.stepped) {
             continue;
@@ -1306,46 +1357,8 @@ void EngineCoreUVE::SyncCollisionLifecycleUVE() {
 
 void EngineCoreUVE::SyncRayCast3DObjectsUVE() {
     m_entityManager->ForEachUVE<Scene::RayCast3DComponentUVE>(
-        [this](const Scene::EntityUVE entity, Scene::RayCast3DComponentUVE& rayCast) {
-            // Every gate fails closed, and it clears the WHOLE result rather than just the flag: a
-            // disabled, malformed or unswept ray has no hit, no point, no normal and no entity.
-            // Leaving last frame's numbers behind a false `hit` is how a consumer that reads
-            // hitEntity without checking hit first ends up acting on a ray that is not there.
-            const auto clearResult = [&rayCast]() {
-                rayCast.hit = false;
-                rayCast.hitPosition = {};
-                rayCast.hitNormal = {};
-                rayCast.hitEntity = Scene::kInvalidEntityUVE;
-            };
-            if (!rayCast.enabled || !Scene::IsRayCast3DObjectComponentValidUVE(rayCast) ||
-                !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
-                clearResult();
-                return;
-            }
-
-            const auto& worldTransform = m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
-            Physics::RaycastQueryUVE query{};
-            query.ray.origin = worldTransform.worldPosition;
-            query.ray.direction = Math::RotateVectorUVE(worldTransform.worldRotation, rayCast.direction);
-            query.maxDistance = rayCast.length;
-            query.layerMask = rayCast.collisionMask;
-            query.ignoreEntity = entity;
-            // The authored exclusions - the component's live prefix, in the order they were
-            // authored. They are entity references, remapped by the serializer on load, not raw
-            // handles that would break the first time the pool handed the index to someone else.
-            query.excludedEntities = std::span<const Scene::EntityUVE>(
-                rayCast.exclusions.data(), Scene::CountRayCast3DExclusionsUVE(rayCast));
-
-            const std::optional<Physics::RaycastHitUVE> result = m_raycastSystem->RaycastUVE(*m_entityManager, query);
-            if (!result.has_value()) {
-                clearResult();
-                return;
-            }
-
-            rayCast.hit = true;
-            rayCast.hitPosition = result->point;
-            rayCast.hitNormal = result->normal;
-            rayCast.hitEntity = result->entity;
+        [this](const Scene::EntityUVE entity, Scene::RayCast3DComponentUVE&) {
+            static_cast<void>(Physics::StepRayCast3DUVE(*m_entityManager, *m_raycastSystem, entity));
         });
 }
 
@@ -1399,6 +1412,16 @@ void EngineCoreUVE::SyncHitbox3DObjectsUVE() {
     for (const Physics::Hitbox3DStrikeTransitionUVE& transition : lifecycle.transitions) {
         if (transition.kind == Physics::Hitbox3DStrikeTransitionKindUVE::Entered) {
             m_eventSystem->QueueEvent(Physics::Hitbox3DStrikeEnteredEventUVE{transition.strike});
+            const Scene::HealthDamageResultUVE damage =
+                Scene::ApplyHitboxStrikeToHealthUVE(*m_entityManager, transition.strike.hurtbox);
+            if (damage.applied) {
+                m_eventSystem->QueueEvent(Gameplay::HealthDamagedEventUVE{
+                    damage.entity, transition.strike.hitbox, transition.strike.hurtbox, damage.amount,
+                    damage.remaining});
+                if (damage.depleted) {
+                    m_eventSystem->QueueEvent(Gameplay::HealthDepletedEventUVE{damage.entity});
+                }
+            }
         } else {
             m_eventSystem->QueueEvent(Physics::Hitbox3DStrikeExitedEventUVE{transition.strike});
         }
@@ -1736,9 +1759,10 @@ void EngineCoreUVE::SyncWorldPartition3DObjectsUVE() {
             m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(partition)
                 .worldPosition;
 
-        // Breadth-first member collection: all descendants that carry a mesh. Nested partitions
-        // stop the walk - a partition deep inside another's volume self-manages, so only the
-        // closest owning partition ever stamps a membership it does not understand.
+        // Breadth-first member collection: all descendants that carry a drawable the vis-budget
+        // can skip. Nested partitions stop the walk - a partition deep inside another's volume
+        // self-manages, so only the closest owning partition ever stamps a membership it does
+        // not understand.
         struct MemberSnapshotUVE final {
             Scene::EntityUVE entity;
             Math::Vector3UVE worldPosition;
@@ -1763,7 +1787,7 @@ void EngineCoreUVE::SyncWorldPartition3DObjectsUVE() {
                         child)) {
                     continue; // closest-ancestor-wins: the inner partition claims its subtree
                 }
-                if (m_entityManager->HasComponentUVE<Scene::MeshComponentUVE>(child) &&
+                if (Scene::CarriesWorldPartition3DDrawableUVE(*m_entityManager, child) &&
                     m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(child)) {
                     const Scene::WorldTransformComponentUVE& world =
                         m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(child);
@@ -1777,9 +1801,9 @@ void EngineCoreUVE::SyncWorldPartition3DObjectsUVE() {
         }
 
         // Membership attachment is idempotent: the engine owns this runtime component on every
-        // mesh-carrying descendant, attaches when absent, and re-stamps the owner when an entity
-        // has moved between partitions between ticks. AddComponentUVE mutates the ECS, but the
-        // member list was snapshotted above, so nothing being iterated here can be invalidated.
+        // drawable descendant, attaches when absent, and re-stamps the owner when an entity has
+        // moved between partitions between ticks. AddComponentUVE mutates the ECS, but the member
+        // list was snapshotted above, so nothing being iterated here can be invalidated.
         for (const MemberSnapshotUVE& member : members) {
             if (!m_entityManager->HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
                     member.entity)) {
@@ -1805,14 +1829,9 @@ void EngineCoreUVE::SyncWorldPartition3DObjectsUVE() {
             continue;
         }
 
-        // Pass over occupied cells: priority = nearest member's squared distance to the nearest
-        // viewer; a cell with no members cannot exist here by construction. The first
-        // maximumLoadedCells are live - the budget acceptance is EXACT, members past it fade.
-        struct OccupiedCellUVE final {
-            Scene::WorldPartition3DCellIdUVE id;
-            float nearestDistanceSquared = std::numeric_limits<float>::max();
-        };
-        std::vector<OccupiedCellUVE> occupied;
+        // Occupied cells: priority = nearest member's squared distance to the nearest viewer.
+        // The first maximumLoadedCells stay drawn - this is a vis-budget, not a file load.
+        std::vector<Scene::WorldPartition3DOccupiedCellUVE> occupied;
         std::vector<float> memberDistances;
         memberDistances.reserve(members.size());
         for (const MemberSnapshotUVE& member : members) {
@@ -1826,40 +1845,26 @@ void EngineCoreUVE::SyncWorldPartition3DObjectsUVE() {
                 continue; // outside the partitioned volume: unmanaged, always renders
             }
             auto found = std::find_if(occupied.begin(), occupied.end(),
-                                      [&members, i](const OccupiedCellUVE& cell) {
+                                      [&members, i](const Scene::WorldPartition3DOccupiedCellUVE& cell) {
                                           return cell.id == *members[i].cell;
                                       });
             if (found == occupied.end()) {
-                occupied.push_back(OccupiedCellUVE{*members[i].cell, memberDistances[i]});
+                occupied.push_back(
+                    Scene::WorldPartition3DOccupiedCellUVE{*members[i].cell, memberDistances[i]});
             } else if (memberDistances[i] < found->nearestDistanceSquared) {
                 found->nearestDistanceSquared = memberDistances[i];
             }
         }
-        std::sort(occupied.begin(), occupied.end(),
-                  [&config](const OccupiedCellUVE& lhs, const OccupiedCellUVE& rhs) {
-                      if (lhs.nearestDistanceSquared != rhs.nearestDistanceSquared) {
-                          return lhs.nearestDistanceSquared < rhs.nearestDistanceSquared;
-                      }
-                      return Scene::ResolveWorldPartition3DCellLinearIndexUVE(
-                                 lhs.id, config.cellCounts) <
-                             Scene::ResolveWorldPartition3DCellLinearIndexUVE(
-                                 rhs.id, config.cellCounts);
-                  });
-        const std::size_t liveCells =
-            std::min<std::size_t>(occupied.size(), config.maximumLoadedCells);
+        Scene::SortWorldPartition3DOccupiedCellsUVE(occupied, config.cellCounts);
+        const std::size_t liveCells = Scene::CountWorldPartition3DAdmittedCellsUVE(
+            occupied.size(), config.maximumLoadedCells);
         // Admission wholly-cellular: every member of an admitted cell goes live together, and
         // every member outside it fades together. Unmanaged members never join the verdict.
         for (std::size_t i = 0U; i < members.size(); ++i) {
-            bool live = true;
-            if (members[i].cell.has_value()) {
-                live = false;
-                for (std::size_t c = 0U; c < liveCells; ++c) {
-                    if (occupied[c].id == *members[i].cell) {
-                        live = true;
-                        break;
-                    }
-                }
-            }
+            const bool live =
+                !members[i].cell.has_value() ||
+                Scene::IsWorldPartition3DCellAdmittedUVE(*members[i].cell, occupied,
+                                                         config.maximumLoadedCells);
             auto& membership =
                 m_entityManager->GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
                     members[i].entity);
@@ -1960,12 +1965,11 @@ void EngineCoreUVE::SyncVisibilityRegion3DObjectsUVE() {
                 : Math::Vector3UVE{};
         const bool stillManaged =
             ownerConfig.enabled && Scene::IsVisibilityRegion3DObjectComponentValidUVE(ownerConfig) &&
-            m_entityManager->HasComponentUVE<Scene::MeshComponentUVE>(member.entity) &&
+            Scene::CarriesVisibilityRegion3DDrawableUVE(*m_entityManager, member.entity) &&
             m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(member.entity) &&
             Scene::ResolveVisibilityRegion3DLayerGateUVE(
                 ownerConfig.visibilityLayers,
-                m_entityManager->GetComponentUVE<Scene::MeshComponentUVE>(member.entity)
-                    .visibilityLayers) &&
+                Scene::ResolveVisibilityRegion3DDrawableLayersUVE(*m_entityManager, member.entity)) &&
             Scene::ResolveVisibilityRegion3DContainsPointUVE(
                 ownerConfig, ownerOrigin,
                 m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(member.entity)
@@ -1975,15 +1979,17 @@ void EngineCoreUVE::SyncVisibilityRegion3DObjectsUVE() {
         membership.live = !stillManaged || ownerConfig.active;
     }
 
-    // Pass 2: discovery. An un-owned mesh (never stamped, or Pass 1 rebranded it to kInvalid on
-    // a dead owner) inside an enabled region whose layer gate passes becomes its member. With
-    // overlapping regions the mesh stamps the NEAREST one's center; ties resolve in the
+    // Pass 2: discovery. An un-owned drawable (never stamped, or Pass 1 rebranded it to kInvalid
+    // on a dead owner) inside an enabled region whose layer gate passes becomes its member. With
+    // overlapping regions the drawable stamps the NEAREST one's center; ties resolve in the
     // iteration order the ECS hands regions over, which is ascending entity id - deterministic
     // for content that does not overlap rooms halfway.
-    std::vector<Scene::EntityUVE> meshes;
-    m_entityManager->ForEachUVE<Scene::MeshComponentUVE, Scene::WorldTransformComponentUVE>(
-        [this, &meshes](const Scene::EntityUVE entity, const Scene::MeshComponentUVE&,
-                        const Scene::WorldTransformComponentUVE&) {
+    std::vector<Scene::EntityUVE> drawables;
+    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE>(
+        [this, &drawables](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE&) {
+            if (!Scene::CarriesVisibilityRegion3DDrawableUVE(*m_entityManager, entity)) {
+                return;
+            }
             const bool unowned =
                 !m_entityManager->HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
                     entity) ||
@@ -1991,15 +1997,15 @@ void EngineCoreUVE::SyncVisibilityRegion3DObjectsUVE() {
                         ->GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(entity)
                         .region == Scene::kInvalidEntityUVE;
             if (unowned) {
-                meshes.push_back(entity);
+                drawables.push_back(entity);
             }
         });
-    for (const Scene::EntityUVE mesh : meshes) {
+    for (const Scene::EntityUVE drawable : drawables) {
         const Math::Vector3UVE position =
-            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(mesh)
+            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(drawable)
                 .worldPosition;
         const std::uint32_t meshLayers =
-            m_entityManager->GetComponentUVE<Scene::MeshComponentUVE>(mesh).visibilityLayers;
+            Scene::ResolveVisibilityRegion3DDrawableLayersUVE(*m_entityManager, drawable);
         float bestDistanceSquared = std::numeric_limits<float>::max();
         Scene::EntityUVE bestRegion = Scene::kInvalidEntityUVE;
         for (const RegionSnapshotUVE& region : regions) {
@@ -2023,19 +2029,19 @@ void EngineCoreUVE::SyncVisibilityRegion3DObjectsUVE() {
             }
         }
         if (bestRegion == Scene::kInvalidEntityUVE) {
-            continue; // outside every region: the mesh stays unmanaged and renders as ever
+            continue; // outside every region: the drawable stays unmanaged and renders as ever
         }
         const bool activeNow =
             m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DComponentUVE>(bestRegion)
                 .active;
         if (!m_entityManager->HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
-                mesh)) {
+                drawable)) {
             m_entityManager->AddComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
-                mesh, Scene::VisibilityRegion3DMembershipComponentUVE{});
+                drawable, Scene::VisibilityRegion3DMembershipComponentUVE{});
         }
         auto& membership =
             m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
-                mesh);
+                drawable);
         membership.region = bestRegion;
         membership.live = activeNow;
     }
@@ -2105,6 +2111,33 @@ void EngineCoreUVE::Update() {
     m_mobileInputSystem->UpdateUVE();
     m_mobileGestureSystem->UpdateUVE(static_cast<float>(m_timer->GetDeltaTimeUVE()));
     m_inputSystem->UpdateUVE();
+    if (m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
+        const Gameplay::GameplayInputUVE gameplayInput = Gameplay::CollectGameplayInputUVE(*m_inputSystem);
+        const Scene::EntityUVE player = Scene::ResolvePossessedPlayerUVE(*m_entityManager);
+        if (player != Scene::kInvalidEntityUVE &&
+            m_entityManager->HasComponentUVE<Scene::PlayerComponentUVE>(player) &&
+            m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(player)) {
+            Scene::PlayerComponentUVE& playerState =
+                m_entityManager->GetComponentUVE<Scene::PlayerComponentUVE>(player);
+            Scene::TransformComponentUVE body =
+                m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(player);
+            const Scene::EntityUVE lookTarget = Scene::FindPlayerLookTargetUVE(*m_entityManager, player);
+            Scene::TransformComponentUVE lookTransform{};
+            Scene::TransformComponentUVE* lookPointer = nullptr;
+            if (lookTarget != Scene::kInvalidEntityUVE &&
+                m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(lookTarget)) {
+                lookTransform = m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(lookTarget);
+                lookPointer = &lookTransform;
+            }
+            Scene::ApplyPlayerLookUVE(playerState, body, lookPointer, gameplayInput.lookPointer,
+                                      gameplayInput.lookStick,
+                                      static_cast<float>(m_timer->GetDeltaTimeUVE()));
+            m_sceneGraph->SetLocalTransformUVE(*m_entityManager, player, body);
+            if (lookPointer != nullptr) {
+                m_sceneGraph->SetLocalTransformUVE(*m_entityManager, lookTarget, lookTransform);
+            }
+        }
+    }
     if (m_windowManager->IsCloseRequestedUVE()) {
         RequestQuitUVE();
     }
@@ -2157,6 +2190,19 @@ void EngineCoreUVE::Update() {
     SyncRayCast3DObjectsUVE();
     SyncHitbox3DObjectsUVE();
     SyncInteractionArea3DObjectsUVE();
+    if (m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
+        const Gameplay::GameplayInputUVE gameplayInput = Gameplay::CollectGameplayInputUVE(*m_inputSystem);
+        if (gameplayInput.interactPressed) {
+            const Scene::EntityUVE player = Scene::ResolvePossessedPlayerUVE(*m_entityManager);
+            const Scene::EntityUVE area = Scene::FindFocusedInteractionAreaUVE(*m_entityManager);
+            if (player != Scene::kInvalidEntityUVE && area != Scene::kInvalidEntityUVE &&
+                m_entityManager->HasComponentUVE<Scene::InteractionArea3DComponentUVE>(area) &&
+                Scene::InteractionArea3DUVE::HasInteractorUVE(
+                    m_entityManager->GetComponentUVE<Scene::InteractionArea3DComponentUVE>(area), player)) {
+                m_eventSystem->QueueEvent(Gameplay::InteractRequestedEventUVE{player, area});
+            }
+        }
+    }
     SyncLevelStreamer3DObjectsUVE();
     SyncReflectionProbe3DObjectsUVE();
     SyncWorldPartition3DObjectsUVE();
@@ -2193,6 +2239,7 @@ void EngineCoreUVE::Update() {
 void EngineCoreUVE::PublishAreaOverlapLifecycleEventsUVE() {
     const Physics::AreaOverlapQueryResultUVE snapshot =
         Physics::AreaOverlapSystemUVE::QueryUVE(*m_entityManager);
+    static_cast<void>(Physics::ApplyArea3DOccupancyUVE(*m_entityManager, snapshot));
     const Physics::AreaOverlapLifecycleReportUVE report =
         m_areaOverlapLifecycleTracker.UpdateUVE(snapshot);
 

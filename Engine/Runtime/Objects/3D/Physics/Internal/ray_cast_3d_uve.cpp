@@ -2,14 +2,69 @@
 
 #include "uve/objects/3d/ray_cast_3d_uve.h"
 
+#include <cmath>
+
 namespace UVE::Scene {
 
-std::size_t CountRayCast3DExclusionsUVE(const RayCast3DComponentUVE& value) noexcept {
+bool RayCast3DUVE::IsCastingUVE(const RayCast3DComponentUVE& rayCast) noexcept {
+    return rayCast.enabled;
+}
+
+std::size_t RayCast3DUVE::ExclusionCountUVE(const RayCast3DComponentUVE& rayCast) noexcept {
     std::size_t count = 0U;
-    while (count < value.exclusions.size() && value.exclusions[count] != kInvalidEntityUVE) {
+    while (count < rayCast.exclusions.size() && rayCast.exclusions[count] != kInvalidEntityUVE) {
         ++count;
     }
     return count;
+}
+
+std::span<const EntityUVE> RayCast3DUVE::ExclusionSpanUVE(const RayCast3DComponentUVE& rayCast) noexcept {
+    return std::span<const EntityUVE>(rayCast.exclusions.data(), ExclusionCountUVE(rayCast));
+}
+
+bool RayCast3DUVE::AcceptsTargetUVE(const EntityUVE rayEntity, const RayCast3DComponentUVE& rayCast,
+                                    const EntityUVE obstacle) noexcept {
+    if (obstacle == kInvalidEntityUVE || obstacle == rayEntity) {
+        return false;
+    }
+    const std::size_t exclusionCount = ExclusionCountUVE(rayCast);
+    for (std::size_t index = 0U; index < exclusionCount; ++index) {
+        if (rayCast.exclusions[index] == obstacle) {
+            return false;
+        }
+    }
+    return true;
+}
+
+Math::Vector3UVE RayCast3DUVE::ResolveWorldDirectionUVE(const Math::Vector3UVE& localDirection,
+                                                         const Math::QuaternionUVE& worldRotation) noexcept {
+    if (!IsFinite3DObjectVectorUVE(localDirection)) {
+        return {};
+    }
+    Math::QuaternionUVE rotation{};
+    if (!Math::TryNormalizeUVE(worldRotation, rotation)) {
+        rotation = {};
+    }
+    return Math::RotateVectorUVE(rotation, localDirection);
+}
+
+void RayCast3DUVE::ClearResultUVE(RayCast3DComponentUVE& rayCast) noexcept {
+    rayCast.hit = false;
+    rayCast.hitPosition = {};
+    rayCast.hitNormal = {};
+    rayCast.hitEntity = kInvalidEntityUVE;
+}
+
+void RayCast3DUVE::RecordHitUVE(RayCast3DComponentUVE& rayCast, const EntityUVE hitEntity,
+                                const Math::Vector3UVE& hitPosition, const Math::Vector3UVE& hitNormal) noexcept {
+    rayCast.hit = true;
+    rayCast.hitEntity = hitEntity;
+    rayCast.hitPosition = hitPosition;
+    rayCast.hitNormal = hitNormal;
+}
+
+std::size_t CountRayCast3DExclusionsUVE(const RayCast3DComponentUVE& value) noexcept {
+    return RayCast3DUVE::ExclusionCountUVE(value);
 }
 
 bool IsRayCast3DObjectComponentValidUVE(const RayCast3DComponentUVE& value) noexcept {
@@ -19,19 +74,14 @@ bool IsRayCast3DObjectComponentValidUVE(const RayCast3DComponentUVE& value) noex
         return false;
     }
 
-    const std::size_t exclusionCount = CountRayCast3DExclusionsUVE(value);
+    const std::size_t exclusionCount = RayCast3DUVE::ExclusionCountUVE(value);
     for (std::size_t index = 0U; index < exclusionCount; ++index) {
-        // Duplicates are refused rather than collapsed: two identical slots are an authoring
-        // mistake, and silently dropping one would hide which of the two was meant.
         for (std::size_t previous = 0U; previous < index; ++previous) {
             if (value.exclusions[previous] == value.exclusions[index]) {
                 return false;
             }
         }
     }
-    // Everything past the first empty slot must be empty too. The list is a prefix, and a live
-    // reference hiding behind an empty slot would be authored data no query would ever honour -
-    // refused loudly here rather than silently ignored everywhere else.
     for (std::size_t index = exclusionCount; index < value.exclusions.size(); ++index) {
         if (value.exclusions[index] != kInvalidEntityUVE) {
             return false;

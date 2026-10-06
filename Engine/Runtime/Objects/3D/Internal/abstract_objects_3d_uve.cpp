@@ -2,6 +2,8 @@
 
 #include "uve/objects/3d/abstract_objects_3d_uve.h"
 
+#include <cmath>
+
 #include "uve/component/light_emitter_component_uve.h"
 #include "uve/component/render_instance_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
@@ -59,6 +61,166 @@ void ApplyLightEmitter3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUV
                                 const std::string_view nameFallback) {
     ApplyRenderInstance3DBaseUVE(entityManager, entity, nameFallback);
     EnsureUVE<LightEmitterComponentUVE>(entityManager, entity);
+}
+
+bool IsSurfaceInstance3DOutsideVisibilityRangeUVE(const SurfaceInstanceComponentUVE& surface,
+                                                  const float cameraDistance) noexcept {
+    if (!IsSurfaceInstanceComponentValidUVE(surface) || !std::isfinite(cameraDistance) || cameraDistance < 0.0F) {
+        return true;
+    }
+    const bool fadeSelf = surface.visibilityRangeFadeMode == SurfaceFadeModeUVE::Self;
+    float nearLimit = surface.visibilityRangeBegin;
+    if (fadeSelf) {
+        nearLimit = surface.visibilityRangeBegin - surface.visibilityRangeBeginMargin;
+        if (nearLimit < 0.0F) {
+            nearLimit = 0.0F;
+        }
+    }
+    if (cameraDistance < nearLimit) {
+        return true;
+    }
+    // End 0 is "no far limit". Inclusive on both ends: a camera sitting exactly on Begin or End
+    // still sees the object, so the boundary is not a flicker seam. Self extends that far end by
+    // the fade margin so the ramp has somewhere to live.
+    if (surface.visibilityRangeEnd <= 0.0F) {
+        return false;
+    }
+    const float farLimit =
+        fadeSelf ? surface.visibilityRangeEnd + surface.visibilityRangeEndMargin : surface.visibilityRangeEnd;
+    return cameraDistance > farLimit;
+}
+
+void ExpandSurfaceInstance3DCullBoundsUVE(const SurfaceInstanceComponentUVE& surface, Math::AabbUVE& bounds) noexcept {
+    const float margin = surface.extraCullMargin;
+    if (!std::isfinite(margin) || margin <= 0.0F || !std::isfinite(bounds.min.x) || !std::isfinite(bounds.min.y) ||
+        !std::isfinite(bounds.min.z) || !std::isfinite(bounds.max.x) || !std::isfinite(bounds.max.y) ||
+        !std::isfinite(bounds.max.z)) {
+        return;
+    }
+    bounds.min.x -= margin;
+    bounds.min.y -= margin;
+    bounds.min.z -= margin;
+    bounds.max.x += margin;
+    bounds.max.y += margin;
+    bounds.max.z += margin;
+}
+
+bool SurfaceInstance3DCastsShadowUVE(const SurfaceInstanceComponentUVE& surface) noexcept {
+    return surface.castShadow != SurfaceShadowModeUVE::Off;
+}
+
+bool SurfaceInstance3DDrawsInViewUVE(const SurfaceInstanceComponentUVE& surface) noexcept {
+    return surface.castShadow != SurfaceShadowModeUVE::ShadowsOnly;
+}
+
+float SurfaceInstance3DOpacityUVE(const SurfaceInstanceComponentUVE& surface) noexcept {
+    if (!std::isfinite(surface.transparency) || surface.transparency <= 0.0F) {
+        return 1.0F;
+    }
+    if (surface.transparency >= 1.0F) {
+        return 0.0F;
+    }
+    return 1.0F - surface.transparency;
+}
+
+float SurfaceInstance3DVisibilityFadeWeightUVE(const SurfaceInstanceComponentUVE& surface,
+                                              const float cameraDistance) noexcept {
+    if (IsSurfaceInstance3DOutsideVisibilityRangeUVE(surface, cameraDistance)) {
+        return 0.0F;
+    }
+    if (surface.visibilityRangeFadeMode != SurfaceFadeModeUVE::Self) {
+        return 1.0F;
+    }
+    const float begin = surface.visibilityRangeBegin;
+    const float beginMargin = surface.visibilityRangeBeginMargin;
+    if (beginMargin > 0.0F && cameraDistance < begin) {
+        float nearStart = begin - beginMargin;
+        if (nearStart < 0.0F) {
+            nearStart = 0.0F;
+        }
+        const float span = begin - nearStart;
+        if (span <= 0.0F) {
+            return 1.0F;
+        }
+        const float t = (cameraDistance - nearStart) / span;
+        if (t <= 0.0F) {
+            return 0.0F;
+        }
+        if (t >= 1.0F) {
+            return 1.0F;
+        }
+        return t;
+    }
+    const float end = surface.visibilityRangeEnd;
+    const float endMargin = surface.visibilityRangeEndMargin;
+    if (end > 0.0F && endMargin > 0.0F && cameraDistance > end) {
+        const float t = (cameraDistance - end) / endMargin;
+        if (t >= 1.0F) {
+            return 0.0F;
+        }
+        if (t <= 0.0F) {
+            return 1.0F;
+        }
+        return 1.0F - t;
+    }
+    return 1.0F;
+}
+
+bool SurfaceInstance3DHasOverlayUVE(const SurfaceInstanceComponentUVE& surface) noexcept {
+    return !surface.materialOverlayPath.empty();
+}
+
+float ApplySurfaceInstance3DOverlaySortBiasUVE(const float baseDepth) noexcept {
+    if (!std::isfinite(baseDepth)) {
+        return baseDepth;
+    }
+    return baseDepth - 0.001F;
+}
+
+float SurfaceInstance3DLodDistanceUVE(const SurfaceInstanceComponentUVE& surface,
+                                      const float cameraDistance) noexcept {
+    if (!std::isfinite(cameraDistance)) {
+        return cameraDistance;
+    }
+    const float bias = surface.lodBias;
+    if (!std::isfinite(bias) || bias <= 0.0F || bias == 1.0F) {
+        return cameraDistance;
+    }
+    return cameraDistance / bias;
+}
+
+bool IsRenderInstance3DOnViewLayersUVE(const std::uint32_t renderLayers,
+                                       const std::uint32_t viewLayerMask) noexcept {
+    return (renderLayers & viewLayerMask) != 0U;
+}
+
+float ApplyRenderInstance3DSortingOffsetUVE(const float baseDepth, const float sortingOffset) noexcept {
+    if (!std::isfinite(sortingOffset)) {
+        return baseDepth;
+    }
+    return baseDepth + sortingOffset;
+}
+
+bool IsLightEmitter3DLightingLayersUVE(const std::uint32_t cullMask, const std::uint32_t renderLayers) noexcept {
+    return (cullMask & renderLayers) != 0U;
+}
+
+float LightEmitter3DDistanceFadeWeightUVE(const float distance, const float begin, const float length) noexcept {
+    if (!std::isfinite(distance) || distance < 0.0F || !std::isfinite(begin) || begin < 0.0F ||
+        !std::isfinite(length) || length < 0.0F) {
+        return 0.0F;
+    }
+    if (length > 0.0F) {
+        const float t = (distance - begin) / length;
+        if (!std::isfinite(t) || t >= 1.0F) {
+            return 0.0F;
+        }
+        if (t <= 0.0F) {
+            return 1.0F;
+        }
+        return 1.0F - t;
+    }
+    return distance <= begin ? 1.0F : 0.0F;
 }
 
 } // namespace UVE::Scene

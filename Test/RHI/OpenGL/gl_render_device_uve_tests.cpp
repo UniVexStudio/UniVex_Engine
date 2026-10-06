@@ -2240,6 +2240,17 @@ TEST_F(GlRenderDeviceUVETest, LitShadowed3DShader_DepthPrepassDarkensOccludedFra
     colorCommandBuffer->SetUniformIntUVE("uAlbedoTexture", 1);
     colorCommandBuffer->BindTextureUVE(whiteTexture, 2U);
     colorCommandBuffer->SetUniformIntUVE("uAOTexture", 2);
+    colorCommandBuffer->BindTextureUVE(whiteTexture, 12U);
+    colorCommandBuffer->SetUniformIntUVE("uMetallicRoughnessTexture", 12);
+    colorCommandBuffer->BindTextureUVE(whiteTexture, 13U);
+    colorCommandBuffer->SetUniformIntUVE("uEmissiveTexture", 13);
+    colorCommandBuffer->SetUniformFloatUVE("uEmissiveEnergy", 1.0F);
+    colorCommandBuffer->SetUniformFloatUVE("uNormalScale", 1.0F);
+    colorCommandBuffer->SetUniformFloatUVE("uOcclusionStrength", 1.0F);
+    colorCommandBuffer->SetUniformVector3UVE("uUvScale", Math::Vector3UVE{1.0F, 1.0F, 0.0F});
+    colorCommandBuffer->SetUniformVector3UVE("uUvOffset", Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    colorCommandBuffer->SetUniformIntUVE("uUnshaded", 0);
+    colorCommandBuffer->SetUniformFloatUVE("uAlphaCutoff", 0.0F);
     colorCommandBuffer->BindVertexBufferUVE(receiverVertexBuffer);
     colorCommandBuffer->DrawUVE(3);
     colorCommandBuffer->EndRenderPassUVE();

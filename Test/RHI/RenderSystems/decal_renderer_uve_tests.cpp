@@ -24,6 +24,9 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/occluder_3d_uve.h"
+#include "uve/objects/3d/visibility_region_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/render_systems/decal_draw_command_uve.h"
 #include "uve/render_systems/decal_draw_data_uve.h"
@@ -231,6 +234,43 @@ protected:
         return result;
     }
 };
+
+TEST_F(DecalRendererUVETest, BuildDrawListUVE_PartitionHiddenDecalIsNotConsidered) {
+    const WallAndDecalUVE scene = MakeWallAndDecalUVE();
+    const Scene::EntityUVE partition = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, partition, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::WorldPartition3DComponentUVE>(partition);
+    entityManager.AddComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        scene.decal, Scene::WorldPartition3DMembershipComponentUVE{partition, false});
+    BuildFrameUVE(Math::Vector3UVE{});
+    EXPECT_EQ(drawList.decalsConsidered, 0U);
+    EXPECT_TRUE(drawList.draws.empty());
+}
+
+TEST_F(DecalRendererUVETest, BuildDrawListUVE_OccludedDecalIsNotDrawn) {
+    static_cast<void>(MakeWallAndDecalUVE());
+    const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE wallTransform;
+    wallTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -2.0F};
+    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
+    Scene::Occluder3DComponentUVE wallOccluder;
+    wallOccluder.halfExtents = Math::Vector3UVE{4.0F, 4.0F, 1.0F};
+    entityManager.AddComponentUVE<Scene::Occluder3DComponentUVE>(wall, wallOccluder);
+    BuildFrameUVE(Math::Vector3UVE{});
+    EXPECT_TRUE(drawList.draws.empty());
+}
+
+TEST_F(DecalRendererUVETest, BuildDrawListUVE_RegionHiddenDecalIsNotConsidered) {
+    const WallAndDecalUVE scene = MakeWallAndDecalUVE();
+    const Scene::EntityUVE region = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, region, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DComponentUVE>(region);
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        scene.decal, Scene::VisibilityRegion3DMembershipComponentUVE{region, false});
+    BuildFrameUVE(Math::Vector3UVE{});
+    EXPECT_EQ(drawList.decalsConsidered, 0U);
+    EXPECT_TRUE(drawList.draws.empty());
+}
 
 TEST_F(DecalRendererUVETest, BuildDrawListUVE_ADecalOnAFlatWallProducesAPatchWithUnitCoordinates) {
     const WallAndDecalUVE scene = MakeWallAndDecalUVE();

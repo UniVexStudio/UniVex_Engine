@@ -13,7 +13,7 @@
 
 namespace UVE::Render {
 
-/// The eight world-space corners of a perspective camera frustum, ordered as near-plane
+/// The eight world-space corners of a camera frustum, ordered as near-plane
 /// bottom-left/bottom-right/top-left/top-right followed by the matching far-plane corners.
 /// This is a value type shared by camera-frustum fitting and directional-shadow culling.
 using CameraFrustumCornersUVE = std::array<Math::Vector3UVE, 8>;
@@ -41,11 +41,10 @@ public:
     [[nodiscard]] virtual Math::Matrix4x4UVE ComputeViewMatrixUVE(const Scene::IEntityManagerUVE& entityManager,
                                                                    Scene::EntityUVE cameraEntity) const = 0;
 
-    /// The view-to-clip perspective projection for `cameraEntity`, built from its
-    /// `CameraComponentUVE` fov/near/far and the caller-supplied `aspectRatio` (width / height of
-    /// the target being rendered into — not itself part of any component, since the same camera
-    /// entity may render into differently-shaped targets, e.g. an editor viewport vs. the game
-    /// window).
+    /// The view-to-clip projection for `cameraEntity`, from its `CameraComponentUVE` and the
+    /// caller-supplied `aspectRatio` (width / height of the target being rendered into — not itself
+    /// part of any component, since the same camera entity may render into differently-shaped
+    /// targets, e.g. an editor viewport vs. the game window).
     [[nodiscard]] virtual Math::Matrix4x4UVE ComputeProjectionMatrixUVE(const Scene::IEntityManagerUVE& entityManager,
                                                                          Scene::EntityUVE cameraEntity,
                                                                          float aspectRatio) const = 0;
@@ -63,8 +62,8 @@ public:
     /// `UVE::Math` directly).
     [[nodiscard]] virtual Math::FrustumUVE ExtractFrustumUVE(const Math::Matrix4x4UVE& viewProjection) const = 0;
 
-    /// Reconstructs `cameraEntity`'s eight world-space perspective-frustum corners directly from
-    /// its transform, FOV, near/far planes, and the caller-supplied render-target aspect ratio.
+    /// Reconstructs `cameraEntity`'s eight world-space frustum corners directly from
+    /// its transform, projection, near/far planes, and the caller-supplied render-target aspect ratio.
     /// This avoids a generic projection-matrix inverse while retaining the exact camera convention
     /// used by ComputeProjectionMatrixUVE().
     [[nodiscard]] virtual CameraFrustumCornersUVE ComputeFrustumCornersUVE(

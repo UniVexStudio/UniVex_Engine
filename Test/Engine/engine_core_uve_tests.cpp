@@ -94,6 +94,7 @@
 #include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
+#include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
@@ -235,6 +236,61 @@ TEST(EngineCoreUVETest, ParticleEmitterComponents_ReconcileWithRuntimeAcrossFram
     entityManager.RemoveComponentUVE<Scene::ParticleEmitterComponentUVE>(entity);
     engine.TickFrameUVE();
     EXPECT_EQ(engine.GetParticleRuntimeSnapshotUVE().instanceCount, 0U);
+}
+
+TEST(EngineCoreUVETest, ParticleEmitter_AutoEmitsFromTheWorldPose) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform{};
+    transform.localPosition = Math::Vector3UVE{0.0F, 4.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, entity, transform);
+    Scene::ParticleEmitterComponentUVE emitter{};
+    emitter.maxParticles = 32U;
+    emitter.emissionRate = 1'000'000.0F;
+    emitter.lifetimeSeconds = 2.0F;
+    entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(entity, emitter);
+
+    engine.TickFrameUVE();
+    const Scene::ParticleRuntimeSnapshotUVE snapshot = engine.GetParticleRuntimeSnapshotUVE();
+    ASSERT_EQ(snapshot.instances.size(), 1U);
+    EXPECT_GT(snapshot.instances.front().liveParticles, 0U);
+    const std::optional<Scene::ParticleStateSnapshotUVE> particles =
+        services.GetParticleRuntimeUVE().GetParticleSnapshotUVE(entity);
+    ASSERT_TRUE(particles.has_value());
+    ASSERT_FALSE(particles->particles.empty());
+    EXPECT_NEAR(particles->particles.front().position.x, 0.0F, 1.0F);
+    EXPECT_NEAR(particles->particles.front().position.y, 4.0F, 2.0F);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, ParticleEmitter_EmittingOffDoesNotAutoEmit) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+    Scene::ParticleEmitterComponentUVE emitter{};
+    emitter.maxParticles = 32U;
+    emitter.emitting = false;
+    emitter.emissionRate = 1'000'000.0F;
+    entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(entity, emitter);
+
+    engine.TickFrameUVE();
+    ASSERT_EQ(engine.GetParticleRuntimeSnapshotUVE().instances.size(), 1U);
+    EXPECT_EQ(engine.GetParticleRuntimeSnapshotUVE().instances.front().liveParticles, 0U);
+
+    engine.Shutdown();
 }
 
 TEST(EngineCoreUVETest, TickMode_GatesParticleEmittersAgainstThePausedState) {
@@ -4509,11 +4565,11 @@ Scene::EntityUVE CreatePartitionChildAtUVE(Scene::IEntityManagerUVE& entityManag
 
 } // namespace
 
-TEST(EngineCoreUVETest, WorldPartition3D_MembershipAttachesOnlyToMeshesAndOutsideStaysUnmanaged) {
-    // The engine-owned runtime state attaches to mesh-carrying descendants only (a transform-only
-    // child must stay clean), the partition beyond its volume is nobody's business (membership
-    // there exists but its live verdict is always true - volume-rejection must never hide
-    // geometry), and loadedCellCount only counts cells actually inside the volume.
+TEST(EngineCoreUVETest, WorldPartition3D_MembershipAttachesToDrawablesAndOutsideStaysUnmanaged) {
+    // The engine-owned runtime state attaches to drawable descendants (mesh and primitive mesh
+    // here; a transform-only child and a light stay clean). The partition beyond its volume is
+    // nobody's business (membership there exists but its live verdict is always true), and
+    // loadedCellCount only counts cells actually inside the volume.
     EngineConfigUVE config = MakeTestConfigUVE();
     EngineCoreUVE engine(config);
     engine.Init();
@@ -4529,6 +4585,15 @@ TEST(EngineCoreUVETest, WorldPartition3D_MembershipAttachesOnlyToMeshesAndOutsid
     const Scene::EntityUVE meshlessChild =
         CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
                                   Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
+    const Scene::EntityUVE primitiveChild =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
+    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(primitiveChild,
+                                                                   Scene::PrimitiveMeshComponentUVE{});
+    const Scene::EntityUVE lightChild =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
+    entityManager.AddComponentUVE<Scene::LightComponentUVE>(lightChild, Scene::LightComponentUVE{});
     const Scene::EntityUVE outsideMesh =
         CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
                                   Math::Vector3UVE{500.0F, 0.0F, 500.0F}, /*withMesh=*/true);
@@ -4546,7 +4611,13 @@ TEST(EngineCoreUVETest, WorldPartition3D_MembershipAttachesOnlyToMeshesAndOutsid
     EXPECT_EQ(insideMembership.partition, partition) << "the engine stamps the deciding owner";
 
     EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
-        meshlessChild)) << "no mesh, no membership - authoritatively not every descendant";
+        meshlessChild)) << "no drawable, no membership - authoritatively not every descendant";
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        primitiveChild))
+        << "a primitive mesh is a drawable the vis-budget can skip";
+    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        lightChild))
+        << "lights are not partition drawables";
 
     ASSERT_TRUE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
         outsideMesh));
@@ -4773,6 +4844,17 @@ TEST(EngineCoreUVETest, VisibilityRegion3D_CameraOutsideTheRoomSkipsItsInteriorC
                                                   0xFFFFFFFFU));
     const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
         entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::EntityUVE primitive = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE primitiveTransform;
+    primitiveTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, primitive, primitiveTransform);
+    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(primitive,
+                                                                   Scene::PrimitiveMeshComponentUVE{});
+    const Scene::EntityUVE light = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE lightTransform;
+    lightTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, light, lightTransform);
+    entityManager.AddComponentUVE<Scene::LightComponentUVE>(light, Scene::LightComponentUVE{});
     const Scene::EntityUVE outside = CreateStandaloneMeshAtUVE(
         entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F}, 0x00000001U);
     const Scene::EntityUVE camera =
@@ -4788,6 +4870,15 @@ TEST(EngineCoreUVETest, VisibilityRegion3D_CameraOutsideTheRoomSkipsItsInteriorC
         << "camera outside: interior content is skipped with zero render work";
     EXPECT_FALSE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
         outside)) << "content outside every region is not a member of anything";
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        primitive))
+        << "a primitive mesh inside the room is a drawable the region can skip";
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                     primitive)
+                     .live);
+    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        light))
+        << "lights are not region drawables";
 
     Scene::TransformComponentUVE enterTransform;
     enterTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};

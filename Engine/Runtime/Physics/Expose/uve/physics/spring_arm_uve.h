@@ -81,11 +81,11 @@ struct SpringArm3DStepResultUVE final {
 ///   1. refuses an arm it cannot drive (see the codes above) rather than half-moving one;
 ///   2. casts a ray from the pivot's world position along its own local +Z - the axis the arm
 ///      extends along, behind the pivot, since this engine's cameras look down -Z;
-///   3. resolves the target length through `Scene::ResolveSpringArm3DTargetUVE` (full reach when
-///      clear, hit distance minus `margin` when not, clamped to the authored envelope);
-///   4. commits it through `Scene::ResolveSpringArm3DLengthUVE` - retraction snaps so a camera
-///      never clips into a wall for one smooth frame's sake, extension springs back at
-///      `smoothing`/s, and an arm switched off hands its whole length back;
+///   3. resolves the target length through `Scene::SpringArm3DUVE` (full reach when clear, hit
+///      distance minus `margin` when not, clamped to the authored envelope);
+///   4. commits it through the node's motion law - retraction snaps so a camera never clips into
+///      a wall for one smooth frame's sake, extension springs back at `smoothing`/s, and an arm
+///      switched off hands its whole length back;
 ///   5. shifts every direct child by the change in length, along the arm's own local Z.
 ///
 /// The child shift is a *delta*, never an absolute rewrite, so authored child offsets survive and

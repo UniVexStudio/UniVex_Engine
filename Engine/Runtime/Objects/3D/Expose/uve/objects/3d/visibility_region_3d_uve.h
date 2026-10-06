@@ -3,12 +3,15 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 #include "uve/component/entity_uve.h"
 #include "uve/objects/3d/object_3d_common_uve.h"
 
 namespace UVE::Scene {
+
+class IEntityManagerUVE;
 
 /// A VisibilityRegion3D: an authored axis-aligned box (halfExtents around the object's world
 /// position) that owns the interior culling verdict for the meshes inside it - Godot has no
@@ -41,11 +44,18 @@ struct VisibilityRegion3DComponentUVE final {
 
 [[nodiscard]] bool IsVisibilityRegion3DObjectComponentValidUVE(const VisibilityRegion3DComponentUVE& value) noexcept;
 
+struct VisibilityRegion3DObjectDefinitionUVE final {
+    static constexpr std::string_view defaultName = "VisibilityRegion3D";
+    VisibilityRegion3DComponentUVE region{};
+};
+
+void ApplyVisibilityRegion3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                                const VisibilityRegion3DObjectDefinitionUVE& value);
+
 // Runtime-only membership, owned by EngineCoreUVE::SyncVisibilityRegion3DObjectsUVE() and
-// ATTACHED BY THE ENGINE to meshes inside a region that the layer gate lets it manage. Never
-// authored (a scene file cannot carry it - the serializer never registered it): `region` is the
-// deciding region entity, `live` is this tick's verdict. The MeshRendererUVE candidate walk
-// consults this through ResolveVisibilityRegion3DMembershipLiveUVE() below.
+// ATTACHED BY THE ENGINE to drawables inside a region the layer gate lets it manage (mesh,
+// primitive mesh, decal, particle emitter, fog volume - not lights). Never authored. Draw paths
+// consult this through IsVisibilityRegion3DDrawHiddenUVE().
 struct VisibilityRegion3DMembershipComponentUVE final {
     Scene::EntityUVE region = Scene::kInvalidEntityUVE;
     bool live = true;
@@ -84,5 +94,24 @@ struct VisibilityRegion3DMembershipComponentUVE final {
     bool regionOwnerAlive, bool live) noexcept {
     return live || !regionOwnerAlive;
 }
+
+inline constexpr std::uint32_t kDefaultVisibilityRegionDrawableLayersUVE = 0x00000001U;
+
+[[nodiscard]] bool CarriesVisibilityRegion3DDrawableUVE(IEntityManagerUVE& entityManager, EntityUVE entity);
+
+[[nodiscard]] std::uint32_t ResolveVisibilityRegion3DDrawableLayersUVE(IEntityManagerUVE& entityManager,
+                                                                       EntityUVE entity);
+
+[[nodiscard]] bool IsVisibilityRegion3DDrawHiddenUVE(IEntityManagerUVE& entityManager, EntityUVE entity);
+
+struct VisibilityRegion3DGizmoUVE final {
+    Math::Vector3UVE origin{};
+    Math::Vector3UVE halfExtents{10.0F, 10.0F, 10.0F};
+    Math::Vector3UVE color{1.0F, 0.72F, 0.28F};
+    bool enabled = true;
+};
+
+void CollectVisibilityRegion3DGizmosUVE(IEntityManagerUVE& entityManager,
+                                        std::vector<VisibilityRegion3DGizmoUVE>& out);
 
 } // namespace UVE::Scene

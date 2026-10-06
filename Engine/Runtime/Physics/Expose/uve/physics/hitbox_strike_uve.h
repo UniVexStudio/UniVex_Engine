@@ -69,12 +69,9 @@ struct Hitbox3DSyncReportUVE final {
 ///
 /// Pass 2 refreshes every hitbox's strike state. A pairing requires all of:
 ///
-///   * the hurtbox is not on the hitbox's own entity - nothing strikes itself;
-///   * symmetric layer/mask acceptance: the hitbox looks for the hurtbox's layer AND the hurtbox
-///     looks for the hitbox's layer (the same contract AreaOverlapSystemUVE uses), so a hurtbox can
-///     refuse a whole class of attackers on its own;
-///   * equal `damageChannel` strings - a "melee" hitbox does not strike a "projectile" hurtbox;
+///   * Hitbox3DUVE::AcceptsTargetUVE and Hurtbox3DUVE::AcceptsAttackerUVE;
 ///   * a real oriented-box overlap (exact 15-axis test; touching boundaries are not strikes).
+/// Each node then commits its own list (unique, deepest first, cap 16, once-per-activation).
 ///
 /// This is a seam rather than more code in the engine-core tick for the same reason
 /// Physics::SyncInteractionAreasUVE() is: the tick owns WHEN this runs, not what the rules are, and

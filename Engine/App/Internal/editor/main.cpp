@@ -42,7 +42,16 @@
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/objects/3d/camera_3d_uve.h"
+#include "uve/objects/3d/directional_light_3d_uve.h"
+#include "uve/objects/3d/fog_volume_3d_uve.h"
+#include "uve/objects/3d/occluder_3d_uve.h"
+#include "uve/objects/3d/reflection_probe_3d_uve.h"
+#include "uve/objects/3d/visibility_region_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
+#include "uve/render_systems/camera_system_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
+#include "univex/gizmo/GizmoGeometry.h"
 
 namespace {
 
@@ -86,24 +95,372 @@ void main() {
 }
 )";
 
-// Chooses "the" scene camera to render through while the Game workspace tab is active - a player
-// preview, per UpdateSelectionGizmoUVE/ApplyOverlayStateUVE's own established "what a player would
-// see" convention for that state. CameraComponentUVE (Component/include/.../camera_component_uve.h)
-// has no priority/"main camera" tag of any kind yet, so this is deliberately the simplest honest
-// rule - the first entity found (stable ECS storage order) carrying both a real world transform and
-// a camera - documented here rather than silently assumed; a future increment can add a real
-// "main camera" flag once more than one scene camera is a real authoring scenario.
 [[nodiscard]] std::optional<UVE::Scene::EntityUVE> FindGameCameraEntityUVE(
     UVE::Scene::IEntityManagerUVE& entityManager) {
-    std::optional<UVE::Scene::EntityUVE> found;
+    return UVE::Scene::FindCurrentCameraEntityUVE(entityManager);
+}
+
+[[nodiscard]] univex::gizmo::GizmoMesh BuildCameraFrustumMeshUVE(
+    UVE::Scene::IEntityManagerUVE& entityManager, const UVE::Scene::EntityUVE hideEntity, const float aspectRatio) {
+    univex::gizmo::GizmoMesh mesh;
+    if (!(std::isfinite(aspectRatio) && aspectRatio > 0.0F)) {
+        return mesh;
+    }
+    UVE::Render::CameraSystemUVE cameras;
     entityManager.ForEachUVE<UVE::Scene::WorldTransformComponentUVE, UVE::Scene::CameraComponentUVE>(
-        [&found](const UVE::Scene::EntityUVE entity, const UVE::Scene::WorldTransformComponentUVE&,
-                 const UVE::Scene::CameraComponentUVE&) {
-            if (!found.has_value()) {
-                found = entity;
+        [&](const UVE::Scene::EntityUVE entity, const UVE::Scene::WorldTransformComponentUVE&,
+            const UVE::Scene::CameraComponentUVE& camera) {
+            if (entity == hideEntity || !UVE::Scene::IsDocumentCameraEntityUVE(entityManager, entity) ||
+                !UVE::Scene::IsCameraComponentValidUVE(camera)) {
+                return;
             }
+            const UVE::Render::CameraFrustumCornersUVE corners =
+                cameras.ComputeFrustumCornersUVE(entityManager, entity, aspectRatio);
+            const univex::math::Vec3 color =
+                camera.current ? univex::math::Vec3{0.55F, 0.92F, 1.0F} : univex::math::Vec3{0.35F, 0.72F, 0.95F};
+            const float widthPx = camera.current ? 2.0F : 1.5F;
+            const auto addLine = [&](const int a, const int b) {
+                mesh.lines.push_back(univex::gizmo::GizmoLine{
+                    univex::math::Vec3{corners[static_cast<std::size_t>(a)].x, corners[static_cast<std::size_t>(a)].y,
+                                       corners[static_cast<std::size_t>(a)].z},
+                    univex::math::Vec3{corners[static_cast<std::size_t>(b)].x, corners[static_cast<std::size_t>(b)].y,
+                                       corners[static_cast<std::size_t>(b)].z},
+                    color, widthPx});
+            };
+            addLine(0, 1);
+            addLine(1, 3);
+            addLine(3, 2);
+            addLine(2, 0);
+            addLine(4, 5);
+            addLine(5, 7);
+            addLine(7, 6);
+            addLine(6, 4);
+            addLine(0, 4);
+            addLine(1, 5);
+            addLine(2, 6);
+            addLine(3, 7);
         });
-    return found;
+    return mesh;
+}
+
+void AppendLightDirectionGizmoUVE(univex::gizmo::GizmoMesh& mesh, const UVE::Scene::LightDirectionGizmoUVE& gizmo) {
+    using univex::math::Cross;
+    using univex::math::Dot;
+    using univex::math::Normalize;
+    using univex::math::Vec3;
+    const Vec3 origin = univex::integration::FromUveVector3UVE(gizmo.origin);
+    const Vec3 direction = Normalize(univex::integration::FromUveVector3UVE(gizmo.direction));
+    if (Dot(direction, direction) < 1.0e-8F) {
+        return;
+    }
+    const Vec3 color = univex::integration::FromUveVector3UVE(gizmo.color);
+    constexpr float kLength = 2.4F;
+    constexpr float kHead = 0.45F;
+    constexpr float kRay = 0.9F;
+    constexpr float kOffset = 0.18F;
+    const Vec3 tip = origin + direction * kLength;
+    const Vec3 neck = origin + direction * (kLength - kHead);
+    const auto addLine = [&](const Vec3& a, const Vec3& b, const float width) {
+        mesh.lines.push_back(univex::gizmo::GizmoLine{a, b, color, width});
+    };
+    addLine(origin, tip, 2.4F);
+    const Vec3 upHint = std::fabs(direction.y) < 0.92F ? Vec3{0.0F, 1.0F, 0.0F} : Vec3{1.0F, 0.0F, 0.0F};
+    const Vec3 right = Normalize(Cross(direction, upHint));
+    const Vec3 up = Normalize(Cross(right, direction));
+    addLine(tip, neck + right * (kHead * 0.45F), 2.0F);
+    addLine(tip, neck - right * (kHead * 0.45F), 2.0F);
+    addLine(tip, neck + up * (kHead * 0.45F), 2.0F);
+    addLine(tip, neck - up * (kHead * 0.45F), 2.0F);
+    const Vec3 offsets[4] = {right * kOffset, right * -kOffset, up * kOffset, up * -kOffset};
+    for (const Vec3& offset : offsets) {
+        const Vec3 start = origin + direction * 0.35F + offset;
+        addLine(start, start + direction * kRay, 1.4F);
+    }
+}
+
+[[nodiscard]] univex::gizmo::GizmoMesh BuildLightDirectionMeshUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
+    univex::gizmo::GizmoMesh mesh;
+    std::vector<UVE::Scene::LightDirectionGizmoUVE> gizmos;
+    UVE::Scene::CollectLightDirectionGizmosUVE(entityManager, gizmos);
+    for (const UVE::Scene::LightDirectionGizmoUVE& gizmo : gizmos) {
+        AppendLightDirectionGizmoUVE(mesh, gizmo);
+    }
+    return mesh;
+}
+
+[[nodiscard]] univex::math::Vec3 FogVolumeGizmoPointUVE(const UVE::Scene::FogVolume3DGizmoUVE& gizmo, const float x,
+                                                        const float y, const float z) {
+    const univex::math::Vec3 origin = univex::integration::FromUveVector3UVE(gizmo.origin);
+    const univex::math::Vec3 axisX = univex::integration::FromUveVector3UVE(gizmo.axisX);
+    const univex::math::Vec3 axisY = univex::integration::FromUveVector3UVE(gizmo.axisY);
+    const univex::math::Vec3 axisZ = univex::integration::FromUveVector3UVE(gizmo.axisZ);
+    return origin + axisX * x + axisY * y + axisZ * z;
+}
+
+void AppendFogVolumeRingUVE(univex::gizmo::GizmoMesh& mesh, const UVE::Scene::FogVolume3DGizmoUVE& gizmo,
+                            const int axis, const float along, const float radiusA, const float radiusB,
+                            const univex::math::Vec3& color) {
+    constexpr int kSegments = 16;
+    const float twoPi = 6.28318530718F;
+    univex::math::Vec3 previous{};
+    for (int i = 0; i <= kSegments; ++i) {
+        const float angle = twoPi * static_cast<float>(i) / static_cast<float>(kSegments);
+        const float c = std::cos(angle);
+        const float s = std::sin(angle);
+        univex::math::Vec3 point;
+        if (axis == 0) {
+            point = FogVolumeGizmoPointUVE(gizmo, along, c * radiusA, s * radiusB);
+        } else if (axis == 1) {
+            point = FogVolumeGizmoPointUVE(gizmo, c * radiusA, along, s * radiusB);
+        } else {
+            point = FogVolumeGizmoPointUVE(gizmo, c * radiusA, s * radiusB, along);
+        }
+        if (i > 0) {
+            mesh.lines.push_back(univex::gizmo::GizmoLine{previous, point, color, 1.5F});
+        }
+        previous = point;
+    }
+}
+
+void AppendFogVolumeGizmoUVE(univex::gizmo::GizmoMesh& mesh, const UVE::Scene::FogVolume3DGizmoUVE& gizmo) {
+    using univex::math::Vec3;
+    const Vec3 color = univex::integration::FromUveVector3UVE(gizmo.color);
+    const float hx = gizmo.halfExtents.x;
+    const float hy = gizmo.halfExtents.y;
+    const float hz = gizmo.halfExtents.z;
+    const auto addLine = [&](const float ax, const float ay, const float az, const float bx, const float by,
+                             const float bz) {
+        mesh.lines.push_back(univex::gizmo::GizmoLine{FogVolumeGizmoPointUVE(gizmo, ax, ay, az),
+                                                      FogVolumeGizmoPointUVE(gizmo, bx, by, bz), color, 1.6F});
+    };
+    if (gizmo.shape == UVE::Scene::FogVolumeShapeUVE::Ellipsoid) {
+        AppendFogVolumeRingUVE(mesh, gizmo, 0, 0.0F, hy, hz, color);
+        AppendFogVolumeRingUVE(mesh, gizmo, 1, 0.0F, hx, hz, color);
+        AppendFogVolumeRingUVE(mesh, gizmo, 2, 0.0F, hx, hy, color);
+        return;
+    }
+    if (gizmo.shape == UVE::Scene::FogVolumeShapeUVE::Cylinder) {
+        AppendFogVolumeRingUVE(mesh, gizmo, 1, hy, hx, hz, color);
+        AppendFogVolumeRingUVE(mesh, gizmo, 1, -hy, hx, hz, color);
+        addLine(hx, -hy, 0.0F, hx, hy, 0.0F);
+        addLine(-hx, -hy, 0.0F, -hx, hy, 0.0F);
+        addLine(0.0F, -hy, hz, 0.0F, hy, hz);
+        addLine(0.0F, -hy, -hz, 0.0F, hy, -hz);
+        return;
+    }
+    if (gizmo.shape == UVE::Scene::FogVolumeShapeUVE::Cone) {
+        AppendFogVolumeRingUVE(mesh, gizmo, 1, -hy, hx, hz, color);
+        addLine(hx, -hy, 0.0F, 0.0F, hy, 0.0F);
+        addLine(-hx, -hy, 0.0F, 0.0F, hy, 0.0F);
+        addLine(0.0F, -hy, hz, 0.0F, hy, 0.0F);
+        addLine(0.0F, -hy, -hz, 0.0F, hy, 0.0F);
+        return;
+    }
+    addLine(-hx, -hy, -hz, hx, -hy, -hz);
+    addLine(hx, -hy, -hz, hx, -hy, hz);
+    addLine(hx, -hy, hz, -hx, -hy, hz);
+    addLine(-hx, -hy, hz, -hx, -hy, -hz);
+    addLine(-hx, hy, -hz, hx, hy, -hz);
+    addLine(hx, hy, -hz, hx, hy, hz);
+    addLine(hx, hy, hz, -hx, hy, hz);
+    addLine(-hx, hy, hz, -hx, hy, -hz);
+    addLine(-hx, -hy, -hz, -hx, hy, -hz);
+    addLine(hx, -hy, -hz, hx, hy, -hz);
+    addLine(hx, -hy, hz, hx, hy, hz);
+    addLine(-hx, -hy, hz, -hx, hy, hz);
+}
+
+[[nodiscard]] univex::gizmo::GizmoMesh BuildFogVolumeMeshUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
+    univex::gizmo::GizmoMesh mesh;
+    std::vector<UVE::Scene::FogVolume3DGizmoUVE> gizmos;
+    UVE::Scene::CollectFogVolume3DGizmosUVE(entityManager, gizmos);
+    for (const UVE::Scene::FogVolume3DGizmoUVE& gizmo : gizmos) {
+        AppendFogVolumeGizmoUVE(mesh, gizmo);
+    }
+    return mesh;
+}
+
+[[nodiscard]] univex::math::Vec3 ReflectionProbeGizmoPointUVE(const UVE::Scene::ReflectionProbe3DGizmoUVE& gizmo,
+                                                              const float x, const float y, const float z) {
+    const univex::math::Vec3 origin = univex::integration::FromUveVector3UVE(gizmo.origin);
+    const univex::math::Vec3 axisX = univex::integration::FromUveVector3UVE(gizmo.axisX);
+    const univex::math::Vec3 axisY = univex::integration::FromUveVector3UVE(gizmo.axisY);
+    const univex::math::Vec3 axisZ = univex::integration::FromUveVector3UVE(gizmo.axisZ);
+    return origin + axisX * x + axisY * y + axisZ * z;
+}
+
+void AppendReflectionProbeGizmoUVE(univex::gizmo::GizmoMesh& mesh, const UVE::Scene::ReflectionProbe3DGizmoUVE& gizmo) {
+    using univex::math::Vec3;
+    const Vec3 color = univex::integration::FromUveVector3UVE(gizmo.color);
+    const float hx = gizmo.halfExtents.x;
+    const float hy = gizmo.halfExtents.y;
+    const float hz = gizmo.halfExtents.z;
+    const auto addLine = [&](const float ax, const float ay, const float az, const float bx, const float by,
+                             const float bz, const float width) {
+        mesh.lines.push_back(univex::gizmo::GizmoLine{ReflectionProbeGizmoPointUVE(gizmo, ax, ay, az),
+                                                      ReflectionProbeGizmoPointUVE(gizmo, bx, by, bz), color, width});
+    };
+    addLine(-hx, -hy, -hz, hx, -hy, -hz, 1.6F);
+    addLine(hx, -hy, -hz, hx, -hy, hz, 1.6F);
+    addLine(hx, -hy, hz, -hx, -hy, hz, 1.6F);
+    addLine(-hx, -hy, hz, -hx, -hy, -hz, 1.6F);
+    addLine(-hx, hy, -hz, hx, hy, -hz, 1.6F);
+    addLine(hx, hy, -hz, hx, hy, hz, 1.6F);
+    addLine(hx, hy, hz, -hx, hy, hz, 1.6F);
+    addLine(-hx, hy, hz, -hx, hy, -hz, 1.6F);
+    addLine(-hx, -hy, -hz, -hx, hy, -hz, 1.6F);
+    addLine(hx, -hy, -hz, hx, hy, -hz, 1.6F);
+    addLine(hx, -hy, hz, hx, hy, hz, 1.6F);
+    addLine(-hx, -hy, hz, -hx, hy, hz, 1.6F);
+    addLine(-hx, 0.0F, 0.0F, hx, 0.0F, 0.0F, 1.2F);
+    addLine(0.0F, -hy, 0.0F, 0.0F, hy, 0.0F, 1.2F);
+    addLine(0.0F, 0.0F, -hz, 0.0F, 0.0F, hz, 1.2F);
+}
+
+[[nodiscard]] univex::gizmo::GizmoMesh BuildReflectionProbeMeshUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
+    univex::gizmo::GizmoMesh mesh;
+    std::vector<UVE::Scene::ReflectionProbe3DGizmoUVE> gizmos;
+    UVE::Scene::CollectReflectionProbe3DGizmosUVE(entityManager, gizmos);
+    for (const UVE::Scene::ReflectionProbe3DGizmoUVE& gizmo : gizmos) {
+        AppendReflectionProbeGizmoUVE(mesh, gizmo);
+    }
+    return mesh;
+}
+
+void AppendWorldPartitionGizmoUVE(univex::gizmo::GizmoMesh& mesh, const UVE::Scene::WorldPartition3DGizmoUVE& gizmo) {
+    using univex::math::Vec3;
+    const Vec3 origin = univex::integration::FromUveVector3UVE(gizmo.origin);
+    const Vec3 size = univex::integration::FromUveVector3UVE(gizmo.size);
+    const Vec3 color = univex::integration::FromUveVector3UVE(gizmo.color);
+    const auto add = [&](const Vec3& a, const Vec3& b, const float width) {
+        mesh.lines.push_back(univex::gizmo::GizmoLine{a, b, color, width});
+    };
+    const Vec3 x{size.x, 0.0F, 0.0F};
+    const Vec3 y{0.0F, size.y, 0.0F};
+    const Vec3 z{0.0F, 0.0F, size.z};
+    add(origin, origin + x, 1.6F);
+    add(origin + x, origin + x + z, 1.6F);
+    add(origin + x + z, origin + z, 1.6F);
+    add(origin + z, origin, 1.6F);
+    add(origin + y, origin + y + x, 1.6F);
+    add(origin + y + x, origin + y + x + z, 1.6F);
+    add(origin + y + x + z, origin + y + z, 1.6F);
+    add(origin + y + z, origin + y, 1.6F);
+    add(origin, origin + y, 1.6F);
+    add(origin + x, origin + y + x, 1.6F);
+    add(origin + x + z, origin + y + x + z, 1.6F);
+    add(origin + z, origin + y + z, 1.6F);
+
+    constexpr std::uint32_t kMaximumInteriorDivisionsUVE = 32U;
+    const std::uint32_t countX = gizmo.cellCounts[0U];
+    const std::uint32_t countY = gizmo.cellCounts[1U];
+    const std::uint32_t countZ = gizmo.cellCounts[2U];
+    if (countX > 1U && countX <= kMaximumInteriorDivisionsUVE && size.x > 0.0F) {
+        for (std::uint32_t i = 1U; i < countX; ++i) {
+            const float t = size.x * (static_cast<float>(i) / static_cast<float>(countX));
+            add(origin + Vec3{t, 0.0F, 0.0F}, origin + Vec3{t, 0.0F, size.z}, 1.0F);
+            add(origin + Vec3{t, size.y, 0.0F}, origin + Vec3{t, size.y, size.z}, 1.0F);
+        }
+    }
+    if (countZ > 1U && countZ <= kMaximumInteriorDivisionsUVE && size.z > 0.0F) {
+        for (std::uint32_t i = 1U; i < countZ; ++i) {
+            const float t = size.z * (static_cast<float>(i) / static_cast<float>(countZ));
+            add(origin + Vec3{0.0F, 0.0F, t}, origin + Vec3{size.x, 0.0F, t}, 1.0F);
+            add(origin + Vec3{0.0F, size.y, t}, origin + Vec3{size.x, size.y, t}, 1.0F);
+        }
+    }
+    if (countY > 1U && countY <= kMaximumInteriorDivisionsUVE && size.y > 0.0F) {
+        for (std::uint32_t i = 1U; i < countY; ++i) {
+            const float t = size.y * (static_cast<float>(i) / static_cast<float>(countY));
+            add(origin + Vec3{0.0F, t, 0.0F}, origin + Vec3{size.x, t, 0.0F}, 1.0F);
+            add(origin + Vec3{size.x, t, 0.0F}, origin + Vec3{size.x, t, size.z}, 1.0F);
+            add(origin + Vec3{size.x, t, size.z}, origin + Vec3{0.0F, t, size.z}, 1.0F);
+            add(origin + Vec3{0.0F, t, size.z}, origin + Vec3{0.0F, t, 0.0F}, 1.0F);
+        }
+    }
+}
+
+[[nodiscard]] univex::gizmo::GizmoMesh BuildWorldPartitionMeshUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
+    univex::gizmo::GizmoMesh mesh;
+    std::vector<UVE::Scene::WorldPartition3DGizmoUVE> gizmos;
+    UVE::Scene::CollectWorldPartition3DGizmosUVE(entityManager, gizmos);
+    for (const UVE::Scene::WorldPartition3DGizmoUVE& gizmo : gizmos) {
+        AppendWorldPartitionGizmoUVE(mesh, gizmo);
+    }
+    return mesh;
+}
+
+void AppendVisibilityRegionGizmoUVE(univex::gizmo::GizmoMesh& mesh,
+                                    const UVE::Scene::VisibilityRegion3DGizmoUVE& gizmo) {
+    using univex::math::Vec3;
+    const Vec3 origin = univex::integration::FromUveVector3UVE(gizmo.origin);
+    const Vec3 color = univex::integration::FromUveVector3UVE(gizmo.color);
+    const float hx = gizmo.halfExtents.x;
+    const float hy = gizmo.halfExtents.y;
+    const float hz = gizmo.halfExtents.z;
+    const auto add = [&](const float ax, const float ay, const float az, const float bx, const float by,
+                         const float bz) {
+        mesh.lines.push_back(univex::gizmo::GizmoLine{origin + Vec3{ax, ay, az}, origin + Vec3{bx, by, bz},
+                                                      color, 1.6F});
+    };
+    add(-hx, -hy, -hz, hx, -hy, -hz);
+    add(hx, -hy, -hz, hx, -hy, hz);
+    add(hx, -hy, hz, -hx, -hy, hz);
+    add(-hx, -hy, hz, -hx, -hy, -hz);
+    add(-hx, hy, -hz, hx, hy, -hz);
+    add(hx, hy, -hz, hx, hy, hz);
+    add(hx, hy, hz, -hx, hy, hz);
+    add(-hx, hy, hz, -hx, hy, -hz);
+    add(-hx, -hy, -hz, -hx, hy, -hz);
+    add(hx, -hy, -hz, hx, hy, -hz);
+    add(hx, -hy, hz, hx, hy, hz);
+    add(-hx, -hy, hz, -hx, hy, hz);
+}
+
+[[nodiscard]] univex::gizmo::GizmoMesh BuildVisibilityRegionMeshUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
+    univex::gizmo::GizmoMesh mesh;
+    std::vector<UVE::Scene::VisibilityRegion3DGizmoUVE> gizmos;
+    UVE::Scene::CollectVisibilityRegion3DGizmosUVE(entityManager, gizmos);
+    for (const UVE::Scene::VisibilityRegion3DGizmoUVE& gizmo : gizmos) {
+        AppendVisibilityRegionGizmoUVE(mesh, gizmo);
+    }
+    return mesh;
+}
+
+void AppendOccluderGizmoUVE(univex::gizmo::GizmoMesh& mesh, const UVE::Scene::Occluder3DGizmoUVE& gizmo) {
+    using univex::math::Vec3;
+    const Vec3 origin = univex::integration::FromUveVector3UVE(gizmo.origin);
+    const Vec3 color = univex::integration::FromUveVector3UVE(gizmo.color);
+    const float hx = gizmo.halfExtents.x;
+    const float hy = gizmo.halfExtents.y;
+    const float hz = gizmo.halfExtents.z;
+    const auto add = [&](const float ax, const float ay, const float az, const float bx, const float by,
+                         const float bz) {
+        mesh.lines.push_back(univex::gizmo::GizmoLine{origin + Vec3{ax, ay, az}, origin + Vec3{bx, by, bz},
+                                                      color, 1.6F});
+    };
+    add(-hx, -hy, -hz, hx, -hy, -hz);
+    add(hx, -hy, -hz, hx, -hy, hz);
+    add(hx, -hy, hz, -hx, -hy, hz);
+    add(-hx, -hy, hz, -hx, -hy, -hz);
+    add(-hx, hy, -hz, hx, hy, -hz);
+    add(hx, hy, -hz, hx, hy, hz);
+    add(hx, hy, hz, -hx, hy, hz);
+    add(-hx, hy, hz, -hx, hy, -hz);
+    add(-hx, -hy, -hz, -hx, hy, -hz);
+    add(hx, -hy, -hz, hx, hy, -hz);
+    add(hx, -hy, hz, hx, hy, hz);
+    add(-hx, -hy, hz, -hx, hy, hz);
+}
+
+[[nodiscard]] univex::gizmo::GizmoMesh BuildOccluderMeshUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
+    univex::gizmo::GizmoMesh mesh;
+    std::vector<UVE::Scene::Occluder3DGizmoUVE> gizmos;
+    UVE::Scene::CollectOccluder3DGizmosUVE(entityManager, gizmos);
+    for (const UVE::Scene::Occluder3DGizmoUVE& gizmo : gizmos) {
+        AppendOccluderGizmoUVE(mesh, gizmo);
+    }
+    return mesh;
 }
 
 // Bridges Engine/Editor/Viewport's real GL renderer (grid + orbit camera + transform/orientation
@@ -150,6 +507,25 @@ public:
         }
 
         ApplyOverlayStateUVE(overlayState);
+        const UVE::Scene::EntityUVE previewCamera = editor_.GetPreviewCameraUVE();
+        const bool wantPreview =
+            !gameWorkspaceActive_ && !studioView_ && previewCamera != UVE::Scene::kInvalidEntityUVE;
+        if (wantPreview && !previewing_) {
+            poseBeforePreview_ = CameraPoseUVE{camera_.Target(), camera_.Yaw(), camera_.Pitch(), camera_.Distance(),
+                                               camera_.IsOrthographic()};
+            previewing_ = true;
+        } else if (!wantPreview && previewing_) {
+            if (poseBeforePreview_.has_value()) {
+                camera_.CancelAnimation();
+                camera_.SetTarget(poseBeforePreview_->target);
+                camera_.SetYawPitch(poseBeforePreview_->yaw, poseBeforePreview_->pitch);
+                camera_.SetDistance(poseBeforePreview_->distance);
+                camera_.SetOrthographic(poseBeforePreview_->orthographic);
+                poseBeforePreview_.reset();
+            }
+            previewing_ = false;
+        }
+        renderPass_->Settings().viewGizmos = !studioView_ && !gameWorkspaceActive_ && !previewing_;
         if (studioView_) {
             // Looked at, not edited: nothing is selected or moved, and the view does not turn.
             renderPass_->Settings().viewTransformGizmo = false;
@@ -158,16 +534,19 @@ public:
             }
         } else {
             UpdateSelectionGizmoUVE();
-            const bool navGizmoOwnsGesture = UpdateNavGizmoInteractionUVE(width, height);
+            const bool navGizmoOwnsGesture =
+                previewing_ ? false : UpdateNavGizmoInteractionUVE(width, height);
             // A handle drag outranks both: grabbing an arrow must not also orbit the camera or, on
             // release, register as a click that selects whatever is behind the gizmo.
             const bool gizmoOwnsGesture = !navGizmoOwnsGesture && UpdateGizmoDragUVE(width, height);
             const bool pointerTaken = navGizmoOwnsGesture || gizmoOwnsGesture;
             UpdateSelectionFromMouseUVE(width, height, pointerTaken);
             UpdateEntityContextToolbarFromMouseUVE(width, height, pointerTaken);
-            UpdateCameraFromMouseUVE(height, pointerTaken);
-            UpdateViewportViewHotkeysUVE();
-            UpdateViewportBookmarkHotkeysUVE();
+            if (!previewing_) {
+                UpdateCameraFromMouseUVE(height, pointerTaken);
+                UpdateViewportViewHotkeysUVE();
+                UpdateViewportBookmarkHotkeysUVE();
+            }
         }
         // Advances the eased snap-to-axis animation SnapToDirection() starts (a manual orbit/pan
         // cancels it instead - see OrbitCamera.cpp) - without this the camera would flag itself
@@ -187,10 +566,40 @@ public:
         // comment for the "first camera found" convention; EditorMeshLayerUVE itself falls back to
         // the OrbitCamera-synced view if the scene has no usable camera, so a Play session with no
         // authored camera still shows something instead of a blank panel.
-        const std::optional<UVE::Scene::EntityUVE> gameCameraOverride =
-            gameWorkspaceActive_ ? FindGameCameraEntityUVE(entityManager_) : std::nullopt;
+        std::optional<UVE::Scene::EntityUVE> lookThroughCamera;
+        if (gameWorkspaceActive_) {
+            lookThroughCamera = FindGameCameraEntityUVE(entityManager_);
+        } else if (wantPreview) {
+            lookThroughCamera = previewCamera;
+        }
         const univex::integration::EditorMeshLayerResultUVE meshResult = meshLayer_.RenderUVE(
-            camera_, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), gameCameraOverride);
+            camera_, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), lookThroughCamera);
+        if (!gameWorkspaceActive_ && !studioView_) {
+            const float aspect = static_cast<float>(width) / static_cast<float>(height);
+            univex::gizmo::GizmoMesh overlay = BuildCameraFrustumMeshUVE(
+                entityManager_, lookThroughCamera.value_or(UVE::Scene::kInvalidEntityUVE), aspect);
+            univex::gizmo::GizmoMesh lights = BuildLightDirectionMeshUVE(entityManager_);
+            overlay.lines.insert(overlay.lines.end(), lights.lines.begin(), lights.lines.end());
+            overlay.triangles.insert(overlay.triangles.end(), lights.triangles.begin(), lights.triangles.end());
+            univex::gizmo::GizmoMesh fog = BuildFogVolumeMeshUVE(entityManager_);
+            overlay.lines.insert(overlay.lines.end(), fog.lines.begin(), fog.lines.end());
+            overlay.triangles.insert(overlay.triangles.end(), fog.triangles.begin(), fog.triangles.end());
+            univex::gizmo::GizmoMesh probes = BuildReflectionProbeMeshUVE(entityManager_);
+            overlay.lines.insert(overlay.lines.end(), probes.lines.begin(), probes.lines.end());
+            overlay.triangles.insert(overlay.triangles.end(), probes.triangles.begin(), probes.triangles.end());
+            univex::gizmo::GizmoMesh partitions = BuildWorldPartitionMeshUVE(entityManager_);
+            overlay.lines.insert(overlay.lines.end(), partitions.lines.begin(), partitions.lines.end());
+            overlay.triangles.insert(overlay.triangles.end(), partitions.triangles.begin(), partitions.triangles.end());
+            univex::gizmo::GizmoMesh regions = BuildVisibilityRegionMeshUVE(entityManager_);
+            overlay.lines.insert(overlay.lines.end(), regions.lines.begin(), regions.lines.end());
+            overlay.triangles.insert(overlay.triangles.end(), regions.triangles.begin(), regions.triangles.end());
+            univex::gizmo::GizmoMesh occluders = BuildOccluderMeshUVE(entityManager_);
+            overlay.lines.insert(overlay.lines.end(), occluders.lines.begin(), occluders.lines.end());
+            overlay.triangles.insert(overlay.triangles.end(), occluders.triangles.begin(), occluders.triangles.end());
+            renderPass_->SetCameraFrustumMeshUVE(std::move(overlay));
+        } else {
+            renderPass_->SetCameraFrustumMeshUVE({});
+        }
         outUsedSize = UVE::Math::Vector2UVE{static_cast<float>(width), static_cast<float>(height)};
 
         // One framebuffer, one depth buffer, drawn back to front: backdrop, then the engine's
@@ -1319,6 +1728,8 @@ private:
         bool orthographic = false;
     };
     std::optional<CameraPoseUVE> poseBeforeStudio_;
+    std::optional<CameraPoseUVE> poseBeforePreview_;
+    bool previewing_ = false;
     // Set each frame by ApplyOverlayStateUVE(), read by UpdateSelectionGizmoUVE() so it can force
     // the transform gizmo off while the Game workspace tab is active (see ApplyOverlayStateUVE's
     // own comment - it already forces the grid off directly, but the gizmo's visibility is decided

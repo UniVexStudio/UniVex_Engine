@@ -54,9 +54,9 @@ public:
     /// never invokes a drawer, exposes its callback, or transfers ECS/editor ownership.
     [[nodiscard]] std::vector<std::string> GetEligibleDrawerIdsUVE(Scene::EntityUVE entity) const;
 
-    /// Places a registered drawer under a class-chain heading ("Object3D", "Object"). Consecutive
-    /// eligible drawers sharing a heading are drawn under one banner, drawn by `SetGroupHeaderDrawerUVE`
-    /// just before the first of them. Returns false for an unknown drawer.
+    /// Places a registered drawer under a class-chain heading. Consecutive eligible drawers sharing
+    /// a heading are drawn under one banner, drawn by `SetGroupHeaderDrawerUVE` just before the
+    /// first of them. Returns false for an unknown drawer.
     [[nodiscard]] bool SetDrawerGroupUVE(std::string_view id, std::string group);
     void SetGroupHeaderDrawerUVE(std::function<void(const std::string&)> drawHeader);
 

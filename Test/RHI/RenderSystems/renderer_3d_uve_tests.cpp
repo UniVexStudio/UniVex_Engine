@@ -44,11 +44,16 @@
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
+#include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/occluder_3d_uve.h"
+#include "uve/objects/3d/visibility_region_3d_uve.h"
+#include "uve/objects/3d/world_environment_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/threading/thread_pool_uve.h"
@@ -497,6 +502,192 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_FiniteExtremePrimitiveTransformIsReject
     EXPECT_EQ(diagnostics.primitiveDrawCallsRecorded, 0U);
 }
 
+TEST_F(Renderer3DUVETest, RenderFrameUVE_PartitionHiddenPrimitiveIsNotACandidate) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE partition = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, partition, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::WorldPartition3DComponentUVE>(partition);
+    sceneGraph.UpdateUVE(entityManager);
+
+    const Scene::EntityUVE hidden = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.8F, 0.2F, 0.1F}});
+    const Scene::EntityUVE shown = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{1.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.2F, 0.8F, 0.1F}});
+    entityManager.AddComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        hidden, Scene::WorldPartition3DMembershipComponentUVE{partition, false});
+    entityManager.AddComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        shown, Scene::WorldPartition3DMembershipComponentUVE{partition, true});
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveCandidates, 1U);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveItemsExtracted, 1U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_OccludedPrimitiveIsNotExtracted) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE wallTransform;
+    wallTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -5.0F};
+    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
+    Scene::Occluder3DComponentUVE wallOccluder;
+    wallOccluder.halfExtents = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    entityManager.AddComponentUVE<Scene::Occluder3DComponentUVE>(wall, wallOccluder);
+    sceneGraph.UpdateUVE(entityManager);
+
+    MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.8F, 0.2F, 0.1F}});
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveItemsExtracted, 0U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SurfaceInstanceRangeHidesAPrimitive) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE entity = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.8F, 0.2F, 0.1F}});
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.visibilityRangeEnd = 5.0F;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveCandidates, 1U);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveItemsExtracted, 0U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SurfaceInstanceShadowsOnlyDoesNotDrawAPrimitive) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE entity = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.8F, 0.2F, 0.1F}});
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.castShadow = Scene::SurfaceShadowModeUVE::ShadowsOnly;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveCandidates, 1U);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveItemsExtracted, 0U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SurfaceInstanceIgnoreOcclusionKeepsACoveredPrimitive) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE wallTransform;
+    wallTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -5.0F};
+    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
+    Scene::Occluder3DComponentUVE wallOccluder;
+    wallOccluder.halfExtents = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    entityManager.AddComponentUVE<Scene::Occluder3DComponentUVE>(wall, wallOccluder);
+    sceneGraph.UpdateUVE(entityManager);
+
+    const Scene::EntityUVE entity = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.8F, 0.2F, 0.1F}});
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.ignoreOcclusionCulling = true;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveItemsExtracted, 1U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SurfaceInstanceTransparencyPushesPrimitiveOpacity) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE entity = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.15F, 0.45F, 0.85F}});
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.transparency = 0.25F;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
+        shaderManager.UpdateUVE(0.0);
+        if (shaderManager.GetPendingJobCountUVE() == 0U) {
+            break;
+        }
+        std::this_thread::yield();
+    }
+    ASSERT_EQ(shaderManager.GetPendingJobCountUVE(), 0U);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto opacity = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformFloatCommandUVE>(command) &&
+               std::get<SetUniformFloatCommandUVE>(command).name == "uSurfaceOpacity";
+    });
+    ASSERT_NE(opacity, commands.cend());
+    EXPECT_FLOAT_EQ(std::get<SetUniformFloatCommandUVE>(*opacity).value, 0.75F);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SurfaceInstanceTransparencyBindsABlendedMeshPipeline) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_si_blend_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_si_blend_material.uvmat");
+    MakeMeshEntityUVE(Math::Vector3UVE{-1.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    const Scene::EntityUVE faded =
+        MakeMeshEntityUVE(Math::Vector3UVE{1.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.transparency = 0.25F;
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(faded, surface);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const auto pipelineBoundForOpacity = [](const std::vector<RecordedCommandUVE>& commands,
+                                            const float opacity) -> PipelineHandleUVE {
+        for (std::size_t index = 0U; index < commands.size(); ++index) {
+            if (!std::holds_alternative<SetUniformFloatCommandUVE>(commands[index])) {
+                continue;
+            }
+            const SetUniformFloatCommandUVE& uniform = std::get<SetUniformFloatCommandUVE>(commands[index]);
+            if (uniform.name != "uSurfaceOpacity" || uniform.value != opacity) {
+                continue;
+            }
+            for (std::size_t lookback = index; lookback > 0U; --lookback) {
+                const RecordedCommandUVE& previous = commands[lookback - 1U];
+                if (std::holds_alternative<BindPipelineCommandUVE>(previous)) {
+                    return std::get<BindPipelineCommandUVE>(previous).pipeline;
+                }
+            }
+        }
+        return kInvalidPipelineHandleUVE;
+    };
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const PipelineHandleUVE opaque = pipelineBoundForOpacity(commands, 1.0F);
+    const PipelineHandleUVE blended = pipelineBoundForOpacity(commands, 0.75F);
+    ASSERT_NE(opaque, kInvalidPipelineHandleUVE);
+    ASSERT_NE(blended, kInvalidPipelineHandleUVE);
+    EXPECT_NE(opaque, blended);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_RegionHiddenPrimitiveIsNotACandidate) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE region = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, region, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DComponentUVE>(region);
+    sceneGraph.UpdateUVE(entityManager);
+
+    const Scene::EntityUVE hidden = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.8F, 0.2F, 0.1F}});
+    const Scene::EntityUVE shown = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{1.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.2F, 0.8F, 0.1F}});
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        hidden, Scene::VisibilityRegion3DMembershipComponentUVE{region, false});
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        shown, Scene::VisibilityRegion3DMembershipComponentUVE{region, true});
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveCandidates, 1U);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveItemsExtracted, 1U);
+}
+
 TEST_F(Renderer3DUVETest, RenderFrameUVE_VisiblePrimitive_ReportsEvidenceSpecificDiagnostics) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     MakePrimitiveEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F},
@@ -824,6 +1015,116 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_MaterialWithoutTextures_UsesFallbackTex
     EXPECT_NE(textureBinds[0].texture, textureBinds[1].texture); // albedo != normal (different fallback)
     EXPECT_NE(textureBinds[0].texture, kInvalidTextureHandleUVE);
     EXPECT_NE(textureBinds[1].texture, kInvalidTextureHandleUVE);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_MaterialSettings_PushUvEmissiveNormalAoUnshadedCutoffAndPackedMaps) {
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
+        [vertexGuid = vertexShaderGuid, fragmentGuid = fragmentShaderGuid](const std::filesystem::path&,
+                                                                             Asset::MaterialAssetUVE& material) {
+            material.vertexShader = vertexGuid;
+            material.fragmentShader = fragmentGuid;
+            material.albedoColor = Math::Vector3UVE{0.2F, 0.4F, 0.6F};
+            material.metallic = 0.25F;
+            material.roughness = 0.75F;
+            material.emissiveColor = Math::Vector3UVE{0.1F, 0.0F, 0.0F};
+            material.emissiveEnergy = 3.0F;
+            material.normalScale = 0.5F;
+            material.occlusionStrength = 0.25F;
+            material.uvScale = Math::Vector2UVE{2.0F, 4.0F};
+            material.uvOffset = Math::Vector2UVE{0.25F, 0.5F};
+            material.unshaded = true;
+            material.alphaCutoff = 0.4F;
+            return true;
+        });
+
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_material_settings_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid =
+        assetDatabase.RegisterUVE("renderer3d_tests_material_settings.uvmat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    bool foundEmissiveEnergy = false;
+    bool foundNormalScale = false;
+    bool foundOcclusionStrength = false;
+    bool foundAlphaCutoff = false;
+    bool foundUnshaded = false;
+    bool foundUvScale = false;
+    bool foundUvOffset = false;
+    bool foundMetallicRoughnessSlot = false;
+    bool foundEmissiveSlot = false;
+    bool boundMetallicRoughness = false;
+    bool boundEmissive = false;
+    for (const RecordedCommandUVE& command : commands) {
+        if (const auto* const uniform = std::get_if<SetUniformFloatCommandUVE>(&command)) {
+            if (uniform->name == "uEmissiveEnergy") {
+                EXPECT_FLOAT_EQ(uniform->value, 3.0F);
+                foundEmissiveEnergy = true;
+            }
+            if (uniform->name == "uNormalScale") {
+                EXPECT_FLOAT_EQ(uniform->value, 0.5F);
+                foundNormalScale = true;
+            }
+            if (uniform->name == "uOcclusionStrength") {
+                EXPECT_FLOAT_EQ(uniform->value, 0.25F);
+                foundOcclusionStrength = true;
+            }
+            if (uniform->name == "uAlphaCutoff") {
+                EXPECT_FLOAT_EQ(uniform->value, 0.4F);
+                foundAlphaCutoff = true;
+            }
+        }
+        if (const auto* const uniform = std::get_if<SetUniformIntCommandUVE>(&command)) {
+            if (uniform->name == "uUnshaded") {
+                EXPECT_EQ(uniform->value, 1);
+                foundUnshaded = true;
+            }
+            if (uniform->name == "uMetallicRoughnessTexture") {
+                EXPECT_EQ(uniform->value, 12);
+                foundMetallicRoughnessSlot = true;
+            }
+            if (uniform->name == "uEmissiveTexture") {
+                EXPECT_EQ(uniform->value, 13);
+                foundEmissiveSlot = true;
+            }
+        }
+        if (const auto* const uniform = std::get_if<SetUniformVector3CommandUVE>(&command)) {
+            if (uniform->name == "uUvScale") {
+                EXPECT_FLOAT_EQ(uniform->value.x, 2.0F);
+                EXPECT_FLOAT_EQ(uniform->value.y, 4.0F);
+                foundUvScale = true;
+            }
+            if (uniform->name == "uUvOffset") {
+                EXPECT_FLOAT_EQ(uniform->value.x, 0.25F);
+                EXPECT_FLOAT_EQ(uniform->value.y, 0.5F);
+                foundUvOffset = true;
+            }
+        }
+        if (const auto* const bind = std::get_if<BindTextureCommandUVE>(&command)) {
+            if (bind->slot == 12U) {
+                EXPECT_NE(bind->texture, kInvalidTextureHandleUVE);
+                boundMetallicRoughness = true;
+            }
+            if (bind->slot == 13U) {
+                EXPECT_NE(bind->texture, kInvalidTextureHandleUVE);
+                boundEmissive = true;
+            }
+        }
+    }
+    EXPECT_TRUE(foundEmissiveEnergy);
+    EXPECT_TRUE(foundNormalScale);
+    EXPECT_TRUE(foundOcclusionStrength);
+    EXPECT_TRUE(foundAlphaCutoff);
+    EXPECT_TRUE(foundUnshaded);
+    EXPECT_TRUE(foundUvScale);
+    EXPECT_TRUE(foundUvOffset);
+    EXPECT_TRUE(foundMetallicRoughnessSlot);
+    EXPECT_TRUE(foundEmissiveSlot);
+    EXPECT_TRUE(boundMetallicRoughness);
+    EXPECT_TRUE(boundEmissive);
 }
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_ReadyEmptyMeshSkipsInvalidGpuBuffers) {
@@ -1516,7 +1817,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidShadowTargetsSkipShadowPassSafel
     EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*cascadeCount).value, 0);
     EXPECT_FALSE(std::any_of(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
         return std::holds_alternative<BindTextureCommandUVE>(command) &&
-               std::get<BindTextureCommandUVE>(command).slot >= 3U;
+               std::get<BindTextureCommandUVE>(command).slot >= 3U &&
+               std::get<BindTextureCommandUVE>(command).slot < 12U;
     }));
 }
 
@@ -2263,6 +2565,90 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ASkinnedMeshUnderASkeletonIsDrawnInTheS
     sceneGraph.UpdateUVE(entityManager);
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
     EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().skinnedMeshesDrawn, 0U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_EmptySkyAssetKeepsProceduralSky) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE environment = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environment,
+                                                                        Scene::WorldEnvironment3DComponentUVE{});
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto enabled = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uSkyTextureEnabled";
+    });
+    ASSERT_NE(enabled, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*enabled).value, 0);
+    bool skyPassBoundSlot1 = false;
+    for (auto it = enabled; it != commands.cend(); ++it) {
+        if (std::holds_alternative<EndRenderPassCommandUVE>(*it)) {
+            break;
+        }
+        if (std::holds_alternative<BindTextureCommandUVE>(*it) &&
+            std::get<BindTextureCommandUVE>(*it).slot == 1U) {
+            skyPassBoundSlot1 = true;
+        }
+    }
+    EXPECT_FALSE(skyPassBoundSlot1);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SkyAssetBindsTheEquirectTexture) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const std::filesystem::path skyPath{"environment/day.hdr"};
+    const Asset::AssetGuidUVE skyGuid = assetDatabase.RegisterUVE(skyPath);
+    WaitUntilTextureReadyUVE(skyGuid);
+
+    Scene::WorldEnvironment3DComponentUVE environment{};
+    environment.skyAssetPath = skyPath.string();
+    const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
+
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto enabled = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uSkyTextureEnabled";
+    });
+    ASSERT_NE(enabled, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*enabled).value, 1);
+    bool skyPassBoundSlot1 = false;
+    for (auto it = enabled; it != commands.cend(); ++it) {
+        if (std::holds_alternative<EndRenderPassCommandUVE>(*it)) {
+            break;
+        }
+        if (std::holds_alternative<BindTextureCommandUVE>(*it) &&
+            std::get<BindTextureCommandUVE>(*it).slot == 1U &&
+            std::get<BindTextureCommandUVE>(*it).texture != kInvalidTextureHandleUVE) {
+            skyPassBoundSlot1 = true;
+        }
+    }
+    EXPECT_TRUE(skyPassBoundSlot1);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_MissingSkyAssetStaysProcedural) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    assetManager.RegisterLoaderUVE<Asset::TextureAssetUVE>(
+        [](const std::filesystem::path&, Asset::TextureAssetUVE&) { return false; });
+    Scene::WorldEnvironment3DComponentUVE environment{};
+    environment.skyAssetPath = "environment/missing.hdr";
+    const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
+
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto enabled = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uSkyTextureEnabled";
+    });
+    ASSERT_NE(enabled, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*enabled).value, 0);
 }
 
 } // namespace UVE::Render::Tests

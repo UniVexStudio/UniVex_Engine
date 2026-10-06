@@ -9,6 +9,7 @@
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/objects/3d/camera_3d_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 #include "uve/scene/scene_serializer_uve.h"
 
@@ -19,19 +20,8 @@ namespace {
     return {code, std::move(message)};
 }
 
-// Mirrors Engine/App/src/editor/main.cpp's own FindGameCameraEntityUVE() exactly: this engine has
-// no "main camera" tag/priority concept yet, so "first entity found with both components" is the
-// same honest, simple convention already used by the editor's own Play-mode game-camera switch.
-[[nodiscard]] std::optional<Scene::EntityUVE> FindFirstCameraEntityUVE(Scene::IEntityManagerUVE& entityManager) {
-    std::optional<Scene::EntityUVE> found;
-    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::CameraComponentUVE>(
-        [&found](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE&,
-                 const Scene::CameraComponentUVE&) {
-            if (!found.has_value()) {
-                found = entity;
-            }
-        });
-    return found;
+[[nodiscard]] std::optional<Scene::EntityUVE> FindPlayCameraEntityUVE(Scene::IEntityManagerUVE& entityManager) {
+    return Scene::FindCurrentCameraEntityUVE(entityManager);
 }
 
 } // namespace
@@ -68,7 +58,7 @@ ProjectLaunchResultUVE LoadAndActivateProjectSceneUVE(Core::EngineCoreUVE& engin
     // both need a real WorldTransformComponentUVE to already be present.
     services.GetSceneGraphUVE().UpdateUVE(entityManager);
 
-    const std::optional<Scene::EntityUVE> cameraEntity = FindFirstCameraEntityUVE(entityManager);
+    const std::optional<Scene::EntityUVE> cameraEntity = FindPlayCameraEntityUVE(entityManager);
     if (cameraEntity.has_value()) {
         engine.SetActiveCameraUVE(*cameraEntity);
     }

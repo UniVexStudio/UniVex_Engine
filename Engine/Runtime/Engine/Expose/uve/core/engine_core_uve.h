@@ -467,7 +467,8 @@ private:
     /// backend reports unusable so no follow-up GL call is issued.
     void Update();
     /// Reconciles authored ParticleEmitterComponentUVE values with the existing bounded particle
-    /// runtime, simulates one frame under configured gravity, and leaves renderer extraction read-only.
+    /// runtime, auto-emits from each ticking emitter's world pose, simulates one frame under
+    /// configured gravity, and leaves renderer extraction read-only.
     void SyncParticleRuntimeUVE();
     /// Ages every decal by the step's simulated seconds and queues one Decal3DExpiredEventUVE per
     /// decal that runs out. Lifetime is simulation time, so a paused game freezes decals and the
@@ -604,9 +605,9 @@ private:
     /// The interaction scan, new wiring for previously unconsumed authored data (the
     /// Unreal-Lyra-style interactor/focus loop Godot leaves every game to hand-roll out of
     /// Area3D signals): every frame, every character-controller entity that has a
-    /// ColliderComponentUVE and a world transform is an interactor, the first one in
-    /// (index,generation) order is the PRIMARY interactor (Scene::ResolvePrimaryInteractorUVE,
-    /// the same decision SpawnPoint3D selection makes), and every InteractionArea3D object's
+    /// ColliderComponentUVE and a world transform is an interactor, a possessed Player3D is the
+    /// PRIMARY interactor when one exists (else the first in (index,generation) order via
+    /// Scene::ResolvePrimaryInteractorUVE), and every InteractionArea3D object's
     /// runtime state is refreshed against them. The full contract: only enabled, valid areas
     /// participate (everything else fails closed - a disabled or invalid area ends the frame
     /// with zero interactors, never stale ones, SyncHitbox3DObjectsUVE's discipline); both
@@ -620,10 +621,10 @@ private:
     /// kMaximumInteractionAreaCandidatesUVE by Scene::ResolveInteractionAreaCandidateCapUVE,
     /// overflow flagged) and exactly one area - the one nearest the primary interactor,
     /// ties broken by (index,generation) via Scene::ResolveInteractionFocusUVE - is marked
-    /// focusedByPrimaryInteractor. Runtime state is never serialized. Acting on the focus
-    /// (prompt UI, an "interact" binding, focus enter/exit events) is deliberately not done
-    /// here - the gameplay layer no system owns yet; the authored interactionTag is carried
-    /// for that follow-up and intentionally does not filter anything today.
+    /// focusedByPrimaryInteractor. Runtime state is never serialized. Interact (the Interact
+    /// action or E) queues Gameplay::InteractRequestedEventUVE for the possessed player when
+    /// they are in the focused area. Prompt UI is still gameplay. interactionTag does not
+    /// filter the scan.
     ///
     /// The contract above is implemented in Physics::SyncInteractionAreasUVE(), which this calls:
     /// the tick owns WHEN the scan runs (it is in the fixed-step order), the seam owns what the
@@ -665,10 +666,9 @@ private:
     /// under continuous demand - with camera distance (squared, no sqrt) and (index,generation)
     /// as the tie-breaks. Stragglers age their captureWaitTicks and re-request on the next tick.
     /// A serviced capture flips capturedOnce, clears the
-    /// OnDemand latch, and bumps captureGeneration - the runtime contract a future shading pass
-    /// binds against. Honest boundary: no cubemap GPU capture exists in this engine yet, so the
-    /// sync owns the deterministic scheduler and the measurable blend weights; the imagery side
-    /// lands with the reflection BRDF pass.
+    /// OnDemand latch, and bumps captureGeneration - the runtime contract Renderer3DUVE binds
+    /// against when it renders six 2D cubemap faces. This sync stays CPU-only: engine tests must
+    /// still pass without a GPU. The imagery lives in the renderer, not in the generation counter.
     void SyncReflectionProbe3DObjectsUVE();
 
     /// The WorldPartition3D consumer: cell-based visibility for a partition's own subtree
@@ -711,9 +711,6 @@ private:
     /// transactionally resizes Renderer3DUVE before the frame's scene work begins.
     void SyncAdaptiveRenderResolutionUVE();
 
-    /// Queries the bounded area-overlap snapshot, advances the copied lifecycle baseline, and queues
-    /// typed Entered/Exited DTOs in the tracker-provided deterministic order. Truncated snapshots
-    /// intentionally produce no inferred exits, and this seam does not mutate ECS/physics state.
     void PublishAreaOverlapLifecycleEventsUVE();
 
     /// Recomputes FrameStatsUVE::fps (an exponential moving average of
@@ -786,6 +783,8 @@ private:
     std::unique_ptr<Physics::IPhysicsQuerySystemUVE> m_physicsQuerySystem;
     std::unique_ptr<Physics::IRaycastSystemUVE> m_raycastSystem;
     std::unique_ptr<Scene::ParticleRuntimeUVE> m_particleRuntime;
+    /// Unused fraction of a particle per emitter, so a rate below the frame rate still emits.
+    std::unordered_map<Scene::EntityUVE, float> m_particleEmitRemainder;
 
     /// Baked navmeshes by region entity, and one steering state per agent entity. Owned here so the
     /// caches live exactly as long as the session that built them; a scene teardown clears them

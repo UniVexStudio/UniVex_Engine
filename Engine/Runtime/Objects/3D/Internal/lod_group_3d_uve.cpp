@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <cmath>
 
+#include "uve/entity/i_entity_manager_uve.h"
+#include "uve/objects/3d/abstract_objects_3d_uve.h"
+
 namespace UVE::Scene {
 
 namespace {
@@ -35,6 +38,14 @@ bool IsLodGroup3DObjectComponentValidUVE(const LodGroup3DComponentUVE& value) no
         }
     }
     return true;
+}
+
+void ApplyLodGroup3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                        const LodGroup3DObjectDefinitionUVE& value) {
+    ApplyObject3DRecipeUVE(entityManager, entity, LodGroup3DObjectDefinitionUVE::defaultName);
+    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<LodGroup3DComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<LodGroup3DComponentUVE>(entity, value.lod);
+    }
 }
 
 void ResolveLodGroup3DLevelUVE(LodGroup3DComponentUVE& value, const float distanceToCamera) noexcept {

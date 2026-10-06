@@ -416,24 +416,35 @@ bool EditorUVE::EnterPlayModeUVE() {
 
 bool EditorUVE::ApplyPlayEntrySpawnUVE() {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
 
-    // The player: the entity carrying the character controller. A scene with several is a
-    // split-screen/multiplayer question this v1 deliberately does not answer - the first in
-    // pool order is the only deterministic honest pick, and any gameplay layer that wants
-    // richer selection lands its rule in ResolveSpawnPoint3DSelectionUVE, not here.
-    Scene::EntityUVE player = Scene::kInvalidEntityUVE;
-    entityManager.ForEachUVE<Scene::CharacterControllerComponentUVE>(
-        [&entityManager, &player](const Scene::EntityUVE entity,
-                                  Scene::CharacterControllerComponentUVE&) {
-            if (player == Scene::kInvalidEntityUVE &&
-                entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity) &&
-                entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
-                player = entity;
+    Scene::EntityUVE player = Scene::ResolvePossessedPlayerUVE(entityManager);
+    if (player == Scene::kInvalidEntityUVE) {
+        const std::string relative = GetDefaultPlayerEntityUVE();
+        if (!relative.empty()) {
+            const std::filesystem::path absolute =
+                m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot /
+                std::filesystem::path{relative};
+            std::error_code error;
+            if (std::filesystem::is_regular_file(absolute, error)) {
+                const Asset::AssetGuidUVE guid = m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
+                if (guid != Asset::kInvalidAssetGuidUVE) {
+                    static_cast<void>(m_services->GetPrefabSystemUVE().InstantiateUVE(
+                        entityManager, sceneGraph, m_services->GetAssetDatabaseUVE(), guid,
+                        GetDocumentSceneRootUVE()));
+                    sceneGraph.UpdateUVE(entityManager);
+                    player = Scene::ResolvePossessedPlayerUVE(entityManager);
+                }
             }
-        });
+        }
+    }
+    if (player == Scene::kInvalidEntityUVE) {
+        player = Scene::ResolvePlayCharacterUVE(entityManager);
+    }
     if (player == Scene::kInvalidEntityUVE) {
         return false;
     }
+    Scene::MakePlayerCameraCurrentUVE(entityManager, player);
 
     // The candidates come from the shared spawn query - enabled, valid, world-posed, in stable
     // content order - rather than from a second copy of those rules living here. The tag is left
@@ -1105,7 +1116,8 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
                 return false;
             } else if constexpr (std::is_same_v<LeftType, Scene::CameraComponentUVE>) {
                 return left.fieldOfViewDegrees == right.fieldOfViewDegrees && left.nearPlane == right.nearPlane &&
-                       left.farPlane == right.farPlane;
+                       left.farPlane == right.farPlane && left.projection == right.projection &&
+                       left.orthographicSize == right.orthographicSize && left.current == right.current;
             } else if constexpr (std::is_same_v<LeftType, Scene::MeshComponentUVE>) {
                 return left.meshGuid == right.meshGuid && left.materialGuid == right.materialGuid;
             } else if constexpr (std::is_same_v<LeftType, Scene::LightComponentUVE>) {
@@ -1115,7 +1127,8 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
                 return left.halfExtents == right.halfExtents && left.collisionLayer == right.collisionLayer &&
                        left.collisionMask == right.collisionMask && left.friction == right.friction &&
                        left.restitution == right.restitution && left.density == right.density &&
-                       left.shapeType == right.shapeType && left.radius == right.radius && left.height == right.height;
+                       left.shapeType == right.shapeType && left.radius == right.radius &&
+                       left.height == right.height && left.disabled == right.disabled;
             } else if constexpr (std::is_same_v<LeftType, Scene::Rigid3DComponentUVE>) {
                 return left.mass == right.mass && left.isKinematic == right.isKinematic &&
                        left.velocity == right.velocity && left.angularVelocity == right.angularVelocity &&
@@ -1199,8 +1212,17 @@ bool EditorUVE::ApplySceneComponentStateUVE(
     };
 
     switch (kind) {
-        case EditorSceneComponentKindUVE::Camera:
-            return apply.template operator()<Scene::CameraComponentUVE>();
+        case EditorSceneComponentKindUVE::Camera: {
+            const bool applied = apply.template operator()<Scene::CameraComponentUVE>();
+            if (applied && value.has_value()) {
+                Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+                if (entityManager.HasComponentUVE<Scene::CameraComponentUVE>(entity) &&
+                    entityManager.GetComponentUVE<Scene::CameraComponentUVE>(entity).current) {
+                    Scene::MakeCameraCurrentUVE(entityManager, entity);
+                }
+            }
+            return applied;
+        }
         case EditorSceneComponentKindUVE::Mesh:
             return apply.template operator()<Scene::MeshComponentUVE>();
         case EditorSceneComponentKindUVE::Light:
@@ -2010,6 +2032,10 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::Character3DObjectDefinitionUVE{},
                                                             Scene::ApplyCharacter3DObjectDefinitionUVE);
             break;
+        case Scene::Objects::SceneObjectKindUVE::Player3D:
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::Player3DObjectDefinitionUVE{},
+                                                            Scene::ApplyPlayer3DObjectDefinitionUVE);
+            break;
         case Scene::Objects::SceneObjectKindUVE::Rigid3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::Rigid3DObjectDefinitionUVE{},
                                                             Scene::ApplyRigid3DObjectDefinitionUVE);
@@ -2112,7 +2138,8 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
                                                             Scene::ApplyDirectionalLight3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::ReflectionProbe3D:
-            entity = createObjectWithComponent(Scene::ReflectionProbe3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::ReflectionProbe3DObjectDefinitionUVE{},
+                                                            Scene::ApplyReflectionProbe3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::Decal3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::Decal3DObjectDefinitionUVE{},
@@ -2123,13 +2150,16 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
                                                             Scene::ApplyFogVolume3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::LODGroup3D:
-            entity = createObjectWithComponent(Scene::LodGroup3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::LodGroup3DObjectDefinitionUVE{},
+                                                            Scene::ApplyLodGroup3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::Occluder3D:
-            entity = createObjectWithComponent(Scene::Occluder3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::Occluder3DObjectDefinitionUVE{},
+                                                            Scene::ApplyOccluder3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::VisibilityRegion3D:
-            entity = createObjectWithComponent(Scene::VisibilityRegion3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::VisibilityRegion3DObjectDefinitionUVE{},
+                                                            Scene::ApplyVisibilityRegion3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::SpawnPoint3D:
             entity = createObjectWithComponent(Scene::SpawnPoint3DComponentUVE{});
@@ -2138,7 +2168,8 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
             entity = createObjectWithComponent(Scene::LevelStreamer3DComponentUVE{});
             break;
         case Scene::Objects::SceneObjectKindUVE::WorldPartition3D:
-            entity = createObjectWithComponent(Scene::WorldPartition3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::WorldPartition3DObjectDefinitionUVE{},
+                                                            Scene::ApplyWorldPartition3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::AnimationGraph:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::AnimationGraphObjectDefinitionUVE{},
@@ -3645,6 +3676,27 @@ EditorStateUVE EditorUVE::GetStateUVE() const noexcept {
 
 Scene::EntityUVE EditorUVE::GetSelectedEntityUVE() const noexcept {
     return m_selectedEntity;
+}
+
+Scene::EntityUVE EditorUVE::GetPreviewCameraUVE() const noexcept {
+    if (m_previewCamera == Scene::kInvalidEntityUVE || m_services == nullptr) {
+        return Scene::kInvalidEntityUVE;
+    }
+    if (!Scene::IsDocumentCameraEntityUVE(m_services->GetEntityManagerUVE(), m_previewCamera)) {
+        return Scene::kInvalidEntityUVE;
+    }
+    return m_previewCamera;
+}
+
+void EditorUVE::SetPreviewCameraUVE(const Scene::EntityUVE entity) {
+    if (m_services == nullptr || !Scene::IsDocumentCameraEntityUVE(m_services->GetEntityManagerUVE(), entity)) {
+        return;
+    }
+    m_previewCamera = entity;
+}
+
+void EditorUVE::ClearPreviewCameraUVE() noexcept {
+    m_previewCamera = Scene::kInvalidEntityUVE;
 }
 
 namespace {

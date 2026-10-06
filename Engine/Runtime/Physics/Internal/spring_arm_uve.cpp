@@ -17,8 +17,6 @@ namespace {
 
 /// The arm's own axis in its local space: +Z, behind the pivot. Named because it is the one
 /// convention everything here and the component's own documentation share.
-constexpr Math::Vector3UVE kArmAxisUVE{0.0F, 0.0F, 1.0F};
-
 [[nodiscard]] bool IsUsableUVE(const Math::Vector3UVE& value) noexcept {
     return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 }
@@ -86,17 +84,10 @@ SpringArm3DStepResultUVE StepSpringArm3DUVE(Scene::IEntityManagerUVE& entityMana
     // ---- Where is the arm pointing, and what is in the way? --------------------------------------
     // Switched off, the arm casts nothing and aims home: the child it carries has to be able to
     // come back, or disabling an arm would strand a camera in a wall forever.
-    if (springArm.enabled) {
+    if (Scene::SpringArm3DUVE::IsCastingUVE(springArm)) {
         const Scene::WorldTransformComponentUVE& worldTransform =
             entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
-        // A degenerate rotation would send the arm along a garbage axis; the hitbox sync reads the
-        // same situation the same way, falling back to the identity rather than refusing a body
-        // whose pose the scene graph could not resolve.
-        Math::QuaternionUVE rotation{};
-        if (!Math::TryNormalizeUVE(worldTransform.worldRotation, rotation)) {
-            rotation = {};
-        }
-        const Math::Vector3UVE axis = Math::RotateVectorUVE(rotation, kArmAxisUVE);
+        const Math::Vector3UVE axis = Scene::SpringArm3DUVE::ResolveWorldAxisUVE(worldTransform.worldRotation);
         if (!IsUsableUVE(worldTransform.worldPosition) || !IsUsableUVE(axis)) {
             result.code = SpringArm3DStepCodeUVE::InvalidComponent;
             return result;
@@ -117,7 +108,7 @@ SpringArm3DStepResultUVE StepSpringArm3DUVE(Scene::IEntityManagerUVE& entityMana
             result.hitPoint = hit->point;
             result.hitDistance = hit->distance;
         }
-        result.targetLength = Scene::ResolveSpringArm3DTargetUVE(
+        result.targetLength = Scene::SpringArm3DUVE::ResolveTargetUVE(
             hit.has_value() ? std::optional<float>{hit->distance} : std::nullopt, springArm.margin,
             springArm.armLength);
         result.code = SpringArm3DStepCodeUVE::Stepped;
@@ -126,8 +117,7 @@ SpringArm3DStepResultUVE StepSpringArm3DUVE(Scene::IEntityManagerUVE& entityMana
         result.code = SpringArm3DStepCodeUVE::Disabled;
     }
 
-    // ---- The motion law, then the children that ride it ------------------------------------------
-    const float resolvedLength = Scene::ResolveSpringArm3DLengthUVE(
+    const float resolvedLength = Scene::SpringArm3DUVE::ResolveLengthUVE(
         springArm.currentLength, result.targetLength, springArm.smoothing, deltaTimeSeconds);
     result.currentLength = resolvedLength;
     result.lengthDelta = resolvedLength - result.previousLength;

@@ -56,7 +56,10 @@ struct LightUVE {
 
 uniform LightUVE uLights[kMaxLightsUVE];
 uniform vec3 uAmbientColor;
+uniform vec3 uSkyAmbient;
+uniform vec3 uGroundAmbient;
 uniform vec3 uColor;
+uniform float uSurfaceOpacity = 1.0;
 
 vec3 SafeNormalizeUVE(vec3 value) {
     float lengthValue = length(value);
@@ -65,7 +68,12 @@ vec3 SafeNormalizeUVE(vec3 value) {
 
 void main() {
     vec3 normal = SafeNormalizeUVE(vNormal);
-    vec3 accumulated = uColor * uAmbientColor;
+    vec3 ambient = uAmbientColor;
+    if (dot(uSkyAmbient, uSkyAmbient) + dot(uGroundAmbient, uGroundAmbient) >= 1.0e-10) {
+        float hemi = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
+        ambient = mix(uGroundAmbient, uSkyAmbient, hemi);
+    }
+    vec3 accumulated = uColor * ambient;
 
     for (int lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
         LightUVE light = uLights[lightIndex];
@@ -99,6 +107,6 @@ void main() {
         accumulated += uColor * light.color * (light.intensity * attenuation * diffuse);
     }
 
-    FragColor = vec4(accumulated, 1.0);
+    FragColor = vec4(accumulated, clamp(uSurfaceOpacity, 0.0, 1.0));
 }
 #endif

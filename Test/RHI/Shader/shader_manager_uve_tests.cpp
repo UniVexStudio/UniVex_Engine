@@ -387,6 +387,8 @@ INSTANTIATE_TEST_SUITE_P(
                                                                       BuiltIn::kBasic3DTexturedSource},
                        std::pair<std::string_view, std::string_view>{"fullscreen_quad.glsl",
                                                                       BuiltIn::kFullscreenQuadSource},
+                       std::pair<std::string_view, std::string_view>{"procedural_sky.glsl",
+                                                                      BuiltIn::kProceduralSkySource},
                        std::pair<std::string_view, std::string_view>{"shadow_depth.glsl",
                                                                       BuiltIn::kShadowDepthSource},
                        std::pair<std::string_view, std::string_view>{"lit_shadowed_3d.glsl",

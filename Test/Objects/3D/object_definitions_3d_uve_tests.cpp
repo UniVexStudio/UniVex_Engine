@@ -19,6 +19,7 @@
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/editor_description_component_uve.h"
+#include "uve/component/editor_internal_entity_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
@@ -35,6 +36,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/events/event_system_uve.h"
+#include "uve/math/aabb_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
@@ -53,6 +55,7 @@ static_assert(std::is_class_v<Object3DObjectDefinitionUVE>);            // Objec
 static_assert(std::is_class_v<Area3DObjectDefinitionUVE>);           // Area3D
 static_assert(std::is_class_v<Static3DObjectDefinitionUVE>);     // Static3D
 static_assert(std::is_class_v<Character3DObjectDefinitionUVE>);  // Character3D
+static_assert(std::is_class_v<Player3DObjectDefinitionUVE>);     // Player3D
 static_assert(std::is_class_v<Camera3DObjectDefinitionUVE>);         // Camera3D
 static_assert(std::is_class_v<MeshInstance3DObjectDefinitionUVE>);   // MeshInstance3D
 static_assert(std::is_class_v<BoxMesh3DObjectDefinitionUVE>);        // BoxMesh3D
@@ -108,6 +111,7 @@ TEST_F(Object3DDefinitionsUVETest, AllDefinitionDefaultsAreValid) {
     EXPECT_TRUE(IsArea3DObjectDefinitionValidUVE(Area3DObjectDefinitionUVE{}));
     EXPECT_TRUE(IsStatic3DObjectDefinitionValidUVE(Static3DObjectDefinitionUVE{}));
     EXPECT_TRUE(IsCharacter3DObjectDefinitionValidUVE(Character3DObjectDefinitionUVE{}));
+    EXPECT_TRUE(IsPlayer3DObjectDefinitionValidUVE(Player3DObjectDefinitionUVE{}));
     EXPECT_TRUE(IsCamera3DObjectDefinitionValidUVE(Camera3DObjectDefinitionUVE{}));
     EXPECT_TRUE(IsMeshInstance3DObjectDefinitionValidUVE(MeshInstance3DObjectDefinitionUVE{}));
     EXPECT_TRUE(IsBoxMesh3DObjectDefinitionValidUVE(BoxMesh3DObjectDefinitionUVE{}));
@@ -192,6 +196,7 @@ TEST_F(Object3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
         ApplyCamera3DObjectDefinitionUVE(entityManager, entity, Camera3DObjectDefinitionUVE{});
         ExpectObject3DBaselineUVE(entityManager, entity, Camera3DObjectDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<CameraComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.GetComponentUVE<CameraComponentUVE>(entity).current);
     }
     {
         const EntityUVE entity = CreateEntityUVE();
@@ -297,6 +302,18 @@ TEST_F(Object3DDefinitionsUVETest, PrimitiveMeshRecipesKeepTheirDistinctShapesWh
         EXPECT_EQ(entityManager.GetComponentUVE<ColliderComponentUVE>(entity).halfExtents,
                   (Math::Vector3UVE{0.5F, 0.025F, 0.5F}));
     }
+}
+
+TEST_F(Object3DDefinitionsUVETest, Player3DIsACharacterMarkedAsThePossessedBody) {
+    const EntityUVE entity = CreateEntityUVE();
+    ApplyPlayer3DObjectDefinitionUVE(entityManager, entity, Player3DObjectDefinitionUVE{});
+    ExpectObject3DBaselineUVE(entityManager, entity, Player3DObjectDefinitionUVE::defaultName);
+    EXPECT_TRUE(entityManager.HasComponentUVE<CharacterControllerComponentUVE>(entity));
+    ASSERT_TRUE(entityManager.HasComponentUVE<PlayerComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.GetComponentUVE<PlayerComponentUVE>(entity).possessOnPlay);
+    ASSERT_TRUE(entityManager.HasComponentUVE<HealthComponentUVE>(entity));
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<HealthComponentUVE>(entity).maxHealth, 100.0F);
+    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, entity), Objects::SceneObjectKindUVE::Player3D);
 }
 
 TEST_F(Object3DDefinitionsUVETest, CharacterBodyIsItsChainPlusAReadyToWalkCapsule) {
@@ -543,6 +560,38 @@ TEST_F(Object3DDefinitionsUVETest, Decal3DAndFogVolume3DAreRenderInstancesPlusTh
     EXPECT_EQ(entityManager.GetComponentUVE<FogVolume3DComponentUVE>(fog).density, -0.5F);
 }
 
+TEST_F(Object3DDefinitionsUVETest, OptimizationVolumesAreObject3DNotRenderInstances) {
+    const EntityUVE occluder = CreateEntityUVE();
+    const EntityUVE region = CreateEntityUVE();
+    const EntityUVE partition = CreateEntityUVE();
+    const EntityUVE lod = CreateEntityUVE();
+    const EntityUVE probe = CreateEntityUVE();
+    ApplyOccluder3DObjectDefinitionUVE(entityManager, occluder, Occluder3DObjectDefinitionUVE{});
+    ApplyVisibilityRegion3DObjectDefinitionUVE(entityManager, region, VisibilityRegion3DObjectDefinitionUVE{});
+    ApplyWorldPartition3DObjectDefinitionUVE(entityManager, partition, WorldPartition3DObjectDefinitionUVE{});
+    ApplyLodGroup3DObjectDefinitionUVE(entityManager, lod, LodGroup3DObjectDefinitionUVE{});
+    ApplyReflectionProbe3DObjectDefinitionUVE(entityManager, probe, ReflectionProbe3DObjectDefinitionUVE{});
+    ExpectObject3DBaselineUVE(entityManager, occluder, "Occluder3D");
+    ExpectObject3DBaselineUVE(entityManager, region, "VisibilityRegion3D");
+    ExpectObject3DBaselineUVE(entityManager, partition, "WorldPartition3D");
+    ExpectObject3DBaselineUVE(entityManager, lod, "LODGroup3D");
+    ExpectObject3DBaselineUVE(entityManager, probe, "ReflectionProbe3D");
+    for (const EntityUVE entity : {occluder, region, partition, lod, probe}) {
+        EXPECT_TRUE(entityManager.HasComponentUVE<VisibilityComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<ProcessComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<ObjectMetadataComponentUVE>(entity));
+        EXPECT_FALSE(entityManager.HasComponentUVE<RenderInstanceComponentUVE>(entity));
+        EXPECT_FALSE(entityManager.HasComponentUVE<SurfaceInstanceComponentUVE>(entity));
+        EXPECT_FALSE(entityManager.HasComponentUVE<LightEmitterComponentUVE>(entity));
+        EXPECT_FALSE(entityManager.HasComponentUVE<PhysicsObjectComponentUVE>(entity));
+    }
+    EXPECT_TRUE(entityManager.HasComponentUVE<Occluder3DComponentUVE>(occluder));
+    EXPECT_TRUE(entityManager.HasComponentUVE<VisibilityRegion3DComponentUVE>(region));
+    EXPECT_TRUE(entityManager.HasComponentUVE<WorldPartition3DComponentUVE>(partition));
+    EXPECT_TRUE(entityManager.HasComponentUVE<LodGroup3DComponentUVE>(lod));
+    EXPECT_TRUE(entityManager.HasComponentUVE<ReflectionProbe3DComponentUVE>(probe));
+}
+
 TEST_F(Object3DDefinitionsUVETest, RenderInstanceFamilyComponentsRejectValuesTheySaveBadly) {
     EXPECT_TRUE(IsSurfaceInstanceComponentValidUVE(SurfaceInstanceComponentUVE{}));
     SurfaceInstanceComponentUVE surface{};
@@ -555,6 +604,118 @@ TEST_F(Object3DDefinitionsUVETest, RenderInstanceFamilyComponentsRejectValuesThe
     surface.visibilityRangeBegin = 10.0F;
     surface.visibilityRangeEnd = 5.0F;
     EXPECT_FALSE(IsSurfaceInstanceComponentValidUVE(surface));
+
+    EXPECT_FALSE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(SurfaceInstanceComponentUVE{}, 0.0F));
+    EXPECT_FALSE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(SurfaceInstanceComponentUVE{}, 1000.0F));
+    SurfaceInstanceComponentUVE ranged{};
+    ranged.visibilityRangeBegin = 5.0F;
+    ranged.visibilityRangeEnd = 20.0F;
+    EXPECT_TRUE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(ranged, 4.9F));
+    EXPECT_FALSE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(ranged, 5.0F));
+    EXPECT_FALSE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(ranged, 20.0F));
+    EXPECT_TRUE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(ranged, 20.1F));
+    EXPECT_TRUE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(ranged, std::numeric_limits<float>::quiet_NaN()));
+    EXPECT_FLOAT_EQ(SurfaceInstance3DVisibilityFadeWeightUVE(ranged, 5.0F), 1.0F);
+    EXPECT_FLOAT_EQ(SurfaceInstance3DVisibilityFadeWeightUVE(ranged, 4.9F), 0.0F);
+    SurfaceInstanceComponentUVE selfFade{};
+    selfFade.visibilityRangeBegin = 5.0F;
+    selfFade.visibilityRangeBeginMargin = 2.0F;
+    selfFade.visibilityRangeEnd = 20.0F;
+    selfFade.visibilityRangeEndMargin = 4.0F;
+    selfFade.visibilityRangeFadeMode = SurfaceFadeModeUVE::Self;
+    EXPECT_TRUE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(selfFade, 2.9F));
+    EXPECT_FALSE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(selfFade, 3.0F));
+    EXPECT_FALSE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(selfFade, 24.0F));
+    EXPECT_TRUE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(selfFade, 24.1F));
+    EXPECT_FLOAT_EQ(SurfaceInstance3DVisibilityFadeWeightUVE(selfFade, 3.0F), 0.0F);
+    EXPECT_FLOAT_EQ(SurfaceInstance3DVisibilityFadeWeightUVE(selfFade, 4.0F), 0.5F);
+    EXPECT_FLOAT_EQ(SurfaceInstance3DVisibilityFadeWeightUVE(selfFade, 5.0F), 1.0F);
+    EXPECT_FLOAT_EQ(SurfaceInstance3DVisibilityFadeWeightUVE(selfFade, 20.0F), 1.0F);
+    EXPECT_FLOAT_EQ(SurfaceInstance3DVisibilityFadeWeightUVE(selfFade, 22.0F), 0.5F);
+    EXPECT_FLOAT_EQ(SurfaceInstance3DVisibilityFadeWeightUVE(selfFade, 24.0F), 0.0F);
+    SurfaceInstanceComponentUVE dependencies{};
+    dependencies.visibilityRangeBegin = 5.0F;
+    dependencies.visibilityRangeEnd = 20.0F;
+    dependencies.visibilityRangeBeginMargin = 2.0F;
+    dependencies.visibilityRangeFadeMode = SurfaceFadeModeUVE::Dependencies;
+    EXPECT_TRUE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(dependencies, 4.9F));
+    EXPECT_FLOAT_EQ(SurfaceInstance3DVisibilityFadeWeightUVE(dependencies, 5.0F), 1.0F);
+    SurfaceInstanceComponentUVE invalidRange{};
+    invalidRange.transparency = 2.0F;
+    EXPECT_TRUE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(invalidRange, 1.0F));
+
+    Math::AabbUVE bounds = Math::AabbUVE::FromCenterExtentsUVE({0.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    ExpandSurfaceInstance3DCullBoundsUVE(SurfaceInstanceComponentUVE{}, bounds);
+    EXPECT_NEAR(bounds.min.x, -0.5F, 1.0e-6F);
+    EXPECT_NEAR(bounds.max.x, 0.5F, 1.0e-6F);
+    SurfaceInstanceComponentUVE padded{};
+    padded.extraCullMargin = 2.0F;
+    ExpandSurfaceInstance3DCullBoundsUVE(padded, bounds);
+    EXPECT_NEAR(bounds.min.x, -2.5F, 1.0e-6F);
+    EXPECT_NEAR(bounds.max.x, 2.5F, 1.0e-6F);
+    EXPECT_NEAR(bounds.min.y, -2.5F, 1.0e-6F);
+    EXPECT_NEAR(bounds.max.z, 2.5F, 1.0e-6F);
+
+    EXPECT_TRUE(SurfaceInstance3DCastsShadowUVE(SurfaceInstanceComponentUVE{}));
+    EXPECT_TRUE(SurfaceInstance3DDrawsInViewUVE(SurfaceInstanceComponentUVE{}));
+    SurfaceInstanceComponentUVE shadowOff{};
+    shadowOff.castShadow = SurfaceShadowModeUVE::Off;
+    EXPECT_FALSE(SurfaceInstance3DCastsShadowUVE(shadowOff));
+    EXPECT_TRUE(SurfaceInstance3DDrawsInViewUVE(shadowOff));
+    SurfaceInstanceComponentUVE shadowsOnly{};
+    shadowsOnly.castShadow = SurfaceShadowModeUVE::ShadowsOnly;
+    EXPECT_TRUE(SurfaceInstance3DCastsShadowUVE(shadowsOnly));
+    EXPECT_FALSE(SurfaceInstance3DDrawsInViewUVE(shadowsOnly));
+    SurfaceInstanceComponentUVE doubleSided{};
+    doubleSided.castShadow = SurfaceShadowModeUVE::DoubleSided;
+    EXPECT_TRUE(SurfaceInstance3DCastsShadowUVE(doubleSided));
+    EXPECT_TRUE(SurfaceInstance3DDrawsInViewUVE(doubleSided));
+    EXPECT_FLOAT_EQ(SurfaceInstance3DOpacityUVE(SurfaceInstanceComponentUVE{}), 1.0F);
+    SurfaceInstanceComponentUVE faded{};
+    faded.transparency = 0.25F;
+    EXPECT_FLOAT_EQ(SurfaceInstance3DOpacityUVE(faded), 0.75F);
+    faded.transparency = 1.0F;
+    EXPECT_FLOAT_EQ(SurfaceInstance3DOpacityUVE(faded), 0.0F);
+    faded.transparency = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FLOAT_EQ(SurfaceInstance3DOpacityUVE(faded), 1.0F);
+    EXPECT_FALSE(SurfaceInstance3DHasOverlayUVE(SurfaceInstanceComponentUVE{}));
+    SurfaceInstanceComponentUVE overlay{};
+    overlay.materialOverlayPath = "flash.uvmat";
+    EXPECT_TRUE(SurfaceInstance3DHasOverlayUVE(overlay));
+    EXPECT_FLOAT_EQ(ApplySurfaceInstance3DOverlaySortBiasUVE(4.0F), 3.999F);
+    EXPECT_TRUE(std::isnan(ApplySurfaceInstance3DOverlaySortBiasUVE(std::numeric_limits<float>::quiet_NaN())));
+    EXPECT_FLOAT_EQ(SurfaceInstance3DLodDistanceUVE(SurfaceInstanceComponentUVE{}, 40.0F), 40.0F);
+    SurfaceInstanceComponentUVE keepDetail{};
+    keepDetail.lodBias = 2.0F;
+    EXPECT_FLOAT_EQ(SurfaceInstance3DLodDistanceUVE(keepDetail, 40.0F), 20.0F);
+    SurfaceInstanceComponentUVE dropSooner{};
+    dropSooner.lodBias = 0.5F;
+    EXPECT_FLOAT_EQ(SurfaceInstance3DLodDistanceUVE(dropSooner, 40.0F), 80.0F);
+    dropSooner.lodBias = 0.0F;
+    EXPECT_FLOAT_EQ(SurfaceInstance3DLodDistanceUVE(dropSooner, 40.0F), 40.0F);
+    EXPECT_TRUE(std::isnan(
+        SurfaceInstance3DLodDistanceUVE(SurfaceInstanceComponentUVE{}, std::numeric_limits<float>::quiet_NaN())));
+
+    EXPECT_TRUE(IsRenderInstance3DOnViewLayersUVE(0x00000001U, 0xFFFFFFFFU));
+    EXPECT_TRUE(IsRenderInstance3DOnViewLayersUVE(0x00000002U, 0x00000002U));
+    EXPECT_FALSE(IsRenderInstance3DOnViewLayersUVE(0x00000001U, 0x00000002U));
+    EXPECT_FALSE(IsRenderInstance3DOnViewLayersUVE(0x00000001U, 0U));
+    EXPECT_FALSE(IsRenderInstance3DOnViewLayersUVE(0U, 0xFFFFFFFFU));
+    EXPECT_FLOAT_EQ(ApplyRenderInstance3DSortingOffsetUVE(4.0F, 1.5F), 5.5F);
+    EXPECT_FLOAT_EQ(ApplyRenderInstance3DSortingOffsetUVE(4.0F, -1.0F), 3.0F);
+    EXPECT_FLOAT_EQ(ApplyRenderInstance3DSortingOffsetUVE(4.0F, std::numeric_limits<float>::quiet_NaN()), 4.0F);
+
+    EXPECT_TRUE(IsLightEmitter3DLightingLayersUVE(0xFFFFFFFFU, 1U));
+    EXPECT_TRUE(IsLightEmitter3DLightingLayersUVE(0x2U, 0x2U));
+    EXPECT_FALSE(IsLightEmitter3DLightingLayersUVE(0x1U, 0x2U));
+    EXPECT_FALSE(IsLightEmitter3DLightingLayersUVE(0U, 0xFFFFFFFFU));
+    EXPECT_FLOAT_EQ(LightEmitter3DDistanceFadeWeightUVE(0.0F, 40.0F, 10.0F), 1.0F);
+    EXPECT_FLOAT_EQ(LightEmitter3DDistanceFadeWeightUVE(40.0F, 40.0F, 10.0F), 1.0F);
+    EXPECT_FLOAT_EQ(LightEmitter3DDistanceFadeWeightUVE(45.0F, 40.0F, 10.0F), 0.5F);
+    EXPECT_FLOAT_EQ(LightEmitter3DDistanceFadeWeightUVE(50.0F, 40.0F, 10.0F), 0.0F);
+    EXPECT_FLOAT_EQ(LightEmitter3DDistanceFadeWeightUVE(41.0F, 40.0F, 0.0F), 0.0F);
+    EXPECT_FLOAT_EQ(LightEmitter3DDistanceFadeWeightUVE(40.0F, 40.0F, 0.0F), 1.0F);
+    EXPECT_FLOAT_EQ(LightEmitter3DDistanceFadeWeightUVE(std::numeric_limits<float>::quiet_NaN(), 40.0F, 10.0F), 0.0F);
 
     EXPECT_TRUE(IsLightEmitterComponentValidUVE(LightEmitterComponentUVE{}));
     LightEmitterComponentUVE light{};
@@ -1078,6 +1239,31 @@ TEST_F(Object3DDefinitionsUVETest, AnimationGraphIsCreatableAndValidatesItsBlend
     EXPECT_TRUE(descriptor->libraryCreatable);
 }
 
+TEST_F(Object3DDefinitionsUVETest, CameraCurrentIsExclusiveAndSkipsEditorInternal) {
+    const EntityUVE first = CreateEntityUVE();
+    ApplyCamera3DObjectDefinitionUVE(entityManager, first, Camera3DObjectDefinitionUVE{});
+    const EntityUVE second = CreateEntityUVE();
+    ApplyCamera3DObjectDefinitionUVE(entityManager, second, Camera3DObjectDefinitionUVE{});
+    EXPECT_TRUE(entityManager.GetComponentUVE<CameraComponentUVE>(first).current);
+    EXPECT_FALSE(entityManager.GetComponentUVE<CameraComponentUVE>(second).current);
+    ASSERT_TRUE(FindCurrentCameraEntityUVE(entityManager).has_value());
+    EXPECT_EQ(*FindCurrentCameraEntityUVE(entityManager), first);
+
+    MakeCameraCurrentUVE(entityManager, second);
+    EXPECT_FALSE(entityManager.GetComponentUVE<CameraComponentUVE>(first).current);
+    EXPECT_TRUE(entityManager.GetComponentUVE<CameraComponentUVE>(second).current);
+    ASSERT_TRUE(FindCurrentCameraEntityUVE(entityManager).has_value());
+    EXPECT_EQ(*FindCurrentCameraEntityUVE(entityManager), second);
+
+    const EntityUVE internal = CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, internal, TransformComponentUVE{});
+    entityManager.AddComponentUVE<CameraComponentUVE>(internal);
+    entityManager.AddComponentUVE<EditorInternalEntityComponentUVE>(internal);
+    ASSERT_TRUE(FindCurrentCameraEntityUVE(entityManager).has_value());
+    EXPECT_EQ(*FindCurrentCameraEntityUVE(entityManager), second);
+    EXPECT_FALSE(IsDocumentCameraEntityUVE(entityManager, internal));
+}
+
 } // namespace
 // =================================================================================================
 // Participation: what a PhysicsObject3D's Process mode and disable mode mean to the physics world.
@@ -1169,6 +1355,10 @@ TEST_F(Object3DDefinitionsUVETest, BodyKindsWithShapesAreToldApartByTheirControl
     const EntityUVE character = entityManager.CreateEntityUVE();
     ApplyCharacter3DObjectDefinitionUVE(entityManager, character, Character3DObjectDefinitionUVE{});
     EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, character), Objects::SceneObjectKindUVE::Character3D);
+
+    const EntityUVE player = entityManager.CreateEntityUVE();
+    ApplyPlayer3DObjectDefinitionUVE(entityManager, player, Player3DObjectDefinitionUVE{});
+    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, player), Objects::SceneObjectKindUVE::Player3D);
 }
 
 TEST_F(PhysicsObjectParticipationUVETest, AnEntityThatIsNotAPhysicsObjectIsLeftAlone) {
