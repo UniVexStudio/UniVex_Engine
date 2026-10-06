@@ -2188,8 +2188,8 @@ struct Renderer3DUVE::ImplUVE {
                 continue;
             }
             const Asset::MaterialAssetUVE* const material = representative.materialHandle.TryGetUVE();
-            const std::shared_ptr<Shader::ShaderProgramUVE>& program = materialResources->program;
-            if (material == nullptr || !program->IsValidUVE()) {
+            Shader::ShaderProgramUVE* const program = MeshColorProgramUVE(*materialResources, representative);
+            if (material == nullptr || program == nullptr) {
                 continue; // Still compiling or invalid: never bind a stale raw material pipeline.
             }
 

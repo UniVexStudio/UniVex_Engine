@@ -714,6 +714,7 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
                 static_cast<void>(m_particleRuntime->AttachDetailedUVE(entity, component));
             } else if (!budgetMatches) {
                 static_cast<void>(m_particleRuntime->DetachDetailedUVE(entity));
+                m_particleEmitRemainder.erase(entity);
                 static_cast<void>(m_particleRuntime->AttachDetailedUVE(entity, component));
             }
             // Same rule as scripts: a Running emitter freezes mid-flight while the simulation is
@@ -759,6 +760,7 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
                 continue;
             }
             if (!m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+                m_particleEmitRemainder.erase(entity);
                 continue;
             }
             const Scene::WorldTransformComponentUVE& worldTransform =
