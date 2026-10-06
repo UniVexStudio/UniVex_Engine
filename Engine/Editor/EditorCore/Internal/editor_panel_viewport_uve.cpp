@@ -224,27 +224,33 @@ void EditorUVE::DrawViewportPanelUVE() {
         ImGui::PopStyleVar();
         return;
     }
-    DrawViewportImageUVE();
+    DrawViewportImageUVE(ViewportContextUVE::Main);
     ImGui::End();
     ImGui::PopStyleVar();
 }
 
-void EditorUVE::DrawViewportImageUVE() {
+void EditorUVE::DrawViewportImageUVE(const ViewportContextUVE context) {
+    ViewportOverlayStateUVE* state = &m_viewportOverlayState;
+    if (context == ViewportContextUVE::EntityEditor) {
+        state = &m_entityViewportOverlayState;
+    } else if (context == ViewportContextUVE::Retarget) {
+        state = &m_retargetViewportOverlayState;
+    }
+
     const ImVec2 availableRegion = ImGui::GetContentRegionAvail();
     if (m_viewportPanelRenderer && availableRegion.x > 0.0F && availableRegion.y > 0.0F) {
-        m_viewportOverlayState.gameWorkspaceActive = m_activeWorkspace == EditorWorkspaceUVE::Game;
-        m_viewportOverlayState.studioView = m_retargetPreview.has_value();
-        m_viewportOverlayState.bones.clear();
-        if (!m_viewportOverlayState.gameWorkspaceActive) {
-            BuildSkeletonOverlayUVE(m_viewportOverlayState.bones);
+        state->gameWorkspaceActive = context == ViewportContextUVE::Main &&
+                                     m_activeWorkspace == EditorWorkspaceUVE::Game;
+        state->studioView = context == ViewportContextUVE::Retarget;
+        state->bones.clear();
+        if (!state->gameWorkspaceActive) {
+            BuildSkeletonOverlayUVE(state->bones);
         }
         const Math::Vector2UVE available{availableRegion.x, availableRegion.y};
         Math::Vector2UVE used{0.0F, 0.0F};
-        // Whatever the overlay bubbles below changed last frame - the renderer applies it to its
-        // own real projection/gizmo-mode/grid state. One frame of lag between clicking a bubble
-        // and the render reflecting it is imperceptible and avoids restructuring this call to run
-        // after the image (whose rect the bubbles themselves need to position against).
-        const std::uint64_t textureId = m_viewportPanelRenderer(available, used, m_viewportOverlayState);
+        // Whatever this particular view's overlay changed last frame is applied only to that
+        // view's backend. Camera requests and toolbar state can no longer leak between windows.
+        const std::uint64_t textureId = m_viewportPanelRenderer(context, available, used, *state);
         if (textureId != 0U && used.x > 0.0F && used.y > 0.0F) {
             const ImVec2 cursorBeforeImage = ImGui::GetCursorScreenPos();
             // The viewport renderer's framebuffer texture is a normal OpenGL render target
@@ -257,17 +263,25 @@ void EditorUVE::DrawViewportImageUVE() {
             // The projection/gizmo-mode overlay bubbles are editor-authoring chrome - hidden while
             // the Game workspace tab is active, matching Unity's own Scene/Game split where the
             // Game view previews what a player would see with no editor overlays on top.
-            if (!m_viewportOverlayState.gameWorkspaceActive && !m_viewportOverlayState.studioView) {
+            if (!state->gameWorkspaceActive && !state->studioView) {
+                // The existing toolbar helpers operate on the canonical member. Temporarily put
+                // this view's state there while they draw, then return both states to their owners.
+                // This keeps the large, proven toolbar implementation unchanged while preserving
+                // strict state isolation for the Entity Editor.
+                const bool auxiliaryState = state != &m_viewportOverlayState;
+                if (auxiliaryState) {
+                    std::swap(*state, m_viewportOverlayState);
+                }
                 DrawViewportOverlayBubblesUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},
                                               Math::Vector2UVE{used.x, used.y});
                 DrawEntityContextToolbarUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},
                                             Math::Vector2UVE{used.x, used.y});
-                // Every item submitted in this window this frame is an overlay bubble - the image
-                // above is not a hoverable item - so this is exactly "the pointer is on a button",
-                // which the renderer reads next frame to keep a toolbar click out of the scene.
                 m_viewportOverlayState.pointerOverOverlay = ImGui::IsAnyItemHovered();
+                if (auxiliaryState) {
+                    std::swap(*state, m_viewportOverlayState);
+                }
             } else {
-                m_viewportOverlayState.pointerOverOverlay = false;
+                state->pointerOverOverlay = false;
             }
         }
     }
