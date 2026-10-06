@@ -472,8 +472,20 @@ public:
     /// module that may compose Engine/Runtime, not something that should link a sibling
     /// Engine/Editor module directly) - see Engine/App/src/editor/main.cpp for the concrete
     /// Engine/Editor/Viewport-backed implementation.
+    /// Identifies one of the editor's physically independent render views.  This is deliberately
+    /// explicit at the renderer boundary: Main, Entity Editor, and Retarget must never reuse an
+    /// orbit camera, gesture, framebuffer, or render texture merely because only one happened to
+    /// be visible in an earlier frame.
+    enum class ViewportContextUVE : std::uint8_t {
+        Main = 0,
+        EntityEditor,
+        Retarget,
+        Count
+    };
+
     using ViewportPanelRendererUVE =
-        std::function<std::uint64_t(const Math::Vector2UVE& availableSize, Math::Vector2UVE& outUsedSize,
+        std::function<std::uint64_t(ViewportContextUVE context, const Math::Vector2UVE& availableSize,
+                                    Math::Vector2UVE& outUsedSize,
                                     const ViewportOverlayStateUVE& overlayState)>;
 
     /// Registers (or clears, with an empty std::function) the Viewport panel's render callback.
@@ -1619,7 +1631,7 @@ private:
     void DrawViewportPanelUVE();
     /// The rendered scene and its overlay, filling the rest of the current window (the main
     /// Viewport panel and the Entity Editor both use it).
-    void DrawViewportImageUVE();
+    void DrawViewportImageUVE(ViewportContextUVE context);
     void DrawViewportOverlayBubblesUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
     void DrawEntityContextToolbarUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
     void DrawViewportAxisColorPickerUVE();
@@ -2430,7 +2442,11 @@ private:
     bool m_consoleScrollToBottom = false;
     bool m_viewportPanelVisible = true;
     ViewportPanelRendererUVE m_viewportPanelRenderer;
+    // UI/render state is isolated just like the three backend cameras and render targets. Main
+    // remains the canonical settings-backed state; tool-window state is session-local.
     ViewportOverlayStateUVE m_viewportOverlayState;
+    ViewportOverlayStateUVE m_entityViewportOverlayState;
+    ViewportOverlayStateUVE m_retargetViewportOverlayState;
     Scene::EntityUVE m_previewCamera = Scene::kInvalidEntityUVE;
     bool m_sceneDirty = false;
     bool m_uiInitialized = false;
