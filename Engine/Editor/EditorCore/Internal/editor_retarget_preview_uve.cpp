@@ -135,7 +135,7 @@ bool EditorUVE::EndRetargetPreviewUVE() {
     if (m_simulationControl != nullptr && preview.simulationBefore.has_value()) {
         static_cast<void>(m_simulationControl->SetSimulationExecutionModeUVE(*preview.simulationBefore));
     }
-    m_viewportOverlayState.bones.clear();
+    m_retargetViewportOverlayState.bones.clear();
     InvalidateHierarchyFilterCacheUVE();
     return true;
 }
@@ -245,13 +245,13 @@ void EditorUVE::DrawRetargetPreviewUVE() {
     RetargetPreviewUVE& preview = *m_retargetPreview;
     // The camera faces both figures from the front, a little above the floor, and stays there.
     if (preview.frameRequested) {
-        m_viewportOverlayState.studioTarget = {0.0F, kFigureHeightUVE * 0.5F, 0.0F};
+        m_retargetViewportOverlayState.studioTarget = {0.0F, kFigureHeightUVE * 0.5F, 0.0F};
         // Wide enough for a T-posed character's arms beside the humanoid.
-        m_viewportOverlayState.studioRadius = kFigureOffsetUVE + kFigureHeightUVE * 0.75F;
-        ++m_viewportOverlayState.studioFramingSerial;
+        m_retargetViewportOverlayState.studioRadius = kFigureOffsetUVE + kFigureHeightUVE * 0.75F;
+        ++m_retargetViewportOverlayState.studioFramingSerial;
         preview.frameRequested = false;
     }
-    DrawViewportImageUVE();
+    DrawViewportImageUVE(ViewportContextUVE::Retarget);
 }
 
 void EditorUVE::DrawRetargetPlaceholderUVE() {

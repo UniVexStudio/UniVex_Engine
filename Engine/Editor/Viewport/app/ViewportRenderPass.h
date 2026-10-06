@@ -77,7 +77,9 @@ public:
     // Expected order: ClearUVE, RenderBackgroundUVE, [host scene geometry],
     // RenderGridUVE, RenderOverlayUVE.
     void ClearUVE(int framebufferWidth, int framebufferHeight) const;
-    void RenderBackgroundUVE() const;
+    /// `neutralEditorFallback` is reserved for Main's empty authoring scene. It must not alter
+    /// Entity Editor, Retarget, standalone viewport, or authored WorldEnvironment presentation.
+    void RenderBackgroundUVE(bool neutralEditorFallback = false) const;
     void RenderGridUVE(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight) const;
     void RenderOverlayUVE(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight) const;
 
