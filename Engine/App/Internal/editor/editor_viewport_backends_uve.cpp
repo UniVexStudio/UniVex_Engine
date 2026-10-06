@@ -46,6 +46,7 @@
 #include "uve/objects/3d/occluder_3d_uve.h"
 #include "uve/objects/3d/reflection_probe_3d_uve.h"
 #include "uve/objects/3d/visibility_region_3d_uve.h"
+#include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/render_systems/camera_system_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
