@@ -5,12 +5,25 @@
 #include <algorithm>
 #include <cmath>
 
+#include "uve/component/editor_internal_entity_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
+#include "uve/objects/3d/abstract_objects_3d_uve.h"
+
 namespace UVE::Scene {
 
 bool IsOccluder3DObjectComponentValidUVE(const Occluder3DComponentUVE& value) noexcept {
     return IsFinite3DObjectVectorUVE(value.halfExtents) && value.halfExtents.x > 0.0F &&
            value.halfExtents.y > 0.0F && value.halfExtents.z > 0.0F &&
            value.mode == Occluder3DObjectModeUVE::ConservativeBox;
+}
+
+void ApplyOccluder3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                        const Occluder3DObjectDefinitionUVE& value) {
+    ApplyObject3DRecipeUVE(entityManager, entity, Occluder3DObjectDefinitionUVE::defaultName);
+    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<Occluder3DComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<Occluder3DComponentUVE>(entity, value.occluder);
+    }
 }
 
 bool ResolveOccluder3DFullyHiddenUVE(const Occluder3DComponentUVE& config,
@@ -20,8 +33,6 @@ bool ResolveOccluder3DFullyHiddenUVE(const Occluder3DComponentUVE& config,
     if (!IsOccluder3DObjectComponentValidUVE(config)) {
         return false;
     }
-    // The strictly-contained check is INCLUSIVE on the surface: standing on the cover counts as
-    // being in it, which is the fail-open reading at the exact boundary everywhere below.
     const auto containsPoint = [&config](const Math::Vector3UVE& center,
                                          const Math::Vector3UVE& point) noexcept {
         return std::abs(point.x - center.x) <= config.halfExtents.x &&
@@ -38,11 +49,11 @@ bool ResolveOccluder3DFullyHiddenUVE(const Occluder3DComponentUVE& config,
     }
     if (containsPoint(occluderWorldPosition, viewerWorldPosition) ||
         containsPoint(occluderWorldPosition, pointWorld)) {
-        return false; // inside the cover: you cannot be hidden by it, and it never hides its own
+        return false;
     }
 
-    const float directionX = pointWorld.x - viewerWorldPosition.x;
-    const float directions[3U] = {directionX, pointWorld.y - viewerWorldPosition.y,
+    const float directions[3U] = {pointWorld.x - viewerWorldPosition.x,
+                                  pointWorld.y - viewerWorldPosition.y,
                                   pointWorld.z - viewerWorldPosition.z};
     const float viewerAxes[3U] = {viewerWorldPosition.x, viewerWorldPosition.y,
                                   viewerWorldPosition.z};
@@ -56,12 +67,6 @@ bool ResolveOccluder3DFullyHiddenUVE(const Occluder3DComponentUVE& config,
         !std::isfinite(directions[2U])) {
         return false;
     }
-    // Slab intersection of the segment against the box, expressed as a parametric overlap on
-    // t in [0, 1]: only strict interior overlap counts, and only when the box lands strictly
-    // before the segment's far end (tEnter < 1) - so "the candidate is exactly inside the cover"
-    // and "the ray only grazes the skin" both fail open. Degenerate axes (the segment is exactly
-    // parallel to a slab) collapse that axis' interval: harmless because being parallel means
-    // this axis carries no restriction beyond the endpoint check contained in tEnter/tExit.
     float tEnter = 0.0F;
     float tExit = 1.0F;
     for (std::size_t axis = 0U; axis < 3U; ++axis) {
@@ -71,7 +76,7 @@ bool ResolveOccluder3DFullyHiddenUVE(const Occluder3DComponentUVE& config,
         const float upper = upperAxes[axis];
         if (direction == 0.0F) {
             if (viewer <= lower || viewer >= upper) {
-                return false; // parallel travel outside this slab never enters the box
+                return false;
             }
             continue;
         }
@@ -83,10 +88,87 @@ bool ResolveOccluder3DFullyHiddenUVE(const Occluder3DComponentUVE& config,
         tEnter = std::max(tEnter, near);
         tExit = std::min(tExit, far);
         if (tEnter >= tExit) {
-            return false; // no common interior interval at all
+            return false;
         }
     }
     return tEnter < tExit;
+}
+
+bool ResolveOccluder3DFullyHidesAabbUVE(const Occluder3DComponentUVE& config,
+                                        const Math::Vector3UVE& occluderWorldPosition,
+                                        const Math::Vector3UVE& viewerWorldPosition,
+                                        const Math::AabbUVE& bounds) noexcept {
+    if (!std::isfinite(bounds.min.x) || !std::isfinite(bounds.min.y) || !std::isfinite(bounds.min.z) ||
+        !std::isfinite(bounds.max.x) || !std::isfinite(bounds.max.y) || !std::isfinite(bounds.max.z) ||
+        bounds.min.x > bounds.max.x || bounds.min.y > bounds.max.y || bounds.min.z > bounds.max.z) {
+        return false;
+    }
+    const Math::Vector3UVE corners[8U] = {
+        {bounds.min.x, bounds.min.y, bounds.min.z}, {bounds.min.x, bounds.min.y, bounds.max.z},
+        {bounds.min.x, bounds.max.y, bounds.min.z}, {bounds.min.x, bounds.max.y, bounds.max.z},
+        {bounds.max.x, bounds.min.y, bounds.min.z}, {bounds.max.x, bounds.min.y, bounds.max.z},
+        {bounds.max.x, bounds.max.y, bounds.min.z}, {bounds.max.x, bounds.max.y, bounds.max.z},
+    };
+    for (const Math::Vector3UVE& corner : corners) {
+        if (!ResolveOccluder3DFullyHiddenUVE(config, occluderWorldPosition, viewerWorldPosition, corner)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void CollectOccluder3DSnapshotsUVE(IEntityManagerUVE& entityManager, std::vector<Occluder3DSnapshotUVE>& out) {
+    entityManager.ForEachUVE<WorldTransformComponentUVE, Occluder3DComponentUVE>(
+        [&entityManager, &out](const EntityUVE entity, const WorldTransformComponentUVE& world,
+                               const Occluder3DComponentUVE& config) {
+            if (entityManager.HasComponentUVE<EditorInternalEntityComponentUVE>(entity) || world.dirty ||
+                !config.enabled || !IsOccluder3DObjectComponentValidUVE(config)) {
+                return;
+            }
+            out.push_back(Occluder3DSnapshotUVE{config, world.worldPosition});
+        });
+}
+
+bool IsOccluder3DPointDrawHiddenUVE(const std::span<const Occluder3DSnapshotUVE> occluders,
+                                    const Math::Vector3UVE& viewerWorldPosition,
+                                    const Math::Vector3UVE& pointWorld) noexcept {
+    for (const Occluder3DSnapshotUVE& occluder : occluders) {
+        if (ResolveOccluder3DFullyHiddenUVE(occluder.config, occluder.worldPosition, viewerWorldPosition,
+                                            pointWorld)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IsOccluder3DAabbDrawHiddenUVE(const std::span<const Occluder3DSnapshotUVE> occluders,
+                                   const Math::Vector3UVE& viewerWorldPosition,
+                                   const Math::AabbUVE& bounds) noexcept {
+    for (const Occluder3DSnapshotUVE& occluder : occluders) {
+        if (ResolveOccluder3DFullyHidesAabbUVE(occluder.config, occluder.worldPosition, viewerWorldPosition,
+                                               bounds)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void CollectOccluder3DGizmosUVE(IEntityManagerUVE& entityManager, std::vector<Occluder3DGizmoUVE>& out) {
+    entityManager.ForEachUVE<WorldTransformComponentUVE, Occluder3DComponentUVE>(
+        [&entityManager, &out](const EntityUVE entity, const WorldTransformComponentUVE& world,
+                               const Occluder3DComponentUVE& config) {
+            if (entityManager.HasComponentUVE<EditorInternalEntityComponentUVE>(entity) || world.dirty ||
+                !IsOccluder3DObjectComponentValidUVE(config)) {
+                return;
+            }
+            Occluder3DGizmoUVE gizmo;
+            gizmo.origin = world.worldPosition;
+            gizmo.halfExtents = config.halfExtents;
+            gizmo.enabled = config.enabled;
+            gizmo.color = config.enabled ? Math::Vector3UVE{0.95F, 0.45F, 0.28F}
+                                         : Math::Vector3UVE{0.50F, 0.46F, 0.42F};
+            out.push_back(gizmo);
+        });
 }
 
 } // namespace UVE::Scene

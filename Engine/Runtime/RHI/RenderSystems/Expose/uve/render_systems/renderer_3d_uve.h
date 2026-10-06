@@ -72,6 +72,8 @@ public:
     [[nodiscard]] Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept override;
 
 private:
+    void CaptureDueReflectionProbesUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity);
+
     struct ImplUVE;
     std::unique_ptr<ImplUVE> m_impl;
 };

@@ -94,6 +94,7 @@ public:
     [[nodiscard]] virtual bool IsActionHeldUVE(std::string_view actionName) const = 0;
     [[nodiscard]] virtual bool IsActionReleasedUVE(std::string_view actionName) const = 0;
     [[nodiscard]] virtual float GetAxisValueUVE(std::string_view actionName) const = 0;
+    [[nodiscard]] virtual bool HasActionUVE(std::string_view actionName) const = 0;
 };
 
 } // namespace UVE::Input

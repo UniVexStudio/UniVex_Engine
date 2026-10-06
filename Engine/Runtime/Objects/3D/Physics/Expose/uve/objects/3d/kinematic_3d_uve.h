@@ -7,6 +7,7 @@
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/component/rigid_3d_component_uve.h"
+#include "uve/math/quaternion_uve.h"
 #include "uve/objects/3d/object_3d_common_uve.h"
 
 namespace UVE::Scene {
@@ -63,5 +64,19 @@ struct Kinematic3DObjectDefinitionUVE final {
 /// Hierarchy/Name) through EnsureObject3DBaselineUVE - this kind is Object3D plus its recipe.
 void ApplyKinematic3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                             const Kinematic3DObjectDefinitionUVE& value);
+
+class Kinematic3DUVE final {
+public:
+    [[nodiscard]] static bool IsDrivingUVE(const Kinematic3DComponentUVE& kinematic) noexcept;
+
+    [[nodiscard]] static float EaseBlendUVE(float interpolation, float deltaTimeSeconds) noexcept;
+
+    [[nodiscard]] static Math::Vector3UVE ResolveWorldTargetUVE(const Math::Vector3UVE& localTarget,
+                                                                const Math::QuaternionUVE& worldRotation) noexcept;
+
+    [[nodiscard]] static Math::Vector3UVE EaseVelocityUVE(const Math::Vector3UVE& currentWorldVelocity,
+                                                          const Math::Vector3UVE& worldTarget,
+                                                          float interpolation, float deltaTimeSeconds) noexcept;
+};
 
 } // namespace UVE::Scene

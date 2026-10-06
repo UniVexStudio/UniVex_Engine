@@ -22,6 +22,9 @@ constexpr Tree<4> kCharacter{{{Kind::Character3D, -1, {}},
                               {Kind::MeshInstance3D, 0, "Mesh"},
                               {Kind::AnimationSequencer, 0, "AnimationSequencer"},
                               {Kind::AnimationGraph, 0, "AnimationGraph"}}};
+constexpr Tree<3> kPlayer{{{Kind::Player3D, -1, {}},
+                           {Kind::SpringArm3D, 0, "SpringArm"},
+                           {Kind::Camera3D, 1, "Camera"}}};
 constexpr Tree<3> kProp{{{Kind::Static3D, -1, {}}, {Kind::MeshInstance3D, 0, "Mesh"}, {Kind::Collider3D, 0, "Collider"}}};
 constexpr Tree<3> kPhysicsProp{
     {{Kind::Rigid3D, -1, {}}, {Kind::MeshInstance3D, 0, "Mesh"}, {Kind::Collider3D, 0, "Collider"}}};
@@ -67,6 +70,8 @@ constexpr std::array<ContentCatalogueItemUVE, 34> kItems{{
     {"character", "Character", "Entity",
      "A playable body: Character3D with a Mesh, an AnimationSequencer and an AnimationGraph", Action::EntityAsset,
      kCharacter},
+    {"player", "Player", "Entity",
+     "The possessed body: Player3D with a SpringArm3D and a Camera3D", Action::EntityAsset, kPlayer},
     {"prop", "Prop", "Entity", "Something solid to place: Static3D with a Mesh and a Collider",
      Action::EntityAsset, kProp},
     {"physics-prop", "Physics Prop", "Entity", "A prop that falls and gets pushed: Rigid3D, Mesh and Collider",

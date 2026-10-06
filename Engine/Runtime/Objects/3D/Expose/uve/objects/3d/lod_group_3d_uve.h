@@ -5,11 +5,15 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 
 #include "uve/asset/asset_guid_uve.h"
+#include "uve/component/entity_uve.h"
 #include "uve/objects/3d/object_3d_common_uve.h"
 
 namespace UVE::Scene {
+
+class IEntityManagerUVE;
 
 inline constexpr std::size_t kMaximumLodLevelsUVE = 8U;
 
@@ -95,5 +99,13 @@ void ResolveLodGroup3DLevelUVE(LodGroup3DComponentUVE& value, float distanceToCa
     const LodGroup3DComponentUVE& value, const Asset::AssetGuidUVE& baseMeshGuid) noexcept;
 
 [[nodiscard]] bool IsLodGroup3DObjectComponentValidUVE(const LodGroup3DComponentUVE& value) noexcept;
+
+struct LodGroup3DObjectDefinitionUVE final {
+    static constexpr std::string_view defaultName = "LODGroup3D";
+    LodGroup3DComponentUVE lod{};
+};
+
+void ApplyLodGroup3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                        const LodGroup3DObjectDefinitionUVE& value);
 
 } // namespace UVE::Scene

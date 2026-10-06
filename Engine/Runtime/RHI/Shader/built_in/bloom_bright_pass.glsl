@@ -22,11 +22,12 @@ out vec4 FragColor;
 
 uniform sampler2D uSourceTexture;
 uniform float uBloomThreshold;
+uniform float uBloomIntensity;
 
 void main() {
     vec3 hdrColor = max(texture(uSourceTexture, vTexCoord).rgb, vec3(0.0));
     float luminance = dot(hdrColor, vec3(0.2126, 0.7152, 0.0722));
     float contribution = max(luminance - uBloomThreshold, 0.0) / max(luminance, 0.0001);
-    FragColor = vec4(hdrColor * contribution, 1.0);
+    FragColor = vec4(hdrColor * contribution * max(uBloomIntensity, 0.0), 1.0);
 }
 #endif

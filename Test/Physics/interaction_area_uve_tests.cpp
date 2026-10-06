@@ -424,6 +424,37 @@ TEST_F(InteractionAreaUVETest, TheScanWritesOnlyTheRuntimeHalfAndNeverTheAuthore
     EXPECT_TRUE(live.enabled);
 }
 
+TEST_F(InteractionAreaUVETest, AnIgnoredInteractorIsNeverListed) {
+    const EntityUVE area = MakeAreaUVE({0.0F, 0.0F, 0.0F});
+    const EntityUVE ignored = MakeInteractorUVE({-0.5F, 0.0F, 0.0F});
+    const EntityUVE other = MakeInteractorUVE({0.5F, 0.0F, 0.0F});
+    entityManager.GetComponentUVE<InteractionArea3DComponentUVE>(area).ignoreEntity = ignored;
+
+    InteractionAreaScanResultUVE result = ScanUVE();
+    ASSERT_EQ(AreaUVE(area).interactorCount, 1U);
+    EXPECT_EQ(AreaUVE(area).interactors[0], other);
+    EXPECT_EQ(result.primaryInteractor, ignored);
+    EXPECT_FALSE(AreaUVE(area).focusedByPrimaryInteractor);
+
+    entityManager.GetComponentUVE<InteractionArea3DComponentUVE>(area).ignoreEntity = kInvalidEntityUVE;
+    result = ScanUVE();
+    EXPECT_EQ(AreaUVE(area).interactorCount, 2U);
+    EXPECT_TRUE(AreaUVE(area).focusedByPrimaryInteractor);
+}
+
+TEST_F(InteractionAreaUVETest, ADisabledColliderDoesNotInteract) {
+    const EntityUVE area = MakeAreaUVE({0.0F, 0.0F, 0.0F});
+    const EntityUVE interactor = MakeInteractorUVE({0.0F, 0.0F, 0.0F});
+    static_cast<void>(ScanUVE());
+    ASSERT_EQ(AreaUVE(area).interactorCount, 1U);
+
+    entityManager.GetComponentUVE<ColliderComponentUVE>(interactor).disabled = true;
+    const InteractionAreaScanResultUVE disabled = ScanUVE();
+    EXPECT_EQ(disabled.interactorCount, 0U);
+    ExpectClearedUVE(area);
+    EXPECT_FALSE(disabled.HasPrimaryInteractorUVE());
+}
+
 TEST_F(InteractionAreaUVETest, TheTagIsCarriedAndDeliberatelyDoesNotFilter) {
     // Two areas with different tags both track the same controller: tag-based gating belongs to
     // the gameplay layer that acts on the focus, and inventing a rule here would silently change

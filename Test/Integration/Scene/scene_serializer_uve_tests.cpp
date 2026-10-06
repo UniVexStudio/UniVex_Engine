@@ -291,6 +291,14 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     SpawnPoint3DComponentUVE spawn;
     spawn.spawnTag = "player_start";
     entityManager.AddComponentUVE<SpawnPoint3DComponentUVE>(source, spawn);
+    PlayerComponentUVE player;
+    player.lookSensitivity = 0.2F;
+    entityManager.AddComponentUVE<PlayerComponentUVE>(source, player);
+    HealthComponentUVE health;
+    health.maxHealth = 75.0F;
+    health.health = 12.0F;
+    health.invulnerable = true;
+    entityManager.AddComponentUVE<HealthComponentUVE>(source, health);
     LevelStreamer3DComponentUVE streamer;
     streamer.levelPath = "levels/courtyard.uvscene";
     streamer.enabled = true;
@@ -406,6 +414,11 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_EQ(entityManager.GetComponentUVE<Decal3DComponentUVE>(restored).materialAssetPath,
               "materials/warning.uemat");
     EXPECT_EQ(entityManager.GetComponentUVE<SpawnPoint3DComponentUVE>(restored).spawnTag, "player_start");
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<PlayerComponentUVE>(restored).lookSensitivity, 0.2F);
+    ASSERT_TRUE(entityManager.HasComponentUVE<HealthComponentUVE>(restored));
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<HealthComponentUVE>(restored).maxHealth, 75.0F);
+    EXPECT_TRUE(entityManager.GetComponentUVE<HealthComponentUVE>(restored).invulnerable);
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<HealthComponentUVE>(restored).health, 75.0F);
     EXPECT_TRUE(entityManager.GetComponentUVE<LevelStreamer3DComponentUVE>(restored).enabled);
     EXPECT_TRUE(entityManager.HasComponentUVE<Kinematic3DComponentUVE>(restored));
     EXPECT_TRUE(entityManager.HasComponentUVE<NavSeeker3DComponentUVE>(restored));
@@ -747,6 +760,7 @@ TEST_F(SceneSerializerUVETest, Projectile3DAuthoredHitContractRoundTripsAndTheRu
     EXPECT_EQ(restored.hitPolicy, Projectile3DHitPolicyUVE::Bounce);
     EXPECT_FLOAT_EQ(restored.restitution, 0.75F);
     EXPECT_FLOAT_EQ(restored.friction, 0.1F);
+    EXPECT_EQ(restored.ignoreEntity, kInvalidEntityUVE);
     EXPECT_FLOAT_EQ(restored.remainingLifetime, restored.maxLifetime)
         << "the countdown is re-armed from the authored lifetime, not restored stale";
     EXPECT_FALSE(restored.hit);
@@ -1260,6 +1274,148 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestoreUVE_RayCastExclusionsFollowTheO
     EXPECT_EQ(secondRay.exclusions[0], secondRoots[1]);
 }
 
+TEST_F(SceneSerializerUVETest, CaptureThenRestoreUVE_HitboxIgnoreFollowsTheObjectItNames) {
+    const EntityUVE owner = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(owner, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(owner, HierarchyComponentUVE{});
+    const EntityUVE hitboxEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(hitboxEntity, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(hitboxEntity, HierarchyComponentUVE{});
+    Hitbox3DComponentUVE hitbox;
+    hitbox.damageChannel = "melee";
+    hitbox.ignoreEntity = owner;
+    entityManager.AddComponentUVE<Hitbox3DComponentUVE>(hitboxEntity, hitbox);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {hitboxEntity, owner}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE restoredManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(restoredManager, *snapshot);
+    ASSERT_EQ(roots.size(), 2U);
+    EntityUVE restoredHitbox = kInvalidEntityUVE;
+    EntityUVE restoredOwner = kInvalidEntityUVE;
+    for (const EntityUVE root : roots) {
+        if (restoredManager.HasComponentUVE<Hitbox3DComponentUVE>(root)) {
+            restoredHitbox = root;
+        } else {
+            restoredOwner = root;
+        }
+    }
+    ASSERT_NE(restoredHitbox, kInvalidEntityUVE);
+    ASSERT_NE(restoredOwner, kInvalidEntityUVE);
+    ASSERT_NE(restoredOwner, owner);
+    const Hitbox3DComponentUVE& restored = restoredManager.GetComponentUVE<Hitbox3DComponentUVE>(restoredHitbox);
+    EXPECT_EQ(restored.damageChannel, "melee");
+    EXPECT_EQ(restored.ignoreEntity, restoredOwner);
+}
+
+TEST_F(SceneSerializerUVETest, CaptureThenRestoreUVE_HurtboxIgnoreFollowsTheObjectItNames) {
+    const EntityUVE owner = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(owner, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(owner, HierarchyComponentUVE{});
+    const EntityUVE hurtboxEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(hurtboxEntity, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(hurtboxEntity, HierarchyComponentUVE{});
+    Hurtbox3DComponentUVE hurtbox;
+    hurtbox.damageChannel = "player";
+    hurtbox.ignoreEntity = owner;
+    entityManager.AddComponentUVE<Hurtbox3DComponentUVE>(hurtboxEntity, hurtbox);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {hurtboxEntity, owner}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE restoredManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(restoredManager, *snapshot);
+    ASSERT_EQ(roots.size(), 2U);
+    EntityUVE restoredHurtbox = kInvalidEntityUVE;
+    EntityUVE restoredOwner = kInvalidEntityUVE;
+    for (const EntityUVE root : roots) {
+        if (restoredManager.HasComponentUVE<Hurtbox3DComponentUVE>(root)) {
+            restoredHurtbox = root;
+        } else {
+            restoredOwner = root;
+        }
+    }
+    ASSERT_NE(restoredHurtbox, kInvalidEntityUVE);
+    ASSERT_NE(restoredOwner, kInvalidEntityUVE);
+    ASSERT_NE(restoredOwner, owner);
+    const Hurtbox3DComponentUVE& restored = restoredManager.GetComponentUVE<Hurtbox3DComponentUVE>(restoredHurtbox);
+    EXPECT_EQ(restored.damageChannel, "player");
+    EXPECT_EQ(restored.ignoreEntity, restoredOwner);
+}
+
+TEST_F(SceneSerializerUVETest, CaptureThenRestoreUVE_InteractionAreaIgnoreFollowsTheObjectItNames) {
+    const EntityUVE owner = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(owner, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(owner, HierarchyComponentUVE{});
+    const EntityUVE areaEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(areaEntity, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(areaEntity, HierarchyComponentUVE{});
+    InteractionArea3DComponentUVE area;
+    area.interactionTag = "door";
+    area.ignoreEntity = owner;
+    entityManager.AddComponentUVE<InteractionArea3DComponentUVE>(areaEntity, area);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {areaEntity, owner}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE restoredManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(restoredManager, *snapshot);
+    ASSERT_EQ(roots.size(), 2U);
+    EntityUVE restoredArea = kInvalidEntityUVE;
+    EntityUVE restoredOwner = kInvalidEntityUVE;
+    for (const EntityUVE root : roots) {
+        if (restoredManager.HasComponentUVE<InteractionArea3DComponentUVE>(root)) {
+            restoredArea = root;
+        } else {
+            restoredOwner = root;
+        }
+    }
+    ASSERT_NE(restoredArea, kInvalidEntityUVE);
+    ASSERT_NE(restoredOwner, kInvalidEntityUVE);
+    ASSERT_NE(restoredOwner, owner);
+    const InteractionArea3DComponentUVE& restored =
+        restoredManager.GetComponentUVE<InteractionArea3DComponentUVE>(restoredArea);
+    EXPECT_EQ(restored.interactionTag, "door");
+    EXPECT_EQ(restored.ignoreEntity, restoredOwner);
+}
+
+TEST_F(SceneSerializerUVETest, CaptureThenRestoreUVE_ProjectileIgnoreFollowsTheObjectItNames) {
+    const EntityUVE owner = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(owner, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(owner, HierarchyComponentUVE{});
+    const EntityUVE projectileEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(projectileEntity, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(projectileEntity, HierarchyComponentUVE{});
+    Projectile3DComponentUVE projectile;
+    projectile.velocity = Math::Vector3UVE{0.0F, 0.0F, 20.0F};
+    projectile.ignoreEntity = owner;
+    entityManager.AddComponentUVE<Projectile3DComponentUVE>(projectileEntity, projectile);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {projectileEntity, owner}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE restoredManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(restoredManager, *snapshot);
+    ASSERT_EQ(roots.size(), 2U);
+    EntityUVE restoredProjectile = kInvalidEntityUVE;
+    EntityUVE restoredOwner = kInvalidEntityUVE;
+    for (const EntityUVE root : roots) {
+        if (restoredManager.HasComponentUVE<Projectile3DComponentUVE>(root)) {
+            restoredProjectile = root;
+        } else {
+            restoredOwner = root;
+        }
+    }
+    ASSERT_NE(restoredProjectile, kInvalidEntityUVE);
+    ASSERT_NE(restoredOwner, kInvalidEntityUVE);
+    ASSERT_NE(restoredOwner, owner);
+    const Projectile3DComponentUVE& restored =
+        restoredManager.GetComponentUVE<Projectile3DComponentUVE>(restoredProjectile);
+    EXPECT_EQ(restored.velocity, projectile.velocity);
+    EXPECT_EQ(restored.ignoreEntity, restoredOwner);
+}
+
 TEST_F(SceneSerializerUVETest, CaptureThenRestoreUVE_AnExclusionOutsideTheSavedSetIsDroppedRatherThanRenumbered) {
     // The excluded object lives in another part of the level, so this file does not contain it.
     // Writing its handle out would be writing a number the next load reads as whatever entity
@@ -1492,6 +1648,40 @@ TEST(ParticleEmitterComponentUVE, IsParticleEmitterComponentValidUVE_EnforcesBou
         ParticleEmitterComponentUVE{kMaximumParticleEmitterParticlesUVE + 1U}));
 }
 
+TEST(ParticleEmitterComponentUVE, IsParticleEmitterComponentValidUVE_EnforcesRateAndLifetime) {
+    ParticleEmitterComponentUVE component{};
+    component.maxParticles = 8U;
+    EXPECT_TRUE(IsParticleEmitterComponentValidUVE(component));
+    component.emissionRate = -1.0F;
+    EXPECT_FALSE(IsParticleEmitterComponentValidUVE(component));
+    component.emissionRate = 10.0F;
+    component.lifetimeSeconds = 0.0F;
+    EXPECT_FALSE(IsParticleEmitterComponentValidUVE(component));
+    component.lifetimeSeconds = kMaximumParticleEmitterLifetimeSecondsUVE + 1.0F;
+    EXPECT_FALSE(IsParticleEmitterComponentValidUVE(component));
+}
+
+TEST(ParticleEmitterComponentUVE, ConsumeParticleEmitterAutoEmitCountUVE_SpendsRateAcrossFrames) {
+    ParticleEmitterComponentUVE component{};
+    component.maxParticles = 8U;
+    component.emissionRate = 10.0F;
+    float remainder = 0.0F;
+    EXPECT_EQ(ConsumeParticleEmitterAutoEmitCountUVE(remainder, component, 0.05F, 0U), 0U);
+    EXPECT_EQ(ConsumeParticleEmitterAutoEmitCountUVE(remainder, component, 0.05F, 0U), 1U);
+    EXPECT_NEAR(remainder, 0.0F, 1.0e-5F);
+    component.emitting = false;
+    EXPECT_EQ(ConsumeParticleEmitterAutoEmitCountUVE(remainder, component, 1.0F, 0U), 0U);
+}
+
+TEST(ParticleEmitterComponentUVE, ConsumeParticleEmitterAutoEmitCountUVE_StopsAtTheBudget) {
+    ParticleEmitterComponentUVE component{};
+    component.maxParticles = 2U;
+    component.emissionRate = 100.0F;
+    float remainder = 0.0F;
+    EXPECT_EQ(ConsumeParticleEmitterAutoEmitCountUVE(remainder, component, 1.0F, 0U), 2U);
+    EXPECT_EQ(ConsumeParticleEmitterAutoEmitCountUVE(remainder, component, 1.0F, 2U), 0U);
+}
+
 TEST_F(SceneSerializerUVETest, RestoreUVE_ScriptSavedBeforeExportValuesLoadsWithNone) {
     const std::string payloadText =
         R"({"entities":[{"localId":0,"components":{"ScriptComponentUVE":{"scriptAssetPath":"scripts/a.uvs"}}}]})";
@@ -1527,6 +1717,24 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidScriptPayload_RollsBackCreatedE
     EXPECT_TRUE(roots.empty());
     EXPECT_TRUE(entityManager.IsAliveUVE(existing));
     EXPECT_EQ(entityManager.GetEntityCountUVE(), entityCountBefore);
+}
+
+TEST_F(SceneSerializerUVETest, RestoreUVE_ParticleEmitterSavedBeforeAutoEmitLoadsDefaults) {
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"ParticleEmitterComponentUVE":{"maxParticles":128}}}]})";
+    const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
+    const SceneSnapshotUVE snapshot{
+        Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
+                                        std::vector<std::byte>{payloadBytes, payloadBytes + payloadText.size()}),
+        SceneAssetTypeUVE::Scene};
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    const ParticleEmitterComponentUVE& restored =
+        entityManager.GetComponentUVE<ParticleEmitterComponentUVE>(roots.front());
+    EXPECT_EQ(restored.maxParticles, 128U);
+    EXPECT_TRUE(restored.emitting);
+    EXPECT_FLOAT_EQ(restored.emissionRate, ParticleEmitterComponentUVE{}.emissionRate);
+    EXPECT_FLOAT_EQ(restored.lifetimeSeconds, ParticleEmitterComponentUVE{}.lifetimeSeconds);
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidParticlePayload_RollsBackCreatedEntities) {
@@ -1879,6 +2087,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_CharacterControllerComponentUVE_Roun
     characterController.platformOnLeave = CharacterPlatformLeaveModeUVE::AddUpwardVelocity;
     characterController.maximumPlatformSpeed = 12.0F;
     characterController.slideOnCeiling = false;
+    characterController.upDirection = Math::Vector3UVE{0.0F, 0.0F, 1.0F};
     characterController.pushRigidBodies = true;
     characterController.pushStrength = 2.0F;
     characterController.maxPushSpeed = 7.0F;
@@ -1919,6 +2128,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_CharacterControllerComponentUVE_Roun
     EXPECT_EQ(loadedController.platformOnLeave, CharacterPlatformLeaveModeUVE::AddUpwardVelocity);
     EXPECT_FLOAT_EQ(loadedController.maximumPlatformSpeed, 12.0F);
     EXPECT_FALSE(loadedController.slideOnCeiling);
+    EXPECT_EQ(loadedController.upDirection, (Math::Vector3UVE{0.0F, 0.0F, 1.0F}));
     EXPECT_TRUE(loadedController.pushRigidBodies);
     EXPECT_FLOAT_EQ(loadedController.pushStrength, 2.0F);
     EXPECT_FLOAT_EQ(loadedController.maxPushSpeed, 7.0F);
@@ -2139,7 +2349,20 @@ TEST_F(SceneSerializerUVETest, LoadUVE_LegacyDocumentWithoutNameComponent_Remain
 
 TEST_F(SceneSerializerUVETest, SaveThenLoad_AreaComponentUVE_RoundTripsExtentsAndMasks) {
     const EntityUVE entity = entityManager.CreateEntityUVE();
-    const AreaComponentUVE area{Math::Vector3UVE{2.0F, 3.0F, 4.0F}, 4U, 0x0000FFFFU};
+    AreaComponentUVE area{Math::Vector3UVE{2.0F, 3.0F, 4.0F}, 4U, 0x0000FFFFU};
+    area.gravityOverride = AreaSpaceOverrideModeUVE::Replace;
+    area.gravityDirection = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    area.gravityMagnitude = 4.5F;
+    area.gravityPoint = true;
+    area.gravityPointOffset = Math::Vector3UVE{1.0F, 0.0F, -1.0F};
+    area.gravityPointUnitDistance = 3.0F;
+    area.linearDampOverride = AreaSpaceOverrideModeUVE::Combine;
+    area.linearDamp = 0.4F;
+    area.angularDampOverride = AreaSpaceOverrideModeUVE::ReplaceCombine;
+    area.angularDamp = 0.25F;
+    area.priority = 7;
+    area.overlappingBodyCount = 3U;
+    area.overlappingBodiesTruncated = true;
     entityManager.AddComponentUVE<AreaComponentUVE>(entity, area);
 
     const std::filesystem::path path = "uve_scene_serializer_tests_area.uvscene";
@@ -2154,6 +2377,19 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_AreaComponentUVE_RoundTripsExtentsAn
     EXPECT_EQ(loaded.halfExtents, area.halfExtents);
     EXPECT_EQ(loaded.collisionLayer, 4U);
     EXPECT_EQ(loaded.collisionMask, 0x0000FFFFU);
+    EXPECT_EQ(loaded.gravityOverride, AreaSpaceOverrideModeUVE::Replace);
+    EXPECT_EQ(loaded.gravityDirection, area.gravityDirection);
+    EXPECT_FLOAT_EQ(loaded.gravityMagnitude, 4.5F);
+    EXPECT_TRUE(loaded.gravityPoint);
+    EXPECT_EQ(loaded.gravityPointOffset, area.gravityPointOffset);
+    EXPECT_FLOAT_EQ(loaded.gravityPointUnitDistance, 3.0F);
+    EXPECT_EQ(loaded.linearDampOverride, AreaSpaceOverrideModeUVE::Combine);
+    EXPECT_FLOAT_EQ(loaded.linearDamp, 0.4F);
+    EXPECT_EQ(loaded.angularDampOverride, AreaSpaceOverrideModeUVE::ReplaceCombine);
+    EXPECT_FLOAT_EQ(loaded.angularDamp, 0.25F);
+    EXPECT_EQ(loaded.priority, 7);
+    EXPECT_EQ(loaded.overlappingBodyCount, 0U);
+    EXPECT_FALSE(loaded.overlappingBodiesTruncated);
 
     std::filesystem::remove(path);
 }
@@ -2166,6 +2402,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_ColliderComponentUVE_RoundTripsFrict
     collider.friction = 0.4F;
     collider.restitution = 0.9F;
     collider.density = 2.5F;
+    collider.disabled = true;
     entityManager.AddComponentUVE<ColliderComponentUVE>(entity, collider);
 
     const std::filesystem::path path = "uve_scene_serializer_tests_collider.uvscene";
@@ -2185,6 +2422,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_ColliderComponentUVE_RoundTripsFrict
     EXPECT_EQ(loaded.shapeType, ColliderShapeTypeUVE::Box);
     EXPECT_FLOAT_EQ(loaded.radius, 0.5F);
     EXPECT_FLOAT_EQ(loaded.height, 1.0F);
+    EXPECT_TRUE(loaded.disabled);
 
     std::filesystem::remove(path);
 }

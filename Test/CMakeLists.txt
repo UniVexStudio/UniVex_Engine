@@ -86,13 +86,12 @@ add_executable(uve_core_tests
     Plugins/plugin_registry_uve_tests.cpp
     ProjectCheck/project_checker_uve_tests.cpp
     Input/input_system_uve_tests.cpp
+    Gameplay/gameplay_input_uve_tests.cpp
     Input/input_names_uve_tests.cpp
     Input/mobile_input_system_uve_tests.cpp
     Input/mobile_gesture_system_uve_tests.cpp
     Input/mobile_gesture_recognizer_uve_tests.cpp
     RHI/null_render_device_uve_tests.cpp
-    RHI/OpenGL/gl_render_device_uve_tests.cpp
-    RHI/Vulkan/vulkan_render_device_uve_tests.cpp
     RHI/Shader/shader_binary_cache_uve_tests.cpp
     RHI/Shader/shader_diagnostics_parser_uve_tests.cpp
     RHI/Shader/shader_manager_uve_tests.cpp
@@ -104,7 +103,6 @@ add_executable(uve_core_tests
     Window/monitor_info_validation_uve_tests.cpp
     Window/null_window_manager_uve_tests.cpp
     Window/window_desc_validation_uve_tests.cpp
-    Window/window_manager_uve_tests.cpp
     Math/vector2_uve_tests.cpp
     Math/vector3_uve_tests.cpp
     Math/quaternion_uve_tests.cpp
@@ -118,6 +116,13 @@ add_executable(uve_core_tests
     Retarget/retarget_conform_uve_tests.cpp
     Retarget/retarget_files_uve_tests.cpp
 )
+if(UVE_HAS_DESKTOP_GL)
+    target_sources(uve_core_tests PRIVATE
+        RHI/OpenGL/gl_render_device_uve_tests.cpp
+        RHI/Vulkan/vulkan_render_device_uve_tests.cpp
+        Window/window_manager_uve_tests.cpp
+    )
+endif()
 target_link_libraries(uve_core_tests PRIVATE
     uve_uvscript
     uve_retarget
@@ -133,6 +138,7 @@ target_link_libraries(uve_core_tests PRIVATE
     uve_events
     uve_asset
     uve_input
+    uve_gameplay
     uve_window
     uve_rhi
     uve_rhi_opengl
@@ -144,9 +150,16 @@ target_link_libraries(uve_core_tests PRIVATE
     uve_network
     uve_plugins
     uve_project_check_lib
+    ZLIB::ZLIB
     GTest::gtest
     GTest::gtest_main
 )
+if(NOT ANDROID)
+    target_link_libraries(uve_core_tests PRIVATE JPEG::JPEG)
+endif()
+if(TARGET uve_jpeg_ep)
+    add_dependencies(uve_core_tests uve_jpeg_ep)
+endif()
 target_compile_features(uve_core_tests PRIVATE cxx_std_23)
 target_compile_definitions(uve_core_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 uve_set_warnings(uve_core_tests)
@@ -184,6 +197,15 @@ add_executable(uve_integration_tests
     Support/test_scratch_uve.cpp
     Objects/3D/objects_3d_uve_tests.cpp
     Objects/3D/object_definitions_3d_uve_tests.cpp
+    Objects/3D/player_3d_uve_tests.cpp
+    Objects/3D/health_uve_tests.cpp
+    Objects/3D/world_environment_uve_tests.cpp
+    Objects/3D/directional_light_3d_uve_tests.cpp
+    Objects/3D/fog_volume_3d_uve_tests.cpp
+    Objects/3D/world_partition_3d_uve_tests.cpp
+    Objects/3D/visibility_region_3d_uve_tests.cpp
+    Objects/3D/occluder_3d_uve_tests.cpp
+    Objects/3D/reflection_probe_3d_uve_tests.cpp
     Objects/3D/animation_objects_uve_tests.cpp
     Objects/3D/conformed_playback_uve_tests.cpp
     Objects/3D/two_bone_ik_3d_uve_tests.cpp
@@ -205,6 +227,7 @@ add_executable(uve_integration_tests
     Integration/Scene/particle_runtime_uve_tests.cpp
     Integration/Scene/scene_object_registry_uve_tests.cpp
     Integration/Scene/spawn_point_query_uve_tests.cpp
+    Integration/Scene/marker_3d_query_uve_tests.cpp
     Integration/Animation/time_pose_contract_uve_tests.cpp
     Integration/Animation/animation_clip_uve_tests.cpp
     Integration/Animation/pose_graph_uve_tests.cpp
@@ -215,26 +238,38 @@ add_executable(uve_integration_tests
     Integration/Object/type_metadata_bridge_uve_tests.cpp
     Integration/Object/variant_uve_tests.cpp
     Physics/angular_dynamics_uve_tests.cpp
+    Physics/area_3d_uve_tests.cpp
     Physics/area_overlap_lifecycle_tracker_uve_tests.cpp
     Physics/area_overlap_system_uve_tests.cpp
     Physics/character_controller_uve_tests.cpp
     Physics/character_body_motion_uve_tests.cpp
     Physics/character_3d_uve_tests.cpp
+    Physics/collider_3d_uve_tests.cpp
     Physics/collider_shape_uve_tests.cpp
     Physics/collision_lifecycle_tracker_uve_tests.cpp
     Physics/collision_system_uve_tests.cpp
     Physics/hinge_motor_limit_uve_tests.cpp
+    Physics/hitbox_3d_uve_tests.cpp
     Physics/hitbox_strike_uve_tests.cpp
+    Physics/hurtbox_3d_uve_tests.cpp
+    Physics/interaction_area_3d_uve_tests.cpp
     Physics/interaction_area_uve_tests.cpp
+    Physics/kinematic_3d_uve_tests.cpp
     Physics/kinematic_body_uve_tests.cpp
+    Physics/projectile_3d_uve_tests.cpp
     Physics/physics_constraint_system_uve_tests.cpp
     Physics/physics_material_uve_tests.cpp
     Physics/physics_query_system_uve_tests.cpp
     Physics/physics_system_uve_tests.cpp
+    Physics/ray_cast_3d_uve_tests.cpp
+    Physics/ray_cast_3d_step_uve_tests.cpp
     Physics/raycast_system_uve_tests.cpp
+    Physics/rigid_3d_uve_tests.cpp
     Physics/projectile_3d_step_uve_tests.cpp
     Physics/shape_cast_system_uve_tests.cpp
+    Physics/spring_arm_3d_uve_tests.cpp
     Physics/spring_arm_uve_tests.cpp
+    Physics/static_3d_uve_tests.cpp
     Navigation/navmesh_uve_tests.cpp
     Navigation/navmesh_bake_uve_tests.cpp
     Navigation/nav_path_uve_tests.cpp
@@ -257,11 +292,6 @@ add_executable(uve_integration_tests
     Audio/wav_pcm16_decoder_uve_tests.cpp
     Audio/wav_importer_uve_tests.cpp
     RHI/RenderSystems/camera_system_uve_tests.cpp
-    RHI/RenderSystems/compute_system_uve_tests.cpp
-    RHI/RenderSystems/particle_compute_simulation_uve_tests.cpp
-    RHI/RenderSystems/frustum_cull_compute_uve_tests.cpp
-    RHI/RenderSystems/frustum_cull_indirect_uve_tests.cpp
-    RHI/RenderSystems/mesh_skin_compute_uve_tests.cpp
     RHI/RenderSystems/render_batch_uve_tests.cpp
     RHI/RenderSystems/compute_kernel_portability_uve_tests.cpp
     RHI/RenderSystems/compute_workloads_vulkan_uve_tests.cpp
@@ -279,7 +309,17 @@ add_executable(uve_integration_tests
     RHI/RenderSystems/particle_draw_command_uve_tests.cpp
     UI/ui_font_atlas_uve_tests.cpp
     UI/ui_runtime_uve_tests.cpp
+    UI/canvas_ancestry_uve_tests.cpp
 )
+if(UVE_HAS_DESKTOP_GL)
+    target_sources(uve_integration_tests PRIVATE
+        RHI/RenderSystems/compute_system_uve_tests.cpp
+        RHI/RenderSystems/particle_compute_simulation_uve_tests.cpp
+        RHI/RenderSystems/frustum_cull_compute_uve_tests.cpp
+        RHI/RenderSystems/frustum_cull_indirect_uve_tests.cpp
+        RHI/RenderSystems/mesh_skin_compute_uve_tests.cpp
+    )
+endif()
 target_link_libraries(uve_integration_tests PRIVATE
     uve_retarget
     uve_navigation
@@ -332,6 +372,7 @@ target_include_directories(uve_integration_tests PRIVATE ${CMAKE_SOURCE_DIR}/Eng
 
 gtest_discover_tests(uve_integration_tests)
 
+if(UVE_HAS_DESKTOP_GL)
 #
 # uve_engine_tests covers Engine/Runtime/Engine - EngineCoreUVE (the whole-engine bootstrap),
 # EngineServicesUVE, VersionUVE, and EngineStateUVE. Kept as its own executable rather than
@@ -455,3 +496,4 @@ uve_set_warnings(uve_editor_tests)
 target_include_directories(uve_editor_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 gtest_discover_tests(uve_editor_tests)
+endif()

@@ -10,6 +10,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/objects/3d/abstract_physics_objects_3d_uve.h"
+#include "uve/objects/3d/collider_3d_uve.h"
 
 namespace UVE::Physics::Detail {
 namespace {
@@ -33,7 +34,8 @@ std::vector<ColliderWorldAabbUVE> BuildColliderWorldAabbCacheUVE(Scene::IEntityM
             // A physics object that has been taken out of the world is not here to be found by
             // anything: collisions, raycasts, shape casts and area overlaps all read this one
             // cache, so one answer covers every one of them.
-            if (!Scene::IsPhysicsObjectInWorldUVE(entityManager, entity)) {
+            if (!Scene::IsPhysicsObjectInWorldUVE(entityManager, entity) ||
+                !Scene::Collider3DUVE::IsParticipatingUVE(collider)) {
                 return;
             }
             const bool isSphere = collider.shapeType == Scene::ColliderShapeTypeUVE::Sphere;

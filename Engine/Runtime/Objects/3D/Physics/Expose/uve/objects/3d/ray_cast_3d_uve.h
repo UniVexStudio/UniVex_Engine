@@ -3,7 +3,9 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <span>
 
 #include "uve/objects/3d/object_3d_common_uve.h"
 #include "uve/component/entity_uve.h"
@@ -53,5 +55,25 @@ struct RayCast3DComponentUVE final {
 /// exclusion list that is dense and free of duplicates. Runtime result fields do not affect it,
 /// except that a claimed hit must name an entity and be finite.
 [[nodiscard]] bool IsRayCast3DObjectComponentValidUVE(const RayCast3DComponentUVE& value) noexcept;
+
+class RayCast3DUVE final {
+public:
+    [[nodiscard]] static bool IsCastingUVE(const RayCast3DComponentUVE& rayCast) noexcept;
+
+    [[nodiscard]] static std::size_t ExclusionCountUVE(const RayCast3DComponentUVE& rayCast) noexcept;
+
+    [[nodiscard]] static std::span<const EntityUVE> ExclusionSpanUVE(const RayCast3DComponentUVE& rayCast) noexcept;
+
+    [[nodiscard]] static bool AcceptsTargetUVE(EntityUVE rayEntity, const RayCast3DComponentUVE& rayCast,
+                                               EntityUVE obstacle) noexcept;
+
+    [[nodiscard]] static Math::Vector3UVE ResolveWorldDirectionUVE(
+        const Math::Vector3UVE& localDirection, const Math::QuaternionUVE& worldRotation) noexcept;
+
+    static void ClearResultUVE(RayCast3DComponentUVE& rayCast) noexcept;
+
+    static void RecordHitUVE(RayCast3DComponentUVE& rayCast, EntityUVE hitEntity,
+                             const Math::Vector3UVE& hitPosition, const Math::Vector3UVE& hitNormal) noexcept;
+};
 
 } // namespace UVE::Scene

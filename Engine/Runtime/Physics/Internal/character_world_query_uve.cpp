@@ -108,37 +108,35 @@ bool CharacterWorldQueryUVE::IsCollidableUVE(const Detail::ColliderWorldAabbUVE&
     return (collider.collisionLayer & m_mask) != 0U && (collider.collisionMask & m_layer) != 0U;
 }
 
-std::vector<Scene::CharacterSlideCollisionUVE> CharacterWorldQueryUVE::GetOverlapsUVE() const {
+std::vector<Scene::CharacterSlideCollisionUVE> CharacterWorldQueryUVE::GetOverlapsAtUVE(
+    const Math::Vector3UVE& center) const {
     std::vector<Scene::CharacterSlideCollisionUVE> overlaps;
-    if (!m_isMovable) {
+    if (!m_isMovable || m_collisionSystem == nullptr || !IsUsableUVE(center)) {
         return overlaps;
     }
-    const std::vector<CollisionPairUVE> pairs = m_collisionSystem->DetectCollisionsUVE(*m_entityManager);
-    overlaps.reserve(pairs.size());
-    for (const CollisionPairUVE& pair : pairs) {
-        const bool characterIsFirst = pair.first == m_entity;
-        if (!characterIsFirst && pair.second != m_entity) {
+    if (!m_colliders.has_value()) {
+        m_colliders = Detail::BuildColliderWorldAabbCacheUVE(*m_entityManager);
+    }
+    // Same shape the sweep uses: a recovery and a sweep cannot disagree about whether this pose
+    // is free. The normal points from the surface back at the body, which is -axis of the MTV
+    // (ComputePenetrationUVE's axis points from the moving box toward the target).
+    const Math::AabbUVE body = Math::AabbUVE::FromCenterExtentsUVE(center, m_halfExtents);
+    for (const Detail::ColliderWorldAabbUVE& collider : *m_colliders) {
+        if (!IsCollidableUVE(collider)) {
             continue;
         }
-        if (pair.first == m_ignoredEntity || pair.second == m_ignoredEntity) {
-            continue;
-        }
-        // A pair's axis points from the pair's first entity toward its second. The mover wants the
-        // surface normal, which points from the surface back at the character - so the axis is
-        // negated when the character is the one it points away from.
-        const Math::Vector3UVE normal = characterIsFirst ? -pair.separationAxis : pair.separationAxis;
-        if (!std::isfinite(pair.penetrationDepth) || pair.penetrationDepth <= 0.0F ||
-            !IsUsableUVE(normal) || Math::LengthSquaredUVE(normal) <= 0.0F) {
+        const std::optional<Math::PenetrationUVE> penetration =
+            Math::ComputePenetrationUVE(body, collider.worldAabb);
+        if (!penetration.has_value() || !std::isfinite(penetration->depth) ||
+            penetration->depth <= 0.0F || !IsUsableUVE(penetration->axis) ||
+            Math::LengthSquaredUVE(penetration->axis) <= 0.0F) {
             continue;
         }
         Scene::CharacterSlideCollisionUVE overlap;
-        overlap.entity = characterIsFirst ? pair.second : pair.first;
-        overlap.normal = normal;
-        // The exact contact point of an AABB pair is on the face between them; the character's own
-        // center is the honest stand-in that costs nothing to compute and cannot be wrong about
-        // which side it is on.
-        overlap.position = m_center;
-        overlap.depth = pair.penetrationDepth;
+        overlap.entity = collider.entity;
+        overlap.normal = penetration->axis * -1.0F;
+        overlap.position = center;
+        overlap.depth = penetration->depth;
         overlap.travel = 0.0F;
         overlaps.push_back(overlap);
     }

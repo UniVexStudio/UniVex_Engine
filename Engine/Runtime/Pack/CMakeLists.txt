@@ -9,6 +9,11 @@
 # lightweight standalone-tool layout (Expose/Internal/app), but needs uve_core (not just uve_asset)
 # since the launcher half drives a real EngineCoreUVE/Scene::SceneSerializerUVE.
 
+if(NOT UVE_HAS_DESKTOP_GL)
+    add_library(uve_pack_lib INTERFACE)
+    return()
+endif()
+
 add_library(uve_pack_lib STATIC
     Internal/project_packager_uve.cpp
     Internal/project_launcher_uve.cpp

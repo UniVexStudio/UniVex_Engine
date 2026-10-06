@@ -7,6 +7,7 @@
 # objects/scene_object_uve.h's restore note, which this module unblocks.
 
 add_library(uve_physics STATIC
+    Internal/area_3d_runtime_uve.cpp
     Internal/area_overlap_lifecycle_tracker_uve.cpp
     Internal/character_controller_uve.cpp
     Internal/character_body_motion_uve.cpp
@@ -17,6 +18,7 @@ add_library(uve_physics STATIC
     Internal/hitbox_strike_lifecycle_tracker_uve.cpp
     Internal/spring_arm_uve.cpp
     Internal/projectile_3d_step_uve.cpp
+    Internal/ray_cast_3d_step_uve.cpp
     Internal/area_overlap_system_uve.cpp
     Internal/angular_dynamics_uve.cpp
     Internal/collider_world_aabb_cache_uve.cpp

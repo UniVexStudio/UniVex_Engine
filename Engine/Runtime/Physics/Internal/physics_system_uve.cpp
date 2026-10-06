@@ -8,17 +8,21 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <vector>
 
 #include "uve/logging/assert_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/physics/angular_dynamics_uve.h"
+#include "uve/physics/area_3d_runtime_uve.h"
 #include "uve/physics/collision_pair_uve.h"
 #include "uve/physics/physics_material_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/objects/3d/abstract_physics_objects_3d_uve.h"
+#include "uve/objects/3d/rigid_3d_uve.h"
+#include "uve/objects/3d/static_3d_uve.h"
 
 namespace UVE::Physics {
 
@@ -26,12 +30,6 @@ namespace {
 
 [[nodiscard]] bool IsFiniteVector3UVE(const Math::Vector3UVE& value) noexcept {
     return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
-
-/// 0 for a kinematic or non-positive-mass body — the "infinite mass" case (immovable). Computed
-/// on demand rather than stored on Rigid3DComponentUVE, so mass/inverseMass can never desync.
-[[nodiscard]] float EffectiveInverseMassUVE(bool isKinematic, float mass) noexcept {
-    return (isKinematic || mass <= 0.0F) ? 0.0F : 1.0F / mass;
 }
 
 [[nodiscard]] bool TryIntegratePositionUVE(const Math::Vector3UVE& position,
@@ -70,16 +68,11 @@ void MoveAndDeflectUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGra
         return;
     }
     Scene::Rigid3DComponentUVE& rigidBody = entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity);
-    if (rigidBody.isKinematic) {
+    if (!Scene::Rigid3DUVE::IsDynamicUVE(rigidBody)) {
         return;
     }
-    const float intoSurface = Math::DotUVE(rigidBody.velocity, towardOtherBody);
-    if (intoSurface > 0.0F) {
-        const Math::Vector3UVE normalVelocity = towardOtherBody * intoSurface;
-        const Math::Vector3UVE tangentialVelocity = rigidBody.velocity - normalVelocity;
-        const float frictionFactor = std::clamp(1.0F - material.friction, 0.0F, 1.0F);
-        rigidBody.velocity = tangentialVelocity * frictionFactor - normalVelocity * material.restitution;
-    }
+    rigidBody.velocity = Scene::Rigid3DUVE::DeflectVelocityUVE(rigidBody.velocity, towardOtherBody,
+                                                              material.friction, material.restitution);
 }
 
 /// Resolves one overlapping pair: mass-weighted positional correction (a kinematic or
@@ -89,7 +82,7 @@ void ResolvePairUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphU
                     const CollisionPairUVE& pair) {
     const auto InverseMassOfUVE = [&entityManager](Scene::EntityUVE entity) {
         if (!entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(entity)) {
-            return 0.0F;
+            return Scene::Static3DUVE::InverseMassUVE();
         }
         // An object the simulation may not move - a kinematically driven one, a PhysicsObject3D
         // kept as a static obstacle, or one taken out of the world - has no inverse mass to give
@@ -99,7 +92,7 @@ void ResolvePairUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphU
         }
         const Scene::Rigid3DComponentUVE& rigidBody =
             entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity);
-        return EffectiveInverseMassUVE(rigidBody.isKinematic, rigidBody.mass);
+        return Scene::Rigid3DUVE::InverseMassUVE(rigidBody);
     };
 
     // How much of the overlap each side takes: its inverse mass, divided by its authored collision
@@ -150,15 +143,16 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
         !std::isfinite(m_gravity.x) || !std::isfinite(m_gravity.y) || !std::isfinite(m_gravity.z)) {
         return;
     }
+    const std::vector<Area3DBodySpaceUVE> areaSpaces = CollectArea3DBodySpacesUVE(entityManager, m_gravity);
     entityManager.ForEachUVE<Scene::TransformComponentUVE, Scene::Rigid3DComponentUVE>(
-        [&entityManager, &sceneGraph, this, fixedDeltaTimeSeconds](
+        [&entityManager, &sceneGraph, &areaSpaces, this, fixedDeltaTimeSeconds](
             Scene::EntityUVE entity, const Scene::TransformComponentUVE& transform,
             Scene::Rigid3DComponentUVE& rigidBody) {
             if (!Scene::IsRigid3DComponentValidUVE(rigidBody)) {
                 UVE_ASSERT(Scene::IsRigid3DComponentValidUVE(rigidBody));
                 return;
             }
-            if (rigidBody.isKinematic) {
+            if (!Scene::Rigid3DUVE::IsDynamicUVE(rigidBody)) {
                 return;
             }
             // A stopped physics object is either out of the world (its collider never reaches the
@@ -168,19 +162,21 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
                 return;
             }
 
-            const float gravityStep = rigidBody.gravityScale * fixedDeltaTimeSeconds;
-            if (!std::isfinite(gravityStep)) {
+            Math::Vector3UVE gravity = m_gravity;
+            float linearDamp = rigidBody.drag;
+            float angularDamp = 0.0F;
+            if (const Area3DBodySpaceUVE* space = FindArea3DBodySpaceUVE(areaSpaces, entity)) {
+                gravity = space->gravity;
+                linearDamp = space->linearDamp;
+                angularDamp = space->angularDamp;
+            }
+            if (!std::isfinite(angularDamp)) {
                 return;
             }
-            Math::Vector3UVE candidateVelocity = rigidBody.velocity + m_gravity * gravityStep;
-            if (!IsFiniteVector3UVE(candidateVelocity)) {
+            const std::optional<Math::Vector3UVE> candidateVelocity = Scene::Rigid3DUVE::IntegrateLinearVelocityUVE(
+                rigidBody.velocity, gravity, rigidBody.gravityScale, linearDamp, fixedDeltaTimeSeconds);
+            if (!candidateVelocity.has_value()) {
                 return;
-            }
-            if (rigidBody.drag > 0.0F) {
-                candidateVelocity *= std::max(0.0F, 1.0F - rigidBody.drag * fixedDeltaTimeSeconds);
-                if (!IsFiniteVector3UVE(candidateVelocity)) {
-                    return;
-                }
             }
 
             Math::Vector3UVE candidateAngularVelocity = rigidBody.angularVelocity;
@@ -201,9 +197,16 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
                 return;
             }
             candidateAngularVelocity = *integratedAngularVelocity;
+            if (angularDamp > 0.0F) {
+                candidateAngularVelocity *=
+                    std::max(0.0F, 1.0F - angularDamp * fixedDeltaTimeSeconds);
+                if (!IsFiniteVector3UVE(candidateAngularVelocity)) {
+                    return;
+                }
+            }
 
             Scene::TransformComponentUVE newTransform = transform;
-            if (!TryIntegratePositionUVE(transform.localPosition, candidateVelocity, fixedDeltaTimeSeconds,
+            if (!TryIntegratePositionUVE(transform.localPosition, *candidateVelocity, fixedDeltaTimeSeconds,
                                          newTransform.localPosition)) {
                 return;
             }
@@ -222,7 +225,7 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
                     }
                 }
             }
-            rigidBody.velocity = candidateVelocity;
+            rigidBody.velocity = *candidateVelocity;
             rigidBody.angularVelocity = candidateAngularVelocity;
             sceneGraph.SetLocalTransformUVE(entityManager, entity, newTransform);
         });
