@@ -4,13 +4,17 @@
 
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <string>
+#include <utility>
 
 #include <gtest/gtest.h>
 
 #include "uve/config/config_manager_uve.h"
 #include "uve/config/settings_document_uve.h"
+#include "uve/config/settings_stack_uve.h"
 
 namespace UVE::Config::Tests {
 namespace {
@@ -44,11 +48,113 @@ protected:
     ConfigManagerUVE store;
 };
 
+TEST(SettingsStackUVETest, PrecedenceProvenanceAndInvalidValuesFallThrough) {
+    SettingsRegistryUVE registry;
+    SettingDescriptorUVE platformValue =
+        MakeIntSettingUVE("settings.platformValue", 5, 1, 120, "Platform Value", "Test");
+    platformValue.flags |= kSettingFlagPerPlatformUVE;
+    ASSERT_TRUE(registry.RegisterUVE(std::move(platformValue)));
+    SettingDescriptorUVE sessionValue = MakeBoolSettingUVE("settings.sessionValue", false, "Session Value", "Test");
+    sessionValue.flags |= kSettingFlagNotPersistedUVE;
+    ASSERT_TRUE(registry.RegisterUVE(std::move(sessionValue)));
+    ASSERT_TRUE(registry.RegisterUVE(MakeIntSettingUVE("settings.nonPlatformValue", 7, 1, 120,
+                                                       "Non-Platform Value", "Test")));
+
+    ConfigManagerUVE project;
+    ConfigManagerUVE user;
+    ConfigManagerUVE platform;
+    ConfigManagerUVE commandLine;
+    SettingsStackUVE stack(registry);
+
+    EXPECT_FALSE(stack.AttachLayerUVE(SettingValueSourceUVE::EngineDefault, project));
+    ASSERT_TRUE(stack.AttachLayerUVE(SettingValueSourceUVE::Project, project));
+    ASSERT_TRUE(stack.AttachLayerUVE(SettingValueSourceUVE::User, user));
+    ASSERT_TRUE(stack.AttachLayerUVE(SettingValueSourceUVE::Platform, platform));
+    ASSERT_TRUE(stack.AttachLayerUVE(SettingValueSourceUVE::CommandLine, commandLine));
+
+    constexpr std::string_view kSettingId = "settings.platformValue";
+    auto resolved = stack.ResolveUVE(kSettingId);
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_EQ(std::get<std::int64_t>(resolved->value), 5);
+    EXPECT_EQ(resolved->source, SettingValueSourceUVE::EngineDefault);
+
+    project.SetIntUVE(kSettingId, 10);
+    user.SetIntUVE(kSettingId, 20);
+    platform.SetIntUVE(kSettingId, 30);
+    commandLine.SetIntUVE(kSettingId, 40);
+    resolved = stack.ResolveUVE(kSettingId);
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_EQ(std::get<std::int64_t>(resolved->value), 40);
+    EXPECT_EQ(resolved->source, SettingValueSourceUVE::CommandLine);
+
+    // A bad high-priority value is absent, not a reason to mask lower layers.
+    commandLine.SetIntUVE(kSettingId, 500);
+    EXPECT_FALSE(stack.GetStoredValueUVE(SettingValueSourceUVE::CommandLine, kSettingId).has_value());
+    resolved = stack.ResolveUVE(kSettingId);
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_EQ(std::get<std::int64_t>(resolved->value), 30);
+    EXPECT_EQ(resolved->source, SettingValueSourceUVE::Platform);
+
+    commandLine.SetStringUVE(kSettingId, "not an integer");
+    EXPECT_FALSE(stack.GetStoredValueUVE(SettingValueSourceUVE::CommandLine, kSettingId).has_value());
+    resolved = stack.ResolveUVE(kSettingId);
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_EQ(std::get<std::int64_t>(resolved->value), 30);
+    EXPECT_EQ(resolved->source, SettingValueSourceUVE::Platform);
+
+    platform.SetIntUVE("settings.nonPlatformValue", 99);
+    resolved = stack.ResolveUVE("settings.nonPlatformValue");
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_EQ(std::get<std::int64_t>(resolved->value), 7);
+    EXPECT_EQ(resolved->source, SettingValueSourceUVE::EngineDefault);
+    EXPECT_FALSE(stack.GetStoredValueUVE(SettingValueSourceUVE::Platform,
+                                        "settings.nonPlatformValue").has_value());
+
+    project.SetBoolUVE("settings.sessionValue", true);
+    user.SetBoolUVE("settings.sessionValue", true);
+    platform.SetBoolUVE("settings.sessionValue", true);
+    resolved = stack.ResolveUVE("settings.sessionValue");
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_FALSE(std::get<bool>(resolved->value));
+    EXPECT_EQ(resolved->source, SettingValueSourceUVE::EngineDefault);
+    commandLine.SetBoolUVE("settings.sessionValue", true);
+    resolved = stack.ResolveUVE("settings.sessionValue");
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_TRUE(std::get<bool>(resolved->value));
+    EXPECT_EQ(resolved->source, SettingValueSourceUVE::CommandLine);
+
+    ASSERT_TRUE(stack.DetachLayerUVE(SettingValueSourceUVE::Platform));
+    resolved = stack.ResolveUVE(kSettingId);
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_EQ(std::get<std::int64_t>(resolved->value), 20);
+    EXPECT_EQ(resolved->source, SettingValueSourceUVE::User);
+
+    ASSERT_TRUE(stack.DetachLayerUVE(SettingValueSourceUVE::User));
+    resolved = stack.ResolveUVE(kSettingId);
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_EQ(std::get<std::int64_t>(resolved->value), 10);
+    EXPECT_EQ(resolved->source, SettingValueSourceUVE::Project);
+
+    ASSERT_TRUE(stack.DetachLayerUVE(SettingValueSourceUVE::Project));
+    resolved = stack.ResolveUVE(kSettingId);
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_EQ(std::get<std::int64_t>(resolved->value), 5);
+    EXPECT_EQ(resolved->source, SettingValueSourceUVE::EngineDefault);
+    EXPECT_FALSE(stack.ResolveUVE("settings.unknown").has_value());
+    EXPECT_FALSE(stack.DetachLayerUVE(SettingValueSourceUVE::EngineDefault));
+}
+
 TEST(SettingDescriptorUVETest, ValidDescriptorsOfEveryTypeHaveNoProblem) {
     EXPECT_EQ(ValidateSettingDescriptorUVE(MakeBoolSettingUVE("a.b", false, "A", "Cat")), "");
     EXPECT_EQ(ValidateSettingDescriptorUVE(MakeIntSettingUVE("a.i", 0, std::nullopt, std::nullopt, "I", "")), "");
     EXPECT_EQ(ValidateSettingDescriptorUVE(MakeFloatSettingUVE("a.f", 2.0, 1.0, 3.0, "F", "Cat/Sub Page")), "");
     EXPECT_EQ(ValidateSettingDescriptorUVE(MakeStringSettingUVE("a.s", "abc", 3, "S", "Cat")), "");
+    EXPECT_EQ(ValidateSettingDescriptorUVE(MakeStringListSettingUVE("a.list", {"first", "second"}, 3, 16,
+                                                                    "List", "Cat")), "");
+    EXPECT_EQ(ValidateSettingDescriptorUVE(MakeFilePathSettingUVE("a.path", "Assets/Scene.uvscene", 256,
+                                                                  "Scene", "Project")), "");
+    EXPECT_EQ(ValidateSettingDescriptorUVE(MakeKeyBindingSettingUVE("a.shortcut", "Ctrl+Shift+S",
+                                                                     "Save", "Editor/Shortcuts")), "");
     EXPECT_EQ(ValidateSettingDescriptorUVE(MakeQualityUVE()), "");
     EXPECT_EQ(ValidateSettingDescriptorUVE(MakeColorSettingUVE("a.c", {0.0F, 1.0F, 0.5F}, false, "C", "Cat")), "");
 }
@@ -58,6 +164,29 @@ TEST(SettingDescriptorUVETest, MalformedIdsAreRejected) {
         EXPECT_NE(ValidateSettingDescriptorUVE(MakeBoolSettingUVE(id, false, "A", "Cat")), "") << "id: " << id;
     }
     EXPECT_EQ(ValidateSettingDescriptorUVE(MakeBoolSettingUVE("editor_2.grid_visible", false, "A", "")), "");
+}
+
+TEST(SettingDescriptorUVETest, DocumentVersionKeyIsReservedAndReplacementIdsRequireDeprecatedAliases) {
+    EXPECT_NE(ValidateSettingDescriptorUVE(MakeBoolSettingUVE("version", false, "Version", "")), "");
+    EXPECT_NE(ValidateSettingDescriptorUVE(MakeBoolSettingUVE("version.settings", false, "Version", "")), "");
+
+    SettingDescriptorUVE live = MakeIntSettingUVE("settings.current", 1, 0, 10, "Current", "");
+    live.replacementId = "settings.other";
+    EXPECT_NE(ValidateSettingDescriptorUVE(live), "");
+
+    SettingDescriptorUVE alias = MakeIntSettingUVE("settings.old", 1, 0, 10, "Old", "");
+    alias.flags |= kSettingFlagDeprecatedUVE;
+    alias.replacementId = "settings.current";
+    EXPECT_EQ(ValidateSettingDescriptorUVE(alias), "");
+    alias.replacementId = alias.id;
+    EXPECT_NE(ValidateSettingDescriptorUVE(alias), "");
+
+    SettingsRegistryUVE registry;
+    live.replacementId.clear();
+    alias.replacementId = "settings.current";
+    EXPECT_FALSE(registry.RegisterUVE(alias)); // The live target must be registered first.
+    ASSERT_TRUE(registry.RegisterUVE(std::move(live)));
+    EXPECT_TRUE(registry.RegisterUVE(std::move(alias)));
 }
 
 TEST(SettingDescriptorUVETest, MalformedCategoriesAreRejected) {
@@ -72,12 +201,33 @@ TEST(SettingDescriptorUVETest, DefaultMustSatisfyItsOwnConstraints) {
     EXPECT_NE(ValidateSettingDescriptorUVE(MakeFloatSettingUVE("a.f", 11.0, 1.0, 10.0, "F", "")), "");
     EXPECT_NE(ValidateSettingDescriptorUVE(MakeFloatSettingUVE("a.f", kNaN, std::nullopt, std::nullopt, "F", "")), "");
     EXPECT_NE(ValidateSettingDescriptorUVE(MakeStringSettingUVE("a.s", "abcd", 3, "S", "")), "");
+    EXPECT_NE(ValidateSettingDescriptorUVE(MakeStringListSettingUVE("a.list", {"one", "two"}, 1, 8,
+                                                                     "List", "")), "");
+    EXPECT_NE(ValidateSettingDescriptorUVE(MakeStringListSettingUVE("a.list", {"too-long"}, 2, 3,
+                                                                     "List", "")), "");
+    EXPECT_NE(ValidateSettingDescriptorUVE(MakeFilePathSettingUVE("a.path", std::string(5, 'x'), 4,
+                                                                  "Path", "")), "");
+    EXPECT_NE(ValidateSettingDescriptorUVE(MakeKeyBindingSettingUVE("a.shortcut", "Ctrl+Hyper", "Shortcut", "")), "");
+    EXPECT_NE(ValidateSettingDescriptorUVE(MakeKeyBindingSettingUVE("a.shortcut", "Ctrl+Ctrl+S", "Shortcut", "")), "");
     EXPECT_NE(ValidateSettingDescriptorUVE(MakeEnumSettingUVE("a.e", 7, {{0, "Zero"}}, "E", "")), "");
     EXPECT_NE(ValidateSettingDescriptorUVE(MakeColorSettingUVE("a.c", {1.5F, 0.0F, 0.0F}, false, "C", "")), "");
 
     SettingDescriptorUVE wrongAlternative = MakeBoolSettingUVE("a.b", false, "B", "");
     wrongAlternative.defaultValue = std::int64_t{1};
     EXPECT_NE(ValidateSettingDescriptorUVE(wrongAlternative), "");
+}
+
+TEST(SettingDescriptorUVETest, StringListRequiresABoundedItemCount) {
+    SettingDescriptorUVE noItemLimit = MakeStringListSettingUVE("a.list", {}, 0U, 0U, "List", "");
+    EXPECT_NE(ValidateSettingDescriptorUVE(noItemLimit), "");
+
+    SettingDescriptorUVE excessiveLimit = MakeStringListSettingUVE(
+        "a.list", {}, kMaximumSettingStringListItemsUVE + 1U, 0U, "List", "");
+    EXPECT_NE(ValidateSettingDescriptorUVE(excessiveLimit), "");
+
+    SettingDescriptorUVE notAList = MakeBoolSettingUVE("a.flag", false, "Flag", "");
+    notAList.maxItems = 1U;
+    EXPECT_NE(ValidateSettingDescriptorUVE(notAList), "");
 }
 
 TEST(SettingDescriptorUVETest, BoundsAndStepMustBeCoherent) {
@@ -177,6 +327,60 @@ TEST_F(SettingsRegistryUVETest, TypedGettersReturnStoredValues) {
     EXPECT_DOUBLE_EQ(store.GetDoubleUVE("editor.clear.color.a", 0.0), 0.25);
 }
 
+TEST_F(SettingsRegistryUVETest, FilePathAndKeyBindingUseTextStorageWithTypeSpecificValidation) {
+    ASSERT_TRUE(registry.RegisterUVE(MakeFilePathSettingUVE("application.iconPath", "Assets/icon.png", 256,
+                                                            "Application Icon", "Application")));
+    ASSERT_TRUE(registry.RegisterUVE(MakeKeyBindingSettingUVE("editor.shortcuts.save", "Ctrl+S", "Save", "Editor")));
+
+    ASSERT_TRUE(registry.SetValueUVE(store, "application.iconPath", std::string{"Assets/Studio Icon.png"}));
+    ASSERT_TRUE(registry.SetValueUVE(store, "editor.shortcuts.save", std::string{"Ctrl+Shift+F12"}));
+    EXPECT_EQ(registry.GetStringUVE(store, "application.iconPath"), "Assets/Studio Icon.png");
+    EXPECT_EQ(registry.GetStringUVE(store, "editor.shortcuts.save"), "Ctrl+Shift+F12");
+
+    EXPECT_FALSE(registry.SetValueUVE(store, "application.iconPath", std::string(257U, 'x')));
+    EXPECT_FALSE(registry.SetValueUVE(store, "application.iconPath", std::string{"bad\0path", 8U}));
+    EXPECT_FALSE(registry.SetValueUVE(store, "editor.shortcuts.save", std::string{"Hyper+S"}));
+    EXPECT_FALSE(registry.SetValueUVE(store, "editor.shortcuts.save", std::string{"Ctrl+Ctrl+S"}));
+    EXPECT_FALSE(registry.SetValueUVE(store, "editor.shortcuts.save", std::string{"F13"}));
+
+    store.SetStringUVE("editor.shortcuts.save", "Hyper+S");
+    EXPECT_EQ(registry.GetValueUVE(store, "editor.shortcuts.save"), SettingValueUVE{std::string{"Ctrl+S"}});
+}
+
+TEST_F(SettingsRegistryUVETest, StringListUsesBoundedNumberedStringStorage) {
+    constexpr std::string_view kListId = "editor.favoriteProjects";
+    const SettingStringListUVE defaultValue{"Default/Project"};
+    ASSERT_TRUE(registry.RegisterUVE(MakeStringListSettingUVE(std::string{kListId}, defaultValue, 3U, 32U,
+                                                              "Favorite Projects", "Editor/Session")));
+
+    const SettingStringListUVE values{"First/Project", "Second/Project"};
+    ASSERT_TRUE(registry.SetValueUVE(store, kListId, values));
+    EXPECT_EQ(store.GetIntUVE("editor.favoriteProjects.count", -1), 2);
+    EXPECT_EQ(store.GetStringUVE("editor.favoriteProjects.0", ""), values[0]);
+    EXPECT_EQ(store.GetStringUVE("editor.favoriteProjects.1", ""), values[1]);
+    EXPECT_EQ(registry.GetStringListUVE(store, kListId), values);
+    EXPECT_EQ(registry.GetValueUVE(store, kListId), SettingValueUVE{values});
+    EXPECT_EQ(registry.GetStringListUVE(store, "editor.grid.visible", {"fallback"}),
+              (SettingStringListUVE{"fallback"}));
+
+    EXPECT_FALSE(registry.SetValueUVE(store, kListId, SettingStringListUVE{"one", "two", "three", "four"}));
+    EXPECT_FALSE(registry.SetValueUVE(store, kListId, SettingStringListUVE{std::string(33U, 'x')}));
+    EXPECT_EQ(registry.GetStringListUVE(store, kListId), values)
+        << "a rejected list write must leave all stored entries unchanged";
+
+    // List item paths are reserved, while a nonnumeric sibling under the same JSON object remains legal.
+    EXPECT_FALSE(registry.RegisterUVE(MakeBoolSettingUVE("editor.favoriteProjects.1", false, "Collision", "")));
+    EXPECT_FALSE(registry.RegisterUVE(MakeBoolSettingUVE("editor.favoriteProjects", false, "Parent", "")));
+    EXPECT_TRUE(registry.RegisterUVE(
+        MakeBoolSettingUVE("editor.favoriteProjects.descriptionVisible", true, "Sibling", "")));
+
+    ASSERT_TRUE(registry.ClearValueUVE(store, kListId));
+    EXPECT_FALSE(store.HasKeyUVE("editor.favoriteProjects.count"));
+    EXPECT_FALSE(store.HasKeyUVE("editor.favoriteProjects.0"));
+    EXPECT_FALSE(store.HasKeyUVE("editor.favoriteProjects.1"));
+    EXPECT_EQ(registry.GetStringListUVE(store, kListId), defaultValue);
+}
+
 TEST_F(SettingsRegistryUVETest, TypedGettersAnswerFallbackForUnknownOrMismatchedIds) {
     EXPECT_TRUE(registry.GetBoolUVE(store, "editor.unknown", true));
     EXPECT_EQ(registry.GetIntUVE(store, "editor.grid.opacity", 9), 9);
@@ -270,6 +474,41 @@ TEST_F(SettingsRegistryUVETest, DeprecatedSettingsAreReadButNeverWritten) {
     EXPECT_EQ(registry.GetIntUVE(store, "editor.legacy.size"), 7);
     EXPECT_FALSE(registry.SetValueUVE(store, "editor.legacy.size", std::int64_t{2}));
     EXPECT_EQ(store.GetIntUVE("editor.legacy.size", 0), 7);
+}
+
+TEST(DeprecatedAliasUVETest, ReadsMigratesAndThenRemovesTheOldId) {
+    SettingsRegistryUVE registry;
+    ASSERT_TRUE(registry.RegisterUVE(
+        MakeIntSettingUVE("rendering.shadow.resolution", 2048, 512, 4096, "Resolution", "Rendering")));
+    SettingDescriptorUVE alias =
+        MakeIntSettingUVE("rendering.shadow.mapSize", 2048, 512, 4096, "Legacy Resolution", "Rendering");
+    alias.flags = kSettingFlagDeprecatedUVE | kSettingFlagHiddenUVE;
+    alias.replacementId = "rendering.shadow.resolution";
+    ASSERT_TRUE(registry.RegisterUVE(alias));
+
+    ConfigManagerUVE store;
+    store.SetIntUVE("rendering.shadow.mapSize", 1024);
+    EXPECT_EQ(registry.GetStoredValueUVE(store, "rendering.shadow.mapSize"), SettingValueUVE{1024});
+    EXPECT_EQ(registry.GetStoredValueUVE(store, "rendering.shadow.resolution"), SettingValueUVE{1024});
+    EXPECT_FALSE(registry.SetValueUVE(store, "rendering.shadow.mapSize", std::int64_t{4096}));
+
+    EXPECT_TRUE(registry.MigrateDeprecatedValuesUVE(store));
+    EXPECT_EQ(store.GetIntUVE("rendering.shadow.resolution", 0), 1024);
+    EXPECT_FALSE(store.HasKeyUVE("rendering.shadow.mapSize"));
+    EXPECT_FALSE(registry.MigrateDeprecatedValuesUVE(store));
+
+    // The live id wins if both forms are present; the stale alias is removed.
+    store.SetIntUVE("rendering.shadow.mapSize", 512);
+    store.SetIntUVE("rendering.shadow.resolution", 2048);
+    EXPECT_TRUE(registry.MigrateDeprecatedValuesUVE(store));
+    EXPECT_EQ(store.GetIntUVE("rendering.shadow.resolution", 0), 2048);
+    EXPECT_FALSE(store.HasKeyUVE("rendering.shadow.mapSize"));
+
+    // Resetting the live id also clears any raw deprecated key so it cannot reappear as fallback.
+    store.SetIntUVE("rendering.shadow.mapSize", 1024);
+    EXPECT_TRUE(registry.ClearValueUVE(store, "rendering.shadow.resolution"));
+    EXPECT_FALSE(store.HasKeyUVE("rendering.shadow.mapSize"));
+    EXPECT_FALSE(registry.GetStoredValueUVE(store, "rendering.shadow.resolution").has_value());
 }
 
 TEST_F(SettingsRegistryUVETest, ValuesSurviveASaveAndReload) {
@@ -385,20 +624,205 @@ class SettingsDocumentUVETest : public ::testing::Test {
 protected:
     void SetUp() override {
         std::remove(path.c_str());
+        std::remove(invalidPath.c_str());
         ASSERT_TRUE(document.GetRegistryUVE().RegisterUVE(
             MakeFloatSettingUVE("physics.ticks", 60.0, 1.0, 1000.0, "Ticks", "Physics")));
         ASSERT_TRUE(document.GetRegistryUVE().RegisterUVE(
             MakeColorSettingUVE("rendering.clear", {0.1F, 0.1F, 0.1F}, false, "Clear", "Rendering")));
     }
-    void TearDown() override { std::remove(path.c_str()); }
+    void TearDown() override {
+        std::remove(path.c_str());
+        std::remove(invalidPath.c_str());
+    }
 
     const std::string path = "uve_settings_document_test.uvsettings";
+    const std::string invalidPath = "uve_settings_document_invalid_test.uvsettings";
     SettingsDocumentUVE document;
 };
+
+TEST_F(SettingsDocumentUVETest, LoadsEveryHistoricalFixtureThroughForwardMigrationSteps) {
+    struct Fixture final {
+        std::string name;
+        std::string contents;
+        double ticksPerSecond;
+        bool alreadyCurrent;
+    };
+    const std::vector<Fixture> fixtures{
+        {"v0", R"({"physics":{"legacyTicks":30}})", 30.0, false},
+        {"v1", R"({"version":1,"physics":{"ticks":45}})", 45.0, false},
+        {"v2", R"({"version":2,"simulation":{"ticks":90.0}})", 90.0, false},
+        {"v3", R"({"version":3,"physics":{"ticksPerSecond":120.0}})", 120.0, true},
+    };
+    const auto registerSchema = [](SettingsDocumentUVE& versioned) {
+        if (!versioned.GetRegistryUVE().RegisterUVE(
+                MakeFloatSettingUVE("physics.ticksPerSecond", 60.0, 1.0, 1000.0, "Ticks", "Physics")) ||
+            !versioned.SetCurrentVersionUVE(3U)) {
+            return false;
+        }
+        if (!versioned.RegisterMigrationUVE(0U, [](IConfigManagerUVE& store) {
+                if (!store.HasKeyUVE("physics.legacyTicks")) {
+                    return true;
+                }
+                const std::int64_t ticks = store.GetIntUVE("physics.legacyTicks", -1);
+                if (ticks < 1) {
+                    return false;
+                }
+                store.SetIntUVE("physics.ticks", ticks);
+                return store.RemoveKeyUVE("physics.legacyTicks");
+            })) {
+            return false;
+        }
+        if (!versioned.RegisterMigrationUVE(1U, [](IConfigManagerUVE& store) {
+                if (!store.HasKeyUVE("physics.ticks")) {
+                    return true;
+                }
+                const std::int64_t ticks = store.GetIntUVE("physics.ticks", -1);
+                if (ticks < 1) {
+                    return false;
+                }
+                store.SetDoubleUVE("simulation.ticks", static_cast<double>(ticks));
+                return store.RemoveKeyUVE("physics.ticks");
+            })) {
+            return false;
+        }
+        return versioned.RegisterMigrationUVE(2U, [](IConfigManagerUVE& store) {
+            if (!store.HasKeyUVE("simulation.ticks")) {
+                return true;
+            }
+            const double ticks = store.GetDoubleUVE("simulation.ticks", -1.0);
+            if (ticks < 1.0) {
+                return false;
+            }
+            store.SetDoubleUVE("physics.ticksPerSecond", ticks);
+            return store.RemoveKeyUVE("simulation.ticks");
+        });
+    };
+
+    for (const Fixture& fixture : fixtures) {
+        const std::string fixturePath = "uve_settings_document_migration_" + fixture.name + ".uvsettings";
+        std::remove(fixturePath.c_str());
+        {
+            std::ofstream file(fixturePath);
+            ASSERT_TRUE(file.is_open()) << fixture.name;
+            file << fixture.contents;
+        }
+
+        SettingsDocumentUVE versioned;
+        ASSERT_TRUE(registerSchema(versioned)) << fixture.name;
+        ASSERT_TRUE(versioned.LoadUVE(fixturePath)) << fixture.name;
+        EXPECT_EQ(versioned.GetCurrentVersionUVE(), 3U);
+        EXPECT_EQ(versioned.GetStoreUVE().GetIntUVE(kSettingsDocumentVersionKeyUVE, -1), 3);
+        EXPECT_EQ(versioned.GetValueUVE("physics.ticksPerSecond"), SettingValueUVE{fixture.ticksPerSecond});
+        EXPECT_EQ(versioned.IsDirtyUVE(), !fixture.alreadyCurrent) << fixture.name;
+        EXPECT_FALSE(versioned.GetStoreUVE().HasKeyUVE("physics.legacyTicks"));
+        EXPECT_FALSE(versioned.GetStoreUVE().HasKeyUVE("physics.ticks"));
+        EXPECT_FALSE(versioned.GetStoreUVE().HasKeyUVE("simulation.ticks"));
+
+        ASSERT_TRUE(versioned.SaveUVE()) << fixture.name;
+        ConfigManagerUVE persisted;
+        ASSERT_TRUE(persisted.LoadUVE(fixturePath)) << fixture.name;
+        EXPECT_EQ(persisted.GetIntUVE(kSettingsDocumentVersionKeyUVE, -1), 3);
+        EXPECT_DOUBLE_EQ(persisted.GetDoubleUVE("physics.ticksPerSecond", -1.0), fixture.ticksPerSecond);
+        std::remove(fixturePath.c_str());
+    }
+}
+
+TEST_F(SettingsDocumentUVETest, FailedFutureAndStepMigrationsLeaveTheLoadedDocumentUntouched) {
+    const std::string validPath = "uve_settings_document_version_current.uvsettings";
+    const std::string futurePath = "uve_settings_document_version_future.uvsettings";
+    const std::string invalidVersionPath = "uve_settings_document_version_invalid.uvsettings";
+    const std::string failedStepPath = "uve_settings_document_version_failed_step.uvsettings";
+    for (const std::string& fixturePath : {validPath, futurePath, invalidVersionPath, failedStepPath}) {
+        std::remove(fixturePath.c_str());
+    }
+    {
+        std::ofstream file(validPath);
+        ASSERT_TRUE(file.is_open());
+        file << R"({"version":2,"physics":{"ticks":120.0}})";
+    }
+    {
+        std::ofstream file(futurePath);
+        ASSERT_TRUE(file.is_open());
+        file << R"({"version":3,"physics":{"ticks":240.0}})";
+    }
+    {
+        std::ofstream file(invalidVersionPath);
+        ASSERT_TRUE(file.is_open());
+        file << R"({"version":{"nested":1},"physics":{"ticks":30.0}})";
+    }
+    {
+        std::ofstream file(failedStepPath);
+        ASSERT_TRUE(file.is_open());
+        file << R"({"version":1,"physics":{"ticks":30.0}})";
+    }
+
+    SettingsDocumentUVE versioned;
+    ASSERT_TRUE(versioned.GetRegistryUVE().RegisterUVE(
+        MakeFloatSettingUVE("physics.ticks", 60.0, 1.0, 1000.0, "Ticks", "Physics")));
+    ASSERT_TRUE(versioned.SetCurrentVersionUVE(2U));
+    ASSERT_TRUE(versioned.RegisterMigrationUVE(1U, [](IConfigManagerUVE& store) {
+        store.SetDoubleUVE("physics.ticks", 1.0); // Prove a failed callback's partial edits are discarded.
+        return false;
+    }));
+    ASSERT_TRUE(versioned.LoadUVE(validPath));
+    ASSERT_TRUE(versioned.SetValueUVE("physics.ticks", 180.0));
+    const std::filesystem::path pathBeforeFailure = versioned.GetPathUVE();
+
+    EXPECT_FALSE(versioned.LoadUVE(futurePath));
+    EXPECT_EQ(versioned.GetPathUVE(), pathBeforeFailure);
+    EXPECT_TRUE(versioned.IsDirtyUVE());
+    EXPECT_EQ(versioned.GetValueUVE("physics.ticks"), SettingValueUVE{180.0});
+    EXPECT_EQ(versioned.GetStoreUVE().GetIntUVE(kSettingsDocumentVersionKeyUVE, -1), 2);
+
+    EXPECT_FALSE(versioned.LoadUVE(invalidVersionPath));
+    EXPECT_EQ(versioned.GetPathUVE(), pathBeforeFailure);
+    EXPECT_TRUE(versioned.IsDirtyUVE());
+    EXPECT_EQ(versioned.GetValueUVE("physics.ticks"), SettingValueUVE{180.0});
+    EXPECT_EQ(versioned.GetStoreUVE().GetIntUVE(kSettingsDocumentVersionKeyUVE, -1), 2);
+
+    EXPECT_FALSE(versioned.LoadUVE(failedStepPath));
+    EXPECT_EQ(versioned.GetPathUVE(), pathBeforeFailure);
+    EXPECT_TRUE(versioned.IsDirtyUVE());
+    EXPECT_EQ(versioned.GetValueUVE("physics.ticks"), SettingValueUVE{180.0});
+    EXPECT_EQ(versioned.GetStoreUVE().GetIntUVE(kSettingsDocumentVersionKeyUVE, -1), 2);
+    EXPECT_FALSE(versioned.SetCurrentVersionUVE(3U));
+    EXPECT_FALSE(versioned.RegisterMigrationUVE(1U, [](IConfigManagerUVE&) { return true; }));
+
+    for (const std::string& fixturePath : {validPath, futurePath, invalidVersionPath, failedStepPath}) {
+        std::remove(fixturePath.c_str());
+    }
+}
+
+TEST_F(SettingsDocumentUVETest, LoadingMigratesDeprecatedAliasToItsReplacement) {
+    const std::string aliasPath = "uve_settings_document_deprecated_alias.uvsettings";
+    std::remove(aliasPath.c_str());
+    {
+        std::ofstream file(aliasPath);
+        ASSERT_TRUE(file.is_open());
+        file << R"({"version":1,"physics":{"legacyTicks":120.0}})";
+    }
+
+    SettingsDocumentUVE versioned;
+    ASSERT_TRUE(versioned.GetRegistryUVE().RegisterUVE(
+        MakeFloatSettingUVE("physics.ticks", 60.0, 1.0, 1000.0, "Ticks", "Physics")));
+    SettingDescriptorUVE alias = MakeFloatSettingUVE("physics.legacyTicks", 60.0, 1.0, 1000.0,
+                                                     "Old Ticks", "Physics");
+    alias.flags = kSettingFlagDeprecatedUVE | kSettingFlagHiddenUVE;
+    alias.replacementId = "physics.ticks";
+    ASSERT_TRUE(versioned.GetRegistryUVE().RegisterUVE(std::move(alias)));
+
+    ASSERT_TRUE(versioned.LoadUVE(aliasPath));
+    EXPECT_EQ(versioned.GetValueUVE("physics.ticks"), SettingValueUVE{120.0});
+    EXPECT_FALSE(versioned.GetStoreUVE().HasKeyUVE("physics.legacyTicks"));
+    EXPECT_TRUE(versioned.IsDirtyUVE());
+    ASSERT_TRUE(versioned.SaveUVE());
+    std::remove(aliasPath.c_str());
+}
 
 TEST_F(SettingsDocumentUVETest, AMissingFileIsEveryDefault) {
     ASSERT_TRUE(document.LoadUVE(path));
     EXPECT_FALSE(document.IsDirtyUVE());
+    EXPECT_EQ(document.GetStoreUVE().GetIntUVE(kSettingsDocumentVersionKeyUVE, -1), 1);
     EXPECT_EQ(document.GetValueUVE("physics.ticks"), SettingValueUVE{60.0});
     EXPECT_FALSE(document.GetStoredValueUVE("physics.ticks").has_value());
     EXPECT_FALSE(document.IsModifiedUVE("physics.ticks"));
@@ -421,6 +845,219 @@ TEST_F(SettingsDocumentUVETest, HoldsOnlyWhatDiffersFromTheDefault) {
     EXPECT_TRUE(document.IsDirtyUVE());
     EXPECT_FALSE(document.GetStoreUVE().HasKeyUVE("physics.ticks"));
     EXPECT_FALSE(document.GetStoreUVE().HasKeyUVE("physics"));
+}
+
+TEST_F(SettingsDocumentUVETest, SettingObserversFireOnlyForEffectiveChangesAndCanUnsubscribe) {
+    ASSERT_TRUE(document.LoadUVE(path));
+    std::vector<SettingChangedEventUVE> changes;
+    const SettingsObserverSubscriptionUVE subscription = document.SubscribeToSettingUVE(
+        "physics.ticks", [&changes](const SettingChangedEventUVE& event) { changes.push_back(event); });
+    ASSERT_TRUE(subscription.IsValidUVE());
+
+    ASSERT_TRUE(document.SetValueUVE("physics.ticks", 120.0));
+    ASSERT_EQ(changes.size(), 1U);
+    EXPECT_EQ(changes[0].id, "physics.ticks");
+    EXPECT_EQ(changes[0].previousValue, SettingValueUVE{60.0});
+    EXPECT_EQ(changes[0].newValue, SettingValueUVE{120.0});
+
+    // A repeated write and a rejected write do not represent a value change.
+    ASSERT_TRUE(document.SetValueUVE("physics.ticks", 120.0));
+    EXPECT_FALSE(document.SetValueUVE("physics.ticks", 0.0));
+    EXPECT_EQ(changes.size(), 1U);
+
+    ASSERT_TRUE(document.ResetUVE("physics.ticks"));
+    ASSERT_EQ(changes.size(), 2U);
+    EXPECT_EQ(changes[1].previousValue, SettingValueUVE{120.0});
+    EXPECT_EQ(changes[1].newValue, SettingValueUVE{60.0});
+    EXPECT_TRUE(document.UnsubscribeUVE(subscription));
+    EXPECT_FALSE(document.UnsubscribeUVE(subscription));
+    ASSERT_TRUE(document.SetValueUVE("physics.ticks", 90.0));
+    EXPECT_EQ(changes.size(), 2U);
+}
+
+TEST_F(SettingsDocumentUVETest, RemovingInvalidStoredDataDoesNotNotifyWhenEffectiveValueIsUnchanged) {
+    {
+        std::ofstream fixture(path);
+        ASSERT_TRUE(fixture.is_open());
+        fixture << R"({"physics":{"ticks":5000}})";
+    }
+    ASSERT_TRUE(document.LoadUVE(path));
+    EXPECT_EQ(document.GetValueUVE("physics.ticks"), SettingValueUVE{60.0});
+    EXPECT_FALSE(document.GetStoredValueUVE("physics.ticks").has_value());
+
+    int notifications = 0;
+    ASSERT_TRUE(document.SubscribeToSettingUVE(
+        "physics.ticks", [&notifications](const SettingChangedEventUVE&) { ++notifications; }).IsValidUVE());
+    ASSERT_TRUE(document.SetValueUVE("physics.ticks", 60.0));
+
+    EXPECT_TRUE(document.IsDirtyUVE()); // The corrupt raw key was removed from disk state.
+    EXPECT_FALSE(document.GetStoreUVE().HasKeyUVE("physics.ticks"));
+    EXPECT_EQ(notifications, 0); // The effective value was the default both before and after cleanup.
+}
+
+TEST_F(SettingsDocumentUVETest, CategoryObserversUseSlashBoundaries) {
+    ASSERT_TRUE(document.GetRegistryUVE().RegisterUVE(
+        MakeFloatSettingUVE("rendering.viewport.scale", 1.0, 0.1, 4.0, "Scale", "Rendering/Viewport")));
+    ASSERT_TRUE(document.GetRegistryUVE().RegisterUVE(
+        MakeFloatSettingUVE("renderingExtra.scale", 1.0, 0.1, 4.0, "Extra Scale", "RenderingExtra")));
+    ASSERT_TRUE(document.LoadUVE(path));
+
+    std::vector<std::string> changedIds;
+    const SettingsObserverSubscriptionUVE subscription = document.SubscribeToCategoryUVE(
+        "Rendering", [&changedIds](const SettingChangedEventUVE& event) { changedIds.push_back(event.id); });
+    ASSERT_TRUE(subscription.IsValidUVE());
+    EXPECT_FALSE(document.SubscribeToCategoryUVE("Render", [](const SettingChangedEventUVE&) {}).IsValidUVE());
+    EXPECT_FALSE(document.SubscribeToCategoryUVE("", [](const SettingChangedEventUVE&) {}).IsValidUVE());
+    EXPECT_FALSE(document.SubscribeToSettingUVE("rendering.unknown", [](const SettingChangedEventUVE&) {})
+                     .IsValidUVE());
+
+    ASSERT_TRUE(document.SetValueUVE("rendering.clear", SettingColorUVE{0.5F, 0.25F, 0.75F}));
+    ASSERT_TRUE(document.SetValueUVE("rendering.viewport.scale", 2.0));
+    ASSERT_TRUE(document.SetValueUVE("renderingExtra.scale", 2.0));
+    EXPECT_EQ(changedIds, (std::vector<std::string>{"rendering.clear", "rendering.viewport.scale"}));
+    EXPECT_TRUE(document.UnsubscribeUVE(subscription));
+}
+
+TEST_F(SettingsDocumentUVETest, UnsubscribeDuringDispatchSkipsTheRemovedObserver) {
+    ASSERT_TRUE(document.LoadUVE(path));
+    int firstCalls = 0;
+    int secondCalls = 0;
+    SettingsObserverSubscriptionUVE secondSubscription;
+    const SettingsObserverSubscriptionUVE firstSubscription = document.SubscribeToSettingUVE(
+        "physics.ticks", [this, &firstCalls, &secondSubscription](const SettingChangedEventUVE&) {
+            ++firstCalls;
+            EXPECT_TRUE(document.UnsubscribeUVE(secondSubscription));
+        });
+    secondSubscription = document.SubscribeToSettingUVE(
+        "physics.ticks", [&secondCalls](const SettingChangedEventUVE&) { ++secondCalls; });
+    ASSERT_TRUE(firstSubscription.IsValidUVE());
+    ASSERT_TRUE(secondSubscription.IsValidUVE());
+
+    ASSERT_TRUE(document.SetValueUVE("physics.ticks", 120.0));
+    EXPECT_EQ(firstCalls, 1);
+    EXPECT_EQ(secondCalls, 0);
+    EXPECT_FALSE(document.UnsubscribeUVE(secondSubscription));
+}
+
+TEST_F(SettingsDocumentUVETest, ReentrantSettingChangesNotifyImmediatelyWithCompleteValues) {
+    ASSERT_TRUE(document.LoadUVE(path));
+    std::vector<SettingChangedEventUVE> changes;
+    const SettingsObserverSubscriptionUVE subscription = document.SubscribeToSettingUVE(
+        "physics.ticks", [this, &changes](const SettingChangedEventUVE& event) {
+            changes.push_back(event);
+            if (event.newValue == SettingValueUVE{120.0}) {
+                EXPECT_TRUE(document.SetValueUVE("physics.ticks", 180.0));
+            }
+        });
+    ASSERT_TRUE(subscription.IsValidUVE());
+
+    ASSERT_TRUE(document.SetValueUVE("physics.ticks", 120.0));
+
+    ASSERT_EQ(changes.size(), 2U);
+    EXPECT_EQ(changes[0].previousValue, SettingValueUVE{60.0});
+    EXPECT_EQ(changes[0].newValue, SettingValueUVE{120.0});
+    EXPECT_EQ(changes[1].previousValue, SettingValueUVE{120.0});
+    EXPECT_EQ(changes[1].newValue, SettingValueUVE{180.0});
+    EXPECT_EQ(document.GetValueUVE("physics.ticks"), SettingValueUVE{180.0});
+}
+
+TEST_F(SettingsDocumentUVETest, ObserverAddedDuringDispatchStartsWithTheNextChange) {
+    ASSERT_TRUE(document.LoadUVE(path));
+    int lateCalls = 0;
+    bool added = false;
+    SettingsObserverSubscriptionUVE lateSubscription;
+    const SettingsObserverSubscriptionUVE earlySubscription = document.SubscribeToSettingUVE(
+        "physics.ticks", [this, &added, &lateCalls, &lateSubscription](const SettingChangedEventUVE&) {
+            if (!added) {
+                lateSubscription = document.SubscribeToSettingUVE(
+                    "physics.ticks", [&lateCalls](const SettingChangedEventUVE&) { ++lateCalls; });
+                added = true;
+            }
+        });
+    ASSERT_TRUE(earlySubscription.IsValidUVE());
+
+    ASSERT_TRUE(document.SetValueUVE("physics.ticks", 120.0));
+    ASSERT_TRUE(lateSubscription.IsValidUVE());
+    EXPECT_EQ(lateCalls, 0);
+    ASSERT_TRUE(document.SetValueUVE("physics.ticks", 180.0));
+    EXPECT_EQ(lateCalls, 1);
+}
+
+TEST_F(SettingsDocumentUVETest, ObserverHandlesCannotUnsubscribeAnotherDocumentsListener) {
+    ASSERT_TRUE(document.LoadUVE(path));
+    SettingsDocumentUVE otherDocument;
+    ASSERT_TRUE(otherDocument.GetRegistryUVE().RegisterUVE(
+        MakeFloatSettingUVE("physics.ticks", 60.0, 1.0, 1000.0, "Ticks", "Physics")));
+    const SettingsObserverSubscriptionUVE subscription =
+        otherDocument.SubscribeToSettingUVE("physics.ticks", [](const SettingChangedEventUVE&) {});
+    ASSERT_TRUE(subscription.IsValidUVE());
+
+    EXPECT_FALSE(document.UnsubscribeUVE(subscription));
+    EXPECT_TRUE(otherDocument.UnsubscribeUVE(subscription));
+}
+
+TEST_F(SettingsDocumentUVETest, SuccessfulLoadNotifiesChangesButFailedLoadLeavesStateAlone) {
+    ASSERT_TRUE(document.LoadUVE(path));
+    std::vector<SettingChangedEventUVE> changes;
+    ASSERT_TRUE(document.SubscribeToSettingUVE(
+        "physics.ticks", [&changes](const SettingChangedEventUVE& event) { changes.push_back(event); }).IsValidUVE());
+
+    ASSERT_TRUE(document.SetValueUVE("physics.ticks", 120.0));
+    ASSERT_TRUE(document.SaveUVE());
+    ASSERT_TRUE(document.SetValueUVE("physics.ticks", 60.0));
+    ASSERT_EQ(changes.size(), 2U);
+    ASSERT_TRUE(document.IsDirtyUVE());
+
+    {
+        std::ofstream malformed(invalidPath);
+        ASSERT_TRUE(malformed.is_open());
+        malformed << "{ not valid json";
+    }
+    const std::filesystem::path pathBeforeFailedLoad = document.GetPathUVE();
+    EXPECT_FALSE(document.LoadUVE(invalidPath));
+    EXPECT_EQ(document.GetPathUVE(), pathBeforeFailedLoad);
+    EXPECT_TRUE(document.IsDirtyUVE());
+    EXPECT_EQ(document.GetValueUVE("physics.ticks"), SettingValueUVE{60.0});
+    EXPECT_EQ(changes.size(), 2U);
+
+    ASSERT_TRUE(document.LoadUVE(path));
+    EXPECT_FALSE(document.IsDirtyUVE());
+    EXPECT_EQ(document.GetValueUVE("physics.ticks"), SettingValueUVE{120.0});
+    ASSERT_EQ(changes.size(), 3U);
+    EXPECT_EQ(changes[2].previousValue, SettingValueUVE{60.0});
+    EXPECT_EQ(changes[2].newValue, SettingValueUVE{120.0});
+}
+
+TEST_F(SettingsDocumentUVETest, LoadingAMissingFileClearsPriorValuesAndNotifiesTheReset) {
+    ASSERT_TRUE(document.LoadUVE(path));
+    std::vector<SettingChangedEventUVE> changes;
+    ASSERT_TRUE(document.SubscribeToSettingUVE(
+        "physics.ticks", [&changes](const SettingChangedEventUVE& event) { changes.push_back(event); }).IsValidUVE());
+    ASSERT_TRUE(document.SetValueUVE("physics.ticks", 120.0));
+    ASSERT_EQ(changes.size(), 1U);
+
+    ASSERT_TRUE(document.LoadUVE(path)); // The file is still missing; this is a successful empty load.
+    EXPECT_FALSE(document.IsDirtyUVE());
+    EXPECT_EQ(document.GetValueUVE("physics.ticks"), SettingValueUVE{60.0});
+    ASSERT_EQ(changes.size(), 2U);
+    EXPECT_EQ(changes[1].previousValue, SettingValueUVE{120.0});
+    EXPECT_EQ(changes[1].newValue, SettingValueUVE{60.0});
+}
+
+TEST_F(SettingsDocumentUVETest, IgnoredAlphaOnOpaqueColourDoesNotDirtyOrNotify) {
+    ASSERT_TRUE(document.LoadUVE(path));
+    int notifications = 0;
+    ASSERT_TRUE(document.SubscribeToSettingUVE(
+        "rendering.clear", [&notifications](const SettingChangedEventUVE&) { ++notifications; }).IsValidUVE());
+
+    ASSERT_TRUE(document.SetValueUVE("rendering.clear", SettingColorUVE{0.1F, 0.1F, 0.1F, 0.25F}));
+
+    EXPECT_FALSE(document.IsDirtyUVE());
+    EXPECT_FALSE(document.IsModifiedUVE("rendering.clear"));
+    EXPECT_FALSE(document.GetStoredValueUVE("rendering.clear").has_value());
+    EXPECT_EQ(document.GetValueUVE("rendering.clear"),
+              (SettingValueUVE{SettingColorUVE{0.1F, 0.1F, 0.1F, 1.0F}}));
+    EXPECT_EQ(notifications, 0);
 }
 
 TEST_F(SettingsDocumentUVETest, RefusesIllegalValuesAndSurvivesAReload) {

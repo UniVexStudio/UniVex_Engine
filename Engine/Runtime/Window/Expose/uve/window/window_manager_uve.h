@@ -40,8 +40,16 @@ public:
     [[nodiscard]] bool IsCloseRequestedUVE() const noexcept override;
     void SetVSyncEnabledUVE(bool enabled) override;
     [[nodiscard]] bool IsVSyncEnabledUVE() const noexcept override;
+    void SetVSyncModeUVE(Platform::VSyncModeUVE mode) override;
+    [[nodiscard]] Platform::VSyncModeUVE GetVSyncModeUVE() const noexcept override;
     void SetFullscreenUVE(bool fullscreen) override;
     [[nodiscard]] bool IsFullscreenUVE() const noexcept override;
+    void SetWindowModeUVE(Platform::WindowModeUVE mode) override;
+    [[nodiscard]] Platform::WindowModeUVE GetWindowModeUVE() const noexcept override;
+    void SetWindowTitleUVE(std::string_view title) override;
+    [[nodiscard]] bool IsFocusedUVE() const noexcept override;
+    void GetContentScaleUVE(float& outX, float& outY) const noexcept override;
+    void SetDisplaySleepAllowedUVE(bool allowed) noexcept override;
     [[nodiscard]] std::uint32_t GetWidthUVE() const noexcept override;
     [[nodiscard]] std::uint32_t GetHeightUVE() const noexcept override;
     [[nodiscard]] std::vector<MonitorInfoUVE> EnumerateMonitorsUVE() const override;
@@ -57,6 +65,8 @@ public:
     [[nodiscard]] std::uintptr_t CreateVulkanWindowSurfaceUVE(std::uintptr_t vulkanInstance) override;
     void DestroyVulkanWindowSurfaceUVE(std::uintptr_t vulkanInstance, std::uintptr_t vulkanSurface) override;
     void GetVulkanFramebufferSizeUVE(std::uint32_t& outWidth, std::uint32_t& outHeight) const override;
+    [[nodiscard]] Platform::VSyncModeUVE GetRequestedVSyncModeUVE() const noexcept override;
+    [[nodiscard]] bool IsTransparentFramebufferRequestedUVE() const noexcept override;
 
 private:
     struct ImplUVE;

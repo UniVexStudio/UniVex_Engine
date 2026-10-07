@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include <cmath>
+#include <limits>
 
 #include <gtest/gtest.h>
 
@@ -15,6 +16,33 @@ TEST(AdaptiveRenderResolutionUVETest, InvalidInputsReturnZeroSize) {
     EXPECT_EQ(ComputeAdaptiveRenderResolutionUVE(1280U, 0U, limits).height, 0U);
     EXPECT_EQ(ComputeAdaptiveRenderResolutionUVE(1280U, 720U, AdaptiveRenderResolutionLimitsUVE{0U, 1ULL}).width, 0U);
     EXPECT_EQ(ComputeAdaptiveRenderResolutionUVE(1280U, 720U, AdaptiveRenderResolutionLimitsUVE{2048U, 0ULL}).height, 0U);
+    EXPECT_EQ(ComputeAdaptiveRenderResolutionUVE(1280U, 720U, limits, 0.0).width, 0U);
+    EXPECT_EQ(ComputeAdaptiveRenderResolutionUVE(1280U, 720U, limits, -0.5).height, 0U);
+    EXPECT_EQ(ComputeAdaptiveRenderResolutionUVE(1280U, 720U, limits,
+                                                 std::numeric_limits<double>::infinity()).width,
+              0U);
+    EXPECT_EQ(ComputeAdaptiveRenderResolutionUVE(1280U, 720U, limits,
+                                                 std::numeric_limits<double>::quiet_NaN()).height,
+              0U);
+}
+
+TEST(AdaptiveRenderResolutionUVETest, AppliesFixedRenderScaleBeforePresentationSafetyCaps) {
+    constexpr AdaptiveRenderResolutionLimitsUVE desktopLimits{8192U, 3840ULL * 2160ULL};
+    const AdaptiveRenderResolutionUVE halfScale =
+        ComputeAdaptiveRenderResolutionUVE(1280U, 720U, desktopLimits, 0.5);
+    EXPECT_EQ(halfScale.width, 640U);
+    EXPECT_EQ(halfScale.height, 360U);
+
+    const AdaptiveRenderResolutionUVE threeQuarterScale =
+        ComputeAdaptiveRenderResolutionUVE(1280U, 720U, desktopLimits, 0.75);
+    EXPECT_EQ(threeQuarterScale.width, 960U);
+    EXPECT_EQ(threeQuarterScale.height, 540U);
+
+    // The configured scale is applied first, then the Android-style budget clamps oversized output.
+    const AdaptiveRenderResolutionUVE scaledAndCapped = ComputeAdaptiveRenderResolutionUVE(
+        2400U, 1080U, AdaptiveRenderResolutionLimitsUVE{2048U, 1280ULL * 720ULL}, 0.5);
+    EXPECT_EQ(scaledAndCapped.width, 1200U);
+    EXPECT_EQ(scaledAndCapped.height, 540U);
 }
 
 TEST(AdaptiveRenderResolutionUVETest, SmallPortraitSurfaceScalesToAndroidBudgetAndPreservesAspect) {

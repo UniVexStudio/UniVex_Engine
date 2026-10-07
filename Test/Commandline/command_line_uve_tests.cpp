@@ -61,6 +61,16 @@ TEST(CommandLineUVETest, PresenceOnlyFlag_FollowedByAnotherFlag_BothRecognizedIn
     EXPECT_EQ(commandLine.GetValueUVE("verbose", "unset"), "unset");
 }
 
+TEST(CommandLineUVETest, OptionalValueDistinguishesAbsentPresenceOnlyAndEmptyValues) {
+    const CommandLineUVE commandLine(std::vector<std::string>{"--server", "--empty", ""});
+
+    EXPECT_FALSE(commandLine.GetOptionalValueUVE("missing").has_value());
+    EXPECT_TRUE(commandLine.HasFlagUVE("server"));
+    EXPECT_FALSE(commandLine.GetOptionalValueUVE("server").has_value());
+    ASSERT_TRUE(commandLine.GetOptionalValueUVE("empty").has_value());
+    EXPECT_TRUE(commandLine.GetOptionalValueUVE("empty")->empty());
+}
+
 TEST(CommandLineUVETest, MixedFlags_HubStyleInvocation_ParsesAllCorrectly) {
     const CommandLineUVE commandLine(
         std::vector<std::string>{"--project", "/path/to/project", "--build", "linux", "--server"});

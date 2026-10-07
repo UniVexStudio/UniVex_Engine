@@ -26,6 +26,13 @@ inline constexpr std::string_view kActiveWorkspaceUVE = "editor.workspace.active
 inline constexpr std::string_view kActiveRightPanelTabUVE = "editor.rightPanel.activeTab";
 inline constexpr std::string_view kActiveBottomDockUVE = "editor.bottomDock.active";
 inline constexpr std::string_view kColorPickerAdvancedOpenUVE = "editor.colorPicker.advancedOpen";
+inline constexpr std::string_view kColorPickerSavedUVE = "editor.colorPicker.saved";
+inline constexpr std::string_view kColorPickerRecentUVE = "editor.colorPicker.recent";
+inline constexpr std::string_view kInspectorFoldsUVE = "editor.inspector.folds";
+inline constexpr std::string_view kFavoriteProjectsUVE = "editor.favorites";
+inline constexpr std::string_view kViewportAxisColorXUVE = "editor.viewport.axisColors.x";
+inline constexpr std::string_view kViewportAxisColorYUVE = "editor.viewport.axisColors.y";
+inline constexpr std::string_view kViewportAxisColorZUVE = "editor.viewport.axisColors.z";
 // Preferences.
 inline constexpr std::string_view kSnapEnabledUVE = "editor.viewport.snap.enabled";
 inline constexpr std::string_view kSnapTranslateStepUVE = "editor.viewport.snap.translateStep";
@@ -57,9 +64,8 @@ inline constexpr std::string_view kHierarchyIndentWidthUVE = "editor.hierarchy.i
 } // namespace EditorSettingIdUVE
 
 /// One setting id that was renamed, and the id it now has. A settings file written before the
-/// rename still carries the old key; the editor moves its value across once at load, so the
-/// author keeps their choice (see the flag descriptions on the alias descriptors in
-/// RegisterEditorSettingsUVE and MigrateRenamedSettingIdsUVE).
+/// rename still carries the old key; the registry's Deprecated alias migrates its value to the new
+/// id on load, so the author keeps their choice.
 struct RenamedSettingIdUVE final {
     std::string_view oldId;
     std::string_view newId;
@@ -77,9 +83,10 @@ inline constexpr RenamedSettingIdUVE kRenamedSettingIdsUVE[] = {
 /// accepts too. False if any declaration is refused - a programming error the editor's settings
 /// test catches.
 ///
-/// Not yet here, because the descriptor vocabulary cannot express them: the colour picker's saved
-/// and recent colours, remembered inspector folds and favourite projects (lists), and the
-/// viewport axis colours, whose defaults belong to the viewport module and are seeded by the host.
+/// The colour picker's saved/recent colours, remembered inspector folds and favorite projects use
+/// hidden StringList descriptors; the viewport axis colours use hidden Color descriptors but are
+/// loaded and saved as one palette because their defaults belong to the host. Lists have no
+/// editable generic panel row yet.
 [[nodiscard]] bool RegisterEditorSettingsUVE(Config::SettingsRegistryUVE& registry);
 
 // What the preferences window is made of, kept free of UI so it can be tested.

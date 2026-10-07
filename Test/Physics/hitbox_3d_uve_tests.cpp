@@ -44,6 +44,7 @@ TEST(Hitbox3DUVETest, IsArmedUVE_FalseWhenDisabledOrInvalid) {
 
 TEST(Hitbox3DUVETest, AcceptsTargetUVE_SkipsSelfIgnoreLayerAndChannel) {
     Hitbox3DComponentUVE hitbox{};
+    hitbox.collisionMask = 1U;
     hitbox.damageChannel = "melee";
     EXPECT_TRUE(Hitbox3DUVE::AcceptsTargetUVE(kHitbox, hitbox, kHurtboxA, 1U, 0xFFFFFFFFU, "melee"));
     EXPECT_FALSE(Hitbox3DUVE::AcceptsTargetUVE(kHitbox, hitbox, kHitbox, 1U, 0xFFFFFFFFU, "melee"));

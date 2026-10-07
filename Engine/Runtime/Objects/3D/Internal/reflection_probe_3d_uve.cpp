@@ -23,7 +23,8 @@ constexpr float kBoxRayEpsilonUVE = 1.0e-8F;
 
 bool IsReflectionProbe3DObjectComponentValidUVE(const ReflectionProbe3DComponentUVE& value) noexcept {
     return IsFinite3DObjectVectorUVE(value.size) && value.size.x > 0.0F && value.size.y > 0.0F &&
-           value.size.z > 0.0F && value.updateMode <= ReflectionProbeUpdateModeUVE::OnDemand;
+           value.size.z > 0.0F && value.updateMode <= ReflectionProbeUpdateModeUVE::OnDemand &&
+           IsReflectionProbeResolutionValidUVE(value.resolution);
 }
 
 void ApplyReflectionProbe3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
@@ -203,6 +204,7 @@ bool TryMakeReflectionProbe3DFrameUVE(const ReflectionProbe3DComponentUVE& value
     out.axisY = axisY;
     out.axisZ = axisZ;
     out.halfExtents = Math::Vector3UVE{value.size.x * 0.5F, value.size.y * 0.5F, value.size.z * 0.5F};
+    out.captureResolution = GetReflectionProbeResolutionPixelsUVE(value.resolution);
     out.captureGeneration = value.captureGeneration;
     out.capturedOnce = value.capturedOnce;
     out.enabled = value.enabled;

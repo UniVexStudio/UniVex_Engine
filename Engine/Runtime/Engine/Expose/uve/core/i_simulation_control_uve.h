@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include <string_view>
+
 namespace UVE::Core {
 
 /// Controls whether EngineCoreUVE consumes normal fixed simulation time, holds it, or consumes one
@@ -38,6 +40,13 @@ public:
     /// advancement while this flag is active, independently from fixed execution mode.
     [[nodiscard]] virtual bool SetTransientSimulationSessionActiveUVE(bool active) noexcept = 0;
     [[nodiscard]] virtual bool IsTransientSimulationSessionActiveUVE() const noexcept = 0;
+
+    /// Updates the optional Editor Play scene-name title suffix. Empty clears the suffix and
+    /// exits editor-play title mode. Hosts that do not own a native window may ignore this hint.
+    [[nodiscard]] virtual bool SetEditorPlaySceneNameUVE(std::string_view sceneName) noexcept {
+        static_cast<void>(sceneName);
+        return false;
+    }
 };
 
 } // namespace UVE::Core

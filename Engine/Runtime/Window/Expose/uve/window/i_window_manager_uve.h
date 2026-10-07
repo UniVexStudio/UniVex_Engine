@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "uve/input/i_input_system_uve.h"
+#include "uve/platform/application_window_settings_uve.h"
 #include "uve/window/monitor_info_uve.h"
 
 namespace UVE::Window {
@@ -60,12 +61,36 @@ public:
     /// Enables or disables vertical sync (GLFW: glfwSwapInterval(1 or 0)).
     virtual void SetVSyncEnabledUVE(bool enabled) = 0;
     [[nodiscard]] virtual bool IsVSyncEnabledUVE() const noexcept = 0;
+    /// Requests the richer swap policy. A backend may fall back when its graphics API does not
+    /// expose a requested mode (for example, OpenGL has no mailbox present mode).
+    virtual void SetVSyncModeUVE(Platform::VSyncModeUVE mode) {
+        SetVSyncEnabledUVE(mode != Platform::VSyncModeUVE::Off);
+    }
+    [[nodiscard]] virtual Platform::VSyncModeUVE GetVSyncModeUVE() const noexcept {
+        return IsVSyncEnabledUVE() ? Platform::VSyncModeUVE::On : Platform::VSyncModeUVE::Off;
+    }
 
     /// Toggles the window between windowed and borderless-fullscreen-on-primary-monitor. The cached
     /// state changes only after the backend confirms the requested monitor transition; a failed
     /// transition preserves the previous state.
     virtual void SetFullscreenUVE(bool fullscreen) = 0;
     [[nodiscard]] virtual bool IsFullscreenUVE() const noexcept = 0;
+    virtual void SetWindowModeUVE(Platform::WindowModeUVE mode) {
+        SetFullscreenUVE(mode == Platform::WindowModeUVE::Fullscreen ||
+                         mode == Platform::WindowModeUVE::ExclusiveFullscreen);
+    }
+    [[nodiscard]] virtual Platform::WindowModeUVE GetWindowModeUVE() const noexcept {
+        return IsFullscreenUVE() ? Platform::WindowModeUVE::Fullscreen : Platform::WindowModeUVE::Windowed;
+    }
+    virtual void SetWindowTitleUVE(std::string_view title) { static_cast<void>(title); }
+    [[nodiscard]] virtual bool IsFocusedUVE() const noexcept { return true; }
+    /// Content scale reported by the host, unless a positive descriptor override was requested.
+    virtual void GetContentScaleUVE(float& outX, float& outY) const noexcept {
+        outX = 1.0F;
+        outY = 1.0F;
+    }
+    /// Best-effort platform power hint. Backends without an OS integration leave this a no-op.
+    virtual void SetDisplaySleepAllowedUVE(bool allowed) noexcept { static_cast<void>(allowed); }
 
     /// The window's current framebuffer size in pixels. Always current — never cached stale
     /// across a resize, since GlRenderDeviceUVE polls this every frame to set the GL viewport

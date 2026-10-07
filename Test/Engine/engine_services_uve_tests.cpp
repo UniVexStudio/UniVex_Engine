@@ -188,6 +188,9 @@ public:
                                            std::string_view defaultValue) const override {
         return std::string(defaultValue);
     }
+    [[nodiscard]] std::optional<std::string> GetOptionalValueUVE(std::string_view) const override {
+        return std::nullopt;
+    }
 
     mutable int hasFlagCallCount = 0;
 };

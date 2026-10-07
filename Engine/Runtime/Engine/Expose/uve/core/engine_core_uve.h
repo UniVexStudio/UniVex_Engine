@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <functional>
@@ -18,6 +19,8 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
@@ -46,6 +49,7 @@
 #include "uve/core/i_simulation_control_uve.h"
 #include "uve/core/engine_state_uve.h"
 #include "uve/core/frame_stats_uve.h"
+#include "uve/core/dynamic_render_resolution_uve.h"
 #include "uve/core/uvscript_object_host_uve.h"
 #include "uve/uvscript/uvscript_instance_uve.h"
 #include "uve/core/version_uve.h"
@@ -135,8 +139,8 @@ namespace UVE::Core {
 /// EngineConfigUVE::headlessUVE is true (also settable via the `--headless` CLI flag), Init()
 /// creates a real GLFW3 window and OpenGL 4.6 Core render device; Update()'s first statement
 /// (after InputSystemUVE::UpdateUVE()) pumps window events and checks
-/// IWindowManagerUVE::IsCloseRequestedUVE(), calling RequestQuitUVE() if the user closed the
-/// window; Render() additionally records and presents a small, explicitly temporary demo
+/// IWindowManagerUVE::IsCloseRequestedUVE(), calling RequestQuitUVE() when the configured
+/// quit-on-last-window-closed policy is enabled; Render() additionally records and presents a small, explicitly temporary demo
 /// triangle proving the window/GL pipeline end-to-end — deliberately outside Renderer3DUVE, which
 /// still only ever renders into its own offscreen target regardless of windowed mode (see
 /// docs/CODING_STANDARDS.md for the full rendering-evolution roadmap this triangle is the first
@@ -145,8 +149,8 @@ namespace UVE::Core {
 /// so RunUVE() shuts down cleanly instead of proceeding into a broken windowed session. If a
 /// context exists but the required OpenGL entry points cannot be loaded, Init() treats that as a
 /// recoverable backend-selection failure and selects NullRenderDeviceUVE before shader/frame code
-/// runs; this build does not claim an automatic Vulkan renderer fallback because no Vulkan RHI is
-/// compiled yet.
+/// runs. A CPU-only build (without desktop GLFW/OpenGL) compiles EngineCoreUVE with the null window
+/// and render backends; a requested windowed startup warns and continues headlessly.
 /// CheckpointManagerUVE (Increment 19) is driven from Update()'s final statement:
 /// UpdateUVE(deltaTime, entityManager, every SceneGraphUVE::GetChildrenUVE(kInvalidEntityUVE)
 /// root) accumulates elapsed time and, once the configured
@@ -188,16 +192,12 @@ public:
     EngineCoreUVE(const EngineCoreUVE&) = delete;
     EngineCoreUVE& operator=(const EngineCoreUVE&) = delete;
 
-    /// Constructs and initializes CommandLine, Logger, MemoryManager,
-    /// ThreadPool, Timer, EventSystem, EntityManager, SceneGraph,
-    /// AssetDatabase, ProjectFileIndex, SceneSerializer, PrefabSystem, HotReload, AssetManager,
-    /// AssetImporter, AssetBundle, FileSystem, WindowManager, RenderDevice, ShaderManager, RenderSystem,
-    /// CameraSystem, MeshRenderer, LightSystem, Renderer3D, CollisionSystem, PhysicsSystem, RaycastSystem, InputSystem, AudioDevice, AudioSystem, AudioSourceSystem, SaveGameSystem, CheckpointManager, and ConfigManager in that order (CommandLine first — it
-    /// has no dependencies of its own; immediately after, reads the `--headless` CLI flag via
-    /// CommandLineUVE::HasFlagUVE("headless"), OR'd into EngineConfigUVE::headlessUVE; Logger
-    /// second — every later step and
-    /// every other system may need to log or UVE_ASSERT during its own
-    /// setup; EntityManager right after EventSystem, since it needs
+    /// Constructs CommandLine and Logger first, then loads and resolves the project, user,
+    /// active-platform and command-line settings layers before constructing systems that consume
+    /// EngineConfigUVE. `--headless` is a hidden, NotPersisted boolean setting in the command-line
+    /// layer; project, user and platform stores cannot override it. The remaining services are
+    /// initialized in dependency order; CommandLine is pure parsing, and Logger is ready before
+    /// migrations or settings loads can log. EntityManager follows EventSystem, since it needs
     /// MemoryManager for allocation and EventSystem for entity lifecycle
     /// events; SceneGraph immediately after, though it has no dependencies
     /// of its own; AssetDatabase right after SceneGraph, needing only
@@ -212,8 +212,9 @@ public:
     /// after, both stateless; FileSystem right after, needing AssetBundle
     /// (its bundle-backed mounts read entries through it); WindowManager right after — a real
     /// Window::WindowManagerUVE (owning the entire GLFW/GL context lifecycle) unless
-    /// EngineConfigUVE::headlessUVE, in which case Window::NullWindowManagerUVE; a real window
-    /// that fails to create sets a private failure flag Load() checks (see Load()'s own doc
+    /// EngineConfigUVE::headlessUVE, in which case Window::NullWindowManagerUVE; CPU-only builds
+    /// always use the null window/render backends and warn if a windowed startup was requested; a
+    /// real window that fails to create sets a private failure flag Load() checks (see Load()'s own doc
     /// comment) rather than aborting Init() mid-construction (EngineStateUVE's transition table
     /// forbids jumping straight from Initializing to ShuttingDown); RenderDevice
     /// right after — Render::GlRenderDeviceUVE when a real, valid window exists, otherwise
@@ -249,9 +250,10 @@ public:
     /// MeshRendererUVE::ExtractRenderQueueUVE()); SaveGameSystem right after, needing
     /// SceneSerializer (composed by reference) and EngineConfigUVE::saveDirectoryPath;
     /// CheckpointManager right after, needing SaveGameSystem (composed by reference) and
-    /// EngineConfigUVE::autoSaveIntervalSecondsUVE; ConfigManager last, so
-    /// its LoadUVE() call can log through the already-initialized Logger),
-    /// then builds EngineServicesUVE from all thirty-four. Transitions
+    /// EngineConfigUVE::autoSaveIntervalSecondsUVE; the ConfigManager store
+    /// is loaded after Logger and before the project/user/platform/command-line
+    /// stack is applied, so effective values are settled before dependent systems
+    /// are constructed; then builds EngineServicesUVE from all thirty-four. Transitions
     /// Uninitialized -> Initializing -> Running.
     void Init();
 
@@ -290,6 +292,10 @@ public:
     /// Requests that a currently-running RunUVE() loop stop after the
     /// current frame completes, without running further frames.
     void RequestQuitUVE() noexcept;
+
+    /// Updates the application clear color used for the empty window and scene passes. Invalid
+    /// non-finite/out-of-range RGBA values are rejected without changing the current color.
+    [[nodiscard]] bool SetApplicationBackgroundColorUVE(const std::array<float, 4U>& color) noexcept;
 
     /// True once RequestQuitUVE() has been called (directly, or internally because
     /// IWindowManagerUVE::IsCloseRequestedUVE() went true - see TickFrameUVE()'s own per-frame
@@ -358,6 +364,7 @@ public:
     /// advancement is skipped independently from normal or paused fixed simulation execution.
     [[nodiscard]] bool SetTransientSimulationSessionActiveUVE(bool active) noexcept override;
     [[nodiscard]] bool IsTransientSimulationSessionActiveUVE() const noexcept override;
+    [[nodiscard]] bool SetEditorPlaySceneNameUVE(std::string_view sceneName) noexcept override;
 
     /// Sets the entity Render() passes to Renderer3DUVE::RenderFrameUVE() as the camera to render
     /// from, starting with the next frame. Passing Scene::kInvalidEntityUVE (the default) reverts
@@ -740,12 +747,18 @@ private:
     void TransitionStateUVE(EngineStateUVE newState);
 
     EngineConfigUVE m_config;
+    DynamicRenderResolutionControllerUVE m_dynamicRenderResolutionControllerUVE;
+    double m_currentRenderResolutionScaleUVE = kMaximumRenderResolutionScaleUVE;
     EngineStateUVE m_state = EngineStateUVE::Uninitialized;
     SimulationExecutionModeUVE m_simulationExecutionMode = SimulationExecutionModeUVE::Running;
     bool m_singleSimulationStepPending = false;
     bool m_transientSimulationSessionActive = false;
     bool m_graphicsBackendLossLoggedUVE = false;
     bool m_adaptiveResizeFailureLoggedUVE = false;
+    bool m_integerScaleFallbackLoggedUVE = false;
+    std::string m_editorPlaySceneNameUVE;
+    std::optional<std::chrono::steady_clock::time_point> m_nextFrameDeadlineUVE;
+    std::uint32_t m_lastFrameRateCapUVE = 0U;
     std::optional<Render::ViewportRectUVE> m_editorViewportRegionUVE;
 
     std::unique_ptr<CommandLine::ICommandLineUVE> m_commandLine;

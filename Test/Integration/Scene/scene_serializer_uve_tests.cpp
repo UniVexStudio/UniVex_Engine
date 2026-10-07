@@ -144,6 +144,11 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     light.type = LightTypeUVE::Spot;
     light.intensity = 4.0F;
     entityManager.AddComponentUVE<LightComponentUVE>(source, light);
+    DirectionalLight3DComponentUVE directionalLight{};
+    directionalLight.shadowMaxDistance = 85.0F;
+    directionalLight.shadowSplitBlend = 0.3F;
+    directionalLight.shadowDistanceFadeRange = 7.0F;
+    entityManager.AddComponentUVE<DirectionalLight3DComponentUVE>(source, directionalLight);
     entityManager.AddComponentUVE<CameraComponentUVE>(source, CameraComponentUVE{75.0F, 0.2F, 250.0F});
     entityManager.AddComponentUVE<NameComponentUVE>(source, NameComponentUVE{"Complete Snapshot"});
     ColliderComponentUVE collider{};
@@ -276,11 +281,32 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     entityManager.AddComponentUVE<InteractionArea3DComponentUVE>(source, interaction);
     WorldEnvironment3DComponentUVE environment;
     environment.skyAssetPath = "environment/day.uesky";
+    environment.ambientSource = WorldEnvironmentAmbientSourceUVE::EnvironmentMap;
     environment.fogEnabled = true;
     environment.fogDensity = 0.02F;
+    environment.fogMode = WorldEnvironmentFogModeUVE::Linear;
+    environment.fogStart = 18.0F;
+    environment.fogEnd = 320.0F;
+    environment.bloomSoftKnee = 0.65F;
+    environment.bloomMipCount = 3U;
+    environment.vignetteIntensity = 0.8F;
+    environment.vignetteRadius = 0.6F;
+    environment.chromaticAberrationIntensity = 0.4F;
+    environment.filmGrainIntensity = 0.35F;
+    environment.lensDistortionIntensity = 0.5F;
+    environment.depthOfFieldEnabled = true;
+    environment.depthOfFieldFocusMode = WorldEnvironmentDepthOfFieldFocusModeUVE::ScreenCenter;
+    environment.depthOfFieldBokehShape = WorldEnvironmentDepthOfFieldBokehShapeUVE::Hexagonal;
+    environment.depthOfFieldFocusDistance = 24.0F;
+    environment.depthOfFieldAperture = 0.8F;
+    environment.depthOfFieldQuality = 2U;
+    environment.motionBlurEnabled = true;
+    environment.motionBlurStrength = 0.25F;
+    environment.motionBlurSampleCount = 12U;
     entityManager.AddComponentUVE<WorldEnvironment3DComponentUVE>(source, environment);
     ReflectionProbe3DComponentUVE probe;
     probe.updateMode = ReflectionProbeUpdateModeUVE::OnDemand;
+    probe.resolution = ReflectionProbeResolutionUVE::High;
     entityManager.AddComponentUVE<ReflectionProbe3DComponentUVE>(source, probe);
     Decal3DComponentUVE decal;
     decal.materialAssetPath = "materials/warning.uemat";
@@ -321,6 +347,11 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_EQ(entityManager.GetComponentUVE<PrimitiveMeshComponentUVE>(restored).baseColor,
               (Math::Vector3UVE{0.2F, 0.5F, 0.8F}));
     EXPECT_EQ(entityManager.GetComponentUVE<LightComponentUVE>(restored).type, LightTypeUVE::Spot);
+    const DirectionalLight3DComponentUVE& restoredDirectionalLight =
+        entityManager.GetComponentUVE<DirectionalLight3DComponentUVE>(restored);
+    EXPECT_FLOAT_EQ(restoredDirectionalLight.shadowMaxDistance, 85.0F);
+    EXPECT_FLOAT_EQ(restoredDirectionalLight.shadowSplitBlend, 0.3F);
+    EXPECT_FLOAT_EQ(restoredDirectionalLight.shadowDistanceFadeRange, 7.0F);
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<CameraComponentUVE>(restored).farPlane, 250.0F);
     EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(restored).name, "Complete Snapshot");
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<ColliderComponentUVE>(restored).friction, 0.25F);
@@ -409,8 +440,29 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_EQ(entityManager.GetComponentUVE<Skeleton3DComponentUVE>(restored).bones.size(), 1U);
     EXPECT_EQ(entityManager.GetComponentUVE<Hitbox3DComponentUVE>(restored).damageChannel, "melee");
     EXPECT_EQ(entityManager.GetComponentUVE<InteractionArea3DComponentUVE>(restored).interactionTag, "door");
-    EXPECT_EQ(entityManager.GetComponentUVE<WorldEnvironment3DComponentUVE>(restored).skyAssetPath,
-              "environment/day.uesky");
+    const WorldEnvironment3DComponentUVE& restoredEnvironment =
+        entityManager.GetComponentUVE<WorldEnvironment3DComponentUVE>(restored);
+    EXPECT_EQ(restoredEnvironment.skyAssetPath, "environment/day.uesky");
+    EXPECT_EQ(restoredEnvironment.ambientSource, WorldEnvironmentAmbientSourceUVE::EnvironmentMap);
+    EXPECT_EQ(restoredEnvironment.fogMode, WorldEnvironmentFogModeUVE::Linear);
+    EXPECT_FLOAT_EQ(restoredEnvironment.fogStart, 18.0F);
+    EXPECT_FLOAT_EQ(restoredEnvironment.fogEnd, 320.0F);
+    EXPECT_FLOAT_EQ(restoredEnvironment.bloomSoftKnee, 0.65F);
+    EXPECT_EQ(restoredEnvironment.bloomMipCount, 3U);
+    EXPECT_FLOAT_EQ(restoredEnvironment.vignetteIntensity, 0.8F);
+    EXPECT_FLOAT_EQ(restoredEnvironment.vignetteRadius, 0.6F);
+    EXPECT_FLOAT_EQ(restoredEnvironment.chromaticAberrationIntensity, 0.4F);
+    EXPECT_FLOAT_EQ(restoredEnvironment.filmGrainIntensity, 0.35F);
+    EXPECT_FLOAT_EQ(restoredEnvironment.lensDistortionIntensity, 0.5F);
+    EXPECT_TRUE(restoredEnvironment.depthOfFieldEnabled);
+    EXPECT_EQ(restoredEnvironment.depthOfFieldFocusMode, WorldEnvironmentDepthOfFieldFocusModeUVE::ScreenCenter);
+    EXPECT_EQ(restoredEnvironment.depthOfFieldBokehShape, WorldEnvironmentDepthOfFieldBokehShapeUVE::Hexagonal);
+    EXPECT_FLOAT_EQ(restoredEnvironment.depthOfFieldFocusDistance, 24.0F);
+    EXPECT_FLOAT_EQ(restoredEnvironment.depthOfFieldAperture, 0.8F);
+    EXPECT_EQ(restoredEnvironment.depthOfFieldQuality, 2U);
+    EXPECT_TRUE(restoredEnvironment.motionBlurEnabled);
+    EXPECT_FLOAT_EQ(restoredEnvironment.motionBlurStrength, 0.25F);
+    EXPECT_EQ(restoredEnvironment.motionBlurSampleCount, 12U);
     EXPECT_EQ(entityManager.GetComponentUVE<Decal3DComponentUVE>(restored).materialAssetPath,
               "materials/warning.uemat");
     EXPECT_EQ(entityManager.GetComponentUVE<SpawnPoint3DComponentUVE>(restored).spawnTag, "player_start");
@@ -427,7 +479,9 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_TRUE(entityManager.HasComponentUVE<Marker3DComponentUVE>(restored));
     EXPECT_TRUE(entityManager.HasComponentUVE<Hurtbox3DComponentUVE>(restored));
     EXPECT_TRUE(entityManager.HasComponentUVE<Projectile3DComponentUVE>(restored));
-    EXPECT_TRUE(entityManager.HasComponentUVE<ReflectionProbe3DComponentUVE>(restored));
+    ASSERT_TRUE(entityManager.HasComponentUVE<ReflectionProbe3DComponentUVE>(restored));
+    EXPECT_EQ(entityManager.GetComponentUVE<ReflectionProbe3DComponentUVE>(restored).resolution,
+              ReflectionProbeResolutionUVE::High);
     EXPECT_TRUE(entityManager.HasComponentUVE<LodGroup3DComponentUVE>(restored));
     EXPECT_TRUE(entityManager.HasComponentUVE<Occluder3DComponentUVE>(restored));
     EXPECT_TRUE(entityManager.HasComponentUVE<VisibilityRegion3DComponentUVE>(restored));
@@ -889,6 +943,67 @@ TEST_F(SceneSerializerUVETest, CaptureUVE_UnregisteredComponent_ReturnsNulloptWi
     EXPECT_FALSE(snapshot.has_value());
     EXPECT_TRUE(entityManager.IsAliveUVE(entity));
     EXPECT_EQ(entityManager.GetEntityCountUVE(), entityCountBefore);
+}
+
+TEST_F(SceneSerializerUVETest, RestoreUVE_LegacyEnvironmentDefaultsToHeightFog) {
+    // This payload predates the selectable fog-mode fields. Its missing fields must retain the
+    // legacy height-fog behavior rather than silently switching existing projects to exponential.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"WorldEnvironment3DComponentUVE":{"ambientColor":[0.2,0.2,0.2],"fogColor":[0.5,0.6,0.7],"fogEnabled":true,"fogDensity":0.02}}}]})";
+    const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
+    const SceneSnapshotUVE snapshot{
+        Asset::EncodeUveFileEnvelopeUVE(
+            SceneAssetTypeUVE::Scene,
+            std::vector<std::byte>{payloadBytes, payloadBytes + payloadText.size()}),
+        SceneAssetTypeUVE::Scene};
+
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
+
+    ASSERT_EQ(roots.size(), 1U);
+    const WorldEnvironment3DComponentUVE& restored =
+        entityManager.GetComponentUVE<WorldEnvironment3DComponentUVE>(roots.front());
+    EXPECT_TRUE(restored.fogEnabled);
+    EXPECT_EQ(restored.ambientSource, WorldEnvironmentAmbientSourceUVE::Sky);
+    EXPECT_EQ(restored.fogMode, WorldEnvironmentFogModeUVE::Height);
+    EXPECT_FLOAT_EQ(restored.fogStart, 0.0F);
+    EXPECT_FLOAT_EQ(restored.fogEnd, 1000.0F);
+    EXPECT_FLOAT_EQ(restored.bloomSoftKnee, 0.0F);
+    EXPECT_EQ(restored.bloomMipCount, 1U);
+    EXPECT_FLOAT_EQ(restored.vignetteIntensity, 0.0F);
+    EXPECT_FLOAT_EQ(restored.vignetteRadius, 0.65F);
+    EXPECT_FLOAT_EQ(restored.chromaticAberrationIntensity, 0.0F);
+    EXPECT_FLOAT_EQ(restored.filmGrainIntensity, 0.0F);
+    EXPECT_FLOAT_EQ(restored.lensDistortionIntensity, 0.0F);
+    EXPECT_FALSE(restored.depthOfFieldEnabled);
+    EXPECT_EQ(restored.depthOfFieldFocusMode, WorldEnvironmentDepthOfFieldFocusModeUVE::Manual);
+    EXPECT_EQ(restored.depthOfFieldBokehShape, WorldEnvironmentDepthOfFieldBokehShapeUVE::Circular);
+    EXPECT_FLOAT_EQ(restored.depthOfFieldFocusDistance, 10.0F);
+    EXPECT_FLOAT_EQ(restored.depthOfFieldAperture, 0.5F);
+    EXPECT_EQ(restored.depthOfFieldQuality, 1U);
+    EXPECT_FALSE(restored.motionBlurEnabled);
+    EXPECT_FLOAT_EQ(restored.motionBlurStrength, 0.5F);
+    EXPECT_EQ(restored.motionBlurSampleCount, 8U);
+}
+
+TEST_F(SceneSerializerUVETest, RestoreUVE_LegacyReflectionProbeDefaultsToMediumResolution) {
+    // The resolution tier was added after reflection probes were already serializable. A payload
+    // without it must keep the former 128-pixel capture size rather than fail validation.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"ReflectionProbe3DComponentUVE":{"size":[5.0,5.0,5.0],"visibilityLayers":4294967295,"updateMode":0,"enabled":true}}}]})";
+    const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
+    const SceneSnapshotUVE snapshot{
+        Asset::EncodeUveFileEnvelopeUVE(
+            SceneAssetTypeUVE::Scene,
+            std::vector<std::byte>{payloadBytes, payloadBytes + payloadText.size()}),
+        SceneAssetTypeUVE::Scene};
+
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
+
+    ASSERT_EQ(roots.size(), 1U);
+    const ReflectionProbe3DComponentUVE& restored =
+        entityManager.GetComponentUVE<ReflectionProbe3DComponentUVE>(roots.front());
+    EXPECT_EQ(restored.resolution, ReflectionProbeResolutionUVE::Medium);
+    EXPECT_EQ(GetReflectionProbeResolutionPixelsUVE(restored.resolution), 128U);
 }
 
 TEST(NameComponentUVETest, IsNameComponentValidUVE_BoundsBytesAndRejectsEmbeddedNul) {

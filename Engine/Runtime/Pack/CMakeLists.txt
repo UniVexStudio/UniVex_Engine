@@ -7,12 +7,9 @@
 # loads a packaged/authored project's startup scene and activates its camera, used by both
 # uve_runtime's own --project flag and this module's tests). Mirrors ProjectCheck's own
 # lightweight standalone-tool layout (Expose/Internal/app), but needs uve_core (not just uve_asset)
-# since the launcher half drives a real EngineCoreUVE/Scene::SceneSerializerUVE.
-
-if(NOT UVE_HAS_DESKTOP_GL)
-    add_library(uve_pack_lib INTERFACE)
-    return()
-endif()
+# since the launcher half drives a real EngineCoreUVE/Scene::SceneSerializerUVE. EngineCoreUVE's
+# Null-backed headless runtime is CPU-buildable too, so the packager and project loader can be
+# tested without desktop GL.
 
 add_library(uve_pack_lib STATIC
     Internal/project_packager_uve.cpp

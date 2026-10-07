@@ -2,6 +2,7 @@
 
 #include "uve/scene/scene_component_metadata_uve.h"
 
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -51,6 +52,7 @@
 #include "uve/objects/3d/kinematic_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
+#include "uve/objects/3d/reflection_probe_3d_uve.h"
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
 #include "uve/objects/3d/interaction_area_3d_uve.h"
@@ -379,6 +381,17 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         MakeEntryUVE(
             "component.world_environment", "WorldEnvironment", kSectionOrderTypeSpecificUVE,
             {
+                WithTooltipUVE(
+                    DeclareEnumUVE<&WorldEnvironment3DComponentUVE::ambientSource>(
+                        "ambientSource", "Ambient Light Source",
+                        {{static_cast<std::int64_t>(WorldEnvironmentAmbientSourceUVE::None), "None"},
+                         {static_cast<std::int64_t>(WorldEnvironmentAmbientSourceUVE::FlatColor), "Flat Color"},
+                         {static_cast<std::int64_t>(WorldEnvironmentAmbientSourceUVE::Sky), "Sky"},
+                         {static_cast<std::int64_t>(WorldEnvironmentAmbientSourceUVE::EnvironmentMap),
+                          "Environment Map"}}),
+                    "None disables only ambient lighting; Flat Color uses Ambient Tint and Energy; Sky keeps "
+                    "the existing hemispherical sky/ground fill; Environment Map samples the Sky Asset for "
+                    "diffuse and specular ambient light."),
                 DeclareUVE<&WorldEnvironment3DComponentUVE::skyColor>("skyColor", "Sky Color",
                                                                           kPropertyTypeColorUVE),
                 DeclareUVE<&WorldEnvironment3DComponentUVE::horizonColor>(
@@ -391,16 +404,43 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::groundCurve>(
                                  "groundCurve", "Ground Curve", kPropertyTypeFloatUVE),
                              0.001, 4.0, 0.01),
-                DeclareUVE<&WorldEnvironment3DComponentUVE::ambientColor>(
-                    "ambientColor", "Ambient Tint", kPropertyTypeColorUVE),
-                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::ambientEnergy>(
-                                 "ambientEnergy", "Ambient Energy", kPropertyTypeFloatUVE),
-                             0.0, 100.0, 0.05),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::ambientColor>(
+                        "ambientColor", "Ambient Tint", kPropertyTypeColorUVE);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->ambientSource !=
+                               WorldEnvironmentAmbientSourceUVE::None;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::ambientEnergy>(
+                                         "ambientEnergy", "Ambient Energy", kPropertyTypeFloatUVE),
+                                     0.0, 100.0, 0.05);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->ambientSource !=
+                               WorldEnvironmentAmbientSourceUVE::None;
+                    };
+                    return property;
+                }(),
+
                 WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::exposure>(
                                  "exposure", "Exposure", kPropertyTypeFloatUVE),
                              0.0, 100.0, 0.05),
                 DeclareUVE<&WorldEnvironment3DComponentUVE::fogEnabled>("fogEnabled", "Fog",
                                                                             kPropertyTypeBoolUVE),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareEnumUVE<&WorldEnvironment3DComponentUVE::fogMode>(
+                        "fogMode", "Fog Mode",
+                        {{static_cast<std::int64_t>(WorldEnvironmentFogModeUVE::Linear), "Linear"},
+                         {static_cast<std::int64_t>(WorldEnvironmentFogModeUVE::Exponential), "Exponential"},
+                         {static_cast<std::int64_t>(WorldEnvironmentFogModeUVE::Height), "Height"}});
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
+                    };
+                    return property;
+                }(),
                 [] {
                     TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::fogColor>(
                         "fogColor", "Fog Color", kPropertyTypeColorUVE);
@@ -415,7 +455,30 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                          "fogDensity", "Fog Density", kPropertyTypeFloatUVE),
                                      0.0, 1.0, 0.001);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->fogEnabled && environment->fogMode != WorldEnvironmentFogModeUVE::Linear;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogStart>(
+                                         "fogStart", "Fog Start", kPropertyTypeFloatUVE),
+                                     0.0, 1000000.0, 0.1);
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->fogEnabled && environment->fogMode == WorldEnvironmentFogModeUVE::Linear;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogEnd>(
+                                         "fogEnd", "Fog End", kPropertyTypeFloatUVE),
+                                     0.1, 1000000.0, 0.1);
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->fogEnabled && environment->fogMode == WorldEnvironmentFogModeUVE::Linear;
                     };
                     return property;
                 }(),
@@ -435,7 +498,8 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                          "fogHeight", "Fog Height", kPropertyTypeFloatUVE),
                                      -1000.0, 10000.0, 0.5);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->fogEnabled && environment->fogMode == WorldEnvironmentFogModeUVE::Height;
                     };
                     return property;
                 }(),
@@ -445,7 +509,8 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                          "fogHeightFalloff", "Fog Falloff", kPropertyTypeFloatUVE),
                                      0.1, 10000.0, 1.0);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->fogEnabled && environment->fogMode == WorldEnvironmentFogModeUVE::Height;
                     };
                     return property;
                 }(),
@@ -492,6 +557,32 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                     return property;
                 }(),
                 [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::bloomSoftKnee>(
+                                         "bloomSoftKnee", "Bloom Soft Knee", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.tooltip = "Width of the gradual bright-pass transition as a fraction of the threshold. "
+                                       "0 preserves a hard threshold; larger values soften the transition.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->bloomEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::bloomMipCount>(
+                                         "bloomMipCount", "Bloom Mip Count", kPropertyTypeUInt32UVE),
+                                     1.0, static_cast<double>(kMaximumWorldEnvironmentBloomMipCountUVE), 1.0);
+                    property.tooltip = "Number of progressively smaller half-resolution scales in the bloom blur. "
+                                       "1 preserves the legacy single-scale bloom.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->bloomEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
                     TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::ssaoEnabled>(
                         "ssaoEnabled", "SSAO", kPropertyTypeBoolUVE);
                     property.isVisible = +[](const void* instance) {
@@ -530,11 +621,180 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::saturation>(
                                  "saturation", "Saturation", kPropertyTypeFloatUVE),
                              0.0, 2.0, 0.01),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::vignetteIntensity>(
+                                         "vignetteIntensity", "Vignette Intensity", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.tooltip = "Darken the image toward its edges; 0 disables the vignette.";
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::vignetteRadius>(
+                                         "vignetteRadius", "Vignette Radius", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.tooltip = "Normalized screen-space radius where edge darkening begins.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->vignetteIntensity > 0.0F;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::chromaticAberrationIntensity>(
+                                         "chromaticAberrationIntensity", "Chromatic Aberration",
+                                         kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.tooltip = "Separate red and blue sampling toward screen edges by up to four target "
+                                       "texels; 0 disables the effect.";
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::filmGrainIntensity>(
+                                         "filmGrainIntensity", "Film Grain", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.tooltip = "Animated monochrome noise, up to +/-0.04 at full intensity; 0 disables it.";
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::lensDistortionIntensity>(
+                                         "lensDistortionIntensity", "Lens Distortion", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.tooltip = "Radially expand scene features toward the edges; maximum 12% at full "
+                                       "intensity, 0 disables it.";
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        DeclareUVE<&WorldEnvironment3DComponentUVE::depthOfFieldEnabled>(
+                            "depthOfFieldEnabled", "Depth of Field", kPropertyTypeBoolUVE);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareEnumUVE<&WorldEnvironment3DComponentUVE::depthOfFieldFocusMode>(
+                        "depthOfFieldFocusMode", "Focus Mode",
+                        {{static_cast<std::int64_t>(WorldEnvironmentDepthOfFieldFocusModeUVE::Manual), "Manual"},
+                         {static_cast<std::int64_t>(WorldEnvironmentDepthOfFieldFocusModeUVE::ScreenCenter),
+                          "Screen Center Autofocus"}});
+                    property.tooltip = "Use the authored focus distance or focus on the closest visible surface at "
+                                       "the center of the screen.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->depthOfFieldEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareEnumUVE<&WorldEnvironment3DComponentUVE::depthOfFieldBokehShape>(
+                        "depthOfFieldBokehShape", "Bokeh Shape",
+                        {{static_cast<std::int64_t>(WorldEnvironmentDepthOfFieldBokehShapeUVE::Circular), "Circular"},
+                         {static_cast<std::int64_t>(WorldEnvironmentDepthOfFieldBokehShapeUVE::Hexagonal), "Hexagonal"}});
+                    property.tooltip = "Shape the radial blur sample kernel as a circle or a six-sided aperture.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->depthOfFieldEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::depthOfFieldFocusDistance>(
+                                         "depthOfFieldFocusDistance", "Focus Distance", kPropertyTypeFloatUVE),
+                                     0.1, 1000.0, 0.1);
+                    property.tooltip = "Manual focus distance along the camera ray, in world units.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->depthOfFieldEnabled &&
+                               environment->depthOfFieldFocusMode ==
+                                   WorldEnvironmentDepthOfFieldFocusModeUVE::Manual;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::depthOfFieldAperture>(
+                                         "depthOfFieldAperture", "Aperture", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.tooltip = "Normalized blur strength; full aperture permits up to an eight-pixel radius.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->depthOfFieldEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::depthOfFieldQuality>(
+                                         "depthOfFieldQuality", "Blur Quality", kPropertyTypeUInt32UVE),
+                                     0.0, 2.0, 1.0);
+                    property.tooltip = "Quality tier: 4, 8, or 12 taps arranged in the selected bokeh shape.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->depthOfFieldEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        DeclareUVE<&WorldEnvironment3DComponentUVE::motionBlurEnabled>(
+                            "motionBlurEnabled", "Motion Blur", kPropertyTypeBoolUVE);
+                    property.tooltip = "Blur camera-induced motion between consecutive frames; per-object blur is "
+                                       "not yet supported.";
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::motionBlurStrength>(
+                                         "motionBlurStrength", "Motion Blur Strength", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.tooltip = "Scale camera motion vectors; 0 is a strict passthrough.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->motionBlurEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::motionBlurSampleCount>(
+                                         "motionBlurSampleCount", "Motion Blur Samples", kPropertyTypeUInt32UVE),
+                                     4.0, 12.0, 4.0);
+                    property.tooltip = "Camera-motion integration quality: 4, 8, or 12 samples.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->motionBlurEnabled;
+                    };
+                    return property;
+                }(),
                 DeclareUVE<&WorldEnvironment3DComponentUVE::colorFilter>(
                     "colorFilter", "Color Filter", kPropertyTypeColorUVE),
                 WithTooltipUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::skyAssetPath>(
                                    "skyAssetPath", "Sky Asset", kPropertyTypeStringUVE),
-                               "Equirectangular sky texture. Empty keeps the procedural sky."),
+                               "Equirectangular sky texture. Empty keeps the procedural sky; Ambient Light Source "
+                               "uses this texture when set to Environment Map, and falls back to Sky while it "
+                               "is unavailable."),
             }));
 
     AddUVE<ParticleEmitterComponentUVE>(
@@ -2133,14 +2393,18 @@ void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                    "The render layers this light affects."),
                                     std::string(kLayerMaskDrawerRenderUVE)),
                 InGroupUVE(DeclareUVE<&L::shadowEnabled>("shadowEnabled", "Enabled", kPropertyTypeBoolUVE), "Shadow"),
-                InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithRangeUVE(
-                               DeclareUVE<&L::shadowBias>("shadowBias", "Bias", kPropertyTypeFloatUVE), 0.0, 10.0,
-                               0.001)),
+                InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&L::shadowBias>("shadowBias", "Bias", kPropertyTypeFloatUVE),
+                                           -1.0, 10.0, 0.001),
+                               "Negative inherits the project's default shadow depth bias; non-negative values "
+                               "override it for this light.")),
                            "Shadow"),
-                InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithRangeUVE(
-                               DeclareUVE<&L::shadowNormalBias>("shadowNormalBias", "Normal Bias",
-                                                                kPropertyTypeFloatUVE),
-                               0.0, 10.0, 0.001)),
+                InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&L::shadowNormalBias>("shadowNormalBias", "Normal Bias",
+                                                                             kPropertyTypeFloatUVE),
+                                           -1.0, 10.0, 0.001),
+                               "Negative inherits the project's default normal-bias multiplier; non-negative "
+                               "values override it for this light.")),
                            "Shadow"),
                 InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithRangeUVE(
                                DeclareUVE<&L::shadowOpacity>("shadowOpacity", "Opacity", kPropertyTypeFloatUVE), 0.0,
@@ -2340,6 +2604,27 @@ void DeclareTwoBoneIKUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// Concrete RenderInstance3D children. Each brings exactly its own section; everything above it
 /// comes from the bases.
 void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    using R = ReflectionProbe3DComponentUVE;
+    AddValidatedUVE<R, &IsReflectionProbe3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.reflection_probe_3d", "ReflectionProbe3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&R::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off, the probe contributes no local reflection and captures are skipped."),
+                WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::size>("size", "Influence Size", kPropertyTypeVector3UVE),
+                                            0.001, 100000.0, 0.01),
+                               "Full box extents in metres. Reflection influence fades to zero at each face."),
+                WithTooltipUVE(
+                    DeclareEnumUVE<&R::resolution>(
+                        "resolution", "Capture Resolution",
+                        {{0, "64 (Low)"}, {1, "128 (Medium)"}, {2, "256 (High)"}, {3, "512 (Ultra)"}}),
+                    "Texels per cubemap face. Higher resolution sharpens the captured reflection at the cost of "
+                    "six larger textures; changing it reallocates the probe and triggers a fresh capture."),
+                DeclareEnumUVE<&R::updateMode>("updateMode", "Update Mode",
+                                               {{0, "Once"}, {1, "Every Frame"}, {2, "On Demand"}}),
+            }));
+
     AddValidatedUVE<DirectionalLight3DComponentUVE, &IsDirectionalLight3DComponentValidUVE>(
         entries,
         MakeEntryUVE(
@@ -2353,9 +2638,16 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
                            "Shadow"),
                 InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&DirectionalLight3DComponentUVE::shadowSplitBlend>(
                                                            "shadowSplitBlend", "Split Blend", kPropertyTypeFloatUVE),
-                                                       0.0, 1.0, 0.01),
+                                                       -1.0, 1.0, 0.01),
                                           "How the shadow cascades share that distance: 0 evenly, 1 packed near the "
-                                          "camera (sharper up close)."),
+                                          "camera (sharper up close); a negative value inherits the project's default."),
+                           "Shadow"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&DirectionalLight3DComponentUVE::shadowDistanceFadeRange>(
+                                                           "shadowDistanceFadeRange", "Distance Fade Range",
+                                                           kPropertyTypeFloatUVE),
+                                                       0.0, 10000.0, 1.0),
+                                          "Fade shadows smoothly to fully lit over this many metres at the end of "
+                                          "the final cascade. 0 disables the fade."),
                            "Shadow"),
             }));
 

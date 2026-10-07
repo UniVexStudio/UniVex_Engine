@@ -145,6 +145,64 @@ TEST(MeshRenderVisibilityUVETest, RejectedCandidatesPublishTheSameFieldsTheyAlwa
     }
 }
 
+TEST(MeshRenderVisibilityUVETest, FrustumCullingFreezeKeepsOffCameraPlacementsAndTheirSortDepth) {
+    // The debug freeze (CullingSettingsUVE / MeshVisibilitySetUVE::frustumTestsDisabled) asks for
+    // every PLACED mesh, wherever the camera looks. Two things must survive it: the sort depth,
+    // which is what keeps a frozen frame's queue ordered instead of dumping everything at depth
+    // zero, and placement validity, because a freeze draws off-screen geometry rather than
+    // geometry that was never valid to begin with.
+    const Math::AabbUVE localBounds =
+        Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+    const Math::Matrix4x4UVE view =
+        Math::Matrix4x4UVE::ViewFromPositionAndRotationUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{});
+    const Math::Matrix4x4UVE projection =
+        Math::Matrix4x4UVE::PerspectiveUVE(std::numbers::pi_v<float> / 2.0F, 1.0F, 1.0F, 100.0F);
+    const Math::FrustumUVE frustum = Math::FrustumUVE::FromViewProjectionUVE(projection * view);
+
+    MeshRenderPlacementUVE behind;
+    behind.reason = MeshRenderEligibilityReasonUVE::Eligible;
+    behind.worldMatrix = Math::Matrix4x4UVE::ComposeTrsUVE(Math::Vector3UVE{0.0F, 0.0F, 50.0F}, Math::QuaternionUVE{},
+                                                           Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    behind.worldBounds = localBounds.TransformUVE(behind.worldMatrix);
+
+    // Unfrozen, the same placement is the OutsideFrustum rejection the test above pins.
+    MeshRenderEligibilityUVE culled;
+    EXPECT_FALSE(TestMeshRenderVisibilityUVE(behind, frustum, culled));
+    EXPECT_EQ(culled.reason, MeshRenderEligibilityReasonUVE::OutsideFrustum);
+
+    MeshRenderEligibilityUVE frozen;
+    ASSERT_TRUE(TestMeshRenderVisibilityUVE(behind, frustum, frozen, true));
+    EXPECT_EQ(frozen.reason, MeshRenderEligibilityReasonUVE::Eligible);
+    EXPECT_TRUE(std::isfinite(frozen.sortDepth));
+    EXPECT_GT(frozen.sortDepth, 0.0F) << "a frozen candidate still needs a real depth to sort by";
+    EXPECT_FLOAT_EQ(frozen.worldBounds.min.z, behind.worldBounds.min.z);
+
+    // Depth must still come from this frustum: a placement in front of the camera sorts nearer than
+    // one behind it, exactly as it does when culling is on.
+    MeshRenderPlacementUVE inFront;
+    inFront.reason = MeshRenderEligibilityReasonUVE::Eligible;
+    inFront.worldMatrix = Math::Matrix4x4UVE::ComposeTrsUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+                                                            Math::QuaternionUVE{},
+                                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    inFront.worldBounds = localBounds.TransformUVE(inFront.worldMatrix);
+    MeshRenderEligibilityUVE frozenInFront;
+    MeshRenderEligibilityUVE culledInFront;
+    ASSERT_TRUE(TestMeshRenderVisibilityUVE(inFront, frustum, frozenInFront, true));
+    ASSERT_TRUE(TestMeshRenderVisibilityUVE(inFront, frustum, culledInFront));
+    EXPECT_FLOAT_EQ(frozenInFront.sortDepth, culledInFront.sortDepth)
+        << "the freeze skips the plane test, not the depth derivation";
+    EXPECT_LT(frozenInFront.sortDepth, frozen.sortDepth);
+
+    // An unplaced candidate stays rejected: the freeze is about where things are, not whether they
+    // are drawable at all.
+    MeshRenderPlacementUVE unplaced;
+    unplaced.reason = MeshRenderEligibilityReasonUVE::InvalidWorldTransform;
+    MeshRenderEligibilityUVE frozenUnplaced;
+    EXPECT_FALSE(TestMeshRenderVisibilityUVE(unplaced, frustum, frozenUnplaced, true));
+    EXPECT_EQ(frozenUnplaced.reason, MeshRenderEligibilityReasonUVE::InvalidWorldTransform);
+    EXPECT_FLOAT_EQ(frozenUnplaced.sortDepth, 0.0F);
+}
+
 TEST(MeshRenderVisibilityUVETest, OutputIsNotContaminatedByAPreviousCall) {
     // The call site reuses one MeshRenderEligibilityUVE across every candidate in a cull, so a
     // rejection must not leave the previous candidate's values behind. Currently that holds

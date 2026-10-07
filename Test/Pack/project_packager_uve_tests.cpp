@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <string>
 
 #include <gtest/gtest.h>
 
@@ -22,9 +23,14 @@ protected:
         outputDirectory = ::UVE::Tests::ScratchPathUVE("packager_output");
 
         std::filesystem::create_directories(projectRoot / "content" / "scenes");
+        std::filesystem::create_directories(projectRoot / "content" / "icons");
         {
             std::ofstream scene(projectRoot / "content" / "scenes" / "main.uvscene");
             scene << "{}";
+        }
+        {
+            std::ofstream icon(projectRoot / "content" / "icons" / "linux-64.png", std::ios::binary);
+            icon << "fake-icon-bytes";
         }
         {
             std::ofstream texture(projectRoot / "content" / "hero.uvtex", std::ios::binary);
@@ -45,6 +51,15 @@ protected:
         package.projectId = "packager-test-project";
         package.displayName = "Packager Test Project";
         package.engineVersion = {0U, 1U, 0U, 1U};
+        package.productMetadata.name = "Sky Runner";
+        package.productMetadata.shortName = "sky-runner";
+        package.productMetadata.description = "A packaged sample.";
+        package.productMetadata.version = "2.4.1-beta";
+        package.productMetadata.buildNumber = 17U;
+        package.applicationSettings.publisherName = "Studio Labs";
+        package.applicationSettings.copyrightLine = "Copyright (c) 2026 Studio Labs.";
+        package.applicationSettings.applicationIdentifiersByTarget["linux"] = "com.example.skyrunner";
+        package.applicationSettings.iconPathsByTarget["linux"] = {{64U, "icons/linux-64.png"}};
         package.contentRoot = "content";
         package.assetDatabasePath = ".uvassetdb";
         package.settingsPath = ".uvsettings";
@@ -78,17 +93,35 @@ TEST_F(ProjectPackagerUVETest, PackUVE_CopiesRuntimeManifestAndContentIntoOneFol
     const ProjectPackResultUVE result = ProjectPackagerUVE::PackUVE(MakeOptionsUVE());
 
     ASSERT_TRUE(result.IsSuccessUVE()) << result.message;
+    EXPECT_NE(result.message.find("Sky Runner"), std::string::npos);
+    EXPECT_NE(result.message.find("v2.4.1-beta (build 17)"), std::string::npos);
+    EXPECT_NE(result.message.find("publisher: Studio Labs"), std::string::npos);
+    EXPECT_NE(result.message.find("Copyright (c) 2026 Studio Labs."), std::string::npos);
     EXPECT_TRUE(std::filesystem::is_regular_file(outputDirectory / "fake_uve_runtime"));
     EXPECT_TRUE(std::filesystem::is_regular_file(outputDirectory / "project.uvproject"));
     EXPECT_TRUE(std::filesystem::is_regular_file(outputDirectory / "content" / "scenes" / "main.uvscene"));
     EXPECT_TRUE(std::filesystem::is_regular_file(outputDirectory / "content" / "hero.uvtex"));
+    EXPECT_TRUE(std::filesystem::is_regular_file(outputDirectory / "content" / "icons" / "linux-64.png"));
 
     // The copied .uvproject's relative paths must still resolve unchanged against the copy.
     const Platform::EditorProjectPackageLoadResultUVE reloaded =
         Platform::EditorProjectPackageCodecUVE::LoadUVE(outputDirectory / "project.uvproject");
     ASSERT_TRUE(reloaded.IsAcceptedUVE());
+    EXPECT_EQ(reloaded.package->productMetadata, package.productMetadata);
+    EXPECT_EQ(reloaded.package->applicationSettings, package.applicationSettings);
     EXPECT_TRUE(std::filesystem::is_regular_file(outputDirectory / reloaded.package->contentRoot /
                                                  reloaded.package->startupScenePath));
+}
+
+TEST_F(ProjectPackagerUVETest, PackUVE_RejectsMissingReferencedApplicationIcon) {
+    package.applicationSettings.iconPathsByTarget["windows"] = {{256U, "icons/missing.png"}};
+    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+
+    const ProjectPackResultUVE result = ProjectPackagerUVE::PackUVE(MakeOptionsUVE());
+
+    EXPECT_FALSE(result.IsSuccessUVE());
+    EXPECT_EQ(result.code, ProjectPackCodeUVE::ApplicationResourceNotFound);
+    EXPECT_FALSE(std::filesystem::exists(outputDirectory));
 }
 
 TEST_F(ProjectPackagerUVETest, PackUVE_PreservesRuntimeExecutablePermissionBits) {

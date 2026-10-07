@@ -1280,12 +1280,16 @@ template <typename VectorT>
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const WorldEnvironment3DComponentUVE& value) {
     return {{"skyAssetPath", value.skyAssetPath},
+            {"ambientSource", static_cast<std::uint8_t>(value.ambientSource)},
             {"ambientColor", ToJsonUVE(value.ambientColor)},
             {"fogColor", ToJsonUVE(value.fogColor)},
             {"ambientEnergy", value.ambientEnergy},
             {"exposure", value.exposure},
             {"fogDensity", value.fogDensity},
             {"fogEnabled", value.fogEnabled},
+            {"fogMode", static_cast<std::uint8_t>(value.fogMode)},
+            {"fogStart", value.fogStart},
+            {"fogEnd", value.fogEnd},
             {"postProcessingEnabled", value.postProcessingEnabled},
             {"skyColor", ToJsonUVE(value.skyColor)},
             {"horizonColor", ToJsonUVE(value.horizonColor)},
@@ -1296,12 +1300,28 @@ template <typename VectorT>
             {"bloomEnabled", value.bloomEnabled},
             {"bloomIntensity", value.bloomIntensity},
             {"bloomThreshold", value.bloomThreshold},
+            {"bloomSoftKnee", value.bloomSoftKnee},
+            {"bloomMipCount", value.bloomMipCount},
             {"ssaoEnabled", value.ssaoEnabled},
             {"ssaoIntensity", value.ssaoIntensity},
             {"ssaoRadius", value.ssaoRadius},
             {"brightness", value.brightness},
             {"contrast", value.contrast},
             {"saturation", value.saturation},
+            {"vignetteIntensity", value.vignetteIntensity},
+            {"vignetteRadius", value.vignetteRadius},
+            {"chromaticAberrationIntensity", value.chromaticAberrationIntensity},
+            {"filmGrainIntensity", value.filmGrainIntensity},
+            {"lensDistortionIntensity", value.lensDistortionIntensity},
+            {"depthOfFieldEnabled", value.depthOfFieldEnabled},
+            {"depthOfFieldFocusMode", static_cast<std::uint8_t>(value.depthOfFieldFocusMode)},
+            {"depthOfFieldBokehShape", static_cast<std::uint8_t>(value.depthOfFieldBokehShape)},
+            {"depthOfFieldFocusDistance", value.depthOfFieldFocusDistance},
+            {"depthOfFieldAperture", value.depthOfFieldAperture},
+            {"depthOfFieldQuality", value.depthOfFieldQuality},
+            {"motionBlurEnabled", value.motionBlurEnabled},
+            {"motionBlurStrength", value.motionBlurStrength},
+            {"motionBlurSampleCount", value.motionBlurSampleCount},
             {"colorFilter", ToJsonUVE(value.colorFilter)},
             {"fogHeight", value.fogHeight},
             {"fogHeightFalloff", value.fogHeightFalloff},
@@ -1311,12 +1331,18 @@ template <typename VectorT>
 [[nodiscard]] WorldEnvironment3DComponentUVE WorldEnvironment3DObjectFromJsonUVE(const nlohmann::json& json) {
     WorldEnvironment3DComponentUVE value;
     value.skyAssetPath = json.value("skyAssetPath", std::string{});
+    value.ambientSource = static_cast<WorldEnvironmentAmbientSourceUVE>(
+        json.value("ambientSource", static_cast<std::uint8_t>(value.ambientSource)));
     value.ambientColor = Vector3FromJsonUVE(json.at("ambientColor"));
     value.fogColor = Vector3FromJsonUVE(json.at("fogColor"));
     value.ambientEnergy = json.value("ambientEnergy", 1.0F);
     value.exposure = json.value("exposure", 1.0F);
     value.fogDensity = json.value("fogDensity", 0.0F);
     value.fogEnabled = json.value("fogEnabled", false);
+    value.fogMode = static_cast<WorldEnvironmentFogModeUVE>(
+        json.value("fogMode", static_cast<std::uint8_t>(value.fogMode)));
+    value.fogStart = json.value("fogStart", value.fogStart);
+    value.fogEnd = json.value("fogEnd", value.fogEnd);
     value.postProcessingEnabled = json.value("postProcessingEnabled", true);
     if (json.contains("skyColor")) {
         value.skyColor = Vector3FromJsonUVE(json.at("skyColor"));
@@ -1333,12 +1359,31 @@ template <typename VectorT>
     value.bloomEnabled = json.value("bloomEnabled", value.bloomEnabled);
     value.bloomIntensity = json.value("bloomIntensity", value.bloomIntensity);
     value.bloomThreshold = json.value("bloomThreshold", value.bloomThreshold);
+    value.bloomSoftKnee = json.value("bloomSoftKnee", value.bloomSoftKnee);
+    value.bloomMipCount = json.value("bloomMipCount", value.bloomMipCount);
     value.ssaoEnabled = json.value("ssaoEnabled", value.ssaoEnabled);
     value.ssaoIntensity = json.value("ssaoIntensity", value.ssaoIntensity);
     value.ssaoRadius = json.value("ssaoRadius", value.ssaoRadius);
     value.brightness = json.value("brightness", value.brightness);
     value.contrast = json.value("contrast", value.contrast);
     value.saturation = json.value("saturation", value.saturation);
+    value.vignetteIntensity = json.value("vignetteIntensity", value.vignetteIntensity);
+    value.vignetteRadius = json.value("vignetteRadius", value.vignetteRadius);
+    value.chromaticAberrationIntensity =
+        json.value("chromaticAberrationIntensity", value.chromaticAberrationIntensity);
+    value.filmGrainIntensity = json.value("filmGrainIntensity", value.filmGrainIntensity);
+    value.lensDistortionIntensity = json.value("lensDistortionIntensity", value.lensDistortionIntensity);
+    value.depthOfFieldEnabled = json.value("depthOfFieldEnabled", value.depthOfFieldEnabled);
+    value.depthOfFieldFocusMode = static_cast<WorldEnvironmentDepthOfFieldFocusModeUVE>(
+        json.value("depthOfFieldFocusMode", static_cast<std::uint8_t>(value.depthOfFieldFocusMode)));
+    value.depthOfFieldBokehShape = static_cast<WorldEnvironmentDepthOfFieldBokehShapeUVE>(
+        json.value("depthOfFieldBokehShape", static_cast<std::uint8_t>(value.depthOfFieldBokehShape)));
+    value.depthOfFieldFocusDistance = json.value("depthOfFieldFocusDistance", value.depthOfFieldFocusDistance);
+    value.depthOfFieldAperture = json.value("depthOfFieldAperture", value.depthOfFieldAperture);
+    value.depthOfFieldQuality = json.value("depthOfFieldQuality", value.depthOfFieldQuality);
+    value.motionBlurEnabled = json.value("motionBlurEnabled", value.motionBlurEnabled);
+    value.motionBlurStrength = json.value("motionBlurStrength", value.motionBlurStrength);
+    value.motionBlurSampleCount = json.value("motionBlurSampleCount", value.motionBlurSampleCount);
     if (json.contains("colorFilter")) {
         value.colorFilter = Vector3FromJsonUVE(json.at("colorFilter"));
     }
@@ -1352,6 +1397,7 @@ template <typename VectorT>
     return {{"size", ToJsonUVE(value.size)},
             {"visibilityLayers", value.visibilityLayers},
             {"updateMode", static_cast<std::uint8_t>(value.updateMode)},
+            {"resolution", static_cast<std::uint8_t>(value.resolution)},
             {"enabled", value.enabled}};
 }
 
@@ -1360,6 +1406,8 @@ template <typename VectorT>
     value.size = Vector3FromJsonUVE(json.at("size"));
     value.visibilityLayers = json.value("visibilityLayers", std::uint32_t{0xFFFFFFFFU});
     value.updateMode = static_cast<ReflectionProbeUpdateModeUVE>(json.value("updateMode", std::uint8_t{0}));
+    value.resolution = static_cast<ReflectionProbeResolutionUVE>(json.value(
+        "resolution", static_cast<std::uint8_t>(ReflectionProbeResolutionUVE::Medium)));
     value.enabled = json.value("enabled", true);
     return value;
 }
@@ -1410,7 +1458,9 @@ template <typename VectorT>
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const DirectionalLight3DComponentUVE& value) {
-    return {{"shadowMaxDistance", value.shadowMaxDistance}, {"shadowSplitBlend", value.shadowSplitBlend}};
+    return {{"shadowMaxDistance", value.shadowMaxDistance},
+            {"shadowSplitBlend", value.shadowSplitBlend},
+            {"shadowDistanceFadeRange", value.shadowDistanceFadeRange}};
 }
 
 [[nodiscard]] DirectionalLight3DComponentUVE DirectionalLight3DFromJsonUVE(const nlohmann::json& json) {
@@ -1418,6 +1468,7 @@ template <typename VectorT>
     DirectionalLight3DComponentUVE value{};
     value.shadowMaxDistance = json.value("shadowMaxDistance", defaults.shadowMaxDistance);
     value.shadowSplitBlend = json.value("shadowSplitBlend", defaults.shadowSplitBlend);
+    value.shadowDistanceFadeRange = json.value("shadowDistanceFadeRange", defaults.shadowDistanceFadeRange);
     return value;
 }
 

@@ -16,8 +16,8 @@ This file uses the same four status markers as `ROADMAP.md`, `FOUNDATION.md` and
 - `[ ]` = not started, or only a stub/placeholder exists.
 - `[~]` = partially implemented — a foundation exists but the feature is not complete. The note
   after the item says what is missing.
-- `[/]` = **wired, not fully verified** — a real system runs it, confirmed by reading the actual
-  implementation, but it lacks the dedicated test coverage needed to call it verified.
+- `[/]` = **wired, not fully verified** — the implementation is present and source-reviewed, but
+  dedicated tests are missing or could not be run in the available build configuration.
 - `[x]` = **verified** — real and working, confirmed by reading the source (not assumed), and
   backed by dedicated tests that lock more than one case.
 
@@ -28,9 +28,12 @@ state of the codebase today, and the whole reason this roadmap exists.
 third-party engine or product is named here. Where an item exists because mature engines have
 converged on it, that is stated as "the established convention" and described on its own terms.
 
-## Current state, honestly stated
+## Baseline state when this roadmap was first drafted (historical)
 
-The following were confirmed by reading the source while writing this document.
+The following inventory was confirmed when this document was first written. It is retained as
+historical context, **not as a current source audit**; several statements have since been
+superseded by the implementation tracked in Part 0. The remaining roadmap still needs a
+systematic source audit before it can be treated as a complete present-day status report.
 
 **The settings store is a bare JSON dictionary.** `IConfigManagerUVE`
 (`Engine/Runtime/Config/Expose/uve/config/i_config_manager_uve.h`) offers exactly four scalar
@@ -83,14 +86,14 @@ covered by unit tests in `Test/Input/input_system_uve_tests.cpp`, but it has **n
 caller** — nothing in the editor or runtime rebinds an action. There is no input-map asset format
 and no input-map UI.
 
-### The conclusion that orders this entire document
+### The conclusion that ordered the original roadmap
 
-Every settings page described in Parts 1 through 6 sits on top of a settings system that does not
-exist. Building pages first means hand-writing validation, defaults, persistence and UI for each
-of several hundred settings, at their own call sites — which is precisely the pattern the sixteen
-existing editor keys already demonstrate at small scale.
+When this roadmap was drafted, the settings substrate did not exist. Building the several hundred
+settings pages first would have meant hand-writing validation, defaults, persistence and UI at
+each call site — precisely the pattern the original sixteen editor keys demonstrated at small
+scale.
 
-So **Part 0 comes first**, and it is the only part written in full engineering detail.
+That is why **Part 0 comes first** and is written in more engineering detail than the later parts.
 
 ---
 
@@ -114,10 +117,13 @@ and it is written once per setting. Multiply by four hundred settings and the co
 
 - [~] `SettingDescriptorUVE` — the single record describing one setting. Landed in
       `Engine/Runtime/Config` (`setting_descriptor_uve.h`) with bool, int, float, string, enum,
-      colour and vector3; the remaining types and the version fields below are still open.
+      colour, vector3, file-path, key-binding and bounded string-list descriptors; other setting
+      types and descriptor-level version metadata remain open.
+
   - [x] `id` — the dot path, e.g. `rendering.shadows.softShadowQuality`. The storage key.
-  - [~] `type` — bool, int, float/double, string, enum, colour, vector2/3/4, key binding, asset
-        reference, file path, layer mask, string list.
+  - [~] `type` — bool, int, float/double, string, enum, colour, vector3 and bounded string lists
+        are supported; file path and key binding are distinct descriptor types too. Vector2/4, asset
+        reference and layer mask remain open.
   - [x] `defaultValue` — the engine default, typed. The single source of "reset to default".
   - [x] `minimum` / `maximum` / `step` — for numeric types; absent means unbounded.
   - [x] `enumEntries` — ordered (value, label) pairs for enum types, so a combo box needs no
@@ -176,38 +182,55 @@ collects them.
 
 ## 0.6 Change notification
 
-- [ ] An observer registration keyed by id or by category prefix, so the viewport can react to
-      `editor.viewport.*` without polling every frame and without the settings layer knowing what
-      a viewport is.
-- [ ] Observers fire only on an actual change in value, not on every write.
-- [ ] Clear documentation of which thread observers run on — the store is already mutex-guarded
-      and callable from any thread, so this is not optional detail.
+- [x] An observer registration keyed by id or by category prefix, so consumers can react without
+      polling and without the settings layer knowing what they are. The shared
+      `SettingsObserverHubUVE` now backs both `SettingsDocumentUVE` and `EditorUVE`; document
+      settings and editor preferences use the same exact-id and slash-boundary category path.
+- [x] Observers fire only when the effective value changes, not on every write. Document Set,
+      Reset, and successful Load notifications report the complete before/after value; editor
+      setting writes and live viewport preference setters likewise suppress no-op notifications.
+      Invalid writes and storage-only cleanup do not produce false change events.
+- [x] The callback thread and re-entrancy contract is documented: callbacks run synchronously on
+      the owner's thread after the value is committed. The owner is not thread-safe, callbacks must
+      stay on that thread, nested mutations dispatch nested events, and unsubscribing an observer
+      before its turn skips it in the current dispatch.
 
 ## 0.7 Layering and override order
 
-- [~] Resolution order, lowest to highest priority: **engine default → project setting → user
-      preference → per-platform override → command-line override**. The project layer exists:
-      `project.uvsettings` is read at the start of `EngineCoreUVE::Init()` and overrides the
-      application's `EngineConfigUVE` wherever it sets a legal value. The user, platform and
-      command-line layers are not stacked on it yet.
-- [ ] `EngineConfigUVE`'s existing command-line overrides become the top layer of this stack
-      rather than a separate mechanism.
-- [~] A query for *where a value came from*. Without it, "I changed the setting and nothing
-      happened" is undebuggable, because a higher layer may be silently winning.
-      `GetStoredValueUVE` answers what one layer contributes (nothing, or a legal value); the
-      query across a full stack comes with the stack.
+- [x] Resolution order, lowest to highest priority: **engine default → project setting → user
+      preference → per-platform override → command-line override**. `SettingsStackUVE` resolves the
+      chain, and `EngineCoreUVE::Init()` attaches all four stores before dependent systems initialize.
+      The CPU-buildable settings target tests provenance, layer filtering, invalid-value fallthrough
+      and preservation of the caller's base config. Headless EngineCore integration tests load
+      project, user and platform files, resolve command-line precedence, and exercise both generated
+      and explicit platform paths through actual startup.
+- [x] Command-line values for registered EngineConfig settings use setting ids directly:
+      `--<setting.id> <value>`; a presence-only bool means true, and `--headless` is the hidden
+      `NotPersisted` CLI-only setting. Typed conversion and descriptor validation run in the
+      CPU-buildable settings target, with tests for bool, integer, float, vector and enum values,
+      invalid overrides, and command-line precedence. Focused `EngineCore::Init()` integration tests
+      also run in the headless CPU target; GL-rendering tests remain desktop-only.
+- [x] A query for *where a value came from*. `SettingsStackUVE::ResolveUVE` returns the effective,
+      descriptor-validated value together with its `SettingValueSourceUVE`; invalid high-priority
+      values fall through. Dedicated tests cover every precedence level, provenance, and invalid
+      command-line fallback.
 - [x] Per-layer save targets: user preferences never write into the project file, and vice versa.
       Editor preferences go to `.uvsettings`, project settings to `project.uvsettings`
       (committed; the ignore rule for `*.uvsettings` makes an exception for it).
 
 ## 0.8 Versioning and migration
 
-- [ ] A document version, following the existing session-settings version idiom in
-      `editor_uve.cpp`, which already bumps a version integer alongside the format.
-- [ ] Forward migration steps registered per version, so an old settings file is upgraded on load
-      rather than discarded.
-- [ ] `Deprecated` descriptors read old ids and write the new ones, then stop.
-- [ ] A test that loads a fixture of each historical version and asserts the migrated result.
+- [x] A root-level integer `version` for `SettingsDocumentUVE`. Missing-version files are version 0;
+      successful loads record the current version, while malformed or newer-than-supported versions
+      fail closed without replacing the in-memory document.
+- [x] Forward migration callbacks registered for version N run on a candidate store before it is
+      committed. A failed callback leaves the existing document, path and dirty state unchanged;
+      unregistered steps are identity migrations that still advance the version.
+- [x] A `Deprecated` descriptor can name its live `replacementId`. Reads can fall back to a valid old
+      value; load migrates it to the new id and removes the alias, while a valid new value wins.
+      Editor setting renames now use this shared registry path.
+- [x] Version 0, 1, 2 and current-version fixtures verify forward migration, serialization, alias
+      cleanup, and rejection of future, malformed and failed migrations.
 
 ## 0.9 Enumeration, search and the generic panel
 
@@ -219,18 +242,20 @@ This is the payoff, and it is why the descriptor carries display strings.
 - [x] A generic settings panel that renders a page purely from descriptors: a category tree on
       the left, the matching settings on the right, each rendered by its type. The editor's
       **Editor Preferences** window (Menu > File), `editor_panel_preferences_uve.cpp`.
-- [~] Per-type row renderers written **once** — bool, slider, drag, combo, colour, vector, path,
-      key binding — instead of per setting. Bool, int, float, string, enum and colour (through
-      the editor's colour field) and vector3 (the axis-tagged fields Transform uses) exist; path
-      and key binding follow their types.
+- [/] Per-type row renderers written **once** — bool, slider, drag, combo, colour, vector, path,
+      key binding — instead of per setting. FilePath uses a bounded path text field; KeyBinding has
+      a capture/clear control with the editor's stable modifier-and-key names. Descriptor validation
+      and storage are tested; the new controls still need a live Editor UI test.
 - [x] A modified-from-default indicator and a per-setting revert control, both of which are free
       once `defaultValue` is in the descriptor. Also a "Modified only" filter, a dot on every
       category holding a change, the default in each row's tooltip, and a confirmed "Reset to
       Defaults" for what is shown.
 - [x] An "advanced settings" toggle that reveals `Advanced`-flagged entries. It appears only
       when some setting is `Advanced`.
-- [~] A restart-required notice for `RestartRequired` entries: a "(restart)" tag and a tooltip
-      line. No setting needs it yet, and there is no notice after a change is made.
+- [/] A restart-required notice for `RestartRequired` entries: a "(restart)" tag and a tooltip
+      line, plus a visible notice listing pending changes. It compares against the window's initial
+      values, updates after edits and disappears when a setting is restored; live UI behavior still
+      needs verification in a non-CPU-only Editor build.
 
 Note the existing inspector search box matches **drawer ids only**, not property names, so typing
 a property name hides everything. A registry-backed search fixes that same class of problem for
@@ -252,19 +277,31 @@ settings, and the inspector should eventually share the mechanism.
 
 1. [x] `SettingDescriptorUVE` and the registry, with the uniqueness/range/default test.
 2. [x] Typed validated access over `ConfigManagerUVE`.
-3. [~] Migrate the sixteen existing `editor.*` keys onto descriptors, deleting their hand-rolled
-       validation. This is the proof the substrate works, on real settings, with existing tests
-       to catch a regression. Eighteen scalar settings now go through `RegisterEditorSettingsUVE`
-       (panels, tabs, snapping, grid, selection outline), and a corrupt value falls back per setting
-       rather than taking its neighbours with it. Still hand-written: the saved and recent colours,
-       inspector folds and favourite projects (they need a list type), and the viewport axis
-       colours (their defaults belong to the viewport module and are seeded by the host).
-4. [ ] Change notification.
+3. [/] Migrate the existing editor preferences onto descriptors, moving typed storage and bounds
+       into the registry while keeping domain-specific conversion and one-time legacy migration in
+       the editor. Forty-one bound settings now go through `RegisterEditorSettingsUVE`; the saved
+       and recent colour lists remain hex strings, Inspector folds keep arbitrary keys and both
+       open/closed states, and favorite projects remain filesystem paths. These use bounded hidden
+       `StringList` descriptors, including conversion of legacy nested fold records. Three hidden
+       `Color` descriptors store the host-seeded viewport axis palette; restoration is all-or-none,
+       leaves host defaults untouched when no complete valid palette exists, and consumes the old
+       `.set` marker. The core build and all 1,057 core tests pass; Editor sources and regression-test
+       sources pass strict syntax checks, but Editor runtime tests could not be run because the
+       configured CPU-only build excludes Editor targets without GLFW/OpenGL.
+4. [x] Change notification. The shared `SettingsObserverHubUVE` backs document and editor
+       settings, with exact-id/category subscriptions, effective-value events, owner-scoped handles,
+       and dedicated document/editor regression tests.
 5. [x] The generic settings panel with type-based row renderers (the Editor Preferences window).
-6. [~] Layering, override order, and the "where did this come from" query. The project layer
-       over the application's config; the rest of the stack is open.
+6. [x] Layering, override order, and the "where did this value come from" query. `SettingsStackUVE`
+       resolves defaults/project/user/platform/command-line and reports the winner; EngineCore
+       attaches all four stores before constructing dependent systems. CPU-buildable tests cover
+       typed command-line conversion, platform-path selection, layer attachment, provenance,
+       invalid-value fallthrough and mapping to `EngineConfigUVE`. Focused `EngineCore::Init()`
+       tests load project/user/platform files and exercise command-line precedence and fallback in
+       headless mode. The broader EngineCore suite's GL-rendering tests remain desktop-only.
 7. [x] The project settings file and its layer.
-8. [ ] Versioning and migration.
+8. [x] Versioning and migration. `SettingsDocumentUVE` versions its root document, runs registered
+       forward migrations transactionally, and migrates Deprecated aliases to their replacement ids.
 
 ---
 
@@ -276,38 +313,111 @@ it is declared in it and something reads it.
 
 ## 1.1 Application and metadata
 
-- [ ] Product name, short name, description, version string, build number.
-- [ ] Company / publisher name, copyright line.
-- [ ] Unique application identifier (reverse-domain style) per target.
-- [ ] Application icon set, per platform and per size.
-- [ ] Main scene to load on launch.
-- [ ] Splash/boot screen image, background colour, fade time, minimum display time, whether it is
-      skippable.
-- [ ] Boot logo behaviour in editor play mode (usually skipped).
-- [ ] Quit-on-last-window-closed behaviour.
-- [ ] Single-instance enforcement.
-- [ ] Command-line argument documentation surface (which arguments the shipped build accepts).
-- [ ] Custom user data directory name, and whether it is per-user or portable.
-- [ ] Crash handler enable, crash dump directory, symbol upload endpoint.
+- [x] Product name, short name, description, product version string and build number. Stored as
+      optional, bounded `.uvproject` product metadata for older-project compatibility; the packager
+      uses the product name (falling back to the project display name) and reports its version/build.
+      Codec round-trip, defaults and validation have dedicated tests.
+- [x] Company / publisher name and copyright line. Stored and validated with the `.uvproject`
+      application settings and included in the packager's product report.
+- [x] Unique reverse-domain application identifier per target. Target-specific identifiers are
+      validated, resolved into runtime configuration, and used as the single-instance lock identity;
+      legacy projects without one fall back to their project ID.
+- [x] Application icon assets per target and pixel size. Package validation and copying retain the
+      full icon set; current-target PNGs are decoded and applied to the live window. `.ico`/`.icns`
+      assets are retained for host/native packaging, while the current GLFW path consumes PNG.
+- [x] Main scene to load on launch. The manifest's content-relative startup scene is validated,
+      loaded, and its camera activated before the game loop.
+- [x] Splash/boot image, background colour, fade, minimum display time and skip policy. Standalone
+      startup imports supported source images to derived user data, renders through ordered UI image
+      batches, and skips display on headless/no-window runs.
+- [x] Boot logo behaviour in editor play mode. Project settings can skip it (default) or show a
+      timed/fading, Escape-skippable viewport overlay with the configured image/title.
+- [x] Quit-on-last-window-closed behavior is mapped from the package to EngineCore's run policy.
+- [x] Single-instance enforcement uses a per-application lock in user data; duplicate launches fail
+      cleanly, and the lock releases on shutdown.
+- [x] Runtime `--help`/`-h` documents `--project` and every registered engine setting flag.
+- [x] Custom user-data directory name and portable/per-user policy. Runtime resolves platform data
+      roots and places caches, settings, logs, saves and crash output under the selected directory.
+- [~] Crash handler enable/directory and HTTPS symbol endpoint are stored, validated and consumed.
+      Windows writes minidumps; POSIX writes an async-safe signal report. The endpoint is exposed
+      for host integration but the runtime does not upload symbols or crash data automatically.
+
+Implementation/verification note: CPU/null-runtime builds and focused tests verify startup,
+metadata, policy, PNG icon decoding and UI texture/order paths. The standalone splash code builds,
+but its native-window visual behavior could not be checked; the editor-only source could not be
+compiled because GLFW/OpenGL/ImGui are unavailable. The Windows minidump branch is also unverified
+on this Linux build.
 
 ## 1.2 Display and window
 
-- [ ] Default window width and height.
-- [ ] Window mode: windowed, maximised, fullscreen, exclusive fullscreen, borderless.
-- [ ] Resizable, borderless, always-on-top, transparent background.
-- [ ] Minimum and maximum window size.
-- [ ] Initial window position and which monitor to open on.
-- [ ] High-DPI awareness and per-monitor DPI scaling.
-- [ ] Content scale factor override.
-- [ ] Stretch mode: disabled, canvas items, viewport; and aspect policy: ignore, keep, keep width,
-      keep height, expand.
-- [ ] Integer-only scaling for pixel-art targets.
-- [ ] Orientation for handheld targets, and allowed orientation set.
-- [ ] V-sync mode: off, on, adaptive, mailbox.
-- [ ] Frame rate cap, separate caps for focused and unfocused windows.
-- [ ] Allow display sleep / keep screen on.
-- [ ] Mouse cursor: custom image, hotspot, visibility default, confine-to-window default.
-- [ ] Window title format, including whether the scene name is appended in editor play mode.
+- [x] Default window width and height. Defaults are 1280x720 in project application settings and
+      `EngineConfigUVE`; package/runtime mapping is covered by tests.
+- [/] Window mode: windowed, maximised, fullscreen, exclusive fullscreen, borderless. Portable
+      values, validation, transitions, and the no-monitor fallback to windowed mode are covered;
+      borderless is explicitly distinguished from monitor fullscreen in the CPU-tested state policy.
+      Restore geometry is preserved across maximized/fullscreen transitions by capturing bounds only
+      from a normal window state. The earlier GLFW translation unit passed syntax-only checks against
+      GLFW 3.4 with and without optional logind; the latest policy wiring cannot be recompiled here
+      because GLFW headers are unavailable, and the native target is not linked or run.
+- [/] Resizable, borderless, always-on-top, transparent background. Settings and descriptor mapping
+      are covered, and the initial/runtime decoration policy is CPU tested; Vulkan composite-alpha
+      selection has pure tests for transparency preference and fallbacks, but native window/compositor
+      behavior remains unverified here.
+- [/] Minimum and maximum window size. Values are range/order validated and mapped per axis to
+      backend limits with a CPU-tested resolver; native resize enforcement remains unverified here.
+- [/] Initial window position and which monitor to open on. Mapping and exact-name monitor
+      selection with primary-monitor fallback are implemented and CPU tested; native placement
+      remains unverified here.
+- [/] High-DPI awareness and per-monitor DPI scaling. GLFW hints/content-scale querying are wired;
+      native scales are accepted only when both axes are finite and positive (CPU policy tested),
+      but platform-specific DPI behavior remains unverified here.
+- [x] Content scale factor override. The shared 0-to-4 range is validated and the real/null window
+      scale-query paths apply a positive override uniformly, with descriptor/settings coverage.
+- [x] Stretch mode: disabled, canvas items, viewport; and aspect policy: ignore, keep, keep width,
+      keep height, expand. Presentation layout drives viewport letterboxing and adaptive render
+      dimensions; `UIRuntimeUVE` maps authored CanvasItems drawing and pointer hit-testing through
+      the same aspect/DPI/content-scale transform, including editor viewport regions. If integer-only
+      scaling cannot fit, the runtime logs once and uses fractional aspect-preserving scaling.
+- [x] Integer-only scaling for pixel-art targets. The layout helper applies whole-number scaling
+      (including independent axes for Ignore), reports when no integer scale fits, and has focused
+      tests.
+- [~] Orientation for handheld targets, and allowed orientation set. Values are serialized,
+      validated, and mapped into `WindowDescUVE`, but this checkout has no handheld window backend
+      that consumes/enforces them; GLFW desktop windows cannot request display rotation.
+- [/] V-sync mode: off, on, adaptive, mailbox. Vulkan present-mode selection has a pure resolver
+      with coverage for optional-mode selection, FIFO fallbacks, and invalid requests; OpenGL
+      swap-interval/fallback policy is also tested. Native swap behavior could not be exercised in
+      this environment.
+- [/] Frame rate cap, separate caps for focused and unfocused windows. Runtime uses deterministic
+      cap-selection/deadline decisions with boundary tests; actual sleep timing still needs native
+      window integration coverage.
+- [/] Allow display sleep / keep screen on. Windows uses the display-power API, macOS holds an
+      IOPM assertion, and Linux requests a logind `idle` inhibitor through optional libsystemd.
+      Platforms without a supported native API (or Linux builds without libsystemd/logind) warn and
+      fail open; CPU tests cover policy forwarding through the headless backend, but native power
+      behavior could not be exercised in this environment.
+- [/] Mouse cursor: custom image, hotspot, visibility default, confine-to-window default. PNG
+      resolution/loading, path containment, descriptor validation, config mapping, and all four
+      visibility/confinement combinations are covered by the CPU-tested GLFW cursor-mode policy;
+      native cursor behavior remains unverified here.
+- [/] Window title format, including whether the scene name is appended in editor play mode. The
+      formatter and its policies have focused tests; EngineCore's Editor Play title hook now has a
+      headless integration regression through the null window manager. Editor-only caller sources and
+      native title rendering could not be verified here.
+
+Implementation/verification note: project package settings, typed settings layers, `EngineConfigUVE`,
+`WindowDescUVE`, the null backend, Vulkan policy, viewport-layout helpers, and title formatting are
+wired. The CPU-only build and focused core/integration tests passed in the previous verification
+session. In this snapshot, a strict standalone `g++` smoke executable covering the available window
+policies, validations, presentation layout, title formatting, and frame-pacing decisions also passed.
+The earlier GLFW translation-unit revision passed syntax-only compilation against GLFW 3.4 headers
+with and without optional systemd/logind. CMake, GoogleTest, GLFW/OpenGL headers, and a display are
+unavailable here, so the latest GLFW wiring cannot be recompiled and native linking/runtime behavior
+and Editor-only caller integration remain unverified.
+Handheld orientation enforcement remains explicitly `[~]`: this checkout has no handheld window
+backend to consume the policy. Native desktop/window and display-sleep behavior remains a platform-runner
+verification follow-up; keep the affected items at `[/]` rather than treating them as fully verified.
+Proceeding to §1.3 is user-directed, while these §1.2 limitations remain recorded and open.
 
 ## 1.3 Rendering
 
@@ -315,48 +425,138 @@ The largest group by far, and the one most dependent on the renderer maturing.
 
 ### Pipeline and general
 
-- [ ] Renderer backend selection and fallback order.
-- [ ] Rendering method: forward, forward-plus, deferred, mobile/low-end path.
-- [ ] Colour space: linear vs. gamma working space.
+- [/] Renderer backend selection and fallback order. `rendering.backend.preference` is a per-platform,
+      restart-required project setting; Auto/OpenGL, Vulkan-to-OpenGL-to-Null, and forced-Null orders are
+      resolved by a CPU-tested policy. A strict syntax check passed for EngineCore's desktop attempt loop,
+      and an in-memory runtime smoke verified platform-over-project precedence; full CMake/GTest and
+      hardware backend selection remain unverified.
+- [~] Rendering method: the current 3D renderer uses a forward path; no project-selectable
+      Forward+, Deferred, or mobile/low-end alternatives are implemented, so unavailable modes are
+      not exposed as fake settings.
+- [~] Colour space: RHI textures distinguish linear and sRGB sampling (with tests), but there is no
+      project-wide working-space selector or gamma-space renderer mode.
 - [ ] HDR rendering enable, output transfer function, peak luminance, paper white.
 - [ ] Render target format and precision (8/10/16-bit).
-- [ ] Default clear colour.
-- [ ] Render scale / dynamic resolution, with minimum scale and target frame time.
-- [ ] Upscaling method and quality (spatial vs. temporal).
+- [/] Default clear colour. The project `application.boot.backgroundColor` RGBA setting maps into
+      `EngineConfigUVE` and is applied to empty-scene/presentation clears. A default-value regression
+      assertion was added; strict syntax checks and an in-memory runtime smoke verified the default and
+      custom RGBA mapping. Native presentation pixels remain platform-runtime coverage.
+- [/] Render scale and dynamic resolution. Per-platform, restart-required settings choose a fixed/max
+      scale, dynamic enable, minimum scale, and target frame time. EngineCore smooths whole-frame
+      wall-clock samples, steps down after sustained budget overruns, and restores quality more slowly;
+      window/output dimensions stay unchanged. This is not a GPU timestamp: the measurement includes
+      presentation/swap wait, so configure the target with V-sync refresh in mind. Policy/settings
+      tests and a windowed GL regression are added; strict syntax checks and policy/settings smokes
+      passed, but full GTest and native GL execution remain unverified.
+- [~] Upscaling method and quality (spatial vs. temporal). `rendering.upscaling.method` now selects
+      bilinear (default) or nearest-neighbour reconstruction in the actual tone-mapping shader, so
+      reduced-resolution scene targets have a real, wired spatial-resampling choice. Temporal
+      upscaling and higher-quality reconstruction remain unavailable without frame history/motion
+      vectors; setting registration/layering/CLI passed an in-memory smoke and a Null-RHI uniform
+      regression was added and syntax-checked, but native shader/pixel verification remains open.
 - [ ] Multi-threaded rendering enable and command-buffer thread count.
-- [ ] Pipeline cache location and precompilation at startup.
-- [ ] Shader compilation mode: ahead-of-time, on-demand, async with placeholder.
-- [ ] GPU validation layers enable (debug builds).
+- [~] Pipeline-cache location and precompilation at startup. The existing OpenGL shader-program binary cache directory is configurable per platform through a restart-required working-directory-relative path setting; absolute paths and parent traversal are rejected. Cache entries are still created lazily. Vulkan pipeline-cache persistence and startup precompilation remain unimplemented.
+- [~] Shader compilation mode. `rendering.shaders.compilationMode` is a per-platform, restart-required
+      enum: asynchronous on-demand (default) preprocesses on workers and compiles/links on the render
+      thread while updates drain jobs; synchronous on-demand completes creation-time source work and
+      RHI compile/link before returning on the render thread. Ahead-of-time compilation and placeholder
+      programs remain unimplemented. Settings, CLI, manager wiring, and immediate-readiness regression
+      coverage are in place. A Null-RHI runtime smoke passed for source, unified-program, and separate-stage
+      program creation; strict C++23 warnings-as-errors syntax checks passed with local dependency stubs.
+      CMake and GoogleTest are unavailable here, so the committed test suite could not be executed.
+- [~] GPU validation layers (debug builds). Advanced, per-platform, restart-required setting requests
+      `VK_LAYER_KHRONOS_validation` (enabled by default in debug builds). Vulkan enables it when
+      installed and forwards warning/error messages through `VK_EXT_debug_utils` when available; a
+      missing layer logs a warning and preserves normal backend fallback. CPU policy tests and strict
+      C++23 Vulkan-source syntax checks against the pinned Vulkan-Headers passed; no loader/ICD or
+      installed validation-layer runtime is available here for device-level verification.
 
 ### Anti-aliasing
 
-- [ ] MSAA sample count, separately for 2D and 3D.
-- [ ] Post-process AA method: none, fast approximate, temporal.
+- [ ] MSAA sample count, separately for 2D and 3D. Deferred: the RHI has no multisampled attachment or
+      resolve contract yet, so no configuration-only sample-count option is exposed.
+- [~] Post-process AA method. `rendering.antialiasing.postProcessMethod` selects None or Fast approximate;
+      the latter runs an edge-directed luminance filter in the full-screen tone-mapping shader. Temporal
+      AA is not offered until frame history, motion vectors, and camera jitter exist. Setting layering,
+      renderer wiring, and a Null-RHI command/uniform regression are added and syntax-checked; GTest and
+      native shader/pixel execution remain unavailable in this environment.
 - [ ] Temporal AA sample count, jitter pattern, sharpening amount.
-- [ ] Screen-space AA quality.
+- [~] Screen-space AA quality. `rendering.antialiasing.screenSpaceQuality` selects Low/Medium/High and
+      changes the filter's 3/5/7 edge-direction taps (plus its fixed four-neighbour contrast probe); quality
+      is wired through EngineConfigUVE into the actual shader. Settings and renderer command coverage are
+      added and syntax-checked, but GTest and native GPU image-quality verification remain open.
 - [ ] Alpha-to-coverage for foliage-style materials.
 
 ### Shadows
 
-- [ ] Shadow atlas size, and per-light quadrant subdivision.
+- [ ] Shadow atlas size, and per-light quadrant subdivision. Deferred for now: Renderer3DUVE allocates
+      one independent depth texture per cascade; a real atlas requires shared-target region clears,
+      per-cascade viewport regions, and matching shader UV/PCF transforms. No atlas-size control is
+      exposed until that resource and sampling path is implemented.
 - [~] Directional shadow resolution and split count. Resolution is `rendering.shadows.mapResolution`
       (512-4096, applied at startup); the split count is fixed at three.
-- [ ] Cascade split distribution (logarithmic/linear blend), and fade-out range.
+- [~] Cascade split distribution and shadow-distance fade. `rendering.shadows.defaultCascadeSplitBlend`
+      supplies the per-platform default for lights whose per-light Split Blend is set to Inherit; explicit
+      light overrides remain serialized. Each DirectionalLight3D's Max Distance limits the final split,
+      and its serialized Distance Fade Range now smooths shadow visibility to fully lit across the end of
+      that range (0 disables the fade). Settings/CLI passed an in-memory smoke; Null-RHI cascade/fade
+      uniform regressions are syntax-checked, but GTest/native shadow-map quality verification remains open.
 - [x] Shadow filter quality: hard, soft, very soft, and sample counts per tier.
       `rendering.shadows.filter`: Hard, Soft (3x3), Softer (5x5), applied at startup.
-- [ ] Depth bias, normal bias, slope-scaled bias defaults.
-- [ ] Shadow maximum distance.
+- [~] Depth/normal/slope-angle bias defaults. Per-platform `rendering.shadows.defaultBias` and
+      `rendering.shadows.defaultNormalBias` values now feed the renderer's angle-aware shader formula;
+      negative per-light LightEmitter3D values inherit these defaults, while non-negative values remain
+      serialized overrides. The current shader couples the slope-angle term to its depth/normal-bias
+      controls; no independent slope-bias control exists. Engine setting registration/layering/CLI smoke
+      passed, and the Null-RHI uniform regression was syntax-checked; GTest and native shadow-map
+      verification remain open.
+- [~] Shadow maximum distance. DirectionalLight3D exposes serialized per-light Max Distance and Distance
+      Fade Range controls; the renderer bounds the final cascade and fades shadow contribution toward fully
+      lit over the configured range. A zero Max Distance follows the camera far plane; a zero Fade Range
+      preserves the hard cutoff.
 - [ ] 16-bit vs. 32-bit shadow depth format.
 - [ ] Point/spot shadow cube resolution.
 - [ ] Contact shadows enable, length, step count.
 
 ### Global illumination and reflections
 
-- [ ] Ambient light source: none, flat colour, sky, environment map.
-- [ ] Screen-space ambient occlusion: enable, radius, intensity, power, quality tier, blur.
-- [ ] Screen-space indirect lighting: enable, quality, frame count.
-- [ ] Screen-space reflections: enable, max steps, fade in/out, depth tolerance.
-- [ ] Reflection probe atlas size and per-probe resolution.
+- [/] Ambient light source: None, Flat Color, Sky, Environment Map. WorldEnvironment now selects a real
+      source (Sky is the backward-compatible default): None removes ambient fill without disabling direct
+      lights/reflection probes; Flat Color uses Ambient Tint × Energy; Sky keeps the existing sky/ground
+      hemisphere; Environment Map samples the equirectangular Sky Asset with a five-tap diffuse irradiance
+      approximation and roughness-filtered specular. The map path falls back to Sky while loading or after
+      failure. The selector is authored in the inspector and serialized with old scenes defaulting to Sky;
+      CPU-frame, metadata, serialization, Null-RHI source-uniform, and environment-map binding/fallback
+      regressions were added. Modified runtime and focused test translation units passed strict C++23 syntax
+      checks using temporary formatting/GTest stubs, and the lit shader embedded fallbacks are synchronized.
+      Full build/GTest, GLSL compilation/native image, editor (missing imgui.h), and serializer (missing
+      nlohmann/json.hpp) verification remain open because this environment lacks the required build/compiler dependencies.
+- [/] Screen-space ambient occlusion. Per-platform, restart-required settings now control enable, world-space
+      radius, intensity, power, sample quality (4/8/12 kernel taps), and optional blur. Radius/intensity feed the
+      global renderer defaults when no WorldEnvironment is present; existing WorldEnvironment enable/radius/
+      intensity behavior remains authoritative when one is active. Power curves the final visibility, quality
+      changes the actual loop count, and blur applies a clamped 3x3 Gaussian while the occlusion target is
+      multiplied into the scene (no configuration-only controls or extra render-target allocation). Settings,
+      layering/CLI, Null-RHI uniform, quality-clamp, and WorldEnvironment-precedence regressions were added.
+      Modified production and focused test translation units passed strict C++23 syntax checks using temporary
+      format/GTest stubs, and both built-in GLSL sources match their embedded fallbacks. Full build/GTest execution,
+      GLSL compilation, and native image verification remain unverified because CMake and GLSL compilers are absent.
+- [ ] Screen-space indirect lighting: enable, quality, frame count. Deferred until the renderer has stable
+      frame history/reprojection and a GI sampling path; no frame-count or quality control is exposed without
+      temporal runtime behavior.
+- [ ] Screen-space reflections: enable, max steps, fade in/out, depth tolerance. Deferred until the renderer
+      can provide the per-pixel surface data and validated ray-hit path these controls would tune; the current
+      forward path has no normal/roughness buffer, so a settings-only or depth-only approximation is not exposed.
+- [~] Reflection probe atlas size and per-probe resolution. ReflectionProbe3D exposes serialized Low/Medium/High/
+      Ultra capture tiers (64/128/256/512 texels); the renderer uses each tier for the six face textures, matching
+      depth target, and capture viewport, and reallocates/recaptures when the tier changes. Object/frame mapping,
+      metadata validation, serialization (including legacy Medium defaults), and Null-RHI allocation/recapture
+      regressions were added. Atlas packing remains deferred: the live cache still owns six independent 2D textures
+      per probe and the lit shader binds their individual handles; no atlas sampling/region transform exists.
+      Modified runtime and focused object/metadata/renderer/serializer-test translation units passed strict C++23
+      syntax-only checks using temporary fmt/GTest stubs. GTest execution and native GPU image verification remain
+      open (the full build tools/GTest are absent); the serializer implementation also remains unchecked because
+      nlohmann/json.hpp is unavailable.
 - [ ] Voxel or signed-distance GI quality tier, bounce count, and update budget.
 - [ ] Lightmap baking: resolution scale, bounce count, denoiser enable, directional lightmaps,
       texel density defaults.
@@ -364,23 +564,107 @@ The largest group by far, and the one most dependent on the renderer maturing.
 
 ### Post-processing
 
-- [ ] Tonemapper: linear, filmic, ACES-style, or custom curve; white point; exposure.
+- [~] Tonemapper: linear clamp or ACES-style is selectable through
+      `rendering.postProcessing.toneMapper` and the final fullscreen shader; ACES remains the default.
+      Exposure continues to come from the active WorldEnvironment. Filmic/custom curves and a
+      configurable white point are not implemented. Settings-layering/CLI passed an in-memory smoke; the
+      Null-RHI uniform regression is added and syntax-checked, but GTest and native shader/pixel output
+      verification remain open.
 - [ ] Auto-exposure: enable, min/max luminance, adaptation speed up/down.
-- [ ] Bloom: enable, threshold, soft knee, intensity, mip count.
-- [ ] Depth of field: enable, focus mode, aperture, bokeh shape, quality.
-- [ ] Motion blur: enable, strength, sample count, per-object vs. camera-only.
-- [ ] Chromatic aberration, vignette, film grain, lens distortion.
+- [/] Bloom: the active WorldEnvironment exposes serialized enable, threshold, normalized soft knee, intensity,
+      and a 1..6 `bloomMipCount` (default 1 preserves the former single-scale output). The renderer lazily allocates
+      per-size HDR targets, extracts once, downsamples the bright image through the requested scales, blurs each
+      scale horizontally/vertically, then additively composites them with intensity shared across scales. Inspector,
+      validation, frame resolution, serialization/legacy defaults, soft-knee uniform, and multi-scale target/runtime
+      diagnostics regressions were added. Strict C++23 warnings-as-errors syntax checks passed for the component,
+      metadata, renderer, embedded shader, and focused object/metadata/renderer tests using temporary fmt/GTest
+      stubs; standalone and embedded bright-pass/downsample/blur sources match. Serializer translation units could
+      not be checked because `nlohmann/json.hpp` is absent; full CMake/GTest, GLSL compilation, and native image
+      verification remain unavailable.
+- [~] Depth of field: WorldEnvironment adds default-off manual or screen-center autofocus, focus distance,
+      normalized aperture strength, and quality (4/8/12 taps). Center autofocus uses the center pixel's reconstructed
+      depth and falls back to the far plane when it sees no geometry. The final fullscreen shader computes a circle of
+      confusion and depth-weights a circular or hexagonal aperture kernel up to an eight-pixel radius; post-processing
+      gates it. Inspector, validation, renderer-uniform, focus-mode/bokeh-shape, legacy-default, and serializer
+      round-trip regressions were added. Additional aperture shapes and more advanced autofocus selection remain
+      unimplemented. Strict C++23
+      warnings-as-errors syntax checks passed for the resolver, metadata, renderer, embedded shader, and focused
+      object/metadata/renderer tests using temporary fmt/GTest stubs; standalone and embedded shader sources match.
+      GTest execution, serializer compilation (`nlohmann/json.hpp` is absent), GLSL compilation, and native image
+      verification remain open.
+- [~] Motion blur: WorldEnvironment exposes a default-off enable, normalized strength (0..1), and a
+      4/8/12 sample count. The renderer keeps the previous frame's camera view-projection and only feeds it to
+      the final shader when the same camera rendered the prior frame at the same target aspect - the first frame,
+      a camera switch, an aspect change, and reflection-probe captures all leave the blur off instead of
+      reprojectioning stale vectors. The fullscreen shader reconstructs each pixel's world position from scene
+      depth, reprojects it through that history to form a camera-motion vector clamped to twenty texels, and
+      integrates 4-12 HDR samples along it before tone mapping; post-processing gates the whole effect. Inspector,
+      validation, serialization/legacy-default, object-default, and Null-RHI history/uniform-gating regressions
+      were added. Per-object blur is not implemented: it needs a velocity buffer the forward path does not write,
+      so only camera-induced motion is blurred and the inspector says so; sky pixels reconstruct at the far plane,
+      so they smear with camera motion too. Strict C++23 warnings-as-errors syntax
+      checks passed for the resolver, metadata, renderer, embedded shader, and focused object/metadata/renderer
+      tests using temporary fmt/GTest stubs; standalone and embedded shader sources match byte-for-byte. The
+      shader's reprojection math was also validated numerically against a standalone double-precision model of
+      `Matrix4x4UVE::PerspectiveUVE`/`ViewFromPositionAndRotationUVE` and the renderer's camera basis: a static
+      camera yields zero motion, yaw matches the analytical tangent-space displacement to 1e-9 UV, strafing smears
+      opposite the camera with 25x more motion at 2 units than at 50, pure rotation is depth-independent, the
+      twenty-texel clamp caps a 37.9-pixel vector at exactly 20, cleared depth stays finite, and a point behind
+      the previous camera is rejected by the w guard. GTest execution, serializer compilation
+      (`nlohmann/json.hpp` is absent), GLSL compilation, and native image verification remain open.
+- [~] Vignette, chromatic aberration, film grain, and lens distortion: WorldEnvironment exposes serialized,
+      validated intensity controls (all default off) plus the vignette edge-start radius. The final shader radially
+      separates red/blue samples in HDR, applies aspect-correct vignette darkening after grading, adds frame-seeded
+      monochrome grain (up to +/-0.04 at full intensity), and applies an aspect-correct barrel warp (up to 12% at
+      corners); all are gated by post-processing. Inspector, renderer-uniform/frame-seed, legacy-default, and
+      round-trip regressions were added. Strict C++23 warnings-as-errors syntax checks passed for the resolver,
+      metadata, renderer, embedded shader, and focused object/metadata/renderer tests using temporary fmt/GTest stubs;
+      standalone and embedded shader sources match. GTest execution, serializer compilation (`nlohmann/json.hpp` is
+      absent), GLSL compilation, and native image verification remain open.
 - [ ] Colour grading: LUT slot, LUT size, and whether grading happens pre- or post-tonemap.
-- [ ] Sharpening amount.
-- [ ] Debanding / dithering enable.
-- [ ] Fog: mode (linear, exponential, height), colour, density, start/end, sun scatter.
+- [~] Sharpening amount. Per-platform `rendering.postProcessing.sharpeningAmount` (0..1, default 0)
+      is passed into the final shader's edge-clamped unsharp mask; zero is a strict passthrough. Settings
+      registration/layering/CLI smoke passed, and the Null-RHI uniform/clamp regression was syntax-checked;
+      full GTest and native image-quality verification remain open.
+- [~] Debanding / dithering enable. Per-platform `rendering.postProcessing.ditheringEnabled` defaults on and
+      adds deterministic half-LSB screen-space noise after tone mapping, immediately before output
+      quantization. Settings/CLI smoke passed and the Null-RHI toggle-uniform regression is syntax-checked;
+      native gradient/image verification remains open.
+- [/] WorldEnvironment fog modes. `WorldEnvironmentFogModeUVE` selects Linear, Exponential, or Height;
+      Height remains the default so existing scenes keep their former height-fog profile. Linear start/end,
+      exponential/height density, colour, and sun scatter are authored through mode-aware inspector metadata,
+      serialized with backward-compatible defaults, resolved into the frame, and sent to the final shader.
+      Perspective depth is reconstructed with the inverse camera projection before measuring ray distance,
+      replacing the prior non-linear depth interpolation. Component/frame, metadata, renderer-uniform,
+      serialization round-trip, and legacy-payload regressions were added. Strict C++23 syntax checks passed
+      for the component, metadata, renderer, and touched test translation units using temporary dependency
+      stubs; shader-source/embedded-source parity and `git diff --check` pass. GTest, serializer implementation
+      compilation (nlohmann JSON is unavailable), GLSL compilation, and native image verification remain open.
 - [ ] Volumetric fog: enable, froxel resolution, depth distribution, temporal reprojection,
       anisotropy.
 
 ### Geometry, culling and batching
 
 - [ ] Default near and far clip planes.
-- [ ] Frustum culling enable and debug freeze.
+- [/] Frustum culling enable and debug freeze. Per-platform `rendering.culling.frustumCulling` enum
+      (`Enabled` / `Debug freeze (draw everything)`, default `Enabled`, restart-required) backs
+      `EngineConfigUVE::frustumCullingModeUVE` and reaches the renderer through
+      `IRenderer3DUVE::SetCullingSettingsUVE` and `Render::CullingSettingsUVE`. When frozen, the main
+      colour view stops rejecting geometry by frustum: `MeshVisibilitySetUVE::frustumTestsDisabled` is
+      set per cull exactly like `shadowPass` and honoured by `TestMeshRenderVisibilityUVE` (skips the
+      plane test but still derives sort depth from this frustum's near plane), by the mesh cull's
+      cluster and per-candidate tests, by the primitive/surface-instance and unmaterialed-mesh
+      extraction, and by the decal draw list. Shadow cascades keep culling against their own light
+      frusta, and visibility flags, world partitioning, visibility regions, LOD/SurfaceInstance draw
+      distances, render layers and Occluder3D occlusion are all left running — a freeze that also
+      ignored an author's "hidden" flag would hide the very bug it exists to diagnose. Reflection-probe
+      captures stay unfrozen. `Renderer3DFrameDiagnosticsUVE::frustumCullingFrozen` reports the state,
+      and the main-view cluster-rejection counter is suppressed while frozen so it never reports
+      rejections that did not happen. Eligibility, cull-level, decal, mesh/primitive renderer, and
+      settings-registry/layering regressions were added. Strict C++23 warnings-as-errors syntax checks
+      passed for the eligibility, mesh-renderer, decal, renderer, project-settings and engine-core
+      translation units and their focused tests using temporary fmt/GTest stubs; GTest execution and a
+      full CMake build remain unavailable, so the new tests are source-reviewed but unrun.
 - [ ] Occlusion culling: enable, method, buffer resolution, bake settings.
 - [ ] LOD bias, minimum screen coverage, and crossfade mode.
 - [ ] Mesh LOD auto-generation defaults.
@@ -734,9 +1018,10 @@ The group with the most real backing today.
 
 - [/] Snap enabled, translate step, rotate step (degrees) and scale step are persisted under
       `editor.viewport.snap.*` with positive-finite validation on load.
-- [x] Gizmo axis colours are user-configurable and persisted under `editor.viewport.axisColors.*`,
-      applied whole-or-nothing to both the transform gizmo and the grid axis lines, with the grid
-      taking a dimmed variant; covered by dedicated tests.
+- [x] Gizmo axis colours are user-configurable and persisted through three `Color` descriptors
+      under `editor.viewport.axisColors.*`; the complete palette is restored whole-or-nothing to
+      both the transform gizmo and grid axis lines, with the grid taking a dimmed variant. Missing
+      or invalid saved colours leave host-seeded defaults untouched; covered by dedicated tests.
 - [~] Grid: visible, size, subdivisions, extent/fade distance, colour, and which plane(s) are
       drawn. Visible and opacity (10-100%) are set from the grid button (click toggles,
       right-click opens the options) and saved under `editor.viewport.grid.*`, with a corrupt
@@ -1413,18 +1698,21 @@ If only one thing is built from this document, build this, in this order:
 
 ## 7.3 Honest summary
 
-Of the roughly 640 items in this document, **six are marked `[/]` or `[x]` today**: the
-viewport snap steps and the gizmo axis colours, plus the handful of persisted panel-visibility
-booleans. Everything else is `[ ]`.
-
-That ratio is the finding. This engine does not have a settings system with some settings
-missing; it has a JSON file with sixteen keys in it. Part 0 is not preparatory work before the
-real work — Part 0 **is** the work, and Parts 1 through 6 are what it makes cheap.
+The checklist currently contains 637 items: 80 `[x]` verified, 22 `[/]` wired but not fully
+verified, 52 `[~]` partial, and 483 `[ ]` not started. This is a mechanical count, not a measure
+of effort or completeness, and older status notes have not all been re-audited against the current
+source. This increment advances Part 0.11, step 6: engine-setting registration/application,
+platform-path selection, layer attachment and typed command-line conversion now have CPU-buildable
+regression coverage in `uve_engine_settings`; focused tests also exercise actual headless
+`EngineCore::Init()` file loading and precedence. All 1,061 core tests and both focused EngineCore
+settings tests pass. The broader EngineCore suite's GL-rendering tests and the Editor runtime suite
+remain unavailable in this CPU-only build.
 
 ## 7.4 Keeping this document honest
 
 - Update an item's marker in the same change that implements it.
-- A marker only becomes `[x]` when a dedicated test locks more than one case. "It runs" is `[/]`.
+- A marker only becomes `[x]` after dedicated tests run successfully and lock more than one case.
+  A wired item whose tests are missing or unavailable in the current build configuration is `[/]`.
 - When an item here turns out to be wrong about the codebase, fix the text and say so, rather
   than leaving a stale claim in place. Two claims were corrected while writing this document:
   the collision-layer serializer defaults are consistent (not mismatched), and `RemapActionUVE`

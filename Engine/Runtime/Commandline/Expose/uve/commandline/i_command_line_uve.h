@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -34,6 +35,10 @@ public:
     /// presence-only (no following value).
     [[nodiscard]] virtual std::string GetValueUVE(std::string_view name,
                                                    std::string_view defaultValue) const = 0;
+
+    /// Returns the captured value when `name` appeared with a value. Nothing when absent or
+    /// presence-only; unlike GetValueUVE(), this distinguishes a captured empty string.
+    [[nodiscard]] virtual std::optional<std::string> GetOptionalValueUVE(std::string_view name) const = 0;
 };
 
 } // namespace UVE::CommandLine

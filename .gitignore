@@ -1,5 +1,6 @@
 build/
 build-*/
+.venv/
 *.o
 *.obj
 compile_commands.json
