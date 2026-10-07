@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -14,6 +15,8 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -41,16 +44,21 @@
 #include "uve/rhi_shader/built_in_shaders_uve.h"
 #include "uve/rhi_shader/shader_manager_uve.h"
 #include "uve/component/camera_component_uve.h"
+#include "uve/component/canvas_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
+#include "uve/component/ui_image_component_uve.h"
+#include "uve/component/ui_text_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/objects/3d/occluder_3d_uve.h"
+#include "uve/objects/3d/reflection_probe_3d_uve.h"
 #include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
@@ -294,8 +302,67 @@ protected:
         }
         ASSERT_TRUE(probe->IsReadyUVE());
         ASSERT_TRUE(probe->IsValidUVE());
+        // Renderer3DUVE also requests tone-mapping and other built-ins at fixture construction.
+        // Drain those jobs too so command-buffer tests do not race asynchronous shader compilation.
+        for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
+            shaderManager.UpdateUVE(0.0);
+            if (shaderManager.GetPendingJobCountUVE() == 0U) {
+                break;
+            }
+            std::this_thread::yield();
+        }
+        ASSERT_EQ(shaderManager.GetPendingJobCountUVE(), 0U);
     }
 };
+
+TEST_F(Renderer3DUVETest, ReflectionProbeResolutionControlsFaceTargetsAndRecapturesOnTierChange) {
+    const Scene::EntityUVE camera = MakeCameraEntityUVE();
+    const Scene::EntityUVE probeEntity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, probeEntity, Scene::TransformComponentUVE{});
+    Scene::ReflectionProbe3DComponentUVE probe{};
+    probe.resolution = Scene::ReflectionProbeResolutionUVE::High;
+    probe.capturedOnce = true;
+    probe.captureGeneration = 7U;
+    entityManager.AddComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probeEntity, probe);
+    const Scene::EntityUVE mediumProbeEntity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, mediumProbeEntity, Scene::TransformComponentUVE{});
+    Scene::ReflectionProbe3DComponentUVE mediumProbe{};
+    mediumProbe.resolution = Scene::ReflectionProbeResolutionUVE::Medium;
+    mediumProbe.capturedOnce = true;
+    mediumProbe.captureGeneration = 3U;
+    entityManager.AddComponentUVE<Scene::ReflectionProbe3DComponentUVE>(mediumProbeEntity, mediumProbe);
+    sceneGraph.UpdateUVE(entityManager);
+
+    renderer3D->RenderFrameUVE(entityManager, camera);
+    std::vector<TextureDescUVE> liveTextureDescs = renderDevice.GetLiveTextureDescsUVE();
+    const auto countSquareRgbaAt = [&liveTextureDescs](const std::uint32_t resolution) {
+        return std::count_if(liveTextureDescs.cbegin(), liveTextureDescs.cend(), [resolution](const auto& desc) {
+            return desc.width == resolution && desc.height == resolution &&
+                   desc.format == TextureFormatUVE::RGBA8Unorm;
+        });
+    };
+    EXPECT_GE(countSquareRgbaAt(256U), 6) << "a reflection cubemap owns six per-face color textures";
+    EXPECT_GE(countSquareRgbaAt(128U), 6) << "probes in one frame retain their own resolution tier";
+    EXPECT_GE(std::count_if(liveTextureDescs.cbegin(), liveTextureDescs.cend(), [](const auto& desc) {
+                  return desc.width == 128U && desc.height == 128U &&
+                         desc.format == TextureFormatUVE::Depth32Float;
+              }), 2)
+        << "a cached per-tier capture depth target survives another probe's capture";
+    EXPECT_TRUE(std::any_of(liveTextureDescs.cbegin(), liveTextureDescs.cend(), [](const auto& desc) {
+        return desc.width == 256U && desc.height == 256U && desc.format == TextureFormatUVE::Depth32Float;
+    })) << "the capture depth target must match the selected face resolution";
+
+    // The capture generation is intentionally unchanged: changing only the authored tier must
+    // invalidate/reallocate the six face textures and capture depth, then render the new size.
+    entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probeEntity).resolution =
+        Scene::ReflectionProbeResolutionUVE::Ultra;
+    renderer3D->RenderFrameUVE(entityManager, camera);
+    liveTextureDescs = renderDevice.GetLiveTextureDescsUVE();
+    EXPECT_GE(countSquareRgbaAt(512U), 6) << "resolution edits recapture instead of leaving stale probe data";
+    EXPECT_TRUE(std::any_of(liveTextureDescs.cbegin(), liveTextureDescs.cend(), [](const auto& desc) {
+        return desc.width == 512U && desc.height == 512U && desc.format == TextureFormatUVE::Depth32Float;
+    }));
+}
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_ADecalOnAMeshIsProjectedAndReportedInTheFrameDiagnostics) {
     // The decal pass end to end through the frame the renderer actually builds: the wall's assets
@@ -399,6 +466,583 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ADecalIsHandedToTheGpuRatherThanOnlyCou
                std::get<SetUniformIntCommandUVE>(command).value == 0;
     });
     EXPECT_NE(albedoSampler, commands.cend()) << "the decal program must be told where its texture is";
+}
+
+TEST_F(Renderer3DUVETest, FastApproximateAAIsAppliedByToneMappingWithClampedQualityUniforms) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    WaitUntilShadowProgramReadyUVE();
+
+    PostProcessSettingsUVE settings;
+    settings.fastApproximateAAEnabledUVE = true;
+    settings.fastApproximateAAQualityUVE = 99U; // Renderer clamps untrusted API callers to High.
+    renderer3D->SetPostProcessSettingsUVE(settings);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    ASSERT_TRUE(diagnostics.toneMappingPassRecorded);
+    EXPECT_TRUE(diagnostics.fastApproximateAAPassApplied);
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto aaEnabled = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uFastApproximateAA";
+    });
+    ASSERT_NE(aaEnabled, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*aaEnabled).value, 1);
+    const auto aaQuality = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uScreenSpaceAAQuality";
+    });
+    ASSERT_NE(aaQuality, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*aaQuality).value, 2);
+    EXPECT_TRUE(std::any_of(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformFloatCommandUVE>(command) &&
+               std::get<SetUniformFloatCommandUVE>(command).name == "uFxaaTexelX" &&
+               std::get<SetUniformFloatCommandUVE>(command).value > 0.0F;
+    }));
+}
+
+TEST_F(Renderer3DUVETest, SharpeningAmountIsClampedAndSentToTheFinalPass) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    WaitUntilShadowProgramReadyUVE();
+
+    const auto captureSharpeningAmount = [this, cameraEntity]() -> std::optional<float> {
+        renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+        for (const RecordedCommandUVE& command : renderDevice.GetLastSubmittedCommandsUVE()) {
+            const auto* const uniform = std::get_if<SetUniformFloatCommandUVE>(&command);
+            if (uniform != nullptr && uniform->name == "uSharpeningAmount") {
+                return uniform->value;
+            }
+        }
+        return std::nullopt;
+    };
+
+    PostProcessSettingsUVE settings;
+    settings.sharpeningAmountUVE = 0.6F;
+    renderer3D->SetPostProcessSettingsUVE(settings);
+    const std::optional<float> configuredAmount = captureSharpeningAmount();
+    ASSERT_TRUE(configuredAmount.has_value());
+    EXPECT_FLOAT_EQ(*configuredAmount, 0.6F);
+
+    settings.sharpeningAmountUVE = 1.5F; // Direct API callers are clamped to the supported range.
+    renderer3D->SetPostProcessSettingsUVE(settings);
+    const std::optional<float> clampedAmount = captureSharpeningAmount();
+    ASSERT_TRUE(clampedAmount.has_value());
+    EXPECT_FLOAT_EQ(*clampedAmount, 1.0F);
+}
+
+TEST_F(Renderer3DUVETest, DitheringToggleReachesTheFinalPass) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    WaitUntilShadowProgramReadyUVE();
+
+    const auto captureDitheringToggle = [this, cameraEntity]() -> std::optional<std::int32_t> {
+        renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+        for (const RecordedCommandUVE& command : renderDevice.GetLastSubmittedCommandsUVE()) {
+            const auto* const uniform = std::get_if<SetUniformIntCommandUVE>(&command);
+            if (uniform != nullptr && uniform->name == "uDitheringEnabled") {
+                return uniform->value;
+            }
+        }
+        return std::nullopt;
+    };
+
+    PostProcessSettingsUVE settings;
+    settings.ditheringEnabledUVE = true;
+    renderer3D->SetPostProcessSettingsUVE(settings);
+    const std::optional<std::int32_t> enabled = captureDitheringToggle();
+    ASSERT_TRUE(enabled.has_value());
+    EXPECT_EQ(*enabled, 1);
+
+    settings.ditheringEnabledUVE = false;
+    renderer3D->SetPostProcessSettingsUVE(settings);
+    const std::optional<std::int32_t> disabled = captureDitheringToggle();
+    ASSERT_TRUE(disabled.has_value());
+    EXPECT_EQ(*disabled, 0);
+}
+
+TEST_F(Renderer3DUVETest, NearestUpscalingIsSelectedByTheToneMappingShader) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    WaitUntilShadowProgramReadyUVE();
+
+    PostProcessSettingsUVE settings;
+    settings.nearestUpscalingEnabledUVE = true;
+    renderer3D->SetPostProcessSettingsUVE(settings);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto upscalingMethod = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uNearestUpscaling";
+    });
+    ASSERT_NE(upscalingMethod, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*upscalingMethod).value, 1);
+}
+
+TEST_F(Renderer3DUVETest, LinearClampToneMappingIsSelectedByTheToneMappingShader) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    WaitUntilShadowProgramReadyUVE();
+
+    PostProcessSettingsUVE settings;
+    settings.acesToneMappingEnabledUVE = false;
+    renderer3D->SetPostProcessSettingsUVE(settings);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto toneMappingMethod = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uToneMappingMethod";
+    });
+    ASSERT_NE(toneMappingMethod, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*toneMappingMethod).value, 0);
+}
+
+TEST_F(Renderer3DUVETest, SSAORadiusIntensityPowerQualityAndBlurReachTheirShaderPasses) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    WaitUntilShadowProgramReadyUVE();
+
+    PostProcessSettingsUVE settings;
+    settings.ssaoRadiusUVE = 0.8F;
+    settings.ssaoIntensityUVE = 1.7F;
+    settings.ssaoPowerUVE = 2.0F;
+    settings.ssaoQualityUVE = 0U; // Low maps to four kernel samples.
+    settings.ssaoBlurEnabledUVE = true;
+    renderer3D->SetPostProcessSettingsUVE(settings);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    EXPECT_TRUE(renderer3D->GetLastFrameDiagnosticsUVE().ssaoPassRecorded);
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto floatUniform = [&commands](const std::string_view name) -> std::optional<float> {
+        const auto found = std::find_if(commands.cbegin(), commands.cend(), [name](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformFloatCommandUVE>(command) &&
+                   std::get<SetUniformFloatCommandUVE>(command).name == name;
+        });
+        return found == commands.cend() ? std::nullopt
+                                         : std::optional<float>{std::get<SetUniformFloatCommandUVE>(*found).value};
+    };
+    const auto intUniform = [&commands](const std::string_view name) -> std::optional<std::int32_t> {
+        const auto found = std::find_if(commands.cbegin(), commands.cend(), [name](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+                   std::get<SetUniformIntCommandUVE>(command).name == name;
+        });
+        return found == commands.cend() ? std::nullopt
+                                         : std::optional<std::int32_t>{std::get<SetUniformIntCommandUVE>(*found).value};
+    };
+    ASSERT_TRUE(floatUniform("uRadius").has_value());
+    ASSERT_TRUE(floatUniform("uIntensity").has_value());
+    ASSERT_TRUE(floatUniform("uPower").has_value());
+    ASSERT_TRUE(intUniform("uSampleCount").has_value());
+    ASSERT_TRUE(intUniform("uSsaoBlurEnabled").has_value());
+    EXPECT_FLOAT_EQ(*floatUniform("uRadius"), 0.8F);
+    EXPECT_FLOAT_EQ(*floatUniform("uIntensity"), 1.7F);
+    EXPECT_FLOAT_EQ(*floatUniform("uPower"), 2.0F);
+    EXPECT_EQ(*intUniform("uSampleCount"), 4);
+    EXPECT_EQ(*intUniform("uSsaoBlurEnabled"), 1);
+
+    settings.ssaoQualityUVE = 99U; // Untrusted API quality is clamped to High (12 samples).
+    settings.ssaoBlurEnabledUVE = false;
+    renderer3D->SetPostProcessSettingsUVE(settings);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const std::vector<RecordedCommandUVE>& highQualityCommands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto highSampleCount = std::find_if(highQualityCommands.cbegin(), highQualityCommands.cend(),
+                                               [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uSampleCount";
+    });
+    ASSERT_NE(highSampleCount, highQualityCommands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*highSampleCount).value, 12);
+    const auto disabledBlur = std::find_if(highQualityCommands.cbegin(), highQualityCommands.cend(),
+                                            [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uSsaoBlurEnabled";
+    });
+    ASSERT_NE(disabledBlur, highQualityCommands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*disabledBlur).value, 0);
+}
+
+TEST_F(Renderer3DUVETest, WorldEnvironmentBloomSoftKneeReachesTheBrightPassShader) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
+    Scene::WorldEnvironment3DComponentUVE environment{};
+    environment.ssaoEnabled = false;
+    entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
+
+    const auto readBloomSoftKnee = [this]() -> std::optional<float> {
+        for (const RecordedCommandUVE& command : renderDevice.GetLastSubmittedCommandsUVE()) {
+            const auto* const uniform = std::get_if<SetUniformFloatCommandUVE>(&command);
+            if (uniform != nullptr && uniform->name == "uBloomSoftKnee") {
+                return uniform->value;
+            }
+        }
+        return std::nullopt;
+    };
+
+    // Bloom's built-in shader is compiled asynchronously. Render and service shader jobs until the
+    // bright-pass is recorded, then verify that the default still selects the former hard threshold.
+    bool bloomPassRecorded = false;
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
+        renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+        if (renderer3D->GetLastFrameDiagnosticsUVE().bloomPassRecorded) {
+            bloomPassRecorded = true;
+            break;
+        }
+        shaderManager.UpdateUVE(0.0);
+        std::this_thread::yield();
+    }
+    ASSERT_TRUE(bloomPassRecorded);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().bloomMipCountUsed, 1U);
+    const std::optional<float> defaultSoftKnee = readBloomSoftKnee();
+    ASSERT_TRUE(defaultSoftKnee.has_value());
+    EXPECT_FLOAT_EQ(*defaultSoftKnee, 0.0F);
+
+    // An edit to the serialized environment setting must change what the same bright-pass shader
+    // receives on the next frame, not just alter inspector metadata.
+    entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity).bloomSoftKnee = 0.65F;
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const std::optional<float> configuredSoftKnee = readBloomSoftKnee();
+    ASSERT_TRUE(configuredSoftKnee.has_value());
+    EXPECT_FLOAT_EQ(*configuredSoftKnee, 0.65F);
+}
+
+TEST_F(Renderer3DUVETest, WorldEnvironmentBloomMipCountCreatesAndRunsDistinctScaleTargets) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
+    Scene::WorldEnvironment3DComponentUVE environment{};
+    environment.bloomMipCount = 3U;
+    environment.ssaoEnabled = false;
+    entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
+
+    // The downsample program is asynchronous too. Require the frame to report three used levels,
+    // rather than treating a merely authored or allocated count as evidence that the pyramid ran.
+    bool requestedMipCountUsed = false;
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
+        renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+        if (renderer3D->GetLastFrameDiagnosticsUVE().bloomMipCountUsed == 3U) {
+            requestedMipCountUsed = true;
+            break;
+        }
+        shaderManager.UpdateUVE(0.0);
+        std::this_thread::yield();
+    }
+    ASSERT_TRUE(requestedMipCountUsed);
+    EXPECT_TRUE(renderer3D->GetLastFrameDiagnosticsUVE().bloomPassRecorded);
+
+    const std::vector<TextureDescUVE> liveTextureDescs = renderDevice.GetLiveTextureDescsUVE();
+    const auto countHdrTargetsAt = [&liveTextureDescs](const std::uint32_t width, const std::uint32_t height) {
+        return std::count_if(liveTextureDescs.cbegin(), liveTextureDescs.cend(), [width, height](const auto& desc) {
+            return desc.width == width && desc.height == height &&
+                   (desc.format == TextureFormatUVE::RGBA16Float || desc.format == TextureFormatUVE::RGBA8Unorm);
+        });
+    };
+    EXPECT_GE(countHdrTargetsAt(16U, 16U), 3)
+        << "the first downsample level owns bright and two separable-blur targets";
+    EXPECT_GE(countHdrTargetsAt(8U, 8U), 3)
+        << "the second downsample level owns its own bright and blur targets";
+
+    entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity).bloomMipCount = 1U;
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().bloomMipCountUsed, 1U)
+        << "lowering the authored count immediately switches back to one-scale bloom";
+}
+
+TEST_F(Renderer3DUVETest, WorldEnvironmentSSAOEnableRadiusAndIntensityOverridesRemainActive) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
+    Scene::WorldEnvironment3DComponentUVE environment{};
+    environment.ssaoEnabled = true;
+    environment.ssaoRadius = 0.65F;
+    environment.ssaoIntensity = 1.4F;
+    entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
+    WaitUntilShadowProgramReadyUVE();
+
+    PostProcessSettingsUVE settings;
+    settings.ssaoRadiusUVE = 1.8F;
+    settings.ssaoIntensityUVE = 2.6F;
+    renderer3D->SetPostProcessSettingsUVE(settings);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_TRUE(renderer3D->GetLastFrameDiagnosticsUVE().ssaoPassRecorded);
+
+    std::optional<float> radius;
+    std::optional<float> intensity;
+    for (const RecordedCommandUVE& command : renderDevice.GetLastSubmittedCommandsUVE()) {
+        const auto* const uniform = std::get_if<SetUniformFloatCommandUVE>(&command);
+        if (uniform == nullptr) {
+            continue;
+        }
+        if (uniform->name == "uRadius") {
+            radius = uniform->value;
+        } else if (uniform->name == "uIntensity") {
+            intensity = uniform->value;
+        }
+    }
+    ASSERT_TRUE(radius.has_value());
+    ASSERT_TRUE(intensity.has_value());
+    EXPECT_FLOAT_EQ(*radius, environment.ssaoRadius);
+    EXPECT_FLOAT_EQ(*intensity, environment.ssaoIntensity);
+
+    entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity).ssaoEnabled = false;
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_FALSE(renderer3D->GetLastFrameDiagnosticsUVE().ssaoPassRecorded);
+
+    entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity).ssaoEnabled = true;
+    settings.ssaoEnabledUVE = false;
+    renderer3D->SetPostProcessSettingsUVE(settings);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_FALSE(renderer3D->GetLastFrameDiagnosticsUVE().ssaoPassRecorded);
+}
+
+TEST_F(Renderer3DUVETest, WorldEnvironmentFogControlsAndInverseProjectionReachToneMapping) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
+    Scene::WorldEnvironment3DComponentUVE environment{};
+    environment.fogEnabled = true;
+    environment.fogMode = Scene::WorldEnvironmentFogModeUVE::Linear;
+    environment.fogStart = 17.0F;
+    environment.fogEnd = 275.0F;
+    environment.ssaoEnabled = false;
+    entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
+    WaitUntilShadowProgramReadyUVE();
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto fogEnabled = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uFogEnabled";
+    });
+    ASSERT_NE(fogEnabled, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*fogEnabled).value, 1);
+    const auto fogMode = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uFogMode";
+    });
+    ASSERT_NE(fogMode, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*fogMode).value,
+              static_cast<std::int32_t>(Scene::WorldEnvironmentFogModeUVE::Linear));
+    const auto uniformValue = [&commands](const std::string_view name) -> std::optional<float> {
+        const auto found = std::find_if(commands.cbegin(), commands.cend(), [name](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformFloatCommandUVE>(command) &&
+                   std::get<SetUniformFloatCommandUVE>(command).name == name;
+        });
+        return found == commands.cend() ? std::nullopt
+                                         : std::optional<float>{std::get<SetUniformFloatCommandUVE>(*found).value};
+    };
+    ASSERT_TRUE(uniformValue("uFogStart").has_value());
+    ASSERT_TRUE(uniformValue("uFogEnd").has_value());
+    EXPECT_FLOAT_EQ(*uniformValue("uFogStart"), 17.0F);
+    EXPECT_FLOAT_EQ(*uniformValue("uFogEnd"), 275.0F);
+
+    const auto inverseProjectionUniform =
+        std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformMatrix4x4CommandUVE>(command) &&
+                   std::get<SetUniformMatrix4x4CommandUVE>(command).name == "uInverseProjection";
+        });
+    ASSERT_NE(inverseProjectionUniform, commands.cend());
+    const Math::Matrix4x4UVE projection =
+        cameraSystem.ComputeProjectionMatrixUVE(entityManager, cameraEntity, 1.0F);
+    Math::Matrix4x4UVE expectedInverseProjection{};
+    ASSERT_TRUE(Math::TryInverseUVE(projection, expectedInverseProjection));
+    EXPECT_EQ(std::get<SetUniformMatrix4x4CommandUVE>(*inverseProjectionUniform).value,
+              expectedInverseProjection);
+}
+
+TEST_F(Renderer3DUVETest, WorldEnvironmentLensControlsReachToneMappingAndRespectPostProcessingToggle) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
+    Scene::WorldEnvironment3DComponentUVE environment{};
+    environment.bloomEnabled = false;
+    environment.ssaoEnabled = false;
+    environment.vignetteIntensity = 0.7F;
+    environment.vignetteRadius = 0.55F;
+    environment.chromaticAberrationIntensity = 0.4F;
+    environment.filmGrainIntensity = 0.6F;
+    environment.lensDistortionIntensity = 0.5F;
+    environment.depthOfFieldEnabled = true;
+    environment.depthOfFieldFocusMode = Scene::WorldEnvironmentDepthOfFieldFocusModeUVE::ScreenCenter;
+    environment.depthOfFieldBokehShape = Scene::WorldEnvironmentDepthOfFieldBokehShapeUVE::Hexagonal;
+    environment.depthOfFieldFocusDistance = 24.0F;
+    environment.depthOfFieldAperture = 0.8F;
+    environment.depthOfFieldQuality = 2U;
+    entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
+    WaitUntilShadowProgramReadyUVE();
+
+    const auto floatUniformValue = [](const std::vector<RecordedCommandUVE>& commands,
+                                      const std::string_view name) -> std::optional<float> {
+        const auto found = std::find_if(commands.cbegin(), commands.cend(), [name](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformFloatCommandUVE>(command) &&
+                   std::get<SetUniformFloatCommandUVE>(command).name == name;
+        });
+        return found == commands.cend() ? std::nullopt
+                                         : std::optional<float>{std::get<SetUniformFloatCommandUVE>(*found).value};
+    };
+    const auto intUniformValue = [](const std::vector<RecordedCommandUVE>& commands,
+                                    const std::string_view name) -> std::optional<std::int32_t> {
+        const auto found = std::find_if(commands.cbegin(), commands.cend(), [name](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+                   std::get<SetUniformIntCommandUVE>(command).name == name;
+        });
+        return found == commands.cend()
+                   ? std::nullopt
+                   : std::optional<std::int32_t>{std::get<SetUniformIntCommandUVE>(*found).value};
+    };
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_TRUE(renderer3D->GetLastFrameDiagnosticsUVE().toneMappingPassRecorded);
+    const std::vector<RecordedCommandUVE>& enabledCommands = renderDevice.GetLastSubmittedCommandsUVE();
+    ASSERT_TRUE(floatUniformValue(enabledCommands, "uVignetteIntensity").has_value());
+    ASSERT_TRUE(floatUniformValue(enabledCommands, "uVignetteRadius").has_value());
+    ASSERT_TRUE(floatUniformValue(enabledCommands, "uChromaticAberrationIntensity").has_value());
+    ASSERT_TRUE(floatUniformValue(enabledCommands, "uFilmGrainIntensity").has_value());
+    ASSERT_TRUE(intUniformValue(enabledCommands, "uFilmGrainFrame").has_value());
+    ASSERT_TRUE(floatUniformValue(enabledCommands, "uLensDistortionIntensity").has_value());
+    ASSERT_TRUE(intUniformValue(enabledCommands, "uDepthOfFieldEnabled").has_value());
+    ASSERT_TRUE(intUniformValue(enabledCommands, "uDepthOfFieldFocusMode").has_value());
+    ASSERT_TRUE(intUniformValue(enabledCommands, "uDepthOfFieldBokehShape").has_value());
+    ASSERT_TRUE(floatUniformValue(enabledCommands, "uDepthOfFieldFocusDistance").has_value());
+    ASSERT_TRUE(floatUniformValue(enabledCommands, "uDepthOfFieldAperture").has_value());
+    ASSERT_TRUE(intUniformValue(enabledCommands, "uDepthOfFieldQuality").has_value());
+    EXPECT_FLOAT_EQ(*floatUniformValue(enabledCommands, "uVignetteIntensity"), 0.7F);
+    EXPECT_FLOAT_EQ(*floatUniformValue(enabledCommands, "uVignetteRadius"), 0.55F);
+    EXPECT_FLOAT_EQ(*floatUniformValue(enabledCommands, "uChromaticAberrationIntensity"), 0.4F);
+    EXPECT_FLOAT_EQ(*floatUniformValue(enabledCommands, "uFilmGrainIntensity"), 0.6F);
+    EXPECT_FLOAT_EQ(*floatUniformValue(enabledCommands, "uLensDistortionIntensity"), 0.5F);
+    EXPECT_EQ(*intUniformValue(enabledCommands, "uDepthOfFieldEnabled"), 1);
+    EXPECT_EQ(*intUniformValue(enabledCommands, "uDepthOfFieldFocusMode"),
+              static_cast<std::int32_t>(Scene::WorldEnvironmentDepthOfFieldFocusModeUVE::ScreenCenter));
+    EXPECT_EQ(*intUniformValue(enabledCommands, "uDepthOfFieldBokehShape"),
+              static_cast<std::int32_t>(Scene::WorldEnvironmentDepthOfFieldBokehShapeUVE::Hexagonal));
+    EXPECT_FLOAT_EQ(*floatUniformValue(enabledCommands, "uDepthOfFieldFocusDistance"), 24.0F);
+    EXPECT_FLOAT_EQ(*floatUniformValue(enabledCommands, "uDepthOfFieldAperture"), 0.8F);
+    EXPECT_EQ(*intUniformValue(enabledCommands, "uDepthOfFieldQuality"), 2);
+    const std::int32_t enabledGrainFrame = *intUniformValue(enabledCommands, "uFilmGrainFrame");
+
+    entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity).postProcessingEnabled =
+        false;
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_TRUE(renderer3D->GetLastFrameDiagnosticsUVE().toneMappingPassRecorded);
+    const std::vector<RecordedCommandUVE>& disabledCommands = renderDevice.GetLastSubmittedCommandsUVE();
+    ASSERT_TRUE(floatUniformValue(disabledCommands, "uVignetteIntensity").has_value());
+    ASSERT_TRUE(floatUniformValue(disabledCommands, "uChromaticAberrationIntensity").has_value());
+    ASSERT_TRUE(floatUniformValue(disabledCommands, "uFilmGrainIntensity").has_value());
+    ASSERT_TRUE(floatUniformValue(disabledCommands, "uLensDistortionIntensity").has_value());
+    ASSERT_TRUE(intUniformValue(disabledCommands, "uDepthOfFieldEnabled").has_value());
+    ASSERT_TRUE(intUniformValue(disabledCommands, "uFilmGrainFrame").has_value());
+    EXPECT_FLOAT_EQ(*floatUniformValue(disabledCommands, "uVignetteIntensity"), 0.0F);
+    EXPECT_FLOAT_EQ(*floatUniformValue(disabledCommands, "uChromaticAberrationIntensity"), 0.0F);
+    EXPECT_FLOAT_EQ(*floatUniformValue(disabledCommands, "uFilmGrainIntensity"), 0.0F);
+    EXPECT_FLOAT_EQ(*floatUniformValue(disabledCommands, "uLensDistortionIntensity"), 0.0F);
+    EXPECT_EQ(*intUniformValue(disabledCommands, "uDepthOfFieldEnabled"), 0);
+    const std::int32_t disabledGrainFrame = *intUniformValue(disabledCommands, "uFilmGrainFrame");
+    EXPECT_EQ((disabledGrainFrame - enabledGrainFrame + 4096) % 4096, 1);
+}
+
+TEST_F(Renderer3DUVETest, WorldEnvironmentMotionBlurUsesOnlyValidCameraHistory) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
+    Scene::WorldEnvironment3DComponentUVE environment{};
+    environment.motionBlurEnabled = true;
+    environment.motionBlurStrength = 0.75F;
+    environment.motionBlurSampleCount = 12U;
+    entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
+
+    const auto intUniformValue = [](const std::vector<RecordedCommandUVE>& commands,
+                                    const std::string_view name) -> std::optional<std::int32_t> {
+        const auto found = std::find_if(commands.cbegin(), commands.cend(), [name](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+                   std::get<SetUniformIntCommandUVE>(command).name == name;
+        });
+        return found == commands.cend()
+                   ? std::nullopt
+                   : std::optional<std::int32_t>{std::get<SetUniformIntCommandUVE>(*found).value};
+    };
+    const auto floatUniformValue = [](const std::vector<RecordedCommandUVE>& commands,
+                                      const std::string_view name) -> std::optional<float> {
+        const auto found = std::find_if(commands.cbegin(), commands.cend(), [name](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformFloatCommandUVE>(command) &&
+                   std::get<SetUniformFloatCommandUVE>(command).name == name;
+        });
+        return found == commands.cend() ? std::nullopt
+                                         : std::optional<float>{std::get<SetUniformFloatCommandUVE>(*found).value};
+    };
+    const auto matrixUniformValue = [](const std::vector<RecordedCommandUVE>& commands,
+                                       const std::string_view name) -> std::optional<Math::Matrix4x4UVE> {
+        const auto found = std::find_if(commands.cbegin(), commands.cend(), [name](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformMatrix4x4CommandUVE>(command) &&
+                   std::get<SetUniformMatrix4x4CommandUVE>(command).name == name;
+        });
+        return found == commands.cend()
+                   ? std::nullopt
+                   : std::optional<Math::Matrix4x4UVE>{std::get<SetUniformMatrix4x4CommandUVE>(*found).value};
+    };
+    const auto currentViewProjection = [this, cameraEntity]() -> Math::Matrix4x4UVE {
+        constexpr std::uint32_t width = kTargetWidthUVE;
+        constexpr std::uint32_t height = kTargetHeightUVE;
+        const float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
+        return cameraSystem.ComputeViewProjectionUVE(entityManager, cameraEntity, aspectRatio);
+    };
+
+    WaitUntilShadowProgramReadyUVE();
+
+    // The first tone-mapped frame has no prior camera, so no motion vector is trustworthy yet.
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_TRUE(renderer3D->GetLastFrameDiagnosticsUVE().toneMappingPassRecorded);
+    const std::vector<RecordedCommandUVE>& firstCommands = renderDevice.GetLastSubmittedCommandsUVE();
+    ASSERT_TRUE(intUniformValue(firstCommands, "uMotionBlurEnabled").has_value());
+    ASSERT_TRUE(floatUniformValue(firstCommands, "uMotionBlurStrength").has_value());
+    ASSERT_TRUE(intUniformValue(firstCommands, "uMotionBlurSampleCount").has_value());
+    ASSERT_TRUE(matrixUniformValue(firstCommands, "uPreviousViewProjection").has_value());
+    EXPECT_EQ(*intUniformValue(firstCommands, "uMotionBlurEnabled"), 0);
+    EXPECT_FLOAT_EQ(*floatUniformValue(firstCommands, "uMotionBlurStrength"), 0.0F);
+    EXPECT_EQ(*intUniformValue(firstCommands, "uMotionBlurSampleCount"), 12);
+    const Math::Matrix4x4UVE staticViewProjection = currentViewProjection();
+    EXPECT_EQ(*matrixUniformValue(firstCommands, "uPreviousViewProjection"), staticViewProjection);
+
+    // A second frame from the same camera has history, so the authored blur reaches the shader.
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_TRUE(renderer3D->GetLastFrameDiagnosticsUVE().toneMappingPassRecorded);
+    const std::vector<RecordedCommandUVE>& staticCommands = renderDevice.GetLastSubmittedCommandsUVE();
+    ASSERT_TRUE(intUniformValue(staticCommands, "uMotionBlurEnabled").has_value());
+    ASSERT_TRUE(floatUniformValue(staticCommands, "uMotionBlurStrength").has_value());
+    ASSERT_TRUE(matrixUniformValue(staticCommands, "uPreviousViewProjection").has_value());
+    EXPECT_EQ(*intUniformValue(staticCommands, "uMotionBlurEnabled"), 1);
+    EXPECT_FLOAT_EQ(*floatUniformValue(staticCommands, "uMotionBlurStrength"), 0.75F);
+    EXPECT_EQ(*matrixUniformValue(staticCommands, "uPreviousViewProjection"), staticViewProjection);
+
+    // Moving the camera keeps the prior frame's matrix, which is what makes blur possible.
+    Math::QuaternionUVE rotatedCamera{};
+    ASSERT_TRUE(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.35F, rotatedCamera));
+    Scene::TransformComponentUVE movedTransform =
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(cameraEntity);
+    movedTransform.localRotation = rotatedCamera;
+    sceneGraph.SetLocalTransformUVE(entityManager, cameraEntity, movedTransform);
+    sceneGraph.UpdateUVE(entityManager);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_TRUE(renderer3D->GetLastFrameDiagnosticsUVE().toneMappingPassRecorded);
+    const std::vector<RecordedCommandUVE>& movedCommands = renderDevice.GetLastSubmittedCommandsUVE();
+    ASSERT_TRUE(intUniformValue(movedCommands, "uMotionBlurEnabled").has_value());
+    ASSERT_TRUE(matrixUniformValue(movedCommands, "uPreviousViewProjection").has_value());
+    EXPECT_EQ(*intUniformValue(movedCommands, "uMotionBlurEnabled"), 1);
+    EXPECT_EQ(*matrixUniformValue(movedCommands, "uPreviousViewProjection"), staticViewProjection);
+    EXPECT_NE(*matrixUniformValue(movedCommands, "uPreviousViewProjection"), currentViewProjection());
+
+    // A target aspect change invalidates the old reprojection rather than stretching stale vectors.
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(kTargetWidthUVE * 2U, kTargetHeightUVE + 32U));
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_TRUE(renderer3D->GetLastFrameDiagnosticsUVE().toneMappingPassRecorded);
+    const std::vector<RecordedCommandUVE>& resizedCommands = renderDevice.GetLastSubmittedCommandsUVE();
+    ASSERT_TRUE(intUniformValue(resizedCommands, "uMotionBlurEnabled").has_value());
+    ASSERT_TRUE(floatUniformValue(resizedCommands, "uMotionBlurStrength").has_value());
+    EXPECT_EQ(*intUniformValue(resizedCommands, "uMotionBlurEnabled"), 0);
+    EXPECT_FLOAT_EQ(*floatUniformValue(resizedCommands, "uMotionBlurStrength"), 0.0F);
+
+    // Disabling the post-processing master switch suppresses blur even with fresh history.
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity).postProcessingEnabled =
+        false;
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_TRUE(renderer3D->GetLastFrameDiagnosticsUVE().toneMappingPassRecorded);
+    const std::vector<RecordedCommandUVE>& disabledCommands = renderDevice.GetLastSubmittedCommandsUVE();
+    ASSERT_TRUE(intUniformValue(disabledCommands, "uMotionBlurEnabled").has_value());
+    ASSERT_TRUE(floatUniformValue(disabledCommands, "uMotionBlurStrength").has_value());
+    EXPECT_EQ(*intUniformValue(disabledCommands, "uMotionBlurEnabled"), 0);
+    EXPECT_FLOAT_EQ(*floatUniformValue(disabledCommands, "uMotionBlurStrength"), 0.0F);
 }
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_EmptyScene_MainPassBeginsAndEndsWithNoDraws) {
@@ -949,6 +1593,76 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_AmbientColorFromConstructor_AlwaysPushe
     assertAmbientColor(renderDevice.GetLastSubmittedCommandsUVE());
 }
 
+TEST_F(Renderer3DUVETest, WorldEnvironmentAmbientSourceReachesPrimitiveShaderUniforms) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    MakePrimitiveEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, Scene::PrimitiveMeshComponentUVE{});
+    const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
+    Scene::WorldEnvironment3DComponentUVE environment{};
+    environment.ambientColor = Math::Vector3UVE{0.4F, 0.3F, 0.2F};
+    environment.ambientEnergy = 2.0F;
+    entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+
+    const auto captureAmbient = [this, cameraEntity, environmentEntity](
+                                    const Scene::WorldEnvironmentAmbientSourceUVE source) {
+        entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity).ambientSource = source;
+        renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+        const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+        std::optional<std::int32_t> selectedSource;
+        std::optional<Math::Vector3UVE> ambientColor;
+        std::optional<Math::Vector3UVE> skyAmbient;
+        std::optional<Math::Vector3UVE> groundAmbient;
+        for (const RecordedCommandUVE& command : commands) {
+            if (const auto* const uniform = std::get_if<SetUniformIntCommandUVE>(&command);
+                uniform != nullptr && uniform->name == "uAmbientSource") {
+                selectedSource = uniform->value;
+            } else if (const auto* const vectorUniform = std::get_if<SetUniformVector3CommandUVE>(&command);
+                       vectorUniform != nullptr) {
+                if (vectorUniform->name == "uAmbientColor") {
+                    ambientColor = vectorUniform->value;
+                } else if (vectorUniform->name == "uSkyAmbient") {
+                    skyAmbient = vectorUniform->value;
+                } else if (vectorUniform->name == "uGroundAmbient") {
+                    groundAmbient = vectorUniform->value;
+                }
+            }
+        }
+        return std::tuple{selectedSource, ambientColor, skyAmbient, groundAmbient};
+    };
+
+    const auto [noneSource, noneColor, noneSky, noneGround] =
+        captureAmbient(Scene::WorldEnvironmentAmbientSourceUVE::None);
+    ASSERT_TRUE(noneSource.has_value());
+    ASSERT_TRUE(noneColor.has_value());
+    ASSERT_TRUE(noneSky.has_value());
+    ASSERT_TRUE(noneGround.has_value());
+    EXPECT_EQ(*noneSource, static_cast<std::int32_t>(Scene::WorldEnvironmentAmbientSourceUVE::None));
+    EXPECT_EQ(*noneColor, Math::Vector3UVE{});
+    EXPECT_EQ(*noneSky, Math::Vector3UVE{});
+    EXPECT_EQ(*noneGround, Math::Vector3UVE{});
+
+    const auto [flatSource, flatColor, flatSky, flatGround] =
+        captureAmbient(Scene::WorldEnvironmentAmbientSourceUVE::FlatColor);
+    ASSERT_TRUE(flatSource.has_value());
+    ASSERT_TRUE(flatColor.has_value());
+    ASSERT_TRUE(flatSky.has_value());
+    ASSERT_TRUE(flatGround.has_value());
+    EXPECT_EQ(*flatSource, static_cast<std::int32_t>(Scene::WorldEnvironmentAmbientSourceUVE::FlatColor));
+    EXPECT_EQ(*flatColor, (Math::Vector3UVE{0.8F, 0.6F, 0.4F}));
+    EXPECT_EQ(*flatSky, Math::Vector3UVE{});
+    EXPECT_EQ(*flatGround, Math::Vector3UVE{});
+
+    const auto [skySource, skyColor, skyAmbient, groundAmbient] =
+        captureAmbient(Scene::WorldEnvironmentAmbientSourceUVE::Sky);
+    ASSERT_TRUE(skySource.has_value());
+    ASSERT_TRUE(skyColor.has_value());
+    ASSERT_TRUE(skyAmbient.has_value());
+    ASSERT_TRUE(groundAmbient.has_value());
+    EXPECT_EQ(*skySource, static_cast<std::int32_t>(Scene::WorldEnvironmentAmbientSourceUVE::Sky));
+    EXPECT_EQ(*skyColor, (Math::Vector3UVE{0.8F, 0.6F, 0.4F}));
+    EXPECT_GT(skyAmbient->z, groundAmbient->z);
+}
+
 TEST_F(Renderer3DUVETest, RenderFrameUVE_CameraAtKnownPosition_PushesMatchingViewPositionUniform) {
     // Stays on the same viewing axis as the mesh below (default identity rotation looks down -Z)
     // so the mesh remains inside the frustum — an off-axis camera position would cull it, leaving
@@ -1240,6 +1954,123 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_OverflowedCascadeSplitsDisableShadowPas
     }));
 }
 #endif
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_UIImages_BindTheirResolvedTextureInsteadOfSolidFallback) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    Input::InputSystemUVE inputSystem{eventSystem};
+    UI::UIRuntimeUVE uiRuntime;
+    renderer3D->SetUIRuntimeUVE(&uiRuntime);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    struct ResetUIRuntimeBindingUVE final {
+        Render::Renderer3DUVE& renderer;
+        ~ResetUIRuntimeBindingUVE() { renderer.SetUIRuntimeUVE(nullptr); }
+    } resetUIRuntimeBinding{*renderer3D};
+
+    const Scene::EntityUVE solidImageEntity = entityManager.CreateEntityUVE();
+    Scene::UIImageComponentUVE solidImage;
+    solidImage.sizePixels = Math::Vector2UVE{32.0F, 32.0F};
+    entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(solidImageEntity, solidImage);
+    inputSystem.UpdateUVE();
+    uiRuntime.TickUVE(entityManager, inputSystem);
+    ASSERT_EQ(uiRuntime.GetDrawBatchUVE().quads.size(), 1U);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const auto slotZeroTextures = [](const std::vector<RecordedCommandUVE>& commands) {
+        std::vector<TextureHandleUVE> result;
+        for (const RecordedCommandUVE& command : commands) {
+            if (const auto* const bind = std::get_if<BindTextureCommandUVE>(&command);
+                bind != nullptr && bind->slot == 0U) {
+                result.push_back(bind->texture);
+            }
+        }
+        return result;
+    };
+    const std::vector<TextureHandleUVE> solidTextures =
+        slotZeroTextures(renderDevice.GetLastSubmittedCommandsUVE());
+
+    static_cast<void>(entityManager.DestroyEntityUVE(solidImageEntity));
+    const Asset::AssetGuidUVE splashTextureGuid = assetDatabase.RegisterUVE("renderer3d_tests_ui_splash.uvtex");
+    const Scene::EntityUVE imageEntity = entityManager.CreateEntityUVE();
+    Scene::UIImageComponentUVE texturedImage;
+    texturedImage.textureAssetGuid = splashTextureGuid;
+    texturedImage.sizePixels = Math::Vector2UVE{64.0F, 32.0F};
+    entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(imageEntity, texturedImage);
+    WaitUntilTextureReadyUVE(splashTextureGuid);
+    inputSystem.UpdateUVE();
+    uiRuntime.TickUVE(entityManager, inputSystem);
+    ASSERT_EQ(uiRuntime.GetDrawBatchUVE().quads.size(), 1U);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<TextureHandleUVE> imageTextures =
+        slotZeroTextures(renderDevice.GetLastSubmittedCommandsUVE());
+    ASSERT_FALSE(solidTextures.empty());
+    ASSERT_EQ(imageTextures.size(), solidTextures.size());
+    EXPECT_NE(imageTextures.back(), kInvalidTextureHandleUVE);
+    EXPECT_NE(imageTextures.back(), solidTextures.back());
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_UIOverlay_PreservesCanvasOrderAcrossGlyphAndImageTextures) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    Input::InputSystemUVE inputSystem{eventSystem};
+    UI::UIRuntimeUVE uiRuntime;
+    renderer3D->SetUIRuntimeUVE(&uiRuntime);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    struct ResetUIRuntimeBindingUVE final {
+        Render::Renderer3DUVE& renderer;
+        ~ResetUIRuntimeBindingUVE() { renderer.SetUIRuntimeUVE(nullptr); }
+    } resetUIRuntimeBinding{*renderer3D};
+
+    const Asset::AssetGuidUVE splashTextureGuid = assetDatabase.RegisterUVE("renderer3d_tests_ui_canvas_order.uvtex");
+    const Scene::EntityUVE imageCanvasEntity = entityManager.CreateEntityUVE();
+    Scene::CanvasComponentUVE imageCanvas;
+    imageCanvas.sortOrder = 1;
+    entityManager.AddComponentUVE<Scene::CanvasComponentUVE>(imageCanvasEntity, imageCanvas);
+    Scene::UIImageComponentUVE image;
+    image.textureAssetGuid = splashTextureGuid;
+    image.positionPixels = Math::Vector2UVE{20.0F, 20.0F};
+    image.sizePixels = Math::Vector2UVE{48.0F, 48.0F};
+    entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(imageCanvasEntity, image);
+    WaitUntilTextureReadyUVE(splashTextureGuid);
+    inputSystem.UpdateUVE();
+    uiRuntime.TickUVE(entityManager, inputSystem);
+    ASSERT_EQ(uiRuntime.GetDrawBatchUVE().quads.size(), 1U);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const auto slotZeroTextures = [](const std::vector<RecordedCommandUVE>& commands) {
+        std::vector<TextureHandleUVE> result;
+        for (const RecordedCommandUVE& command : commands) {
+            if (const auto* const bind = std::get_if<BindTextureCommandUVE>(&command);
+                bind != nullptr && bind->slot == 0U) {
+                result.push_back(bind->texture);
+            }
+        }
+        return result;
+    };
+    const std::vector<TextureHandleUVE> imageOnlyTextures =
+        slotZeroTextures(renderDevice.GetLastSubmittedCommandsUVE());
+    ASSERT_FALSE(imageOnlyTextures.empty());
+
+    const Scene::EntityUVE textCanvasEntity = entityManager.CreateEntityUVE();
+    Scene::CanvasComponentUVE textCanvas;
+    textCanvas.sortOrder = 0;
+    entityManager.AddComponentUVE<Scene::CanvasComponentUVE>(textCanvasEntity, textCanvas);
+    Scene::UITextComponentUVE text;
+    text.text = "A";
+    text.positionPixels = Math::Vector2UVE{8.0F, 8.0F};
+    entityManager.AddComponentUVE<Scene::UITextComponentUVE>(textCanvasEntity, text);
+    inputSystem.UpdateUVE();
+    uiRuntime.TickUVE(entityManager, inputSystem);
+    ASSERT_EQ(uiRuntime.GetDrawBatchUVE().quads.size(), 2U);
+    EXPECT_EQ(uiRuntime.GetDrawBatchUVE().quads[0].kind, UI::UIDrawItemKindUVE::Glyph);
+    EXPECT_EQ(uiRuntime.GetDrawBatchUVE().quads[1].kind, UI::UIDrawItemKindUVE::Image);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<TextureHandleUVE> mixedTextures =
+        slotZeroTextures(renderDevice.GetLastSubmittedCommandsUVE());
+    ASSERT_GE(mixedTextures.size(), 2U);
+    EXPECT_EQ(mixedTextures.back(), imageOnlyTextures.back());
+    EXPECT_NE(mixedTextures[mixedTextures.size() - 2U], mixedTextures.back());
+}
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_MaterialWithAlbedoTexture_UploadsAndBindsRealTexture) {
     const std::size_t baselineLiveResources = renderDevice.GetLiveResourceCountUVE();
@@ -1653,6 +2484,146 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ActiveCameraPath_MatchesEngineCoreInteg
     EXPECT_FALSE(commands.empty());
 }
 
+TEST_F(Renderer3DUVETest, DirectionalLightInheritShadowBiasUsesProjectDefaultsAndHonorsOverrides) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_shadow_bias_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_shadow_bias_material.uvmat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+
+    const Scene::EntityUVE sun = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, sun, Scene::TransformComponentUVE{});
+    Scene::DirectionalLight3DObjectDefinitionUVE definition;
+    definition.light.shadowMaxDistance = 0.0F;
+    definition.emitter.shadowEnabled = true;
+    Scene::ApplyDirectionalLight3DObjectDefinitionUVE(entityManager, sun, definition);
+    sceneGraph.UpdateUVE(entityManager);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    WaitUntilShadowProgramReadyUVE();
+
+    renderer3D->SetShadowBiasDefaultsUVE(0.4F, 2.0F);
+    const auto captureBiasUniforms = [this, cameraEntity]() {
+        renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+        std::optional<float> depthBias;
+        std::optional<float> normalBias;
+        for (const RecordedCommandUVE& command : renderDevice.GetLastSubmittedCommandsUVE()) {
+            const auto* const uniform = std::get_if<SetUniformFloatCommandUVE>(&command);
+            if (uniform == nullptr) {
+                continue;
+            }
+            if (uniform->name == "uShadowBias") {
+                depthBias = uniform->value;
+            } else if (uniform->name == "uShadowNormalBias") {
+                normalBias = uniform->value;
+            }
+        }
+        return std::pair{depthBias, normalBias};
+    };
+
+    auto [depthBias, normalBias] = captureBiasUniforms();
+    ASSERT_TRUE(depthBias.has_value());
+    ASSERT_TRUE(normalBias.has_value());
+    EXPECT_NEAR(*depthBias, 0.4F * 0.025F, 1.0e-6F);
+    EXPECT_FLOAT_EQ(*normalBias, 2.0F);
+
+    Scene::LightEmitterComponentUVE& emitter = entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sun);
+    emitter.shadowBias = 0.2F;
+    emitter.shadowNormalBias = 0.5F;
+    const auto [overriddenDepthBias, overriddenNormalBias] = captureBiasUniforms();
+    ASSERT_TRUE(overriddenDepthBias.has_value());
+    ASSERT_TRUE(overriddenNormalBias.has_value());
+    EXPECT_NEAR(*overriddenDepthBias, 0.2F * 0.025F, 1.0e-6F);
+    EXPECT_FLOAT_EQ(*overriddenNormalBias, 0.5F);
+}
+
+TEST_F(Renderer3DUVETest, DirectionalLightDistanceFadeRangeReachesShaderAndZeroDisablesIt) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_shadow_fade_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_shadow_fade_material.uvmat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+
+    const Scene::EntityUVE sun = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, sun, Scene::TransformComponentUVE{});
+    Scene::DirectionalLight3DObjectDefinitionUVE definition;
+    definition.light.shadowMaxDistance = 0.0F;
+    definition.light.shadowDistanceFadeRange = 6.5F;
+    Scene::ApplyDirectionalLight3DObjectDefinitionUVE(entityManager, sun, definition);
+    sceneGraph.UpdateUVE(entityManager);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    WaitUntilShadowProgramReadyUVE();
+
+    const auto captureDistanceFadeRange = [this, cameraEntity]() -> std::optional<float> {
+        renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+        std::optional<float> fadeRange;
+        for (const RecordedCommandUVE& command : renderDevice.GetLastSubmittedCommandsUVE()) {
+            const auto* const uniform = std::get_if<SetUniformFloatCommandUVE>(&command);
+            if (uniform != nullptr && uniform->name == "uShadowMaxDistanceFadeRange") {
+                fadeRange = uniform->value;
+            }
+        }
+        return fadeRange;
+    };
+
+    const std::optional<float> fadeRange = captureDistanceFadeRange();
+    ASSERT_TRUE(fadeRange.has_value());
+    EXPECT_FLOAT_EQ(*fadeRange, 6.5F);
+    bool cascadesEnabled = false;
+    for (const RecordedCommandUVE& command : renderDevice.GetLastSubmittedCommandsUVE()) {
+        const auto* const uniform = std::get_if<SetUniformIntCommandUVE>(&command);
+        cascadesEnabled = cascadesEnabled ||
+                          (uniform != nullptr && uniform->name == "uShadowCascadeCount" && uniform->value == 3);
+    }
+    EXPECT_TRUE(cascadesEnabled);
+
+    entityManager.GetComponentUVE<Scene::DirectionalLight3DComponentUVE>(sun).shadowDistanceFadeRange = 0.0F;
+    const std::optional<float> disabledFadeRange = captureDistanceFadeRange();
+    ASSERT_TRUE(disabledFadeRange.has_value());
+    EXPECT_FLOAT_EQ(*disabledFadeRange, 0.0F);
+}
+
+TEST_F(Renderer3DUVETest, DirectionalLightInheritSplitBlendUsesRendererDefault) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_split_blend_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_split_blend_material.uvmat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    const Scene::EntityUVE sun = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, sun, Scene::TransformComponentUVE{});
+    Scene::DirectionalLight3DObjectDefinitionUVE definition;
+    definition.light.shadowMaxDistance = 0.0F; // Follow this camera's far plane.
+    definition.light.shadowSplitBlend = -1.0F; // Inherit kTestShadowCascadeSplitLambdaUVE from Renderer3D.
+    Scene::ApplyDirectionalLight3DObjectDefinitionUVE(entityManager, sun, definition);
+    sceneGraph.UpdateUVE(entityManager);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    WaitUntilShadowProgramReadyUVE();
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const Scene::CameraComponentUVE& camera = entityManager.GetComponentUVE<Scene::CameraComponentUVE>(cameraEntity);
+    std::array<float, 3U> splits{};
+    std::array<bool, 3U> found{};
+    for (const RecordedCommandUVE& command : renderDevice.GetLastSubmittedCommandsUVE()) {
+        const auto* const uniform = std::get_if<SetUniformFloatCommandUVE>(&command);
+        if (uniform == nullptr) {
+            continue;
+        }
+        for (std::size_t index = 0U; index < splits.size(); ++index) {
+            if (uniform->name == "uShadowCascadeSplits[" + std::to_string(index) + "]") {
+                splits[index] = uniform->value;
+                found[index] = true;
+            }
+        }
+    }
+    for (std::size_t index = 0U; index < splits.size(); ++index) {
+        ASSERT_TRUE(found[index]);
+        const float progress = static_cast<float>(index + 1U) / static_cast<float>(splits.size());
+        const float uniformSplit = camera.nearPlane + (camera.farPlane - camera.nearPlane) * progress;
+        const float logarithmicSplit = camera.nearPlane *
+                                       std::pow(camera.farPlane / camera.nearPlane, progress);
+        const float expected = uniformSplit * (1.0F - kTestShadowCascadeSplitLambdaUVE) +
+                               logarithmicSplit * kTestShadowCascadeSplitLambdaUVE;
+        EXPECT_NEAR(splits[index], expected, 0.001F);
+    }
+}
+
 TEST_F(Renderer3DUVETest, RenderFrameUVE_DirectionalLight_PushesThreeOrderedCascadeSplits) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_cascade_mesh.uvmodel");
@@ -1873,6 +2844,102 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_FittedLightFrustum_CastsOffCameraOcclud
 
     EXPECT_EQ(shadowDrawCount, 2U);
     EXPECT_EQ(mainDrawCount, 1U);
+}
+
+TEST_F(Renderer3DUVETest, FrustumCullingFreezeDrawsOffCameraMeshesAndLeavesShadowCascadesCulled) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE visibleMeshGuid = assetDatabase.RegisterUVE("renderer3d_freeze_visible.uvmodel");
+    const Asset::AssetGuidUVE visibleMaterialGuid = assetDatabase.RegisterUVE("renderer3d_freeze_visible.uvmat");
+    const Asset::AssetGuidUVE offCameraMeshGuid = assetDatabase.RegisterUVE("renderer3d_freeze_offcamera.uvmodel");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, visibleMeshGuid, visibleMaterialGuid);
+    // Far outside the default camera's 60-degree view at z=-10 (which reaches roughly +/-5.8 on X),
+    // but inside the fitted directional-light frustum. It shares the visible mesh's material so
+    // the freeze assertion isolates culling from asynchronous compilation of a second material shader.
+    MakeMeshEntityUVE(Math::Vector3UVE{50.0F, 0.0F, -10.0F}, offCameraMeshGuid, visibleMaterialGuid);
+    MakeLightEntityUVE(Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 3.0F});
+    WaitUntilAssetsReadyUVE(visibleMeshGuid, visibleMaterialGuid);
+    WaitUntilAssetsReadyUVE(offCameraMeshGuid, visibleMaterialGuid);
+    WaitUntilShadowProgramReadyUVE();
+
+    const auto countDraws = [](const std::vector<RecordedCommandUVE>& commands) {
+        const auto shadowPassEnd = std::find_if(commands.cbegin(), commands.cend(),
+                                                [](const RecordedCommandUVE& command) {
+                                                    return std::holds_alternative<EndRenderPassCommandUVE>(command);
+                                                });
+        const bool hasShadowPass = shadowPassEnd != commands.cend();
+        const auto draws = [&commands](auto first, auto last) {
+            std::size_t instances = 0U;
+            for (auto command = first; command != last; ++command) {
+                if (const auto* const draw = std::get_if<DrawIndexedCommandUVE>(&*command); draw != nullptr) {
+                    instances += draw->instanceCount;
+                }
+            }
+            return instances;
+        };
+        return std::pair<std::size_t, std::size_t>{
+            hasShadowPass ? draws(commands.cbegin(), shadowPassEnd) : 0U,
+            hasShadowPass ? draws(std::next(shadowPassEnd), commands.cend()) : draws(commands.cbegin(), commands.cend())};
+    };
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const auto [culledShadowDraws, culledMainDraws] = countDraws(renderDevice.GetLastSubmittedCommandsUVE());
+    EXPECT_FALSE(renderer3D->GetLastFrameDiagnosticsUVE().frustumCullingFrozen)
+        << "culling is on unless a host asks for the freeze";
+    EXPECT_EQ(culledMainDraws, 1U);
+    ASSERT_GT(culledShadowDraws, 0U) << "this test needs a shadow pass to prove the freeze skips it";
+
+    Render::CullingSettingsUVE frozen;
+    frozen.frustumCullingEnabledUVE = false;
+    renderer3D->SetCullingSettingsUVE(frozen);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const auto [frozenShadowDraws, frozenMainDraws] = countDraws(renderDevice.GetLastSubmittedCommandsUVE());
+    const Renderer3DFrameDiagnosticsUVE frozenDiagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_TRUE(frozenDiagnostics.frustumCullingFrozen);
+    EXPECT_EQ(frozenMainDraws, 2U) << "the off-camera mesh must reach the colour view when culling is frozen";
+    EXPECT_EQ(frozenDiagnostics.meshItemsExtracted, 2U);
+    EXPECT_EQ(frozenShadowDraws, culledShadowDraws)
+        << "shadow cascades keep culling against their own light frusta";
+
+    renderer3D->SetCullingSettingsUVE(Render::CullingSettingsUVE{});
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const auto [restoredShadowDraws, restoredMainDraws] = countDraws(renderDevice.GetLastSubmittedCommandsUVE());
+    EXPECT_FALSE(renderer3D->GetLastFrameDiagnosticsUVE().frustumCullingFrozen);
+    EXPECT_EQ(restoredMainDraws, culledMainDraws);
+    EXPECT_EQ(restoredShadowDraws, culledShadowDraws);
+}
+
+TEST_F(Renderer3DUVETest, FrustumCullingFreezeDrawsOffCameraPrimitives) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    MakePrimitiveEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, Scene::PrimitiveMeshComponentUVE{});
+    // The primitive path culls in its own extraction, not through the mesh visibility set, so it
+    // needs its own proof that the freeze reaches it.
+    MakePrimitiveEntityUVE(Math::Vector3UVE{80.0F, 0.0F, -10.0F}, Scene::PrimitiveMeshComponentUVE{});
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
+        shaderManager.UpdateUVE(0.0);
+        if (shaderManager.GetPendingJobCountUVE() == 0U) {
+            break;
+        }
+        std::this_thread::yield();
+    }
+    ASSERT_EQ(shaderManager.GetPendingJobCountUVE(), 0U);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE culled = renderer3D->GetLastFrameDiagnosticsUVE();
+    ASSERT_TRUE(culled.primitiveProgramReady);
+    EXPECT_FALSE(culled.frustumCullingFrozen);
+    EXPECT_EQ(culled.primitiveCandidates, 2U);
+    EXPECT_EQ(culled.primitiveItemsExtracted, 1U);
+
+    Render::CullingSettingsUVE frozen;
+    frozen.frustumCullingEnabledUVE = false;
+    renderer3D->SetCullingSettingsUVE(frozen);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE frozenDiagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_TRUE(frozenDiagnostics.frustumCullingFrozen);
+    EXPECT_EQ(frozenDiagnostics.primitiveItemsExtracted, 2U)
+        << "the off-camera primitive must be submitted when culling is frozen";
 }
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_DirectionalLightAndReadyShadowProgram_ShadowPassDrawsOpaqueItem) {
@@ -2595,14 +3662,16 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_EmptySkyAssetKeepsProceduralSky) {
     EXPECT_FALSE(skyPassBoundSlot1);
 }
 
-TEST_F(Renderer3DUVETest, RenderFrameUVE_SkyAssetBindsTheEquirectTexture) {
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SkyAssetDrivesEnvironmentMapAmbientAndSky) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    MakePrimitiveEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, Scene::PrimitiveMeshComponentUVE{});
     const std::filesystem::path skyPath{"environment/day.hdr"};
     const Asset::AssetGuidUVE skyGuid = assetDatabase.RegisterUVE(skyPath);
     WaitUntilTextureReadyUVE(skyGuid);
 
     Scene::WorldEnvironment3DComponentUVE environment{};
     environment.skyAssetPath = skyPath.string();
+    environment.ambientSource = Scene::WorldEnvironmentAmbientSourceUVE::EnvironmentMap;
     const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
 
@@ -2616,6 +3685,32 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_SkyAssetBindsTheEquirectTexture) {
     });
     ASSERT_NE(enabled, commands.cend());
     EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*enabled).value, 1);
+    const auto ambientSource = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uAmbientSource";
+    });
+    const auto ambientMapEnabled =
+        std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+                   std::get<SetUniformIntCommandUVE>(command).name == "uAmbientEnvironmentMapEnabled";
+        });
+    const auto ambientMapSampler =
+        std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+                   std::get<SetUniformIntCommandUVE>(command).name == "uAmbientEnvironmentMap";
+        });
+    ASSERT_NE(ambientSource, commands.cend());
+    ASSERT_NE(ambientMapEnabled, commands.cend());
+    ASSERT_NE(ambientMapSampler, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*ambientSource).value,
+              static_cast<std::int32_t>(Scene::WorldEnvironmentAmbientSourceUVE::EnvironmentMap));
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*ambientMapEnabled).value, 1);
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*ambientMapSampler).value, 14);
+    EXPECT_TRUE(std::any_of(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<BindTextureCommandUVE>(command) &&
+               std::get<BindTextureCommandUVE>(command).slot == 14U &&
+               std::get<BindTextureCommandUVE>(command).texture != kInvalidTextureHandleUVE;
+    }));
     bool skyPassBoundSlot1 = false;
     for (auto it = enabled; it != commands.cend(); ++it) {
         if (std::holds_alternative<EndRenderPassCommandUVE>(*it)) {
@@ -2630,12 +3725,14 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_SkyAssetBindsTheEquirectTexture) {
     EXPECT_TRUE(skyPassBoundSlot1);
 }
 
-TEST_F(Renderer3DUVETest, RenderFrameUVE_MissingSkyAssetStaysProcedural) {
+TEST_F(Renderer3DUVETest, RenderFrameUVE_MissingSkyAssetFallsBackForSkyAndAmbientLighting) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    MakePrimitiveEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, Scene::PrimitiveMeshComponentUVE{});
     assetManager.RegisterLoaderUVE<Asset::TextureAssetUVE>(
         [](const std::filesystem::path&, Asset::TextureAssetUVE&) { return false; });
     Scene::WorldEnvironment3DComponentUVE environment{};
     environment.skyAssetPath = "environment/missing.hdr";
+    environment.ambientSource = Scene::WorldEnvironmentAmbientSourceUVE::EnvironmentMap;
     const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
 
@@ -2649,6 +3746,25 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_MissingSkyAssetStaysProcedural) {
     });
     ASSERT_NE(enabled, commands.cend());
     EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*enabled).value, 0);
+    const auto ambientSource = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uAmbientSource";
+    });
+    const auto ambientMapEnabled =
+        std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+                   std::get<SetUniformIntCommandUVE>(command).name == "uAmbientEnvironmentMapEnabled";
+        });
+    ASSERT_NE(ambientSource, commands.cend());
+    ASSERT_NE(ambientMapEnabled, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*ambientSource).value,
+              static_cast<std::int32_t>(Scene::WorldEnvironmentAmbientSourceUVE::EnvironmentMap));
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*ambientMapEnabled).value, 0);
+    EXPECT_TRUE(std::any_of(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<BindTextureCommandUVE>(command) &&
+               std::get<BindTextureCommandUVE>(command).slot == 14U &&
+               std::get<BindTextureCommandUVE>(command).texture != kInvalidTextureHandleUVE;
+    })); // A valid fallback descriptor remains bound even though the map source is disabled.
 }
 
 } // namespace UVE::Render::Tests

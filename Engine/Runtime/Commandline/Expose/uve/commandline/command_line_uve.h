@@ -42,6 +42,7 @@ public:
     [[nodiscard]] bool HasFlagUVE(std::string_view name) const noexcept override;
     [[nodiscard]] std::string GetValueUVE(std::string_view name,
                                            std::string_view defaultValue) const override;
+    [[nodiscard]] std::optional<std::string> GetOptionalValueUVE(std::string_view name) const override;
 
 private:
     /// Parses `args` into `m_flags`, called once from both constructors.

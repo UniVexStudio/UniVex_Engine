@@ -51,7 +51,8 @@ void TryAddLightDirectionGizmoUVE(IEntityManagerUVE& entityManager, const Entity
 
 bool IsDirectionalLight3DComponentValidUVE(const DirectionalLight3DComponentUVE& value) noexcept {
     return std::isfinite(value.shadowMaxDistance) && value.shadowMaxDistance >= 0.0F &&
-           std::isfinite(value.shadowSplitBlend) && value.shadowSplitBlend >= 0.0F && value.shadowSplitBlend <= 1.0F;
+           std::isfinite(value.shadowSplitBlend) && value.shadowSplitBlend >= -1.0F && value.shadowSplitBlend <= 1.0F &&
+           std::isfinite(value.shadowDistanceFadeRange) && value.shadowDistanceFadeRange >= 0.0F;
 }
 
 void ApplyDirectionalLight3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,

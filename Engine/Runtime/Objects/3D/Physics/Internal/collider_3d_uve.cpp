@@ -20,6 +20,14 @@ namespace {
     return {};
 }
 
+[[nodiscard]] bool IsRuntimeColliderValidUVE(const ColliderComponentUVE& collider) noexcept {
+    ColliderComponentUVE sanitized = collider;
+    sanitized.friction = std::isfinite(sanitized.friction) ? std::clamp(sanitized.friction, 0.0F, 1.0F) : 0.0F;
+    sanitized.restitution =
+        std::isfinite(sanitized.restitution) ? std::clamp(sanitized.restitution, 0.0F, 1.0F) : 0.0F;
+    return IsColliderComponentValidUVE(sanitized);
+}
+
 [[nodiscard]] Math::Vector3UVE ToLocalUVE(const Math::Vector3UVE& center,
                                           const Math::QuaternionUVE& rotation,
                                           const Math::Vector3UVE& point) noexcept {
@@ -210,7 +218,7 @@ ColliderComponentUVE Collider3DUVE::MakeCapsuleUVE(const float radius, const flo
 }
 
 bool Collider3DUVE::IsParticipatingUVE(const ColliderComponentUVE& collider) noexcept {
-    return IsColliderComponentValidUVE(collider) && !collider.disabled;
+    return IsRuntimeColliderValidUVE(collider) && !collider.disabled;
 }
 
 Math::AabbUVE Collider3DUVE::GetLocalAabbUVE(const ColliderComponentUVE& collider) noexcept {
@@ -243,7 +251,7 @@ Math::AabbUVE Collider3DUVE::GetWorldAabbUVE(const ColliderComponentUVE& collide
 }
 
 float Collider3DUVE::GetVolumeUVE(const ColliderComponentUVE& collider) noexcept {
-    if (!IsColliderComponentValidUVE(collider)) {
+    if (!IsRuntimeColliderValidUVE(collider)) {
         return 0.0F;
     }
     switch (collider.shapeType) {

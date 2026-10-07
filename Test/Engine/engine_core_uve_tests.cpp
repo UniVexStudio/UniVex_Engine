@@ -129,6 +129,67 @@ EngineConfigUVE MakeTestConfigUVE() {
     return config;
 }
 
+TEST(EngineCoreUVETest, InvalidApplicationRenderScaleFallsBackToNativeResolution) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.renderResolutionScaleUVE = std::numeric_limits<double>::quiet_NaN();
+    config.dynamicRenderResolutionEnabledUVE = true;
+    config.minimumRenderResolutionScaleUVE = 1.25;
+    config.renderResolutionTargetFrameTimeMillisecondsUVE = std::numeric_limits<double>::quiet_NaN();
+    config.settingsFilePath = "uve_engine_core_invalid_render_scale.uvsettings";
+    config.projectSettingsFilePath = "uve_engine_core_invalid_render_scale.project.uvsettings";
+    config.platformSettingsFilePath = "uve_engine_core_invalid_render_scale.platform.uvsettings";
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().renderResolutionScaleUVE, 1.0);
+    EXPECT_TRUE(engine.GetConfigUVE().dynamicRenderResolutionEnabledUVE);
+    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().minimumRenderResolutionScaleUVE,
+                     kMinimumRenderResolutionScaleUVE);
+    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().renderResolutionTargetFrameTimeMillisecondsUVE,
+                     kDefaultRenderResolutionTargetFrameTimeMillisecondsUVE);
+    engine.Shutdown();
+
+    std::filesystem::remove(config.settingsFilePath);
+    std::filesystem::remove(config.projectSettingsFilePath);
+    std::filesystem::remove(config.platformSettingsFilePath);
+}
+
+TEST(EngineCoreUVETest, UnsafeProjectShaderCachePathDoesNotOverrideSafeApplicationValue) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.projectSettingsFilePath = "uve_engine_core_unsafe_shader_cache.project.uvsettings";
+    config.settingsFilePath = "uve_engine_core_unsafe_shader_cache.uvsettings";
+    config.platformSettingsFilePath = "uve_engine_core_unsafe_shader_cache.platform.uvsettings";
+    config.shaderCachePath = "safe_application_cache";
+    {
+        std::ofstream file(config.projectSettingsFilePath);
+        file << R"({"rendering": {"shaders": {"programCacheDirectory": "../outside_cache"}}})";
+    }
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_EQ(engine.GetConfigUVE().shaderCachePath, std::filesystem::path("safe_application_cache"));
+    engine.Shutdown();
+    std::filesystem::remove(config.projectSettingsFilePath);
+    std::filesystem::remove(config.settingsFilePath);
+    std::filesystem::remove(config.platformSettingsFilePath);
+}
+
+TEST(EngineCoreUVETest, UnsafeApplicationShaderCachePathFallsBackToEngineDefault) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.projectSettingsFilePath = "uve_engine_core_unsafe_application_shader_cache.project.uvsettings";
+    config.settingsFilePath = "uve_engine_core_unsafe_application_shader_cache.uvsettings";
+    config.platformSettingsFilePath = "uve_engine_core_unsafe_application_shader_cache.platform.uvsettings";
+    config.shaderCachePath = "../outside_cache";
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_EQ(engine.GetConfigUVE().shaderCachePath, EngineConfigUVE{}.shaderCachePath);
+    engine.Shutdown();
+    std::filesystem::remove(config.projectSettingsFilePath);
+    std::filesystem::remove(config.settingsFilePath);
+    std::filesystem::remove(config.platformSettingsFilePath);
+}
+
 TEST(EngineCoreUVETest, ProjectSettings_OverrideTheApplicationsConfigWhereTheProjectSetsThem) {
     EngineConfigUVE config = MakeTestConfigUVE();
     config.projectSettingsFilePath = "uve_engine_core_tests_overrides.project.uvsettings";
@@ -151,21 +212,134 @@ TEST(EngineCoreUVETest, ProjectSettings_OverrideTheApplicationsConfigWhereThePro
     EXPECT_EQ(engine.GetConfigUVE().shadowMapResolution, EngineConfigUVE{}.shadowMapResolution);
     const Config::SettingsDocumentUVE& project = engine.GetServicesUVE().GetProjectSettingsUVE();
     EXPECT_TRUE(project.IsModifiedUVE(EngineProjectSettingIdUVE::kPhysicsTicksPerSecondUVE));
-    EXPECT_FALSE(project.IsDirtyUVE());
+    EXPECT_TRUE(project.IsDirtyUVE()); // The unversioned fixture is upgraded in memory for its next save.
     engine.Shutdown();
     std::filesystem::remove(config.projectSettingsFilePath);
+}
+
+TEST(EngineCoreUVETest, UserSettingsOverrideProjectSettingsBeforeDependentSystemsInitialize) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.projectSettingsFilePath = "uve_engine_core_tests_user_override.project.uvsettings";
+    config.settingsFilePath = "uve_engine_core_tests_user_override.uvsettings";
+    {
+        std::ofstream file(config.projectSettingsFilePath);
+        file << R"({"physics": {"common": {"ticksPerSecond": 30}}})";
+    }
+    {
+        std::ofstream file(config.settingsFilePath);
+        file << R"({"physics": {"common": {"ticksPerSecond": 120}}})";
+    }
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().fixedUpdateFps, 120.0);
+    engine.Shutdown();
+    std::filesystem::remove(config.projectSettingsFilePath);
+    std::filesystem::remove(config.settingsFilePath);
+}
+
+TEST(EngineCoreUVETest, InvalidUserSettingFallsBackToTheValidProjectSetting) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.projectSettingsFilePath = "uve_engine_core_tests_invalid_user.project.uvsettings";
+    config.settingsFilePath = "uve_engine_core_tests_invalid_user.uvsettings";
+    {
+        std::ofstream file(config.projectSettingsFilePath);
+        file << R"({"physics": {"common": {"ticksPerSecond": 30}}})";
+    }
+    {
+        std::ofstream file(config.settingsFilePath);
+        file << R"({"physics": {"common": {"ticksPerSecond": 0}}})";
+    }
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().fixedUpdateFps, 30.0);
+    engine.Shutdown();
+    std::filesystem::remove(config.projectSettingsFilePath);
+    std::filesystem::remove(config.settingsFilePath);
+}
+
+TEST(EngineCoreUVETest, PlatformAndCommandLineLayersOverrideUserAndProject) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.projectSettingsFilePath = "uve_engine_core_tests_cli_platform.project.uvsettings";
+    config.settingsFilePath = "uve_engine_core_tests_cli_platform.uvsettings";
+    config.platformSettingsFilePath = "uve_engine_core_tests_cli_platform.platform.uvsettings";
+    config.commandLineArgs = {"--rendering.shadows.mapResolution", "512"};
+    {
+        std::ofstream file(config.projectSettingsFilePath);
+        file << R"({"rendering": {"shadows": {"mapResolution": 4096}}})";
+    }
+    {
+        std::ofstream file(config.settingsFilePath);
+        file << R"({"rendering": {"shadows": {"mapResolution": 2048}}})";
+    }
+    {
+        std::ofstream file(config.platformSettingsFilePath);
+        file << R"({"rendering": {"shadows": {"mapResolution": 1024}}})";
+    }
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_EQ(engine.GetConfigUVE().shadowMapResolution, 512U);
+    engine.Shutdown();
+    std::filesystem::remove(config.projectSettingsFilePath);
+    std::filesystem::remove(config.settingsFilePath);
+    std::filesystem::remove(config.platformSettingsFilePath);
+}
+
+TEST(EngineCoreUVETest, InvalidCommandLineSettingFallsBackToPlatformValue) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.projectSettingsFilePath = "uve_engine_core_tests_invalid_cli.project.uvsettings";
+    config.settingsFilePath = "uve_engine_core_tests_invalid_cli.uvsettings";
+    config.platformSettingsFilePath = "uve_engine_core_tests_invalid_cli.platform.uvsettings";
+    config.commandLineArgs = {"--rendering.shadows.mapResolution", "1536"};
+    {
+        std::ofstream file(config.projectSettingsFilePath);
+        file << R"({"rendering": {"shadows": {"mapResolution": 4096}}})";
+    }
+    {
+        std::ofstream file(config.settingsFilePath);
+        file << R"({"rendering": {"shadows": {"mapResolution": 2048}}})";
+    }
+    {
+        std::ofstream file(config.platformSettingsFilePath);
+        file << R"({"rendering": {"shadows": {"mapResolution": 1024}}})";
+    }
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_EQ(engine.GetConfigUVE().shadowMapResolution, 1024U);
+    engine.Shutdown();
+    std::filesystem::remove(config.projectSettingsFilePath);
+    std::filesystem::remove(config.settingsFilePath);
+    std::filesystem::remove(config.platformSettingsFilePath);
 }
 
 TEST(EngineCoreUVETest, ProjectSettings_DeclareEngineDefaultsAndNeedARestart) {
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 8U + (2U * kLayerCountUVE));
-    const EngineConfigUVE defaults{};
+    // 76 settings declared in the GetEngineProjectSettingsUVE() table plus the default-player entity
+    // registered on its own; the 2 * kLayerCountUVE layer-name settings are added on top of this.
+    // Spelled out because the number silently drifts every time a setting is added to the table.
+    EXPECT_EQ(registry.GetCountUVE(), 77U + (2U * kLayerCountUVE));
     namespace Id = EngineProjectSettingIdUVE;
+    ASSERT_NE(registry.FindUVE(Id::kDefaultPlayerEntityUVE), nullptr);
+    ASSERT_NE(registry.FindUVE(Id::kShaderProgramCacheDirectoryUVE), nullptr);
+    EXPECT_EQ(registry.FindUVE(Id::kShaderProgramCacheDirectoryUVE)->type, Config::SettingTypeUVE::FilePath);
+    EXPECT_TRUE(registry.FindUVE(Id::kShaderProgramCacheDirectoryUVE)
+                    ->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
+    EXPECT_EQ(registry.FindUVE(Id::kDefaultPlayerEntityUVE)->type, Config::SettingTypeUVE::FilePath);
+    const EngineConfigUVE defaults{};
     EXPECT_DOUBLE_EQ(registry.GetFloatUVE(Config::ConfigManagerUVE{}, Id::kPhysicsTicksPerSecondUVE),
                      defaults.fixedUpdateFps);
     EXPECT_EQ(registry.GetIntUVE(Config::ConfigManagerUVE{}, Id::kShadowMapResolutionUVE),
               static_cast<std::int64_t>(defaults.shadowMapResolution));
+    EXPECT_EQ(registry.GetBoolUVE(Config::ConfigManagerUVE{}, Id::kHeadlessUVE), defaults.headlessUVE);
+    ASSERT_NE(registry.FindUVE(Id::kShadowMapResolutionUVE), nullptr);
+    EXPECT_TRUE(registry.FindUVE(Id::kShadowMapResolutionUVE)->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
+    ASSERT_NE(registry.FindUVE(Id::kHeadlessUVE), nullptr);
+    EXPECT_TRUE(registry.FindUVE(Id::kHeadlessUVE)->HasFlagUVE(Config::kSettingFlagHiddenUVE));
+    EXPECT_TRUE(registry.FindUVE(Id::kHeadlessUVE)->HasFlagUVE(Config::kSettingFlagNotPersistedUVE));
     for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
         EXPECT_EQ(Config::ValidateSettingDescriptorUVE(*descriptor), "") << descriptor->id;
         // Everything that overrides EngineConfigUVE is read at startup; layer names and the default
@@ -3247,9 +3421,8 @@ TEST(EngineCoreUVETest, SimulationControl_PausesStepsQueuesOneStepAndSuppressesT
 }
 
 TEST(EngineCoreUVETest, HeadlessCommandLineFlag_ForcesHeadlessAndUsesNullWindowManager) {
-    // headlessUVE starts false here specifically to prove the --headless CLI flag itself forces
-    // it (Init() reads CommandLineUVE before anything else consults the flag), not that the
-    // config's own default already happened to be headless.
+    // headlessUVE starts false here specifically to prove the hidden `headless` descriptor maps
+    // the presence-only --headless flag through the highest-priority command-line settings layer.
     EngineConfigUVE config = MakeTestConfigUVE();
     config.headlessUVE = false;
     config.commandLineArgs = {"--headless"};
@@ -3665,6 +3838,52 @@ TEST(EngineCoreUVETest, SetEditorViewportRegionUVE_DrivesRenderTargetToRegionNot
     EXPECT_FALSE(foundViewportRejection);
 
     engine.Shutdown();
+}
+
+// The configured fixed scene-render scale must change only the 3D render target; the native
+// presentation surface remains at the window's drawable resolution. This is a windowed GL
+// integration check and skips when no display/context is available.
+TEST(EngineCoreUVETest, FixedRenderScaleScalesSceneTargetWithoutChangingWindowSize) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.headlessUVE = false;
+    config.windowWidth = 200U;
+    config.windowHeight = 150U;
+    config.renderResolutionScaleUVE = 0.5;
+    config.settingsFilePath = "uve_engine_core_fixed_render_scale.uvsettings";
+    config.projectSettingsFilePath = "uve_engine_core_fixed_render_scale.project.uvsettings";
+    config.platformSettingsFilePath = "uve_engine_core_fixed_render_scale.platform.uvsettings";
+    config.vsyncEnabledUVE = false;
+    config.windowGlVersionMajor = 4U;
+    config.windowGlVersionMinor = 5U;
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    if (!engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {
+        GTEST_SKIP() << "No display available for windowed EngineCoreUVE - skipping (run under "
+                        "xvfb-run to exercise this test)";
+    }
+    ASSERT_TRUE(engine.Load());
+
+    EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+    const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, camera, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera);
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    const Render::Renderer3DFrameDiagnosticsUVE diagnostics =
+        services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(diagnostics.renderTargetWidth, 100U);
+    EXPECT_EQ(diagnostics.renderTargetHeight, 75U);
+    EXPECT_EQ(services.GetWindowManagerUVE().GetWidthUVE(), 200U);
+    EXPECT_EQ(services.GetWindowManagerUVE().GetHeightUVE(), 150U);
+
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
+    std::filesystem::remove(config.projectSettingsFilePath);
+    std::filesystem::remove(config.platformSettingsFilePath);
 }
 
 // A region whose on-screen destination sub-rect is a THIN SLICE of the window (very narrow and

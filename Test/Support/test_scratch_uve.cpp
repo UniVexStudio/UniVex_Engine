@@ -84,7 +84,7 @@ private:
     std::filesystem::path m_originalWorkingDirectory;
 };
 
-/// All four test executables link GTest::gtest_main, so there is no main() to register the
+/// Every test executable that includes this file links GTest::gtest_main, so there is no main() to register the
 /// environment from. A static initializer does it instead. This is safe against
 /// static-initialization order because GoogleTest keeps its environment list inside
 /// UnitTest::GetInstance(), a function-local static that constructs on first use. The translation

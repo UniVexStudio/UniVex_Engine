@@ -138,6 +138,51 @@ TEST_F(ShaderManagerUVETest, CreateSourceUVE_EmbeddedFallback_BecomesReadyAndVal
     EXPECT_NE(source->GetHandleUVE(), kInvalidShaderHandleUVE);
 }
 
+TEST_F(ShaderManagerUVETest, SynchronousOnDemandCreationCompletesSourceAndProgramsBeforeReturning) {
+    ShaderManagerConfigUVE config;
+    config.compileSynchronouslyUVE = true;
+    const std::unique_ptr<ShaderManagerUVE> shaderManager = MakeManagerUVE(config);
+
+    ShaderSourceCompileDescUVE sourceDesc;
+    sourceDesc.stage = ShaderStageUVE::Vertex;
+    sourceDesc.virtualFilePath = "shaders/missing_on_disk.glsl";
+    sourceDesc.embeddedFallbackSourceCode = "#version 330 core\nvoid main() { gl_Position = vec4(0.0); }\n";
+    const std::shared_ptr<ShaderSourceUVE> source = shaderManager->CreateSourceUVE(sourceDesc);
+    ASSERT_TRUE(source->IsReadyUVE());
+    EXPECT_TRUE(source->IsValidUVE());
+    EXPECT_NE(source->GetHandleUVE(), kInvalidShaderHandleUVE);
+    EXPECT_EQ(shaderManager->GetPendingJobCountUVE(), 0U);
+    EXPECT_EQ(threadPool->GetPendingJobCountUVE(), 0U);
+
+    ShaderProgramDescUVE programDesc;
+    programDesc.virtualFilePath = std::string(BuiltIn::kBasic3DVirtualPath);
+    programDesc.embeddedFallbackSourceCode = std::string(BuiltIn::kBasic3DSource);
+    programDesc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0}};
+    programDesc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
+    const std::shared_ptr<ShaderProgramUVE> program = shaderManager->CreateProgramUVE(programDesc);
+    ASSERT_TRUE(program->IsReadyUVE());
+    EXPECT_TRUE(program->IsValidUVE());
+    EXPECT_NE(program->GetPipelineHandleUVE(), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(shaderManager->GetPendingJobCountUVE(), 0U);
+    EXPECT_EQ(threadPool->GetPendingJobCountUVE(), 0U);
+
+    ShaderProgramStagesDescUVE stagesDesc;
+    stagesDesc.vertexSource.embeddedFallbackSourceCode =
+        "#version 330 core\nlayout(location = 0) in vec3 aPosition;\n"
+        "void main() { gl_Position = vec4(aPosition, 1.0); }\n";
+    stagesDesc.fragmentSource.stage = ShaderStageUVE::Fragment;
+    stagesDesc.fragmentSource.embeddedFallbackSourceCode =
+        "#version 330 core\nout vec4 FragColor;\nvoid main() { FragColor = vec4(1.0); }\n";
+    stagesDesc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0}};
+    stagesDesc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
+    const std::shared_ptr<ShaderProgramUVE> stagesProgram = shaderManager->CreateProgramFromStagesUVE(stagesDesc);
+    ASSERT_TRUE(stagesProgram->IsReadyUVE());
+    EXPECT_TRUE(stagesProgram->IsValidUVE());
+    EXPECT_NE(stagesProgram->GetPipelineHandleUVE(), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(shaderManager->GetPendingJobCountUVE(), 0U);
+    EXPECT_EQ(threadPool->GetPendingJobCountUVE(), 0U);
+}
+
 TEST_F(ShaderManagerUVETest, CreateProgramUVE_BuiltInBasic3D_BecomesReadyAndValid) {
     const std::unique_ptr<ShaderManagerUVE> shaderManager = MakeManagerUVE();
 

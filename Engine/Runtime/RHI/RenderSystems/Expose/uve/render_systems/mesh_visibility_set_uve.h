@@ -259,6 +259,18 @@ struct MeshVisibilitySetUVE final {
     /// with the candidates - the caller sets it before each cull, like viewLayerMask.
     bool shadowPass = false;
 
+    /// When true, the cull skips frustum rejection entirely: every candidate this set holds is
+    /// queued, wherever the frustum points. This is the renderer's frustum-culling debug freeze
+    /// (CullingSettingsUVE), and it is a PER-CULL flag for the same reason `shadowPass` is - one
+    /// frame culls this set four times, and only the caller knows which of those views is frozen.
+    /// Shadow cascades leave it false so a frozen colour view does not also multiply shadow work.
+    ///
+    /// What it does NOT disable: `drawsInView`/`castsShadow` (author visibility, render layers,
+    /// partition/region/LOD/range/occlusion verdicts already resolved during the build) and the
+    /// sort-depth derivation, which still measures against this frustum's near plane so queue order
+    /// stays meaningful. Set before each cull, like shadowPass; not cleared with the candidates.
+    bool frustumTestsDisabled = false;
+
     /// Monotonic frame stamp, incremented by each build, used to tell touched entries from stale
     /// ones without a second pass to reset flags.
     std::uint64_t frameIndex = 0U;

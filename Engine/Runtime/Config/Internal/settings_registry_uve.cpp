@@ -3,8 +3,10 @@
 #include "uve/config/settings_registry_uve.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 
@@ -60,6 +62,56 @@ constexpr double kNoValueUVE = std::numeric_limits<double>::quiet_NaN();
                        [value](const SettingEnumEntryUVE& entry) { return entry.value == value; });
 }
 
+[[nodiscard]] bool IsShortcutKeyNameUVE(const std::string_view key) noexcept {
+    if (key.size() == 1U) {
+        const char character = key.front();
+        return (character >= 'A' && character <= 'Z') || (character >= '0' && character <= '9');
+    }
+    if (key.size() >= 2U && key.size() <= 3U && key.front() == 'F' && key[1U] != '0') {
+        unsigned int number = 0U;
+        for (const char character : key.substr(1U)) {
+            if (character < '0' || character > '9') {
+                return false;
+            }
+            number = (number * 10U) + static_cast<unsigned int>(character - '0');
+        }
+        return number >= 1U && number <= 12U;
+    }
+    static constexpr std::array<std::string_view, 21U> kNamedShortcutKeysUVE{
+        "Left", "Right", "Up", "Down", "Delete", "Backspace", "Insert", "Home", "End", "PageUp",
+        "PageDown", "Space", "Enter", "Tab", "Comma", "Period", "Slash", "Minus", "Equal", "LeftBracket",
+        "RightBracket"};
+    return std::find(kNamedShortcutKeysUVE.begin(), kNamedShortcutKeysUVE.end(), key) != kNamedShortcutKeysUVE.end();
+}
+
+/// A stable editor shortcut chord: optional unique Ctrl/Shift/Alt modifiers and one known key name.
+[[nodiscard]] bool IsKeyBindingValueValidUVE(const std::string_view text) noexcept {
+    if (text.empty()) {
+        return true; // An empty string is an unbound shortcut.
+    }
+
+    bool control = false;
+    bool shift = false;
+    bool alt = false;
+    std::size_t keyStart = 0U;
+    while (true) {
+        const std::size_t plus = text.find('+', keyStart);
+        if (plus == std::string_view::npos) {
+            break;
+        }
+        const std::string_view modifier = text.substr(keyStart, plus - keyStart);
+        bool* const seen = modifier == "Ctrl" ? &control : modifier == "Shift" ? &shift
+                                                      : modifier == "Alt"     ? &alt
+                                                                              : nullptr;
+        if (seen == nullptr || *seen || plus + 1U == text.size()) {
+            return false;
+        }
+        *seen = true;
+        keyStart = plus + 1U;
+    }
+    return IsShortcutKeyNameUVE(text.substr(keyStart));
+}
+
 /// A colour without alpha is always opaque, whatever `a` was passed.
 [[nodiscard]] SettingValueUVE NormalizeUVE(const SettingDescriptorUVE& descriptor, SettingValueUVE value) {
     if (descriptor.type == SettingTypeUVE::Color && !descriptor.colorHasAlpha) {
@@ -76,6 +128,12 @@ constexpr double kNoValueUVE = std::numeric_limits<double>::quiet_NaN();
     key.append(id).push_back('.');
     key.push_back(channel);
     return key;
+}
+
+[[nodiscard]] std::string StringListCountKeyUVE(const std::string& id) { return id + ".count"; }
+
+[[nodiscard]] std::string StringListItemKeyUVE(const std::string& id, const std::size_t index) {
+    return id + "." + std::to_string(index);
 }
 
 /// The keys beneath a composite setting's id that hold its parts; none for a scalar setting.
@@ -102,7 +160,11 @@ constexpr double kNoValueUVE = std::numeric_limits<double>::quiet_NaN();
 [[nodiscard]] std::optional<SettingValueUVE> ReadStoredUVE(const SettingDescriptorUVE& descriptor,
                                                           const IConfigManagerUVE& store) {
     const std::string& id = descriptor.id;
-    if (ComponentKeysUVE(descriptor.type).empty() && !store.HasKeyUVE(id)) {
+    if (descriptor.type == SettingTypeUVE::StringList) {
+        if (!store.HasKeyUVE(StringListCountKeyUVE(id))) {
+            return std::nullopt;
+        }
+    } else if (ComponentKeysUVE(descriptor.type).empty() && !store.HasKeyUVE(id)) {
         return std::nullopt;
     }
     switch (descriptor.type) {
@@ -132,13 +194,33 @@ constexpr double kNoValueUVE = std::numeric_limits<double>::quiet_NaN();
         const double stored = store.GetDoubleUVE(id, kNoValueUVE);
         return std::isnan(stored) ? std::nullopt : std::optional<SettingValueUVE>(stored);
     }
-    case SettingTypeUVE::String: {
+    case SettingTypeUVE::String:
+    case SettingTypeUVE::FilePath:
+    case SettingTypeUVE::KeyBinding: {
         std::string stored = store.GetStringUVE(id, "");
         // An empty read is a real empty string only if a second, non-empty fallback reads empty too.
         if (stored.empty() && !store.GetStringUVE(id, "x").empty()) {
             return std::nullopt;
         }
         return SettingValueUVE{std::move(stored)};
+    }
+    case SettingTypeUVE::StringList: {
+        constexpr std::int64_t kMissingListCountUVE = std::numeric_limits<std::int64_t>::min();
+        const std::int64_t storedCount = store.GetIntUVE(StringListCountKeyUVE(id), kMissingListCountUVE);
+        if (storedCount == kMissingListCountUVE || storedCount < 0) {
+            return std::nullopt;
+        }
+        const std::size_t count = storedCount > static_cast<std::int64_t>(descriptor.maxItems)
+                                      ? descriptor.maxItems
+                                      : static_cast<std::size_t>(storedCount);
+        SettingStringListUVE values;
+        values.reserve(count);
+        for (std::size_t index = 0U; index < count; ++index) {
+            // Missing or mistyped entries read as empty, matching the legacy editor lists, whose
+            // consumers skip invalid elements without discarding their valid neighbours.
+            values.push_back(store.GetStringUVE(StringListItemKeyUVE(id, index), ""));
+        }
+        return values;
     }
     case SettingTypeUVE::Color: {
         if (!store.HasKeyUVE(ChannelKeyUVE(id, 'r'))) {
@@ -164,6 +246,34 @@ constexpr double kNoValueUVE = std::numeric_limits<double>::quiet_NaN();
     }
     }
     return std::nullopt;
+}
+
+[[nodiscard]] std::optional<SettingValueUVE> GetValidStoredValueUVE(const SettingDescriptorUVE& descriptor,
+                                                                    const IConfigManagerUVE& store) {
+    std::optional<SettingValueUVE> stored = ReadStoredUVE(descriptor, store);
+    if (!stored || !IsSettingValueValidUVE(descriptor, *stored)) {
+        return std::nullopt;
+    }
+    return NormalizeUVE(descriptor, std::move(*stored));
+}
+
+[[nodiscard]] bool ClearDescriptorValueUVE(IConfigManagerUVE& store, const SettingDescriptorUVE& descriptor) {
+    if (descriptor.type == SettingTypeUVE::StringList) {
+        bool removed = store.RemoveKeyUVE(StringListCountKeyUVE(descriptor.id));
+        for (std::size_t index = 0U; index < descriptor.maxItems; ++index) {
+            removed = store.RemoveKeyUVE(StringListItemKeyUVE(descriptor.id, index)) || removed;
+        }
+        return removed;
+    }
+    const std::string_view components = ComponentKeysUVE(descriptor.type);
+    if (components.empty()) {
+        return store.RemoveKeyUVE(descriptor.id);
+    }
+    bool removed = false;
+    for (const char component : components) {
+        removed = store.RemoveKeyUVE(ChannelKeyUVE(descriptor.id, component)) || removed;
+    }
+    return removed;
 }
 
 [[nodiscard]] SettingDescriptorUVE MakeSettingUVE(std::string id, const SettingTypeUVE type,
@@ -201,6 +311,26 @@ bool IsSettingValueValidUVE(const SettingDescriptorUVE& descriptor, const Settin
         const auto* text = std::get_if<std::string>(&value);
         return text != nullptr && (descriptor.maxLength == 0U || text->size() <= descriptor.maxLength);
     }
+    case SettingTypeUVE::FilePath: {
+        const auto* path = std::get_if<std::string>(&value);
+        return path != nullptr && path->find('\0') == std::string::npos &&
+               (descriptor.maxLength == 0U || path->size() <= descriptor.maxLength);
+    }
+    case SettingTypeUVE::KeyBinding: {
+        const auto* binding = std::get_if<std::string>(&value);
+        return binding != nullptr && IsKeyBindingValueValidUVE(*binding);
+    }
+    case SettingTypeUVE::StringList: {
+        const auto* list = std::get_if<SettingStringListUVE>(&value);
+        if (list == nullptr || descriptor.maxItems == 0U ||
+            descriptor.maxItems > kMaximumSettingStringListItemsUVE || list->size() > descriptor.maxItems) {
+            return false;
+        }
+        return descriptor.maxLength == 0U ||
+               std::all_of(list->begin(), list->end(), [&descriptor](const std::string& item) {
+                   return item.size() <= descriptor.maxLength;
+               });
+    }
     case SettingTypeUVE::Enum: {
         const auto* integer = std::get_if<std::int64_t>(&value);
         return integer != nullptr && IsEnumValueValidUVE(descriptor, *integer);
@@ -222,6 +352,17 @@ bool IsSettingValueValidUVE(const SettingDescriptorUVE& descriptor, const Settin
 std::string ValidateSettingDescriptorUVE(const SettingDescriptorUVE& descriptor) {
     if (!IsPathUVE(descriptor.id, '.', false)) {
         return "id '" + descriptor.id + "' is not a dot path of letters, digits and underscores";
+    }
+    if (descriptor.id == kSettingsDocumentVersionKeyUVE || descriptor.id.starts_with("version.")) {
+        return "'" + descriptor.id + "' conflicts with the reserved document version key";
+    }
+    if (!descriptor.replacementId.empty()) {
+        if (!descriptor.HasFlagUVE(kSettingFlagDeprecatedUVE)) {
+            return "'" + descriptor.id + "' has a replacement id but is not Deprecated";
+        }
+        if (!IsPathUVE(descriptor.replacementId, '.', false) || descriptor.replacementId == descriptor.id) {
+            return "'" + descriptor.id + "' has a malformed or self-referential replacement id";
+        }
     }
     const bool numeric = descriptor.type == SettingTypeUVE::Int || descriptor.type == SettingTypeUVE::Float ||
                          descriptor.type == SettingTypeUVE::Vector3;
@@ -256,8 +397,18 @@ std::string ValidateSettingDescriptorUVE(const SettingDescriptorUVE& descriptor)
     } else if (!descriptor.enumEntries.empty()) {
         return "'" + descriptor.id + "' lists Enum entries but is not an Enum setting";
     }
-    if (descriptor.type != SettingTypeUVE::String && descriptor.maxLength != 0U) {
-        return "'" + descriptor.id + "' declares a maximum length but is not a String setting";
+    const bool hasStringLength = descriptor.type == SettingTypeUVE::String ||
+                                 descriptor.type == SettingTypeUVE::FilePath ||
+                                 descriptor.type == SettingTypeUVE::StringList;
+    if (!hasStringLength && descriptor.maxLength != 0U) {
+        return "'" + descriptor.id + "' declares a maximum length but has no string value";
+    }
+    if (descriptor.type == SettingTypeUVE::StringList) {
+        if (descriptor.maxItems == 0U || descriptor.maxItems > kMaximumSettingStringListItemsUVE) {
+            return "'" + descriptor.id + "' has a StringList limit outside 1..4096 items";
+        }
+    } else if (descriptor.maxItems != 0U) {
+        return "'" + descriptor.id + "' declares a maximum item count but is not a StringList setting";
     }
     if (descriptor.type != SettingTypeUVE::Color && descriptor.colorHasAlpha) {
         return "'" + descriptor.id + "' declares alpha but is not a Color setting";
@@ -308,6 +459,33 @@ SettingDescriptorUVE MakeStringSettingUVE(std::string id, std::string defaultVal
     return descriptor;
 }
 
+SettingDescriptorUVE MakeStringListSettingUVE(std::string id, SettingStringListUVE defaultValue,
+                                              const std::size_t maxItems, const std::size_t maxLength,
+                                              std::string displayName, std::string category,
+                                              std::string tooltip) {
+    SettingDescriptorUVE descriptor =
+        MakeSettingUVE(std::move(id), SettingTypeUVE::StringList, std::move(defaultValue),
+                       std::move(displayName), std::move(category), std::move(tooltip));
+    descriptor.maxItems = maxItems;
+    descriptor.maxLength = maxLength;
+    return descriptor;
+}
+
+SettingDescriptorUVE MakeFilePathSettingUVE(std::string id, std::string defaultValue, const std::size_t maxLength,
+                                            std::string displayName, std::string category, std::string tooltip) {
+    SettingDescriptorUVE descriptor =
+        MakeSettingUVE(std::move(id), SettingTypeUVE::FilePath, std::move(defaultValue), std::move(displayName),
+                       std::move(category), std::move(tooltip));
+    descriptor.maxLength = maxLength;
+    return descriptor;
+}
+
+SettingDescriptorUVE MakeKeyBindingSettingUVE(std::string id, std::string defaultValue, std::string displayName,
+                                              std::string category, std::string tooltip) {
+    return MakeSettingUVE(std::move(id), SettingTypeUVE::KeyBinding, std::move(defaultValue),
+                          std::move(displayName), std::move(category), std::move(tooltip));
+}
+
 SettingDescriptorUVE MakeEnumSettingUVE(std::string id, const std::int64_t defaultValue,
                                         std::vector<SettingEnumEntryUVE> entries, std::string displayName,
                                         std::string category, std::string tooltip) {
@@ -339,16 +517,30 @@ bool SettingsRegistryUVE::RegisterUVE(SettingDescriptorUVE descriptor) {
     if (!ValidateSettingDescriptorUVE(descriptor).empty() || m_byId.contains(descriptor.id)) {
         return false;
     }
-    // Where the setting's values sit in the document: at its id, or for a composite at its
-    // component keys (a colour's alpha reserved even when unused). A composite's id is therefore
-    // an object, and other settings may live beside its components, e.g. "outline" and
-    // "outline.thickness".
-    std::vector<std::string> values;
-    for (const char component : ComponentKeysUVE(descriptor.type)) {
-        values.push_back(ChannelKeyUVE(descriptor.id, component));
+    if (!descriptor.replacementId.empty()) {
+        const SettingDescriptorUVE* const replacement = FindUVE(descriptor.replacementId);
+        if (replacement == nullptr || replacement->HasFlagUVE(kSettingFlagDeprecatedUVE) ||
+            replacement->type != descriptor.type) {
+            return false;
+        }
     }
-    if (values.empty()) {
-        values.push_back(descriptor.id);
+    // Where the setting's values sit in the document: at its id, in a composite's component keys,
+    // or in a StringList's bounded count/item keys. A composite's id is therefore an object, and
+    // other settings may live beside its components, e.g. "outline" and "outline.thickness".
+    std::vector<std::string> values;
+    if (descriptor.type == SettingTypeUVE::StringList) {
+        values.reserve(descriptor.maxItems + 1U);
+        values.push_back(StringListCountKeyUVE(descriptor.id));
+        for (std::size_t index = 0U; index < descriptor.maxItems; ++index) {
+            values.push_back(StringListItemKeyUVE(descriptor.id, index));
+        }
+    } else {
+        for (const char component : ComponentKeysUVE(descriptor.type)) {
+            values.push_back(ChannelKeyUVE(descriptor.id, component));
+        }
+        if (values.empty()) {
+            values.push_back(descriptor.id);
+        }
     }
     // No path may be both a value and an object: "a.b" holding a value rules out "a.b.c", and the
     // other way round.
@@ -417,8 +609,21 @@ bool SettingsRegistryUVE::SetValueUVE(IConfigManagerUVE& store, const std::strin
         store.SetDoubleUVE(key, std::get<double>(value));
         break;
     case SettingTypeUVE::String:
+    case SettingTypeUVE::FilePath:
+    case SettingTypeUVE::KeyBinding:
         store.SetStringUVE(key, std::get<std::string>(value));
         break;
+    case SettingTypeUVE::StringList: {
+        const SettingStringListUVE& list = std::get<SettingStringListUVE>(value);
+        for (std::size_t index = 0U; index < descriptor->maxItems; ++index) {
+            static_cast<void>(store.RemoveKeyUVE(StringListItemKeyUVE(key, index)));
+        }
+        store.SetIntUVE(StringListCountKeyUVE(key), static_cast<std::int64_t>(list.size()));
+        for (std::size_t index = 0U; index < list.size(); ++index) {
+            store.SetStringUVE(StringListItemKeyUVE(key, index), list[index]);
+        }
+        break;
+    }
     case SettingTypeUVE::Color: {
         // Every channel was validated above, so the colour is written whole.
         const auto& color = std::get<SettingColorUVE>(value);
@@ -438,6 +643,11 @@ bool SettingsRegistryUVE::SetValueUVE(IConfigManagerUVE& store, const std::strin
         break;
     }
     }
+    for (const auto& candidate : m_descriptors) {
+        if (candidate->HasFlagUVE(kSettingFlagDeprecatedUVE) && candidate->replacementId == descriptor->id) {
+            static_cast<void>(ClearDescriptorValueUVE(store, *candidate));
+        }
+    }
     return true;
 }
 
@@ -451,13 +661,13 @@ bool SettingsRegistryUVE::ClearValueUVE(IConfigManagerUVE& store, const std::str
     if (descriptor == nullptr) {
         return false;
     }
-    const std::string_view components = ComponentKeysUVE(descriptor->type);
-    if (components.empty()) {
-        return store.RemoveKeyUVE(descriptor->id);
-    }
-    bool removed = false;
-    for (const char component : components) {
-        removed = store.RemoveKeyUVE(ChannelKeyUVE(descriptor->id, component)) || removed;
+    bool removed = ClearDescriptorValueUVE(store, *descriptor);
+    if (!descriptor->HasFlagUVE(kSettingFlagDeprecatedUVE)) {
+        for (const auto& candidate : m_descriptors) {
+            if (candidate->HasFlagUVE(kSettingFlagDeprecatedUVE) && candidate->replacementId == descriptor->id) {
+                removed = ClearDescriptorValueUVE(store, *candidate) || removed;
+            }
+        }
     }
     return removed;
 }
@@ -468,11 +678,47 @@ std::optional<SettingValueUVE> SettingsRegistryUVE::GetStoredValueUVE(const ICon
     if (descriptor == nullptr) {
         return std::nullopt;
     }
-    std::optional<SettingValueUVE> stored = ReadStoredUVE(*descriptor, store);
-    if (!stored || !IsSettingValueValidUVE(*descriptor, *stored)) {
+    if (std::optional<SettingValueUVE> stored = GetValidStoredValueUVE(*descriptor, store)) {
+        return stored;
+    }
+    if (descriptor->HasFlagUVE(kSettingFlagDeprecatedUVE)) {
         return std::nullopt;
     }
-    return NormalizeUVE(*descriptor, std::move(*stored));
+    for (const auto& alias : m_descriptors) {
+        if (!alias->HasFlagUVE(kSettingFlagDeprecatedUVE) || alias->replacementId != descriptor->id) {
+            continue;
+        }
+        const std::optional<SettingValueUVE> legacy = GetValidStoredValueUVE(*alias, store);
+        if (legacy && IsSettingValueValidUVE(*descriptor, *legacy)) {
+            return NormalizeUVE(*descriptor, *legacy);
+        }
+    }
+    return std::nullopt;
+}
+
+bool SettingsRegistryUVE::MigrateDeprecatedValuesUVE(IConfigManagerUVE& store) const {
+    bool changed = false;
+    for (const auto& alias : m_descriptors) {
+        if (!alias->HasFlagUVE(kSettingFlagDeprecatedUVE) || alias->replacementId.empty()) {
+            continue;
+        }
+        const SettingDescriptorUVE* const replacement = FindUVE(alias->replacementId);
+        if (replacement == nullptr || replacement->HasFlagUVE(kSettingFlagDeprecatedUVE)) {
+            continue; // registration prevents this; remain defensive if the registry changes later
+        }
+        const std::optional<SettingValueUVE> current = GetValidStoredValueUVE(*replacement, store);
+        const std::optional<SettingValueUVE> legacy = GetValidStoredValueUVE(*alias, store);
+        if (current) {
+            changed = ClearDescriptorValueUVE(store, *alias) || changed;
+        } else if (legacy && IsSettingValueValidUVE(*replacement, *legacy)) {
+            if (NormalizeUVE(*replacement, *legacy) == replacement->defaultValue) {
+                changed = ClearValueUVE(store, replacement->id) || changed;
+            } else if (SetValueUVE(store, replacement->id, NormalizeUVE(*replacement, *legacy))) {
+                changed = true;
+            }
+        }
+    }
+    return changed;
 }
 
 bool SettingsRegistryUVE::IsModifiedUVE(const IConfigManagerUVE& store, const std::string_view id) const {
@@ -516,7 +762,15 @@ double SettingsRegistryUVE::GetFloatUVE(const IConfigManagerUVE& store, const st
 
 std::string SettingsRegistryUVE::GetStringUVE(const IConfigManagerUVE& store, const std::string_view id,
                                               std::string fallback) const {
-    return GetTypedUVE<std::string>(*this, store, id, {SettingTypeUVE::String}, std::move(fallback));
+    return GetTypedUVE<std::string>(*this, store, id,
+                                    {SettingTypeUVE::String, SettingTypeUVE::FilePath, SettingTypeUVE::KeyBinding},
+                                    std::move(fallback));
+}
+
+SettingStringListUVE SettingsRegistryUVE::GetStringListUVE(const IConfigManagerUVE& store,
+                                                            const std::string_view id,
+                                                            SettingStringListUVE fallback) const {
+    return GetTypedUVE<SettingStringListUVE>(*this, store, id, {SettingTypeUVE::StringList}, std::move(fallback));
 }
 
 SettingColorUVE SettingsRegistryUVE::GetColorUVE(const IConfigManagerUVE& store, const std::string_view id,

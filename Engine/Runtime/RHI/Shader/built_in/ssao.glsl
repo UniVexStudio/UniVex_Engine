@@ -31,13 +31,14 @@ uniform mat4 uProjection;
 uniform float uRadius;
 uniform float uBias;
 uniform float uIntensity;
+uniform float uPower;
+uniform int uSampleCount;
 
-// A fixed 12-tap hemisphere kernel (offline-generated, hemisphere-distributed, biased toward the
-// origin so more samples land close to the shaded point) stands in for the noise-texture-driven
-// per-pixel kernel rotation real engines typically use - HashUVE() below provides the per-pixel
-// rotation instead, trading a small amount of dither/banding for not needing a vendored noise
-// texture asset. Reasonable for this engine's scope; a dedicated rotation-noise texture is a
-// future quality upgrade, not a correctness requirement.
+// A 12-entry hemisphere kernel (quality tiers consume its first 4, 8, or all 12 samples) is
+// offline-generated, hemisphere-distributed, and biased toward the origin so more samples land
+// close to the shaded point. HashUVE() below supplies per-pixel kernel rotation without a vendored
+// noise texture, trading a small amount of dither/banding for a compact built-in path. A dedicated
+// rotation-noise texture remains a future quality upgrade, not a correctness requirement.
 const int kKernelSizeUVE = 12;
 const vec3 kKernelUVE[12] = vec3[](
     vec3(-0.0557, 0.0476, 0.0681),
@@ -97,7 +98,8 @@ void main() {
     mat3 tbn = mat3(tangent, bitangent, viewNormal);
 
     float occlusion = 0.0;
-    for (int sampleIndex = 0; sampleIndex < kKernelSizeUVE; ++sampleIndex) {
+    int sampleCount = clamp(uSampleCount, 1, kKernelSizeUVE);
+    for (int sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex) {
         vec3 samplePos = centerViewPos + (tbn * kKernelUVE[sampleIndex]) * uRadius;
 
         // Re-project the sample point with uProjection to look up what's actually in the depth
@@ -114,7 +116,8 @@ void main() {
         float rangeCheck = smoothstep(0.0, 1.0, uRadius / max(abs(centerViewPos.z - sampledViewPos.z), 0.0001));
         occlusion += (sampledViewPos.z >= samplePos.z + uBias ? 1.0 : 0.0) * rangeCheck;
     }
-    occlusion = 1.0 - (occlusion / float(kKernelSizeUVE)) * uIntensity;
-    FragColor = vec4(vec3(clamp(occlusion, 0.0, 1.0)), 1.0);
+    float visibility = clamp(1.0 - (occlusion / float(sampleCount)) * max(uIntensity, 0.0), 0.0, 1.0);
+    visibility = pow(visibility, clamp(uPower, 0.1, 4.0));
+    FragColor = vec4(vec3(visibility), 1.0);
 }
 #endif

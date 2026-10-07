@@ -582,7 +582,8 @@ void MeshRendererUVE::CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visib
             } else if (!candidate.drawsInView) {
                 continue;
             }
-            if (!TestMeshRenderVisibilityUVE(candidate.placement, cullFrustum, eligibility)) {
+            if (!TestMeshRenderVisibilityUVE(candidate.placement, cullFrustum, eligibility,
+                                             visibilitySet.frustumTestsDisabled)) {
                 continue;
             }
 
@@ -626,7 +627,10 @@ void MeshRendererUVE::CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visib
         return;
     }
     for (const MeshVisibilitySetUVE::CandidateClusterUVE& cluster : visibilitySet.clusters) {
-        if (!cullFrustum.IntersectsUVE(cluster.bounds)) {
+        // A frozen cull takes every cluster: rejecting one here would drop candidates the disabled
+        // frustum test was asked to keep, and the whole point of the freeze is that nothing is
+        // dropped for being off-screen.
+        if (!visibilitySet.frustumTestsDisabled && !cullFrustum.IntersectsUVE(cluster.bounds)) {
             continue;
         }
         cullRangeUVE(cluster.first, cluster.count);

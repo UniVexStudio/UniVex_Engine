@@ -459,6 +459,39 @@ TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_DifferentFrustaSelectDiffer
     EXPECT_NE(forwardQueue.opaqueItems[0].worldMatrix, backwardQueue.opaqueItems[0].worldMatrix);
 }
 
+TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_FrustumCullingFreezeKeepsOffFrustumCandidates) {
+    // The per-cull freeze flag (MeshVisibilitySetUVE::frustumTestsDisabled) is what the renderer sets
+    // on the colour view when CullingSettingsUVE disables frustum culling. This proves the cull
+    // honours it end to end - both the cluster-level skip and the per-candidate frustum test - so an
+    // off-frustum candidate reaches the queue it would otherwise be dropped from. It is per-cull
+    // state, so clearing it again must restore culling on the very next call.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_freeze.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_freeze.uvmat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    const Math::FrustumUVE frustum = MakeTestFrustumUVE();
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 2U);
+
+    RenderQueueUVE culled;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, frustum, culled);
+    EXPECT_EQ(culled.opaqueItems.size(), 1U) << "the behind-camera mesh is frustum-rejected";
+
+    visibilitySet.frustumTestsDisabled = true;
+    RenderQueueUVE frozen;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, frustum, frozen);
+    EXPECT_EQ(frozen.opaqueItems.size(), 2U) << "the freeze keeps the off-frustum candidate";
+
+    visibilitySet.frustumTestsDisabled = false;
+    RenderQueueUVE restored;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, frustum, restored);
+    EXPECT_EQ(restored.opaqueItems.size(), 1U) << "the flag is per-cull, not sticky";
+}
+
 TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_ReusedAcrossFrames_DoesNotAccumulate) {
     // Renderer3DUVE holds one set for the lifetime of the renderer, so appending instead of
     // clearing would re-render every frame the scene has ever had.

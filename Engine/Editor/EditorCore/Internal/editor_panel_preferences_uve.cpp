@@ -33,6 +33,7 @@ using Config::SettingValueUVE;
 
 /// The theme's check-mark blue: marks a setting that differs from its default.
 constexpr ImVec4 kModifiedAccentUVE{0.561F, 0.706F, 0.847F, 1.0F};
+constexpr ImVec4 kRestartRequiredAccentUVE{0.95F, 0.70F, 0.30F, 1.0F};
 
 /// One visible setting and whether it differs from its default, worked out once per frame.
 struct PreferenceRowUVE final {
@@ -83,7 +84,8 @@ void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float si
 /// The control for one setting's value. Returns the new value when the person changed it.
 [[nodiscard]] std::optional<SettingValueUVE> DrawSettingControlUVE(const SettingDescriptorUVE& descriptor,
                                                                    const SettingValueUVE& current,
-                                                                   ColorPickerPreferencesUVE& pickerPreferences) {
+                                                                   ColorPickerPreferencesUVE& pickerPreferences,
+                                                                   std::string& activeKeyBindingId) {
     ImGui::SetNextItemWidth(-std::numeric_limits<float>::min());
     switch (descriptor.type) {
     case SettingTypeUVE::Bool: {
@@ -111,15 +113,65 @@ void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float si
                    ? std::optional<SettingValueUVE>(value)
                    : std::nullopt;
     }
-    case SettingTypeUVE::String: {
+    case SettingTypeUVE::String:
+    case SettingTypeUVE::FilePath: {
         std::string buffer = std::get<std::string>(current);
         const std::size_t capacity = descriptor.maxLength != 0U ? descriptor.maxLength : 256U;
         buffer.resize(std::max(capacity, buffer.size()) + 1U, '\0');
-        if (!ImGui::InputText("##value", buffer.data(), capacity + 1U)) {
+        const bool changed = descriptor.type == SettingTypeUVE::FilePath
+                                 ? ImGui::InputTextWithHint("##value", "File or directory path", buffer.data(),
+                                                            capacity + 1U)
+                                 : ImGui::InputText("##value", buffer.data(), capacity + 1U);
+        if (!changed) {
             return std::nullopt;
         }
         buffer.resize(std::char_traits<char>::length(buffer.c_str()));
         return SettingValueUVE{std::move(buffer)};
+    }
+    case SettingTypeUVE::StringList:
+        // The session-backed list descriptors stay hidden until the panel has an editable list row.
+        ImGui::TextDisabled("%zu entries", std::get<Config::SettingStringListUVE>(current).size());
+        return std::nullopt;
+    case SettingTypeUVE::KeyBinding: {
+        const std::string& binding = std::get<std::string>(current);
+        bool listening = activeKeyBindingId == descriptor.id;
+        if (listening) {
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+                activeKeyBindingId.clear();
+                listening = false;
+            } else {
+                const ImGuiIO& io = ImGui::GetIO();
+                for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END; ++key) {
+                    if (IsShortcutKeyUVE(key) && ImGui::IsKeyPressed(static_cast<ImGuiKey>(key), false)) {
+                        activeKeyBindingId.clear();
+                        return SettingValueUVE{FormatEditorShortcutUVE(
+                            EditorShortcutUVE{key, io.KeyCtrl, io.KeyShift, io.KeyAlt})};
+                    }
+                }
+            }
+        }
+
+        const std::optional<EditorShortcutUVE> parsed = ParseEditorShortcutUVE(binding);
+        std::string label = "Unbound";
+        if (listening) {
+            label = "Press a key...";
+        } else if (parsed && !parsed->IsEmptyUVE()) {
+            label = DisplayEditorShortcutUVE(*parsed);
+        }
+        const float clearWidth = ImGui::GetFrameHeight();
+        if (ImGui::Button(label.c_str(), ImVec2{binding.empty() || listening ? -1.0F : -clearWidth - 4.0F, 0.0F})) {
+            activeKeyBindingId = descriptor.id;
+        }
+        ImGui::SetItemTooltip(listening ? "Press a key chord, or Escape to cancel."
+                                        : "Click, then press a key chord.");
+        if (!binding.empty() && !listening) {
+            ImGui::SameLine(0.0F, 4.0F);
+            if (ImGui::Button("x", ImVec2{clearWidth, 0.0F})) {
+                return SettingValueUVE{std::string{}};
+            }
+            ImGui::SetItemTooltip("Clear this shortcut");
+        }
+        return std::nullopt;
     }
     case SettingTypeUVE::Enum: {
         const std::int64_t value = std::get<std::int64_t>(current);
@@ -197,6 +249,7 @@ bool EditorUVE::SaveProjectSettingsUVE() {
 
 void EditorUVE::DrawEditorPreferencesWindowUVE() {
     if (!m_preferencesWindow.visible) {
+        m_preferencesWindow.activeKeyBindingId.clear();
         return;
     }
     const SettingsWindowSourceUVE source{
@@ -211,6 +264,7 @@ void EditorUVE::DrawEditorPreferencesWindowUVE() {
 
 void EditorUVE::DrawProjectSettingsWindowUVE() {
     if (!m_projectSettingsWindow.visible) {
+        m_projectSettingsWindow.activeKeyBindingId.clear();
         return;
     }
     Config::SettingsDocumentUVE& project = m_services->GetProjectSettingsUVE();
@@ -236,8 +290,8 @@ void EditorUVE::DrawProjectSettingsWindowUVE() {
     }
 }
 
-void EditorUVE::DrawSettingRowUVE(const SettingDescriptorUVE& descriptor, const bool modified,
-                                  const SettingsWindowSourceUVE& source) {
+void EditorUVE::DrawSettingRowUVE(SettingsWindowStateUVE& state, const SettingDescriptorUVE& descriptor,
+                                  const bool modified, const SettingsWindowSourceUVE& source) {
     const std::optional<SettingValueUVE> current = source.get(descriptor.id);
     if (!current) {
         return;
@@ -277,7 +331,8 @@ void EditorUVE::DrawSettingRowUVE(const SettingDescriptorUVE& descriptor, const 
     }
 
     ImGui::TableSetColumnIndex(1);
-    std::optional<SettingValueUVE> edited = DrawSettingControlUVE(descriptor, *current, m_colorPickerPreferences);
+    std::optional<SettingValueUVE> edited =
+        DrawSettingControlUVE(descriptor, *current, m_colorPickerPreferences, state.activeKeyBindingId);
 
     ImGui::TableSetColumnIndex(2);
     if (modified) {
@@ -305,11 +360,28 @@ void EditorUVE::DrawSettingRowUVE(const SettingDescriptorUVE& descriptor, const 
 
 void EditorUVE::DrawSettingsWindowBodyUVE(SettingsWindowStateUVE& state, const SettingsWindowSourceUVE& source) {
     const float fontSize = ImGui::GetFontSize();
+    const std::vector<const SettingDescriptorUVE*> allDescriptors = source.registry->GetAllUVE();
+
+    // Snapshot restart-only values before the first edit in this window. Comparing against this
+    // baseline means reverting a setting also clears the restart notice.
+    if (!state.restartRequiredBaselineCaptured) {
+        for (const SettingDescriptorUVE* descriptor : allDescriptors) {
+            if (!descriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE) ||
+                descriptor->HasFlagUVE(Config::kSettingFlagHiddenUVE) ||
+                descriptor->HasFlagUVE(Config::kSettingFlagDeprecatedUVE)) {
+                continue;
+            }
+            if (const std::optional<SettingValueUVE> value = source.get(descriptor->id)) {
+                state.restartRequiredBaseline.emplace(descriptor->id, *value);
+            }
+        }
+        state.restartRequiredBaselineCaptured = true;
+    }
 
     // Every setting a person may change, with whether it differs from its default.
     std::vector<PreferenceRowUVE> rows;
     bool anyAdvanced = false;
-    for (const SettingDescriptorUVE* descriptor : source.registry->GetAllUVE()) {
+    for (const SettingDescriptorUVE* descriptor : allDescriptors) {
         if (descriptor->HasFlagUVE(Config::kSettingFlagHiddenUVE)) {
             continue;
         }
@@ -350,6 +422,39 @@ void EditorUVE::DrawSettingsWindowBodyUVE(SettingsWindowStateUVE& state, const S
                 IsInSettingCategoryUVE(row.descriptor->category, state.category)) &&
                (!state.modifiedOnly || row.modified);
     };
+    if (!state.activeKeyBindingId.empty() &&
+        std::none_of(rows.begin(), rows.end(), [&](const PreferenceRowUVE& row) {
+            return row.descriptor->id == state.activeKeyBindingId && isShown(row);
+        })) {
+        state.activeKeyBindingId.clear();
+    }
+
+    std::vector<const SettingDescriptorUVE*> restartRequiredChanges;
+    std::string restartRequiredTooltip = "Restart the editor to apply these changes:";
+    for (const SettingDescriptorUVE* descriptor : allDescriptors) {
+        if (!descriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE) ||
+            descriptor->HasFlagUVE(Config::kSettingFlagHiddenUVE) ||
+            descriptor->HasFlagUVE(Config::kSettingFlagDeprecatedUVE)) {
+            continue;
+        }
+        const auto baseline = state.restartRequiredBaseline.find(descriptor->id);
+        const std::optional<SettingValueUVE> current = source.get(descriptor->id);
+        if (baseline == state.restartRequiredBaseline.end() || !current || *current == baseline->second) {
+            continue;
+        }
+        restartRequiredChanges.push_back(descriptor);
+        restartRequiredTooltip += "\n- ";
+        restartRequiredTooltip += descriptor->displayName.empty() ? descriptor->id : descriptor->displayName;
+        restartRequiredTooltip += " (";
+        restartRequiredTooltip += descriptor->id;
+        restartRequiredTooltip += ')';
+    }
+    if (!restartRequiredChanges.empty()) {
+        ImGui::TextColored(kRestartRequiredAccentUVE, "Restart the editor to apply %zu changed setting%s.",
+                           restartRequiredChanges.size(), restartRequiredChanges.size() == 1U ? "" : "s");
+        ImGui::SetItemTooltip("%s", restartRequiredTooltip.c_str());
+        ImGui::Spacing();
+    }
 
     // Left: the category tree. A dot marks a category holding a modified setting.
     std::vector<const SettingDescriptorUVE*> descriptors;
@@ -413,7 +518,7 @@ void EditorUVE::DrawSettingsWindowBodyUVE(SettingsWindowStateUVE& state, const S
                     ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch, 0.58F);
                     ImGui::TableSetupColumn("Reset", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
                 }
-                DrawSettingRowUVE(*row.descriptor, row.modified, source);
+                DrawSettingRowUVE(state, *row.descriptor, row.modified, source);
                 ++shownCount;
                 shownModifiedCount += row.modified ? 1U : 0U;
             }

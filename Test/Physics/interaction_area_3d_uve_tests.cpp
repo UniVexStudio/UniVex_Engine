@@ -36,6 +36,7 @@ TEST(InteractionArea3DUVETest, IsArmedUVE_FalseWhenDisabledOrInvalid) {
 
 TEST(InteractionArea3DUVETest, AcceptsInteractorUVE_SkipsSelfIgnoreAndMask) {
     InteractionArea3DComponentUVE area{};
+    area.collisionMask = 1U;
     EXPECT_TRUE(InteractionArea3DUVE::AcceptsInteractorUVE(kArea, area, kFirst, 1U, 0xFFFFFFFFU));
     EXPECT_FALSE(InteractionArea3DUVE::AcceptsInteractorUVE(kArea, area, kArea, 1U, 0xFFFFFFFFU));
     EXPECT_FALSE(InteractionArea3DUVE::AcceptsInteractorUVE(kArea, area, kInvalidEntityUVE, 1U, 0xFFFFFFFFU));

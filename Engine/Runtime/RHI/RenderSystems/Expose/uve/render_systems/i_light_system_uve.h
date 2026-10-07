@@ -67,14 +67,17 @@ struct LightDataUVE {
     /// Directional only: how cascades share the shadow distance, 0 evenly .. 1 packed near the
     /// camera; negative keeps the renderer's own setting.
     float shadowSplitBlend = -1.0F;
+    /// Directional only: width, in metres, of the fade-to-lit band at the last cascade.
+    float shadowDistanceFadeRange = 0.0F;
 
     /// Render layers this light illuminates. Default every layer, matching an unauthored emitter.
     std::uint32_t cullMask = 0xFFFFFFFFU;
     /// Scales the specular term. LightComponent slots stay at 1 so their look does not change.
     float specular = 1.0F;
-    /// Shader-ready constant/slope shadow bias (LightEmitter 0.1 maps to the previous 0.0025).
-    float shadowBias = 0.0025F;
-    float shadowNormalBias = 1.0F;
+    /// Shader-ready depth bias; negative inherits the renderer's configured default.
+    float shadowBias = -1.0F;
+    /// Angle-aware normal-bias multiplier; negative inherits the renderer's configured default.
+    float shadowNormalBias = -1.0F;
     float shadowOpacity = 1.0F;
     /// PCF kernel radius when >= 0; negative keeps the renderer's own setting.
     float shadowBlur = -1.0F;

@@ -12,6 +12,22 @@
 
 namespace UVE::UI {
 
+/// Maps authored UI coordinates to the renderer's current presentation target. Draw coordinates
+/// become `authored * scale + offset`; pointer coordinates are first converted by `inputScale`,
+/// then `inputOffset` and the draw offset are removed before button hit testing.
+struct UICoordinateTransformUVE final {
+    float scaleX = 1.0F;
+    float scaleY = 1.0F;
+    float offsetX = 0.0F;
+    float offsetY = 0.0F;
+    float inputScaleX = 1.0F;
+    float inputScaleY = 1.0F;
+    float inputOffsetX = 0.0F;
+    float inputOffsetY = 0.0F;
+
+    [[nodiscard]] bool operator==(const UICoordinateTransformUVE&) const = default;
+};
+
 /// What UI text needs in order to be localized, supplied by the caller.
 ///
 /// Whether an entity's text is translated is a hierarchy question - its Auto Translate mode is
@@ -34,6 +50,10 @@ public:
     UIRuntimeUVE(const UIRuntimeUVE&) = delete;
     UIRuntimeUVE& operator=(const UIRuntimeUVE&) = delete;
 
+    /// Applies the same presentation transform to drawing and pointer hit testing. Invalid scales
+    /// are ignored and reset to identity so malformed runtime metrics cannot poison UI state.
+    void SetCoordinateTransformUVE(const UICoordinateTransformUVE& transform) noexcept;
+
     /// `localization` defaults to none, so a caller that does not localize draws authored text
     /// exactly as it always did. An authored string is its own translation key: a table maps
     /// "Play" to "Maglaro", and a string with no entry is drawn as authored.
@@ -46,6 +66,7 @@ public:
 private:
     UIFontAtlasUVE m_fontAtlas;
     UIDrawBatchUVE m_drawBatch;
+    UICoordinateTransformUVE m_coordinateTransform{};
 };
 
 } // namespace UVE::UI
