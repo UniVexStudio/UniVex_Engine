@@ -25,6 +25,7 @@ enum class ProjectPackCodeUVE : std::uint8_t {
     NoStartupSceneConfigured,
     RuntimeExecutableNotFound,
     ContentRootNotFound,
+    ApplicationResourceNotFound,
     OutputDirectoryNotEmpty,
     CopyFailed,
 };

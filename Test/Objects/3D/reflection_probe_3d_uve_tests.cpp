@@ -112,13 +112,39 @@ TEST(CubemapFaceUVETest, CubeCornerLandsOnTheFaceCorner) {
 TEST_F(ReflectionProbe3DImageryUVETest, FrameAxesFollowRotationAndInfluenceMatchesTheChebyshevRule) {
     ReflectionProbe3DComponentUVE probe{};
     probe.size = Math::Vector3UVE{4.0F, 4.0F, 4.0F};
+    probe.resolution = ReflectionProbeResolutionUVE::High;
     ReflectionProbe3DFrameUVE frame{};
     ASSERT_TRUE(TryMakeReflectionProbe3DFrameUVE(probe, Math::Vector3UVE{1.0F, 2.0F, 3.0F}, Math::QuaternionUVE{},
                                                  frame));
     EXPECT_EQ(frame.halfExtents.x, 2.0F);
+    EXPECT_EQ(frame.captureResolution, 256U);
     EXPECT_FLOAT_EQ(SampleReflectionProbe3DInfluenceUVE(frame, Math::Vector3UVE{1.0F, 2.0F, 3.0F}), 1.0F);
     EXPECT_FLOAT_EQ(SampleReflectionProbe3DInfluenceUVE(frame, Math::Vector3UVE{3.0F, 2.0F, 3.0F}), 0.0F);
     EXPECT_FLOAT_EQ(SampleReflectionProbe3DInfluenceUVE(frame, Math::Vector3UVE{2.0F, 2.0F, 3.0F}), 0.5F);
+}
+
+TEST_F(ReflectionProbe3DImageryUVETest, ResolutionTiersAreBoundedAndMapToSquareCaptureSizes) {
+    const std::array<ReflectionProbeResolutionUVE, 4> tiers{
+        ReflectionProbeResolutionUVE::Low, ReflectionProbeResolutionUVE::Medium,
+        ReflectionProbeResolutionUVE::High, ReflectionProbeResolutionUVE::Ultra};
+    const std::array<std::uint32_t, 4> pixels{64U, 128U, 256U, 512U};
+    ReflectionProbe3DComponentUVE probe{};
+    EXPECT_EQ(probe.resolution, ReflectionProbeResolutionUVE::Medium);
+    EXPECT_EQ(GetReflectionProbeResolutionPixelsUVE(probe.resolution), 128U);
+
+    for (std::size_t i = 0; i < tiers.size(); ++i) {
+        probe.resolution = tiers[i];
+        EXPECT_TRUE(IsReflectionProbe3DObjectComponentValidUVE(probe));
+        EXPECT_EQ(GetReflectionProbeResolutionPixelsUVE(tiers[i]), pixels[i]);
+        ReflectionProbe3DFrameUVE frame{};
+        ASSERT_TRUE(TryMakeReflectionProbe3DFrameUVE(probe, Math::Vector3UVE{}, Math::QuaternionUVE{}, frame));
+        EXPECT_EQ(frame.captureResolution, pixels[i]);
+    }
+
+    probe.resolution = static_cast<ReflectionProbeResolutionUVE>(255U);
+    EXPECT_FALSE(IsReflectionProbe3DObjectComponentValidUVE(probe));
+    ReflectionProbe3DFrameUVE invalidFrame{};
+    EXPECT_FALSE(TryMakeReflectionProbe3DFrameUVE(probe, Math::Vector3UVE{}, Math::QuaternionUVE{}, invalidFrame));
 }
 
 TEST_F(ReflectionProbe3DImageryUVETest, BoxProjectionFromTheCentreHitsTheFace) {

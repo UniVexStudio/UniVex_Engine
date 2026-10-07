@@ -4,6 +4,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include "uve/component/editor_internal_entity_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/transform_component_uve.h"
@@ -24,6 +26,25 @@ protected:
     EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
     SceneGraphUVE sceneGraph;
 };
+
+TEST(DirectionalLight3DComponentUVETest, ShadowDefaultsAreValidAndRejectOutOfRangeValues) {
+    const DirectionalLight3DComponentUVE defaults;
+    EXPECT_FLOAT_EQ(defaults.shadowSplitBlend, -1.0F);
+    EXPECT_FLOAT_EQ(defaults.shadowDistanceFadeRange, 10.0F);
+    EXPECT_TRUE(IsDirectionalLight3DComponentValidUVE(defaults));
+
+    DirectionalLight3DComponentUVE invalid = defaults;
+    invalid.shadowSplitBlend = -1.01F;
+    EXPECT_FALSE(IsDirectionalLight3DComponentValidUVE(invalid));
+    invalid = defaults;
+    invalid.shadowSplitBlend = 1.01F;
+    EXPECT_FALSE(IsDirectionalLight3DComponentValidUVE(invalid));
+    invalid = defaults;
+    invalid.shadowDistanceFadeRange = -0.1F;
+    EXPECT_FALSE(IsDirectionalLight3DComponentValidUVE(invalid));
+    invalid.shadowDistanceFadeRange = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(IsDirectionalLight3DComponentValidUVE(invalid));
+}
 
 TEST_F(DirectionalLight3DUVETest, IdentityRotationPointsAlongNegativeZ) {
     const EntityUVE sun = entityManager.CreateEntityUVE();

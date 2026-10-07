@@ -3,18 +3,20 @@
 
 #pragma once
 
+#include <string>
+
 #include "uve/window/i_window_manager_uve.h"
 #include "uve/window/window_desc_uve.h"
 
 namespace UVE::Window {
 
 /// NullWindowManagerUVE is the headless IWindowManagerUVE backend: it never touches GLFW, X11, or
-/// any OS window/GL API — it bookkeeps a width/height/vsync/fullscreen state matching what a real
-/// window with the given WindowDescUVE would report, so code that queries an IWindowManagerUVE&
-/// behaves consistently whether or not a real window exists. Used whenever
-/// EngineConfigUVE::headlessUVE is true, so EngineServicesUVE's "every service is a live
-/// reference" contract needs no headless-mode exception — mirrors NullRenderDeviceUVE/
-/// NullAudioDeviceUVE's exact role for their own interfaces.
+/// any OS window/GL API — it bookkeeps the portable window state requested through WindowDescUVE,
+/// including size, V-sync, mode, title, and display-sleep policy, so headless integrations can
+/// inspect the same settings without native side effects. Used whenever EngineConfigUVE::headlessUVE
+/// is true, so EngineServicesUVE's "every service is a live reference" contract needs no
+/// headless-mode exception — mirrors NullRenderDeviceUVE/NullAudioDeviceUVE's role for their own
+/// interfaces.
 /// Thread-safety: not thread-safe, matching IWindowManagerUVE's own documented contract.
 class NullWindowManagerUVE final : public IWindowManagerUVE {
 public:
@@ -27,8 +29,19 @@ public:
     [[nodiscard]] bool IsCloseRequestedUVE() const noexcept override;
     void SetVSyncEnabledUVE(bool enabled) override;
     [[nodiscard]] bool IsVSyncEnabledUVE() const noexcept override;
+    void SetVSyncModeUVE(Platform::VSyncModeUVE mode) override;
+    [[nodiscard]] Platform::VSyncModeUVE GetVSyncModeUVE() const noexcept override;
     void SetFullscreenUVE(bool fullscreen) override;
     [[nodiscard]] bool IsFullscreenUVE() const noexcept override;
+    void SetWindowModeUVE(Platform::WindowModeUVE mode) override;
+    [[nodiscard]] Platform::WindowModeUVE GetWindowModeUVE() const noexcept override;
+    void SetWindowTitleUVE(std::string_view title) override;
+    /// Returns the last accepted title so headless integrations can verify title updates.
+    [[nodiscard]] std::string_view GetWindowTitleUVE() const noexcept;
+    void SetDisplaySleepAllowedUVE(bool allowed) noexcept override;
+    /// Reports the retained request only; the headless backend never changes OS power state.
+    [[nodiscard]] bool IsDisplaySleepAllowedUVE() const noexcept;
+    void GetContentScaleUVE(float& outX, float& outY) const noexcept override;
     [[nodiscard]] std::uint32_t GetWidthUVE() const noexcept override;
     [[nodiscard]] std::uint32_t GetHeightUVE() const noexcept override;
     [[nodiscard]] std::vector<MonitorInfoUVE> EnumerateMonitorsUVE() const override;
@@ -39,7 +52,12 @@ private:
     std::uint32_t m_width;
     std::uint32_t m_height;
     bool m_vsyncEnabled;
+    Platform::VSyncModeUVE m_vsyncMode = Platform::VSyncModeUVE::On;
+    Platform::WindowModeUVE m_windowMode = Platform::WindowModeUVE::Windowed;
+    double m_contentScaleOverride = 0.0;
     bool m_fullscreen = false;
+    bool m_displaySleepAllowed = true;
+    std::string m_windowTitle;
 };
 
 } // namespace UVE::Window

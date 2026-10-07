@@ -28,11 +28,15 @@ void WriteFixtureFileUVE(const std::filesystem::path& path, std::string_view con
     file << contents;
 }
 
-TEST(ConfigManagerUVETest, LoadUVE_NonexistentPath_ReturnsFalseAndDefaultsAreReturned) {
+TEST(ConfigManagerUVETest, LoadUVE_NonexistentPath_ReturnsFalseAndStartsWithAnEmptyDocument) {
+    const std::filesystem::path missingPath = "uve_config_tests_nonexistent.uvsettings";
+    std::filesystem::remove(missingPath);
     ConfigManagerUVE config;
-    EXPECT_FALSE(config.LoadUVE("uve_config_tests_nonexistent.uvsettings"));
+    config.SetIntUVE("window.width", 1600);
+    EXPECT_FALSE(config.LoadUVE(missingPath));
     EXPECT_EQ(config.GetStringUVE("editor.theme", "light"), "light");
     EXPECT_EQ(config.GetIntUVE("window.width", 1280), 1280);
+    std::filesystem::remove(missingPath);
 }
 
 TEST(ConfigManagerUVETest, LoadUVE_ValidFixture_ReadsAllFourScalarTypesAcrossNestedPaths) {
@@ -91,6 +95,28 @@ TEST(ConfigManagerUVETest, SetAndGetXUVE_RoundTripsEachScalarType) {
     EXPECT_EQ(config.GetIntUVE("window.width", 0), 1600);
     EXPECT_DOUBLE_EQ(config.GetDoubleUVE("window.scale", 0.0), 1.25);
     EXPECT_TRUE(config.GetBoolUVE("server.enabled", false));
+}
+
+TEST(ConfigManagerUVETest, ClearAllUVE_EmptiesTheDocumentAndKeepsTheSavePath) {
+    const std::filesystem::path savePath = "uve_config_tests_clear_all.uvsettings";
+    std::filesystem::remove(savePath);
+
+    ConfigManagerUVE config;
+    config.SetIntUVE("editor.width", 1280);
+    ASSERT_TRUE(config.SaveUVE(savePath));
+    config.SetStringUVE("editor.theme", "dark");
+
+    config.ClearAllUVE();
+
+    EXPECT_FALSE(config.HasKeyUVE("editor.width"));
+    EXPECT_FALSE(config.HasKeyUVE("editor.theme"));
+    ASSERT_TRUE(config.SaveUVE());
+
+    ConfigManagerUVE reloaded;
+    ASSERT_TRUE(reloaded.LoadUVE(savePath));
+    EXPECT_FALSE(reloaded.HasKeyUVE("editor.width"));
+    EXPECT_FALSE(reloaded.HasKeyUVE("editor.theme"));
+    std::filesystem::remove(savePath);
 }
 
 TEST(ConfigManagerUVETest, SetStringUVE_OnBrandNewNestedPath_CreatesIntermediateObjects) {
@@ -153,7 +179,9 @@ TEST(ConfigManagerUVETest, LoadUVE_MalformedJson_ReturnsFalseAndLogsError) {
     logger.AddSink(std::move(memorySink));
 
     ConfigManagerUVE config;
+    config.SetIntUVE("keep.value", 42);
     EXPECT_FALSE(config.LoadUVE(fixturePath));
+    EXPECT_EQ(config.GetIntUVE("keep.value", 0), 42);
 
     const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
     const bool foundParseError =

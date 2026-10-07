@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "uve/platform/application_window_settings_uve.h"
+
 namespace UVE::Window {
 
 /// IVulkanWindowSurfaceUVE is the optional capability interface a WindowManager implementation
@@ -50,6 +52,13 @@ public:
     /// Current drawable framebuffer size in pixels, for swapchain extent selection. Mirrors
     /// glfwGetFramebufferSize semantics (may differ from the window size on HiDPI displays).
     virtual void GetVulkanFramebufferSizeUVE(std::uint32_t& outWidth, std::uint32_t& outHeight) const = 0;
+
+    /// Present mode requested by the project; VulkanRenderDeviceUVE chooses the closest mode
+    /// actually advertised by the surface, always retaining FIFO as the guaranteed fallback.
+    [[nodiscard]] virtual Platform::VSyncModeUVE GetRequestedVSyncModeUVE() const noexcept {
+        return Platform::VSyncModeUVE::On;
+    }
+    [[nodiscard]] virtual bool IsTransparentFramebufferRequestedUVE() const noexcept { return false; }
 };
 
 } // namespace UVE::Window

@@ -321,7 +321,11 @@ void DecalRendererUVE::BuildDrawListUVE(Scene::IEntityManagerUVE& entityManager,
 
             const Math::AabbUVE projectionBounds =
                 Math::AabbUVE::FromCenterExtentsUVE(projection.worldPosition, projection.halfExtents);
-            if (!viewFrustum.IntersectsUVE(projectionBounds)) {
+            // The frustum-culling debug freeze covers decals too: a decal is painted by the same
+            // main view whose meshes stopped being rejected, and leaving it culled would make the
+            // frozen frame disagree with itself about what is on screen. Occlusion, layer and
+            // distance-fade verdicts are separate systems and keep running.
+            if (!visibilitySet.frustumTestsDisabled && !viewFrustum.IntersectsUVE(projectionBounds)) {
                 ++outDrawList.decalsOutsideView;
                 return;
             }

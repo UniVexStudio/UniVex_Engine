@@ -86,8 +86,10 @@ if(UVE_HAS_DESKTOP_GL)
     add_subdirectory(Engine/Editor/EditorCore)
     add_subdirectory(Engine/Editor/Viewport)
     add_subdirectory(Engine/Editor/EditorApp)
-    add_subdirectory(Engine/App)
 endif()
+# The runtime CLI and project packager use EngineCore's Null-backed CPU path too; only the editor
+# executable remains desktop-GL gated.
+add_subdirectory(Engine/App)
 
 if(UVE_BUILD_TESTS)
     add_subdirectory(Test)

@@ -187,9 +187,11 @@ public:
     /// "render device takes IWindowManagerUVE&" call-shape precedent (audit #30 naming).
     /// `windowManager` must outlive the returned device. VkInstance, VkDevice, and the
     /// surface/swapchain are all owned by the returned device and destroyed in strict LIFO
-    /// order from its destructor, while windowManager's window is still alive.
+    /// order from its destructor, while windowManager's window is still alive. When requested,
+    /// VK_LAYER_KHRONOS_validation is enabled only if installed; missing validation tooling warns
+    /// and does not prevent the ordinary backend fallback chain from running.
     [[nodiscard]] static std::unique_ptr<VulkanRenderDeviceUVE> CreateUVE(
-        Window::IWindowManagerUVE& windowManager);
+        Window::IWindowManagerUVE& windowManager, bool enableValidationLayersUVE = false);
 
     /// Same factory contract as the window-manager overload above (nullptr on any host-level
     /// failure, never throws), but takes the surface capability *directly* — for Vulkan
@@ -201,7 +203,7 @@ public:
     /// pickup, swapchain, present loop) is identical, because the window-manager path funnels
     /// through this same bridge on entry. `surfaceBridge` must outlive the returned device.
     [[nodiscard]] static std::unique_ptr<VulkanRenderDeviceUVE> CreateFromBridgeUVE(
-        Window::IVulkanWindowSurfaceUVE& surfaceBridge);
+        Window::IVulkanWindowSurfaceUVE& surfaceBridge, bool enableValidationLayersUVE = false);
 
     /// Fully self-contained headless construction: the device itself requests
     /// VK_EXT_headless_surface, creates its own VkHeadlessSurfaceEXT, and sizes the swapchain
@@ -213,7 +215,8 @@ public:
     /// and present path itself is identical to the windowed one — only surface provenance
     /// and extent reporting differ. Failure policy is unchanged: nullptr on any host-level
     /// failure, never throws.
-    [[nodiscard]] static std::unique_ptr<VulkanRenderDeviceUVE> CreateHeadlessUVE();
+    [[nodiscard]] static std::unique_ptr<VulkanRenderDeviceUVE> CreateHeadlessUVE(
+        bool enableValidationLayersUVE = false);
 
     ~VulkanRenderDeviceUVE() override;
 
@@ -284,7 +287,7 @@ private:
     [[nodiscard]] bool CreateFallbackTextureUVE();
 
     VulkanRenderDeviceUVE(Window::IWindowManagerUVE* windowManager,
-                          Window::IVulkanWindowSurfaceUVE* bridge);
+                          Window::IVulkanWindowSurfaceUVE* bridge, bool enableValidationLayersUVE);
 
     /// Replays one submitted recorded command buffer inside the frame render pass (see the
     /// .cpp for the M2a integration contract).

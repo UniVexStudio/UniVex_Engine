@@ -36,8 +36,10 @@ struct LightEmitterComponentUVE final {
     std::uint32_t cullMask = 0xFFFFFFFFU;
 
     bool shadowEnabled = false;
-    float shadowBias = 0.1F;
-    float shadowNormalBias = 1.0F;
+    /// Negative inherits the project default; non-negative values override it per light.
+    float shadowBias = -1.0F;
+    /// Negative inherits the project default; non-negative values override it per light.
+    float shadowNormalBias = -1.0F;
     /// 1 fully dark shadows; lower lets light through.
     float shadowOpacity = 1.0F;
     /// Softens shadow edges.

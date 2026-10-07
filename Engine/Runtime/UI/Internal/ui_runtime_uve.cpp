@@ -3,6 +3,7 @@
 #include "uve/ui/ui_runtime_uve.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -50,6 +51,18 @@ void RankWidgetUVE(const Scene::EntityUVE entity, const CanvasAncestryUVE& ances
 
 } // namespace
 
+void UIRuntimeUVE::SetCoordinateTransformUVE(const UICoordinateTransformUVE& transform) noexcept {
+    if (!std::isfinite(transform.scaleX) || !std::isfinite(transform.scaleY) || transform.scaleX <= 0.0F ||
+        transform.scaleY <= 0.0F || !std::isfinite(transform.offsetX) || !std::isfinite(transform.offsetY) ||
+        !std::isfinite(transform.inputScaleX) || !std::isfinite(transform.inputScaleY) ||
+        transform.inputScaleX <= 0.0F || transform.inputScaleY <= 0.0F ||
+        !std::isfinite(transform.inputOffsetX) || !std::isfinite(transform.inputOffsetY)) {
+        m_coordinateTransform = UICoordinateTransformUVE{};
+        return;
+    }
+    m_coordinateTransform = transform;
+}
+
 void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input::IInputSystemUVE& inputSystem,
                            const UITextLocalizationUVE& localization) {
     m_drawBatch.quads.clear();
@@ -70,7 +83,14 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
             RankWidgetUVE(entity, ResolveCanvasAncestryUVE(entityManager, entity), 0, {quad}, ranked);
         });
 
-    const Math::Vector2UVE mousePosition = inputSystem.GetMousePositionUVE();
+    const Math::Vector2UVE rawMousePosition = inputSystem.GetMousePositionUVE();
+    const Math::Vector2UVE mousePosition{
+        (rawMousePosition.x * m_coordinateTransform.inputScaleX - m_coordinateTransform.inputOffsetX -
+         m_coordinateTransform.offsetX) /
+            m_coordinateTransform.scaleX,
+        (rawMousePosition.y * m_coordinateTransform.inputScaleY - m_coordinateTransform.inputOffsetY -
+         m_coordinateTransform.offsetY) /
+            m_coordinateTransform.scaleY};
     const bool mouseDown = inputSystem.IsMouseButtonDownUVE(Input::MouseButtonUVE::Left);
     const bool mousePressedThisFrame = inputSystem.WasMouseButtonPressedThisFrameUVE(Input::MouseButtonUVE::Left);
     entityManager.ForEachUVE<Scene::UIButtonComponentUVE>(
@@ -152,6 +172,12 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
     });
     for (const RankedWidgetUVE& widget : ranked) {
         m_drawBatch.quads.insert(m_drawBatch.quads.end(), widget.quads.begin(), widget.quads.end());
+    }
+    for (UIQuadUVE& quad : m_drawBatch.quads) {
+        quad.positionPixels.x = quad.positionPixels.x * m_coordinateTransform.scaleX + m_coordinateTransform.offsetX;
+        quad.positionPixels.y = quad.positionPixels.y * m_coordinateTransform.scaleY + m_coordinateTransform.offsetY;
+        quad.sizePixels.x *= m_coordinateTransform.scaleX;
+        quad.sizePixels.y *= m_coordinateTransform.scaleY;
     }
 }
 

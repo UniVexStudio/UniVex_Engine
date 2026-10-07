@@ -11,10 +11,15 @@
 
 #include "uve/core/engine_core_uve.h"
 
+#include "uve/core/frame_pacing_uve.h"
+#include "uve/core/render_backend_selection_uve.h"
 #include "uve/asset/legacy_extension_migration_uve.h"
+#include "uve/asset/png_metadata_uve.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -23,8 +28,11 @@
 #include <cstdio>
 #include <fstream>
 #include <optional>
-#include <span>
+#include <stdexcept>
 #include <string>
+#include <string_view>
+#include <system_error>
+#include <thread>
 #include <unordered_set>
 #include <vector>
 #include <utility>
@@ -54,6 +62,7 @@
 #include "uve/commandline/command_line_uve.h"
 #include "uve/config/config_manager_uve.h"
 #include "uve/core/engine_project_settings_uve.h"
+#include "uve/core/shader_cache_path_policy_uve.h"
 #include "uve/uvscript/uvscript_codegen_uve.h"
 #include "uve/uvscript/uvscript_compiler_uve.h"
 #include "uve/logging/assert_uve.h"
@@ -117,7 +126,9 @@
 #include "uve/platform/platform_uve.h"
 #include "uve/render_systems/camera_system_uve.h"
 #include "uve/render_systems/compute_system_uve.h"
+#if UVE_HAS_DESKTOP_GL
 #include "uve/rhi_opengl/gl_render_device_uve.h"
+#endif
 #include "uve/rhi_vulkan/vulkan_render_device_uve.h"
 #include "uve/render_systems/light_system_uve.h"
 #include "uve/render_systems/mesh_renderer_uve.h"
@@ -145,10 +156,12 @@
 #include "uve/utilities/timer_uve.h"
 #include "uve/window/adaptive_render_resolution_uve.h"
 #include "uve/window/null_window_manager_uve.h"
+#include "uve/window/presentation_layout_uve.h"
+#include "uve/window/window_title_format_uve.h"
 #if defined(__ANDROID__)
 #include "uve/window/android_surface_size_uve.h"
 #include "uve/window/android_window_manager_uve.h"
-#else
+#elif UVE_HAS_DESKTOP_GL
 #include "uve/window/window_manager_uve.h"
 #endif
 
@@ -163,6 +176,85 @@ constexpr Window::AdaptiveRenderResolutionLimitsUVE kAdaptiveRenderResolutionLim
 // Keep large desktop displays sharp up to 4K while bounding worst-case offscreen allocations.
 constexpr Window::AdaptiveRenderResolutionLimitsUVE kAdaptiveRenderResolutionLimitsUVE{8192U, 3840ULL * 2160ULL};
 #endif
+
+[[nodiscard]] Window::PresentationLayoutUVE ComputeWindowPresentationLayoutUVE(
+    const EngineConfigUVE& config, const std::uint32_t framebufferWidth, const std::uint32_t framebufferHeight) noexcept {
+    return Window::ComputePresentationLayoutUVE(framebufferWidth, framebufferHeight, config.windowWidth,
+                                                config.windowHeight, config.aspectPolicyUVE,
+                                                config.integerOnlyScalingUVE);
+}
+
+[[nodiscard]] bool LoadCursorImageUVE(const EngineConfigUVE& config, std::vector<std::uint8_t>& outPixels,
+                                      std::uint32_t& outWidth, std::uint32_t& outHeight) {
+    outPixels.clear();
+    outWidth = 0U;
+    outHeight = 0U;
+    if (config.cursorImagePathUVE.empty()) {
+        return true;
+    }
+    std::filesystem::path requestedPath = config.cursorImagePathUVE;
+    if (!requestedPath.is_absolute()) {
+        if (config.projectContentRootUVE.empty()) {
+            return false;
+        }
+        requestedPath = config.projectContentRootUVE / requestedPath;
+    }
+
+    std::error_code error;
+    const std::filesystem::path resolvedPath = std::filesystem::canonical(requestedPath, error);
+    if (error || !std::filesystem::is_regular_file(resolvedPath, error) || error) {
+        return false;
+    }
+    if (!config.projectContentRootUVE.empty()) {
+        const std::filesystem::path canonicalRoot = std::filesystem::canonical(config.projectContentRootUVE, error);
+        if (error) {
+            return false;
+        }
+        const std::filesystem::path relative = resolvedPath.lexically_relative(canonicalRoot);
+        if (relative.empty() || relative.is_absolute() || *relative.begin() == "..") {
+            return false;
+        }
+    }
+    std::string extension = resolvedPath.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    if (extension != ".png") {
+        return false;
+    }
+
+    constexpr std::uintmax_t kMaximumCursorFileBytesUVE = 64ULL * 1024ULL * 1024ULL;
+    const std::uintmax_t fileSize = std::filesystem::file_size(resolvedPath, error);
+    if (error || fileSize == 0U || fileSize > kMaximumCursorFileBytesUVE) {
+        return false;
+    }
+    std::ifstream input(resolvedPath, std::ios::binary);
+    if (!input.is_open()) {
+        return false;
+    }
+    std::vector<std::byte> bytes(static_cast<std::size_t>(fileSize));
+    input.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    if (input.gcount() != static_cast<std::streamsize>(bytes.size()) || input.bad()) {
+        return false;
+    }
+    const std::optional<Asset::PngMetadataUVE> metadata = Asset::ParsePngMetadataUVE(bytes);
+    constexpr std::uint64_t kMaximumCursorDecodedBytesUVE = 64ULL * 1024ULL * 1024ULL;
+    if (!metadata || metadata->width == 0U || metadata->height == 0U || metadata->width > 8192U ||
+        metadata->height > 8192U ||
+        !Asset::ValidatePngRgba8PixelBudgetUVE(*metadata, kMaximumCursorDecodedBytesUVE)) {
+        return false;
+    }
+    Asset::PngRgba8ImageUVE image;
+    if (!Asset::DecodePngRgba8ImageUVE(bytes, image)) {
+        return false;
+    }
+    outWidth = image.width;
+    outHeight = image.height;
+    outPixels.reserve(image.pixels.size());
+    for (const std::byte pixel : image.pixels) {
+        outPixels.push_back(std::to_integer<std::uint8_t>(pixel));
+    }
+    return true;
+}
 
 /// The process mode the scene graph resolved for `entity` on its last update, or the hierarchy
 /// default for an entity it has not seen yet (created since, or not a scene-graph object). Asking the
@@ -245,17 +337,10 @@ void EngineCoreUVE::RegisterBuiltInAssetLoadersUVE() {
 void EngineCoreUVE::Init() {
     TransitionStateUVE(EngineStateUVE::Initializing);
 
-    // CommandLine first: it has zero dependencies (pure parsing of the
-    // args already captured in EngineConfigUVE), and its parsed flags are
-    // the kind of thing a later step could plausibly want during its own
-    // setup in a future increment.
+    // CommandLine first: it has no dependencies and parses the raw startup tokens. Registered
+    // setting flags (including --headless) are converted to typed values after the settings schema
+    // is ready, then resolved at the top of SettingsStackUVE.
     m_commandLine = std::make_unique<CommandLine::CommandLineUVE>(m_config.commandLineArgs);
-
-    // --headless overrides EngineConfigUVE::headlessUVE the moment CommandLine exists, before
-    // anything below reads it.
-    if (m_commandLine->HasFlagUVE("headless")) {
-        m_config.headlessUVE = true;
-    }
 
     // Logger second: every later step below, and every other engine
     // system, may need to log or UVE_ASSERT during its own setup. See
@@ -273,21 +358,175 @@ void EngineCoreUVE::Init() {
 
     // Projects saved before the .uve* -> .uv* rename are moved over before anything reads them:
     // the config files by name, the content folder file by file, then the asset registry's paths.
-    for (const std::filesystem::path* const file : {&m_config.projectSettingsFilePath, &m_config.settingsFilePath,
-                                                    &m_config.inputMapFilePath, &m_config.assetDatabaseFilePath}) {
+    const std::filesystem::path platformSettingsPath = GetPlatformSettingsFilePathUVE(m_config);
+    const std::array<const std::filesystem::path*, 5U> settingsFiles{
+        &m_config.projectSettingsFilePath, &m_config.settingsFilePath, &platformSettingsPath, &m_config.inputMapFilePath,
+        &m_config.assetDatabaseFilePath};
+    for (const std::filesystem::path* const file : settingsFiles) {
         static_cast<void>(Asset::MigrateLegacyFileUVE(*file));
     }
     static_cast<void>(Asset::MigrateLegacyContentUVE(m_config.projectContentRootUVE));
     static_cast<void>(Asset::RewriteLegacyExtensionsInTextFileUVE(m_config.assetDatabaseFilePath));
 
-    // The project's settings next, before anything below reads the fields they override: the
-    // project file sits above the application's EngineConfigUVE, so a project carries its tick
-    // rate, shadow quality and so on wherever it is opened.
+    // Load the project and user stores before constructing any system that consumes the effective
+    // EngineConfigUVE fields. The application-supplied config remains the base; valid settings then
+    // resolve project -> user -> active platform -> command line. The platform file is optional and
+    // separate from user preferences; it is loaded only when present to avoid a warning on first run.
     if (!m_projectSettings.LoadUVE(m_config.projectSettingsFilePath)) {
-        UVE_WARNING("EngineCoreUVE: project settings \"{}\" could not be read; using the defaults",
+        UVE_WARNING("EngineCoreUVE: project settings \"{}\" could not be read; continuing without project overrides",
                     m_config.projectSettingsFilePath.string());
     }
-    ApplyEngineProjectSettingsUVE(m_projectSettings, m_config);
+    auto configManager = std::make_unique<Config::ConfigManagerUVE>();
+    configManager->LoadUVE(m_config.settingsFilePath);
+    m_configManager = std::move(configManager);
+
+    Config::ConfigManagerUVE platformSettings;
+    std::error_code platformSettingsError;
+    if (std::filesystem::exists(platformSettingsPath, platformSettingsError)) {
+        static_cast<void>(platformSettings.LoadUVE(platformSettingsPath));
+    } else if (platformSettingsError) {
+        UVE_WARNING("EngineCoreUVE: platform settings \"{}\" could not be checked: {}",
+                    platformSettingsPath.string(), platformSettingsError.message());
+    }
+
+    Config::ConfigManagerUVE commandLineSettings;
+    PopulateEngineCommandLineSettingsUVE(m_projectSettings.GetRegistryUVE(), *m_commandLine, commandLineSettings);
+
+    Config::SettingsStackUVE settings(m_projectSettings.GetRegistryUVE());
+    if (!AttachEngineSettingsLayersUVE(settings, m_projectSettings.GetStoreUVE(), *m_configManager, platformSettings,
+                                       commandLineSettings)) {
+        throw std::logic_error("Failed to attach engine settings layers.");
+    }
+    ApplyEngineSettingsUVE(settings, m_config);
+    if (!IsSafeShaderCachePathUVE(m_config.shaderCachePath)) {
+        const std::filesystem::path defaultShaderCachePath = EngineConfigUVE{}.shaderCachePath;
+        UVE_WARNING("EngineCoreUVE: shader-cache directory must be a non-empty relative path without parent "
+                    "segments; using \"{}\"",
+                    defaultShaderCachePath.string());
+        m_config.shaderCachePath = defaultShaderCachePath;
+    }
+    switch (m_config.shaderCompilationModeUVE) {
+    case ShaderCompilationModeUVE::SynchronousOnDemandUVE:
+    case ShaderCompilationModeUVE::AsynchronousOnDemandUVE:
+        break;
+    default:
+        UVE_WARNING("EngineCoreUVE: invalid shader compilation mode {}; using asynchronous on-demand",
+                    static_cast<std::uint32_t>(m_config.shaderCompilationModeUVE));
+        m_config.shaderCompilationModeUVE = ShaderCompilationModeUVE::AsynchronousOnDemandUVE;
+        break;
+    }
+    switch (m_config.spatialUpscalingMethodUVE) {
+    case SpatialUpscalingMethodUVE::BilinearUVE:
+    case SpatialUpscalingMethodUVE::NearestUVE:
+        break;
+    default:
+        UVE_WARNING("EngineCoreUVE: invalid spatial upscaling method {}; using bilinear",
+                    static_cast<std::uint32_t>(m_config.spatialUpscalingMethodUVE));
+        m_config.spatialUpscalingMethodUVE = SpatialUpscalingMethodUVE::BilinearUVE;
+        break;
+    }
+    switch (m_config.toneMappingMethodUVE) {
+    case ToneMappingMethodUVE::LinearClampUVE:
+    case ToneMappingMethodUVE::AcesUVE:
+        break;
+    default:
+        UVE_WARNING("EngineCoreUVE: invalid tone-mapping method {}; using ACES",
+                    static_cast<std::uint32_t>(m_config.toneMappingMethodUVE));
+        m_config.toneMappingMethodUVE = ToneMappingMethodUVE::AcesUVE;
+        break;
+    }
+    switch (m_config.postProcessAAMethodUVE) {
+    case PostProcessAAMethodUVE::NoneUVE:
+    case PostProcessAAMethodUVE::FastApproximateUVE:
+        break;
+    default:
+        UVE_WARNING("EngineCoreUVE: invalid post-process AA method {}; disabling AA",
+                    static_cast<std::uint32_t>(m_config.postProcessAAMethodUVE));
+        m_config.postProcessAAMethodUVE = PostProcessAAMethodUVE::NoneUVE;
+        break;
+    }
+    if (m_config.screenSpaceAAQualityUVE > 2U) {
+        UVE_WARNING("EngineCoreUVE: screen-space AA quality {} is outside [0, 2]; clamping to 2",
+                    m_config.screenSpaceAAQualityUVE);
+        m_config.screenSpaceAAQualityUVE = 2U;
+    }
+    if (!std::isfinite(m_config.ssaoRadiusUVE) || m_config.ssaoRadiusUVE < 0.01F ||
+        m_config.ssaoRadiusUVE > 10.0F) {
+        UVE_WARNING("EngineCoreUVE: SSAO radius {} is outside [0.01, 10]; using 0.5", m_config.ssaoRadiusUVE);
+        m_config.ssaoRadiusUVE = 0.5F;
+    }
+    if (!std::isfinite(m_config.ssaoIntensityUVE) || m_config.ssaoIntensityUVE < 0.0F ||
+        m_config.ssaoIntensityUVE > 4.0F) {
+        UVE_WARNING("EngineCoreUVE: SSAO intensity {} is outside [0, 4]; using 1", m_config.ssaoIntensityUVE);
+        m_config.ssaoIntensityUVE = 1.0F;
+    }
+    if (!std::isfinite(m_config.ssaoPowerUVE) || m_config.ssaoPowerUVE < 0.1F || m_config.ssaoPowerUVE > 4.0F) {
+        UVE_WARNING("EngineCoreUVE: SSAO power {} is outside [0.1, 4]; using 1", m_config.ssaoPowerUVE);
+        m_config.ssaoPowerUVE = 1.0F;
+    }
+    if (m_config.ssaoQualityUVE > 2U) {
+        UVE_WARNING("EngineCoreUVE: SSAO quality {} is outside [0, 2]; clamping to 2", m_config.ssaoQualityUVE);
+        m_config.ssaoQualityUVE = 2U;
+    }
+    if (!std::isfinite(m_config.renderResolutionScaleUVE) ||
+        m_config.renderResolutionScaleUVE < kMinimumRenderResolutionScaleUVE ||
+        m_config.renderResolutionScaleUVE > kMaximumRenderResolutionScaleUVE) {
+        UVE_WARNING("EngineCoreUVE: invalid render-resolution scale {}; expected [{}, {}]; using 1.0",
+                    m_config.renderResolutionScaleUVE, kMinimumRenderResolutionScaleUVE,
+                    kMaximumRenderResolutionScaleUVE);
+        m_config.renderResolutionScaleUVE = kMaximumRenderResolutionScaleUVE;
+    }
+    if (!std::isfinite(m_config.minimumRenderResolutionScaleUVE) ||
+        m_config.minimumRenderResolutionScaleUVE < kMinimumRenderResolutionScaleUVE ||
+        m_config.minimumRenderResolutionScaleUVE > kMaximumRenderResolutionScaleUVE) {
+        UVE_WARNING("EngineCoreUVE: invalid minimum render-resolution scale {}; using {}",
+                    m_config.minimumRenderResolutionScaleUVE, kMinimumRenderResolutionScaleUVE);
+        m_config.minimumRenderResolutionScaleUVE = kMinimumRenderResolutionScaleUVE;
+    }
+    if (m_config.minimumRenderResolutionScaleUVE > m_config.renderResolutionScaleUVE) {
+        UVE_WARNING("EngineCoreUVE: minimum render-resolution scale {} exceeds maximum {}; clamping minimum",
+                    m_config.minimumRenderResolutionScaleUVE, m_config.renderResolutionScaleUVE);
+        m_config.minimumRenderResolutionScaleUVE = m_config.renderResolutionScaleUVE;
+    }
+    if (!std::isfinite(m_config.renderResolutionTargetFrameTimeMillisecondsUVE) ||
+        m_config.renderResolutionTargetFrameTimeMillisecondsUVE <
+            kMinimumRenderResolutionTargetFrameTimeMillisecondsUVE ||
+        m_config.renderResolutionTargetFrameTimeMillisecondsUVE >
+            kMaximumRenderResolutionTargetFrameTimeMillisecondsUVE) {
+        UVE_WARNING("EngineCoreUVE: invalid render-resolution target frame time {}; using {} ms",
+                    m_config.renderResolutionTargetFrameTimeMillisecondsUVE,
+                    kDefaultRenderResolutionTargetFrameTimeMillisecondsUVE);
+        m_config.renderResolutionTargetFrameTimeMillisecondsUVE =
+            kDefaultRenderResolutionTargetFrameTimeMillisecondsUVE;
+    }
+    const DynamicRenderResolutionSettingsUVE dynamicResolutionSettings{
+        m_config.minimumRenderResolutionScaleUVE,
+        m_config.renderResolutionScaleUVE,
+        m_config.renderResolutionTargetFrameTimeMillisecondsUVE};
+    if (!m_dynamicRenderResolutionControllerUVE.ConfigureUVE(dynamicResolutionSettings)) {
+        UVE_WARNING("EngineCoreUVE: dynamic render-resolution policy is invalid; using configured fixed scale");
+        m_config.dynamicRenderResolutionEnabledUVE = false;
+    }
+    m_currentRenderResolutionScaleUVE = m_config.dynamicRenderResolutionEnabledUVE
+                                            ? m_dynamicRenderResolutionControllerUVE.GetCurrentScaleUVE()
+                                            : m_config.renderResolutionScaleUVE;
+    if (m_config.windowTransparentUVE) {
+        m_config.backgroundColorUVE[3] = 0.0F;
+    }
+    if (!m_config.cursorImagePathUVE.empty() && m_config.cursorRgba8UVE.empty()) {
+        if (!LoadCursorImageUVE(m_config, m_config.cursorRgba8UVE, m_config.cursorImageWidthUVE,
+                                m_config.cursorImageHeightUVE) ||
+            m_config.cursorHotspotXUVE >= m_config.cursorImageWidthUVE ||
+            m_config.cursorHotspotYUVE >= m_config.cursorImageHeightUVE) {
+            UVE_WARNING("EngineCoreUVE: configured cursor image could not be loaded or its hotspot is outside "
+                        "the image; using the system cursor");
+            m_config.cursorRgba8UVE.clear();
+            m_config.cursorImageWidthUVE = 0U;
+            m_config.cursorImageHeightUVE = 0U;
+            m_config.cursorHotspotXUVE = 0U;
+            m_config.cursorHotspotYUVE = 0U;
+        }
+    }
 
     // MemoryManager third: the next most foundational service after
     // logging — nothing constructed here has a hard dependency on it yet,
@@ -314,8 +553,8 @@ void EngineCoreUVE::Init() {
     // EventSystem sixth: it is the piece most likely to gain future
     // dependents (systems subscribing during their own Init()), so it is
     // constructed after every other foundational service except
-    // EntityManager/SceneGraph/ConfigManager, once it is guaranteed nothing
-    // else in this list still needs to be built.
+    // EntityManager/SceneGraph, once it is guaranteed nothing else in this
+    // list still needs to be built.
     m_eventSystem = std::make_unique<Events::EventSystemUVE>();
 
     // EntityManager seventh: needs MemoryManager (for chunk allocation) and
@@ -390,6 +629,54 @@ void EngineCoreUVE::Init() {
     // mounts read entries through IAssetBundleUVE.
     m_fileSystem = std::make_unique<Asset::FileSystemUVE>(*m_assetBundle);
 
+    Window::WindowDescUVE windowDesc;
+    windowDesc.title = Window::FormatWindowTitleUVE(
+        m_config.windowTitleFormatUVE, m_config.windowTitle, m_config.projectDisplayNameUVE, {},
+        m_config.editorPlayModeUVE, m_config.appendSceneNameInEditorPlayModeUVE);
+    windowDesc.icons.reserve(m_config.windowIconsUVE.size());
+    for (const Core::EngineApplicationIconImageUVE& icon : m_config.windowIconsUVE) {
+        windowDesc.icons.push_back(Window::WindowIconUVE{icon.width, icon.height, icon.rgba8});
+    }
+    windowDesc.width = m_config.windowWidth;
+    windowDesc.height = m_config.windowHeight;
+    windowDesc.resizable = m_config.windowResizableUVE;
+    windowDesc.vsyncEnabled = m_config.vsyncEnabledUVE;
+    windowDesc.vsyncModeExplicit = m_config.vsyncModeExplicitUVE;
+    windowDesc.vsyncMode = m_config.vsyncModeUVE;
+    windowDesc.mode = m_config.windowModeUVE;
+    windowDesc.borderless = m_config.windowBorderlessUVE;
+    windowDesc.alwaysOnTop = m_config.windowAlwaysOnTopUVE;
+    windowDesc.transparent = m_config.windowTransparentUVE;
+    windowDesc.minimumWidth = m_config.windowMinimumWidthUVE;
+    windowDesc.minimumHeight = m_config.windowMinimumHeightUVE;
+    windowDesc.maximumWidth = m_config.windowMaximumWidthUVE;
+    windowDesc.maximumHeight = m_config.windowMaximumHeightUVE;
+    windowDesc.initialPositionSpecified = m_config.windowPositionSpecifiedUVE;
+    windowDesc.initialPositionX = m_config.windowPositionXUVE;
+    windowDesc.initialPositionY = m_config.windowPositionYUVE;
+    windowDesc.monitorName = m_config.windowMonitorNameUVE;
+    windowDesc.highDpiAware = m_config.highDpiAwareUVE;
+    windowDesc.perMonitorScaling = m_config.perMonitorScalingUVE;
+    windowDesc.contentScaleOverride = m_config.contentScaleOverrideUVE;
+    windowDesc.stretchMode = m_config.stretchModeUVE;
+    windowDesc.aspectPolicy = m_config.aspectPolicyUVE;
+    windowDesc.integerOnlyScaling = m_config.integerOnlyScalingUVE;
+    windowDesc.orientation = m_config.orientationUVE;
+    windowDesc.allowedOrientations = m_config.allowedOrientationsUVE;
+    windowDesc.focusedFrameRateCap = m_config.focusedFrameRateCapUVE;
+    windowDesc.unfocusedFrameRateCap = m_config.unfocusedFrameRateCapUVE;
+    windowDesc.allowDisplaySleep = m_config.allowDisplaySleepUVE;
+    windowDesc.cursorImageWidth = m_config.cursorImageWidthUVE;
+    windowDesc.cursorImageHeight = m_config.cursorImageHeightUVE;
+    windowDesc.cursorRgba8 = m_config.cursorRgba8UVE;
+    windowDesc.cursorHotspotX = m_config.cursorHotspotXUVE;
+    windowDesc.cursorHotspotY = m_config.cursorHotspotYUVE;
+    windowDesc.cursorVisible = m_config.cursorVisibleUVE;
+    windowDesc.cursorConfinedToWindow = m_config.cursorConfinedToWindowUVE;
+    windowDesc.glVersionMajor = m_config.windowGlVersionMajor;
+    windowDesc.glVersionMinor = m_config.windowGlVersionMinor;
+
+#if UVE_HAS_DESKTOP_GL
     // WindowManager seventeenth: a real Window::WindowManagerUVE (owning the entire GLFW/GL
     // context lifecycle — init, create, activate, destroy, terminate) unless
     // EngineConfigUVE::headlessUVE, in which case Window::NullWindowManagerUVE. A real window
@@ -400,16 +687,8 @@ void EngineCoreUVE::Init() {
     // but cannot load the complete GL function table is handled separately below as a recoverable
     // backend-selection failure and falls back to NullRenderDeviceUVE.
     if (m_config.headlessUVE) {
-        m_windowManager = std::make_unique<Window::NullWindowManagerUVE>();
+        m_windowManager = std::make_unique<Window::NullWindowManagerUVE>(windowDesc);
     } else {
-        Window::WindowDescUVE windowDesc;
-        windowDesc.title = m_config.windowTitle;
-        windowDesc.width = m_config.windowWidth;
-        windowDesc.height = m_config.windowHeight;
-        windowDesc.resizable = m_config.windowResizableUVE;
-        windowDesc.vsyncEnabled = m_config.vsyncEnabledUVE;
-        windowDesc.glVersionMajor = m_config.windowGlVersionMajor;
-        windowDesc.glVersionMinor = m_config.windowGlVersionMinor;
 #if defined(__ANDROID__)
         if (m_config.nativeWindowHandleUVE == nullptr) {
             UVE_FATAL("EngineCoreUVE: Android window handle is required for a windowed run");
@@ -429,47 +708,50 @@ void EngineCoreUVE::Init() {
     }
     m_windowedRenderingActiveUVE = !m_config.headlessUVE && m_windowManager->IsValidUVE();
 
-    // RenderDevice eighteenth: backend selection ordered by EngineConfigUVE::renderBackendPreferenceUVE
-    // when a real valid window/context exists, otherwise Render::NullRenderDeviceUVE. The preference is a
-    // *starting point*, never a hard requirement — the chain is Vulkan -> OpenGL -> Null, each
-    // fall-through a logged warning, and the null device is one the entire headless test suite
-    // already proves the engine survives on. OpenGL remains the production default (AutoUVE
-    // resolves to it); VulkanUVE opts into the M1 bootstrap device. A context can exist while
-    // the required GL entry points are unavailable on an unusual driver; GlRenderDeviceUVE
-    // reports that state without aborting, and the engine selects NullRenderDeviceUVE before
-    // ShaderManager or any frame code can call a missing function pointer.
+    // RenderDevice eighteenth: use the tested preference-to-fallback order when a real window
+    // exists. A preferred backend is only a starting point; every plan terminates in Null so an
+    // unavailable driver/device never prevents the engine from completing startup.
     if (m_windowedRenderingActiveUVE) {
-        const RenderBackendPreferenceUVE preference = m_config.renderBackendPreferenceUVE;
-        if (preference == RenderBackendPreferenceUVE::VulkanUVE) {
-            // Factory-probe create: nullptr (with reason logged) when the host lacks a loader,
-            // an ICD, or the GLFW bridge's surface capability. IsUsableUVE() is checked anyway
-            // so a future early-inert state stays load-bearing protection here.
-            auto vulkanDevice = Render::VulkanRenderDeviceUVE::CreateUVE(*m_windowManager);
-            if (vulkanDevice != nullptr && vulkanDevice->IsUsableUVE()) {
-                m_renderDevice = std::move(vulkanDevice);
-                UVE_INFO("EngineCoreUVE: render backend = {}", m_renderDevice->GetBackendNameUVE());
-            } else {
-                UVE_WARNING("EngineCoreUVE: requested Vulkan backend is unavailable on this host; trying OpenGL");
+        const RenderBackendAttemptOrderUVE attemptOrder =
+            ResolveRenderBackendAttemptOrderUVE(m_config.renderBackendPreferenceUVE);
+        for (std::size_t attempt = 0U; attempt < attemptOrder.count && m_renderDevice == nullptr; ++attempt) {
+            switch (attemptOrder.backends[attempt]) {
+            case RenderBackendKindUVE::Vulkan: {
+                // Factory-probe create: nullptr (with reason logged) when the host lacks a loader,
+                // an ICD, or the GLFW bridge's surface capability. IsUsableUVE() remains a guard
+                // against a future early-inert state.
+                auto vulkanDevice = Render::VulkanRenderDeviceUVE::CreateUVE(
+                    *m_windowManager, m_config.vulkanValidationLayersEnabledUVE);
+                if (vulkanDevice != nullptr && vulkanDevice->IsUsableUVE()) {
+                    m_renderDevice = std::move(vulkanDevice);
+                    UVE_INFO("EngineCoreUVE: render backend = {}", m_renderDevice->GetBackendNameUVE());
+                } else {
+                    UVE_WARNING("EngineCoreUVE: requested Vulkan backend is unavailable on this host; trying next backend");
+                }
+                break;
             }
-        }
-        if (m_renderDevice == nullptr && preference != RenderBackendPreferenceUVE::NullUVE) {
-            auto glRenderDevice = std::make_unique<Render::GlRenderDeviceUVE>(*m_windowManager);
-            if (glRenderDevice->IsUsableUVE()) {
-                m_renderDevice = std::move(glRenderDevice);
-            } else {
+            case RenderBackendKindUVE::OpenGL: {
+                auto glRenderDevice = std::make_unique<Render::GlRenderDeviceUVE>(*m_windowManager);
+                if (glRenderDevice->IsUsableUVE()) {
+                    m_renderDevice = std::move(glRenderDevice);
+                    UVE_INFO("EngineCoreUVE: render backend = {}", m_renderDevice->GetBackendNameUVE());
+                } else {
 #if defined(__ANDROID__)
-                // Android currently ships an EGL/GLES implementation only. If that context or its
-                // required entry points are unavailable, do not guess that a Vulkan renderer exists:
-                // the Vulkan backend is desktop-windowed only in this build. Keep the engine alive
-                // on the inert RHI instead of dereferencing a partial GL function table and
-                // crashing during shader/frame startup.
-                UVE_WARNING("EngineCoreUVE: OpenGL ES backend is unavailable; Vulkan RHI is not built, using Null backend");
+                    UVE_WARNING("EngineCoreUVE: OpenGL ES backend is unavailable; trying the next backend");
 #else
-                UVE_WARNING("EngineCoreUVE: OpenGL backend is unavailable; using Null backend");
+                    UVE_WARNING("EngineCoreUVE: OpenGL backend is unavailable; trying the next backend");
 #endif
+                }
+                break;
+            }
+            case RenderBackendKindUVE::Null:
+                m_windowedRenderingActiveUVE = false;
+                m_renderDevice = std::make_unique<Render::NullRenderDeviceUVE>();
+                break;
             }
         }
         if (m_renderDevice == nullptr) {
+            // Defensive fallback if a future plan omits Null or contains no attempts.
             m_windowedRenderingActiveUVE = false;
             m_renderDevice = std::make_unique<Render::NullRenderDeviceUVE>();
         }
@@ -477,6 +759,18 @@ void EngineCoreUVE::Init() {
         m_renderDevice = std::make_unique<Render::NullRenderDeviceUVE>();
     }
     m_presentationSurfaceReadyUVE = m_windowedRenderingActiveUVE;
+#else
+    // CPU-only builds still support a real headless EngineCoreUVE runtime. Keep the full settings
+    // bootstrap and Null-backed systems available for servers/tests; a requested windowed run
+    // degrades to the null backend rather than making EngineCore itself unbuildable.
+    if (!m_config.headlessUVE) {
+        UVE_WARNING("EngineCoreUVE: desktop window/rendering support is unavailable in this build; using the null backend");
+    }
+    m_windowManager = std::make_unique<Window::NullWindowManagerUVE>(windowDesc);
+    m_windowedRenderingActiveUVE = false;
+    m_renderDevice = std::make_unique<Render::NullRenderDeviceUVE>();
+    m_presentationSurfaceReadyUVE = false;
+#endif
 
     // ShaderManager nineteenth: needs ThreadPool, EventSystem, RenderDevice, and FileSystem — all
     // already constructed by this point. Mounts EngineConfigUVE::shaderSourceRealDirectoryUVE
@@ -494,6 +788,8 @@ void EngineCoreUVE::Init() {
     }
     Render::Shader::ShaderManagerConfigUVE shaderManagerConfig;
     shaderManagerConfig.cachePath = m_config.shaderCachePath;
+    shaderManagerConfig.compileSynchronouslyUVE =
+        m_config.shaderCompilationModeUVE == ShaderCompilationModeUVE::SynchronousOnDemandUVE;
     shaderManagerConfig.hotReloadEnabledUVE = m_config.shaderHotReloadEnabledUVE;
     shaderManagerConfig.hotReloadPollIntervalSecondsUVE = m_config.shaderHotReloadPollIntervalSecondsUVE;
 #if UVE_DEBUG
@@ -542,6 +838,27 @@ void EngineCoreUVE::Init() {
         m_config.ambientColor, m_config.shadowMapResolution, m_config.shadowMapHalfExtent,
         m_config.shadowMapNearPlane, m_config.shadowMapFarPlane, m_config.shadowFrustumPadding,
         m_config.shadowCascadeSplitLambda, m_config.shadowCascadeBlendRatio, m_config.shadowPcfKernelRadius);
+    m_renderer3D->SetSceneClearColorUVE(m_config.backgroundColorUVE);
+    Render::PostProcessSettingsUVE postProcessSettings;
+    postProcessSettings.nearestUpscalingEnabledUVE =
+        m_config.spatialUpscalingMethodUVE == SpatialUpscalingMethodUVE::NearestUVE;
+    postProcessSettings.acesToneMappingEnabledUVE = m_config.toneMappingMethodUVE == ToneMappingMethodUVE::AcesUVE;
+    postProcessSettings.sharpeningAmountUVE = m_config.sharpeningAmountUVE;
+    postProcessSettings.ditheringEnabledUVE = m_config.ditheringEnabledUVE;
+    postProcessSettings.fastApproximateAAEnabledUVE =
+        m_config.postProcessAAMethodUVE == PostProcessAAMethodUVE::FastApproximateUVE;
+    postProcessSettings.fastApproximateAAQualityUVE = m_config.screenSpaceAAQualityUVE;
+    postProcessSettings.ssaoEnabledUVE = m_config.ssaoEnabledUVE;
+    postProcessSettings.ssaoRadiusUVE = m_config.ssaoRadiusUVE;
+    postProcessSettings.ssaoIntensityUVE = m_config.ssaoIntensityUVE;
+    postProcessSettings.ssaoPowerUVE = m_config.ssaoPowerUVE;
+    postProcessSettings.ssaoQualityUVE = m_config.ssaoQualityUVE;
+    postProcessSettings.ssaoBlurEnabledUVE = m_config.ssaoBlurEnabledUVE;
+    m_renderer3D->SetPostProcessSettingsUVE(postProcessSettings);
+    m_renderer3D->SetShadowBiasDefaultsUVE(m_config.shadowBiasDefaultUVE, m_config.shadowNormalBiasDefaultUVE);
+    Render::CullingSettingsUVE cullingSettings;
+    cullingSettings.frustumCullingEnabledUVE = m_config.frustumCullingModeUVE == FrustumCullingModeUVE::EnabledUVE;
+    m_renderer3D->SetCullingSettingsUVE(cullingSettings);
 
     // CollisionSystem twenty-fifth: stateless, no dependencies of its own.
     m_collisionSystem = std::make_unique<Physics::CollisionSystemUVE>();
@@ -631,13 +948,6 @@ void EngineCoreUVE::Init() {
     checkpointMetadata.engineVersionBuild = engineVersion.build;
     m_checkpointManager = std::make_unique<Save::CheckpointManagerUVE>(
         *m_saveGameSystem, m_config.autoSaveIntervalSecondsUVE, checkpointMetadata);
-
-    // ConfigManager last: it immediately calls LoadUVE(), which logs its
-    // outcome (missing/malformed/success) through the Logger constructed
-    // above — so Logger must already exist by this point.
-    auto configManager = std::make_unique<Config::ConfigManagerUVE>();
-    configManager->LoadUVE(m_config.settingsFilePath);
-    m_configManager = std::move(configManager);
 
     m_services.emplace(*m_logger, *m_timer, *m_eventSystem, *m_memoryManager, *m_threadPool,
                                                  *m_commandLine, *m_configManager, m_projectSettings, m_inputMap, *m_entityManager, *m_sceneGraph,
@@ -800,6 +1110,128 @@ void EngineCoreUVE::SyncUIRuntimeUVE() {
     if (m_inputSystem == nullptr) {
         return;
     }
+
+    UI::UICoordinateTransformUVE uiTransform;
+    if (m_windowedRenderingActiveUVE && m_windowManager != nullptr) {
+        const std::uint32_t framebufferWidth = m_windowManager->GetWidthUVE();
+        const std::uint32_t framebufferHeight = m_windowManager->GetHeightUVE();
+        if (framebufferWidth > 0U && framebufferHeight > 0U) {
+            float contentScaleX = 1.0F;
+            float contentScaleY = 1.0F;
+            m_windowManager->GetContentScaleUVE(contentScaleX, contentScaleY);
+            if (!(contentScaleX > 0.0F) || !std::isfinite(contentScaleX)) {
+                contentScaleX = 1.0F;
+            }
+            if (!(contentScaleY > 0.0F) || !std::isfinite(contentScaleY)) {
+                contentScaleY = 1.0F;
+            }
+
+            std::optional<Render::ViewportRectUVE> outputRegion = m_editorViewportRegionUVE;
+            Window::PresentationLayoutUVE viewportLayout;
+            bool hasProjectViewportLayout = false;
+            if (!outputRegion.has_value() && m_config.stretchModeUVE == Platform::StretchModeUVE::Viewport) {
+                viewportLayout = ComputeWindowPresentationLayoutUVE(m_config, framebufferWidth, framebufferHeight);
+                hasProjectViewportLayout = true;
+                if (viewportLayout.width > 0U && viewportLayout.height > 0U &&
+                    (viewportLayout.x != 0U || viewportLayout.y != 0U ||
+                     viewportLayout.width != framebufferWidth || viewportLayout.height != framebufferHeight)) {
+                    outputRegion = Render::ViewportRectUVE{viewportLayout.x, viewportLayout.y,
+                                                           viewportLayout.width, viewportLayout.height};
+                }
+            }
+
+            std::uint32_t projectionWidth = 0U;
+            std::uint32_t projectionHeight = 0U;
+            if (outputRegion.has_value()) {
+                projectionWidth = outputRegion->width;
+                projectionHeight = outputRegion->height;
+            } else {
+                const std::uint32_t drawableWidth =
+                    hasProjectViewportLayout && viewportLayout.width > 0U ? viewportLayout.width : framebufferWidth;
+                const std::uint32_t drawableHeight =
+                    hasProjectViewportLayout && viewportLayout.height > 0U ? viewportLayout.height : framebufferHeight;
+                const Window::AdaptiveRenderResolutionUVE renderSize =
+                    Window::ComputeAdaptiveRenderResolutionUVE(drawableWidth, drawableHeight,
+                                                               kAdaptiveRenderResolutionLimitsUVE,
+                                                               m_currentRenderResolutionScaleUVE);
+                projectionWidth = renderSize.width;
+                projectionHeight = renderSize.height;
+            }
+
+            if (projectionWidth > 0U && projectionHeight > 0U) {
+                const float projectionScaleX = outputRegion.has_value()
+                                                   ? 1.0F
+                                                   : static_cast<float>(projectionWidth) /
+                                                         static_cast<float>(framebufferWidth);
+                const float projectionScaleY = outputRegion.has_value()
+                                                   ? 1.0F
+                                                   : static_cast<float>(projectionHeight) /
+                                                         static_cast<float>(framebufferHeight);
+                const float inputScaleX = contentScaleX * projectionScaleX;
+                const float inputScaleY = contentScaleY * projectionScaleY;
+                const float inputOffsetX = outputRegion.has_value() ? static_cast<float>(outputRegion->x) : 0.0F;
+                const float inputOffsetY = outputRegion.has_value() ? static_cast<float>(outputRegion->y) : 0.0F;
+
+                switch (m_config.stretchModeUVE) {
+                case Platform::StretchModeUVE::Disabled:
+                    uiTransform.scaleX = inputScaleX;
+                    uiTransform.scaleY = inputScaleY;
+                    uiTransform.inputScaleX = inputScaleX;
+                    uiTransform.inputScaleY = inputScaleY;
+                    uiTransform.inputOffsetX = inputOffsetX;
+                    uiTransform.inputOffsetY = inputOffsetY;
+                    break;
+                case Platform::StretchModeUVE::CanvasItems: {
+                    const Window::PresentationLayoutUVE canvasLayout = Window::ComputePresentationLayoutUVE(
+                        projectionWidth, projectionHeight, m_config.windowWidth, m_config.windowHeight,
+                        m_config.aspectPolicyUVE, m_config.integerOnlyScalingUVE);
+                    uiTransform.scaleX = static_cast<float>(canvasLayout.scaleX);
+                    uiTransform.scaleY = static_cast<float>(canvasLayout.scaleY);
+                    uiTransform.offsetX = static_cast<float>(canvasLayout.x);
+                    uiTransform.offsetY = static_cast<float>(canvasLayout.y);
+                    uiTransform.inputScaleX = inputScaleX;
+                    uiTransform.inputScaleY = inputScaleY;
+                    uiTransform.inputOffsetX = inputOffsetX;
+                    uiTransform.inputOffsetY = inputOffsetY;
+                    if (!canvasLayout.integerScaleAvailable && !m_integerScaleFallbackLoggedUVE) {
+                        UVE_WARNING("EngineCoreUVE: integer-only canvas scaling cannot fit below the reference "
+                                    "resolution; using fractional aspect-preserving scaling");
+                        m_integerScaleFallbackLoggedUVE = true;
+                    }
+                    break;
+                }
+                case Platform::StretchModeUVE::Viewport:
+                    if (outputRegion.has_value()) {
+                        if (hasProjectViewportLayout && !m_editorViewportRegionUVE.has_value()) {
+                            uiTransform.scaleX = static_cast<float>(viewportLayout.scaleX);
+                            uiTransform.scaleY = static_cast<float>(viewportLayout.scaleY);
+                        } else {
+                            const Window::PresentationLayoutUVE viewportCanvasLayout =
+                                Window::ComputePresentationLayoutUVE(
+                                    projectionWidth, projectionHeight, m_config.windowWidth, m_config.windowHeight,
+                                    m_config.aspectPolicyUVE, m_config.integerOnlyScalingUVE);
+                            uiTransform.scaleX = static_cast<float>(viewportCanvasLayout.scaleX);
+                            uiTransform.scaleY = static_cast<float>(viewportCanvasLayout.scaleY);
+                            uiTransform.offsetX = static_cast<float>(viewportCanvasLayout.x);
+                            uiTransform.offsetY = static_cast<float>(viewportCanvasLayout.y);
+                        }
+                    } else if (hasProjectViewportLayout) {
+                        uiTransform.scaleX = static_cast<float>(viewportLayout.scaleX) * projectionScaleX;
+                        uiTransform.scaleY = static_cast<float>(viewportLayout.scaleY) * projectionScaleY;
+                        uiTransform.offsetX = static_cast<float>(viewportLayout.x) * projectionScaleX;
+                        uiTransform.offsetY = static_cast<float>(viewportLayout.y) * projectionScaleY;
+                    }
+                    uiTransform.inputScaleX = inputScaleX;
+                    uiTransform.inputScaleY = inputScaleY;
+                    uiTransform.inputOffsetX = inputOffsetX;
+                    uiTransform.inputOffsetY = inputOffsetY;
+                    break;
+                }
+            }
+        }
+    }
+    m_uiRuntime.SetCoordinateTransformUVE(uiTransform);
+
     // Whether a text is translated is its resolved Auto Translate mode, asked of the scene graph so
     // a label with no component of its own follows the menu it sits in. An entity the scene graph
     // has not resolved yet takes the hierarchy default, Always.
@@ -2057,17 +2489,32 @@ void EngineCoreUVE::SyncAdaptiveRenderResolutionUVE() {
     // adaptive-resolution scaling all match what will actually be displayed there (see
     // SetEditorViewportRegionUVE()'s own doc comment). Absent one (every standalone runtime/test
     // path), this is exactly the previous full-window behavior.
-    const std::uint32_t drawableWidth =
+    std::uint32_t drawableWidth =
         m_editorViewportRegionUVE.has_value() ? m_editorViewportRegionUVE->width : m_windowManager->GetWidthUVE();
-    const std::uint32_t drawableHeight =
+    std::uint32_t drawableHeight =
         m_editorViewportRegionUVE.has_value() ? m_editorViewportRegionUVE->height : m_windowManager->GetHeightUVE();
+    if (!m_editorViewportRegionUVE.has_value() &&
+        m_config.stretchModeUVE == Platform::StretchModeUVE::Viewport) {
+        const Window::PresentationLayoutUVE layout =
+            ComputeWindowPresentationLayoutUVE(m_config, drawableWidth, drawableHeight);
+        if (layout.width > 0U && layout.height > 0U) {
+            drawableWidth = layout.width;
+            drawableHeight = layout.height;
+            if (!layout.integerScaleAvailable && !m_integerScaleFallbackLoggedUVE) {
+                UVE_WARNING("EngineCoreUVE: integer-only viewport scaling cannot fit below the reference "
+                            "resolution; using fractional aspect-preserving scaling until an integer scale is available");
+                m_integerScaleFallbackLoggedUVE = true;
+            }
+        }
+    }
     if (drawableWidth == 0U || drawableHeight == 0U) {
         return;
     }
 
     const Window::AdaptiveRenderResolutionUVE desiredResolution =
         Window::ComputeAdaptiveRenderResolutionUVE(drawableWidth, drawableHeight,
-                                                    kAdaptiveRenderResolutionLimitsUVE);
+                                                    kAdaptiveRenderResolutionLimitsUVE,
+                                                    m_currentRenderResolutionScaleUVE);
     if (desiredResolution.width == 0U || desiredResolution.height == 0U) {
         return;
     }
@@ -2138,7 +2585,7 @@ void EngineCoreUVE::Update() {
             }
         }
     }
-    if (m_windowManager->IsCloseRequestedUVE()) {
+    if (m_config.quitOnLastWindowClosedUVE && m_windowManager->IsCloseRequestedUVE()) {
         RequestQuitUVE();
     }
 
@@ -2315,8 +2762,40 @@ void EngineCoreUVE::Render() {
     m_renderer3D->SetUIRuntimeUVE(&m_uiRuntime);
     if (m_activeCamera != Scene::kInvalidEntityUVE) {
         const bool hasParticles = m_particleRuntime != nullptr && m_particleRuntime->GetInstanceCountUVE() > 0U;
-        if (m_editorViewportRegionUVE.has_value()) {
-            m_renderer3D->RenderFrameToRegionUVE(*m_entityManager, m_activeCamera, *m_editorViewportRegionUVE,
+        std::optional<Render::ViewportRectUVE> contentRegion = m_editorViewportRegionUVE;
+        if (!contentRegion.has_value() && m_windowedRenderingActiveUVE &&
+            m_config.stretchModeUVE == Platform::StretchModeUVE::Viewport) {
+            const Window::PresentationLayoutUVE layout =
+                ComputeWindowPresentationLayoutUVE(m_config, m_windowManager->GetWidthUVE(),
+                                                   m_windowManager->GetHeightUVE());
+            if (!layout.integerScaleAvailable && !m_integerScaleFallbackLoggedUVE) {
+                UVE_WARNING("EngineCoreUVE: integer-only viewport scaling cannot fit below the reference "
+                            "resolution; using fractional aspect-preserving scaling until an integer scale is available");
+                m_integerScaleFallbackLoggedUVE = true;
+            }
+            if (layout.width > 0U && layout.height > 0U &&
+                (layout.x != 0U || layout.y != 0U || layout.width != m_windowManager->GetWidthUVE() ||
+                 layout.height != m_windowManager->GetHeightUVE())) {
+                contentRegion = Render::ViewportRectUVE{layout.x, layout.y, layout.width, layout.height};
+            }
+        }
+        if (contentRegion.has_value() && !m_editorViewportRegionUVE.has_value()) {
+            // Clear the bars before the scaled viewport writes its own region. These are two
+            // ordered command submissions drained by the same PresentUVE() call.
+            m_renderSystem->BeginFrameUVE();
+            Render::ICommandBufferUVE& clearCommands = m_renderSystem->GetFrameCommandBufferUVE();
+            Render::RenderPassDescUVE clearDesc;
+            clearDesc.colorAttachment = Render::kInvalidTextureHandleUVE;
+            clearDesc.depthAttachment = Render::kInvalidTextureHandleUVE;
+            clearDesc.colorLoadOp = Render::LoadOpUVE::Clear;
+            clearDesc.depthLoadOp = Render::LoadOpUVE::DontCare;
+            clearDesc.clearColor = m_config.backgroundColorUVE;
+            clearCommands.BeginRenderPassUVE(clearDesc);
+            clearCommands.EndRenderPassUVE();
+            m_renderSystem->EndFrameUVE();
+        }
+        if (contentRegion.has_value()) {
+            m_renderer3D->RenderFrameToRegionUVE(*m_entityManager, m_activeCamera, *contentRegion,
                                                   hasParticles ? m_particleRuntime.get() : nullptr);
         } else if (hasParticles) {
             m_renderer3D->RenderFrameWithParticleRuntimeUVE(*m_entityManager, m_activeCamera, *m_particleRuntime);
@@ -2338,7 +2817,7 @@ void EngineCoreUVE::Render() {
             passDesc.depthAttachment = Render::kInvalidTextureHandleUVE;
             passDesc.colorLoadOp = Render::LoadOpUVE::Clear;
             passDesc.depthLoadOp = Render::LoadOpUVE::DontCare;
-            passDesc.clearColor = {0.05F, 0.05F, 0.05F, 1.0F};
+            passDesc.clearColor = m_config.backgroundColorUVE;
             passDesc.viewportOverride = m_editorViewportRegionUVE;
             commandBuffer.BeginRenderPassUVE(passDesc);
             commandBuffer.EndRenderPassUVE();
@@ -2357,6 +2836,16 @@ void EngineCoreUVE::Render() {
 void EngineCoreUVE::EndFrame() {
     const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
     m_frameStats.frameTimeSeconds = std::chrono::duration<double>(now - m_frameStartTime).count();
+    if (m_config.dynamicRenderResolutionEnabledUVE && m_windowedRenderingActiveUVE &&
+        m_presentationSurfaceReadyUVE &&
+        m_dynamicRenderResolutionControllerUVE.ObserveFrameTimeUVE(m_frameStats.frameTimeSeconds)) {
+        m_currentRenderResolutionScaleUVE =
+            m_dynamicRenderResolutionControllerUVE.GetCurrentScaleUVE();
+        UVE_INFO("EngineCoreUVE: dynamic 3D render scale adjusted to {} (smoothed frame time {} ms, target {} ms)",
+                 m_currentRenderResolutionScaleUVE,
+                 m_dynamicRenderResolutionControllerUVE.GetSmoothedFrameTimeMillisecondsUVE(),
+                 m_config.renderResolutionTargetFrameTimeMillisecondsUVE);
+    }
     UVE_TRACE("EndFrame {}: delta={} total={} fps={} frameTime={}", m_frameStats.frameNumber,
               m_frameStats.deltaTimeSeconds, m_frameStats.totalTimeSeconds, m_frameStats.fps,
               m_frameStats.frameTimeSeconds);
@@ -2364,6 +2853,25 @@ void EngineCoreUVE::EndFrame() {
 
 void EngineCoreUVE::TickFrameUVE() {
     UVE_ASSERT(m_state == EngineStateUVE::Running);
+    const bool windowedRenderingActive = m_windowedRenderingActiveUVE && m_windowManager != nullptr;
+    const bool focused = windowedRenderingActive && m_windowManager->IsFocusedUVE();
+    const std::uint32_t frameRateCap = SelectFrameRateCapUVE(
+        windowedRenderingActive, focused, m_config.focusedFrameRateCapUVE,
+        m_config.unfocusedFrameRateCapUVE);
+    auto now = std::chrono::steady_clock::now();
+    const FramePacingDecisionUVE pacingDecision = ComputeFramePacingDecisionUVE(
+        frameRateCap, m_lastFrameRateCapUVE, m_nextFrameDeadlineUVE, now);
+    if (pacingDecision.frameRateCap == 0U) {
+        m_nextFrameDeadlineUVE.reset();
+        m_lastFrameRateCapUVE = 0U;
+    } else {
+        if (pacingDecision.sleepUntil.has_value()) {
+            std::this_thread::sleep_until(*pacingDecision.sleepUntil);
+            now = std::chrono::steady_clock::now();
+        }
+        m_nextFrameDeadlineUVE = now + pacingDecision.framePeriod;
+        m_lastFrameRateCapUVE = pacingDecision.frameRateCap;
+    }
     BeginFrame();
     Update();
     LateUpdate();
@@ -2417,6 +2925,19 @@ void EngineCoreUVE::RequestQuitUVE() noexcept {
     m_quitRequested = true;
 }
 
+bool EngineCoreUVE::SetApplicationBackgroundColorUVE(const std::array<float, 4U>& color) noexcept {
+    for (const float channel : color) {
+        if (!std::isfinite(channel) || channel < 0.0F || channel > 1.0F) {
+            return false;
+        }
+    }
+    m_config.backgroundColorUVE = color;
+    if (m_renderer3D != nullptr) {
+        m_renderer3D->SetSceneClearColorUVE(color);
+    }
+    return true;
+}
+
 std::size_t EngineCoreUVE::GetActiveScriptInstanceCountUVE() const noexcept {
     return m_uvScripts.size();
 }
@@ -2428,8 +2949,8 @@ void EngineCoreUVE::Shutdown() {
     m_transientSimulationSessionActive = false;
     UVE_INFO("EngineCoreUVE: shutting down");
 
-    // Exact reverse of Init()'s construction order: ConfigManager, then
-    // CheckpointManager, then SaveGameSystem, then AudioSourceSystem, then AudioSystem, then AudioDevice, then
+    // Exact reverse of Init()'s construction order: CheckpointManager,
+    // then SaveGameSystem, then AudioSourceSystem, then AudioSystem, then AudioDevice, then
     // InputSystem, then MobileGestureSystem, then MobileInputSystem, then GamepadInputSystem, then
     // RaycastSystem, then PhysicsSystem, then CollisionSystem, then Renderer3D, then LightSystem, then MeshRenderer, then CameraSystem, then RenderSystem, then ShaderManager, then RenderDevice
     // (destroying the demo triangle's shader program and vertex buffer first, if windowed rendering
@@ -2439,12 +2960,12 @@ void EngineCoreUVE::Shutdown() {
     // finishes), then HotReload, then PrefabSystem, then SceneSerializer,
     // then AssetDatabase, then SceneGraph, then EntityManager, then
     // EventSystem, then Timer, then ThreadPool, then MemoryManager, then
-    // Logger, then CommandLine. The final log message is emitted before the
+    // ConfigManager (loaded early so its settings can override project values),
+    // then Logger, then CommandLine. The final log message is emitted before the
     // logger itself is torn down, so it is guaranteed to be recorded.
     m_uvScriptFailedSources.clear();
     m_uvScripts.clear(); // hosts point into the entity manager, so they go first
     m_services.reset();
-    m_configManager.reset();
     m_checkpointManager.reset();
     m_saveGameSystem.reset();
     m_audioSourceSystem.reset();
@@ -2513,6 +3034,7 @@ void EngineCoreUVE::Shutdown() {
     UVE_ASSERT(m_memoryManager->GetActiveAllocationCountUVE() == 0);
 #endif
     m_memoryManager.reset();
+    m_configManager.reset();
 
     UVE_INFO("EngineCoreUVE: shutdown complete");
     m_logger->Shutdown();
@@ -2568,6 +3090,29 @@ bool EngineCoreUVE::SetTransientSimulationSessionActiveUVE(const bool active) no
 
 bool EngineCoreUVE::IsTransientSimulationSessionActiveUVE() const noexcept {
     return m_transientSimulationSessionActive;
+}
+
+bool EngineCoreUVE::SetEditorPlaySceneNameUVE(const std::string_view sceneName) noexcept {
+    if (m_state != EngineStateUVE::Running || sceneName.size() > Window::kMaximumWindowTitleBytesUVE ||
+        sceneName.find('\0') != std::string_view::npos) {
+        return false;
+    }
+    const bool previousEditorPlayMode = m_config.editorPlayModeUVE;
+    try {
+        std::string candidateSceneName{sceneName};
+        m_config.editorPlayModeUVE = !candidateSceneName.empty();
+        const std::string title = Window::FormatWindowTitleUVE(
+            m_config.windowTitleFormatUVE, m_config.windowTitle, m_config.projectDisplayNameUVE,
+            candidateSceneName, m_config.editorPlayModeUVE, m_config.appendSceneNameInEditorPlayModeUVE);
+        m_editorPlaySceneNameUVE = std::move(candidateSceneName);
+        if (m_windowManager != nullptr) {
+            m_windowManager->SetWindowTitleUVE(title);
+        }
+        return true;
+    } catch (...) {
+        m_config.editorPlayModeUVE = previousEditorPlayMode;
+        return false;
+    }
 }
 
 void EngineCoreUVE::SetActiveCameraUVE(Scene::EntityUVE cameraEntity) noexcept {

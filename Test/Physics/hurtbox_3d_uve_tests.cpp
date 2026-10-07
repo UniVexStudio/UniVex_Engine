@@ -42,6 +42,7 @@ TEST(Hurtbox3DUVETest, IsVulnerableUVE_FalseWhenDisabledOrInvalid) {
 
 TEST(Hurtbox3DUVETest, AcceptsAttackerUVE_SkipsSelfIgnoreLayerAndChannel) {
     Hurtbox3DComponentUVE hurtbox{};
+    hurtbox.collisionMask = 1U;
     hurtbox.damageChannel = "melee";
     EXPECT_TRUE(Hurtbox3DUVE::AcceptsAttackerUVE(kHurtbox, hurtbox, kHitboxA, 1U, 0xFFFFFFFFU, "melee"));
     EXPECT_FALSE(Hurtbox3DUVE::AcceptsAttackerUVE(kHurtbox, hurtbox, kHurtbox, 1U, 0xFFFFFFFFU, "melee"));

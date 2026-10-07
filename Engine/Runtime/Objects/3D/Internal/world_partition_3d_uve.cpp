@@ -132,6 +132,9 @@ bool CarriesWorldPartition3DDrawableUVE(IEntityManagerUVE& entityManager, const 
 }
 
 bool IsWorldPartition3DDrawHiddenUVE(IEntityManagerUVE& entityManager, const EntityUVE entity) {
+    if (!entityManager.IsAliveUVE(entity)) {
+        return false;
+    }
     if (!entityManager.HasComponentUVE<WorldPartition3DMembershipComponentUVE>(entity)) {
         return false;
     }

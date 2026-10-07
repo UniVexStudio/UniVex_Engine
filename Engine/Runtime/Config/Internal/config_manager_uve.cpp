@@ -5,8 +5,10 @@
 
 #include <cerrno>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <string>
 #include <utility>
 
 #include <nlohmann/json.hpp>
@@ -110,10 +112,17 @@ bool ConfigManagerUVE::LoadUVE(const std::filesystem::path& path) {
 
     std::ifstream file(path);
     if (!file.is_open()) {
-        UVE_WARNING("ConfigManagerUVE: settings file not found at \"{}\" - starting with an "
-                    "empty configuration",
-                    path.string());
-        m_impl->document = nlohmann::json::object();
+        std::error_code statusError;
+        const bool exists = std::filesystem::exists(path, statusError);
+        if (!exists && !statusError) {
+            UVE_WARNING("ConfigManagerUVE: settings file not found at \"{}\" - starting with an "
+                        "empty configuration",
+                        path.string());
+            m_impl->document = nlohmann::json::object();
+            return false;
+        }
+        const std::string reason = statusError ? statusError.message() : std::strerror(errno);
+        UVE_ERROR("ConfigManagerUVE: failed to open settings file \"{}\" for reading: {}", path.string(), reason);
         return false;
     }
 
@@ -127,6 +136,20 @@ bool ConfigManagerUVE::LoadUVE(const std::filesystem::path& path) {
                    parseError.what());
         return false;
     }
+}
+
+void ConfigManagerUVE::ClearAllUVE() {
+    const std::lock_guard<std::mutex> lock(m_impl->mutex);
+    m_impl->document = nlohmann::json::object();
+}
+
+void ConfigManagerUVE::ReplaceDocumentUVE(ConfigManagerUVE& candidate) {
+    if (this == &candidate) {
+        return;
+    }
+    const std::scoped_lock lock(m_impl->mutex, candidate.m_impl->mutex);
+    m_impl->document.swap(candidate.m_impl->document);
+    m_impl->loadedPath.swap(candidate.m_impl->loadedPath);
 }
 
 bool ConfigManagerUVE::SaveUVE() {
@@ -205,6 +228,11 @@ bool ConfigManagerUVE::HasKeyUVE(std::string_view keyPath) const {
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
     const nlohmann::json* const value = ResolveConstUVE(m_impl->document, SplitKeyPathUVE(keyPath));
     return value != nullptr && !value->is_object();
+}
+
+bool ConfigManagerUVE::HasNodeUVE(std::string_view keyPath) const {
+    const std::lock_guard<std::mutex> lock(m_impl->mutex);
+    return ResolveConstUVE(m_impl->document, SplitKeyPathUVE(keyPath)) != nullptr;
 }
 
 bool ConfigManagerUVE::RemoveKeyUVE(std::string_view keyPath) {

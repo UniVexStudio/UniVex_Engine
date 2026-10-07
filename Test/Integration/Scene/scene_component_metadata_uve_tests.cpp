@@ -26,9 +26,11 @@
 #include "uve/objects/3d/lod_group_3d_uve.h"
 #include "uve/objects/3d/occluder_3d_uve.h"
 #include "uve/objects/3d/visibility_region_3d_uve.h"
+#include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
+#include "uve/objects/3d/reflection_probe_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
 #include "uve/objects/3d/health_uve.h"
 #include "uve/objects/3d/player_3d_uve.h"
@@ -96,7 +98,7 @@ TEST(SceneComponentMetadataUVETest, EveryLayerMaskNamesTheLayersItPicksFrom) {
     // every strike, every interact volume and every path in the engine filters on the same
     // layer contract, so they all belong to the same drawer set rather than a second, hand-drawn one.
     EXPECT_EQ(physics, 15U);
-    EXPECT_EQ(render, 4U); // mesh, render instance, light and decal
+    EXPECT_EQ(render, 5U); // mesh, render instance, light, decal and reflection probe
 }
 
 TEST(SceneComponentMetadataUVETest, FindSceneComponentMetadataUVE_ResolvesALiveComponentType) {
@@ -196,6 +198,407 @@ TEST(SceneComponentMetadataUVETest, RotationIsRoutedToACustomDrawerRatherThanWri
     const TypeMetadataPropertyUVE* rotation = FindPropertyUVE(*transform, "localRotation");
     ASSERT_NE(rotation, nullptr);
     EXPECT_EQ(rotation->customDrawerId, "transform.rotation");
+}
+
+TEST(SceneComponentMetadataUVETest, WorldEnvironmentFogModeSelectsTheRelevantAuthoringControls) {
+    const TypeMetadataEntryUVE* environmentEntry =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(WorldEnvironment3DComponentUVE)));
+    ASSERT_NE(environmentEntry, nullptr);
+    const TypeMetadataPropertyUVE* mode = FindPropertyUVE(*environmentEntry, "fogMode");
+    const TypeMetadataPropertyUVE* density = FindPropertyUVE(*environmentEntry, "fogDensity");
+    const TypeMetadataPropertyUVE* start = FindPropertyUVE(*environmentEntry, "fogStart");
+    const TypeMetadataPropertyUVE* end = FindPropertyUVE(*environmentEntry, "fogEnd");
+    const TypeMetadataPropertyUVE* height = FindPropertyUVE(*environmentEntry, "fogHeight");
+    ASSERT_NE(mode, nullptr);
+    ASSERT_NE(density, nullptr);
+    ASSERT_NE(start, nullptr);
+    ASSERT_NE(end, nullptr);
+    ASSERT_NE(height, nullptr);
+    ASSERT_EQ(mode->enumEntries.size(), 3U);
+    EXPECT_EQ(mode->enumEntries[0].label, "Linear");
+    EXPECT_EQ(mode->enumEntries[1].label, "Exponential");
+    EXPECT_EQ(mode->enumEntries[2].label, "Height");
+    ASSERT_NE(mode->isVisible, nullptr);
+    ASSERT_NE(density->isVisible, nullptr);
+    ASSERT_NE(start->isVisible, nullptr);
+    ASSERT_NE(end->isVisible, nullptr);
+    ASSERT_NE(height->isVisible, nullptr);
+
+    WorldEnvironment3DComponentUVE component;
+    EXPECT_FALSE(mode->isVisible(&component));
+    component.fogEnabled = true;
+    EXPECT_TRUE(mode->isVisible(&component));
+
+    SetPropertyValueUVE(*mode, component, mode->enumEntries[0].value);
+    EXPECT_EQ(component.fogMode, WorldEnvironmentFogModeUVE::Linear);
+    EXPECT_FALSE(density->isVisible(&component));
+    EXPECT_TRUE(start->isVisible(&component));
+    EXPECT_TRUE(end->isVisible(&component));
+    EXPECT_FALSE(height->isVisible(&component));
+
+    SetPropertyValueUVE(*mode, component, mode->enumEntries[1].value);
+    EXPECT_EQ(component.fogMode, WorldEnvironmentFogModeUVE::Exponential);
+    EXPECT_TRUE(density->isVisible(&component));
+    EXPECT_FALSE(start->isVisible(&component));
+    EXPECT_FALSE(height->isVisible(&component));
+
+    SetPropertyValueUVE(*mode, component, mode->enumEntries[2].value);
+    EXPECT_EQ(component.fogMode, WorldEnvironmentFogModeUVE::Height);
+    EXPECT_TRUE(density->isVisible(&component));
+    EXPECT_TRUE(height->isVisible(&component));
+}
+
+TEST(SceneComponentMetadataUVETest, WorldEnvironmentAmbientSourceExposesRealLightingModes) {
+    const TypeMetadataEntryUVE* environmentEntry =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(WorldEnvironment3DComponentUVE)));
+    ASSERT_NE(environmentEntry, nullptr);
+    const TypeMetadataPropertyUVE* source = FindPropertyUVE(*environmentEntry, "ambientSource");
+    const TypeMetadataPropertyUVE* tint = FindPropertyUVE(*environmentEntry, "ambientColor");
+    const TypeMetadataPropertyUVE* energy = FindPropertyUVE(*environmentEntry, "ambientEnergy");
+    ASSERT_NE(source, nullptr);
+    ASSERT_NE(tint, nullptr);
+    ASSERT_NE(energy, nullptr);
+    ASSERT_EQ(source->enumEntries.size(), 4U);
+    EXPECT_EQ(source->enumEntries[0].label, "None");
+    EXPECT_EQ(source->enumEntries[1].label, "Flat Color");
+    EXPECT_EQ(source->enumEntries[2].label, "Sky");
+    EXPECT_EQ(source->enumEntries[3].label, "Environment Map");
+    ASSERT_NE(tint->isVisible, nullptr);
+    ASSERT_NE(energy->isVisible, nullptr);
+
+    WorldEnvironment3DComponentUVE component;
+    EXPECT_EQ(component.ambientSource, WorldEnvironmentAmbientSourceUVE::Sky);
+    EXPECT_TRUE(tint->isVisible(&component));
+    EXPECT_TRUE(energy->isVisible(&component));
+    SetPropertyValueUVE(*source, component, source->enumEntries[0].value);
+    EXPECT_EQ(component.ambientSource, WorldEnvironmentAmbientSourceUVE::None);
+    EXPECT_FALSE(tint->isVisible(&component));
+    EXPECT_FALSE(energy->isVisible(&component));
+    SetPropertyValueUVE(*source, component, source->enumEntries[1].value);
+    EXPECT_EQ(component.ambientSource, WorldEnvironmentAmbientSourceUVE::FlatColor);
+    EXPECT_TRUE(tint->isVisible(&component));
+    SetPropertyValueUVE(*source, component, source->enumEntries[3].value);
+    EXPECT_EQ(component.ambientSource, WorldEnvironmentAmbientSourceUVE::EnvironmentMap);
+    EXPECT_TRUE(energy->isVisible(&component));
+}
+
+TEST(SceneComponentMetadataUVETest, BloomSoftKneeIsAuthorableAndOnlyShownForActiveBloom) {
+    const TypeMetadataEntryUVE* environmentEntry =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(WorldEnvironment3DComponentUVE)));
+    ASSERT_NE(environmentEntry, nullptr);
+    const TypeMetadataPropertyUVE* softKnee = FindPropertyUVE(*environmentEntry, "bloomSoftKnee");
+    ASSERT_NE(softKnee, nullptr);
+    EXPECT_TRUE(softKnee->IsAuthoringWritableUVE());
+    EXPECT_TRUE(softKnee->IsSerializedUVE());
+    EXPECT_FALSE(softKnee->tooltip.empty());
+    ASSERT_TRUE(softKnee->range.enabled);
+    EXPECT_DOUBLE_EQ(softKnee->range.minimum, 0.0);
+    EXPECT_DOUBLE_EQ(softKnee->range.maximum, 1.0);
+    ASSERT_NE(softKnee->isVisible, nullptr);
+
+    WorldEnvironment3DComponentUVE environment{};
+    EXPECT_TRUE(softKnee->isVisible(&environment));
+    environment.bloomEnabled = false;
+    EXPECT_FALSE(softKnee->isVisible(&environment));
+    environment.bloomEnabled = true;
+    environment.postProcessingEnabled = false;
+    EXPECT_FALSE(softKnee->isVisible(&environment));
+    environment.postProcessingEnabled = true;
+    SetPropertyValueUVE(*softKnee, environment, 0.65F);
+    EXPECT_FLOAT_EQ(environment.bloomSoftKnee, 0.65F);
+}
+
+TEST(SceneComponentMetadataUVETest, BloomMipCountIsAuthorableAndVisibleOnlyForActiveBloom) {
+    const TypeMetadataEntryUVE* environmentEntry =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(WorldEnvironment3DComponentUVE)));
+    ASSERT_NE(environmentEntry, nullptr);
+    const TypeMetadataPropertyUVE* mipCount = FindPropertyUVE(*environmentEntry, "bloomMipCount");
+    ASSERT_NE(mipCount, nullptr);
+    EXPECT_EQ(mipCount->typeId, kPropertyTypeUInt32UVE);
+    EXPECT_TRUE(mipCount->IsAuthoringWritableUVE());
+    EXPECT_TRUE(mipCount->IsSerializedUVE());
+    EXPECT_FALSE(mipCount->tooltip.empty());
+    ASSERT_TRUE(mipCount->range.enabled);
+    EXPECT_DOUBLE_EQ(mipCount->range.minimum, 1.0);
+    EXPECT_DOUBLE_EQ(mipCount->range.maximum,
+                     static_cast<double>(kMaximumWorldEnvironmentBloomMipCountUVE));
+    EXPECT_DOUBLE_EQ(mipCount->range.step, 1.0);
+    ASSERT_NE(mipCount->isVisible, nullptr);
+
+    WorldEnvironment3DComponentUVE environment{};
+    EXPECT_TRUE(mipCount->isVisible(&environment));
+    environment.bloomEnabled = false;
+    EXPECT_FALSE(mipCount->isVisible(&environment));
+    environment.bloomEnabled = true;
+    environment.postProcessingEnabled = false;
+    EXPECT_FALSE(mipCount->isVisible(&environment));
+    environment.postProcessingEnabled = true;
+    SetPropertyValueUVE(*mipCount, environment, 3U);
+    EXPECT_EQ(environment.bloomMipCount, 3U);
+}
+
+TEST(SceneComponentMetadataUVETest, VignetteControlsAreAuthorableAndShownWhenPostProcessingIsEnabled) {
+    const TypeMetadataEntryUVE* environmentEntry =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(WorldEnvironment3DComponentUVE)));
+    ASSERT_NE(environmentEntry, nullptr);
+    const TypeMetadataPropertyUVE* intensity = FindPropertyUVE(*environmentEntry, "vignetteIntensity");
+    const TypeMetadataPropertyUVE* radius = FindPropertyUVE(*environmentEntry, "vignetteRadius");
+    ASSERT_NE(intensity, nullptr);
+    ASSERT_NE(radius, nullptr);
+    EXPECT_TRUE(intensity->IsAuthoringWritableUVE());
+    EXPECT_TRUE(intensity->IsSerializedUVE());
+    EXPECT_TRUE(radius->IsAuthoringWritableUVE());
+    EXPECT_TRUE(radius->IsSerializedUVE());
+    EXPECT_FALSE(intensity->tooltip.empty());
+    EXPECT_FALSE(radius->tooltip.empty());
+    ASSERT_TRUE(intensity->range.enabled);
+    ASSERT_TRUE(radius->range.enabled);
+    EXPECT_DOUBLE_EQ(intensity->range.minimum, 0.0);
+    EXPECT_DOUBLE_EQ(intensity->range.maximum, 1.0);
+    EXPECT_DOUBLE_EQ(radius->range.minimum, 0.0);
+    EXPECT_DOUBLE_EQ(radius->range.maximum, 1.0);
+    ASSERT_NE(intensity->isVisible, nullptr);
+    ASSERT_NE(radius->isVisible, nullptr);
+
+    WorldEnvironment3DComponentUVE environment{};
+    EXPECT_TRUE(intensity->isVisible(&environment));
+    EXPECT_FALSE(radius->isVisible(&environment));
+    SetPropertyValueUVE(*intensity, environment, 0.7F);
+    EXPECT_TRUE(radius->isVisible(&environment));
+    SetPropertyValueUVE(*radius, environment, 0.55F);
+    EXPECT_FLOAT_EQ(environment.vignetteIntensity, 0.7F);
+    EXPECT_FLOAT_EQ(environment.vignetteRadius, 0.55F);
+    environment.postProcessingEnabled = false;
+    EXPECT_FALSE(intensity->isVisible(&environment));
+    EXPECT_FALSE(radius->isVisible(&environment));
+}
+
+TEST(SceneComponentMetadataUVETest, ChromaticAberrationIsAnAuthorablePostProcessingControl) {
+    const TypeMetadataEntryUVE* environmentEntry =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(WorldEnvironment3DComponentUVE)));
+    ASSERT_NE(environmentEntry, nullptr);
+    const TypeMetadataPropertyUVE* aberration =
+        FindPropertyUVE(*environmentEntry, "chromaticAberrationIntensity");
+    ASSERT_NE(aberration, nullptr);
+    EXPECT_TRUE(aberration->IsAuthoringWritableUVE());
+    EXPECT_TRUE(aberration->IsSerializedUVE());
+    EXPECT_FALSE(aberration->tooltip.empty());
+    ASSERT_TRUE(aberration->range.enabled);
+    EXPECT_DOUBLE_EQ(aberration->range.minimum, 0.0);
+    EXPECT_DOUBLE_EQ(aberration->range.maximum, 1.0);
+    ASSERT_NE(aberration->isVisible, nullptr);
+
+    WorldEnvironment3DComponentUVE environment{};
+    EXPECT_TRUE(aberration->isVisible(&environment));
+    SetPropertyValueUVE(*aberration, environment, 0.45F);
+    EXPECT_FLOAT_EQ(environment.chromaticAberrationIntensity, 0.45F);
+    environment.postProcessingEnabled = false;
+    EXPECT_FALSE(aberration->isVisible(&environment));
+}
+
+TEST(SceneComponentMetadataUVETest, FilmGrainIsAnAuthorablePostProcessingControl) {
+    const TypeMetadataEntryUVE* environmentEntry =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(WorldEnvironment3DComponentUVE)));
+    ASSERT_NE(environmentEntry, nullptr);
+    const TypeMetadataPropertyUVE* grain = FindPropertyUVE(*environmentEntry, "filmGrainIntensity");
+    ASSERT_NE(grain, nullptr);
+    EXPECT_TRUE(grain->IsAuthoringWritableUVE());
+    EXPECT_TRUE(grain->IsSerializedUVE());
+    EXPECT_FALSE(grain->tooltip.empty());
+    ASSERT_TRUE(grain->range.enabled);
+    EXPECT_DOUBLE_EQ(grain->range.minimum, 0.0);
+    EXPECT_DOUBLE_EQ(grain->range.maximum, 1.0);
+    ASSERT_NE(grain->isVisible, nullptr);
+
+    WorldEnvironment3DComponentUVE environment{};
+    EXPECT_TRUE(grain->isVisible(&environment));
+    SetPropertyValueUVE(*grain, environment, 0.35F);
+    EXPECT_FLOAT_EQ(environment.filmGrainIntensity, 0.35F);
+    environment.postProcessingEnabled = false;
+    EXPECT_FALSE(grain->isVisible(&environment));
+}
+
+TEST(SceneComponentMetadataUVETest, LensDistortionIsAnAuthorablePostProcessingControl) {
+    const TypeMetadataEntryUVE* environmentEntry =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(WorldEnvironment3DComponentUVE)));
+    ASSERT_NE(environmentEntry, nullptr);
+    const TypeMetadataPropertyUVE* distortion =
+        FindPropertyUVE(*environmentEntry, "lensDistortionIntensity");
+    ASSERT_NE(distortion, nullptr);
+    EXPECT_TRUE(distortion->IsAuthoringWritableUVE());
+    EXPECT_TRUE(distortion->IsSerializedUVE());
+    EXPECT_FALSE(distortion->tooltip.empty());
+    ASSERT_TRUE(distortion->range.enabled);
+    EXPECT_DOUBLE_EQ(distortion->range.minimum, 0.0);
+    EXPECT_DOUBLE_EQ(distortion->range.maximum, 1.0);
+    ASSERT_NE(distortion->isVisible, nullptr);
+
+    WorldEnvironment3DComponentUVE environment{};
+    EXPECT_TRUE(distortion->isVisible(&environment));
+    SetPropertyValueUVE(*distortion, environment, 0.5F);
+    EXPECT_FLOAT_EQ(environment.lensDistortionIntensity, 0.5F);
+    environment.postProcessingEnabled = false;
+    EXPECT_FALSE(distortion->isVisible(&environment));
+}
+
+TEST(SceneComponentMetadataUVETest, DepthOfFieldControlsAreAuthorableAndConditionallyVisible) {
+    const TypeMetadataEntryUVE* environmentEntry =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(WorldEnvironment3DComponentUVE)));
+    ASSERT_NE(environmentEntry, nullptr);
+    const TypeMetadataPropertyUVE* enabled = FindPropertyUVE(*environmentEntry, "depthOfFieldEnabled");
+    const TypeMetadataPropertyUVE* focusMode = FindPropertyUVE(*environmentEntry, "depthOfFieldFocusMode");
+    const TypeMetadataPropertyUVE* bokehShape = FindPropertyUVE(*environmentEntry, "depthOfFieldBokehShape");
+    const TypeMetadataPropertyUVE* focus = FindPropertyUVE(*environmentEntry, "depthOfFieldFocusDistance");
+    const TypeMetadataPropertyUVE* aperture = FindPropertyUVE(*environmentEntry, "depthOfFieldAperture");
+    const TypeMetadataPropertyUVE* quality = FindPropertyUVE(*environmentEntry, "depthOfFieldQuality");
+    ASSERT_NE(enabled, nullptr);
+    ASSERT_NE(focusMode, nullptr);
+    ASSERT_NE(bokehShape, nullptr);
+    ASSERT_NE(focus, nullptr);
+    ASSERT_NE(aperture, nullptr);
+    ASSERT_NE(quality, nullptr);
+    EXPECT_TRUE(enabled->IsAuthoringWritableUVE());
+    EXPECT_TRUE(enabled->IsSerializedUVE());
+    EXPECT_TRUE(focusMode->IsAuthoringWritableUVE());
+    EXPECT_TRUE(focusMode->IsSerializedUVE());
+    ASSERT_EQ(focusMode->enumEntries.size(), 2U);
+    EXPECT_EQ(focusMode->enumEntries[0].label, "Manual");
+    EXPECT_EQ(focusMode->enumEntries[1].label, "Screen Center Autofocus");
+    EXPECT_TRUE(bokehShape->IsAuthoringWritableUVE());
+    EXPECT_TRUE(bokehShape->IsSerializedUVE());
+    ASSERT_EQ(bokehShape->enumEntries.size(), 2U);
+    EXPECT_EQ(bokehShape->enumEntries[0].label, "Circular");
+    EXPECT_EQ(bokehShape->enumEntries[1].label, "Hexagonal");
+    EXPECT_FALSE(bokehShape->tooltip.empty());
+    ASSERT_NE(bokehShape->isVisible, nullptr);
+    EXPECT_TRUE(focus->IsAuthoringWritableUVE());
+    EXPECT_TRUE(focus->IsSerializedUVE());
+    EXPECT_TRUE(aperture->IsAuthoringWritableUVE());
+    EXPECT_TRUE(aperture->IsSerializedUVE());
+    EXPECT_TRUE(quality->IsAuthoringWritableUVE());
+    EXPECT_TRUE(quality->IsSerializedUVE());
+    ASSERT_TRUE(focus->range.enabled);
+    ASSERT_TRUE(aperture->range.enabled);
+    ASSERT_TRUE(quality->range.enabled);
+    EXPECT_DOUBLE_EQ(focus->range.minimum, 0.1);
+    EXPECT_DOUBLE_EQ(aperture->range.minimum, 0.0);
+    EXPECT_DOUBLE_EQ(aperture->range.maximum, 1.0);
+    EXPECT_DOUBLE_EQ(quality->range.minimum, 0.0);
+    EXPECT_DOUBLE_EQ(quality->range.maximum, 2.0);
+
+    WorldEnvironment3DComponentUVE environment{};
+    ASSERT_NE(enabled->isVisible, nullptr);
+    ASSERT_NE(focusMode->isVisible, nullptr);
+    ASSERT_NE(bokehShape->isVisible, nullptr);
+    ASSERT_NE(focus->isVisible, nullptr);
+    ASSERT_NE(aperture->isVisible, nullptr);
+    ASSERT_NE(quality->isVisible, nullptr);
+    EXPECT_EQ(environment.depthOfFieldFocusMode, WorldEnvironmentDepthOfFieldFocusModeUVE::Manual);
+    EXPECT_EQ(environment.depthOfFieldBokehShape, WorldEnvironmentDepthOfFieldBokehShapeUVE::Circular);
+    EXPECT_TRUE(enabled->isVisible(&environment));
+    EXPECT_FALSE(focusMode->isVisible(&environment));
+    EXPECT_FALSE(bokehShape->isVisible(&environment));
+    EXPECT_FALSE(focus->isVisible(&environment));
+    SetPropertyValueUVE(*enabled, environment, true);
+    EXPECT_TRUE(focusMode->isVisible(&environment));
+    EXPECT_TRUE(bokehShape->isVisible(&environment));
+    EXPECT_TRUE(focus->isVisible(&environment));
+    EXPECT_TRUE(aperture->isVisible(&environment));
+    EXPECT_TRUE(quality->isVisible(&environment));
+    SetPropertyValueUVE(*focus, environment, 24.0F);
+    SetPropertyValueUVE(*bokehShape, environment, bokehShape->enumEntries[1].value);
+    SetPropertyValueUVE(*aperture, environment, 0.8F);
+    SetPropertyValueUVE(*quality, environment, 2U);
+    EXPECT_FLOAT_EQ(environment.depthOfFieldFocusDistance, 24.0F);
+    EXPECT_EQ(environment.depthOfFieldBokehShape, WorldEnvironmentDepthOfFieldBokehShapeUVE::Hexagonal);
+    EXPECT_FLOAT_EQ(environment.depthOfFieldAperture, 0.8F);
+    EXPECT_EQ(environment.depthOfFieldQuality, 2U);
+    SetPropertyValueUVE(*focusMode, environment, focusMode->enumEntries[1].value);
+    EXPECT_EQ(environment.depthOfFieldFocusMode, WorldEnvironmentDepthOfFieldFocusModeUVE::ScreenCenter);
+    EXPECT_FALSE(focus->isVisible(&environment));
+    environment.postProcessingEnabled = false;
+    EXPECT_FALSE(enabled->isVisible(&environment));
+    EXPECT_FALSE(focusMode->isVisible(&environment));
+    EXPECT_FALSE(bokehShape->isVisible(&environment));
+    EXPECT_FALSE(focus->isVisible(&environment));
+    EXPECT_FALSE(aperture->isVisible(&environment));
+    EXPECT_FALSE(quality->isVisible(&environment));
+}
+
+TEST(SceneComponentMetadataUVETest, MotionBlurControlsAreAuthorableAndConditionallyVisible) {
+    const TypeMetadataEntryUVE* environmentEntry =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(WorldEnvironment3DComponentUVE)));
+    ASSERT_NE(environmentEntry, nullptr);
+    const TypeMetadataPropertyUVE* enabled = FindPropertyUVE(*environmentEntry, "motionBlurEnabled");
+    const TypeMetadataPropertyUVE* strength = FindPropertyUVE(*environmentEntry, "motionBlurStrength");
+    const TypeMetadataPropertyUVE* samples = FindPropertyUVE(*environmentEntry, "motionBlurSampleCount");
+    ASSERT_NE(enabled, nullptr);
+    ASSERT_NE(strength, nullptr);
+    ASSERT_NE(samples, nullptr);
+    EXPECT_TRUE(enabled->IsAuthoringWritableUVE());
+    EXPECT_TRUE(enabled->IsSerializedUVE());
+    EXPECT_TRUE(strength->IsAuthoringWritableUVE());
+    EXPECT_TRUE(strength->IsSerializedUVE());
+    EXPECT_TRUE(samples->IsAuthoringWritableUVE());
+    EXPECT_TRUE(samples->IsSerializedUVE());
+    ASSERT_TRUE(strength->range.enabled);
+    EXPECT_DOUBLE_EQ(strength->range.minimum, 0.0);
+    EXPECT_DOUBLE_EQ(strength->range.maximum, 1.0);
+    ASSERT_TRUE(samples->range.enabled);
+    EXPECT_DOUBLE_EQ(samples->range.minimum, 4.0);
+    EXPECT_DOUBLE_EQ(samples->range.maximum, 12.0);
+    EXPECT_DOUBLE_EQ(samples->range.step, 4.0);
+
+    WorldEnvironment3DComponentUVE environment{};
+    environment.postProcessingEnabled = false;
+    ASSERT_NE(enabled->isVisible, nullptr);
+    ASSERT_NE(strength->isVisible, nullptr);
+    ASSERT_NE(samples->isVisible, nullptr);
+    EXPECT_FALSE(environment.motionBlurEnabled);
+    EXPECT_FALSE(enabled->isVisible(&environment));
+    EXPECT_FALSE(strength->isVisible(&environment));
+    EXPECT_FALSE(samples->isVisible(&environment));
+    environment.postProcessingEnabled = true;
+    EXPECT_TRUE(enabled->isVisible(&environment));
+    EXPECT_FALSE(strength->isVisible(&environment));
+    SetPropertyValueUVE(*enabled, environment, true);
+    EXPECT_TRUE(environment.motionBlurEnabled);
+    EXPECT_TRUE(strength->isVisible(&environment));
+    EXPECT_TRUE(samples->isVisible(&environment));
+    SetPropertyValueUVE(*strength, environment, 0.25F);
+    SetPropertyValueUVE(*samples, environment, 12U);
+    EXPECT_FLOAT_EQ(environment.motionBlurStrength, 0.25F);
+    EXPECT_EQ(environment.motionBlurSampleCount, 12U);
+    environment.postProcessingEnabled = false;
+    EXPECT_FALSE(enabled->isVisible(&environment));
+    EXPECT_FALSE(strength->isVisible(&environment));
+    EXPECT_FALSE(samples->isVisible(&environment));
+}
+
+TEST(SceneComponentMetadataUVETest, ReflectionProbeResolutionIsAnAuthorableValidatedPerProbeSetting) {
+    const TypeMetadataEntryUVE* probeEntry =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(ReflectionProbe3DComponentUVE)));
+    ASSERT_NE(probeEntry, nullptr);
+    EXPECT_EQ(probeEntry->typeId, "component.reflection_probe_3d");
+    const TypeMetadataPropertyUVE* resolution = FindPropertyUVE(*probeEntry, "resolution");
+    ASSERT_NE(resolution, nullptr);
+    EXPECT_TRUE(resolution->IsAuthoringWritableUVE());
+    EXPECT_TRUE(resolution->IsSerializedUVE());
+    ASSERT_EQ(resolution->enumEntries.size(), 4U);
+    EXPECT_EQ(resolution->enumEntries[0].label, "64 (Low)");
+    EXPECT_EQ(resolution->enumEntries[1].label, "128 (Medium)");
+    EXPECT_EQ(resolution->enumEntries[2].label, "256 (High)");
+    EXPECT_EQ(resolution->enumEntries[3].label, "512 (Ultra)");
+    ASSERT_NE(probeEntry->isInstanceValid, nullptr);
+
+    ReflectionProbe3DComponentUVE probe{};
+    EXPECT_EQ(probe.resolution, ReflectionProbeResolutionUVE::Medium);
+    EXPECT_TRUE(probeEntry->isInstanceValid(&probe));
+    SetPropertyValueUVE(*resolution, probe, resolution->enumEntries[2].value);
+    EXPECT_EQ(probe.resolution, ReflectionProbeResolutionUVE::High);
+    EXPECT_TRUE(probeEntry->isInstanceValid(&probe));
+    probe.resolution = static_cast<ReflectionProbeResolutionUVE>(255U);
+    EXPECT_FALSE(probeEntry->isInstanceValid(&probe));
 }
 
 TEST(SceneComponentMetadataUVETest, ConditionalVisibilityFollowsTheSiblingFieldItDependsOn) {

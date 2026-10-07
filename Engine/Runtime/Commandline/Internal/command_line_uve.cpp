@@ -56,11 +56,13 @@ bool CommandLineUVE::HasFlagUVE(std::string_view name) const noexcept {
 }
 
 std::string CommandLineUVE::GetValueUVE(std::string_view name, std::string_view defaultValue) const {
+    const std::optional<std::string> value = GetOptionalValueUVE(name);
+    return value.has_value() ? *value : std::string(defaultValue);
+}
+
+std::optional<std::string> CommandLineUVE::GetOptionalValueUVE(std::string_view name) const {
     const auto flagIt = m_flags.find(std::string(name));
-    if (flagIt == m_flags.end() || !flagIt->second.has_value()) {
-        return std::string(defaultValue);
-    }
-    return *flagIt->second;
+    return flagIt != m_flags.end() ? flagIt->second : std::nullopt;
 }
 
 } // namespace UVE::CommandLine
