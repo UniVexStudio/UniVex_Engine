@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -20,6 +21,7 @@
 #include "uve/logging/log_level_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/platform/platform_uve.h"
+#include "uve/platform/application_window_settings_uve.h"
 
 namespace UVE::Core {
 
@@ -36,6 +38,62 @@ enum class RenderBackendPreferenceUVE : std::uint32_t {
     OpenGLUVE,
     VulkanUVE,
     NullUVE, ///< Force the null swapchain device (rendering disabled) even with a window.
+};
+
+/// Runtime on-demand shader work scheduling. Ahead-of-time compilation and placeholder programs
+/// are not currently provided; asynchronous mode preprocesses on workers, then compiles/links on
+/// the render thread when ShaderManagerUVE::UpdateUVE() drains completed jobs.
+enum class ShaderCompilationModeUVE : std::uint32_t {
+    SynchronousOnDemandUVE = 0U,
+    AsynchronousOnDemandUVE,
+};
+
+/// Post-process anti-aliasing methods the runtime can execute today. Temporal AA is omitted until
+/// the renderer has frame-history, motion vectors, and camera-jitter support.
+enum class PostProcessAAMethodUVE : std::uint32_t {
+    NoneUVE = 0U,
+    FastApproximateUVE,
+};
+
+/// Frustum-culling mode for the renderer's main colour view. DebugFreezeUVE stops rejecting geometry
+/// by frustum so every placed mesh, primitive, surface instance and decal is submitted for the frame
+/// - the "is it off-screen or is it missing?" diagnostic. Author visibility flags, world partitioning,
+/// visibility regions, LOD/SurfaceInstance draw distances, render layers, Occluder3D occlusion and the
+/// shadow cascades' own light-frustum culls all keep running; see Render::CullingSettingsUVE.
+enum class FrustumCullingModeUVE : std::uint32_t {
+    EnabledUVE = 0U,
+    DebugFreezeUVE,
+};
+
+/// Spatial reconstruction used when the scene render target is smaller than the presentation target.
+/// Temporal upscaling remains unavailable without frame history and motion vectors.
+enum class SpatialUpscalingMethodUVE : std::uint32_t {
+    BilinearUVE = 0U,
+    NearestUVE,
+};
+
+/// Tone-mapping operators the built-in final pass can execute. LinearClamp is a direct clip into
+/// display range; ACES provides the existing filmic roll-off and remains the default.
+enum class ToneMappingMethodUVE : std::uint32_t {
+    LinearClampUVE = 0U,
+    AcesUVE,
+};
+
+/// Bounds shared by the persisted resolution-scale settings and EngineCoreUVE's startup validation.
+inline constexpr double kMinimumRenderResolutionScaleUVE = 0.5;
+inline constexpr double kMaximumRenderResolutionScaleUVE = 1.0;
+inline constexpr double kMinimumRenderResolutionTargetFrameTimeMillisecondsUVE = 8.0;
+inline constexpr double kMaximumRenderResolutionTargetFrameTimeMillisecondsUVE = 100.0;
+inline constexpr double kDefaultRenderResolutionTargetFrameTimeMillisecondsUVE = 16.6667;
+
+/// Decoded icon pixels staged by the application bootstrap and copied into the native window
+/// descriptor when a desktop window is created.
+struct EngineApplicationIconImageUVE final {
+    std::uint32_t width = 0U;
+    std::uint32_t height = 0U;
+    std::vector<std::uint8_t> rgba8;
+
+    [[nodiscard]] bool operator==(const EngineApplicationIconImageUVE&) const = default;
 };
 
 /// Configuration passed into EngineCoreUVE's constructor. Every field has a
@@ -94,10 +152,16 @@ struct EngineConfigUVE {
     /// file yet.
     std::filesystem::path settingsFilePath = ".uvsettings";
 
+    /// Optional path to an active-target override file. When empty, EngineCoreUVE loads
+    /// `<settingsFilePath parent>/platforms/<target>/<settingsFilePath filename>` if present;
+    /// target is android, linux, windows, apple, web or unknown. These values only override
+    /// descriptors marked PerPlatform and are kept separate from the user settings file.
+    std::filesystem::path platformSettingsFilePath{};
+
     /// Path of the project's own settings file (see EngineServicesUVE::GetProjectSettingsUVE()),
-    /// read during Init(). Its values override the matching fields of this struct - the tick rate,
-    /// shadow quality and so on - so a project carries its settings with it. A missing file is
-    /// every default, not an error.
+    /// read during Init(). Valid project values override this struct's base values; user,
+    /// per-platform and command-line layers may override them in turn. A missing file changes
+    /// nothing.
     std::filesystem::path projectSettingsFilePath = "project.uvsettings";
 
     /// Path of the project's input map (see Core::InputMapDocumentUVE), read during Init() and
@@ -107,7 +171,10 @@ struct EngineConfigUVE {
     /// Raw startup argument tokens (excluding the program path) that
     /// CommandLineUVE parses during Init(). Populated by main() from
     /// argv[1..argc); left empty by default so tests can construct an
-    /// EngineConfigUVE without a real process argv.
+    /// EngineConfigUVE without a real process argv. A registered EngineConfig
+    /// setting can be overridden as `--<setting.id> <value>`; booleans also
+    /// accept a presence-only flag, enums accept their label or integer value, and
+    /// vectors/colors use comma-separated numbers.
     std::vector<std::string> commandLineArgs = {};
 
     /// Path AssetDatabaseUVE::LoadUVE() is called with during Init(). A
@@ -194,11 +261,17 @@ struct EngineConfigUVE {
     /// negative caller values are clamped to zero by Renderer3DUVE.
     float shadowFrustumPadding = 1.0F;
 
-    /// Practical-split blend for the fixed three directional shadow cascades. `0` distributes
-    /// splits uniformly over the camera depth range, `1` uses fully logarithmic spacing, and
-    /// Renderer3DUVE clamps caller values to `[0, 1]`. The default favors near-camera detail
-    /// without starving the far cascade.
-    float shadowCascadeSplitLambda = 0.5F;
+    /// Default authored LightEmitter3D depth bias for components with a negative/inherit bias.
+    /// Renderer3DUVE scales this value by 0.025 before sending it to the shadow shader.
+    float shadowBiasDefaultUVE = 0.1F;
+    /// Default angle-aware normal-bias multiplier for LightEmitter3D components that inherit it.
+    float shadowNormalBiasDefaultUVE = 1.0F;
+
+    /// Default practical-split blend for directional shadows whose per-light split value is unset.
+    /// `0` distributes splits uniformly over the camera depth range; `1` uses fully logarithmic
+    /// spacing. New DirectionalLight3D components inherit this setting; explicit per-light values
+    /// continue to override it. The default preserves the previous 0.6 per-light behavior.
+    float shadowCascadeSplitLambda = 0.6F;
 
     /// Fraction of each non-final cascade range used to cross-fade into the next cascade. The
     /// renderer clamps this to `[0, 0.25]`; zero preserves the Increment 30 hard cascade boundary.
@@ -228,25 +301,90 @@ struct EngineConfigUVE {
 
     /// When true, EngineCoreUVE::Init() constructs Window::NullWindowManagerUVE and
     /// Render::NullRenderDeviceUVE instead of the real GLFW3/OpenGL backends — no window, no GL
-    /// context, safe to run with no display attached (CI, this project's own test suite). Also
-    /// settable via the `--headless` CLI flag (CommandLineUVE::HasFlagUVE("headless")), read and
-    /// OR'd into this field during Init() right after CommandLineUVE is constructed.
+    /// context, safe to run with no display attached (CI, this project's own test suite). The
+    /// hidden, NotPersisted `headless` setting maps the `--headless` presence-only CLI flag into
+    /// the highest-priority command-line layer during Init(); project/user/platform files cannot
+    /// override it.
     bool headlessUVE = false;
 
-    /// Title bar text WindowManagerUVE's real backend creates its window with. Unused when
-    /// headlessUVE is true.
+    /// Application-level policies resolved from the project manifest before engine startup.
+    /// `applicationIdentifierUVE` keys the process single-instance lock; the user-data directory
+    /// is the resolved per-user or project-portable root. CrashReporterUVE writes platform-native
+    /// Windows minidumps and bounded POSIX fatal-signal reports below the configured directory.
+    std::string applicationIdentifierUVE;
+    std::filesystem::path userDataDirectoryPathUVE;
+    bool quitOnLastWindowClosedUVE = true;
+    bool enforceSingleInstanceUVE = false;
+    bool crashHandlerEnabledUVE = true;
+    std::filesystem::path crashDumpDirectoryUVE = "crash-dumps";
+    std::string symbolUploadEndpointUVE;
+
+    /// Boot-splash presentation policy. The standalone runtime draws the background and optional
+    /// imported image through the UI overlay, then restores the project's active camera.
+    std::filesystem::path bootSplashImagePathUVE;
+    std::array<float, 4U> backgroundColorUVE{0.05F, 0.05F, 0.05F, 1.0F};
+    double splashFadeSecondsUVE = 0.25;
+    double splashMinimumDisplaySecondsUVE = 1.0;
+    bool splashSkippableUVE = true;
+    bool skipSplashInEditorPlayModeUVE = true;
+
+    /// Product/project identity used by the window title formatter. `windowTitle` remains the
+    /// product-name fallback and legacy caller-provided title.
     std::string windowTitle = "UniVex Engine";
+    std::string projectDisplayNameUVE;
+    /// Supports {productName}, {projectName}, and {sceneName}; literal text is preserved.
+    std::string windowTitleFormatUVE = "{productName}";
+    std::vector<EngineApplicationIconImageUVE> windowIconsUVE;
 
     /// Requested window size, in pixels, at creation time (the OS/window manager may still clamp
     /// or override it). Unused when headlessUVE is true.
     std::uint32_t windowWidth = 1280;
     std::uint32_t windowHeight = 720;
 
-    /// Whether the real window is user-resizable.
+    /// Whether the real window is user-resizable. Remaining window policy is consumed by the
+    /// platform backend at construction; unsupported platform-specific choices are retained in
+    /// config but reported/fallback by that backend.
     bool windowResizableUVE = true;
+    Platform::WindowModeUVE windowModeUVE = Platform::WindowModeUVE::Windowed;
+    bool windowBorderlessUVE = false;
+    bool windowAlwaysOnTopUVE = false;
+    bool windowTransparentUVE = false;
+    std::uint32_t windowMinimumWidthUVE = 0U;
+    std::uint32_t windowMinimumHeightUVE = 0U;
+    std::uint32_t windowMaximumWidthUVE = 0U;
+    std::uint32_t windowMaximumHeightUVE = 0U;
+    bool windowPositionSpecifiedUVE = false;
+    std::int32_t windowPositionXUVE = 0;
+    std::int32_t windowPositionYUVE = 0;
+    std::string windowMonitorNameUVE;
+    bool highDpiAwareUVE = true;
+    bool perMonitorScalingUVE = true;
+    double contentScaleOverrideUVE = 0.0;
+    Platform::StretchModeUVE stretchModeUVE = Platform::StretchModeUVE::Disabled;
+    Platform::AspectPolicyUVE aspectPolicyUVE = Platform::AspectPolicyUVE::Keep;
+    bool integerOnlyScalingUVE = false;
+    Platform::DisplayOrientationUVE orientationUVE = Platform::DisplayOrientationUVE::Auto;
+    std::vector<Platform::DisplayOrientationUVE> allowedOrientationsUVE{
+        Platform::DisplayOrientationUVE::Landscape, Platform::DisplayOrientationUVE::Portrait};
 
-    /// Whether the real window's GL context starts with vertical sync enabled.
+    /// `vsyncEnabledUVE` remains the source-compatible legacy toggle. Explicit enum selections
+    /// set `vsyncModeExplicitUVE`; otherwise EngineCore maps the legacy bool to Off/On.
     bool vsyncEnabledUVE = true;
+    Platform::VSyncModeUVE vsyncModeUVE = Platform::VSyncModeUVE::On;
+    bool vsyncModeExplicitUVE = false;
+    std::uint32_t focusedFrameRateCapUVE = 0U;
+    std::uint32_t unfocusedFrameRateCapUVE = 0U;
+    bool allowDisplaySleepUVE = true;
+    std::filesystem::path cursorImagePathUVE;
+    std::uint32_t cursorHotspotXUVE = 0U;
+    std::uint32_t cursorHotspotYUVE = 0U;
+    std::vector<std::uint8_t> cursorRgba8UVE;
+    std::uint32_t cursorImageWidthUVE = 0U;
+    std::uint32_t cursorImageHeightUVE = 0U;
+    bool cursorVisibleUVE = true;
+    bool cursorConfinedToWindowUVE = false;
+    bool appendSceneNameInEditorPlayModeUVE = false;
+    bool editorPlayModeUVE = false;
 
     /// Requested OpenGL context version, forwarded to Window::WindowDescUVE::glVersionMajor/Minor.
     /// The production default is OpenGL 4.6 Core, per the approved architecture decision.
@@ -257,11 +395,26 @@ struct EngineConfigUVE {
     std::uint32_t windowGlVersionMajor = 4;
     std::uint32_t windowGlVersionMinor = 6;
 
-    /// Directory Shader::ShaderManagerUVE persists compiled GL program binaries under (see its
-    /// on-disk cache, keyed by a hash of each program's fully resolved — post-#include,
-    /// post-macro — source). A per-platform subdirectory is appended automatically. Created
-    /// lazily on first write, mirroring saveDirectoryPath's own "missing is not an error"
-    /// contract.
+    /// Runtime shader compilation is on-demand. The async default prepares source on the worker
+    /// pool, then compiles/links through the RHI on the render thread as completed jobs are drained;
+    /// the synchronous mode completes the work in each Create* call and can stall that caller.
+    /// Ahead-of-time compilation and placeholder programs are not supported yet.
+    ShaderCompilationModeUVE shaderCompilationModeUVE = ShaderCompilationModeUVE::AsynchronousOnDemandUVE;
+
+    /// Request VK_LAYER_KHRONOS_validation when the Vulkan backend is selected. The layer is
+    /// enabled only when installed; otherwise Vulkan logs a warning and continues without it.
+#if UVE_DEBUG
+    bool vulkanValidationLayersEnabledUVE = true;
+#else
+    bool vulkanValidationLayersEnabledUVE = false;
+#endif
+
+    /// Directory relative to the process working directory where Shader::ShaderManagerUVE persists
+    /// compiled OpenGL program binaries (keyed by a hash of each program's fully resolved —
+    /// post-#include, post-macro — source). A per-platform subdirectory is appended automatically;
+    /// the cache directory is created lazily on first write. EngineCore rejects absolute/rooted paths
+    /// and any `..` component; this lexical policy does not treat symlinks inside the working
+    /// directory as a sandbox boundary.
     std::filesystem::path shaderCachePath = "shader_cache/";
 
     /// Whether ShaderManagerUVE::UpdateUVE() polls loaded shader programs' source file (and
@@ -299,9 +452,49 @@ struct EngineConfigUVE {
     /// true — headless always uses NullRenderDeviceUVE). `AutoUVE` resolves to `OpenGLUVE`,
     /// the production default; `VulkanUVE` opts into the milestone-1 Vulkan bootstrap device
     /// (window surface + clear-color present; see Render::VulkanRenderDeviceUVE) with the
-    /// documented Vulkan -> OpenGL -> Null fallback chain when the host lacks it. Appended
-    /// last so existing aggregate-construction order in callers and tests is unchanged.
+    /// documented Vulkan -> OpenGL -> Null fallback chain when the host lacks it. Appended after
+    /// the pre-existing config fields so their aggregate-construction order remains unchanged.
     RenderBackendPreferenceUVE renderBackendPreferenceUVE = RenderBackendPreferenceUVE::AutoUVE;
+
+    /// Maximum fraction of the display/viewport dimensions used for the 3D scene render target.
+    /// With dynamic resolution disabled this is the fixed scale; when enabled it is the starting
+    /// and upper scale. The final image is still presented at the normal output size.
+    double renderResolutionScaleUVE = kMaximumRenderResolutionScaleUVE;
+    bool dynamicRenderResolutionEnabledUVE = false;
+    double minimumRenderResolutionScaleUVE = kMinimumRenderResolutionScaleUVE;
+    double renderResolutionTargetFrameTimeMillisecondsUVE =
+        kDefaultRenderResolutionTargetFrameTimeMillisecondsUVE;
+
+    /// Spatial resampling used to fit the scene render target to the presentation size.
+    SpatialUpscalingMethodUVE spatialUpscalingMethodUVE = SpatialUpscalingMethodUVE::BilinearUVE;
+    /// Operator used to map the HDR scene color into display range in the final full-screen pass.
+    ToneMappingMethodUVE toneMappingMethodUVE = ToneMappingMethodUVE::AcesUVE;
+    /// Unsharp-mask strength applied to the final scene reconstruction before exposure/tone mapping; 0 disables it.
+    float sharpeningAmountUVE = 0.0F;
+    /// Add sub-LSB screen-space noise before output quantization to reduce visible banding.
+    bool ditheringEnabledUVE = true;
+
+    /// Fast approximate AA is applied in the Renderer3DUVE tone-mapping shader when selected.
+    /// Temporal AA is not available until the engine supports frame history and camera jitter.
+    PostProcessAAMethodUVE postProcessAAMethodUVE = PostProcessAAMethodUVE::NoneUVE;
+    /// Edge-direction taps used only by fast approximate AA: 0 = low (3), 1 = medium (5),
+    /// 2 = high (7), in addition to the filter's fixed four-neighbour contrast probes.
+    std::uint32_t screenSpaceAAQualityUVE = 1U;
+
+    /// Screen-space ambient occlusion controls. These are global renderer defaults; an active
+    /// WorldEnvironment retains its existing enable/radius/intensity values as local overrides.
+    bool ssaoEnabledUVE = true;
+    float ssaoRadiusUVE = 0.5F;
+    float ssaoIntensityUVE = 1.0F;
+    float ssaoPowerUVE = 1.0F;
+    /// 0 = Low (4 samples), 1 = Medium (8), 2 = High (12); High preserves the existing kernel cost.
+    std::uint32_t ssaoQualityUVE = 2U;
+    /// Apply the small Gaussian AO blur while compositing; disabled by default to preserve current output.
+    bool ssaoBlurEnabledUVE = false;
+
+    /// Frustum culling for the renderer's main colour view. DebugFreezeUVE submits everything the
+    /// scene placed, wherever the camera looks; EnabledUVE preserves the shipped culling behaviour.
+    FrustumCullingModeUVE frustumCullingModeUVE = FrustumCullingModeUVE::EnabledUVE;
 };
 
 } // namespace UVE::Core

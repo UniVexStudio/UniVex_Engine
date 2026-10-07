@@ -43,6 +43,29 @@ ProjectPackResultUVE ProjectPackagerUVE::PackUVE(const ProjectPackOptionsUVE& op
                              "The project's content root was not found: " + contentRoot.string());
     }
 
+    const auto referencedResourceExists = [&contentRoot](const std::filesystem::path& relativePath) {
+        if (relativePath.empty()) {
+            return true;
+        }
+        std::error_code resourceError;
+        return std::filesystem::is_regular_file(contentRoot / relativePath, resourceError) && !resourceError;
+    };
+    if (!referencedResourceExists(package.applicationSettings.splashImagePath)) {
+        return MakeResultUVE(ProjectPackCodeUVE::ApplicationResourceNotFound,
+                             "The configured splash image was not found under the content root.");
+    }
+    for (const auto& [target, icons] : package.applicationSettings.iconPathsByTarget) {
+        static_cast<void>(target);
+        for (const auto& [pixelSize, iconPath] : icons) {
+            static_cast<void>(pixelSize);
+            if (!referencedResourceExists(iconPath)) {
+                return MakeResultUVE(ProjectPackCodeUVE::ApplicationResourceNotFound,
+                                     "A configured application icon was not found under the content root: " +
+                                         iconPath.string());
+            }
+        }
+    }
+
     error.clear();
     if (std::filesystem::exists(options.outputDirectory, error) &&
         !std::filesystem::is_empty(options.outputDirectory, error)) {
@@ -100,10 +123,20 @@ ProjectPackResultUVE ProjectPackagerUVE::PackUVE(const ProjectPackOptionsUVE& op
                                  error.message());
     }
 
-    return MakeResultUVE(ProjectPackCodeUVE::Success,
-                         "Packaged '" + package.displayName + "' into " + options.outputDirectory.string() +
-                             " - run with: " + copiedRuntimePath.filename().string() + " --project " +
-                             options.projectFile.filename().string());
+    const std::string& productName =
+        package.productMetadata.name.empty() ? package.displayName : package.productMetadata.name;
+    std::string message = "Packaged '" + productName + "' v" + package.productMetadata.version + " (build " +
+                          std::to_string(package.productMetadata.buildNumber) + ") into " +
+                          options.outputDirectory.string() + " - run with: " +
+                          copiedRuntimePath.filename().string() + " --project " +
+                          options.projectFile.filename().string();
+    if (!package.applicationSettings.publisherName.empty()) {
+        message += " - publisher: " + package.applicationSettings.publisherName;
+    }
+    if (!package.applicationSettings.copyrightLine.empty()) {
+        message += " - " + package.applicationSettings.copyrightLine;
+    }
+    return MakeResultUVE(ProjectPackCodeUVE::Success, std::move(message));
 }
 
 } // namespace UVE::Pack

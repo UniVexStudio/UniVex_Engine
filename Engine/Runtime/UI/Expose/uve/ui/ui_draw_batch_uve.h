@@ -23,10 +23,10 @@ enum class UIDrawItemKindUVE : std::uint8_t {
     Glyph,
 };
 
-/// One screen-space quad, in raw window pixel coordinates (top-left origin - the same convention
-/// IInputSystemUVE::GetMousePositionUVE() already uses). `color`/`alpha` tint whatever `kind`
-/// samples (or is the flat fill color for SolidColor). Plain data only - no GPU resource is
-/// referenced anywhere in this struct.
+/// One screen-space quad with a top-left origin. UIRuntimeUVE transforms authored window-coordinate
+/// widgets into the renderer's current presentation-target coordinates before returning its batch.
+/// `color`/`alpha` tint whatever `kind` samples (or is the flat fill color for SolidColor). Plain
+/// data only - no GPU resource is referenced anywhere in this struct.
 struct UIQuadUVE final {
     Math::Vector2UVE positionPixels{};
     Math::Vector2UVE sizePixels{};

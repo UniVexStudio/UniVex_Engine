@@ -95,6 +95,9 @@ TEST_F(LightSystemUVETest, DirectionalLight3DUVE_LightsTheFrameFromItsEmitterAnd
     EXPECT_TRUE(lights[0].castsShadows);
     EXPECT_FLOAT_EQ(lights[0].shadowMaxDistance, 40.0F);
     EXPECT_FLOAT_EQ(lights[0].shadowSplitBlend, 0.25F);
+    EXPECT_FLOAT_EQ(lights[0].shadowDistanceFadeRange, 10.0F);
+    EXPECT_FLOAT_EQ(lights[0].shadowBias, -1.0F);
+    EXPECT_FLOAT_EQ(lights[0].shadowNormalBias, -1.0F);
     EXPECT_FLOAT_EQ(lights[1].intensity, 0.0F) << "one light, one slot";
     // The same light is chosen when ranked for a view.
     EXPECT_FLOAT_EQ(lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{}).at(0).intensity, 3.0F);
@@ -446,7 +449,10 @@ TEST_F(LightSystemUVETest, DirectionalLight3DUVE_CopiesEmitterLayersSpecularShad
     definition.emitter.specular = 0.25F;
     definition.emitter.shadowOpacity = 0.5F;
     definition.emitter.shadowBlur = 2.0F;
+    definition.emitter.shadowBias = 0.2F;
+    definition.emitter.shadowNormalBias = 1.5F;
     definition.emitter.volumetricFogEnergy = 3.0F;
+    definition.light.shadowDistanceFadeRange = 4.5F;
     Scene::ApplyDirectionalLight3DObjectDefinitionUVE(entityManager, sun, definition);
     sceneGraph.UpdateUVE(entityManager);
 
@@ -456,7 +462,9 @@ TEST_F(LightSystemUVETest, DirectionalLight3DUVE_CopiesEmitterLayersSpecularShad
     EXPECT_FLOAT_EQ(lights[0].shadowOpacity, 0.5F);
     EXPECT_FLOAT_EQ(lights[0].shadowBlur, 2.0F);
     EXPECT_FLOAT_EQ(lights[0].volumetricFogEnergy, 3.0F);
-    EXPECT_FLOAT_EQ(lights[0].shadowBias, 0.1F * 0.025F);
+    EXPECT_FLOAT_EQ(lights[0].shadowBias, 0.2F * 0.025F);
+    EXPECT_FLOAT_EQ(lights[0].shadowNormalBias, 1.5F);
+    EXPECT_FLOAT_EQ(lights[0].shadowDistanceFadeRange, 4.5F);
 }
 
 TEST_F(LightSystemUVETest, DirectionalLight3DUVE_EmptyCullMaskDoesNotOccupyASlot) {

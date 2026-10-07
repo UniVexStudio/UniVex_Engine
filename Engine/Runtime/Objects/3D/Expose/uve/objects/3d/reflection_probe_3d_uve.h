@@ -24,12 +24,44 @@ enum class ReflectionProbeUpdateModeUVE : std::uint8_t {
     OnDemand,
 };
 
+/// Resolution tiers map to square 2D textures for each of a probe's six cubemap faces. A tier is
+/// authored per probe because nearby hero probes can afford more texels than background probes.
+enum class ReflectionProbeResolutionUVE : std::uint8_t {
+    Low = 0U,
+    Medium,
+    High,
+    Ultra,
+};
+
+inline constexpr std::uint32_t kReflectionProbeCaptureResolutionUVE = 128U;
+
+[[nodiscard]] constexpr std::uint32_t GetReflectionProbeResolutionPixelsUVE(
+    const ReflectionProbeResolutionUVE resolution) noexcept {
+    switch (resolution) {
+        case ReflectionProbeResolutionUVE::Low:
+            return 64U;
+        case ReflectionProbeResolutionUVE::Medium:
+            return kReflectionProbeCaptureResolutionUVE;
+        case ReflectionProbeResolutionUVE::High:
+            return 256U;
+        case ReflectionProbeResolutionUVE::Ultra:
+            return 512U;
+    }
+    return 0U;
+}
+
+[[nodiscard]] constexpr bool IsReflectionProbeResolutionValidUVE(
+    const ReflectionProbeResolutionUVE resolution) noexcept {
+    return GetReflectionProbeResolutionPixelsUVE(resolution) != 0U;
+}
+
 struct ReflectionProbe3DComponentUVE final {
     // `size` is the box's FULL extents on each axis (Godot's ReflectionProbe convention);
     // everything geometric works in half-extents internally.
     Math::Vector3UVE size{5.0F, 5.0F, 5.0F};
     std::uint32_t visibilityLayers = 0xFFFFFFFFU;
     ReflectionProbeUpdateModeUVE updateMode = ReflectionProbeUpdateModeUVE::Once;
+    ReflectionProbeResolutionUVE resolution = ReflectionProbeResolutionUVE::Medium;
     // The OnDemand recapture latch: authoring (or an inspector "Recapture" button) sets it,
     // EngineCoreUVE::SyncReflectionProbe3DObjectsUVE() clears it the tick the capture resolves. In
     // the other update modes the engine owns the schedule and simply ignores this, so it keeps
@@ -116,7 +148,6 @@ struct ReflectionProbe3DCaptureFrameUVE final {
     const ReflectionProbe3DCaptureFrameUVE& frame) noexcept;
 
 inline constexpr std::size_t kReflectionProbeCubemapFaceCountUVE = 6U;
-inline constexpr std::uint32_t kReflectionProbeCaptureResolutionUVE = 128U;
 inline constexpr std::size_t kMaximumReflectionProbesPerFrameUVE = 4U;
 
 enum class CubemapFaceUVE : std::uint8_t {
@@ -149,6 +180,7 @@ struct ReflectionProbe3DFrameUVE final {
     Math::Vector3UVE axisY{0.0F, 1.0F, 0.0F};
     Math::Vector3UVE axisZ{0.0F, 0.0F, 1.0F};
     Math::Vector3UVE halfExtents{2.5F, 2.5F, 2.5F};
+    std::uint32_t captureResolution = kReflectionProbeCaptureResolutionUVE;
     float influenceWeight = 0.0F;
     std::uint32_t captureGeneration = 0;
     bool capturedOnce = false;

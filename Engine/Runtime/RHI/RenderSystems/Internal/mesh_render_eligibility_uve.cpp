@@ -68,7 +68,8 @@ bool EvaluateMeshRenderPlacementUVE(const Scene::MeshComponentUVE& meshComponent
 
 bool TestMeshRenderVisibilityUVE(const MeshRenderPlacementUVE& placement,
                                  const Math::FrustumUVE& cullFrustum,
-                                 MeshRenderEligibilityUVE& outEligibility) noexcept {
+                                 MeshRenderEligibilityUVE& outEligibility,
+                                 const bool frustumTestsDisabled) noexcept {
     MeshRenderEligibilityUVE candidate;
 
     // A placement that failed carries no usable matrix or bounds, so its own failure reason is
@@ -83,13 +84,15 @@ bool TestMeshRenderVisibilityUVE(const MeshRenderPlacementUVE& placement,
     candidate.worldMatrix = placement.worldMatrix;
     candidate.worldBounds = placement.worldBounds;
 
-    if (!cullFrustum.IntersectsUVE(candidate.worldBounds)) {
+    // Skipped, not short-circuited away: the freeze still needs the sort depth below, which is
+    // measured against this frustum's near plane whether or not the plane test ran.
+    if (!frustumTestsDisabled && !cullFrustum.IntersectsUVE(candidate.worldBounds)) {
         candidate.reason = MeshRenderEligibilityReasonUVE::OutsideFrustum;
         outEligibility = candidate;
         return false;
     }
-    candidate.sortDepth = cullFrustum.planes[kNearPlaneIndexUVE].GetSignedDistanceUVE(
-        candidate.worldBounds.GetCenterUVE());
+    candidate.sortDepth = std::fabs(cullFrustum.planes[kNearPlaneIndexUVE].GetSignedDistanceUVE(
+        candidate.worldBounds.GetCenterUVE()));
     if (!std::isfinite(candidate.sortDepth)) {
         candidate.reason = MeshRenderEligibilityReasonUVE::InvalidWorldTransform;
         outEligibility = candidate;

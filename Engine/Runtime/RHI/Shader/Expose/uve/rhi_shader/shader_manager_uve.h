@@ -22,8 +22,8 @@ namespace UVE::Render::Shader {
 class ShaderManagerUVE final : public IShaderManagerUVE {
 public:
     /// `threadPool`/`eventSystem`/`renderDevice`/`fileSystem` must all outlive this
-    /// ShaderManagerUVE. `renderDevice` is used only from the main thread (inside UpdateUVE()),
-    /// honoring its own single-threaded contract.
+    /// ShaderManagerUVE. All renderDevice operations are made on the main thread; asynchronous
+    /// compile/link runs inside UpdateUVE(), while synchronous on-demand mode runs it in Create*().
     ShaderManagerUVE(Threading::IThreadPoolUVE& threadPool, Events::IEventSystemUVE& eventSystem,
                       IRenderDeviceUVE& renderDevice, Asset::IFileSystemUVE& fileSystem,
                       ShaderManagerConfigUVE config);
@@ -38,9 +38,8 @@ public:
         const ShaderProgramStagesDescUVE& desc) override;
     void UpdateUVE(double deltaTimeSeconds) override;
 
-    /// Test-only hook (not part of IShaderManagerUVE): how many ShaderSourceUVE/ShaderProgramUVE
-    /// background preprocessing jobs are currently in flight (submitted, not yet drained by
-    /// UpdateUVE()).
+    /// Test-only hook (not part of IShaderManagerUVE): how many source-preparation jobs/results
+    /// are pending processing by the manager (submitted or completed but not yet drained).
     [[nodiscard]] std::size_t GetPendingJobCountUVE() const noexcept;
 
     /// Test-only hook: whether the most recently completed CreateProgramUVE()'s GL compile

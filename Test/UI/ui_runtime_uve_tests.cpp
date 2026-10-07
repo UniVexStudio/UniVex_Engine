@@ -201,6 +201,49 @@ TEST_F(UIRuntimeUVETest, TickUVE_ButtonHitTest_HoverWithoutClickUsesHoverColorNo
     EXPECT_EQ(runtime.GetDrawBatchUVE().quads[0].color, button.hoverColor);
 }
 
+TEST_F(UIRuntimeUVETest, CoordinateTransform_ScalesDrawQuadsAndMapsPointerForHitTesting) {
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    Scene::UIButtonComponentUVE button{};
+    button.positionPixels = Math::Vector2UVE{100.0F, 100.0F};
+    button.sizePixels = Math::Vector2UVE{120.0F, 32.0F};
+    entityManager.AddComponentUVE<Scene::UIButtonComponentUVE>(entity, button);
+    runtime.SetCoordinateTransformUVE(UICoordinateTransformUVE{2.0F, 2.0F, 10.0F, 20.0F,
+                                                                2.0F, 2.0F, 100.0F, 200.0F});
+
+    inputSystem.SetMousePositionUVE(Math::Vector2UVE{205.0F, 220.0F});
+    inputSystem.SetMouseButtonStateUVE(Input::MouseButtonUVE::Left, true);
+    inputSystem.UpdateUVE();
+    runtime.TickUVE(entityManager, inputSystem);
+
+    const Scene::UIButtonComponentUVE& updated = entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(entity);
+    EXPECT_TRUE(updated.isHovered);
+    EXPECT_TRUE(updated.wasClickedThisFrame);
+    ASSERT_EQ(runtime.GetDrawBatchUVE().quads.size(), 1U);
+    EXPECT_FLOAT_EQ(runtime.GetDrawBatchUVE().quads[0].positionPixels.x, 210.0F);
+    EXPECT_FLOAT_EQ(runtime.GetDrawBatchUVE().quads[0].positionPixels.y, 220.0F);
+    EXPECT_FLOAT_EQ(runtime.GetDrawBatchUVE().quads[0].sizePixels.x, 240.0F);
+    EXPECT_FLOAT_EQ(runtime.GetDrawBatchUVE().quads[0].sizePixels.y, 64.0F);
+}
+
+TEST_F(UIRuntimeUVETest, InvalidCoordinateTransformFallsBackToIdentity) {
+    runtime.SetCoordinateTransformUVE(UICoordinateTransformUVE{0.0F, 1.0F, 4.0F, 5.0F,
+                                                                1.0F, 1.0F, 0.0F, 0.0F});
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    Scene::UIImageComponentUVE image{};
+    image.positionPixels = Math::Vector2UVE{10.0F, 20.0F};
+    image.sizePixels = Math::Vector2UVE{30.0F, 40.0F};
+    entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(entity, image);
+
+    inputSystem.UpdateUVE();
+    runtime.TickUVE(entityManager, inputSystem);
+
+    ASSERT_EQ(runtime.GetDrawBatchUVE().quads.size(), 1U);
+    EXPECT_FLOAT_EQ(runtime.GetDrawBatchUVE().quads[0].positionPixels.x, 10.0F);
+    EXPECT_FLOAT_EQ(runtime.GetDrawBatchUVE().quads[0].positionPixels.y, 20.0F);
+    EXPECT_FLOAT_EQ(runtime.GetDrawBatchUVE().quads[0].sizePixels.x, 30.0F);
+    EXPECT_FLOAT_EQ(runtime.GetDrawBatchUVE().quads[0].sizePixels.y, 40.0F);
+}
+
 TEST_F(UIRuntimeUVETest, TickUVE_ClearsPreviousBatchEachCall) {
     const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(entity, Scene::UIImageComponentUVE{});

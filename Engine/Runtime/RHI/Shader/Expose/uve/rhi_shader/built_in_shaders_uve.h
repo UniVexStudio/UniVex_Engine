@@ -77,6 +77,9 @@ extern const std::string_view kMeshSkinSource;
 inline constexpr std::string_view kBloomBrightPassVirtualPath = "shaders/bloom_bright_pass.glsl";
 extern const std::string_view kBloomBrightPassSource;
 
+inline constexpr std::string_view kBloomDownsampleVirtualPath = "shaders/bloom_downsample.glsl";
+extern const std::string_view kBloomDownsampleSource;
+
 inline constexpr std::string_view kBloomBlurVirtualPath = "shaders/bloom_blur.glsl";
 extern const std::string_view kBloomBlurSource;
 

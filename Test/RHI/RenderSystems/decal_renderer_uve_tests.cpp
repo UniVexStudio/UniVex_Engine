@@ -438,6 +438,38 @@ TEST_F(DecalRendererUVETest, BuildDrawListUVE_DistanceFadeRemovesADecalTheCamera
     EXPECT_EQ(drawList.receiversTested, 1U);
 }
 
+TEST_F(DecalRendererUVETest, BuildDrawListUVE_FrustumCullingFreezeDrawsAnOffScreenDecal) {
+    // The debug freeze reaches the decal pass too. A decal is painted by the same main colour view
+    // whose meshes stopped being frustum-rejected, so leaving it culled would make the frozen frame
+    // disagree with itself about what is on screen. Occlusion, layer, distance-fade and receiver
+    // verdicts are separate systems and keep running in both modes.
+    meshHalfExtents = Math::Vector3UVE{2.0F, 2.0F, 0.05F};
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("decal_renderer_tests_freeze_wall.uvmodel");
+    const Asset::AssetGuidUVE wallMaterialGuid = assetDatabase.RegisterUVE("decal_renderer_tests_freeze_wall.uvmat");
+    const Asset::AssetGuidUVE decalMaterialGuid = assetDatabase.RegisterUVE(kDecalMaterialPathUVE);
+    RegisterImmediateLoadersUVE();
+    // Both wall and decal sit at x=200 - far outside the origin, -Z, 90-degree test frustum - but
+    // the decal still overlaps its own wall, so it has a receiver to paint onto once the frustum
+    // stops rejecting it. The wall is a receiver even off-screen: BuildVisibilitySetUVE never
+    // frustum-tests candidates, so receivers are the whole placed set, not just the visible part.
+    const Math::Vector3UVE offScreen{200.0F, 0.0F, 0.0F};
+    MakeReceiverUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F} + offScreen, meshGuid, wallMaterialGuid);
+    MakeDecalUVE(Math::Vector3UVE{0.0F, 0.0F, -4.8F} + offScreen, Math::QuaternionUVE{}, MakeScorchDecalUVE());
+    WaitUntilAssetsReadyUVE({wallMaterialGuid, decalMaterialGuid}, {meshGuid});
+
+    BuildFrameUVE(Math::Vector3UVE{});
+    EXPECT_EQ(drawList.decalsConsidered, 1U);
+    EXPECT_EQ(drawList.decalsOutsideView, 1U) << "culling is on by default";
+    EXPECT_EQ(drawList.draws.size(), 0U);
+
+    // Set on the shared visibility set, exactly as the renderer sets it per cull; ClearUVE leaves it
+    // alone, so the next BuildFrameUVE keeps it.
+    visibilitySet.frustumTestsDisabled = true;
+    BuildFrameUVE(Math::Vector3UVE{});
+    EXPECT_EQ(drawList.decalsOutsideView, 0U) << "the freeze must stop rejecting the off-screen decal";
+    EXPECT_EQ(drawList.draws.size(), 1U) << "and it still paints onto its own off-screen wall";
+}
+
 TEST_F(DecalRendererUVETest, BuildDrawListUVE_AReceiverOnALayerTheDecalDoesNotProjectOntoIsSkipped) {
     meshHalfExtents = Math::Vector3UVE{2.0F, 2.0F, 0.05F};
     const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("decal_renderer_tests_layer_wall.uvmodel");

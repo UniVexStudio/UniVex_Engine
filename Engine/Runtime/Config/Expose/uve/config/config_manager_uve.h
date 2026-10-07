@@ -9,6 +9,8 @@
 
 namespace UVE::Config {
 
+class SettingsDocumentUVE;
+
 /// ConfigManagerUVE is the concrete, engine-standard implementation of
 /// IConfigManagerUVE, backed by nlohmann::json. The JSON library is
 /// entirely confined to config_manager_uve.cpp via the private ImplUVE
@@ -27,6 +29,9 @@ public:
     ConfigManagerUVE& operator=(const ConfigManagerUVE&) = delete;
 
     bool LoadUVE(const std::filesystem::path& path) override;
+    /// Replaces the in-memory JSON document with an empty object without changing the remembered save path.
+    /// Thread-safe.
+    void ClearAllUVE();
     bool SaveUVE() override;
     bool SaveUVE(const std::filesystem::path& path) override;
 
@@ -46,6 +51,12 @@ public:
     bool RemoveKeyUVE(std::string_view keyPath) override;
 
 private:
+    friend class SettingsDocumentUVE;
+    /// Distinguishes a missing path from a root-level object at reserved metadata keys.
+    [[nodiscard]] bool HasNodeUVE(std::string_view keyPath) const;
+    /// Atomically replaces this store with a fully loaded and migrated candidate.
+    void ReplaceDocumentUVE(ConfigManagerUVE& candidate);
+
     struct ImplUVE;
     std::unique_ptr<ImplUVE> m_impl;
 };

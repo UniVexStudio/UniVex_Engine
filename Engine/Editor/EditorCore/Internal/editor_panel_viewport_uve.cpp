@@ -35,6 +35,7 @@
 #include "editor_object_icons_uve.h"
 
 #include "uve/component/script_component_uve.h"
+#include "uve/editor/editor_settings_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -238,6 +239,7 @@ void EditorUVE::DrawViewportImageUVE(const ViewportContextUVE context) {
     }
 
     const ImVec2 availableRegion = ImGui::GetContentRegionAvail();
+    const ImVec2 viewportOrigin = ImGui::GetCursorScreenPos();
     if (m_viewportPanelRenderer && availableRegion.x > 0.0F && availableRegion.y > 0.0F) {
         state->gameWorkspaceActive = context == ViewportContextUVE::Main &&
                                      m_activeWorkspace == EditorWorkspaceUVE::Game;
@@ -284,6 +286,10 @@ void EditorUVE::DrawViewportImageUVE(const ViewportContextUVE context) {
                 state->pointerOverOverlay = false;
             }
         }
+    }
+    if (availableRegion.x > 0.0F && availableRegion.y > 0.0F) {
+        DrawEditorPlayBootSplashOverlayUVE(Math::Vector2UVE{viewportOrigin.x, viewportOrigin.y},
+                                           Math::Vector2UVE{availableRegion.x, availableRegion.y});
     }
 }
 
@@ -384,7 +390,8 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
 
         if (DrawViewportBubbleIconButtonUVE("##viewport-grid", m_viewportOverlayState.gridVisible,
                                             DrawGridIconUVE)) {
-            m_viewportOverlayState.gridVisible = !m_viewportOverlayState.gridVisible;
+            static_cast<void>(SetViewportGridUVE(!m_viewportOverlayState.gridVisible,
+                                                 m_viewportOverlayState.gridOpacity));
         }
         // Click toggles; right-click opens the grid's options, so the toolbar stays one button wide.
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
@@ -632,8 +639,14 @@ bool EditorUVE::SetViewportGridUVE(const bool visible, const float opacity) {
     if (!std::isfinite(opacity) || opacity < kMinimumViewportGridOpacityUVE || opacity > 1.0F) {
         return false;
     }
+    const bool previousVisible = m_viewportOverlayState.gridVisible;
+    const float previousOpacity = m_viewportOverlayState.gridOpacity;
     m_viewportOverlayState.gridVisible = visible;
     m_viewportOverlayState.gridOpacity = opacity;
+    namespace Id = EditorSettingIdUVE;
+    NotifyEditorSettingChangedUVE(Id::kGridVisibleUVE, previousVisible, visible);
+    NotifyEditorSettingChangedUVE(Id::kGridOpacityUVE, static_cast<double>(previousOpacity),
+                                  static_cast<double>(opacity));
     return true;
 }
 
@@ -642,7 +655,10 @@ bool EditorUVE::SetViewportGridCellSizeUVE(const float cellSize) {
         cellSize > kMaximumViewportGridCellSizeUVE) {
         return false;
     }
+    const float previousCellSize = m_viewportOverlayState.gridCellSize;
     m_viewportOverlayState.gridCellSize = cellSize;
+    NotifyEditorSettingChangedUVE(EditorSettingIdUVE::kGridCellSizeUVE,
+                                  static_cast<double>(previousCellSize), static_cast<double>(cellSize));
     return true;
 }
 
@@ -652,9 +668,19 @@ bool EditorUVE::SetViewportSelectionOutlineUVE(const bool visible, const Viewpor
         thickness < kMinimumSelectionOutlineThicknessUVE || thickness > kMaximumSelectionOutlineThicknessUVE) {
         return false;
     }
+    const bool previousVisible = m_viewportOverlayState.selectionOutlineVisible;
+    const ViewportAxisColorUVE previousColor = m_viewportOverlayState.selectionOutlineColor;
+    const float previousThickness = m_viewportOverlayState.selectionOutlineThickness;
     m_viewportOverlayState.selectionOutlineVisible = visible;
     m_viewportOverlayState.selectionOutlineColor = color;
     m_viewportOverlayState.selectionOutlineThickness = thickness;
+    namespace Id = EditorSettingIdUVE;
+    NotifyEditorSettingChangedUVE(Id::kSelectionOutlineVisibleUVE, previousVisible, visible);
+    NotifyEditorSettingChangedUVE(Id::kSelectionOutlineColorUVE,
+                                  Config::SettingColorUVE{previousColor.r, previousColor.g, previousColor.b},
+                                  Config::SettingColorUVE{color.r, color.g, color.b});
+    NotifyEditorSettingChangedUVE(Id::kSelectionOutlineThicknessUVE, static_cast<double>(previousThickness),
+                                  static_cast<double>(thickness));
     return true;
 }
 

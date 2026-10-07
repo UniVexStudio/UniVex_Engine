@@ -20,7 +20,10 @@ struct DirectionalLight3DComponentUVE final {
     /// Shadows are drawn up to this far from the camera, in metres; 0 follows the camera's far plane.
     float shadowMaxDistance = 100.0F;
     /// How the cascades are spread over that distance: 0 evenly, 1 packed near the camera.
-    float shadowSplitBlend = 0.6F;
+    /// A negative value inherits EngineConfigUVE::shadowCascadeSplitLambda / the project shadow default.
+    float shadowSplitBlend = -1.0F;
+    /// Width, in metres, over which shadows fade to fully lit at the end of the final cascade. 0 disables it.
+    float shadowDistanceFadeRange = 10.0F;
 
     [[nodiscard]] bool operator==(const DirectionalLight3DComponentUVE&) const = default;
 };

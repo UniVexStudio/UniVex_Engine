@@ -3,8 +3,9 @@
 # Resolves desktop packages the rest of the tree expects as imported targets.
 # ZLIB and JPEG fall back to FetchContent when -dev packages are missing.
 # GLFW/OpenGL/GLEW stay system-only: FetchContent GLFW still needs GL headers,
-# which this host may not have. UVE_HAS_DESKTOP_GL is then OFF and Window/OpenGL/
-# EngineCore/Editor/App stay on Null/INTERFACE stubs so CPU tests still configure.
+# which this host may not have. UVE_HAS_DESKTOP_GL is then OFF; Window/OpenGL use
+# their Null/INTERFACE targets, EngineCore builds its Null-backed headless runtime, and
+# Editor/App are excluded so CPU tests still configure.
 
 include(FetchContent)
 enable_language(C)

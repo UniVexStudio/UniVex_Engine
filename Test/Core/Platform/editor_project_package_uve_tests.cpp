@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -22,6 +23,65 @@ protected:
         package.projectId = "univex-demo-01";
         package.displayName = "UniVex Demo";
         package.engineVersion = {0U, 1U, 0U, 42U};
+        package.productMetadata.name = "Astro Build";
+        package.productMetadata.shortName = "astro";
+        package.productMetadata.description = "A compact sample project.";
+        package.productMetadata.version = "2.3.1-beta";
+        package.productMetadata.buildNumber = 42U;
+        package.applicationSettings.publisherName = "UniVex Studios";
+        package.applicationSettings.copyrightLine = "Copyright (c) 2026 UniVex Studios.";
+        package.applicationSettings.applicationIdentifiersByTarget = {
+            {"linux", "com.example.astro"}, {"windows", "com.example.astro"}};
+        package.applicationSettings.iconPathsByTarget["linux"] = {{64U, "icons/linux-64.png"},
+                                                                    {128U, "icons/linux-128.png"}};
+        package.applicationSettings.splashImagePath = "branding/splash.uvtex";
+        package.applicationSettings.splashBackgroundColor = {0.05F, 0.1F, 0.2F, 1.0F};
+        package.applicationSettings.splashFadeSeconds = 0.5;
+        package.applicationSettings.splashMinimumDisplaySeconds = 2.0;
+        package.applicationSettings.splashSkippable = false;
+        package.applicationSettings.skipSplashInEditorPlayMode = true;
+        package.applicationSettings.quitOnLastWindowClosed = false;
+        package.applicationSettings.enforceSingleInstance = true;
+        package.applicationSettings.userDataDirectoryName = "astro";
+        package.applicationSettings.portableUserData = true;
+        package.applicationSettings.crashHandlerEnabled = false;
+        package.applicationSettings.crashDumpDirectory = "reports/crashes";
+        package.applicationSettings.symbolUploadEndpoint = "https://symbols.example.com/upload";
+        package.applicationSettings.windowWidth = 1920U;
+        package.applicationSettings.windowHeight = 1080U;
+        package.applicationSettings.windowMode = WindowModeUVE::ExclusiveFullscreen;
+        package.applicationSettings.windowResizable = false;
+        package.applicationSettings.windowBorderless = true;
+        package.applicationSettings.windowAlwaysOnTop = true;
+        package.applicationSettings.windowTransparent = true;
+        package.applicationSettings.minimumWindowWidth = 640U;
+        package.applicationSettings.minimumWindowHeight = 360U;
+        package.applicationSettings.maximumWindowWidth = 2560U;
+        package.applicationSettings.maximumWindowHeight = 1440U;
+        package.applicationSettings.initialWindowPositionSpecified = true;
+        package.applicationSettings.initialWindowPositionX = 40;
+        package.applicationSettings.initialWindowPositionY = 80;
+        package.applicationSettings.initialMonitorName = "Display-1";
+        package.applicationSettings.highDpiAware = false;
+        package.applicationSettings.perMonitorScaling = false;
+        package.applicationSettings.contentScaleOverride = 1.25;
+        package.applicationSettings.stretchMode = StretchModeUVE::Viewport;
+        package.applicationSettings.aspectPolicy = AspectPolicyUVE::KeepWidth;
+        package.applicationSettings.integerOnlyScaling = true;
+        package.applicationSettings.orientation = DisplayOrientationUVE::LandscapeLeft;
+        package.applicationSettings.allowedOrientations = {DisplayOrientationUVE::LandscapeLeft,
+                                                            DisplayOrientationUVE::Portrait};
+        package.applicationSettings.vsyncMode = VSyncModeUVE::Mailbox;
+        package.applicationSettings.focusedFrameRateCap = 144U;
+        package.applicationSettings.unfocusedFrameRateCap = 30U;
+        package.applicationSettings.allowDisplaySleep = false;
+        package.applicationSettings.cursorImagePath = "ui/cursor.png";
+        package.applicationSettings.cursorHotspotX = 3U;
+        package.applicationSettings.cursorHotspotY = 5U;
+        package.applicationSettings.cursorVisible = false;
+        package.applicationSettings.cursorConfinedToWindow = true;
+        package.applicationSettings.windowTitleFormat = "{projectName} ({sceneName})";
+        package.applicationSettings.appendSceneNameInEditorPlayMode = true;
         package.contentRoot = "assets";
         package.assetDatabasePath = ".uvassetdb";
         package.settingsPath = ".uvsettings";
@@ -60,6 +120,93 @@ TEST_F(EditorProjectPackageUVETest, Validate_RejectsUnboundedIdentityAndTraversa
     package.settingsPath = "/tmp/settings.json";
     EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
               EditorProjectPackageCodeUVE::InvalidPath);
+}
+
+TEST_F(EditorProjectPackageUVETest, Validate_RejectsInvalidProductMetadata) {
+    EditorProjectPackageUVE package = MakePackage();
+    package.productMetadata.name = std::string(kMaximumEditorProductNameBytesUVE + 1U, 'x');
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
+              EditorProjectPackageCodeUVE::InvalidPackage);
+
+    package = MakePackage();
+    package.productMetadata.shortName = std::string(kMaximumEditorProductShortNameBytesUVE + 1U, 'x');
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
+              EditorProjectPackageCodeUVE::InvalidPackage);
+
+    package = MakePackage();
+    package.productMetadata.description.assign(16U, 'x');
+    package.productMetadata.description[3U] = static_cast<char>(0);
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
+              EditorProjectPackageCodeUVE::InvalidPackage);
+
+    package = MakePackage();
+    package.productMetadata.version.clear();
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
+              EditorProjectPackageCodeUVE::InvalidPackage);
+}
+
+TEST_F(EditorProjectPackageUVETest, Validate_RejectsInvalidApplicationSettings) {
+    EditorProjectPackageUVE package = MakePackage();
+    package.applicationSettings.applicationIdentifiersByTarget["linux"] = "com..astro";
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
+              EditorProjectPackageCodeUVE::InvalidPackage);
+
+    package = MakePackage();
+    package.applicationSettings.applicationIdentifiersByTarget["desktop"] = "com.example.astro";
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
+              EditorProjectPackageCodeUVE::InvalidPackage);
+
+    package = MakePackage();
+    package.applicationSettings.iconPathsByTarget["windows"][256U] = "../icon.png";
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
+              EditorProjectPackageCodeUVE::InvalidPath);
+
+    package = MakePackage();
+    package.applicationSettings.splashFadeSeconds = 61.0;
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
+              EditorProjectPackageCodeUVE::InvalidPackage);
+
+    package = MakePackage();
+    package.applicationSettings.userDataDirectoryName = "../escape";
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
+              EditorProjectPackageCodeUVE::InvalidPackage);
+
+    package = MakePackage();
+    package.applicationSettings.symbolUploadEndpoint = "http://symbols.example.com";
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
+              EditorProjectPackageCodeUVE::InvalidPackage);
+}
+
+TEST_F(EditorProjectPackageUVETest, Validate_RejectsInvalidWindowAndCursorPolicies) {
+    EditorProjectPackageUVE package = MakePackage();
+    package.applicationSettings.windowWidth = 0U;
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
+              EditorProjectPackageCodeUVE::InvalidPackage);
+
+    package = MakePackage();
+    package.applicationSettings.minimumWindowWidth = 3000U;
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
+              EditorProjectPackageCodeUVE::InvalidPackage);
+
+    package = MakePackage();
+    package.applicationSettings.cursorImagePath = "../cursor.png";
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
+              EditorProjectPackageCodeUVE::InvalidPath);
+
+    package = MakePackage();
+    package.applicationSettings.orientation = DisplayOrientationUVE::LandscapeRight;
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
+              EditorProjectPackageCodeUVE::InvalidPackage);
+
+    package = MakePackage();
+    package.applicationSettings.focusedFrameRateCap = 1001U;
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
+              EditorProjectPackageCodeUVE::InvalidPackage);
+
+    package = MakePackage();
+    package.applicationSettings.contentScaleOverride = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
+              EditorProjectPackageCodeUVE::InvalidPackage);
 }
 
 TEST_F(EditorProjectPackageUVETest, Save_RejectsWrongExtensionWithoutCreatingFile) {
@@ -145,8 +292,8 @@ TEST_F(EditorProjectPackageUVETest, SaveAndLoad_RoundTripsStartupScenePath) {
 }
 
 TEST_F(EditorProjectPackageUVETest, Load_DefaultsMissingStartupScenePathToEmptyForOlderFiles) {
-    // Simulates a .uvproject file written before startupScenePath existed - no such key at all,
-    // not merely an empty string for it.
+    // Simulates an older .uvproject file written before productMetadata and startupScenePath
+    // existed - neither key is present, not merely set to an empty value.
     const nlohmann::json legacyJson{{"format", "uvproject"},
                                     {"schemaVersion", kCurrentEditorProjectSchemaVersionUVE},
                                     {"revision", 1U},
@@ -165,6 +312,18 @@ TEST_F(EditorProjectPackageUVETest, Load_DefaultsMissingStartupScenePathToEmptyF
 
     ASSERT_TRUE(loadResult.IsAcceptedUVE()) << loadResult.result.message;
     EXPECT_TRUE(loadResult.package->startupScenePath.empty());
+    EXPECT_TRUE(loadResult.package->productMetadata.name.empty());
+    EXPECT_TRUE(loadResult.package->productMetadata.shortName.empty());
+    EXPECT_TRUE(loadResult.package->productMetadata.description.empty());
+    EXPECT_EQ(loadResult.package->productMetadata.version, "1.0.0");
+    EXPECT_EQ(loadResult.package->productMetadata.buildNumber, 0U);
+    EXPECT_TRUE(loadResult.package->applicationSettings.publisherName.empty());
+    EXPECT_TRUE(loadResult.package->applicationSettings.applicationIdentifiersByTarget.empty());
+    EXPECT_TRUE(loadResult.package->applicationSettings.iconPathsByTarget.empty());
+    EXPECT_TRUE(loadResult.package->applicationSettings.quitOnLastWindowClosed);
+    EXPECT_FALSE(loadResult.package->applicationSettings.enforceSingleInstance);
+    EXPECT_TRUE(loadResult.package->applicationSettings.crashHandlerEnabled);
+    EXPECT_EQ(loadResult.package->applicationSettings.crashDumpDirectory, "crash-dumps");
 }
 
 TEST_F(EditorProjectPackageUVETest, Validate_RejectsTraversalStartupScenePathButAllowsEmpty) {

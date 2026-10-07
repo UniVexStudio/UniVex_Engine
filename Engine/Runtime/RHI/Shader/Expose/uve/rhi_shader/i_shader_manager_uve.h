@@ -20,36 +20,37 @@ namespace UVE::Render::Shader {
 /// CreateShaderUVE/CreatePipelineUVE compile+link+error-capture logic instead of duplicating it —
 /// so it works identically against NullRenderDeviceUVE (headless) and GlRenderDeviceUVE (real
 /// GL), with no separate Null/Gl ShaderManager implementation needed.
-/// Thread-safety: CreateSourceUVE()/CreateProgramUVE() are safe to call from the main thread only
-/// (they submit background work but return immediately); the underlying preprocessing runs on an
-/// IThreadPoolUVE worker. UpdateUVE() must be called once per frame from the main thread — it is
-/// the only place a real IRenderDeviceUVE compile/link call happens, honoring
-/// IRenderDeviceUVE's own main-thread-only contract.
+/// Thread-safety: Call creation and update methods from the main/render thread. In asynchronous
+/// on-demand mode, source preprocessing runs on an IThreadPoolUVE worker and UpdateUVE() performs
+/// RHI compile/link. In synchronous on-demand mode, each creation call preprocesses and performs
+/// RHI compile/link before returning (and may block); this still honors IRenderDeviceUVE's
+/// main-thread-only contract. UpdateUVE() must be called once per frame for asynchronous job
+/// completion and hot-reload polling.
 class IShaderManagerUVE {
 public:
     virtual ~IShaderManagerUVE() = default;
 
-    /// Begins compiling one shader stage. Returns immediately with a not-yet-ready
-    /// ShaderSourceUVE — the real compile happens asynchronously; poll IsReadyUVE()/IsValidUVE()
-    /// or subscribe to hot-reload events to observe completion.
+    /// Starts compiling one shader stage. In asynchronous on-demand mode, returns with a
+    /// not-yet-ready ShaderSourceUVE; poll IsReadyUVE()/IsValidUVE() or subscribe to hot-reload
+    /// events to observe completion. In synchronous on-demand mode, completes before returning.
     [[nodiscard]] virtual std::shared_ptr<ShaderSourceUVE> CreateSourceUVE(
         const ShaderSourceCompileDescUVE& desc) = 0;
 
-    /// Begins compiling and linking a vertex+fragment program from the same resolved source.
-    /// Returns immediately with a not-yet-ready ShaderProgramUVE, exactly like CreateSourceUVE().
+    /// Compiles and links a vertex+fragment program from the same resolved source. Its readiness
+    /// on return follows the configured asynchronous or synchronous on-demand mode.
     [[nodiscard]] virtual std::shared_ptr<ShaderProgramUVE> CreateProgramUVE(const ShaderProgramDescUVE& desc) = 0;
 
     /// Begins compiling and linking a vertex+fragment program from two independent source
     /// descriptors. This is the managed path for MaterialAssetUVE's separate vertexShader and
-    /// fragmentShader assets; it has the same asynchronous readiness and program-level hot-reload
-    /// contract as CreateProgramUVE().
+    /// fragmentShader assets; it has the same configured readiness mode and program-level
+    /// hot-reload contract as CreateProgramUVE().
     [[nodiscard]] virtual std::shared_ptr<ShaderProgramUVE> CreateProgramFromStagesUVE(
         const ShaderProgramStagesDescUVE& desc) = 0;
 
-    /// Drains any completed background preprocessing (running the real GL compile/link/cache
-    /// lookup synchronously on the calling thread), and - if hot-reload is enabled - polls every
-    /// tracked program's dependency closure for on-disk changes, triggering a recompile when one
-    /// is found. Call exactly once per frame from the main thread.
+    /// Drains completed background preprocessing in asynchronous mode, running RHI compile/link
+    /// and cache lookup on the calling thread. If hot-reload is enabled, also polls every tracked
+    /// program's dependency closure for on-disk changes and schedules a recompile when one is
+    /// found. Call exactly once per frame from the main thread.
     virtual void UpdateUVE(double deltaTimeSeconds) = 0;
 };
 

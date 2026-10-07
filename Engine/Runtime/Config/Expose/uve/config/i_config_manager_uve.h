@@ -17,9 +17,8 @@ namespace UVE::Config {
 /// document; the JSON library itself never appears in this interface or
 /// any implementation's public header (see ConfigManagerUVE). Only scalar
 /// value types are supported — string, 64-bit integer, double, and bool.
-/// The in-memory document reserves a root-level "version" integer field as
-/// a forward-compatibility convention for future `.uvsettings` format
-/// changes; this increment implements no migration logic against it.
+/// A root-level `version` integer is reserved for document schema metadata. SettingsDocumentUVE
+/// writes it and runs registered migrations; this raw key-value interface does not interpret it.
 /// Thread-safety: implementations must be safe to call from any thread
 /// concurrently, guarded by an internal mutex.
 class IConfigManagerUVE {
@@ -30,9 +29,9 @@ public:
     /// in-memory document on success and remembering `path` as the default
     /// target for SaveUVE(). If `path` does not exist, logs a Warning and
     /// leaves the in-memory document as an empty object (not fatal — a
-    /// first-run engine has no settings file yet). If `path` exists but
-    /// fails to parse as JSON, logs an Error (including the parser's
-    /// message) and leaves the previous in-memory document untouched.
+    /// first-run engine has no settings file yet). If the file exists but
+    /// cannot be opened or fails to parse as JSON, logs an Error and leaves
+    /// the previous in-memory document untouched.
     /// Returns true only on a fully successful load.
     virtual bool LoadUVE(const std::filesystem::path& path) = 0;
 

@@ -108,10 +108,18 @@ struct MeshRenderEligibilityUVE final {
 ///
 /// An unplaced input is rejected rather than trusted. A caller that skipped the placement step, or
 /// whose placement failed, must not silently get a queue entry built on a default matrix.
+///
+/// `frustumTestsDisabled` is the frustum-culling debug freeze (see CullingSettingsUVE and
+/// MeshVisibilitySetUVE::frustumTestsDisabled): the plane test is skipped, so a placed mesh outside
+/// the frustum is still eligible. The sort depth is NOT skipped - it is measured against this same
+/// frustum's near plane, which is what keeps a frozen frame's queue order meaningful instead of
+/// leaving every off-screen item at depth zero. Placement validity is never skipped either: a
+/// freeze draws everything that exists, not everything that was malformed.
 [[nodiscard]] bool TestMeshRenderVisibilityUVE(
     const MeshRenderPlacementUVE& placement,
     const Math::FrustumUVE& cullFrustum,
-    MeshRenderEligibilityUVE& outEligibility) noexcept;
+    MeshRenderEligibilityUVE& outEligibility,
+    bool frustumTestsDisabled = false) noexcept;
 
 [[nodiscard]] bool EvaluateMeshRenderEligibilityUVE(
     const Scene::MeshComponentUVE& meshComponent,

@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -17,13 +18,49 @@
 
 namespace UVE::Render {
 
-/// Phase 2b post-process quality-tier toggles. Both default to enabled, matching this project's
-/// "on unless a low-end tier opts out" precedent already set by shadow mapping; each is checked
-/// independently when Renderer3DUVE builds its per-frame render graph, so disabling one skips that
-/// pass's GPU work entirely rather than merely hiding its visual contribution.
+/// Post-process controls. The final tone-mapping pass supports bilinear or nearest-neighbour
+/// spatial reconstruction and ACES or linear-clamp tone mapping; fast approximate AA is opt-in and
+/// runs in that same shader. The final pass also supports edge-clamped unsharp masking. Bloom and
+/// SSAO default to enabled; SSAO uses radius 0.5, intensity/power 1, and 12 kernel samples, matching
+/// the renderer's existing behavior. Active WorldEnvironment components retain their enable/radius/
+/// intensity overrides. SSAO quality is clamped to 0..2 (4/8/12 samples), power to [0.1, 4], and
+/// the optional blur is applied during AO compositing. Fast-approximate-AA quality is clamped to
+/// 0..2 (low/medium/high), selecting 3/5/7 edge-direction taps in addition to a fixed four-neighbour
+/// contrast test; sharpening strength is clamped to [0, 1]. Dithering adds deterministic sub-LSB
+/// screen-space noise before final output quantization.
+
 struct PostProcessSettingsUVE final {
     bool bloomEnabledUVE = true;
     bool ssaoEnabledUVE = true;
+    float ssaoRadiusUVE = 0.5F;
+    float ssaoIntensityUVE = 1.0F;
+    float ssaoPowerUVE = 1.0F;
+    /// 0 = Low (4 samples), 1 = Medium (8), 2 = High (12).
+    std::uint32_t ssaoQualityUVE = 2U;
+    bool ssaoBlurEnabledUVE = false;
+    bool fastApproximateAAEnabledUVE = false;
+    std::uint32_t fastApproximateAAQualityUVE = 1U;
+    bool nearestUpscalingEnabledUVE = false;
+    bool acesToneMappingEnabledUVE = true;
+    float sharpeningAmountUVE = 0.0F;
+    bool ditheringEnabledUVE = true;
+};
+
+/// Culling controls for the main colour view.
+///
+/// `frustumCullingEnabledUVE` false is the spec's "debug freeze": the renderer stops rejecting
+/// anything by frustum, so every placed mesh, primitive, surface instance and decal in the scene is
+/// submitted for the frame regardless of where the camera looks. It is a debugging aid, not a
+/// quality option - a frozen frame draws the whole scene.
+///
+/// Deliberately narrow in what it turns off. Visibility flags, world partitioning, visibility
+/// regions, LodGroup3D draw distances, SurfaceInstance3D ranges, render layers and Occluder3D
+/// occlusion are separate authoring/culling systems with their own controls and counters, and they
+/// keep running: a debug freeze that also ignored an author's "hidden" flag would hide the very
+/// mistake it exists to diagnose. Shadow cascades also keep culling against their own light frusta,
+/// since freezing those multiplies shadow draw work without changing what the camera sees.
+struct CullingSettingsUVE final {
+    bool frustumCullingEnabledUVE = true;
 };
 
 /// A copied, frame-local account of observable Renderer3DUVE work. Each field names evidence that
@@ -108,6 +145,13 @@ struct Renderer3DFrameDiagnosticsUVE final {
     std::size_t visibilityClusters = 0U;
     std::size_t visibilityClustersRejected = 0U;
 
+    /// True when the main colour view skipped every frustum rejection this frame because
+    /// CullingSettingsUVE::frustumCullingEnabledUVE was false (the debug freeze). Reported because
+    /// the frozen frame's draw counts are otherwise indistinguishable from a scene that simply has
+    /// nothing off-screen - and a freeze left on by accident is a performance bug nobody can see.
+    /// Shadow cascades keep culling, so this describes the colour view alone.
+    bool frustumCullingFrozen = false;
+
     /// Entities a LodGroup3D dropped for being past the end of its distance chain. Distinct from
     /// a hidden entity: this is "too far to matter", not "the author switched it off", and a scene
     /// that is mostly this wants its draw distances reviewed rather than its visibility flags.
@@ -123,15 +167,19 @@ struct Renderer3DFrameDiagnosticsUVE final {
     bool mainPassRecorded = false;
     bool toneMappingProgramReady = false;
     bool toneMappingPassRecorded = false;
+    /// True when the fast approximate edge filter was enabled and dispatched by tone mapping.
+    bool fastApproximateAAPassApplied = false;
     bool particleItemsTruncated = false;
     bool particleDrawCommandsSubmissionTruncated = false;
     /// True only when SSAO was enabled (PostProcessSettingsUVE), its post-process targets and
     /// programs were valid, and the camera's projection matrix was invertible this frame - not
     /// merely that SSAO was requested.
     bool ssaoPassRecorded = false;
-    /// True only when bloom was enabled (PostProcessSettingsUVE) and its post-process targets and
-    /// programs were valid this frame - not merely that bloom was requested.
+    /// True only when bloom was enabled by PostProcessSettingsUVE and the active WorldEnvironment,
+    /// and the required targets/programs were valid this frame - not merely that bloom was requested.
     bool bloomPassRecorded = false;
+    /// Number of bloom scales actually blurred and composited this frame, or zero when inactive.
+    std::uint32_t bloomMipCountUsed = 0U;
 };
 
 /// IRenderer3DUVE is the engine's final per-frame render orchestrator (the spec's `Renderer3DUVE`,
@@ -162,6 +210,12 @@ public:
         static_cast<void>(width);
         static_cast<void>(height);
         return false;
+    }
+
+    /// Sets the scene/presentation clear color used when no sky is active. The default is a no-op
+    /// so lightweight renderers and test doubles need not retain the value.
+    virtual void SetSceneClearColorUVE(const std::array<float, 4U>& color) noexcept {
+        static_cast<void>(color);
     }
 
     /// Renders the scene while extracting a copied particle snapshot from the caller-owned runtime
@@ -222,6 +276,21 @@ public:
     /// implementation is intentionally a no-op so non-Renderer3D test doubles need not own
     /// post-process state.
     virtual void SetPostProcessSettingsUVE(const PostProcessSettingsUVE& settings) {
+        static_cast<void>(settings);
+    }
+
+    /// Sets the authored depth-bias and angle-aware normal-bias defaults used by directional lights whose
+    /// per-light values are negative (inherit). Implementations may clamp out-of-range direct API input;
+    /// settings-system values are already validated to [0, 10].
+    virtual void SetShadowBiasDefaultsUVE(float depthBias, float normalBias) noexcept {
+        static_cast<void>(depthBias);
+        static_cast<void>(normalBias);
+    }
+
+    /// Updates the culling controls used by later frames. The default implementation is a no-op so
+    /// non-Renderer3D test doubles need not own culling state; a double that never culls already
+    /// behaves the way a disabled setting asks for.
+    virtual void SetCullingSettingsUVE(const CullingSettingsUVE& settings) noexcept {
         static_cast<void>(settings);
     }
 

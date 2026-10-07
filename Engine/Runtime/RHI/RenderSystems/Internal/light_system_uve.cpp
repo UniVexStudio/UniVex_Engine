@@ -122,11 +122,13 @@ namespace {
     outLight.castsShadows = emitter.shadowEnabled;
     outLight.shadowMaxDistance = directional.shadowMaxDistance;
     outLight.shadowSplitBlend = directional.shadowSplitBlend;
+    outLight.shadowDistanceFadeRange = directional.shadowDistanceFadeRange;
     outLight.cullMask = emitter.cullMask;
     outLight.specular = emitter.specular;
-    // Authored default 0.1 maps onto the previous constant slope 0.0025.
-    outLight.shadowBias = emitter.shadowBias * 0.025F;
-    outLight.shadowNormalBias = emitter.shadowNormalBias;
+    // Negative component values preserve the inherit sentinel for Renderer3DUVE's configured defaults;
+    // authored depth-bias values use the engine's established 0.025 shader-unit scale.
+    outLight.shadowBias = emitter.shadowBias >= 0.0F ? emitter.shadowBias * 0.025F : -1.0F;
+    outLight.shadowNormalBias = emitter.shadowNormalBias >= 0.0F ? emitter.shadowNormalBias : -1.0F;
     outLight.shadowOpacity = emitter.shadowOpacity;
     outLight.shadowBlur = emitter.shadowBlur;
     outLight.volumetricFogEnergy = emitter.volumetricFogEnergy;

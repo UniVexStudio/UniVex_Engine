@@ -97,6 +97,9 @@ uniform LightUVE uLights[4];
 uniform vec3 uAmbientColor;
 uniform vec3 uSkyAmbient;
 uniform vec3 uGroundAmbient;
+uniform int uAmbientSource; // 0=None, 1=FlatColor, 2=Sky, 3=EnvironmentMap
+uniform sampler2D uAmbientEnvironmentMap;
+uniform int uAmbientEnvironmentMapEnabled;
 uniform vec3 uViewPosition;
 uniform vec3 uAlbedoColor;
 uniform float uMetallic;
@@ -124,6 +127,7 @@ uniform float uShadowCascadeSplits[3];
 uniform int uShadowCascadeCount;
 // Increment 31: fraction of each non-final cascade depth interval used to cross-fade into the next.
 uniform float uShadowCascadeBlendRatio;
+uniform float uShadowMaxDistanceFadeRange;
 uniform int uMeshRenderLayers;
 uniform float uSurfaceOpacity;
 uniform float uShadowBias;
@@ -154,6 +158,58 @@ vec3 HemisphereAmbientUVE(vec3 normal) {
     }
     float hemi = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
     return mix(uGroundAmbient, uSkyAmbient, hemi);
+}
+
+vec2 AmbientEnvironmentUvUVE(vec3 direction) {
+    vec3 dir = SafeNormalizeUVE(direction);
+    float longitude = atan(dir.z, dir.x);
+    float latitude = asin(clamp(dir.y, -1.0, 1.0));
+    return vec2(longitude * (1.0 / (2.0 * kPiUVE)) + 0.5, latitude * (1.0 / kPiUVE) + 0.5);
+}
+
+vec3 SampleAmbientEnvironmentUVE(vec3 direction) {
+    return max(texture(uAmbientEnvironmentMap, AmbientEnvironmentUvUVE(direction)).rgb, vec3(0.0));
+}
+
+vec3 SampleEnvironmentIrradianceUVE(vec3 normal) {
+    vec3 n = SafeNormalizeUVE(normal);
+    vec3 referenceAxis = abs(n.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = SafeNormalizeUVE(cross(referenceAxis, n));
+    vec3 bitangent = cross(n, tangent);
+    const float spread = 0.65;
+    return SampleAmbientEnvironmentUVE(n) * 0.4 +
+           (SampleAmbientEnvironmentUVE(SafeNormalizeUVE(n + tangent * spread)) +
+            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(n - tangent * spread)) +
+            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(n + bitangent * spread)) +
+            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(n - bitangent * spread))) * 0.15;
+}
+
+vec3 SampleEnvironmentSpecularUVE(vec3 direction, float roughness) {
+    vec3 reflection = SafeNormalizeUVE(direction);
+    vec3 referenceAxis = abs(reflection.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = SafeNormalizeUVE(cross(referenceAxis, reflection));
+    vec3 bitangent = cross(reflection, tangent);
+    float spread = clamp(roughness, 0.0, 1.0) * 0.65;
+    return SampleAmbientEnvironmentUVE(reflection) * 0.4 +
+           (SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection + tangent * spread)) +
+            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection - tangent * spread)) +
+            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection + bitangent * spread)) +
+            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection - bitangent * spread))) * 0.15;
+}
+
+vec3 AmbientFromSourceUVE(vec3 normal) {
+    if (uAmbientSource == 0) {
+        return vec3(0.0);
+    }
+    if (uAmbientSource == 1) {
+        return max(uAmbientColor, vec3(0.0));
+    }
+    if (uAmbientSource == 3 && uAmbientEnvironmentMapEnabled != 0) {
+        return max(uAmbientColor, vec3(0.0)) * SampleEnvironmentIrradianceUVE(normal);
+    }
+    // Sky is the compatibility path and the fallback while an Environment Map asset is loading
+    // or missing.
+    return HemisphereAmbientUVE(normal);
 }
 
 int SelectCubemapFaceUVE(vec3 direction) {
@@ -364,17 +420,29 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
     return mix(1.0, visibleSamples / float(sampleCount), clamp(uShadowOpacity, 0.0, 1.0));
 }
 
+float FadeShadowToLitAtDistanceUVE(float shadowFactor, float viewDepth, float finalCascadeFarDepth) {
+    float fadeRange = min(max(uShadowMaxDistanceFadeRange, 0.0), max(finalCascadeFarDepth, 0.0));
+    if (fadeRange <= 0.0) {
+        return shadowFactor;
+    }
+    float fadeStartDepth = max(finalCascadeFarDepth - fadeRange, 0.0);
+    float shadowWeight = 1.0 - smoothstep(fadeStartDepth, finalCascadeFarDepth, viewDepth);
+    return mix(1.0, shadowFactor, shadowWeight);
+}
+
 float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
     if (uShadowCascadeCount <= 0) {
         return ShadowFactorFromPositionUVE(vLightSpacePosition, normal, lightDirection, -1);
     }
 
     float viewDepth = length(vWorldPosition - uViewPosition);
-    // Past the last cascade the light casts no shadow: that is where its shadow distance ends.
-    if (viewDepth > uShadowCascadeSplits[clamp(uShadowCascadeCount - 1, 0, 2)]) {
+    int finalCascadeIndex = clamp(uShadowCascadeCount - 1, 0, 2);
+    float finalCascadeFarDepth = uShadowCascadeSplits[finalCascadeIndex];
+    // Beyond the last split the light casts no shadow; at the split the fade has reached fully lit.
+    if (viewDepth > finalCascadeFarDepth) {
         return 1.0;
     }
-    int cascadeIndex = clamp(uShadowCascadeCount - 1, 0, 2);
+    int cascadeIndex = finalCascadeIndex;
     for (int candidateIndex = 0; candidateIndex < 2; ++candidateIndex) {
         if (candidateIndex < uShadowCascadeCount && viewDepth <= uShadowCascadeSplits[candidateIndex]) {
             cascadeIndex = candidateIndex;
@@ -383,24 +451,20 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
     }
     float shadowFactor = ShadowFactorFromPositionUVE(CascadeLightSpacePositionUVE(cascadeIndex), normal,
                                                       lightDirection, cascadeIndex);
-    int finalCascadeIndex = clamp(uShadowCascadeCount - 1, 0, 2);
-    if (cascadeIndex >= finalCascadeIndex) {
-        return shadowFactor;
+    if (cascadeIndex < finalCascadeIndex) {
+        float cascadeNearDepth = cascadeIndex == 0 ? 0.0 : uShadowCascadeSplits[cascadeIndex - 1];
+        float cascadeFarDepth = uShadowCascadeSplits[cascadeIndex];
+        float cascadeDepthRange = max(cascadeFarDepth - cascadeNearDepth, 0.0001);
+        float blendWidth = cascadeDepthRange * clamp(uShadowCascadeBlendRatio, 0.0, 0.25);
+        float blendStartDepth = cascadeFarDepth - blendWidth;
+        if (blendWidth > 0.0 && viewDepth > blendStartDepth) {
+            float nextCascadeShadowFactor = ShadowFactorFromPositionUVE(
+                CascadeLightSpacePositionUVE(cascadeIndex + 1), normal, lightDirection, cascadeIndex + 1);
+            float blendWeight = smoothstep(blendStartDepth, cascadeFarDepth, viewDepth);
+            shadowFactor = mix(shadowFactor, nextCascadeShadowFactor, blendWeight);
+        }
     }
-
-    float cascadeNearDepth = cascadeIndex == 0 ? 0.0 : uShadowCascadeSplits[cascadeIndex - 1];
-    float cascadeFarDepth = uShadowCascadeSplits[cascadeIndex];
-    float cascadeDepthRange = max(cascadeFarDepth - cascadeNearDepth, 0.0001);
-    float blendWidth = cascadeDepthRange * clamp(uShadowCascadeBlendRatio, 0.0, 0.25);
-    float blendStartDepth = cascadeFarDepth - blendWidth;
-    if (blendWidth <= 0.0 || viewDepth <= blendStartDepth) {
-        return shadowFactor;
-    }
-
-    float nextCascadeShadowFactor = ShadowFactorFromPositionUVE(
-        CascadeLightSpacePositionUVE(cascadeIndex + 1), normal, lightDirection, cascadeIndex + 1);
-    float blendWeight = smoothstep(blendStartDepth, cascadeFarDepth, viewDepth);
-    return mix(shadowFactor, nextCascadeShadowFactor, blendWeight);
+    return FadeShadowToLitAtDistanceUVE(shadowFactor, viewDepth, finalCascadeFarDepth);
 }
 
 void main() {
@@ -440,9 +504,9 @@ void main() {
     // single most visible way a correct BRDF still looks wrong, and it is why "the PBR looks
     // broken" usually means "there is no ambient specular".
     //
-    // Specular ambient comes from the strongest captured ReflectionProbe3D at the eye (six 2D
-    // faces, box-projected). Diffuse ambient stays the hemisphere - a 128 LDR capture is a poor
-    // irradiance map. Disabled probes leave this path identical to hemisphere-only.
+    // Specular ambient comes from the selected source or the strongest captured ReflectionProbe3D
+    // at the eye (six 2D faces, box-projected). Environment-map ambient uses a small equirectangular
+    // cone filter; the legacy Sky source remains the hemisphere approximation.
     vec3 ambientBaseReflectance = mix(vec3(0.04), albedo, metallic);
     float normalDotViewAmbient = max(dot(normal, viewDirection), 0.0);
     // Roughness-aware Fresnel: the standard Schlick term goes to white at grazing angles, which on
@@ -454,15 +518,18 @@ void main() {
         (max(vec3(1.0 - roughness), ambientBaseReflectance) - ambientBaseReflectance) *
             pow(1.0 - normalDotViewAmbient, 5.0);
     vec3 ambientDiffuseWeight = (vec3(1.0) - ambientFresnel) * (1.0 - metallic);
-    vec3 ambientColor = HemisphereAmbientUVE(normal);
+    vec3 ambientColor = AmbientFromSourceUVE(normal);
+    vec3 reflection = reflect(-viewDirection, normal);
     vec3 specEnv = ambientColor;
+    if (uAmbientSource == 3 && uAmbientEnvironmentMapEnabled != 0) {
+        specEnv = max(uAmbientColor, vec3(0.0)) * SampleEnvironmentSpecularUVE(reflection, roughness);
+    }
     if (uReflectionProbeEnabled != 0) {
         float probeWeight = ReflectionProbeInfluenceUVE(vWorldPosition);
         if (probeWeight > 0.0) {
-            vec3 reflection = reflect(-viewDirection, normal);
             vec3 sampleDir = ReflectionProbeBoxProjectUVE(vWorldPosition, reflection);
             vec3 captured = SampleReflectionProbeUVE(sampleDir);
-            specEnv = mix(ambientColor, captured, probeWeight * (1.0 - roughness * roughness));
+            specEnv = mix(specEnv, captured, probeWeight * (1.0 - roughness * roughness));
         }
     }
     vec3 ambientDiffuse = ambientDiffuseWeight * albedo * ambientColor;

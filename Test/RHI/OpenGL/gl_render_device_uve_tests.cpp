@@ -2228,12 +2228,17 @@ TEST_F(GlRenderDeviceUVETest, LitShadowed3DShader_DepthPrepassDarkensOccludedFra
     colorCommandBuffer->SetUniformFloatUVE("uRoughness", 1.0F);
     colorCommandBuffer->SetUniformVector3UVE("uEmissiveColor", Math::Vector3UVE{0.0F, 0.0F, 0.0F});
     colorCommandBuffer->SetUniformIntUVE("uLights[0].type", 0);
+    colorCommandBuffer->SetUniformIntUVE("uMeshRenderLayers", 1);
+    colorCommandBuffer->SetUniformIntUVE("uLights[0].cullMask", 1);
     colorCommandBuffer->SetUniformVector3UVE("uLights[0].direction", Math::Vector3UVE{0.0F, 0.0F, -1.0F});
     colorCommandBuffer->SetUniformVector3UVE("uLights[0].color", Math::Vector3UVE{1.0F, 1.0F, 1.0F});
     colorCommandBuffer->SetUniformFloatUVE("uLights[0].intensity", 1.0F);
     colorCommandBuffer->BindTextureUVE(shadowMap, 0U);
     colorCommandBuffer->SetUniformIntUVE("uShadowMapTexture", 0);
     colorCommandBuffer->SetUniformIntUVE("uShadowPcfKernelRadius", 1);
+    colorCommandBuffer->SetUniformFloatUVE("uShadowOpacity", 1.0F);
+    colorCommandBuffer->SetUniformFloatUVE("uShadowBias", 0.001F);
+    colorCommandBuffer->SetUniformFloatUVE("uShadowNormalBias", 1.0F);
     colorCommandBuffer->BindTextureUVE(flatNormalTexture, 3U);
     colorCommandBuffer->SetUniformIntUVE("uNormalTexture", 3);
     colorCommandBuffer->BindTextureUVE(whiteTexture, 1U);
