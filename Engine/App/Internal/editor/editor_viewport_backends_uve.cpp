@@ -704,7 +704,7 @@ public:
         }
         // The selection outline sits over the scene and the grid, under the gizmos. The Game tab
         // previews what a player sees, so no editor outline there.
-        if (!gameWorkspaceActive_ && !studioView_) {
+        if (!gameWorkspaceActive_ && !studioView_ && !previewing_) {
             renderPass_->RenderSelectionOutlineUVE(
                 camera_, width, height,
                 univex::integration::CollectSelectionOutlineTrianglesUVE(
