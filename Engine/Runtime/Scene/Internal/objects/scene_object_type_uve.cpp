@@ -125,6 +125,7 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
                            OwnComponentUVE<UIImageComponentUVE>{Kind::UIImage},
                            OwnComponentUVE<UIButtonComponentUVE>{Kind::UIButton},
                            OwnComponentUVE<AreaComponentUVE>{Kind::Area3D},
+                           OwnComponentUVE<PlayerComponentUVE>{Kind::Player3D},
                            OwnComponentUVE<CharacterControllerComponentUVE>{Kind::Character3D})) {
         return kind;
     }

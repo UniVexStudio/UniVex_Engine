@@ -137,6 +137,25 @@ TEST(CharacterBodyMotionUVETest, StandingOnTheFloorDoesNotBuildUpFallSpeed) {
     EXPECT_FLOAT_EQ(c.timeSinceOnFloor, 0.0F);
 }
 
+TEST(CharacterBodyMotionUVETest, AJumpAndGravityFollowTheBodyUpNotWorldY) {
+    CharacterControllerComponentUVE c = OnFloorUVE();
+    c.upDirection = {0.0F, 0.0F, 1.0F};
+    c.jumpHeight = 2.0F;
+    ASSERT_TRUE(StepCharacterIntentUVE(c, {{}, 0.0F, true}, kGravityUVE, kStepUVE));
+    const float g = -kGravityUVE;
+    EXPECT_NEAR((c.velocity.z * c.velocity.z) / (2.0F * g), 2.0F, 1.0e-4F);
+    EXPECT_NEAR(c.velocity.y, 0.0F, 1.0e-6F);
+    EXPECT_FALSE(c.grounded);
+
+    CharacterControllerComponentUVE falling{};
+    falling.upDirection = {0.0F, 0.0F, 1.0F};
+    falling.timeSinceOnFloor = 1.0F;
+    falling.builtInMovement = false;
+    EXPECT_FALSE(StepCharacterIntentUVE(falling, {}, kGravityUVE, kStepUVE));
+    EXPECT_NEAR(falling.velocity.z, kGravityUVE * kStepUVE, 1.0e-6F);
+    EXPECT_NEAR(falling.velocity.y, 0.0F, 1.0e-6F);
+}
+
 TEST(CharacterBodyMotionUVETest, ACeilingStopsTheRiseAndOptionallyTheWholeMove) {
     CharacterControllerComponentUVE sliding{};
     sliding.velocity = Math::Vector3UVE{3.0F, 4.0F, 0.0F};

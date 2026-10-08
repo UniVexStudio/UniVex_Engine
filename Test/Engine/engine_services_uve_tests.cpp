@@ -188,6 +188,9 @@ public:
                                            std::string_view defaultValue) const override {
         return std::string(defaultValue);
     }
+    [[nodiscard]] std::optional<std::string> GetOptionalValueUVE(std::string_view) const override {
+        return std::nullopt;
+    }
 
     mutable int hasFlagCallCount = 0;
 };
@@ -845,6 +848,7 @@ public:
     [[nodiscard]] bool IsActionHeldUVE(std::string_view) const override { return false; }
     [[nodiscard]] bool IsActionReleasedUVE(std::string_view) const override { return false; }
     [[nodiscard]] float GetAxisValueUVE(std::string_view) const override { return 0.0F; }
+    [[nodiscard]] bool HasActionUVE(std::string_view) const override { return false; }
 
     int updateCallCount = 0;
 };

@@ -12,8 +12,10 @@
 #include "uve/logging/assert_uve.h"
 #include "uve/logging/logging_macros_uve.h"
 #include "uve/math/quaternion_uve.h"
+#include "uve/math/vector3_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/light_emitter_component_uve.h"
+#include "uve/objects/3d/abstract_objects_3d_uve.h"
 #include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 
@@ -114,10 +116,45 @@ namespace {
     if (!TryBuildLightDataUVE(worldTransform, light, outLight)) {
         return false;
     }
+    if (emitter.cullMask == 0U) {
+        return false;
+    }
     outLight.castsShadows = emitter.shadowEnabled;
     outLight.shadowMaxDistance = directional.shadowMaxDistance;
     outLight.shadowSplitBlend = directional.shadowSplitBlend;
+    outLight.shadowDistanceFadeRange = directional.shadowDistanceFadeRange;
+    outLight.cullMask = emitter.cullMask;
+    outLight.specular = emitter.specular;
+    // Negative component values preserve the inherit sentinel for Renderer3DUVE's configured defaults;
+    // authored depth-bias values use the engine's established 0.025 shader-unit scale.
+    outLight.shadowBias = emitter.shadowBias >= 0.0F ? emitter.shadowBias * 0.025F : -1.0F;
+    outLight.shadowNormalBias = emitter.shadowNormalBias >= 0.0F ? emitter.shadowNormalBias : -1.0F;
+    outLight.shadowOpacity = emitter.shadowOpacity;
+    outLight.shadowBlur = emitter.shadowBlur;
+    outLight.volumetricFogEnergy = emitter.volumetricFogEnergy;
+    outLight.distanceFadeEnabled = emitter.distanceFadeEnabled;
+    outLight.distanceFadeBegin = emitter.distanceFadeBegin;
+    outLight.distanceFadeShadow = emitter.distanceFadeShadow;
+    outLight.distanceFadeLength = emitter.distanceFadeLength;
     return true;
+}
+
+void ApplyLightEmitter3DViewFadeUVE(LightDataUVE& light, const Math::Vector3UVE& viewPosition) noexcept {
+    if (!light.distanceFadeEnabled) {
+        return;
+    }
+    const Math::Vector3UVE toLight{light.position.x - viewPosition.x, light.position.y - viewPosition.y,
+                                   light.position.z - viewPosition.z};
+    const float distance = Math::LengthUVE(toLight);
+    const float lightWeight =
+        Scene::LightEmitter3DDistanceFadeWeightUVE(distance, light.distanceFadeBegin, light.distanceFadeLength);
+    light.intensity *= lightWeight;
+    const float shadowWeight =
+        Scene::LightEmitter3DDistanceFadeWeightUVE(distance, light.distanceFadeShadow, light.distanceFadeLength);
+    light.shadowOpacity *= shadowWeight;
+    if (shadowWeight <= 0.0F) {
+        light.castsShadows = false;
+    }
 }
 
 /// Every light the frame can use, in entity order: Light3D and DirectionalLight3D alike.
@@ -169,7 +206,8 @@ LightListUVE LightSystemUVE::ExtractActiveLightsForViewUVE(Scene::IEntityManager
     };
     std::vector<RankedLightUVE> candidates;
 
-    ForEachLightDataUVE(entityManager, [&](const LightDataUVE& light) {
+    ForEachLightDataUVE(entityManager, [&](LightDataUVE light) {
+        ApplyLightEmitter3DViewFadeUVE(light, viewPosition);
         candidates.push_back(RankedLightUVE{light, EstimateLightContributionUVE(light, viewPosition)});
     });
 

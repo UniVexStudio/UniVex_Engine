@@ -86,6 +86,8 @@ TEST_F(SceneObjectTypeUVETest, InferenceReadsEveryKindThatHasComponentsOfItsOwn)
                                       MakeWithUVE(ColliderComponentUVE{}, Rigid3DComponentUVE{},
                                                   CharacterControllerComponentUVE{})),
               Kind::Character3D);
+    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(PlayerComponentUVE{}, CharacterControllerComponentUVE{})),
+              Kind::Player3D);
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(Rigid3DComponentUVE{})), Kind::Rigid3D);
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{})), Kind::Collider3D);
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{}, Rigid3DComponentUVE{},

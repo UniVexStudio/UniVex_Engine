@@ -12,6 +12,22 @@
 
 namespace UVE::UI {
 
+/// Maps authored UI coordinates to the renderer's current presentation target. Draw coordinates
+/// become `authored * scale + offset`; pointer coordinates are first converted by `inputScale`,
+/// then `inputOffset` and the draw offset are removed before button hit testing.
+struct UICoordinateTransformUVE final {
+    float scaleX = 1.0F;
+    float scaleY = 1.0F;
+    float offsetX = 0.0F;
+    float offsetY = 0.0F;
+    float inputScaleX = 1.0F;
+    float inputScaleY = 1.0F;
+    float inputOffsetX = 0.0F;
+    float inputOffsetY = 0.0F;
+
+    [[nodiscard]] bool operator==(const UICoordinateTransformUVE&) const = default;
+};
+
 /// What UI text needs in order to be localized, supplied by the caller.
 ///
 /// Whether an entity's text is translated is a hierarchy question - its Auto Translate mode is
@@ -24,19 +40,19 @@ struct UITextLocalizationUVE final {
     std::function<bool(Scene::EntityUVE)> isAutoTranslated;
 };
 
-/// Per-frame reconciliation of authored screen-space UI (Canvas/UIText/UIImage/UIButton) into two
-/// things: real button hit-testing against the actual mouse state (writing `isHovered`/
-/// `wasClickedThisFrame` back onto UIButtonComponentUVE, the same "runtime state written by a
-/// Sync* system" convention CharacterControllerComponentUVE::isGrounded already established), and
-/// a plain-data UIDrawBatchUVE snapshot a renderer can later turn into pixels (Phase U3 - no GPU
-/// resource is touched here). Ticked once per real frame (not the fixed-step loop), since UI
-/// responsiveness should track real input latency, not simulation steps.
+/// Per-frame reconciliation of authored screen-space UI (Canvas/UIText/UIImage/UIButton) into
+/// button hit-testing and a UIDrawBatchUVE. CanvasComponentUVE on an ancestor hides widgets and
+/// orders canvases by sortOrder. Widgets without a canvas still draw. No GPU work here.
 /// Thread-safety: not thread-safe; owned and ticked from the scene/runtime thread.
 class UIRuntimeUVE final {
 public:
     UIRuntimeUVE() = default;
     UIRuntimeUVE(const UIRuntimeUVE&) = delete;
     UIRuntimeUVE& operator=(const UIRuntimeUVE&) = delete;
+
+    /// Applies the same presentation transform to drawing and pointer hit testing. Invalid scales
+    /// are ignored and reset to identity so malformed runtime metrics cannot poison UI state.
+    void SetCoordinateTransformUVE(const UICoordinateTransformUVE& transform) noexcept;
 
     /// `localization` defaults to none, so a caller that does not localize draws authored text
     /// exactly as it always did. An authored string is its own translation key: a table maps
@@ -50,6 +66,7 @@ public:
 private:
     UIFontAtlasUVE m_fontAtlas;
     UIDrawBatchUVE m_drawBatch;
+    UICoordinateTransformUVE m_coordinateTransform{};
 };
 
 } // namespace UVE::UI

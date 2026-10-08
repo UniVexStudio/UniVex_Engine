@@ -22,11 +22,24 @@ out vec4 FragColor;
 
 uniform sampler2D uSourceTexture;
 uniform float uBloomThreshold;
+uniform float uBloomIntensity;
+uniform float uBloomSoftKnee;
 
 void main() {
     vec3 hdrColor = max(texture(uSourceTexture, vTexCoord).rgb, vec3(0.0));
     float luminance = dot(hdrColor, vec3(0.2126, 0.7152, 0.0722));
-    float contribution = max(luminance - uBloomThreshold, 0.0) / max(luminance, 0.0001);
-    FragColor = vec4(hdrColor * contribution, 1.0);
+    float threshold = max(uBloomThreshold, 0.0);
+    float excess = luminance - threshold;
+    float softKnee = clamp(uBloomSoftKnee, 0.0, 1.0);
+    if (softKnee > 0.0 && threshold > 0.0) {
+        float knee = threshold * softKnee;
+        float softContribution = clamp(excess + knee, 0.0, 2.0 * knee);
+        softContribution = softContribution * softContribution / (4.0 * knee);
+        excess = max(excess, softContribution);
+    } else {
+        excess = max(excess, 0.0);
+    }
+    float contribution = excess / max(luminance, 0.0001);
+    FragColor = vec4(hdrColor * contribution * max(uBloomIntensity, 0.0), 1.0);
 }
 #endif

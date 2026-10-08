@@ -72,6 +72,13 @@ TEST(SceneObjectEditorUVETest, CentralizedRegistryCreationUVE_AttachesExpectedAu
         // The controller owns all of its motion: no rigid body for gravity to fight over.
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(character));
 
+        const Scene::EntityUVE player =
+            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Player3D);
+        ASSERT_NE(player, Scene::kInvalidEntityUVE);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::PlayerComponentUVE>(player));
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(player));
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, player), Scene::Objects::SceneObjectKindUVE::Player3D);
+
         const Scene::EntityUVE animationPlayer =
             editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AnimationSequencer);
         ASSERT_NE(animationPlayer, Scene::kInvalidEntityUVE);

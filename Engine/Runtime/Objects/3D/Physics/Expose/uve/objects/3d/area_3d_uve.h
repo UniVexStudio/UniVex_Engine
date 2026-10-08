@@ -2,38 +2,86 @@
 
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
+#include <span>
 #include <string_view>
+#include <vector>
 
 #include "uve/component/area_component_uve.h"
 #include "uve/component/entity_uve.h"
+#include "uve/math/vector3_uve.h"
 
 namespace UVE::Scene {
 
 class IEntityManagerUVE;
 
-/// Authoring definition for the Area3D scene object: the component set and defaults a freshly
-/// created Area3D entity attaches. This recipe used to be hardcoded inline in EditorUVE's
-/// creation switch; it now has the same per-file home every other object kind has, so the object's
-/// creation behavior is customized in exactly one discoverable place. Per
-/// Engine/Runtime/Scene/README.md's "one truth per concept" rule this holds the *recipe*, not a
-/// second copy of component storage: overlap/trigger state itself still lives only in
-/// AreaComponentUVE (and is driven by Physics/AreaOverlapSystemUVE).
 struct Area3DObjectDefinitionUVE final {
-    /// Default document-entity name for a freshly created object of this kind. (Previously the
-    /// generic "Empty" — the editor created Area3D as a bare entity plus one component.)
     static constexpr std::string_view defaultName = "Area3D";
-
-    /// Area authored defaults; the entity's transform is attached by the creation shell.
     AreaComponentUVE area{};
 };
 
 [[nodiscard]] bool IsArea3DObjectDefinitionValidUVE(const Area3DObjectDefinitionUVE& value) noexcept;
 
-/// Attaches this object's components to `entity` using the definition's authored defaults. The
-/// entity must be alive and must not already have any of the attached component types.
-/// Every application first guarantees the Object3D baseline (Transform/WorldTransform/
-/// Hierarchy/Name) through EnsureObject3DBaselineUVE - this kind is Object3D plus its recipe.
 void ApplyArea3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                   const Area3DObjectDefinitionUVE& value);
+
+struct Area3DOverlapUVE final {
+    EntityUVE other{};
+    float penetrationDepth = 0.0F;
+    bool otherIsArea = false;
+};
+
+struct Area3DFieldUVE final {
+    EntityUVE areaEntity{};
+    std::int32_t priority = 0;
+    AreaSpaceOverrideModeUVE gravityOverride = AreaSpaceOverrideModeUVE::Disabled;
+    Math::Vector3UVE gravityDirection{0.0F, -1.0F, 0.0F};
+    float gravityMagnitude = kDefaultAreaGravityMagnitudeUVE;
+    bool gravityPoint = false;
+    Math::Vector3UVE gravityPointWorldCenter{};
+    float gravityPointUnitDistance = 0.0F;
+    AreaSpaceOverrideModeUVE linearDampOverride = AreaSpaceOverrideModeUVE::Disabled;
+    float linearDamp = 0.1F;
+    AreaSpaceOverrideModeUVE angularDampOverride = AreaSpaceOverrideModeUVE::Disabled;
+    float angularDamp = 0.1F;
+};
+
+struct Area3DSpaceResultUVE final {
+    Math::Vector3UVE gravity{};
+    float linearDamp = 0.0F;
+    float angularDamp = 0.0F;
+    bool gravityFromArea = false;
+    bool linearDampFromArea = false;
+    bool angularDampFromArea = false;
+
+    [[nodiscard]] bool operator==(const Area3DSpaceResultUVE&) const noexcept = default;
+};
+
+class Area3DUVE final {
+public:
+    static void ClearOccupancyUVE(AreaComponentUVE& area) noexcept;
+    static void RefreshOccupancyUVE(AreaComponentUVE& area,
+                                    std::span<const Area3DOverlapUVE> overlaps) noexcept;
+
+    [[nodiscard]] static bool HasOverlappingBodyUVE(const AreaComponentUVE& area,
+                                                    EntityUVE entity) noexcept;
+    [[nodiscard]] static bool HasOverlappingAreaUVE(const AreaComponentUVE& area,
+                                                    EntityUVE entity) noexcept;
+    [[nodiscard]] static const EntityUVE* GetOverlappingBodyUVE(const AreaComponentUVE& area,
+                                                                std::size_t index) noexcept;
+    [[nodiscard]] static const EntityUVE* GetOverlappingAreaUVE(const AreaComponentUVE& area,
+                                                                std::size_t index) noexcept;
+
+    [[nodiscard]] static Area3DFieldUVE MakeFieldUVE(EntityUVE areaEntity,
+                                                     const AreaComponentUVE& area,
+                                                     const Math::Vector3UVE& areaWorldCenter) noexcept;
+    [[nodiscard]] static Math::Vector3UVE EvaluateGravityAtUVE(const Area3DFieldUVE& field,
+                                                               const Math::Vector3UVE& bodyPosition) noexcept;
+    static void SortFieldsByPriorityUVE(std::vector<Area3DFieldUVE>& fields);
+    [[nodiscard]] static Area3DSpaceResultUVE ResolveSpaceUVE(
+        const Math::Vector3UVE& worldGravity, float bodyLinearDamp, float bodyAngularDamp,
+        const Math::Vector3UVE& bodyPosition, std::span<const Area3DFieldUVE> overlappingFields);
+};
 
 } // namespace UVE::Scene

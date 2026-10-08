@@ -46,6 +46,7 @@
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
+#include "uve/objects/3d/camera_3d_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/fog_volume_3d_uve.h"
 #include "uve/objects/3d/marker_3d_uve.h"
@@ -477,8 +478,9 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // validated with nothing to author them from, and the route the step publishes is declared
         // as runtime-only state, so the Inspector shows where an agent is going while playing
         // without ever offering to save it; 49 with TwoBoneIK3D's, the chain's three bone
-        // references, its target and pole, and the answers one solve writes back.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 49U);
+        // references, its target and pole, and the answers one solve writes back; the current
+        // engine additions bring the metadata-driven drawer total to 57.
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 57U);
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "directional-light-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-mixer"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "solid-body"));
@@ -999,12 +1001,12 @@ TEST(EditorUVETest, SessionSettingsUVE_ReadsValuesSavedUnderTheOldNodeKeys) {
         editor.InitUVE();
         EXPECT_EQ(editor.GetEditorSettingUVE(Id::kNewObjectsUnderSelectionUVE), Config::SettingValueUVE{false});
         EXPECT_EQ(editor.GetEditorSettingUVE(Id::kNewObjectPlacementUVE), placement(EditorNewObjectPlacementUVE::ViewFocus));
-        // The value moved to the new name; the old one is left exactly as the file had it.
+        // The registry migrates to the new ids and removes the old aliases on load.
         EXPECT_EQ(settings.GetBoolUVE("editor.objects.addUnderSelection", true), false);
         EXPECT_EQ(settings.GetIntUVE("editor.objects.placement", -1),
                   static_cast<std::int64_t>(EditorNewObjectPlacementUVE::ViewFocus));
-        EXPECT_EQ(settings.GetIntUVE("editor.nodes.placement", -1),
-                  static_cast<std::int64_t>(EditorNewObjectPlacementUVE::ViewFocus));
+        EXPECT_FALSE(settings.HasKeyUVE("editor.nodes.addUnderSelection"));
+        EXPECT_FALSE(settings.HasKeyUVE("editor.nodes.placement"));
         editor.ShutdownUVE();
     }
 
@@ -1047,11 +1049,18 @@ TEST(EditorUVETest, EditorSettingsUVE_DescriptorDefaultsMatchTheEditorsOwnDefaul
         const Config::SettingsRegistryUVE& registry = editor.GetSettingsRegistryUVE();
         // The declared preferences, and a primary and alternate shortcut for every command.
         ASSERT_EQ(registry.GetCountUVE(),
-                  37U + std::size(kRenamedSettingIdsUVE) + (2U * editor.GetEditorCommandsUVE().size()));
+                  44U + std::size(kRenamedSettingIdsUVE) + (2U * editor.GetEditorCommandsUVE().size()));
         for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
-            // A renamed setting's old name has no member behind it: it is read once at load by
-            // MigrateRenamedSettingIdsUVE, not a preference with a value of its own.
+            // A renamed setting's old name is only a migration alias; the registry moves its value
+            // to the replacement before normal settings are applied.
             if (descriptor->HasFlagUVE(Config::kSettingFlagDeprecatedUVE)) {
+                continue;
+            }
+            // Axis palette defaults belong to the host and are intentionally unset until it seeds
+            // all three colours together; these hidden descriptors are tested by the palette tests.
+            if (descriptor->id == EditorSettingIdUVE::kViewportAxisColorXUVE ||
+                descriptor->id == EditorSettingIdUVE::kViewportAxisColorYUVE ||
+                descriptor->id == EditorSettingIdUVE::kViewportAxisColorZUVE) {
                 continue;
             }
             const std::optional<Config::SettingValueUVE> value = editor.GetEditorSettingUVE(descriptor->id);
@@ -1595,6 +1604,36 @@ TEST(EditorUVETest, InspectorFoldsUVE_RememberedAcrossSessionReloadAndBounded) {
     std::filesystem::remove(config.settingsFilePath);
 }
 
+TEST(EditorUVETest, InspectorFoldsUVE_MigratesLegacyObjectEntriesToTypedStringList) {
+    const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    std::filesystem::remove(config.settingsFilePath);
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Config::IConfigManagerUVE& settings = engine.GetServicesUVE().GetConfigManagerUVE();
+    settings.SetIntUVE("editor.inspector.folds.count", 2);
+    settings.SetStringUVE("editor.inspector.folds.0.key", "section:transform");
+    settings.SetBoolUVE("editor.inspector.folds.0.open", false);
+    settings.SetStringUVE("editor.inspector.folds.1.key", "group:light/Shadow");
+    settings.SetBoolUVE("editor.inspector.folds.1.open", true);
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_inspector_folds_migration.uvscene");
+        editor.InitUVE();
+        EXPECT_FALSE(editor.IsInspectorFoldOpenUVE("section:transform", true));
+        EXPECT_TRUE(editor.IsInspectorFoldOpenUVE("group:light/Shadow", false));
+        EXPECT_EQ(settings.GetStringUVE("editor.inspector.folds.0", ""), "0:section:transform");
+        EXPECT_EQ(settings.GetStringUVE("editor.inspector.folds.1", ""), "1:group:light/Shadow");
+        EXPECT_FALSE(settings.HasKeyUVE("editor.inspector.folds.0.key"));
+        EXPECT_FALSE(settings.HasKeyUVE("editor.inspector.folds.0.open"));
+        ASSERT_TRUE(EditorUVEAccessUVE::SaveSessionSettingsUVE(editor));
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
+}
+
 TEST(EditorUVETest, ViewportGridUVE_RefusesBadOpacityAndPersistsAcrossSessionReload) {
     const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
     std::filesystem::remove(config.settingsFilePath);
@@ -1785,6 +1824,11 @@ TEST(EditorUVETest, ViewportAxisColorsUVE_RefuseInvalidChannelsAndPersistAcrossS
         EXPECT_FLOAT_EQ(editor.GetViewportAxisColorUVE(2).b, chosenZ.b);
 
         ASSERT_TRUE(EditorUVEAccessUVE::SaveSessionSettingsUVE(editor));
+        Config::IConfigManagerUVE& settings = engine.GetServicesUVE().GetConfigManagerUVE();
+        EXPECT_FALSE(settings.HasKeyUVE("editor.viewport.axisColors.set"));
+        EXPECT_DOUBLE_EQ(settings.GetDoubleUVE("editor.viewport.axisColors.x.r", 0.0), chosenX.r);
+        EXPECT_DOUBLE_EQ(settings.GetDoubleUVE("editor.viewport.axisColors.y.g", 0.0), chosenY.g);
+        EXPECT_DOUBLE_EQ(settings.GetDoubleUVE("editor.viewport.axisColors.z.b", 0.0), chosenZ.b);
         editor.ShutdownUVE();
     }
     {
@@ -1816,6 +1860,51 @@ TEST(EditorUVETest, ViewportAxisColorsUVE_RefuseInvalidChannelsAndPersistAcrossS
         EXPECT_FALSE(corrupt.AreViewportAxisColorsSetUVE())
             << "an out-of-range persisted channel must fall back to unset, not be clamped in";
         corrupt.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
+}
+
+TEST(EditorUVETest, ViewportAxisColorsUVE_InvalidOrMissingPaletteDoesNotOverwriteHostDefaults) {
+    const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    std::filesystem::remove(config.settingsFilePath);
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    using AxisColorUVE = EditorUVE::ViewportAxisColorUVE;
+    const AxisColorUVE hostX{0.12F, 0.34F, 0.56F};
+    const AxisColorUVE hostY{0.23F, 0.45F, 0.67F};
+    const AxisColorUVE hostZ{0.31F, 0.53F, 0.75F};
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_axis_colors_host_defaults.uvscene");
+        editor.InitUVE();
+        ASSERT_TRUE(editor.SetViewportAxisColorsUVE(hostX, hostY, hostZ)); // the host seeds its defaults
+
+        // With no saved palette, loading session settings must not clear the host's palette.
+        EditorUVEAccessUVE::LoadSessionSettingsUVE(editor);
+        EXPECT_TRUE(editor.AreViewportAxisColorsSetUVE());
+        EXPECT_FLOAT_EQ(editor.GetViewportAxisColorUVE(0).r, hostX.r);
+        EXPECT_FLOAT_EQ(editor.GetViewportAxisColorUVE(1).g, hostY.g);
+        EXPECT_FLOAT_EQ(editor.GetViewportAxisColorUVE(2).b, hostZ.b);
+
+        // The legacy explicit-unset marker and a corrupt, incomplete descriptor palette are also
+        // not permission to replace host defaults with the editor's placeholder values.
+        Config::IConfigManagerUVE& settings = engine.GetServicesUVE().GetConfigManagerUVE();
+        settings.SetBoolUVE("editor.viewport.axisColors.set", false);
+        EditorUVEAccessUVE::LoadSessionSettingsUVE(editor);
+        EXPECT_TRUE(editor.AreViewportAxisColorsSetUVE());
+        EXPECT_FLOAT_EQ(editor.GetViewportAxisColorUVE(0).r, hostX.r);
+
+        settings.SetBoolUVE("editor.viewport.axisColors.set", true);
+        settings.SetDoubleUVE("editor.viewport.axisColors.x.r", 1.5);
+        EditorUVEAccessUVE::LoadSessionSettingsUVE(editor);
+        EXPECT_TRUE(editor.AreViewportAxisColorsSetUVE());
+        EXPECT_FLOAT_EQ(editor.GetViewportAxisColorUVE(0).r, hostX.r);
+        EXPECT_FLOAT_EQ(editor.GetViewportAxisColorUVE(1).g, hostY.g);
+        EXPECT_FLOAT_EQ(editor.GetViewportAxisColorUVE(2).b, hostZ.b);
+        editor.ShutdownUVE();
     }
 
     engine.Shutdown();
@@ -1858,6 +1947,51 @@ TEST(EditorUVETest, FavoritesUVE_ToggleReflectsImmediatelyAndPersistsAcrossSessi
         EXPECT_TRUE(EditorUVEAccessUVE::IsProjectPathFavoritedUVE(editor, secondFavorite));
         EXPECT_FALSE(EditorUVEAccessUVE::IsProjectPathFavoritedUVE(editor, std::filesystem::path{"never-favorited"}));
         editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
+}
+
+TEST(EditorUVETest, FavoriteProjectsUVE_PersistenceIsBoundedAndKeepsPathOrder) {
+    const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    std::filesystem::remove(config.settingsFilePath);
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    constexpr std::size_t kExpectedFavoriteLimit = 128U;
+    std::vector<std::filesystem::path> favorites;
+    favorites.reserve(kExpectedFavoriteLimit + 2U);
+    for (std::size_t index = 0U; index < kExpectedFavoriteLimit + 2U; ++index) {
+        favorites.emplace_back("favorite-" + std::to_string(index));
+    }
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_favorites_bound.uvscene");
+        editor.InitUVE();
+        for (const std::filesystem::path& favorite : favorites) {
+            EditorUVEAccessUVE::ToggleProjectPathFavoriteUVE(editor, favorite);
+        }
+        ASSERT_TRUE(EditorUVEAccessUVE::SaveSessionSettingsUVE(editor));
+        Config::IConfigManagerUVE& settings = engine.GetServicesUVE().GetConfigManagerUVE();
+        EXPECT_EQ(settings.GetIntUVE("editor.favorites.count", -1),
+                  static_cast<std::int64_t>(kExpectedFavoriteLimit));
+        EXPECT_EQ(settings.GetStringUVE("editor.favorites.0", ""), favorites.front().generic_string());
+        EXPECT_EQ(settings.GetStringUVE(
+                      "editor.favorites." + std::to_string(kExpectedFavoriteLimit - 1U), ""),
+                  favorites[kExpectedFavoriteLimit - 1U].generic_string());
+        editor.ShutdownUVE();
+    }
+    {
+        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_favorites_bound_reload.uvscene");
+        reloaded.InitUVE();
+        EXPECT_TRUE(EditorUVEAccessUVE::IsProjectPathFavoritedUVE(reloaded, favorites.front()));
+        EXPECT_TRUE(EditorUVEAccessUVE::IsProjectPathFavoritedUVE(
+            reloaded, favorites[kExpectedFavoriteLimit - 1U]));
+        EXPECT_FALSE(EditorUVEAccessUVE::IsProjectPathFavoritedUVE(
+            reloaded, favorites[kExpectedFavoriteLimit]));
+        EXPECT_FALSE(EditorUVEAccessUVE::IsProjectPathFavoritedUVE(reloaded, favorites.back()));
+        reloaded.ShutdownUVE();
     }
 
     engine.Shutdown();
@@ -4379,6 +4513,70 @@ TEST(EditorUVETest, PlayModeSandbox_PlayerWithNoSpawnPointKeepsItsAuthoredPose) 
     engine.Shutdown();
 }
 
+TEST(EditorUVETest, PlayModeSandbox_InstantiatesDefaultPlayerAndUsesItsCamera) {
+    const std::filesystem::path scratch = ::UVE::Tests::MakeTestCaseDirectoryUVE("play_default_player");
+    const std::filesystem::path content = scratch / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    config.projectContentRootUVE = content;
+    config.projectSettingsFilePath = scratch / "project.uvsettings";
+    config.assetDatabaseFilePath = scratch / "assets.json";
+    config.logFilePath = scratch / "log.txt";
+    config.settingsFilePath = scratch / "settings.json";
+    config.inputMapFilePath = scratch / "input_map.json";
+    config.saveDirectoryPath = scratch / "saves";
+    config.shaderCachePath = scratch / "shader_cache";
+
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scratch / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+
+        const auto created = editor.CreateContentCatalogueItemUVE("player", content);
+        ASSERT_TRUE(created.has_value());
+        ASSERT_TRUE(editor.SetDefaultPlayerEntityUVE(created->filename()));
+
+        const Scene::EntityUVE spawn = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE spawnTransform{};
+        spawnTransform.localPosition = Math::Vector3UVE{5.0F, 1.0F, -2.0F};
+        AttachRootUVE(engine, spawn, spawnTransform);
+        entityManager.AddComponentUVE<Scene::SpawnPoint3DComponentUVE>(spawn, Scene::SpawnPoint3DComponentUVE{});
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+
+        EXPECT_EQ(Scene::ResolvePossessedPlayerUVE(entityManager), Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(editor.EnterPlayModeUVE());
+
+        const Scene::EntityUVE player = Scene::ResolvePossessedPlayerUVE(entityManager);
+        ASSERT_NE(player, Scene::kInvalidEntityUVE);
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+        const Scene::WorldTransformComponentUVE& played =
+            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(player);
+        EXPECT_NEAR(played.worldPosition.x, 5.0F, 1.0e-4F);
+        EXPECT_NEAR(played.worldPosition.y, 1.0F, 1.0e-4F);
+        EXPECT_NEAR(played.worldPosition.z, -2.0F, 1.0e-4F);
+
+        const Scene::EntityUVE camera = Scene::FindPlayerCameraUVE(entityManager, player);
+        ASSERT_NE(camera, Scene::kInvalidEntityUVE);
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::CameraComponentUVE>(camera).current);
+        const std::optional<Scene::EntityUVE> current = Scene::FindCurrentCameraEntityUVE(entityManager);
+        ASSERT_TRUE(current.has_value());
+        EXPECT_EQ(*current, camera);
+
+        ASSERT_TRUE(editor.StopPlayModeUVE());
+        EXPECT_EQ(Scene::ResolvePossessedPlayerUVE(entityManager), Scene::kInvalidEntityUVE);
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
 TEST(EditorUVETest, ViewportBookmarks_StoreRestoreClearAndRejectBadInput) {
     // The session bookmark store itself: Unreal's Ctrl+digit/digit slots as editor-owned
     // transient state - isolated per slot, validated on the way in, honest about what is not
@@ -5360,13 +5558,29 @@ TEST(EditorUVETest, InspectorHeadersUVE_SpellOutTheClassChain) {
             editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AnimationSequencer);
         ASSERT_NE(body, Scene::kInvalidEntityUVE);
         ASSERT_NE(player, Scene::kInvalidEntityUVE);
-        // Transform and Visibility sit under Object3D, the common section under Object.
         EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, body),
-                  (std::vector<std::string>{"Object3D", "Object"}));
-        // A pure Object has no Object3D part to name.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, player), (std::vector<std::string>{"Object"}));
+                  (std::vector<std::string>{"Character3D", "SolidBody3D", "PhysicsObject3D", "Object3D", "Object"}));
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, player),
+                  (std::vector<std::string>{"AnimationSequencer", "AnimationDriver", "Object"}));
         EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, editor.GetDocumentSceneRootUVE()),
                   (std::vector<std::string>{"Object"}));
+
+        const Scene::EntityUVE occluder =
+            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Occluder3D);
+        const Scene::EntityUVE fog =
+            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::FogVolume3D);
+        const Scene::EntityUVE sun =
+            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
+        ASSERT_NE(occluder, Scene::kInvalidEntityUVE);
+        ASSERT_NE(fog, Scene::kInvalidEntityUVE);
+        ASSERT_NE(sun, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, occluder),
+                  (std::vector<std::string>{"Occluder3D", "Object3D", "Object"}));
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, fog),
+                  (std::vector<std::string>{"FogVolume3D", "RenderInstance3D", "Object3D", "Object"}));
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, sun),
+                  (std::vector<std::string>{"DirectionalLight3D", "LightEmitter3D", "RenderInstance3D", "Object3D",
+                                            "Object"}));
         editor.ShutdownUVE();
     }
     engine.Shutdown();
@@ -5545,6 +5759,10 @@ TEST(EditorUVETest, ColorPickerPreferencesUVE_SanitiseAndPersistAcrossSessionRel
         EXPECT_EQ(Editor::FormatColorHexUVE(editor.GetColorPickerPreferencesUVE().saved[1], true), "#FF004080");
         EXPECT_EQ(editor.GetColorPickerPreferencesUVE().recents.size(), Editor::kMaxRecentColorsUVE);
         ASSERT_TRUE(EditorUVEAccessUVE::SaveSessionSettingsUVE(editor));
+        Config::IConfigManagerUVE& settings = engine.GetServicesUVE().GetConfigManagerUVE();
+        EXPECT_EQ(settings.GetIntUVE("editor.colorPicker.saved.count", -1), 2);
+        EXPECT_EQ(settings.GetStringUVE("editor.colorPicker.saved.0", ""), "#FF8000FF");
+        EXPECT_EQ(settings.GetStringUVE("editor.colorPicker.saved.1", ""), "#FF004080");
         editor.ShutdownUVE();
     }
     {
@@ -5556,6 +5774,11 @@ TEST(EditorUVETest, ColorPickerPreferencesUVE_SanitiseAndPersistAcrossSessionRel
         EXPECT_EQ(Editor::FormatColorHexUVE(preferences.saved[0], true), "#FF8000FF");
         EXPECT_EQ(Editor::FormatColorHexUVE(preferences.saved[1], true), "#FF004080");
         EXPECT_EQ(preferences.recents.size(), Editor::kMaxRecentColorsUVE);
+        for (std::size_t index = 0U; index < Editor::kMaxRecentColorsUVE; ++index) {
+            const Editor::EditorColorUVE expected{static_cast<float>(index) / 15.0F, 0.0F, 0.0F, 1.0F};
+            EXPECT_EQ(Editor::FormatColorHexUVE(preferences.recents[index], true),
+                      Editor::FormatColorHexUVE(expected, true)) << index;
+        }
         reloaded.ShutdownUVE();
     }
     // A stored entry that is not a colour is skipped; the rest of the list still loads.
@@ -5566,6 +5789,22 @@ TEST(EditorUVETest, ColorPickerPreferencesUVE_SanitiseAndPersistAcrossSessionRel
         ASSERT_EQ(corrupt.GetColorPickerPreferencesUVE().saved.size(), 1U);
         EXPECT_EQ(Editor::FormatColorHexUVE(corrupt.GetColorPickerPreferencesUVE().saved[0], true), "#FF004080");
         corrupt.ShutdownUVE();
+    }
+    // Invalid entries do not consume the saved-colour cap: the legacy loader inspected up to 64
+    // raw entries before applying the 24 valid-colour limit.
+    Config::IConfigManagerUVE& settings = engine.GetServicesUVE().GetConfigManagerUVE();
+    settings.SetIntUVE("editor.colorPicker.saved.count", 26);
+    for (std::int64_t index = 0; index < 25; ++index) {
+        settings.SetStringUVE("editor.colorPicker.saved." + std::to_string(index), "not a colour");
+    }
+    settings.SetStringUVE("editor.colorPicker.saved.25", "#123456");
+    {
+        EditorUVE invalidPrefix(engine.GetServicesUVE(), "uve_editor_tests_color_prefs_invalid_prefix.uvscene");
+        invalidPrefix.InitUVE();
+        ASSERT_EQ(invalidPrefix.GetColorPickerPreferencesUVE().saved.size(), 1U);
+        EXPECT_EQ(Editor::FormatColorHexUVE(invalidPrefix.GetColorPickerPreferencesUVE().saved[0], true),
+                  "#123456FF");
+        invalidPrefix.ShutdownUVE();
     }
     engine.Shutdown();
     std::filesystem::remove(config.settingsFilePath);

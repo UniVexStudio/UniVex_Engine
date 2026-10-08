@@ -45,9 +45,11 @@
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/asset/i_asset_database_uve.h"
 #include "uve/asset/i_project_file_index_uve.h"
+#include "uve/component/camera_component_uve.h"
 #include "uve/component/editor_description_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/component/transform_component_uve.h"
+#include "uve/objects/3d/camera_3d_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/core/engine_project_settings_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
@@ -324,13 +326,19 @@ void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
                 DrawMetadataComponentDrawerUVE(entity, *entry, nested);
             },
         }));
-        // The class chain, spelled out: Object3D's own sections under a "Object3D" heading and the
-        // common Object section under "Object", so the Inspector reads as the object's ancestry.
+        // One heading per ancestor, most-derived first: the object's own section, then each
+        // abstract base, then Object3D, then Object.
+        std::string group;
         if (entry->order >= Scene::kSectionOrderObjectCommonUVE) {
-            static_cast<void>(m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Object"));
+            group = "Object";
         } else if (entry->order >= Scene::kSectionOrderTransformUVE) {
+            group = "Object3D";
+        } else if (entry->order >= Scene::kSectionOrderTypeSpecificUVE) {
+            group = entry->displayName;
+        }
+        if (!group.empty()) {
             static_cast<void>(
-                m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Object3D"));
+                m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), std::move(group)));
         }
     }
     if (!transformRegistered) {
@@ -367,6 +375,16 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
     DrawInspectorSectionMenuUVE(&entry, sectionTitle.c_str());
     if (sectionOpen) {
         DrawMetadataPropertyRowsUVE(entry, instance);
+        if (entry.typeIndex == std::type_index(typeid(Scene::CameraComponentUVE))) {
+            bool preview = GetPreviewCameraUVE() == entity;
+            if (ImGui::Checkbox("Preview", &preview)) {
+                if (preview) {
+                    SetPreviewCameraUVE(entity);
+                } else {
+                    ClearPreviewCameraUVE();
+                }
+            }
+        }
         for (const NestedMetadataSectionUVE& section : nested) {
             const TypeMetadataEntryUVE* const child = section.entry;
             if (!entityManager.HasComponentUVE(entity, child->typeIndex) ||
@@ -1125,6 +1143,12 @@ bool EditorUVE::SetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entr
     RecordHistoryUVE(ComponentPropertyHistoryEntryUVE{m_selectedEntity, &entry, std::move(before),
                                                       std::move(after), selectionBefore,
                                                       CaptureSelectionSnapshotUVE(), dirtyBefore, true});
+    if (entry.typeIndex == std::type_index(typeid(Scene::CameraComponentUVE))) {
+        const auto* const camera = static_cast<const Scene::CameraComponentUVE*>(instance);
+        if (camera != nullptr && camera->current) {
+            Scene::MakeCameraCurrentUVE(entityManager, m_selectedEntity);
+        }
+    }
     return true;
 }
 

@@ -57,6 +57,7 @@ public:
 
     void RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity) override;
     [[nodiscard]] bool ResizeTargetsUVE(std::uint32_t width, std::uint32_t height) override;
+    void SetSceneClearColorUVE(const std::array<float, 4U>& color) noexcept override;
     void RenderFrameWithParticleRuntimeUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
                                            const Scene::ParticleRuntimeUVE& particleRuntime) override;
     void RenderFrameToRegionUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
@@ -66,12 +67,16 @@ public:
                                 TextureHandleUVE colorTarget, TextureHandleUVE depthTarget,
                                 std::uint32_t width = 0U, std::uint32_t height = 0U) override;
     void SetPostProcessSettingsUVE(const PostProcessSettingsUVE& settings) override;
+    void SetShadowBiasDefaultsUVE(float depthBias, float normalBias) noexcept override;
+    void SetCullingSettingsUVE(const CullingSettingsUVE& settings) noexcept override;
     void SetUIRuntimeUVE(const UI::UIRuntimeUVE* uiRuntime) noexcept override;
     void SetPhysicsInterpolationAlphaUVE(float alpha) noexcept override;
 
     [[nodiscard]] Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept override;
 
 private:
+    void CaptureDueReflectionProbesUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity);
+
     struct ImplUVE;
     std::unique_ptr<ImplUVE> m_impl;
 };

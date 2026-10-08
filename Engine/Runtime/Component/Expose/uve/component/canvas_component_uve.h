@@ -6,17 +6,14 @@
 
 namespace UVE::Scene {
 
-/// Marks an entity as a screen-space UI root - the minimal "Canvas" concept named by the
-/// playable-engine roadmap's UI/HUD item. World-space (3D-anchored) canvases are explicitly out of
-/// scope for this pass; every UITextComponentUVE/UIImageComponentUVE/UIButtonComponentUVE renders
-/// in raw window-pixel coordinates regardless of which Canvas (if any) it's nested under - this
-/// component exists as an authoring/visibility grouping and future extension point, not something
-/// UIRuntimeUVE's batching currently reads per-element.
+/// Screen-space UI root. Widgets keep raw window-pixel coordinates; the canvas does not scale them.
+/// World-space canvases are out of scope. UIRuntimeUVE walks the hierarchy to this component:
+/// `visible` hides every descendant widget (and ancestor canvases AND together), `sortOrder`
+/// paints later (on top) when higher. A widget with no canvas ancestor still draws at sort 0.
 /// Thread-safety: value type; trivially safe to copy/move.
 struct CanvasComponentUVE final {
     bool visible = true;
-    /// Draw-order tiebreaker when multiple canvases overlap - higher draws later (on top). Purely
-    /// a sort key; UIRuntimeUVE does not otherwise interpret it.
+    /// Draw-order key when canvases overlap - higher draws later (on top).
     std::int32_t sortOrder = 0;
 };
 

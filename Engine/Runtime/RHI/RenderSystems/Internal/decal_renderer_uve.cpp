@@ -12,6 +12,9 @@
 #include "uve/component/render_instance_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/occluder_3d_uve.h"
+#include "uve/objects/3d/visibility_region_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
 
 namespace UVE::Render {
 
@@ -199,19 +202,14 @@ void BuildBoxFaceQuadUVE(const Math::AabbUVE& bounds, const std::size_t faceInde
 /// Builds this frame's receiver list out of the visibility set. Entities without a render instance
 /// component carry the documented layer-1 default rather than being skipped, which is what makes a
 /// decal whose cullMask includes layer 1 project onto ordinary scene meshes.
-void BuildReceiversUVE(Scene::IEntityManagerUVE& entityManager, const MeshVisibilitySetUVE& visibilitySet,
-                       std::vector<DecalReceiverUVE>& outReceivers) {
+void BuildReceiversUVE(const MeshVisibilitySetUVE& visibilitySet, std::vector<DecalReceiverUVE>& outReceivers) {
     outReceivers.clear();
     outReceivers.reserve(visibilitySet.candidates.size());
     for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
         DecalReceiverUVE receiver{};
         receiver.entity = candidate.entity;
         receiver.worldBounds = candidate.placement.worldBounds;
-        if (candidate.entity != Scene::kInvalidEntityUVE &&
-            entityManager.HasComponentUVE<Scene::RenderInstanceComponentUVE>(candidate.entity)) {
-            receiver.renderLayers =
-                entityManager.GetComponentUVE<Scene::RenderInstanceComponentUVE>(candidate.entity).renderLayers;
-        }
+        receiver.renderLayers = candidate.renderLayers;
         outReceivers.push_back(receiver);
     }
 }
@@ -276,17 +274,23 @@ void DecalRendererUVE::BuildDrawListUVE(Scene::IEntityManagerUVE& entityManager,
     outDrawList.ClearUVE();
 
     std::vector<DecalReceiverUVE> receivers;
-    BuildReceiversUVE(entityManager, visibilitySet, receivers);
+    BuildReceiversUVE(visibilitySet, receivers);
 
     // Built lazily, on the first decal that gets far enough to need a material, and shared by every
     // decal after it.
     std::unordered_map<std::string, Asset::AssetGuidUVE> pathToGuidIndex;
     bool pathIndexBuilt = false;
     std::unordered_map<std::uint64_t, std::size_t> materialSlots;
+    std::vector<Scene::Occluder3DSnapshotUVE> occluders;
+    Scene::CollectOccluder3DSnapshotsUVE(entityManager, occluders);
 
     entityManager.ForEachUVE<Scene::Decal3DComponentUVE, Scene::WorldTransformComponentUVE>(
         [&](const Scene::EntityUVE entity, const Scene::Decal3DComponentUVE& decal,
             const Scene::WorldTransformComponentUVE& worldTransform) {
+            if (Scene::IsWorldPartition3DDrawHiddenUVE(entityManager, entity) ||
+                Scene::IsVisibilityRegion3DDrawHiddenUVE(entityManager, entity)) {
+                return;
+            }
             ++outDrawList.decalsConsidered;
 
             // The one gate that answers "should this decal paint at all": enabled, unexpired and
@@ -315,9 +319,17 @@ void DecalRendererUVE::BuildDrawListUVE(Scene::IEntityManagerUVE& entityManager,
                 return;
             }
 
-            if (!viewFrustum.IntersectsUVE(Math::AabbUVE::FromCenterExtentsUVE(projection.worldPosition,
-                                                                                projection.halfExtents))) {
+            const Math::AabbUVE projectionBounds =
+                Math::AabbUVE::FromCenterExtentsUVE(projection.worldPosition, projection.halfExtents);
+            // The frustum-culling debug freeze covers decals too: a decal is painted by the same
+            // main view whose meshes stopped being rejected, and leaving it culled would make the
+            // frozen frame disagree with itself about what is on screen. Occlusion, layer and
+            // distance-fade verdicts are separate systems and keep running.
+            if (!visibilitySet.frustumTestsDisabled && !viewFrustum.IntersectsUVE(projectionBounds)) {
                 ++outDrawList.decalsOutsideView;
+                return;
+            }
+            if (Scene::IsOccluder3DAabbDrawHiddenUVE(occluders, cameraWorldPosition, projectionBounds)) {
                 return;
             }
 

@@ -29,6 +29,7 @@
 #include "uve/asset/i_project_change_watcher_uve.h"
 #include "uve/core/engine_services_uve.h"
 #include "uve/core/i_simulation_control_uve.h"
+#include "uve/config/settings_observer_uve.h"
 #include "uve/config/settings_registry_uve.h"
 #include "uve/editor/animation_clip_editing_uve.h"
 #include "uve/editor/editor_color_uve.h"
@@ -472,8 +473,20 @@ public:
     /// module that may compose Engine/Runtime, not something that should link a sibling
     /// Engine/Editor module directly) - see Engine/App/src/editor/main.cpp for the concrete
     /// Engine/Editor/Viewport-backed implementation.
+    /// Identifies one of the editor's physically independent render views.  This is deliberately
+    /// explicit at the renderer boundary: Main, Entity Editor, and Retarget must never reuse an
+    /// orbit camera, gesture, framebuffer, or render texture merely because only one happened to
+    /// be visible in an earlier frame.
+    enum class ViewportContextUVE : std::uint8_t {
+        Main = 0,
+        EntityEditor,
+        Retarget,
+        Count
+    };
+
     using ViewportPanelRendererUVE =
-        std::function<std::uint64_t(const Math::Vector2UVE& availableSize, Math::Vector2UVE& outUsedSize,
+        std::function<std::uint64_t(ViewportContextUVE context, const Math::Vector2UVE& availableSize,
+                                    Math::Vector2UVE& outUsedSize,
                                     const ViewportOverlayStateUVE& overlayState)>;
 
     /// Registers (or clears, with an empty std::function) the Viewport panel's render callback.
@@ -815,7 +828,22 @@ public:
     [[nodiscard]] std::optional<Config::SettingValueUVE> GetEditorSettingUVE(std::string_view id) const;
     /// Applies `value` to editor setting `id` at once. Refused, changing nothing, for an unknown id
     /// or a value its descriptor does not allow. Stored in the settings file with the session.
+    /// Notifies observers synchronously after a successful effective change.
     [[nodiscard]] bool SetEditorSettingUVE(std::string_view id, const Config::SettingValueUVE& value);
+    /// Calls `callback` after future effective changes to exactly one registered editor setting.
+    /// Callbacks run synchronously on the editor's calling thread after the value is applied; a
+    /// setting mutation from a callback dispatches its own notification immediately (nested).
+    /// Keep subscriptions and callbacks on the editor's owner thread, avoid feedback loops, and do
+    /// not throw from callbacks; see SettingsObserverHubUVE for dispatch-time subscription rules.
+    [[nodiscard]] Config::SettingsObserverSubscriptionUVE SubscribeToSettingUVE(
+        std::string_view id, Config::SettingsObserverCallbackUVE callback);
+    /// Calls `callback` after changes to settings in `categoryPrefix` or any descendant category,
+    /// matched at slash boundaries. An invalid handle is returned for an empty callback or a prefix
+    /// that currently matches no registered editor setting.
+    [[nodiscard]] Config::SettingsObserverSubscriptionUVE SubscribeToCategoryUVE(
+        std::string_view categoryPrefix, Config::SettingsObserverCallbackUVE callback);
+    /// Removes a subscription issued by this editor; false for an invalid, foreign, or removed handle.
+    [[nodiscard]] bool UnsubscribeUVE(Config::SettingsObserverSubscriptionUVE subscription);
     /// The point the viewport camera orbits, reported by the host each frame; new objects are placed
     /// there when their placement preference says so. A non-finite point is ignored.
     void SetViewportCameraFocusUVE(const Math::Vector3UVE& focus) noexcept;
@@ -910,6 +938,10 @@ public:
     [[nodiscard]] Scene::EntityUVE GetDocumentViewportUVE();
     [[nodiscard]] EditorStateUVE GetStateUVE() const noexcept;
     [[nodiscard]] Scene::EntityUVE GetSelectedEntityUVE() const noexcept;
+
+    [[nodiscard]] Scene::EntityUVE GetPreviewCameraUVE() const noexcept;
+    void SetPreviewCameraUVE(Scene::EntityUVE entity);
+    void ClearPreviewCameraUVE() noexcept;
     /// Returns editor-only 2D canvas state for screen-space authoring. It is not scene data.
     [[nodiscard]] Editor2DCanvasStateUVE Get2DCanvasStateUVE() const noexcept;
 
@@ -1251,6 +1283,8 @@ private:
     /// nothing to do - no player, no enabled spawn point, or a degenerate pose/ancestry the
     /// resolvers refuse - and a false return never fails play entry.
     [[nodiscard]] bool ApplyPlayEntrySpawnUVE();
+    void BeginEditorPlayBootSplashUVE();
+    void DrawEditorPlayBootSplashOverlayUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
 
     /// Editor-only workspace labels. They do not alter document data, simulation state, or history.
     enum class EditorWorkspaceUVE {
@@ -1606,16 +1640,13 @@ private:
     void DestroyDocumentSubtreeUVE(Scene::EntityUVE root);
     void ClearDocumentSceneUVE();
     void LoadSessionSettingsUVE();
-    /// Moves the value of every renamed setting id from its old key to its new one, once, when the
-    /// file still carries the old name and the new one holds nothing (see kRenamedSettingIdsUVE).
-    void MigrateRenamedSettingIdsUVE(Config::IConfigManagerUVE& config);
     [[nodiscard]] bool SaveSessionSettingsUVE();
     void ApplyLayoutPresetUVE(EditorLayoutPresetUVE preset) noexcept;
     void DrawMenuBarUVE();
     void DrawViewportPanelUVE();
     /// The rendered scene and its overlay, filling the rest of the current window (the main
     /// Viewport panel and the Entity Editor both use it).
-    void DrawViewportImageUVE();
+    void DrawViewportImageUVE(ViewportContextUVE context);
     void DrawViewportOverlayBubblesUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
     void DrawEntityContextToolbarUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
     void DrawViewportAxisColorPickerUVE();
@@ -1627,8 +1658,11 @@ private:
         bool focusSearch = false;
         bool modifiedOnly = false;
         bool showAdvanced = false;
+        bool restartRequiredBaselineCaptured = false;
         std::array<char, 128> search{};
         std::string category;
+        std::string activeKeyBindingId;
+        std::unordered_map<std::string, Config::SettingValueUVE> restartRequiredBaseline;
     };
     // Where a settings window reads and writes values: the live editor, or a settings document.
     struct SettingsWindowSourceUVE final {
@@ -1685,8 +1719,8 @@ private:
     // Sets the project's input map and registers it with the input system at once.
     void CommitInputMapUVE(std::vector<Input::InputActionUVE> actions);
     void DrawSettingsWindowBodyUVE(SettingsWindowStateUVE& state, const SettingsWindowSourceUVE& source);
-    void DrawSettingRowUVE(const Config::SettingDescriptorUVE& descriptor, bool modified,
-                           const SettingsWindowSourceUVE& source);
+    void DrawSettingRowUVE(SettingsWindowStateUVE& state, const Config::SettingDescriptorUVE& descriptor,
+                           bool modified, const SettingsWindowSourceUVE& source);
     void DrawBottomDockUVE();
     void DrawBottomDockContentUVE();
     /// The strip of dock tabs along the bottom edge - Content, Output, Console - and the dock toggle.
@@ -1866,6 +1900,7 @@ private:
     void ReconcileContentBrowserDirectoryUVE(const Asset::ProjectFileSnapshotUVE& snapshot) noexcept;
     [[nodiscard]] bool IsProjectPathFavoritedUVE(const std::filesystem::path& relativePath) const;
     void ToggleProjectPathFavoriteUVE(const std::filesystem::path& relativePath);
+    static constexpr std::size_t kMaxPersistedFavoriteProjectsUVE = 128U;
     /// The team's shelves live beside project.uvsettings, in project.uvshelves.
     [[nodiscard]] std::filesystem::path GetSharedShelvesPathUVE() const;
     /// Replaces the shared shelves with the file's; no file means none. Personal shelves stay.
@@ -1937,6 +1972,7 @@ private:
     /// The editor's own settings, declared by RegisterEditorSettingsUVE; read and written in the
     /// services' settings store.
     Config::SettingsRegistryUVE m_settingsRegistry;
+    Config::SettingsObserverHubUVE m_settingsObservers{m_settingsRegistry};
     // Object creation preferences (editor_settings_uve.cpp), and the host's latest camera focus.
     bool m_newObjectsUnderSelection = true;
     EditorNewObjectPlacementUVE m_newObjectPlacement = EditorNewObjectPlacementUVE::ParentOrigin;
@@ -1956,6 +1992,8 @@ private:
     // (editor_settings_uve.cpp) that loading, saving and the preferences window all use.
     [[nodiscard]] static const std::vector<EditorSettingBindingUVE>& GetSettingBindingsUVE();
     [[nodiscard]] static const EditorSettingBindingUVE* FindSettingBindingUVE(std::string_view id);
+    void NotifyEditorSettingChangedUVE(std::string_view id, const Config::SettingValueUVE& previousValue,
+                                       const Config::SettingValueUVE& newValue);
     // Where a new object goes: under the single selection when the preference allows and there is
     // one, otherwise under the scene root. Then, for a spatial object, where in space.
     [[nodiscard]] Scene::EntityUVE ResolveNewObjectParentUVE();
@@ -1989,6 +2027,15 @@ private:
     EditorStateUVE m_state = EditorStateUVE::Uninitialized;
     EditorPlayModeStateUVE m_playModeState = EditorPlayModeStateUVE::Edit;
     std::optional<PlayModeSessionUVE> m_playModeSession;
+    bool m_playBootSplashActive = false;
+    bool m_playBootSplashSkippable = true;
+    bool m_playBootSplashSkipRequested = false;
+    double m_playBootSplashFadeSeconds = 0.25;
+    double m_playBootSplashMinimumSeconds = 1.0;
+    std::chrono::steady_clock::time_point m_playBootSplashStart{};
+    std::array<float, 4U> m_playBootSplashBackground{0.0F, 0.0F, 0.0F, 1.0F};
+    std::filesystem::path m_playBootSplashImagePath;
+    Math::Vector2UVE m_playBootSplashImageDimensions{};
     std::optional<EntityEditSessionUVE> m_entityEditSession;
     std::optional<RetargetWindowStateUVE> m_retargetWindow;
     std::optional<RetargetPreviewUVE> m_retargetPreview;
@@ -2426,7 +2473,12 @@ private:
     bool m_consoleScrollToBottom = false;
     bool m_viewportPanelVisible = true;
     ViewportPanelRendererUVE m_viewportPanelRenderer;
+    // UI/render state is isolated just like the three backend cameras and render targets. Main
+    // remains the canonical settings-backed state; tool-window state is session-local.
     ViewportOverlayStateUVE m_viewportOverlayState;
+    ViewportOverlayStateUVE m_entityViewportOverlayState;
+    ViewportOverlayStateUVE m_retargetViewportOverlayState;
+    Scene::EntityUVE m_previewCamera = Scene::kInvalidEntityUVE;
     bool m_sceneDirty = false;
     bool m_uiInitialized = false;
     EditorUiAssetsUVE m_uiAssets;

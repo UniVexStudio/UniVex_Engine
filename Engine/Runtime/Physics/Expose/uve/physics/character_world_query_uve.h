@@ -36,8 +36,8 @@ class ICollisionSystemUVE;
 ///    stop a body early - never late, so it cannot tunnel.
 ///  * The skin is the caller's margin, so queries never report a surface closer than a margin to the
 ///    body. That is what keeps a resting body's next query well-posed instead of exactly touching.
-///  * Overlaps come from the collision system's own narrow phase, so whatever the rest of the engine
-///    treats as touching, a character treats as touching too.
+///  * Overlaps at a pose use the same world AABB as the sweep, so a recovery asked of a working
+///    center and a sweep from that center cannot disagree about whether the pose is free.
 ///
 /// The collider list is cached the first time it is needed and reused for the rest of the step: a
 /// step moves one body through a world that is not moving under it, so the list cannot go stale
@@ -62,7 +62,8 @@ public:
     [[nodiscard]] Math::Vector3UVE GetHalfExtentsUVE() const noexcept;
 
     [[nodiscard]] Math::Vector3UVE GetCenterUVE() const override;
-    [[nodiscard]] std::vector<Scene::CharacterSlideCollisionUVE> GetOverlapsUVE() const override;
+    [[nodiscard]] std::vector<Scene::CharacterSlideCollisionUVE> GetOverlapsAtUVE(
+        const Math::Vector3UVE& center) const override;
     [[nodiscard]] std::optional<Scene::CharacterSlideCollisionUVE> SweepUVE(
         const Math::Vector3UVE& center, const Math::Vector3UVE& motion, float margin) const override;
     [[nodiscard]] Math::Vector3UVE GetSurfaceVelocityUVE(Scene::EntityUVE entity) const override;

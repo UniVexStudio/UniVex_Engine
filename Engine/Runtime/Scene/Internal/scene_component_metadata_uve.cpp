@@ -2,10 +2,12 @@
 
 #include "uve/scene/scene_component_metadata_uve.h"
 
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "uve/component/area_component_uve.h"
 #include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/auto_translate_component_uve.h"
@@ -50,16 +52,23 @@
 #include "uve/objects/3d/kinematic_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
+#include "uve/objects/3d/reflection_probe_3d_uve.h"
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
+#include "uve/objects/3d/interaction_area_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/nav_mesh_volume_3d_uve.h"
 #include "uve/objects/3d/nav_seeker_3d_uve.h"
+#include "uve/objects/3d/occluder_3d_uve.h"
 #include "uve/objects/3d/spring_arm_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
+#include "uve/objects/3d/health_uve.h"
+#include "uve/objects/3d/player_3d_uve.h"
 #include "uve/objects/3d/two_bone_ik_3d_uve.h"
+#include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_environment_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
 
 namespace UVE::Scene {
@@ -254,18 +263,42 @@ void DeclareIdentityAndTransformUVE(std::vector<TypeMetadataEntryUVE>& entries) 
 void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddUVE<CameraComponentUVE>(
         entries,
-        MakeEntryUVE("component.camera", "Camera", kSectionOrderTypeSpecificUVE,
-                     {
-                         WithRangeUVE(DeclareUVE<&CameraComponentUVE::fieldOfViewDegrees>(
-                                          "fieldOfViewDegrees", "Field Of View", kPropertyTypeFloatUVE),
-                                      1.0, 179.0, 0.5),
-                         WithRangeUVE(DeclareUVE<&CameraComponentUVE::nearPlane>("nearPlane", "Near Plane",
-                                                                                 kPropertyTypeFloatUVE),
-                                      0.001, 10000.0, 0.01),
-                         WithRangeUVE(DeclareUVE<&CameraComponentUVE::farPlane>("farPlane", "Far Plane",
-                                                                                kPropertyTypeFloatUVE),
-                                      0.002, 100000.0, 1.0),
-                     }));
+        MakeEntryUVE(
+            "component.camera", "Camera", kSectionOrderTypeSpecificUVE,
+            {
+                DeclareEnumUVE<&CameraComponentUVE::projection>(
+                    "projection", "Mode",
+                    {{0, "Perspective"}, {1, "Orthographic"}, {2, "Human Eye"}}),
+                DeclareUVE<&CameraComponentUVE::current>("current", "Current", kPropertyTypeBoolUVE),
+                [] {
+                    TypeMetadataPropertyUVE property = WithRangeUVE(
+                        DeclareUVE<&CameraComponentUVE::fieldOfViewDegrees>(
+                            "fieldOfViewDegrees", "Field Of View", kPropertyTypeFloatUVE),
+                        1.0, 179.0, 0.5);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const CameraComponentUVE*>(instance)->projection ==
+                               CameraProjectionModeUVE::Perspective;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property = WithRangeUVE(
+                        DeclareUVE<&CameraComponentUVE::orthographicSize>("orthographicSize", "Size",
+                                                                          kPropertyTypeFloatUVE),
+                        0.001, 10000.0, 0.1);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const CameraComponentUVE*>(instance)->projection ==
+                               CameraProjectionModeUVE::Orthographic;
+                    };
+                    return property;
+                }(),
+                WithRangeUVE(DeclareUVE<&CameraComponentUVE::nearPlane>("nearPlane", "Near Plane",
+                                                                        kPropertyTypeFloatUVE),
+                             0.001, 10000.0, 0.01),
+                WithRangeUVE(DeclareUVE<&CameraComponentUVE::farPlane>("farPlane", "Far Plane",
+                                                                       kPropertyTypeFloatUVE),
+                             0.002, 100000.0, 1.0),
+            }));
 
     AddUVE<LightComponentUVE>(
         entries,
@@ -348,18 +381,66 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         MakeEntryUVE(
             "component.world_environment", "WorldEnvironment", kSectionOrderTypeSpecificUVE,
             {
-                DeclareUVE<&WorldEnvironment3DComponentUVE::skyAssetPath>("skyAssetPath", "Sky",
-                                                                              kPropertyTypeStringUVE),
-                DeclareUVE<&WorldEnvironment3DComponentUVE::ambientColor>(
-                    "ambientColor", "Ambient Color", kPropertyTypeColorUVE),
-                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::ambientEnergy>(
-                                 "ambientEnergy", "Ambient Energy", kPropertyTypeFloatUVE),
-                             0.0, 100.0, 0.05),
+                WithTooltipUVE(
+                    DeclareEnumUVE<&WorldEnvironment3DComponentUVE::ambientSource>(
+                        "ambientSource", "Ambient Light Source",
+                        {{static_cast<std::int64_t>(WorldEnvironmentAmbientSourceUVE::None), "None"},
+                         {static_cast<std::int64_t>(WorldEnvironmentAmbientSourceUVE::FlatColor), "Flat Color"},
+                         {static_cast<std::int64_t>(WorldEnvironmentAmbientSourceUVE::Sky), "Sky"},
+                         {static_cast<std::int64_t>(WorldEnvironmentAmbientSourceUVE::EnvironmentMap),
+                          "Environment Map"}}),
+                    "None disables only ambient lighting; Flat Color uses Ambient Tint and Energy; Sky keeps "
+                    "the existing hemispherical sky/ground fill; Environment Map samples the Sky Asset for "
+                    "diffuse and specular ambient light."),
+                DeclareUVE<&WorldEnvironment3DComponentUVE::skyColor>("skyColor", "Sky Color",
+                                                                          kPropertyTypeColorUVE),
+                DeclareUVE<&WorldEnvironment3DComponentUVE::horizonColor>(
+                    "horizonColor", "Horizon Color", kPropertyTypeColorUVE),
+                DeclareUVE<&WorldEnvironment3DComponentUVE::groundColor>(
+                    "groundColor", "Ground Color", kPropertyTypeColorUVE),
+                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::skyCurve>(
+                                 "skyCurve", "Sky Curve", kPropertyTypeFloatUVE),
+                             0.001, 4.0, 0.01),
+                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::groundCurve>(
+                                 "groundCurve", "Ground Curve", kPropertyTypeFloatUVE),
+                             0.001, 4.0, 0.01),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::ambientColor>(
+                        "ambientColor", "Ambient Tint", kPropertyTypeColorUVE);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->ambientSource !=
+                               WorldEnvironmentAmbientSourceUVE::None;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::ambientEnergy>(
+                                         "ambientEnergy", "Ambient Energy", kPropertyTypeFloatUVE),
+                                     0.0, 100.0, 0.05);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->ambientSource !=
+                               WorldEnvironmentAmbientSourceUVE::None;
+                    };
+                    return property;
+                }(),
+
                 WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::exposure>(
                                  "exposure", "Exposure", kPropertyTypeFloatUVE),
                              0.0, 100.0, 0.05),
-                DeclareUVE<&WorldEnvironment3DComponentUVE::fogEnabled>("fogEnabled", "Fog Enabled",
+                DeclareUVE<&WorldEnvironment3DComponentUVE::fogEnabled>("fogEnabled", "Fog",
                                                                             kPropertyTypeBoolUVE),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareEnumUVE<&WorldEnvironment3DComponentUVE::fogMode>(
+                        "fogMode", "Fog Mode",
+                        {{static_cast<std::int64_t>(WorldEnvironmentFogModeUVE::Linear), "Linear"},
+                         {static_cast<std::int64_t>(WorldEnvironmentFogModeUVE::Exponential), "Exponential"},
+                         {static_cast<std::int64_t>(WorldEnvironmentFogModeUVE::Height), "Height"}});
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
+                    };
+                    return property;
+                }(),
                 [] {
                     TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::fogColor>(
                         "fogColor", "Fog Color", kPropertyTypeColorUVE);
@@ -374,12 +455,346 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                          "fogDensity", "Fog Density", kPropertyTypeFloatUVE),
                                      0.0, 1.0, 0.001);
                     property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->fogEnabled && environment->fogMode != WorldEnvironmentFogModeUVE::Linear;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogStart>(
+                                         "fogStart", "Fog Start", kPropertyTypeFloatUVE),
+                                     0.0, 1000000.0, 0.1);
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->fogEnabled && environment->fogMode == WorldEnvironmentFogModeUVE::Linear;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogEnd>(
+                                         "fogEnd", "Fog End", kPropertyTypeFloatUVE),
+                                     0.1, 1000000.0, 0.1);
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->fogEnabled && environment->fogMode == WorldEnvironmentFogModeUVE::Linear;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogSkyAffect>(
+                                         "fogSkyAffect", "Fog Sky", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogHeight>(
+                                         "fogHeight", "Fog Height", kPropertyTypeFloatUVE),
+                                     -1000.0, 10000.0, 0.5);
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->fogEnabled && environment->fogMode == WorldEnvironmentFogModeUVE::Height;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogHeightFalloff>(
+                                         "fogHeightFalloff", "Fog Falloff", kPropertyTypeFloatUVE),
+                                     0.1, 10000.0, 1.0);
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->fogEnabled && environment->fogMode == WorldEnvironmentFogModeUVE::Height;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogSunScatter>(
+                                         "fogSunScatter", "Fog Sun Scatter", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.isVisible = +[](const void* instance) {
                         return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
                     };
                     return property;
                 }(),
                 DeclareUVE<&WorldEnvironment3DComponentUVE::postProcessingEnabled>(
                     "postProcessingEnabled", "Post Processing", kPropertyTypeBoolUVE),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::bloomEnabled>(
+                        "bloomEnabled", "Bloom", kPropertyTypeBoolUVE);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::bloomIntensity>(
+                                         "bloomIntensity", "Bloom Intensity", kPropertyTypeFloatUVE),
+                                     0.0, 8.0, 0.01);
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->bloomEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::bloomThreshold>(
+                                         "bloomThreshold", "Bloom Threshold", kPropertyTypeFloatUVE),
+                                     0.0, 8.0, 0.05);
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->bloomEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::bloomSoftKnee>(
+                                         "bloomSoftKnee", "Bloom Soft Knee", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.tooltip = "Width of the gradual bright-pass transition as a fraction of the threshold. "
+                                       "0 preserves a hard threshold; larger values soften the transition.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->bloomEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::bloomMipCount>(
+                                         "bloomMipCount", "Bloom Mip Count", kPropertyTypeUInt32UVE),
+                                     1.0, static_cast<double>(kMaximumWorldEnvironmentBloomMipCountUVE), 1.0);
+                    property.tooltip = "Number of progressively smaller half-resolution scales in the bloom blur. "
+                                       "1 preserves the legacy single-scale bloom.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->bloomEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::ssaoEnabled>(
+                        "ssaoEnabled", "SSAO", kPropertyTypeBoolUVE);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::ssaoIntensity>(
+                                         "ssaoIntensity", "SSAO Intensity", kPropertyTypeFloatUVE),
+                                     0.0, 4.0, 0.05);
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->ssaoEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::ssaoRadius>(
+                                         "ssaoRadius", "SSAO Radius", kPropertyTypeFloatUVE),
+                                     0.05, 4.0, 0.05);
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->ssaoEnabled;
+                    };
+                    return property;
+                }(),
+                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::brightness>(
+                                 "brightness", "Brightness", kPropertyTypeFloatUVE),
+                             -1.0, 1.0, 0.01),
+                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::contrast>(
+                                 "contrast", "Contrast", kPropertyTypeFloatUVE),
+                             0.0, 2.0, 0.01),
+                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::saturation>(
+                                 "saturation", "Saturation", kPropertyTypeFloatUVE),
+                             0.0, 2.0, 0.01),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::vignetteIntensity>(
+                                         "vignetteIntensity", "Vignette Intensity", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.tooltip = "Darken the image toward its edges; 0 disables the vignette.";
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::vignetteRadius>(
+                                         "vignetteRadius", "Vignette Radius", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.tooltip = "Normalized screen-space radius where edge darkening begins.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->vignetteIntensity > 0.0F;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::chromaticAberrationIntensity>(
+                                         "chromaticAberrationIntensity", "Chromatic Aberration",
+                                         kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.tooltip = "Separate red and blue sampling toward screen edges by up to four target "
+                                       "texels; 0 disables the effect.";
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::filmGrainIntensity>(
+                                         "filmGrainIntensity", "Film Grain", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.tooltip = "Animated monochrome noise, up to +/-0.04 at full intensity; 0 disables it.";
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::lensDistortionIntensity>(
+                                         "lensDistortionIntensity", "Lens Distortion", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.tooltip = "Radially expand scene features toward the edges; maximum 12% at full "
+                                       "intensity, 0 disables it.";
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        DeclareUVE<&WorldEnvironment3DComponentUVE::depthOfFieldEnabled>(
+                            "depthOfFieldEnabled", "Depth of Field", kPropertyTypeBoolUVE);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareEnumUVE<&WorldEnvironment3DComponentUVE::depthOfFieldFocusMode>(
+                        "depthOfFieldFocusMode", "Focus Mode",
+                        {{static_cast<std::int64_t>(WorldEnvironmentDepthOfFieldFocusModeUVE::Manual), "Manual"},
+                         {static_cast<std::int64_t>(WorldEnvironmentDepthOfFieldFocusModeUVE::ScreenCenter),
+                          "Screen Center Autofocus"}});
+                    property.tooltip = "Use the authored focus distance or focus on the closest visible surface at "
+                                       "the center of the screen.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->depthOfFieldEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareEnumUVE<&WorldEnvironment3DComponentUVE::depthOfFieldBokehShape>(
+                        "depthOfFieldBokehShape", "Bokeh Shape",
+                        {{static_cast<std::int64_t>(WorldEnvironmentDepthOfFieldBokehShapeUVE::Circular), "Circular"},
+                         {static_cast<std::int64_t>(WorldEnvironmentDepthOfFieldBokehShapeUVE::Hexagonal), "Hexagonal"}});
+                    property.tooltip = "Shape the radial blur sample kernel as a circle or a six-sided aperture.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->depthOfFieldEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::depthOfFieldFocusDistance>(
+                                         "depthOfFieldFocusDistance", "Focus Distance", kPropertyTypeFloatUVE),
+                                     0.1, 1000.0, 0.1);
+                    property.tooltip = "Manual focus distance along the camera ray, in world units.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->depthOfFieldEnabled &&
+                               environment->depthOfFieldFocusMode ==
+                                   WorldEnvironmentDepthOfFieldFocusModeUVE::Manual;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::depthOfFieldAperture>(
+                                         "depthOfFieldAperture", "Aperture", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.tooltip = "Normalized blur strength; full aperture permits up to an eight-pixel radius.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->depthOfFieldEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::depthOfFieldQuality>(
+                                         "depthOfFieldQuality", "Blur Quality", kPropertyTypeUInt32UVE),
+                                     0.0, 2.0, 1.0);
+                    property.tooltip = "Quality tier: 4, 8, or 12 taps arranged in the selected bokeh shape.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->depthOfFieldEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        DeclareUVE<&WorldEnvironment3DComponentUVE::motionBlurEnabled>(
+                            "motionBlurEnabled", "Motion Blur", kPropertyTypeBoolUVE);
+                    property.tooltip = "Blur camera-induced motion between consecutive frames; per-object blur is "
+                                       "not yet supported.";
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::motionBlurStrength>(
+                                         "motionBlurStrength", "Motion Blur Strength", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01);
+                    property.tooltip = "Scale camera motion vectors; 0 is a strict passthrough.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->motionBlurEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::motionBlurSampleCount>(
+                                         "motionBlurSampleCount", "Motion Blur Samples", kPropertyTypeUInt32UVE),
+                                     4.0, 12.0, 4.0);
+                    property.tooltip = "Camera-motion integration quality: 4, 8, or 12 samples.";
+                    property.isVisible = +[](const void* instance) {
+                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        return environment->postProcessingEnabled && environment->motionBlurEnabled;
+                    };
+                    return property;
+                }(),
+                DeclareUVE<&WorldEnvironment3DComponentUVE::colorFilter>(
+                    "colorFilter", "Color Filter", kPropertyTypeColorUVE),
+                WithTooltipUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::skyAssetPath>(
+                                   "skyAssetPath", "Sky Asset", kPropertyTypeStringUVE),
+                               "Equirectangular sky texture. Empty keeps the procedural sky; Ambient Light Source "
+                               "uses this texture when set to Environment Map, and falls back to Sky while it "
+                               "is unavailable."),
             }));
 
     AddUVE<ParticleEmitterComponentUVE>(
@@ -387,7 +802,16 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                               kSectionOrderTypeSpecificUVE,
                               {WithRangeUVE(DeclareUVE<&ParticleEmitterComponentUVE::maxParticles>(
                                                 "maxParticles", "Max Particles", kPropertyTypeUInt32UVE),
-                                            0.0, 1000000.0, 1.0)}));
+                                            0.0, 1000000.0, 1.0),
+                               WithTooltipUVE(DeclareUVE<&ParticleEmitterComponentUVE::emitting>(
+                                                  "emitting", "Emitting", kPropertyTypeBoolUVE),
+                                              "Off, live particles stay but none spawn."),
+                               WithRangeUVE(DeclareUVE<&ParticleEmitterComponentUVE::emissionRate>(
+                                                "emissionRate", "Emission Rate", kPropertyTypeFloatUVE),
+                                            0.0, 1000000.0, 0.1),
+                               WithRangeUVE(DeclareUVE<&ParticleEmitterComponentUVE::lifetimeSeconds>(
+                                                "lifetimeSeconds", "Lifetime", kPropertyTypeFloatUVE),
+                                            0.01, 3600.0, 0.01)}));
 
     // LODGroup3D's own section. The chain is declared as a prefix: `levelCount` says how many of
     // the two lists below are in use, and both lists are drawn by a block drawer that shows exactly
@@ -448,6 +872,9 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     TypeMetadataEntryUVE collider = MakeEntryUVE(
             "component.collider", "Collider", kSectionOrderTypeSpecificUVE,
             {
+                WithTooltipUVE(DeclareUVE<&ColliderComponentUVE::disabled>("disabled", "Disabled",
+                                                                          kPropertyTypeBoolUVE),
+                               "Off this shape is ignored by collision, rays, and areas."),
                 DeclareEnumUVE<&ColliderComponentUVE::shapeType>(
                     "shapeType", "Shape", {{0, "Box"}, {1, "Sphere"}, {2, "Capsule"}}),
                 [] {
@@ -532,6 +959,157 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                    kPropertyTypeVector3UVE),
             }));
 
+    using A = AreaComponentUVE;
+    const auto whenGravity = [](TypeMetadataPropertyUVE property) {
+        property.isVisible = +[](const void* instance) {
+            return static_cast<const A*>(instance)->gravityOverride != AreaSpaceOverrideModeUVE::Disabled;
+        };
+        return property;
+    };
+    const auto whenGravityPoint = [](TypeMetadataPropertyUVE property) {
+        property.isVisible = +[](const void* instance) {
+            const A& area = *static_cast<const A*>(instance);
+            return area.gravityOverride != AreaSpaceOverrideModeUVE::Disabled && area.gravityPoint;
+        };
+        return property;
+    };
+    const auto whenGravityVector = [](TypeMetadataPropertyUVE property) {
+        property.isVisible = +[](const void* instance) {
+            const A& area = *static_cast<const A*>(instance);
+            return area.gravityOverride != AreaSpaceOverrideModeUVE::Disabled && !area.gravityPoint;
+        };
+        return property;
+    };
+    const auto whenLinearDamp = [](TypeMetadataPropertyUVE property) {
+        property.isVisible = +[](const void* instance) {
+            return static_cast<const A*>(instance)->linearDampOverride !=
+                   AreaSpaceOverrideModeUVE::Disabled;
+        };
+        return property;
+    };
+    const auto whenAngularDamp = [](TypeMetadataPropertyUVE property) {
+        property.isVisible = +[](const void* instance) {
+            return static_cast<const A*>(instance)->angularDampOverride !=
+                   AreaSpaceOverrideModeUVE::Disabled;
+        };
+        return property;
+    };
+    const std::vector<TypeMetadataEnumEntryUVE> spaceOverrideOptions{
+        {0, "Disabled"},
+        {1, "Combine"},
+        {2, "Combine Replace"},
+        {3, "Replace"},
+        {4, "Replace Combine"},
+    };
+    AddValidatedUVE<AreaComponentUVE, &IsAreaComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.area", "Area3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(
+                    DeclareUVE<&A::halfExtents>("halfExtents", "Half Extents", kPropertyTypeVector3UVE),
+                    "The axis-aligned box this area occupies, in metres, around the object's origin. "
+                    "World scale is deliberately not applied - a scaled art pivot never re-sizes a "
+                    "trigger."),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&A::collisionLayer>("collisionLayer", "Layer",
+                                                                 kPropertyTypeBitMask32UVE),
+                                   "The layers this area is on - what others have to be looking for."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&A::collisionMask>("collisionMask", "Mask",
+                                                                kPropertyTypeBitMask32UVE),
+                                   "The layers this area looks for. Detection needs BOTH sides to "
+                                   "accept the other."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                WithTooltipUVE(DeclareUVE<&A::monitoring>("monitoring", "Monitoring",
+                                                          kPropertyTypeBoolUVE),
+                               "On, this area lists who is inside it and fires enter/exit. Off, the "
+                               "lists stay empty. Space override still applies either way."),
+                WithTooltipUVE(DeclareUVE<&A::monitorable>("monitorable", "Monitorable",
+                                                           kPropertyTypeBoolUVE),
+                               "On, other monitoring areas can detect this one."),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::priority>("priority", "Priority",
+                                                                  kPropertyTypeInt32UVE),
+                                          "When several areas overlap one body, higher priority is "
+                                          "applied first. Equal priorities resolve by entity id."),
+                           "Space"),
+                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&A::gravityOverride>(
+                                              "gravityOverride", "Gravity Override", spaceOverrideOptions),
+                                          "How this area's gravity mixes with the world and with lower "
+                                          "priority areas. Disabled leaves gravity alone."),
+                           "Gravity"),
+                InGroupUVE(whenGravity(WithTooltipUVE(
+                               DeclareUVE<&A::gravityPoint>("gravityPoint", "Point Gravity",
+                                                            kPropertyTypeBoolUVE),
+                               "On, gravity pulls toward a point instead of along Gravity Direction.")),
+                           "Gravity"),
+                InGroupUVE(whenGravityVector(WithTooltipUVE(
+                               DeclareUVE<&A::gravityDirection>("gravityDirection", "Gravity Direction",
+                                                                kPropertyTypeVector3UVE),
+                               "The direction of gravity inside this area. It is normalized before "
+                               "use; a zero vector is no gravity.")),
+                           "Gravity"),
+                InGroupUVE(whenGravity(WithRangeUVE(
+                               WithTooltipUVE(DeclareUVE<&A::gravityMagnitude>(
+                                                  "gravityMagnitude", "Gravity", kPropertyTypeFloatUVE),
+                                              "Gravity strength in metres per second squared. Negative "
+                                              "repels when Point Gravity is on."),
+                               -10000.0, 10000.0, 0.01)),
+                           "Gravity"),
+                InGroupUVE(whenGravityPoint(WithTooltipUVE(
+                               DeclareUVE<&A::gravityPointOffset>("gravityPointOffset", "Point Offset",
+                                                                  kPropertyTypeVector3UVE),
+                               "Where the point sits relative to this area's origin, in metres.")),
+                           "Gravity"),
+                InGroupUVE(whenGravityPoint(WithRangeUVE(
+                               WithTooltipUVE(DeclareUVE<&A::gravityPointUnitDistance>(
+                                                  "gravityPointUnitDistance", "Unit Distance",
+                                                  kPropertyTypeFloatUVE),
+                                              "Distance at which point gravity equals Gravity. 0 is "
+                                              "constant magnitude; greater than 0 is inverse square."),
+                               0.0, 100000.0, 0.01)),
+                           "Gravity"),
+                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&A::linearDampOverride>(
+                                              "linearDampOverride", "Linear Damp Override",
+                                              spaceOverrideOptions),
+                                          "How this area's linear damping mixes with the body's drag "
+                                          "and with lower priority areas."),
+                           "Damping"),
+                InGroupUVE(whenLinearDamp(WithRangeUVE(
+                               WithTooltipUVE(DeclareUVE<&A::linearDamp>("linearDamp", "Linear Damp",
+                                                                        kPropertyTypeFloatUVE),
+                                              "Linear damping this area contributes. Velocity is scaled "
+                                              "by (1 - damp * dt) each physics step."),
+                               0.0, 100.0, 0.01)),
+                           "Damping"),
+                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&A::angularDampOverride>(
+                                              "angularDampOverride", "Angular Damp Override",
+                                              spaceOverrideOptions),
+                                          "How this area's angular damping mixes with lower priority "
+                                          "areas. Bodies have no angular drag of their own."),
+                           "Damping"),
+                InGroupUVE(whenAngularDamp(WithRangeUVE(
+                               WithTooltipUVE(DeclareUVE<&A::angularDamp>("angularDamp", "Angular Damp",
+                                                                         kPropertyTypeFloatUVE),
+                                              "Angular damping this area contributes, applied after "
+                                              "torque integration."),
+                               0.0, 100.0, 0.01)),
+                           "Damping"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::overlappingBodyCount>(
+                               "overlappingBodyCount", "Bodies", kPropertyTypeUInt8UVE),
+                           "Occupancy"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::overlappingBodiesTruncated>(
+                               "overlappingBodiesTruncated", "Bodies Truncated", kPropertyTypeBoolUVE),
+                           "Occupancy"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::overlappingAreaCount>(
+                               "overlappingAreaCount", "Areas", kPropertyTypeUInt8UVE),
+                           "Occupancy"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::overlappingAreasTruncated>(
+                               "overlappingAreasTruncated", "Areas Truncated", kPropertyTypeBoolUVE),
+                           "Occupancy"),
+            }));
+
     // Kinematic3D's own section. A platform is authored with two decisions - where it is going, and
     // how quickly it gets there - so the drawer stays short and honest, and says in the property
     // help what the mover does with them.
@@ -545,9 +1123,9 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             {
                 WithTooltipUVE(DeclareUVE<&Kinematic3DComponentUVE::targetVelocity>(
                                    "targetVelocity", "Target Velocity", kPropertyTypeVector3UVE),
-                               "Where the body is going, in metres per second. The body is driven at "
-                               "this velocity every fixed step - through the world, not around it, so "
-                               "geometry stops it and the bodies it meets get pushed."),
+                               "Where the body is going, metres per second, in its own local axes. "
+                               "Rotated into the world each step. Geometry stops it; bodies it meets "
+                               "get pushed."),
                 WithRangeUVE(WithTooltipUVE(DeclareUVE<&Kinematic3DComponentUVE::interpolation>(
                                                 "interpolation", "Interpolation", kPropertyTypeFloatUVE),
                                             "How quickly the body gets up to speed: 1 is at speed on "
@@ -647,6 +1225,9 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                               {{0, "Grounded"}, {1, "Floating"}}),
                                "Grounded walks on floors under gravity. Floating flies or swims: no gravity, no "
                                "floor, every surface a wall."),
+                WithTooltipUVE(DeclareUVE<&C::upDirection>("upDirection", "Up Direction", kPropertyTypeVector3UVE),
+                               "The body's own up. Floors, jumps, gravity and ceilings are measured from this. "
+                               "World +Y is the default, because the engine's gravity is along -Y."),
                 whenGrounded(WithTooltipUVE(WithRangeUVE(DeclareUVE<&C::gravityScale>("gravityScale", "Gravity Scale",
                                                                                       kPropertyTypeFloatUVE),
                                                          0.0, 100.0, 0.05),
@@ -857,6 +1438,10 @@ void DeclareProjectileUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         };
         return property;
     };
+    TypeMetadataPropertyUVE projectileIgnore = WithTooltipUVE(
+        DeclareUVE<&Projectile3DComponentUVE::ignoreEntity>("ignoreEntity", "Ignore Entity", kPropertyTypeEntityUVE),
+        "Never hit this entity. Set the owner so a shot does not collide with the body that fired it.");
+    projectileIgnore.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
     AddValidatedUVE<Projectile3DComponentUVE, &IsProjectile3DObjectComponentValidUVE>(
         entries,
         MakeEntryUVE(
@@ -899,6 +1484,7 @@ void DeclareProjectileUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                    "Which collision layers this projectile may hit, on the same "
                                    "layer drawer every other physics object uses."),
                     std::string(kLayerMaskDrawerPhysicsUVE)),
+                projectileIgnore,
                 WithTooltipUVE(
                     DeclareEnumUVE<&Projectile3DComponentUVE::hitPolicy>("hitPolicy", "On Hit",
                                                                          {{0, "Stop"}, {1, "Bounce"}}),
@@ -947,13 +1533,10 @@ void DeclareProjectileUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 }
 
 void DeclareCombatUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    // Hitbox3D and Hurtbox3D, declared together because they are one conversation: a strike needs
-    // both sides to agree about the layer, the mask and the damage channel, and the Inspector is
-    // where that agreement is authored. The world-shape rule both state in their tooltips - exact
-    // oriented box, world position/rotation plus authored half-extents, world SCALE deliberately
-    // not applied - is the same contract ColliderComponentUVE and AreaComponentUVE follow, and it
-    // is said out loud here because a scaled parent silently not scaling a hurtbox is exactly the
-    // kind of thing an author has to know before they debug it.
+    TypeMetadataPropertyUVE hitboxIgnore = WithTooltipUVE(
+        DeclareUVE<&Hitbox3DComponentUVE::ignoreEntity>("ignoreEntity", "Ignore Entity", kPropertyTypeEntityUVE),
+        "Never strike this entity. Set the owner so a weapon does not hit the character holding it.");
+    hitboxIgnore.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
     AddValidatedUVE<Hitbox3DComponentUVE, &IsHitbox3DObjectComponentValidUVE>(
         entries,
         MakeEntryUVE(
@@ -989,14 +1572,22 @@ void DeclareCombatUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                    "accept the other, so a hurtbox can refuse a whole class of "
                                    "attackers on its own."),
                     std::string(kLayerMaskDrawerPhysicsUVE)),
+                std::move(hitboxIgnore),
                 InGroupUVE(DeclareRuntimeStateUVE<&Hitbox3DComponentUVE::strikeCount>(
                                "strikeCount", "Strikes", kPropertyTypeUInt8UVE),
                            "Result"),
                 InGroupUVE(DeclareRuntimeStateUVE<&Hitbox3DComponentUVE::strikesTruncated>(
                                "strikesTruncated", "Truncated", kPropertyTypeBoolUVE),
                            "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Hitbox3DComponentUVE::struckCount>(
+                               "struckCount", "Landed", kPropertyTypeUInt8UVE),
+                           "Result"),
             }));
 
+    TypeMetadataPropertyUVE hurtboxIgnore = WithTooltipUVE(
+        DeclareUVE<&Hurtbox3DComponentUVE::ignoreEntity>("ignoreEntity", "Ignore Entity", kPropertyTypeEntityUVE),
+        "Never accept a strike from this entity. Set the owner so a character is not hit by its own weapon.");
+    hurtboxIgnore.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
     AddValidatedUVE<Hurtbox3DComponentUVE, &IsHurtbox3DObjectComponentValidUVE>(
         entries,
         MakeEntryUVE(
@@ -1030,6 +1621,16 @@ void DeclareCombatUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                    "BOTH sides to accept the other, which is how a hurtbox refuses "
                                    "a whole class of attackers without touching any of them."),
                     std::string(kLayerMaskDrawerPhysicsUVE)),
+                std::move(hurtboxIgnore),
+                InGroupUVE(DeclareRuntimeStateUVE<&Hurtbox3DComponentUVE::hitCount>(
+                               "hitCount", "Hits", kPropertyTypeUInt8UVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Hurtbox3DComponentUVE::hitsTruncated>(
+                               "hitsTruncated", "Truncated", kPropertyTypeBoolUVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Hurtbox3DComponentUVE::receivedCount>(
+                               "receivedCount", "Received", kPropertyTypeUInt8UVE),
+                           "Result"),
             }));
 }
 
@@ -1307,6 +1908,56 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 // built-in counterpart), and the section is deliberately declarative: the query that consumes it
 // lives in uve_scene, and nothing in this file decides when a point fires.
 void DeclareGameplayUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    AddValidatedUVE<PlayerComponentUVE, &IsPlayer3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.player", "Player3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::possessOnPlay>(
+                                   "possessOnPlay", "Possess On Play", kPropertyTypeBoolUVE),
+                               "This body receives move, look, jump and interact. Off, it is an NPC."),
+                WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::lookEnabled>("lookEnabled", "Look",
+                                                                            kPropertyTypeBoolUVE),
+                               "Mouse and look-stick rotate this body (yaw) and its camera or spring arm (pitch)."),
+                WithRangeUVE(WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::lookSensitivity>(
+                                                "lookSensitivity", "Look Sensitivity", kPropertyTypeFloatUVE),
+                                            "Degrees per mouse pixel."),
+                             0.0, 10.0, 0.01),
+                WithRangeUVE(WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::lookStickSpeedDegrees>(
+                                                "lookStickSpeedDegrees", "Stick Look Speed",
+                                                kPropertyTypeFloatUVE),
+                                            "Degrees per second at full stick."),
+                             0.0, 720.0, 1.0),
+                WithRangeUVE(WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::minPitchDegrees>(
+                                                "minPitchDegrees", "Min Pitch", kPropertyTypeFloatUVE),
+                                            "Lowest look pitch, in degrees."),
+                             -89.0, 89.0, 1.0),
+                WithRangeUVE(WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::maxPitchDegrees>(
+                                                "maxPitchDegrees", "Max Pitch", kPropertyTypeFloatUVE),
+                                            "Highest look pitch, in degrees."),
+                             -89.0, 89.0, 1.0),
+                InGroupUVE(DeclareRuntimeStateUVE<&PlayerComponentUVE::pitchDegrees>(
+                               "pitchDegrees", "Pitch", kPropertyTypeFloatUVE),
+                           "State"),
+            }));
+
+    AddValidatedUVE<HealthComponentUVE, &IsHealthComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.health", "Health", kSectionOrderTypeSpecificUVE,
+            {
+                WithRangeUVE(WithTooltipUVE(DeclareUVE<&HealthComponentUVE::maxHealth>(
+                                                "maxHealth", "Max Health", kPropertyTypeFloatUVE),
+                                            "Hit points at spawn."),
+                             1.0, 10000.0, 1.0),
+                WithTooltipUVE(DeclareUVE<&HealthComponentUVE::invulnerable>("invulnerable", "Invulnerable",
+                                                                            kPropertyTypeBoolUVE),
+                               "Strikes do not reduce health."),
+                InGroupUVE(DeclareRuntimeStateUVE<&HealthComponentUVE::health>("health", "Health",
+                                                                              kPropertyTypeFloatUVE),
+                           "State"),
+            }));
+
     AddValidatedUVE<SpawnPoint3DComponentUVE, &IsSpawnPoint3DObjectComponentValidUVE>(
         entries,
         MakeEntryUVE(
@@ -1340,6 +1991,56 @@ void DeclareGameplayUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                     "A checkpoint: the first caller that actually spawns from this point spends "
                     "it, and no later query can use it again this session. The authored value "
                     "comes back when Play is left, like every other sandboxed edit."),
+            }));
+
+    TypeMetadataPropertyUVE areaIgnore = WithTooltipUVE(
+        DeclareUVE<&InteractionArea3DComponentUVE::ignoreEntity>("ignoreEntity", "Ignore Entity",
+                                                                 kPropertyTypeEntityUVE),
+        "Never list this interactor. Set the owner so a character does not interact with a volume it carries.");
+    areaIgnore.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+    AddValidatedUVE<InteractionArea3DComponentUVE, &IsInteractionArea3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.interaction_area_3d", "InteractionArea3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(
+                    DeclareUVE<&InteractionArea3DComponentUVE::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                    "Off, the area tracks nobody and drops focus this tick."),
+                WithTooltipUVE(
+                    DeclareUVE<&InteractionArea3DComponentUVE::halfExtents>("halfExtents", "Half Extents",
+                                                                           kPropertyTypeVector3UVE),
+                    "The exact oriented box, world position and rotation plus these half-extents. "
+                    "World SCALE is not applied."),
+                WithTooltipUVE(
+                    DeclareUVE<&InteractionArea3DComponentUVE::interactionTag>("interactionTag", "Tag",
+                                                                              kPropertyTypeStringUVE),
+                    "Carried for gameplay. The scan does not filter on it."),
+                WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&InteractionArea3DComponentUVE::maximumCandidates>(
+                                       "maximumCandidates", "Max Interactors", kPropertyTypeUInt32UVE),
+                                   "How many overlapping interactors this area stores. Overflow is flagged, "
+                                   "not dropped silently. 1 to 4096; storage itself caps at 16."),
+                    1.0, 4096.0, 1.0),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&InteractionArea3DComponentUVE::collisionLayer>(
+                                       "collisionLayer", "Layer", kPropertyTypeBitMask32UVE),
+                                   "The layers this area is on."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&InteractionArea3DComponentUVE::collisionMask>(
+                                       "collisionMask", "Mask", kPropertyTypeBitMask32UVE),
+                                   "The layers this area accepts interactors from. Both sides must agree."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                std::move(areaIgnore),
+                InGroupUVE(DeclareRuntimeStateUVE<&InteractionArea3DComponentUVE::interactorCount>(
+                               "interactorCount", "Interactors", kPropertyTypeUInt8UVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&InteractionArea3DComponentUVE::interactorsTruncated>(
+                               "interactorsTruncated", "Truncated", kPropertyTypeBoolUVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&InteractionArea3DComponentUVE::focusedByPrimaryInteractor>(
+                               "focusedByPrimaryInteractor", "Focused", kPropertyTypeBoolUVE),
+                           "Result"),
             }));
 }
 
@@ -1692,14 +2393,18 @@ void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                    "The render layers this light affects."),
                                     std::string(kLayerMaskDrawerRenderUVE)),
                 InGroupUVE(DeclareUVE<&L::shadowEnabled>("shadowEnabled", "Enabled", kPropertyTypeBoolUVE), "Shadow"),
-                InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithRangeUVE(
-                               DeclareUVE<&L::shadowBias>("shadowBias", "Bias", kPropertyTypeFloatUVE), 0.0, 10.0,
-                               0.001)),
+                InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&L::shadowBias>("shadowBias", "Bias", kPropertyTypeFloatUVE),
+                                           -1.0, 10.0, 0.001),
+                               "Negative inherits the project's default shadow depth bias; non-negative values "
+                               "override it for this light.")),
                            "Shadow"),
-                InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithRangeUVE(
-                               DeclareUVE<&L::shadowNormalBias>("shadowNormalBias", "Normal Bias",
-                                                                kPropertyTypeFloatUVE),
-                               0.0, 10.0, 0.001)),
+                InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&L::shadowNormalBias>("shadowNormalBias", "Normal Bias",
+                                                                             kPropertyTypeFloatUVE),
+                                           -1.0, 10.0, 0.001),
+                               "Negative inherits the project's default normal-bias multiplier; non-negative "
+                               "values override it for this light.")),
                            "Shadow"),
                 InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithRangeUVE(
                                DeclareUVE<&L::shadowOpacity>("shadowOpacity", "Opacity", kPropertyTypeFloatUVE), 0.0,
@@ -1899,6 +2604,27 @@ void DeclareTwoBoneIKUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// Concrete RenderInstance3D children. Each brings exactly its own section; everything above it
 /// comes from the bases.
 void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    using R = ReflectionProbe3DComponentUVE;
+    AddValidatedUVE<R, &IsReflectionProbe3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.reflection_probe_3d", "ReflectionProbe3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&R::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off, the probe contributes no local reflection and captures are skipped."),
+                WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::size>("size", "Influence Size", kPropertyTypeVector3UVE),
+                                            0.001, 100000.0, 0.01),
+                               "Full box extents in metres. Reflection influence fades to zero at each face."),
+                WithTooltipUVE(
+                    DeclareEnumUVE<&R::resolution>(
+                        "resolution", "Capture Resolution",
+                        {{0, "64 (Low)"}, {1, "128 (Medium)"}, {2, "256 (High)"}, {3, "512 (Ultra)"}}),
+                    "Texels per cubemap face. Higher resolution sharpens the captured reflection at the cost of "
+                    "six larger textures; changing it reallocates the probe and triggers a fresh capture."),
+                DeclareEnumUVE<&R::updateMode>("updateMode", "Update Mode",
+                                               {{0, "Once"}, {1, "Every Frame"}, {2, "On Demand"}}),
+            }));
+
     AddValidatedUVE<DirectionalLight3DComponentUVE, &IsDirectionalLight3DComponentValidUVE>(
         entries,
         MakeEntryUVE(
@@ -1912,9 +2638,16 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
                            "Shadow"),
                 InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&DirectionalLight3DComponentUVE::shadowSplitBlend>(
                                                            "shadowSplitBlend", "Split Blend", kPropertyTypeFloatUVE),
-                                                       0.0, 1.0, 0.01),
+                                                       -1.0, 1.0, 0.01),
                                           "How the shadow cascades share that distance: 0 evenly, 1 packed near the "
-                                          "camera (sharper up close)."),
+                                          "camera (sharper up close); a negative value inherits the project's default."),
+                           "Shadow"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&DirectionalLight3DComponentUVE::shadowDistanceFadeRange>(
+                                                           "shadowDistanceFadeRange", "Distance Fade Range",
+                                                           kPropertyTypeFloatUVE),
+                                                       0.0, 10000.0, 1.0),
+                                          "Fade shadows smoothly to fully lit over this many metres at the end of "
+                                          "the final cascade. 0 disables the fade."),
                            "Shadow"),
             }));
 
@@ -2005,7 +2738,7 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
                 }(),
                 WithTooltipUVE(DeclareUVE<&F::materialAssetPath>("materialAssetPath", "Material",
                                                                  kPropertyTypeStringUVE),
-                               "An optional fog material. When set it replaces the values below."),
+                               "Reserved for a custom fog material. Until one is assigned, Density, Albedo and Emission drive the volume."),
                 InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&F::density>("density", "Density",
                                                                                kPropertyTypeFloatUVE),
                                                        -1024.0, 1024.0, 0.01),
@@ -2025,6 +2758,72 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
                                                        0.0, 1.0, 0.01),
                                           "Softens the volume's boundary. 0 is a hard edge."),
                            "Fog"),
+            }));
+
+    using P = WorldPartition3DComponentUVE;
+    AddValidatedUVE<WorldPartition3DComponentUVE, &IsWorldPartition3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.world_partition_3d", "WorldPartition3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&P::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off, every member draws. On, only the nearest occupied cells up to the "
+                               "budget draw. This does not load files."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&P::cellSize>("cellSize", "Cell Size", kPropertyTypeFloatUVE),
+                                 0.001, 100000.0, 0.01),
+                    "Metres along one cell edge. The volume starts at this object's position and "
+                    "covers Cell Size times the saved cell counts along X, Y and Z."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&P::maximumLoadedCells>("maximumLoadedCells", "Loaded Cells",
+                                                                    kPropertyTypeUInt32UVE),
+                                 1.0, static_cast<double>(kMaximumStreamedCellsUVE), 1.0),
+                    "How many occupied cells stay drawn. Farther cells skip their draws."),
+                InGroupUVE(DeclareRuntimeStateUVE<&P::loadedCellCount>("loadedCellCount", "Live Cells",
+                                                                       kPropertyTypeUInt32UVE),
+                           "Result"),
+            }));
+
+    using V = VisibilityRegion3DComponentUVE;
+    AddValidatedUVE<VisibilityRegion3DComponentUVE, &IsVisibilityRegion3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.visibility_region_3d", "VisibilityRegion3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&V::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off, every member draws. On, interior drawables skip while no viewer "
+                               "stands inside the box."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&V::halfExtents>("halfExtents", "Half Extents",
+                                                             kPropertyTypeVector3UVE),
+                                 0.001, 100000.0, 0.01),
+                    "The room box, centred on this object and aligned to the world axes."),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&V::visibilityLayers>("visibilityLayers", "Visibility Layers",
+                                                                    kPropertyTypeBitMask32UVE),
+                                   "Which mesh layers this room manages. A zero mask manages nothing. "
+                                   "Primitives, decals, particles and fog use layer 0."),
+                    std::string(kLayerMaskDrawerRenderUVE)),
+                InGroupUVE(DeclareRuntimeStateUVE<&V::active>("active", "Active", kPropertyTypeBoolUVE),
+                           "Result"),
+            }));
+
+    using O = Occluder3DComponentUVE;
+    AddValidatedUVE<Occluder3DComponentUVE, &IsOccluder3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.occluder_3d", "Occluder3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&O::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off, the box covers nothing. On, drawables whose whole bounds sit "
+                               "behind it skip."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&O::halfExtents>("halfExtents", "Half Extents",
+                                                             kPropertyTypeVector3UVE),
+                                 0.001, 100000.0, 0.01),
+                    "The cover box, centred on this object and aligned to the world axes."),
+                WithTooltipUVE(DeclareEnumUVE<&O::mode>("mode", "Mode", {{0, "Conservative Box"}}),
+                               "Hides a drawable only when every corner of its bounds is behind the box."),
             }));
 }
 

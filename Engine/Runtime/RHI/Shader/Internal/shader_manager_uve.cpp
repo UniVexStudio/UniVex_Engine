@@ -196,6 +196,7 @@ namespace {
     request.topology = desc.topology;
     request.depthTestEnabled = desc.depthTestEnabled;
     request.depthWriteEnabled = desc.depthWriteEnabled;
+    request.blendMode = desc.blendMode;
     request.hotReloadEnabledUVE = desc.hotReloadEnabledUVE;
     return request;
 }
@@ -227,6 +228,18 @@ std::shared_ptr<ShaderProgramUVE> ShaderManagerUVE::MakeProgramUVE(IRenderDevice
 
 void ShaderManagerUVE::SubmitSourceCompileJobUVE(ImplUVE& impl, const std::shared_ptr<ShaderSourceUVE>& target,
                                                   const ShaderSourceCompileDescUVE& desc) {
+    if (impl.config.compileSynchronouslyUVE) {
+        const std::vector<std::pair<std::string, std::string>> defines =
+            BuildDefinesUVE(desc.stage, impl.config.injectDebugDefineUVE, desc.extraDefines);
+        Detail::PreprocessResultUVE preprocess = Detail::PreprocessShaderSourceUVE(
+            impl.fileSystem, desc.virtualFilePath, desc.embeddedFallbackSourceCode, defines);
+        std::lock_guard<std::mutex> lock(impl.mutex);
+        ++impl.pendingJobCount;
+        impl.completedSourceJobs.push_back(
+            ImplUVE::SourceJobUVE{target, desc, std::move(preprocess)});
+        return;
+    }
+
     {
         std::lock_guard<std::mutex> lock(impl.mutex);
         ++impl.pendingJobCount;
@@ -530,6 +543,9 @@ ShaderManagerUVE::~ShaderManagerUVE() {
 std::shared_ptr<ShaderSourceUVE> ShaderManagerUVE::CreateSourceUVE(const ShaderSourceCompileDescUVE& desc) {
     std::shared_ptr<ShaderSourceUVE> target = MakeSourceUVE(m_impl->renderDevice, desc.stage);
     SubmitSourceCompileJobUVE(*m_impl, target, desc);
+    if (m_impl->config.compileSynchronouslyUVE) {
+        DrainCompletedSourceJobsUVE(*m_impl);
+    }
     return target;
 }
 
@@ -546,6 +562,10 @@ std::shared_ptr<ShaderProgramUVE> ShaderManagerUVE::CreateProgramUVE(const Shade
         std::lock_guard<std::mutex> lock(m_impl->mutex);
         m_impl->pendingProgramLinks.push_back(
             ImplUVE::PendingProgramLinkUVE{program, vertexSource, fragmentSource, request});
+    }
+    if (m_impl->config.compileSynchronouslyUVE) {
+        DrainCompletedSourceJobsUVE(*m_impl);
+        ApplyPendingProgramLinksUVE(*m_impl);
     }
     return program;
 }
@@ -565,6 +585,10 @@ std::shared_ptr<ShaderProgramUVE> ShaderManagerUVE::CreateProgramFromStagesUVE(
         m_impl->pendingProgramLinks.push_back(
             ImplUVE::PendingProgramLinkUVE{program, vertexSource, fragmentSource, request});
     }
+    if (m_impl->config.compileSynchronouslyUVE) {
+        DrainCompletedSourceJobsUVE(*m_impl);
+        ApplyPendingProgramLinksUVE(*m_impl);
+    }
     return program;
 }
 
@@ -581,6 +605,10 @@ void ShaderManagerUVE::UpdateUVE(double deltaTimeSeconds) {
     }
     m_impl->hotReloadAccumulatorSeconds = 0.0;
     PollHotReloadUVE(*m_impl);
+    if (m_impl->config.compileSynchronouslyUVE) {
+        DrainCompletedSourceJobsUVE(*m_impl);
+        ApplyPendingProgramLinksUVE(*m_impl);
+    }
 }
 
 std::size_t ShaderManagerUVE::GetPendingJobCountUVE() const noexcept {

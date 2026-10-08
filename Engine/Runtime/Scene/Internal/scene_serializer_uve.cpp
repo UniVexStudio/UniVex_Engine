@@ -453,6 +453,9 @@ namespace {
         {"fieldOfViewDegrees", component.fieldOfViewDegrees},
         {"nearPlane", component.nearPlane},
         {"farPlane", component.farPlane},
+        {"projection", static_cast<std::uint8_t>(component.projection)},
+        {"orthographicSize", component.orthographicSize},
+        {"current", component.current},
     };
 }
 
@@ -469,7 +472,8 @@ namespace {
             {"density", component.density},
             {"shapeType", static_cast<std::uint8_t>(component.shapeType)},
             {"radius", component.radius},
-            {"height", component.height}};
+            {"height", component.height},
+            {"disabled", component.disabled}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const AreaComponentUVE& component) {
@@ -477,7 +481,18 @@ namespace {
             {"collisionLayer", component.collisionLayer},
             {"collisionMask", component.collisionMask},
             {"monitoring", component.monitoring},
-            {"monitorable", component.monitorable}};
+            {"monitorable", component.monitorable},
+            {"gravityOverride", static_cast<std::uint8_t>(component.gravityOverride)},
+            {"gravityDirection", ToJsonUVE(component.gravityDirection)},
+            {"gravityMagnitude", component.gravityMagnitude},
+            {"gravityPoint", component.gravityPoint},
+            {"gravityPointOffset", ToJsonUVE(component.gravityPointOffset)},
+            {"gravityPointUnitDistance", component.gravityPointUnitDistance},
+            {"linearDampOverride", static_cast<std::uint8_t>(component.linearDampOverride)},
+            {"linearDamp", component.linearDamp},
+            {"angularDampOverride", static_cast<std::uint8_t>(component.angularDampOverride)},
+            {"angularDamp", component.angularDamp},
+            {"priority", component.priority}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const Rigid3DComponentUVE& component) {
@@ -493,6 +508,7 @@ namespace {
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const CharacterControllerComponentUVE& component) {
     return {{"motionMode", static_cast<std::uint8_t>(component.motionMode)},
+            {"upDirection", ToJsonUVE(component.upDirection)},
             {"gravityScale", component.gravityScale},
             {"builtInMovement", component.builtInMovement},
             {"moveSpeed", component.moveSpeed},
@@ -577,7 +593,10 @@ namespace {
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const ParticleEmitterComponentUVE& component) {
-    return {{"maxParticles", component.maxParticles}};
+    return {{"maxParticles", component.maxParticles},
+            {"emitting", component.emitting},
+            {"emissionRate", component.emissionRate},
+            {"lifetimeSeconds", component.lifetimeSeconds}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const PhysicsInterpolationComponentUVE& component) {
@@ -1124,6 +1143,23 @@ template <typename VectorT>
                                     json.value("enabled", true)};
 }
 
+[[nodiscard]] Hitbox3DComponentUVE Hitbox3DComponentWithResolvedIgnoreUVE(
+    const nlohmann::json& json, const std::unordered_map<std::uint32_t, EntityUVE>& localIdToEntity) {
+    Hitbox3DComponentUVE value = Hitbox3DObjectFromJsonUVE(json);
+    const std::int64_t ignoreLocalId = json.value("ignoreLocalId", static_cast<std::int64_t>(-1));
+    if (ignoreLocalId >= 0 &&
+        static_cast<std::uint64_t>(ignoreLocalId) <= std::numeric_limits<std::uint32_t>::max()) {
+        const auto ignoreIt = localIdToEntity.find(static_cast<std::uint32_t>(ignoreLocalId));
+        if (ignoreIt != localIdToEntity.end()) {
+            value.ignoreEntity = ignoreIt->second;
+        }
+    }
+    if (!IsHitbox3DObjectComponentValidUVE(value)) {
+        throw std::runtime_error("Invalid Hitbox3DComponentUVE payload");
+    }
+    return value;
+}
+
 [[nodiscard]] nlohmann::json ToJsonUVE(const Hurtbox3DComponentUVE& value) {
     return {{"halfExtents", ToJsonUVE(value.halfExtents)},
             {"collisionLayer", value.collisionLayer},
@@ -1138,6 +1174,23 @@ template <typename VectorT>
                                      json.value("collisionMask", std::uint32_t{0xFFFFFFFFU}),
                                      json.value("damageChannel", std::string{"default"}),
                                      json.value("enabled", true)};
+}
+
+[[nodiscard]] Hurtbox3DComponentUVE Hurtbox3DComponentWithResolvedIgnoreUVE(
+    const nlohmann::json& json, const std::unordered_map<std::uint32_t, EntityUVE>& localIdToEntity) {
+    Hurtbox3DComponentUVE value = Hurtbox3DObjectFromJsonUVE(json);
+    const std::int64_t ignoreLocalId = json.value("ignoreLocalId", static_cast<std::int64_t>(-1));
+    if (ignoreLocalId >= 0 &&
+        static_cast<std::uint64_t>(ignoreLocalId) <= std::numeric_limits<std::uint32_t>::max()) {
+        const auto ignoreIt = localIdToEntity.find(static_cast<std::uint32_t>(ignoreLocalId));
+        if (ignoreIt != localIdToEntity.end()) {
+            value.ignoreEntity = ignoreIt->second;
+        }
+    }
+    if (!IsHurtbox3DObjectComponentValidUVE(value)) {
+        throw std::runtime_error("Invalid Hurtbox3DComponentUVE payload");
+    }
+    return value;
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const Projectile3DComponentUVE& value) {
@@ -1173,6 +1226,23 @@ template <typename VectorT>
     return value;
 }
 
+[[nodiscard]] Projectile3DComponentUVE Projectile3DComponentWithResolvedIgnoreUVE(
+    const nlohmann::json& json, const std::unordered_map<std::uint32_t, EntityUVE>& localIdToEntity) {
+    Projectile3DComponentUVE value = Projectile3DObjectFromJsonUVE(json);
+    const std::int64_t ignoreLocalId = json.value("ignoreLocalId", static_cast<std::int64_t>(-1));
+    if (ignoreLocalId >= 0 &&
+        static_cast<std::uint64_t>(ignoreLocalId) <= std::numeric_limits<std::uint32_t>::max()) {
+        const auto ignoreIt = localIdToEntity.find(static_cast<std::uint32_t>(ignoreLocalId));
+        if (ignoreIt != localIdToEntity.end()) {
+            value.ignoreEntity = ignoreIt->second;
+        }
+    }
+    if (!IsProjectile3DObjectComponentValidUVE(value)) {
+        throw std::runtime_error("Invalid Projectile3DComponentUVE payload");
+    }
+    return value;
+}
+
 [[nodiscard]] nlohmann::json ToJsonUVE(const InteractionArea3DComponentUVE& value) {
     return {{"halfExtents", ToJsonUVE(value.halfExtents)},
             {"collisionLayer", value.collisionLayer},
@@ -1191,32 +1261,143 @@ template <typename VectorT>
                                              json.value("enabled", true)};
 }
 
+[[nodiscard]] InteractionArea3DComponentUVE InteractionArea3DComponentWithResolvedIgnoreUVE(
+    const nlohmann::json& json, const std::unordered_map<std::uint32_t, EntityUVE>& localIdToEntity) {
+    InteractionArea3DComponentUVE value = InteractionArea3DObjectFromJsonUVE(json);
+    const std::int64_t ignoreLocalId = json.value("ignoreLocalId", static_cast<std::int64_t>(-1));
+    if (ignoreLocalId >= 0 &&
+        static_cast<std::uint64_t>(ignoreLocalId) <= std::numeric_limits<std::uint32_t>::max()) {
+        const auto ignoreIt = localIdToEntity.find(static_cast<std::uint32_t>(ignoreLocalId));
+        if (ignoreIt != localIdToEntity.end()) {
+            value.ignoreEntity = ignoreIt->second;
+        }
+    }
+    if (!IsInteractionArea3DObjectComponentValidUVE(value)) {
+        throw std::runtime_error("Invalid InteractionArea3DComponentUVE payload");
+    }
+    return value;
+}
+
 [[nodiscard]] nlohmann::json ToJsonUVE(const WorldEnvironment3DComponentUVE& value) {
     return {{"skyAssetPath", value.skyAssetPath},
+            {"ambientSource", static_cast<std::uint8_t>(value.ambientSource)},
             {"ambientColor", ToJsonUVE(value.ambientColor)},
             {"fogColor", ToJsonUVE(value.fogColor)},
             {"ambientEnergy", value.ambientEnergy},
             {"exposure", value.exposure},
             {"fogDensity", value.fogDensity},
             {"fogEnabled", value.fogEnabled},
-            {"postProcessingEnabled", value.postProcessingEnabled}};
+            {"fogMode", static_cast<std::uint8_t>(value.fogMode)},
+            {"fogStart", value.fogStart},
+            {"fogEnd", value.fogEnd},
+            {"postProcessingEnabled", value.postProcessingEnabled},
+            {"skyColor", ToJsonUVE(value.skyColor)},
+            {"horizonColor", ToJsonUVE(value.horizonColor)},
+            {"groundColor", ToJsonUVE(value.groundColor)},
+            {"skyCurve", value.skyCurve},
+            {"groundCurve", value.groundCurve},
+            {"fogSkyAffect", value.fogSkyAffect},
+            {"bloomEnabled", value.bloomEnabled},
+            {"bloomIntensity", value.bloomIntensity},
+            {"bloomThreshold", value.bloomThreshold},
+            {"bloomSoftKnee", value.bloomSoftKnee},
+            {"bloomMipCount", value.bloomMipCount},
+            {"ssaoEnabled", value.ssaoEnabled},
+            {"ssaoIntensity", value.ssaoIntensity},
+            {"ssaoRadius", value.ssaoRadius},
+            {"brightness", value.brightness},
+            {"contrast", value.contrast},
+            {"saturation", value.saturation},
+            {"vignetteIntensity", value.vignetteIntensity},
+            {"vignetteRadius", value.vignetteRadius},
+            {"chromaticAberrationIntensity", value.chromaticAberrationIntensity},
+            {"filmGrainIntensity", value.filmGrainIntensity},
+            {"lensDistortionIntensity", value.lensDistortionIntensity},
+            {"depthOfFieldEnabled", value.depthOfFieldEnabled},
+            {"depthOfFieldFocusMode", static_cast<std::uint8_t>(value.depthOfFieldFocusMode)},
+            {"depthOfFieldBokehShape", static_cast<std::uint8_t>(value.depthOfFieldBokehShape)},
+            {"depthOfFieldFocusDistance", value.depthOfFieldFocusDistance},
+            {"depthOfFieldAperture", value.depthOfFieldAperture},
+            {"depthOfFieldQuality", value.depthOfFieldQuality},
+            {"motionBlurEnabled", value.motionBlurEnabled},
+            {"motionBlurStrength", value.motionBlurStrength},
+            {"motionBlurSampleCount", value.motionBlurSampleCount},
+            {"colorFilter", ToJsonUVE(value.colorFilter)},
+            {"fogHeight", value.fogHeight},
+            {"fogHeightFalloff", value.fogHeightFalloff},
+            {"fogSunScatter", value.fogSunScatter}};
 }
 
 [[nodiscard]] WorldEnvironment3DComponentUVE WorldEnvironment3DObjectFromJsonUVE(const nlohmann::json& json) {
-    return WorldEnvironment3DComponentUVE{json.value("skyAssetPath", std::string{}),
-                                              Vector3FromJsonUVE(json.at("ambientColor")),
-                                              Vector3FromJsonUVE(json.at("fogColor")),
-                                              json.value("ambientEnergy", 1.0F),
-                                              json.value("exposure", 1.0F),
-                                              json.value("fogDensity", 0.0F),
-                                              json.value("fogEnabled", false),
-                                              json.value("postProcessingEnabled", false)};
+    WorldEnvironment3DComponentUVE value;
+    value.skyAssetPath = json.value("skyAssetPath", std::string{});
+    value.ambientSource = static_cast<WorldEnvironmentAmbientSourceUVE>(
+        json.value("ambientSource", static_cast<std::uint8_t>(value.ambientSource)));
+    value.ambientColor = Vector3FromJsonUVE(json.at("ambientColor"));
+    value.fogColor = Vector3FromJsonUVE(json.at("fogColor"));
+    value.ambientEnergy = json.value("ambientEnergy", 1.0F);
+    value.exposure = json.value("exposure", 1.0F);
+    value.fogDensity = json.value("fogDensity", 0.0F);
+    value.fogEnabled = json.value("fogEnabled", false);
+    value.fogMode = static_cast<WorldEnvironmentFogModeUVE>(
+        json.value("fogMode", static_cast<std::uint8_t>(value.fogMode)));
+    value.fogStart = json.value("fogStart", value.fogStart);
+    value.fogEnd = json.value("fogEnd", value.fogEnd);
+    value.postProcessingEnabled = json.value("postProcessingEnabled", true);
+    if (json.contains("skyColor")) {
+        value.skyColor = Vector3FromJsonUVE(json.at("skyColor"));
+    }
+    if (json.contains("horizonColor")) {
+        value.horizonColor = Vector3FromJsonUVE(json.at("horizonColor"));
+    }
+    if (json.contains("groundColor")) {
+        value.groundColor = Vector3FromJsonUVE(json.at("groundColor"));
+    }
+    value.skyCurve = json.value("skyCurve", value.skyCurve);
+    value.groundCurve = json.value("groundCurve", value.groundCurve);
+    value.fogSkyAffect = json.value("fogSkyAffect", value.fogSkyAffect);
+    value.bloomEnabled = json.value("bloomEnabled", value.bloomEnabled);
+    value.bloomIntensity = json.value("bloomIntensity", value.bloomIntensity);
+    value.bloomThreshold = json.value("bloomThreshold", value.bloomThreshold);
+    value.bloomSoftKnee = json.value("bloomSoftKnee", value.bloomSoftKnee);
+    value.bloomMipCount = json.value("bloomMipCount", value.bloomMipCount);
+    value.ssaoEnabled = json.value("ssaoEnabled", value.ssaoEnabled);
+    value.ssaoIntensity = json.value("ssaoIntensity", value.ssaoIntensity);
+    value.ssaoRadius = json.value("ssaoRadius", value.ssaoRadius);
+    value.brightness = json.value("brightness", value.brightness);
+    value.contrast = json.value("contrast", value.contrast);
+    value.saturation = json.value("saturation", value.saturation);
+    value.vignetteIntensity = json.value("vignetteIntensity", value.vignetteIntensity);
+    value.vignetteRadius = json.value("vignetteRadius", value.vignetteRadius);
+    value.chromaticAberrationIntensity =
+        json.value("chromaticAberrationIntensity", value.chromaticAberrationIntensity);
+    value.filmGrainIntensity = json.value("filmGrainIntensity", value.filmGrainIntensity);
+    value.lensDistortionIntensity = json.value("lensDistortionIntensity", value.lensDistortionIntensity);
+    value.depthOfFieldEnabled = json.value("depthOfFieldEnabled", value.depthOfFieldEnabled);
+    value.depthOfFieldFocusMode = static_cast<WorldEnvironmentDepthOfFieldFocusModeUVE>(
+        json.value("depthOfFieldFocusMode", static_cast<std::uint8_t>(value.depthOfFieldFocusMode)));
+    value.depthOfFieldBokehShape = static_cast<WorldEnvironmentDepthOfFieldBokehShapeUVE>(
+        json.value("depthOfFieldBokehShape", static_cast<std::uint8_t>(value.depthOfFieldBokehShape)));
+    value.depthOfFieldFocusDistance = json.value("depthOfFieldFocusDistance", value.depthOfFieldFocusDistance);
+    value.depthOfFieldAperture = json.value("depthOfFieldAperture", value.depthOfFieldAperture);
+    value.depthOfFieldQuality = json.value("depthOfFieldQuality", value.depthOfFieldQuality);
+    value.motionBlurEnabled = json.value("motionBlurEnabled", value.motionBlurEnabled);
+    value.motionBlurStrength = json.value("motionBlurStrength", value.motionBlurStrength);
+    value.motionBlurSampleCount = json.value("motionBlurSampleCount", value.motionBlurSampleCount);
+    if (json.contains("colorFilter")) {
+        value.colorFilter = Vector3FromJsonUVE(json.at("colorFilter"));
+    }
+    value.fogHeight = json.value("fogHeight", value.fogHeight);
+    value.fogHeightFalloff = json.value("fogHeightFalloff", value.fogHeightFalloff);
+    value.fogSunScatter = json.value("fogSunScatter", value.fogSunScatter);
+    return value;
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const ReflectionProbe3DComponentUVE& value) {
     return {{"size", ToJsonUVE(value.size)},
             {"visibilityLayers", value.visibilityLayers},
             {"updateMode", static_cast<std::uint8_t>(value.updateMode)},
+            {"resolution", static_cast<std::uint8_t>(value.resolution)},
             {"enabled", value.enabled}};
 }
 
@@ -1225,6 +1406,8 @@ template <typename VectorT>
     value.size = Vector3FromJsonUVE(json.at("size"));
     value.visibilityLayers = json.value("visibilityLayers", std::uint32_t{0xFFFFFFFFU});
     value.updateMode = static_cast<ReflectionProbeUpdateModeUVE>(json.value("updateMode", std::uint8_t{0}));
+    value.resolution = static_cast<ReflectionProbeResolutionUVE>(json.value(
+        "resolution", static_cast<std::uint8_t>(ReflectionProbeResolutionUVE::Medium)));
     value.enabled = json.value("enabled", true);
     return value;
 }
@@ -1275,7 +1458,9 @@ template <typename VectorT>
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const DirectionalLight3DComponentUVE& value) {
-    return {{"shadowMaxDistance", value.shadowMaxDistance}, {"shadowSplitBlend", value.shadowSplitBlend}};
+    return {{"shadowMaxDistance", value.shadowMaxDistance},
+            {"shadowSplitBlend", value.shadowSplitBlend},
+            {"shadowDistanceFadeRange", value.shadowDistanceFadeRange}};
 }
 
 [[nodiscard]] DirectionalLight3DComponentUVE DirectionalLight3DFromJsonUVE(const nlohmann::json& json) {
@@ -1283,6 +1468,7 @@ template <typename VectorT>
     DirectionalLight3DComponentUVE value{};
     value.shadowMaxDistance = json.value("shadowMaxDistance", defaults.shadowMaxDistance);
     value.shadowSplitBlend = json.value("shadowSplitBlend", defaults.shadowSplitBlend);
+    value.shadowDistanceFadeRange = json.value("shadowDistanceFadeRange", defaults.shadowDistanceFadeRange);
     return value;
 }
 
@@ -1468,6 +1654,38 @@ template <typename VectorT>
                                         QuaternionFromJsonUVE(json.at("localRotation")),
                                         json.value("enabled", true),
                                         json.value("oneShot", false)};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const PlayerComponentUVE& value) {
+    return {{"possessOnPlay", value.possessOnPlay},
+            {"lookEnabled", value.lookEnabled},
+            {"lookSensitivity", value.lookSensitivity},
+            {"lookStickSpeedDegrees", value.lookStickSpeedDegrees},
+            {"minPitchDegrees", value.minPitchDegrees},
+            {"maxPitchDegrees", value.maxPitchDegrees}};
+}
+
+[[nodiscard]] PlayerComponentUVE Player3DObjectFromJsonUVE(const nlohmann::json& json) {
+    PlayerComponentUVE value{};
+    value.possessOnPlay = json.value("possessOnPlay", value.possessOnPlay);
+    value.lookEnabled = json.value("lookEnabled", value.lookEnabled);
+    value.lookSensitivity = json.value("lookSensitivity", value.lookSensitivity);
+    value.lookStickSpeedDegrees = json.value("lookStickSpeedDegrees", value.lookStickSpeedDegrees);
+    value.minPitchDegrees = json.value("minPitchDegrees", value.minPitchDegrees);
+    value.maxPitchDegrees = json.value("maxPitchDegrees", value.maxPitchDegrees);
+    return value;
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const HealthComponentUVE& value) {
+    return {{"maxHealth", value.maxHealth}, {"invulnerable", value.invulnerable}};
+}
+
+[[nodiscard]] HealthComponentUVE HealthFromJsonUVE(const nlohmann::json& json) {
+    HealthComponentUVE value{};
+    value.maxHealth = json.value("maxHealth", value.maxHealth);
+    value.invulnerable = json.value("invulnerable", value.invulnerable);
+    value.health = value.maxHealth;
+    return value;
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const LevelStreamer3DComponentUVE& value) {
@@ -1746,9 +1964,14 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           return light;
                       }, IsLightComponentValidUVE));
         table.emplace("CameraComponentUVE", MakeRegistrationUVE<CameraComponentUVE>([](const nlohmann::json& json) {
-                          const CameraComponentUVE camera{json.at("fieldOfViewDegrees").get<float>(),
-                                                          json.at("nearPlane").get<float>(),
-                                                          json.at("farPlane").get<float>()};
+                          CameraComponentUVE camera;
+                          camera.fieldOfViewDegrees = json.at("fieldOfViewDegrees").get<float>();
+                          camera.nearPlane = json.at("nearPlane").get<float>();
+                          camera.farPlane = json.at("farPlane").get<float>();
+                          camera.projection = static_cast<CameraProjectionModeUVE>(json.value(
+                              "projection", static_cast<std::uint8_t>(CameraProjectionModeUVE::Perspective)));
+                          camera.orthographicSize = json.value("orthographicSize", 5.0F);
+                          camera.current = json.value("current", false);
                           if (!IsCameraComponentValidUVE(camera)) {
                               throw std::runtime_error("Invalid CameraComponentUVE payload");
                           }
@@ -1773,6 +1996,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                               json.value("shapeType", std::uint8_t{0}));
                           collider.radius = json.value("radius", 0.5F);
                           collider.height = json.value("height", 1.0F);
+                          collider.disabled = json.value("disabled", false);
                           if (!IsColliderComponentValidUVE(collider)) {
                               throw std::runtime_error("Invalid ColliderComponentUVE payload");
                           }
@@ -1785,6 +2009,25 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           area.collisionMask = json.value("collisionMask", std::uint32_t{0xFFFFFFFFU});
                           area.monitoring = json.value("monitoring", true);
                           area.monitorable = json.value("monitorable", true);
+                          area.gravityOverride = static_cast<AreaSpaceOverrideModeUVE>(
+                              json.value("gravityOverride", static_cast<std::uint8_t>(0)));
+                          if (json.contains("gravityDirection")) {
+                              area.gravityDirection = Vector3FromJsonUVE(json.at("gravityDirection"));
+                          }
+                          area.gravityMagnitude =
+                              json.value("gravityMagnitude", kDefaultAreaGravityMagnitudeUVE);
+                          area.gravityPoint = json.value("gravityPoint", false);
+                          if (json.contains("gravityPointOffset")) {
+                              area.gravityPointOffset = Vector3FromJsonUVE(json.at("gravityPointOffset"));
+                          }
+                          area.gravityPointUnitDistance = json.value("gravityPointUnitDistance", 0.0F);
+                          area.linearDampOverride = static_cast<AreaSpaceOverrideModeUVE>(
+                              json.value("linearDampOverride", static_cast<std::uint8_t>(0)));
+                          area.linearDamp = json.value("linearDamp", 0.1F);
+                          area.angularDampOverride = static_cast<AreaSpaceOverrideModeUVE>(
+                              json.value("angularDampOverride", static_cast<std::uint8_t>(0)));
+                          area.angularDamp = json.value("angularDamp", 0.1F);
+                          area.priority = json.value("priority", 0);
                           if (!IsAreaComponentValidUVE(area)) {
                               throw std::runtime_error("Invalid AreaComponentUVE payload");
                           }
@@ -2016,6 +2259,22 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 }
                 return value;
             }, IsSpawnPoint3DObjectComponentValidUVE));
+        table.emplace("PlayerComponentUVE", MakeRegistrationUVE<PlayerComponentUVE>(
+            [](const nlohmann::json& json) {
+                const PlayerComponentUVE value = Player3DObjectFromJsonUVE(json);
+                if (!IsPlayer3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid PlayerComponentUVE payload");
+                }
+                return value;
+            }, IsPlayer3DObjectComponentValidUVE));
+        table.emplace("HealthComponentUVE", MakeRegistrationUVE<HealthComponentUVE>(
+            [](const nlohmann::json& json) {
+                const HealthComponentUVE value = HealthFromJsonUVE(json);
+                if (!IsHealthComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid HealthComponentUVE payload");
+                }
+                return value;
+            }, IsHealthComponentValidUVE));
         table.emplace("LevelStreamer3DComponentUVE", MakeRegistrationUVE<LevelStreamer3DComponentUVE>(
             [](const nlohmann::json& json) {
                 const LevelStreamer3DComponentUVE value = LevelStreamer3DObjectFromJsonUVE(json);
@@ -2057,6 +2316,9 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           // existed loads as if it had been left at that default.
                           CharacterControllerComponentUVE c;
                           c.motionMode = static_cast<CharacterMotionModeUVE>(json.value("motionMode", std::uint8_t{0}));
+                          c.upDirection = json.contains("upDirection")
+                                              ? Vector3FromJsonUVE(json.at("upDirection"))
+                                              : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
                           c.gravityScale = json.value("gravityScale", c.gravityScale);
                           c.builtInMovement = json.value("builtInMovement", c.builtInMovement);
                           c.moveSpeed = json.value("moveSpeed", c.moveSpeed);
@@ -2196,7 +2458,12 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                       }, IsScriptComponentValidUVE));
         table.emplace("ParticleEmitterComponentUVE",
                       MakeRegistrationUVE<ParticleEmitterComponentUVE>([](const nlohmann::json& json) {
-                          const ParticleEmitterComponentUVE emitter{json.at("maxParticles").get<std::uint32_t>()};
+                          const ParticleEmitterComponentUVE defaults{};
+                          ParticleEmitterComponentUVE emitter{};
+                          emitter.maxParticles = json.at("maxParticles").get<std::uint32_t>();
+                          emitter.emitting = json.value("emitting", defaults.emitting);
+                          emitter.emissionRate = json.value("emissionRate", defaults.emissionRate);
+                          emitter.lifetimeSeconds = json.value("lifetimeSeconds", defaults.lifetimeSeconds);
                           if (!IsParticleEmitterComponentValidUVE(emitter)) {
                               throw std::runtime_error("Invalid ParticleEmitterComponentUVE payload");
                           }
@@ -2541,6 +2808,52 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 }
                 componentsJson[*name]["exclusionsLocalIds"] = std::move(exclusionLocalIds);
             }
+            if (type == std::type_index(typeid(Hitbox3DComponentUVE))) {
+                const Hitbox3DComponentUVE& hitbox = entityManager.GetComponentUVE<Hitbox3DComponentUVE>(entity);
+                std::int64_t ignoreLocalId = -1;
+                if (hitbox.ignoreEntity != kInvalidEntityUVE) {
+                    const auto ignoreIt = entityToLocalId.find(hitbox.ignoreEntity);
+                    if (ignoreIt != entityToLocalId.end()) {
+                        ignoreLocalId = static_cast<std::int64_t>(ignoreIt->second);
+                    }
+                }
+                componentsJson[*name]["ignoreLocalId"] = ignoreLocalId;
+            }
+            if (type == std::type_index(typeid(Hurtbox3DComponentUVE))) {
+                const Hurtbox3DComponentUVE& hurtbox = entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(entity);
+                std::int64_t ignoreLocalId = -1;
+                if (hurtbox.ignoreEntity != kInvalidEntityUVE) {
+                    const auto ignoreIt = entityToLocalId.find(hurtbox.ignoreEntity);
+                    if (ignoreIt != entityToLocalId.end()) {
+                        ignoreLocalId = static_cast<std::int64_t>(ignoreIt->second);
+                    }
+                }
+                componentsJson[*name]["ignoreLocalId"] = ignoreLocalId;
+            }
+            if (type == std::type_index(typeid(InteractionArea3DComponentUVE))) {
+                const InteractionArea3DComponentUVE& area =
+                    entityManager.GetComponentUVE<InteractionArea3DComponentUVE>(entity);
+                std::int64_t ignoreLocalId = -1;
+                if (area.ignoreEntity != kInvalidEntityUVE) {
+                    const auto ignoreIt = entityToLocalId.find(area.ignoreEntity);
+                    if (ignoreIt != entityToLocalId.end()) {
+                        ignoreLocalId = static_cast<std::int64_t>(ignoreIt->second);
+                    }
+                }
+                componentsJson[*name]["ignoreLocalId"] = ignoreLocalId;
+            }
+            if (type == std::type_index(typeid(Projectile3DComponentUVE))) {
+                const Projectile3DComponentUVE& projectile =
+                    entityManager.GetComponentUVE<Projectile3DComponentUVE>(entity);
+                std::int64_t ignoreLocalId = -1;
+                if (projectile.ignoreEntity != kInvalidEntityUVE) {
+                    const auto ignoreIt = entityToLocalId.find(projectile.ignoreEntity);
+                    if (ignoreIt != entityToLocalId.end()) {
+                        ignoreLocalId = static_cast<std::int64_t>(ignoreIt->second);
+                    }
+                }
+                componentsJson[*name]["ignoreLocalId"] = ignoreLocalId;
+            }
         }
         entitiesJson.push_back({{"localId", entityToLocalId.at(entity)}, {"components", std::move(componentsJson)}});
     }
@@ -2782,6 +3095,26 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
                 if (CanonicalComponentNameUVE(componentName) == "RayCast3DComponentUVE") {
                     entityManager.AddComponentUVE<RayCast3DComponentUVE>(
                         entity, RayCast3DComponentWithResolvedExclusionsUVE(componentJson, localIdToEntity));
+                    continue;
+                }
+                if (CanonicalComponentNameUVE(componentName) == "Hitbox3DComponentUVE") {
+                    entityManager.AddComponentUVE<Hitbox3DComponentUVE>(
+                        entity, Hitbox3DComponentWithResolvedIgnoreUVE(componentJson, localIdToEntity));
+                    continue;
+                }
+                if (CanonicalComponentNameUVE(componentName) == "Hurtbox3DComponentUVE") {
+                    entityManager.AddComponentUVE<Hurtbox3DComponentUVE>(
+                        entity, Hurtbox3DComponentWithResolvedIgnoreUVE(componentJson, localIdToEntity));
+                    continue;
+                }
+                if (CanonicalComponentNameUVE(componentName) == "InteractionArea3DComponentUVE") {
+                    entityManager.AddComponentUVE<InteractionArea3DComponentUVE>(
+                        entity, InteractionArea3DComponentWithResolvedIgnoreUVE(componentJson, localIdToEntity));
+                    continue;
+                }
+                if (CanonicalComponentNameUVE(componentName) == "Projectile3DComponentUVE") {
+                    entityManager.AddComponentUVE<Projectile3DComponentUVE>(
+                        entity, Projectile3DComponentWithResolvedIgnoreUVE(componentJson, localIdToEntity));
                     continue;
                 }
                 if (CanonicalComponentNameUVE(componentName) == "BoneAttachment3DComponentUVE") {

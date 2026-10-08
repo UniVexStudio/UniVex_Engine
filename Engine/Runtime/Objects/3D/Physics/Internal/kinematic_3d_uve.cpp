@@ -2,10 +2,19 @@
 
 #include "uve/objects/3d/kinematic_3d_uve.h"
 
+#include <cmath>
+
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/objects/3d/abstract_physics_objects_3d_uve.h"
 
 namespace UVE::Scene {
+namespace {
+
+[[nodiscard]] bool IsUsableVelocityUVE(const Math::Vector3UVE& value) noexcept {
+    return IsFinite3DObjectVectorUVE(value);
+}
+
+} // namespace
 
 bool IsKinematic3DObjectComponentValidUVE(const Kinematic3DComponentUVE& value) noexcept {
     return IsFinite3DObjectVectorUVE(value.targetVelocity) && std::isfinite(value.interpolation) &&
@@ -13,21 +22,59 @@ bool IsKinematic3DObjectComponentValidUVE(const Kinematic3DComponentUVE& value) 
 }
 
 bool IsKinematic3DObjectDefinitionValidUVE(const Kinematic3DObjectDefinitionUVE& value) noexcept {
-    // Kinematic is part of the Kinematic3D contract, not a tunable: a dynamic body here
-    // would make gravity fight the authored target-velocity motion.
     return IsColliderComponentValidUVE(value.collider) && IsRigid3DComponentValidUVE(value.body) &&
            value.body.isKinematic && IsKinematic3DObjectComponentValidUVE(value.animatableBody);
 }
 
 void ApplyKinematic3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                                             const Kinematic3DObjectDefinitionUVE& value) {
-    // Object3D > PhysicsObject3D > Kinematic3D. The physics object base is what gives a stopped
-    // platform a meaning - kept in the world as an immovable obstacle, taken out of it, or left
-    // moving - and lets an author weight it against another body in a contact.
     ApplyPhysicsObject3DBaseUVE(entityManager, entity, Kinematic3DObjectDefinitionUVE::defaultName);
     entityManager.AddComponentUVE<ColliderComponentUVE>(entity, value.collider);
     entityManager.AddComponentUVE<Rigid3DComponentUVE>(entity, value.body);
     entityManager.AddComponentUVE<Kinematic3DComponentUVE>(entity, value.animatableBody);
+}
+
+bool Kinematic3DUVE::IsDrivingUVE(const Kinematic3DComponentUVE& kinematic) noexcept {
+    return kinematic.active;
+}
+
+float Kinematic3DUVE::EaseBlendUVE(const float interpolation, const float deltaTimeSeconds) noexcept {
+    if (!std::isfinite(interpolation) || interpolation <= 0.0F) {
+        return 0.0F;
+    }
+    if (interpolation >= 1.0F) {
+        return 1.0F;
+    }
+    if (!std::isfinite(deltaTimeSeconds) || deltaTimeSeconds <= 0.0F) {
+        return 0.0F;
+    }
+    return 1.0F - std::pow(1.0F - interpolation, deltaTimeSeconds);
+}
+
+Math::Vector3UVE Kinematic3DUVE::ResolveWorldTargetUVE(const Math::Vector3UVE& localTarget,
+                                                       const Math::QuaternionUVE& worldRotation) noexcept {
+    if (!IsUsableVelocityUVE(localTarget)) {
+        return {};
+    }
+    Math::QuaternionUVE rotation{};
+    if (!Math::TryNormalizeUVE(worldRotation, rotation)) {
+        rotation = {};
+    }
+    return Math::RotateVectorUVE(rotation, localTarget);
+}
+
+Math::Vector3UVE Kinematic3DUVE::EaseVelocityUVE(const Math::Vector3UVE& currentWorldVelocity,
+                                                 const Math::Vector3UVE& worldTarget, const float interpolation,
+                                                 const float deltaTimeSeconds) noexcept {
+    Math::Vector3UVE velocity = IsUsableVelocityUVE(currentWorldVelocity) ? currentWorldVelocity : Math::Vector3UVE{};
+    const Math::Vector3UVE target = IsUsableVelocityUVE(worldTarget) ? worldTarget : Math::Vector3UVE{};
+    const float blend = EaseBlendUVE(interpolation, deltaTimeSeconds);
+    if (blend >= 1.0F) {
+        velocity = target;
+    } else if (blend > 0.0F) {
+        velocity += (target - velocity) * blend;
+    }
+    return IsUsableVelocityUVE(velocity) ? velocity : Math::Vector3UVE{};
 }
 
 } // namespace UVE::Scene

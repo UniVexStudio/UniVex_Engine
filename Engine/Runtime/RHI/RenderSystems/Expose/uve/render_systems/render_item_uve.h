@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 #include "uve/asset/asset_handle_uve.h"
 #include "uve/asset/material_asset_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
@@ -25,6 +27,12 @@ struct RenderItemUVE {
     Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle;
     Asset::AssetHandleUVE<Asset::MaterialAssetUVE> materialHandle;
     float sortDepth = 0.0F;
+    /// RenderInstance layers this item is on; 1 when the entity has no RenderInstance.
+    std::uint32_t renderLayers = 1U;
+    /// SurfaceInstance opacity: 1 solid, 0 invisible. 1 when the entity has no surface.
+    float opacity = 1.0F;
+    /// Second colour pass (SurfaceInstance overlay). Drawn blended, never a shadow caster.
+    bool overlay = false;
 };
 
 } // namespace UVE::Render

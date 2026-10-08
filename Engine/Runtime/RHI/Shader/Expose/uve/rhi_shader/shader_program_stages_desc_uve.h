@@ -28,6 +28,7 @@ struct ShaderProgramStagesDescUVE {
     PrimitiveTopologyUVE topology = PrimitiveTopologyUVE::Triangles;
     bool depthTestEnabled = true;
     bool depthWriteEnabled = true;
+    PipelineBlendModeUVE blendMode = PipelineBlendModeUVE::Opaque;
 
     /// Enables program-level dependency tracking over the union of both stage closures. Individual
     /// source flags are honored only for source-only compilation requests; this program-level flag
