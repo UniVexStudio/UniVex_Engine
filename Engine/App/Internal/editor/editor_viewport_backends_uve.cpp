@@ -994,10 +994,11 @@ private:
         settings.viewGrid = overlayState.gridVisible && !overlayState.gameWorkspaceActive;
         renderPass_->SetGridOpacityUVE(overlayState.gridOpacity);
         renderPass_->SetGridCellSizeUVE(overlayState.gridCellSize);
+        constexpr float kSelectionOutlineVisualScaleUVE = 0.20F;
         renderPass_->SetSelectionOutlineUVE(univex::render::SelectionOutlineSettings{
             overlayState.selectionOutlineVisible, overlayState.selectionOutlineColor.r,
             overlayState.selectionOutlineColor.g, overlayState.selectionOutlineColor.b,
-            overlayState.selectionOutlineThickness});
+            overlayState.selectionOutlineThickness * kSelectionOutlineVisualScaleUVE});
         // A named side view looks along the ground, which is only an edge from there; the grid
         // stands up on the plane facing the camera instead, so the view keeps a reference.
         const univex::math::Vec3 viewAxis = NamedViewDirectionUVE(overlayState.view);

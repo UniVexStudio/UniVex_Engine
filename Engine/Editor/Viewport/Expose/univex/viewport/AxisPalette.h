@@ -25,9 +25,9 @@ struct AxisRgbUVE {
     }
 };
 
-inline constexpr AxisRgbUVE kAxisColorXUVE{1.000f, 0.365f, 0.365f}; // #ff5d5d
-inline constexpr AxisRgbUVE kAxisColorYUVE{0.373f, 0.878f, 0.541f}; // #5fe08a
-inline constexpr AxisRgbUVE kAxisColorZUVE{0.357f, 0.616f, 1.000f}; // #5b9dff
+inline constexpr AxisRgbUVE kAxisColorXUVE{1.000f, 0.220f, 0.220f}; // vivid red
+inline constexpr AxisRgbUVE kAxisColorYUVE{0.180f, 1.000f, 0.420f}; // vivid green
+inline constexpr AxisRgbUVE kAxisColorZUVE{0.220f, 0.500f, 1.000f}; // vivid blue
 
 /// The grid's axis lines run through the same origin the transform gizmo sits on, so drawing both
 /// in the identical colour leaves the gizmo's own axes competing with the ground lines behind
