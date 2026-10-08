@@ -123,7 +123,7 @@ void main() {
     }
     UVE::Render::CameraSystemUVE cameras;
     entityManager.ForEachUVE<UVE::Scene::WorldTransformComponentUVE, UVE::Scene::CameraComponentUVE>(
-        [&](const UVE::Scene::EntityUVE entity, const UVE::Scene::WorldTransformComponentUVE&,
+        [&](const UVE::Scene::EntityUVE entity, const UVE::Scene::WorldTransformComponentUVE& worldTransform,
             const UVE::Scene::CameraComponentUVE& camera) {
             if (entity == hideEntity || !UVE::Scene::IsDocumentCameraEntityUVE(entityManager, entity) ||
                 !UVE::Scene::IsCameraComponentValidUVE(camera)) {
@@ -131,16 +131,28 @@ void main() {
             }
             const UVE::Render::CameraFrustumCornersUVE corners =
                 cameras.ComputeFrustumCornersUVE(entityManager, entity, aspectRatio);
+            // The authored far plane can be hundreds or thousands of units away. Keep the editor
+            // visualization compact around the camera while leaving the real camera projection,
+            // far plane, and runtime rendering completely unchanged.
+            constexpr float kEditorFrustumLength = 3.0F;
+            const float visualFarScale =
+                std::min(1.0F, kEditorFrustumLength / std::max(camera.farPlane, camera.nearPlane));
+            const univex::math::Vec3 origin{worldTransform.worldPosition.x, worldTransform.worldPosition.y,
+                                            worldTransform.worldPosition.z};
             const univex::math::Vec3 color =
                 camera.current ? univex::math::Vec3{0.55F, 0.92F, 1.0F} : univex::math::Vec3{0.35F, 0.72F, 0.95F};
             const float widthPx = camera.current ? 2.0F : 1.5F;
             const auto addLine = [&](const int a, const int b) {
+                const auto visualPoint = [&](const int index) {
+                    const univex::math::Vec3 point{corners[static_cast<std::size_t>(index)].x,
+                                                   corners[static_cast<std::size_t>(index)].y,
+                                                   corners[static_cast<std::size_t>(index)].z};
+                    return index < 4 ? point : origin + (point - origin) * visualFarScale;
+                };
+                const univex::math::Vec3 start = visualPoint(a);
+                const univex::math::Vec3 end = visualPoint(b);
                 mesh.lines.push_back(univex::gizmo::GizmoLine{
-                    univex::math::Vec3{corners[static_cast<std::size_t>(a)].x, corners[static_cast<std::size_t>(a)].y,
-                                       corners[static_cast<std::size_t>(a)].z},
-                    univex::math::Vec3{corners[static_cast<std::size_t>(b)].x, corners[static_cast<std::size_t>(b)].y,
-                                       corners[static_cast<std::size_t>(b)].z},
-                    color, widthPx});
+                    start, end, color, widthPx});
             };
             addLine(0, 1);
             addLine(1, 3);
