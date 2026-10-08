@@ -33,6 +33,7 @@
 #include <imgui.h>
 
 #include "uve/asset/asset_import_queue_uve.h"
+#include "uve/editor/editor_content_catalogue_uve.h"
 #include "uve/editor/editor_content_browser_model_uve.h"
 
 #include "editor_chrome_layout_uve.h"
@@ -48,6 +49,35 @@ constexpr const char* kIconAdjustmentsUVE = "\xEE\xA8\x83";
 constexpr float kFilesystemLongPressThresholdSecondsUVE = 0.60F;
 constexpr ImVec4 kAccentUVE{0.357F, 0.478F, 0.600F, 1.0F};
 constexpr ImVec4 kAccentHoveredUVE{0.443F, 0.573F, 0.706F, 1.0F};
+
+[[nodiscard]] std::string LowerContentAssetStemUVE(const std::filesystem::path& path) {
+    std::string stem = path.stem().generic_string();
+    std::transform(stem.begin(), stem.end(), stem.begin(), [](const unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    return stem;
+}
+
+[[nodiscard]] std::optional<Scene::Objects::SceneObjectKindUVE> GetEntityAssetIconKindUVE(
+    const std::filesystem::path& path) {
+    const std::string stem = LowerContentAssetStemUVE(path);
+    for (const ContentCatalogueItemUVE& item : GetContentCatalogueItemsUVE()) {
+        if (item.action != ContentCatalogueActionUVE::EntityAsset || item.objects.empty()) {
+            continue;
+        }
+        const auto matches = [&stem](std::string_view value) {
+            std::string candidate{value};
+            std::transform(candidate.begin(), candidate.end(), candidate.begin(), [](const unsigned char character) {
+                return static_cast<char>(std::tolower(character));
+            });
+            return stem == candidate || (stem.size() > candidate.size() && stem.starts_with(candidate + " "));
+        };
+        if (matches(item.label) || matches(item.id)) {
+            return GetContentCatalogueIconKindUVE(item);
+        }
+    }
+    return std::nullopt;
+}
 
 /// Small line-drawn symbols for the toolbar. Drawn rather than taken from the icon font so the
 /// font subset does not have to grow for a handful of arrows.
@@ -1091,7 +1121,17 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                 : look.type == ContentBrowserItemTypeUVE::Mesh || look.type == ContentBrowserItemTypeUVE::Model
                     ? GetMeshThumbnailUVE(entry.relativePath)
                     : 0U;
-            look.icon = preview != 0U ? preview : m_uiAssets.GetContentTypeIconTextureIdUVE(look.typeLabel);
+            if (preview != 0U) {
+                look.icon = preview;
+            } else if (look.type == ContentBrowserItemTypeUVE::Entity ||
+                       look.type == ContentBrowserItemTypeUVE::Prefab) {
+                const std::optional<Scene::Objects::SceneObjectKindUVE> objectKind =
+                    GetEntityAssetIconKindUVE(entry.relativePath);
+                look.icon = m_uiAssets.GetObjectIconTextureIdUVE(
+                    objectKind.value_or(Scene::Objects::SceneObjectKindUVE::Object3D));
+            } else {
+                look.icon = m_uiAssets.GetContentTypeIconTextureIdUVE(look.typeLabel);
+            }
             return look;
         };
         const auto factsOf = [&](const Asset::ProjectFileEntryUVE& entry, const ItemLookUVE& look) {
