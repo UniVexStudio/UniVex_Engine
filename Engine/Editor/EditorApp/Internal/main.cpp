@@ -47,6 +47,9 @@
 #include "uve/input/input_system_uve.h"
 #include "uve/memory/heap_allocator_uve.h"
 #include "uve/component/transform_component_uve.h"
+#include "uve/objects/3d/box_mesh_3d_uve.h"
+#include "uve/objects/3d/directional_light_3d_uve.h"
+#include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/window/window_desc_uve.h"
 #include "uve/window/window_manager_uve.h"
@@ -83,23 +86,42 @@ void GoToStandardView(ViewportRenderPass& pass, OrbitCamera& camera, StandardVie
     }
 }
 
-// Populates a handful of entities the same way Engine/Editor/Viewport's own
-// headless_capture --engine-demo does, so the editor window shows the same
-// proven real-entity integration instead of an empty world.
+// Populates a small real lighting scene: primitive meshes are rendered by the engine's
+// renderer, the environment supplies the sky/ambient term, and the directional light has
+// shadows enabled. This is deliberately kept in the harness so it is an actual engine smoke
+// scene, not a screenshot-only mock.
 void PopulateDemoEntities(UVE::World::WorldUVE& world, UVE::Scene::SceneGraphUVE& sceneGraph) {
     auto& entityManager = world.GetEntityManagerUVE();
-    const std::array<UVE::Math::Vector3UVE, 5> positions = {
-        UVE::Math::Vector3UVE{0.0F, 0.0F, 0.0F},
-        UVE::Math::Vector3UVE{4.0F, 0.0F, 2.0F},
-        UVE::Math::Vector3UVE{-3.0F, 0.0F, -2.0F},
-        UVE::Math::Vector3UVE{2.0F, 0.0F, -4.0F},
-        UVE::Math::Vector3UVE{-4.0F, 0.0F, 3.0F},
-    };
-    for (const auto& position : positions) {
+    const auto makeBox = [&](const UVE::Math::Vector3UVE& position,
+                             const UVE::Math::Vector3UVE& scale,
+                             const UVE::Math::Vector3UVE& color) {
         const UVE::Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, entity,
-                                       UVE::Scene::TransformComponentUVE{position, {}, {1.0F, 1.0F, 1.0F}});
-    }
+        UVE::Scene::BoxMesh3DObjectDefinitionUVE definition{};
+        definition.mesh.baseColor = color;
+        UVE::Scene::ApplyBoxMesh3DObjectDefinitionUVE(entityManager, entity, definition);
+        sceneGraph.SetLocalTransformUVE(entityManager, entity,
+                                        UVE::Scene::TransformComponentUVE{position, {}, scale});
+        return entity;
+    };
+
+    // A large floor plus an elevated cube makes the sun shadow easy to read.
+    makeBox({0.0F, -1.0F, 0.0F}, {12.0F, 1.0F, 12.0F}, {0.22F, 0.28F, 0.34F});
+    makeBox({0.0F, 0.65F, 0.0F}, {1.3F, 1.3F, 1.3F}, {0.86F, 0.32F, 0.12F});
+    makeBox({-2.4F, 0.35F, 1.2F}, {0.7F, 0.7F, 0.7F}, {0.12F, 0.54F, 0.86F});
+
+    const UVE::Scene::EntityUVE environment = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<UVE::Scene::WorldEnvironment3DComponentUVE>(environment);
+    sceneGraph.AttachTransformUVE(entityManager, environment,
+                                   UVE::Scene::TransformComponentUVE{});
+
+    const UVE::Scene::EntityUVE sun = entityManager.CreateEntityUVE();
+    UVE::Scene::DirectionalLight3DObjectDefinitionUVE light{};
+    light.emitter.shadowEnabled = true;
+    light.emitter.energy = 2.0F;
+    light.light.shadowMaxDistance = 80.0F;
+    UVE::Scene::ApplyDirectionalLight3DObjectDefinitionUVE(entityManager, sun, light);
+    sceneGraph.SetLocalTransformUVE(entityManager, sun,
+                                    UVE::Scene::TransformComponentUVE{{-4.0F, 7.0F, 5.0F}, {}, {1.0F, 1.0F, 1.0F}});
 }
 
 } // namespace
