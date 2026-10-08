@@ -6,19 +6,12 @@ namespace UVE::Editor {
 
 void ApplyEditorVisualThemeUVE() noexcept {
     ImGuiStyle& style = ImGui::GetStyle();
-    // Tightened interior padding and row spacing so panel content sits closer to the panel edges
-    // and list/tree/inspector rows are denser - the earlier looser values wasted vertical space
-    // against the reference's tight rows.
+    // Compact professional-editor spacing: dense rows, clear hierarchy, and no soft "glass" look.
     style.WindowPadding = ImVec2{6.0F, 4.0F};
     style.FramePadding = ImVec2{5.0F, 2.0F};
     style.ItemSpacing = ImVec2{5.0F, 2.0F};
     style.ItemInnerSpacing = ImVec2{4.0F, 3.0F};
-    // Thinner scrollbars (ImGui defaults to a chunky 14px) so they read as a slim gutter, not a
-    // heavy bar eating panel width - matching the reference editors' slim scrollbars.
     style.ScrollbarSize = 9.0F;
-    // Square corners throughout - the earlier "glass" look (8px/6px/4px rounding) read as soft
-    // and inconsistent against real reference editors; every panel, popup, and control now shares
-    // one flat, sharp-cornered language instead.
     style.WindowRounding = 0.0F;
     style.ChildRounding = 0.0F;
     style.FrameRounding = 0.0F;
@@ -35,53 +28,47 @@ void ApplyEditorVisualThemeUVE() noexcept {
     style.DisabledAlpha = 0.62F;
 
     ImVec4* const colors = style.Colors;
-    colors[ImGuiCol_Text] = ImVec4{0.91F, 0.92F, 0.94F, 1.0F};
-    colors[ImGuiCol_TextDisabled] = ImVec4{0.56F, 0.59F, 0.64F, 1.0F};
-    // rgb retargeted to Cowork's mockup --app-bg #0a0c0f / --panel-bg rgba(22,25,30,.94) - the
-    // exact hex values delivered for this editor's own real theme, ported verbatim.
-    colors[ImGuiCol_WindowBg] = ImVec4{0.039F, 0.047F, 0.059F, 0.90F};
-    colors[ImGuiCol_ChildBg] = ImVec4{0.086F, 0.098F, 0.118F, 0.94F};
-    colors[ImGuiCol_PopupBg] = ImVec4{0.106F, 0.125F, 0.149F, 0.94F};
-    colors[ImGuiCol_MenuBarBg] = ImVec4{0.106F, 0.125F, 0.149F, 0.94F};
-    colors[ImGuiCol_TitleBg] = ImVec4{0.067F, 0.078F, 0.094F, 0.94F};
-    colors[ImGuiCol_TitleBgActive] = ImVec4{0.137F, 0.165F, 0.196F, 0.96F};
-    // Retargeted to Cowork's mockup --border-soft #2b3037 - the common seam color used for most
-    // panel/frame edges in the mockup (the brighter --border #454e5c is reserved there only for
-    // dropdown/popup outlines, a single-color distinction ImGui's one Border slot can't express
-    // without extra per-widget PushStyleColor calls - accepted as an honest simplification).
-    colors[ImGuiCol_Border] = ImVec4{0.169F, 0.188F, 0.216F, 1.0F};
-    colors[ImGuiCol_BorderShadow] = ImVec4{0.0F, 0.0F, 0.0F, 0.55F};
-    colors[ImGuiCol_FrameBg] = ImVec4{0.106F, 0.125F, 0.149F, 0.92F};
-    colors[ImGuiCol_FrameBgHovered] = ImVec4{0.165F, 0.196F, 0.231F, 0.96F};
-    colors[ImGuiCol_FrameBgActive] = ImVec4{0.247F, 0.310F, 0.373F, 1.0F};
-    colors[ImGuiCol_Header] = ImVec4{0.165F, 0.196F, 0.231F, 0.92F};
-    colors[ImGuiCol_HeaderHovered] = ImVec4{0.247F, 0.310F, 0.373F, 0.96F};
-    colors[ImGuiCol_HeaderActive] = ImVec4{0.384F, 0.494F, 0.596F, 1.0F};
-    colors[ImGuiCol_Button] = ImVec4{0.122F, 0.145F, 0.173F, 0.92F};
-    colors[ImGuiCol_ButtonHovered] = ImVec4{0.200F, 0.239F, 0.286F, 0.96F};
-    // Accent-driven active states retargeted to Cowork's mockup --accent #5b7a99 / --accent-bright
-    // #8fb4d8 exact hex.
-    colors[ImGuiCol_ButtonActive] = ImVec4{0.357F, 0.478F, 0.600F, 1.0F};
-    colors[ImGuiCol_CheckMark] = ImVec4{0.561F, 0.706F, 0.847F, 1.0F};
-    colors[ImGuiCol_SliderGrab] = ImVec4{0.43F, 0.52F, 0.62F, 1.0F};
-    colors[ImGuiCol_SliderGrabActive] = ImVec4{0.561F, 0.706F, 0.847F, 1.0F};
-    colors[ImGuiCol_Separator] = ImVec4{0.188F, 0.216F, 0.255F, 0.76F};
-    colors[ImGuiCol_SeparatorHovered] = ImVec4{0.48F, 0.55F, 0.63F, 0.88F};
-    colors[ImGuiCol_SeparatorActive] = ImVec4{0.64F, 0.72F, 0.82F, 1.0F};
-    colors[ImGuiCol_Tab] = ImVec4{0.105F, 0.11F, 0.12F, 0.90F};
-    colors[ImGuiCol_TabHovered] = ImVec4{0.25F, 0.28F, 0.32F, 0.96F};
-    colors[ImGuiCol_TabActive] = ImVec4{0.205F, 0.23F, 0.26F, 0.96F};
-    colors[ImGuiCol_TabUnfocused] = ImVec4{0.075F, 0.078F, 0.085F, 0.88F};
-    colors[ImGuiCol_TabUnfocusedActive] = ImVec4{0.13F, 0.14F, 0.155F, 0.92F};
-    colors[ImGuiCol_ResizeGrip] = ImVec4{0.30F, 0.36F, 0.43F, 0.55F};
-    colors[ImGuiCol_ResizeGripHovered] = ImVec4{0.50F, 0.60F, 0.71F, 0.80F};
-    colors[ImGuiCol_ResizeGripActive] = ImVec4{0.67F, 0.77F, 0.88F, 0.98F};
-    colors[ImGuiCol_ScrollbarBg] = ImVec4{0.035F, 0.037F, 0.042F, 0.88F};
-    colors[ImGuiCol_ScrollbarGrab] = ImVec4{0.22F, 0.24F, 0.27F, 1.0F};
-    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4{0.36F, 0.40F, 0.45F, 1.0F};
-    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4{0.50F, 0.57F, 0.65F, 1.0F};
-    colors[ImGuiCol_TextSelectedBg] = ImVec4{0.247F, 0.337F, 0.420F, 0.72F};
-    colors[ImGuiCol_NavHighlight] = ImVec4{0.561F, 0.686F, 0.796F, 0.92F};
+    // Layered charcoal palette: deepest surfaces are reserved for numeric fields, consoles, and
+    // empty work areas; rows and panels step upward so hierarchy remains readable without blue tint.
+    colors[ImGuiCol_Text] = ImVec4{0.89F, 0.90F, 0.92F, 1.0F};              // #E3E5EA
+    colors[ImGuiCol_TextDisabled] = ImVec4{0.48F, 0.51F, 0.55F, 1.0F};      // #7A828C
+    colors[ImGuiCol_WindowBg] = ImVec4{0.043F, 0.047F, 0.051F, 0.98F};     // #0B0C0D
+    colors[ImGuiCol_ChildBg] = ImVec4{0.106F, 0.118F, 0.129F, 1.0F};       // #1B1E21
+    colors[ImGuiCol_PopupBg] = ImVec4{0.125F, 0.137F, 0.149F, 1.0F};       // #202327
+    colors[ImGuiCol_MenuBarBg] = ImVec4{0.106F, 0.118F, 0.129F, 1.0F};     // #1B1E21
+    colors[ImGuiCol_TitleBg] = ImVec4{0.075F, 0.082F, 0.090F, 1.0F};       // #131517
+    colors[ImGuiCol_TitleBgActive] = ImVec4{0.137F, 0.153F, 0.169F, 1.0F}; // #23272B
+    colors[ImGuiCol_Border] = ImVec4{0.220F, 0.239F, 0.259F, 1.0F};       // #383D42
+    colors[ImGuiCol_BorderShadow] = ImVec4{0.0F, 0.0F, 0.0F, 0.65F};
+    colors[ImGuiCol_FrameBg] = ImVec4{0.098F, 0.110F, 0.122F, 1.0F};       // #191C1F
+    colors[ImGuiCol_FrameBgHovered] = ImVec4{0.165F, 0.184F, 0.204F, 1.0F}; // #2A2F34
+    colors[ImGuiCol_FrameBgActive] = ImVec4{0.227F, 0.267F, 0.310F, 1.0F}; // #3A4450
+    colors[ImGuiCol_Header] = ImVec4{0.141F, 0.161F, 0.180F, 1.0F};       // #24292E
+    colors[ImGuiCol_HeaderHovered] = ImVec4{0.188F, 0.216F, 0.243F, 1.0F}; // #30373E
+    colors[ImGuiCol_HeaderActive] = ImVec4{0.235F, 0.278F, 0.325F, 1.0F};  // #3C4753
+    colors[ImGuiCol_Button] = ImVec4{0.145F, 0.165F, 0.184F, 1.0F};        // #252A2F
+    colors[ImGuiCol_ButtonHovered] = ImVec4{0.208F, 0.239F, 0.271F, 1.0F}; // #353D45
+    colors[ImGuiCol_ButtonActive] = ImVec4{0.286F, 0.376F, 0.471F, 1.0F};  // #496078
+    colors[ImGuiCol_CheckMark] = ImVec4{0.392F, 0.620F, 0.816F, 1.0F};     // #649ED0
+    colors[ImGuiCol_SliderGrab] = ImVec4{0.310F, 0.365F, 0.420F, 1.0F};    // #4F5D6B
+    colors[ImGuiCol_SliderGrabActive] = ImVec4{0.392F, 0.620F, 0.816F, 1.0F};
+    colors[ImGuiCol_Separator] = ImVec4{0.196F, 0.216F, 0.235F, 1.0F};    // #32373C
+    colors[ImGuiCol_SeparatorHovered] = ImVec4{0.329F, 0.380F, 0.431F, 1.0F};
+    colors[ImGuiCol_SeparatorActive] = ImVec4{0.392F, 0.478F, 0.565F, 1.0F};
+    colors[ImGuiCol_Tab] = ImVec4{0.102F, 0.114F, 0.125F, 1.0F};           // #1A1D20
+    colors[ImGuiCol_TabHovered] = ImVec4{0.204F, 0.231F, 0.259F, 1.0F};    // #343B42
+    colors[ImGuiCol_TabActive] = ImVec4{0.161F, 0.188F, 0.216F, 1.0F};     // #293036
+    colors[ImGuiCol_TabUnfocused] = ImVec4{0.067F, 0.071F, 0.078F, 1.0F};  // #111214
+    colors[ImGuiCol_TabUnfocusedActive] = ImVec4{0.122F, 0.137F, 0.153F, 1.0F};
+    colors[ImGuiCol_ResizeGrip] = ImVec4{0.267F, 0.302F, 0.337F, 0.55F};
+    colors[ImGuiCol_ResizeGripHovered] = ImVec4{0.416F, 0.478F, 0.541F, 0.80F};
+    colors[ImGuiCol_ResizeGripActive] = ImVec4{0.580F, 0.686F, 0.792F, 0.98F};
+    colors[ImGuiCol_ScrollbarBg] = ImVec4{0.035F, 0.039F, 0.043F, 1.0F};  // #090A0B
+    colors[ImGuiCol_ScrollbarGrab] = ImVec4{0.180F, 0.196F, 0.216F, 1.0F};
+    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4{0.302F, 0.333F, 0.365F, 1.0F};
+    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4{0.424F, 0.471F, 0.518F, 1.0F};
+    colors[ImGuiCol_TextSelectedBg] = ImVec4{0.239F, 0.361F, 0.478F, 0.72F};
+    colors[ImGuiCol_NavHighlight] = ImVec4{0.392F, 0.620F, 0.816F, 0.92F};
 }
 
 } // namespace UVE::Editor
