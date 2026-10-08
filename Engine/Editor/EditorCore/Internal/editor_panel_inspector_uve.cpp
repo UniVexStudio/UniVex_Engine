@@ -135,6 +135,9 @@ void EditorUVE::DrawInspectorPanelUVE() {
     // No title row: the Inspector / Import / Events tabs are the panel's top edge, so the name is
     // not said twice. The panel is fixed in the layout, so there is nothing to drag it by anyway.
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
+    // Match the Outliner panel's neutral charcoal surface. Inputs and nested fields keep the
+    // darker FrameBg/ChildBg layers from the shared theme, so depth and editability remain clear.
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{0.106F, 0.118F, 0.129F, 1.0F});
     ImGui::Begin(kPanelLabelInspectorUVE, nullptr, flags);
 
     // Real tabs rather than three selectable labels. The active tab can also be changed from
@@ -172,6 +175,7 @@ void EditorUVE::DrawInspectorPanelUVE() {
             break;
     }
     ImGui::End();
+    ImGui::PopStyleColor();
 }
 
 void EditorUVE::DrawImportQueueMonitorUVE() {
