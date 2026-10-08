@@ -19,6 +19,7 @@
 // where it reads as a change rather than hiding inside a move.
 
 #include "uve/editor/editor_uve.h"
+#include "uve/objects/3d/camera_3d_uve.h"
 
 #include <algorithm>
 #include <array>
@@ -233,6 +234,29 @@ void EditorUVE::DrawInspectorContentUVE() {
         }
         ImGui::TextDisabled("Single-entity editing is unavailable for multi-selection.");
         return;
+    }
+
+    if (Scene::IsDocumentCameraEntityUVE(m_services->GetEntityManagerUVE(), m_selectedEntity)) {
+        const bool previewOpen = DrawInspectorFoldUVE("Camera Preview###camera-preview-section",
+                                                      "section:camera-preview", true, true, 0);
+        if (previewOpen) {
+            const ImVec2 available = ImGui::GetContentRegionAvail();
+            const float previewWidth = std::max(160.0F, available.x);
+            const Math::Vector2UVE previewSize{previewWidth, previewWidth * (9.0F / 16.0F)};
+            Math::Vector2UVE usedSize{};
+            const std::uint64_t textureId = m_viewportPanelRenderer
+                                                 ? m_viewportPanelRenderer(
+                                                       ViewportContextUVE::InspectorCameraPreview, previewSize,
+                                                       usedSize, m_viewportOverlayState)
+                                                 : 0U;
+            if (textureId != 0U && usedSize.x > 0.0F && usedSize.y > 0.0F) {
+                ImGui::Image(static_cast<ImTextureID>(textureId), ImVec2{usedSize.x, usedSize.y},
+                             ImVec2{0.0F, 1.0F}, ImVec2{1.0F, 0.0F});
+            } else {
+                ImGui::TextDisabled("Camera preview is not ready.");
+            }
+        }
+        ImGui::Separator();
     }
 
     ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
