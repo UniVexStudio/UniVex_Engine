@@ -581,8 +581,13 @@ public:
 
         ApplyOverlayStateUVE(overlayState);
         const UVE::Scene::EntityUVE previewCamera = editor_.GetPreviewCameraUVE();
+        const bool inspectorCameraPreview = context_ == UVE::Editor::EditorUVE::ViewportContextUVE::InspectorCameraPreview;
+        const UVE::Scene::EntityUVE selectedEntity = editor_.GetSelectedEntityUVE();
+        const bool selectedIsCamera = inspectorCameraPreview &&
+                                      UVE::Scene::IsDocumentCameraEntityUVE(entityManager_, selectedEntity);
         const bool wantPreview =
-            !gameWorkspaceActive_ && !studioView_ && previewCamera != UVE::Scene::kInvalidEntityUVE;
+            !gameWorkspaceActive_ && !studioView_ &&
+            ((previewCamera != UVE::Scene::kInvalidEntityUVE) || selectedIsCamera);
         if (wantPreview && !previewing_) {
             poseBeforePreview_ = CameraPoseUVE{camera_.Target(), camera_.Yaw(), camera_.Pitch(), camera_.Distance(),
                                                camera_.IsOrthographic()};
@@ -643,6 +648,8 @@ public:
         std::optional<UVE::Scene::EntityUVE> lookThroughCamera;
         if (gameWorkspaceActive_) {
             lookThroughCamera = FindGameCameraEntityUVE(entityManager_);
+        } else if (selectedIsCamera) {
+            lookThroughCamera = selectedEntity;
         } else if (wantPreview) {
             lookThroughCamera = previewCamera;
         }
