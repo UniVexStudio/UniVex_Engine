@@ -40,6 +40,8 @@
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/math/quaternion_uve.h"
+#include "uve/objects/3d/box_mesh_3d_uve.h"
 #include "uve/objects/3d/camera_3d_uve.h"
 #include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/objects/3d/fog_volume_3d_uve.h"
@@ -113,6 +115,38 @@ void main() {
             hasDirectionalLight |= UVE::Scene::IsDirectionalLight3DComponentValidUVE(value);
         });
     return !hasEnvironment && !hasDirectionalLight;
+}
+
+void PopulateLightingSmokeSceneUVE(UVE::Core::EngineServicesUVE& services) {
+    auto& entities = services.GetEntityManagerUVE();
+    auto& graph = services.GetSceneGraphUVE();
+    const auto box = [&](const UVE::Math::Vector3UVE position, const UVE::Math::Vector3UVE scale,
+                         const UVE::Math::Vector3UVE color) {
+        const UVE::Scene::EntityUVE entity = entities.CreateEntityUVE();
+        UVE::Scene::BoxMesh3DObjectDefinitionUVE definition{};
+        definition.mesh.baseColor = color;
+        UVE::Scene::ApplyBoxMesh3DObjectDefinitionUVE(entities, entity, definition);
+        graph.SetLocalTransformUVE(entities, entity,
+                                   UVE::Scene::TransformComponentUVE{position, {}, scale});
+    };
+    box({0.0F, -1.0F, 0.0F}, {12.0F, 1.0F, 12.0F}, {0.22F, 0.28F, 0.34F});
+    box({0.0F, 0.65F, 0.0F}, {1.3F, 1.3F, 1.3F}, {0.86F, 0.32F, 0.12F});
+    box({-2.4F, 0.35F, 1.2F}, {0.7F, 0.7F, 0.7F}, {0.12F, 0.54F, 0.86F});
+    const UVE::Scene::EntityUVE environment = entities.CreateEntityUVE();
+    entities.AddComponentUVE<UVE::Scene::WorldEnvironment3DComponentUVE>(environment);
+    graph.AttachTransformUVE(entities, environment, UVE::Scene::TransformComponentUVE{});
+    const UVE::Scene::EntityUVE sun = entities.CreateEntityUVE();
+    UVE::Scene::DirectionalLight3DObjectDefinitionUVE light{};
+    light.emitter.energy = 2.0F;
+    light.emitter.shadowEnabled = true;
+    light.light.shadowMaxDistance = 80.0F;
+    UVE::Scene::ApplyDirectionalLight3DObjectDefinitionUVE(entities, sun, light);
+    UVE::Math::QuaternionUVE lightRotation{};
+    static_cast<void>(UVE::Math::TryMakeLookAtUVE({4.0F, 6.0F, 4.0F}, {0.0F, 1.0F, 0.0F}, lightRotation));
+    graph.SetLocalTransformUVE(entities, sun,
+                               UVE::Scene::TransformComponentUVE{{4.0F, 6.0F, 4.0F}, lightRotation,
+                                                                  {1.0F, 1.0F, 1.0F}});
+    graph.UpdateUVE(entities);
 }
 
 [[nodiscard]] univex::gizmo::GizmoMesh BuildCameraFrustumMeshUVE(
@@ -1806,6 +1840,7 @@ struct EditorViewportBackendsUVE::ImplUVE final {
         static_cast<std::size_t>(Editor::EditorUVE::ViewportContextUVE::Count);
 
     ImplUVE(Editor::EditorUVE& editor, Core::EngineCoreUVE& engine) {
+        PopulateLightingSmokeSceneUVE(engine.GetServicesUVE());
         for (std::size_t index = 0U; index < backends.size(); ++index) {
             backends[index].emplace(editor, engine,
                                     static_cast<Editor::EditorUVE::ViewportContextUVE>(index));
