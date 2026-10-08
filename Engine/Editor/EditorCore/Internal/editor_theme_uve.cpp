@@ -40,12 +40,13 @@ void ApplyEditorVisualThemeUVE() noexcept {
     colors[ImGuiCol_TitleBgActive] = ImVec4{0.137F, 0.153F, 0.169F, 1.0F}; // #23272B
     colors[ImGuiCol_Border] = ImVec4{0.220F, 0.239F, 0.259F, 1.0F};       // #383D42
     colors[ImGuiCol_BorderShadow] = ImVec4{0.0F, 0.0F, 0.0F, 0.65F};
-    colors[ImGuiCol_FrameBg] = ImVec4{0.098F, 0.110F, 0.122F, 1.0F};       // #191C1F
-    colors[ImGuiCol_FrameBgHovered] = ImVec4{0.165F, 0.184F, 0.204F, 1.0F}; // #2A2F34
-    colors[ImGuiCol_FrameBgActive] = ImVec4{0.227F, 0.267F, 0.310F, 1.0F}; // #3A4450
-    colors[ImGuiCol_Header] = ImVec4{0.141F, 0.161F, 0.180F, 1.0F};       // #24292E
-    colors[ImGuiCol_HeaderHovered] = ImVec4{0.188F, 0.216F, 0.243F, 1.0F}; // #30373E
-    colors[ImGuiCol_HeaderActive] = ImVec4{0.235F, 0.278F, 0.325F, 1.0F};  // #3C4753
+    // Recessed controls: numeric fields and collapsible Inspector rows are the deepest layer.
+    colors[ImGuiCol_FrameBg] = ImVec4{0.055F, 0.063F, 0.071F, 1.0F};       // #0E1012
+    colors[ImGuiCol_FrameBgHovered] = ImVec4{0.102F, 0.114F, 0.125F, 1.0F}; // #1A1D20
+    colors[ImGuiCol_FrameBgActive] = ImVec4{0.145F, 0.165F, 0.184F, 1.0F};  // #252A2F
+    colors[ImGuiCol_Header] = ImVec4{0.055F, 0.063F, 0.071F, 1.0F};        // #0E1012
+    colors[ImGuiCol_HeaderHovered] = ImVec4{0.106F, 0.118F, 0.129F, 1.0F}; // #1B1E21
+    colors[ImGuiCol_HeaderActive] = ImVec4{0.161F, 0.188F, 0.216F, 1.0F};  // #293036
     colors[ImGuiCol_Button] = ImVec4{0.145F, 0.165F, 0.184F, 1.0F};        // #252A2F
     colors[ImGuiCol_ButtonHovered] = ImVec4{0.208F, 0.239F, 0.271F, 1.0F}; // #353D45
     colors[ImGuiCol_ButtonActive] = ImVec4{0.286F, 0.376F, 0.471F, 1.0F};  // #496078
