@@ -41,7 +41,8 @@ std::optional<SphereCastHitUVE> ShapeCastSystemUVE::SphereCastUVE(
         Detail::BuildColliderWorldAabbCacheUVE(entityManager);
     std::optional<SphereCastHitUVE> closestHit;
     for (const Detail::ColliderWorldAabbUVE& collider : colliders) {
-        if (collider.entity == query.ignoreEntity || (collider.collisionLayer & query.layerMask) == 0U) {
+        if (collider.entity == query.ignoreEntity || collider.entity == query.alsoIgnoreEntity ||
+            (collider.collisionLayer & query.layerMask) == 0U) {
             continue;
         }
 

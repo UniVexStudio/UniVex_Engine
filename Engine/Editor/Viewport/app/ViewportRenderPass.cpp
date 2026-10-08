@@ -30,13 +30,13 @@ void main() {
 constexpr const char* kBackgroundFragmentSource = R"GLSL(#version 330 core
 in vec2 vClipPos;
 out vec4 fragColor;
+uniform bool uNeutralEditorFallback;
 void main() {
-    // Vertical gradient, darker at the top. Gives the horizon something to
-    // sit against so the grid's fade reads as distance rather than as the
-    // grid simply stopping.
+    // Main's empty authoring scene is deliberately achromatic. Other viewport users retain the
+    // established navy presentation; a real WorldEnvironment is composited over either backdrop.
     float t = clamp(vClipPos.y * 0.5 + 0.5, 0.0, 1.0);
-    vec3 top    = vec3(0.043, 0.055, 0.086);
-    vec3 bottom = vec3(0.086, 0.102, 0.145);
+    vec3 top = uNeutralEditorFallback ? vec3(0.205, 0.210, 0.220) : vec3(0.043, 0.055, 0.086);
+    vec3 bottom = uNeutralEditorFallback ? vec3(0.285, 0.290, 0.300) : vec3(0.086, 0.102, 0.145);
     fragColor = vec4(mix(bottom, top, t), 1.0);
 }
 )GLSL";
@@ -219,6 +219,25 @@ void ViewportRenderPass::DrawBackground() const {
     if (hadBlend == GL_TRUE) glEnable(GL_BLEND);
 }
 
+void ViewportRenderPass::DrawCameraFrustums(const OrbitCamera& camera, int width, int height) const {
+    if (cameraFrustumMesh_.Empty()) {
+        return;
+    }
+    const Vec3 viewDirection = Normalize(camera.Target() - camera.Eye());
+    GizmoDrawParams params;
+    params.viewProjection = camera.ViewProjection(static_cast<float>(width) / static_cast<float>(height));
+    params.origin = Vec3{0.f, 0.f, 0.f};
+    params.scale = 1.f;
+    params.viewDirection = viewDirection;
+    params.viewportWidth = static_cast<float>(width);
+    params.viewportHeight = static_cast<float>(height);
+    glDepthMask(GL_TRUE);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    params.depthTest = true;
+    params.depthWrite = true;
+    gizmos_.Draw(cameraFrustumMesh_, params);
+}
+
 void ViewportRenderPass::DrawBones(const OrbitCamera& camera, int width, int height) const {
     const Vec3 viewDirection = Normalize(camera.Target() - camera.Eye());
     const univex::gizmo::GizmoMesh mesh = univex::gizmo::BuildBoneMeshUVE(bones_, viewDirection);
@@ -316,12 +335,17 @@ void ViewportRenderPass::ClearUVE(int framebufferWidth, int framebufferHeight) c
     if (framebufferWidth <= 0 || framebufferHeight <= 0) return;
     glViewport(0, 0, framebufferWidth, framebufferHeight);
     glDepthMask(GL_TRUE); // clearing depth requires the write mask on
-    glClearColor(0.043f, 0.055f, 0.086f, 1.f);
+    glClearColor(0.043F, 0.055F, 0.086F, 1.0F);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void ViewportRenderPass::RenderBackgroundUVE() const {
-    if (settings_.viewEnvironment) DrawBackground();
+void ViewportRenderPass::RenderBackgroundUVE(const bool neutralEditorFallback) const {
+    if (!settings_.viewEnvironment) {
+        return;
+    }
+    backgroundProgram_.Use();
+    glUniform1i(backgroundProgram_.UniformLocation("uNeutralEditorFallback"), neutralEditorFallback ? 1 : 0);
+    DrawBackground();
 }
 
 void ViewportRenderPass::RenderGridUVE(const OrbitCamera& camera,
@@ -346,6 +370,7 @@ void ViewportRenderPass::RenderOverlayUVE(const OrbitCamera& camera,
     if (!bones_.empty()) {
         DrawBones(camera, framebufferWidth, framebufferHeight);
     }
+    DrawCameraFrustums(camera, framebufferWidth, framebufferHeight);
     // Last pass of the frame - see DrawTransformGizmo on why that matters.
     if (settings_.viewTransformGizmo && gizmoMode_ != GizmoMode::Select) {
         DrawTransformGizmo(camera, framebufferWidth, framebufferHeight);

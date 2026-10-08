@@ -94,6 +94,7 @@
 #include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
+#include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
@@ -128,6 +129,67 @@ EngineConfigUVE MakeTestConfigUVE() {
     return config;
 }
 
+TEST(EngineCoreUVETest, InvalidApplicationRenderScaleFallsBackToNativeResolution) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.renderResolutionScaleUVE = std::numeric_limits<double>::quiet_NaN();
+    config.dynamicRenderResolutionEnabledUVE = true;
+    config.minimumRenderResolutionScaleUVE = 1.25;
+    config.renderResolutionTargetFrameTimeMillisecondsUVE = std::numeric_limits<double>::quiet_NaN();
+    config.settingsFilePath = "uve_engine_core_invalid_render_scale.uvsettings";
+    config.projectSettingsFilePath = "uve_engine_core_invalid_render_scale.project.uvsettings";
+    config.platformSettingsFilePath = "uve_engine_core_invalid_render_scale.platform.uvsettings";
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().renderResolutionScaleUVE, 1.0);
+    EXPECT_TRUE(engine.GetConfigUVE().dynamicRenderResolutionEnabledUVE);
+    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().minimumRenderResolutionScaleUVE,
+                     kMinimumRenderResolutionScaleUVE);
+    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().renderResolutionTargetFrameTimeMillisecondsUVE,
+                     kDefaultRenderResolutionTargetFrameTimeMillisecondsUVE);
+    engine.Shutdown();
+
+    std::filesystem::remove(config.settingsFilePath);
+    std::filesystem::remove(config.projectSettingsFilePath);
+    std::filesystem::remove(config.platformSettingsFilePath);
+}
+
+TEST(EngineCoreUVETest, UnsafeProjectShaderCachePathDoesNotOverrideSafeApplicationValue) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.projectSettingsFilePath = "uve_engine_core_unsafe_shader_cache.project.uvsettings";
+    config.settingsFilePath = "uve_engine_core_unsafe_shader_cache.uvsettings";
+    config.platformSettingsFilePath = "uve_engine_core_unsafe_shader_cache.platform.uvsettings";
+    config.shaderCachePath = "safe_application_cache";
+    {
+        std::ofstream file(config.projectSettingsFilePath);
+        file << R"({"rendering": {"shaders": {"programCacheDirectory": "../outside_cache"}}})";
+    }
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_EQ(engine.GetConfigUVE().shaderCachePath, std::filesystem::path("safe_application_cache"));
+    engine.Shutdown();
+    std::filesystem::remove(config.projectSettingsFilePath);
+    std::filesystem::remove(config.settingsFilePath);
+    std::filesystem::remove(config.platformSettingsFilePath);
+}
+
+TEST(EngineCoreUVETest, UnsafeApplicationShaderCachePathFallsBackToEngineDefault) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.projectSettingsFilePath = "uve_engine_core_unsafe_application_shader_cache.project.uvsettings";
+    config.settingsFilePath = "uve_engine_core_unsafe_application_shader_cache.uvsettings";
+    config.platformSettingsFilePath = "uve_engine_core_unsafe_application_shader_cache.platform.uvsettings";
+    config.shaderCachePath = "../outside_cache";
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_EQ(engine.GetConfigUVE().shaderCachePath, EngineConfigUVE{}.shaderCachePath);
+    engine.Shutdown();
+    std::filesystem::remove(config.projectSettingsFilePath);
+    std::filesystem::remove(config.settingsFilePath);
+    std::filesystem::remove(config.platformSettingsFilePath);
+}
+
 TEST(EngineCoreUVETest, ProjectSettings_OverrideTheApplicationsConfigWhereTheProjectSetsThem) {
     EngineConfigUVE config = MakeTestConfigUVE();
     config.projectSettingsFilePath = "uve_engine_core_tests_overrides.project.uvsettings";
@@ -150,21 +212,134 @@ TEST(EngineCoreUVETest, ProjectSettings_OverrideTheApplicationsConfigWhereThePro
     EXPECT_EQ(engine.GetConfigUVE().shadowMapResolution, EngineConfigUVE{}.shadowMapResolution);
     const Config::SettingsDocumentUVE& project = engine.GetServicesUVE().GetProjectSettingsUVE();
     EXPECT_TRUE(project.IsModifiedUVE(EngineProjectSettingIdUVE::kPhysicsTicksPerSecondUVE));
-    EXPECT_FALSE(project.IsDirtyUVE());
+    EXPECT_TRUE(project.IsDirtyUVE()); // The unversioned fixture is upgraded in memory for its next save.
     engine.Shutdown();
     std::filesystem::remove(config.projectSettingsFilePath);
+}
+
+TEST(EngineCoreUVETest, UserSettingsOverrideProjectSettingsBeforeDependentSystemsInitialize) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.projectSettingsFilePath = "uve_engine_core_tests_user_override.project.uvsettings";
+    config.settingsFilePath = "uve_engine_core_tests_user_override.uvsettings";
+    {
+        std::ofstream file(config.projectSettingsFilePath);
+        file << R"({"physics": {"common": {"ticksPerSecond": 30}}})";
+    }
+    {
+        std::ofstream file(config.settingsFilePath);
+        file << R"({"physics": {"common": {"ticksPerSecond": 120}}})";
+    }
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().fixedUpdateFps, 120.0);
+    engine.Shutdown();
+    std::filesystem::remove(config.projectSettingsFilePath);
+    std::filesystem::remove(config.settingsFilePath);
+}
+
+TEST(EngineCoreUVETest, InvalidUserSettingFallsBackToTheValidProjectSetting) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.projectSettingsFilePath = "uve_engine_core_tests_invalid_user.project.uvsettings";
+    config.settingsFilePath = "uve_engine_core_tests_invalid_user.uvsettings";
+    {
+        std::ofstream file(config.projectSettingsFilePath);
+        file << R"({"physics": {"common": {"ticksPerSecond": 30}}})";
+    }
+    {
+        std::ofstream file(config.settingsFilePath);
+        file << R"({"physics": {"common": {"ticksPerSecond": 0}}})";
+    }
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().fixedUpdateFps, 30.0);
+    engine.Shutdown();
+    std::filesystem::remove(config.projectSettingsFilePath);
+    std::filesystem::remove(config.settingsFilePath);
+}
+
+TEST(EngineCoreUVETest, PlatformAndCommandLineLayersOverrideUserAndProject) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.projectSettingsFilePath = "uve_engine_core_tests_cli_platform.project.uvsettings";
+    config.settingsFilePath = "uve_engine_core_tests_cli_platform.uvsettings";
+    config.platformSettingsFilePath = "uve_engine_core_tests_cli_platform.platform.uvsettings";
+    config.commandLineArgs = {"--rendering.shadows.mapResolution", "512"};
+    {
+        std::ofstream file(config.projectSettingsFilePath);
+        file << R"({"rendering": {"shadows": {"mapResolution": 4096}}})";
+    }
+    {
+        std::ofstream file(config.settingsFilePath);
+        file << R"({"rendering": {"shadows": {"mapResolution": 2048}}})";
+    }
+    {
+        std::ofstream file(config.platformSettingsFilePath);
+        file << R"({"rendering": {"shadows": {"mapResolution": 1024}}})";
+    }
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_EQ(engine.GetConfigUVE().shadowMapResolution, 512U);
+    engine.Shutdown();
+    std::filesystem::remove(config.projectSettingsFilePath);
+    std::filesystem::remove(config.settingsFilePath);
+    std::filesystem::remove(config.platformSettingsFilePath);
+}
+
+TEST(EngineCoreUVETest, InvalidCommandLineSettingFallsBackToPlatformValue) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.projectSettingsFilePath = "uve_engine_core_tests_invalid_cli.project.uvsettings";
+    config.settingsFilePath = "uve_engine_core_tests_invalid_cli.uvsettings";
+    config.platformSettingsFilePath = "uve_engine_core_tests_invalid_cli.platform.uvsettings";
+    config.commandLineArgs = {"--rendering.shadows.mapResolution", "1536"};
+    {
+        std::ofstream file(config.projectSettingsFilePath);
+        file << R"({"rendering": {"shadows": {"mapResolution": 4096}}})";
+    }
+    {
+        std::ofstream file(config.settingsFilePath);
+        file << R"({"rendering": {"shadows": {"mapResolution": 2048}}})";
+    }
+    {
+        std::ofstream file(config.platformSettingsFilePath);
+        file << R"({"rendering": {"shadows": {"mapResolution": 1024}}})";
+    }
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_EQ(engine.GetConfigUVE().shadowMapResolution, 1024U);
+    engine.Shutdown();
+    std::filesystem::remove(config.projectSettingsFilePath);
+    std::filesystem::remove(config.settingsFilePath);
+    std::filesystem::remove(config.platformSettingsFilePath);
 }
 
 TEST(EngineCoreUVETest, ProjectSettings_DeclareEngineDefaultsAndNeedARestart) {
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 8U + (2U * kLayerCountUVE));
-    const EngineConfigUVE defaults{};
+    // 76 settings declared in the GetEngineProjectSettingsUVE() table plus the default-player entity
+    // registered on its own; the 2 * kLayerCountUVE layer-name settings are added on top of this.
+    // Spelled out because the number silently drifts every time a setting is added to the table.
+    EXPECT_EQ(registry.GetCountUVE(), 77U + (2U * kLayerCountUVE));
     namespace Id = EngineProjectSettingIdUVE;
+    ASSERT_NE(registry.FindUVE(Id::kDefaultPlayerEntityUVE), nullptr);
+    ASSERT_NE(registry.FindUVE(Id::kShaderProgramCacheDirectoryUVE), nullptr);
+    EXPECT_EQ(registry.FindUVE(Id::kShaderProgramCacheDirectoryUVE)->type, Config::SettingTypeUVE::FilePath);
+    EXPECT_TRUE(registry.FindUVE(Id::kShaderProgramCacheDirectoryUVE)
+                    ->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
+    EXPECT_EQ(registry.FindUVE(Id::kDefaultPlayerEntityUVE)->type, Config::SettingTypeUVE::FilePath);
+    const EngineConfigUVE defaults{};
     EXPECT_DOUBLE_EQ(registry.GetFloatUVE(Config::ConfigManagerUVE{}, Id::kPhysicsTicksPerSecondUVE),
                      defaults.fixedUpdateFps);
     EXPECT_EQ(registry.GetIntUVE(Config::ConfigManagerUVE{}, Id::kShadowMapResolutionUVE),
               static_cast<std::int64_t>(defaults.shadowMapResolution));
+    EXPECT_EQ(registry.GetBoolUVE(Config::ConfigManagerUVE{}, Id::kHeadlessUVE), defaults.headlessUVE);
+    ASSERT_NE(registry.FindUVE(Id::kShadowMapResolutionUVE), nullptr);
+    EXPECT_TRUE(registry.FindUVE(Id::kShadowMapResolutionUVE)->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
+    ASSERT_NE(registry.FindUVE(Id::kHeadlessUVE), nullptr);
+    EXPECT_TRUE(registry.FindUVE(Id::kHeadlessUVE)->HasFlagUVE(Config::kSettingFlagHiddenUVE));
+    EXPECT_TRUE(registry.FindUVE(Id::kHeadlessUVE)->HasFlagUVE(Config::kSettingFlagNotPersistedUVE));
     for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
         EXPECT_EQ(Config::ValidateSettingDescriptorUVE(*descriptor), "") << descriptor->id;
         // Everything that overrides EngineConfigUVE is read at startup; layer names and the default
@@ -235,6 +410,61 @@ TEST(EngineCoreUVETest, ParticleEmitterComponents_ReconcileWithRuntimeAcrossFram
     entityManager.RemoveComponentUVE<Scene::ParticleEmitterComponentUVE>(entity);
     engine.TickFrameUVE();
     EXPECT_EQ(engine.GetParticleRuntimeSnapshotUVE().instanceCount, 0U);
+}
+
+TEST(EngineCoreUVETest, ParticleEmitter_AutoEmitsFromTheWorldPose) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform{};
+    transform.localPosition = Math::Vector3UVE{0.0F, 4.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, entity, transform);
+    Scene::ParticleEmitterComponentUVE emitter{};
+    emitter.maxParticles = 32U;
+    emitter.emissionRate = 1'000'000.0F;
+    emitter.lifetimeSeconds = 2.0F;
+    entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(entity, emitter);
+
+    engine.TickFrameUVE();
+    const Scene::ParticleRuntimeSnapshotUVE snapshot = engine.GetParticleRuntimeSnapshotUVE();
+    ASSERT_EQ(snapshot.instances.size(), 1U);
+    EXPECT_GT(snapshot.instances.front().liveParticles, 0U);
+    const std::optional<Scene::ParticleStateSnapshotUVE> particles =
+        services.GetParticleRuntimeUVE().GetParticleSnapshotUVE(entity);
+    ASSERT_TRUE(particles.has_value());
+    ASSERT_FALSE(particles->particles.empty());
+    EXPECT_NEAR(particles->particles.front().position.x, 0.0F, 1.0F);
+    EXPECT_NEAR(particles->particles.front().position.y, 4.0F, 2.0F);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, ParticleEmitter_EmittingOffDoesNotAutoEmit) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+    Scene::ParticleEmitterComponentUVE emitter{};
+    emitter.maxParticles = 32U;
+    emitter.emitting = false;
+    emitter.emissionRate = 1'000'000.0F;
+    entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(entity, emitter);
+
+    engine.TickFrameUVE();
+    ASSERT_EQ(engine.GetParticleRuntimeSnapshotUVE().instances.size(), 1U);
+    EXPECT_EQ(engine.GetParticleRuntimeSnapshotUVE().instances.front().liveParticles, 0U);
+
+    engine.Shutdown();
 }
 
 TEST(EngineCoreUVETest, TickMode_GatesParticleEmittersAgainstThePausedState) {
@@ -3191,9 +3421,8 @@ TEST(EngineCoreUVETest, SimulationControl_PausesStepsQueuesOneStepAndSuppressesT
 }
 
 TEST(EngineCoreUVETest, HeadlessCommandLineFlag_ForcesHeadlessAndUsesNullWindowManager) {
-    // headlessUVE starts false here specifically to prove the --headless CLI flag itself forces
-    // it (Init() reads CommandLineUVE before anything else consults the flag), not that the
-    // config's own default already happened to be headless.
+    // headlessUVE starts false here specifically to prove the hidden `headless` descriptor maps
+    // the presence-only --headless flag through the highest-priority command-line settings layer.
     EngineConfigUVE config = MakeTestConfigUVE();
     config.headlessUVE = false;
     config.commandLineArgs = {"--headless"};
@@ -3609,6 +3838,52 @@ TEST(EngineCoreUVETest, SetEditorViewportRegionUVE_DrivesRenderTargetToRegionNot
     EXPECT_FALSE(foundViewportRejection);
 
     engine.Shutdown();
+}
+
+// The configured fixed scene-render scale must change only the 3D render target; the native
+// presentation surface remains at the window's drawable resolution. This is a windowed GL
+// integration check and skips when no display/context is available.
+TEST(EngineCoreUVETest, FixedRenderScaleScalesSceneTargetWithoutChangingWindowSize) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.headlessUVE = false;
+    config.windowWidth = 200U;
+    config.windowHeight = 150U;
+    config.renderResolutionScaleUVE = 0.5;
+    config.settingsFilePath = "uve_engine_core_fixed_render_scale.uvsettings";
+    config.projectSettingsFilePath = "uve_engine_core_fixed_render_scale.project.uvsettings";
+    config.platformSettingsFilePath = "uve_engine_core_fixed_render_scale.platform.uvsettings";
+    config.vsyncEnabledUVE = false;
+    config.windowGlVersionMajor = 4U;
+    config.windowGlVersionMinor = 5U;
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    if (!engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {
+        GTEST_SKIP() << "No display available for windowed EngineCoreUVE - skipping (run under "
+                        "xvfb-run to exercise this test)";
+    }
+    ASSERT_TRUE(engine.Load());
+
+    EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+    const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, camera, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera);
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    const Render::Renderer3DFrameDiagnosticsUVE diagnostics =
+        services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(diagnostics.renderTargetWidth, 100U);
+    EXPECT_EQ(diagnostics.renderTargetHeight, 75U);
+    EXPECT_EQ(services.GetWindowManagerUVE().GetWidthUVE(), 200U);
+    EXPECT_EQ(services.GetWindowManagerUVE().GetHeightUVE(), 150U);
+
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
+    std::filesystem::remove(config.projectSettingsFilePath);
+    std::filesystem::remove(config.platformSettingsFilePath);
 }
 
 // A region whose on-screen destination sub-rect is a THIN SLICE of the window (very narrow and
@@ -4509,11 +4784,11 @@ Scene::EntityUVE CreatePartitionChildAtUVE(Scene::IEntityManagerUVE& entityManag
 
 } // namespace
 
-TEST(EngineCoreUVETest, WorldPartition3D_MembershipAttachesOnlyToMeshesAndOutsideStaysUnmanaged) {
-    // The engine-owned runtime state attaches to mesh-carrying descendants only (a transform-only
-    // child must stay clean), the partition beyond its volume is nobody's business (membership
-    // there exists but its live verdict is always true - volume-rejection must never hide
-    // geometry), and loadedCellCount only counts cells actually inside the volume.
+TEST(EngineCoreUVETest, WorldPartition3D_MembershipAttachesToDrawablesAndOutsideStaysUnmanaged) {
+    // The engine-owned runtime state attaches to drawable descendants (mesh and primitive mesh
+    // here; a transform-only child and a light stay clean). The partition beyond its volume is
+    // nobody's business (membership there exists but its live verdict is always true), and
+    // loadedCellCount only counts cells actually inside the volume.
     EngineConfigUVE config = MakeTestConfigUVE();
     EngineCoreUVE engine(config);
     engine.Init();
@@ -4529,6 +4804,15 @@ TEST(EngineCoreUVETest, WorldPartition3D_MembershipAttachesOnlyToMeshesAndOutsid
     const Scene::EntityUVE meshlessChild =
         CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
                                   Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
+    const Scene::EntityUVE primitiveChild =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
+    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(primitiveChild,
+                                                                   Scene::PrimitiveMeshComponentUVE{});
+    const Scene::EntityUVE lightChild =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
+    entityManager.AddComponentUVE<Scene::LightComponentUVE>(lightChild, Scene::LightComponentUVE{});
     const Scene::EntityUVE outsideMesh =
         CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
                                   Math::Vector3UVE{500.0F, 0.0F, 500.0F}, /*withMesh=*/true);
@@ -4546,7 +4830,13 @@ TEST(EngineCoreUVETest, WorldPartition3D_MembershipAttachesOnlyToMeshesAndOutsid
     EXPECT_EQ(insideMembership.partition, partition) << "the engine stamps the deciding owner";
 
     EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
-        meshlessChild)) << "no mesh, no membership - authoritatively not every descendant";
+        meshlessChild)) << "no drawable, no membership - authoritatively not every descendant";
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        primitiveChild))
+        << "a primitive mesh is a drawable the vis-budget can skip";
+    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        lightChild))
+        << "lights are not partition drawables";
 
     ASSERT_TRUE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
         outsideMesh));
@@ -4773,6 +5063,17 @@ TEST(EngineCoreUVETest, VisibilityRegion3D_CameraOutsideTheRoomSkipsItsInteriorC
                                                   0xFFFFFFFFU));
     const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
         entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::EntityUVE primitive = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE primitiveTransform;
+    primitiveTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, primitive, primitiveTransform);
+    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(primitive,
+                                                                   Scene::PrimitiveMeshComponentUVE{});
+    const Scene::EntityUVE light = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE lightTransform;
+    lightTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, light, lightTransform);
+    entityManager.AddComponentUVE<Scene::LightComponentUVE>(light, Scene::LightComponentUVE{});
     const Scene::EntityUVE outside = CreateStandaloneMeshAtUVE(
         entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F}, 0x00000001U);
     const Scene::EntityUVE camera =
@@ -4788,6 +5089,15 @@ TEST(EngineCoreUVETest, VisibilityRegion3D_CameraOutsideTheRoomSkipsItsInteriorC
         << "camera outside: interior content is skipped with zero render work";
     EXPECT_FALSE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
         outside)) << "content outside every region is not a member of anything";
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        primitive))
+        << "a primitive mesh inside the room is a drawable the region can skip";
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                     primitive)
+                     .live);
+    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        light))
+        << "lights are not region drawables";
 
     Scene::TransformComponentUVE enterTransform;
     enterTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};

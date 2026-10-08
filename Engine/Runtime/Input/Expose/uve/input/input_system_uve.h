@@ -69,6 +69,7 @@ public:
     [[nodiscard]] bool IsActionHeldUVE(std::string_view actionName) const override;
     [[nodiscard]] bool IsActionReleasedUVE(std::string_view actionName) const override;
     [[nodiscard]] float GetAxisValueUVE(std::string_view actionName) const override;
+    [[nodiscard]] bool HasActionUVE(std::string_view actionName) const override;
 
 private:
     static constexpr std::size_t kKeyCodeCount = static_cast<std::size_t>(KeyCodeUVE::Count);

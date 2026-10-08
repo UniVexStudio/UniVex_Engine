@@ -41,6 +41,10 @@ enum class CharacterPlatformLeaveModeUVE : std::uint8_t {
 /// last and is shown in the Inspector only while playing.
 struct CharacterControllerComponentUVE final {
     CharacterMotionModeUVE motionMode = CharacterMotionModeUVE::Grounded;
+    /// The body's own up. Floors, jumps, gravity and ceilings are measured from this. Defaults to
+    /// world +Y because the engine's gravity is along -Y; a body that walks on a wall or a planet
+    /// writes a different up here and the mover, the jump and the floor probe all follow it.
+    Math::Vector3UVE upDirection{0.0F, 1.0F, 0.0F};
     /// Multiplies the engine's gravity: 1 = normal, 0 = none. Ignored while Floating.
     float gravityScale = 1.0F;
 

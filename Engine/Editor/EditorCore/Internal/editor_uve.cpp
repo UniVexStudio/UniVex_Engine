@@ -66,6 +66,7 @@
 #include "uve/scene/spawn_point_query_uve.h"
 #include "uve/editor/editor_content_catalogue_uve.h"
 #include "uve/core/engine_project_settings_uve.h"
+#include "uve/input/key_code_uve.h"
 #include "uve/scene/objects/scene_folder_uve.h"
 #include "uve/scene/objects/scene_root_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
@@ -200,6 +201,10 @@ constexpr float kMaximum2DCanvasZoomUVE = 4.00F;
     recoveryPath += ".editor-recovery";
     return recoveryPath;
 }
+
+[[nodiscard]] bool DecodeRawImageThumbnailPixelsUVE(const std::filesystem::path& absolutePath,
+                                                     std::uint32_t& outWidth, std::uint32_t& outHeight,
+                                                     std::vector<std::byte>& outPixels);
 
 [[nodiscard]] bool IsFiniteUVE(const float value) noexcept {
     return std::isfinite(value);
@@ -400,6 +405,7 @@ bool EditorUVE::EnterPlayModeUVE() {
 
     m_playModeSession = std::move(session);
     m_playModeState = EditorPlayModeStateUVE::Playing;
+    static_cast<void>(m_simulationControl->SetEditorPlaySceneNameUVE(m_activeScenePath.stem().string()));
     // Play-entry spawn resolution, inside the snapshot's protection and never allowed to fail
     // entering Play itself: a scene with no player or no enabled spawn point simply plays from
     // the authored poses.
@@ -411,29 +417,240 @@ bool EditorUVE::EnterPlayModeUVE() {
     if (m_playPauseOnStart) {
         static_cast<void>(PausePlayModeUVE());
     }
+    BeginEditorPlayBootSplashUVE();
     return true;
+}
+
+void EditorUVE::BeginEditorPlayBootSplashUVE() {
+    m_playBootSplashActive = false;
+    m_playBootSplashSkipRequested = false;
+    m_playBootSplashFadeSeconds = 0.25;
+    m_playBootSplashMinimumSeconds = 1.0;
+    m_playBootSplashSkippable = true;
+    m_playBootSplashBackground = {0.05F, 0.05F, 0.05F, 1.0F};
+    m_playBootSplashImagePath.clear();
+    m_playBootSplashImageDimensions = Math::Vector2UVE{};
+    if (m_services == nullptr) {
+        return;
+    }
+
+    try {
+        const Config::SettingsDocumentUVE& settings = m_services->GetProjectSettingsUVE();
+        const auto readValue = [&settings](const std::string_view id) {
+            return settings.GetValueUVE(id);
+        };
+        const std::optional<Config::SettingValueUVE> skipValue =
+            readValue(Core::EngineProjectSettingIdUVE::kSkipBootSplashInEditorPlayModeUVE);
+        const bool* const skipInEditor =
+            skipValue.has_value() ? std::get_if<bool>(&*skipValue) : nullptr;
+        if (skipInEditor == nullptr || *skipInEditor) {
+            return;
+        }
+
+        const std::optional<Config::SettingValueUVE> fadeValue =
+            readValue(Core::EngineProjectSettingIdUVE::kBootSplashFadeSecondsUVE);
+        if (fadeValue.has_value()) {
+            if (const double* const seconds = std::get_if<double>(&*fadeValue); seconds != nullptr &&
+                std::isfinite(*seconds) && *seconds >= 0.0 && *seconds <= 60.0) {
+                m_playBootSplashFadeSeconds = *seconds;
+            }
+        }
+        const std::optional<Config::SettingValueUVE> minimumValue =
+            readValue(Core::EngineProjectSettingIdUVE::kBootSplashMinimumDisplaySecondsUVE);
+        if (minimumValue.has_value()) {
+            if (const double* const seconds = std::get_if<double>(&*minimumValue); seconds != nullptr &&
+                std::isfinite(*seconds) && *seconds >= 0.0 && *seconds <= 600.0) {
+                m_playBootSplashMinimumSeconds = *seconds;
+            }
+        }
+        const std::optional<Config::SettingValueUVE> skippableValue =
+            readValue(Core::EngineProjectSettingIdUVE::kBootSplashSkippableUVE);
+        if (skippableValue.has_value()) {
+            if (const bool* const skippable = std::get_if<bool>(&*skippableValue); skippable != nullptr) {
+                m_playBootSplashSkippable = *skippable;
+            }
+        }
+        const std::optional<Config::SettingValueUVE> backgroundValue =
+            readValue(Core::EngineProjectSettingIdUVE::kBootBackgroundColorUVE);
+        if (backgroundValue.has_value()) {
+            if (const Config::SettingColorUVE* const color =
+                    std::get_if<Config::SettingColorUVE>(&*backgroundValue);
+                color != nullptr) {
+                m_playBootSplashBackground = {color->r, color->g, color->b, color->a};
+            }
+        }
+        const std::optional<Config::SettingValueUVE> imageValue =
+            readValue(Core::EngineProjectSettingIdUVE::kBootSplashImageUVE);
+        if (imageValue.has_value()) {
+            if (const std::string* const imagePath = std::get_if<std::string>(&*imageValue);
+                imagePath != nullptr && !imagePath->empty()) {
+                const std::filesystem::path relativeImage{*imagePath};
+                const bool unsafePath = relativeImage.is_absolute() || relativeImage.has_root_name() ||
+                                        relativeImage.has_root_directory() ||
+                                        std::any_of(relativeImage.begin(), relativeImage.end(),
+                                                    [](const std::filesystem::path& component) {
+                                                        return component == "..";
+                                                    });
+                if (!unsafePath) {
+                    m_playBootSplashImagePath = relativeImage.lexically_normal();
+                }
+            }
+        }
+        if (!m_playBootSplashImagePath.empty()) {
+            const std::filesystem::path contentRoot =
+                m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+            const std::filesystem::path absoluteImage = contentRoot / m_playBootSplashImagePath;
+            std::error_code pathError;
+            const std::filesystem::path canonicalRoot = std::filesystem::canonical(contentRoot, pathError);
+            const std::filesystem::path canonicalImage = pathError
+                                                             ? std::filesystem::path{}
+                                                             : std::filesystem::canonical(absoluteImage, pathError);
+            const bool regularFile = !pathError && std::filesystem::is_regular_file(canonicalImage, pathError) &&
+                                     !pathError;
+            const std::filesystem::path relativeCanonical =
+                regularFile ? canonicalImage.lexically_relative(canonicalRoot) : std::filesystem::path{};
+            const bool insideContentRoot = regularFile && !relativeCanonical.empty() &&
+                                           !relativeCanonical.is_absolute() &&
+                                           *relativeCanonical.begin() != "..";
+            if (!insideContentRoot) {
+                m_playBootSplashImagePath.clear();
+            } else {
+                Asset::TextureAssetUVE importedTexture;
+                std::uint32_t width = 0U;
+                std::uint32_t height = 0U;
+                std::vector<std::byte> pixels;
+                std::string extension = absoluteImage.extension().string();
+                std::transform(extension.begin(), extension.end(), extension.begin(),
+                               [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+                bool imageRead = false;
+                if (extension == ".uvtex") {
+                    imageRead = Asset::LoadTextureAssetUVE(canonicalImage, importedTexture);
+                    if (imageRead) {
+                        width = importedTexture.width;
+                        height = importedTexture.height;
+                    }
+                } else {
+                    imageRead = DecodeRawImageThumbnailPixelsUVE(canonicalImage, width, height, pixels);
+                }
+                if (imageRead && width > 0U && height > 0U) {
+                    m_playBootSplashImageDimensions = Math::Vector2UVE{static_cast<float>(width),
+                                                                        static_cast<float>(height)};
+                } else {
+                    m_playBootSplashImagePath.clear();
+                }
+            }
+        }
+        m_playBootSplashStart = std::chrono::steady_clock::now();
+        m_playBootSplashActive = true;
+    } catch (...) {
+        // Boot presentation is optional and must never roll back an otherwise-valid Play session.
+        m_playBootSplashActive = false;
+        m_playBootSplashImagePath.clear();
+    }
+}
+
+void EditorUVE::DrawEditorPlayBootSplashOverlayUVE(const Math::Vector2UVE imageOrigin,
+                                                    const Math::Vector2UVE imageSize) {
+    if (!m_playBootSplashActive || m_playModeState == EditorPlayModeStateUVE::Edit || m_services == nullptr ||
+        imageSize.x <= 0.0F || imageSize.y <= 0.0F) {
+        return;
+    }
+
+    const double elapsed =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - m_playBootSplashStart).count();
+    const double minimum = m_playBootSplashMinimumSeconds;
+    if (m_playBootSplashSkippable &&
+        m_services->GetInputSystemUVE().WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Escape)) {
+        m_playBootSplashSkipRequested = true;
+    }
+    if (m_playBootSplashSkippable && m_playBootSplashSkipRequested && elapsed >= minimum) {
+        m_playBootSplashActive = false;
+        return;
+    }
+
+    const double holdEnd = std::max(m_playBootSplashFadeSeconds, minimum);
+    if (elapsed >= holdEnd + m_playBootSplashFadeSeconds) {
+        m_playBootSplashActive = false;
+        return;
+    }
+    double opacity = 1.0;
+    if (m_playBootSplashFadeSeconds > 0.0 && elapsed < m_playBootSplashFadeSeconds) {
+        opacity = elapsed / m_playBootSplashFadeSeconds;
+    } else if (m_playBootSplashFadeSeconds > 0.0 && elapsed >= holdEnd) {
+        opacity = 1.0 - (elapsed - holdEnd) / m_playBootSplashFadeSeconds;
+    }
+    const float clampedOpacity = static_cast<float>(std::clamp(opacity, 0.0, 1.0));
+    ImDrawList* const drawList = ImGui::GetWindowDrawList();
+    const ImVec2 min{imageOrigin.x, imageOrigin.y};
+    const ImVec2 max{imageOrigin.x + imageSize.x, imageOrigin.y + imageSize.y};
+    const ImVec4 backgroundColor{m_playBootSplashBackground[0], m_playBootSplashBackground[1],
+                                 m_playBootSplashBackground[2],
+                                 m_playBootSplashBackground[3] * clampedOpacity};
+    drawList->AddRectFilled(min, max, ImGui::ColorConvertFloat4ToU32(backgroundColor));
+
+    const char* const title = "UniVex Runtime";
+    const ImVec2 titleSize = ImGui::CalcTextSize(title);
+    float titleY = imageOrigin.y + (imageSize.y - titleSize.y) * 0.5F;
+    if (!m_playBootSplashImagePath.empty()) {
+        const std::uintptr_t textureId = GetTextureThumbnailUVE(m_playBootSplashImagePath);
+        if (textureId != 0U) {
+            const float aspectRatio = m_playBootSplashImageDimensions.x > 0.0F &&
+                                              m_playBootSplashImageDimensions.y > 0.0F
+                                          ? m_playBootSplashImageDimensions.x / m_playBootSplashImageDimensions.y
+                                          : 1.6F;
+            const float maxWidth = imageSize.x * 0.62F;
+            const float maxHeight = imageSize.y * 0.52F;
+            float logoWidth = maxWidth;
+            float logoHeight = maxWidth / aspectRatio;
+            if (logoHeight > maxHeight) {
+                logoHeight = maxHeight;
+                logoWidth = maxHeight * aspectRatio;
+            }
+            const float logoLeft = imageOrigin.x + (imageSize.x - logoWidth) * 0.5F;
+            const float logoTop = imageOrigin.y + imageSize.y * 0.34F - logoHeight * 0.5F;
+            const ImVec4 imageTint{1.0F, 1.0F, 1.0F, clampedOpacity};
+            drawList->AddImage(static_cast<ImTextureID>(textureId), ImVec2{logoLeft, logoTop},
+                               ImVec2{logoLeft + logoWidth, logoTop + logoHeight}, ImVec2{0.0F, 0.0F},
+                               ImVec2{1.0F, 1.0F}, ImGui::ColorConvertFloat4ToU32(imageTint));
+            titleY = logoTop + logoHeight + 22.0F;
+        }
+    }
+    const ImVec2 titlePosition{imageOrigin.x + (imageSize.x - titleSize.x) * 0.5F, titleY};
+    const ImVec4 titleColor{1.0F, 1.0F, 1.0F, clampedOpacity};
+    drawList->AddText(titlePosition, ImGui::ColorConvertFloat4ToU32(titleColor), title);
 }
 
 bool EditorUVE::ApplyPlayEntrySpawnUVE() {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
 
-    // The player: the entity carrying the character controller. A scene with several is a
-    // split-screen/multiplayer question this v1 deliberately does not answer - the first in
-    // pool order is the only deterministic honest pick, and any gameplay layer that wants
-    // richer selection lands its rule in ResolveSpawnPoint3DSelectionUVE, not here.
-    Scene::EntityUVE player = Scene::kInvalidEntityUVE;
-    entityManager.ForEachUVE<Scene::CharacterControllerComponentUVE>(
-        [&entityManager, &player](const Scene::EntityUVE entity,
-                                  Scene::CharacterControllerComponentUVE&) {
-            if (player == Scene::kInvalidEntityUVE &&
-                entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity) &&
-                entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
-                player = entity;
+    Scene::EntityUVE player = Scene::ResolvePossessedPlayerUVE(entityManager);
+    if (player == Scene::kInvalidEntityUVE) {
+        const std::string relative = GetDefaultPlayerEntityUVE();
+        if (!relative.empty()) {
+            const std::filesystem::path absolute =
+                m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot /
+                std::filesystem::path{relative};
+            std::error_code error;
+            if (std::filesystem::is_regular_file(absolute, error)) {
+                const Asset::AssetGuidUVE guid = m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
+                if (guid != Asset::kInvalidAssetGuidUVE) {
+                    static_cast<void>(m_services->GetPrefabSystemUVE().InstantiateUVE(
+                        entityManager, sceneGraph, m_services->GetAssetDatabaseUVE(), guid,
+                        GetDocumentSceneRootUVE()));
+                    sceneGraph.UpdateUVE(entityManager);
+                    player = Scene::ResolvePossessedPlayerUVE(entityManager);
+                }
             }
-        });
+        }
+    }
+    if (player == Scene::kInvalidEntityUVE) {
+        player = Scene::ResolvePlayCharacterUVE(entityManager);
+    }
     if (player == Scene::kInvalidEntityUVE) {
         return false;
     }
+    Scene::MakePlayerCameraCurrentUVE(entityManager, player);
 
     // The candidates come from the shared spawn query - enabled, valid, world-posed, in stable
     // content order - rather than from a second copy of those rules living here. The tag is left
@@ -550,6 +767,8 @@ bool EditorUVE::StopPlayModeUVE() {
 
     m_playModeSession.reset();
     m_playModeState = EditorPlayModeStateUVE::Edit;
+    static_cast<void>(m_simulationControl->SetEditorPlaySceneNameUVE({}));
+    m_playBootSplashActive = false;
     if (m_activeWorkspace == EditorWorkspaceUVE::Game) {
         m_activeWorkspace = m_workspaceBeforePlayMode;
     }
@@ -1105,7 +1324,8 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
                 return false;
             } else if constexpr (std::is_same_v<LeftType, Scene::CameraComponentUVE>) {
                 return left.fieldOfViewDegrees == right.fieldOfViewDegrees && left.nearPlane == right.nearPlane &&
-                       left.farPlane == right.farPlane;
+                       left.farPlane == right.farPlane && left.projection == right.projection &&
+                       left.orthographicSize == right.orthographicSize && left.current == right.current;
             } else if constexpr (std::is_same_v<LeftType, Scene::MeshComponentUVE>) {
                 return left.meshGuid == right.meshGuid && left.materialGuid == right.materialGuid;
             } else if constexpr (std::is_same_v<LeftType, Scene::LightComponentUVE>) {
@@ -1115,7 +1335,8 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
                 return left.halfExtents == right.halfExtents && left.collisionLayer == right.collisionLayer &&
                        left.collisionMask == right.collisionMask && left.friction == right.friction &&
                        left.restitution == right.restitution && left.density == right.density &&
-                       left.shapeType == right.shapeType && left.radius == right.radius && left.height == right.height;
+                       left.shapeType == right.shapeType && left.radius == right.radius &&
+                       left.height == right.height && left.disabled == right.disabled;
             } else if constexpr (std::is_same_v<LeftType, Scene::Rigid3DComponentUVE>) {
                 return left.mass == right.mass && left.isKinematic == right.isKinematic &&
                        left.velocity == right.velocity && left.angularVelocity == right.angularVelocity &&
@@ -1134,8 +1355,9 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
             } else if constexpr (std::is_same_v<LeftType, Scene::AnimationSequencerComponentUVE>) {
                 return left.HasSameSettingsUVE(right);
             } else if constexpr (std::is_same_v<LeftType, Scene::WorldEnvironment3DComponentUVE>) {
-                return left.skyAssetPath == right.skyAssetPath && left.ambientColor == right.ambientColor &&
-                       left.fogColor == right.fogColor && left.ambientEnergy == right.ambientEnergy &&
+                return left.skyAssetPath == right.skyAssetPath && left.ambientSource == right.ambientSource &&
+                       left.ambientColor == right.ambientColor && left.fogColor == right.fogColor &&
+                       left.ambientEnergy == right.ambientEnergy &&
                        left.exposure == right.exposure && left.fogDensity == right.fogDensity &&
                        left.fogEnabled == right.fogEnabled &&
                        left.postProcessingEnabled == right.postProcessingEnabled;
@@ -1199,8 +1421,17 @@ bool EditorUVE::ApplySceneComponentStateUVE(
     };
 
     switch (kind) {
-        case EditorSceneComponentKindUVE::Camera:
-            return apply.template operator()<Scene::CameraComponentUVE>();
+        case EditorSceneComponentKindUVE::Camera: {
+            const bool applied = apply.template operator()<Scene::CameraComponentUVE>();
+            if (applied && value.has_value()) {
+                Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+                if (entityManager.HasComponentUVE<Scene::CameraComponentUVE>(entity) &&
+                    entityManager.GetComponentUVE<Scene::CameraComponentUVE>(entity).current) {
+                    Scene::MakeCameraCurrentUVE(entityManager, entity);
+                }
+            }
+            return applied;
+        }
         case EditorSceneComponentKindUVE::Mesh:
             return apply.template operator()<Scene::MeshComponentUVE>();
         case EditorSceneComponentKindUVE::Light:
@@ -1853,7 +2084,17 @@ bool EditorUVE::SetTransformSnappingSettingsUVE(const EditorTransformSnappingSet
     if (!IsAuthoringCommandAllowedUVE() || !AreTransformSnappingSettingsValidUVE(settings)) {
         return false;
     }
+    const EditorTransformSnappingSettingsUVE previous = m_transformSnappingSettings;
     m_transformSnappingSettings = settings;
+    m_viewportOverlayState.snapEnabled = settings.enabled;
+    namespace Id = EditorSettingIdUVE;
+    NotifyEditorSettingChangedUVE(Id::kSnapEnabledUVE, previous.enabled, settings.enabled);
+    NotifyEditorSettingChangedUVE(Id::kSnapTranslateStepUVE, static_cast<double>(previous.translateStep),
+                                  static_cast<double>(settings.translateStep));
+    NotifyEditorSettingChangedUVE(Id::kSnapRotateStepDegreesUVE, static_cast<double>(previous.rotateStepDegrees),
+                                  static_cast<double>(settings.rotateStepDegrees));
+    NotifyEditorSettingChangedUVE(Id::kSnapScaleStepUVE, static_cast<double>(previous.scaleStep),
+                                  static_cast<double>(settings.scaleStep));
     return true;
 }
 
@@ -2010,6 +2251,10 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::Character3DObjectDefinitionUVE{},
                                                             Scene::ApplyCharacter3DObjectDefinitionUVE);
             break;
+        case Scene::Objects::SceneObjectKindUVE::Player3D:
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::Player3DObjectDefinitionUVE{},
+                                                            Scene::ApplyPlayer3DObjectDefinitionUVE);
+            break;
         case Scene::Objects::SceneObjectKindUVE::Rigid3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::Rigid3DObjectDefinitionUVE{},
                                                             Scene::ApplyRigid3DObjectDefinitionUVE);
@@ -2112,7 +2357,8 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
                                                             Scene::ApplyDirectionalLight3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::ReflectionProbe3D:
-            entity = createObjectWithComponent(Scene::ReflectionProbe3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::ReflectionProbe3DObjectDefinitionUVE{},
+                                                            Scene::ApplyReflectionProbe3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::Decal3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::Decal3DObjectDefinitionUVE{},
@@ -2123,13 +2369,16 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
                                                             Scene::ApplyFogVolume3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::LODGroup3D:
-            entity = createObjectWithComponent(Scene::LodGroup3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::LodGroup3DObjectDefinitionUVE{},
+                                                            Scene::ApplyLodGroup3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::Occluder3D:
-            entity = createObjectWithComponent(Scene::Occluder3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::Occluder3DObjectDefinitionUVE{},
+                                                            Scene::ApplyOccluder3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::VisibilityRegion3D:
-            entity = createObjectWithComponent(Scene::VisibilityRegion3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::VisibilityRegion3DObjectDefinitionUVE{},
+                                                            Scene::ApplyVisibilityRegion3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::SpawnPoint3D:
             entity = createObjectWithComponent(Scene::SpawnPoint3DComponentUVE{});
@@ -2138,7 +2387,8 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
             entity = createObjectWithComponent(Scene::LevelStreamer3DComponentUVE{});
             break;
         case Scene::Objects::SceneObjectKindUVE::WorldPartition3D:
-            entity = createObjectWithComponent(Scene::WorldPartition3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::WorldPartition3DObjectDefinitionUVE{},
+                                                            Scene::ApplyWorldPartition3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::AnimationGraph:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::AnimationGraphObjectDefinitionUVE{},
@@ -3647,6 +3897,27 @@ Scene::EntityUVE EditorUVE::GetSelectedEntityUVE() const noexcept {
     return m_selectedEntity;
 }
 
+Scene::EntityUVE EditorUVE::GetPreviewCameraUVE() const noexcept {
+    if (m_previewCamera == Scene::kInvalidEntityUVE || m_services == nullptr) {
+        return Scene::kInvalidEntityUVE;
+    }
+    if (!Scene::IsDocumentCameraEntityUVE(m_services->GetEntityManagerUVE(), m_previewCamera)) {
+        return Scene::kInvalidEntityUVE;
+    }
+    return m_previewCamera;
+}
+
+void EditorUVE::SetPreviewCameraUVE(const Scene::EntityUVE entity) {
+    if (m_services == nullptr || !Scene::IsDocumentCameraEntityUVE(m_services->GetEntityManagerUVE(), entity)) {
+        return;
+    }
+    m_previewCamera = entity;
+}
+
+void EditorUVE::ClearPreviewCameraUVE() noexcept {
+    m_previewCamera = Scene::kInvalidEntityUVE;
+}
+
 namespace {
 
 [[nodiscard]] bool IsFiniteVector3UVE(const Math::Vector3UVE& value) noexcept {
@@ -3906,6 +4177,7 @@ std::optional<std::string> EditorUVE::ReadProjectTextFileUVE(const std::filesyst
 
 
 void EditorUVE::SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferences) {
+    const bool previousAdvancedOpen = m_colorPickerPreferences.advancedOpen;
     const auto sanitize = [](std::vector<EditorColorUVE>& colors, const std::size_t cap) {
         std::erase_if(colors, [](const EditorColorUVE& color) {
             return !std::isfinite(color.r) || !std::isfinite(color.g) || !std::isfinite(color.b) ||
@@ -3922,6 +4194,8 @@ void EditorUVE::SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferenc
     sanitize(preferences.saved, kMaxSavedColorsUVE);
     sanitize(preferences.recents, kMaxRecentColorsUVE);
     m_colorPickerPreferences = std::move(preferences);
+    NotifyEditorSettingChangedUVE(EditorSettingIdUVE::kColorPickerAdvancedOpenUVE, previousAdvancedOpen,
+                                  m_colorPickerPreferences.advancedOpen);
 }
 
 void EditorUVE::ShutdownUVE() {
@@ -4278,9 +4552,40 @@ void EditorUVE::LoadSessionSettingsUVE() {
     if (version > kSessionVersion) {
         return;
     }
-    // A settings file written before a setting was renamed still carries the old key. Move each
-    // such value to its new name once, so the loop below reads one name per setting.
-    MigrateRenamedSettingIdsUVE(config);
+    // Aliases marked Deprecated move their legacy values to the replacement ids before the editor
+    // reads the current descriptors; legal values already at the new ids win.
+    static_cast<void>(m_settingsRegistry.MigrateDeprecatedValuesUVE(config));
+
+    // Inspector folds used to be stored as objects (`<id>.<index>.key/.open`). Convert that
+    // legacy shape once to the StringList descriptor's ordered `key`/state records before the
+    // registry reads it; current list entries are leaf strings at `<id>.<index>`.
+    const std::string foldId{EditorSettingIdUVE::kInspectorFoldsUVE};
+    const std::int64_t legacyFoldCount = std::clamp(
+        config.GetIntUVE(foldId + ".count", 0), std::int64_t{0},
+        static_cast<std::int64_t>(kMaxRememberedInspectorFoldsUVE));
+    bool hasLegacyFoldShape = legacyFoldCount > 0 && !config.HasKeyUVE(foldId + ".0");
+    for (std::size_t index = 0U; index < kMaxRememberedInspectorFoldsUVE && !hasLegacyFoldShape; ++index) {
+        const std::string prefix = foldId + "." + std::to_string(index);
+        hasLegacyFoldShape = config.HasKeyUVE(prefix + ".key") || config.HasKeyUVE(prefix + ".open");
+    }
+    if (hasLegacyFoldShape) {
+        Config::SettingStringListUVE encodedFolds;
+        encodedFolds.reserve(static_cast<std::size_t>(legacyFoldCount));
+        for (std::int64_t index = 0; index < legacyFoldCount; ++index) {
+            const std::string prefix = foldId + "." + std::to_string(index) + ".";
+            const std::string key = config.GetStringUVE(prefix + "key", "");
+            if (!key.empty()) {
+                encodedFolds.push_back(std::string{config.GetBoolUVE(prefix + "open", true) ? "1:" : "0:"} + key);
+            }
+        }
+        for (std::size_t index = 0U; index < kMaxRememberedInspectorFoldsUVE; ++index) {
+            const std::string prefix = foldId + "." + std::to_string(index);
+            static_cast<void>(config.RemoveKeyUVE(prefix + ".key"));
+            static_cast<void>(config.RemoveKeyUVE(prefix + ".open"));
+        }
+        static_cast<void>(m_settingsRegistry.SetValueUVE(config, foldId, encodedFolds));
+    }
+
     // Every value read through the registry is legal for its setting - anything missing, mistyped
     // or out of range comes back as that one setting's default - so each binding applies it.
     for (const Config::SettingDescriptorUVE* descriptor : m_settingsRegistry.GetAllUVE()) {
@@ -4294,55 +4599,37 @@ void EditorUVE::LoadSessionSettingsUVE() {
             static_cast<void>(SetEditorSettingUVE(descriptor->id, *value));
         }
     }
-    // The colour picker's palette and recents, stored as hex. An entry that does not parse is
-    // skipped rather than failing the whole list.
-    {
-        ColorPickerPreferencesUVE picker;
-        picker.advancedOpen = m_colorPickerPreferences.advancedOpen;
-        const auto loadList = [&config](const std::string& prefix, std::vector<EditorColorUVE>& out) {
-            const std::int64_t count = std::clamp<std::int64_t>(config.GetIntUVE(prefix + ".count", 0), 0, 64);
-            for (std::int64_t index = 0; index < count; ++index) {
-                if (const std::optional<EditorColorUVE> color =
-                        ParseColorHexUVE(config.GetStringUVE(prefix + "." + std::to_string(index), ""))) {
-                    out.push_back(*color);
-                }
-            }
-        };
-        loadList("editor.colorPicker.saved", picker.saved);
-        loadList("editor.colorPicker.recent", picker.recents);
-        SetColorPickerPreferencesUVE(std::move(picker));
-    }
-    // The viewport's axis hues, restored only if a complete, in-range palette was stored. Anything
-    // missing, out of 0..1, or not finite leaves the state unset, which makes the host re-seed its
-    // own defaults on the next frame - a corrupt or hand-edited settings file therefore costs the
-    // author their colour choice, never a viewport drawing axes in colours nobody picked.
-    if (config.GetBoolUVE("editor.viewport.axisColors.set", false)) {
-        const auto readChannel = [&config](const std::string& key) {
-            // -1 as the fallback is deliberately outside 0..1, so a missing key fails the same
-            // range check a corrupt value does instead of quietly reading as black.
-            return static_cast<float>(config.GetDoubleUVE(key, -1.0));
-        };
-        const auto readColor = [&readChannel](const char* axis) {
-            const std::string prefix = std::string{"editor.viewport.axisColors."} + axis + ".";
-            return ViewportAxisColorUVE{readChannel(prefix + "r"), readChannel(prefix + "g"),
-                                        readChannel(prefix + "b")};
-        };
-        // SetViewportAxisColorsUVE does the validating, and refuses all three together rather than
-        // leaving one axis restored and two defaulted.
-        static_cast<void>(SetViewportAxisColorsUVE(readColor("x"), readColor("y"), readColor("z")));
-    }
-    // Inspector folds: one key and one open flag per entry, bounded like the favourites. An entry
-    // with an empty key is skipped rather than trusted.
-    m_inspectorFoldOpen.clear();
-    const std::int64_t foldCount = std::clamp(config.GetIntUVE("editor.inspector.folds.count", 0), std::int64_t{0},
-                                              static_cast<std::int64_t>(kMaxRememberedInspectorFoldsUVE));
-    for (std::int64_t index = 0; index < foldCount; ++index) {
-        const std::string prefix = "editor.inspector.folds." + std::to_string(index) + ".";
-        const std::string key = config.GetStringUVE(prefix + "key", "");
-        if (!key.empty()) {
-            SetInspectorFoldOpenUVE(key, config.GetBoolUVE(prefix + "open", true));
+    // The host owns the viewport's axis defaults. Adopt a complete stored palette only; otherwise
+    // leave the current state untouched. A new editor starts unset so the host can seed it, while
+    // an already-seeded host palette must not be replaced by missing or invalid stored data.
+    constexpr std::string_view kLegacyAxisPaletteSetKeyUVE = "editor.viewport.axisColors.set";
+    const bool hasLegacyAxisMarker = config.HasKeyUVE(kLegacyAxisPaletteSetKeyUVE);
+    const bool shouldRestoreAxisPalette = hasLegacyAxisMarker
+                                              ? config.GetBoolUVE(kLegacyAxisPaletteSetKeyUVE, false)
+                                              : true;
+    if (shouldRestoreAxisPalette) {
+        const std::optional<Config::SettingValueUVE> x =
+            m_settingsRegistry.GetStoredValueUVE(config, EditorSettingIdUVE::kViewportAxisColorXUVE);
+        const std::optional<Config::SettingValueUVE> y =
+            m_settingsRegistry.GetStoredValueUVE(config, EditorSettingIdUVE::kViewportAxisColorYUVE);
+        const std::optional<Config::SettingValueUVE> z =
+            m_settingsRegistry.GetStoredValueUVE(config, EditorSettingIdUVE::kViewportAxisColorZUVE);
+        if (x && y && z) {
+            const auto toAxisColor = [](const Config::SettingValueUVE& value) {
+                const Config::SettingColorUVE& color = std::get<Config::SettingColorUVE>(value);
+                return ViewportAxisColorUVE{color.r, color.g, color.b};
+            };
+            static_cast<void>(SetViewportAxisColorsUVE(toAxisColor(*x), toAxisColor(*y), toAxisColor(*z)));
         }
+    } else {
+        static_cast<void>(m_settingsRegistry.ClearValueUVE(config, EditorSettingIdUVE::kViewportAxisColorXUVE));
+        static_cast<void>(m_settingsRegistry.ClearValueUVE(config, EditorSettingIdUVE::kViewportAxisColorYUVE));
+        static_cast<void>(m_settingsRegistry.ClearValueUVE(config, EditorSettingIdUVE::kViewportAxisColorZUVE));
     }
+    if (hasLegacyAxisMarker) {
+        static_cast<void>(config.RemoveKeyUVE(kLegacyAxisPaletteSetKeyUVE));
+    }
+
     // Recent "+ Add" items; an id the catalogue no longer has is dropped rather than kept.
     m_contentCreateRecent.clear();
     const std::int64_t recentCount = std::clamp(config.GetIntUVE("editor.content.recent.count", 0), std::int64_t{0},
@@ -4351,17 +4638,6 @@ void EditorUVE::LoadSessionSettingsUVE() {
         const std::string id = config.GetStringUVE("editor.content.recent." + std::to_string(index), "");
         if (FindContentCatalogueItemUVE(id) != nullptr) {
             PushContentCreateRecentUVE(m_contentCreateRecent, id);
-        }
-    }
-    constexpr std::int64_t kMaxPersistedFavoritesUVE = 128;
-    const std::int64_t favoritesCount =
-        std::clamp(config.GetIntUVE("editor.favorites.count", 0), std::int64_t{0}, kMaxPersistedFavoritesUVE);
-    m_favoriteProjectPaths.clear();
-    m_favoriteProjectPaths.reserve(static_cast<std::size_t>(favoritesCount));
-    for (std::int64_t index = 0; index < favoritesCount; ++index) {
-        const std::string stored = config.GetStringUVE("editor.favorites." + std::to_string(index), "");
-        if (!stored.empty()) {
-            m_favoriteProjectPaths.emplace_back(stored);
         }
     }
     // Personal shelves: a name and its items each, bounded like the pins. The team's shelves come
@@ -4390,25 +4666,6 @@ void EditorUVE::LoadSessionSettingsUVE() {
     }
 }
 
-void EditorUVE::MigrateRenamedSettingIdsUVE(Config::IConfigManagerUVE& config) {
-    for (const RenamedSettingIdUVE& renamed : kRenamedSettingIdsUVE) {
-        // A value already stored under the new name wins: the rename fallback is only for files
-        // written before it, never a way for a stale key to override a current one.
-        if (m_settingsRegistry.GetStoredValueUVE(config, renamed.newId)) {
-            continue;
-        }
-        const std::optional<Config::SettingValueUVE> legacy =
-            m_settingsRegistry.GetStoredValueUVE(config, renamed.oldId);
-        if (!legacy) {
-            continue; // nothing stored under the old name either
-        }
-        // The alias descriptor carries the current setting's own type and bounds, so the old value
-        // is read the way the new one validates; a stale or hand-edited value that no longer fits
-        // is refused here and the setting keeps its default.
-        static_cast<void>(m_settingsRegistry.SetValueUVE(config, renamed.newId, *legacy));
-    }
-}
-
 bool EditorUVE::SaveSessionSettingsUVE() {
     if (m_state != EditorStateUVE::Running ||
         !AreTransformSnappingSettingsValidUVE(m_transformSnappingSettings)) {
@@ -4424,48 +4681,27 @@ bool EditorUVE::SaveSessionSettingsUVE() {
             static_cast<void>(m_settingsRegistry.SetValueUVE(config, descriptor->id, *value));
         }
     }
-    const auto saveList = [&config](const std::string& prefix, const std::vector<EditorColorUVE>& colors) {
-        config.SetIntUVE(prefix + ".count", static_cast<std::int64_t>(colors.size()));
-        for (std::size_t index = 0; index < colors.size(); ++index) {
-            config.SetStringUVE(prefix + "." + std::to_string(index), FormatColorHexUVE(colors[index], true));
-        }
-    };
-    saveList("editor.colorPicker.saved", m_colorPickerPreferences.saved);
-    saveList("editor.colorPicker.recent", m_colorPickerPreferences.recents);
-    // The viewport's axis hues. Written only once the host has seeded the real defaults: until
-    // then the stored values are zeroes standing for "not chosen yet", and persisting those would
-    // turn "I never touched the colours" into "I chose black" on the next launch.
-    config.SetBoolUVE("editor.viewport.axisColors.set", m_viewportOverlayState.axisColorsValid);
+    // The axis palette has no editor-owned default. Store all three descriptor values when the
+    // host has seeded or restored a complete palette; absence means "ask the host for its defaults".
     if (m_viewportOverlayState.axisColorsValid) {
-        const std::array<std::pair<const char*, ViewportAxisColorUVE>, 3> axisColors{{
-            {"x", m_viewportOverlayState.axisColorX},
-            {"y", m_viewportOverlayState.axisColorY},
-            {"z", m_viewportOverlayState.axisColorZ},
-        }};
-        for (const auto& [axis, color] : axisColors) {
-            const std::string prefix = std::string{"editor.viewport.axisColors."} + axis + ".";
-            config.SetDoubleUVE(prefix + "r", color.r);
-            config.SetDoubleUVE(prefix + "g", color.g);
-            config.SetDoubleUVE(prefix + "b", color.b);
-        }
+        const auto toSettingColor = [](const ViewportAxisColorUVE color) {
+            return Config::SettingColorUVE{color.r, color.g, color.b};
+        };
+        static_cast<void>(m_settingsRegistry.SetValueUVE(
+            config, EditorSettingIdUVE::kViewportAxisColorXUVE, toSettingColor(m_viewportOverlayState.axisColorX)));
+        static_cast<void>(m_settingsRegistry.SetValueUVE(
+            config, EditorSettingIdUVE::kViewportAxisColorYUVE, toSettingColor(m_viewportOverlayState.axisColorY)));
+        static_cast<void>(m_settingsRegistry.SetValueUVE(
+            config, EditorSettingIdUVE::kViewportAxisColorZUVE, toSettingColor(m_viewportOverlayState.axisColorZ)));
+    } else {
+        static_cast<void>(m_settingsRegistry.ClearValueUVE(config, EditorSettingIdUVE::kViewportAxisColorXUVE));
+        static_cast<void>(m_settingsRegistry.ClearValueUVE(config, EditorSettingIdUVE::kViewportAxisColorYUVE));
+        static_cast<void>(m_settingsRegistry.ClearValueUVE(config, EditorSettingIdUVE::kViewportAxisColorZUVE));
     }
-    config.SetIntUVE("editor.inspector.folds.count", static_cast<std::int64_t>(m_inspectorFoldOpen.size()));
-    std::size_t foldIndex = 0U;
-    for (const auto& [key, open] : m_inspectorFoldOpen) {
-        const std::string prefix = "editor.inspector.folds." + std::to_string(foldIndex++) + ".";
-        config.SetStringUVE(prefix + "key", key);
-        config.SetBoolUVE(prefix + "open", open);
-    }
+    static_cast<void>(config.RemoveKeyUVE("editor.viewport.axisColors.set"));
     config.SetIntUVE("editor.content.recent.count", static_cast<std::int64_t>(m_contentCreateRecent.size()));
     for (std::size_t index = 0U; index < m_contentCreateRecent.size(); ++index) {
         config.SetStringUVE("editor.content.recent." + std::to_string(index), m_contentCreateRecent[index]);
-    }
-    constexpr std::size_t kMaxPersistedFavoritesUVE = 128U;
-    const std::size_t favoritesToPersist = std::min(m_favoriteProjectPaths.size(), kMaxPersistedFavoritesUVE);
-    config.SetIntUVE("editor.favorites.count", static_cast<std::int64_t>(favoritesToPersist));
-    for (std::size_t index = 0U; index < favoritesToPersist; ++index) {
-        config.SetStringUVE("editor.favorites." + std::to_string(index),
-                             m_favoriteProjectPaths[index].generic_string());
     }
     std::vector<ContentShelfUVE> shelves;
     std::ranges::copy_if(m_contentShelves.GetAllUVE(), std::back_inserter(shelves),

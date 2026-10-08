@@ -3,30 +3,26 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
+#include <string_view>
+#include <vector>
 
+#include "uve/component/entity_uve.h"
+#include "uve/math/aabb_uve.h"
 #include "uve/objects/3d/object_3d_common_uve.h"
 
 namespace UVE::Scene {
+
+class IEntityManagerUVE;
 
 enum class Occluder3DObjectModeUVE : std::uint8_t {
     ConservativeBox = 0,
 };
 
 /// An Occluder3D: an authored axis-aligned box (halfExtents around the object's world position)
-/// that hides whatever stands strictly BEHIND it from the current viewer - the classic
-/// conservative occlusion cull, so a concrete wall stops the engine from drawing the courtyard
-/// behind it. No Godot built-in answers this (Godot ships portal/room culling addons only), and
-/// Unreal solves it offline; here the evaluation is per-frame exact for point-granularity
-/// targets, with NO state kept between frames: the verdict is re-derived against the live camera
-/// every visibility build, so a stale verdict that hides content after a camera teleport cannot
-/// exist by construction.
-///
-/// Honest granularity: the occlusion question is answered for the MESH ORIGIN (center-point),
-/// exactly the key the LodGroup3D, WorldPartition3D and VisibilityRegion3D gates already use -
-/// one rule the whole candidate walk keeps. A huge mesh whose bounds peek past the wall belongs
-/// in the future bounds-aware mode; ConservativeBox culls centers only and NEVER invents bounds.
-/// `ConservativeBox` is the only accepted mode today (the sphere/bounds modes land with their own
-/// resolvers, not by widening this one).
+/// that hides whatever stands strictly BEHIND it from the current viewer. Conservative: a
+/// candidate is hidden only when every corner of its world AABB is hidden. A mesh that peeks
+/// around the wall still draws. No state is kept between frames.
 struct Occluder3DComponentUVE final {
     Math::Vector3UVE halfExtents{2.0F, 2.0F, 2.0F};
     Occluder3DObjectModeUVE mode = Occluder3DObjectModeUVE::ConservativeBox;
@@ -35,23 +31,50 @@ struct Occluder3DComponentUVE final {
 
 [[nodiscard]] bool IsOccluder3DObjectComponentValidUVE(const Occluder3DComponentUVE& value) noexcept;
 
-// The whole semantics of one occluder against one candidate point, pure and frame-exact. Rules,
-// each measured in the object tests:
-//   * invalid config, a non-finite pose, or the viewer standing INSIDE the box -> NOT hidden
-//     (you cannot be occluded by the cover you stand in; anything unusable fails open)
-//   * a candidate strictly inside the box -> NOT hidden (a wall never hides what it contains)
-//   * a candidate is hidden only when the open segment viewer->point strictly PASSES THROUGH
-//     the box interior and finishes on the other side; a grazing touch of the surface, or the
-//     box sitting exactly at the candidate, answers NOT hidden (the no-false-culls edge: at any
-//     honest ambiguity, the mesh draws)
-//   * world-axis-aligned box, the same rule WorldPartition3D and VisibilityRegion3D document -
-//     a rotated occluder object does not rotate the cover.
-//
-// Composition (several occluders hiding in front of one mesh) is a plain OR and lives in the
-// renderer's candidate walk, where the camera pose is sourced from the visibility set.
+struct Occluder3DObjectDefinitionUVE final {
+    static constexpr std::string_view defaultName = "Occluder3D";
+    Occluder3DComponentUVE occluder{};
+};
+
+void ApplyOccluder3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                        const Occluder3DObjectDefinitionUVE& value);
+
+// One occluder against one candidate point. Invalid config, a non-finite pose, the viewer or
+// the point inside the box, or a grazing touch: NOT hidden.
 [[nodiscard]] bool ResolveOccluder3DFullyHiddenUVE(const Occluder3DComponentUVE& config,
                                                    const Math::Vector3UVE& occluderWorldPosition,
                                                    const Math::Vector3UVE& viewerWorldPosition,
                                                    const Math::Vector3UVE& pointWorld) noexcept;
+
+// True only when every corner of `bounds` is hidden by this occluder. An unordered or
+// non-finite AABB fails open.
+[[nodiscard]] bool ResolveOccluder3DFullyHidesAabbUVE(const Occluder3DComponentUVE& config,
+                                                      const Math::Vector3UVE& occluderWorldPosition,
+                                                      const Math::Vector3UVE& viewerWorldPosition,
+                                                      const Math::AabbUVE& bounds) noexcept;
+
+struct Occluder3DSnapshotUVE final {
+    Occluder3DComponentUVE config{};
+    Math::Vector3UVE worldPosition{};
+};
+
+void CollectOccluder3DSnapshotsUVE(IEntityManagerUVE& entityManager, std::vector<Occluder3DSnapshotUVE>& out);
+
+[[nodiscard]] bool IsOccluder3DPointDrawHiddenUVE(std::span<const Occluder3DSnapshotUVE> occluders,
+                                                  const Math::Vector3UVE& viewerWorldPosition,
+                                                  const Math::Vector3UVE& pointWorld) noexcept;
+
+[[nodiscard]] bool IsOccluder3DAabbDrawHiddenUVE(std::span<const Occluder3DSnapshotUVE> occluders,
+                                                 const Math::Vector3UVE& viewerWorldPosition,
+                                                 const Math::AabbUVE& bounds) noexcept;
+
+struct Occluder3DGizmoUVE final {
+    Math::Vector3UVE origin{};
+    Math::Vector3UVE halfExtents{2.0F, 2.0F, 2.0F};
+    Math::Vector3UVE color{0.95F, 0.45F, 0.28F};
+    bool enabled = true;
+};
+
+void CollectOccluder3DGizmosUVE(IEntityManagerUVE& entityManager, std::vector<Occluder3DGizmoUVE>& out);
 
 } // namespace UVE::Scene

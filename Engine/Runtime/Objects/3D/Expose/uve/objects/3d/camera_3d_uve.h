@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <optional>
 #include <string_view>
 
 #include "uve/component/camera_component_uve.h"
@@ -35,5 +36,11 @@ struct Camera3DObjectDefinitionUVE final {
 /// Hierarchy/Name) through EnsureObject3DBaselineUVE - this kind is Object3D plus its recipe.
 void ApplyCamera3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                     const Camera3DObjectDefinitionUVE& value);
+
+[[nodiscard]] bool IsDocumentCameraEntityUVE(const IEntityManagerUVE& entityManager, EntityUVE entity);
+
+[[nodiscard]] std::optional<EntityUVE> FindCurrentCameraEntityUVE(IEntityManagerUVE& entityManager);
+
+void MakeCameraCurrentUVE(IEntityManagerUVE& entityManager, EntityUVE entity);
 
 } // namespace UVE::Scene

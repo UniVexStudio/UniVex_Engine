@@ -77,7 +77,9 @@ public:
     // Expected order: ClearUVE, RenderBackgroundUVE, [host scene geometry],
     // RenderGridUVE, RenderOverlayUVE.
     void ClearUVE(int framebufferWidth, int framebufferHeight) const;
-    void RenderBackgroundUVE() const;
+    /// `neutralEditorFallback` is reserved for Main's empty authoring scene. It must not alter
+    /// Entity Editor, Retarget, standalone viewport, or authored WorldEnvironment presentation.
+    void RenderBackgroundUVE(bool neutralEditorFallback = false) const;
     void RenderGridUVE(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight) const;
     void RenderOverlayUVE(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight) const;
 
@@ -129,6 +131,8 @@ public:
     // scene, under the transform gizmo, so a rig inside its mesh is still visible and editable.
     void SetBonesUVE(std::vector<univex::gizmo::BoneOverlayUVE> bones) { bones_ = std::move(bones); }
 
+    void SetCameraFrustumMeshUVE(univex::gizmo::GizmoMesh mesh) { cameraFrustumMesh_ = std::move(mesh); }
+
     // ---- nav gizmo geometry, shared with input handling -------------------
     // The nav gizmo's own camera: the main camera's rotation, no translation.
     [[nodiscard]] static Mat4 NavViewMatrix(const OrbitCamera& camera);
@@ -141,6 +145,7 @@ private:
     void DrawBackground() const;
     void DrawTransformGizmo(const OrbitCamera& camera, int width, int height) const;
     void DrawBones(const OrbitCamera& camera, int width, int height) const;
+    void DrawCameraFrustums(const OrbitCamera& camera, int width, int height) const;
     void DrawNavGizmo(const OrbitCamera& camera, int width, int height) const;
     void Destroy() noexcept;
 
@@ -158,6 +163,7 @@ private:
     GizmoMode gizmoMode_ = GizmoMode::Universal;
     std::optional<Vec3> gizmoPivotOverride_;
     std::vector<univex::gizmo::BoneOverlayUVE> bones_;
+    univex::gizmo::GizmoMesh cameraFrustumMesh_;
 };
 
 } // namespace univex::app

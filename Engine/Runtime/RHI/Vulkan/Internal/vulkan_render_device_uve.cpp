@@ -22,6 +22,9 @@
 
 
 #include "uve/rhi_vulkan/vulkan_render_device_uve.h"
+#include "uve/vulkan/vulkan_composite_alpha_policy_uve.h"
+#include "uve/vulkan/vulkan_present_mode_policy_uve.h"
+#include "uve/vulkan/vulkan_validation_policy_uve.h"
 
 #include <algorithm>
 #include <array>
@@ -63,6 +66,56 @@ constexpr float kBootstrapClearAlphaUVE = 1.0F;
     // struct pointer when VK_USE_64_BIT_PTR_DEFINES == 1 (the default on 64-bit builds) or a
     // plain uint64_t when 0 — and the bridge is ABI-safe either way, since both fit uintptr_t.
     return std::bit_cast<VkSurfaceKHR>(bits); // both forms are exactly pointer-sized/uint64-sized
+}
+
+[[nodiscard]] bool HasInstanceLayerUVE(PFN_vkEnumerateInstanceLayerProperties enumerateLayers,
+                                       const char* requestedName) {
+    if (enumerateLayers == nullptr) {
+        return false;
+    }
+    std::uint32_t count = 0U;
+    if (enumerateLayers(&count, nullptr) != VK_SUCCESS || count == 0U) {
+        return false;
+    }
+    std::vector<VkLayerProperties> properties(count);
+    if (enumerateLayers(&count, properties.data()) != VK_SUCCESS) {
+        return false;
+    }
+    return std::any_of(properties.begin(), properties.begin() + count, [requestedName](const auto& property) {
+        return std::strcmp(property.layerName, requestedName) == 0;
+    });
+}
+
+[[nodiscard]] bool HasInstanceExtensionUVE(PFN_vkEnumerateInstanceExtensionProperties enumerateExtensions,
+                                           const char* requestedName) {
+    if (enumerateExtensions == nullptr) {
+        return false;
+    }
+    std::uint32_t count = 0U;
+    if (enumerateExtensions(nullptr, &count, nullptr) != VK_SUCCESS || count == 0U) {
+        return false;
+    }
+    std::vector<VkExtensionProperties> properties(count);
+    if (enumerateExtensions(nullptr, &count, properties.data()) != VK_SUCCESS) {
+        return false;
+    }
+    return std::any_of(properties.begin(), properties.begin() + count, [requestedName](const auto& property) {
+        return std::strcmp(property.extensionName, requestedName) == 0;
+    });
+}
+
+VKAPI_ATTR VkBool32 VKAPI_CALL VulkanValidationMessageCallbackUVE(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUtilsMessageTypeFlagsEXT,
+    const VkDebugUtilsMessengerCallbackDataEXT* callbackData, void*) {
+    const char* const message = callbackData != nullptr && callbackData->pMessage != nullptr
+                                    ? callbackData->pMessage
+                                    : "(validation layer supplied no message)";
+    if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0U) {
+        UVE_ERROR("Vulkan validation: {}", message);
+    } else {
+        UVE_WARNING("Vulkan validation: {}", message);
+    }
+    return VK_FALSE;
 }
 
 /// M2e: RHI load-op contract → attachment load op. The swapchain's full-frame-clear policy
@@ -145,15 +198,20 @@ struct SamplerSlotRefUVE {
 } // namespace
 
 struct VulkanRenderDeviceUVE::ImplUVE {
-    ImplUVE(Window::IWindowManagerUVE* windowManagerIn, Window::IVulkanWindowSurfaceUVE* bridgeIn)
-        : windowManager(windowManagerIn), bridge(bridgeIn) {}
+    ImplUVE(Window::IWindowManagerUVE* windowManagerIn, Window::IVulkanWindowSurfaceUVE* bridgeIn,
+            bool enableValidationLayersIn)
+        : windowManager(windowManagerIn), bridge(bridgeIn),
+          validationLayersRequestedUVE(enableValidationLayersIn) {}
 
     Window::IWindowManagerUVE* windowManager; // nullable: bridge-direct ("headless") construction
     Window::IVulkanWindowSurfaceUVE* bridge = nullptr;
+    bool validationLayersRequestedUVE = false;
 
     VkFunctionsUVE vk;
 
     VkInstance instance = VK_NULL_HANDLE;
+    VkDebugUtilsMessengerEXT validationMessengerUVE = VK_NULL_HANDLE;
+    PFN_vkDestroyDebugUtilsMessengerEXT destroyValidationMessengerUVE = nullptr;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
     std::uint32_t queueFamilyIndex = 0;
@@ -964,6 +1022,101 @@ bool VulkanRenderDeviceUVE::ImplUVE::CreateSwapchainResourcesUVE() {
         imageCount = capabilities.maxImageCount;
     }
 
+    std::vector<VkPresentModeKHR> availablePresentModes;
+    std::uint32_t presentModeCount = 0U;
+    if (vk.vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, nullptr) ==
+            VK_SUCCESS &&
+        presentModeCount > 0U && presentModeCount <= 256U) {
+        availablePresentModes.resize(presentModeCount);
+        if (vk.vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount,
+                                                         availablePresentModes.data()) != VK_SUCCESS) {
+            availablePresentModes.clear();
+        } else {
+            availablePresentModes.resize(presentModeCount);
+        }
+    }
+    const auto supportsPresentMode = [&availablePresentModes](const VkPresentModeKHR mode) {
+        return std::find(availablePresentModes.begin(), availablePresentModes.end(), mode) !=
+               availablePresentModes.end();
+    };
+    const Platform::VSyncModeUVE requestedVSync = bridge != nullptr
+                                                       ? bridge->GetRequestedVSyncModeUVE()
+                                                       : Platform::VSyncModeUVE::On;
+    const Vulkan::PresentModeAvailabilityUVE presentModeAvailability{
+        supportsPresentMode(VK_PRESENT_MODE_IMMEDIATE_KHR),
+        supportsPresentMode(VK_PRESENT_MODE_FIFO_RELAXED_KHR),
+        supportsPresentMode(VK_PRESENT_MODE_MAILBOX_KHR)};
+    const Vulkan::PresentModeResolutionUVE presentModeResolution =
+        Vulkan::ResolveVulkanPresentModeUVE(requestedVSync, presentModeAvailability);
+    VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    switch (presentModeResolution.mode) {
+    case Vulkan::PresentModePolicyUVE::Immediate:
+        presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+        break;
+    case Vulkan::PresentModePolicyUVE::Fifo:
+        presentMode = VK_PRESENT_MODE_FIFO_KHR;
+        break;
+    case Vulkan::PresentModePolicyUVE::FifoRelaxed:
+        presentMode = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+        break;
+    case Vulkan::PresentModePolicyUVE::Mailbox:
+        presentMode = VK_PRESENT_MODE_MAILBOX_KHR;
+        break;
+    }
+    switch (presentModeResolution.fallback) {
+    case Vulkan::PresentModeFallbackUVE::None:
+    case Vulkan::PresentModeFallbackUVE::OffUsesMailbox:
+        break;
+    case Vulkan::PresentModeFallbackUVE::OffUsesFifo:
+        UVE_WARNING("VulkanRenderDeviceUVE: immediate/mailbox present mode is unavailable; falling back to FIFO");
+        break;
+    case Vulkan::PresentModeFallbackUVE::AdaptiveUsesFifo:
+        UVE_WARNING("VulkanRenderDeviceUVE: adaptive present mode is unavailable; falling back to FIFO");
+        break;
+    case Vulkan::PresentModeFallbackUVE::MailboxUsesFifo:
+        UVE_WARNING("VulkanRenderDeviceUVE: mailbox present mode is unavailable; falling back to FIFO");
+        break;
+    case Vulkan::PresentModeFallbackUVE::InvalidUsesFifo:
+        UVE_WARNING("VulkanRenderDeviceUVE: invalid V-sync mode; falling back to FIFO");
+        break;
+    }
+    if (!supportsPresentMode(presentMode)) {
+        UVE_WARNING("VulkanRenderDeviceUVE: FIFO present mode is unavailable; swapchain creation may fail");
+        presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    }
+
+    const bool transparencyRequested = bridge != nullptr && bridge->IsTransparentFramebufferRequestedUVE();
+    const Vulkan::CompositeAlphaAvailabilityUVE compositeAlphaAvailability{
+        (capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) != 0U,
+        (capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) != 0U,
+        (capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR) != 0U,
+        (capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) != 0U};
+    const Vulkan::CompositeAlphaResolutionUVE compositeAlphaResolution =
+        Vulkan::ResolveVulkanCompositeAlphaUVE(transparencyRequested, compositeAlphaAvailability);
+    if (compositeAlphaResolution.fallback == Vulkan::CompositeAlphaFallbackUVE::TransparencyUnavailable) {
+        UVE_WARNING(
+            "VulkanRenderDeviceUVE: surface has no transparent composite-alpha mode; using opaque if supported");
+    }
+    if (!compositeAlphaResolution.mode.has_value()) {
+        return LogBailUVE("surface advertises no supported composite-alpha mode");
+    }
+
+    VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    switch (*compositeAlphaResolution.mode) {
+    case Vulkan::CompositeAlphaModeUVE::Opaque:
+        compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        break;
+    case Vulkan::CompositeAlphaModeUVE::PreMultiplied:
+        compositeAlpha = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
+        break;
+    case Vulkan::CompositeAlphaModeUVE::PostMultiplied:
+        compositeAlpha = VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR;
+        break;
+    case Vulkan::CompositeAlphaModeUVE::Inherit:
+        compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+        break;
+    }
+
     VkSwapchainCreateInfoKHR swapchainInfo{};
     swapchainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     swapchainInfo.surface = surface;
@@ -975,8 +1128,8 @@ bool VulkanRenderDeviceUVE::ImplUVE::CreateSwapchainResourcesUVE() {
     swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     swapchainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE; // one queue family total (M1)
     swapchainInfo.preTransform = capabilities.currentTransform;
-    swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    swapchainInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR; // guaranteed present; FIFO == vsync
+    swapchainInfo.compositeAlpha = compositeAlpha;
+    swapchainInfo.presentMode = presentMode;
     swapchainInfo.clipped = VK_TRUE;
     swapchainInfo.oldSwapchain = VK_NULL_HANDLE;
 
@@ -1120,6 +1273,38 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
                           "Vulkan WSI support is unavailable on this platform");
     }
 
+    Vulkan::ValidationLayerPlanUVE validationPlan;
+    if (validationLayersRequestedUVE) {
+        const auto enumerateLayers = reinterpret_cast<PFN_vkEnumerateInstanceLayerProperties>(
+            vk.ResolveVkProcUVE(VK_NULL_HANDLE, "vkEnumerateInstanceLayerProperties"));
+        const bool validationLayerAvailable = HasInstanceLayerUVE(enumerateLayers, "VK_LAYER_KHRONOS_validation");
+        bool debugUtilsAvailable = false;
+        if (validationLayerAvailable) {
+            const auto enumerateExtensions = reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(
+                vk.ResolveVkProcUVE(VK_NULL_HANDLE, "vkEnumerateInstanceExtensionProperties"));
+            debugUtilsAvailable = HasInstanceExtensionUVE(enumerateExtensions, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        }
+        validationPlan = Vulkan::ResolveValidationLayerPlanUVE(
+            true, validationLayerAvailable, debugUtilsAvailable);
+        if (validationPlan.validationLayerUnavailableUVE) {
+            UVE_WARNING("Vulkan validation was requested but VK_LAYER_KHRONOS_validation is not installed; "
+                        "continuing without validation");
+        } else if (validationPlan.debugUtilsUnavailableUVE) {
+            UVE_WARNING("VK_LAYER_KHRONOS_validation is available but VK_EXT_debug_utils is not; "
+                        "validation runs without engine-log callbacks");
+        }
+    }
+    if (validationPlan.enableDebugUtilsUVE) {
+        const bool alreadyEnabled = std::any_of(
+            instanceExtensions.begin(), instanceExtensions.end(), [](const char* extensionName) {
+                return extensionName != nullptr &&
+                       std::strcmp(extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0;
+            });
+        if (!alreadyEnabled) {
+            instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        }
+    }
+
     VkApplicationInfo applicationInfo{};
     applicationInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     applicationInfo.pApplicationName = "UniVex Engine";
@@ -1128,18 +1313,50 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     applicationInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
     applicationInfo.apiVersion = apiVersion;
 
+    VkDebugUtilsMessengerCreateInfoEXT validationMessengerInfo{};
+    validationMessengerInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    validationMessengerInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    validationMessengerInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                                          VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                                          VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    validationMessengerInfo.pfnUserCallback = &VulkanValidationMessageCallbackUVE;
+
+    const char* const validationLayerName = "VK_LAYER_KHRONOS_validation";
     VkInstanceCreateInfo instanceInfo{};
     instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instanceInfo.pApplicationInfo = &applicationInfo;
     instanceInfo.enabledExtensionCount = static_cast<std::uint32_t>(instanceExtensions.size());
     instanceInfo.ppEnabledExtensionNames = instanceExtensions.data();
-    // No validation layer is ever requested by engine code: correctness tooling belongs to the
-    // developer's environment (VK_INSTANCE_LAYERS), never to a shipped engine's defaults.
+    if (validationPlan.enableKhronosValidationUVE) {
+        instanceInfo.enabledLayerCount = 1U;
+        instanceInfo.ppEnabledLayerNames = &validationLayerName;
+    }
+    if (validationPlan.enableDebugUtilsUVE) {
+        // The pNext messenger receives diagnostics emitted during vkCreateInstance itself.
+        instanceInfo.pNext = &validationMessengerInfo;
+    }
     if (vk.vkCreateInstance(&instanceInfo, nullptr, &instance) != VK_SUCCESS || instance == VK_NULL_HANDLE) {
         return LogBailUVE("vkCreateInstance failed (is an ICD/driver installed?)");
     }
     if (!vk.LoadInstanceUVE(instance)) {
         return LogBailUVE("Vulkan instance-level entry points failed to resolve");
+    }
+    if (validationPlan.enableDebugUtilsUVE) {
+        const auto createMessenger = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+            vk.ResolveVkProcUVE(instance, "vkCreateDebugUtilsMessengerEXT"));
+        destroyValidationMessengerUVE = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+            vk.ResolveVkProcUVE(instance, "vkDestroyDebugUtilsMessengerEXT"));
+        if (createMessenger == nullptr || destroyValidationMessengerUVE == nullptr) {
+            destroyValidationMessengerUVE = nullptr;
+            UVE_WARNING("VK_EXT_debug_utils was enabled but its messenger entry points are unavailable; "
+                        "validation will run without engine-log callbacks");
+        } else if (createMessenger(instance, &validationMessengerInfo, nullptr,
+                                   &validationMessengerUVE) != VK_SUCCESS) {
+            destroyValidationMessengerUVE = nullptr;
+            validationMessengerUVE = VK_NULL_HANDLE;
+            UVE_WARNING("Vulkan validation debug-messenger creation failed; validation remains enabled");
+        }
     }
 
     // --- window surface --------------------------------------------------------------------
@@ -1763,8 +1980,9 @@ void VulkanRenderDeviceUVE::ImplUVE::DestroyAllResourcesUVE() {
 }
 
 VulkanRenderDeviceUVE::VulkanRenderDeviceUVE(Window::IWindowManagerUVE* windowManager,
-                                             Window::IVulkanWindowSurfaceUVE* bridge)
-    : m_impl(std::make_unique<ImplUVE>(windowManager, bridge)) {}
+                                             Window::IVulkanWindowSurfaceUVE* bridge,
+                                             const bool enableValidationLayersUVE)
+    : m_impl(std::make_unique<ImplUVE>(windowManager, bridge, enableValidationLayersUVE)) {}
 
 VulkanRenderDeviceUVE::~VulkanRenderDeviceUVE() {
     if (m_impl->device != VK_NULL_HANDLE) {
@@ -1798,15 +2016,19 @@ VulkanRenderDeviceUVE::~VulkanRenderDeviceUVE() {
         // (see DestroyVulkanWindowSurfaceUVE's documented bridge no-op contract).
         m_impl->vk.vkDestroySurfaceKHR(m_impl->instance, m_impl->surface, nullptr);
     }
+    if (m_impl->validationMessengerUVE != VK_NULL_HANDLE &&
+        m_impl->destroyValidationMessengerUVE != nullptr && m_impl->instance != VK_NULL_HANDLE) {
+        m_impl->destroyValidationMessengerUVE(m_impl->instance, m_impl->validationMessengerUVE, nullptr);
+    }
     if (m_impl->instance != VK_NULL_HANDLE) {
         m_impl->vk.vkDestroyInstance(m_impl->instance, nullptr);
     }
 }
 
 std::unique_ptr<VulkanRenderDeviceUVE> VulkanRenderDeviceUVE::CreateUVE(
-    Window::IWindowManagerUVE& windowManager) {
+    Window::IWindowManagerUVE& windowManager, const bool enableValidationLayersUVE) {
     auto device = std::unique_ptr<VulkanRenderDeviceUVE>(
-        new VulkanRenderDeviceUVE(&windowManager, nullptr));
+        new VulkanRenderDeviceUVE(&windowManager, nullptr, enableValidationLayersUVE));
     if (!device->m_impl->InitializeUVE()) {
         // Partially-constructed state is torn down by the destructor — every bail in
         // InitializeUVE() has already logged its own reason.
@@ -1852,9 +2074,9 @@ bool VulkanRenderDeviceUVE::CreateFallbackTextureUVE() {
 }
 
 std::unique_ptr<VulkanRenderDeviceUVE> VulkanRenderDeviceUVE::CreateFromBridgeUVE(
-    Window::IVulkanWindowSurfaceUVE& surfaceBridge) {
+    Window::IVulkanWindowSurfaceUVE& surfaceBridge, const bool enableValidationLayersUVE) {
     auto device = std::unique_ptr<VulkanRenderDeviceUVE>(
-        new VulkanRenderDeviceUVE(nullptr, &surfaceBridge));
+        new VulkanRenderDeviceUVE(nullptr, &surfaceBridge, enableValidationLayersUVE));
     if (!device->m_impl->InitializeUVE()) {
         return nullptr; // partially-initialized state torn down by the destructor
     }
@@ -1864,9 +2086,10 @@ std::unique_ptr<VulkanRenderDeviceUVE> VulkanRenderDeviceUVE::CreateFromBridgeUV
     return device;
 }
 
-std::unique_ptr<VulkanRenderDeviceUVE> VulkanRenderDeviceUVE::CreateHeadlessUVE() {
+std::unique_ptr<VulkanRenderDeviceUVE> VulkanRenderDeviceUVE::CreateHeadlessUVE(
+    const bool enableValidationLayersUVE) {
     auto device = std::unique_ptr<VulkanRenderDeviceUVE>(
-        new VulkanRenderDeviceUVE(nullptr, nullptr));
+        new VulkanRenderDeviceUVE(nullptr, nullptr, enableValidationLayersUVE));
     device->m_impl->headless = true; // InitializeUVE() branches on this at the WSI edges
     if (!device->m_impl->InitializeUVE()) {
         return nullptr; // partially-initialized state torn down by the destructor
@@ -2523,7 +2746,8 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     }
     VkImageMemoryBarrier toFinal{};
     toFinal.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toFinal.srcAccessMask = uploadBytes != 0U ? VK_ACCESS_TRANSFER_WRITE_BIT : 0U;
+    toFinal.srcAccessMask = uploadBytes != 0U ? static_cast<VkAccessFlags>(VK_ACCESS_TRANSFER_WRITE_BIT)
+                                               : VkAccessFlags{0U};
     toFinal.dstAccessMask = (finalLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
                                 ? VK_ACCESS_SHADER_READ_BIT
                                 : (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |

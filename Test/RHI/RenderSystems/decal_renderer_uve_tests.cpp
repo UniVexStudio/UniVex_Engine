@@ -24,6 +24,9 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/occluder_3d_uve.h"
+#include "uve/objects/3d/visibility_region_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/render_systems/decal_draw_command_uve.h"
 #include "uve/render_systems/decal_draw_data_uve.h"
@@ -232,6 +235,43 @@ protected:
     }
 };
 
+TEST_F(DecalRendererUVETest, BuildDrawListUVE_PartitionHiddenDecalIsNotConsidered) {
+    const WallAndDecalUVE scene = MakeWallAndDecalUVE();
+    const Scene::EntityUVE partition = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, partition, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::WorldPartition3DComponentUVE>(partition);
+    entityManager.AddComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        scene.decal, Scene::WorldPartition3DMembershipComponentUVE{partition, false});
+    BuildFrameUVE(Math::Vector3UVE{});
+    EXPECT_EQ(drawList.decalsConsidered, 0U);
+    EXPECT_TRUE(drawList.draws.empty());
+}
+
+TEST_F(DecalRendererUVETest, BuildDrawListUVE_OccludedDecalIsNotDrawn) {
+    static_cast<void>(MakeWallAndDecalUVE());
+    const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE wallTransform;
+    wallTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -2.0F};
+    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
+    Scene::Occluder3DComponentUVE wallOccluder;
+    wallOccluder.halfExtents = Math::Vector3UVE{4.0F, 4.0F, 1.0F};
+    entityManager.AddComponentUVE<Scene::Occluder3DComponentUVE>(wall, wallOccluder);
+    BuildFrameUVE(Math::Vector3UVE{});
+    EXPECT_TRUE(drawList.draws.empty());
+}
+
+TEST_F(DecalRendererUVETest, BuildDrawListUVE_RegionHiddenDecalIsNotConsidered) {
+    const WallAndDecalUVE scene = MakeWallAndDecalUVE();
+    const Scene::EntityUVE region = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, region, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DComponentUVE>(region);
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        scene.decal, Scene::VisibilityRegion3DMembershipComponentUVE{region, false});
+    BuildFrameUVE(Math::Vector3UVE{});
+    EXPECT_EQ(drawList.decalsConsidered, 0U);
+    EXPECT_TRUE(drawList.draws.empty());
+}
+
 TEST_F(DecalRendererUVETest, BuildDrawListUVE_ADecalOnAFlatWallProducesAPatchWithUnitCoordinates) {
     const WallAndDecalUVE scene = MakeWallAndDecalUVE();
     BuildFrameUVE(Math::Vector3UVE{});
@@ -396,6 +436,38 @@ TEST_F(DecalRendererUVETest, BuildDrawListUVE_DistanceFadeRemovesADecalTheCamera
     EXPECT_EQ(drawList.decalsFadedOut, 1U);
     EXPECT_EQ(drawList.draws.size(), 1U) << "the unfaded decal beside it still paints";
     EXPECT_EQ(drawList.receiversTested, 1U);
+}
+
+TEST_F(DecalRendererUVETest, BuildDrawListUVE_FrustumCullingFreezeDrawsAnOffScreenDecal) {
+    // The debug freeze reaches the decal pass too. A decal is painted by the same main colour view
+    // whose meshes stopped being frustum-rejected, so leaving it culled would make the frozen frame
+    // disagree with itself about what is on screen. Occlusion, layer, distance-fade and receiver
+    // verdicts are separate systems and keep running in both modes.
+    meshHalfExtents = Math::Vector3UVE{2.0F, 2.0F, 0.05F};
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("decal_renderer_tests_freeze_wall.uvmodel");
+    const Asset::AssetGuidUVE wallMaterialGuid = assetDatabase.RegisterUVE("decal_renderer_tests_freeze_wall.uvmat");
+    const Asset::AssetGuidUVE decalMaterialGuid = assetDatabase.RegisterUVE(kDecalMaterialPathUVE);
+    RegisterImmediateLoadersUVE();
+    // Both wall and decal sit at x=200 - far outside the origin, -Z, 90-degree test frustum - but
+    // the decal still overlaps its own wall, so it has a receiver to paint onto once the frustum
+    // stops rejecting it. The wall is a receiver even off-screen: BuildVisibilitySetUVE never
+    // frustum-tests candidates, so receivers are the whole placed set, not just the visible part.
+    const Math::Vector3UVE offScreen{200.0F, 0.0F, 0.0F};
+    MakeReceiverUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F} + offScreen, meshGuid, wallMaterialGuid);
+    MakeDecalUVE(Math::Vector3UVE{0.0F, 0.0F, -4.8F} + offScreen, Math::QuaternionUVE{}, MakeScorchDecalUVE());
+    WaitUntilAssetsReadyUVE({wallMaterialGuid, decalMaterialGuid}, {meshGuid});
+
+    BuildFrameUVE(Math::Vector3UVE{});
+    EXPECT_EQ(drawList.decalsConsidered, 1U);
+    EXPECT_EQ(drawList.decalsOutsideView, 1U) << "culling is on by default";
+    EXPECT_EQ(drawList.draws.size(), 0U);
+
+    // Set on the shared visibility set, exactly as the renderer sets it per cull; ClearUVE leaves it
+    // alone, so the next BuildFrameUVE keeps it.
+    visibilitySet.frustumTestsDisabled = true;
+    BuildFrameUVE(Math::Vector3UVE{});
+    EXPECT_EQ(drawList.decalsOutsideView, 0U) << "the freeze must stop rejecting the off-screen decal";
+    EXPECT_EQ(drawList.draws.size(), 1U) << "and it still paints onto its own off-screen wall";
 }
 
 TEST_F(DecalRendererUVETest, BuildDrawListUVE_AReceiverOnALayerTheDecalDoesNotProjectOntoIsSkipped) {

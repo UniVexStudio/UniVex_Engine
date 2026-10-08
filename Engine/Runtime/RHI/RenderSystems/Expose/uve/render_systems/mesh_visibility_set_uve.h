@@ -117,6 +117,20 @@ struct MeshVisibilityCandidateUVE final {
     /// in hand, and some of what a pass needs to decide - the render layers a decal projects onto,
     /// for one - lives on another component of that entity rather than on the placement.
     Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+    /// RenderInstance3D layers, or layer 1 when the entity has no render instance. The view mask
+    /// is tested against this in the build, so an off-layer mesh never becomes a candidate.
+    std::uint32_t renderLayers = 1U;
+    /// Added to frustum sort depth in the cull, in world units. Positive is further back.
+    float sortingOffset = 0.0F;
+    /// When false, sort depth is the object's origin rather than the centre of its bounds.
+    bool sortingUseAabbCenter = true;
+    /// SurfaceInstance3D shadow mode. No surface, and On / DoubleSided, both cast and draw.
+    bool castsShadow = true;
+    bool drawsInView = true;
+    /// 1 fully solid, 0 invisible. SurfaceInstance3D transparency inverted; 1 when there is no surface.
+    float opacity = 1.0F;
+    /// Second colour pass with materialOverlayPath. Never writes the shadow maps.
+    bool overlay = false;
 };
 
 /// This frame's renderable set, built once and then culled against as many frusta as the frame
@@ -197,6 +211,17 @@ struct MeshVisibilitySetUVE final {
     /// behind a wall" says nothing about streaming or room design.
     std::size_t occlusionCulledEntities = 0U;
 
+    /// Entities skipped because a SurfaceInstance3D visibility range put the camera too near or
+    /// too far. Separate from LodGroup3D's distanceCulledEntities: one is a per-object draw
+    /// distance, the other is a mesh-swap chain, and a scene that is mostly the first wants its
+    /// SurfaceInstance ranges looked at, not its LOD groups.
+    std::size_t rangeCulledEntities = 0U;
+
+    /// Entities skipped because their RenderInstance3D layers do not overlap this view's mask.
+    /// Separate from hiddenEntities: one is the author switching the object off, the other is the
+    /// view not looking at that layer.
+    std::size_t layerCulledEntities = 0U;
+
     std::size_t invalidAssetReferences = 0U;
     std::size_t pendingAssetLoads = 0U;
     std::size_t failedAssetLoads = 0U;
@@ -223,6 +248,28 @@ struct MeshVisibilitySetUVE final {
     /// Left at the origin it simply means distances are measured from there - LOD groups are the
     /// only consumer, and a caller that has none is unaffected.
     Math::Vector3UVE cameraWorldPosition{};
+
+    /// Which RenderInstance3D layers this view draws. Set by the caller before the build, like the
+    /// camera position. Default is every layer, so a caller that has never heard of layers sees
+    /// every mesh - including every existing test.
+    std::uint32_t viewLayerMask = 0xFFFFFFFFU;
+
+    /// When true, this cull is a shadow cascade: keep casters (including ShadowsOnly) and drop
+    /// Off. Default false is the colour view: ShadowsOnly is omitted, Off still draws. Not cleared
+    /// with the candidates - the caller sets it before each cull, like viewLayerMask.
+    bool shadowPass = false;
+
+    /// When true, the cull skips frustum rejection entirely: every candidate this set holds is
+    /// queued, wherever the frustum points. This is the renderer's frustum-culling debug freeze
+    /// (CullingSettingsUVE), and it is a PER-CULL flag for the same reason `shadowPass` is - one
+    /// frame culls this set four times, and only the caller knows which of those views is frozen.
+    /// Shadow cascades leave it false so a frozen colour view does not also multiply shadow work.
+    ///
+    /// What it does NOT disable: `drawsInView`/`castsShadow` (author visibility, render layers,
+    /// partition/region/LOD/range/occlusion verdicts already resolved during the build) and the
+    /// sort-depth derivation, which still measures against this frustum's near plane so queue order
+    /// stays meaningful. Set before each cull, like shadowPass; not cleared with the candidates.
+    bool frustumTestsDisabled = false;
 
     /// Monotonic frame stamp, incremented by each build, used to tell touched entries from stale
     /// ones without a second pass to reset flags.

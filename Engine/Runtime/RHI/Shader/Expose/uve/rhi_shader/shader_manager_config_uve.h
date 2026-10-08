@@ -15,6 +15,13 @@ struct ShaderManagerConfigUVE {
     /// is appended automatically — see Detail's shader_binary_cache_uve.h).
     std::filesystem::path cachePath = "shader_cache/";
 
+    /// Run source preprocessing and GPU compile/link in the Create* call instead of queuing
+    /// preprocessing work to the thread pool and completing GPU work while UpdateUVE() drains it.
+    /// Call the creation APIs on the render thread in this mode, as required by IRenderDeviceUVE.
+    /// Synchronous mode is useful for deterministic tools/tests but may block the caller; it does
+    /// not introduce ahead-of-time compilation or placeholder programs.
+    bool compileSynchronouslyUVE = false;
+
     /// Whether ShaderManagerUVE::UpdateUVE() polls hot-reload-tracked programs' dependency
     /// closures for on-disk changes at all.
     bool hotReloadEnabledUVE = true;

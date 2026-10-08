@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
@@ -66,6 +67,27 @@ struct LightDataUVE {
     /// Directional only: how cascades share the shadow distance, 0 evenly .. 1 packed near the
     /// camera; negative keeps the renderer's own setting.
     float shadowSplitBlend = -1.0F;
+    /// Directional only: width, in metres, of the fade-to-lit band at the last cascade.
+    float shadowDistanceFadeRange = 0.0F;
+
+    /// Render layers this light illuminates. Default every layer, matching an unauthored emitter.
+    std::uint32_t cullMask = 0xFFFFFFFFU;
+    /// Scales the specular term. LightComponent slots stay at 1 so their look does not change.
+    float specular = 1.0F;
+    /// Shader-ready depth bias; negative inherits the renderer's configured default.
+    float shadowBias = -1.0F;
+    /// Angle-aware normal-bias multiplier; negative inherits the renderer's configured default.
+    float shadowNormalBias = -1.0F;
+    float shadowOpacity = 1.0F;
+    /// PCF kernel radius when >= 0; negative keeps the renderer's own setting.
+    float shadowBlur = -1.0F;
+    /// Scales this light's contribution to volumetric fog / sun scatter.
+    float volumetricFogEnergy = 1.0F;
+
+    bool distanceFadeEnabled = false;
+    float distanceFadeBegin = 40.0F;
+    float distanceFadeShadow = 50.0F;
+    float distanceFadeLength = 10.0F;
 };
 
 /// A fixed-size list of this frame's active lights — see kMaxLightsUVE. Trailing unused slots

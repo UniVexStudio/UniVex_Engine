@@ -35,7 +35,10 @@ void BuildRenderBatchesUVE(const std::span<const RenderItemUVE> items,
         // lower batch count.
         const bool extendsOpenBatch = !outBatches.batches.empty() &&
                                       outBatches.batches.back().meshGuid == meshGuid &&
-                                      outBatches.batches.back().materialGuid == materialGuid;
+                                      outBatches.batches.back().materialGuid == materialGuid &&
+                                      items[outBatches.batches.back().firstItem].renderLayers == item.renderLayers &&
+                                      items[outBatches.batches.back().firstItem].opacity == item.opacity &&
+                                      items[outBatches.batches.back().firstItem].overlay == item.overlay;
         if (extendsOpenBatch) {
             ++outBatches.batches.back().itemCount;
         } else {

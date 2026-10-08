@@ -9,6 +9,8 @@
 
 #include "uve/asset/uve_file_envelope_uve.h"
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/math/vector2_uve.h"
+#include "uve/math/vector3_uve.h"
 
 namespace UVE::Asset {
 
@@ -20,6 +22,14 @@ namespace {
 
 [[nodiscard]] Math::Vector3UVE JsonToVector3UVE(const nlohmann::json& value) {
     return Math::Vector3UVE{value.at("x").get<float>(), value.at("y").get<float>(), value.at("z").get<float>()};
+}
+
+[[nodiscard]] nlohmann::json Vector2ToJsonUVE(const Math::Vector2UVE& value) {
+    return nlohmann::json{{"x", value.x}, {"y", value.y}};
+}
+
+[[nodiscard]] Math::Vector2UVE JsonToVector2UVE(const nlohmann::json& value) {
+    return Math::Vector2UVE{value.at("x").get<float>(), value.at("y").get<float>()};
 }
 
 [[nodiscard]] bool IsFiniteUnitIntervalUVE(const float value) noexcept {
@@ -38,7 +48,34 @@ bool IsMaterialAssetValidUVE(const MaterialAssetUVE& material) noexcept {
            IsFiniteUnitIntervalUVE(material.albedoColor.y) &&
            IsFiniteUnitIntervalUVE(material.albedoColor.z) &&
            IsFiniteUnitIntervalUVE(material.metallic) && IsFiniteUnitIntervalUVE(material.roughness) &&
-           IsFiniteNonNegativeVectorUVE(material.emissiveColor);
+           IsFiniteNonNegativeVectorUVE(material.emissiveColor) &&
+           material.billboardMode <= MaterialBillboardModeUVE::Y &&
+           std::isfinite(material.emissiveEnergy) && material.emissiveEnergy >= 0.0F &&
+           std::isfinite(material.normalScale) && material.normalScale >= 0.0F &&
+           IsFiniteUnitIntervalUVE(material.occlusionStrength) &&
+           std::isfinite(material.uvScale.x) && std::isfinite(material.uvScale.y) &&
+           std::isfinite(material.uvOffset.x) && std::isfinite(material.uvOffset.y) &&
+           IsFiniteUnitIntervalUVE(material.alphaCutoff);
+}
+
+bool TryMakeMaterialBillboardRotationUVE(const MaterialBillboardModeUVE mode,
+                                         const Math::Vector3UVE& objectPosition,
+                                         const Math::Vector3UVE& cameraPosition,
+                                         Math::QuaternionUVE& outRotation) noexcept {
+    if (mode == MaterialBillboardModeUVE::Disabled || mode > MaterialBillboardModeUVE::Y) {
+        return false;
+    }
+    if (!Math::IsFiniteUVE(objectPosition) || !Math::IsFiniteUVE(cameraPosition)) {
+        return false;
+    }
+    Math::Vector3UVE toCamera = cameraPosition - objectPosition;
+    if (mode == MaterialBillboardModeUVE::Y) {
+        toCamera.y = 0.0F;
+    }
+    if (!Math::IsFiniteUVE(toCamera) || Math::LengthSquaredUVE(toCamera) <= 1.0e-12F) {
+        return false;
+    }
+    return Math::TryMakeLookAtUVE(toCamera, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, outRotation);
 }
 
 bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& outMaterial) {
@@ -75,6 +112,38 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
         material.vertexShader = AssetGuidUVE{payload.at("vertexShader").get<std::uint64_t>()};
         material.fragmentShader = AssetGuidUVE{payload.at("fragmentShader").get<std::uint64_t>()};
         material.isTransparent = payload.at("isTransparent").get<bool>();
+        if (payload.contains("billboardMode")) {
+            material.billboardMode =
+                static_cast<MaterialBillboardModeUVE>(payload.at("billboardMode").get<std::uint8_t>());
+        }
+        if (payload.contains("metallicRoughnessTexture")) {
+            material.metallicRoughnessTexture =
+                AssetGuidUVE{payload.at("metallicRoughnessTexture").get<std::uint64_t>()};
+        }
+        if (payload.contains("emissiveTexture")) {
+            material.emissiveTexture = AssetGuidUVE{payload.at("emissiveTexture").get<std::uint64_t>()};
+        }
+        if (payload.contains("emissiveEnergy")) {
+            material.emissiveEnergy = payload.at("emissiveEnergy").get<float>();
+        }
+        if (payload.contains("normalScale")) {
+            material.normalScale = payload.at("normalScale").get<float>();
+        }
+        if (payload.contains("occlusionStrength")) {
+            material.occlusionStrength = payload.at("occlusionStrength").get<float>();
+        }
+        if (payload.contains("uvScale")) {
+            material.uvScale = JsonToVector2UVE(payload.at("uvScale"));
+        }
+        if (payload.contains("uvOffset")) {
+            material.uvOffset = JsonToVector2UVE(payload.at("uvOffset"));
+        }
+        if (payload.contains("unshaded")) {
+            material.unshaded = payload.at("unshaded").get<bool>();
+        }
+        if (payload.contains("alphaCutoff")) {
+            material.alphaCutoff = payload.at("alphaCutoff").get<float>();
+        }
     } catch (const nlohmann::json::exception& fieldError) {
         UVE_ERROR("MaterialAssetUVE: \"{}\" is missing an expected field: {}", path.string(), fieldError.what());
         return false;
@@ -104,6 +173,16 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     payload["vertexShader"] = material.vertexShader.value;
     payload["fragmentShader"] = material.fragmentShader.value;
     payload["isTransparent"] = material.isTransparent;
+    payload["billboardMode"] = static_cast<std::uint8_t>(material.billboardMode);
+    payload["metallicRoughnessTexture"] = material.metallicRoughnessTexture.value;
+    payload["emissiveTexture"] = material.emissiveTexture.value;
+    payload["emissiveEnergy"] = material.emissiveEnergy;
+    payload["normalScale"] = material.normalScale;
+    payload["occlusionStrength"] = material.occlusionStrength;
+    payload["uvScale"] = Vector2ToJsonUVE(material.uvScale);
+    payload["uvOffset"] = Vector2ToJsonUVE(material.uvOffset);
+    payload["unshaded"] = material.unshaded;
+    payload["alphaCutoff"] = material.alphaCutoff;
 
     const std::string payloadText = payload.dump();
     const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());

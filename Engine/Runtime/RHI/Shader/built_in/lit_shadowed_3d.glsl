@@ -89,10 +89,17 @@ struct LightUVE {
     float intensity;
     float range;
     float spotAngleDegrees;
+    int cullMask;
+    float specular;
 };
 
 uniform LightUVE uLights[4];
 uniform vec3 uAmbientColor;
+uniform vec3 uSkyAmbient;
+uniform vec3 uGroundAmbient;
+uniform int uAmbientSource; // 0=None, 1=FlatColor, 2=Sky, 3=EnvironmentMap
+uniform sampler2D uAmbientEnvironmentMap;
+uniform int uAmbientEnvironmentMapEnabled;
 uniform vec3 uViewPosition;
 uniform vec3 uAlbedoColor;
 uniform float uMetallic;
@@ -101,6 +108,15 @@ uniform vec3 uEmissiveColor;
 uniform sampler2D uAlbedoTexture;
 uniform sampler2D uNormalTexture;
 uniform sampler2D uAOTexture;
+uniform sampler2D uMetallicRoughnessTexture;
+uniform sampler2D uEmissiveTexture;
+uniform float uEmissiveEnergy = 1.0;
+uniform float uNormalScale = 1.0;
+uniform float uOcclusionStrength = 1.0;
+uniform vec3 uUvScale = vec3(1.0, 1.0, 0.0);
+uniform vec3 uUvOffset = vec3(0.0, 0.0, 0.0);
+uniform int uUnshaded = 0;
+uniform float uAlphaCutoff = 0.0;
 // Legacy Increment 27 pair retained for project-authored shaders and direct single-map tests.
 uniform sampler2D uShadowMapTexture;
 uniform mat4 uLightSpaceMatrix;
@@ -111,6 +127,19 @@ uniform float uShadowCascadeSplits[3];
 uniform int uShadowCascadeCount;
 // Increment 31: fraction of each non-final cascade depth interval used to cross-fade into the next.
 uniform float uShadowCascadeBlendRatio;
+uniform float uShadowMaxDistanceFadeRange;
+uniform int uMeshRenderLayers;
+uniform float uSurfaceOpacity;
+uniform float uShadowBias;
+uniform float uShadowNormalBias;
+uniform float uShadowOpacity;
+uniform int uReflectionProbeEnabled;
+uniform vec3 uReflectionProbePosition;
+uniform vec3 uReflectionProbeAxisX;
+uniform vec3 uReflectionProbeAxisY;
+uniform vec3 uReflectionProbeAxisZ;
+uniform vec3 uReflectionProbeHalfExtents;
+uniform sampler2D uReflectionProbeFaces[6];
 
 const float kPiUVE = 3.14159265359;
 const float kBrdfEpsilonUVE = 0.0001;
@@ -121,6 +150,184 @@ const float kSpotInnerConeRatioUVE = 0.85;
 
 vec3 SafeNormalizeUVE(vec3 value) {
     return value / max(length(value), kBrdfEpsilonUVE);
+}
+
+vec3 HemisphereAmbientUVE(vec3 normal) {
+    if (dot(uSkyAmbient, uSkyAmbient) + dot(uGroundAmbient, uGroundAmbient) < 1.0e-10) {
+        return uAmbientColor;
+    }
+    float hemi = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
+    return mix(uGroundAmbient, uSkyAmbient, hemi);
+}
+
+vec2 AmbientEnvironmentUvUVE(vec3 direction) {
+    vec3 dir = SafeNormalizeUVE(direction);
+    float longitude = atan(dir.z, dir.x);
+    float latitude = asin(clamp(dir.y, -1.0, 1.0));
+    return vec2(longitude * (1.0 / (2.0 * kPiUVE)) + 0.5, latitude * (1.0 / kPiUVE) + 0.5);
+}
+
+vec3 SampleAmbientEnvironmentUVE(vec3 direction) {
+    return max(texture(uAmbientEnvironmentMap, AmbientEnvironmentUvUVE(direction)).rgb, vec3(0.0));
+}
+
+vec3 SampleEnvironmentIrradianceUVE(vec3 normal) {
+    vec3 n = SafeNormalizeUVE(normal);
+    vec3 referenceAxis = abs(n.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = SafeNormalizeUVE(cross(referenceAxis, n));
+    vec3 bitangent = cross(n, tangent);
+    const float spread = 0.65;
+    return SampleAmbientEnvironmentUVE(n) * 0.4 +
+           (SampleAmbientEnvironmentUVE(SafeNormalizeUVE(n + tangent * spread)) +
+            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(n - tangent * spread)) +
+            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(n + bitangent * spread)) +
+            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(n - bitangent * spread))) * 0.15;
+}
+
+vec3 SampleEnvironmentSpecularUVE(vec3 direction, float roughness) {
+    vec3 reflection = SafeNormalizeUVE(direction);
+    vec3 referenceAxis = abs(reflection.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = SafeNormalizeUVE(cross(referenceAxis, reflection));
+    vec3 bitangent = cross(reflection, tangent);
+    float spread = clamp(roughness, 0.0, 1.0) * 0.65;
+    return SampleAmbientEnvironmentUVE(reflection) * 0.4 +
+           (SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection + tangent * spread)) +
+            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection - tangent * spread)) +
+            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection + bitangent * spread)) +
+            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection - bitangent * spread))) * 0.15;
+}
+
+vec3 AmbientFromSourceUVE(vec3 normal) {
+    if (uAmbientSource == 0) {
+        return vec3(0.0);
+    }
+    if (uAmbientSource == 1) {
+        return max(uAmbientColor, vec3(0.0));
+    }
+    if (uAmbientSource == 3 && uAmbientEnvironmentMapEnabled != 0) {
+        return max(uAmbientColor, vec3(0.0)) * SampleEnvironmentIrradianceUVE(normal);
+    }
+    // Sky is the compatibility path and the fallback while an Environment Map asset is loading
+    // or missing.
+    return HemisphereAmbientUVE(normal);
+}
+
+int SelectCubemapFaceUVE(vec3 direction) {
+    vec3 a = abs(direction);
+    if (a.x >= a.y && a.x >= a.z) {
+        return direction.x >= 0.0 ? 0 : 1;
+    }
+    if (a.y >= a.z) {
+        return direction.y >= 0.0 ? 2 : 3;
+    }
+    return direction.z >= 0.0 ? 4 : 5;
+}
+
+vec3 CubemapFaceForwardUVE(int face) {
+    if (face == 0) {
+        return vec3(1.0, 0.0, 0.0);
+    }
+    if (face == 1) {
+        return vec3(-1.0, 0.0, 0.0);
+    }
+    if (face == 2) {
+        return vec3(0.0, 1.0, 0.0);
+    }
+    if (face == 3) {
+        return vec3(0.0, -1.0, 0.0);
+    }
+    if (face == 4) {
+        return vec3(0.0, 0.0, 1.0);
+    }
+    return vec3(0.0, 0.0, -1.0);
+}
+
+vec3 CubemapFaceUpUVE(int face) {
+    if (face == 2) {
+        return vec3(0.0, 0.0, -1.0);
+    }
+    if (face == 3) {
+        return vec3(0.0, 0.0, 1.0);
+    }
+    return vec3(0.0, 1.0, 0.0);
+}
+
+vec3 SampleReflectionProbeFaceUVE(int face, vec2 uv) {
+    if (face == 0) {
+        return texture(uReflectionProbeFaces[0], uv).rgb;
+    }
+    if (face == 1) {
+        return texture(uReflectionProbeFaces[1], uv).rgb;
+    }
+    if (face == 2) {
+        return texture(uReflectionProbeFaces[2], uv).rgb;
+    }
+    if (face == 3) {
+        return texture(uReflectionProbeFaces[3], uv).rgb;
+    }
+    if (face == 4) {
+        return texture(uReflectionProbeFaces[4], uv).rgb;
+    }
+    return texture(uReflectionProbeFaces[5], uv).rgb;
+}
+
+vec3 SampleReflectionProbeUVE(vec3 direction) {
+    int face = SelectCubemapFaceUVE(direction);
+    vec3 forward = CubemapFaceForwardUVE(face);
+    vec3 right = SafeNormalizeUVE(cross(forward, CubemapFaceUpUVE(face)));
+    vec3 cameraUp = cross(-forward, right);
+    float denom = max(dot(direction, forward), kBrdfEpsilonUVE);
+    vec2 uv = vec2(dot(direction, right), dot(direction, cameraUp)) / denom * 0.5 + 0.5;
+    return SampleReflectionProbeFaceUVE(face, uv);
+}
+
+float ReflectionProbeInfluenceUVE(vec3 worldPoint) {
+    vec3 halfExtents = uReflectionProbeHalfExtents;
+    if (halfExtents.x <= 0.0 || halfExtents.y <= 0.0 || halfExtents.z <= 0.0) {
+        return 0.0;
+    }
+    vec3 delta = worldPoint - uReflectionProbePosition;
+    vec3 localPoint = vec3(dot(delta, uReflectionProbeAxisX), dot(delta, uReflectionProbeAxisY),
+                           dot(delta, uReflectionProbeAxisZ));
+    float normalizedDistance = max(max(abs(localPoint.x) / halfExtents.x, abs(localPoint.y) / halfExtents.y),
+                                   abs(localPoint.z) / halfExtents.z);
+    if (normalizedDistance >= 1.0) {
+        return 0.0;
+    }
+    return 1.0 - normalizedDistance;
+}
+
+vec3 ReflectionProbeBoxProjectUVE(vec3 worldOrigin, vec3 worldDirection) {
+    vec3 halfExtents = uReflectionProbeHalfExtents;
+    vec3 delta = worldOrigin - uReflectionProbePosition;
+    vec3 localOrigin = vec3(dot(delta, uReflectionProbeAxisX), dot(delta, uReflectionProbeAxisY),
+                            dot(delta, uReflectionProbeAxisZ));
+    vec3 localDirection = vec3(dot(worldDirection, uReflectionProbeAxisX),
+                               dot(worldDirection, uReflectionProbeAxisY),
+                               dot(worldDirection, uReflectionProbeAxisZ));
+    float tFar = 1.0e20;
+    for (int axis = 0; axis < 3; ++axis) {
+        float origin = axis == 0 ? localOrigin.x : (axis == 1 ? localOrigin.y : localOrigin.z);
+        float dir = axis == 0 ? localDirection.x : (axis == 1 ? localDirection.y : localDirection.z);
+        float halfExtent = axis == 0 ? halfExtents.x : (axis == 1 ? halfExtents.y : halfExtents.z);
+        if (abs(dir) < kBrdfEpsilonUVE) {
+            if (origin < -halfExtent || origin > halfExtent) {
+                return worldDirection;
+            }
+            continue;
+        }
+        float inv = 1.0 / dir;
+        float t1 = (-halfExtent - origin) * inv;
+        float t2 = (halfExtent - origin) * inv;
+        tFar = min(tFar, max(t1, t2));
+    }
+    if (!(tFar > kBrdfEpsilonUVE)) {
+        return worldDirection;
+    }
+    vec3 localHit = localOrigin + localDirection * tFar;
+    vec3 worldHit = uReflectionProbePosition + uReflectionProbeAxisX * localHit.x +
+                    uReflectionProbeAxisY * localHit.y + uReflectionProbeAxisZ * localHit.z;
+    return worldHit - uReflectionProbePosition;
 }
 
 float DistributionGgxUVE(float normalDotHalf, float roughness) {
@@ -192,7 +399,8 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
     vec2 texelSize = cascadeIndex < 0 ? 1.0 / vec2(textureSize(uShadowMapTexture, 0))
                                       : CascadeTexelSizeUVE(cascadeIndex);
     float currentDepth = projected.z;
-    float bias = max(0.0025 * (1.0 - max(dot(normal, lightDirection), 0.0)), 0.0005);
+    float bias = max(uShadowBias * (1.0 - max(dot(normal, lightDirection), 0.0)) * max(uShadowNormalBias, 0.0),
+                     uShadowBias * 0.2);
     float visibleSamples = 0.0;
     int sampleCount = 0;
 
@@ -209,7 +417,17 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
         }
     }
 
-    return visibleSamples / float(sampleCount);
+    return mix(1.0, visibleSamples / float(sampleCount), clamp(uShadowOpacity, 0.0, 1.0));
+}
+
+float FadeShadowToLitAtDistanceUVE(float shadowFactor, float viewDepth, float finalCascadeFarDepth) {
+    float fadeRange = min(max(uShadowMaxDistanceFadeRange, 0.0), max(finalCascadeFarDepth, 0.0));
+    if (fadeRange <= 0.0) {
+        return shadowFactor;
+    }
+    float fadeStartDepth = max(finalCascadeFarDepth - fadeRange, 0.0);
+    float shadowWeight = 1.0 - smoothstep(fadeStartDepth, finalCascadeFarDepth, viewDepth);
+    return mix(1.0, shadowFactor, shadowWeight);
 }
 
 float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
@@ -218,11 +436,13 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
     }
 
     float viewDepth = length(vWorldPosition - uViewPosition);
-    // Past the last cascade the light casts no shadow: that is where its shadow distance ends.
-    if (viewDepth > uShadowCascadeSplits[clamp(uShadowCascadeCount - 1, 0, 2)]) {
+    int finalCascadeIndex = clamp(uShadowCascadeCount - 1, 0, 2);
+    float finalCascadeFarDepth = uShadowCascadeSplits[finalCascadeIndex];
+    // Beyond the last split the light casts no shadow; at the split the fade has reached fully lit.
+    if (viewDepth > finalCascadeFarDepth) {
         return 1.0;
     }
-    int cascadeIndex = clamp(uShadowCascadeCount - 1, 0, 2);
+    int cascadeIndex = finalCascadeIndex;
     for (int candidateIndex = 0; candidateIndex < 2; ++candidateIndex) {
         if (candidateIndex < uShadowCascadeCount && viewDepth <= uShadowCascadeSplits[candidateIndex]) {
             cascadeIndex = candidateIndex;
@@ -231,29 +451,35 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
     }
     float shadowFactor = ShadowFactorFromPositionUVE(CascadeLightSpacePositionUVE(cascadeIndex), normal,
                                                       lightDirection, cascadeIndex);
-    int finalCascadeIndex = clamp(uShadowCascadeCount - 1, 0, 2);
-    if (cascadeIndex >= finalCascadeIndex) {
-        return shadowFactor;
+    if (cascadeIndex < finalCascadeIndex) {
+        float cascadeNearDepth = cascadeIndex == 0 ? 0.0 : uShadowCascadeSplits[cascadeIndex - 1];
+        float cascadeFarDepth = uShadowCascadeSplits[cascadeIndex];
+        float cascadeDepthRange = max(cascadeFarDepth - cascadeNearDepth, 0.0001);
+        float blendWidth = cascadeDepthRange * clamp(uShadowCascadeBlendRatio, 0.0, 0.25);
+        float blendStartDepth = cascadeFarDepth - blendWidth;
+        if (blendWidth > 0.0 && viewDepth > blendStartDepth) {
+            float nextCascadeShadowFactor = ShadowFactorFromPositionUVE(
+                CascadeLightSpacePositionUVE(cascadeIndex + 1), normal, lightDirection, cascadeIndex + 1);
+            float blendWeight = smoothstep(blendStartDepth, cascadeFarDepth, viewDepth);
+            shadowFactor = mix(shadowFactor, nextCascadeShadowFactor, blendWeight);
+        }
     }
-
-    float cascadeNearDepth = cascadeIndex == 0 ? 0.0 : uShadowCascadeSplits[cascadeIndex - 1];
-    float cascadeFarDepth = uShadowCascadeSplits[cascadeIndex];
-    float cascadeDepthRange = max(cascadeFarDepth - cascadeNearDepth, 0.0001);
-    float blendWidth = cascadeDepthRange * clamp(uShadowCascadeBlendRatio, 0.0, 0.25);
-    float blendStartDepth = cascadeFarDepth - blendWidth;
-    if (blendWidth <= 0.0 || viewDepth <= blendStartDepth) {
-        return shadowFactor;
-    }
-
-    float nextCascadeShadowFactor = ShadowFactorFromPositionUVE(
-        CascadeLightSpacePositionUVE(cascadeIndex + 1), normal, lightDirection, cascadeIndex + 1);
-    float blendWeight = smoothstep(blendStartDepth, cascadeFarDepth, viewDepth);
-    return mix(shadowFactor, nextCascadeShadowFactor, blendWeight);
+    return FadeShadowToLitAtDistanceUVE(shadowFactor, viewDepth, finalCascadeFarDepth);
 }
 
 void main() {
-    vec3 albedo = texture(uAlbedoTexture, vTexCoord).rgb * uAlbedoColor;
-    float ambientOcclusion = texture(uAOTexture, vTexCoord).r;
+    vec2 uv = vTexCoord * uUvScale.xy + uUvOffset.xy;
+    vec4 albedoSample = texture(uAlbedoTexture, uv);
+    if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
+        discard;
+    }
+    vec3 albedo = albedoSample.rgb * uAlbedoColor;
+    float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0);
+    if (uUnshaded != 0) {
+        FragColor = vec4(albedo, surfaceOpacity);
+        return;
+    }
+    float ambientOcclusion = mix(1.0, texture(uAOTexture, uv).r, clamp(uOcclusionStrength, 0.0, 1.0));
     vec3 normal = SafeNormalizeUVE(vWorldNormal);
     vec3 tangent = vWorldTangent - normal * dot(normal, vWorldTangent);
     if (dot(tangent, tangent) <= 0.00000001) {
@@ -263,11 +489,13 @@ void main() {
     tangent = SafeNormalizeUVE(tangent);
     vec3 bitangent = SafeNormalizeUVE(cross(normal, tangent));
     bitangent *= vTangentHandedness < 0.0 ? -1.0 : 1.0;
-    vec3 tangentSpaceNormal = texture(uNormalTexture, vTexCoord).xyz * 2.0 - 1.0;
+    vec3 tangentSpaceNormal = texture(uNormalTexture, uv).xyz * 2.0 - 1.0;
+    tangentSpaceNormal.xy *= uNormalScale;
     normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
     vec3 viewDirection = SafeNormalizeUVE(uViewPosition - vWorldPosition);
-    float metallic = clamp(uMetallic, 0.0, 1.0);
-    float roughness = clamp(uRoughness, 0.04, 1.0);
+    vec3 metallicRoughnessSample = texture(uMetallicRoughnessTexture, uv).rgb;
+    float metallic = clamp(uMetallic * metallicRoughnessSample.b, 0.0, 1.0);
+    float roughness = clamp(uRoughness * metallicRoughnessSample.g, 0.04, 1.0);
     // Ambient, split into diffuse and specular exactly as the direct term is.
     //
     // The old ambient was purely diffuse: albedo * ambient * ao. For a dielectric that is roughly
@@ -276,11 +504,9 @@ void main() {
     // single most visible way a correct BRDF still looks wrong, and it is why "the PBR looks
     // broken" usually means "there is no ambient specular".
     //
-    // This is not image-based lighting: there is no environment cubemap here, so the ambient
-    // colour stands in for the environment's average radiance. What it does buy is the right
-    // ENERGY SPLIT - a metal reflects the ambient tinted by its own albedo, a dielectric reflects
-    // about 4% of it untinted, and both lose energy to roughness. A real IBL probe replaces the
-    // source of that radiance later without changing this structure.
+    // Specular ambient comes from the selected source or the strongest captured ReflectionProbe3D
+    // at the eye (six 2D faces, box-projected). Environment-map ambient uses a small equirectangular
+    // cone filter; the legacy Sky source remains the hemisphere approximation.
     vec3 ambientBaseReflectance = mix(vec3(0.04), albedo, metallic);
     float normalDotViewAmbient = max(dot(normal, viewDirection), 0.0);
     // Roughness-aware Fresnel: the standard Schlick term goes to white at grazing angles, which on
@@ -292,15 +518,33 @@ void main() {
         (max(vec3(1.0 - roughness), ambientBaseReflectance) - ambientBaseReflectance) *
             pow(1.0 - normalDotViewAmbient, 5.0);
     vec3 ambientDiffuseWeight = (vec3(1.0) - ambientFresnel) * (1.0 - metallic);
-    vec3 ambientDiffuse = ambientDiffuseWeight * albedo * uAmbientColor;
-    vec3 ambientSpecular = ambientFresnel * uAmbientColor;
+    vec3 ambientColor = AmbientFromSourceUVE(normal);
+    vec3 reflection = reflect(-viewDirection, normal);
+    vec3 specEnv = ambientColor;
+    if (uAmbientSource == 3 && uAmbientEnvironmentMapEnabled != 0) {
+        specEnv = max(uAmbientColor, vec3(0.0)) * SampleEnvironmentSpecularUVE(reflection, roughness);
+    }
+    if (uReflectionProbeEnabled != 0) {
+        float probeWeight = ReflectionProbeInfluenceUVE(vWorldPosition);
+        if (probeWeight > 0.0) {
+            vec3 sampleDir = ReflectionProbeBoxProjectUVE(vWorldPosition, reflection);
+            vec3 captured = SampleReflectionProbeUVE(sampleDir);
+            specEnv = mix(specEnv, captured, probeWeight * (1.0 - roughness * roughness));
+        }
+    }
+    vec3 ambientDiffuse = ambientDiffuseWeight * albedo * ambientColor;
+    vec3 ambientSpecular = ambientFresnel * specEnv;
     // AO occludes both terms. Applying it to the diffuse alone is a common shortcut, but a crevice
     // does not stop reflecting light in a way the sky can reach either.
-    vec3 lighting = (ambientDiffuse + ambientSpecular) * ambientOcclusion + uEmissiveColor;
+    vec3 lighting = (ambientDiffuse + ambientSpecular) * ambientOcclusion +
+                    uEmissiveColor * max(uEmissiveEnergy, 0.0) * texture(uEmissiveTexture, uv).rgb;
 
     for (int lightIndex = 0; lightIndex < 4; ++lightIndex) {
         LightUVE light = uLights[lightIndex];
         if (light.intensity <= 0.0) {
+            continue;
+        }
+        if ((light.cullMask & uMeshRenderLayers) == 0) {
             continue;
         }
 
@@ -350,7 +594,7 @@ void main() {
         float distribution = DistributionGgxUVE(normalDotHalf, roughness);
         float geometry = GeometrySmithUVE(normalDotView, normalDotLight, roughness);
         vec3 specular = (distribution * geometry * fresnel) /
-                        max(4.0 * normalDotView * normalDotLight, kBrdfEpsilonUVE);
+                        max(4.0 * normalDotView * normalDotLight, kBrdfEpsilonUVE) * max(light.specular, 0.0);
         vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
         vec3 diffuse = diffuseWeight * albedo / kPiUVE;
         vec3 radiance = light.color * light.intensity * attenuation;
@@ -362,6 +606,6 @@ void main() {
         lighting += directContribution;
     }
 
-    FragColor = vec4(lighting, 1.0);
+    FragColor = vec4(lighting, surfaceOpacity);
 }
 #endif

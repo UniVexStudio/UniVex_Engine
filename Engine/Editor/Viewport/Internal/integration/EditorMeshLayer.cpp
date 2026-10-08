@@ -136,6 +136,7 @@ void EditorMeshLayerUVE::SyncCameraFromOrbitUVE(const univex::camera::OrbitCamer
     cameraComponent.fieldOfViewDegrees = fovDegrees;
     cameraComponent.nearPlane = camera.NearPlane();
     cameraComponent.farPlane = camera.FarPlane();
+    cameraComponent.current = false;
 
     // CameraSystemUVE treats local -Z as forward (see camera_system_uve.cpp), so the rotation
     // must point local +Z along the eye-to-target "backward" vector for local -Z to land on the

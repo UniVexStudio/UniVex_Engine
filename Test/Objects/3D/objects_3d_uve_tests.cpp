@@ -34,6 +34,8 @@ TEST(Expanded3DObjectComponentsUVETest, DefaultContractsAreValid) {
     EXPECT_TRUE(IsOccluder3DObjectComponentValidUVE(Occluder3DComponentUVE{}));
     EXPECT_TRUE(IsVisibilityRegion3DObjectComponentValidUVE(VisibilityRegion3DComponentUVE{}));
     EXPECT_TRUE(IsSpawnPoint3DObjectComponentValidUVE(SpawnPoint3DComponentUVE{}));
+    EXPECT_TRUE(IsPlayer3DObjectComponentValidUVE(PlayerComponentUVE{}));
+    EXPECT_TRUE(IsHealthComponentValidUVE(HealthComponentUVE{}));
     EXPECT_TRUE(IsLevelStreamer3DObjectComponentValidUVE(LevelStreamer3DComponentUVE{}));
     EXPECT_TRUE(IsWorldPartition3DObjectComponentValidUVE(WorldPartition3DComponentUVE{}));
 }
@@ -242,6 +244,8 @@ TEST(Expanded3DObjectComponentsUVETest, Hitbox3DStrikeStateIsRuntimeOnlyAndNever
     Hitbox3DComponentUVE hitbox;
     EXPECT_EQ(hitbox.strikeCount, 0U);
     EXPECT_FALSE(hitbox.strikesTruncated);
+    EXPECT_EQ(hitbox.ignoreEntity, kInvalidEntityUVE);
+    EXPECT_EQ(hitbox.struckCount, 0U);
 
     // Mid-frame runtime state must not change authoring validity - a live hitbox with fresh
     // strikes still passes the same validation a freshly authored one does.
@@ -249,6 +253,32 @@ TEST(Expanded3DObjectComponentsUVETest, Hitbox3DStrikeStateIsRuntimeOnlyAndNever
     hitbox.strikesTruncated = true;
     hitbox.strikes[0U] = Hitbox3DStrikeUVE{EntityUVE{}, 0.25F};
     EXPECT_TRUE(IsHitbox3DObjectComponentValidUVE(hitbox));
+}
+
+TEST(Expanded3DObjectComponentsUVETest, Hurtbox3DHitStateIsRuntimeOnlyAndNeverAuthored) {
+    Hurtbox3DComponentUVE hurtbox;
+    EXPECT_EQ(hurtbox.hitCount, 0U);
+    EXPECT_FALSE(hurtbox.hitsTruncated);
+    EXPECT_EQ(hurtbox.ignoreEntity, kInvalidEntityUVE);
+    EXPECT_EQ(hurtbox.receivedCount, 0U);
+
+    hurtbox.hitCount = 3U;
+    hurtbox.hitsTruncated = true;
+    hurtbox.hits[0U] = Hurtbox3DHitUVE{EntityUVE{}, 0.25F};
+    EXPECT_TRUE(IsHurtbox3DObjectComponentValidUVE(hurtbox));
+}
+
+TEST(Expanded3DObjectComponentsUVETest, InteractionArea3DInteractorStateIsRuntimeOnlyAndNeverAuthored) {
+    InteractionArea3DComponentUVE area;
+    EXPECT_EQ(area.interactorCount, 0U);
+    EXPECT_FALSE(area.interactorsTruncated);
+    EXPECT_FALSE(area.focusedByPrimaryInteractor);
+    EXPECT_EQ(area.ignoreEntity, kInvalidEntityUVE);
+
+    area.interactorCount = 3U;
+    area.interactorsTruncated = true;
+    area.focusedByPrimaryInteractor = true;
+    EXPECT_TRUE(IsInteractionArea3DObjectComponentValidUVE(area));
 }
 
 TEST(Expanded3DObjectComponentsUVETest, RayCast3DExclusionListIsAPrefixOfRealReferences) {
@@ -297,6 +327,7 @@ TEST(Expanded3DObjectComponentsUVETest, Projectile3DHitContractRejectsWhatItCann
     Projectile3DComponentUVE projectile;
     EXPECT_TRUE(IsProjectile3DObjectComponentValidUVE(projectile));
     EXPECT_TRUE(IsKnownProjectile3DHitPolicyUVE(projectile.hitPolicy));
+    EXPECT_EQ(projectile.ignoreEntity, kInvalidEntityUVE);
 
     // A policy outside the enum is a malformed component, not a policy to guess at.
     Projectile3DComponentUVE policy = projectile;

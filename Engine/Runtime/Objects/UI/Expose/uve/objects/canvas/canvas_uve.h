@@ -11,13 +11,8 @@ namespace UVE::Scene {
 
 class IEntityManagerUVE;
 
-/// Authoring definition for the Canvas scene object (Canvas family): the component set and
-/// defaults a freshly created Canvas entity attaches. Until now Canvas was reachable only through
-/// the Inspector's "Add Component" list; promoting it to the Scene object registry gives UI
-/// authoring the same one-entry-point Add-Object list every 3D kind has. Per
-/// Engine/Runtime/Scene/README.md's "one truth per concept" rule this holds the *recipe*, not a
-/// second copy of component storage: the canvas record itself still lives only in
-/// CanvasComponentUVE (and is drawn by UI/UIRuntimeUVE's overlay pass).
+/// Authoring definition for the Canvas scene object. The record lives in CanvasComponentUVE;
+/// UIRuntimeUVE reads that component for visibility and sort order.
 struct CanvasObjectDefinitionUVE final {
     /// Default document-entity name for a freshly created object of this kind — matches the
     /// Inspector's own "Canvas" component label exactly, so both entry points feel identical.

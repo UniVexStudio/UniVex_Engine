@@ -23,8 +23,8 @@ namespace UVE::Config {
 /// description layer on top. Reading goes through a descriptor, so a value that is missing, of the
 /// wrong type or out of range comes back as the declared default - per setting, never by throwing
 /// away the whole document. Writing goes through it too, so an illegal value never enters the
-/// document at all. Composite values (colours) are checked whole: one bad channel refuses the
-/// write, or falls back to the default on read.
+/// document at all. Composite values (colours and vectors) are checked whole; StringLists are
+/// bounded ordered strings stored under `<id>.count` and `<id>.<index>`.
 ///
 /// Not thread-safe: register everything at startup, before the registry is shared. Reads and
 /// writes go to the store, which is itself safe to call from any thread.
@@ -32,9 +32,9 @@ class SettingsRegistryUVE final {
 public:
     /// Adds `descriptor`. Refused - nothing registered, false returned - when ValidateSettingDescriptorUVE
     /// finds it malformed, its id is already registered, or the document could not hold it beside
-    /// the registered settings: "a.b" holding a value rules out "a.b.c", and a colour's channel keys
-    /// (`.r`, `.g`, `.b`, `.a`) and a vector's (`.x`, `.y`, `.z`) are its own. All are programming errors the registry's own test is
-    /// there to catch.
+    /// the registered settings: "a.b" holding a value rules out "a.b.c". A colour, vector, or
+    /// StringList reserves its component or numbered paths, while siblings such as "outline" and
+    /// "outline.thickness" remain legal.
     [[nodiscard]] bool RegisterUVE(SettingDescriptorUVE descriptor);
 
     [[nodiscard]] const SettingDescriptorUVE* FindUVE(std::string_view id) const;
@@ -50,8 +50,8 @@ public:
     [[nodiscard]] bool SetValueUVE(IConfigManagerUVE& store, std::string_view id, const SettingValueUVE& value) const;
     /// Stores the default of setting `id`.
     [[nodiscard]] bool ResetUVE(IConfigManagerUVE& store, std::string_view id) const;
-    /// Removes setting `id` from the store altogether (every channel of a colour), so it reads as
-    /// its default here, or as whatever a lower layer holds. False for an unknown id or when the
+    /// Removes setting `id` from the store altogether (every component or list item), so it reads
+    /// as its default here, or as whatever a lower layer holds. False for an unknown id or when the
     /// store held nothing for it.
     bool ClearValueUVE(IConfigManagerUVE& store, std::string_view id) const;
     /// The value the store holds for setting `id`, only when it holds a legal one: nothing for a
@@ -59,18 +59,24 @@ public:
     /// contributes; GetValueUVE is this with the default filled in.
     [[nodiscard]] std::optional<SettingValueUVE> GetStoredValueUVE(const IConfigManagerUVE& store,
                                                                    std::string_view id) const;
+    /// Migrates stored Deprecated descriptors with a `replacementId` to their live setting. A legal
+    /// value already stored at the new id wins; legacy ids are removed only after a successful copy
+    /// or when superseded by a legal new value. Returns true if the store changed.
+    bool MigrateDeprecatedValuesUVE(IConfigManagerUVE& store) const;
     /// Whether the value in use differs from the default.
     [[nodiscard]] bool IsModifiedUVE(const IConfigManagerUVE& store, std::string_view id) const;
 
     // Typed forms of GetValueUVE. `fallback` is answered only for an id that is not registered, or
     // is registered under another type - a programming error a test should catch. GetIntUVE also
-    // reads Enum settings.
+    // reads Enum settings; GetStringUVE reads FilePath/KeyBinding, and GetStringListUVE reads StringList.
     [[nodiscard]] bool GetBoolUVE(const IConfigManagerUVE& store, std::string_view id, bool fallback = false) const;
     [[nodiscard]] std::int64_t GetIntUVE(const IConfigManagerUVE& store, std::string_view id,
                                          std::int64_t fallback = 0) const;
     [[nodiscard]] double GetFloatUVE(const IConfigManagerUVE& store, std::string_view id, double fallback = 0.0) const;
     [[nodiscard]] std::string GetStringUVE(const IConfigManagerUVE& store, std::string_view id,
                                            std::string fallback = {}) const;
+    [[nodiscard]] SettingStringListUVE GetStringListUVE(const IConfigManagerUVE& store, std::string_view id,
+                                                        SettingStringListUVE fallback = {}) const;
     [[nodiscard]] SettingColorUVE GetColorUVE(const IConfigManagerUVE& store, std::string_view id,
                                               SettingColorUVE fallback = {}) const;
     [[nodiscard]] SettingVector3UVE GetVector3UVE(const IConfigManagerUVE& store, std::string_view id,
@@ -79,7 +85,7 @@ public:
 private:
     std::vector<std::unique_ptr<SettingDescriptorUVE>> m_descriptors;
     std::unordered_map<std::string, const SettingDescriptorUVE*> m_byId;
-    /// Document paths holding a value (an id, or a colour's or vector's component keys), and every path that
+    /// Document paths holding a value (an id, or a composite/list component), and every path that
     /// is an object because a value sits beneath it. No path may be in both.
     std::unordered_set<std::string> m_values;
     std::unordered_set<std::string> m_branches;

@@ -472,6 +472,117 @@ TEST_F(HitboxStrikeUVETest, TransitionsComeOutInDeterministicHitboxThenHurtboxOr
     EXPECT_TRUE(tracker.UpdateUVE(SyncHitboxes3DUVE(entityManager)).transitions.empty());
 }
 
+TEST_F(HitboxStrikeUVETest, AnIgnoredEntityIsNeverStruck) {
+    const EntityUVE owner = MakeHurtboxUVE({1.5F, 0.0F, 0.0F});
+    const EntityUVE other = MakeHurtboxUVE({-1.5F, 0.0F, 0.0F});
+    const EntityUVE hitbox = MakeHitboxUVE({0.0F, 0.0F, 0.0F});
+    entityManager.GetComponentUVE<Hitbox3DComponentUVE>(hitbox).ignoreEntity = owner;
+
+    Hitbox3DSyncReportUVE report = SyncHitboxes3DUVE(entityManager);
+    ASSERT_EQ(report.strikes.size(), 1U);
+    EXPECT_EQ(report.strikes[0].hurtbox, other);
+    EXPECT_EQ(ComponentUVE(hitbox).strikeCount, 1U);
+    EXPECT_EQ(ComponentUVE(hitbox).strikes[0].hurtboxEntity, other);
+
+    entityManager.GetComponentUVE<Hitbox3DComponentUVE>(hitbox).ignoreEntity = kInvalidEntityUVE;
+    report = SyncHitboxes3DUVE(entityManager);
+    EXPECT_EQ(report.strikes.size(), 2U);
+    EXPECT_EQ(ComponentUVE(hitbox).strikeCount, 2U);
+}
+
+TEST_F(HitboxStrikeUVETest, AStrikeLandsOncePerActivationWithoutDroppingLaterOverlaps) {
+    const EntityUVE hurtbox = MakeHurtboxUVE({1.5F, 0.0F, 0.0F});
+    const EntityUVE hitbox = MakeHitboxUVE({0.0F, 0.0F, 0.0F});
+
+    ASSERT_EQ(SyncHitboxes3DUVE(entityManager).strikes.size(), 1U);
+    EXPECT_TRUE(ComponentUVE(hitbox).strikes[0].landed);
+    EXPECT_EQ(ComponentUVE(hitbox).struckCount, 1U);
+
+    ASSERT_EQ(SyncHitboxes3DUVE(entityManager).strikes.size(), 1U);
+    EXPECT_EQ(ComponentUVE(hitbox).strikeCount, 1U);
+    EXPECT_FALSE(ComponentUVE(hitbox).strikes[0].landed);
+    EXPECT_EQ(ComponentUVE(hitbox).strikes[0].hurtboxEntity, hurtbox);
+
+    MoveUVE(hurtbox, {10.0F, 0.0F, 0.0F});
+    EXPECT_TRUE(SyncHitboxes3DUVE(entityManager).strikes.empty());
+    EXPECT_EQ(ComponentUVE(hitbox).struckCount, 1U);
+    MoveUVE(hurtbox, {1.5F, 0.0F, 0.0F});
+    ASSERT_EQ(SyncHitboxes3DUVE(entityManager).strikes.size(), 1U);
+    EXPECT_FALSE(ComponentUVE(hitbox).strikes[0].landed);
+
+    entityManager.GetComponentUVE<Hitbox3DComponentUVE>(hitbox).enabled = false;
+    EXPECT_TRUE(SyncHitboxes3DUVE(entityManager).strikes.empty());
+    EXPECT_EQ(ComponentUVE(hitbox).struckCount, 0U);
+
+    entityManager.GetComponentUVE<Hitbox3DComponentUVE>(hitbox).enabled = true;
+    ASSERT_EQ(SyncHitboxes3DUVE(entityManager).strikes.size(), 1U);
+    EXPECT_TRUE(ComponentUVE(hitbox).strikes[0].landed);
+}
+
+TEST_F(HitboxStrikeUVETest, TheHurtboxRecordsIncomingHitsFromEveryAttacker) {
+    const EntityUVE hurtbox = MakeHurtboxUVE({0.0F, 0.0F, 0.0F});
+    const EntityUVE east = MakeHitboxUVE({1.5F, 0.0F, 0.0F});
+    const EntityUVE west = MakeHitboxUVE({-1.5F, 0.0F, 0.0F});
+
+    ASSERT_EQ(SyncHitboxes3DUVE(entityManager).strikes.size(), 2U);
+    const Hurtbox3DComponentUVE received = entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox);
+    EXPECT_EQ(received.hitCount, 2U);
+    EXPECT_TRUE(Scene::Hurtbox3DUVE::HasHitFromUVE(received, east));
+    EXPECT_TRUE(Scene::Hurtbox3DUVE::HasHitFromUVE(received, west));
+    EXPECT_TRUE(received.hits[0].received);
+    EXPECT_TRUE(received.hits[1].received);
+
+    ASSERT_EQ(SyncHitboxes3DUVE(entityManager).strikes.size(), 2U);
+    const Hurtbox3DComponentUVE stillHit = entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox);
+    EXPECT_EQ(stillHit.hitCount, 2U);
+    EXPECT_FALSE(stillHit.hits[0].received);
+    EXPECT_FALSE(stillHit.hits[1].received);
+    EXPECT_EQ(stillHit.receivedCount, 2U);
+}
+
+TEST_F(HitboxStrikeUVETest, AHurtboxIgnoreRefusesThatAttackerOnBothSides) {
+    const EntityUVE hurtbox = MakeHurtboxUVE({1.5F, 0.0F, 0.0F});
+    const EntityUVE ignored = MakeHitboxUVE({0.0F, 0.0F, 0.0F});
+    const EntityUVE other = MakeHitboxUVE({3.0F, 0.0F, 0.0F});
+    entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox).ignoreEntity = ignored;
+
+    Hitbox3DSyncReportUVE report = SyncHitboxes3DUVE(entityManager);
+    ASSERT_EQ(report.strikes.size(), 1U);
+    EXPECT_EQ(report.strikes[0].hitbox, other);
+    EXPECT_EQ(ComponentUVE(ignored).strikeCount, 0U);
+    EXPECT_EQ(ComponentUVE(other).strikeCount, 1U);
+    EXPECT_EQ(entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox).hitCount, 1U);
+    EXPECT_EQ(entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox).hits[0].hitboxEntity, other);
+
+    entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox).ignoreEntity = kInvalidEntityUVE;
+    report = SyncHitboxes3DUVE(entityManager);
+    EXPECT_EQ(report.strikes.size(), 2U);
+    EXPECT_EQ(entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox).hitCount, 2U);
+}
+
+TEST_F(HitboxStrikeUVETest, AHurtboxReceivesOncePerEnableWithoutDroppingLaterHits) {
+    const EntityUVE hurtbox = MakeHurtboxUVE({1.5F, 0.0F, 0.0F});
+    const EntityUVE hitbox = MakeHitboxUVE({0.0F, 0.0F, 0.0F});
+
+    ASSERT_EQ(SyncHitboxes3DUVE(entityManager).strikes.size(), 1U);
+    EXPECT_TRUE(entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox).hits[0].received);
+    EXPECT_EQ(entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox).receivedCount, 1U);
+
+    ASSERT_EQ(SyncHitboxes3DUVE(entityManager).strikes.size(), 1U);
+    EXPECT_EQ(entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox).hitCount, 1U);
+    EXPECT_FALSE(entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox).hits[0].received);
+    EXPECT_EQ(entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox).hits[0].hitboxEntity, hitbox);
+
+    entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox).enabled = false;
+    EXPECT_TRUE(SyncHitboxes3DUVE(entityManager).strikes.empty());
+    EXPECT_EQ(entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox).receivedCount, 0U);
+    EXPECT_EQ(entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox).hitCount, 0U);
+
+    entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox).enabled = true;
+    ASSERT_EQ(SyncHitboxes3DUVE(entityManager).strikes.size(), 1U);
+    EXPECT_TRUE(entityManager.GetComponentUVE<Hurtbox3DComponentUVE>(hurtbox).hits[0].received);
+}
+
 TEST_F(HitboxStrikeUVETest, TheEventsCarryThePairAndCompareByValue) {
     const Hitbox3DStrikePairUVE strike{Scene::EntityUVE{3U, 1U}, Scene::EntityUVE{9U, 2U}, 0.25F,
                                       {0.0F, 1.0F, 0.0F}, "melee"};

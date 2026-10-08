@@ -38,10 +38,8 @@
 # asset model here (MeshAssetUVE, TextureAssetUVE, ShaderAssetUVE) - Audio still gets it through
 # its existing uve_asset PUBLIC link, unchanged.
 
-find_package(ZLIB REQUIRED)
-if(NOT ANDROID)
-    find_package(JPEG REQUIRED)
-endif()
+# ZLIB::ZLIB / JPEG::JPEG come from Engine/CMake/UveFindSystemDeps.cmake (system
+# packages, or FetchContent when -dev packages are missing).
 
 # ufbx (vendored via FetchContent, pinned tag): the FBX parser behind ConvertFbxMeshUVE. One C
 # file and its header, compiled as its own small library with its own warning profile; it is linked
@@ -141,6 +139,9 @@ target_link_libraries(uve_asset
 )
 if(NOT ANDROID)
     target_link_libraries(uve_asset PRIVATE JPEG::JPEG)
+endif()
+if(TARGET uve_jpeg_ep)
+    add_dependencies(uve_asset uve_jpeg_ep)
 endif()
 target_compile_features(uve_asset PUBLIC cxx_std_23)
 uve_set_warnings(uve_asset)

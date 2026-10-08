@@ -2,12 +2,17 @@
 
 #include "uve/ui/ui_runtime_uve.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <string>
+#include <vector>
 
-#include "uve/input/mouse_button_uve.h"
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/ui_image_component_uve.h"
 #include "uve/component/ui_text_component_uve.h"
+#include "uve/input/mouse_button_uve.h"
+#include "uve/ui/canvas_ancestry_uve.h"
 
 namespace UVE::UI {
 
@@ -19,14 +24,55 @@ namespace {
            point.y <= rectPosition.y + rectSize.y;
 }
 
+struct RankedWidgetUVE final {
+    std::int32_t sortOrder = 0;
+    bool hasCanvas = false;
+    std::uint32_t canvasIndex = 0;
+    std::uint32_t canvasGeneration = 0;
+    std::uint8_t layer = 0;
+    std::uint32_t entityIndex = 0;
+    std::uint32_t entityGeneration = 0;
+    std::vector<UIQuadUVE> quads;
+};
+
+void RankWidgetUVE(const Scene::EntityUVE entity, const CanvasAncestryUVE& ancestry, const std::uint8_t layer,
+                   std::vector<UIQuadUVE> quads, std::vector<RankedWidgetUVE>& ranked) {
+    RankedWidgetUVE rankedWidget;
+    rankedWidget.sortOrder = ancestry.sortOrder;
+    rankedWidget.hasCanvas = ancestry.hasCanvas;
+    rankedWidget.canvasIndex = ancestry.canvas.index;
+    rankedWidget.canvasGeneration = ancestry.canvas.generation;
+    rankedWidget.layer = layer;
+    rankedWidget.entityIndex = entity.index;
+    rankedWidget.entityGeneration = entity.generation;
+    rankedWidget.quads = std::move(quads);
+    ranked.push_back(std::move(rankedWidget));
+}
+
 } // namespace
+
+void UIRuntimeUVE::SetCoordinateTransformUVE(const UICoordinateTransformUVE& transform) noexcept {
+    if (!std::isfinite(transform.scaleX) || !std::isfinite(transform.scaleY) || transform.scaleX <= 0.0F ||
+        transform.scaleY <= 0.0F || !std::isfinite(transform.offsetX) || !std::isfinite(transform.offsetY) ||
+        !std::isfinite(transform.inputScaleX) || !std::isfinite(transform.inputScaleY) ||
+        transform.inputScaleX <= 0.0F || transform.inputScaleY <= 0.0F ||
+        !std::isfinite(transform.inputOffsetX) || !std::isfinite(transform.inputOffsetY)) {
+        m_coordinateTransform = UICoordinateTransformUVE{};
+        return;
+    }
+    m_coordinateTransform = transform;
+}
 
 void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input::IInputSystemUVE& inputSystem,
                            const UITextLocalizationUVE& localization) {
     m_drawBatch.quads.clear();
+    std::vector<RankedWidgetUVE> ranked;
 
     entityManager.ForEachUVE<Scene::UIImageComponentUVE>(
-        [this](const Scene::EntityUVE, const Scene::UIImageComponentUVE& image) {
+        [&entityManager, &ranked](const Scene::EntityUVE entity, const Scene::UIImageComponentUVE& image) {
+            if (!ShouldDrawUiWidgetUVE(entityManager, entity)) {
+                return;
+            }
             UIQuadUVE quad{};
             quad.positionPixels = image.positionPixels;
             quad.sizePixels = image.sizePixels;
@@ -34,15 +80,27 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
             quad.alpha = image.alpha;
             quad.kind = image.textureAssetGuid.value == 0U ? UIDrawItemKindUVE::SolidColor : UIDrawItemKindUVE::Image;
             quad.imageAssetGuid = image.textureAssetGuid;
-            m_drawBatch.quads.push_back(quad);
+            RankWidgetUVE(entity, ResolveCanvasAncestryUVE(entityManager, entity), 0, {quad}, ranked);
         });
 
-    const Math::Vector2UVE mousePosition = inputSystem.GetMousePositionUVE();
+    const Math::Vector2UVE rawMousePosition = inputSystem.GetMousePositionUVE();
+    const Math::Vector2UVE mousePosition{
+        (rawMousePosition.x * m_coordinateTransform.inputScaleX - m_coordinateTransform.inputOffsetX -
+         m_coordinateTransform.offsetX) /
+            m_coordinateTransform.scaleX,
+        (rawMousePosition.y * m_coordinateTransform.inputScaleY - m_coordinateTransform.inputOffsetY -
+         m_coordinateTransform.offsetY) /
+            m_coordinateTransform.scaleY};
     const bool mouseDown = inputSystem.IsMouseButtonDownUVE(Input::MouseButtonUVE::Left);
     const bool mousePressedThisFrame = inputSystem.WasMouseButtonPressedThisFrameUVE(Input::MouseButtonUVE::Left);
     entityManager.ForEachUVE<Scene::UIButtonComponentUVE>(
-        [this, &mousePosition, mouseDown, mousePressedThisFrame](const Scene::EntityUVE,
-                                                                  Scene::UIButtonComponentUVE& button) {
+        [&entityManager, &ranked, &mousePosition, mouseDown, mousePressedThisFrame](
+            const Scene::EntityUVE entity, Scene::UIButtonComponentUVE& button) {
+            if (!ShouldDrawUiWidgetUVE(entityManager, entity)) {
+                button.isHovered = false;
+                button.wasClickedThisFrame = false;
+                return;
+            }
             button.isHovered = IsPointInsideRectUVE(mousePosition, button.positionPixels, button.sizePixels);
             button.wasClickedThisFrame = button.isHovered && mousePressedThisFrame;
 
@@ -52,29 +110,29 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
             quad.color = button.isHovered ? (mouseDown ? button.pressedColor : button.hoverColor) : button.normalColor;
             quad.alpha = 1.0F;
             quad.kind = UIDrawItemKindUVE::SolidColor;
-            m_drawBatch.quads.push_back(quad);
+            RankWidgetUVE(entity, ResolveCanvasAncestryUVE(entityManager, entity), 1, {quad}, ranked);
         });
 
     std::vector<UIGlyphQuadUVE> glyphQuads;
     std::string translated;
     entityManager.ForEachUVE<Scene::UITextComponentUVE>(
-        [this, &glyphQuads, &localization, &translated](const Scene::EntityUVE entity,
-                                                       const Scene::UITextComponentUVE& text) {
+        [this, &entityManager, &ranked, &glyphQuads, &localization, &translated](const Scene::EntityUVE entity,
+                                                                                const Scene::UITextComponentUVE& text) {
+            if (!ShouldDrawUiWidgetUVE(entityManager, entity)) {
+                return;
+            }
             glyphQuads.clear();
-            // The authored string is its own key. With no table installed - or no entry for this
-            // string - TranslateUVE hands it back unchanged, so localizing a scene nobody has
-            // translated draws exactly what it drew before.
             const std::string* shown = &text.text;
             if (localization.service != nullptr &&
                 (!localization.isAutoTranslated || localization.isAutoTranslated(entity))) {
                 translated = localization.service->TranslateUVE(text.text);
                 shown = &translated;
             }
-            // positionPixels is the text box's top-left; approximate the baseline as one fontSize
-            // down (no separate ascent/descent metric is tracked) so the first line sits inside it.
             float cursorX = text.positionPixels.x;
             float cursorY = text.positionPixels.y + text.fontSize;
             m_fontAtlas.AppendTextQuadsUVE(*shown, cursorX, cursorY, text.fontSize, glyphQuads);
+            std::vector<UIQuadUVE> quads;
+            quads.reserve(glyphQuads.size());
             for (const UIGlyphQuadUVE& glyphQuad : glyphQuads) {
                 UIQuadUVE quad{};
                 quad.positionPixels = Math::Vector2UVE{glyphQuad.x0, glyphQuad.y0};
@@ -86,9 +144,41 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
                 quad.color = text.color;
                 quad.alpha = text.alpha;
                 quad.kind = UIDrawItemKindUVE::Glyph;
-                m_drawBatch.quads.push_back(quad);
+                quads.push_back(quad);
             }
+            RankWidgetUVE(entity, ResolveCanvasAncestryUVE(entityManager, entity), 2, std::move(quads), ranked);
         });
+
+    std::sort(ranked.begin(), ranked.end(), [](const RankedWidgetUVE& lhs, const RankedWidgetUVE& rhs) {
+        if (lhs.sortOrder != rhs.sortOrder) {
+            return lhs.sortOrder < rhs.sortOrder;
+        }
+        if (lhs.hasCanvas != rhs.hasCanvas) {
+            return !lhs.hasCanvas && rhs.hasCanvas;
+        }
+        if (lhs.canvasIndex != rhs.canvasIndex) {
+            return lhs.canvasIndex < rhs.canvasIndex;
+        }
+        if (lhs.canvasGeneration != rhs.canvasGeneration) {
+            return lhs.canvasGeneration < rhs.canvasGeneration;
+        }
+        if (lhs.layer != rhs.layer) {
+            return lhs.layer < rhs.layer;
+        }
+        if (lhs.entityIndex != rhs.entityIndex) {
+            return lhs.entityIndex < rhs.entityIndex;
+        }
+        return lhs.entityGeneration < rhs.entityGeneration;
+    });
+    for (const RankedWidgetUVE& widget : ranked) {
+        m_drawBatch.quads.insert(m_drawBatch.quads.end(), widget.quads.begin(), widget.quads.end());
+    }
+    for (UIQuadUVE& quad : m_drawBatch.quads) {
+        quad.positionPixels.x = quad.positionPixels.x * m_coordinateTransform.scaleX + m_coordinateTransform.offsetX;
+        quad.positionPixels.y = quad.positionPixels.y * m_coordinateTransform.scaleY + m_coordinateTransform.offsetY;
+        quad.sizePixels.x *= m_coordinateTransform.scaleX;
+        quad.sizePixels.y *= m_coordinateTransform.scaleY;
+    }
 }
 
 } // namespace UVE::UI

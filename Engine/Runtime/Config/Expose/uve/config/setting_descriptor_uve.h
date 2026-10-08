@@ -12,14 +12,25 @@
 
 namespace UVE::Config {
 
+/// Root-level metadata key reserved for the settings document schema version.
+inline constexpr std::string_view kSettingsDocumentVersionKeyUVE = "version";
+
 /// What kind of value a setting holds. Each maps onto the scalar store (IConfigManagerUVE): a
 /// colour is stored as one number per channel under `<id>.r`, `.g`, `.b` (and `.a`), a vector as
-/// one per component under `<id>.x`, `.y`, `.z`.
+/// one per component under `<id>.x`, `.y`, `.z`, and a StringList as `<id>.count` plus numbered
+/// string values. FilePath and KeyBinding are stored as strings; KeyBinding uses stable names
+/// rather than backend key codes.
 enum class SettingTypeUVE {
     Bool,
     Int,
     Float,
     String,
+    /// A filesystem path stored as text, with no requirement that it exist yet.
+    FilePath,
+    /// A stable keyboard chord such as "Ctrl+Shift+S"; an empty string means unbound.
+    KeyBinding,
+    /// An ordered list of strings, stored as a count and numbered values beneath the setting id.
+    StringList,
     /// A 64-bit value that must be one of the descriptor's enumEntries.
     Enum,
     Color,
@@ -46,10 +57,14 @@ struct SettingVector3UVE final {
     [[nodiscard]] bool operator==(const SettingVector3UVE&) const = default;
 };
 
+using SettingStringListUVE = std::vector<std::string>;
+inline constexpr std::size_t kMaximumSettingStringListItemsUVE = 4096U;
+
 /// One setting's value. The alternative in use always matches the descriptor's type: bool for
-/// Bool, int64 for Int and Enum, double for Float, string for String, SettingColorUVE for Color,
-/// SettingVector3UVE for Vector3.
-using SettingValueUVE = std::variant<bool, std::int64_t, double, std::string, SettingColorUVE, SettingVector3UVE>;
+/// Bool, int64 for Int and Enum, double for Float, string for String/FilePath/KeyBinding,
+/// SettingStringListUVE for StringList, SettingColorUVE for Color, SettingVector3UVE for Vector3.
+using SettingValueUVE =
+    std::variant<bool, std::int64_t, double, std::string, SettingStringListUVE, SettingColorUVE, SettingVector3UVE>;
 
 /// Flags that describe a setting to the tools around it. The registry stores them; the settings
 /// panel, layering and migration act on them.
@@ -91,8 +106,12 @@ struct SettingDescriptorUVE final {
     std::optional<double> step;
     /// The legal values of an Enum setting, in display order.
     std::vector<SettingEnumEntryUVE> enumEntries;
-    /// Longest legal String, in bytes; 0 means unbounded.
+    /// Longest legal String or FilePath value, or StringList item, in bytes; 0 means unbounded.
+    /// KeyBinding uses a validated chord syntax independent of this field.
     std::size_t maxLength = 0U;
+    /// Maximum number of StringList entries. Required and capped by the registry for that type;
+    /// zero for every other type.
+    std::size_t maxItems = 0U;
     /// Whether a Color setting carries alpha.
     bool colorHasAlpha = false;
     std::string displayName;
@@ -100,6 +119,9 @@ struct SettingDescriptorUVE final {
     /// Where it appears in the settings tree, as a slash path, e.g. "Editor/Viewport/Grid".
     std::string category;
     std::uint32_t flags = kSettingFlagNoneUVE;
+    /// For a Deprecated descriptor, the live setting that replaces this old id. Its stored value
+    /// is read through the replacement and migrated to that id on the next document load/save.
+    std::string replacementId;
 
     [[nodiscard]] bool HasFlagUVE(const SettingFlagUVE flag) const noexcept { return (flags & flag) != 0U; }
 };
@@ -127,6 +149,16 @@ struct SettingDescriptorUVE final {
 [[nodiscard]] SettingDescriptorUVE MakeStringSettingUVE(std::string id, std::string defaultValue,
                                                         std::size_t maxLength, std::string displayName,
                                                         std::string category, std::string tooltip = {});
+[[nodiscard]] SettingDescriptorUVE MakeStringListSettingUVE(std::string id, SettingStringListUVE defaultValue,
+                                                            std::size_t maxItems, std::size_t maxLength,
+                                                            std::string displayName, std::string category,
+                                                            std::string tooltip = {});
+[[nodiscard]] SettingDescriptorUVE MakeFilePathSettingUVE(std::string id, std::string defaultValue,
+                                                          std::size_t maxLength, std::string displayName,
+                                                          std::string category, std::string tooltip = {});
+[[nodiscard]] SettingDescriptorUVE MakeKeyBindingSettingUVE(std::string id, std::string defaultValue,
+                                                            std::string displayName, std::string category,
+                                                            std::string tooltip = {});
 [[nodiscard]] SettingDescriptorUVE MakeEnumSettingUVE(std::string id, std::int64_t defaultValue,
                                                       std::vector<SettingEnumEntryUVE> entries,
                                                       std::string displayName, std::string category,

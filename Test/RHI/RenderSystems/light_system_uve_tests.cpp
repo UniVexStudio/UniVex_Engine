@@ -16,6 +16,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
+#include "uve/component/light_emitter_component_uve.h"
 #include "uve/objects/3d/directional_light_3d_uve.h"
 
 namespace UVE::Render::Tests {
@@ -94,6 +95,9 @@ TEST_F(LightSystemUVETest, DirectionalLight3DUVE_LightsTheFrameFromItsEmitterAnd
     EXPECT_TRUE(lights[0].castsShadows);
     EXPECT_FLOAT_EQ(lights[0].shadowMaxDistance, 40.0F);
     EXPECT_FLOAT_EQ(lights[0].shadowSplitBlend, 0.25F);
+    EXPECT_FLOAT_EQ(lights[0].shadowDistanceFadeRange, 10.0F);
+    EXPECT_FLOAT_EQ(lights[0].shadowBias, -1.0F);
+    EXPECT_FLOAT_EQ(lights[0].shadowNormalBias, -1.0F);
     EXPECT_FLOAT_EQ(lights[1].intensity, 0.0F) << "one light, one slot";
     // The same light is chosen when ranked for a view.
     EXPECT_FLOAT_EQ(lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{}).at(0).intensity, 3.0F);
@@ -435,6 +439,81 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_RejectsExactlyWhatTheUn
     EXPECT_FLOAT_EQ(selected[0].intensity, 5.0F);
     EXPECT_FLOAT_EQ(unordered[1].intensity, 0.0F);
     EXPECT_FLOAT_EQ(selected[1].intensity, 0.0F);
+}
+
+TEST_F(LightSystemUVETest, DirectionalLight3DUVE_CopiesEmitterLayersSpecularShadowAndFog) {
+    const Scene::EntityUVE sun = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, sun, Scene::TransformComponentUVE{});
+    Scene::DirectionalLight3DObjectDefinitionUVE definition;
+    definition.emitter.cullMask = 0x4U;
+    definition.emitter.specular = 0.25F;
+    definition.emitter.shadowOpacity = 0.5F;
+    definition.emitter.shadowBlur = 2.0F;
+    definition.emitter.shadowBias = 0.2F;
+    definition.emitter.shadowNormalBias = 1.5F;
+    definition.emitter.volumetricFogEnergy = 3.0F;
+    definition.light.shadowDistanceFadeRange = 4.5F;
+    Scene::ApplyDirectionalLight3DObjectDefinitionUVE(entityManager, sun, definition);
+    sceneGraph.UpdateUVE(entityManager);
+
+    const LightListUVE lights = lightSystem.ExtractActiveLightsUVE(entityManager);
+    EXPECT_EQ(lights[0].cullMask, 0x4U);
+    EXPECT_FLOAT_EQ(lights[0].specular, 0.25F);
+    EXPECT_FLOAT_EQ(lights[0].shadowOpacity, 0.5F);
+    EXPECT_FLOAT_EQ(lights[0].shadowBlur, 2.0F);
+    EXPECT_FLOAT_EQ(lights[0].volumetricFogEnergy, 3.0F);
+    EXPECT_FLOAT_EQ(lights[0].shadowBias, 0.2F * 0.025F);
+    EXPECT_FLOAT_EQ(lights[0].shadowNormalBias, 1.5F);
+    EXPECT_FLOAT_EQ(lights[0].shadowDistanceFadeRange, 4.5F);
+}
+
+TEST_F(LightSystemUVETest, DirectionalLight3DUVE_EmptyCullMaskDoesNotOccupyASlot) {
+    const Scene::EntityUVE sun = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, sun, Scene::TransformComponentUVE{});
+    Scene::DirectionalLight3DObjectDefinitionUVE definition;
+    definition.emitter.cullMask = 0U;
+    definition.emitter.energy = 8.0F;
+    Scene::ApplyDirectionalLight3DObjectDefinitionUVE(entityManager, sun, definition);
+    sceneGraph.UpdateUVE(entityManager);
+
+    const LightListUVE lights = lightSystem.ExtractActiveLightsUVE(entityManager);
+    EXPECT_FLOAT_EQ(lights[0].intensity, 0.0F);
+}
+
+TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_DistanceFadeScalesEnergyThenDropsTheShadow) {
+    const Scene::EntityUVE sun = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE local{};
+    local.localPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, sun, local);
+    Scene::DirectionalLight3DObjectDefinitionUVE definition;
+    definition.emitter.energy = 4.0F;
+    definition.emitter.distanceFadeEnabled = true;
+    definition.emitter.distanceFadeBegin = 40.0F;
+    definition.emitter.distanceFadeShadow = 50.0F;
+    definition.emitter.distanceFadeLength = 10.0F;
+    Scene::ApplyDirectionalLight3DObjectDefinitionUVE(entityManager, sun, definition);
+    sceneGraph.UpdateUVE(entityManager);
+
+    const LightListUVE near = lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    EXPECT_FLOAT_EQ(near[0].intensity, 4.0F);
+    EXPECT_TRUE(near[0].castsShadows);
+
+    const LightListUVE midLight =
+        lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{45.0F, 0.0F, 0.0F});
+    EXPECT_FLOAT_EQ(midLight[0].intensity, 2.0F);
+    EXPECT_TRUE(midLight[0].castsShadows);
+
+    entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sun).distanceFadeShadow = 20.0F;
+    const LightListUVE midShadow =
+        lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{25.0F, 0.0F, 0.0F});
+    EXPECT_FLOAT_EQ(midShadow[0].intensity, 4.0F);
+    EXPECT_FLOAT_EQ(midShadow[0].shadowOpacity, 0.5F);
+    EXPECT_TRUE(midShadow[0].castsShadows);
+
+    const LightListUVE noShadow =
+        lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{30.0F, 0.0F, 0.0F});
+    EXPECT_FLOAT_EQ(noShadow[0].intensity, 4.0F);
+    EXPECT_FALSE(noShadow[0].castsShadows);
 }
 
 } // namespace

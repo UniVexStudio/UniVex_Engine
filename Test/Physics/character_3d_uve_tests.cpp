@@ -29,6 +29,7 @@
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/events/event_system_uve.h"
 #include "uve/math/aabb_uve.h"
+#include "uve/math/vector3_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/character_3d_uve.h"
 #include "uve/physics/character_world_query_uve.h"
@@ -86,8 +87,31 @@ public:
         return center;
     }
 
-    [[nodiscard]] std::vector<CharacterSlideCollisionUVE> GetOverlapsUVE() const override {
-        return overlaps;
+    [[nodiscard]] std::vector<CharacterSlideCollisionUVE> GetOverlapsAtUVE(
+        const Math::Vector3UVE& sweepCenter) const override {
+        std::vector<CharacterSlideCollisionUVE> result;
+        if (Math::IsFiniteUVE(sweepCenter)) {
+            const Math::AabbUVE moving = Math::AabbUVE::FromCenterExtentsUVE(sweepCenter, halfExtents);
+            for (const FakeBoxUVE& box : boxes) {
+                const std::optional<Math::PenetrationUVE> penetration =
+                    Math::ComputePenetrationUVE(moving, Math::AabbUVE{box.min, box.max});
+                if (!penetration.has_value() || !std::isfinite(penetration->depth) ||
+                    penetration->depth <= 0.0F) {
+                    continue;
+                }
+                CharacterSlideCollisionUVE overlap;
+                overlap.entity = box.entity;
+                overlap.normal = penetration->axis * -1.0F;
+                overlap.position = sweepCenter;
+                overlap.depth = penetration->depth;
+                result.push_back(overlap);
+            }
+        }
+        // Scripted overlaps describe the query's own pose, not a pose the mover has already left.
+        if (sweepCenter == center) {
+            result.insert(result.end(), overlaps.begin(), overlaps.end());
+        }
+        return result;
     }
 
     [[nodiscard]] std::optional<CharacterSlideCollisionUVE> SweepUVE(
@@ -448,6 +472,27 @@ TEST(Character3DMoverUVETest, AStepWithNoHeadroomIsRefusedRatherThanForced) {
     ExpectNearUVE(state.lastMotion, {0.999F, 0.0F, 0.0F}, 3.0e-3F);
 }
 
+TEST(Character3DMoverUVETest, AStepWhoseOwnMeshIsTheCeilingIsRefused) {
+    FakeCharacterWorldUVE world;
+    AddFloorUVE(world, 0.0F);
+    const Scene::EntityUVE stepAndLintel = MakeEntityUVE(5U);
+    // A 0.2 m step, and a lintel 0.15 m above the body's feet that is the same entity: a doorway
+    // whose wall and ceiling are one mesh. Rising along the riser is not rising through the roof.
+    world.boxes.push_back(FakeBoxUVE{stepAndLintel, {1.0F, 0.0F, -2.0F}, {3.0F, 0.2F, 2.0F}});
+    world.boxes.push_back(FakeBoxUVE{stepAndLintel, {0.0F, 0.15F, -2.0F}, {4.0F, 1.15F, 2.0F}});
+    CharacterMotionStateUVE state;
+    state.grounded = true;
+    state.velocity = {1.0F, 0.0F, 0.0F};
+
+    const CharacterMotionResultUVE result =
+        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {1.0F, 0.0F, 0.0F}, 0.1F);
+
+    ASSERT_TRUE(result.IsAcceptedUVE());
+    EXPECT_FALSE(result.stepUpUsed);
+    EXPECT_TRUE(result.blocked);
+    ExpectNearUVE(state.lastMotion, {0.999F, 0.0F, 0.0F}, 3.0e-3F);
+}
+
 TEST(Character3DMoverUVETest, ABodyInTheAirDoesNotStepUpOntoAnything) {
     FakeCharacterWorldUVE world;
     AddFloorUVE(world, -2.0F);
@@ -486,6 +531,25 @@ TEST(Character3DMoverUVETest, AGroundedBodyFollowsTheFloorDownSmallSteps) {
     EXPECT_LT(result.finalCenter.y, 0.02F);
     EXPECT_GT(result.finalCenter.y, -1.0e-3F);
     ExpectNearUVE(result.snapMotion, {0.0F, result.finalCenter.y - 0.05F, 0.0F}, 1.0e-3F);
+}
+
+TEST(Character3DMoverUVETest, ASnapOntoTheFloorIsAContactTheCallerCanRead) {
+    FakeCharacterWorldUVE world;
+    AddFloorUVE(world, 0.0F, MakeEntityUVE(9U));
+    CharacterMotionStateUVE state;
+    state.grounded = true;
+    world.center = {0.0F, 0.05F, 0.0F};
+
+    const CharacterMotionResultUVE result =
+        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {0.1F, 0.0F, 0.0F}, 0.1F);
+
+    ASSERT_TRUE(result.IsAcceptedUVE());
+    EXPECT_TRUE(result.snapUsed);
+    EXPECT_TRUE(result.onFloor);
+    ASSERT_EQ(result.collisions.size(), 1U);
+    EXPECT_EQ(result.GetCollisionUVE(0U)->entity.index, 9U);
+    EXPECT_FALSE(result.GetCollisionUVE(0U)->steppedUp);
+    ExpectNearUVE(result.GetCollisionUVE(0U)->normal, {0.0F, 1.0F, 0.0F}, 1.0e-3F);
 }
 
 TEST(Character3DMoverUVETest, AJumpIsNotSnappedBackDownToTheFloor) {
@@ -662,10 +726,30 @@ TEST(Character3DMoverUVETest, ABodyInsideSeveralThingsIsPushedOutDeepestFirst) {
         Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {0.0F, 0.0F, 0.0F}, 0.1F);
 
     ASSERT_TRUE(result.IsAcceptedUVE());
-    EXPECT_EQ(result.depenetrationPasses, 3U);
-    // Deepest first, and the total push is the sum - which is also the deepest-first order's own
-    // doing: written out here so a change to that order shows up as a changed number.
-    ExpectNearUVE(result.depenetrationMotion, {0.0F, 0.3F + 0.1F + 0.05F + 0.003F, 0.0F}, 2.0e-3F);
+    EXPECT_EQ(result.depenetrationPasses, 1U);
+    // Deepest first, and only that one: after the push the working center has left the pose the
+    // scripted overlaps described, so they cannot keep pushing.
+    ExpectNearUVE(result.depenetrationMotion, {0.0F, 0.301F, 0.0F}, 2.0e-3F);
+    ASSERT_GE(result.collisions.size(), 1U);
+    EXPECT_EQ(result.GetCollisionUVE(0U)->entity.index, 12U);
+}
+
+TEST(Character3DMoverUVETest, DepenetrationRequeriesTheWorkingCenterSoABoxIsLeftBehind) {
+    FakeCharacterWorldUVE world;
+    world.halfExtents = {0.5F, 0.5F, 0.5F};
+    // The body occupies [-0.5, 0.5]; this wall's face sits at x = 0.2, so the body is 0.7 m inside.
+    AddBoxUVE(world, MakeEntityUVE(8U), {-2.0F, -2.0F, -2.0F}, {0.2F, 2.0F, 2.0F});
+    CharacterMotionStateUVE state;
+
+    const CharacterMotionResultUVE result =
+        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {0.0F, 0.0F, 0.0F}, 0.1F);
+
+    ASSERT_TRUE(result.IsAcceptedUVE());
+    EXPECT_TRUE(result.depenetrated);
+    EXPECT_EQ(result.depenetrationPasses, 1U);
+    ExpectNearUVE(result.depenetrationMotion, {0.701F, 0.0F, 0.0F}, 2.0e-3F);
+    // Asked about the pose it was pushed to, the wall is gone: a second pass would be a ghost.
+    EXPECT_TRUE(world.GetOverlapsAtUVE(result.finalCenter).empty());
 }
 
 TEST(Character3DMoverUVETest, ContactsAreCappedAndTheLossIsReported) {
@@ -912,12 +996,15 @@ TEST(Character3DMoverUVETest, StateAndConfigRoundTripThroughTheComponent) {
     controller.floorSnapLength = 0.25F;
     controller.maxStepHeight = 0.45F;
     controller.floorBlockOnWall = true;
+    controller.slideOnCeiling = false;
     controller.floorStopOnSlope = true;
     controller.floorConstantSpeed = true;
     controller.maximumPlatformSpeed = 12.0F;
     controller.platformOnLeave = Scene::CharacterPlatformLeaveModeUVE::AddUpwardVelocity;
+    controller.upDirection = {0.0F, 0.0F, 1.0F};
 
     const CharacterMotionConfigUVE config = Scene::MakeCharacterMotionConfigUVE(controller);
+    ExpectNearUVE(config.upDirection, {0.0F, 0.0F, 1.0F}, 1.0e-6F);
     EXPECT_EQ(config.maxSlides, 12U);
     EXPECT_NEAR(config.floorMaxAngleDegrees, 30.0F, 1.0e-5F);
     EXPECT_NEAR(config.wallMinSlideAngleDegrees, 5.0F, 1.0e-5F);
@@ -925,6 +1012,7 @@ TEST(Character3DMoverUVETest, StateAndConfigRoundTripThroughTheComponent) {
     EXPECT_NEAR(config.floorSnapLength, 0.25F, 1.0e-6F);
     EXPECT_NEAR(config.maxStepHeight, 0.45F, 1.0e-6F);
     EXPECT_TRUE(config.floorBlockOnWall);
+    EXPECT_FALSE(config.slideOnCeiling);
     EXPECT_TRUE(config.floorStopOnSlope);
     EXPECT_TRUE(config.floorConstantSpeed);
     EXPECT_NEAR(config.maximumPlatformSpeed, 12.0F, 1.0e-6F);
@@ -976,6 +1064,87 @@ TEST(Character3DMoverUVETest, StateAndConfigRoundTripThroughTheComponent) {
     EXPECT_EQ(readBack.platform, state.platform);
     EXPECT_TRUE(readBack.hasPlatformWorldPosition);
     ExpectNearUVE(readBack.platformVelocity, state.platformVelocity, 1.0e-6F);
+}
+
+TEST(Character3DMoverUVETest, SnapAndStepUseTheBodyUpNotWorldY) {
+    // A Z-up body whose world-Y velocity is large: that used to be read as "going up", which
+    // skipped the snap and refused the step. Along this body's own up it is standing still, so
+    // both have to happen.
+    const auto zUpConfig = []() {
+        CharacterMotionConfigUVE config = DefaultConfigUVE();
+        config.upDirection = {0.0F, 0.0F, 1.0F};
+        return config;
+    };
+
+    {
+        FakeCharacterWorldUVE world;
+        AddBoxUVE(world, MakeEntityUVE(1U), {-100.0F, -100.0F, -1.0F}, {100.0F, 100.0F, 0.0F});
+        world.center = {0.0F, 0.0F, 0.05F};
+        CharacterMotionStateUVE state;
+        state.grounded = true;
+        state.velocity = {0.0F, 5.0F, 0.0F};
+        const CharacterMotionResultUVE result =
+            Character3DUVE::MoveAndSlideUVE(world, zUpConfig(), state, {0.1F, 0.0F, 0.0F}, 0.1F);
+        ASSERT_TRUE(result.IsAcceptedUVE());
+        EXPECT_TRUE(result.snapUsed);
+        EXPECT_TRUE(result.onFloor);
+        EXPECT_LT(result.finalCenter.z, 0.02F);
+        EXPECT_GT(result.finalCenter.z, -1.0e-3F);
+    }
+
+    {
+        FakeCharacterWorldUVE world;
+        AddBoxUVE(world, MakeEntityUVE(1U), {-100.0F, -100.0F, -1.0F}, {100.0F, 100.0F, 0.0F});
+        world.center = {0.0F, 0.0F, 0.05F};
+        CharacterMotionStateUVE state;
+        state.grounded = true;
+        state.velocity = {0.0F, 0.0F, 5.0F};
+        const CharacterMotionResultUVE result =
+            Character3DUVE::MoveAndSlideUVE(world, zUpConfig(), state, {0.1F, 0.0F, 0.0F}, 0.1F);
+        ASSERT_TRUE(result.IsAcceptedUVE());
+        EXPECT_FALSE(result.snapUsed);
+        EXPECT_NEAR(result.finalCenter.z, 0.05F, 1.0e-4F);
+    }
+
+    {
+        FakeCharacterWorldUVE world;
+        AddBoxUVE(world, MakeEntityUVE(1U), {-100.0F, -100.0F, -1.0F}, {100.0F, 100.0F, 0.0F});
+        world.boxes.push_back(
+            FakeBoxUVE{MakeEntityUVE(5U), {1.0F, -2.0F, 0.0F}, {3.0F, 2.0F, 0.2F}});
+        world.center = {0.0F, 0.0F, 0.001F};
+        CharacterMotionStateUVE state;
+        state.grounded = true;
+        state.velocity = {1.0F, 5.0F, 0.0F};
+        const CharacterMotionResultUVE result =
+            Character3DUVE::MoveAndSlideUVE(world, zUpConfig(), state, {1.0F, 0.0F, 0.0F}, 0.1F);
+        ASSERT_TRUE(result.IsAcceptedUVE());
+        EXPECT_TRUE(result.stepUpUsed);
+        EXPECT_TRUE(result.onFloor);
+        EXPECT_GT(result.finalCenter.z, 0.15F);
+    }
+}
+
+TEST(Character3DMoverUVETest, FloorStopOnSlopeUsesTheBodyUpNotWorldY) {
+    FakeCharacterWorldUVE world;
+    CharacterSlideCollisionUVE ramp;
+    ramp.entity = MakeEntityUVE(4U);
+    ramp.normal = Math::NormalizeUVE(Math::Vector3UVE{-0.342F, 0.0F, 0.940F});
+    ramp.travel = 0.5F;
+    world.scriptedHits.push_back(ramp);
+    CharacterMotionConfigUVE config = DefaultConfigUVE();
+    config.upDirection = {0.0F, 0.0F, 1.0F};
+    config.floorStopOnSlope = true;
+    CharacterMotionStateUVE state;
+    state.grounded = true;
+    // Horizontal in Z-up. World-Y would have read this as "going up" and left the body creeping.
+    state.velocity = {0.0F, 0.05F, 0.0F};
+
+    const CharacterMotionResultUVE result =
+        Character3DUVE::MoveAndSlideUVE(world, config, state, {0.0F, 0.0F, -0.1F}, 0.1F);
+
+    ASSERT_TRUE(result.IsAcceptedUVE());
+    EXPECT_TRUE(result.onFloor);
+    ExpectNearUVE(state.velocity, {0.0F, 0.0F, 0.0F}, 1.0e-5F);
 }
 
 TEST(Character3DMoverUVETest, ACharacterCanBeBuiltFromItsObjectDefinition) {

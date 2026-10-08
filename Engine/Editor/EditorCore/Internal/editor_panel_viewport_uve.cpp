@@ -35,6 +35,7 @@
 #include "editor_object_icons_uve.h"
 
 #include "uve/component/script_component_uve.h"
+#include "uve/editor/editor_settings_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -224,27 +225,34 @@ void EditorUVE::DrawViewportPanelUVE() {
         ImGui::PopStyleVar();
         return;
     }
-    DrawViewportImageUVE();
+    DrawViewportImageUVE(ViewportContextUVE::Main);
     ImGui::End();
     ImGui::PopStyleVar();
 }
 
-void EditorUVE::DrawViewportImageUVE() {
+void EditorUVE::DrawViewportImageUVE(const ViewportContextUVE context) {
+    ViewportOverlayStateUVE* state = &m_viewportOverlayState;
+    if (context == ViewportContextUVE::EntityEditor) {
+        state = &m_entityViewportOverlayState;
+    } else if (context == ViewportContextUVE::Retarget) {
+        state = &m_retargetViewportOverlayState;
+    }
+
     const ImVec2 availableRegion = ImGui::GetContentRegionAvail();
+    const ImVec2 viewportOrigin = ImGui::GetCursorScreenPos();
     if (m_viewportPanelRenderer && availableRegion.x > 0.0F && availableRegion.y > 0.0F) {
-        m_viewportOverlayState.gameWorkspaceActive = m_activeWorkspace == EditorWorkspaceUVE::Game;
-        m_viewportOverlayState.studioView = m_retargetPreview.has_value();
-        m_viewportOverlayState.bones.clear();
-        if (!m_viewportOverlayState.gameWorkspaceActive) {
-            BuildSkeletonOverlayUVE(m_viewportOverlayState.bones);
+        state->gameWorkspaceActive = context == ViewportContextUVE::Main &&
+                                     m_activeWorkspace == EditorWorkspaceUVE::Game;
+        state->studioView = context == ViewportContextUVE::Retarget;
+        state->bones.clear();
+        if (!state->gameWorkspaceActive) {
+            BuildSkeletonOverlayUVE(state->bones);
         }
         const Math::Vector2UVE available{availableRegion.x, availableRegion.y};
         Math::Vector2UVE used{0.0F, 0.0F};
-        // Whatever the overlay bubbles below changed last frame - the renderer applies it to its
-        // own real projection/gizmo-mode/grid state. One frame of lag between clicking a bubble
-        // and the render reflecting it is imperceptible and avoids restructuring this call to run
-        // after the image (whose rect the bubbles themselves need to position against).
-        const std::uint64_t textureId = m_viewportPanelRenderer(available, used, m_viewportOverlayState);
+        // Whatever this particular view's overlay changed last frame is applied only to that
+        // view's backend. Camera requests and toolbar state can no longer leak between windows.
+        const std::uint64_t textureId = m_viewportPanelRenderer(context, available, used, *state);
         if (textureId != 0U && used.x > 0.0F && used.y > 0.0F) {
             const ImVec2 cursorBeforeImage = ImGui::GetCursorScreenPos();
             // The viewport renderer's framebuffer texture is a normal OpenGL render target
@@ -257,19 +265,31 @@ void EditorUVE::DrawViewportImageUVE() {
             // The projection/gizmo-mode overlay bubbles are editor-authoring chrome - hidden while
             // the Game workspace tab is active, matching Unity's own Scene/Game split where the
             // Game view previews what a player would see with no editor overlays on top.
-            if (!m_viewportOverlayState.gameWorkspaceActive && !m_viewportOverlayState.studioView) {
+            if (!state->gameWorkspaceActive && !state->studioView) {
+                // The existing toolbar helpers operate on the canonical member. Temporarily put
+                // this view's state there while they draw, then return both states to their owners.
+                // This keeps the large, proven toolbar implementation unchanged while preserving
+                // strict state isolation for the Entity Editor.
+                const bool auxiliaryState = state != &m_viewportOverlayState;
+                if (auxiliaryState) {
+                    std::swap(*state, m_viewportOverlayState);
+                }
                 DrawViewportOverlayBubblesUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},
                                               Math::Vector2UVE{used.x, used.y});
                 DrawEntityContextToolbarUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},
                                             Math::Vector2UVE{used.x, used.y});
-                // Every item submitted in this window this frame is an overlay bubble - the image
-                // above is not a hoverable item - so this is exactly "the pointer is on a button",
-                // which the renderer reads next frame to keep a toolbar click out of the scene.
                 m_viewportOverlayState.pointerOverOverlay = ImGui::IsAnyItemHovered();
+                if (auxiliaryState) {
+                    std::swap(*state, m_viewportOverlayState);
+                }
             } else {
-                m_viewportOverlayState.pointerOverOverlay = false;
+                state->pointerOverOverlay = false;
             }
         }
+    }
+    if (availableRegion.x > 0.0F && availableRegion.y > 0.0F) {
+        DrawEditorPlayBootSplashOverlayUVE(Math::Vector2UVE{viewportOrigin.x, viewportOrigin.y},
+                                           Math::Vector2UVE{availableRegion.x, availableRegion.y});
     }
 }
 
@@ -370,7 +390,8 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
 
         if (DrawViewportBubbleIconButtonUVE("##viewport-grid", m_viewportOverlayState.gridVisible,
                                             DrawGridIconUVE)) {
-            m_viewportOverlayState.gridVisible = !m_viewportOverlayState.gridVisible;
+            static_cast<void>(SetViewportGridUVE(!m_viewportOverlayState.gridVisible,
+                                                 m_viewportOverlayState.gridOpacity));
         }
         // Click toggles; right-click opens the grid's options, so the toolbar stays one button wide.
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
@@ -618,8 +639,14 @@ bool EditorUVE::SetViewportGridUVE(const bool visible, const float opacity) {
     if (!std::isfinite(opacity) || opacity < kMinimumViewportGridOpacityUVE || opacity > 1.0F) {
         return false;
     }
+    const bool previousVisible = m_viewportOverlayState.gridVisible;
+    const float previousOpacity = m_viewportOverlayState.gridOpacity;
     m_viewportOverlayState.gridVisible = visible;
     m_viewportOverlayState.gridOpacity = opacity;
+    namespace Id = EditorSettingIdUVE;
+    NotifyEditorSettingChangedUVE(Id::kGridVisibleUVE, previousVisible, visible);
+    NotifyEditorSettingChangedUVE(Id::kGridOpacityUVE, static_cast<double>(previousOpacity),
+                                  static_cast<double>(opacity));
     return true;
 }
 
@@ -628,7 +655,10 @@ bool EditorUVE::SetViewportGridCellSizeUVE(const float cellSize) {
         cellSize > kMaximumViewportGridCellSizeUVE) {
         return false;
     }
+    const float previousCellSize = m_viewportOverlayState.gridCellSize;
     m_viewportOverlayState.gridCellSize = cellSize;
+    NotifyEditorSettingChangedUVE(EditorSettingIdUVE::kGridCellSizeUVE,
+                                  static_cast<double>(previousCellSize), static_cast<double>(cellSize));
     return true;
 }
 
@@ -638,9 +668,19 @@ bool EditorUVE::SetViewportSelectionOutlineUVE(const bool visible, const Viewpor
         thickness < kMinimumSelectionOutlineThicknessUVE || thickness > kMaximumSelectionOutlineThicknessUVE) {
         return false;
     }
+    const bool previousVisible = m_viewportOverlayState.selectionOutlineVisible;
+    const ViewportAxisColorUVE previousColor = m_viewportOverlayState.selectionOutlineColor;
+    const float previousThickness = m_viewportOverlayState.selectionOutlineThickness;
     m_viewportOverlayState.selectionOutlineVisible = visible;
     m_viewportOverlayState.selectionOutlineColor = color;
     m_viewportOverlayState.selectionOutlineThickness = thickness;
+    namespace Id = EditorSettingIdUVE;
+    NotifyEditorSettingChangedUVE(Id::kSelectionOutlineVisibleUVE, previousVisible, visible);
+    NotifyEditorSettingChangedUVE(Id::kSelectionOutlineColorUVE,
+                                  Config::SettingColorUVE{previousColor.r, previousColor.g, previousColor.b},
+                                  Config::SettingColorUVE{color.r, color.g, color.b});
+    NotifyEditorSettingChangedUVE(Id::kSelectionOutlineThicknessUVE, static_cast<double>(previousThickness),
+                                  static_cast<double>(thickness));
     return true;
 }
 

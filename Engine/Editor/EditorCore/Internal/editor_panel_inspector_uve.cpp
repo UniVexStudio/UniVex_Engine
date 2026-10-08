@@ -99,8 +99,8 @@ constexpr const char* kPanelLabelInspectorUVE = "\xEE\xA8\x83 Inspector##right-p
 }
 
 
-/// A class-chain heading ("Object3D", "Object"): the ancestor the sections below it come from. A
-/// quiet label with a rule to the edge, so it groups without competing with the section headers.
+/// A class-chain heading: the ancestor the sections below it come from. A quiet label with a rule
+/// to the edge, so it groups without competing with the section headers.
 void DrawInspectorChainHeaderUVE(const std::string& label) {
     ImGui::Dummy(ImVec2(0.0F, 4.0F));
     const ImVec2 start = ImGui::GetCursorScreenPos();
@@ -237,10 +237,11 @@ void EditorUVE::DrawInspectorContentUVE() {
 
     ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
     ImGui::Text("%s", GetEntityDisplayLabelUVE(m_selectedEntity).c_str());
-    // Every Inspector is its object's recipe and nothing else: the object's own section, its bases,
-    // Object3D's Transform and Visibility, then the common Object section. Objects are renamed and
-    // reparented from the Scene panel and get their parts from their recipe, so there is no name
-    // field, hierarchy block, search box, Add Component or Remove here.
+    // Every Inspector is its object's recipe and nothing else, parent by parent: the object's own
+    // section, each abstract base, Object3D's Transform and Visibility, then the common Object
+    // section. Objects are renamed and reparented from the Scene panel and get their parts from
+    // their recipe, so there is no name field, hierarchy block, search box, Add Component or Remove
+    // here.
     RepairInspectorRecipeUVE(m_selectedEntity);
     ImGui::Separator();
     m_inspectorDrawerRegistry.DrawEligibleUVE(m_selectedEntity);

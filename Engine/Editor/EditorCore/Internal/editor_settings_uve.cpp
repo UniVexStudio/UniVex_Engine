@@ -6,7 +6,9 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -21,6 +23,7 @@ namespace {
 using Config::SettingColorUVE;
 using Config::SettingDescriptorUVE;
 using Config::SettingEnumEntryUVE;
+using Config::SettingStringListUVE;
 using Config::SettingValueUVE;
 
 constexpr const char* kSessionCategoryUVE = "Editor/Session";
@@ -30,6 +33,9 @@ constexpr const char* kOutlineCategoryUVE = "Editor/Viewport/Selection Outline";
 constexpr const char* kObjectsCategoryUVE = "Editor/Objects";
 constexpr const char* kPlayCategoryUVE = "Editor/Play Mode";
 constexpr const char* kHierarchyCategoryUVE = "Editor/Hierarchy";
+// Legacy color-list loading scanned up to 64 stored entries before skipping invalid hex strings
+// and applying the smaller saved/recent caps to the successfully parsed colors.
+constexpr std::size_t kMaxStoredColorPreferenceEntriesUVE = 64U;
 
 [[nodiscard]] SettingDescriptorUVE HiddenUVE(SettingDescriptorUVE descriptor) {
     descriptor.flags |= Config::kSettingFlagHiddenUVE;
@@ -52,6 +58,46 @@ template <typename Enum>
 
 [[nodiscard]] float FloatUVE(const SettingValueUVE& value) {
     return static_cast<float>(std::get<double>(value));
+}
+
+[[nodiscard]] SettingStringListUVE EncodeColorListUVE(const std::vector<EditorColorUVE>& colors) {
+    SettingStringListUVE encoded;
+    encoded.reserve(colors.size());
+    for (const EditorColorUVE& color : colors) {
+        encoded.push_back(FormatColorHexUVE(color, true));
+    }
+    return encoded;
+}
+
+[[nodiscard]] std::vector<EditorColorUVE> DecodeColorListUVE(const SettingStringListUVE& encoded) {
+    std::vector<EditorColorUVE> colors;
+    colors.reserve(encoded.size());
+    for (const std::string& value : encoded) {
+        if (const std::optional<EditorColorUVE> color = ParseColorHexUVE(value)) {
+            colors.push_back(*color);
+        }
+    }
+    return colors;
+}
+
+[[nodiscard]] SettingStringListUVE EncodeInspectorFoldsUVE(const std::map<std::string, bool>& folds) {
+    SettingStringListUVE encoded;
+    encoded.reserve(folds.size());
+    for (const auto& [key, open] : folds) {
+        encoded.push_back(std::string{open ? "1:" : "0:"} + key);
+    }
+    return encoded;
+}
+
+[[nodiscard]] std::map<std::string, bool> DecodeInspectorFoldsUVE(const SettingStringListUVE& encoded) {
+    std::map<std::string, bool> folds;
+    for (const std::string& entry : encoded) {
+        if (entry.size() <= 2U || entry[1U] != ':' || (entry[0U] != '0' && entry[0U] != '1')) {
+            continue;
+        }
+        folds.insert_or_assign(entry.substr(2U), entry[0U] == '1');
+    }
+    return folds;
 }
 
 } // namespace
@@ -174,6 +220,62 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              editor.m_colorPickerPreferences.advancedOpen = std::get<bool>(value);
              return true;
          }},
+        {HiddenUVE(Config::MakeStringListSettingUVE(IdUVE(Id::kColorPickerSavedUVE), {},
+                                                    kMaxStoredColorPreferenceEntriesUVE, 0U,
+                                                    "Saved Colours", kSessionCategoryUVE)),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return EncodeColorListUVE(editor.GetColorPickerPreferencesUVE().saved);
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             ColorPickerPreferencesUVE preferences = editor.GetColorPickerPreferencesUVE();
+             preferences.saved = DecodeColorListUVE(std::get<SettingStringListUVE>(value));
+             editor.SetColorPickerPreferencesUVE(std::move(preferences));
+             return true;
+         }},
+        {HiddenUVE(Config::MakeStringListSettingUVE(IdUVE(Id::kColorPickerRecentUVE), {},
+                                                    kMaxStoredColorPreferenceEntriesUVE, 0U,
+                                                    "Recent Colours", kSessionCategoryUVE)),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return EncodeColorListUVE(editor.GetColorPickerPreferencesUVE().recents);
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             ColorPickerPreferencesUVE preferences = editor.GetColorPickerPreferencesUVE();
+             preferences.recents = DecodeColorListUVE(std::get<SettingStringListUVE>(value));
+             editor.SetColorPickerPreferencesUVE(std::move(preferences));
+             return true;
+         }},
+        {HiddenUVE(Config::MakeStringListSettingUVE(IdUVE(Id::kInspectorFoldsUVE), {},
+                                                    EditorUVE::kMaxRememberedInspectorFoldsUVE, 0U,
+                                                    "Inspector Folds", kSessionCategoryUVE)),
+         [](const EditorUVE& editor) -> SettingValueUVE { return EncodeInspectorFoldsUVE(editor.m_inspectorFoldOpen); },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_inspectorFoldOpen = DecodeInspectorFoldsUVE(std::get<SettingStringListUVE>(value));
+             return true;
+         }},
+        {HiddenUVE(Config::MakeStringListSettingUVE(IdUVE(Id::kFavoriteProjectsUVE), {},
+                                                    EditorUVE::kMaxPersistedFavoriteProjectsUVE, 0U,
+                                                    "Favorite Projects", kSessionCategoryUVE)),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             const std::size_t count = std::min(editor.m_favoriteProjectPaths.size(),
+                                                EditorUVE::kMaxPersistedFavoriteProjectsUVE);
+             SettingStringListUVE paths;
+             paths.reserve(count);
+             for (std::size_t index = 0U; index < count; ++index) {
+                 paths.push_back(editor.m_favoriteProjectPaths[index].generic_string());
+             }
+             return paths;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             const SettingStringListUVE& paths = std::get<SettingStringListUVE>(value);
+             editor.m_favoriteProjectPaths.clear();
+             editor.m_favoriteProjectPaths.reserve(paths.size());
+             for (const std::string& path : paths) {
+                 if (!path.empty()) {
+                     editor.m_favoriteProjectPaths.emplace_back(path);
+                 }
+             }
+             return true;
+         }},
 
         // Snapping. The steps share their bounds with SetTransformSnappingSettingsUVE, so a value
         // legal here is one that setter accepts; it is assigned directly because loading happens
@@ -183,6 +285,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
          [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_transformSnappingSettings.enabled; },
          [](EditorUVE& editor, const SettingValueUVE& value) {
              editor.m_transformSnappingSettings.enabled = std::get<bool>(value);
+             editor.m_viewportOverlayState.snapEnabled = editor.m_transformSnappingSettings.enabled;
              return true;
          }},
         {Config::MakeFloatSettingUVE(IdUVE(Id::kSnapTranslateStepUVE), snapping.translateStep,
@@ -221,7 +324,8 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
         {Config::MakeBoolSettingUVE(IdUVE(Id::kGridVisibleUVE), overlay.gridVisible, "Show Grid", kGridCategoryUVE),
          [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_viewportOverlayState.gridVisible; },
          [](EditorUVE& editor, const SettingValueUVE& value) {
-             return editor.SetViewportGridUVE(std::get<bool>(value), editor.m_viewportOverlayState.gridOpacity);
+             editor.m_viewportOverlayState.gridVisible = std::get<bool>(value);
+             return true;
          }},
         {WithStepUVE(Config::MakeFloatSettingUVE(IdUVE(Id::kGridOpacityUVE), overlay.gridOpacity,
                                                  kMinimumViewportGridOpacityUVE, 1.0, "Opacity", kGridCategoryUVE,
@@ -231,7 +335,8 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              return static_cast<double>(editor.m_viewportOverlayState.gridOpacity);
          },
          [](EditorUVE& editor, const SettingValueUVE& value) {
-             return editor.SetViewportGridUVE(editor.m_viewportOverlayState.gridVisible, FloatUVE(value));
+             editor.m_viewportOverlayState.gridOpacity = FloatUVE(value);
+             return true;
          }},
         {Config::MakeFloatSettingUVE(IdUVE(Id::kGridCellSizeUVE), overlay.gridCellSize,
                                      kMinimumViewportGridCellSizeUVE, kMaximumViewportGridCellSizeUVE, "Cell Size",
@@ -241,7 +346,8 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              return static_cast<double>(editor.m_viewportOverlayState.gridCellSize);
          },
          [](EditorUVE& editor, const SettingValueUVE& value) {
-             return editor.SetViewportGridCellSizeUVE(FloatUVE(value));
+             editor.m_viewportOverlayState.gridCellSize = FloatUVE(value);
+             return true;
          }},
 
         // Selection outline.
@@ -251,9 +357,8 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              return editor.m_viewportOverlayState.selectionOutlineVisible;
          },
          [](EditorUVE& editor, const SettingValueUVE& value) {
-             const ViewportOverlayStateUVE& state = editor.m_viewportOverlayState;
-             return editor.SetViewportSelectionOutlineUVE(std::get<bool>(value), state.selectionOutlineColor,
-                                                         state.selectionOutlineThickness);
+             editor.m_viewportOverlayState.selectionOutlineVisible = std::get<bool>(value);
+             return true;
          }},
         {Config::MakeColorSettingUVE(IdUVE(Id::kSelectionOutlineColorUVE),
                                      SettingColorUVE{overlay.selectionOutlineColor.r, overlay.selectionOutlineColor.g,
@@ -264,11 +369,9 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              return SettingColorUVE{color.r, color.g, color.b};
          },
          [](EditorUVE& editor, const SettingValueUVE& value) {
-             const ViewportOverlayStateUVE& state = editor.m_viewportOverlayState;
              const auto& color = std::get<SettingColorUVE>(value);
-             return editor.SetViewportSelectionOutlineUVE(state.selectionOutlineVisible,
-                                                         ViewportAxisColorUVE{color.r, color.g, color.b},
-                                                         state.selectionOutlineThickness);
+             editor.m_viewportOverlayState.selectionOutlineColor = ViewportAxisColorUVE{color.r, color.g, color.b};
+             return true;
          }},
         {WithStepUVE(Config::MakeFloatSettingUVE(IdUVE(Id::kSelectionOutlineThicknessUVE),
                                                  overlay.selectionOutlineThickness,
@@ -280,9 +383,8 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              return static_cast<double>(editor.m_viewportOverlayState.selectionOutlineThickness);
          },
          [](EditorUVE& editor, const SettingValueUVE& value) {
-             const ViewportOverlayStateUVE& state = editor.m_viewportOverlayState;
-             return editor.SetViewportSelectionOutlineUVE(state.selectionOutlineVisible, state.selectionOutlineColor,
-                                                         FloatUVE(value));
+             editor.m_viewportOverlayState.selectionOutlineThickness = FloatUVE(value);
+             return true;
          }},
 
         // New objects.
@@ -470,12 +572,48 @@ std::optional<Config::SettingValueUVE> EditorUVE::GetEditorSettingUVE(const std:
 }
 
 bool EditorUVE::SetEditorSettingUVE(const std::string_view id, const Config::SettingValueUVE& value) {
-    if (const EditorSettingBindingUVE* binding = FindSettingBindingUVE(id)) {
-        return Config::IsSettingValueValidUVE(binding->descriptor, value) && binding->set(*this, value);
-    }
     const Config::SettingDescriptorUVE* descriptor = m_settingsRegistry.FindUVE(id);
-    return descriptor != nullptr && Config::IsSettingValueValidUVE(*descriptor, value) &&
-           SetShortcutSettingUVE(id, value);
+    if (descriptor == nullptr || descriptor->HasFlagUVE(Config::kSettingFlagDeprecatedUVE) ||
+        !Config::IsSettingValueValidUVE(*descriptor, value)) {
+        return false;
+    }
+
+    const std::optional<SettingValueUVE> previousValue = GetEditorSettingUVE(id);
+    if (!previousValue) {
+        return false;
+    }
+
+    const EditorSettingBindingUVE* binding = FindSettingBindingUVE(id);
+    const bool applied = binding != nullptr ? binding->set(*this, value) : SetShortcutSettingUVE(id, value);
+    if (!applied) {
+        return false;
+    }
+
+    if (const std::optional<SettingValueUVE> newValue = GetEditorSettingUVE(id);
+        newValue && *previousValue != *newValue) {
+        NotifyEditorSettingChangedUVE(id, *previousValue, *newValue);
+    }
+    return true;
+}
+
+Config::SettingsObserverSubscriptionUVE EditorUVE::SubscribeToSettingUVE(
+    const std::string_view id, Config::SettingsObserverCallbackUVE callback) {
+    return m_settingsObservers.SubscribeToSettingUVE(id, std::move(callback));
+}
+
+Config::SettingsObserverSubscriptionUVE EditorUVE::SubscribeToCategoryUVE(
+    const std::string_view categoryPrefix, Config::SettingsObserverCallbackUVE callback) {
+    return m_settingsObservers.SubscribeToCategoryUVE(categoryPrefix, std::move(callback));
+}
+
+bool EditorUVE::UnsubscribeUVE(const Config::SettingsObserverSubscriptionUVE subscription) {
+    return m_settingsObservers.UnsubscribeUVE(subscription);
+}
+
+void EditorUVE::NotifyEditorSettingChangedUVE(const std::string_view id,
+                                               const Config::SettingValueUVE& previousValue,
+                                               const Config::SettingValueUVE& newValue) {
+    m_settingsObservers.NotifyChangedUVE(id, previousValue, newValue);
 }
 
 namespace {
@@ -577,6 +715,9 @@ std::string FormatSettingValueUVE(const Config::SettingDescriptorUVE& descriptor
         std::snprintf(text, sizeof(text), "(%.6g, %.6g, %.6g)", vector->x, vector->y, vector->z);
         return text;
     }
+    if (const auto* list = std::get_if<Config::SettingStringListUVE>(&value)) {
+        return std::to_string(list->size()) + (list->size() == 1U ? " item" : " items");
+    }
     const auto* text = std::get_if<std::string>(&value);
     return text != nullptr ? *text : std::string{};
 }
@@ -585,14 +726,14 @@ namespace {
 
 /// The old name of a renamed setting, declared as an alias of the setting that replaced it: same
 /// type, bounds and enum entries, so a value stored under the old name is read exactly as the new
-/// one validates. Hidden, so the preferences window never offers a name the editor no longer
-/// uses, and Deprecated, so a save never writes it back - the rename is one-way, and the alias
-/// exists only for files written before it.
+/// one validates. Hidden, so the preferences window never offers a name the editor no longer uses;
+/// Deprecated, so the registry migrates a legacy value to the replacement and removes the old key.
 [[nodiscard]] Config::SettingDescriptorUVE MakeRenamedSettingAliasUVE(const Config::SettingDescriptorUVE& current,
                                                                      const RenamedSettingIdUVE& renamed) {
     Config::SettingDescriptorUVE alias = current;
     alias.id = std::string(renamed.oldId);
     alias.flags |= Config::kSettingFlagHiddenUVE | Config::kSettingFlagDeprecatedUVE;
+    alias.replacementId = std::string(renamed.newId);
     return alias;
 }
 
@@ -613,6 +754,19 @@ bool RegisterEditorSettingsUVE(Config::SettingsRegistryUVE& registry) {
         allRegistered = binding != bindings.cend() &&
                         registry.RegisterUVE(MakeRenamedSettingAliasUVE(binding->descriptor, renamed)) && allRegistered;
     }
+
+    // The viewport module owns these defaults, so EditorCore registers only the persisted values.
+    // Load/save handles them as one palette: the host's default colours are never replaced by a
+    // descriptor's placeholder default when no complete stored palette exists.
+    allRegistered = registry.RegisterUVE(HiddenUVE(Config::MakeColorSettingUVE(
+                        IdUVE(EditorSettingIdUVE::kViewportAxisColorXUVE), {}, false, "X Axis Colour",
+                        kSessionCategoryUVE))) && allRegistered;
+    allRegistered = registry.RegisterUVE(HiddenUVE(Config::MakeColorSettingUVE(
+                        IdUVE(EditorSettingIdUVE::kViewportAxisColorYUVE), {}, false, "Y Axis Colour",
+                        kSessionCategoryUVE))) && allRegistered;
+    allRegistered = registry.RegisterUVE(HiddenUVE(Config::MakeColorSettingUVE(
+                        IdUVE(EditorSettingIdUVE::kViewportAxisColorZUVE), {}, false, "Z Axis Colour",
+                        kSessionCategoryUVE))) && allRegistered;
     return allRegistered;
 }
 

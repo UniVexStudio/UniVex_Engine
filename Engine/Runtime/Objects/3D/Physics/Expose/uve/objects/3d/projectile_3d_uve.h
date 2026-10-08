@@ -67,6 +67,7 @@ struct Projectile3DComponentUVE final {
     /// How much of the speed *along* a surface is lost on each bounce, 0..1 (0 = frictionless,
     /// 1 = it keeps none of its sideways motion). Only a bounce uses it.
     float friction = 0.2F;
+    EntityUVE ignoreEntity = kInvalidEntityUVE;
 
     // ---------------------------------------------------------------------------------------------
     // Runtime-only result state, written by Physics::StepProjectile3DUVE() - never serialized (the
@@ -105,5 +106,45 @@ struct Projectile3DComponentUVE final {
 /// 0..1. A claimed runtime hit must also name an entity and be finite, so a consumer can never
 /// read a hit that points at nothing.
 [[nodiscard]] bool IsProjectile3DObjectComponentValidUVE(const Projectile3DComponentUVE& value) noexcept;
+
+class Projectile3DUVE final {
+public:
+    struct ContactMotionUVE {
+        Math::Vector3UVE velocity{};
+        bool bounced = false;
+        bool stopped = false;
+    };
+
+    [[nodiscard]] static bool IsFlyingUVE(const Projectile3DComponentUVE& projectile) noexcept;
+
+    [[nodiscard]] static bool AcceptsObstacleUVE(EntityUVE projectileEntity,
+                                                 const Projectile3DComponentUVE& projectile,
+                                                 EntityUVE obstacle) noexcept;
+
+    [[nodiscard]] static Math::Vector3UVE IntegrateVelocityUVE(const Math::Vector3UVE& velocity,
+                                                               const Math::Vector3UVE& acceleration,
+                                                               float deltaTimeSeconds) noexcept;
+
+    [[nodiscard]] static Math::Vector3UVE ResolveWorldVelocityUVE(
+        const Math::Vector3UVE& localVelocity, const Math::QuaternionUVE& worldRotation) noexcept;
+
+    [[nodiscard]] static Math::Vector3UVE BounceVelocityUVE(const Math::Vector3UVE& velocity,
+                                                            const Math::Vector3UVE& normal,
+                                                            float restitution, float friction) noexcept;
+
+    [[nodiscard]] static bool IsUsableMotionUVE(const Math::Vector3UVE& velocity) noexcept;
+
+    [[nodiscard]] static ContactMotionUVE ResolveContactUVE(const Projectile3DComponentUVE& projectile,
+                                                            const Math::Vector3UVE& localVelocity,
+                                                            const Math::Vector3UVE& localNormal) noexcept;
+
+    [[nodiscard]] static float TickLifetimeUVE(float remainingLifetime, float deltaTimeSeconds) noexcept;
+
+    [[nodiscard]] static bool HasExpiredUVE(float remainingLifetime) noexcept;
+
+    static void RecordHitUVE(Projectile3DComponentUVE& projectile, EntityUVE hitEntity,
+                             const Math::Vector3UVE& hitPosition, const Math::Vector3UVE& hitNormal,
+                             float impactSpeed) noexcept;
+};
 
 } // namespace UVE::Scene

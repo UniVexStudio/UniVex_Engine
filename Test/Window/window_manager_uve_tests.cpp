@@ -106,7 +106,9 @@ TEST_F(WindowManagerUVETest, SetFullscreenUVE_RoundTripsWithBackendConfirmedStat
     EXPECT_EQ(glfwGetWindowMonitor(glfwWindow), nullptr);
     windowManager->SetFullscreenUVE(true);
     EXPECT_TRUE(windowManager->IsFullscreenUVE());
-    EXPECT_EQ(glfwGetWindowMonitor(glfwWindow), primaryMonitor);
+    // The boolean API promises borderless fullscreen; exclusive monitor attachment is a distinct
+    // WindowModeUVE and must not be inferred from this legacy toggle.
+    EXPECT_EQ(glfwGetWindowMonitor(glfwWindow), nullptr);
     windowManager->SetFullscreenUVE(false);
     EXPECT_FALSE(windowManager->IsFullscreenUVE());
     EXPECT_EQ(glfwGetWindowMonitor(glfwWindow), nullptr);
