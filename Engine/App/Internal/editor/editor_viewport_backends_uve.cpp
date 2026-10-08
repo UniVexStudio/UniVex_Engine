@@ -599,6 +599,7 @@ public:
             previewing_ = false;
         }
         renderPass_->Settings().viewGizmos = !studioView_ && !gameWorkspaceActive_ && !previewing_;
+        renderPass_->Settings().viewTransformGizmo = !studioView_ && !gameWorkspaceActive_ && !previewing_;
         if (studioView_) {
             // Looked at, not edited: nothing is selected or moved, and the view does not turn.
             renderPass_->Settings().viewTransformGizmo = false;
@@ -647,7 +648,7 @@ public:
         }
         const univex::integration::EditorMeshLayerResultUVE meshResult = meshLayer_.RenderUVE(
             camera_, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), lookThroughCamera);
-        if (!gameWorkspaceActive_ && !studioView_) {
+        if (!gameWorkspaceActive_ && !studioView_ && !previewing_) {
             const float aspect = static_cast<float>(width) / static_cast<float>(height);
             univex::gizmo::GizmoMesh overlay = BuildCameraFrustumMeshUVE(
                 entityManager_, lookThroughCamera.value_or(UVE::Scene::kInvalidEntityUVE), aspect);
@@ -698,7 +699,9 @@ public:
         if (studio != nullptr) {
             studio->DrawFloor(camera_, width, height);
         }
-        renderPass_->RenderGridUVE(camera_, width, height);
+        if (!previewing_) {
+            renderPass_->RenderGridUVE(camera_, width, height);
+        }
         // The selection outline sits over the scene and the grid, under the gizmos. The Game tab
         // previews what a player sees, so no editor outline there.
         if (!gameWorkspaceActive_ && !studioView_) {
@@ -1127,7 +1130,7 @@ private:
         }
 
         const bool hasSelection = contributing > 0;
-        renderPass_->Settings().viewTransformGizmo = hasSelection && !gameWorkspaceActive_;
+        renderPass_->Settings().viewTransformGizmo = hasSelection && !gameWorkspaceActive_ && !previewing_;
         if (hasSelection) {
             gizmoPivot_ = centroid * (1.0F / static_cast<float>(contributing));
             renderPass_->SetGizmoPivotOverride(gizmoPivot_);
