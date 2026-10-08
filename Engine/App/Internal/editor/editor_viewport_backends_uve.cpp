@@ -142,9 +142,9 @@ void PopulateLightingSmokeSceneUVE(UVE::Core::EngineServicesUVE& services) {
     light.light.shadowMaxDistance = 80.0F;
     UVE::Scene::ApplyDirectionalLight3DObjectDefinitionUVE(entities, sun, light);
     UVE::Math::QuaternionUVE lightRotation{};
-    static_cast<void>(UVE::Math::TryMakeLookAtUVE({4.0F, 6.0F, 4.0F}, {0.0F, 1.0F, 0.0F}, lightRotation));
+    static_cast<void>(UVE::Math::TryMakeLookAtUVE({2.0F, 3.0F, 2.0F}, {0.0F, 1.0F, 0.0F}, lightRotation));
     graph.SetLocalTransformUVE(entities, sun,
-                               UVE::Scene::TransformComponentUVE{{4.0F, 6.0F, 4.0F}, lightRotation,
+                               UVE::Scene::TransformComponentUVE{{2.0F, 3.0F, 2.0F}, lightRotation,
                                                                   {1.0F, 1.0F, 1.0F}});
     graph.UpdateUVE(entities);
 }
