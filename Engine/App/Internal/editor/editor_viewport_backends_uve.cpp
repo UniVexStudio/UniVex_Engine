@@ -134,7 +134,7 @@ void main() {
             // The authored far plane can be hundreds or thousands of units away. Keep the editor
             // visualization compact around the camera while leaving the real camera projection,
             // far plane, and runtime rendering completely unchanged.
-            constexpr float kEditorFrustumLength = 3.0F;
+            constexpr float kEditorFrustumLength = 2.4F;
             const float visualFarScale =
                 std::min(1.0F, kEditorFrustumLength / std::max(camera.farPlane, camera.nearPlane));
             const univex::math::Vec3 origin{worldTransform.worldPosition.x, worldTransform.worldPosition.y,
@@ -154,6 +154,51 @@ void main() {
                 mesh.lines.push_back(univex::gizmo::GizmoLine{
                     start, end, color, widthPx});
             };
+            const auto rotate = [&](const UVE::Math::Vector3UVE local) {
+                const UVE::Math::Vector3UVE world = UVE::Math::RotateVectorUVE(worldTransform.worldRotation, local);
+                return univex::math::Vec3{world.x, world.y, world.z};
+            };
+            const univex::math::Vec3 right = rotate({1.0F, 0.0F, 0.0F});
+            const univex::math::Vec3 up = rotate({0.0F, 1.0F, 0.0F});
+            const univex::math::Vec3 forward = rotate({0.0F, 0.0F, -1.0F});
+            const univex::math::Vec3 iconColor{1.0F, 0.72F, 0.22F};
+            const float bodyWidth = 0.20F;
+            const float bodyHeight = 0.14F;
+            const float bodyDepth = 0.10F;
+            const univex::math::Vec3 bodyBack = origin - forward * bodyDepth;
+            const univex::math::Vec3 bodyFront = origin + forward * bodyDepth;
+            const univex::math::Vec3 bodyCorners[8] = {
+                bodyBack - right * bodyWidth - up * bodyHeight,
+                bodyBack + right * bodyWidth - up * bodyHeight,
+                bodyBack - right * bodyWidth + up * bodyHeight,
+                bodyBack + right * bodyWidth + up * bodyHeight,
+                bodyFront - right * bodyWidth - up * bodyHeight,
+                bodyFront + right * bodyWidth - up * bodyHeight,
+                bodyFront - right * bodyWidth + up * bodyHeight,
+                bodyFront + right * bodyWidth + up * bodyHeight,
+            };
+            const auto addIconLine = [&](const univex::math::Vec3& a, const univex::math::Vec3& b) {
+                mesh.lines.push_back(univex::gizmo::GizmoLine{a, b, iconColor, 2.0F});
+            };
+            for (const std::array<int, 2> edge : {std::array<int, 2>{0, 1}, std::array<int, 2>{1, 3},
+                                                   std::array<int, 2>{3, 2}, std::array<int, 2>{2, 0},
+                                                   std::array<int, 2>{4, 5}, std::array<int, 2>{5, 7},
+                                                   std::array<int, 2>{7, 6}, std::array<int, 2>{6, 4},
+                                                   std::array<int, 2>{0, 4}, std::array<int, 2>{1, 5},
+                                                   std::array<int, 2>{2, 6}, std::array<int, 2>{3, 7}}) {
+                addIconLine(bodyCorners[edge[0]], bodyCorners[edge[1]]);
+            }
+            const univex::math::Vec3 lensCenter = bodyFront + forward * 0.045F;
+            const univex::math::Vec3 lensCorners[4] = {
+                lensCenter - right * 0.08F - up * 0.055F,
+                lensCenter + right * 0.08F - up * 0.055F,
+                lensCenter + right * 0.08F + up * 0.055F,
+                lensCenter - right * 0.08F + up * 0.055F,
+            };
+            addIconLine(lensCorners[0], lensCorners[1]);
+            addIconLine(lensCorners[1], lensCorners[2]);
+            addIconLine(lensCorners[2], lensCorners[3]);
+            addIconLine(lensCorners[3], lensCorners[0]);
             addLine(0, 1);
             addLine(1, 3);
             addLine(3, 2);
