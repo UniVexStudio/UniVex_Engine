@@ -394,8 +394,21 @@ std::string ValidateSettingDescriptorUVE(const SettingDescriptorUVE& descriptor)
                 return "'" + descriptor.id + "' has two Enum entries with the same value or label";
             }
         }
+    } else if (descriptor.type == SettingTypeUVE::StringList) {
+        // A StringList may carry entries as the vocabulary its items are chosen from (the editor's
+        // per-object default extras do); the owner of the setting enforces membership. The labels
+        // are still the items, so they must be non-empty and unique.
+        std::unordered_set<std::string> labels;
+        for (const SettingEnumEntryUVE& entry : descriptor.enumEntries) {
+            if (entry.label.empty()) {
+                return "'" + descriptor.id + "' has a StringList entry with no label";
+            }
+            if (!labels.insert(entry.label).second) {
+                return "'" + descriptor.id + "' has two StringList entries with the same label";
+            }
+        }
     } else if (!descriptor.enumEntries.empty()) {
-        return "'" + descriptor.id + "' lists Enum entries but is not an Enum setting";
+        return "'" + descriptor.id + "' lists Enum entries but is not an Enum or StringList setting";
     }
     const bool hasStringLength = descriptor.type == SettingTypeUVE::String ||
                                  descriptor.type == SettingTypeUVE::FilePath ||
