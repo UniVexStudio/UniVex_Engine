@@ -19,11 +19,13 @@
 // where it reads as a change rather than hiding inside a move.
 
 #include "uve/editor/editor_uve.h"
+#include "uve/editor/editor_settings_uve.h"
 #include "uve/objects/3d/camera_3d_uve.h"
 
 #include <algorithm>
 #include <array>
 #include <cfloat>
+#include <cstddef>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -119,9 +121,11 @@ void DrawInspectorChainHeaderUVE(const std::string& label) {
 
 void EditorUVE::DrawInspectorPanelUVE() {
     // A colour edit whose object is no longer the one selected - picked elsewhere while its picker
-    // was open - is finished as it stands rather than left waiting for a picker nobody can see.
+    // was open - is finished as it stands rather than left waiting for a picker nobody can see. A
+    // drag that never left its selection previews on, including a steady multi-selection drag.
     if (m_componentPropertyPreview.has_value() &&
-        (m_componentPropertyPreview->entity != m_selectedEntity || !HasSingleDocumentSelectionUVE())) {
+        (m_componentPropertyPreview->entity != m_selectedEntity ||
+         !IsSelectionSnapshotCurrentUVE(m_componentPropertyPreview->selectionBefore))) {
         static_cast<void>(CommitComponentPropertyPreviewUVE());
     }
     if (!m_inspectorPanelVisible) {
@@ -236,7 +240,13 @@ void EditorUVE::DrawInspectorContentUVE() {
                                   entity == m_selectedEntity ? " (Active)" : "");
             }
         }
-        ImGui::TextDisabled("Single-entity editing is unavailable for multi-selection.");
+        ImGui::TextDisabled("An edit below lands on every selected object that has the property, as one undo step.");
+        ImGui::Separator();
+        ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
+        // The sections anchor on the active object; every row still writes the whole selection.
+        RepairInspectorRecipeUVE(m_selectedEntity);
+        m_inspectorDrawerRegistry.DrawEligibleUVE(m_selectedEntity);
+        ImGui::EndDisabled();
         return;
     }
 
@@ -283,7 +293,13 @@ void EditorUVE::RegisterTransformInspectorDrawerUVE() {
             return IsDocumentEntityUVE(entity) &&
                    m_services->GetEntityManagerUVE().HasComponentUVE<Scene::TransformComponentUVE>(entity);
         },
-        [this](const Scene::EntityUVE entity) { DrawTransformInspectorDrawerUVE(entity); },
+        // Transform stays a single-object edit: the gizmo behind it moves one object. In a
+        // multi-selection the section still shows (anchored on the active object) but cannot edit.
+        [this](const Scene::EntityUVE entity) {
+            ImGui::BeginDisabled(!HasSingleDocumentSelectionUVE());
+            DrawTransformInspectorDrawerUVE(entity);
+            ImGui::EndDisabled();
+        },
     }));
     static_cast<void>(m_inspectorDrawerRegistry.SetDrawerGroupUVE("transform", "Object3D"));
 }
@@ -296,11 +312,17 @@ void EditorUVE::RepairInspectorRecipeUVE(const Scene::EntityUVE entity) {
     if (!IsDocumentEntityUVE(entity)) {
         return;
     }
+    // This legacy-recipe repair may add filterable components; invalidate the outliner only when
+    // the entity's component set actually changes.
+    const std::size_t componentCountBefore = entityManager.GetComponentTypesUVE(entity).size();
     if (entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity) &&
         !entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity)) {
         entityManager.AddComponentUVE<Scene::VisibilityComponentUVE>(entity, Scene::VisibilityComponentUVE{});
     }
     Scene::EnsureCommonObjectSectionUVE(entityManager, entity);
+    if (entityManager.GetComponentTypesUVE(entity).size() != componentCountBefore) {
+        InvalidateHierarchyFilterCacheUVE();
+    }
 }
 
 void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {
@@ -320,7 +342,13 @@ void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {
             return IsDocumentEntityUVE(entity) &&
                    m_services->GetEntityManagerUVE().HasComponentUVE<Scene::PrefabInstanceComponentUVE>(entity);
         },
-        [this](const Scene::EntityUVE entity) { DrawPrefabInspectorDrawerUVE(entity); },
+        // Prefab links stay per-object, like Transform: shown for the active object, read-only
+        // while several are selected.
+        [this](const Scene::EntityUVE entity) {
+            ImGui::BeginDisabled(!HasSingleDocumentSelectionUVE());
+            DrawPrefabInspectorDrawerUVE(entity);
+            ImGui::EndDisabled();
+        },
     }));
 }
 
@@ -342,18 +370,23 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
         return;
     }
     float position[3]{edited.localPosition.x, edited.localPosition.y, edited.localPosition.z};
-    // Displayed/edited as Euler degrees (Position/Scale's own 3-box shape, and the convention
-    // every other engine's Inspector uses) even though the stored/serialized rotation stays a
-    // quaternion - TryToEulerUVE()/TryMakeEulerUVE() are the display/edit-boundary conversion,
-    // never touching TransformComponentUVE's own data shape.
-    constexpr float kRadiansToDegreesUVE = 180.0F / std::numbers::pi_v<float>;
-    constexpr float kDegreesToRadiansUVE = std::numbers::pi_v<float> / 180.0F;
+    // Displayed/edited as Euler angles in the unit the author chose (degrees by default, the
+    // convention every other engine's Inspector uses) even though the stored/serialized rotation
+    // stays a quaternion - TryToEulerUVE()/TryMakeEulerUVE() are the display/edit-boundary
+    // conversion, never touching TransformComponentUVE's own data shape, and these factors are the
+    // unit boundary in the middle of it. One factor pair, so what is shown can never disagree with
+    // what is stored.
+    const AngleDisplayFactorsUVE angleFactors = AngleDisplayFactorsForUVE(m_inspectorAngleDisplay);
     Math::Vector3UVE eulerRadians{};
     const bool haveEuler = Math::TryToEulerUVE(edited.localRotation, eulerRadians);
-    float rotationDegrees[3]{haveEuler ? eulerRadians.x * kRadiansToDegreesUVE : 0.0F,
-                             haveEuler ? eulerRadians.y * kRadiansToDegreesUVE : 0.0F,
-                             haveEuler ? eulerRadians.z * kRadiansToDegreesUVE : 0.0F};
+    float rotationDisplayed[3]{haveEuler ? eulerRadians.x * angleFactors.unitsPerRadian : 0.0F,
+                               haveEuler ? eulerRadians.y * angleFactors.unitsPerRadian : 0.0F,
+                               haveEuler ? eulerRadians.z * angleFactors.unitsPerRadian : 0.0F};
     float scale[3]{edited.localScale.x, edited.localScale.y, edited.localScale.z};
+    // A drag moves a comparable amount in either unit: half a degree per pixel is the shipped feel,
+    // and 0.01 rad (~0.57 degrees) is its nearest clean step in radians.
+    const float rotationDragSpeed =
+        m_inspectorAngleDisplay == EditorAngleDisplayUVE::Degrees ? 0.5F : 0.01F;
 
     // Label beside value, the layout every other Inspector row uses, with one axis-tagged field per
     // component sharing the value column. Each field clips its own number, so a narrow panel shows
@@ -374,7 +407,8 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
             ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted(label);
             ImGui::TableSetColumnIndex(1);
-            const bool changed = DrawAxisVectorInputUVE(id, values, 3, speed);
+            const bool changed =
+                DrawAxisVectorInputUVE(id, values, 3, speed, 0.0F, 0.0F, m_inspectorFloatPrecision);
             if (ImGui::IsItemActivated()) {
                 // Tabbing from one field to the next ends the first edit and starts another.
                 if (GetToolSessionPhaseUVE() == EditorToolSessionPhaseUVE::Previewing) {
@@ -383,10 +417,31 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
                 static_cast<void>(BeginTransformGestureUVE(mode));
             }
             gestureEnded = (ImGui::IsItemDeactivated() && !ImGui::IsItemActive()) || gestureEnded;
+            // Right-click menu on the row's value group, the row's equivalent of the section
+            // menu. The axis input leaves its group as the last item, so the popup anchors to
+            // the whole row; each row keys its own popup from its widget id. A mode this switch
+            // does not name gets no menu rather than another row's.
+            std::optional<TransformClipboardPartUVE> part;
+            switch (mode) {
+            case EditorToolSessionModeUVE::Translate:
+                part = TransformClipboardPartUVE::Position;
+                break;
+            case EditorToolSessionModeUVE::Rotate:
+                part = TransformClipboardPartUVE::Rotation;
+                break;
+            case EditorToolSessionModeUVE::Scale:
+                part = TransformClipboardPartUVE::Scale;
+                break;
+            }
+            if (part.has_value()) {
+                const std::string menuId = std::string(id) + "-menu";
+                DrawInspectorTransformPartMenuUVE(*part, label, menuId.c_str());
+            }
             return changed;
         };
         positionChanged = row("Position", "##local-position", position, 0.01F, EditorToolSessionModeUVE::Translate);
-        rotationChanged = row("Rotation", "##local-rotation", rotationDegrees, 0.5F, EditorToolSessionModeUVE::Rotate);
+        rotationChanged =
+            row("Rotation", "##local-rotation", rotationDisplayed, rotationDragSpeed, EditorToolSessionModeUVE::Rotate);
         scaleChanged = row("Scale", "##local-scale", scale, 0.01F, EditorToolSessionModeUVE::Scale);
         ImGui::EndTable();
     }
@@ -394,9 +449,9 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
         edited.localPosition = Math::Vector3UVE{position[0], position[1], position[2]};
         if (rotationChanged) {
             Math::QuaternionUVE newRotation{};
-            const Math::Vector3UVE radians{rotationDegrees[0] * kDegreesToRadiansUVE,
-                                           rotationDegrees[1] * kDegreesToRadiansUVE,
-                                           rotationDegrees[2] * kDegreesToRadiansUVE};
+            const Math::Vector3UVE radians{rotationDisplayed[0] * angleFactors.radiansPerUnit,
+                                           rotationDisplayed[1] * angleFactors.radiansPerUnit,
+                                           rotationDisplayed[2] * angleFactors.radiansPerUnit};
             if (Math::TryMakeEulerUVE(radians, newRotation)) {
                 edited.localRotation = newRotation;
             }
@@ -462,6 +517,38 @@ void EditorUVE::SetInspectorFoldOpenUVE(const std::string& key, const bool open)
     } else if (m_inspectorFoldOpen.size() < kMaxRememberedInspectorFoldsUVE) {
         m_inspectorFoldOpen.emplace(key, open);
     }
+}
+
+bool EditorUVE::SetInspectorAngleDisplayUVE(const EditorAngleDisplayUVE mode) {
+    switch (mode) {
+    case EditorAngleDisplayUVE::Degrees:
+    case EditorAngleDisplayUVE::Radians:
+        break;
+    default:
+        return false; // not one of ours: a casted-out value, refused rather than stored
+    }
+    const EditorAngleDisplayUVE previous = m_inspectorAngleDisplay;
+    if (previous == mode) {
+        return false;
+    }
+    m_inspectorAngleDisplay = mode;
+    NotifyEditorSettingChangedUVE(EditorSettingIdUVE::kInspectorAngleDisplayUVE,
+                                  static_cast<std::int64_t>(previous), static_cast<std::int64_t>(mode));
+    return true;
+}
+
+bool EditorUVE::SetInspectorFloatPrecisionUVE(const int precision) {
+    if (precision < kInspectorFloatPrecisionMinUVE || precision > kInspectorFloatPrecisionMaxUVE) {
+        return false; // outside the 0..6 the format table spells: refused rather than stored
+    }
+    const int previous = m_inspectorFloatPrecision;
+    if (previous == precision) {
+        return false;
+    }
+    m_inspectorFloatPrecision = precision;
+    NotifyEditorSettingChangedUVE(EditorSettingIdUVE::kInspectorFloatPrecisionUVE,
+                                  static_cast<std::int64_t>(previous), static_cast<std::int64_t>(precision));
+    return true;
 }
 
 bool EditorUVE::IsInspectorFoldOpenUVE(const std::string& key, const bool defaultOpen) const {

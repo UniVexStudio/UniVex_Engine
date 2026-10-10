@@ -24,7 +24,6 @@ namespace {
 
 constexpr ImVec4 kConflictColorUVE{0.93F, 0.70F, 0.30F, 1.0F};
 constexpr std::string_view kShortcutSettingPrefixUVE = "editor.shortcuts.";
-constexpr std::size_t kMaximumRecentCommandsUVE = 8U;
 
 [[nodiscard]] EditorShortcutUVE KeyUVE(const ImGuiKey key, const bool ctrl = false, const bool shift = false,
                                        const bool alt = false) {
@@ -80,8 +79,8 @@ void EditorUVE::RegisterEditorCommandsUVE() {
     add("file.preferences", "Editor Preferences", "File", {KeyUVE(ImGuiKey_Comma, true)}, always,
         [this] { OpenEditorPreferencesUVE(); }, true);
     add("file.keyboardShortcuts", "Keyboard Shortcuts", "File", {}, always, [this] { OpenKeyboardShortcutsUVE(); });
-    add("file.commandPalette", "Command Palette", "File", {KeyUVE(ImGuiKey_P, true, true)}, always,
-        [this] { OpenCommandPaletteUVE(); }, true);
+    add("file.commandPalette", "Command Palette", "File", {KeyUVE(ImGuiKey_P, true, true)},
+        [this] { return m_commandPaletteSettings.enabled; }, [this] { OpenCommandPaletteUVE(); }, true);
 
     add("edit.undo", "Undo", "Edit", {KeyUVE(ImGuiKey_Z, true)}, [this] { return CanUndoUVE(); },
         [this] { static_cast<void>(UndoUVE()); });
@@ -90,7 +89,45 @@ void EditorUVE::RegisterEditorCommandsUVE() {
     add("edit.duplicate", "Duplicate", "Edit", {KeyUVE(ImGuiKey_D, true)}, canChangeSelection,
         [this] { static_cast<void>(DuplicateSelectedEntityUVE()); });
     add("edit.delete", "Delete", "Edit", {KeyUVE(ImGuiKey_Delete)}, canChangeSelection,
-        [this] { static_cast<void>(DeleteSelectedEntityUVE()); });
+        [this] { static_cast<void>(RequestHierarchyDeleteUVE()); });
+    const auto canClipboardSelection = [this] {
+        return IsLifecycleCommandAllowedUVE() && !IsStructuralRootUVE(m_selectedEntity);
+    };
+    add("edit.cut", "Cut", "Edit", {KeyUVE(ImGuiKey_X, true)}, canClipboardSelection,
+        [this] { static_cast<void>(CutSelectedEntityUVE()); });
+    add("edit.copy", "Copy", "Edit", {KeyUVE(ImGuiKey_C, true)}, canClipboardSelection,
+        [this] { static_cast<void>(CopySelectedEntityUVE()); });
+    add("edit.paste", "Paste", "Edit", {KeyUVE(ImGuiKey_V, true)},
+        [this] { return IsAuthoringCommandAllowedUVE() && HasEntityClipboardUVE(); },
+        [this] { static_cast<void>(PasteEntityUVE()); });
+    // No default shortcut: a path and a handle are copied far less often than an object is, and
+    // Ctrl+Shift+C is the author's to give away in Keyboard Shortcuts.
+    add("edit.copyNodePath", "Copy Node Path", "Edit", {},
+        [this] { return IsDocumentEntityUVE(m_selectedEntity); },
+        [this] { static_cast<void>(CopyEntityNodePathUVE(m_selectedEntity)); });
+    // Framing and alignment: three ways to make the view and an object agree. None carries a
+    // default shortcut - F already means Focus over the viewport, and the row menu and the palette
+    // are where these are found - and each is gated on what it actually needs: something to frame,
+    // an object with a rotation to look along, or the camera's own angles.
+    add("view.frameSelection", "Frame Selection", "View", {},
+        [this] { return CanFrameSelectionInViewportUVE(); },
+        [this] { static_cast<void>(RequestViewportFrameSelectionUVE()); });
+    add("view.alignViewToNode", "Align View to Node", "View", {},
+        [this] { return HasSingleDocumentSelectionUVE() && CanAlignViewToEntityUVE(m_selectedEntity); },
+        [this] { static_cast<void>(RequestViewportAlignViewToEntityUVE(m_selectedEntity)); });
+    add("view.alignNodeToView", "Align Node to View", "View", {},
+        [this] { return CanAlignSelectedEntityToViewUVE(); },
+        [this] { static_cast<void>(AlignSelectedEntityToViewUVE()); });
+    // Hierarchy locks are session-only selection state, not document edits: they carry no default
+    // shortcut (the lock column and the row menu are the usual ways in) and do not touch Undo.
+    add("edit.lock", "Lock Object", "Edit", {}, [this] { return CanLockSelectionUVE(); },
+        [this] { static_cast<void>(LockSelectionUVE()); });
+    add("edit.unlockAll", "Unlock All Objects", "Edit", {},
+        [this] { return IsAuthoringCommandAllowedUVE() && HasLockedEntitiesUVE(); },
+        [this] { static_cast<void>(UnlockAllEntitiesUVE()); });
+    add("edit.copyNodeIdentifier", "Copy Node Identifier", "Edit", {},
+        [this] { return IsDocumentEntityUVE(m_selectedEntity); },
+        [this] { static_cast<void>(CopyEntityIdentifierUVE(m_selectedEntity)); });
     const auto addMove = [&](std::string id, std::string label, const EditorSiblingMoveUVE move,
                              const EditorShortcutUVE shortcut) {
         add(std::move(id), std::move(label), "Edit", {shortcut},
@@ -163,10 +200,11 @@ bool EditorUVE::RunEditorCommandUVE(const std::string_view id) {
         return false;
     }
     command->run();
-    // Remembered for the palette, most recent first, once each.
+    // Remembered for the palette, most recent first, once each, up to the configured depth.
     std::erase(m_recentCommandIds, command->id);
     m_recentCommandIds.push_front(command->id);
-    if (m_recentCommandIds.size() > kMaximumRecentCommandsUVE) {
+    const std::size_t depth = std::min(m_commandPaletteSettings.recentCount, kMaximumRecentCommandsUVE);
+    while (m_recentCommandIds.size() > depth) {
         m_recentCommandIds.pop_back();
     }
     return true;
@@ -252,7 +290,24 @@ void EditorUVE::DrawCommandMenuItemUVE(const std::string_view id) {
     }
 }
 
+bool EditorUVE::SetCommandPaletteSettingsUVE(CommandPaletteSettingsUVE settings) noexcept {
+    settings.recentCount = std::min(settings.recentCount, kMaximumRecentCommandsUVE);
+    m_commandPaletteSettings = settings;
+    while (m_recentCommandIds.size() > m_commandPaletteSettings.recentCount) {
+        m_recentCommandIds.pop_back();
+    }
+    if (!m_commandPaletteSettings.enabled) {
+        m_commandPalette.open = false; // turned off while it was open: it goes away at once
+    }
+    return true;
+}
+
 void EditorUVE::OpenCommandPaletteUVE() noexcept {
+    // The preference can turn the palette off, and then Ctrl+Shift+P does nothing: the command it
+    // is bound to is what reports that, but its run function still has to refuse.
+    if (!m_commandPaletteSettings.enabled) {
+        return;
+    }
     m_commandPalette.open = true;
     m_commandPalette.focus = true;
     m_commandPalette.query.fill('\0');
@@ -300,7 +355,8 @@ void EditorUVE::DrawCommandPaletteUVE() {
     std::vector<MatchUVE> matches;
     for (std::size_t index = 0U; index < m_commands.size(); ++index) {
         const EditorCommandUVE& command = m_commands[index];
-        int score = std::max(ScoreFuzzyMatchUVE(command.label, query), ScoreFuzzyMatchUVE(CommandTitleUVE(command), query));
+        int score = ScoreCommandPaletteMatchUVE(command.label, CommandTitleUVE(command), query,
+                                                m_commandPaletteSettings.matchMode);
         if (score < 0) {
             continue;
         }

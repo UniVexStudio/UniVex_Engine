@@ -7,7 +7,9 @@
 #include <atomic>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -95,6 +97,134 @@ TEST(ConfigManagerUVETest, SetAndGetXUVE_RoundTripsEachScalarType) {
     EXPECT_EQ(config.GetIntUVE("window.width", 0), 1600);
     EXPECT_DOUBLE_EQ(config.GetDoubleUVE("window.scale", 0.0), 1.25);
     EXPECT_TRUE(config.GetBoolUVE("server.enabled", false));
+}
+
+TEST(ConfigManagerUVETest, BatchReadReturnsEveryScalarTypeAndMarksMissingOrObjectPaths) {
+    ConfigManagerUVE config;
+    config.SetStringUVE("sample.label", "hello");
+    config.SetIntUVE("sample.count", 42);
+    config.SetDoubleUVE("sample.ratio", 0.75);
+    config.SetBoolUVE("sample.enabled", true);
+
+    const std::vector<std::optional<ConfigScalarValueUVE>> values =
+        config.GetValuesUVE({"sample.label", "sample.count", "sample.ratio", "sample.enabled", "missing", "sample"});
+    ASSERT_EQ(values.size(), 6U);
+    ASSERT_TRUE(values[0].has_value());
+    ASSERT_TRUE(values[1].has_value());
+    ASSERT_TRUE(values[2].has_value());
+    ASSERT_TRUE(values[3].has_value());
+    EXPECT_EQ(std::get<std::string>(*values[0]), "hello");
+    EXPECT_EQ(std::get<std::int64_t>(*values[1]), 42);
+    EXPECT_DOUBLE_EQ(std::get<double>(*values[2]), 0.75);
+    EXPECT_TRUE(std::get<bool>(*values[3]));
+    EXPECT_FALSE(values[4].has_value());
+    EXPECT_FALSE(values[5].has_value());
+}
+
+TEST(ConfigManagerUVETest, BatchReadReturnsNulloptForJsonContainersAndNull) {
+    const std::filesystem::path fixturePath = "uve_config_tests_batch_values.uvsettings";
+    WriteFixtureFileUVE(fixturePath, R"({
+        "sample": {
+            "object": {"child": 1},
+            "array": [1, 2],
+            "nullValue": null
+        }
+    })");
+
+    ConfigManagerUVE config;
+    ASSERT_TRUE(config.LoadUVE(fixturePath));
+    const std::vector<std::optional<ConfigScalarValueUVE>> values = config.GetValuesUVE(
+        {"sample.object", "sample.array", "sample.nullValue", "sample.missing"});
+    ASSERT_EQ(values.size(), 4U);
+    for (const auto& value : values) {
+        EXPECT_FALSE(value.has_value());
+    }
+    std::filesystem::remove(fixturePath);
+}
+
+TEST(ConfigManagerUVETest, AtomicMutationsCommitSetsAndRemovalsTogetherOrNotAtAll) {
+    ConfigManagerUVE config;
+    config.SetStringUVE("palette.name", "old");
+    config.SetStringUVE("palette.stale", "remove me");
+
+    const std::vector<ConfigMutationUVE> mutations{
+        {"palette.name", ConfigScalarValueUVE{std::string("new")}},
+        {"palette.red", ConfigScalarValueUVE{0.25}},
+        {"palette.stale", std::nullopt},
+    };
+    ASSERT_TRUE(config.ApplyMutationsUVE(mutations));
+    EXPECT_EQ(config.GetStringUVE("palette.name", ""), "new");
+    EXPECT_DOUBLE_EQ(config.GetDoubleUVE("palette.red", 0.0), 0.25);
+    EXPECT_FALSE(config.HasKeyUVE("palette.stale"));
+
+    const std::vector<ConfigMutationUVE> malformed{
+        {"palette.name", ConfigScalarValueUVE{std::string("must not commit")}},
+        {"palette..invalid", ConfigScalarValueUVE{std::int64_t{1}}},
+    };
+    EXPECT_FALSE(config.ApplyMutationsUVE(malformed));
+    EXPECT_EQ(config.GetStringUVE("palette.name", ""), "new");
+    EXPECT_FALSE(config.HasKeyUVE("palette..invalid"));
+
+    const std::vector<ConfigMutationUVE> nonFinite{
+        {"palette.name", ConfigScalarValueUVE{std::string("must not commit")}},
+        {"palette.red", ConfigScalarValueUVE{std::numeric_limits<double>::infinity()}},
+    };
+    EXPECT_FALSE(config.ApplyMutationsUVE(nonFinite));
+    EXPECT_EQ(config.GetStringUVE("palette.name", ""), "new");
+    EXPECT_DOUBLE_EQ(config.GetDoubleUVE("palette.red", 0.0), 0.25);
+    EXPECT_TRUE(config.ApplyMutationsUVE({}));
+}
+
+TEST(ConfigManagerUVETest, BatchReadIsOneSnapshotWhileAtomicWritersReplaceRelatedValues) {
+    ConfigManagerUVE config;
+    ASSERT_TRUE(config.ApplyMutationsUVE({
+        {"pair.left", ConfigScalarValueUVE{std::int64_t{0}}},
+        {"pair.right", ConfigScalarValueUVE{std::int64_t{0}}},
+    }));
+
+    constexpr std::int64_t kIterations = 50000;
+    std::atomic<bool> start{false};
+    std::atomic<bool> finished{false};
+    std::atomic<bool> snapshotsConsistent{true};
+    std::thread writer([&] {
+        while (!start.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+        for (std::int64_t value = 1; value <= kIterations; ++value) {
+            if (!config.ApplyMutationsUVE({
+                    {"pair.left", ConfigScalarValueUVE{value}},
+                    {"pair.right", ConfigScalarValueUVE{-value}},
+                })) {
+                snapshotsConsistent.store(false, std::memory_order_release);
+                break;
+            }
+            if ((value % 32) == 0) {
+                std::this_thread::yield();
+            }
+        }
+        finished.store(true, std::memory_order_release);
+    });
+
+    start.store(true, std::memory_order_release);
+    std::size_t snapshotsRead = 0U;
+    do {
+        const std::vector<std::optional<ConfigScalarValueUVE>> values =
+            config.GetValuesUVE({"pair.left", "pair.right"});
+        if (values.size() != 2U || !values[0] || !values[1]) {
+            snapshotsConsistent.store(false, std::memory_order_release);
+        } else {
+            const auto* left = std::get_if<std::int64_t>(&*values[0]);
+            const auto* right = std::get_if<std::int64_t>(&*values[1]);
+            if (left == nullptr || right == nullptr || *left != -*right) {
+                snapshotsConsistent.store(false, std::memory_order_release);
+            }
+        }
+        ++snapshotsRead;
+    } while (!finished.load(std::memory_order_acquire));
+    writer.join();
+
+    EXPECT_GT(snapshotsRead, 0U);
+    EXPECT_TRUE(snapshotsConsistent.load(std::memory_order_acquire));
 }
 
 TEST(ConfigManagerUVETest, ClearAllUVE_EmptiesTheDocumentAndKeepsTheSavePath) {

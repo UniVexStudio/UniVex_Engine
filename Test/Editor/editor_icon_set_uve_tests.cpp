@@ -10,7 +10,7 @@
 
 #include <gtest/gtest.h>
 
-#include "uve/scene/objects/scene_object_registry_uve.h"
+#include "uve/object/scene_object_registry_uve.h"
 
 namespace UVE::Editor::Tests {
 namespace {

@@ -61,7 +61,6 @@ constexpr const char* kMenuLabelHelpUVE = "\xEF\xA4\x9D Help";
 void EditorUVE::DrawViewportSelectionOutlineMenuUVE() {
     bool visible = m_viewportOverlayState.selectionOutlineVisible;
     ViewportAxisColorUVE color = m_viewportOverlayState.selectionOutlineColor;
-    int thickness = static_cast<int>(std::lround(m_viewportOverlayState.selectionOutlineThickness));
     bool changed = ImGui::Checkbox("Show outline", &visible);
 
     const float labelColumn = ImGui::GetFontSize() * 5.5F;
@@ -76,14 +75,6 @@ void EditorUVE::DrawViewportSelectionOutlineMenuUVE() {
         color = ViewportAxisColorUVE{picked.r, picked.g, picked.b};
         changed = true;
     }
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Thickness");
-    ImGui::SameLine(labelColumn);
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0F);
-    changed |= ImGui::SliderInt("##selection-outline-thickness", &thickness,
-                                static_cast<int>(kMinimumSelectionOutlineThicknessUVE),
-                                static_cast<int>(kMaximumSelectionOutlineThicknessUVE), "%d px",
-                                ImGuiSliderFlags_AlwaysClamp);
     ImGui::EndDisabled();
 
     ImGui::Separator();
@@ -91,11 +82,10 @@ void EditorUVE::DrawViewportSelectionOutlineMenuUVE() {
         const ViewportOverlayStateUVE defaults{};
         visible = defaults.selectionOutlineVisible;
         color = defaults.selectionOutlineColor;
-        thickness = static_cast<int>(defaults.selectionOutlineThickness);
         changed = true;
     }
     if (changed) {
-        static_cast<void>(SetViewportSelectionOutlineUVE(visible, color, static_cast<float>(thickness)));
+        static_cast<void>(SetViewportSelectionOutlineUVE(visible, color));
     }
 }
 
@@ -219,6 +209,12 @@ void EditorUVE::DrawMenuBarUVE() {
                     ImGui::EndMenu();
                 }
                 ImGui::Separator();
+                // View framing and the two alignments live here for the same reason the two
+                // menus above do: they change what the viewport shows, not the document.
+                DrawCommandMenuItemUVE("view.frameSelection");
+                DrawCommandMenuItemUVE("view.alignViewToNode");
+                DrawCommandMenuItemUVE("view.alignNodeToView");
+                ImGui::Separator();
                 DrawCommandMenuItemUVE("file.projectSettings");
                 DrawCommandMenuItemUVE("file.inputMap");
                 DrawCommandMenuItemUVE("file.preferences");
@@ -235,6 +231,9 @@ void EditorUVE::DrawMenuBarUVE() {
                 ImGui::Separator();
                 DrawCommandMenuItemUVE("edit.duplicate");
                 DrawCommandMenuItemUVE("edit.delete");
+                ImGui::Separator();
+                DrawCommandMenuItemUVE("edit.lock");
+                DrawCommandMenuItemUVE("edit.unlockAll");
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu(kMenuLabelAssetsUVE)) {

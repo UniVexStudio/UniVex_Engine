@@ -7,6 +7,7 @@
 #include "uve/editor/editor_settings_uve.h"
 #include "editor_settings_binding_uve.h"
 #include "uve/editor/editor_render_stats_uve.h"
+#include "uve/logging/logger_uve.h"
 
 #include "editor_chrome_layout_uve.h"
 #include "editor_entity_label_uve.h"
@@ -19,6 +20,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -36,6 +38,9 @@
 #include <system_error>
 #include <stdexcept>
 #include <type_traits>
+#include <typeindex>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -60,15 +65,34 @@
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
+#include "uve/component/audio_source_component_uve.h"
+#include "uve/component/auto_translate_component_uve.h"
+#include "uve/component/bone_modifier_component_uve.h"
+#include "uve/component/canvas_component_uve.h"
+#include "uve/component/editor_description_component_uve.h"
+#include "uve/component/mesh_component_uve.h"
+#include "uve/component/object_metadata_component_uve.h"
+#include "uve/component/particle_emitter_component_uve.h"
+#include "uve/component/physics_object_component_uve.h"
+#include "uve/component/process_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
+#include "uve/component/solid_body_component_uve.h"
+#include "uve/component/thread_group_component_uve.h"
+#include "uve/component/ui_button_component_uve.h"
+#include "uve/component/ui_image_component_uve.h"
+#include "uve/component/ui_text_component_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
 #include "uve/objects/canvas/all_objects_canvas_uve.h"
 #include "uve/scene/objects/scene_object_type_uve.h"
+#include "uve/scene/scene_component_metadata_uve.h"
 #include "uve/scene/spawn_point_query_uve.h"
 #include "uve/editor/editor_content_catalogue_uve.h"
 #include "uve/core/engine_project_settings_uve.h"
 #include "uve/input/key_code_uve.h"
-#include "uve/scene/objects/scene_folder_uve.h"
-#include "uve/scene/objects/scene_root_uve.h"
+#include "uve/object/scene_folder_uve.h"
+#include "uve/object/object_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/editor_internal_entity_component_uve.h"
@@ -333,12 +357,21 @@ void EditorUVE::InitUVE() {
     m_state = EditorStateUVE::Running;
     LoadSessionSettingsUVE();
     LoadSharedShelvesUVE();
-    // A document always has exactly one scene root - the structural anchor at the top of the
+    // A document always has exactly one Object - the structural anchor at the top of the
     // hierarchy. A fresh editor start is an empty document with just the root.
-    static_cast<void>(EnsureDocumentSceneRootUVE());
+    static_cast<void>(EnsureDocumentObjectUVE());
     static_cast<void>(EnsureDocumentLayoutUVE());
     ClearHistoryUVE();
     m_sceneDirty = false;
+    // Pause on Error counts Error-and-worse records through its own sink. The logger owns the
+    // sink from here; the editor only polls its count, never calls back into it. No logger (a
+    // use that never initialized the engine) simply leaves the pointer null and the poll a
+    // no-op.
+    if (Debug::LoggerUVE* const logger = Debug::LoggerUVE::GetActiveInstanceUVE(); logger != nullptr) {
+        auto sink = std::make_unique<PlayPauseOnErrorSinkUVE>();
+        m_playPauseOnErrorSink = sink.get();
+        logger->AddSink(std::move(sink));
+    }
 }
 
 void EditorUVE::TickUVE() {
@@ -355,7 +388,10 @@ void EditorUVE::TickUVE() {
         RefreshProjectFileIndexUVE();
     }
     PollModelImportJobsUVE();
+    PollPlayPauseOnErrorUVE();
 
+    std::erase_if(m_lockedHierarchyEntities,
+                  [this](const Scene::EntityUVE entity) { return !IsDocumentEntityUVE(entity); });
     PruneSelectionUVE();
     if (m_hierarchyRenameEntity != Scene::kInvalidEntityUVE &&
         (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() ||
@@ -418,6 +454,11 @@ bool EditorUVE::EnterPlayModeUVE() {
         static_cast<void>(PausePlayModeUVE());
     }
     BeginEditorPlayBootSplashUVE();
+    // Errors logged up to here belong to entering Play, not to playing; the pause-on-error
+    // baseline starts now, so only errors from live play can pause.
+    if (m_playPauseOnErrorSink != nullptr) {
+        m_playPauseOnErrorSeenErrors = m_playPauseOnErrorSink->GetErrorCountUVE();
+    }
     return true;
 }
 
@@ -441,50 +482,39 @@ void EditorUVE::BeginEditorPlayBootSplashUVE() {
         };
         const std::optional<Config::SettingValueUVE> skipValue =
             readValue(Core::EngineProjectSettingIdUVE::kSkipBootSplashInEditorPlayModeUVE);
-        const bool* const skipInEditor =
-            skipValue.has_value() ? std::get_if<bool>(&*skipValue) : nullptr;
-        if (skipInEditor == nullptr || *skipInEditor) {
+        if (!skipValue.has_value() || std::get<bool>(*skipValue)) {
             return;
         }
 
-        const std::optional<Config::SettingValueUVE> fadeValue =
-            readValue(Core::EngineProjectSettingIdUVE::kBootSplashFadeSecondsUVE);
-        if (fadeValue.has_value()) {
-            if (const double* const seconds = std::get_if<double>(&*fadeValue); seconds != nullptr &&
-                std::isfinite(*seconds) && *seconds >= 0.0 && *seconds <= 60.0) {
-                m_playBootSplashFadeSeconds = *seconds;
-            }
+        // These reads have already been type/range checked by the project-settings registry. Keep
+        // the conversions direct; path containment below remains a consumer-specific safety check.
+        if (const std::optional<Config::SettingValueUVE> fadeValue =
+                readValue(Core::EngineProjectSettingIdUVE::kBootSplashFadeSecondsUVE);
+            fadeValue.has_value()) {
+            m_playBootSplashFadeSeconds = std::get<double>(*fadeValue);
         }
-        const std::optional<Config::SettingValueUVE> minimumValue =
-            readValue(Core::EngineProjectSettingIdUVE::kBootSplashMinimumDisplaySecondsUVE);
-        if (minimumValue.has_value()) {
-            if (const double* const seconds = std::get_if<double>(&*minimumValue); seconds != nullptr &&
-                std::isfinite(*seconds) && *seconds >= 0.0 && *seconds <= 600.0) {
-                m_playBootSplashMinimumSeconds = *seconds;
-            }
+        if (const std::optional<Config::SettingValueUVE> minimumValue =
+                readValue(Core::EngineProjectSettingIdUVE::kBootSplashMinimumDisplaySecondsUVE);
+            minimumValue.has_value()) {
+            m_playBootSplashMinimumSeconds = std::get<double>(*minimumValue);
         }
-        const std::optional<Config::SettingValueUVE> skippableValue =
-            readValue(Core::EngineProjectSettingIdUVE::kBootSplashSkippableUVE);
-        if (skippableValue.has_value()) {
-            if (const bool* const skippable = std::get_if<bool>(&*skippableValue); skippable != nullptr) {
-                m_playBootSplashSkippable = *skippable;
-            }
+        if (const std::optional<Config::SettingValueUVE> skippableValue =
+                readValue(Core::EngineProjectSettingIdUVE::kBootSplashSkippableUVE);
+            skippableValue.has_value()) {
+            m_playBootSplashSkippable = std::get<bool>(*skippableValue);
         }
-        const std::optional<Config::SettingValueUVE> backgroundValue =
-            readValue(Core::EngineProjectSettingIdUVE::kBootBackgroundColorUVE);
-        if (backgroundValue.has_value()) {
-            if (const Config::SettingColorUVE* const color =
-                    std::get_if<Config::SettingColorUVE>(&*backgroundValue);
-                color != nullptr) {
-                m_playBootSplashBackground = {color->r, color->g, color->b, color->a};
-            }
+        if (const std::optional<Config::SettingValueUVE> backgroundValue =
+                readValue(Core::EngineProjectSettingIdUVE::kBootBackgroundColorUVE);
+            backgroundValue.has_value()) {
+            const Config::SettingColorUVE& color = std::get<Config::SettingColorUVE>(*backgroundValue);
+            m_playBootSplashBackground = {color.r, color.g, color.b, color.a};
         }
-        const std::optional<Config::SettingValueUVE> imageValue =
-            readValue(Core::EngineProjectSettingIdUVE::kBootSplashImageUVE);
-        if (imageValue.has_value()) {
-            if (const std::string* const imagePath = std::get_if<std::string>(&*imageValue);
-                imagePath != nullptr && !imagePath->empty()) {
-                const std::filesystem::path relativeImage{*imagePath};
+        if (const std::optional<Config::SettingValueUVE> imageValue =
+                readValue(Core::EngineProjectSettingIdUVE::kBootSplashImageUVE);
+            imageValue.has_value()) {
+            const std::string& imagePath = std::get<std::string>(*imageValue);
+            if (!imagePath.empty()) {
+                const std::filesystem::path relativeImage{imagePath};
                 const bool unsafePath = relativeImage.is_absolute() || relativeImage.has_root_name() ||
                                         relativeImage.has_root_directory() ||
                                         std::any_of(relativeImage.begin(), relativeImage.end(),
@@ -637,7 +667,7 @@ bool EditorUVE::ApplyPlayEntrySpawnUVE() {
                 if (guid != Asset::kInvalidAssetGuidUVE) {
                     static_cast<void>(m_services->GetPrefabSystemUVE().InstantiateUVE(
                         entityManager, sceneGraph, m_services->GetAssetDatabaseUVE(), guid,
-                        GetDocumentSceneRootUVE()));
+                        GetDocumentObjectUVE()));
                     sceneGraph.UpdateUVE(entityManager);
                     player = Scene::ResolvePossessedPlayerUVE(entityManager);
                 }
@@ -719,6 +749,18 @@ bool EditorUVE::ResumePlayModeUVE() {
     }
     m_playModeState = EditorPlayModeStateUVE::Playing;
     return true;
+}
+
+void EditorUVE::PollPlayPauseOnErrorUVE() {
+    if (m_playModeState != EditorPlayModeStateUVE::Playing || m_playPauseOnErrorSink == nullptr) {
+        return;
+    }
+    const std::uint64_t errors = m_playPauseOnErrorSink->GetErrorCountUVE();
+    const bool freshErrors = errors != m_playPauseOnErrorSeenErrors;
+    m_playPauseOnErrorSeenErrors = errors;
+    if (m_playPauseOnError && freshErrors) {
+        static_cast<void>(PausePlayModeUVE());
+    }
 }
 
 bool EditorUVE::StepPlayModeUVE() {
@@ -870,7 +912,7 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
         Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
         Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
         const Scene::EntityUVE root = CreateObjectDefinitionEntityInternalUVE(
-            Scene::SceneRootObjectDefinitionUVE{}, Scene::ApplySceneRootObjectDefinitionUVE);
+            Scene::ObjectDefinitionUVE{}, Scene::ApplyObjectDefinitionUVE);
         const Scene::EntityUVE viewport = CreateObjectDefinitionEntityInternalUVE(
             Scene::ViewportObjectDefinitionUVE{}, Scene::ApplyViewportObjectDefinitionUVE);
         const Scene::EntityUVE world = CreateObjectDefinitionEntityInternalUVE(
@@ -992,8 +1034,7 @@ bool EditorUVE::SetDefaultPlayerEntityUVE(const std::filesystem::path& contentRe
 std::string EditorUVE::GetDefaultPlayerEntityUVE() const {
     const std::optional<Config::SettingValueUVE> value =
         m_services->GetProjectSettingsUVE().GetValueUVE(Core::EngineProjectSettingIdUVE::kDefaultPlayerEntityUVE);
-    const auto* const text = value.has_value() ? std::get_if<std::string>(&*value) : nullptr;
-    return text != nullptr ? *text : std::string{};
+    return value.has_value() ? std::get<std::string>(*value) : std::string{};
 }
 
 bool EditorUVE::RefreshSelectedPrefabUVE() {
@@ -1075,26 +1116,28 @@ bool EditorUVE::LoadSceneUVE() {
         static_cast<void>(m_services->GetSceneSerializerUVE().LoadUVE(entityManager, recoveryPath));
         std::filesystem::remove(recoveryPath, error);
         // Even a total load failure must not leave a rootless document behind.
-        static_cast<void>(EnsureDocumentSceneRootUVE());
+        static_cast<void>(EnsureDocumentObjectUVE());
         return false;
     }
 
+    // Locks belong to the editor view of a document, not to serialized scene objects.
+    m_lockedHierarchyEntities.clear();
     std::filesystem::remove(recoveryPath, error);
-    // Auto-migrate: a loaded document must end with exactly one scene root. Files saved before
+    // Auto-migrate: a loaded document must end with exactly one Object. Files saved before
     // the root existed are legitimately multi-root (every Add-Object used to create a new root),
-    // so wrap their top-level entities under a fresh SceneRoot; files that already carry the
+    // so wrap their top-level entities under a fresh Object; files that already carry the
     // root pass through untouched. Either way the in-memory document afterwards holds the
     // one-root invariant every other document seam relies on.
     bool migrated = false;
-    const Scene::EntityUVE sceneRoot = EnsureDocumentSceneRootUVE();
-    if (sceneRoot != Scene::kInvalidEntityUVE) {
+    const Scene::EntityUVE rootObject = EnsureDocumentObjectUVE();
+    if (rootObject != Scene::kInvalidEntityUVE) {
         Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
 
         // Strip any marker other than the one root this document keeps. A .uvscene is plain JSON
         // on disk, so a file can arrive carrying two of them - a badly resolved merge, a
         // hand-edit, a future tool - and the loop below would then reparent the second one UNDER
         // the first, leaving a root inside a root. That is not cosmetic: the editor refuses to
-        // delete or reparent a scene root, so the surplus would be an entity the user has no way
+        // delete or reparent an Object, so the surplus would be an entity the user has no way
         // to remove.
         //
         // The marker is stripped rather than the entity destroyed. The surplus root may well have
@@ -1102,20 +1145,20 @@ bool EditorUVE::LoadSceneUVE() {
         // trade - demoted to an ordinary object it keeps its name, its transform and its subtree,
         // and the migration below folds it under the real root like any other top-level entity.
         std::vector<Scene::EntityUVE> surplusRoots;
-        entityManager.ForEachUVE<Scene::SceneRootComponentUVE>(
-            [&surplusRoots, sceneRoot](const Scene::EntityUVE entity, const Scene::SceneRootComponentUVE&) {
-                if (entity != sceneRoot) {
+        entityManager.ForEachUVE<Scene::ObjectComponentUVE>(
+            [&surplusRoots, rootObject](const Scene::EntityUVE entity, const Scene::ObjectComponentUVE&) {
+                if (entity != rootObject) {
                     surplusRoots.push_back(entity);
                 }
             });
         for (const Scene::EntityUVE surplus : surplusRoots) {
-            entityManager.RemoveComponentUVE<Scene::SceneRootComponentUVE>(surplus);
+            entityManager.RemoveComponentUVE<Scene::ObjectComponentUVE>(surplus);
             migrated = true; // the document no longer matches the bytes it was loaded from
         }
 
         for (const Scene::EntityUVE topLevel : GetDocumentRootsUVE()) {
-            if (topLevel != sceneRoot) {
-                sceneGraph.SetParentUVE(entityManager, topLevel, sceneRoot);
+            if (topLevel != rootObject) {
+                sceneGraph.SetParentUVE(entityManager, topLevel, rootObject);
                 migrated = true;
             }
         }
@@ -1144,6 +1187,70 @@ bool EditorUVE::OpenSceneAssetUVE(const std::filesystem::path& path) {
     return false;
 }
 
+std::vector<Scene::EntityUVE> EditorUVE::ExpandHierarchySelectionUVE(
+    const std::vector<Scene::EntityUVE>& roots) const {
+    std::vector<Scene::EntityUVE> expanded;
+    expanded.reserve(roots.size());
+    if (roots.empty()) {
+        return expanded;
+    }
+    std::unordered_set<Scene::EntityUVE> visited;
+    visited.reserve(roots.size());
+
+    if (!m_hierarchyView.selectChildren) {
+        for (const Scene::EntityUVE root : roots) {
+            if (IsDocumentEntityUVE(root) && visited.insert(root).second) {
+                expanded.push_back(root);
+            }
+        }
+        return expanded;
+    }
+
+    // Build the parent-to-children view in one pass. Calling GetChildrenUVE once per descendant
+    // would rescan every hierarchy component each time and make selecting a large subtree quadratic.
+    using OrderedChildUVE = std::pair<std::int64_t, Scene::EntityUVE>;
+    std::unordered_map<Scene::EntityUVE, std::vector<OrderedChildUVE>> orderedChildren;
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    entityManager.ForEachUVE<Scene::HierarchyComponentUVE>(
+        [&orderedChildren](const Scene::EntityUVE child, Scene::HierarchyComponentUVE& hierarchy) {
+            if (hierarchy.parent != Scene::kInvalidEntityUVE) {
+                orderedChildren[hierarchy.parent].emplace_back(hierarchy.siblingOrder, child);
+            }
+        });
+    for (auto& [parent, children] : orderedChildren) {
+        static_cast<void>(parent);
+        std::sort(children.begin(), children.end(), [](const OrderedChildUVE& left, const OrderedChildUVE& right) {
+            if (left.first != right.first) {
+                return left.first < right.first;
+            }
+            return left.second.index != right.second.index ? left.second.index < right.second.index
+                                                           : left.second.generation < right.second.generation;
+        });
+    }
+
+    std::vector<Scene::EntityUVE> pending;
+    for (const Scene::EntityUVE root : roots) {
+        if (IsDocumentEntityUVE(root)) {
+            pending.push_back(root);
+        }
+        while (!pending.empty()) {
+            const Scene::EntityUVE current = pending.back();
+            pending.pop_back();
+            if (!IsDocumentEntityUVE(current) || !visited.insert(current).second) {
+                continue;
+            }
+            expanded.push_back(current);
+            if (const auto children = orderedChildren.find(current); children != orderedChildren.end()) {
+                // Push in reverse so popping preserves the scene graph's stable sibling order.
+                for (auto child = children->second.rbegin(); child != children->second.rend(); ++child) {
+                    pending.push_back(child->second);
+                }
+            }
+        }
+    }
+    return expanded;
+}
+
 void EditorUVE::SelectEntityUVE(const Scene::EntityUVE entity) noexcept {
     if (!IsAuthoringCommandAllowedUVE()) {
         return;
@@ -1152,24 +1259,40 @@ void EditorUVE::SelectEntityUVE(const Scene::EntityUVE entity) noexcept {
         ClearSelectionUVE();
         return;
     }
-    RestoreSelectionUVE(EditorSelectionSnapshotUVE{{entity}, entity});
+    if (IsEntityLockedUVE(entity)) {
+        return;
+    }
+    std::vector<Scene::EntityUVE> selected = ExpandHierarchySelectionUVE({entity});
+    std::erase_if(selected, [this](const Scene::EntityUVE current) { return IsEntityLockedUVE(current); });
+    RestoreSelectionUVE(EditorSelectionSnapshotUVE{std::move(selected), entity});
 }
 
 void EditorUVE::ToggleEntitySelectionUVE(const Scene::EntityUVE entity) noexcept {
-    if (!IsAuthoringCommandAllowedUVE() || !IsDocumentEntityUVE(entity)) {
+    if (!IsAuthoringCommandAllowedUVE() || !IsDocumentEntityUVE(entity) || IsEntityLockedUVE(entity)) {
         return;
     }
 
+    m_hierarchySelectionAnchor = entity;
     const auto selectedIt = std::find(m_selectedEntities.begin(), m_selectedEntities.end(), entity);
+    const std::vector<Scene::EntityUVE> selectionGroup = ExpandHierarchySelectionUVE({entity});
+    const std::unordered_set<Scene::EntityUVE> selectionGroupSet(selectionGroup.begin(), selectionGroup.end());
     if (selectedIt == m_selectedEntities.end()) {
-        m_selectedEntities.push_back(entity);
+        std::unordered_set<Scene::EntityUVE> selectedSet(m_selectedEntities.begin(), m_selectedEntities.end());
+        selectedSet.reserve(m_selectedEntities.size() + selectionGroup.size());
+        for (const Scene::EntityUVE current : selectionGroup) {
+            if (IsDocumentEntityUVE(current) && !IsEntityLockedUVE(current) && selectedSet.insert(current).second) {
+                m_selectedEntities.push_back(current);
+            }
+        }
         m_selectedEntity = entity;
         CancelHierarchyRenameUVE();
         return;
     }
 
-    const bool removedActive = entity == m_selectedEntity;
-    m_selectedEntities.erase(selectedIt);
+    const bool removedActive = selectionGroupSet.contains(m_selectedEntity);
+    std::erase_if(m_selectedEntities, [&selectionGroupSet](const Scene::EntityUVE current) {
+        return selectionGroupSet.contains(current);
+    });
     if (m_selectedEntities.empty()) {
         m_selectedEntity = Scene::kInvalidEntityUVE;
     } else if (removedActive) {
@@ -1178,9 +1301,144 @@ void EditorUVE::ToggleEntitySelectionUVE(const Scene::EntityUVE entity) noexcept
     CancelHierarchyRenameUVE();
 }
 
+void EditorUVE::SelectHierarchyRangeUVE(const Scene::EntityUVE entity,
+                                       const std::vector<Scene::EntityUVE>& visibleOrder,
+                                       const bool addToSelection) noexcept {
+    if (!IsAuthoringCommandAllowedUVE() || !IsDocumentEntityUVE(entity) || IsEntityLockedUVE(entity)) {
+        return;
+    }
+
+    Scene::EntityUVE anchor = m_hierarchySelectionAnchor;
+    if (!IsDocumentEntityUVE(anchor)) {
+        anchor = m_selectedEntity;
+    }
+    const auto clickedIt = std::find(visibleOrder.begin(), visibleOrder.end(), entity);
+    const auto anchorIt = std::find(visibleOrder.begin(), visibleOrder.end(), anchor);
+    const bool hasRange = clickedIt != visibleOrder.end() && anchorIt != visibleOrder.end();
+
+    const auto rangeFirst = hasRange ? std::min(clickedIt, anchorIt) : visibleOrder.end();
+    const auto rangeLast = hasRange ? std::max(clickedIt, anchorIt) : visibleOrder.end();
+    const std::size_t rangeCount =
+        hasRange ? static_cast<std::size_t>(std::distance(rangeFirst, rangeLast)) + 1U : 1U;
+    const std::size_t reserveCount = (addToSelection ? m_selectedEntities.size() : 0U) + rangeCount;
+    std::vector<Scene::EntityUVE> selected;
+    selected.reserve(reserveCount);
+    std::unordered_set<Scene::EntityUVE> selectedSet;
+    selectedSet.reserve(reserveCount);
+
+    if (addToSelection) {
+        for (const Scene::EntityUVE current : m_selectedEntities) {
+            if (IsDocumentEntityUVE(current) && !IsEntityLockedUVE(current) && selectedSet.insert(current).second) {
+                selected.push_back(current);
+            }
+        }
+    }
+
+    std::vector<Scene::EntityUVE> rangeRoots;
+    rangeRoots.reserve(rangeCount);
+    if (hasRange) {
+        for (auto current = rangeFirst; current <= rangeLast; ++current) {
+            const Scene::EntityUVE candidate = *current;
+            if (IsDocumentEntityUVE(candidate) && !IsEntityLockedUVE(candidate)) {
+                rangeRoots.push_back(candidate);
+            }
+        }
+    } else {
+        rangeRoots.push_back(entity);
+        // If the old anchor is hidden by collapse or filtering, this click becomes the new anchor.
+        m_hierarchySelectionAnchor = entity;
+    }
+    for (const Scene::EntityUVE candidate : ExpandHierarchySelectionUVE(rangeRoots)) {
+        if (IsDocumentEntityUVE(candidate) && !IsEntityLockedUVE(candidate) && selectedSet.insert(candidate).second) {
+            selected.push_back(candidate);
+        }
+    }
+
+    const bool changed = selected != m_selectedEntities || m_selectedEntity != entity;
+    m_selectedEntities = std::move(selected);
+    m_selectedEntity = entity;
+    if (changed) {
+        CancelHierarchyRenameUVE();
+    }
+}
+
+void EditorUVE::ApplyHierarchyBoxSelectionUVE(
+    const std::vector<HierarchySelectionRowBoundsUVE>& rowBounds,
+    const float startX, const float startY, const float endX, const float endY, const bool additive,
+    const std::vector<Scene::EntityUVE>& selectionBefore, const Scene::EntityUVE activeBefore) noexcept {
+    if (!IsAuthoringCommandAllowedUVE() || !std::isfinite(startX) || !std::isfinite(startY) ||
+        !std::isfinite(endX) || !std::isfinite(endY)) {
+        return;
+    }
+
+    const float left = std::min(startX, endX);
+    const float top = std::min(startY, endY);
+    const float right = std::max(startX, endX);
+    const float bottom = std::max(startY, endY);
+    std::vector<Scene::EntityUVE> selected;
+    const std::size_t reserveCount = (additive ? selectionBefore.size() : 0U) + rowBounds.size();
+    selected.reserve(reserveCount);
+    std::unordered_set<Scene::EntityUVE> selectedSet;
+    selectedSet.reserve(reserveCount);
+
+    if (additive) {
+        for (const Scene::EntityUVE entity : selectionBefore) {
+            if (IsDocumentEntityUVE(entity) && !IsEntityLockedUVE(entity) && selectedSet.insert(entity).second) {
+                selected.push_back(entity);
+            }
+        }
+    }
+
+    bool selectedFromBox = false;
+    Scene::EntityUVE active = Scene::kInvalidEntityUVE;
+    std::vector<Scene::EntityUVE> boxRoots;
+    boxRoots.reserve(rowBounds.size());
+    for (const HierarchySelectionRowBoundsUVE& row : rowBounds) {
+        const bool overlaps = row.left < right && row.right > left && row.top < bottom && row.bottom > top;
+        if (!overlaps || !IsDocumentEntityUVE(row.entity) || IsEntityLockedUVE(row.entity)) {
+            continue;
+        }
+        selectedFromBox = true;
+        active = row.entity;
+        boxRoots.push_back(row.entity);
+    }
+    for (const Scene::EntityUVE candidate : ExpandHierarchySelectionUVE(boxRoots)) {
+        if (IsDocumentEntityUVE(candidate) && !IsEntityLockedUVE(candidate) && selectedSet.insert(candidate).second) {
+            selected.push_back(candidate);
+        }
+    }
+
+    if (active == Scene::kInvalidEntityUVE && additive) {
+        if (IsDocumentEntityUVE(activeBefore) && selectedSet.contains(activeBefore)) {
+            active = activeBefore;
+        } else if (!selected.empty()) {
+            active = selected.back();
+        }
+    }
+    if (active == Scene::kInvalidEntityUVE && !selected.empty()) {
+        active = selected.back();
+    }
+
+    const bool changed = selected != m_selectedEntities || active != m_selectedEntity;
+    m_selectedEntities = std::move(selected);
+    m_selectedEntity = active;
+    if (selectedFromBox) {
+        m_hierarchySelectionAnchor = active;
+    } else if (!additive) {
+        m_hierarchySelectionAnchor = Scene::kInvalidEntityUVE;
+    }
+    if (changed) {
+        CancelHierarchyRenameUVE();
+    }
+}
+
 void EditorUVE::ClearSelectionUVE() noexcept {
     m_selectedEntities.clear();
     m_selectedEntity = Scene::kInvalidEntityUVE;
+    m_hierarchySelectionAnchor = Scene::kInvalidEntityUVE;
+    m_hierarchyBoxSelecting = false;
+    m_hierarchyBoxSelectionBefore.clear();
+    m_hierarchyBoxActiveBefore = Scene::kInvalidEntityUVE;
     CancelHierarchyRenameUVE();
 }
 
@@ -1601,6 +1859,12 @@ bool EditorUVE::SetSelectedSceneComponentUVE(const EditorSceneComponentKindUVE k
     if (!ApplySceneComponentStateUVE(m_selectedEntity, kind, value)) {
         return false;
     }
+    // Applying always leaves the component attached, so the presence this edit ends with is
+    // "present": the filter cache only has work to do when nothing was there before. (The undo and
+    // redo paths compare their optionals because either side can be empty there.)
+    if (!before.has_value()) {
+        InvalidateHierarchyFilterCacheUVE();
+    }
     m_sceneDirty = true;
     RecordHistoryUVE(SceneComponentHistoryEntryUVE{
         m_selectedEntity, kind, before, value, selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore, true});
@@ -1688,6 +1952,7 @@ bool EditorUVE::RemoveSelectedSceneComponentUVE(const EditorSceneComponentKindUV
     if (!ApplySceneComponentStateUVE(m_selectedEntity, kind, std::nullopt)) {
         return false;
     }
+    InvalidateHierarchyFilterCacheUVE();
     m_sceneDirty = true;
     RecordHistoryUVE(SceneComponentHistoryEntryUVE{
         m_selectedEntity, kind, before, std::nullopt, selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore, true});
@@ -1695,30 +1960,45 @@ bool EditorUVE::RemoveSelectedSceneComponentUVE(const EditorSceneComponentKindUV
 }
 
 bool EditorUVE::SetSelectedEntityNameUVE(std::string name) {
-    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() ||
+    if (!IsAuthoringCommandAllowedUVE() || !IsDocumentEntityUVE(m_selectedEntity) ||
+        !IsEntitySelectedUVE(m_selectedEntity) || IsEntityLockedUVE(m_selectedEntity)) {
+        return false;
+    }
+    return SetHierarchyEntityNameUVE(m_selectedEntity, std::move(name));
+}
+
+bool EditorUVE::SetHierarchyEntityNameUVE(const Scene::EntityUVE entity, std::string name) {
+    if (!IsAuthoringCommandAllowedUVE() || !IsDocumentEntityUVE(entity) || IsEntityLockedUVE(entity) ||
         !IsEntityNameValidUVE(name)) {
         return false;
     }
 
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     std::optional<std::string> beforeName;
-    if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(m_selectedEntity)) {
-        beforeName = entityManager.GetComponentUVE<Scene::NameComponentUVE>(m_selectedEntity).name;
+    if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(entity)) {
+        beforeName = entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name;
         if (*beforeName == name) {
             return false;
         }
     }
 
+    // Manual names use the same document-wide numeric-suffix policy as newly created objects.
+    // Ignore the renamed entity so an available suffix it already owns does not become "Name 3".
+    std::string uniqueName = MakeUniqueDocumentEntityNameUVE(name, entity);
+    if (!IsEntityNameValidUVE(uniqueName) || (beforeName.has_value() && *beforeName == uniqueName)) {
+        return false;
+    }
+
     const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
     const bool dirtyBefore = m_sceneDirty;
-    const std::optional<std::string> afterName{std::move(name)};
-    if (!ApplyEntityNameStateUVE(m_selectedEntity, afterName)) {
+    const std::optional<std::string> afterName{std::move(uniqueName)};
+    if (!ApplyEntityNameStateUVE(entity, afterName)) {
         return false;
     }
 
     m_sceneDirty = true;
     RecordHistoryUVE(NameHistoryEntryUVE{
-        m_selectedEntity, beforeName, afterName, selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore, true});
+        entity, beforeName, afterName, selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore, true});
     return true;
 }
 
@@ -2183,6 +2463,555 @@ Scene::EntityUVE EditorUVE::CreateDocumentEntityUVE(const EditorEntityKindUVE ki
     return entity;
 }
 
+namespace {
+
+// The recipe extras every Recipe-based kind carries: Visibility plus the common Object section.
+// One helper so the owned-components switch below cannot list them differently per kind.
+template <typename Visitor>
+void VisitTypeChangeRecipeCommonUVE(Visitor& visitor) {
+    visitor.template OnUVE<Scene::VisibilityComponentUVE>();
+    visitor.template OnUVE<Scene::ProcessComponentUVE>();
+    visitor.template OnUVE<Scene::ThreadGroupComponentUVE>();
+    visitor.template OnUVE<Scene::PhysicsInterpolationComponentUVE>();
+    visitor.template OnUVE<Scene::AutoTranslateComponentUVE>();
+    visitor.template OnUVE<Scene::EditorDescriptionComponentUVE>();
+    visitor.template OnUVE<Scene::ScriptComponentUVE>();
+    visitor.template OnUVE<Scene::ObjectMetadataComponentUVE>();
+}
+
+// What the pure-Object kinds (no Transform, nothing to hide) carry instead: the same common
+// Object section without Visibility.
+template <typename Visitor>
+void VisitTypeChangeObjectCommonUVE(Visitor& visitor) {
+    visitor.template OnUVE<Scene::ProcessComponentUVE>();
+    visitor.template OnUVE<Scene::ThreadGroupComponentUVE>();
+    visitor.template OnUVE<Scene::PhysicsInterpolationComponentUVE>();
+    visitor.template OnUVE<Scene::AutoTranslateComponentUVE>();
+    visitor.template OnUVE<Scene::EditorDescriptionComponentUVE>();
+    visitor.template OnUVE<Scene::ScriptComponentUVE>();
+    visitor.template OnUVE<Scene::ObjectMetadataComponentUVE>();
+}
+
+// Every component `kind` attaches beyond the creation shell (Transform, WorldTransform, Hierarchy,
+// Name) and the kind tag - read off the kind's Apply path, base helpers included. The one table
+// the type change walks three ways: collecting type indices for the legality check, capturing
+// values while removing, and capturing the fresh set afterwards. Replay walks the recorded values
+// instead, so this switch and SceneObjectTypeChangeValueUVE cover the same types by construction:
+// a type stored here that the variant lacks fails to compile at the capture. False only for the
+// structural kinds, which never convert in either direction.
+template <typename Visitor>
+[[nodiscard]] bool VisitSceneObjectTypeChangeOwnedUVE(const Scene::Objects::SceneObjectKindUVE kind,
+                                                      Visitor& visitor) {
+    switch (kind) {
+        case Scene::Objects::SceneObjectKindUVE::Object3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Area3D:
+            visitor.template OnUVE<Scene::AreaComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::RayCast3D:
+            visitor.template OnUVE<Scene::RayCast3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Static3D:
+            visitor.template OnUVE<Scene::ColliderComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Kinematic3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::PhysicsObjectComponentUVE>();
+            visitor.template OnUVE<Scene::ColliderComponentUVE>();
+            visitor.template OnUVE<Scene::Rigid3DComponentUVE>();
+            visitor.template OnUVE<Scene::Kinematic3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::NavMeshVolume3D:
+            visitor.template OnUVE<Scene::NavMeshVolume3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::NavSeeker3D:
+            visitor.template OnUVE<Scene::NavSeeker3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Skeleton3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::Skeleton3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::BoneAttachment3D:
+            visitor.template OnUVE<Scene::BoneAttachment3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::SpringArm3D:
+            visitor.template OnUVE<Scene::SpringArm3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Marker3D:
+            visitor.template OnUVE<Scene::Marker3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Hitbox3D:
+            visitor.template OnUVE<Scene::Hitbox3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Hurtbox3D:
+            visitor.template OnUVE<Scene::Hurtbox3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Projectile3D:
+            visitor.template OnUVE<Scene::Projectile3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::InteractionArea3D:
+            visitor.template OnUVE<Scene::InteractionArea3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D:
+            VisitTypeChangeObjectCommonUVE(visitor);
+            visitor.template OnUVE<Scene::WorldEnvironment3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::ReflectionProbe3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::ReflectionProbe3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Decal3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::RenderInstanceComponentUVE>();
+            visitor.template OnUVE<Scene::Decal3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::LODGroup3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::LodGroup3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Occluder3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::Occluder3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::VisibilityRegion3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::VisibilityRegion3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::SpawnPoint3D:
+            visitor.template OnUVE<Scene::SpawnPoint3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::LevelStreamer3D:
+            visitor.template OnUVE<Scene::LevelStreamer3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::WorldPartition3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::WorldPartition3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::AnimationGraph:
+            VisitTypeChangeObjectCommonUVE(visitor);
+            visitor.template OnUVE<Scene::AnimationDriverComponentUVE>();
+            visitor.template OnUVE<Scene::AnimationGraphComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::AnimationSequencer:
+            VisitTypeChangeObjectCommonUVE(visitor);
+            visitor.template OnUVE<Scene::AnimationDriverComponentUVE>();
+            visitor.template OnUVE<Scene::AnimationSequencerComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Character3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::PhysicsObjectComponentUVE>();
+            visitor.template OnUVE<Scene::SolidBodyComponentUVE>();
+            visitor.template OnUVE<Scene::ColliderComponentUVE>();
+            visitor.template OnUVE<Scene::CharacterControllerComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Camera3D:
+            visitor.template OnUVE<Scene::CameraComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::MeshInstance3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::RenderInstanceComponentUVE>();
+            visitor.template OnUVE<Scene::SurfaceInstanceComponentUVE>();
+            visitor.template OnUVE<Scene::MeshComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::BoxMesh3D:
+        case Scene::Objects::SceneObjectKindUVE::SphereMesh3D:
+        case Scene::Objects::SceneObjectKindUVE::PlaneMesh3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::RenderInstanceComponentUVE>();
+            visitor.template OnUVE<Scene::SurfaceInstanceComponentUVE>();
+            visitor.template OnUVE<Scene::PrimitiveMeshComponentUVE>();
+            visitor.template OnUVE<Scene::ColliderComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Light3D:
+            visitor.template OnUVE<Scene::LightComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Collider3D:
+            visitor.template OnUVE<Scene::ColliderComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Rigid3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::PhysicsObjectComponentUVE>();
+            visitor.template OnUVE<Scene::ColliderComponentUVE>();
+            visitor.template OnUVE<Scene::Rigid3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::AudioSource3D:
+            visitor.template OnUVE<Scene::AudioSourceComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::ParticleEmitter3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::RenderInstanceComponentUVE>();
+            visitor.template OnUVE<Scene::SurfaceInstanceComponentUVE>();
+            visitor.template OnUVE<Scene::ParticleEmitterComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Script:
+            visitor.template OnUVE<Scene::ScriptComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Canvas:
+            visitor.template OnUVE<Scene::CanvasComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::UIText:
+            visitor.template OnUVE<Scene::UITextComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::UIImage:
+            visitor.template OnUVE<Scene::UIImageComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::UIButton:
+            visitor.template OnUVE<Scene::UIButtonComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::FogVolume3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::RenderInstanceComponentUVE>();
+            visitor.template OnUVE<Scene::FogVolume3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::DirectionalLight3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::RenderInstanceComponentUVE>();
+            visitor.template OnUVE<Scene::LightEmitterComponentUVE>();
+            visitor.template OnUVE<Scene::DirectionalLight3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::BoneModifierComponentUVE>();
+            visitor.template OnUVE<Scene::TwoBoneIK3DComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Player3D:
+            VisitTypeChangeRecipeCommonUVE(visitor);
+            visitor.template OnUVE<Scene::PhysicsObjectComponentUVE>();
+            visitor.template OnUVE<Scene::SolidBodyComponentUVE>();
+            visitor.template OnUVE<Scene::ColliderComponentUVE>();
+            visitor.template OnUVE<Scene::CharacterControllerComponentUVE>();
+            visitor.template OnUVE<Scene::PlayerComponentUVE>();
+            visitor.template OnUVE<Scene::HealthComponentUVE>();
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Object:
+        case Scene::Objects::SceneObjectKindUVE::Viewport:
+        case Scene::Objects::SceneObjectKindUVE::Folder:
+            return false;
+    }
+    // Unreachable for a valid kind; keeps the function total for any raw enumerator value.
+    return false;
+}
+
+struct TypeChangeTypeCollectorUVE final {
+    std::vector<std::type_index>& out;
+    template <typename T>
+    void OnUVE() {
+        out.push_back(std::type_index(typeid(T)));
+    }
+};
+
+[[nodiscard]] bool CollectTypeChangeOwnedTypeIndicesUVE(
+    const Scene::Objects::SceneObjectKindUVE kind, std::vector<std::type_index>& out) {
+    TypeChangeTypeCollectorUVE collector{out};
+    return VisitSceneObjectTypeChangeOwnedUVE(kind, collector);
+}
+
+struct TypeChangeCaptureVisitorUVE final {
+    Scene::IEntityManagerUVE& entityManager;
+    Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+    std::vector<SceneObjectTypeChangeValueUVE>& out;
+    bool remove = false;
+    template <typename T>
+    void OnUVE() {
+        // Absent is fine, not an error: the author may have removed one of the kind's components
+        // by hand, and only what is actually there needs carrying.
+        if (!entityManager.HasComponentUVE<T>(entity)) {
+            return;
+        }
+        out.emplace_back(entityManager.GetComponentUVE<T>(entity));
+        if (remove) {
+            entityManager.RemoveComponentUVE<T>(entity);
+        }
+    }
+};
+
+// ---- Per-kind recipe-default extras -----------------------------------------------------------
+// Creation attaches the extras named by editor.objects.defaultExtras.<kindTypeId> with engine
+// defaults. The component ids below must stay in lockstep with the palette in
+// editor_settings_uve.cpp (kDefaultExtraComponentIdsUVE); the kitchen-sink creation test proves
+// every palette member attaches here.
+template <typename Component>
+void AttachDefaultExtraIfMissingUVE(Scene::IEntityManagerUVE& entityManager, const Scene::EntityUVE entity) {
+    if (!entityManager.HasComponentUVE<Component>(entity)) {
+        entityManager.AddComponentUVE<Component>(entity, Component{});
+    }
+}
+
+struct DefaultExtraAttachmentUVE final {
+    std::string_view componentId;
+    void (*attach)(Scene::IEntityManagerUVE&, const Scene::EntityUVE);
+};
+
+constexpr DefaultExtraAttachmentUVE kDefaultExtraAttachmentsUVE[] = {
+    {"component.script", &AttachDefaultExtraIfMissingUVE<Scene::ScriptComponentUVE>},
+    {"component.object_metadata", &AttachDefaultExtraIfMissingUVE<Scene::ObjectMetadataComponentUVE>},
+    {"component.editor_description", &AttachDefaultExtraIfMissingUVE<Scene::EditorDescriptionComponentUVE>},
+    {"component.mesh", &AttachDefaultExtraIfMissingUVE<Scene::MeshComponentUVE>},
+    {"component.primitive_mesh", &AttachDefaultExtraIfMissingUVE<Scene::PrimitiveMeshComponentUVE>},
+    {"component.collider", &AttachDefaultExtraIfMissingUVE<Scene::ColliderComponentUVE>},
+    {"component.rigid_body", &AttachDefaultExtraIfMissingUVE<Scene::Rigid3DComponentUVE>},
+    {"component.solid_body", &AttachDefaultExtraIfMissingUVE<Scene::SolidBodyComponentUVE>},
+    {"component.physics_object", &AttachDefaultExtraIfMissingUVE<Scene::PhysicsObjectComponentUVE>},
+    {"component.kinematic_3d", &AttachDefaultExtraIfMissingUVE<Scene::Kinematic3DComponentUVE>},
+    {"component.character_controller", &AttachDefaultExtraIfMissingUVE<Scene::CharacterControllerComponentUVE>},
+    {"component.area", &AttachDefaultExtraIfMissingUVE<Scene::AreaComponentUVE>},
+    {"component.camera", &AttachDefaultExtraIfMissingUVE<Scene::CameraComponentUVE>},
+    {"component.audio_source", &AttachDefaultExtraIfMissingUVE<Scene::AudioSourceComponentUVE>},
+    {"component.particle_emitter", &AttachDefaultExtraIfMissingUVE<Scene::ParticleEmitterComponentUVE>},
+    {"component.ui_button", &AttachDefaultExtraIfMissingUVE<Scene::UIButtonComponentUVE>},
+    {"component.ui_text", &AttachDefaultExtraIfMissingUVE<Scene::UITextComponentUVE>},
+    {"component.ui_image", &AttachDefaultExtraIfMissingUVE<Scene::UIImageComponentUVE>},
+    {"component.canvas", &AttachDefaultExtraIfMissingUVE<Scene::CanvasComponentUVE>},
+    {"component.auto_translate", &AttachDefaultExtraIfMissingUVE<Scene::AutoTranslateComponentUVE>},
+    {"component.thread_group", &AttachDefaultExtraIfMissingUVE<Scene::ThreadGroupComponentUVE>},
+    {"component.process", &AttachDefaultExtraIfMissingUVE<Scene::ProcessComponentUVE>},
+    {"component.bone_modifier", &AttachDefaultExtraIfMissingUVE<Scene::BoneModifierComponentUVE>},
+    {"component.animation_player", &AttachDefaultExtraIfMissingUVE<Scene::AnimationSequencerComponentUVE>},
+    {"component.animation_tree", &AttachDefaultExtraIfMissingUVE<Scene::AnimationGraphComponentUVE>},
+};
+
+// Unknown ids are ignored, not an error: settings written by a newer editor still load, and only
+// their known extras apply.
+void AttachDefaultExtraComponentsUVE(Scene::IEntityManagerUVE& entityManager, const Scene::EntityUVE entity,
+                                     const Config::SettingStringListUVE& componentIds) {
+    for (const std::string& id : componentIds) {
+        for (const DefaultExtraAttachmentUVE& attachment : kDefaultExtraAttachmentsUVE) {
+            if (attachment.componentId == id) {
+                attachment.attach(entityManager, entity);
+                break;
+            }
+        }
+    }
+}
+
+void CaptureTypeChangeOwnedUVE(Scene::IEntityManagerUVE& entityManager, const Scene::EntityUVE entity,
+                               const Scene::Objects::SceneObjectKindUVE kind,
+                               std::vector<SceneObjectTypeChangeValueUVE>& out, const bool remove) {
+    TypeChangeCaptureVisitorUVE visitor{entityManager, entity, out, remove};
+    static_cast<void>(VisitSceneObjectTypeChangeOwnedUVE(kind, visitor));
+}
+
+// Writes recorded values back: overwriting what is there, attaching what is not unless
+// `onlyPresent` (the carried-values pass must not resurrect components the target kind dropped).
+void RestoreTypeChangeValuesUVE(Scene::IEntityManagerUVE& entityManager, const Scene::EntityUVE entity,
+                                const std::vector<SceneObjectTypeChangeValueUVE>& values,
+                                const bool onlyPresent) {
+    for (const SceneObjectTypeChangeValueUVE& value : values) {
+        std::visit(
+            [&entityManager, entity, onlyPresent](const auto& typedValue) {
+                using Component = std::decay_t<decltype(typedValue)>;
+                if (entityManager.HasComponentUVE<Component>(entity)) {
+                    entityManager.GetComponentUVE<Component>(entity) = typedValue;
+                } else if (!onlyPresent) {
+                    entityManager.AddComponentUVE<Component>(entity, typedValue);
+                }
+            },
+            value);
+    }
+}
+
+// Puts `kind`'s owned components on: the same Apply path creation uses, with fresh authored
+// defaults. No shell, no naming, no retag - the caller owns those. Carried values go over the top
+// afterwards, so this stays a plain creation-shaped pass.
+[[nodiscard]] bool ApplyTypeChangeKindUVE(Scene::IEntityManagerUVE& entityManager,
+                                         const Scene::EntityUVE entity,
+                                         const Scene::Objects::SceneObjectKindUVE kind) {
+    switch (kind) {
+        case Scene::Objects::SceneObjectKindUVE::Object3D:
+            Scene::ApplyObject3DObjectDefinitionUVE(entityManager, entity, Scene::Object3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Area3D:
+            Scene::ApplyArea3DObjectDefinitionUVE(entityManager, entity, Scene::Area3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::RayCast3D:
+            entityManager.AddComponentUVE<Scene::RayCast3DComponentUVE>(entity, Scene::RayCast3DComponentUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Static3D:
+            Scene::ApplyStatic3DObjectDefinitionUVE(entityManager, entity, Scene::Static3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Kinematic3D:
+            Scene::ApplyKinematic3DObjectDefinitionUVE(entityManager, entity, Scene::Kinematic3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::NavMeshVolume3D:
+            entityManager.AddComponentUVE<Scene::NavMeshVolume3DComponentUVE>(
+                entity, Scene::NavMeshVolume3DComponentUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::NavSeeker3D:
+            entityManager.AddComponentUVE<Scene::NavSeeker3DComponentUVE>(entity, Scene::NavSeeker3DComponentUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Skeleton3D:
+            Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, entity, Scene::Skeleton3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::BoneAttachment3D:
+            entityManager.AddComponentUVE<Scene::BoneAttachment3DComponentUVE>(
+                entity, Scene::BoneAttachment3DComponentUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::SpringArm3D:
+            Scene::ApplySpringArm3DObjectDefinitionUVE(entityManager, entity, Scene::SpringArm3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Marker3D:
+            entityManager.AddComponentUVE<Scene::Marker3DComponentUVE>(entity, Scene::Marker3DComponentUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Hitbox3D:
+            entityManager.AddComponentUVE<Scene::Hitbox3DComponentUVE>(entity, Scene::Hitbox3DComponentUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Hurtbox3D:
+            entityManager.AddComponentUVE<Scene::Hurtbox3DComponentUVE>(entity, Scene::Hurtbox3DComponentUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Projectile3D:
+            entityManager.AddComponentUVE<Scene::Projectile3DComponentUVE>(entity, Scene::Projectile3DComponentUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::InteractionArea3D:
+            entityManager.AddComponentUVE<Scene::InteractionArea3DComponentUVE>(
+                entity, Scene::InteractionArea3DComponentUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D:
+            Scene::ApplyWorldEnvironmentObjectDefinitionUVE(
+                entityManager, entity, Scene::WorldEnvironmentObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::ReflectionProbe3D:
+            Scene::ApplyReflectionProbe3DObjectDefinitionUVE(
+                entityManager, entity, Scene::ReflectionProbe3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Decal3D:
+            Scene::ApplyDecal3DObjectDefinitionUVE(entityManager, entity, Scene::Decal3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::LODGroup3D:
+            Scene::ApplyLodGroup3DObjectDefinitionUVE(entityManager, entity, Scene::LodGroup3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Occluder3D:
+            Scene::ApplyOccluder3DObjectDefinitionUVE(entityManager, entity, Scene::Occluder3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::VisibilityRegion3D:
+            Scene::ApplyVisibilityRegion3DObjectDefinitionUVE(
+                entityManager, entity, Scene::VisibilityRegion3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::SpawnPoint3D:
+            entityManager.AddComponentUVE<Scene::SpawnPoint3DComponentUVE>(entity, Scene::SpawnPoint3DComponentUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::LevelStreamer3D:
+            entityManager.AddComponentUVE<Scene::LevelStreamer3DComponentUVE>(
+                entity, Scene::LevelStreamer3DComponentUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::WorldPartition3D:
+            Scene::ApplyWorldPartition3DObjectDefinitionUVE(
+                entityManager, entity, Scene::WorldPartition3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::AnimationGraph:
+            Scene::ApplyAnimationGraphObjectDefinitionUVE(
+                entityManager, entity, Scene::AnimationGraphObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::AnimationSequencer:
+            Scene::ApplyAnimationSequencerObjectDefinitionUVE(
+                entityManager, entity, Scene::AnimationSequencerObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Character3D:
+            Scene::ApplyCharacter3DObjectDefinitionUVE(entityManager, entity, Scene::Character3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Camera3D:
+            Scene::ApplyCamera3DObjectDefinitionUVE(entityManager, entity, Scene::Camera3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::MeshInstance3D:
+            Scene::ApplyMeshInstance3DObjectDefinitionUVE(
+                entityManager, entity, Scene::MeshInstance3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::BoxMesh3D:
+            Scene::ApplyBoxMesh3DObjectDefinitionUVE(entityManager, entity, Scene::BoxMesh3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::SphereMesh3D:
+            Scene::ApplySphereMesh3DObjectDefinitionUVE(
+                entityManager, entity, Scene::SphereMesh3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::PlaneMesh3D:
+            Scene::ApplyPlaneMesh3DObjectDefinitionUVE(entityManager, entity, Scene::PlaneMesh3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Light3D:
+            Scene::ApplyLight3DObjectDefinitionUVE(entityManager, entity, Scene::Light3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Collider3D:
+            Scene::ApplyCollider3DObjectDefinitionUVE(entityManager, entity, Scene::Collider3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Rigid3D:
+            Scene::ApplyRigid3DObjectDefinitionUVE(entityManager, entity, Scene::Rigid3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::AudioSource3D:
+            Scene::ApplyAudioSource3DObjectDefinitionUVE(
+                entityManager, entity, Scene::AudioSource3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::ParticleEmitter3D:
+            Scene::ApplyParticleEmitter3DObjectDefinitionUVE(
+                entityManager, entity, Scene::ParticleEmitter3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Script:
+            Scene::ApplyScriptObjectDefinitionUVE(entityManager, entity, Scene::ScriptObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Canvas:
+            Scene::ApplyCanvasObjectDefinitionUVE(entityManager, entity, Scene::CanvasObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::UIText:
+            Scene::ApplyUITextObjectDefinitionUVE(entityManager, entity, Scene::UITextObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::UIImage:
+            Scene::ApplyUIImageObjectDefinitionUVE(entityManager, entity, Scene::UIImageObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::UIButton:
+            Scene::ApplyUIButtonObjectDefinitionUVE(entityManager, entity, Scene::UIButtonObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::FogVolume3D:
+            Scene::ApplyFogVolume3DObjectDefinitionUVE(entityManager, entity, Scene::FogVolume3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::DirectionalLight3D:
+            Scene::ApplyDirectionalLight3DObjectDefinitionUVE(
+                entityManager, entity, Scene::DirectionalLight3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D:
+            Scene::ApplyTwoBoneIK3DObjectDefinitionUVE(entityManager, entity, Scene::TwoBoneIK3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Player3D:
+            Scene::ApplyPlayer3DObjectDefinitionUVE(entityManager, entity, Scene::Player3DObjectDefinitionUVE{});
+            return true;
+        case Scene::Objects::SceneObjectKindUVE::Object:
+        case Scene::Objects::SceneObjectKindUVE::Viewport:
+        case Scene::Objects::SceneObjectKindUVE::Folder:
+            return false;
+    }
+    // Unreachable for a valid kind; keeps the function total for any raw enumerator value.
+    return false;
+}
+
+// The document-structure boundary: the Object root, the level Viewport, and folders organise the
+// scene rather than take part in it, so no object converts into or out of them.
+[[nodiscard]] bool IsStructuralTypeChangeKindUVE(const Scene::Objects::SceneObjectKindUVE kind) noexcept {
+    return kind == Scene::Objects::SceneObjectKindUVE::Object ||
+           kind == Scene::Objects::SceneObjectKindUVE::Viewport ||
+           kind == Scene::Objects::SceneObjectKindUVE::Folder;
+}
+
+// The kinds whose Apply runs the pure-Object baseline, which folds the Transform into the children
+// and removes it: crossing to or from one is the only time a change touches the shell.
+[[nodiscard]] bool IsTransformlessTypeChangeKindUVE(const Scene::Objects::SceneObjectKindUVE kind) noexcept {
+    return kind == Scene::Objects::SceneObjectKindUVE::AnimationSequencer ||
+           kind == Scene::Objects::SceneObjectKindUVE::AnimationGraph ||
+           kind == Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D;
+}
+
+[[nodiscard]] std::optional<Scene::PrimitiveMeshKindUVE> TypeChangePrimitiveTargetUVE(
+    const Scene::Objects::SceneObjectKindUVE kind) noexcept {
+    switch (kind) {
+        case Scene::Objects::SceneObjectKindUVE::BoxMesh3D:
+            return Scene::PrimitiveMeshKindUVE::Cube;
+        case Scene::Objects::SceneObjectKindUVE::SphereMesh3D:
+            return Scene::PrimitiveMeshKindUVE::UVSphere;
+        case Scene::Objects::SceneObjectKindUVE::PlaneMesh3D:
+            return Scene::PrimitiveMeshKindUVE::Plane;
+        default:
+            return std::nullopt;
+    }
+}
+
+} // namespace
+
 Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Objects::SceneObjectKindUVE kind) {
     Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
@@ -2401,9 +3230,9 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
         case Scene::Objects::SceneObjectKindUVE::Viewport:
             // The level's Viewport is created by the document layout (EnsureDocumentLayoutUVE).
             return Scene::kInvalidEntityUVE;
-        case Scene::Objects::SceneObjectKindUVE::SceneRoot:
-            // The scene root is created by the document lifecycle
-            // (EnsureDocumentSceneRootUVE), never through the library path.
+        case Scene::Objects::SceneObjectKindUVE::Object:
+            // The Object is created by the document lifecycle
+            // (EnsureDocumentObjectUVE), never through the library path.
             return Scene::kInvalidEntityUVE;
     }
 
@@ -2448,6 +3277,14 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneObjectUVE(
     }
     PlaceNewDocumentObjectUVE(entity);
 
+    // The author's per-kind extras ride along with the recipe, before the snapshot below is taken,
+    // so undo removes them with the object and redo restores them. Only the document path passes
+    // here: content-catalogue transient builds go through CreateSceneObjectEntityInternalUVE alone.
+    if (const auto extras = m_objectDefaultExtras.find(std::string(Scene::Objects::GetSceneObjectTypeIdUVE(kind)));
+        extras != m_objectDefaultExtras.end()) {
+        AttachDefaultExtraComponentsUVE(entityManager, entity, extras->second);
+    }
+
     const std::optional<Scene::SceneSnapshotUVE> snapshot = CaptureSubtreeUVE(entity);
     if (!snapshot.has_value()) {
         DestroyDocumentSubtreeUVE(entity);
@@ -2462,6 +3299,254 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneObjectUVE(
         *snapshot, kind, entity, selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore, true,
         parentObject});
     return entity;
+}
+
+bool EditorUVE::CanChangeDocumentSceneObjectKindUVE(const Scene::EntityUVE entity,
+                                                    const Scene::Objects::SceneObjectKindUVE kind) {
+    if (!IsAuthoringCommandAllowedUVE() || !IsDocumentEntityUVE(entity) || IsEntityLockedUVE(entity) ||
+        IsStructuralRootUVE(entity)) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::Objects::SceneObjectKindUVE source =
+        Scene::ResolveSceneObjectKindUVE(entityManager, entity);
+    if (source == kind || IsStructuralTypeChangeKindUVE(source) || IsStructuralTypeChangeKindUVE(kind)) {
+        return false;
+    }
+    const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
+        Scene::Objects::FindSceneObjectDescriptorUVE(kind);
+    if (descriptor == nullptr || !descriptor->libraryCreatable) {
+        return false;
+    }
+    // Same one-sun-one-sky rule as creation: becoming the top-level singleton is only possible
+    // while the level does not have one yet.
+    if (IsOutlinerLayoutActiveUVE() && IsTopLevelSingletonKindUVE(kind) &&
+        FindTopLevelObjectUVE(kind) != Scene::kInvalidEntityUVE) {
+        return false;
+    }
+    // A component the target owns that the source does not must be absent: if the author attached
+    // one by hand, the change would have to steal it or overwrite it, so the target is refused and
+    // simply not offered. Components both kinds own round-trip through the entry with their values.
+    std::vector<std::type_index> sourceOwned;
+    std::vector<std::type_index> targetOwned;
+    if (!CollectTypeChangeOwnedTypeIndicesUVE(source, sourceOwned) ||
+        !CollectTypeChangeOwnedTypeIndicesUVE(kind, targetOwned)) {
+        return false;
+    }
+    const std::vector<std::type_index> present = entityManager.GetComponentTypesUVE(entity);
+    // Default extras the source kind bestowed are carried, not refused: the change captures them
+    // with their values like source-owned components (see the conversion shadow in
+    // ChangeDocumentSceneObjectKindUVE). Provenance is read from the source kind's current
+    // defaults, so an extra removed from the setting since creation refuses like a hand-attached
+    // component - conservatively, since the change can no longer tell them apart.
+    const Config::SettingStringListUVE sourceExtras =
+        GetObjectDefaultExtrasUVE(Scene::Objects::GetSceneObjectTypeIdUVE(source));
+    for (const std::type_index targetType : targetOwned) {
+        const bool shared =
+            std::find(sourceOwned.begin(), sourceOwned.end(), targetType) != sourceOwned.end();
+        if (shared) {
+            continue;
+        }
+        if (std::find(present.begin(), present.end(), targetType) == present.end()) {
+            continue;
+        }
+        const Core::TypeMetadataEntryUVE* const metadata = Scene::FindSceneComponentMetadataUVE(targetType);
+        if (metadata != nullptr &&
+            std::find(sourceExtras.begin(), sourceExtras.end(), metadata->typeId) != sourceExtras.end()) {
+            continue;
+        }
+        return false;
+    }
+    return true;
+}
+
+std::vector<Scene::Objects::SceneObjectKindUVE> EditorUVE::GetSceneObjectKindChangeTargetsUVE(
+    const Scene::EntityUVE entity) {
+    std::vector<Scene::Objects::SceneObjectKindUVE> targets;
+    if (!IsAuthoringCommandAllowedUVE() || !IsDocumentEntityUVE(entity) || IsEntityLockedUVE(entity) ||
+        IsStructuralRootUVE(entity)) {
+        return targets;
+    }
+    for (const Scene::Objects::SceneObjectDescriptorUVE& descriptor :
+         Scene::Objects::GetSceneObjectDescriptorsUVE()) {
+        if (CanChangeDocumentSceneObjectKindUVE(entity, descriptor.kind)) {
+            targets.push_back(descriptor.kind);
+        }
+    }
+    return targets;
+}
+
+std::optional<EditorUVE::ObjectDefaultExtrasPreviewUVE> EditorUVE::ComputeObjectDefaultExtrasForEntityUVE(
+    const Scene::EntityUVE entity) {
+    if (!IsDocumentEntityUVE(entity)) {
+        return std::nullopt;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::Objects::SceneObjectKindUVE kind =
+        Scene::ResolveSceneObjectKindUVE(entityManager, entity);
+    const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
+        Scene::Objects::FindSceneObjectDescriptorUVE(kind);
+    if (descriptor == nullptr || !descriptor->libraryCreatable) {
+        return std::nullopt;
+    }
+    // The recipe, exactly as conversion knows it: the kind's owned components plus the shell every
+    // document object is born with (CreateDocumentEntityShellInternalUVE: Transform and Name, with
+    // WorldTransform and Hierarchy arriving through the scene graph) and the structural tags. What
+    // remains is the author's own layer - extras candidates and palette outsiders alike.
+    std::vector<std::type_index> owned;
+    if (!CollectTypeChangeOwnedTypeIndicesUVE(kind, owned)) {
+        return std::nullopt;
+    }
+    const std::vector<std::type_index> shell = {
+        std::type_index(typeid(Scene::NameComponentUVE)),
+        std::type_index(typeid(Scene::TransformComponentUVE)),
+        std::type_index(typeid(Scene::WorldTransformComponentUVE)),
+        std::type_index(typeid(Scene::HierarchyComponentUVE)),
+        std::type_index(typeid(Scene::SceneObjectTypeComponentUVE)),
+        std::type_index(typeid(Scene::FolderComponentUVE)),
+    };
+    ObjectDefaultExtrasPreviewUVE preview;
+    preview.kind = kind;
+    for (const std::type_index present : entityManager.GetComponentTypesUVE(entity)) {
+        if (std::find(owned.begin(), owned.end(), present) != owned.end() ||
+            std::find(shell.begin(), shell.end(), present) != shell.end()) {
+            continue;
+        }
+        const Core::TypeMetadataEntryUVE* const metadata = Scene::FindSceneComponentMetadataUVE(present);
+        if (metadata == nullptr) {
+            ++preview.skippedUnnamed;
+            continue;
+        }
+        if (EditorSettingIdUVE::IsObjectDefaultExtraComponentUVE(metadata->typeId)) {
+            preview.extras.push_back(metadata->typeId);
+        } else {
+            preview.skipped.push_back(metadata->typeId);
+        }
+    }
+    // Palette order, not entity order: saved lists read the same no matter how the node grew.
+    const auto paletteIndex = [](const std::string& id) {
+        const auto& palette = EditorSettingIdUVE::kObjectDefaultExtrasPaletteUVE;
+        return std::distance(palette.begin(), std::find(palette.begin(), palette.end(), id));
+    };
+    std::sort(preview.extras.begin(), preview.extras.end(),
+              [&paletteIndex](const std::string& a, const std::string& b) {
+                  return paletteIndex(a) < paletteIndex(b);
+              });
+    std::sort(preview.skipped.begin(), preview.skipped.end());
+    return preview;
+}
+
+bool EditorUVE::ChangeDocumentSceneObjectKindUVE(const Scene::EntityUVE entity,
+                                                 const Scene::Objects::SceneObjectKindUVE kind) {
+    if (!CanChangeDocumentSceneObjectKindUVE(entity, kind)) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::Objects::SceneObjectKindUVE source =
+        Scene::ResolveSceneObjectKindUVE(entityManager, entity);
+    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+
+    SceneObjectTypeChangeHistoryEntryUVE entry;
+    entry.entity = entity;
+    entry.kindBefore = source;
+    entry.kindAfter = kind;
+    entry.hadTypeComponentBefore =
+        entityManager.HasComponentUVE<Scene::SceneObjectTypeComponentUVE>(entity);
+    entry.selectionBefore = selectionBefore;
+    entry.dirtyBefore = dirtyBefore;
+    // The only shell component a change can move: the pure-Object kinds carry no Transform, so a
+    // change across that boundary backs the author's up for the way back. WorldTransform is
+    // derived and recomputes from it.
+    if (entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+        entry.transformBefore = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+    }
+    CaptureTypeChangeOwnedUVE(entityManager, entity, source, entry.removed, true);
+    // The conversion shadow: extras the TARGET kind owns are still on the entity (nothing removed
+    // them), and the apply below would re-add them over the live instances. Capturing them into
+    // `removed` first backs their authored values up for the carried-values pass and for undo,
+    // exactly like source-owned components. Absent is a no-op, so kinds without extras behave as
+    // before.
+    CaptureTypeChangeOwnedUVE(entityManager, entity, kind, entry.removed, true);
+    if (!ApplyTypeChangeKindUVE(entityManager, entity, kind)) {
+        RestoreTypeChangeValuesUVE(entityManager, entity, entry.removed, false);
+        Scene::SetSceneObjectKindUVE(entityManager, entity, source);
+        return false;
+    }
+    // Shared components keep the author's values over the fresh defaults; components the target
+    // dropped stay dropped.
+    RestoreTypeChangeValuesUVE(entityManager, entity, entry.removed, true);
+    // A primitive that becomes another primitive keeps its size and color but takes the new shape:
+    // Box, Sphere and Plane share one component with different kinds.
+    if (const std::optional<Scene::PrimitiveMeshKindUVE> primitive = TypeChangePrimitiveTargetUVE(kind);
+        primitive.has_value() &&
+        entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
+        entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity).kind = *primitive;
+    }
+    CaptureTypeChangeOwnedUVE(entityManager, entity, kind, entry.added, false);
+    Scene::SetSceneObjectKindUVE(entityManager, entity, kind);
+
+    InvalidateHierarchyFilterCacheUVE();
+    m_sceneDirty = true;
+    entry.selectionAfter = CaptureSelectionSnapshotUVE();
+    entry.dirtyAfter = true;
+    RecordHistoryUVE(std::move(entry));
+    return true;
+}
+
+bool EditorUVE::ApplySceneObjectTypeChangeUVE(SceneObjectTypeChangeHistoryEntryUVE& entry,
+                                              const bool forward) {
+    if (!IsDocumentEntityUVE(entry.entity)) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::Objects::SceneObjectKindUVE toKind = forward ? entry.kindAfter : entry.kindBefore;
+    const std::vector<SceneObjectTypeChangeValueUVE>& off = forward ? entry.removed : entry.added;
+    const std::vector<SceneObjectTypeChangeValueUVE>& on = forward ? entry.added : entry.removed;
+    // Exact replay of recorded values, never fresh defaults: undo and redo restore what the change
+    // saw, whatever the definitions say today.
+    for (const SceneObjectTypeChangeValueUVE& value : off) {
+        std::visit(
+            [&entityManager, entity = entry.entity](const auto& typedValue) {
+                using Component = std::decay_t<decltype(typedValue)>;
+                if (entityManager.HasComponentUVE<Component>(entity)) {
+                    entityManager.RemoveComponentUVE<Component>(entity);
+                }
+            },
+            value);
+    }
+    RestoreTypeChangeValuesUVE(entityManager, entry.entity, on, false);
+    // The transform boundary, replayed: the pure-Object kinds hold no Transform, every other kind
+    // does. The fallbacks below only name a missing Name component, which the shell never drops,
+    // so the author's name always survives this.
+    std::string_view nameFallback = "Object";
+    if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(entry.entity)) {
+        nameFallback = entityManager.GetComponentUVE<Scene::NameComponentUVE>(entry.entity).name;
+    }
+    if (IsTransformlessTypeChangeKindUVE(toKind)) {
+        Scene::EnsureObjectBaselineUVE(entityManager, entry.entity, nameFallback);
+    } else {
+        Scene::EnsureObject3DBaselineUVE(entityManager, entry.entity, nameFallback);
+    }
+    // The author's Transform back over the fresh one the baseline ensured - but only when there is
+    // both a backup and a Transform to write it to, so a replay landing on a pure-Object kind
+    // keeps the backup for the way back instead.
+    if (entry.transformBefore.has_value() &&
+        entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entry.entity)) {
+        if (const Scene::TransformComponentUVE* const backup =
+                std::get_if<Scene::TransformComponentUVE>(&*entry.transformBefore);
+            backup != nullptr) {
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entry.entity) = *backup;
+        }
+    }
+    if (!forward && !entry.hadTypeComponentBefore) {
+        if (entityManager.HasComponentUVE<Scene::SceneObjectTypeComponentUVE>(entry.entity)) {
+            entityManager.RemoveComponentUVE<Scene::SceneObjectTypeComponentUVE>(entry.entity);
+        }
+    } else {
+        Scene::SetSceneObjectKindUVE(entityManager, entry.entity, toKind);
+    }
+    return true;
 }
 
 Scene::EntityUVE EditorUVE::DuplicateSelectedEntityUVE() {
@@ -2550,6 +3635,157 @@ bool EditorUVE::DeleteSelectedEntityUVE() {
     return true;
 }
 
+std::optional<EditorUVE::EntityClipboardUVE> EditorUVE::CaptureEntityClipboardUVE() {
+    // The lifecycle gate is the authoring state plus a single live document selection; a structural
+    // anchor is not an object anyone authored, so it is not something to copy.
+    if (!IsLifecycleCommandAllowedUVE() || IsStructuralRootUVE(m_selectedEntity)) {
+        return std::nullopt;
+    }
+
+    const Scene::EntityUVE source = m_selectedEntity;
+    std::optional<Scene::SceneSnapshotUVE> snapshot = CaptureSubtreeUVE(source);
+    if (!snapshot.has_value()) {
+        return std::nullopt;
+    }
+
+    EntityClipboardUVE clipboard;
+    clipboard.snapshot = std::move(*snapshot);
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(source)) {
+        clipboard.rootName = entityManager.GetComponentUVE<Scene::NameComponentUVE>(source).name;
+    }
+    clipboard.entityCount = CountDocumentSubtreeEntitiesUpToConfirmationThresholdUVE(source);
+    return clipboard;
+}
+
+bool EditorUVE::CopySelectedEntityUVE() {
+    std::optional<EntityClipboardUVE> captured = CaptureEntityClipboardUVE();
+    if (!captured.has_value()) {
+        return false;
+    }
+    m_entityClipboard = std::move(*captured);
+    return true;
+}
+
+bool EditorUVE::CutSelectedEntityUVE() {
+    // Capture first, adopt only after the delete landed: a cut that failed to remove the object
+    // must not leave a copy of it on the clipboard, where the next Paste would duplicate it.
+    std::optional<EntityClipboardUVE> captured = CaptureEntityClipboardUVE();
+    if (!captured.has_value()) {
+        return false;
+    }
+    if (!DeleteSelectedEntityUVE()) {
+        return false;
+    }
+    m_entityClipboard = std::move(*captured);
+    return true;
+}
+
+Scene::EntityUVE EditorUVE::PasteEntityUVE() {
+    if (!IsAuthoringCommandAllowedUVE() || !m_entityClipboard.has_value()) {
+        return Scene::kInvalidEntityUVE;
+    }
+
+    // Where a new object goes: into the selected folder, under the selection when it lives inside
+    // one, otherwise the folder new objects go to - so a Paste never lands somewhere a new object
+    // could not.
+    const Scene::EntityUVE parent = ResolveNewObjectParentUVE();
+    const Scene::EntityUVE pasted = RestoreSubtreeUnderParentUVE(m_entityClipboard->snapshot, parent);
+    if (pasted == Scene::kInvalidEntityUVE) {
+        return Scene::kInvalidEntityUVE;
+    }
+
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    std::optional<std::string> pastedRootName;
+    if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(pasted) &&
+        IsEntityNameValidUVE(m_entityClipboard->rootName)) {
+        // The restored root still carries the name it was captured with; it must not count itself
+        // as a clash, or a Paste after a Cut (which freed the name) would come back as "Lamp 2".
+        pastedRootName = MakeUniqueDocumentEntityNameUVE(m_entityClipboard->rootName, pasted);
+        if (!ApplyEntityNameStateUVE(pasted, *pastedRootName)) {
+            DestroyDocumentSubtreeUVE(pasted);
+            return Scene::kInvalidEntityUVE;
+        }
+    }
+
+    const std::size_t siblingIndex =
+        m_services->GetSceneGraphUVE().GetSiblingIndexUVE(entityManager, pasted).value_or(0U);
+    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    SelectEntityUVE(pasted);
+    m_sceneDirty = true;
+    InvalidateHierarchyFilterCacheUVE();
+    // A paste is an insertion of a captured subtree, exactly what a duplicate is; Undo removes the
+    // inserted root again, Redo puts it back under the same parent with the same name.
+    RecordHistoryUVE(DuplicationHistoryEntryUVE{m_entityClipboard->snapshot, parent, pasted,
+                                                std::move(pastedRootName), selectionBefore,
+                                                CaptureSelectionSnapshotUVE(), dirtyBefore, true, siblingIndex});
+    return pasted;
+}
+
+bool EditorUVE::HasEntityClipboardUVE() const noexcept {
+    return m_entityClipboard.has_value();
+}
+
+std::string EditorUVE::GetEntityClipboardLabelUVE() const {
+    if (!m_entityClipboard.has_value()) {
+        return {};
+    }
+    const std::size_t count = m_entityClipboard->entityCount;
+    if (count == 0U) {
+        return "The copied objects";
+    }
+    if (count >= kHierarchyLargeSubtreeReparentThresholdUVE) {
+        return std::to_string(kHierarchyLargeSubtreeReparentThresholdUVE) + "+ objects";
+    }
+    if (count == 1U) {
+        return "1 object";
+    }
+    return std::to_string(count) + " objects";
+}
+
+std::string EditorUVE::GetEntityNodePathUVE(const Scene::EntityUVE entity) const {
+    const std::vector<Scene::EntityUVE> ancestry = GetDocumentAncestryUVE(entity);
+    std::string path;
+    for (const Scene::EntityUVE ancestor : ancestry) {
+        if (!path.empty()) {
+            path.push_back('/');
+        }
+        path.append(GetEntityDisplayLabelUVE(ancestor));
+    }
+    return path;
+}
+
+bool EditorUVE::CopyEntityNodePathUVE(const Scene::EntityUVE entity) {
+    const std::string path = GetEntityNodePathUVE(entity);
+    if (path.empty()) {
+        return false;
+    }
+    SetClipboardTextUVE(path);
+    return true;
+}
+
+bool EditorUVE::CopyEntityIdentifierUVE(const Scene::EntityUVE entity) {
+    if (!IsDocumentEntityUVE(entity)) {
+        return false;
+    }
+    SetClipboardTextUVE(std::to_string(entity.index) + ":" + std::to_string(entity.generation));
+    return true;
+}
+
+const std::string& EditorUVE::GetClipboardTextUVE() const noexcept {
+    return m_clipboardText;
+}
+
+void EditorUVE::SetClipboardTextUVE(std::string text) {
+    m_clipboardText = std::move(text);
+    // The host owns the real clipboard through ImGui; a headless editor and a test keep only the
+    // string above. ImGui's own clipboard needs a context, so this is guarded rather than assumed.
+    if (ImGui::GetCurrentContext() != nullptr) {
+        ImGui::SetClipboardText(m_clipboardText.c_str());
+    }
+}
+
 bool EditorUVE::ReparentSelectedEntityUVE(const Scene::EntityUVE newParent) {
     return ReparentDocumentEntityUVE(m_selectedEntity, newParent);
 }
@@ -2610,6 +3846,191 @@ bool EditorUVE::ComputeKeepWorldLocalTransformUVE(const Scene::EntityUVE entity,
            outTransform.localScale.y >= kMinimumLocalScaleUVE && outTransform.localScale.z >= kMinimumLocalScaleUVE;
 }
 
+std::size_t EditorUVE::CountDocumentSubtreeEntitiesUpToConfirmationThresholdUVE(
+    const Scene::EntityUVE root) const {
+    if (!IsDocumentEntityUVE(root)) {
+        return 0U;
+    }
+
+    const std::size_t threshold = kHierarchyLargeSubtreeReparentThresholdUVE;
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+    std::vector<Scene::EntityUVE> pending{root};
+    std::unordered_set<Scene::EntityUVE> visited;
+    visited.reserve(threshold);
+    std::size_t count = 0U;
+    while (!pending.empty()) {
+        const Scene::EntityUVE current = pending.back();
+        pending.pop_back();
+        if (!IsDocumentEntityUVE(current) || !visited.insert(current).second) {
+            return 0U;
+        }
+        ++count;
+        if (count >= threshold) {
+            return threshold;
+        }
+        const std::vector<Scene::EntityUVE> children = sceneGraph.GetChildrenUVE(entityManager, current);
+        for (const Scene::EntityUVE child : children) {
+            if (count + pending.size() >= threshold) {
+                break;
+            }
+            pending.push_back(child);
+        }
+    }
+    return count;
+}
+
+bool EditorUVE::RequestHierarchyReparentUVE(const Scene::EntityUVE entity, const Scene::EntityUVE newParent) {
+    if (m_pendingHierarchyReparent.has_value()) {
+        CancelHierarchyReparentUVE();
+    }
+    if (!IsLifecycleCommandAllowedUVE() || !m_hierarchyView.dragToReparent ||
+        IsStructuralRootUVE(entity) || !IsReparentableObjectUVE(entity)) {
+        return false;
+    }
+    if (!m_hierarchyView.confirmLargeSubtreeReparent) {
+        return ReparentDocumentEntityUVE(entity, newParent);
+    }
+
+    const std::size_t subtreeEntityCount = CountDocumentSubtreeEntitiesUpToConfirmationThresholdUVE(entity);
+    if (subtreeEntityCount == 0U) {
+        return false;
+    }
+
+    // Reject destinations that are already known to be invalid before opening a modal. In
+    // particular, do not resolve/create the default folder for an empty-space drop yet: cancelling
+    // the confirmation must not make any document edits as a side effect of merely asking.
+    Scene::EntityUVE effectiveParent = newParent;
+    if (effectiveParent == Scene::kInvalidEntityUVE) {
+        if (m_entityEditSession.has_value()) {
+            effectiveParent = GetEntityEditorRootUVE();
+        } else {
+            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+            const Scene::EntityUVE viewport = GetDocumentViewportUVE();
+            const Scene::Objects::SceneObjectKindUVE kind = Scene::ResolveSceneObjectKindUVE(entityManager, entity);
+            if (viewport == Scene::kInvalidEntityUVE || IsTopLevelSingletonKindUVE(kind)) {
+                effectiveParent = GetDocumentObjectUVE();
+            } else if (entityManager.HasComponentUVE<Scene::FolderComponentUVE>(entity)) {
+                effectiveParent = viewport;
+            } else {
+                const auto isInViewport = [this, viewport](const Scene::EntityUVE folder) {
+                    const std::vector<Scene::EntityUVE> ancestry = GetDocumentAncestryUVE(folder);
+                    return std::find(ancestry.begin(), ancestry.end(), viewport) != ancestry.end();
+                };
+                if (m_lastUsedFolder != Scene::kInvalidEntityUVE &&
+                    entityManager.IsAliveUVE(m_lastUsedFolder) &&
+                    entityManager.HasComponentUVE<Scene::FolderComponentUVE>(m_lastUsedFolder) &&
+                    isInViewport(m_lastUsedFolder)) {
+                    effectiveParent = m_lastUsedFolder;
+                } else {
+                    for (const Scene::EntityUVE child :
+                         m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, viewport)) {
+                        if (entityManager.HasComponentUVE<Scene::FolderComponentUVE>(child)) {
+                            effectiveParent = child;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (effectiveParent != Scene::kInvalidEntityUVE) {
+        if (!IsHierarchyObjectUVE(effectiveParent) || entity == effectiveParent ||
+            !IsAllowedOutlinerParentUVE(entity, effectiveParent)) {
+            return false;
+        }
+        const std::vector<Scene::EntityUVE> ancestry = GetDocumentAncestryUVE(effectiveParent);
+        if (ancestry.empty() || std::find(ancestry.begin(), ancestry.end(), entity) != ancestry.end()) {
+            return false;
+        }
+        Scene::EntityUVE currentParent = Scene::kInvalidEntityUVE;
+        if (!TryGetDocumentParentUVE(entity, currentParent) || currentParent == effectiveParent) {
+            return false;
+        }
+        Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+        if (entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity) &&
+            m_reparentTransformMode == EditorReparentTransformModeUVE::KeepWorld) {
+            Scene::TransformComponentUVE localAfter{};
+            if (!ComputeKeepWorldLocalTransformUVE(entity, effectiveParent, localAfter)) {
+                return false;
+            }
+        }
+    }
+
+    if (subtreeEntityCount >= kHierarchyLargeSubtreeReparentThresholdUVE) {
+        m_pendingHierarchyReparent = PendingHierarchyReparentUVE{entity, newParent, subtreeEntityCount};
+        m_hierarchyReparentPopupRequested = true;
+        return true;
+    }
+    return ReparentDocumentEntityUVE(entity, newParent);
+}
+
+bool EditorUVE::ConfirmHierarchyReparentUVE() {
+    if (!m_pendingHierarchyReparent.has_value()) {
+        return false;
+    }
+    const PendingHierarchyReparentUVE pending = *m_pendingHierarchyReparent;
+    CancelHierarchyReparentUVE();
+    if (!m_hierarchyView.dragToReparent || !m_hierarchyView.confirmLargeSubtreeReparent) {
+        return false;
+    }
+    return ReparentDocumentEntityUVE(pending.entity, pending.newParent);
+}
+
+void EditorUVE::CancelHierarchyReparentUVE() noexcept {
+    m_pendingHierarchyReparent.reset();
+    m_hierarchyReparentPopupRequested = false;
+}
+
+bool EditorUVE::RequestHierarchyDeleteUVE() {
+    if (m_pendingHierarchyDelete.has_value()) {
+        CancelHierarchyDeleteUVE();
+    }
+    if (!IsLifecycleCommandAllowedUVE() || !IsDocumentEntityUVE(m_selectedEntity) ||
+        IsStructuralRootUVE(m_selectedEntity)) {
+        return false;
+    }
+    if (!m_hierarchyView.confirmDeleteSubtree) {
+        return DeleteSelectedEntityUVE();
+    }
+    const std::size_t subtreeEntityCount =
+        CountDocumentSubtreeEntitiesUpToConfirmationThresholdUVE(m_selectedEntity);
+    if (subtreeEntityCount == 0U) {
+        return false;
+    }
+    // A lone object deletes immediately, still undoable; only a branch - descendants going down
+    // silently with it - stops to ask.
+    if (subtreeEntityCount >= kHierarchyDeleteSubtreeConfirmThresholdUVE) {
+        m_pendingHierarchyDelete = PendingHierarchyDeleteUVE{m_selectedEntity, subtreeEntityCount};
+        m_hierarchyDeletePopupRequested = true;
+        return true;
+    }
+    return DeleteSelectedEntityUVE();
+}
+
+bool EditorUVE::ConfirmHierarchyDeleteUVE() {
+    if (!m_pendingHierarchyDelete.has_value()) {
+        return false;
+    }
+    const PendingHierarchyDeleteUVE pending = *m_pendingHierarchyDelete;
+    CancelHierarchyDeleteUVE();
+    if (!m_hierarchyView.confirmDeleteSubtree) {
+        return false;
+    }
+    // The delete runs on the selection, so it must still be the object the request named; a
+    // selection that moved behind the modal refuses rather than deletes a stranger.
+    if (m_selectedEntity != pending.entity) {
+        return false;
+    }
+    return DeleteSelectedEntityUVE();
+}
+
+void EditorUVE::CancelHierarchyDeleteUVE() noexcept {
+    m_pendingHierarchyDelete.reset();
+    m_hierarchyDeletePopupRequested = false;
+}
+
 bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const Scene::EntityUVE newParent) {
     if (!IsLifecycleCommandAllowedUVE() || IsStructuralRootUVE(entity) || !IsReparentableObjectUVE(entity) ||
         !IsDocumentSubtreeUVE(entity) ||
@@ -2618,16 +4039,16 @@ bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const S
         return false;
     }
     // One-root documents: "move to document root" means becoming a direct child of the
-    // scene root - nothing but the root itself may sit at top level.
+    // Object - nothing but the root itself may sit at top level.
     // In the Entity Editor the entity's root plays that part.
     // In the level, "the top" means the object's folder, or the Viewport for a folder.
     const auto defaultParent = [this, entity] {
         Scene::IEntityManagerUVE& manager = m_services->GetEntityManagerUVE();
         if (GetDocumentViewportUVE() == Scene::kInvalidEntityUVE) {
-            return EnsureDocumentSceneRootUVE();
+            return EnsureDocumentObjectUVE();
         }
         if (IsTopLevelSingletonKindUVE(Scene::ResolveSceneObjectKindUVE(manager, entity))) {
-            return EnsureDocumentSceneRootUVE();
+            return EnsureDocumentObjectUVE();
         }
         return manager.HasComponentUVE<Scene::FolderComponentUVE>(entity) ? GetDocumentViewportUVE()
                                                                           : ResolveObjectFolderUVE();
@@ -2668,7 +4089,7 @@ bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const S
     m_sceneDirty = true;
     InvalidateHierarchyFilterCacheUVE();
     // The parent the entity actually got. Recording `newParent` would make redo of "move to
-    // document root" set no parent at all, leaving a stray beside the scene root instead of under it.
+    // document root" set no parent at all, leaving a stray beside the Object instead of under it.
     RecordHistoryUVE(ReparentHistoryEntryUVE{
         entity, parentBefore, effectiveParent, localBefore, localAfter, selectionBefore,
         CaptureSelectionSnapshotUVE(), dirtyBefore, true, siblingIndexBefore,
@@ -3086,11 +4507,17 @@ EditorUVE::EditorSelectionSnapshotUVE EditorUVE::CaptureSelectionSnapshotUVE() c
     return selection;
 }
 
+bool EditorUVE::IsSelectionSnapshotCurrentUVE(const EditorSelectionSnapshotUVE& snapshot) const {
+    const EditorSelectionSnapshotUVE live = CaptureSelectionSnapshotUVE();
+    return live.activeEntity == snapshot.activeEntity && live.entities == snapshot.entities;
+}
+
 void EditorUVE::RestoreSelectionUVE(EditorSelectionSnapshotUVE selection) noexcept {
     std::vector<Scene::EntityUVE> restored;
     restored.reserve(selection.entities.size());
     for (const Scene::EntityUVE entity : selection.entities) {
-        if (IsDocumentEntityUVE(entity) && std::find(restored.begin(), restored.end(), entity) == restored.end()) {
+        if (IsDocumentEntityUVE(entity) && !IsEntityLockedUVE(entity) &&
+            std::find(restored.begin(), restored.end(), entity) == restored.end()) {
             restored.push_back(entity);
         }
     }
@@ -3103,13 +4530,18 @@ void EditorUVE::RestoreSelectionUVE(EditorSelectionSnapshotUVE selection) noexce
     const bool changed = restored != m_selectedEntities || restoredActive != m_selectedEntity;
     m_selectedEntities = std::move(restored);
     m_selectedEntity = restoredActive;
+    m_hierarchySelectionAnchor = restoredActive;
     if (changed) {
         CancelHierarchyRenameUVE();
     }
 }
 
 void EditorUVE::PruneSelectionUVE() noexcept {
+    const Scene::EntityUVE selectionAnchor = m_hierarchySelectionAnchor;
     RestoreSelectionUVE(CaptureSelectionSnapshotUVE());
+    if (IsDocumentEntityUVE(selectionAnchor) && !IsEntityLockedUVE(selectionAnchor)) {
+        m_hierarchySelectionAnchor = selectionAnchor;
+    }
 }
 
 bool EditorUVE::IsEntitySelectedUVE(const Scene::EntityUVE entity) const noexcept {
@@ -3330,7 +4762,7 @@ Scene::EntityUVE EditorUVE::ResolveNewObjectParentUVE() {
             return entityRoot;
         }
     }
-    return EnsureDocumentSceneRootUVE();
+    return EnsureDocumentObjectUVE();
 }
 
 Scene::EntityUVE EditorUVE::ResolveNewObjectParentForUVE(const Scene::Objects::SceneObjectKindUVE kind) {
@@ -3338,7 +4770,7 @@ Scene::EntityUVE EditorUVE::ResolveNewObjectParentForUVE(const Scene::Objects::S
         return ResolveNewObjectParentUVE();
     }
     if (IsTopLevelSingletonKindUVE(kind)) {
-        return EnsureDocumentSceneRootUVE();
+        return EnsureDocumentObjectUVE();
     }
     if (kind == Scene::Objects::SceneObjectKindUVE::Folder) {
         // Into the selected folder (or the Viewport itself); otherwise the Viewport.
@@ -3376,12 +4808,12 @@ bool EditorUVE::IsTopLevelSingletonKindUVE(const Scene::Objects::SceneObjectKind
 }
 
 Scene::EntityUVE EditorUVE::FindTopLevelObjectUVE(const Scene::Objects::SceneObjectKindUVE kind) {
-    const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
-    if (sceneRoot == Scene::kInvalidEntityUVE) {
+    const Scene::EntityUVE rootObject = GetDocumentObjectUVE();
+    if (rootObject == Scene::kInvalidEntityUVE) {
         return Scene::kInvalidEntityUVE;
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    for (const Scene::EntityUVE child : m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, sceneRoot)) {
+    for (const Scene::EntityUVE child : m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, rootObject)) {
         if (Scene::ResolveSceneObjectKindUVE(entityManager, child) == kind) {
             return child;
         }
@@ -3393,8 +4825,8 @@ bool EditorUVE::EnsureDocumentLayoutUVE() {
     if (!IsOutlinerLayoutActiveUVE()) {
         return false;
     }
-    const Scene::EntityUVE sceneRoot = EnsureDocumentSceneRootUVE();
-    if (sceneRoot == Scene::kInvalidEntityUVE) {
+    const Scene::EntityUVE rootObject = EnsureDocumentObjectUVE();
+    if (rootObject == Scene::kInvalidEntityUVE) {
         return false;
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
@@ -3408,12 +4840,12 @@ bool EditorUVE::EnsureDocumentLayoutUVE() {
         }
         Scene::ApplyViewportObjectDefinitionUVE(entityManager, viewport, Scene::ViewportObjectDefinitionUVE{});
         Scene::SetSceneObjectKindUVE(entityManager, viewport, Scene::Objects::SceneObjectKindUVE::Viewport);
-        sceneGraph.SetParentUVE(entityManager, viewport, sceneRoot);
+        sceneGraph.SetParentUVE(entityManager, viewport, rootObject);
         changed = true;
     }
     if (Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
-        !TryGetDocumentParentUVE(viewport, parent) || parent != sceneRoot) {
-        sceneGraph.SetParentUVE(entityManager, viewport, sceneRoot);
+        !TryGetDocumentParentUVE(viewport, parent) || parent != rootObject) {
+        sceneGraph.SetParentUVE(entityManager, viewport, rootObject);
         changed = true;
     }
     static_cast<void>(sceneGraph.SetSiblingIndexUVE(entityManager, viewport, 0U));
@@ -3432,7 +4864,7 @@ bool EditorUVE::EnsureDocumentLayoutUVE() {
     bool seenLight = false;
     bool seenEnvironment = false;
     std::vector<Scene::EntityUVE> strays;
-    for (const Scene::EntityUVE child : sceneGraph.GetChildrenUVE(entityManager, sceneRoot)) {
+    for (const Scene::EntityUVE child : sceneGraph.GetChildrenUVE(entityManager, rootObject)) {
         if (child == viewport) {
             continue;
         }
@@ -3470,7 +4902,7 @@ bool EditorUVE::EnsureDocumentLayoutUVE() {
 Scene::EntityUVE EditorUVE::ResolveObjectFolderUVE() {
     const Scene::EntityUVE viewport = GetDocumentViewportUVE();
     if (viewport == Scene::kInvalidEntityUVE) {
-        return EnsureDocumentSceneRootUVE();
+        return EnsureDocumentObjectUVE();
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
@@ -3508,13 +4940,13 @@ bool EditorUVE::IsAllowedOutlinerParentUVE(const Scene::EntityUVE entity, const 
         return true;
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
+    const Scene::EntityUVE rootObject = GetDocumentObjectUVE();
     const Scene::EntityUVE viewport = GetDocumentViewportUVE();
     if (entity == viewport) {
-        return parent == sceneRoot;
+        return parent == rootObject;
     }
     const Scene::Objects::SceneObjectKindUVE kind = Scene::ResolveSceneObjectKindUVE(entityManager, entity);
-    if (parent == sceneRoot) {
+    if (parent == rootObject) {
         // Only the level's own sun and environment sit beside the Viewport, one of each.
         const Scene::EntityUVE existing = IsTopLevelSingletonKindUVE(kind) ? FindTopLevelObjectUVE(kind) : entity;
         return IsTopLevelSingletonKindUVE(kind) && (existing == Scene::kInvalidEntityUVE || existing == entity);
@@ -3536,21 +4968,40 @@ bool EditorUVE::IsAllowedOutlinerParentUVE(const Scene::EntityUVE entity, const 
 }
 
 void EditorUVE::PlaceNewDocumentObjectUVE(const Scene::EntityUVE entity) {
-    if (m_newObjectPlacement != EditorNewObjectPlacementUVE::ViewFocus || !m_viewportCameraFocus.has_value()) {
-        return;
+    switch (m_newObjectPlacement) {
+        case EditorNewObjectPlacementUVE::ViewFocus:
+            if (m_viewportCameraFocus.has_value()) {
+                PlaceNewDocumentObjectAtUVE(entity, *m_viewportCameraFocus);
+            }
+            return;
+        case EditorNewObjectPlacementUVE::GroundPlane:
+            // No aim yet (the cursor never entered the viewport) falls back to the focus, so the
+            // first object still lands where the person is looking instead of at the origin.
+            if (m_viewportCursorGroundPoint.has_value()) {
+                PlaceNewDocumentObjectAtUVE(entity, *m_viewportCursorGroundPoint);
+            } else if (m_viewportCameraFocus.has_value()) {
+                PlaceNewDocumentObjectAtUVE(entity, *m_viewportCameraFocus);
+            }
+            return;
+        case EditorNewObjectPlacementUVE::ParentOrigin:
+            return;
     }
+}
+
+void EditorUVE::PlaceNewDocumentObjectAtUVE(const Scene::EntityUVE entity,
+                                            const Math::Vector3UVE& worldPoint) {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     if (!entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity) ||
         !entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
         return; // A pure Object has no place in space.
     }
-    // The object sits at its parent's origin; move it by the offset from there to the focus, taken
+    // The object sits at its parent's origin; move it by the offset from there to the point, taken
     // into the parent's space. A parent whose world transform is not resolved yet leaves it be.
     const std::optional<Scene::WorldTransformComponentUVE> parentWorld =
         TryGetComposingParentWorldUVE(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent);
     Math::Vector3UVE localPosition{};
     if (!parentWorld.has_value() || parentWorld->dirty ||
-        !ComputeLocalDeltaForWorldDeltaUVE(entity, *m_viewportCameraFocus - parentWorld->worldPosition,
+        !ComputeLocalDeltaForWorldDeltaUVE(entity, worldPoint - parentWorld->worldPosition,
                                            localPosition)) {
         return;
     }
@@ -3562,6 +5013,12 @@ void EditorUVE::PlaceNewDocumentObjectUVE(const Scene::EntityUVE entity) {
 void EditorUVE::SetViewportCameraFocusUVE(const Math::Vector3UVE& focus) noexcept {
     if (IsFiniteVectorUVE(focus)) {
         m_viewportCameraFocus = focus;
+    }
+}
+
+void EditorUVE::SetViewportCursorGroundPointUVE(const Math::Vector3UVE& groundPoint) noexcept {
+    if (IsFiniteVectorUVE(groundPoint)) {
+        m_viewportCursorGroundPoint = groundPoint;
     }
 }
 
@@ -3607,6 +5064,9 @@ bool EditorUVE::UndoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 if (!ApplySceneComponentStateUVE(typedEntry.entity, typedEntry.kind, typedEntry.before)) {
                     return false;
                 }
+                if (typedEntry.before.has_value() != typedEntry.after.has_value()) {
+                    InvalidateHierarchyFilterCacheUVE();
+                }
                 RestoreSelectionUVE(typedEntry.selectionBefore);
                 m_sceneDirty = typedEntry.dirtyBefore;
                 return true;
@@ -3614,6 +5074,23 @@ bool EditorUVE::UndoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 if (!ApplyComponentPropertySnapshotUVE(typedEntry.entity, typedEntry.metadata,
                                                        typedEntry.before.GetUVE())) {
                     return false;
+                }
+                RestoreSelectionUVE(typedEntry.selectionBefore);
+                m_sceneDirty = typedEntry.dirtyBefore;
+                return true;
+            } else if constexpr (std::is_same_v<EntryType, MultiComponentPropertyHistoryEntryUVE>) {
+                // Every holder checked before any is touched, so a stale holder refuses the whole
+                // step instead of leaving half the selection rewound.
+                for (const MultiComponentPropertyEditUVE& edit : typedEntry.edits) {
+                    if (!IsDocumentEntityUVE(edit.entity)) {
+                        return false;
+                    }
+                }
+                for (const MultiComponentPropertyEditUVE& edit : typedEntry.edits) {
+                    if (!ApplyComponentPropertySnapshotUVE(edit.entity, typedEntry.metadata,
+                                                           edit.before.GetUVE())) {
+                        return false;
+                    }
                 }
                 RestoreSelectionUVE(typedEntry.selectionBefore);
                 m_sceneDirty = typedEntry.dirtyBefore;
@@ -3658,6 +5135,14 @@ bool EditorUVE::UndoHistoryEntryUVE(HistoryEntryUVE& entry) {
                     m_services->GetEntityManagerUVE(), restored, typedEntry.siblingIndex));
                 typedEntry.activeEntity = restored;
                 typedEntry.selectionBefore = EditorSelectionSnapshotUVE{{restored}, restored};
+                RestoreSelectionUVE(typedEntry.selectionBefore);
+                m_sceneDirty = typedEntry.dirtyBefore;
+                return true;
+            } else if constexpr (std::is_same_v<EntryType, SceneObjectTypeChangeHistoryEntryUVE>) {
+                if (!ApplySceneObjectTypeChangeUVE(typedEntry, false)) {
+                    return false;
+                }
+                InvalidateHierarchyFilterCacheUVE();
                 RestoreSelectionUVE(typedEntry.selectionBefore);
                 m_sceneDirty = typedEntry.dirtyBefore;
                 return true;
@@ -3720,6 +5205,9 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 if (!ApplySceneComponentStateUVE(typedEntry.entity, typedEntry.kind, typedEntry.after)) {
                     return false;
                 }
+                if (typedEntry.before.has_value() != typedEntry.after.has_value()) {
+                    InvalidateHierarchyFilterCacheUVE();
+                }
                 RestoreSelectionUVE(typedEntry.selectionAfter);
                 m_sceneDirty = typedEntry.dirtyAfter;
                 return true;
@@ -3727,6 +5215,21 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 if (!ApplyComponentPropertySnapshotUVE(typedEntry.entity, typedEntry.metadata,
                                                        typedEntry.after.GetUVE())) {
                     return false;
+                }
+                RestoreSelectionUVE(typedEntry.selectionAfter);
+                m_sceneDirty = typedEntry.dirtyAfter;
+                return true;
+            } else if constexpr (std::is_same_v<EntryType, MultiComponentPropertyHistoryEntryUVE>) {
+                for (const MultiComponentPropertyEditUVE& edit : typedEntry.edits) {
+                    if (!IsDocumentEntityUVE(edit.entity)) {
+                        return false;
+                    }
+                }
+                for (const MultiComponentPropertyEditUVE& edit : typedEntry.edits) {
+                    if (!ApplyComponentPropertySnapshotUVE(edit.entity, typedEntry.metadata,
+                                                           edit.after.GetUVE())) {
+                        return false;
+                    }
                 }
                 RestoreSelectionUVE(typedEntry.selectionAfter);
                 m_sceneDirty = typedEntry.dirtyAfter;
@@ -3754,8 +5257,8 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 Scene::EntityUVE redoParent = typedEntry.createdUnderParent;
                 if (redoParent == Scene::kInvalidEntityUVE || !IsDocumentEntityUVE(redoParent)) {
                     // The original parent is gone (deleted by later history, say) - re-home
-                    // under the scene root rather than dropping the object to document top level.
-                    redoParent = EnsureDocumentSceneRootUVE();
+                    // under the Object rather than dropping the object to document top level.
+                    redoParent = EnsureDocumentObjectUVE();
                 }
                 const Scene::EntityUVE restored =
                     RestoreSubtreeUnderParentUVE(typedEntry.snapshot, redoParent);
@@ -3798,6 +5301,14 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 RestoreSelectionUVE(typedEntry.selectionAfter);
                 m_sceneDirty = typedEntry.dirtyAfter;
                 return true;
+            } else if constexpr (std::is_same_v<EntryType, SceneObjectTypeChangeHistoryEntryUVE>) {
+                if (!ApplySceneObjectTypeChangeUVE(typedEntry, true)) {
+                    return false;
+                }
+                InvalidateHierarchyFilterCacheUVE();
+                RestoreSelectionUVE(typedEntry.selectionAfter);
+                m_sceneDirty = typedEntry.dirtyAfter;
+                return true;
             } else {
                 const bool reparented = typedEntry.parentBefore != typedEntry.parentAfter;
                 if (reparented ? (!IsReparentableObjectUVE(typedEntry.entity) ||
@@ -3827,20 +5338,20 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
 }
 
 bool EditorUVE::IsStructuralRootUVE(const Scene::EntityUVE entity) {
-    return IsSceneRootEntityUVE(entity) ||
+    return IsObjectRootEntityUVE(entity) ||
            (entity != Scene::kInvalidEntityUVE && entity == GetDocumentViewportUVE()) ||
            (m_entityEditSession.has_value() && entity != Scene::kInvalidEntityUVE && entity == GetEntityEditorRootUVE());
 }
 
-bool EditorUVE::IsSceneRootEntityUVE(const Scene::EntityUVE entity) const {
+bool EditorUVE::IsObjectRootEntityUVE(const Scene::EntityUVE entity) const {
     return entity != Scene::kInvalidEntityUVE && m_services->GetEntityManagerUVE().IsAliveUVE(entity) &&
-           m_services->GetEntityManagerUVE().HasComponentUVE<Scene::SceneRootComponentUVE>(entity);
+           m_services->GetEntityManagerUVE().HasComponentUVE<Scene::ObjectComponentUVE>(entity);
 }
 
-Scene::EntityUVE EditorUVE::GetDocumentSceneRootUVE() {
+Scene::EntityUVE EditorUVE::GetDocumentObjectUVE() {
     Scene::EntityUVE found = Scene::kInvalidEntityUVE;
-    m_services->GetEntityManagerUVE().ForEachUVE<Scene::SceneRootComponentUVE>(
-        [&found](const Scene::EntityUVE entity, const Scene::SceneRootComponentUVE&) {
+    m_services->GetEntityManagerUVE().ForEachUVE<Scene::ObjectComponentUVE>(
+        [&found](const Scene::EntityUVE entity, const Scene::ObjectComponentUVE&) {
             if (found == Scene::kInvalidEntityUVE) {
                 found = entity; // markers are guarded to exactly one; first hit is THE root
             }
@@ -3848,19 +5359,19 @@ Scene::EntityUVE EditorUVE::GetDocumentSceneRootUVE() {
     return found;
 }
 
-Scene::EntityUVE EditorUVE::EnsureDocumentSceneRootUVE() {
-    const Scene::EntityUVE existing = GetDocumentSceneRootUVE();
+Scene::EntityUVE EditorUVE::EnsureDocumentObjectUVE() {
+    const Scene::EntityUVE existing = GetDocumentObjectUVE();
     if (existing != Scene::kInvalidEntityUVE) {
         return existing;
     }
 
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     const Scene::EntityUVE root =
-        CreateDocumentEntityShellInternalUVE(Scene::SceneRootObjectDefinitionUVE::defaultName);
+        CreateDocumentEntityShellInternalUVE(Scene::ObjectDefinitionUVE::defaultName);
     if (root == Scene::kInvalidEntityUVE) {
         return Scene::kInvalidEntityUVE;
     }
-    Scene::ApplySceneRootObjectDefinitionUVE(entityManager, root, Scene::SceneRootObjectDefinitionUVE{});
+    Scene::ApplyObjectDefinitionUVE(entityManager, root, Scene::ObjectDefinitionUVE{});
     return root;
 }
 
@@ -3869,7 +5380,7 @@ std::vector<Scene::EntityUVE> EditorUVE::GetDocumentRootsUVE() {
     std::vector<Scene::EntityUVE> roots =
         m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, Scene::kInvalidEntityUVE);
     // Internal engine/editor infrastructure entities (e.g. the Viewport's hidden free-look-camera
-    // proxy) are also scene roots (AttachTransformUVE always creates one), but must never be
+    // proxy) are also Objects (AttachTransformUVE always creates one), but must never be
     // treated as document content - this is the one place that decision needs to be made, since
     // every other document-root consumer (Play-mode snapshot capture/restore, the Scene Hierarchy
     // panel, ClearDocumentSceneUVE, etc.) already reaches roots exclusively through this function.
@@ -3879,14 +5390,52 @@ std::vector<Scene::EntityUVE> EditorUVE::GetDocumentRootsUVE() {
                                        entity);
                                }),
                roots.end());
-    // The scene root leads. The entity manager iterates in archetype order, which it documents as
+    // The Object leads. The entity manager iterates in archetype order, which it documents as
     // unspecified and which moves whenever an object's component set changes; without this the root
     // could sit anywhere among stray top-level entities, in the outliner, in the reparent list, and
     // in the order a Play-mode snapshot is captured and restored.
     std::stable_partition(roots.begin(), roots.end(), [&entityManager](const Scene::EntityUVE entity) {
-        return entityManager.HasComponentUVE<Scene::SceneRootComponentUVE>(entity);
+        return entityManager.HasComponentUVE<Scene::ObjectComponentUVE>(entity);
     });
     return roots;
+}
+
+std::vector<Scene::EntityUVE> EditorUVE::SortHierarchyRowsUVE(
+    std::vector<Scene::EntityUVE> entities) const {
+    const HierarchySortModeUVE sortMode = m_hierarchyView.sortMode;
+    if (sortMode == HierarchySortModeUVE::SceneOrder || entities.size() < 2U) {
+        return entities;
+    }
+
+    // The Object is a structural anchor rather than an authored sibling; keep it first even when
+    // loose document roots are sorted. All other groups are presentation-only stable sorts.
+    std::size_t firstSortable =
+        !entities.empty() && IsObjectRootEntityUVE(entities.front()) ? 1U : 0U;
+    struct SortKeyUVE final {
+        Scene::EntityUVE entity;
+        std::string name;
+        std::string type;
+    };
+    std::vector<SortKeyUVE> keys;
+    keys.reserve(entities.size() - firstSortable);
+    for (std::size_t index = firstSortable; index < entities.size(); ++index) {
+        const Scene::EntityUVE entity = entities[index];
+        keys.push_back(SortKeyUVE{entity, GetEntityDisplayLabelUVE(entity),
+                                  std::string{GetObjectTypeNameUVE(entity)}});
+    }
+    std::stable_sort(keys.begin(), keys.end(), [sortMode](const SortKeyUVE& left, const SortKeyUVE& right) {
+        return CompareHierarchySortKeysUVE(sortMode, left.name, left.type, right.name, right.type) < 0;
+    });
+    for (std::size_t index = 0U; index < keys.size(); ++index) {
+        entities[firstSortable + index] = keys[index].entity;
+    }
+    return entities;
+}
+
+std::vector<Scene::EntityUVE> EditorUVE::GetHierarchyChildrenInViewOrderUVE(
+    const Scene::EntityUVE parent) const {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    return SortHierarchyRowsUVE(m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, parent));
 }
 
 EditorStateUVE EditorUVE::GetStateUVE() const noexcept {
@@ -4178,6 +5727,7 @@ std::optional<std::string> EditorUVE::ReadProjectTextFileUVE(const std::filesyst
 
 void EditorUVE::SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferences) {
     const bool previousAdvancedOpen = m_colorPickerPreferences.advancedOpen;
+    const ColorPickerRgbDisplayUVE previousRgbDisplay = m_colorPickerPreferences.rgbDisplay;
     const auto sanitize = [](std::vector<EditorColorUVE>& colors, const std::size_t cap) {
         std::erase_if(colors, [](const EditorColorUVE& color) {
             return !std::isfinite(color.r) || !std::isfinite(color.g) || !std::isfinite(color.b) ||
@@ -4193,15 +5743,31 @@ void EditorUVE::SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferenc
     };
     sanitize(preferences.saved, kMaxSavedColorsUVE);
     sanitize(preferences.recents, kMaxRecentColorsUVE);
+    if (preferences.rgbDisplay != ColorPickerRgbDisplayUVE::ZeroToOne &&
+        preferences.rgbDisplay != ColorPickerRgbDisplayUVE::ZeroTo255) {
+        preferences.rgbDisplay = ColorPickerRgbDisplayUVE::ZeroToOne;
+    }
     m_colorPickerPreferences = std::move(preferences);
     NotifyEditorSettingChangedUVE(EditorSettingIdUVE::kColorPickerAdvancedOpenUVE, previousAdvancedOpen,
                                   m_colorPickerPreferences.advancedOpen);
+    // Unlike the Advanced flag above, only a real change notifies: the saved/recent bindings
+    // rebuild the whole struct on every load, and that must not look like a display change.
+    if (m_colorPickerPreferences.rgbDisplay != previousRgbDisplay) {
+        NotifyEditorSettingChangedUVE(EditorSettingIdUVE::kColorPickerRgbDisplayUVE,
+                                      static_cast<std::int64_t>(previousRgbDisplay),
+                                      static_cast<std::int64_t>(m_colorPickerPreferences.rgbDisplay));
+    }
 }
 
 void EditorUVE::ShutdownUVE() {
     if (m_state == EditorStateUVE::Shutdown || m_state == EditorStateUVE::Uninitialized) {
         return;
     }
+    // The pause-on-error sink stays on the logger (there is no unregister); the editor only
+    // stops reading it.
+    m_playPauseOnErrorSink = nullptr;
+    CancelHierarchyReparentUVE();
+    m_hierarchyReparentPopupWasOpened = false;
     static_cast<void>(CommitComponentPropertyPreviewUVE());
     // An open entity is closed without saving (nothing here can ask), so the scene is back in
     // place for whatever runs after the editor.
@@ -4244,6 +5810,9 @@ void EditorUVE::ShutdownUVE() {
 
     ClearSelectionUVE();
     ClearHistoryUVE();
+    m_lockedHierarchyEntities.clear();
+    m_entityClipboard.reset();
+    m_clipboardText.clear();
     m_state = EditorStateUVE::Shutdown;
 }
 
@@ -4263,7 +5832,7 @@ bool EditorUVE::HasSceneGraphObjectUVE(const Scene::EntityUVE entity) const noex
 }
 
 bool EditorUVE::IsReparentableObjectUVE(const Scene::EntityUVE entity) const noexcept {
-    // A spatial object carries the full transform set; a pure Object (AnimationSequencer, the scene root)
+    // A spatial object carries the full transform set; a pure Object (AnimationSequencer, the Object)
     // carries none of it. Anything in between is a half-built entity and is refused.
     if (HasSceneGraphObjectUVE(entity)) {
         return true;
@@ -4335,12 +5904,13 @@ std::string EditorUVE::GetDefaultEntityNameUVE(const EditorEntityKindUVE kind) c
     return {};
 }
 
-std::string EditorUVE::MakeUniqueDocumentEntityNameUVE(const std::string_view baseName) const {
+std::string EditorUVE::MakeUniqueDocumentEntityNameUVE(const std::string_view baseName,
+                                                        const Scene::EntityUVE ignoredEntity) const {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     std::vector<std::string> names;
     entityManager.ForEachUVE<Scene::NameComponentUVE>(
-        [this, &names](const Scene::EntityUVE entity, Scene::NameComponentUVE& component) {
-            if (IsDocumentEntityUVE(entity)) {
+        [this, &names, ignoredEntity](const Scene::EntityUVE entity, Scene::NameComponentUVE& component) {
+            if (entity != ignoredEntity && IsDocumentEntityUVE(entity)) {
                 names.push_back(component.name);
             }
         });
@@ -4355,7 +5925,8 @@ std::string EditorUVE::MakeUniqueDocumentEntityNameUVE(const std::string_view ba
     }
 
     for (std::size_t suffix = 2U;; ++suffix) {
-        const std::string candidate = std::string{baseName} + " " + std::to_string(suffix);
+        const std::string candidate =
+            FormatDuplicateNameUVE(baseName, suffix, m_hierarchyView.duplicateNameSuffix);
         if (!isUsed(candidate)) {
             return candidate;
         }
@@ -4455,6 +6026,40 @@ bool EditorUVE::ComputeLocalRotationForWorldAxisUVE(const Scene::EntityUVE entit
     return Math::TryNormalizeUVE(Math::MultiplyUVE(localDelta, initialNormalized), outLocalRotation);
 }
 
+bool EditorUVE::ComputeLocalRotationForWorldRotationUVE(const Scene::EntityUVE entity,
+                                                        const Math::QuaternionUVE& desiredWorldRotation,
+                                                        Math::QuaternionUVE& outLocalRotation) const {
+    if (!IsDocumentEntityUVE(entity) || !IsQuaternionFiniteUVE(desiredWorldRotation)) {
+        return false;
+    }
+
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
+        return false;
+    }
+
+    const Scene::HierarchyComponentUVE& hierarchy =
+        entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(entity);
+    if (hierarchy.parent == Scene::kInvalidEntityUVE) {
+        // A root's parent space is the world, so the wanted rotation is already the local one.
+        return Math::TryNormalizeUVE(desiredWorldRotation, outLocalRotation);
+    }
+
+    const std::optional<Scene::WorldTransformComponentUVE> composingParent =
+        TryGetComposingParentWorldUVE(hierarchy.parent);
+    if (!composingParent.has_value()) {
+        return false;
+    }
+    const Scene::WorldTransformComponentUVE& parentWorld = *composingParent;
+    Math::QuaternionUVE parentNormalized{};
+    Math::QuaternionUVE parentInverse{};
+    if (parentWorld.dirty || !Math::TryNormalizeUVE(parentWorld.worldRotation, parentNormalized) ||
+        !Math::TryInverseUVE(parentNormalized, parentInverse)) {
+        return false;
+    }
+    return Math::TryNormalizeUVE(Math::MultiplyUVE(parentInverse, desiredWorldRotation), outLocalRotation);
+}
+
 bool EditorUVE::ComputeLocalDeltaForWorldDeltaUVE(const Scene::EntityUVE entity,
                                                    const Math::Vector3UVE& worldDelta,
                                                    Math::Vector3UVE& outLocalDelta) const {
@@ -4516,6 +6121,9 @@ void EditorUVE::ClearDocumentSceneUVE() {
         DestroyDocumentSubtreeUVE(root);
     }
     ClearSelectionUVE();
+    // The clipboard describes the document that just went away; a Paste into the next one would
+    // insert objects no author copied from it.
+    m_entityClipboard.reset();
 }
 
 void EditorUVE::ApplyLayoutPresetUVE(const EditorLayoutPresetUVE preset) noexcept {
@@ -4587,7 +6195,8 @@ void EditorUVE::LoadSessionSettingsUVE() {
     }
 
     // Every value read through the registry is legal for its setting - anything missing, mistyped
-    // or out of range comes back as that one setting's default - so each binding applies it.
+    // or out of range comes back as that one setting's default - so each binding applies it directly,
+    // without repeating boundary validation in the editor setter.
     for (const Config::SettingDescriptorUVE* descriptor : m_settingsRegistry.GetAllUVE()) {
         // A renamed setting's old name is an alias for the migration above only: its value was
         // just moved to the new name, and applying it again would overwrite what the new name
@@ -4596,7 +6205,7 @@ void EditorUVE::LoadSessionSettingsUVE() {
             continue;
         }
         if (const std::optional<Config::SettingValueUVE> value = m_settingsRegistry.GetValueUVE(config, descriptor->id)) {
-            static_cast<void>(SetEditorSettingUVE(descriptor->id, *value));
+            static_cast<void>(ApplyValidatedEditorSettingUVE(descriptor->id, *value));
         }
     }
     // The host owns the viewport's axis defaults. Adopt a complete stored palette only; otherwise
@@ -4619,7 +6228,10 @@ void EditorUVE::LoadSessionSettingsUVE() {
                 const Config::SettingColorUVE& color = std::get<Config::SettingColorUVE>(value);
                 return ViewportAxisColorUVE{color.r, color.g, color.b};
             };
-            static_cast<void>(SetViewportAxisColorsUVE(toAxisColor(*x), toAxisColor(*y), toAxisColor(*z)));
+            m_viewportOverlayState.axisColorX = toAxisColor(*x);
+            m_viewportOverlayState.axisColorY = toAxisColor(*y);
+            m_viewportOverlayState.axisColorZ = toAxisColor(*z);
+            m_viewportOverlayState.axisColorsValid = true;
         }
     } else {
         static_cast<void>(m_settingsRegistry.ClearValueUVE(config, EditorSettingIdUVE::kViewportAxisColorXUVE));
@@ -4630,40 +6242,32 @@ void EditorUVE::LoadSessionSettingsUVE() {
         static_cast<void>(config.RemoveKeyUVE(kLegacyAxisPaletteSetKeyUVE));
     }
 
-    // Recent "+ Add" items; an id the catalogue no longer has is dropped rather than kept.
-    m_contentCreateRecent.clear();
-    const std::int64_t recentCount = std::clamp(config.GetIntUVE("editor.content.recent.count", 0), std::int64_t{0},
-                                                std::int64_t{5});
-    for (std::int64_t index = recentCount - 1; index >= 0; --index) {
-        const std::string id = config.GetStringUVE("editor.content.recent." + std::to_string(index), "");
-        if (FindContentCatalogueItemUVE(id) != nullptr) {
-            PushContentCreateRecentUVE(m_contentCreateRecent, id);
-        }
-    }
-    // Personal shelves: a name and its items each, bounded like the pins. The team's shelves come
-    // from the project (LoadSharedShelvesUVE) and are left alone here; a personal shelf whose name
-    // a team shelf has is kept under a new name rather than dropped.
+    // Personal shelves: read the established count/name/items keys through their bounded descriptors.
+    // The team's shelves come from the project (LoadSharedShelvesUVE) and are left alone here; a
+    // personal shelf whose name a team shelf has is kept under a new name rather than dropped.
     m_contentShelves.RemoveAllUVE(false);
     const std::int64_t shelfCount =
-        std::clamp(config.GetIntUVE("editor.shelves.count", 0), std::int64_t{0},
-                   static_cast<std::int64_t>(ContentShelvesUVE::kMaxShelvesUVE));
+        m_settingsRegistry.GetIntUVE(config, EditorSettingIdUVE::kPersonalShelvesCountUVE);
     for (std::int64_t index = 0; index < shelfCount; ++index) {
-        const std::string prefix = "editor.shelves." + std::to_string(index) + ".";
-        const std::string storedName = config.GetStringUVE(prefix + "name", "");
+        const std::size_t shelfIndex = static_cast<std::size_t>(index);
+        const std::string storedName =
+            m_settingsRegistry.GetStringUVE(config, EditorSettingIdUVE::GetPersonalShelfNameSettingIdUVE(shelfIndex));
         const std::string name = storedName.empty() ? std::string{} : m_contentShelves.CreateUVE(storedName);
         if (name.empty()) {
             continue;
         }
-        const std::int64_t itemCount =
-            std::clamp(config.GetIntUVE(prefix + "items.count", 0), std::int64_t{0},
-                       static_cast<std::int64_t>(ContentShelvesUVE::kMaxItemsPerShelfUVE));
-        for (std::int64_t item = 0; item < itemCount; ++item) {
-            const std::string stored = config.GetStringUVE(prefix + "items." + std::to_string(item), "");
+        const Config::SettingStringListUVE storedItems =
+            m_settingsRegistry.GetStringListUVE(config, EditorSettingIdUVE::GetPersonalShelfItemsSettingIdUVE(shelfIndex));
+        for (const std::string& stored : storedItems) {
             if (!stored.empty()) {
                 static_cast<void>(m_contentShelves.AddItemUVE(name, stored));
             }
         }
     }
+    // Restoring stored preferences is not an author edit, so nothing above counts as a change to
+    // save back: without this the editor would rewrite the settings file on every launch, and a
+    // host default seeded after a load would be pinned to disk as if the author had chosen it.
+    m_preferencesAutoSavePending = false;
 }
 
 bool EditorUVE::SaveSessionSettingsUVE() {
@@ -4699,23 +6303,32 @@ bool EditorUVE::SaveSessionSettingsUVE() {
         static_cast<void>(m_settingsRegistry.ClearValueUVE(config, EditorSettingIdUVE::kViewportAxisColorZUVE));
     }
     static_cast<void>(config.RemoveKeyUVE("editor.viewport.axisColors.set"));
-    config.SetIntUVE("editor.content.recent.count", static_cast<std::int64_t>(m_contentCreateRecent.size()));
-    for (std::size_t index = 0U; index < m_contentCreateRecent.size(); ++index) {
-        config.SetStringUVE("editor.content.recent." + std::to_string(index), m_contentCreateRecent[index]);
-    }
     std::vector<ContentShelfUVE> shelves;
     std::ranges::copy_if(m_contentShelves.GetAllUVE(), std::back_inserter(shelves),
                          [](const ContentShelfUVE& shelf) { return !shelf.shared; });
-    config.SetIntUVE("editor.shelves.count", static_cast<std::int64_t>(shelves.size()));
+    bool allShelvesStored = m_settingsRegistry.SetValueUVE(
+        config, EditorSettingIdUVE::kPersonalShelvesCountUVE,
+        Config::SettingValueUVE{static_cast<std::int64_t>(shelves.size())});
     for (std::size_t index = 0U; index < shelves.size(); ++index) {
-        const std::string prefix = "editor.shelves." + std::to_string(index) + ".";
-        config.SetStringUVE(prefix + "name", shelves[index].name);
-        config.SetIntUVE(prefix + "items.count", static_cast<std::int64_t>(shelves[index].items.size()));
-        for (std::size_t item = 0U; item < shelves[index].items.size(); ++item) {
-            config.SetStringUVE(prefix + "items." + std::to_string(item), shelves[index].items[item].generic_string());
+        const std::string nameId = EditorSettingIdUVE::GetPersonalShelfNameSettingIdUVE(index);
+        const std::string itemsId = EditorSettingIdUVE::GetPersonalShelfItemsSettingIdUVE(index);
+        const bool nameStored = m_settingsRegistry.SetValueUVE(config, nameId, Config::SettingValueUVE{shelves[index].name});
+        if (!nameStored) {
+            static_cast<void>(m_settingsRegistry.ClearValueUVE(config, nameId));
         }
+        Config::SettingStringListUVE items;
+        items.reserve(shelves[index].items.size());
+        for (const std::filesystem::path& item : shelves[index].items) {
+            items.push_back(item.generic_string());
+        }
+        const bool itemsStored =
+            m_settingsRegistry.SetValueUVE(config, itemsId, Config::SettingValueUVE{std::move(items)});
+        if (!itemsStored) {
+            static_cast<void>(m_settingsRegistry.ClearValueUVE(config, itemsId));
+        }
+        allShelvesStored = nameStored && itemsStored && allShelvesStored;
     }
-    return config.SaveUVE();
+    return config.SaveUVE() && allShelvesStored;
 }
 
 
@@ -4734,10 +6347,23 @@ void EditorUVE::InvalidateHierarchyFilterCacheUVE() noexcept {
     m_hierarchyFilterCacheDirty = true;
 }
 
+void EditorUVE::BeginHierarchyRenameUVE(const Scene::EntityUVE entity) {
+    if (!IsAuthoringCommandAllowedUVE() || !IsDocumentEntityUVE(entity) || IsEntityLockedUVE(entity)) {
+        return;
+    }
+    m_hierarchyRenameEntity = entity;
+    m_hierarchyRenameBuffer = GetEntityDisplayLabelUVE(entity);
+    m_hierarchyRenameFocusRequested = true;
+    m_hierarchyRenameUsesDialogUVE = m_hierarchyView.renameMode == HierarchyRenameModeUVE::Dialog;
+    m_hierarchyRenameDialogOpenRequested = m_hierarchyRenameUsesDialogUVE;
+}
+
 void EditorUVE::CancelHierarchyRenameUVE() noexcept {
     m_hierarchyRenameEntity = Scene::kInvalidEntityUVE;
     m_hierarchyRenameBuffer.clear();
     m_hierarchyRenameFocusRequested = false;
+    m_hierarchyRenameUsesDialogUVE = false;
+    m_hierarchyRenameDialogOpenRequested = false;
 }
 
 void EditorUVE::RebuildHierarchyFilterCacheUVE() {
@@ -4750,32 +6376,70 @@ void EditorUVE::RebuildHierarchyFilterCacheUVE() {
     if (!IsHierarchyFilterActiveUVE()) {
         return;
     }
-    const auto visit = [this](const auto& self, const Scene::EntityUVE entity) -> bool {
+    const bool hasTypeQuery = m_hierarchyFilter.rfind("type:", 0U) == 0U;
+    const bool hasComponentQuery = m_hierarchyFilter.rfind("component:", 0U) == 0U;
+    const std::string_view filterText{m_hierarchyFilter};
+    const std::string_view query = hasTypeQuery ? filterText.substr(5U)
+                                : hasComponentQuery ? filterText.substr(10U)
+                                                    : filterText;
+    const bool includeTypesAndComponents =
+        m_hierarchyView.filterMode == HierarchyFilterModeUVE::NameTypeAndComponents;
+    const bool keepAncestors = m_hierarchyView.filterKeepAncestors;
+    const auto contains = [this](const std::string_view text, const std::string_view needle) {
+        return m_hierarchyView.filterCaseSensitive ? text.find(needle) != std::string_view::npos
+                                                   : ContainsCaseInsensitiveUVE(text, needle);
+    };
+    const auto equals = [&contains](const std::string_view left, const std::string_view right) {
+        return left.size() == right.size() && contains(left, right);
+    };
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const auto visit = [this, &contains, &equals, &entityManager, query, hasTypeQuery, hasComponentQuery,
+                        includeTypesAndComponents, keepAncestors](const auto& self,
+                                                                 const Scene::EntityUVE entity) -> bool {
         if (!IsDocumentEntityUVE(entity)) {
             return false;
         }
         const std::string displayLabel = GetEntityDisplayLabelUVE(entity);
         const std::string typeTag = GetOutlinerTypeTagUVE(entity);
-        const bool hasTypeQuery = m_hierarchyFilter.rfind("type:", 0U) == 0U;
-        const std::string_view typeQuery = hasTypeQuery ? std::string_view{m_hierarchyFilter}.substr(5U) : std::string_view{};
-        // The object's type ("Static3D") or its older specialised tag ("Collision Box") both count.
-        const bool typeMatches = !hasTypeQuery || ContainsCaseInsensitiveUVE(typeTag, typeQuery) ||
-                                 ContainsCaseInsensitiveUVE(GetObjectTypeNameUVE(entity), typeQuery);
+        const std::string_view objectType = GetObjectTypeNameUVE(entity);
+        // Both the actual object type ("Static3D") and its specialised outliner tag ("Collision Box") count.
+        const bool shouldSearchType = hasTypeQuery || (!hasComponentQuery && includeTypesAndComponents);
+        const bool typeMatches = shouldSearchType && (contains(typeTag, query) || contains(objectType, query));
+        const bool shouldSearchComponents =
+            hasComponentQuery || (!hasTypeQuery && !hasComponentQuery && includeTypesAndComponents);
+        bool componentMatches = false;
+        if (shouldSearchComponents) {
+            for (const std::type_index componentType : entityManager.GetComponentTypesUVE(entity)) {
+                const Core::TypeMetadataEntryUVE* const metadata = Scene::FindSceneComponentMetadataUVE(componentType);
+                if (metadata != nullptr && contains(metadata->displayName, query)) {
+                    componentMatches = true;
+                    break;
+                }
+            }
+        }
         Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
         const bool isRoot = !TryGetDocumentParentUVE(entity, parent) || parent == Scene::kInvalidEntityUVE;
-        const bool nameMatches = hasTypeQuery || ContainsCaseInsensitiveUVE(displayLabel, m_hierarchyFilter) ||
-                                 (m_hierarchyFilter == "root" && isRoot);
-        bool visible = typeMatches && nameMatches;
-        Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-        for (const Scene::EntityUVE child : m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity)) {
-            visible = self(self, child) || visible;
-        }
-        if (visible) {
+        const bool rootQuery = !hasTypeQuery && !hasComponentQuery && equals(query, "root") && isRoot;
+        const bool nameMatches = !hasTypeQuery && !hasComponentQuery &&
+                                 (contains(displayLabel, query) || rootQuery);
+        const bool matches = hasTypeQuery       ? typeMatches
+                             : hasComponentQuery ? componentMatches
+                             : nameMatches || (includeTypesAndComponents && (typeMatches || componentMatches));
+        // With context disabled, preserve preorder in this list so flat results follow the selected
+        // hierarchy-view order. With context enabled, parents are added after their descendants below.
+        if (!keepAncestors && matches) {
             m_cachedHierarchyVisibleEntities.push_back(entity);
         }
-        return visible;
+        bool subtreeMatches = matches;
+        for (const Scene::EntityUVE child : GetHierarchyChildrenInViewOrderUVE(entity)) {
+            subtreeMatches = self(self, child) || subtreeMatches;
+        }
+        if (keepAncestors && subtreeMatches) {
+            m_cachedHierarchyVisibleEntities.push_back(entity);
+        }
+        return subtreeMatches;
     };
-    for (const Scene::EntityUVE root : GetDocumentRootsUVE()) {
+    for (const Scene::EntityUVE root : SortHierarchyRowsUVE(GetDocumentRootsUVE())) {
         static_cast<void>(visit(visit, root));
     }
 }
@@ -4791,7 +6455,7 @@ void EditorUVE::AcceptHierarchyDropTargetUVE(const Scene::EntityUVE targetParent
     if (payload != nullptr && payload->DataSize == static_cast<int>(sizeof(Scene::EntityUVE))) {
         Scene::EntityUVE source = Scene::kInvalidEntityUVE;
         std::memcpy(&source, payload->Data, sizeof(source));
-        static_cast<void>(ReparentDocumentEntityUVE(source, targetParent));
+        static_cast<void>(RequestHierarchyReparentUVE(source, targetParent));
     }
     // An entity asset dragged out of Content lands under the row, or in the scene for empty space.
     const ImGuiPayload* const asset = ImGui::AcceptDragDropPayload(kContentEntityPayloadUVE);

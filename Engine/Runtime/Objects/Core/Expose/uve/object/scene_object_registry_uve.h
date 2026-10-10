@@ -55,7 +55,11 @@ enum class SceneObjectKindUVE : std::uint8_t {
     UIText,
     UIImage,
     UIButton,
-    SceneRoot,
+    /// The document's structural root - the Object every Object3D in the level hangs from.
+    /// Formerly spelled `SceneRoot`: the enumerator was renamed in place and its value is
+    /// unchanged, so anything that stored the raw enumerator still decodes, and documents that
+    /// stored the old "scene_root" type id still resolve to this kind.
+    Object,
     /// Appended rather than placed beside Decal3D so no existing kind's value moves.
     FogVolume3D,
     /// Groups objects in the Scene panel; no transform, no effect on the running scene.

@@ -2,12 +2,14 @@
 
 #include "uve/config/settings_registry_uve.h"
 
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <limits>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include <gtest/gtest.h>
@@ -157,6 +159,18 @@ TEST(SettingDescriptorUVETest, ValidDescriptorsOfEveryTypeHaveNoProblem) {
                                                                      "Save", "Editor/Shortcuts")), "");
     EXPECT_EQ(ValidateSettingDescriptorUVE(MakeQualityUVE()), "");
     EXPECT_EQ(ValidateSettingDescriptorUVE(MakeColorSettingUVE("a.c", {0.0F, 1.0F, 0.5F}, false, "C", "Cat")), "");
+    EXPECT_EQ(ValidateSettingDescriptorUVE(
+                  MakeVector2SettingUVE("a.v2", {1.0, -2.0}, -10.0, 10.0, "V2", "Cat")),
+              "");
+    EXPECT_EQ(ValidateSettingDescriptorUVE(
+                  MakeVector4SettingUVE("a.v4", {1.0, -2.0, 3.0, -4.0}, -10.0, 10.0, "V4", "Cat")),
+              "");
+    EXPECT_EQ(ValidateSettingDescriptorUVE(
+                  MakeLayerMaskSettingUVE("physics.collisionMask", {0xFFFFFFFFU}, "Collision Mask", "Physics")),
+              "");
+    EXPECT_EQ(ValidateSettingDescriptorUVE(
+                  MakeAssetReferenceSettingUVE("application.boot.logo", {0xFEDCBA9876543210ULL}, "Boot Logo", "Application")),
+              "");
 }
 
 TEST(SettingDescriptorUVETest, MalformedIdsAreRejected) {
@@ -171,6 +185,8 @@ TEST(SettingDescriptorUVETest, DocumentVersionKeyIsReservedAndReplacementIdsRequ
     EXPECT_NE(ValidateSettingDescriptorUVE(MakeBoolSettingUVE("version.settings", false, "Version", "")), "");
 
     SettingDescriptorUVE live = MakeIntSettingUVE("settings.current", 1, 0, 10, "Current", "");
+    live.sinceVersion = 2U;
+    live.migratedFrom = {"settings.old"};
     live.replacementId = "settings.other";
     EXPECT_NE(ValidateSettingDescriptorUVE(live), "");
 
@@ -186,6 +202,48 @@ TEST(SettingDescriptorUVETest, DocumentVersionKeyIsReservedAndReplacementIdsRequ
     alias.replacementId = "settings.current";
     EXPECT_FALSE(registry.RegisterUVE(alias)); // The live target must be registered first.
     ASSERT_TRUE(registry.RegisterUVE(std::move(live)));
+    ASSERT_NE(registry.FindUVE("settings.current"), nullptr);
+    EXPECT_EQ(registry.FindUVE("settings.current")->sinceVersion, std::optional<std::uint32_t>{2U});
+    EXPECT_EQ(registry.FindUVE("settings.current")->migratedFrom, std::vector<std::string>{"settings.old"});
+    EXPECT_TRUE(registry.RegisterUVE(std::move(alias)));
+}
+
+TEST(SettingDescriptorUVETest, ValidatesSinceVersionAndMigratedFromMetadata) {
+    SettingDescriptorUVE descriptor = MakeBoolSettingUVE("settings.current", false, "Current", "");
+    descriptor.sinceVersion = 1U;
+    descriptor.migratedFrom = {"settings.old", "legacy.current"};
+    EXPECT_EQ(ValidateSettingDescriptorUVE(descriptor), "");
+
+    descriptor.sinceVersion = 0U;
+    EXPECT_NE(ValidateSettingDescriptorUVE(descriptor), "");
+    descriptor.sinceVersion.reset();
+
+    for (const std::string& oldId : {std::string{}, std::string{".old"}, std::string{"old."},
+                                     std::string{"old..id"}, std::string{"settings.current"},
+                                     std::string{"version"}, std::string{"version.old"}}) {
+        descriptor.migratedFrom = {oldId};
+        EXPECT_NE(ValidateSettingDescriptorUVE(descriptor), "") << "migratedFrom: " << oldId;
+    }
+    descriptor.migratedFrom = {"settings.old", "settings.old"};
+    EXPECT_NE(ValidateSettingDescriptorUVE(descriptor), "");
+
+    descriptor.flags |= kSettingFlagDeprecatedUVE;
+    descriptor.migratedFrom = {"settings.old"};
+    EXPECT_NE(ValidateSettingDescriptorUVE(descriptor), "");
+}
+
+TEST(DeprecatedMigrationMetadataUVETest, AliasMustAppearInReplacementHistory) {
+    SettingsRegistryUVE registry;
+    SettingDescriptorUVE current = MakeIntSettingUVE("settings.current", 1, 0, 10, "Current", "");
+    current.migratedFrom = {"settings.former"};
+    ASSERT_TRUE(registry.RegisterUVE(std::move(current)));
+
+    SettingDescriptorUVE alias = MakeIntSettingUVE("settings.legacy", 1, 0, 10, "Legacy", "");
+    alias.flags |= kSettingFlagDeprecatedUVE;
+    alias.replacementId = "settings.current";
+    EXPECT_FALSE(registry.RegisterUVE(alias));
+
+    alias.id = "settings.former";
     EXPECT_TRUE(registry.RegisterUVE(std::move(alias)));
 }
 
@@ -211,6 +269,22 @@ TEST(SettingDescriptorUVETest, DefaultMustSatisfyItsOwnConstraints) {
     EXPECT_NE(ValidateSettingDescriptorUVE(MakeKeyBindingSettingUVE("a.shortcut", "Ctrl+Ctrl+S", "Shortcut", "")), "");
     EXPECT_NE(ValidateSettingDescriptorUVE(MakeEnumSettingUVE("a.e", 7, {{0, "Zero"}}, "E", "")), "");
     EXPECT_NE(ValidateSettingDescriptorUVE(MakeColorSettingUVE("a.c", {1.5F, 0.0F, 0.0F}, false, "C", "")), "");
+    EXPECT_NE(ValidateSettingDescriptorUVE(MakeVector2SettingUVE("a.v2", {0.0, 11.0}, -10.0, 10.0, "V2", "")), "");
+    EXPECT_NE(ValidateSettingDescriptorUVE(
+                  MakeVector4SettingUVE("a.v4", {0.0, 0.0, 0.0, kNaN}, -10.0, 10.0, "V4", "")),
+              "");
+
+    SettingDescriptorUVE boundedMask =
+        MakeLayerMaskSettingUVE("a.mask", {0U}, "Mask", "");
+    boundedMask.minimum = 0.0;
+    EXPECT_NE(ValidateSettingDescriptorUVE(boundedMask), "");
+    SettingDescriptorUVE wrongMaskAlternative = MakeLayerMaskSettingUVE("a.mask", {0U}, "Mask", "");
+    wrongMaskAlternative.defaultValue = std::int64_t{1};
+    EXPECT_NE(ValidateSettingDescriptorUVE(wrongMaskAlternative), "");
+    SettingDescriptorUVE wrongAssetReferenceAlternative =
+        MakeAssetReferenceSettingUVE("a.asset", {0U}, "Asset", "");
+    wrongAssetReferenceAlternative.defaultValue = std::string{"not-a-guid"};
+    EXPECT_NE(ValidateSettingDescriptorUVE(wrongAssetReferenceAlternative), "");
 
     SettingDescriptorUVE wrongAlternative = MakeBoolSettingUVE("a.b", false, "B", "");
     wrongAlternative.defaultValue = std::int64_t{1};
@@ -478,8 +552,11 @@ TEST_F(SettingsRegistryUVETest, DeprecatedSettingsAreReadButNeverWritten) {
 
 TEST(DeprecatedAliasUVETest, ReadsMigratesAndThenRemovesTheOldId) {
     SettingsRegistryUVE registry;
-    ASSERT_TRUE(registry.RegisterUVE(
-        MakeIntSettingUVE("rendering.shadow.resolution", 2048, 512, 4096, "Resolution", "Rendering")));
+    SettingDescriptorUVE current =
+        MakeIntSettingUVE("rendering.shadow.resolution", 2048, 512, 4096, "Resolution", "Rendering");
+    current.sinceVersion = 2U;
+    current.migratedFrom = {"rendering.shadow.mapSize"};
+    ASSERT_TRUE(registry.RegisterUVE(std::move(current)));
     SettingDescriptorUVE alias =
         MakeIntSettingUVE("rendering.shadow.mapSize", 2048, 512, 4096, "Legacy Resolution", "Rendering");
     alias.flags = kSettingFlagDeprecatedUVE | kSettingFlagHiddenUVE;
@@ -618,6 +695,217 @@ TEST(SettingVector3UVETest, IsStoredPerComponentAndValidatedWhole) {
     EXPECT_FALSE(registry.RegisterUVE(MakeFloatSettingUVE("physics.gravity.x", 0.0, 0.0, 1.0, "X", "")));
     EXPECT_TRUE(registry.RegisterUVE(MakeFloatSettingUVE("physics.gravity.scale", 1.0, 0.0, 10.0, "Scale", "")));
     EXPECT_NE(ValidateSettingDescriptorUVE(MakeVector3SettingUVE("a.v", {0.0, 5.0, 0.0}, 0.0, 1.0, "V", "")), "");
+}
+
+TEST(SettingCompositeConcurrencyUVETest, VectorAndStringListReadsNeverMixAtomicUpdates) {
+    SettingsRegistryUVE registry;
+    ASSERT_TRUE(registry.RegisterUVE(
+        MakeVector3SettingUVE("physics.gravity", {0.0, 1.0, 2.0}, std::nullopt, std::nullopt, "Gravity", "Physics")));
+    ASSERT_TRUE(registry.RegisterUVE(
+        MakeStringListSettingUVE("editor.recent", {"first", "one"}, 4U, 16U, "Recent", "Editor")));
+    ConfigManagerUVE store;
+    ASSERT_TRUE(registry.SetValueUVE(store, "physics.gravity", SettingVector3UVE{0.0, 1.0, 2.0}));
+    ASSERT_TRUE(registry.SetValueUVE(store, "editor.recent", SettingStringListUVE{"first", "one"}));
+
+    constexpr std::int64_t kIterations = 20000;
+    std::atomic<bool> start{false};
+    std::atomic<bool> finished{false};
+    std::atomic<bool> snapshotsConsistent{true};
+    std::thread writer([&] {
+        while (!start.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+        for (std::int64_t value = 1; value <= kIterations; ++value) {
+            if (!registry.SetValueUVE(store, "physics.gravity",
+                                      SettingVector3UVE{static_cast<double>(value),
+                                                       static_cast<double>(value + 1),
+                                                       static_cast<double>(value + 2)})) {
+                snapshotsConsistent.store(false, std::memory_order_release);
+                break;
+            }
+            const SettingStringListUVE list = (value % 2) == 0 ? SettingStringListUVE{"even", "value"}
+                                                                : SettingStringListUVE{"odd", "entry", "value"};
+            if (!registry.SetValueUVE(store, "editor.recent", list)) {
+                snapshotsConsistent.store(false, std::memory_order_release);
+                break;
+            }
+            if ((value % 32) == 0) {
+                std::this_thread::yield();
+            }
+        }
+        finished.store(true, std::memory_order_release);
+    });
+
+    start.store(true, std::memory_order_release);
+    do {
+        const SettingVector3UVE vector = registry.GetVector3UVE(store, "physics.gravity");
+        if (vector.y != vector.x + 1.0 || vector.z != vector.x + 2.0) {
+            snapshotsConsistent.store(false, std::memory_order_release);
+        }
+        const SettingStringListUVE list = registry.GetStringListUVE(store, "editor.recent");
+        const bool validList = list == SettingStringListUVE{"first", "one"} ||
+                               list == SettingStringListUVE{"even", "value"} ||
+                               list == SettingStringListUVE{"odd", "entry", "value"};
+        if (!validList) {
+            snapshotsConsistent.store(false, std::memory_order_release);
+        }
+    } while (!finished.load(std::memory_order_acquire));
+    writer.join();
+
+    EXPECT_TRUE(snapshotsConsistent.load(std::memory_order_acquire));
+}
+
+TEST(SettingVector2UVETest, IsStoredPerComponentAndValidatedAsOneValue) {
+    SettingsRegistryUVE registry;
+    ASSERT_TRUE(registry.RegisterUVE(
+        MakeVector2SettingUVE("viewport.center", {0.5, 0.5}, 0.0, 1.0, "Center", "Viewport")));
+    ConfigManagerUVE store;
+
+    EXPECT_EQ(registry.GetVector2UVE(store, "viewport.center"), (SettingVector2UVE{0.5, 0.5}));
+    ASSERT_TRUE(registry.SetValueUVE(store, "viewport.center", SettingVector2UVE{0.25, 0.75}));
+    EXPECT_DOUBLE_EQ(store.GetDoubleUVE("viewport.center.x", 0.0), 0.25);
+    EXPECT_DOUBLE_EQ(store.GetDoubleUVE("viewport.center.y", 0.0), 0.75);
+    EXPECT_EQ(registry.GetVector2UVE(store, "viewport.center"), (SettingVector2UVE{0.25, 0.75}));
+    const std::string path = "uve_settings_vector2_roundtrip.uvsettings";
+    ASSERT_TRUE(store.SaveUVE(path));
+    ConfigManagerUVE reloaded;
+    ASSERT_TRUE(reloaded.LoadUVE(path));
+    EXPECT_EQ(registry.GetVector2UVE(reloaded, "viewport.center"), (SettingVector2UVE{0.25, 0.75}));
+    std::remove(path.c_str());
+
+    EXPECT_FALSE(registry.SetValueUVE(store, "viewport.center", SettingVector2UVE{0.1, 1.5}));
+    EXPECT_EQ(registry.GetVector2UVE(store, "viewport.center"), (SettingVector2UVE{0.25, 0.75}));
+    store.RemoveKeyUVE("viewport.center.y");
+    EXPECT_FALSE(registry.GetStoredValueUVE(store, "viewport.center").has_value());
+    EXPECT_EQ(registry.GetVector2UVE(store, "viewport.center"), (SettingVector2UVE{0.5, 0.5}));
+
+    ASSERT_TRUE(registry.SetValueUVE(store, "viewport.center", SettingVector2UVE{0.2, 0.8}));
+    EXPECT_TRUE(registry.ClearValueUVE(store, "viewport.center"));
+    EXPECT_FALSE(store.HasKeyUVE("viewport.center.x"));
+    EXPECT_FALSE(store.HasKeyUVE("viewport.center.y"));
+    EXPECT_FALSE(registry.RegisterUVE(MakeFloatSettingUVE("viewport.center.x", 0.0, 0.0, 1.0, "X", "")));
+}
+
+TEST(SettingVector4UVETest, IsStoredPerComponentAndValidatedAsOneValue) {
+    SettingsRegistryUVE registry;
+    ASSERT_TRUE(registry.RegisterUVE(
+        MakeVector4SettingUVE("render.viewport", {0.0, 0.0, 1.0, 1.0}, 0.0, 1.0, "Viewport", "Rendering")));
+    ConfigManagerUVE store;
+
+    EXPECT_EQ(registry.GetVector4UVE(store, "render.viewport"), (SettingVector4UVE{0.0, 0.0, 1.0, 1.0}));
+    const SettingVector4UVE value{0.1, 0.2, 0.7, 0.8};
+    ASSERT_TRUE(registry.SetValueUVE(store, "render.viewport", value));
+    EXPECT_DOUBLE_EQ(store.GetDoubleUVE("render.viewport.w", 0.0), 0.8);
+    EXPECT_EQ(registry.GetVector4UVE(store, "render.viewport"), value);
+    const std::string path = "uve_settings_vector4_roundtrip.uvsettings";
+    ASSERT_TRUE(store.SaveUVE(path));
+    ConfigManagerUVE reloaded;
+    ASSERT_TRUE(reloaded.LoadUVE(path));
+    EXPECT_EQ(registry.GetVector4UVE(reloaded, "render.viewport"), value);
+    std::remove(path.c_str());
+
+    EXPECT_FALSE(registry.SetValueUVE(store, "render.viewport", SettingVector4UVE{0.1, 0.2, 0.7, -0.1}));
+    EXPECT_EQ(registry.GetVector4UVE(store, "render.viewport"), value);
+    store.SetStringUVE("render.viewport.z", "corrupt");
+    EXPECT_FALSE(registry.GetStoredValueUVE(store, "render.viewport").has_value());
+    EXPECT_EQ(registry.GetVector4UVE(store, "render.viewport"), (SettingVector4UVE{0.0, 0.0, 1.0, 1.0}));
+
+    ASSERT_TRUE(registry.SetValueUVE(store, "render.viewport", value));
+    EXPECT_TRUE(registry.ClearValueUVE(store, "render.viewport"));
+    for (const char component : std::string_view{"xyzw"}) {
+        EXPECT_FALSE(store.HasKeyUVE(std::string("render.viewport.") + component));
+    }
+    EXPECT_FALSE(registry.RegisterUVE(MakeFloatSettingUVE("render.viewport.w", 0.0, 0.0, 1.0, "W", "")));
+}
+
+TEST(SettingLayerMaskUVETest, StoresUnsignedBitsAndRejectsCorruptOrOutOfRangeScalars) {
+    SettingsRegistryUVE registry;
+    constexpr std::string_view kId = "physics.collisionMask";
+    ASSERT_TRUE(registry.RegisterUVE(
+        MakeLayerMaskSettingUVE(std::string{kId}, {0xFFFFFFFFU}, "Collision Mask", "Physics")));
+    ConfigManagerUVE store;
+
+    EXPECT_EQ(registry.GetLayerMaskUVE(store, kId), (SettingLayerMaskUVE{0xFFFFFFFFU}));
+    EXPECT_FALSE(registry.SetValueUVE(store, kId, std::int64_t{1}));
+    EXPECT_FALSE(store.HasKeyUVE(kId));
+    constexpr SettingLayerMaskUVE kMask{0x80000005U};
+    ASSERT_TRUE(registry.SetValueUVE(store, kId, kMask));
+    EXPECT_EQ(store.GetIntUVE(kId, -1), static_cast<std::int64_t>(kMask.bits));
+    EXPECT_EQ(registry.GetLayerMaskUVE(store, kId), kMask);
+
+    const std::string path = "uve_settings_layer_mask_roundtrip.uvsettings";
+    ASSERT_TRUE(store.SaveUVE(path));
+    ConfigManagerUVE reloaded;
+    ASSERT_TRUE(reloaded.LoadUVE(path));
+    EXPECT_EQ(registry.GetLayerMaskUVE(reloaded, kId), kMask);
+    std::remove(path.c_str());
+
+    store.SetDoubleUVE(kId, 4294967295.0); // An exactly representable whole-number JSON value is accepted.
+    EXPECT_EQ(registry.GetLayerMaskUVE(store, kId), (SettingLayerMaskUVE{0xFFFFFFFFU}));
+    store.SetDoubleUVE(kId, 4294967296.0);
+    EXPECT_FALSE(registry.GetStoredValueUVE(store, kId).has_value());
+    EXPECT_EQ(registry.GetLayerMaskUVE(store, kId), (SettingLayerMaskUVE{0xFFFFFFFFU}));
+    store.SetIntUVE(kId, -1);
+    EXPECT_FALSE(registry.GetStoredValueUVE(store, kId).has_value());
+    store.SetStringUVE(kId, "0xFFFFFFFF");
+    EXPECT_FALSE(registry.GetStoredValueUVE(store, kId).has_value());
+
+    ASSERT_TRUE(registry.SetValueUVE(store, kId, kMask));
+    EXPECT_TRUE(registry.ClearValueUVE(store, kId));
+    EXPECT_FALSE(store.HasKeyUVE(kId));
+    EXPECT_EQ(registry.GetLayerMaskUVE(store, kId), (SettingLayerMaskUVE{0xFFFFFFFFU}));
+    EXPECT_FALSE(registry.RegisterUVE(MakeBoolSettingUVE("physics.collisionMask.child", false, "Child", "")));
+    EXPECT_EQ(registry.GetLayerMaskUVE(store, "physics.otherMask", {7U}), (SettingLayerMaskUVE{7U}));
+}
+
+TEST(SettingAssetReferenceUVETest, PreservesFullGuidWidthAndRejectsMalformedStoredIds) {
+    SettingsRegistryUVE registry;
+    constexpr std::string_view kId = "application.boot.logo";
+    ASSERT_TRUE(registry.RegisterUVE(
+        MakeAssetReferenceSettingUVE(std::string{kId}, {0U}, "Boot Logo", "Application")));
+    ConfigManagerUVE store;
+
+    EXPECT_EQ(registry.GetAssetReferenceUVE(store, kId), (SettingAssetReferenceUVE{0U}));
+    constexpr SettingAssetReferenceUVE kReference{0xFEDCBA9876543210ULL};
+    EXPECT_EQ(FormatSettingAssetReferenceUVE(kReference), "fedcba9876543210");
+    EXPECT_EQ(ParseSettingAssetReferenceUVE("fedcba9876543210"),
+              std::optional<SettingAssetReferenceUVE>{kReference});
+    EXPECT_EQ(ParseSettingAssetReferenceUVE(""),
+              std::optional<SettingAssetReferenceUVE>{SettingAssetReferenceUVE{0U}});
+    EXPECT_FALSE(ParseSettingAssetReferenceUVE("fedcba987654321g").has_value());
+    EXPECT_FALSE(ParseSettingAssetReferenceUVE("fedcba987654321").has_value());
+    ASSERT_TRUE(registry.SetValueUVE(store, kId, kReference));
+    EXPECT_EQ(store.GetStringUVE(kId, ""), "fedcba9876543210");
+    EXPECT_EQ(registry.GetAssetReferenceUVE(store, kId), kReference);
+
+    const std::string path = "uve_settings_asset_reference_roundtrip.uvsettings";
+    ASSERT_TRUE(store.SaveUVE(path));
+    ConfigManagerUVE reloaded;
+    ASSERT_TRUE(reloaded.LoadUVE(path));
+    EXPECT_EQ(registry.GetAssetReferenceUVE(reloaded, kId), kReference);
+    std::remove(path.c_str());
+
+    constexpr SettingAssetReferenceUVE kMaximumReference{std::numeric_limits<std::uint64_t>::max()};
+    ASSERT_TRUE(registry.SetValueUVE(store, kId, kMaximumReference));
+    EXPECT_EQ(store.GetStringUVE(kId, ""), "ffffffffffffffff");
+    EXPECT_EQ(registry.GetAssetReferenceUVE(store, kId), kMaximumReference);
+
+    store.SetStringUVE(kId, "fedcba987654321g");
+    EXPECT_FALSE(registry.GetStoredValueUVE(store, kId).has_value());
+    EXPECT_EQ(registry.GetAssetReferenceUVE(store, kId), (SettingAssetReferenceUVE{0U}));
+    store.SetStringUVE(kId, "fedcba987654321"); // Short, non-canonical values are corrupt.
+    EXPECT_FALSE(registry.GetStoredValueUVE(store, kId).has_value());
+    store.SetIntUVE(kId, 42);
+    EXPECT_FALSE(registry.GetStoredValueUVE(store, kId).has_value());
+    store.SetStringUVE(kId, ""); // Empty text is a valid no-asset value for hand-edited documents.
+    EXPECT_EQ(registry.GetAssetReferenceUVE(store, kId), (SettingAssetReferenceUVE{0U}));
+
+    ASSERT_TRUE(registry.SetValueUVE(store, kId, kReference));
+    EXPECT_TRUE(registry.ClearValueUVE(store, kId));
+    EXPECT_FALSE(store.HasKeyUVE(kId));
+    EXPECT_EQ(registry.GetAssetReferenceUVE(store, kId), (SettingAssetReferenceUVE{0U}));
+    EXPECT_EQ(registry.GetAssetReferenceUVE(store, "application.unknown", {123U}),
+              (SettingAssetReferenceUVE{123U}));
 }
 
 class SettingsDocumentUVETest : public ::testing::Test {
@@ -803,8 +1091,10 @@ TEST_F(SettingsDocumentUVETest, LoadingMigratesDeprecatedAliasToItsReplacement) 
     }
 
     SettingsDocumentUVE versioned;
-    ASSERT_TRUE(versioned.GetRegistryUVE().RegisterUVE(
-        MakeFloatSettingUVE("physics.ticks", 60.0, 1.0, 1000.0, "Ticks", "Physics")));
+    SettingDescriptorUVE current =
+        MakeFloatSettingUVE("physics.ticks", 60.0, 1.0, 1000.0, "Ticks", "Physics");
+    current.migratedFrom = {"physics.legacyTicks"};
+    ASSERT_TRUE(versioned.GetRegistryUVE().RegisterUVE(std::move(current)));
     SettingDescriptorUVE alias = MakeFloatSettingUVE("physics.legacyTicks", 60.0, 1.0, 1000.0,
                                                      "Old Ticks", "Physics");
     alias.flags = kSettingFlagDeprecatedUVE | kSettingFlagHiddenUVE;

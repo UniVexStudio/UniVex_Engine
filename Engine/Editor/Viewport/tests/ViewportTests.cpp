@@ -529,12 +529,18 @@ int main() {
             wide.pivotDotRadiusPx = style.pivotDotRadiusPx * 2.f;
             const auto narrowMesh = BuildGizmoMesh(GizmoMode::Select, style, view, kUnitsPerPixel);
             const auto wideMesh = BuildGizmoMesh(GizmoMode::Select, wide, view, kUnitsPerPixel);
-            const auto outermost = [](const univex::gizmo::GizmoMesh& mesh) {
+            // The ring sits a fixed two pixels in front of the pivot along the view direction, which
+            // does not scale with its radius, and its stroke width is a fixed pixel size too. Measure
+            // across the view, in the ring's own plane, and add back half the stroke to the inner rim
+            // so the figure compared is the ring's centre-line radius - the thing that scales.
+            const float halfStroke = style.pivotDotWidthPx * 0.5f * kUnitsPerPixel;
+            const auto outermost = [&view, halfStroke](const univex::gizmo::GizmoMesh& mesh) {
                 float furthest = 0.f;
                 for (const auto& tri : mesh.triangles) {
-                    furthest = std::max(furthest, univex::math::Length(tri.a));
+                    const Vec3 across = tri.a - view * univex::math::Dot(tri.a, view);
+                    furthest = std::max(furthest, univex::math::Length(across));
                 }
-                return furthest;
+                return furthest + halfStroke;
             };
             CheckNear(outermost(wideMesh), outermost(narrowMesh) * 2.f, 1e-3f,
                       "the pivot dot scales with its pixel radius");

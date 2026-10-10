@@ -13,7 +13,7 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/canvas/all_objects_canvas_uve.h"
-#include "uve/scene/objects/scene_object_registry_uve.h"
+#include "uve/object/scene_object_registry_uve.h"
 
 namespace UVE::Scene::Tests {
 namespace {

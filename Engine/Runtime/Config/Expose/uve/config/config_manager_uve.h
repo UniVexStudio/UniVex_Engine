@@ -4,6 +4,8 @@
 #pragma once
 
 #include <memory>
+#include <optional>
+#include <vector>
 
 #include "uve/config/i_config_manager_uve.h"
 
@@ -46,6 +48,10 @@ public:
     void SetIntUVE(std::string_view keyPath, std::int64_t value) override;
     void SetDoubleUVE(std::string_view keyPath, double value) override;
     void SetBoolUVE(std::string_view keyPath, bool value) override;
+
+    [[nodiscard]] std::vector<std::optional<ConfigScalarValueUVE>> GetValuesUVE(
+        const std::vector<std::string>& keyPaths) const override;
+    bool ApplyMutationsUVE(const std::vector<ConfigMutationUVE>& mutations) override;
 
     [[nodiscard]] bool HasKeyUVE(std::string_view keyPath) const override;
     bool RemoveKeyUVE(std::string_view keyPath) override;

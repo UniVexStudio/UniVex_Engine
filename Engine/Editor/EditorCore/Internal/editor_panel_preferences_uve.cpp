@@ -81,6 +81,80 @@ void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float si
     return static_cast<float>(std::max(std::abs(value) * 0.005, 0.0001));
 }
 
+/// An editable string-list row: one combo or text field per entry, each with a remove button,
+/// and an Add button below. Descriptors with enumEntries offer the entry labels as combos (the
+/// per-kind default-extras settings use this: the label IS the component id to store);
+/// descriptors without offer free text. Returns the edited list when anything changed.
+[[nodiscard]] std::optional<SettingValueUVE> DrawStringListSettingControlUVE(
+    const SettingDescriptorUVE& descriptor, const SettingValueUVE& current) {
+    Config::SettingStringListUVE edited = std::get<Config::SettingStringListUVE>(current);
+    bool changed = false;
+    const float removeWidth = ImGui::GetFrameHeight();
+    for (std::size_t index = 0U; index < edited.size();) {
+        ImGui::PushID(static_cast<int>(index));
+        ImGui::SetNextItemWidth(-removeWidth - 4.0F);
+        if (!descriptor.enumEntries.empty()) {
+            // A stored id the palette no longer offers still shows as the preview, so an older
+            // list is never silently rewritten by opening Preferences.
+            if (ImGui::BeginCombo("##item", edited[index].c_str())) {
+                for (const Config::SettingEnumEntryUVE& option : descriptor.enumEntries) {
+                    const bool selected = option.label == edited[index];
+                    if (ImGui::Selectable(option.label.c_str(), selected) && !selected) {
+                        edited[index] = option.label;
+                        changed = true;
+                    }
+                    if (selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        } else {
+            std::string buffer = edited[index];
+            const std::size_t capacity = descriptor.maxLength != 0U ? descriptor.maxLength : 256U;
+            buffer.resize(std::max(capacity, buffer.size()) + 1U, '\0');
+            if (ImGui::InputText("##item", buffer.data(), capacity + 1U)) {
+                buffer.resize(std::char_traits<char>::length(buffer.c_str()));
+                if (buffer != edited[index]) {
+                    edited[index] = std::move(buffer);
+                    changed = true;
+                }
+            }
+        }
+        ImGui::SameLine(0.0F, 4.0F);
+        if (ImGui::Button("x", ImVec2{removeWidth, 0.0F})) {
+            edited.erase(edited.begin() + static_cast<std::ptrdiff_t>(index));
+            changed = true;
+        } else {
+            ++index;
+        }
+        ImGui::PopID();
+    }
+    const std::size_t cap = descriptor.maxItems != 0U ? descriptor.maxItems : 64U;
+    ImGui::BeginDisabled(edited.size() >= cap);
+    if (ImGui::Button("+ Add", ImVec2{-std::numeric_limits<float>::min(), 0.0F})) {
+        // The first palette member not already listed; a full palette repeats the first entry and
+        // lets the setting's own validation dedupe or refuse it.
+        std::string added;
+        for (const Config::SettingEnumEntryUVE& option : descriptor.enumEntries) {
+            if (std::find(edited.begin(), edited.end(), option.label) == edited.end()) {
+                added = option.label;
+                break;
+            }
+        }
+        if (added.empty() && !descriptor.enumEntries.empty()) {
+            added = descriptor.enumEntries.front().label;
+        }
+        edited.push_back(std::move(added));
+        changed = true;
+    }
+    ImGui::EndDisabled();
+    if (!changed) {
+        return std::nullopt;
+    }
+    return SettingValueUVE{std::move(edited)};
+}
+
 /// The control for one setting's value. Returns the new value when the person changed it.
 [[nodiscard]] std::optional<SettingValueUVE> DrawSettingControlUVE(const SettingDescriptorUVE& descriptor,
                                                                    const SettingValueUVE& current,
@@ -129,9 +203,7 @@ void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float si
         return SettingValueUVE{std::move(buffer)};
     }
     case SettingTypeUVE::StringList:
-        // The session-backed list descriptors stay hidden until the panel has an editable list row.
-        ImGui::TextDisabled("%zu entries", std::get<Config::SettingStringListUVE>(current).size());
-        return std::nullopt;
+        return DrawStringListSettingControlUVE(descriptor, current);
     case SettingTypeUVE::KeyBinding: {
         const std::string& binding = std::get<std::string>(current);
         bool listening = activeKeyBindingId == descriptor.id;
@@ -201,6 +273,18 @@ void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float si
         }
         return SettingValueUVE{Config::SettingColorUVE{color.r, color.g, color.b, color.a}};
     }
+    case SettingTypeUVE::Vector2: {
+        const auto& vector = std::get<Config::SettingVector2UVE>(current);
+        std::array<float, 2> components{static_cast<float>(vector.x), static_cast<float>(vector.y)};
+        const float speed = descriptor.step ? static_cast<float>(*descriptor.step * 0.2) : 0.01F;
+        const bool bounded = descriptor.minimum && descriptor.maximum;
+        const float minimum = bounded ? static_cast<float>(*descriptor.minimum) : 0.0F;
+        const float maximum = bounded ? static_cast<float>(*descriptor.maximum) : 0.0F;
+        if (!DrawAxisVectorInputUVE("##value", components.data(), 2, speed, minimum, maximum)) {
+            return std::nullopt;
+        }
+        return SettingValueUVE{Config::SettingVector2UVE{components[0], components[1]}};
+    }
     case SettingTypeUVE::Vector3: {
         const auto& vector = std::get<Config::SettingVector3UVE>(current);
         std::array<float, 3> components{static_cast<float>(vector.x), static_cast<float>(vector.y),
@@ -215,6 +299,45 @@ void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float si
             return std::nullopt;
         }
         return SettingValueUVE{Config::SettingVector3UVE{components[0], components[1], components[2]}};
+    }
+    case SettingTypeUVE::Vector4: {
+        const auto& vector = std::get<Config::SettingVector4UVE>(current);
+        std::array<float, 4> components{static_cast<float>(vector.x), static_cast<float>(vector.y),
+                                        static_cast<float>(vector.z), static_cast<float>(vector.w)};
+        const float speed = descriptor.step ? static_cast<float>(*descriptor.step * 0.2) : 0.01F;
+        const bool bounded = descriptor.minimum && descriptor.maximum;
+        const float minimum = bounded ? static_cast<float>(*descriptor.minimum) : 0.0F;
+        const float maximum = bounded ? static_cast<float>(*descriptor.maximum) : 0.0F;
+        if (!DrawAxisVectorInputUVE("##value", components.data(), 4, speed, minimum, maximum)) {
+            return std::nullopt;
+        }
+        return SettingValueUVE{Config::SettingVector4UVE{components[0], components[1], components[2], components[3]}};
+    }
+    case SettingTypeUVE::LayerMask: {
+        std::uint32_t bits = std::get<Config::SettingLayerMaskUVE>(current).bits;
+        const bool changed =
+            ImGui::InputScalar("##value", ImGuiDataType_U32, &bits, nullptr, nullptr, "%08X",
+                               ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("32-bit layer mask in hexadecimal (bit 0 is Layer 1).");
+        }
+        if (!changed) {
+            return std::nullopt;
+        }
+        return SettingValueUVE{Config::SettingLayerMaskUVE{bits}};
+    }
+    case SettingTypeUVE::AssetReference: {
+        const auto& reference = std::get<Config::SettingAssetReferenceUVE>(current);
+        const std::string formatted = Config::FormatSettingAssetReferenceUVE(reference);
+        std::array<char, 17U> buffer{};
+        std::copy(formatted.begin(), formatted.end(), buffer.begin());
+        if (!ImGui::InputTextWithHint("##value", "16-digit asset GUID or empty", buffer.data(), buffer.size(),
+                                      ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue)) {
+            return std::nullopt;
+        }
+        const std::optional<Config::SettingAssetReferenceUVE> parsed =
+            Config::ParseSettingAssetReferenceUVE(std::string_view{buffer.data()});
+        return parsed ? std::optional<SettingValueUVE>{SettingValueUVE{*parsed}} : std::nullopt;
     }
     }
     return std::nullopt;

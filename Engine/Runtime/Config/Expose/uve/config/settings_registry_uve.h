@@ -23,7 +23,8 @@ namespace UVE::Config {
 /// description layer on top. Reading goes through a descriptor, so a value that is missing, of the
 /// wrong type or out of range comes back as the declared default - per setting, never by throwing
 /// away the whole document. Writing goes through it too, so an illegal value never enters the
-/// document at all. Composite values (colours and vectors) are checked whole; StringLists are
+/// document at all. Composite values are read from a single store snapshot and written in one
+/// atomic batch, so readers never observe half a colour, vector or StringList. StringLists are
 /// bounded ordered strings stored under `<id>.count` and `<id>.<index>`.
 ///
 /// Not thread-safe: register everything at startup, before the registry is shared. Reads and
@@ -31,8 +32,10 @@ namespace UVE::Config {
 class SettingsRegistryUVE final {
 public:
     /// Adds `descriptor`. Refused - nothing registered, false returned - when ValidateSettingDescriptorUVE
-    /// finds it malformed, its id is already registered, or the document could not hold it beside
-    /// the registered settings: "a.b" holding a value rules out "a.b.c". A colour, vector, or
+    /// finds it malformed, its id is already registered, its deprecated `replacementId` is not
+    /// listed by the live setting's `migratedFrom` metadata, one legacy id is claimed by two live
+    /// settings, or the document could not hold it beside the registered settings: "a.b" holding a
+    /// value rules out "a.b.c". A colour, vector, or
     /// StringList reserves its component or numbered paths, while siblings such as "outline" and
     /// "outline.thickness" remain legal.
     [[nodiscard]] bool RegisterUVE(SettingDescriptorUVE descriptor);
@@ -79,8 +82,16 @@ public:
                                                         SettingStringListUVE fallback = {}) const;
     [[nodiscard]] SettingColorUVE GetColorUVE(const IConfigManagerUVE& store, std::string_view id,
                                               SettingColorUVE fallback = {}) const;
+    [[nodiscard]] SettingVector2UVE GetVector2UVE(const IConfigManagerUVE& store, std::string_view id,
+                                                  SettingVector2UVE fallback = {}) const;
     [[nodiscard]] SettingVector3UVE GetVector3UVE(const IConfigManagerUVE& store, std::string_view id,
                                                   SettingVector3UVE fallback = {}) const;
+    [[nodiscard]] SettingVector4UVE GetVector4UVE(const IConfigManagerUVE& store, std::string_view id,
+                                                  SettingVector4UVE fallback = {}) const;
+    [[nodiscard]] SettingLayerMaskUVE GetLayerMaskUVE(const IConfigManagerUVE& store, std::string_view id,
+                                                      SettingLayerMaskUVE fallback = {}) const;
+    [[nodiscard]] SettingAssetReferenceUVE GetAssetReferenceUVE(const IConfigManagerUVE& store, std::string_view id,
+                                                                SettingAssetReferenceUVE fallback = {}) const;
 
 private:
     std::vector<std::unique_ptr<SettingDescriptorUVE>> m_descriptors;

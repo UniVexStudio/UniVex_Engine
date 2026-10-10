@@ -4,6 +4,14 @@
 **Branch:** `arena/01a0fd0d-univex-engine` (from `43a68128`)
 **Scope:** every placeable scene node kind this engine has, the strings it is called by, where each
 string lives in code, and how each name lines up with the Godot 4.4 class it is modelled on.
+**Update (2026-10-08):** the object definitions this audit points at - the root, the Folder/Viewport
+pair, and the kind registry - moved from `Engine/Runtime/Scene/{Expose/uve/scene/objects,Internal/objects}`
+to `Engine/Runtime/Objects/Core/{Expose/uve/object,Internal}` (library `uve_objects_core`), and the
+`SceneRoot` kind was renamed to **`Object`** in full - enumerator, marker component, definition,
+type id and icon, with the old type id and component name still resolved on load. The root's
+`scene_root_uve.*` pair merged into `object_uve.*`. The paths and names below were updated to match;
+the Godot comparisons and the rest of the table are unchanged.
+
 **Godot reference used:** `godotengine/godot` `4.4-stable`, `doc/classes/` — 880 classes total,
 241 descendants of `Node`, **216 instantiable node classes**, 201 of those outside the editor's own
 classes. Names below are compared against that set, not against memory.
@@ -49,7 +57,7 @@ Section 8 lists the fixes that *would* change behavior, each with its blast radi
 |---|---|
 | Scene node kinds registered in the engine | **47** |
 | Of those, offered by the add/create UI (`libraryCreatable = true`) | **45** |
-| Internal-only kinds (created by the document, never by the add UI) | **2** — `SceneRoot`, `Viewport` |
+| Internal-only kinds (created by the document, never by the add UI) | **2** — `Object`, `Viewport` |
 | Category icons / node icons on disk vs kinds needing one | **14 / 14** and **47 / 47** — all present, no gaps |
 | Type ids (`typeId`) | **47**, all unique, no duplicates, no empty |
 | Kinds whose C++ name is *exactly* a Godot class name | **22** |
@@ -66,7 +74,7 @@ A name is not stored in one place; every kind has up to five, and they can drift
 
 | # | Layer | Where it lives | Example |
 |---|---|---|---|
-| 1 | **C++ kind** (`SceneNodeKindUVE`) | `Engine/Runtime/Scene/Expose/uve/scene/objects/scene_object_registry_uve.h:13-64` | `WorldEnvironment3D` |
+| 1 | **C++ kind** (`SceneNodeKindUVE`) | `Engine/Runtime/Objects/Core/Expose/uve/object/scene_object_registry_uve.h:13-64` | `WorldEnvironment3D` |
 | 2 | **Saved type id** (`typeId`) | `Engine/Runtime/Scene/Internal/objects/scene_object_registry_uve.cpp:50-102` | `world_environment_3d` |
 | 3 | **Add/create label** (`displayName`) | same registry rows | `WorldEnvironment` |
 | 4 | **Default node name** (`defaultName`) | per-kind definition header, e.g. `Engine/Runtime/Nodes/3D/Expose/uve/objects/3d/world_environment_3d_uve.h:32` | `WorldEnvironment` |
@@ -90,7 +98,7 @@ called in the Outliner. **Bold** marks a broken default name.
 
 | # | Kind (C++) | typeId | Create label | Default node name | Category | Definition / component header | Godot 4.4 counterpart |
 |---|---|---|---|---|---|---|---|
-| 1 | `SceneRoot` | `scene_root` | SceneRoot | SceneRoot | Scene | `Scene/Expose/uve/scene/objects/scene_root_uve.h` | none — a Godot scene root is just any node |
+| 1 | `Object` | `object` (`scene_root` still loads) | Object | Object | Scene | `Objects/Core/Expose/uve/object/object_uve.h` | none — a Godot scene root is just any node |
 | 2 | `Object3D` | `object_3d` | Object3D | Object3D | Scene | `Nodes/3D/Expose/uve/objects/3d/object_3d_uve.h` | **Object3D** ✅ |
 | 3 | `Area3D` | `area_3d` | Area3D | Area3D | Physics | `Nodes/3D/Physics/Expose/uve/objects/3d/area_3d_uve.h` | **Area3D** ✅ |
 | 4 | `RayCast3D` | `ray_cast_3d` | RayCast3D | **Object3D** | Physics | `.../3d/ray_cast_3d_uve.h` | **RayCast3D** ✅ |
@@ -134,9 +142,9 @@ called in the Outliner. **Bold** marks a broken default name.
 | 42 | `UIText` | `ui_text` | UI Text | UI Text | UI | `.../canvas_layer/ui_text_uve.h` | `Label` |
 | 43 | `UIImage` | `ui_image` | UI Image | UI Image | UI | `.../canvas_layer/ui_image_uve.h` | `TextureRect` |
 | 44 | `UIButton` | `ui_button` | UI Button | UI Button | UI | `.../canvas_layer/ui_button_uve.h` | `Button` |
-| 45 | `Folder` | `folder` | Folder | Folder | Scene | `Scene/Expose/uve/scene/objects/scene_folder_uve.h` | none — Godot groups with plain `Node`s / node groups |
+| 45 | `Folder` | `folder` | Folder | Folder | Scene | `Objects/Core/Expose/uve/object/scene_folder_uve.h` | none — Godot groups with plain `Node`s / node groups |
 | 46 | `DirectionalLight3D` | `directional_light_3d` | DirectionalLight3D | DirectionalLight3D | Rendering | `.../3d/directional_light_3d_uve.h` | **DirectionalLight3D** ✅ |
-| 47 | `Viewport` | `viewport` | Viewport | Viewport | Scene | `Scene/Expose/uve/scene/objects/scene_folder_uve.h` | ⚠ name taken: Godot's `Viewport` is an **abstract render-target node** (`SubViewport`, `Window` are the real ones); UniVex's `Viewport` is the Outliner's level root |
+| 47 | `Viewport` | `viewport` | Viewport | Viewport | Scene | `Objects/Core/Expose/uve/object/scene_folder_uve.h` | ⚠ name taken: Godot's `Viewport` is an **abstract render-target node** (`SubViewport`, `Window` are the real ones); UniVex's `Viewport` is the Outliner's level root |
 
 Exact-name matches (rows marked ✅, 18 node kinds): `Object3D`, `Area3D`, `RayCast3D`,
 `StaticBody3D`, `AnimatableBody3D`, `NavigationRegion3D`, `NavigationAgent3D`, `Skeleton3D`,
@@ -152,7 +160,7 @@ it matches is an abstract base, so a UniVex `Light3D` and a Godot `Light3D` are 
 
 | Layer | File | Lines |
 |---|---|---|
-| Kind enum | `Engine/Runtime/Scene/Expose/uve/scene/objects/scene_object_registry_uve.h` | 13-64 |
+| Kind enum | `Engine/Runtime/Objects/Core/Expose/uve/object/scene_object_registry_uve.h` | 13-64 |
 | Registry rows (typeId, label, category, contracts, `libraryCreatable`) | `Engine/Runtime/Scene/Internal/objects/scene_object_registry_uve.cpp` | 13-46 (contracts), 50-102 (rows) |
 | Legacy type-id alias (`"empty"` → `Object3D`) | `Engine/Runtime/Scene/Internal/objects/scene_object_registry_uve.cpp` | 119-126 |
 | Kind inference from components (for scenes saved before the type was stored) | `Engine/Runtime/Scene/Internal/objects/scene_object_type_uve.cpp` | whole file |
@@ -271,7 +279,9 @@ These are the UniVex-only nodes — no Godot node class exists with this meaning
 to align to:
 
 `Hitbox3D`, `Hurtbox3D`, `Projectile3D`, `InteractionArea3D`, `LODGroup3D`, `VisibilityRegion3D`,
-`SpawnPoint3D`, `LevelStreamer3D`, `WorldPartition3D`, `SceneRoot`, `Folder`, `Script` (as a node).
+`SpawnPoint3D`, `LevelStreamer3D`, `WorldPartition3D`, `Object` (the base Object, carrying the
+common Object section and the hierarchy every Object3D hangs from - `SceneRoot` until 2026-10-08),
+`Folder`, `Script` (as a node).
 
 And these are UniVex names for a Godot node that exists under a different string:
 

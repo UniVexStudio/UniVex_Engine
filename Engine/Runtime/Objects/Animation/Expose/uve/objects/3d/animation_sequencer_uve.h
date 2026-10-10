@@ -27,7 +27,7 @@ struct Skeleton3DComponentUVE;
 /// Authoring definition for the AnimationSequencer object: a pure Object - no transform, no visibility -
 /// whose Inspector is its own section, its AnimationDriver base, then the Object section.
 /// It plays a clip on another object (`target`, or its parent), so it can sit anywhere in the tree,
-/// directly under the scene root included.
+/// directly under the Object included.
 struct AnimationSequencerObjectDefinitionUVE final {
     static constexpr std::string_view defaultName = "AnimationSequencer";
 

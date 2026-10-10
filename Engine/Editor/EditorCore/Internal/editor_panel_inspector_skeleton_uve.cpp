@@ -32,6 +32,8 @@
 
 #include <imgui.h>
 
+#include "editor_axis_input_uve.h"
+
 #include "uve/asset/fbx_mesh_converter_uve.h"
 #include "uve/asset/gltf_skeleton_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
@@ -412,8 +414,13 @@ void EditorUVE::DrawSkeletonBonesPropertyUVE(const Core::TypeMetadataEntryUVE&,
                                        ? std::string{"(root)"}
                                        : skeleton.bones[static_cast<std::size_t>(selected->parentIndex)].name;
         std::array<char, 96> text{};
+        // One spelling table for the readouts too: the triple format is the single format three
+        // times, so the rest pose can never drift from what the draggable rows show.
+        const char* const restFormat = InspectorFloatFormatUVE(m_inspectorFloatPrecision);
+        std::array<char, 32> restTriple{};
+        std::snprintf(restTriple.data(), restTriple.size(), "%s  %s  %s", restFormat, restFormat, restFormat);
         ReadOnlyRowUVE("Parent", parent.c_str());
-        std::snprintf(text.data(), text.size(), "%.3f  %.3f  %.3f", static_cast<double>(selected->localPosition.x),
+        std::snprintf(text.data(), text.size(), restTriple.data(), static_cast<double>(selected->localPosition.x),
                       static_cast<double>(selected->localPosition.y), static_cast<double>(selected->localPosition.z));
         ReadOnlyRowUVE("Rest Position", text.data());
         if (haveEuler) {
@@ -423,7 +430,7 @@ void EditorUVE::DrawSkeletonBonesPropertyUVE(const Core::TypeMetadataEntryUVE&,
             std::snprintf(text.data(), text.size(), "-");
         }
         ReadOnlyRowUVE("Rest Rotation", text.data());
-        std::snprintf(text.data(), text.size(), "%.3f  %.3f  %.3f", static_cast<double>(selected->localScale.x),
+        std::snprintf(text.data(), text.size(), restTriple.data(), static_cast<double>(selected->localScale.x),
                       static_cast<double>(selected->localScale.y), static_cast<double>(selected->localScale.z));
         ReadOnlyRowUVE("Rest Scale", text.data());
         ImGui::EndTable();

@@ -24,7 +24,7 @@
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/entity_uve.h"
-#include "uve/scene/objects/scene_object_registry_uve.h"
+#include "uve/object/scene_object_registry_uve.h"
 // The 21 object types that used to live behind their own thin compatibility-alias facade here
 // (RayCast3D, Skeleton3D, Hitbox3D, WorldEnvironment3D, etc.) have their real struct definitions
 // directly in Engine/Runtime/Objects/3D — and the 17 kinds whose data already lives in a shared

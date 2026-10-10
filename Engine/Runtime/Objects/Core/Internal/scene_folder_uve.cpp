@@ -1,9 +1,9 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/scene/objects/scene_folder_uve.h"
+#include "uve/object/scene_folder_uve.h"
 
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/objects/3d/object_3d_uve.h"
+#include "uve/object/object_uve.h"
 
 namespace UVE::Scene {
 

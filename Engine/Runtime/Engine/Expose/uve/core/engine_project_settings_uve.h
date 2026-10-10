@@ -146,8 +146,8 @@ void PopulateEngineCommandLineSettingsUVE(const Config::SettingsRegistryUVE& reg
                                                  const Config::IConfigManagerUVE& commandLine) noexcept;
 
 /// Applies every non-default value resolved by `settings` to the matching field of `config`.
-/// EngineConfigUVE remains the caller's base configuration when no project/user/platform/command-line
-/// store supplies an effective value.
+/// Each value is read and validated by the registry before conversion into EngineConfigUVE. The
+/// caller's base remains unchanged for settings no project/user/platform/command-line store supplies.
 void ApplyEngineSettingsUVE(const Config::SettingsStackUVE& settings, EngineConfigUVE& config);
 /// Compatibility convenience for a project-only stack: copies every setting `document` stores into
 /// its matching field, leaving application-selected fields alone when the project does not set them.

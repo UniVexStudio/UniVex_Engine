@@ -5,10 +5,24 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
+#include <vector>
 
 namespace UVE::Config {
+
+/// The scalar alternatives stored by IConfigManagerUVE. Kept JSON-free so callers can atomically
+/// read or update several values without exposing the backing document implementation.
+using ConfigScalarValueUVE = std::variant<bool, std::int64_t, double, std::string>;
+
+/// One scalar mutation in an atomic settings-store update. A value sets the path; nullopt removes
+/// it (and prunes empty parent objects). Mutations in one batch are applied in vector order.
+struct ConfigMutationUVE final {
+    std::string keyPath;
+    std::optional<ConfigScalarValueUVE> value;
+};
 
 /// IConfigManagerUVE is the engine's JSON-backed key-value settings store
 /// interface (the `.uvsettings` file — engine/editor settings such as
@@ -74,6 +88,16 @@ public:
     /// Sets the bool value at dot-path `keyPath`, creating any missing
     /// intermediate objects along the path.
     virtual void SetBoolUVE(std::string_view keyPath, bool value) = 0;
+
+    /// Reads scalar values for `keyPaths` under one lock, in the same order. Missing paths,
+    /// intermediate objects, JSON arrays/null, and unsupported leaf types return nullopt.
+    [[nodiscard]] virtual std::vector<std::optional<ConfigScalarValueUVE>> GetValuesUVE(
+        const std::vector<std::string>& keyPaths) const = 0;
+
+    /// Applies every set/removal as one transaction. Returns false for a malformed path, a
+    /// non-finite double, or an internal failure; on false the document is unchanged. An empty
+    /// batch succeeds. Paths use the same dot-separated syntax as the scalar accessors.
+    virtual bool ApplyMutationsUVE(const std::vector<ConfigMutationUVE>& mutations) = 0;
 
     /// True iff `keyPath` exists and resolves to a leaf value (not merely
     /// an intermediate object).
