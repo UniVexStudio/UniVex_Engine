@@ -31,11 +31,16 @@
 #include <backends/imgui_impl_opengl3.h>
 
 #include "editor_chrome_layout_uve.h"
+#include "editor_color_field_uve.h"
 #include "editor_fonts_uve.h"
 #include "editor_object_icons_uve.h"
 
+#include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/script_component_uve.h"
+#include "uve/component/transform_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 #include "uve/editor/editor_settings_uve.h"
+#include "uve/render_systems/primitive_geometry_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -131,9 +136,17 @@ void EditorUVE::RenderOverlayUVE() {
         return;
     }
 
+    // Preferences save themselves, on the first frame the author is not holding a widget: a slider
+    // drag emits a change every frame, and waiting for the hand to come off turns that into one
+    // write. IsAnyItemActive() reads the previous frame's item, which is the state that matters
+    // here; whatever is still pending when the editor closes is written by the shutdown save.
+    if (!ImGui::IsAnyItemActive()) {
+        static_cast<void>(FlushPendingPreferencesSaveUVE());
+    }
+
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
+    ImGui::NewFrame();
     // While playing, the panels lean toward the tint colour: what is edited now is lost at Stop.
     int tintedColors = 0;
     if (m_playModeState != EditorPlayModeStateUVE::Edit && m_playTintEnabled) {
@@ -260,7 +273,7 @@ void EditorUVE::DrawViewportImageUVE(const ViewportContextUVE context) {
             // displays elsewhere in this file - flip the V axis so the image displays right-side up.
             ImGui::Image(static_cast<ImTextureID>(textureId), ImVec2{used.x, used.y}, ImVec2{0.0F, 1.0F},
                          ImVec2{1.0F, 0.0F});
-            // An entity asset dropped on the view goes under the scene root.
+            // An entity asset dropped on the view goes under the Object.
             AcceptContentEntityDropUVE(Scene::kInvalidEntityUVE);
             // The projection/gizmo-mode overlay bubbles are editor-authoring chrome - hidden while
             // the Game workspace tab is active, matching Unity's own Scene/Game split where the
@@ -437,6 +450,92 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
                 ImGui::SetTooltip("The smallest grid square. Zooming out still steps the grid up in tens.");
+            }
+            // Sub-lines: 1 draws the grid as it always was. Only the counts worth clicking are
+            // offered, but a hand-edited stored value still shows as itself in the preview.
+            static constexpr std::array<int, 5> kSubdivisionCountsUVE{1, 2, 5, 8, 10};
+            const int subdivisions = m_viewportOverlayState.gridSubdivisions;
+            std::array<char, 32> subdivisionLabel{};
+            std::snprintf(subdivisionLabel.data(), subdivisionLabel.size(), "%d", subdivisions);
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0F);
+            if (ImGui::BeginCombo("Sub-lines", subdivisionLabel.data())) {
+                for (const int count : kSubdivisionCountsUVE) {
+                    const bool current = count == subdivisions;
+                    std::array<char, 32> label{};
+                    std::snprintf(label.data(), label.size(), "%d", count);
+                    if (ImGui::Selectable(label.data(), current)) {
+                        static_cast<void>(SetViewportGridSubdivisionsUVE(count));
+                    }
+                    if (current) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("Lines inside each grid square: 1 draws none, 10 draws nine.");
+            }
+            // Fade distances, as multiples of the camera distance, so the fade sits at the same
+            // place on screen at any zoom. The setter refuses a pair whose end is not past its
+            // start, which makes a dragged slider snap back rather than store a hard edge.
+            float fadeStart = m_viewportOverlayState.gridFadeStart;
+            float fadeEnd = m_viewportOverlayState.gridFadeEnd;
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0F);
+            bool fadeChanged = ImGui::SliderFloat("Fade start", &fadeStart, kMinimumViewportGridFadeScaleUVE,
+                                                  kMaximumViewportGridFadeScaleUVE, "%.0fx",
+                                                  ImGuiSliderFlags_AlwaysClamp);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("How far out the grid begins to fade, in camera distances.");
+            }
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0F);
+            fadeChanged |= ImGui::SliderFloat("Fade out", &fadeEnd, kMinimumViewportGridFadeScaleUVE,
+                                              kMaximumViewportGridFadeScaleUVE, "%.0fx",
+                                              ImGuiSliderFlags_AlwaysClamp);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("Where the grid has faded out entirely. Must be past the fade start.");
+            }
+            if (fadeChanged) {
+                static_cast<void>(SetViewportGridFadeUVE(fadeStart, fadeEnd));
+            }
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Line tint");
+            ImGui::SameLine(ImGui::GetFontSize() * 5.5F);
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0F);
+            ViewportAxisColorUVE tint = m_viewportOverlayState.gridLineTint;
+            EditorColorUVE pickedTint{tint.r, tint.g, tint.b, 1.0F};
+            if (DrawColorFieldUVE("##viewport-grid-tint", "Grid line tint", pickedTint, false,
+                                  m_colorPickerPreferences) != ColorFieldEventUVE::None) {
+                tint = ViewportAxisColorUVE{pickedTint.r, pickedTint.g, pickedTint.b};
+                static_cast<void>(SetViewportGridLineTintUVE(tint));
+            }
+            static constexpr std::array<EditorViewportGridPlaneUVE, 4> kGridPlanesUVE{
+                EditorViewportGridPlaneUVE::FollowView, EditorViewportGridPlaneUVE::GroundXZ,
+                EditorViewportGridPlaneUVE::FrontXY, EditorViewportGridPlaneUVE::SideZY};
+            const auto planeLabel = [](const EditorViewportGridPlaneUVE plane) {
+                switch (plane) {
+                case EditorViewportGridPlaneUVE::GroundXZ: return "Ground (XZ)";
+                case EditorViewportGridPlaneUVE::FrontXY: return "Front (XY)";
+                case EditorViewportGridPlaneUVE::SideZY: return "Side (ZY)";
+                case EditorViewportGridPlaneUVE::FollowView: break;
+                }
+                return "Follow view";
+            };
+            const EditorViewportGridPlaneUVE plane = m_viewportOverlayState.gridPlane;
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0F);
+            if (ImGui::BeginCombo("Plane", planeLabel(plane))) {
+                for (const EditorViewportGridPlaneUVE candidate : kGridPlanesUVE) {
+                    const bool current = candidate == plane;
+                    if (ImGui::Selectable(planeLabel(candidate), current)) {
+                        static_cast<void>(SetViewportGridPlaneUVE(candidate));
+                    }
+                    if (current) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("Follow view keeps the ground grid, and stands it up in a side view.");
             }
             ImGui::EndDisabled();
             ImGui::EndPopup();
@@ -662,25 +761,90 @@ bool EditorUVE::SetViewportGridCellSizeUVE(const float cellSize) {
     return true;
 }
 
-bool EditorUVE::SetViewportSelectionOutlineUVE(const bool visible, const ViewportAxisColorUVE color,
-                                               const float thickness) {
-    if (!IsViewportAxisColorValidUVE(color) || !std::isfinite(thickness) ||
-        thickness < kMinimumSelectionOutlineThicknessUVE || thickness > kMaximumSelectionOutlineThicknessUVE) {
+bool EditorUVE::SetViewportGridSubdivisionsUVE(const int subdivisions) {
+    if (subdivisions < kMinimumViewportGridSubdivisionsUVE || subdivisions > kMaximumViewportGridSubdivisionsUVE) {
+        return false;
+    }
+    const int previous = m_viewportOverlayState.gridSubdivisions;
+    if (previous == subdivisions) {
+        return false;
+    }
+    m_viewportOverlayState.gridSubdivisions = subdivisions;
+    NotifyEditorSettingChangedUVE(EditorSettingIdUVE::kGridSubdivisionsUVE,
+                                  static_cast<std::int64_t>(previous), static_cast<std::int64_t>(subdivisions));
+    return true;
+}
+
+bool EditorUVE::SetViewportGridFadeUVE(const float startScale, const float endScale) {
+    if (!std::isfinite(startScale) || !std::isfinite(endScale) ||
+        startScale < kMinimumViewportGridFadeScaleUVE || startScale > kMaximumViewportGridFadeScaleUVE ||
+        endScale < kMinimumViewportGridFadeScaleUVE || endScale > kMaximumViewportGridFadeScaleUVE ||
+        startScale >= endScale) {
+        return false;
+    }
+    const float previousStart = m_viewportOverlayState.gridFadeStart;
+    const float previousEnd = m_viewportOverlayState.gridFadeEnd;
+    if (previousStart == startScale && previousEnd == endScale) {
+        return false;
+    }
+    m_viewportOverlayState.gridFadeStart = startScale;
+    m_viewportOverlayState.gridFadeEnd = endScale;
+    namespace Id = EditorSettingIdUVE;
+    NotifyEditorSettingChangedUVE(Id::kGridFadeStartUVE, static_cast<double>(previousStart),
+                                  static_cast<double>(startScale));
+    NotifyEditorSettingChangedUVE(Id::kGridFadeEndUVE, static_cast<double>(previousEnd),
+                                  static_cast<double>(endScale));
+    return true;
+}
+
+bool EditorUVE::SetViewportGridLineTintUVE(const ViewportAxisColorUVE& tint) {
+    if (!IsViewportAxisColorValidUVE(tint)) {
+        return false;
+    }
+    const ViewportAxisColorUVE previous = m_viewportOverlayState.gridLineTint;
+    if (previous.r == tint.r && previous.g == tint.g && previous.b == tint.b) {
+        return false;
+    }
+    m_viewportOverlayState.gridLineTint = tint;
+    NotifyEditorSettingChangedUVE(
+        EditorSettingIdUVE::kGridLineTintUVE, Config::SettingColorUVE{previous.r, previous.g, previous.b},
+        Config::SettingColorUVE{tint.r, tint.g, tint.b});
+    return true;
+}
+
+bool EditorUVE::SetViewportGridPlaneUVE(const EditorViewportGridPlaneUVE plane) {
+    switch (plane) {
+    case EditorViewportGridPlaneUVE::FollowView:
+    case EditorViewportGridPlaneUVE::GroundXZ:
+    case EditorViewportGridPlaneUVE::FrontXY:
+    case EditorViewportGridPlaneUVE::SideZY:
+        break;
+    default:
+        return false; // not one of ours: a casted-out value, refused rather than stored
+    }
+    const EditorViewportGridPlaneUVE previous = m_viewportOverlayState.gridPlane;
+    if (previous == plane) {
+        return false;
+    }
+    m_viewportOverlayState.gridPlane = plane;
+    NotifyEditorSettingChangedUVE(EditorSettingIdUVE::kGridPlaneUVE, static_cast<std::int64_t>(previous),
+                                  static_cast<std::int64_t>(plane));
+    return true;
+}
+
+bool EditorUVE::SetViewportSelectionOutlineUVE(const bool visible, const ViewportAxisColorUVE color) {
+    if (!IsViewportAxisColorValidUVE(color)) {
         return false;
     }
     const bool previousVisible = m_viewportOverlayState.selectionOutlineVisible;
     const ViewportAxisColorUVE previousColor = m_viewportOverlayState.selectionOutlineColor;
-    const float previousThickness = m_viewportOverlayState.selectionOutlineThickness;
     m_viewportOverlayState.selectionOutlineVisible = visible;
     m_viewportOverlayState.selectionOutlineColor = color;
-    m_viewportOverlayState.selectionOutlineThickness = thickness;
     namespace Id = EditorSettingIdUVE;
     NotifyEditorSettingChangedUVE(Id::kSelectionOutlineVisibleUVE, previousVisible, visible);
     NotifyEditorSettingChangedUVE(Id::kSelectionOutlineColorUVE,
                                   Config::SettingColorUVE{previousColor.r, previousColor.g, previousColor.b},
                                   Config::SettingColorUVE{color.r, color.g, color.b});
-    NotifyEditorSettingChangedUVE(Id::kSelectionOutlineThicknessUVE, static_cast<double>(previousThickness),
-                                  static_cast<double>(thickness));
     return true;
 }
 
@@ -772,6 +936,187 @@ void EditorUVE::DrawEntityContextToolbarUVE(const Math::Vector2UVE imageOriginUV
         static_cast<void>(OpenScriptGraphForEntityUVE(entity));
         m_viewportOverlayState.entityContextToolbarOpen = false;
     }
+}
+
+// ---------------------------------------------------------------------------
+// View framing and alignment: Frame Selection, Align View to Node, Align Node
+// to View.
+//
+// The editor owns the requests and the maths; the host owns the camera. Framing
+// and align-view travel out through ViewportOverlayStateUVE and are applied
+// exactly like the focus request beside them, while align-node-to-view needs the
+// camera's angles, which the host pushes back through SetViewportCameraAnglesUVE.
+// The two directions use one convention - the orbit camera's own forward formula
+// - so a view aligned to an object and an object aligned to that view meet.
+// ---------------------------------------------------------------------------
+
+bool TryComposeOrbitLookRotationUVE(const float yawRadians, const float pitchRadians,
+                                    Math::QuaternionUVE& outRotation) noexcept {
+    // The camera's eye sits at target + (cos yaw cos pitch, sin pitch, sin yaw cos pitch) and looks
+    // the other way, so the facing to reproduce is the negative of that offset. Rotating -Z onto it
+    // is Ry(pi/2 - yaw) * Rx(-pitch): at yaw 0, pitch 0 the first factor alone turns -Z into -X,
+    // which is exactly the facing the offset formula gives there.
+    constexpr float kHalfPiUVE = 1.57079632679489661923F;
+    if (!std::isfinite(yawRadians) || !std::isfinite(pitchRadians)) {
+        return false;
+    }
+    Math::QuaternionUVE yawRotation{};
+    Math::QuaternionUVE pitchRotation{};
+    if (!Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, kHalfPiUVE - yawRadians, yawRotation) ||
+        !Math::TryMakeAxisAngleUVE(Math::Vector3UVE{1.0F, 0.0F, 0.0F}, -pitchRadians, pitchRotation)) {
+        return false;
+    }
+    return Math::TryNormalizeUVE(Math::MultiplyUVE(yawRotation, pitchRotation), outRotation);
+}
+
+bool EditorUVE::TryComposeEntityWorldBoundsUVE(const Scene::EntityUVE entity, Math::AabbUVE& outBounds) const {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!IsDocumentEntityUVE(entity) ||
+        !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+        return false;
+    }
+    const Scene::WorldTransformComponentUVE& world =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    if (world.dirty || !IsFiniteVectorUVE(world.worldPosition) || !IsFiniteVectorUVE(world.worldScale) ||
+        !IsQuaternionFiniteUVE(world.worldRotation)) {
+        return false;
+    }
+    if (entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
+        const Scene::PrimitiveMeshComponentUVE& primitive =
+            entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
+        Math::QuaternionUVE rotation{};
+        if (Scene::IsPrimitiveMeshComponentValidUVE(primitive) &&
+            Math::TryNormalizeUVE(world.worldRotation, rotation)) {
+            // The primitive's own bounds, read from the one place that owns them, so a framed
+            // selection matches what the renderer draws and the picker hits.
+            const Math::Matrix4x4UVE worldMatrix =
+                Math::Matrix4x4UVE::ComposeTrsUVE(world.worldPosition, rotation, world.worldScale);
+            outBounds = Render::GetPrimitiveGeometryUVE(primitive.kind).localBounds.TransformUVE(worldMatrix);
+            return true;
+        }
+    }
+    // Nothing to measure but the object itself: a plain Object, a light, a Marker3D. Its own
+    // position is still worth framing, and one point is exactly that.
+    outBounds = Math::AabbUVE{world.worldPosition, world.worldPosition};
+    return true;
+}
+
+bool EditorUVE::TryGetSelectionFrameUVE(Math::Vector3UVE& outCenter, float& outRadius) const {
+    bool any = false;
+    Math::AabbUVE bounds{};
+    for (const Scene::EntityUVE entity : m_selectedEntities) {
+        Math::AabbUVE entityBounds{};
+        if (!TryComposeEntityWorldBoundsUVE(entity, entityBounds)) {
+            continue;
+        }
+        bounds = any ? bounds.UnionUVE(entityBounds) : entityBounds;
+        any = true;
+    }
+    if (!any) {
+        return false;
+    }
+    const Math::Vector3UVE center = bounds.GetCenterUVE();
+    const float radius = Math::LengthUVE(bounds.GetExtentsUVE());
+    if (!IsFiniteVectorUVE(center) || !std::isfinite(radius)) {
+        return false;
+    }
+    outCenter = center;
+    outRadius = radius;
+    return true;
+}
+
+bool EditorUVE::CanFrameSelectionInViewportUVE() const {
+    Math::Vector3UVE center{};
+    float radius = 0.0F;
+    return TryGetSelectionFrameUVE(center, radius);
+}
+
+bool EditorUVE::RequestViewportFrameSelectionUVE() {
+    Math::Vector3UVE center{};
+    float radius = 0.0F;
+    if (!TryGetSelectionFrameUVE(center, radius)) {
+        return false;
+    }
+    m_viewportOverlayState.frameCenter = center;
+    m_viewportOverlayState.frameRadius = radius;
+    ++m_viewportOverlayState.frameRequestSerial;
+    return true;
+}
+
+bool EditorUVE::CanAlignViewToEntityUVE(const Scene::EntityUVE entity) const {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!IsDocumentEntityUVE(entity) ||
+        !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+        return false;
+    }
+    const Scene::WorldTransformComponentUVE& world =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    if (world.dirty || !IsFiniteVectorUVE(world.worldPosition)) {
+        return false;
+    }
+    Math::QuaternionUVE rotation{};
+    return Math::TryNormalizeUVE(world.worldRotation, rotation);
+}
+
+bool EditorUVE::RequestViewportAlignViewToEntityUVE(const Scene::EntityUVE entity) {
+    if (!CanAlignViewToEntityUVE(entity)) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::WorldTransformComponentUVE& world =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    Math::QuaternionUVE rotation{};
+    if (!Math::TryNormalizeUVE(world.worldRotation, rotation)) {
+        return false;
+    }
+    // The object's own forward, the same -Z the marker path composes a viewpoint from.
+    const Math::Vector3UVE forward = Math::RotateVectorUVE(rotation, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+    const Math::Vector3UVE eye = world.worldPosition - (forward * kEditorMarkerFocusDistanceUVE);
+    const std::optional<EditorViewportBookmarkUVE> bookmark =
+        ResolveOrbitBookmarkFromLookUVE(eye, forward, kEditorMarkerFocusDistanceUVE);
+    if (!bookmark.has_value()) {
+        return false;
+    }
+    m_viewportOverlayState.alignViewBookmark = *bookmark;
+    ++m_viewportOverlayState.alignViewRequestSerial;
+    return true;
+}
+
+void EditorUVE::SetViewportCameraAnglesUVE(const float yawRadians, const float pitchRadians) noexcept {
+    if (!std::isfinite(yawRadians) || !std::isfinite(pitchRadians)) {
+        return; // a non-finite pair never replaces a usable one
+    }
+    m_viewportCameraYaw = yawRadians;
+    m_viewportCameraPitch = pitchRadians;
+    m_hasViewportCameraAngles = true;
+}
+
+bool EditorUVE::CanAlignSelectedEntityToViewUVE() const noexcept {
+    if (!m_hasViewportCameraAngles || !IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE()) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    return entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity);
+}
+
+bool EditorUVE::AlignSelectedEntityToViewUVE() {
+    if (!CanAlignSelectedEntityToViewUVE()) {
+        return false;
+    }
+    Math::QuaternionUVE viewRotation{};
+    if (!TryComposeOrbitLookRotationUVE(m_viewportCameraYaw, m_viewportCameraPitch, viewRotation)) {
+        return false;
+    }
+    Math::QuaternionUVE localRotation{};
+    if (!ComputeLocalRotationForWorldRotationUVE(m_selectedEntity, viewRotation, localRotation)) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::TransformComponentUVE transform =
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity);
+    transform.localRotation = localRotation;
+    // The shared selection setter owns the history entry and the dirty flag, and refuses a no-op.
+    return SetSelectedLocalTransformUVE(transform);
 }
 
 } // namespace UVE::Editor

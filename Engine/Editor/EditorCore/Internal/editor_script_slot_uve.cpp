@@ -23,8 +23,10 @@
 
 #include <imgui.h>
 
+#include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/object/scene_folder_uve.h"
 #include "uve/scene/objects/scene_object_type_uve.h"
 
 namespace UVE::Editor {
@@ -32,6 +34,7 @@ namespace {
 
 constexpr std::string_view kScriptFolderUVE = "scripts";
 constexpr std::string_view kUVScriptExtensionUVE = ".uvs";
+constexpr std::size_t kMaximumScriptStemBytesUVE = 64U;
 
 /// A file stem from an object name: letters, digits, '-' and '_' kept, anything else an underscore,
 /// runs of underscores collapsed. "Main Menu (old)" becomes "Main_Menu_old".
@@ -49,9 +52,8 @@ constexpr std::string_view kUVScriptExtensionUVE = ".uvs";
     while (!stem.empty() && stem.back() == '_') {
         stem.pop_back();
     }
-    constexpr std::size_t kMaximumStemBytesUVE = 64U;
-    if (stem.size() > kMaximumStemBytesUVE) {
-        stem.resize(kMaximumStemBytesUVE);
+    if (stem.size() > kMaximumScriptStemBytesUVE) {
+        stem.resize(kMaximumScriptStemBytesUVE);
     }
     return stem.empty() ? std::string{"script"} : stem;
 }
@@ -182,39 +184,278 @@ bool EditorUVE::AssignScriptToSelectedEntityUVE(const std::string& path) {
     return target.entry != nullptr && SetSelectedComponentPropertyUVE(*target.entry, *target.property, &path);
 }
 
+bool EditorUVE::AssignScriptToEntityUVE(const Scene::EntityUVE entity, const std::string& path) {
+    if (!IsAuthoringCommandAllowedUVE() || !IsHierarchyObjectUVE(entity) || IsEntityLockedUVE(entity)) {
+        return false;
+    }
+    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (entityManager.HasComponentUVE<Scene::FolderComponentUVE>(entity)) {
+        return false;
+    }
+    if (path.empty()) {
+        if (!entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity) ||
+            entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath.empty()) {
+            return false;
+        }
+        return SetScriptPathForEntityUVE(entity, path);
+    }
+    if (!CanCreateUVScriptForEntityUVE(entity) || !DescribeScriptAssetProblemUVE(path).empty()) {
+        return false;
+    }
+    return SetScriptPathForEntityUVE(entity, path);
+}
+
+bool EditorUVE::OpenHierarchyScriptAttachDialogUVE(const Scene::EntityUVE target) {
+    if (!CanCreateUVScriptForEntityUVE(target)) {
+        return false;
+    }
+    m_hierarchyScriptAttachTarget = target;
+    m_hierarchyScriptAttachPath.clear();
+    m_hierarchyScriptAttachFilter.clear();
+    m_hierarchyScriptAttachCandidates = GetKnownScriptAssetPathsUVE();
+    m_hierarchyScriptAttachProblem = "Choose or enter an existing .uvs script path.";
+    m_hierarchyScriptAttachDialogOpenRequested = true;
+    return true;
+}
+
+void EditorUVE::SetHierarchyScriptAttachPathUVE(std::string path) {
+    m_hierarchyScriptAttachPath = std::move(path);
+    m_hierarchyScriptAttachProblem = DescribeScriptAssetProblemUVE(m_hierarchyScriptAttachPath);
+}
+
+bool EditorUVE::ConfirmHierarchyScriptAttachUVE() {
+    if (!CanCreateUVScriptForEntityUVE(m_hierarchyScriptAttachTarget)) {
+        m_hierarchyScriptAttachProblem = "Choose an available object without an attached script.";
+        return false;
+    }
+    m_hierarchyScriptAttachProblem = DescribeScriptAssetProblemUVE(m_hierarchyScriptAttachPath);
+    if (!m_hierarchyScriptAttachProblem.empty() ||
+        !AssignScriptToEntityUVE(m_hierarchyScriptAttachTarget, m_hierarchyScriptAttachPath)) {
+        if (m_hierarchyScriptAttachProblem.empty()) {
+            m_hierarchyScriptAttachProblem = "The script could not be attached.";
+        }
+        return false;
+    }
+    CancelHierarchyScriptAttachUVE();
+    return true;
+}
+
+void EditorUVE::CancelHierarchyScriptAttachUVE() noexcept {
+    m_hierarchyScriptAttachTarget = Scene::kInvalidEntityUVE;
+    m_hierarchyScriptAttachPath.clear();
+    m_hierarchyScriptAttachFilter.clear();
+    m_hierarchyScriptAttachProblem.clear();
+    m_hierarchyScriptAttachCandidates.clear();
+    m_hierarchyScriptAttachDialogOpenRequested = false;
+    m_hierarchyScriptAttachDialogWasOpened = false;
+}
+
 bool EditorUVE::CreateUVScriptForSelectedEntityUVE() {
     if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE()) {
         return false;
     }
-    const Scene::EntityUVE entity = m_selectedEntity;
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity) ||
-        !entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath.empty()) {
+    if (!entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(m_selectedEntity) ||
+        !entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(m_selectedEntity).scriptAssetPath.empty()) {
+        return false;
+    }
+    return CreateUVScriptForEntityUVE(m_selectedEntity);
+}
+
+bool EditorUVE::CanCreateUVScriptForEntityUVE(const Scene::EntityUVE entity) const {
+    if (!IsAuthoringCommandAllowedUVE() || !IsHierarchyObjectUVE(entity) || IsEntityLockedUVE(entity)) {
+        return false;
+    }
+    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (entityManager.HasComponentUVE<Scene::FolderComponentUVE>(entity)) {
+        return false;
+    }
+    return !entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity) ||
+           entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath.empty();
+}
+
+std::vector<Scene::EntityUVE> EditorUVE::GetUVScriptTargetCandidatesUVE() const {
+    std::vector<Scene::EntityUVE> candidates;
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    entityManager.ForEachUVE<Scene::HierarchyComponentUVE>(
+        [this, &candidates](const Scene::EntityUVE entity, const Scene::HierarchyComponentUVE&) {
+            if (IsHierarchyObjectUVE(entity)) {
+                candidates.push_back(entity);
+            }
+        });
+    std::sort(candidates.begin(), candidates.end(), [this](const Scene::EntityUVE lhs, const Scene::EntityUVE rhs) {
+        const std::string leftName = GetEntityDisplayLabelUVE(lhs);
+        const std::string rightName = GetEntityDisplayLabelUVE(rhs);
+        return leftName == rightName ? lhs.index < rhs.index : leftName < rightName;
+    });
+    return candidates;
+}
+
+std::string EditorUVE::GetUniqueUVScriptPathUVE(const std::string_view fileName) const {
+    if (fileName.empty() ||
+        std::all_of(fileName.begin(), fileName.end(), [](const char character) {
+            return std::isspace(static_cast<unsigned char>(character)) != 0;
+        })) {
+        return {};
+    }
+    const std::string stem = ScriptFileStemUVE(std::string{fileName});
+    return FindFreeScriptPathUVE(stem, GetKnownScriptAssetPathsUVE(), kUVScriptExtensionUVE,
+                                 [this](const std::string& candidate) {
+                                     return ReadProjectTextFileUVE(candidate).has_value();
+                                 });
+}
+
+bool EditorUVE::OpenUVScriptCreationDialogUVE(const Scene::EntityUVE defaultTarget) {
+    if (!CanCreateUVScriptForEntityUVE(defaultTarget)) {
+        return false;
+    }
+    m_uvScriptCreationTarget = defaultTarget;
+    m_uvScriptCreationFileName = GetEntityDisplayLabelUVE(defaultTarget);
+    m_uvScriptCreationFileNameEdited = false;
+    m_uvScriptCreationPath = GetUniqueUVScriptPathUVE(m_uvScriptCreationFileName);
+    m_uvScriptCreationProblem = m_uvScriptCreationPath.empty()
+                                    ? "Enter a different name; no free default filename is available."
+                                    : std::string{};
+    m_uvScriptCreationDialogOpenRequested = true;
+    return true;
+}
+
+bool EditorUVE::ChooseUVScriptCreationTargetUVE(const Scene::EntityUVE target) {
+    if (!CanCreateUVScriptForEntityUVE(target)) {
+        return false;
+    }
+    m_uvScriptCreationTarget = target;
+    if (!m_uvScriptCreationFileNameEdited) {
+        m_uvScriptCreationFileName = GetEntityDisplayLabelUVE(target);
+    }
+    m_uvScriptCreationPath = GetUniqueUVScriptPathUVE(m_uvScriptCreationFileName);
+    m_uvScriptCreationProblem.clear();
+    return true;
+}
+
+void EditorUVE::SetUVScriptCreationFileNameUVE(std::string fileName) {
+    m_uvScriptCreationFileName = std::move(fileName);
+    m_uvScriptCreationFileNameEdited = true;
+    m_uvScriptCreationPath = GetUniqueUVScriptPathUVE(m_uvScriptCreationFileName);
+    m_uvScriptCreationProblem.clear();
+}
+
+bool EditorUVE::ConfirmUVScriptCreationDialogUVE() {
+    if (!CanCreateUVScriptForEntityUVE(m_uvScriptCreationTarget) || m_uvScriptCreationPath.empty()) {
+        m_uvScriptCreationProblem = "Choose an available object and enter a valid script name.";
+        return false;
+    }
+    if (!CreateUVScriptForEntityUVE(m_uvScriptCreationTarget, m_uvScriptCreationFileName)) {
+        m_uvScriptCreationProblem = "The script could not be created or attached.";
+        return false;
+    }
+    CancelUVScriptCreationDialogUVE();
+    return true;
+}
+
+void EditorUVE::CancelUVScriptCreationDialogUVE() noexcept {
+    m_uvScriptCreationTarget = Scene::kInvalidEntityUVE;
+    m_uvScriptCreationFileName.clear();
+    m_uvScriptCreationPath.clear();
+    m_uvScriptCreationProblem.clear();
+    m_uvScriptCreationFileNameEdited = false;
+    m_uvScriptCreationDialogOpenRequested = false;
+    m_uvScriptCreationDialogWasOpened = false;
+}
+
+bool EditorUVE::CreateUVScriptForEntityUVE(const Scene::EntityUVE entity, const std::string_view fileName) {
+    if (!IsAuthoringCommandAllowedUVE() || !IsDocumentEntityUVE(entity) || IsEntityLockedUVE(entity)) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const bool hasScriptComponent = entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity);
+    if (hasScriptComponent) {
+        if (!entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath.empty()) {
+            return false;
+        }
+    } else if (!IsHierarchyObjectUVE(entity) || entityManager.HasComponentUVE<Scene::FolderComponentUVE>(entity)) {
         return false;
     }
     const ScriptPathPropertyUVE target = FindScriptPathPropertyUVE();
-    if (target.entry == nullptr) {
+    if (target.entry == nullptr || target.property == nullptr || !target.entry->HasFactoryUVE() ||
+        !target.property->IsAuthoringWritableUVE()) {
         return false;
     }
     const std::string label = GetEntityDisplayLabelUVE(entity);
-    const std::string path =
-        FindFreeScriptPathUVE(ScriptFileStemUVE(label), GetKnownScriptAssetPathsUVE(), kUVScriptExtensionUVE,
-                              [this](const std::string& candidate) { return ReadProjectTextFileUVE(candidate).has_value(); });
+    const std::string path = GetUniqueUVScriptPathUVE(fileName.empty() ? std::string_view{label} : fileName);
     if (path.empty() || !Scene::IsScriptAssetPathValidUVE(path)) {
         return false;
     }
 
-    // The header names the object and the kind it drives; the two handlers every script starts from.
+    // The header names the attached object and its kind; only the file's name can be overridden.
     const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
         Scene::Objects::FindSceneObjectDescriptorUVE(Scene::ResolveSceneObjectKindUVE(entityManager, entity));
     const std::string kind = ScriptIdentifierUVE(descriptor != nullptr ? descriptor->displayName : "Object", "Object");
     const std::string text = "entity " + ScriptIdentifierUVE(label, "Object_") + " : " + kind +
                              "\n\non ready:\n    print(\"{name} is ready\")\n\non tick(dt):\n    pass\n";
     // The file first: if it cannot be written, nothing about the object has changed yet.
-    if (!WriteProjectTextFileUVE(path, text) || !SetSelectedComponentPropertyUVE(*target.entry, *target.property, &path)) {
+    if (!WriteProjectTextFileUVE(path, text) || !SetScriptPathForEntityUVE(entity, path)) {
         return false;
     }
     return OpenUVScriptForEntityUVE(entity);
+}
+
+bool EditorUVE::SetScriptPathForEntityUVE(const Scene::EntityUVE entity, const std::string& path) {
+    static_cast<void>(CommitComponentPropertyPreviewUVE());
+    if (!IsAuthoringCommandAllowedUVE() || !IsDocumentEntityUVE(entity) || IsEntityLockedUVE(entity)) {
+        return false;
+    }
+    const ScriptPathPropertyUVE target = FindScriptPathPropertyUVE();
+    if (target.entry == nullptr || target.property == nullptr || !target.entry->HasFactoryUVE() ||
+        !target.property->IsAuthoringWritableUVE()) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE(entity, target.entry->typeIndex)) {
+        Scene::ScriptComponentUVE script{};
+        script.scriptAssetPath = path;
+        const EditorSceneComponentValueUVE value{script};
+        if (!IsSceneComponentValueValidUVE(EditorSceneComponentKindUVE::Script, value)) {
+            return false;
+        }
+        const EditorSelectionSnapshotUVE selection = CaptureSelectionSnapshotUVE();
+        const bool dirtyBefore = m_sceneDirty;
+        const std::optional<EditorSceneComponentValueUVE> after{value};
+        if (!ApplySceneComponentStateUVE(entity, EditorSceneComponentKindUVE::Script, after)) {
+            return false;
+        }
+        InvalidateHierarchyFilterCacheUVE();
+        m_sceneDirty = true;
+        RecordHistoryUVE(SceneComponentHistoryEntryUVE{entity, EditorSceneComponentKindUVE::Script, std::nullopt,
+                                                       after, selection, selection, dirtyBefore, true});
+        return true;
+    }
+    const EditorSelectionSnapshotUVE selection = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    void* const instance = entityManager.GetComponentPointerUVE(entity, target.entry->typeIndex);
+    Core::TypeInstanceUVE before = Core::TypeInstanceUVE::CloneUVE(*target.entry, instance);
+    if (!before.IsValidUVE()) {
+        return false;
+    }
+    target.property->setValue(instance, &path);
+    if (target.entry->isInstanceValid != nullptr && !target.entry->isInstanceValid(instance)) {
+        target.entry->assignInstance(instance, before.GetUVE());
+        return false;
+    }
+    if (target.property->areEqual != nullptr && target.property->areEqual(before.GetUVE(), instance)) {
+        return false;
+    }
+    Core::TypeInstanceUVE after = Core::TypeInstanceUVE::CloneUVE(*target.entry, instance);
+    if (!after.IsValidUVE()) {
+        target.entry->assignInstance(instance, before.GetUVE());
+        return false;
+    }
+
+    // This row-targeted write keeps the exact pre-edit selection snapshot on both sides of undo and redo.
+    m_sceneDirty = true;
+    RecordHistoryUVE(ComponentPropertyHistoryEntryUVE{entity, target.entry, std::move(before), std::move(after),
+                                                      selection, selection, dirtyBefore, true});
+    return true;
 }
 
 void EditorUVE::DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entry,

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/scene/objects/scene_object_registry_uve.h"
+#include "uve/object/scene_object_registry_uve.h"
 
 namespace UVE::Scene::Objects {
 namespace {
@@ -54,7 +54,12 @@ constexpr std::array<std::string_view, 1U> kUIButtonContracts{"UIButtonComponent
 constexpr std::array<SceneObjectDescriptorUVE, 49U> kDescriptors{
     // The document's structural root: created by the document lifecycle (new document,
     // load-time migration), never through the Add-Object library - libraryCreatable is false.
-    SceneObjectDescriptorUVE{SceneObjectKindUVE::SceneRoot, "scene_root", "SceneRoot", "Scene", "Scene/SceneRootObjectDefinitionUVE", kNoContracts, false},
+    // It is the base Object, carrying the common Object section (Process, Thread Group, Physics
+    // Interpolation, Auto Translate, Editor Description, Script, Metadata) and the hierarchy link
+    // every Object3D in the level hangs from. Type id "object" - the persistence key a saved scene
+    // stores and the icon id the editor looks the row's picture up by. Was "scene_root" until the
+    // 2026-10-08 rename; FindSceneObjectDescriptorUVE(typeId) still resolves that old id.
+    SceneObjectDescriptorUVE{SceneObjectKindUVE::Object, "object", "Object", "Scene", "Objects/Core/ObjectDefinitionUVE", kNoContracts, false},
     // The transform-only base object, type id "object_3d". Documents and layouts written while the
     // kind was called "node_3d", or "empty" before that, keep loading: FindSceneObjectDescriptorUVE
     // (typeId) resolves both legacy ids to this same row, so neither rename touches a saved file.
@@ -128,6 +133,11 @@ const SceneObjectDescriptorUVE* FindSceneObjectDescriptorUVE(const std::string_v
     // resolving to the same object, so every rename leaves its previous id readable here forever.
     if (typeId == "empty" || typeId == "node_3d") {
         return FindSceneObjectDescriptorUVE(SceneObjectKindUVE::Object3D);
+    }
+    // The root was spelled "scene_root" until it took the name of what it is; documents written
+    // before that carry the old id and must keep loading.
+    if (typeId == "scene_root") {
+        return FindSceneObjectDescriptorUVE(SceneObjectKindUVE::Object);
     }
     if (typeId == "static_body_3d") {
         return FindSceneObjectDescriptorUVE(SceneObjectKindUVE::Static3D);

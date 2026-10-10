@@ -105,12 +105,18 @@ void InfiniteGridRenderer::Draw(const GridFrameParams& frame) const {
 
     program_.SetFloat("uBaseSpacing", settings_.baseSpacing);
     program_.SetFloat("uTargetCellPixels", settings_.targetCellPixels);
+    program_.SetFloat("uSubdivisions", static_cast<float>(std::max(1, settings_.subdivisions)));
     program_.SetFloat("uLineWidthPixels", settings_.lineWidthPixels);
     program_.SetFloat("uAxisWidthPixels", settings_.axisWidthPixels);
 
-    program_.SetVec3("uThinColor", settings_.thinColor.r, settings_.thinColor.g, settings_.thinColor.b);
-    program_.SetVec3("uMidColor", settings_.midColor.r, settings_.midColor.g, settings_.midColor.b);
-    program_.SetVec3("uThickColor", settings_.thickColor.r, settings_.thickColor.g, settings_.thickColor.b);
+    // The tint is folded in here rather than pushed as a fourth uniform: the shader already has the
+    // three level colours, and one multiply on the CPU keeps the GPU path as it was.
+    const GridColor thin = TintedGridColor(settings_.thinColor, settings_.lineTint);
+    const GridColor mid = TintedGridColor(settings_.midColor, settings_.lineTint);
+    const GridColor thick = TintedGridColor(settings_.thickColor, settings_.lineTint);
+    program_.SetVec3("uThinColor", thin.r, thin.g, thin.b);
+    program_.SetVec3("uMidColor", mid.r, mid.g, mid.b);
+    program_.SetVec3("uThickColor", thick.r, thick.g, thick.b);
     program_.SetFloat("uThinIntensity", settings_.thinIntensity);
     program_.SetFloat("uMidIntensity", settings_.midIntensity);
     program_.SetFloat("uThickIntensity", settings_.thickIntensity);

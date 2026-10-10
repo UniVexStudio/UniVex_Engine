@@ -3,6 +3,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <functional>
 #include <optional>
 #include <string>
@@ -37,6 +38,36 @@ struct EditorShortcutUVE final {
 /// ignoring case and spaces, must all appear in order), higher for a better one - a prefix beats
 /// a whole-word substring, which beats one scattered through the text.
 [[nodiscard]] int ScoreFuzzyMatchUVE(std::string_view text, std::string_view query);
+
+/// How the command palette reads a query. Fuzzy (the shipped default) treats the whole query as
+/// one pattern, exactly like ScoreFuzzyMatchUVE. Words requires every whitespace-separated word
+/// to match on its own, so "cop node" finds "Copy Node Path" even though the words are apart and
+/// in a different order than the label would need.
+enum class CommandPaletteMatchModeUVE {
+    Fuzzy,
+    Words,
+};
+
+/// How well a command matches a palette `query` under `mode`: -1 when it does not match at all,
+/// otherwise a score where higher is a better match. A command is looked up by its `label` and by
+/// its `title` ("Edit: Duplicate"), the two things the palette shows, and the better of the two
+/// is what counts.
+[[nodiscard]] int ScoreCommandPaletteMatchUVE(std::string_view label, std::string_view title,
+                                              std::string_view query, CommandPaletteMatchModeUVE mode);
+
+/// The palette's options, kept as editor settings (see RegisterEditorSettingsUVE).
+struct CommandPaletteSettingsUVE final {
+    /// Whether Ctrl+Shift+P and the File > Command Palette item open the palette at all. Off is
+    /// for an author who lives in the menus: the command stays declared, and stays rebindable.
+    bool enabled = true;
+    CommandPaletteMatchModeUVE matchMode = CommandPaletteMatchModeUVE::Fuzzy;
+    /// How many recently run commands are remembered and offered first; at most the maximum below.
+    std::size_t recentCount = 8U;
+};
+
+/// The most a recentCount setting may ask for. Beyond a couple of dozen the list stops being a
+/// shortcut and starts being a second, stale menu.
+inline constexpr std::size_t kMaximumRecentCommandsUVE = 16U;
 
 /// One thing the editor can do, found by the menu bar, the command palette and keyboard
 /// shortcuts alike. Each has a primary and an alternate shortcut.

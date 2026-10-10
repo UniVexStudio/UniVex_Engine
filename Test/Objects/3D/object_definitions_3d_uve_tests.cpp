@@ -40,9 +40,9 @@
 #include "uve/math/quaternion_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
-#include "uve/scene/objects/scene_object_registry_uve.h"
+#include "uve/object/scene_object_registry_uve.h"
 #include "uve/scene/objects/scene_object_type_uve.h"
-#include "uve/scene/objects/scene_root_uve.h"
+#include "uve/object/object_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 
 namespace UVE::Scene::Tests {
@@ -765,14 +765,30 @@ TEST_F(Object3DDefinitionsUVETest, Object3DApplyIsIdempotent) {
 TEST_F(Object3DDefinitionsUVETest, Object3DApplyRefusesADestroyedEntity) {
     const EntityUVE entity = CreateEntityUVE();
     entityManager.DestroyEntityUVE(entity);
-    // Same refusal as the scene-root apply: dead entities get nothing, and nothing crashes.
+    // Same refusal as the Object apply: dead entities get nothing, and nothing crashes.
     ApplyObject3DObjectDefinitionUVE(entityManager, entity, Object3DObjectDefinitionUVE{});
     EXPECT_FALSE(entityManager.IsAliveUVE(entity));
 }
 
-TEST_F(Object3DDefinitionsUVETest, SceneRootIsAPureObjectCarryingTheCommonObjectSection) {
+TEST_F(Object3DDefinitionsUVETest, ObjectIsReachableUnderBothItsNewAndLegacyTypeIds) {
+    const Objects::SceneObjectDescriptorUVE* descriptor =
+        Objects::FindSceneObjectDescriptorUVE(Objects::SceneObjectKindUVE::Object);
+    ASSERT_NE(descriptor, nullptr);
+    EXPECT_EQ(descriptor->typeId, "object");
+    EXPECT_EQ(descriptor->displayName, "Object");
+    // Never offered by the Add-Object library: the document lifecycle creates the root.
+    EXPECT_FALSE(descriptor->libraryCreatable);
+
+    // "scene_root" was this kind's id until it took the name of what it is; a document written
+    // before that must keep resolving to the very same row.
+    EXPECT_EQ(Objects::FindSceneObjectDescriptorUVE("object"), descriptor);
+    EXPECT_EQ(Objects::FindSceneObjectDescriptorUVE("scene_root"), descriptor);
+    EXPECT_EQ(Objects::GetSceneObjectTypeIdUVE(Objects::SceneObjectKindUVE::Object), "object");
+}
+
+TEST_F(Object3DDefinitionsUVETest, ObjectIsTheBaseCarryingTheCommonObjectSection) {
     const EntityUVE root = CreateEntityUVE();
-    ApplySceneRootObjectDefinitionUVE(entityManager, root, SceneRootObjectDefinitionUVE{});
+    ApplyObjectDefinitionUVE(entityManager, root, ObjectDefinitionUVE{});
 
     // In the hierarchy and named, but with no transform: placing things in space is what Object3D
     // adds, and the root has nothing to place. Its children start their own transform chains.
@@ -781,8 +797,8 @@ TEST_F(Object3DDefinitionsUVETest, SceneRootIsAPureObjectCarryingTheCommonObject
     EXPECT_TRUE(entityManager.HasComponentUVE<HierarchyComponentUVE>(root));
     EXPECT_TRUE(entityManager.HasComponentUVE<NameComponentUVE>(root));
     EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(root).name,
-              SceneRootObjectDefinitionUVE::defaultName);
-    EXPECT_TRUE(entityManager.HasComponentUVE<SceneRootComponentUVE>(root));
+              ObjectDefinitionUVE::defaultName);
+    EXPECT_TRUE(entityManager.HasComponentUVE<ObjectComponentUVE>(root));
 
     // The root's Inspector offers no Add Component, so the whole common Object section is attached
     // here - anything left out could never be reached from the editor.
@@ -797,14 +813,14 @@ TEST_F(Object3DDefinitionsUVETest, SceneRootIsAPureObjectCarryingTheCommonObject
     // And it is still the idempotent recipe the document lifecycle relies on: applying twice
     // adds nothing and changes nothing, including an authored value.
     entityManager.GetComponentUVE<ProcessComponentUVE>(root).priority = 7;
-    ApplySceneRootObjectDefinitionUVE(entityManager, root, SceneRootObjectDefinitionUVE{});
+    ApplyObjectDefinitionUVE(entityManager, root, ObjectDefinitionUVE{});
     EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(root).name,
-              SceneRootObjectDefinitionUVE::defaultName);
+              ObjectDefinitionUVE::defaultName);
     EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(root).priority, 7);
     EXPECT_FALSE(entityManager.HasComponentUVE<TransformComponentUVE>(root));
 }
 
-TEST_F(Object3DDefinitionsUVETest, SceneRootMigrationBakesAnOldRootTransformIntoItsChildren) {
+TEST_F(Object3DDefinitionsUVETest, ObjectMigrationBakesAnOldRootTransformIntoItsChildren) {
     // A scene saved when the root still had a transform: the root moved, rotated and scaled, and
     // every child's world pose was composed through it. Dropping the transform must move nothing.
     const EntityUVE root = CreateEntityUVE();
@@ -835,7 +851,7 @@ TEST_F(Object3DDefinitionsUVETest, SceneRootMigrationBakesAnOldRootTransformInto
     const WorldTransformComponentUVE topLevelBefore =
         entityManager.GetComponentUVE<WorldTransformComponentUVE>(topLevelChild);
 
-    ApplySceneRootObjectDefinitionUVE(entityManager, root, SceneRootObjectDefinitionUVE{});
+    ApplyObjectDefinitionUVE(entityManager, root, ObjectDefinitionUVE{});
     ASSERT_FALSE(entityManager.HasComponentUVE<TransformComponentUVE>(root));
     sceneGraph.UpdateUVE(entityManager);
 
@@ -864,7 +880,7 @@ TEST_F(Object3DDefinitionsUVETest, SceneRootMigrationBakesAnOldRootTransformInto
               topLevelTransform.localPosition);
 
     // Idempotent: a second apply finds no transform and bakes nothing twice.
-    ApplySceneRootObjectDefinitionUVE(entityManager, root, SceneRootObjectDefinitionUVE{});
+    ApplyObjectDefinitionUVE(entityManager, root, ObjectDefinitionUVE{});
     sceneGraph.UpdateUVE(entityManager);
     EXPECT_NEAR(entityManager.GetComponentUVE<WorldTransformComponentUVE>(child).worldPosition.x,
                 childBefore.worldPosition.x, kTolerance);

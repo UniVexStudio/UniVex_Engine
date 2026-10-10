@@ -144,6 +144,7 @@ struct EditorBridgeHierarchyEntryUVE final {
     std::optional<EditorBridgeEntityRefUVE> parent;
     std::string displayLabel;
     std::string typeTag;
+    /// Visible nesting depth; zero for every row in flat-filter mode, regardless of actual parentage.
     std::size_t depth = 0U;
     std::size_t childCount = 0U;
     bool selected = false;

@@ -223,6 +223,11 @@ public:
     void SetIntUVE(std::string_view, std::int64_t) override {}
     void SetDoubleUVE(std::string_view, double) override {}
     void SetBoolUVE(std::string_view, bool) override {}
+    [[nodiscard]] std::vector<std::optional<Config::ConfigScalarValueUVE>> GetValuesUVE(
+        const std::vector<std::string>& keyPaths) const override {
+        return std::vector<std::optional<Config::ConfigScalarValueUVE>>(keyPaths.size());
+    }
+    bool ApplyMutationsUVE(const std::vector<Config::ConfigMutationUVE>&) override { return true; }
     [[nodiscard]] bool HasKeyUVE(std::string_view) const override { return false; }
     bool RemoveKeyUVE(std::string_view) override { return false; }
 

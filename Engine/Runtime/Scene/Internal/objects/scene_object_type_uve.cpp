@@ -21,8 +21,8 @@
 #include "uve/component/ui_text_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
-#include "uve/scene/objects/scene_folder_uve.h"
-#include "uve/scene/objects/scene_root_uve.h"
+#include "uve/object/scene_folder_uve.h"
+#include "uve/object/object_uve.h"
 
 namespace UVE::Scene {
 namespace {
@@ -66,8 +66,8 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
     if (!entityManager.IsAliveUVE(entity)) {
         return Kind::Object3D;
     }
-    if (entityManager.HasComponentUVE<SceneRootComponentUVE>(entity)) {
-        return Kind::SceneRoot;
+    if (entityManager.HasComponentUVE<ObjectComponentUVE>(entity)) {
+        return Kind::Object;
     }
     if (entityManager.HasComponentUVE<OutlinerViewportComponentUVE>(entity)) {
         return Kind::Viewport;

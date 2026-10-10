@@ -115,15 +115,16 @@ and it is written once per setting. Multiply by four hundred settings and the co
 
 ## 0.2 The setting descriptor
 
-- [~] `SettingDescriptorUVE` — the single record describing one setting. Landed in
+- [x] `SettingDescriptorUVE` — the single record describing one setting. Landed in
       `Engine/Runtime/Config` (`setting_descriptor_uve.h`) with bool, int, float, string, enum,
-      colour, vector3, file-path, key-binding and bounded string-list descriptors; other setting
-      types and descriptor-level version metadata remain open.
+      colour, vector2/3/4, asset-reference, layer-mask, file-path, key-binding and bounded
+      string-list descriptors, plus version and rename-history metadata.
 
   - [x] `id` — the dot path, e.g. `rendering.shadows.softShadowQuality`. The storage key.
-  - [~] `type` — bool, int, float/double, string, enum, colour, vector3 and bounded string lists
-        are supported; file path and key binding are distinct descriptor types too. Vector2/4, asset
-        reference and layer mask remain open.
+  - [x] `type` — bool, int, float/double, string, enum, colour, vector2/3/4, asset reference,
+        layer mask and bounded string lists are supported; file path and key binding are distinct
+        descriptor types too. Asset references preserve the full 64-bit GUID as fixed-width hex;
+        syntactic validation is separate from checking whether a project asset still exists.
   - [x] `defaultValue` — the engine default, typed. The single source of "reset to default".
   - [x] `minimum` / `maximum` / `step` — for numeric types; absent means unbounded.
   - [x] `enumEntries` — ordered (value, label) pairs for enum types, so a combo box needs no
@@ -135,7 +136,10 @@ and it is written once per setting. Multiply by four hundred settings and the co
         `PerPlatform` (may be overridden per target), `NotPersisted` (session-only),
         `Internal` (never shown in UI), `Deprecated` (read for migration, never written).
         `Hidden` covers `Internal`: both meant "stored and read, never shown".
-  - [ ] `sinceVersion` / `migratedFrom` — supports the migration path in 0.8.
+  - [x] `sinceVersion` / `migratedFrom` — the optional, nonzero settings-document schema version
+        when a setting was introduced and its prior ids. A prior id must be represented by a
+        Deprecated descriptor whose `replacementId` points back to the live setting; the registry
+        checks both sides so migration metadata cannot silently disagree.
 
 The descriptor is **data**, declared next to the system that owns the setting, not centralised in
 one giant file. A rendering setting is declared by the rendering module; the registry merely
@@ -163,18 +167,26 @@ collects them.
       `ConfigManagerUVE` remains underneath as the JSON document; nothing about it is replaced.
 - [x] Setters that reject out-of-range values rather than storing them, so a bad value can never
       enter the document in the first place.
-- [~] **Whole-or-nothing application for composite settings.** The axis-palette setter added for
-      the viewport already establishes this rule: a palette with one bad channel leaves *both*
-      the gizmo and the grid untouched rather than half-written. Composite settings — colours,
-      vectors, key bindings — should follow it uniformly. Colours do, on write and on read;
-      vectors and key bindings follow when their types land.
+- [x] **Whole-or-nothing application for composite settings.** `IConfigManagerUVE` now provides
+      atomic batched mutations and one-lock multi-key snapshots. `SettingsRegistryUVE` uses them
+      for colours, Vector2/3/4 and bounded string lists, including clear/reset; malformed transactions
+      leave the document unchanged. Key bindings are a single scalar string, so they cannot be
+      partially applied. Concurrent regression tests verify readers never observe mixed vector or
+      list components while another thread replaces the value. Future composite descriptor types
+      should use the same batch API.
 
 ## 0.5 Validation at the boundary
 
-- [~] Every value crossing the file boundary is validated once, at the registry, against its
-      descriptor. Consumers downstream receive values that are already legal and stop carrying
-      defensive checks. The registry does this; consumers drop their own checks as they migrate
-      (0.11 step 3).
+- [/] Generic type, range, and enum invariants for file-backed values are validated once at the
+      registry against their descriptors. Registry reads take one typed store snapshot per scalar
+      or composite setting.
+      EngineCore normalizes application-supplied `EngineConfigUVE` values before overlays and does
+      not repeat per-field validation afterward. Editor session loading applies registry-returned
+      values through an internal trusted path, and boot-splash settings use their validated types and
+      ranges directly; the public editor setter still validates direct callers. Cross-setting rules
+      and consumer-specific defenses remain at their owners (including content-root path containment
+      and the dynamic-resolution controller's public configuration API). Editor runtime tests remain
+      unavailable in this CPU-only build, so this is wired but not fully verified (0.11 step 3).
 - [x] Non-finite values (NaN, infinity) fail range checks by construction — a comparison against
       a bound is already false for NaN, which is the idiom the axis-palette validator uses.
 - [x] A corrupt or hand-edited settings file degrades to defaults **per setting**, never
@@ -226,9 +238,11 @@ collects them.
 - [x] Forward migration callbacks registered for version N run on a candidate store before it is
       committed. A failed callback leaves the existing document, path and dirty state unchanged;
       unregistered steps are identity migrations that still advance the version.
-- [x] A `Deprecated` descriptor can name its live `replacementId`. Reads can fall back to a valid old
-      value; load migrates it to the new id and removes the alias, while a valid new value wins.
-      Editor setting renames now use this shared registry path.
+- [x] A `Deprecated` descriptor can name its live `replacementId`, and the live descriptor records
+      that old id in `migratedFrom`. Reads can fall back to a valid old value; load migrates it to
+      the new id and removes the alias, while a valid new value wins. Editor setting renames now use
+      this shared registry path. `sinceVersion` records the nonzero settings-document schema version
+      that introduced a setting when known; historical or unknown introductions remain unset.
 - [x] Version 0, 1, 2 and current-version fixtures verify forward migration, serialization, alias
       cleanup, and rejection of future, malformed and failed migrations.
 
@@ -279,15 +293,19 @@ settings, and the inspector should eventually share the mechanism.
 2. [x] Typed validated access over `ConfigManagerUVE`.
 3. [/] Migrate the existing editor preferences onto descriptors, moving typed storage and bounds
        into the registry while keeping domain-specific conversion and one-time legacy migration in
-       the editor. Forty-one bound settings now go through `RegisterEditorSettingsUVE`; the saved
-       and recent colour lists remain hex strings, Inspector folds keep arbitrary keys and both
-       open/closed states, and favorite projects remain filesystem paths. These use bounded hidden
-       `StringList` descriptors, including conversion of legacy nested fold records. Three hidden
-       `Color` descriptors store the host-seeded viewport axis palette; restoration is all-or-none,
-       leaves host defaults untouched when no complete valid palette exists, and consumes the old
-       `.set` marker. The core build and all 1,057 core tests pass; Editor sources and regression-test
-       sources pass strict syntax checks, but Editor runtime tests could not be run because the
-       configured CPU-only build excludes Editor targets without GLFW/OpenGL.
+       the editor. Forty-five bound settings now go through `RegisterEditorSettingsUVE`; content-
+       creation recents, the saved/recent colour lists, Inspector folds, favorite projects and
+       personal-shelf item lists use hidden bounded `StringList` descriptors while preserving their
+       existing count/index keys. Personal shelves also have bounded count and per-shelf name
+       descriptors; their count/name/items keys and stored order remain unchanged. Inspector folds
+       keep arbitrary keys and both open/closed states; favorite projects remain filesystem paths.
+       The registry also converts legacy nested fold records. Three hidden `Color` descriptors
+       store the host-seeded viewport axis palette; restoration is all-or-none, leaves host defaults
+       untouched when no complete valid palette exists, and consumes the old `.set` marker.
+       `uve_core_tests` passes 16/16 and `uve_engine_settings_integration_tests` passes 1,163/1,163.
+       `editor_settings_uve.cpp` and its regression-test source pass syntax-only checks;
+       `editor_uve.cpp` and Editor runtime tests remain unverified because this CPU-only build
+       excludes Editor targets and lacks desktop GL/ImGui dependencies.
 4. [x] Change notification. The shared `SettingsObserverHubUVE` backs document and editor
        settings, with exact-id/category subscriptions, effective-value events, owner-scoped handles,
        and dedicated document/editor regression tests.
@@ -904,50 +922,112 @@ already built in, but none of them is a setting yet - each is fixed in code.
       Hierarchy > Reveal Selection turns it off.
 - [ ] Expand-all / collapse-all depth limit.
 - [ ] Persist expansion state per scene across sessions.
-- [~] Row height, indent width, and whether indent guides are drawn. Indent Width (12-40 px)
-      and Tree Lines (none, to each child, full height) are preferences; missing: row height.
-- [~] Object-type icons: show, hide, or colour-code by type. Every row draws an icon for its object
+- [/] Row height, indent width, and whether indent guides are drawn. Row Height (16-48 px)
+      now controls each tree row's vertical hit target; Indent Width (12-40 px) and Tree Lines
+      (none, to each child, full height) are persisted too. Editor session tests cover defaults,
+      bounds and round-trip; live UI verification is unavailable in this CPU-only build.
+- [/] Object-type icons: show, hide, or colour-code by type. Every row draws an icon for its object
       kind (mesh, camera, light, environment, physics, audio, particle, script, plain node), and
-      Object Icons hides them; missing: recolouring.
+      Object Icons hides them. The opt-in Color-code Icons preference adds a low-alpha, rounded
+      category-colour backplate without tinting the existing multicolour artwork; category mapping
+      and preference/session round-trip have dedicated tests. Live UI verification is unavailable
+      in this CPU-only build.
 - [x] Show node type name alongside the node name. Every node now stores the type it was made
       as (saved by its stable id), and nodes from older scenes are read from their components.
       Object Type Names writes the type after the name, dimmed, when all of it fits and the name
       is not already the type; otherwise the row's tooltip carries it. The icon and the `type:`
       filter use the same type.
-- [~] Show component badges on the row (script attached, visibility off, locked). A script badge
-      (with its path on hover) and the visibility eye sit in fixed columns at the row's right edge,
-      and a long name is cut with "..." and shown whole on hover; missing: locked, and a setting.
+- [/] Show component badges on the row (script attached, visibility off, locked). The script-path
+      badge and diagnostic badge use fixed columns; the clickable lock column and Visibility Toggles
+      control stay separate. Component Badges hides the script marker without hiding diagnostics,
+      visibility, or locking. The row menu remains a second way to lock/unlock; lock state is
+      editor-session-only, not scene data. Focused setting, lock-selection and lock-glyph tests are
+      added; runtime UI verification is unavailable in this CPU-only build.
 - [x] Visibility toggle column: show, hide, or show on hover. Every row that can be hidden has
       an eye at its right edge; a click is one undoable edit that leaves the selection alone, and
       a node hidden only by its parent shows a dimmer eye. Visibility Toggles chooses Always, On
       Hover (a hidden node keeps its closed eye) or Hidden (the badges take the freed column).
-- [ ] Lock / unselectable column.
-- [~] Filter behaviour: match name only, or name plus type plus component; case sensitivity;
-      whether ancestors of a match are kept visible. The Search Objects box already matches the
-      name case-insensitively, `type:` filters by node type, `root` lists the roots, ancestors of
-      a match stay visible and the tree opens while a filter is active; missing: component
-      matching and a setting to choose the mode.
-- [ ] Sort mode: scene order (authoritative), alphabetical, or by type.
-- [~] Drag-and-drop reparent: enable, and whether a confirmation is required for large subtrees.
+- [/] Lock / unselectable column. Each row has a fixed click target immediately left of the eye
+      (or at the right edge when eyes are hidden); locked objects keep a closed lock visible and
+      unlocked controls appear on row hover. A click
+      toggles the editor-session lock without changing scene data; hierarchy, viewport, and bridge
+      selection paths refuse locked entities. Focused lock-selection and glyph-visibility tests are
+      added; live column interaction is unavailable in this CPU-only build.
+- [/] Filter behaviour: match name only, or name plus type plus component; case sensitivity;
+      whether ancestors of a match are kept visible. `Filter Mode` selects Name Only or Name, Type
+      & Components; `Filter Case Sensitive` controls text matching; and `Keep Filter Ancestors`
+      preserves context or shows matching rows flat. Explicit `type:` and `component:` queries
+      narrow matching to those fields, while `root` remains a root query. Flat results still visit
+      descendants of hidden parents in both the panel and bridge snapshot. Setting, Editor-filter
+      (including component removal and undo/redo) and bridge-snapshot regression tests are added;
+      Editor build and runtime verification remain unavailable in this workspace.
+- [/] Sort mode: scene order (authoritative), alphabetical, or by type. `Hierarchy Sort Mode`
+      offers Scene Order (default), case-insensitive Alphabetical, and By Type (type first, name second).
+      Sorting is display-only: sibling order in the scene, saves, and runtime traversal are untouched; equal
+      keys retain scene order,
+      and the structural Object stays first. The hierarchy, flat-filter results, and Editor bridge snapshot
+      use the same order. Setting, sort-helper, Editor, and bridge regression cases are added, but the Editor
+      target could not be built or run in this CPU-only workspace, so live UI verification remains outstanding.
+- [/] Drag-and-drop reparent: enable, and whether a confirmation is required for large subtrees.
       Dragging a row onto another reparents it, dropping below the tree makes it a root, and Drag
-      to Reparent turns both off; missing: the large-subtree confirmation.
-- [~] Multi-selection behaviour: rubber-band, range select, and whether children follow the
-      parent. Ctrl+click toggles a row in the selection; missing: range select, rubber-band and
-      the children-follow option.
+      to Reparent turns both off. A default-on preference now asks before a drag affects a subtree
+      of 64 or more entities; cancel leaves the document untouched and acceptance uses the existing
+      undoable reparent path. Focused threshold, cancel, accept, and preference tests are added, but
+      Editor build and runtime verification remain outstanding.
+- [/] Multi-selection behaviour: rubber-band, range select, and whether children follow the
+      parent. Ctrl+click toggles a row; Shift+click selects the inclusive range in visible row order,
+      and Ctrl+Shift adds it. Dragging from blank hierarchy space draws a selection rectangle and
+      selects intersecting rows; Ctrl/Cmd-drag adds. The `Select Children With Parent` preference
+      includes unlocked descendants, even when their rows are collapsed or filtered; Ctrl/Cmd-click
+      toggles a selected row's descendant group. Active-row F2/double-click, row-menu rename, and
+      the selected-name command still target one row without collapsing the group selection. Editor
+      cases cover row intersections,
+      locked rows, range direction, anchor persistence, hidden-anchor fallback, descendant expansion
+      and rename/undo selection preservation, but test execution and live UI interaction remain
+      unverified.
 - [ ] Colour tags / node groups, and whether tag colour tints the row.
-- [~] Warning and error badges (missing script, broken reference, invalid transform). An amber
-      badge lists each problem on hover: non-finite transform, invalid script path, no mesh, mesh
-      or material missing from the project, Skeleton3D with no source; missing: error severity
-      and per-node-type checks beyond these.
-- [~] Double-click action: rename, focus in viewport, or open script. Double-Click chooses
-      Rename, Focus in Viewport or Expand or Collapse, and F2 always renames; missing: open
-      script, which waits for a script editor.
-- [~] Rename mode: inline edit vs. dialog, and name-collision policy. Inline rename exists (F2 or
-      double-click, Enter commits, Escape cancels), and a renamed row keeps its children open;
-      missing: the dialog option and a name-collision policy.
-- [~] Show the scene root specially. The scene root can no longer be dragged, and its
-      right-click menu disables Duplicate and Delete with a tooltip saying why; missing: a
-      distinct look for its row.
+- [/] Warning and error badges (missing script, broken reference, invalid transform). An amber
+      warning triangle or red error glyph takes the row's highest severity; the tooltip labels every
+      problem. Non-finite transforms, invalid script paths, missing mesh/material/LOD-level mesh assets,
+      and invalid camera, light, audio-source, primitive-mesh, collider, rigid-body, and world-environment
+      values are errors; an unassigned mesh and a source-less Skeleton3D are warnings. Whole-value validators
+      registered in scene-component metadata now feed the same error badge for types such as Area3D,
+      Character3D, RayCast3D, NavMeshVolume3D, NavSeeker3D, SpawnPoint3D, and Health. Path-valued
+      references are judged too - an attached script, a Skeleton3D source model, a WorldEnvironment sky
+      texture, a Decal3D or FogVolume3D material, a LevelStreamer3D level, a NavMeshVolume3D's baked
+      navigation mesh, and a drawable's material override and overlay - by the rules the runtime opens
+      them with: the virtual file system, a real file at the path, and, for the content-relative ones,
+      an entry in the project's content tree. That tree is consulted only while the editor holds a
+      current index, so no path reference is reported before the editor has read the project. The navigation mesh is judged even
+      though no runtime consumer reads it yet, so an author who moved or deleted a baked mesh hears it from
+      the row rather than from a bake that quietly re-rasterizes. Audio clip paths are deliberately not
+      judged this way: they resolve through a pluggable clip resolver, not the file system, and a project
+      that supplies one would be flagged wrongly. Editor tests cover the categories, mixed-severity rows,
+      the content-tree rescue, the no-index state and every path category above, but remain unrun here;
+      live badge rendering remains open in this CPU-only build.
+- [~] Double-click action: rename, focus in viewport, or expand/collapse. Double-Click chooses
+      Rename, Focus in Viewport or Expand or Collapse; F2 always renames. Creating a UVScript is a
+      row right-click action, not a double-click action (see Part 2.4). The choice setting is covered
+      by Editor round-trip tests; live hierarchy double-click remains unverified.
+- [/] Rename mode: inline edit or dialog. Rename Mode routes F2, the Rename menu item, and a
+      rename double-click through the selected mode; Enter commits and Escape cancels, with the
+      dialog also offering Rename and Cancel buttons. A duplicate document-wide name receives
+      the next unused numeric suffix, matching object creation; Editor and bridge regression tests
+      cover the policy and undo/redo, and the setting round-trips with invalid modes rejected.
+      Live inline/dialog and bridge runtime verification is unavailable in this CPU-only build.
+- [/] Show the Object root specially. The Object root can no longer be dragged, and its right-click
+      menu disables Duplicate and Delete with a tooltip saying why. Its row - and the document's
+      other structural anchors, the viewport and the entity-editor root - now carries a distinct
+      look: a warm gold bar down its left edge, plus a low-alpha band behind the row, both drawn
+      before the label so nothing is painted over text or glyphs, with the band stepping aside when
+      the selection colour is already painting the row. That rule
+      (GetHierarchyStructuralRowStyleUVE) is covered by an Editor hierarchy-view test, and the row
+      reads **Object** now that the root took the name of what it is: the kind, the marker
+      component, the definition, the type id and the icon id are all Object (an older document's
+      `scene_root` id and `SceneRootComponentUVE` component name still load and are rewritten on
+      save). That test compiles in this workspace now that real ImGui
+      headers are available, but the Editor binary itself still cannot be built or run here (no cmake,
+      no desktop GL), so this item is `[/]` pending build/test and live-rendering verification.
 
 ## 2.4 Scene node context menu (right-click)
 
@@ -959,34 +1039,104 @@ settings question.
 - [~] Add child node, add sibling node, instantiate scene as child. Each hierarchy row has a
       right-click menu with Add Child Object (the full object library); missing: add sibling and
       instantiate scene.
-- [ ] Attach / detach / open script.
+- [/] Attach / detach / open script. The hierarchy row's right-click menu offers `Create Script...`,
+      `Attach Existing Script...`, `Open Script` and `Detach Script`. Creation opens a compact dialog;
+      its selectable Parent defaults to the right-clicked object and lists every current-scene hierarchy
+      name (folders remain visible but unavailable). The filename follows Parent until manually edited,
+      under the current project-relative `scripts/` folder with `.uvs` fixed. Create writes a unique file
+      with the target's name and resolved type in the template, attaches it undoably (adding a missing
+      Script component when needed), and opens it in Scripting; Cancel makes no change. Attach searches
+      known project scripts and validates a manually entered project-relative `.uvs` path; it also adds
+      a missing Script component undoably. Open refuses invalid/missing files, and Detach leaves the file
+      in place while making the path change undoable. All target-specific actions preserve selection; an
+      attached script blocks a second attachment or creation. Blueprint Node Script is not offered until
+      ready. Focused Editor coverage is added; execution and live hierarchy UI remain unverified.
 - [ ] Add component, remove component, copy component values, paste component values.
-- [~] Cut, copy, paste, duplicate, delete, with a configurable duplicate-name suffix pattern.
-      Duplicate and Delete are in the row's right-click menu and on Ctrl+D / Delete, both
-      disabled on the scene root; missing: cut/copy/paste and the suffix setting.
-- [~] Rename, and change node type where the conversion is legal. Rename is in the right-click
-      menu (and F2); missing: change node type.
-- [ ] Reparent to selection, reparent keeping global transform (toggle).
+- [/] Cut, copy, paste, duplicate, delete, with a configurable duplicate-name suffix pattern.
+      All five are in the row's right-click menu; Cut, Copy and Paste also sit on Ctrl+X / Ctrl+C /
+      Ctrl+V through the command registry. The clipboard holds a captured subtree - editor-session
+      state only, dropped when the document is replaced or the editor shuts down - and Paste inserts
+      it where a new object would go (into the selected folder, under the selection when it lives
+      inside one, otherwise the folder new objects go to). The inserted root takes the first free
+      name from the Duplicate Name Suffix preference (`%n` is the number; the default ` %n` gives
+      "Lamp 2") and the insertion is one Undo/Redo entry. Duplicate, Delete, Cut and Copy stay
+      disabled on the structural anchors - the Object root, the level's Viewport, the entity-editor
+      root - which are not objects to copy; a Cut is a copy plus one undoable delete, and its
+      clipboard is adopted only once that delete landed. Focused copy/paste/cut, undo/redo,
+      name-suffix and clipboard-lifetime tests are added, but the editor test binary cannot be
+      linked or run in this CPU-only build.
+- [/] Rename, and change node type where the conversion is legal. Rename is in the right-click
+      menu (and F2); "Change Type..." sits beside it and opens a searchable picker of the legal
+      targets - every kind except the structural Object, Viewport and Folder. One undo step takes
+      the old kind's owned components off and puts the new kind's on through the same Apply path
+      creation uses, with the author's values carried across every shared component and the
+      Transform backed up across the transform boundary, so undo and redo replay exact values
+      rather than fresh defaults. Covered by a conversion round-trip test and a refusals test;
+      live picking is compile-verified only in this workspace.
+- [/] Reparent to selection, reparent keeping global transform (toggle). The row menu has
+      Reparent To... with a searchable parent picker (the large-subtree confirmation still asks)
+      and a session Keep Global Transform toggle that drags and the picker both obey; the
+      transform solver, eligible-parent list and history were already covered by tests, and the
+      toggle's default/round-trip is now locked too.
 - [x] Move up / move down / move to top / move to bottom in sibling order. Sibling order is now
       the scene's own: it survives adding a component (which moves a node in ECS storage), is
       saved as the order siblings appear in the file, and the four moves are in the row's menu
       (Ctrl+Up / Ctrl+Down) as one undoable edit each. A duplicate lands just below its source,
       and an undone delete puts the node back where it was.
 - [ ] Save branch as a reusable scene, and make a local instance editable.
-- [~] Focus in viewport, frame selection, align view to node, align node to view. Focus in
+- [/] Focus in viewport, frame selection, align view to node, align node to view. Focus in
       Viewport is in the row's menu and on F over the viewport, both through one request the host
       applies: the node becomes the orbit pivot, and a Marker3D flies the camera into its
-      viewpoint; it is disabled, with a tooltip, for a node with no position (the scene root, a
-      plain Object); missing: framing by bounds, and the two align commands.
-- [~] Lock / unlock, show / hide, toggle selectable. Hide / Show is in the row's menu, the same
-      undoable edit as the row's eye; missing: lock and selectable.
-- [ ] Copy node path, copy node identifier.
+      viewpoint; it is disabled, with a tooltip, for a node with no position (the Object root, a
+      plain Object). **Frame Selection** sends the selection's world bounds - each primitive's own
+      local bounds, the ones the renderer draws, transformed by its object's world matrix, and a
+      bare position where there is no mesh - as a centre plus the half-diagonal, which the host
+      applies as one `OrbitCamera::Focus`, keeping the angles; it is disabled, with a tooltip, when
+      nothing in the selection can be measured, so a selection of only the Object root does nothing.
+      **Align View to Node** composes the orbit pose from the object's own forward axis (-Z) at the
+      marker focus distance and hands the host a target/yaw/pitch/distance pose, exactly like a
+      Marker3D focus. **Align Node to View** goes the other way: the host pushes the camera's own
+      yaw/pitch, and the editor turns the selected object so its -Z faces the same way, one undoable
+      transform edit that accounts for a rotated ancestor. Both directions share one convention
+      (`TryComposeOrbitLookRotationUVE`, the inverse of `ResolveOrbitBookmarkFromLookUVE`), checked
+      against the camera's own eye-offset formula in a runtime harness. All three are commands -
+      `view.frameSelection`, `view.alignViewToNode`, `view.alignNodeToView`, no default shortcut
+      because F already means Focus - drawn in the row menu and the File menu's viewport section.
+      Still `[/]`: the app host applies the two outgoing requests and pushes the angles, but the
+      Editor target cannot be built in this workspace, so the live gestures are unverified.
+- [/] Lock / unlock, show / hide, toggle selectable. Hide / Show is in the row's menu, the same
+      undoable edit as the row's eye, and Lock Object / Unlock Object sits beside it (checked while
+      locked) next to the row's fixed lock column. Locking *is* the editor's not-selectable state
+      under its other name, and nothing else suppresses selection: a locked row cannot be selected
+      from the hierarchy or from a viewport click, which leaves the selection untouched, and there
+      is no second flag that could drift from it. `edit.lock` locks every unlocked selected object,
+      the locked rows leaving the selection as they go; `edit.unlockAll` releases the whole session
+      and is offered in the Edit menu, in the command palette and on any row's menu while something
+      is locked. Both are session-only, so neither dirties the scene nor enters Undo/Redo. Live
+      hierarchy behaviour is still unchecked here, so the item stays `[/]`.
+- [/] Copy node path, copy node identifier. Both are in the row's right-click menu and in the
+      command registry. The path is the Object root's name down to the row, slash-separated as the
+      Outliner shows it ("Object/Level/Props/Lamp"); the identifier is the entity handle's
+      `index:generation`, which names the object for this session only. The text reaches ImGui's
+      clipboard when a context is live and the editor's own clipboard text otherwise, so a headless
+      host or a test can read it; both are covered by tests.
 - [x] Expand / collapse subtree. Expand Branch and Collapse Branch open or close a row and every
       row below it; rows inside a collapsed branch stay closed when the branch is opened again.
 - [ ] Whether the context menu also selects the node it opened on (currently it does — keep it as
       an explicit, documented setting rather than incidental behaviour).
 - [ ] Long-press equivalent for touch input, with a configurable hold duration.
-- [ ] Whether dangerous entries (delete subtree) require confirmation.
+- [x] Whether dangerous entries (delete subtree) require confirmation. A default-on
+      `editor.hierarchy.confirmDeleteSubtree` preference asks before deleting a branch (two or
+      more objects) through a modal with the count; a lone object deletes immediately, still
+      undoable. The row menu, Del key and Edit menu share the one request path, while cuts keep
+      the immediate delete. Request/confirm/cancel, the preference round-trip and the defaults
+      are covered by tests. Verified by `EditorUVETest.DeleteSubtreeConfirmUVE_BranchAsksLeafDeletesImmediately`,
+      one test locking six cases: a branch arms the request with its count while both objects stay
+      alive, Confirm deletes the whole subtree, one undo restores branch and leaf (under fresh
+      handles, like every delete undo), Cancel leaves the document untouched and disarms Confirm,
+      the preference off deletes a branch immediately, and a lone object never asks.
+      Ran 2026-10-10 on Linux (Ubuntu 24.04, GCC 13.3, CMake + Ninja Debug), under `xvfb-run ctest`:
+      the full suite passed 3583/3583 (49 GPU-device tests skipped for want of a device). The modal itself was not opened in a live GUI.
 
 ## 2.5 Menu bar and commands
 
@@ -995,9 +1145,15 @@ settings question.
       `editor_commands_uve.cpp`: a primary and an alternate shortcut each, one dispatcher in
       place of the old hard-coded F5/F6/Ctrl+Z chain (modifiers match exactly, so F5 and
       Shift+F5 differ), and menu items that show the shortcut in use. New: Ctrl+S saves.
-- [~] Command palette: enable, fuzzy-match mode, recent-command memory depth. Ctrl+Shift+P:
+- [/] Command palette: enable, fuzzy-match mode, recent-command memory depth. Ctrl+Shift+P:
       fuzzy matching (prefix, then word, then inside, then scattered), the last eight commands
-      first, unavailable ones dimmed, arrows and Enter. Its options are not settings yet.
+      first, unavailable ones dimmed, arrows and Enter. All three options are **Editor/Commands**
+      settings now: Enabled is the command's own gate, so its menu item and its shortcut go inert
+      without being unbound; Match Mode chooses between the whole query as one pattern (Fuzzy) and
+      every word matching on its own in any order (All Words), scored by one shared matcher; Recent
+      Commands is the memory depth, 0 to 16, clamped, and lowering it trims the remembered list at
+      once. The palette's own window still cannot be seen in this workspace, so this stays `[/]`
+      until a live check of the settings page and the palette.
 - [x] Shortcut bindings as a real settings page: searchable, per-command, with conflict detection
       and a reset-to-default per binding. **Keyboard Shortcuts** (Menu > File): click a shortcut
       and press the new one; a shortcut two commands share is amber with the other's name; each
@@ -1008,9 +1164,17 @@ settings question.
 - [ ] Recent files / recent projects list length, and whether it is cleared on exit.
 - [ ] Toolbar contents and button size.
 - [ ] Confirmation prompts: which destructive actions ask first.
-- [/] "Save Editor Preferences" exists as a menu item, and an interactive editor now also saves
-      its preferences when it shuts down; it should become an automatic save on change once the
-      substrate lands.
+- [/] "Save Editor Preferences" exists as a menu item, and an interactive editor also saves its
+      preferences when it shuts down. The automatic save is now in on top of that: every effective
+      editor-setting change marks the document behind (one flag set in the notification funnel both
+      the settings sheet and every panel setter pass through), and the first frame the author is not
+      holding a widget writes it - so dragging a slider is one save on release, not one per frame -
+      with the shutdown save as the backstop. Restoring stored values at session load is
+      deliberately not a change, so starting the editor never rewrites the file on its own, and a
+      failed write stays pending for the next attempt. A dedicated test locks the contract (two
+      changes by two routes become one write, the document on disk carries both values, a fresh
+      session reads them back, and an ineffective change saves nothing); it is compile-verified only
+      in this workspace, so what remains unverified is the live frame hook itself.
 
 ## 2.6 Viewport and 3D editing
 
@@ -1022,14 +1186,25 @@ The group with the most real backing today.
       under `editor.viewport.axisColors.*`; the complete palette is restored whole-or-nothing to
       both the transform gizmo and grid axis lines, with the grid taking a dimmed variant. Missing
       or invalid saved colours leave host-seeded defaults untouched; covered by dedicated tests.
-- [~] Grid: visible, size, subdivisions, extent/fade distance, colour, and which plane(s) are
+- [/] Grid: visible, size, subdivisions, extent/fade distance, colour, and which plane(s) are
       drawn. Visible and opacity (10-100%) are set from the grid button (click toggles,
       right-click opens the options) and saved under `editor.viewport.grid.*`, with a corrupt
       stored value falling back to the defaults. The plane follows the view: the ground normally,
       XY in Front/Back and ZY in Left/Right so a side view keeps a grid. Cell size (0.1 to 10 m,
       the finest square; zooming out still steps up in tens) is in the same options and saved as
-      `editor.viewport.grid.cellSize`; missing: subdivisions, fade, colour, and a manual plane
-      choice.
+      `editor.viewport.grid.cellSize`. The same options now carry the rest of the item: Sub-lines
+      (`editor.viewport.grid.subdivisions`, 1-10) draws N-1 lines inside each decade cell, at the
+      spacing the CPU mirror reports (`ComputeGridSubdivisionSpacing`) and faded with the finest
+      tier so the decade tick-over looks exactly as it did; Fade start / Fade out
+      (`editor.viewport.grid.fadeStart|fadeEnd`, 4x-200x the orbit distance) moves the horizon fade,
+      refused unless start < end so a fade can never become a hard edge; Line tint
+      (`editor.viewport.grid.lineTint`) multiplies all three line levels; and Plane
+      (`editor.viewport.grid.plane`) pins the grid to Ground (XZ), Front (XY) or Side (ZY), or keeps
+      the shipped Follow View behaviour. All five reach the renderer through ViewportRenderPass's
+      own validating setters, which the host already calls for opacity and cell size. The
+      sub-lines, the tint multiply and the plane switch live in infinite_grid.frag,
+      InfiniteGridRenderer and ViewportRenderPass - none of which can be compiled or run in this
+      workspace (no GLSL compiler, no GL) - so this stays `[/]` until a live check.
 - [ ] Grid follows the camera vs. fixed at origin.
 - [ ] Gizmo size in pixels, gizmo opacity, and whether the gizmo is hidden during drag.
 - [ ] Gizmo mode memory: whether the active transform mode persists across sessions.
@@ -1048,12 +1223,16 @@ The group with the most real backing today.
       without a keypad) for Top/Front/Right, Ctrl for the opposite side, Numpad 5 / Alt+5 to switch
       projection; missing: user rebinding.
 - [ ] Frame-selected padding and animation duration.
-- [~] Selection outline: colour, thickness, and whether it draws through geometry. Selected
+- [~] Selection outline: colour, and whether it draws through geometry. Selected
       meshes, and the meshes below a selected node, get a band of colour outside their silhouette
       (the active node full strength, the rest of a multi-selection dimmer); File > Selection
-      Outline sets show, colour and thickness (1-6 px), saved under
-      `editor.viewport.selectionOutline.*`; missing: hiding the parts behind other geometry, which
-      waits on the renderer exporting depth.
+      Outline sets show and colour, saved under `editor.viewport.selectionOutline.*`. The width is
+      fixed at 1 px - the renderer's own floor - and the 1-6 px slider plus its
+      `editor.viewport.selectionOutline.thickness` setting were removed with it: the 0.20 scale
+      that made the outline read alongside the thinned gizmos put every value of that range on that
+      same floor, so the control drew one band from end to end. A stored key from an older build has
+      no descriptor left and is ignored. Missing: hiding the parts behind other geometry,
+      which waits on the renderer exporting depth.
 - [ ] Selection box / rubber-band select mode: touch vs. enclose.
 - [ ] View modes: wireframe, unshaded, overdraw, lighting-only, normals, and per-buffer debug
       views.
@@ -1077,21 +1256,53 @@ The group with the most real backing today.
       the node's own class chain. If search returns, it must match property names, not drawer
       ids.
 - [ ] Label width / name column ratio, and word-wrapping of long labels.
-- [~] Float display precision, and drag step per property. The drag step comes from each
+- [/] Float display precision, and drag step per property. The drag step comes from each
       property's metadata range, and a drag is one undo step however long it lasts - numbers,
       vectors, Transform (now draggable too; double-click or Ctrl+click types) and metadata
-      values alike; missing: display precision.
-- [~] Degrees vs. radians display for angles. Rotation is shown and edited in degrees and stored
-      in radians; missing: the choice.
+      values alike; and the decimals are now a choice: `editor.inspector.floatPrecision`
+      under **Editor/Inspector** is 0 to 6, default 3 - the shipped look. One spelling table
+      (`InspectorFloatFormatUVE`) serves the Transform rows, the metadata scalars and vectors,
+      the script exports, the animation-graph numbers and the skeleton's rest-pose readouts, so
+      the same precision is never spelt two ways; a narrow field still squeezes below the choice
+      but never to a different number, and the tooltip always holds the exact value. Deliberately
+      outside the choice: unit-suffixed readouts (`m`, `%`, `s`, `x`), the skeleton's
+      rest-rotation readout (which keeps its single-decimal degrees), the colour picker's own
+      channels, packed integers, and the transition widgets shared with the animation panel.
+      Object-metadata doubles previously showed ImGui's raw `%f`; they now follow the same table.
+      A dedicated test locks the registration, the refusal of -1 and 7 and of a no-op, the
+      observer notification, and the settings-sheet round trip, with the range also pinned at
+      compile time; it is compile-verified only in this workspace, so the rows' own live
+      rendering is what remains unchecked.
+- [/] Degrees vs. radians display for angles. Rotation is shown and edited as Euler angles and
+      stored as a quaternion, and which unit the Inspector reads them in is now a choice:
+      `editor.inspector.angleDisplay` under **Editor/Inspector** is Degrees (the shipped default,
+      and the convention every other engine's Inspector uses) or Radians. The Transform row
+      converts through one factor pair (`EditorUVE::AngleDisplayFactorsForUVE`), so what is shown
+      can never disagree with what is stored, and the drag speed follows the unit - half a degree
+      per pixel as before, or its 0.01 rad equivalent. Switching the choice never rewrites a
+      stored rotation, and the snapped-rotation step keeps its own unit, being a step value rather
+      than a reading. A dedicated test locks the registration, the refusal of an impossible unit
+      and of a no-op, the observer notification, and the round trip between the two units, with
+      the unit factors also pinned at compile time; it is compile-verified only in this workspace,
+      so the row's own live rendering is what remains unchecked.
 - [ ] Show advanced / internal properties toggle.
 - [/] Show modified-from-default markers, and per-property revert. A revert button appears only
       on a row whose value differs from what a freshly added component holds, and resets it to
       that value; no dedicated test locks it yet.
-- [ ] Multi-object editing, with mixed-value indication. With several nodes selected the
-      Inspector says single-entity editing is unavailable.
-- [~] Copy / paste property values, and copy property path. Right-click a section header for
+- [/] Multi-object editing, with mixed-value indication. Shared metadata rows edit every
+      selected holder as one undo step, disagreeing rows show (mixed), and revert, per-property
+      paste, section paste/reset, drags and the color picker all funnel through the same
+      multi-aware setter. Transform and prefab stay single-object (shown dimmed), and whole-width
+      block drawers sit out multi-selections.
+- [/] Copy / paste property values, and copy property path. Right-click a section header for
       Copy Values, Paste Values (same component type only) and Reset to Defaults, each one undoable
-      step; Transform copies only the local pose; missing: per-property copy/paste and the path.
+      step; Transform copies only the local pose. Done: right-click a property label (or a
+      Transform row) for Copy Value, Paste Value (same property only, one undoable step) and Copy
+      Path (`Level/Lamp/component.primitive_mesh/kind`, `Level/Lamp/Transform/localPosition`); a
+      copied rotation carries its Euler authoring state, so a pasted 370 stays 370. Rows owned by
+      block drawers carry no menu: those drawers lay out their own rows outside the shared label
+      row. Three tests cover property, Transform part and path; the menus' live rendering is
+      compile-verified only in this workspace.
 - [ ] Favourite properties pinned to the top — a favourites list already exists in the preferences
       (capped at 128 entries) and could back this.
 - [ ] Default colour-picker shape and colour-picker mode (see Part 3).
@@ -1179,7 +1390,11 @@ Explicitly requested. The engine has a log level and log sinks; it has no consol
 - [x] Save all scenes before playing, or run from the in-memory state. **Save Scene First**
       saves a dirty scene that has a file before the Play snapshot is taken.
 - [ ] Which scene runs: the current one, the main scene, or a fixed custom scene.
-- [~] Pause on start, and pause on error. **Pause on Start**; pause on error is open.
+- [/] Pause on start, and pause on error. **Pause on Start**; **Pause on Error** pauses Play on
+      the frame an error is logged, through a counting log sink polled each tick - never a
+      callback, so logging from any thread stays safe. The baseline is taken at Play entry and
+      still advances while the setting is off, so old errors never pause. Covered by a play-mode
+      test; live pausing is compile-verified only in this workspace.
 - [ ] Keep the editor responsive while playing.
 - [ ] Live reload of scripts and of scene changes.
 - [x] Enter/exit play-mode tint, so play mode is visually unmistakable. **Tint While Playing**
@@ -1229,8 +1444,9 @@ already sitting there**, behind a shared property-row helper instead of ten copi
 
 **Now:** every colour row - component colour properties in the Inspector, colour metadata, and
 the viewport axis colours - goes through one colour field (`DrawColorFieldUVE`): a swatch showing
-the colour and its hex code, opening a picker with a hue/saturation disc beside saturation and
-value bars, the old colour above the new one, recents, a saved-colour shelf, an Advanced section
+the colour and its hex code, opening a picker with a hue/saturation disc beside saturation, value
+and - for colours with alpha - alpha bars, the old colour above the new one, recents, a saved-colour
+shelf, an Advanced section
 with R, G, B, A and H, S, V sliders and a hex field, and OK / Cancel. The disc and bars are drawn
 by the editor rather than taken from the UI library's picker, whose wheel only offers a triangle.
 
@@ -1248,9 +1464,24 @@ by the editor rather than taken from the UI library's picker, whose wheel only o
 
 ## 3.3 Colour modes
 
-- [~] RGB — 0-255 or 0-1 display, user-selectable. Shown as 0-1; missing: the 0-255 choice.
-- [~] HSV — hue in degrees, saturation and value as percentages. Hue in degrees, saturation and
-      value as 0-1; missing: percentages.
+- [/] RGB — 0-255 or 0-1 display, user-selectable. The Advanced section's R, G, B and A
+      sliders read from one scale (`ColorPickerRgbScaleForUVE`):
+      `editor.colorPicker.rgbDisplay` under **Editor/Color Picker** is 0-1 (the shipped default)
+      or 0-255, and the same stored unit colour is shown and edited in either. The sliders edit
+      shown copies, so only a moved slider writes its reading back; stored colours are never
+      rewritten by the choice itself. Alpha follows RGB - the four read as one group - while hue
+      keeps its degrees, saturation and value stay 0-1 (percentages are the next item), and hex
+      is untouched. A dedicated test locks the registration, the sheet round trip and its refusal
+      of a third value, the bulk setter's sanitizing of a value from nowhere, and notification
+      only on a real change, with both scales also pinned at compile time; it is compile-verified
+      only in this workspace, so the picker's own live rendering is what remains unchecked.
+- [/] HSV — hue in degrees, saturation and value as percentages. The S and V sliders read whole
+      percents (0-100) through shown copies, converted back to the stored unit channels only when
+      moved; hue already read degrees. Percentages, not a choice beside 0-1 - no engine offers
+      unit-float S/V as a convention, so there is no setting and no preference, only the one
+      shared scale (`kHsvPercentScaleUVE`). A dedicated test locks the conversions and the round
+      trip, with the scale also pinned at compile time; it is compile-verified only in this
+      workspace, so the sliders' own live rendering is what remains unchecked.
 - [ ] Linear vs. sRGB display, with a clear indicator of which is shown. This matters because the
       engine stores material colours linearly; showing a linear value labelled as if it were sRGB
       is a bug users cannot see. **Blocked on the renderer:** the OpenGL path writes its
@@ -1265,8 +1496,15 @@ by the editor rather than taken from the UI library's picker, whose wheel only o
       Applied when the field is left or Enter is pressed; a 3 or 6 digit entry keeps the alpha.
 - [x] Per-channel numeric inputs, drag-adjustable. Each slider has a strip under it showing the
       colours that channel runs through; Ctrl+click types a value.
-- [~] **Alpha bar**, drawn over a checkerboard so transparency is visible. Colours with alpha get an
-      A slider and half-transparent swatches over a checkerboard; missing: a bar beside the disc.
+- [/] **Alpha bar**, drawn over a checkerboard so transparency is visible. Colours with alpha get an
+      A slider, half-transparent swatches over a checkerboard, and now a third bar beside the disc:
+      opaque working colour at the top fading to transparent at the bottom, painted over a
+      checkerboard in ImGui's own two swatch tones so transparency reads the same as on the
+      swatches. It drags like the saturation and value bars and writes only the alpha channel
+      back; colours without alpha keep exactly the layout they always had. No dedicated test -
+      this is drawing-only through ImGui primitives, as the disc and the two bars beside it
+      already were - so it is compile-verified only in this workspace, and the bar's own live
+      rendering is what remains unchecked.
 - [ ] **Intensity / exposure** control for HDR colours, so an emissive colour can exceed 1.0
       without the hue field becoming unusable. Required for emission (Part 4.3).
 - [ ] Clamp-to-LDR toggle for colours that must not exceed 1.0.
@@ -1625,14 +1863,47 @@ constantly and they belong in the same inventory.
 ## 6.7 Object and component defaults
 
 - [ ] Default property values for newly created nodes of each type, editable as a setting.
-- [~] Object creation defaults: where a new node is placed (origin, camera focus, ground plane under
+- [/] Object creation defaults: where a new node is placed (origin, camera focus, ground plane under
       the cursor), and whether it is parented to the selection. Editor Preferences > Objects:
-      **Placement** (Parent's Origin, or View Focus - the point the viewport camera orbits, taken
-      into the parent's space) and **Add Under Selection**. The ground plane under the cursor is
-      open.
-- [~] Default component set for each node type. Each node type's recipe attaches its
-      components (its own, its bases', and Object3D's); missing: editing that set as a setting.
-- [ ] A "save current node as the default" action.
+      **Placement** (Parent's Origin, View Focus - the point the viewport camera orbits, taken
+      into the parent's space - or Ground Plane) and **Add Under Selection**. Ground Plane lands
+      the object where the cursor ray meets the world XZ plane, pushed by the viewport backend
+      while hovered and kept afterwards, since creation happens from a menu; with no aim yet the
+      view focus stands in. Covered by a placement test; live aiming is compile-verified only in
+      this workspace.
+- [x] Default component set for each node type. Each node type's recipe attaches its
+      components (its own, its bases', and Object3D's); editing that set as a setting now
+      exists, add-only: `editor.objects.defaultExtras.<kindTypeId>` StringList settings (one
+      per library-creatable kind, Editor Preferences > Objects) name extra components from a
+      25-member audited palette, offered as per-row combos. Extras attach with engine
+      defaults after the recipe at creation (recipe members skipped, never duplicated) and
+      ride the creation snapshot, so undo/redo carry them; conversion captures target-owned
+      extras with their values (exempted from the hand-attached refusal by source-kind
+      provenance) instead of asserting or resetting. Descriptor coverage, unknown-id
+      rejection, dedupe, creation attach/skip, the 25-member kitchen sink, conversion carry
+      + undo, the no-extras fresh-default case, the hand-attached refusal and the settings
+      round-trip are all tested. Still missing: recipe-member removal and per-extra value
+      overrides (the "default property values" item above). Verified by
+      `EditorSettingsUVETest.ObjectDefaultExtrasUVE_{EveryCreatableKindHasAStringListSetting,
+      SetRejectsUnknownComponentIds,SetDedupesKeepingFirstOrder,ExtrasSurviveASettingsRoundTrip}`
+      and `SceneObjectEditorUVETest.DefaultExtrasUVE_{CreationAttachesNamedExtras,
+      RecipeMembersAreSkippedNeverDuplicated,KitchenSinkAttachesTheWholePalette,
+      ConversionCarriesExtraValuesAndUndoRestoresThem,ConversionWithoutExtrasKeepsFreshDefaults,
+      HandAttachedComponentsStillRefuseConversion}` (10 tests). Ran 2026-10-10 on Linux (Ubuntu 24.04, GCC 13.3, CMake + Ninja Debug), under `xvfb-run ctest`:
+      the full suite passed 3583/3583 (49 GPU-device tests skipped for want of a device). The Editor Preferences
+      combos were not opened in a live GUI.
+- [x] A "save current node as the default" action. The hierarchy row menu offers Save as
+      <Kind> Default, arming a modal that shows current vs. new extras (skipped palette
+      outsiders counted, values-never-captured disclosed) with Save/Cancel. Compute subtracts
+      the kind's conversion-owned recipe plus shell/structural tags from the live components,
+      keeps palette members in palette order, and stores through the kind's defaultExtras
+      setting (recomputed at confirm, so a changed node cannot save stale). Preview
+      order/skip, recipe+shell exclusion, nondocument rejection and the compute-store-create
+      round-trip are tested. Verified by `SceneObjectEditorUVETest.SaveDefaultUVE_{
+      ComputeFindsPaletteMembersInPaletteOrder,ComputeExcludesRecipeAndShell,
+      ComputeRejectsNondocumentEntity,ComputedPreviewBecomesWorkingDefaults}` (4 tests). Ran 2026-10-10 on Linux (Ubuntu 24.04, GCC 13.3, CMake + Ninja Debug), under `xvfb-run ctest`:
+      the full suite passed 3583/3583 (49 GPU-device tests skipped for want of a device).
+      The row-menu entry and the Save/Cancel modal were not opened in a live GUI.
 - [ ] Per-project node templates.
 
 ## 6.8 Accessibility
@@ -1698,15 +1969,113 @@ If only one thing is built from this document, build this, in this order:
 
 ## 7.3 Honest summary
 
-The checklist currently contains 637 items: 80 `[x]` verified, 22 `[/]` wired but not fully
-verified, 52 `[~]` partial, and 483 `[ ]` not started. This is a mechanical count, not a measure
-of effort or completeness, and older status notes have not all been re-audited against the current
-source. This increment advances Part 0.11, step 6: engine-setting registration/application,
-platform-path selection, layer attachment and typed command-line conversion now have CPU-buildable
-regression coverage in `uve_engine_settings`; focused tests also exercise actual headless
-`EngineCore::Init()` file loading and precedence. All 1,061 core tests and both focused EngineCore
-settings tests pass. The broader EngineCore suite's GL-rendering tests and the Editor runtime suite
-remain unavailable in this CPU-only build.
+The 637 hyphen-led checklist items currently contain 87 `[x]` verified, 57 `[/]` wired but not fully
+verified, 30 `[~]` partial, and 463 `[ ]` not started. This is a mechanical count, not a measure of
+effort or completeness; numbered sub-items are not included. This increment advances Part 0.5,
+Part 0.11 step 3, Part 2.3, and Part 2.4: EngineCore now normalizes application-supplied configuration
+before settings overlays and does not repeat per-field checks after registry validation; Editor
+session loading uses an internal apply path for registry-validated values, and boot-splash reads
+trust registry-validated types/ranges while retaining content-root containment. Content-creation
+recents and personal-shelf count/name/item values now use hidden bounded descriptors over their
+existing keys; shelf order and consumer-specific duplicate/empty-item handling remain in the Editor.
+Hierarchy row height is now a bounded, persisted preference applied to each tree row; session tests
+cover its default, range rejection and round-trip. The opt-in Color-code Icons preference adds a
+subtle category-colour backplate without tinting the existing multicolour icon artwork; mapping and
+preference round-trip regression cases are added. Component Badges controls the attached-script
+marker; the dedicated lock column sits beside the eye, remains visible for locked objects, and
+reveals unlocked controls on row hover. Its click and the row menu toggle an editor-session-only
+lock that prevents selection without changing scene data or history. Focused setting, lock-selection
+and lock-glyph cases are added; the column's live interaction remains unavailable in this CPU-only
+build. Hierarchy renames now resolve a document-wide name collision with the next unused
+numeric suffix, matching object creation; Editor and bridge coverage includes the renamed result and
+undo/redo. The persisted Rename Mode preference routes F2, the Rename menu and rename double-clicks
+to either inline editing or a modal dialog; both reuse the same validated setter. Setting round-trip
+and invalid-mode tests are added, but the inline and modal interactions still need live UI
+verification. Hierarchy filters now persist Name Only versus Name, Type & Components matching, case
+sensitivity, and ancestor retention; `type:`, `component:` and `root` queries remain. Flat mode draws
+matching rows without ancestor indentation, and bridge snapshots traverse hidden parents and report
+flat depth. Focused setting, Editor-cache and bridge-snapshot tests are added, but this verification
+is still outstanding. The public editor setter still validates direct callers; cross-setting rules
+and standalone consumer defenses remain in place. Earlier increments recorded `uve_core_tests` at 16/16
+and `uve_engine_settings_integration_tests` at 1,163/1,163, and the then-touched Editor sources/tests
+passed syntax-only checks. The lock-column and rename-dialog
+UI additions are not compiled in the current workspace because generated build flags and the vendored
+ImGui/gtest headers are absent; only the pure hierarchy-helper smoke check and `git diff --check` were
+available here. The latest configure attempt also cannot start because `cmake` is not installed.
+Drag-to-reparent now has a default-on large-subtree confirmation preference: a bounded walk counts up
+to 64 entities, the operation waits for acceptance, and cancellation leaves scene hierarchy and
+history untouched. Threshold, cancellation, acceptance/undo, and preference coverage is added, but
+this prompt and the touched Editor sources/tests remain uncompiled in this workspace. Live
+column/modal interaction, hierarchy-filter bridge traversal and Editor runtime tests remain
+unverified. Hierarchy Shift-click now selects the inclusive visible-row range; Ctrl+Shift adds to the
+current selection, locked rows are skipped, and the anchor survives selection pruning. A rubber-band
+drag from blank hierarchy space selects intersecting rows, with Ctrl/Cmd adding to the current
+selection. The persisted `Select Children With Parent` preference now expands click, Ctrl/Cmd-toggle,
+range and box selection to unlocked descendants, including collapsed or filtered rows. Active-row
+F2/double-click, row-menu and selected-name-command renames remain row-targeted during child-follow
+multi-selection, and undo/redo preserves the group. Focused Editor tests cover range direction,
+anchor persistence, hidden-anchor fallback, box intersection, child expansion and rename preservation;
+test execution and live input remain unverified, so the item is now `[/]` rather than `[~]`. Hierarchy
+diagnostics now distinguish red errors from amber warnings, label severities in the tooltip, and classify
+non-finite transforms, invalid script paths, missing mesh/material/LOD-level mesh assets, and invalid
+camera, light, audio-source, primitive-mesh, collider, rigid-body and world-environment values as errors
+while keeping unassigned meshes and source-less Skeleton3D as warnings. Whole-value validators
+registered in scene component metadata now feed the badge for additional types including Area3D,
+Character3D, RayCast3D, NavMeshVolume3D, NavSeeker3D, SpawnPoint3D and Health. Path-valued references are
+judged as well - an attached script, a Skeleton3D source model, a sky texture, a decal or fog material and
+a level file - against the file system, a real file at the path and the project content tree, with nothing
+reported until the editor has refreshed that tree. Editor cases cover those categories, the mixed-severity
+rows, the content-tree rescue and the no-index state, but remain unrun; live badge rendering is still open. Hierarchy double-click remains limited to Rename, Focus in
+Viewport, and Expand or Collapse; script creation is not a double-click setting, and its roadmap entry
+retains `[~]` while live input remains unverified. The row's right-click menu now creates a unique UVScript
+for the clicked object. `Create Script...` now opens a compact dialog with a Parent picker listing every
+current-scene hierarchy name, including unavailable folders; the right-clicked row is the default
+target, while another object can be selected. The filename follows the chosen object's name until
+manually edited; its unique path preview is under the current project-relative `scripts/` folder with
+`.uvs` fixed. Create attaches and opens the generated name/type template, adding a missing Script
+component undoably; Cancel leaves the scene untouched. The same row menu now attaches an existing
+project `.uvs` from a searchable known-script list or a validated typed path, opens a valid attached
+script in Scripting, and detaches its path without deleting the file. These target-specific operations
+preserve selection and use undo/redo; attaching also adds a missing Script component undoably. Blueprint
+Node Script is not shown until its editor exists, and each object accepts one script. Focused Editor
+tests cover creation defaults/retargeting, objects without a Script component, existing-script attach,
+open, detach, invalid paths, cancellation, file preservation, and selection/history; they remain
+uncompiled/unrun here, and live hierarchy UI remains unverified. Hierarchy Sort Mode now offers
+Scene Order, Alphabetical, and By Type as a persisted Editor preference; it sorts presentation siblings,
+flat-filter rows, and bridge snapshots without changing the scene's stored sibling order. Equal keys stay
+in scene order and the Object remains pinned first. Dedicated sort, preference, Editor, and bridge regression
+tests were added; the Editor target remains unavailable in this workspace, so this new item is `[/]` pending
+build/test and live-UI verification. The Object root's row now carries its own markers, covered by a
+hierarchy-view test but not yet verified live. The command palette's three options are real
+**Editor/Commands** settings now - Enabled, Match Mode (Fuzzy or All Words through one shared matcher),
+and Recent Commands (0 to 16, clamped, applied to the remembered list immediately) - with a settings
+registration test and matcher tests beside them; the palette window itself stays unverified here, so
+that item moved to `[/]`. Locking gained its command-level half too: `edit.lock` locks every unlocked
+selected object and `edit.unlockAll` releases the session's locks, both gated on their own state and
+both leaving the document untouched, with tests covering the group lock, the pruning it causes, the
+release, and the empty-selection gates; the row menu offers Unlock All only while something is locked.
+Framing and the two alignments arrived with them: the selection's world bounds (primitives' own
+local bounds through each world matrix, positions where there is no mesh) drive a frame request the
+host applies as one `OrbitCamera::Focus`, an object's own forward axis composes the pose that turns
+the view onto it, and the camera's own yaw/pitch - pushed back by the host - turn the selected object
+to match, undoably and parent-aware; the shared angle/rotation convention was checked against the
+camera's own formula in a runtime harness, and three commands carry all three. The viewport grid gained the options the item was missing -
+sub-line count, the fade's start and end, a tint over the three line levels and a manual plane - each a
+persisted `editor.viewport.grid.*` setting reached through the pass's own validating setters, with the
+sub-lines, the tint and the plane drawn by code this workspace cannot compile. Editor preferences also
+now save themselves, on the first frame no widget is held rather than once per change, with the
+shutdown save kept as the backstop, and the Inspector's angle display became a choice - degrees or
+radians - over one shared pair of conversion factors, and the Inspector's float precision became
+a choice beside it - 0 to 6 decimals over one shared spelling table, defaulting to the shipped
+look, and the colour picker's RGB readout became a choice - 0-1 or 0-255 - over one shared
+slider scale, with saturation and value as whole percents over their own, and an alpha bar over a
+checkerboard beside the disc, and per-property copy/paste with copyable paths arrived on
+Inspector labels and Transform rows, and Play gained pause on error, and hierarchy rows gained
+a "Change Type..." conversion with carried values and exact undo/redo, and Placement grew a
+Ground Plane mode that lands new objects where the cursor aimed. Three items were then
+flipped `[/]` to `[x]` after their dedicated tests ran green in a full `ctest` pass (delete-subtree
+confirmation, the default component set, and save-current-node-as-default). The checklist count is
+updated to 87 `[x]`, 57 `[/]`, 30 `[~]`, and 463 `[ ]`.
 
 ## 7.4 Keeping this document honest
 

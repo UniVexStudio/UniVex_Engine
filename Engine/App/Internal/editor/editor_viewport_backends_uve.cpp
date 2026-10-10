@@ -621,6 +621,7 @@ public:
             const bool pointerTaken = navGizmoOwnsGesture || gizmoOwnsGesture;
             UpdateSelectionFromMouseUVE(width, height, pointerTaken);
             UpdateEntityContextToolbarFromMouseUVE(width, height, pointerTaken);
+            UpdateCursorGroundPointUVE(width, height);
             if (!previewing_) {
                 UpdateCameraFromMouseUVE(height, pointerTaken);
                 UpdateViewportViewHotkeysUVE();
@@ -635,6 +636,9 @@ public:
         // Where a new object appears when its placement follows the view.
         const univex::math::Vec3 cameraFocus = camera_.Target();
         editor_.SetViewportCameraFocusUVE(UVE::Math::Vector3UVE{cameraFocus.x, cameraFocus.y, cameraFocus.z});
+        // And the angles, which Align Node to View turns an object to match: the editor never owns
+        // the camera, so the one thing it cannot work out for itself is where the view is pointing.
+        editor_.SetViewportCameraAnglesUVE(camera_.Yaw(), camera_.Pitch());
 
         // Real scene entities, rendered via the same lit/shaded pipeline EngineCoreUVE itself uses
         // at runtime (Renderer3DUVE::RenderFrameToTargetUVE) - see EditorMeshLayerUVE's own header
@@ -990,19 +994,64 @@ private:
             appliedFocusRequestSerial_ = overlayState.focusRequestSerial;
             FocusCameraOnEntityUVE(overlayState.focusEntity);
         }
+        if (overlayState.frameRequestSerial != appliedFrameRequestSerial_) {
+            appliedFrameRequestSerial_ = overlayState.frameRequestSerial;
+            // Framing keeps the angles: it moves the pivot to the bounds' centre and pulls the
+            // distance back until a sphere of that radius fits, which OrbitCamera::Focus already is.
+            camera_.CancelAnimation();
+            camera_.Focus(univex::integration::FromUveVector3UVE(overlayState.frameCenter),
+                          overlayState.frameRadius);
+        }
+        if (overlayState.alignViewRequestSerial != appliedAlignViewRequestSerial_) {
+            appliedAlignViewRequestSerial_ = overlayState.alignViewRequestSerial;
+            // The editor composed this pose from the object's own forward, so the host only has to
+            // stand the camera in it - the same three calls the Marker3D focus above makes.
+            editor_.NotifyViewportOrbitedUVE(); // an object's own axes are a free view, not a named one
+            camera_.CancelAnimation();
+            camera_.SetTarget(univex::integration::FromUveVector3UVE(overlayState.alignViewBookmark.target));
+            camera_.SetYawPitch(overlayState.alignViewBookmark.yawRadians,
+                                overlayState.alignViewBookmark.pitchRadians);
+            camera_.SetDistance(overlayState.alignViewBookmark.distance);
+        }
         // The Game workspace tab previews what a player would see - no editor-only grid overlay.
         settings.viewGrid = overlayState.gridVisible && !overlayState.gameWorkspaceActive;
         renderPass_->SetGridOpacityUVE(overlayState.gridOpacity);
         renderPass_->SetGridCellSizeUVE(overlayState.gridCellSize);
-        constexpr float kSelectionOutlineVisualScaleUVE = 0.20F;
+        // The rest of the grid's options are pushed the same way, every frame, through the pass's
+        // own setters - that is where they are checked, so a value the UI could not have produced
+        // (a hand-edited document, a stale overlay state) cannot reach the renderer either.
+        renderPass_->SetGridSubdivisionsUVE(overlayState.gridSubdivisions);
+        renderPass_->SetGridFadeUVE(overlayState.gridFadeStart, overlayState.gridFadeEnd);
+        renderPass_->SetGridLineTintUVE(univex::render::GridColor{overlayState.gridLineTint.r,
+                                                                  overlayState.gridLineTint.g,
+                                                                  overlayState.gridLineTint.b});
+        // Which plane the grid is drawn on: the editor can pin one, or - the default - let the view
+        // choose. A named side view looks along the ground, which is only an edge from there, so the
+        // grid stands up on the plane facing the camera and the view keeps a reference.
+        const univex::math::Vec3 viewAxis = NamedViewDirectionUVE(overlayState.view);
+        switch (overlayState.gridPlane) {
+        case UVE::Editor::EditorUVE::EditorViewportGridPlaneUVE::GroundXZ:
+            renderPass_->SetGridPlaneUVE(univex::render::GridPlane::XZ);
+            break;
+        case UVE::Editor::EditorUVE::EditorViewportGridPlaneUVE::FrontXY:
+            renderPass_->SetGridPlaneUVE(univex::render::GridPlane::XY);
+            break;
+        case UVE::Editor::EditorUVE::EditorViewportGridPlaneUVE::SideZY:
+            renderPass_->SetGridPlaneUVE(univex::render::GridPlane::ZY);
+            break;
+        case UVE::Editor::EditorUVE::EditorViewportGridPlaneUVE::FollowView:
+            renderPass_->SetGridPlaneUVE(univex::render::GridPlaneFacing(viewAxis.x, viewAxis.y, viewAxis.z));
+            break;
+        }
+        // The outline's width is fixed, and has been since the outline was scaled to the gizmos'
+        // own (thinner) weight: that scale put the whole stored 1-6 px on the renderer's 1 px floor,
+        // so the menu control could not be seen to do anything and was removed with its setting.
+        // This is the width every one of those values drew.
+        constexpr float kSelectionOutlineThicknessPixelsUVE = 1.0F;
         renderPass_->SetSelectionOutlineUVE(univex::render::SelectionOutlineSettings{
             overlayState.selectionOutlineVisible, overlayState.selectionOutlineColor.r,
             overlayState.selectionOutlineColor.g, overlayState.selectionOutlineColor.b,
-            overlayState.selectionOutlineThickness * kSelectionOutlineVisualScaleUVE});
-        // A named side view looks along the ground, which is only an edge from there; the grid
-        // stands up on the plane facing the camera instead, so the view keeps a reference.
-        const univex::math::Vec3 viewAxis = NamedViewDirectionUVE(overlayState.view);
-        renderPass_->SetGridPlaneUVE(univex::render::GridPlaneFacing(viewAxis.x, viewAxis.y, viewAxis.z));
+            kSelectionOutlineThicknessPixelsUVE});
         gameWorkspaceActive_ = overlayState.gameWorkspaceActive;
         pointerOverOverlay_ = overlayState.pointerOverOverlay;
         ApplyStudioViewUVE(overlayState);
@@ -1447,6 +1496,37 @@ private:
         dragHandle_ = univex::gizmo::GizmoHandleUVE::None;
     }
 
+    // Where a new object lands when its placement follows the cursor: the cursor ray's hit with
+    // the ground, pushed while hovered and kept afterwards - creation happens from a menu with the
+    // cursor elsewhere, so clearing on leave would leave nothing to place with. A ray running
+    // along the ground (side views) or away from it (the sky) simply keeps the last aim.
+    void UpdateCursorGroundPointUVE(const int width, const int height) {
+        const ImGuiIO& io = ImGui::GetIO();
+        if (pointerOverOverlay_ || !ImGui::IsWindowHovered()) {
+            return;
+        }
+        const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
+        const float pixelX = io.MousePos.x - imageOrigin.x;
+        const float pixelY = io.MousePos.y - imageOrigin.y;
+        if (pixelX < 0.0F || pixelY < 0.0F || pixelX >= static_cast<float>(width) ||
+            pixelY >= static_cast<float>(height)) {
+            return;
+        }
+        const UVE::Math::RayUVE ray =
+            univex::integration::BuildCursorRayUVE(camera_, width, height, pixelX, pixelY);
+        // The ground is the world XZ plane (y = 0), the grid's own plane. The negated comparisons
+        // also catch a non-finite ray, which likewise keeps the last aim.
+        if (!(ray.direction.y < -1.0e-6F)) {
+            return;
+        }
+        const float t = -ray.origin.y / ray.direction.y;
+        if (!(t >= 0.0F) || t > 1.0e6F) {
+            return;
+        }
+        editor_.SetViewportCursorGroundPointUVE(UVE::Math::Vector3UVE{
+            ray.origin.x + ray.direction.x * t, 0.0F, ray.origin.z + ray.direction.z * t});
+    }
+
     // Click-to-select. Until now selection came only from the Hierarchy panel, so the 3D view was
     // something to look at rather than something to work in.
     //
@@ -1796,6 +1876,9 @@ private:
     std::uint32_t appliedViewRequestSerial_ = 0U;
     // The last focus request applied; see ViewportOverlayStateUVE::focusRequestSerial.
     std::uint32_t appliedFocusRequestSerial_ = 0U;
+    // The last frame and align-view requests applied; see the two other counters there.
+    std::uint32_t appliedFrameRequestSerial_ = 0U;
+    std::uint32_t appliedAlignViewRequestSerial_ = 0U;
     UVE::Core::EngineCoreUVE& engine_;
     UVE::Scene::IEntityManagerUVE& entityManager_;
     univex::integration::EditorMeshLayerUVE meshLayer_;

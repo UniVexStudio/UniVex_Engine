@@ -76,7 +76,7 @@ struct TransformComponentUVE final {
     /// object organisationally but must not be dragged around by it: a camera parented to a rig so
     /// it is saved and deleted with it, but aimed in world space; a projectile that keeps its
     /// spawner as an owner after leaving the barrel; a UI marker filed under the entity it
-    /// annotates. Re-parenting to the scene root would achieve the transform part and lose all the
+    /// annotates. Re-parenting to the Object would achieve the transform part and lose all the
     /// organisational part, which is why "just move it" is not the same answer.
     ///
     /// A top-level entity is also immune to a non-finite ancestor. It never reads the parent's

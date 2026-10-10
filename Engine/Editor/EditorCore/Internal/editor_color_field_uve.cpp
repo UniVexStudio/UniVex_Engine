@@ -138,10 +138,25 @@ void DrawMarkerUVE(ImDrawList& drawList, const ImVec2 position, const EditorColo
     drawList.AddCircle(position, 5.0F, IM_COL32(255, 255, 255, 255), 16, 1.5F);
 }
 
+// A mid-grey checkerboard in ImGui's own two swatch tones, so transparency reads the same here
+// as on the picker's swatches. Two columns across, like the stock picker's own alpha bar.
+void DrawCheckerboardUVE(ImDrawList& drawList, const ImVec2 min, const ImVec2 max, const float cell) {
+    int row = 0;
+    for (float y = min.y; y < max.y; y += cell, ++row) {
+        int column = 0;
+        for (float x = min.x; x < max.x; x += cell, ++column) {
+            drawList.AddRectFilled(ImVec2{x, y}, ImVec2{std::min(x + cell, max.x), std::min(y + cell, max.y)},
+                                   (row + column) % 2 == 0 ? IM_COL32(204, 204, 204, 255)
+                                                           : IM_COL32(128, 128, 128, 255));
+        }
+    }
+}
+
 // A vertical bar whose top is 1 and bottom 0, painted from `top` to `bottom`, with arrows at the
-// current value. Returns true while the author drags it; `value` is updated.
+// current value. Returns true while the author drags it; `value` is updated. With `checkerboard`
+// the gradient is painted over squares, so a fading alpha reads as transparency.
 [[nodiscard]] bool DrawVerticalBarUVE(const char* id, const ImVec2 size, const ImU32 top, const ImU32 bottom,
-                                      float& value, const char* tooltip) {
+                                      float& value, const char* tooltip, const bool checkerboard = false) {
     const ImVec2 min = ImGui::GetCursorScreenPos();
     const ImVec2 max{min.x + size.x, min.y + size.y};
     static_cast<void>(ImGui::InvisibleButton(id, size));
@@ -155,6 +170,9 @@ void DrawMarkerUVE(ImDrawList& drawList, const ImVec2 position, const EditorColo
         ImGui::SetTooltip("%s", tooltip);
     }
     ImDrawList& drawList = *ImGui::GetWindowDrawList();
+    if (checkerboard) {
+        DrawCheckerboardUVE(drawList, min, max, size.x * 0.5F);
+    }
     drawList.AddRectFilledMultiColor(min, max, top, top, bottom, bottom);
     drawList.AddRect(min, max, ImGui::GetColorU32(ImGuiCol_Border));
     const float y = min.y + ((1.0F - std::clamp(value, 0.0F, 1.0F)) * size.y);
@@ -347,7 +365,10 @@ PickerBodyResultUVE DrawPickerBodyUVE(const char* title, ColorFieldSessionUVE& s
     const float barWidth = font * 1.1F;
     const float barGap = font * 0.9F;
     const float sideWidth = font * 6.5F;
-    const float width = discSize + ((barGap + barWidth) * 2.0F) + barGap + sideWidth;
+    // Two bars beside the disc, three when the colour has alpha; without alpha the width - and
+    // everything laid out from it - is exactly what it always was.
+    const float width =
+        discSize + ((barGap + barWidth) * 2.0F) + barGap + sideWidth + (hasAlpha ? barGap + barWidth : 0.0F);
 
     ImGui::TextUnformatted(title);
     ImGui::Spacing();
@@ -408,6 +429,22 @@ PickerBodyResultUVE DrawPickerBodyUVE(const char* title, ColorFieldSessionUVE& s
         result.edited = true;
     }
 
+    // Alpha over a checkerboard, so transparency is visible where it is dragged. Only colours
+    // with alpha get the bar, as only they get the A slider below.
+    if (hasAlpha) {
+        ImGui::SameLine(0.0F, barGap);
+        float alpha = session.working.a;
+        const EditorColorUVE rgb{session.working.r, session.working.g, session.working.b, 1.0F};
+        if (DrawVerticalBarUVE("##alpha", ImVec2{barWidth, discSize}, ToImU32UVE(rgb),
+                               ImGui::ColorConvertFloat4ToU32(ImVec4{rgb.r, rgb.g, rgb.b, 0.0F}), alpha,
+                               "Alpha (opacity)", true)) {
+            EditorColorUVE next = session.working;
+            next.a = alpha;
+            SetWorkingRgbUVE(session, next);
+            result.edited = true;
+        }
+    }
+
     // Old above new; the old one is a button that goes back to it. Recents under them.
     ImGui::SameLine(0.0F, barGap);
     ImGui::BeginGroup();
@@ -463,19 +500,32 @@ PickerBodyResultUVE DrawPickerBodyUVE(const char* title, ColorFieldSessionUVE& s
 
         ImGui::BeginGroup();
         EditorColorUVE edited = c;
+        // One scale for all four channels, so 0-255 can never show beside 0-1. The sliders edit
+        // shown copies; only a moved slider writes its reading back to the stored unit colour.
+        const ColorPickerRgbScaleUVE rgbScale = ColorPickerRgbScaleForUVE(preferences.rgbDisplay);
+        float shownR = ColorPickerRgbToShownUVE(edited.r, preferences.rgbDisplay);
+        float shownG = ColorPickerRgbToShownUVE(edited.g, preferences.rgbDisplay);
+        float shownB = ColorPickerRgbToShownUVE(edited.b, preferences.rgbDisplay);
+        float shownA = ColorPickerRgbToShownUVE(edited.a, preferences.rgbDisplay);
         bool rgbChanged = false;
-        rgbChanged |= DrawChannelSliderUVE("R", edited.r, 1.0F, "%.3f", column,
+        rgbChanged |= DrawChannelSliderUVE("R", shownR, rgbScale.maximum, rgbScale.format, column,
                                            std::array<ImU32, 2>{rgb(0.0F, c.g, c.b), rgb(1.0F, c.g, c.b)});
-        rgbChanged |= DrawChannelSliderUVE("G", edited.g, 1.0F, "%.3f", column,
+        rgbChanged |= DrawChannelSliderUVE("G", shownG, rgbScale.maximum, rgbScale.format, column,
                                            std::array<ImU32, 2>{rgb(c.r, 0.0F, c.b), rgb(c.r, 1.0F, c.b)});
-        rgbChanged |= DrawChannelSliderUVE("B", edited.b, 1.0F, "%.3f", column,
+        rgbChanged |= DrawChannelSliderUVE("B", shownB, rgbScale.maximum, rgbScale.format, column,
                                            std::array<ImU32, 2>{rgb(c.r, c.g, 0.0F), rgb(c.r, c.g, 1.0F)});
         if (hasAlpha) {
-            rgbChanged |= DrawChannelSliderUVE("A", edited.a, 1.0F, "%.3f", column,
+            rgbChanged |= DrawChannelSliderUVE("A", shownA, rgbScale.maximum, rgbScale.format, column,
                                                std::array<ImU32, 2>{IM_COL32(128, 128, 128, 255), rgb(c.r, c.g, c.b)});
         }
         ImGui::EndGroup();
         if (rgbChanged) {
+            edited.r = ColorPickerShownRgbToStoredUVE(shownR, preferences.rgbDisplay);
+            edited.g = ColorPickerShownRgbToStoredUVE(shownG, preferences.rgbDisplay);
+            edited.b = ColorPickerShownRgbToStoredUVE(shownB, preferences.rgbDisplay);
+            if (hasAlpha) {
+                edited.a = ColorPickerShownRgbToStoredUVE(shownA, preferences.rgbDisplay);
+            }
             SetWorkingRgbUVE(session, edited);
             result.edited = true;
         }
@@ -493,14 +543,22 @@ PickerBodyResultUVE DrawPickerBodyUVE(const char* title, ColorFieldSessionUVE& s
             editedHsv.h = std::clamp(degrees / 360.0F, 0.0F, 1.0F);
             hsvChanged = true;
         }
-        hsvChanged |= DrawChannelSliderUVE(
-            "S", editedHsv.s, 1.0F, "%.3f", column,
+        // Whole percents, through shown copies like the RGB channels above.
+        float shownS = HsvToPercentUVE(editedHsv.s);
+        float shownV = HsvToPercentUVE(editedHsv.v);
+        const bool sChanged = DrawChannelSliderUVE(
+            "S", shownS, kHsvPercentScaleUVE.maximum, kHsvPercentScaleUVE.format, column,
             std::array<ImU32, 2>{ToImU32UVE(HsvToRgbUVE(EditorHsvUVE{hsv.h, 0.0F, hsv.v}, 1.0F)),
                                  ToImU32UVE(HsvToRgbUVE(EditorHsvUVE{hsv.h, 1.0F, hsv.v}, 1.0F))});
-        hsvChanged |= DrawChannelSliderUVE(
-            "V", editedHsv.v, 1.0F, "%.3f", column,
+        const bool vChanged = DrawChannelSliderUVE(
+            "V", shownV, kHsvPercentScaleUVE.maximum, kHsvPercentScaleUVE.format, column,
             std::array<ImU32, 2>{IM_COL32(0, 0, 0, 255),
                                  ToImU32UVE(HsvToRgbUVE(EditorHsvUVE{hsv.h, hsv.s, 1.0F}, 1.0F))});
+        if (sChanged || vChanged) {
+            editedHsv.s = PercentToHsvUVE(shownS);
+            editedHsv.v = PercentToHsvUVE(shownV);
+            hsvChanged = true;
+        }
         if (hsvChanged) {
             SetWorkingHsvUVE(session, editedHsv);
             result.edited = true;

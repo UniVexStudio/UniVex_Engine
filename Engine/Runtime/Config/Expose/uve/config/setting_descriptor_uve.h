@@ -16,10 +16,11 @@ namespace UVE::Config {
 inline constexpr std::string_view kSettingsDocumentVersionKeyUVE = "version";
 
 /// What kind of value a setting holds. Each maps onto the scalar store (IConfigManagerUVE): a
-/// colour is stored as one number per channel under `<id>.r`, `.g`, `.b` (and `.a`), a vector as
-/// one per component under `<id>.x`, `.y`, `.z`, and a StringList as `<id>.count` plus numbered
-/// string values. FilePath and KeyBinding are stored as strings; KeyBinding uses stable names
-/// rather than backend key codes.
+/// colour is stored as one number per channel under `<id>.r`, `.g`, `.b` (and `.a`), vectors are
+/// stored per component under `<id>.x`, `.y`, `.z`, `.w` as applicable, an AssetReference as a
+/// fixed-width hexadecimal GUID string, a LayerMask as one unsigned 32-bit integer under `<id>`,
+/// and a StringList as `<id>.count` plus numbered string values. FilePath and KeyBinding are stored
+/// as strings; KeyBinding uses stable names rather than backend key codes.
 enum class SettingTypeUVE {
     Bool,
     Int,
@@ -36,6 +37,14 @@ enum class SettingTypeUVE {
     Color,
     /// Three numbers; the descriptor's bounds, if any, apply to each component.
     Vector3,
+    /// Two numbers; the descriptor's bounds, if any, apply to each component.
+    Vector2,
+    /// Four numbers; the descriptor's bounds, if any, apply to each component.
+    Vector4,
+    /// A 32-bit bitset used to select layers.
+    LayerMask,
+    /// An asset database GUID; zero represents no asset. Registry validation does not resolve it.
+    AssetReference,
 };
 
 /// A colour setting's value: channels in 0..1. `a` is ignored for a colour without alpha.
@@ -48,7 +57,15 @@ struct SettingColorUVE final {
     [[nodiscard]] bool operator==(const SettingColorUVE&) const = default;
 };
 
-/// A vector setting's value.
+/// A two-component vector setting's value.
+struct SettingVector2UVE final {
+    double x = 0.0;
+    double y = 0.0;
+
+    [[nodiscard]] bool operator==(const SettingVector2UVE&) const = default;
+};
+
+/// A three-component vector setting's value.
 struct SettingVector3UVE final {
     double x = 0.0;
     double y = 0.0;
@@ -57,14 +74,40 @@ struct SettingVector3UVE final {
     [[nodiscard]] bool operator==(const SettingVector3UVE&) const = default;
 };
 
+/// A four-component vector setting's value.
+struct SettingVector4UVE final {
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
+    double w = 0.0;
+
+    [[nodiscard]] bool operator==(const SettingVector4UVE&) const = default;
+};
+
+/// A 32-bit mask selecting layers; bit zero represents layer one.
+struct SettingLayerMaskUVE final {
+    std::uint32_t bits = 0U;
+
+    [[nodiscard]] bool operator==(const SettingLayerMaskUVE&) const = default;
+};
+
+/// A stable 64-bit asset database identifier. Zero is the empty/no-asset reference.
+struct SettingAssetReferenceUVE final {
+    std::uint64_t guid = 0U;
+
+    [[nodiscard]] bool operator==(const SettingAssetReferenceUVE&) const = default;
+};
+
 using SettingStringListUVE = std::vector<std::string>;
 inline constexpr std::size_t kMaximumSettingStringListItemsUVE = 4096U;
 
 /// One setting's value. The alternative in use always matches the descriptor's type: bool for
 /// Bool, int64 for Int and Enum, double for Float, string for String/FilePath/KeyBinding,
-/// SettingStringListUVE for StringList, SettingColorUVE for Color, SettingVector3UVE for Vector3.
-using SettingValueUVE =
-    std::variant<bool, std::int64_t, double, std::string, SettingStringListUVE, SettingColorUVE, SettingVector3UVE>;
+/// SettingStringListUVE for StringList, SettingColorUVE for Color, the matching vector struct for
+/// Vector2/3/4, SettingLayerMaskUVE for LayerMask, and SettingAssetReferenceUVE for AssetReference.
+using SettingValueUVE = std::variant<bool, std::int64_t, double, std::string, SettingStringListUVE,
+                                     SettingColorUVE, SettingVector3UVE, SettingVector2UVE, SettingVector4UVE,
+                                     SettingLayerMaskUVE, SettingAssetReferenceUVE>;
 
 /// Flags that describe a setting to the tools around it. The registry stores them; the settings
 /// panel, layering and migration act on them.
@@ -99,7 +142,7 @@ struct SettingDescriptorUVE final {
     SettingTypeUVE type = SettingTypeUVE::Bool;
     /// The engine default, of the type's own alternative. What "reset to default" restores.
     SettingValueUVE defaultValue = false;
-    /// Inclusive bounds for Int, Float and each component of a Vector3; absent means unbounded.
+    /// Inclusive bounds for Int, Float and each component of Vector2/3/4; absent means unbounded.
     std::optional<double> minimum;
     std::optional<double> maximum;
     /// Suggested increment for a slider or drag; purely a UI hint.
@@ -119,12 +162,26 @@ struct SettingDescriptorUVE final {
     /// Where it appears in the settings tree, as a slash path, e.g. "Editor/Viewport/Grid".
     std::string category;
     std::uint32_t flags = kSettingFlagNoneUVE;
+    /// Settings-document schema version in which this setting was introduced; absent when the
+    /// introduction version predates version tracking or is not known. Version zero is reserved
+    /// for unversioned documents and is not a valid `sinceVersion`.
+    std::optional<std::uint32_t> sinceVersion;
+    /// Previous ids for this setting. Each registered old id must be a Deprecated alias whose
+    /// `replacementId` points back here, keeping the history metadata and runtime migration aligned.
+    std::vector<std::string> migratedFrom;
     /// For a Deprecated descriptor, the live setting that replaces this old id. Its stored value
-    /// is read through the replacement and migrated to that id on the next document load/save.
+    /// is read through the replacement and migrated to that id on the next document load/save; the
+    /// replacement lists this id in `migratedFrom`.
     std::string replacementId;
 
     [[nodiscard]] bool HasFlagUVE(const SettingFlagUVE flag) const noexcept { return (flags & flag) != 0U; }
 };
+
+/// Canonical lower-case, fixed-width hexadecimal spelling used to store an asset reference GUID.
+[[nodiscard]] std::string FormatSettingAssetReferenceUVE(SettingAssetReferenceUVE reference);
+/// Reads that spelling; empty text is accepted as the zero/no-asset reference. Other values must be
+/// exactly 16 hexadecimal digits. This validates syntax, not whether the asset database knows it.
+[[nodiscard]] std::optional<SettingAssetReferenceUVE> ParseSettingAssetReferenceUVE(std::string_view text) noexcept;
 
 /// Whether `value` is legal for `descriptor`: the right alternative for its type and within every
 /// constraint it declares. Not-a-number and infinity are never legal for a number or a channel.
@@ -166,9 +223,24 @@ struct SettingDescriptorUVE final {
 [[nodiscard]] SettingDescriptorUVE MakeColorSettingUVE(std::string id, SettingColorUVE defaultValue, bool hasAlpha,
                                                        std::string displayName, std::string category,
                                                        std::string tooltip = {});
+[[nodiscard]] SettingDescriptorUVE MakeVector2SettingUVE(std::string id, SettingVector2UVE defaultValue,
+                                                         std::optional<double> minimum, std::optional<double> maximum,
+                                                         std::string displayName, std::string category,
+                                                         std::string tooltip = {});
 [[nodiscard]] SettingDescriptorUVE MakeVector3SettingUVE(std::string id, SettingVector3UVE defaultValue,
                                                          std::optional<double> minimum, std::optional<double> maximum,
                                                          std::string displayName, std::string category,
                                                          std::string tooltip = {});
+[[nodiscard]] SettingDescriptorUVE MakeVector4SettingUVE(std::string id, SettingVector4UVE defaultValue,
+                                                         std::optional<double> minimum, std::optional<double> maximum,
+                                                         std::string displayName, std::string category,
+                                                         std::string tooltip = {});
+[[nodiscard]] SettingDescriptorUVE MakeLayerMaskSettingUVE(std::string id, SettingLayerMaskUVE defaultValue,
+                                                           std::string displayName, std::string category,
+                                                           std::string tooltip = {});
+[[nodiscard]] SettingDescriptorUVE MakeAssetReferenceSettingUVE(std::string id,
+                                                                SettingAssetReferenceUVE defaultValue,
+                                                                std::string displayName, std::string category,
+                                                                std::string tooltip = {});
 
 } // namespace UVE::Config

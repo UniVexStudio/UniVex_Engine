@@ -3,7 +3,7 @@
 #pragma once
 
 #include "uve/component/entity_uve.h"
-#include "uve/scene/objects/scene_object_registry_uve.h"
+#include "uve/object/scene_object_registry_uve.h"
 
 namespace UVE::Scene {
 

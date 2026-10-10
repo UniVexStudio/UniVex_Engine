@@ -43,8 +43,8 @@
 #include "uve/component/collider_component_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
 #include "uve/scene/objects/scene_object_type_uve.h"
-#include "uve/scene/objects/scene_folder_uve.h"
-#include "uve/scene/objects/scene_root_uve.h"
+#include "uve/object/scene_folder_uve.h"
+#include "uve/object/object_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/light_emitter_component_uve.h"
@@ -829,7 +829,7 @@ template <typename VectorT>
     return nlohmann::json::object();
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const SceneRootComponentUVE&) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const ObjectComponentUVE&) {
     return nlohmann::json::object(); // pure marker: no authored state to persist
 }
 
@@ -1834,6 +1834,9 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
         // engine's other base components are named for what they make an object (PhysicsObject3D,
         // RenderInstance3D, LightEmitter3D), so this one follows them instead of borrowing a name.
         {"AnimationMixerComponentUVE", "AnimationDriverComponentUVE"},
+        // The Object pass: the root is the base Object, so its marker component says so. A
+        // document written before the rename carries the left-hand name and still loads.
+        {"SceneRootComponentUVE", "ObjectComponentUVE"},
         // The navigation pass: those two were the last kinds named after another engine's own
         // navigation classes. A document written before this carries the left-hand name.
         {"NavigationRegion3DComponentUVE", "NavMeshVolume3DComponentUVE"},
@@ -2135,10 +2138,10 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
         table.emplace("OutlinerViewportComponentUVE", MakeRegistrationUVE<OutlinerViewportComponentUVE>([](const nlohmann::json&) {
                           return OutlinerViewportComponentUVE{};
                       }, IsOutlinerViewportComponentValidUVE));
-        table.emplace("SceneRootComponentUVE",
-                    MakeRegistrationUVE<SceneRootComponentUVE>([](const nlohmann::json&) {
-                        return SceneRootComponentUVE{};
-                    }, IsSceneRootComponentValidUVE));
+        table.emplace("ObjectComponentUVE",
+                    MakeRegistrationUVE<ObjectComponentUVE>([](const nlohmann::json&) {
+                        return ObjectComponentUVE{};
+                    }, IsObjectComponentValidUVE));
         table.emplace("Hitbox3DComponentUVE", MakeRegistrationUVE<Hitbox3DComponentUVE>(
             [](const nlohmann::json& json) {
                 const Hitbox3DComponentUVE value = Hitbox3DObjectFromJsonUVE(json);

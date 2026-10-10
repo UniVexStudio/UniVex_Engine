@@ -12,7 +12,11 @@
 
 #include "uve/core/engine_core_uve.h"
 #include "uve/editor/editor_bridge_uve.h"
+#include "uve/editor/editor_settings_uve.h"
 #include "uve/component/mesh_component_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
+#include "uve/scene/i_scene_graph_uve.h"
+#include "uve/object/scene_object_registry_uve.h"
 
 namespace UVE::Editor::Tests {
 namespace {
@@ -291,21 +295,39 @@ TEST(EditorBridgeUVETest, DispatchUVE_RoutesCreateNameUndoRedoThroughNativeComma
         ASSERT_EQ(named.snapshot.selectedEntities.size(), 1U);
         EXPECT_EQ(named.snapshot.selectedEntities.front().displayLabel, "Bridge Authored Name");
 
+        // The bridge routes manual names through the same collision policy as inline rename.
+        const EditorBridgeRequestUVE createAgainRequest{
+            kEditorBridgeProtocolVersionUVE, 3U, named.snapshot.revision,
+            EditorBridgeRequestKindUVE::CreateDocumentEntity, std::nullopt, std::nullopt,
+            EditorEntityKindUVE::UVSphere};
+        const EditorBridgeResponseUVE createdAgain = bridge.DispatchUVE(createAgainRequest);
+        ASSERT_TRUE(createdAgain.applied);
+        ASSERT_TRUE(createdAgain.createdEntity.has_value());
+
+        const EditorBridgeRequestUVE collisionNameRequest{
+            kEditorBridgeProtocolVersionUVE, 4U, createdAgain.snapshot.revision,
+            EditorBridgeRequestKindUVE::SetSelectedEntityName, std::nullopt,
+            std::string{"Bridge Authored Name"}, std::nullopt};
+        const EditorBridgeResponseUVE collisionNamed = bridge.DispatchUVE(collisionNameRequest);
+        ASSERT_TRUE(collisionNamed.applied);
+        ASSERT_EQ(collisionNamed.snapshot.selectedEntities.size(), 1U);
+        EXPECT_EQ(collisionNamed.snapshot.selectedEntities.front().displayLabel, "Bridge Authored Name 2");
+
         const EditorBridgeRequestUVE undoRequest{
-            kEditorBridgeProtocolVersionUVE, 3U, named.snapshot.revision, EditorBridgeRequestKindUVE::Undo,
+            kEditorBridgeProtocolVersionUVE, 5U, collisionNamed.snapshot.revision, EditorBridgeRequestKindUVE::Undo,
             std::nullopt, std::nullopt, std::nullopt};
         const EditorBridgeResponseUVE undone = bridge.DispatchUVE(undoRequest);
         ASSERT_TRUE(undone.applied);
         ASSERT_EQ(undone.snapshot.selectedEntities.size(), 1U);
-        EXPECT_NE(undone.snapshot.selectedEntities.front().displayLabel, "Bridge Authored Name");
+        EXPECT_NE(undone.snapshot.selectedEntities.front().displayLabel, "Bridge Authored Name 2");
 
         const EditorBridgeRequestUVE redoRequest{
-            kEditorBridgeProtocolVersionUVE, 4U, undone.snapshot.revision, EditorBridgeRequestKindUVE::Redo,
+            kEditorBridgeProtocolVersionUVE, 6U, undone.snapshot.revision, EditorBridgeRequestKindUVE::Redo,
             std::nullopt, std::nullopt, std::nullopt};
         const EditorBridgeResponseUVE redone = bridge.DispatchUVE(redoRequest);
         ASSERT_TRUE(redone.applied);
         ASSERT_EQ(redone.snapshot.selectedEntities.size(), 1U);
-        EXPECT_EQ(redone.snapshot.selectedEntities.front().displayLabel, "Bridge Authored Name");
+        EXPECT_EQ(redone.snapshot.selectedEntities.front().displayLabel, "Bridge Authored Name 2");
 
         editor.ShutdownUVE();
     }
@@ -328,9 +350,9 @@ TEST(EditorBridgeUVETest, DispatchUVE_RejectsUnsupportedProtocolAndInvalidEntity
         const EditorBridgeResponseUVE versionResponse = bridge.DispatchUVE(invalidVersion);
         EXPECT_FALSE(versionResponse.applied);
         EXPECT_EQ(versionResponse.code, "bridge.protocol.unsupported");
-        // The document was not mutated: the only root is the ever-present scene root.
+        // The document was not mutated: the only root is the ever-present Object.
         ASSERT_EQ(GetRootsUVE(editor).size(), 1U);
-        EXPECT_EQ(GetRootsUVE(editor)[0U], editor.GetDocumentSceneRootUVE());
+        EXPECT_EQ(GetRootsUVE(editor)[0U], editor.GetDocumentObjectUVE());
 
         const EditorBridgeRequestUVE invalidEntity{
             kEditorBridgeProtocolVersionUVE, 8U, snapshot.revision, EditorBridgeRequestKindUVE::SelectEntity,
@@ -339,9 +361,36 @@ TEST(EditorBridgeUVETest, DispatchUVE_RejectsUnsupportedProtocolAndInvalidEntity
         EXPECT_FALSE(entityResponse.applied);
         EXPECT_EQ(entityResponse.code, "bridge.entity.invalid");
         EXPECT_TRUE(entityResponse.snapshot.selectedEntities.empty());
-        // The document was not mutated: the only root is the ever-present scene root.
+        // The document was not mutated: the only root is the ever-present Object.
         ASSERT_EQ(GetRootsUVE(editor).size(), 1U);
-        EXPECT_EQ(GetRootsUVE(editor)[0U], editor.GetDocumentSceneRootUVE());
+        EXPECT_EQ(GetRootsUVE(editor)[0U], editor.GetDocumentObjectUVE());
+
+        const EditorBridgeRequestUVE createRequest{
+            kEditorBridgeProtocolVersionUVE, 9U, snapshot.revision, EditorBridgeRequestKindUVE::CreateDocumentEntity,
+            std::nullopt, std::nullopt, EditorEntityKindUVE::Cube};
+        const EditorBridgeResponseUVE created = bridge.DispatchUVE(createRequest);
+        ASSERT_TRUE(created.applied);
+        ASSERT_TRUE(created.createdEntity.has_value());
+        const Scene::EntityUVE lockedEntity{created.createdEntity->index, created.createdEntity->generation};
+        ASSERT_TRUE(editor.SetEntityLockedUVE(lockedEntity, true));
+        const EditorBridgeSnapshotUVE lockedSnapshot = bridge.GetSnapshotUVE();
+        EXPECT_TRUE(lockedSnapshot.selectedEntities.empty());
+
+        const EditorBridgeRequestUVE selectLockedRequest{
+            kEditorBridgeProtocolVersionUVE, 10U, lockedSnapshot.revision, EditorBridgeRequestKindUVE::SelectEntity,
+            created.createdEntity, std::nullopt, std::nullopt};
+        const EditorBridgeResponseUVE selectLocked = bridge.DispatchUVE(selectLockedRequest);
+        EXPECT_FALSE(selectLocked.applied);
+        EXPECT_EQ(selectLocked.code, "bridge.entity.locked");
+        EXPECT_TRUE(selectLocked.snapshot.selectedEntities.empty());
+
+        const EditorBridgeRequestUVE toggleLockedRequest{
+            kEditorBridgeProtocolVersionUVE, 11U, selectLocked.snapshot.revision,
+            EditorBridgeRequestKindUVE::ToggleEntitySelection, created.createdEntity, std::nullopt, std::nullopt};
+        const EditorBridgeResponseUVE toggleLocked = bridge.DispatchUVE(toggleLockedRequest);
+        EXPECT_FALSE(toggleLocked.applied);
+        EXPECT_EQ(toggleLocked.code, "bridge.entity.locked");
+        EXPECT_TRUE(toggleLocked.snapshot.selectedEntities.empty());
 
         editor.ShutdownUVE();
     }
@@ -355,6 +404,7 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
     {
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_panel_snapshot.uvscene");
         editor.InitUVE();
+        ASSERT_TRUE(editor.SetEditorSettingUVE(EditorSettingIdUVE::kHierarchyFilterKeepAncestorsUVE, true));
         EditorBridgeUVE bridge(editor);
 
         const Scene::EntityUVE root = editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Cube);
@@ -370,13 +420,13 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
             child, Scene::MeshComponentUVE{Asset::AssetGuidUVE{0x1111U}, Asset::AssetGuidUVE{0x2222U}});
 
         EditorBridgeSnapshotUVE snapshot = bridge.GetSnapshotUVE();
-        // The hierarchy leads with the document's ever-present SceneRoot, then the level's Viewport
+        // The hierarchy leads with the document's ever-present Object, then the level's Viewport
         // and its object folder; the authored pair sits inside that folder.
-        const Scene::EntityUVE sceneRoot = editor.GetDocumentSceneRootUVE();
+        const Scene::EntityUVE rootObject = editor.GetDocumentObjectUVE();
         ASSERT_EQ(snapshot.hierarchy.entries.size(), 5U);
         EXPECT_EQ(snapshot.hierarchy.entries[0].entity,
-                  (EditorBridgeEntityRefUVE{sceneRoot.index, sceneRoot.generation}));
-        EXPECT_EQ(snapshot.hierarchy.entries[0].displayLabel, "SceneRoot");
+                  (EditorBridgeEntityRefUVE{rootObject.index, rootObject.generation}));
+        EXPECT_EQ(snapshot.hierarchy.entries[0].displayLabel, "Object");
         EXPECT_EQ(snapshot.hierarchy.entries[0].depth, 0U);
         EXPECT_EQ(snapshot.hierarchy.entries[0].childCount, 1U);
         EXPECT_EQ(snapshot.hierarchy.entries[1].displayLabel, "uve_editor_bridge_panel_snapshot"); // the open level's asset name
@@ -441,15 +491,27 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
         const EditorBridgeResponseUVE filtered = bridge.DispatchUVE(filterRequest);
         ASSERT_TRUE(filtered.applied);
         EXPECT_TRUE(filtered.snapshot.hierarchy.filterActive);
-        // The filter match plus its ancestor chain: SceneRoot, the Viewport and its folder above
+        // The filter match plus its ancestor chain: Object, the Viewport and its folder above
         // the authored pair.
         ASSERT_EQ(filtered.snapshot.hierarchy.entries.size(), 5U);
         EXPECT_GT(filtered.snapshot.revision, snapshot.revision);
 
+        ASSERT_TRUE(editor.SetEditorSettingUVE(EditorSettingIdUVE::kHierarchyFilterKeepAncestorsUVE, false));
+        const EditorBridgeSnapshotUVE flatFiltered = bridge.GetSnapshotUVE();
+        EXPECT_GT(flatFiltered.revision, filtered.snapshot.revision);
+        ASSERT_EQ(flatFiltered.hierarchy.entries.size(), 1U);
+        EXPECT_EQ(flatFiltered.hierarchy.entries.front().entity,
+                  (EditorBridgeEntityRefUVE{child.index, child.generation}));
+        EXPECT_EQ(flatFiltered.hierarchy.entries.front().displayLabel, "Bridge Child");
+        EXPECT_EQ(flatFiltered.hierarchy.entries.front().depth, 0U);
+        ASSERT_TRUE(flatFiltered.hierarchy.entries.front().parent.has_value());
+        EXPECT_EQ(*flatFiltered.hierarchy.entries.front().parent,
+                  (EditorBridgeEntityRefUVE{root.index, root.generation}));
+
         EditorBridgeRequestUVE toggleRequest{};
         toggleRequest.protocolVersion = kEditorBridgeProtocolVersionUVE;
         toggleRequest.requestId = 11U;
-        toggleRequest.expectedRevision = filtered.snapshot.revision;
+        toggleRequest.expectedRevision = flatFiltered.revision;
         toggleRequest.kind = EditorBridgeRequestKindUVE::ToggleEntitySelection;
         toggleRequest.entity = EditorBridgeEntityRefUVE{root.index, root.generation};
         const EditorBridgeResponseUVE toggled = bridge.DispatchUVE(toggleRequest);
@@ -457,9 +519,77 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
         EXPECT_EQ(toggled.snapshot.inspector.mode, EditorBridgeInspectorModeUVE::MultiSelection);
         EXPECT_FALSE(toggled.snapshot.inspector.canEditSelectedName);
 
+        ASSERT_TRUE(editor.SetEditorSettingUVE(EditorSettingIdUVE::kHierarchyFilterKeepAncestorsUVE, true));
         editor.ShutdownUVE();
     }
     engine.Shutdown();
+}
+
+TEST(EditorBridgeUVETest, SnapshotUVE_HierarchySortFollowsTheViewWithoutChangingSceneSiblingOrder) {
+    Core::EngineConfigUVE config = MakeBridgeTestConfigUVE();
+    std::filesystem::remove(config.settingsFilePath);
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_hierarchy_sort.uvscene");
+        editor.InitUVE();
+        using Kind = Scene::Objects::SceneObjectKindUVE;
+        ASSERT_TRUE(editor.SetEditorSettingUVE(EditorSettingIdUVE::kNewObjectsUnderSelectionUVE, true));
+        ASSERT_TRUE(editor.SetEditorSettingUVE(
+            EditorSettingIdUVE::kHierarchySortModeUVE, static_cast<std::int64_t>(HierarchySortModeUVE::SceneOrder)));
+        const Scene::EntityUVE parent = editor.CreateDocumentSceneObjectUVE(Kind::Object3D);
+        ASSERT_NE(parent, Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(editor.SetSelectedEntityNameUVE("Sort Container"));
+
+        const auto createChild = [&editor, parent](const Kind kind, const char* const name) {
+            editor.SelectEntityUVE(parent);
+            const Scene::EntityUVE child = editor.CreateDocumentSceneObjectUVE(kind);
+            if (child != Scene::kInvalidEntityUVE) {
+                static_cast<void>(editor.SetSelectedEntityNameUVE(name));
+            }
+            return child;
+        };
+        const Scene::EntityUVE zuluCamera = createChild(Kind::Camera3D, "Sortable Zulu");
+        const Scene::EntityUVE alphaStatic = createChild(Kind::Static3D, "Sortable Alpha");
+        const Scene::EntityUVE charlieCamera = createChild(Kind::Camera3D, "Sortable Charlie");
+        const Scene::EntityUVE bravoBox = createChild(Kind::BoxMesh3D, "Sortable Bravo");
+        ASSERT_NE(zuluCamera, Scene::kInvalidEntityUVE);
+        ASSERT_NE(alphaStatic, Scene::kInvalidEntityUVE);
+        ASSERT_NE(charlieCamera, Scene::kInvalidEntityUVE);
+        ASSERT_NE(bravoBox, Scene::kInvalidEntityUVE);
+
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        auto& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+        const std::vector<Scene::EntityUVE> authoredOrder = sceneGraph.GetChildrenUVE(entityManager, parent);
+        ASSERT_EQ(authoredOrder, (std::vector<Scene::EntityUVE>{zuluCamera, alphaStatic, charlieCamera, bravoBox}));
+        const EditorBridgeEntityRefUVE parentRef{parent.index, parent.generation};
+        const auto childLabels = [parentRef](const EditorBridgeSnapshotUVE& snapshot) {
+            std::vector<std::string> labels;
+            for (const EditorBridgeHierarchyEntryUVE& entry : snapshot.hierarchy.entries) {
+                if (entry.parent.has_value() && *entry.parent == parentRef) {
+                    labels.push_back(entry.displayLabel);
+                }
+            }
+            return labels;
+        };
+        EditorBridgeUVE bridge(editor);
+        EXPECT_EQ(childLabels(bridge.GetSnapshotUVE()),
+                  (std::vector<std::string>{"Sortable Zulu", "Sortable Alpha", "Sortable Charlie", "Sortable Bravo"}));
+
+        ASSERT_TRUE(editor.SetEditorSettingUVE(
+            EditorSettingIdUVE::kHierarchySortModeUVE, static_cast<std::int64_t>(HierarchySortModeUVE::Alphabetical)));
+        EXPECT_EQ(childLabels(bridge.GetSnapshotUVE()),
+                  (std::vector<std::string>{"Sortable Alpha", "Sortable Bravo", "Sortable Charlie", "Sortable Zulu"}));
+        ASSERT_TRUE(editor.SetEditorSettingUVE(
+            EditorSettingIdUVE::kHierarchySortModeUVE, static_cast<std::int64_t>(HierarchySortModeUVE::ByType)));
+        EXPECT_EQ(childLabels(bridge.GetSnapshotUVE()),
+                  (std::vector<std::string>{"Sortable Bravo", "Sortable Charlie", "Sortable Zulu", "Sortable Alpha"}));
+        EXPECT_EQ(sceneGraph.GetChildrenUVE(entityManager, parent), authoredOrder);
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
 }
 
 TEST(EditorBridgeUVETest, SnapshotUVE_BoundsCopiedPanelRowsWithoutClaimingDeletion) {
