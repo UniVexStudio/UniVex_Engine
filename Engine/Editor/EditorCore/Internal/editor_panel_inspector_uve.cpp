@@ -19,6 +19,7 @@
 // where it reads as a change rather than hiding inside a move.
 
 #include "uve/editor/editor_uve.h"
+#include "uve/objects/3d/camera_3d_uve.h"
 
 #include <algorithm>
 #include <array>
@@ -134,6 +135,9 @@ void EditorUVE::DrawInspectorPanelUVE() {
     // No title row: the Inspector / Import / Events tabs are the panel's top edge, so the name is
     // not said twice. The panel is fixed in the layout, so there is nothing to drag it by anyway.
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
+    // Match the Outliner panel's neutral charcoal surface. Inputs and nested fields keep the
+    // darker FrameBg/ChildBg layers from the shared theme, so depth and editability remain clear.
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{0.106F, 0.118F, 0.129F, 1.0F});
     ImGui::Begin(kPanelLabelInspectorUVE, nullptr, flags);
 
     // Real tabs rather than three selectable labels. The active tab can also be changed from
@@ -171,6 +175,7 @@ void EditorUVE::DrawInspectorPanelUVE() {
             break;
     }
     ImGui::End();
+    ImGui::PopStyleColor();
 }
 
 void EditorUVE::DrawImportQueueMonitorUVE() {
@@ -233,6 +238,29 @@ void EditorUVE::DrawInspectorContentUVE() {
         }
         ImGui::TextDisabled("Single-entity editing is unavailable for multi-selection.");
         return;
+    }
+
+    if (Scene::IsDocumentCameraEntityUVE(m_services->GetEntityManagerUVE(), m_selectedEntity)) {
+        const bool previewOpen = DrawInspectorFoldUVE("Camera Preview###camera-preview-section",
+                                                      "section:camera-preview", true, true, 0);
+        if (previewOpen) {
+            const ImVec2 available = ImGui::GetContentRegionAvail();
+            const float previewWidth = std::max(160.0F, available.x);
+            const Math::Vector2UVE previewSize{previewWidth, previewWidth * (9.0F / 16.0F)};
+            Math::Vector2UVE usedSize{};
+            const std::uint64_t textureId = m_viewportPanelRenderer
+                                                 ? m_viewportPanelRenderer(
+                                                       ViewportContextUVE::InspectorCameraPreview, previewSize,
+                                                       usedSize, m_viewportOverlayState)
+                                                 : 0U;
+            if (textureId != 0U && usedSize.x > 0.0F && usedSize.y > 0.0F) {
+                ImGui::Image(static_cast<ImTextureID>(textureId), ImVec2{usedSize.x, usedSize.y},
+                             ImVec2{0.0F, 1.0F}, ImVec2{1.0F, 0.0F});
+            } else {
+                ImGui::TextDisabled("Camera preview is not ready.");
+            }
+        }
+        ImGui::Separator();
     }
 
     ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());

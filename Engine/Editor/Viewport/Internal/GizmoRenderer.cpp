@@ -23,6 +23,13 @@ constexpr GLsizei kSolidStride = static_cast<GLsizei>(sizeof(float) * 11);
 // At and above this alpha, blending leaves a triangle visually solid, so it is drawn in the
 // opaque pass and keeps its depth writes.
 constexpr float kOpaqueAlphaThreshold = 0.999f;
+// Visual-only scale: picking and the authored gizmo size remain unchanged.
+constexpr float kGizmoVisualThicknessScaleUVE = 0.20f;
+
+[[nodiscard]] Vec3 VividGizmoColorUVE(const Vec3& color) {
+    return Vec3{std::min(1.0f, color.x * 1.25f), std::min(1.0f, color.y * 1.25f),
+                std::min(1.0f, color.z * 1.25f)};
+}
 
 // Depth of a triangle's centroid along the view axis; larger is farther from the eye.
 [[nodiscard]] float CentroidDepth(const univex::gizmo::GizmoTriangle& tri, const Vec3& viewDirection) {
@@ -149,10 +156,11 @@ void GizmoRenderer::UploadAndDrawTriangles(const GizmoMesh& mesh, const GizmoDra
         // simple low-poly look the gizmo's flat colours already have.
         const Vec3 normal = univex::math::Normalize(
             univex::math::Cross(tri.b - tri.a, tri.c - tri.a));
+        const Vec3 vividColor = VividGizmoColorUVE(tri.color);
         for (const Vec3& p : {tri.a, tri.b, tri.c}) {
             vertices.insert(vertices.end(),
                             {p.x, p.y, p.z, normal.x, normal.y, normal.z,
-                             tri.color.x, tri.color.y, tri.color.z, tri.alpha, tri.lit});
+                             vividColor.x, vividColor.y, vividColor.z, tri.alpha, tri.lit});
         }
     }
 
@@ -178,17 +186,19 @@ void GizmoRenderer::UploadAndDrawLines(const GizmoMesh& mesh, const GizmoDrawPar
     std::vector<float> vertices;
     vertices.reserve(mesh.lines.size() * 6 * 11);
     for (const auto& line : mesh.lines) {
+        const Vec3 vividColor = VividGizmoColorUVE(line.color);
+        const float width = line.widthPx * kGizmoVisualThicknessScaleUVE;
         // Quad corners: A-n, A+n, B+n, B-n. At B the computed normal is
         // flipped (its "other" end is A), so the side value flips with it.
         // The width's sign marks the end (A positive, B negative), so the shader can lay out a
         // coordinate along the segment and round both caps.
-        PushLineVertex(vertices, line.a, line.b, line.color, -1.f, line.widthPx);
-        PushLineVertex(vertices, line.a, line.b, line.color, +1.f, line.widthPx);
-        PushLineVertex(vertices, line.b, line.a, line.color, -1.f, -line.widthPx);
+        PushLineVertex(vertices, line.a, line.b, vividColor, -1.f, width);
+        PushLineVertex(vertices, line.a, line.b, vividColor, +1.f, width);
+        PushLineVertex(vertices, line.b, line.a, vividColor, -1.f, -width);
 
-        PushLineVertex(vertices, line.a, line.b, line.color, -1.f, line.widthPx);
-        PushLineVertex(vertices, line.b, line.a, line.color, -1.f, -line.widthPx);
-        PushLineVertex(vertices, line.b, line.a, line.color, +1.f, -line.widthPx);
+        PushLineVertex(vertices, line.a, line.b, vividColor, -1.f, width);
+        PushLineVertex(vertices, line.b, line.a, vividColor, -1.f, -width);
+        PushLineVertex(vertices, line.b, line.a, vividColor, +1.f, -width);
     }
 
     glBindVertexArray(lineVao_);

@@ -474,13 +474,15 @@ public:
     /// Engine/Editor module directly) - see Engine/App/src/editor/main.cpp for the concrete
     /// Engine/Editor/Viewport-backed implementation.
     /// Identifies one of the editor's physically independent render views.  This is deliberately
-    /// explicit at the renderer boundary: Main, Entity Editor, and Retarget must never reuse an
+    /// explicit at the renderer boundary: Main, Entity Editor, Retarget, and Inspector Camera
+    /// Preview must never reuse an
     /// orbit camera, gesture, framebuffer, or render texture merely because only one happened to
     /// be visible in an earlier frame.
     enum class ViewportContextUVE : std::uint8_t {
         Main = 0,
         EntityEditor,
         Retarget,
+        InspectorCameraPreview,
         Count
     };
 

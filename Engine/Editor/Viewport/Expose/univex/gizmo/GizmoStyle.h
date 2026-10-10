@@ -51,12 +51,12 @@ struct GizmoStyle {
     // without any extra geometry type. `outlineShade` scales the handle's own colour.
     float outlineExtraPx = 2.2f;
     float outlineShade = 0.30f;
-    float ringLineWidthPx = 2.6f;
-    float freeRingWidthPx = 1.1f;
-    float cubeEdgeWidthPx = 0.9f;
+    float ringLineWidthPx = 0.52f;
+    float freeRingWidthPx = 0.22f;
+    float cubeEdgeWidthPx = 0.18f;
     // The plane chips' outlines. Was a bare 1.1f repeated five times inside the geometry builders;
     // a number that decides how the widget looks belongs with the rest of the look.
-    float planeHandleEdgeWidthPx = 1.1f;
+    float planeHandleEdgeWidthPx = 0.22f;
 
     // ---- move gizmo -------------------------------------------------------
     float moveShaftStart = 0.18f;
@@ -97,8 +97,8 @@ struct GizmoStyle {
     float universalConeRadius = 0.090f;
     float universalScaleBoxOffset = 1.86f;
     float universalScaleBoxSize = 0.165f;
-    float universalLineWidthPx = 2.6f;
-    float universalRingWidthPx = 2.6f;
+    float universalLineWidthPx = 0.52f;
+    float universalRingWidthPx = 0.52f;
 
     // ---- pivot dot -------------------------------------------------------
     // The visual for the Uniform (free-move / uniform-scale) handle, and the only thing Select
@@ -113,7 +113,7 @@ struct GizmoStyle {
     // disc as you zoom in on a small object. GizmoPicking derives the Uniform hit radius from
     // pivotDotRadiusPx too, so the clickable area can never drift from what is drawn.
     float pivotDotRadiusPx = 5.0f;
-    float pivotDotWidthPx = 1.2f;
+    float pivotDotWidthPx = 0.24f;
     int   pivotDotSegments = 24; // plenty for a 5 px circle; ringSegments would be 4x wasted work
 
     // ---- orientation (nav) gizmo -----------------------------------------

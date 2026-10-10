@@ -123,7 +123,7 @@ void main() {
     }
     UVE::Render::CameraSystemUVE cameras;
     entityManager.ForEachUVE<UVE::Scene::WorldTransformComponentUVE, UVE::Scene::CameraComponentUVE>(
-        [&](const UVE::Scene::EntityUVE entity, const UVE::Scene::WorldTransformComponentUVE&,
+        [&](const UVE::Scene::EntityUVE entity, const UVE::Scene::WorldTransformComponentUVE& worldTransform,
             const UVE::Scene::CameraComponentUVE& camera) {
             if (entity == hideEntity || !UVE::Scene::IsDocumentCameraEntityUVE(entityManager, entity) ||
                 !UVE::Scene::IsCameraComponentValidUVE(camera)) {
@@ -131,17 +131,74 @@ void main() {
             }
             const UVE::Render::CameraFrustumCornersUVE corners =
                 cameras.ComputeFrustumCornersUVE(entityManager, entity, aspectRatio);
+            // The authored far plane can be hundreds or thousands of units away. Keep the editor
+            // visualization compact around the camera while leaving the real camera projection,
+            // far plane, and runtime rendering completely unchanged.
+            constexpr float kEditorFrustumLength = 2.4F;
+            const float visualFarScale =
+                std::min(1.0F, kEditorFrustumLength / std::max(camera.farPlane, camera.nearPlane));
+            const univex::math::Vec3 origin{worldTransform.worldPosition.x, worldTransform.worldPosition.y,
+                                            worldTransform.worldPosition.z};
             const univex::math::Vec3 color =
                 camera.current ? univex::math::Vec3{0.55F, 0.92F, 1.0F} : univex::math::Vec3{0.35F, 0.72F, 0.95F};
             const float widthPx = camera.current ? 2.0F : 1.5F;
             const auto addLine = [&](const int a, const int b) {
+                const auto visualPoint = [&](const int index) {
+                    const univex::math::Vec3 point{corners[static_cast<std::size_t>(index)].x,
+                                                   corners[static_cast<std::size_t>(index)].y,
+                                                   corners[static_cast<std::size_t>(index)].z};
+                    return index < 4 ? point : origin + (point - origin) * visualFarScale;
+                };
+                const univex::math::Vec3 start = visualPoint(a);
+                const univex::math::Vec3 end = visualPoint(b);
                 mesh.lines.push_back(univex::gizmo::GizmoLine{
-                    univex::math::Vec3{corners[static_cast<std::size_t>(a)].x, corners[static_cast<std::size_t>(a)].y,
-                                       corners[static_cast<std::size_t>(a)].z},
-                    univex::math::Vec3{corners[static_cast<std::size_t>(b)].x, corners[static_cast<std::size_t>(b)].y,
-                                       corners[static_cast<std::size_t>(b)].z},
-                    color, widthPx});
+                    start, end, color, widthPx});
             };
+            const auto rotate = [&](const UVE::Math::Vector3UVE local) {
+                const UVE::Math::Vector3UVE world = UVE::Math::RotateVectorUVE(worldTransform.worldRotation, local);
+                return univex::math::Vec3{world.x, world.y, world.z};
+            };
+            const univex::math::Vec3 right = rotate({1.0F, 0.0F, 0.0F});
+            const univex::math::Vec3 up = rotate({0.0F, 1.0F, 0.0F});
+            const univex::math::Vec3 forward = rotate({0.0F, 0.0F, -1.0F});
+            const univex::math::Vec3 iconColor{1.0F, 0.72F, 0.22F};
+            const float bodyWidth = 0.20F;
+            const float bodyHeight = 0.14F;
+            const float bodyDepth = 0.10F;
+            const univex::math::Vec3 bodyBack = origin - forward * bodyDepth;
+            const univex::math::Vec3 bodyFront = origin + forward * bodyDepth;
+            const univex::math::Vec3 bodyCorners[8] = {
+                bodyBack - right * bodyWidth - up * bodyHeight,
+                bodyBack + right * bodyWidth - up * bodyHeight,
+                bodyBack - right * bodyWidth + up * bodyHeight,
+                bodyBack + right * bodyWidth + up * bodyHeight,
+                bodyFront - right * bodyWidth - up * bodyHeight,
+                bodyFront + right * bodyWidth - up * bodyHeight,
+                bodyFront - right * bodyWidth + up * bodyHeight,
+                bodyFront + right * bodyWidth + up * bodyHeight,
+            };
+            const auto addIconLine = [&](const univex::math::Vec3& a, const univex::math::Vec3& b) {
+                mesh.lines.push_back(univex::gizmo::GizmoLine{a, b, iconColor, 2.0F});
+            };
+            for (const std::array<int, 2> edge : {std::array<int, 2>{0, 1}, std::array<int, 2>{1, 3},
+                                                   std::array<int, 2>{3, 2}, std::array<int, 2>{2, 0},
+                                                   std::array<int, 2>{4, 5}, std::array<int, 2>{5, 7},
+                                                   std::array<int, 2>{7, 6}, std::array<int, 2>{6, 4},
+                                                   std::array<int, 2>{0, 4}, std::array<int, 2>{1, 5},
+                                                   std::array<int, 2>{2, 6}, std::array<int, 2>{3, 7}}) {
+                addIconLine(bodyCorners[edge[0]], bodyCorners[edge[1]]);
+            }
+            const univex::math::Vec3 lensCenter = bodyFront + forward * 0.045F;
+            const univex::math::Vec3 lensCorners[4] = {
+                lensCenter - right * 0.08F - up * 0.055F,
+                lensCenter + right * 0.08F - up * 0.055F,
+                lensCenter + right * 0.08F + up * 0.055F,
+                lensCenter - right * 0.08F + up * 0.055F,
+            };
+            addIconLine(lensCorners[0], lensCorners[1]);
+            addIconLine(lensCorners[1], lensCorners[2]);
+            addIconLine(lensCorners[2], lensCorners[3]);
+            addIconLine(lensCorners[3], lensCorners[0]);
             addLine(0, 1);
             addLine(1, 3);
             addLine(3, 2);
@@ -524,8 +581,13 @@ public:
 
         ApplyOverlayStateUVE(overlayState);
         const UVE::Scene::EntityUVE previewCamera = editor_.GetPreviewCameraUVE();
+        const bool inspectorCameraPreview = context_ == UVE::Editor::EditorUVE::ViewportContextUVE::InspectorCameraPreview;
+        const UVE::Scene::EntityUVE selectedEntity = editor_.GetSelectedEntityUVE();
+        const bool selectedIsCamera = inspectorCameraPreview &&
+                                      UVE::Scene::IsDocumentCameraEntityUVE(entityManager_, selectedEntity);
         const bool wantPreview =
-            !gameWorkspaceActive_ && !studioView_ && previewCamera != UVE::Scene::kInvalidEntityUVE;
+            !gameWorkspaceActive_ && !studioView_ &&
+            ((previewCamera != UVE::Scene::kInvalidEntityUVE) || selectedIsCamera);
         if (wantPreview && !previewing_) {
             poseBeforePreview_ = CameraPoseUVE{camera_.Target(), camera_.Yaw(), camera_.Pitch(), camera_.Distance(),
                                                camera_.IsOrthographic()};
@@ -542,6 +604,7 @@ public:
             previewing_ = false;
         }
         renderPass_->Settings().viewGizmos = !studioView_ && !gameWorkspaceActive_ && !previewing_;
+        renderPass_->Settings().viewTransformGizmo = !studioView_ && !gameWorkspaceActive_ && !previewing_;
         if (studioView_) {
             // Looked at, not edited: nothing is selected or moved, and the view does not turn.
             renderPass_->Settings().viewTransformGizmo = false;
@@ -585,12 +648,14 @@ public:
         std::optional<UVE::Scene::EntityUVE> lookThroughCamera;
         if (gameWorkspaceActive_) {
             lookThroughCamera = FindGameCameraEntityUVE(entityManager_);
+        } else if (selectedIsCamera) {
+            lookThroughCamera = selectedEntity;
         } else if (wantPreview) {
             lookThroughCamera = previewCamera;
         }
         const univex::integration::EditorMeshLayerResultUVE meshResult = meshLayer_.RenderUVE(
             camera_, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), lookThroughCamera);
-        if (!gameWorkspaceActive_ && !studioView_) {
+        if (!gameWorkspaceActive_ && !studioView_ && !previewing_) {
             const float aspect = static_cast<float>(width) / static_cast<float>(height);
             univex::gizmo::GizmoMesh overlay = BuildCameraFrustumMeshUVE(
                 entityManager_, lookThroughCamera.value_or(UVE::Scene::kInvalidEntityUVE), aspect);
@@ -641,10 +706,12 @@ public:
         if (studio != nullptr) {
             studio->DrawFloor(camera_, width, height);
         }
-        renderPass_->RenderGridUVE(camera_, width, height);
+        if (!previewing_) {
+            renderPass_->RenderGridUVE(camera_, width, height);
+        }
         // The selection outline sits over the scene and the grid, under the gizmos. The Game tab
         // previews what a player sees, so no editor outline there.
-        if (!gameWorkspaceActive_ && !studioView_) {
+        if (!gameWorkspaceActive_ && !studioView_ && !previewing_) {
             renderPass_->RenderSelectionOutlineUVE(
                 camera_, width, height,
                 univex::integration::CollectSelectionOutlineTrianglesUVE(
@@ -927,10 +994,11 @@ private:
         settings.viewGrid = overlayState.gridVisible && !overlayState.gameWorkspaceActive;
         renderPass_->SetGridOpacityUVE(overlayState.gridOpacity);
         renderPass_->SetGridCellSizeUVE(overlayState.gridCellSize);
+        constexpr float kSelectionOutlineVisualScaleUVE = 0.20F;
         renderPass_->SetSelectionOutlineUVE(univex::render::SelectionOutlineSettings{
             overlayState.selectionOutlineVisible, overlayState.selectionOutlineColor.r,
             overlayState.selectionOutlineColor.g, overlayState.selectionOutlineColor.b,
-            overlayState.selectionOutlineThickness});
+            overlayState.selectionOutlineThickness * kSelectionOutlineVisualScaleUVE});
         // A named side view looks along the ground, which is only an edge from there; the grid
         // stands up on the plane facing the camera instead, so the view keeps a reference.
         const univex::math::Vec3 viewAxis = NamedViewDirectionUVE(overlayState.view);
@@ -1070,7 +1138,7 @@ private:
         }
 
         const bool hasSelection = contributing > 0;
-        renderPass_->Settings().viewTransformGizmo = hasSelection && !gameWorkspaceActive_;
+        renderPass_->Settings().viewTransformGizmo = hasSelection && !gameWorkspaceActive_ && !previewing_;
         if (hasSelection) {
             gizmoPivot_ = centroid * (1.0F / static_cast<float>(contributing));
             renderPass_->SetGizmoPivotOverride(gizmoPivot_);
