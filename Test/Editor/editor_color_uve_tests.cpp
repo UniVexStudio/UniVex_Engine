@@ -125,5 +125,51 @@ TEST(EditorColorUVETest, HsvConversion_RoundTripsAndKeepsHueThroughGreyAndBlack)
     ExpectColorNear(HsvToRgbUVE(EditorHsvUVE{1.0F, 1.0F, 1.0F}, 1.0F), EditorColorUVE{1.0F, 0.0F, 0.0F, 1.0F});
 }
 
+// The two slider scales are decided by the compiler, not only by the expectations below: a
+// scale that drifts from its end or spelling stops this file from building at all.
+static_assert(ColorPickerRgbScaleForUVE(ColorPickerRgbDisplayUVE::ZeroToOne).maximum == 1.0F);
+static_assert(ColorPickerRgbScaleForUVE(ColorPickerRgbDisplayUVE::ZeroTo255).maximum == 255.0F);
+static_assert(ColorPickerRgbToShownUVE(1.0F, ColorPickerRgbDisplayUVE::ZeroTo255) == 255.0F);
+static_assert(ColorPickerShownRgbToStoredUVE(255.0F, ColorPickerRgbDisplayUVE::ZeroTo255) == 1.0F);
+
+TEST(EditorColorUVETest, RgbDisplay_ScalesAndSpellsEachModeOnce) {
+    using Display = ColorPickerRgbDisplayUVE;
+    const ColorPickerRgbScaleUVE unit = ColorPickerRgbScaleForUVE(Display::ZeroToOne);
+    const ColorPickerRgbScaleUVE bytes = ColorPickerRgbScaleForUVE(Display::ZeroTo255);
+    EXPECT_FLOAT_EQ(unit.maximum, 1.0F);
+    EXPECT_STREQ(unit.format, "%.3f");
+    EXPECT_FLOAT_EQ(bytes.maximum, 255.0F);
+    EXPECT_STREQ(bytes.format, "%.0f");
+
+    // 0-1 is the identity; 0-255 multiplies out and divides back.
+    EXPECT_FLOAT_EQ(ColorPickerRgbToShownUVE(0.5F, Display::ZeroToOne), 0.5F);
+    EXPECT_FLOAT_EQ(ColorPickerRgbToShownUVE(0.5F, Display::ZeroTo255), 127.5F);
+    EXPECT_FLOAT_EQ(ColorPickerShownRgbToStoredUVE(128.0F, Display::ZeroTo255), 128.0F / 255.0F);
+    EXPECT_NEAR(ColorPickerShownRgbToStoredUVE(ColorPickerRgbToShownUVE(0.3F, Display::ZeroTo255),
+                                              Display::ZeroTo255),
+                0.3F, 1.0e-6F);
+
+    // Anything but 0-255 reads as 0-1, so a value from an older session can never land the
+    // sliders off their scale.
+    const Display nowhere = static_cast<Display>(9);
+    EXPECT_FLOAT_EQ(ColorPickerRgbScaleForUVE(nowhere).maximum, 1.0F);
+    EXPECT_FLOAT_EQ(ColorPickerRgbToShownUVE(0.5F, nowhere), 0.5F);
+}
+
+// The percent scale is decided by the compiler too: an end or a conversion that drifts stops
+// this file from building at all.
+static_assert(kHsvPercentScaleUVE.maximum == 100.0F);
+static_assert(HsvToPercentUVE(1.0F) == 100.0F);
+static_assert(PercentToHsvUVE(100.0F) == 1.0F);
+
+TEST(EditorColorUVETest, HsvPercent_ShowsWholePercentsAndRoundTrips) {
+    EXPECT_FLOAT_EQ(HsvToPercentUVE(0.5F), 50.0F);
+    EXPECT_FLOAT_EQ(HsvToPercentUVE(0.0F), 0.0F);
+    EXPECT_FLOAT_EQ(PercentToHsvUVE(75.0F), 0.75F);
+    EXPECT_NEAR(PercentToHsvUVE(HsvToPercentUVE(0.3F)), 0.3F, 1.0e-6F);
+    EXPECT_FLOAT_EQ(kHsvPercentScaleUVE.maximum, 100.0F);
+    EXPECT_STREQ(kHsvPercentScaleUVE.format, "%.0f%%");
+}
+
 } // namespace
 } // namespace UVE::Editor::Tests

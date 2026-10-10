@@ -105,8 +105,8 @@ def axes(ic, ox, oy, length=20, width=4.4, head=10.5):
     arrow(ic, (ox, oy), iso(ox, oy, 0, length, 0), AXIS_Y, width, head)
 
 
-@scene_object("scene_root", "SceneRoot", "Scene")
-def scene_root(ic):
+@scene_object("object", "Object", "Scene")
+def object_icon(ic):
     shadow(ic, 32, 56, 26, 6)
     slab(ic, 32, 50, 40, 40, 5, shade(STEEL, -0.12))
     link(ic, (32, 17), (19, 34))

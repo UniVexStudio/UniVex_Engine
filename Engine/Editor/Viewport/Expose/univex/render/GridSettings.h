@@ -55,12 +55,24 @@ struct GridSettings {
     // steps up a decade. Larger = sparser grid.
     float targetCellPixels = 24.0f;
 
+    // How many of the finest lines share each decade cell: 1 draws none of them (the grid as it
+    // was before the option existed), N draws N-1 sub-lines between the finest decade's lines, at
+    // ComputeGridSubdivisionSpacing()'s spacing. The sub-lines fade with the finest tier - see
+    // kGridSubdivisionIntensityUVE - so the decade tick-over still looks exactly as it did.
+    int subdivisions = 1;
+
     float lineWidthPixels = 1.25f;
     float axisWidthPixels = 1.6f;
 
     GridColor thinColor{0.36f, 0.40f, 0.49f};
     GridColor midColor{0.55f, 0.60f, 0.70f};
     GridColor thickColor{0.72f, 0.77f, 0.87f};
+
+    // Multiplied over all three line levels, so one control tints the whole grid; white (the
+    // default) leaves the levels exactly as they are drawn. A field of its own rather than the
+    // caller writing into the three colours, because all three have to move together and a tint
+    // applied twice must not darken twice.
+    GridColor lineTint{1.f, 1.f, 1.f};
 
     float thinIntensity = 0.45f;
     float midIntensity = 0.70f;
@@ -87,6 +99,17 @@ struct GridSettings {
     GridPlane plane = GridPlane::XZ;
 };
 
+// One of the grid's colours with the tint over it - the renderer, a HUD swatch and the tests all
+// combine the two the same way.
+[[nodiscard]] inline GridColor TintedGridColor(const GridColor& color, const GridColor& tint) {
+    return GridColor{color.r * tint.r, color.g * tint.g, color.b * tint.b};
+}
+
+// How strong a subdivision line is next to the finest decade line it sits between. Less than half
+// keeps the sub-lines reading as texture rather than as grid steps of their own, and it is the same
+// scale infinite_grid.frag applies - one value, so the shader and this mirror cannot drift.
+inline constexpr float kGridSubdivisionIntensityUVE = 0.5f;
+
 struct GridLod {
     float level = 0.f;      // continuous LOD; floor() is the decade
     float fade = 0.f;       // fract(level): how far into the next decade
@@ -106,6 +129,16 @@ struct GridLod {
     lod.fade = level - std::floor(level);
     lod.finestSpacing = settings.baseSpacing * std::pow(10.f, std::floor(level));
     return lod;
+}
+
+// The spacing of the subdivision lines right now: the finest decade's spacing, divided by the
+// subdivision count, so a caller (a HUD, snapping, a test) can name the step the user sees between
+// the decade lines without a GPU. With subdivisions == 1 there are no sub-lines and this is the
+// finest decade's spacing - the value the grid effectively still has.
+[[nodiscard]] inline float ComputeGridSubdivisionSpacing(float worldPerPixel, const GridSettings& settings) {
+    const GridLod lod = ComputeGridLod(worldPerPixel, settings);
+    const int subdivisions = std::max(1, settings.subdivisions);
+    return lod.finestSpacing / static_cast<float>(subdivisions);
 }
 
 // The spacing a user would call "the grid size" right now — the finest

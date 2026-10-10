@@ -41,12 +41,18 @@ worse than no checklist.
 
 ### Working today
 
-- [x] SceneRoot — the document's single structural root (Godot-style one-root scene): created
+- [x] Object — the document's single structural root (Godot-style one-root scene): created
   automatically with every new document, every loaded legacy multi-root file is auto-migrated
   under it on load, all new nodes join the hierarchy under the current selection (or the root
-  when nothing is selected), and it can never be deleted, re-parented, or duplicated. Structural
-  only by design — name + identity transform; scene-wide settings get their own authored homes
-  when the systems that consume them exist, not before.
+  when nothing is selected), and it can never be deleted, re-parented, or duplicated. Named
+  **Object** — that is what it is: the base Object (a pure Object: name, hierarchy link and the
+  common Object section — Process, Thread Group, Physics Interpolation, Auto Translate, Editor
+  Description, Script, Metadata — with no transform), and the hierarchy every Object3D in the
+  level hangs from. It is called Object everywhere: the marker component (`ObjectComponentUVE`),
+  the definition (`ObjectDefinitionUVE`), the registry kind (`SceneObjectKindUVE::Object`), the
+  type id `object` and the icon `object.svg`. Documents written before the rename load unchanged —
+  the old `scene_root` type id and the `SceneRootComponentUVE` component name are still resolved —
+  and are written back under the new names.
 - [x] Empty — plain transform-only node, the base of every scene hierarchy.
 - [x] Camera3D — real camera, drives view/projection for rendering.
 - [x] MeshInstance3D — real mesh + material rendering through the lit shader pipeline.

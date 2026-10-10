@@ -48,8 +48,8 @@ struct EngineProjectSettingUVE final {
 };
 
 [[nodiscard]] bool IsValidShaderCacheSettingValueUVE(const SettingValueUVE& value) {
-    const std::string* const pathValue = std::get_if<std::string>(&value);
-    return pathValue != nullptr && IsSafeShaderCachePathUVE(std::filesystem::path(*pathValue));
+    // The registry already guarantees this setting's FilePath type; keep only the shader-cache path policy here.
+    return IsSafeShaderCachePathUVE(std::filesystem::path(std::get<std::string>(value)));
 }
 
 [[nodiscard]] SettingDescriptorUVE RestartRequiredUVE(SettingDescriptorUVE descriptor) {
@@ -595,6 +595,37 @@ struct EngineProjectSettingUVE final {
     return error == std::errc{} && end == text.data() + text.size();
 }
 
+[[nodiscard]] bool ParseCommandLineLayerMaskUVE(const std::string_view text, std::uint32_t& value) noexcept {
+    int base = 10;
+    std::string_view digits = text;
+    if (digits.starts_with("0x") || digits.starts_with("0X")) {
+        base = 16;
+        digits.remove_prefix(2U);
+    }
+    if (digits.empty()) {
+        return false;
+    }
+    const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), value, base);
+    return error == std::errc{} && end == digits.data() + digits.size();
+}
+
+[[nodiscard]] bool ParseCommandLineAssetReferenceUVE(const std::string_view text, std::uint64_t& guid) noexcept {
+    std::string_view digits = text;
+    const bool hasHexPrefix = digits.starts_with("0x") || digits.starts_with("0X");
+    if (hasHexPrefix) {
+        digits.remove_prefix(2U);
+        if (digits.empty()) {
+            return false;
+        }
+    }
+    const std::optional<Config::SettingAssetReferenceUVE> reference = Config::ParseSettingAssetReferenceUVE(digits);
+    if (!reference) {
+        return false;
+    }
+    guid = reference->guid;
+    return true;
+}
+
 [[nodiscard]] bool EqualsAsciiCaseInsensitiveUVE(const std::string_view left, const std::string_view right) noexcept {
     if (left.size() != right.size()) {
         return false;
@@ -693,6 +724,14 @@ struct EngineProjectSettingUVE final {
         }
         return Config::SettingValueUVE{color};
     }
+    case Config::SettingTypeUVE::Vector2: {
+        std::array<double, 2U> components{};
+        const std::optional<std::size_t> count = ParseCommaSeparatedNumbersUVE(text, components);
+        if (!count.has_value() || *count != components.size()) {
+            return std::nullopt;
+        }
+        return Config::SettingValueUVE{Config::SettingVector2UVE{components[0U], components[1U]}};
+    }
     case Config::SettingTypeUVE::Vector3: {
         std::array<double, 3U> components{};
         const std::optional<std::size_t> count = ParseCommaSeparatedNumbersUVE(text, components);
@@ -700,6 +739,27 @@ struct EngineProjectSettingUVE final {
             return std::nullopt;
         }
         return Config::SettingValueUVE{Config::SettingVector3UVE{components[0U], components[1U], components[2U]}};
+    }
+    case Config::SettingTypeUVE::Vector4: {
+        std::array<double, 4U> components{};
+        const std::optional<std::size_t> count = ParseCommaSeparatedNumbersUVE(text, components);
+        if (!count.has_value() || *count != components.size()) {
+            return std::nullopt;
+        }
+        return Config::SettingValueUVE{Config::SettingVector4UVE{components[0U], components[1U], components[2U],
+                                                                 components[3U]}};
+    }
+    case Config::SettingTypeUVE::LayerMask: {
+        std::uint32_t bits = 0U;
+        return ParseCommandLineLayerMaskUVE(text, bits)
+                   ? std::optional<Config::SettingValueUVE>{Config::SettingLayerMaskUVE{bits}}
+                   : std::nullopt;
+    }
+    case Config::SettingTypeUVE::AssetReference: {
+        std::uint64_t guid = 0U;
+        return ParseCommandLineAssetReferenceUVE(text, guid)
+                   ? std::optional<Config::SettingValueUVE>{Config::SettingAssetReferenceUVE{guid}}
+                   : std::nullopt;
     }
     }
     return std::nullopt;

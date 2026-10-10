@@ -34,6 +34,7 @@
 #include <system_error>
 #include <typeindex>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <imgui.h>
@@ -454,6 +455,11 @@ void EditorUVE::DrawMetadataPropertyRowsUVE(const TypeMetadataEntryUVE& entry, c
         if (group != nullptr && !groupOpen) {
             continue;
         }
+        // Whole-width editors (metadata entries, node graphs) have no per-property value to share
+        // across holders, so they sit out multi-selections rather than pretend.
+        if (!HasSingleDocumentSelectionUVE() && IsBlockPropertyDrawerUVE(property.customDrawerId)) {
+            continue;
+        }
         if (IsBlockPropertyDrawerUVE(property.customDrawerId)) {
             // A block drawer lays out its own rows, so the shared table closes around it and a
             // fresh one opens for whatever follows.
@@ -483,10 +489,22 @@ bool EditorUVE::DrawMetadataPropertyLabelUVE(const TypeMetadataEntryUVE& entry, 
     const float cellWidth = ImGui::GetContentRegionAvail().x;
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(property.displayName.c_str());
+    if (!HasSingleDocumentSelectionUVE() && IsComponentPropertyMixedUVE(entry, property)) {
+        // The widget shows the active holder's value; the marker admits the others disagree.
+        ImGui::SameLine(0.0F, 4.0F);
+        ImGui::TextDisabled("(mixed)");
+    }
     DrawTooltipUVE(property);
+    // Right-click menu on the label, the row's equivalent of the section menu. The call submits
+    // nothing before the popup, so the menu anchors to the label text itself.
+    DrawInspectorPropertyMenuUVE(entry, property, writable);
     // Offered only when there is something to revert to. A revert control on every row, most of
     // them already at their default, is noise that hides the few rows someone actually changed.
-    if (!writable || IsPropertyAtDefaultUVE(entry, property, instance)) {
+    // In a multi-selection the revert lands on every holder, so it shows while any holder differs.
+    const bool atDefault = HasSingleDocumentSelectionUVE()
+                               ? IsPropertyAtDefaultUVE(entry, property, instance)
+                               : IsMultiSelectedPropertyAtDefaultUVE(entry, property);
+    if (!writable || atDefault) {
         return false;
     }
     const float size = ImGui::GetFrameHeight();
@@ -553,20 +571,23 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
     } else if (property.typeId == Scene::kPropertyTypeFloatUVE) {
         float value = 0.0F;
         property.getValue(instance, &value);
-        const bool changed = ImGui::DragFloat("##value", &value, RangeStepUVE(property, 0.01F),
-                                              RangeMinimumUVE(property), RangeMaximumUVE(property));
+        const bool changed =
+            ImGui::DragFloat("##value", &value, RangeStepUVE(property, 0.01F), RangeMinimumUVE(property),
+                             RangeMaximumUVE(property), InspectorFloatFormatUVE(m_inspectorFloatPrecision));
         edited = ApplyContinuousPropertyEditUVE(entry, property, changed, &value) || edited;
     } else if (property.typeId == Scene::kPropertyTypeVector2UVE) {
         Math::Vector2UVE value{};
         property.getValue(instance, &value);
-        const bool changed = DrawAxisVectorInputUVE("##value", &value.x, 2, RangeStepUVE(property, 0.01F),
-                                                    RangeMinimumUVE(property), RangeMaximumUVE(property));
+        const bool changed =
+            DrawAxisVectorInputUVE("##value", &value.x, 2, RangeStepUVE(property, 0.01F),
+                                   RangeMinimumUVE(property), RangeMaximumUVE(property), m_inspectorFloatPrecision);
         edited = ApplyContinuousPropertyEditUVE(entry, property, changed, &value) || edited;
     } else if (property.typeId == Scene::kPropertyTypeVector3UVE) {
         Math::Vector3UVE value{};
         property.getValue(instance, &value);
-        const bool changed = DrawAxisVectorInputUVE("##value", &value.x, 3, RangeStepUVE(property, 0.01F),
-                                                    RangeMinimumUVE(property), RangeMaximumUVE(property));
+        const bool changed =
+            DrawAxisVectorInputUVE("##value", &value.x, 3, RangeStepUVE(property, 0.01F),
+                                   RangeMinimumUVE(property), RangeMaximumUVE(property), m_inspectorFloatPrecision);
         edited = ApplyContinuousPropertyEditUVE(entry, property, changed, &value) || edited;
     } else if (property.typeId == Scene::kPropertyTypeColorUVE) {
         // Shown live while the picker is open, recorded as one undo step when it closes.
@@ -928,9 +949,12 @@ bool EditorUVE::SetSelectedComponentValueUVE(const TypeMetadataEntryUVE& entry, 
     // A live edit still in flight is finished first, before this one changes anything, so the two
     // land in history in the order they happened.
     static_cast<void>(CommitComponentPropertyPreviewUVE());
-    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() || !entry.HasFactoryUVE() ||
-        newInstance == nullptr || (entry.isInstanceValid != nullptr && !entry.isInstanceValid(newInstance))) {
+    if (!IsAuthoringCommandAllowedUVE() || !entry.HasFactoryUVE() || newInstance == nullptr ||
+        (entry.isInstanceValid != nullptr && !entry.isInstanceValid(newInstance))) {
         return false;
+    }
+    if (!HasSingleDocumentSelectionUVE()) {
+        return SetMultiSelectedComponentValueUVE(entry, newInstance);
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     if (!entityManager.HasComponentUVE(m_selectedEntity, entry.typeIndex)) {
@@ -949,6 +973,38 @@ bool EditorUVE::SetSelectedComponentValueUVE(const TypeMetadataEntryUVE& entry, 
     RecordHistoryUVE(ComponentPropertyHistoryEntryUVE{m_selectedEntity, &entry, std::move(before), std::move(after),
                                                       selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore,
                                                       true});
+    return true;
+}
+
+bool EditorUVE::SetMultiSelectedComponentValueUVE(const Core::TypeMetadataEntryUVE& entry,
+                                                  const void* const newInstance) {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const std::vector<Scene::EntityUVE> holders = CollectComponentPropertyHoldersUVE(entry);
+    if (holders.empty()) {
+        return false;
+    }
+    // The incoming component was already accepted by the type's own rule before the dispatch, the
+    // same check the single path runs, so every holder can take it; still, every before is cloned
+    // before anything moves, so a failed clone aborts with the scene untouched.
+    std::vector<MultiComponentPropertyEditUVE> edits;
+    for (const Scene::EntityUVE holder : holders) {
+        Core::TypeInstanceUVE before = Core::TypeInstanceUVE::CloneUVE(
+            entry, entityManager.GetComponentPointerUVE(holder, entry.typeIndex));
+        Core::TypeInstanceUVE after = Core::TypeInstanceUVE::CloneUVE(entry, newInstance);
+        if (!before.IsValidUVE() || !after.IsValidUVE()) {
+            return false;
+        }
+        edits.push_back(MultiComponentPropertyEditUVE{holder, std::move(before), std::move(after)});
+    }
+    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    for (const MultiComponentPropertyEditUVE& edit : edits) {
+        entry.assignInstance(entityManager.GetComponentPointerUVE(edit.entity, entry.typeIndex),
+                             edit.after.GetUVE());
+    }
+    m_sceneDirty = true;
+    RecordHistoryUVE(MultiComponentPropertyHistoryEntryUVE{&entry, std::move(edits), selectionBefore,
+                                                           CaptureSelectionSnapshotUVE(), dirtyBefore, true});
     return true;
 }
 
@@ -1011,6 +1067,72 @@ Scene::TransformComponentUVE WithLocalPoseUVE(Scene::TransformComponentUVE targe
     return target;
 }
 
+// The stable name of a Transform row: it keys the per-property clipboard and is the last level
+// of a Transform part path, so the two can never disagree. These are the component's own field
+// names, not the shown labels ("Position"), because labels are display text and fields are not.
+[[nodiscard]] const char* TransformPartNameUVE(const TransformClipboardPartUVE part) noexcept {
+    switch (part) {
+    case TransformClipboardPartUVE::Position:
+        return "localPosition";
+    case TransformClipboardPartUVE::Rotation:
+        return "localRotation";
+    case TransformClipboardPartUVE::Scale:
+        return "localScale";
+    }
+    return "localPosition";
+}
+
+// One property value read generically: the reader fills whichever alternative the declared type
+// needs, so a caller can move a value it cannot name - a reset default, a drag's landing value -
+// into the setter without naming its type.
+using ComponentPropertyBytesUVE =
+    std::variant<std::string, Asset::AssetGuidUVE, Scene::EntityUVE, std::array<std::byte, 64>>;
+
+[[nodiscard]] const void* ComponentPropertyBytesPointerUVE(const ComponentPropertyBytesUVE& bytes) noexcept {
+    return std::visit([](const auto& stored) -> const void* { return &stored; }, bytes);
+}
+
+[[nodiscard]] std::optional<ComponentPropertyBytesUVE> ReadComponentPropertyBytesUVE(
+    const Core::TypeMetadataPropertyUVE& property, const void* const instance) {
+    if (property.getValue == nullptr || instance == nullptr) {
+        return std::nullopt;
+    }
+    if (property.typeId == Scene::kPropertyTypeStringUVE) {
+        ComponentPropertyBytesUVE bytes = std::string{};
+        property.getValue(instance, &std::get<std::string>(bytes));
+        return bytes;
+    }
+    if (property.typeId == Scene::kPropertyTypeAssetGuidUVE) {
+        ComponentPropertyBytesUVE bytes = Asset::AssetGuidUVE{};
+        property.getValue(instance, &std::get<Asset::AssetGuidUVE>(bytes));
+        return bytes;
+    }
+    if (property.typeId == Scene::kPropertyTypeEntityUVE) {
+        ComponentPropertyBytesUVE bytes = Scene::kInvalidEntityUVE;
+        property.getValue(instance, &std::get<Scene::EntityUVE>(bytes));
+        return bytes;
+    }
+    // The byte buffer is only sound for trivially copyable values, so the types allowed through
+    // it are named rather than assumed. A list or other owning value (the metadata entries) is
+    // never moved through here; its custom drawer owns that.
+    const bool trivial = !property.enumEntries.empty() || property.typeId == Scene::kPropertyTypeBoolUVE ||
+                         property.typeId == Scene::kPropertyTypeFloatUVE ||
+                         property.typeId == Scene::kPropertyTypeInt32UVE ||
+                         property.typeId == Scene::kPropertyTypeUInt32UVE ||
+                         property.typeId == Scene::kPropertyTypeUInt8UVE ||
+                         property.typeId == Scene::kPropertyTypeBitMask32UVE ||
+                         property.typeId == Scene::kPropertyTypeVector2UVE ||
+                         property.typeId == Scene::kPropertyTypeVector3UVE ||
+                         property.typeId == Scene::kPropertyTypeColorUVE ||
+                         property.typeId == Scene::kPropertyTypeQuaternionUVE;
+    if (!trivial) {
+        return std::nullopt;
+    }
+    ComponentPropertyBytesUVE bytes = std::array<std::byte, 64>{};
+    property.getValue(instance, std::get<std::array<std::byte, 64>>(bytes).data());
+    return bytes;
+}
+
 } // namespace
 
 bool EditorUVE::PasteSelectedTransformUVE() {
@@ -1031,6 +1153,245 @@ bool EditorUVE::ResetSelectedTransformUVE() {
     }
     return SetSelectedLocalTransformUVE(WithLocalPoseUVE(
         entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity), Scene::TransformComponentUVE{}));
+}
+
+bool EditorUVE::CopySelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entry,
+                                                 const TypeMetadataPropertyUVE& property) {
+    if (!HasSingleDocumentSelectionUVE() || !entry.HasFactoryUVE() || property.getValue == nullptr) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE(m_selectedEntity, entry.typeIndex)) {
+        return false;
+    }
+    const void* const instance = entityManager.GetComponentPointerUVE(m_selectedEntity, entry.typeIndex);
+    if (instance == nullptr) {
+        return false;
+    }
+    // Read through the same accessor the row draws, one typed case per drawable value - in the
+    // row's own order, with an enum first because enum-ness is declared beside the type, not as
+    // one. A value type nothing here names is refused, leaving the clipboard as it was.
+    PropertyClipboardUVE copied;
+    copied.ownerType = entry.typeIndex;
+    copied.propertyName = property.name;
+    copied.propertyTypeId = property.typeId;
+    copied.isEnum = !property.enumEntries.empty();
+    if (!property.enumEntries.empty()) {
+        std::int64_t value = 0;
+        property.getValue(instance, &value);
+        copied.value = value;
+    } else if (property.typeId == Scene::kPropertyTypeBoolUVE) {
+        bool value = false;
+        property.getValue(instance, &value);
+        copied.value = value;
+    } else if (property.typeId == Scene::kPropertyTypeFloatUVE) {
+        float value = 0.0F;
+        property.getValue(instance, &value);
+        copied.value = value;
+    } else if (property.typeId == Scene::kPropertyTypeVector2UVE) {
+        Math::Vector2UVE value{};
+        property.getValue(instance, &value);
+        copied.value = value;
+    } else if (property.typeId == Scene::kPropertyTypeVector3UVE) {
+        Math::Vector3UVE value{};
+        property.getValue(instance, &value);
+        copied.value = value;
+    } else if (property.typeId == Scene::kPropertyTypeColorUVE) {
+        Math::Vector3UVE value{};
+        property.getValue(instance, &value);
+        copied.value = value;
+    } else if (property.typeId == Scene::kPropertyTypeInt32UVE) {
+        std::int32_t value = 0;
+        property.getValue(instance, &value);
+        copied.value = value;
+    } else if (property.typeId == Scene::kPropertyTypeUInt32UVE) {
+        std::uint32_t value = 0U;
+        property.getValue(instance, &value);
+        copied.value = value;
+    } else if (property.typeId == Scene::kPropertyTypeUInt8UVE) {
+        std::uint8_t value = 0U;
+        property.getValue(instance, &value);
+        copied.value = value;
+    } else if (property.typeId == Scene::kPropertyTypeBitMask32UVE) {
+        std::uint32_t value = 0U;
+        property.getValue(instance, &value);
+        copied.value = value;
+    } else if (property.typeId == Scene::kPropertyTypeStringUVE) {
+        std::string value;
+        property.getValue(instance, &value);
+        copied.value = value;
+    } else if (property.typeId == Scene::kPropertyTypeAssetGuidUVE) {
+        Asset::AssetGuidUVE value{};
+        property.getValue(instance, &value);
+        copied.value = value;
+    } else if (property.typeId == Scene::kPropertyTypeEntityUVE) {
+        Scene::EntityUVE value = Scene::kInvalidEntityUVE;
+        property.getValue(instance, &value);
+        copied.value = value;
+    } else if (property.typeId == Scene::kPropertyTypeQuaternionUVE) {
+        Math::QuaternionUVE value{};
+        property.getValue(instance, &value);
+        copied.value = value;
+    } else {
+        return false;
+    }
+    m_propertyClipboard = std::move(copied);
+    return true;
+}
+
+bool EditorUVE::CanPasteSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entry,
+                                                     const TypeMetadataPropertyUVE& property) const {
+    // Same-property only, by identity: the type index cannot collide, and a property's name is
+    // unique within its entry. The type id and enum-ness ride along so a value can never be
+    // reinterpreted if the registry ever changes under a live clipboard.
+    return m_propertyClipboard.has_value() && m_propertyClipboard->ownerType == entry.typeIndex &&
+           m_propertyClipboard->propertyName == property.name &&
+           m_propertyClipboard->propertyTypeId == property.typeId &&
+           m_propertyClipboard->isEnum == !property.enumEntries.empty();
+}
+
+bool EditorUVE::PasteSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entry,
+                                                  const TypeMetadataPropertyUVE& property) {
+    if (!CanPasteSelectedComponentPropertyUVE(entry, property)) {
+        return false;
+    }
+    // The match above guarantees the stored alternative is the one this property reads: the
+    // copy wrote it from this same declaration. The write itself is the row's own setter, so a
+    // paste is one undo step and obeys the component's own rule.
+    return std::visit(
+        [this, &entry, &property](const auto& stored) {
+            return SetSelectedComponentPropertyUVE(entry, property, &stored);
+        },
+        m_propertyClipboard->value);
+}
+
+bool EditorUVE::CopySelectedTransformPartUVE(const TransformClipboardPartUVE part) {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!HasSingleDocumentSelectionUVE() ||
+        !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity)) {
+        return false;
+    }
+    const Scene::TransformComponentUVE transform =
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity);
+    PropertyClipboardUVE copied;
+    copied.ownerType = std::type_index(typeid(Scene::TransformComponentUVE));
+    copied.propertyName = TransformPartNameUVE(part);
+    switch (part) {
+    case TransformClipboardPartUVE::Position:
+        copied.value = transform.localPosition;
+        break;
+    case TransformClipboardPartUVE::Rotation:
+        // The quaternion plus its Euler authoring state: what the row shows is only ever a
+        // derived view of these, so copying the shown angles would lose data (see
+        // TransformComponentUVE::localEulerRadians).
+        copied.value = TransformRotationClipboardUVE{transform.localRotation, transform.localEulerRadians,
+                                                     transform.eulerOrder, transform.rotationEditMode};
+        break;
+    case TransformClipboardPartUVE::Scale:
+        copied.value = transform.localScale;
+        break;
+    }
+    m_propertyClipboard = std::move(copied);
+    return true;
+}
+
+bool EditorUVE::CanPasteSelectedTransformPartUVE(const TransformClipboardPartUVE part) const {
+    // Same part only. The empty type id and clear enum flag are what a Transform copy stores,
+    // so they are compared too: a metadata property can never match a part, even a future one
+    // declared on the Transform component itself.
+    return m_propertyClipboard.has_value() &&
+           m_propertyClipboard->ownerType == std::type_index(typeid(Scene::TransformComponentUVE)) &&
+           m_propertyClipboard->propertyName == TransformPartNameUVE(part) &&
+           m_propertyClipboard->propertyTypeId.empty() && !m_propertyClipboard->isEnum;
+}
+
+bool EditorUVE::PasteSelectedTransformPartUVE(const TransformClipboardPartUVE part) {
+    if (!CanPasteSelectedTransformPartUVE(part) || !HasSingleDocumentSelectionUVE()) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity)) {
+        return false;
+    }
+    Scene::TransformComponentUVE target =
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity);
+    const PropertyClipboardValueUVE& stored = m_propertyClipboard->value;
+    switch (part) {
+    case TransformClipboardPartUVE::Position:
+        if (const Math::Vector3UVE* const position = std::get_if<Math::Vector3UVE>(&stored);
+            position != nullptr) {
+            target.localPosition = *position;
+        } else {
+            return false;
+        }
+        break;
+    case TransformClipboardPartUVE::Rotation:
+        if (const TransformRotationClipboardUVE* const rotation = std::get_if<TransformRotationClipboardUVE>(&stored);
+            rotation != nullptr) {
+            target.localRotation = rotation->rotation;
+            target.localEulerRadians = rotation->eulerRadians;
+            target.eulerOrder = rotation->eulerOrder;
+            target.rotationEditMode = rotation->rotationEditMode;
+        } else {
+            return false;
+        }
+        break;
+    case TransformClipboardPartUVE::Scale:
+        if (const Math::Vector3UVE* const scale = std::get_if<Math::Vector3UVE>(&stored); scale != nullptr) {
+            target.localScale = *scale;
+        } else {
+            return false;
+        }
+        break;
+    }
+    return SetSelectedLocalTransformUVE(target);
+}
+
+std::string EditorUVE::GetSelectedComponentPropertyPathUVE(
+    const Core::TypeMetadataEntryUVE& entry, const Core::TypeMetadataPropertyUVE& property) const {
+    if (!HasSingleDocumentSelectionUVE()) {
+        return {};
+    }
+    const std::string nodePath = GetEntityNodePathUVE(m_selectedEntity);
+    if (nodePath.empty()) {
+        return {};
+    }
+    // Stable identifiers, not shown labels: a section title can follow the value (a primitive's
+    // reads SphereMesh3D or BoxMesh3D depending on its shape), but a type id and field name never
+    // move, and a display name can hold spaces a path should not.
+    return nodePath + "/" + entry.typeId + "/" + property.name;
+}
+
+bool EditorUVE::CopySelectedComponentPropertyPathUVE(const Core::TypeMetadataEntryUVE& entry,
+                                                     const Core::TypeMetadataPropertyUVE& property) {
+    const std::string path = GetSelectedComponentPropertyPathUVE(entry, property);
+    if (path.empty()) {
+        return false;
+    }
+    SetClipboardTextUVE(path);
+    return true;
+}
+
+std::string EditorUVE::GetSelectedTransformPartPathUVE(const TransformClipboardPartUVE part) const {
+    if (!HasSingleDocumentSelectionUVE()) {
+        return {};
+    }
+    const std::string nodePath = GetEntityNodePathUVE(m_selectedEntity);
+    if (nodePath.empty()) {
+        return {};
+    }
+    // The Transform section has no metadata entry, so the section's own shown name stands where
+    // a type id would. The part name is the same one that keys the clipboard.
+    return nodePath + "/Transform/" + TransformPartNameUVE(part);
+}
+
+bool EditorUVE::CopySelectedTransformPartPathUVE(const TransformClipboardPartUVE part) {
+    const std::string path = GetSelectedTransformPartPathUVE(part);
+    if (path.empty()) {
+        return false;
+    }
+    SetClipboardTextUVE(path);
+    return true;
 }
 
 void EditorUVE::DrawInspectorSectionMenuUVE(const TypeMetadataEntryUVE* const entry, const char* const sectionName) {
@@ -1054,6 +1415,54 @@ void EditorUVE::DrawInspectorSectionMenuUVE(const TypeMetadataEntryUVE* const en
     ImGui::Separator();
     if (ImGui::MenuItem("Reset to Defaults", nullptr, false, writable)) {
         static_cast<void>(entry != nullptr ? ResetSelectedComponentUVE(*entry) : ResetSelectedTransformUVE());
+    }
+    ImGui::EndPopup();
+}
+
+void EditorUVE::DrawInspectorPropertyMenuUVE(const TypeMetadataEntryUVE& entry,
+                                             const TypeMetadataPropertyUVE& property, const bool writable) {
+    if (!ImGui::BeginPopupContextItem("##property-menu")) {
+        return;
+    }
+    ImGui::TextDisabled("%s", property.displayName.c_str());
+    ImGui::Separator();
+    if (ImGui::MenuItem("Copy Value")) {
+        static_cast<void>(CopySelectedComponentPropertyUVE(entry, property));
+    }
+    const bool canPaste = writable && CanPasteSelectedComponentPropertyUVE(entry, property);
+    if (ImGui::MenuItem("Paste Value", nullptr, false, canPaste)) {
+        static_cast<void>(PasteSelectedComponentPropertyUVE(entry, property));
+    }
+    if (!canPaste && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Copy a %s value first.", property.displayName.c_str());
+    }
+    ImGui::Separator();
+    if (ImGui::MenuItem("Copy Path")) {
+        static_cast<void>(CopySelectedComponentPropertyPathUVE(entry, property));
+    }
+    ImGui::EndPopup();
+}
+
+void EditorUVE::DrawInspectorTransformPartMenuUVE(const TransformClipboardPartUVE part, const char* const label,
+                                                  const char* const menuId) {
+    if (!ImGui::BeginPopupContextItem(menuId)) {
+        return;
+    }
+    ImGui::TextDisabled("%s", label);
+    ImGui::Separator();
+    if (ImGui::MenuItem("Copy Value")) {
+        static_cast<void>(CopySelectedTransformPartUVE(part));
+    }
+    const bool canPaste = IsAuthoringCommandAllowedUVE() && CanPasteSelectedTransformPartUVE(part);
+    if (ImGui::MenuItem("Paste Value", nullptr, false, canPaste)) {
+        static_cast<void>(PasteSelectedTransformPartUVE(part));
+    }
+    if (!canPaste && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Copy a %s value first.", label);
+    }
+    ImGui::Separator();
+    if (ImGui::MenuItem("Copy Path")) {
+        static_cast<void>(CopySelectedTransformPartPathUVE(part));
     }
     ImGui::EndPopup();
 }
@@ -1100,9 +1509,12 @@ bool EditorUVE::SetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entr
                                                 const void* const newValue) {
     // See SetSelectedComponentValueUVE: a live edit in flight is recorded before this one.
     static_cast<void>(CommitComponentPropertyPreviewUVE());
-    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() ||
-        !property.IsAuthoringWritableUVE() || !entry.HasFactoryUVE() || newValue == nullptr) {
+    if (!IsAuthoringCommandAllowedUVE() || !property.IsAuthoringWritableUVE() || !entry.HasFactoryUVE() ||
+        newValue == nullptr) {
         return false;
+    }
+    if (!HasSingleDocumentSelectionUVE()) {
+        return SetMultiSelectedComponentPropertyUVE(entry, property, newValue);
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     if (!entityManager.HasComponentUVE(m_selectedEntity, entry.typeIndex)) {
@@ -1152,11 +1564,108 @@ bool EditorUVE::SetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entr
     return true;
 }
 
+std::vector<Scene::EntityUVE> EditorUVE::CollectComponentPropertyHoldersUVE(
+    const Core::TypeMetadataEntryUVE& entry) {
+    std::vector<Scene::EntityUVE> holders;
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    for (const Scene::EntityUVE entity : m_selectedEntities) {
+        if (IsDocumentEntityUVE(entity) && entityManager.HasComponentUVE(entity, entry.typeIndex)) {
+            holders.push_back(entity);
+        }
+    }
+    return holders;
+}
+
+bool EditorUVE::SetMultiSelectedComponentPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                                     const TypeMetadataPropertyUVE& property,
+                                                     const void* const newValue) {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const std::vector<Scene::EntityUVE> holders = CollectComponentPropertyHoldersUVE(entry);
+    if (holders.empty()) {
+        return false;
+    }
+    // Every holder's write is rehearsed on a scratch copy before anything moves, so one refusal -
+    // a rule rejection, a failed clone - aborts the whole edit with the scene untouched. Holders
+    // already at the value are left out of the entry rather than recorded as no-ops.
+    std::vector<MultiComponentPropertyEditUVE> edits;
+    for (const Scene::EntityUVE holder : holders) {
+        void* const live = entityManager.GetComponentPointerUVE(holder, entry.typeIndex);
+        Core::TypeInstanceUVE before = Core::TypeInstanceUVE::CloneUVE(entry, live);
+        Core::TypeInstanceUVE scratch = Core::TypeInstanceUVE::CloneUVE(entry, live);
+        if (!before.IsValidUVE() || !scratch.IsValidUVE()) {
+            return false;
+        }
+        property.setValue(scratch.GetMutableUVE(), newValue);
+        if (entry.isInstanceValid != nullptr && !entry.isInstanceValid(scratch.GetUVE())) {
+            return false;
+        }
+        if (property.areEqual != nullptr && property.areEqual(before.GetUVE(), scratch.GetUVE())) {
+            continue;
+        }
+        edits.push_back(MultiComponentPropertyEditUVE{holder, std::move(before), std::move(scratch)});
+    }
+    if (edits.empty()) {
+        return false;
+    }
+    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    for (const MultiComponentPropertyEditUVE& edit : edits) {
+        entry.assignInstance(entityManager.GetComponentPointerUVE(edit.entity, entry.typeIndex),
+                             edit.after.GetUVE());
+    }
+    m_sceneDirty = true;
+    RecordHistoryUVE(MultiComponentPropertyHistoryEntryUVE{&entry, std::move(edits), selectionBefore,
+                                                           CaptureSelectionSnapshotUVE(), dirtyBefore, true});
+    if (entry.typeIndex == std::type_index(typeid(Scene::CameraComponentUVE))) {
+        for (const Scene::EntityUVE holder : holders) {
+            const auto* const camera = static_cast<const Scene::CameraComponentUVE*>(
+                entityManager.GetComponentPointerUVE(holder, entry.typeIndex));
+            if (camera != nullptr && camera->current) {
+                Scene::MakeCameraCurrentUVE(entityManager, holder);
+            }
+        }
+    }
+    return true;
+}
+
+bool EditorUVE::IsComponentPropertyMixedUVE(const Core::TypeMetadataEntryUVE& entry,
+                                            const Core::TypeMetadataPropertyUVE& property) {
+    if (property.areEqual == nullptr || HasSingleDocumentSelectionUVE()) {
+        return false;
+    }
+    const std::vector<Scene::EntityUVE> holders = CollectComponentPropertyHoldersUVE(entry);
+    if (holders.size() < 2U) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const void* const first = entityManager.GetComponentPointerUVE(holders.front(), entry.typeIndex);
+    for (std::size_t index = 1U; index < holders.size(); ++index) {
+        if (!property.areEqual(first, entityManager.GetComponentPointerUVE(holders[index], entry.typeIndex))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool EditorUVE::IsMultiSelectedPropertyAtDefaultUVE(const Core::TypeMetadataEntryUVE& entry,
+                                                    const Core::TypeMetadataPropertyUVE& property) {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    for (const Scene::EntityUVE holder : CollectComponentPropertyHoldersUVE(entry)) {
+        if (!IsPropertyAtDefaultUVE(entry, property,
+                                    entityManager.GetComponentPointerUVE(holder, entry.typeIndex))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool EditorUVE::PreviewSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entry,
                                                     const TypeMetadataPropertyUVE& property,
                                                     const void* const newValue) {
-    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() ||
-        !property.IsAuthoringWritableUVE() || !entry.HasFactoryUVE() || newValue == nullptr) {
+    // The single-selection gate is deliberately absent: a drag in a multi-selection previews on
+    // the active entity and lands on every holder when committed.
+    if (!IsAuthoringCommandAllowedUVE() || !property.IsAuthoringWritableUVE() || !entry.HasFactoryUVE() ||
+        newValue == nullptr) {
         return false;
     }
     if (m_componentPropertyPreview.has_value() &&
@@ -1206,6 +1715,26 @@ bool EditorUVE::CommitComponentPropertyPreviewUVE() {
         // Opened and closed without a net change: nothing to undo, and nothing left unsaved.
         m_sceneDirty = preview.dirtyBefore;
         return true;
+    }
+    if (!HasSingleDocumentSelectionUVE() && IsSelectionSnapshotCurrentUVE(preview.selectionBefore)) {
+        // The drag ran its whole course inside this multi-selection: rewind the active holder and
+        // land the value on every holder through the one multi-aware funnel, as one undo step.
+        const std::optional<ComponentPropertyBytesUVE> bytes =
+            ReadComponentPropertyBytesUVE(*preview.property, instance);
+        if (bytes.has_value()) {
+            preview.entry->assignInstance(instance, preview.before.GetUVE());
+            if (SetMultiSelectedComponentPropertyUVE(*preview.entry, *preview.property,
+                                                     ComponentPropertyBytesPointerUVE(*bytes))) {
+                return true;
+            }
+            // Refused for the group (a holder's rule rejected it): the active holder keeps the
+            // dragged value, unrecorded, rather than silently losing the drag.
+            preview.property->setValue(instance, ComponentPropertyBytesPointerUVE(*bytes));
+            m_sceneDirty = true;
+            return false;
+        }
+        // A value this reader cannot name - a list mid-drag when the selection grew underneath
+        // it - falls through and commits for the dragged holder alone, honestly recorded below.
     }
     Core::TypeInstanceUVE after = Core::TypeInstanceUVE::CloneUVE(*preview.entry, instance);
     if (!after.IsValidUVE()) {
@@ -1577,40 +2106,12 @@ bool EditorUVE::ResetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& en
     }
     // Read the default through the same accessor the live value uses, so the buffer is exactly the
     // right size and type for the write that follows - without this function naming either.
-    std::array<std::byte, 64> buffer{};
-    if (property.typeId == Scene::kPropertyTypeStringUVE) {
-        std::string value;
-        property.getValue(defaults.GetUVE(), &value);
-        return SetSelectedComponentPropertyUVE(entry, property, &value);
-    }
-    if (property.typeId == Scene::kPropertyTypeAssetGuidUVE) {
-        Asset::AssetGuidUVE value{};
-        property.getValue(defaults.GetUVE(), &value);
-        return SetSelectedComponentPropertyUVE(entry, property, &value);
-    }
-    if (property.typeId == Scene::kPropertyTypeEntityUVE) {
-        Scene::EntityUVE value = Scene::kInvalidEntityUVE;
-        property.getValue(defaults.GetUVE(), &value);
-        return SetSelectedComponentPropertyUVE(entry, property, &value);
-    }
-    // The byte buffer is only sound for trivially copyable values, so the types allowed through it
-    // are named rather than assumed. A list or other owning value (the metadata entries) is never
-    // reset through here; its custom drawer owns that.
-    const bool trivial = !property.enumEntries.empty() || property.typeId == Scene::kPropertyTypeBoolUVE ||
-                         property.typeId == Scene::kPropertyTypeFloatUVE ||
-                         property.typeId == Scene::kPropertyTypeInt32UVE ||
-                         property.typeId == Scene::kPropertyTypeUInt32UVE ||
-                         property.typeId == Scene::kPropertyTypeUInt8UVE ||
-                         property.typeId == Scene::kPropertyTypeBitMask32UVE ||
-                         property.typeId == Scene::kPropertyTypeVector2UVE ||
-                         property.typeId == Scene::kPropertyTypeVector3UVE ||
-                         property.typeId == Scene::kPropertyTypeColorUVE ||
-                         property.typeId == Scene::kPropertyTypeQuaternionUVE;
-    if (!trivial) {
+    const std::optional<ComponentPropertyBytesUVE> bytes =
+        ReadComponentPropertyBytesUVE(property, defaults.GetUVE());
+    if (!bytes.has_value()) {
         return false;
     }
-    property.getValue(defaults.GetUVE(), buffer.data());
-    return SetSelectedComponentPropertyUVE(entry, property, buffer.data());
+    return SetSelectedComponentPropertyUVE(entry, property, ComponentPropertyBytesPointerUVE(*bytes));
 }
 
 } // namespace UVE::Editor

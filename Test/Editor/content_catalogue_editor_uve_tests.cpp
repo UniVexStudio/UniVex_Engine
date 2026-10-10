@@ -22,8 +22,8 @@
 #include "uve/core/engine_project_settings_uve.h"
 #include "uve/editor/editor_content_catalogue_uve.h"
 #include "uve/editor/editor_uve.h"
-#include "uve/scene/objects/scene_folder_uve.h"
-#include "uve/scene/objects/scene_object_registry_uve.h"
+#include "uve/object/scene_folder_uve.h"
+#include "uve/object/scene_object_registry_uve.h"
 #include "uve/scene/objects/scene_object_type_uve.h"
 
 namespace UVE::Editor::Tests {
@@ -293,11 +293,11 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSce
         EXPECT_FALSE(editor.UndoUVE());
 
         // One root only: an object beside the root is refused on save.
-        const Scene::EntityUVE sceneRoot = editor.GetDocumentSceneRootUVE();
+        const Scene::EntityUVE rootObject = editor.GetDocumentObjectUVE();
         const Scene::EntityUVE stray = entityManager.CreateEntityUVE();
         entityManager.AddComponentUVE<Scene::TransformComponentUVE>(stray, Scene::TransformComponentUVE{});
         entityManager.AddComponentUVE<Scene::HierarchyComponentUVE>(stray, Scene::HierarchyComponentUVE{});
-        services.GetSceneGraphUVE().SetParentUVE(entityManager, stray, sceneRoot);
+        services.GetSceneGraphUVE().SetParentUVE(entityManager, stray, rootObject);
         EXPECT_EQ(editor.GetEntityEditorRootUVE(), Scene::kInvalidEntityUVE);
         EXPECT_FALSE(editor.SaveEntityEditorUVE());
         ASSERT_TRUE(editor.RevertEntityEditorUVE());

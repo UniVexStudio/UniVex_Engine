@@ -127,7 +127,7 @@ bool EditorUVE::EndRetargetPreviewUVE() {
             return false;
         }
     } else {
-        static_cast<void>(EnsureDocumentSceneRootUVE());
+        static_cast<void>(EnsureDocumentObjectUVE());
     }
     RestoreSelectionUVE(ResolveSelectionPathsUVE(preview.selectionBefore, restored));
     m_sceneDirty = preview.sceneDirtyBefore;
@@ -152,8 +152,8 @@ void EditorUVE::RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std
 
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
-    const Scene::EntityUVE sceneRoot = EnsureDocumentSceneRootUVE();
-    if (sceneRoot == Scene::kInvalidEntityUVE) {
+    const Scene::EntityUVE rootObject = EnsureDocumentObjectUVE();
+    if (rootObject == Scene::kInvalidEntityUVE) {
         return;
     }
     using Kind = Scene::Objects::SceneObjectKindUVE;
@@ -175,7 +175,7 @@ void EditorUVE::RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std
     };
     const auto shell = [&](const std::string& name) { return CreateDocumentEntityShellInternalUVE(name); };
 
-    preview.frameRoot = place(CreateSceneObjectEntityInternalUVE(Kind::Object3D), "Retarget Preview", Kind::Object3D, sceneRoot);
+    preview.frameRoot = place(CreateSceneObjectEntityInternalUVE(Kind::Object3D), "Retarget Preview", Kind::Object3D, rootObject);
     if (preview.frameRoot == Scene::kInvalidEntityUVE) {
         return;
     }

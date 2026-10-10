@@ -163,6 +163,33 @@ void ViewportRenderPass::SetGridCellSizeUVE(const float cellSize) {
     }
 }
 
+void ViewportRenderPass::SetGridSubdivisionsUVE(const int subdivisions) {
+    grid_.Settings().subdivisions = std::max(1, subdivisions);
+}
+
+void ViewportRenderPass::SetGridFadeUVE(const float startScale, const float endScale) {
+    if (!std::isfinite(startScale) || !std::isfinite(endScale)) {
+        return;
+    }
+    // Both ends or neither: a start written past an untouched end is exactly the hard edge this
+    // refuses, so the pair is only replaced when it is one the shader can draw.
+    if (startScale < 0.f || startScale >= endScale) {
+        return;
+    }
+    grid_.Settings().fadeStartDistanceScale = startScale;
+    grid_.Settings().fadeEndDistanceScale = endScale;
+}
+
+void ViewportRenderPass::SetGridLineTintUVE(const univex::render::GridColor& tint) {
+    const auto inRange = [](const float channel) {
+        return std::isfinite(channel) && channel >= 0.f && channel <= 1.f;
+    };
+    if (!inRange(tint.r) || !inRange(tint.g) || !inRange(tint.b)) {
+        return;
+    }
+    grid_.Settings().lineTint = tint;
+}
+
 univex::viewport::AxisPaletteUVE ViewportRenderPass::GetAxisPaletteUVE() const {
     return univex::viewport::AxisPaletteOfUVE(style_);
 }

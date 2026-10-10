@@ -239,9 +239,9 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_ReportsIncompatibleHelloWithoutMutatingE
         ASSERT_EQ(frames.size(), 1U);
         EXPECT_FALSE(frames.front().at("result").at("compatible").get<bool>());
         EXPECT_EQ(frames.front().at("result").at("code").get<std::string>(), "bridge.protocol.unsupported");
-        // The document was not mutated: the only root is the ever-present scene root.
+        // The document was not mutated: the only root is the ever-present Object.
         ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
-        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentObjectUVE());
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
 
         editor.ShutdownUVE();
@@ -275,9 +275,9 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_RejectsMalformedJsonWithoutDispatchingEd
         ASSERT_EQ(frames.size(), 1U);
         EXPECT_EQ(frames.front().at("error").at("data").at("code").get<std::string>(),
                   "bridge.transport.json.invalid");
-        // The document was not mutated: the only root is the ever-present scene root.
+        // The document was not mutated: the only root is the ever-present Object.
         ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
-        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentObjectUVE());
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
 
         editor.ShutdownUVE();
@@ -306,9 +306,9 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_RejectsZeroLengthFrameBeforeDispatchingE
         ASSERT_EQ(frames.size(), 1U);
         EXPECT_EQ(frames.front().at("error").at("data").at("code").get<std::string>(),
                   "bridge.transport.frame.zero_length");
-        // The document was not mutated: the only root is the ever-present scene root.
+        // The document was not mutated: the only root is the ever-present Object.
         ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
-        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentObjectUVE());
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
 
         editor.ShutdownUVE();
@@ -337,9 +337,9 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_ClassifiesTruncatedAndOversizedFramesBef
             const std::vector<JsonUVE> frames = ReadFramesUVE(output);
             ASSERT_EQ(frames.size(), 1U);
             EXPECT_EQ(frames.front().at("error").at("data").at("code").get<std::string>(), expectedCode);
-            // The document was not mutated: the only root is the ever-present scene root.
+            // The document was not mutated: the only root is the ever-present Object.
         ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
-        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentObjectUVE());
             EXPECT_FALSE(editor.IsSceneDirtyUVE());
         };
 

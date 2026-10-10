@@ -24,7 +24,7 @@ namespace UVE::Scene {
 /// `Bundle`) also uses.
 using SceneAssetTypeUVE = Asset::AssetKindUVE;
 
-/// An in-memory universal `.uve*` envelope containing one or more scene roots and every descendant.
+/// An in-memory universal `.uve*` envelope containing one or more Objects and every descendant.
 /// It deliberately uses the same envelope, component registration, and file-local hierarchy-id rules
 /// as SaveUVE()/LoadUVE(), allowing editor history to restore fresh entity handles without temporary
 /// files. `assetType` is retained beside the bytes as a caller-visible intent check; RestoreUVE()

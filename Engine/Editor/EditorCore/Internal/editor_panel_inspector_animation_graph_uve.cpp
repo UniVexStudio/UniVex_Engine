@@ -24,6 +24,7 @@
 #include <imgui.h>
 
 #include "editor_animation_graph_widgets_uve.h"
+#include "editor_axis_input_uve.h"
 
 #include "uve/component/animation_graph_component_uve.h"
 #include "uve/editor/animation_graph_editing_uve.h"
@@ -117,7 +118,8 @@ void EditorUVE::DrawAnimationParametersPropertyUVE(const Core::TypeMetadataEntry
             ImGui::TableSetColumnIndex(2);
             ImGui::SetNextItemWidth(-FLT_MIN);
             if (parameter.type == AnimationParameterTypeUVE::Float) {
-                if (ImGui::DragFloat("##value", &parameter.value, 0.01F)) {
+                if (ImGui::DragFloat("##value", &parameter.value, 0.01F, 0.0F, 0.0F,
+                                        InspectorFloatFormatUVE(m_inspectorFloatPrecision))) {
                     continuous = true;
                 }
                 if (ImGui::IsItemDeactivated()) {
@@ -286,7 +288,8 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                                       const float maximum) {
                     RowUVE(label);
                     const std::string id = std::string{"##"} + label;
-                    if (ImGui::DragFloat(id.c_str(), &value, speed, minimum, maximum, "%.3f")) {
+                    if (ImGui::DragFloat(id.c_str(), &value, speed, minimum, maximum,
+                                            InspectorFloatFormatUVE(m_inspectorFloatPrecision))) {
                         continuous = true;
                     }
                     if (ImGui::IsItemDeactivated()) {
@@ -528,11 +531,13 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                         RowUVE("  at");
                         if (node.kind == Kind::BlendSpace2D) {
                             float xy[2] = {point.position.x, point.position.y};
-                            if (ImGui::DragFloat2("##at", xy, 0.01F)) {
+                            if (ImGui::DragFloat2("##at", xy, 0.01F, 0.0F, 0.0F,
+                                                  InspectorFloatFormatUVE(m_inspectorFloatPrecision))) {
                                 point.position = Math::Vector2UVE{xy[0], xy[1]};
                                 continuous = true;
                             }
-                        } else if (ImGui::DragFloat("##at", &point.position.x, 0.01F)) {
+                        } else if (ImGui::DragFloat("##at", &point.position.x, 0.01F, 0.0F, 0.0F,
+                                                     InspectorFloatFormatUVE(m_inspectorFloatPrecision))) {
                             continuous = true;
                         }
                         if (ImGui::IsItemDeactivated()) {

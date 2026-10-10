@@ -210,6 +210,10 @@ EditorBridgeResponseUVE EditorBridgeUVE::DispatchUVE(const EditorBridgeRequestUV
                 return MakeResponseUVE(request, false, "bridge.entity.invalid",
                                        "The requested entity is not a live document entity.");
             }
+            if (m_editor->IsEntityLockedUVE(ToEntityUVE(*request.entity))) {
+                return MakeResponseUVE(request, false, "bridge.entity.locked",
+                                       "The requested entity is locked against selection.");
+            }
             m_editor->SelectEntityUVE(ToEntityUVE(*request.entity));
             applied = true;
             code = "bridge.command.applied";
@@ -266,6 +270,10 @@ EditorBridgeResponseUVE EditorBridgeUVE::DispatchUVE(const EditorBridgeRequestUV
                 !m_editor->IsDocumentEntityUVE(ToEntityUVE(*request.entity))) {
                 return MakeResponseUVE(request, false, "bridge.entity.invalid",
                                        "The requested entity is not a live document entity.");
+            }
+            if (m_editor->IsEntityLockedUVE(ToEntityUVE(*request.entity))) {
+                return MakeResponseUVE(request, false, "bridge.entity.locked",
+                                       "The requested entity is locked against selection.");
             }
             m_editor->ToggleEntitySelectionUVE(ToEntityUVE(*request.entity));
             applied = true;
@@ -744,38 +752,41 @@ EditorBridgeHierarchySnapshotUVE EditorBridgeUVE::CaptureHierarchyUVE() {
     EditorBridgeHierarchySnapshotUVE snapshot{};
     snapshot.filter = BoundPresentationTextUVE(m_editor->m_hierarchyFilter);
     snapshot.filterActive = m_editor->IsHierarchyFilterActiveUVE();
+    const bool flattenFilterResults = snapshot.filterActive && !m_editor->m_hierarchyView.filterKeepAncestors;
     m_editor->RebuildHierarchyFilterCacheUVE();
 
-    Scene::IEntityManagerUVE& entityManager = m_editor->m_services->GetEntityManagerUVE();
-    const auto visit = [this, &snapshot, &entityManager](const auto& self, const Scene::EntityUVE entity,
-                                                          const std::size_t depth) -> void {
-        if (!m_editor->IsDocumentEntityUVE(entity) || !m_editor->IsHierarchyEntityVisibleUVE(entity)) {
+    const auto visit = [this, &snapshot, flattenFilterResults](
+                           const auto& self, const Scene::EntityUVE entity, const std::size_t depth) -> void {
+        if (!m_editor->IsDocumentEntityUVE(entity)) {
             return;
         }
-        if (snapshot.entries.size() >= kEditorBridgeMaximumPanelEntriesUVE) {
-            snapshot.truncated = true;
-            return;
+        const bool visible = m_editor->IsHierarchyEntityVisibleUVE(entity);
+        const std::vector<Scene::EntityUVE> children = m_editor->GetHierarchyChildrenInViewOrderUVE(entity);
+        if (visible) {
+            if (snapshot.entries.size() >= kEditorBridgeMaximumPanelEntriesUVE) {
+                snapshot.truncated = true;
+                return;
+            }
+            Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+            const bool hasParent =
+                m_editor->TryGetDocumentParentUVE(entity, parent) && parent != Scene::kInvalidEntityUVE;
+            snapshot.entries.push_back(EditorBridgeHierarchyEntryUVE{
+                ToBridgeEntityUVE(entity),
+                hasParent ? std::optional<EditorBridgeEntityRefUVE>{ToBridgeEntityUVE(parent)} : std::nullopt,
+                BoundPresentationTextUVE(m_editor->GetEntityDisplayLabelUVE(entity)),
+                BoundPresentationTextUVE(m_editor->GetOutlinerTypeTagUVE(entity)),
+                flattenFilterResults ? 0U : depth,
+                children.size(),
+                m_editor->IsEntitySelectedUVE(entity),
+                entity == m_editor->m_selectedEntity,
+            });
         }
-
-        Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
-        const bool hasParent = m_editor->TryGetDocumentParentUVE(entity, parent) && parent != Scene::kInvalidEntityUVE;
-        const std::vector<Scene::EntityUVE> children =
-            m_editor->m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
-        snapshot.entries.push_back(EditorBridgeHierarchyEntryUVE{
-            ToBridgeEntityUVE(entity),
-            hasParent ? std::optional<EditorBridgeEntityRefUVE>{ToBridgeEntityUVE(parent)} : std::nullopt,
-            BoundPresentationTextUVE(m_editor->GetEntityDisplayLabelUVE(entity)),
-            BoundPresentationTextUVE(m_editor->GetOutlinerTypeTagUVE(entity)),
-            depth,
-            children.size(),
-            m_editor->IsEntitySelectedUVE(entity),
-            entity == m_editor->m_selectedEntity,
-        });
+        // A nonmatching parent may be omitted in flat-filter mode; still visit its children.
         for (const Scene::EntityUVE child : children) {
             self(self, child, depth + 1U);
         }
     };
-    for (const Scene::EntityUVE root : m_editor->GetDocumentRootsUVE()) {
+    for (const Scene::EntityUVE root : m_editor->SortHierarchyRowsUVE(m_editor->GetDocumentRootsUVE())) {
         visit(visit, root, 0U);
     }
     return snapshot;
