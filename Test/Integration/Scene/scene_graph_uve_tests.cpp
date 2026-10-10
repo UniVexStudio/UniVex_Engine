@@ -713,7 +713,7 @@ TEST_F(SceneGraphUVETest, TryGetResolvedObjectModesUVE_IsEmptyForAnEntityTheUpda
     EXPECT_EQ(*sceneGraph.TryGetResolvedObjectModesUVE(late), ResolvedObjectModesUVE{});
 }
 
-// A pure Object is in the hierarchy with no transform of its own - the scene root is one. The rule
+// A pure Object is in the hierarchy with no transform of its own - the Object is one. The rule
 // these lock: it passes the modes and visibility down like any object, and it cuts the transform
 // chain, because there is no transform on it to compose from.
 
@@ -784,7 +784,7 @@ TEST_F(SceneGraphUVETest, UpdateUVE_APureObjectBetweenSpatialObjectsCutsTheChain
 }
 
 TEST_F(SceneGraphUVETest, TryGetResolvedObjectModesUVE_AnswersForThePureObjectItself) {
-    // The scene root's own Process and Thread Group settings are what its whole scene inherits, so
+    // The Object's own Process and Thread Group settings are what its whole scene inherits, so
     // the pure Object carrying them must have an answer of its own, published to its components.
     const EntityUVE root = CreatePureObjectUVE(entityManager);
     ProcessComponentUVE whenPaused{};

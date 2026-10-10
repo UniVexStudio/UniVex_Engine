@@ -59,5 +59,43 @@ TEST(EditorFuzzyMatchUVETest, PrefixBeatsWordBeatsInsideBeatsScattered) {
     EXPECT_GE(ScoreFuzzyMatchUVE("Editor Preferences", "ED PREF"), 0);
 }
 
+TEST(EditorCommandPaletteMatchUVETest, FuzzyReadsTheWholeQueryAsOnePattern) {
+    const auto fuzzy = [](const std::string_view query) {
+        return ScoreCommandPaletteMatchUVE("Copy Node Path", "Edit: Copy Node Path", query,
+                                           CommandPaletteMatchModeUVE::Fuzzy);
+    };
+    EXPECT_EQ(fuzzy(""), 0); // nothing to match on leaves every command in the list
+    EXPECT_GE(fuzzy("copy"), 0);
+    EXPECT_EQ(fuzzy("zzz"), -1);
+    // The characters of the query have to appear in order, so reversed words do not match.
+    EXPECT_EQ(fuzzy("node copy"), -1);
+}
+
+TEST(EditorCommandPaletteMatchUVETest, WordsModeNeedsEveryWordAndAnyOrder) {
+    const auto words = [](const std::string_view query) {
+        return ScoreCommandPaletteMatchUVE("Copy Node Path", "Edit: Copy Node Path", query,
+                                           CommandPaletteMatchModeUVE::Words);
+    };
+    EXPECT_EQ(words(""), 0);
+    // Words need not sit together nor in the label's order.
+    EXPECT_GT(words("node copy"), 0);
+    EXPECT_EQ(words("copy node"), words("node copy"));
+    // One word that matches nothing rejects the command, as one unmatched character does in fuzzy.
+    EXPECT_EQ(words("copy zzz"), -1);
+    // Leading, trailing and repeated spaces are not words.
+    EXPECT_EQ(words("  copy   node  "), words("copy node"));
+    // A one-word query is what fuzzy would have scored.
+    EXPECT_EQ(words("copy"), ScoreCommandPaletteMatchUVE("Copy Node Path", "Edit: Copy Node Path",
+                                                         "copy", CommandPaletteMatchModeUVE::Fuzzy));
+}
+
+TEST(EditorCommandPaletteSettingsUVETest, DefaultsOpenFuzzilyWithMemory) {
+    const CommandPaletteSettingsUVE defaults{};
+    EXPECT_TRUE(defaults.enabled);
+    EXPECT_EQ(defaults.matchMode, CommandPaletteMatchModeUVE::Fuzzy);
+    EXPECT_GT(defaults.recentCount, 0U);
+    EXPECT_LE(defaults.recentCount, kMaximumRecentCommandsUVE);
+}
+
 } // namespace
 } // namespace UVE::Editor::Tests

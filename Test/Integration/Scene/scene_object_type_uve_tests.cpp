@@ -24,7 +24,7 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
-#include "uve/scene/objects/scene_root_uve.h"
+#include "uve/object/object_uve.h"
 #include "uve/scene/scene_serializer_uve.h"
 
 namespace UVE::Scene::Tests {
@@ -62,7 +62,7 @@ protected:
 
 TEST_F(SceneObjectTypeUVETest, InferenceReadsEveryKindThatHasComponentsOfItsOwn) {
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeUVE()), Kind::Object3D);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(SceneRootComponentUVE{})), Kind::SceneRoot);
+    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ObjectComponentUVE{})), Kind::Object);
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(CameraComponentUVE{})), Kind::Camera3D);
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(MeshComponentUVE{})), Kind::MeshInstance3D);
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(Marker3DComponentUVE{})), Kind::Marker3D);
@@ -98,6 +98,31 @@ TEST_F(SceneObjectTypeUVETest, InferenceReadsEveryKindThatHasComponentsOfItsOwn)
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ScriptComponentUVE{})), Kind::Script);
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(MeshComponentUVE{}, ScriptComponentUVE{})),
               Kind::MeshInstance3D);
+}
+
+TEST_F(SceneObjectTypeUVETest, ADocumentWrittenBeforeTheRootRenamedStillLoadsAndRewrites) {
+    // Both old spellings in one file, as a document written before 2026-10-08 carries them: the
+    // type id was "scene_root" and the marker component was registered as "SceneRootComponentUVE".
+    const std::string payload =
+        std::string(R"({"entities":[{"localId":0,"components":{"NameComponentUVE":{"name":"Object"},)") +
+        R"("SceneRootComponentUVE":{},"SceneObjectTypeComponentUVE":{"type":"scene_root"}}}]})";
+
+    const std::vector<EntityUVE> restored = serializer.RestoreUVE(entityManager, SnapshotFromPayloadUVE(payload));
+    ASSERT_EQ(restored.size(), 1U);
+    EXPECT_TRUE(entityManager.HasComponentUVE<ObjectComponentUVE>(restored.front()));
+    ASSERT_TRUE(entityManager.HasComponentUVE<SceneObjectTypeComponentUVE>(restored.front()));
+    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, restored.front()), Kind::Object);
+
+    // And the rewrite is one-way: writing the document again uses the new names, so the old ones
+    // only ever live in files that have not been re-saved.
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, restored, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    const std::string text(reinterpret_cast<const char*>(snapshot->bytes.data()), snapshot->bytes.size());
+    EXPECT_NE(text.find("\"ObjectComponentUVE\""), std::string::npos);
+    EXPECT_NE(text.find("\"object\""), std::string::npos);
+    EXPECT_EQ(text.find("\"SceneRootComponentUVE\""), std::string::npos);
+    EXPECT_EQ(text.find("\"scene_root\""), std::string::npos);
 }
 
 TEST_F(SceneObjectTypeUVETest, AStoredTypeWinsOverWhatTheComponentsSuggest) {
@@ -166,6 +191,7 @@ TEST_F(SceneObjectTypeUVETest, UnknownAndLegacyIdsLoadWithoutFailingTheScene) {
         {"animation_tree", Kind::AnimationGraph},
         {"navigation_region_3d", Kind::NavMeshVolume3D},
         {"navigation_agent_3d", Kind::NavSeeker3D},
+        {"scene_root", Kind::Object},
     };
     for (const auto& [oldId, expected] : renamed) {
         const std::vector<EntityUVE> aliased = restoreWithType(oldId);

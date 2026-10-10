@@ -4,12 +4,17 @@
 #include "uve/config/config_manager_uve.h"
 
 #include <cerrno>
+#include <cmath>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -68,6 +73,79 @@ nlohmann::json& ResolveOrCreateUVE(nlohmann::json& document, const std::vector<s
         current = &(*current)[segment];
     }
     return *current;
+}
+
+/// Batch operations use the same dot path shape as the normal accessors, but refuse empty paths
+/// and empty segments so a malformed transaction can never replace the root document.
+[[nodiscard]] bool IsValidMutationPathUVE(const std::string_view path) noexcept {
+    if (path.empty() || path.front() == '.' || path.back() == '.') {
+        return false;
+    }
+    return path.find("..") == std::string_view::npos;
+}
+
+/// Removes one scalar leaf from `document` and prunes objects left empty by the removal.
+bool RemoveKeyFromDocumentUVE(nlohmann::json& document, const std::vector<std::string>& segments) {
+    if (segments.empty()) {
+        return false;
+    }
+    std::vector<nlohmann::json*> parents{&document};
+    for (std::size_t index = 0U; index + 1U < segments.size(); ++index) {
+        nlohmann::json& parent = *parents.back();
+        if (!parent.is_object()) {
+            return false;
+        }
+        const auto member = parent.find(segments[index]);
+        if (member == parent.end()) {
+            return false;
+        }
+        parents.push_back(&*member);
+    }
+    nlohmann::json& parent = *parents.back();
+    if (!parent.is_object()) {
+        return false;
+    }
+    const auto leaf = parent.find(segments.back());
+    if (leaf == parent.end() || leaf->is_object()) {
+        return false;
+    }
+    parent.erase(leaf);
+    for (std::size_t depth = parents.size() - 1U; depth > 0U && parents[depth]->empty(); --depth) {
+        parents[depth - 1U]->erase(segments[depth - 1U]);
+    }
+    return true;
+}
+
+[[nodiscard]] std::optional<ConfigScalarValueUVE> ReadScalarValueUVE(const nlohmann::json* value) {
+    if (value == nullptr || value->is_null() || value->is_object() || value->is_array()) {
+        return std::nullopt;
+    }
+    if (value->is_boolean()) {
+        return value->get<bool>();
+    }
+    if (value->is_string()) {
+        return value->get<std::string>();
+    }
+    if (value->is_number_unsigned()) {
+        const std::uint64_t number = value->get<std::uint64_t>();
+        if (number > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+            // The raw store has no uint64 alternative; retaining it as double preserves numeric
+            // reads while typed Int descriptors will still reject it as outside int64 range.
+            return static_cast<double>(number);
+        }
+        return static_cast<std::int64_t>(number);
+    }
+    if (value->is_number_integer()) {
+        return value->get<std::int64_t>();
+    }
+    if (value->is_number_float()) {
+        return value->get<double>();
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] nlohmann::json ToJsonValueUVE(const ConfigScalarValueUVE& value) {
+    return std::visit([](const auto& scalar) { return nlohmann::json(scalar); }, value);
 }
 
 /// Pretty-prints `document` to `path`. Does not create missing parent
@@ -224,6 +302,60 @@ void ConfigManagerUVE::SetBoolUVE(std::string_view keyPath, bool value) {
     ResolveOrCreateUVE(m_impl->document, SplitKeyPathUVE(keyPath)) = value;
 }
 
+std::vector<std::optional<ConfigScalarValueUVE>> ConfigManagerUVE::GetValuesUVE(
+    const std::vector<std::string>& keyPaths) const {
+    const std::lock_guard<std::mutex> lock(m_impl->mutex);
+    std::vector<std::optional<ConfigScalarValueUVE>> values;
+    values.reserve(keyPaths.size());
+    for (const std::string& keyPath : keyPaths) {
+        const nlohmann::json* const value = ResolveConstUVE(m_impl->document, SplitKeyPathUVE(keyPath));
+        values.push_back(ReadScalarValueUVE(value));
+    }
+    return values;
+}
+
+bool ConfigManagerUVE::ApplyMutationsUVE(const std::vector<ConfigMutationUVE>& mutations) {
+    if (mutations.empty()) {
+        return true;
+    }
+
+    try {
+        std::vector<std::vector<std::string>> paths;
+        paths.reserve(mutations.size());
+        for (const ConfigMutationUVE& mutation : mutations) {
+            if (!IsValidMutationPathUVE(mutation.keyPath)) {
+                return false;
+            }
+            if (mutation.value) {
+                if (const double* number = std::get_if<double>(&*mutation.value); number != nullptr &&
+                    !std::isfinite(*number)) {
+                    return false;
+                }
+            }
+            paths.push_back(SplitKeyPathUVE(mutation.keyPath));
+        }
+
+        const std::lock_guard<std::mutex> lock(m_impl->mutex);
+        nlohmann::json candidate = m_impl->document;
+        for (std::size_t index = 0U; index < mutations.size(); ++index) {
+            const ConfigMutationUVE& mutation = mutations[index];
+            if (mutation.value) {
+                ResolveOrCreateUVE(candidate, paths[index]) = ToJsonValueUVE(*mutation.value);
+            } else {
+                static_cast<void>(RemoveKeyFromDocumentUVE(candidate, paths[index]));
+            }
+        }
+        m_impl->document.swap(candidate);
+        return true;
+    } catch (const std::exception& exception) {
+        UVE_ERROR("ConfigManagerUVE: failed to apply an atomic settings update: {}", exception.what());
+        return false;
+    } catch (...) {
+        UVE_ERROR("ConfigManagerUVE: failed to apply an atomic settings update with an unknown exception");
+        return false;
+    }
+}
+
 bool ConfigManagerUVE::HasKeyUVE(std::string_view keyPath) const {
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
     const nlohmann::json* const value = ResolveConstUVE(m_impl->document, SplitKeyPathUVE(keyPath));
@@ -237,37 +369,7 @@ bool ConfigManagerUVE::HasNodeUVE(std::string_view keyPath) const {
 
 bool ConfigManagerUVE::RemoveKeyUVE(std::string_view keyPath) {
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
-    const std::vector<std::string> segments = SplitKeyPathUVE(keyPath);
-    if (segments.empty()) {
-        return false;
-    }
-    // The chain of objects from the root down to the leaf's parent.
-    std::vector<nlohmann::json*> parents{&m_impl->document};
-    for (std::size_t index = 0U; index + 1U < segments.size(); ++index) {
-        nlohmann::json& parent = *parents.back();
-        if (!parent.is_object()) {
-            return false;
-        }
-        const auto member = parent.find(segments[index]);
-        if (member == parent.end()) {
-            return false;
-        }
-        parents.push_back(&*member);
-    }
-    nlohmann::json& parent = *parents.back();
-    if (!parent.is_object()) {
-        return false;
-    }
-    const auto leaf = parent.find(segments.back());
-    if (leaf == parent.end() || leaf->is_object()) {
-        return false;
-    }
-    parent.erase(leaf);
-    // Prune objects the removal emptied, deepest first; the root always stays.
-    for (std::size_t depth = parents.size() - 1U; depth > 0U && parents[depth]->empty(); --depth) {
-        parents[depth - 1U]->erase(segments[depth - 1U]);
-    }
-    return true;
+    return RemoveKeyFromDocumentUVE(m_impl->document, SplitKeyPathUVE(keyPath));
 }
 
 } // namespace UVE::Config

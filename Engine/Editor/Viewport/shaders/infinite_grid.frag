@@ -39,6 +39,7 @@ uniform vec3  uCameraPos;
 
 uniform float uBaseSpacing;       // finest grid spacing, world units (e.g. 1.0 = 1 m)
 uniform float uTargetCellPixels;  // desired minimum on-screen cell size before stepping a decade
+uniform float uSubdivisions;      // sub-lines per finest cell: 1 = none, N = N-1 between them
 uniform float uLineWidthPixels;
 uniform float uAxisWidthPixels;
 
@@ -198,6 +199,14 @@ void main() {
     float spacing2 = spacing1 * 10.0;
     float spacing3 = spacing2 * 10.0;
 
+    // Sub-lines first, so the decade lines draw over them: with uSubdivisions = N every Nth
+    // sub-line coincides with a decade line, and drawing them underneath is what keeps the decade
+    // line the one that reads as the grid step.
+    float covSub = 0.0;
+    if (uSubdivisions > 1.0) {
+        covSub = GridCoverage(worldPos.xz, spacing0 / uSubdivisions, worldPerPixel, uLineWidthPixels);
+    }
+
     float cov0 = GridCoverage(worldPos.xz, spacing0, worldPerPixel, uLineWidthPixels);
     float cov1 = GridCoverage(worldPos.xz, spacing1, worldPerPixel, uLineWidthPixels);
     float cov2 = GridCoverage(worldPos.xz, spacing2, worldPerPixel, uLineWidthPixels);
@@ -211,7 +220,12 @@ void main() {
     vec3  color2 = mix(uThickColor, uMidColor,  lodFade); float alpha2 = mix(uThickIntensity, uMidIntensity,  lodFade);
     vec3  color3 = uThickColor;                       float alpha3 = uThickIntensity * lodFade;
 
+    // The sub-lines fade with the finest tier (the same 1.0 - lodFade the thin tier uses) so the
+    // decade tick-over keeps its continuous look, and at half the thin tier's strength so they
+    // read as texture rather than as steps of their own. kGridSubdivisionIntensityUVE in
+    // GridSettings.h is the same value for the CPU mirror.
     vec4 accum = vec4(uThinColor, 0.0);
+    accum = Over(accum, uThinColor, covSub * uThinIntensity * 0.5 * (1.0 - lodFade));
     accum = Over(accum, color0, cov0 * alpha0);
     accum = Over(accum, color1, cov1 * alpha1);
     accum = Over(accum, color2, cov2 * alpha2);

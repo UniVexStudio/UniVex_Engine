@@ -23,7 +23,8 @@ enum class ColorFieldEventUVE {
 /// colour picker:
 ///   * a shelf of saved colours along the top - drop any colour on it to keep it, click one to use
 ///     it, drag one to the bin to remove it;
-///   * a hue/saturation disc beside separate saturation and value bars;
+///   * a hue/saturation disc beside separate saturation, value and - for colours with alpha -
+///     alpha bars, the alpha bar over a checkerboard;
 ///   * the colour the picker opened with above the current one (click the old one to go back),
 ///     and the recent colours under them;
 ///   * an Advanced section (open or closed as the author left it) with R, G, B, A and H, S, V

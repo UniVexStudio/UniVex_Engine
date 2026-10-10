@@ -117,8 +117,8 @@ bool EditorUVE::DrawVariantValueEditorUVE(const char* const id, VariantUVE& valu
         stored = Core::VariantColorUVE{color.r, color.g, color.b, color.a};
         return true;
     };
-    const auto dragFloats = [](float* values, const int count) {
-        return DrawAxisVectorInputUVE("##v", values, count, 0.01F);
+    const auto dragFloats = [this](float* values, const int count) {
+        return DrawAxisVectorInputUVE("##v", values, count, 0.01F, 0.0F, 0.0F, m_inspectorFloatPrecision);
     };
     value.VisitMutableUVE([&](auto& stored) {
         using T = std::decay_t<decltype(stored)>;
@@ -129,7 +129,8 @@ bool EditorUVE::DrawVariantValueEditorUVE(const char* const id, VariantUVE& valu
             changed = ImGui::DragScalar("##v", ImGuiDataType_S64, &stored, 1.0F);
         } else if constexpr (std::is_same_v<T, double>) {
             ImGui::SetNextItemWidth(-FLT_MIN);
-            changed = ImGui::DragScalar("##v", ImGuiDataType_Double, &stored, 0.01F);
+            changed = ImGui::DragScalar("##v", ImGuiDataType_Double, &stored, 0.01F, nullptr, nullptr,
+                                        InspectorFloatFormatUVE(m_inspectorFloatPrecision));
         } else if constexpr (std::is_same_v<T, std::string>) {
             changed = EditTextUVE("##v", stored);
         } else if constexpr (std::is_same_v<T, Math::Vector2UVE> || std::is_same_v<T, Math::Vector3UVE> ||
@@ -191,9 +192,15 @@ bool EditorUVE::DrawVariantValueEditorUVE(const char* const id, VariantUVE& valu
                                                                               : ImGuiDataType_Double;
             changed = EditListUVE(
                 stored,
-                [](E& element) {
+                [this](E& element) {
                     ImGui::SetNextItemWidth(-FLT_MIN);
-                    return ImGui::DragScalar("##e", kType, &element, 1.0F);
+                    // The precision is a float choice; packed integers keep ImGui's own spelling.
+                    if constexpr (std::is_same_v<E, float> || std::is_same_v<E, double>) {
+                        return ImGui::DragScalar("##e", kType, &element, 1.0F, nullptr, nullptr,
+                                                 InspectorFloatFormatUVE(m_inspectorFloatPrecision));
+                    } else {
+                        return ImGui::DragScalar("##e", kType, &element, 1.0F);
+                    }
                 },
                 [] { return E{}; });
         }

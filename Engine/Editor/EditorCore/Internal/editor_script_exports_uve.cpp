@@ -22,6 +22,8 @@
 
 #include <imgui.h>
 
+#include "editor_axis_input_uve.h"
+
 #include "uve/core/uvscript_object_host_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/uvscript/uvscript_compiler_uve.h"
@@ -187,13 +189,14 @@ void EditorUVE::DrawScriptExportsPropertyUVE(const Core::TypeMetadataEntryUVE& /
                 }
             } else if (const double* const real = std::get_if<double>(&*value)) {
                 double number = *real;
-                if (ImGui::InputScalar("##value", ImGuiDataType_Double, &number, nullptr, nullptr, "%.3f", kCommitOnEnter)) {
+                if (ImGui::InputScalar("##value", ImGuiDataType_Double, &number, nullptr, nullptr,
+                                         InspectorFloatFormatUVE(m_inspectorFloatPrecision), kCommitOnEnter)) {
                     edit.emplace(row.name, UVScript::FormatValueUVE(UVScript::ValueUVE{number}));
                 }
             } else if (const auto* const vector = std::get_if<UVScript::Vec3ValueUVE>(&*value)) {
                 std::array<double, 3> parts{vector->x, vector->y, vector->z};
-                if (ImGui::InputScalarN("##value", ImGuiDataType_Double, parts.data(), 3, nullptr, nullptr, "%.3f",
-                                        kCommitOnEnter)) {
+                if (ImGui::InputScalarN("##value", ImGuiDataType_Double, parts.data(), 3, nullptr, nullptr,
+                                         InspectorFloatFormatUVE(m_inspectorFloatPrecision), kCommitOnEnter)) {
                     edit.emplace(row.name, UVScript::FormatValueUVE(
                                                UVScript::ValueUVE{UVScript::Vec3ValueUVE{parts[0], parts[1], parts[2]}}));
                 }

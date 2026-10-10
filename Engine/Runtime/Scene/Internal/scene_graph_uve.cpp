@@ -343,7 +343,7 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
                                                         interpolation, process, threadGroup, autoTranslate});
         });
 
-    // Pure Objects: in the hierarchy, with no transform of their own - the scene root is the first.
+    // Pure Objects: in the hierarchy, with no transform of their own - the Object is the first.
     // They take part in the sweep because their children wait on them and because the inherited
     // modes (Process, Thread Group, Auto Translate, and visibility passing through) must flow down
     // through them; leaving them out would strand every child waiting on a parent answer that never

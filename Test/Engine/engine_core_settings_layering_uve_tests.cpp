@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <string>
 #include <system_error>
 
@@ -88,6 +89,62 @@ TEST(EngineCoreSettingsLayeringUVETest, LoadsAllLayersAndAppliesCommandLineBefor
     EXPECT_EQ(engine.GetConfigUVE().shadowMapResolution, 512U);
     EXPECT_TRUE(engine.GetConfigUVE().headlessUVE);
     EXPECT_DOUBLE_EQ(engine.GetConfigUVE().autoSaveIntervalSecondsUVE, 777.0);
+    engine.Shutdown();
+}
+
+TEST(EngineCoreSettingsLayeringUVETest, NormalizesDirectEngineConfigBeforeSettingsAreApplied) {
+    SettingsTestDirectoryUVE directory;
+    EngineConfigUVE config = MakeSettingsTestConfigUVE(directory.GetPathUVE());
+    config.shaderCachePath = "../unsafe-cache";
+    config.shaderCompilationModeUVE = static_cast<ShaderCompilationModeUVE>(99U);
+    config.spatialUpscalingMethodUVE = static_cast<SpatialUpscalingMethodUVE>(99U);
+    config.toneMappingMethodUVE = static_cast<ToneMappingMethodUVE>(99U);
+    config.postProcessAAMethodUVE = static_cast<PostProcessAAMethodUVE>(99U);
+    config.screenSpaceAAQualityUVE = 255U;
+    config.ssaoRadiusUVE = std::numeric_limits<float>::quiet_NaN();
+    config.ssaoIntensityUVE = 5.0F;
+    config.ssaoPowerUVE = 0.0F;
+    config.ssaoQualityUVE = 255U;
+    config.renderResolutionScaleUVE = 2.0;
+    config.minimumRenderResolutionScaleUVE = 2.0;
+    config.renderResolutionTargetFrameTimeMillisecondsUVE = 1.0;
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    const EngineConfigUVE& normalized = engine.GetConfigUVE();
+    EXPECT_EQ(normalized.shaderCachePath, EngineConfigUVE{}.shaderCachePath);
+    EXPECT_EQ(normalized.shaderCompilationModeUVE, ShaderCompilationModeUVE::AsynchronousOnDemandUVE);
+    EXPECT_EQ(normalized.spatialUpscalingMethodUVE, SpatialUpscalingMethodUVE::BilinearUVE);
+    EXPECT_EQ(normalized.toneMappingMethodUVE, ToneMappingMethodUVE::AcesUVE);
+    EXPECT_EQ(normalized.postProcessAAMethodUVE, PostProcessAAMethodUVE::NoneUVE);
+    EXPECT_EQ(normalized.screenSpaceAAQualityUVE, 2U);
+    EXPECT_FLOAT_EQ(normalized.ssaoRadiusUVE, 0.5F);
+    EXPECT_FLOAT_EQ(normalized.ssaoIntensityUVE, 1.0F);
+    EXPECT_FLOAT_EQ(normalized.ssaoPowerUVE, 1.0F);
+    EXPECT_EQ(normalized.ssaoQualityUVE, 2U);
+    EXPECT_DOUBLE_EQ(normalized.renderResolutionScaleUVE, kMaximumRenderResolutionScaleUVE);
+    EXPECT_DOUBLE_EQ(normalized.minimumRenderResolutionScaleUVE, kMinimumRenderResolutionScaleUVE);
+    EXPECT_DOUBLE_EQ(normalized.renderResolutionTargetFrameTimeMillisecondsUVE,
+                     kDefaultRenderResolutionTargetFrameTimeMillisecondsUVE);
+    engine.Shutdown();
+}
+
+TEST(EngineCoreSettingsLayeringUVETest, ValidSettingsOverrideAnInvalidDirectBaseWithoutPostValidation) {
+    SettingsTestDirectoryUVE directory;
+    EngineConfigUVE config = MakeSettingsTestConfigUVE(directory.GetPathUVE());
+    config.renderResolutionScaleUVE = 0.25;
+    config.minimumRenderResolutionScaleUVE = 0.25;
+    config.renderResolutionTargetFrameTimeMillisecondsUVE = std::numeric_limits<double>::quiet_NaN();
+    ASSERT_TRUE(WriteTextFileUVE(
+        config.projectSettingsFilePath,
+        R"({"rendering":{"resolution":{"scale":0.8,"minimumScale":0.6,"targetFrameTimeMilliseconds":20.0},"ssao":{"radius":1.25}}})"));
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().renderResolutionScaleUVE, 0.8);
+    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().minimumRenderResolutionScaleUVE, 0.6);
+    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().renderResolutionTargetFrameTimeMillisecondsUVE, 20.0);
+    EXPECT_FLOAT_EQ(engine.GetConfigUVE().ssaoRadiusUVE, 1.25F);
     engine.Shutdown();
 }
 

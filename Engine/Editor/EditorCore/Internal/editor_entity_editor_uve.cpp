@@ -39,9 +39,9 @@ constexpr ImVec4 kCleanColourUVE{0.45F, 0.80F, 0.55F, 1.0F};
 
 Scene::EntityUVE EditorUVE::LoadEntityIntoDocumentUVE(const Asset::AssetGuidUVE guid) {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    const Scene::EntityUVE sceneRoot = EnsureDocumentSceneRootUVE();
+    const Scene::EntityUVE rootObject = EnsureDocumentObjectUVE();
     const Scene::EntityUVE root = m_services->GetPrefabSystemUVE().InstantiateUVE(
-        entityManager, m_services->GetSceneGraphUVE(), m_services->GetAssetDatabaseUVE(), guid, sceneRoot);
+        entityManager, m_services->GetSceneGraphUVE(), m_services->GetAssetDatabaseUVE(), guid, rootObject);
     if (root == Scene::kInvalidEntityUVE) {
         return root;
     }
@@ -127,12 +127,12 @@ Scene::EntityUVE EditorUVE::GetEntityEditorRootUVE() {
     if (!m_entityEditSession.has_value()) {
         return Scene::kInvalidEntityUVE;
     }
-    const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
-    if (sceneRoot == Scene::kInvalidEntityUVE) {
+    const Scene::EntityUVE rootObject = GetDocumentObjectUVE();
+    if (rootObject == Scene::kInvalidEntityUVE) {
         return Scene::kInvalidEntityUVE;
     }
     const std::vector<Scene::EntityUVE> children =
-        m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), sceneRoot);
+        m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), rootObject);
     return children.size() == 1U ? children.front() : Scene::kInvalidEntityUVE;
 }
 
@@ -268,13 +268,13 @@ std::vector<Scene::EntityUVE> EditorUVE::CollectEntityEditorObjectsUVE() {
     if (!m_entityEditSession.has_value()) {
         return objects;
     }
-    const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
-    if (sceneRoot == Scene::kInvalidEntityUVE) {
+    const Scene::EntityUVE rootObject = GetDocumentObjectUVE();
+    if (rootObject == Scene::kInvalidEntityUVE) {
         return objects;
     }
     // Depth first, children in their authored order: the order the Scene tree shows.
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    std::vector<Scene::EntityUVE> pending = m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, sceneRoot);
+    std::vector<Scene::EntityUVE> pending = m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, rootObject);
     std::reverse(pending.begin(), pending.end());
     while (!pending.empty()) {
         const Scene::EntityUVE entity = pending.back();

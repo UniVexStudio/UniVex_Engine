@@ -109,6 +109,17 @@ public:
     /// The grid's finest spacing in world units (GridSettings::baseSpacing). A size that is not
     /// finite or not positive is ignored and the grid keeps its current spacing.
     void SetGridCellSizeUVE(float cellSize);
+    /// How many of the finest grid cells share a decade line: 1 (the default) draws none of them,
+    /// N draws N-1 sub-lines between each pair. Values below 1 are raised to 1, because the shader
+    /// divides the spacing by this count.
+    void SetGridSubdivisionsUVE(int subdivisions);
+    /// Where the grid's horizon fade starts and ends, as multiples of the camera's orbit distance.
+    /// A pair that does not run start < end, or that is not finite, is ignored and the grid keeps
+    /// the pair it has - a fade that ends before it starts would be a hard edge.
+    void SetGridFadeUVE(float startScale, float endScale);
+    /// A tint multiplied over the grid's three line levels. Out-of-range or non-finite channels are
+    /// ignored; white leaves the levels as they are drawn.
+    void SetGridLineTintUVE(const univex::render::GridColor& tint);
     /// How the selection outline looks (colour clamped to 0..1, thickness to 1..6 px).
     void SetSelectionOutlineUVE(const univex::render::SelectionOutlineSettings& settings);
     /// Draws the outline of the selected meshes' world-space triangles. Call after the scene and

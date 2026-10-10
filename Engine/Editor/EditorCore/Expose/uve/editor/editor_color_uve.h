@@ -61,10 +61,65 @@ struct EditorHsvUVE final {
 /// HSV to RGB; alpha is taken from `alpha`.
 [[nodiscard]] EditorColorUVE HsvToRgbUVE(const EditorHsvUVE& hsv, float alpha);
 
+/// How the picker's Advanced section shows the red, green, blue and alpha channels: unit
+/// floats, or the 0-255 bytes authors type from every other tool. The stored colour stays unit
+/// floats either way; only the sliders' reading changes.
+enum class ColorPickerRgbDisplayUVE {
+    ZeroToOne,
+    ZeroTo255,
+};
+
+/// One slider's end and spelling for a display mode, so the Advanced section can never show
+/// one channel's 0-255 beside another's 0-1.
+struct ColorPickerRgbScaleUVE final {
+    float maximum = 1.0F;
+    const char* format = "%.3f";
+};
+
+[[nodiscard]] constexpr ColorPickerRgbScaleUVE ColorPickerRgbScaleForUVE(
+    const ColorPickerRgbDisplayUVE display) noexcept {
+    return display == ColorPickerRgbDisplayUVE::ZeroTo255 ? ColorPickerRgbScaleUVE{255.0F, "%.0f"}
+                                                          : ColorPickerRgbScaleUVE{1.0F, "%.3f"};
+}
+
+/// A stored unit channel as the slider shows it. Anything but ZeroTo255 reads as itself, so a
+/// value from an older session can never land the sliders off their scale.
+[[nodiscard]] constexpr float ColorPickerRgbToShownUVE(const float stored,
+                                                       const ColorPickerRgbDisplayUVE display) noexcept {
+    return display == ColorPickerRgbDisplayUVE::ZeroTo255 ? stored * 255.0F : stored;
+}
+
+/// A slider's reading back to the stored unit channel.
+[[nodiscard]] constexpr float ColorPickerShownRgbToStoredUVE(const float shown,
+                                                             const ColorPickerRgbDisplayUVE display) noexcept {
+    return display == ColorPickerRgbDisplayUVE::ZeroTo255 ? shown / 255.0F : shown;
+}
+
+/// Saturation and value as the whole percents every picker shows: the stored channels stay
+/// unit floats, and the sliders read 0-100. Percentages, not a choice beside 0-1 - no engine
+/// offers unit-float S/V as a convention.
+[[nodiscard]] constexpr float HsvToPercentUVE(const float stored) noexcept {
+    return stored * 100.0F;
+}
+
+/// A percent slider's reading back to the stored unit channel.
+[[nodiscard]] constexpr float PercentToHsvUVE(const float shown) noexcept {
+    return shown / 100.0F;
+}
+
+/// The saturation/value sliders' one end and spelling, shared by both channels.
+struct HsvPercentScaleUVE final {
+    float maximum = 100.0F;
+    const char* format = "%.0f%%";
+};
+
+inline constexpr HsvPercentScaleUVE kHsvPercentScaleUVE{};
+
 /// Colour picker choices that follow the author between pickers and sessions.
 struct ColorPickerPreferencesUVE final {
     /// Whether the picker's per-channel section (RGBA, HSV, hex) is expanded.
     bool advancedOpen = true;
+    ColorPickerRgbDisplayUVE rgbDisplay = ColorPickerRgbDisplayUVE::ZeroToOne;
     std::vector<EditorColorUVE> saved;
     std::vector<EditorColorUVE> recents;
 };

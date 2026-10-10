@@ -165,4 +165,38 @@ int ScoreFuzzyMatchUVE(const std::string_view text, const std::string_view query
     return 100 - static_cast<int>(std::min<std::size_t>(span - needle.size(), 99U));
 }
 
+int ScoreCommandPaletteMatchUVE(const std::string_view label, const std::string_view title,
+                                const std::string_view query, const CommandPaletteMatchModeUVE mode) {
+    const auto best = [&label, &title](const std::string_view text) {
+        return std::max(ScoreFuzzyMatchUVE(label, text), ScoreFuzzyMatchUVE(title, text));
+    };
+    if (mode == CommandPaletteMatchModeUVE::Fuzzy) {
+        return best(query);
+    }
+
+    // Words: every whitespace-separated word has to match on its own, so a query of one word
+    // behaves exactly like Fuzzy, and each further word can only narrow the list. The command's
+    // score is what its words scored together, which keeps the best of the near-matches on top.
+    int total = 0;
+    std::size_t cursor = 0U;
+    while (cursor < query.size()) {
+        while (cursor < query.size() && query[cursor] == ' ') {
+            ++cursor;
+        }
+        const std::size_t start = cursor;
+        while (cursor < query.size() && query[cursor] != ' ') {
+            ++cursor;
+        }
+        if (start == cursor) {
+            break; // trailing spaces only
+        }
+        const int wordScore = best(query.substr(start, cursor - start));
+        if (wordScore < 0) {
+            return -1;
+        }
+        total += wordScore;
+    }
+    return total;
+}
+
 } // namespace UVE::Editor

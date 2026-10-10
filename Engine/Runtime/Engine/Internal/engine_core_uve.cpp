@@ -184,6 +184,106 @@ constexpr Window::AdaptiveRenderResolutionLimitsUVE kAdaptiveRenderResolutionLim
                                                 config.integerOnlyScalingUVE);
 }
 
+/// Normalizes values supplied directly by the application before descriptor-validated settings
+/// override them. After the overlay is applied, per-setting range/type checks belong to the registry;
+/// only cross-setting policies and consumer-specific checks remain at their use sites.
+void NormalizeBaseEngineConfigUVE(EngineConfigUVE& config) {
+    if (!IsSafeShaderCachePathUVE(config.shaderCachePath)) {
+        const std::filesystem::path defaultShaderCachePath = EngineConfigUVE{}.shaderCachePath;
+        UVE_WARNING("EngineCoreUVE: shader-cache directory must be a non-empty relative path without parent "
+                    "segments; using \"{}\"",
+                    defaultShaderCachePath.string());
+        config.shaderCachePath = defaultShaderCachePath;
+    }
+    switch (config.shaderCompilationModeUVE) {
+    case ShaderCompilationModeUVE::SynchronousOnDemandUVE:
+    case ShaderCompilationModeUVE::AsynchronousOnDemandUVE:
+        break;
+    default:
+        UVE_WARNING("EngineCoreUVE: invalid shader compilation mode {}; using asynchronous on-demand",
+                    static_cast<std::uint32_t>(config.shaderCompilationModeUVE));
+        config.shaderCompilationModeUVE = ShaderCompilationModeUVE::AsynchronousOnDemandUVE;
+        break;
+    }
+    switch (config.spatialUpscalingMethodUVE) {
+    case SpatialUpscalingMethodUVE::BilinearUVE:
+    case SpatialUpscalingMethodUVE::NearestUVE:
+        break;
+    default:
+        UVE_WARNING("EngineCoreUVE: invalid spatial upscaling method {}; using bilinear",
+                    static_cast<std::uint32_t>(config.spatialUpscalingMethodUVE));
+        config.spatialUpscalingMethodUVE = SpatialUpscalingMethodUVE::BilinearUVE;
+        break;
+    }
+    switch (config.toneMappingMethodUVE) {
+    case ToneMappingMethodUVE::LinearClampUVE:
+    case ToneMappingMethodUVE::AcesUVE:
+        break;
+    default:
+        UVE_WARNING("EngineCoreUVE: invalid tone-mapping method {}; using ACES",
+                    static_cast<std::uint32_t>(config.toneMappingMethodUVE));
+        config.toneMappingMethodUVE = ToneMappingMethodUVE::AcesUVE;
+        break;
+    }
+    switch (config.postProcessAAMethodUVE) {
+    case PostProcessAAMethodUVE::NoneUVE:
+    case PostProcessAAMethodUVE::FastApproximateUVE:
+        break;
+    default:
+        UVE_WARNING("EngineCoreUVE: invalid post-process AA method {}; disabling AA",
+                    static_cast<std::uint32_t>(config.postProcessAAMethodUVE));
+        config.postProcessAAMethodUVE = PostProcessAAMethodUVE::NoneUVE;
+        break;
+    }
+    if (config.screenSpaceAAQualityUVE > 2U) {
+        UVE_WARNING("EngineCoreUVE: screen-space AA quality {} is outside [0, 2]; clamping to 2",
+                    config.screenSpaceAAQualityUVE);
+        config.screenSpaceAAQualityUVE = 2U;
+    }
+    if (!std::isfinite(config.ssaoRadiusUVE) || config.ssaoRadiusUVE < 0.01F || config.ssaoRadiusUVE > 10.0F) {
+        UVE_WARNING("EngineCoreUVE: SSAO radius {} is outside [0.01, 10]; using 0.5", config.ssaoRadiusUVE);
+        config.ssaoRadiusUVE = 0.5F;
+    }
+    if (!std::isfinite(config.ssaoIntensityUVE) || config.ssaoIntensityUVE < 0.0F || config.ssaoIntensityUVE > 4.0F) {
+        UVE_WARNING("EngineCoreUVE: SSAO intensity {} is outside [0, 4]; using 1", config.ssaoIntensityUVE);
+        config.ssaoIntensityUVE = 1.0F;
+    }
+    if (!std::isfinite(config.ssaoPowerUVE) || config.ssaoPowerUVE < 0.1F || config.ssaoPowerUVE > 4.0F) {
+        UVE_WARNING("EngineCoreUVE: SSAO power {} is outside [0.1, 4]; using 1", config.ssaoPowerUVE);
+        config.ssaoPowerUVE = 1.0F;
+    }
+    if (config.ssaoQualityUVE > 2U) {
+        UVE_WARNING("EngineCoreUVE: SSAO quality {} is outside [0, 2]; clamping to 2", config.ssaoQualityUVE);
+        config.ssaoQualityUVE = 2U;
+    }
+    if (!std::isfinite(config.renderResolutionScaleUVE) ||
+        config.renderResolutionScaleUVE < kMinimumRenderResolutionScaleUVE ||
+        config.renderResolutionScaleUVE > kMaximumRenderResolutionScaleUVE) {
+        UVE_WARNING("EngineCoreUVE: invalid render-resolution scale {}; expected [{}, {}]; using 1.0",
+                    config.renderResolutionScaleUVE, kMinimumRenderResolutionScaleUVE,
+                    kMaximumRenderResolutionScaleUVE);
+        config.renderResolutionScaleUVE = kMaximumRenderResolutionScaleUVE;
+    }
+    if (!std::isfinite(config.minimumRenderResolutionScaleUVE) ||
+        config.minimumRenderResolutionScaleUVE < kMinimumRenderResolutionScaleUVE ||
+        config.minimumRenderResolutionScaleUVE > kMaximumRenderResolutionScaleUVE) {
+        UVE_WARNING("EngineCoreUVE: invalid minimum render-resolution scale {}; using {}",
+                    config.minimumRenderResolutionScaleUVE, kMinimumRenderResolutionScaleUVE);
+        config.minimumRenderResolutionScaleUVE = kMinimumRenderResolutionScaleUVE;
+    }
+    if (!std::isfinite(config.renderResolutionTargetFrameTimeMillisecondsUVE) ||
+        config.renderResolutionTargetFrameTimeMillisecondsUVE <
+            kMinimumRenderResolutionTargetFrameTimeMillisecondsUVE ||
+        config.renderResolutionTargetFrameTimeMillisecondsUVE >
+            kMaximumRenderResolutionTargetFrameTimeMillisecondsUVE) {
+        UVE_WARNING("EngineCoreUVE: invalid render-resolution target frame time {}; using {} ms",
+                    config.renderResolutionTargetFrameTimeMillisecondsUVE,
+                    kDefaultRenderResolutionTargetFrameTimeMillisecondsUVE);
+        config.renderResolutionTargetFrameTimeMillisecondsUVE =
+            kDefaultRenderResolutionTargetFrameTimeMillisecondsUVE;
+    }
+}
+
 [[nodiscard]] bool LoadCursorImageUVE(const EngineConfigUVE& config, std::vector<std::uint8_t>& outPixels,
                                       std::uint32_t& outWidth, std::uint32_t& outHeight) {
     outPixels.clear();
@@ -397,107 +497,16 @@ void EngineCoreUVE::Init() {
                                        commandLineSettings)) {
         throw std::logic_error("Failed to attach engine settings layers.");
     }
+    // Sanitize the caller-supplied base before overlays. Values subsequently read from settings
+    // files are already type/range checked by the registry and should not be validated again here.
+    NormalizeBaseEngineConfigUVE(m_config);
     ApplyEngineSettingsUVE(settings, m_config);
-    if (!IsSafeShaderCachePathUVE(m_config.shaderCachePath)) {
-        const std::filesystem::path defaultShaderCachePath = EngineConfigUVE{}.shaderCachePath;
-        UVE_WARNING("EngineCoreUVE: shader-cache directory must be a non-empty relative path without parent "
-                    "segments; using \"{}\"",
-                    defaultShaderCachePath.string());
-        m_config.shaderCachePath = defaultShaderCachePath;
-    }
-    switch (m_config.shaderCompilationModeUVE) {
-    case ShaderCompilationModeUVE::SynchronousOnDemandUVE:
-    case ShaderCompilationModeUVE::AsynchronousOnDemandUVE:
-        break;
-    default:
-        UVE_WARNING("EngineCoreUVE: invalid shader compilation mode {}; using asynchronous on-demand",
-                    static_cast<std::uint32_t>(m_config.shaderCompilationModeUVE));
-        m_config.shaderCompilationModeUVE = ShaderCompilationModeUVE::AsynchronousOnDemandUVE;
-        break;
-    }
-    switch (m_config.spatialUpscalingMethodUVE) {
-    case SpatialUpscalingMethodUVE::BilinearUVE:
-    case SpatialUpscalingMethodUVE::NearestUVE:
-        break;
-    default:
-        UVE_WARNING("EngineCoreUVE: invalid spatial upscaling method {}; using bilinear",
-                    static_cast<std::uint32_t>(m_config.spatialUpscalingMethodUVE));
-        m_config.spatialUpscalingMethodUVE = SpatialUpscalingMethodUVE::BilinearUVE;
-        break;
-    }
-    switch (m_config.toneMappingMethodUVE) {
-    case ToneMappingMethodUVE::LinearClampUVE:
-    case ToneMappingMethodUVE::AcesUVE:
-        break;
-    default:
-        UVE_WARNING("EngineCoreUVE: invalid tone-mapping method {}; using ACES",
-                    static_cast<std::uint32_t>(m_config.toneMappingMethodUVE));
-        m_config.toneMappingMethodUVE = ToneMappingMethodUVE::AcesUVE;
-        break;
-    }
-    switch (m_config.postProcessAAMethodUVE) {
-    case PostProcessAAMethodUVE::NoneUVE:
-    case PostProcessAAMethodUVE::FastApproximateUVE:
-        break;
-    default:
-        UVE_WARNING("EngineCoreUVE: invalid post-process AA method {}; disabling AA",
-                    static_cast<std::uint32_t>(m_config.postProcessAAMethodUVE));
-        m_config.postProcessAAMethodUVE = PostProcessAAMethodUVE::NoneUVE;
-        break;
-    }
-    if (m_config.screenSpaceAAQualityUVE > 2U) {
-        UVE_WARNING("EngineCoreUVE: screen-space AA quality {} is outside [0, 2]; clamping to 2",
-                    m_config.screenSpaceAAQualityUVE);
-        m_config.screenSpaceAAQualityUVE = 2U;
-    }
-    if (!std::isfinite(m_config.ssaoRadiusUVE) || m_config.ssaoRadiusUVE < 0.01F ||
-        m_config.ssaoRadiusUVE > 10.0F) {
-        UVE_WARNING("EngineCoreUVE: SSAO radius {} is outside [0.01, 10]; using 0.5", m_config.ssaoRadiusUVE);
-        m_config.ssaoRadiusUVE = 0.5F;
-    }
-    if (!std::isfinite(m_config.ssaoIntensityUVE) || m_config.ssaoIntensityUVE < 0.0F ||
-        m_config.ssaoIntensityUVE > 4.0F) {
-        UVE_WARNING("EngineCoreUVE: SSAO intensity {} is outside [0, 4]; using 1", m_config.ssaoIntensityUVE);
-        m_config.ssaoIntensityUVE = 1.0F;
-    }
-    if (!std::isfinite(m_config.ssaoPowerUVE) || m_config.ssaoPowerUVE < 0.1F || m_config.ssaoPowerUVE > 4.0F) {
-        UVE_WARNING("EngineCoreUVE: SSAO power {} is outside [0.1, 4]; using 1", m_config.ssaoPowerUVE);
-        m_config.ssaoPowerUVE = 1.0F;
-    }
-    if (m_config.ssaoQualityUVE > 2U) {
-        UVE_WARNING("EngineCoreUVE: SSAO quality {} is outside [0, 2]; clamping to 2", m_config.ssaoQualityUVE);
-        m_config.ssaoQualityUVE = 2U;
-    }
-    if (!std::isfinite(m_config.renderResolutionScaleUVE) ||
-        m_config.renderResolutionScaleUVE < kMinimumRenderResolutionScaleUVE ||
-        m_config.renderResolutionScaleUVE > kMaximumRenderResolutionScaleUVE) {
-        UVE_WARNING("EngineCoreUVE: invalid render-resolution scale {}; expected [{}, {}]; using 1.0",
-                    m_config.renderResolutionScaleUVE, kMinimumRenderResolutionScaleUVE,
-                    kMaximumRenderResolutionScaleUVE);
-        m_config.renderResolutionScaleUVE = kMaximumRenderResolutionScaleUVE;
-    }
-    if (!std::isfinite(m_config.minimumRenderResolutionScaleUVE) ||
-        m_config.minimumRenderResolutionScaleUVE < kMinimumRenderResolutionScaleUVE ||
-        m_config.minimumRenderResolutionScaleUVE > kMaximumRenderResolutionScaleUVE) {
-        UVE_WARNING("EngineCoreUVE: invalid minimum render-resolution scale {}; using {}",
-                    m_config.minimumRenderResolutionScaleUVE, kMinimumRenderResolutionScaleUVE);
-        m_config.minimumRenderResolutionScaleUVE = kMinimumRenderResolutionScaleUVE;
-    }
+    // The range checks above are per setting; this relation spans two individually valid settings,
+    // so enforce it only after project/user/platform/command-line resolution.
     if (m_config.minimumRenderResolutionScaleUVE > m_config.renderResolutionScaleUVE) {
         UVE_WARNING("EngineCoreUVE: minimum render-resolution scale {} exceeds maximum {}; clamping minimum",
                     m_config.minimumRenderResolutionScaleUVE, m_config.renderResolutionScaleUVE);
         m_config.minimumRenderResolutionScaleUVE = m_config.renderResolutionScaleUVE;
-    }
-    if (!std::isfinite(m_config.renderResolutionTargetFrameTimeMillisecondsUVE) ||
-        m_config.renderResolutionTargetFrameTimeMillisecondsUVE <
-            kMinimumRenderResolutionTargetFrameTimeMillisecondsUVE ||
-        m_config.renderResolutionTargetFrameTimeMillisecondsUVE >
-            kMaximumRenderResolutionTargetFrameTimeMillisecondsUVE) {
-        UVE_WARNING("EngineCoreUVE: invalid render-resolution target frame time {}; using {} ms",
-                    m_config.renderResolutionTargetFrameTimeMillisecondsUVE,
-                    kDefaultRenderResolutionTargetFrameTimeMillisecondsUVE);
-        m_config.renderResolutionTargetFrameTimeMillisecondsUVE =
-            kDefaultRenderResolutionTargetFrameTimeMillisecondsUVE;
     }
     const DynamicRenderResolutionSettingsUVE dynamicResolutionSettings{
         m_config.minimumRenderResolutionScaleUVE,
@@ -1428,7 +1437,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         return it->second.TryGetUVE();
     };
     // The object an animation moves: its target when that is a live object with a transform, otherwise
-    // its parent when that has one. A pure Object parent (the scene root) gives nothing to move.
+    // its parent when that has one. A pure Object parent (the Object) gives nothing to move.
     const auto resolveTarget = [this](const Scene::EntityUVE self,
                                       const Scene::EntityUVE target) -> Scene::TransformComponentUVE* {
         Scene::EntityUVE chosen = target;
