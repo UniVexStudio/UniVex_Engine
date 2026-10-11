@@ -985,9 +985,14 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity, const bool
     // in the current font. A fixed two spaces was narrower than the icon, which then sat on top of
     // the name's first letter.
     const float spaceWidth = std::max(1.0F, ImGui::CalcTextSize(" ").x);
+    // Where the row's label begins, measured from the row's left edge. The row is drawn with a zero
+    // horizontal FramePadding (pushed around TreeNodeEx below), so the label starts exactly one font
+    // size in. ImGui::GetTreeNodeToLabelSpacing() here would still include the default padding, which
+    // put the icon about two paddings to the right of the label start and left it touching the name.
+    const float treeLabelSpacing = ImGui::GetFontSize();
     const auto gapSpaces = m_hierarchyView.showIcons
                                ? static_cast<std::size_t>(
-                                     std::ceil((kHierarchyObjectIconSizeUVE + 6.0F) / spaceWidth))
+                                     std::ceil((kHierarchyObjectIconSizeUVE + kHierarchyIconLabelGapUVE) / spaceWidth))
                                : std::size_t{0U};
     // The row's right-hand columns (eye, lock, diagnostic, script) are fixed; the name gives way to
     // them. A name that would run under the leftmost used column is cut short with "..." and shown
@@ -1006,7 +1011,7 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity, const bool
         usedColumns = eyeColumns + 4.0F;
     }
     const std::string fullName = GetEntityDisplayLabelUVE(entity);
-    const float labelStart = ImGui::GetCursorPosX() + ImGui::GetTreeNodeToLabelSpacing() +
+    const float labelStart = ImGui::GetCursorPosX() + treeLabelSpacing +
                              (static_cast<float>(gapSpaces) * spaceWidth);
     const float labelLimit = ImGui::GetWindowContentRegionMax().x - (usedColumns * ImGui::GetFrameHeight()) -
                              ImGui::GetStyle().ItemSpacing.x;
@@ -1074,7 +1079,7 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity, const bool
     bool typeHintShown = false;
     if (!renaming && m_hierarchyView.showTypeName && !nameTruncated && !typeHint.empty()) {
         const std::string hint(typeHint);
-        const float hintStart = rowMin.x + ImGui::GetTreeNodeToLabelSpacing() +
+        const float hintStart = rowMin.x + treeLabelSpacing +
                                 ImGui::CalcTextSize(visibleLabel.c_str()).x + ImGui::GetStyle().ItemSpacing.x;
         const float hintLimit = ImGui::GetWindowPos().x - ImGui::GetScrollX() + labelLimit;
         if (ImGui::CalcTextSize(hint.c_str()).x <= hintLimit - hintStart) {
@@ -1090,7 +1095,7 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity, const bool
         const Scene::Objects::SceneObjectKindUVE kind = Scene::ResolveSceneObjectKindUVE(entityManager, entity);
         const std::uintptr_t icon = m_uiAssets.GetObjectIconTextureIdUVE(kind);
         if (icon != 0U) {
-            const ImVec2 iconMin{std::floor(rowMin.x + ImGui::GetTreeNodeToLabelSpacing()),
+            const ImVec2 iconMin{std::floor(rowMin.x + treeLabelSpacing),
                                  std::floor(((rowMin.y + rowMax.y) - kHierarchyObjectIconSizeUVE) * 0.5F)};
             const ImVec2 iconMax{iconMin.x + kHierarchyObjectIconSizeUVE, iconMin.y + kHierarchyObjectIconSizeUVE};
             if (m_hierarchyView.colorCodeIcons) {
