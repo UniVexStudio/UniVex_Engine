@@ -11,7 +11,7 @@ namespace UVE::Asset {
 
 inline constexpr std::size_t kMaximumAudioAssetSamplesUVE = 1U << 20U;
 
-/// Typed CPU audio envelope for bounded interleaved normalized PCM16-derived samples. Runtime
+/// Typed CPU audio envelope for bounded interleaved normalized floating-point PCM samples. Runtime
 /// devices, streaming cursors, mixer routing, compression, and platform codec ownership remain
 /// outside this asset contract.
 struct AudioAssetUVE final {
