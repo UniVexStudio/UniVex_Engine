@@ -2,6 +2,7 @@
 
 
 #include "uve/rhi_opengl/gl_render_device_uve.h"
+#include "uve/rhi/bind_group_uve.h"
 #include "uve/asset/asset_bundle_uve.h"
 #include "uve/asset/file_system_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
@@ -142,6 +143,40 @@ TEST(GlRenderDeviceUnavailableUVETest, InvalidWindowManager_ConstructsAsUnusable
     EXPECT_EQ(renderDevice.GetBackendNameUVE(), "OpenGL");
     EXPECT_EQ(renderDevice.GetLiveResourceCountUVE(), 0U);
     renderDevice.PresentUVE();
+}
+
+TEST_F(GlRenderDeviceUVETest, BindGroupAppliesRealTextureSamplerAndBufferBindings) {
+    const auto uniform = renderDevice->CreateBufferUVE({64U, BufferUsageUVE::Uniform});
+    const auto storage = renderDevice->CreateBufferUVE({64U, BufferUsageUVE::Storage});
+    const auto texture = renderDevice->CreateTextureUVE({1U, 1U, TextureFormatUVE::RGBA8Unorm});
+    const auto sampler = renderDevice->CreateSamplerUVE({});
+    ASSERT_NE(uniform, kInvalidBufferHandleUVE);
+    ASSERT_NE(storage, kInvalidBufferHandleUVE);
+    ASSERT_NE(texture, kInvalidTextureHandleUVE);
+    ASSERT_NE(sampler, kInvalidSamplerHandleUVE);
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0U, 0U);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0U, 0U);
+    glBindSampler(0U, 0U);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0U);
+    const std::array<ResourceBindingUVE, 4> bindings{
+        BindUniformBufferCommandUVE{uniform, 0U}, BindStorageBufferCommandUVE{storage, 0U},
+        BindTextureCommandUVE{texture, 0U}, BindSamplerCommandUVE{sampler, 0U}};
+    auto commands = renderDevice->CreateCommandBufferUVE();
+    commands->BeginRenderPassUVE({});
+    BindGroupUVE(*commands, {bindings, {}});
+    GLint name = 0;
+    glGetIntegeri_v(GL_UNIFORM_BUFFER_BINDING, 0U, &name); EXPECT_GT(name, 0);
+    glGetIntegeri_v(GL_SHADER_STORAGE_BUFFER_BINDING, 0U, &name); EXPECT_GT(name, 0);
+    glGetIntegeri_v(GL_SAMPLER_BINDING, 0U, &name); EXPECT_GT(name, 0);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &name); EXPECT_GT(name, 0);
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+    commands->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commands));
+    renderDevice->DestroyBufferUVE(uniform);
+    renderDevice->DestroyBufferUVE(storage);
+    renderDevice->DestroyTextureUVE(texture);
+    renderDevice->DestroySamplerUVE(sampler);
 }
 
 TEST_F(GlRenderDeviceUVETest, GetBackendNameUVE_ReturnsOpenGL) {

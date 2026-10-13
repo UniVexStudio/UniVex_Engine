@@ -129,6 +129,22 @@ jobs:
             exit 1
           fi
 
+      - name: Verify software OpenGL device tests actually ran
+        working-directory: build
+        run: |
+          set -o pipefail
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./Test/uve_core_tests --gtest_filter='GlRenderDeviceUVETest.*' | tee /tmp/opengl.log
+          executed=$(grep -c '^\[       OK \] GlRenderDeviceUVETest' /tmp/opengl.log)
+          echo "OpenGL device cases executed: $executed"
+          if [ "$executed" -lt 1 ]; then
+            echo "::error::No software OpenGL device case ran; a capability skip is not native verification."
+            exit 1
+          fi
+          if ! grep -Fq '[       OK ] GlRenderDeviceUVETest.BindGroupAppliesRealTextureSamplerAndBufferBindings' /tmp/opengl.log; then
+            echo "::error::The native bind-group contract was not exercised."
+            exit 1
+          fi
+
       - name: Upload test log
         if: failure()
         uses: actions/upload-artifact@v4

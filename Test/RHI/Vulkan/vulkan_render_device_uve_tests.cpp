@@ -31,6 +31,7 @@
 
 #include "uve/events/event_system_uve.h"
 #include "uve/rhi/i_command_buffer_uve.h"
+#include "uve/rhi/bind_group_uve.h"
 #include "uve/window/i_vulkan_window_surface_uve.h"
 #include "spirv_test_shaders_uve.h"
 #include "uve/window/null_window_manager_uve.h"
@@ -1465,8 +1466,10 @@ TEST_F(VulkanRenderDeviceUVETest, BoundSamplerSelectsPointFiltering) {
         commandBuffer->BeginRenderPassUVE(passDesc);
         commandBuffer->BindPipelineUVE(texturedPipeline);
         commandBuffer->BindVertexBufferUVE(quadBuffer);
-        commandBuffer->BindTextureUVE(splitTexture, 0U);
-        commandBuffer->BindSamplerUVE(pointSampler, 0U);
+        const std::array<ResourceBindingUVE, 2> group{
+            BindTextureCommandUVE{splitTexture, 0U}, BindSamplerCommandUVE{pointSampler, 0U}};
+        ASSERT_EQ(ValidateBindGroupUVE({group, {}}), BindGroupValidationUVE::Valid);
+        BindGroupUVE(*commandBuffer, {group, {}});
         commandBuffer->DrawUVE(6U);
         commandBuffer->EndRenderPassUVE();
         device->SubmitUVE(std::move(commandBuffer));
