@@ -412,12 +412,13 @@ say so**; only `MemoryManagerUVE` is.
   Audio, Assets, Scripting, Editor), named for profiling, capacity-capped, and
   validated before execution with result codes instead of asserts.
 
-`[~]` **The capability is built and gameplay does not use it.** The entire
-`Update()` / `LateUpdate()` chain in `EngineCoreUVE` is single-threaded main-thread
-code. The job graph is used by asset import and shader preprocessing only. Nothing
-is broken; the parallelism is simply not claimed yet. Making a system parallel is
-therefore a wiring problem, not a missing-infrastructure problem — which is a much
-better place to be, and worth knowing before anyone proposes building a job system.
+`[x]` **The frame graph has a runtime foundation consumer:** `WorldUVE` uses its stable
+execution plan and `FrameSchedulerUVE::ExecuteSerialUVE` for registered scene systems and
+transform propagation. This deliberately preserves deterministic main-thread ownership.
+`EngineCoreUVE`'s overall update chain is not converted to parallel gameplay; that is a separate
+system-integration choice, not a missing job primitive. Existing worker consumers also include
+particles, so the older "only assets and shaders" claim was too narrow. Serial planning/action
+failure tests live in `frame_serial_uve_tests.cpp`; existing parallel scheduler tests are unchanged.
 
 Missing primitives:
 
@@ -863,10 +864,25 @@ driven by nothing.
 - `[x]` **Entity/Scene** — archetype ECS (`EntityManagerUVE`, PIMPL), stateless
   `SceneGraphUVE`, `SceneSerializerUVE` (explicit-roots, never implicit
   whole-world), `PrefabSystemUVE`, `ParticleRuntimeUVE`.
-- `[~]` **`WorldUVE`** — owns one entity manager and one scene graph; `TickUVE`
-  bumps counters and propagates transforms. No system registration, no multi-scene,
-  no scene-unload. `[ ]` **There is no `SceneUVE` type at all** — no object
-  representing a loaded level.
+- `[x]` **World/scene lifecycle and system registration** — `WorldUVE` now owns a persistent
+  primary scene and independently unloadable `World::SceneUVE` instances, each reusing the
+  existing EntityManager/SceneGraph. Scene identity reuses `ObjectRegistryUVE`; secondary entity
+  event buses are isolated so equal numeric entity ids cannot notify the wrong scene. Existing
+  constructor, Tick counters, primary entity-manager access and serialized scene formats remain
+  compatible. Optional population callbacks use the existing SceneSerializer/PrefabSystem.
+  `WorldSystemDescUVE` registers start/tick/stop callbacks, named dependencies, priority and
+  Before/AfterTransforms phases. The existing FrameTaskGraph/FrameScheduler now supplies stable
+  topological planning and owner-thread serial execution; this is not parallel gameplay.
+  Graph validation precedes initialization; failed starts roll back (including the failing
+  start); reentrant world mutation is rejected; tick exceptions fail closed; unloading stops
+  systems while the scene is alive, invalidates its handle and destroys entities in index order.
+  Shutdown is permanent/idempotent, and scene pause preserves its contents. No second ECS,
+  scene serializer, or general-purpose job graph was introduced. Fifteen tests in
+  `Test/Integration/World/world_lifecycle_uve_tests.cpp` and three
+  `Test/Core/Scheduling/frame_serial_uve_tests.cpp` cases cover these contracts, including old
+  snapshot loading, stale/foreign scene handles, callback failure and event isolation. The two
+  original World tests remain unchanged. Full verification: **4,033 CTest cases, zero failures,
+  seven existing Vulkan skips** (2026-10-13).
 - `[x]` **Physics** — box/sphere/capsule shapes, raycast, sphere/box/capsule casts,
   area overlap, character controller with CCD, fixed-step integration with
   positional resolution, island-partitioned distance and hinge constraints.

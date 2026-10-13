@@ -263,6 +263,45 @@ FrameTaskGraphValidationResultUVE FrameTaskGraphUVE::ValidateUVE() const {
     return FrameTaskGraphValidationResultUVE{FrameTaskGraphValidationCodeUVE::Valid, 0U, "valid"};
 }
 
+FrameTaskGraphValidationResultUVE FrameTaskGraphUVE::BuildExecutionOrderUVE(
+    std::vector<FrameTaskIdUVE>& outOrder) const {
+    const auto validation = ValidateUVE();
+    if (!validation.IsValidUVE()) return validation;
+    const auto tasks = GetTasksUVE();
+    std::vector<FrameTaskIdUVE> order;
+    order.reserve(tasks.size());
+    while (order.size() < tasks.size()) {
+        for (const auto& task : tasks) {
+            if (std::find(order.begin(), order.end(), task.id) != order.end()) continue;
+            const bool ready = std::all_of(task.dependencies.begin(), task.dependencies.end(),
+                [&order](const auto dependency) {
+                    return std::find(order.begin(), order.end(), dependency) != order.end();
+                });
+            if (ready) { order.push_back(task.id); break; }
+        }
+    }
+    outOrder = std::move(order);
+    return validation;
+}
+
+FrameScheduleResultUVE FrameSchedulerUVE::ExecuteSerialUVE(const FrameTaskGraphUVE& graph) {
+    std::vector<FrameTaskIdUVE> order;
+    const auto validation = graph.BuildExecutionOrderUVE(order);
+    if (!validation.IsValidUVE()) {
+        return {FrameScheduleResultCodeUVE::InvalidGraph, 0U, graph.GetTaskCountUVE(), validation.message};
+    }
+    std::size_t completed = 0U;
+    try {
+        for (const auto id : order) {
+            graph.GetTasksUVE()[FindTaskIndexUVE(graph.GetTasksUVE(), id)].action();
+            ++completed;
+        }
+    } catch (...) {
+        return {FrameScheduleResultCodeUVE::TaskFailed, completed, order.size(), ExceptionMessageUVE()};
+    }
+    return {FrameScheduleResultCodeUVE::Completed, completed, order.size(), "completed"};
+}
+
 FrameScheduleResultUVE FrameSchedulerUVE::ExecuteUVE(const FrameTaskGraphUVE& graph) const {
     const FrameTaskGraphValidationResultUVE validation = graph.ValidateUVE();
     if (!validation.IsValidUVE()) {
