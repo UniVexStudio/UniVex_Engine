@@ -177,6 +177,13 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
         }
         m_state->gl.glBindFramebuffer(GL_FRAMEBUFFER, 0);
         m_tempFramebuffer = 0;
+#if !defined(__ANDROID__)
+        // A preceding depth-only FBO explicitly uses GL_NONE for both buffers. Restore the
+        // window back-buffer selectors before the next swapchain pass so no driver carries the
+        // depth-only routing into the default framebuffer.
+        glDrawBuffer(GL_BACK);
+        glReadBuffer(GL_BACK);
+#endif
         if (!ApplyViewportUVE(renderPassDesc, width, height)) {
             return;
         }
