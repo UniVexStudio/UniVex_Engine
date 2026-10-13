@@ -91,6 +91,22 @@ jobs:
               > build/failed-tests.txt || true
           fi
           sort -u -o build/failed-tests.txt build/failed-tests.txt
+          # Keep bounded assertion context accessible through the Checks API too. Artifact/log
+          # downloads use a different host and are not reachable on every restricted network.
+          details=$(awk '
+            /\*\*\*(Failed|Timeout|Exception|Subprocess aborted)/ { capture=1; lines=0 }
+            capture && lines++ < 160 {
+              line=substr($0 "\n", 1, 12000-bytes); printf "%s", line; bytes+=length(line)
+              if (bytes >= 12000) exit
+            }
+            capture && /\[  FAILED  \]/ { capture=0 }
+          ' build/ctest-output.txt)
+          if [ -n "$details" ]; then
+            details=${details//%/%25}
+            details=${details//$'\r'/%0D}
+            details=${details//$'\n'/%0A}
+            echo "::error title=ctest failure context::${details}"
+          fi
           count=$(( $(wc -l < build/failed-tests.txt) + 0 ))
           summary=$(paste -sd'; ' build/failed-tests.txt | cut -c1-900)
           if [ "$count" -eq 0 ]; then
