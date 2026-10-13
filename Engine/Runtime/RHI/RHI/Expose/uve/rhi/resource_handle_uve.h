@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 //
-// Shared strong-handle template for the RHI's four GPU resource kinds
-// (Buffer/Texture/Shader/Pipeline). Until the 2026-09-17 audit, each kind had
+// Shared strong-handle template for the RHI's five GPU resource kinds
+// (Buffer/Texture/Shader/Pipeline/Sampler). Until the 2026-09-17 audit, each kind had
 // its own hand-copied ~37-line header implementing the same wrapper+equality+hash; they are
 // now generated from this one template via per-kind tag types and `using` aliases in
 // buffer_handle_uve.h / texture_handle_uve.h / shader_handle_uve.h / pipeline_handle_uve.h.
@@ -10,7 +10,7 @@
 // Why a small wrapper struct rather than a bare std::uint32_t alias: a ResourceHandleUVE<BufferTag>
 // can never be silently passed where a ResourceHandleUVE<TextureTag> was meant — matching
 // AssetGuidUVE's precedent for opaque ids that must not be confused with each other, which
-// matters here since the RHI has four distinct resource kinds.
+// matters here since the RHI has five distinct resource kinds.
 // Thread-safety: value type; safe to copy/compare/hash freely, no shared state.
 
 

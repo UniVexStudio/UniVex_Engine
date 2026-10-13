@@ -15,6 +15,7 @@
 #include "uve/component/collider_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/ray_uve.h"
+#include "uve/math/scalar_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/physics/i_raycast_system_uve.h"
 #include "uve/physics/raycast_query_uve.h"
@@ -114,7 +115,7 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
     report.resolutionClamped = resolutionClamped;
 
     const Math::Vector3UVE extents = bounds.max - bounds.min;
-    const float slopeCosineLimit = std::cos(settings.maximumSlopeDegrees * 3.14159265358979323846F / 180.0F);
+    const float slopeCosineLimit = std::cos(Math::DegToRadUVE(settings.maximumSlopeDegrees));
 
     std::vector<CellUVE> cells(columnsX * columnsZ);
     const auto cellIndexUVE = [columnsX](const std::size_t column, const std::size_t row) { return row * columnsX + column; };

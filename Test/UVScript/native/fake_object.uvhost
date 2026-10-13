@@ -4,6 +4,7 @@ property velocity vec3
 property grounded bool readonly
 property health int
 function input.axis(str, str) -> float
+function node(str) -> Object3D
 event ready()
 event tick(float)
 event body_entered(Object3D)

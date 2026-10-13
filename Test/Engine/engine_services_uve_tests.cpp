@@ -223,11 +223,6 @@ public:
     void SetIntUVE(std::string_view, std::int64_t) override {}
     void SetDoubleUVE(std::string_view, double) override {}
     void SetBoolUVE(std::string_view, bool) override {}
-    [[nodiscard]] std::vector<std::optional<Config::ConfigScalarValueUVE>> GetValuesUVE(
-        const std::vector<std::string>& keyPaths) const override {
-        return std::vector<std::optional<Config::ConfigScalarValueUVE>>(keyPaths.size());
-    }
-    bool ApplyMutationsUVE(const std::vector<Config::ConfigMutationUVE>&) override { return true; }
     [[nodiscard]] bool HasKeyUVE(std::string_view) const override { return false; }
     bool RemoveKeyUVE(std::string_view) override { return false; }
 
@@ -594,6 +589,7 @@ public:
     void BindVertexBufferUVE(Render::BufferHandleUVE, std::uint32_t) override {}
     void BindIndexBufferUVE(Render::BufferHandleUVE) override {}
     void BindTextureUVE(Render::TextureHandleUVE, std::uint32_t) override {}
+    void BindSamplerUVE(Render::SamplerHandleUVE, std::uint32_t) override {}
     void BindUniformBufferUVE(Render::BufferHandleUVE, std::uint32_t) override {}
     void BindStorageBufferUVE(Render::BufferHandleUVE, std::uint32_t) override {}
     void DrawIndexedUVE(std::uint32_t, std::uint32_t) override {}
@@ -638,6 +634,10 @@ public:
         return false;
     }
     void DestroyTextureUVE(Render::TextureHandleUVE) override {}
+    [[nodiscard]] Render::SamplerHandleUVE CreateSamplerUVE(const Render::SamplerDescUVE&) override {
+        return Render::SamplerHandleUVE{1};
+    }
+    void DestroySamplerUVE(Render::SamplerHandleUVE) override {}
     [[nodiscard]] Render::ShaderHandleUVE CreateShaderUVE(const Render::ShaderDescUVE&, std::string*) override {
         return Render::ShaderHandleUVE{1};
     }
@@ -925,6 +925,14 @@ public:
 class FakeAudioSourceSystemUVE final : public Audio::IAudioSourceSystemUVE {
 public:
     void SyncUVE(Scene::IEntityManagerUVE&, Audio::IAudioSystemUVE&) override { ++syncCallCount; }
+    [[nodiscard]] bool PlayEntityUVE(Scene::EntityUVE, Scene::IEntityManagerUVE&,
+                                     Audio::IAudioSystemUVE&) override {
+        return false;
+    }
+    [[nodiscard]] bool StopEntityUVE(Scene::EntityUVE, Audio::IAudioSystemUVE&) override { return false; }
+    [[nodiscard]] bool IsEntityPlayingUVE(Scene::EntityUVE, const Audio::IAudioSystemUVE&) const override {
+        return false;
+    }
 
     int syncCallCount = 0;
 };

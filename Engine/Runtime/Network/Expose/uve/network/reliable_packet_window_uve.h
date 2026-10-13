@@ -5,7 +5,8 @@
 //
 // This is a wire-format library: it encodes and decodes reliable packet headers and bounded
 // payload fragments, and nothing more. It has no caller inside Engine/ by design, because the
-// engine currently ships no transport at all - there is no socket, peer, connection, or timer
+// engine currently ships no socket transport - the only transport is the in-memory loopback
+// seam (uve/network/network_transport_uve.h); there is no socket, peer, connection, or timer
 // layer anywhere in the tree (grep for socket(/sendto(/recvfrom( across Engine/ returns nothing).
 // The only in-tree consumer is Test/Network/reliable_packet_window_uve_tests.cpp, which is the
 // intended one: the helpers are pure and stateless, so tests are their natural driver.
@@ -13,7 +14,8 @@
 // Every function below repeats the same contract in its own doc comment - "owns no socket, timer,
 // peer, retransmission, or transport lifecycle" - and that contract is the reason for the absence
 // of callers, not evidence of an unfinished integration. Wiring these up means writing the
-// transport subsystem first; do not treat them as an orphaned call site waiting to be connected.
+// socket/session layers on the transport seam; do not treat them as an orphaned call site
+// waiting to be connected.
 //
 #include <cstddef>
 #include <cstdint>

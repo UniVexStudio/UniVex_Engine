@@ -157,6 +157,35 @@ TEST_F(VulkanRenderDeviceUVETest, DeviceReportsUsableWithHonestBootstrapName) {
         << "backend name must report the exact slice and capability gate, got: " << name;
 }
 
+TEST_F(VulkanRenderDeviceUVETest, CreatePipelineUVE_LinesTopology_Succeeds) {
+    // Tier 2.8 Scope A: LINE_LIST assembly bakes without a validation error on a real device.
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kDepthUniformVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kDepthUniformFragmentSpirvUVE;
+    const ShaderHandleUVE vertexShader = device->CreateShaderUVE(vertexDesc);
+    const ShaderHandleUVE fragmentShader = device->CreateShaderUVE(fragmentDesc);
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.vertexStride = 12U;
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U});
+    pipelineDesc.depthTestEnabled = true;
+    pipelineDesc.depthWriteEnabled = true;
+    pipelineDesc.topology = PrimitiveTopologyUVE::Lines;
+    const PipelineHandleUVE pipeline = device->CreatePipelineUVE(pipelineDesc);
+    EXPECT_NE(pipeline, kInvalidPipelineHandleUVE);
+
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyShaderUVE(fragmentShader);
+}
+
 TEST_F(VulkanRenderDeviceUVETest, PresentedFrameReadbackIsUniformBootstrapClear) {
     for (int frame = 0; frame < 6; ++frame) {
         device->PresentUVE();
@@ -1359,6 +1388,336 @@ TEST_F(VulkanRenderDeviceUVETest, DepthTestWorksInColorOnlyOffscreenPass) {
     device->DestroyBufferUVE(quadBuffer);
     device->DestroyTextureUVE(renderTarget);
     device->DestroyPipelineUVE(depthPipeline);
+    device->DestroyPipelineUVE(texturedPipeline);
+    device->DestroyShaderUVE(depthVS);
+    device->DestroyShaderUVE(depthFS);
+    device->DestroyShaderUVE(quadVS);
+    device->DestroyShaderUVE(quadFS);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, CreateSamplerUVE_MalformedDesc_ReturnsInvalid) {
+    SamplerDescUVE desc;
+    desc.wrapW = static_cast<SamplerWrapUVE>(0xFFU);
+    EXPECT_EQ(device->CreateSamplerUVE(desc), kInvalidSamplerHandleUVE);
+
+    SamplerDescUVE anisoDesc;
+    anisoDesc.maxAnisotropy = 0.0F;
+    EXPECT_EQ(device->CreateSamplerUVE(anisoDesc), kInvalidSamplerHandleUVE);
+
+    const SamplerHandleUVE sampler = device->CreateSamplerUVE(SamplerDescUVE{});
+    EXPECT_NE(sampler, kInvalidSamplerHandleUVE);
+    device->DestroySamplerUVE(sampler);
+    device->DestroySamplerUVE(sampler); // double-destroy: safe no-op
+}
+
+TEST_F(VulkanRenderDeviceUVETest, BoundSamplerSelectsPointFiltering) {
+    // Tier 2.2 proof that BindSamplerUVE reaches the Vulkan descriptors: a 2x2 texture with a
+    // VERTICAL red/blue split (both rows identical, so the GL-bottom-up vs Vulkan-top-down row
+    // order cannot matter) sampled through a point sampler at U=0.4/0.6 — far enough from the
+    // texel centers (0.25/0.75) that linear filtering would visibly blend, firmly inside each
+    // texel so point sampling reads the exact color.
+    const std::uint8_t splitPixels[16] = {
+        255U, 0U, 0U, 255U,  0U, 0U, 255U, 255U,
+        255U, 0U, 0U, 255U,  0U, 0U, 255U, 255U,
+    };
+    TextureDescUVE splitDesc{};
+    splitDesc.width = 2U;
+    splitDesc.height = 2U;
+    splitDesc.format = TextureFormatUVE::RGBA8Unorm;
+    const TextureHandleUVE splitTexture = device->CreateTextureUVE(splitDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(splitPixels),
+                                   sizeof(splitPixels)));
+    ASSERT_NE(splitTexture, kInvalidTextureHandleUVE);
+
+    SamplerDescUVE pointDesc;
+    pointDesc.magFilter = SamplerFilterUVE::Point;
+    pointDesc.minFilter = SamplerFilterUVE::Point;
+    pointDesc.mipMode = SamplerMipModeUVE::None;
+    const SamplerHandleUVE pointSampler = device->CreateSamplerUVE(pointDesc);
+    ASSERT_NE(pointSampler, kInvalidSamplerHandleUVE);
+
+    ShaderHandleUVE quadVS{}, quadFS{};
+    const PipelineHandleUVE texturedPipeline = CreateTexturedPipelineUVE(*device, &quadVS, &quadFS);
+    ASSERT_NE(texturedPipeline, kInvalidPipelineHandleUVE);
+
+    const float quadVertices[30] = {
+        -1.0F, -1.0F, 0.0F,  0.0F, 0.0F,
+         1.0F, -1.0F, 0.0F,  1.0F, 0.0F,
+        -1.0F,  1.0F, 0.0F,  0.0F, 1.0F,
+         1.0F, -1.0F, 0.0F,  1.0F, 0.0F,
+         1.0F,  1.0F, 0.0F,  1.0F, 1.0F,
+        -1.0F,  1.0F, 0.0F,  0.0F, 1.0F,
+    };
+    BufferDescUVE quadBufferDesc{};
+    quadBufferDesc.sizeBytes = sizeof(quadVertices);
+    quadBufferDesc.usage = BufferUsageUVE::Vertex;
+    const BufferHandleUVE quadBuffer = device->CreateBufferUVE(quadBufferDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(quadVertices),
+                                   sizeof(quadVertices)));
+    ASSERT_NE(quadBuffer, kInvalidBufferHandleUVE);
+
+    {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(texturedPipeline);
+        commandBuffer->BindVertexBufferUVE(quadBuffer);
+        commandBuffer->BindTextureUVE(splitTexture, 0U);
+        commandBuffer->BindSamplerUVE(pointSampler, 0U);
+        commandBuffer->DrawUVE(6U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+    }
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+
+    std::vector<std::byte> pixels(1280U * 720U * 4U);
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+    if (width == 0U || height == 0U) {
+        GTEST_SKIP() << "driver reported a zero-sized extent; coverage math needs pixels";
+    }
+
+    const std::string_view name = device->GetBackendNameUVE();
+    if (name == "Vulkan (M2c textures+staging)") {
+        const auto center = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+        EXPECT_GT(center[0], 240); // fallback white, frame intact
+        EXPECT_GT(center[1], 240);
+        EXPECT_GT(center[2], 240);
+    } else {
+        // NDC x=-0.2 → U=0.4 (red texel); x=+0.2 → U=0.6 (blue texel). Linear filtering at
+        // these points would read ~(178,0,76) / ~(76,0,178) — the bounds below only pass for
+        // unblended texels.
+        const auto left = ChannelAtNdcUVE(pixels, width, height, -0.2F, 0.0F);
+        EXPECT_GT(left[0], 200);
+        EXPECT_LT(left[1], 60);
+        EXPECT_LT(left[2], 60) << "point sampling must read the exact red texel at U=0.4 - "
+            "got (" << left[0] << "," << left[1] << "," << left[2] << ")";
+        const auto right = ChannelAtNdcUVE(pixels, width, height, 0.2F, 0.0F);
+        EXPECT_LT(right[0], 60);
+        EXPECT_LT(right[1], 60);
+        EXPECT_GT(right[2], 200) << "point sampling must read the exact blue texel at U=0.6 - "
+            "got (" << right[0] << "," << right[1] << "," << right[2] << ")";
+    }
+
+    device->DestroyBufferUVE(quadBuffer);
+    device->DestroyTextureUVE(splitTexture);
+    device->DestroyPipelineUVE(texturedPipeline);
+    device->DestroySamplerUVE(pointSampler);
+    device->DestroyShaderUVE(quadVS);
+    device->DestroyShaderUVE(quadFS);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, DepthCompareSelectsTheCoplanarWinner) {
+    // Tier 2.1 proof that PipelineDescUVE::depthCompare threads into the Vulkan pipeline: two
+    // pipelines identical except the compare op each render GREEN-then-RED at the SAME depth
+    // into separate offscreen targets. Less keeps the first draw (green wins); LessOrEqual
+    // lets the coplanar second draw through (red wins). Same shader, same constants — the
+    // only variable is the compare op.
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kDepthUniformVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kDepthUniformFragmentSpirvUVE;
+    const ShaderHandleUVE depthVS = device->CreateShaderUVE(vertexDesc);
+    const ShaderHandleUVE depthFS = device->CreateShaderUVE(fragmentDesc);
+    ASSERT_NE(depthVS, kInvalidShaderHandleUVE);
+    ASSERT_NE(depthFS, kInvalidShaderHandleUVE);
+
+    PipelineDescUVE lessDesc{};
+    lessDesc.vertexShader = depthVS;
+    lessDesc.fragmentShader = depthFS;
+    lessDesc.vertexStride = 12U;
+    lessDesc.vertexLayout.push_back(
+        VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U});
+    lessDesc.depthTestEnabled = true;
+    lessDesc.depthWriteEnabled = true;
+    lessDesc.depthCompare = DepthCompareUVE::Less;
+    const PipelineHandleUVE lessPipeline = device->CreatePipelineUVE(lessDesc);
+    ASSERT_NE(lessPipeline, kInvalidPipelineHandleUVE);
+
+    PipelineDescUVE lequalDesc = lessDesc;
+    lequalDesc.depthCompare = DepthCompareUVE::LessOrEqual;
+    const PipelineHandleUVE lequalPipeline = device->CreatePipelineUVE(lequalDesc);
+    ASSERT_NE(lequalPipeline, kInvalidPipelineHandleUVE);
+
+    ShaderHandleUVE quadVS{}, quadFS{};
+    const PipelineHandleUVE texturedPipeline = CreateTexturedPipelineUVE(*device, &quadVS, &quadFS);
+    ASSERT_NE(texturedPipeline, kInvalidPipelineHandleUVE);
+
+    TextureDescUVE rtDesc{};
+    rtDesc.width = 64U;
+    rtDesc.height = 64U;
+    rtDesc.format = TextureFormatUVE::RGBA8Unorm;
+    const TextureHandleUVE lessTarget = device->CreateTextureUVE(rtDesc);
+    ASSERT_NE(lessTarget, kInvalidTextureHandleUVE);
+    const TextureHandleUVE lequalTarget = device->CreateTextureUVE(rtDesc);
+    ASSERT_NE(lequalTarget, kInvalidTextureHandleUVE);
+
+    const float triVertices[9] = {
+        -1.0F, -1.0F, 0.0F,
+         3.0F, -1.0F, 0.0F,
+        -1.0F,  3.0F, 0.0F,
+    };
+    BufferDescUVE triBufferDesc{};
+    triBufferDesc.sizeBytes = sizeof(triVertices);
+    triBufferDesc.usage = BufferUsageUVE::Vertex;
+    const BufferHandleUVE triBuffer = device->CreateBufferUVE(triBufferDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(triVertices),
+                                   sizeof(triVertices)));
+    ASSERT_NE(triBuffer, kInvalidBufferHandleUVE);
+
+    const float quadVertices[30] = {
+        -1.0F, -1.0F, 0.0F,  0.0F, 0.0F,
+         1.0F, -1.0F, 0.0F,  1.0F, 0.0F,
+        -1.0F,  1.0F, 0.0F,  0.0F, 1.0F,
+         1.0F, -1.0F, 0.0F,  1.0F, 0.0F,
+         1.0F,  1.0F, 0.0F,  1.0F, 1.0F,
+        -1.0F,  1.0F, 0.0F,  0.0F, 1.0F,
+    };
+    BufferDescUVE quadBufferDesc{};
+    quadBufferDesc.sizeBytes = sizeof(quadVertices);
+    quadBufferDesc.usage = BufferUsageUVE::Vertex;
+    const BufferHandleUVE quadBuffer = device->CreateBufferUVE(quadBufferDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(quadVertices),
+                                   sizeof(quadVertices)));
+    ASSERT_NE(quadBuffer, kInvalidBufferHandleUVE);
+
+    // Submission 1: GREEN then RED at the SAME depth through the Less pipeline.
+    {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorAttachment = lessTarget;
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.0F, 0.0F, 1.0F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.clearDepth = 1.0F;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(lessPipeline);
+        commandBuffer->BindVertexBufferUVE(triBuffer);
+        commandBuffer->SetUniformVector3UVE("uColorTri", Math::Vector3UVE{0.0F, 1.0F, 0.0F});
+        commandBuffer->SetUniformFloatUVE("uDepth", 0.3F);
+        commandBuffer->SetUniformFloatUVE("uOffsetX", 0.0F);
+        commandBuffer->SetUniformFloatUVE("uOffsetY", 0.0F);
+        commandBuffer->DrawUVE(3U);
+        commandBuffer->SetUniformVector3UVE("uColorTri", Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+        commandBuffer->SetUniformFloatUVE("uDepth", 0.3F);
+        commandBuffer->DrawUVE(3U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+    }
+    // Submission 2: the identical coplanar pair through the LessOrEqual pipeline.
+    {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorAttachment = lequalTarget;
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.0F, 0.0F, 1.0F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.clearDepth = 1.0F;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(lequalPipeline);
+        commandBuffer->BindVertexBufferUVE(triBuffer);
+        commandBuffer->SetUniformVector3UVE("uColorTri", Math::Vector3UVE{0.0F, 1.0F, 0.0F});
+        commandBuffer->SetUniformFloatUVE("uDepth", 0.3F);
+        commandBuffer->SetUniformFloatUVE("uOffsetX", 0.0F);
+        commandBuffer->SetUniformFloatUVE("uOffsetY", 0.0F);
+        commandBuffer->DrawUVE(3U);
+        commandBuffer->SetUniformVector3UVE("uColorTri", Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+        commandBuffer->SetUniformFloatUVE("uDepth", 0.3F);
+        commandBuffer->DrawUVE(3U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+    }
+    // Submission 3: show the Less target.
+    {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(texturedPipeline);
+        commandBuffer->BindVertexBufferUVE(quadBuffer);
+        commandBuffer->BindTextureUVE(lessTarget, 0U);
+        commandBuffer->DrawUVE(6U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+    }
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+
+    std::vector<std::byte> pixels(1280U * 720U * 4U);
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+    if (width == 0U || height == 0U) {
+        GTEST_SKIP() << "driver reported a zero-sized extent; coverage math needs pixels";
+    }
+
+    const std::string_view name = device->GetBackendNameUVE();
+    if (name == "Vulkan (M2c textures+staging)") {
+        const auto center = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+        EXPECT_GT(center[0], 240); // fallback white, frame intact
+        EXPECT_GT(center[1], 240);
+        EXPECT_GT(center[2], 240);
+    } else {
+        const auto center = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+        EXPECT_LT(center[0], 80);
+        EXPECT_GT(center[1], 200);
+        EXPECT_LT(center[2], 80) << "Less must reject the coplanar red redraw - "
+            "got (" << center[0] << "," << center[1] << "," << center[2] << ")";
+    }
+
+    // Submission 4: show the LessOrEqual target.
+    {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(texturedPipeline);
+        commandBuffer->BindVertexBufferUVE(quadBuffer);
+        commandBuffer->BindTextureUVE(lequalTarget, 0U);
+        commandBuffer->DrawUVE(6U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+    }
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+
+    std::uint32_t width2 = 0;
+    std::uint32_t height2 = 0;
+    ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width2, height2));
+    if (width2 == 0U || height2 == 0U) {
+        GTEST_SKIP() << "driver reported a zero-sized extent; coverage math needs pixels";
+    }
+
+    if (name == "Vulkan (M2c textures+staging)") {
+        const auto center = ChannelAtNdcUVE(pixels, width2, height2, 0.0F, 0.0F);
+        EXPECT_GT(center[0], 240); // fallback white, frame intact
+        EXPECT_GT(center[1], 240);
+        EXPECT_GT(center[2], 240);
+    } else {
+        const auto center = ChannelAtNdcUVE(pixels, width2, height2, 0.0F, 0.0F);
+        EXPECT_GT(center[0], 200);
+        EXPECT_LT(center[1], 80);
+        EXPECT_LT(center[2], 80) << "LessOrEqual must accept the coplanar red redraw - "
+            "got (" << center[0] << "," << center[1] << "," << center[2] << ")";
+    }
+
+    device->DestroyBufferUVE(triBuffer);
+    device->DestroyBufferUVE(quadBuffer);
+    device->DestroyTextureUVE(lessTarget);
+    device->DestroyTextureUVE(lequalTarget);
+    device->DestroyPipelineUVE(lessPipeline);
+    device->DestroyPipelineUVE(lequalPipeline);
     device->DestroyPipelineUVE(texturedPipeline);
     device->DestroyShaderUVE(depthVS);
     device->DestroyShaderUVE(depthFS);
@@ -3733,6 +4092,470 @@ TEST_F(VulkanRenderDeviceUVETest, DepthTextureInStorageSlotFallsBackToSinkAndFra
     device->DestroyShaderUVE(computeShader);
     device->DestroyShaderUVE(vertexShader);
     device->DestroyShaderUVE(fragmentShader);
+}
+
+
+TEST_F(VulkanRenderDeviceUVETest, OffscreenPass_LayerOutOfRange_SkipsGracefullyAndStaysUsable) {
+    // Tier 2.3: layer selection is validated before any view/barrier work. A pass naming a
+    // layer past the attachment's count must skip (warn-once) rather than crash or wedge the
+    // device, and the very next submission must run normally. Classic devices degrade every
+    // offscreen pass the same way, so both paths share these assertions (no name branch).
+    TextureDescUVE arrayDesc{};
+    arrayDesc.width = 4U;
+    arrayDesc.height = 4U;
+    arrayDesc.format = TextureFormatUVE::RGBA8Unorm;
+    arrayDesc.type = TextureTypeUVE::Texture2DArray;
+    arrayDesc.arrayLayers = 2U;
+    const TextureHandleUVE array = device->CreateTextureUVE(arrayDesc);
+    ASSERT_NE(array, kInvalidTextureHandleUVE);
+    TextureDescUVE depthDesc{};
+    depthDesc.width = 4U;
+    depthDesc.height = 4U;
+    depthDesc.format = TextureFormatUVE::Depth32Float;
+    const TextureHandleUVE depth = device->CreateTextureUVE(depthDesc);
+    ASSERT_NE(depth, kInvalidTextureHandleUVE);
+
+    const auto submitLayerPass = [&](const std::uint32_t colorLayer, const std::uint32_t depthLayer) {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorAttachment = array;
+        passDesc.depthAttachment = depth;
+        passDesc.colorLayer = colorLayer;
+        passDesc.depthLayer = depthLayer;
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {1.0F, 0.0F, 0.0F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+        device->PresentUVE();
+    };
+    submitLayerPass(5U, 0U); // color layer past the 2-layer count
+    ASSERT_TRUE(device->IsUsableUVE());
+    submitLayerPass(0U, 1U); // depth layer past the 1-layer depth
+    ASSERT_TRUE(device->IsUsableUVE());
+    submitLayerPass(1U, 0U); // in range on both attachments
+    EXPECT_TRUE(device->IsUsableUVE());
+
+    // Liveness note: rejected passes must not corrupt the texture map — the in-range pass
+    // above already ran against the same textures (GetLiveTextureDescsUVE is a Null-only
+    // seam; the VK suite proves liveness through reuse, not desc scans).
+    device->DestroyTextureUVE(array);
+    device->DestroyTextureUVE(depth);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, CubemapCaptureAndSample_RendersPerFaceColors) {
+    // Tier 2.3 end-to-end: six clear-only offscreen passes paint one cubemap's layers, then a
+    // samplerCube strip shader composites the faces back to the swapchain for readback. The
+    // cube ALSO carries uploaded per-face colors, so the classic path (offscreen passes skip,
+    // staging uploads land) asserts the uploaded set while modern devices assert the cleared
+    // set — deterministic pixels on both, no eyeball needed.
+    if (kCubeStripFragmentSpirvUVE.empty()) {
+        GTEST_SKIP() << "cube-strip fragment SPIR-V not baked yet (see spirv_test_shaders_uve.h)";
+    }
+    // Uploaded set (dark, one solid 4x4 face each, level-major): what classic asserts.
+    const std::uint8_t uploadedFaces[6][4] = {
+        {128U, 0U, 0U, 255U}, {0U, 128U, 0U, 255U}, {0U, 0U, 128U, 255U},
+        {128U, 128U, 0U, 255U}, {128U, 0U, 128U, 255U}, {0U, 128U, 128U, 255U},
+    };
+    // Cleared set (bright): what modern devices assert. Faces are uniform, so any filtering
+    // reads these exact values.
+    const std::uint8_t clearedFaces[6][4] = {
+        {255U, 0U, 0U, 255U}, {0U, 255U, 0U, 255U}, {0U, 0U, 255U, 255U},
+        {255U, 255U, 0U, 255U}, {255U, 0U, 255U, 255U}, {0U, 255U, 255U, 255U},
+    };
+    const float clearColors[6][4] = {
+        {1.0F, 0.0F, 0.0F, 1.0F}, {0.0F, 1.0F, 0.0F, 1.0F}, {0.0F, 0.0F, 1.0F, 1.0F},
+        {1.0F, 1.0F, 0.0F, 1.0F}, {1.0F, 0.0F, 1.0F, 1.0F}, {0.0F, 1.0F, 1.0F, 1.0F},
+    };
+    std::array<std::uint8_t, 4U * 4U * 4U * 6U> uploadBytes{};
+    for (std::uint32_t face = 0U; face < 6U; ++face) {
+        for (std::uint32_t texel = 0U; texel < 16U; ++texel) {
+            const std::size_t base = (static_cast<std::size_t>(face) * 16U + texel) * 4U;
+            uploadBytes[base] = uploadedFaces[face][0];
+            uploadBytes[base + 1U] = uploadedFaces[face][1];
+            uploadBytes[base + 2U] = uploadedFaces[face][2];
+            uploadBytes[base + 3U] = uploadedFaces[face][3];
+        }
+    }
+    TextureDescUVE cubeDesc{};
+    cubeDesc.width = 4U;
+    cubeDesc.height = 4U;
+    cubeDesc.format = TextureFormatUVE::RGBA8Unorm;
+    cubeDesc.type = TextureTypeUVE::Cubemap;
+    cubeDesc.arrayLayers = 6U;
+    const TextureHandleUVE cube = device->CreateTextureUVE(
+        cubeDesc, std::span<const std::byte>(reinterpret_cast<const std::byte*>(uploadBytes.data()),
+                                             uploadBytes.size()));
+    ASSERT_NE(cube, kInvalidTextureHandleUVE);
+    TextureDescUVE depthDesc{};
+    depthDesc.width = 4U;
+    depthDesc.height = 4U;
+    depthDesc.format = TextureFormatUVE::Depth32Float;
+    const TextureHandleUVE depth = device->CreateTextureUVE(depthDesc);
+    ASSERT_NE(depth, kInvalidTextureHandleUVE);
+
+    // Six clear-only passes, one layer each (face == layer, CubemapFaceUVE order).
+    for (std::uint32_t face = 0U; face < 6U; ++face) {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorAttachment = cube;
+        passDesc.depthAttachment = depth;
+        passDesc.colorLayer = face;
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {clearColors[face][0], clearColors[face][1], clearColors[face][2],
+                               clearColors[face][3]};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+    }
+
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kTexturedVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kCubeStripFragmentSpirvUVE;
+    const ShaderHandleUVE vertexShader = device->CreateShaderUVE(vertexDesc);
+    const ShaderHandleUVE fragmentShader = device->CreateShaderUVE(fragmentDesc);
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.vertexStride = 20U;
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U});
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"TEXCOORD", VertexAttributeFormatUVE::Float2, 12U});
+    pipelineDesc.depthTestEnabled = false;
+    pipelineDesc.depthWriteEnabled = false;
+    const PipelineHandleUVE pipeline = device->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+
+    const float quadVertices[30] = {
+        -1.0F, -1.0F, 0.0F,  0.0F, 0.0F,
+         1.0F, -1.0F, 0.0F,  1.0F, 0.0F,
+        -1.0F,  1.0F, 0.0F,  0.0F, 1.0F,
+         1.0F, -1.0F, 0.0F,  1.0F, 0.0F,
+         1.0F,  1.0F, 0.0F,  1.0F, 1.0F,
+        -1.0F,  1.0F, 0.0F,  0.0F, 1.0F,
+    };
+    BufferDescUVE quadBufferDesc{};
+    quadBufferDesc.sizeBytes = sizeof(quadVertices);
+    quadBufferDesc.usage = BufferUsageUVE::Vertex;
+    const BufferHandleUVE quadBuffer = device->CreateBufferUVE(quadBufferDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(quadVertices),
+                                   sizeof(quadVertices)));
+    ASSERT_NE(quadBuffer, kInvalidBufferHandleUVE);
+
+    {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(pipeline);
+        commandBuffer->BindVertexBufferUVE(quadBuffer);
+        commandBuffer->BindTextureUVE(cube, 0U);
+        commandBuffer->DrawUVE(6U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+    }
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+
+    std::vector<std::byte> pixels(1280U * 720U * 4U);
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+    if (width == 0U || height == 0U) {
+        GTEST_SKIP() << "driver reported a zero-sized extent; coverage math needs pixels";
+    }
+
+    // Strip i centers at U=(i+0.5)/6 over the fullscreen quad: NDC x=(i+0.5)/3-1.
+    const bool isClassic = device->GetBackendNameUVE() == "Vulkan (M2c textures+staging)";
+    for (std::uint32_t face = 0U; face < 6U; ++face) {
+        SCOPED_TRACE("face " + std::to_string(face) + (isClassic ? " (uploaded)" : " (cleared)"));
+        const float ndcX = (static_cast<float>(face) + 0.5F) / 3.0F - 1.0F;
+        const auto got = ChannelAtNdcUVE(pixels, width, height, ndcX, 0.0F);
+        const std::uint8_t* expected = isClassic ? uploadedFaces[face] : clearedFaces[face];
+        for (std::size_t channel = 0; channel < 3; ++channel) {
+            const int want = static_cast<int>(expected[channel]);
+            if (want >= 200) {
+                EXPECT_GT(got[channel], 200);
+            } else if (want >= 96) {
+                EXPECT_GE(got[channel], 96);
+                EXPECT_LE(got[channel], 160);
+            } else {
+                EXPECT_LT(got[channel], 60);
+            }
+        }
+    }
+
+    device->DestroyBufferUVE(quadBuffer);
+    device->DestroyTextureUVE(cube);
+    device->DestroyTextureUVE(depth);
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyShaderUVE(fragmentShader);
+}
+
+
+TEST_F(VulkanRenderDeviceUVETest, OffscreenPass_ExtraPrefixGap_SkipsGracefullyAndStaysUsable) {
+    // Tier 2.4: a gapped extras prefix is malformed — the submission's draws skip (warn-once)
+    // and the device stays usable for the very next submission. Both arms share these
+    // assertions (classic degrades every offscreen pass the same way — no name branch).
+    TextureDescUVE colorDesc{};
+    colorDesc.width = 4U;
+    colorDesc.height = 4U;
+    colorDesc.format = TextureFormatUVE::RGBA8Unorm;
+    const TextureHandleUVE target0 = device->CreateTextureUVE(colorDesc);
+    ASSERT_NE(target0, kInvalidTextureHandleUVE);
+    const TextureHandleUVE target1 = device->CreateTextureUVE(colorDesc);
+    ASSERT_NE(target1, kInvalidTextureHandleUVE);
+    TextureDescUVE depthDesc{};
+    depthDesc.width = 4U;
+    depthDesc.height = 4U;
+    depthDesc.format = TextureFormatUVE::Depth32Float;
+    const TextureHandleUVE depth = device->CreateTextureUVE(depthDesc);
+    ASSERT_NE(depth, kInvalidTextureHandleUVE);
+
+    const auto submitMrtPass =
+        [&](const TextureHandleUVE color, const TextureHandleUVE extraSlot0,
+            const TextureHandleUVE extraSlot2) {
+            auto commandBuffer = device->CreateCommandBufferUVE();
+            RenderPassDescUVE passDesc{};
+            passDesc.colorAttachment = color;
+            passDesc.depthAttachment = depth;
+            passDesc.colorLoadOp = LoadOpUVE::Clear;
+            passDesc.clearColor = {1.0F, 0.0F, 0.0F, 1.0F};
+            passDesc.depthLoadOp = LoadOpUVE::Clear;
+            passDesc.extraColorAttachments[0].target = extraSlot0;
+            passDesc.extraColorAttachments[0].loadOp = LoadOpUVE::Clear;
+            passDesc.extraColorAttachments[0].clearColor = {0.0F, 1.0F, 0.0F, 1.0F};
+            passDesc.extraColorAttachments[2].target = extraSlot2;
+            passDesc.extraColorAttachments[2].loadOp = LoadOpUVE::Clear;
+            passDesc.extraColorAttachments[2].clearColor = {0.0F, 0.0F, 1.0F, 1.0F};
+            commandBuffer->BeginRenderPassUVE(passDesc);
+            commandBuffer->EndRenderPassUVE();
+            device->SubmitUVE(std::move(commandBuffer));
+            device->PresentUVE();
+        };
+    // Location 2 set while 1 is empty (the gap check fires before any per-slot validation).
+    submitMrtPass(target0, target1, target1);
+    ASSERT_TRUE(device->IsUsableUVE());
+    // Extras without location 0 never reach an instance either.
+    submitMrtPass(kInvalidTextureHandleUVE, target1, kInvalidTextureHandleUVE);
+    ASSERT_TRUE(device->IsUsableUVE());
+    // The well-formed twin runs normally on both arms (classic: validated-then-skipped).
+    submitMrtPass(target0, target1, kInvalidTextureHandleUVE);
+    EXPECT_TRUE(device->IsUsableUVE());
+
+    // Liveness note: the well-formed twin above already reused both targets (the VK suite has
+    // no desc-liveness seam — GetLiveTextureDescsUVE is Null-only — so reuse is the proof).
+    device->DestroyTextureUVE(target0);
+    device->DestroyTextureUVE(target1);
+    device->DestroyTextureUVE(depth);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, MultiTargetCaptureAndSample_RendersPerTargetColors) {
+    // Tier 2.4 end-to-end: ONE offscreen pass clears two targets (bright red / bright green),
+    // then each target is sampled fullscreen back to the swapchain. Both textures ALSO carry
+    // uploaded dark colors, so classic (offscreen skips, uploads land) asserts dark while
+    // modern asserts bright — deterministic pixels on both, no eyeball needed.
+    std::array<std::uint8_t, 4U * 4U * 4U> uploadRed{};
+    std::array<std::uint8_t, 4U * 4U * 4U> uploadGreen{};
+    for (std::uint32_t texel = 0U; texel < 16U; ++texel) {
+        uploadRed[texel * 4U] = 128U;
+        uploadRed[texel * 4U + 3U] = 255U;
+        uploadGreen[texel * 4U + 1U] = 128U;
+        uploadGreen[texel * 4U + 3U] = 255U;
+    }
+    TextureDescUVE colorDesc{};
+    colorDesc.width = 4U;
+    colorDesc.height = 4U;
+    colorDesc.format = TextureFormatUVE::RGBA8Unorm;
+    const TextureHandleUVE target0 = device->CreateTextureUVE(
+        colorDesc, std::span<const std::byte>(reinterpret_cast<const std::byte*>(uploadRed.data()),
+                                              uploadRed.size()));
+    ASSERT_NE(target0, kInvalidTextureHandleUVE);
+    const TextureHandleUVE target1 = device->CreateTextureUVE(
+        colorDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(uploadGreen.data()),
+                                   uploadGreen.size()));
+    ASSERT_NE(target1, kInvalidTextureHandleUVE);
+    TextureDescUVE depthDesc{};
+    depthDesc.width = 4U;
+    depthDesc.height = 4U;
+    depthDesc.format = TextureFormatUVE::Depth32Float;
+    const TextureHandleUVE depth = device->CreateTextureUVE(depthDesc);
+    ASSERT_NE(depth, kInvalidTextureHandleUVE);
+
+    {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorAttachment = target0;
+        passDesc.depthAttachment = depth;
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {1.0F, 0.0F, 0.0F, 1.0F};
+        passDesc.colorStoreOp = StoreOpUVE::Store;
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.extraColorAttachments[0].target = target1;
+        passDesc.extraColorAttachments[0].loadOp = LoadOpUVE::Clear;
+        passDesc.extraColorAttachments[0].clearColor = {0.0F, 1.0F, 0.0F, 1.0F};
+        passDesc.extraColorAttachments[0].storeOp = StoreOpUVE::Store;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+    }
+
+    ShaderHandleUVE vertexShader{};
+    ShaderHandleUVE fragmentShader{};
+    const PipelineHandleUVE pipeline =
+        CreateTexturedPipelineUVE(*device, &vertexShader, &fragmentShader);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+    const float quadVertices[30] = {
+        -1.0F, -1.0F, 0.0F,  0.0F, 0.0F,
+         1.0F, -1.0F, 0.0F,  1.0F, 0.0F,
+        -1.0F,  1.0F, 0.0F,  0.0F, 1.0F,
+         1.0F, -1.0F, 0.0F,  1.0F, 0.0F,
+         1.0F,  1.0F, 0.0F,  1.0F, 1.0F,
+        -1.0F,  1.0F, 0.0F,  0.0F, 1.0F,
+    };
+    BufferDescUVE quadBufferDesc{};
+    quadBufferDesc.sizeBytes = sizeof(quadVertices);
+    quadBufferDesc.usage = BufferUsageUVE::Vertex;
+    const BufferHandleUVE quadBuffer = device->CreateBufferUVE(
+        quadBufferDesc, std::span<const std::byte>(reinterpret_cast<const std::byte*>(quadVertices),
+                                                   sizeof(quadVertices)));
+    ASSERT_NE(quadBuffer, kInvalidBufferHandleUVE);
+
+    const auto destroyAll = [&]() {
+        device->DestroyBufferUVE(quadBuffer);
+        device->DestroyTextureUVE(target0);
+        device->DestroyTextureUVE(target1);
+        device->DestroyTextureUVE(depth);
+        device->DestroyPipelineUVE(pipeline);
+        device->DestroyShaderUVE(vertexShader);
+        device->DestroyShaderUVE(fragmentShader);
+    };
+    const bool isClassic = device->GetBackendNameUVE() == "Vulkan (M2c textures+staging)";
+    const auto expectChannelBands = [](const std::array<int, 4>& got, const int wantR,
+                                       const int wantG, const int wantB) {
+        const int want[3] = {wantR, wantG, wantB};
+        for (std::size_t channel = 0; channel < 3; ++channel) {
+            if (want[channel] >= 200) {
+                EXPECT_GT(got[channel], 200);
+            } else if (want[channel] >= 96) {
+                EXPECT_GE(got[channel], 96);
+                EXPECT_LE(got[channel], 160);
+            } else {
+                EXPECT_LT(got[channel], 60);
+            }
+        }
+    };
+    const auto sampleTargetCenter = [&](const TextureHandleUVE target) {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(pipeline);
+        commandBuffer->BindVertexBufferUVE(quadBuffer);
+        commandBuffer->BindTextureUVE(target, 0U);
+        commandBuffer->DrawUVE(6U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+        device->PresentUVE();
+        std::vector<std::byte> pixels(1280U * 720U * 4U);
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        EXPECT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        return std::make_tuple(std::move(pixels), width, height);
+    };
+
+    {
+        SCOPED_TRACE(isClassic ? "target0 (uploaded dark red)" : "target0 (cleared bright red)");
+        const auto [pixels, width, height] = sampleTargetCenter(target0);
+        ASSERT_TRUE(device->IsUsableUVE());
+        if (width == 0U || height == 0U) {
+            destroyAll();
+            GTEST_SKIP() << "driver reported a zero-sized extent; coverage math needs pixels";
+        }
+        const auto got = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+        if (isClassic) {
+            expectChannelBands(got, 128, 0, 0);
+        } else {
+            expectChannelBands(got, 255, 0, 0);
+        }
+    }
+    {
+        SCOPED_TRACE(isClassic ? "target1 (uploaded dark green)" : "target1 (cleared bright green)");
+        const auto [pixels, width, height] = sampleTargetCenter(target1);
+        ASSERT_TRUE(device->IsUsableUVE());
+        ASSERT_NE(width, 0U);
+        ASSERT_NE(height, 0U);
+        const auto got = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+        if (isClassic) {
+            expectChannelBands(got, 0, 128, 0);
+        } else {
+            expectChannelBands(got, 0, 255, 0);
+        }
+    }
+
+    destroyAll();
+}
+
+TEST_F(VulkanRenderDeviceUVETest, OffscreenPass_DontCareStore_StaysUsable) {
+    // Tier 2.5: DontCare stores run the full pass (barriers + instance) with discard semantics —
+    // the device stays usable and the attachments remain live for the next pass. (Discarded
+    // contents are undefined, so this asserts health + liveness, not pixels.)
+    TextureDescUVE colorDesc{};
+    colorDesc.width = 4U;
+    colorDesc.height = 4U;
+    colorDesc.format = TextureFormatUVE::RGBA8Unorm;
+    const TextureHandleUVE target0 = device->CreateTextureUVE(colorDesc);
+    ASSERT_NE(target0, kInvalidTextureHandleUVE);
+    const TextureHandleUVE target1 = device->CreateTextureUVE(colorDesc);
+    ASSERT_NE(target1, kInvalidTextureHandleUVE);
+    TextureDescUVE depthDesc{};
+    depthDesc.width = 4U;
+    depthDesc.height = 4U;
+    depthDesc.format = TextureFormatUVE::Depth32Float;
+    const TextureHandleUVE depth = device->CreateTextureUVE(depthDesc);
+    ASSERT_NE(depth, kInvalidTextureHandleUVE);
+
+    const auto submitStorePass = [&](const StoreOpUVE store) {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorAttachment = target0;
+        passDesc.depthAttachment = depth;
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.0F, 0.0F, 1.0F, 1.0F};
+        passDesc.colorStoreOp = store;
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.depthStoreOp = store;
+        passDesc.extraColorAttachments[0].target = target1;
+        passDesc.extraColorAttachments[0].loadOp = LoadOpUVE::Clear;
+        passDesc.extraColorAttachments[0].clearColor = {1.0F, 1.0F, 0.0F, 1.0F};
+        passDesc.extraColorAttachments[0].storeOp = store;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+        device->PresentUVE();
+    };
+    submitStorePass(StoreOpUVE::DontCare);
+    ASSERT_TRUE(device->IsUsableUVE());
+    submitStorePass(StoreOpUVE::Store);
+    EXPECT_TRUE(device->IsUsableUVE());
+
+    // Liveness note: the follow-up Store pass already reused all three attachments (the VK
+    // suite has no desc-liveness seam — GetLiveTextureDescsUVE is Null-only).
+    device->DestroyTextureUVE(target0);
+    device->DestroyTextureUVE(target1);
+    device->DestroyTextureUVE(depth);
 }
 
 } // namespace UVE::Render::Tests

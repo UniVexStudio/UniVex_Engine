@@ -60,4 +60,24 @@ bool ShouldDrawUiWidgetUVE(Scene::IEntityManagerUVE& entityManager, const Scene:
     return ResolveCanvasAncestryUVE(entityManager, entity).visible;
 }
 
+std::size_t UIHierarchyDepthUVE(Scene::IEntityManagerUVE& entityManager, const Scene::EntityUVE entity) {
+    std::size_t depth = 0U;
+    Scene::EntityUVE cursor = entity;
+    // The ancestry cap, reused: a cycle bottoms out at the cap instead of hanging the frame.
+    for (std::size_t walk = 0U; walk < kMaximumCanvasAncestorWalkUVE; ++walk) {
+        if (!entityManager.IsAliveUVE(cursor) ||
+            !entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(cursor)) {
+            return depth;
+        }
+        const Scene::EntityUVE parent =
+            entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(cursor).parent;
+        if (parent == Scene::kInvalidEntityUVE || parent == cursor) {
+            return depth;
+        }
+        cursor = parent;
+        ++depth;
+    }
+    return depth;
+}
+
 } // namespace UVE::UI

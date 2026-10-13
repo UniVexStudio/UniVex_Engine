@@ -17,15 +17,15 @@ namespace {
 
 [[nodiscard]] bool ReadVector3FromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
                                              Math::Vector3UVE& outValue) {
-    return Utilities::ReadFloatFromBufferUVE(buffer, offset, outValue.x) &&
-           Utilities::ReadFloatFromBufferUVE(buffer, offset, outValue.y) &&
-           Utilities::ReadFloatFromBufferUVE(buffer, offset, outValue.z);
+    return Utilities::ReadFloatLeFromBufferUVE(buffer, offset, outValue.x) &&
+           Utilities::ReadFloatLeFromBufferUVE(buffer, offset, outValue.y) &&
+           Utilities::ReadFloatLeFromBufferUVE(buffer, offset, outValue.z);
 }
 
 void AppendVector3UVE(std::vector<std::byte>& buffer, const Math::Vector3UVE& value) {
-    Utilities::AppendFloatUVE(buffer, value.x);
-    Utilities::AppendFloatUVE(buffer, value.y);
-    Utilities::AppendFloatUVE(buffer, value.z);
+    Utilities::AppendFloatLeUVE(buffer, value.x);
+    Utilities::AppendFloatLeUVE(buffer, value.y);
+    Utilities::AppendFloatLeUVE(buffer, value.z);
 }
 
 [[nodiscard]] Math::Vector3UVE DeterministicTangentFallbackUVE(const Math::Vector3UVE& normal) noexcept {
@@ -256,7 +256,7 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
     std::size_t offset = 0;
 
     std::uint32_t vertexCount = 0;
-    if (!Utilities::ReadUint32FromBufferUVE(payload, offset, vertexCount)) {
+    if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, vertexCount)) {
         UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated vertex count", path.string());
         return false;
     }
@@ -275,7 +275,7 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
         MeshVertexUVE vertex;
         if (!ReadVector3FromBufferUVE(payload, offset, vertex.position) ||
             !ReadVector3FromBufferUVE(payload, offset, vertex.normal) ||
-            !Utilities::ReadFloatFromBufferUVE(payload, offset, vertex.u) || !Utilities::ReadFloatFromBufferUVE(payload, offset, vertex.v)) {
+            !Utilities::ReadFloatLeFromBufferUVE(payload, offset, vertex.u) || !Utilities::ReadFloatLeFromBufferUVE(payload, offset, vertex.v)) {
             UVE_ERROR("MeshAssetUVE: \"{}\" has truncated vertex data", path.string());
             return false;
         }
@@ -283,7 +283,7 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
     }
 
     std::uint32_t indexCount = 0;
-    if (!Utilities::ReadUint32FromBufferUVE(payload, offset, indexCount)) {
+    if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, indexCount)) {
         UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated index count", path.string());
         return false;
     }
@@ -296,7 +296,7 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
     indices.reserve(indexCount);
     for (std::uint32_t index = 0; index < indexCount; ++index) {
         std::uint32_t value = 0;
-        if (!Utilities::ReadUint32FromBufferUVE(payload, offset, value)) {
+        if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, value)) {
             UVE_ERROR("MeshAssetUVE: \"{}\" has truncated index data", path.string());
             return false;
         }
@@ -324,7 +324,7 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
     std::vector<MeshJointUVE> joints;
     if (offset < payload.size()) {
         std::uint32_t jointCount = 0;
-        if (!Utilities::ReadUint32FromBufferUVE(payload, offset, jointCount)) {
+        if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, jointCount)) {
             UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated joint count", path.string());
             return false;
         }
@@ -337,14 +337,14 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
         joints.reserve(jointCount);
         for (std::uint32_t jointIndex = 0; jointIndex < jointCount; ++jointIndex) {
             MeshJointUVE joint;
-            if (!Utilities::ReadUint32FromBufferUVE(payload, offset, joint.parentIndex)) {
+            if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, joint.parentIndex)) {
                 UVE_ERROR("MeshAssetUVE: \"{}\" has truncated joint data", path.string());
                 return false;
             }
             bool matrixComplete = true;
             for (auto& row : joint.inverseBindMatrix.m) {
                 for (float& value : row) {
-                    matrixComplete = matrixComplete && Utilities::ReadFloatFromBufferUVE(payload, offset, value);
+                    matrixComplete = matrixComplete && Utilities::ReadFloatLeFromBufferUVE(payload, offset, value);
                 }
             }
             if (!matrixComplete) {
@@ -362,10 +362,10 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
             MeshSkinningInfluenceUVE influence;
             bool complete = true;
             for (std::uint32_t& jointSlot : influence.joints) {
-                complete = complete && Utilities::ReadUint32FromBufferUVE(payload, offset, jointSlot);
+                complete = complete && Utilities::ReadUint32LeFromBufferUVE(payload, offset, jointSlot);
             }
             for (float& weight : influence.weights) {
-                complete = complete && Utilities::ReadFloatFromBufferUVE(payload, offset, weight);
+                complete = complete && Utilities::ReadFloatLeFromBufferUVE(payload, offset, weight);
             }
             if (!complete) {
                 UVE_ERROR("MeshAssetUVE: \"{}\" has truncated skinning influences", path.string());
@@ -376,14 +376,14 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
 
         if (offset < payload.size()) {
             std::uint32_t nameCount = 0;
-            if (!Utilities::ReadUint32FromBufferUVE(payload, offset, nameCount) || nameCount != joints.size()) {
+            if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, nameCount) || nameCount != joints.size()) {
                 UVE_ERROR("MeshAssetUVE: \"{}\" has a joint name table that does not match its joints", path.string());
                 return false;
             }
             constexpr std::uint32_t kMaximumJointNameBytesUVE = 256U;
             for (MeshJointUVE& joint : joints) {
                 std::uint32_t length = 0;
-                if (!Utilities::ReadUint32FromBufferUVE(payload, offset, length) || length > kMaximumJointNameBytesUVE ||
+                if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, length) || length > kMaximumJointNameBytesUVE ||
                     payload.size() - offset < length) {
                     UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated joint name", path.string());
                     return false;
@@ -416,17 +416,17 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
 
 bool SaveMeshAssetUVE(const MeshAssetUVE& mesh, const std::filesystem::path& path) {
     std::vector<std::byte> payload;
-    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(mesh.vertices.size()));
+    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(mesh.vertices.size()));
     for (const MeshVertexUVE& vertex : mesh.vertices) {
         AppendVector3UVE(payload, vertex.position);
         AppendVector3UVE(payload, vertex.normal);
-        Utilities::AppendFloatUVE(payload, vertex.u);
-        Utilities::AppendFloatUVE(payload, vertex.v);
+        Utilities::AppendFloatLeUVE(payload, vertex.u);
+        Utilities::AppendFloatLeUVE(payload, vertex.v);
     }
 
-    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(mesh.indices.size()));
+    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(mesh.indices.size()));
     for (std::uint32_t index : mesh.indices) {
-        Utilities::AppendUint32UVE(payload, index);
+        Utilities::AppendUint32LeUVE(payload, index);
     }
 
     AppendVector3UVE(payload, mesh.localBounds.min);
@@ -436,28 +436,28 @@ bool SaveMeshAssetUVE(const MeshAssetUVE& mesh, const std::filesystem::path& pat
     // of this engine produced - which is the property that makes the optional trailing section
     // safe in both directions, not just on read.
     if (mesh.IsSkinnedUVE()) {
-        Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(mesh.joints.size()));
+        Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(mesh.joints.size()));
         for (const MeshJointUVE& joint : mesh.joints) {
-            Utilities::AppendUint32UVE(payload, joint.parentIndex);
+            Utilities::AppendUint32LeUVE(payload, joint.parentIndex);
             for (const auto& row : joint.inverseBindMatrix.m) {
                 for (const float value : row) {
-                    Utilities::AppendFloatUVE(payload, value);
+                    Utilities::AppendFloatLeUVE(payload, value);
                 }
             }
         }
         for (const MeshSkinningInfluenceUVE& influence : mesh.skinningInfluences) {
             for (const std::uint32_t joint : influence.joints) {
-                Utilities::AppendUint32UVE(payload, joint);
+                Utilities::AppendUint32LeUVE(payload, joint);
             }
             for (const float weight : influence.weights) {
-                Utilities::AppendFloatUVE(payload, weight);
+                Utilities::AppendFloatLeUVE(payload, weight);
             }
         }
         // Joint names trail the influences for the same reason the skin trails the bounds: a file
         // from before they were kept simply ends here.
-        Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(mesh.joints.size()));
+        Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(mesh.joints.size()));
         for (const MeshJointUVE& joint : mesh.joints) {
-            Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(joint.name.size()));
+            Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(joint.name.size()));
             const auto* const bytes = reinterpret_cast<const std::byte*>(joint.name.data());
             payload.insert(payload.end(), bytes, bytes + joint.name.size());
         }

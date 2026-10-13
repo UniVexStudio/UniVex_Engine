@@ -21,6 +21,7 @@
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/physics_object_component_uve.h"
+#include "uve/component/predicted_character_component_uve.h"
 #include "uve/component/process_component_uve.h"
 #include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/solid_body_component_uve.h"
@@ -1461,6 +1462,14 @@ TEST_F(Character3DStepUVETest, BodiesTheStepCannotDriveAreRefusedWithAReason) {
     entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
         noCollider, Scene::CharacterControllerComponentUVE{});
     EXPECT_EQ(StepUVE(noCollider).code, Character3DStepCodeUVE::MissingCollider);
+
+    // A predicted body belongs to the predictor: refused, and left exactly where it was.
+    const Scene::EntityUVE predicted = MakeCharacterUVE({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponentUVE<Scene::PredictedCharacterComponentUVE>(
+        predicted, Scene::PredictedCharacterComponentUVE{});
+    EXPECT_EQ(StepUVE(predicted).code, Character3DStepCodeUVE::PredictedElsewhere);
+    EXPECT_FALSE(StepUVE(predicted).stepped);
+    EXPECT_EQ(PositionUVE(predicted), (Math::Vector3UVE{0.0F, 1.0F, 0.0F}));
 
     // A dynamic rigid body is driven by forces, not by a character controller.
     const Scene::EntityUVE dynamic = MakeCharacterUVE({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});

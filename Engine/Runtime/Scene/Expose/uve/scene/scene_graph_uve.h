@@ -4,6 +4,7 @@
 #pragma once
 
 #include <optional>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -15,6 +16,7 @@
 #include "uve/component/thread_group_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
+#include "uve/scene/children_index_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 
 namespace UVE::Scene {
@@ -48,6 +50,19 @@ public:
                                                                  EntityUVE entity) override;
     [[nodiscard]] bool SetSiblingIndexUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                           std::size_t index) override;
+    /// Rebuilds the graph's children index from the manager's current hierarchy links. Nothing
+    /// calls this implicitly — not even UpdateUVE — because the rebuild is an O(n) pass and the
+    /// index exists to make that cost explicit and payable once. Call it when the hierarchy may
+    /// have changed since the last rebuild, then serve every child-list query from
+    /// GetIndexedChildrenUVE until it changes again.
+    void RebuildChildrenIndexUVE(IEntityManagerUVE& entityManager);
+
+    /// The children of `parent` from the graph's index, in the same sibling order
+    /// GetChildrenUVE returns. Answers from the last RebuildChildrenIndexUVE — an empty span
+    /// means "no children recorded", which for a never-rebuilt index means "never rebuilt".
+    /// Prefer GetChildrenUVE when the hierarchy may have changed since the last rebuild; prefer
+    /// this when it has not and many parents' children are needed.
+    [[nodiscard]] std::span<const EntityUVE> GetIndexedChildrenUVE(EntityUVE parent) const noexcept;
     /// Answered from the pass state UpdateUVE() leaves behind, which is retained until the next
     /// update clears it - so this costs one hash lookup and adds no storage or pass of its own.
     [[nodiscard]] std::optional<ResolvedObjectModesUVE> TryGetResolvedObjectModesUVE(
@@ -176,6 +191,9 @@ private:
 
     std::vector<PendingEntityUVE> m_pendingScratch;
     std::unordered_map<EntityUVE, WorldTransformPassStateUVE> m_passStateScratch;
+
+    /// Frame-held children lookup for bulk queries; rebuilt only by RebuildChildrenIndexUVE.
+    ChildrenIndexUVE m_childrenIndex;
 };
 
 } // namespace UVE::Scene

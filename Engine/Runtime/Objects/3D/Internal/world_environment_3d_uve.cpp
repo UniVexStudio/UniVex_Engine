@@ -6,6 +6,7 @@
 #include <cmath>
 
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/math/scalar_uve.h"
 #include "uve/objects/3d/object_3d_uve.h"
 
 namespace UVE::Scene {
@@ -164,7 +165,6 @@ bool TryMakeSkyEquirectUvUVE(const Math::Vector3UVE& direction, Math::Vector2UVE
     if (!Math::IsFiniteUVE(n)) {
         return false;
     }
-    constexpr float kPiUVE = 3.14159265358979323846F;
     float longitude = 0.0F;
     if (std::fabs(n.x) + std::fabs(n.z) >= 1.0e-8F) {
         longitude = std::atan2(n.z, n.x);
@@ -173,7 +173,7 @@ bool TryMakeSkyEquirectUvUVE(const Math::Vector3UVE& direction, Math::Vector2UVE
     if (!std::isfinite(longitude) || !std::isfinite(latitude)) {
         return false;
     }
-    outUv = Math::Vector2UVE{longitude / (2.0F * kPiUVE) + 0.5F, latitude / kPiUVE + 0.5F};
+    outUv = Math::Vector2UVE{longitude / (2.0F * Math::kPiUVE) + 0.5F, latitude / Math::kPiUVE + 0.5F};
     return std::isfinite(outUv.x) && std::isfinite(outUv.y);
 }
 

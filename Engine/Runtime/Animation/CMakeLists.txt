@@ -33,6 +33,6 @@ add_library(uve_animation STATIC
     Internal/animation_state_machine_uve.cpp
 )
 target_include_directories(uve_animation PUBLIC Expose)
-target_link_libraries(uve_animation PUBLIC uve_math PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(uve_animation PUBLIC uve_math PRIVATE nlohmann_json::nlohmann_json uve_utilities)
 target_compile_features(uve_animation PUBLIC cxx_std_23)
 uve_set_warnings(uve_animation)

@@ -8,6 +8,7 @@
 
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
+#include "uve/component/predicted_character_component_uve.h"
 #include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/solid_body_component_uve.h"
 #include "uve/component/transform_component_uve.h"
@@ -267,6 +268,10 @@ Character3DStepResultUVE StepCharacter3DUVE(Scene::IEntityManagerUVE& entityMana
     }
     if (!entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity)) {
         report.code = Character3DStepCodeUVE::NotAController;
+        return report;
+    }
+    if (entityManager.HasComponentUVE<Scene::PredictedCharacterComponentUVE>(entity)) {
+        report.code = Character3DStepCodeUVE::PredictedElsewhere;
         return report;
     }
     if (!entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity)) {

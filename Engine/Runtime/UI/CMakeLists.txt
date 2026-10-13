@@ -15,7 +15,11 @@
 add_library(uve_ui STATIC
     Internal/stb_truetype_impl.cpp
     Internal/ui_font_atlas_uve.cpp
+    Internal/ui_embedded_font_uve.cpp
     Internal/canvas_ancestry_uve.cpp
+    Internal/ui_layout_uve.cpp
+    Internal/ui_anchors_uve.cpp
+    Internal/ui_tween_uve.cpp
     Internal/ui_runtime_uve.cpp
 )
 

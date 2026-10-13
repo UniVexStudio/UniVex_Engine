@@ -1,0 +1,51 @@
+entity Satchel : Character3D
+
+var pack: list[str] = ["rope", "torch"]
+var counts: map[str, int] = {"coins": 3}
+
+fn describe() -> str:
+    let items = push(pack, "map")
+    return "{length(items)} things: {items[0]}, {items[2]}"
+
+fn total() -> int:
+    let sum = 0
+    for n in [1, 2, 3]:
+        sum += n
+    return sum
+
+fn tally(words: list[str]) -> map[str, int]:
+    let out: map[str, int] = {}
+    for w in words:
+        if contains(out, w):
+            out[w] = out[w] + 1
+        else:
+            out[w] = 1
+    return out
+
+fn first_pair() -> tuple[int, str]:
+    return (1, "one")
+
+fn unpacked() -> str:
+    let (n, word) = first_pair()
+    return "{word}={n}"
+
+fn key_list() -> list[str]:
+    return keys(counts)
+
+fn dropped() -> list[str]:
+    let xs = pack
+    xs.push("bedroll")
+    return remove(xs, 0)
+
+fn joined() -> list[int]:
+    return [1, 2] + [3]
+
+fn has_torch() -> bool:
+    return contains(pack, "torch") and not contains(pack, "sword")
+
+fn count_words() -> int:
+    counts["coins"] = counts["coins"] + 1
+    return counts["coins"]
+
+on ready:
+    print(describe())

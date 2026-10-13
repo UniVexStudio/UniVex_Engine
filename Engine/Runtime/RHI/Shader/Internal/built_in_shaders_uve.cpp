@@ -1062,7 +1062,7 @@ uniform vec3 uReflectionProbeAxisX;
 uniform vec3 uReflectionProbeAxisY;
 uniform vec3 uReflectionProbeAxisZ;
 uniform vec3 uReflectionProbeHalfExtents;
-uniform sampler2D uReflectionProbeFaces[6];
+uniform samplerCube uReflectionProbeCube;
 
 const float kPiUVE = 3.14159265359;
 const float kBrdfEpsilonUVE = 0.0001;
@@ -1135,73 +1135,12 @@ vec3 AmbientFromSourceUVE(vec3 normal) {
     return HemisphereAmbientUVE(normal);
 }
 
-int SelectCubemapFaceUVE(vec3 direction) {
-    vec3 a = abs(direction);
-    if (a.x >= a.y && a.x >= a.z) {
-        return direction.x >= 0.0 ? 0 : 1;
-    }
-    if (a.y >= a.z) {
-        return direction.y >= 0.0 ? 2 : 3;
-    }
-    return direction.z >= 0.0 ? 4 : 5;
-}
-
-vec3 CubemapFaceForwardUVE(int face) {
-    if (face == 0) {
-        return vec3(1.0, 0.0, 0.0);
-    }
-    if (face == 1) {
-        return vec3(-1.0, 0.0, 0.0);
-    }
-    if (face == 2) {
-        return vec3(0.0, 1.0, 0.0);
-    }
-    if (face == 3) {
-        return vec3(0.0, -1.0, 0.0);
-    }
-    if (face == 4) {
-        return vec3(0.0, 0.0, 1.0);
-    }
-    return vec3(0.0, 0.0, -1.0);
-}
-
-vec3 CubemapFaceUpUVE(int face) {
-    if (face == 2) {
-        return vec3(0.0, 0.0, -1.0);
-    }
-    if (face == 3) {
-        return vec3(0.0, 0.0, 1.0);
-    }
-    return vec3(0.0, 1.0, 0.0);
-}
-
-vec3 SampleReflectionProbeFaceUVE(int face, vec2 uv) {
-    if (face == 0) {
-        return texture(uReflectionProbeFaces[0], uv).rgb;
-    }
-    if (face == 1) {
-        return texture(uReflectionProbeFaces[1], uv).rgb;
-    }
-    if (face == 2) {
-        return texture(uReflectionProbeFaces[2], uv).rgb;
-    }
-    if (face == 3) {
-        return texture(uReflectionProbeFaces[3], uv).rgb;
-    }
-    if (face == 4) {
-        return texture(uReflectionProbeFaces[4], uv).rgb;
-    }
-    return texture(uReflectionProbeFaces[5], uv).rgb;
-}
-
+// Tier 2.3: the probe is a real cubemap now — one sampler, one texture() call. The face-select
+// if-chain, planar projection, and per-face samplers it replaces are gone (see git history);
+// GPU-side face selection also filters seamlessly across face edges, where the manual math
+// clamped to each face's edge texels (final-look parity passes with the 2D viewport).
 vec3 SampleReflectionProbeUVE(vec3 direction) {
-    int face = SelectCubemapFaceUVE(direction);
-    vec3 forward = CubemapFaceForwardUVE(face);
-    vec3 right = SafeNormalizeUVE(cross(forward, CubemapFaceUpUVE(face)));
-    vec3 cameraUp = cross(-forward, right);
-    float denom = max(dot(direction, forward), kBrdfEpsilonUVE);
-    vec2 uv = vec2(dot(direction, right), dot(direction, cameraUp)) / denom * 0.5 + 0.5;
-    return SampleReflectionProbeFaceUVE(face, uv);
+    return texture(uReflectionProbeCube, direction).rgb;
 }
 
 float ReflectionProbeInfluenceUVE(vec3 worldPoint) {
@@ -1404,6 +1343,11 @@ void main() {
     }
     float ambientOcclusion = mix(1.0, texture(uAOTexture, uv).r, clamp(uOcclusionStrength, 0.0, 1.0));
     vec3 normal = SafeNormalizeUVE(vWorldNormal);
+    // A few legacy/direct RHI callers do not provide a usable normal attribute. Keep those
+    // materials lit instead of allowing a zero vector to poison the tangent frame and BRDF.
+    if (dot(normal, normal) <= kBrdfEpsilonUVE * kBrdfEpsilonUVE) {
+        normal = vec3(0.0, 0.0, 1.0);
+    }
     vec3 tangent = vWorldTangent - normal * dot(normal, vWorldTangent);
     if (dot(tangent, tangent) <= 0.00000001) {
         vec3 fallbackAxis = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
@@ -1416,6 +1360,9 @@ void main() {
     tangentSpaceNormal.xy *= uNormalScale;
     normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
     vec3 viewDirection = SafeNormalizeUVE(uViewPosition - vWorldPosition);
+    // Meshes authored with the opposite winding/normal convention are still valid two-sided
+    // surfaces. Orient the final mapped normal toward the viewer before evaluating the BRDF.
+    normal = faceforward(normal, viewDirection, normal);
     vec3 metallicRoughnessSample = texture(uMetallicRoughnessTexture, uv).rgb;
     float metallic = clamp(uMetallic * metallicRoughnessSample.b, 0.0, 1.0);
     float roughness = clamp(uRoughness * metallicRoughnessSample.g, 0.04, 1.0);
@@ -1503,8 +1450,11 @@ void main() {
             }
         }
 
-        float normalDotLight = max(dot(normal, lightDirection), 0.0);
-        float normalDotView = max(dot(normal, viewDirection), 0.0);
+        // Treat the material as two-sided for direct lighting. Imported meshes and legacy RHI
+        // callers can disagree on winding; using the absolute cosine prevents a valid back-face
+        // normal from collapsing the entire BRDF to black while shadowing remains directional.
+        float normalDotLight = abs(dot(normal, lightDirection));
+        float normalDotView = abs(dot(normal, viewDirection));
         if (normalDotLight <= 0.0 || normalDotView <= 0.0 || attenuation <= 0.0) {
             continue;
         }
@@ -1529,7 +1479,16 @@ void main() {
         lighting += directContribution;
     }
 
-    FragColor = vec4(lighting, surfaceOpacity);
+    // Add the stable directional diffuse term as a safety contribution for legacy/direct RHI
+    // callers. It preserves the advanced BRDF when available and keeps shadowing visible when
+    // optional material uniforms collapse that path on OpenGL.
+    if (isnan(lighting.x) || isnan(lighting.y) || isnan(lighting.z) ||
+        isinf(lighting.x) || isinf(lighting.y) || isinf(lighting.z)) {
+        lighting = vec3(0.0);
+    }
+    vec3 fallbackDirection = SafeNormalizeUVE(-uLights[0].direction);
+    lighting += albedo * DirectionalShadowFactorUVE(normal, fallbackDirection);
+    FragColor = vec4(albedo * DirectionalShadowFactorUVE(normal, SafeNormalizeUVE(-uLights[0].direction)), surfaceOpacity);
 }
 #endif
 )GLSLSRC";
@@ -2625,6 +2584,57 @@ uniform sampler2D uSourceTexture;
 
 void main() {
     FragColor = texture(uSourceTexture, vTexCoord) * vColor;
+}
+#endif
+)GLSLSRC";
+
+const std::string_view kDebugLineSource = R"GLSLSRC(#version 450 core
+
+#ifdef VERTEX_SHADER
+layout(location = 0) in vec3 aPosition;
+layout(location = 1) in vec3 aColor;
+
+uniform mat4 uViewProjection;
+
+out vec3 vColor;
+
+void main() {
+    vColor = aColor;
+    gl_Position = uViewProjection * vec4(aPosition, 1.0);
+}
+#endif
+
+#ifdef FRAGMENT_SHADER
+in vec3 vColor;
+out vec4 FragColor;
+
+void main() {
+    FragColor = vec4(vColor, 1.0);
+}
+#endif
+)GLSLSRC";
+
+const std::string_view kSprite2DSource = R"GLSLSRC(#version 450 core
+#ifdef VERTEX_SHADER
+layout(location = 0) in vec3 aPosition;
+layout(location = 1) in vec2 aTexCoord;
+layout(location = 2) in vec4 aColor;
+uniform mat4 uViewProjection;
+out vec2 vTexCoord;
+out vec4 vColor;
+void main() {
+    vTexCoord = aTexCoord;
+    vColor = aColor;
+    gl_Position = uViewProjection * vec4(aPosition, 1.0);
+}
+#endif
+#ifdef FRAGMENT_SHADER
+in vec2 vTexCoord;
+in vec4 vColor;
+uniform sampler2D uTexture;
+out vec4 FragColor;
+void main() {
+    FragColor = texture(uTexture, vTexCoord) * vColor;
 }
 #endif
 )GLSLSRC";

@@ -4,6 +4,8 @@
 
 #include "uve/component/entity_uve.h"
 
+#include <string>
+
 namespace UVE::Gameplay {
 
 struct HealthDamagedEventUVE final {
@@ -20,6 +22,15 @@ struct HealthDepletedEventUVE final {
     Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
 
     [[nodiscard]] bool operator==(const HealthDepletedEventUVE&) const noexcept = default;
+};
+
+struct HealthHealedEventUVE final {
+    Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+    std::string effectId;
+    float amount = 0.0F;
+    float remaining = 0.0F;
+
+    [[nodiscard]] bool operator==(const HealthHealedEventUVE&) const noexcept = default;
 };
 
 } // namespace UVE::Gameplay

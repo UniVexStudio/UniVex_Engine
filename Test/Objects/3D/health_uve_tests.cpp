@@ -79,5 +79,43 @@ TEST_F(HealthUVETest, InvulnerableAndMissingHealthDoNothing) {
     EXPECT_EQ(missing.entity, kInvalidEntityUVE);
 }
 
+TEST_F(HealthUVETest, HealRestoresUpToMaxAndIgnoresInvulnerability) {
+    HealthComponentUVE health{};
+    static_cast<void>(ApplyHealthDamageUVE(health, 30.0F));
+    ASSERT_FLOAT_EQ(health.health, 70.0F);
+
+    const HealthDamageResultUVE first = ApplyHealthHealUVE(health, 20.0F);
+    EXPECT_TRUE(first.applied);
+    EXPECT_FALSE(first.depleted);
+    EXPECT_FLOAT_EQ(first.amount, 20.0F);
+    EXPECT_FLOAT_EQ(first.remaining, 90.0F);
+
+    health.invulnerable = true;
+    const HealthDamageResultUVE through = ApplyHealthHealUVE(health, 20.0F);
+    EXPECT_TRUE(through.applied);
+    EXPECT_FLOAT_EQ(through.amount, 20.0F);
+    EXPECT_FLOAT_EQ(through.remaining, 100.0F);
+    EXPECT_FLOAT_EQ(health.health, 100.0F);
+
+    EXPECT_FALSE(ApplyHealthHealUVE(health, 10.0F).applied);
+    EXPECT_FALSE(ApplyHealthHealUVE(health, 0.0F).applied);
+    EXPECT_FALSE(ApplyHealthHealUVE(health, -5.0F).applied);
+    EXPECT_FALSE(ApplyHealthHealUVE(health, std::numeric_limits<float>::quiet_NaN()).applied);
+}
+
+TEST_F(HealthUVETest, HealRevivesFromZeroButNotTheInvalid) {
+    HealthComponentUVE health{};
+    static_cast<void>(ApplyHealthDamageUVE(health, 200.0F));
+    ASSERT_FLOAT_EQ(health.health, 0.0F);
+
+    const HealthDamageResultUVE revived = ApplyHealthHealUVE(health, 50.0F);
+    EXPECT_TRUE(revived.applied);
+    EXPECT_FLOAT_EQ(revived.remaining, 50.0F);
+
+    HealthComponentUVE bad{};
+    bad.maxHealth = 0.0F;
+    EXPECT_FALSE(ApplyHealthHealUVE(bad, 10.0F).applied);
+}
+
 } // namespace
 } // namespace UVE::Scene::Tests

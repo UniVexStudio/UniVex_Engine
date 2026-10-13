@@ -4,6 +4,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <string>
 #include <typeindex>
 
 #include "uve/component/camera_component_uve.h"
@@ -103,6 +105,34 @@ TEST(TypeMetadataBridgeUVETest, TypeInstanceUVE_IsInvalidForADescribeOnlyEntry) 
     EXPECT_EQ(defaults.GetUVE(), nullptr);
 }
 
+struct StorageProbeUVE {
+    int value = 7;
+    std::string label = "probe";
+};
+
+TEST(TypeMetadataBridgeUVETest, BindTypeUVE_BindsArchetypeSlotConstructionTrio) {
+    TypeMetadataEntryUVE entry{TypeMetadataKindUVE::Component, "component.probe", "Probe", 1U, {}, {}};
+    BindTypeUVE<StorageProbeUVE>(entry);
+    EXPECT_EQ(entry.instanceSize, sizeof(StorageProbeUVE));
+    EXPECT_EQ(entry.instanceAlignment, alignof(StorageProbeUVE));
+    ASSERT_NE(entry.constructDefaultInPlace, nullptr);
+    ASSERT_NE(entry.moveConstructInPlace, nullptr);
+    ASSERT_NE(entry.destroyInPlace, nullptr);
+
+    alignas(StorageProbeUVE) unsigned char buffer[sizeof(StorageProbeUVE)];
+    entry.constructDefaultInPlace(buffer);
+    EXPECT_EQ(reinterpret_cast<const StorageProbeUVE*>(buffer)->value, 7);
+    EXPECT_EQ(reinterpret_cast<const StorageProbeUVE*>(buffer)->label, "probe");
+
+    alignas(StorageProbeUVE) unsigned char moved[sizeof(StorageProbeUVE)];
+    entry.moveConstructInPlace(moved, buffer);
+    EXPECT_EQ(reinterpret_cast<const StorageProbeUVE*>(moved)->value, 7);
+    EXPECT_EQ(reinterpret_cast<const StorageProbeUVE*>(moved)->label, "probe");
+    // The move destroys its source (mirroring ComponentTypeInfoUVE's contract), so only the
+    // destination is destroyed here; destroying the source again would double-free the string.
+    entry.destroyInPlace(moved);
+}
+
 TEST(TypeMetadataPropertyTraitsUVETest, RuntimeStateAndReadOnlyRefuseAuthoringAndPersistence) {
     TypeMetadataPropertyUVE derived = MakePropertyUVE<&Scene::TransformComponentUVE::localPosition>(
         "localPosition", "Position", "Vector3", true);
@@ -122,6 +152,13 @@ TEST(TypeMetadataPropertyTraitsUVETest, RuntimeStateAndReadOnlyRefuseAuthoringAn
     plain.flags = TypeMetadataPropertyFlagsUVE::None;
     EXPECT_TRUE(plain.IsAuthoringWritableUVE());
     EXPECT_TRUE(plain.IsSerializedUVE());
+
+    // Editor-only authoring is shown (and writable) in the inspector but never shipped in
+    // runtime data, so the metadata-driven serializer skips it like runtime state.
+    TypeMetadataPropertyUVE editorOnly = derived;
+    editorOnly.flags = TypeMetadataPropertyFlagsUVE::EditorOnly;
+    EXPECT_TRUE(editorOnly.IsAuthoringWritableUVE());
+    EXPECT_FALSE(editorOnly.IsSerializedUVE());
 
     // A describe-only property has no accessor to write through, so it is never authorable.
     const TypeMetadataPropertyUVE describeOnly{"legacy", "Legacy", "Number", true};

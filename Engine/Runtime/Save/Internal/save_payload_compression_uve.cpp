@@ -1,5 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "uve/save/save_payload_compression_uve.h"
+#include "uve/utilities/binary_buffer_uve.h"
+#include "uve/utilities/hash_uve.h"
 #include <cstring>
 #include <iterator>
 #include <utility>
@@ -12,27 +14,14 @@ constexpr std::size_t kChecksummedHeaderBytes = kLegacyHeaderBytes + sizeof(std:
 [[nodiscard]] bool HasMagicUVE(const std::vector<std::byte>& payload, const std::byte (&magic)[4]) noexcept {
     return payload.size() >= sizeof(magic) && std::memcmp(payload.data(), magic, sizeof(magic)) == 0;
 }
-void AppendUint64UVE(std::vector<std::byte>& output, const std::uint64_t value) {
-    const auto* bytes = reinterpret_cast<const std::byte*>(&value);
-    output.insert(output.end(), bytes, bytes + sizeof(value));
-}
-[[nodiscard]] bool ReadUint64UVE(const std::vector<std::byte>& input, const std::size_t offset,
-                                 std::uint64_t& value) noexcept {
-    if (offset > input.size() || input.size() - offset < sizeof(value)) {
-        return false;
-    }
-    std::memcpy(&value, input.data() + offset, sizeof(value));
-    return true;
-}
 [[nodiscard]] std::uint64_t ComputeSavePayloadFingerprintUVE(const std::vector<std::byte>& payload) noexcept {
-    constexpr std::uint64_t kOffsetBasis = 1469598103934665603ULL;
-    constexpr std::uint64_t kPrime = 1099511628211ULL;
-    std::uint64_t fingerprint = kOffsetBasis;
-    for (const std::byte value : payload) {
-        fingerprint ^= std::to_integer<std::uint8_t>(value);
-        fingerprint *= kPrime;
-    }
-    return fingerprint;
+    // The checksum is embedded in every compressed save, so its values are a format: the legacy
+    // transposed seed is preserved deliberately (see kFnv1a64LegacyOffsetBasisUVE). Old saves
+    // keep verifying bit-for-bit.
+    // (An empty payload hashes from a null data pointer with a zero size, which the hasher
+    // defines as a no-op — matching the old loop, which simply never iterated.)
+    return Utilities::HashBytesUVE(payload.data(), payload.size(),
+                                   Utilities::kFnv1a64LegacyOffsetBasisUVE);
 }
 } // namespace
 std::vector<std::byte> CompressSavePayloadUVE(const std::vector<std::byte>& payload) {
@@ -42,8 +31,10 @@ std::vector<std::byte> CompressSavePayloadUVE(const std::vector<std::byte>& payl
     std::vector<std::byte> compressed;
     compressed.reserve(kChecksummedHeaderBytes + payload.size());
     compressed.insert(compressed.end(), std::begin(kChecksummedMagic), std::end(kChecksummedMagic));
-    AppendUint64UVE(compressed, payload.size());
-    AppendUint64UVE(compressed, ComputeSavePayloadFingerprintUVE(payload));
+    // Little-endian by format: byte-identical to the old host-order writes on every
+    // little-endian target (all of them), so old saves keep loading unchanged.
+    Utilities::AppendUint64LeUVE(compressed, payload.size());
+    Utilities::AppendUint64LeUVE(compressed, ComputeSavePayloadFingerprintUVE(payload));
     for (std::size_t offset = 0U; offset < payload.size();) {
         const std::byte value = payload[offset];
         std::size_t runLength = 1U;
@@ -72,12 +63,16 @@ bool DecompressSavePayloadUVE(const std::vector<std::byte>& payload,
     }
     const std::size_t headerBytes = checksummed ? kChecksummedHeaderBytes : kLegacyHeaderBytes;
     std::uint64_t expectedSize = 0U;
-    if (!ReadUint64UVE(payload, sizeof(kChecksummedMagic), expectedSize) ||
+    // The old local reader took its offset by value; the shared reader advances it, so each
+    // fixed-offset read gets a throwaway cursor. Same bytes, same values.
+    std::size_t sizeOffset = sizeof(kChecksummedMagic);
+    if (!Utilities::ReadUint64LeFromBufferUVE(payload, sizeOffset, expectedSize) ||
         expectedSize > kMaximumCompressedSavePayloadBytesUVE || payload.size() < headerBytes) {
         return false;
     }
     std::uint64_t expectedFingerprint = 0U;
-    if (checksummed && !ReadUint64UVE(payload, kLegacyHeaderBytes, expectedFingerprint)) {
+    std::size_t fingerprintOffset = kLegacyHeaderBytes;
+    if (checksummed && !Utilities::ReadUint64LeFromBufferUVE(payload, fingerprintOffset, expectedFingerprint)) {
         return false;
     }
     std::vector<std::byte> expanded;

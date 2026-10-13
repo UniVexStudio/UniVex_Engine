@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -12,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "uve/math/rect_int_uve.h"
 #include "uve/rhi/shader_handle_uve.h"
 #include "uve/rhi/texture_handle_uve.h"
 
@@ -163,6 +165,22 @@ struct TextureFormatBlockInfoUVE {
 /// Describes a GPU texture to create via IRenderDeviceUVE::CreateTextureUVE(). `mipLevels` is
 /// the total number of levels including level 0; it must not exceed the complete chain for the
 /// base dimensions. Color assets may provide tightly concatenated texel or block bytes for every level.
+/// Texture dimensionality (Tier 2.3). `Texture2D` is the only pre-2.3 shape; arrays stack
+/// `arrayLayers` same-sized 2D slices (shadow cascades, texture atlases), and cubemaps are the
+/// 6-face sampling shape (reflection probes, sky). Cube faces upload and attach in
+/// `CubemapFaceUVE` order (+X,-X,+Y,-Y,+Z,-Z), which matches the GL/VK hardware face order.
+enum class TextureTypeUVE : std::uint8_t { Texture2D, Texture2DArray, Cubemap };
+
+[[nodiscard]] constexpr bool IsTextureTypeValidUVE(const TextureTypeUVE type) noexcept {
+    switch (type) {
+        case TextureTypeUVE::Texture2D:
+        case TextureTypeUVE::Texture2DArray:
+        case TextureTypeUVE::Cubemap:
+            return true;
+    }
+    return false;
+}
+
 struct TextureDescUVE {
     std::uint32_t width = 0;
     std::uint32_t height = 0;
@@ -170,7 +188,77 @@ struct TextureDescUVE {
     std::uint32_t mipLevels = 1;
     // Appended after existing members to preserve aggregate initialization of legacy descriptors.
     TextureColorSpaceUVE colorSpace = TextureColorSpaceUVE::Linear;
+    // Tier 2.3: dimensionality. Defaults describe the only pre-2.3 shape (one 2D slice).
+    TextureTypeUVE type = TextureTypeUVE::Texture2D;
+    std::uint32_t arrayLayers = 1;
 };
+
+/// How a sampler reads within one mip level. Shared by magnification and minification: GL and
+/// Vulkan both take the same NEAREST/LINEAR choice on each axis, so one enum serves both.
+enum class SamplerFilterUVE : std::uint8_t { Point, Linear };
+
+[[nodiscard]] constexpr bool IsSamplerFilterValidUVE(const SamplerFilterUVE filter) noexcept {
+    switch (filter) {
+        case SamplerFilterUVE::Point:
+        case SamplerFilterUVE::Linear:
+            return true;
+    }
+    return false;
+}
+
+/// How a sampler blends (or refuses to blend) between mip levels. `None` pins sampling to
+/// level 0 — the honest choice for single-level textures like shadow maps and render targets.
+enum class SamplerMipModeUVE : std::uint8_t { None, Point, Linear };
+
+[[nodiscard]] constexpr bool IsSamplerMipModeValidUVE(const SamplerMipModeUVE mode) noexcept {
+    switch (mode) {
+        case SamplerMipModeUVE::None:
+        case SamplerMipModeUVE::Point:
+        case SamplerMipModeUVE::Linear:
+            return true;
+    }
+    return false;
+}
+
+/// How a sampler resolves UVs outside [0, 1]. No clamp-to-border in v1: a border needs a
+/// border-COLOR knob the RHI was deliberately not given (follow-up alongside 2.3 cubemaps,
+/// whose seams are the first real border consumer).
+enum class SamplerWrapUVE : std::uint8_t { ClampToEdge, Repeat, MirroredRepeat };
+
+[[nodiscard]] constexpr bool IsSamplerWrapValidUVE(const SamplerWrapUVE wrap) noexcept {
+    switch (wrap) {
+        case SamplerWrapUVE::ClampToEdge:
+        case SamplerWrapUVE::Repeat:
+        case SamplerWrapUVE::MirroredRepeat:
+            return true;
+    }
+    return false;
+}
+
+/// Describes a sampler object to create via IRenderDeviceUVE::CreateSamplerUVE(). Filtering,
+/// mip blending, wrapping, and anisotropy live here — NOT on the texture — so one texture can
+/// be sampled differently from different slots (a shadow map point-sampled by the PCF pass
+/// while a debug view linear-samples the same target). Defaults reproduce the pre-2.2
+/// hardcoded behavior (linear/trilinear/clamp), so pipelines that never bind a sampler render
+/// byte-identical pixels to before.
+struct SamplerDescUVE {
+    SamplerFilterUVE magFilter = SamplerFilterUVE::Linear;
+    SamplerFilterUVE minFilter = SamplerFilterUVE::Linear;
+    SamplerMipModeUVE mipMode = SamplerMipModeUVE::Linear;
+    SamplerWrapUVE wrapU = SamplerWrapUVE::ClampToEdge;
+    SamplerWrapUVE wrapV = SamplerWrapUVE::ClampToEdge;
+    SamplerWrapUVE wrapW = SamplerWrapUVE::ClampToEdge;
+    /// Maximum anisotropy; 1.0 disables. Must be finite and >= 1.0 — backends clamp values
+    /// above their device limit (with a warn-once), but below-1.0/NaN is a malformed desc.
+    float maxAnisotropy = 1.0F;
+};
+
+[[nodiscard]] inline bool IsSamplerDescValidUVE(const SamplerDescUVE& desc) noexcept {
+    return IsSamplerFilterValidUVE(desc.magFilter) && IsSamplerFilterValidUVE(desc.minFilter) &&
+           IsSamplerMipModeValidUVE(desc.mipMode) && IsSamplerWrapValidUVE(desc.wrapU) &&
+           IsSamplerWrapValidUVE(desc.wrapV) && IsSamplerWrapValidUVE(desc.wrapW) &&
+           std::isfinite(desc.maxAnisotropy) && desc.maxAnisotropy >= 1.0F;
+}
 
 struct TextureMipExtentUVE {
     std::uint32_t width = 0U;
@@ -239,6 +327,28 @@ struct TextureMipExtentUVE {
         (desc.format == TextureFormatUVE::Depth32Float && desc.mipLevels > 1U)) {
         return false;
     }
+    // Tier 2.3 dimensionality rules. Layer-count CAPS are device properties, so backends
+    // enforce them at creation; these shape rules hold on every device. (Cube arrays — 6N
+    // layers with cube sampling — are a follow-up; v1 cubes are exactly one cube.)
+    switch (desc.type) {
+        case TextureTypeUVE::Texture2D:
+            if (desc.arrayLayers != 1U) {
+                return false;
+            }
+            break;
+        case TextureTypeUVE::Texture2DArray:
+            if (desc.arrayLayers == 0U) {
+                return false;
+            }
+            break;
+        case TextureTypeUVE::Cubemap:
+            if (desc.width != desc.height || desc.arrayLayers != 6U) {
+                return false;
+            }
+            break;
+        default:
+            return false;
+    }
 
     std::uint64_t totalBytes = 0U;
     TextureMipExtentUVE extent{desc.width, desc.height};
@@ -252,6 +362,12 @@ struct TextureMipExtentUVE {
         extent.width = extent.width > 1U ? extent.width / 2U : 1U;
         extent.height = extent.height > 1U ? extent.height / 2U : 1U;
     }
+    // Every layer carries the full mip chain (level-major upload: all layers of L0, then L1…).
+    if (desc.arrayLayers > 0U &&
+        totalBytes > std::numeric_limits<std::uint64_t>::max() / desc.arrayLayers) {
+        return false;
+    }
+    totalBytes *= desc.arrayLayers;
     if (totalBytes > std::numeric_limits<std::size_t>::max()) {
         return false;
     }
@@ -368,13 +484,15 @@ struct VertexAttributeUVE {
     return true;
 }
 
-/// How a pipeline's bound vertex/index buffers are assembled into primitives. Only `Triangles`
-/// exists today — lines/points aren't needed by anything built so far.
-enum class PrimitiveTopologyUVE : std::uint8_t { Triangles };
+/// How a pipeline's bound vertex/index buffers are assembled into primitives. `Triangles` is
+/// the mesh default; `Lines` assembles consecutive vertex/index pairs as 1px line segments for
+/// the debug renderer (Tier 2.8) — there is no strip/fan mode and no line-width state.
+enum class PrimitiveTopologyUVE : std::uint8_t { Triangles, Lines };
 
 [[nodiscard]] constexpr bool IsPrimitiveTopologyValidUVE(const PrimitiveTopologyUVE topology) noexcept {
     switch (topology) {
         case PrimitiveTopologyUVE::Triangles:
+        case PrimitiveTopologyUVE::Lines:
             return true;
     }
     return false;
@@ -399,6 +517,81 @@ enum class PipelineBlendModeUVE : std::uint8_t { Opaque, SourceAlphaOver, Additi
     return false;
 }
 
+/// Which triangle faces the rasterizer discards. `None` (no culling) is the default both
+/// backends already implement: GL never enables `GL_CULL_FACE` for RHI pipelines, and Vulkan
+/// hardcodes `VK_CULL_MODE_NONE`.
+enum class CullModeUVE : std::uint8_t { None, Front, Back, FrontAndBack };
+
+[[nodiscard]] constexpr bool IsCullModeValidUVE(const CullModeUVE mode) noexcept {
+    switch (mode) {
+        case CullModeUVE::None:
+        case CullModeUVE::Front:
+        case CullModeUVE::Back:
+        case CullModeUVE::FrontAndBack:
+            return true;
+    }
+    return false;
+}
+
+/// Which vertex winding counts as front-facing for culling. Counter-clockwise is the default
+/// both backends already implement (and the winding glTF importers produce).
+enum class FrontFaceUVE : std::uint8_t { CounterClockwise, Clockwise };
+
+[[nodiscard]] constexpr bool IsFrontFaceValidUVE(const FrontFaceUVE face) noexcept {
+    switch (face) {
+        case FrontFaceUVE::CounterClockwise:
+        case FrontFaceUVE::Clockwise:
+            return true;
+    }
+    return false;
+}
+
+/// How triangles fill their pixels. `Fill` is the default both backends already implement.
+/// There is no point mode: points need a point-size state neither backend was given.
+enum class FillModeUVE : std::uint8_t { Fill, Wireframe };
+
+[[nodiscard]] constexpr bool IsFillModeValidUVE(const FillModeUVE mode) noexcept {
+    switch (mode) {
+        case FillModeUVE::Fill:
+        case FillModeUVE::Wireframe:
+            return true;
+    }
+    return false;
+}
+
+/// How an incoming fragment's depth compares against the depth buffer when the depth test is
+/// on. Ordered to match `VkCompareOp`'s numbering (Never=0 … Always=7) — backends still map
+/// explicitly, never by static_cast, so the order is a reading convenience, not a contract.
+///
+/// The default is `Less`, matching what the GL backend has always done (it never calls
+/// `glDepthFunc`, so the context default rules). Note this CHANGES the Vulkan backend, which
+/// hardcoded `LESS_OR_EQUAL` under a comment claiming it matched GL — it did not.
+enum class DepthCompareUVE : std::uint8_t {
+    Never,
+    Less,
+    Equal,
+    LessOrEqual,
+    Greater,
+    NotEqual,
+    GreaterOrEqual,
+    Always,
+};
+
+[[nodiscard]] constexpr bool IsDepthCompareValidUVE(const DepthCompareUVE compare) noexcept {
+    switch (compare) {
+        case DepthCompareUVE::Never:
+        case DepthCompareUVE::Less:
+        case DepthCompareUVE::Equal:
+        case DepthCompareUVE::LessOrEqual:
+        case DepthCompareUVE::Greater:
+        case DepthCompareUVE::NotEqual:
+        case DepthCompareUVE::GreaterOrEqual:
+        case DepthCompareUVE::Always:
+            return true;
+    }
+    return false;
+}
+
 /// Describes a pipeline state object to create via IRenderDeviceUVE::CreatePipelineUVE().
 /// Fixed-function state remains deliberately small; blending is explicit because editor visual
 /// composition is the first proven consumer rather than an implicit global OpenGL side effect.
@@ -416,6 +609,17 @@ struct PipelineDescUVE {
     /// `glVertexAttribPointer` stride parameter). `0` (the default) is only ever valid for
     /// `NullRenderDeviceUVE`, which ignores this field like every other one it merely bookkeeps.
     std::uint32_t vertexStride = 0;
+
+    // Appended after existing members to preserve aggregate initialization of legacy descriptors.
+    // Defaults reproduce what both backends already did — except depthCompare, where Less
+    // matches GL and moves Vulkan off its hardcoded LessOrEqual (see DepthCompareUVE).
+    CullModeUVE cullMode = CullModeUVE::None;
+    FrontFaceUVE frontFace = FrontFaceUVE::CounterClockwise;
+    FillModeUVE fillMode = FillModeUVE::Fill;
+    bool depthBiasEnabled = false;
+    float depthBiasConstantFactor = 0.0F;
+    float depthBiasSlopeFactor = 0.0F;
+    DepthCompareUVE depthCompare = DepthCompareUVE::Less;
 };
 
 /// Describes a COMPUTE pipeline to create via IRenderDeviceUVE::CreateComputePipelineUVE()
@@ -441,6 +645,16 @@ struct PipelineBinaryDescUVE {
     bool depthTestEnabled = true;
     bool depthWriteEnabled = true;
     PipelineBlendModeUVE blendMode = PipelineBlendModeUVE::Opaque;
+
+    // Same appended-rasterizer-state tail as PipelineDescUVE: a cache-loaded pipeline must be
+    // able to express everything a compiled one can, or cache hits would silently drop state.
+    CullModeUVE cullMode = CullModeUVE::None;
+    FrontFaceUVE frontFace = FrontFaceUVE::CounterClockwise;
+    FillModeUVE fillMode = FillModeUVE::Fill;
+    bool depthBiasEnabled = false;
+    float depthBiasConstantFactor = 0.0F;
+    float depthBiasSlopeFactor = 0.0F;
+    DepthCompareUVE depthCompare = DepthCompareUVE::Less;
 };
 
 /// What happens to a render pass attachment's existing contents at the start of the pass.
@@ -451,6 +665,22 @@ enum class LoadOpUVE : std::uint8_t { Clear, Load, DontCare };
         case LoadOpUVE::Clear:
         case LoadOpUVE::Load:
         case LoadOpUVE::DontCare:
+            return true;
+    }
+    return false;
+}
+
+/// What happens to a render pass attachment's contents at the END of the pass (Tier 2.5).
+/// `Store` keeps the rendered bits for later sampling — the only pre-2.5 behavior, since every
+/// backend stored unconditionally. `DontCare` lets the driver discard them (tiler efficiency);
+/// the contents become undefined. There is deliberately no Resolve option: multisampled
+/// textures do not exist in the RHI yet.
+enum class StoreOpUVE : std::uint8_t { Store, DontCare };
+
+[[nodiscard]] constexpr bool IsStoreOpValidUVE(const StoreOpUVE storeOp) noexcept {
+    switch (storeOp) {
+        case StoreOpUVE::Store:
+        case StoreOpUVE::DontCare:
             return true;
     }
     return false;
@@ -467,11 +697,27 @@ enum class LoadOpUVE : std::uint8_t { Clear, Load, DontCare };
 /// render into different regions of the same window in a single frame - but it's a general
 /// RenderPassDescUVE capability, not split-view-specific, since any caller may want to render into
 /// less than the full attachment.
-struct ViewportRectUVE {
-    std::uint32_t x = 0;
-    std::uint32_t y = 0;
-    std::uint32_t width = 0;
-    std::uint32_t height = 0;
+/// Implemented as Math::RectIntUVE under an RHI name: the old four-uint32 struct retired in
+/// favour of the one shared integer-rect type. Position/size are signed now; backends reject
+/// a negative or zero-size rect through the same viewport fit-check as an out-of-bounds one.
+using ViewportRectUVE = Math::RectIntUVE;
+
+/// How many color locations past location 0 a pass may target (Tier 2.4): locations 1..3, so
+/// four total — inside every GL (MAX_DRAW_BUFFERS >= 8) and Vulkan (maxColorAttachments, queried
+/// at init) device, and no G-buffer needs more.
+inline constexpr std::uint32_t kExtraColorAttachmentCountUVE = 3U;
+
+/// One of locations 1..3 of a multi-target pass (Tier 2.4). Location 0 keeps the legacy
+/// top-level fields below (colorAttachment/colorLoadOp/clearColor/...), so single-target passes
+/// — every pass that exists today — compile and behave exactly as before. An extra slot whose
+/// target is invalid is simply unused, and gaps are NOT allowed: location 2 set while location 1
+/// is invalid is malformed, and backends reject it like any other malformed pass descriptor.
+struct ColorAttachmentUVE {
+    TextureHandleUVE target;
+    std::uint32_t layer = 0;
+    LoadOpUVE loadOp = LoadOpUVE::Clear;
+    StoreOpUVE storeOp = StoreOpUVE::Store;
+    std::array<float, 4> clearColor{0.0F, 0.0F, 0.0F, 1.0F};
 };
 
 struct RenderPassDescUVE {
@@ -482,11 +728,22 @@ struct RenderPassDescUVE {
     LoadOpUVE depthLoadOp = LoadOpUVE::Clear;
     float clearDepth = 1.0F;
     /// When set, the pass's GL viewport is this pixel rect instead of the full attachment/window
-    /// size. Must fit entirely within the target: `x + width` and `y + height` must not exceed the
-    /// attachment's (or, for the default framebuffer, the window's) dimensions. A backend rejects
-    /// an out-of-bounds rect the same way it rejects any other malformed pass descriptor, rather
-    /// than silently clamping it.
+    /// size. Must fit entirely within the target: a zero-size, negative, or out-of-bounds rect is
+    /// rejected the same way as any other malformed pass descriptor, rather than silently
+    /// clamped. See Math::ContainsUVE for the exact fit-check the backends apply.
     std::optional<ViewportRectUVE> viewportOverride;
+    // Tier 2.3: which layer of an array/cube attachment this pass renders into (cube faces are
+    // layers 0-5 in CubemapFaceUVE order). Must be 0 for Texture2D attachments and below
+    // `arrayLayers` otherwise; backends reject out-of-range layers like any other malformed
+    // pass descriptor. Defaults preserve the only pre-2.3 behavior (layer 0 of a 2D target).
+    std::uint32_t colorLayer = 0;
+    std::uint32_t depthLayer = 0;
+    // Tier 2.5: end-of-pass behavior for location 0 and depth. Defaults preserve the only
+    // pre-2.5 behavior (everything stored).
+    StoreOpUVE colorStoreOp = StoreOpUVE::Store;
+    StoreOpUVE depthStoreOp = StoreOpUVE::Store;
+    // Tier 2.4: locations 1..3 (see ColorAttachmentUVE). Empty by default: a single target.
+    std::array<ColorAttachmentUVE, kExtraColorAttachmentCountUVE> extraColorAttachments{};
 };
 
 } // namespace UVE::Render

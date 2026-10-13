@@ -49,6 +49,20 @@ HealthDamageResultUVE ApplyHealthDamageUVE(HealthComponentUVE& health, const flo
     return result;
 }
 
+HealthDamageResultUVE ApplyHealthHealUVE(HealthComponentUVE& health, const float amount) noexcept {
+    HealthDamageResultUVE result;
+    result.remaining = health.health;
+    if (!IsHealthComponentValidUVE(health) || !std::isfinite(amount) || amount <= 0.0F ||
+        health.health >= health.maxHealth) {
+        return result;
+    }
+    health.health = std::min(health.maxHealth, health.health + amount);
+    result.applied = true;
+    result.amount = amount;
+    result.remaining = health.health;
+    return result;
+}
+
 HealthDamageResultUVE ApplyHitboxStrikeToHealthUVE(IEntityManagerUVE& entityManager, const EntityUVE hurtbox,
                                                    const float amount) {
     const EntityUVE entity = FindHealthEntityUVE(entityManager, hurtbox);

@@ -28,6 +28,7 @@
 namespace UVE::Editor {
 namespace {
 
+constexpr std::size_t kMaximumContentRecentUVE = 5U;
 constexpr std::size_t kMaximumContentNameBytesUVE = 96U;
 
 [[nodiscard]] std::string LowerExtensionUVE(const std::filesystem::path& path) {
@@ -178,8 +179,8 @@ std::optional<std::filesystem::path> EditorUVE::DuplicateContentFileUVE(const st
 void EditorUVE::PushContentCreateRecentUVE(std::vector<std::string>& recent, const std::string_view id) {
     std::erase(recent, id);
     recent.insert(recent.begin(), std::string{id});
-    if (recent.size() > kMaxContentCreateRecentUVE) {
-        recent.resize(kMaxContentCreateRecentUVE);
+    if (recent.size() > kMaximumContentRecentUVE) {
+        recent.resize(kMaximumContentRecentUVE);
     }
 }
 
@@ -383,7 +384,7 @@ void EditorUVE::AcceptContentEntityDropUVE(Scene::EntityUVE parent) {
         payload != nullptr && payload->DataSize > 1) {
         const std::string path(static_cast<const char*>(payload->Data), static_cast<std::size_t>(payload->DataSize - 1));
         if (parent == Scene::kInvalidEntityUVE) {
-            parent = EnsureDocumentObjectUVE();
+            parent = EnsureDocumentSceneRootUVE();
         }
         if (PlaceEntityAssetUVE(path, parent) == Scene::kInvalidEntityUVE) {
             m_contentStatusMessage = "Could not place " + std::filesystem::path{path}.filename().string() + ".";

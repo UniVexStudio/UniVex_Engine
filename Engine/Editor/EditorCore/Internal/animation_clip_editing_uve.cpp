@@ -7,6 +7,7 @@
 #include <limits>
 
 #include "uve/math/quaternion_uve.h"
+#include "uve/math/scalar_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -208,8 +209,7 @@ float GetClipPoseComponentUVE(const Asset::AnimationAssetPoseUVE& pose, const in
     if (!Math::TryToEulerUVE(pose.rotation, radians)) {
         return 0.0F;
     }
-    constexpr float kDegreesPerRadianUVE = 57.29577951308232F;
-    return pick(radians) * kDegreesPerRadianUVE;
+    return Math::RadToDegUVE(pick(radians));
 }
 
 bool SetClipKeyComponentUVE(Asset::AnimationClipAssetUVE& clip, const std::string& track, const double timeSeconds,
@@ -238,8 +238,7 @@ bool SetClipKeyComponentUVE(Asset::AnimationClipAssetUVE& clip, const std::strin
     if (!Math::TryToEulerUVE(pose.rotation, radians)) {
         return false;
     }
-    constexpr float kRadiansPerDegreeUVE = 0.017453292519943295F;
-    (axis == 0 ? radians.x : (axis == 1 ? radians.y : radians.z)) = value * kRadiansPerDegreeUVE;
+    (axis == 0 ? radians.x : (axis == 1 ? radians.y : radians.z)) = Math::DegToRadUVE(value);
     return Math::TryMakeEulerUVE(radians, pose.rotation);
 }
 

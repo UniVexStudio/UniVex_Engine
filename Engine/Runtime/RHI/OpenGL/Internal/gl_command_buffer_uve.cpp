@@ -47,6 +47,16 @@ namespace {
     return true;
 }
 
+[[nodiscard]] GLenum ToGlDrawModeUVE(PrimitiveTopologyUVE topology) noexcept {
+    switch (topology) {
+        case PrimitiveTopologyUVE::Triangles:
+            return GL_TRIANGLES;
+        case PrimitiveTopologyUVE::Lines:
+            return GL_LINES;
+    }
+    return GL_TRIANGLES;
+}
+
 [[nodiscard]] GLint VertexAttributeComponentCountUVE(VertexAttributeFormatUVE format) noexcept {
     switch (format) {
         case VertexAttributeFormatUVE::Float2:
@@ -94,18 +104,18 @@ namespace {
         return true;
     }
     const ViewportRectUVE& rect = *renderPassDesc.viewportOverride;
-    if (rect.width == 0U || rect.height == 0U || rect.x + rect.width > targetWidth ||
-        rect.y + rect.height > targetHeight) {
+    const ViewportRectUVE targetBounds{Math::Vector2iUVE{0, 0},
+                                        Math::Vector2iUVE{static_cast<std::int32_t>(targetWidth),
+                                                          static_cast<std::int32_t>(targetHeight)}};
+    if (rect.size.x <= 0 || rect.size.y <= 0 || !Math::ContainsUVE(targetBounds, rect)) {
         UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE viewportOverride ({}, {}, {}x{}) does not fit within "
                   "the {}x{} target",
-                  rect.x, rect.y, rect.width, rect.height, targetWidth, targetHeight);
+                  rect.position.x, rect.position.y, rect.size.x, rect.size.y, targetWidth, targetHeight);
         return false;
     }
     glEnable(GL_SCISSOR_TEST);
-    glScissor(static_cast<GLint>(rect.x), static_cast<GLint>(rect.y), static_cast<GLsizei>(rect.width),
-              static_cast<GLsizei>(rect.height));
-    glViewport(static_cast<GLint>(rect.x), static_cast<GLint>(rect.y), static_cast<GLsizei>(rect.width),
-               static_cast<GLsizei>(rect.height));
+    glScissor(rect.position.x, rect.position.y, rect.size.x, rect.size.y);
+    glViewport(rect.position.x, rect.position.y, rect.size.x, rect.size.y);
     return true;
 }
 
@@ -121,6 +131,13 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
         UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE received an unknown load operation");
         return;
     }
+    // Tier 2.5: store ops validate like load ops (garbage in = error, even on passes whose
+    // store is later ignored — the default framebuffer never invalidates).
+    m_passDiscardCount = 0U;
+    if (!IsStoreOpValidUVE(renderPassDesc.colorStoreOp) || !IsStoreOpValidUVE(renderPassDesc.depthStoreOp)) {
+        UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE received an unknown store operation");
+        return;
+    }
     if (renderPassDesc.colorLoadOp == LoadOpUVE::Clear) {
         for (const float clearChannel : renderPassDesc.clearColor) {
             if (!std::isfinite(clearChannel)) {
@@ -134,8 +151,18 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
         return;
     }
 
+    // Tier 2.4: extras alone make a pass offscreen (they ride the offscreen branch's
+    // validation — a default-framebuffer pass must not silently drop them).
+    bool hasExtraAttachments = false;
+    for (const ColorAttachmentUVE& extra : renderPassDesc.extraColorAttachments) {
+        if (extra.target != kInvalidTextureHandleUVE) {
+            hasExtraAttachments = true;
+            break;
+        }
+    }
+    std::uint32_t extraCount = 0U; // resolved by the offscreen branch below
     if (renderPassDesc.colorAttachment == kInvalidTextureHandleUVE &&
-        renderPassDesc.depthAttachment == kInvalidTextureHandleUVE) {
+        renderPassDesc.depthAttachment == kInvalidTextureHandleUVE && !hasExtraAttachments) {
         if (m_state->windowManager == nullptr || !m_state->windowManager->IsValidUVE()) {
             UVE_ERROR("GlCommandBufferUVE: default framebuffer render pass requires a valid window surface");
             return;
@@ -181,16 +208,124 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
             UVE_ERROR("GlCommandBufferUVE: depthAttachment must use TextureFormatUVE::Depth32Float");
             return;
         }
+        // Tier 2.4: extras need location 0 (a pass with extras but no colorAttachment is
+        // malformed — the swapchain/default framebuffer never takes extras).
+        if (hasExtraAttachments && colorIt == m_state->textures.end()) {
+            UVE_ERROR("GlCommandBufferUVE: extra color attachments need location 0 "
+                      "(a pass with extras but no colorAttachment is malformed)");
+            return;
+        }
         if (colorIt != m_state->textures.end() && depthIt != m_state->textures.end() &&
             (colorIt->second.desc.width != depthIt->second.desc.width ||
              colorIt->second.desc.height != depthIt->second.desc.height)) {
             UVE_ERROR("GlCommandBufferUVE: colorAttachment and depthAttachment dimensions must match");
             return;
         }
+        // Tier 2.3: layer selection must sit inside the attachment's layer count (2D textures
+        // carry exactly one layer, so any nonzero layer on them fails here too).
+        if (colorIt != m_state->textures.end() &&
+            renderPassDesc.colorLayer >= colorIt->second.desc.arrayLayers) {
+            UVE_ERROR("GlCommandBufferUVE: colorLayer exceeds the color attachment's layer count");
+            return;
+        }
+        if (depthIt != m_state->textures.end() &&
+            renderPassDesc.depthLayer >= depthIt->second.desc.arrayLayers) {
+            UVE_ERROR("GlCommandBufferUVE: depthLayer exceeds the depth attachment's layer count");
+            return;
+        }
 
-        const std::uint64_t framebufferKey =
-            (static_cast<std::uint64_t>(renderPassDesc.colorAttachment.value) << 32U) |
-            static_cast<std::uint64_t>(renderPassDesc.depthAttachment.value);
+        // Tier 2.4: locations 1..3 — a contiguous prefix under the same contract as location 0
+        // (known color-format handle, matching dims, layer in range), pairwise distinct from
+        // location 0, the depth, and each other (one texture may not feed two attachments).
+        // Loader entries are checked here too so an MRT pass fails BEFORE allocating its FBO.
+        std::array<std::uint32_t, kExtraColorAttachmentCountUVE> extraHandles{};
+        std::array<std::uint32_t, kExtraColorAttachmentCountUVE> extraLayers{};
+        {
+            bool gapSeen = false;
+            bool anyColorClear = renderPassDesc.colorLoadOp == LoadOpUVE::Clear;
+            for (const ColorAttachmentUVE& slot : renderPassDesc.extraColorAttachments) {
+                if (slot.target == kInvalidTextureHandleUVE) {
+                    gapSeen = true;
+                    continue;
+                }
+                if (gapSeen) {
+                    UVE_ERROR("GlCommandBufferUVE: extra color attachments must be a contiguous "
+                              "prefix (a gap is malformed)");
+                    return;
+                }
+                if (!IsLoadOpValidUVE(slot.loadOp) || !IsStoreOpValidUVE(slot.storeOp)) {
+                    UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE received an unknown extra "
+                              "attachment load or store operation");
+                    return;
+                }
+                if (slot.loadOp == LoadOpUVE::Clear) {
+                    anyColorClear = true;
+                    for (const float clearChannel : slot.clearColor) {
+                        if (!std::isfinite(clearChannel)) {
+                            UVE_ERROR("GlCommandBufferUVE: extra color clear value must be finite");
+                            return;
+                        }
+                    }
+                }
+                const auto extraIt = m_state->textures.find(slot.target.value);
+                if (extraIt == m_state->textures.end()) {
+                    UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE referenced an unknown extra "
+                              "color attachment handle");
+                    return;
+                }
+                if (extraIt->second.desc.format == TextureFormatUVE::Depth32Float ||
+                    IsTextureFormatCompressedUVE(extraIt->second.desc.format)) {
+                    UVE_ERROR("GlCommandBufferUVE: extra color attachments must use a color texture "
+                              "format (block-compressed textures are sampled-only)");
+                    return;
+                }
+                if (extraIt->second.desc.width != colorIt->second.desc.width ||
+                    extraIt->second.desc.height != colorIt->second.desc.height) {
+                    UVE_ERROR("GlCommandBufferUVE: every color attachment must match location 0's "
+                              "dimensions (FBO completeness)");
+                    return;
+                }
+                if (slot.layer >= extraIt->second.desc.arrayLayers) {
+                    UVE_ERROR("GlCommandBufferUVE: an extra color layer exceeds its attachment's "
+                              "layer count");
+                    return;
+                }
+                if (extraIt->second.desc.type != TextureTypeUVE::Texture2D &&
+                    m_state->gl.glFramebufferTextureLayer == nullptr) {
+                    UVE_ERROR("GlCommandBufferUVE: layered render targets need "
+                              "glFramebufferTextureLayer (GL 3.2+)");
+                    return;
+                }
+                if (slot.target.value == renderPassDesc.colorAttachment.value ||
+                    slot.target.value == renderPassDesc.depthAttachment.value) {
+                    UVE_ERROR("GlCommandBufferUVE: one texture may not feed two attachments of the "
+                              "same pass");
+                    return;
+                }
+                for (std::uint32_t j = 0U; j < extraCount; ++j) {
+                    if (extraHandles[j] == slot.target.value) {
+                        UVE_ERROR("GlCommandBufferUVE: one texture may not feed two attachments of "
+                                  "the same pass");
+                        return;
+                    }
+                }
+                extraHandles[extraCount] = slot.target.value;
+                extraLayers[extraCount] = slot.layer;
+                ++extraCount;
+            }
+            if (extraCount > 0U && m_state->gl.glDrawBuffers == nullptr) {
+                UVE_ERROR("GlCommandBufferUVE: multi-target passes need glDrawBuffers");
+                return;
+            }
+            if (extraCount > 0U && anyColorClear && m_state->gl.glClearBufferfv == nullptr) {
+                UVE_ERROR("GlCommandBufferUVE: multi-target clears need glClearBufferfv");
+                return;
+            }
+        }
+
+        const Detail::GlDeviceStateUVE::FramebufferKeyUVE framebufferKey{
+            renderPassDesc.colorAttachment.value, renderPassDesc.depthAttachment.value,
+            renderPassDesc.colorLayer, renderPassDesc.depthLayer, extraHandles, extraLayers};
         GLuint framebuffer = 0;
         const auto cachedFramebufferIt = m_state->framebufferCache.find(framebufferKey);
         const bool framebufferCreated = cachedFramebufferIt == m_state->framebufferCache.end();
@@ -218,9 +353,67 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
         }
 
         if (framebufferCreated) {
+            // Tier 2.4: fail closed past the context's draw-buffer limit (queried once per FBO
+            // creation, not per pass — the cached FBO bakes the routing).
+            if (extraCount > 0U) {
+                GLint maxDrawBuffers = 0;
+                glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxDrawBuffers);
+                if (maxDrawBuffers < 1 ||
+                    1U + extraCount > static_cast<std::uint32_t>(maxDrawBuffers)) {
+                    UVE_ERROR("GlCommandBufferUVE: the pass names more color attachments than the "
+                              "context offers ({} > GL_MAX_DRAW_BUFFERS {})",
+                              1U + extraCount, maxDrawBuffers);
+                    m_state->gl.glDeleteFramebuffers(1, &framebuffer);
+                    m_state->framebufferCache.erase(framebufferKey);
+                    m_state->gl.glBindFramebuffer(GL_FRAMEBUFFER,
+                                                  static_cast<GLuint>(previousFramebuffer));
+                    return;
+                }
+            }
             if (colorIt != m_state->textures.end()) {
-                m_state->gl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                                                    colorIt->second.glTexture, 0);
+                // Tier 2.3: arrays/cubes attach one layer (cube faces ARE layers 0..5).
+                const bool colorIsLayered =
+                    colorIt->second.desc.type != TextureTypeUVE::Texture2D;
+                if (colorIsLayered && m_state->gl.glFramebufferTextureLayer == nullptr) {
+                    // No layered attach on this context (pre-3.2): skip the attachment so the
+                    // status check below tears the FBO down through the standard path.
+                    UVE_ERROR("GlCommandBufferUVE: layered render targets need "
+                              "glFramebufferTextureLayer (GL 3.2+)");
+                } else if (colorIsLayered) {
+                    m_state->gl.glFramebufferTextureLayer(
+                        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, colorIt->second.glTexture, 0,
+                        static_cast<GLint>(renderPassDesc.colorLayer));
+                } else {
+                    m_state->gl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                                       GL_TEXTURE_2D, colorIt->second.glTexture, 0);
+                }
+                // Tier 2.4: locations 1..3 attach exactly like location 0 (layered extras ride
+                // glFramebufferTextureLayer — validated available above when layered).
+                for (std::uint32_t i = 0U; i < extraCount; ++i) {
+                    const auto extraIt =
+                        m_state->textures.find(extraHandles[i]); // validated known above
+                    const GLenum extraPoint =
+                        static_cast<GLenum>(GL_COLOR_ATTACHMENT0 + 1U + i);
+                    if (extraIt->second.desc.type != TextureTypeUVE::Texture2D) {
+                        m_state->gl.glFramebufferTextureLayer(
+                            GL_FRAMEBUFFER, extraPoint, extraIt->second.glTexture, 0,
+                            static_cast<GLint>(extraLayers[i]));
+                    } else {
+                        m_state->gl.glFramebufferTexture2D(GL_FRAMEBUFFER, extraPoint,
+                                                           GL_TEXTURE_2D, extraIt->second.glTexture,
+                                                           0);
+                    }
+                }
+                if (extraCount > 0U) {
+                    // Draw-buffer routing is per-FBO state: set once at creation, baked into the
+                    // cached FBO. (glDrawBuffers was validated non-null above.)
+                    std::array<GLenum, 1U + kExtraColorAttachmentCountUVE> drawBuffers{};
+                    for (std::uint32_t i = 0U; i < 1U + extraCount; ++i) {
+                        drawBuffers[i] = static_cast<GLenum>(GL_COLOR_ATTACHMENT0 + i);
+                    }
+                    m_state->gl.glDrawBuffers(static_cast<GLsizei>(1U + extraCount),
+                                                  drawBuffers.data());
+                }
             } else {
                 // Depth-only pass (e.g. a shadow map's depth pre-pass, Increment 26): a core-profile
                 // FBO with no color attachment must explicitly declare it has none, or
@@ -234,8 +427,19 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
 #endif
             }
             if (depthIt != m_state->textures.end()) {
-                m_state->gl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D,
-                                                    depthIt->second.glTexture, 0);
+                const bool depthIsLayered =
+                    depthIt->second.desc.type != TextureTypeUVE::Texture2D;
+                if (depthIsLayered && m_state->gl.glFramebufferTextureLayer == nullptr) {
+                    UVE_ERROR("GlCommandBufferUVE: layered render targets need "
+                              "glFramebufferTextureLayer (GL 3.2+)");
+                } else if (depthIsLayered) {
+                    m_state->gl.glFramebufferTextureLayer(
+                        GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthIt->second.glTexture, 0,
+                        static_cast<GLint>(renderPassDesc.depthLayer));
+                } else {
+                    m_state->gl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                                                       GL_TEXTURE_2D, depthIt->second.glTexture, 0);
+                }
             }
             const GLenum framebufferStatus = m_state->gl.glCheckFramebufferStatus(GL_FRAMEBUFFER);
             if (framebufferStatus != GL_FRAMEBUFFER_COMPLETE) {
@@ -262,14 +466,45 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
             }
             return;
         }
+        // Tier 2.5: remember the DontCare attachments — EndRenderPassUVE invalidates them while
+        // the FBO is still bound (a discard hint, never a correctness requirement).
+        m_passDiscardCount = 0U;
+        if (renderPassDesc.colorStoreOp == StoreOpUVE::DontCare &&
+            colorIt != m_state->textures.end()) {
+            m_passDiscardAttachments[m_passDiscardCount++] = GL_COLOR_ATTACHMENT0;
+        }
+        for (std::uint32_t i = 0U; i < extraCount; ++i) {
+            if (renderPassDesc.extraColorAttachments[i].storeOp == StoreOpUVE::DontCare) {
+                m_passDiscardAttachments[m_passDiscardCount++] =
+                    static_cast<GLenum>(GL_COLOR_ATTACHMENT0 + 1U + i);
+            }
+        }
+        if (renderPassDesc.depthStoreOp == StoreOpUVE::DontCare &&
+            depthIt != m_state->textures.end()) {
+            m_passDiscardAttachments[m_passDiscardCount++] = GL_DEPTH_ATTACHMENT;
+        }
         m_tempFramebuffer = framebuffer;
     }
 
     GLbitfield clearMask = 0;
-    if (renderPassDesc.colorLoadOp == LoadOpUVE::Clear) {
+    if (extraCount == 0U && renderPassDesc.colorLoadOp == LoadOpUVE::Clear) {
         glClearColor(renderPassDesc.clearColor[0], renderPassDesc.clearColor[1], renderPassDesc.clearColor[2],
                      renderPassDesc.clearColor[3]);
         clearMask |= GL_COLOR_BUFFER_BIT;
+    }
+    // Tier 2.4: glClear would paint every draw buffer one color — multi-target passes clear
+    // per slot instead (glClearBufferfv was validated non-null above when any color clears).
+    if (extraCount > 0U && renderPassDesc.colorLoadOp == LoadOpUVE::Clear) {
+        m_state->gl.glClearBufferfv(GL_COLOR, 0, renderPassDesc.clearColor.data());
+    }
+    if (extraCount > 0U) {
+        for (std::uint32_t i = 0U; i < extraCount; ++i) {
+            const ColorAttachmentUVE& slot = renderPassDesc.extraColorAttachments[i];
+            if (slot.loadOp == LoadOpUVE::Clear) {
+                m_state->gl.glClearBufferfv(GL_COLOR, static_cast<GLint>(1U + i),
+                                             slot.clearColor.data());
+            }
+        }
     }
     if (renderPassDesc.depthLoadOp == LoadOpUVE::Clear) {
         // glClear(GL_DEPTH_BUFFER_BIT) respects GL_DEPTH_WRITEMASK. A prior fullscreen pass
@@ -296,6 +531,14 @@ void GlCommandBufferUVE::EndRenderPassUVE() {
         return;
     }
     if (m_tempFramebuffer != 0) {
+        // Tier 2.5: discard DontCare attachments while the FBO is still bound (a missing loader
+        // entry just skips the hint — contents survive, which is always safe).
+        if (m_passDiscardCount > 0U && m_state->gl.glInvalidateFramebuffer != nullptr) {
+            m_state->gl.glInvalidateFramebuffer(GL_FRAMEBUFFER,
+                                                 static_cast<GLsizei>(m_passDiscardCount),
+                                                 m_passDiscardAttachments.data());
+        }
+        m_passDiscardCount = 0U;
         m_state->gl.glBindFramebuffer(GL_FRAMEBUFFER, 0);
         m_tempFramebuffer = 0;
     }
@@ -353,6 +596,59 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
         case PipelineBlendModeUVE::Opaque:
             glDisable(GL_BLEND);
             break;
+    }
+    // Tier 2.1: rasterizer state from the pipeline record. Defaults reproduce pre-2.1 behavior
+    // exactly (culling off, CCW, fill, no polygon offset, LESS compare — the compare call is
+    // new but LESS is what the untouched context default always gave us).
+    switch (pipelineIt->second.cullMode) {
+        case CullModeUVE::None:
+            glDisable(GL_CULL_FACE);
+            break;
+        case CullModeUVE::Front:
+            glEnable(GL_CULL_FACE);
+            glCullFace(GL_FRONT);
+            break;
+        case CullModeUVE::Back:
+            glEnable(GL_CULL_FACE);
+            glCullFace(GL_BACK);
+            break;
+        case CullModeUVE::FrontAndBack:
+            glEnable(GL_CULL_FACE);
+            glCullFace(GL_FRONT_AND_BACK);
+            break;
+    }
+    switch (pipelineIt->second.frontFace) {
+        case FrontFaceUVE::CounterClockwise:
+            glFrontFace(GL_CCW);
+            break;
+        case FrontFaceUVE::Clockwise:
+            glFrontFace(GL_CW);
+            break;
+    }
+    switch (pipelineIt->second.fillMode) {
+        case FillModeUVE::Fill:
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+            break;
+        case FillModeUVE::Wireframe:
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            break;
+    }
+    if (pipelineIt->second.depthBiasEnabled) {
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        // NOTE the argument order: glPolygonOffset takes (slopeFactor, constantUnits).
+        glPolygonOffset(pipelineIt->second.depthBiasSlopeFactor, pipelineIt->second.depthBiasConstantFactor);
+    } else {
+        glDisable(GL_POLYGON_OFFSET_FILL);
+    }
+    switch (pipelineIt->second.depthCompare) {
+        case DepthCompareUVE::Never:          glDepthFunc(GL_NEVER);   break;
+        case DepthCompareUVE::Less:           glDepthFunc(GL_LESS);    break;
+        case DepthCompareUVE::Equal:          glDepthFunc(GL_EQUAL);   break;
+        case DepthCompareUVE::LessOrEqual:    glDepthFunc(GL_LEQUAL);  break;
+        case DepthCompareUVE::Greater:        glDepthFunc(GL_GREATER); break;
+        case DepthCompareUVE::NotEqual:       glDepthFunc(GL_NOTEQUAL); break;
+        case DepthCompareUVE::GreaterOrEqual: glDepthFunc(GL_GEQUAL);  break;
+        case DepthCompareUVE::Always:         glDepthFunc(GL_ALWAYS);  break;
     }
 }
 
@@ -447,7 +743,14 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
         boundTextureIt != m_boundTextures.end() && boundTextureIt->second == texture;
     if (!alreadyBoundToSlot) {
         m_state->gl.glActiveTexture(static_cast<GLenum>(GL_TEXTURE0 + slot));
-        glBindTexture(GL_TEXTURE_2D, textureIt->second.glTexture);
+        // Tier 2.3: bind under the texture's own target (targets coexist per unit in GL, so
+        // a cube bound after a 2D on the same slot cannot disturb the earlier binding).
+        const GLenum bindTarget = textureIt->second.desc.type == TextureTypeUVE::Cubemap
+                                      ? GL_TEXTURE_CUBE_MAP
+                                  : textureIt->second.desc.type == TextureTypeUVE::Texture2DArray
+                                      ? GL_TEXTURE_2D_ARRAY
+                                      : GL_TEXTURE_2D;
+        glBindTexture(bindTarget, textureIt->second.glTexture);
         m_boundTextures[slot] = texture;
     }
 
@@ -491,14 +794,19 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
                         imageFormat = 0;
                         break;
                 }
-                if (imageFormat != 0) {
+                // Tier 2.3: layered storage images are out of scope — arrays/cubes stay
+                // sampler-only, matching the Vulkan backend's black-sink fallback.
+                if (imageFormat != 0 && textureIt->second.desc.arrayLayers <= 1U) {
                     m_state->gl.glBindImageTexture(slot, textureIt->second.glTexture, 0, GL_FALSE,
                                                    0, GL_READ_WRITE, imageFormat);
                 } else {
                     // Do not leave a prior command's image binding live when the new sampled
                     // texture cannot legally serve as a storage image.
                     m_state->gl.glBindImageTexture(slot, 0U, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8);
-                    if (IsTextureFormatCompressedUVE(textureIt->second.desc.format)) {
+                    if (textureIt->second.desc.arrayLayers > 1U) {
+                        UVE_ERROR("GlCommandBufferUVE: array/cubemap textures cannot be bound as "
+                                  "storage images in Tier 2.3; the image unit is left unbound");
+                    } else if (IsTextureFormatCompressedUVE(textureIt->second.desc.format)) {
                         UVE_ERROR("GlCommandBufferUVE: block-compressed textures cannot be bound as storage "
                                   "images; the image unit is left unbound");
                     } else if (textureIt->second.desc.colorSpace == TextureColorSpaceUVE::Srgb) {
@@ -511,6 +819,32 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
                 }
             }
         }
+    }
+}
+
+void GlCommandBufferUVE::BindSamplerUVE(SamplerHandleUVE sampler, std::uint32_t slot) {
+    // Same compute-aware gate as BindTextureUVE: sampler binds pair with texture binds.
+    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) {
+        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "BindSamplerUVE");
+        return;
+    }
+    if (m_state->maxCombinedTextureImageUnits <= 0 ||
+        slot >= static_cast<std::uint32_t>(m_state->maxCombinedTextureImageUnits)) {
+        UVE_ERROR("GlCommandBufferUVE: BindSamplerUVE sampler slot exceeds GL texture-unit limits");
+        return;
+    }
+    const auto samplerIt = m_state->samplers.find(sampler.value);
+    if (samplerIt == m_state->samplers.end()) {
+        UVE_ERROR("GlCommandBufferUVE: BindSamplerUVE referenced an unknown sampler handle");
+        return;
+    }
+    const auto boundSamplerIt = m_boundSamplers.find(slot);
+    const bool alreadyBoundToSlot =
+        boundSamplerIt != m_boundSamplers.end() && boundSamplerIt->second == sampler;
+    if (!alreadyBoundToSlot) {
+        // NOTE: glBindSampler takes the unit INDEX (unlike glActiveTexture's GL_TEXTURE0+n).
+        m_state->gl.glBindSampler(slot, samplerIt->second.glSampler);
+        m_boundSamplers[slot] = sampler;
     }
 }
 
@@ -692,7 +1026,8 @@ void GlCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t 
     if (!RequireInsideRenderPassUVE(m_insideRenderPass, "DrawIndexedUVE")) {
         return;
     }
-    if (FindCurrentPipelineUVE() == nullptr) {
+    const auto* const pipelineRecord = FindCurrentPipelineUVE();
+    if (pipelineRecord == nullptr) {
         UVE_ERROR("GlCommandBufferUVE: DrawIndexedUVE called without a live pipeline");
         return;
     }
@@ -717,7 +1052,8 @@ void GlCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t 
     if (instanceCount > 1) {
         UVE_WARNING("GlCommandBufferUVE: DrawIndexedUVE instanceCount > 1 is not yet supported - drawing once");
     }
-    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indexCount), GL_UNSIGNED_INT, nullptr);
+    glDrawElements(ToGlDrawModeUVE(pipelineRecord->topology), static_cast<GLsizei>(indexCount),
+                     GL_UNSIGNED_INT, nullptr);
     UVE_GL_CHECK_ERROR_UVE("DrawIndexedUVE");
 }
 
@@ -726,7 +1062,8 @@ void GlCommandBufferUVE::DrawIndexedIndirectUVE(const BufferHandleUVE buffer,
     if (!RequireInsideRenderPassUVE(m_insideRenderPass, "DrawIndexedIndirectUVE")) {
         return;
     }
-    if (FindCurrentPipelineUVE() == nullptr) {
+    const auto* const pipelineRecord = FindCurrentPipelineUVE();
+    if (pipelineRecord == nullptr) {
         UVE_ERROR("GlCommandBufferUVE: DrawIndexedIndirectUVE called without a live pipeline");
         return;
     }
@@ -768,7 +1105,7 @@ void GlCommandBufferUVE::DrawIndexedIndirectUVE(const BufferHandleUVE buffer,
     }
     m_state->gl.glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectIt->second.glBuffer);
     m_state->gl.glDrawElementsIndirect(
-        GL_TRIANGLES, GL_UNSIGNED_INT,
+        ToGlDrawModeUVE(pipelineRecord->topology), GL_UNSIGNED_INT,
         reinterpret_cast<const void*>(static_cast<std::uintptr_t>(offsetBytes)));
     UVE_GL_CHECK_ERROR_UVE("DrawIndexedIndirectUVE");
     // Leave no lingering indirect binding: the buffer's home target is the SSBO one, and a stale
@@ -804,7 +1141,11 @@ void GlCommandBufferUVE::DrawUVE(std::uint32_t vertexCount, std::uint32_t instan
     if (instanceCount > 1) {
         UVE_WARNING("GlCommandBufferUVE: DrawUVE instanceCount > 1 is not yet supported - drawing once");
     }
-    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertexCount));
+    const auto* const drawPipelineRecord = FindCurrentPipelineUVE();
+    const GLenum drawMode = drawPipelineRecord != nullptr
+                                ? ToGlDrawModeUVE(drawPipelineRecord->topology)
+                                : GL_TRIANGLES;
+    glDrawArrays(drawMode, 0, static_cast<GLsizei>(vertexCount));
     UVE_GL_CHECK_ERROR_UVE("DrawUVE");
 }
 

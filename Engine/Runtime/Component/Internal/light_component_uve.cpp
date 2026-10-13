@@ -12,8 +12,8 @@ namespace UVE::Scene {
 }
 
 [[nodiscard]] bool IsLightComponentValidUVE(const LightComponentUVE& light) noexcept {
-    return std::isfinite(light.color.x) && std::isfinite(light.color.y) && std::isfinite(light.color.z) &&
-           light.color.x >= 0.0F && light.color.y >= 0.0F && light.color.z >= 0.0F &&
+    return std::isfinite(light.color.r) && std::isfinite(light.color.g) && std::isfinite(light.color.b) &&
+           light.color.r >= 0.0F && light.color.g >= 0.0F && light.color.b >= 0.0F &&
            std::isfinite(light.intensity) && light.intensity >= 0.0F && IsLightTypeValidUVE(light.type) &&
            std::isfinite(light.range) && light.range > 0.0F && std::isfinite(light.spotAngleDegrees) &&
            light.spotAngleDegrees > 0.0F && light.spotAngleDegrees < 180.0F;

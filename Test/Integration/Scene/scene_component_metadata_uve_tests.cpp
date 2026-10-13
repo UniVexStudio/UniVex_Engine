@@ -41,7 +41,6 @@ namespace UVE::Scene::Tests {
 namespace {
 
 using Core::GetPropertyValueUVE;
-using Core::HasPropertyFlagUVE;
 using Core::SetPropertyValueUVE;
 using Core::TypeMetadataEntryUVE;
 using Core::TypeMetadataPropertyFlagsUVE;
@@ -71,7 +70,7 @@ TEST(SceneComponentMetadataUVETest, EveryDeclarationRegistersAndCarriesItsNative
             // can do anything with it.
             EXPECT_NE(property.getValue, nullptr) << entry.typeId << "." << property.name;
             EXPECT_NE(property.setValue, nullptr) << entry.typeId << "." << property.name;
-            EXPECT_FALSE(property.typeId.empty()) << entry.typeId << "." << property.name;
+            EXPECT_FALSE(property.typeId.IsEmptyUVE()) << entry.typeId << "." << property.name;
         }
     }
 }
@@ -178,7 +177,7 @@ TEST(SceneComponentMetadataUVETest, EntityReferencesAreDeclaredRatherThanRedisco
     ASSERT_NE(visibility, nullptr);
     const TypeMetadataPropertyUVE* visibilityParent = FindPropertyUVE(*visibility, "visibilityParent");
     ASSERT_NE(visibilityParent, nullptr);
-    EXPECT_TRUE(HasPropertyFlagUVE(visibilityParent->flags, TypeMetadataPropertyFlagsUVE::EntityReference));
+    EXPECT_TRUE(visibilityParent->flags.HasUVE(TypeMetadataPropertyFlagsUVE::EntityReference));
     EXPECT_EQ(visibilityParent->customDrawerId, "visibility.parent");
 
     const TypeMetadataEntryUVE* hierarchy =
@@ -186,7 +185,7 @@ TEST(SceneComponentMetadataUVETest, EntityReferencesAreDeclaredRatherThanRedisco
     ASSERT_NE(hierarchy, nullptr);
     const TypeMetadataPropertyUVE* parent = FindPropertyUVE(*hierarchy, "parent");
     ASSERT_NE(parent, nullptr);
-    EXPECT_TRUE(HasPropertyFlagUVE(parent->flags, TypeMetadataPropertyFlagsUVE::EntityReference));
+    EXPECT_TRUE(parent->flags.HasUVE(TypeMetadataPropertyFlagsUVE::EntityReference));
 }
 
 TEST(SceneComponentMetadataUVETest, RotationIsRoutedToACustomDrawerRatherThanWrittenRaw) {
@@ -664,7 +663,7 @@ TEST(SceneComponentMetadataUVETest, ThePlayerSectionCarriesPossessAndLook) {
     ASSERT_NE(FindPropertyUVE(*player, "lookEnabled"), nullptr);
     const TypeMetadataPropertyUVE* pitch = FindPropertyUVE(*player, "pitchDegrees");
     ASSERT_NE(pitch, nullptr);
-    EXPECT_TRUE(HasPropertyFlagUVE(pitch->flags, TypeMetadataPropertyFlagsUVE::RuntimeState));
+    EXPECT_TRUE(pitch->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState));
 }
 
 TEST(SceneComponentMetadataUVETest, TheHealthSectionCarriesMaxInvulnerableAndRuntimeHealth) {
@@ -677,7 +676,7 @@ TEST(SceneComponentMetadataUVETest, TheHealthSectionCarriesMaxInvulnerableAndRun
     ASSERT_NE(FindPropertyUVE(*health, "invulnerable"), nullptr);
     const TypeMetadataPropertyUVE* current = FindPropertyUVE(*health, "health");
     ASSERT_NE(current, nullptr);
-    EXPECT_TRUE(HasPropertyFlagUVE(current->flags, TypeMetadataPropertyFlagsUVE::RuntimeState));
+    EXPECT_TRUE(current->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState));
 }
 
 TEST(SceneComponentMetadataUVETest, TheSpawnPointSectionCarriesTheWholeAuthoredContract) {
@@ -694,7 +693,7 @@ TEST(SceneComponentMetadataUVETest, TheSpawnPointSectionCarriesTheWholeAuthoredC
     for (const char* const name : kAuthored) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*spawn, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+        EXPECT_FALSE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState))
             << name;
     }
 
@@ -738,7 +737,7 @@ TEST(SceneComponentMetadataUVETest, TheLodGroupSectionCarriesTheChainTheMeshesAn
          {"enabled", "levelCount", "hysteresis", "distanceThresholds", "lodMeshGuids"}) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*lod, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+        EXPECT_FALSE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState))
             << name;
         EXPECT_TRUE(property->IsAuthoringWritableUVE()) << name;
     }
@@ -788,7 +787,7 @@ TEST(SceneComponentMetadataUVETest, TheLodGroupSectionCarriesTheChainTheMeshesAn
     for (const char* const name : {"currentLevel", "culledByDistance"}) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*lod, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_TRUE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+        EXPECT_TRUE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState))
             << name;
         EXPECT_FALSE(property->IsAuthoringWritableUVE()) << name;
         EXPECT_FALSE(property->IsSerializedUVE()) << name;
@@ -815,14 +814,14 @@ TEST(SceneComponentMetadataUVETest, TheWorldPartitionSectionCarriesTheVisBudgetA
     for (const char* const name : {"enabled", "cellSize", "maximumLoadedCells"}) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*partition, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+        EXPECT_FALSE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState))
             << name;
         EXPECT_TRUE(property->IsAuthoringWritableUVE()) << name;
     }
 
     const TypeMetadataPropertyUVE* live = FindPropertyUVE(*partition, "loadedCellCount");
     ASSERT_NE(live, nullptr);
-    EXPECT_TRUE(HasPropertyFlagUVE(live->flags, TypeMetadataPropertyFlagsUVE::RuntimeState));
+    EXPECT_TRUE(live->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState));
     EXPECT_FALSE(live->IsAuthoringWritableUVE());
     EXPECT_FALSE(live->IsSerializedUVE());
     EXPECT_EQ(live->section, "Result");
@@ -845,14 +844,14 @@ TEST(SceneComponentMetadataUVETest, TheVisibilityRegionSectionCarriesTheRoomBoxA
     for (const char* const name : {"enabled", "halfExtents", "visibilityLayers"}) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*region, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+        EXPECT_FALSE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState))
             << name;
         EXPECT_TRUE(property->IsAuthoringWritableUVE()) << name;
     }
 
     const TypeMetadataPropertyUVE* active = FindPropertyUVE(*region, "active");
     ASSERT_NE(active, nullptr);
-    EXPECT_TRUE(HasPropertyFlagUVE(active->flags, TypeMetadataPropertyFlagsUVE::RuntimeState));
+    EXPECT_TRUE(active->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState));
     EXPECT_FALSE(active->IsAuthoringWritableUVE());
     EXPECT_FALSE(active->IsSerializedUVE());
     EXPECT_EQ(active->section, "Result");
@@ -899,21 +898,21 @@ TEST(SceneComponentMetadataUVETest, TheBoneAttachmentSectionDeclaresTheReference
 
     const TypeMetadataPropertyUVE* skeleton = FindPropertyUVE(*entry, "skeleton");
     ASSERT_NE(skeleton, nullptr);
-    EXPECT_TRUE(HasPropertyFlagUVE(skeleton->flags, TypeMetadataPropertyFlagsUVE::EntityReference));
+    EXPECT_TRUE(skeleton->flags.HasUVE(TypeMetadataPropertyFlagsUVE::EntityReference));
     EXPECT_EQ(skeleton->typeId, kPropertyTypeEntityUVE);
-    EXPECT_FALSE(HasPropertyFlagUVE(skeleton->flags, TypeMetadataPropertyFlagsUVE::RuntimeState));
+    EXPECT_FALSE(skeleton->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState));
 
     const char* const kAuthored[] = {"enabled",     "boneName",      "boneIndex",
                                      "localPosition", "localRotation", "localScale"};
     for (const char* const name : kAuthored) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*entry, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
+        EXPECT_FALSE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
     }
     for (const char* const name : {"bound", "resolvedBoneIndex"}) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*entry, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_TRUE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
+        EXPECT_TRUE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
     }
 
     // The bone index defaults to "ask the name": that is the sentinel the pass reads, so a component
@@ -953,9 +952,9 @@ TEST(SceneComponentMetadataUVETest, TheTwoBoneIKSectionDeclaresThreeReferencesTh
     for (const char* const name : {"skeleton", "target", "poleTarget"}) {
         const TypeMetadataPropertyUVE* reference = FindPropertyUVE(*entry, name);
         ASSERT_NE(reference, nullptr) << name;
-        EXPECT_TRUE(HasPropertyFlagUVE(reference->flags, TypeMetadataPropertyFlagsUVE::EntityReference)) << name;
+        EXPECT_TRUE(reference->flags.HasUVE(TypeMetadataPropertyFlagsUVE::EntityReference)) << name;
         EXPECT_EQ(reference->typeId, kPropertyTypeEntityUVE) << name;
-        EXPECT_FALSE(HasPropertyFlagUVE(reference->flags, TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
+        EXPECT_FALSE(reference->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
     }
 
     const char* const kAuthored[] = {"enabled",         "rootBoneName",    "rootBoneIndex",
@@ -964,13 +963,13 @@ TEST(SceneComponentMetadataUVETest, TheTwoBoneIKSectionDeclaresThreeReferencesTh
     for (const char* const name : kAuthored) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*entry, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
+        EXPECT_FALSE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
     }
     for (const char* const name : {"solved", "reached", "endToTargetDistanceMetres", "resolvedRootBoneIndex",
                                    "resolvedMiddleBoneIndex", "resolvedEndBoneIndex"}) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*entry, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_TRUE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
+        EXPECT_TRUE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
     }
 
     // Every bone index defaults to "ask the name": the sentinel the pass reads, so a chain nobody has
@@ -1009,7 +1008,7 @@ TEST(SceneComponentMetadataUVETest, TheDecalResultSectionShowsTheCountdownWithou
     for (const char* const name : {"remainingLifetime", "expired"}) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*decal, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_TRUE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+        EXPECT_TRUE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState))
             << name;
         EXPECT_FALSE(property->IsAuthoringWritableUVE()) << name;
         EXPECT_FALSE(property->IsSerializedUVE()) << name;
@@ -1020,7 +1019,7 @@ TEST(SceneComponentMetadataUVETest, TheDecalResultSectionShowsTheCountdownWithou
     // The authored half stays authoring's: the lifetime is the input the countdown is derived from.
     const TypeMetadataPropertyUVE* lifetime = FindPropertyUVE(*decal, "lifetime");
     ASSERT_NE(lifetime, nullptr);
-    EXPECT_FALSE(HasPropertyFlagUVE(lifetime->flags, TypeMetadataPropertyFlagsUVE::RuntimeState));
+    EXPECT_FALSE(lifetime->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState));
     EXPECT_TRUE(lifetime->IsAuthoringWritableUVE());
 }
 
@@ -1037,7 +1036,7 @@ TEST(SceneComponentMetadataUVETest, TheRayCastSectionCarriesWhatTheRayIsAndWhatI
     for (const char* const name : {"enabled", "direction", "length", "collisionMask", "exclusions"}) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*rayCast, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+        EXPECT_FALSE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState))
             << name;
         EXPECT_TRUE(property->IsAuthoringWritableUVE()) << name;
     }
@@ -1080,7 +1079,7 @@ TEST(SceneComponentMetadataUVETest, TheRayCastSectionCarriesWhatTheRayIsAndWhatI
     for (const char* const name : {"hit", "hitEntity", "hitPosition", "hitNormal"}) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*rayCast, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_TRUE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+        EXPECT_TRUE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState))
             << name;
         EXPECT_FALSE(property->IsAuthoringWritableUVE()) << name;
         EXPECT_FALSE(property->IsSerializedUVE()) << name;
@@ -1101,7 +1100,7 @@ TEST(SceneComponentMetadataUVETest, TheProjectileSectionCarriesItsHitContractAnd
           "hitPolicy", "restitution", "friction"}) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*projectile, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+        EXPECT_FALSE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState))
             << name;
         EXPECT_TRUE(property->IsAuthoringWritableUVE()) << name;
     }
@@ -1114,7 +1113,7 @@ TEST(SceneComponentMetadataUVETest, TheProjectileSectionCarriesItsHitContractAnd
     const TypeMetadataPropertyUVE* ignoreEntity = FindPropertyUVE(*projectile, "ignoreEntity");
     ASSERT_NE(ignoreEntity, nullptr);
     EXPECT_EQ(ignoreEntity->typeId, kPropertyTypeEntityUVE);
-    EXPECT_TRUE(HasPropertyFlagUVE(ignoreEntity->flags, TypeMetadataPropertyFlagsUVE::EntityReference));
+    EXPECT_TRUE(ignoreEntity->flags.HasUVE(TypeMetadataPropertyFlagsUVE::EntityReference));
     EXPECT_TRUE(ignoreEntity->IsAuthoringWritableUVE());
 
     // The policy is an enum with exactly the two motions the engine can execute, and a generic
@@ -1153,7 +1152,7 @@ TEST(SceneComponentMetadataUVETest, TheProjectileSectionCarriesItsHitContractAnd
          {"remainingLifetime", "hit", "hitEntity", "hitPosition", "hitNormal", "impactSpeed", "bounceCount"}) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*projectile, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_TRUE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+        EXPECT_TRUE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState))
             << name;
         EXPECT_FALSE(property->IsAuthoringWritableUVE()) << name;
         EXPECT_FALSE(property->IsSerializedUVE()) << name;
@@ -1194,7 +1193,7 @@ TEST(SceneComponentMetadataUVETest, TheCombatSectionsCarryTheStrikeContractAndIt
         for (const TypeMetadataEntryUVE* const entry : {hitbox, hurtbox}) {
             const TypeMetadataPropertyUVE* property = FindPropertyUVE(*entry, name);
             ASSERT_NE(property, nullptr) << entry->typeId << "." << name;
-            EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+            EXPECT_FALSE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState))
                 << name;
             EXPECT_TRUE(property->IsAuthoringWritableUVE()) << name;
         }
@@ -1220,7 +1219,7 @@ TEST(SceneComponentMetadataUVETest, TheCombatSectionsCarryTheStrikeContractAndIt
         const TypeMetadataPropertyUVE* ignoreEntity = FindPropertyUVE(*entry, "ignoreEntity");
         ASSERT_NE(ignoreEntity, nullptr) << entry->typeId;
         EXPECT_EQ(ignoreEntity->typeId, kPropertyTypeEntityUVE);
-        EXPECT_TRUE(HasPropertyFlagUVE(ignoreEntity->flags, TypeMetadataPropertyFlagsUVE::EntityReference));
+        EXPECT_TRUE(ignoreEntity->flags.HasUVE(TypeMetadataPropertyFlagsUVE::EntityReference));
         EXPECT_TRUE(ignoreEntity->IsAuthoringWritableUVE());
     }
 
@@ -1231,7 +1230,7 @@ TEST(SceneComponentMetadataUVETest, TheCombatSectionsCarryTheStrikeContractAndIt
     for (const TypeMetadataPropertyUVE& property : hitbox->properties) {
         if (property.name == "strikeCount" || property.name == "strikesTruncated" ||
             property.name == "struckCount") {
-            EXPECT_TRUE(HasPropertyFlagUVE(property.flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+            EXPECT_TRUE(property.flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState))
                 << property.name;
             EXPECT_FALSE(property.IsAuthoringWritableUVE()) << property.name;
             EXPECT_FALSE(property.IsSerializedUVE()) << property.name;
@@ -1244,7 +1243,7 @@ TEST(SceneComponentMetadataUVETest, TheCombatSectionsCarryTheStrikeContractAndIt
     for (const TypeMetadataPropertyUVE& property : hurtbox->properties) {
         if (property.name == "hitCount" || property.name == "hitsTruncated" ||
             property.name == "receivedCount") {
-            EXPECT_TRUE(HasPropertyFlagUVE(property.flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+            EXPECT_TRUE(property.flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState))
                 << property.name;
             EXPECT_FALSE(property.IsAuthoringWritableUVE()) << property.name;
             EXPECT_FALSE(property.IsSerializedUVE()) << property.name;
@@ -1292,11 +1291,11 @@ TEST(SceneComponentMetadataUVETest, TheInteractionAreaSectionCarriesIgnoreAndRun
     }
     const TypeMetadataPropertyUVE* ignoreEntity = FindPropertyUVE(*area, "ignoreEntity");
     ASSERT_NE(ignoreEntity, nullptr);
-    EXPECT_TRUE(HasPropertyFlagUVE(ignoreEntity->flags, TypeMetadataPropertyFlagsUVE::EntityReference));
+    EXPECT_TRUE(ignoreEntity->flags.HasUVE(TypeMetadataPropertyFlagsUVE::EntityReference));
     for (const char* const name : {"interactorCount", "interactorsTruncated", "focusedByPrimaryInteractor"}) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*area, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_TRUE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
+        EXPECT_TRUE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
         EXPECT_FALSE(property->IsAuthoringWritableUVE()) << name;
         EXPECT_EQ(property->section, "Result");
     }
@@ -1320,7 +1319,7 @@ TEST(SceneComponentMetadataUVETest, TheArea3DSectionCarriesSpaceOverrideAndOccup
           "angularDampOverride", "angularDamp"}) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*area, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+        EXPECT_FALSE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState))
             << name;
         EXPECT_TRUE(property->IsAuthoringWritableUVE()) << name;
     }
@@ -1335,7 +1334,7 @@ TEST(SceneComponentMetadataUVETest, TheArea3DSectionCarriesSpaceOverrideAndOccup
           "overlappingAreasTruncated"}) {
         const TypeMetadataPropertyUVE* property = FindPropertyUVE(*area, name);
         ASSERT_NE(property, nullptr) << name;
-        EXPECT_TRUE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+        EXPECT_TRUE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState))
             << name;
         EXPECT_FALSE(property->IsAuthoringWritableUVE()) << name;
     }
@@ -1346,6 +1345,21 @@ TEST(SceneComponentMetadataUVETest, TheArea3DSectionCarriesSpaceOverrideAndOccup
     AreaComponentUVE unknownMode{};
     unknownMode.gravityOverride = static_cast<AreaSpaceOverrideModeUVE>(9U);
     EXPECT_FALSE(area->isInstanceValid(&unknownMode));
+}
+
+TEST(SceneComponentMetadataUVETest, EveryComponentEntryNamesItsCppType) {
+    // Auto-discovery joins the registry to the serializer's component table on cppName: an
+    // entry without one is invisible to generic serialization, and a duplicate would fight
+    // over one table slot. This is the drift guard for both.
+    const Core::TypeMetadataRegistryUVE& registry = GetSceneComponentMetadataRegistryUVE();
+    std::vector<std::string> names;
+    for (const TypeMetadataEntryUVE& entry : registry.GetSnapshotUVE().entries) {
+        EXPECT_FALSE(entry.cppName.empty()) << entry.typeId;
+        names.push_back(entry.cppName);
+    }
+    ASSERT_FALSE(names.empty());
+    std::sort(names.begin(), names.end());
+    EXPECT_EQ(std::adjacent_find(names.begin(), names.end()), names.end());
 }
 
 } // namespace

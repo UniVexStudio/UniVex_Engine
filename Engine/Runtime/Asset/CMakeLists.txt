@@ -69,6 +69,7 @@ endif()
 add_library(uve_asset STATIC
     Internal/asset_guid_uve.cpp
     Internal/audio_asset_uve.cpp
+    Internal/font_asset_uve.cpp
     Internal/uve_file_envelope_uve.cpp
     Internal/asset_database_uve.cpp
     Internal/legacy_extension_migration_uve.cpp
@@ -92,6 +93,7 @@ add_library(uve_asset STATIC
     Internal/bmp_metadata_uve.cpp
     Internal/tga_importer_uve.cpp
     Internal/tga_metadata_uve.cpp
+    Internal/ttf_importer_uve.cpp
     Internal/png_importer_uve.cpp
     Internal/png_metadata_uve.cpp
     Internal/jpeg_importer_uve.cpp
@@ -105,6 +107,8 @@ add_library(uve_asset STATIC
     Internal/gltf_mesh_converter_uve.cpp
     Internal/gltf_metadata_uve.cpp
     Internal/gltf_skeleton_uve.cpp
+    Internal/gltf_skin_converter_uve.cpp
+    Internal/gltf_animation_converter_uve.cpp
     Internal/mtl_importer_uve.cpp
     Internal/mtl_material_converter_uve.cpp
     Internal/mtl_metadata_uve.cpp
@@ -116,6 +120,8 @@ add_library(uve_asset STATIC
     Internal/derived_artifact_cache_uve.cpp
     Internal/resource_dependency_graph_uve.cpp
     Internal/animation_clip_asset_uve.cpp
+    Internal/skeleton_asset_uve.cpp
+    Internal/animation_library_asset_uve.cpp
     Internal/data_table_uve.cpp
     Internal/data_table_asset_uve.cpp
     Internal/data_table_asset_manager_uve.cpp

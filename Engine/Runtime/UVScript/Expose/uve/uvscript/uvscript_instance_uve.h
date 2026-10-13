@@ -45,6 +45,10 @@ public:
     /// Calls `fn name(args)` and returns its result, or nothing on an error or unknown function.
     std::optional<ValueUVE> CallUVE(std::string_view name, std::span<const ValueUVE> args = {});
 
+    /// Whether `fn name` takes `argc` values (what CallUVE would run). The engine asks before
+    /// routing a cross-node call at a script, so a missing method falls through to built-ins.
+    [[nodiscard]] bool HasFunctionUVE(std::string_view name, std::size_t argc) const noexcept;
+
     [[nodiscard]] std::optional<ValueUVE> GetFieldUVE(std::string_view name) const;
     /// Sets an `export` or `var` field (the Inspector's edits). False for a const, an unknown field or
     /// a value of the wrong type.

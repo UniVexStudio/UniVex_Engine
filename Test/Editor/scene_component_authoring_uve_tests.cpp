@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <filesystem>
 #include <limits>
 #include <string>
 
@@ -7,6 +8,7 @@
 
 #include "Support/test_scratch_uve.h"
 
+#include "uve/asset/animation_library_asset_uve.h"
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/core/engine_core_uve.h"
 #include "uve/editor/editor_uve.h"
@@ -181,15 +183,15 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_UIComponentsAd
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::UIImageComponentUVE>(entity).textureAssetGuid.value, 0x3030U);
 
         Scene::UIButtonComponentUVE button{};
-        button.sizePixels = Math::Vector2UVE{200.0F, 48.0F};
+        button.rect.size = Math::Vector2UVE{200.0F, 48.0F};
         ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::UIButton, button));
-        EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(entity).sizePixels.x, 200.0F);
+        EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(entity).rect.size.x, 200.0F);
 
         ASSERT_TRUE(editor.RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::UIButton));
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(entity));
         ASSERT_TRUE(editor.UndoUVE());
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(entity));
-        EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(entity).sizePixels.x, 200.0F);
+        EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(entity).rect.size.x, 200.0F);
         ASSERT_TRUE(editor.RedoUVE());
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(entity));
 
@@ -240,6 +242,109 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_RejectsInvalid
         invalidAnimation.speed = std::numeric_limits<float>::quiet_NaN();
         EXPECT_FALSE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::AnimationSequencer, invalidAnimation));
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(entity));
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(SceneComponentAuthoringUVETest, AnimationLibraryExportImportRoundTripsThePlayerListInOneUndoStep) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("sequencer_library_roundtrip");
+    Core::EngineCoreUVE engine(MakeSceneComponentAuthoringTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_sequencer_library.uvscene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE entity = editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Empty);
+        ASSERT_TRUE(entityManager.IsAliveUVE(entity));
+
+        Scene::AnimationSequencerComponentUVE animation;
+        animation.clip = Asset::AssetGuidUVE{0xA11CEU};
+        animation.library = {Asset::AssetGuidUVE{0xA11CEU}, Asset::AssetGuidUVE{0xB22CEU}};
+        ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::AnimationSequencer, animation));
+
+        const std::filesystem::path libraryPath = root / "Player Library.uvanimlib";
+        EXPECT_TRUE(editor.ExportAnimationSequencerToLibraryUVE(entity, libraryPath));
+        Asset::AnimationLibraryAssetUVE library;
+        ASSERT_TRUE(Asset::LoadAnimationLibraryAssetUVE(libraryPath, library));
+        ASSERT_EQ(library.entries.size(), 2U);
+        EXPECT_EQ(library.entries[0].clip.value, 0xA11CEU);
+        EXPECT_EQ(library.entries[1].clip.value, 0xB22CEU);
+        // The GUIDs are made up and resolve to nothing: they keep their GUIDs under a
+        // "(missing)" name, so importing back restores the exact same list.
+        EXPECT_EQ(library.entries[0].name, "(missing)");
+
+        // Clear the player through the real edit funnel, import the file back, and prove the
+        // whole import lands as a single undo step.
+        ASSERT_TRUE(editor.EditAnimationSequencerUVE(entity, [](Scene::AnimationSequencerComponentUVE& component) {
+            component.library.clear();
+            component.clip = Asset::AssetGuidUVE{};
+        }));
+        EXPECT_TRUE(editor.ImportAnimationLibraryIntoSequencerUVE(entity, libraryPath));
+        const Scene::AnimationSequencerComponentUVE& imported =
+            entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(entity);
+        EXPECT_EQ(imported.library.size(), 2U);
+        EXPECT_EQ(imported.clip.value, 0xA11CEU);
+        EXPECT_FALSE(editor.ImportAnimationLibraryIntoSequencerUVE(entity, libraryPath)); // nothing new
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(entity).library.empty());
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(SceneComponentAuthoringUVETest, AnimationLibraryLinkUnlinkAreUndoStepsAndMergeDedupesInOrder) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("sequencer_library_link");
+    Asset::AnimationLibraryAssetUVE file;
+    file.libraryId = "Link";
+    file.entries.push_back({Asset::AssetGuidUVE{0xB22CEU}, "Clip B"});
+    file.entries.push_back({Asset::AssetGuidUVE{0xC33CEU}, "Clip C"});
+    const std::filesystem::path libraryPath = root / "Link.uvanimlib";
+    ASSERT_TRUE(Asset::SaveAnimationLibraryAssetUVE(file, libraryPath));
+
+    Core::EngineCoreUVE engine(MakeSceneComponentAuthoringTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_sequencer_library_link.uvscene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE entity = editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Empty);
+        ASSERT_TRUE(entityManager.IsAliveUVE(entity));
+
+        Scene::AnimationSequencerComponentUVE animation;
+        animation.clip = Asset::AssetGuidUVE{0xA11CEU};
+        animation.library = {Asset::AssetGuidUVE{0xA11CEU}};
+        ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::AnimationSequencer, animation));
+
+        EXPECT_TRUE(editor.LinkAnimationLibraryToSequencerUVE(entity, libraryPath));
+        const Asset::AssetGuidUVE linked =
+            entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(entity).libraryRef;
+        EXPECT_NE(linked, Asset::AssetGuidUVE{});
+        EXPECT_EQ(engine.GetServicesUVE().GetAssetDatabaseUVE().ResolveUVE(linked).filename().string(), "Link.uvanimlib");
+
+        EXPECT_TRUE(editor.UnlinkAnimationLibraryFromSequencerUVE(entity));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(entity).libraryRef,
+                  Asset::AssetGuidUVE{});
+        EXPECT_FALSE(editor.UnlinkAnimationLibraryFromSequencerUVE(entity)); // nothing to unlink
+
+        ASSERT_TRUE(editor.UndoUVE()); // the unlink goes: linked again
+        EXPECT_NE(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(entity).libraryRef,
+                  Asset::AssetGuidUVE{});
+        ASSERT_TRUE(editor.UndoUVE()); // the link goes: unlinked again
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(entity).libraryRef,
+                  Asset::AssetGuidUVE{});
+
+        // The merge the picker offers: owned, the clip first when unlisted, then linked in order.
+        const std::vector<Asset::AssetGuidUVE> owned{Asset::AssetGuidUVE{0xA11CEU}, Asset::AssetGuidUVE{0xB22CEU}};
+        const std::vector<Asset::AssetGuidUVE> linkedClips{Asset::AssetGuidUVE{0xB22CEU}, Asset::AssetGuidUVE{0xD44DEU}};
+        EXPECT_EQ(EditorUVE::MergeSequencerClipListsUVE(owned, Asset::AssetGuidUVE{0xC33CEU}, linkedClips),
+                  (std::vector<Asset::AssetGuidUVE>{Asset::AssetGuidUVE{0xC33CEU}, Asset::AssetGuidUVE{0xA11CEU},
+                                                    Asset::AssetGuidUVE{0xB22CEU}, Asset::AssetGuidUVE{0xD44DEU}}));
+        EXPECT_TRUE(EditorUVE::MergeSequencerClipListsUVE({}, Asset::AssetGuidUVE{}, {}).empty());
 
         editor.ShutdownUVE();
     }

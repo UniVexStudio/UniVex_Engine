@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -55,7 +56,14 @@ public:
     static constexpr int kFirstCharUVE = 0x20;
     static constexpr int kCharCountUVE = 0x7F - 0x20;
 
+    /// Bakes the embedded engine font (`GetEmbeddedUIFontBytesUVE()`): the default behind every
+    /// existing call site.
     UIFontAtlasUVE();
+
+    /// Bakes `fontBytes` (raw TTF/OTF, e.g. a `FontAssetUVE`'s payload) instead of the embedded
+    /// font. Unparseable bytes fail closed: the atlas reports `!IsValidUVE()` with an empty
+    /// bitmap and no glyphs, exactly as a failed bake always has.
+    explicit UIFontAtlasUVE(std::span<const std::uint8_t> fontBytes);
 
     [[nodiscard]] bool IsValidUVE() const noexcept { return m_valid; }
 
@@ -75,6 +83,12 @@ public:
     /// text stands `fontSizePixels` tall regardless of the baked reference size.
     void AppendTextQuadsUVE(std::string_view text, float& cursorX, float& cursorY, float fontSizePixels,
                              std::vector<UIGlyphQuadUVE>& outQuads) const;
+
+    /// The horizontal advance of `text` at `fontSizePixels`: the same per-glyph advance sum
+    /// AppendTextQuadsUVE walks the pen by, so measured width and drawn width agree by
+    /// construction. Unrenderable characters contribute nothing on either side; an invalid atlas
+    /// or a non-positive size measures zero.
+    [[nodiscard]] float MeasureTextWidthUVE(std::string_view text, float fontSizePixels) const noexcept;
 
 private:
     bool m_valid = false;

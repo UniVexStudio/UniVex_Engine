@@ -19,6 +19,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <GL/gl.h>
@@ -69,6 +70,7 @@
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
+#include "uve/gameplay/pawn_uve.h"
 #include "uve/component/solid_body_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/asset/uve_file_envelope_uve.h"
@@ -83,6 +85,8 @@
 #include "uve/objects/3d/two_bone_ik_3d_uve.h"
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
+#include "uve/gameplay/health_events_uve.h"
+#include "uve/objects/3d/health_uve.h"
 #include "uve/objects/3d/decal_3d_events_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/nav_mesh_volume_3d_uve.h"
@@ -1658,7 +1662,7 @@ TEST(EngineCoreUVETest, CameraSystem_ReachableAndComputesViewProjectionAfterInit
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, LightSystem_ReachableAndReturnsSentinelWithNoLightEntityAfterInit) {
+TEST(EngineCoreUVETest, LightSystem_ReachableAndReturnsEmptyListWithNoLightEntityAfterInit) {
     EngineCoreUVE engine(MakeTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
@@ -1666,9 +1670,8 @@ TEST(EngineCoreUVETest, LightSystem_ReachableAndReturnsSentinelWithNoLightEntity
     Render::ILightSystemUVE& lightSystem = engine.GetServicesUVE().GetLightSystemUVE();
     const Render::LightListUVE lights =
         lightSystem.ExtractActiveLightsUVE(engine.GetServicesUVE().GetEntityManagerUVE());
-    for (const Render::LightDataUVE& slot : lights) {
-        EXPECT_FLOAT_EQ(slot.intensity, 0.0F);
-    }
+    EXPECT_TRUE(lights.EmptyUVE());
+    EXPECT_EQ(lights.SizeUVE(), 0U);
 
     engine.Shutdown();
 }
@@ -2062,6 +2065,15 @@ TEST(EngineCoreUVETest, CharacterController_FallsUnderGravityLandsOnGroundThenJu
     sceneGraph.AttachTransformUVE(entityManager, entity, local);
     entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity, Scene::ColliderComponentUVE{});
     entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+
+    // Character input is routed through a mutually possessed player controller; an unpossessed
+    // CharacterController intentionally stands still even while the keyboard is active.
+    entityManager.AddComponentUVE<Scene::PawnComponentUVE>(entity);
+    const Scene::EntityUVE playerController = entityManager.CreateEntityUVE();
+    Scene::ControllerComponentUVE controller;
+    controller.kind = Scene::ControllerKindUVE::Player;
+    entityManager.AddComponentUVE<Scene::ControllerComponentUVE>(playerController, controller);
+    ASSERT_TRUE(Scene::PossessControllerUVE(entityManager, playerController, entity));
 
     for (int frame = 0; frame < 400; ++frame) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
@@ -3664,14 +3676,15 @@ TEST(EngineCoreUVETest, WindowedMode_UIOverlayRendersAuthoredUIAndRegistersAReal
 
     const Scene::EntityUVE imageEntity = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(
-        imageEntity, Scene::UIImageComponentUVE{Asset::AssetGuidUVE{}, Math::Vector2UVE{10.0F, 10.0F},
-                                                 Math::Vector2UVE{20.0F, 20.0F}, Math::Vector3UVE{0.90F, 0.10F, 0.10F},
-                                                 1.0F});
+        imageEntity, Scene::UIImageComponentUVE{Asset::AssetGuidUVE{},
+                                                 Math::RectUVE{Math::Vector2UVE{10.0F, 10.0F},
+                                                               Math::Vector2UVE{20.0F, 20.0F}},
+                                                 Math::Vector3UVE{0.90F, 0.10F, 0.10F}, 1.0F});
 
     const Scene::EntityUVE buttonEntity = entityManager.CreateEntityUVE();
     Scene::UIButtonComponentUVE buttonComponent{};
-    buttonComponent.positionPixels = Math::Vector2UVE{60.0F, 10.0F};
-    buttonComponent.sizePixels = Math::Vector2UVE{40.0F, 20.0F};
+    buttonComponent.rect.position = Math::Vector2UVE{60.0F, 10.0F};
+    buttonComponent.rect.size = Math::Vector2UVE{40.0F, 20.0F};
     buttonComponent.normalColor = Math::Vector3UVE{0.10F, 0.85F, 0.10F};
     buttonComponent.hoverColor = Math::Vector3UVE{0.10F, 0.10F, 0.85F};
     buttonComponent.pressedColor = Math::Vector3UVE{0.85F, 0.85F, 0.10F};
@@ -3814,7 +3827,7 @@ TEST(EngineCoreUVETest, SetEditorViewportRegionUVE_DrivesRenderTargetToRegionNot
 
     // A region clearly smaller than, and offset within, the window - proves the target tracks the
     // region's own dimensions ("very narrow"/"resized side panels" editor layouts), not the window.
-    engine.SetEditorViewportRegionUVE(Render::ViewportRectUVE{20U, 10U, 90U, 60U});
+    engine.SetEditorViewportRegionUVE(Render::ViewportRectUVE{Math::Vector2iUVE{20, 10}, Math::Vector2iUVE{90, 60}});
     engine.TickFrameUVE();
     const Render::Renderer3DFrameDiagnosticsUVE regionDrivenDiagnostics =
         services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
@@ -3915,7 +3928,7 @@ TEST(EngineCoreUVETest, SetEditorViewportRegionUVE_HandlesVeryNarrowAndVeryWideR
     engine.SetActiveCameraUVE(camera);
 
     // Very narrow: a 10px-wide sliver on the right (e.g. a Scene panel dragged nearly closed).
-    engine.SetEditorViewportRegionUVE(Render::ViewportRectUVE{180U, 0U, 10U, 150U});
+    engine.SetEditorViewportRegionUVE(Render::ViewportRectUVE{Math::Vector2iUVE{180, 0}, Math::Vector2iUVE{10, 150}});
     engine.TickFrameUVE();
     const Render::Renderer3DFrameDiagnosticsUVE narrowDiagnostics =
         services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
@@ -3924,7 +3937,7 @@ TEST(EngineCoreUVETest, SetEditorViewportRegionUVE_HandlesVeryNarrowAndVeryWideR
 
     // Very wide/short: the full width, a thin 8px strip in height (e.g. a bottom dock nearly
     // maximized over the viewport).
-    engine.SetEditorViewportRegionUVE(Render::ViewportRectUVE{0U, 0U, 200U, 8U});
+    engine.SetEditorViewportRegionUVE(Render::ViewportRectUVE{Math::Vector2iUVE{0, 0}, Math::Vector2iUVE{200, 8}});
     engine.TickFrameUVE();
     const Render::Renderer3DFrameDiagnosticsUVE wideDiagnostics =
         services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
@@ -5291,6 +5304,217 @@ TEST(EngineCoreUVETest, VisibilityRegion3D_NoViewersAtAllFailsOpenWithActiveRegi
     EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
                     content)
                     .live);
+}
+
+
+[[nodiscard]] Scene::EntityUVE MakeLagShooterUVE(Scene::IEntityManagerUVE& entityManager,
+                                                 Scene::ISceneGraphUVE& sceneGraph,
+                                                 const Math::Vector3UVE& position) {
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform{};
+    transform.localPosition = position;
+    sceneGraph.AttachTransformUVE(entityManager, entity, transform);
+    Scene::Hitbox3DComponentUVE hitbox{};
+    hitbox.halfExtents = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+    hitbox.damageChannel = "melee";
+    entityManager.AddComponentUVE<Scene::Hitbox3DComponentUVE>(entity, hitbox);
+    return entity;
+}
+
+[[nodiscard]] Scene::EntityUVE MakeLagTargetUVE(Scene::IEntityManagerUVE& entityManager,
+                                               Scene::ISceneGraphUVE& sceneGraph,
+                                               const Math::Vector3UVE& position) {
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform{};
+    transform.localPosition = position;
+    sceneGraph.AttachTransformUVE(entityManager, entity, transform);
+    Scene::Hurtbox3DComponentUVE hurtbox{};
+    hurtbox.halfExtents = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+    hurtbox.damageChannel = "melee";
+    entityManager.AddComponentUVE<Scene::Hurtbox3DComponentUVE>(entity, hurtbox);
+    entityManager.AddComponentUVE<Scene::HealthComponentUVE>(entity, Scene::HealthComponentUVE{});
+    return entity;
+}
+
+void MoveLagEntityUVE(Scene::IEntityManagerUVE& entityManager,
+                      Scene::ISceneGraphUVE& sceneGraph, const Scene::EntityUVE entity,
+                      const Math::Vector3UVE& position) {
+    Scene::TransformComponentUVE transform =
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+    transform.localPosition = position;
+    sceneGraph.SetLocalTransformUVE(entityManager, entity, transform);
+}
+
+[[nodiscard]] float HealthOfUVE(Scene::IEntityManagerUVE& entityManager,
+                               const Scene::EntityUVE entity) {
+    return entityManager.GetComponentUVE<Scene::HealthComponentUVE>(entity).health;
+}
+
+TEST(EngineCoreUVETest, LagTick_RecordsEveryFrame) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    // 1-based engine frames: nothing recorded before the first sync.
+    EXPECT_EQ(engine.GetLagTickUVE(), 0U);
+    EXPECT_EQ(engine.GetLagCompensatorUVE().HistorySizeUVE(), 0U);
+    engine.TickFrameUVE();
+    engine.TickFrameUVE();
+    engine.TickFrameUVE();
+    EXPECT_EQ(engine.GetLagTickUVE(), 3U);
+    EXPECT_EQ(engine.GetLagCompensatorUVE().HistorySizeUVE(), 3U);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, LagShot_MergedBeforeTrackerDamages) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE shooter =
+        MakeLagShooterUVE(entityManager, sceneGraph, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    const Scene::EntityUVE target =
+        MakeLagTargetUVE(entityManager, sceneGraph, Math::Vector3UVE{1.5F, 0.0F, 0.0F});
+
+    // Frame 1 records the overlap - and live-hits it the same frame (entered, 100 -> 99).
+    engine.TickFrameUVE();
+    ASSERT_EQ(engine.GetLagTickUVE(), 1U);
+    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 99.0F);
+
+    // Escape: frame 2 records the miss, and the live strike exits without further damage.
+    MoveLagEntityUVE(entityManager, sceneGraph, target, Math::Vector3UVE{20.0F, 0.0F, 0.0F});
+    engine.TickFrameUVE();
+    ASSERT_EQ(engine.GetLagTickUVE(), 2U);
+    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 99.0F);
+
+    // The lagged shot, resolved against tick 1 through the engine's own compensator...
+    Physics::LagShotReportUVE compensated =
+        engine.GetLagCompensatorUVE().ResolveShotUVE(shooter, 1U, entityManager);
+    ASSERT_EQ(compensated.pairs.size(), 1U);
+
+    // ...re-enters on frame 3 exactly like a live strike: damage plus the typed event.
+    std::vector<Gameplay::HealthDamagedEventUVE> damaged;
+    const Events::EventSubscriptionUVE damagedSub =
+        services.GetEventSystemUVE().Subscribe<Gameplay::HealthDamagedEventUVE>(
+            [&](const Gameplay::HealthDamagedEventUVE& event) { damaged.push_back(event); });
+    static_cast<void>(damagedSub);
+    engine.SubmitLagShotUVE(std::move(compensated));
+    engine.TickFrameUVE();
+    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 98.0F);
+    services.GetEventSystemUVE().DispatchQueuedUVE();
+    ASSERT_EQ(damaged.size(), 1U);
+    EXPECT_EQ(damaged[0].hurtbox, target);
+    EXPECT_EQ(damaged[0].hitbox, shooter);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, LagShot_ReplayedSubmitStaysSilent) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE shooter =
+        MakeLagShooterUVE(entityManager, sceneGraph, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    const Scene::EntityUVE target =
+        MakeLagTargetUVE(entityManager, sceneGraph, Math::Vector3UVE{1.5F, 0.0F, 0.0F});
+    engine.TickFrameUVE();
+    MoveLagEntityUVE(entityManager, sceneGraph, target, Math::Vector3UVE{20.0F, 0.0F, 0.0F});
+    engine.TickFrameUVE();
+    ASSERT_FLOAT_EQ(HealthOfUVE(entityManager, target), 99.0F);
+
+    std::vector<Gameplay::HealthDamagedEventUVE> damaged;
+    const Events::EventSubscriptionUVE damagedSub =
+        services.GetEventSystemUVE().Subscribe<Gameplay::HealthDamagedEventUVE>(
+            [&](const Gameplay::HealthDamagedEventUVE& event) { damaged.push_back(event); });
+    static_cast<void>(damagedSub);
+
+    // Frame 3 re-enters compensated (99 -> 98); frame 4 replays the same report - the pair
+    // is already active, so the merge stays silent.
+    engine.SubmitLagShotUVE(
+        engine.GetLagCompensatorUVE().ResolveShotUVE(shooter, 1U, entityManager));
+    engine.TickFrameUVE();
+    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 98.0F);
+    engine.SubmitLagShotUVE(
+        engine.GetLagCompensatorUVE().ResolveShotUVE(shooter, 1U, entityManager));
+    engine.TickFrameUVE();
+    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 98.0F);
+
+    services.GetEventSystemUVE().DispatchQueuedUVE();
+    EXPECT_EQ(damaged.size(), 1U);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, LagShot_EmptyHistoryResolvesEmpty) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE shooter =
+        MakeLagShooterUVE(entityManager, sceneGraph, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    const Scene::EntityUVE target =
+        MakeLagTargetUVE(entityManager, sceneGraph, Math::Vector3UVE{20.0F, 0.0F, 0.0F});
+
+    // No frames ran, so no history exists: the resolve is empty, and submitting it is a
+    // no-op the first real frame shrugs off.
+    Physics::LagShotReportUVE empty =
+        engine.GetLagCompensatorUVE().ResolveShotUVE(shooter, 5U, entityManager);
+    EXPECT_TRUE(empty.pairs.empty());
+    std::vector<Gameplay::HealthDamagedEventUVE> damaged;
+    const Events::EventSubscriptionUVE damagedSub =
+        services.GetEventSystemUVE().Subscribe<Gameplay::HealthDamagedEventUVE>(
+            [&](const Gameplay::HealthDamagedEventUVE& event) { damaged.push_back(event); });
+    static_cast<void>(damagedSub);
+    engine.SubmitLagShotUVE(std::move(empty));
+    engine.TickFrameUVE();
+    EXPECT_EQ(engine.GetLagTickUVE(), 1U);
+    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 100.0F);
+    services.GetEventSystemUVE().DispatchQueuedUVE();
+    EXPECT_TRUE(damaged.empty());
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, LagShot_FractionalResolveSubmits) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE shooter =
+        MakeLagShooterUVE(entityManager, sceneGraph, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    const Scene::EntityUVE target =
+        MakeLagTargetUVE(entityManager, sceneGraph, Math::Vector3UVE{4.0F, 0.0F, 0.0F});
+    engine.TickFrameUVE();
+    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 100.0F);
+    MoveLagEntityUVE(entityManager, sceneGraph, target, Math::Vector3UVE{-4.0F, 0.0F, 0.0F});
+    engine.TickFrameUVE();
+    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 100.0F);
+
+    // Neither recorded frame overlaps, but halfway the target stood inside the shooter:
+    // the interpolated report enters through the inbox like any lagged shot.
+    Physics::LagShotReportUVE between =
+        engine.GetLagCompensatorUVE().ResolveShotAtUVE(shooter, 1U, 0.5F, entityManager);
+    ASSERT_EQ(between.pairs.size(), 1U);
+    EXPECT_TRUE(between.interpolated);
+    engine.SubmitLagShotUVE(std::move(between));
+    engine.TickFrameUVE();
+    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 99.0F);
+
+    engine.Shutdown();
 }
 
 } // namespace

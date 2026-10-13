@@ -548,6 +548,27 @@ TEST(NullRenderDeviceUVETest, CreatePipelineUVE_UnknownBlendMode_ReturnsInvalidB
     EXPECT_EQ(validPipeline.value, 1U);
 }
 
+TEST(NullRenderDeviceUVETest, CreatePipelineUVE_LinesTopology_IsAccepted) {
+    NullRenderDeviceUVE device;
+    const ShaderHandleUVE vertexShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, "vs"});
+    const ShaderHandleUVE fragmentShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Fragment, "fs"});
+    PipelineDescUVE desc;
+    desc.vertexShader = vertexShader;
+    desc.fragmentShader = fragmentShader;
+    desc.topology = PrimitiveTopologyUVE::Lines;
+
+    const PipelineHandleUVE pipeline = device.CreatePipelineUVE(desc);
+    EXPECT_NE(pipeline, kInvalidPipelineHandleUVE);
+
+    EXPECT_TRUE(IsPrimitiveTopologyValidUVE(PrimitiveTopologyUVE::Triangles));
+    EXPECT_TRUE(IsPrimitiveTopologyValidUVE(PrimitiveTopologyUVE::Lines));
+    EXPECT_FALSE(IsPrimitiveTopologyValidUVE(static_cast<PrimitiveTopologyUVE>(0xFFU)));
+
+    PipelineDescUVE invalidDesc = desc;
+    invalidDesc.topology = static_cast<PrimitiveTopologyUVE>(0xFFU);
+    EXPECT_EQ(device.CreatePipelineUVE(invalidDesc), kInvalidPipelineHandleUVE);
+}
+
 TEST(NullRenderDeviceUVETest, CreatePipelineFromBinaryUVE_UnknownBlendMode_ReturnsInvalidBeforePublication) {
     NullRenderDeviceUVE device;
     const std::array<std::byte, 4> binary{};
@@ -843,6 +864,440 @@ TEST(NullRenderDeviceUVETest, DispatchUVE_RecordsOutsidePassWithStorageTextureAn
     device.DestroyShaderUVE(computeShader);
 }
 
+TEST(NullRenderDeviceUVETest, CreatePipelineUVE_UnknownCullMode_ReturnsInvalidBeforePublication) {
+    NullRenderDeviceUVE device;
+    const ShaderHandleUVE vertexShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, "vs"});
+    const ShaderHandleUVE fragmentShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Fragment, "fs"});
+    PipelineDescUVE invalidDesc;
+    invalidDesc.vertexShader = vertexShader;
+    invalidDesc.fragmentShader = fragmentShader;
+    invalidDesc.cullMode = static_cast<CullModeUVE>(0xFFU);
+
+    EXPECT_EQ(device.CreatePipelineUVE(invalidDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 2U);
+
+    invalidDesc.cullMode = CullModeUVE::Back;
+    const PipelineHandleUVE validPipeline = device.CreatePipelineUVE(invalidDesc);
+    EXPECT_EQ(validPipeline.value, 1U);
+}
+
+TEST(NullRenderDeviceUVETest, CreatePipelineFromBinaryUVE_UnknownCullMode_ReturnsInvalidBeforePublication) {
+    NullRenderDeviceUVE device;
+    const std::array<std::byte, 4> binary{};
+    PipelineBinaryDescUVE invalidDesc;
+    invalidDesc.cullMode = static_cast<CullModeUVE>(0xFFU);
+
+    EXPECT_EQ(device.CreatePipelineFromBinaryUVE(binary, 0U, invalidDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+
+    invalidDesc.cullMode = CullModeUVE::Back;
+    const PipelineHandleUVE validPipeline = device.CreatePipelineFromBinaryUVE(binary, 0U, invalidDesc);
+    EXPECT_EQ(validPipeline.value, 1U);
+}
+
+TEST(NullRenderDeviceUVETest, CreatePipelineUVE_UnknownFrontFace_ReturnsInvalidBeforePublication) {
+    NullRenderDeviceUVE device;
+    const ShaderHandleUVE vertexShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, "vs"});
+    const ShaderHandleUVE fragmentShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Fragment, "fs"});
+    PipelineDescUVE invalidDesc;
+    invalidDesc.vertexShader = vertexShader;
+    invalidDesc.fragmentShader = fragmentShader;
+    invalidDesc.frontFace = static_cast<FrontFaceUVE>(0xFFU);
+
+    EXPECT_EQ(device.CreatePipelineUVE(invalidDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 2U);
+
+    invalidDesc.frontFace = FrontFaceUVE::Clockwise;
+    const PipelineHandleUVE validPipeline = device.CreatePipelineUVE(invalidDesc);
+    EXPECT_EQ(validPipeline.value, 1U);
+}
+
+TEST(NullRenderDeviceUVETest, CreatePipelineFromBinaryUVE_UnknownFrontFace_ReturnsInvalidBeforePublication) {
+    NullRenderDeviceUVE device;
+    const std::array<std::byte, 4> binary{};
+    PipelineBinaryDescUVE invalidDesc;
+    invalidDesc.frontFace = static_cast<FrontFaceUVE>(0xFFU);
+
+    EXPECT_EQ(device.CreatePipelineFromBinaryUVE(binary, 0U, invalidDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+
+    invalidDesc.frontFace = FrontFaceUVE::Clockwise;
+    const PipelineHandleUVE validPipeline = device.CreatePipelineFromBinaryUVE(binary, 0U, invalidDesc);
+    EXPECT_EQ(validPipeline.value, 1U);
+}
+
+TEST(NullRenderDeviceUVETest, CreatePipelineUVE_UnknownFillMode_ReturnsInvalidBeforePublication) {
+    NullRenderDeviceUVE device;
+    const ShaderHandleUVE vertexShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, "vs"});
+    const ShaderHandleUVE fragmentShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Fragment, "fs"});
+    PipelineDescUVE invalidDesc;
+    invalidDesc.vertexShader = vertexShader;
+    invalidDesc.fragmentShader = fragmentShader;
+    invalidDesc.fillMode = static_cast<FillModeUVE>(0xFFU);
+
+    EXPECT_EQ(device.CreatePipelineUVE(invalidDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 2U);
+
+    invalidDesc.fillMode = FillModeUVE::Wireframe;
+    const PipelineHandleUVE validPipeline = device.CreatePipelineUVE(invalidDesc);
+    EXPECT_EQ(validPipeline.value, 1U);
+}
+
+TEST(NullRenderDeviceUVETest, CreatePipelineFromBinaryUVE_UnknownFillMode_ReturnsInvalidBeforePublication) {
+    NullRenderDeviceUVE device;
+    const std::array<std::byte, 4> binary{};
+    PipelineBinaryDescUVE invalidDesc;
+    invalidDesc.fillMode = static_cast<FillModeUVE>(0xFFU);
+
+    EXPECT_EQ(device.CreatePipelineFromBinaryUVE(binary, 0U, invalidDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+
+    invalidDesc.fillMode = FillModeUVE::Wireframe;
+    const PipelineHandleUVE validPipeline = device.CreatePipelineFromBinaryUVE(binary, 0U, invalidDesc);
+    EXPECT_EQ(validPipeline.value, 1U);
+}
+
+TEST(NullRenderDeviceUVETest, CreatePipelineUVE_UnknownDepthCompare_ReturnsInvalidBeforePublication) {
+    NullRenderDeviceUVE device;
+    const ShaderHandleUVE vertexShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, "vs"});
+    const ShaderHandleUVE fragmentShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Fragment, "fs"});
+    PipelineDescUVE invalidDesc;
+    invalidDesc.vertexShader = vertexShader;
+    invalidDesc.fragmentShader = fragmentShader;
+    invalidDesc.depthCompare = static_cast<DepthCompareUVE>(0xFFU);
+
+    EXPECT_EQ(device.CreatePipelineUVE(invalidDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 2U);
+
+    invalidDesc.depthCompare = DepthCompareUVE::LessOrEqual;
+    const PipelineHandleUVE validPipeline = device.CreatePipelineUVE(invalidDesc);
+    EXPECT_EQ(validPipeline.value, 1U);
+}
+
+TEST(NullRenderDeviceUVETest, CreatePipelineFromBinaryUVE_UnknownDepthCompare_ReturnsInvalidBeforePublication) {
+    NullRenderDeviceUVE device;
+    const std::array<std::byte, 4> binary{};
+    PipelineBinaryDescUVE invalidDesc;
+    invalidDesc.depthCompare = static_cast<DepthCompareUVE>(0xFFU);
+
+    EXPECT_EQ(device.CreatePipelineFromBinaryUVE(binary, 0U, invalidDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+
+    invalidDesc.depthCompare = DepthCompareUVE::LessOrEqual;
+    const PipelineHandleUVE validPipeline = device.CreatePipelineFromBinaryUVE(binary, 0U, invalidDesc);
+    EXPECT_EQ(validPipeline.value, 1U);
+}
+
+TEST(NullRenderDeviceUVETest, PipelineDescs_DefaultRasterizerState_MatchesPreTier21Behavior) {
+    const PipelineDescUVE desc;
+    EXPECT_EQ(desc.cullMode, CullModeUVE::None);
+    EXPECT_EQ(desc.frontFace, FrontFaceUVE::CounterClockwise);
+    EXPECT_EQ(desc.fillMode, FillModeUVE::Fill);
+    EXPECT_FALSE(desc.depthBiasEnabled);
+    EXPECT_FLOAT_EQ(desc.depthBiasConstantFactor, 0.0F);
+    EXPECT_FLOAT_EQ(desc.depthBiasSlopeFactor, 0.0F);
+    EXPECT_EQ(desc.depthCompare, DepthCompareUVE::Less);
+
+    const PipelineBinaryDescUVE binaryDesc;
+    EXPECT_EQ(binaryDesc.cullMode, CullModeUVE::None);
+    EXPECT_EQ(binaryDesc.frontFace, FrontFaceUVE::CounterClockwise);
+    EXPECT_EQ(binaryDesc.fillMode, FillModeUVE::Fill);
+    EXPECT_FALSE(binaryDesc.depthBiasEnabled);
+    EXPECT_FLOAT_EQ(binaryDesc.depthBiasConstantFactor, 0.0F);
+    EXPECT_FLOAT_EQ(binaryDesc.depthBiasSlopeFactor, 0.0F);
+    EXPECT_EQ(binaryDesc.depthCompare, DepthCompareUVE::Less);
+}
+
+TEST(NullRenderDeviceUVETest, SamplerDescUVE_Defaults_MatchPreTier22Behavior) {
+    const SamplerDescUVE desc;
+    EXPECT_EQ(desc.magFilter, SamplerFilterUVE::Linear);
+    EXPECT_EQ(desc.minFilter, SamplerFilterUVE::Linear);
+    EXPECT_EQ(desc.mipMode, SamplerMipModeUVE::Linear);
+    EXPECT_EQ(desc.wrapU, SamplerWrapUVE::ClampToEdge);
+    EXPECT_EQ(desc.wrapV, SamplerWrapUVE::ClampToEdge);
+    EXPECT_EQ(desc.wrapW, SamplerWrapUVE::ClampToEdge);
+    EXPECT_FLOAT_EQ(desc.maxAnisotropy, 1.0F);
+    EXPECT_TRUE(IsSamplerDescValidUVE(desc));
+}
+
+TEST(NullRenderDeviceUVETest, CreateSamplerUVE_InvalidMagFilter_ReturnsInvalid) {
+    NullRenderDeviceUVE device;
+    SamplerDescUVE desc;
+    desc.magFilter = static_cast<SamplerFilterUVE>(0xFFU);
+    EXPECT_EQ(device.CreateSamplerUVE(desc), kInvalidSamplerHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+}
+
+TEST(NullRenderDeviceUVETest, CreateSamplerUVE_InvalidMinFilter_ReturnsInvalid) {
+    NullRenderDeviceUVE device;
+    SamplerDescUVE desc;
+    desc.minFilter = static_cast<SamplerFilterUVE>(0xFFU);
+    EXPECT_EQ(device.CreateSamplerUVE(desc), kInvalidSamplerHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+}
+
+TEST(NullRenderDeviceUVETest, CreateSamplerUVE_InvalidMipMode_ReturnsInvalid) {
+    NullRenderDeviceUVE device;
+    SamplerDescUVE desc;
+    desc.mipMode = static_cast<SamplerMipModeUVE>(0xFFU);
+    EXPECT_EQ(device.CreateSamplerUVE(desc), kInvalidSamplerHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+}
+
+TEST(NullRenderDeviceUVETest, CreateSamplerUVE_InvalidWrap_ReturnsInvalid) {
+    NullRenderDeviceUVE device;
+    SamplerDescUVE desc;
+    desc.wrapV = static_cast<SamplerWrapUVE>(0xFFU);
+    EXPECT_EQ(device.CreateSamplerUVE(desc), kInvalidSamplerHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+}
+
+TEST(NullRenderDeviceUVETest, CreateSamplerUVE_BadAnisotropy_ReturnsInvalid) {
+    NullRenderDeviceUVE device;
+    SamplerDescUVE desc;
+    desc.maxAnisotropy = 0.5F;
+    EXPECT_EQ(device.CreateSamplerUVE(desc), kInvalidSamplerHandleUVE);
+    desc.maxAnisotropy = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_EQ(device.CreateSamplerUVE(desc), kInvalidSamplerHandleUVE);
+    desc.maxAnisotropy = std::numeric_limits<float>::infinity();
+    EXPECT_EQ(device.CreateSamplerUVE(desc), kInvalidSamplerHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+
+    // Null has no device limit — any finite >= 1.0 is accepted (real backends clamp).
+    desc.maxAnisotropy = 1.0e30F;
+    EXPECT_NE(device.CreateSamplerUVE(desc), kInvalidSamplerHandleUVE);
+}
+
+TEST(NullRenderDeviceUVETest, CreateSamplerUVE_NonDefaults_RoundTripThroughLiveDescs) {
+    NullRenderDeviceUVE device;
+    SamplerDescUVE desc;
+    desc.magFilter = SamplerFilterUVE::Point;
+    desc.minFilter = SamplerFilterUVE::Point;
+    desc.mipMode = SamplerMipModeUVE::None;
+    desc.wrapU = SamplerWrapUVE::Repeat;
+    desc.wrapV = SamplerWrapUVE::MirroredRepeat;
+    desc.maxAnisotropy = 4.0F;
+    const SamplerHandleUVE sampler = device.CreateSamplerUVE(desc);
+    ASSERT_NE(sampler, kInvalidSamplerHandleUVE);
+
+    const std::vector<SamplerDescUVE> liveDescs = device.GetLiveSamplerDescsUVE();
+    ASSERT_EQ(liveDescs.size(), 1U);
+    EXPECT_EQ(liveDescs[0].magFilter, SamplerFilterUVE::Point);
+    EXPECT_EQ(liveDescs[0].minFilter, SamplerFilterUVE::Point);
+    EXPECT_EQ(liveDescs[0].mipMode, SamplerMipModeUVE::None);
+    EXPECT_EQ(liveDescs[0].wrapU, SamplerWrapUVE::Repeat);
+    EXPECT_EQ(liveDescs[0].wrapV, SamplerWrapUVE::MirroredRepeat);
+    EXPECT_FLOAT_EQ(liveDescs[0].maxAnisotropy, 4.0F);
+}
+
+TEST(NullRenderDeviceUVETest, BindSamplerUVE_RecordedWithSlotOnSubmit) {
+    NullRenderDeviceUVE device;
+    const SamplerHandleUVE sampler = device.CreateSamplerUVE(SamplerDescUVE{});
+    ASSERT_NE(sampler, kInvalidSamplerHandleUVE);
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
+    commandBuffer->BeginRenderPassUVE(RenderPassDescUVE{});
+    commandBuffer->BindSamplerUVE(sampler, 3U);
+    commandBuffer->EndRenderPassUVE();
+    device.SubmitUVE(std::move(commandBuffer));
+
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    ASSERT_EQ(recorded.size(), 3U);
+    const auto* bind = std::get_if<BindSamplerCommandUVE>(&recorded[1]);
+    ASSERT_NE(bind, nullptr);
+    EXPECT_EQ(bind->sampler, sampler);
+    EXPECT_EQ(bind->slot, 3U);
+}
+
+TEST(NullRenderDeviceUVETest, CreateSamplerUVE_CountsTowardLiveResourcesUntilDestroyed) {
+    NullRenderDeviceUVE device;
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+    const SamplerHandleUVE sampler = device.CreateSamplerUVE(SamplerDescUVE{});
+    ASSERT_NE(sampler, kInvalidSamplerHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 1U);
+    EXPECT_TRUE(device.GetLiveSamplerDescsUVE().empty() == false);
+    device.DestroySamplerUVE(sampler);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+    EXPECT_TRUE(device.GetLiveSamplerDescsUVE().empty());
+}
+
+TEST(NullRenderDeviceUVETest, DestroySamplerUVE_UnknownHandle_IsSafeNoOp) {
+    NullRenderDeviceUVE device;
+    const SamplerHandleUVE sampler = device.CreateSamplerUVE(SamplerDescUVE{});
+    ASSERT_NE(sampler, kInvalidSamplerHandleUVE);
+    device.DestroySamplerUVE(sampler);
+    device.DestroySamplerUVE(sampler); // double-destroy: logged, no crash
+    device.DestroySamplerUVE(kInvalidSamplerHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+}
+
+
+// Tier 2.3: array layers + cubemaps. The Null backend shares the RHI validators with every
+// backend, so these pin the dimensional contract (defaults, byte math, upload sizes, handle
+// retention, pass-layer recording) without needing a GPU.
+TEST(NullRenderDeviceUVETest, TextureTypeUVE_DefaultsTo2DWithOneLayer) {
+    const TextureDescUVE desc;
+    EXPECT_EQ(desc.type, TextureTypeUVE::Texture2D);
+    EXPECT_EQ(desc.arrayLayers, 1U);
+    EXPECT_TRUE(IsTextureTypeValidUVE(TextureTypeUVE::Texture2D));
+    EXPECT_TRUE(IsTextureTypeValidUVE(TextureTypeUVE::Texture2DArray));
+    EXPECT_TRUE(IsTextureTypeValidUVE(TextureTypeUVE::Cubemap));
+    EXPECT_FALSE(IsTextureTypeValidUVE(static_cast<TextureTypeUVE>(99U)));
+}
+
+TEST(NullRenderDeviceUVETest, CalculateTextureUploadByteCountUVE_MultipliesByLayerCount) {
+    // 2x2 RGBA8, two levels: 16 + 4 = 20 bytes per layer; x4 layers = 80.
+    const TextureDescUVE arrayDesc{2U, 2U, TextureFormatUVE::RGBA8Unorm, 2U,
+                                   TextureColorSpaceUVE::Linear, TextureTypeUVE::Texture2DArray, 4U};
+    std::uint64_t expectedBytes = 0U;
+    ASSERT_TRUE(CalculateTextureUploadByteCountUVE(arrayDesc, expectedBytes));
+    EXPECT_EQ(expectedBytes, 80U);
+
+    // 4x4 RGBA8 cube, one level: 64 bytes per face; x6 faces = 384.
+    const TextureDescUVE cubeDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U,
+                                  TextureColorSpaceUVE::Linear, TextureTypeUVE::Cubemap, 6U};
+    ASSERT_TRUE(CalculateTextureUploadByteCountUVE(cubeDesc, expectedBytes));
+    EXPECT_EQ(expectedBytes, 384U);
+}
+
+TEST(NullRenderDeviceUVETest, CalculateTextureUploadByteCountUVE_RejectsBadDimensionality) {
+    std::uint64_t expectedBytes = 0U;
+    // 2D textures carry exactly one layer.
+    EXPECT_FALSE(CalculateTextureUploadByteCountUVE(
+        TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear,
+                       TextureTypeUVE::Texture2D, 2U},
+        expectedBytes));
+    EXPECT_FALSE(CalculateTextureUploadByteCountUVE(
+        TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear,
+                       TextureTypeUVE::Texture2D, 0U},
+        expectedBytes));
+    // Cubes are square with exactly six layers.
+    EXPECT_FALSE(CalculateTextureUploadByteCountUVE(
+        TextureDescUVE{4U, 8U, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear,
+                       TextureTypeUVE::Cubemap, 6U},
+        expectedBytes));
+    EXPECT_FALSE(CalculateTextureUploadByteCountUVE(
+        TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear,
+                       TextureTypeUVE::Cubemap, 5U},
+        expectedBytes));
+    // Arrays need at least one layer.
+    EXPECT_FALSE(CalculateTextureUploadByteCountUVE(
+        TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear,
+                       TextureTypeUVE::Texture2DArray, 0U},
+        expectedBytes));
+    // Unknown dimensionality never computes a size.
+    EXPECT_FALSE(CalculateTextureUploadByteCountUVE(
+        TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear,
+                       static_cast<TextureTypeUVE>(99U), 1U},
+        expectedBytes));
+}
+
+TEST(NullRenderDeviceUVETest, ValidateTextureUploadUVE_ArrayRequiresEveryLayer) {
+    const TextureDescUVE arrayDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U,
+                                   TextureColorSpaceUVE::Linear, TextureTypeUVE::Texture2DArray, 3U};
+    std::array<std::byte, 192U> allLayers{}; // 64 bytes x 3 layers, level-major
+    EXPECT_TRUE(ValidateTextureUploadUVE(arrayDesc, allLayers));
+    EXPECT_FALSE(ValidateTextureUploadUVE(
+        arrayDesc, std::span<const std::byte>(allLayers.data(), 64U))) << "one layer is short";
+    EXPECT_FALSE(ValidateTextureUploadUVE(
+        arrayDesc, std::span<const std::byte>(allLayers.data(), 128U))) << "two layers are short";
+    // Render-target arrays (single-level, uncompressed) still allow a data-free creation.
+    EXPECT_TRUE(ValidateTextureUploadUVE(arrayDesc, {}));
+
+    const TextureDescUVE cubeDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U,
+                                  TextureColorSpaceUVE::Linear, TextureTypeUVE::Cubemap, 6U};
+    std::array<std::byte, 384U> allFaces{};
+    EXPECT_TRUE(ValidateTextureUploadUVE(cubeDesc, allFaces));
+    EXPECT_FALSE(ValidateTextureUploadUVE(
+        cubeDesc, std::span<const std::byte>(allFaces.data(), 320U))) << "five faces are short";
+    EXPECT_TRUE(ValidateTextureUploadUVE(cubeDesc, {}));
+}
+
+TEST(NullRenderDeviceUVETest, CreateTextureUVE_ArrayAndCube_RoundTripThroughLiveDescs) {
+    NullRenderDeviceUVE device;
+    const TextureDescUVE arrayDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U,
+                                   TextureColorSpaceUVE::Linear, TextureTypeUVE::Texture2DArray, 3U};
+    const TextureHandleUVE array = device.CreateTextureUVE(arrayDesc);
+    ASSERT_NE(array, kInvalidTextureHandleUVE);
+    const TextureDescUVE cubeDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U,
+                                  TextureColorSpaceUVE::Linear, TextureTypeUVE::Cubemap, 6U};
+    const TextureHandleUVE cube = device.CreateTextureUVE(cubeDesc);
+    ASSERT_NE(cube, kInvalidTextureHandleUVE);
+
+    const std::vector<TextureDescUVE> liveDescs = device.GetLiveTextureDescsUVE();
+    ASSERT_EQ(liveDescs.size(), 2U);
+    // Live-desc order follows the device's unordered handle map, so match by type.
+    const TextureDescUVE* arrayLive = nullptr;
+    const TextureDescUVE* cubeLive = nullptr;
+    for (const TextureDescUVE& live : liveDescs) {
+        if (live.type == TextureTypeUVE::Texture2DArray) {
+            arrayLive = &live;
+        } else if (live.type == TextureTypeUVE::Cubemap) {
+            cubeLive = &live;
+        }
+    }
+    ASSERT_NE(arrayLive, nullptr);
+    ASSERT_NE(cubeLive, nullptr);
+    EXPECT_EQ(arrayLive->arrayLayers, 3U);
+    EXPECT_EQ(cubeLive->arrayLayers, 6U);
+
+    device.DestroyTextureUVE(array);
+    device.DestroyTextureUVE(cube);
+    EXPECT_TRUE(device.GetLiveTextureDescsUVE().empty());
+}
+
+TEST(NullRenderDeviceUVETest, CreateTextureUVE_RejectsBadDimensionality) {
+    NullRenderDeviceUVE device;
+    EXPECT_EQ(device.CreateTextureUVE(TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U,
+                                                     TextureColorSpaceUVE::Linear,
+                                                     TextureTypeUVE::Texture2D, 2U}),
+              kInvalidTextureHandleUVE);
+    EXPECT_EQ(device.CreateTextureUVE(TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U,
+                                                     TextureColorSpaceUVE::Linear,
+                                                     TextureTypeUVE::Cubemap, 5U}),
+              kInvalidTextureHandleUVE);
+    EXPECT_EQ(device.CreateTextureUVE(TextureDescUVE{4U, 8U, TextureFormatUVE::RGBA8Unorm, 1U,
+                                                     TextureColorSpaceUVE::Linear,
+                                                     TextureTypeUVE::Cubemap, 6U}),
+              kInvalidTextureHandleUVE);
+    EXPECT_TRUE(device.GetLiveTextureDescsUVE().empty());
+}
+
+TEST(NullRenderDeviceUVETest, RenderPassDescUVE_LayersDefaultToZero) {
+    const RenderPassDescUVE desc;
+    EXPECT_EQ(desc.colorLayer, 0U);
+    EXPECT_EQ(desc.depthLayer, 0U);
+}
+
+TEST(NullRenderDeviceUVETest, BeginRenderPassUVE_RecordsSelectedLayers) {
+    NullRenderDeviceUVE device;
+    const TextureHandleUVE color = device.CreateTextureUVE(
+        TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear,
+                       TextureTypeUVE::Texture2DArray, 4U});
+    ASSERT_NE(color, kInvalidTextureHandleUVE);
+    const TextureHandleUVE depth = device.CreateTextureUVE(
+        TextureDescUVE{4U, 4U, TextureFormatUVE::Depth32Float, 1U});
+    ASSERT_NE(depth, kInvalidTextureHandleUVE);
+
+    auto commandBuffer = device.CreateCommandBufferUVE();
+    RenderPassDescUVE passDesc;
+    passDesc.colorAttachment = color;
+    passDesc.depthAttachment = depth;
+    passDesc.colorLayer = 2U;
+    commandBuffer->BeginRenderPassUVE(passDesc);
+    commandBuffer->EndRenderPassUVE();
+    device.SubmitUVE(std::move(commandBuffer));
+
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    ASSERT_EQ(recorded.size(), 2U);
+    ASSERT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(recorded[0]));
+    EXPECT_EQ(std::get<BeginRenderPassCommandUVE>(recorded[0]).desc.colorLayer, 2U);
+    EXPECT_EQ(std::get<BeginRenderPassCommandUVE>(recorded[0]).desc.depthLayer, 0U);
+
+    device.DestroyTextureUVE(color);
+    device.DestroyTextureUVE(depth);
+}
+
 #if UVE_DEBUG
 TEST(NullRenderDeviceUVEDeathTest, CommandBuffer_DispatchInsideRenderPass_Asserts) {
     NullRenderDeviceUVE device;
@@ -927,6 +1382,153 @@ TEST(NullCommandBufferUVERuntimeTest, CommandBufferLifecycleMisuseIsSafeNoOpInRe
     EXPECT_TRUE(std::holds_alternative<DispatchCommandUVE>(recorded[10]));
 }
 #endif
+
+
+TEST(NullCommandBufferUVETest, BeginRenderPassUVE_UnknownStoreOp_DoesNotRecordOrEnterPass) {
+    // Tier 2.5 mirror of UnknownLoadOp: a garbage store enum is a malformed pass on every
+    // backend, so Null refuses to record or enter it (both slots covered, then a valid pass
+    // proves the device is unaffected).
+    NullRenderDeviceUVE device;
+    std::unique_ptr<ICommandBufferUVE> badColorStore = device.CreateCommandBufferUVE();
+    RenderPassDescUVE badColorDesc;
+    badColorDesc.colorStoreOp = static_cast<StoreOpUVE>(0xFFU);
+    badColorStore->BeginRenderPassUVE(badColorDesc);
+    device.SubmitUVE(std::move(badColorStore));
+    EXPECT_TRUE(device.GetLastSubmittedCommandsUVE().empty());
+
+    std::unique_ptr<ICommandBufferUVE> badDepthStore = device.CreateCommandBufferUVE();
+    RenderPassDescUVE badDepthDesc;
+    badDepthDesc.depthStoreOp = static_cast<StoreOpUVE>(0xFFU);
+    badDepthStore->BeginRenderPassUVE(badDepthDesc);
+    device.SubmitUVE(std::move(badDepthStore));
+    EXPECT_TRUE(device.GetLastSubmittedCommandsUVE().empty());
+
+    std::unique_ptr<ICommandBufferUVE> validCommandBuffer = device.CreateCommandBufferUVE();
+    validCommandBuffer->BeginRenderPassUVE(RenderPassDescUVE{});
+    validCommandBuffer->EndRenderPassUVE();
+    device.SubmitUVE(std::move(validCommandBuffer));
+    EXPECT_EQ(device.GetLastSubmittedCommandsUVE().size(), 2U);
+}
+
+TEST(NullCommandBufferUVETest, BeginRenderPassUVE_ExtrasRoundTrip_RecordsSlotsVerbatim) {
+    // Tier 2.4/2.5: a two-extra prefix plus non-default store ops records opaquely and reads
+    // back verbatim. The defaults pinned first are the zero-behavior-change contract (the
+    // renderer's 73 pass sites never set these fields).
+    const RenderPassDescUVE defaults;
+    EXPECT_EQ(defaults.colorStoreOp, StoreOpUVE::Store);
+    EXPECT_EQ(defaults.depthStoreOp, StoreOpUVE::Store);
+    for (const ColorAttachmentUVE& slot : defaults.extraColorAttachments) {
+        EXPECT_EQ(slot.target, kInvalidTextureHandleUVE);
+    }
+
+    NullRenderDeviceUVE device;
+    const TextureHandleUVE color = device.CreateTextureUVE(TextureDescUVE{4U, 4U});
+    ASSERT_NE(color, kInvalidTextureHandleUVE);
+    const TextureHandleUVE depth =
+        device.CreateTextureUVE(TextureDescUVE{4U, 4U, TextureFormatUVE::Depth32Float, 1U});
+    ASSERT_NE(depth, kInvalidTextureHandleUVE);
+    const TextureHandleUVE extra0 = device.CreateTextureUVE(TextureDescUVE{4U, 4U});
+    ASSERT_NE(extra0, kInvalidTextureHandleUVE);
+    const TextureHandleUVE extra1 = device.CreateTextureUVE(TextureDescUVE{4U, 4U});
+    ASSERT_NE(extra1, kInvalidTextureHandleUVE);
+
+    auto commandBuffer = device.CreateCommandBufferUVE();
+    RenderPassDescUVE passDesc;
+    passDesc.colorAttachment = color;
+    passDesc.depthAttachment = depth;
+    passDesc.colorStoreOp = StoreOpUVE::Store;
+    passDesc.depthStoreOp = StoreOpUVE::DontCare;
+    passDesc.extraColorAttachments[0].target = extra0;
+    passDesc.extraColorAttachments[0].layer = 1U;
+    passDesc.extraColorAttachments[0].loadOp = LoadOpUVE::Load;
+    passDesc.extraColorAttachments[0].storeOp = StoreOpUVE::DontCare;
+    passDesc.extraColorAttachments[0].clearColor = {0.25F, 0.5F, 0.75F, 1.0F};
+    passDesc.extraColorAttachments[1].target = extra1;
+    passDesc.extraColorAttachments[1].layer = 0U;
+    passDesc.extraColorAttachments[1].loadOp = LoadOpUVE::Clear;
+    passDesc.extraColorAttachments[1].storeOp = StoreOpUVE::Store;
+    passDesc.extraColorAttachments[1].clearColor = {1.0F, 0.0F, 0.0F, 1.0F};
+    commandBuffer->BeginRenderPassUVE(passDesc);
+    commandBuffer->EndRenderPassUVE();
+    device.SubmitUVE(std::move(commandBuffer));
+
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    ASSERT_EQ(recorded.size(), 2U);
+    ASSERT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(recorded[0]));
+    const RenderPassDescUVE& roundTripped = std::get<BeginRenderPassCommandUVE>(recorded[0]).desc;
+    EXPECT_EQ(roundTripped.colorAttachment, color);
+    EXPECT_EQ(roundTripped.depthAttachment, depth);
+    EXPECT_EQ(roundTripped.colorStoreOp, StoreOpUVE::Store);
+    EXPECT_EQ(roundTripped.depthStoreOp, StoreOpUVE::DontCare);
+    EXPECT_EQ(roundTripped.extraColorAttachments[0].target, extra0);
+    EXPECT_EQ(roundTripped.extraColorAttachments[0].layer, 1U);
+    EXPECT_EQ(roundTripped.extraColorAttachments[0].loadOp, LoadOpUVE::Load);
+    EXPECT_EQ(roundTripped.extraColorAttachments[0].storeOp, StoreOpUVE::DontCare);
+    EXPECT_FLOAT_EQ(roundTripped.extraColorAttachments[0].clearColor[0], 0.25F);
+    EXPECT_FLOAT_EQ(roundTripped.extraColorAttachments[0].clearColor[1], 0.5F);
+    EXPECT_FLOAT_EQ(roundTripped.extraColorAttachments[0].clearColor[2], 0.75F);
+    EXPECT_FLOAT_EQ(roundTripped.extraColorAttachments[0].clearColor[3], 1.0F);
+    EXPECT_EQ(roundTripped.extraColorAttachments[1].target, extra1);
+    EXPECT_EQ(roundTripped.extraColorAttachments[1].layer, 0U);
+    EXPECT_EQ(roundTripped.extraColorAttachments[1].loadOp, LoadOpUVE::Clear);
+    EXPECT_EQ(roundTripped.extraColorAttachments[1].storeOp, StoreOpUVE::Store);
+    EXPECT_EQ(roundTripped.extraColorAttachments[2].target, kInvalidTextureHandleUVE);
+
+    device.DestroyTextureUVE(color);
+    device.DestroyTextureUVE(depth);
+    device.DestroyTextureUVE(extra0);
+    device.DestroyTextureUVE(extra1);
+}
+
+TEST(NullCommandBufferUVETest, BeginRenderPassUVE_GappyExtras_DoesNotRecordOrEnterPass) {
+    // Tier 2.4: location 2 set while 1 is empty is malformed on every backend — Null refuses
+    // to record or enter it, then proves the device is unaffected with a valid prefix.
+    NullRenderDeviceUVE device;
+    const TextureHandleUVE extra = device.CreateTextureUVE(TextureDescUVE{4U, 4U});
+    ASSERT_NE(extra, kInvalidTextureHandleUVE);
+
+    std::unique_ptr<ICommandBufferUVE> gappyCommandBuffer = device.CreateCommandBufferUVE();
+    RenderPassDescUVE gappyDesc;
+    gappyDesc.extraColorAttachments[0].target = extra;
+    gappyDesc.extraColorAttachments[2].target = extra;
+    gappyCommandBuffer->BeginRenderPassUVE(gappyDesc);
+    device.SubmitUVE(std::move(gappyCommandBuffer));
+    EXPECT_TRUE(device.GetLastSubmittedCommandsUVE().empty());
+
+    std::unique_ptr<ICommandBufferUVE> validCommandBuffer = device.CreateCommandBufferUVE();
+    RenderPassDescUVE validDesc;
+    validDesc.extraColorAttachments[0].target = extra;
+    validCommandBuffer->BeginRenderPassUVE(validDesc);
+    validCommandBuffer->EndRenderPassUVE();
+    device.SubmitUVE(std::move(validCommandBuffer));
+    EXPECT_EQ(device.GetLastSubmittedCommandsUVE().size(), 2U);
+
+    device.DestroyTextureUVE(extra);
+}
+
+TEST(NullCommandBufferUVETest, BeginRenderPassUVE_UnknownExtraStoreOp_DoesNotRecordOrEnterPass) {
+    // Tier 2.4/2.5: per-slot ops validate like the location-0 ops — a garbage extra store enum
+    // refuses to record or enter.
+    NullRenderDeviceUVE device;
+    const TextureHandleUVE extra = device.CreateTextureUVE(TextureDescUVE{4U, 4U});
+    ASSERT_NE(extra, kInvalidTextureHandleUVE);
+
+    std::unique_ptr<ICommandBufferUVE> invalidCommandBuffer = device.CreateCommandBufferUVE();
+    RenderPassDescUVE invalidDesc;
+    invalidDesc.extraColorAttachments[0].target = extra;
+    invalidDesc.extraColorAttachments[0].storeOp = static_cast<StoreOpUVE>(0xFFU);
+    invalidCommandBuffer->BeginRenderPassUVE(invalidDesc);
+    device.SubmitUVE(std::move(invalidCommandBuffer));
+    EXPECT_TRUE(device.GetLastSubmittedCommandsUVE().empty());
+
+    std::unique_ptr<ICommandBufferUVE> validCommandBuffer = device.CreateCommandBufferUVE();
+    validCommandBuffer->BeginRenderPassUVE(RenderPassDescUVE{});
+    validCommandBuffer->EndRenderPassUVE();
+    device.SubmitUVE(std::move(validCommandBuffer));
+    EXPECT_EQ(device.GetLastSubmittedCommandsUVE().size(), 2U);
+
+    device.DestroyTextureUVE(extra);
+}
 
 } // namespace
 } // namespace UVE::Render::Tests

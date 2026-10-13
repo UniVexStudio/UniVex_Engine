@@ -10,6 +10,7 @@
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/math/color_uve.h"
 
 namespace UVE::Asset {
 
@@ -33,13 +34,13 @@ enum class MaterialBillboardModeUVE : std::uint8_t {
 /// concern — a referenced texture/shader may simply not be loaded yet, which isn't an error here;
 /// a future `MeshRendererUVE` (Increment 13) is what decides how to handle that at render time.
 struct MaterialAssetUVE {
-    Math::Vector3UVE albedoColor{1.0F, 1.0F, 1.0F};
+    Math::ColorUVE albedoColor{1.0F, 1.0F, 1.0F};
     AssetGuidUVE albedoTexture;
     AssetGuidUVE normalTexture;
     float metallic = 0.0F;
     float roughness = 0.5F;
     AssetGuidUVE aoTexture;
-    Math::Vector3UVE emissiveColor{0.0F, 0.0F, 0.0F};
+    Math::ColorUVE emissiveColor{0.0F, 0.0F, 0.0F};
     AssetGuidUVE vertexShader;
     AssetGuidUVE fragmentShader;
     /// Drives `RenderQueueUVE`'s opaque/transparent bucketing (Increment 13) — not consumed by

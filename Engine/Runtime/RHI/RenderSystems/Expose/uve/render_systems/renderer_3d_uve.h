@@ -65,7 +65,8 @@ public:
                                 const Scene::ParticleRuntimeUVE* particleRuntime = nullptr) override;
     void RenderFrameToTargetUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
                                 TextureHandleUVE colorTarget, TextureHandleUVE depthTarget,
-                                std::uint32_t width = 0U, std::uint32_t height = 0U) override;
+                                std::uint32_t width = 0U, std::uint32_t height = 0U,
+                                std::uint32_t colorLayer = 0U, std::uint32_t depthLayer = 0U) override;
     void SetPostProcessSettingsUVE(const PostProcessSettingsUVE& settings) override;
     void SetShadowBiasDefaultsUVE(float depthBias, float normalBias) noexcept override;
     void SetCullingSettingsUVE(const CullingSettingsUVE& settings) noexcept override;

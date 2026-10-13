@@ -183,8 +183,8 @@ struct ProjectBootSplashOverlayUVE final {
                 imageHeight = maxHeight;
                 imageWidth = maxHeight * aspectRatio;
             }
-            image.sizePixels = UVE::Math::Vector2UVE{imageWidth, imageHeight};
-            image.positionPixels = UVE::Math::Vector2UVE{
+            image.rect.size = UVE::Math::Vector2UVE{imageWidth, imageHeight};
+            image.rect.position = UVE::Math::Vector2UVE{
                 (static_cast<float>(surfaceWidth) - imageWidth) * 0.5F,
                 (static_cast<float>(surfaceHeight) - imageHeight) * 0.5F};
         }
@@ -267,8 +267,8 @@ struct ProjectBootSplashOverlayUVE final {
 
     overlay.backgroundEntity = entities.CreateEntityUVE();
     UVE::Scene::UIImageComponentUVE background;
-    background.positionPixels = UVE::Math::Vector2UVE{0.0F, 0.0F};
-    background.sizePixels = UVE::Math::Vector2UVE{static_cast<float>(overlay.surfaceWidth),
+    background.rect.position = UVE::Math::Vector2UVE{0.0F, 0.0F};
+    background.rect.size = UVE::Math::Vector2UVE{static_cast<float>(overlay.surfaceWidth),
                                                   static_cast<float>(overlay.surfaceHeight)};
     background.tintColor = UVE::Math::Vector3UVE{0.0F, 0.0F, 0.0F};
     background.alpha = 1.0F;
@@ -278,7 +278,7 @@ struct ProjectBootSplashOverlayUVE final {
         overlay.imageEntity = entities.CreateEntityUVE();
         UVE::Scene::UIImageComponentUVE image;
         image.textureAssetGuid = splashTextureGuid;
-        image.sizePixels = UVE::Math::Vector2UVE{1.0F, 1.0F};
+        image.rect.size = UVE::Math::Vector2UVE{1.0F, 1.0F};
         image.tintColor = UVE::Math::Vector3UVE{1.0F, 1.0F, 1.0F};
         image.alpha = 0.0F;
         entities.AddComponentUVE<UVE::Scene::UIImageComponentUVE>(overlay.imageEntity, image);
@@ -353,15 +353,15 @@ void AuthorUIOverlayDemoFixtureUVE(UVE::Core::EngineCoreUVE& engine) {
 
     const UVE::Scene::EntityUVE imageEntity = entityManager.CreateEntityUVE();
     UVE::Scene::UIImageComponentUVE image{};
-    image.positionPixels = UVE::Math::Vector2UVE{40.0F, 40.0F};
-    image.sizePixels = UVE::Math::Vector2UVE{120.0F, 120.0F};
+    image.rect.position = UVE::Math::Vector2UVE{40.0F, 40.0F};
+    image.rect.size = UVE::Math::Vector2UVE{120.0F, 120.0F};
     image.tintColor = UVE::Math::Vector3UVE{0.85F, 0.20F, 0.20F};
     entityManager.AddComponentUVE<UVE::Scene::UIImageComponentUVE>(imageEntity, image);
 
     const UVE::Scene::EntityUVE buttonEntity = entityManager.CreateEntityUVE();
     UVE::Scene::UIButtonComponentUVE button{};
-    button.positionPixels = UVE::Math::Vector2UVE{220.0F, 60.0F};
-    button.sizePixels = UVE::Math::Vector2UVE{160.0F, 48.0F};
+    button.rect.position = UVE::Math::Vector2UVE{220.0F, 60.0F};
+    button.rect.size = UVE::Math::Vector2UVE{160.0F, 48.0F};
     button.normalColor = UVE::Math::Vector3UVE{0.15F, 0.55F, 0.20F};
     button.hoverColor = UVE::Math::Vector3UVE{0.20F, 0.70F, 0.28F};
     button.pressedColor = UVE::Math::Vector3UVE{0.85F, 0.75F, 0.15F};

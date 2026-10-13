@@ -17,6 +17,10 @@ namespace UVE::Asset {
 
 /// One bone of a glTF skin, in its rest pose relative to its parent bone.
 struct GltfJointUVE final {
+    /// Index of the source node in the document's nodes[] — the skin's joint list and animation
+    /// channel targets reference nodes, while this list is reordered parents-first, so the
+    /// skeletal converters map through this field instead of zipping by position.
+    std::size_t sourceNodeIndex = 0U;
     std::string name;
     /// Index into the same joint list, always lower than this joint's own index; -1 for a root.
     std::int32_t parentIndex = -1;

@@ -30,6 +30,7 @@ public:
     void BindVertexBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) override;
     void BindIndexBufferUVE(BufferHandleUVE buffer) override;
     void BindTextureUVE(TextureHandleUVE texture, std::uint32_t slot) override;
+    void BindSamplerUVE(SamplerHandleUVE sampler, std::uint32_t slot) override;
     void BindUniformBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) override;
     void BindStorageBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) override;
     void SetUniformFloatUVE(std::string_view name, float value) override;

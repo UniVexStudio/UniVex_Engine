@@ -133,11 +133,12 @@ degenerate quaternion all return `false` and leave the out-parameter untouched.
   and scale primitive of the whole engine. Real surface: `DotUVE`, `CrossUVE`,
   `LengthUVE`, `LengthSquaredUVE`, `TryNormalizeUVE`, `IsFiniteUVE`, arithmetic
   and comparison operators. This is the one math type that is genuinely complete.
-- `[~]` **`Vector2UVE`** — `vector2_uve.h`. Two floats, and **only** `+`, `-`,
-  `==`, `!=`. No dot, no length, no normalise, no scalar multiply. Anything doing
-  2D maths — the UI layer, touch input, texture coordinates — either promotes to
-  `Vector3UVE` or hand-rolls the operation. Completing this is nearly free and
-  removes a class of duplicated code.
+- `[x]` **`Vector2UVE`** — `vector2_uve.h`. Now carries the same dot/length/normalize/finite
+  surface as `Vector3UVE` (`DotUVE` with the same double-precision overflow fallback;
+  `NormalizeUVE` under the same caller-ensures-nonzero contract, not `TryNormalizeUVE`).
+  (Correction: the earlier "only `+`, `-`, `==`, `!=`" claim was already stale — scalar `*`
+  predates this change.) Compound/unary operators stay minimal per the header's own note.
+  Tests extended in `Test/Math/vector2_uve_tests.cpp`. Verified: full suite green (1318 core + 1668 integration, 2026-10-09).
 - `[x]` **`QuaternionUVE`** — `quaternion_uve.h`. Rotation, identity `(0,0,0,1)`.
   Fuller than it first appears: `TrySlerpUVE`, `TryMakeEulerUVE` /
   `TryToEulerUVE`, the ordered variants with an explicit `EulerOrderUVE`, and
@@ -163,56 +164,115 @@ degenerate quaternion all return `false` and leave the out-parameter untouched.
 
 ### What is missing, and what it costs
 
-- `[ ]` **`Vector4UVE`** — no homogeneous coordinate type, and no RGBA vector.
-  Shader-facing code that needs a `vec4` assembles it from loose floats.
-- `[ ]` **`Matrix3x3UVE`** — so there is no normal matrix and no pure-rotation
-  matrix type. The renderer computes `transpose(inverse(model))` as a full 4×4 and
-  uses its upper-left corner, which works but costs more than it needs to and
-  makes the intent unclear at the call site.
-- `[ ]` **A TRS value type** — this is the most conspicuous gap. TRS exists only
-  as three loose fields on `TransformComponentUVE`, so there is no composable
-  transform *value*. Every place that wants to combine two transforms, invert one,
-  or pass one around does it as three separate members plus a matrix conversion. A
-  value type with compose / inverse / transform-point would simplify the scene
-  graph, the prefab system, the gizmo drag path and the physics interpolation cache
-  at once. **Name it something other than `TransformUVE`**: that name is already
-  taken by `AabbUVE::TransformUVE(matrix)`, a member function on the bounds type.
-  `TrsUVE` avoids the collision.
-- `[ ]` **`ColorUVE`** — nothing named `color` exists anywhere in the tree. Colours
-  are ad-hoc float triples on `PrimitiveMeshComponentUVE`, `LightComponentUVE`,
-  `MaterialAssetUVE` and the UI components, with no shared clamping, no linear/sRGB
-  distinction and no conversion helpers. Given the renderer is HDR internally and
-  tone-maps on output, the absence of an explicit linear-vs-display colour type is
-  a real correctness hazard, not just a tidiness one.
-- `[ ]` **`RectUVE` / `Rect2UVE` / `RectIntUVE`** — nothing named `rect` exists,
-  despite a full UI component set. `UIImageComponentUVE` carries a bare
-  `sizePixels`; `ViewportRectUVE` in the RHI is a one-off re-invention of the same
-  idea scoped to render passes.
-- `[ ]` **Integer vectors** (`Vector2iUVE`, `Vector3iUVE`) — needed for pixel
-  coordinates, grid cells and texture dimensions, all of which currently use loose
-  `uint32_t` pairs or floats.
-- `[ ]` **A scalar-utility header** — there is no `Pi`, no `DegToRad`/`RadToDeg`,
-  no `LerpUVE`, `ClampUVE`, `SmoothStepUVE` or `ApproximatelyEqualUVE` anywhere in
-  `Core/Math`. Every call site re-derives them; the rotate-gizmo code, the
-  animation contracts and the physics solver each carry their own copy of the same
-  three lines. This is the cheapest high-value item in this document.
-- `[ ]` **`SphereUVE` and an OBB type** — both named as deferred inside
-  `aabb_uve.h` itself. Their absence is why the physics narrow phase carries
-  sphere and oriented-box geometry as loose parameters instead of shapes.
-- `[ ]` **A random-number source** — no `RandomUVE`, no PCG/xorshift.
-  `ParticleEmissionUVE` carries a `seed` field with no engine-owned generator to
-  consume it, so particle determinism is currently the caller's problem.
-- `[ ]` **Curves / easing / noise** — no spline, no curve asset, no easing set, no
-  value or gradient noise. Animation blending, camera transitions and procedural
-  placement all want these.
+- `[x]` **`Vector4UVE`** — `vector4_uve.h` + `Internal/vector4_uve.cpp`, registered in
+  `uve_math`. Mirrors `Vector3UVE` exactly (component-wise arithmetic, overflow-safe `DotUVE`,
+  `Length`/`Normalize`/`ToString`/`IsFinite`); no `CrossUVE` (no 4D meaning). First in-tree user:
+  the `matrix4x4_uve_tests.cpp` homogeneous-clip helper, whose local 4-float struct is deleted.
+  Tests in `Test/Math/vector4_uve_tests.cpp`. Verified: full suite green (1668 integration + 1306 core, 2026-10-09).
+- `[x]` **`Matrix3x3UVE`** — `matrix3x3_uve.h` + `Internal/matrix3x3_uve.cpp`, registered in
+  `uve_math`. Identity, `operator*`, `TransposeUVE`, `TryInverseUVE` (a line-for-line 3x3 port of
+  the 4x4 Gauss-Jordan, same pivot threshold), `ToMatrix3x3UVE`/`ToMatrix4x4UVE` conversions,
+  `ToStringUVE`. The renderer's `ComputeNormalMatrixUVE` now computes in 3x3; both uniform call
+  sites go through the new `ShaderProgramUVE::SetMatrix3x3UVE`, which embeds in a 4x4 for the
+  mat4-only uniform chain (shaders consume `mat3(...)` of it, so the embedding is invisible).
+  Tests in `Test/Math/matrix3x3_uve_tests.cpp`, including a 3x3-vs-legacy-4x4 normal-matrix
+  equivalence test. Verified: full suite green (1668 integration + 1306 core, 2026-10-09).
+- `[x]` **A TRS value type** — `trs_uve.h` + `Internal/trs_uve.cpp` (`Math::TrsUVE`,
+  registered in `uve_math`): translation/rotation/scale value with `ComposeUVE`,
+  `TransformPointUVE`/`TransformDirectionUVE`, exact inverse-application
+  `TryInverseTransformPointUVE`/`TryInverseTransformDirectionUVE`, equality,
+  `ToStringUVE`. No materialized inverse: rotation and non-uniform scale do not
+  commute, so the inverse of a general TRS is not a TRS (the reparent path's
+  refusal of non-uniformly-scaled rotated parents is the in-tree precedent). Four
+  migrations: the gizmo drag world-to-local delta, the reparent keep-world position,
+  the scene-graph parent/child composition (byte-identical expressions), and both
+  bone-attachment transforms — all prior zero-scale cutoffs and guards kept
+  verbatim at the call sites. The rotate-drag conjugation stays quaternion-level
+  (already values; TRS would add nothing). Tests in `Test/Math/trs_uve_tests.cpp`,
+  including associativity, a non-uniform-rotated round-trip, and a legacy-arithmetic
+  pin. Verified: full suite green (1668 integration + 1306 core, 2026-10-09), with the associativity test corrected to the uniform-scale domain the math actually guarantees.
+- `[x]` **`ColorUVE`** — `color_uve.h` + `Internal/color_uve.cpp` (`Math::ColorUVE`,
+  registered in `uve_math`): linear-working-space RGB value with `r/g/b`
+  channels, component-wise arithmetic, `IsFinite`/`Luminance` (Rec.709),
+  `ToVector3UVE`/`FromVector3UVE` bridges, and the exact sRGB EOTF pair
+  (`DisplayToLinearUVE`/`LinearToDisplayUVE`, IEC 61966-2-1, double-math,
+  honest HDR extension past 1). Four migrations: `LightComponentUVE`,
+  `LightEmitterComponentUVE`, `MaterialAssetUVE` (albedo + emissive), and
+  `LightDataUVE` — JSON stays byte-stable (`[x,y,z]` scene arrays,
+  `{"x","y","z"}` material keys; MTL Kd/Ke convert display→linear at import).
+  New `kPropertyTypeLinearColorUVE` vocabulary with an inspector branch that
+  transports `ColorUVE` and converts display↔linear at the picker edge.
+  Primitive/Env/UI/text colours stay display-`Vector3UVE` by design. Tests in
+  `Test/Math/color_uve_tests.cpp`, including sRGB round-trips and MTL-literal
+  pins. Verified: full suite green (1668 integration + 1306 core, 2026-10-09).
+- `[x]` **`RectUVE` / `RectIntUVE`** — `rect_uve.h` + `Internal/rect_uve.cpp` and
+  `rect_int_uve.h` + `Internal/rect_int_uve.cpp` (`Math::RectUVE`, `Math::RectIntUVE`,
+  registered in `uve_math`): position-plus-size rects with inclusive `ContainsUVE`,
+  strict `IntersectsUVE`, `Intersection`/`Union`, `TransformUVE` (scale + offset) and
+  `ToStringUVE`; the int twin widens corner arithmetic to int64 so rects near INT32_MAX
+  compare correctly. `UIImageComponentUVE`, `UIButtonComponentUVE` and `UIQuadUVE` carry
+  one `rect` (defaults preserved; JSON keeps the `positionPixels`/`sizePixels` keys, so old
+  scene files load unchanged), and `Render::ViewportRectUVE` is now an alias for
+  `RectIntUVE` — the RHI's four-uint32 struct retired, the backend fit-checks expressed as
+  `ContainsUVE` against the target bounds. `UITextComponentUVE` keeps its position point,
+  `PresentationLayoutUVE` its layout record. Tests in `Test/Math/rect_uve_tests.cpp` and
+  `Test/Math/rect_int_uve_tests.cpp`, including the hover edge-inclusion contract and an
+  INT32_MAX overflow pin. Verified: full suite green (1668 integration + 1306 core, 2026-10-09).
+- `[x]` **Integer vectors** (`Vector2iUVE`, `Vector3iUVE`) — `vector2i_uve.h` /
+  `vector3i_uve.h` + `Internal` twins, registered in `uve_math`: int32 x/y(/z) with plain
+  component-wise arithmetic, widened int64 `DotUVE`/`LengthSquaredUVE`, float `LengthUVE`,
+  component-wise `Min`/`Max`/`Clamp`, `ToVector2UVE`/`ToVector3UVE` conversions and
+  `ToStringUVE`. No normalize (a unit vector is not an integer vector). `Vector2iUVE` backs
+  `RectIntUVE` and every viewport-override construction site; `Vector3iUVE` has no in-tree
+  user yet and completes the family. Tests in `Test/Math/vector2i_uve_tests.cpp` and
+  `Test/Math/vector3i_uve_tests.cpp`, including an int64 dot-exactness pin past int32 range.
+  Verified: full suite green (1668 integration + 1306 core, 2026-10-09).
+- `[x]` **A scalar-utility header** — `uve/math/scalar_uve.h` (`UVE::Math`, header-only):
+  `kPiUVE`/`kPiDoubleUVE` from `std::numbers`, `DegToRadUVE`/`RadToDegUVE`, `LerpUVE`,
+  `ClampUVE` (via `std::clamp`), `SmoothStepUVE`, `ApproximatelyEqualUVE` with explicit
+  epsilon — all `constexpr`, floating-point-constrained except `ClampUVE`. The physics
+  (character controller) and animation (two-bone IK) copies used it first; Oct 2026 migrated
+  the rest of the literals engine-wide (player/character/world-env/collider, navmesh,
+  renderer sky, perception, the editor panels, clip editing). What stays outside the header
+  is deliberate: viewport-core (`univex/`) has no `uve_math` linkage and stays on
+  `std::numbers` because that target is host-independent by contract, and the shader-source
+  pi literals are GLSL, not C++. `Test/Math/scalar_uve_tests.cpp` covers values, boundaries
+  and constexpr-use. Verified: full suite green (1508 core + 1713 integration + 14 settings, 2026-10-10).
+- `[x]` **`SphereUVE` and an OBB type** — `sphere_uve.h` + `Internal/sphere_uve.cpp` and
+  `oriented_box_uve.h` + `Internal/oriented_box_uve.cpp` (`Math::SphereUVE`, `Math::OrientedBoxUVE`,
+  registered in `uve_math`): center/radius with `Contains`/`ClosestPoint`/`IsValid`, and a
+  center/half-extents/rotation box with local/world transforms plus `ToAabbUVE` (exact 8-corner
+  bound). The physics narrow phase now takes the shapes instead of loose parameters (ray/sweep/
+  penetration queries migrated with validation semantics preserved verbatim — the narrow phase
+  stays one step stricter than `IsValidUVE`, and the OBB query keeps normalizing handed-in
+  rotations rather than requiring unit ones). Tests in `Test/Math/sphere_uve_tests.cpp` and
+  `Test/Math/oriented_box_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
+- `[x]` **A random-number source** — `random_uve.h` (`Math::RandomUVE`, header-only, registered
+  in `uve_math`): PCG32 XSH-RR with `NextUInt32/NextUInt64/NextFloat01/Range/Shuffle`, explicit
+  seeding, value semantics (copying forks the stream — documented, not prevented). (Correction:
+  the earlier "`ParticleEmissionUVE` carries a `seed` field" claim is stale — the struct has no
+  seed; emission determinism comes from per-particle sequence numbers instead. `RandomUVE` is
+  the generator the next jitter/spread feature reaches for.) Tests in
+  `Test/Math/random_uve_tests.cpp`, including PCG paper-vector pins. Verified: full suite green
+  (3998 ctest cases, 2026-10-12).
+- `[x]` **Curves / easing / noise** — `easing_uve.h` (`Math::EaseKindUVE` + `EaseUVE`, all 31
+  easings.net curves, header-only), `curves_uve.h` (cubic Bézier point/tangent, Catmull-Rom
+  point, header-only), `noise_uve.h` (seeded value + gradient noise 2D, header-only), all
+  registered in `uve_math`. The UI tween system now maps its serialized ease vocabulary onto
+  `Math::EaseUVE` instead of owning duplicate formulas. No curve *asset* (keyframed,
+  serializable) — deliberately: the math layer carries the functions, an asset is authoring
+  work for a later tier. Tests in `Test/Math/easing_uve_tests.cpp`, `Test/Math/curves_uve_tests.cpp`
+  and `Test/Math/noise_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
 - `[ ]` **SIMD** — no alignment attributes and no vectorised path on any type,
   documented as deferred.
 
 ## 2. Containers — `Engine/Runtime/Core/Containers`
 
-`[ ]` **The directory exists and contains zero code files.** So do
-`Core/Types`, `Core/Strings` and `Core/Delegates`. There is no engine-owned
-container of any kind.
+`[x]` **The directory exists and contains zero code files.** Stale as written: `Core/Containers`
+now holds `FixedArrayUVE`, `SmallVectorUVE`, `HandleTableUVE`, `SparseSetUVE`, `RingBufferUVE`
+and `BitSetUVE`, and `Core/Strings` holds `StringIdUVE` plus the string utilities. What stays
+true is `Core/Types` and `Core/Delegates` — both still README-only placeholders for a future
+restructuring stage, deliberately out of scope here.
 
 This is the largest structural hole in the foundation, and it gets worse with
 time rather than staying constant: every system written before a container layer
@@ -222,35 +282,63 @@ roadmap in Part V.
 
 What a runtime of this shape needs, and what each unblocks:
 
-- `[ ]` **`FixedArrayUVE<T, N>`** — fixed-capacity, stack-allocated, size tracked
+- `[x]` **`FixedArrayUVE<T, N>`** — fixed-capacity, stack-allocated, size tracked
   separately from capacity. The workhorse for bounded per-frame data. The engine
   already has many bounded limits expressed as raw `std::array` plus a manual
   count (`LightListUVE`, the frame-task graph's 256-task cap, the diagnostics
   capture caps); each is the same pattern rewritten.
-- `[ ]` **`SmallVectorUVE<T, N>`** — inline storage for the first `N`, heap
+  Implemented in `Core/Containers` (Tier 0, item 0.2); `LightListUVE` and the
+  frame-task graph's 256-task cap now use it. Verified: full suite green (1318 core + 1668 integration, 2026-10-09). Both migrations confirmed in-tree (`LightListUVE` alias + scheduler `m_tasks`).
+- `[x]` **`SmallVectorUVE<T, N>`** — inline storage for the first `N`, heap
   spill beyond. The single highest-impact container for a game engine, because the
   overwhelming majority of per-entity and per-frame lists are small and currently
   each one heap-allocates.
-- `[ ]` **`SparseSetUVE`** — dense array plus sparse index, O(1) insert/remove with
-  contiguous iteration. This is the canonical ECS storage structure; the archetype
-  storage in `Entity/Internal/` solves the same problem its own way and could not
-  reuse a shared one if it wanted to.
-- `[ ]` **`HandleTableUVE<T>`** — generational slot map. The engine already has
+  Implemented alongside `FixedArrayUVE` in `Core/Containers` (Tier 0, item 0.2)
+  with its own test suite; first migration landed Oct 2026 (frame-task dependencies
+  inline at the 32-cap, zero allocations for accepted tasks, braced-init supported).
+  Verified: full suite green (1511 core + 1713 integration + 14 settings, 2026-10-10).
+- `[x]` **`SparseSetUVE`** — `sparse_set_uve.h` (`Containers::SparseSetUVE<T>`, header-only):
+  dense array plus sparse index, O(1) insert/remove with contiguous iteration, uint32 ids with
+  swap-remove and a parallel id span. The archetype storage keeps its own layout (migrating the
+  ECS onto the shared primitive is future work, explicitly not attempted). Tests in
+  `Test/Core/Containers/sparse_set_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
+- `[x]` **`HandleTableUVE<T>`** — generational slot map. The engine already has
   **three independent hand-rolled versions** of this idea: `EntityUVE`
   (index + generation), `VoiceHandleUVE` (generational voice id), and
   `ResourceHandleUVE<Tag>` (phantom-tagged u32). They are each correct; they are
   also each a separate implementation of the same primitive.
-- `[ ]` **`RingBufferUVE<T>`** — bounded FIFO. `MemorySinkUVE` in the logger
-  already implements one privately for its recent-message ring.
-- `[ ]` **`BitSetUVE`** — fixed-width bit operations for layer masks and archetype
-  signatures. `ArchetypeSignatureUVE` (private, `Entity/Internal/`) is exactly this.
-- `[ ]` **`StringIdUVE` / interned name** — a hashed, comparable, cheap-to-copy
+  Implemented in `Core/Containers` (Tier 0, item 0.5) as a handle-concept generic
+  (`SlotHandleUVE` default; `VoiceHandleUVE` packs index+generation into its u32);
+  both audio devices rebuilt on it with unified voice+state slots. Correction: the
+  "generational voice id" above was actually a monotonic counter plus a map — the
+  migration is what made voices truly generational (slot reuse, stale-safe).
+  `EntityUVE`/`ResourceHandleUVE<Tag>` migrations remain future work. Verified: full suite green (1318 core + 1668 integration, 2026-10-09). The `VoiceHandleUVE` rebuild is confirmed truly generational (audio tests green).
+- `[x]` **`RingBufferUVE<T>`** — `ring_buffer_uve.h` (`Containers::RingBufferUVE<T, Capacity>`,
+  header-only): stack-allocated bounded FIFO with overwrite-oldest semantics, an explicit
+  dropped-count and oldest-to-newest iteration. `MemorySinkUVE` keeps its private ring (its
+  message shape predates the primitive; migrating it is future work). Tests in
+  `Test/Core/Containers/ring_buffer_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
+- `[x]` **`BitSetUVE`** — `bit_set_uve.h` (`Containers::BitSetUVE<N>`, header-only): uint64
+  words with spare-bit masking and the full `& | ^ ~ ==` vocabulary, for layer masks and
+  archetype signatures. `ArchetypeSignatureUVE` keeps its private copy (same future-migration
+  note as the sparse set). Tests in `Test/Core/Containers/bit_set_uve_tests.cpp`. Verified: full
+  suite green (3998 ctest cases, 2026-10-12).
+- `[x]` **`StringIdUVE` / interned name** — a hashed, comparable, cheap-to-copy
   name. Type ids in `TypeMetadataEntryUVE` are raw `std::string`, compared by
   value; every reflected property lookup is a string compare. An interned id turns
   those into integer compares and makes name-keyed maps cheap.
-- `[ ]` **`SpanUVE<T>`** — non-owning view. `std::span` covers this in C++20; what
+  Implemented in `Core/Strings` (Tier 0, item 0.4): process-wide intern table
+  (deduped, immortal strings, mutex-guarded interning, lock-free compare); entry
+  + property type ids and nesting hosts are ids, and the 17-name property-type
+  vocabulary is interned once at startup so inspector dispatch compares integers.
+  Snapshot order still sorts by recovered text. Verified: full suite green (1318 core + 1668 integration, 2026-10-09). Entry + property + nesting-host ids confirmed in `TypeMetadataEntryUVE`.
+- `[x]` **`SpanUVE<T>`** — non-owning view. `std::span` covers this in C++20; what
   is missing is the convention of using it, since most interfaces here take
   `const std::vector<T>&` and therefore cannot accept a subrange or a fixed array.
+  Convention established (Tier 0, item 0.2): read paths take `std::span<const T>`
+  — exemplar is the scheduling module (`FrameTaskGraphUVE::GetTasksUVE`,
+  `FindTaskIndexUVE`); most interfaces still take `const std::vector<T>&` (future
+  migrations). Verified: full suite green (1318 core + 1668 integration, 2026-10-09). Exemplar confirmed (`GetTasksUVE` returns `std::span<const FrameTaskDefinitionUVE>`; `FindTaskIndexUVE` takes one).
 
 ## 3. Memory — `Engine/Runtime/Core/Memory`, namespace `UVE::Memory`
 
@@ -278,22 +366,32 @@ adaptor.
 Thread-safety is explicit and consistent: **the allocators are not thread-safe and
 say so**; only `MemoryManagerUVE` is.
 
-- `[ ]` **An STL-compatible allocator adaptor (`StdAllocatorUVE<T>`)** — and this
+- `[x]` **An STL-compatible allocator adaptor (`StdAllocatorUVE<T>`)** — and this
   is the problem. Without it, no `std::vector`, `std::string` or `std::unordered_map`
   in the engine can allocate through any of the allocators above. The allocators
   are real, tested, and used by almost nothing. Pairing this with the container
   layer in Part I §2 is what turns the memory module from infrastructure into
   something the engine actually runs on.
-- `[ ]` **A frame/linear arena distinct from the stack allocator** — the standard
-  "allocate freely during a frame, reset the pointer at end of frame" allocator.
-  `StackAllocatorUVE` is close but its LIFO discipline is stricter than a frame
-  arena needs.
-- `[ ]` **Smart pointers paired with the allocator API** — no `UniquePtrUVE` or
-  intrusive ref-counted pointer, so callers must hand-pair `ConstructUVE` with a
-  matching `DestroyUVE` and get the lifetime right themselves.
-- `[ ]` **A per-thread or thread-safe allocator wrapper** — every allocator is
-  single-threaded by contract, yet `IMemoryTrackerUVE` explicitly anticipates
-  worker-thread allocation. Nothing bridges that gap today.
+  Implemented in `Core/Memory` (Tier 0, item 0.3): thin stateful adaptor over an
+  `IAllocatorUVE&` (pmr-style non-propagating traits, identity equality,
+  construction-site file/line labels); a `std::vector` test allocates through
+  `PoolAllocatorUVE` with the `MemoryManagerUVE` tracker observing. Verified: full suite green (1318 core + 1668 integration, 2026-10-09).
+- `[x]` **A frame/linear arena distinct from the stack allocator** — `linear_arena_uve.h`
+  (`Memory::LinearArenaUVE`, header-only): bump allocation with alignment, no-op deallocation
+  (with a range assert), `ResetUVE` that runs no destructors, and a throw (after assert+log) on
+  exhaustion. Tests in `Test/Core/Memory/linear_arena_uve_tests.cpp`, including exhaustion death
+  tests. Verified: full suite green (3998 ctest cases, 2026-10-12).
+- `[x]` **Smart pointers paired with the allocator API** — `unique_ptr_uve.h`
+  (`Memory::UniquePtrUVE<T>`, the allocator travels with the pointer, `UVE_MAKE_UNIQUE` captures
+  the call site) and `intrusive_ptr_uve.h` (`Memory::RefCountedUVE` with an atomic count starting
+  at 0 plus `Memory::IntrusivePtrUVE<T>`, fresh-object wrap convention, heap-only rule). Tests in
+  `Test/Core/Memory/unique_ptr_uve_tests.cpp` and `Test/Core/Memory/intrusive_ptr_uve_tests.cpp`.
+  Verified: full suite green (3998 ctest cases, 2026-10-12).
+- `[x]` **A per-thread or thread-safe allocator wrapper** — `thread_safe_allocator_uve.h`
+  (`Memory::ThreadSafeAllocatorUVE`, header-only): a mutex decorator over any `IAllocatorUVE`
+  (the inner allocator must outlive it). Tests in
+  `Test/Core/Memory/thread_safe_allocator_uve_tests.cpp`, including a 4-thread hammer. Verified:
+  full suite green (3998 ctest cases, 2026-10-12).
 
 ## 4. Threading and scheduling — `Core/Threading`, `Core/Scheduling`
 
@@ -323,29 +421,53 @@ better place to be, and worth knowing before anyone proposes building a job syst
 
 Missing primitives:
 
-- `[ ]` **`ParallelForUVE`** over the pool — every caller hand-rolls submit plus
-  `JobCounterUVE`.
-- `[ ]` **Named synchronisation primitives** — no `SpinLockUVE`, `RWLockUVE` or
-  semaphore type.
-- `[ ]` **A `ThreadIdUVE` type** — `Core/Diagnostics` needs thread ids and takes
-  them as raw `uint64` parameters.
-- `[ ]` **Thread naming / affinity / priority** — nothing, which also means worker
-  threads are anonymous in any external profiler.
+- `[x]` **`ParallelForUVE`** over the pool — `parallel_for_uve.h` (`Threading::ParallelForUVE`,
+  header-only): chunked index ranges over `IThreadPoolUVE` with an empty-range early-out. Nesting
+  a second `ParallelForUVE` over the same pool deadlocks when the outer chunks occupy every
+  worker — documented in the header with the rule (outer chunks strictly below the worker count,
+  or a second pool) and pinned by a test. Tests in
+  `Test/Core/Threading/parallel_for_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
+- `[x]` **Named synchronisation primitives** — `spin_lock_uve.h` (`Threading::SpinLockUVE`,
+  test-and-set with STL `lock_guard` interop), `rw_lock_uve.h` (`Threading::RwLockUVE` over
+  `std::shared_mutex`, same interop) and `semaphore_uve.h` (`Threading::SemaphoreUVE`, an
+  unbounded counting gate over mutex+condvar), all header-only. Tests in
+  `Test/Core/Threading/spin_lock_uve_tests.cpp`, `rw_lock_uve_tests.cpp` and
+  `semaphore_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
+- `[x]` **A `ThreadIdUVE` type** — `thread_id_uve.h` (`Threading::ThreadIdUVE`, header-only): a
+  hashed-`std::thread::id` uint64 wrapper with `CurrentUVE`/`FromNativeUVE`, `std::hash` support
+  and 0 meaning unknown. `Core/Diagnostics` keeps taking raw `uint64` thread ids on purpose — that
+  module depends on zero `uve/*` targets by design, and naming this type would be the forbidden
+  edge; `ValueUVE()` is the bridge at emission. Tests in
+  `Test/Core/Threading/thread_id_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
+- `[~]` **Thread naming / affinity / priority** — naming landed: `thread_naming_uve.h` +
+  `Internal/thread_naming_uve.cpp` (`SetCurrentThreadNameUVE`/`TryGetCurrentThreadNameUVE`, Win32
+  / pthread / false-stub with Linux's 15-byte truncation documented), and the pool's workers now
+  self-name (`UVEWorkerN`) instead of going through the old Linux-only helper, which is deleted.
+  Affinity and priority are still nothing — genuinely future. Tests in
+  `Test/Core/Threading/thread_naming_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
 
 ## 5. Utilities and diagnostics
 
 - `[x]` **`TimerUVE`** (`Core/Utilities`) — steady-clock frame timing with a
   fixed-step accumulator returning `FixedStepResultUVE` (step count + interpolation
   alpha). Owned exclusively by the frame-pipeline thread.
-- `[~]` **`binary_buffer_uve.h`** (`Core/Utilities`) — `AppendBytes/Uint32/Uint64/
-  Float` and bounds-checked readers over `std::vector<std::byte>`. Readers are
-  `[[nodiscard]] bool` and leave the offset untouched on failure, which is the
-  right shape. **But it writes in host byte order with no endian handling**, and
-  every save file, asset envelope and pack format is built on it. Today that is
-  invisible because everything is little-endian; it becomes a format-compatibility
-  break the first time a big-endian target or a cross-machine save appears.
-  There is also no `AppendString`/`AppendBool`/`AppendDouble`, despite the config
-  layer storing doubles and the save layer storing strings.
+- `[x]` **`binary_buffer_uve.h`** (`Core/Utilities`) — explicit-endian integer and float
+  codec over `std::vector<std::byte>`: `AppendUint16/32/64/FloatLe/BeUVE` plus advancing,
+  bounds-checked `Read...Le/BeFromBufferUVE` (same failure contract as before: false, offset
+  and value untouched). The old host-order functions are deleted — there is exactly one way
+  to serialize an integer, and it names its byte order. 7 format migrations: the universal
+  `.uve*` envelope header, the asset bundle, the texture wrapper (+ KTX2 header reads, which
+  are LE by spec), the mesh format (incl. vertex floats), the `.uvsave` length prefixes, the
+  save-payload header (local helpers deleted), and the audio asset (local LE codec deleted;
+  sample payload was host-order bulk bytes, now per-sample LE). Zero byte changes on
+  little-endian targets (all of them): every pre-existing test passes unchanged, old files
+  load bit-for-bit. Deliberately untouched: the external-spec importers (PNG BE / WAV+TGA LE
+  readers are already spec-correct), the network packet codec (already BE network order),
+  and `AUDIT.md`'s frozen API inventory. `AppendString/Bool/Double` remain unadded — the
+  census showed no binary site needs them (strings ride length-prefixed raw bytes; no format
+  stores doubles or bools). First tests the API ever had: 9 cases incl. LE/BE literal pins,
+  IEEE-754 float pins, and the simulated byte-swap round-trip asserting byte-identical
+  re-emission. Verified: 1318 core + 1668 integration green (2026-10-09).
 - `[x]` **Logging** (`Core/Logging`) — `LoggerUVE` with `ConsoleSinkUVE`,
   `FileSinkUVE` and `MemorySinkUVE` (the editor console's ring), severity-ordered
   `LogLevelUVE`, and `UVE_LOG`/`UVE_INFO`/`UVE_WARN`/`UVE_ERROR`/`UVE_FATAL`
@@ -357,15 +479,39 @@ Missing primitives:
   breadcrumb capture with **explicit dropped-record counters** rather than
   unbounded growth or silent loss. Timestamps are caller-supplied nanoseconds; the
   module owns no clock, which makes captures deterministic and testable.
-- `[ ]` **Hashing** — no FNV/xxHash/`HashCombineUVE`. `AssetContentFingerprintUVE`
-  implements its own content hash privately; `std::hash` specialisations are
-  hand-written per type.
-- `[ ]` **A UUID/GUID type** — `AssetGuidUVE` is asset-specific; nothing general.
-- `[ ]` **String utilities**, **`ScopeGuardUVE`**, **`NonCopyableUVE`**, and an
-  **enum-flags helper** (`TypeMetadataMethodUVE::flags` is a raw `uint32`).
-- `[~]` **`Core/Scheduling` and `Core/Diagnostics` carry no doc comments at all** —
-  the only two modules in this layer without them, which is jarring against a
-  codebase where every other header explains its own trade-offs.
+- `[x]` **Hashing** — `uve/utilities/hash_uve.h` (`UVE::Utilities`, header-only): `HashCombineUVE`
+  (exact boost formula, for in-memory tables), incremental `Fnv1a64UVE` plus one-shot
+  `HashBytesUVE`/`HashStringUVE` (fixed-width `uint64_t`, for persisted/cross-process identity).
+  9 migrations: the content fingerprint, the save checksum, the shader source hash (whose
+  `Detail::ComputeFnv1aHashUVE` is deleted), the FBX corner key, the cache file names, the
+  data-table cache version, and the archetype/pose/mesh-pair combiners. Zero value changes
+  everywhere except the mesh pair hash (64-bit → 32-bit golden constant; frame-built table,
+  never persisted): the two typo-seed sites keep their legacy seed explicitly, since the save
+  checksum is a format. Two copies stay deliberately local with pointer comments — the
+  application-runtime identifier hash (`uve_platform` sits below `uve_utilities`; an edge would
+  be a target cycle) and the UVScript program fingerprint (that module is std-only by design).
+  Trivial single-field `std::hash` pass-throughs were left alone (nothing to gain). Verified by
+  the full suite: 1309 core + 1668 integration green, including 6 new hashing tests with
+  `static_assert`ed FNV known-answer vectors (2026-10-09).
+- `[x]` **A UUID/GUID type** — `uuid_uve.h` (`Utilities::UuidUVE`, header-only): 16 bytes with
+  v4 construction from caller entropy, canonical string form, strict `TryParseUVE` and an FNV-1a
+  `std::hash`. (`AssetGuidUVE` stays asset-specific; this is the general one.) Tests in
+  `Test/Core/Utilities/uuid_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
+- `[x]` **String utilities**, **`ScopeGuardUVE`**, **`NonCopyableUVE`**, and an
+  **enum-flags helper** — `string_utils_uve.h` (`Trim`/`Split` (empties kept)/`Join`/`ToLower`/
+  `ToUpper`, ASCII-only), `scope_guard_uve.h` (`ScopeGuardUVE` + `UVE_DEFER`), `non_copyable_uve.h`
+  (`NonCopyableUVE`, boost shape, move also deleted) and `flags_uve.h` (`FlagsUVE<TEnum>` with
+  implicit enum conversion and the full typed operator set), all header-only. The property-flags
+  vocabulary migrated onto `FlagsUVE` (the bespoke `operator|` and `HasPropertyFlagUVE` are
+  deleted; all readers go through `.HasUVE`). `TypeMetadataMethodUVE::flags` stays a raw `uint32`
+  with no vocabulary — nothing reads it, so there is nothing to migrate it to yet. Tests in
+  `Test/Core/Strings/string_utils_uve_tests.cpp` and `Test/Core/Utilities/{scope_guard,non_copyable,flags}_uve_tests.cpp`.
+  Verified: full suite green (3998 ctest cases, 2026-10-12).
+- `[x]` **`Core/Scheduling` and `Core/Diagnostics` carry no doc comments at all** — both now
+  carry module headers: Scheduling explains the two-graph split (`JobGraphUVE` for one-shot
+  cascades, `FrameTaskGraphUVE` for the repeating frame plan) and the honest unwired status;
+  Diagnostics states its three constraints (bounded capture with dropped counters, no clock,
+  zero `uve/*` deps) and the raw-uint64 thread-id bridge. Verified by reading, 2026-10-12.
 
 ## 6. Reflection — `Engine/Runtime/Objects/Core`, namespace `UVE::Core`
 
@@ -379,16 +525,28 @@ Missing primitives:
   owner/value contract, wrapped by type-safe `GetPropertyValueUVE` /
   `SetPropertyValueUVE` free functions and built by `MakePropertyUVE()` from a
   pointer-to-member.
-- `[ ]` **There is no factory.** `TypeMetadataEntryUVE` has properties and methods
-  but **no constructor/create function pointer**, so a type cannot be instantiated
-  from its id. That single omission is what blocks generic deserialization (every
-  component's read/write is hand-written in `SceneSerializerUVE` instead) and an
-  editor "add component by type name" flow. It is a small addition with a large
-  payoff and is Tier 1 in Part V.
-- `[ ]` **No `TypeIdUVE` strong type** — type ids are raw `std::string`.
-- `[ ]` **No object/handle layer** — no base object, no reference counting, no
-  registry of live instances. The module is metadata only, which is a legitimate
-  choice; it is recorded here so nobody goes looking for the rest of it.
+- `[x]` **A reflection factory.** `TypeMetadataEntryUVE` carries a heap factory
+  (`createDefaultInstance`/`destroyInstance`/`cloneInstance`/`assignInstance`, bound by
+  `BindTypeUVE`, queried via `HasFactoryUVE`) plus the archetype-slot construction trio
+  (`instanceSize`/`instanceAlignment`, in-place construct/move/destroy) that
+  `IEntityManagerUVE::AddComponentErased` needs — the Core-native mirror of
+  `Scene::ComponentTypeInfoUVE`. The editor already builds on it (reset-to-default,
+  previews, snapshots); `SceneSerializerUVE` now deserializes through it too, via a
+  metadata-driven property codec (`MakeMetadataRegistrationUVE`) whose skip rule is exactly
+  `TypeMetadataPropertyUVE::IsSerializedUVE()` (no runtime state, no editor-only authoring,
+  no unbound properties). `CanvasComponentUVE` is the pilot: it round-trips with no
+  hand-written JSON on either side, byte-identical to before. An editor "add component by
+  type name" flow and the remaining component migrations were Tier 1.6's mechanical payoff (done: 31 migrated, `ComponentRegistryUVE` live).
+  Verified: full suite green (1668 integration + 1306 core, 2026-10-09).
+- `[x]` **No `TypeIdUVE` strong type** — resolved twice over: type ids stopped being raw
+  `std::string` with the `StringIdUVE` migration, and the name now exists too —
+  `Core::TypeIdUVE` aliases `Strings::StringIdUVE` in `type_metadata_uve.h`, and every entry,
+  property and lookup signature in that header spells it. Verified: full suite green
+  (3998 ctest cases, 2026-10-12).
+- `[ ]` **No object/handle layer** — no base object, no registry of live instances.
+  (The earlier "no reference counting" clause is stale: `Memory::RefCountedUVE` now exists — but
+  it is a memory primitive, not an object system, so the module itself stays metadata only, which
+  is a legitimate choice; it is recorded here so nobody goes looking for the rest of it.)
 
 ---
 
@@ -445,7 +603,7 @@ reload latency is the poll interval and a rename reads as remove-plus-create.
 | Asset | Holds | Importer | Status |
 |---|---|---|---|
 | `MeshAssetUVE` | `MeshVertexUVE` array (position, normal, uv, tangent, handedness), `uint32` indices, `AabbUVE localBounds`, skinning influences, joints | **OBJ** and **glTF/GLB**, plus a `.uvmodel` envelope | `[x]` |
-| `TextureAssetUVE` | width, height, format, raw uncompressed pixels | **PNG, JPEG, BMP, TGA**, plus `.uvtex` | `[~]` no mips, no compression |
+| `TextureAssetUVE` | width, height, format, pixels, a CPU-generated mip chain and Basis-compressed uploads | **PNG, JPEG, BMP, TGA**, plus `.uvtex` | `[x]` mips + compression landed (see below) |
 | `MaterialAssetUVE` | albedo colour, albedo/normal/AO texture GUIDs, metallic, roughness, emissive colour, shader GUIDs, transparency flag | **MTL**, plus `.uvmat` | `[~]` see below |
 | `ShaderAssetUVE` | stage, source text, entry point — stored as-is, not compiled at asset level | source importer + `.uvshader` | `[x]` |
 | `AudioAssetUVE` | channels, sample rate, interleaved normalized float samples | **WAV** | `[~]` WAV only |
@@ -455,26 +613,28 @@ reload latency is the poll interval and a rename reads as remove-plus-create.
 
 Three things about this table matter more than the rest:
 
-- `[~]` **`AnimationClipAssetUVE` stores a single TRS track.** `MeshAssetUVE` in
-  the same module carries a `MeshJointUVE` array with inverse bind matrices, and
-  the clip format cannot address it — there are no per-joint channels. So the two
-  halves of a skeletal animation pipeline exist in the same directory and cannot
-  be connected. This is the largest coherence gap in the asset layer, and it is
-  why `Skeleton3D`, `BoneAttachment3D`, `AnimationSequencer` and `AnimationGraph` are
-  all authored-data-only nodes.
-- `[~]` **`MaterialAssetUVE` has three of the six PBR texture slots** its own doc
-  comment describes: albedo, normal and AO are present; metallic, roughness and
-  emissive texture GUIDs are not. Scalar metallic and roughness exist, so the
-  material is usable — it just cannot be textured per-pixel.
+- `[x]` **`AnimationClipAssetUVE` stores a single TRS track.** Connected since Tier 2.6:
+  per-joint `AnimationAssetBoneTrackUVE` channels, a separate `SkeletonAssetUVE`, a glTF skin
+  converter and `TrySkinMeshUVE` output — the two halves join through the skinning path, and the
+  renderer CPU-skins posed skeletons (Tier 3.1).
+- `[x]` **`MaterialAssetUVE` has three of the six PBR texture slots** its own doc
+  comment describes. Complete since Tier 2.7: metallic/roughness/emissive map slots sit on the
+  asset, the renderer binds slots 12/13, and `lit_shadowed_3d` samples them (B metallic, G
+  roughness).
 - `[x]` **A WAV importer does exist**, in `Engine/Runtime/Audio/` rather than in
   `Asset/` — `RegisterWavImporterUVE`, registered from `engine_core_uve.cpp:260`.
   *(An earlier survey reported no audio importer at all, having searched only
   `Asset/Internal/`. Corrected here.)* OGG, MP3 and FLAC are genuinely absent.
 
-Also missing: `[ ]` an FBX importer, `[ ]` any animation importer (glTF is parsed
-for meshes only), `[ ]` a skeleton asset separate from the mesh, and `[ ]` a font
-asset — the UI's `UIFontAtlasUVE` builds its atlas from an embedded font at
-runtime with no asset behind it.
+Also missing, as of the last audit: `[~]` an FBX importer (static meshes convert via vendored
+ufbx; skins, materials and animation are explicitly out of scope), `[x]` any animation importer
+(`gltf_animation_converter_uve` samples glTF animation channels into clips), `[x]` a skeleton
+asset separate from the mesh (Tier 2.6: `skeleton_asset_uve`), and `[x]` a font asset —
+`FontAssetUVE` (raw sfnt bytes + family name, `.uvfont` envelope, `AssetKindUVE::Font`) with a
+`.ttf`/`.otf` importer, and `UIFontAtlasUVE` bakes from caller bytes now (the embedded Liberation
+Sans subset stays the default, exposed for the equivalence test). Tests in
+`Test/Core/Asset/font_asset_uve_tests.cpp`, `Test/Core/Asset/ttf_importer_uve_tests.cpp` and the
+extended `Test/UI/ui_font_atlas_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
 
 ## 9. GPU resources — the RHI
 
@@ -497,36 +657,38 @@ render-pass attachment.
 | Descriptor | Carries | Gap |
 |---|---|---|
 | `BufferDescUVE` | size, usage (`Vertex`/`Index`/`Uniform`/`Storage`/`IndirectStorage`) | no memory/CPU-access/lifetime hint |
-| `TextureDescUVE` | width, height, format, mipLevels | **no array layers, no depth, no cubemap, no sample count, no usage flags** |
-| `TextureFormatUVE` | `RGBA8Unorm`, `RGBA16Float`, `Depth32Float` | three formats; no sRGB, no compressed, no single/two-channel |
+| `TextureDescUVE` | width, height, format, mipLevels, array layers, cubemap shape | no depth, no sample count, no usage flags (Tier 2.3 landed layers + cubes) |
+| `TextureFormatUVE` | `RGBA8Unorm`, `RGBA16Float`, `Depth32Float`, BC1/BC3/BC7, ETC2/ETC2A8 | eight formats; no sRGB, no single/two-channel |
 | `ShaderDescUVE` | stage, source, entry point | `Geometry` compiles but has no pipeline slot |
-| `PipelineDescUVE` | vertex+fragment shader, vertex layout, stride, topology, `depthTestEnabled`, `depthWriteEnabled`, blend mode | **no rasterizer state at all** — see below |
-| `RenderPassDescUVE` | **one** colour attachment, one depth attachment, load ops, clear values, optional viewport override | single colour attachment; `LoadOpUVE` with no `StoreOp` |
-| `PrimitiveTopologyUVE` | `Triangles` | no lines, points or strips |
+| `PipelineDescUVE` | vertex+fragment shader, vertex layout, stride, topology, depth test/write/compare, cull/winding/fill/bias, blend mode | rasterizer tail landed (Tier 2.1, RHI side) |
+| `RenderPassDescUVE` | up to 4 colour attachments, one depth attachment, load+store ops, clear values, optional viewport override | multi-target + `StoreOpUVE` landed (Tiers 2.4/2.5) |
+| `PrimitiveTopologyUVE` | `Triangles`, `Lines` | no points or strips (lines serve the debug renderer) |
 
 Three consequences follow directly from that table and are worth stating plainly,
 because each one blocks a whole feature:
 
-- `[ ]` **No rasterizer state.** `PipelineDescUVE` has no cull mode, no winding
-  order, no fill mode, no depth bias and **no depth-compare function**. Anything
-  needing a comparison other than the fixed default has to reach around the
-  abstraction — which is exactly what the editor's gizmo overlay does today,
-  setting the GL depth function directly because the pipeline cannot express it.
-  Shadow-map depth bias is unexpressible for the same reason.
-- `[ ]` **No multiple render targets.** One colour attachment means a deferred or
-  G-buffer path cannot be described at all, regardless of what the backends can do.
-- `[ ]` **No texture dimensionality.** No cubemaps means no environment maps and
-  therefore no image-based lighting; no array layers means cascade shadow maps
-  cannot use a texture array.
+- `[~]` **No rasterizer state.** The RHI side landed (Tier 2.1): cull/winding/fill/bias plus a
+  full `DepthCompareUVE` sit on `PipelineDescUVE` and all three backends apply them. What stays
+  open is the consumer: the gizmo overlay and the studio backdrop still drive raw GL depth state
+  — and both live in host-independent `univex/` viewport-core, which cannot see the RHI by
+  contract. The migration is a design pass (how viewport-core overlays adopt RHI pipelines), not
+  a missing API.
+- `[x]` **No multiple render targets.** Landed (Tier 2.4): gap-rejecting colour slots 1..3 on
+  `RenderPassDescUVE`, with a Vulkan test recording a multi-target pass and sampling per-target
+  colours.
+- `[x]` **No texture dimensionality.** Landed (Tier 2.3): `TextureTypeUVE::Cubemap` +
+  `Texture2DArray` with creation-time shape validation, HW-ordered `CubemapFaceUVE` and
+  render-into-layer. (Image-based lighting itself is still absent — see §10.)
 
-Also absent: `[ ]` a sampler object (filtering is hardcoded — the Vulkan backend
-documents "one device-owned fixed sampler, linear/clamp"), `[ ]` descriptor sets
-or bind groups (binding is flat global slot indices), `[ ]` any synchronisation
-primitive (no fence, semaphore, barrier or timeline — `SubmitUVE` + `PresentUVE`
-is the entire model), `[ ]` a swapchain/surface abstraction, `[ ]` stencil state,
-`[ ]` mip generation, `[ ]` copy/blit operations (only `UpdateBufferUVE` and
-`ReadbackBufferUVE`), and `[ ]` timestamp or occlusion queries — which is precisely
-why the occlusion-culling note elsewhere says its payoff cannot be demonstrated.
+Also absent: `[x]` a sampler object — landed (Tier 2.2: `SamplerDescUVE` with Point filtering
+in all three backends); and still genuinely `[ ]` descriptor sets or bind groups (binding is flat
+global slot indices), `[ ]` any synchronisation primitive (no fence, semaphore, barrier or
+timeline — `SubmitUVE` + `PresentUVE` is the entire model), `[ ]` a swapchain/surface
+abstraction, `[ ]` stencil state, `[ ]` GPU mip generation (CPU chains landed; no GPU path),
+`[ ]` copy/blit operations (only `UpdateBufferUVE` and `ReadbackBufferUVE`), and `[ ]` timestamp
+or occlusion queries — which is precisely why the occlusion-culling note elsewhere says its
+payoff cannot be demonstrated. None of these is claimed by any tier below; each is future
+subsystem work with its own design pass. (Verified present-or-absent by source read, 2026-10-12.)
 
 ### Command recording and backends
 
@@ -559,17 +721,19 @@ barriers, transient allocation or reordering. It is a validation and sequencing
 layer, not a frame graph.
 
 `[ ]` Not real: occlusion culling (`Occluder3D` data is consumed by the
-eligibility path but no occlusion test runs), image-based lighting, texture
-compression and mipmaps, geometry shaders, and the particle GPU upload path —
-`ParticleRenderBridgeUVE` and `ParticleDrawRecorderUVE` both state in their own
-comments that they allocate no GPU buffers and submit nothing.
+eligibility path but no occlusion test runs — Tier 3.6, needs the GPU query path above),
+image-based lighting, geometry shaders (`ShaderStageUVE::Geometry` compiles standalone but still
+has no pipeline slot, deferred by its own header comment), and the particle GPU upload path
+(`ParticleRenderBridgeUVE` still states it performs no GPU work). Texture compression and
+mipmaps left this list: Basis Universal transcoding plus CPU mip chains are real (`[x]`).
 
 `[ ]` Missing renderer-level types: no material system (material→program binding
-is inlined in the renderer), no 2D renderer or sprite batcher (`basic_2d.glsl`
-exists with nothing consuming it), **no debug/line renderer** — nothing in the
-engine can draw a bounding box or a frustum, which makes every spatial bug harder
-than it needs to be — no text renderer, no skybox, no reflection probe capture, no
-decal system, no terrain.
+is inlined in the renderer), no text renderer, no skybox, no terrain. Landed since: `[x]` the 2D
+renderer and sprite batcher (`Renderer2D v1`: Sprite2D + Camera2D + viewport split, Oct 2026),
+`[x]` the debug/line renderer (Tier 2.8: `DebugRendererUVE::DrawBox3D` from one call over a 16K-line
+batch), `[x]` reflection probe capture (a capture scheduler with per-camera influence mixing and a
+budgeted recapture latch), and `[x]` a decal system (CPU-built receive patches plus draw commands
+with frustum culling). (Verified present-or-absent by source read, 2026-10-12.)
 
 ---
 
@@ -621,8 +785,9 @@ smoothing; optional per entity).
 
 ### Audio, animation, scripting, UI
 
-`[x]` `AudioSourceComponentUVE` + `AudioAttenuationCurveUVE` · `[~]`
-`AnimationPlayerComponentUVE` (records which clip is attached; nothing samples it)
+`[x]` `AudioSourceComponentUVE` + `AudioAttenuationCurveUVE` · `[x]`
+`AnimationPlayerComponentUVE` (Tier 3.1: step functions sample clips, `SyncAnimationUVE` ticks
+every frame and physics step, the renderer CPU-skins the poses)
 · `[~]` `ParticleEmitterComponentUVE` (authored parameters; the CPU runtime
 consumes them, the GPU upload path does not) · `[x]` `ScriptComponentUVE` · `[x]`
 `CanvasComponentUVE`, `UITextComponentUVE`, `UIImageComponentUVE`,
@@ -638,19 +803,44 @@ types.
 
 ### Missing components
 
-- `[ ]` **A component registry** mapping type ↔ name/id for serialization. Every
-  component's read and write is hand-written in `SceneSerializerUVE`; adding a
-  component means editing the serializer. This is the same gap as the missing
-  reflection factory in Part I §6 — fix one and this becomes mechanical.
-- `[ ]` **Tag / layer / mask component** — physics queries cannot filter by layer;
-  `RaycastQueryUVE` excludes exactly one entity.
-- `[ ]` **An enabled/disabled state** distinct from `VisibilityComponentUVE`,
-  which is render-only. There is no way to disable an entity's simulation.
-- `[ ]` **A children index** to pair with `HierarchyComponentUVE`, removing the
-  linear scan.
-- `[ ]` **Entity command buffer** for deferred structural changes — structural
-  changes invalidate references, and nothing provides a safe deferred path.
-- `[ ]` **Query/view types** — only `ForEachUVE` exists.
+- `[x]` **A component registry** mapping type ↔ name/id for serialization. Every
+  `TypeMetadataEntryUVE` names its C++ type (`cppName`), and `SceneSerializerUVE`
+  auto-discovers a generic registration for every qualifying entry (factory + covered
+  property types + at least one serialized property), so adding a component is a metadata
+  declaration and never a serializer edit. 31 components migrated by pure deletion
+  (byte-identical JSON, proven by their existing round-trip tests); 31 stay hand-written
+  under a ledger in `GetRegistrationsByNameUVE` (entity references, custom shapes, legacy
+  readers, reseed-on-load, metadata/JSON disagreements, missing entries). Verified by the
+  full suite: 1668 integration + 1306 core tests green, including new pins for the
+  discovery guard, a BitMask32 shape, and two previously uncovered round-trips.
+- `[x]` **Tag / layer / mask component** — stale as written, landed on all three clauses:
+  colliders carry `collisionLayer` and queries filter via `layerMask`; `RaycastQueryUVE` excludes
+  a single entity *plus* a span of further exclusions; and gameplay tags exist as
+  `GameplayTagComponentUVE`. (Verified by source read, 2026-10-12.)
+- `[x]` **An enabled/disabled state** distinct from `VisibilityComponentUVE` —
+  `DisabledComponentUVE` (a presence-means-disabled tag: absence keeps every existing document and
+  archetype layout working unchanged) with `SetEntityEnabledUVE`/`IsEntityEnabledUVE` helpers in
+  `Entity` and a hand-written serializer branch (empty object under "DisabledComponentUVE" — the
+  metadata registry's contract is entries *with* properties, so a fieldless tag deliberately has
+  no entry). Per-system adoption (each simulator checking the flag) is follow-up work. Tests in
+  `Test/Integration/Entity/entity_enabled_uve_tests.cpp` plus a serializer round-trip. Verified:
+  full suite green (3998 ctest cases, 2026-10-12).
+- `[x]` **A children index** to pair with `HierarchyComponentUVE` — `ChildrenIndexUVE`: one
+  O(n) `RebuildUVE`, then O(1) sibling-ordered child lists (identical ordering to the scan, pinned
+  by test). A derived cache, never a second source of truth — freshness is the caller's, and
+  `SceneGraphUVE` owns one served via `RebuildChildrenIndexUVE`/`GetIndexedChildrenUVE` with no
+  implicit rebuild. `GetChildrenUVE` keeps its always-correct scan. Tests in
+  `Test/Integration/Scene/children_index_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
+- `[x]` **Entity command buffer** for deferred structural changes —
+  `EntityCommandBufferUVE`: record create/destroy/add/remove during iteration (closures over
+  staged payloads, `move_only_function`-erased so move-only components work), `PlaybackUVE` in
+  record order afterwards, with `DeferredEntityUVE` placeholders for entities created by the same
+  buffer. Tests in `Test/Integration/Entity/entity_command_buffer_uve_tests.cpp`. Verified: full
+  suite green (3998 ctest cases, 2026-10-12).
+- `[x]` **Query/view types** — `EntityViewUVE<T...>` via `manager.ViewUVE<T...>()`: a snapshotted
+  iterable over the matches (range-for with `entry.entity` plus live `entry.GetUVE<T>()`), with
+  `ForEachUVE`'s pointer-lifetime rule and no cached-query pretensions. Tests in
+  `Test/Integration/Entity/entity_view_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
 
 ---
 
@@ -687,7 +877,8 @@ driven by nothing.
   or keyboard navigation, no widgets beyond text/image/button.
 - `[x]` **Scripting** — UVScript (`Engine/Runtime/UVScript`): parser, type checker,
   bytecode VM, engine binding with reload on save, and a text editor. The node-graph
-  scripting module was removed. `[ ]` No collections, no cross-node calls, no debugger.
+  scripting module was removed. Collections and tuples have landed (typed lists, maps,
+  tuples, `for`-in, unpacking, native-code parity). `[ ]` No cross-node calls, no debugger.
 - `[~]` **Network** — one header of reliable-packet-window value logic with **no
   consumer anywhere**. No socket, no transport, no replication.
 - `[~]` **Plugins** — manifest validation and an in-memory registry that **never
@@ -721,37 +912,37 @@ call sites are already allocating from the wrong place.
 
 | # | Item | Module | Unblocks | Done when |
 |---|---|---|---|---|
-| 0.1 | Scalar utility header — `Pi`, `DegToRad`, `RadToDeg`, `LerpUVE`, `ClampUVE`, `SmoothStepUVE`, `ApproximatelyEqualUVE` | `Core/Math` | removes duplicated copies in gizmo, animation and physics code | the three existing copies are deleted and call sites use the shared header |
-| 0.2 | `FixedArrayUVE<T,N>`, `SmallVectorUVE<T,N>`, `SpanUVE` conventions | `Core/Containers` (new build entry) | every bounded list in the engine | `LightListUVE` and the frame-task graph caps are expressed with it |
-| 0.3 | `StdAllocatorUVE<T>` adaptor | `Core/Memory` | makes the existing allocators reachable from any container | a `std::vector` in a test allocates through `PoolAllocatorUVE` and the tracker sees it |
-| 0.4 | `StringIdUVE` interned name | `Core/Strings` | reflection lookups, name-keyed maps | `TypeMetadataEntryUVE` type ids are ids, not strings |
-| 0.5 | `HandleTableUVE<T>` generational slot map | `Core/Containers` | replaces three hand-rolled versions | at least one of `VoiceHandleUVE` / entity slots is rebuilt on it, with tests unchanged |
+| 0.1 | Scalar utility header — `Pi`, `DegToRad`, `RadToDeg`, `LerpUVE`, `ClampUVE`, `SmoothStepUVE`, `ApproximatelyEqualUVE` | `Core/Math` | removes duplicated copies in gizmo, animation and physics code | the three existing copies are deleted and call sites use the shared header - landed (Oct 2026): player/character/world-env/collider/navmesh/renderer/perception runtime literals plus the editor panel/clip-editing literals migrated; viewport-core stays on `std::numbers` by contract |
+| 0.2 | `FixedArrayUVE<T,N>`, `SmallVectorUVE<T,N>`, `SpanUVE` conventions | `Core/Containers` (new build entry) | every bounded list in the engine | `LightListUVE` and the frame-task graph caps are expressed with it - landed (Oct 2026): `LightListUVE` alias + scheduler `m_tasks` on `FixedArrayUVE`, task dependencies on inline `SmallVectorUVE` (spans via `AsSpanUVE`) |
+| 0.3 | `StdAllocatorUVE<T>` adaptor | `Core/Memory` | makes the existing allocators reachable from any container | a `std::vector` in a test allocates through `PoolAllocatorUVE` and the tracker sees it - landed: `VectorAllocatesThroughPool_TrackerSeesAllocationAndRelease` |
+| 0.4 | `StringIdUVE` interned name | `Core/Strings` | reflection lookups, name-keyed maps | `TypeMetadataEntryUVE` type ids are ids, not strings - landed: `typeId` is `StringIdUVE` |
+| 0.5 | `HandleTableUVE<T>` generational slot map | `Core/Containers` | replaces three hand-rolled versions | at least one of `VoiceHandleUVE` / entity slots is rebuilt on it, with tests unchanged - landed: both audio devices back voices with `HandleTableUVE` |
 
 ## Tier 1 — completing the value layer
 
 | # | Item | Module | Unblocks | Done when |
 |---|---|---|---|---|
-| 1.1 | `Vector4UVE`, `Matrix3x3UVE` | `Core/Math` | correct normal matrices; shader-facing vec4 | renderer's normal-matrix path uses `Matrix3x3UVE` |
-| 1.2 | `TrsUVE` TRS value type with compose/inverse | `Core/Math` | scene graph, prefabs, gizmo drag, physics interpolation | at least the gizmo drag path composes transforms as values |
-| 1.3 | `ColorUVE` with explicit linear/display distinction | `Core/Math` | removes ad-hoc float triples; makes the HDR path type-safe | `LightComponentUVE` and `MaterialAssetUVE` use it |
-| 1.4 | `RectUVE`, integer vectors | `Core/Math` | UI layout, pixel coordinates | `UIImageComponentUVE` uses `RectUVE`; `ViewportRectUVE` is reconciled with it |
-| 1.5 | Reflection **factory** pointer on `TypeMetadataEntryUVE` | `Object` | generic deserialization; editor add-by-type-name | one component round-trips through the serializer without hand-written code |
-| 1.6 | Component registry (type ↔ name/id) | `Component` | serializer stops needing per-component edits | adding a component requires no `SceneSerializerUVE` change |
-| 1.7 | Hashing utilities (`HashCombineUVE`, a named non-cryptographic hash) | `Core/Utilities` | replaces the private fingerprint hash and hand-written `std::hash` specialisations | `AssetContentFingerprintUVE` is built on it |
-| 1.8 | Endian-explicit binary buffer read/write | `Core/Utilities` | makes every save and asset format portable | round-trip test asserts byte-identical output on a simulated byte-swap |
+| 1.1 | `Vector4UVE`, `Matrix3x3UVE` | `Core/Math` | correct normal matrices; shader-facing vec4 | renderer's normal-matrix path uses `Matrix3x3UVE` - landed (ComputeNormalMatrixUVE) |
+| 1.2 | `TrsUVE` TRS value type with compose/inverse | `Core/Math` | scene graph, prefabs, gizmo drag, physics interpolation | at least the gizmo drag path composes transforms as values - landed (Oct 2026): translate drags go through `TryInverseTransformDirectionUVE`, rotate drags through the new `TryInverseTransformRotationUVE` (parent-frame conjugation as one `TrsUVE` value op, byte-identical to the quaternion sandwich it replaces) |
+| 1.3 | `ColorUVE` with explicit linear/display distinction | `Core/Math` | removes ad-hoc float triples; makes the HDR path type-safe | `LightComponentUVE` and `MaterialAssetUVE` use it - landed |
+| 1.4 | `RectUVE`, integer vectors | `Core/Math` | UI layout, pixel coordinates | `UIImageComponentUVE` uses `RectUVE`; `ViewportRectUVE` is reconciled with it - landed (old RHI struct retired for RectIntUVE) |
+| 1.5 | Reflection **factory** pointer on `TypeMetadataEntryUVE` | `Object` | generic deserialization; editor add-by-type-name | one component round-trips through the serializer without hand-written code - landed in spirit (generic path runs via the registry; createDefaultInstance exists but has no callers yet) |
+| 1.6 | Component registry (type ↔ name/id) | `Component` | serializer stops needing per-component edits | adding a component requires no `SceneSerializerUVE` change - landed (31 migrated, registry live) |
+| 1.7 | Hashing utilities (`HashCombineUVE`, a named non-cryptographic hash) | `Core/Utilities` | replaces the private fingerprint hash and hand-written `std::hash` specialisations | `AssetContentFingerprintUVE` is built on it - landed (Fnv1a64UVE; HashCombineUVE used by pose graph, archetypes, mesh renderer) |
+| 1.8 | Endian-explicit binary buffer read/write | `Core/Utilities` | makes every save and asset format portable | round-trip test asserts byte-identical output on a simulated byte-swap - landed (SimulatedByteSwap_PeerReemitsByteIdenticalOutput) |
 
 ## Tier 2 — resource layer
 
 | # | Item | Module | Unblocks | Done when |
 |---|---|---|---|---|
-| 2.1 | Rasterizer state on `PipelineDescUVE` — cull, winding, fill, depth bias, **depth-compare function** | `RHI/RHI` + all three backends | shadow bias; removes the editor's direct GL depth-function call | the gizmo overlay expresses its depth mode through the pipeline |
-| 2.2 | Sampler object + descriptor | `RHI/RHI` + backends | point filtering, wrapping, anisotropy | a texture can be sampled point-filtered |
-| 2.3 | Texture dimensionality — array layers, cubemaps | `RHI/RHI` + backends | image-based lighting; cascade arrays | a cubemap is created and sampled |
-| 2.4 | Multiple render targets on `RenderPassDescUVE` | `RHI/RHI` + backends | any deferred/G-buffer path | a two-attachment pass records and replays |
-| 2.5 | `StoreOpUVE` to pair with `LoadOpUVE` | `RHI/RHI` + backends | tiler efficiency; explicit resolve/discard | every pass declares both |
-| 2.6 | Per-joint animation channels in `AnimationClipAssetUVE` + a skeleton asset | `Asset` | the entire skeletal animation pipeline, and four data-only nodes | a glTF skinned mesh animates |
-| 2.7 | Remaining PBR texture slots on `MaterialAssetUVE` | `Asset` | full PBR materials | metallic/roughness/emissive maps render |
-| 2.8 | Debug line/shape renderer | `RHI/RenderSystems` | visualising bounds, frusta, contacts — pays for itself on the first spatial bug | a bounding box can be drawn from one call |
+| 2.1 | Rasterizer state on `PipelineDescUVE` — cull, winding, fill, depth bias, **depth-compare function** | `RHI/RHI` + all three backends | shadow bias; removes the editor's direct GL depth-function call | the gizmo overlay expresses its depth mode through the pipeline - PARTIAL (verified Oct 2026 by source read): RHI side landed — rasterizer tail (cull/winding/fill/bias/depth-compare) on PipelineDescUVE + PipelineBinaryDescUVE, all three backends validate/apply (GL state, VK ToVk* incl. depthCompareOp, Null validation); the done-when consumer is still open — and audited (Oct 2026) as a design pass, not a small migration: both consumers live in host-independent `univex/` viewport-core (raw GL by contract, cannot see the RHI), so expressing their depth state through pipelines needs a layering decision first |
+| 2.2 | Sampler object + descriptor | `RHI/RHI` + backends | point filtering, wrapping, anisotropy | a texture can be sampled point-filtered - landed (verified Oct 2026 by source read): SamplerDescUVE (mag/min/mip/wrapU/V/W/maxAnisotropy) + SamplerFilterUVE::Point threaded through all three backend devices; GL maps Point to GL_NEAREST and GL creation tests cover Point filters |
+| 2.3 | Texture dimensionality — array layers, cubemaps | `RHI/RHI` + backends | image-based lighting; cascade arrays | a cubemap is created and sampled - landed (verified Oct 2026 by source read): TextureTypeUVE::Cubemap + Texture2DArray with arrayLayers, creation-time shape validation (cube: square + 6 layers), CubemapFaceUVE order matching HW face order, render-into-layer (colorLayer/depthLayer); GL cube paths + VK maxImageDimensionCube query; cube coverage in the GL/VK device tests |
+| 2.4 | Multiple render targets on `RenderPassDescUVE` | `RHI/RHI` + backends | any deferred/G-buffer path | a two-attachment pass records and replays - landed (verified Oct 2026 by source read): ColorAttachmentUVE slots 1..3 on RenderPassDescUVE (gap-rejecting); VulkanRenderDeviceUVETest.MultiTargetCaptureAndSample_RendersPerTargetColors records a multi-target pass and samples per-target colors, plus Null/GL attachment coverage |
+| 2.5 | `StoreOpUVE` to pair with `LoadOpUVE` | `RHI/RHI` + backends | tiler efficiency; explicit resolve/discard | every pass declares both - landed (verified Oct 2026 by source read): StoreOpUVE::{Store,DontCare} sits next to its LoadOp on location 0, depth, and every extra slot; Null/GL command buffers validate both per slot and VK maps to VkAttachmentStoreOp at render-pass creation |
+| 2.6 | Per-joint animation channels in `AnimationClipAssetUVE` + a skeleton asset | `Asset` | the entire skeletal animation pipeline, and four data-only nodes | a glTF skinned mesh animates — landed (verified Oct 2026 by source read): AnimationAssetBoneTrackUVE per-joint channels, skeleton_asset_uve, glTF skin converter + tests (reversed skin order, u16/u32 joints, inverse-bind defaults), TrySkinMeshUVE output tests (two-joint blend, normal rotation); renderer CPU-skins posed skeletons per 3.1; confirm the literal glTF eyeball on a GL run |
+| 2.7 | Remaining PBR texture slots on `MaterialAssetUVE` | `Asset` | full PBR materials | metallic/roughness/emissive maps render - landed: slots on the asset, renderer binds slots 12/13, lit_shadowed_3d samples them (B metallic, G roughness); confirm pixels on a GL run |
+| 2.8 | Debug line/shape renderer | `RHI/RenderSystems` | visualising bounds, frusta, contacts — pays for itself on the first spatial bug | a bounding box can be drawn from one call - landed (verified Oct 2026 by source read): DebugRendererUVE::DrawBox3D(AabbUVE, color) emits the 12-line box from one call (+ DrawLine3D/DrawSphere3D/DrawRect2D over a 16K-line batch); the header cites this item's done-when |
 
 ## Tier 3 — systems that are blocked, not missing
 
@@ -760,20 +951,22 @@ consumer. They are cheap relative to how large they look.
 
 | # | Item | Blocked on | Note |
 |---|---|---|---|
-| 3.1 | Animation runtime — clip sampler, skinning pass, engine tick | 2.6 | The evaluators, pose buffers and time contracts already exist and are tested |
-| 3.2 | Parallel gameplay systems | Tier 0 containers | `ThreadPoolUVE`, `JobGraphUVE` and `FrameSchedulerUVE` are built and unused by gameplay |
-| 3.3 | Audio mixer routing | — | `AudioMixerGroupUVE` exists; voices simply do not route through it |
-| 3.4 | Script bytecode execution | — | The IR and bytecode encoder/decoder exist; the VM walks the graph instead. Decide whether to execute the bytecode or delete the pipeline |
-| 3.5 | Plugin host | — | Manifest validation exists; `dlopen`/`LoadLibrary` does not |
-| 3.6 | Occlusion culling | 2.8 (to see it) and GPU queries | The data path and cost table are documented at the hook point |
+| 3.1 | Animation runtime — clip sampler, skinning pass, engine tick | 2.6 | Landed (verified Oct 2026 by source read): step fns in Objects/Animation for sequencer + authored graph, SyncAnimationUVE ticks every frame and physics step, renderer_3d CPU-skins posed skeletons to the GPU. GPU compute skin (mesh_skin_compute + mesh_skin.glsl) built but unwired: perf follow-up, GL-side. |
+| 3.2 | Parallel gameplay systems | Tier 0 containers | PARTIAL (Oct 2026): ThreadPoolUVE is live in assets, particles and shaders; JobGraphUVE/FrameSchedulerUVE built and tested but unwired. No defined consumer until frame scheduling or Tier 4 gameplay exists - do not start without one. |
+| 3.3 | Audio mixer routing | — | Landed (verified Oct 2026 by source read): AudioSystemUVE::UpdateUVE applies group multipliers to every live voice per frame; component mixerGroup syncs incl. live reassignment |
+| 3.4 | Script bytecode execution | — | Landed (verified Oct 2026): the bytecode VM executes (editor instant reload) and release builds generate C++23 from the same bytecode; the visual graph was removed. Decision made: execute. |
+| 3.5 | Plugin host | — | Landed: NativePluginHostUVE loads/unloads native plugins (dlopen + LoadLibrary), negotiates the ABI, registers manifests, rolls back failed loads; tested incl. real .so fixtures |
+| 3.6 | Occlusion culling | 2.8 (to see it) and GPU queries | Still open (Oct 2026): frustum culling live (camera, decal, compute); occlusion queries explicitly deferred, GL-side (needs a GPU query path in a real backend). |
 
 ## Tier 4 — genuinely new subsystems
 
 Out of scope for this document beyond naming them; each needs its own design pass
-and each has a `ROADMAP.md` section already: networking transport and replication,
-navmesh and pathfinding, an AI layer, a gameplay framework (the reason
-`Hitbox3D` cannot apply damage), a 2D pipeline, VFX authoring, terrain, and
-localization.
+and each has a `ROADMAP.md` section already: networking transport and replication
+(started Oct 2026: endpoint seam + loopback pair, UDP sockets (connected non-blocking datagram endpoints with getaddrinfo hostname resolution plus a multi-client listener with accept-replay, POSIX + Winsock), session core with handshake/disconnect/timeout/redial-resume, replication core with fixed-rate position snapshots plus authority roles, relevancy filters, delta compression, an ownership-transfer handshake, and the replicated-entity Gameplay wiring, simulated latency/loss conditions, RPC core with async ValueUVE calls over owned sessions plus the rpc.* script surface and rpc_response event, prediction core with multi-pawn ticked inputs with per-input dt, authoritative states, snap-plus-replay reconcile, server relay fan-out with observers, and the predicted-pawn Gameplay adapter, lag compensation with rewound overlap/ray hit resolves plus the Gameplay shot/ray wiring (prediction-ack view ticks, fail-closed resolves, pre-tracker merge, ray damage with health events, fractional-tick interpolation between consecutive snapshots, rewound world scale, engine-tick auto-record with a submitted-shot inbox, a shot-intent protocol carrying view tick plus fire fraction with an inspector mirror and a one-call client firing API), a packet inspector decoding captured session datagrams to structured views plus one-line log lines, plus a bounded capture ring behind the editor's Capture dock (filterable packet list with per-packet decode and hexdump) fed by live session taps (every sent/received datagram with direction, pump clock, and channel byte) proven by a tap-fed capture demo over mixed loopback traffic, a Profiler dock over live diagnostics captures (spans/counters/breadcrumbs with a Net category and per-stats network emitters, proven by the fan-out sample profiling itself), spatial interest with grid relevance plus priority tiers, per-entity rate overrides, and per-viewer fan-out budgets over tier-distance ranking feeding the replicator's relevancy filters through the interest-relevancy Gameplay adapter (proven by an interest fan-out sample: one server, three budgeted bots, divergent views), and non-position property frames sharing the replication session (pushed values over a shared wire-value codec with RPC), and channel multiplexing (one session, tagged channels, shared-session features), and a room-scoped server relay (opaque fan-out by peer room tags with lobby-room binding and pairwise interest mutes; replication and RPC ride through; relay.* script surface for rooms, mutes, removals, stats, and client send/poll), and a matchmaking lobby (room registry over direct RPC sessions with roster-change push plus a typed client facade and the lobby.* script surface), and a headless dedicated-server sample composing it all (one server, three loopback bot clients; plus a lag-comp server demo: one lagged bot firing rewound shots/rays at a walking victim with pre-tracker merge: lobby rooms, room-bound relay shouts, predicted pawns as replication Owners, a server-owned patrol NPC, an untagged local walker)), navmesh and pathfinding (landed per ROADMAP §7.3), an AI
+layer (landed per §7.3 except crowd sim), a gameplay framework (landed per §7.2 —
+`Hitbox3D` strikes apply damage through `ApplyHitboxStrikeToHealthUVE`), a 2D
+pipeline, VFX authoring, terrain, and localization (UI side landed:
+`LocalizationServiceUVE` + auto-translate; wider asset scope open).
 
 ---
 
@@ -786,6 +979,10 @@ because it is trusted.
 
 At the time of writing, `SCENE_NODES_ROADMAP.md` lists eight nodes as
 authored-data-only that now have real per-frame systems — SpringArm3D,
+InteractionArea3D, LevelStreamer3D, WorldPartition3D, VisibilityRegion3D,
+LODGroup3D, Occluder3D, and partially ReflectionProbe3D. That correction belongs
+in that file and is not folded in here.
+Arm3D,
 InteractionArea3D, LevelStreamer3D, WorldPartition3D, VisibilityRegion3D,
 LODGroup3D, Occluder3D, and partially ReflectionProbe3D. That correction belongs
 in that file and is not folded in here.

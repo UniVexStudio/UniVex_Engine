@@ -33,6 +33,25 @@ public:
     /// voice and its cached descriptor remain live. Volume, pitch, and position continue updating in
     /// place, while playOnAwake is only honored for the first source creation.
     virtual void SyncUVE(Scene::IEntityManagerUVE& entityManager, IAudioSystemUVE& audioSystem) = 0;
+
+    /// Starts this entity's voice, creating it first when SyncUVE() has not seen the entity yet -
+    /// scripts tick before the audio sync each frame, so an `audio.play()` in `ready` must not
+    /// depend on frame order. Creation follows SyncUVE()'s qualification (alive, WorldTransform +
+    /// AudioSource, valid) and descriptor path, including the initial position/volume/pitch a
+    /// Sync-born voice would get from the sync tail. Returns false, creating nothing, when the
+    /// entity does not qualify or playback fails. Thread-safety: same main-thread contract as SyncUVE().
+    [[nodiscard]] virtual bool PlayEntityUVE(Scene::EntityUVE entity, Scene::IEntityManagerUVE& entityManager,
+                                             IAudioSystemUVE& audioSystem) = 0;
+
+    /// Stops this entity's voice. Returns false when no voice is registered - stopping a voice
+    /// SyncUVE() never created is a no-op, never an error. Each method takes only the systems it
+    /// needs: stopping needs no entity manager.
+    [[nodiscard]] virtual bool StopEntityUVE(Scene::EntityUVE entity, IAudioSystemUVE& audioSystem) = 0;
+
+    /// True exactly when a voice is registered for the entity and the audio system reports it
+    /// Playing. Unknown entities read as not playing.
+    [[nodiscard]] virtual bool IsEntityPlayingUVE(Scene::EntityUVE entity,
+                                                  const IAudioSystemUVE& audioSystem) const = 0;
 };
 
 } // namespace UVE::Audio

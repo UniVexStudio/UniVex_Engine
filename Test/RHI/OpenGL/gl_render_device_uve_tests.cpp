@@ -288,6 +288,223 @@ TEST_F(GlRenderDeviceUVETest, CreatePipelineFromBinaryUVE_UnknownBlendMode_Retur
     EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
 }
 
+TEST_F(GlRenderDeviceUVETest, CreateSamplerUVE_UnknownMagFilter_ReturnsInvalidBeforeAllocation) {
+    SamplerDescUVE invalidDesc;
+    invalidDesc.magFilter = static_cast<SamplerFilterUVE>(0xFFU);
+    EXPECT_EQ(renderDevice->CreateSamplerUVE(invalidDesc), kInvalidSamplerHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
+
+    invalidDesc.magFilter = SamplerFilterUVE::Point;
+    const SamplerHandleUVE validSampler = renderDevice->CreateSamplerUVE(invalidDesc);
+    EXPECT_NE(validSampler, kInvalidSamplerHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 1U);
+    renderDevice->DestroySamplerUVE(validSampler);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreateSamplerUVE_UnknownMinFilter_ReturnsInvalidBeforeAllocation) {
+    SamplerDescUVE invalidDesc;
+    invalidDesc.minFilter = static_cast<SamplerFilterUVE>(0xFFU);
+    EXPECT_EQ(renderDevice->CreateSamplerUVE(invalidDesc), kInvalidSamplerHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
+
+    invalidDesc.minFilter = SamplerFilterUVE::Point;
+    const SamplerHandleUVE validSampler = renderDevice->CreateSamplerUVE(invalidDesc);
+    EXPECT_NE(validSampler, kInvalidSamplerHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 1U);
+    renderDevice->DestroySamplerUVE(validSampler);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreateSamplerUVE_UnknownMipMode_ReturnsInvalidBeforeAllocation) {
+    SamplerDescUVE invalidDesc;
+    invalidDesc.mipMode = static_cast<SamplerMipModeUVE>(0xFFU);
+    EXPECT_EQ(renderDevice->CreateSamplerUVE(invalidDesc), kInvalidSamplerHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
+
+    invalidDesc.mipMode = SamplerMipModeUVE::None;
+    const SamplerHandleUVE validSampler = renderDevice->CreateSamplerUVE(invalidDesc);
+    EXPECT_NE(validSampler, kInvalidSamplerHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 1U);
+    renderDevice->DestroySamplerUVE(validSampler);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreateSamplerUVE_UnknownWrap_ReturnsInvalidBeforeAllocation) {
+    SamplerDescUVE invalidDesc;
+    invalidDesc.wrapU = static_cast<SamplerWrapUVE>(0xFFU);
+    EXPECT_EQ(renderDevice->CreateSamplerUVE(invalidDesc), kInvalidSamplerHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
+
+    invalidDesc.wrapU = SamplerWrapUVE::Repeat;
+    const SamplerHandleUVE validSampler = renderDevice->CreateSamplerUVE(invalidDesc);
+    EXPECT_NE(validSampler, kInvalidSamplerHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 1U);
+    renderDevice->DestroySamplerUVE(validSampler);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreateSamplerUVE_NonDefaults_SucceedsAndCounts) {
+    SamplerDescUVE desc;
+    desc.magFilter = SamplerFilterUVE::Point;
+    desc.minFilter = SamplerFilterUVE::Point;
+    desc.mipMode = SamplerMipModeUVE::None;
+    desc.wrapU = SamplerWrapUVE::Repeat;
+    desc.wrapV = SamplerWrapUVE::MirroredRepeat;
+    desc.maxAnisotropy = 4.0F; // clamped to the device limit when lower, never a failure
+    const SamplerHandleUVE sampler = renderDevice->CreateSamplerUVE(desc);
+    EXPECT_NE(sampler, kInvalidSamplerHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 1U);
+    renderDevice->DestroySamplerUVE(sampler);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
+}
+
+TEST_F(GlRenderDeviceUVETest, DestroySamplerUVE_UnknownHandle_IsSafeNoOp) {
+    renderDevice->DestroySamplerUVE(kInvalidSamplerHandleUVE);
+    renderDevice->DestroySamplerUVE(SamplerHandleUVE{999});
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreatePipelineUVE_UnknownCullMode_ReturnsInvalidBeforeAllocation) {
+    const ShaderHandleUVE vertexShader =
+        renderDevice->CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource)});
+    const ShaderHandleUVE fragmentShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Fragment, std::string(kValidFragmentShaderSource)});
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+
+    PipelineDescUVE invalidDesc;
+    invalidDesc.vertexShader = vertexShader;
+    invalidDesc.fragmentShader = fragmentShader;
+    invalidDesc.cullMode = static_cast<CullModeUVE>(0xFFU);
+    EXPECT_EQ(renderDevice->CreatePipelineUVE(invalidDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 2U);
+
+    invalidDesc.cullMode = CullModeUVE::Back;
+    invalidDesc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U}};
+    invalidDesc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
+    const PipelineHandleUVE validPipeline = renderDevice->CreatePipelineUVE(invalidDesc);
+    EXPECT_EQ(validPipeline.value, 1U);
+
+    renderDevice->DestroyPipelineUVE(validPipeline);
+    renderDevice->DestroyShaderUVE(fragmentShader);
+    renderDevice->DestroyShaderUVE(vertexShader);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreatePipelineFromBinaryUVE_UnknownCullMode_ReturnsInvalidBeforeAllocation) {
+    const std::array<std::byte, 4> binary{};
+    PipelineBinaryDescUVE invalidDesc;
+    invalidDesc.cullMode = static_cast<CullModeUVE>(0xFFU);
+
+    EXPECT_EQ(renderDevice->CreatePipelineFromBinaryUVE(binary, 0U, invalidDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreatePipelineUVE_UnknownFrontFace_ReturnsInvalidBeforeAllocation) {
+    const ShaderHandleUVE vertexShader =
+        renderDevice->CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource)});
+    const ShaderHandleUVE fragmentShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Fragment, std::string(kValidFragmentShaderSource)});
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+
+    PipelineDescUVE invalidDesc;
+    invalidDesc.vertexShader = vertexShader;
+    invalidDesc.fragmentShader = fragmentShader;
+    invalidDesc.frontFace = static_cast<FrontFaceUVE>(0xFFU);
+    EXPECT_EQ(renderDevice->CreatePipelineUVE(invalidDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 2U);
+
+    invalidDesc.frontFace = FrontFaceUVE::Clockwise;
+    invalidDesc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U}};
+    invalidDesc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
+    const PipelineHandleUVE validPipeline = renderDevice->CreatePipelineUVE(invalidDesc);
+    EXPECT_EQ(validPipeline.value, 1U);
+
+    renderDevice->DestroyPipelineUVE(validPipeline);
+    renderDevice->DestroyShaderUVE(fragmentShader);
+    renderDevice->DestroyShaderUVE(vertexShader);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreatePipelineFromBinaryUVE_UnknownFrontFace_ReturnsInvalidBeforeAllocation) {
+    const std::array<std::byte, 4> binary{};
+    PipelineBinaryDescUVE invalidDesc;
+    invalidDesc.frontFace = static_cast<FrontFaceUVE>(0xFFU);
+
+    EXPECT_EQ(renderDevice->CreatePipelineFromBinaryUVE(binary, 0U, invalidDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreatePipelineUVE_UnknownFillMode_ReturnsInvalidBeforeAllocation) {
+    const ShaderHandleUVE vertexShader =
+        renderDevice->CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource)});
+    const ShaderHandleUVE fragmentShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Fragment, std::string(kValidFragmentShaderSource)});
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+
+    PipelineDescUVE invalidDesc;
+    invalidDesc.vertexShader = vertexShader;
+    invalidDesc.fragmentShader = fragmentShader;
+    invalidDesc.fillMode = static_cast<FillModeUVE>(0xFFU);
+    EXPECT_EQ(renderDevice->CreatePipelineUVE(invalidDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 2U);
+
+    invalidDesc.fillMode = FillModeUVE::Wireframe;
+    invalidDesc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U}};
+    invalidDesc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
+    const PipelineHandleUVE validPipeline = renderDevice->CreatePipelineUVE(invalidDesc);
+    EXPECT_EQ(validPipeline.value, 1U);
+
+    renderDevice->DestroyPipelineUVE(validPipeline);
+    renderDevice->DestroyShaderUVE(fragmentShader);
+    renderDevice->DestroyShaderUVE(vertexShader);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreatePipelineFromBinaryUVE_UnknownFillMode_ReturnsInvalidBeforeAllocation) {
+    const std::array<std::byte, 4> binary{};
+    PipelineBinaryDescUVE invalidDesc;
+    invalidDesc.fillMode = static_cast<FillModeUVE>(0xFFU);
+
+    EXPECT_EQ(renderDevice->CreatePipelineFromBinaryUVE(binary, 0U, invalidDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreatePipelineUVE_UnknownDepthCompare_ReturnsInvalidBeforeAllocation) {
+    const ShaderHandleUVE vertexShader =
+        renderDevice->CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource)});
+    const ShaderHandleUVE fragmentShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Fragment, std::string(kValidFragmentShaderSource)});
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+
+    PipelineDescUVE invalidDesc;
+    invalidDesc.vertexShader = vertexShader;
+    invalidDesc.fragmentShader = fragmentShader;
+    invalidDesc.depthCompare = static_cast<DepthCompareUVE>(0xFFU);
+    EXPECT_EQ(renderDevice->CreatePipelineUVE(invalidDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 2U);
+
+    invalidDesc.depthCompare = DepthCompareUVE::LessOrEqual;
+    invalidDesc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U}};
+    invalidDesc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
+    const PipelineHandleUVE validPipeline = renderDevice->CreatePipelineUVE(invalidDesc);
+    EXPECT_EQ(validPipeline.value, 1U);
+
+    renderDevice->DestroyPipelineUVE(validPipeline);
+    renderDevice->DestroyShaderUVE(fragmentShader);
+    renderDevice->DestroyShaderUVE(vertexShader);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreatePipelineFromBinaryUVE_UnknownDepthCompare_ReturnsInvalidBeforeAllocation) {
+    const std::array<std::byte, 4> binary{};
+    PipelineBinaryDescUVE invalidDesc;
+    invalidDesc.depthCompare = static_cast<DepthCompareUVE>(0xFFU);
+
+    EXPECT_EQ(renderDevice->CreatePipelineFromBinaryUVE(binary, 0U, invalidDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
+}
+
 TEST_F(GlRenderDeviceUVETest, CreatePipelineUVE_UnknownTopology_ReturnsInvalidBeforeAllocation) {
     const ShaderHandleUVE vertexShader =
         renderDevice->CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource)});
@@ -545,6 +762,52 @@ TEST_F(GlRenderDeviceUVETest, DrawUVE_BoundVertexBufferCapacityIsValidated) {
     EXPECT_EQ(glGetError(), GL_NO_ERROR);
     fullscreenCommandBuffer->EndRenderPassUVE();
     renderDevice->SubmitUVE(std::move(fullscreenCommandBuffer));
+
+    renderDevice->DestroyBufferUVE(vertexBuffer);
+    renderDevice->DestroyPipelineUVE(pipeline);
+    renderDevice->DestroyShaderUVE(vertexShader);
+    renderDevice->DestroyShaderUVE(fragmentShader);
+}
+
+TEST_F(GlRenderDeviceUVETest, DrawUVE_LinesPipeline_BindsDrawsAndSubmitsWithoutGlError) {
+    // Tier 2.8 Scope A: a Lines pipeline binds and draws cleanly on a real driver. The mode
+    // mapping itself (ToGlDrawModeUVE) is six lines reviewed by inspection; this test guards
+    // the create/bind/draw/submit path a debug-line submit exercises.
+    const ShaderHandleUVE vertexShader =
+        renderDevice->CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource)});
+    const ShaderHandleUVE fragmentShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Fragment, std::string(kValidFragmentShaderSource)});
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+
+    PipelineDescUVE pipelineDesc;
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0}};
+    pipelineDesc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
+    pipelineDesc.topology = PrimitiveTopologyUVE::Lines;
+    const PipelineHandleUVE pipeline = renderDevice->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+
+    constexpr std::array<float, 6> twoVertices{-1.0F, -1.0F, 0.0F, 1.0F, 1.0F, 0.0F};
+    const BufferHandleUVE vertexBuffer = renderDevice->CreateBufferUVE(
+        BufferDescUVE{sizeof(twoVertices), BufferUsageUVE::Vertex}, std::as_bytes(std::span(twoVertices)));
+    ASSERT_NE(vertexBuffer, kInvalidBufferHandleUVE);
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    RenderPassDescUVE passDesc;
+    passDesc.colorAttachment = kInvalidTextureHandleUVE;
+    passDesc.depthLoadOp = LoadOpUVE::DontCare;
+    commandBuffer->BeginRenderPassUVE(passDesc);
+    commandBuffer->BindPipelineUVE(pipeline);
+    commandBuffer->BindVertexBufferUVE(vertexBuffer);
+    while (glGetError() != GL_NO_ERROR) {
+    }
+    commandBuffer->DrawUVE(2U);
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    commandBuffer->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commandBuffer));
 
     renderDevice->DestroyBufferUVE(vertexBuffer);
     renderDevice->DestroyPipelineUVE(pipeline);
@@ -2255,6 +2518,9 @@ TEST_F(GlRenderDeviceUVETest, LitShadowed3DShader_DepthPrepassDarkensOccludedFra
     colorCommandBuffer->SetUniformVector3UVE("uUvScale", Math::Vector3UVE{1.0F, 1.0F, 0.0F});
     colorCommandBuffer->SetUniformVector3UVE("uUvOffset", Math::Vector3UVE{0.0F, 0.0F, 0.0F});
     colorCommandBuffer->SetUniformIntUVE("uUnshaded", 0);
+    // Surface opacity became an explicit lit-shader uniform; this direct opaque receiver must
+    // initialize it just like Renderer3DUVE does for an opaque SurfaceInstance3D.
+    colorCommandBuffer->SetUniformFloatUVE("uSurfaceOpacity", 1.0F);
     colorCommandBuffer->SetUniformFloatUVE("uAlphaCutoff", 0.0F);
     colorCommandBuffer->BindVertexBufferUVE(receiverVertexBuffer);
     colorCommandBuffer->DrawUVE(3);
@@ -2477,7 +2743,7 @@ void main() {
     leftPassDesc.colorLoadOp = LoadOpUVE::Clear;
     leftPassDesc.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
     leftPassDesc.depthLoadOp = LoadOpUVE::DontCare;
-    leftPassDesc.viewportOverride = ViewportRectUVE{0U, 0U, 32U, 64U};
+    leftPassDesc.viewportOverride = ViewportRectUVE{Math::Vector2iUVE{0, 0}, Math::Vector2iUVE{32, 64}};
     commandBuffer->BeginRenderPassUVE(leftPassDesc);
     commandBuffer->BindPipelineUVE(pipeline);
     commandBuffer->SetUniformVector3UVE("uColor", Math::Vector3UVE{0.9F, 0.05F, 0.05F});
@@ -2485,7 +2751,7 @@ void main() {
     commandBuffer->EndRenderPassUVE();
 
     RenderPassDescUVE rightPassDesc = leftPassDesc;
-    rightPassDesc.viewportOverride = ViewportRectUVE{32U, 0U, 32U, 64U};
+    rightPassDesc.viewportOverride = ViewportRectUVE{Math::Vector2iUVE{32, 0}, Math::Vector2iUVE{32, 64}};
     commandBuffer->BeginRenderPassUVE(rightPassDesc);
     commandBuffer->BindPipelineUVE(pipeline);
     commandBuffer->SetUniformVector3UVE("uColor", Math::Vector3UVE{0.05F, 0.05F, 0.9F});
@@ -2853,4 +3119,476 @@ TEST_F(GlRenderDeviceUVETest, BindTextureUVE_FragmentImageStore_ProvenByGlGetTex
 }
 
 } // namespace
+
+TEST_F(GlRenderDeviceUVETest, CreateTextureUVE_Texture2DArray_UploadsLevelMajorLayers) {
+    // Tier 2.3: a 2x2x3 array with one solid color per layer, read straight back through
+    // glGetTexImage (depth slices come back contiguous, layer after layer).
+    constexpr std::uint8_t kLayerColors[3][4] = {
+        {255U, 0U, 0U, 255U}, {0U, 255U, 0U, 255U}, {0U, 0U, 255U, 255U},
+    };
+    std::array<std::uint8_t, 2U * 2U * 4U * 3U> upload{};
+    for (std::uint32_t layer = 0U; layer < 3U; ++layer) {
+        for (std::uint32_t texel = 0U; texel < 4U; ++texel) {
+            const std::size_t base = (static_cast<std::size_t>(layer) * 4U + texel) * 4U;
+            upload[base] = kLayerColors[layer][0];
+            upload[base + 1U] = kLayerColors[layer][1];
+            upload[base + 2U] = kLayerColors[layer][2];
+            upload[base + 3U] = kLayerColors[layer][3];
+        }
+    }
+    const TextureHandleUVE array = renderDevice->CreateTextureUVE(
+        TextureDescUVE{2U, 2U, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear,
+                       TextureTypeUVE::Texture2DArray, 3U},
+        std::as_bytes(std::span(upload)));
+    ASSERT_NE(array, kInvalidTextureHandleUVE);
+
+    const GLuint native = static_cast<GLuint>(renderDevice->GetNativeTextureIdUVE(array));
+    EXPECT_NE(native, 0U);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, native);
+    std::array<std::uint8_t, 2U * 2U * 4U * 3U> readback{};
+    glGetTexImage(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA, GL_UNSIGNED_BYTE, readback.data());
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    for (std::uint32_t layer = 0U; layer < 3U; ++layer) {
+        for (std::uint32_t texel = 0U; texel < 4U; ++texel) {
+            const std::size_t base = (static_cast<std::size_t>(layer) * 4U + texel) * 4U;
+            EXPECT_EQ(readback[base], kLayerColors[layer][0]) << "layer " << layer;
+            EXPECT_EQ(readback[base + 1U], kLayerColors[layer][1]) << "layer " << layer;
+            EXPECT_EQ(readback[base + 2U], kLayerColors[layer][2]) << "layer " << layer;
+            EXPECT_EQ(readback[base + 3U], kLayerColors[layer][3]) << "layer " << layer;
+        }
+    }
+    renderDevice->DestroyTextureUVE(array);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreateTextureUVE_Cubemap_UploadsFacesInCubemapFaceOrder) {
+    // Tier 2.3: six solid 2x2 faces upload in CubemapFaceUVE order (+X,-X,+Y,-Y,+Z,-Z), which
+    // is also GL's POSITIVE_X + face order — each face target must read back its own color.
+    constexpr std::uint8_t kFaceColors[6][4] = {
+        {255U, 0U, 0U, 255U}, {0U, 255U, 0U, 255U}, {0U, 0U, 255U, 255U},
+        {255U, 255U, 0U, 255U}, {255U, 0U, 255U, 255U}, {0U, 255U, 255U, 255U},
+    };
+    std::array<std::uint8_t, 2U * 2U * 4U * 6U> upload{};
+    for (std::uint32_t face = 0U; face < 6U; ++face) {
+        for (std::uint32_t texel = 0U; texel < 4U; ++texel) {
+            const std::size_t base = (static_cast<std::size_t>(face) * 4U + texel) * 4U;
+            upload[base] = kFaceColors[face][0];
+            upload[base + 1U] = kFaceColors[face][1];
+            upload[base + 2U] = kFaceColors[face][2];
+            upload[base + 3U] = kFaceColors[face][3];
+        }
+    }
+    const TextureHandleUVE cube = renderDevice->CreateTextureUVE(
+        TextureDescUVE{2U, 2U, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear,
+                       TextureTypeUVE::Cubemap, 6U},
+        std::as_bytes(std::span(upload)));
+    ASSERT_NE(cube, kInvalidTextureHandleUVE);
+
+    const GLuint native = static_cast<GLuint>(renderDevice->GetNativeTextureIdUVE(cube));
+    EXPECT_NE(native, 0U);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, native);
+    for (std::uint32_t face = 0U; face < 6U; ++face) {
+        std::array<std::uint8_t, 2U * 2U * 4U> faceReadback{};
+        glGetTexImage(static_cast<GLenum>(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face), 0, GL_RGBA,
+                      GL_UNSIGNED_BYTE, faceReadback.data());
+        EXPECT_EQ(glGetError(), GL_NO_ERROR) << "face " << face;
+        for (std::uint32_t texel = 0U; texel < 4U; ++texel) {
+            EXPECT_EQ(faceReadback[texel * 4U], kFaceColors[face][0]) << "face " << face;
+            EXPECT_EQ(faceReadback[texel * 4U + 1U], kFaceColors[face][1]) << "face " << face;
+            EXPECT_EQ(faceReadback[texel * 4U + 2U], kFaceColors[face][2]) << "face " << face;
+            EXPECT_EQ(faceReadback[texel * 4U + 3U], kFaceColors[face][3]) << "face " << face;
+        }
+    }
+    renderDevice->DestroyTextureUVE(cube);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreateTextureUVE_DimensionsBeyondGlLimits_ReturnInvalidBeforeAllocation) {
+    // Tier 2.3: layer counts the RHI validator accepts (no overflow) but no GL device offers.
+    EXPECT_EQ(renderDevice->CreateTextureUVE(
+                  TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U,
+                                 TextureColorSpaceUVE::Linear, TextureTypeUVE::Texture2DArray,
+                                 1000000U}),
+              kInvalidTextureHandleUVE);
+    EXPECT_EQ(renderDevice->CreateTextureUVE(
+                  TextureDescUVE{100000U, 100000U, TextureFormatUVE::RGBA8Unorm, 1U,
+                                 TextureColorSpaceUVE::Linear, TextureTypeUVE::Cubemap, 6U}),
+              kInvalidTextureHandleUVE);
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+}
+
+TEST_F(GlRenderDeviceUVETest, BeginRenderPassUVE_LayerBeyondAttachmentLayerCount_LeavesFramebufferUnchanged) {
+    // Tier 2.3 mirror of UnknownAttachmentDoesNotBindOrCacheFramebuffer: out-of-range layers
+    // reject before any FBO work (a nonzero layer on a 1-layer 2D texture fails here too).
+    TextureDescUVE arrayDesc{2U, 2U, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear,
+                             TextureTypeUVE::Texture2DArray, 2U};
+    const TextureHandleUVE array = renderDevice->CreateTextureUVE(arrayDesc);
+    ASSERT_NE(array, kInvalidTextureHandleUVE);
+    const TextureHandleUVE flat = renderDevice->CreateTextureUVE(TextureDescUVE{2U, 2U});
+    ASSERT_NE(flat, kInvalidTextureHandleUVE);
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+
+    const auto assertFramebufferUnchanged = [&commandBuffer](const RenderPassDescUVE& passDesc) {
+        GLint before = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &before);
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        GLint after = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &after);
+        EXPECT_EQ(after, before);
+    };
+    RenderPassDescUVE badColorLayer;
+    badColorLayer.colorAttachment = array;
+    badColorLayer.colorLayer = 5U;
+    assertFramebufferUnchanged(badColorLayer);
+
+    RenderPassDescUVE badDepthLayer;
+    badDepthLayer.colorAttachment = array;
+    badDepthLayer.depthAttachment = flat; // format aside, layer 1 already exceeds its 1 layer
+    badDepthLayer.depthLayer = 1U;
+    assertFramebufferUnchanged(badDepthLayer);
+
+    RenderPassDescUVE flatWithLayer;
+    flatWithLayer.colorAttachment = flat;
+    flatWithLayer.colorLayer = 1U;
+    assertFramebufferUnchanged(flatWithLayer);
+
+    RenderPassDescUVE validLayeredPass;
+    validLayeredPass.colorAttachment = array;
+    validLayeredPass.colorLayer = 1U;
+    commandBuffer->BeginRenderPassUVE(validLayeredPass);
+    GLint layeredFramebuffer = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &layeredFramebuffer);
+    EXPECT_NE(layeredFramebuffer, 0);
+    commandBuffer->EndRenderPassUVE();
+    renderDevice->DestroyTextureUVE(array);
+    renderDevice->DestroyTextureUVE(flat);
+}
+
+TEST_F(GlRenderDeviceUVETest, BeginRenderPassUVE_LayeredAttachments_RenderIntoSelectedLayers) {
+    // Tier 2.3 pixel proof for render-to-layer: clear layer 0 green and layer 1 red through
+    // two passes, then read both slices back — each must hold exactly its own clear color.
+    GLint glMajor = 0;
+    GLint glMinor = 0;
+    glGetIntegerv(GL_MAJOR_VERSION, &glMajor);
+    glGetIntegerv(GL_MINOR_VERSION, &glMinor);
+    TextureDescUVE arrayDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear,
+                             TextureTypeUVE::Texture2DArray, 2U};
+    const TextureHandleUVE array = renderDevice->CreateTextureUVE(arrayDesc);
+    ASSERT_NE(array, kInvalidTextureHandleUVE);
+    const TextureHandleUVE depth = renderDevice->CreateTextureUVE(
+        TextureDescUVE{4U, 4U, TextureFormatUVE::Depth32Float, 1U});
+    ASSERT_NE(depth, kInvalidTextureHandleUVE);
+    if (glMajor < 3 || (glMajor == 3 && glMinor < 2)) {
+        renderDevice->DestroyTextureUVE(array);
+        renderDevice->DestroyTextureUVE(depth);
+        GTEST_SKIP() << "layered FBO attach needs glFramebufferTextureLayer (GL 3.2+)";
+    }
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    RenderPassDescUVE greenPass;
+    greenPass.colorAttachment = array;
+    greenPass.depthAttachment = depth;
+    greenPass.colorLayer = 0U;
+    greenPass.colorLoadOp = LoadOpUVE::Clear;
+    greenPass.clearColor = {0.0F, 1.0F, 0.0F, 1.0F};
+    greenPass.depthLoadOp = LoadOpUVE::Clear;
+    commandBuffer->BeginRenderPassUVE(greenPass);
+    commandBuffer->EndRenderPassUVE();
+    RenderPassDescUVE redPass = greenPass;
+    redPass.colorLayer = 1U;
+    redPass.clearColor = {1.0F, 0.0F, 0.0F, 1.0F};
+    commandBuffer->BeginRenderPassUVE(redPass);
+    commandBuffer->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commandBuffer));
+
+    const GLuint native = static_cast<GLuint>(renderDevice->GetNativeTextureIdUVE(array));
+    glBindTexture(GL_TEXTURE_2D_ARRAY, native);
+    std::array<std::uint8_t, 4U * 4U * 4U * 2U> readback{};
+    glGetTexImage(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA, GL_UNSIGNED_BYTE, readback.data());
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    for (std::uint32_t texel = 0U; texel < 16U; ++texel) {
+        const std::size_t green = texel * 4U;
+        EXPECT_EQ(readback[green], 0U);
+        EXPECT_EQ(readback[green + 1U], 255U);
+        EXPECT_EQ(readback[green + 2U], 0U);
+        const std::size_t red = (16U + texel) * 4U;
+        EXPECT_EQ(readback[red], 255U);
+        EXPECT_EQ(readback[red + 1U], 0U);
+        EXPECT_EQ(readback[red + 2U], 0U);
+    }
+    renderDevice->DestroyTextureUVE(array);
+    renderDevice->DestroyTextureUVE(depth);
+}
+
+TEST_F(GlRenderDeviceUVETest, BindTextureUVE_ArrayTexture_BindsUnderArrayTarget) {
+    // Tier 2.3: an array binds under GL_TEXTURE_2D_ARRAY on its unit and must not disturb that
+    // unit's 2D binding (targets coexist per unit in GL).
+    const TextureHandleUVE color = renderDevice->CreateTextureUVE(TextureDescUVE{1U, 1U});
+    ASSERT_NE(color, kInvalidTextureHandleUVE);
+    TextureDescUVE arrayDesc{2U, 2U, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear,
+                             TextureTypeUVE::Texture2DArray, 3U};
+    const TextureHandleUVE array = renderDevice->CreateTextureUVE(arrayDesc);
+    ASSERT_NE(array, kInvalidTextureHandleUVE);
+    const GLuint native = static_cast<GLuint>(renderDevice->GetNativeTextureIdUVE(array));
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    RenderPassDescUVE passDesc;
+    passDesc.colorAttachment = color;
+    passDesc.colorLoadOp = LoadOpUVE::Clear;
+    passDesc.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+    commandBuffer->BeginRenderPassUVE(passDesc);
+    commandBuffer->BindTextureUVE(array, 3U);
+    commandBuffer->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commandBuffer));
+
+    glActiveTexture(static_cast<GLenum>(GL_TEXTURE0 + 3));
+    GLint arrayBinding = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D_ARRAY, &arrayBinding);
+    EXPECT_EQ(arrayBinding, static_cast<GLint>(native));
+    GLint flatBinding = -1;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &flatBinding);
+    EXPECT_EQ(flatBinding, 0) << "a 2D bind must not shadow the array on the same unit";
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    renderDevice->DestroyTextureUVE(array);
+    renderDevice->DestroyTextureUVE(color);
+}
+
+TEST_F(GlRenderDeviceUVETest, BindTextureUVE_ArrayTexture_LeavesComputeImageUnitUnbound) {
+    // Tier 2.3 mirror of ComputeStorageImageOnSrgbTexture: layered storage images are out of
+    // scope, so an array stays sampler-visible while its image unit is cleared — matching the
+    // Vulkan backend's black-sink fallback.
+    constexpr std::array<std::uint8_t, 4U * 4U * 4U * 2U> kZeroPixels{};
+    TextureDescUVE arrayDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear,
+                             TextureTypeUVE::Texture2DArray, 2U};
+    const TextureHandleUVE array = renderDevice->CreateTextureUVE(
+        arrayDesc, std::as_bytes(std::span(kZeroPixels)));
+    ASSERT_NE(array, kInvalidTextureHandleUVE);
+
+    const ShaderHandleUVE computeShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Compute, std::string(kImageFillComputeSource)});
+    if (computeShader == kInvalidShaderHandleUVE) {
+        renderDevice->DestroyTextureUVE(array);
+        GTEST_SKIP() << "context lacks compute shaders (GL 4.3+)";
+    }
+    ComputePipelineDescUVE pipelineDesc{};
+    pipelineDesc.computeShader = computeShader;
+    std::string infoLog;
+    const PipelineHandleUVE computePipeline =
+        renderDevice->CreateComputePipelineUVE(pipelineDesc, &infoLog);
+    if (computePipeline == kInvalidPipelineHandleUVE) {
+        renderDevice->DestroyShaderUVE(computeShader);
+        renderDevice->DestroyTextureUVE(array);
+        GTEST_SKIP() << "compute pipeline refused: " << infoLog;
+    }
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    while (glGetError() != GL_NO_ERROR) {
+    }
+    commandBuffer->BindPipelineUVE(computePipeline);
+    commandBuffer->BindTextureUVE(array, 0U); // M5b: legal outside pass while compute is bound
+    renderDevice->SubmitUVE(std::move(commandBuffer));
+
+    GLint textureName = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D_ARRAY, &textureName);
+    EXPECT_NE(textureName, 0) << "the array must remain bound for sampler access";
+    GLint imageName = -1;
+    glGetIntegeri_v(GL_IMAGE_BINDING_NAME, 0U, &imageName);
+    EXPECT_EQ(imageName, 0) << "layered storage-image bindings must be cleared in Tier 2.3";
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+
+    renderDevice->DestroyPipelineUVE(computePipeline);
+    renderDevice->DestroyShaderUVE(computeShader);
+    renderDevice->DestroyTextureUVE(array);
+}
+
+
+TEST_F(GlRenderDeviceUVETest, BeginRenderPassUVE_TwoColorAttachments_ClearEachToItsOwnColor) {
+    // Tier 2.4 pixel proof for MRT: one pass clears location 0 green and location 1 red —
+    // each texture must hold exactly its own clear color (glClear would paint both one color).
+    GLint glMajor = 0;
+    glGetIntegerv(GL_MAJOR_VERSION, &glMajor);
+    const TextureHandleUVE target0 = renderDevice->CreateTextureUVE(TextureDescUVE{4U, 4U});
+    ASSERT_NE(target0, kInvalidTextureHandleUVE);
+    const TextureHandleUVE target1 = renderDevice->CreateTextureUVE(TextureDescUVE{4U, 4U});
+    ASSERT_NE(target1, kInvalidTextureHandleUVE);
+    if (glMajor < 3) {
+        renderDevice->DestroyTextureUVE(target0);
+        renderDevice->DestroyTextureUVE(target1);
+        GTEST_SKIP() << "per-slot clears need glClearBufferfv (GL 3.0+)";
+    }
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    RenderPassDescUVE passDesc;
+    passDesc.colorAttachment = target0;
+    passDesc.colorLoadOp = LoadOpUVE::Clear;
+    passDesc.clearColor = {0.0F, 1.0F, 0.0F, 1.0F};
+    passDesc.extraColorAttachments[0].target = target1;
+    passDesc.extraColorAttachments[0].loadOp = LoadOpUVE::Clear;
+    passDesc.extraColorAttachments[0].clearColor = {1.0F, 0.0F, 0.0F, 1.0F};
+    commandBuffer->BeginRenderPassUVE(passDesc);
+    GLint mrtFramebuffer = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &mrtFramebuffer);
+    EXPECT_NE(mrtFramebuffer, 0);
+    commandBuffer->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commandBuffer));
+
+    const auto readbackTexture = [&](const TextureHandleUVE target) {
+        const GLuint native = static_cast<GLuint>(renderDevice->GetNativeTextureIdUVE(target));
+        glBindTexture(GL_TEXTURE_2D, native);
+        std::array<std::uint8_t, 4U * 4U * 4U> pixels{};
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+        EXPECT_EQ(glGetError(), GL_NO_ERROR);
+        return pixels;
+    };
+    const auto green = readbackTexture(target0);
+    const auto red = readbackTexture(target1);
+    for (std::uint32_t texel = 0U; texel < 16U; ++texel) {
+        const std::size_t base = texel * 4U;
+        EXPECT_EQ(green[base], 0U);
+        EXPECT_EQ(green[base + 1U], 255U);
+        EXPECT_EQ(green[base + 2U], 0U);
+        EXPECT_EQ(red[base], 255U);
+        EXPECT_EQ(red[base + 1U], 0U);
+        EXPECT_EQ(red[base + 2U], 0U);
+    }
+    renderDevice->DestroyTextureUVE(target0);
+    renderDevice->DestroyTextureUVE(target1);
+}
+
+TEST_F(GlRenderDeviceUVETest, BeginRenderPassUVE_MalformedExtras_LeavesFramebufferUnchanged) {
+    // Tier 2.4 mirror of LayerBeyondAttachmentLayerCount: malformed extras reject before any
+    // FBO work. Load ops stay Load so the routing check needs no clear-capable context.
+    const TextureHandleUVE target0 = renderDevice->CreateTextureUVE(TextureDescUVE{4U, 4U});
+    ASSERT_NE(target0, kInvalidTextureHandleUVE);
+    const TextureHandleUVE target1 = renderDevice->CreateTextureUVE(TextureDescUVE{4U, 4U});
+    ASSERT_NE(target1, kInvalidTextureHandleUVE);
+    const TextureHandleUVE small = renderDevice->CreateTextureUVE(TextureDescUVE{2U, 2U});
+    ASSERT_NE(small, kInvalidTextureHandleUVE);
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+
+    const auto assertFramebufferUnchanged = [&commandBuffer](const RenderPassDescUVE& passDesc) {
+        GLint before = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &before);
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        GLint after = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &after);
+        EXPECT_EQ(after, before);
+    };
+    const auto loadOnlyPass = [](const TextureHandleUVE color) {
+        RenderPassDescUVE passDesc;
+        passDesc.colorAttachment = color;
+        passDesc.colorLoadOp = LoadOpUVE::Load;
+        passDesc.depthLoadOp = LoadOpUVE::Load;
+        return passDesc;
+    };
+    RenderPassDescUVE gap = loadOnlyPass(target0);
+    gap.extraColorAttachments[0].target = target1;
+    gap.extraColorAttachments[0].loadOp = LoadOpUVE::Load;
+    gap.extraColorAttachments[2].target = target1; // location 2 set while 1 is empty
+    gap.extraColorAttachments[2].loadOp = LoadOpUVE::Load;
+    assertFramebufferUnchanged(gap);
+
+    RenderPassDescUVE noLocation0 = loadOnlyPass(kInvalidTextureHandleUVE);
+    noLocation0.extraColorAttachments[0].target = target1;
+    noLocation0.extraColorAttachments[0].loadOp = LoadOpUVE::Load;
+    assertFramebufferUnchanged(noLocation0);
+
+    RenderPassDescUVE unknownExtra = loadOnlyPass(target0);
+    unknownExtra.extraColorAttachments[0].target = TextureHandleUVE{999999U};
+    unknownExtra.extraColorAttachments[0].loadOp = LoadOpUVE::Load;
+    assertFramebufferUnchanged(unknownExtra);
+
+    RenderPassDescUVE dimsMismatch = loadOnlyPass(target0);
+    dimsMismatch.extraColorAttachments[0].target = small;
+    dimsMismatch.extraColorAttachments[0].loadOp = LoadOpUVE::Load;
+    assertFramebufferUnchanged(dimsMismatch);
+
+    RenderPassDescUVE aliased = loadOnlyPass(target0);
+    aliased.extraColorAttachments[0].target = target0; // one texture, two attachments
+    aliased.extraColorAttachments[0].loadOp = LoadOpUVE::Load;
+    assertFramebufferUnchanged(aliased);
+
+    RenderPassDescUVE badStore = loadOnlyPass(target0);
+    badStore.colorStoreOp = static_cast<StoreOpUVE>(0xFFU);
+    assertFramebufferUnchanged(badStore);
+
+    RenderPassDescUVE badExtraOp = loadOnlyPass(target0);
+    badExtraOp.extraColorAttachments[0].target = target1;
+    badExtraOp.extraColorAttachments[0].loadOp = LoadOpUVE::Load;
+    badExtraOp.extraColorAttachments[0].storeOp = static_cast<StoreOpUVE>(0xFFU);
+    assertFramebufferUnchanged(badExtraOp);
+
+    // The well-formed twin binds a real FBO — the rejects above were selective, not blanket.
+    RenderPassDescUVE valid = loadOnlyPass(target0);
+    valid.extraColorAttachments[0].target = target1;
+    valid.extraColorAttachments[0].loadOp = LoadOpUVE::Load;
+    commandBuffer->BeginRenderPassUVE(valid);
+    GLint mrtFramebuffer = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &mrtFramebuffer);
+    EXPECT_NE(mrtFramebuffer, 0);
+    commandBuffer->EndRenderPassUVE();
+    renderDevice->DestroyTextureUVE(target0);
+    renderDevice->DestroyTextureUVE(target1);
+    renderDevice->DestroyTextureUVE(small);
+}
+
+TEST_F(GlRenderDeviceUVETest, BeginRenderPassUVE_DontCareStore_StaysHealthy) {
+    // Tier 2.5: DontCare stores discard (invalidate) without disturbing GL state — the error
+    // flag stays clean and the very next pass renders normally. (Discarded CONTENTS are
+    // undefined by design, so the follow-up pass carries the pixel proof, not this one.)
+    GLint glMajor = 0;
+    glGetIntegerv(GL_MAJOR_VERSION, &glMajor);
+    const TextureHandleUVE target0 = renderDevice->CreateTextureUVE(TextureDescUVE{4U, 4U});
+    ASSERT_NE(target0, kInvalidTextureHandleUVE);
+    const TextureHandleUVE target1 = renderDevice->CreateTextureUVE(TextureDescUVE{4U, 4U});
+    ASSERT_NE(target1, kInvalidTextureHandleUVE);
+    if (glMajor < 3) {
+        renderDevice->DestroyTextureUVE(target0);
+        renderDevice->DestroyTextureUVE(target1);
+        GTEST_SKIP() << "per-slot clears need glClearBufferfv (GL 3.0+)";
+    }
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    RenderPassDescUVE discardPass;
+    discardPass.colorAttachment = target0;
+    discardPass.colorLoadOp = LoadOpUVE::Clear;
+    discardPass.clearColor = {0.0F, 1.0F, 0.0F, 1.0F};
+    discardPass.colorStoreOp = StoreOpUVE::DontCare;
+    discardPass.extraColorAttachments[0].target = target1;
+    discardPass.extraColorAttachments[0].loadOp = LoadOpUVE::Clear;
+    discardPass.extraColorAttachments[0].clearColor = {1.0F, 0.0F, 0.0F, 1.0F};
+    discardPass.extraColorAttachments[0].storeOp = StoreOpUVE::DontCare;
+    commandBuffer->BeginRenderPassUVE(discardPass);
+    commandBuffer->EndRenderPassUVE();
+
+    RenderPassDescUVE followUpPass;
+    followUpPass.colorAttachment = target0;
+    followUpPass.colorLoadOp = LoadOpUVE::Clear;
+    followUpPass.clearColor = {0.0F, 0.0F, 1.0F, 1.0F};
+    followUpPass.colorStoreOp = StoreOpUVE::Store;
+    commandBuffer->BeginRenderPassUVE(followUpPass);
+    commandBuffer->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commandBuffer));
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+
+    const GLuint native = static_cast<GLuint>(renderDevice->GetNativeTextureIdUVE(target0));
+    glBindTexture(GL_TEXTURE_2D, native);
+    std::array<std::uint8_t, 4U * 4U * 4U> pixels{};
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    for (std::uint32_t texel = 0U; texel < 16U; ++texel) {
+        const std::size_t base = texel * 4U;
+        EXPECT_EQ(pixels[base], 0U);
+        EXPECT_EQ(pixels[base + 1U], 0U);
+        EXPECT_EQ(pixels[base + 2U], 255U);
+    }
+    renderDevice->DestroyTextureUVE(target0);
+    renderDevice->DestroyTextureUVE(target1);
+}
+
 } // namespace UVE::Render::Tests

@@ -2,20 +2,19 @@
 
 #include "uve/objects/3d/character_3d_uve.h"
 
+#include "uve/objects/3d/player_3d_uve.h"
+
 #include <algorithm>
 #include <cmath>
 #include <optional>
 #include <vector>
 
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/math/scalar_uve.h"
 #include "uve/objects/3d/abstract_physics_objects_3d_uve.h"
 
 namespace UVE::Scene {
 namespace {
-
-constexpr float kPiUVE = 3.14159265358979323846F;
-constexpr float kRadiansPerDegreeUVE = kPiUVE / 180.0F;
-constexpr float kDegreesPerRadianUVE = 180.0F / kPiUVE;
 
 /// Below this a vector is too short to say anything about direction.
 constexpr float kMinimumNormalizableLengthUVE = 1.0e-12F;
@@ -208,7 +207,7 @@ struct ResolvedConfigUVE final {
         return CharacterSurfaceKindUVE::Invalid;
     }
     const float alignment = std::clamp(Math::DotUVE(*normal, unitUp), -1.0F, 1.0F);
-    const float angleDegrees = std::acos(alignment) * kDegreesPerRadianUVE;
+    const float angleDegrees = Math::RadToDegUVE(std::acos(alignment));
     outAngleDegrees = angleDegrees;
     if (angleDegrees <= config.floorMaxAngleDegrees) {
         return config.detectFloor ? CharacterSurfaceKindUVE::Floor : CharacterSurfaceKindUVE::Wall;
@@ -924,7 +923,7 @@ float Character3DUVE::SlopeAngleDegreesUVE(const Math::Vector3UVE& normal,
         return 0.0F;
     }
     const float alignment = std::clamp(Math::DotUVE(*unitNormal, *up), -1.0F, 1.0F);
-    return std::acos(alignment) * kDegreesPerRadianUVE;
+    return Math::RadToDegUVE(std::acos(alignment));
 }
 
 Math::Vector3UVE Character3DUVE::SlideMotionUVE(const Math::Vector3UVE& motion,
@@ -1102,8 +1101,11 @@ CharacterMotionConfigUVE MakeCharacterMotionConfigUVE(
 // =================================================================================================
 
 bool IsCharacter3DObjectDefinitionValidUVE(const Character3DObjectDefinitionUVE& value) noexcept {
+    ControllerComponentUVE authoredController;
+    authoredController.kind = value.controllerKind;
     return IsColliderComponentValidUVE(value.collider) &&
-           IsCharacterControllerComponentValidUVE(value.controller);
+           IsCharacterControllerComponentValidUVE(value.controller) &&
+           IsControllerComponentValidUVE(authoredController);
 }
 
 void ApplyCharacter3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
@@ -1118,6 +1120,38 @@ void ApplyCharacter3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const
     if (!entityManager.HasComponentUVE<CharacterControllerComponentUVE>(entity)) {
         entityManager.AddComponentUVE<CharacterControllerComponentUVE>(entity, value.controller);
     }
+    if (!entityManager.HasComponentUVE<PawnComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<PawnComponentUVE>(entity, PawnComponentUVE{});
+    }
+    if (!entityManager.HasComponentUVE<ControllerComponentUVE>(entity)) {
+        ControllerComponentUVE possession;
+        possession.kind = value.controllerKind;
+        entityManager.AddComponentUVE<ControllerComponentUVE>(entity, possession);
+    }
+}
+
+Physics::CharacterMotionInputUVE ResolveCharacterMotionUVE(IEntityManagerUVE& entityManager,
+                                                           const EntityUVE entity) {
+    Physics::CharacterMotionInputUVE motion{};
+    const EntityUVE driver = FindPawnControllerUVE(entityManager, entity);
+    if (driver == kInvalidEntityUVE) {
+        return motion;
+    }
+    const PawnComponentUVE& pawn = entityManager.GetComponentUVE<PawnComponentUVE>(entity);
+    if (!IsPawnComponentValidUVE(pawn)) {
+        return motion;
+    }
+    motion.move = pawn.input.move;
+    motion.rise = pawn.input.rise;
+    motion.jumpPressed = pawn.input.jumpPressed;
+    if (entityManager.GetComponentUVE<ControllerComponentUVE>(driver).kind ==
+            ControllerKindUVE::Player &&
+        entityManager.HasComponentUVE<TransformComponentUVE>(entity)) {
+        motion.move = FaceMoveFromLookUVE(
+            entityManager.GetComponentUVE<TransformComponentUVE>(entity).localRotation,
+            pawn.input.move);
+    }
+    return motion;
 }
 
 } // namespace UVE::Scene

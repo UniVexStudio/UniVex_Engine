@@ -24,10 +24,24 @@ add_library(uve_component STATIC
     Internal/animation_graph_component_uve.cpp
     Internal/area_component_uve.cpp
     Internal/audio_source_component_uve.cpp
+    Internal/camera_2d_component_uve.cpp
     Internal/camera_component_uve.cpp
+    Internal/camera_follow_component_uve.cpp
+    Internal/ui_layout_container_component_uve.cpp
+    Internal/ui_anchor_component_uve.cpp
+    Internal/ui_scrollbar_component_uve.cpp
+    Internal/ui_slider_component_uve.cpp
+    Internal/ui_progress_bar_component_uve.cpp
+    Internal/ui_dropdown_component_uve.cpp
+    Internal/ui_text_input_component_uve.cpp
+    Internal/ui_scroll_container_component_uve.cpp
+    Internal/ui_checkbox_component_uve.cpp
+    Internal/ui_tooltip_component_uve.cpp
+    Internal/ui_tween_component_uve.cpp
     Internal/canvas_component_uve.cpp
     Internal/character_controller_component_uve.cpp
     Internal/collider_component_uve.cpp
+    Internal/disabled_component_uve.cpp
     Internal/editor_internal_entity_component_uve.cpp
     Internal/hierarchy_component_uve.cpp
     Internal/light_component_uve.cpp
@@ -51,6 +65,7 @@ add_library(uve_component STATIC
     Internal/thread_group_component_uve.cpp
     Internal/transform_component_uve.cpp
     Internal/visibility_component_uve.cpp
+    Internal/sprite_2d_component_uve.cpp
     Internal/ui_button_component_uve.cpp
     Internal/ui_image_component_uve.cpp
     Internal/ui_text_component_uve.cpp

@@ -156,6 +156,7 @@ std::optional<GltfSkeletonUVE> ParseGltfSkeletonUVE(const std::string_view json,
                 unique = name + "_" + std::to_string(suffix);
             }
             usedNames.insert(unique);
+            joint.sourceNodeIndex = object;
             joint.name = unique;
             joint.parentIndex = parent;
             if (source.contains("matrix")) {

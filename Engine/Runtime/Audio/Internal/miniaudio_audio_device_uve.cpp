@@ -7,11 +7,12 @@
 #include <cmath>
 #include <cstring>
 #include <mutex>
-#include <unordered_map>
+#include <utility>
 
 #include <miniaudio.h>
 
 #include "uve/asset/audio_asset_uve.h"
+#include "uve/containers/handle_table_uve.h"
 #include "uve/logging/logging_macros_uve.h"
 
 namespace UVE::Audio {
@@ -38,10 +39,16 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
     bool deviceInitialized = false;
     ma_uint32 outputSampleRate = 0U;
 
+    // Voice slots: one generational table holding each voice together with its playback state
+    // (the two used to live in parallel maps keyed by a monotonic counter — always in sync, so
+    // unifying them changes no behavior while making single-lookup access possible).
+    struct VoiceEntryUVE {
+        VoiceUVE voice;
+        VoicePlaybackStateUVE state = VoicePlaybackStateUVE::Stopped;
+    };
+
     mutable std::mutex voicesMutex;
-    std::unordered_map<std::uint32_t, VoiceUVE> voices;
-    std::unordered_map<std::uint32_t, VoicePlaybackStateUVE> voiceStates;
-    std::uint32_t nextVoiceHandle = 1U;
+    Containers::HandleTableUVE<VoiceEntryUVE, VoiceHandleUVE> voices;
 
     std::string backendName;
 
@@ -56,14 +63,13 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
         std::memset(out, 0, frameCount * kOutputChannelsUVE * sizeof(float));
 
         std::lock_guard<std::mutex> lock(impl->voicesMutex);
-        for (auto& [handle, voice] : impl->voices) {
-            const auto stateIterator = impl->voiceStates.find(handle);
-            if (stateIterator == impl->voiceStates.end() ||
-                stateIterator->second != VoicePlaybackStateUVE::Playing) {
-                continue;
+        impl->voices.ForEachUVE([&](VoiceHandleUVE /*handle*/, VoiceEntryUVE& entry) {
+            VoiceUVE& voice = entry.voice;
+            if (entry.state != VoicePlaybackStateUVE::Playing) {
+                return;
             }
             if (voice.channels == 0U) {
-                continue; // clip-less source shell: inaudible, stays Playing until stopped
+                return; // clip-less source shell: inaudible, stays Playing until stopped
             }
             const std::size_t totalFrames = voice.samples.size() / voice.channels;
             for (ma_uint32 frame = 0U; frame < frameCount; ++frame) {
@@ -90,12 +96,12 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
                         voice.cursorFrames = std::fmod(voice.cursorFrames, static_cast<double>(totalFrames));
                     } else {
                         voice.cursorFrames = static_cast<double>(totalFrames);
-                        stateIterator->second = VoicePlaybackStateUVE::Stopped;
+                        entry.state = VoicePlaybackStateUVE::Stopped;
                         break; // finishes naturally mid-buffer; the rest stays silent
                     }
                 }
             }
-        }
+        });
     }
 };
 
@@ -176,10 +182,8 @@ VoiceHandleUVE MiniaudioAudioDeviceUVE::CreateVoiceUVE(const AudioVoiceDescUVE& 
                                         static_cast<double>(m_impl->outputSampleRate);
         emptyVoice.looping = desc.looping;
         std::lock_guard<std::mutex> lock(m_impl->voicesMutex);
-        const std::uint32_t handleValue = m_impl->nextVoiceHandle++;
-        m_impl->voices.emplace(handleValue, std::move(emptyVoice));
-        m_impl->voiceStates.emplace(handleValue, VoicePlaybackStateUVE::Stopped);
-        return VoiceHandleUVE{handleValue};
+        return m_impl->voices.AcquireUVE(
+            ImplUVE::VoiceEntryUVE{std::move(emptyVoice), VoicePlaybackStateUVE::Stopped});
     }
 
     Asset::AudioAssetUVE asset;
@@ -207,15 +211,13 @@ VoiceHandleUVE MiniaudioAudioDeviceUVE::CreateVoiceUVE(const AudioVoiceDescUVE& 
                                static_cast<double>(m_impl->outputSampleRate);
 
     std::lock_guard<std::mutex> lock(m_impl->voicesMutex);
-    const std::uint32_t handleValue = m_impl->nextVoiceHandle++;
-    m_impl->voices.emplace(handleValue, std::move(voice));
-    m_impl->voiceStates.emplace(handleValue, VoicePlaybackStateUVE::Stopped);
-    return VoiceHandleUVE{handleValue};
+    return m_impl->voices.AcquireUVE(
+        ImplUVE::VoiceEntryUVE{std::move(voice), VoicePlaybackStateUVE::Stopped});
 }
 
 void MiniaudioAudioDeviceUVE::DestroyVoiceUVE(VoiceHandleUVE voice) {
     std::lock_guard<std::mutex> lock(m_impl->voicesMutex);
-    const bool erased = (m_impl->voices.erase(voice.value) != 0U) | (m_impl->voiceStates.erase(voice.value) != 0U);
+    const bool erased = m_impl->voices.ReleaseUVE(voice);
     if (!erased) {
         UVE_ERROR("MiniaudioAudioDeviceUVE: DestroyVoiceUVE called with an unknown or already-destroyed "
                   "handle ({})",
@@ -225,37 +227,35 @@ void MiniaudioAudioDeviceUVE::DestroyVoiceUVE(VoiceHandleUVE voice) {
 
 bool MiniaudioAudioDeviceUVE::PlayUVE(VoiceHandleUVE voice) {
     std::lock_guard<std::mutex> lock(m_impl->voicesMutex);
-    const auto stateIterator = m_impl->voiceStates.find(voice.value);
-    if (stateIterator == m_impl->voiceStates.end()) {
+    ImplUVE::VoiceEntryUVE* const entry = m_impl->voices.FindUVE(voice);
+    if (entry == nullptr) {
         UVE_ERROR("MiniaudioAudioDeviceUVE: PlayUVE called with an unknown handle ({})", voice.value);
         return false;
     }
     // Restart semantics (matching the interface contract): a voice that already finished starts
     // over from the beginning.
-    if (stateIterator->second == VoicePlaybackStateUVE::Stopped) {
-        if (const auto voiceIterator = m_impl->voices.find(voice.value); voiceIterator != m_impl->voices.end()) {
-            voiceIterator->second.cursorFrames = 0.0;
-        }
+    if (entry->state == VoicePlaybackStateUVE::Stopped) {
+        entry->voice.cursorFrames = 0.0;
     }
-    stateIterator->second = VoicePlaybackStateUVE::Playing;
+    entry->state = VoicePlaybackStateUVE::Playing;
     return true;
 }
 
 bool MiniaudioAudioDeviceUVE::StopUVE(VoiceHandleUVE voice) {
     std::lock_guard<std::mutex> lock(m_impl->voicesMutex);
-    const auto stateIterator = m_impl->voiceStates.find(voice.value);
-    if (stateIterator == m_impl->voiceStates.end()) {
+    ImplUVE::VoiceEntryUVE* const entry = m_impl->voices.FindUVE(voice);
+    if (entry == nullptr) {
         UVE_ERROR("MiniaudioAudioDeviceUVE: StopUVE called with an unknown handle ({})", voice.value);
         return false;
     }
-    stateIterator->second = VoicePlaybackStateUVE::Stopped;
+    entry->state = VoicePlaybackStateUVE::Stopped;
     return true;
 }
 
 bool MiniaudioAudioDeviceUVE::SetVoiceParamsUVE(VoiceHandleUVE voice, const AudioVoiceParamsUVE& params) {
     std::lock_guard<std::mutex> lock(m_impl->voicesMutex);
-    const auto iterator = m_impl->voices.find(voice.value);
-    if (iterator == m_impl->voices.end()) {
+    ImplUVE::VoiceEntryUVE* const entry = m_impl->voices.FindUVE(voice);
+    if (entry == nullptr) {
         UVE_ERROR("MiniaudioAudioDeviceUVE: SetVoiceParamsUVE called with an unknown handle ({})", voice.value);
         return false;
     }
@@ -264,25 +264,25 @@ bool MiniaudioAudioDeviceUVE::SetVoiceParamsUVE(VoiceHandleUVE voice, const Audi
                   voice.value);
         return false;
     }
-    iterator->second.position[0] = params.position.x;
-    iterator->second.position[1] = params.position.y;
-    iterator->second.position[2] = params.position.z;
-    iterator->second.gain = params.gain;
-    iterator->second.pitch = params.pitch;
-    iterator->second.stepPerOutputFrame =
-        (static_cast<double>(iterator->second.sampleRate) / static_cast<double>(m_impl->outputSampleRate)) *
+    entry->voice.position[0] = params.position.x;
+    entry->voice.position[1] = params.position.y;
+    entry->voice.position[2] = params.position.z;
+    entry->voice.gain = params.gain;
+    entry->voice.pitch = params.pitch;
+    entry->voice.stepPerOutputFrame =
+        (static_cast<double>(entry->voice.sampleRate) / static_cast<double>(m_impl->outputSampleRate)) *
         static_cast<double>(params.pitch);
     return true;
 }
 
 VoicePlaybackStateUVE MiniaudioAudioDeviceUVE::GetVoiceStateUVE(VoiceHandleUVE voice) const {
     std::lock_guard<std::mutex> lock(m_impl->voicesMutex);
-    const auto iterator = m_impl->voiceStates.find(voice.value);
-    if (iterator == m_impl->voiceStates.end()) {
+    const ImplUVE::VoiceEntryUVE* const entry = m_impl->voices.FindUVE(voice);
+    if (entry == nullptr) {
         UVE_ERROR("MiniaudioAudioDeviceUVE: GetVoiceStateUVE called with an unknown handle ({})", voice.value);
         return VoicePlaybackStateUVE::Stopped;
     }
-    return iterator->second;
+    return entry->state;
 }
 
 std::string_view MiniaudioAudioDeviceUVE::GetBackendNameUVE() const noexcept {

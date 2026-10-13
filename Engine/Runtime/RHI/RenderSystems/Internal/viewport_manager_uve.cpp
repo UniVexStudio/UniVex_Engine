@@ -120,7 +120,10 @@ void ViewportManagerUVE::RenderAllPanesUVE(IRenderer3DUVE& renderer, Scene::IEnt
         // to think in GL's coordinate space.
         const std::uint32_t pixelYFromBottom = windowHeight - pixelYFromTop - clampedHeight;
         renderer.RenderFrameToRegionUVE(entityManager, pane.cameraEntity,
-                                        ViewportRectUVE{pixelX, pixelYFromBottom, clampedWidth, clampedHeight});
+                                        ViewportRectUVE{Math::Vector2iUVE{static_cast<std::int32_t>(pixelX),
+                                                                          static_cast<std::int32_t>(pixelYFromBottom)},
+                                                        Math::Vector2iUVE{static_cast<std::int32_t>(clampedWidth),
+                                                                          static_cast<std::int32_t>(clampedHeight)}});
     }
 }
 

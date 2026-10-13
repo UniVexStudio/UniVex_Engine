@@ -14,6 +14,7 @@
 #include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/area_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
+#include "uve/component/camera_2d_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/light_component_uve.h"
@@ -22,9 +23,10 @@
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
+#include "uve/component/sprite_2d_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/entity_uve.h"
-#include "uve/object/scene_object_registry_uve.h"
+#include "uve/scene/objects/scene_object_registry_uve.h"
 // The 21 object types that used to live behind their own thin compatibility-alias facade here
 // (RayCast3D, Skeleton3D, Hitbox3D, WorldEnvironment3D, etc.) have their real struct definitions
 // directly in Engine/Runtime/Objects/3D — and the 17 kinds whose data already lives in a shared
@@ -34,3 +36,4 @@
 // header or in the editor's creation switch.
 #include "uve/objects/3d/all_objects_3d_uve.h"
 #include "uve/objects/canvas/all_objects_canvas_uve.h"
+#include "uve/objects/2d/all_objects_2d_uve.h"

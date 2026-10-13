@@ -7,6 +7,10 @@
 
 #include "uve/audio/i_audio_source_system_uve.h"
 
+namespace UVE::Scene {
+struct AudioSourceComponentUVE;
+} // namespace Scene
+
 namespace UVE::Audio {
 
 /// AudioSourceSystemUVE is the concrete, engine-standard implementation of
@@ -24,8 +28,26 @@ public:
     AudioSourceSystemUVE& operator=(const AudioSourceSystemUVE&) = delete;
 
     void SyncUVE(Scene::IEntityManagerUVE& entityManager, IAudioSystemUVE& audioSystem) override;
+    [[nodiscard]] bool PlayEntityUVE(Scene::EntityUVE entity, Scene::IEntityManagerUVE& entityManager,
+                                     IAudioSystemUVE& audioSystem) override;
+    [[nodiscard]] bool StopEntityUVE(Scene::EntityUVE entity, IAudioSystemUVE& audioSystem) override;
+    [[nodiscard]] bool IsEntityPlayingUVE(Scene::EntityUVE entity,
+                                          const IAudioSystemUVE& audioSystem) const override;
 
 private:
+    struct EnsuredVoiceUVE final {
+        VoiceHandleUVE voice;
+        bool created;
+    };
+
+    /// The registry find-or-create SyncUVE() and PlayEntityUVE() share: returns the live voice, or
+    /// an invalid handle when the source is invalid or creation fails. Sets no voice parameters -
+    /// SyncUVE()'s tail owns those for sync-born voices, and PlayEntityUVE() sets them for the
+    /// voices it births mid-frame, so no existing sync call sequence changes.
+    [[nodiscard]] EnsuredVoiceUVE EnsureVoiceUVE(Scene::EntityUVE entity,
+                                                 const Scene::AudioSourceComponentUVE& source,
+                                                 IAudioSystemUVE& audioSystem);
+
     struct ImplUVE;
     std::unique_ptr<ImplUVE> m_impl;
 };

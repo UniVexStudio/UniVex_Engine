@@ -71,7 +71,7 @@ struct AreaWorldAabbCacheUVE final {
     switch (collider.shapeType) {
     case Scene::ColliderShapeTypeUVE::Sphere:
         return Detail::ComputeSphereAabbPenetrationUVE(
-            area.worldAabb, collider.worldAabb.GetCenterUVE(), collider.shapeRadius);
+            area.worldAabb, Math::SphereUVE{collider.worldAabb.GetCenterUVE(), collider.shapeRadius});
     case Scene::ColliderShapeTypeUVE::Capsule:
         return Detail::ComputeCapsuleAabbPenetrationUVE(
             area.worldAabb, collider.shapeSegmentStart, collider.shapeSegmentEnd, collider.shapeRadius);

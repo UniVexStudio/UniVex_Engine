@@ -139,9 +139,9 @@ private:
 [[nodiscard]] std::vector<std::byte> BuildSavePayloadUVE(const std::vector<std::byte>& metadataJsonBytes,
                                                           const std::vector<std::byte>& worldJsonBytes) {
     std::vector<std::byte> payload;
-    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(metadataJsonBytes.size()));
+    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(metadataJsonBytes.size()));
     Utilities::AppendBytesUVE(payload, metadataJsonBytes.data(), metadataJsonBytes.size());
-    Utilities::AppendUint64UVE(payload, worldJsonBytes.size());
+    Utilities::AppendUint64LeUVE(payload, worldJsonBytes.size());
     Utilities::AppendBytesUVE(payload, worldJsonBytes.data(), worldJsonBytes.size());
     return CompressSavePayloadUVE(payload);
 }
@@ -153,12 +153,12 @@ private:
                                         std::vector<std::byte>& outWorldJsonBytes) {
     std::size_t offset = 0;
     std::uint32_t metadataLength = 0;
-    if (!Utilities::ReadUint32FromBufferUVE(payload, offset, metadataLength) ||
+    if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, metadataLength) ||
         !Utilities::ReadBytesFromBufferUVE(payload, offset, metadataLength, outMetadataJsonBytes)) {
         return false;
     }
     std::uint64_t worldLength = 0;
-    if (!Utilities::ReadUint64FromBufferUVE(payload, offset, worldLength) ||
+    if (!Utilities::ReadUint64LeFromBufferUVE(payload, offset, worldLength) ||
         !Utilities::ReadBytesFromBufferUVE(payload, offset, worldLength, outWorldJsonBytes)) {
         return false;
     }
@@ -171,12 +171,12 @@ private:
                                              std::vector<std::byte>& outMetadataJsonBytes) {
     std::size_t offset = 0;
     std::uint32_t metadataLength = 0;
-    if (!Utilities::ReadUint32FromBufferUVE(payload, offset, metadataLength) ||
+    if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, metadataLength) ||
         !Utilities::ReadBytesFromBufferUVE(payload, offset, metadataLength, outMetadataJsonBytes)) {
         return false;
     }
     std::uint64_t worldLength = 0U;
-    if (!Utilities::ReadUint64FromBufferUVE(payload, offset, worldLength)) {
+    if (!Utilities::ReadUint64LeFromBufferUVE(payload, offset, worldLength)) {
         return false;
     }
     const std::size_t remainingBytes = payload.size() - offset;

@@ -529,20 +529,20 @@ int main() {
             wide.pivotDotRadiusPx = style.pivotDotRadiusPx * 2.f;
             const auto narrowMesh = BuildGizmoMesh(GizmoMode::Select, style, view, kUnitsPerPixel);
             const auto wideMesh = BuildGizmoMesh(GizmoMode::Select, wide, view, kUnitsPerPixel);
-            // The ring sits a fixed two pixels in front of the pivot along the view direction, which
-            // does not scale with its radius, and its stroke width is a fixed pixel size too. Measure
-            // across the view, in the ring's own plane, and add back half the stroke to the inner rim
-            // so the figure compared is the ring's centre-line radius - the thing that scales.
-            const float halfStroke = style.pivotDotWidthPx * 0.5f * kUnitsPerPixel;
-            const auto outermost = [&view, halfStroke](const univex::gizmo::GizmoMesh& mesh) {
+            const auto authoredRadiusFromRingCentre = [&](const univex::gizmo::GizmoMesh& mesh) {
+                float nearest = std::numeric_limits<float>::max();
                 float furthest = 0.f;
+                const Vec3 ringCentre = view * (-2.f * kUnitsPerPixel);
                 for (const auto& tri : mesh.triangles) {
-                    const Vec3 across = tri.a - view * univex::math::Dot(tri.a, view);
-                    furthest = std::max(furthest, univex::math::Length(across));
+                    for (const Vec3 vertex : {tri.a, tri.b, tri.c}) {
+                        const float radius = univex::math::Length(vertex - ringCentre);
+                        nearest = std::min(nearest, radius);
+                        furthest = std::max(furthest, radius);
+                    }
                 }
-                return furthest + halfStroke;
+                return (nearest + furthest) * 0.5f;
             };
-            CheckNear(outermost(wideMesh), outermost(narrowMesh) * 2.f, 1e-3f,
+            CheckNear(authoredRadiusFromRingCentre(wideMesh), authoredRadiusFromRingCentre(narrowMesh) * 2.f, 1e-3f,
                       "the pivot dot scales with its pixel radius");
         }
 

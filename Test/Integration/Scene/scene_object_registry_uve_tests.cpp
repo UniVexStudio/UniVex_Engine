@@ -14,7 +14,7 @@ namespace {
 
 TEST(SceneObjectRegistryUVETest, BuiltInDescriptorsUVE_AreStableUniqueAndRuntimeBound) {
     const std::span<const SceneObjectDescriptorUVE> descriptors = GetSceneObjectDescriptorsUVE();
-    ASSERT_EQ(descriptors.size(), 49U);
+    ASSERT_EQ(descriptors.size(), 51U);
 
     std::unordered_set<std::string_view> ids;
     for (const SceneObjectDescriptorUVE& descriptor : descriptors) {
@@ -25,7 +25,7 @@ TEST(SceneObjectRegistryUVETest, BuiltInDescriptorsUVE_AreStableUniqueAndRuntime
         EXPECT_FALSE(descriptor.runtimeOwner.empty());
         EXPECT_LE(descriptor.authoredContracts.size(), 8U);
         // Structure the document creates itself; never offered in an object list.
-        if (descriptor.kind == SceneObjectKindUVE::Object || descriptor.kind == SceneObjectKindUVE::Viewport) {
+        if (descriptor.kind == SceneObjectKindUVE::SceneRoot || descriptor.kind == SceneObjectKindUVE::Viewport3D) {
             EXPECT_FALSE(descriptor.libraryCreatable);
         } else {
             EXPECT_TRUE(descriptor.libraryCreatable);
@@ -84,7 +84,39 @@ TEST(SceneObjectRegistryUVETest, RealObjectTypesUVE_AreReachableFromTheAggregate
     static_assert(std::is_class_v<AudioSourceComponentUVE>);                  // AudioSource3D
     static_assert(std::is_class_v<ParticleEmitterComponentUVE>);              // ParticleEmitter3D
     static_assert(std::is_class_v<ScriptComponentUVE>);                       // Script
+    static_assert(std::is_class_v<Sprite2DComponentUVE>);                  // Sprite2D
+    static_assert(std::is_class_v<Sprite2DObjectDefinitionUVE>);          // Sprite2D
+    static_assert(std::is_class_v<Camera2DComponentUVE>);                  // Camera2D
+    static_assert(std::is_class_v<Camera2DObjectDefinitionUVE>);          // Camera2D
     SUCCEED();
+}
+
+TEST(SceneObjectRegistryUVETest, Sprite2DDescriptorUVE_OpensThe2DCategory) {
+    const SceneObjectDescriptorUVE* const byKind =
+        FindSceneObjectDescriptorUVE(SceneObjectKindUVE::Sprite2D);
+    ASSERT_NE(byKind, nullptr);
+    EXPECT_EQ(byKind->typeId, "sprite_2d");
+    EXPECT_EQ(byKind->displayName, "Sprite2D");
+    EXPECT_EQ(byKind->category, "2D");
+    EXPECT_TRUE(byKind->libraryCreatable);
+    ASSERT_EQ(byKind->authoredContracts.size(), 1U);
+    EXPECT_EQ(byKind->authoredContracts[0], "Sprite2DComponentUVE");
+    EXPECT_EQ(FindSceneObjectDescriptorUVE(std::string_view{"sprite_2d"}), byKind);
+    EXPECT_EQ(GetSceneObjectTypeIdUVE(SceneObjectKindUVE::Sprite2D), "sprite_2d");
+}
+
+TEST(SceneObjectRegistryUVETest, Camera2DDescriptorUVE_JoinsTheRenderingCategory) {
+    const SceneObjectDescriptorUVE* const byKind =
+        FindSceneObjectDescriptorUVE(SceneObjectKindUVE::Camera2D);
+    ASSERT_NE(byKind, nullptr);
+    EXPECT_EQ(byKind->typeId, "camera_2d");
+    EXPECT_EQ(byKind->displayName, "Camera2D");
+    EXPECT_EQ(byKind->category, "Rendering");
+    EXPECT_TRUE(byKind->libraryCreatable);
+    ASSERT_EQ(byKind->authoredContracts.size(), 1U);
+    EXPECT_EQ(byKind->authoredContracts[0], "Camera2DComponentUVE");
+    EXPECT_EQ(FindSceneObjectDescriptorUVE(std::string_view{"camera_2d"}), byKind);
+    EXPECT_EQ(GetSceneObjectTypeIdUVE(SceneObjectKindUVE::Camera2D), "camera_2d");
 }
 
 TEST(SceneObjectRegistryUVETest, UnknownLookupUVE_ReturnsEmptyOrNull) {
