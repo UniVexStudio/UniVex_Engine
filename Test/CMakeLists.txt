@@ -43,6 +43,7 @@ add_executable(uve_core_tests
     Core/Threading/semaphore_uve_tests.cpp
     Core/Threading/thread_id_uve_tests.cpp
     Core/Threading/thread_naming_uve_tests.cpp
+    Core/Threading/thread_control_uve_tests.cpp
     Core/Utilities/timer_uve_tests.cpp
     Core/Utilities/hash_uve_tests.cpp
     Core/Utilities/binary_buffer_uve_tests.cpp
