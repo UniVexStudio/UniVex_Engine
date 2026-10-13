@@ -105,6 +105,7 @@ add_executable(uve_core_tests
     Core/Asset/mtl_material_converter_uve_tests.cpp
     Core/Asset/mtl_metadata_uve_tests.cpp
     Core/Asset/hot_reload_uve_tests.cpp
+    Core/Asset/hot_reload_backend_uve_tests.cpp
     Core/Asset/asset_import_queue_uve_tests.cpp
     Core/Asset/project_change_watcher_uve_tests.cpp
     Core/Asset/project_file_index_uve_tests.cpp

@@ -618,8 +618,22 @@ plan for reimport), `AssetBundleUVE` (`.uvbundle` pack/unpack), and
 Prefab, Blob, Bundle, Mesh, Texture, Shader, Material, Save, DataTable, Audio and
 Animation.
 
-`[~]` **`HotReloadUVE`** polls mtimes. There is no OS file-watcher backend, so
-reload latency is the poll interval and a rename reads as remove-plus-create.
+`[x]` **Capability-detected hot reload with polling fallback** — `HotReloadUVE` now
+supplements path/existence/mtime/size snapshots with nonblocking Linux inotify in
+`Asset/Internal/native_file_watcher_uve.{h,cpp}`. Automatic reports the backend that actually
+initialized; forced Polling and unsupported/unwatchable native paths retain real snapshot
+polling. There is no new worker or duplicate project scanner. Parent and symlink-target
+directories are watched; native bursts coalesce at the existing interval, requests are GUID-
+sorted, and real queue overflow/directory replacement forces a bounded-drain rescan. Duplicate
+Track does not erase history; epoch timestamps are valid; deletion retains last-good data;
+recreation/DB relocation reloads, and a change during Loading remains pending. Manager/event
+callbacks are outside the lock. Events mean triggered, not succeeded. Shutdown closes watches.
+Polling alone still cannot see identical-metadata content changes entirely between scans;
+Windows/macOS use that explicit fallback, not a pretend native watcher. Thirteen new
+`hot_reload_backend_uve_tests.cpp` cases cover these contracts, including a real kernel queue
+overflow, symlink target writes and descriptor cleanup. All 17 hot-reload tests pass, the
+in-flight-load case passes 20 repetitions, and the full strict build/CTest passes **4,069 cases,
+zero failures, seven existing Vulkan skips**, with no watcher skips on this host (2026-10-13).
 
 ## 8. Asset types
 
