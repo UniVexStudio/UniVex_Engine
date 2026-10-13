@@ -9,6 +9,7 @@
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/rhi/buffer_handle_uve.h"
+#include "uve/rhi/device_operations_uve.h"
 #include "uve/rhi/pipeline_handle_uve.h"
 #include "uve/rhi/render_resource_descs_uve.h"
 #include "uve/rhi/sampler_handle_uve.h"
@@ -35,6 +36,11 @@ namespace UVE::Render {
 class ICommandBufferUVE {
 public:
     virtual ~ICommandBufferUVE() = default;
+    /// Visibility dependency outside render passes; no queue-family or image-layout ownership
+    /// transfer is implied. Unsupported adapters return explicitly without recording anything.
+    [[nodiscard]] virtual RenderOperationResultUVE MemoryBarrierUVE(MemoryBarrierMaskUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
 
     /// Begins a render pass targeting `renderPassDesc`'s attachments. Must not be called while
     /// already inside a render pass (no nested passes).

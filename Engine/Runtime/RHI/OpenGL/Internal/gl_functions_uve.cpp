@@ -36,6 +36,25 @@ bool GlFunctionsUVE::IsCompleteUVE() const noexcept {
 GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
     GlFunctionsUVE functions;
 
+    functions.glCopyBufferSubData =
+        LoadOneUVE<PFNGLCOPYBUFFERSUBDATAPROC>(getProcAddress, "glCopyBufferSubData");
+    functions.glBlitFramebuffer = LoadOneUVE<PFNGLBLITFRAMEBUFFERPROC>(getProcAddress, "glBlitFramebuffer");
+    functions.glGenerateMipmap = LoadOneUVE<PFNGLGENERATEMIPMAPPROC>(getProcAddress, "glGenerateMipmap");
+    functions.glFenceSync = LoadOneUVE<PFNGLFENCESYNCPROC>(getProcAddress, "glFenceSync");
+    functions.glClientWaitSync = LoadOneUVE<PFNGLCLIENTWAITSYNCPROC>(getProcAddress, "glClientWaitSync");
+    functions.glDeleteSync = LoadOneUVE<PFNGLDELETESYNCPROC>(getProcAddress, "glDeleteSync");
+    functions.glGenQueries = LoadOneUVE<PFNGLGENQUERIESPROC>(getProcAddress, "glGenQueries");
+    functions.glDeleteQueries = LoadOneUVE<PFNGLDELETEQUERIESPROC>(getProcAddress, "glDeleteQueries");
+    functions.glBeginQuery = LoadOneUVE<PFNGLBEGINQUERYPROC>(getProcAddress, "glBeginQuery");
+    functions.glEndQuery = LoadOneUVE<PFNGLENDQUERYPROC>(getProcAddress, "glEndQuery");
+    functions.glGetQueryiv = LoadOneUVE<PFNGLGETQUERYIVPROC>(getProcAddress, "glGetQueryiv");
+    functions.glGetQueryObjectuiv =
+        LoadOneUVE<PFNGLGETQUERYOBJECTUIVPROC>(getProcAddress, "glGetQueryObjectuiv");
+#if !defined(__ANDROID__)
+    functions.glQueryCounter = LoadOneUVE<PFNGLQUERYCOUNTERPROC>(getProcAddress, "glQueryCounter");
+    functions.glGetQueryObjectui64v =
+        LoadOneUVE<PFNGLGETQUERYOBJECTUI64VPROC>(getProcAddress, "glGetQueryObjectui64v");
+#endif
     functions.glGenBuffers = LoadOneUVE<PFNGLGENBUFFERSPROC>(getProcAddress, "glGenBuffers");
     functions.glDeleteBuffers = LoadOneUVE<PFNGLDELETEBUFFERSPROC>(getProcAddress, "glDeleteBuffers");
     functions.glBindBuffer = LoadOneUVE<PFNGLBINDBUFFERPROC>(getProcAddress, "glBindBuffer");

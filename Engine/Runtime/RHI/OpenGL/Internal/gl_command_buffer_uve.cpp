@@ -1181,3 +1181,35 @@ void GlCommandBufferUVE::DispatchUVE(std::uint32_t groupCountX, std::uint32_t gr
 }
 
 } // namespace UVE::Render
+
+namespace UVE::Render {
+RenderOperationResultUVE GlCommandBufferUVE::MemoryBarrierUVE(MemoryBarrierMaskUVE mask) {
+    if (!IsMemoryBarrierMaskValidUVE(mask))
+        return RenderOperationResultUVE::InvalidArgument;
+    if (m_insideRenderPass)
+        return RenderOperationResultUVE::InvalidState;
+#if defined(__ANDROID__)
+    return RenderOperationResultUVE::Unsupported;
+#else
+    if (!m_state->supportsComputeShadersUVE || !m_state->gl.glMemoryBarrier)
+        return RenderOperationResultUVE::Unsupported;
+    const auto bits = static_cast<std::uint32_t>(mask);
+    GLbitfield native = 0U;
+    if ((bits & 1U) != 0U)
+        native |= GL_SHADER_STORAGE_BARRIER_BIT;
+    if ((bits & 2U) != 0U)
+        native |= GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT;
+    if ((bits & 4U) != 0U)
+        native |= GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_ELEMENT_ARRAY_BARRIER_BIT | GL_UNIFORM_BARRIER_BIT;
+    if ((bits & 8U) != 0U)
+        native |= GL_COMMAND_BARRIER_BIT;
+    if ((bits & 16U) != 0U)
+        native |= GL_BUFFER_UPDATE_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT;
+    if ((bits & 32U) != 0U)
+        native |= GL_FRAMEBUFFER_BARRIER_BIT;
+    m_state->gl.glMemoryBarrier(native);
+    return glGetError() == GL_NO_ERROR ? RenderOperationResultUVE::Success
+                                       : RenderOperationResultUVE::SystemError;
+#endif
+}
+} // namespace UVE::Render

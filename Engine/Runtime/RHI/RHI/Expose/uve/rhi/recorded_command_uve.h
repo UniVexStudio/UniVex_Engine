@@ -10,6 +10,7 @@
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/rhi/buffer_handle_uve.h"
+#include "uve/rhi/device_operations_uve.h"
 #include "uve/rhi/pipeline_handle_uve.h"
 #include "uve/rhi/render_resource_descs_uve.h"
 #include "uve/rhi/sampler_handle_uve.h"
@@ -93,14 +94,11 @@ struct SetUniformMatrix4x4CommandUVE {
 };
 
 /// A single recorded ICommandBufferUVE call, tagged by which method it came from.
-using RecordedCommandUVE =
-    std::variant<BeginRenderPassCommandUVE, EndRenderPassCommandUVE, BindPipelineCommandUVE,
-                 BindVertexBufferCommandUVE, BindIndexBufferCommandUVE, BindTextureCommandUVE,
-                 BindSamplerCommandUVE,
-                 BindUniformBufferCommandUVE, BindStorageBufferCommandUVE, DrawIndexedCommandUVE,
-                 DrawCommandUVE, DrawIndexedIndirectCommandRecordUVE, DispatchCommandUVE,
-                 SetUniformFloatCommandUVE,
-                 SetUniformIntCommandUVE, SetUniformBoolCommandUVE, SetUniformVector3CommandUVE,
-                 SetUniformMatrix4x4CommandUVE>;
+using RecordedCommandUVE = std::variant<
+    BeginRenderPassCommandUVE, EndRenderPassCommandUVE, BindPipelineCommandUVE, BindVertexBufferCommandUVE,
+    BindIndexBufferCommandUVE, BindTextureCommandUVE, BindSamplerCommandUVE, BindUniformBufferCommandUVE,
+    BindStorageBufferCommandUVE, DrawIndexedCommandUVE, DrawCommandUVE, DrawIndexedIndirectCommandRecordUVE,
+    DispatchCommandUVE, SetUniformFloatCommandUVE, SetUniformIntCommandUVE, SetUniformBoolCommandUVE,
+    SetUniformVector3CommandUVE, SetUniformMatrix4x4CommandUVE, MemoryBarrierCommandUVE>;
 
 } // namespace UVE::Render
