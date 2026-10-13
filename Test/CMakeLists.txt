@@ -61,6 +61,7 @@ add_executable(uve_core_tests
     Core/Strings/string_id_uve_tests.cpp
     Core/Strings/string_utils_uve_tests.cpp
     Core/Scheduling/frame_scheduler_uve_tests.cpp
+    Core/Scheduling/frame_serial_uve_tests.cpp
     Core/Diagnostics/profiler_diagnostics_uve_tests.cpp
     Core/Events/event_system_uve_tests.cpp
     Core/Asset/uve_file_envelope_uve_tests.cpp
@@ -373,6 +374,7 @@ add_executable(uve_integration_tests
     Integration/Animation/pose_graph_uve_tests.cpp
     Integration/Animation/animation_state_machine_uve_tests.cpp
     Integration/World/world_uve_tests.cpp
+    Integration/World/world_lifecycle_uve_tests.cpp
     Integration/Object/type_metadata_uve_tests.cpp
     Integration/Object/property_accessor_uve_tests.cpp
     Integration/Object/type_metadata_bridge_uve_tests.cpp
