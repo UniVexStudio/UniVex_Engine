@@ -743,8 +743,18 @@ because each one blocks a whole feature:
   render-into-layer. (Image-based lighting itself is still absent — see §10.)
 
 Also absent: `[x]` a sampler object — landed (Tier 2.2: `SamplerDescUVE` with Point filtering
-in all three backends); and still genuinely `[ ]` descriptor sets or bind groups (binding is flat
-global slot indices), `[ ]` any synchronisation primitive (no fence, semaphore, barrier or
+in all three backends). `[/]` **Validated bind-group packets** now live in
+`RHI/RHI/Expose/uve/rhi/bind_group_uve.h`: bounded borrowed packets reuse existing typed resource
+commands, reject invalid/duplicate bindings or incompatible declared layouts before any bind,
+and retain input ordering. The material renderer consumes the packet for its five PBR textures.
+GL applies the same resource calls, Vulkan retains/replays them and Null records them; no new
+GPU resource lifetime or arbitrary native descriptor-set numbering is pretended. Unlisted slots,
+resource ownership, hardware limits and graphics/compute pass rules keep their existing meaning.
+Five new `BindGroupUVETest` cases and 88 renderer cases pass; full CPU-only CTest has **4,093
+cases, zero failures, seven expected Vulkan skips**. A new native GL binding-state case and the
+existing Vulkan point-sampler pixel assertions exercise this packet in graphics-capable CI;
+that new native coverage is pending verification, so this entry is not `[x]` yet.
+Still genuinely `[ ]` any synchronisation primitive (no fence, semaphore, barrier or
 timeline — `SubmitUVE` + `PresentUVE` is the entire model), `[ ]` a swapchain/surface
 abstraction, `[ ]` stencil state, `[ ]` GPU mip generation (CPU chains landed; no GPU path),
 `[ ]` copy/blit operations (only `UpdateBufferUVE` and `ReadbackBufferUVE`), and `[ ]` timestamp

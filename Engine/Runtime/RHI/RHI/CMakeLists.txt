@@ -16,6 +16,7 @@
 
 add_library(uve_rhi STATIC
     Internal/shader_data_type_uve.cpp
+    Internal/bind_group_uve.cpp
 )
 target_include_directories(uve_rhi PUBLIC Expose)
 target_link_libraries(uve_rhi PUBLIC uve_math uve_logging)
