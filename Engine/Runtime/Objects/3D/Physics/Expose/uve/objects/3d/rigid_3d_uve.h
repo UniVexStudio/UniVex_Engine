@@ -52,7 +52,25 @@ public:
 
     [[nodiscard]] static std::optional<Math::Vector3UVE> IntegrateLinearVelocityUVE(
         const Math::Vector3UVE& velocity, const Math::Vector3UVE& gravity, float gravityScale,
-        float linearDamp, float deltaTimeSeconds) noexcept;
+        float linearDamp, float deltaTimeSeconds, const Math::Vector3UVE& force = Math::Vector3UVE{},
+        float inverseMass = 0.0F) noexcept;
+
+    /// Stores a caller-owned persistent force on the body's component, integrated as
+    /// force/mass every step until changed. Answers false - storing nothing - without a body or
+    /// with a non-finite force; a kinematic or massless body stores the force like any other
+    /// (it reads back, and takes effect if the body ever becomes dynamic).
+    [[nodiscard]] static bool ApplyForceUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                            const Math::Vector3UVE& force) noexcept;
+    /// Adds an instant velocity kick: velocity += impulse * inverseMass. Answers false - writing
+    /// nothing - without a body, with a non-finite impulse, or when the body cannot move
+    /// (kinematic or massless): an impulse is an instant with nothing to store, so applying one
+    /// to an immovable body is meaningless, unlike storing a persistent force on it.
+    [[nodiscard]] static bool ApplyImpulseUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                              const Math::Vector3UVE& impulse) noexcept;
+    /// Stores a caller-owned persistent torque, the angular twin of ApplyForceUVE, with the same
+    /// fail-closed answers.
+    [[nodiscard]] static bool ApplyTorqueUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                             const Math::Vector3UVE& torque) noexcept;
 
     [[nodiscard]] static Math::Vector3UVE DeflectVelocityUVE(const Math::Vector3UVE& velocity,
                                                              const Math::Vector3UVE& towardOtherBody,

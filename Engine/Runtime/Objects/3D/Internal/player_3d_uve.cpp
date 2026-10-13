@@ -7,12 +7,14 @@
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <vector>
 
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/quaternion_uve.h"
+#include "uve/math/scalar_uve.h"
 #include "uve/objects/3d/camera_3d_uve.h"
 #include "uve/objects/3d/interaction_area_3d_uve.h"
 #include "uve/objects/3d/spring_arm_3d_uve.h"
@@ -20,8 +22,6 @@
 namespace UVE::Scene {
 namespace {
 
-constexpr float kPiUVE = 3.14159265358979323846F;
-constexpr float kRadiansPerDegreeUVE = kPiUVE / 180.0F;
 constexpr float kMaximumPitchLimitDegreesUVE = 89.0F;
 
 [[nodiscard]] bool IsEarlierEntityUVE(const EntityUVE lhs, const EntityUVE rhs) noexcept {
@@ -51,9 +51,12 @@ bool IsPlayer3DObjectComponentValidUVE(const PlayerComponentUVE& value) noexcept
 }
 
 bool IsPlayer3DObjectDefinitionValidUVE(const Player3DObjectDefinitionUVE& value) noexcept {
+    ControllerComponentUVE authoredController;
+    authoredController.kind = value.controllerKind;
     return IsColliderComponentValidUVE(value.collider) &&
            IsCharacterControllerComponentValidUVE(value.controller) &&
-           IsPlayer3DObjectComponentValidUVE(value.player) && IsHealthComponentValidUVE(value.health);
+           IsPlayer3DObjectComponentValidUVE(value.player) && IsHealthComponentValidUVE(value.health) &&
+           IsControllerComponentValidUVE(authoredController);
 }
 
 void ApplyPlayer3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
@@ -64,6 +67,7 @@ void ApplyPlayer3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const En
     Character3DObjectDefinitionUVE character{};
     character.collider = value.collider;
     character.controller = value.controller;
+    character.controllerKind = value.controllerKind;
     ApplyCharacter3DObjectDefinitionUVE(entityManager, entity, character);
     if (entityManager.HasComponentUVE<NameComponentUVE>(entity) &&
         entityManager.GetComponentUVE<NameComponentUVE>(entity).name ==
@@ -77,6 +81,37 @@ void ApplyPlayer3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const En
     if (!entityManager.HasComponentUVE<HealthComponentUVE>(entity)) {
         entityManager.AddComponentUVE<HealthComponentUVE>(entity, value.health);
     }
+    if (!entityManager.HasComponentUVE<PawnComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<PawnComponentUVE>(entity, PawnComponentUVE{});
+    }
+    if (!entityManager.HasComponentUVE<ControllerComponentUVE>(entity)) {
+        ControllerComponentUVE possession;
+        possession.kind = value.controllerKind;
+        entityManager.AddComponentUVE<ControllerComponentUVE>(entity, possession);
+    }
+}
+
+void MaintainPlayerPossessionUVE(IEntityManagerUVE& entityManager) {
+    std::vector<EntityUVE> flagged;
+    entityManager.ForEachUVE<PlayerComponentUVE>(
+        [&entityManager, &flagged](const EntityUVE entity, const PlayerComponentUVE& player) {
+            if (!player.possessOnPlay || !IsPlayer3DObjectComponentValidUVE(player) ||
+                !entityManager.HasComponentUVE<PawnComponentUVE>(entity) ||
+                !entityManager.HasComponentUVE<ControllerComponentUVE>(entity)) {
+                return;
+            }
+            const ControllerComponentUVE& controller =
+                entityManager.GetComponentUVE<ControllerComponentUVE>(entity);
+            const PawnComponentUVE& pawn = entityManager.GetComponentUVE<PawnComponentUVE>(entity);
+            if (controller.kind != ControllerKindUVE::Player ||
+                controller.pawn != kInvalidEntityUVE || pawn.controller != kInvalidEntityUVE) {
+                return;
+            }
+            flagged.push_back(entity);
+        });
+    for (const EntityUVE entity : flagged) {
+        static_cast<void>(PossessControllerUVE(entityManager, entity, entity));
+    }
 }
 
 EntityUVE ResolvePossessedPlayerUVE(IEntityManagerUVE& entityManager) {
@@ -87,6 +122,12 @@ EntityUVE ResolvePossessedPlayerUVE(IEntityManagerUVE& entityManager) {
                 !entityManager.HasComponentUVE<CharacterControllerComponentUVE>(entity) ||
                 !entityManager.HasComponentUVE<TransformComponentUVE>(entity) ||
                 !entityManager.HasComponentUVE<HierarchyComponentUVE>(entity)) {
+                return;
+            }
+            const EntityUVE driver = FindPawnControllerUVE(entityManager, entity);
+            if (driver == kInvalidEntityUVE ||
+                entityManager.GetComponentUVE<ControllerComponentUVE>(driver).kind !=
+                    ControllerKindUVE::Player) {
                 return;
             }
             if (best == kInvalidEntityUVE || IsEarlierEntityUVE(entity, best)) {
@@ -219,7 +260,7 @@ void ApplyPlayerLookUVE(PlayerComponentUVE& player, TransformComponentUVE& body,
     if (std::fabs(yawDeltaDegrees) > 0.0F) {
         Math::QuaternionUVE yaw{};
         if (Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F},
-                                      yawDeltaDegrees * kRadiansPerDegreeUVE, yaw)) {
+                                      Math::DegToRadUVE(yawDeltaDegrees), yaw)) {
             body.localRotation = Math::MultiplyUVE(yaw, body.localRotation);
             Math::QuaternionUVE normalized{};
             if (Math::TryNormalizeUVE(body.localRotation, normalized)) {
@@ -234,7 +275,7 @@ void ApplyPlayerLookUVE(PlayerComponentUVE& player, TransformComponentUVE& body,
     }
     Math::QuaternionUVE pitch{};
     if (Math::TryMakeAxisAngleUVE(Math::Vector3UVE{1.0F, 0.0F, 0.0F},
-                                  player.pitchDegrees * kRadiansPerDegreeUVE, pitch)) {
+                                  Math::DegToRadUVE(player.pitchDegrees), pitch)) {
         lookTarget->localRotation = pitch;
         lookTarget->rotationEditMode = RotationEditModeUVE::Quaternion;
     }

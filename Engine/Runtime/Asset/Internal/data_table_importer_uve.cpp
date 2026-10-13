@@ -12,6 +12,7 @@
 
 #include "uve/asset/data_table_asset_uve.h"
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/utilities/hash_uve.h"
 
 namespace UVE::Asset {
 namespace {
@@ -79,15 +80,11 @@ enum class DataTableSourceFormatUVE : std::uint8_t {
 } // namespace
 
 std::string DataTableImportSettingsUVE::GetCacheVersionUVE() const {
-    constexpr std::uint64_t kFnvOffsetBasis = 14695981039346656037ULL;
-    constexpr std::uint64_t kFnvPrime = 1099511628211ULL;
-    std::uint64_t hash = kFnvOffsetBasis;
-    const auto appendBytes = [&hash](const std::string_view value) {
-        for (const char character : value) {
-            const auto byte = static_cast<std::uint64_t>(static_cast<unsigned char>(character));
-            hash ^= byte;
-            hash *= kFnvPrime;
-        }
+    // The version string feeds the import cache, so these values must never change: the hasher
+    // consumes exactly the same bytes in exactly the same order as the loop it replaced.
+    Utilities::Fnv1a64UVE hasher;
+    const auto appendBytes = [&hasher](const std::string_view value) {
+        hasher.AppendString(value);
     };
     const auto appendLengthDelimited = [&appendBytes](const std::string_view value) {
         appendBytes(std::to_string(value.size()));
@@ -103,7 +100,7 @@ std::string DataTableImportSettingsUVE::GetCacheVersionUVE() const {
     }
 
     std::ostringstream version;
-    version << "data-table-import-v2-" << std::hex << std::setw(16) << std::setfill('0') << hash;
+    version << "data-table-import-v2-" << std::hex << std::setw(16) << std::setfill('0') << hasher.Digest();
     return version.str();
 }
 

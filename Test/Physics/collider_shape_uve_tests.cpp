@@ -78,7 +78,7 @@ TEST(ColliderComponentUVETest, IsColliderComponentValidUVE_RejectsInvalidShapePa
 TEST(ShapeNarrowPhaseUVETest, MovingSphereSphereSweepReportsExactHitAndDeterministicNormal) {
     const Math::RayUVE ray{{-5.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}};
     const std::optional<Math::RayHitUVE> hit =
-        Detail::IntersectMovingSphereSphereUVE(ray, {0.0F, 1.4F, 0.0F}, 0.5F, 1.0F, 100.0F);
+        Detail::IntersectMovingSphereSphereUVE(ray, 0.5F, Math::SphereUVE{{0.0F, 1.4F, 0.0F}, 1.0F}, 100.0F);
     ASSERT_TRUE(hit.has_value());
     EXPECT_NEAR(hit->distance, 5.0F - std::sqrt(0.29F), 1.0e-4F);
     EXPECT_LT(hit->normal.x, 0.0F);
@@ -87,24 +87,24 @@ TEST(ShapeNarrowPhaseUVETest, MovingSphereSphereSweepReportsExactHitAndDetermini
 
     const std::optional<Math::RayHitUVE> initialOverlap =
         Detail::IntersectMovingSphereSphereUVE(Math::RayUVE{{0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}},
-                                               {0.0F, 0.0F, 0.0F}, 0.5F, 1.0F, 1.0F);
+                                               0.5F, Math::SphereUVE{{0.0F, 0.0F, 0.0F}, 1.0F}, 1.0F);
     ASSERT_TRUE(initialOverlap.has_value());
     EXPECT_FLOAT_EQ(initialOverlap->distance, 0.0F);
     EXPECT_EQ(initialOverlap->normal, (Math::Vector3UVE{}));
 
     EXPECT_FALSE(Detail::IntersectMovingSphereSphereUVE(
-                     Math::RayUVE{{-5.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}}, {0.0F, 1.5F, 0.0F}, 0.5F, 1.0F,
-                     100.0F)
+                     Math::RayUVE{{-5.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}}, 0.5F,
+                     Math::SphereUVE{{0.0F, 1.5F, 0.0F}, 1.0F}, 100.0F)
                      .has_value());
     EXPECT_FALSE(Detail::IntersectMovingSphereSphereUVE(
-                     ray, {0.0F, 1.4F, 0.0F}, 0.5F, 1.0F, 1.0F)
+                     ray, 0.5F, Math::SphereUVE{{0.0F, 1.4F, 0.0F}, 1.0F}, 1.0F)
                      .has_value());
 }
 
 TEST(ShapeNarrowPhaseUVETest, RayTargetHelpersUseExactGeometryAndFailureClosedBounds) {
     const Math::RayUVE ray{{-5.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}};
     const std::optional<Math::RayHitUVE> sphereHit =
-        Detail::IntersectRaySphereUVE(ray, {0.0F, 0.9F, 0.0F}, 1.0F, 100.0F);
+        Detail::IntersectRaySphereUVE(ray, Math::SphereUVE{{0.0F, 0.9F, 0.0F}, 1.0F}, 100.0F);
     ASSERT_TRUE(sphereHit.has_value());
     EXPECT_NEAR(sphereHit->distance, 5.0F - std::sqrt(0.19F), 1.0e-4F);
     EXPECT_NEAR(sphereHit->normal.x, -std::sqrt(0.19F), 1.0e-4F);
@@ -119,19 +119,21 @@ TEST(ShapeNarrowPhaseUVETest, RayTargetHelpersUseExactGeometryAndFailureClosedBo
     EXPECT_NEAR(capsuleHit->normal.y, 0.8F, 1.0e-4F);
 
     const std::optional<Math::RayHitUVE> boxHit = Detail::IntersectRayOrientedBoxUVE(
-        Math::RayUVE{{-5.0F, 0.5F, 0.0F}, {1.0F, 0.0F, 0.0F}}, {}, {0.25F, 1.0F, 0.25F},
-        Math::QuaternionUVE{0.0F, 0.0F, 0.3826834324F, 0.9238795325F}, 100.0F);
+        Math::RayUVE{{-5.0F, 0.5F, 0.0F}, {1.0F, 0.0F, 0.0F}},
+        Math::OrientedBoxUVE{{}, {0.25F, 1.0F, 0.25F},
+                             Math::QuaternionUVE{0.0F, 0.0F, 0.3826834324F, 0.9238795325F}},
+        100.0F);
     ASSERT_TRUE(boxHit.has_value());
     EXPECT_NEAR(boxHit->distance, 5.0F - (0.25F * std::sqrt(2.0F) + 0.5F), 1.0e-4F);
     EXPECT_NEAR(boxHit->normal.x, -std::sqrt(0.5F), 1.0e-4F);
     EXPECT_NEAR(boxHit->normal.y, -std::sqrt(0.5F), 1.0e-4F);
 
     const std::optional<Math::RayHitUVE> initialSphere =
-        Detail::IntersectRaySphereUVE(ray, {-4.0F, 0.0F, 0.0F}, 2.0F, 100.0F);
+        Detail::IntersectRaySphereUVE(ray, Math::SphereUVE{{-4.0F, 0.0F, 0.0F}, 2.0F}, 100.0F);
     ASSERT_TRUE(initialSphere.has_value());
     EXPECT_FLOAT_EQ(initialSphere->distance, 0.0F);
     EXPECT_EQ(initialSphere->normal, (Math::Vector3UVE{}));
-    EXPECT_FALSE(Detail::IntersectRaySphereUVE(ray, {}, 1.0F, -1.0F).has_value());
+    EXPECT_FALSE(Detail::IntersectRaySphereUVE(ray, Math::SphereUVE{{}, 1.0F}, -1.0F).has_value());
 }
 
 TEST(ShapeNarrowPhaseUVETest, RadiusSumOverflowFailsClosedBeforePenetrationPublication) {
@@ -255,7 +257,7 @@ TEST(ShapeNarrowPhaseUVETest, SphereAabbUsesFinitePrecisionForLargeRadiusOverlap
     const float maximumRadius = std::numeric_limits<float>::max();
     const Math::AabbUVE box{{0.0F, -1.0F, -1.0F}, {1.0F, 1.0F, 1.0F}};
     const std::optional<Math::PenetrationUVE> penetration =
-        Detail::ComputeSphereAabbPenetrationUVE(box, {2.0e38F, 0.0F, 0.0F}, maximumRadius);
+        Detail::ComputeSphereAabbPenetrationUVE(box, Math::SphereUVE{{2.0e38F, 0.0F, 0.0F}, maximumRadius});
     ASSERT_TRUE(penetration.has_value());
     EXPECT_TRUE(std::isfinite(penetration->depth));
     EXPECT_GT(penetration->depth, 0.0F);

@@ -31,14 +31,17 @@ namespace {
 } // namespace
 
 std::optional<Math::RayHitUVE> IntersectMovingSphereSphereUVE(
-    const Math::RayUVE& ray, const Math::Vector3UVE targetCenter, const float movingRadius,
-    const float targetRadius, const float maxDistance) noexcept {
+    const Math::RayUVE& ray, const float movingRadius, const Math::SphereUVE& target,
+    const float maxDistance) noexcept {
+    // The narrow phase is one step stricter than SphereUVE::IsValidUVE (which permits a zero
+    // radius): a zero-radius TARGET has no surface to hit, so it still fails closed here.
     if (!Math::IsFiniteUVE(ray.origin) || !Math::IsFiniteUVE(ray.direction) ||
-        !Math::IsFiniteUVE(targetCenter) || !std::isfinite(movingRadius) || movingRadius < 0.0F ||
-        !std::isfinite(targetRadius) || targetRadius <= 0.0F || !std::isfinite(maxDistance) ||
-        maxDistance < 0.0F) {
+        !target.IsValidUVE() || target.radius <= 0.0F || !std::isfinite(movingRadius) ||
+        movingRadius < 0.0F || !std::isfinite(maxDistance) || maxDistance < 0.0F) {
         return std::nullopt;
     }
+    const Math::Vector3UVE targetCenter = target.center;
+    const float targetRadius = target.radius;
 
     const double directionX = static_cast<double>(ray.direction.x);
     const double directionY = static_cast<double>(ray.direction.y);
@@ -96,9 +99,8 @@ std::optional<Math::RayHitUVE> IntersectMovingSphereSphereUVE(
 }
 
 std::optional<Math::RayHitUVE> IntersectRaySphereUVE(
-    const Math::RayUVE& ray, const Math::Vector3UVE targetCenter, const float targetRadius,
-    const float maxDistance) noexcept {
-    return IntersectMovingSphereSphereUVE(ray, targetCenter, 0.0F, targetRadius, maxDistance);
+    const Math::RayUVE& ray, const Math::SphereUVE& target, const float maxDistance) noexcept {
+    return IntersectMovingSphereSphereUVE(ray, 0.0F, target, maxDistance);
 }
 
 std::optional<Math::RayHitUVE> IntersectRayCapsuleUVE(
@@ -119,7 +121,7 @@ std::optional<Math::RayHitUVE> IntersectRayCapsuleUVE(
         return std::nullopt;
     }
     if (segmentLengthSquared <= 0.0) {
-        return IntersectRaySphereUVE(ray, segmentStart, capsuleRadius, maxDistance);
+        return IntersectRaySphereUVE(ray, Math::SphereUVE{segmentStart, capsuleRadius}, maxDistance);
     }
 
     const double segmentLength = std::sqrt(segmentLengthSquared);
@@ -204,7 +206,7 @@ std::optional<Math::RayHitUVE> IntersectRayCapsuleUVE(
     }
 
     const std::optional<Math::RayHitUVE> startHit =
-        IntersectRaySphereUVE(ray, segmentStart, capsuleRadius, maxDistance);
+        IntersectRaySphereUVE(ray, Math::SphereUVE{segmentStart, capsuleRadius}, maxDistance);
     if (startHit.has_value()) {
         const Math::Vector3UVE point = ray.origin + ray.direction * startHit->distance;
         const double axial = static_cast<double>(point.x - segmentStart.x) * static_cast<double>(axis.x) +
@@ -215,7 +217,7 @@ std::optional<Math::RayHitUVE> IntersectRayCapsuleUVE(
         }
     }
     const std::optional<Math::RayHitUVE> endHit =
-        IntersectRaySphereUVE(ray, segmentEnd, capsuleRadius, maxDistance);
+        IntersectRaySphereUVE(ray, Math::SphereUVE{segmentEnd, capsuleRadius}, maxDistance);
     if (endHit.has_value()) {
         const Math::Vector3UVE point = ray.origin + ray.direction * endHit->distance;
         const double axial = static_cast<double>(point.x - segmentStart.x) * static_cast<double>(axis.x) +
@@ -229,13 +231,19 @@ std::optional<Math::RayHitUVE> IntersectRayCapsuleUVE(
 }
 
 std::optional<Math::RayHitUVE> IntersectRayOrientedBoxUVE(
-    const Math::RayUVE& ray, const Math::Vector3UVE boxCenter, const Math::Vector3UVE boxHalfExtents,
-    const Math::QuaternionUVE boxRotation, const float maxDistance) noexcept {
-    if (!Math::IsFiniteUVE(ray.origin) || !Math::IsFiniteUVE(ray.direction) || !Math::IsFiniteUVE(boxCenter) ||
-        !Math::IsFiniteUVE(boxHalfExtents) || boxHalfExtents.x <= 0.0F || boxHalfExtents.y <= 0.0F ||
-        boxHalfExtents.z <= 0.0F || !std::isfinite(maxDistance) || maxDistance < 0.0F) {
+    const Math::RayUVE& ray, const Math::OrientedBoxUVE& box, const float maxDistance) noexcept {
+    // Deliberately not OrientedBoxUVE::IsValidUVE: that requires a unit rotation, but this query
+    // normalizes whatever rotation it is handed (a zero rotation still fails below), so only the
+    // center/extents/range checks apply here.
+    if (!Math::IsFiniteUVE(ray.origin) || !Math::IsFiniteUVE(ray.direction) ||
+        !Math::IsFiniteUVE(box.center) || !Math::IsFiniteUVE(box.halfExtents) ||
+        box.halfExtents.x <= 0.0F || box.halfExtents.y <= 0.0F || box.halfExtents.z <= 0.0F ||
+        !std::isfinite(maxDistance) || maxDistance < 0.0F) {
         return std::nullopt;
     }
+    const Math::Vector3UVE boxCenter = box.center;
+    const Math::Vector3UVE boxHalfExtents = box.halfExtents;
+    const Math::QuaternionUVE boxRotation = box.rotation;
     Math::QuaternionUVE normalizedRotation;
     Math::QuaternionUVE inverseRotation;
     if (!Math::TryNormalizeUVE(boxRotation, normalizedRotation) ||
@@ -258,11 +266,14 @@ std::optional<Math::RayHitUVE> IntersectRayOrientedBoxUVE(
 }
 
 std::optional<Math::PenetrationUVE> ComputeSphereAabbPenetrationUVE(
-    const Math::AabbUVE& box, const Math::Vector3UVE sphereCenter, const float sphereRadius) noexcept {
-    if (!IsFiniteAabbUVE(box) || !std::isfinite(sphereCenter.x) || !std::isfinite(sphereCenter.y) ||
-        !std::isfinite(sphereCenter.z) || !std::isfinite(sphereRadius) || sphereRadius <= 0.0F) {
+    const Math::AabbUVE& box, const Math::SphereUVE& sphere) noexcept {
+    // As in IntersectMovingSphereSphereUVE: the narrow phase needs a strictly positive radius,
+    // one step stricter than SphereUVE::IsValidUVE.
+    if (!IsFiniteAabbUVE(box) || !sphere.IsValidUVE() || sphere.radius <= 0.0F) {
         return std::nullopt;
     }
+    const Math::Vector3UVE sphereCenter = sphere.center;
+    const float sphereRadius = sphere.radius;
 
     const Math::Vector3UVE closestPoint{
         std::clamp(sphereCenter.x, box.min.x, box.max.x),
@@ -465,7 +476,8 @@ std::optional<Math::PenetrationUVE> ComputeCapsuleAabbPenetrationUVE(
         if (!Math::IsFiniteUVE(closestSegmentPoint)) {
             return std::nullopt;
         }
-        return ComputeSphereAabbPenetrationUVE(box, closestSegmentPoint, capsuleRadius);
+        return ComputeSphereAabbPenetrationUVE(box,
+                                                   Math::SphereUVE{closestSegmentPoint, capsuleRadius});
     }
 
     const double distance = std::sqrt(bestDistanceSquared);
@@ -830,7 +842,8 @@ std::optional<Math::PenetrationUVE> ComputeSphereOrientedBoxPenetrationUVE(
     const Math::AabbUVE localBox =
         Math::AabbUVE::FromCenterExtentsUVE({0.0F, 0.0F, 0.0F}, scaledHalfExtents);
     const std::optional<Math::PenetrationUVE> localPenetration =
-        ComputeSphereAabbPenetrationUVE(localBox, localSphereCenter, scaledSphereRadius);
+        ComputeSphereAabbPenetrationUVE(localBox,
+                                           Math::SphereUVE{localSphereCenter, scaledSphereRadius});
     if (!localPenetration.has_value()) {
         return std::nullopt;
     }

@@ -46,10 +46,10 @@ namespace {
 
 [[nodiscard]] std::vector<std::byte> MakeLegacyTexturePayloadUVE(const TextureAssetUVE& texture) {
     std::vector<std::byte> payload;
-    Utilities::AppendUint32UVE(payload, texture.width);
-    Utilities::AppendUint32UVE(payload, texture.height);
-    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(texture.format));
-    Utilities::AppendUint64UVE(payload, static_cast<std::uint64_t>(texture.pixels.size()));
+    Utilities::AppendUint32LeUVE(payload, texture.width);
+    Utilities::AppendUint32LeUVE(payload, texture.height);
+    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.format));
+    Utilities::AppendUint64LeUVE(payload, static_cast<std::uint64_t>(texture.pixels.size()));
     Utilities::AppendBytesUVE(payload, texture.pixels.data(), texture.pixels.size());
     return payload;
 }
@@ -58,13 +58,13 @@ namespace {
     constexpr std::array<char, 4U> kMagic{'U', 'V', 'T', 'X'};
     std::vector<std::byte> payload;
     Utilities::AppendBytesUVE(payload, kMagic.data(), kMagic.size());
-    Utilities::AppendUint32UVE(payload, 1U);
-    Utilities::AppendUint32UVE(payload, texture.width);
-    Utilities::AppendUint32UVE(payload, texture.height);
-    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(texture.format));
-    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(texture.colorSpace));
-    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(texture.usage));
-    Utilities::AppendUint64UVE(payload, static_cast<std::uint64_t>(texture.pixels.size()));
+    Utilities::AppendUint32LeUVE(payload, 1U);
+    Utilities::AppendUint32LeUVE(payload, texture.width);
+    Utilities::AppendUint32LeUVE(payload, texture.height);
+    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.format));
+    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.colorSpace));
+    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.usage));
+    Utilities::AppendUint64LeUVE(payload, static_cast<std::uint64_t>(texture.pixels.size()));
     Utilities::AppendBytesUVE(payload, texture.pixels.data(), texture.pixels.size());
     return payload;
 }
@@ -73,19 +73,19 @@ namespace {
     constexpr std::array<char, 4U> kMagic{'U', 'V', 'T', 'X'};
     std::vector<std::byte> payload;
     Utilities::AppendBytesUVE(payload, kMagic.data(), kMagic.size());
-    Utilities::AppendUint32UVE(payload, 2U);
-    Utilities::AppendUint32UVE(payload, texture.width);
-    Utilities::AppendUint32UVE(payload, texture.height);
-    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(texture.format));
-    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(texture.colorSpace));
-    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(texture.usage));
-    Utilities::AppendUint64UVE(payload, static_cast<std::uint64_t>(texture.pixels.size()));
+    Utilities::AppendUint32LeUVE(payload, 2U);
+    Utilities::AppendUint32LeUVE(payload, texture.width);
+    Utilities::AppendUint32LeUVE(payload, texture.height);
+    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.format));
+    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.colorSpace));
+    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.usage));
+    Utilities::AppendUint64LeUVE(payload, static_cast<std::uint64_t>(texture.pixels.size()));
     Utilities::AppendBytesUVE(payload, texture.pixels.data(), texture.pixels.size());
-    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(texture.mipLevels.size()));
+    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.mipLevels.size()));
     for (const TextureMipLevelUVE& mip : texture.mipLevels) {
-        Utilities::AppendUint32UVE(payload, mip.width);
-        Utilities::AppendUint32UVE(payload, mip.height);
-        Utilities::AppendUint64UVE(payload, static_cast<std::uint64_t>(mip.pixels.size()));
+        Utilities::AppendUint32LeUVE(payload, mip.width);
+        Utilities::AppendUint32LeUVE(payload, mip.height);
+        Utilities::AppendUint64LeUVE(payload, static_cast<std::uint64_t>(mip.pixels.size()));
         Utilities::AppendBytesUVE(payload, mip.pixels.data(), mip.pixels.size());
     }
     return payload;

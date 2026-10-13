@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 namespace univex::camera {
 
@@ -17,7 +18,9 @@ namespace {
 // Shortest signed angular distance, wrapped into (-pi, pi], so a snap
 // always turns the short way round instead of unwinding past 180 degrees.
 float WrapAngleDelta(float delta) {
-    constexpr float kPi = 3.14159265358979323846f;
+    // NOTE: viewport-core is host-independent by contract, so this uses std::numbers rather
+    // than UVE::Math::kPiUVE (see GizmoDrag.cpp, same pattern).
+    constexpr float kPi = std::numbers::pi_v<float>;
     float wrapped = std::fmod(delta + kPi, 2.f * kPi);
     if (wrapped < 0.f) wrapped += 2.f * kPi;
     return wrapped - kPi;

@@ -9,7 +9,8 @@ namespace UVE::Scene {
 [[nodiscard]] bool IsRigid3DComponentValidUVE(const Rigid3DComponentUVE& rigidBody) noexcept {
     return std::isfinite(rigidBody.mass) && rigidBody.mass >= 0.0F && std::isfinite(rigidBody.velocity.x) &&
            std::isfinite(rigidBody.velocity.y) && std::isfinite(rigidBody.velocity.z) &&
-           std::isfinite(rigidBody.angularVelocity.x) && std::isfinite(rigidBody.angularVelocity.y) &&
+           std::isfinite(rigidBody.force.x) && std::isfinite(rigidBody.force.y) &&
+           std::isfinite(rigidBody.force.z) && std::isfinite(rigidBody.angularVelocity.x) && std::isfinite(rigidBody.angularVelocity.y) &&
            std::isfinite(rigidBody.angularVelocity.z) && std::isfinite(rigidBody.torque.x) &&
            std::isfinite(rigidBody.torque.y) && std::isfinite(rigidBody.torque.z) &&
            std::isfinite(rigidBody.inverseInertia.x) && rigidBody.inverseInertia.x >= 0.0F &&

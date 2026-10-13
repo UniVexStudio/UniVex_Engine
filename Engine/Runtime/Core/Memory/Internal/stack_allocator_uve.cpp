@@ -14,11 +14,6 @@ namespace UVE::Memory {
 
 namespace {
 
-constexpr std::uintptr_t AlignUpUVE(std::uintptr_t address, std::size_t alignment) {
-    const std::uintptr_t mask = static_cast<std::uintptr_t>(alignment) - 1;
-    return (address + mask) & ~mask;
-}
-
 // Trailing per-allocation header: written immediately after each block's payload, storing
 // enough information to reconstruct the block's user pointer and rewind past it in one step.
 // Read/written via memcpy (not a reinterpret_cast'd pointer), since its address (the end of a

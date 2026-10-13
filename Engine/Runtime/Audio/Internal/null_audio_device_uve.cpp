@@ -3,16 +3,15 @@
 
 #include "uve/audio/null_audio_device_uve.h"
 
-#include <unordered_map>
 #include <utility>
 
+#include "uve/containers/handle_table_uve.h"
 #include "uve/logging/logging_macros_uve.h"
 
 namespace UVE::Audio {
 
 struct NullAudioDeviceUVE::ImplUVE {
-    std::unordered_map<std::uint32_t, VoicePlaybackStateUVE> voices;
-    std::uint32_t nextVoiceHandle = 1;
+    Containers::HandleTableUVE<VoicePlaybackStateUVE, VoiceHandleUVE> voices;
     std::vector<RecordedAudioCallUVE> recordedCalls;
 };
 
@@ -22,42 +21,40 @@ NullAudioDeviceUVE::~NullAudioDeviceUVE() = default;
 
 VoiceHandleUVE NullAudioDeviceUVE::CreateVoiceUVE(const AudioVoiceDescUVE& desc) {
     static_cast<void>(desc); // NullAudioDeviceUVE performs no real audio output, bookkeeping only.
-    const std::uint32_t handleValue = m_impl->nextVoiceHandle++;
-    m_impl->voices.emplace(handleValue, VoicePlaybackStateUVE::Stopped);
-    return VoiceHandleUVE{handleValue};
+    return m_impl->voices.AcquireUVE(VoicePlaybackStateUVE::Stopped);
 }
 
 void NullAudioDeviceUVE::DestroyVoiceUVE(VoiceHandleUVE voice) {
-    if (m_impl->voices.erase(voice.value) == 0) {
+    if (!m_impl->voices.ReleaseUVE(voice)) {
         UVE_ERROR("NullAudioDeviceUVE: DestroyVoiceUVE called with an unknown or already-destroyed handle ({})",
                    voice.value);
     }
 }
 
 bool NullAudioDeviceUVE::PlayUVE(VoiceHandleUVE voice) {
-    const auto iterator = m_impl->voices.find(voice.value);
-    if (iterator == m_impl->voices.end()) {
+    VoicePlaybackStateUVE* const state = m_impl->voices.FindUVE(voice);
+    if (state == nullptr) {
         UVE_ERROR("NullAudioDeviceUVE: PlayUVE called with an unknown handle ({})", voice.value);
         return false;
     }
-    iterator->second = VoicePlaybackStateUVE::Playing;
+    *state = VoicePlaybackStateUVE::Playing;
     m_impl->recordedCalls.emplace_back(PlayVoiceCallUVE{voice});
     return true;
 }
 
 bool NullAudioDeviceUVE::StopUVE(VoiceHandleUVE voice) {
-    const auto iterator = m_impl->voices.find(voice.value);
-    if (iterator == m_impl->voices.end()) {
+    VoicePlaybackStateUVE* const state = m_impl->voices.FindUVE(voice);
+    if (state == nullptr) {
         UVE_ERROR("NullAudioDeviceUVE: StopUVE called with an unknown handle ({})", voice.value);
         return false;
     }
-    iterator->second = VoicePlaybackStateUVE::Stopped;
+    *state = VoicePlaybackStateUVE::Stopped;
     m_impl->recordedCalls.emplace_back(StopVoiceCallUVE{voice});
     return true;
 }
 
 bool NullAudioDeviceUVE::SetVoiceParamsUVE(VoiceHandleUVE voice, const AudioVoiceParamsUVE& params) {
-    if (!m_impl->voices.contains(voice.value)) {
+    if (!m_impl->voices.ContainsUVE(voice)) {
         UVE_ERROR("NullAudioDeviceUVE: SetVoiceParamsUVE called with an unknown handle ({})", voice.value);
         return false;
     }
@@ -70,12 +67,12 @@ bool NullAudioDeviceUVE::SetVoiceParamsUVE(VoiceHandleUVE voice, const AudioVoic
 }
 
 VoicePlaybackStateUVE NullAudioDeviceUVE::GetVoiceStateUVE(VoiceHandleUVE voice) const {
-    const auto iterator = m_impl->voices.find(voice.value);
-    if (iterator == m_impl->voices.end()) {
+    const VoicePlaybackStateUVE* const state = m_impl->voices.FindUVE(voice);
+    if (state == nullptr) {
         UVE_ERROR("NullAudioDeviceUVE: GetVoiceStateUVE called with an unknown handle ({})", voice.value);
         return VoicePlaybackStateUVE::Stopped;
     }
-    return iterator->second;
+    return *state;
 }
 
 std::string_view NullAudioDeviceUVE::GetBackendNameUVE() const noexcept {
@@ -91,7 +88,7 @@ void NullAudioDeviceUVE::ClearRecordedCallsUVE() noexcept {
 }
 
 std::size_t NullAudioDeviceUVE::GetLiveVoiceCountUVE() const noexcept {
-    return m_impl->voices.size();
+    return m_impl->voices.GetLiveCountUVE();
 }
 
 } // namespace UVE::Audio

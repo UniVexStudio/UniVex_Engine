@@ -2,14 +2,32 @@
 
 #pragma once
 
+#include "uve/containers/fixed_array_uve.h"
+#include "uve/containers/small_vector_uve.h"
 #include "uve/threading/i_thread_pool_uve.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <span>
 #include <string>
-#include <vector>
 
+/// The frame scheduler: a small, validated, domain-tagged task graph for per-frame work, one
+/// level above `Threading::JobGraphUVE`.
+///
+/// WHY TWO GRAPHS. `JobGraphUVE` is the general dependency DAG (asset import, shader
+/// preprocessing — ad-hoc jobs with ad-hoc lifetimes). `FrameTaskGraphUVE` is the frame's
+/// fixed plan: up to 256 named tasks (`FixedArrayUVE`-capped, so the plan never allocates),
+/// each tagged with a `FrameTaskDomainUVE` (Animation, ECS, Physics, ...) and validated up
+/// front with result codes instead of asserts. `FrameSchedulerUVE` then executes the plan on a
+/// `Threading::IThreadPoolUVE`. The split is lifetime and vocabulary: one-shot job cascades go
+/// to the job graph, the repeating frame plan goes here.
+///
+/// HONEST STATUS. The graph and scheduler are built, validated and tested — and almost nothing
+/// claims them yet: `EngineCoreUVE`'s Update/LateUpdate chain is still single-threaded
+/// main-thread code, and the only live pool users are assets, particles and shaders. Making a
+/// system parallel is therefore a wiring problem (express its frame work as tasks and execute),
+/// not a missing-infrastructure problem.
 namespace UVE::Core {
 
 enum class FrameTaskDomainUVE : std::uint8_t {
@@ -31,7 +49,10 @@ struct FrameTaskDefinitionUVE final {
     FrameTaskIdUVE id = 0U;
     FrameTaskDomainUVE domain = FrameTaskDomainUVE::Animation;
     std::string name;
-    std::vector<FrameTaskIdUVE> dependencies;
+    // Inline capacity == kMaximumDependenciesPerTaskUVE (a literal: this struct precedes the
+    // constant). AddTaskUVE rejects longer lists before storing, so accepted tasks never spill
+    // and task dependency lists never heap-allocate.
+    Containers::SmallVectorUVE<FrameTaskIdUVE, 32U> dependencies;
     std::function<void()> action;
 };
 
@@ -80,21 +101,24 @@ class FrameTaskGraphUVE final {
 public:
     static constexpr std::size_t kMaximumTasksUVE = 256U;
     static constexpr std::size_t kMaximumDependenciesPerTaskUVE = 32U;
+    // Pinned: the dependencies member above inlines exactly this many ids, so drift here would
+    // silently change spill behavior.
+    static_assert(kMaximumDependenciesPerTaskUVE == 32U);
     static constexpr std::size_t kMaximumTaskNameBytesUVE = 128U;
 
     [[nodiscard]] FrameTaskGraphMutationResultUVE AddTaskUVE(FrameTaskDefinitionUVE task);
     [[nodiscard]] FrameTaskGraphValidationResultUVE ValidateUVE() const;
 
     [[nodiscard]] std::size_t GetTaskCountUVE() const noexcept {
-        return m_tasks.size();
+        return m_tasks.SizeUVE();
     }
 
-    [[nodiscard]] const std::vector<FrameTaskDefinitionUVE>& GetTasksUVE() const noexcept {
-        return m_tasks;
+    [[nodiscard]] std::span<const FrameTaskDefinitionUVE> GetTasksUVE() const noexcept {
+        return m_tasks.AsSpanUVE();
     }
 
 private:
-    std::vector<FrameTaskDefinitionUVE> m_tasks;
+    Containers::FixedArrayUVE<FrameTaskDefinitionUVE, kMaximumTasksUVE> m_tasks;
 };
 
 enum class FrameScheduleResultCodeUVE : std::uint8_t {

@@ -10,6 +10,7 @@
 #include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
+#include "uve/math/scalar_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/physics/detail/collider_world_aabb_cache_uve.h"
 
@@ -102,8 +103,7 @@ bool ValidateControllerInputUVE(Scene::IEntityManagerUVE& entityManager,
         degrees = CharacterControllerUVE::kMaximumGroundSlopeDegreesUVE;
         result.inputClamped = true;
     }
-    constexpr float kPiUVE = 3.14159265358979323846F;
-    return std::cos(degrees * (kPiUVE / 180.0F));
+    return std::cos(Math::DegToRadUVE(degrees));
 }
 
 void RegisterGroundContactUVE(CharacterControllerMoveResultUVE& result,

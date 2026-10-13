@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <algorithm>
+#include <functional>
 #include <optional>
 #include <set>
 #include <span>
@@ -56,27 +57,40 @@ namespace {
 }
 
 [[nodiscard]] std::string ValueLiteralUVE(const ValueUVE& value) {
-    return std::visit(
-        [](const auto& v) -> std::string {
-            using T = std::decay_t<decltype(v)>;
-            if constexpr (std::is_same_v<T, std::monostate>) {
-                return "ValueUVE{}";
-            } else if constexpr (std::is_same_v<T, bool>) {
-                return v ? "ValueUVE{true}" : "ValueUVE{false}";
-            } else if constexpr (std::is_same_v<T, std::int64_t>) {
-                return "ValueUVE{std::int64_t{" + std::to_string(v) + "}}";
-            } else if constexpr (std::is_same_v<T, double>) {
-                return "ValueUVE{" + DoubleLiteralUVE(v) + "}";
-            } else if constexpr (std::is_same_v<T, std::string>) {
-                return "ValueUVE{std::string{" + StringLiteralUVE(v) + "}}";
-            } else if constexpr (std::is_same_v<T, Vec3ValueUVE>) {
-                return "ValueUVE{Vec3ValueUVE{" + DoubleLiteralUVE(v.x) + ", " + DoubleLiteralUVE(v.y) + ", " +
-                       DoubleLiteralUVE(v.z) + "}}";
-            } else {
-                return "ValueUVE{ObjectRefUVE{" + std::to_string(v.id) + "U}}";
-            }
-        },
-        value);
+    std::function<std::string(const ValueUVE&)> emit;
+    emit = [&](const ValueUVE& current) -> std::string {
+        return std::visit(
+            [&](const auto& v) -> std::string {
+                using T = std::decay_t<decltype(v)>;
+                if constexpr (std::is_same_v<T, std::monostate>) {
+                    return "ValueUVE{}";
+                } else if constexpr (std::is_same_v<T, bool>) {
+                    return v ? "ValueUVE{true}" : "ValueUVE{false}";
+                } else if constexpr (std::is_same_v<T, std::int64_t>) {
+                    return "ValueUVE{std::int64_t{" + std::to_string(v) + "}}";
+                } else if constexpr (std::is_same_v<T, double>) {
+                    return "ValueUVE{" + DoubleLiteralUVE(v) + "}";
+                } else if constexpr (std::is_same_v<T, std::string>) {
+                    return "ValueUVE{std::string{" + StringLiteralUVE(v) + "}}";
+                } else if constexpr (std::is_same_v<T, Vec3ValueUVE>) {
+                    return "ValueUVE{Vec3ValueUVE{" + DoubleLiteralUVE(v.x) + ", " + DoubleLiteralUVE(v.y) + ", " +
+                           DoubleLiteralUVE(v.z) + "}}";
+                } else if constexpr (std::is_same_v<T, ObjectRefUVE>) {
+                    return "ValueUVE{ObjectRefUVE{" + std::to_string(v.id) + "U}}";
+                } else {
+                    const char* maker = v->kind == CollectionValueUVE::KindUVE::List     ? "MakeListValueUVE"
+                                        : v->kind == CollectionValueUVE::KindUVE::Map     ? "MakeMapValueUVE"
+                                                                                         : "MakeTupleValueUVE";
+                    std::string out = std::string{maker} + "(std::vector<ValueUVE>{";
+                    for (const ValueUVE& item : v->items) {
+                        out += emit(item) + ", ";
+                    }
+                    return out + "})";
+                }
+            },
+            current);
+    };
+    return emit(value);
 }
 
 [[nodiscard]] const char* ArithmeticNameUVE(const OpUVE op) {
@@ -182,8 +196,14 @@ struct TypedPlanUVE final {
         case BuiltinUVE::Cos:
         case BuiltinUVE::Floor:
         case BuiltinUVE::Lerp:
-        case BuiltinUVE::Float:
-        case BuiltinUVE::Length: return SlotUVE::Float;
+        case BuiltinUVE::Float: return SlotUVE::Float;
+        // `length` is overloaded: a vec3's magnitude stays a float, a str's count is whole.
+        // Collections never reach the typed planner, so anything else bails out below.
+        case BuiltinUVE::Length:
+            if (!args.empty() && args[0] == SlotUVE::Vec3) {
+                return SlotUVE::Float;
+            }
+            return !args.empty() && args[0] == SlotUVE::Str ? std::optional<SlotUVE>{SlotUVE::Int} : std::nullopt;
         case BuiltinUVE::Int: return SlotUVE::Int;
         case BuiltinUVE::Abs:
         case BuiltinUVE::Min:
@@ -191,6 +211,10 @@ struct TypedPlanUVE final {
         case BuiltinUVE::Clamp: return allInt ? SlotUVE::Int : SlotUVE::Float;
         case BuiltinUVE::Vec3:
         case BuiltinUVE::Normalize: return SlotUVE::Vec3;
+        case BuiltinUVE::Push:
+        case BuiltinUVE::Keys:
+        case BuiltinUVE::Contains:
+        case BuiltinUVE::Remove: return std::nullopt;
     }
     return std::nullopt;
 }
@@ -409,7 +433,15 @@ struct TypedPlanUVE final {
                 fallsThrough = false;
                 break;
             case OpUVE::ReturnNone: fallsThrough = false; break;
+            case OpUVE::CallMethod: return std::nullopt; // dynamic dispatch stays boxed, like Wait
             case OpUVE::Wait: return std::nullopt;
+            // Collections stay boxed: the typed planner only knows scalars and vec3.
+            case OpUVE::BuildList:
+            case OpUVE::BuildMap:
+            case OpUVE::BuildTuple:
+            case OpUVE::GetIndex:
+            case OpUVE::SetIndex:
+            case OpUVE::Unpack: return std::nullopt;
         }
         if (fallsThrough && !flow(n + 1U, s)) {
             return std::nullopt;
@@ -632,7 +664,14 @@ private:
             }
             case OpUVE::Return: body = "return " + top(1U) + ";"; break;
             case OpUVE::ReturnNone: body = m_plan->result == SlotUVE::None ? "return;" : "return {};"; break;
-            case OpUVE::Wait: break; // never typed
+            case OpUVE::CallMethod: break; // never typed
+            case OpUVE::Wait: break;       // never typed
+            case OpUVE::BuildList: break;  // never typed
+            case OpUVE::BuildMap: break;   // never typed
+            case OpUVE::BuildTuple: break; // never typed
+            case OpUVE::GetIndex: break;   // never typed
+            case OpUVE::SetIndex: break;   // never typed
+            case OpUVE::Unpack: break;     // never typed
         }
         m_out += "    { c.StepUVE(" + std::to_string(in.line) + "U); " + body + " }\n";
     }
@@ -757,12 +796,20 @@ private:
                               : r + " = std::clamp(" + num(0) + ", " + num(1) + ", std::max(" + num(1) + ", " + num(2) + "));";
             case BuiltinUVE::Vec3: return r + " = Vec3ValueUVE{" + num(0) + ", " + num(1) + ", " + num(2) + "};";
             case BuiltinUVE::Length:
+                if (types[0] == SlotUVE::Str) {
+                    return r + " = static_cast<std::int64_t>(" + arg(0) + ".size());";
+                }
                 return r + " = std::sqrt(" + arg(0) + ".x * " + arg(0) + ".x + " + arg(0) + ".y * " + arg(0) + ".y + " + arg(0) +
                        ".z * " + arg(0) + ".z);";
             case BuiltinUVE::Normalize:
                 return "{ const Vec3ValueUVE v = " + arg(0) +
                        "; const double n = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); " + r +
                        " = n == 0.0 ? v : Vec3ValueUVE{v.x / n, v.y / n, v.z / n}; }";
+            // Collection builtins never type: the planner bails before typed emission.
+            case BuiltinUVE::Push:
+            case BuiltinUVE::Keys:
+            case BuiltinUVE::Contains:
+            case BuiltinUVE::Remove: return {};
         }
         return {};
     }
@@ -931,6 +978,21 @@ private:
                 body = "const ValueUVE v = PopUVE(s); const ValueUVE vec = PopUVE(s); "
                        "s.push_back(SetComponentUVE(vec, " + a + ", v));";
                 break;
+            case OpUVE::BuildList:
+                body = "ValueUVE v = BuildListUVE(s, " + a + "U); s.push_back(std::move(v));";
+                break;
+            case OpUVE::BuildMap: body = "ValueUVE v = BuildMapUVE(s, " + a + "U); s.push_back(std::move(v));"; break;
+            case OpUVE::BuildTuple:
+                body = "ValueUVE v = BuildTupleUVE(s, " + a + "U); s.push_back(std::move(v));";
+                break;
+            case OpUVE::GetIndex:
+                body = "const ValueUVE k = PopUVE(s); const ValueUVE box = PopUVE(s); s.push_back(GetIndexUVE(box, k));";
+                break;
+            case OpUVE::SetIndex:
+                body = "const ValueUVE v = PopUVE(s); const ValueUVE k = PopUVE(s); const ValueUVE box = PopUVE(s); "
+                       "s.push_back(SetIndexUVE(box, k, v));";
+                break;
+            case OpUVE::Unpack: body = "UnpackUVE(s, " + a + "U);"; break;
             case OpUVE::Concat: body = "ValueUVE t = ConcatUVE(s, " + a + "U); s.push_back(std::move(t));"; break;
             case OpUVE::Jump: body = "goto I" + a + ";"; break;
             case OpUVE::JumpIfFalse: body = "if (!AsBoolUVE(PopUVE(s))) goto I" + a + ";"; break;
@@ -950,6 +1012,11 @@ private:
             case OpUVE::CallHost:
                 body = "const std::vector<ValueUVE> args(s.end() - " + b + ", s.end()); s.resize(s.size() - " + b +
                        "U); ValueUVE r = c.host.CallFunctionUVE(" + Name(in.a) + ", args); s.push_back(std::move(r));";
+                break;
+            case OpUVE::CallMethod:
+                body = "const std::vector<ValueUVE> args(s.end() - " + b + ", s.end()); s.resize(s.size() - " + b +
+                       "U); c.host.CallMethodUVE(AsObjectRefUVE(PopUVE(s)), " + Name(in.a) +
+                       ", args); s.push_back(ValueUVE{});";
                 break;
             case OpUVE::Return: body = "f.result = PopUVE(s); f.resume = 0U; return StatusUVE::Finished;"; break;
             case OpUVE::ReturnNone: body = "f.result = ValueUVE{}; f.resume = 0U; return StatusUVE::Finished;"; break;

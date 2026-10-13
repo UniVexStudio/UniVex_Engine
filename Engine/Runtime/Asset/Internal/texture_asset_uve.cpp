@@ -119,15 +119,15 @@ constexpr std::uint32_t kTexturePayloadVersionUVE = 3U;
     std::uint32_t faceCount = 0U;
     std::uint32_t levelCount = 0U;
     std::uint32_t supercompressionScheme = 0U;
-    if (!Utilities::ReadUint32FromBufferUVE(bytes, offset, vkFormat) ||
-        !Utilities::ReadUint32FromBufferUVE(bytes, offset, typeSize) ||
-        !Utilities::ReadUint32FromBufferUVE(bytes, offset, width) ||
-        !Utilities::ReadUint32FromBufferUVE(bytes, offset, height) ||
-        !Utilities::ReadUint32FromBufferUVE(bytes, offset, depth) ||
-        !Utilities::ReadUint32FromBufferUVE(bytes, offset, layerCount) ||
-        !Utilities::ReadUint32FromBufferUVE(bytes, offset, faceCount) ||
-        !Utilities::ReadUint32FromBufferUVE(bytes, offset, levelCount) ||
-        !Utilities::ReadUint32FromBufferUVE(bytes, offset, supercompressionScheme)) {
+    if (!Utilities::ReadUint32LeFromBufferUVE(bytes, offset, vkFormat) ||
+        !Utilities::ReadUint32LeFromBufferUVE(bytes, offset, typeSize) ||
+        !Utilities::ReadUint32LeFromBufferUVE(bytes, offset, width) ||
+        !Utilities::ReadUint32LeFromBufferUVE(bytes, offset, height) ||
+        !Utilities::ReadUint32LeFromBufferUVE(bytes, offset, depth) ||
+        !Utilities::ReadUint32LeFromBufferUVE(bytes, offset, layerCount) ||
+        !Utilities::ReadUint32LeFromBufferUVE(bytes, offset, faceCount) ||
+        !Utilities::ReadUint32LeFromBufferUVE(bytes, offset, levelCount) ||
+        !Utilities::ReadUint32LeFromBufferUVE(bytes, offset, supercompressionScheme)) {
         return false;
     }
 
@@ -152,9 +152,9 @@ constexpr std::uint32_t kTexturePayloadVersionUVE = 3U;
         std::uint64_t levelOffset = 0U;
         std::uint64_t levelLength = 0U;
         std::uint64_t uncompressedLength = 0U;
-        if (!Utilities::ReadUint64FromBufferUVE(bytes, offset, levelOffset) ||
-            !Utilities::ReadUint64FromBufferUVE(bytes, offset, levelLength) ||
-            !Utilities::ReadUint64FromBufferUVE(bytes, offset, uncompressedLength)) {
+        if (!Utilities::ReadUint64LeFromBufferUVE(bytes, offset, levelOffset) ||
+            !Utilities::ReadUint64LeFromBufferUVE(bytes, offset, levelLength) ||
+            !Utilities::ReadUint64LeFromBufferUVE(bytes, offset, uncompressedLength)) {
             return false;
         }
         // KTX2 BasisLZ (ETC1S) requires uncompressedByteLength == 0; uncompressed UASTC
@@ -258,7 +258,7 @@ bool LoadTextureAssetUVE(const std::filesystem::path& path, TextureAssetUVE& out
     std::size_t offset = 0U;
     if (hasVersionedHeader) {
         offset += kTexturePayloadMagicUVE.size();
-        if (!Utilities::ReadUint32FromBufferUVE(payload, offset, payloadVersion)) {
+        if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, payloadVersion)) {
             UVE_ERROR("TextureAssetUVE: \"{}\" has a truncated payload version", path.string());
             return false;
         }
@@ -276,20 +276,20 @@ bool LoadTextureAssetUVE(const std::filesystem::path& path, TextureAssetUVE& out
     std::uint32_t colorSpaceValue = static_cast<std::uint32_t>(TextureAssetColorSpaceUVE::Linear);
     std::uint32_t usageValue = static_cast<std::uint32_t>(TextureUsageUVE::Generic);
     std::uint32_t encodingValue = static_cast<std::uint32_t>(TexturePayloadEncodingUVE::RawPixels);
-    if (!Utilities::ReadUint32FromBufferUVE(payload, offset, width) ||
-        !Utilities::ReadUint32FromBufferUVE(payload, offset, height) ||
-        !Utilities::ReadUint32FromBufferUVE(payload, offset, formatValue)) {
+    if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, width) ||
+        !Utilities::ReadUint32LeFromBufferUVE(payload, offset, height) ||
+        !Utilities::ReadUint32LeFromBufferUVE(payload, offset, formatValue)) {
         UVE_ERROR("TextureAssetUVE: \"{}\" has a truncated header", path.string());
         return false;
     }
     if (payloadVersion >= kTexturePayloadMetadataVersionUVE &&
-        (!Utilities::ReadUint32FromBufferUVE(payload, offset, colorSpaceValue) ||
-         !Utilities::ReadUint32FromBufferUVE(payload, offset, usageValue))) {
+        (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, colorSpaceValue) ||
+         !Utilities::ReadUint32LeFromBufferUVE(payload, offset, usageValue))) {
         UVE_ERROR("TextureAssetUVE: \"{}\" has truncated texture metadata", path.string());
         return false;
     }
     if (payloadVersion == kTexturePayloadVersionUVE &&
-        !Utilities::ReadUint32FromBufferUVE(payload, offset, encodingValue)) {
+        !Utilities::ReadUint32LeFromBufferUVE(payload, offset, encodingValue)) {
         UVE_ERROR("TextureAssetUVE: \"{}\" has a truncated texture storage encoding", path.string());
         return false;
     }
@@ -320,13 +320,13 @@ bool LoadTextureAssetUVE(const std::filesystem::path& path, TextureAssetUVE& out
     std::uint64_t byteCount = 0U;
     if (payloadEncoding == TexturePayloadEncodingUVE::BasisUniversalKtx2) {
         if (payloadVersion != kTexturePayloadVersionUVE ||
-            !Utilities::ReadUint64FromBufferUVE(payload, offset, byteCount) ||
+            !Utilities::ReadUint64LeFromBufferUVE(payload, offset, byteCount) ||
             !ReadPixelBytesUVE(payload, offset, byteCount, candidate.basisKtx2Data)) {
             UVE_ERROR("TextureAssetUVE: \"{}\" has a malformed or truncated Basis/KTX2 payload", path.string());
             return false;
         }
     } else {
-        if (!Utilities::ReadUint64FromBufferUVE(payload, offset, byteCount)) {
+        if (!Utilities::ReadUint64LeFromBufferUVE(payload, offset, byteCount)) {
             UVE_ERROR("TextureAssetUVE: \"{}\" has a truncated level-0 byte count", path.string());
             return false;
         }
@@ -347,7 +347,7 @@ bool LoadTextureAssetUVE(const std::filesystem::path& path, TextureAssetUVE& out
 
         if (payloadVersion == kTexturePayloadMipmapVersionUVE || payloadVersion == kTexturePayloadVersionUVE) {
             std::uint32_t mipLevelCount = 0U;
-            if (!Utilities::ReadUint32FromBufferUVE(payload, offset, mipLevelCount)) {
+            if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, mipLevelCount)) {
                 UVE_ERROR("TextureAssetUVE: \"{}\" has a truncated mip-level count", path.string());
                 return false;
             }
@@ -364,9 +364,9 @@ bool LoadTextureAssetUVE(const std::filesystem::path& path, TextureAssetUVE& out
                 std::uint32_t levelWidth = 0U;
                 std::uint32_t levelHeight = 0U;
                 std::uint64_t levelByteCount = 0U;
-                if (!Utilities::ReadUint32FromBufferUVE(payload, offset, levelWidth) ||
-                    !Utilities::ReadUint32FromBufferUVE(payload, offset, levelHeight) ||
-                    !Utilities::ReadUint64FromBufferUVE(payload, offset, levelByteCount)) {
+                if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, levelWidth) ||
+                    !Utilities::ReadUint32LeFromBufferUVE(payload, offset, levelHeight) ||
+                    !Utilities::ReadUint64LeFromBufferUVE(payload, offset, levelByteCount)) {
                     UVE_ERROR("TextureAssetUVE: \"{}\" has a truncated mip-level header", path.string());
                     return false;
                 }
@@ -422,24 +422,24 @@ bool SaveTextureAssetUVE(const TextureAssetUVE& texture, const std::filesystem::
     payload.reserve(kTexturePayloadMagicUVE.size() + 7U * sizeof(std::uint32_t) + sizeof(std::uint64_t) +
                     texture.pixels.size() + texture.basisKtx2Data.size());
     Utilities::AppendBytesUVE(payload, kTexturePayloadMagicUVE.data(), kTexturePayloadMagicUVE.size());
-    Utilities::AppendUint32UVE(payload, kTexturePayloadVersionUVE);
-    Utilities::AppendUint32UVE(payload, texture.width);
-    Utilities::AppendUint32UVE(payload, texture.height);
-    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(texture.format));
-    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(texture.colorSpace));
-    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(texture.usage));
-    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(texture.payloadEncoding));
+    Utilities::AppendUint32LeUVE(payload, kTexturePayloadVersionUVE);
+    Utilities::AppendUint32LeUVE(payload, texture.width);
+    Utilities::AppendUint32LeUVE(payload, texture.height);
+    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.format));
+    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.colorSpace));
+    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.usage));
+    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.payloadEncoding));
     if (texture.payloadEncoding == TexturePayloadEncodingUVE::BasisUniversalKtx2) {
-        Utilities::AppendUint64UVE(payload, static_cast<std::uint64_t>(texture.basisKtx2Data.size()));
+        Utilities::AppendUint64LeUVE(payload, static_cast<std::uint64_t>(texture.basisKtx2Data.size()));
         Utilities::AppendBytesUVE(payload, texture.basisKtx2Data.data(), texture.basisKtx2Data.size());
     } else {
-        Utilities::AppendUint64UVE(payload, static_cast<std::uint64_t>(texture.pixels.size()));
+        Utilities::AppendUint64LeUVE(payload, static_cast<std::uint64_t>(texture.pixels.size()));
         Utilities::AppendBytesUVE(payload, texture.pixels.data(), texture.pixels.size());
-        Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(texture.mipLevels.size()));
+        Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.mipLevels.size()));
         for (const TextureMipLevelUVE& mipLevel : texture.mipLevels) {
-            Utilities::AppendUint32UVE(payload, mipLevel.width);
-            Utilities::AppendUint32UVE(payload, mipLevel.height);
-            Utilities::AppendUint64UVE(payload, static_cast<std::uint64_t>(mipLevel.pixels.size()));
+            Utilities::AppendUint32LeUVE(payload, mipLevel.width);
+            Utilities::AppendUint32LeUVE(payload, mipLevel.height);
+            Utilities::AppendUint64LeUVE(payload, static_cast<std::uint64_t>(mipLevel.pixels.size()));
             Utilities::AppendBytesUVE(payload, mipLevel.pixels.data(), mipLevel.pixels.size());
         }
     }

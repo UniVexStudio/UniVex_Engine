@@ -33,6 +33,7 @@ public:
     }
     std::optional<HostFunctionUVE> DescribeFunctionUVE(const std::string_view name) const override {
         if (name == "input.axis") return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::StrUVE()}, TypeUVE::FloatUVE()};
+        if (name == "node") return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::ObjectUVE("Object3D")};
         return std::nullopt;
     }
     std::optional<std::vector<TypeUVE>> DescribeEventUVE(const std::string_view event) const override {
@@ -51,8 +52,20 @@ public:
         else health = std::get<std::int64_t>(value);
     }
     ValueUVE CallFunctionUVE(const std::string_view name, std::span<const ValueUVE> args) override {
+        if (name == "node") {
+            return std::get<std::string>(args[0]) == "nobody" ? ValueUVE{ObjectRefUVE{}}
+                                                              : ValueUVE{ObjectRefUVE{7U}};
+        }
         calls.push_back(std::string{name} + "(" + std::get<std::string>(args[0]) + "," + std::get<std::string>(args[1]) + ")");
         return axis;
+    }
+    void CallMethodUVE(const ObjectRefUVE target, const std::string_view method,
+                       const std::span<const ValueUVE> args) override {
+        std::string call = std::to_string(target.id) + "." + std::string{method} + "(";
+        for (std::size_t i = 0U; i < args.size(); ++i) {
+            call += (i == 0U ? "" : ",") + FormatValueUVE(args[i]);
+        }
+        calls.push_back(call + ")");
     }
     void PrintUVE(const std::string_view text) override { printed.emplace_back(text); }
 
@@ -264,6 +277,41 @@ TEST(UVScriptVmUVETest, ValueTextReadsBackWhatFormatWrites) {
     EXPECT_FALSE(ParseValueTextUVE("", TypeUVE::IntUVE()).has_value());
 }
 
+TEST(UVScriptVmUVETest, CallsMethodsOnOtherNodesFireAndForget) {
+    FakeHostUVE host;
+    const auto program = CompileOrFailUVE(R"(
+on body_entered(other):
+    other.take_damage(30)
+    other.hide()
+    if other == none:
+        print("gone")
+    else:
+        print("here")
+    let ghost = node("nobody")
+    if ghost == none:
+        print("no ghost")
+    if node("friend").greet("hi") == none:
+        print("fire and forget")
+)", host);
+    ASSERT_NE(program, nullptr);
+    ScriptInstanceUVE instance(program, host);
+    const std::array<ValueUVE, 1> args{ValueUVE{ObjectRefUVE{3U}}};
+    ASSERT_TRUE(instance.RaiseEventUVE("body_entered", args)) << instance.GetLastErrorUVE();
+    EXPECT_EQ(host.calls, (std::vector<std::string>{"3.take_damage(30)", "3.hide()", "7.greet(hi)"}));
+    EXPECT_EQ(host.printed, (std::vector<std::string>{"here", "no ghost", "fire and forget"}));
+}
+
+TEST(UVScriptVmUVETest, ReportsBadMethodCallsBeforeRunning) {
+    EXPECT_EQ(ErrorsOfUVE("on tick(dt):\n    velocity.hide()\n"),
+              (std::vector<std::string>{"2: there is no function 'velocity.hide'"}));
+    EXPECT_EQ(ErrorsOfUVE("on tick(dt):\n    dt.hide()\n"),
+              (std::vector<std::string>{"2: there is no function 'dt.hide'"}));
+    EXPECT_EQ(ErrorsOfUVE("on tick(dt):\n    other.hide()\n"),
+              (std::vector<std::string>{"2: there is no function 'other.hide'"}));
+    EXPECT_EQ(ErrorsOfUVE("on tick(dt):\n    print(node(\"a\") < node(\"b\"))\n"),
+              (std::vector<std::string>{"2: '<' cannot compare Object3D with Object3D"}));
+}
+
 // ---- Native code: the same scripts compiled to C++ by uvsc at build time (Test/CMakeLists.txt).
 
 [[nodiscard]] std::string ReadNativeScriptUVE(const std::string& name) {
@@ -335,6 +383,46 @@ TEST(UVScriptNativeUVETest, PlayerControllerMatchesTheInterpreter) {
         results.push_back(FormatValueUVE(*instance.GetFieldUVE("jumps")));
         results.push_back(FormatValueUVE(*instance.GetFieldUVE("jump")));
     });
+}
+
+TEST(UVScriptNativeUVETest, MethodCallsMatchTheInterpreter) {
+    ExpectNativeMatchesInterpreterUVE(
+        "methods.uvs", [](ScriptInstanceUVE& instance, FakeHostUVE&, std::vector<std::string>& results) {
+            const std::array<ValueUVE, 1> nobody{ValueUVE{ObjectRefUVE{}}};
+            results.push_back(std::to_string(instance.RaiseEventUVE("body_entered", nobody)));
+            const std::array<ValueUVE, 1> friend_{ValueUVE{ObjectRefUVE{5U}}};
+            results.push_back(std::to_string(instance.RaiseEventUVE("body_entered", friend_)));
+        });
+}
+
+TEST(UVScriptNativeUVETest, CollectionsMatchTheInterpreter) {
+    ExpectNativeMatchesInterpreterUVE("collections.uvs", [](ScriptInstanceUVE& instance, FakeHostUVE&,
+                                                             std::vector<std::string>& results) {
+        results.push_back(ResultTextUVE(instance.CallUVE("describe"), instance));
+        results.push_back(ResultTextUVE(instance.CallUVE("total"), instance));
+        const std::array<ValueUVE, 1> words{MakeListValueUVE({ValueUVE{std::string{"a"}}, ValueUVE{std::string{"b"}},
+                                                              ValueUVE{std::string{"a"}}})};
+        results.push_back(ResultTextUVE(instance.CallUVE("tally", words), instance));
+        results.push_back(ResultTextUVE(instance.CallUVE("first_pair"), instance));
+        results.push_back(ResultTextUVE(instance.CallUVE("unpacked"), instance));
+        results.push_back(ResultTextUVE(instance.CallUVE("key_list"), instance));
+        results.push_back(ResultTextUVE(instance.CallUVE("dropped"), instance));
+        results.push_back(ResultTextUVE(instance.CallUVE("joined"), instance));
+        results.push_back(ResultTextUVE(instance.CallUVE("has_torch"), instance));
+        results.push_back(ResultTextUVE(instance.CallUVE("count_words"), instance));
+        results.push_back(ResultTextUVE(instance.CallUVE("count_words"), instance));
+        results.push_back(std::to_string(instance.RaiseEventUVE("ready")));
+    });
+    // And the values are the right ones, not merely the same wrong ones.
+    FakeHostUVE host;
+    const auto program = CompileOrFailUVE(ReadNativeScriptUVE("collections.uvs"), host);
+    ASSERT_NE(program, nullptr);
+    ScriptInstanceUVE instance(program, host);
+    ASSERT_TRUE(instance.IsNativeUVE());
+    EXPECT_EQ(FormatValueUVE(*instance.CallUVE("total")), "6");
+    EXPECT_EQ(FormatValueUVE(*instance.CallUVE("unpacked")), "one=1");
+    EXPECT_EQ(FormatValueUVE(*instance.CallUVE("joined")), "[1, 2, 3]");
+    EXPECT_EQ(FormatValueUVE(*instance.CallUVE("describe")), "3 things: rope, map");
 }
 
 TEST(UVScriptNativeUVETest, ArithmeticControlFlowAndBuiltinsMatchTheInterpreter) {

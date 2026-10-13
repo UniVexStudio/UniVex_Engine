@@ -262,12 +262,18 @@ public:
     /// and falls back to a full-frame RenderFrameUVE(), matching this interface's existing
     /// safe-no-op-default convention for test doubles/lightweight renderers with no offscreen-target
     /// concept.
+    /// Tier 2.3: colorLayer/depthLayer name the rendered LAYERS of that pair (probe capture
+    /// aims cube faces at layers); both default to 0, preserving every existing caller's behavior.
     virtual void RenderFrameToTargetUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
                                         TextureHandleUVE colorTarget, TextureHandleUVE depthTarget,
-                                        std::uint32_t width = 0U, std::uint32_t height = 0U) {
+                                        std::uint32_t width = 0U, std::uint32_t height = 0U,
+                                        std::uint32_t colorLayer = 0U, std::uint32_t depthLayer = 0U) {
         static_cast<void>(colorTarget);
         static_cast<void>(depthTarget);
         static_cast<void>(width);
+        static_cast<void>(height);
+        static_cast<void>(colorLayer);
+        static_cast<void>(depthLayer);
         static_cast<void>(height);
         RenderFrameUVE(entityManager, cameraEntity);
     }

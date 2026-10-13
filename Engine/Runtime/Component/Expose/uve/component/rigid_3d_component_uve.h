@@ -20,6 +20,10 @@ struct Rigid3DComponentUVE final {
     float mass = 1.0F;
     bool isKinematic = false;
     Math::Vector3UVE velocity{};
+    /// Caller-owned persistent linear force in newtons; integrated as force/mass each step until
+    /// changed, zero means gravity-and-drag only. Mirrors `torque`'s contract on the angular side -
+    /// scripts hold a thruster with `physics.apply_force` and fire one-shots with impulses instead.
+    Math::Vector3UVE force{};
     /// Local-space angular velocity in radians/second. Zero preserves legacy orientation behavior.
     Math::Vector3UVE angularVelocity{};
     /// Caller-owned persistent torque in local-space force units; zero means no angular acceleration.

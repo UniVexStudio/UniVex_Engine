@@ -1,0 +1,12 @@
+entity Friend : Character3D
+
+on body_entered(other):
+    other.take_damage(30)
+    other.hide()
+    if other == none:
+        print("gone")
+    else:
+        print("here {other}")
+    node("nobody").hide()
+    if node("friend").greet("hi") == none:
+        print("fire and forget")

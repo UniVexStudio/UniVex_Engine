@@ -353,7 +353,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
     };
     // Anything in Content drags onto a shelf. Entity assets keep the payload the Scene panel and
     // the viewport place from; everything else carries its content-relative path.
-    const auto dragContentItem = [&snapshot](const Asset::ProjectFileEntryUVE& entry, const bool entityAsset) {
+    const auto dragContentItem = [this, &snapshot](const Asset::ProjectFileEntryUVE& entry, const bool entityAsset) {
         if (!ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
             return;
         }
@@ -362,6 +362,17 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             const std::string absolutePath = (snapshot.contentRoot / entry.relativePath).string();
             ImGui::SetDragDropPayload(kContentEntityPayloadUVE, absolutePath.c_str(), absolutePath.size() + 1U);
             ImGui::Text("Place %s", name.c_str());
+        } else if (m_contentSelection.ItemsUVE().size() > 1U &&
+                   m_contentSelection.ContainsUVE(entry.relativePath.generic_string())) {
+            // A multi-selection drags together: one payload, every selected path NUL-joined.
+            // Single-path acceptors (shelves, the Timeline) ignore the shape; libraries read it.
+            std::string packed;
+            for (const std::string& item : m_contentSelection.ItemsUVE()) {
+                packed += item;
+                packed += '\0';
+            }
+            ImGui::SetDragDropPayload(kContentItemsPayloadUVE, packed.data(), packed.size());
+            ImGui::Text("%d items", static_cast<int>(m_contentSelection.ItemsUVE().size()));
         } else {
             const std::string relativePath = entry.relativePath.generic_string();
             ImGui::SetDragDropPayload(kContentItemPayloadUVE, relativePath.c_str(), relativePath.size() + 1U);
@@ -1149,6 +1160,29 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             const std::string itemKey = entry.relativePath.generic_string();
             m_contentShownOrder.push_back(itemKey);
             dragContentItem(entry, look.type == ContentBrowserItemTypeUVE::Entity || look.type == ContentBrowserItemTypeUVE::Prefab);
+            // A library row also takes drops: clips join the file, like in the library window.
+            if (look.type == ContentBrowserItemTypeUVE::AnimationLibrary &&
+                entry.kind != Asset::ProjectFileEntryKindUVE::Directory && ImGui::BeginDragDropTarget()) {
+                const std::vector<std::filesystem::path> dropped = AcceptAnimationLibraryDropPathsUVE();
+                if (!dropped.empty()) {
+                    const std::filesystem::path libraryAbsolute = snapshot.contentRoot / entry.relativePath;
+                    std::vector<std::filesystem::path> absolute;
+                    absolute.reserve(dropped.size());
+                    for (const std::filesystem::path& relative : dropped) {
+                        absolute.push_back(snapshot.contentRoot / relative);
+                    }
+                    const std::size_t added = AppendClipsToAnimationLibraryUVE(libraryAbsolute, absolute);
+                    if (added > 0U) {
+                        RefreshAnimationLibraryWindowUVE(libraryAbsolute);
+                        m_contentStatusMessage = "Added " + std::to_string(added) + " to " +
+                                                 entry.relativePath.filename().generic_string() + ".";
+                    } else {
+                        m_contentStatusMessage = "Nothing new to add to " +
+                                                 entry.relativePath.filename().generic_string() + ".";
+                    }
+                }
+                ImGui::EndDragDropTarget();
+            }
             const std::string displayLabel = entry.relativePath.filename().generic_string();
             if (hovered && !ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
                 // Anything but a plain folder listing mixes folders, so say where the file lives.
@@ -1177,6 +1211,10 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                     } else if (look.type == ContentBrowserItemTypeUVE::Scene &&
                                !OpenSceneAssetUVE(snapshot.contentRoot / entry.relativePath)) {
                         m_contentStatusMessage = "Could not open " + entry.relativePath.filename().string() + " as a scene.";
+                    } else if (look.type == ContentBrowserItemTypeUVE::AnimationLibrary &&
+                               !OpenAnimationLibraryUVE(snapshot.contentRoot / entry.relativePath)) {
+                        m_contentStatusMessage = "Could not open " + entry.relativePath.filename().string() +
+                                                 " as an animation library.";
                     }
                 }
             }

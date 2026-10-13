@@ -327,7 +327,7 @@ TEST_F(AudioSystemUVETest, MixerGroup_ScalesFinalGainAndPitchBeforeDeviceSubmiss
     ASSERT_EQ(diagnostics.routedSourceCount, 1U);
     ASSERT_EQ(diagnostics.groups.back().name, "SFX");
     EXPECT_EQ(diagnostics.groups.back().sourceCount, 1U);
-    EXPECT_EQ(source, VoiceHandleUVE{1U});
+    EXPECT_EQ(source, VoiceHandleUVE::FromIndexAndGenerationUVE(0U, 1U));
 }
 
 TEST_F(AudioSystemUVETest, MixerGroup_RerouteAndDestroyKeepsCopiedCountsConsistent) {

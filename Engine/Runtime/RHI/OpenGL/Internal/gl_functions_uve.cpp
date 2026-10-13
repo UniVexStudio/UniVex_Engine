@@ -95,6 +95,19 @@ GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
     functions.glActiveTexture = LoadOneUVE<PFNGLACTIVETEXTUREPROC>(getProcAddress, "glActiveTexture");
     functions.glCompressedTexImage2D =
         LoadOneUVE<PFNGLCOMPRESSEDTEXIMAGE2DPROC>(getProcAddress, "glCompressedTexImage2D");
+    // Tier 2.3 array/cubemap entries (kept out of IsCompleteUVE: optional capability).
+    functions.glTexImage3D = LoadOneUVE<PFNGLTEXIMAGE3DPROC>(getProcAddress, "glTexImage3D");
+    functions.glCompressedTexImage3D =
+        LoadOneUVE<PFNGLCOMPRESSEDTEXIMAGE3DPROC>(getProcAddress, "glCompressedTexImage3D");
+    functions.glFramebufferTextureLayer = LoadOneUVE<PFNGLFRAMEBUFFERTEXTURELAYERPROC>(
+        getProcAddress, "glFramebufferTextureLayer");
+    // Tier 2.4/2.5 MRT entries (kept out of IsCompleteUVE: optional capability).
+    functions.glDrawBuffers =
+        LoadOneUVE<PFNGLDRAWBUFFERSPROC>(getProcAddress, "glDrawBuffers");
+    functions.glClearBufferfv =
+        LoadOneUVE<PFNGLCLEARBUFFERFVPROC>(getProcAddress, "glClearBufferfv");
+    functions.glInvalidateFramebuffer =
+        LoadOneUVE<PFNGLINVALIDATEFRAMEBUFFERPROC>(getProcAddress, "glInvalidateFramebuffer");
 
     functions.glGetUniformLocation = LoadOneUVE<PFNGLGETUNIFORMLOCATIONPROC>(getProcAddress, "glGetUniformLocation");
     functions.glUniform1f = LoadOneUVE<PFNGLUNIFORM1FPROC>(getProcAddress, "glUniform1f");
@@ -104,6 +117,15 @@ GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
     functions.glGetActiveUniform = LoadOneUVE<PFNGLGETACTIVEUNIFORMPROC>(getProcAddress, "glGetActiveUniform");
     functions.glGetProgramBinary = LoadOneUVE<PFNGLGETPROGRAMBINARYPROC>(getProcAddress, "glGetProgramBinary");
     functions.glProgramBinary = LoadOneUVE<PFNGLPROGRAMBINARYPROC>(getProcAddress, "glProgramBinary");
+
+    functions.glGenSamplers = LoadOneUVE<PFNGLGENSAMPLERSPROC>(getProcAddress, "glGenSamplers");
+    functions.glDeleteSamplers = LoadOneUVE<PFNGLDELETESAMPLERSPROC>(getProcAddress, "glDeleteSamplers");
+    functions.glBindSampler = LoadOneUVE<PFNGLBINDSAMPLERPROC>(getProcAddress, "glBindSampler");
+    functions.glSamplerParameteri =
+        LoadOneUVE<PFNGLSAMPLERPARAMETERIPROC>(getProcAddress, "glSamplerParameteri");
+    functions.glSamplerParameterf =
+        LoadOneUVE<PFNGLSAMPLERPARAMETERFPROC>(getProcAddress, "glSamplerParameterf");
+    functions.glGetStringi = LoadOneUVE<PFNGLGETSTRINGIPROC>(getProcAddress, "glGetStringi");
 
     functions.glDebugMessageCallback =
         LoadOneUVE<PFNGLDEBUGMESSAGECALLBACKPROC>(getProcAddress, "glDebugMessageCallback");

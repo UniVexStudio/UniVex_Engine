@@ -11,7 +11,7 @@
 // patterns in the implementation body; the declaration section below has none of that).
 #include "stb_truetype.h"
 
-#include "ui_font_ttf_bytes.inc"
+#include "uve/ui/ui_embedded_font_uve.h"
 
 namespace UVE::UI {
 
@@ -40,7 +40,14 @@ namespace {
 
 } // namespace
 
-UIFontAtlasUVE::UIFontAtlasUVE() {
+UIFontAtlasUVE::UIFontAtlasUVE() : UIFontAtlasUVE(GetEmbeddedUIFontBytesUVE()) {
+}
+
+UIFontAtlasUVE::UIFontAtlasUVE(const std::span<const std::uint8_t> fontBytes) {
+    if (fontBytes.empty()) {
+        m_valid = false;
+        return;
+    }
     // stbtt_BakeFontBitmap only ever writes a single-channel (alpha) bitmap; this engine's
     // TextureFormatUVE has no single-channel option (RGBA8Unorm/RGBA16Float/Depth32Float only), so
     // the baked coverage is expanded into RGBA8 (opaque white, coverage in alpha) once here rather
@@ -50,7 +57,7 @@ UIFontAtlasUVE::UIFontAtlasUVE() {
 
     std::array<stbtt_bakedchar, kCharCountUVE> bakedChars{};
     const int bakeResult =
-        stbtt_BakeFontBitmap(uve_ui_runtime_font_ttf_bytes.data(), 0, kBakedFontPixelHeightUVE, coverage.data(),
+        stbtt_BakeFontBitmap(fontBytes.data(), 0, kBakedFontPixelHeightUVE, coverage.data(),
                               kAtlasWidthUVE, kAtlasHeightUVE, kFirstCharUVE, kCharCountUVE, bakedChars.data());
     if (bakeResult <= 0) {
         m_valid = false;
@@ -104,6 +111,23 @@ void UIFontAtlasUVE::AppendTextQuadsUVE(const std::string_view text, float& curs
         outQuads.push_back(quad);
         cursorX += glyph->advanceX * scale;
     }
+}
+
+float UIFontAtlasUVE::MeasureTextWidthUVE(const std::string_view text,
+                                          const float fontSizePixels) const noexcept {
+    if (!m_valid || fontSizePixels <= 0.0F) {
+        return 0.0F;
+    }
+    const float scale = fontSizePixels / kBakedFontPixelHeightUVE;
+    float width = 0.0F;
+    for (const char character : text) {
+        const UIGlyphUVE* glyph = FindGlyphUVE(character);
+        if (glyph == nullptr) {
+            continue;
+        }
+        width += glyph->advanceX * scale;
+    }
+    return width;
 }
 
 } // namespace UVE::UI

@@ -11,17 +11,20 @@
 #include "uve/logging/logging_macros_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/math/color_uve.h"
 
 namespace UVE::Asset {
 
 namespace {
 
-[[nodiscard]] nlohmann::json Vector3ToJsonUVE(const Math::Vector3UVE& value) {
-    return nlohmann::json{{"x", value.x}, {"y", value.y}, {"z", value.z}};
+// Colors persist under the same "x"/"y"/"z" keys vectors always used: old .uvmat files load
+// byte-identical, and the linear interpretation comes from the ColorUVE type, not the file.
+[[nodiscard]] nlohmann::json ColorToJsonUVE(const Math::ColorUVE& value) {
+    return nlohmann::json{{"x", value.r}, {"y", value.g}, {"z", value.b}};
 }
 
-[[nodiscard]] Math::Vector3UVE JsonToVector3UVE(const nlohmann::json& value) {
-    return Math::Vector3UVE{value.at("x").get<float>(), value.at("y").get<float>(), value.at("z").get<float>()};
+[[nodiscard]] Math::ColorUVE JsonToColorUVE(const nlohmann::json& value) {
+    return Math::ColorUVE{value.at("x").get<float>(), value.at("y").get<float>(), value.at("z").get<float>()};
 }
 
 [[nodiscard]] nlohmann::json Vector2ToJsonUVE(const Math::Vector2UVE& value) {
@@ -36,19 +39,19 @@ namespace {
     return std::isfinite(value) && value >= 0.0F && value <= 1.0F;
 }
 
-[[nodiscard]] bool IsFiniteNonNegativeVectorUVE(const Math::Vector3UVE& value) noexcept {
-    return std::isfinite(value.x) && value.x >= 0.0F && std::isfinite(value.y) && value.y >= 0.0F &&
-           std::isfinite(value.z) && value.z >= 0.0F;
+[[nodiscard]] bool IsFiniteNonNegativeColorUVE(const Math::ColorUVE& value) noexcept {
+    return std::isfinite(value.r) && value.r >= 0.0F && std::isfinite(value.g) && value.g >= 0.0F &&
+           std::isfinite(value.b) && value.b >= 0.0F;
 }
 
 } // namespace
 
 bool IsMaterialAssetValidUVE(const MaterialAssetUVE& material) noexcept {
-    return IsFiniteUnitIntervalUVE(material.albedoColor.x) &&
-           IsFiniteUnitIntervalUVE(material.albedoColor.y) &&
-           IsFiniteUnitIntervalUVE(material.albedoColor.z) &&
+    return IsFiniteUnitIntervalUVE(material.albedoColor.r) &&
+           IsFiniteUnitIntervalUVE(material.albedoColor.g) &&
+           IsFiniteUnitIntervalUVE(material.albedoColor.b) &&
            IsFiniteUnitIntervalUVE(material.metallic) && IsFiniteUnitIntervalUVE(material.roughness) &&
-           IsFiniteNonNegativeVectorUVE(material.emissiveColor) &&
+           IsFiniteNonNegativeColorUVE(material.emissiveColor) &&
            material.billboardMode <= MaterialBillboardModeUVE::Y &&
            std::isfinite(material.emissiveEnergy) && material.emissiveEnergy >= 0.0F &&
            std::isfinite(material.normalScale) && material.normalScale >= 0.0F &&
@@ -102,13 +105,13 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
 
     MaterialAssetUVE material;
     try {
-        material.albedoColor = JsonToVector3UVE(payload.at("albedoColor"));
+        material.albedoColor = JsonToColorUVE(payload.at("albedoColor"));
         material.albedoTexture = AssetGuidUVE{payload.at("albedoTexture").get<std::uint64_t>()};
         material.normalTexture = AssetGuidUVE{payload.at("normalTexture").get<std::uint64_t>()};
         material.metallic = payload.at("metallic").get<float>();
         material.roughness = payload.at("roughness").get<float>();
         material.aoTexture = AssetGuidUVE{payload.at("aoTexture").get<std::uint64_t>()};
-        material.emissiveColor = JsonToVector3UVE(payload.at("emissiveColor"));
+        material.emissiveColor = JsonToColorUVE(payload.at("emissiveColor"));
         material.vertexShader = AssetGuidUVE{payload.at("vertexShader").get<std::uint64_t>()};
         material.fragmentShader = AssetGuidUVE{payload.at("fragmentShader").get<std::uint64_t>()};
         material.isTransparent = payload.at("isTransparent").get<bool>();
@@ -163,13 +166,13 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
         return false;
     }
     nlohmann::json payload;
-    payload["albedoColor"] = Vector3ToJsonUVE(material.albedoColor);
+    payload["albedoColor"] = ColorToJsonUVE(material.albedoColor);
     payload["albedoTexture"] = material.albedoTexture.value;
     payload["normalTexture"] = material.normalTexture.value;
     payload["metallic"] = material.metallic;
     payload["roughness"] = material.roughness;
     payload["aoTexture"] = material.aoTexture.value;
-    payload["emissiveColor"] = Vector3ToJsonUVE(material.emissiveColor);
+    payload["emissiveColor"] = ColorToJsonUVE(material.emissiveColor);
     payload["vertexShader"] = material.vertexShader.value;
     payload["fragmentShader"] = material.fragmentShader.value;
     payload["isTransparent"] = material.isTransparent;

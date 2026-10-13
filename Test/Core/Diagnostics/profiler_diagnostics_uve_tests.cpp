@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "uve/diagnostics/profiler_diagnostics_uve.h"
+#include "uve/diagnostics/profiler_view_uve.h"
 
 #include <gtest/gtest.h>
 
@@ -116,4 +117,147 @@ TEST(ProfilerCaptureUVETest, CaptureLifecycleUVE_RejectsInvalidOrOutOfOrderOpera
     EXPECT_EQ(capture.EndUVE(21U).code, DiagnosticCaptureCodeUVE::NotActive);
 }
 
+
+TEST(ProfilerCaptureUVETest, SnapshotUVE_SeesInProgressWithoutEnding) {
+    ProfilerCaptureUVE capture;
+    ASSERT_TRUE(capture.BeginUVE("live", 100U).IsAcceptedUVE());
+    ASSERT_TRUE(capture.RecordSpanUVE(DiagnosticCategoryUVE::Cpu, "frame", 110U, 140U, 7U, 42U)
+                    .IsAcceptedUVE());
+    ASSERT_TRUE(capture.RecordCounterUVE(DiagnosticCategoryUVE::Net, "net.sent", 145U, 3.0, 7U,
+                                         42U)
+                    .IsAcceptedUVE());
+
+    const DiagnosticCaptureBundleUVE live = capture.SnapshotUVE();
+    EXPECT_EQ(live.sessionId, "live");
+    ASSERT_EQ(live.spans.size(), 1U);
+    EXPECT_EQ(live.spans[0].name, "frame");
+    ASSERT_EQ(live.counters.size(), 1U);
+    EXPECT_EQ(live.counters[0].category, DiagnosticCategoryUVE::Net);
+    EXPECT_TRUE(capture.IsActiveUVE());
+
+    ASSERT_TRUE(capture.RecordBreadcrumbUVE(DiagnosticCategoryUVE::Cpu, "late", 150U, 7U, 42U)
+                    .IsAcceptedUVE());
+    const DiagnosticCaptureStopResultUVE result = capture.EndUVE(200U);
+    ASSERT_TRUE(result.IsAcceptedUVE());
+    EXPECT_EQ(result.bundle.spans.size(), 1U);
+    EXPECT_EQ(result.bundle.counters.size(), 1U);
+    EXPECT_EQ(result.bundle.breadcrumbs.size(), 1U);
+    // End moved the bundle out: the aftermath snapshots empty.
+    EXPECT_TRUE(capture.SnapshotUVE().sessionId.empty());
+    EXPECT_TRUE(capture.SnapshotUVE().spans.empty());
+}
+
+TEST(ProfilerCaptureUVETest, SnapshotUVE_InactiveIsEmpty) {
+    ProfilerCaptureUVE capture;
+    const DiagnosticCaptureBundleUVE empty = capture.SnapshotUVE();
+    EXPECT_TRUE(empty.sessionId.empty());
+    EXPECT_TRUE(empty.spans.empty());
+    EXPECT_TRUE(empty.counters.empty());
+    EXPECT_TRUE(empty.breadcrumbs.empty());
+}
+
+TEST(ProfilerCaptureUVETest, NetCategoryUVE_AcceptedEverywhere) {
+    ProfilerCaptureUVE capture;
+    ASSERT_TRUE(capture.BeginUVE("net", 1U).IsAcceptedUVE());
+    EXPECT_TRUE(capture.RecordSpanUVE(DiagnosticCategoryUVE::Net, "send", 2U, 5U, 1U, 1U)
+                    .IsAcceptedUVE());
+    EXPECT_TRUE(capture.RecordCounterUVE(DiagnosticCategoryUVE::Net, "net.sent", 3U, 1.0, 1U, 1U)
+                    .IsAcceptedUVE());
+    EXPECT_TRUE(
+        capture.RecordBreadcrumbUVE(DiagnosticCategoryUVE::Net, "linked", 4U, 1U, 1U)
+            .IsAcceptedUVE());
+    EXPECT_EQ(capture.RecordSpanUVE(DiagnosticCategoryUVE::Count, "nope", 2U, 5U, 1U, 1U).code,
+              DiagnosticCaptureCodeUVE::InvalidCategory);
+}
+
+TEST(ProfilerViewUVETest, CategoryNameUVE_NamesEveryCategory) {
+    EXPECT_EQ(ProfilerCategoryNameUVE(DiagnosticCategoryUVE::Cpu), "cpu");
+    EXPECT_EQ(ProfilerCategoryNameUVE(DiagnosticCategoryUVE::Task), "task");
+    EXPECT_EQ(ProfilerCategoryNameUVE(DiagnosticCategoryUVE::Memory), "memory");
+    EXPECT_EQ(ProfilerCategoryNameUVE(DiagnosticCategoryUVE::Animation), "animation");
+    EXPECT_EQ(ProfilerCategoryNameUVE(DiagnosticCategoryUVE::ECS), "ecs");
+    EXPECT_EQ(ProfilerCategoryNameUVE(DiagnosticCategoryUVE::VM), "vm");
+    EXPECT_EQ(ProfilerCategoryNameUVE(DiagnosticCategoryUVE::Render), "render");
+    EXPECT_EQ(ProfilerCategoryNameUVE(DiagnosticCategoryUVE::Audio), "audio");
+    EXPECT_EQ(ProfilerCategoryNameUVE(DiagnosticCategoryUVE::Streaming), "streaming");
+    EXPECT_EQ(ProfilerCategoryNameUVE(DiagnosticCategoryUVE::Net), "net");
+    EXPECT_EQ(ProfilerCategoryNameUVE(DiagnosticCategoryUVE::Count), "unknown");
+    EXPECT_EQ(ProfilerCategoryNameUVE(static_cast<DiagnosticCategoryUVE>(250U)), "unknown");
+}
+
+TEST(ProfilerViewUVETest, DurationUVE_FormatsByMagnitude) {
+    EXPECT_EQ(FormatProfilerDurationUVE(0U), "0ns");
+    EXPECT_EQ(FormatProfilerDurationUVE(999U), "999ns");
+    EXPECT_EQ(FormatProfilerDurationUVE(1000U), "1.00us");
+    EXPECT_EQ(FormatProfilerDurationUVE(1500U), "1.50us");
+    EXPECT_EQ(FormatProfilerDurationUVE(999999U), "1000.00us");
+    EXPECT_EQ(FormatProfilerDurationUVE(1000000U), "1.00ms");
+    EXPECT_EQ(FormatProfilerDurationUVE(3400000U), "3.40ms");
+    EXPECT_EQ(FormatProfilerDurationUVE(1000000000U), "1.00s");
+    EXPECT_EQ(FormatProfilerDurationUVE(2500000000U), "2.50s");
+}
+
+TEST(ProfilerViewUVETest, SpanRowsUVE_SortByBeginAndSaturate) {
+    DiagnosticSpanUVE late;
+    late.category = DiagnosticCategoryUVE::Render;
+    late.name = "present";
+    late.beginTimestampNanoseconds = 200U;
+    late.endTimestampNanoseconds = 260U;
+    DiagnosticSpanUVE early;
+    early.category = DiagnosticCategoryUVE::Cpu;
+    early.name = "frame";
+    early.beginTimestampNanoseconds = 100U;
+    early.endTimestampNanoseconds = 150U;
+    DiagnosticSpanUVE broken;
+    broken.category = DiagnosticCategoryUVE::Net;
+    broken.name = "send";
+    broken.beginTimestampNanoseconds = 300U;
+    broken.endTimestampNanoseconds = 250U;
+    const std::vector<ProfilerSpanRowUVE> rows =
+        BuildProfilerSpanRowsUVE({late, early, broken});
+    ASSERT_EQ(rows.size(), 3U);
+    EXPECT_EQ(rows[0].name, "frame");
+    EXPECT_EQ(rows[0].category, DiagnosticCategoryUVE::Cpu);
+    EXPECT_EQ(rows[0].beginNanoseconds, 100U);
+    EXPECT_EQ(rows[0].durationNanoseconds, 50U);
+    EXPECT_EQ(rows[1].name, "present");
+    EXPECT_EQ(rows[1].durationNanoseconds, 60U);
+    EXPECT_EQ(rows[2].name, "send");
+    EXPECT_EQ(rows[2].durationNanoseconds, 0U);
+}
+
+TEST(ProfilerViewUVETest, CounterRowsUVE_KeepLatestPerName) {
+    DiagnosticCounterUVE stale;
+    stale.category = DiagnosticCategoryUVE::Net;
+    stale.name = "net.sent";
+    stale.timestampNanoseconds = 10U;
+    stale.value = 1.0;
+    DiagnosticCounterUVE fresh;
+    fresh.category = DiagnosticCategoryUVE::Net;
+    fresh.name = "net.sent";
+    fresh.timestampNanoseconds = 20U;
+    fresh.value = 2.0;
+    DiagnosticCounterUVE other;
+    other.category = DiagnosticCategoryUVE::Memory;
+    other.name = "net.sent";
+    other.timestampNanoseconds = 30U;
+    other.value = 9.0;
+    const std::vector<ProfilerCounterRowUVE> rows =
+        BuildProfilerCounterRowsUVE({stale, other, fresh});
+    ASSERT_EQ(rows.size(), 2U);
+    // Sorted by (category, name): memory (2) before net (9).
+    EXPECT_EQ(rows[0].category, DiagnosticCategoryUVE::Memory);
+    EXPECT_DOUBLE_EQ(rows[0].value, 9.0);
+    EXPECT_EQ(rows[1].category, DiagnosticCategoryUVE::Net);
+    EXPECT_DOUBLE_EQ(rows[1].value, 2.0);
+    EXPECT_EQ(rows[1].timestampNanoseconds, 20U);
+}
+
+TEST(ProfilerViewUVETest, CounterUVE_PrintsWholeWhenIntegral) {
+    EXPECT_EQ(FormatProfilerCounterUVE(2048.0), "2048");
+    EXPECT_EQ(FormatProfilerCounterUVE(0.0), "0");
+    EXPECT_EQ(FormatProfilerCounterUVE(-3.0), "-3");
+    EXPECT_EQ(FormatProfilerCounterUVE(1.5), "1.500");
+    EXPECT_EQ(FormatProfilerCounterUVE(0.123456), "0.123");
+}
 } // namespace UVE::Core

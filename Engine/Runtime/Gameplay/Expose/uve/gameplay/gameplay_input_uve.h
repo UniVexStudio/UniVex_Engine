@@ -26,6 +26,8 @@ struct GameplayInputUVE final {
     Math::Vector2UVE lookPointer{};
     Math::Vector2UVE lookStick{};
     bool interactPressed = false;
+
+    [[nodiscard]] bool operator==(const GameplayInputUVE&) const = default;
 };
 
 [[nodiscard]] std::vector<Input::InputActionUVE> MakeDefaultGameplayActionsUVE();

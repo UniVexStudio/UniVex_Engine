@@ -3,37 +3,19 @@
 
 #include "uve/threading/thread_pool_uve.h"
 
-#include <cstdio>
 #include <exception>
+#include <string>
 #include <utility>
-
-#if defined(__linux__)
-#include <pthread.h>
-#endif
 
 #include "uve/logging/assert_uve.h"
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/threading/thread_naming_uve.h"
 
 namespace UVE::Threading {
 
 namespace {
 
 thread_local const ThreadPoolUVE* t_currentThreadPool = nullptr;
-
-#if defined(__linux__)
-// Linux thread names are capped at 15 visible characters (16 bytes including the NUL
-// terminator) — pthread_setname_np() itself enforces that (returning ERANGE, silently ignored
-// here, if exceeded) — purely a debugging aid (visible in gdb/perf/htop), not load-bearing. The
-// local buffer is sized for the true worst case (std::size_t can print up to 20 digits) purely
-// so snprintf() itself can never be accused of truncating into it — GCC's -Wformat-truncation
-// (an -O2+-only analysis, which is why this only surfaced in the Release build) cannot prove
-// workerIndex stays small from this function's local context alone.
-void SetWorkerThreadNameUVE(std::thread& worker, std::size_t workerIndex) {
-    char name[32];
-    std::snprintf(name, sizeof(name), "UVEWorker%zu", workerIndex);
-    pthread_setname_np(worker.native_handle(), name);
-}
-#endif
 
 } // namespace
 
@@ -48,9 +30,6 @@ ThreadPoolUVE::ThreadPoolUVE(std::size_t workerCount) {
     m_workers.reserve(resolvedWorkerCount);
     for (std::size_t workerIndex = 0; workerIndex < resolvedWorkerCount; ++workerIndex) {
         m_workers.emplace_back([this, workerIndex] { WorkerLoopUVE(workerIndex); });
-#if defined(__linux__)
-        SetWorkerThreadNameUVE(m_workers.back(), workerIndex);
-#endif
     }
 }
 
@@ -90,6 +69,9 @@ void ThreadPoolUVE::SubmitInternalUVE(QueuedJobUVE job) {
 
 void ThreadPoolUVE::WorkerLoopUVE(std::size_t workerIndex) {
     t_currentThreadPool = this;
+    // Named from inside (the portable subset — macOS offers no cross-thread naming), so every
+    // platform's profiler shows UVEWorkerN instead of an anonymous stack.
+    static_cast<void>(SetCurrentThreadNameUVE("UVEWorker" + std::to_string(workerIndex)));
 
     while (true) {
         QueuedJobUVE job;

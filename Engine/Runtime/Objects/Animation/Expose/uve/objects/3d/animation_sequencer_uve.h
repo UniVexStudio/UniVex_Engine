@@ -27,7 +27,7 @@ struct Skeleton3DComponentUVE;
 /// Authoring definition for the AnimationSequencer object: a pure Object - no transform, no visibility -
 /// whose Inspector is its own section, its AnimationDriver base, then the Object section.
 /// It plays a clip on another object (`target`, or its parent), so it can sit anywhere in the tree,
-/// directly under the Object included.
+/// directly under the scene root included.
 struct AnimationSequencerObjectDefinitionUVE final {
     static constexpr std::string_view defaultName = "AnimationSequencer";
 
@@ -43,7 +43,7 @@ void ApplyAnimationSequencerObjectDefinitionUVE(IEntityManagerUVE& entityManager
 
 // ---- Playback ------------------------------------------------------------------------------------
 // Pure functions over the component, the clip and the target's transform, so the whole behaviour
-// is testable without an engine. EngineCoreUVE::SyncAnimationSequencersUVE drives them.
+// is testable without an engine. EngineCoreUVE::SyncAnimationUVE drives them.
 
 /// Starts playback from `startOffsetSeconds` (from the end when speed is negative), remembering
 /// the target's current pose for the blend-in, relative playback and Return To Start.

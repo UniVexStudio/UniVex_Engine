@@ -13,6 +13,7 @@
 #include "uve/component/auto_translate_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/bone_modifier_component_uve.h"
+#include "uve/component/camera_2d_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/canvas_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
@@ -36,9 +37,21 @@
 #include "uve/component/script_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/transform_component_uve.h"
+#include "uve/component/ui_anchor_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
+#include "uve/component/ui_checkbox_component_uve.h"
+#include "uve/component/ui_dropdown_component_uve.h"
+#include "uve/component/sprite_2d_component_uve.h"
 #include "uve/component/ui_image_component_uve.h"
+#include "uve/component/ui_layout_container_component_uve.h"
+#include "uve/component/ui_progress_bar_component_uve.h"
+#include "uve/component/ui_scroll_container_component_uve.h"
+#include "uve/component/ui_scrollbar_component_uve.h"
+#include "uve/component/ui_slider_component_uve.h"
 #include "uve/component/ui_text_component_uve.h"
+#include "uve/component/ui_text_input_component_uve.h"
+#include "uve/component/ui_tooltip_component_uve.h"
+#include "uve/component/ui_tween_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/logging/assert_uve.h"
 #include "uve/logging/logging_macros_uve.h"
@@ -87,9 +100,8 @@ using Core::TypeMetadataRegistryUVE;
 /// adjusts flags/range on the returned value for the cases that need it.
 template <auto MemberPointer>
 [[nodiscard]] TypeMetadataPropertyUVE DeclareUVE(std::string name, std::string displayName,
-                                                 const std::string_view typeId) {
-    return MakePropertyUVE<MemberPointer>(std::move(name), std::move(displayName), std::string(typeId),
-                                          true);
+                                                 const Strings::StringIdUVE typeId) {
+    return MakePropertyUVE<MemberPointer>(std::move(name), std::move(displayName), typeId, true);
 }
 
 /// Declares a property a runtime system owns. It is shown so an author can see what the simulation
@@ -97,7 +109,7 @@ template <auto MemberPointer>
 /// cache over whatever the system computed on load.
 template <auto MemberPointer>
 [[nodiscard]] TypeMetadataPropertyUVE DeclareRuntimeStateUVE(std::string name, std::string displayName,
-                                                             const std::string_view typeId) {
+                                                             const Strings::StringIdUVE typeId) {
     TypeMetadataPropertyUVE property = DeclareUVE<MemberPointer>(std::move(name), std::move(displayName),
                                                                  typeId);
     property.flags = TypeMetadataPropertyFlagsUVE::RuntimeState;
@@ -108,7 +120,7 @@ template <auto MemberPointer>
 [[nodiscard]] TypeMetadataPropertyUVE DeclareEnumUVE(std::string name, std::string displayName,
                                                      std::vector<TypeMetadataEnumEntryUVE> options) {
     return MakeEnumPropertyUVE<MemberPointer>(std::move(name), std::move(displayName),
-                                              std::string(kPropertyTypeEnumUVE), true,
+                                              kPropertyTypeEnumUVE, true,
                                               std::move(options));
 }
 
@@ -171,12 +183,13 @@ template <auto SwitchPointer>
     return property;
 }
 
-[[nodiscard]] TypeMetadataEntryUVE MakeEntryUVE(std::string typeId, std::string displayName,
-                                                const std::int32_t order,
+[[nodiscard]] TypeMetadataEntryUVE MakeEntryUVE(Strings::StringIdUVE typeId, std::string cppName,
+                                                std::string displayName, const std::int32_t order,
                                                 std::vector<TypeMetadataPropertyUVE> properties) {
     TypeMetadataEntryUVE entry{TypeMetadataKindUVE::Component, std::move(typeId), std::move(displayName),
                                1U, std::move(properties), {}};
     entry.order = order;
+    entry.cppName = std::move(cppName);
     return entry;
 }
 
@@ -188,8 +201,11 @@ void AddUVE(std::vector<TypeMetadataEntryUVE>& entries, TypeMetadataEntryUVE ent
     entries.push_back(std::move(entry));
 }
 
-/// AddUVE for a component with a whole-value rule, so a generic editor enforces it too.
-template <typename ComponentT, bool (*IsValid)(const ComponentT&) noexcept>
+/// AddUVE for a component with a whole-value rule, so a generic editor enforces it too - and so
+/// the generic serializer validates what it loads. `IsValid` is any callable taking
+/// `const ComponentT&` (a noexcept function pointer, a plain one, a derived-to-base reuse): the
+/// entry's isInstanceValid is a plain function pointer, so every spelling converts.
+template <typename ComponentT, auto IsValid>
 void AddValidatedUVE(std::vector<TypeMetadataEntryUVE>& entries, TypeMetadataEntryUVE entry) {
     entry.isInstanceValid = +[](const void* instance) { return IsValid(*static_cast<const ComponentT*>(instance)); };
     AddUVE<ComponentT>(entries, std::move(entry));
@@ -201,8 +217,8 @@ void AddValidatedUVE(std::vector<TypeMetadataEntryUVE>& entries, TypeMetadataEnt
 // ---------------------------------------------------------------------------------------------
 
 void DeclareIdentityAndTransformUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    AddUVE<NameComponentUVE>(
-        entries, MakeEntryUVE("component.name", "Name", kSectionOrderIdentityUVE,
+    AddValidatedUVE<NameComponentUVE, &IsNameComponentValidUVE>(
+        entries, MakeEntryUVE("component.name", "NameComponentUVE", "Name", kSectionOrderIdentityUVE,
                               {DeclareUVE<&NameComponentUVE::name>("name", "Name", kPropertyTypeStringUVE)}));
 
     // Rotation is the one place a generic editor would be actively wrong. The quaternion, the
@@ -212,8 +228,7 @@ void DeclareIdentityAndTransformUVE(std::vector<TypeMetadataEntryUVE>& entries) 
     // ordinary data and is declared ordinarily.
     AddUVE<TransformComponentUVE>(
         entries,
-        MakeEntryUVE(
-            "component.transform", "Transform", kSectionOrderTransformUVE,
+        MakeEntryUVE("component.transform", "TransformComponentUVE", "Transform", kSectionOrderTransformUVE,
             {
                 DeclareUVE<&TransformComponentUVE::localPosition>("localPosition", "Position",
                                                                  kPropertyTypeVector3UVE),
@@ -243,7 +258,7 @@ void DeclareIdentityAndTransformUVE(std::vector<TypeMetadataEntryUVE>& entries) 
 
     AddUVE<VisibilityComponentUVE>(
         entries,
-        MakeEntryUVE("component.visibility", "Visibility", kSectionOrderVisibilityUVE,
+        MakeEntryUVE("component.visibility", "VisibilityComponentUVE", "Visibility", kSectionOrderVisibilityUVE,
                      {
                          DeclareUVE<&VisibilityComponentUVE::visible>("visible", "Visible",
                                                                       kPropertyTypeBoolUVE),
@@ -256,15 +271,19 @@ void DeclareIdentityAndTransformUVE(std::vector<TypeMetadataEntryUVE>& entries) 
         DeclareUVE<&HierarchyComponentUVE::parent>("parent", "Parent", kPropertyTypeEntityUVE),
         "hierarchy.parent");
     parent.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
-    AddUVE<HierarchyComponentUVE>(entries, MakeEntryUVE("component.hierarchy", "Hierarchy",
+    AddUVE<HierarchyComponentUVE>(entries, MakeEntryUVE("component.hierarchy", "HierarchyComponentUVE", "Hierarchy",
                                                         kSectionOrderIdentityUVE, {std::move(parent)}));
+    // No entry for DisabledComponentUVE on purpose: the registry's contract (pinned by
+    // EveryDeclarationRegistersAndCarriesItsNativeType) is entries with at least one property for
+    // the generic consumers, and a fieldless tag has nothing for them. Its seams are the
+    // Set/IsEntityEnabledUVE helpers and SceneSerializerUVE's hand-written branch, neither of
+    // which needs the registry — the same "no metadata entry" corner Folder and Marker3D live in.
 }
 
 void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    AddUVE<CameraComponentUVE>(
+    AddValidatedUVE<CameraComponentUVE, &IsCameraComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.camera", "Camera", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.camera", "CameraComponentUVE", "Camera", kSectionOrderTypeSpecificUVE,
             {
                 DeclareEnumUVE<&CameraComponentUVE::projection>(
                     "projection", "Mode",
@@ -300,14 +319,22 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                              0.002, 100000.0, 1.0),
             }));
 
-    AddUVE<LightComponentUVE>(
+    AddValidatedUVE<Camera2DComponentUVE, &IsCamera2DComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.light", "Light", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.camera_2d", "Camera2DComponentUVE", "Camera2D", kSectionOrderTypeSpecificUVE,
+            {
+                DeclareUVE<&Camera2DComponentUVE::zoom>("zoom", "Zoom", kPropertyTypeVector2UVE),
+                DeclareUVE<&Camera2DComponentUVE::offset>("offset", "Offset", kPropertyTypeVector2UVE),
+                DeclareUVE<&Camera2DComponentUVE::current>("current", "Current", kPropertyTypeBoolUVE),
+            }));
+
+    AddValidatedUVE<LightComponentUVE, &IsLightComponentValidUVE>(
+        entries,
+        MakeEntryUVE("component.light", "LightComponentUVE", "Light", kSectionOrderTypeSpecificUVE,
             {
                 DeclareEnumUVE<&LightComponentUVE::type>("type", "Type",
                                                          {{0, "Directional"}, {1, "Point"}, {2, "Spot"}}),
-                DeclareUVE<&LightComponentUVE::color>("color", "Color", kPropertyTypeColorUVE),
+                DeclareUVE<&LightComponentUVE::color>("color", "Color", kPropertyTypeLinearColorUVE),
                 WithRangeUVE(DeclareUVE<&LightComponentUVE::intensity>("intensity", "Intensity",
                                                                        kPropertyTypeFloatUVE),
                              0.0, 1000.0, 0.05),
@@ -337,7 +364,7 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 
     AddValidatedUVE<MeshComponentUVE, &IsMeshComponentValidUVE>(
         entries,
-        MakeEntryUVE("component.mesh", "MeshInstance3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.mesh", "MeshComponentUVE", "MeshInstance3D", kSectionOrderTypeSpecificUVE,
                      {
                          WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&MeshComponentUVE::meshGuid>(
                                                                 "meshGuid", "Mesh", kPropertyTypeAssetGuidUVE),
@@ -356,7 +383,7 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // One component behind BoxMesh3D, SphereMesh3D and PlaneMesh3D; its section carries the name
     // of the object it is on.
     TypeMetadataEntryUVE primitive =
-        MakeEntryUVE("component.primitive_mesh", "PrimitiveMesh3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.primitive_mesh", "PrimitiveMeshComponentUVE", "PrimitiveMesh3D", kSectionOrderTypeSpecificUVE,
                      {
                          DeclareEnumUVE<&PrimitiveMeshComponentUVE::kind>(
                              "kind", "Shape", {{0, "Cube"}, {1, "UV Sphere"}, {2, "Plane"}}),
@@ -374,12 +401,11 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         }
         return "BoxMesh3D";
     };
-    AddUVE<PrimitiveMeshComponentUVE>(entries, std::move(primitive));
+    AddValidatedUVE<PrimitiveMeshComponentUVE, &IsPrimitiveMeshComponentValidUVE>(entries, std::move(primitive));
 
-    AddUVE<WorldEnvironment3DComponentUVE>(
+    AddValidatedUVE<WorldEnvironment3DComponentUVE, &IsWorldEnvironment3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.world_environment", "WorldEnvironment", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.world_environment", "WorldEnvironment3DComponentUVE", "WorldEnvironment", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(
                     DeclareEnumUVE<&WorldEnvironment3DComponentUVE::ambientSource>(
@@ -790,15 +816,16 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 }(),
                 DeclareUVE<&WorldEnvironment3DComponentUVE::colorFilter>(
                     "colorFilter", "Color Filter", kPropertyTypeColorUVE),
-                WithTooltipUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::skyAssetPath>(
-                                   "skyAssetPath", "Sky Asset", kPropertyTypeStringUVE),
+                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::skyAssetPath>(
+                                                       "skyAssetPath", "Sky Asset", kPropertyTypeStringUVE),
+                                                   "file:uvtex"),
                                "Equirectangular sky texture. Empty keeps the procedural sky; Ambient Light Source "
                                "uses this texture when set to Environment Map, and falls back to Sky while it "
                                "is unavailable."),
             }));
 
-    AddUVE<ParticleEmitterComponentUVE>(
-        entries, MakeEntryUVE("component.particle_emitter", "ParticleEmitter3D",
+    AddValidatedUVE<ParticleEmitterComponentUVE, &IsParticleEmitterComponentValidUVE>(
+        entries, MakeEntryUVE("component.particle_emitter", "ParticleEmitterComponentUVE", "ParticleEmitter3D",
                               kSectionOrderTypeSpecificUVE,
                               {WithRangeUVE(DeclareUVE<&ParticleEmitterComponentUVE::maxParticles>(
                                                 "maxParticles", "Max Particles", kPropertyTypeUInt32UVE),
@@ -820,8 +847,7 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // runtime state: they describe the frame the renderer last ran, not the scene.
     AddValidatedUVE<LodGroup3DComponentUVE, &IsLodGroup3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.lod_group_3d", "LODGroup3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.lod_group_3d", "LodGroup3DComponentUVE", "LODGroup3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&LodGroup3DComponentUVE::enabled>("enabled", "Enabled",
                                                                             kPropertyTypeBoolUVE),
@@ -869,8 +895,7 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 }
 
 void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    TypeMetadataEntryUVE collider = MakeEntryUVE(
-            "component.collider", "Collider", kSectionOrderTypeSpecificUVE,
+    TypeMetadataEntryUVE collider = MakeEntryUVE("component.collider", "ColliderComponentUVE", "Collider", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&ColliderComponentUVE::disabled>("disabled", "Disabled",
                                                                           kPropertyTypeBoolUVE),
@@ -932,12 +957,11 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // BoxMesh3D/SphereMesh3D/PlaneMesh3D is created with sits in that object's section, and a body's
     // or area's shape, layer and mask sit in PhysicsObject3D's.
     collider.nestedUnderTypeIds = {"component.primitive_mesh", "component.physics_object"};
-    AddUVE<ColliderComponentUVE>(entries, std::move(collider));
+    AddValidatedUVE<ColliderComponentUVE, &IsColliderComponentValidUVE>(entries, std::move(collider));
 
-    AddUVE<Rigid3DComponentUVE>(
+    AddValidatedUVE<Rigid3DComponentUVE, &IsRigid3DComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.rigid_body", "Rigid Body", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.rigid_body", "Rigid3DComponentUVE", "Rigid Body", kSectionOrderTypeSpecificUVE,
             {
                 WithRangeUVE(DeclareUVE<&Rigid3DComponentUVE::mass>("mass", "Mass",
                                                                        kPropertyTypeFloatUVE),
@@ -952,6 +976,7 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                              -100.0, 100.0, 0.05),
                 DeclareUVE<&Rigid3DComponentUVE::velocity>("velocity", "Velocity",
                                                              kPropertyTypeVector3UVE),
+                DeclareUVE<&Rigid3DComponentUVE::force>("force", "Force", kPropertyTypeVector3UVE),
                 DeclareUVE<&Rigid3DComponentUVE::angularVelocity>("angularVelocity", "Angular Velocity",
                                                                     kPropertyTypeVector3UVE),
                 DeclareUVE<&Rigid3DComponentUVE::torque>("torque", "Torque", kPropertyTypeVector3UVE),
@@ -1003,8 +1028,7 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     };
     AddValidatedUVE<AreaComponentUVE, &IsAreaComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.area", "Area3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.area", "AreaComponentUVE", "Area3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(
                     DeclareUVE<&A::halfExtents>("halfExtents", "Half Extents", kPropertyTypeVector3UVE),
@@ -1118,8 +1142,7 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // value, so the mover never has to guess at a value nobody could have meant.
     AddValidatedUVE<Kinematic3DComponentUVE, &IsKinematic3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.kinematic_3d", "Kinematic Body", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.kinematic_3d", "Kinematic3DComponentUVE", "Kinematic Body", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&Kinematic3DComponentUVE::targetVelocity>(
                                    "targetVelocity", "Target Velocity", kPropertyTypeVector3UVE),
@@ -1143,8 +1166,7 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // on; the runtime half is the one number the arm derives every step.
     AddValidatedUVE<SpringArm3DComponentUVE, &IsSpringArm3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.spring_arm", "SpringArm3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.spring_arm", "SpringArm3DComponentUVE", "SpringArm3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&SpringArm3DComponentUVE::enabled>("enabled", "Enabled",
                                                                              kPropertyTypeBoolUVE),
@@ -1218,8 +1240,7 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     maximumContacts.range = {true, 1.0, 64.0, 1.0};
     AddValidatedUVE<CharacterControllerComponentUVE, &IsCharacterControllerComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.character_controller", "Character3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.character_controller", "CharacterControllerComponentUVE", "Character3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareEnumUVE<&C::motionMode>("motionMode", "Motion Mode",
                                                               {{0, "Grounded"}, {1, "Floating"}}),
@@ -1369,8 +1390,7 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 void DeclareRayCastUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddValidatedUVE<RayCast3DComponentUVE, &IsRayCast3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.ray_cast_3d", "RayCast3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.ray_cast_3d", "RayCast3DComponentUVE", "RayCast3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(
                     DeclareUVE<&RayCast3DComponentUVE::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
@@ -1444,8 +1464,7 @@ void DeclareProjectileUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     projectileIgnore.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
     AddValidatedUVE<Projectile3DComponentUVE, &IsProjectile3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.projectile_3d", "Projectile3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.projectile_3d", "Projectile3DComponentUVE", "Projectile3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(
                     DeclareUVE<&Projectile3DComponentUVE::active>("active", "Active", kPropertyTypeBoolUVE),
@@ -1539,8 +1558,7 @@ void DeclareCombatUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     hitboxIgnore.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
     AddValidatedUVE<Hitbox3DComponentUVE, &IsHitbox3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.hitbox_3d", "Hitbox3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.hitbox_3d", "Hitbox3DComponentUVE", "Hitbox3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(
                     DeclareUVE<&Hitbox3DComponentUVE::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
@@ -1590,8 +1608,7 @@ void DeclareCombatUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     hurtboxIgnore.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
     AddValidatedUVE<Hurtbox3DComponentUVE, &IsHurtbox3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.hurtbox_3d", "Hurtbox3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.hurtbox_3d", "Hurtbox3DComponentUVE", "Hurtbox3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(
                     DeclareUVE<&Hurtbox3DComponentUVE::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
@@ -1648,8 +1665,7 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     mixerTarget.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
     AddValidatedUVE<AnimationDriverComponentUVE, &IsAnimationDriverComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.animation_mixer", std::string{AnimationDriverObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 20,
+        MakeEntryUVE("component.animation_mixer", "AnimationDriverComponentUVE", std::string{AnimationDriverObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 20,
             {
                 WithTooltipUVE(DeclareUVE<&M::active>("active", "Active", kPropertyTypeBoolUVE),
                                "Off, nothing is evaluated and the target is left alone."),
@@ -1702,12 +1718,14 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     };
     AddValidatedUVE<AnimationSequencerComponentUVE, &IsAnimationSequencerComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.animation_player", "AnimationSequencer", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.animation_player", "AnimationSequencerComponentUVE", "AnimationSequencer", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&P::clip>("clip", "Clip", kPropertyTypeAssetGuidUVE),
                                                    "asset:uvanim"),
                                "The .uvanim clip to play."),
+                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&P::libraryRef>("libraryRef", "Library", kPropertyTypeAssetGuidUVE),
+                                                   "asset:uvanimlib"),
+                               "A .uvanimlib whose clips this player also offers, live: editing the file changes what the Timeline offers."),
                 WithTooltipUVE(DeclareUVE<&P::autoplay>("autoplay", "Autoplay", kPropertyTypeBoolUVE),
                                "Starts playing as soon as the scene runs."),
                 InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&P::speed>("speed", "Speed", kPropertyTypeFloatUVE),
@@ -1752,8 +1770,7 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // property row cannot express, so each is one custom-drawn block.
     AddValidatedUVE<AnimationGraphComponentUVE, &IsAnimationGraphComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.animation_tree", "AnimationGraph", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.animation_tree", "AnimationGraphComponentUVE", "AnimationGraph", kSectionOrderTypeSpecificUVE,
             {
                 InGroupUVE(WithCustomDrawerUVE(DeclareUVE<&T::parameters>("parameters", "Parameters",
                                                                          "AnimationParameterList"),
@@ -1769,13 +1786,13 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 }
 
 void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    AddUVE<AudioSourceComponentUVE>(
+    AddValidatedUVE<AudioSourceComponentUVE, &IsAudioSourceComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.audio_source", "Audio Source", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.audio_source", "AudioSourceComponentUVE", "Audio Source", kSectionOrderTypeSpecificUVE,
             {
-                DeclareUVE<&AudioSourceComponentUVE::audioAssetPath>("audioAssetPath", "Clip",
-                                                                     kPropertyTypeStringUVE),
+                WithCustomDrawerUVE(DeclareUVE<&AudioSourceComponentUVE::audioAssetPath>("audioAssetPath", "Clip",
+                                                                                           kPropertyTypeStringUVE),
+                                      "file:uvaudio,wav"),
                 DeclareUVE<&AudioSourceComponentUVE::mixerGroup>("mixerGroup", "Mixer Group",
                                                                  kPropertyTypeStringUVE),
                 WithRangeUVE(DeclareUVE<&AudioSourceComponentUVE::volume>("volume", "Volume",
@@ -1824,7 +1841,7 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 
     AddUVE<CanvasComponentUVE>(
         entries,
-        MakeEntryUVE("component.canvas", "Canvas", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.canvas", "CanvasComponentUVE", "Canvas", kSectionOrderTypeSpecificUVE,
                      {
                          DeclareUVE<&CanvasComponentUVE::visible>("visible", "Visible",
                                                                   kPropertyTypeBoolUVE),
@@ -1832,9 +1849,9 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                     kPropertyTypeInt32UVE),
                      }));
 
-    AddUVE<UITextComponentUVE>(
+    AddValidatedUVE<UITextComponentUVE, &IsUITextComponentValidUVE>(
         entries,
-        MakeEntryUVE("component.ui_text", "UI Text", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.ui_text", "UITextComponentUVE", "UI Text", kSectionOrderTypeSpecificUVE,
                      {
                          DeclareUVE<&UITextComponentUVE::text>("text", "Text", kPropertyTypeStringUVE),
                          DeclareUVE<&UITextComponentUVE::positionPixels>("positionPixels", "Position",
@@ -1848,31 +1865,58 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                       0.0, 1.0, 0.01),
                      }));
 
-    AddUVE<UIImageComponentUVE>(
+    AddValidatedUVE<UIImageComponentUVE, &IsUIImageComponentValidUVE>(
         entries,
-        MakeEntryUVE("component.ui_image", "UI Image", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.ui_image", "UIImageComponentUVE", "UI Image", kSectionOrderTypeSpecificUVE,
                      {
                          DeclareUVE<&UIImageComponentUVE::textureAssetGuid>("textureAssetGuid", "Texture",
                                                                             kPropertyTypeAssetGuidUVE),
-                         DeclareUVE<&UIImageComponentUVE::positionPixels>("positionPixels", "Position",
-                                                                          kPropertyTypeVector2UVE),
-                         DeclareUVE<&UIImageComponentUVE::sizePixels>("sizePixels", "Size",
-                                                                      kPropertyTypeVector2UVE),
+                         DeclareUVE<&UIImageComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
                          DeclareUVE<&UIImageComponentUVE::tintColor>("tintColor", "Tint",
                                                                      kPropertyTypeColorUVE),
                          WithRangeUVE(DeclareUVE<&UIImageComponentUVE::alpha>("alpha", "Alpha",
                                                                               kPropertyTypeFloatUVE),
                                       0.0, 1.0, 0.01),
+                         DeclareUVE<&UIImageComponentUVE::nineSliceEnabled>("nineSliceEnabled", "Nine Slice",
+                                                                            kPropertyTypeBoolUVE),
+                         DeclareUVE<&UIImageComponentUVE::sliceFillCenter>("sliceFillCenter", "Slice Fill Center",
+                                                                          kPropertyTypeBoolUVE),
+                         DeclareUVE<&UIImageComponentUVE::sliceMarginMin>("sliceMarginMin", "Slice Margin Min",
+                                                                         kPropertyTypeVector2UVE),
+                         DeclareUVE<&UIImageComponentUVE::sliceMarginMax>("sliceMarginMax", "Slice Margin Max",
+                                                                         kPropertyTypeVector2UVE),
+                         DeclareUVE<&UIImageComponentUVE::sliceUVMin>("sliceUVMin", "Slice UV Min",
+                                                                     kPropertyTypeVector2UVE),
+                         DeclareUVE<&UIImageComponentUVE::sliceUVMax>("sliceUVMax", "Slice UV Max",
+                                                                     kPropertyTypeVector2UVE),
+                     }));
+
+    AddValidatedUVE<Sprite2DComponentUVE, &IsSprite2DComponentValidUVE>(
+        entries,
+        MakeEntryUVE("component.sprite_2d", "Sprite2DComponentUVE", "Sprite2D", kSectionOrderTypeSpecificUVE,
+                     {
+                         DeclareUVE<&Sprite2DComponentUVE::textureAssetGuid>("textureAssetGuid", "Texture",
+                                                                            kPropertyTypeAssetGuidUVE),
+                         DeclareUVE<&Sprite2DComponentUVE::sourceRect>("sourceRect", "Source Rect",
+                                                                      kPropertyTypeRectUVE),
+                         DeclareUVE<&Sprite2DComponentUVE::flipH>("flipH", "Flip H",
+                                                                  kPropertyTypeBoolUVE),
+                         DeclareUVE<&Sprite2DComponentUVE::flipV>("flipV", "Flip V",
+                                                                  kPropertyTypeBoolUVE),
+                         DeclareUVE<&Sprite2DComponentUVE::modulate>("modulate", "Modulate",
+                                                                     kPropertyTypeColorUVE),
+                         WithRangeUVE(DeclareUVE<&Sprite2DComponentUVE::alpha>("alpha", "Alpha",
+                                                                              kPropertyTypeFloatUVE),
+                                      0.0, 1.0, 0.01),
+                         DeclareUVE<&Sprite2DComponentUVE::offset>("offset", "Offset",
+                                                                   kPropertyTypeVector2UVE),
                      }));
 
     AddUVE<UIButtonComponentUVE>(
         entries,
-        MakeEntryUVE("component.ui_button", "UI Button", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.ui_button", "UIButtonComponentUVE", "UI Button", kSectionOrderTypeSpecificUVE,
                      {
-                         DeclareUVE<&UIButtonComponentUVE::positionPixels>("positionPixels", "Position",
-                                                                           kPropertyTypeVector2UVE),
-                         DeclareUVE<&UIButtonComponentUVE::sizePixels>("sizePixels", "Size",
-                                                                       kPropertyTypeVector2UVE),
+                         DeclareUVE<&UIButtonComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
                          DeclareUVE<&UIButtonComponentUVE::normalColor>("normalColor", "Normal",
                                                                         kPropertyTypeColorUVE),
                          DeclareUVE<&UIButtonComponentUVE::hoverColor>("hoverColor", "Hover",
@@ -1883,6 +1927,275 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                              "isHovered", "Hovered", kPropertyTypeBoolUVE),
                          DeclareRuntimeStateUVE<&UIButtonComponentUVE::wasClickedThisFrame>(
                              "wasClickedThisFrame", "Clicked This Frame", kPropertyTypeBoolUVE),
+                     }));
+    AddValidatedUVE<UILayoutContainerComponentUVE, &IsUILayoutContainerComponentValidUVE>(
+        entries,
+        MakeEntryUVE("component.ui_layout_container", "UILayoutContainerComponentUVE", "UI Layout Container",
+                     kSectionOrderTypeSpecificUVE,
+                     {
+                         DeclareUVE<&UILayoutContainerComponentUVE::rect>("rect", "Rect",
+                                                                         kPropertyTypeRectUVE),
+                         DeclareEnumUVE<&UILayoutContainerComponentUVE::direction>(
+                             "direction", "Direction", {{0, "Vertical"}, {1, "Horizontal"}}),
+                         DeclareEnumUVE<&UILayoutContainerComponentUVE::alignment>(
+                             "alignment", "Alignment", {{0, "Start"}, {1, "Center"}, {2, "End"}}),
+                         DeclareUVE<&UILayoutContainerComponentUVE::padding>("padding", "Padding",
+                                                                            kPropertyTypeFloatUVE),
+                         DeclareUVE<&UILayoutContainerComponentUVE::spacing>("spacing", "Spacing",
+                                                                            kPropertyTypeFloatUVE),
+                         DeclareUVE<&UILayoutContainerComponentUVE::wrapAfter>("wrapAfter", "Wrap After",
+                                                                              kPropertyTypeUInt32UVE),
+                         DeclareUVE<&UILayoutContainerComponentUVE::autoSizeWidth>("autoSizeWidth", "Auto Size Width",
+                                                                                  kPropertyTypeBoolUVE),
+                         DeclareUVE<&UILayoutContainerComponentUVE::autoSizeHeight>(
+                             "autoSizeHeight", "Auto Size Height", kPropertyTypeBoolUVE),
+                     }));
+    AddValidatedUVE<UIAnchorComponentUVE, &IsUIAnchorComponentValidUVE>(
+        entries,
+        MakeEntryUVE("component.ui_anchor", "UIAnchorComponentUVE", "UI Anchor", kSectionOrderTypeSpecificUVE,
+                     {
+                         DeclareUVE<&UIAnchorComponentUVE::anchorMin>("anchorMin", "Anchor Min",
+                                                                     kPropertyTypeVector2UVE),
+                         DeclareUVE<&UIAnchorComponentUVE::anchorMax>("anchorMax", "Anchor Max",
+                                                                     kPropertyTypeVector2UVE),
+                         DeclareUVE<&UIAnchorComponentUVE::offsetMin>("offsetMin", "Offset Min",
+                                                                     kPropertyTypeVector2UVE),
+                         DeclareUVE<&UIAnchorComponentUVE::offsetMax>("offsetMax", "Offset Max",
+                                                                     kPropertyTypeVector2UVE),
+                     }));
+    AddUVE<UISliderComponentUVE>(
+        entries,
+        MakeEntryUVE("component.ui_slider", "UISliderComponentUVE", "UI Slider", kSectionOrderTypeSpecificUVE,
+                     {
+                         DeclareUVE<&UISliderComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
+                         DeclareUVE<&UISliderComponentUVE::value>("value", "Value", kPropertyTypeFloatUVE),
+                         DeclareUVE<&UISliderComponentUVE::minValue>("minValue", "Min Value",
+                                                                    kPropertyTypeFloatUVE),
+                         DeclareUVE<&UISliderComponentUVE::maxValue>("maxValue", "Max Value",
+                                                                    kPropertyTypeFloatUVE),
+                         DeclareUVE<&UISliderComponentUVE::step>("step", "Step", kPropertyTypeFloatUVE),
+                         DeclareUVE<&UISliderComponentUVE::trackColor>("trackColor", "Track",
+                                                                      kPropertyTypeColorUVE),
+                         DeclareUVE<&UISliderComponentUVE::fillColor>("fillColor", "Fill",
+                                                                     kPropertyTypeColorUVE),
+                         DeclareUVE<&UISliderComponentUVE::thumbColor>("thumbColor", "Thumb",
+                                                                      kPropertyTypeColorUVE),
+                         DeclareUVE<&UISliderComponentUVE::thumbWidth>("thumbWidth", "Thumb Width",
+                                                                      kPropertyTypeFloatUVE),
+                         DeclareRuntimeStateUVE<&UISliderComponentUVE::isHovered>(
+                             "isHovered", "Hovered", kPropertyTypeBoolUVE),
+                         DeclareRuntimeStateUVE<&UISliderComponentUVE::isDragging>(
+                             "isDragging", "Dragging", kPropertyTypeBoolUVE),
+                         DeclareRuntimeStateUVE<&UISliderComponentUVE::wasChangedThisFrame>(
+                             "wasChangedThisFrame", "Changed This Frame", kPropertyTypeBoolUVE),
+                     }));
+    AddValidatedUVE<UIProgressBarComponentUVE, &IsUIProgressBarComponentValidUVE>(
+        entries,
+        MakeEntryUVE("component.ui_progress_bar", "UIProgressBarComponentUVE", "UI Progress Bar",
+                     kSectionOrderTypeSpecificUVE,
+                     {
+                         DeclareUVE<&UIProgressBarComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
+                         DeclareUVE<&UIProgressBarComponentUVE::value>("value", "Value", kPropertyTypeFloatUVE),
+                         DeclareUVE<&UIProgressBarComponentUVE::minValue>("minValue", "Min Value",
+                                                                         kPropertyTypeFloatUVE),
+                         DeclareUVE<&UIProgressBarComponentUVE::maxValue>("maxValue", "Max Value",
+                                                                         kPropertyTypeFloatUVE),
+                         DeclareUVE<&UIProgressBarComponentUVE::backgroundColor>("backgroundColor", "Background",
+                                                                                kPropertyTypeColorUVE),
+                         DeclareUVE<&UIProgressBarComponentUVE::fillColor>("fillColor", "Fill",
+                                                                          kPropertyTypeColorUVE),
+                     }));
+    AddUVE<UITweenComponentUVE>(
+        entries,
+        MakeEntryUVE("component.ui_tween", "UITweenComponentUVE", "UI Tween", kSectionOrderTypeSpecificUVE,
+                     {
+                         DeclareEnumUVE<&UITweenComponentUVE::target>("target", "Target",
+                                                                     {{0, "Rect"}, {1, "Alpha"}}),
+                         DeclareUVE<&UITweenComponentUVE::fromRect>("fromRect", "From Rect",
+                                                                   kPropertyTypeRectUVE),
+                         DeclareUVE<&UITweenComponentUVE::toRect>("toRect", "To Rect", kPropertyTypeRectUVE),
+                         DeclareUVE<&UITweenComponentUVE::fromAlpha>("fromAlpha", "From Alpha",
+                                                                    kPropertyTypeFloatUVE),
+                         DeclareUVE<&UITweenComponentUVE::toAlpha>("toAlpha", "To Alpha",
+                                                                  kPropertyTypeFloatUVE),
+                         DeclareUVE<&UITweenComponentUVE::duration>("duration", "Duration",
+                                                                   kPropertyTypeFloatUVE),
+                         DeclareUVE<&UITweenComponentUVE::delay>("delay", "Delay", kPropertyTypeFloatUVE),
+                         DeclareEnumUVE<&UITweenComponentUVE::ease>("ease", "Ease",
+                                                                   {{0, "Linear"},
+                                                                    {1, "SineInOut"},
+                                                                    {2, "QuadIn"},
+                                                                    {3, "QuadOut"},
+                                                                    {4, "QuadInOut"},
+                                                                    {5, "CubicIn"},
+                                                                    {6, "CubicOut"},
+                                                                    {7, "CubicInOut"},
+                                                                    {8, "OutBack"}}),
+                         DeclareEnumUVE<&UITweenComponentUVE::loop>(
+                             "loop", "Loop", {{0, "Once"}, {1, "Loop"}, {2, "PingPong"}}),
+                         DeclareRuntimeStateUVE<&UITweenComponentUVE::elapsed>(
+                             "elapsed", "Elapsed", kPropertyTypeFloatUVE),
+                         DeclareRuntimeStateUVE<&UITweenComponentUVE::playing>(
+                             "playing", "Playing", kPropertyTypeBoolUVE),
+                         DeclareRuntimeStateUVE<&UITweenComponentUVE::completedThisFrame>(
+                             "completedThisFrame", "Completed This Frame", kPropertyTypeBoolUVE),
+                         DeclareRuntimeStateUVE<&UITweenComponentUVE::currentAlpha>(
+                             "currentAlpha", "Current Alpha", kPropertyTypeFloatUVE),
+                     }));
+    AddUVE<UICheckboxComponentUVE>(
+        entries,
+        MakeEntryUVE("component.ui_checkbox", "UICheckboxComponentUVE", "UI Checkbox",
+                     kSectionOrderTypeSpecificUVE,
+                     {
+                         DeclareUVE<&UICheckboxComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
+                         DeclareUVE<&UICheckboxComponentUVE::boxColor>("boxColor", "Box",
+                                                                      kPropertyTypeColorUVE),
+                         DeclareUVE<&UICheckboxComponentUVE::hoverColor>("hoverColor", "Hover",
+                                                                        kPropertyTypeColorUVE),
+                         DeclareUVE<&UICheckboxComponentUVE::checkColor>("checkColor", "Check",
+                                                                        kPropertyTypeColorUVE),
+                         DeclareUVE<&UICheckboxComponentUVE::checked>("checked", "Checked",
+                                                                     kPropertyTypeBoolUVE),
+                         DeclareRuntimeStateUVE<&UICheckboxComponentUVE::isHovered>(
+                             "isHovered", "Hovered", kPropertyTypeBoolUVE),
+                         DeclareRuntimeStateUVE<&UICheckboxComponentUVE::wasToggledThisFrame>(
+                             "wasToggledThisFrame", "Toggled This Frame", kPropertyTypeBoolUVE),
+                     }));
+    AddUVE<UITooltipComponentUVE>(
+        entries,
+        MakeEntryUVE("component.ui_tooltip", "UITooltipComponentUVE", "UI Tooltip",
+                     kSectionOrderTypeSpecificUVE,
+                     {
+                         DeclareUVE<&UITooltipComponentUVE::text>("text", "Text", kPropertyTypeStringUVE),
+                         DeclareUVE<&UITooltipComponentUVE::delay>("delay", "Delay",
+                                                                  kPropertyTypeFloatUVE),
+                         DeclareUVE<&UITooltipComponentUVE::offset>("offset", "Offset",
+                                                                   kPropertyTypeVector2UVE),
+                         DeclareUVE<&UITooltipComponentUVE::padding>("padding", "Padding",
+                                                                    kPropertyTypeFloatUVE),
+                         DeclareUVE<&UITooltipComponentUVE::fontSize>("fontSize", "Font Size",
+                                                                     kPropertyTypeFloatUVE),
+                         DeclareUVE<&UITooltipComponentUVE::backgroundColor>("backgroundColor", "Background",
+                                                                            kPropertyTypeColorUVE),
+                         DeclareUVE<&UITooltipComponentUVE::textColor>("textColor", "Text",
+                                                                      kPropertyTypeColorUVE),
+                         DeclareRuntimeStateUVE<&UITooltipComponentUVE::hoverTime>(
+                             "hoverTime", "Hover Time", kPropertyTypeFloatUVE),
+                         DeclareRuntimeStateUVE<&UITooltipComponentUVE::visibleThisFrame>(
+                             "visibleThisFrame", "Visible This Frame", kPropertyTypeBoolUVE),
+                     }));
+    AddUVE<UIDropdownComponentUVE>(
+        entries,
+        MakeEntryUVE("component.ui_dropdown", "UIDropdownComponentUVE", "UI Dropdown",
+                     kSectionOrderTypeSpecificUVE,
+                     {
+                         DeclareUVE<&UIDropdownComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
+                         DeclareUVE<&UIDropdownComponentUVE::options>("options", "Options",
+                                                                     kPropertyTypeStringUVE),
+                         DeclareUVE<&UIDropdownComponentUVE::selectedIndex>("selectedIndex", "Selected",
+                                                                           kPropertyTypeInt32UVE),
+                         DeclareUVE<&UIDropdownComponentUVE::placeholder>("placeholder", "Placeholder",
+                                                                         kPropertyTypeStringUVE),
+                         DeclareUVE<&UIDropdownComponentUVE::fontSize>("fontSize", "Font Size",
+                                                                      kPropertyTypeFloatUVE),
+                         DeclareUVE<&UIDropdownComponentUVE::optionHeight>("optionHeight", "Option Height",
+                                                                          kPropertyTypeFloatUVE),
+                         DeclareUVE<&UIDropdownComponentUVE::textPadding>("textPadding", "Text Padding",
+                                                                         kPropertyTypeFloatUVE),
+                         DeclareUVE<&UIDropdownComponentUVE::boxColor>("boxColor", "Box",
+                                                                      kPropertyTypeColorUVE),
+                         DeclareUVE<&UIDropdownComponentUVE::boxHoverColor>("boxHoverColor", "Box Hover",
+                                                                           kPropertyTypeColorUVE),
+                         DeclareUVE<&UIDropdownComponentUVE::popupColor>("popupColor", "Popup",
+                                                                        kPropertyTypeColorUVE),
+                         DeclareUVE<&UIDropdownComponentUVE::optionHoverColor>("optionHoverColor",
+                                                                              "Option Hover",
+                                                                              kPropertyTypeColorUVE),
+                         DeclareUVE<&UIDropdownComponentUVE::selectedColor>("selectedColor", "Selected",
+                                                                           kPropertyTypeColorUVE),
+                         DeclareUVE<&UIDropdownComponentUVE::textColor>("textColor", "Text",
+                                                                       kPropertyTypeColorUVE),
+                         DeclareRuntimeStateUVE<&UIDropdownComponentUVE::open>(
+                             "open", "Open", kPropertyTypeBoolUVE),
+                         DeclareRuntimeStateUVE<&UIDropdownComponentUVE::isHovered>(
+                             "isHovered", "Hovered", kPropertyTypeBoolUVE),
+                         DeclareRuntimeStateUVE<&UIDropdownComponentUVE::hoveredIndex>(
+                             "hoveredIndex", "Hovered Option", kPropertyTypeInt32UVE),
+                         DeclareRuntimeStateUVE<&UIDropdownComponentUVE::wasSelectionChangedThisFrame>(
+                             "wasSelectionChangedThisFrame", "Selection Changed This Frame",
+                             kPropertyTypeBoolUVE),
+                     }));
+    AddUVE<UITextInputComponentUVE>(
+        entries,
+        MakeEntryUVE("component.ui_text_input", "UITextInputComponentUVE", "UI Text Input",
+                     kSectionOrderTypeSpecificUVE,
+                     {
+                         DeclareUVE<&UITextInputComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
+                         DeclareUVE<&UITextInputComponentUVE::text>("text", "Text", kPropertyTypeStringUVE),
+                         DeclareUVE<&UITextInputComponentUVE::maxLength>("maxLength", "Max Length",
+                                                                        kPropertyTypeInt32UVE),
+                         DeclareUVE<&UITextInputComponentUVE::placeholder>("placeholder", "Placeholder",
+                                                                          kPropertyTypeStringUVE),
+                         DeclareUVE<&UITextInputComponentUVE::fontSize>("fontSize", "Font Size",
+                                                                       kPropertyTypeFloatUVE),
+                         DeclareUVE<&UITextInputComponentUVE::textPadding>("textPadding", "Text Padding",
+                                                                          kPropertyTypeFloatUVE),
+                         DeclareUVE<&UITextInputComponentUVE::boxColor>("boxColor", "Box",
+                                                                       kPropertyTypeColorUVE),
+                         DeclareUVE<&UITextInputComponentUVE::focusColor>("focusColor", "Focus",
+                                                                         kPropertyTypeColorUVE),
+                         DeclareUVE<&UITextInputComponentUVE::textColor>("textColor", "Text",
+                                                                        kPropertyTypeColorUVE),
+                         DeclareUVE<&UITextInputComponentUVE::caretColor>("caretColor", "Caret",
+                                                                         kPropertyTypeColorUVE),
+                         DeclareUVE<&UITextInputComponentUVE::placeholderColor>("placeholderColor",
+                                                                               "Placeholder",
+                                                                               kPropertyTypeColorUVE),
+                         DeclareRuntimeStateUVE<&UITextInputComponentUVE::focused>(
+                             "focused", "Focused", kPropertyTypeBoolUVE),
+                         DeclareRuntimeStateUVE<&UITextInputComponentUVE::caretIndex>(
+                             "caretIndex", "Caret", kPropertyTypeInt32UVE),
+                         DeclareRuntimeStateUVE<&UITextInputComponentUVE::wasSubmittedThisFrame>(
+                             "wasSubmittedThisFrame", "Submitted This Frame", kPropertyTypeBoolUVE),
+                         DeclareRuntimeStateUVE<&UITextInputComponentUVE::blinkTime>(
+                             "blinkTime", "Blink Time", kPropertyTypeFloatUVE),
+                         DeclareRuntimeStateUVE<&UITextInputComponentUVE::scrollOffset>(
+                             "scrollOffset", "Scroll", kPropertyTypeFloatUVE),
+                     }));
+    AddUVE<UIScrollContainerComponentUVE>(
+        entries,
+        MakeEntryUVE("component.ui_scroll_container", "UIScrollContainerComponentUVE", "UI Scroll Container",
+                     kSectionOrderTypeSpecificUVE,
+                     {
+                         DeclareUVE<&UIScrollContainerComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
+                         DeclareUVE<&UIScrollContainerComponentUVE::padding>("padding", "Padding",
+                                                                            kPropertyTypeFloatUVE),
+                         DeclareUVE<&UIScrollContainerComponentUVE::gap>("gap", "Gap", kPropertyTypeFloatUVE),
+                         DeclareUVE<&UIScrollContainerComponentUVE::wheelStep>("wheelStep", "Wheel Step",
+                                                                              kPropertyTypeFloatUVE),
+                         DeclareUVE<&UIScrollContainerComponentUVE::scrollOffset>("scrollOffset", "Scroll",
+                                                                                 kPropertyTypeVector2UVE),
+                         DeclareRuntimeStateUVE<&UIScrollContainerComponentUVE::contentSize>(
+                             "contentSize", "Content Size", kPropertyTypeVector2UVE),
+                     }));
+    AddUVE<UIScrollbarComponentUVE>(
+        entries,
+        MakeEntryUVE("component.ui_scrollbar", "UIScrollbarComponentUVE", "UI Scrollbar",
+                     kSectionOrderTypeSpecificUVE,
+                     {
+                         DeclareUVE<&UIScrollbarComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
+                         DeclareUVE<&UIScrollbarComponentUVE::trackColor>("trackColor", "Track",
+                                                                          kPropertyTypeColorUVE),
+                         DeclareUVE<&UIScrollbarComponentUVE::thumbColor>("thumbColor", "Thumb",
+                                                                          kPropertyTypeColorUVE),
+                         DeclareUVE<&UIScrollbarComponentUVE::minThumbHeight>("minThumbHeight", "Min Thumb",
+                                                                              kPropertyTypeFloatUVE),
+                         DeclareRuntimeStateUVE<&UIScrollbarComponentUVE::isHovered>(
+                             "isHovered", "Hovered", kPropertyTypeBoolUVE),
+                         DeclareRuntimeStateUVE<&UIScrollbarComponentUVE::isDragging>(
+                             "isDragging", "Dragging", kPropertyTypeBoolUVE),
+                         DeclareRuntimeStateUVE<&UIScrollbarComponentUVE::wasChangedThisFrame>(
+                             "wasChangedThisFrame", "Changed This Frame", kPropertyTypeBoolUVE),
                      }));
 }
 
@@ -1910,8 +2223,7 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 void DeclareGameplayUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddValidatedUVE<PlayerComponentUVE, &IsPlayer3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.player", "Player3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.player", "PlayerComponentUVE", "Player3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::possessOnPlay>(
                                    "possessOnPlay", "Possess On Play", kPropertyTypeBoolUVE),
@@ -1943,8 +2255,7 @@ void DeclareGameplayUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 
     AddValidatedUVE<HealthComponentUVE, &IsHealthComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.health", "Health", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.health", "HealthComponentUVE", "Health", kSectionOrderTypeSpecificUVE,
             {
                 WithRangeUVE(WithTooltipUVE(DeclareUVE<&HealthComponentUVE::maxHealth>(
                                                 "maxHealth", "Max Health", kPropertyTypeFloatUVE),
@@ -1960,8 +2271,7 @@ void DeclareGameplayUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 
     AddValidatedUVE<SpawnPoint3DComponentUVE, &IsSpawnPoint3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.spawn_point", "SpawnPoint3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.spawn_point", "SpawnPoint3DComponentUVE", "SpawnPoint3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(
                     DeclareUVE<&SpawnPoint3DComponentUVE::spawnTag>("spawnTag", "Tag",
@@ -2000,8 +2310,7 @@ void DeclareGameplayUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     areaIgnore.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
     AddValidatedUVE<InteractionArea3DComponentUVE, &IsInteractionArea3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.interaction_area_3d", "InteractionArea3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.interaction_area_3d", "InteractionArea3DComponentUVE", "InteractionArea3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(
                     DeclareUVE<&InteractionArea3DComponentUVE::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
@@ -2055,8 +2364,7 @@ void DeclareNavigationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     using R = NavMeshVolume3DComponentUVE;
     AddValidatedUVE<NavMeshVolume3DComponentUVE, &IsNavMeshVolume3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.nav_mesh_volume_3d", "NavMeshVolume3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.nav_mesh_volume_3d", "NavMeshVolume3DComponentUVE", "NavMeshVolume3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&R::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
                                "Off, the region has no mesh at all: an agent standing on it fails "
@@ -2114,8 +2422,7 @@ void DeclareNavigationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     using S = NavSeeker3DComponentUVE;
     AddValidatedUVE<NavSeeker3DComponentUVE, &IsNavSeeker3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.nav_seeker_3d", "NavSeeker3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.nav_seeker_3d", "NavSeeker3DComponentUVE", "NavSeeker3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&S::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
                                "Off, the agent publishes nothing - no velocity, no route - and "
@@ -2225,9 +2532,9 @@ void DeclareNavigationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 }
 
 void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    AddUVE<BoneModifierComponentUVE>(
+    AddValidatedUVE<BoneModifierComponentUVE, &IsBoneModifierComponentValidUVE>(
         entries,
-        MakeEntryUVE("component.bone_modifier", std::string{BoneModifier3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE,
+        MakeEntryUVE("component.bone_modifier", "BoneModifierComponentUVE", std::string{BoneModifier3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE,
                      {
                          WithTooltipUVE(DeclareUVE<&BoneModifierComponentUVE::active>("active", "Active",
                                                                                         kPropertyTypeBoolUVE),
@@ -2243,10 +2550,9 @@ void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                   kPropertyTypeFloatUVE),
         "How strongly this object is pushed out of an overlap; higher yields less.");
     priority.range = {true, 0.0, 1000000.0, 0.1};
-    AddUVE<PhysicsObjectComponentUVE>(
+    AddValidatedUVE<PhysicsObjectComponentUVE, &IsPhysicsObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.physics_object", std::string{PhysicsObject3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 1,
+        MakeEntryUVE("component.physics_object", "PhysicsObjectComponentUVE", std::string{PhysicsObject3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 1,
             {
                 WithTooltipUVE(DeclareEnumUVE<&PhysicsObjectComponentUVE::disableMode>(
                                    "disableMode", "Disable Mode",
@@ -2264,7 +2570,7 @@ void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // Sorts before PhysicsObject3D: a base that derives from another is drawn above it.
     AddUVE<SolidBodyComponentUVE>(
         entries,
-        MakeEntryUVE("component.solid_body", std::string{SolidBody3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE,
+        MakeEntryUVE("component.solid_body", "SolidBodyComponentUVE", std::string{SolidBody3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE,
                      {
                          InGroupUVE(WithTooltipUVE(DeclareUVE<&SolidBodyComponentUVE::lockMotionX>(
                                                        "lockMotionX", "X", kPropertyTypeBoolUVE),
@@ -2280,9 +2586,9 @@ void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                     "Lock Motion"),
                      }));
 
-    AddUVE<RenderInstanceComponentUVE>(
+    AddValidatedUVE<RenderInstanceComponentUVE, &IsRenderInstanceComponentValidUVE>(
         entries,
-        MakeEntryUVE("component.render_instance", std::string{RenderInstance3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 10,
+        MakeEntryUVE("component.render_instance", "RenderInstanceComponentUVE", std::string{RenderInstance3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 10,
                      {
                          WithCustomDrawerUVE(
                              WithTooltipUVE(DeclareUVE<&RenderInstanceComponentUVE::renderLayers>(
@@ -2300,14 +2606,15 @@ void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     using S = SurfaceInstanceComponentUVE;
     AddValidatedUVE<SurfaceInstanceComponentUVE, &IsSurfaceInstanceComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.surface_instance", std::string{SurfaceInstance3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 3,
+        MakeEntryUVE("component.surface_instance", "SurfaceInstanceComponentUVE", std::string{SurfaceInstance3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 3,
             {
-                WithTooltipUVE(DeclareUVE<&S::materialOverridePath>("materialOverridePath", "Override",
-                                                                    kPropertyTypeStringUVE),
+                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&S::materialOverridePath>("materialOverridePath", "Override",
+                                                                                          kPropertyTypeStringUVE),
+                                                     "file:uvmat"),
                                "Material override: used on every surface in place of the mesh's own. Empty keeps them."),
-                WithTooltipUVE(DeclareUVE<&S::materialOverlayPath>("materialOverlayPath", "Overlay",
-                                                                   kPropertyTypeStringUVE),
+                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&S::materialOverlayPath>("materialOverlayPath", "Overlay",
+                                                                                         kPropertyTypeStringUVE),
+                                                     "file:uvmat"),
                                "Material overlay: drawn over every surface, on top of whatever it already shows."),
                 WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::transparency>("transparency", "Transparency",
                                                                          kPropertyTypeFloatUVE),
@@ -2365,10 +2672,9 @@ void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     using L = LightEmitterComponentUVE;
     AddValidatedUVE<LightEmitterComponentUVE, &IsLightEmitterComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.light_emitter", std::string{LightEmitter3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 4,
+        MakeEntryUVE("component.light_emitter", "LightEmitterComponentUVE", std::string{LightEmitter3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 4,
             {
-                DeclareUVE<&L::color>("color", "Color", kPropertyTypeColorUVE),
+                DeclareUVE<&L::color>("color", "Color", kPropertyTypeLinearColorUVE),
                 WithTooltipUVE(WithRangeUVE(DeclareUVE<&L::energy>("energy", "Energy", kPropertyTypeFloatUVE), 0.0,
                                             1000.0, 0.01),
                                "How bright the light is."),
@@ -2443,7 +2749,7 @@ void DeclareSkeletonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     bones.flags = TypeMetadataPropertyFlagsUVE::ReadOnly;
     AddValidatedUVE<Skeleton3DComponentUVE, &IsSkeleton3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE("component.skeleton_3d", "Skeleton3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.skeleton_3d", "Skeleton3DComponentUVE", "Skeleton3D", kSectionOrderTypeSpecificUVE,
                      {
                          WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&K::skeletonAssetPath>(
                                                                 "skeletonAssetPath", "Source", kPropertyTypeStringUVE),
@@ -2470,8 +2776,7 @@ void DeclareBoneAttachmentUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     skeleton.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
     AddValidatedUVE<BoneAttachment3DComponentUVE, &IsBoneAttachment3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.bone_attachment_3d", "BoneAttachment3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.bone_attachment_3d", "BoneAttachment3DComponentUVE", "BoneAttachment3D", kSectionOrderTypeSpecificUVE,
             {
                 std::move(skeleton),
                 WithTooltipUVE(DeclareUVE<&A::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
@@ -2518,8 +2823,7 @@ void DeclareTwoBoneIKUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     };
     AddValidatedUVE<TwoBoneIK3DComponentUVE, &IsTwoBoneIK3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.two_bone_ik_3d", "TwoBoneIK3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.two_bone_ik_3d", "TwoBoneIK3DComponentUVE", "TwoBoneIK3D", kSectionOrderTypeSpecificUVE,
             {
                 entityReference(WithTooltipUVE(DeclareUVE<&A::skeleton>("skeleton", "Skeleton",
                                                                          kPropertyTypeEntityUVE),
@@ -2607,8 +2911,7 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
     using R = ReflectionProbe3DComponentUVE;
     AddValidatedUVE<R, &IsReflectionProbe3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.reflection_probe_3d", "ReflectionProbe3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.reflection_probe_3d", "ReflectionProbe3DComponentUVE", "ReflectionProbe3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&R::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
                                "Off, the probe contributes no local reflection and captures are skipped."),
@@ -2627,8 +2930,7 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
 
     AddValidatedUVE<DirectionalLight3DComponentUVE, &IsDirectionalLight3DComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.directional_light_3d", "DirectionalLight3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.directional_light_3d", "DirectionalLight3DComponentUVE", "DirectionalLight3D", kSectionOrderTypeSpecificUVE,
             {
                 InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&DirectionalLight3DComponentUVE::shadowMaxDistance>(
                                                            "shadowMaxDistance", "Max Distance", kPropertyTypeFloatUVE),
@@ -2654,13 +2956,13 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
     using D = Decal3DComponentUVE;
     AddValidatedUVE<Decal3DComponentUVE, &IsDecal3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.decal_3d", "Decal3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.decal_3d", "Decal3DComponentUVE", "Decal3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&D::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
                                "Off stops projecting without removing the object."),
-                WithTooltipUVE(DeclareUVE<&D::materialAssetPath>("materialAssetPath", "Material",
-                                                                 kPropertyTypeStringUVE),
+                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&D::materialAssetPath>("materialAssetPath", "Material",
+                                                                                       kPropertyTypeStringUVE),
+                                                     "file:uvmat"),
                                "The decal material to project."),
                 WithTooltipUVE(WithRangeUVE(DeclareUVE<&D::size>("size", "Size", kPropertyTypeVector3UVE), 0.001,
                                             100000.0, 0.01),
@@ -2721,8 +3023,7 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
     using F = FogVolume3DComponentUVE;
     AddValidatedUVE<FogVolume3DComponentUVE, &IsFogVolume3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.fog_volume_3d", "FogVolume3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.fog_volume_3d", "FogVolume3DComponentUVE", "FogVolume3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareEnumUVE<&F::shape>(
                                    "shape", "Shape",
@@ -2736,8 +3037,9 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
                     };
                     return property;
                 }(),
-                WithTooltipUVE(DeclareUVE<&F::materialAssetPath>("materialAssetPath", "Material",
-                                                                 kPropertyTypeStringUVE),
+                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&F::materialAssetPath>("materialAssetPath", "Material",
+                                                                                       kPropertyTypeStringUVE),
+                                                     "file:uvmat"),
                                "Reserved for a custom fog material. Until one is assigned, Density, Albedo and Emission drive the volume."),
                 InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&F::density>("density", "Density",
                                                                                kPropertyTypeFloatUVE),
@@ -2763,8 +3065,7 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
     using P = WorldPartition3DComponentUVE;
     AddValidatedUVE<WorldPartition3DComponentUVE, &IsWorldPartition3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.world_partition_3d", "WorldPartition3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.world_partition_3d", "WorldPartition3DComponentUVE", "WorldPartition3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&P::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
                                "Off, every member draws. On, only the nearest occupied cells up to the "
@@ -2787,8 +3088,7 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
     using V = VisibilityRegion3DComponentUVE;
     AddValidatedUVE<VisibilityRegion3DComponentUVE, &IsVisibilityRegion3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.visibility_region_3d", "VisibilityRegion3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.visibility_region_3d", "VisibilityRegion3DComponentUVE", "VisibilityRegion3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&V::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
                                "Off, every member draws. On, interior drawables skip while no viewer "
@@ -2811,8 +3111,7 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
     using O = Occluder3DComponentUVE;
     AddValidatedUVE<Occluder3DComponentUVE, &IsOccluder3DObjectComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.occluder_3d", "Occluder3D", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.occluder_3d", "Occluder3DComponentUVE", "Occluder3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&O::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
                                "Off, the box covers nothing. On, drawables whose whole bounds sit "
@@ -2840,10 +3139,9 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     constexpr std::int32_t kScriptOrder = kSectionOrderObjectCommonUVE + 50;
     constexpr std::int32_t kMetadataOrder = kSectionOrderObjectCommonUVE + 60;
 
-    AddUVE<ProcessComponentUVE>(
+    AddValidatedUVE<ProcessComponentUVE, &IsProcessComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.process", "Process", kProcessOrder,
+        MakeEntryUVE("component.process", "ProcessComponentUVE", "Process", kProcessOrder,
             {
                 WithTooltipUVE(
                     ResolvedByUVE(DeclareEnumUVE<&ProcessComponentUVE::mode>("mode", "Mode",
@@ -2870,8 +3168,7 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 
     // A sub-group of Process: which thread the work runs on is a refinement of when it runs.
-    TypeMetadataEntryUVE threadGroup = MakeEntryUVE(
-        "component.thread_group", "Thread Group", kThreadGroupOrder,
+    TypeMetadataEntryUVE threadGroup = MakeEntryUVE("component.thread_group", "ThreadGroupComponentUVE", "Thread Group", kThreadGroupOrder,
         {
             WithTooltipUVE(
                 ResolvedByUVE(DeclareEnumUVE<&ThreadGroupComponentUVE::mode>(
@@ -2888,15 +3185,15 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 {{0, "Inherit"}, {1, "Main Thread"}, {2, "Sub Thread"}}),
         });
     threadGroup.nestedUnderTypeIds = {"component.process"};
-    AddUVE<ThreadGroupComponentUVE>(entries, std::move(threadGroup));
+    AddValidatedUVE<ThreadGroupComponentUVE, &IsThreadGroupComponentValidUVE>(entries, std::move(threadGroup));
 
     // Only `mode` is authored. Everything else on this component is the interpolation system's
     // working state: the resolved answer plus the two poses it blends between. Marking them
     // RuntimeState is what keeps a generic editor from writing a pose and a generic serializer
     // from persisting one - either would corrupt the next frame's interpolation.
-    AddUVE<PhysicsInterpolationComponentUVE>(
+    AddValidatedUVE<PhysicsInterpolationComponentUVE, &IsPhysicsInterpolationComponentValidUVE>(
         entries,
-        MakeEntryUVE("component.physics_interpolation", "Physics Interpolation", kPhysicsInterpolationOrder,
+        MakeEntryUVE("component.physics_interpolation", "PhysicsInterpolationComponentUVE", "Physics Interpolation", kPhysicsInterpolationOrder,
                      {
                          ResolvedByUVE(DeclareEnumUVE<&PhysicsInterpolationComponentUVE::mode>(
                                            "mode", "Mode", {{0, "Inherit"}, {1, "Blended"}, {2, "Exact"}}),
@@ -2908,10 +3205,9 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                              "hasPreviousPose", "Has Previous Pose", kPropertyTypeBoolUVE),
                      }));
 
-    AddUVE<AutoTranslateComponentUVE>(
+    AddValidatedUVE<AutoTranslateComponentUVE, &IsAutoTranslateComponentValidUVE>(
         entries,
-        MakeEntryUVE(
-            "component.auto_translate", "Auto Translate", kAutoTranslateOrder,
+        MakeEntryUVE("component.auto_translate", "AutoTranslateComponentUVE", "Auto Translate", kAutoTranslateOrder,
             {
                 WithTooltipUVE(
                     ResolvedByUVE(DeclareEnumUVE<&AutoTranslateComponentUVE::mode>(
@@ -2932,13 +3228,13 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         "multiline-text");
     description.flags = TypeMetadataPropertyFlagsUVE::EditorOnly;
     AddUVE<EditorDescriptionComponentUVE>(entries,
-                                          MakeEntryUVE("component.editor_description", "Editor Description",
+                                          MakeEntryUVE("component.editor_description", "EditorDescriptionComponentUVE", "Editor Description",
                                                        kEditorDescriptionOrder, {std::move(description)}));
 
     // The script slot: empty offers to create, pick or load a script; filled names it. The path
     // is still the stored truth - the drawer only decides how it is chosen.
     TypeMetadataEntryUVE script =
-        MakeEntryUVE("component.script", "Script", kScriptOrder,
+        MakeEntryUVE("component.script", "ScriptComponentUVE", "Script", kScriptOrder,
                      {WithCustomDrawerUVE(DeclareUVE<&ScriptComponentUVE::scriptAssetPath>(
                                               "scriptAssetPath", "Scripting", kPropertyTypeStringUVE),
                                           "script-slot"),
@@ -2952,8 +3248,7 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 
     // Typed key/value pairs. A list needs add, rename, retype and remove, which a single property
     // row cannot express, so the whole list is one custom-drawn property.
-    TypeMetadataEntryUVE metadata = MakeEntryUVE(
-        "component.object_metadata", "Metadata", kMetadataOrder,
+    TypeMetadataEntryUVE metadata = MakeEntryUVE("component.object_metadata", "ObjectMetadataComponentUVE", "Metadata", kMetadataOrder,
         {WithCustomDrawerUVE(DeclareUVE<&ObjectMetadataComponentUVE::entries>("entries", "Metadata",
                                                                             "ObjectMetadataEntryList"),
                              "object-metadata")});
@@ -2981,13 +3276,13 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 
     TypeMetadataRegistryUVE registry;
     for (TypeMetadataEntryUVE& entry : entries) {
-        const std::string typeId = entry.typeId;
+        const Strings::StringIdUVE typeId = entry.typeId;
         const Core::TypeMetadataRegistrationResultUVE result = registry.RegisterTypeUVE(std::move(entry));
         if (!result.IsRegisteredUVE()) {
             // A rejected declaration is a mistake in this file, not a runtime condition: the entry
             // is a compile-time literal, so it either always registers or never does. Log loudly
             // and carry on - the affected component simply falls back to having no metadata.
-            UVE_ERROR("SceneComponentMetadataUVE: \"{}\" was rejected: {}", typeId, result.message);
+            UVE_ERROR("SceneComponentMetadataUVE: \"{}\" was rejected: {}", typeId.ToStringUVE(), result.message);
             // Loud in debug builds. A rejected declaration otherwise costs only a log line while its
             // whole component silently vanishes from the Inspector - which is exactly how an
             // over-long tooltip once removed the Process section without failing anything but a

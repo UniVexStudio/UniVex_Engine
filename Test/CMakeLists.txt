@@ -29,10 +29,35 @@ add_executable(uve_core_tests
     Core/Memory/memory_manager_uve_tests.cpp
     Core/Memory/allocator_utils_uve_tests.cpp
     Core/Memory/memory_alignment_uve_tests.cpp
+    Core/Memory/std_allocator_uve_tests.cpp
+    Core/Memory/linear_arena_uve_tests.cpp
+    Core/Memory/unique_ptr_uve_tests.cpp
+    Core/Memory/intrusive_ptr_uve_tests.cpp
+    Core/Memory/thread_safe_allocator_uve_tests.cpp
     Core/Threading/job_counter_uve_tests.cpp
     Core/Threading/job_graph_uve_tests.cpp
     Core/Threading/thread_pool_uve_tests.cpp
+    Core/Threading/parallel_for_uve_tests.cpp
+    Core/Threading/spin_lock_uve_tests.cpp
+    Core/Threading/rw_lock_uve_tests.cpp
+    Core/Threading/semaphore_uve_tests.cpp
+    Core/Threading/thread_id_uve_tests.cpp
+    Core/Threading/thread_naming_uve_tests.cpp
     Core/Utilities/timer_uve_tests.cpp
+    Core/Utilities/hash_uve_tests.cpp
+    Core/Utilities/binary_buffer_uve_tests.cpp
+    Core/Utilities/uuid_uve_tests.cpp
+    Core/Utilities/scope_guard_uve_tests.cpp
+    Core/Utilities/non_copyable_uve_tests.cpp
+    Core/Utilities/flags_uve_tests.cpp
+    Core/Containers/fixed_array_uve_tests.cpp
+    Core/Containers/small_vector_uve_tests.cpp
+    Core/Containers/handle_table_uve_tests.cpp
+    Core/Containers/sparse_set_uve_tests.cpp
+    Core/Containers/ring_buffer_uve_tests.cpp
+    Core/Containers/bit_set_uve_tests.cpp
+    Core/Strings/string_id_uve_tests.cpp
+    Core/Strings/string_utils_uve_tests.cpp
     Core/Scheduling/frame_scheduler_uve_tests.cpp
     Core/Diagnostics/profiler_diagnostics_uve_tests.cpp
     Core/Events/event_system_uve_tests.cpp
@@ -41,12 +66,15 @@ add_executable(uve_core_tests
     Core/Asset/legacy_extension_migration_uve_tests.cpp
     UVScript/uvscript_parser_uve_tests.cpp
     UVScript/uvscript_vm_uve_tests.cpp
+    UVScript/uvscript_collections_uve_tests.cpp
     Core/Asset/asset_manager_uve_tests.cpp
     Core/Asset/file_system_uve_tests.cpp
     Core/Asset/mesh_asset_uve_tests.cpp
     Core/Asset/mesh_skinning_uve_tests.cpp
     Core/Asset/texture_asset_uve_tests.cpp
     Core/Asset/shader_asset_uve_tests.cpp
+    Core/Asset/font_asset_uve_tests.cpp
+    Core/Asset/ttf_importer_uve_tests.cpp
     Core/Asset/material_asset_uve_tests.cpp
     Core/Asset/asset_importer_uve_tests.cpp
     Core/Asset/bmp_importer_uve_tests.cpp
@@ -65,6 +93,10 @@ add_executable(uve_core_tests
     Core/Asset/gltf_mesh_converter_uve_tests.cpp
     Core/Asset/gltf_metadata_uve_tests.cpp
     Core/Asset/gltf_skeleton_uve_tests.cpp
+    Core/Asset/skeleton_asset_uve_tests.cpp
+    Core/Asset/animation_library_asset_uve_tests.cpp
+    Core/Asset/gltf_skin_converter_uve_tests.cpp
+    Core/Asset/gltf_animation_converter_uve_tests.cpp
     Core/Asset/mtl_importer_uve_tests.cpp
     Core/Asset/mtl_material_converter_uve_tests.cpp
     Core/Asset/mtl_metadata_uve_tests.cpp
@@ -90,10 +122,42 @@ add_executable(uve_core_tests
     Engine/shader_cache_path_policy_uve_tests.cpp
     Engine/render_backend_selection_uve_tests.cpp
     Network/reliable_packet_window_uve_tests.cpp
+    Network/network_transport_uve_tests.cpp
+    Network/network_udp_uve_tests.cpp
+    Network/network_udp_listener_uve_tests.cpp
+    Network/network_session_uve_tests.cpp
+    Network/network_conditions_uve_tests.cpp
+    Network/network_replication_uve_tests.cpp
+    Network/network_rpc_uve_tests.cpp
+    Network/network_prediction_uve_tests.cpp
+    Network/network_inspector_uve_tests.cpp
+    Network/network_packet_capture_uve_tests.cpp
+    Network/network_packet_tap_uve_tests.cpp
+    Network/network_profiler_uve_tests.cpp
+    Network/network_shot_uve_tests.cpp
+    Network/network_interest_uve_tests.cpp
+    Network/network_interest_fanout_uve_tests.cpp
+    Network/network_value_codec_uve_tests.cpp
+    Network/network_multiplex_uve_tests.cpp
+    Network/network_relay_uve_tests.cpp
+    Network/network_lobby_uve_tests.cpp
+    Network/network_relay_rooms_uve_tests.cpp
+    Network/network_relay_interest_uve_tests.cpp
+    Network/network_crowd_uve_tests.cpp
     Plugins/plugin_registry_uve_tests.cpp
+    Plugins/native_plugin_host_uve_tests.cpp
     ProjectCheck/project_checker_uve_tests.cpp
     Input/input_system_uve_tests.cpp
     Gameplay/gameplay_input_uve_tests.cpp
+    Gameplay/gameplay_attributes_uve_tests.cpp
+    Gameplay/gameplay_tags_uve_tests.cpp
+    Gameplay/status_effects_uve_tests.cpp
+    Gameplay/trigger_volume_uve_tests.cpp
+    Gameplay/pawn_uve_tests.cpp
+    Gameplay/cinematic_uve_tests.cpp
+    Gameplay/camera_follow_uve_tests.cpp
+    AI/utility_ai_uve_tests.cpp
+    AI/perception_uve_tests.cpp
     Input/input_names_uve_tests.cpp
     Input/mobile_input_system_uve_tests.cpp
     Input/mobile_gesture_system_uve_tests.cpp
@@ -122,11 +186,26 @@ add_executable(uve_core_tests
     Window/window_style_policy_uve_tests.cpp
     Math/vector2_uve_tests.cpp
     Math/vector3_uve_tests.cpp
+    Math/vector4_uve_tests.cpp
     Math/quaternion_uve_tests.cpp
     Math/matrix4x4_uve_tests.cpp
+    Math/matrix3x3_uve_tests.cpp
+    Math/trs_uve_tests.cpp
+    Math/color_uve_tests.cpp
+    Math/vector2i_uve_tests.cpp
+    Math/vector3i_uve_tests.cpp
+    Math/rect_uve_tests.cpp
+    Math/rect_int_uve_tests.cpp
     Math/aabb_uve_tests.cpp
     Math/plane_uve_tests.cpp
     Math/frustum_uve_tests.cpp
+    Math/scalar_uve_tests.cpp
+    Math/sphere_uve_tests.cpp
+    Math/oriented_box_uve_tests.cpp
+    Math/random_uve_tests.cpp
+    Math/easing_uve_tests.cpp
+    Math/noise_uve_tests.cpp
+    Math/curves_uve_tests.cpp
     Retarget/retarget_names_uve_tests.cpp
     Retarget/retarget_humanoid_uve_tests.cpp
     Retarget/retarget_match_uve_tests.cpp
@@ -156,6 +235,7 @@ target_link_libraries(uve_core_tests PRIVATE
     uve_asset
     uve_input
     uve_gameplay
+    uve_ai
     uve_window
     uve_rhi
     uve_rhi_opengl
@@ -167,6 +247,10 @@ target_link_libraries(uve_core_tests PRIVATE
     uve_engine_settings
     uve_network
     uve_plugins
+    # network_prediction_uve_tests.cpp steps the production character predictor
+    # (uve_objects_3d) as its mover - proof the layering holds with production movement code.
+    uve_objects_3d
+    uve_physics
     uve_project_check_lib
     ZLIB::ZLIB
     GTest::gtest
@@ -180,6 +264,20 @@ if(TARGET uve_jpeg_ep)
 endif()
 target_compile_features(uve_core_tests PRIVATE cxx_std_23)
 target_compile_definitions(uve_core_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+# Native plugin host fixtures: tiny real shared libraries the host loads end to end.
+add_library(uve_test_plugin_valid MODULE Plugins/Fixtures/uve_test_plugin_valid.cpp)
+add_library(uve_test_plugin_bad_protocol MODULE Plugins/Fixtures/uve_test_plugin_bad_protocol.cpp)
+add_library(uve_test_plugin_no_entry MODULE Plugins/Fixtures/uve_test_plugin_no_entry.cpp)
+foreach(fixture IN ITEMS uve_test_plugin_valid uve_test_plugin_bad_protocol uve_test_plugin_no_entry)
+    target_include_directories(${fixture} PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Runtime/Plugins/Expose)
+    target_compile_features(${fixture} PRIVATE cxx_std_23)
+endforeach()
+target_compile_definitions(uve_core_tests PRIVATE
+    UVE_TEST_PLUGIN_VALID_PATH="$<TARGET_FILE:uve_test_plugin_valid>"
+    UVE_TEST_PLUGIN_BAD_PROTOCOL_PATH="$<TARGET_FILE:uve_test_plugin_bad_protocol>"
+    UVE_TEST_PLUGIN_NO_ENTRY_PATH="$<TARGET_FILE:uve_test_plugin_no_entry>")
+add_dependencies(uve_core_tests uve_test_plugin_valid uve_test_plugin_bad_protocol uve_test_plugin_no_entry)
 uve_set_warnings(uve_core_tests)
 
 # Support/ holds the suite's shared test-only helpers. Test/ itself goes on the include path
@@ -198,7 +296,7 @@ target_include_directories(uve_core_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Run
 uve_add_uvscript_native(uve_core_tests
     HOST UVScript/native/fake_object.uvhost
     SCRIPTS UVScript/native/player.uvs UVScript/native/math.uvs UVScript/native/waits.uvs
-            UVScript/native/errors.uvs)
+            UVScript/native/errors.uvs UVScript/native/methods.uvs UVScript/native/collections.uvs)
 target_compile_definitions(uve_core_tests PRIVATE
     UVE_UVSCRIPT_NATIVE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/UVScript/native")
 
@@ -216,6 +314,15 @@ add_executable(uve_integration_tests
     Objects/3D/objects_3d_uve_tests.cpp
     Objects/3D/object_definitions_3d_uve_tests.cpp
     Objects/3D/player_3d_uve_tests.cpp
+    Objects/3D/character_motion_uve_tests.cpp
+    Objects/3D/character_prediction_uve_tests.cpp
+    Objects/3D/replicated_entity_uve_tests.cpp
+    Objects/3D/interest_relevancy_uve_tests.cpp
+    Objects/3D/hitbox_lag_wiring_uve_tests.cpp
+    Samples/dedicated_server_sample_uve_tests.cpp
+    Samples/lag_comp_server_sample_uve_tests.cpp
+    Samples/packet_capture_sample_uve_tests.cpp
+    Samples/interest_fanout_sample_uve_tests.cpp
     Objects/3D/health_uve_tests.cpp
     Objects/3D/world_environment_uve_tests.cpp
     Objects/3D/directional_light_3d_uve_tests.cpp
@@ -228,16 +335,25 @@ add_executable(uve_integration_tests
     Objects/3D/conformed_playback_uve_tests.cpp
     Objects/3D/two_bone_ik_3d_uve_tests.cpp
     Objects/UI/object_definitions_canvas_uve_tests.cpp
+    Objects/2D/sprite_2d_uve_tests.cpp
+    Objects/2D/camera_2d_uve_tests.cpp
     Integration/Entity/archetype_uve_tests.cpp
     Integration/Entity/archetype_chunk_uve_tests.cpp
     Integration/Entity/entity_manager_uve_tests.cpp
+    Integration/Entity/entity_enabled_uve_tests.cpp
+    Integration/Entity/entity_command_buffer_uve_tests.cpp
+    Integration/Entity/entity_view_uve_tests.cpp
     Integration/Localization/localization_uve_tests.cpp
     Integration/Scene/scene_graph_uve_tests.cpp
+    Integration/Scene/children_index_uve_tests.cpp
+    Integration/Script/contact_script_events_uve_tests.cpp
     Integration/Scene/bone_attachment_pass_uve_tests.cpp
     Integration/Scene/two_bone_ik_pass_uve_tests.cpp
     Integration/Scene/object_common_components_uve_tests.cpp
     Integration/Scene/scene_component_metadata_uve_tests.cpp
     Integration/Scene/scene_serializer_uve_tests.cpp
+    Integration/Scene/gameplay_serialization_uve_tests.cpp
+    Integration/Scene/ai_serialization_uve_tests.cpp
     Integration/Scene/scene_object_type_uve_tests.cpp
     Integration/Scene/prefab_system_uve_tests.cpp
     Integration/Scene/prefab_maturity_uve_tests.cpp
@@ -262,12 +378,21 @@ add_executable(uve_integration_tests
     Physics/character_controller_uve_tests.cpp
     Physics/character_body_motion_uve_tests.cpp
     Physics/character_3d_uve_tests.cpp
+    Physics/uvscript_physics_forces_uve_tests.cpp
+    Script/uvscript_node_state_uve_tests.cpp
+    Script/uvscript_cross_node_uve_tests.cpp
+    Audio/uvscript_audio_bindings_uve_tests.cpp
+    Gameplay/uvscript_gameplay_bindings_uve_tests.cpp
+    Gameplay/uvscript_rpc_bindings_uve_tests.cpp
+    Gameplay/uvscript_lobby_bindings_uve_tests.cpp
+    Gameplay/uvscript_relay_bindings_uve_tests.cpp
     Physics/collider_3d_uve_tests.cpp
     Physics/collider_shape_uve_tests.cpp
     Physics/collision_lifecycle_tracker_uve_tests.cpp
     Physics/collision_system_uve_tests.cpp
     Physics/hinge_motor_limit_uve_tests.cpp
     Physics/hitbox_3d_uve_tests.cpp
+    Physics/hitbox_lag_compensation_uve_tests.cpp
     Physics/hitbox_strike_uve_tests.cpp
     Physics/hurtbox_3d_uve_tests.cpp
     Physics/interaction_area_3d_uve_tests.cpp
@@ -309,18 +434,21 @@ add_executable(uve_integration_tests
     Audio/wav_metadata_uve_tests.cpp
     Audio/wav_pcm16_decoder_uve_tests.cpp
     Audio/wav_importer_uve_tests.cpp
+    RHI/RenderSystems/camera_2d_system_uve_tests.cpp
     RHI/RenderSystems/camera_system_uve_tests.cpp
     RHI/RenderSystems/render_batch_uve_tests.cpp
     RHI/RenderSystems/compute_kernel_portability_uve_tests.cpp
     RHI/RenderSystems/compute_workloads_vulkan_uve_tests.cpp
     RHI/RenderSystems/light_system_uve_tests.cpp
     RHI/RenderSystems/decal_renderer_uve_tests.cpp
+    RHI/RenderSystems/debug_renderer_uve_tests.cpp
     RHI/RenderSystems/mesh_renderer_uve_tests.cpp
     RHI/RenderSystems/mesh_render_eligibility_uve_tests.cpp
     RHI/RenderSystems/primitive_geometry_uve_tests.cpp
     RHI/RenderSystems/render_graph_uve_tests.cpp
     RHI/RenderSystems/render_queue_uve_tests.cpp
     RHI/RenderSystems/render_system_uve_tests.cpp
+    RHI/RenderSystems/renderer_2d_uve_tests.cpp
     RHI/RenderSystems/renderer_3d_uve_tests.cpp
     RHI/RenderSystems/viewport_manager_uve_tests.cpp
     RHI/RenderSystems/particle_render_bridge_uve_tests.cpp
@@ -328,6 +456,15 @@ add_executable(uve_integration_tests
     UI/ui_font_atlas_uve_tests.cpp
     UI/ui_runtime_uve_tests.cpp
     UI/canvas_ancestry_uve_tests.cpp
+    UI/ui_layout_uve_tests.cpp
+    UI/ui_anchors_uve_tests.cpp
+    UI/ui_value_widgets_uve_tests.cpp
+    UI/ui_tween_uve_tests.cpp
+    UI/ui_nine_slice_uve_tests.cpp
+    UI/ui_checkbox_tooltip_uve_tests.cpp
+    UI/ui_dropdown_uve_tests.cpp
+    UI/ui_text_input_uve_tests.cpp
+    UI/ui_scroll_uve_tests.cpp
 )
 if(UVE_HAS_DESKTOP_GL)
     target_sources(uve_integration_tests PRIVATE
@@ -339,6 +476,10 @@ if(UVE_HAS_DESKTOP_GL)
     )
 endif()
 target_link_libraries(uve_integration_tests PRIVATE
+    uve_dedicated_server_sample
+    uve_lag_comp_server_sample
+    uve_packet_capture_sample
+    uve_interest_fanout_sample
     uve_retarget
     uve_navigation
     uve_localization
@@ -371,6 +512,19 @@ target_link_libraries(uve_integration_tests PRIVATE
     uve_window
     uve_input
     uve_ui
+    uve_gameplay
+    uve_ai
+    # uvscript_physics_forces_uve_tests.cpp drives the real UVScriptObjectHostUVE (uve_core)
+    # and script values (uve_uvscript) - the first runnable coverage of Engine's script host.
+    uve_core
+    uve_uvscript
+    # uvscript_rpc_bindings_uve_tests.cpp drives RPC peers plus the object host together -
+    # script-initiated calls over loopback sessions, responses back into running scripts.
+    uve_network
+    # character_prediction_uve_tests.cpp drives the predicted-pawn adapter (uve_objects_3d)
+    # against loopback predictors - components to states and back, plus live reconciles.
+    uve_objects_3d
+    uve_objects_2d
     GTest::gtest
     GTest::gtest_main
 )
@@ -477,6 +631,7 @@ add_executable(uve_editor_tests
     Editor/animation_clip_editing_uve_tests.cpp
     Editor/animation_graph_editing_uve_tests.cpp
     Editor/scene_component_authoring_uve_tests.cpp
+    Editor/file_picker_uve_tests.cpp
     Editor/scene_object_editor_uve_tests.cpp
 )
 target_link_libraries(uve_editor_tests PRIVATE

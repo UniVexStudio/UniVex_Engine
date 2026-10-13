@@ -11,6 +11,7 @@
 #include "uve/rhi/buffer_handle_uve.h"
 #include "uve/rhi/pipeline_handle_uve.h"
 #include "uve/rhi/render_resource_descs_uve.h"
+#include "uve/rhi/sampler_handle_uve.h"
 #include "uve/rhi/texture_handle_uve.h"
 
 namespace UVE::Render {
@@ -69,6 +70,15 @@ public:
     /// destroyed-after-bind storage-image slots write into the same sink; sampled slots keep
     /// the M2c 1x1-white fallback.
     virtual void BindTextureUVE(TextureHandleUVE texture, std::uint32_t slot) = 0;
+
+    /// Binds `sampler` at `slot`, pairing with the texture bound at the same slot (Tier 2.2).
+    /// Slots share one space with BindTextureUVE: the pipeline's i-th texture-family binding
+    /// samples texture[i] through sampler[i]. A slot with no bound sampler keeps the device
+    /// default (linear/trilinear, clamp-to-edge — the pre-2.2 behavior); a sampler bound with
+    /// no texture applies to the slot's fallback texture, deterministically. Storage-image
+    /// slots ignore samplers (imageLoad/imageStore don't sample). Same pass-gating as
+    /// BindTextureUVE (compute-aware since M5a).
+    virtual void BindSamplerUVE(SamplerHandleUVE sampler, std::uint32_t slot) = 0;
 
     /// Binds `buffer` as a uniform buffer at `slot` for the active pipeline's shaders. Must be
     /// called inside a render pass.

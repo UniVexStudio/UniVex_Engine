@@ -174,7 +174,8 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
                 return;
             }
             const std::optional<Math::Vector3UVE> candidateVelocity = Scene::Rigid3DUVE::IntegrateLinearVelocityUVE(
-                rigidBody.velocity, gravity, rigidBody.gravityScale, linearDamp, fixedDeltaTimeSeconds);
+                rigidBody.velocity, gravity, rigidBody.gravityScale, linearDamp, fixedDeltaTimeSeconds,
+                rigidBody.force, Scene::Rigid3DUVE::InverseMassUVE(rigidBody));
             if (!candidateVelocity.has_value()) {
                 return;
             }

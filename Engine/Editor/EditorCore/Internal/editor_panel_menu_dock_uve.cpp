@@ -19,11 +19,13 @@
 #include <algorithm>
 #include <array>
 #include <cfloat>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <imgui.h>
@@ -33,6 +35,7 @@
 #include "editor_fonts_uve.h"
 #include "editor_object_icons_uve.h"
 
+#include "uve/diagnostics/profiler_view_uve.h"
 #include "uve/editor/editor_render_stats_uve.h"
 
 namespace UVE::Editor {
@@ -61,6 +64,7 @@ constexpr const char* kMenuLabelHelpUVE = "\xEF\xA4\x9D Help";
 void EditorUVE::DrawViewportSelectionOutlineMenuUVE() {
     bool visible = m_viewportOverlayState.selectionOutlineVisible;
     ViewportAxisColorUVE color = m_viewportOverlayState.selectionOutlineColor;
+    int thickness = static_cast<int>(std::lround(m_viewportOverlayState.selectionOutlineThickness));
     bool changed = ImGui::Checkbox("Show outline", &visible);
 
     const float labelColumn = ImGui::GetFontSize() * 5.5F;
@@ -75,6 +79,14 @@ void EditorUVE::DrawViewportSelectionOutlineMenuUVE() {
         color = ViewportAxisColorUVE{picked.r, picked.g, picked.b};
         changed = true;
     }
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Thickness");
+    ImGui::SameLine(labelColumn);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0F);
+    changed |= ImGui::SliderInt("##selection-outline-thickness", &thickness,
+                                static_cast<int>(kMinimumSelectionOutlineThicknessUVE),
+                                static_cast<int>(kMaximumSelectionOutlineThicknessUVE), "%d px",
+                                ImGuiSliderFlags_AlwaysClamp);
     ImGui::EndDisabled();
 
     ImGui::Separator();
@@ -82,10 +94,11 @@ void EditorUVE::DrawViewportSelectionOutlineMenuUVE() {
         const ViewportOverlayStateUVE defaults{};
         visible = defaults.selectionOutlineVisible;
         color = defaults.selectionOutlineColor;
+        thickness = static_cast<int>(defaults.selectionOutlineThickness);
         changed = true;
     }
     if (changed) {
-        static_cast<void>(SetViewportSelectionOutlineUVE(visible, color));
+        static_cast<void>(SetViewportSelectionOutlineUVE(visible, color, static_cast<float>(thickness)));
     }
 }
 
@@ -209,12 +222,6 @@ void EditorUVE::DrawMenuBarUVE() {
                     ImGui::EndMenu();
                 }
                 ImGui::Separator();
-                // View framing and the two alignments live here for the same reason the two
-                // menus above do: they change what the viewport shows, not the document.
-                DrawCommandMenuItemUVE("view.frameSelection");
-                DrawCommandMenuItemUVE("view.alignViewToNode");
-                DrawCommandMenuItemUVE("view.alignNodeToView");
-                ImGui::Separator();
                 DrawCommandMenuItemUVE("file.projectSettings");
                 DrawCommandMenuItemUVE("file.inputMap");
                 DrawCommandMenuItemUVE("file.preferences");
@@ -231,9 +238,6 @@ void EditorUVE::DrawMenuBarUVE() {
                 ImGui::Separator();
                 DrawCommandMenuItemUVE("edit.duplicate");
                 DrawCommandMenuItemUVE("edit.delete");
-                ImGui::Separator();
-                DrawCommandMenuItemUVE("edit.lock");
-                DrawCommandMenuItemUVE("edit.unlockAll");
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu(kMenuLabelAssetsUVE)) {
@@ -340,14 +344,14 @@ void EditorUVE::DrawMenuBarUVE() {
             // The open Viewport asset (the level): the same name and icon as its Outliner row and its
             // file in the Content Browser.
             const std::string stem = m_activeScenePath.stem().string();
-            const std::string name = stem.empty() ? std::string{"Viewport"} : stem;
+            const std::string name = stem.empty() ? std::string{"Viewport3D"} : stem;
             constexpr float kTabIconSizeUVE = 16.0F;
             const float tabWidth = ImGui::CalcTextSize(name.c_str()).x + kTabIconSizeUVE + 34.0F;
             const ImVec2 tabMin{toolbarMin.x, toolbarMin.y + 3.0F};
             const ImVec2 tabMax{toolbarMin.x + tabWidth, toolbarMax.y};
             toolbarDrawList->AddRectFilled(tabMin, tabMax, IM_COL32(21, 25, 31, 255), 4.0F, ImDrawFlags_RoundCornersTop);
             const float midY = (tabMin.y + tabMax.y) * 0.5F;
-            if (const std::uintptr_t icon = m_uiAssets.GetObjectIconTextureIdUVE(Scene::Objects::SceneObjectKindUVE::Viewport); icon != 0U) {
+            if (const std::uintptr_t icon = m_uiAssets.GetObjectIconTextureIdUVE(Scene::Objects::SceneObjectKindUVE::Viewport3D); icon != 0U) {
                 toolbarDrawList->AddImage(static_cast<ImTextureID>(icon), ImVec2{tabMin.x + 12.0F, midY - kTabIconSizeUVE * 0.5F},
                                           ImVec2{tabMin.x + 12.0F + kTabIconSizeUVE, midY + kTabIconSizeUVE * 0.5F});
             }
@@ -510,6 +514,16 @@ void EditorUVE::DrawBottomDockContentUVE() {
         return;
     }
 
+    if (m_activeBottomDock == EditorBottomDockUVE::Capture) {
+        DrawCaptureDockUVE();
+        return;
+    }
+
+    if (m_activeBottomDock == EditorBottomDockUVE::Profiler) {
+        DrawProfilerDockUVE();
+        return;
+    }
+
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
     // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change. This
@@ -558,6 +572,8 @@ void EditorUVE::DrawBottomDockContentUVE() {
             break;
         case EditorBottomDockUVE::FileSystem:
         case EditorBottomDockUVE::Console:
+        case EditorBottomDockUVE::Capture:
+        case EditorBottomDockUVE::Profiler:
             break;
     }
     ImGui::End();
@@ -605,10 +621,12 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
             EditorBottomDockUVE dock;
             const char* tooltip;
         };
-        constexpr std::array<TabUVE, 3> kTabs{{
+        constexpr std::array<TabUVE, 5> kTabs{{
             {"Content", EditorBottomDockUVE::FileSystem, "The project's files and assets."},
             {"Output", EditorBottomDockUVE::Debugger, "Frame statistics and editor state."},
             {"Console", EditorBottomDockUVE::Console, "Engine messages and a command line."},
+            {"Capture", EditorBottomDockUVE::Capture, "Tapped session datagrams and their decode."},
+            {"Profiler", EditorBottomDockUVE::Profiler, "Capture spans, counters, and breadcrumbs."},
         }};
         const ImGuiStyle& style = ImGui::GetStyle();
         for (const TabUVE& tab : kTabs) {
@@ -682,6 +700,298 @@ void EditorUVE::DrawConsoleDockUVE() {
             ImGui::SetKeyboardFocusHere(-1);
         }
     }
+    ImGui::End();
+}
+
+
+void EditorUVE::CapturePacketUVE(const std::vector<std::uint8_t>& datagram,
+                                 const Network::PacketDirectionUVE direction,
+                                 const std::uint64_t timestampMs,
+                                 const Network::InspectedChannelUVE channel) {
+    m_packetCapture.PushUVE(datagram, direction, timestampMs, channel);
+}
+
+void EditorUVE::ClearCapturedPacketsUVE() {
+    m_packetCapture.ClearUVE();
+}
+
+const Network::PacketCaptureUVE& EditorUVE::CapturedPacketsUVE() const noexcept {
+    return m_packetCapture;
+}
+
+Core::ProfilerCaptureUVE& EditorUVE::ProfilerUVE() noexcept {
+    return m_profilerCapture;
+}
+
+const Core::DiagnosticCaptureBundleUVE& EditorUVE::ProfilerBundleUVE() const noexcept {
+    return m_profilerBundle;
+}
+
+void EditorUVE::DrawCaptureDockUVE() {
+    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+    const EditorChromeLayoutUVE layout =
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
+    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
+    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                                       ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+    if (!ImGui::Begin("Capture##lower-workspace-capture", nullptr, flags)) {
+        ImGui::End();
+        return;
+    }
+    // The viewer owns plain-int combo state; the filter struct is rebuilt from it each
+    // frame so the ring's matching logic stays the single source of truth.
+    static constexpr const char* kDirections[] = {"Both", "Out", "In"};
+    static constexpr const char* kChannels[] = {"Any", "Wire", "Replication", "RPC", "Prediction", "Shot"};
+    m_captureFilter.text = std::string(m_captureText.data());
+    m_captureFilter.direction =
+        static_cast<Network::PacketCaptureDirectionUVE>(m_captureDirection);
+    if (m_captureChannel == 0) {
+        m_captureFilter.channel.reset();
+    } else {
+        m_captureFilter.channel =
+            static_cast<Network::InspectedChannelUVE>(m_captureChannel - 1);
+    }
+    m_captureFilter.malformedOnly = m_captureMalformedOnly;
+
+    if (ImGui::Button("Clear")) {
+        ClearCapturedPacketsUVE();
+        m_captureSelected = kNoCaptureSelectionUVE;
+    }
+    ImGui::SameLine();
+    const std::string stats = std::to_string(m_packetCapture.SizeUVE()) + "/" +
+                              std::to_string(m_packetCapture.CapacityUVE()) + " packets (" +
+                              std::to_string(m_packetCapture.DropsUVE()) + " dropped, " +
+                              std::to_string(m_packetCapture.MalformedUVE()) + " malformed)";
+    ImGui::TextDisabled("%s", stats.c_str());
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(80.0F);
+    if (ImGui::BeginCombo("##uve_capture_dir", kDirections[m_captureDirection])) {
+        for (int i = 0; i < 3; ++i) {
+            const bool selected = m_captureDirection == i;
+            if (ImGui::Selectable(kDirections[i], selected)) {
+                m_captureDirection = i;
+            }
+            if (selected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(110.0F);
+    if (ImGui::BeginCombo("##uve_capture_ch", kChannels[m_captureChannel])) {
+        for (int i = 0; i < 6; ++i) {
+            const bool selected = m_captureChannel == i;
+            if (ImGui::Selectable(kChannels[i], selected)) {
+                m_captureChannel = i;
+            }
+            if (selected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    ImGui::Checkbox("Malformed", &m_captureMalformedOnly);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    ImGui::InputText("##uve_capture_text", m_captureText.data(), m_captureText.size());
+
+    const std::vector<std::size_t> rows = m_packetCapture.FilteredUVE(m_captureFilter);
+    if (m_captureSelected != kNoCaptureSelectionUVE &&
+        m_packetCapture.TryAtUVE(m_captureSelected) == nullptr) {
+        m_captureSelected = kNoCaptureSelectionUVE;
+    }
+    if (ImGui::BeginChild("##uve_capture_list", ImVec2(0.0F, 220.0F), true)) {
+        if (ImGui::BeginTable("##uve_capture_table", 1,
+                              ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+            for (const std::size_t index : rows) {
+                const Network::InspectedPacketUVE* const packet =
+                    m_packetCapture.TryAtUVE(index);
+                if (packet == nullptr) {
+                    continue;
+                }
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                const std::string line = Network::DescribePacketUVE(*packet);
+                const bool selected = m_captureSelected == index;
+                if (packet->malformed) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.45F, 0.45F, 1.0F));
+                }
+                if (ImGui::Selectable(line.c_str(), selected,
+                                      ImGuiSelectableFlags_SpanAllColumns)) {
+                    m_captureSelected = index;
+                }
+                if (packet->malformed) {
+                    ImGui::PopStyleColor();
+                }
+                if (selected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndTable();
+        }
+    }
+    ImGui::EndChild();
+
+    if (ImGui::BeginChild("##uve_capture_detail", ImVec2(0.0F, 0.0F), true)) {
+        const Network::InspectedPacketUVE* const packet =
+            m_captureSelected == kNoCaptureSelectionUVE
+                ? nullptr
+                : m_packetCapture.TryAtUVE(m_captureSelected);
+        if (packet == nullptr) {
+            ImGui::TextDisabled("Select a packet.");
+        } else {
+            ImGui::TextUnformatted(Network::DescribePacketUVE(*packet).c_str());
+            const std::string meta = "t=" + std::to_string(packet->timestampMs) + " ms, " +
+                                     std::to_string(packet->raw.size()) + " bytes" +
+                                     (packet->malformed ? ", MALFORMED" : "");
+            ImGui::TextDisabled("%s", meta.c_str());
+            if (ImGui::BeginChild("##uve_capture_hex", ImVec2(0.0F, 0.0F), false,
+                                  ImGuiWindowFlags_HorizontalScrollbar)) {
+                ImGui::TextUnformatted(Network::HexdumpPacketUVE(packet->raw).c_str());
+            }
+            ImGui::EndChild();
+        }
+    }
+    ImGui::EndChild();
+    ImGui::End();
+}
+static std::uint64_t ProfilerNowNsUVE() {
+    const std::chrono::nanoseconds now =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch());
+    return static_cast<std::uint64_t>(now.count());
+}
+
+void EditorUVE::DrawProfilerDockUVE() {
+    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+    const EditorChromeLayoutUVE layout =
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
+    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
+    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                                       ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+    if (!ImGui::Begin("Profiler##lower-workspace-profiler", nullptr, flags)) {
+        ImGui::End();
+        return;
+    }
+    const bool active = m_profilerCapture.IsActiveUVE();
+    if (!active && ImGui::Button("Begin capture")) {
+        ++m_profilerSession;
+        const std::string session = "editor-" + std::to_string(m_profilerSession);
+        const Core::DiagnosticCaptureResultUVE begun =
+            m_profilerCapture.BeginUVE(session, ProfilerNowNsUVE());
+        m_profilerStatus =
+            begun.IsAcceptedUVE() ? "Capturing " + session + "." : begun.message;
+    }
+    if (active && ImGui::Button("End capture")) {
+        Core::DiagnosticCaptureStopResultUVE ended =
+            m_profilerCapture.EndUVE(ProfilerNowNsUVE());
+        if (ended.IsAcceptedUVE()) {
+            m_profilerBundle = std::move(ended.bundle);
+            m_profilerHasBundle = true;
+            m_profilerStatus = "Ended " + m_profilerBundle.sessionId + ".";
+        } else {
+            m_profilerStatus = ended.message;
+        }
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", m_profilerStatus.c_str());
+
+    // Live while capturing, frozen on the last completed bundle otherwise. The builders
+    // hold the sorting and formatting; this loop only prints their rows.
+    const Core::DiagnosticCaptureBundleUVE live =
+        active ? m_profilerCapture.SnapshotUVE() : Core::DiagnosticCaptureBundleUVE{};
+    const Core::DiagnosticCaptureBundleUVE& shown =
+        active ? live : (m_profilerHasBundle ? m_profilerBundle : live);
+    if (shown.sessionId.empty()) {
+        ImGui::TextDisabled("No capture yet: begin one to profile this session.");
+        ImGui::End();
+        return;
+    }
+    const std::string counts =
+        shown.sessionId + (active ? " (live)" : " (ended)") + ": " +
+        std::to_string(shown.spans.size()) + " spans, " +
+        std::to_string(shown.counters.size()) + " counters, " +
+        std::to_string(shown.breadcrumbs.size()) + " breadcrumbs (" +
+        std::to_string(shown.droppedSpanCount) + "/" +
+        std::to_string(shown.droppedCounterCount) + "/" +
+        std::to_string(shown.droppedBreadcrumbCount) + " dropped)";
+    ImGui::TextDisabled("%s", counts.c_str());
+
+    if (ImGui::BeginChild("##uve_profiler_body", ImVec2(0.0F, 0.0F), true)) {
+        ImGui::TextUnformatted("Spans");
+        const std::vector<Core::ProfilerSpanRowUVE> spans =
+            Core::BuildProfilerSpanRowsUVE(shown.spans);
+        if (ImGui::BeginTable("##uve_profiler_spans", 4,
+                              ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+            ImGui::TableSetupColumn("Span");
+            ImGui::TableSetupColumn("Category");
+            ImGui::TableSetupColumn("Begin (ns)");
+            ImGui::TableSetupColumn("Duration");
+            ImGui::TableHeadersRow();
+            for (const Core::ProfilerSpanRowUVE& row : spans) {
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(row.name.c_str());
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(Core::ProfilerCategoryNameUVE(row.category).data());
+                ImGui::TableNextColumn();
+                ImGui::Text("%llu", static_cast<unsigned long long>(row.beginNanoseconds));
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(
+                    Core::FormatProfilerDurationUVE(row.durationNanoseconds).c_str());
+            }
+            ImGui::EndTable();
+        }
+        ImGui::TextUnformatted("Counters");
+        const std::vector<Core::ProfilerCounterRowUVE> counters =
+            Core::BuildProfilerCounterRowsUVE(shown.counters);
+        if (ImGui::BeginTable("##uve_profiler_counters", 3,
+                              ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+            ImGui::TableSetupColumn("Counter");
+            ImGui::TableSetupColumn("Category");
+            ImGui::TableSetupColumn("Value");
+            ImGui::TableHeadersRow();
+            for (const Core::ProfilerCounterRowUVE& row : counters) {
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(row.name.c_str());
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(Core::ProfilerCategoryNameUVE(row.category).data());
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(Core::FormatProfilerCounterUVE(row.value).c_str());
+            }
+            ImGui::EndTable();
+        }
+        ImGui::TextUnformatted("Breadcrumbs");
+        if (shown.breadcrumbs.empty()) {
+            ImGui::TextDisabled("None.");
+        }
+        for (auto crumb = shown.breadcrumbs.rbegin(); crumb != shown.breadcrumbs.rend();
+             ++crumb) {
+            ImGui::TextDisabled("[%llu] %s", static_cast<unsigned long long>(crumb->sequence),
+                                crumb->message.c_str());
+        }
+        ImGui::TextUnformatted("Runtime");
+        const Core::DiagnosticRuntimeSnapshotUVE& runtime = shown.runtimeSnapshot;
+        const std::string runtimeLine =
+            "frame " + std::to_string(runtime.frameNumber) + ", " +
+            std::to_string(runtime.activeAllocationCount) + " allocations (" +
+            std::to_string(runtime.activeBytes) + " bytes, peak " +
+            std::to_string(runtime.peakBytes) + "), " + std::to_string(runtime.workerCount) +
+            " workers (" + std::to_string(runtime.activeWorkerCount) + " active, " +
+            std::to_string(runtime.pendingTaskCount) + " pending, " +
+            std::to_string(runtime.stolenJobCount) + " stolen), animation " +
+            std::to_string(runtime.animationEvaluationCount) + ", ecs " +
+            std::to_string(runtime.ecsSystemCount) + ", vm " +
+            std::to_string(runtime.vmInstructionCount) + ", render passes " +
+            std::to_string(runtime.renderPassCount);
+        ImGui::TextDisabled("%s", runtimeLine.c_str());
+    }
+    ImGui::EndChild();
     ImGui::End();
 }
 

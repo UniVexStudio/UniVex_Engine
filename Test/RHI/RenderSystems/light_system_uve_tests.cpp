@@ -47,10 +47,10 @@ TEST(LightComponentUVETest, IsLightComponentValidUVE_RejectsUnsafeValues) {
     EXPECT_TRUE(Scene::IsLightComponentValidUVE(Scene::LightComponentUVE{}));
 
     Scene::LightComponentUVE invalid = {};
-    invalid.color.x = -0.1F;
+    invalid.color.r = -0.1F;
     EXPECT_FALSE(Scene::IsLightComponentValidUVE(invalid));
     invalid = {};
-    invalid.color.y = std::numeric_limits<float>::quiet_NaN();
+    invalid.color.g = std::numeric_limits<float>::quiet_NaN();
     EXPECT_FALSE(Scene::IsLightComponentValidUVE(invalid));
     invalid = {};
     invalid.intensity = -1.0F;
@@ -81,7 +81,7 @@ TEST_F(LightSystemUVETest, DirectionalLight3DUVE_LightsTheFrameFromItsEmitterAnd
     const Scene::EntityUVE sun = entityManager.CreateEntityUVE();
     sceneGraph.AttachTransformUVE(entityManager, sun, Scene::TransformComponentUVE{});
     Scene::DirectionalLight3DObjectDefinitionUVE definition;
-    definition.emitter.color = Math::Vector3UVE{1.0F, 0.9F, 0.8F};
+    definition.emitter.color = Math::ColorUVE{1.0F, 0.9F, 0.8F};
     definition.emitter.energy = 3.0F;
     definition.light.shadowMaxDistance = 40.0F;
     definition.light.shadowSplitBlend = 0.25F;
@@ -91,27 +91,27 @@ TEST_F(LightSystemUVETest, DirectionalLight3DUVE_LightsTheFrameFromItsEmitterAnd
     const LightListUVE lights = lightSystem.ExtractActiveLightsUVE(entityManager);
     EXPECT_EQ(lights[0].type, Scene::LightTypeUVE::Directional);
     EXPECT_FLOAT_EQ(lights[0].intensity, 3.0F);
-    EXPECT_FLOAT_EQ(lights[0].color.y, 0.9F);
+    EXPECT_FLOAT_EQ(lights[0].color.g, 0.9F);
     EXPECT_TRUE(lights[0].castsShadows);
     EXPECT_FLOAT_EQ(lights[0].shadowMaxDistance, 40.0F);
     EXPECT_FLOAT_EQ(lights[0].shadowSplitBlend, 0.25F);
     EXPECT_FLOAT_EQ(lights[0].shadowDistanceFadeRange, 10.0F);
     EXPECT_FLOAT_EQ(lights[0].shadowBias, -1.0F);
     EXPECT_FLOAT_EQ(lights[0].shadowNormalBias, -1.0F);
-    EXPECT_FLOAT_EQ(lights[1].intensity, 0.0F) << "one light, one slot";
+    EXPECT_EQ(lights.SizeUVE(), 1U) << "one light, one slot";
     // The same light is chosen when ranked for a view.
-    EXPECT_FLOAT_EQ(lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{}).at(0).intensity, 3.0F);
+    EXPECT_FLOAT_EQ(lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{})[0].intensity, 3.0F);
 
     // Shadows off on the emitter: still lights, no longer casts.
     entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sun).shadowEnabled = false;
     EXPECT_FALSE(lightSystem.ExtractActiveLightsUVE(entityManager)[0].castsShadows);
     // A negative light is left out rather than drawn as a positive one.
     entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sun).negative = true;
-    EXPECT_FLOAT_EQ(lightSystem.ExtractActiveLightsUVE(entityManager)[0].intensity, 0.0F);
+    EXPECT_TRUE(lightSystem.ExtractActiveLightsUVE(entityManager).EmptyUVE());
 }
 
 TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_OneDirectionalLight_PopulatesSlotZeroOnly) {
-    Scene::LightComponentUVE light{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 2.0F};
+    Scene::LightComponentUVE light{Math::ColorUVE{1.0F, 1.0F, 1.0F}, 2.0F};
     light.type = Scene::LightTypeUVE::Directional;
     static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{}, light));
 
@@ -121,16 +121,16 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_OneDirectionalLight_PopulatesS
     EXPECT_EQ(result[0].direction, (Math::Vector3UVE{0.0F, 0.0F, -1.0F}));
     EXPECT_EQ(result[0].rotation, Math::QuaternionUVE{});
     EXPECT_FLOAT_EQ(result[0].intensity, 2.0F);
-    for (std::size_t i = 1; i < kMaxLightsUVE; ++i) {
-        EXPECT_FLOAT_EQ(result[i].intensity, 0.0F);
-    }
+    // One light, one slot: the list holds exactly what was extracted, and operator[] asserts
+    // in bounds, so there is nothing past slot zero to read.
+    EXPECT_EQ(result.SizeUVE(), 1U);
 }
 
 TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_RotatedDirectionalLight_DirectionMatchesRotateVectorUVE) {
     // 180 degrees about Y: x=0, y=sin(90deg)=1, z=0, w=cos(90deg)=0 — negates x and z, so the
     // light's forward {0,0,-1} becomes {0,0,1}.
     const Math::QuaternionUVE rotation{0.0F, 1.0F, 0.0F, 0.0F};
-    const Scene::LightComponentUVE light{Math::Vector3UVE{0.2F, 0.4F, 0.6F}, 3.5F};
+    const Scene::LightComponentUVE light{Math::ColorUVE{0.2F, 0.4F, 0.6F}, 3.5F};
     static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, rotation, light));
 
     const LightListUVE result = lightSystem.ExtractActiveLightsUVE(entityManager);
@@ -142,7 +142,7 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_RotatedDirectionalLight_Direct
 }
 
 TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_OnePointLight_PositionTypeAndRangeMatch) {
-    Scene::LightComponentUVE light{Math::Vector3UVE{0.5F, 0.6F, 0.7F}, 4.0F};
+    Scene::LightComponentUVE light{Math::ColorUVE{0.5F, 0.6F, 0.7F}, 4.0F};
     light.type = Scene::LightTypeUVE::Point;
     light.range = 25.0F;
     const Math::Vector3UVE position{3.0F, 1.0F, -2.0F};
@@ -157,7 +157,7 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_OnePointLight_PositionTypeAndR
 }
 
 TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_OneSpotLight_PositionDirectionAndAngleMatch) {
-    Scene::LightComponentUVE light{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 6.0F};
+    Scene::LightComponentUVE light{Math::ColorUVE{1.0F, 1.0F, 1.0F}, 6.0F};
     light.type = Scene::LightTypeUVE::Spot;
     light.range = 12.0F;
     light.spotAngleDegrees = 20.0F;
@@ -180,7 +180,7 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_LightComponentWithoutWorldTran
     // — no assert, no error, just silently excluded from the result.
     const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<Scene::LightComponentUVE>(
-        entity, Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 5.0F});
+        entity, Scene::LightComponentUVE{Math::ColorUVE{1.0F, 1.0F, 1.0F}, 5.0F});
 
     const LightListUVE result = lightSystem.ExtractActiveLightsUVE(entityManager);
 
@@ -195,21 +195,21 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_MultipleLightsSameArchetype_Ea
     // single archetype, ForEachUVE's iteration order is chunk/row creation order, so this pins
     // "slot N == the Nth created entity" as a deterministic, testable outcome.
     static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
-                                          Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 10.0F}));
+                                          Scene::LightComponentUVE{Math::ColorUVE{1.0F, 0.0F, 0.0F}, 10.0F}));
     static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
-                                          Scene::LightComponentUVE{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 20.0F}));
+                                          Scene::LightComponentUVE{Math::ColorUVE{0.0F, 1.0F, 0.0F}, 20.0F}));
     static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
-                                          Scene::LightComponentUVE{Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 30.0F}));
+                                          Scene::LightComponentUVE{Math::ColorUVE{0.0F, 0.0F, 1.0F}, 30.0F}));
 
     const LightListUVE result = lightSystem.ExtractActiveLightsUVE(entityManager);
 
     EXPECT_FLOAT_EQ(result[0].intensity, 10.0F);
-    EXPECT_EQ(result[0].color, (Math::Vector3UVE{1.0F, 0.0F, 0.0F}));
+    EXPECT_EQ(result[0].color, (Math::ColorUVE{1.0F, 0.0F, 0.0F}));
     EXPECT_FLOAT_EQ(result[1].intensity, 20.0F);
-    EXPECT_EQ(result[1].color, (Math::Vector3UVE{0.0F, 1.0F, 0.0F}));
+    EXPECT_EQ(result[1].color, (Math::ColorUVE{0.0F, 1.0F, 0.0F}));
     EXPECT_FLOAT_EQ(result[2].intensity, 30.0F);
-    EXPECT_EQ(result[2].color, (Math::Vector3UVE{0.0F, 0.0F, 1.0F}));
-    EXPECT_FLOAT_EQ(result[3].intensity, 0.0F); // unfilled sentinel
+    EXPECT_EQ(result[2].color, (Math::ColorUVE{0.0F, 0.0F, 1.0F}));
+    EXPECT_EQ(result.SizeUVE(), 3U); // three lights, three slots, no sentinel tail
 }
 
 TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_MoreThanMaxLights_OnlyFirstFourCreatedAreKept) {
@@ -219,12 +219,12 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_MoreThanMaxLights_OnlyFirstFou
     for (int i = 0; i < 6; ++i) {
         static_cast<void>(MakeLightEntityUVE(
             Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
-            Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, static_cast<float>(i + 1)}));
+            Scene::LightComponentUVE{Math::ColorUVE{1.0F, 1.0F, 1.0F}, static_cast<float>(i + 1)}));
     }
 
     const LightListUVE result = lightSystem.ExtractActiveLightsUVE(entityManager);
 
-    ASSERT_EQ(result.size(), kMaxLightsUVE);
+    ASSERT_EQ(result.SizeUVE(), kMaxLightsUVE);
     EXPECT_FLOAT_EQ(result[0].intensity, 1.0F);
     EXPECT_FLOAT_EQ(result[1].intensity, 2.0F);
     EXPECT_FLOAT_EQ(result[2].intensity, 3.0F);
@@ -234,7 +234,7 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_MoreThanMaxLights_OnlyFirstFou
 TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_EntityWithExtraComponents_StillMatched) {
     const Scene::EntityUVE entity =
         MakeLightEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
-                            Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 7.0F});
+                            Scene::LightComponentUVE{Math::ColorUVE{1.0F, 1.0F, 1.0F}, 7.0F});
     entityManager.AddComponentUVE<Scene::MeshComponentUVE>(entity);
 
     const LightListUVE result = lightSystem.ExtractActiveLightsUVE(entityManager);
@@ -305,7 +305,7 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_InvalidWorldTransform_SkipsWit
     light.type = Scene::LightTypeUVE::Point;
     light.intensity = intensity;
     light.range = range;
-    light.color = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+    light.color = Math::ColorUVE{1.0F, 1.0F, 1.0F};
     return light;
 }
 
@@ -367,7 +367,7 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_OutOfRangeLightNeverTak
         lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
 
     EXPECT_FLOAT_EQ(result[0].position.x, 50.0F);
-    EXPECT_FLOAT_EQ(result[1].intensity, 0.0F) << "the out-of-range light must leave the slot empty";
+    EXPECT_EQ(result.SizeUVE(), 1U) << "the out-of-range light must leave no slot at all";
 }
 
 TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_MoreLightsThanSlots_KeepsTheStrongestFour) {
@@ -380,7 +380,7 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_MoreLightsThanSlots_Kee
     const LightListUVE result =
         lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
 
-    ASSERT_EQ(result.size(), 4U);
+    ASSERT_EQ(result.SizeUVE(), 4U);
     for (std::size_t index = 0U; index < 4U; ++index) {
         EXPECT_FLOAT_EQ(result[index].position.x, static_cast<float>(index + 1));
     }
@@ -437,8 +437,8 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_RejectsExactlyWhatTheUn
     // One light reaches both: the component without a world transform is matched by neither.
     EXPECT_FLOAT_EQ(unordered[0].intensity, 5.0F);
     EXPECT_FLOAT_EQ(selected[0].intensity, 5.0F);
-    EXPECT_FLOAT_EQ(unordered[1].intensity, 0.0F);
-    EXPECT_FLOAT_EQ(selected[1].intensity, 0.0F);
+    EXPECT_EQ(unordered.SizeUVE(), 1U);
+    EXPECT_EQ(selected.SizeUVE(), 1U);
 }
 
 TEST_F(LightSystemUVETest, DirectionalLight3DUVE_CopiesEmitterLayersSpecularShadowAndFog) {
@@ -477,7 +477,7 @@ TEST_F(LightSystemUVETest, DirectionalLight3DUVE_EmptyCullMaskDoesNotOccupyASlot
     sceneGraph.UpdateUVE(entityManager);
 
     const LightListUVE lights = lightSystem.ExtractActiveLightsUVE(entityManager);
-    EXPECT_FLOAT_EQ(lights[0].intensity, 0.0F);
+    EXPECT_TRUE(lights.EmptyUVE());
 }
 
 TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_DistanceFadeScalesEnergyThenDropsTheShadow) {

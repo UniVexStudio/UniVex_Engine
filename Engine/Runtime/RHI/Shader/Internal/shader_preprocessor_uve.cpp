@@ -427,15 +427,4 @@ PreprocessResultUVE PreprocessShaderSourceUVE(Asset::IFileSystemUVE& fileSystem,
     return result;
 }
 
-std::uint64_t ComputeFnv1aHashUVE(std::string_view data) noexcept {
-    constexpr std::uint64_t kOffsetBasis = 0xcbf29ce484222325ULL;
-    constexpr std::uint64_t kPrime = 0x100000001b3ULL;
-    std::uint64_t hash = kOffsetBasis;
-    for (const char character : data) {
-        hash ^= static_cast<std::uint64_t>(static_cast<unsigned char>(character));
-        hash *= kPrime;
-    }
-    return hash;
-}
-
 } // namespace UVE::Render::Shader::Detail

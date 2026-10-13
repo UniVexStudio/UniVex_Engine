@@ -49,7 +49,8 @@ std::optional<SphereCastHitUVE> ShapeCastSystemUVE::SphereCastUVE(
         std::optional<Math::RayHitUVE> hit;
         if (collider.shapeType == Scene::ColliderShapeTypeUVE::Sphere) {
             hit = Detail::IntersectMovingSphereSphereUVE(
-                query.ray, collider.worldAabb.GetCenterUVE(), query.radius, collider.shapeRadius, query.maxDistance);
+                query.ray, query.radius,
+                Math::SphereUVE{collider.worldAabb.GetCenterUVE(), collider.shapeRadius}, query.maxDistance);
         } else if (collider.shapeType == Scene::ColliderShapeTypeUVE::Capsule) {
             const float expandedRadius = query.radius + collider.shapeRadius;
             if (std::isfinite(expandedRadius) && expandedRadius >= 0.0F) {

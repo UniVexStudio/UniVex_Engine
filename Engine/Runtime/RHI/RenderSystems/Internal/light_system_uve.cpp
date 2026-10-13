@@ -43,7 +43,7 @@ namespace {
     // Rec. 709 luminance: the eye's own weighting, so a green light is not ranked equal to a blue
     // one of the same numeric intensity.
     const float luminance =
-        0.2126F * light.color.x + 0.7152F * light.color.y + 0.0722F * light.color.z;
+        0.2126F * light.color.r + 0.7152F * light.color.g + 0.0722F * light.color.b;
     const float emitted = light.intensity * std::max(luminance, 0.0F);
     if (emitted <= 0.0F) {
         return 0.0F;
@@ -183,12 +183,15 @@ void ForEachLightDataUVE(Scene::IEntityManagerUVE& entityManager, const Visit& v
 
 LightListUVE LightSystemUVE::ExtractActiveLightsUVE(Scene::IEntityManagerUVE& entityManager) const {
     LightListUVE result;
-    std::size_t filledCount = 0;
 
     ForEachLightDataUVE(entityManager, [&](const LightDataUVE& light) {
-        if (filledCount < kMaxLightsUVE) {
-            result[filledCount++] = light;
+        // A light contributing nothing (a negative light zeroes its intensity when built) is left
+        // out of the list rather than occupying a slot: the shader would skip it anyway, and
+        // holding a slot open costs a real light its place. Same rule as the ranked path below.
+        if (light.intensity <= 0.0F || result.FullUVE()) {
+            return;
         }
+        result.PushBackUVE(light);
     });
 
     return result;
@@ -224,12 +227,12 @@ LightListUVE LightSystemUVE::ExtractActiveLightsForViewUVE(Scene::IEntityManager
 
     LightListUVE result;
     for (std::size_t index = 0U; index < keepCount; ++index) {
-        // A light contributing nothing is left as the empty sentinel rather than occupying a slot:
-        // the shader would skip it anyway, and holding a slot open costs a real light its place.
+        // A light contributing nothing is left out of the list rather than occupying a slot: the
+        // shader would skip it anyway, and holding a slot open costs a real light its place.
         if (candidates[index].contribution <= 0.0F) {
             break;
         }
-        result[index] = candidates[index].light;
+        result.PushBackUVE(candidates[index].light);
     }
     return result;
 }

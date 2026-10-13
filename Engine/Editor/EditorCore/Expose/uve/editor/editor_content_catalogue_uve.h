@@ -6,7 +6,7 @@
 #include <span>
 #include <string_view>
 
-#include "uve/object/scene_object_registry_uve.h"
+#include "uve/scene/objects/scene_object_registry_uve.h"
 
 namespace UVE::Editor {
 
@@ -26,8 +26,11 @@ enum class ContentCatalogueActionUVE : std::uint8_t {
     Folder = 0,
     /// A `.uventity` asset holding `objects`.
     EntityAsset,
-    /// A `.uvscene` asset with a complete Object and nodes beneath its Viewport.
+    /// A `.uvscene` asset with a complete scene root and nodes beneath its Viewport.
     SceneAsset,
+    /// A `.uvanimlib` asset: an empty animation library. Like Folder, it makes a file and no
+    /// entities, so its item carries no objects.
+    LibraryAsset,
 };
 
 /// An entry of the Content "+ Add" / right-click menu.

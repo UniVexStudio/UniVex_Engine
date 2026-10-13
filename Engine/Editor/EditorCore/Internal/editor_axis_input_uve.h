@@ -11,16 +11,10 @@
 
 namespace UVE::Editor {
 
-/// The Inspector's float formats: one spelling per decimal count, so every float row -
-/// Transform, metadata scalars and vectors, script exports - shows the same precision the
-/// same way. The setting's own range (EditorUVE::kInspectorFloatPrecisionMinUVE..MaxUVE)
-/// matches this table; the clamp keeps a caller that passes anything else on a real entry
-/// instead of off the end.
-[[nodiscard]] inline const char* InspectorFloatFormatUVE(const int decimals) noexcept {
-    static constexpr std::array<const char*, 7> kFormats{"%.0f", "%.1f", "%.2f", "%.3f",
-                                                         "%.4f", "%.5f", "%.6f"};
-    return kFormats[static_cast<std::size_t>(std::clamp(decimals, 0, 6))];
-}
+/// Default axis tags for DrawAxisVectorInputUVE (X red, Y green, Z blue, W grey).
+inline constexpr std::array<const char*, 4> kDefaultAxisNamesUVE{"X", "Y", "Z", "W"};
+/// Axis tags for a rect extent row: width/height instead of X/Y (only the first two are read).
+inline constexpr std::array<const char*, 4> kRectSizeAxisNamesUVE{"W", "H", "", ""};
 
 /// One vector field per axis, sharing the available width equally, each led by a coloured axis tag
 /// (X red, Y green, Z blue, W grey) drawn inside the field's own frame. The number is drawn after
@@ -30,14 +24,12 @@ namespace UVE::Editor {
 /// Returns true when any component changed this frame. `count` is 2, 3 or 4. The fields form one
 /// group, so ImGui::IsItemActive() and IsItemDeactivated() after the call describe the whole
 /// vector: a drag on any axis is one edit, which callers record as one undo step when it ends.
-/// `maxDecimals` caps the chain at the author's chosen precision - 3 is the shipped look, and
-/// the Inspector passes its float-precision setting while every other caller keeps the default.
+/// `axisNames` overrides the per-axis tags (a rect extent row shows W/H instead of X/Y).
 inline bool DrawAxisVectorInputUVE(const char* const id, float* const values, const int count, const float speed,
                                    const float minimum = 0.0F, const float maximum = 0.0F,
-                                   const int maxDecimals = 3) {
+                                   const std::array<const char*, 4>& axisNames = kDefaultAxisNamesUVE) {
     static constexpr std::array<ImU32, 4> kAxisColors{IM_COL32(214, 72, 72, 255), IM_COL32(96, 180, 72, 255),
                                                       IM_COL32(72, 128, 222, 255), IM_COL32(140, 140, 150, 255)};
-    static constexpr std::array<const char*, 4> kAxisNames{"X", "Y", "Z", "W"};
     ImGui::PushID(id);
     ImGui::BeginGroup();
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -61,7 +53,7 @@ inline bool DrawAxisVectorInputUVE(const char* const id, float* const values, co
         drawList.AddRectFilled(origin, ImVec2{origin.x + tagWidth, origin.y + height},
                                kAxisColors[static_cast<std::size_t>(axis)], style.FrameRounding,
                                ImDrawFlags_RoundCornersLeft);
-        const char* const name = kAxisNames[static_cast<std::size_t>(axis)];
+        const char* const name = axisNames[static_cast<std::size_t>(axis)];
         const ImVec2 labelSize = ImGui::CalcTextSize(name);
         drawList.AddText(ImVec2{origin.x + ((tagWidth - labelSize.x) * 0.5F), origin.y + ((height - labelSize.y) * 0.5F)},
                          IM_COL32(255, 255, 255, 240), name);
@@ -69,23 +61,21 @@ inline bool DrawAxisVectorInputUVE(const char* const id, float* const values, co
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{2.0F, style.FramePadding.y});
         const float fieldWidth = std::max(8.0F, width - tagWidth);
         ImGui::SetNextItemWidth(fieldWidth);
-        // As many decimals as the field can show whole, up to the author's chosen precision: a
-        // narrow panel shows "1.25" rather than a cut-off "1.250" - but squeezing never shows a
-        // different number, and the choice itself is always honoured. The exact value is always
-        // in the tooltip, and typing is never limited.
-        const int capped = std::clamp(maxDecimals, 0, 6);
-        const char* fieldFormat = InspectorFloatFormatUVE(capped);
+        // As many decimals as the field can show whole: a narrow panel shows "1.25" rather than a
+        // cut-off "1.250" - but never so few that the number shown is a different one. The exact
+        // value is always in the tooltip, and typing is never limited.
+        const char* fieldFormat = "%.3f";
+        static constexpr std::array<const char*, 4> kFallbacks{"%.3f", "%.2f", "%.1f", "%.0f"};
         std::array<char, 64> preview{};
-        for (int decimals = capped; decimals >= 0; --decimals) {
+        for (const char* const candidate : kFallbacks) {
             // Whole numbers only when the value is one: 0.5 shown as "0" is a wrong number, while a
-            // clipped "0.5" is merely cut short (and the tooltip has it exactly). The guard applies
-            // while squeezing below the choice, never to the choice itself.
-            if (decimals == 0 && decimals < capped &&
+            // clipped "0.5" is merely cut short (and the tooltip has it exactly).
+            if (candidate == kFallbacks.back() && fieldFormat != nullptr &&
                 std::abs(values[axis] - std::round(values[axis])) > 1.0e-4F) {
                 break;
             }
-            fieldFormat = InspectorFloatFormatUVE(decimals);
-            std::snprintf(preview.data(), preview.size(), fieldFormat, static_cast<double>(values[axis]));
+            fieldFormat = candidate;
+            std::snprintf(preview.data(), preview.size(), candidate, static_cast<double>(values[axis]));
             if (ImGui::CalcTextSize(preview.data()).x + 6.0F <= fieldWidth) {
                 break;
             }

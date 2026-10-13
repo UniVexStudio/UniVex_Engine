@@ -16,8 +16,9 @@ namespace UVE::Scene {
 /// one of the master spec's named built-in components. Deliberately holds only the parent (not
 /// a children list too), so there is exactly one place the parent/child relationship is
 /// recorded; SceneGraphUVE::GetChildrenUVE() derives the children of a given entity by
-/// scanning for this component rather than maintaining a second, redundant index. `parent ==
-/// kInvalidEntityUVE` means "this entity is an Object."
+/// scanning for this component. `ChildrenIndexUVE` keeps a derived parent->children map for bulk
+/// queries, but it is a cache (rebuilt, never authored), so this link stays the one place the
+/// relationship is recorded. `parent == kInvalidEntityUVE` means "this entity is a scene root."
 ///
 /// `siblingOrder` places the entity among its parent's children: lower first. Only the
 /// comparison matters, never the number. A new link takes the next order, so it lands after the

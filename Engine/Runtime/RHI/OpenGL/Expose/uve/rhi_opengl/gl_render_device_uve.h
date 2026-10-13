@@ -48,6 +48,8 @@ public:
     [[nodiscard]] bool SupportsTextureFormatUVE(
         TextureFormatUVE format, TextureColorSpaceUVE colorSpace = TextureColorSpaceUVE::Linear) const noexcept override;
     void DestroyTextureUVE(TextureHandleUVE texture) override;
+    [[nodiscard]] SamplerHandleUVE CreateSamplerUVE(const SamplerDescUVE& desc) override;
+    void DestroySamplerUVE(SamplerHandleUVE sampler) override;
 
     [[nodiscard]] ShaderHandleUVE CreateShaderUVE(const ShaderDescUVE& desc, std::string* outInfoLog = nullptr) override;
     void DestroyShaderUVE(ShaderHandleUVE shader) override;

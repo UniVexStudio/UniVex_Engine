@@ -223,17 +223,10 @@ TEST(ShaderPreprocessorUVETest, EmbeddedFallback_FileIndexTableHasSingleEntry) {
     EXPECT_EQ(result.fileIndexTable[0], "shaders/missing.glsl (embedded fallback)");
 }
 
-TEST(ShaderPreprocessorUVETest, ComputeFnv1aHashUVE_SameInput_ProducesSameHash) {
-    EXPECT_EQ(ComputeFnv1aHashUVE("hello world"), ComputeFnv1aHashUVE("hello world"));
-}
-
-TEST(ShaderPreprocessorUVETest, ComputeFnv1aHashUVE_DifferentInput_ProducesDifferentHash) {
-    EXPECT_NE(ComputeFnv1aHashUVE("hello world"), ComputeFnv1aHashUVE("hello there"));
-}
-
-TEST(ShaderPreprocessorUVETest, ComputeFnv1aHashUVE_EmptyInput_DoesNotCrashAndIsDeterministic) {
-    EXPECT_EQ(ComputeFnv1aHashUVE(""), ComputeFnv1aHashUVE(""));
-}
+// NOTE: the FNV-1a primitive these tests pinned (Detail::ComputeFnv1aHashUVE) was deleted by the
+// 1.7 hashing migration — ShaderManagerUVE now calls Utilities::HashStringUVE directly, and the
+// determinism/difference/empty properties are pinned with known-answer vectors in
+// Test/Core/Utilities/hash_uve_tests.cpp instead.
 
 } // namespace
 } // namespace UVE::Render::Shader::Detail::Tests

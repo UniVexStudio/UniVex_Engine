@@ -45,6 +45,8 @@ public:
     [[nodiscard]] bool SupportsTextureFormatUVE(
         TextureFormatUVE format, TextureColorSpaceUVE colorSpace = TextureColorSpaceUVE::Linear) const noexcept override;
     void DestroyTextureUVE(TextureHandleUVE texture) override;
+    [[nodiscard]] SamplerHandleUVE CreateSamplerUVE(const SamplerDescUVE& desc) override;
+    void DestroySamplerUVE(SamplerHandleUVE sampler) override;
 
     [[nodiscard]] ShaderHandleUVE CreateShaderUVE(const ShaderDescUVE& desc, std::string* outInfoLog = nullptr) override;
     void DestroyShaderUVE(ShaderHandleUVE shader) override;
@@ -80,6 +82,10 @@ public:
     /// Test-only hook: snapshots descriptors for live textures so renderer integration tests can
     /// verify asset metadata reached the RHI without exposing backend storage through the RHI API.
     [[nodiscard]] std::vector<TextureDescUVE> GetLiveTextureDescsUVE() const;
+
+    /// Test-only hook: snapshots descriptors for live samplers (the Tier 2.2 analogue of
+    /// GetLiveTextureDescsUVE above).
+    [[nodiscard]] std::vector<SamplerDescUVE> GetLiveSamplerDescsUVE() const;
 
     /// Test-only hook: how many CreateTextureUVE() attempts have reached this device, including
     /// attempts rejected by descriptor validation. It exposes retry behavior without adding a

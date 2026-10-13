@@ -61,8 +61,8 @@ protected:
     /// than a cube, which is what makes a patch's extent mean something.
     Math::Vector3UVE meshHalfExtents{0.5F, 0.5F, 0.5F};
     bool materialIsTransparent = false;
-    Math::Vector3UVE materialAlbedo{1.0F, 1.0F, 1.0F};
-    Math::Vector3UVE materialEmissive{0.0F, 0.0F, 0.0F};
+    Math::ColorUVE materialAlbedo{1.0F, 1.0F, 1.0F};
+    Math::ColorUVE materialEmissive{0.0F, 0.0F, 0.0F};
 
     void RegisterImmediateLoadersUVE() {
         assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>(
@@ -650,8 +650,8 @@ TEST_F(DecalRendererUVETest, BuildDecalDrawPlanUVE_CarriesTheAuthoredLookIntoThe
     // the material's albedo and emissive, and the decal's own modulate/emissionEnergy/albedoMix and
     // fades. This pins the wiring between the two, which is the difference between an authored
     // field and a field that does nothing.
-    materialAlbedo = Math::Vector3UVE{0.8F, 0.1F, 0.1F};
-    materialEmissive = Math::Vector3UVE{0.2F, 0.0F, 0.0F};
+    materialAlbedo = Math::ColorUVE{0.8F, 0.1F, 0.1F};
+    materialEmissive = Math::ColorUVE{0.2F, 0.0F, 0.0F};
     const WallAndDecalUVE scene = MakeWallAndDecalUVE();
 
     Scene::Decal3DComponentUVE& authored = entityManager.GetComponentUVE<Scene::Decal3DComponentUVE>(scene.decal);

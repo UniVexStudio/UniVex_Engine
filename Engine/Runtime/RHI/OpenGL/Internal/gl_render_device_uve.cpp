@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstring>
 #include <limits>
 #include <string>
 
@@ -18,6 +19,13 @@
 #endif
 
 #include "gl_command_buffer_uve.h"
+
+// The anisotropy enums live in glext.h on desktop GL; this fallback keeps exotic platform
+// headers (Android NDK configurations without the EXT declaration) compiling — the value is
+// the registered 0x84FE on every API.
+#if !defined(GL_TEXTURE_MAX_ANISOTROPY_EXT)
+#define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
+#endif
 #include "gl_error_check_uve.h"
 #include "gl_render_device_state_uve.h"
 #include "uve/logging/assert_uve.h"
@@ -328,6 +336,29 @@ GlRenderDeviceUVE::GlRenderDeviceUVE(Window::IWindowManagerUVE& windowManager)
     } else {
         glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &m_impl->state.maxCombinedTextureImageUnits);
         glGetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &m_impl->state.maxUniformBufferBindings);
+        // Tier 2.2 anisotropy probe: GL_EXT_texture_filter_anisotropic is an EXTENSION on every
+        // API (never core), so support is a string scan, not a version check. glGetStringi is
+        // core since GL 3.0 — the desktop baseline — and equally present on GLES 3.0.
+        if (m_impl->state.gl.glGetStringi != nullptr) {
+            GLint extensionCount = 0;
+            glGetIntegerv(GL_NUM_EXTENSIONS, &extensionCount);
+            for (GLint extensionIndex = 0; extensionIndex < extensionCount; ++extensionIndex) {
+                const char* const extensionName = reinterpret_cast<const char*>(
+                    m_impl->state.gl.glGetStringi(GL_EXTENSIONS, static_cast<GLuint>(extensionIndex)));
+                if (extensionName != nullptr &&
+                    std::strcmp(extensionName, "GL_EXT_texture_filter_anisotropic") == 0) {
+                    m_impl->state.samplerAnisotropySupported = true;
+                    break;
+                }
+            }
+            if (m_impl->state.samplerAnisotropySupported) {
+                GLfloat maxAnisotropy = 1.0F;
+                glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAnisotropy);
+                if (maxAnisotropy >= 1.0F) {
+                    m_impl->state.maxSamplerAnisotropy = maxAnisotropy;
+                }
+            }
+        }
         glGetIntegerv(GL_MAX_VERTEX_ATTRIBS, &m_impl->state.maxVertexAttribs);
         GLint compressedFormatCount = 0;
         glGetIntegerv(kGlNumCompressedTextureFormatsUVE, &compressedFormatCount);
@@ -390,6 +421,13 @@ GlRenderDeviceUVE::~GlRenderDeviceUVE() {
         glDeleteTextures(1, &record.glTexture);
     }
     m_impl->state.textures.clear();
+    for (const auto& [handle, record] : m_impl->state.samplers) {
+        static_cast<void>(handle);
+        // glDeleteSamplers is non-null whenever this map is non-empty: CreateSamplerUVE fails
+        // closed without the entry points, so a sampler record implies a loaded deleter.
+        m_impl->state.gl.glDeleteSamplers(1, &record.glSampler);
+    }
+    m_impl->state.samplers.clear();
 }
 
 BufferHandleUVE GlRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc, std::span<const std::byte> initialData) {
@@ -548,43 +586,124 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
     // Texture creation temporarily binds the object on the current active unit. Preserve both
     // pieces of caller/command-buffer state so a live GlCommandBufferUVE texture cache cannot
     // falsely skip a later rebind after a resource is created between draws.
+    // Tier 2.3: dimensional targets. Cubes upload face-by-face in CubemapFaceUVE order
+    // (POSITIVE_X + face); arrays upload whole levels, all layers contiguous.
+    const bool isCube = desc.type == TextureTypeUVE::Cubemap;
+    const bool isArray = desc.type == TextureTypeUVE::Texture2DArray;
+    const GLenum textureTarget = isCube ? GL_TEXTURE_CUBE_MAP
+                                 : isArray ? GL_TEXTURE_2D_ARRAY
+                                           : GL_TEXTURE_2D;
+    const GLenum bindingQuery = isCube ? GL_TEXTURE_BINDING_CUBE_MAP
+                                 : isArray ? GL_TEXTURE_BINDING_2D_ARRAY
+                                           : GL_TEXTURE_BINDING_2D;
+    if (isArray || isCube) {
+        GLint maxLayers = 0;
+        glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &maxLayers);
+        GLint maxCubeSize = 0;
+        glGetIntegerv(GL_MAX_CUBE_MAP_TEXTURE_SIZE, &maxCubeSize);
+        if ((isArray && desc.arrayLayers > static_cast<std::uint32_t>(maxLayers)) ||
+            (isCube && desc.width > static_cast<std::uint32_t>(maxCubeSize))) {
+            UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE array/cubemap exceeds GL limits");
+            return kInvalidTextureHandleUVE;
+        }
+        if (isArray && m_impl->state.gl.glTexImage3D == nullptr &&
+            !IsTextureFormatCompressedUVE(desc.format)) {
+            UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE needs glTexImage3D for arrays");
+            return kInvalidTextureHandleUVE;
+        }
+        if (isArray && m_impl->state.gl.glCompressedTexImage3D == nullptr &&
+            IsTextureFormatCompressedUVE(desc.format)) {
+            UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE needs glCompressedTexImage3D");
+            return kInvalidTextureHandleUVE;
+        }
+    }
+
     GLint previousActiveTexture = GL_TEXTURE0;
     GLint previousTextureBinding = 0;
     glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureBinding);
+    glGetIntegerv(bindingQuery, &previousTextureBinding);
 
     GLuint glTexture = 0;
     glGenTextures(1, &glTexture);
-    glBindTexture(GL_TEXTURE_2D, glTexture);
+    glBindTexture(textureTarget, glTexture);
     std::size_t dataOffset = 0U;
     std::uint32_t levelWidth = desc.width;
     std::uint32_t levelHeight = desc.height;
     for (std::uint32_t level = 0U; level < desc.mipLevels; ++level) {
-        const std::byte* const levelData = initialData.empty() ? nullptr : initialData.data() + dataOffset;
-        if (IsTextureFormatCompressedUVE(desc.format)) {
-            m_impl->state.gl.glCompressedTexImage2D(
-                GL_TEXTURE_2D, static_cast<GLint>(level), static_cast<GLenum>(glFormat.internalFormat),
-                static_cast<GLsizei>(levelWidth), static_cast<GLsizei>(levelHeight), 0,
-                mipImageSizes[level], levelData);
+        const std::byte* const levelData =
+            initialData.empty() ? nullptr : initialData.data() + dataOffset;
+        if (isCube) {
+            // Cube faces upload consecutively per level in CubemapFaceUVE order.
+            for (std::uint32_t face = 0U; face < 6U; ++face) {
+                const std::byte* faceData = nullptr;
+                if (levelData != nullptr) {
+                    faceData =
+                        levelData + static_cast<std::size_t>(mipImageSizes[level]) * face;
+                }
+                const GLenum faceTarget =
+                    static_cast<GLenum>(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face);
+                if (IsTextureFormatCompressedUVE(desc.format)) {
+                    m_impl->state.gl.glCompressedTexImage2D(
+                        faceTarget, static_cast<GLint>(level),
+                        static_cast<GLenum>(glFormat.internalFormat),
+                        static_cast<GLsizei>(levelWidth), static_cast<GLsizei>(levelHeight), 0,
+                        mipImageSizes[level], faceData);
+                } else {
+                    glTexImage2D(faceTarget, static_cast<GLint>(level), glFormat.internalFormat,
+                                 static_cast<GLsizei>(levelWidth), static_cast<GLsizei>(levelHeight),
+                                 0, glFormat.format, glFormat.type, faceData);
+                }
+            }
+            dataOffset += static_cast<std::size_t>(mipImageSizes[level]) * 6U;
+        } else if (isArray) {
+            // Whole-level upload: all layers contiguous (level-major, per the RHI contract).
+            // The size_t intermediate keeps huge levels out of signed-overflow UB; the driver
+            // reports oversized allocations through the standard GL error path below.
+            const GLsizei levelBytesAllLayers = static_cast<GLsizei>(
+                static_cast<std::size_t>(mipImageSizes[level]) * desc.arrayLayers);
+            if (IsTextureFormatCompressedUVE(desc.format)) {
+                m_impl->state.gl.glCompressedTexImage3D(
+                    GL_TEXTURE_2D_ARRAY, static_cast<GLint>(level),
+                    static_cast<GLenum>(glFormat.internalFormat), static_cast<GLsizei>(levelWidth),
+                    static_cast<GLsizei>(levelHeight), static_cast<GLsizei>(desc.arrayLayers), 0,
+                    levelBytesAllLayers, levelData);
+            } else {
+                m_impl->state.gl.glTexImage3D(
+                    GL_TEXTURE_2D_ARRAY, static_cast<GLint>(level), glFormat.internalFormat,
+                    static_cast<GLsizei>(levelWidth), static_cast<GLsizei>(levelHeight),
+                    static_cast<GLsizei>(desc.arrayLayers), 0, glFormat.format, glFormat.type,
+                    levelData);
+            }
+            dataOffset += static_cast<std::size_t>(mipImageSizes[level]) * desc.arrayLayers;
         } else {
-            glTexImage2D(GL_TEXTURE_2D, static_cast<GLint>(level), glFormat.internalFormat,
-                         static_cast<GLsizei>(levelWidth), static_cast<GLsizei>(levelHeight), 0,
-                         glFormat.format, glFormat.type, levelData);
+            if (IsTextureFormatCompressedUVE(desc.format)) {
+                m_impl->state.gl.glCompressedTexImage2D(
+                    GL_TEXTURE_2D, static_cast<GLint>(level),
+                    static_cast<GLenum>(glFormat.internalFormat), static_cast<GLsizei>(levelWidth),
+                    static_cast<GLsizei>(levelHeight), 0, mipImageSizes[level], levelData);
+            } else {
+                glTexImage2D(GL_TEXTURE_2D, static_cast<GLint>(level), glFormat.internalFormat,
+                             static_cast<GLsizei>(levelWidth), static_cast<GLsizei>(levelHeight), 0,
+                             glFormat.format, glFormat.type, levelData);
+            }
+            dataOffset += static_cast<std::size_t>(mipImageSizes[level]);
         }
-        dataOffset += static_cast<std::size_t>(mipImageSizes[level]);
         levelWidth = levelWidth > 1U ? levelWidth / 2U : 1U;
         levelHeight = levelHeight > 1U ? levelHeight / 2U : 1U;
     }
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+    glTexParameteri(textureTarget, GL_TEXTURE_MIN_FILTER,
                     desc.mipLevels > 1U ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(desc.mipLevels - 1U));
+    glTexParameteri(textureTarget, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(textureTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(textureTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    if (isArray) {
+        glTexParameteri(textureTarget, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    }
+    glTexParameteri(textureTarget, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(desc.mipLevels - 1U));
     UVE_GL_CHECK_ERROR_UVE("CreateTextureUVE mip allocation/upload and sampler state");
 
     m_impl->state.gl.glActiveTexture(static_cast<GLenum>(previousActiveTexture));
-    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
+    glBindTexture(textureTarget, static_cast<GLuint>(previousTextureBinding));
 
     const std::uint32_t handleValue = m_impl->state.nextTextureHandle++;
     m_impl->state.textures.emplace(handleValue, Detail::GlDeviceStateUVE::TextureRecordUVE{glTexture, desc});
@@ -629,9 +748,18 @@ void GlRenderDeviceUVE::DestroyTextureUVE(TextureHandleUVE texture) {
     glDeleteTextures(1, &it->second.glTexture);
     for (auto framebufferIt = m_impl->state.framebufferCache.begin();
          framebufferIt != m_impl->state.framebufferCache.end();) {
-        const std::uint32_t colorHandle = static_cast<std::uint32_t>(framebufferIt->first >> 32U);
-        const std::uint32_t depthHandle = static_cast<std::uint32_t>(framebufferIt->first & 0xFFFF'FFFFULL);
-        if (colorHandle == texture.value || depthHandle == texture.value) {
+        const std::uint32_t colorHandle = framebufferIt->first.color;
+        const std::uint32_t depthHandle = framebufferIt->first.depth;
+        // Tier 2.4: extras pin their FBOs too — a destroyed extra must evict the cache entry
+        // (unused slots hold 0, which no live handle takes, so they never match).
+        bool extraMatches = false;
+        for (const std::uint32_t extraHandle : framebufferIt->first.extraColors) {
+            if (extraHandle == texture.value) {
+                extraMatches = true;
+                break;
+            }
+        }
+        if (colorHandle == texture.value || depthHandle == texture.value || extraMatches) {
             m_impl->state.gl.glDeleteFramebuffers(1, &framebufferIt->second);
             framebufferIt = m_impl->state.framebufferCache.erase(framebufferIt);
         } else {
@@ -639,6 +767,81 @@ void GlRenderDeviceUVE::DestroyTextureUVE(TextureHandleUVE texture) {
         }
     }
     m_impl->state.textures.erase(it);
+}
+
+SamplerHandleUVE GlRenderDeviceUVE::CreateSamplerUVE(const SamplerDescUVE& desc) {
+    if (!IsSamplerDescValidUVE(desc)) {
+        UVE_ERROR("GlRenderDeviceUVE: CreateSamplerUVE received an invalid sampler descriptor");
+        return kInvalidSamplerHandleUVE;
+    }
+    if (m_impl->state.gl.glGenSamplers == nullptr || m_impl->state.gl.glDeleteSamplers == nullptr ||
+        m_impl->state.gl.glBindSampler == nullptr || m_impl->state.gl.glSamplerParameteri == nullptr ||
+        m_impl->state.gl.glSamplerParameterf == nullptr) {
+        UVE_ERROR("GlRenderDeviceUVE: CreateSamplerUVE needs GL 3.3+ sampler objects, "
+                  "unavailable on this context");
+        return kInvalidSamplerHandleUVE;
+    }
+    const auto toWrap = [](const SamplerWrapUVE wrap) noexcept {
+        switch (wrap) {
+            case SamplerWrapUVE::Repeat:         return GL_REPEAT;
+            case SamplerWrapUVE::MirroredRepeat: return GL_MIRRORED_REPEAT;
+            case SamplerWrapUVE::ClampToEdge:    return GL_CLAMP_TO_EDGE;
+        }
+        return GL_CLAMP_TO_EDGE; // unreachable; desc was validated
+    };
+    // GL's MIN_FILTER fuses minification and mip blending into one enum; the desc keeps them
+    // separate (Vulkan's shape), so the fusion happens here.
+    GLint minFilter = GL_LINEAR_MIPMAP_LINEAR;
+    if (desc.mipMode == SamplerMipModeUVE::None) {
+        minFilter = desc.minFilter == SamplerFilterUVE::Point ? GL_NEAREST : GL_LINEAR;
+    } else if (desc.minFilter == SamplerFilterUVE::Point) {
+        minFilter = desc.mipMode == SamplerMipModeUVE::Point ? GL_NEAREST_MIPMAP_NEAREST
+                                                             : GL_NEAREST_MIPMAP_LINEAR;
+    } else {
+        minFilter = desc.mipMode == SamplerMipModeUVE::Point ? GL_LINEAR_MIPMAP_NEAREST
+                                                             : GL_LINEAR_MIPMAP_LINEAR;
+    }
+    GLuint glSampler = 0;
+    m_impl->state.gl.glGenSamplers(1, &glSampler);
+    m_impl->state.gl.glSamplerParameteri(glSampler, GL_TEXTURE_MIN_FILTER, minFilter);
+    m_impl->state.gl.glSamplerParameteri(
+        glSampler, GL_TEXTURE_MAG_FILTER,
+        desc.magFilter == SamplerFilterUVE::Point ? GL_NEAREST : GL_LINEAR);
+    m_impl->state.gl.glSamplerParameteri(glSampler, GL_TEXTURE_WRAP_S, toWrap(desc.wrapU));
+    m_impl->state.gl.glSamplerParameteri(glSampler, GL_TEXTURE_WRAP_T, toWrap(desc.wrapV));
+    m_impl->state.gl.glSamplerParameteri(glSampler, GL_TEXTURE_WRAP_R, toWrap(desc.wrapW));
+    if (desc.maxAnisotropy > 1.0F) {
+        if (!m_impl->state.samplerAnisotropySupported) {
+            if (!m_impl->state.warnedSamplerAnisotropyClamped) {
+                m_impl->state.warnedSamplerAnisotropyClamped = true;
+                UVE_WARNING("GlRenderDeviceUVE: CreateSamplerUVE without GL_EXT_texture_filter_anisotropic; "
+                            "anisotropy clamps to 1.0");
+            }
+        } else {
+            m_impl->state.gl.glSamplerParameterf(
+                glSampler, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+                std::min(desc.maxAnisotropy, m_impl->state.maxSamplerAnisotropy));
+        }
+    }
+    UVE_GL_CHECK_ERROR_UVE("CreateSamplerUVE sampler state");
+
+    const std::uint32_t handleValue = m_impl->state.nextSamplerHandle++;
+    m_impl->state.samplers.emplace(handleValue,
+                                   Detail::GlDeviceStateUVE::SamplerRecordUVE{glSampler, desc});
+    return SamplerHandleUVE{handleValue};
+}
+
+void GlRenderDeviceUVE::DestroySamplerUVE(SamplerHandleUVE sampler) {
+    const auto it = m_impl->state.samplers.find(sampler.value);
+    if (it == m_impl->state.samplers.end()) {
+        UVE_ERROR("GlRenderDeviceUVE: DestroySamplerUVE called with an unknown or already-destroyed handle ({})",
+                   sampler.value);
+        return;
+    }
+    // A sampler deleted while bound is implicitly unbound from every unit by the driver
+    // (core GL 3.3 semantics) — no unit bookkeeping to repair here.
+    m_impl->state.gl.glDeleteSamplers(1, &it->second.glSampler);
+    m_impl->state.samplers.erase(it);
 }
 
 ShaderHandleUVE GlRenderDeviceUVE::CreateShaderUVE(const ShaderDescUVE& desc, std::string* outInfoLog) {
@@ -725,6 +928,22 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown primitive topology");
         return kInvalidPipelineHandleUVE;
     }
+    if (!IsCullModeValidUVE(desc.cullMode)) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown cull mode");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (!IsFrontFaceValidUVE(desc.frontFace)) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown front-face winding");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (!IsFillModeValidUVE(desc.fillMode)) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown fill mode");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (!IsDepthCompareValidUVE(desc.depthCompare)) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown depth comparison");
+        return kInvalidPipelineHandleUVE;
+    }
     if (m_impl->state.maxVertexAttribs <= 0 ||
         desc.vertexLayout.size() > static_cast<std::size_t>(m_impl->state.maxVertexAttribs)) {
         UVE_ERROR("GlRenderDeviceUVE: pipeline vertex layout exceeds GL vertex-attrib limits");
@@ -767,9 +986,22 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
     GLuint glVao = 0;
     m_impl->state.gl.glGenVertexArrays(1, &glVao);
 
-    Detail::GlDeviceStateUVE::PipelineRecordUVE record{
-        glProgram, glVao, desc.vertexLayout, desc.vertexStride, desc.depthTestEnabled, desc.depthWriteEnabled,
-        desc.blendMode, /*isCompute=*/false, {}};
+    Detail::GlDeviceStateUVE::PipelineRecordUVE record;
+    record.glProgram = glProgram;
+    record.glVao = glVao;
+    record.vertexLayout = desc.vertexLayout;
+    record.vertexStride = desc.vertexStride;
+    record.depthTestEnabled = desc.depthTestEnabled;
+    record.depthWriteEnabled = desc.depthWriteEnabled;
+    record.blendMode = desc.blendMode;
+    record.cullMode = desc.cullMode;
+    record.frontFace = desc.frontFace;
+    record.fillMode = desc.fillMode;
+    record.depthBiasEnabled = desc.depthBiasEnabled;
+    record.depthBiasConstantFactor = desc.depthBiasConstantFactor;
+    record.depthBiasSlopeFactor = desc.depthBiasSlopeFactor;
+    record.depthCompare = desc.depthCompare;
+    record.topology = desc.topology;
     ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms);
 
     const std::uint32_t handleValue = m_impl->state.nextPipelineHandle++;
@@ -829,7 +1061,10 @@ PipelineHandleUVE GlRenderDeviceUVE::CreateComputePipelineUVE(const ComputePipel
     // GlCommandBufferUVE skips glBindVertexArray() for isCompute pipelines entirely.
     Detail::GlDeviceStateUVE::PipelineRecordUVE record{
         glProgram, /*glVao=*/0U, {}, /*vertexStride=*/0U, /*depthTestEnabled=*/true,
-        /*depthWriteEnabled=*/true, PipelineBlendModeUVE::Opaque, /*isCompute=*/true, {}};
+        /*depthWriteEnabled=*/true, PipelineBlendModeUVE::Opaque, CullModeUVE::None,
+        FrontFaceUVE::CounterClockwise, FillModeUVE::Fill, /*depthBiasEnabled=*/false,
+        /*depthBiasConstantFactor=*/0.0F, /*depthBiasSlopeFactor=*/0.0F, DepthCompareUVE::Less,
+        PrimitiveTopologyUVE::Triangles, /*isCompute=*/true, {}};
     // Active-uniform reflection works identically for compute programs, so SetUniform*UVE on a
     // compute pipeline needs no special-casing.
     ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms);
@@ -913,6 +1148,22 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<const
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown primitive topology");
         return kInvalidPipelineHandleUVE;
     }
+    if (!IsCullModeValidUVE(desc.cullMode)) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown cull mode");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (!IsFrontFaceValidUVE(desc.frontFace)) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown front-face winding");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (!IsFillModeValidUVE(desc.fillMode)) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown fill mode");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (!IsDepthCompareValidUVE(desc.depthCompare)) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown depth comparison");
+        return kInvalidPipelineHandleUVE;
+    }
     if (m_impl->state.maxVertexAttribs <= 0 ||
         desc.vertexLayout.size() > static_cast<std::size_t>(m_impl->state.maxVertexAttribs)) {
         UVE_ERROR("GlRenderDeviceUVE: pipeline vertex layout exceeds GL vertex-attrib limits");
@@ -947,9 +1198,22 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<const
     GLuint glVao = 0;
     m_impl->state.gl.glGenVertexArrays(1, &glVao);
 
-    Detail::GlDeviceStateUVE::PipelineRecordUVE record{
-        glProgram, glVao, desc.vertexLayout, desc.vertexStride, desc.depthTestEnabled, desc.depthWriteEnabled,
-        desc.blendMode, /*isCompute=*/false, {}};
+    Detail::GlDeviceStateUVE::PipelineRecordUVE record;
+    record.glProgram = glProgram;
+    record.glVao = glVao;
+    record.vertexLayout = desc.vertexLayout;
+    record.vertexStride = desc.vertexStride;
+    record.depthTestEnabled = desc.depthTestEnabled;
+    record.depthWriteEnabled = desc.depthWriteEnabled;
+    record.blendMode = desc.blendMode;
+    record.cullMode = desc.cullMode;
+    record.frontFace = desc.frontFace;
+    record.fillMode = desc.fillMode;
+    record.depthBiasEnabled = desc.depthBiasEnabled;
+    record.depthBiasConstantFactor = desc.depthBiasConstantFactor;
+    record.depthBiasSlopeFactor = desc.depthBiasSlopeFactor;
+    record.depthCompare = desc.depthCompare;
+    record.topology = desc.topology;
     // Uniform locations are not guaranteed portable across a binary load even though behavior
     // is - reflection must always be re-run here, never assumed inherited from the original
     // compile that produced this binary.
@@ -988,8 +1252,8 @@ bool GlRenderDeviceUVE::IsUsableUVE() const noexcept {
 }
 
 std::size_t GlRenderDeviceUVE::GetLiveResourceCountUVE() const noexcept {
-    return m_impl->state.buffers.size() + m_impl->state.textures.size() + m_impl->state.shaders.size() +
-           m_impl->state.pipelines.size();
+    return m_impl->state.buffers.size() + m_impl->state.textures.size() + m_impl->state.samplers.size() +
+           m_impl->state.shaders.size() + m_impl->state.pipelines.size();
 }
 
 std::uint32_t GlRenderDeviceUVE::GetNativeTextureIdUVE(const TextureHandleUVE texture) const noexcept {

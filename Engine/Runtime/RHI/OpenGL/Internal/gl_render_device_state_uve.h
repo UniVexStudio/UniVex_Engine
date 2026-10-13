@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -85,10 +86,55 @@ struct GlDeviceStateUVE {
     std::unordered_map<std::uint32_t, TextureRecordUVE> textures;
     std::uint32_t nextTextureHandle = 1;
 
+    struct SamplerRecordUVE {
+        GLuint glSampler = 0;
+        SamplerDescUVE desc;
+    };
+    std::unordered_map<std::uint32_t, SamplerRecordUVE> samplers;
+    std::uint32_t nextSamplerHandle = 1;
+
+    /// Tier 2.2 anisotropy capability, probed once at init from the extension string.
+    bool samplerAnisotropySupported = false;
+    float maxSamplerAnisotropy = 1.0F;
+    /// Warn-once latch for anisotropy clamps (this backend has no VK-style bitmask infra).
+    bool warnedSamplerAnisotropyClamped = false;
+
     /// Cached FBO names keyed by the pair of UVE texture handles attached to them. The render
     /// device invalidates entries when a dependent texture is destroyed; the cache itself owns no
     /// texture lifetime and is released while the GL context is still current.
-    std::unordered_map<std::uint64_t, GLuint> framebufferCache;
+    // Tier 2.3: FBOs are keyed by the attachment pair AND the rendered layers (one cached
+    // FBO per layer — a layer is baked into the attachment at glFramebufferTextureLayer).
+    struct FramebufferKeyUVE {
+        std::uint32_t color = 0U;
+        std::uint32_t depth = 0U;
+        std::uint32_t colorLayer = 0U;
+        std::uint32_t depthLayer = 0U;
+        // Tier 2.4: locations 1..3 ride the key (handles AND layers — one cached FBO per
+        // attachment set, same as the 2.3 layer rule; unused slots stay 0).
+        std::array<std::uint32_t, kExtraColorAttachmentCountUVE> extraColors{};
+        std::array<std::uint32_t, kExtraColorAttachmentCountUVE> extraColorLayers{};
+        bool operator==(const FramebufferKeyUVE& other) const noexcept {
+            return color == other.color && depth == other.depth &&
+                   colorLayer == other.colorLayer && depthLayer == other.depthLayer &&
+                   extraColors == other.extraColors && extraColorLayers == other.extraColorLayers;
+        }
+    };
+    struct FramebufferKeyHashUVE {
+        std::size_t operator()(const FramebufferKeyUVE& key) const noexcept {
+            std::size_t hash = std::hash<std::uint32_t>{}(key.color);
+            hash = hash * 31U + std::hash<std::uint32_t>{}(key.depth);
+            hash = hash * 31U + std::hash<std::uint32_t>{}(key.colorLayer);
+            hash = hash * 31U + std::hash<std::uint32_t>{}(key.depthLayer);
+            for (const std::uint32_t extra : key.extraColors) {
+                hash = hash * 31U + std::hash<std::uint32_t>{}(extra);
+            }
+            for (const std::uint32_t extraLayer : key.extraColorLayers) {
+                hash = hash * 31U + std::hash<std::uint32_t>{}(extraLayer);
+            }
+            return hash;
+        }
+    };
+    std::unordered_map<FramebufferKeyUVE, GLuint, FramebufferKeyHashUVE> framebufferCache;
 
     struct ShaderRecordUVE {
         GLuint glShader = 0;
@@ -109,6 +155,21 @@ struct GlDeviceStateUVE {
         bool depthTestEnabled = true;
         bool depthWriteEnabled = true;
         PipelineBlendModeUVE blendMode = PipelineBlendModeUVE::Opaque;
+
+        // Tier 2.1: rasterizer tail mirroring PipelineDescUVE — defaults reproduce the pre-2.1
+        // effective state (no culling, CCW front, fill, no polygon offset, LESS compare).
+        CullModeUVE cullMode = CullModeUVE::None;
+        FrontFaceUVE frontFace = FrontFaceUVE::CounterClockwise;
+        FillModeUVE fillMode = FillModeUVE::Fill;
+        bool depthBiasEnabled = false;
+        float depthBiasConstantFactor = 0.0F;
+        float depthBiasSlopeFactor = 0.0F;
+        DepthCompareUVE depthCompare = DepthCompareUVE::Less;
+
+        /// Tier 2.8: the draw mode, read by Draw*UVE at record time — GL takes topology as a
+        /// draw-call parameter rather than pipeline state, so the record carries what Vulkan
+        /// bakes into the pipeline object.
+        PrimitiveTopologyUVE topology = PrimitiveTopologyUVE::Triangles;
 
         /// M5a: true for programs linked from CreateComputePipelineUVE(). Such records carry no
         /// VAO/vertex layout and no render state — GlCommandBufferUVE skips the graphics-side

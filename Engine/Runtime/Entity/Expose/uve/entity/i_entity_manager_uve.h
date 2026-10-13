@@ -12,6 +12,7 @@
 #include "uve/logging/assert_uve.h"
 #include "uve/component/component_type_info_uve.h"
 #include "uve/component/entity_uve.h"
+#include "uve/entity/entity_view_uve.h"
 
 namespace UVE::Scene {
 
@@ -81,6 +82,20 @@ public:
         return *(::new (slot) T(std::forward<TArgs>(args)...));
     }
 
+    /// Runtime-typed counterpart to AddComponentUVE<T>(): attaches a component of type
+    /// `componentType` (described by `typeInfo`, whose size/alignment/construct/move/destroy
+    /// must match the type) to `entity`, default-constructed in its archetype slot. The caller
+    /// fills the slot through the returned pointer (a metadata entry's assignInstance from a
+    /// factory-built instance, today). Same asserts as the typed form: `entity` is alive and
+    /// does not already have the type. What lets generic deserialization attach a component it
+    /// only knows by std::type_index.
+    [[nodiscard]] void* AddComponentUVE(EntityUVE entity, std::type_index componentType,
+                                        const ComponentTypeInfoUVE& typeInfo) {
+        void* const slot = AddComponentErased(entity, componentType, typeInfo);
+        typeInfo.constructDefault(slot);
+        return slot;
+    }
+
     /// Removes `T` from `entity`, migrating it to the new archetype (entity's current
     /// components minus `T`). Asserts `entity` is alive and currently has a `T`.
     template <typename T>
@@ -147,6 +162,21 @@ public:
             Detail::InvokeForEachCallbackUVE<TComponents...>(callback, entity, pointers,
                                                                std::index_sequence_for<TComponents...>{});
         });
+    }
+
+    /// Collects the entities currently carrying every one of `TComponents...` into an iterable
+    /// `EntityViewUVE` (range-for over `entry.entity` plus live `entry.GetUVE<T>()` references).
+    /// Same matches as `ForEachUVE`, snapshotted once: re-call to re-query, and record
+    /// structural changes through `EntityCommandBufferUVE` rather than making them mid-iteration.
+    template <typename... TComponents>
+    [[nodiscard]] EntityViewUVE<TComponents...> ViewUVE() {
+        std::vector<typename EntityViewUVE<TComponents...>::RowUVE> rows;
+        const std::vector<std::type_index> types{std::type_index(typeid(TComponents))...};
+        ForEachErased(types, [&rows](const EntityUVE entity, const std::vector<void*>& pointers) {
+            rows.push_back(Detail::MakeViewRowUVE<TComponents...>(
+                entity, pointers, std::index_sequence_for<TComponents...>{}));
+        });
+        return EntityViewUVE<TComponents...>{std::move(rows)};
     }
 
 protected:

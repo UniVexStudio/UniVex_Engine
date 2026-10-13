@@ -11,9 +11,9 @@ namespace UVE::Math {
 /// A 3-component single-precision vector, used engine-wide for position, scale, and any other
 /// three-float quantity. Deliberately minimal: only the operations Scene/ECS's transform
 /// composition actually needs today (addition, component-wise multiplication for scale
-/// composition, equality). A fuller math library (Vector2UVE/Vector4UVE, cross/dot products,
-/// SIMD optimization, swizzles) is a real design problem for whichever future increment
-/// (Rendering, Physics) first needs it — not invented here.
+/// composition, equality). Vector2UVE/Vector4UVE, cross/dot products, and Length/Normalize
+/// now exist as their own headers; SIMD optimization and swizzles remain a real design problem
+/// for whichever future increment first needs them — not invented here.
 /// Thread-safety: value type; safe to copy/pass freely, no shared state.
 struct Vector3UVE {
     float x = 0.0F;

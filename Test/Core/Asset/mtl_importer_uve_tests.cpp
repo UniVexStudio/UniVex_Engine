@@ -24,7 +24,7 @@ void WriteMtlFixtureUVE(const std::filesystem::path& path, const std::string_vie
 
 [[nodiscard]] MaterialAssetUVE MakeExistingMaterialUVE() {
     MaterialAssetUVE material;
-    material.albedoColor = Math::Vector3UVE{0.3F, 0.2F, 0.1F};
+    material.albedoColor = Math::ColorUVE{0.3F, 0.2F, 0.1F};
     material.metallic = 0.8F;
     material.roughness = 0.2F;
     material.isTransparent = true;
@@ -46,7 +46,9 @@ TEST(MtlImporterUVETest, ImportUVE_ValidMtlPublishesUveMatAndRegistersGuid) {
     EXPECT_EQ(database.ResolveUVE(guid), destinationPath);
     MaterialAssetUVE material;
     ASSERT_TRUE(LoadMaterialAssetUVE(destinationPath, material));
-    EXPECT_EQ(material.albedoColor, (Math::Vector3UVE{0.2F, 0.4F, 0.6F}));
+    EXPECT_NEAR(material.albedoColor.r, 0.0331048F, 1e-6F);
+    EXPECT_NEAR(material.albedoColor.g, 0.1328683F, 1e-6F);
+    EXPECT_NEAR(material.albedoColor.b, 0.3185468F, 1e-6F);
     EXPECT_FLOAT_EQ(material.metallic, 0.75F);
     EXPECT_FLOAT_EQ(material.roughness, 0.5F);
     EXPECT_FALSE(material.isTransparent);

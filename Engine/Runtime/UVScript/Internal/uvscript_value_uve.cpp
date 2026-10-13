@@ -93,6 +93,9 @@ std::optional<ValueUVE> ParseValueTextUVE(const std::string_view text, const Typ
         }
         case TypeUVE::KindUVE::None:
         case TypeUVE::KindUVE::Object:
+        case TypeUVE::KindUVE::List:
+        case TypeUVE::KindUVE::Map:
+        case TypeUVE::KindUVE::Tuple:
         case TypeUVE::KindUVE::Error:
             break;
     }
@@ -108,6 +111,19 @@ std::string TypeUVE::NameUVE() const {
         case KindUVE::Str: return "str";
         case KindUVE::Vec3: return "vec3";
         case KindUVE::Object: return object.empty() ? std::string{"Object"} : object;
+        case KindUVE::List: return elements.empty() ? "list" : "list[" + elements[0].NameUVE() + "]";
+        case KindUVE::Map:
+            if (elements.size() < 2U) {
+                return "map";
+            }
+            return "map[" + elements[0].NameUVE() + ", " + elements[1].NameUVE() + "]";
+        case KindUVE::Tuple: {
+            std::string text = "(";
+            for (std::size_t i = 0U; i < elements.size(); ++i) {
+                text += (i == 0U ? "" : ", ") + elements[i].NameUVE();
+            }
+            return text + (elements.size() == 1U ? ",)" : ")");
+        }
         case KindUVE::Error: return "?";
     }
     return "?";
@@ -129,8 +145,31 @@ std::string FormatValueUVE(const ValueUVE& value) {
                 return v;
             } else if constexpr (std::is_same_v<T, Vec3ValueUVE>) {
                 return "(" + FormatNumberUVE(v.x) + ", " + FormatNumberUVE(v.y) + ", " + FormatNumberUVE(v.z) + ")";
-            } else {
+            } else if constexpr (std::is_same_v<T, ObjectRefUVE>) {
                 return "object#" + std::to_string(v.id);
+            } else {
+                const CollectionValueUVE& box = *v;
+                const auto join = [](const std::vector<ValueUVE>& items, const std::size_t begin,
+                                     const std::size_t step) {
+                    std::string text;
+                    for (std::size_t i = begin; i < items.size(); i += step) {
+                        text += (i == begin ? "" : ", ") + FormatValueUVE(items[i]);
+                    }
+                    return text;
+                };
+                if (box.kind == CollectionValueUVE::KindUVE::Map) {
+                    std::string text = "{";
+                    for (std::size_t i = 0U; i + 1U < box.items.size(); i += 2U) {
+                        text += (i == 0U ? "" : ", ") + FormatValueUVE(box.items[i]) + ": " +
+                                FormatValueUVE(box.items[i + 1U]);
+                    }
+                    return text + "}";
+                }
+                const char bracket = box.kind == CollectionValueUVE::KindUVE::List ? '[' : '(';
+                const std::string close = box.kind == CollectionValueUVE::KindUVE::List ? "]"
+                                          : box.items.size() == 1U                                   ? ",)"
+                                                                                                     : ")";
+                return bracket + join(box.items, 0U, 1U) + close;
             }
         },
         value);

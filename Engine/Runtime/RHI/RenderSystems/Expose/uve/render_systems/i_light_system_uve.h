@@ -3,14 +3,15 @@
 
 #pragma once
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/math/color_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/containers/fixed_array_uve.h"
 
 namespace UVE::Render {
 
@@ -51,7 +52,7 @@ struct LightDataUVE {
     /// direction-to-view-matrix construction.
     Math::QuaternionUVE rotation{};
 
-    Math::Vector3UVE color{1.0F, 1.0F, 1.0F};
+    Math::ColorUVE color{1.0F, 1.0F, 1.0F};
     float intensity = 0.0F;
 
     /// Point/Spot falloff distance. Unused for Directional.
@@ -90,9 +91,11 @@ struct LightDataUVE {
     float distanceFadeLength = 10.0F;
 };
 
-/// A fixed-size list of this frame's active lights — see kMaxLightsUVE. Trailing unused slots
-/// hold the default LightDataUVE{} sentinel (intensity == 0.0F).
-using LightListUVE = std::array<LightDataUVE, kMaxLightsUVE>;
+/// This frame's active lights — see kMaxLightsUVE. A `FixedArrayUVE`, not a `std::array`: only
+/// extracted lights occupy slots (`SizeUVE()`), so consumers iterate the live range instead of
+/// probing trailing `LightDataUVE{}` sentinels (intensity == 0.0F) for occupancy. The renderer
+/// upload still walks all kMaxLightsUVE fixed shader slots and zero-fills the unused ones.
+using LightListUVE = Containers::FixedArrayUVE<LightDataUVE, kMaxLightsUVE>;
 
 /// ILightSystemUVE extracts this frame's active lights from the ECS (the spec's `LightSystemUVE`,
 /// Part 7.2 — "Light culling, IBL (diffuse + specular probes)"). Culling and IBL remain deferred
@@ -107,10 +110,10 @@ class ILightSystemUVE {
 public:
     virtual ~ILightSystemUVE() = default;
 
-    /// Fills up to kMaxLightsUVE slots with the first light entities
-    /// `ForEachUVE<WorldTransformComponentUVE, LightComponentUVE>` encounters this call; any
-    /// slot beyond the number of light entities present stays at the default LightDataUVE{}
-    /// sentinel (intensity 0.0F). `IEntityManagerUVE::ForEachUVE` only guarantees "every matching
+    /// Returns up to kMaxLightsUVE of the first light entities
+    /// `ForEachUVE<WorldTransformComponentUVE, LightComponentUVE>` encounters this call; the
+    /// returned list holds exactly those lights (`SizeUVE()`), with no trailing-sentinel slots.
+    /// `IEntityManagerUVE::ForEachUVE` only guarantees "every matching
     /// entity exactly once, order unspecified" — if more than kMaxLightsUVE light entities exist,
     /// which ones are kept is first-encountered/arbitrary this v1 (no distance- or
     /// importance-based selection — that's future work, same deferral v1 already documented).
@@ -123,8 +126,8 @@ public:
     /// reference too).
     [[nodiscard]] virtual LightListUVE ExtractActiveLightsUVE(Scene::IEntityManagerUVE& entityManager) const = 0;
 
-    /// Fills the same kMaxLightsUVE slots, but choosing WHICH lights when a scene has more than
-    /// fit, by their estimated contribution at `viewPosition`.
+    /// Returns the same up-to-kMaxLightsUVE lights, but choosing WHICH lights when a scene has
+    /// more than fit, by their estimated contribution at `viewPosition`.
     ///
     /// The overload exists because first-encountered order is not merely arbitrary, it is
     /// observably wrong: a torch beside the player and a lamp across the level are equally

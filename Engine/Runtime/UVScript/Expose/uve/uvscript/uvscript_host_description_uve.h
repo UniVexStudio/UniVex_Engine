@@ -34,6 +34,7 @@ public:
     [[nodiscard]] ValueUVE GetPropertyUVE(std::string_view name) override;
     void SetPropertyUVE(std::string_view name, const ValueUVE& value) override;
     [[nodiscard]] ValueUVE CallFunctionUVE(std::string_view name, std::span<const ValueUVE> args) override;
+    void CallMethodUVE(ObjectRefUVE target, std::string_view method, std::span<const ValueUVE> args) override;
     void PrintUVE(std::string_view text) override;
 
 private:

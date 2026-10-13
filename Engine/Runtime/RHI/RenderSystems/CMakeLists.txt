@@ -19,6 +19,7 @@
 add_library(uve_render_systems STATIC
     Internal/render_system_uve.cpp
     Internal/render_graph_uve.cpp
+    Internal/camera_2d_system_uve.cpp
     Internal/camera_system_uve.cpp
     Internal/compute_system_uve.cpp
     Internal/particle_compute_simulation_uve.cpp
@@ -33,14 +34,17 @@ add_library(uve_render_systems STATIC
     Internal/decal_draw_data_uve.cpp
     Internal/decal_draw_command_uve.cpp
     Internal/decal_renderer_uve.cpp
+    Internal/debug_renderer_uve.cpp
     Internal/mesh_renderer_uve.cpp
     Internal/mesh_render_eligibility_uve.cpp
     Internal/primitive_geometry_uve.cpp
     Internal/light_system_uve.cpp
+    Internal/renderer_2d_uve.cpp
     Internal/renderer_3d_uve.cpp
     Internal/viewport_manager_uve.cpp
 )
 target_include_directories(uve_render_systems PUBLIC Expose)
-target_link_libraries(uve_render_systems PUBLIC uve_platform uve_logging uve_math uve_scene uve_asset uve_rhi uve_rhi_shader uve_ui)
+target_link_libraries(uve_render_systems PUBLIC uve_platform uve_logging uve_containers uve_math uve_scene uve_objects_2d uve_asset uve_rhi uve_rhi_shader uve_ui)
+target_link_libraries(uve_render_systems PRIVATE uve_utilities)
 target_compile_features(uve_render_systems PUBLIC cxx_std_23)
 uve_set_warnings(uve_render_systems)

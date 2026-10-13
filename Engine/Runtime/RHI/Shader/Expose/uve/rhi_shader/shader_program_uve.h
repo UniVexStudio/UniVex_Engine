@@ -13,6 +13,7 @@
 #include <variant>
 #include <vector>
 
+#include "uve/math/matrix3x3_uve.h"
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/rhi/i_command_buffer_uve.h"
@@ -53,6 +54,12 @@ public:
     void SetBoolUVE(std::string_view name, bool value);
     void SetVector3UVE(std::string_view name, const Math::Vector3UVE& value);
     void SetMatrix4x4UVE(std::string_view name, const Math::Matrix4x4UVE& value);
+    /// Queues a 3x3 uniform value (the renderer's normal matrix), embedded in a 4x4 for upload:
+    /// the RHI uniform chain (ICommandBufferUVE) has no mat3 setter, and every built-in shader
+    /// consumes this uniform through mat3(...) anyway, so the embedded fourth row/column never
+    /// reaches a computation. When the chain grows a mat3 arm, only this setter's body changes —
+    /// callers stay as-is.
+    void SetMatrix3x3UVE(std::string_view name, const Math::Matrix3x3UVE& value);
 
     /// Binds this program's pipeline on `commandBuffer` and flushes every currently-queued
     /// uniform value onto it. Must be called inside a render pass, exactly where a raw

@@ -9,6 +9,21 @@
 #include <string_view>
 #include <vector>
 
+/// Live diagnostics capture: bounded spans, counters and breadcrumbs by
+/// `DiagnosticCategoryUVE`, behind the editor's Profiler dock and the per-system emitters.
+///
+/// THREE DELIBERATE CONSTRAINTS. First, the capture is bounded (`DiagnosticCaptureLimitsUVE`:
+/// 8K spans, 4K counters, 2K breadcrumbs) with explicit dropped-record counters rather than
+/// unbounded growth or silent loss — an overloaded capture reports what it dropped. Second, the
+/// module owns no clock: timestamps are caller-supplied nanoseconds, which keeps captures
+/// deterministic and testable (tests hand in synthetic timestamps). Third, the module depends
+/// on zero `uve/*` targets (see its CMakeLists): it sits below everything so anything can emit
+/// without a layering edge.
+///
+/// The one visible consequence of the third constraint is that thread ids are raw `std::uint64_t`
+/// here, not `Threading::ThreadIdUVE` — naming that type would be the forbidden edge. The bridge
+/// is `ThreadIdUVE::ValueUVE()` at emission and `ThreadIdUVE{value}` for keying maps on the
+/// consuming side; thread id 0 keeps its "unknown" meaning on both sides of the bridge.
 namespace UVE::Core {
 
 enum class DiagnosticCategoryUVE : std::uint8_t {
@@ -21,6 +36,7 @@ enum class DiagnosticCategoryUVE : std::uint8_t {
     Render,
     Audio,
     Streaming,
+    Net,
     Count,
 };
 
@@ -153,6 +169,11 @@ public:
         DiagnosticRuntimeSnapshotUVE snapshot);
 
     [[nodiscard]] DiagnosticCaptureStopResultUVE EndUVE(std::uint64_t endTimestampNanoseconds);
+
+    /// Copies the in-progress capture without ending it: the live panel's feed. Empty
+    /// when no capture is active (End moves the bundle out, so a completed session
+    /// snapshots empty too - keep the End result to show it).
+    [[nodiscard]] DiagnosticCaptureBundleUVE SnapshotUVE() const;
 
     [[nodiscard]] bool IsActiveUVE() const noexcept;
 
