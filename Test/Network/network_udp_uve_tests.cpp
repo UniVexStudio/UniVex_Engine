@@ -16,15 +16,41 @@
 #include <variant>
 #include <vector>
 
+#if defined(_WIN32)
+#    include <process.h>
+#else
+#    include <unistd.h>
+#endif
+
 #include <gtest/gtest.h>
 
 namespace UVE::Network::Tests {
 namespace {
 
-// Fixed loopback ports: no ephemeral chicken-and-egg (each side names the other up front),
-// and nothing here runs in parallel with itself, so nothing else can be squatting on them.
+// Fixed loopback ports are retained for the explicit bind/conflict tests below. The pair helper
+// derives its ports from the test process instead: CTest launches each case as a separate process,
+// so fixed ports make otherwise independent UDP tests race when the suite runs with -j.
 inline constexpr std::uint16_t kUdpTestPortAUVE = 41741U;
 inline constexpr std::uint16_t kUdpTestPortBUVE = 41742U;
+inline constexpr std::uint16_t kUdpDynamicPortBaseUVE = 49152U;
+
+[[nodiscard]] std::uint32_t CurrentProcessIdUVE() noexcept {
+#if defined(_WIN32)
+    return static_cast<std::uint32_t>(_getpid());
+#else
+    return static_cast<std::uint32_t>(::getpid());
+#endif
+}
+
+[[nodiscard]] std::pair<std::uint16_t, std::uint16_t> DynamicPairPortsUVE(
+    const std::uint32_t attempt) noexcept {
+    constexpr std::uint32_t kPortPairCountUVE = 2500U;
+    const std::uint32_t pairIndex =
+        (CurrentProcessIdUVE() % kPortPairCountUVE + attempt) % kPortPairCountUVE;
+    const std::uint16_t first = static_cast<std::uint16_t>(
+        kUdpDynamicPortBaseUVE + pairIndex * 2U);
+    return {first, static_cast<std::uint16_t>(first + 1U)};
+}
 
 [[nodiscard]] std::vector<std::uint8_t> BytesUVE(const std::string& text) {
     return std::vector<std::uint8_t>(text.begin(), text.end());
@@ -45,14 +71,22 @@ struct UdpPairUVE final {
 };
 
 [[nodiscard]] std::optional<UdpPairUVE> MakePairUVE() {
-    std::optional<UdpTransportEndpointUVE> a =
-        CreateUdpTransportEndpointUVE(ConfigUVE(kUdpTestPortAUVE, kUdpTestPortBUVE));
-    std::optional<UdpTransportEndpointUVE> b =
-        CreateUdpTransportEndpointUVE(ConfigUVE(kUdpTestPortBUVE, kUdpTestPortAUVE));
-    if (!a.has_value() || !b.has_value()) {
-        return std::nullopt;
+    // A runner may already have a socket on the process-derived candidate, so retry a bounded
+    // sequence of disjoint pairs instead of turning harmless port contention into a flaky test.
+    for (std::uint32_t attempt = 0U; attempt < 64U; ++attempt) {
+        const auto [portA, portB] = DynamicPairPortsUVE(attempt);
+        std::optional<UdpTransportEndpointUVE> a =
+            CreateUdpTransportEndpointUVE(ConfigUVE(portA, portB));
+        if (!a.has_value()) {
+            continue;
+        }
+        std::optional<UdpTransportEndpointUVE> b =
+            CreateUdpTransportEndpointUVE(ConfigUVE(portB, portA));
+        if (b.has_value()) {
+            return UdpPairUVE{std::move(*a), std::move(*b)};
+        }
     }
-    return UdpPairUVE{std::move(*a), std::move(*b)};
+    return std::nullopt;
 }
 
 // Spins until the predicate holds or the budget (in 1ms naps) runs out. Localhost delivery
@@ -71,8 +105,9 @@ template <typename PredicateUVE>
 TEST(UdpTransportUVE, PairExchangesDatagramsBothDirectionsInOrder) {
     std::optional<UdpPairUVE> pair = MakePairUVE();
     ASSERT_TRUE(pair.has_value());
-    EXPECT_EQ(pair->a.LocalPortUVE(), kUdpTestPortAUVE);
-    EXPECT_EQ(pair->b.LocalPortUVE(), kUdpTestPortBUVE);
+    EXPECT_NE(pair->a.LocalPortUVE(), 0U);
+    EXPECT_NE(pair->b.LocalPortUVE(), 0U);
+    EXPECT_NE(pair->a.LocalPortUVE(), pair->b.LocalPortUVE());
 
     EXPECT_TRUE(pair->a.SendUVE(BytesUVE("one")));
     EXPECT_TRUE(pair->a.SendUVE(BytesUVE("two")));
@@ -157,7 +192,7 @@ TEST(UdpTransportUVE, CopiesShareOneSocketAndMovedFromIsInert) {
     EXPECT_EQ(copy.PendingCountUVE(), 0U);
     EXPECT_EQ(copy.StatsUVE(), UdpTransportStatsUVE{});
     EXPECT_EQ(copy.LocalPortUVE(), 0U);
-    EXPECT_EQ(moved.LocalPortUVE(), kUdpTestPortAUVE);
+    EXPECT_NE(moved.LocalPortUVE(), 0U);
 }
 
 TEST(UdpTransportUVE, InvalidConfigsReturnNullopt) {
