@@ -1195,6 +1195,14 @@ void GlCommandBufferUVE::DispatchUVE(std::uint32_t groupCountX, std::uint32_t gr
 } // namespace UVE::Render
 
 namespace UVE::Render {
+RenderFeatureSupportUVE GlCommandBufferUVE::GetMemoryBarrierSupportUVE() const noexcept {
+#if defined(__ANDROID__)
+    return RenderFeatureSupportUVE::Unsupported;
+#else
+    return m_state->supportsComputeShadersUVE && m_state->gl.glMemoryBarrier
+        ? RenderFeatureSupportUVE::Native : RenderFeatureSupportUVE::Unsupported;
+#endif
+}
 RenderOperationResultUVE GlCommandBufferUVE::MemoryBarrierUVE(MemoryBarrierMaskUVE mask) {
     if (!IsMemoryBarrierMaskValidUVE(mask))
         return RenderOperationResultUVE::InvalidArgument;

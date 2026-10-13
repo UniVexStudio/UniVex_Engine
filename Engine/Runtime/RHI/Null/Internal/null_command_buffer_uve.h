@@ -24,6 +24,9 @@ namespace UVE::Render {
 /// contract.
 class NullCommandBufferUVE final : public ICommandBufferUVE {
 public:
+  [[nodiscard]] RenderFeatureSupportUVE GetMemoryBarrierSupportUVE() const noexcept override {
+      return RenderFeatureSupportUVE::Model;
+  }
   [[nodiscard]] RenderOperationResultUVE MemoryBarrierUVE(MemoryBarrierMaskUVE mask) override;
   void BeginRenderPassUVE(const RenderPassDescUVE &renderPassDesc) override;
   void EndRenderPassUVE() override;

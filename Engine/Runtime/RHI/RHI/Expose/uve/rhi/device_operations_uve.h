@@ -33,6 +33,8 @@ struct RenderDeviceCapabilitiesUVE final {
     RenderFeatureSupportUVE timestampQueries = RenderFeatureSupportUVE::Unsupported;
     RenderFeatureSupportUVE occlusionQueries = RenderFeatureSupportUVE::Unsupported;
     RenderFeatureSupportUVE surface = RenderFeatureSupportUVE::Unsupported;
+    /// Command-buffer resource leases are retained until that backend has finished using them.
+    RenderFeatureSupportUVE retainedTextures = RenderFeatureSupportUVE::Unsupported;
     /// Copy source/destination offsets and byte count must satisfy this backend's alignment.
     std::uint32_t bufferCopyAlignment = 1U;
 };

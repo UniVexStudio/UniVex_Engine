@@ -37,7 +37,20 @@ namespace UVE::Render {
 /// concrete implementation states otherwise.
 class IRenderDeviceUVE {
 public:
-    virtual ~IRenderDeviceUVE() = default;
+    IRenderDeviceUVE();
+    virtual ~IRenderDeviceUVE();
+    IRenderDeviceUVE(const IRenderDeviceUVE&) = delete;
+    IRenderDeviceUVE& operator=(const IRenderDeviceUVE&) = delete;
+
+    /// Takes exclusive retirement responsibility for newly allocated, distinct live textures.
+    /// Attach the returned lease to every command buffer that uses them. The input vector stays
+    /// owned by the caller on rejection/exception. Releasing a lease on any thread only enqueues
+    /// retirement; native destruction occurs on the owner thread at a safe backend boundary.
+    /// No device pointer survives device destruction. Requires retainedTextures capability.
+    [[nodiscard]] std::shared_ptr<void> AdoptTransientTexturesUVE(std::vector<TextureHandleUVE>&& textures);
+    /// Owner-thread drain; only backend-completed/discarded leases arrive here. Present/WaitIdle
+    /// call it automatically. Clients may also drain discarded, unsubmitted command-buffer leases.
+    std::size_t CollectRetiredTexturesUVE();
 
     /// Optional capabilities are explicit. The default is unsupported for third-party adapters;
     /// it never fabricates success or changes output. Model recording is distinct from GPU work.
@@ -252,6 +265,9 @@ public:
 
     /// A short human-readable backend name (e.g. `"Null"`), for logging/diagnostics.
     [[nodiscard]] virtual std::string_view GetBackendNameUVE() const noexcept = 0;
+private:
+    struct TextureRetirementStateUVE;
+    std::shared_ptr<TextureRetirementStateUVE> m_textureRetirement;
 };
 
 } // namespace UVE::Render

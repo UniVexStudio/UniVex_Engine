@@ -756,7 +756,7 @@ existing Vulkan point-sampler pixel assertions exercise this packet in graphics-
 The native Ubuntu/GCC/Debug workflow for `37f0b0b` passed (run `38402183962`); the earlier
 pending-verification label is now resolved, without reimplementing the packet.
 
-`[/]` **Explicit device-operation contracts** — `device_operations_uve.h`, optional methods
+`[x]` **Explicit device-operation contracts** — `device_operations_uve.h`, optional methods
 on `IRenderDeviceUVE`, and `ICommandBufferUVE::MemoryBarrierUVE` add capability-aware operations.
 `Success` means the host call/native command was accepted, not implicit GPU completion;
 `Recorded` distinguishes a retained command or Null model. Failures leave output arguments
@@ -788,9 +788,10 @@ Ten new CPU `DeviceOperationsUVETest` cases pass, alongside existing binding tes
 Debug build/CTest: **4,103 cases, zero failures, seven existing Vulkan skips**. Added three GL
 native tests assert copied bytes, generated/blitted pixels, preserved state, real 0/1 visibility
 and timestamp ordering; two Vulkan tests verify copies/fences and the deferred-CPU-FIFO guard.
-Native sources/tests pass strict syntax checks against real headers. Execution of these new
-native cases is pending graphics-capable CI, so this implementation remains `[/]` until verified.
-Semaphores/timelines and stencil state remain `[ ]`; they are not closed by a binary fence or a
+Native sources/tests pass strict syntax checks against real headers. Graphics-capable CI run
+`38429697106` on `012f69f` passed the native suite, including the new operations and the unchanged
+shadow pixel comparisons after correcting their sampler setup. This closes the earlier execution-
+verification gap, not the explicitly unsupported Vulkan operations. Semaphores/timelines and stencil state remain `[ ]`; they are not closed by a binary fence or a
 surface metadata view. General Vulkan texture-transfer/query parity remains explicitly partial.
 
 ### Command recording and backends
@@ -818,10 +819,31 @@ bloom, SSAO, tone mapping, instancing, CPU frustum culling (clustered), GPU
 frustum culling, GPU indirect culling, distance/LOD culling, GPU skinning, GPU
 particle simulation.
 
-`[~]` **Render graph** — `RenderGraphUVE` exists but imports externally-owned
-textures and executes passes **in insertion order**, with no culling, aliasing,
-barriers, transient allocation or reordering. It is a validation and sequencing
-layer, not a frame graph.
+`[/]` **Render graph** — the former insertion-only layer now compiles explicit pass dependencies
+and RAW/WAR/WAW texture hazards into stable topological order. `topological_order_uve.h` is shared
+with the existing frame scheduler, not another job-system implementation. Duplicate native imports
+coalesce; graph-owner/generation tags reject foreign/stale resources and passes. Compilation is
+failure-atomic, validates unknown access/dependencies/cycles/read-before-write, and bounds work.
+Pure passes may be culled from side-effect/output roots; legacy passes stay side-effecting by default.
+Per-resource first/last use drives exact-shape, non-overlapping transient texture reuse; exported
+outputs remain live to frame end. Callbacks resolve transient handles through a borrowed execution
+context. Explicit execution preflights barrier and retirement support before allocating or recording.
+`Renderer3DUVE` now consumes planned barriers where supported and retains its implicit backend path
+otherwise. Unlinked tone mapping is not declared as a phantom read, preserving the original empty-
+scene command-sequence assertions without changing the tests.
+
+Transient GPU lifetimes follow recorded work, not `RenderGraphUVE::ClearUVE`: RHI texture leases
+retire through an allocation-free, thread-safe queue. GL/Null collect on the owner thread; Vulkan
+moves leases with deferred submissions and retains them until its frame fence/idle wait proves
+completion. Discarding a recording after device destruction cannot call a dead device. Imported
+textures remain caller-owned. This is a single-queue, whole-texture graph with one-level transient
+render targets, not implicit cross-queue ownership transfer or a new image-layout manager.
+
+Eleven compiler/consumer tests, four resource-lifetime tests and three shared topology tests were
+added. All 88 existing renderer cases remain unchanged and pass; focused graph/renderer execution
+passes 102 cases. Strict full CTest: **4,121 cases, zero failures, seven existing Vulkan skips**.
+The four lifetime cases also pass focused ASan+UBSan. New GL pixel/worker-retirement and Vulkan
+CPU-FIFO/GPU-completion tests are awaiting native CI before this batch is marked fully verified.
 
 `[ ]` Not real: occlusion culling (`Occluder3D` data is consumed by the
 eligibility path but no occlusion test runs — Tier 3.6, needs the GPU query path above),

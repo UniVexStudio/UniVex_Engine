@@ -180,6 +180,30 @@ TEST_F(GlRenderDeviceUVETest, BindGroupAppliesRealTextureSamplerAndBufferBinding
     renderDevice->DestroySamplerUVE(sampler);
 }
 
+TEST_F(GlRenderDeviceUVETest, TextureLeaseRetiresOnOwnerThreadAfterWorkerSubmission) {
+    const auto texture = renderDevice->CreateTextureUVE({1U, 1U, TextureFormatUVE::RGBA8Unorm});
+    ASSERT_NE(texture, kInvalidTextureHandleUVE);
+    auto lease = renderDevice->AdoptTransientTexturesUVE(std::vector<TextureHandleUVE>{texture});
+    ASSERT_NE(lease, nullptr);
+    auto commands = renderDevice->CreateCommandBufferUVE();
+    commands->RetainResourcesUVE(std::move(lease));
+    RenderPassDescUVE pass; pass.colorAttachment = texture; pass.clearColor = {1.0F, 0.0F, 0.0F, 1.0F};
+    commands->BeginRenderPassUVE(pass);
+    std::array<std::uint8_t, 4> pixel{};
+    glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel.data());
+    EXPECT_GT(pixel[0], 240U); EXPECT_LT(pixel[1], 8U);
+    commands->EndRenderPassUVE();
+    std::thread worker([this, commands = std::move(commands)]() mutable {
+        renderDevice->SubmitUVE(std::move(commands));
+    });
+    worker.join();
+    TextureDescUVE description;
+    EXPECT_EQ(renderDevice->GetTextureDescUVE(texture, description), RenderOperationResultUVE::Success);
+    EXPECT_EQ(renderDevice->WaitIdleUVE(), RenderOperationResultUVE::Success);
+    EXPECT_EQ(renderDevice->GetTextureDescUVE(texture, description), RenderOperationResultUVE::InvalidHandle);
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+}
+
 TEST_F(GlRenderDeviceUVETest, GetBackendNameUVE_ReturnsOpenGL) {
     EXPECT_EQ(renderDevice->GetBackendNameUVE(), "OpenGL");
 }

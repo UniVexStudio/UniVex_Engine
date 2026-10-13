@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "uve/scheduling/frame_scheduler_uve.h"
+#include "uve/utilities/topological_order_uve.h"
 
 #include <algorithm>
 #include <condition_variable>
@@ -268,18 +269,20 @@ FrameTaskGraphValidationResultUVE FrameTaskGraphUVE::BuildExecutionOrderUVE(
     const auto validation = ValidateUVE();
     if (!validation.IsValidUVE()) return validation;
     const auto tasks = GetTasksUVE();
-    std::vector<FrameTaskIdUVE> order;
-    order.reserve(tasks.size());
-    while (order.size() < tasks.size()) {
-        for (const auto& task : tasks) {
-            if (std::find(order.begin(), order.end(), task.id) != order.end()) continue;
-            const bool ready = std::all_of(task.dependencies.begin(), task.dependencies.end(),
-                [&order](const auto dependency) {
-                    return std::find(order.begin(), order.end(), dependency) != order.end();
-                });
-            if (ready) { order.push_back(task.id); break; }
+    std::vector<std::vector<std::uint32_t>> edges(tasks.size());
+    for (std::size_t index = 0U; index < tasks.size(); ++index) {
+        for (auto id : tasks[index].dependencies) {
+            edges[index].push_back(static_cast<std::uint32_t>(FindTaskIndexUVE(tasks, id)));
         }
     }
+    std::vector<std::uint32_t> indices;
+    if (Utilities::BuildTopologicalOrderUVE(edges, indices) != Utilities::TopologicalOrderCodeUVE::Ordered) {
+        return MakeValidationErrorUVE(FrameTaskGraphValidationCodeUVE::CyclicDependency, 0U,
+                                      "frame dependency planning failed");
+    }
+    std::vector<FrameTaskIdUVE> order;
+    order.reserve(indices.size());
+    for (auto index : indices) order.push_back(tasks[index].id);
     outOrder = std::move(order);
     return validation;
 }

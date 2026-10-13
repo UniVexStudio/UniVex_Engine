@@ -46,6 +46,7 @@ add_executable(uve_core_tests
     Core/Threading/thread_control_uve_tests.cpp
     Core/Utilities/timer_uve_tests.cpp
     Core/Utilities/hash_uve_tests.cpp
+    Core/Utilities/topological_order_uve_tests.cpp
     Core/Utilities/binary_buffer_uve_tests.cpp
     Core/Utilities/uuid_uve_tests.cpp
     Core/Utilities/scope_guard_uve_tests.cpp
@@ -169,6 +170,7 @@ add_executable(uve_core_tests
     Input/mobile_gesture_recognizer_uve_tests.cpp
     RHI/null_render_device_uve_tests.cpp
     RHI/device_operations_uve_tests.cpp
+    RHI/render_resource_lifetime_uve_tests.cpp
     RHI/bind_group_uve_tests.cpp
     RHI/Vulkan/vulkan_composite_alpha_policy_uve_tests.cpp
     RHI/Vulkan/vulkan_present_mode_policy_uve_tests.cpp
@@ -461,6 +463,7 @@ add_executable(uve_integration_tests
     RHI/RenderSystems/mesh_render_eligibility_uve_tests.cpp
     RHI/RenderSystems/primitive_geometry_uve_tests.cpp
     RHI/RenderSystems/render_graph_uve_tests.cpp
+    RHI/RenderSystems/render_graph_compiler_uve_tests.cpp
     RHI/RenderSystems/render_queue_uve_tests.cpp
     RHI/RenderSystems/render_system_uve_tests.cpp
     RHI/RenderSystems/renderer_2d_uve_tests.cpp

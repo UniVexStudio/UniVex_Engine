@@ -350,6 +350,7 @@ void NullRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBu
 }
 
 void NullRenderDeviceUVE::PresentUVE() {
+    CollectRetiredTexturesUVE();
     ++m_impl->presentCallCount;
 }
 
@@ -404,7 +405,7 @@ std::uint64_t NullRenderDeviceUVE::GetPresentCallCountUVE() const noexcept {
 namespace UVE::Render {
 RenderDeviceCapabilitiesUVE NullRenderDeviceUVE::GetCapabilitiesUVE() const noexcept {
     const auto model = RenderFeatureSupportUVE::Model;
-    return {model, model, model, model, model, model, model, RenderFeatureSupportUVE::Unsupported};
+    return {model, model, model, model, model, model, model, RenderFeatureSupportUVE::Unsupported, model};
 }
 RenderOperationResultUVE NullRenderDeviceUVE::GetTextureDescUVE(TextureHandleUVE handle,
                                                                 TextureDescUVE &output) const {
@@ -465,7 +466,10 @@ RenderOperationResultUVE NullRenderDeviceUVE::DestroyFenceUVE(FenceHandleUVE han
     return m_impl->fences.erase(handle.value) != 0U ? RenderOperationResultUVE::Recorded
                                                     : RenderOperationResultUVE::InvalidHandle;
 }
-RenderOperationResultUVE NullRenderDeviceUVE::WaitIdleUVE() { return RenderOperationResultUVE::Recorded; }
+RenderOperationResultUVE NullRenderDeviceUVE::WaitIdleUVE() {
+    CollectRetiredTexturesUVE();
+    return RenderOperationResultUVE::Recorded;
+}
 RenderOperationResultUVE NullRenderDeviceUVE::CreateQueryUVE(RenderQueryKindUVE kind,
                                                              QueryHandleUVE &output) {
     if (kind != RenderQueryKindUVE::Timestamp && kind != RenderQueryKindUVE::AnySamplesPassed)

@@ -148,6 +148,33 @@ protected:
     std::unique_ptr<VulkanRenderDeviceUVE> device;
 };
 
+TEST_F(VulkanRenderDeviceUVETest, TextureLeaseSurvivesDeferredSubmissionUntilGpuCompletion) {
+    const auto texture = device->CreateTextureUVE({1U, 1U, TextureFormatUVE::RGBA8Unorm});
+    ASSERT_NE(texture, kInvalidTextureHandleUVE);
+    auto lease = device->AdoptTransientTexturesUVE(std::vector<TextureHandleUVE>{texture});
+    ASSERT_NE(lease, nullptr);
+    std::weak_ptr<void> observer = lease;
+    auto commands = device->CreateCommandBufferUVE();
+    commands->RetainResourcesUVE(std::move(lease));
+    RenderPassDescUVE pass;
+    // Dynamic rendering can clear an offscreen transient; classic devices still exercise the
+    // same completion lifetime through a default-surface pass rather than claiming that feature.
+    if (device->GetCapabilitiesUVE().memoryBarriers == RenderFeatureSupportUVE::Native)
+        pass.colorAttachment = texture;
+    commands->BeginRenderPassUVE(pass); commands->EndRenderPassUVE();
+    std::thread worker([this, commands = std::move(commands)]() mutable { device->SubmitUVE(std::move(commands)); });
+    worker.join();
+    EXPECT_FALSE(observer.expired());
+    EXPECT_EQ(device->WaitIdleUVE(), RenderOperationResultUVE::InvalidState);
+    TextureDescUVE description;
+    EXPECT_EQ(device->GetTextureDescUVE(texture, description), RenderOperationResultUVE::Success);
+    device->PresentUVE();
+    EXPECT_FALSE(observer.expired());
+    EXPECT_EQ(device->WaitIdleUVE(), RenderOperationResultUVE::Success);
+    EXPECT_TRUE(observer.expired());
+    EXPECT_EQ(device->GetTextureDescUVE(texture, description), RenderOperationResultUVE::InvalidHandle);
+}
+
 TEST_F(VulkanRenderDeviceUVETest, DeviceReportsUsableWithHonestBootstrapName) {
     EXPECT_TRUE(device->IsUsableUVE());
     // M5b: the reported name is capability-driven — a 1.3/dynamic-rendering device reports

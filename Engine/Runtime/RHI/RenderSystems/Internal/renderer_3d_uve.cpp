@@ -3844,7 +3844,9 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     // scene color input remains explicit in the graph while this pass writes that external output.
     const std::array<RenderGraphResourceUseUVE, 1U> toneMappingResources{
         RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Read}};
-    renderGraph.AddPassUVE(
+    // An unlinked program records no work: do not declare a phantom read (and barrier) while
+    // shader compilation is pending. The callback retains its defensive readiness check.
+    if (m_impl->toneMappingProgram->IsValidUVE()) renderGraph.AddPassUVE(
         "ToneMapping", toneMappingResources,
         [this, inverseProjection, previousMotionBlurViewProjection, motionBlurHistoryReady](
             ICommandBufferUVE& commandBuffer) {
@@ -4082,7 +4084,9 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
 
     m_impl->renderSystem.BeginFrameUVE();
     ICommandBufferUVE& commandBuffer = m_impl->renderSystem.GetFrameCommandBufferUVE();
-    const bool graphExecuted = renderGraph.ExecuteUVE(commandBuffer);
+    RenderGraphOptionsUVE graphOptions;
+    graphOptions.emitBarriers = commandBuffer.GetMemoryBarrierSupportUVE() != RenderFeatureSupportUVE::Unsupported;
+    const bool graphExecuted = renderGraph.ExecuteUVE(commandBuffer, graphOptions).IsCompletedUVE();
     UVE_ASSERT(graphExecuted && "Renderer3DUVE must build a valid render graph");
     m_impl->renderSystem.EndFrameUVE();
     if (!capturingProbe && graphExecuted) {
