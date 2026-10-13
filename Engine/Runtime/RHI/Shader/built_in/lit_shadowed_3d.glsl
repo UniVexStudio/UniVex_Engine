@@ -565,6 +565,9 @@ void main() {
     }
     vec3 fallbackDirection = SafeNormalizeUVE(-uLights[0].direction);
     lighting += albedo * DirectionalShadowFactorUVE(normal, fallbackDirection);
-    FragColor = vec4(albedo * DirectionalShadowFactorUVE(normal, SafeNormalizeUVE(-uLights[0].direction)), surfaceOpacity);
+    // Keep the complete BRDF/ambient result. The fallback above augments `lighting`; it must not
+    // replace it, otherwise direct light, ambient light, specular response, and material colour
+    // contributions are discarded and the rendered object falls back to an incorrect flat tint.
+    FragColor = vec4(lighting, surfaceOpacity);
 }
 #endif
