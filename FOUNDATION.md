@@ -1134,3 +1134,16 @@ present in the current checkout; this baseline was rerun, not assumed.
   the subsequent full build/CTest passed: **3,991 passed, 7 expected skips, 0 failures**.
 - Initial math-boundary, vocabulary, panel-include and whitespace checks passed.
   The remaining markers above are work to resolve, not a completion claim.
+
+### Native baseline reconciliation (2026-10-13)
+
+The saved Foundation branch was integrated with `master` through `9f0a039`, retaining upstream
+UDP pair isolation and default-framebuffer routing rather than reimplementing them. The strict
+CPU-only baseline was rerun: **4,103 cases, zero failures, seven existing Vulkan skips**.
+Native CI run `38426263544` reported one failure, the same shadow pixel test failing on master.
+The full lighting shader keeps `uReflectionProbeCube` active; the direct-RHI test left that
+samplerCube at unit 0 alongside a sampler2D. Its fixture now mirrors the real renderer's separate
+cubemap unit, with a real complete cube texture and additional GL-error assertions. Neither
+shadow pixel assertion nor either shader copy was weakened/changed. Local full CTest and all
+16 embedded/physical shader-parity cases pass; native re-execution is required before marking
+this correction or the pending device-operations batch fully verified.
