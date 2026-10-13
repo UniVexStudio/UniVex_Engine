@@ -2487,6 +2487,16 @@ TEST_F(GlRenderDeviceUVETest, LitShadowed3DShader_DepthPrepassDarkensOccludedFra
     ASSERT_NE(shadowMap, kInvalidTextureHandleUVE);
     ASSERT_NE(whiteTexture, kInvalidTextureHandleUVE);
     ASSERT_NE(flatNormalTexture, kInvalidTextureHandleUVE);
+    // All active sampler uniforms must have type-compatible image units, even if the runtime
+    // branch using one is disabled. The complete lighting shader keeps samplerCube active;
+    // leaving it at its GL default (unit 0) aliases the 2D shadow sampler and invalidates Draw.
+    std::array<std::uint8_t, 24> whiteCubePixels{};
+    whiteCubePixels.fill(255U);
+    TextureDescUVE cubeDesc{1U, 1U, TextureFormatUVE::RGBA8Unorm, 1U};
+    cubeDesc.type = TextureTypeUVE::Cubemap;
+    cubeDesc.arrayLayers = 6U;
+    const auto reflectionCube = renderDevice->CreateTextureUVE(cubeDesc, std::as_bytes(std::span(whiteCubePixels)));
+    ASSERT_NE(reflectionCube, kInvalidTextureHandleUVE);
 
     std::unique_ptr<ICommandBufferUVE> shadowCommandBuffer = renderDevice->CreateCommandBufferUVE();
     ASSERT_NE(shadowCommandBuffer, nullptr);
@@ -2554,12 +2564,17 @@ TEST_F(GlRenderDeviceUVETest, LitShadowed3DShader_DepthPrepassDarkensOccludedFra
     colorCommandBuffer->SetUniformVector3UVE("uUvScale", Math::Vector3UVE{1.0F, 1.0F, 0.0F});
     colorCommandBuffer->SetUniformVector3UVE("uUvOffset", Math::Vector3UVE{0.0F, 0.0F, 0.0F});
     colorCommandBuffer->SetUniformIntUVE("uUnshaded", 0);
+    colorCommandBuffer->BindTextureUVE(reflectionCube, 6U);
+    colorCommandBuffer->SetUniformIntUVE("uReflectionProbeCube", 6);
+    colorCommandBuffer->SetUniformIntUVE("uReflectionProbeEnabled", 0);
     // Surface opacity became an explicit lit-shader uniform; this direct opaque receiver must
     // initialize it just like Renderer3DUVE does for an opaque SurfaceInstance3D.
     colorCommandBuffer->SetUniformFloatUVE("uSurfaceOpacity", 1.0F);
     colorCommandBuffer->SetUniformFloatUVE("uAlphaCutoff", 0.0F);
     colorCommandBuffer->BindVertexBufferUVE(receiverVertexBuffer);
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
     colorCommandBuffer->DrawUVE(3);
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
     colorCommandBuffer->EndRenderPassUVE();
     renderDevice->SubmitUVE(std::move(colorCommandBuffer));
 
@@ -2572,6 +2587,7 @@ TEST_F(GlRenderDeviceUVETest, LitShadowed3DShader_DepthPrepassDarkensOccludedFra
     EXPECT_GT(static_cast<int>(softEdgePixel[0]), static_cast<int>(shadowedPixel[0]) + 16);
     EXPECT_GT(static_cast<int>(litPixel[0]), static_cast<int>(softEdgePixel[0]) + 16);
 
+    renderDevice->DestroyTextureUVE(reflectionCube);
     renderDevice->DestroyTextureUVE(flatNormalTexture);
     renderDevice->DestroyTextureUVE(whiteTexture);
     renderDevice->DestroyTextureUVE(shadowMap);
