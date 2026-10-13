@@ -263,8 +263,19 @@ degenerate quaternion all return `false` and leave the out-parameter untouched.
   serializable) — deliberately: the math layer carries the functions, an asset is authoring
   work for a later tier. Tests in `Test/Math/easing_uve_tests.cpp`, `Test/Math/curves_uve_tests.cpp`
   and `Test/Math/noise_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
-- `[ ]` **SIMD** — no alignment attributes and no vectorised path on any type,
-  documented as deferred.
+- `[x]` **Deliberate SIMD boundary with scalar ABI/fallback** — `point_transform_batch_uve.h`
+  and its private implementation add `TryTransformPointsUVE`; `AabbUVE::TransformUVE` is the
+  first real consumer. SSE2 is selected only when the compiler target guarantees it, including
+  the corresponding MSVC target macros. Two rows accumulate in double in the scalar operation
+  order; other targets use `TransformPointUVE`. Public vector/quaternion/matrix sizes and float
+  alignment do not change, no intrinsic type is exposed, and no CPU/fast-math build flags are
+  enabled. This is not blanket vectorization or a measured speedup claim. Exact in-place and
+  adjacent disjoint spans work; partial overlap, invalid sizes/paths and unsupported explicit
+  SIMD fail before mutation. Seven `PointTransformBatchUVETest` cases pin layout, unaligned-
+  to-16-byte storage, odd tails, scalar equivalence, cancellation/non-finite policy and AABB
+  consumer parity. They also pass with focused ASan+UBSan and a separately compiled `-mno-sse2`
+  fallback on this host. Full verification: 69 focused math cases and **4,076 CTest cases,
+  zero failures, seven existing Vulkan skips** (2026-10-13).
 
 ## 2. Containers — `Engine/Runtime/Core/Containers`
 

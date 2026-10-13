@@ -194,6 +194,7 @@ add_executable(uve_core_tests
     Math/vector4_uve_tests.cpp
     Math/quaternion_uve_tests.cpp
     Math/matrix4x4_uve_tests.cpp
+    Math/point_transform_batch_uve_tests.cpp
     Math/matrix3x3_uve_tests.cpp
     Math/trs_uve_tests.cpp
     Math/color_uve_tests.cpp
