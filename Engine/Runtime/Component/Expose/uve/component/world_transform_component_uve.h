@@ -14,13 +14,16 @@ namespace UVE::Scene {
 /// transform never has to touch this cached data (and vice versa). `dirty` is set whenever the
 /// authored local transform or the parent link changes (see SceneGraphUVE::
 /// SetLocalTransformUVE()/SetParentUVE()); SceneGraphUVE::UpdateUVE() clears it after
-/// recomputing worldPosition/worldRotation/worldScale from the parent chain. Only
-/// SceneGraphUVE writes to this component — treat it as read-only elsewhere.
+/// recomputing worldPosition/worldRotation/worldScale from the parent chain. Ordinary ECS
+/// Get/ForEach/View access exposes a const live component; SceneGraphUVE alone can obtain the
+/// mutable derived-cache access key. The mutable dirty bit is an invalidation request, not a
+/// second world-pose writer. Initial value construction stays compatible; no serialized layout
+/// changes (this derived cache is never serialized).
 struct WorldTransformComponentUVE final {
     Math::Vector3UVE worldPosition{};
     Math::QuaternionUVE worldRotation{};
     Math::Vector3UVE worldScale{1.0F, 1.0F, 1.0F};
-    bool dirty = true;
+    mutable bool dirty = true;
 };
 
 } // namespace UVE::Scene

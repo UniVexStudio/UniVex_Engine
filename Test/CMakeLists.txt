@@ -355,6 +355,7 @@ add_executable(uve_integration_tests
     Integration/Entity/entity_view_uve_tests.cpp
     Integration/Localization/localization_uve_tests.cpp
     Integration/Scene/scene_graph_uve_tests.cpp
+    Integration/Scene/derived_pose_contract_uve_tests.cpp
     Integration/Scene/children_index_uve_tests.cpp
     Integration/Script/contact_script_events_uve_tests.cpp
     Integration/Scene/bone_attachment_pass_uve_tests.cpp

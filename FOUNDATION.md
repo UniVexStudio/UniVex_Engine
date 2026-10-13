@@ -821,7 +821,7 @@ One inconsistency to know: every component lives in `namespace UVE::Scene`, not
 | `[x]` `EntityUVE` (`entity_uve.h`) | — | everything. Index + generation; no data, no behaviour, no manager binding. Deliberately lives in Component, not Entity, so component headers do not depend on the manager |
 | `[x]` `ComponentTypeInfoUVE` | registration | archetype storage. Type-erased size/align/construct/move/destroy vtable |
 | `[x]` `TransformComponentUVE` | authoring, gizmo drag, scripts | `SceneGraphUVE`. Local TRS plus `RotationEditModeUVE` recording whether Euler or quaternion is the source of truth |
-| `[~]` `WorldTransformComponentUVE` | **`SceneGraphUVE` only** | renderer, physics, audio, picking. Cached world TRS + dirty flag. The single-writer rule is documented but **not enforced** |
+| `[x]` `WorldTransformComponentUVE` | Scene-graph-authorized live pose writes | Get/ForEach/View expose const live poses; mutable erased access is rejected. `SceneGraphWriteAccessUVE` is available only to graph implementations. Initial component value construction stays supported; the mutable dirty bit is explicitly an invalidation request, not a pose writer. Renderer/physics/audio readers keep scalar layouts unchanged |
 | `[x]` `HierarchyComponentUVE` | scene graph, reparenting | scene graph. **Parent link only** — children are found by linear scan, so `GetChildrenUVE` is O(n) in entity count |
 | `[x]` `NameComponentUVE`, `VisibilityComponentUVE` | authoring | editor, renderer |
 
@@ -841,9 +841,21 @@ append-only, capsule height is total end-to-end including caps) · `[x]`
 `RigidBodyComponentUVE` (mass, velocity, kinematic flag — **a collider without one
 means static world geometry**, an overload worth knowing) · `[x]`
 `AreaComponentUVE` (non-solid trigger volume; never enters collision resolution)
-· `[x]` `CharacterControllerComponentUVE` · `[~]`
-`PhysicsInterpolationComponentUVE` (previous/current pose cache for render
-smoothing; optional per entity).
+· `[x]` `CharacterControllerComponentUVE` · `[x]`
+`PhysicsInterpolationComponentUVE` (optional render smoothing, not authoritative simulation).
+`ISceneGraphUVE::TryTeleportLocalTransformUVE` and `ResetInterpolationSubtreeUVE` reset history
+without changing serialized modes; reparenting snaps the affected subtree, idempotent setters
+preserve useful history, and an unchanged reset pose is seeded correctly. Disabled simulation
+tags keep world transforms current but discard their own interpolation history (the existing
+non-inherited disabled-tag policy is unchanged); World scene resume also reseeds history.
+Unknown modes/non-finite poses fail without output mutation, and double weighted interpolation
+avoids overflow between large finite endpoints. Ordinary motion still records previous/current
+poses for the existing renderer consumer. Twelve new tests in
+`Test/Integration/Scene/derived_pose_contract_uve_tests.cpp` cover access authority, invalidation,
+teleport/reparent/mode/reset/disable/resume, finite bounds and byte-identical serialized snapshots.
+Existing corruption tests now construct malformed cache values rather than mutating const live
+poses; every prior assertion remains. Verified: 106 focused cases and **4,088 CTest cases,
+zero failures, seven existing Vulkan skips** (2026-10-13).
 
 ### Audio, animation, scripting, UI
 

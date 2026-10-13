@@ -52,6 +52,16 @@ public:
     virtual void SetLocalTransformUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                        const TransformComponentUVE& localTransform) = 0;
 
+    /// Validated discontinuous local placement. Unlike ordinary motion, resets interpolation
+    /// for this entity and descendants, so the next Update seeds at the new authoritative pose.
+    /// Invalid entity/component/transform input returns false without changing authored data.
+    [[nodiscard]] bool TryTeleportLocalTransformUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                                    const TransformComponentUVE& localTransform);
+    /// Discards smoothing history for a live subtree without changing transforms or authored
+    /// modes. Uses a temporary current children index; does not invalidate cached index borrows.
+    /// The next valid Update seeds both poses even when the transform itself stayed unchanged.
+    [[nodiscard]] bool ResetInterpolationSubtreeUVE(IEntityManagerUVE& entityManager, EntityUVE root);
+
     /// Reparents `child` under `newParent` (or makes it a root if `newParent ==
     /// kInvalidEntityUVE`), marking `child` dirty. A child that changes parent goes after its new
     /// siblings; one given the parent it already has keeps its place. Debug builds assert valid entities/components and
@@ -95,6 +105,9 @@ public:
     /// inheritance the mode promises. This returns the answer for every object, carrier or not.
     [[nodiscard]] virtual std::optional<ResolvedObjectModesUVE> TryGetResolvedObjectModesUVE(
         EntityUVE entity) const = 0;
+
+protected:
+    [[nodiscard]] static SceneGraphWriteAccessUVE GetCacheWriteAccessUVE() noexcept { return {}; }
 };
 
 } // namespace UVE::Scene

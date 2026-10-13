@@ -10,6 +10,7 @@
 #include "uve/logging/assert_uve.h"
 #include "uve/logging/logging_macros_uve.h"
 #include "uve/object/object_registry_uve.h"
+#include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/scheduling/frame_scheduler_uve.h"
 #include "uve/utilities/scope_guard_uve.h"
 
@@ -301,6 +302,10 @@ WorldResultUVE WorldUVE::SetSceneEnabledUVE(const SceneHandleUVE handle, const b
     auto *scene = GetSceneUVE(handle);
     if (scene == nullptr)
         return WorldResultUVE::UnknownScene;
+    if (enabled && !scene->m_enabled) {
+        scene->m_entities.ForEachUVE<Scene::PhysicsInterpolationComponentUVE>(
+            [](const auto, auto& interpolation) { interpolation.hasPreviousPose = false; });
+    }
     scene->m_enabled = enabled;
     return WorldResultUVE::Succeeded;
 }

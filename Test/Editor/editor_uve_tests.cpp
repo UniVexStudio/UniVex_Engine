@@ -4065,19 +4065,28 @@ TEST(EditorUVETest, SelectedBoundsQuery_UsesDerivedParentTransformAndRejectsUnsa
         entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(child).halfExtents.x = 0.0F;
         EXPECT_FALSE(editor.TryGetSelectedBoundsUVE().has_value());
         entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(child).halfExtents = collider.halfExtents;
-        Scene::WorldTransformComponentUVE& worldTransform =
-            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(child);
-        worldTransform.dirty = true;
+        const auto& liveWorld = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(child);
+        liveWorld.dirty = true;
         EXPECT_FALSE(editor.TryGetSelectedBoundsUVE().has_value());
-        worldTransform.dirty = false;
+        liveWorld.dirty = false;
+        auto worldTransform = liveWorld;
+        // Malformed initial snapshots exercise the same consumer rejection paths; live cache
+        // pose mutation is no longer available through ordinary entity-manager access.
+        const auto replaceCache = [&] {
+            entityManager.RemoveComponentUVE<Scene::WorldTransformComponentUVE>(child);
+            entityManager.AddComponentUVE<Scene::WorldTransformComponentUVE>(child, worldTransform);
+        };
         const Math::Vector3UVE savedScale = worldTransform.worldScale;
         worldTransform.worldScale.x = std::numeric_limits<float>::infinity();
+        replaceCache();
         EXPECT_FALSE(editor.TryGetSelectedBoundsUVE().has_value());
         worldTransform.worldScale = savedScale;
         const Math::QuaternionUVE savedRotation = worldTransform.worldRotation;
         worldTransform.worldRotation = Math::QuaternionUVE{0.0F, 0.0F, 0.0F, 0.0F};
+        replaceCache();
         EXPECT_FALSE(editor.TryGetSelectedBoundsUVE().has_value());
         worldTransform.worldRotation = savedRotation;
+        replaceCache();
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
         EXPECT_FALSE(editor.CanUndoUVE());
 
