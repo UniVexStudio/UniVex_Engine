@@ -26,7 +26,9 @@ namespace UVE::Asset {
 /// save file always has exactly these two sections, never a variable named set. `DataTable` is the
 /// envelope-backed typed data-table asset format. `Audio` is the bounded
 /// interleaved PCM16-derived normalized sample envelope used by `.uvaudio` importer output. `Animation`
-/// is the bounded JSON transform-sample/event envelope used by `.uvanim` importer output. The
+/// is the bounded JSON transform-sample/event envelope used by `.uvanim` importer output.
+/// `AnimationLibrary` is the bounded JSON clip-reference envelope used by `.uvanimlib` output.
+/// `Font` is the bounded raw-sfnt-bytes envelope used by `.uvfont` importer output. The
 /// `assetType` value is never reused.
 inline constexpr std::size_t kMaximumUveFilePayloadBytesUVE = 512U * 1024U * 1024U;
 
@@ -43,6 +45,9 @@ enum class AssetKindUVE : std::uint32_t {
     DataTable = 10,
     Audio = 11,
     Animation = 12,
+    Skeleton = 13,
+    AnimationLibrary = 14,
+    Font = 15,
 };
 
 /// The fixed-size portion of a `.uve*` file's header, returned by ReadUveFileUVE() alongside the
@@ -59,8 +64,8 @@ struct UveFileHeaderUVE {
 /// Encodes `payload` as a universal `.uve*` binary envelope in memory: magic "UVE\0",
 /// `version uint32` (the current payload schema version), `assetType uint32`,
 /// `compressionMethod uint32` (always `0 = None`), `payloadLength uint64`, then `payload`
-/// verbatim. It is the authoritative byte layout used by both filesystem persistence and
-/// in-memory scene-history snapshots.
+/// verbatim. All header integers are little-endian. It is the authoritative byte layout used by
+/// both filesystem persistence and in-memory scene-history snapshots.
 [[nodiscard]] std::vector<std::byte> EncodeUveFileEnvelopeUVE(AssetKindUVE assetType,
                                                                const std::vector<std::byte>& payload);
 

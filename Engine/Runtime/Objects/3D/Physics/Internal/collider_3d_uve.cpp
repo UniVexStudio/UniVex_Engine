@@ -7,6 +7,7 @@
 #include <numbers>
 
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/math/scalar_uve.h"
 #include "uve/objects/3d/object_3d_uve.h"
 
 namespace UVE::Scene {
@@ -257,13 +258,13 @@ float Collider3DUVE::GetVolumeUVE(const ColliderComponentUVE& collider) noexcept
     switch (collider.shapeType) {
     case ColliderShapeTypeUVE::Sphere: {
         const float r = collider.radius;
-        return (4.0F / 3.0F) * std::numbers::pi_v<float> * r * r * r;
+        return (4.0F / 3.0F) * Math::kPiUVE * r * r * r;
     }
     case ColliderShapeTypeUVE::Capsule: {
         const float r = collider.radius;
         const float cylinder = collider.height - 2.0F * r;
-        return std::numbers::pi_v<float> * r * r * cylinder +
-               (4.0F / 3.0F) * std::numbers::pi_v<float> * r * r * r;
+        return Math::kPiUVE * r * r * cylinder +
+               (4.0F / 3.0F) * Math::kPiUVE * r * r * r;
     }
     case ColliderShapeTypeUVE::Box:
     default:

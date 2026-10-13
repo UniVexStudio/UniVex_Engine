@@ -3,6 +3,7 @@
 
 #include "uve/math/vector2_uve.h"
 
+#include <limits>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -51,6 +52,37 @@ TEST(Vector2UVETest, ToStringUVE_ContainsBothComponents) {
 
     EXPECT_NE(text.find("1.000000"), std::string::npos);
     EXPECT_NE(text.find("2.000000"), std::string::npos);
+}
+
+TEST(Vector2UVETest, Dot_SumsComponentProducts) {
+    constexpr Vector2UVE lhs{1.0F, 2.0F};
+    constexpr Vector2UVE rhs{10.0F, 20.0F};
+    EXPECT_FLOAT_EQ(DotUVE(lhs, rhs), 50.0F);
+    EXPECT_FLOAT_EQ(DotUVE(lhs, Vector2UVE{-2.0F, 1.0F}), 0.0F);
+}
+
+TEST(Vector2UVETest, LengthSquared_AgreesWithDot) {
+    constexpr Vector2UVE vector{3.0F, 4.0F};
+    EXPECT_FLOAT_EQ(LengthSquaredUVE(vector), 25.0F);
+    EXPECT_FLOAT_EQ(LengthSquaredUVE(vector), DotUVE(vector, vector));
+}
+
+TEST(Vector2UVETest, Length_MeasuresEuclideanDistance) {
+    EXPECT_FLOAT_EQ(LengthUVE(Vector2UVE{3.0F, 4.0F}), 5.0F);
+    EXPECT_FLOAT_EQ(LengthUVE(Vector2UVE{}), 0.0F);
+}
+
+TEST(Vector2UVETest, Normalize_ScalesToUnitLength) {
+    const Vector2UVE unit = NormalizeUVE(Vector2UVE{3.0F, 4.0F});
+    EXPECT_FLOAT_EQ(LengthUVE(unit), 1.0F);
+    EXPECT_FLOAT_EQ(unit.x, 0.6F);
+    EXPECT_FLOAT_EQ(unit.y, 0.8F);
+}
+
+TEST(Vector2UVETest, IsFinite_RejectsNonFiniteComponents) {
+    EXPECT_TRUE(IsFiniteUVE(Vector2UVE{1.0F, 2.0F}));
+    EXPECT_FALSE(IsFiniteUVE(Vector2UVE{std::numeric_limits<float>::infinity(), 0.0F}));
+    EXPECT_FALSE(IsFiniteUVE(Vector2UVE{0.0F, std::numeric_limits<float>::quiet_NaN()}));
 }
 
 } // namespace

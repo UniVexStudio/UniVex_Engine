@@ -7,12 +7,11 @@
 namespace UVE::Scene {
 
 [[nodiscard]] bool IsUIButtonComponentValidUVE(const UIButtonComponentUVE& component) noexcept {
-    return std::isfinite(component.positionPixels.x) && std::isfinite(component.positionPixels.y) &&
-           std::isfinite(component.sizePixels.x) && std::isfinite(component.sizePixels.y) &&
-           component.sizePixels.x >= kMinimumUIButtonSizePixelsUVE &&
-           component.sizePixels.x <= kMaximumUIButtonSizePixelsUVE &&
-           component.sizePixels.y >= kMinimumUIButtonSizePixelsUVE &&
-           component.sizePixels.y <= kMaximumUIButtonSizePixelsUVE && std::isfinite(component.normalColor.x) &&
+    return Math::IsFiniteUVE(component.rect) &&
+           component.rect.size.x >= kMinimumUIButtonSizePixelsUVE &&
+           component.rect.size.x <= kMaximumUIButtonSizePixelsUVE &&
+           component.rect.size.y >= kMinimumUIButtonSizePixelsUVE &&
+           component.rect.size.y <= kMaximumUIButtonSizePixelsUVE && std::isfinite(component.normalColor.x) &&
            std::isfinite(component.normalColor.y) && std::isfinite(component.normalColor.z) &&
            std::isfinite(component.hoverColor.x) && std::isfinite(component.hoverColor.y) &&
            std::isfinite(component.hoverColor.z) && std::isfinite(component.pressedColor.x) &&

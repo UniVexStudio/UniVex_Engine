@@ -302,12 +302,12 @@ TEST_F(ViewportManagerRenderUVETest, RenderAllPanesUVE_ValidPaneRendersWithCorre
     ASSERT_TRUE(toneMappingDesc.has_value());
     ASSERT_TRUE(toneMappingDesc->viewportOverride.has_value());
     // originX01=0.5, sizeX01=0.5 over a 200-wide window -> pixelX=100, width=100.
-    EXPECT_EQ(toneMappingDesc->viewportOverride->x, 100U);
-    EXPECT_EQ(toneMappingDesc->viewportOverride->width, 100U);
+    EXPECT_EQ(toneMappingDesc->viewportOverride->position.x, 100U);
+    EXPECT_EQ(toneMappingDesc->viewportOverride->size.x, 100U);
     // originY01=0.0, sizeY01=0.5 over a 100-tall window, top-left origin, flipped to GL's
     // bottom-left convention: pixelYFromTop=0, height=50 -> pixelYFromBottom=100-0-50=50.
-    EXPECT_EQ(toneMappingDesc->viewportOverride->y, 50U);
-    EXPECT_EQ(toneMappingDesc->viewportOverride->height, 50U);
+    EXPECT_EQ(toneMappingDesc->viewportOverride->position.y, 50U);
+    EXPECT_EQ(toneMappingDesc->viewportOverride->size.y, 50U);
 }
 
 // NullRenderDeviceUVE::GetLastSubmittedCommandsUVE() reflects only the most recently submitted
@@ -335,8 +335,8 @@ TEST_F(ViewportManagerRenderUVETest, RenderAllPanesUVE_ProcessesEveryValidPaneIn
         FindToneMappingPassDescUVE(renderDevice.GetLastSubmittedCommandsUVE());
     ASSERT_TRUE(toneMappingDesc.has_value());
     ASSERT_TRUE(toneMappingDesc->viewportOverride.has_value());
-    EXPECT_EQ(toneMappingDesc->viewportOverride->x, 64U);
-    EXPECT_EQ(toneMappingDesc->viewportOverride->width, 64U);
+    EXPECT_EQ(toneMappingDesc->viewportOverride->position.x, 64U);
+    EXPECT_EQ(toneMappingDesc->viewportOverride->size.x, 64U);
 }
 
 } // namespace

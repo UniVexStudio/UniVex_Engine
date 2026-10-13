@@ -233,6 +233,11 @@ std::uintptr_t EditorUiAssetsUVE::GetObjectCategoryIconTextureIdUVE(const std::s
 }
 
 std::uintptr_t EditorUiAssetsUVE::GetContentTypeIconTextureIdUVE(const std::string_view typeId) const noexcept {
+    // Viewport3D is the user-facing label for a scene asset, while icon source names use the
+    // stable identifier spelling shared by the catalogue and asset filenames.
+    if (typeId == "Viewport3D") {
+        return FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ContentType, "viewport_3d");
+    }
     return FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ContentType, typeId);
 }
 

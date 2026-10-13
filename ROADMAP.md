@@ -462,18 +462,47 @@ This is close to entirely unbuilt. Two folders exist (one placeholder, one with 
 real utility file) — networked multiplayer is a from-scratch, long-term project.
 
 - [x] A reliable packet window utility (ordering/retransmission bookkeeping primitive)
-- [ ] A real transport layer (UDP-based, with a real socket abstraction per platform)
-- [ ] A client-server session/connection lifecycle (connect, handshake, disconnect,
+- [x] A transport seam plus an in-memory loopback pair (endpoint contract + bounded FIFO queues; proves the interface the UDP transport implements)
+- [x] A real transport layer (UDP-based: connected non-blocking datagram sockets behind the endpoint seam, POSIX + Winsock, dotted quads plus getaddrinfo hostnames)
+- [x] UDP listener: one socket serving many clients (recvfrom demux by sender address, per-peer endpoint handles with sendto routing, bounded stranger backlog with accept-replay so Hellos survive the gap, exact peer queue counts)
+- [x] A client-server session/connection lifecycle (connect, handshake, disconnect,
   timeout, reconnection)
+- [x] Session core over the seam: Hello/Welcome handshake, version-checked (v2 Hello carries a session token), best-effort Bye disconnect, silence timeout on an explicit clock, client redial with bounded attempts, server resume recognition
+- [x] Channel multiplexing: one session carries many features on tagged channels (opt-in per session with a single untagged handshake, per-channel queues, replication/RPC/prediction ride shared sessions; mode and channel ids agreed out of band)
+- [x] Server relay: broadcast fan-out over N server sessions (opaque byte forwarding, channel-blind, no echo, established-only delivery, explicit join/leave; script surface relay.peer_count/set_room/room/set_interest/interested/remove/stat_*/peer_state plus relay.send/poll, all synchronous with no events)
+- [x] Matchmaking lobby: room registry over direct RPC sessions (create/list/join/leave/roster over RPC, one room per client with auto-leave on move, unique names per room, empty rooms removed, roster-change push to survivors; typed client facade with room/roster cache and stale-push guards; script surface lobby.list/create/join/leave/roster/result_* plus lobby_result/lobby_roster)
+- [x] Relay rooms: routed fan-out by peer room tags (implicit rooms with no registry, the default room is exactly broadcast, room-skips silent like unestablished-skips; lobby rooms bind verbatim via a ClientRoomUVE sync loop)
+- [x] Relay interest: pairwise mute matrix over fan-out (default interested, one-way mutes, self-mutes stored but never consulted, removals prune both directions; composes with rooms; app syncs teams, proximity, or subscriptions)
 - [ ] Entity/state replication (which properties replicate, at what rate, to which clients)
+- [x] Replication core: fixed-rate position snapshots over sessions (net-id registry with sampler/applier callbacks, strict little-endian framing, per-entity authority roles, per-entity relevancy filters, delta compression between fulls, non-position property frames with a shared wire-value codec)
+- [x] Ownership-transfer handshake: request/accept/deny control frames move authority over the wire (single-flight per entity, timeouts with retry, stale-answer guards, manual rebind still overrides)
+- [x] Replication deltas: changed-only sends between scheduled full snapshots (epsilon change detection, first-sighting ships, baselines survive authority flips, drops heal at the next full; period 1 keeps legacy fulls)
+- [x] Replication Gameplay adapter: sampler/applier wiring to the scene (world-read samplers with last-known hold, scene-graph appliers, net-id map with register/unregister/find/prune; predicted pawns ride as Owner)
 - [ ] A remote-procedure-call framework callable from the scripting/gameplay layer
-- [ ] Client-side prediction and server reconciliation for responsive movement
-- [ ] Lag compensation for hit registration
+- [x] RPC core: async calls over an owned session (method registry, per-call timeouts, at-most-once, 64-deep retained results, strict magic+version framing, ValueUVE args/results incl. collections; script surface rpc.begin/push/send/result_* plus rpc_response; script-registered methods, sync calls still open)
+- [x] Client-side prediction and server reconciliation for responsive movement
+- [x] Prediction core: per-tick input capture with immediate local stepping, triple-repeat input stream, ordered server apply with per-tick states, epsilon reconcile (snap + replay), gap-timeout skip, offline prediction across reconnects (u64 ticks per pawn, opaque app determinism word; multi-pawn streams with seeded spawns, per-input dt with stored-dt replay, server relay fan-out with pawn-tracking observers)
+- [x] Prediction Gameplay adapter: component <-> PredictedStateUVE (packed clocks, real-intent stepper, tick/sync pawn drivers with pawn overloads; local mover refuses tagged bodies)
+- [x] Dedicated-server sample: headless server + 3 bot clients over loopback (lobby rooms, relay shouts bound to rooms, predicted pawns as replication Owners, server-owned patrol NPC, untagged local walker; quiet relay rooms need longer session timeouts than the 5 s default)
+- [x] Lag compensation for hit registration (shot-intent protocol transports the view tick plus the fire fraction; one-call FireLagShotUVE client firing with outcome receipts)
+- [x] Lag compensation core: per-tick pose history for combatants (64-tick window), rewound overlap + ray resolves through the live narrow-phase with live acceptance gates, merged-report damage via the lifecycle tracker (idempotent replays, no spurious exits)
+- [x] Lag-comp Gameplay wiring: shooter view ticks sourced from prediction acks, invalid-tick fail-closed shot resolve, pre-tracker rewound merge, rewound-ray damage with live-parity health events
+- [x] Lag-comp interpolation: fractional-tick rewound resolves (position lerp + rotation slerp between consecutive snapshots; gap/newest/clamped floor fallbacks, fail-closed fractions; fractions ride the shot-intent protocol)
+- [x] Lag-comp scale rewind: recorded world scale with rewound half-extents (authored size times absolute scale; zero/non-finite unhittable, mirrors occupy the same box; scale lerps between snapshots)
+- [x] Lag-comp engine tick: per-frame auto-record with 1-based engine ticks, submitted-shot inbox merged pre-tracker, Shutdown drain (prediction ticks map app-side)
+- [x] Lag-comp server demo: headless server + lagged bot over loopback (prediction-ack views, rewound shot/ray saves, pre-tracker merge, fractional-tick coverage)
 - [ ] Interest management / relevancy (only replicate what a client can see or needs)
+- [x] Interest core: spatial relevance between viewers and entities (uniform grid, per-viewer radii, hysteresis band, always-relevant flags, fail-open unknowns with counters; feeds the replicator's per-entity relevancy filters; priority tiers with id-staggered send rates, per-entity rate overrides, multi-client fan-out with per-viewer budgets over tier-distance ranking, proven by a fan-out sample: one server, three budgeted bots, divergent views)
+- [x] Interest Gameplay adapter: scene <-> interest sync with filter binding (world-pose upserts that never flip always-relevant flags, viewer-follows-pawn moves, idempotent per-viewer binds; short counts surface map/core drift)
 - [ ] Voice chat
 - [ ] A matchmaking/lobby layer, or at minimum a clean integration point for a third-party
   one
-- [ ] Network debugging tools (packet inspector, simulated latency/loss for testing)
+- [x] Network debugging tools (packet inspector, simulated latency/loss for testing)
+- [x] Simulated transport conditions: deterministic drop periods + fixed delays per direction over any endpoint
+- [x] Packet inspector core: captured session datagrams decoded to structured records plus one-line summaries (hello version/token with mismatch flags, strict replication/RPC/prediction payload mirrors incl. RPC value args, `> [rpc] ...` log lines, malformed flagging, opaque unknown channels)
+- [x] Editor capture UI: bounded decode-on-push packet ring (512, drop-oldest, direction/channel/malformed/text filters, hexdump) feeding a Capture bottom-dock tab with filter toolbar, packet list, and selected decode (Clear + stats; app-fed via CapturePacketUVE until live taps land)
+- [x] Live stream taps: session-level tap sink copying every sent/received datagram (direction, pump clock, channel byte; ignored garbage included, failed sends excluded) straight into the capture ring
+- [x] Capture demo: tap-fed ring over mixed loopback traffic (handshake, replication, RPC, shots, garbage) with host channel mapping, forced drops, filter proofs, and a printed hexdump
 - [ ] The now-redundant `Networking` placeholder folder and the real `Network` folder
   should be reconciled into one clearly-named module once real network code exists, instead
   of carrying two same-purpose folders forward
@@ -492,8 +521,20 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 - [x] Engine binding: a node's `.uvs` runs `ready`/`tick(dt)` in process order, reloads on save
 - [x] Editor: New UVScript on the script slot, a text editor with live diagnostics, `export`
   fields in the Inspector
-- [ ] Collections and tuples, calling methods on other nodes, `wait` inside a `fn`
-- [ ] More host bindings: collision/overlap events, audio, physics forces, other node kinds
+- [ ] Collections and tuples, calling methods on other nodes, `wait` inside a `fn` — methods
+  on other nodes have landed (`node(name)` lookup plus fire-and-forget `ref.method(args)`, reaching
+  the target's own script functions first with `hide()`/`show()` built in), and so have collections
+  and tuples (typed `list[int]`/`map[str, int]`/`tuple[int, str]`, literals, `[]`, `for x in xs`,
+  `let (a, b) = pair()`, `length`/`push`/`keys`/`contains`/`remove` with native-code parity); only
+  `wait` inside a `fn` remains
+- [ ] More host bindings: collision/overlap events, audio, physics forces, other node kinds —
+  physics forces have landed (persistent force/torque plus mass-scaled impulses on rigid
+  bodies, with rigid-body velocity readable/writable), as have audio bindings (play/stop
+  plus a playing query on audio sources, with volume/pitch readable/writable) and
+  collision/overlap events (both parties' scripts hear each enter/exit with the other's
+  name); other node kinds have landed too (writable `visible` on every object, `intensity`
+  on lights, `fov` on cameras), and gameplay pools and tags (`attributes.has/get/max/damage/heal`
+  and `tags.has/add/remove` on entities with the components)
 - [ ] An in-editor debugger (breakpoints, stepping, live values)
 - [x] C++23 output for release builds: bytecode translated to C++, registered by program fingerprint,
   checked against the interpreter
@@ -501,27 +542,28 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   `fib(20)`: 68.8 ms interpreted, 0.62 ms native; Release not measured)
 
 ### 7.2 Gameplay framework
-- [ ] A formal actor/pawn/controller-style gameplay object model above raw ECS entities +
-  components (something a gameplay programmer authors against directly, not just entities
-  and components)
-- [ ] An input-action-mapping layer (bind a logical action like "Jump" to any physical
+- [x] A formal actor/pawn/controller-style gameplay object model above raw ECS entities +
+  components (Pawn/Controller components with mutual-or-absent links, Possess/Unpossess stealing
+  both sides, input routing to Player pawns, the player-look/interact/character flow resolved
+  through possession, character motion steered from pawn input, possessed/unpossessed
+  lifecycle events, and follow cameras that track the possessed pawn)
+- [x] An input-action-mapping layer (bind a logical action like "Jump" to any physical
   input across keyboard/gamepad, with rebinding support), rather than scripts polling raw
   key codes directly
-- [ ] A gameplay tag / gameplay-attribute system (health, stamina, status effects) as a
+- [x] A gameplay tag / gameplay-attribute system (health, stamina, status effects) as a
   reusable framework rather than one-off components per game
-- [ ] A cinematic/sequencer tool for cutscenes (keyframing cameras, animation, audio, and
+- [x] A cinematic/sequencer tool for cutscenes (keyframing cameras, animation, audio, and
   gameplay events on a shared timeline)
-- [ ] A trigger/event layer for level scripting lighter than a full script
+- [x] A trigger/event layer for level scripting lighter than a full script
   (lightweight "on overlap, do X" level logic)
 
 ### 7.3 AI
-- [ ] Navmesh generation from level geometry (the `navigation region`/`navigation agent`
-  scene-node kinds already exist as descriptors; no navmesh baking or pathfinding system
-  backs them yet)
-- [ ] A* / pathfinding over the generated navmesh, with agent avoidance (steering around
-  other agents)
-- [ ] A behavior-tree or utility-AI framework for authoring NPC decision-making
-- [ ] A perception system (sight/hearing cones feeding AI decisions)
+- [x] Navmesh generation from level geometry (BakeNavmeshUVE bakes NavMeshVolume3D regions to
+  rectangles-and-portals meshes, queried through NavmeshUVE)
+- [x] A* / pathfinding over the generated navmesh, with agent avoidance (FindNavPathUVE +
+  string-pulling; NavAgentUVE steers with separation from neighbours)
+- [x] A behavior-tree or utility-AI framework for authoring NPC decision-making (utility-AI: considerations, response curves, hysteresis selection over blackboards)
+- [x] A perception system (sight/hearing cones feeding AI decisions: raycast-occluded sight cones over watched tags, hearing radius against decaying noise emitters, sensed into blackboards)
 - [ ] Crowd simulation for large numbers of agents (long-term)
 
 ---
@@ -564,15 +606,27 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   authored through the editor's Inspector, hit-tested against real input, rendered both in
   the plain runtime and the live editor's own viewport during play
 - [x] A baked bitmap font atlas approach for UI text rendering
-- [ ] Layout containers (horizontal/vertical stacks, grids, anchors/margins that respond to
-  screen-size and aspect-ratio changes) — current UI elements are placed at fixed pixel
-  positions
+- [x] Layout containers (horizontal/vertical stacks, grids, anchors/margins that respond to
+  screen-size and aspect-ratio changes) — horizontal/vertical stack containers with
+  padding/spacing/alignment run inside UIRuntimeUVE::TickUVE, stacks wrap into
+  uniform-cell grids via wrapAfter, normalized anchors with pixel margins resolve
+  against parents or the viewport ahead of layout, text paces by measured atlas
+  advances, and containers auto-size to content per axis deepest-first
 - [ ] Additional widget types: sliders, checkboxes, dropdowns, text input fields, scroll
-  views, progress bars, tooltips
+  views, progress bars, tooltips — sliders, progress bars, checkboxes, hover-delay
+  tooltips, and dropdowns have landed with draw batching and layout/anchor
+  participation, as have single-line text input (focus, caret, basic editing) and
+  scroll views (clipped vertical stacks with wheel scrolling) — the widget box is
+  fully checked
 - [ ] Rich text (multiple fonts/sizes/styles/colors within one text block, not just one
   baked font per label)
-- [ ] 9-slice/scalable image borders for resolution-independent UI art
-- [ ] UI animation/tweening (transitions, easing) as a first-class authoring feature
+- [x] 9-slice/scalable image borders for resolution-independent UI art — textured images
+  slice into up to 9 quads with authored pixel margins and texture-fraction borders,
+  hollow-frame and proportional-shrink fallbacks included
+- [x] UI animation/tweening (transitions, easing) as a first-class authoring feature —
+  UITweenComponentUVE drives rect/alpha with 9 easings, delay, and once/loop/ping-pong
+  modes, ticked on the real frame clock after layout so active tweens override the
+  resting arrangement; alpha tweens multiply authored alpha, runtime state reseeds
 - [ ] Input focus and gamepad/keyboard UI navigation (tab order, D-pad navigation) for
   controller- and accessibility-friendly menus
 - [ ] World-space UI (a Canvas rendered as a 3D object in the scene, e.g. floating health
@@ -633,7 +687,7 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   revision-policy plumbing already exists; the editor-facing workflow needs verifying and
   filling in)
 - [ ] A profiler / frame-debugger panel (CPU and GPU timings per system, a frame capture
-  view for the render graph, a memory-usage view)
+  view for the render graph, a memory-usage view; capture panel landed: live snapshots over ProfilerCaptureUVE, Net category, network emitters, fan-out sample profiles itself - GPU timings, render-graph capture, memory view still open)
 - [ ] A material editor / shader graph (see also Asset Pipeline above)
 - [ ] A terrain-sculpting tool
 - [ ] A particle-effect editor
@@ -718,7 +772,8 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 - [ ] Getting-started and system-by-system guides for new contributors, generated/kept
   alongside the code they document rather than living only in chat history
 - [ ] Sample/template projects demonstrating each major system (a "third-person
-  character" sample, a "multiplayer" sample once networking exists, a "UI" sample, etc.)
+  character" sample, a "multiplayer" sample once networking exists - done: Samples/DedicatedServer,
+  a "UI" sample, etc.)
 - [ ] A public contribution guide with coding standards, PR process, and issue templates
 
 ---
@@ -736,8 +791,8 @@ this list, and are a reasonable place to resume work first:
    (material editor, sequencer, profiler) is more valuable once panels can be freely
    arranged, and building each new tool against the current fixed-position system means
    redoing layout work later.
-4. Navmesh + pathfinding (section 7.3) — the most commonly needed AI building block, and
-   currently completely absent despite scene-node descriptors already anticipating it.
+4. Navmesh + pathfinding (section 7.3) — DONE and checked above (bake, A*, string-pulling,
+   agents with separation steering, 48 tests green). Behavior trees and perception remain.
 5. A minimal real networking transport + replication slice (section 6) — currently the
    least-built major system in the entire engine, and the one most games eventually need
    in some form.

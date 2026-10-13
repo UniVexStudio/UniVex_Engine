@@ -6,7 +6,7 @@
 #include <cmath>
 #include <cstdint>
 
-#include "uve/math/vector3_uve.h"
+#include "uve/math/color_uve.h"
 
 namespace UVE::Scene {
 
@@ -24,10 +24,11 @@ enum class LightTypeUVE : std::uint8_t { Directional = 0, Point = 1, Spot = 2 };
 /// (`worldPosition`/`worldRotation`), exactly as Increment 23 established for direction.
 struct LightComponentUVE final {
     // color/intensity stay first (their original Increment-5 position) so every existing 2-arg
-    // aggregate-init call site (LightComponentUVE{color, intensity}) keeps compiling unmodified,
+    // aggregate-init call site (LightComponentUVE{color, intensity}) keeps its shape (color is a
+    // linear Math::ColorUVE since Tier 1.3),
     // matching the established backward-compatible-field-addition convention (see
     // ColliderComponentUVE's own later-added fields for the same trailing-default pattern).
-    Math::Vector3UVE color{1.0F, 1.0F, 1.0F};
+    Math::ColorUVE color{1.0F, 1.0F, 1.0F};
     float intensity = 1.0F;
 
     LightTypeUVE type = LightTypeUVE::Directional;

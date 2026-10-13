@@ -23,6 +23,7 @@
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/render_instance_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
+#include "uve/utilities/hash_uve.h"
 #include "uve/objects/3d/abstract_objects_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
 #include "uve/objects/3d/occluder_3d_uve.h"
@@ -77,9 +78,14 @@ struct AssetPairKeyHashUVE final {
     [[nodiscard]] std::size_t operator()(const AssetPairKeyUVE& key) const noexcept {
         const std::size_t meshHash = std::hash<std::uint64_t>{}(key.meshGuidValue);
         const std::size_t materialHash = std::hash<std::uint64_t>{}(key.materialGuidValue);
-        // The usual boost-style mix: the two GUIDs are independent, so a plain XOR would collide
-        // for any pairing and its reverse.
-        return meshHash ^ (materialHash + 0x9E3779B97F4A7C15ULL + (meshHash << 6U) + (meshHash >> 2U));
+        // The two GUIDs are independent, so a plain XOR would collide for any pairing and its
+        // reverse — hence the shared combiner. NOTE: the old hand-rolled mix used the 64-bit
+        // golden constant where the shared formula uses boost's 32-bit one, so values changed
+        // with the 1.7 migration. The pairing table is rebuilt per visibility set and never
+        // persisted, so nothing depends on the old values.
+        std::size_t seed = meshHash;
+        Utilities::HashCombineUVE(seed, materialHash);
+        return seed;
     }
 };
 

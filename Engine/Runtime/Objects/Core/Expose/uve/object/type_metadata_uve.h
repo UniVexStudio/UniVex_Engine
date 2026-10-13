@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <new>
 #include <string>
 #include <string_view>
 #include <concepts>
@@ -13,7 +14,15 @@
 #include <utility>
 #include <vector>
 
+#include "uve/strings/string_id_uve.h"
+#include "uve/utilities/flags_uve.h"
+
 namespace UVE::Core {
+
+/// `TypeIdUVE` is the strong type id: an interned name, so reflected lookups and name-keyed
+/// maps compare integers instead of strings. Type ids were raw `std::string` before the
+/// `StringIdUVE` migration; this alias names the resolution at the type that owns it.
+using TypeIdUVE = Strings::StringIdUVE;
 
 enum class TypeMetadataKindUVE : std::uint8_t {
     Component = 0,
@@ -42,17 +51,6 @@ enum class TypeMetadataPropertyFlagsUVE : std::uint32_t {
     EntityReference = 1U << 5U,
 };
 
-[[nodiscard]] constexpr TypeMetadataPropertyFlagsUVE operator|(const TypeMetadataPropertyFlagsUVE left,
-                                                               const TypeMetadataPropertyFlagsUVE right) noexcept {
-    return static_cast<TypeMetadataPropertyFlagsUVE>(static_cast<std::uint32_t>(left) |
-                                                     static_cast<std::uint32_t>(right));
-}
-
-[[nodiscard]] constexpr bool HasPropertyFlagUVE(const TypeMetadataPropertyFlagsUVE value,
-                                                const TypeMetadataPropertyFlagsUVE flag) noexcept {
-    return (static_cast<std::uint32_t>(value) & static_cast<std::uint32_t>(flag)) != 0U;
-}
-
 /// Bounds for a numeric property, so the inspector picks a slider/step without a per-type branch.
 /// `enabled` distinguishes "no range declared" from a legitimate [0, 0] range.
 struct TypeMetadataNumericRangeUVE final {
@@ -80,7 +78,7 @@ struct TypeMetadataPropertyUVE final {
     /// forces every existing declaration to brace-initialize it.
     TypeMetadataPropertyUVE() = default;
     TypeMetadataPropertyUVE(std::string propertyName, std::string propertyDisplayName,
-                            std::string propertyTypeId, const bool isEditable)
+                            TypeIdUVE propertyTypeId, const bool isEditable)
         : name(std::move(propertyName)),
           displayName(std::move(propertyDisplayName)),
           typeId(std::move(propertyTypeId)),
@@ -88,7 +86,7 @@ struct TypeMetadataPropertyUVE final {
 
     std::string name;
     std::string displayName;
-    std::string typeId;
+    TypeIdUVE typeId;
     bool editable = false;
 
     /// Type-erased accessors bound to a specific member by MakePropertyUVE() below - null for a
@@ -104,7 +102,7 @@ struct TypeMetadataPropertyUVE final {
     /// collapsible header, so declare a group's properties together and after the ungrouped ones.
     std::string section;
     std::int32_t order = 0;
-    TypeMetadataPropertyFlagsUVE flags = TypeMetadataPropertyFlagsUVE::None;
+    Utilities::FlagsUVE<TypeMetadataPropertyFlagsUVE> flags;
     TypeMetadataNumericRangeUVE range;
     std::vector<TypeMetadataEnumEntryUVE> enumEntries;
     std::string tooltip;
@@ -133,15 +131,19 @@ struct TypeMetadataPropertyUVE final {
     /// because a runtime system owns it. Both consumers ask this rather than re-deriving it.
     [[nodiscard]] bool IsAuthoringWritableUVE() const noexcept {
         return editable && setValue != nullptr &&
-               !HasPropertyFlagUVE(flags, TypeMetadataPropertyFlagsUVE::ReadOnly) &&
-               !HasPropertyFlagUVE(flags, TypeMetadataPropertyFlagsUVE::RuntimeState);
+               !flags.HasUVE(TypeMetadataPropertyFlagsUVE::ReadOnly) &&
+               !flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState);
     }
 
-    /// True when the property belongs in persisted scene data. Runtime-derived state is excluded:
-    /// persisting it would fight the system that recomputes it every frame.
+    /// True when the property belongs in persisted scene data. Excluded: runtime-derived
+    /// state (persisting it would fight the system that recomputes it every frame),
+    /// editor-only authoring (never shipped in runtime data, per the flag's contract), and
+    /// describe-only properties with no accessor to read/write through. The metadata-driven
+    /// serializer's skip rule is exactly this predicate.
     [[nodiscard]] bool IsSerializedUVE() const noexcept {
         return getValue != nullptr && setValue != nullptr &&
-               !HasPropertyFlagUVE(flags, TypeMetadataPropertyFlagsUVE::RuntimeState);
+               !flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState) &&
+               !flags.HasUVE(TypeMetadataPropertyFlagsUVE::EditorOnly);
     }
 };
 
@@ -163,7 +165,7 @@ struct MemberPointerTraitsUVE<ValueT OwnerT::*> {
 /// describe a property's existence, never actually get or set one.
 template <auto MemberPointer>
 [[nodiscard]] TypeMetadataPropertyUVE MakePropertyUVE(std::string name, std::string displayName,
-                                                       std::string typeId, bool editable) {
+                                                       TypeIdUVE typeId, bool editable) {
     using Traits = Detail::MemberPointerTraitsUVE<decltype(MemberPointer)>;
     using OwnerT = typename Traits::Owner;
     using ValueT = typename Traits::Value;
@@ -196,7 +198,7 @@ template <auto MemberPointer>
 /// back to a real enumerator instead of relying on label order matching declaration order.
 template <auto MemberPointer>
 [[nodiscard]] TypeMetadataPropertyUVE MakeEnumPropertyUVE(std::string name, std::string displayName,
-                                                          std::string typeId, const bool editable,
+                                                          TypeIdUVE typeId, const bool editable,
                                                           std::vector<TypeMetadataEnumEntryUVE> options) {
     using Traits = Detail::MemberPointerTraitsUVE<decltype(MemberPointer)>;
     using OwnerT = typename Traits::Owner;
@@ -254,7 +256,7 @@ struct TypeMetadataEntryUVE final {
     /// As with TypeMetadataPropertyUVE: kind/id/name/version/members are the entry's identity,
     /// and the native-type binding below is attached separately by BindTypeUVE().
     TypeMetadataEntryUVE() = default;
-    TypeMetadataEntryUVE(const TypeMetadataKindUVE entryKind, std::string entryTypeId,
+    TypeMetadataEntryUVE(const TypeMetadataKindUVE entryKind, TypeIdUVE entryTypeId,
                          std::string entryDisplayName, const std::uint32_t entryVersion,
                          std::vector<TypeMetadataPropertyUVE> entryProperties,
                          std::vector<TypeMetadataMethodUVE> entryMethods)
@@ -266,7 +268,7 @@ struct TypeMetadataEntryUVE final {
           methods(std::move(entryMethods)) {}
 
     TypeMetadataKindUVE kind = TypeMetadataKindUVE::Other;
-    std::string typeId;
+    TypeIdUVE typeId;
     std::string displayName;
     std::uint32_t version = 1U;
     std::vector<TypeMetadataPropertyUVE> properties;
@@ -276,6 +278,11 @@ struct TypeMetadataEntryUVE final {
     /// only, so nothing could join an entity's live components to their metadata. Defaults to
     /// typeid(void) for a hand-built, describe-only entry that owns no C++ type.
     std::type_index typeIndex{typeid(void)};
+    /// The reflected type's C++ name ("CanvasComponentUVE"), joining the registry's string
+    /// type id to the names the serializer's component table and scene files use. Empty for a
+    /// hand-built, describe-only entry that owns no C++ type; every declared component entry
+    /// sets it, and the scene serializer auto-discovers generic registrations from it.
+    std::string cppName;
     /// Default-construct / destroy one instance of the reflected type. Null for a describe-only
     /// entry. This is what makes add-by-type-id, reset-to-default (default-construct and read the
     /// field back) and generic deserialization possible without a per-type branch.
@@ -286,6 +293,16 @@ struct TypeMetadataEntryUVE final {
     /// prior value and put it back without naming the component's type.
     void* (*cloneInstance)(const void* source) = nullptr;
     void (*assignInstance)(void* destination, const void* source) = nullptr;
+    /// Archetype-slot construction for the reflected type: its size/alignment plus the
+    /// construct-default/move-construct/destroy trio `IEntityManagerUVE::AddComponentErased`
+    /// needs. A Core-native mirror of `Scene::ComponentTypeInfoUVE` (which Core must not
+    /// include); consumers adapt these into one at the attach call site. Zero/null for a
+    /// describe-only entry. Set together with the heap factory by `BindTypeUVE()`.
+    std::size_t instanceSize = 0;
+    std::size_t instanceAlignment = 0;
+    void (*constructDefaultInPlace)(void* destination) = nullptr;
+    void (*moveConstructInPlace)(void* destination, void* source) = nullptr;
+    void (*destroyInPlace)(void* target) = nullptr;
     /// Sort key for the type's own inspector section, so a common section can be pushed last.
     std::int32_t order = 0;
     /// Inspector presentation: draw this type's section inside a host type's section whenever an
@@ -294,7 +311,7 @@ struct TypeMetadataEntryUVE final {
     /// type can belong to different objects (a collider sits in a primitive mesh's section on a
     /// BoxMesh3D and in PhysicsObject3D's on a body). On an entity with none of its hosts it stands
     /// on its own, so nothing ever becomes unreachable.
-    std::vector<std::string> nestedUnderTypeIds;
+    std::vector<TypeIdUVE> nestedUnderTypeIds;
     /// Inspector presentation: draw the properties as rows in place, with no collapsible header,
     /// for a type that is conceptually one property of the object rather than a feature of it - a
     /// object has a script and has metadata, it does not have a "Script section".
@@ -316,9 +333,10 @@ struct TypeMetadataEntryUVE final {
     }
 };
 
-/// Binds `entry` to the concrete C++ type it describes: its std::type_index (the ECS bridge) and
-/// its default-construct/destroy pair. Kept separate from MakePropertyUVE so an entry's identity
-/// and its property list stay independently declarable.
+/// Binds `entry` to the concrete C++ type it describes: its std::type_index (the ECS bridge),
+/// its heap factory (default-construct/destroy/clone/assign), and its archetype-slot
+/// construction trio (size/alignment plus in-place construct/move/destroy). Kept separate from
+/// MakePropertyUVE so an entry's identity and its property list stay independently declarable.
 template <typename TypeT>
 void BindTypeUVE(TypeMetadataEntryUVE& entry) {
     entry.typeIndex = std::type_index(typeid(TypeT));
@@ -330,6 +348,15 @@ void BindTypeUVE(TypeMetadataEntryUVE& entry) {
     entry.assignInstance = +[](void* destination, const void* source) {
         *static_cast<TypeT*>(destination) = *static_cast<const TypeT*>(source);
     };
+    entry.instanceSize = sizeof(TypeT);
+    entry.instanceAlignment = alignof(TypeT);
+    entry.constructDefaultInPlace = +[](void* destination) { ::new (destination) TypeT(); };
+    entry.moveConstructInPlace = +[](void* destination, void* source) {
+        TypeT* const sourceObject = static_cast<TypeT*>(source);
+        ::new (destination) TypeT(std::move(*sourceObject));
+        sourceObject->~TypeT();
+    };
+    entry.destroyInPlace = +[](void* target) { static_cast<TypeT*>(target)->~TypeT(); };
 }
 
 /// Owns one instance of a reflected type without the owner naming that type. Used to answer "what
@@ -432,7 +459,7 @@ public:
     TypeMetadataRegistryUVE& operator=(TypeMetadataRegistryUVE&&) noexcept = default;
 
     [[nodiscard]] TypeMetadataRegistrationResultUVE RegisterTypeUVE(TypeMetadataEntryUVE entry);
-    [[nodiscard]] const TypeMetadataEntryUVE* FindTypeUVE(std::string_view typeId) const noexcept;
+    [[nodiscard]] const TypeMetadataEntryUVE* FindTypeUVE(TypeIdUVE typeId) const noexcept;
     /// The ECS-side lookup: resolves a live component's std::type_index to its metadata. Entries
     /// left at typeid(void) (describe-only) are never matched, so they cannot collide with each
     /// other on the void index.

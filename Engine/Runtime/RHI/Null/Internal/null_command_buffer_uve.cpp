@@ -39,6 +39,33 @@ void NullCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPas
         UVE_ERROR("NullCommandBufferUVE: BeginRenderPassUVE received an unknown load operation");
         return;
     }
+    // Tier 2.5: store ops validate like load ops (Null records opaquely, but a garbage enum is
+    // still a malformed pass on every backend).
+    if (!IsStoreOpValidUVE(renderPassDesc.colorStoreOp) || !IsStoreOpValidUVE(renderPassDesc.depthStoreOp)) {
+        UVE_ERROR("NullCommandBufferUVE: BeginRenderPassUVE received an unknown store operation");
+        return;
+    }
+    // Tier 2.4: the extras prefix rule is structural (no handle lookups — Null never resolves
+    // handles), so it enforces here: contiguous prefix, valid per-slot ops.
+    {
+        bool gapSeen = false;
+        for (const ColorAttachmentUVE& slot : renderPassDesc.extraColorAttachments) {
+            if (slot.target == kInvalidTextureHandleUVE) {
+                gapSeen = true;
+                continue;
+            }
+            if (gapSeen) {
+                UVE_ERROR("NullCommandBufferUVE: extra color attachments must be a contiguous "
+                          "prefix (a gap is malformed)");
+                return;
+            }
+            if (!IsLoadOpValidUVE(slot.loadOp) || !IsStoreOpValidUVE(slot.storeOp)) {
+                UVE_ERROR("NullCommandBufferUVE: BeginRenderPassUVE received an unknown extra "
+                          "attachment load or store operation");
+                return;
+            }
+        }
+    }
     m_insideRenderPass = true;
     m_commands.emplace_back(BeginRenderPassCommandUVE{renderPassDesc});
 }
@@ -81,6 +108,12 @@ void NullCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_
     // the Vulkan record side does (and like BindStorageBufferUVE does), and the executing
     // backends keep the real kind-aware rules.
     m_commands.emplace_back(BindTextureCommandUVE{texture, slot});
+}
+
+void NullCommandBufferUVE::BindSamplerUVE(SamplerHandleUVE sampler, std::uint32_t slot) {
+    // Ungated exactly like BindTextureUVE above: sampler binds pair with texture binds, and
+    // the executing backends keep the real kind-aware rules.
+    m_commands.emplace_back(BindSamplerCommandUVE{sampler, slot});
 }
 
 void NullCommandBufferUVE::BindUniformBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) {

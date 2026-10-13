@@ -529,9 +529,18 @@ private:
         stmt->at = Current().at;
         if (Accept("let")) {
             stmt->kind = StmtKindUVE::Let;
-            stmt->name = ExpectName("a name after 'let'");
-            if (Accept(":")) {
-                stmt->type = ParseType();
+            // `let (a, b) = pair()` unpacks a tuple; the names take their types from it, so no
+            // annotation is allowed there.
+            if (Accept("(")) {
+                do {
+                    stmt->names.push_back(ExpectName("a name to unpack into"));
+                } while (Accept(","));
+                Expect(")", "')' after the names");
+            } else {
+                stmt->name = ExpectName("a name after 'let'");
+                if (Accept(":")) {
+                    stmt->type = ParseType();
+                }
             }
             Expect("=", "'=' and a value - 'let' always starts with one");
             stmt->value = ParseExpr();
@@ -768,9 +777,50 @@ private:
             return expr;
         }
         if (Accept("(")) {
+            // `(x)` is still a parenthesized value; `(x, y)` and `()` are tuples. A lone pair of
+            // brackets with one value and no comma stays grouped, so old scripts parse as before.
+            if (Accept(")")) {
+                expr->kind = ExprKindUVE::Tuple;
+                return expr;
+            }
             ExprPtrUVE inner = ParseExpr();
-            Expect(")", "')'");
-            return inner;
+            if (!IsSymbol(",")) {
+                Expect(")", "')'");
+                return inner;
+            }
+            expr->kind = ExprKindUVE::Tuple;
+            expr->operands.push_back(std::move(inner));
+            do {
+                Take();
+                if (IsSymbol(")")) {
+                    break;
+                }
+                expr->operands.push_back(ParseExpr());
+            } while (IsSymbol(","));
+            Expect(")", "')' after the tuple");
+            return expr;
+        }
+        if (Accept("[")) {
+            expr->kind = ExprKindUVE::List;
+            if (!Accept("]")) {
+                do {
+                    expr->operands.push_back(ParseExpr());
+                } while (Accept(",") && !IsSymbol("]"));
+                Expect("]", "']' after the list");
+            }
+            return expr;
+        }
+        if (Accept("{")) {
+            expr->kind = ExprKindUVE::Map;
+            if (!Accept("}")) {
+                do {
+                    expr->operands.push_back(ParseExpr());
+                    Expect(":", "':' between a key and its value");
+                    expr->operands.push_back(ParseExpr());
+                } while (Accept(",") && !IsSymbol("}"));
+                Expect("}", "'}' after the map");
+            }
+            return expr;
         }
         if (Is(TokenKindUVE::Name) && !IsKeyword(Current().text)) {
             expr->kind = ExprKindUVE::Name;

@@ -21,6 +21,7 @@
 #include <nlohmann/json.hpp>
 
 #include "import_helpers_uve.h"
+#include "gltf_document_uve.h"
 
 #include "uve/asset/gltf_mesh_converter_uve.h"
 #include "uve/asset/gltf_metadata_uve.h"
@@ -35,45 +36,6 @@ constexpr std::size_t kGlbHeaderBytesUVE = 12U;
 constexpr std::size_t kGlbChunkHeaderBytesUVE = 8U;
 constexpr std::size_t kMaximumGltfSourceBytesUVE = kMaximumGltfDataUriDecodedBytesUVE;
 constexpr std::string_view kGltfTemporarySuffixUVE = ".uve_gltf_tmp";
-
-struct AccessorDefinitionUVE final {
-    std::uint64_t bufferView = 0U;
-    std::uint64_t byteOffset = 0U;
-    std::uint64_t count = 0U;
-    std::uint32_t componentType = 0U;
-    std::string type;
-};
-
-struct BufferViewDefinitionUVE final {
-    std::uint64_t buffer = 0U;
-    std::uint64_t byteOffset = 0U;
-    std::uint64_t byteLength = 0U;
-    std::uint64_t byteStride = 0U;
-};
-
-[[nodiscard]] std::optional<std::uint64_t> ReadJsonUintUVE(const nlohmann::json& object,
-                                                           const char* key,
-                                                           const bool required) {
-    if (!object.contains(key)) {
-        return required ? std::nullopt : std::optional<std::uint64_t>{0U};
-    }
-    const auto& value = object.at(key);
-    if (value.is_number_unsigned()) {
-        return value.get<std::uint64_t>();
-    }
-    if (value.is_number_integer() && value.get<std::int64_t>() >= 0) {
-        return static_cast<std::uint64_t>(value.get<std::int64_t>());
-    }
-    return std::nullopt;
-}
-
-[[nodiscard]] std::optional<std::uint32_t> ReadJsonU32UVE(const nlohmann::json& object, const char* key) {
-    const auto value = ReadJsonUintUVE(object, key, true);
-    if (!value.has_value() || *value > std::numeric_limits<std::uint32_t>::max()) {
-        return std::nullopt;
-    }
-    return static_cast<std::uint32_t>(*value);
-}
 
 [[nodiscard]] std::uint32_t ReadU32LittleEndianUVE(const std::vector<std::byte>& bytes,
                                                    const std::size_t offset) noexcept {
@@ -161,7 +123,7 @@ struct BufferViewDefinitionUVE final {
         return false;
     }
     const auto& buffer = outDocument.at("buffers").at(0);
-    const auto byteLength = ReadJsonUintUVE(buffer, "byteLength", true);
+    const auto byteLength = Detail::ReadJsonUintUVE(buffer, "byteLength", true);
     if (!byteLength.has_value() || *byteLength > kMaximumGltfDataUriDecodedBytesUVE) {
         return false;
     }
@@ -187,125 +149,13 @@ struct BufferViewDefinitionUVE final {
     return outBuffer.size() >= *byteLength;
 }
 
-[[nodiscard]] std::optional<nlohmann::json::size_type> CheckedJsonArrayIndexUVE(
-    const nlohmann::json& array, const std::uint64_t index) {
-    if (!array.is_array() || index > static_cast<std::uint64_t>(std::numeric_limits<nlohmann::json::size_type>::max()) ||
-        index >= array.size()) {
-        return std::nullopt;
-    }
-    return static_cast<nlohmann::json::size_type>(index);
-}
-
-[[nodiscard]] std::optional<BufferViewDefinitionUVE> ReadBufferViewUVE(const nlohmann::json& document,
-                                                                       const std::uint64_t index) {
-    if (!document.contains("bufferViews")) {
-        return std::nullopt;
-    }
-    const auto bufferViewsIndex = CheckedJsonArrayIndexUVE(document.at("bufferViews"), index);
-    if (!bufferViewsIndex || !document.at("bufferViews").at(*bufferViewsIndex).is_object()) {
-        return std::nullopt;
-    }
-    const auto& value = document.at("bufferViews").at(*bufferViewsIndex);
-    const auto buffer = ReadJsonUintUVE(value, "buffer", true);
-    const auto byteOffset = ReadJsonUintUVE(value, "byteOffset", false);
-    const auto byteLength = ReadJsonUintUVE(value, "byteLength", true);
-    const auto byteStride = ReadJsonUintUVE(value, "byteStride", false);
-    if (!buffer || !byteOffset || !byteLength || !byteStride) {
-        return std::nullopt;
-    }
-    return BufferViewDefinitionUVE{*buffer, *byteOffset, *byteLength, *byteStride};
-}
-
-[[nodiscard]] std::optional<AccessorDefinitionUVE> ReadAccessorUVE(const nlohmann::json& document,
-                                                                   const std::uint64_t index) {
-    if (!document.contains("accessors")) {
-        return std::nullopt;
-    }
-    const auto accessorsIndex = CheckedJsonArrayIndexUVE(document.at("accessors"), index);
-    if (!accessorsIndex || !document.at("accessors").at(*accessorsIndex).is_object()) {
-        return std::nullopt;
-    }
-    const auto& value = document.at("accessors").at(*accessorsIndex);
-    const auto bufferView = ReadJsonUintUVE(value, "bufferView", true);
-    const auto byteOffset = ReadJsonUintUVE(value, "byteOffset", false);
-    const auto count = ReadJsonUintUVE(value, "count", true);
-    const auto componentType = ReadJsonU32UVE(value, "componentType");
-    if (!bufferView || !byteOffset || !count || !componentType || !value.contains("type") ||
-        !value.at("type").is_string() || *count > kMaximumGltfAccessorElementsUVE) {
-        return std::nullopt;
-    }
-    return AccessorDefinitionUVE{*bufferView, *byteOffset, *count, *componentType, value.at("type").get<std::string>()};
-}
-
-[[nodiscard]] std::optional<GltfComponentTypeUVE> ToComponentTypeUVE(const std::uint32_t value) noexcept {
-    switch (value) {
-    case 5121U:
-        return GltfComponentTypeUVE::UnsignedByte;
-    case 5123U:
-        return GltfComponentTypeUVE::UnsignedShort;
-    case 5125U:
-        return GltfComponentTypeUVE::UnsignedInt;
-    case 5126U:
-        return GltfComponentTypeUVE::Float;
-    default:
-        return std::nullopt;
-    }
-}
-
-[[nodiscard]] bool AddU64UVE(const std::uint64_t left, const std::uint64_t right,
-                             std::uint64_t& outValue) noexcept {
-    if (right > std::numeric_limits<std::uint64_t>::max() - left) {
-        return false;
-    }
-    outValue = left + right;
-    return true;
-}
-
-[[nodiscard]] std::optional<GltfAccessorViewUVE> BuildAccessorViewUVE(
-    const nlohmann::json& document, const std::vector<std::byte>& buffer, const std::uint64_t accessorIndex,
-    const std::string_view expectedType, const bool allowIndices) {
-    const auto accessor = ReadAccessorUVE(document, accessorIndex);
-    if (!accessor || accessor->type != expectedType) {
-        return std::nullopt;
-    }
-    const auto componentType = ToComponentTypeUVE(accessor->componentType);
-    if (!componentType || (!allowIndices && *componentType != GltfComponentTypeUVE::Float) ||
-        (allowIndices && *componentType == GltfComponentTypeUVE::Float)) {
-        return std::nullopt;
-    }
-    const auto view = ReadBufferViewUVE(document, accessor->bufferView);
-    if (!view || view->buffer != 0U) {
-        return std::nullopt;
-    }
-    std::uint64_t totalOffset = 0U;
-    std::uint64_t viewEnd = 0U;
-    if (!AddU64UVE(view->byteOffset, view->byteLength, viewEnd) || viewEnd > buffer.size() ||
-        !AddU64UVE(view->byteOffset, accessor->byteOffset, totalOffset) ||
-        accessor->byteOffset > view->byteLength) {
-        return std::nullopt;
-    }
-    const std::uint64_t componentSize = *componentType == GltfComponentTypeUVE::UnsignedByte
-                                             ? 1U
-                                             : *componentType == GltfComponentTypeUVE::UnsignedShort ? 2U : 4U;
-    const std::uint64_t elementSize = expectedType == "VEC3" ? componentSize * 3U
-                                      : expectedType == "VEC2" ? componentSize * 2U
-                                                               : componentSize;
-    const std::uint64_t stride = view->byteStride == 0U ? elementSize : view->byteStride;
-    if (!ValidateGltfAccessorSpanUVE(view->byteLength, accessor->byteOffset, accessor->count, stride, elementSize) ||
-        !ValidateGltfAccessorSpanUVE(buffer.size(), totalOffset, accessor->count, stride, elementSize)) {
-        return std::nullopt;
-    }
-    return GltfAccessorViewUVE{std::span<const std::byte>{buffer.data(), buffer.size()}, totalOffset,
-                               accessor->count, view->byteStride, *componentType};
-}
-
 [[nodiscard]] bool ConvertDocumentUVE(const nlohmann::json& document, const std::vector<std::byte>& buffer,
                                       MeshAssetUVE& outMesh) {
     if (!document.contains("buffers") || !document.at("buffers").is_array() ||
         document.at("buffers").size() != 1U || !document.at("buffers").at(0).is_object()) {
         return false;
     }
-    const auto declaredBufferLength = ReadJsonUintUVE(document.at("buffers").at(0), "byteLength", true);
+    const auto declaredBufferLength = Detail::ReadJsonUintUVE(document.at("buffers").at(0), "byteLength", true);
     if (!declaredBufferLength.has_value() || *declaredBufferLength > kMaximumGltfDataUriDecodedBytesUVE ||
         buffer.size() < *declaredBufferLength) {
         return false;
@@ -321,35 +171,35 @@ struct BufferViewDefinitionUVE final {
         return false;
     }
     const auto& attributes = primitive.at("attributes");
-    const auto positionIndex = ReadJsonUintUVE(attributes, "POSITION", true);
+    const auto positionIndex = Detail::ReadJsonUintUVE(attributes, "POSITION", true);
     if (!positionIndex) {
         return false;
     }
     GltfPrimitiveSourceUVE source;
-    source.mode = primitive.contains("mode") ? ReadJsonU32UVE(primitive, "mode").value_or(0U) : 4U;
-    const auto positions = BuildAccessorViewUVE(document, buffer, *positionIndex, "VEC3", false);
+    source.mode = primitive.contains("mode") ? Detail::ReadJsonU32UVE(primitive, "mode").value_or(0U) : 4U;
+    const auto positions = Detail::BuildAccessorViewUVE(document, buffer, *positionIndex, "VEC3", false);
     if (!positions) {
         return false;
     }
     source.positions = *positions;
     if (attributes.contains("NORMAL")) {
-        const auto normalIndex = ReadJsonUintUVE(attributes, "NORMAL", true);
+        const auto normalIndex = Detail::ReadJsonUintUVE(attributes, "NORMAL", true);
         if (!normalIndex) return false;
-        const auto normals = BuildAccessorViewUVE(document, buffer, *normalIndex, "VEC3", false);
+        const auto normals = Detail::BuildAccessorViewUVE(document, buffer, *normalIndex, "VEC3", false);
         if (!normals) return false;
         source.normals = *normals;
     }
     if (attributes.contains("TEXCOORD_0")) {
-        const auto texcoordIndex = ReadJsonUintUVE(attributes, "TEXCOORD_0", true);
+        const auto texcoordIndex = Detail::ReadJsonUintUVE(attributes, "TEXCOORD_0", true);
         if (!texcoordIndex) return false;
-        const auto texcoords = BuildAccessorViewUVE(document, buffer, *texcoordIndex, "VEC2", false);
+        const auto texcoords = Detail::BuildAccessorViewUVE(document, buffer, *texcoordIndex, "VEC2", false);
         if (!texcoords) return false;
         source.texcoords0 = *texcoords;
     }
     if (primitive.contains("indices")) {
-        const auto indexAccessor = ReadJsonUintUVE(primitive, "indices", true);
+        const auto indexAccessor = Detail::ReadJsonUintUVE(primitive, "indices", true);
         if (!indexAccessor) return false;
-        const auto indices = BuildAccessorViewUVE(document, buffer, *indexAccessor, "SCALAR", true);
+        const auto indices = Detail::BuildAccessorViewUVE(document, buffer, *indexAccessor, "SCALAR", true);
         if (!indices) return false;
         source.indices = *indices;
     }

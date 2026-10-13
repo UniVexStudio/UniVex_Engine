@@ -2,6 +2,7 @@
 
 
 #include "uve/math/matrix4x4_uve.h"
+#include "uve/math/vector4_uve.h"
 
 #include <cmath>
 #include <limits>
@@ -15,17 +16,10 @@ namespace {
 
 constexpr float kEpsilon = 1e-4F;
 
-struct Vec4UVE {
-    float x = 0.0F;
-    float y = 0.0F;
-    float z = 0.0F;
-    float w = 0.0F;
-};
-
 // Full 4-component multiply, used only for testing PerspectiveUVE's clip-space output (unlike
 // TransformPointUVE, this deliberately keeps `w` instead of assuming an affine w=1 matrix).
-[[nodiscard]] Vec4UVE MultiplyHomogeneousUVE(const Matrix4x4UVE& matrix, Vec4UVE vector) {
-    Vec4UVE result{};
+[[nodiscard]] Vector4UVE MultiplyHomogeneousUVE(const Matrix4x4UVE& matrix, Vector4UVE vector) {
+    Vector4UVE result{};
     result.x = matrix.m[0][0] * vector.x + matrix.m[0][1] * vector.y + matrix.m[0][2] * vector.z +
                matrix.m[0][3] * vector.w;
     result.y = matrix.m[1][0] * vector.x + matrix.m[1][1] * vector.y + matrix.m[1][2] * vector.z +
@@ -83,7 +77,7 @@ TEST(Matrix4x4UVETest, PerspectiveUVE_MapsNearPlaneToDepthZero) {
     const Matrix4x4UVE projection =
         Matrix4x4UVE::PerspectiveUVE(std::numbers::pi_v<float> / 2.0F, 1.0F, 1.0F, 100.0F);
 
-    const Vec4UVE clip = MultiplyHomogeneousUVE(projection, Vec4UVE{0.0F, 0.0F, -1.0F, 1.0F});
+    const Vector4UVE clip = MultiplyHomogeneousUVE(projection, Vector4UVE{0.0F, 0.0F, -1.0F, 1.0F});
 
     EXPECT_NEAR(clip.z / clip.w, 0.0F, kEpsilon);
 }
@@ -102,7 +96,7 @@ TEST(Matrix4x4UVETest, PerspectiveUVE_MapsFarPlaneToDepthOne) {
     const Matrix4x4UVE projection =
         Matrix4x4UVE::PerspectiveUVE(std::numbers::pi_v<float> / 2.0F, 1.0F, 1.0F, 100.0F);
 
-    const Vec4UVE clip = MultiplyHomogeneousUVE(projection, Vec4UVE{0.0F, 0.0F, -100.0F, 1.0F});
+    const Vector4UVE clip = MultiplyHomogeneousUVE(projection, Vector4UVE{0.0F, 0.0F, -100.0F, 1.0F});
 
     EXPECT_NEAR(clip.z / clip.w, 1.0F, kEpsilon);
 }
@@ -156,7 +150,7 @@ TEST(Matrix4x4UVETest, OrthographicUVE_PreservesFiniteExtremeVerticalExtentScale
 TEST(Matrix4x4UVETest, OrthographicUVE_MapsNearPlaneToDepthZero) {
     const Matrix4x4UVE projection = Matrix4x4UVE::OrthographicUVE(-10.0F, 10.0F, -10.0F, 10.0F, 1.0F, 100.0F);
 
-    const Vec4UVE clip = MultiplyHomogeneousUVE(projection, Vec4UVE{0.0F, 0.0F, -1.0F, 1.0F});
+    const Vector4UVE clip = MultiplyHomogeneousUVE(projection, Vector4UVE{0.0F, 0.0F, -1.0F, 1.0F});
 
     EXPECT_NEAR(clip.z / clip.w, 0.0F, kEpsilon);
 }
@@ -164,7 +158,7 @@ TEST(Matrix4x4UVETest, OrthographicUVE_MapsNearPlaneToDepthZero) {
 TEST(Matrix4x4UVETest, OrthographicUVE_MapsFarPlaneToDepthOne) {
     const Matrix4x4UVE projection = Matrix4x4UVE::OrthographicUVE(-10.0F, 10.0F, -10.0F, 10.0F, 1.0F, 100.0F);
 
-    const Vec4UVE clip = MultiplyHomogeneousUVE(projection, Vec4UVE{0.0F, 0.0F, -100.0F, 1.0F});
+    const Vector4UVE clip = MultiplyHomogeneousUVE(projection, Vector4UVE{0.0F, 0.0F, -100.0F, 1.0F});
 
     EXPECT_NEAR(clip.z / clip.w, 1.0F, kEpsilon);
 }
@@ -172,8 +166,8 @@ TEST(Matrix4x4UVETest, OrthographicUVE_MapsFarPlaneToDepthOne) {
 TEST(Matrix4x4UVETest, OrthographicUVE_MapsBoxCornersToPlusMinusOne) {
     const Matrix4x4UVE projection = Matrix4x4UVE::OrthographicUVE(-10.0F, 10.0F, -5.0F, 5.0F, 1.0F, 100.0F);
 
-    const Vec4UVE minCorner = MultiplyHomogeneousUVE(projection, Vec4UVE{-10.0F, -5.0F, -50.0F, 1.0F});
-    const Vec4UVE maxCorner = MultiplyHomogeneousUVE(projection, Vec4UVE{10.0F, 5.0F, -50.0F, 1.0F});
+    const Vector4UVE minCorner = MultiplyHomogeneousUVE(projection, Vector4UVE{-10.0F, -5.0F, -50.0F, 1.0F});
+    const Vector4UVE maxCorner = MultiplyHomogeneousUVE(projection, Vector4UVE{10.0F, 5.0F, -50.0F, 1.0F});
 
     EXPECT_NEAR(minCorner.x / minCorner.w, -1.0F, kEpsilon);
     EXPECT_NEAR(minCorner.y / minCorner.w, -1.0F, kEpsilon);
@@ -186,8 +180,8 @@ TEST(Matrix4x4UVETest, OrthographicUVE_UnlikePerspective_DoesNotScaleWithDepth) 
     // same NDC x/y regardless of how far along -Z it sits (no perspective divide changes the ratio).
     const Matrix4x4UVE projection = Matrix4x4UVE::OrthographicUVE(-10.0F, 10.0F, -10.0F, 10.0F, 1.0F, 100.0F);
 
-    const Vec4UVE near = MultiplyHomogeneousUVE(projection, Vec4UVE{5.0F, 0.0F, -1.0F, 1.0F});
-    const Vec4UVE far = MultiplyHomogeneousUVE(projection, Vec4UVE{5.0F, 0.0F, -99.0F, 1.0F});
+    const Vector4UVE near = MultiplyHomogeneousUVE(projection, Vector4UVE{5.0F, 0.0F, -1.0F, 1.0F});
+    const Vector4UVE far = MultiplyHomogeneousUVE(projection, Vector4UVE{5.0F, 0.0F, -99.0F, 1.0F});
 
     EXPECT_NEAR(near.x / near.w, far.x / far.w, kEpsilon);
     EXPECT_NEAR(near.w, 1.0F, kEpsilon);

@@ -5,7 +5,9 @@
 #include "integration/MathConversions.h"
 #include "univex/camera/OrbitCamera.h"
 
+#include "uve/math/color_uve.h"
 #include "uve/math/quaternion_uve.h"
+#include "uve/math/scalar_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/rhi_opengl/gl_render_device_uve.h"
 #include "uve/render_systems/i_renderer_3d_uve.h"
@@ -82,7 +84,9 @@ bool EditorMeshLayerUVE::SyncHeadlightUVE(const univex::camera::OrbitCamera& cam
     UVE::Scene::LightComponentUVE& headlight =
         entityManager.GetComponentUVE<UVE::Scene::LightComponentUVE>(headlightEntity_);
     headlight.type = UVE::Scene::LightTypeUVE::Directional;
-    headlight.color = UVE::Math::Vector3UVE{1.0F, 0.98F, 0.94F};
+    // Warm-white display tint, converted: the headlight is authored, not measured, so what the
+    // author picked is a display shade and linear storage must hold its conversion.
+    headlight.color = UVE::Math::ColorFromDisplayUVE(UVE::Math::Vector3UVE{1.0F, 0.98F, 0.94F});
     headlight.intensity = sceneHasItsOwnLight ? 0.0F : 1.25F;
     if (sceneHasItsOwnLight) {
         return false; // no point orienting a light that contributes nothing
@@ -132,7 +136,7 @@ void EditorMeshLayerUVE::SyncCameraFromOrbitUVE(const univex::camera::OrbitCamer
 
     UVE::Scene::CameraComponentUVE& cameraComponent =
         entityManager.GetComponentUVE<UVE::Scene::CameraComponentUVE>(cameraEntity_);
-    const float fovDegrees = camera.Settings().fovYRadians * (180.0F / 3.14159265358979323846F);
+    const float fovDegrees = UVE::Math::RadToDegUVE(camera.Settings().fovYRadians);
     cameraComponent.fieldOfViewDegrees = fovDegrees;
     cameraComponent.nearPlane = camera.NearPlane();
     cameraComponent.farPlane = camera.FarPlane();

@@ -152,6 +152,8 @@ std::optional<std::vector<TypeUVE>> DescribedHostUVE::DescribeEventUVE(const std
 ValueUVE DescribedHostUVE::GetPropertyUVE(std::string_view /*name*/) { return {}; }
 void DescribedHostUVE::SetPropertyUVE(std::string_view /*name*/, const ValueUVE& /*value*/) {}
 ValueUVE DescribedHostUVE::CallFunctionUVE(std::string_view /*name*/, std::span<const ValueUVE> /*args*/) { return {}; }
+void DescribedHostUVE::CallMethodUVE(ObjectRefUVE /*target*/, std::string_view /*method*/,
+                                     std::span<const ValueUVE> /*args*/) {}
 void DescribedHostUVE::PrintUVE(std::string_view /*text*/) {}
 
 } // namespace UVE::UVScript

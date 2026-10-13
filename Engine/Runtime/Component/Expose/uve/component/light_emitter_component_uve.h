@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-#include "uve/math/vector3_uve.h"
+#include "uve/math/color_uve.h"
 
 namespace UVE::Scene {
 
@@ -21,7 +21,7 @@ enum class LightBakeModeUVE : std::uint8_t {
 /// No object is a LightEmitter3D on its own; its kinds - directional, point, spot - carry this
 /// component and add their own shape.
 struct LightEmitterComponentUVE final {
-    Math::Vector3UVE color{1.0F, 1.0F, 1.0F};
+    Math::ColorUVE color{1.0F, 1.0F, 1.0F};
     float energy = 1.0F;
     /// Scales this light's contribution to bounced (indirect) lighting.
     float indirectEnergy = 1.0F;

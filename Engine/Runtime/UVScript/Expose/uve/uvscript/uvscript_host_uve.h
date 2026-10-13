@@ -42,6 +42,9 @@ public:
     [[nodiscard]] virtual ValueUVE GetPropertyUVE(std::string_view name) = 0;
     virtual void SetPropertyUVE(std::string_view name, const ValueUVE& value) = 0;
     [[nodiscard]] virtual ValueUVE CallFunctionUVE(std::string_view name, std::span<const ValueUVE> args) = 0;
+    /// Calls `method(args)` on another object (a `ref` this host handed out). Fire-and-forget:
+    /// the caller gets none either way, and a missing target or method fails closed as nothing.
+    virtual void CallMethodUVE(ObjectRefUVE target, std::string_view method, std::span<const ValueUVE> args) = 0;
     /// Where `print` goes.
     virtual void PrintUVE(std::string_view text) = 0;
 };

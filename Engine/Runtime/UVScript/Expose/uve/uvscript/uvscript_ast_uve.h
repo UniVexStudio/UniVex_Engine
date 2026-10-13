@@ -41,6 +41,9 @@ enum class ExprKindUVE : std::uint8_t {
     Member,
     Call,
     Index,
+    List,
+    Map,
+    Tuple,
 };
 
 /// One expression. Which fields mean something depends on `kind`:
@@ -50,6 +53,7 @@ enum class ExprKindUVE : std::uint8_t {
 /// - Bool: `boolean`. Name: `text`. Member: `operands[0]` `.` `text`.
 /// - Unary/Binary: `text` is the operator (`-`, `not`, `+`, `and`, `..`, ...), `operands` in order.
 /// - Call: `operands[0]` is the callee, the rest are arguments. Index: `operands[0][operands[1]]`.
+/// - List/Tuple: `operands` are the items. Map: `operands` alternate key, value, key, value...
 struct ExprUVE final {
     ExprKindUVE kind = ExprKindUVE::None;
     SourceLocationUVE at;
@@ -88,7 +92,7 @@ struct ConditionalBlockUVE final {
 };
 
 /// One statement. By `kind`:
-/// - Let: `name`, `type` (optional), `value`.
+/// - Let: `name` (or `names` for `let (a, b) = ...`), `type` (optional), `value`.
 /// - Assign: `target` `op` `value` (`op` is =, +=, -=, *= or /=). Expr: `value`.
 /// - If: `branches` (the `if` and every `elif`, in order) and `elseBody`.
 /// - While: `branches[0]`. For: `name` in `value`, `body`.
@@ -97,6 +101,7 @@ struct StmtUVE final {
     StmtKindUVE kind = StmtKindUVE::Pass;
     SourceLocationUVE at;
     std::string name;
+    std::vector<std::string> names;
     std::optional<TypeRefUVE> type;
     std::string op;
     ExprPtrUVE target;

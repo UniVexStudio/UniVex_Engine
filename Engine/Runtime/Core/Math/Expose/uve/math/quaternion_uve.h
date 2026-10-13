@@ -58,6 +58,12 @@ struct QuaternionUVE {
 /// Rotates `vector` by `rotation`.
 [[nodiscard]] Vector3UVE RotateVectorUVE(const QuaternionUVE& rotation, const Vector3UVE& vector) noexcept;
 
+/// The conjugate (negated xyz, kept w): the inverse of a unit rotation, without the
+/// fallibility of `TryInverseUVE`. Caller ensures the input is unit-length.
+[[nodiscard]] constexpr QuaternionUVE ConjugateUVE(const QuaternionUVE& rotation) noexcept {
+    return QuaternionUVE{-rotation.x, -rotation.y, -rotation.z, rotation.w};
+}
+
 /// Builds a normalized XYZ Euler rotation from radians. Returns false for non-finite input.
 [[nodiscard]] bool TryMakeEulerUVE(const Vector3UVE& radians, QuaternionUVE& outRotation) noexcept;
 

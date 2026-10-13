@@ -71,7 +71,7 @@ namespace {
     const std::function<bool(std::string_view name, std::size_t dataOffset, std::uint64_t dataLength)>& visitor) {
     std::size_t offset = 0;
     std::uint32_t entryCount = 0;
-    if (!Utilities::ReadUint32FromBufferUVE(payload, offset, entryCount)) {
+    if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, entryCount)) {
         UVE_ERROR("AssetBundleUVE: \"{}\" has a truncated entry count", bundlePath.string());
         return false;
     }
@@ -83,8 +83,8 @@ namespace {
     for (std::uint32_t index = 0; index < entryCount; ++index) {
         std::uint64_t guidValue = 0;
         std::uint32_t nameLength = 0;
-        if (!Utilities::ReadUint64FromBufferUVE(payload, offset, guidValue) ||
-            !Utilities::ReadUint32FromBufferUVE(payload, offset, nameLength)) {
+        if (!Utilities::ReadUint64LeFromBufferUVE(payload, offset, guidValue) ||
+            !Utilities::ReadUint32LeFromBufferUVE(payload, offset, nameLength)) {
             UVE_ERROR("AssetBundleUVE: \"{}\" has a truncated entry header", bundlePath.string());
             return false;
         }
@@ -102,7 +102,7 @@ namespace {
         }
 
         std::uint64_t dataLength = 0;
-        if (!Utilities::ReadUint64FromBufferUVE(payload, offset, dataLength)) {
+        if (!Utilities::ReadUint64LeFromBufferUVE(payload, offset, dataLength)) {
             UVE_ERROR("AssetBundleUVE: \"{}\" has a truncated entry data length", bundlePath.string());
             return false;
         }
@@ -128,7 +128,7 @@ bool AssetBundleUVE::PackUVE(const std::vector<AssetBundleEntryUVE>& entries,
         return false;
     }
     std::vector<std::byte> payload;
-    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(entries.size()));
+    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(entries.size()));
 
     for (const AssetBundleEntryUVE& entry : entries) {
         std::ifstream file(entry.sourcePath, std::ios::binary);
@@ -143,10 +143,10 @@ bool AssetBundleUVE::PackUVE(const std::vector<AssetBundleEntryUVE>& entries,
             UVE_ERROR("AssetBundleUVE: entry name \"{}\" is not a safe relative path", name);
             return false;
         }
-        Utilities::AppendUint64UVE(payload, entry.guid.value);
-        Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(name.size()));
+        Utilities::AppendUint64LeUVE(payload, entry.guid.value);
+        Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(name.size()));
         Utilities::AppendBytesUVE(payload, name.data(), name.size());
-        Utilities::AppendUint64UVE(payload, data.size());
+        Utilities::AppendUint64LeUVE(payload, data.size());
         Utilities::AppendBytesUVE(payload, data.data(), data.size());
     }
 

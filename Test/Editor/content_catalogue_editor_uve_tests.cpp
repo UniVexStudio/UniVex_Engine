@@ -12,6 +12,7 @@
 #include "Support/test_scratch_uve.h"
 
 #include "uve/asset/animation_clip_asset_uve.h"
+#include "uve/asset/animation_library_asset_uve.h"
 #include "uve/component/name_component_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/component/animation_sequencer_component_uve.h"
@@ -22,8 +23,8 @@
 #include "uve/core/engine_project_settings_uve.h"
 #include "uve/editor/editor_content_catalogue_uve.h"
 #include "uve/editor/editor_uve.h"
-#include "uve/object/scene_folder_uve.h"
-#include "uve/object/scene_object_registry_uve.h"
+#include "uve/scene/objects/scene_folder_uve.h"
+#include "uve/scene/objects/scene_object_registry_uve.h"
 #include "uve/scene/objects/scene_object_type_uve.h"
 
 namespace UVE::Editor::Tests {
@@ -46,7 +47,9 @@ TEST(ContentCatalogueUVETest, EveryItemIsCreatableAndGroupsAreInOrder) {
             ++groupIndex;
         }
         ASSERT_LT(groupIndex, groups.size()) << item.id << " is out of group order";
-        if (item.action == ContentCatalogueActionUVE::Folder) {
+        // Folder and LibraryAsset make a file, not entities, so their items carry no objects.
+        if (item.action == ContentCatalogueActionUVE::Folder ||
+            item.action == ContentCatalogueActionUVE::LibraryAsset) {
             EXPECT_TRUE(item.objects.empty());
             continue;
         }
@@ -62,7 +65,7 @@ TEST(ContentCatalogueUVETest, EveryItemIsCreatableAndGroupsAreInOrder) {
             // intentionally not standalone library objects.
             EXPECT_TRUE(descriptor->libraryCreatable ||
                         (item.action == ContentCatalogueActionUVE::SceneAsset &&
-                         object.kind == Scene::Objects::SceneObjectKindUVE::Viewport))
+                         object.kind == Scene::Objects::SceneObjectKindUVE::Viewport3D))
                 << item.id;
         }
     }
@@ -104,6 +107,10 @@ TEST(ContentCatalogueUVETest, ContentFileNamesNeverCollide) {
     std::ofstream(root / "Hero.uventity") << "x";
     std::ofstream(root / "Hero 2.uventity") << "x";
     EXPECT_EQ(EditorUVE::MakeUniqueContentPathUVE(root, "Hero", ".uventity"), root / "Hero 3.uventity");
+    // Folders take the same helper with an empty extension: the picker's + Folder.
+    EXPECT_EQ(EditorUVE::MakeUniqueContentPathUVE(root, "New Folder", ""), root / "New Folder");
+    std::filesystem::create_directories(root / "New Folder");
+    EXPECT_EQ(EditorUVE::MakeUniqueContentPathUVE(root, "New Folder", ""), root / "New Folder 2");
 
     const auto renamed = EditorUVE::RenameContentFileUVE(root / "Hero.uventity", "Player");
     ASSERT_TRUE(renamed.has_value());
@@ -221,6 +228,31 @@ TEST(ContentCatalogueEditorUVETest, CharacterAssetPlacesAsItsWholeTreeWithOneUnd
     engine.Shutdown();
 }
 
+TEST(ContentCatalogueEditorUVETest, LibraryAssetCreatesAnEmptyAnimationLibrary) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("content_catalogue_library");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        const auto created = editor.CreateContentCatalogueItemUVE("animation-library", content);
+        ASSERT_TRUE(created.has_value());
+        EXPECT_EQ(*created, content / "Animation Library.uvanimlib");
+        Asset::AnimationLibraryAssetUVE library;
+        EXPECT_TRUE(Asset::LoadAnimationLibraryAssetUVE(*created, library));
+        EXPECT_TRUE(library.entries.empty());
+        const auto second = editor.CreateContentCatalogueItemUVE("animation-library", content);
+        ASSERT_TRUE(second.has_value());
+        EXPECT_EQ(*second, content / "Animation Library 2.uvanimlib");
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
 TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSceneBack) {
     const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("entity_editor");
     const std::filesystem::path content = root / "Content";
@@ -293,11 +325,11 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSce
         EXPECT_FALSE(editor.UndoUVE());
 
         // One root only: an object beside the root is refused on save.
-        const Scene::EntityUVE rootObject = editor.GetDocumentObjectUVE();
+        const Scene::EntityUVE sceneRoot = editor.GetDocumentSceneRootUVE();
         const Scene::EntityUVE stray = entityManager.CreateEntityUVE();
         entityManager.AddComponentUVE<Scene::TransformComponentUVE>(stray, Scene::TransformComponentUVE{});
         entityManager.AddComponentUVE<Scene::HierarchyComponentUVE>(stray, Scene::HierarchyComponentUVE{});
-        services.GetSceneGraphUVE().SetParentUVE(entityManager, stray, rootObject);
+        services.GetSceneGraphUVE().SetParentUVE(entityManager, stray, sceneRoot);
         EXPECT_EQ(editor.GetEntityEditorRootUVE(), Scene::kInvalidEntityUVE);
         EXPECT_FALSE(editor.SaveEntityEditorUVE());
         ASSERT_TRUE(editor.RevertEntityEditorUVE());

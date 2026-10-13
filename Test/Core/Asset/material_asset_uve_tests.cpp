@@ -28,13 +28,13 @@ namespace {
 
 [[nodiscard]] MaterialAssetUVE MakeTestMaterialUVE() {
     MaterialAssetUVE material;
-    material.albedoColor = Math::Vector3UVE{0.8F, 0.2F, 0.2F};
+    material.albedoColor = Math::ColorUVE{0.8F, 0.2F, 0.2F};
     material.albedoTexture = AssetGuidUVE{111};
     material.normalTexture = AssetGuidUVE{222};
     material.metallic = 0.5F;
     material.roughness = 0.3F;
     material.aoTexture = AssetGuidUVE{333};
-    material.emissiveColor = Math::Vector3UVE{0.1F, 0.0F, 0.0F};
+    material.emissiveColor = Math::ColorUVE{0.1F, 0.0F, 0.0F};
     material.vertexShader = AssetGuidUVE{444};
     material.fragmentShader = AssetGuidUVE{555};
     material.isTransparent = true;
@@ -119,7 +119,7 @@ TEST(MaterialAssetUVETest, SaveMaterialAssetUVE_RejectsInvalidValuesBeforeReplac
     invalid.roughness = std::numeric_limits<float>::quiet_NaN();
     EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
     invalid = original;
-    invalid.emissiveColor.x = -1.0F;
+    invalid.emissiveColor.r = -1.0F;
     EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
     invalid = original;
     invalid.emissiveEnergy = -0.1F;

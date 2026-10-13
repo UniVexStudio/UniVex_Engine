@@ -36,18 +36,61 @@ float Rigid3DUVE::InverseMassUVE(const Rigid3DComponentUVE& rigidBody) noexcept 
     return (!IsDynamicUVE(rigidBody) || rigidBody.mass <= 0.0F) ? 0.0F : 1.0F / rigidBody.mass;
 }
 
+bool Rigid3DUVE::ApplyForceUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                               const Math::Vector3UVE& force) noexcept {
+    if (!Math::IsFiniteUVE(force) || !entityManager.IsAliveUVE(entity) ||
+        !entityManager.HasComponentUVE<Rigid3DComponentUVE>(entity)) {
+        return false;
+    }
+    entityManager.GetComponentUVE<Rigid3DComponentUVE>(entity).force = force;
+    return true;
+}
+
+bool Rigid3DUVE::ApplyImpulseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                 const Math::Vector3UVE& impulse) noexcept {
+    if (!Math::IsFiniteUVE(impulse) || !entityManager.IsAliveUVE(entity) ||
+        !entityManager.HasComponentUVE<Rigid3DComponentUVE>(entity)) {
+        return false;
+    }
+    Rigid3DComponentUVE& body = entityManager.GetComponentUVE<Rigid3DComponentUVE>(entity);
+    const float inverseMass = InverseMassUVE(body);
+    if (inverseMass <= 0.0F) {
+        return false;
+    }
+    const Math::Vector3UVE candidate = body.velocity + impulse * inverseMass;
+    if (!Math::IsFiniteUVE(candidate)) {
+        return false;
+    }
+    body.velocity = candidate;
+    return true;
+}
+
+bool Rigid3DUVE::ApplyTorqueUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                const Math::Vector3UVE& torque) noexcept {
+    if (!Math::IsFiniteUVE(torque) || !entityManager.IsAliveUVE(entity) ||
+        !entityManager.HasComponentUVE<Rigid3DComponentUVE>(entity)) {
+        return false;
+    }
+    entityManager.GetComponentUVE<Rigid3DComponentUVE>(entity).torque = torque;
+    return true;
+}
+
 std::optional<Math::Vector3UVE> Rigid3DUVE::IntegrateLinearVelocityUVE(
     const Math::Vector3UVE& velocity, const Math::Vector3UVE& gravity, const float gravityScale,
-    const float linearDamp, const float deltaTimeSeconds) noexcept {
+    const float linearDamp, const float deltaTimeSeconds, const Math::Vector3UVE& force,
+    const float inverseMass) noexcept {
     if (!Math::IsFiniteUVE(velocity) || !Math::IsFiniteUVE(gravity) || !std::isfinite(gravityScale) ||
-        !std::isfinite(linearDamp) || !std::isfinite(deltaTimeSeconds) || deltaTimeSeconds < 0.0F) {
+        !std::isfinite(linearDamp) || !std::isfinite(deltaTimeSeconds) || deltaTimeSeconds < 0.0F ||
+        !Math::IsFiniteUVE(force) || !std::isfinite(inverseMass) || inverseMass < 0.0F) {
         return std::nullopt;
     }
     const float gravityStep = gravityScale * deltaTimeSeconds;
-    if (!std::isfinite(gravityStep)) {
+    const float forceStep = inverseMass * deltaTimeSeconds;
+    if (!std::isfinite(gravityStep) || !std::isfinite(forceStep)) {
         return std::nullopt;
     }
-    Math::Vector3UVE candidate = velocity + gravity * gravityStep;
+    // The force term deliberately ignores gravityScale: a thruster works in zero gravity.
+    Math::Vector3UVE candidate = velocity + gravity * gravityStep + force * forceStep;
     if (!Math::IsFiniteUVE(candidate)) {
         return std::nullopt;
     }

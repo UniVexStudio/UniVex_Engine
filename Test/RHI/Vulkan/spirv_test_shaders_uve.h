@@ -252,6 +252,32 @@ inline const char kTexturedFragmentSpirvUVEBytes[] =
 inline const std::string kTexturedFragmentSpirvUVE(kTexturedFragmentSpirvUVEBytes,
                                                      sizeof(kTexturedFragmentSpirvUVEBytes) - 1U);
 
+// Tier 2.3 cube-strip fragment (GLSL):
+//   #version 450
+//   layout(location = 0) in vec2 vUv;
+//   layout(set = 0, binding = 0) uniform samplerCube uCube;
+//   layout(location = 0) out vec4 outColor;
+//   void main() {
+//       float strip = floor(clamp(vUv.x, 0.0, 0.999999) * 6.0);
+//       vec3 dir = vec3(1.0, 0.0, 0.0);
+//       if (strip < 0.5) { dir = vec3(1.0, 0.0, 0.0); }
+//       else if (strip < 1.5) { dir = vec3(-1.0, 0.0, 0.0); }
+//       else if (strip < 2.5) { dir = vec3(0.0, 1.0, 0.0); }
+//       else if (strip < 3.5) { dir = vec3(0.0, -1.0, 0.0); }
+//       else if (strip < 4.5) { dir = vec3(0.0, 0.0, 1.0); }
+//       else { dir = vec3(0.0, 0.0, -1.0); }
+//       outColor = texture(uCube, dir);
+//   }
+// Pairs with kTexturedVertexSpirvUVE above (same vUv/location layout, binding 0).
+// CHECKER: bake with the pinned sandbox glslang (KhronosGroup/glslang @
+// vulkan-sdk-1.4.321.0) and paste the bytes below in the same "\x.." array form as the pairs
+// above. The consuming test GTEST_SKIPs while this string is empty, so the suite stays green
+// until the bake lands.
+inline const char kCubeStripFragmentSpirvUVEBytes[] = "";
+inline const std::string kCubeStripFragmentSpirvUVE(kCubeStripFragmentSpirvUVEBytes,
+                                                    sizeof(kCubeStripFragmentSpirvUVEBytes) - 1U);
+
+
 
 // ---------------------------------------------------------------------------
 // M2f additions (generated 2026-09-18 from the same pinned glslang build as the

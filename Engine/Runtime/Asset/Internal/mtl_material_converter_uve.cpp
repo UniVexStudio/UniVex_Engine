@@ -3,6 +3,8 @@
 
 #include "uve/asset/mtl_material_converter_uve.h"
 
+#include "uve/math/color_uve.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -105,11 +107,12 @@ bool ConvertMtlMaterialUVE(const std::string_view source, MaterialAssetUVE& outM
                         return false;
                     }
                     if (directive == "Kd") {
-                        candidate.albedoColor = Math::Vector3UVE{property.vectorValue[0], property.vectorValue[1],
-                                                                 property.vectorValue[2]};
+                        // MTL colors are display-authored (sRGB); the material stores linear.
+                        candidate.albedoColor = Math::ColorFromDisplayUVE(Math::Vector3UVE{
+                            property.vectorValue[0], property.vectorValue[1], property.vectorValue[2]});
                     } else if (directive == "Ke") {
-                        candidate.emissiveColor = Math::Vector3UVE{property.vectorValue[0], property.vectorValue[1],
-                                                                   property.vectorValue[2]};
+                        candidate.emissiveColor = Math::ColorFromDisplayUVE(Math::Vector3UVE{
+                            property.vectorValue[0], property.vectorValue[1], property.vectorValue[2]});
                     } else if (directive == "Ks") {
                         candidate.metallic = std::clamp(AverageVectorUVE(property.vectorValue), 0.0F, 1.0F);
                     } else if (directive == "Ns") {

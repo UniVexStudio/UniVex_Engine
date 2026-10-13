@@ -30,6 +30,7 @@ enum class AssetImportSourceKindUVE {
     RawMaterial,
     RawShader,
     RawAudio,
+    RawFont,
 };
 
 /// Value-only classification of an import source. It describes the source format and current

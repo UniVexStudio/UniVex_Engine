@@ -14,8 +14,8 @@ namespace {
 } // namespace
 
 bool IsLightEmitterComponentValidUVE(const LightEmitterComponentUVE& component) noexcept {
-    return component.bakeMode <= LightBakeModeUVE::Dynamic && IsNonNegativeUVE(component.color.x) &&
-           IsNonNegativeUVE(component.color.y) && IsNonNegativeUVE(component.color.z) &&
+    return component.bakeMode <= LightBakeModeUVE::Dynamic && IsNonNegativeUVE(component.color.r) &&
+           IsNonNegativeUVE(component.color.g) && IsNonNegativeUVE(component.color.b) &&
            IsNonNegativeUVE(component.energy) && IsNonNegativeUVE(component.indirectEnergy) &&
            IsNonNegativeUVE(component.volumetricFogEnergy) && IsNonNegativeUVE(component.specular) &&
            std::isfinite(component.shadowBias) && std::isfinite(component.shadowNormalBias) &&

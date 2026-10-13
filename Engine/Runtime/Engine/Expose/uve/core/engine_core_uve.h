@@ -55,6 +55,7 @@
 #include "uve/core/version_uve.h"
 #include "uve/logging/i_logger_uve.h"
 #include "uve/events/i_event_system_uve.h"
+#include "uve/gameplay/pawn_uve.h"
 #include "uve/input/i_gamepad_input_system_uve.h"
 #include "uve/input/i_input_system_uve.h"
 #include "uve/input/i_mobile_gesture_system_uve.h"
@@ -62,6 +63,7 @@
 #include "uve/memory/i_memory_manager_uve.h"
 #include "uve/navigation/navigation_runtime_uve.h"
 #include "uve/physics/area_overlap_lifecycle_tracker_uve.h"
+#include "uve/physics/hitbox_lag_compensation_uve.h"
 #include "uve/physics/hitbox_strike_lifecycle_tracker_uve.h"
 #include "uve/physics/collision_lifecycle_tracker_uve.h"
 #include "uve/physics/i_collision_system_uve.h"
@@ -360,6 +362,32 @@ public:
     /// the caller's stack frame, and a second pending request is rejected.
     [[nodiscard]] bool RequestSingleSimulationStepUVE() noexcept override;
 
+    /// Submits a rewound shot for this frame's hitbox sync: the report's pairs merge into the
+    /// live scan BEFORE the lifecycle tracker diffs it, so a lagged hit enters exactly like a
+    /// live one (same Entered event, same damage path). Drains on the next hitbox sync - the
+    /// same frame when submitted during simulation, the frame after when submitted later -
+    /// and clears at Shutdown. Empty reports are harmless (nothing merges, nothing diffs).
+    /// Resolve the report first against GetLagCompensatorUVE() at the shooter's view tick
+    /// (see GetLagTickUVE for the numbering); this only queues it.
+    void SubmitLagShotUVE(Physics::LagShotReportUVE report);
+
+    /// The newest lag tick recorded: 1-based engine frames (++ per hitbox sync, first record
+    /// is tick 1, 0 means nothing recorded yet). Tick 0 is never a legitimate view - the
+    /// Gameplay wiring fails it closed.
+    ///
+    /// Numbering is engine frames, not prediction ticks: the dedicated server maps them (it
+    /// drives both clocks, so after each server frame it notes which prediction tick it
+    /// applied alongside GetLagTickUVE(), and resolves each shooter's shot against the
+    /// engine tick recorded with that shooter's ack). Record history holds 64 frames.
+    [[nodiscard]] Physics::LagTickUVE GetLagTickUVE() const noexcept;
+
+    /// The engine's lag compensator: per-frame pose history, recorded automatically at the
+    /// top of every hitbox sync. Gameplay resolves lagged shots against it, then submits
+    /// them via SubmitLagShotUVE(). Non-const: resolves update the compensator's stats.
+    [[nodiscard]] Physics::HitboxLagCompensatorUVE& GetLagCompensatorUVE() noexcept;
+    /// Inspection (stats, history size) without resolve rights.
+    [[nodiscard]] const Physics::HitboxLagCompensatorUVE& GetLagCompensatorUVE() const noexcept;
+
     /// Marks an editor-owned transient simulation session. While active, checkpoint/save-game
     /// advancement is skipped independently from normal or paused fixed simulation execution.
     [[nodiscard]] bool SetTransientSimulationSessionActiveUVE(bool active) noexcept override;
@@ -526,6 +554,14 @@ private:
     /// animation.
     void SyncBoneAttachment3DObjectsUVE();
 
+    /// Positions every root follow camera from its target through Scene::UpdateCameraFollowUVE() -
+    /// that function owns the skip rules (parked, dead, transformless, parented) and the pose
+    /// math. This seam owns the order: after every mover has stepped, before
+    /// SceneGraphUVE::UpdateUVE() propagates, so the camera's world transform is current for the
+    /// same frame's render. Runs ungated like the bone attachments, so a paused simulation still
+    /// frames its target instead of freezing mid-cutscene.
+    void SyncCameraFollowUVE();
+
     /// Steps every live Projectile3DComponentUVE entity (that also has a transform): the motion is
     /// `Physics::StepProjectile3DUVE()` - `velocity` accumulates `acceleration * dt`, the sphere of
     /// `radius` is swept along that step in world space against the layers `collisionMask` accepts
@@ -540,8 +576,15 @@ private:
     /// Diffs a fresh Physics::ICollisionSystemUVE::DetectCollisionsUVE() snapshot against the
     /// previous tick's via m_collisionLifecycleTracker, storing the resulting enter/exit
     /// transitions in m_collisionLifecycleReport, before scripts run so they see this tick's
-    /// results.
+    /// results. The stored report is drained to scripts after the tick loop (see
+    /// SyncUVScriptsUVE), never here: slots do not exist before the first tick, so raising here
+    /// would drop every frame-1 enter.
     void SyncCollisionLifecycleUVE();
+    /// Raises one contact event to both parties' scripts - each hears the other object's name.
+    /// Dead or scriptless parties are skipped silently; the report keeps its transitions (the
+    /// GetLastCollisionLifecycleReportUVE hook reads them after the frame).
+    void RaiseContactScriptEventUVE(Scene::EntityUVE first, Scene::EntityUVE second,
+                                    std::string_view event);
 
     /// Casts a real ray for every live, enabled RayCast3DComponentUVE entity (that also has a
     /// WorldTransformComponentUVE) through IRaycastSystemUVE, writing the closest result back into
@@ -607,7 +650,27 @@ private:
     /// knockback, i-frames and hit reactions are gameplay's - it decides them from the events, which
     /// carry what struck what, how deeply, along which axis and on which channel. The engine never
     /// applies a consequence of its own.
+    ///
+    /// Lag compensation rides along: every sync first records the settled poses under the
+    /// next 1-based lag tick, then drains SubmitLagShotUVE()'s inbox into the live report
+    /// before the tracker diffs it. An empty inbox diffs exactly the live scan, so games
+    /// that never submit lag shots behave bit-for-bit as before.
     void SyncHitbox3DObjectsUVE();
+    /// Ticks gameplay attribute pools (regen plus status effects) and queues the attribute and
+    /// health events the tick produced. Frame-rate: drift is delta-scaled, so wall-clock status
+    /// durations stay fair at any frame rate.
+    void SyncGameplayAttributesUVE(float deltaSeconds);
+    /// Steps playing cinematics: advances each timeline, queues the CinematicEventFiredUVE keys
+    /// the playhead passed, and cuts the active camera to the live shot. Autoplay shots start
+    /// themselves on the first running frame; cinematics without cuts never touch the camera.
+    void SyncCinematicUVE(float deltaSeconds);
+    /// Evaluates every AI brain against its blackboard (a missing blackboard reads as empty, so
+    /// board-less priority brains work) and queues AiActionSelectedUVE when the selection changes.
+    void SyncAiBrainsUVE(float);
+    /// Decays noise emitters, then senses for every perception component with a blackboard and a
+    /// world transform: watched-tagged entities resolve through sight (range, cone, raycast line of
+    /// sight), emitters through hearing, and both write the sensor's blackboard.
+    void SyncPerceptionUVE(float deltaSeconds);
 
     /// The interaction scan, new wiring for previously unconsumed authored data (the
     /// Unreal-Lyra-style interactor/focus loop Godot leaves every game to hand-roll out of
@@ -807,6 +870,15 @@ private:
     Localization::LocalizationServiceUVE m_localizationService;
     Physics::AreaOverlapLifecycleTrackerUVE m_areaOverlapLifecycleTracker;
     Physics::Hitbox3DStrikeLifecycleTrackerUVE m_hitboxStrikeLifecycleTracker;
+    /// Rewound pose history, recorded automatically every frame (see SyncHitbox3DObjectsUVE).
+    /// Never reset: stale poses fail the resolve's IsAlive/generation gates and evict within
+    /// 64 frames, so scene transitions heal on their own.
+    Physics::HitboxLagCompensatorUVE m_hitboxLagCompensator;
+    /// Submitted lag shots awaiting the next hitbox sync, drained pre-tracker every frame.
+    std::vector<Physics::LagShotReportUVE> m_pendingLagShots;
+    /// Engine-frame lag numbering, 1-based (++ then record; 0 = nothing recorded yet).
+    Physics::LagTickUVE m_lagTickUVE = 0U;
+    Scene::PossessionLifecycleTrackerUVE m_possessionLifecycleTracker;
     Physics::CollisionLifecycleTrackerUVE m_collisionLifecycleTracker;
     Physics::CollisionLifecycleReportUVE m_collisionLifecycleReport;
     std::unique_ptr<Input::IInputSystemUVE> m_inputSystem;

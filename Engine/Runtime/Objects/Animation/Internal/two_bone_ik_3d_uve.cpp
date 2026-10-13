@@ -6,6 +6,7 @@
 #include <cmath>
 
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/math/scalar_uve.h"
 #include "uve/objects/3d/abstract_animation_objects_3d_uve.h"
 
 namespace UVE::Scene {
@@ -40,7 +41,7 @@ inline constexpr float kDegenerateLengthUVE = 1.0e-6F;
         if (!(length > kDegenerateLengthUVE)) {
             return false;
         }
-        return Math::TryMakeAxisAngleUVE(axis * (1.0F / length), 3.14159265F, out);
+        return Math::TryMakeAxisAngleUVE(axis * (1.0F / length), Math::kPiUVE, out);
     }
     const Math::Vector3UVE cross = Math::CrossUVE(from, to);
     return Math::TryNormalizeUVE(Math::QuaternionUVE{cross.x, cross.y, cross.z, 1.0F + dot}, out);

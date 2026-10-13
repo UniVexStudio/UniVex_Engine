@@ -2,6 +2,8 @@
 
 #include "uve/animation/pose_graph_uve.h"
 
+#include "uve/utilities/hash_uve.h"
+
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -22,10 +24,10 @@ struct PoseGraphCacheKeyUVE final {
 
 struct PoseGraphCacheKeyHashUVE final {
     [[nodiscard]] std::size_t operator()(const PoseGraphCacheKeyUVE& key) const noexcept {
-        const std::size_t objectHash = std::hash<std::uint32_t>{}(key.nodeId);
-        const std::size_t timeHash = std::hash<double>{}(key.localTime);
-        return objectHash ^ (timeHash + static_cast<std::size_t>(0x9e3779b9U) +
-                           (objectHash << 6U) + (objectHash >> 2U));
+        // The shared boost-formula combiner: byte-identical to the hand-rolled mix it replaced.
+        std::size_t seed = std::hash<std::uint32_t>{}(key.nodeId);
+        Utilities::HashCombineUVE(seed, std::hash<double>{}(key.localTime));
+        return seed;
     }
 };
 

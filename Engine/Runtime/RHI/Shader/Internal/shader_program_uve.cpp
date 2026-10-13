@@ -49,6 +49,11 @@ void ShaderProgramUVE::SetMatrix4x4UVE(std::string_view name, const Math::Matrix
     SetPendingUniformUVE(name, value);
 }
 
+void ShaderProgramUVE::SetMatrix3x3UVE(std::string_view name, const Math::Matrix3x3UVE& value) {
+    // See the header: embed in an identity-bordered 4x4 for the mat4-only uniform chain.
+    SetPendingUniformUVE(name, Math::ToMatrix4x4UVE(value));
+}
+
 void ShaderProgramUVE::ApplyToUVE(ICommandBufferUVE& commandBuffer) const {
     if (!m_valid) {
         UVE_WARNING("ShaderProgramUVE: ApplyToUVE called on a program that never linked successfully - skipping");

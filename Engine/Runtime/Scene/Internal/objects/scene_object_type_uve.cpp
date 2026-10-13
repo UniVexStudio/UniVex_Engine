@@ -6,6 +6,7 @@
 #include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/area_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
+#include "uve/component/camera_2d_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/canvas_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
@@ -16,13 +17,14 @@
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
+#include "uve/component/sprite_2d_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/ui_image_component_uve.h"
 #include "uve/component/ui_text_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
-#include "uve/object/scene_folder_uve.h"
-#include "uve/object/object_uve.h"
+#include "uve/scene/objects/scene_folder_uve.h"
+#include "uve/scene/objects/scene_root_uve.h"
 
 namespace UVE::Scene {
 namespace {
@@ -66,11 +68,11 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
     if (!entityManager.IsAliveUVE(entity)) {
         return Kind::Object3D;
     }
-    if (entityManager.HasComponentUVE<ObjectComponentUVE>(entity)) {
-        return Kind::Object;
+    if (entityManager.HasComponentUVE<SceneRootComponentUVE>(entity)) {
+        return Kind::SceneRoot;
     }
-    if (entityManager.HasComponentUVE<OutlinerViewportComponentUVE>(entity)) {
-        return Kind::Viewport;
+    if (entityManager.HasComponentUVE<OutlinerViewport3DComponentUVE>(entity)) {
+        return Kind::Viewport3D;
     }
     if (entityManager.HasComponentUVE<FolderComponentUVE>(entity)) {
         return Kind::Folder;
@@ -124,6 +126,8 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
                            OwnComponentUVE<UITextComponentUVE>{Kind::UIText},
                            OwnComponentUVE<UIImageComponentUVE>{Kind::UIImage},
                            OwnComponentUVE<UIButtonComponentUVE>{Kind::UIButton},
+                           OwnComponentUVE<Sprite2DComponentUVE>{Kind::Sprite2D},
+                           OwnComponentUVE<Camera2DComponentUVE>{Kind::Camera2D},
                            OwnComponentUVE<AreaComponentUVE>{Kind::Area3D},
                            OwnComponentUVE<PlayerComponentUVE>{Kind::Player3D},
                            OwnComponentUVE<CharacterControllerComponentUVE>{Kind::Character3D})) {

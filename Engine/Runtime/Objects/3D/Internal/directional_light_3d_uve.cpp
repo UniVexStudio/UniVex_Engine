@@ -9,6 +9,7 @@
 #include "uve/component/light_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/math/color_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/objects/3d/abstract_objects_3d_uve.h"
 
@@ -79,7 +80,8 @@ void CollectLightDirectionGizmosUVE(IEntityManagerUVE& entityManager, std::vecto
                 !IsLightEmitterComponentValidUVE(emitter)) {
                 return;
             }
-            TryAddLightDirectionGizmoUVE(entityManager, entity, emitter.color, emitter.energy, out);
+            TryAddLightDirectionGizmoUVE(entityManager, entity, Math::ToVector3UVE(emitter.color),
+                                            emitter.energy, out);
         });
     entityManager.ForEachUVE<WorldTransformComponentUVE, LightComponentUVE>(
         [&entityManager, &out](const EntityUVE entity, const WorldTransformComponentUVE&,
@@ -88,7 +90,8 @@ void CollectLightDirectionGizmosUVE(IEntityManagerUVE& entityManager, std::vecto
                 entityManager.HasComponentUVE<DirectionalLight3DComponentUVE>(entity)) {
                 return;
             }
-            TryAddLightDirectionGizmoUVE(entityManager, entity, light.color, light.intensity, out);
+            TryAddLightDirectionGizmoUVE(entityManager, entity, Math::ToVector3UVE(light.color),
+                                            light.intensity, out);
         });
 }
 

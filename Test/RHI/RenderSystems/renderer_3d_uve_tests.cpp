@@ -145,10 +145,10 @@ protected:
                 material.vertexShader = vertexGuid;
                 material.fragmentShader = fragmentGuid;
                 material.isTransparent = false;
-                material.albedoColor = Math::Vector3UVE{0.2F, 0.4F, 0.6F};
+                material.albedoColor = Math::ColorUVE{0.2F, 0.4F, 0.6F};
                 material.metallic = 0.25F;
                 material.roughness = 0.75F;
-                material.emissiveColor = Math::Vector3UVE{0.1F, 0.0F, 0.0F};
+                material.emissiveColor = Math::ColorUVE{0.1F, 0.0F, 0.0F};
                 return true;
             });
         // Default texture loader: a small, always-ready 2x2 RGBA8Unorm texture, reused by any
@@ -315,7 +315,7 @@ protected:
     }
 };
 
-TEST_F(Renderer3DUVETest, ReflectionProbeResolutionControlsFaceTargetsAndRecapturesOnTierChange) {
+TEST_F(Renderer3DUVETest, ReflectionProbeResolutionControlsCubeTargetAndRecapturesOnTierChange) {
     const Scene::EntityUVE camera = MakeCameraEntityUVE();
     const Scene::EntityUVE probeEntity = entityManager.CreateEntityUVE();
     sceneGraph.AttachTransformUVE(entityManager, probeEntity, Scene::TransformComponentUVE{});
@@ -335,14 +335,16 @@ TEST_F(Renderer3DUVETest, ReflectionProbeResolutionControlsFaceTargetsAndRecaptu
 
     renderer3D->RenderFrameUVE(entityManager, camera);
     std::vector<TextureDescUVE> liveTextureDescs = renderDevice.GetLiveTextureDescsUVE();
-    const auto countSquareRgbaAt = [&liveTextureDescs](const std::uint32_t resolution) {
+    // Tier 2.3: each probe owns one six-layer cubemap (not six per-face 2D textures).
+    const auto countProbeCubesAt = [&liveTextureDescs](const std::uint32_t resolution) {
         return std::count_if(liveTextureDescs.cbegin(), liveTextureDescs.cend(), [resolution](const auto& desc) {
             return desc.width == resolution && desc.height == resolution &&
-                   desc.format == TextureFormatUVE::RGBA8Unorm;
+                   desc.format == TextureFormatUVE::RGBA8Unorm &&
+                   desc.type == TextureTypeUVE::Cubemap && desc.arrayLayers == 6U;
         });
     };
-    EXPECT_GE(countSquareRgbaAt(256U), 6) << "a reflection cubemap owns six per-face color textures";
-    EXPECT_GE(countSquareRgbaAt(128U), 6) << "probes in one frame retain their own resolution tier";
+    EXPECT_EQ(countProbeCubesAt(256U), 1) << "a reflection probe owns one six-layer cubemap";
+    EXPECT_EQ(countProbeCubesAt(128U), 1) << "probes in one frame retain their own resolution tier";
     EXPECT_GE(std::count_if(liveTextureDescs.cbegin(), liveTextureDescs.cend(), [](const auto& desc) {
                   return desc.width == 128U && desc.height == 128U &&
                          desc.format == TextureFormatUVE::Depth32Float;
@@ -353,12 +355,12 @@ TEST_F(Renderer3DUVETest, ReflectionProbeResolutionControlsFaceTargetsAndRecaptu
     })) << "the capture depth target must match the selected face resolution";
 
     // The capture generation is intentionally unchanged: changing only the authored tier must
-    // invalidate/reallocate the six face textures and capture depth, then render the new size.
+    // invalidate/reallocate the probe cubemap and capture depth, then render the new size.
     entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probeEntity).resolution =
         Scene::ReflectionProbeResolutionUVE::Ultra;
     renderer3D->RenderFrameUVE(entityManager, camera);
     liveTextureDescs = renderDevice.GetLiveTextureDescsUVE();
-    EXPECT_GE(countSquareRgbaAt(512U), 6) << "resolution edits recapture instead of leaving stale probe data";
+    EXPECT_EQ(countProbeCubesAt(512U), 1) << "resolution edits recapture instead of leaving stale probe data";
     EXPECT_TRUE(std::any_of(liveTextureDescs.cbegin(), liveTextureDescs.cend(), [](const auto& desc) {
         return desc.width == 512U && desc.height == 512U && desc.format == TextureFormatUVE::Depth32Float;
     }));
@@ -1521,7 +1523,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ActiveLightEntity_PushesComputedLightUn
     // LightSystemUVETest's own RotateVectorUVE-based coverage for the rotated case). A Point
     // light never casts a shadow (Increment 26 scopes that to Directional only), so this test's
     // shadow pass stays empty regardless.
-    Scene::LightComponentUVE light{Math::Vector3UVE{0.9F, 0.8F, 0.7F}, 4.5F};
+    Scene::LightComponentUVE light{Math::ColorUVE{0.9F, 0.8F, 0.7F}, 4.5F};
     light.type = Scene::LightTypeUVE::Point;
     light.range = 22.0F;
     MakeLightEntityUVE(light);
@@ -1543,8 +1545,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_TwoLightsOfDifferentTypes_PopulateSlots
     const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_multilight_mesh.uvmodel");
     const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_multilight_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
-    Scene::LightComponentUVE directionalLight{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 2.0F};
-    Scene::LightComponentUVE spotLight{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 3.0F};
+    Scene::LightComponentUVE directionalLight{Math::ColorUVE{1.0F, 0.0F, 0.0F}, 2.0F};
+    Scene::LightComponentUVE spotLight{Math::ColorUVE{0.0F, 1.0F, 0.0F}, 3.0F};
     spotLight.type = Scene::LightTypeUVE::Spot;
     spotLight.spotAngleDegrees = 15.0F;
     MakeLightEntityUVE(directionalLight);
@@ -1588,7 +1590,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_AmbientColorFromConstructor_AlwaysPushe
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
     assertAmbientColor(renderDevice.GetLastSubmittedCommandsUVE());
 
-    MakeLightEntityUVE(Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 1.0F});
+    MakeLightEntityUVE(Scene::LightComponentUVE{Math::ColorUVE{1.0F, 1.0F, 1.0F}, 1.0F});
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
     assertAmbientColor(renderDevice.GetLastSubmittedCommandsUVE());
 }
@@ -1737,10 +1739,10 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_MaterialSettings_PushUvEmissiveNormalAo
                                                                              Asset::MaterialAssetUVE& material) {
             material.vertexShader = vertexGuid;
             material.fragmentShader = fragmentGuid;
-            material.albedoColor = Math::Vector3UVE{0.2F, 0.4F, 0.6F};
+            material.albedoColor = Math::ColorUVE{0.2F, 0.4F, 0.6F};
             material.metallic = 0.25F;
             material.roughness = 0.75F;
-            material.emissiveColor = Math::Vector3UVE{0.1F, 0.0F, 0.0F};
+            material.emissiveColor = Math::ColorUVE{0.1F, 0.0F, 0.0F};
             material.emissiveEnergy = 3.0F;
             material.normalScale = 0.5F;
             material.occlusionStrength = 0.25F;
@@ -1931,7 +1933,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_OverflowedCascadeSplitsDisableShadowPas
     const Asset::AssetGuidUVE materialGuid =
         assetDatabase.RegisterUVE("renderer3d_overflowed_cascade_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
-    MakeLightEntityUVE(Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 2.0F});
+    MakeLightEntityUVE(Scene::LightComponentUVE{Math::ColorUVE{1.0F, 1.0F, 1.0F}, 2.0F});
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
     WaitUntilShadowProgramReadyUVE();
 
@@ -1968,7 +1970,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_UIImages_BindTheirResolvedTextureInstea
 
     const Scene::EntityUVE solidImageEntity = entityManager.CreateEntityUVE();
     Scene::UIImageComponentUVE solidImage;
-    solidImage.sizePixels = Math::Vector2UVE{32.0F, 32.0F};
+    solidImage.rect.size = Math::Vector2UVE{32.0F, 32.0F};
     entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(solidImageEntity, solidImage);
     inputSystem.UpdateUVE();
     uiRuntime.TickUVE(entityManager, inputSystem);
@@ -1993,7 +1995,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_UIImages_BindTheirResolvedTextureInstea
     const Scene::EntityUVE imageEntity = entityManager.CreateEntityUVE();
     Scene::UIImageComponentUVE texturedImage;
     texturedImage.textureAssetGuid = splashTextureGuid;
-    texturedImage.sizePixels = Math::Vector2UVE{64.0F, 32.0F};
+    texturedImage.rect.size = Math::Vector2UVE{64.0F, 32.0F};
     entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(imageEntity, texturedImage);
     WaitUntilTextureReadyUVE(splashTextureGuid);
     inputSystem.UpdateUVE();
@@ -2027,8 +2029,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_UIOverlay_PreservesCanvasOrderAcrossGly
     entityManager.AddComponentUVE<Scene::CanvasComponentUVE>(imageCanvasEntity, imageCanvas);
     Scene::UIImageComponentUVE image;
     image.textureAssetGuid = splashTextureGuid;
-    image.positionPixels = Math::Vector2UVE{20.0F, 20.0F};
-    image.sizePixels = Math::Vector2UVE{48.0F, 48.0F};
+    image.rect.position = Math::Vector2UVE{20.0F, 20.0F};
+    image.rect.size = Math::Vector2UVE{48.0F, 48.0F};
     entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(imageCanvasEntity, image);
     WaitUntilTextureReadyUVE(splashTextureGuid);
     inputSystem.UpdateUVE();
@@ -2629,7 +2631,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_DirectionalLight_PushesThreeOrderedCasc
     const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_cascade_mesh.uvmodel");
     const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_cascade_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
-    MakeLightEntityUVE(Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 2.0F});
+    MakeLightEntityUVE(Scene::LightComponentUVE{Math::ColorUVE{1.0F, 1.0F, 1.0F}, 2.0F});
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
@@ -2678,7 +2680,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_DirectionalCascadeMatrices_SnapToShadow
     const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_stabilization_mesh.uvmodel");
     const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_stabilization_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
-    MakeLightEntityUVE(Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 2.0F});
+    MakeLightEntityUVE(Scene::LightComponentUVE{Math::ColorUVE{1.0F, 1.0F, 1.0F}, 2.0F});
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
     const auto captureCascadeMatrices = [this]() {
@@ -2751,7 +2753,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_NoDirectionalLight_SkipsShadowPassEvenW
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidShadowTargetsSkipShadowPassSafely) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    MakeLightEntityUVE(Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 2.0F});
+    MakeLightEntityUVE(Scene::LightComponentUVE{Math::ColorUVE{1.0F, 1.0F, 1.0F}, 2.0F});
     const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_invalid_shadow_mesh.uvmodel");
     const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_invalid_shadow_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
@@ -2821,7 +2823,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_FittedLightFrustum_CastsOffCameraOcclud
     // At z=-10 the default camera's 60-degree view only reaches roughly +/-5.8 on X, while the
     // fitted directional-light frustum includes this potential caster across its far-range width.
     MakeMeshEntityUVE(Math::Vector3UVE{50.0F, 0.0F, -10.0F}, offCameraMeshGuid, offCameraMaterialGuid);
-    MakeLightEntityUVE(Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 3.0F});
+    MakeLightEntityUVE(Scene::LightComponentUVE{Math::ColorUVE{1.0F, 1.0F, 1.0F}, 3.0F});
     WaitUntilAssetsReadyUVE(visibleMeshGuid, visibleMaterialGuid);
     WaitUntilAssetsReadyUVE(offCameraMeshGuid, offCameraMaterialGuid);
     WaitUntilShadowProgramReadyUVE();
@@ -2856,7 +2858,7 @@ TEST_F(Renderer3DUVETest, FrustumCullingFreezeDrawsOffCameraMeshesAndLeavesShado
     // but inside the fitted directional-light frustum. It shares the visible mesh's material so
     // the freeze assertion isolates culling from asynchronous compilation of a second material shader.
     MakeMeshEntityUVE(Math::Vector3UVE{50.0F, 0.0F, -10.0F}, offCameraMeshGuid, visibleMaterialGuid);
-    MakeLightEntityUVE(Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 3.0F});
+    MakeLightEntityUVE(Scene::LightComponentUVE{Math::ColorUVE{1.0F, 1.0F, 1.0F}, 3.0F});
     WaitUntilAssetsReadyUVE(visibleMeshGuid, visibleMaterialGuid);
     WaitUntilAssetsReadyUVE(offCameraMeshGuid, visibleMaterialGuid);
     WaitUntilShadowProgramReadyUVE();
@@ -2947,7 +2949,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_DirectionalLightAndReadyShadowProgram_S
     const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_shadowdraw_mesh.uvmodel");
     const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_shadowdraw_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
-    MakeLightEntityUVE(Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 3.0F});
+    MakeLightEntityUVE(Scene::LightComponentUVE{Math::ColorUVE{1.0F, 1.0F, 1.0F}, 3.0F});
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
     WaitUntilShadowProgramReadyUVE();
 
@@ -3033,7 +3035,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidCameraWorldTransformIsSafeNoOpIn
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_NonFiniteShadowTuningUsesFiniteReleaseDefaults) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    MakeLightEntityUVE(Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 2.0F});
+    MakeLightEntityUVE(Scene::LightComponentUVE{Math::ColorUVE{1.0F, 1.0F, 1.0F}, 2.0F});
     const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_nonfinite_shadow_tuning_mesh.uvmodel");
     const Asset::AssetGuidUVE materialGuid =
         assetDatabase.RegisterUVE("renderer3d_nonfinite_shadow_tuning_material.uvmat");
