@@ -42,6 +42,7 @@ add_library(uve_audio STATIC
     Internal/audio_source_system_uve.cpp
     Internal/wav_metadata_uve.cpp
     Internal/wav_importer_uve.cpp
+    Internal/compressed_audio_importer_uve.cpp
 )
 target_include_directories(uve_audio PUBLIC Expose)
 target_link_libraries(uve_audio
@@ -52,6 +53,6 @@ target_link_libraries(uve_audio
     PRIVATE uve_miniaudio_interface Threads::Threads ${CMAKE_DL_LIBS} m
 )
 # HandleTableUVE backs both devices' voice slot maps; Internal-only use, so PRIVATE.
-target_link_libraries(uve_audio PRIVATE uve_containers)
+target_link_libraries(uve_audio PRIVATE uve_containers uve_utilities)
 target_compile_features(uve_audio PUBLIC cxx_std_23)
 uve_set_warnings(uve_audio)

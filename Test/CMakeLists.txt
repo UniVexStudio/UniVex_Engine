@@ -442,6 +442,7 @@ add_executable(uve_integration_tests
     Audio/wav_metadata_uve_tests.cpp
     Audio/wav_pcm16_decoder_uve_tests.cpp
     Audio/wav_importer_uve_tests.cpp
+    Audio/compressed_audio_importer_uve_tests.cpp
     RHI/RenderSystems/camera_2d_system_uve_tests.cpp
     RHI/RenderSystems/camera_system_uve_tests.cpp
     RHI/RenderSystems/render_batch_uve_tests.cpp

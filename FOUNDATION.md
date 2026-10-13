@@ -618,7 +618,7 @@ reload latency is the poll interval and a rename reads as remove-plus-create.
 | `TextureAssetUVE` | width, height, format, pixels, a CPU-generated mip chain and Basis-compressed uploads | **PNG, JPEG, BMP, TGA**, plus `.uvtex` | `[x]` mips + compression landed (see below) |
 | `MaterialAssetUVE` | albedo colour, albedo/normal/AO texture GUIDs, metallic, roughness, emissive colour, shader GUIDs, transparency flag | **MTL**, plus `.uvmat` | `[~]` see below |
 | `ShaderAssetUVE` | stage, source text, entry point — stored as-is, not compiled at asset level | source importer + `.uvshader` | `[x]` |
-| `AudioAssetUVE` | channels, sample rate, interleaved normalized float samples | **WAV** | `[~]` WAV only |
+| `AudioAssetUVE` | channels, sample rate, bounded interleaved normalized float samples | **WAV, FLAC, MP3, OGG/Vorbis** | `[x]` bounded import/validation; streaming is a separate runtime contract |
 | `AnimationClipAssetUVE` | clip id, duration, sampled TRS poses, timed string events | envelope only | `[~]` see below |
 | `DataTableUVE` | typed schema'd rows (bool / int64 / double / string) | **CSV, TSV, JSON** | `[x]` the most built-out asset in the module |
 | `BlobAssetUVE` | raw bytes, unparsed | — | `[x]` |
@@ -633,10 +633,24 @@ Three things about this table matter more than the rest:
   comment describes. Complete since Tier 2.7: metallic/roughness/emissive map slots sit on the
   asset, the renderer binds slots 12/13, and `lit_shadowed_3d` samples them (B metallic, G
   roughness).
-- `[x]` **A WAV importer does exist**, in `Engine/Runtime/Audio/` rather than in
-  `Asset/` — `RegisterWavImporterUVE`, registered from `engine_core_uve.cpp:260`.
-  *(An earlier survey reported no audio importer at all, having searched only
-  `Asset/Internal/`. Corrected here.)* OGG, MP3 and FLAC are genuinely absent.
+- `[x]` **Audio format import** — existing `RegisterWavImporterUVE` is unchanged; new
+  `RegisterCompressedAudioImportersUVE` / `DecodeEncodedAudioUVE` in `Runtime/Audio` add
+  FLAC, MP3 and OGG/Vorbis and are registered by `engine_core_uve.cpp`. The already pinned
+  miniaudio 0.11.25 supplies FLAC/MP3 plus its bundled `extras/stb_vorbis.c`; decoder support
+  is now enabled without another engine dependency or a change to warning policy. Vendor
+  sources retain their existing MIT/Unlicense terms. There is no claim of AAC/Opus support.
+  Bounds: 64 MiB encoded input, 1..32 channels, the existing 1,048,576-sample asset cap,
+  nonzero rate and finite normalized samples (lossy overshoot is explicitly clipped). Explicit
+  format selection never falls back to a different codec. Rejected input preserves the output;
+  import publishes the existing version-one `.uvaudio` envelope by temporary rename and
+  preserves an existing destination on failure. This is import, not long-file streaming.
+  Seventeen `compressed_audio_importer_uve_tests.cpp` cases cover real decoding, classification,
+  GUID publication, format mismatch, malformed/truncated headers, size/output bounds and failed
+  publication cleanup; the three existing WAV importer tests are unchanged. Fixtures in
+  `Test/Audio/Fixtures/` are self-generated 440 Hz mathematical tones, with a reproducible
+  FFmpeg 7.0.2 generation script; no recording was copied and no FFmpeg binary/code is shipped
+  or linked. All 20 focused cases and **4,050 CTest cases** pass, with zero failures and the
+  same seven explicit Vulkan skips (2026-10-13).
 
 Also missing, as of the last audit: `[~]` an FBX importer (static meshes convert via vendored
 ufbx; skins, materials and animation are explicitly out of scope), `[x]` any animation importer
