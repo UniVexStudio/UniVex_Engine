@@ -359,6 +359,8 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     VkSemaphore imageAvailableSemaphore = VK_NULL_HANDLE;
     VkSemaphore renderFinishedSemaphore = VK_NULL_HANDLE;
     VkFence inFlightFence = VK_NULL_HANDLE;
+    std::unordered_map<std::uint32_t, VkFence> userFences;
+    std::uint32_t nextUserFence = 1U;
 
     bool usable = false; // signed-off only by the very last bring-up step
     std::uint32_t lastPresentedImageIndex = UINT32_MAX; // UINT32_MAX = no frame presented yet
@@ -2119,6 +2121,11 @@ void CollectBlockMembersUVE(const SpvReflectBlockVariable& block, const VkShader
 void VulkanRenderDeviceUVE::ImplUVE::DestroyAllResourcesUVE() {
     // Caller (the destructor) has already drained the queue — destruction must never race an
     // in-flight submit holding any of these objects.
+    for (const auto &[id, fence] : userFences) {
+        static_cast<void>(id);
+        vk.vkDestroyFence(device, fence, nullptr);
+    }
+    userFences.clear();
     for (auto& [handle, record] : pipelines) {
         if (record.pipeline != VK_NULL_HANDLE) {
             vk.vkDestroyPipeline(device, record.pipeline, nullptr);
@@ -2365,10 +2372,25 @@ std::unique_ptr<VulkanRenderDeviceUVE> VulkanRenderDeviceUVE::CreateHeadlessUVE(
 // ---------------------------------------------------------------------------
 class VulkanCommandBufferUVE final : public ICommandBufferUVE {
 public:
+  explicit VulkanCommandBufferUVE(bool supportsBarriers) : m_supportsBarriers(supportsBarriers) {}
+  RenderOperationResultUVE MemoryBarrierUVE(MemoryBarrierMaskUVE mask) override {
+      if (!IsMemoryBarrierMaskValidUVE(mask))
+          return RenderOperationResultUVE::InvalidArgument;
+      if (m_insidePass)
+          return RenderOperationResultUVE::InvalidState;
+      if (!m_supportsBarriers)
+          return RenderOperationResultUVE::Unsupported;
+      m_commands.emplace_back(MemoryBarrierCommandUVE{mask});
+      return RenderOperationResultUVE::Recorded;
+  }
     void BeginRenderPassUVE(const RenderPassDescUVE& renderPassDesc) override {
+        m_insidePass = true;
         m_commands.emplace_back(BeginRenderPassCommandUVE{renderPassDesc});
     }
-    void EndRenderPassUVE() override { m_commands.emplace_back(EndRenderPassCommandUVE{}); }
+    void EndRenderPassUVE() override {
+        m_insidePass = false;
+        m_commands.emplace_back(EndRenderPassCommandUVE{});
+    }
     void BindPipelineUVE(const PipelineHandleUVE pipeline) override {
         m_commands.emplace_back(BindPipelineCommandUVE{pipeline});
     }
@@ -2431,7 +2453,9 @@ public:
     [[nodiscard]] std::vector<RecordedCommandUVE> TakeCommandsUVE() { return std::move(m_commands); }
 
 private:
-    std::vector<RecordedCommandUVE> m_commands;
+  bool m_supportsBarriers = false;
+  bool m_insidePass = false;
+  std::vector<RecordedCommandUVE> m_commands;
 };
 
 // ---------------------------------------------------------------------------
@@ -2470,7 +2494,7 @@ BufferHandleUVE VulkanRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = desc.sizeBytes;
-    bufferInfo.usage = usageFlags;
+    bufferInfo.usage = usageFlags | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     VkBuffer buffer = VK_NULL_HANDLE;
     if (impl.vk.vkCreateBuffer(impl.device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
@@ -4380,7 +4404,7 @@ std::unique_ptr<ICommandBufferUVE> VulkanRenderDeviceUVE::CreateCommandBufferUVE
     if (!m_impl->usable) {
         return nullptr;
     }
-    return std::make_unique<VulkanCommandBufferUVE>();
+    return std::make_unique<VulkanCommandBufferUVE>(m_impl->useDynamicRendering);
 }
 
 void VulkanRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer) {
@@ -5265,6 +5289,20 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                 }
             } else if constexpr (std::is_same_v<OpT, EndRenderPassCommandUVE>) {
                 passActiveForThisList = false;
+            } else if constexpr (std::is_same_v<OpT, MemoryBarrierCommandUVE>) {
+                if (impl.useDynamicRendering && IsMemoryBarrierMaskValidUVE(op.mask)) {
+                    if (impl.framePassState.passOpen)
+                        impl.CloseCurrentPassDynamicUVE();
+                    VkMemoryBarrier barrier{};
+                    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                    barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+                    barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+                    impl.vk.vkCmdPipelineBarrier(impl.commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0U, 1U, &barrier, 0U,
+                                                 nullptr, 0U, nullptr);
+                } else {
+                    UVE_ERROR("Vulkan replay: unsupported or invalid explicit memory barrier");
+                }
             } else if constexpr (std::is_same_v<OpT, DispatchCommandUVE>) {
                 // ------------- M5a compute dispatch (outside pass markers) --------------
                 if (!impl.useDynamicRendering) {
@@ -5984,4 +6022,165 @@ std::string_view VulkanRenderDeviceUVE::GetBackendNameUVE() const noexcept {
                                        : "Vulkan (M2c textures+staging)";
 }
 
+} // namespace UVE::Render
+
+namespace UVE::Render {
+RenderDeviceCapabilitiesUVE VulkanRenderDeviceUVE::GetCapabilitiesUVE() const noexcept {
+    RenderDeviceCapabilitiesUVE caps;
+    if (!IsUsableUVE())
+        return caps;
+    caps.fences = caps.bufferCopy = caps.surface = RenderFeatureSupportUVE::Native;
+    caps.bufferCopyAlignment = 4U;
+    if (m_impl->useDynamicRendering)
+        caps.memoryBarriers = RenderFeatureSupportUVE::Native;
+    return caps;
+}
+RenderOperationResultUVE VulkanRenderDeviceUVE::GetTextureDescUVE(TextureHandleUVE texture,
+                                                                  TextureDescUVE &out) const {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    const auto found = m_impl->textures.find(texture.value);
+    if (found == m_impl->textures.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    out = found->second.desc;
+    return RenderOperationResultUVE::Success;
+}
+RenderOperationResultUVE VulkanRenderDeviceUVE::WaitIdleUVE() {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    {
+        const std::lock_guard lock(m_impl->submissionMutex);
+        if (!m_impl->frameSubmissions.empty())
+            return RenderOperationResultUVE::InvalidState;
+    }
+    return m_impl->vk.vkQueueWaitIdle(m_impl->presentQueue) == VK_SUCCESS
+               ? RenderOperationResultUVE::Success
+               : RenderOperationResultUVE::SystemError;
+}
+RenderOperationResultUVE VulkanRenderDeviceUVE::InsertFenceUVE(FenceHandleUVE &output) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto &impl = *m_impl;
+    {
+        const std::lock_guard lock(impl.submissionMutex);
+        if (!impl.frameSubmissions.empty())
+            return RenderOperationResultUVE::InvalidState;
+    }
+    if (impl.nextUserFence == 0U)
+        return RenderOperationResultUVE::SystemError;
+    const FenceHandleUVE handle{impl.nextUserFence++};
+    auto [entry, inserted] = impl.userFences.emplace(handle.value, VK_NULL_HANDLE);
+    static_cast<void>(inserted);
+    VkFenceCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    if (impl.vk.vkCreateFence(impl.device, &info, nullptr, &entry->second) != VK_SUCCESS) {
+        impl.userFences.erase(entry);
+        return RenderOperationResultUVE::SystemError;
+    }
+    // An empty submit orders the fence after earlier GPU work. CPU FIFO work was explicitly
+    // rejected above; a concurrent later Submit belongs to a later frame, as with Present.
+    if (impl.vk.vkQueueSubmit(impl.presentQueue, 0U, nullptr, entry->second) != VK_SUCCESS) {
+        impl.vk.vkDestroyFence(impl.device, entry->second, nullptr);
+        impl.userFences.erase(entry);
+        return RenderOperationResultUVE::SystemError;
+    }
+    output = handle;
+    return RenderOperationResultUVE::Success;
+}
+RenderOperationResultUVE VulkanRenderDeviceUVE::WaitFenceUVE(FenceHandleUVE handle, std::uint64_t timeoutNs) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    const auto found = m_impl->userFences.find(handle.value);
+    if (found == m_impl->userFences.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    const auto result = m_impl->vk.vkWaitForFences(m_impl->device, 1U, &found->second, VK_TRUE, timeoutNs);
+    if (result == VK_SUCCESS)
+        return RenderOperationResultUVE::Success;
+    if (result == VK_TIMEOUT)
+        return RenderOperationResultUVE::TimedOut;
+    return RenderOperationResultUVE::SystemError;
+}
+RenderOperationResultUVE VulkanRenderDeviceUVE::DestroyFenceUVE(FenceHandleUVE handle) {
+    const auto waited = WaitFenceUVE(handle, 0U);
+    if (waited == RenderOperationResultUVE::TimedOut)
+        return RenderOperationResultUVE::NotReady;
+    if (waited != RenderOperationResultUVE::Success)
+        return waited;
+    m_impl->vk.vkDestroyFence(m_impl->device, m_impl->userFences.at(handle.value), nullptr);
+    m_impl->userFences.erase(handle.value);
+    return RenderOperationResultUVE::Success;
+}
+RenderOperationResultUVE VulkanRenderDeviceUVE::CopyBufferUVE(const BufferCopyDescUVE &copy) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto &impl = *m_impl;
+    {
+        const std::lock_guard lock(impl.submissionMutex);
+        if (!impl.frameSubmissions.empty())
+            return RenderOperationResultUVE::InvalidState;
+    }
+    const auto source = impl.buffers.find(copy.source.value),
+               target = impl.buffers.find(copy.destination.value);
+    if (source == impl.buffers.end() || target == impl.buffers.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (!IsBufferCopyRangeValidUVE(copy, source->second.sizeBytes, target->second.sizeBytes) ||
+        copy.sourceOffset % 4U != 0U || copy.destinationOffset % 4U != 0U || copy.sizeBytes % 4U != 0U)
+        return RenderOperationResultUVE::InvalidArgument;
+    VkCommandBufferAllocateInfo allocate{};
+    allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocate.commandPool = impl.commandPool;
+    allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocate.commandBufferCount = 1U;
+    VkCommandBuffer commands = VK_NULL_HANDLE;
+    if (impl.vk.vkAllocateCommandBuffers(impl.device, &allocate, &commands) != VK_SUCCESS)
+        return RenderOperationResultUVE::SystemError;
+    VkCommandBufferBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    bool ok = impl.vk.vkBeginCommandBuffer(commands, &begin) == VK_SUCCESS;
+    if (ok) {
+        VkMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+        impl.vk.vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                     VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 1U, &barrier, 0U, nullptr, 0U,
+                                     nullptr);
+        const VkBufferCopy region{copy.sourceOffset, copy.destinationOffset, copy.sizeBytes};
+        impl.vk.vkCmdCopyBuffer(commands, source->second.buffer, target->second.buffer, 1U, &region);
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask =
+            VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_HOST_READ_BIT;
+        impl.vk.vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                     VK_PIPELINE_STAGE_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_HOST_BIT, 0U, 1U,
+                                     &barrier, 0U, nullptr, 0U, nullptr);
+        ok = impl.vk.vkEndCommandBuffer(commands) == VK_SUCCESS;
+    }
+    if (ok) {
+        VkSubmitInfo submit{};
+        submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit.commandBufferCount = 1U;
+        submit.pCommandBuffers = &commands;
+        ok = impl.vk.vkQueueSubmit(impl.presentQueue, 1U, &submit, VK_NULL_HANDLE) == VK_SUCCESS;
+        if (ok)
+            ok = impl.vk.vkQueueWaitIdle(impl.presentQueue) == VK_SUCCESS;
+    }
+    impl.vk.vkFreeCommandBuffers(impl.device, impl.commandPool, 1U, &commands);
+    return ok ? RenderOperationResultUVE::Success : RenderOperationResultUVE::SystemError;
+}
+RenderOperationResultUVE VulkanRenderDeviceUVE::GetSurfaceInfoUVE(RenderSurfaceInfoUVE &output) const {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    RenderSurfaceInfoUVE info;
+    info.headless = m_impl->headless;
+    if (info.headless) {
+        info.width = ImplUVE::kHeadlessFramebufferWidthUVE;
+        info.height = ImplUVE::kHeadlessFramebufferHeightUVE;
+    } else
+        m_impl->bridge->GetVulkanFramebufferSizeUVE(info.width, info.height);
+    info.drawable = info.width != 0U && info.height != 0U;
+    info.imageCount = static_cast<std::uint32_t>(m_impl->swapchainImages.size());
+    output = info;
+    return RenderOperationResultUVE::Success;
+}
 } // namespace UVE::Render

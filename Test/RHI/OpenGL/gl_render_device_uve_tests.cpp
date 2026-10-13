@@ -3,6 +3,7 @@
 
 #include "uve/rhi_opengl/gl_render_device_uve.h"
 #include "uve/rhi/bind_group_uve.h"
+#include "uve/rhi/render_surface_uve.h"
 #include "uve/asset/asset_bundle_uve.h"
 #include "uve/asset/file_system_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
@@ -3624,6 +3625,139 @@ TEST_F(GlRenderDeviceUVETest, BeginRenderPassUVE_DontCareStore_StaysHealthy) {
     }
     renderDevice->DestroyTextureUVE(target0);
     renderDevice->DestroyTextureUVE(target1);
+}
+
+TEST_F(GlRenderDeviceUVETest, FoundationBufferCopyFenceAndSurfaceUseNativeWork) {
+    using ResultUVE = RenderOperationResultUVE;
+    const auto caps = renderDevice->GetCapabilitiesUVE();
+    ASSERT_EQ(caps.bufferCopy, RenderFeatureSupportUVE::Native);
+    ASSERT_EQ(caps.fences, RenderFeatureSupportUVE::Native);
+    const std::array<std::uint32_t, 4> values{7, 11, 23, 42};
+    const auto source = renderDevice->CreateBufferUVE({sizeof(values), BufferUsageUVE::Storage},
+                                                      std::as_bytes(std::span(values)));
+    const auto target = renderDevice->CreateBufferUVE({sizeof(values), BufferUsageUVE::Storage});
+    ASSERT_EQ(renderDevice->CopyBufferUVE({source, target, 4, 0, 12}), ResultUVE::Success);
+    EXPECT_EQ(renderDevice->CopyBufferUVE({target, target, 0, 4, 8}), ResultUVE::InvalidArgument);
+    FenceHandleUVE fence;
+    ASSERT_EQ(renderDevice->InsertFenceUVE(fence), ResultUVE::Success);
+    ASSERT_EQ(renderDevice->WaitFenceUVE(fence, 1'000'000'000ULL), ResultUVE::Success);
+    std::array<std::uint32_t, 4> observed{};
+    ASSERT_TRUE(renderDevice->ReadbackBufferUVE(target, std::as_writable_bytes(std::span(observed))));
+    EXPECT_EQ(observed[0], 11U);
+    EXPECT_EQ(observed[1], 23U);
+    EXPECT_EQ(observed[2], 42U);
+    EXPECT_EQ(renderDevice->DestroyFenceUVE(fence), ResultUVE::Success);
+    EXPECT_EQ(renderDevice->WaitFenceUVE(fence, 0), ResultUVE::InvalidHandle);
+    RenderSurfaceUVE surface(*renderDevice);
+    RenderSurfaceInfoUVE info;
+    ASSERT_EQ(surface.DescribeUVE(info), ResultUVE::Success);
+    EXPECT_EQ(info.width, windowManager->GetWidthUVE());
+    EXPECT_EQ(info.height, windowManager->GetHeightUVE());
+    EXPECT_TRUE(info.drawable);
+    EXPECT_EQ(surface.PresentUVE(), ResultUVE::Success);
+    renderDevice->DestroyBufferUVE(source);
+    renderDevice->DestroyBufferUVE(target);
+}
+
+TEST_F(GlRenderDeviceUVETest, FoundationMipsAndBlitProducePixelsAndPreserveScissorAndBindings) {
+    using ResultUVE = RenderOperationResultUVE;
+    std::vector<std::byte> pixels(84U);
+    for (std::size_t i = 0; i < 16U; ++i) {
+        pixels[i * 4U] = std::byte{255};
+        pixels[i * 4U + 3U] = std::byte{255};
+    }
+    const auto source = renderDevice->CreateTextureUVE({4, 4, TextureFormatUVE::RGBA8Unorm, 3}, pixels);
+    const auto target = renderDevice->CreateTextureUVE({2, 2, TextureFormatUVE::RGBA8Unorm});
+    ASSERT_NE(source, kInvalidTextureHandleUVE);
+    ASSERT_NE(target, kInvalidTextureHandleUVE);
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(target));
+    ASSERT_EQ(renderDevice->GenerateMipmapsUVE(source), ResultUVE::Success);
+    GLint bound = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound);
+    EXPECT_EQ(static_cast<std::uint32_t>(bound), renderDevice->GetNativeTextureIdUVE(target));
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(source));
+    std::array<std::uint8_t, 4> mip{};
+    glGetTexImage(GL_TEXTURE_2D, 2, GL_RGBA, GL_UNSIGNED_BYTE, mip.data());
+    EXPECT_EQ(mip, (std::array<std::uint8_t, 4>{255, 0, 0, 255}));
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(0, 0, 0, 0);
+    ASSERT_EQ(renderDevice->BlitTextureUVE(
+                  {source, target, {0, 0, 0, 0, 4, 4}, {0, 0, 0, 0, 2, 2}, BlitFilterUVE::Linear}),
+              ResultUVE::Success);
+    EXPECT_EQ(glIsEnabled(GL_SCISSOR_TEST), static_cast<GLboolean>(GL_TRUE));
+    glDisable(GL_SCISSOR_TEST);
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(target));
+    std::array<std::uint8_t, 16> observed{};
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, observed.data());
+    for (std::size_t i = 0; i < 4U; ++i) {
+        EXPECT_EQ(observed[i * 4U], 255U);
+        EXPECT_EQ(observed[i * 4U + 1U], 0U);
+        EXPECT_EQ(observed[i * 4U + 2U], 0U);
+        EXPECT_EQ(observed[i * 4U + 3U], 255U);
+    }
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+    renderDevice->DestroyTextureUVE(source);
+    renderDevice->DestroyTextureUVE(target);
+}
+
+TEST_F(GlRenderDeviceUVETest, FoundationQueriesMeasureRealVisibilityAndGpuTimestamps) {
+    using ResultUVE = RenderOperationResultUVE;
+    ASSERT_EQ(renderDevice->GetCapabilitiesUVE().timestampQueries, RenderFeatureSupportUVE::Native);
+    ASSERT_EQ(renderDevice->GetCapabilitiesUVE().occlusionQueries, RenderFeatureSupportUVE::Native);
+    QueryHandleUVE before, after, visible;
+    ASSERT_EQ(renderDevice->CreateQueryUVE(RenderQueryKindUVE::Timestamp, before), ResultUVE::Success);
+    ASSERT_EQ(renderDevice->CreateQueryUVE(RenderQueryKindUVE::Timestamp, after), ResultUVE::Success);
+    ASSERT_EQ(renderDevice->CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, visible),
+              ResultUVE::Success);
+    RenderQueryResultUVE value{RenderQueryKindUVE::Timestamp, 42};
+    EXPECT_EQ(renderDevice->GetQueryResultUVE(before, value), ResultUVE::NotReady);
+    EXPECT_EQ(value.value, 42U);
+    ASSERT_EQ(renderDevice->WriteTimestampUVE(before), ResultUVE::Success);
+    const auto vs = renderDevice->CreateShaderUVE(
+        {ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource), "main"});
+    const auto fs = renderDevice->CreateShaderUVE(
+        {ShaderStageUVE::Fragment, std::string(kValidFragmentShaderSource), "main"});
+    PipelineDescUVE desc;
+    desc.vertexShader = vs;
+    desc.fragmentShader = fs;
+    desc.vertexLayout = {{"POSITION", VertexAttributeFormatUVE::Float3, 0}};
+    desc.vertexStride = 3U * sizeof(float);
+    const auto pipeline = renderDevice->CreatePipelineUVE(desc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+    const std::array<float, 9> vertices{-0.5F, -0.5F, 0, 0.5F, -0.5F, 0, 0, 0.5F, 0};
+    const auto buffer = renderDevice->CreateBufferUVE({sizeof(vertices), BufferUsageUVE::Vertex},
+                                                      std::as_bytes(std::span(vertices)));
+    auto commands = renderDevice->CreateCommandBufferUVE();
+    ASSERT_EQ(commands->MemoryBarrierUVE(MemoryBarrierMaskUVE::All), ResultUVE::Success);
+    commands->BeginRenderPassUVE({});
+    commands->BindPipelineUVE(pipeline);
+    commands->BindVertexBufferUVE(buffer);
+    EXPECT_EQ(commands->MemoryBarrierUVE(MemoryBarrierMaskUVE::All), ResultUVE::InvalidState);
+    ASSERT_EQ(renderDevice->BeginQueryUVE(visible), ResultUVE::Success);
+    ASSERT_EQ(renderDevice->EndQueryUVE(visible), ResultUVE::Success);
+    ASSERT_EQ(renderDevice->GetQueryResultUVE(visible, value, true), ResultUVE::Success);
+    EXPECT_EQ(value.value, 0U);
+    ASSERT_EQ(renderDevice->BeginQueryUVE(visible), ResultUVE::Success);
+    commands->DrawUVE(3U);
+    ASSERT_EQ(renderDevice->EndQueryUVE(visible), ResultUVE::Success);
+    ASSERT_EQ(renderDevice->GetQueryResultUVE(visible, value, true), ResultUVE::Success);
+    EXPECT_EQ(value.value, 1U);
+    commands->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commands));
+    ASSERT_EQ(renderDevice->WriteTimestampUVE(after), ResultUVE::Success);
+    RenderQueryResultUVE first, second;
+    ASSERT_EQ(renderDevice->GetQueryResultUVE(before, first, true), ResultUVE::Success);
+    ASSERT_EQ(renderDevice->GetQueryResultUVE(after, second, true), ResultUVE::Success);
+    EXPECT_GE(second.value, first.value);
+    EXPECT_EQ(first.kind, RenderQueryKindUVE::Timestamp);
+    EXPECT_EQ(renderDevice->DestroyQueryUVE(before), ResultUVE::Success);
+    EXPECT_EQ(renderDevice->DestroyQueryUVE(after), ResultUVE::Success);
+    EXPECT_EQ(renderDevice->DestroyQueryUVE(visible), ResultUVE::Success);
+    EXPECT_EQ(renderDevice->GetQueryResultUVE(visible, value), ResultUVE::InvalidHandle);
+    renderDevice->DestroyBufferUVE(buffer);
+    renderDevice->DestroyPipelineUVE(pipeline);
+    renderDevice->DestroyShaderUVE(vs);
+    renderDevice->DestroyShaderUVE(fs);
 }
 
 } // namespace UVE::Render::Tests

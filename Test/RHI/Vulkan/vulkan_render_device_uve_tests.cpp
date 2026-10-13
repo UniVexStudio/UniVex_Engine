@@ -4561,4 +4561,60 @@ TEST_F(VulkanRenderDeviceUVETest, OffscreenPass_DontCareStore_StaysUsable) {
     device->DestroyTextureUVE(depth);
 }
 
+TEST_F(VulkanRenderDeviceUVETest, FoundationCopyAndFencesOrderRealGpuWork) {
+    using ResultUVE = RenderOperationResultUVE;
+    EXPECT_EQ(device->GetCapabilitiesUVE().fences, RenderFeatureSupportUVE::Native);
+    EXPECT_EQ(device->GetCapabilitiesUVE().bufferCopy, RenderFeatureSupportUVE::Native);
+    const std::array<std::uint32_t, 4> values{7, 11, 23, 42};
+    const auto source =
+        device->CreateBufferUVE({sizeof(values), BufferUsageUVE::Storage}, std::as_bytes(std::span(values)));
+    const auto target = device->CreateBufferUVE({sizeof(values), BufferUsageUVE::Storage});
+    ASSERT_NE(source, kInvalidBufferHandleUVE);
+    ASSERT_NE(target, kInvalidBufferHandleUVE);
+    EXPECT_EQ(device->CopyBufferUVE({source, target, 1, 0, 3}), ResultUVE::InvalidArgument);
+    ASSERT_EQ(device->CopyBufferUVE({source, target, 4, 0, 12}), ResultUVE::Success);
+    FenceHandleUVE fence;
+    ASSERT_EQ(device->InsertFenceUVE(fence), ResultUVE::Success);
+    ASSERT_EQ(device->WaitFenceUVE(fence, 1'000'000'000ULL), ResultUVE::Success);
+    std::array<std::uint32_t, 4> output{};
+    ASSERT_TRUE(device->ReadbackBufferUVE(target, std::as_writable_bytes(std::span(output))));
+    EXPECT_EQ(output[0], 11U);
+    EXPECT_EQ(output[1], 23U);
+    EXPECT_EQ(output[2], 42U);
+    ASSERT_EQ(device->DestroyFenceUVE(fence), ResultUVE::Success);
+    EXPECT_EQ(device->WaitFenceUVE(fence, 0), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->WaitIdleUVE(), ResultUVE::Success);
+    device->DestroyBufferUVE(source);
+    device->DestroyBufferUVE(target);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, FoundationFencesDoNotPretendPendingCpuSubmissionsHaveExecuted) {
+    using ResultUVE = RenderOperationResultUVE;
+    auto commands = device->CreateCommandBufferUVE();
+    const auto expected = device->GetCapabilitiesUVE().memoryBarriers == RenderFeatureSupportUVE::Native
+                              ? ResultUVE::Recorded
+                              : ResultUVE::Unsupported;
+    EXPECT_EQ(commands->MemoryBarrierUVE(MemoryBarrierMaskUVE::All), expected);
+    device->SubmitUVE(std::move(commands));
+    FenceHandleUVE untouched{42U};
+    EXPECT_EQ(device->InsertFenceUVE(untouched), ResultUVE::InvalidState);
+    EXPECT_EQ(untouched.value, 42U);
+    EXPECT_EQ(device->WaitIdleUVE(), ResultUVE::InvalidState);
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+    EXPECT_EQ(device->InsertFenceUVE(untouched), ResultUVE::Success);
+    ASSERT_EQ(device->WaitFenceUVE(untouched, 1'000'000'000ULL), ResultUVE::Success);
+    EXPECT_EQ(device->DestroyFenceUVE(untouched), ResultUVE::Success);
+    RenderSurfaceInfoUVE surface;
+    ASSERT_EQ(device->GetSurfaceInfoUVE(surface), ResultUVE::Success);
+    EXPECT_TRUE(surface.drawable);
+    EXPECT_GT(surface.width, 0U);
+    EXPECT_GT(surface.imageCount, 0U);
+    QueryHandleUVE query{73U};
+    EXPECT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::Timestamp, query), ResultUVE::Unsupported);
+    EXPECT_EQ(query.value, 73U);
+    EXPECT_EQ(device->BlitTextureUVE({}), ResultUVE::Unsupported);
+    EXPECT_EQ(device->GenerateMipmapsUVE({}), ResultUVE::Unsupported);
+}
+
 } // namespace UVE::Render::Tests

@@ -14,6 +14,7 @@
 
 #include "uve/rhi_opengl/gl_functions_uve.h"
 #include "uve/rhi/render_resource_descs_uve.h"
+#include "uve/rhi/device_operations_uve.h"
 #include "uve/rhi/shader_data_type_uve.h"
 #include "uve/window/i_window_manager_uve.h"
 
@@ -45,6 +46,15 @@ struct TransparentStringEqualUVE {
 struct GlDeviceStateUVE {
     Window::IWindowManagerUVE* windowManager;
     GlFunctionsUVE gl;
+    std::unordered_map<std::uint32_t, GLsync> fences;
+    std::uint32_t nextFence = 1U;
+    struct QueryRecordUVE {
+        GLuint native = 0U;
+        RenderQueryKindUVE kind = RenderQueryKindUVE::Timestamp;
+        bool issued = false;
+    };
+    std::unordered_map<std::uint32_t, QueryRecordUVE> queries;
+    std::uint32_t nextQuery = 1U, activeOcclusion = 0U;
     GLint maxCombinedTextureImageUnits = 0;
     GLint maxUniformBufferBindings = 0;
     GLint maxVertexAttribs = 0;

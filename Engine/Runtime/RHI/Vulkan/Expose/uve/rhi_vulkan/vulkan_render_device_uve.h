@@ -219,6 +219,17 @@ public:
         bool enableValidationLayersUVE = false);
 
     ~VulkanRenderDeviceUVE() override;
+    [[nodiscard]] RenderDeviceCapabilitiesUVE GetCapabilitiesUVE() const noexcept override;
+    [[nodiscard]] RenderOperationResultUVE GetTextureDescUVE(TextureHandleUVE,
+                                                             TextureDescUVE &) const override;
+    [[nodiscard]] RenderOperationResultUVE CopyBufferUVE(const BufferCopyDescUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE InsertFenceUVE(FenceHandleUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE WaitFenceUVE(FenceHandleUVE, std::uint64_t) override;
+    [[nodiscard]] RenderOperationResultUVE DestroyFenceUVE(FenceHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE WaitIdleUVE() override;
+    [[nodiscard]] RenderOperationResultUVE GetSurfaceInfoUVE(RenderSurfaceInfoUVE &) const override;
+    // Texture blit/mip generation and result queries retain the interface's explicit Unsupported
+    // contract until their native paths are supported; capabilities never advertise them.
 
     VulkanRenderDeviceUVE(const VulkanRenderDeviceUVE&) = delete;
     VulkanRenderDeviceUVE& operator=(const VulkanRenderDeviceUVE&) = delete;

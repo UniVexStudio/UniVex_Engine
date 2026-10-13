@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "uve/rhi/buffer_handle_uve.h"
+#include "uve/rhi/device_operations_uve.h"
 #include "uve/rhi/i_command_buffer_uve.h"
 #include "uve/rhi/pipeline_handle_uve.h"
 #include "uve/rhi/render_resource_descs_uve.h"
@@ -37,6 +38,66 @@ namespace UVE::Render {
 class IRenderDeviceUVE {
 public:
     virtual ~IRenderDeviceUVE() = default;
+
+    /// Optional capabilities are explicit. The default is unsupported for third-party adapters;
+    /// it never fabricates success or changes output. Model recording is distinct from GPU work.
+    [[nodiscard]] virtual RenderDeviceCapabilitiesUVE GetCapabilitiesUVE() const noexcept { return {}; }
+    [[nodiscard]] virtual RenderOperationResultUVE GetTextureDescUVE(TextureHandleUVE,
+                                                                     TextureDescUVE &) const {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE CopyBufferUVE(const BufferCopyDescUVE &) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE BlitTextureUVE(const TextureBlitDescUVE &) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Rebuilds already allocated lower levels from level zero. Does not change texture shape.
+    [[nodiscard]] virtual RenderOperationResultUVE GenerateMipmapsUVE(TextureHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Owner-thread fence after ALREADY SUBMITTED GPU work. A retained backend rejects a fence
+    /// while its CPU submission FIFO is nonempty; Present must drain that FIFO first. Fences
+    /// are one-shot, device-owned and non-recycled. Destroy may return NotReady until completion.
+    [[nodiscard]] virtual RenderOperationResultUVE InsertFenceUVE(FenceHandleUVE &) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE WaitFenceUVE(FenceHandleUVE, std::uint64_t) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE DestroyFenceUVE(FenceHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Does not pretend that deferred CPU command lists have executed. Retained backends return
+    /// InvalidState until they have been presented; owner-thread resource lifetime boundary.
+    [[nodiscard]] virtual RenderOperationResultUVE WaitIdleUVE() {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE CreateQueryUVE(RenderQueryKindUVE, QueryHandleUVE &) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE BeginQueryUVE(QueryHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE EndQueryUVE(QueryHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE WriteTimestampUVE(QueryHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Nonblocking by default; NotReady/Unsupported leave output untouched. Null never returns
+    /// invented zero timings or visibility results. wait=true is an explicitly blocking cold path.
+    [[nodiscard]] virtual RenderOperationResultUVE GetQueryResultUVE(QueryHandleUVE, RenderQueryResultUVE &,
+                                                                     bool = false) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE DestroyQueryUVE(QueryHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Describes the existing device-owned default surface/swapchain; no second window owner.
+    [[nodiscard]] virtual RenderOperationResultUVE GetSurfaceInfoUVE(RenderSurfaceInfoUVE &) const {
+        return RenderOperationResultUVE::Unsupported;
+    }
 
     /// Creates a GPU buffer per `desc`, optionally uploading `initialData` (must be no larger
     /// than `desc.sizeBytes`). Never returns kInvalidBufferHandleUVE on success.

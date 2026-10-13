@@ -168,6 +168,7 @@ add_executable(uve_core_tests
     Input/mobile_gesture_system_uve_tests.cpp
     Input/mobile_gesture_recognizer_uve_tests.cpp
     RHI/null_render_device_uve_tests.cpp
+    RHI/device_operations_uve_tests.cpp
     RHI/bind_group_uve_tests.cpp
     RHI/Vulkan/vulkan_composite_alpha_policy_uve_tests.cpp
     RHI/Vulkan/vulkan_present_mode_policy_uve_tests.cpp

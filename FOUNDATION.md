@@ -743,7 +743,7 @@ because each one blocks a whole feature:
   render-into-layer. (Image-based lighting itself is still absent — see §10.)
 
 Also absent: `[x]` a sampler object — landed (Tier 2.2: `SamplerDescUVE` with Point filtering
-in all three backends). `[/]` **Validated bind-group packets** now live in
+in all three backends). `[x]` **Validated bind-group packets** now live in
 `RHI/RHI/Expose/uve/rhi/bind_group_uve.h`: bounded borrowed packets reuse existing typed resource
 commands, reject invalid/duplicate bindings or incompatible declared layouts before any bind,
 and retain input ordering. The material renderer consumes the packet for its five PBR textures.
@@ -752,15 +752,46 @@ GPU resource lifetime or arbitrary native descriptor-set numbering is pretended.
 resource ownership, hardware limits and graphics/compute pass rules keep their existing meaning.
 Five new `BindGroupUVETest` cases and 88 renderer cases pass; full CPU-only CTest has **4,093
 cases, zero failures, seven expected Vulkan skips**. A new native GL binding-state case and the
-existing Vulkan point-sampler pixel assertions exercise this packet in graphics-capable CI;
-that new native coverage is pending verification, so this entry is not `[x]` yet.
-Still genuinely `[ ]` any synchronisation primitive (no fence, semaphore, barrier or
-timeline — `SubmitUVE` + `PresentUVE` is the entire model), `[ ]` a swapchain/surface
-abstraction, `[ ]` stencil state, `[ ]` GPU mip generation (CPU chains landed; no GPU path),
-`[ ]` copy/blit operations (only `UpdateBufferUVE` and `ReadbackBufferUVE`), and `[ ]` timestamp
-or occlusion queries — which is precisely why the occlusion-culling note elsewhere says its
-payoff cannot be demonstrated. None of these is claimed by any tier below; each is future
-subsystem work with its own design pass. (Verified present-or-absent by source read, 2026-10-12.)
+existing Vulkan point-sampler pixel assertions exercise this packet in graphics-capable CI.
+The native Ubuntu/GCC/Debug workflow for `37f0b0b` passed (run `38402183962`); the earlier
+pending-verification label is now resolved, without reimplementing the packet.
+
+`[/]` **Explicit device-operation contracts** — `device_operations_uve.h`, optional methods
+on `IRenderDeviceUVE`, and `ICommandBufferUVE::MemoryBarrierUVE` add capability-aware operations.
+`Success` means the host call/native command was accepted, not implicit GPU completion;
+`Recorded` distinguishes a retained command or Null model. Failures leave output arguments
+untouched. Missing capabilities explicitly return `Unsupported`, never pretend success.
+
+- **Fences / idle:** real GL sync objects and Vulkan queue fences, non-recycled handles,
+  finite/zero waits, stale rejection and safe retirement. Vulkan rejects fence/idle/copy calls
+  while CPU submissions still await Present; it cannot signal completion before that work runs.
+- **Barriers:** validated outside-pass visibility masks; GL memory barriers, Vulkan global
+  memory dependencies on its dynamic-rendering path, and exact Null command records. Existing
+  pass/texture binding owns image layout transitions; queue-family transfers are not implied.
+- **Buffer copy:** native GL/Vulkan range copies plus actual Null host-byte copying/recording;
+  overlap/overflow/zero-length rejection. Vulkan advertises 4-byte copy alignment. No hidden
+  CPU readback fallback is used for the native paths.
+- **Texture blit / mipgen:** real GL color blits (point/exact copy or linear scale), mip/layer/
+  extent/format checks, caller-binding/scissor preservation, and lower-mip generation on
+  preallocated color textures. Null validates/records; Vulkan explicitly reports these paths
+  unsupported instead of accepting a no-op. Depth/stencil blits and format conversion are not
+  part of this color-transfer contract.
+- **Queries:** real GL GPU timestamps and any-sample occlusion with state/lifetime validation
+  and nonblocking result polling. Null records query operations but NEVER invents visibility or
+  GPU nanoseconds. Vulkan currently advertises queries unsupported.
+- **Surface view:** `RenderSurfaceUVE` exposes the backend-owned default surface/swapchain's
+  current drawable extent and presentation boundary, without duplicating window or swapchain
+  ownership. GL/Vulkan provide actual surface metadata; Null explicitly has no native surface.
+  Present acceptance is not a claim of completed scan-out.
+
+Ten new CPU `DeviceOperationsUVETest` cases pass, alongside existing binding tests. Full strict
+Debug build/CTest: **4,103 cases, zero failures, seven existing Vulkan skips**. Added three GL
+native tests assert copied bytes, generated/blitted pixels, preserved state, real 0/1 visibility
+and timestamp ordering; two Vulkan tests verify copies/fences and the deferred-CPU-FIFO guard.
+Native sources/tests pass strict syntax checks against real headers. Execution of these new
+native cases is pending graphics-capable CI, so this implementation remains `[/]` until verified.
+Semaphores/timelines and stencil state remain `[ ]`; they are not closed by a binary fence or a
+surface metadata view. General Vulkan texture-transfer/query parity remains explicitly partial.
 
 ### Command recording and backends
 
