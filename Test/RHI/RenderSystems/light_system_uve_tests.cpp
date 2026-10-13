@@ -268,8 +268,11 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_InvalidLightParameters_SkipsWi
 TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_InvalidWorldTransform_Asserts) {
     const Scene::EntityUVE entity =
         MakeLightEntityUVE(Math::Vector3UVE{}, Math::QuaternionUVE{}, Scene::LightComponentUVE{});
-    entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).worldPosition.x =
-        std::numeric_limits<float>::quiet_NaN();
+    // Construct a malformed cache fixture; ordinary live cache access is read-only.
+    auto invalidWorld = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    invalidWorld.worldPosition.x = std::numeric_limits<float>::quiet_NaN();
+    entityManager.RemoveComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    entityManager.AddComponentUVE<Scene::WorldTransformComponentUVE>(entity, invalidWorld);
 
     EXPECT_DEATH({ static_cast<void>(lightSystem.ExtractActiveLightsUVE(entityManager)); }, "");
 }
@@ -277,8 +280,10 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_InvalidWorldTransform_Asserts)
 TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_InvalidWorldTransform_SkipsWithoutPublishing) {
     const Scene::EntityUVE entity =
         MakeLightEntityUVE(Math::Vector3UVE{}, Math::QuaternionUVE{}, Scene::LightComponentUVE{});
-    entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).worldRotation =
-        Math::QuaternionUVE{0.0F, 0.0F, 0.0F, 0.0F};
+    auto invalidWorld = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    invalidWorld.worldRotation = Math::QuaternionUVE{0.0F, 0.0F, 0.0F, 0.0F};
+    entityManager.RemoveComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    entityManager.AddComponentUVE<Scene::WorldTransformComponentUVE>(entity, invalidWorld);
 
     const LightListUVE result = lightSystem.ExtractActiveLightsUVE(entityManager);
 

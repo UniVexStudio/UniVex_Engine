@@ -210,8 +210,11 @@ TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_NonFiniteWorldTransform_IsCoun
     const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_nonfinite.uvmat");
     const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
-    entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).worldPosition.x =
-        std::numeric_limits<float>::quiet_NaN();
+    // Construct a malformed cache fixture; ordinary live cache access is read-only.
+    auto invalidWorld = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    invalidWorld.worldPosition.x = std::numeric_limits<float>::quiet_NaN();
+    entityManager.RemoveComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    entityManager.AddComponentUVE<Scene::WorldTransformComponentUVE>(entity, invalidWorld);
 
     const RenderQueueUVE queue =
         meshRenderer.ExtractRenderQueueUVE(entityManager, assetManager, assetDatabase, MakeTestFrustumUVE());

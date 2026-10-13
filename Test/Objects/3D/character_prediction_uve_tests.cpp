@@ -206,8 +206,11 @@ TEST_F(CharacterPredictionUVETest, MissingComponentsFailClosed) {
 
     // Non-finite components never pack; non-finite states never apply, leaving the pose.
     const EntityUVE pawn = MakePawnUVE();
-    entityManager.GetComponentUVE<WorldTransformComponentUVE>(pawn).worldPosition.x =
-        std::numeric_limits<float>::infinity();
+    // Construct a malformed cache fixture; ordinary live cache access is read-only.
+    auto invalidWorld = entityManager.GetComponentUVE<WorldTransformComponentUVE>(pawn);
+    invalidWorld.worldPosition.x = std::numeric_limits<float>::infinity();
+    entityManager.RemoveComponentUVE<WorldTransformComponentUVE>(pawn);
+    entityManager.AddComponentUVE<WorldTransformComponentUVE>(pawn, invalidWorld);
     EXPECT_FALSE(PackPredictedStateUVE(entityManager, pawn).has_value());
 
     const EntityUVE sound = MakePawnUVE({7.0F, 8.0F, 9.0F});
