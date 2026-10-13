@@ -100,7 +100,7 @@ TEST_F(SaveGameSystemUVETest, SaveThenLoad_SingleEntityWithComponents_RoundTrips
     entityManager.AddComponentUVE<MeshComponentUVE>(
         entity, MeshComponentUVE{Asset::AssetGuidUVE{111}, Asset::AssetGuidUVE{222}});
     entityManager.AddComponentUVE<LightComponentUVE>(entity,
-                                                       LightComponentUVE{Math::Vector3UVE{0.2F, 0.4F, 0.6F}, 2.5F});
+                                                       LightComponentUVE{Math::ColorUVE{0.2F, 0.4F, 0.6F}, 2.5F});
 
     GameStateMetadataUVE metadata;
     metadata.saveName = "Before the Dragon Fight";

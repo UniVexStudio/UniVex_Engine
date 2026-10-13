@@ -2,18 +2,14 @@
 
 #include "uve/asset/asset_content_fingerprint_uve.h"
 
+#include "uve/utilities/hash_uve.h"
+
 #include <array>
 #include <cstddef>
 #include <fstream>
 #include <system_error>
 
 namespace UVE::Asset {
-namespace {
-
-constexpr std::uint64_t kFnvOffsetBasisUVE = 14695981039346656037ULL;
-constexpr std::uint64_t kFnvPrimeUVE = 1099511628211ULL;
-
-} // namespace
 
 std::optional<AssetContentFingerprintUVE>
 ComputeAssetContentFingerprintUVE(const std::filesystem::path& path) {
@@ -32,7 +28,7 @@ ComputeAssetContentFingerprintUVE(const std::filesystem::path& path) {
     }
 
     AssetContentFingerprintUVE fingerprint;
-    fingerprint.hash = kFnvOffsetBasisUVE;
+    Utilities::Fnv1a64UVE hasher;
     std::array<char, 16U * 1024U> buffer{};
     while (file.good()) {
         file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
@@ -40,16 +36,14 @@ ComputeAssetContentFingerprintUVE(const std::filesystem::path& path) {
         if (readCount <= 0) {
             break;
         }
-        for (std::streamsize index = 0; index < readCount; ++index) {
-            fingerprint.hash ^= static_cast<unsigned char>(buffer[static_cast<std::size_t>(index)]);
-            fingerprint.hash *= kFnvPrimeUVE;
-        }
+        hasher.AppendBytes(buffer.data(), static_cast<std::size_t>(readCount));
         fingerprint.byteCount += static_cast<std::uint64_t>(readCount);
     }
 
     if (file.bad()) {
         return std::nullopt;
     }
+    fingerprint.hash = hasher.Digest();
     return fingerprint;
 }
 

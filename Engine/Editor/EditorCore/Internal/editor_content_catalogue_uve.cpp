@@ -32,7 +32,7 @@ constexpr Tree<2> kTrigger{{{Kind::Area3D, -1, {}}, {Kind::Collider3D, 0, "Shape
 constexpr Tree<2> kFollowCamera{{{Kind::SpringArm3D, -1, {}}, {Kind::Camera3D, 0, "Camera"}}};
 
 constexpr Tree<1> kEmpty = kOne(Kind::Object3D);
-constexpr Tree<1> kViewport = kOne(Kind::Viewport);
+constexpr Tree<1> kViewport3D = kOne(Kind::Viewport3D);
 constexpr Tree<1> kSpawner = kOne(Kind::SpawnPoint3D);
 constexpr Tree<1> kBox = kOne(Kind::BoxMesh3D);
 constexpr Tree<1> kSphere = kOne(Kind::SphereMesh3D);
@@ -62,10 +62,10 @@ constexpr Tree<1> kOccluder = kOne(Kind::Occluder3D);
 constexpr std::array<std::string_view, 9> kGroups{"Basic",     "Entity",    "Shapes",     "Lighting", "Camera",
                                                   "Physics",   "Animation", "Audio, VFX & UI", "World"};
 
-constexpr std::array<ContentCatalogueItemUVE, 35> kItems{{
+constexpr std::array<ContentCatalogueItemUVE, 36> kItems{{
     {"folder", "Folder", "Basic", "A new folder here in Content", Action::Folder, {}},
     {"empty", "Empty Entity", "Basic", "A bare Object3D to build your own tree on", Action::EntityAsset, kEmpty},
-    {"viewport", "Viewport", "Basic", "A new scene Viewport with an empty World folder", Action::SceneAsset, kViewport},
+    {"viewport_3d", "Viewport3D", "Basic", "A new scene 3D Viewport with an empty World folder", Action::SceneAsset, kViewport3D},
 
     {"character", "Character", "Entity",
      "A playable body: Character3D with a Mesh, an AnimationSequencer and an AnimationGraph", Action::EntityAsset,
@@ -113,6 +113,8 @@ constexpr std::array<ContentCatalogueItemUVE, 35> kItems{{
      kAnimationSequencer},
     {"animation-tree", "AnimationGraph", "Animation", "Blends clips with a graph and a state machine",
      Action::EntityAsset, kAnimationGraph},
+    {"animation-library", "Animation Library", "Animation", "A named collection of animation clips that sequencers load from",
+     Action::LibraryAsset, {}},
 
     {"audio", "Audio Source", "Audio, VFX & UI", "An AudioSource3D that plays a clip in 3D", Action::EntityAsset,
      kAudio},

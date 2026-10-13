@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -33,6 +34,7 @@ public:
     void BindVertexBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) override;
     void BindIndexBufferUVE(BufferHandleUVE buffer) override;
     void BindTextureUVE(TextureHandleUVE texture, std::uint32_t slot) override;
+    void BindSamplerUVE(SamplerHandleUVE sampler, std::uint32_t slot) override;
     void BindUniformBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) override;
     void BindStorageBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) override;
     void SetUniformFloatUVE(std::string_view name, float value) override;
@@ -71,6 +73,11 @@ private:
                                    // name comes from GlDeviceStateUVE's attachment-pair cache and
                                    // is released only when a dependent texture or the device is
                                    // destroyed.
+    // Tier 2.5: GL_COLOR_ATTACHMENTi/GL_DEPTH_ATTACHMENT enums of the open FBO pass's DontCare
+    // attachments (built at Begin, consumed at End; empty for default-framebuffer passes — the
+    // window system owns that storage). A null invalidate entry only skips the hint.
+    std::array<GLenum, 1U + kExtraColorAttachmentCountUVE + 1U> m_passDiscardAttachments{};
+    std::uint32_t m_passDiscardCount = 0U;
     GLuint m_currentProgram = 0;
     GLuint m_currentVao = 0;
     PipelineHandleUVE m_currentPipeline = kInvalidPipelineHandleUVE;
@@ -78,6 +85,7 @@ private:
     BufferHandleUVE m_boundIndexBuffer = kInvalidBufferHandleUVE;
     std::uint32_t m_currentVertexStride = 0;
     std::unordered_map<std::uint32_t, TextureHandleUVE> m_boundTextures;
+    std::unordered_map<std::uint32_t, SamplerHandleUVE> m_boundSamplers;
 };
 
 } // namespace UVE::Render

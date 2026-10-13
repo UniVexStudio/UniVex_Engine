@@ -19,6 +19,7 @@
 #include "uve/logging/logging_macros_uve.h"
 #include "uve/rhi_shader/shader_events_uve.h"
 #include "uve/threading/job_counter_uve.h"
+#include "uve/utilities/hash_uve.h"
 
 namespace UVE::Render::Shader {
 
@@ -52,6 +53,13 @@ struct ShaderManagerUVE::ImplUVE {
         bool depthTestEnabled = true;
         bool depthWriteEnabled = true;
         PipelineBlendModeUVE blendMode = PipelineBlendModeUVE::Opaque;
+        CullModeUVE cullMode = CullModeUVE::None;
+        FrontFaceUVE frontFace = FrontFaceUVE::CounterClockwise;
+        FillModeUVE fillMode = FillModeUVE::Fill;
+        bool depthBiasEnabled = false;
+        float depthBiasConstantFactor = 0.0F;
+        float depthBiasSlopeFactor = 0.0F;
+        DepthCompareUVE depthCompare = DepthCompareUVE::Less;
         bool hotReloadEnabledUVE = true;
         std::string debugNameUVE;
     };
@@ -138,14 +146,14 @@ namespace {
     combined += entryPoint;
     combined += '|';
     combined += std::string(renderDevice.GetBackendNameUVE());
-    return Detail::ComputeFnv1aHashUVE(combined);
+    return Utilities::HashStringUVE(combined);
 }
 
 [[nodiscard]] std::uint64_t ComputeProgramContentHashUVE(const ShaderSourceUVE& vertexSource,
                                                           const ShaderSourceUVE& fragmentSource) {
     const std::string combined =
         std::to_string(vertexSource.GetContentHashUVE()) + "|" + std::to_string(fragmentSource.GetContentHashUVE());
-    return Detail::ComputeFnv1aHashUVE(combined);
+    return Utilities::HashStringUVE(combined);
 }
 
 [[nodiscard]] ShaderSourceCompileDescUVE NormalizeProgramStageDescUVE(ShaderSourceCompileDescUVE desc,
@@ -180,6 +188,13 @@ namespace {
     request.depthTestEnabled = desc.depthTestEnabled;
     request.depthWriteEnabled = desc.depthWriteEnabled;
     request.blendMode = desc.blendMode;
+    request.cullMode = desc.cullMode;
+    request.frontFace = desc.frontFace;
+    request.fillMode = desc.fillMode;
+    request.depthBiasEnabled = desc.depthBiasEnabled;
+    request.depthBiasConstantFactor = desc.depthBiasConstantFactor;
+    request.depthBiasSlopeFactor = desc.depthBiasSlopeFactor;
+    request.depthCompare = desc.depthCompare;
     request.hotReloadEnabledUVE = desc.hotReloadEnabledUVE;
     return request;
 }
@@ -197,6 +212,13 @@ namespace {
     request.depthTestEnabled = desc.depthTestEnabled;
     request.depthWriteEnabled = desc.depthWriteEnabled;
     request.blendMode = desc.blendMode;
+    request.cullMode = desc.cullMode;
+    request.frontFace = desc.frontFace;
+    request.fillMode = desc.fillMode;
+    request.depthBiasEnabled = desc.depthBiasEnabled;
+    request.depthBiasConstantFactor = desc.depthBiasConstantFactor;
+    request.depthBiasSlopeFactor = desc.depthBiasSlopeFactor;
+    request.depthCompare = desc.depthCompare;
     request.hotReloadEnabledUVE = desc.hotReloadEnabledUVE;
     return request;
 }
@@ -364,9 +386,20 @@ void ShaderManagerUVE::ApplyPendingProgramLinksUVE(ImplUVE& impl) {
                 ComputeProgramContentHashUVE(*pending.vertexSource, *pending.fragmentSource);
             const std::filesystem::path cacheFilePath =
                 Detail::GetCacheFilePathUVE(impl.config.cachePath, programHash);
-            const PipelineBinaryDescUVE binaryDesc{pending.desc.vertexLayout, pending.desc.vertexStride,
-                                                    pending.desc.topology, pending.desc.depthTestEnabled,
-                                                    pending.desc.depthWriteEnabled, pending.desc.blendMode};
+            PipelineBinaryDescUVE binaryDesc;
+            binaryDesc.vertexLayout = pending.desc.vertexLayout;
+            binaryDesc.vertexStride = pending.desc.vertexStride;
+            binaryDesc.topology = pending.desc.topology;
+            binaryDesc.depthTestEnabled = pending.desc.depthTestEnabled;
+            binaryDesc.depthWriteEnabled = pending.desc.depthWriteEnabled;
+            binaryDesc.blendMode = pending.desc.blendMode;
+            binaryDesc.cullMode = pending.desc.cullMode;
+            binaryDesc.frontFace = pending.desc.frontFace;
+            binaryDesc.fillMode = pending.desc.fillMode;
+            binaryDesc.depthBiasEnabled = pending.desc.depthBiasEnabled;
+            binaryDesc.depthBiasConstantFactor = pending.desc.depthBiasConstantFactor;
+            binaryDesc.depthBiasSlopeFactor = pending.desc.depthBiasSlopeFactor;
+            binaryDesc.depthCompare = pending.desc.depthCompare;
 
             PipelineHandleUVE newPipeline = kInvalidPipelineHandleUVE;
             bool usedCache = false;
@@ -387,6 +420,13 @@ void ShaderManagerUVE::ApplyPendingProgramLinksUVE(ImplUVE& impl) {
                 pipelineDesc.depthTestEnabled = pending.desc.depthTestEnabled;
                 pipelineDesc.depthWriteEnabled = pending.desc.depthWriteEnabled;
                 pipelineDesc.blendMode = pending.desc.blendMode;
+                pipelineDesc.cullMode = pending.desc.cullMode;
+                pipelineDesc.frontFace = pending.desc.frontFace;
+                pipelineDesc.fillMode = pending.desc.fillMode;
+                pipelineDesc.depthBiasEnabled = pending.desc.depthBiasEnabled;
+                pipelineDesc.depthBiasConstantFactor = pending.desc.depthBiasConstantFactor;
+                pipelineDesc.depthBiasSlopeFactor = pending.desc.depthBiasSlopeFactor;
+                pipelineDesc.depthCompare = pending.desc.depthCompare;
                 pipelineDesc.vertexStride = pending.desc.vertexStride;
                 newPipeline = impl.renderDevice.CreatePipelineUVE(pipelineDesc, &infoLog);
 

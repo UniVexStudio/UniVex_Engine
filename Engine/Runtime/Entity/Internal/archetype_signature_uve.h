@@ -7,6 +7,8 @@
 #include <typeindex>
 #include <vector>
 
+#include "uve/utilities/hash_uve.h"
+
 namespace UVE::Scene::Detail {
 
 /// The sorted set of component types making up one archetype. Private implementation detail —
@@ -37,9 +39,10 @@ private:
 template <>
 struct std::hash<UVE::Scene::Detail::ArchetypeSignatureUVE> {
     [[nodiscard]] std::size_t operator()(const UVE::Scene::Detail::ArchetypeSignatureUVE& signature) const noexcept {
+        // The shared boost-formula combiner: byte-identical to the hand-rolled loop it replaced.
         std::size_t combined = 0;
         for (const std::type_index& type : signature.GetTypesUVE()) {
-            combined ^= type.hash_code() + 0x9e3779b9U + (combined << 6) + (combined >> 2);
+            UVE::Utilities::HashCombineUVE(combined, type.hash_code());
         }
         return combined;
     }

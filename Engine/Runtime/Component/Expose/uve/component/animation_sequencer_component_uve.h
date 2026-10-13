@@ -43,6 +43,9 @@ struct AnimationSequencerComponentUVE final {
     /// Every animation this player has, in the order the Timeline lists them; `clip` is the one it
     /// plays. A clip missing from here still plays; the list is what the editor offers.
     std::vector<Asset::AssetGuidUVE> library;
+    /// A `.uvanimlib` this player is linked to: the Timeline offers the file's clips alongside the
+    /// owned list, live. Invalid means unlinked. The runtime plays `clip` either way.
+    Asset::AssetGuidUVE libraryRef{};
     /// Starts playing as soon as the scene runs.
     bool autoplay = true;
     /// Playback rate: 1 is normal, 2 twice as fast, negative plays backwards. 0 holds the pose.
@@ -87,7 +90,7 @@ struct AnimationSequencerComponentUVE final {
 
     /// Authored settings only: runtime state is ignored, so a playing player equals its saved self.
     [[nodiscard]] bool HasSameSettingsUVE(const AnimationSequencerComponentUVE& other) const noexcept {
-        return clip == other.clip && library == other.library && autoplay == other.autoplay &&
+        return clip == other.clip && library == other.library && libraryRef == other.libraryRef && autoplay == other.autoplay &&
                speed == other.speed && loopMode == other.loopMode && onFinish == other.onFinish &&
                startOffsetSeconds == other.startOffsetSeconds && blendInSeconds == other.blendInSeconds &&
                relative == other.relative;

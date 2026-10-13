@@ -179,6 +179,11 @@ DiagnosticCaptureStopResultUVE ProfilerCaptureUVE::EndUVE(
                                           std::move(completedBundle), "accepted"};
 }
 
+DiagnosticCaptureBundleUVE ProfilerCaptureUVE::SnapshotUVE() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_bundle;
+}
+
 bool ProfilerCaptureUVE::IsActiveUVE() const noexcept {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_active;

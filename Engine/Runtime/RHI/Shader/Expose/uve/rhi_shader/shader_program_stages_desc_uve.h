@@ -35,6 +35,16 @@ struct ShaderProgramStagesDescUVE {
     /// owns reload behavior for linked programs.
     bool hotReloadEnabledUVE = true;
     std::string debugNameUVE;
+
+    // Appended rasterizer tail mirroring PipelineDescUVE (Tier 2.1): same fields, same defaults,
+    // threaded through ShaderManagerUVE into both the compiled and binary-cache pipeline paths.
+    CullModeUVE cullMode = CullModeUVE::None;
+    FrontFaceUVE frontFace = FrontFaceUVE::CounterClockwise;
+    FillModeUVE fillMode = FillModeUVE::Fill;
+    bool depthBiasEnabled = false;
+    float depthBiasConstantFactor = 0.0F;
+    float depthBiasSlopeFactor = 0.0F;
+    DepthCompareUVE depthCompare = DepthCompareUVE::Less;
 };
 
 } // namespace UVE::Render::Shader

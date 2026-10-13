@@ -153,6 +153,8 @@ add_library(uve_editor STATIC
     Internal/editor_retarget_plan_uve.cpp
     Internal/editor_retarget_preview_uve.cpp
     Internal/editor_retarget_window_uve.cpp
+    Internal/editor_animation_library_window_uve.cpp
+    Internal/editor_file_picker_uve.cpp
     Internal/editor_panel_hierarchy_uve.cpp
     Internal/editor_panel_inspector_metadata_uve.cpp
     Internal/editor_panel_inspector_uve.cpp
@@ -184,7 +186,7 @@ target_include_directories(uve_editor PUBLIC Expose)
 target_include_directories(uve_editor PRIVATE "${_uve_editor_generated_dir}")
 target_compile_features(uve_editor PUBLIC cxx_std_23)
 target_link_libraries(uve_editor
-    PUBLIC uve_core uve_plugins uve_retarget
-    PRIVATE uve_editor_imgui nlohmann_json::nlohmann_json glfw
+    PUBLIC uve_core uve_diagnostics uve_network uve_plugins uve_retarget
+    PRIVATE uve_editor_imgui nlohmann_json::nlohmann_json glfw uve_strings
 )
 uve_set_warnings(uve_editor)

@@ -18,8 +18,12 @@ namespace {
 FrameTaskDefinitionUVE MakeTaskUVE(FrameTaskIdUVE id, const char* name,
                                   std::vector<FrameTaskIdUVE> dependencies,
                                   std::function<void()> action) {
-    return FrameTaskDefinitionUVE{id, FrameTaskDomainUVE::Animation, name,
-                                 std::move(dependencies), std::move(action)};
+    Containers::SmallVectorUVE<FrameTaskIdUVE, FrameTaskGraphUVE::kMaximumDependenciesPerTaskUVE> deps;
+    for (const FrameTaskIdUVE dependency : dependencies) {
+        deps.PushBackUVE(dependency);
+    }
+    return FrameTaskDefinitionUVE{id, FrameTaskDomainUVE::Animation, name, std::move(deps),
+                                 std::move(action)};
 }
 
 } // namespace
@@ -112,6 +116,41 @@ TEST(FrameSchedulerUVETest, ExecuteUVE_RejectsEmptyGraphBeforeSubmittingWork) {
     EXPECT_EQ(result.code, FrameScheduleResultCodeUVE::InvalidGraph);
     EXPECT_EQ(result.completedTaskCount, 0U);
     EXPECT_EQ(result.taskCount, 0U);
+}
+
+TEST(FrameTaskGraphUVETest, AddTaskUVE_RejectsTaskBeyondCapacity) {
+    FrameTaskGraphUVE graph;
+    for (std::size_t index = 0U; index < FrameTaskGraphUVE::kMaximumTasksUVE; ++index) {
+        ASSERT_TRUE(graph.AddTaskUVE(MakeTaskUVE(static_cast<FrameTaskIdUVE>(index + 1U), "task", {}, [] {}))
+                        .IsAcceptedUVE())
+            << "task index " << index;
+    }
+    EXPECT_EQ(graph.GetTaskCountUVE(), FrameTaskGraphUVE::kMaximumTasksUVE);
+
+    const FrameTaskGraphMutationResultUVE overflow =
+        graph.AddTaskUVE(MakeTaskUVE(1000000U, "overflow", {}, [] {}));
+    EXPECT_EQ(overflow.code, FrameTaskGraphMutationCodeUVE::CapacityExceeded);
+    EXPECT_EQ(graph.GetTaskCountUVE(), FrameTaskGraphUVE::kMaximumTasksUVE);
+}
+
+TEST(FrameTaskGraphUVETest, Dependencies_LiveInlineAndOverCapIsRejected) {
+    FrameTaskGraphUVE graph;
+    std::vector<FrameTaskIdUVE> full;
+    for (FrameTaskIdUVE id = 2U; id <= FrameTaskGraphUVE::kMaximumDependenciesPerTaskUVE + 1U; ++id) {
+        full.push_back(id);
+    }
+    ASSERT_TRUE(graph.AddTaskUVE(MakeTaskUVE(1U, "full", full, [] {})).IsAcceptedUVE());
+    ASSERT_EQ(graph.GetTaskCountUVE(), 1U);
+    const FrameTaskDefinitionUVE& stored = graph.GetTasksUVE()[0];
+    EXPECT_EQ(stored.dependencies.SizeUVE(), FrameTaskGraphUVE::kMaximumDependenciesPerTaskUVE);
+    // Inline capacity equals the cap: a full-but-accepted list never touched the heap.
+    EXPECT_EQ(stored.dependencies.CapacityUVE(), FrameTaskGraphUVE::kMaximumDependenciesPerTaskUVE);
+
+    full.push_back(99U);
+    const FrameTaskGraphMutationResultUVE overflow =
+        graph.AddTaskUVE(MakeTaskUVE(2U, "overflow", full, [] {}));
+    EXPECT_EQ(overflow.code, FrameTaskGraphMutationCodeUVE::TooManyDependencies);
+    EXPECT_EQ(graph.GetTaskCountUVE(), 1U);
 }
 
 } // namespace UVE::Core

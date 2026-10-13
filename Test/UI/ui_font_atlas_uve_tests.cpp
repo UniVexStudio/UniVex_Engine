@@ -2,7 +2,10 @@
 
 #include "uve/ui/ui_font_atlas_uve.h"
 
+#include "uve/ui/ui_embedded_font_uve.h"
+
 #include <algorithm>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -83,6 +86,36 @@ TEST(UIFontAtlasUVETest, AppendTextQuadsUVE_SkipsUnrenderableCharactersWithoutCr
     atlas.AppendTextQuadsUVE(textWithControlCharacter, cursorX, cursorY, UIFontAtlasUVE::kBakedFontPixelHeightUVE,
                              quads);
     EXPECT_EQ(quads.size(), 2U);
+}
+
+TEST(UIFontAtlasUVETest, BytesConstructor_BakesTheEmbeddedFontIdenticallyToTheDefault) {
+    // The asset path (bake from caller bytes) fed the embedded bytes must reproduce the default
+    // atlas bit-for-bit: same bitmap, same glyph quads and advances.
+    const UIFontAtlasUVE def;
+    ASSERT_TRUE(def.IsValidUVE());
+    const UIFontAtlasUVE fromBytes{GetEmbeddedUIFontBytesUVE()};
+    ASSERT_TRUE(fromBytes.IsValidUVE());
+    EXPECT_EQ(fromBytes.GetBitmapUVE(), def.GetBitmapUVE());
+    for (char c = ' '; c <= '~'; ++c) {
+        const UIGlyphUVE* expected = def.FindGlyphUVE(c);
+        const UIGlyphUVE* actual = fromBytes.FindGlyphUVE(c);
+        ASSERT_NE(expected, nullptr);
+        ASSERT_NE(actual, nullptr);
+        EXPECT_FLOAT_EQ(actual->advanceX, expected->advanceX);
+        EXPECT_FLOAT_EQ(actual->offsetX0, expected->offsetX0);
+        EXPECT_FLOAT_EQ(actual->u1, expected->u1);
+    }
+}
+
+TEST(UIFontAtlasUVETest, BytesConstructor_UnparseableBytesFailClosed) {
+    // All zeros, not a short buffer: stb_truetype reads the table directory without bounds
+    // checks, so the failing input must be big enough to read safely but parse to nothing.
+    const std::vector<std::uint8_t> garbage(1024U, 0x00U);
+    const UIFontAtlasUVE bad{std::span<const std::uint8_t>{garbage}};
+    EXPECT_FALSE(bad.IsValidUVE());
+    EXPECT_TRUE(bad.GetBitmapUVE().empty());
+    const UIFontAtlasUVE empty{std::span<const std::uint8_t>{}};
+    EXPECT_FALSE(empty.IsValidUVE());
 }
 
 } // namespace

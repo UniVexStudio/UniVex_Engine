@@ -51,10 +51,4 @@ struct PreprocessResultUVE {
     Asset::IFileSystemUVE& fileSystem, const std::string& virtualFilePath,
     const std::string& embeddedFallbackSourceCode, const std::vector<std::pair<std::string, std::string>>& defines);
 
-/// A plain FNV-1a 64-bit hash over `data` — the primitive ShaderManagerUVE composes its
-/// program-binary cache keys from (resolved source + stage + entry point + backend identity +
-/// cache format version, concatenated). Deterministic, non-cryptographic, zero new dependency —
-/// matches this codebase's "Foundations"-quality precedent for non-adversarial hashing needs.
-[[nodiscard]] std::uint64_t ComputeFnv1aHashUVE(std::string_view data) noexcept;
-
 } // namespace UVE::Render::Shader::Detail

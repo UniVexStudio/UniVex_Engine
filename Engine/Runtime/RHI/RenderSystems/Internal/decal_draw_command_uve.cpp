@@ -2,6 +2,8 @@
 
 #include "uve/render_systems/decal_draw_command_uve.h"
 
+#include "uve/math/color_uve.h"
+
 #include <algorithm>
 
 namespace UVE::Render {
@@ -110,8 +112,8 @@ void BuildDecalDrawPlanUVE(const DecalDrawListUVE& drawList, DecalDrawPlanUVE& o
         command.worldToUnit = worldToUnit;
         command.projectionDirection = draw.projection.projectionDirection;
         command.albedoTextureGuid = material->albedoTexture;
-        command.baseColor = material->albedoColor * draw.modulate;
-        command.emissionColor = material->emissiveColor * draw.emissionEnergy;
+        command.baseColor = Math::ToVector3UVE(material->albedoColor) * draw.modulate;
+        command.emissionColor = Math::ToVector3UVE(material->emissiveColor) * draw.emissionEnergy;
         command.alphaScale = draw.albedoMix;
         command.normalFade = draw.projection.normalFade;
         command.upperFade = draw.projection.upperFade;

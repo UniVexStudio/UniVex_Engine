@@ -15,6 +15,8 @@ add_library(uve_entity STATIC
     Internal/archetype_uve.cpp
 )
 target_include_directories(uve_entity PUBLIC Expose)
-target_link_libraries(uve_entity PUBLIC uve_platform uve_logging uve_memory uve_events uve_component)
+# uve_utilities is PUBLIC, not PRIVATE: Entity's internal headers (archetype_signature_uve.h)
+# are included directly by test targets, so the hash header must propagate to consumers.
+target_link_libraries(uve_entity PUBLIC uve_platform uve_logging uve_memory uve_events uve_component uve_utilities)
 target_compile_features(uve_entity PUBLIC cxx_std_23)
 uve_set_warnings(uve_entity)

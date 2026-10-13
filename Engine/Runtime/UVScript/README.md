@@ -67,6 +67,7 @@ param       := IDENT (':' type)?
 type        := IDENT ('[' type (',' type)* ']')?
 block       := NEWLINE INDENT statement+ DEDENT
 statement   := 'let' IDENT (':' type)? '=' expr NEWLINE
+             | 'let' '(' IDENT (',' IDENT)* ')' '=' expr NEWLINE
              | 'if' expr ':' block ('elif' expr ':' block)* ('else' ':' block)?
              | 'while' expr ':' block
              | 'for' IDENT 'in' expr ':' block
@@ -82,7 +83,9 @@ sum         := product (('+'|'-') product)*
 product     := unary (('*'|'/'|'%') unary)*
 unary       := '-' unary | postfix
 postfix     := primary ('.' IDENT | '(' args? ')' | '[' expr ']')*
-primary     := NUMBER UNIT? | STRING | 'true' | 'false' | 'none' | IDENT | '(' expr ')'
+primary     := NUMBER UNIT? | STRING | 'true' | 'false' | 'none' | IDENT
+             | '[' (expr (',' expr)* ','?)? ']' | '{' (expr ':' expr (',' expr ':' expr)* ','?)? '}'
+             | '(' (expr (',' expr)* ','?)? ')'
 ```
 
 ## Module
@@ -109,17 +112,29 @@ primary     := NUMBER UNIT? | STRING | 'true' | 'false' | 'none' | IDENT | '(' e
    - `ScriptInstanceUVE` runs it: handlers, functions, fields, and `wait` that pauses only its own
      handler.
    - A runaway loop is cut off after one million instructions.
-   - Not in yet:
-     - collections, tuples and `[]`;
-     - calling methods on other nodes (`other.hide()`);
-     - `wait` inside a `fn`.
+   - `ref.method(args)` calls a method on another node: fire-and-forget, answered with none,
+     resolved when the script runs. An object may be compared with `none`, for lookups that miss.
+   - Collections and tuples: typed `list[int]`, `map[str, int]` and `tuple[int, str]` with
+     literals (`[1, 2]`, `{"a": 1}`, `(1, "a")`), `[]` reads, `xs[i] = v` / `m[k] = v` writes
+     (tuples never change), `for x in xs` and `for k in map`, `let (a, b) = pair()`, `+` on
+     lists, deep `==`, and `length`/`push`/`keys`/`contains`/`remove` (also as `xs.push(v)`).
+     Copies never alias: every write builds a new collection. Generated C++ runs collections
+     through the same operations, so native and interpreted agree exactly.
+   - Not in yet: `wait` inside a `fn`.
 3. **Engine binding.** A node whose script slot names a `.uvs` file runs it:
    - `EngineCoreUVE` compiles it once per path against `UVScriptNodeHostUVE`; errors are logged with
      `file:line:column` once, not every frame;
    - `ready` runs once, then `tick(dt)` every frame, in process-priority order, and paused with the
-     rest of the simulation;
+     rest of the simulation; contact edges arrive as `collision_enter/exit` and
+     `overlap_enter/exit`, each carrying the other object's name;
    - the host gives `name`, `position`, `scale`, and on a character body `velocity` and
-     `grounded`, plus `input.pressed/held/released/axis`.
+     `grounded`, plus `input.pressed/held/released/axis`; a rigid body adds its own
+     `velocity` and `physics.apply_force/apply_impulse/apply_torque(vec3)`; an audio source
+     adds `volume`/`pitch` and `audio.play()/audio.stop()/audio.is_playing()`; every object
+     gets writable `visible`, lights add `intensity`, cameras add `fov`; objects with gameplay
+     pools answer `attributes.has/get/max/damage/heal(id, ...)`, objects with tags answer
+     `tags.has/add/remove(tag)`; `node(name)` finds another
+     object, whose script functions (or the built-in `hide()`/`show()`) run through `ref.method(args)`.
    - a saved edit restarts the script within half a second, and fixing a broken file is enough
      for it to be retried.
 4. **Editor.** The Inspector's script slot has **New UVScript**: it writes `scripts/<node>.uvs`

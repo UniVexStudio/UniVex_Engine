@@ -47,7 +47,8 @@ std::optional<RaycastHitUVE> RaycastSystemUVE::RaycastUVE(Scene::IEntityManagerU
         switch (collider.shapeType) {
         case Scene::ColliderShapeTypeUVE::Sphere:
             hit = Detail::IntersectRaySphereUVE(
-                query.ray, collider.worldAabb.GetCenterUVE(), collider.shapeRadius, query.maxDistance);
+                query.ray,
+                Math::SphereUVE{collider.worldAabb.GetCenterUVE(), collider.shapeRadius}, query.maxDistance);
             break;
         case Scene::ColliderShapeTypeUVE::Capsule:
             hit = Detail::IntersectRayCapsuleUVE(
@@ -56,8 +57,10 @@ std::optional<RaycastHitUVE> RaycastSystemUVE::RaycastUVE(Scene::IEntityManagerU
             break;
         case Scene::ColliderShapeTypeUVE::Box:
             hit = Detail::IntersectRayOrientedBoxUVE(
-                query.ray, collider.worldAabb.GetCenterUVE(), collider.shapeHalfExtents,
-                collider.shapeRotation, query.maxDistance);
+                query.ray,
+                Math::OrientedBoxUVE{collider.worldAabb.GetCenterUVE(), collider.shapeHalfExtents,
+                                     collider.shapeRotation},
+                query.maxDistance);
             break;
         default:
             hit = Math::IntersectRayUVE(query.ray, collider.worldAabb, query.maxDistance);

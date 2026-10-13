@@ -31,6 +31,9 @@ namespace {
 
 [[nodiscard]] std::uint64_t HashIdentifierUVE(const std::string_view identifier) noexcept {
     // FNV-1a is stable across processes and standard-library implementations, unlike std::hash.
+    // Kept local deliberately: uve_platform sits below uve_utilities, so including
+    // <uve/utilities/hash_uve.h> here would be a layer inversion (and a CMake target cycle).
+    // Same algorithm and values as Utilities::HashStringUVE — keep in sync.
     std::uint64_t hash = 14695981039346656037ULL;
     for (const char rawByte : identifier) {
         const unsigned char byte = static_cast<unsigned char>(rawByte);

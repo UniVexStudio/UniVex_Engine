@@ -100,8 +100,8 @@ TEST_F(CanvasAncestryUVETest, HiddenCanvasDropsQuadsAndClearsButtonClicks) {
     entityManager.AddComponentUVE<Scene::CanvasComponentUVE>(canvas, canvasComponent);
     const Scene::EntityUVE button = PlaceUVE();
     Scene::UIButtonComponentUVE buttonComponent{};
-    buttonComponent.positionPixels = Math::Vector2UVE{0.0F, 0.0F};
-    buttonComponent.sizePixels = Math::Vector2UVE{50.0F, 50.0F};
+    buttonComponent.rect.position = Math::Vector2UVE{0.0F, 0.0F};
+    buttonComponent.rect.size = Math::Vector2UVE{50.0F, 50.0F};
     entityManager.AddComponentUVE<Scene::UIButtonComponentUVE>(button, buttonComponent);
     ParentUVE(button, canvas);
 

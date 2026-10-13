@@ -3,6 +3,8 @@
 
 #include "uve/asset/gltf_mesh_converter_uve.h"
 
+#include "gltf_document_uve.h"
+
 #include <algorithm>
 #include <bit>
 #include <cstddef>
@@ -19,78 +21,24 @@ namespace {
 constexpr std::uint64_t kMaximumPrimitiveIndicesUVE = kMaximumGltfAccessorElementsUVE * 3U;
 constexpr float kMinimumNormalLengthSquaredUVE = 1.0e-12F;
 
-[[nodiscard]] std::uint64_t ComponentSizeUVE(const GltfComponentTypeUVE componentType) noexcept {
-    switch (componentType) {
-    case GltfComponentTypeUVE::UnsignedByte:
-        return 1U;
-    case GltfComponentTypeUVE::UnsignedShort:
-        return 2U;
-    case GltfComponentTypeUVE::UnsignedInt:
-    case GltfComponentTypeUVE::Float:
-        return 4U;
-    }
-    return 0U;
-}
-
-[[nodiscard]] bool ValidateAccessorUVE(const GltfAccessorViewUVE& accessor, const std::uint64_t elementSize,
-                                       const std::uint64_t maximumElements) noexcept {
-    if (ComponentSizeUVE(accessor.componentType) == 0U || accessor.elementCount == 0U ||
-        accessor.elementCount > maximumElements) {
-        return false;
-    }
-    const std::uint64_t stride = accessor.byteStride == 0U ? elementSize : accessor.byteStride;
-    if (stride < elementSize || stride > std::numeric_limits<std::size_t>::max()) {
-        return false;
-    }
-    return ValidateGltfAccessorSpanUVE(accessor.buffer.size(), accessor.byteOffset, accessor.elementCount, stride,
-                                       elementSize, maximumElements);
-}
-
-[[nodiscard]] const std::byte* AccessorElementUVE(const GltfAccessorViewUVE& accessor,
-                                                   const std::size_t elementIndex,
-                                                   const std::uint64_t elementSize) noexcept {
-    const std::uint64_t stride = accessor.byteStride == 0U ? elementSize : accessor.byteStride;
-    const std::uint64_t offset = accessor.byteOffset + static_cast<std::uint64_t>(elementIndex) * stride;
-    if (offset > accessor.buffer.size() || accessor.buffer.size() - static_cast<std::size_t>(offset) <
-                                              static_cast<std::size_t>(elementSize)) {
-        return nullptr;
-    }
-    return accessor.buffer.data() + static_cast<std::size_t>(offset);
-}
-
-[[nodiscard]] std::uint32_t ReadU32LittleEndianUVE(const std::byte* bytes) noexcept {
-    return static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[0])) |
-           (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[1])) << 8U) |
-           (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[2])) << 16U) |
-           (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[3])) << 24U);
-}
-
-[[nodiscard]] std::uint16_t ReadU16LittleEndianUVE(const std::byte* bytes) noexcept {
-    return static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[0])) |
-           static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[1]) << 8U);
-}
-
-[[nodiscard]] float ReadFloatLittleEndianUVE(const std::byte* bytes) noexcept {
-    return std::bit_cast<float>(ReadU32LittleEndianUVE(bytes));
-}
-
 [[nodiscard]] UVE::Math::Vector3UVE ReadVector3UVE(const GltfAccessorViewUVE& accessor,
                                                    const std::size_t index) noexcept {
-    const std::byte* const bytes = AccessorElementUVE(accessor, index, 12U);
-    return UVE::Math::Vector3UVE{ReadFloatLittleEndianUVE(bytes), ReadFloatLittleEndianUVE(bytes + 4U),
-                                 ReadFloatLittleEndianUVE(bytes + 8U)};
+    const std::byte* const bytes = Detail::GltfAccessorElementUVE(accessor, index, 12U);
+    return UVE::Math::Vector3UVE{Detail::ReadGltfFloatLEUVE(bytes), Detail::ReadGltfFloatLEUVE(bytes + 4U),
+                                 Detail::ReadGltfFloatLEUVE(bytes + 8U)};
 }
 
 [[nodiscard]] std::uint32_t ReadIndexUVE(const GltfAccessorViewUVE& accessor,
                                          const std::size_t index) noexcept {
-    const std::byte* const bytes = AccessorElementUVE(accessor, index, ComponentSizeUVE(accessor.componentType));
+    const std::byte* const bytes = Detail::GltfAccessorElementUVE(
+        accessor, index, Detail::GltfComponentSizeUVE(accessor.componentType));
     switch (accessor.componentType) {
     case GltfComponentTypeUVE::UnsignedByte:
         return std::to_integer<std::uint8_t>(bytes[0]);
     case GltfComponentTypeUVE::UnsignedShort:
-        return ReadU16LittleEndianUVE(bytes);
+        return Detail::ReadGltfU16LEUVE(bytes);
     case GltfComponentTypeUVE::UnsignedInt:
-        return ReadU32LittleEndianUVE(bytes);
+        return Detail::ReadGltfU32LEUVE(bytes);
     case GltfComponentTypeUVE::Float:
         return 0U;
     }
@@ -115,7 +63,7 @@ bool ConvertGltfPrimitiveUVE(const GltfPrimitiveSourceUVE& source, MeshAssetUVE&
     try {
         if (source.mode != 4U || source.positions.componentType != GltfComponentTypeUVE::Float ||
         source.positions.elementCount == 0U || source.positions.elementCount > kMaximumGltfAccessorElementsUVE ||
-        !ValidateAccessorUVE(source.positions, 12U, kMaximumGltfAccessorElementsUVE)) {
+        !Detail::ValidateGltfAccessorViewUVE(source.positions, 12U, kMaximumGltfAccessorElementsUVE)) {
         return false;
     }
 
@@ -123,14 +71,14 @@ bool ConvertGltfPrimitiveUVE(const GltfPrimitiveSourceUVE& source, MeshAssetUVE&
     if (source.normals.has_value()) {
         if (source.normals->componentType != GltfComponentTypeUVE::Float ||
             source.normals->elementCount != source.positions.elementCount ||
-            !ValidateAccessorUVE(*source.normals, 12U, kMaximumGltfAccessorElementsUVE)) {
+            !Detail::ValidateGltfAccessorViewUVE(*source.normals, 12U, kMaximumGltfAccessorElementsUVE)) {
             return false;
         }
     }
     if (source.texcoords0.has_value()) {
         if (source.texcoords0->componentType != GltfComponentTypeUVE::Float ||
             source.texcoords0->elementCount != source.positions.elementCount ||
-            !ValidateAccessorUVE(*source.texcoords0, 8U, kMaximumGltfAccessorElementsUVE)) {
+            !Detail::ValidateGltfAccessorViewUVE(*source.texcoords0, 8U, kMaximumGltfAccessorElementsUVE)) {
             return false;
         }
     }
@@ -141,11 +89,11 @@ bool ConvertGltfPrimitiveUVE(const GltfPrimitiveSourceUVE& source, MeshAssetUVE&
         return false;
     }
     if (source.indices.has_value()) {
-        const std::uint64_t indexElementSize = ComponentSizeUVE(source.indices->componentType);
+        const std::uint64_t indexElementSize = Detail::GltfComponentSizeUVE(source.indices->componentType);
         if ((source.indices->componentType != GltfComponentTypeUVE::UnsignedByte &&
              source.indices->componentType != GltfComponentTypeUVE::UnsignedShort &&
              source.indices->componentType != GltfComponentTypeUVE::UnsignedInt) ||
-            !ValidateAccessorUVE(*source.indices, indexElementSize, kMaximumPrimitiveIndicesUVE)) {
+            !Detail::ValidateGltfAccessorViewUVE(*source.indices, indexElementSize, kMaximumPrimitiveIndicesUVE)) {
             return false;
         }
     }
@@ -168,9 +116,9 @@ bool ConvertGltfPrimitiveUVE(const GltfPrimitiveSourceUVE& source, MeshAssetUVE&
             candidate.vertices[vertexIndex].normal = UVE::Math::NormalizeUVE(normal);
         }
         if (source.texcoords0.has_value()) {
-            const std::byte* const bytes = AccessorElementUVE(*source.texcoords0, vertexIndex, 8U);
-            candidate.vertices[vertexIndex].u = ReadFloatLittleEndianUVE(bytes);
-            candidate.vertices[vertexIndex].v = ReadFloatLittleEndianUVE(bytes + 4U);
+            const std::byte* const bytes = Detail::GltfAccessorElementUVE(*source.texcoords0, vertexIndex, 8U);
+            candidate.vertices[vertexIndex].u = Detail::ReadGltfFloatLEUVE(bytes);
+            candidate.vertices[vertexIndex].v = Detail::ReadGltfFloatLEUVE(bytes + 4U);
             if (!std::isfinite(candidate.vertices[vertexIndex].u) ||
                 !std::isfinite(candidate.vertices[vertexIndex].v)) {
                 return false;

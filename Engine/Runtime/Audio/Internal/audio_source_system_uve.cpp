@@ -65,6 +65,63 @@ AudioSourceSystemUVE::AudioSourceSystemUVE() : m_impl(std::make_unique<ImplUVE>(
 
 AudioSourceSystemUVE::~AudioSourceSystemUVE() = default;
 
+AudioSourceSystemUVE::EnsuredVoiceUVE AudioSourceSystemUVE::EnsureVoiceUVE(
+    Scene::EntityUVE entity, const Scene::AudioSourceComponentUVE& source, IAudioSystemUVE& audioSystem) {
+    if (const auto existing = m_impl->entityToVoice.find(entity); existing != m_impl->entityToVoice.end()) {
+        return {existing->second.voice, false};
+    }
+    if (!Scene::IsAudioSourceComponentValidUVE(source)) {
+        return {kInvalidVoiceHandleUVE, false};
+    }
+    const AudioSourceDescUVE descriptor = MakeAudioSourceDescUVE(source);
+    const VoiceHandleUVE voice = audioSystem.CreateSourceUVE(descriptor);
+    if (voice == kInvalidVoiceHandleUVE) {
+        return {voice, false};
+    }
+    m_impl->entityToVoice.emplace(entity, ImplUVE::SourceStateUVE{voice, descriptor});
+    return {voice, true};
+}
+
+bool AudioSourceSystemUVE::PlayEntityUVE(Scene::EntityUVE entity, Scene::IEntityManagerUVE& entityManager,
+                                         IAudioSystemUVE& audioSystem) {
+    if (!entityManager.IsAliveUVE(entity) ||
+        !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity) ||
+        !entityManager.HasComponentUVE<Scene::AudioSourceComponentUVE>(entity)) {
+        return false;
+    }
+    const Scene::AudioSourceComponentUVE& source =
+        entityManager.GetComponentUVE<Scene::AudioSourceComponentUVE>(entity);
+    const EnsuredVoiceUVE ensured = EnsureVoiceUVE(entity, source, audioSystem);
+    if (ensured.voice == kInvalidVoiceHandleUVE) {
+        return false;
+    }
+    if (ensured.created) {
+        const Scene::WorldTransformComponentUVE& worldTransform =
+            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+        audioSystem.SetSourcePositionUVE(ensured.voice, worldTransform.worldPosition);
+        audioSystem.SetSourceVolumeUVE(ensured.voice, source.volume);
+        audioSystem.SetSourcePitchUVE(ensured.voice, source.pitch);
+    }
+    return audioSystem.PlayUVE(ensured.voice);
+}
+
+bool AudioSourceSystemUVE::StopEntityUVE(Scene::EntityUVE entity, IAudioSystemUVE& audioSystem) {
+    const auto iterator = m_impl->entityToVoice.find(entity);
+    if (iterator == m_impl->entityToVoice.end()) {
+        return false;
+    }
+    return audioSystem.StopUVE(iterator->second.voice);
+}
+
+bool AudioSourceSystemUVE::IsEntityPlayingUVE(Scene::EntityUVE entity,
+                                              const IAudioSystemUVE& audioSystem) const {
+    const auto iterator = m_impl->entityToVoice.find(entity);
+    if (iterator == m_impl->entityToVoice.end()) {
+        return false;
+    }
+    return audioSystem.GetSourceStateUVE(iterator->second.voice) == VoicePlaybackStateUVE::Playing;
+}
+
 void AudioSourceSystemUVE::SyncUVE(Scene::IEntityManagerUVE& entityManager, IAudioSystemUVE& audioSystem) {
     std::unordered_set<Scene::EntityUVE> seen;
 
@@ -81,14 +138,13 @@ void AudioSourceSystemUVE::SyncUVE(Scene::IEntityManagerUVE& entityManager, IAud
             const AudioSourceDescUVE desiredDesc = MakeAudioSourceDescUVE(audioSource);
             auto iterator = m_impl->entityToVoice.find(entity);
             if (iterator == m_impl->entityToVoice.end()) {
-                const VoiceHandleUVE voice = audioSystem.CreateSourceUVE(desiredDesc);
-                if (voice == kInvalidVoiceHandleUVE) {
+                const EnsuredVoiceUVE ensured = EnsureVoiceUVE(entity, audioSource, audioSystem);
+                if (ensured.voice == kInvalidVoiceHandleUVE) {
                     return;
                 }
-                iterator = m_impl->entityToVoice.emplace(
-                    entity, ImplUVE::SourceStateUVE{voice, desiredDesc}).first;
+                iterator = m_impl->entityToVoice.find(entity);
                 if (audioSource.playOnAwake) {
-                    static_cast<void>(audioSystem.PlayUVE(voice));
+                    static_cast<void>(audioSystem.PlayUVE(ensured.voice));
                 }
             } else {
                 ImplUVE::SourceStateUVE& state = iterator->second;

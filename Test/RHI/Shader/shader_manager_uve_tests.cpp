@@ -442,6 +442,8 @@ INSTANTIATE_TEST_SUITE_P(
                                                                       BuiltIn::kLitPrimitive3DSource},
                        std::pair<std::string_view, std::string_view>{"particle.glsl", BuiltIn::kParticleSource},
                        std::pair<std::string_view, std::string_view>{"decal.glsl", BuiltIn::kDecalSource},
+                       std::pair<std::string_view, std::string_view>{"debug_line.glsl",
+                                                                      BuiltIn::kDebugLineSource},
                        std::pair<std::string_view, std::string_view>{"particle_simulate.glsl",
                                                                       BuiltIn::kParticleSimulateSource},
                        std::pair<std::string_view, std::string_view>{"frustum_cull.glsl",

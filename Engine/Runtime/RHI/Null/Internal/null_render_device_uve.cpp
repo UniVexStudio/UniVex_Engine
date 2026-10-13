@@ -28,6 +28,8 @@ struct NullRenderDeviceUVE::ImplUVE {
     std::uint32_t nextBufferHandle = 1;
     std::unordered_map<std::uint32_t, TextureDescUVE> textures;
     std::uint32_t nextTextureHandle = 1;
+    std::unordered_map<std::uint32_t, SamplerDescUVE> samplers;
+    std::uint32_t nextSamplerHandle = 1;
     std::uint64_t textureCreateAttemptCount = 0;
     std::unordered_map<std::uint32_t, ShaderDescUVE> shaders;
     std::uint32_t nextShaderHandle = 1;
@@ -148,6 +150,23 @@ void NullRenderDeviceUVE::DestroyTextureUVE(TextureHandleUVE texture) {
     }
 }
 
+SamplerHandleUVE NullRenderDeviceUVE::CreateSamplerUVE(const SamplerDescUVE& desc) {
+    if (!IsSamplerDescValidUVE(desc)) {
+        UVE_ERROR("NullRenderDeviceUVE: CreateSamplerUVE received an invalid sampler descriptor");
+        return kInvalidSamplerHandleUVE;
+    }
+    const std::uint32_t handleValue = m_impl->nextSamplerHandle++;
+    m_impl->samplers.emplace(handleValue, desc);
+    return SamplerHandleUVE{handleValue};
+}
+
+void NullRenderDeviceUVE::DestroySamplerUVE(SamplerHandleUVE sampler) {
+    if (m_impl->samplers.erase(sampler.value) == 0) {
+        UVE_ERROR("NullRenderDeviceUVE: DestroySamplerUVE called with an unknown or already-destroyed handle ({})",
+                   sampler.value);
+    }
+}
+
 ShaderHandleUVE NullRenderDeviceUVE::CreateShaderUVE(const ShaderDescUVE& desc, std::string* outInfoLog) {
     static_cast<void>(outInfoLog); // NullRenderDeviceUVE never compiles anything real - nothing to log.
     if (!IsShaderStageValidUVE(desc.stage)) {
@@ -178,6 +197,22 @@ PipelineHandleUVE NullRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& 
     }
     if (!IsPrimitiveTopologyValidUVE(desc.topology)) {
         UVE_ERROR("NullRenderDeviceUVE: CreatePipelineUVE received an unknown primitive topology");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (!IsCullModeValidUVE(desc.cullMode)) {
+        UVE_ERROR("NullRenderDeviceUVE: CreatePipelineUVE received an unknown cull mode");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (!IsFrontFaceValidUVE(desc.frontFace)) {
+        UVE_ERROR("NullRenderDeviceUVE: CreatePipelineUVE received an unknown front-face winding");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (!IsFillModeValidUVE(desc.fillMode)) {
+        UVE_ERROR("NullRenderDeviceUVE: CreatePipelineUVE received an unknown fill mode");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (!IsDepthCompareValidUVE(desc.depthCompare)) {
+        UVE_ERROR("NullRenderDeviceUVE: CreatePipelineUVE received an unknown depth comparison");
         return kInvalidPipelineHandleUVE;
     }
     if (!m_impl->shaders.contains(desc.vertexShader.value) || !m_impl->shaders.contains(desc.fragmentShader.value)) {
@@ -242,6 +277,22 @@ PipelineHandleUVE NullRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<con
         UVE_ERROR("NullRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown primitive topology");
         return kInvalidPipelineHandleUVE;
     }
+    if (!IsCullModeValidUVE(desc.cullMode)) {
+        UVE_ERROR("NullRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown cull mode");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (!IsFrontFaceValidUVE(desc.frontFace)) {
+        UVE_ERROR("NullRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown front-face winding");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (!IsFillModeValidUVE(desc.fillMode)) {
+        UVE_ERROR("NullRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown fill mode");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (!IsDepthCompareValidUVE(desc.depthCompare)) {
+        UVE_ERROR("NullRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown depth comparison");
+        return kInvalidPipelineHandleUVE;
+    }
     static_cast<void>(binary); // NullRenderDeviceUVE never inspects binary contents.
     static_cast<void>(format);
     PipelineDescUVE bookkeepingDesc;
@@ -252,6 +303,14 @@ PipelineHandleUVE NullRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<con
     bookkeepingDesc.depthTestEnabled = desc.depthTestEnabled;
     bookkeepingDesc.depthWriteEnabled = desc.depthWriteEnabled;
     bookkeepingDesc.vertexStride = desc.vertexStride;
+    bookkeepingDesc.blendMode = desc.blendMode;
+    bookkeepingDesc.cullMode = desc.cullMode;
+    bookkeepingDesc.frontFace = desc.frontFace;
+    bookkeepingDesc.fillMode = desc.fillMode;
+    bookkeepingDesc.depthBiasEnabled = desc.depthBiasEnabled;
+    bookkeepingDesc.depthBiasConstantFactor = desc.depthBiasConstantFactor;
+    bookkeepingDesc.depthBiasSlopeFactor = desc.depthBiasSlopeFactor;
+    bookkeepingDesc.depthCompare = desc.depthCompare;
 
     const std::uint32_t handleValue = m_impl->nextPipelineHandle++;
     m_impl->pipelines.emplace(handleValue, bookkeepingDesc);
@@ -287,7 +346,7 @@ const std::vector<RecordedCommandUVE>& NullRenderDeviceUVE::GetLastSubmittedComm
 }
 
 std::size_t NullRenderDeviceUVE::GetLiveResourceCountUVE() const noexcept {
-    return m_impl->buffers.size() + m_impl->textures.size() + m_impl->shaders.size() +
+    return m_impl->buffers.size() + m_impl->textures.size() + m_impl->samplers.size() + m_impl->shaders.size() +
            m_impl->pipelines.size() + m_impl->computePipelines.size();
 }
 
@@ -295,6 +354,16 @@ std::vector<TextureDescUVE> NullRenderDeviceUVE::GetLiveTextureDescsUVE() const 
     std::vector<TextureDescUVE> descriptors;
     descriptors.reserve(m_impl->textures.size());
     for (const auto& [handle, desc] : m_impl->textures) {
+        static_cast<void>(handle);
+        descriptors.push_back(desc);
+    }
+    return descriptors;
+}
+
+std::vector<SamplerDescUVE> NullRenderDeviceUVE::GetLiveSamplerDescsUVE() const {
+    std::vector<SamplerDescUVE> descriptors;
+    descriptors.reserve(m_impl->samplers.size());
+    for (const auto& [handle, desc] : m_impl->samplers) {
         static_cast<void>(handle);
         descriptors.push_back(desc);
     }

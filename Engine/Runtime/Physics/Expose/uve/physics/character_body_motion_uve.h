@@ -15,6 +15,8 @@ struct CharacterMotionInputUVE final {
     float rise = 0.0F;
     /// Jump was pressed this step.
     bool jumpPressed = false;
+
+    [[nodiscard]] bool operator==(const CharacterMotionInputUVE&) const = default;
 };
 
 /// The part of a Character3D's step that decides where it wants to go, before any collision:

@@ -48,9 +48,9 @@ struct CharacterControllerComponentUVE final {
     /// Multiplies the engine's gravity: 1 = normal, 0 = none. Ignored while Floating.
     float gravityScale = 1.0F;
 
-    // ---- Built-in movement: move and jump from the keyboard with no script at all ------------------
-    /// Reads movement and jump input itself. Off, the body moves by `velocity` alone, which is how
-    /// a script or an AI drives it.
+    // ---- Built-in movement: move and jump from the possessed pawn with no script at all ------------
+    /// Reads movement and jump input from the pawn's routed input itself. Off, the body moves by
+    /// `velocity` alone, ignoring possession entirely.
     bool builtInMovement = true;
     /// Top speed on the ground, in metres per second.
     float moveSpeed = 5.0F;

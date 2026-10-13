@@ -54,6 +54,20 @@ public:
     /// are ignored and reset to identity so malformed runtime metrics cannot poison UI state.
     void SetCoordinateTransformUVE(const UICoordinateTransformUVE& transform) noexcept;
 
+    /// The authored-space size roots anchor against: the reference resolution when a stretch mode
+    /// is active, device points when stretching is off (the engine recomputes it every frame
+    /// beside the coordinate transform). Non-finite or negative sizes are ignored, keeping the
+    /// previous size; the default is zero, which collapses anchored roots to their offsets until
+    /// the first real metrics arrive.
+    void SetViewportSizeUVE(const Math::Vector2UVE& viewportSize) noexcept;
+
+    [[nodiscard]] const Math::Vector2UVE& GetViewportSizeUVE() const noexcept { return m_viewportSize; }
+
+    /// The frame's delta time in seconds, fed by the engine from the real frame clock every frame
+    /// (UI tweens stay on wall time so pause menus animate while the simulation is paused).
+    /// Non-finite or negative values are ignored; the default is zero, which freezes tweens.
+    void SetDeltaTimeUVE(float deltaTime) noexcept;
+
     /// `localization` defaults to none, so a caller that does not localize draws authored text
     /// exactly as it always did. An authored string is its own translation key: a table maps
     /// "Play" to "Maglaro", and a string with no entry is drawn as authored.
@@ -67,6 +81,8 @@ private:
     UIFontAtlasUVE m_fontAtlas;
     UIDrawBatchUVE m_drawBatch;
     UICoordinateTransformUVE m_coordinateTransform{};
+    Math::Vector2UVE m_viewportSize{};
+    float m_deltaTime = 0.0F;
 };
 
 } // namespace UVE::UI

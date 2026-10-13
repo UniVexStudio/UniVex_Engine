@@ -4,6 +4,7 @@
 
 #include <cmath>
 
+#include "uve/math/rect_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
 
@@ -20,8 +21,7 @@ inline constexpr float kMaximumUIButtonSizePixelsUVE = 8192.0F;
 /// gameplay code read `wasClickedThisFrame` the same way they'd read any other runtime-state field.
 /// Thread-safety: value type; trivially safe to copy/move.
 struct UIButtonComponentUVE final {
-    Math::Vector2UVE positionPixels{};
-    Math::Vector2UVE sizePixels{120.0F, 32.0F};
+    Math::RectUVE rect{Math::Vector2UVE{0.0F, 0.0F}, Math::Vector2UVE{120.0F, 32.0F}};
     Math::Vector3UVE normalColor{0.25F, 0.25F, 0.28F};
     Math::Vector3UVE hoverColor{0.35F, 0.35F, 0.40F};
     Math::Vector3UVE pressedColor{0.18F, 0.18F, 0.20F};

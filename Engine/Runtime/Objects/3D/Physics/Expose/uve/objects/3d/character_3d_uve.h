@@ -11,7 +11,9 @@
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/entity_uve.h"
+#include "uve/gameplay/pawn_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/physics/character_body_motion_uve.h"
 
 namespace UVE::Scene {
 
@@ -20,15 +22,18 @@ class IEntityManagerUVE;
 /// Character3D: a body moved by its own code rather than by forces - a player, an NPC, an
 /// enemy. Object3D > PhysicsObject3D > SolidBody3D > Character3D.
 ///
-/// A new one is ready to walk: it comes with a person-sized capsule and the built-in movement on,
-/// so dropping one onto a floor and pressing Play is enough to move it around. No rigid body is
-/// attached - the controller owns all of its motion.
+/// A new one is ready to walk: it comes with a person-sized capsule and the built-in movement on.
+/// It moves once something possesses it - drop a Player3D for keyboard play, or drive its pawn
+/// from any controller. No rigid body is attached - the controller owns all of its motion.
 struct Character3DObjectDefinitionUVE final {
     static constexpr std::string_view defaultName = "Character3D";
 
     /// Person-sized: 1.8 m tall, 0.8 m across.
     ColliderComponentUVE collider = MakeDefaultColliderUVE();
     CharacterControllerComponentUVE controller{};
+    // Only the kind is authored: possession links and pawn input are runtime state. AI by
+    // default, so a definition-built body never answers the keyboard unless something opts it in.
+    ControllerKindUVE controllerKind = ControllerKindUVE::AI;
 
     [[nodiscard]] static ColliderComponentUVE MakeDefaultColliderUVE() noexcept {
         ColliderComponentUVE collider{};
@@ -45,6 +50,14 @@ struct Character3DObjectDefinitionUVE final {
 /// and the controller, each only where the entity does not already have one.
 void ApplyCharacter3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                            const Character3DObjectDefinitionUVE& value);
+
+/// Resolves `entity`'s movement intent for this step from possession: a mutually-possessed pawn
+/// with finite input steers from that input, faced by the body's own yaw when the driving
+/// controller is Player-kind (keyboard intent is look-relative; AI authors world-space intent
+/// and passes through unrotated). Anything else - no pawn, no mutual link, non-finite input -
+/// stands still: unpossessed means undriven.
+[[nodiscard]] Physics::CharacterMotionInputUVE ResolveCharacterMotionUVE(
+    IEntityManagerUVE& entityManager, EntityUVE entity);
 
 // =================================================================================================
 // The node runtime: where a Character3D actually walks.

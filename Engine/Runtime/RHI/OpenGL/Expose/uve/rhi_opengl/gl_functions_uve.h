@@ -94,6 +94,19 @@ struct GlFunctionsUVE {
     // Optional GL 1.3 / GLES 2 compressed upload path. It is not required to keep an otherwise
     // usable context alive; compressed SupportsTextureFormatUVE() returns false when absent.
     PFNGLCOMPRESSEDTEXIMAGE2DPROC glCompressedTexImage2D = nullptr;
+    // Tier 2.3: 2D-array uploads (GL 1.2 / GLES 3.0 core) plus layered FBO attach (GL 3.2 /
+    // GLES 3.0 core). Optional like glCompressedTexImage2D above — creation/attach fail
+    // closed when getProcAddress cannot supply them — and IsCompleteUVE() ignores them.
+    PFNGLTEXIMAGE3DPROC glTexImage3D = nullptr;
+    PFNGLCOMPRESSEDTEXIMAGE3DPROC glCompressedTexImage3D = nullptr;
+    PFNGLFRAMEBUFFERTEXTURELAYERPROC glFramebufferTextureLayer = nullptr;
+    // Tier 2.4/2.5: MRT draw routing (GL 2.0 / GLES 3.0 core), per-slot clears (GL 3.0 /
+    // GLES 3.0 core), and DontCare discard hints (GL 4.3 / GLES 3.0 core). Optional like the
+    // Tier 2.3 entries above — IsCompleteUVE() ignores them; MRT passes fail closed when the
+    // routing/clear entries are absent, while a missing discard entry only skips the hint.
+    PFNGLDRAWBUFFERSPROC glDrawBuffers = nullptr;
+    PFNGLCLEARBUFFERFVPROC glClearBufferfv = nullptr;
+    PFNGLINVALIDATEFRAMEBUFFERPROC glInvalidateFramebuffer = nullptr;
 
     // Uniform-related (Increment 21: ShaderManagerUVE's reflection + ICommandBufferUVE's
     // SetUniform*UVE calls) and program-binary-cache (Increment 21's on-disk shader cache).
@@ -105,6 +118,18 @@ struct GlFunctionsUVE {
     PFNGLGETACTIVEUNIFORMPROC glGetActiveUniform = nullptr;
     PFNGLGETPROGRAMBINARYPROC glGetProgramBinary = nullptr;
     PFNGLPROGRAMBINARYPROC glProgramBinary = nullptr;
+
+    // Tier 2.2 sampler objects (core since desktop GL 3.3 / GLES 3.0). Optional like the
+    // program-binary entry points above: CreateSamplerUVE fails closed when getProcAddress
+    // cannot supply them (a pre-3.3 context), and IsCompleteUVE() deliberately ignores them.
+    PFNGLGENSAMPLERSPROC glGenSamplers = nullptr;
+    PFNGLDELETESAMPLERSPROC glDeleteSamplers = nullptr;
+    PFNGLBINDSAMPLERPROC glBindSampler = nullptr;
+    PFNGLSAMPLERPARAMETERIPROC glSamplerParameteri = nullptr;
+    PFNGLSAMPLERPARAMETERFPROC glSamplerParameterf = nullptr;
+    // Extension-string query for the anisotropy probe (core since GL 3.0, so present on every
+    // context this backend initializes — but still null-checked like every loaded pointer).
+    PFNGLGETSTRINGIPROC glGetStringi = nullptr;
 
     // GL_KHR_debug (core since desktop GL 4.3; a common but not universally guaranteed GLES
     // extension - this engine's Android baseline is a fixed GLES 3.0 context, so this is expected

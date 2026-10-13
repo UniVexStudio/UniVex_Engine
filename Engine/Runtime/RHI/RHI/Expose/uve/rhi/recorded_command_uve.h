@@ -12,6 +12,7 @@
 #include "uve/rhi/buffer_handle_uve.h"
 #include "uve/rhi/pipeline_handle_uve.h"
 #include "uve/rhi/render_resource_descs_uve.h"
+#include "uve/rhi/sampler_handle_uve.h"
 #include "uve/rhi/texture_handle_uve.h"
 
 namespace UVE::Render {
@@ -36,6 +37,10 @@ struct BindIndexBufferCommandUVE {
 };
 struct BindTextureCommandUVE {
     TextureHandleUVE texture;
+    std::uint32_t slot = 0;
+};
+struct BindSamplerCommandUVE {
+    SamplerHandleUVE sampler;
     std::uint32_t slot = 0;
 };
 struct BindUniformBufferCommandUVE {
@@ -91,6 +96,7 @@ struct SetUniformMatrix4x4CommandUVE {
 using RecordedCommandUVE =
     std::variant<BeginRenderPassCommandUVE, EndRenderPassCommandUVE, BindPipelineCommandUVE,
                  BindVertexBufferCommandUVE, BindIndexBufferCommandUVE, BindTextureCommandUVE,
+                 BindSamplerCommandUVE,
                  BindUniformBufferCommandUVE, BindStorageBufferCommandUVE, DrawIndexedCommandUVE,
                  DrawCommandUVE, DrawIndexedIndirectCommandRecordUVE, DispatchCommandUVE,
                  SetUniformFloatCommandUVE,

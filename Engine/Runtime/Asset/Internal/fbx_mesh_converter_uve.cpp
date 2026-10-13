@@ -23,6 +23,7 @@
 #include "uve/logging/logging_macros_uve.h"
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/utilities/hash_uve.h"
 
 namespace UVE::Asset {
 
@@ -93,12 +94,10 @@ struct CornerKeyUVE final {
 
 struct CornerKeyHashUVE final {
     std::size_t operator()(const CornerKeyUVE& key) const noexcept {
-        std::uint64_t hash = 1469598103934665603ULL;
-        const auto* const bytes = reinterpret_cast<const unsigned char*>(key.values.data());
-        for (std::size_t index = 0U; index < sizeof(key.values); ++index) {
-            hash = (hash ^ bytes[index]) * 1099511628211ULL;
-        }
-        return static_cast<std::size_t>(hash);
+        // Keeps the legacy transposed seed this table shipped with (see
+        // kFnv1a64LegacyOffsetBasisUVE): same values as before, now via the shared hasher.
+        return static_cast<std::size_t>(Utilities::HashBytesUVE(
+            key.values.data(), sizeof(key.values), Utilities::kFnv1a64LegacyOffsetBasisUVE));
     }
 };
 

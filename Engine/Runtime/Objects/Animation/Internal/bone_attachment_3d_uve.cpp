@@ -2,6 +2,8 @@
 
 #include "uve/objects/3d/bone_attachment_3d_uve.h"
 
+#include "uve/math/trs_uve.h"
+
 #include <cmath>
 #include <cstddef>
 
@@ -17,13 +19,13 @@ ObjectWorldFrameUVE ComposeBoneAttachmentWorldFrameUVE(const ObjectWorldFrameUVE
                                                              const Math::Vector3UVE& localPosition,
                                                              const Math::QuaternionUVE& localRotation,
                                                              const Math::Vector3UVE& localScale) noexcept {
+    const Math::TrsUVE composed = Math::ComposeUVE(
+        Math::TrsUVE{boneFrame.position, boneFrame.rotation, boneFrame.scale},
+        Math::TrsUVE{localPosition, localRotation, localScale});
     ObjectWorldFrameUVE frame{};
-    const Math::Vector3UVE scaled{localPosition.x * boneFrame.scale.x, localPosition.y * boneFrame.scale.y,
-                                  localPosition.z * boneFrame.scale.z};
-    frame.position = boneFrame.position + Math::RotateVectorUVE(boneFrame.rotation, scaled);
-    frame.rotation = Math::MultiplyUVE(boneFrame.rotation, localRotation);
-    frame.scale = Math::Vector3UVE{boneFrame.scale.x * localScale.x, boneFrame.scale.y * localScale.y,
-                                   boneFrame.scale.z * localScale.z};
+    frame.position = composed.translation;
+    frame.rotation = composed.rotation;
+    frame.scale = composed.scale;
     return frame;
 }
 
@@ -55,10 +57,11 @@ bool TryMakeBoneAttachmentLocalTransformUVE(const ObjectWorldFrameUVE& attachmen
         return false;
     }
 
-    const Math::Vector3UVE unrotated = Math::RotateVectorUVE(inverseParentRotation,
-                                                             attachmentWorld.position - parentWorld.position);
-    const Math::Vector3UVE localPosition{unrotated.x / parentWorld.scale.x, unrotated.y / parentWorld.scale.y,
-                                         unrotated.z / parentWorld.scale.z};
+    const Math::TrsUVE parentTrs{parentWorld.position, parentWorld.rotation, parentWorld.scale};
+    Math::Vector3UVE localPosition{};
+    if (!Math::TryInverseTransformPointUVE(parentTrs, attachmentWorld.position, localPosition)) {
+        return false;
+    }
     Math::QuaternionUVE localRotation{};
     if (!Math::TryNormalizeUVE(Math::MultiplyUVE(inverseParentRotation, attachmentWorld.rotation), localRotation)) {
         return false;

@@ -15,6 +15,7 @@
 #include "uve/rhi/i_command_buffer_uve.h"
 #include "uve/rhi/pipeline_handle_uve.h"
 #include "uve/rhi/render_resource_descs_uve.h"
+#include "uve/rhi/sampler_handle_uve.h"
 #include "uve/rhi/shader_handle_uve.h"
 #include "uve/rhi/texture_handle_uve.h"
 #include "uve/rhi/uniform_reflection_uve.h"
@@ -71,10 +72,11 @@ public:
 
     /// Creates a GPU texture per `desc`, optionally uploading `initialData`. A non-empty upload
     /// is tightly packed in mip-level order (level 0 first, then levels 1..N) and must contain
-    /// exactly the bytes required by every declared level. Empty data is legal only for a
-    /// one-level render target. The backend must reject invalid descriptors or partial uploads
-    /// through `ValidateTextureUploadUVE` before allocating a resource; valid creation never
-    /// returns kInvalidTextureHandleUVE.
+    /// exactly the bytes required by every declared level. Array/cubemap uploads pack every
+    /// level's layers 0..N-1 contiguously (cube faces in `CubemapFaceUVE` order) before the
+    /// next level starts. Empty data is legal only for a one-level render target. The backend
+    /// must reject invalid descriptors or partial uploads through `ValidateTextureUploadUVE`
+    /// before allocating a resource; valid creation never returns kInvalidTextureHandleUVE.
     [[nodiscard]] virtual TextureHandleUVE CreateTextureUVE(const TextureDescUVE& desc,
                                                              std::span<const std::byte> initialData = {}) = 0;
 
@@ -86,6 +88,15 @@ public:
 
     /// Destroys `texture`.  A handle already destroyed (or never valid) is a safe no-op (logged).
     virtual void DestroyTextureUVE(TextureHandleUVE texture) = 0;
+
+    /// Creates a sampler object per `desc` (Tier 2.2). The backend rejects malformed descs
+    /// (see IsSamplerDescValidUVE) with kInvalidSamplerHandleUVE; above-limit anisotropy is
+    /// clamped to the device maximum (warn-once), never a creation failure. Valid creation
+    /// never returns kInvalidSamplerHandleUVE.
+    [[nodiscard]] virtual SamplerHandleUVE CreateSamplerUVE(const SamplerDescUVE& desc) = 0;
+
+    /// Destroys `sampler`. A handle already destroyed (or never valid) is a safe no-op (logged).
+    virtual void DestroySamplerUVE(SamplerHandleUVE sampler) = 0;
 
     /// Creates a shader per `desc`. Never returns kInvalidShaderHandleUVE on success. If
     /// `outInfoLog` is non-null, the backend's raw compile info log is written to it regardless

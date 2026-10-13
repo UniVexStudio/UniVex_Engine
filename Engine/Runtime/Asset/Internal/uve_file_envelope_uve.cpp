@@ -7,9 +7,9 @@
 #include <fstream>
 #include <limits>
 #include <string>
-#include <type_traits>
 
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/utilities/binary_buffer_uve.h"
 
 namespace UVE::Asset {
 
@@ -24,25 +24,7 @@ constexpr std::size_t kEnvelopeHeaderBytesUVE =
 
 [[nodiscard]] bool IsAssetKindValidUVE(const std::uint32_t assetType) noexcept {
     return assetType >= static_cast<std::uint32_t>(AssetKindUVE::Scene) &&
-           assetType <= static_cast<std::uint32_t>(AssetKindUVE::Animation);
-}
-
-template <typename T>
-void AppendValueUVE(std::vector<std::byte>& bytes, const T value) {
-    static_assert(std::is_trivially_copyable_v<T>);
-    const auto* const valueBytes = reinterpret_cast<const std::byte*>(&value);
-    bytes.insert(bytes.end(), valueBytes, valueBytes + sizeof(T));
-}
-
-template <typename T>
-[[nodiscard]] bool ReadValueUVE(const std::vector<std::byte>& bytes, std::size_t& offset, T& outValue) {
-    static_assert(std::is_trivially_copyable_v<T>);
-    if (offset > bytes.size() || bytes.size() - offset < sizeof(T)) {
-        return false;
-    }
-    std::memcpy(&outValue, bytes.data() + offset, sizeof(T));
-    offset += sizeof(T);
-    return true;
+           assetType <= static_cast<std::uint32_t>(AssetKindUVE::Font);
 }
 
 [[nodiscard]] std::string SourceDescriptionUVE(const std::string_view sourceDescription) {
@@ -64,10 +46,12 @@ std::vector<std::byte> EncodeUveFileEnvelopeUVE(const AssetKindUVE assetType,
     envelope.reserve(kEnvelopeHeaderBytesUVE + payload.size());
     const auto* const magicBytes = reinterpret_cast<const std::byte*>(kUveMagicUVE.data());
     envelope.insert(envelope.end(), magicBytes, magicBytes + kUveMagicUVE.size());
-    AppendValueUVE(envelope, kEnvelopeVersionUVE);
-    AppendValueUVE(envelope, static_cast<std::uint32_t>(assetType));
-    AppendValueUVE(envelope, kCompressionMethodNoneUVE);
-    AppendValueUVE(envelope, static_cast<std::uint64_t>(payload.size()));
+    // All header integers are little-endian by format: byte-identical to the old host-order
+    // writes on every little-endian target (all of them), so existing .uve files decode unchanged.
+    Utilities::AppendUint32LeUVE(envelope, kEnvelopeVersionUVE);
+    Utilities::AppendUint32LeUVE(envelope, static_cast<std::uint32_t>(assetType));
+    Utilities::AppendUint32LeUVE(envelope, kCompressionMethodNoneUVE);
+    Utilities::AppendUint64LeUVE(envelope, static_cast<std::uint64_t>(payload.size()));
     envelope.insert(envelope.end(), payload.begin(), payload.end());
     return envelope;
 }
@@ -85,8 +69,10 @@ DecodeUveFileEnvelopeUVE(const std::vector<std::byte>& envelope, const std::stri
     UveFileHeaderUVE header;
     std::uint32_t assetType = 0;
     std::uint64_t payloadLength = 0;
-    if (!ReadValueUVE(envelope, offset, header.version) || !ReadValueUVE(envelope, offset, assetType) ||
-        !ReadValueUVE(envelope, offset, header.compressionMethod) || !ReadValueUVE(envelope, offset, payloadLength)) {
+    if (!Utilities::ReadUint32LeFromBufferUVE(envelope, offset, header.version) ||
+        !Utilities::ReadUint32LeFromBufferUVE(envelope, offset, assetType) ||
+        !Utilities::ReadUint32LeFromBufferUVE(envelope, offset, header.compressionMethod) ||
+        !Utilities::ReadUint64LeFromBufferUVE(envelope, offset, payloadLength)) {
         UVE_ERROR("UveFileEnvelopeUVE: \"{}\" has a truncated header", source);
         return std::nullopt;
     }

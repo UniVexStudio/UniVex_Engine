@@ -2,6 +2,8 @@
 
 #include "uve/objects/3d/player_3d_uve.h"
 
+#include "uve/gameplay/pawn_uve.h"
+
 #include <limits>
 
 #include <gtest/gtest.h>
@@ -37,7 +39,76 @@ TEST_F(Player3DUVETest, ResolvePossessedPlayerPrefersPossessOnPlay) {
     const EntityUVE player = entityManager.CreateEntityUVE();
     ApplyPlayer3DObjectDefinitionUVE(entityManager, player, Player3DObjectDefinitionUVE{});
 
+    // Resolution follows possession now: the engine's per-frame fill runs first, like in play.
+    MaintainPlayerPossessionUVE(entityManager);
     EXPECT_EQ(ResolvePossessedPlayerUVE(entityManager), player);
+}
+
+TEST_F(Player3DUVETest, MaintainFillsSelfPossessionButNeverStealsADirectorsTakeover) {
+    const EntityUVE player = entityManager.CreateEntityUVE();
+    ApplyPlayer3DObjectDefinitionUVE(entityManager, player, Player3DObjectDefinitionUVE{});
+    EXPECT_EQ(FindPawnControllerUVE(entityManager, player), kInvalidEntityUVE);
+    EXPECT_EQ(ResolvePossessedPlayerUVE(entityManager), kInvalidEntityUVE);
+
+    MaintainPlayerPossessionUVE(entityManager);
+    EXPECT_EQ(FindPawnControllerUVE(entityManager, player), player);
+    EXPECT_EQ(ResolvePossessedPlayerUVE(entityManager), player);
+
+    // A Player-kind holder elsewhere still counts as player-driven - and is never stolen back.
+    const EntityUVE director = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<ControllerComponentUVE>(director, ControllerComponentUVE{});
+    ASSERT_TRUE(PossessControllerUVE(entityManager, director, player));
+    MaintainPlayerPossessionUVE(entityManager);
+    EXPECT_EQ(FindPawnControllerUVE(entityManager, player), director);
+    EXPECT_EQ(ResolvePossessedPlayerUVE(entityManager), player);
+
+    // An AI-kind takeover removes the body from player resolution until it is released.
+    ASSERT_TRUE(UnpossessControllerUVE(entityManager, director));
+    const EntityUVE aiDirector = entityManager.CreateEntityUVE();
+    ControllerComponentUVE aiController;
+    aiController.kind = ControllerKindUVE::AI;
+    entityManager.AddComponentUVE<ControllerComponentUVE>(aiDirector, aiController);
+    ASSERT_TRUE(PossessControllerUVE(entityManager, aiDirector, player));
+    MaintainPlayerPossessionUVE(entityManager);
+    EXPECT_EQ(FindPawnControllerUVE(entityManager, player), aiDirector);
+    EXPECT_EQ(ResolvePossessedPlayerUVE(entityManager), kInvalidEntityUVE);
+
+    ASSERT_TRUE(UnpossessControllerUVE(entityManager, aiDirector));
+    MaintainPlayerPossessionUVE(entityManager);
+    EXPECT_EQ(FindPawnControllerUVE(entityManager, player), player);
+    EXPECT_EQ(ResolvePossessedPlayerUVE(entityManager), player);
+}
+
+TEST_F(Player3DUVETest, MaintainSkipsUnflaggedBodiesAndNonPlayerControllers) {
+    const EntityUVE npc = entityManager.CreateEntityUVE();
+    ApplyPlayer3DObjectDefinitionUVE(entityManager, npc, Player3DObjectDefinitionUVE{});
+    entityManager.GetComponentUVE<PlayerComponentUVE>(npc).possessOnPlay = false;
+
+    Player3DObjectDefinitionUVE aiDriven{};
+    aiDriven.controllerKind = ControllerKindUVE::AI;
+    const EntityUVE aiBody = entityManager.CreateEntityUVE();
+    ApplyPlayer3DObjectDefinitionUVE(entityManager, aiBody, aiDriven);
+
+    MaintainPlayerPossessionUVE(entityManager);
+    EXPECT_EQ(FindPawnControllerUVE(entityManager, npc), kInvalidEntityUVE);
+    EXPECT_EQ(FindPawnControllerUVE(entityManager, aiBody), kInvalidEntityUVE);
+    EXPECT_EQ(ResolvePossessedPlayerUVE(entityManager), kInvalidEntityUVE);
+}
+
+TEST_F(Player3DUVETest, DefinitionCarriesControllerKindAndRefusesUnknownKinds) {
+    EXPECT_TRUE(IsPlayer3DObjectDefinitionValidUVE(Player3DObjectDefinitionUVE{}));
+    Player3DObjectDefinitionUVE bad{};
+    bad.controllerKind = static_cast<ControllerKindUVE>(7U);
+    EXPECT_FALSE(IsPlayer3DObjectDefinitionValidUVE(bad));
+
+    Player3DObjectDefinitionUVE aiDriven{};
+    aiDriven.controllerKind = ControllerKindUVE::AI;
+    const EntityUVE entity = entityManager.CreateEntityUVE();
+    ApplyPlayer3DObjectDefinitionUVE(entityManager, entity, aiDriven);
+    ASSERT_TRUE(entityManager.HasComponentUVE<PawnComponentUVE>(entity));
+    ASSERT_TRUE(entityManager.HasComponentUVE<ControllerComponentUVE>(entity));
+    EXPECT_EQ(entityManager.GetComponentUVE<ControllerComponentUVE>(entity).kind,
+              ControllerKindUVE::AI);
 }
 
 TEST_F(Player3DUVETest, FaceMoveTurnsForwardWithYaw) {

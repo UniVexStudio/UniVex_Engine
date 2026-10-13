@@ -5,7 +5,9 @@
 #include <optional>
 
 #include "uve/math/aabb_uve.h"
+#include "uve/math/oriented_box_uve.h"
 #include "uve/math/quaternion_uve.h"
+#include "uve/math/sphere_uve.h"
 
 namespace UVE::Physics::Detail {
 
@@ -14,13 +16,13 @@ namespace UVE::Physics::Detail {
 /// touching the combined sphere reports distance zero with a zero normal. Invalid, non-finite,
 /// overflowed, or out-of-range results fail closed. This value-only helper owns no ECS or backend state.
 [[nodiscard]] std::optional<Math::RayHitUVE> IntersectMovingSphereSphereUVE(
-    const Math::RayUVE& ray, Math::Vector3UVE targetCenter, float movingRadius, float targetRadius,
+    const Math::RayUVE& ray, float movingRadius, const Math::SphereUVE& target,
     float maxDistance) noexcept;
 
 /// Intersects a point ray against a stationary sphere using the same bounded quadratic policy as
 /// `IntersectMovingSphereSphereUVE`; initial containment reports distance zero and a zero normal.
 [[nodiscard]] std::optional<Math::RayHitUVE> IntersectRaySphereUVE(
-    const Math::RayUVE& ray, Math::Vector3UVE targetCenter, float targetRadius, float maxDistance) noexcept;
+    const Math::RayUVE& ray, const Math::SphereUVE& target, float maxDistance) noexcept;
 
 /// Intersects a point ray against a finite capsule represented by its world-space centerline segment.
 /// Cylinder and hemispherical-cap candidates are evaluated in double precision; initial containment
@@ -32,8 +34,7 @@ namespace UVE::Physics::Detail {
 /// Intersects a point ray against a stationary oriented box by transforming the ray to box-local
 /// space and reusing bounded slab math. The returned normal is restored to world space.
 [[nodiscard]] std::optional<Math::RayHitUVE> IntersectRayOrientedBoxUVE(
-    const Math::RayUVE& ray, Math::Vector3UVE boxCenter, Math::Vector3UVE boxHalfExtents,
-    Math::QuaternionUVE boxRotation, float maxDistance) noexcept;
+    const Math::RayUVE& ray, const Math::OrientedBoxUVE& box, float maxDistance) noexcept;
 
 /// Computes exact sphere-vs-axis-aligned-box penetration for the current Physics v1 geometry
 /// contract. The returned axis points from the sphere center toward the box, matching
@@ -41,7 +42,7 @@ namespace UVE::Physics::Detail {
 /// Touching boundaries are not intersections. This helper is value-only and deliberately does not
 /// model oriented boxes, capsule pairs, sphere pairs, transforms, ECS state, or backend resources.
 [[nodiscard]] std::optional<Math::PenetrationUVE> ComputeSphereAabbPenetrationUVE(
-    const Math::AabbUVE& box, Math::Vector3UVE sphereCenter, float sphereRadius) noexcept;
+    const Math::AabbUVE& box, const Math::SphereUVE& sphere) noexcept;
 
 /// Computes exact overlap distance between a capsule's axis segment and an axis-aligned box, then
 /// returns a deterministic generic penetration axis/depth. The segment is supplied explicitly and

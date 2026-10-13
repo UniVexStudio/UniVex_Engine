@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "uve/asset/asset_guid_uve.h"
-#include "uve/math/vector2_uve.h"
+#include "uve/math/rect_uve.h"
 #include "uve/math/vector3_uve.h"
 
 namespace UVE::UI {
@@ -28,8 +28,7 @@ enum class UIDrawItemKindUVE : std::uint8_t {
 /// `color`/`alpha` tint whatever `kind` samples (or is the flat fill color for SolidColor). Plain
 /// data only - no GPU resource is referenced anywhere in this struct.
 struct UIQuadUVE final {
-    Math::Vector2UVE positionPixels{};
-    Math::Vector2UVE sizePixels{};
+    Math::RectUVE rect{};
     float u0 = 0.0F;
     float v0 = 0.0F;
     float u1 = 1.0F;
@@ -42,7 +41,11 @@ struct UIQuadUVE final {
 
 /// The CPU-side output of one UIRuntimeUVE::TickUVE() call - a flat, ordered list of quads ready
 /// to be uploaded and drawn. Paint order: canvas sortOrder (orphans at 0, under a sort-0 canvas),
-/// then images, then buttons, then text on top inside that canvas.
+/// then images and progress bars, then buttons, sliders, checkboxes, dropdown boxes, and
+/// text-input boxes, then text (including text-input glyphs and carets), tooltips, and dropdown
+/// popups on top inside that canvas. Scroll containers clip their descendants in software
+/// after sorting: quads are intersected against ancestor scroll boxes (texture coordinates
+/// remapped), fully-outside quads dropped.
 struct UIDrawBatchUVE final {
     std::vector<UIQuadUVE> quads;
 };

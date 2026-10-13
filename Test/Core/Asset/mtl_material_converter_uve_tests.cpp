@@ -28,8 +28,12 @@ map_Kd -s 1 1 1 -o 0 0 0 -clamp on albedo.png
 
     MaterialAssetUVE material;
     ASSERT_TRUE(ConvertMtlMaterialUVE(source, material));
-    EXPECT_EQ(material.albedoColor, (Math::Vector3UVE{0.2F, 0.4F, 0.6F}));
-    EXPECT_EQ(material.emissiveColor, (Math::Vector3UVE{1.0F, 2.0F, 3.0F}));
+    EXPECT_NEAR(material.albedoColor.r, 0.0331048F, 1e-6F);
+    EXPECT_NEAR(material.albedoColor.g, 0.1328683F, 1e-6F);
+    EXPECT_NEAR(material.albedoColor.b, 0.3185468F, 1e-6F);
+    EXPECT_NEAR(material.emissiveColor.r, 1.0F, 1e-6F);
+    EXPECT_NEAR(material.emissiveColor.g, 4.9538458F, 1e-4F);
+    EXPECT_NEAR(material.emissiveColor.b, 12.8298333F, 1e-3F);
     EXPECT_FLOAT_EQ(material.metallic, 0.6F);
     EXPECT_FLOAT_EQ(material.roughness, 0.5F);
     EXPECT_TRUE(material.isTransparent);
@@ -52,7 +56,7 @@ TEST(MtlMaterialConverterUVETest, ConvertMtlMaterialUVE_MapReferencesRemainUnres
 
 TEST(MtlMaterialConverterUVETest, ConvertMtlMaterialUVE_InvalidInputPreservesExistingOutput) {
     MaterialAssetUVE original;
-    original.albedoColor = Math::Vector3UVE{0.3F, 0.2F, 0.1F};
+    original.albedoColor = Math::ColorUVE{0.3F, 0.2F, 0.1F};
     original.metallic = 0.8F;
     original.isTransparent = true;
     MaterialAssetUVE output = original;

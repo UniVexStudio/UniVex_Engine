@@ -2,6 +2,8 @@
 
 #include "uve/asset/derived_artifact_cache_uve.h"
 
+#include "uve/utilities/hash_uve.h"
+
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
@@ -16,9 +18,6 @@
 namespace UVE::Asset {
 namespace {
 
-constexpr std::uint64_t kFnvOffsetBasisUVE = 14695981039346656037ULL;
-constexpr std::uint64_t kFnvPrimeUVE = 1099511628211ULL;
-
 [[nodiscard]] std::filesystem::path NormalizePathUVE(const std::filesystem::path& path) {
     std::error_code errorCode;
     const std::filesystem::path absolutePath = std::filesystem::absolute(path, errorCode);
@@ -27,11 +26,9 @@ constexpr std::uint64_t kFnvPrimeUVE = 1099511628211ULL;
 
 [[nodiscard]] std::string ArtifactFileNameUVE(const std::filesystem::path& destinationPath) {
     const std::string identity = NormalizePathUVE(destinationPath).generic_string();
-    std::uint64_t hash = kFnvOffsetBasisUVE;
-    for (const char character : identity) {
-        hash ^= static_cast<unsigned char>(character);
-        hash *= kFnvPrimeUVE;
-    }
+    // The file name is persisted on disk, so these values must never change: one-shot FNV-1a
+    // over exactly the path bytes, from the same basis as the hand-rolled loop it replaced.
+    const std::uint64_t hash = Utilities::HashStringUVE(identity);
     std::ostringstream stream;
     stream << std::hex << std::setfill('0') << std::setw(16) << hash;
     return stream.str() + ".uvimportcache";

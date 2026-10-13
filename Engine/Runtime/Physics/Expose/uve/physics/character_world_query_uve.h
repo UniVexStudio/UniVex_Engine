@@ -108,6 +108,10 @@ enum class Character3DStepCodeUVE : std::uint8_t {
     /// The step ran and the move stopped for a reason of its own - a wall, a ceiling, a body out of
     /// slides. The move's own report says which.
     Blocked,
+    /// The body is predicted by the network predictor (PredictedCharacterComponentUVE): step it
+    /// through TickPredictedPawnUVE()/SyncPredictedPawnUVE() instead. The local mover never
+    /// touches it, so the two cannot double-step it.
+    PredictedElsewhere,
 };
 
 /// The step's outcome: the code, and the mover's own report when the move ran at all.
