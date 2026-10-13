@@ -986,3 +986,21 @@ Arm3D,
 InteractionArea3D, LevelStreamer3D, WorldPartition3D, VisibilityRegion3D,
 LODGroup3D, Occluder3D, and partially ReflectionProbe3D. That correction belongs
 in that file and is not folded in here.
+
+## 2026-10-13 implementation ledger
+
+Work is based on merged `master` commit `e26f91d`, whose Foundation blob is
+`394f389235e2606e5703d21ae45031a55bed795d`. Earlier interrupted-run outputs were not
+present in the current checkout; this baseline was rerun, not assumed.
+
+- Debian 12 / GCC 12.2 / CMake 3.31.10, Debug with the existing `-Werror` policy.
+  Native desktop GL/Vulkan SDK/runtime dependencies are unavailable locally; the
+  existing CPU-only configuration is used. Tool installations and logs stay in ignored `build/`.
+- Baseline build: 948 steps completed. CTest: 3,998 cases, one UDP setup failure,
+  seven existing `ComputeWorkloadsVulkanUVETest` capability skips. Focused parallel
+  execution reproduced contention for fixed ports 41741/41742 before RPC logic.
+- `Test/Support/ctest_resource_locks.cmake` declares the shared ports after discovery.
+  No socket behavior or assertion was changed. All 14 UDP cases passed 20 repeats;
+  the subsequent full build/CTest passed: **3,991 passed, 7 expected skips, 0 failures**.
+- Initial math-boundary, vocabulary, panel-include and whitespace checks passed.
+  The remaining markers above are work to resolve, not a completion claim.
