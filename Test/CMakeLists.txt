@@ -302,6 +302,9 @@ target_compile_definitions(uve_core_tests PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(uve_core_tests)
+# Apply resource ownership after discovery populates uve_core_tests_TESTS.
+set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/Support/ctest_resource_locks.cmake")
 
 #
 # uve_integration_tests covers Entity/Component/Scene/World - the node system - since the

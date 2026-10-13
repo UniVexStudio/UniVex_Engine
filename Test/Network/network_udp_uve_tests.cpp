@@ -21,8 +21,9 @@
 namespace UVE::Network::Tests {
 namespace {
 
-// Fixed loopback ports: no ephemeral chicken-and-egg (each side names the other up front),
-// and nothing here runs in parallel with itself, so nothing else can be squatting on them.
+// Each endpoint names its peer up front. Discovered tests are separate processes,
+// so Test/Support/ctest_resource_locks.cmake gives these fixed ports a shared CTest
+// resource lock; unrelated suites may still execute in parallel.
 inline constexpr std::uint16_t kUdpTestPortAUVE = 41741U;
 inline constexpr std::uint16_t kUdpTestPortBUVE = 41742U;
 
