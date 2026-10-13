@@ -28,6 +28,7 @@ class GlCommandBufferUVE final : public ICommandBufferUVE {
 public:
     explicit GlCommandBufferUVE(Detail::GlDeviceStateUVE& state);
 
+    [[nodiscard]] RenderFeatureSupportUVE GetMemoryBarrierSupportUVE() const noexcept override;
     [[nodiscard]] RenderOperationResultUVE MemoryBarrierUVE(MemoryBarrierMaskUVE mask) override;
     void BeginRenderPassUVE(const RenderPassDescUVE& renderPassDesc) override;
     void EndRenderPassUVE() override;

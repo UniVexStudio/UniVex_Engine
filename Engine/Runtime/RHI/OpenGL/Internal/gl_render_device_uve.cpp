@@ -392,6 +392,7 @@ GlRenderDeviceUVE::~GlRenderDeviceUVE() {
     if (!IsUsableUVE()) {
         return;
     }
+    CollectRetiredTexturesUVE();
     if (m_impl->state.activeOcclusion != 0U)
         m_impl->state.gl.glEndQuery(GL_ANY_SAMPLES_PASSED);
     for (const auto &[id, query] : m_impl->state.queries) {
@@ -1248,6 +1249,7 @@ void GlRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBuff
 
 void GlRenderDeviceUVE::PresentUVE() {
     if (IsUsableUVE()) {
+        CollectRetiredTexturesUVE();
         m_impl->state.windowManager->SwapBuffersUVE();
     }
 }
@@ -1296,6 +1298,7 @@ RenderDeviceCapabilitiesUVE GlRenderDeviceUVE::GetCapabilitiesUVE() const noexce
     if (!IsUsableUVE())
         return caps;
     const auto native = RenderFeatureSupportUVE::Native;
+    caps.retainedTextures = native;
     const auto &gl = m_impl->state.gl;
     GLint major = 0, minor = 0;
     glGetIntegerv(GL_MAJOR_VERSION, &major);
@@ -1517,7 +1520,9 @@ RenderOperationResultUVE GlRenderDeviceUVE::WaitIdleUVE() {
     if (!IsUsableUVE())
         return RenderOperationResultUVE::DeviceUnavailable;
     glFinish();
-    return FinishDeviceOperationUVE();
+    const auto waited = FinishDeviceOperationUVE();
+    if (waited == RenderOperationResultUVE::Success) CollectRetiredTexturesUVE();
+    return waited;
 }
 RenderOperationResultUVE GlRenderDeviceUVE::CreateQueryUVE(RenderQueryKindUVE kind, QueryHandleUVE &output) {
     if (!IsUsableUVE())

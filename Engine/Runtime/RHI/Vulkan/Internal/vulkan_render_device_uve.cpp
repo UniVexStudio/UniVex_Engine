@@ -720,8 +720,13 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     // (VulkanCommandBufferUVE objects carry no device state at all), so N threads may create,
     // record, and submit concurrently; PresentUVE() drains the FIFO into a local snapshot
     // under the lock and replays strictly main-thread.
+    struct SubmissionUVE {
+        std::vector<RecordedCommandUVE> commands;
+        std::vector<std::shared_ptr<void>> resources;
+    };
     std::mutex submissionMutex;
-    std::deque<std::vector<RecordedCommandUVE>> frameSubmissions;
+    std::deque<SubmissionUVE> frameSubmissions;
+    std::vector<std::shared_ptr<void>> inFlightResources;
 
     // One-shot warning bits so replay-time discoveries (not-yet-implemented paths) log exactly
     // once per process instead of flooding every frame.
@@ -2251,6 +2256,9 @@ VulkanRenderDeviceUVE::~VulkanRenderDeviceUVE() {
         if (m_impl->presentQueue != VK_NULL_HANDLE) {
             m_impl->vk.vkQueueWaitIdle(m_impl->presentQueue);
         }
+        m_impl->frameSubmissions.clear();
+        m_impl->inFlightResources.clear();
+        CollectRetiredTexturesUVE();
         if (m_impl->inFlightFence != VK_NULL_HANDLE) {
             m_impl->vk.vkDestroyFence(m_impl->device, m_impl->inFlightFence, nullptr);
         }
@@ -2373,6 +2381,9 @@ std::unique_ptr<VulkanRenderDeviceUVE> VulkanRenderDeviceUVE::CreateHeadlessUVE(
 class VulkanCommandBufferUVE final : public ICommandBufferUVE {
 public:
   explicit VulkanCommandBufferUVE(bool supportsBarriers) : m_supportsBarriers(supportsBarriers) {}
+  RenderFeatureSupportUVE GetMemoryBarrierSupportUVE() const noexcept override {
+      return m_supportsBarriers ? RenderFeatureSupportUVE::Native : RenderFeatureSupportUVE::Unsupported;
+  }
   RenderOperationResultUVE MemoryBarrierUVE(MemoryBarrierMaskUVE mask) override {
       if (!IsMemoryBarrierMaskValidUVE(mask))
           return RenderOperationResultUVE::InvalidArgument;
@@ -4426,7 +4437,8 @@ void VulkanRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> command
         // M4: safe to call from any thread — the FIFO push is the only shared mutation and
         // it happens under the submission lock (PresentUVE drains under the same lock).
         const std::lock_guard<std::mutex> submissionLock(m_impl->submissionMutex);
-        m_impl->frameSubmissions.push_back(vulkanCommands->TakeCommandsUVE());
+        m_impl->frameSubmissions.push_back(ImplUVE::SubmissionUVE{
+            vulkanCommands->TakeCommandsUVE(), vulkanCommands->TakeRetainedResourcesUVE()});
     }
 }
 
@@ -5561,7 +5573,12 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     // completes. Only the path that truly reaches vkQueueSubmit resets it first. (Simplicity
     // over pipelining is the documented M1 trade-off; the fence starts signaled at creation so
     // the very first frame also passes.)
-    (void)impl.vk.vkWaitForFences(impl.device, 1U, &impl.inFlightFence, VK_TRUE, UINT64_MAX);
+    if (impl.vk.vkWaitForFences(impl.device, 1U, &impl.inFlightFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
+        impl.usable = false;
+        return; // completion was not established; do not retire in-flight resources
+    }
+    impl.inFlightResources.clear();
+    CollectRetiredTexturesUVE();
     // The fence proves the GPU finished the previous frame's reads of the uniform ring;
     // ONLY now is rewinding the bump cursor legal (M2b ring contract at the field comment).
     impl.frameUboCursor = 0U;
@@ -5579,10 +5596,18 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     // created/recorded/submitted command buffers while this frame was being assembled;
     // replay below is strictly main-thread GPU work operating on the local snapshot. A
     // submit racing THIS PresentUVE lands in the next frame's FIFO — honest queue order.
-    std::deque<std::vector<RecordedCommandUVE>> frameSubmissions;
+    std::deque<ImplUVE::SubmissionUVE> frameSubmissions;
     {
         const std::lock_guard<std::mutex> submissionLock(impl.submissionMutex);
         frameSubmissions.swap(impl.frameSubmissions);
+    }
+    // Retain leases before acquiring/resetting native synchronization objects: allocation failure
+    // must not leave the frame fence unsignaled. A skipped frame retires at the next idle/fence drain.
+    std::size_t leaseCount = 0U;
+    for (const auto& submission : frameSubmissions) leaseCount += submission.resources.size();
+    impl.inFlightResources.reserve(leaseCount);
+    for (auto& submission : frameSubmissions) {
+        for (auto& resource : submission.resources) impl.inFlightResources.push_back(std::move(resource));
     }
 
     const auto dropSubmissionsUVE = [&impl, &frameSubmissions](const char* /*why*/) {
@@ -5665,9 +5690,9 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     clearValues[0].color.float32[2] = kBootstrapClearBlueUVE;
     clearValues[0].color.float32[3] = kBootstrapClearAlphaUVE;
     clearValues[1].depthStencil = {1.0F, 0U}; // far plane, matching the GL depth-clear default
-    for (const std::vector<RecordedCommandUVE>& submission : frameSubmissions) {
+    for (const auto& submission : frameSubmissions) {
         bool clearPicked = false;
-        for (const RecordedCommandUVE& command : submission) {
+        for (const RecordedCommandUVE& command : submission.commands) {
             if (const auto* begin = std::get_if<BeginRenderPassCommandUVE>(&command)) {
                 if (begin->desc.colorAttachment == kInvalidTextureHandleUVE &&
                     begin->desc.depthAttachment == kInvalidTextureHandleUVE) {
@@ -5745,8 +5770,8 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     // per frame against the back buffer (it matches how GlRenderDeviceUVE's FBO-0 world
     // works today); anything outside that shape is warned-about once, never silently mangled.
     impl.activePipelineValue = 0U; // pipeline binding is fresh command-buffer state each frame
-    for (const std::vector<RecordedCommandUVE>& submission : frameSubmissions) {
-        ReplayRecordedCommandsUVE(submission);
+    for (const auto& submission : frameSubmissions) {
+        ReplayRecordedCommandsUVE(submission.commands);
     }
     frameSubmissions.clear(); // consumed — the local snapshot dies with this frame (M4: the
                               // shared FIFO was already drained under the submission lock)
@@ -6029,7 +6054,7 @@ RenderDeviceCapabilitiesUVE VulkanRenderDeviceUVE::GetCapabilitiesUVE() const no
     RenderDeviceCapabilitiesUVE caps;
     if (!IsUsableUVE())
         return caps;
-    caps.fences = caps.bufferCopy = caps.surface = RenderFeatureSupportUVE::Native;
+    caps.fences = caps.bufferCopy = caps.surface = caps.retainedTextures = RenderFeatureSupportUVE::Native;
     caps.bufferCopyAlignment = 4U;
     if (m_impl->useDynamicRendering)
         caps.memoryBarriers = RenderFeatureSupportUVE::Native;
@@ -6053,9 +6078,11 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::WaitIdleUVE() {
         if (!m_impl->frameSubmissions.empty())
             return RenderOperationResultUVE::InvalidState;
     }
-    return m_impl->vk.vkQueueWaitIdle(m_impl->presentQueue) == VK_SUCCESS
-               ? RenderOperationResultUVE::Success
-               : RenderOperationResultUVE::SystemError;
+    if (m_impl->vk.vkQueueWaitIdle(m_impl->presentQueue) != VK_SUCCESS)
+        return RenderOperationResultUVE::SystemError;
+    m_impl->inFlightResources.clear();
+    CollectRetiredTexturesUVE();
+    return RenderOperationResultUVE::Success;
 }
 RenderOperationResultUVE VulkanRenderDeviceUVE::InsertFenceUVE(FenceHandleUVE &output) {
     if (!IsUsableUVE())
