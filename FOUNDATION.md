@@ -440,12 +440,23 @@ Missing primitives:
   module depends on zero `uve/*` targets by design, and naming this type would be the forbidden
   edge; `ValueUVE()` is the bridge at emission. Tests in
   `Test/Core/Threading/thread_id_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
-- `[~]` **Thread naming / affinity / priority** — naming landed: `thread_naming_uve.h` +
-  `Internal/thread_naming_uve.cpp` (`SetCurrentThreadNameUVE`/`TryGetCurrentThreadNameUVE`, Win32
-  / pthread / false-stub with Linux's 15-byte truncation documented), and the pool's workers now
-  self-name (`UVEWorkerN`) instead of going through the old Linux-only helper, which is deleted.
-  Affinity and priority are still nothing — genuinely future. Tests in
-  `Test/Core/Threading/thread_naming_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
+- `[x]` **Capability-aware thread control** — new `thread_control_uve.h/.cpp` adds affinity
+  and priority without changing existing naming or pool defaults. Current-thread and caller-owned
+  `std::thread&` operations report Applied/Unsupported/InvalidThread/InvalidArgument/PermissionDenied/
+  SystemError; no raw native handles or silent downgrades. Non-joinable threads are rejected before
+  native access. Reads publish output only on success, and callers synchronize join/move/detach.
+  Linux uses pthread affinity and explicit OTHER/BATCH/RR scheduler classes; realtime may be denied.
+  Windows x64 uses processor-group masks (one group per request); priority never changes the
+  process class, and Realtime is unsupported unless that process is already realtime. MSVC native
+  thread handles are supported; MinGW's different std::thread ABI reports Unsupported for that
+  overload rather than casting a pthread descriptor to HANDLE. Other platforms honestly report
+  unsupported operations. GetThreadControlCapabilitiesUVE distinguishes these boundaries.
+  Six new `ThreadControlUVETest` cases cover invalid requests/handles, real affinity and priority
+  readback, permission failure and worker-name preservation; 22 focused threading tests pass.
+  Full Linux verification: **4,056 CTest cases, zero failures, seven existing Vulkan skips**.
+  Windows x64 current-thread code also compiles to a COFF object using Zig/Clang's Windows-GNU
+  target with strict warnings; this is a compile check, **not** Windows/MSVC execution coverage.
+  Nothing here makes gameplay parallel or automatically assigns worker affinity/priority.
 
 ## 5. Utilities and diagnostics
 
