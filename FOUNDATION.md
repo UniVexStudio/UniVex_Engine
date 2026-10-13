@@ -543,10 +543,21 @@ Missing primitives:
   `Core::TypeIdUVE` aliases `Strings::StringIdUVE` in `type_metadata_uve.h`, and every entry,
   property and lookup signature in that header spells it. Verified: full suite green
   (3998 ctest cases, 2026-10-12).
-- `[ ]` **No object/handle layer** — no base object, no registry of live instances.
-  (The earlier "no reference counting" clause is stale: `Memory::RefCountedUVE` now exists — but
-  it is a memory primitive, not an object system, so the module itself stays metadata only, which
-  is a legitimate choice; it is recorded here so nobody goes looking for the rest of it.)
+- `[x]` **Opt-in native identity/lifetime registry** — `Core::ObjectUVE`, `ObjectHandleUVE`
+  and `ObjectRegistryUVE` in `Objects/Core/Expose/uve/object/`. The non-owning registry uses
+  `HandleTableUVE<ObjectUVE*>` privately and tags handles with a non-recycled registry identity.
+  It rejects stale/foreign/duplicate handles, detaches without deleting caller objects, supports
+  either destruction order, and permanently closes registration at Shutdown. Objects cannot
+  move/copy; lookup pointers are borrowed and all access/destruction is caller-synchronized.
+  ECS, asset, GPU handles, reflection and `Memory::RefCountedUVE` are not replaced. Handles are
+  runtime-only, not serialized or a native-plugin ABI. Nine `ObjectRegistryUVETest` cases cover
+  ownership, both shutdown orders, growth, foreign/duplicate/stale ids and externally locked
+  cross-thread destruction. Eight `HandleTableLifetimeUVETest` cases additionally verify clear/
+  reuse, small-domain rollover, constructor failure, move/copy and iteration. The shared table
+  now retains generations on Clear, retires exhausted slots and keeps its free list in dead
+  slots, so Release/Clear allocate nothing. Its raw handles remain table-relative, not owner-tagged.
+  Both stale-handle regressions failed before this fix. Normal verification: 28 focused cases;
+  **4,015 CTest cases, zero failures, seven existing Vulkan skips** (2026-10-13).
 
 ---
 

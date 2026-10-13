@@ -53,6 +53,8 @@ add_executable(uve_core_tests
     Core/Containers/fixed_array_uve_tests.cpp
     Core/Containers/small_vector_uve_tests.cpp
     Core/Containers/handle_table_uve_tests.cpp
+    Core/Containers/handle_table_lifetime_uve_tests.cpp
+    Core/Object/object_registry_uve_tests.cpp
     Core/Containers/sparse_set_uve_tests.cpp
     Core/Containers/ring_buffer_uve_tests.cpp
     Core/Containers/bit_set_uve_tests.cpp
@@ -220,6 +222,7 @@ if(UVE_HAS_DESKTOP_GL)
     )
 endif()
 target_link_libraries(uve_core_tests PRIVATE
+    uve_object
     uve_uvscript
     uve_retarget
     nlohmann_json::nlohmann_json
