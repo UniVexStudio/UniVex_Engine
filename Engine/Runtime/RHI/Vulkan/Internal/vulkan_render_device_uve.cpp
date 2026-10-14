@@ -182,6 +182,39 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanValidationMessageCallbackUVE(
     return VK_COMPARE_OP_LESS; // unreachable; constexpr-safe default (the unified RHI default)
 }
 
+[[nodiscard]] constexpr VkStencilOp ToVkStencilOpUVE(const StencilOpUVE op) noexcept {
+    switch (op) {
+        case StencilOpUVE::Keep: return VK_STENCIL_OP_KEEP;
+        case StencilOpUVE::Zero: return VK_STENCIL_OP_ZERO;
+        case StencilOpUVE::Replace: return VK_STENCIL_OP_REPLACE;
+        case StencilOpUVE::IncrementClamp: return VK_STENCIL_OP_INCREMENT_AND_CLAMP;
+        case StencilOpUVE::DecrementClamp: return VK_STENCIL_OP_DECREMENT_AND_CLAMP;
+        case StencilOpUVE::Invert: return VK_STENCIL_OP_INVERT;
+        case StencilOpUVE::IncrementWrap: return VK_STENCIL_OP_INCREMENT_AND_WRAP;
+        case StencilOpUVE::DecrementWrap: return VK_STENCIL_OP_DECREMENT_AND_WRAP;
+    }
+    return VK_STENCIL_OP_KEEP;
+}
+
+[[nodiscard]] constexpr VkImageAspectFlags DepthAspectUVE(const TextureFormatUVE format) noexcept {
+    return IsDepthStencilFormatUVE(format)
+               ? static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_DEPTH_BIT |
+                                                 VK_IMAGE_ASPECT_STENCIL_BIT)
+               : static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_DEPTH_BIT);
+}
+
+[[nodiscard]] constexpr VkStencilOpState ToVkStencilStateUVE(const StencilFaceStateUVE& state) noexcept {
+    VkStencilOpState result{};
+    result.failOp = ToVkStencilOpUVE(state.stencilFail);
+    result.passOp = ToVkStencilOpUVE(state.depthPass);
+    result.depthFailOp = ToVkStencilOpUVE(state.depthFail);
+    result.compareOp = ToVkDepthCompareUVE(state.compare);
+    result.compareMask = state.compareMask;
+    result.writeMask = state.writeMask;
+    result.reference = state.reference;
+    return result;
+}
+
 } // namespace
 
 namespace {
@@ -685,6 +718,7 @@ struct VulkanRenderDeviceUVE::ImplUVE {
                                                     VkExtent2D extent,
                                                     const std::array<float, 4>& clearColor,
                                                     float clearDepth,
+                                                    std::uint32_t clearStencil,
                                                     LoadOpUVE colorLoadOp,
                                                     LoadOpUVE depthLoadOp,
                                                     std::uint32_t colorLayer,
@@ -938,10 +972,11 @@ VkImageView VulkanRenderDeviceUVE::ImplUVE::GetOrCreateLayerAttachmentViewUVE(
     layerViewInfo.image = record.image;
     layerViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
     layerViewInfo.format = record.vkFormat; // image-native, matching attachmentView
-    layerViewInfo.subresourceRange = {record.desc.format == TextureFormatUVE::Depth32Float
-                                          ? VK_IMAGE_ASPECT_DEPTH_BIT
-                                          : VK_IMAGE_ASPECT_COLOR_BIT,
-                                      0U, 1U, layer, 1U};
+    layerViewInfo.subresourceRange = {
+        IsDepthFormatUVE(record.desc.format)
+            ? DepthAspectUVE(record.desc.format)
+            : static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_COLOR_BIT),
+        0U, 1U, layer, 1U};
     VkImageView layerView = VK_NULL_HANDLE;
     if (vk.vkCreateImageView(device, &layerViewInfo, nullptr, &layerView) != VK_SUCCESS ||
         layerView == VK_NULL_HANDLE) {
@@ -967,6 +1002,7 @@ bool VulkanRenderDeviceUVE::ImplUVE::IsRecordAnOpenExtraColorUVE(
 bool VulkanRenderDeviceUVE::ImplUVE::BeginOffscreenPassDynamicUVE(
     TextureRecordUVE& color, TextureRecordUVE* depth, const VkExtent2D extent,
     const std::array<float, 4>& clearColor, const float clearDepth,
+    const std::uint32_t clearStencil,
     const LoadOpUVE colorLoadOp, const LoadOpUVE depthLoadOp,
     const std::uint32_t colorLayer, const std::uint32_t depthLayer,
     const StoreOpUVE colorStoreOp, const StoreOpUVE depthStoreOp,
@@ -1017,8 +1053,10 @@ bool VulkanRenderDeviceUVE::ImplUVE::BeginOffscreenPassDynamicUVE(
     }
     depthBarrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     depthBarrier.image = depth != nullptr ? depth->image : scratch->image;
-    depthBarrier.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0U, 1U,
-                                     depth != nullptr ? depthLayer : 0U, 1U};
+    depthBarrier.subresourceRange = {
+        depth != nullptr ? DepthAspectUVE(depth->desc.format)
+                         : static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_DEPTH_BIT),
+        0U, 1U, depth != nullptr ? depthLayer : 0U, 1U};
     vk.vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
                                 VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
@@ -1054,7 +1092,7 @@ bool VulkanRenderDeviceUVE::ImplUVE::BeginOffscreenPassDynamicUVE(
     depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     depthAttachmentInfo.loadOp = ToVkLoadOpUVE(depthLoadOp);
     depthAttachmentInfo.storeOp = ToVkStoreOpUVE(depthStoreOp);
-    depthAttachmentInfo.clearValue.depthStencil = {clearDepth, 0U};
+    depthAttachmentInfo.clearValue.depthStencil = {clearDepth, clearStencil & 0xFFU};
     // Tier 2.4: locations 1..3 ride alongside location 0 in one color array (equal dims were
     // enforced at validation — the GL FBO completeness rule, mirrored for determinism).
     std::array<VkRenderingAttachmentInfo, 1U + kExtraColorAttachmentCountUVE> allColorInfos{};
@@ -1082,6 +1120,10 @@ bool VulkanRenderDeviceUVE::ImplUVE::BeginOffscreenPassDynamicUVE(
     renderingInfo.colorAttachmentCount = 1U + extraCount;
     renderingInfo.pColorAttachments = allColorInfos.data();
     renderingInfo.pDepthAttachment = &depthAttachmentInfo;
+    VkRenderingAttachmentInfo stencilAttachmentInfo = depthAttachmentInfo;
+    if (depth != nullptr && IsDepthStencilFormatUVE(depth->desc.format)) {
+        renderingInfo.pStencilAttachment = &stencilAttachmentInfo;
+    }
     vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
 
     VkViewport viewport{};
@@ -1180,8 +1222,8 @@ void VulkanRenderDeviceUVE::ImplUVE::CloseCurrentPassDynamicUVE() {
         depthToSample.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         depthToSample.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         depthToSample.image = state.openOffscreenDepthRecord->image;
-        depthToSample.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0U, 1U, state.openDepthLayer,
-                                           1U};
+        depthToSample.subresourceRange = {DepthAspectUVE(state.openOffscreenDepthRecord->desc.format),
+                                          0U, 1U, state.openDepthLayer, 1U};
         vk.vkCmdPipelineBarrier(commandBuffer,
                                 VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, nullptr, 0U,
@@ -2796,12 +2838,23 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
                             "only; the render-target slice owns population)");
             }
             break;
+        case TextureFormatUVE::Depth24Stencil8:
+            format = VK_FORMAT_D24_UNORM_S8_UINT;
+            sampledFormat = format;
+            aspect = DepthAspectUVE(desc.format);
+            usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+            finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            if (!initialData.empty()) {
+                return fail("Depth24Stencil8 initial uploads are not supported (attachment-ready "
+                            "only; the render-target slice owns population)");
+            }
+            break;
     }
     {
         VkFormatProperties formatProperties{};
         impl.vk.vkGetPhysicalDeviceFormatProperties(impl.physicalDevice, format, &formatProperties);
         const VkFormatFeatureFlags required =
-            (desc.format == TextureFormatUVE::Depth32Float)
+            IsDepthFormatUVE(desc.format)
                 ? VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
             : (desc.format == TextureFormatUVE::RGBA8Unorm)
                 ? (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
@@ -3110,7 +3163,10 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
                         : desc.type == TextureTypeUVE::Texture2DArray ? VK_IMAGE_VIEW_TYPE_2D_ARRAY
                                                                       : VK_IMAGE_VIEW_TYPE_2D;
     viewInfo.format = sampledFormat;
-    viewInfo.subresourceRange = {aspect, 0U, desc.mipLevels, 0U, desc.arrayLayers};
+    viewInfo.subresourceRange = {desc.format == TextureFormatUVE::Depth24Stencil8
+                                     ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                     : aspect,
+                                 0U, desc.mipLevels, 0U, desc.arrayLayers};
     VkImageView view = VK_NULL_HANDLE;
     if (impl.vk.vkCreateImageView(impl.device, &viewInfo, nullptr, &view) != VK_SUCCESS ||
         view == VK_NULL_HANDLE) {
@@ -3120,6 +3176,7 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     VkImageView attachmentView = VK_NULL_HANDLE;
     if (!IsTextureFormatCompressedUVE(desc.format)) {
         viewInfo.format = format; // image-native: this is the view dynamic rendering attaches
+        viewInfo.subresourceRange.aspectMask = aspect;
         viewInfo.subresourceRange.levelCount = 1U; // render-target attachment is always level 0
         viewInfo.subresourceRange.layerCount = 1U; // …and always layer 0 (deeper layers attach
                                                    // via the Tier 2.3 layer cache)
@@ -3307,6 +3364,7 @@ bool VulkanRenderDeviceUVE::SupportsTextureFormatUVE(const TextureFormatUVE form
         case TextureFormatUVE::RGBA8Unorm:
         case TextureFormatUVE::RGBA16Float:
         case TextureFormatUVE::Depth32Float:
+        case TextureFormatUVE::Depth24Stencil8:
             return false;
     }
 
@@ -3339,6 +3397,7 @@ bool VulkanRenderDeviceUVE::SupportsTextureFormatUVE(const TextureFormatUVE form
         case TextureFormatUVE::RGBA8Unorm:
         case TextureFormatUVE::RGBA16Float:
         case TextureFormatUVE::Depth32Float:
+        case TextureFormatUVE::Depth24Stencil8:
             return false;
     }
     if (vkFormat == VK_FORMAT_UNDEFINED) {
@@ -3522,8 +3581,12 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
         !IsVertexLayoutWithinStrideUVE(desc.vertexLayout, desc.vertexStride) ||
         !IsPrimitiveTopologyValidUVE(desc.topology) || !IsPipelineBlendModeValidUVE(desc.blendMode) ||
         !IsCullModeValidUVE(desc.cullMode) || !IsFrontFaceValidUVE(desc.frontFace) ||
-        !IsFillModeValidUVE(desc.fillMode) || !IsDepthCompareValidUVE(desc.depthCompare)) {
+        !IsFillModeValidUVE(desc.fillMode) || !IsDepthCompareValidUVE(desc.depthCompare) ||
+        !IsStencilStateValidUVE(desc.stencil)) {
         return fail("malformed pipeline descriptor (vertex layout/stride, topology, blend mode, or rasterizer state)");
+    }
+    if (desc.stencil.enabled && !impl.useDynamicRendering) {
+        return fail("stencil pipelines require the dynamic-rendering depth/stencil attachment path");
     }
 
     VkPipelineShaderStageCreateInfo stages[2]{};
@@ -3610,7 +3673,9 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
     depthStencil.depthTestEnable = desc.depthTestEnabled ? VK_TRUE : VK_FALSE;
     depthStencil.depthWriteEnable = desc.depthWriteEnabled ? VK_TRUE : VK_FALSE;
     depthStencil.depthCompareOp = ToVkDepthCompareUVE(desc.depthCompare);
-    depthStencil.stencilTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = desc.stencil.enabled ? VK_TRUE : VK_FALSE;
+    depthStencil.front = ToVkStencilStateUVE(desc.stencil.front);
+    depthStencil.back = ToVkStencilStateUVE(desc.stencil.back);
 
     VkPipelineColorBlendAttachmentState blendAttachment{};
     blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
@@ -4018,7 +4083,10 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
     renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     renderingCreateInfo.colorAttachmentCount = 1U;
     renderingCreateInfo.pColorAttachmentFormats = &impl.swapchainFormat;
-    renderingCreateInfo.depthAttachmentFormat = impl.depthFormat;
+    renderingCreateInfo.depthAttachmentFormat =
+        desc.stencil.enabled ? VK_FORMAT_D24_UNORM_S8_UINT : impl.depthFormat;
+    renderingCreateInfo.stencilAttachmentFormat =
+        desc.stencil.enabled ? VK_FORMAT_D24_UNORM_S8_UINT : VK_FORMAT_UNDEFINED;
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -4569,7 +4637,7 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                        impl.BeginOffscreenPassDynamicUVE(
                            *colorRecord, depthRecord,
                            VkExtent2D{colorRecord->desc.width, colorRecord->desc.height},
-                           {0.0F, 0.0F, 0.0F, 0.0F}, 1.0F, LoadOpUVE::Load, LoadOpUVE::Load,
+                           {0.0F, 0.0F, 0.0F, 0.0F}, 1.0F, 0U, LoadOpUVE::Load, LoadOpUVE::Load,
                            impl.framePassState.openColorLayer,
                            impl.framePassState.openDepthLayer, StoreOpUVE::Store,
                            StoreOpUVE::Store, reopenExtras, reopenExtraCount));
@@ -4662,7 +4730,7 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                         "slot; layered storage images are not supported in Tier 2.3, so the 1x1 "
                         "black storage sink receives the writes instead");
                     value = impl.fallbackStorageImageValue;
-                } else if (slotRecord.desc.format == TextureFormatUVE::Depth32Float &&
+                } else if (IsDepthFormatUVE(slotRecord.desc.format) &&
                            (storageImageSlot || !impl.useDynamicRendering)) {
                     if (storageImageSlot) {
                         // M5b scope: depth images are never storage-bound (imageStore into a
@@ -5117,6 +5185,15 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                                         "the pass runs depth-tested on a per-extent internal "
                                         "target instead");
                                     degradeToScratchDepth = true;
+                                } else if (!IsDepthFormatUVE(foundDepth->second.desc.format)) {
+                                    impl.WarnOnceUVE(
+                                        VulkanRenderDeviceUVE::ImplUVE::kWarnedOffscreenDepthIncompatibleUVE,
+                                        "BeginRenderPassUVE: depth attachment does not use a "
+                                        "depth texture format; the pass runs depth-tested on "
+                                        "an internal target instead");
+                                    degradeToScratchDepth = true;
+                                } else if (IsDepthStencilFormatUVE(foundDepth->second.desc.format)) {
+                                    depthRecord = &foundDepth->second;
                                 } else if (impl.depthFormat != VK_FORMAT_D32_SFLOAT) {
                                     // Caller depth textures are D32-only; a D24 device cannot
                                     // attach them. Scratch depth keeps the pass (test results
@@ -5260,6 +5337,7 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                                         degradeToScratchDepth ? nullptr : depthRecord,
                                         VkExtent2D{color.desc.width, color.desc.height},
                                         op.desc.clearColor, op.desc.clearDepth,
+                                        op.desc.clearStencil,
                                         op.desc.colorLoadOp, op.desc.depthLoadOp,
                                         op.desc.colorLayer, op.desc.depthLayer,
                                         op.desc.colorStoreOp, op.desc.depthStoreOp, extras,

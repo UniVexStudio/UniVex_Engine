@@ -180,6 +180,96 @@ TEST_F(GlRenderDeviceUVETest, BindGroupAppliesRealTextureSamplerAndBufferBinding
     renderDevice->DestroySamplerUVE(sampler);
 }
 
+TEST_F(GlRenderDeviceUVETest, StencilPipelineMasksSecondDrawThroughDepthStencilAttachment) {
+    const ShaderHandleUVE vertexShader =
+        renderDevice->CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource)});
+    const ShaderHandleUVE whiteShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Fragment, std::string(kValidFragmentShaderSource)});
+    const ShaderHandleUVE redShader = renderDevice->CreateShaderUVE(ShaderDescUVE{
+        ShaderStageUVE::Fragment,
+        "#version 330 core\nout vec4 FragColor;\nvoid main() { FragColor = vec4(1.0, 0.0, 0.0, 1.0); }\n"});
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(whiteShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(redShader, kInvalidShaderHandleUVE);
+
+    PipelineDescUVE writerDesc;
+    writerDesc.vertexShader = vertexShader;
+    writerDesc.fragmentShader = whiteShader;
+    writerDesc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U}};
+    writerDesc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
+    writerDesc.depthTestEnabled = false;
+    writerDesc.stencil.enabled = true;
+    writerDesc.stencil.front.compare = DepthCompareUVE::Always;
+    writerDesc.stencil.front.depthPass = StencilOpUVE::Replace;
+    writerDesc.stencil.front.reference = 7U;
+    const PipelineHandleUVE writer = renderDevice->CreatePipelineUVE(writerDesc);
+    ASSERT_NE(writer, kInvalidPipelineHandleUVE);
+
+    PipelineDescUVE readerDesc = writerDesc;
+    readerDesc.fragmentShader = redShader;
+    readerDesc.stencil.front.compare = DepthCompareUVE::Equal;
+    readerDesc.stencil.front.depthPass = StencilOpUVE::Keep;
+    const PipelineHandleUVE reader = renderDevice->CreatePipelineUVE(readerDesc);
+    ASSERT_NE(reader, kInvalidPipelineHandleUVE);
+
+    const TextureHandleUVE color = renderDevice->CreateTextureUVE({4U, 4U, TextureFormatUVE::RGBA8Unorm});
+    const TextureHandleUVE depthStencil =
+        renderDevice->CreateTextureUVE({4U, 4U, TextureFormatUVE::Depth24Stencil8});
+    ASSERT_NE(color, kInvalidTextureHandleUVE);
+    ASSERT_NE(depthStencil, kInvalidTextureHandleUVE);
+
+    constexpr std::array<float, 9> leftTriangle{-1.0F, -1.0F, 0.0F, 0.0F, -1.0F, 0.0F, -1.0F, 1.0F, 0.0F};
+    constexpr std::array<float, 9> fullscreenTriangle{-1.0F, -1.0F, 0.0F, 3.0F, -1.0F, 0.0F, -1.0F, 3.0F, 0.0F};
+    const BufferHandleUVE leftBuffer = renderDevice->CreateBufferUVE(
+        BufferDescUVE{sizeof(leftTriangle), BufferUsageUVE::Vertex}, std::as_bytes(std::span(leftTriangle)));
+    const BufferHandleUVE fullscreenBuffer = renderDevice->CreateBufferUVE(
+        BufferDescUVE{sizeof(fullscreenTriangle), BufferUsageUVE::Vertex},
+        std::as_bytes(std::span(fullscreenTriangle)));
+    ASSERT_NE(leftBuffer, kInvalidBufferHandleUVE);
+    ASSERT_NE(fullscreenBuffer, kInvalidBufferHandleUVE);
+
+    auto commands = renderDevice->CreateCommandBufferUVE();
+    RenderPassDescUVE pass;
+    pass.colorAttachment = color;
+    pass.depthAttachment = depthStencil;
+    pass.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+    pass.clearStencil = 0U;
+    commands->BeginRenderPassUVE(pass);
+    commands->BindPipelineUVE(writer);
+    commands->BindVertexBufferUVE(leftBuffer);
+    commands->DrawUVE(3U);
+    commands->BindPipelineUVE(reader);
+    commands->BindVertexBufferUVE(fullscreenBuffer);
+    commands->DrawUVE(3U);
+    commands->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commands));
+    ASSERT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+
+    std::array<std::uint8_t, 4U * 4U * 4U> pixels{};
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(color));
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    ASSERT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+    const auto pixelAt = [&pixels](const std::size_t x, const std::size_t y) {
+        const std::size_t offset = (y * 4U + x) * 4U;
+        return std::array<std::uint8_t, 4>{pixels[offset], pixels[offset + 1U], pixels[offset + 2U],
+                                           pixels[offset + 3U]};
+    };
+    EXPECT_GT(pixelAt(0U, 0U)[0], 240U);
+    EXPECT_LT(pixelAt(0U, 0U)[1], 8U);
+    EXPECT_LT(pixelAt(3U, 3U)[0], 8U);
+    EXPECT_LT(pixelAt(3U, 3U)[1], 8U);
+
+    renderDevice->DestroyBufferUVE(fullscreenBuffer);
+    renderDevice->DestroyBufferUVE(leftBuffer);
+    renderDevice->DestroyTextureUVE(depthStencil);
+    renderDevice->DestroyTextureUVE(color);
+    renderDevice->DestroyPipelineUVE(reader);
+    renderDevice->DestroyPipelineUVE(writer);
+    renderDevice->DestroyShaderUVE(redShader);
+    renderDevice->DestroyShaderUVE(whiteShader);
+    renderDevice->DestroyShaderUVE(vertexShader);
+}
+
 TEST_F(GlRenderDeviceUVETest, TextureLeaseRetiresOnOwnerThreadAfterWorkerSubmission) {
     const auto texture = renderDevice->CreateTextureUVE({1U, 1U, TextureFormatUVE::RGBA8Unorm});
     ASSERT_NE(texture, kInvalidTextureHandleUVE);

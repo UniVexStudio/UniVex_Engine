@@ -375,6 +375,48 @@ TEST_F(VulkanRenderDeviceUVETest, ShaderCreationRejectsGlslTextAndAcceptsSpirv) 
     device->DestroyShaderUVE(shader);
 }
 
+TEST_F(VulkanRenderDeviceUVETest, StencilPipelineAndDepthStencilTextureCreateOnDynamicDevice) {
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kTriangleVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kTriangleFragmentSpirvUVE;
+    const ShaderHandleUVE vertexShader = device->CreateShaderUVE(vertexDesc);
+    const ShaderHandleUVE fragmentShader = device->CreateShaderUVE(fragmentDesc);
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+
+    TextureDescUVE depthDesc{};
+    depthDesc.width = 8U;
+    depthDesc.height = 8U;
+    depthDesc.format = TextureFormatUVE::Depth24Stencil8;
+    const TextureHandleUVE depthStencil = device->CreateTextureUVE(depthDesc);
+    ASSERT_NE(depthStencil, kInvalidTextureHandleUVE);
+
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.vertexStride = 24U;
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U});
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"COLOR", VertexAttributeFormatUVE::Float3, 12U});
+    pipelineDesc.depthTestEnabled = false;
+    pipelineDesc.depthWriteEnabled = false;
+    pipelineDesc.stencil.enabled = true;
+    pipelineDesc.stencil.front.compare = DepthCompareUVE::Equal;
+    pipelineDesc.stencil.front.depthPass = StencilOpUVE::Replace;
+    pipelineDesc.stencil.front.reference = 7U;
+    pipelineDesc.stencil.back.compare = DepthCompareUVE::Always;
+    pipelineDesc.stencil.back.depthPass = StencilOpUVE::Keep;
+    const PipelineHandleUVE pipeline = device->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyTextureUVE(depthStencil);
+    device->DestroyShaderUVE(fragmentShader);
+    device->DestroyShaderUVE(vertexShader);
+}
+
 TEST_F(VulkanRenderDeviceUVETest, SubmittedTriangleCommandBufferReallyRendersPixels) {
     // A full M2a round trip: SPIR-V shaders + a real pipeline + an interleaved
     // position/color vertex buffer + a recorded command buffer that draws a big triangle —

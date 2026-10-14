@@ -135,6 +135,8 @@ struct GlTextureFormatUVE {
             return {GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT};
         case TextureFormatUVE::Depth32Float:
             return {GL_DEPTH_COMPONENT32F, GL_DEPTH_COMPONENT, GL_FLOAT};
+        case TextureFormatUVE::Depth24Stencil8:
+            return {GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8};
         case TextureFormatUVE::BC1RGB:
             return {colorSpace == TextureColorSpaceUVE::Srgb ? kGlCompressedSrgbS3tcDxt1UVE
                                                               : kGlCompressedRgbS3tcDxt1UVE,
@@ -955,6 +957,10 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown depth comparison");
         return kInvalidPipelineHandleUVE;
     }
+    if (!IsStencilStateValidUVE(desc.stencil)) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown stencil state");
+        return kInvalidPipelineHandleUVE;
+    }
     if (m_impl->state.maxVertexAttribs <= 0 ||
         desc.vertexLayout.size() > static_cast<std::size_t>(m_impl->state.maxVertexAttribs)) {
         UVE_ERROR("GlRenderDeviceUVE: pipeline vertex layout exceeds GL vertex-attrib limits");
@@ -1012,6 +1018,7 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
     record.depthBiasConstantFactor = desc.depthBiasConstantFactor;
     record.depthBiasSlopeFactor = desc.depthBiasSlopeFactor;
     record.depthCompare = desc.depthCompare;
+    record.stencil = desc.stencil;
     record.topology = desc.topology;
     ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms);
 
@@ -1175,6 +1182,10 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<const
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown depth comparison");
         return kInvalidPipelineHandleUVE;
     }
+    if (!IsStencilStateValidUVE(desc.stencil)) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown stencil state");
+        return kInvalidPipelineHandleUVE;
+    }
     if (m_impl->state.maxVertexAttribs <= 0 ||
         desc.vertexLayout.size() > static_cast<std::size_t>(m_impl->state.maxVertexAttribs)) {
         UVE_ERROR("GlRenderDeviceUVE: pipeline vertex layout exceeds GL vertex-attrib limits");
@@ -1224,6 +1235,7 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<const
     record.depthBiasConstantFactor = desc.depthBiasConstantFactor;
     record.depthBiasSlopeFactor = desc.depthBiasSlopeFactor;
     record.depthCompare = desc.depthCompare;
+    record.stencil = desc.stencil;
     record.topology = desc.topology;
     // Uniform locations are not guaranteed portable across a binary load even though behavior
     // is - reflection must always be re-run here, never assumed inherited from the original
