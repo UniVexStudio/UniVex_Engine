@@ -90,6 +90,12 @@ void ApplyStencilFaceUVE(const Detail::GlFunctionsUVE& gl, const GLenum face,
             return GL_TRIANGLES;
         case PrimitiveTopologyUVE::Lines:
             return GL_LINES;
+        case PrimitiveTopologyUVE::Points:
+            return GL_POINTS;
+        case PrimitiveTopologyUVE::LineStrip:
+            return GL_LINE_STRIP;
+        case PrimitiveTopologyUVE::TriangleStrip:
+            return GL_TRIANGLE_STRIP;
     }
     return GL_TRIANGLES;
 }
@@ -696,6 +702,16 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
             break;
     }
+#if !defined(__ANDROID__)
+    // Points take their size from the vertex shader's gl_PointSize, which desktop GL ignores
+    // unless program point size is enabled (GLES always honours it). Toggled per pipeline so a
+    // Points pipeline never leaks the mode into the next triangle pipeline's state.
+    if (pipelineIt->second.topology == PrimitiveTopologyUVE::Points) {
+        glEnable(GL_PROGRAM_POINT_SIZE);
+    } else {
+        glDisable(GL_PROGRAM_POINT_SIZE);
+    }
+#endif
     if (pipelineIt->second.depthBiasEnabled) {
         glEnable(GL_POLYGON_OFFSET_FILL);
         // NOTE the argument order: glPolygonOffset takes (slopeFactor, constantUnits).

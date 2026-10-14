@@ -744,7 +744,7 @@ render-pass attachment.
 | `ShaderDescUVE` | stage, source, entry point | `Geometry` has an optional `PipelineDescUVE::geometryShader` slot (Null/desktop GL); Vulkan reports `geometryShaders = Unsupported` |
 | `PipelineDescUVE` | vertex+fragment shader, vertex layout, stride, topology, depth test/write/compare, cull/winding/fill/bias, blend mode | rasterizer tail landed (Tier 2.1, RHI side) |
 | `RenderPassDescUVE` | up to 4 colour attachments, one depth attachment, load+store ops, clear values, optional viewport override | multi-target + `StoreOpUVE` landed (Tiers 2.4/2.5) |
-| `PrimitiveTopologyUVE` | `Triangles`, `Lines` | no points or strips (lines serve the debug renderer) |
+| `PrimitiveTopologyUVE` | `Triangles`, `Lines`, `Points`, `LineStrip`, `TriangleStrip` (+ `GetPrimitiveCountUVE` / `IsVertexCountCompleteForTopologyUVE`) | no fan, adjacency, primitive restart or line-width state |
 
 Three consequences follow directly from that table and are worth stating plainly,
 because each one blocks a whole feature:
@@ -798,6 +798,19 @@ because each one blocks a whole feature:
   line batch and the 2D sprite quad (`Upload`/`Stream`) and the frustum-cull visibility buffer
   (`Readback`). Not added: sub-allocation, aliasing or persistent-map exposure — one allocation
   per buffer remains the model.
+- `[x]` **No points or strips.** Landed (2026-10-14): `Points`, `LineStrip` and
+  `TriangleStrip` join `PrimitiveTopologyUVE`, mapped to the native draw mode on GL and to
+  `VkPrimitiveTopology` on Vulkan, with the Null device accepting them from source and binary
+  descriptors. A `Points` pipeline on desktop GL enables `GL_PROGRAM_POINT_SIZE` at bind and
+  every other topology disables it, so the vertex shader's `gl_PointSize` is the one point-size
+  story on both backends and the mode never leaks between pipelines. Two constexpr helpers,
+  `GetPrimitiveCountUVE` and `IsVertexCountCompleteForTopologyUVE`, state how a draw's count is
+  consumed (lists need multiples, strips a minimum, points anything); the backends still let
+  the driver drop an incomplete trailing primitive as the APIs specify rather than refusing the
+  draw. First consumer: `DebugRendererUVE::DrawPoint3D` — an 8K-point batch drawn through the
+  new `debug_point` built-in with a batch-wide, clamped pixel size, as a second draw after the
+  lines; sphere circles stay expanded into the line list on purpose (one draw per frame beats
+  one strip per circle). Not added: fans, adjacency, primitive restart, line width.
 
 Also absent: `[x]` a sampler object — landed (Tier 2.2: `SamplerDescUVE` with Point filtering
 in all three backends). `[x]` **Validated bind-group packets** now live in
@@ -1465,3 +1478,15 @@ plus a host→device-local `CopyBufferUVE` observed through the staged readback)
 after the change on the same stacks: Null + device-operations + GL + Vulkan device suites 261
 passed / 3 skipped / 1 (softpipe) failed; `uve_integration_tests` (debug renderer, 2D
 renderer, frustum-cull consumers) all green.
+
+**Point and strip topologies (same day).** Every new topology is proved by a pixel the list
+topology could not have painted, with the list drawn as the control inside the same test: on
+GL (softpipe, 64×64 default framebuffer) a 16-case run covers the 8px point block vs. the clear
+pixels outside it, the strip's far corner vs. the four-vertex triangle list that leaves it
+clear, the line strip's second segment vs. nothing, and `GL_PROGRAM_POINT_SIZE` observed
+enabled only while the Points pipeline is bound; on Vulkan (SwiftShader, swapchain readback)
+the same three proofs run with a freshly baked point vertex shader (`gl_PointSize = 16`) — the
+sandbox now carries a glslang build, so Vulkan test shaders can be baked in-session again. The
+Null suite pins the count helpers and the Null/debug-renderer tests pin the two-draw submit
+(lines then points, `uPointSize` flushed, both batches cleared, all resources released). The
+built-in parity test covers `debug_point.glsl`.

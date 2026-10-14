@@ -609,14 +609,62 @@ struct VertexAttributeUVE {
 
 /// How a pipeline's bound vertex/index buffers are assembled into primitives. `Triangles` is
 /// the mesh default; `Lines` assembles consecutive vertex/index pairs as 1px line segments for
-/// the debug renderer (Tier 2.8) — there is no strip/fan mode and no line-width state.
-enum class PrimitiveTopologyUVE : std::uint8_t { Triangles, Lines };
+/// the debug renderer (Tier 2.8). `Points` rasterises one square per vertex whose side is the
+/// vertex shader's `gl_PointSize` (GL enables program point size for such pipelines; Vulkan
+/// always reads the built-in); `LineStrip` / `TriangleStrip` connect consecutive vertices
+/// (N vertices → N-1 segments / N-2 triangles, no primitive restart). There is no fan mode, no
+/// adjacency and no line-width state. Vertices that do not complete a primitive are dropped by
+/// the driver — `GetPrimitiveCountUVE` / `IsVertexCountCompleteForTopologyUVE` tell a caller
+/// how a count will be consumed before it draws.
+enum class PrimitiveTopologyUVE : std::uint8_t { Triangles, Lines, Points, LineStrip, TriangleStrip };
 
 [[nodiscard]] constexpr bool IsPrimitiveTopologyValidUVE(const PrimitiveTopologyUVE topology) noexcept {
     switch (topology) {
         case PrimitiveTopologyUVE::Triangles:
         case PrimitiveTopologyUVE::Lines:
+        case PrimitiveTopologyUVE::Points:
+        case PrimitiveTopologyUVE::LineStrip:
+        case PrimitiveTopologyUVE::TriangleStrip:
             return true;
+    }
+    return false;
+}
+
+/// Number of primitives `vertexCount` vertices (or indices) assemble into under `topology`.
+/// Unknown topologies yield 0.
+[[nodiscard]] constexpr std::uint32_t GetPrimitiveCountUVE(const PrimitiveTopologyUVE topology,
+                                                          const std::uint32_t vertexCount) noexcept {
+    switch (topology) {
+        case PrimitiveTopologyUVE::Triangles:
+            return vertexCount / 3U;
+        case PrimitiveTopologyUVE::Lines:
+            return vertexCount / 2U;
+        case PrimitiveTopologyUVE::Points:
+            return vertexCount;
+        case PrimitiveTopologyUVE::LineStrip:
+            return vertexCount >= 2U ? vertexCount - 1U : 0U;
+        case PrimitiveTopologyUVE::TriangleStrip:
+            return vertexCount >= 3U ? vertexCount - 2U : 0U;
+    }
+    return 0U;
+}
+
+/// True when every one of `vertexCount` vertices takes part in a primitive under `topology`: a
+/// multiple of 3 / 2 for the list modes, anything for points, and 0 or at least 2 / 3 for the
+/// strips. Zero is complete (an empty draw). Unknown topologies are never complete.
+[[nodiscard]] constexpr bool IsVertexCountCompleteForTopologyUVE(const PrimitiveTopologyUVE topology,
+                                                                const std::uint32_t vertexCount) noexcept {
+    switch (topology) {
+        case PrimitiveTopologyUVE::Triangles:
+            return vertexCount % 3U == 0U;
+        case PrimitiveTopologyUVE::Lines:
+            return vertexCount % 2U == 0U;
+        case PrimitiveTopologyUVE::Points:
+            return true;
+        case PrimitiveTopologyUVE::LineStrip:
+            return vertexCount == 0U || vertexCount >= 2U;
+        case PrimitiveTopologyUVE::TriangleStrip:
+            return vertexCount == 0U || vertexCount >= 3U;
     }
     return false;
 }

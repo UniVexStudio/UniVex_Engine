@@ -1178,6 +1178,124 @@ TEST_F(GlRenderDeviceUVETest, DrawUVE_LinesPipeline_BindsDrawsAndSubmitsWithoutG
     renderDevice->DestroyShaderUVE(fragmentShader);
 }
 
+TEST_F(GlRenderDeviceUVETest, PointAndStripTopologiesRasterizeAsAssembledAndPointSizeComesFromTheShader) {
+    // Three real-driver proofs on the 64x64 default framebuffer, cleared black each pass:
+    //  - Points: one vertex at the origin with gl_PointSize = 8 covers an 8x8 block around the
+    //    centre (pixels 28..35) and nothing at (20, 32) — only possible if the Points pipeline
+    //    enabled GL_PROGRAM_POINT_SIZE; without it the point is 1px and (29, 32) stays black.
+    //  - TriangleStrip: four corners as a strip paint the whole frame, including the top-right
+    //    corner a four-vertex triangle LIST would leave black (its 4th vertex is dropped).
+    //  - LineStrip: three vertices paint the second segment (x = +0.5 column) a two-vertex
+    //    line LIST would not have; a Triangles pipeline bound afterwards reports program point
+    //    size disabled again, so the mode does not leak between pipelines.
+    constexpr std::string_view kPointVertexShaderSource = R"(#version 330 core
+layout(location = 0) in vec3 aPosition;
+void main() {
+    gl_Position = vec4(aPosition, 1.0);
+    gl_PointSize = 8.0;
+}
+)";
+    const ShaderHandleUVE pointVertexShader =
+        renderDevice->CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kPointVertexShaderSource)});
+    const ShaderHandleUVE vertexShader =
+        renderDevice->CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource)});
+    const ShaderHandleUVE fragmentShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Fragment, std::string(kValidFragmentShaderSource)});
+    ASSERT_NE(pointVertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+    const auto makePipeline = [&](const ShaderHandleUVE vs, const PrimitiveTopologyUVE topology) {
+        PipelineDescUVE desc;
+        desc.vertexShader = vs;
+        desc.fragmentShader = fragmentShader;
+        desc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U}};
+        desc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
+        desc.topology = topology;
+        desc.depthTestEnabled = false;
+        desc.depthWriteEnabled = false;
+        return renderDevice->CreatePipelineUVE(desc);
+    };
+    const PipelineHandleUVE pointPipeline = makePipeline(pointVertexShader, PrimitiveTopologyUVE::Points);
+    const PipelineHandleUVE stripPipeline = makePipeline(vertexShader, PrimitiveTopologyUVE::TriangleStrip);
+    const PipelineHandleUVE lineStripPipeline = makePipeline(vertexShader, PrimitiveTopologyUVE::LineStrip);
+    const PipelineHandleUVE trianglePipeline = makePipeline(vertexShader, PrimitiveTopologyUVE::Triangles);
+    ASSERT_NE(pointPipeline, kInvalidPipelineHandleUVE);
+    ASSERT_NE(stripPipeline, kInvalidPipelineHandleUVE);
+    ASSERT_NE(lineStripPipeline, kInvalidPipelineHandleUVE);
+    ASSERT_NE(trianglePipeline, kInvalidPipelineHandleUVE);
+    constexpr std::array<float, 3> kOrigin{0.0F, 0.0F, 0.0F};
+    constexpr std::array<float, 12> kStripCorners{-1.0F, -1.0F, 0.0F, 1.0F, -1.0F, 0.0F,
+                                                  -1.0F, 1.0F,  0.0F, 1.0F, 1.0F,  0.0F};
+    // Pixel-centre aligned on a 64px axis: NDC = (pixel + 0.5) / 32 - 1.
+    constexpr float kRow32 = (32.0F + 0.5F) / 32.0F - 1.0F;
+    constexpr float kColumn48 = (48.0F + 0.5F) / 32.0F - 1.0F;
+    const std::array<float, 9> lineStripVertices{-1.0F, kRow32, 0.0F, kColumn48, kRow32, 0.0F,
+                                                 kColumn48, 1.0F, 0.0F};
+    const BufferHandleUVE pointBuffer = renderDevice->CreateBufferUVE(
+        BufferDescUVE{sizeof(kOrigin), BufferUsageUVE::Vertex}, std::as_bytes(std::span(kOrigin)));
+    const BufferHandleUVE stripBuffer = renderDevice->CreateBufferUVE(
+        BufferDescUVE{sizeof(kStripCorners), BufferUsageUVE::Vertex}, std::as_bytes(std::span(kStripCorners)));
+    const BufferHandleUVE lineStripBuffer = renderDevice->CreateBufferUVE(
+        BufferDescUVE{sizeof(lineStripVertices), BufferUsageUVE::Vertex}, std::as_bytes(std::span(lineStripVertices)));
+    ASSERT_NE(pointBuffer, kInvalidBufferHandleUVE);
+    ASSERT_NE(stripBuffer, kInvalidBufferHandleUVE);
+    ASSERT_NE(lineStripBuffer, kInvalidBufferHandleUVE);
+    const auto readPixel = [](const int x, const int y) {
+        std::array<std::uint8_t, 3> pixel{};
+        glReadPixels(x, y, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, pixel.data());
+        return pixel[0];
+    };
+    const auto drawPass = [&](const PipelineHandleUVE pipeline, const BufferHandleUVE buffer,
+                              const std::uint32_t vertexCount) {
+        std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+        ASSERT_NE(commandBuffer, nullptr);
+        RenderPassDescUVE passDesc;
+        passDesc.colorAttachment = kInvalidTextureHandleUVE;
+        passDesc.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::DontCare;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(pipeline);
+        commandBuffer->BindVertexBufferUVE(buffer);
+        commandBuffer->DrawUVE(vertexCount);
+        commandBuffer->EndRenderPassUVE();
+        renderDevice->SubmitUVE(std::move(commandBuffer));
+    };
+    drawPass(pointPipeline, pointBuffer, 1U);
+    EXPECT_TRUE(glIsEnabled(GL_PROGRAM_POINT_SIZE));
+    EXPECT_GT(readPixel(32, 32), 200U);
+    EXPECT_GT(readPixel(29, 32), 200U) << "an 8px point covers pixels 28..35; a 1px point would not";
+    EXPECT_GT(readPixel(32, 35), 200U);
+    EXPECT_LT(readPixel(20, 32), 40U) << "outside the 8x8 block stays clear";
+    EXPECT_LT(readPixel(32, 44), 40U);
+
+    drawPass(stripPipeline, stripBuffer, 4U);
+    EXPECT_FALSE(glIsEnabled(GL_PROGRAM_POINT_SIZE));
+    EXPECT_GT(readPixel(2, 2), 200U);
+    EXPECT_GT(readPixel(61, 61), 200U) << "the strip's second triangle covers the top-right corner";
+    EXPECT_GT(readPixel(32, 32), 200U);
+
+    drawPass(lineStripPipeline, lineStripBuffer, 3U);
+    EXPECT_GT(readPixel(10, 32), 200U) << "first segment along row 32";
+    EXPECT_GT(readPixel(48, 50), 200U) << "second segment up column 48 — only a strip draws it";
+    EXPECT_LT(readPixel(10, 50), 40U);
+
+    drawPass(trianglePipeline, stripBuffer, 3U);
+    EXPECT_FALSE(glIsEnabled(GL_PROGRAM_POINT_SIZE)) << "program point size is per pipeline, not sticky";
+    EXPECT_LT(readPixel(61, 61), 40U) << "a triangle LIST of these corners leaves the top-right corner clear";
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+
+    renderDevice->DestroyBufferUVE(lineStripBuffer);
+    renderDevice->DestroyBufferUVE(stripBuffer);
+    renderDevice->DestroyBufferUVE(pointBuffer);
+    renderDevice->DestroyPipelineUVE(trianglePipeline);
+    renderDevice->DestroyPipelineUVE(lineStripPipeline);
+    renderDevice->DestroyPipelineUVE(stripPipeline);
+    renderDevice->DestroyPipelineUVE(pointPipeline);
+    renderDevice->DestroyShaderUVE(fragmentShader);
+    renderDevice->DestroyShaderUVE(vertexShader);
+    renderDevice->DestroyShaderUVE(pointVertexShader);
+}
+
 TEST_F(GlRenderDeviceUVETest, BeginRenderPassUVE_UnknownAttachmentDoesNotBindOrCacheFramebuffer) {
     const TextureHandleUVE validColor = renderDevice->CreateTextureUVE(TextureDescUVE{1U, 1U});
     ASSERT_NE(validColor, kInvalidTextureHandleUVE);
