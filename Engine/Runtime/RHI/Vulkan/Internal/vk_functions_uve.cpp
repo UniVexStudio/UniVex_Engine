@@ -154,6 +154,8 @@ bool VkFunctionsUVE::LoadDeviceUVE(const VkDevice device) {
     allResolved &= ResolveDevice(vkGetQueryPoolResults, gdpa, device, "vkGetQueryPoolResults");
     allResolved &= ResolveDevice(vkCmdResetQueryPool, gdpa, device, "vkCmdResetQueryPool");
     allResolved &= ResolveDevice(vkCmdWriteTimestamp, gdpa, device, "vkCmdWriteTimestamp");
+    allResolved &= ResolveDevice(vkCmdBeginQuery, gdpa, device, "vkCmdBeginQuery");
+    allResolved &= ResolveDevice(vkCmdEndQuery, gdpa, device, "vkCmdEndQuery");
     allResolved &= ResolveDevice(vkCreateBuffer, gdpa, device, "vkCreateBuffer");
     allResolved &= ResolveDevice(vkDestroyBuffer, gdpa, device, "vkDestroyBuffer");
     allResolved &= ResolveDevice(vkGetBufferMemoryRequirements, gdpa, device, "vkGetBufferMemoryRequirements");

@@ -4761,6 +4761,85 @@ TEST_F(GlRenderDeviceUVETest, TextureUsageUVE_GatesAttachSampleStorageAndTransfe
     renderDevice->DestroyTextureUVE(sampledOnly);
 }
 
+// ---- Foundation WP3: recorded query brackets ---------------------------------------------
+// Defined BEFORE the timestamp test on purpose: the sandbox's softpipe rasterizer reports zero
+// for every occlusion query issued after a glQueryCounter in the same context (documented in
+// FOUNDATION.md), so this occlusion-only case must run first in definition order.
+TEST_F(GlRenderDeviceUVETest, RecordedOcclusionQueryCountsOnlyVisibleDraws) {
+    using ResultUVE = RenderOperationResultUVE;
+    ASSERT_EQ(renderDevice->GetCapabilitiesUVE().occlusionQueries, RenderFeatureSupportUVE::Native);
+    QueryHandleUVE empty, drawn, timestamp;
+    ASSERT_EQ(renderDevice->CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, empty), ResultUVE::Success);
+    ASSERT_EQ(renderDevice->CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, drawn), ResultUVE::Success);
+    ASSERT_EQ(renderDevice->CreateQueryUVE(RenderQueryKindUVE::Timestamp, timestamp), ResultUVE::Success);
+    const auto vs = renderDevice->CreateShaderUVE(
+        {ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource), "main"});
+    const auto fs = renderDevice->CreateShaderUVE(
+        {ShaderStageUVE::Fragment, std::string(kValidFragmentShaderSource), "main"});
+    PipelineDescUVE desc;
+    desc.vertexShader = vs;
+    desc.fragmentShader = fs;
+    desc.vertexLayout = {{"POSITION", VertexAttributeFormatUVE::Float3, 0}};
+    desc.vertexStride = 3U * sizeof(float);
+    const auto pipeline = renderDevice->CreatePipelineUVE(desc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+    const std::array<float, 9> vertices{-0.5F, -0.5F, 0, 0.5F, -0.5F, 0, 0, 0.5F, 0};
+    const auto buffer = renderDevice->CreateBufferUVE({sizeof(vertices), BufferUsageUVE::Vertex},
+                                                      std::as_bytes(std::span(vertices)));
+    auto commands = renderDevice->CreateCommandBufferUVE();
+    // Validation shared with Null and Vulkan.
+    EXPECT_EQ(commands->BeginQueryUVE(QueryHandleUVE{999999U}), ResultUVE::InvalidHandle);
+    EXPECT_EQ(commands->BeginQueryUVE(timestamp), ResultUVE::InvalidArgument);
+    EXPECT_EQ(commands->WriteTimestampUVE(drawn), ResultUVE::InvalidArgument);
+    EXPECT_EQ(commands->EndQueryUVE(drawn), ResultUVE::InvalidState);
+    commands->BeginRenderPassUVE({});
+    commands->BindPipelineUVE(pipeline);
+    commands->BindVertexBufferUVE(buffer);
+    ASSERT_EQ(commands->BeginQueryUVE(empty), ResultUVE::Recorded);
+    EXPECT_EQ(commands->BeginQueryUVE(drawn), ResultUVE::InvalidState) << "brackets do not nest";
+    EXPECT_EQ(renderDevice->BeginQueryUVE(drawn), ResultUVE::InvalidState)
+        << "the device-level bracket shares the one GL_ANY_SAMPLES_PASSED slot";
+    ASSERT_EQ(commands->EndQueryUVE(empty), ResultUVE::Recorded);
+    ASSERT_EQ(commands->BeginQueryUVE(drawn), ResultUVE::Recorded);
+    commands->DrawUVE(3U);
+    ASSERT_EQ(commands->EndQueryUVE(drawn), ResultUVE::Recorded);
+    commands->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commands));
+    RenderQueryResultUVE value{RenderQueryKindUVE::AnySamplesPassed, 42U};
+    ASSERT_EQ(renderDevice->GetQueryResultUVE(empty, value, true), ResultUVE::Success);
+    EXPECT_EQ(value.value, 0U) << "nothing was drawn inside the first bracket";
+    ASSERT_EQ(renderDevice->GetQueryResultUVE(drawn, value, true), ResultUVE::Success);
+    EXPECT_EQ(value.value, 1U) << "the triangle inside the second bracket passed";
+    EXPECT_EQ(renderDevice->DestroyQueryUVE(empty), ResultUVE::Success);
+    EXPECT_EQ(renderDevice->DestroyQueryUVE(drawn), ResultUVE::Success);
+    EXPECT_EQ(renderDevice->DestroyQueryUVE(timestamp), ResultUVE::Success);
+    renderDevice->DestroyBufferUVE(buffer);
+    renderDevice->DestroyPipelineUVE(pipeline);
+    renderDevice->DestroyShaderUVE(vs);
+    renderDevice->DestroyShaderUVE(fs);
+}
+
+TEST_F(GlRenderDeviceUVETest, RecordedTimestampsAreMonotonic) {
+    using ResultUVE = RenderOperationResultUVE;
+    ASSERT_EQ(renderDevice->GetCapabilitiesUVE().timestampQueries, RenderFeatureSupportUVE::Native);
+    QueryHandleUVE before, after;
+    ASSERT_EQ(renderDevice->CreateQueryUVE(RenderQueryKindUVE::Timestamp, before), ResultUVE::Success);
+    ASSERT_EQ(renderDevice->CreateQueryUVE(RenderQueryKindUVE::Timestamp, after), ResultUVE::Success);
+    auto commands = renderDevice->CreateCommandBufferUVE();
+    ASSERT_EQ(commands->WriteTimestampUVE(before), ResultUVE::Recorded);
+    commands->BeginRenderPassUVE({});
+    commands->EndRenderPassUVE();
+    ASSERT_EQ(commands->WriteTimestampUVE(after), ResultUVE::Recorded);
+    renderDevice->SubmitUVE(std::move(commands));
+    RenderQueryResultUVE first, second;
+    ASSERT_EQ(renderDevice->GetQueryResultUVE(before, first, true), ResultUVE::Success);
+    ASSERT_EQ(renderDevice->GetQueryResultUVE(after, second, true), ResultUVE::Success);
+    EXPECT_EQ(first.kind, RenderQueryKindUVE::Timestamp);
+    EXPECT_GE(second.value, first.value);
+    EXPECT_EQ(renderDevice->DestroyQueryUVE(before), ResultUVE::Success);
+    EXPECT_EQ(renderDevice->DestroyQueryUVE(after), ResultUVE::Success);
+}
+
 TEST_F(GlRenderDeviceUVETest, FoundationQueriesMeasureRealVisibilityAndGpuTimestamps) {
     using ResultUVE = RenderOperationResultUVE;
     ASSERT_EQ(renderDevice->GetCapabilitiesUVE().timestampQueries, RenderFeatureSupportUVE::Native);

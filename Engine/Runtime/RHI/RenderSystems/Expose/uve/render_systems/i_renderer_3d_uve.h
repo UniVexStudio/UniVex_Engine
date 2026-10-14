@@ -61,6 +61,16 @@ struct PostProcessSettingsUVE final {
 /// since freezing those multiplies shadow draw work without changing what the camera sees.
 struct CullingSettingsUVE final {
     bool frustumCullingEnabledUVE = true;
+    /// Foundation WP3: GPU occlusion culling of the main colour view's opaque mesh items. When on,
+    /// and the device reports occlusion queries (RenderDeviceCapabilitiesUVE::occlusionQueries !=
+    /// Unsupported), the main pass ends with one depth-tested, colour-less proxy box per opaque
+    /// item under an ICommandBufferUVE query bracket. An item is skipped on a LATER frame only when
+    /// its most recent bracket completed with zero samples, the camera's view-projection is
+    /// unchanged since that bracket, and the item's world matrix is unchanged (its probe key is
+    /// derived from both the mesh and the matrix). Anything else - a not-ready result, a moved
+    /// camera, a moved object, a device without queries - draws the item. Default off: the stage
+    /// costs a query bracket per item and only pays back in occlusion-heavy scenes.
+    bool gpuOcclusionCullingEnabledUVE = false;
 };
 
 /// A copied, frame-local account of observable Renderer3DUVE work. Each field names evidence that
@@ -151,6 +161,16 @@ struct Renderer3DFrameDiagnosticsUVE final {
     /// nothing off-screen - and a freeze left on by accident is a performance bug nobody can see.
     /// Shadow cascades keep culling, so this describes the colour view alone.
     bool frustumCullingFrozen = false;
+
+    /// Foundation WP3 occlusion stage evidence. `occlusionQueriesSupported` is the device's answer
+    /// (capabilities, not a request); `occlusionQueriesIssued` counts the proxy brackets the main
+    /// pass actually recorded this frame; `occludedItemsSkipped` counts opaque mesh items removed
+    /// from the colour view by a completed zero-sample verdict. A frame with issued > 0 and
+    /// skipped == 0 is the normal first frame (verdicts arrive a frame late) and the permanent
+    /// state on NullRenderDeviceUVE, which records brackets but never invents a result.
+    bool occlusionQueriesSupported = false;
+    std::size_t occlusionQueriesIssued = 0U;
+    std::size_t occludedItemsSkipped = 0U;
 
     /// Entities a LodGroup3D dropped for being past the end of its distance chain. Distinct from
     /// a hidden entity: this is "too far to matter", not "the author switched it off", and a scene

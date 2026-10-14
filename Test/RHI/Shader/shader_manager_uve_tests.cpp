@@ -473,6 +473,8 @@ INSTANTIATE_TEST_SUITE_P(
                                                                       BuiltIn::kProceduralSkySource},
                        std::pair<std::string_view, std::string_view>{"shadow_depth.glsl",
                                                                       BuiltIn::kShadowDepthSource},
+                       std::pair<std::string_view, std::string_view>{"occlusion_proxy.glsl",
+                                                                      BuiltIn::kOcclusionProxySource},
                        std::pair<std::string_view, std::string_view>{"lit_shadowed_3d.glsl",
                                                                       BuiltIn::kLitShadowed3DSource},
                        std::pair<std::string_view, std::string_view>{"lit_primitive_3d.glsl",

@@ -2910,6 +2910,114 @@ TEST_F(Renderer3DUVETest, FrustumCullingFreezeDrawsOffCameraMeshesAndLeavesShado
     EXPECT_EQ(restoredShadowDraws, culledShadowDraws);
 }
 
+TEST_F(Renderer3DUVETest, GpuOcclusionCullingRecordsProxyBracketsAfterOpaqueDrawsAndNeverSkipsWithoutAVerdict) {
+    // Foundation WP3 consumer proof on the Null device: the stage is off by default, records one
+    // depth-tested proxy bracket per opaque item at the END of the main pass when enabled, and -
+    // because Null records brackets but never fabricates a visibility number - never removes an
+    // item from the colour view. The "skip" half of the contract is a real-GPU concern and lives
+    // with the GL/Vulkan bracket tests; here the point is that no verdict means no skip.
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_occlusion_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_occlusion_material.uvmat");
+    MakeMeshEntityUVE(Math::Vector3UVE{-1.5F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{1.5F, 0.0F, -12.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    struct MainPassShapeUVE {
+        std::size_t meshInstances = 0U;
+        std::size_t beginQueries = 0U;
+        std::size_t endQueries = 0U;
+        bool bracketsWellFormed = true;
+        bool bracketsAfterMeshDraws = true;
+    };
+    const auto inspectMainPass = [](const std::vector<RecordedCommandUVE>& commands) {
+        // The main colour pass is the last BeginRenderPass whose span contains a DrawIndexed.
+        MainPassShapeUVE shape;
+        std::size_t passBegin = commands.size();
+        for (std::size_t index = 0U; index < commands.size(); ++index) {
+            if (std::holds_alternative<BeginRenderPassCommandUVE>(commands[index])) {
+                bool hasDraw = false;
+                for (std::size_t probe = index + 1U; probe < commands.size(); ++probe) {
+                    if (std::holds_alternative<EndRenderPassCommandUVE>(commands[probe])) {
+                        break;
+                    }
+                    hasDraw = hasDraw || std::holds_alternative<DrawIndexedCommandUVE>(commands[probe]);
+                }
+                if (hasDraw) {
+                    passBegin = index;
+                }
+            }
+        }
+        if (passBegin == commands.size()) {
+            shape.bracketsWellFormed = false;
+            return shape;
+        }
+        QueryHandleUVE open = kInvalidQueryHandleUVE;
+        bool insideBracket = false;
+        std::size_t drawsInsideOpenBracket = 0U;
+        for (std::size_t index = passBegin + 1U; index < commands.size(); ++index) {
+            const RecordedCommandUVE& command = commands[index];
+            if (std::holds_alternative<EndRenderPassCommandUVE>(command)) {
+                break;
+            }
+            if (const auto* const begin = std::get_if<BeginQueryCommandUVE>(&command); begin != nullptr) {
+                shape.bracketsWellFormed = shape.bracketsWellFormed && !insideBracket;
+                insideBracket = true;
+                open = begin->query;
+                drawsInsideOpenBracket = 0U;
+                ++shape.beginQueries;
+            } else if (const auto* const end = std::get_if<EndQueryCommandUVE>(&command); end != nullptr) {
+                shape.bracketsWellFormed =
+                    shape.bracketsWellFormed && insideBracket && end->query == open && drawsInsideOpenBracket == 1U;
+                insideBracket = false;
+                ++shape.endQueries;
+            } else if (const auto* const draw = std::get_if<DrawIndexedCommandUVE>(&command); draw != nullptr) {
+                if (insideBracket) {
+                    ++drawsInsideOpenBracket;
+                } else {
+                    // A mesh draw after the first bracket would mean the proxies were not last.
+                    shape.bracketsAfterMeshDraws = shape.bracketsAfterMeshDraws && shape.beginQueries == 0U;
+                    shape.meshInstances += draw->instanceCount;
+                }
+            }
+        }
+        shape.bracketsWellFormed = shape.bracketsWellFormed && !insideBracket;
+        return shape;
+    };
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const MainPassShapeUVE off = inspectMainPass(renderDevice.GetLastSubmittedCommandsUVE());
+    const Renderer3DFrameDiagnosticsUVE offDiagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_TRUE(offDiagnostics.occlusionQueriesSupported) << "Null models queries";
+    EXPECT_EQ(offDiagnostics.occlusionQueriesIssued, 0U) << "off by default";
+    EXPECT_EQ(offDiagnostics.occludedItemsSkipped, 0U);
+    EXPECT_EQ(off.beginQueries, 0U);
+    ASSERT_EQ(off.meshInstances, 2U) << "both meshes reach the colour view";
+
+    Render::CullingSettingsUVE occlusion;
+    occlusion.gpuOcclusionCullingEnabledUVE = true;
+    renderer3D->SetCullingSettingsUVE(occlusion);
+    for (int frame = 0; frame < 3; ++frame) {
+        renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+        const MainPassShapeUVE on = inspectMainPass(renderDevice.GetLastSubmittedCommandsUVE());
+        const Renderer3DFrameDiagnosticsUVE onDiagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+        EXPECT_EQ(onDiagnostics.occlusionQueriesIssued, 2U) << "one bracket per opaque item, frame " << frame;
+        EXPECT_EQ(onDiagnostics.occludedItemsSkipped, 0U) << "Null never completes a bracket, frame " << frame;
+        EXPECT_EQ(on.meshInstances, 2U) << "no verdict means no skip, frame " << frame;
+        EXPECT_EQ(on.beginQueries, 2U);
+        EXPECT_EQ(on.endQueries, 2U);
+        EXPECT_TRUE(on.bracketsWellFormed) << "begin/draw/end triples, never nested";
+        EXPECT_TRUE(on.bracketsAfterMeshDraws) << "proxies are recorded after every opaque draw";
+    }
+
+    renderer3D->SetCullingSettingsUVE(Render::CullingSettingsUVE{});
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const MainPassShapeUVE restored = inspectMainPass(renderDevice.GetLastSubmittedCommandsUVE());
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().occlusionQueriesIssued, 0U);
+    EXPECT_EQ(restored.beginQueries, 0U);
+    EXPECT_EQ(restored.meshInstances, 2U);
+}
+
 TEST_F(Renderer3DUVETest, FrustumCullingFreezeDrawsOffCameraPrimitives) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     MakePrimitiveEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, Scene::PrimitiveMeshComponentUVE{});

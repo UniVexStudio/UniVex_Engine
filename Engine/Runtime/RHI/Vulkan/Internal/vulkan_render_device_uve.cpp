@@ -32,6 +32,8 @@
 #include <cstdint>
 #include <cstring>
 #include <deque>
+#include <functional>
+#include <optional>
 #include <map>
 #include <mutex>
 #include <span>
@@ -411,6 +413,14 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     // device's tick length, so results can be reported in nanoseconds like every other backend.
     std::unordered_map<std::uint32_t, VkQueryPool> userQueries;
     std::unordered_map<std::uint32_t, RenderQueryKindUVE> userQueryKinds;
+    // WP3: a query whose pool was never reset+written has undefined contents, so results are
+    // only read once a transient timestamp write or a replayed recorded bracket/timestamp has
+    // reached the native command stream (NotReady before that, exactly like GL's `issued`).
+    std::unordered_map<std::uint32_t, bool> userQueryIssued;
+    // Replay bookkeeping for recorded occlusion brackets: the open query (0 = none) and its
+    // pool, so a rendering instance that must close mid-bracket can end the query first.
+    std::uint32_t replayOpenQuery = 0U;
+    VkQueryPool replayOpenQueryPool = VK_NULL_HANDLE;
     std::uint32_t nextUserQuery = 1U;
     double timestampPeriodNs = 1.0;
     bool timestampQueriesSupported = false;
@@ -973,6 +983,7 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     static constexpr std::uint32_t kWarnedStorageImageLayeredUVE = 1U << 28U; // Tier 2.3
     static constexpr std::uint32_t kWarnedTextureUsageSampledUVE = 1U << 29U; // usage flags
     static constexpr std::uint32_t kWarnedTextureUsageStorageUVE = 1U << 30U; // usage flags
+    static constexpr std::uint32_t kWarnedQueryReplayUVE = 1U << 31U;         // WP3 brackets
     std::uint32_t replayWarningsEmitted = 0U;
 
     // Replay-local pipeline binding state (valid only inside PresentUVE()'s record window).
@@ -1336,6 +1347,17 @@ void VulkanRenderDeviceUVE::ImplUVE::CloseCurrentPassDynamicUVE() {
     FramePassStateUVE& state = framePassState;
     if (!state.passOpen) {
         return;
+    }
+    if (replayOpenQuery != 0U) {
+        // A query may not span rendering instances (VUID vkCmdEndQuery-None-01923); end it
+        // with the draws it has seen so far rather than record an invalid stream.
+        WarnOnceUVE(kWarnedQueryReplayUVE,
+                    "submit replay: a rendering instance closed while an occlusion bracket was open "
+                    "(in-pass layout transition); the bracket ends early");
+        vk.vkCmdEndQuery(commandBuffer, replayOpenQueryPool, 0U);
+        userQueryIssued[replayOpenQuery] = true;
+        replayOpenQuery = 0U;
+        replayOpenQueryPool = VK_NULL_HANDLE;
     }
     vk.vkCmdEndRendering(commandBuffer);
     if (!state.openPassIsSwapchain && state.openOffscreenColorImage != VK_NULL_HANDLE) {
@@ -2699,7 +2721,49 @@ std::unique_ptr<VulkanRenderDeviceUVE> VulkanRenderDeviceUVE::CreateHeadlessUVE(
 // ---------------------------------------------------------------------------
 class VulkanCommandBufferUVE final : public ICommandBufferUVE {
 public:
-  explicit VulkanCommandBufferUVE(bool supportsBarriers) : m_supportsBarriers(supportsBarriers) {}
+  /// Resolves a query handle to its kind (nullopt = unknown/destroyed); supplied by the device
+  /// so recorded brackets validate against the real query table at record time.
+  using QueryKindLookupUVE = std::function<std::optional<RenderQueryKindUVE>(QueryHandleUVE)>;
+
+  explicit VulkanCommandBufferUVE(bool supportsBarriers, QueryKindLookupUVE queryKindLookup = {})
+      : m_supportsBarriers(supportsBarriers), m_queryKindLookup(std::move(queryKindLookup)) {}
+
+  // ---- Foundation WP3: recorded query brackets -------------------------------------------
+  [[nodiscard]] RenderOperationResultUVE BeginQueryUVE(const QueryHandleUVE query) override {
+      if (query.value == 0U)
+          return RenderOperationResultUVE::InvalidHandle;
+      const auto kind = m_queryKindLookup ? m_queryKindLookup(query) : std::nullopt;
+      if (!kind.has_value())
+          return RenderOperationResultUVE::InvalidHandle;
+      if (*kind != RenderQueryKindUVE::AnySamplesPassed)
+          return RenderOperationResultUVE::InvalidArgument;
+      if (m_activeQuery != 0U)
+          return RenderOperationResultUVE::InvalidState;
+      m_activeQuery = query.value;
+      m_activeQueryPassEpoch = m_passEpoch;
+      m_commands.emplace_back(BeginQueryCommandUVE{query});
+      return RenderOperationResultUVE::Recorded;
+  }
+  [[nodiscard]] RenderOperationResultUVE EndQueryUVE(const QueryHandleUVE query) override {
+      if (query.value == 0U)
+          return RenderOperationResultUVE::InvalidHandle;
+      if (m_activeQuery != query.value || m_activeQueryPassEpoch != m_passEpoch)
+          return RenderOperationResultUVE::InvalidState;
+      m_activeQuery = 0U;
+      m_commands.emplace_back(EndQueryCommandUVE{query});
+      return RenderOperationResultUVE::Recorded;
+  }
+  [[nodiscard]] RenderOperationResultUVE WriteTimestampUVE(const QueryHandleUVE query) override {
+      if (query.value == 0U)
+          return RenderOperationResultUVE::InvalidHandle;
+      const auto kind = m_queryKindLookup ? m_queryKindLookup(query) : std::nullopt;
+      if (!kind.has_value())
+          return RenderOperationResultUVE::InvalidHandle;
+      if (*kind != RenderQueryKindUVE::Timestamp)
+          return RenderOperationResultUVE::InvalidArgument;
+      m_commands.emplace_back(WriteTimestampCommandUVE{query});
+      return RenderOperationResultUVE::Recorded;
+  }
   RenderFeatureSupportUVE GetMemoryBarrierSupportUVE() const noexcept override {
       return m_supportsBarriers ? RenderFeatureSupportUVE::Native : RenderFeatureSupportUVE::Unsupported;
   }
@@ -2715,10 +2779,20 @@ public:
   }
     void BeginRenderPassUVE(const RenderPassDescUVE& renderPassDesc) override {
         m_insidePass = true;
+        ++m_passEpoch;
         m_commands.emplace_back(BeginRenderPassCommandUVE{renderPassDesc});
     }
     void EndRenderPassUVE() override {
+        if (m_activeQuery != 0U) {
+            // A bracket may not span the pass boundary (Vulkan: begin and end in the same
+            // rendering instance). Close it loudly; the caller's late EndQueryUVE reports
+            // InvalidState.
+            UVE_ERROR("VulkanCommandBufferUVE: EndRenderPassUVE closed an occlusion query that was still open");
+            m_commands.emplace_back(EndQueryCommandUVE{QueryHandleUVE{m_activeQuery}});
+            m_activeQuery = 0U;
+        }
         m_insidePass = false;
+        ++m_passEpoch;
         m_commands.emplace_back(EndRenderPassCommandUVE{});
     }
     void BindPipelineUVE(const PipelineHandleUVE pipeline) override {
@@ -2786,6 +2860,10 @@ private:
   bool m_supportsBarriers = false;
   bool m_insidePass = false;
   std::vector<RecordedCommandUVE> m_commands;
+  QueryKindLookupUVE m_queryKindLookup;
+  std::uint32_t m_activeQuery = 0U;
+  std::uint64_t m_activeQueryPassEpoch = 0U;
+  std::uint64_t m_passEpoch = 0U;
 };
 
 // ---------------------------------------------------------------------------
@@ -4925,7 +5003,15 @@ std::unique_ptr<ICommandBufferUVE> VulkanRenderDeviceUVE::CreateCommandBufferUVE
     if (!m_impl->usable) {
         return nullptr;
     }
-    return std::make_unique<VulkanCommandBufferUVE>(m_impl->useDynamicRendering);
+    ImplUVE* const impl = m_impl.get();
+    return std::make_unique<VulkanCommandBufferUVE>(
+        impl->useDynamicRendering,
+        [impl](const QueryHandleUVE query) -> std::optional<RenderQueryKindUVE> {
+            const auto found = impl->userQueryKinds.find(query.value);
+            if (found == impl->userQueryKinds.end())
+                return std::nullopt;
+            return found->second;
+        });
 }
 
 void VulkanRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer) {
@@ -5868,6 +5954,44 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                 } else {
                     UVE_ERROR("Vulkan replay: unsupported or invalid explicit memory barrier");
                 }
+            } else if constexpr (std::is_same_v<OpT, BeginQueryCommandUVE>) {
+                // ------------- Foundation WP3: recorded occlusion bracket ----------------
+                // The pool was reset in this frame's prologue (PresentUVE, outside any
+                // rendering instance); the bracket itself may sit inside or outside one.
+                const auto foundPool = impl.userQueries.find(op.query.value);
+                if (foundPool == impl.userQueries.end() || impl.vk.vkCmdBeginQuery == nullptr) {
+                    impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedQueryReplayUVE,
+                                     "submit replay: BeginQueryUVE named an unknown or destroyed query; "
+                                     "the bracket is dropped and its result stays NotReady");
+                } else if (impl.replayOpenQuery != 0U) {
+                    impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedQueryReplayUVE,
+                                     "submit replay: nested occlusion brackets across submissions; "
+                                     "the inner bracket is dropped");
+                } else {
+                    impl.vk.vkCmdBeginQuery(impl.commandBuffer, foundPool->second, 0U, 0U);
+                    impl.replayOpenQuery = op.query.value;
+                    impl.replayOpenQueryPool = foundPool->second;
+                }
+            } else if constexpr (std::is_same_v<OpT, EndQueryCommandUVE>) {
+                if (impl.replayOpenQuery == op.query.value && impl.replayOpenQuery != 0U) {
+                    impl.vk.vkCmdEndQuery(impl.commandBuffer, impl.replayOpenQueryPool, 0U);
+                    impl.userQueryIssued[op.query.value] = true;
+                    impl.replayOpenQuery = 0U;
+                    impl.replayOpenQueryPool = VK_NULL_HANDLE;
+                }
+                // Otherwise the bracket was already closed (dropped begin, or ended early by a
+                // rendering-instance switch); nothing to end.
+            } else if constexpr (std::is_same_v<OpT, WriteTimestampCommandUVE>) {
+                const auto foundPool = impl.userQueries.find(op.query.value);
+                if (foundPool == impl.userQueries.end()) {
+                    impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedQueryReplayUVE,
+                                     "submit replay: WriteTimestampUVE named an unknown or destroyed query; "
+                                     "the write is dropped");
+                } else {
+                    impl.vk.vkCmdWriteTimestamp(impl.commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                                                foundPool->second, 0U);
+                    impl.userQueryIssued[op.query.value] = true;
+                }
             } else if constexpr (std::is_same_v<OpT, DispatchCommandUVE>) {
                 // ------------- M5a compute dispatch (outside pass markers) --------------
                 if (!impl.useDynamicRendering) {
@@ -6243,6 +6367,36 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     clearValues[0].color.float32[2] = kBootstrapClearBlueUVE;
     clearValues[0].color.float32[3] = kBootstrapClearAlphaUVE;
     clearValues[1].depthStencil = {1.0F, 0U}; // far plane, matching the GL depth-clear default
+    // Foundation WP3: every query pool a recorded bracket or timestamp of this frame names is
+    // reset ONCE here — after vkBeginCommandBuffer and before any rendering instance opens
+    // (vkCmdResetQueryPool is illegal inside one). Re-recording a handle therefore destroys the
+    // previous frame's result in queue order, which is why consumers double-buffer handles.
+    impl.replayOpenQuery = 0U;
+    impl.replayOpenQueryPool = VK_NULL_HANDLE;
+    {
+        std::vector<std::uint32_t> resetQueries;
+        for (const auto& submission : frameSubmissions) {
+            for (const RecordedCommandUVE& command : submission.commands) {
+                std::uint32_t queryValue = 0U;
+                if (const auto* begin = std::get_if<BeginQueryCommandUVE>(&command)) {
+                    queryValue = begin->query.value;
+                } else if (const auto* stamp = std::get_if<WriteTimestampCommandUVE>(&command)) {
+                    queryValue = stamp->query.value;
+                }
+                if (queryValue == 0U ||
+                    std::find(resetQueries.begin(), resetQueries.end(), queryValue) != resetQueries.end()) {
+                    continue;
+                }
+                const auto foundPool = impl.userQueries.find(queryValue);
+                if (foundPool == impl.userQueries.end()) {
+                    continue;
+                }
+                impl.vk.vkCmdResetQueryPool(impl.commandBuffer, foundPool->second, 0U, 1U);
+                impl.userQueryIssued[queryValue] = false;
+                resetQueries.push_back(queryValue);
+            }
+        }
+    }
     for (const auto& submission : frameSubmissions) {
         bool clearPicked = false;
         for (const RecordedCommandUVE& command : submission.commands) {
@@ -6615,8 +6769,13 @@ RenderDeviceCapabilitiesUVE VulkanRenderDeviceUVE::GetCapabilitiesUVE() const no
     if (m_impl->timestampQueriesSupported) {
         caps.timestampQueries = RenderFeatureSupportUVE::Native;
     }
-    // occlusionQueries stays Unsupported: vkCmdBeginQuery/vkCmdEndQuery must bracket the caller's
-    // own draws inside ONE command buffer, and this device-level API cannot promise that.
+    // Occlusion queries are Native through the RECORDED bracket (ICommandBufferUVE::BeginQueryUVE/
+    // EndQueryUVE replayed as vkCmdBeginQuery/vkCmdEndQuery around the caller's own draws);
+    // the device-level begin/end pair stays Unsupported because it cannot bracket draws.
+    if (m_impl->vk.vkCmdBeginQuery != nullptr && m_impl->vk.vkCmdEndQuery != nullptr &&
+        m_impl->vk.vkCreateQueryPool != nullptr) {
+        caps.occlusionQueries = RenderFeatureSupportUVE::Native;
+    }
     // Core-since-1.0 blit entry: format-specific blit support is still checked per call, so the
     // capabilities advertise the transfer paths this backend actually implements.
     if (m_impl->vk.vkCmdBlitImage != nullptr) {
@@ -6810,19 +6969,21 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::CreateQueryUVE(const RenderQuery
         return RenderOperationResultUVE::DeviceUnavailable;
     if (kind != RenderQueryKindUVE::Timestamp && kind != RenderQueryKindUVE::AnySamplesPassed)
         return RenderOperationResultUVE::InvalidArgument;
+    auto &impl = *m_impl;
     if (kind == RenderQueryKindUVE::AnySamplesPassed) {
-        // Documented boundary: an occlusion query is only meaningful around the caller's own
-        // draws, which this device-level API cannot bracket in one command buffer.
+        // WP3: occlusion queries are issued through the recorded command-buffer bracket; the
+        // device-level BeginQueryUVE/EndQueryUVE pair stays Unsupported (it cannot bracket draws).
+        if (GetCapabilitiesUVE().occlusionQueries != RenderFeatureSupportUVE::Native)
+            return RenderOperationResultUVE::Unsupported;
+    } else if (GetCapabilitiesUVE().timestampQueries != RenderFeatureSupportUVE::Native) {
         return RenderOperationResultUVE::Unsupported;
     }
-    auto &impl = *m_impl;
-    if (GetCapabilitiesUVE().timestampQueries != RenderFeatureSupportUVE::Native)
-        return RenderOperationResultUVE::Unsupported;
     if (impl.nextUserQuery == 0U)
         return RenderOperationResultUVE::SystemError;
     VkQueryPoolCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-    info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    info.queryType = kind == RenderQueryKindUVE::AnySamplesPassed ? VK_QUERY_TYPE_OCCLUSION
+                                                                  : VK_QUERY_TYPE_TIMESTAMP;
     info.queryCount = 1U;
     VkQueryPool pool = VK_NULL_HANDLE;
     if (impl.vk.vkCreateQueryPool(impl.device, &info, nullptr, &pool) != VK_SUCCESS ||
@@ -6832,6 +6993,7 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::CreateQueryUVE(const RenderQuery
     const QueryHandleUVE handle{impl.nextUserQuery++};
     impl.userQueries.emplace(handle.value, pool);
     impl.userQueryKinds.emplace(handle.value, kind);
+    impl.userQueryIssued.emplace(handle.value, false);
     output = handle;
     return RenderOperationResultUVE::Success;
 }
@@ -6866,7 +7028,10 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::WriteTimestampUVE(const QueryHan
         return RenderOperationResultUVE::SystemError;
     impl.vk.vkCmdResetQueryPool(commands, found->second, 0U, 1U);
     impl.vk.vkCmdWriteTimestamp(commands, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, found->second, 0U);
-    return SubmitTransientCommandsUVE(impl, commands);
+    const auto submitted = SubmitTransientCommandsUVE(impl, commands);
+    if (submitted == RenderOperationResultUVE::Success)
+        impl.userQueryIssued[query.value] = true;
+    return submitted;
 }
 
 RenderOperationResultUVE VulkanRenderDeviceUVE::GetQueryResultUVE(const QueryHandleUVE query,
@@ -6879,8 +7044,13 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::GetQueryResultUVE(const QueryHan
     if (found == impl.userQueries.end())
         return RenderOperationResultUVE::InvalidHandle;
     const auto kind = impl.userQueryKinds.find(query.value);
-    if (kind == impl.userQueryKinds.end() || kind->second != RenderQueryKindUVE::Timestamp)
+    if (kind == impl.userQueryKinds.end())
         return RenderOperationResultUVE::InvalidArgument;
+    // WP3: a pool that was never reset+written (or whose bracket is still queued for the next
+    // PresentUVE) has no defined contents — NotReady, never a number.
+    const auto issued = impl.userQueryIssued.find(query.value);
+    if (issued == impl.userQueryIssued.end() || !issued->second)
+        return RenderOperationResultUVE::NotReady;
     std::uint64_t ticks = 0U;
     VkQueryResultFlags flags = VK_QUERY_RESULT_64_BIT;
     if (wait) {
@@ -6893,9 +7063,15 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::GetQueryResultUVE(const QueryHan
     if (result != VK_SUCCESS)
         return RenderOperationResultUVE::SystemError;
     RenderQueryResultUVE value{};
-    value.kind = RenderQueryKindUVE::Timestamp;
-    value.value = static_cast<std::uint64_t>(
-        static_cast<double>(ticks) * impl.timestampPeriodNs + 0.5);
+    value.kind = kind->second;
+    if (kind->second == RenderQueryKindUVE::AnySamplesPassed) {
+        // An imprecise occlusion query is zero iff no sample passed, which is the whole
+        // AnySamplesPassed contract; GL reports the same boolean.
+        value.value = ticks != 0U ? 1U : 0U;
+    } else {
+        value.value = static_cast<std::uint64_t>(
+            static_cast<double>(ticks) * impl.timestampPeriodNs + 0.5);
+    }
     output = value;
     return RenderOperationResultUVE::Success;
 }
@@ -6910,6 +7086,7 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::DestroyQueryUVE(const QueryHandl
     impl.vk.vkDestroyQueryPool(impl.device, found->second, nullptr);
     impl.userQueries.erase(found);
     impl.userQueryKinds.erase(query.value);
+    impl.userQueryIssued.erase(query.value);
     return RenderOperationResultUVE::Success;
 }
 

@@ -462,8 +462,8 @@ TEST_F(VulkanRenderDeviceUVETest, TimestampQueriesReportRealTicksAndRefuseOcclus
     using ResultUVE = RenderOperationResultUVE;
     const auto caps = device->GetCapabilitiesUVE();
     ASSERT_EQ(caps.timestampQueries, RenderFeatureSupportUVE::Native);
-    EXPECT_EQ(caps.occlusionQueries, RenderFeatureSupportUVE::Unsupported)
-        << "a device-level begin/end pair cannot bracket the caller's draws in one command buffer";
+    EXPECT_EQ(caps.occlusionQueries, RenderFeatureSupportUVE::Native)
+        << "WP3: occlusion queries are real through the recorded command-buffer bracket";
 
     QueryHandleUVE query;
     ASSERT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::Timestamp, query), ResultUVE::Success);
@@ -480,9 +480,22 @@ TEST_F(VulkanRenderDeviceUVETest, TimestampQueriesReportRealTicksAndRefuseOcclus
     EXPECT_GE(result.value, first);
 
     QueryHandleUVE occlusion{};
-    EXPECT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, occlusion), ResultUVE::Unsupported);
-    EXPECT_EQ(occlusion, kInvalidQueryHandleUVE) << "a refused create must leave the output untouched";
-    EXPECT_EQ(device->CreateQueryUVE(static_cast<RenderQueryKindUVE>(0xFFU), occlusion), ResultUVE::InvalidArgument);
+    ASSERT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, occlusion), ResultUVE::Success);
+    EXPECT_NE(occlusion, kInvalidQueryHandleUVE);
+    // The device-level pair still cannot bracket draws: only the recorded bracket is real.
+    EXPECT_EQ(device->BeginQueryUVE(occlusion), ResultUVE::Unsupported);
+    EXPECT_EQ(device->EndQueryUVE(occlusion), ResultUVE::Unsupported);
+    EXPECT_EQ(device->WriteTimestampUVE(occlusion), ResultUVE::InvalidArgument)
+        << "a timestamp write on an occlusion query is a kind mismatch";
+    RenderQueryResultUVE neverIssued{};
+    neverIssued.value = 77U;
+    EXPECT_EQ(device->GetQueryResultUVE(occlusion, neverIssued, false), ResultUVE::NotReady)
+        << "a pool that was never reset+written has no result";
+    EXPECT_EQ(neverIssued.value, 77U);
+    EXPECT_EQ(device->DestroyQueryUVE(occlusion), ResultUVE::Success);
+    QueryHandleUVE refused{};
+    EXPECT_EQ(device->CreateQueryUVE(static_cast<RenderQueryKindUVE>(0xFFU), refused), ResultUVE::InvalidArgument);
+    EXPECT_EQ(refused, kInvalidQueryHandleUVE) << "a refused create must leave the output untouched";
     RenderQueryResultUVE untouched{};
     untouched.value = 4321U;
     EXPECT_EQ(device->WriteTimestampUVE(QueryHandleUVE{999999U}), ResultUVE::InvalidHandle);
@@ -5809,6 +5822,145 @@ TEST_F(VulkanRenderDeviceUVETest, StorageImageBindWithoutStorageUsageWritesTheBl
     device->DestroyPipelineUVE(samplerPipeline);
     device->DestroyShaderUVE(fragmentShader);
     device->DestroyShaderUVE(vertexShader);
+}
+
+// ---- Foundation WP3: recorded occlusion brackets on a real Vulkan ICD ---------------------
+TEST_F(VulkanRenderDeviceUVETest, RecordedOcclusionQueryDistinguishesHiddenAndVisibleTriangles) {
+    using ResultUVE = RenderOperationResultUVE;
+    ASSERT_EQ(device->GetCapabilitiesUVE().occlusionQueries, RenderFeatureSupportUVE::Native);
+    QueryHandleUVE hidden, visible, timestamp;
+    ASSERT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, hidden), ResultUVE::Success);
+    ASSERT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, visible), ResultUVE::Success);
+    ASSERT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::Timestamp, timestamp), ResultUVE::Success);
+
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kDepthUniformVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kDepthUniformFragmentSpirvUVE;
+    const ShaderHandleUVE vertexShader = device->CreateShaderUVE(vertexDesc);
+    const ShaderHandleUVE fragmentShader = device->CreateShaderUVE(fragmentDesc);
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.vertexStride = 12U;
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U});
+    pipelineDesc.depthTestEnabled = true;
+    pipelineDesc.depthWriteEnabled = true;
+    const PipelineHandleUVE pipeline = device->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+    const float vertices[9] = {-0.6F, -0.6F, 0.0F, 0.6F, -0.6F, 0.0F, 0.0F, 0.6F, 0.0F};
+    BufferDescUVE bufferDesc{};
+    bufferDesc.sizeBytes = sizeof(vertices);
+    bufferDesc.usage = BufferUsageUVE::Vertex;
+    const BufferHandleUVE vertexBuffer = device->CreateBufferUVE(bufferDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(vertices), sizeof(vertices)));
+    ASSERT_NE(vertexBuffer, kInvalidBufferHandleUVE);
+
+    auto commandBuffer = device->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    // Validation shared with Null and GL.
+    EXPECT_EQ(commandBuffer->BeginQueryUVE(QueryHandleUVE{999999U}), ResultUVE::InvalidHandle);
+    EXPECT_EQ(commandBuffer->BeginQueryUVE(timestamp), ResultUVE::InvalidArgument);
+    EXPECT_EQ(commandBuffer->WriteTimestampUVE(hidden), ResultUVE::InvalidArgument);
+    EXPECT_EQ(commandBuffer->EndQueryUVE(hidden), ResultUVE::InvalidState);
+    ASSERT_EQ(commandBuffer->WriteTimestampUVE(timestamp), ResultUVE::Recorded);
+    RenderPassDescUVE passDesc{};
+    passDesc.colorLoadOp = LoadOpUVE::Clear;
+    passDesc.clearColor = {0.05F, 0.07F, 0.12F, 1.0F};
+    passDesc.depthLoadOp = LoadOpUVE::Clear;
+    passDesc.clearDepth = 1.0F;
+    commandBuffer->BeginRenderPassUVE(passDesc);
+    commandBuffer->BindPipelineUVE(pipeline);
+    commandBuffer->BindVertexBufferUVE(vertexBuffer);
+    commandBuffer->SetUniformFloatUVE("uOffsetX", 0.0F);
+    commandBuffer->SetUniformFloatUVE("uOffsetY", 0.0F);
+    // Occluder: the same triangle at z = 0.2, written to depth.
+    commandBuffer->SetUniformVector3UVE("uColorTri", Math::Vector3UVE{0.2F, 0.2F, 0.2F});
+    commandBuffer->SetUniformFloatUVE("uDepth", 0.2F);
+    commandBuffer->DrawUVE(3U);
+    // Hidden: identical footprint behind the occluder (z = 0.8) — every fragment fails depth.
+    ASSERT_EQ(commandBuffer->BeginQueryUVE(hidden), ResultUVE::Recorded);
+    EXPECT_EQ(commandBuffer->BeginQueryUVE(visible), ResultUVE::InvalidState) << "brackets do not nest";
+    commandBuffer->SetUniformVector3UVE("uColorTri", Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+    commandBuffer->SetUniformFloatUVE("uDepth", 0.8F);
+    commandBuffer->DrawUVE(3U);
+    ASSERT_EQ(commandBuffer->EndQueryUVE(hidden), ResultUVE::Recorded);
+    // Visible: in front of the occluder (z = 0.1).
+    ASSERT_EQ(commandBuffer->BeginQueryUVE(visible), ResultUVE::Recorded);
+    commandBuffer->SetUniformVector3UVE("uColorTri", Math::Vector3UVE{0.0F, 1.0F, 0.0F});
+    commandBuffer->SetUniformFloatUVE("uDepth", 0.1F);
+    commandBuffer->DrawUVE(3U);
+    ASSERT_EQ(commandBuffer->EndQueryUVE(visible), ResultUVE::Recorded);
+    commandBuffer->EndRenderPassUVE();
+    device->SubmitUVE(std::move(commandBuffer));
+
+    // Submitted but not presented: the brackets are still queued, so nothing is readable yet.
+    RenderQueryResultUVE value{};
+    value.value = 4321U;
+    EXPECT_EQ(device->GetQueryResultUVE(hidden, value, false), ResultUVE::NotReady);
+    EXPECT_EQ(value.value, 4321U);
+
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+    ASSERT_EQ(device->GetQueryResultUVE(hidden, value, true), ResultUVE::Success);
+    EXPECT_EQ(value.kind, RenderQueryKindUVE::AnySamplesPassed);
+    EXPECT_EQ(value.value, 0U) << "the triangle behind the occluder must not pass any sample";
+    ASSERT_EQ(device->GetQueryResultUVE(visible, value, true), ResultUVE::Success);
+    EXPECT_EQ(value.value, 1U) << "the triangle in front of the occluder passes";
+    RenderQueryResultUVE stamp{};
+    ASSERT_EQ(device->GetQueryResultUVE(timestamp, stamp, true), ResultUVE::Success);
+    EXPECT_EQ(stamp.kind, RenderQueryKindUVE::Timestamp);
+
+    // The image itself is unchanged by the brackets: the visible (green) triangle wins the
+    // overlap, the hidden one never shows.
+    std::vector<std::byte> pixels(1280U * 720U * 4U);
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+    if (width != 0U && height != 0U) {
+        const std::size_t x = static_cast<std::size_t>(width / 2U);
+        const std::size_t y = static_cast<std::size_t>(height / 2U);
+        const std::size_t base = (y * width + x) * 4U;
+        EXPECT_LT(static_cast<int>(pixels[base]), 40) << "no red from the hidden triangle";
+        EXPECT_GT(static_cast<int>(pixels[base + 1]), 200) << "green visible triangle at the centre";
+    }
+
+    EXPECT_EQ(device->DestroyQueryUVE(hidden), ResultUVE::Success);
+    EXPECT_EQ(device->DestroyQueryUVE(visible), ResultUVE::Success);
+    EXPECT_EQ(device->DestroyQueryUVE(timestamp), ResultUVE::Success);
+    device->DestroyBufferUVE(vertexBuffer);
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyShaderUVE(fragmentShader);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, RecordedOcclusionQueryIsNotReadyUntilCompletion) {
+    using ResultUVE = RenderOperationResultUVE;
+    ASSERT_EQ(device->GetCapabilitiesUVE().occlusionQueries, RenderFeatureSupportUVE::Native);
+    QueryHandleUVE query;
+    ASSERT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, query), ResultUVE::Success);
+    RenderQueryResultUVE value{};
+    value.value = 99U;
+    EXPECT_EQ(device->GetQueryResultUVE(query, value, false), ResultUVE::NotReady) << "never issued";
+    EXPECT_EQ(device->GetQueryResultUVE(query, value, true), ResultUVE::NotReady)
+        << "waiting on a never-issued query must not block or invent";
+    auto commandBuffer = device->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    commandBuffer->BeginRenderPassUVE(RenderPassDescUVE{});
+    ASSERT_EQ(commandBuffer->BeginQueryUVE(query), ResultUVE::Recorded);
+    ASSERT_EQ(commandBuffer->EndQueryUVE(query), ResultUVE::Recorded);
+    commandBuffer->EndRenderPassUVE();
+    device->SubmitUVE(std::move(commandBuffer));
+    EXPECT_EQ(device->GetQueryResultUVE(query, value, false), ResultUVE::NotReady) << "queued, not replayed";
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+    ASSERT_EQ(device->GetQueryResultUVE(query, value, true), ResultUVE::Success);
+    EXPECT_EQ(value.value, 0U) << "an empty bracket passes no samples";
+    EXPECT_EQ(device->DestroyQueryUVE(query), ResultUVE::Success);
 }
 
 } // namespace UVE::Render::Tests

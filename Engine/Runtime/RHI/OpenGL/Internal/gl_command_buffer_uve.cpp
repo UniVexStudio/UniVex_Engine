@@ -187,6 +187,7 @@ struct GlVertexAttributeFetchUVE final {
 GlCommandBufferUVE::GlCommandBufferUVE(Detail::GlDeviceStateUVE& state) : m_state(&state) {}
 
 void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassDesc) {
+    ++m_passEpoch;
     if (!RequireOutsideRenderPassUVE(m_insideRenderPass)) {
         return;
     }
@@ -632,6 +633,18 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
 }
 
 void GlCommandBufferUVE::EndRenderPassUVE() {
+    ++m_passEpoch;
+    if (m_activeQuery != 0U && m_state != nullptr && m_state->activeOcclusion == m_activeQuery) {
+        // A bracket may not span the pass boundary: close it loudly so the GL query object is
+        // left in a valid state; the caller's late EndQueryUVE reports InvalidState.
+        UVE_ERROR("GlCommandBufferUVE: EndRenderPassUVE closed an occlusion query that was still open");
+        m_state->gl.glEndQuery(GL_ANY_SAMPLES_PASSED);
+        const auto found = m_state->queries.find(m_activeQuery);
+        if (found != m_state->queries.end())
+            found->second.issued = true;
+        m_state->activeOcclusion = 0U;
+        m_activeQuery = 0U;
+    }
     if (!RequireInsideRenderPassUVE(m_insideRenderPass, "EndRenderPassUVE")) {
         return;
     }
@@ -1382,6 +1395,67 @@ RenderOperationResultUVE GlCommandBufferUVE::MemoryBarrierUVE(MemoryBarrierMaskU
     m_state->gl.glMemoryBarrier(native);
     return glGetError() == GL_NO_ERROR ? RenderOperationResultUVE::Success
                                        : RenderOperationResultUVE::SystemError;
+#endif
+}
+} // namespace UVE::Render
+
+namespace UVE::Render {
+RenderOperationResultUVE GlCommandBufferUVE::BeginQueryUVE(const QueryHandleUVE query) {
+    if (m_state == nullptr)
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto& state = *m_state;
+    if (state.gl.glBeginQuery == nullptr || state.gl.glEndQuery == nullptr)
+        return RenderOperationResultUVE::Unsupported;
+    const auto found = state.queries.find(query.value);
+    if (found == state.queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (found->second.kind != RenderQueryKindUVE::AnySamplesPassed)
+        return RenderOperationResultUVE::InvalidArgument;
+    if (state.activeOcclusion != 0U || m_activeQuery != 0U)
+        return RenderOperationResultUVE::InvalidState;
+    state.gl.glBeginQuery(GL_ANY_SAMPLES_PASSED, found->second.native);
+    state.activeOcclusion = query.value;
+    found->second.issued = false;
+    m_activeQuery = query.value;
+    m_activeQueryPassEpoch = m_passEpoch;
+    return RenderOperationResultUVE::Recorded;
+}
+
+RenderOperationResultUVE GlCommandBufferUVE::EndQueryUVE(const QueryHandleUVE query) {
+    if (m_state == nullptr)
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto& state = *m_state;
+    const auto found = state.queries.find(query.value);
+    if (found == state.queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (m_activeQuery != query.value || state.activeOcclusion != query.value)
+        return RenderOperationResultUVE::InvalidState;
+    if (m_activeQueryPassEpoch != m_passEpoch)
+        return RenderOperationResultUVE::InvalidState;
+    state.gl.glEndQuery(GL_ANY_SAMPLES_PASSED);
+    state.activeOcclusion = 0U;
+    m_activeQuery = 0U;
+    found->second.issued = true;
+    return RenderOperationResultUVE::Recorded;
+}
+
+RenderOperationResultUVE GlCommandBufferUVE::WriteTimestampUVE(const QueryHandleUVE query) {
+    if (m_state == nullptr)
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto& state = *m_state;
+    const auto found = state.queries.find(query.value);
+    if (found == state.queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (found->second.kind != RenderQueryKindUVE::Timestamp)
+        return RenderOperationResultUVE::InvalidArgument;
+#if defined(__ANDROID__)
+    return RenderOperationResultUVE::Unsupported;
+#else
+    if (state.gl.glQueryCounter == nullptr)
+        return RenderOperationResultUVE::Unsupported;
+    state.gl.glQueryCounter(found->second.native, GL_TIMESTAMP);
+    found->second.issued = true;
+    return RenderOperationResultUVE::Recorded;
 #endif
 }
 } // namespace UVE::Render

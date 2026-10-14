@@ -4,6 +4,8 @@
 #include "uve/rhi_null/null_render_device_uve.h"
 #include <array>
 #include <limits>
+#include <memory>
+#include <utility>
 #include <variant>
 #include <vector>
 #include <gtest/gtest.h>
@@ -208,6 +210,95 @@ TEST(DeviceOperationsUVETest, DeviceDiagnosticHistoryIsBoundedAndReportsEviction
     EXPECT_EQ(device.GetRecordedDeviceOperationsUVE().size(), 256U);
     EXPECT_EQ(device.GetDroppedDeviceOperationCountUVE(), 44U);
     EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+}
+
+// ---- Foundation WP3: recorded query brackets (ICommandBufferUVE) ------------------------
+TEST(DeviceOperationsUVETest, NullCommandBufferRecordsQueryBracketsInOrder) {
+    NullRenderDeviceUVE device;
+    QueryHandleUVE occlusion, timestamp;
+    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, occlusion), ResultUVE::Recorded);
+    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::Timestamp, timestamp), ResultUVE::Recorded);
+    std::unique_ptr<ICommandBufferUVE> commands = device.CreateCommandBufferUVE();
+    ASSERT_NE(commands, nullptr);
+    EXPECT_EQ(commands->WriteTimestampUVE(timestamp), ResultUVE::Recorded);
+    commands->BeginRenderPassUVE(RenderPassDescUVE{});
+    EXPECT_EQ(commands->BeginQueryUVE(occlusion), ResultUVE::Recorded);
+    commands->DrawUVE(3U, 1U);
+    EXPECT_EQ(commands->EndQueryUVE(occlusion), ResultUVE::Recorded);
+    commands->EndRenderPassUVE();
+    EXPECT_EQ(commands->WriteTimestampUVE(timestamp), ResultUVE::Recorded);
+    device.SubmitUVE(std::move(commands));
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    ASSERT_EQ(recorded.size(), 7U);
+    EXPECT_TRUE(std::holds_alternative<WriteTimestampCommandUVE>(recorded[0]));
+    EXPECT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(recorded[1]));
+    ASSERT_TRUE(std::holds_alternative<BeginQueryCommandUVE>(recorded[2]));
+    EXPECT_EQ(std::get<BeginQueryCommandUVE>(recorded[2]).query, occlusion);
+    EXPECT_TRUE(std::holds_alternative<DrawCommandUVE>(recorded[3]));
+    ASSERT_TRUE(std::holds_alternative<EndQueryCommandUVE>(recorded[4]));
+    EXPECT_EQ(std::get<EndQueryCommandUVE>(recorded[4]).query, occlusion);
+    EXPECT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(recorded[5]));
+    ASSERT_TRUE(std::holds_alternative<WriteTimestampCommandUVE>(recorded[6]));
+    EXPECT_EQ(std::get<WriteTimestampCommandUVE>(recorded[6]).query, timestamp);
+}
+
+TEST(DeviceOperationsUVETest, NullCommandBufferRejectsBadQueryBrackets) {
+    NullRenderDeviceUVE device;
+    QueryHandleUVE occlusion, second, timestamp;
+    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, occlusion), ResultUVE::Recorded);
+    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, second), ResultUVE::Recorded);
+    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::Timestamp, timestamp), ResultUVE::Recorded);
+    std::unique_ptr<ICommandBufferUVE> commands = device.CreateCommandBufferUVE();
+    ASSERT_NE(commands, nullptr);
+    // Handle and kind validation against the device's query table.
+    EXPECT_EQ(commands->BeginQueryUVE(kInvalidQueryHandleUVE), ResultUVE::InvalidHandle);
+    EXPECT_EQ(commands->BeginQueryUVE(QueryHandleUVE{999999U}), ResultUVE::InvalidHandle);
+    EXPECT_EQ(commands->BeginQueryUVE(timestamp), ResultUVE::InvalidArgument);
+    EXPECT_EQ(commands->WriteTimestampUVE(occlusion), ResultUVE::InvalidArgument);
+    EXPECT_EQ(commands->WriteTimestampUVE(QueryHandleUVE{999999U}), ResultUVE::InvalidHandle);
+    // End without begin, nesting, and ending the wrong query.
+    EXPECT_EQ(commands->EndQueryUVE(occlusion), ResultUVE::InvalidState);
+    commands->BeginRenderPassUVE(RenderPassDescUVE{});
+    EXPECT_EQ(commands->BeginQueryUVE(occlusion), ResultUVE::Recorded);
+    EXPECT_EQ(commands->BeginQueryUVE(second), ResultUVE::InvalidState);
+    EXPECT_EQ(commands->EndQueryUVE(second), ResultUVE::InvalidState);
+    EXPECT_EQ(commands->EndQueryUVE(occlusion), ResultUVE::Recorded);
+    // A bracket may not span the pass boundary: the pass end closes it, the late end fails.
+    EXPECT_EQ(commands->BeginQueryUVE(second), ResultUVE::Recorded);
+    commands->EndRenderPassUVE();
+    EXPECT_EQ(commands->EndQueryUVE(second), ResultUVE::InvalidState);
+    device.SubmitUVE(std::move(commands));
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    // begin-pass, begin(occlusion), end(occlusion), begin(second), auto end(second), end-pass
+    ASSERT_EQ(recorded.size(), 6U);
+    ASSERT_TRUE(std::holds_alternative<EndQueryCommandUVE>(recorded[4]));
+    EXPECT_EQ(std::get<EndQueryCommandUVE>(recorded[4]).query, second);
+    EXPECT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(recorded[5]));
+}
+
+TEST(DeviceOperationsUVETest, NullRecordedQueriesNeverInventResults) {
+    NullRenderDeviceUVE device;
+    QueryHandleUVE occlusion, timestamp;
+    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, occlusion), ResultUVE::Recorded);
+    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::Timestamp, timestamp), ResultUVE::Recorded);
+    std::unique_ptr<ICommandBufferUVE> commands = device.CreateCommandBufferUVE();
+    ASSERT_NE(commands, nullptr);
+    commands->BeginRenderPassUVE(RenderPassDescUVE{});
+    ASSERT_EQ(commands->BeginQueryUVE(occlusion), ResultUVE::Recorded);
+    commands->DrawUVE(3U, 1U);
+    ASSERT_EQ(commands->EndQueryUVE(occlusion), ResultUVE::Recorded);
+    commands->EndRenderPassUVE();
+    ASSERT_EQ(commands->WriteTimestampUVE(timestamp), ResultUVE::Recorded);
+    device.SubmitUVE(std::move(commands));
+    device.PresentUVE();
+    RenderQueryResultUVE untouched{};
+    untouched.value = 4321U;
+    EXPECT_EQ(device.GetQueryResultUVE(occlusion, untouched, false), ResultUVE::NotReady);
+    EXPECT_EQ(device.GetQueryResultUVE(occlusion, untouched, true), ResultUVE::NotReady);
+    EXPECT_EQ(device.GetQueryResultUVE(timestamp, untouched, false), ResultUVE::NotReady);
+    EXPECT_EQ(untouched.value, 4321U) << "a recorded bracket never produces a visibility or timing number";
+    EXPECT_EQ(device.DestroyQueryUVE(occlusion), ResultUVE::Recorded);
+    EXPECT_EQ(device.DestroyQueryUVE(timestamp), ResultUVE::Recorded);
 }
 } // namespace
 } // namespace UVE::Render::Tests

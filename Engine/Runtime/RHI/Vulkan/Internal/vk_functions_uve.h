@@ -82,6 +82,10 @@ struct VkFunctionsUVE {
     PFN_vkGetQueryPoolResults vkGetQueryPoolResults = nullptr;
     PFN_vkCmdResetQueryPool vkCmdResetQueryPool = nullptr;
     PFN_vkCmdWriteTimestamp vkCmdWriteTimestamp = nullptr;
+    // Recorded occlusion brackets (core 1.0): Foundation WP3 replays BeginQueryUVE/EndQueryUVE
+    // command-buffer ops around the caller's own draws.
+    PFN_vkCmdBeginQuery vkCmdBeginQuery = nullptr;
+    PFN_vkCmdEndQuery vkCmdEndQuery = nullptr;
     PFN_vkCreateBuffer vkCreateBuffer = nullptr;
     PFN_vkDestroyBuffer vkDestroyBuffer = nullptr;
     PFN_vkGetBufferMemoryRequirements vkGetBufferMemoryRequirements = nullptr;
