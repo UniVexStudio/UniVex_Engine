@@ -767,11 +767,29 @@ Three consequences follow directly from that table and are worth stating plainly
 because each one blocks a whole feature:
 
 - `[~]` **No rasterizer state.** The RHI side landed (Tier 2.1): cull/winding/fill/bias plus a
-  full `DepthCompareUVE` sit on `PipelineDescUVE` and all three backends apply them. What stays
-  open is the consumer: the gizmo overlay and the studio backdrop still drive raw GL depth state
-  — and both live in host-independent `univex/` viewport-core, which cannot see the RHI by
-  contract. The migration is a design pass (how viewport-core overlays adopt RHI pipelines), not
-  a missing API.
+  full `DepthCompareUVE` sit on `PipelineDescUVE` and all three backends apply them. The
+  consumer is being closed by **WP6 (design decided 2026-10-14: candidate B, "depth state becomes
+  data"; step 1 drafted without a compiler):** `univex::render::OverlayRasterState`
+  (`Viewport/Expose/univex/render/OverlayRasterState.h`, pure data in viewport-core: depth test,
+  write, compare, blend, cull with an explicit `Inherit`) with one named preset per overlay pass
+  (`kGizmoOpaqueSolidState`, `kGizmoTranslucentSolidState`, `kGizmoStrokeState`,
+  `kInfiniteGridState`, `kStudioBackdropSkyState`, `kScreenSpaceCompositeState`). The GL target
+  applies a value through exactly one function, `ApplyOverlayRasterState`
+  (`OverlayRasterStateGl.cpp`), and the engine bridge maps the same value onto
+  `PipelineDescUVE` field by field (`integration/OverlayRasterStateToPipeline.h`,
+  `ApplyOverlayRasterStateUVE`) so a host that draws the overlays through `IRenderDeviceUVE` on
+  any backend gets identical depth modes by construction. Converted in step 1: `GizmoRenderer`
+  (its five `glDepthMask` calls; it now also pins `GL_LESS` explicitly instead of inheriting the
+  previous pass's depth function, and restores the function it found) and `InfiniteGridRenderer`.
+  Still raw GL (step 2, listed so nobody has to re-audit): `SelectionOutlineRenderer.cpp` (2
+  calls, composite = `kScreenSpaceCompositeState`), `StudioBackdropRenderer.cpp` (6 calls, sky =
+  `kStudioBackdropSkyState`), `app/ViewportRenderPass.cpp` (7 calls, the pass's clears and
+  save/restore), and `EditorCore/Internal/mesh_thumbnail_renderer_uve.cpp` (thumbnails, not an
+  overlay - stays). Tests: `OverlayRasterStateUVETest.PresetsPinTheOverlayDepthModes`,
+  `BridgeMapsTheStateOntoPipelineDescFieldByField`. The done-when's pixel evidence (headless
+  capture of every gizmo depth mode before/after, byte-equal) is owed by the session that
+  builds this draft; the data step was written to be pixel-neutral (`Inherit` where a pass never
+  touched cull, no blend-equation change).
 - `[x]` **No multiple render targets.** Landed (Tier 2.4): gap-rejecting colour slots 1..3 on
   `RenderPassDescUVE`, with a Vulkan test recording a multi-target pass and sampling per-target
   colours.
@@ -1510,7 +1528,7 @@ call sites are already allocating from the wrong place.
 
 | # | Item | Module | Unblocks | Done when |
 |---|---|---|---|---|
-| 2.1 | Rasterizer state on `PipelineDescUVE` — cull, winding, fill, depth bias, **depth-compare function** | `RHI/RHI` + all three backends | shadow bias; removes the editor's direct GL depth-function call | the gizmo overlay expresses its depth mode through the pipeline - PARTIAL (verified Oct 2026 by source read): RHI side landed — rasterizer tail (cull/winding/fill/bias/depth-compare) on PipelineDescUVE + PipelineBinaryDescUVE, all three backends validate/apply (GL state, VK ToVk* incl. depthCompareOp, Null validation); the done-when consumer is still open — and audited (Oct 2026) as a design pass, not a small migration: both consumers live in host-independent `univex/` viewport-core (raw GL by contract, cannot see the RHI), so expressing their depth state through pipelines needs a layering decision first |
+| 2.1 | Rasterizer state on `PipelineDescUVE` — cull, winding, fill, depth bias, **depth-compare function** | `RHI/RHI` + all three backends | shadow bias; removes the editor's direct GL depth-function call | the gizmo overlay expresses its depth mode through the pipeline - PARTIAL (verified Oct 2026 by source read): RHI side landed — rasterizer tail (cull/winding/fill/bias/depth-compare) on PipelineDescUVE + PipelineBinaryDescUVE, all three backends validate/apply (GL state, VK ToVk* incl. depthCompareOp, Null validation); the done-when consumer is in progress — WP6 decided the layering (Oct 2026): overlay depth state is data (`OverlayRasterState` in viewport-core), applied by one GL function and mapped onto `PipelineDescUVE` in the engine bridge; gizmo + grid converted (uncompiled draft), outline/backdrop/render-pass sites and the pixel evidence remain (see §8 rasterizer bullet) |
 | 2.2 | Sampler object + descriptor | `RHI/RHI` + backends | point filtering, wrapping, anisotropy | a texture can be sampled point-filtered - landed (verified Oct 2026 by source read): SamplerDescUVE (mag/min/mip/wrapU/V/W/maxAnisotropy) + SamplerFilterUVE::Point threaded through all three backend devices; GL maps Point to GL_NEAREST and GL creation tests cover Point filters |
 | 2.3 | Texture dimensionality — array layers, cubemaps | `RHI/RHI` + backends | image-based lighting; cascade arrays | a cubemap is created and sampled - landed (verified Oct 2026 by source read): TextureTypeUVE::Cubemap + Texture2DArray with arrayLayers, creation-time shape validation (cube: square + 6 layers), CubemapFaceUVE order matching HW face order, render-into-layer (colorLayer/depthLayer); GL cube paths + VK maxImageDimensionCube query; cube coverage in the GL/VK device tests |
 | 2.4 | Multiple render targets on `RenderPassDescUVE` | `RHI/RHI` + backends | any deferred/G-buffer path | a two-attachment pass records and replays - landed (verified Oct 2026 by source read): ColorAttachmentUVE slots 1..3 on RenderPassDescUVE (gap-rejecting); VulkanRenderDeviceUVETest.MultiTargetCaptureAndSample_RendersPerTargetColors records a multi-target pass and samples per-target colors, plus Null/GL attachment coverage |

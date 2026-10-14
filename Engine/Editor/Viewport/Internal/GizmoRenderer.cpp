@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "univex/render/GizmoShaderSources.h"
+#include "univex/render/OverlayRasterStateGl.h"
 
 namespace univex::render {
 
@@ -230,34 +231,38 @@ void GizmoRenderer::Draw(const GizmoMesh& mesh, const GizmoDrawParams& params) c
     const GLboolean hadCullFace = glIsEnabled(GL_CULL_FACE);
     GLboolean depthMask = GL_TRUE;
     glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
+    GLint depthFunc = GL_LESS;
+    glGetIntegerv(GL_DEPTH_FUNC, &depthFunc);
 
-    glEnable(GL_BLEND);
-    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    glDisable(GL_CULL_FACE); // gizmo geometry is viewed from every side
-    if (params.depthTest) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
-
+    // Foundation WP6: the depth/blend/cull modes are data (OverlayRasterState presets) applied by
+    // one table-driven function; this renderer no longer issues glDepthMask/glDepthFunc itself.
     // Opaque solids write depth so the widget occludes itself. Translucent solids and the strokes
     // drawn over them test against that depth but never add to it: a half-transparent handle must
     // not reject the geometry showing through it, and an anti-aliased stroke edge must not punch a
-    // hole in whatever is behind it.
+    // hole in whatever is behind it. Gizmo geometry is viewed from every side (cull off).
+    const OverlayRasterState opaqueState =
+        WithDepthTest(WithDepthWrite(kGizmoOpaqueSolidState, params.depthWrite), params.depthTest);
+    const OverlayRasterState translucentState = WithDepthTest(kGizmoTranslucentSolidState, params.depthTest);
+    const OverlayRasterState strokeState = WithDepthTest(kGizmoStrokeState, params.depthTest);
     const auto drawSolids = [&] {
-        glDepthMask(params.depthWrite ? GL_TRUE : GL_FALSE);
+        ApplyOverlayRasterState(opaqueState);
         UploadAndDrawTriangles(mesh, params, TrianglePassUVE::Opaque);
-        glDepthMask(GL_FALSE);
+        ApplyOverlayRasterState(translucentState);
         UploadAndDrawTriangles(mesh, params, TrianglePassUVE::Translucent);
     };
 
     if (params.drawLinesFirst) {
-        glDepthMask(GL_FALSE);
+        ApplyOverlayRasterState(strokeState);
         UploadAndDrawLines(mesh, params);
         drawSolids();
     } else {
         drawSolids();
-        glDepthMask(GL_FALSE);
+        ApplyOverlayRasterState(strokeState);
         UploadAndDrawLines(mesh, params);
     }
 
     glDepthMask(depthMask);
+    glDepthFunc(static_cast<GLenum>(depthFunc));
     if (hadDepthTest == GL_FALSE) glDisable(GL_DEPTH_TEST); else glEnable(GL_DEPTH_TEST);
     if (hadCullFace == GL_TRUE) glEnable(GL_CULL_FACE);
     if (hadBlend == GL_FALSE) glDisable(GL_BLEND);
