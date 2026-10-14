@@ -359,6 +359,9 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     struct TextureRecordUVE; // fwd: FramePassStateUVE carries a pointer to it (M2e)
     struct FramePassStateUVE {
         VkClearValue clearValues[2]{}; // 0: color, 1: depth — swapchain load-CLEAR contents
+        // WP5c: the load ops the frame's first swapchain pass asked for (dynamic arm only).
+        VkAttachmentLoadOp swapchainColorLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        VkAttachmentLoadOp swapchainDepthLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         std::uint32_t swapchainImageIndex = 0U;
         bool barrierDoneForSwapchain = false;   // per-frame image/depth entry transitions
         bool swapchainPassBegunThisFrame = false;
@@ -396,6 +399,11 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     VkExtent2D swapchainExtent{0U, 0U};
     std::vector<VkImage> swapchainImages;
     std::vector<VkImageView> swapchainImageViews;
+    // WP5c: which swapchain images have been presented at least once (their content and
+    // PRESENT_SRC layout are known), and whether the per-swapchain depth image holds a frame.
+    // A Load-op on an image without a known previous state falls back to the pass's clear.
+    std::vector<std::uint8_t> swapchainImagePresented;
+    bool depthImageHoldsFrame = false;
     VkRenderPass renderPass = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> framebuffers;
 
@@ -1019,29 +1027,51 @@ struct VulkanRenderDeviceUVE::ImplUVE {
 
 bool VulkanRenderDeviceUVE::ImplUVE::BeginSwapchainPassDynamicUVE() {
     FramePassStateUVE& state = framePassState;
+    // WP5c: a Load-op is honoured only when the previous content is actually known - the image
+    // was presented before (it sits in PRESENT_SRC with last frame's pixels) / the depth image
+    // rendered a frame. Otherwise the pass's clear values apply, exactly as before this slice.
+    const bool colorPreserved = state.swapchainImageIndex < swapchainImagePresented.size() &&
+                                swapchainImagePresented[state.swapchainImageIndex] != 0U;
+    const bool loadColor = state.swapchainColorLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD && colorPreserved;
+    const bool loadDepth = state.swapchainDepthLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD && depthImageHoldsFrame;
+    const VkAttachmentLoadOp firstColorLoadOp =
+        state.swapchainColorLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD
+            ? (loadColor ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR)
+            : state.swapchainColorLoadOp;
+    const VkAttachmentLoadOp firstDepthLoadOp =
+        state.swapchainDepthLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD
+            ? (loadDepth ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR)
+            : state.swapchainDepthLoadOp;
     if (!state.barrierDoneForSwapchain) {
         // Per-frame entry transitions (once): the acquired image and the per-swapchain depth
         // target enter their attachment layouts. oldLayout=UNDEFINED is always legal (it only
-        // forfeits content preservation), which frees us from per-image layout bookkeeping.
+        // forfeits content preservation); a honoured Load names the real previous layout so the
+        // content survives the transition.
         VkImageMemoryBarrier entryBarriers[2]{};
         for (VkImageMemoryBarrier& barrier : entryBarriers) {
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         }
-        entryBarriers[0].srcAccessMask = 0U;
-        entryBarriers[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        entryBarriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        entryBarriers[0].srcAccessMask = loadColor ? VK_ACCESS_MEMORY_READ_BIT : 0U;
+        entryBarriers[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+        entryBarriers[0].oldLayout = loadColor ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_UNDEFINED;
         entryBarriers[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         entryBarriers[0].image = swapchainImages[state.swapchainImageIndex];
         entryBarriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 1U, 0U, 1U};
-        entryBarriers[1].srcAccessMask = 0U;
-        entryBarriers[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        entryBarriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        entryBarriers[1].srcAccessMask = loadDepth ? VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : 0U;
+        entryBarriers[1].dstAccessMask =
+            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+        entryBarriers[1].oldLayout = loadDepth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
         entryBarriers[1].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         entryBarriers[1].image = depthImage;
         entryBarriers[1].subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0U, 1U, 0U, 1U};
-        vk.vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        const VkPipelineStageFlags entrySourceStage =
+            (loadColor || loadDepth)
+                ? static_cast<VkPipelineStageFlags>(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                                    VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT)
+                : static_cast<VkPipelineStageFlags>(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+        vk.vkCmdPipelineBarrier(commandBuffer, entrySourceStage,
                                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
                                     VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
                                 0U, 0U, nullptr, 0U, nullptr, 2U, entryBarriers);
@@ -1052,14 +1082,14 @@ bool VulkanRenderDeviceUVE::ImplUVE::BeginSwapchainPassDynamicUVE() {
     colorAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     colorAttachmentInfo.imageView = swapchainImageViews[state.swapchainImageIndex];
     colorAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttachmentInfo.loadOp = resume ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachmentInfo.loadOp = resume ? VK_ATTACHMENT_LOAD_OP_LOAD : firstColorLoadOp;
     colorAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachmentInfo.clearValue = state.clearValues[0];
     VkRenderingAttachmentInfo depthAttachmentInfo{};
     depthAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     depthAttachmentInfo.imageView = depthImageView;
     depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depthAttachmentInfo.loadOp = resume ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachmentInfo.loadOp = resume ? VK_ATTACHMENT_LOAD_OP_LOAD : firstDepthLoadOp;
     depthAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachmentInfo.clearValue = state.clearValues[1];
     VkRenderingInfo renderingInfo{};
@@ -1466,6 +1496,8 @@ void VulkanRenderDeviceUVE::ImplUVE::DestroySwapchainResourcesUVE() {
     }
     swapchainImageViews.clear();
     swapchainImages.clear(); // the swapchain owns the images themselves; nothing to destroy here
+    swapchainImagePresented.clear();
+    depthImageHoldsFrame = false;
     if (depthImageView != VK_NULL_HANDLE) {
         vk.vkDestroyImageView(device, depthImageView, nullptr);
         depthImageView = VK_NULL_HANDLE;
@@ -1641,6 +1673,8 @@ bool VulkanRenderDeviceUVE::ImplUVE::CreateSwapchainResourcesUVE() {
     vk.vkGetSwapchainImagesKHR(device, swapchain, &actualImageCount, nullptr);
     swapchainImages.resize(actualImageCount);
     vk.vkGetSwapchainImagesKHR(device, swapchain, &actualImageCount, swapchainImages.data());
+    swapchainImagePresented.assign(actualImageCount, 0U);
+    depthImageHoldsFrame = false;
 
     swapchainImageViews.resize(actualImageCount, VK_NULL_HANDLE);
     for (std::uint32_t index = 0; index < actualImageCount; ++index) {
@@ -6537,18 +6571,25 @@ void VulkanRenderDeviceUVE::PresentUVE() {
             }
         }
     }
+    VkAttachmentLoadOp firstSwapchainColorLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    VkAttachmentLoadOp firstSwapchainDepthLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     for (const auto& submission : frameSubmissions) {
         bool clearPicked = false;
         for (const RecordedCommandUVE& command : submission.commands) {
             if (const auto* begin = std::get_if<BeginRenderPassCommandUVE>(&command)) {
                 if (begin->desc.colorAttachment == kInvalidTextureHandleUVE &&
                     begin->desc.depthAttachment == kInvalidTextureHandleUVE) {
-                    if (begin->desc.colorLoadOp != LoadOpUVE::Clear ||
-                        begin->desc.depthLoadOp != LoadOpUVE::Clear) {
+                    // WP5c: the dynamic arm honours the first swapchain pass's load ops; the
+                    // classic (pre-1.3) arm keeps its baked clear and says so once.
+                    firstSwapchainColorLoadOp = ToVkLoadOpUVE(begin->desc.colorLoadOp);
+                    firstSwapchainDepthLoadOp = ToVkLoadOpUVE(begin->desc.depthLoadOp);
+                    if (!impl.useDynamicRendering && (begin->desc.colorLoadOp != LoadOpUVE::Clear ||
+                                                      begin->desc.depthLoadOp != LoadOpUVE::Clear)) {
                         impl.WarnOnceUVE(ImplUVE::kWarnedLoadOpUnhonoredUVE,
-                            "BeginRenderPassUVE requested Load/DontCare, but the swapchain "
-                            "render pass bakes a full-frame clear (later slices make loadOps "
-                            "real); the frame still starts from the pass's clear values");
+                            "BeginRenderPassUVE requested Load/DontCare, but the classic (pre-1.3) "
+                            "swapchain render pass bakes a full-frame clear; the frame still "
+                            "starts from the pass's clear values (decision: 1.3 dynamic rendering "
+                            "is the floor for load-op semantics)");
                     }
                     const std::array<float, 4U>& requested = begin->desc.clearColor;
                     for (std::size_t channel = 0; channel < 4U; ++channel) {
@@ -6600,6 +6641,8 @@ void VulkanRenderDeviceUVE::PresentUVE() {
         ImplUVE::FramePassStateUVE& state = impl.framePassState;
         state.clearValues[0] = clearValues[0];
         state.clearValues[1] = clearValues[1];
+        state.swapchainColorLoadOp = firstSwapchainColorLoadOp;
+        state.swapchainDepthLoadOp = firstSwapchainDepthLoadOp;
         state.swapchainImageIndex = imageIndex;
         state.barrierDoneForSwapchain = false;
         state.swapchainPassBegunThisFrame = false;
@@ -6707,6 +6750,10 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     const VkResult presentResult = impl.vk.vkQueuePresentKHR(impl.presentQueue, &presentInfo);
     if (presentResult == VK_SUCCESS || presentResult == VK_SUBOPTIMAL_KHR) {
         impl.lastPresentedImageIndex = imageIndex;
+        if (imageIndex < impl.swapchainImagePresented.size()) {
+            impl.swapchainImagePresented[imageIndex] = 1U;
+        }
+        impl.depthImageHoldsFrame = true;
     }
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
         // Resize visible to the driver after acquire: rebuild now so next frame uses a valid

@@ -6047,4 +6047,67 @@ TEST_F(VulkanRenderDeviceUVETest, SubmitDescRejectsDestroyedSemaphore) {
     EXPECT_EQ(device->DestroySemaphoreUVE(live), ResultUVE::Success);
 }
 
+// ---- Foundation WP5c: swapchain load-op semantics on the dynamic-rendering arm ------------------
+TEST_F(VulkanRenderDeviceUVETest, SwapchainLoadOpKeepsThePreviouslyPresentedImage) {
+    // Present a distinctive clear colour often enough that EVERY swapchain image holds it (the
+    // swapchain rotates images, and "Load" means that image's own last presented content), then
+    // present one frame that asks to Load without drawing anything: the colour must survive.
+    // A final Clear frame proves the pass's clear still wins when asked for.
+    constexpr std::uint32_t kWarmupFramesUVE = 8U; // > any sane swapchain image count
+    for (std::uint32_t frame = 0U; frame < kWarmupFramesUVE; ++frame) {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        ASSERT_NE(commandBuffer, nullptr);
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.0F, 1.0F, 0.0F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.clearDepth = 1.0F;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+        device->PresentUVE();
+        ASSERT_TRUE(device->IsUsableUVE());
+    }
+
+    auto loadFrame = device->CreateCommandBufferUVE();
+    ASSERT_NE(loadFrame, nullptr);
+    RenderPassDescUVE loadDesc{};
+    loadDesc.colorLoadOp = LoadOpUVE::Load;
+    loadDesc.clearColor = {1.0F, 0.0F, 0.0F, 1.0F}; // must NOT be applied
+    loadDesc.depthLoadOp = LoadOpUVE::Load;
+    loadFrame->BeginRenderPassUVE(loadDesc);
+    loadFrame->EndRenderPassUVE();
+    device->SubmitUVE(std::move(loadFrame));
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+
+    std::uint32_t width = 0U;
+    std::uint32_t height = 0U;
+    EXPECT_FALSE(device->ReadbackLatestPresentedImageUVE({}, width, height));
+    ASSERT_GT(width, 0U);
+    ASSERT_GT(height, 0U);
+    std::vector<std::byte> pixels(static_cast<std::size_t>(width) * height * 4U);
+    ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+    const auto loaded = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+    EXPECT_LT(loaded[0], 40) << "a Load pass must not apply its clear colour";
+    EXPECT_GT(loaded[1], 200) << "the previously presented green must survive the Load pass";
+    EXPECT_LT(loaded[2], 40);
+
+    auto clearFrame = device->CreateCommandBufferUVE();
+    ASSERT_NE(clearFrame, nullptr);
+    RenderPassDescUVE clearDesc{};
+    clearDesc.colorLoadOp = LoadOpUVE::Clear;
+    clearDesc.clearColor = {0.0F, 0.0F, 1.0F, 1.0F};
+    clearFrame->BeginRenderPassUVE(clearDesc);
+    clearFrame->EndRenderPassUVE();
+    device->SubmitUVE(std::move(clearFrame));
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+    ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+    const auto cleared = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+    EXPECT_LT(cleared[1], 40) << "an explicit Clear still replaces the content";
+    EXPECT_GT(cleared[2], 200);
+    EXPECT_EQ(device->WaitIdleUVE(), RenderOperationResultUVE::Success);
+}
+
 } // namespace UVE::Render::Tests
