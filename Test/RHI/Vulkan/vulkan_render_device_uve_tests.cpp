@@ -3780,6 +3780,159 @@ TEST_F(VulkanRenderDeviceUVETest, ComputeDispatchFillsStorageBufferProvingRealCo
     device->DestroyShaderUVE(fragmentShader);
 }
 
+TEST_F(VulkanRenderDeviceUVETest, PointAndStripTopologiesAssemblePrimitivesOnTheSwapchain) {
+    // Each new topology is proved by a pixel a list topology could not have painted, with the
+    // list drawn as the control in the same test: a 16px point (gl_PointSize from the vertex
+    // shader) covers pixels the 1px/absent alternative would not; a four-vertex TriangleStrip
+    // paints the corner a four-vertex Triangles draw leaves clear; a three-vertex LineStrip
+    // paints the second segment a Lines draw drops.
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kTriangleVertexSpirvUVE;
+    ShaderDescUVE pointVertexDesc{};
+    pointVertexDesc.stage = ShaderStageUVE::Vertex;
+    pointVertexDesc.sourceCode = kPointVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kTriangleFragmentSpirvUVE;
+    const ShaderHandleUVE vertexShader = device->CreateShaderUVE(vertexDesc);
+    const ShaderHandleUVE pointVertexShader = device->CreateShaderUVE(pointVertexDesc);
+    const ShaderHandleUVE fragmentShader = device->CreateShaderUVE(fragmentDesc);
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(pointVertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+    const auto makePipeline = [&](const ShaderHandleUVE vs, const PrimitiveTopologyUVE topology) {
+        PipelineDescUVE desc{};
+        desc.vertexShader = vs;
+        desc.fragmentShader = fragmentShader;
+        desc.vertexStride = 24U;
+        desc.vertexLayout.push_back(VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U});
+        desc.vertexLayout.push_back(VertexAttributeUVE{"COLOR", VertexAttributeFormatUVE::Float3, 12U});
+        desc.topology = topology;
+        desc.depthTestEnabled = false;
+        desc.depthWriteEnabled = false;
+        return device->CreatePipelineUVE(desc);
+    };
+    const PipelineHandleUVE pointPipeline = makePipeline(pointVertexShader, PrimitiveTopologyUVE::Points);
+    const PipelineHandleUVE stripPipeline = makePipeline(vertexShader, PrimitiveTopologyUVE::TriangleStrip);
+    const PipelineHandleUVE trianglePipeline = makePipeline(vertexShader, PrimitiveTopologyUVE::Triangles);
+    const PipelineHandleUVE lineStripPipeline = makePipeline(vertexShader, PrimitiveTopologyUVE::LineStrip);
+    const PipelineHandleUVE linePipeline = makePipeline(vertexShader, PrimitiveTopologyUVE::Lines);
+    ASSERT_NE(pointPipeline, kInvalidPipelineHandleUVE);
+    ASSERT_NE(stripPipeline, kInvalidPipelineHandleUVE);
+    ASSERT_NE(trianglePipeline, kInvalidPipelineHandleUVE);
+    ASSERT_NE(lineStripPipeline, kInvalidPipelineHandleUVE);
+    ASSERT_NE(linePipeline, kInvalidPipelineHandleUVE);
+    PipelineDescUVE unknownTopology{};
+    unknownTopology.vertexShader = vertexShader;
+    unknownTopology.fragmentShader = fragmentShader;
+    unknownTopology.topology = static_cast<PrimitiveTopologyUVE>(0xFFU);
+    EXPECT_EQ(device->CreatePipelineUVE(unknownTopology), kInvalidPipelineHandleUVE);
+
+    // The swapchain extent decides pixel-centre NDC for the line strip's column and row.
+    std::vector<std::byte> pixels(1280U * 720U * 4U);
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    {
+        auto clearFrame = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+        clearFrame->BeginRenderPassUVE(passDesc);
+        clearFrame->EndRenderPassUVE();
+        device->SubmitUVE(std::move(clearFrame));
+        device->PresentUVE();
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        if (width < 64U || height < 64U) { GTEST_SKIP() << "swapchain too small for pixel proofs"; }
+    }
+    const auto ndcForPixel = [](const std::uint32_t pixel, const std::uint32_t size) {
+        return (static_cast<float>(pixel) + 0.5F) / static_cast<float>(size) * 2.0F - 1.0F;
+    };
+    const std::uint32_t centreX = width / 2U;
+    const std::uint32_t centreY = height / 2U;
+    const float columnNdc = ndcForPixel(centreX + width / 4U, width);
+    const float rowNdc = ndcForPixel(centreY, height);
+    const float green[3] = {0.0F, 1.0F, 0.0F};
+    const auto vertex = [&](const float x, const float y, std::array<float, 6>& out) {
+        out = {x, y, 0.0F, green[0], green[1], green[2]};
+    };
+    std::array<std::array<float, 6>, 4> stripCorners{};
+    vertex(-1.0F, -1.0F, stripCorners[0]);
+    vertex(1.0F, -1.0F, stripCorners[1]);
+    vertex(-1.0F, 1.0F, stripCorners[2]);
+    vertex(1.0F, 1.0F, stripCorners[3]);
+    std::array<std::array<float, 6>, 3> lineStrip{};
+    vertex(-1.0F, rowNdc, lineStrip[0]);
+    vertex(columnNdc, rowNdc, lineStrip[1]);
+    vertex(columnNdc, 1.0F, lineStrip[2]);
+    std::array<std::array<float, 6>, 1> point{};
+    vertex(ndcForPixel(centreX, width), ndcForPixel(centreY, height), point[0]);
+    const BufferHandleUVE stripBuffer = device->CreateBufferUVE(
+        {sizeof(stripCorners), BufferUsageUVE::Vertex}, std::as_bytes(std::span(stripCorners)));
+    const BufferHandleUVE lineStripBuffer = device->CreateBufferUVE(
+        {sizeof(lineStrip), BufferUsageUVE::Vertex}, std::as_bytes(std::span(lineStrip)));
+    const BufferHandleUVE pointBuffer = device->CreateBufferUVE(
+        {sizeof(point), BufferUsageUVE::Vertex}, std::as_bytes(std::span(point)));
+    ASSERT_NE(stripBuffer, kInvalidBufferHandleUVE);
+    ASSERT_NE(lineStripBuffer, kInvalidBufferHandleUVE);
+    ASSERT_NE(pointBuffer, kInvalidBufferHandleUVE);
+
+    const auto drawFrame = [&](const PipelineHandleUVE pipeline, const BufferHandleUVE buffer,
+                               const std::uint32_t vertexCount) {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(pipeline);
+        commandBuffer->BindVertexBufferUVE(buffer);
+        commandBuffer->DrawUVE(vertexCount);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+        device->PresentUVE();
+        ASSERT_TRUE(device->IsUsableUVE());
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+    };
+    const auto greenAtPixel = [&](const std::uint32_t x, const std::uint32_t y) {
+        return ChannelAtNdcUVE(pixels, width, height, ndcForPixel(x, width), ndcForPixel(y, height))[1];
+    };
+
+    drawFrame(pointPipeline, pointBuffer, 1U);
+    EXPECT_GT(greenAtPixel(centreX, centreY), 200) << "the point covers its own pixel";
+    EXPECT_GT(greenAtPixel(centreX - 6U, centreY), 200) << "16px point: 6 pixels left is still inside";
+    EXPECT_GT(greenAtPixel(centreX, centreY + 6U), 200);
+    EXPECT_LT(greenAtPixel(centreX - 20U, centreY), 40) << "20 pixels out is beyond the 16px square";
+    EXPECT_LT(greenAtPixel(centreX, centreY + 20U), 40);
+
+    drawFrame(stripPipeline, stripBuffer, 4U);
+    EXPECT_GT(greenAtPixel(width - 8U, height - 8U), 200) << "strip's second triangle paints the far corner";
+    EXPECT_GT(greenAtPixel(8U, 8U), 200);
+    drawFrame(trianglePipeline, stripBuffer, 4U);
+    EXPECT_LT(greenAtPixel(width - 8U, height - 8U), 40) << "a Triangles draw of the same vertices leaves it clear";
+    EXPECT_GT(greenAtPixel(8U, 8U), 200);
+
+    drawFrame(lineStripPipeline, lineStripBuffer, 3U);
+    EXPECT_GT(greenAtPixel(centreX / 2U, centreY), 200) << "first segment along the centre row";
+    EXPECT_GT(greenAtPixel(centreX + width / 4U, centreY + height / 4U), 200)
+        << "second segment down the quarter column: only a strip draws it";
+    drawFrame(linePipeline, lineStripBuffer, 3U);
+    EXPECT_GT(greenAtPixel(centreX / 2U, centreY), 200);
+    EXPECT_LT(greenAtPixel(centreX + width / 4U, centreY + height / 4U), 40)
+        << "a Lines draw drops the unpaired third vertex";
+
+    device->DestroyBufferUVE(pointBuffer);
+    device->DestroyBufferUVE(lineStripBuffer);
+    device->DestroyBufferUVE(stripBuffer);
+    device->DestroyPipelineUVE(linePipeline);
+    device->DestroyPipelineUVE(lineStripPipeline);
+    device->DestroyPipelineUVE(trianglePipeline);
+    device->DestroyPipelineUVE(stripPipeline);
+    device->DestroyPipelineUVE(pointPipeline);
+    device->DestroyShaderUVE(fragmentShader);
+    device->DestroyShaderUVE(pointVertexShader);
+    device->DestroyShaderUVE(vertexShader);
+}
+
 TEST_F(VulkanRenderDeviceUVETest, ReadbackBufferUVE_ReadsComputeWrittenPaletteDirectly) {
     // CS3: the compute result read back as NUMBERS, not inferred from a pixel. M5a proved the
     // dispatch by painting uColors[2] and sampling the framebuffer; this proves the same write

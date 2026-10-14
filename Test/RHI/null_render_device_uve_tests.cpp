@@ -678,6 +678,52 @@ TEST(NullRenderDeviceUVETest, CreatePipelineUVE_LinesTopology_IsAccepted) {
     EXPECT_EQ(device.CreatePipelineUVE(invalidDesc), kInvalidPipelineHandleUVE);
 }
 
+TEST(NullRenderDeviceUVETest, PointAndStripTopologiesAreAcceptedAndTheirPrimitiveArithmeticIsExact) {
+    // Points, LineStrip and TriangleStrip join the valid set (pipelines accept them, from
+    // source and from binary) and the two count helpers describe exactly how a draw's vertex
+    // count will be consumed: lists need multiples, strips need a minimum, points take anything.
+    NullRenderDeviceUVE device;
+    const ShaderHandleUVE vertexShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, "vs"});
+    const ShaderHandleUVE fragmentShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Fragment, "fs"});
+    for (const PrimitiveTopologyUVE topology : {PrimitiveTopologyUVE::Points, PrimitiveTopologyUVE::LineStrip,
+                                                PrimitiveTopologyUVE::TriangleStrip}) {
+        EXPECT_TRUE(IsPrimitiveTopologyValidUVE(topology));
+        PipelineDescUVE desc;
+        desc.vertexShader = vertexShader;
+        desc.fragmentShader = fragmentShader;
+        desc.topology = topology;
+        const PipelineHandleUVE pipeline = device.CreatePipelineUVE(desc);
+        EXPECT_NE(pipeline, kInvalidPipelineHandleUVE);
+        const std::array<std::byte, 4> binary{};
+        PipelineBinaryDescUVE binaryDesc;
+        binaryDesc.topology = topology;
+        EXPECT_NE(device.CreatePipelineFromBinaryUVE(binary, 0U, binaryDesc), kInvalidPipelineHandleUVE);
+    }
+    EXPECT_FALSE(IsPrimitiveTopologyValidUVE(static_cast<PrimitiveTopologyUVE>(5U)));
+
+    EXPECT_EQ(GetPrimitiveCountUVE(PrimitiveTopologyUVE::Triangles, 7U), 2U);
+    EXPECT_EQ(GetPrimitiveCountUVE(PrimitiveTopologyUVE::Lines, 7U), 3U);
+    EXPECT_EQ(GetPrimitiveCountUVE(PrimitiveTopologyUVE::Points, 7U), 7U);
+    EXPECT_EQ(GetPrimitiveCountUVE(PrimitiveTopologyUVE::LineStrip, 7U), 6U);
+    EXPECT_EQ(GetPrimitiveCountUVE(PrimitiveTopologyUVE::LineStrip, 1U), 0U);
+    EXPECT_EQ(GetPrimitiveCountUVE(PrimitiveTopologyUVE::TriangleStrip, 7U), 5U);
+    EXPECT_EQ(GetPrimitiveCountUVE(PrimitiveTopologyUVE::TriangleStrip, 2U), 0U);
+    EXPECT_EQ(GetPrimitiveCountUVE(static_cast<PrimitiveTopologyUVE>(0xFFU), 7U), 0U);
+
+    EXPECT_TRUE(IsVertexCountCompleteForTopologyUVE(PrimitiveTopologyUVE::Triangles, 0U));
+    EXPECT_TRUE(IsVertexCountCompleteForTopologyUVE(PrimitiveTopologyUVE::Triangles, 6U));
+    EXPECT_FALSE(IsVertexCountCompleteForTopologyUVE(PrimitiveTopologyUVE::Triangles, 7U));
+    EXPECT_TRUE(IsVertexCountCompleteForTopologyUVE(PrimitiveTopologyUVE::Lines, 4U));
+    EXPECT_FALSE(IsVertexCountCompleteForTopologyUVE(PrimitiveTopologyUVE::Lines, 5U));
+    EXPECT_TRUE(IsVertexCountCompleteForTopologyUVE(PrimitiveTopologyUVE::Points, 5U));
+    EXPECT_TRUE(IsVertexCountCompleteForTopologyUVE(PrimitiveTopologyUVE::LineStrip, 0U));
+    EXPECT_FALSE(IsVertexCountCompleteForTopologyUVE(PrimitiveTopologyUVE::LineStrip, 1U));
+    EXPECT_TRUE(IsVertexCountCompleteForTopologyUVE(PrimitiveTopologyUVE::LineStrip, 2U));
+    EXPECT_FALSE(IsVertexCountCompleteForTopologyUVE(PrimitiveTopologyUVE::TriangleStrip, 2U));
+    EXPECT_TRUE(IsVertexCountCompleteForTopologyUVE(PrimitiveTopologyUVE::TriangleStrip, 3U));
+    EXPECT_FALSE(IsVertexCountCompleteForTopologyUVE(static_cast<PrimitiveTopologyUVE>(0xFFU), 0U));
+}
+
 TEST(NullRenderDeviceUVETest, CreatePipelineFromBinaryUVE_UnknownBlendMode_ReturnsInvalidBeforePublication) {
     NullRenderDeviceUVE device;
     const std::array<std::byte, 4> binary{};

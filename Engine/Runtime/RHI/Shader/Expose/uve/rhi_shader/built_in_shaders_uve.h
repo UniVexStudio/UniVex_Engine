@@ -53,6 +53,10 @@ extern const std::string_view kDecalSource;
 /// DebugRendererUVE's line pass: world-space positions with per-vertex colors through
 /// uViewProjection, so one batch carries every debug line of the frame in a single draw.
 inline constexpr std::string_view kDebugLineVirtualPath = "shaders/debug_line.glsl";
+/// DebugRendererUVE's point pass: the line pass's vertex format drawn as a Points pipeline, with
+/// one batch-wide uPointSize (pixels) written to gl_PointSize.
+inline constexpr std::string_view kDebugPointVirtualPath = "shaders/debug_point.glsl";
+extern const std::string_view kDebugPointSource;
 /// Renderer2DUVE's sprite pass: world-space textured quads with per-vertex modulate
 /// through uViewProjection, sampled from uTexture (slot 0) - one upload + draw per sprite.
 inline constexpr std::string_view kSprite2DVirtualPath = "shaders/sprite_2d.glsl";
