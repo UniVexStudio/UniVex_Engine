@@ -75,6 +75,13 @@ struct VkFunctionsUVE {
     PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier = nullptr;
     PFN_vkCmdCopyImageToBuffer vkCmdCopyImageToBuffer = nullptr;
     PFN_vkCmdBlitImage vkCmdBlitImage = nullptr; // Tier 2.6 texture blit + mip chain (core 1.0)
+    // Device-level timestamp queries (core 1.0): a transient reset+write submission makes the
+    // result readable, which is what WriteTimestampUVE/GetQueryResultUVE promise.
+    PFN_vkCreateQueryPool vkCreateQueryPool = nullptr;
+    PFN_vkDestroyQueryPool vkDestroyQueryPool = nullptr;
+    PFN_vkGetQueryPoolResults vkGetQueryPoolResults = nullptr;
+    PFN_vkCmdResetQueryPool vkCmdResetQueryPool = nullptr;
+    PFN_vkCmdWriteTimestamp vkCmdWriteTimestamp = nullptr;
     PFN_vkCreateBuffer vkCreateBuffer = nullptr;
     PFN_vkDestroyBuffer vkDestroyBuffer = nullptr;
     PFN_vkGetBufferMemoryRequirements vkGetBufferMemoryRequirements = nullptr;

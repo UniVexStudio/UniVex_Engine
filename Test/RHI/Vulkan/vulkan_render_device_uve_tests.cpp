@@ -394,6 +394,42 @@ TEST_F(VulkanRenderDeviceUVETest, GeometryPipelineIsExplicitlyUnsupportedRatherT
     device->DestroyShaderUVE(vertex);
 }
 
+TEST_F(VulkanRenderDeviceUVETest, TimestampQueriesReportRealTicksAndRefuseOcclusion) {
+    using ResultUVE = RenderOperationResultUVE;
+    const auto caps = device->GetCapabilitiesUVE();
+    ASSERT_EQ(caps.timestampQueries, RenderFeatureSupportUVE::Native);
+    EXPECT_EQ(caps.occlusionQueries, RenderFeatureSupportUVE::Unsupported)
+        << "a device-level begin/end pair cannot bracket the caller's draws in one command buffer";
+
+    QueryHandleUVE query;
+    ASSERT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::Timestamp, query), ResultUVE::Success);
+    EXPECT_EQ(device->BeginQueryUVE(query), ResultUVE::Unsupported);
+    EXPECT_EQ(device->EndQueryUVE(query), ResultUVE::Unsupported);
+    ASSERT_EQ(device->WriteTimestampUVE(query), ResultUVE::Success);
+    RenderQueryResultUVE result{};
+    ASSERT_EQ(device->GetQueryResultUVE(query, result, false), ResultUVE::Success);
+    EXPECT_EQ(result.kind, RenderQueryKindUVE::Timestamp);
+    const std::uint64_t first = result.value;
+    // A later write cannot report an earlier time; a coarse clock may legitimately repeat a tick.
+    ASSERT_EQ(device->WriteTimestampUVE(query), ResultUVE::Success);
+    ASSERT_EQ(device->GetQueryResultUVE(query, result, true), ResultUVE::Success);
+    EXPECT_GE(result.value, first);
+
+    QueryHandleUVE occlusion{};
+    EXPECT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, occlusion), ResultUVE::Unsupported);
+    EXPECT_EQ(occlusion, kInvalidQueryHandleUVE) << "a refused create must leave the output untouched";
+    EXPECT_EQ(device->CreateQueryUVE(static_cast<RenderQueryKindUVE>(0xFFU), occlusion), ResultUVE::InvalidArgument);
+    RenderQueryResultUVE untouched{};
+    untouched.value = 4321U;
+    EXPECT_EQ(device->WriteTimestampUVE(QueryHandleUVE{999999U}), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->GetQueryResultUVE(QueryHandleUVE{999999U}, untouched, false), ResultUVE::InvalidHandle);
+    EXPECT_EQ(untouched.value, 4321U) << "a refused read must leave the output untouched";
+    EXPECT_EQ(device->DestroyQueryUVE(QueryHandleUVE{999999U}), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->DestroyQueryUVE(query), ResultUVE::Success);
+    EXPECT_EQ(device->DestroyQueryUVE(query), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->GetQueryResultUVE(query, untouched, false), ResultUVE::InvalidHandle);
+}
+
 TEST_F(VulkanRenderDeviceUVETest, TimelineSemaphoresProvideRealCountersAndHonestTimeouts) {
     using ResultUVE = RenderOperationResultUVE;
     ASSERT_EQ(device->GetCapabilitiesUVE().timelineSemaphores, RenderFeatureSupportUVE::Native)
