@@ -161,6 +161,11 @@ bool VkFunctionsUVE::LoadDeviceUVE(const VkDevice device) {
     allResolved &= ResolveDevice(vkCmdEndRenderPass, gdpa, device, "vkCmdEndRenderPass");
     allResolved &= ResolveDevice(vkCreateSemaphore, gdpa, device, "vkCreateSemaphore");
     allResolved &= ResolveDevice(vkDestroySemaphore, gdpa, device, "vkDestroySemaphore");
+    // OPTIONAL timeline-semaphore entries (core 1.2, additive): absence only disables the
+    // timelineSemaphores capability, never the device.
+    (void)ResolveDevice(vkGetSemaphoreCounterValue, gdpa, device, "vkGetSemaphoreCounterValue");
+    (void)ResolveDevice(vkWaitSemaphores, gdpa, device, "vkWaitSemaphores");
+    (void)ResolveDevice(vkSignalSemaphore, gdpa, device, "vkSignalSemaphore");
     allResolved &= ResolveDevice(vkCreateFence, gdpa, device, "vkCreateFence");
     allResolved &= ResolveDevice(vkDestroyFence, gdpa, device, "vkDestroyFence");
     allResolved &= ResolveDevice(vkWaitForFences, gdpa, device, "vkWaitForFences");

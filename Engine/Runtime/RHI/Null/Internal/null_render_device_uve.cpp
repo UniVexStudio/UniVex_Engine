@@ -4,6 +4,8 @@
 #include "uve/rhi_null/null_render_device_uve.h"
 
 #include <algorithm>
+#include <chrono>
+#include <condition_variable>
 #include <iterator>
 #include <mutex>
 #include <unordered_map>
@@ -49,6 +51,15 @@ struct NullRenderDeviceUVE::ImplUVE {
         RenderQueryKindUVE kind;
         bool issued = false;
     };
+    // Timeline semaphores: real counters, real blocking waits. `condition` is notified on every
+    // signal and on destruction so no waiter can outlive the device.
+    struct SemaphoreRecordUVE {
+        std::uint64_t value = 0U;
+    };
+    mutable std::mutex semaphoreMutex;
+    std::condition_variable semaphoreCondition;
+    std::unordered_map<std::uint32_t, SemaphoreRecordUVE> semaphores;
+    std::uint32_t nextSemaphore = 1U;
     std::unordered_map<std::uint32_t, QueryRecordUVE> queries;
     std::uint32_t nextQuery = 1U, activeOcclusion = 0U;
     std::vector<RecordedDeviceOperationUVE> operations;
@@ -435,6 +446,7 @@ RenderDeviceCapabilitiesUVE NullRenderDeviceUVE::GetCapabilitiesUVE() const noex
     RenderDeviceCapabilitiesUVE caps{model, model, model, model, model, model, model,
                                      RenderFeatureSupportUVE::Unsupported, model};
     caps.geometryShaders = model;
+    caps.timelineSemaphores = model;
     return caps;
 }
 RenderOperationResultUVE NullRenderDeviceUVE::GetTextureDescUVE(TextureHandleUVE handle,
@@ -500,6 +512,84 @@ RenderOperationResultUVE NullRenderDeviceUVE::WaitIdleUVE() {
     CollectRetiredTexturesUVE();
     return RenderOperationResultUVE::Recorded;
 }
+RenderOperationResultUVE NullRenderDeviceUVE::CreateSemaphoreUVE(const SemaphoreDescUVE &desc,
+                                                                    SemaphoreHandleUVE &output) {
+    const std::uint32_t handleValue = m_impl->nextSemaphore++;
+    {
+        const std::lock_guard lock(m_impl->semaphoreMutex);
+        m_impl->semaphores.emplace(handleValue, ImplUVE::SemaphoreRecordUVE{desc.initialValue});
+    }
+    output = SemaphoreHandleUVE{handleValue};
+    return RenderOperationResultUVE::Success;
+}
+
+RenderOperationResultUVE NullRenderDeviceUVE::GetSemaphoreCounterUVE(const SemaphoreHandleUVE semaphore,
+                                                                     std::uint64_t &output) const {
+    const std::lock_guard lock(m_impl->semaphoreMutex);
+    const auto found = m_impl->semaphores.find(semaphore.value);
+    if (found == m_impl->semaphores.end()) {
+        return RenderOperationResultUVE::InvalidHandle;
+    }
+    output = found->second.value;
+    return RenderOperationResultUVE::Success;
+}
+
+RenderOperationResultUVE NullRenderDeviceUVE::SignalSemaphoreUVE(const SemaphoreHandleUVE semaphore,
+                                                                 const std::uint64_t value) {
+    {
+        const std::lock_guard lock(m_impl->semaphoreMutex);
+        const auto found = m_impl->semaphores.find(semaphore.value);
+        if (found == m_impl->semaphores.end()) {
+            return RenderOperationResultUVE::InvalidHandle;
+        }
+        if (!IsSemaphoreSignalValueValidUVE(found->second.value, value)) {
+            UVE_ERROR("NullRenderDeviceUVE: SignalSemaphoreUVE ignored a non-increasing value");
+            return RenderOperationResultUVE::InvalidArgument;
+        }
+        found->second.value = value;
+    }
+    m_impl->RecordUVE(SignalSemaphoreOperationUVE{semaphore, value});
+    m_impl->semaphoreCondition.notify_all();
+    return RenderOperationResultUVE::Success;
+}
+
+RenderOperationResultUVE NullRenderDeviceUVE::WaitSemaphoreUVE(const SemaphoreHandleUVE semaphore,
+                                                               const std::uint64_t value,
+                                                               const std::uint64_t timeoutNs) {
+    const auto reached = [this, semaphore, value] {
+        const auto found = m_impl->semaphores.find(semaphore.value);
+        return found != m_impl->semaphores.end() && found->second.value >= value;
+    };
+    bool satisfied = false;
+    {
+        std::unique_lock lock(m_impl->semaphoreMutex);
+        if (m_impl->semaphores.find(semaphore.value) == m_impl->semaphores.end()) {
+            return RenderOperationResultUVE::InvalidHandle;
+        }
+        satisfied = m_impl->semaphoreCondition.wait_for(lock, std::chrono::nanoseconds(timeoutNs),
+                                                        reached);
+        if (!satisfied && m_impl->semaphores.find(semaphore.value) == m_impl->semaphores.end()) {
+            return RenderOperationResultUVE::InvalidHandle; // destroyed while waiting
+        }
+    }
+    m_impl->RecordUVE(WaitSemaphoreOperationUVE{semaphore, value, timeoutNs, satisfied});
+    return satisfied ? RenderOperationResultUVE::Success : RenderOperationResultUVE::TimedOut;
+}
+
+RenderOperationResultUVE NullRenderDeviceUVE::DestroySemaphoreUVE(const SemaphoreHandleUVE semaphore) {
+    {
+        const std::lock_guard lock(m_impl->semaphoreMutex);
+        if (m_impl->semaphores.erase(semaphore.value) == 0) {
+            UVE_ERROR("NullRenderDeviceUVE: DestroySemaphoreUVE called with an unknown or "
+                      "already-destroyed handle ({})",
+                      semaphore.value);
+            return RenderOperationResultUVE::InvalidHandle;
+        }
+    }
+    m_impl->semaphoreCondition.notify_all();
+    return RenderOperationResultUVE::Success;
+}
+
 RenderOperationResultUVE NullRenderDeviceUVE::CreateQueryUVE(RenderQueryKindUVE kind,
                                                              QueryHandleUVE &output) {
     if (kind != RenderQueryKindUVE::Timestamp && kind != RenderQueryKindUVE::AnySamplesPassed)

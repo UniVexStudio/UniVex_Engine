@@ -172,6 +172,7 @@ add_executable(uve_core_tests
     RHI/null_render_device_uve_tests.cpp
     RHI/device_operations_uve_tests.cpp
     RHI/stencil_state_uve_tests.cpp
+    RHI/timeline_semaphore_uve_tests.cpp
     RHI/geometry_pipeline_uve_tests.cpp
     RHI/render_resource_lifetime_uve_tests.cpp
     RHI/bind_group_uve_tests.cpp

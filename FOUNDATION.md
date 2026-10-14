@@ -796,6 +796,19 @@ untouched. Missing capabilities explicitly return `Unsupported`, never pretend s
 - **Queries:** real GL GPU timestamps and any-sample occlusion with state/lifetime validation
   and nonblocking result polling. Null records query operations but NEVER invents visibility or
   GPU nanoseconds. Vulkan currently advertises queries unsupported.
+- **Timeline semaphores:** `SemaphoreDescUVE` plus `CreateSemaphoreUVE` /
+  `GetSemaphoreCounterUVE` / `SignalSemaphoreUVE` / `WaitSemaphoreUVE` /
+  `DestroySemaphoreUVE` carry a monotonic 64-bit counter through the common API.
+  `RenderDeviceCapabilitiesUVE::timelineSemaphores` defaults to `Unsupported`, so no backend
+  claims the feature implicitly. Null keeps real counters and real blocking waits (a dedicated
+  mutex and condition variable, `TimedOut` on expiry, refused non-increasing signals, and
+  `InvalidHandle` when the semaphore is destroyed under a waiter), which makes
+  `TimelineSemaphoreUVETest`'s six cases genuine concurrency tests. Vulkan creates its own
+  timeline semaphores when the 1.2 feature and entry points are present and reports
+  `Unsupported` otherwise; GL reports `Unsupported` for every call instead of modelling a
+  queue-sync primitive it cannot honor. Binary (queue-to-queue) semaphores remain outside the
+  API on purpose: they only mean something as submission parameters, and `SubmitUVE` owns the
+  backend's frame submission — an explicit boundary, not a silent gap.
 - **Surface view:** `RenderSurfaceUVE` exposes the backend-owned default surface/swapchain's
   current drawable extent and presentation boundary, without duplicating window or swapchain
   ownership. GL/Vulkan provide actual surface metadata; Null explicitly has no native surface.
@@ -809,9 +822,11 @@ Native sources/tests pass strict syntax checks against real headers. Graphics-ca
 `38429697106` on `012f69f` passed the native suite, including the new operations and the unchanged
 shadow pixel comparisons after correcting their sampler setup. This closes the earlier execution-
 verification gap, not the explicitly unsupported Vulkan operations. Semaphores/timelines
-remain `[ ]`; they are not closed by a binary fence or a surface metadata view. Vulkan
-texture-transfer parity is implemented and awaiting native CI execution; Vulkan query parity
-(timestamps / any-samples-passed) remains explicitly partial.
+are implemented as timeline objects (`CreateSemaphoreUVE` and friends, above); the
+`[ ]` that remains is *submission-level* queue sync (binary semaphores as `SubmitUVE`
+parameters), which is not closed by a CPU-visible counter. Vulkan texture-transfer parity is
+implemented and awaiting native CI execution; Vulkan query parity (timestamps /
+any-samples-passed) remains explicitly partial.
 
 `[/]` **Stencil state** — `StencilStateUVE`/`StencilFaceStateUVE` are appended to both
 pipeline descriptors with disabled legacy defaults. Front/back compare, operations,

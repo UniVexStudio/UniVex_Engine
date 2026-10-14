@@ -38,6 +38,18 @@ public:
     [[nodiscard]] RenderOperationResultUVE WaitFenceUVE(FenceHandleUVE, std::uint64_t) override;
     [[nodiscard]] RenderOperationResultUVE DestroyFenceUVE(FenceHandleUVE) override;
     [[nodiscard]] RenderOperationResultUVE WaitIdleUVE() override;
+    /// Timeline semaphores are the one part of the Null model that is genuinely concurrent: a
+    /// wait blocks, so the thread that signals is by definition a different one. The semaphore
+    /// table therefore carries its own mutex and condition variable instead of relying on the
+    /// device's single-threaded contract.
+    [[nodiscard]] RenderOperationResultUVE CreateSemaphoreUVE(const SemaphoreDescUVE &,
+                                                              SemaphoreHandleUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE GetSemaphoreCounterUVE(SemaphoreHandleUVE,
+                                                                  std::uint64_t &) const override;
+    [[nodiscard]] RenderOperationResultUVE SignalSemaphoreUVE(SemaphoreHandleUVE, std::uint64_t) override;
+    [[nodiscard]] RenderOperationResultUVE WaitSemaphoreUVE(SemaphoreHandleUVE, std::uint64_t,
+                                                            std::uint64_t) override;
+    [[nodiscard]] RenderOperationResultUVE DestroySemaphoreUVE(SemaphoreHandleUVE) override;
     [[nodiscard]] RenderOperationResultUVE CreateQueryUVE(RenderQueryKindUVE, QueryHandleUVE &) override;
     [[nodiscard]] RenderOperationResultUVE BeginQueryUVE(QueryHandleUVE) override;
     [[nodiscard]] RenderOperationResultUVE EndQueryUVE(QueryHandleUVE) override;

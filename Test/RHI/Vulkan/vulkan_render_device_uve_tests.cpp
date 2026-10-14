@@ -394,6 +394,39 @@ TEST_F(VulkanRenderDeviceUVETest, GeometryPipelineIsExplicitlyUnsupportedRatherT
     device->DestroyShaderUVE(vertex);
 }
 
+TEST_F(VulkanRenderDeviceUVETest, TimelineSemaphoresProvideRealCountersAndHonestTimeouts) {
+    using ResultUVE = RenderOperationResultUVE;
+    ASSERT_EQ(device->GetCapabilitiesUVE().timelineSemaphores, RenderFeatureSupportUVE::Native)
+        << "the CI ICD (lavapipe) exposes Vulkan 1.2+ timeline semaphores";
+
+    SemaphoreHandleUVE semaphore;
+    ASSERT_EQ(device->CreateSemaphoreUVE(SemaphoreDescUVE{3U}, semaphore), ResultUVE::Success);
+    std::uint64_t counter = 0U;
+    ASSERT_EQ(device->GetSemaphoreCounterUVE(semaphore, counter), ResultUVE::Success);
+    EXPECT_EQ(counter, 3U);
+    EXPECT_EQ(device->WaitSemaphoreUVE(semaphore, 3U, 0U), ResultUVE::Success)
+        << "an already-reached value resolves without waiting";
+    EXPECT_EQ(device->WaitSemaphoreUVE(semaphore, 4U, 0U), ResultUVE::TimedOut);
+    EXPECT_EQ(device->SignalSemaphoreUVE(semaphore, 3U), ResultUVE::InvalidArgument)
+        << "a timeline counter never moves backwards";
+    EXPECT_EQ(device->SignalSemaphoreUVE(semaphore, 2U), ResultUVE::InvalidArgument);
+    ASSERT_EQ(device->SignalSemaphoreUVE(semaphore, 4U), ResultUVE::Success);
+    EXPECT_EQ(device->WaitSemaphoreUVE(semaphore, 4U, 1'000'000'000ULL), ResultUVE::Success);
+    ASSERT_EQ(device->GetSemaphoreCounterUVE(semaphore, counter), ResultUVE::Success);
+    EXPECT_EQ(counter, 4U);
+
+    std::uint64_t untouched = 55U;
+    EXPECT_EQ(device->GetSemaphoreCounterUVE(SemaphoreHandleUVE{999999U}, untouched), ResultUVE::InvalidHandle);
+    EXPECT_EQ(untouched, 55U) << "a refused counter read must leave the output untouched";
+    EXPECT_EQ(device->WaitSemaphoreUVE(SemaphoreHandleUVE{999999U}, 0U, 0U), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->SignalSemaphoreUVE(SemaphoreHandleUVE{999999U}, 5U), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->DestroySemaphoreUVE(SemaphoreHandleUVE{999999U}), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->DestroySemaphoreUVE(semaphore), ResultUVE::Success);
+    EXPECT_EQ(device->DestroySemaphoreUVE(semaphore), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->GetSemaphoreCounterUVE(semaphore, untouched), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->WaitIdleUVE(), ResultUVE::Success);
+}
+
 TEST_F(VulkanRenderDeviceUVETest, StencilPipelineAndDepthStencilTextureCreateOnDynamicDevice) {
     ShaderDescUVE vertexDesc{};
     vertexDesc.stage = ShaderStageUVE::Vertex;

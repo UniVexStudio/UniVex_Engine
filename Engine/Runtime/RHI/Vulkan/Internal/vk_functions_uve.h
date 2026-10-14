@@ -85,6 +85,11 @@ struct VkFunctionsUVE {
     PFN_vkUnmapMemory vkUnmapMemory = nullptr;
     PFN_vkCreateSemaphore vkCreateSemaphore = nullptr;
     PFN_vkDestroySemaphore vkDestroySemaphore = nullptr;
+    // Timeline semaphores are core 1.2: resolved optionally (a 1.0/1.1 host must still bring the
+    // device up), and the capability stays Unsupported when any of them is missing.
+    PFN_vkGetSemaphoreCounterValue vkGetSemaphoreCounterValue = nullptr;
+    PFN_vkWaitSemaphores vkWaitSemaphores = nullptr;
+    PFN_vkSignalSemaphore vkSignalSemaphore = nullptr;
     PFN_vkCreateFence vkCreateFence = nullptr;
     PFN_vkDestroyFence vkDestroyFence = nullptr;
     PFN_vkWaitForFences vkWaitForFences = nullptr;

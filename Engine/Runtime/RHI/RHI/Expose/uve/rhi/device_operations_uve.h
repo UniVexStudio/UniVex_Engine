@@ -37,14 +37,45 @@ struct RenderDeviceCapabilitiesUVE final {
     RenderFeatureSupportUVE retainedTextures = RenderFeatureSupportUVE::Unsupported;
     /// Copy source/destination offsets and byte count must satisfy this backend's alignment.
     std::uint32_t bufferCopyAlignment = 1U;
+    /// Timeline semaphore objects with CPU-visible counters. `Model` means the backend keeps
+    /// real counter state and real blocking waits but never claims GPU timing; `Native` means the
+    /// driver's own timeline semaphores back the calls; `Unsupported` means every semaphore call
+    /// is refused explicitly.
+    RenderFeatureSupportUVE timelineSemaphores = RenderFeatureSupportUVE::Unsupported;
     /// Optional geometry stage in a graphics pipeline; Model never means GPU execution.
     RenderFeatureSupportUVE geometryShaders = RenderFeatureSupportUVE::Unsupported;
 };
+/// Timeline semaphore: a monotonic 64-bit counter that orders work without a binary
+/// signal/unsignal cycle. Binary (queue-to-queue) semaphores are deliberately NOT part of this
+/// surface: they only mean something as parameters of a submission, and this RHI's SubmitUVE
+/// owns its frame submission. A backend may therefore report timeline semaphores as
+/// `Unsupported` without affecting fences, which remain the CPU-visible completion primitive.
 struct FenceTagUVE {};
+struct SemaphoreTagUVE {};
+/// Creation parameters for CreateSemaphoreUVE. `initialValue` is the counter's starting value;
+/// waiting for a value at or below it succeeds immediately, and signalling must strictly exceed
+/// the current value (a timeline counter never moves backwards).
+struct SemaphoreDescUVE final {
+    std::uint64_t initialValue = 0U;
+};
+
+[[nodiscard]] constexpr bool IsSemaphoreSignalValueValidUVE(const std::uint64_t currentValue,
+                                                            const std::uint64_t value) noexcept {
+    return value > currentValue;
+}
+
+/// A wait for a value already reached resolves immediately, so every value is a legal wait
+/// target; only the handle and the timeout decide the outcome.
+[[nodiscard]] constexpr bool IsSemaphoreWaitValueValidUVE(const std::uint64_t /*value*/) noexcept {
+    return true;
+}
+
 struct QueryTagUVE {};
 using FenceHandleUVE = ResourceHandleUVE<FenceTagUVE>;
+using SemaphoreHandleUVE = ResourceHandleUVE<SemaphoreTagUVE>;
 using QueryHandleUVE = ResourceHandleUVE<QueryTagUVE>;
 inline constexpr FenceHandleUVE kInvalidFenceHandleUVE{};
+inline constexpr SemaphoreHandleUVE kInvalidSemaphoreHandleUVE{};
 inline constexpr QueryHandleUVE kInvalidQueryHandleUVE{};
 
 /// A visibility barrier, outside render passes. Backend pass/texture binding still owns image
@@ -136,6 +167,19 @@ struct GenerateMipsOperationUVE {
 struct FenceOperationUVE {
     FenceHandleUVE fence;
 };
+/// Recorded (not simulated) CPU-side timeline operations: Null keeps their exact arguments in
+/// its diagnostic history, and no backend pretends a signal happened on the GPU because one was
+/// recorded here.
+struct SignalSemaphoreOperationUVE {
+    SemaphoreHandleUVE semaphore;
+    std::uint64_t value = 0U;
+};
+struct WaitSemaphoreOperationUVE {
+    SemaphoreHandleUVE semaphore;
+    std::uint64_t value = 0U;
+    std::uint64_t timeoutNs = 0U;
+    bool satisfied = false;
+};
 struct QueryOperationUVE {
     QueryHandleUVE query;
     RenderQueryKindUVE kind;
@@ -143,5 +187,5 @@ struct QueryOperationUVE {
 };
 using RecordedDeviceOperationUVE =
     std::variant<BufferCopyDescUVE, TextureBlitDescUVE, GenerateMipsOperationUVE, FenceOperationUVE,
-                 QueryOperationUVE>;
+                 QueryOperationUVE, SignalSemaphoreOperationUVE, WaitSemaphoreOperationUVE>;
 } // namespace UVE::Render
