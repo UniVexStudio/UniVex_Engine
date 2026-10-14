@@ -233,6 +233,17 @@ public:
     [[nodiscard]] RenderOperationResultUVE InsertFenceUVE(FenceHandleUVE &) override;
     [[nodiscard]] RenderOperationResultUVE WaitFenceUVE(FenceHandleUVE, std::uint64_t) override;
     [[nodiscard]] RenderOperationResultUVE DestroyFenceUVE(FenceHandleUVE) override;
+    /// Timeline semaphores (Vulkan 1.2 feature): real device counters with CPU-visible waits.
+    /// Every call reports Unsupported until the feature is enabled and its entry points resolve,
+    /// so a 1.0/1.1 host never half-implements the contract.
+    [[nodiscard]] RenderOperationResultUVE CreateSemaphoreUVE(const SemaphoreDescUVE &,
+                                                              SemaphoreHandleUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE GetSemaphoreCounterUVE(SemaphoreHandleUVE,
+                                                                  std::uint64_t &) const override;
+    [[nodiscard]] RenderOperationResultUVE SignalSemaphoreUVE(SemaphoreHandleUVE, std::uint64_t) override;
+    [[nodiscard]] RenderOperationResultUVE WaitSemaphoreUVE(SemaphoreHandleUVE, std::uint64_t,
+                                                            std::uint64_t) override;
+    [[nodiscard]] RenderOperationResultUVE DestroySemaphoreUVE(SemaphoreHandleUVE) override;
     [[nodiscard]] RenderOperationResultUVE WaitIdleUVE() override;
     [[nodiscard]] RenderOperationResultUVE GetSurfaceInfoUVE(RenderSurfaceInfoUVE &) const override;
     // Result queries (timestamps / occlusion) retain the interface's explicit Unsupported

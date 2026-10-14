@@ -327,6 +327,10 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     // classic M2c shape and offscreen passes degrade to a one-shot warning + skip. All goes-
     // through-dynamic-rendering decisions branch on useDynamicRendering, never on the probe.
     bool dynamicRenderingSupported = false;
+    /// Timeline semaphores: queried from VkPhysicalDeviceVulkan12Features and, when supported,
+    /// requested at device creation. Capability reporting additionally requires the 1.2 entry
+    /// points, so a loader without them can never claim the feature.
+    bool timelineSemaphoresRequested = false;
     bool useDynamicRendering = false;
 
     // M2d scratch depth for color-only offscreen passes: one DEVICE_LOCAL depth image per
@@ -394,6 +398,9 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     VkFence inFlightFence = VK_NULL_HANDLE;
     std::unordered_map<std::uint32_t, VkFence> userFences;
     std::uint32_t nextUserFence = 1U;
+    // Timeline semaphores, when the device enabled the 1.2 feature and resolved its entries.
+    std::unordered_map<std::uint32_t, VkSemaphore> userSemaphores;
+    std::uint32_t nextUserSemaphore = 1U;
 
     bool usable = false; // signed-off only by the very last bring-up step
     std::uint32_t lastPresentedImageIndex = UINT32_MAX; // UINT32_MAX = no frame presented yet
@@ -1758,6 +1765,20 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
         dynamicRenderingSupported = v13Features.dynamicRendering == VK_TRUE;
     }
 
+    // Timeline-semaphore probe: the same feature2 query, one API version lower. A 1.1-or-lower
+    // host reports nothing here and keeps the capability Unsupported.
+    if (apiVersion >= VK_API_VERSION_1_2 && vk.vkGetPhysicalDeviceFeatures2 != nullptr) {
+        VkPhysicalDeviceVulkan12Features v12Features{};
+        v12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+        VkPhysicalDeviceFeatures2 features2{};
+        features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        features2.pNext = &v12Features;
+        vk.vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
+        timelineSemaphoresRequested = v12Features.timelineSemaphore == VK_TRUE &&
+                                      vk.vkGetSemaphoreCounterValue != nullptr &&
+                                      vk.vkWaitSemaphores != nullptr && vk.vkSignalSemaphore != nullptr;
+    }
+
     const float queuePriority = 1.0F;
     VkDeviceQueueCreateInfo queueInfo{};
     queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -1771,6 +1792,11 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     if (dynamicRenderingSupported) {
         enabledV13Features.dynamicRendering = VK_TRUE;
     }
+    VkPhysicalDeviceVulkan12Features enabledV12Features{};
+    enabledV12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    enabledV12Features.timelineSemaphore = timelineSemaphoresRequested ? VK_TRUE : VK_FALSE;
+    // Chain only what is really enabled, or a device would be asked for unsupported features.
+    enabledV12Features.pNext = dynamicRenderingSupported ? &enabledV13Features : nullptr;
     VkDeviceCreateInfo deviceInfo{};
     deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     deviceInfo.queueCreateInfoCount = 1U;
@@ -1778,7 +1804,9 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     deviceInfo.pEnabledFeatures = &enabledFeatures;
     deviceInfo.enabledExtensionCount = 1U;
     deviceInfo.ppEnabledExtensionNames = kDeviceExtensions;
-    if (dynamicRenderingSupported) {
+    if (timelineSemaphoresRequested) {
+        deviceInfo.pNext = &enabledV12Features;
+    } else if (dynamicRenderingSupported) {
         deviceInfo.pNext = &enabledV13Features;
     }
 
@@ -2168,6 +2196,11 @@ void CollectBlockMembersUVE(const SpvReflectBlockVariable& block, const VkShader
 void VulkanRenderDeviceUVE::ImplUVE::DestroyAllResourcesUVE() {
     // Caller (the destructor) has already drained the queue — destruction must never race an
     // in-flight submit holding any of these objects.
+    for (const auto &[id, semaphore] : userSemaphores) {
+        (void)id;
+        vk.vkDestroySemaphore(device, semaphore, nullptr);
+    }
+    userSemaphores.clear();
     for (const auto &[id, fence] : userFences) {
         static_cast<void>(id);
         vk.vkDestroyFence(device, fence, nullptr);
@@ -6140,6 +6173,9 @@ RenderDeviceCapabilitiesUVE VulkanRenderDeviceUVE::GetCapabilitiesUVE() const no
         return caps;
     caps.fences = caps.bufferCopy = caps.surface = caps.retainedTextures =
         RenderFeatureSupportUVE::Native;
+    if (m_impl->timelineSemaphoresRequested) {
+        caps.timelineSemaphores = RenderFeatureSupportUVE::Native;
+    }
     // Core-since-1.0 blit entry: format-specific blit support is still checked per call, so the
     // capabilities advertise the transfer paths this backend actually implements.
     if (m_impl->vk.vkCmdBlitImage != nullptr) {
@@ -6228,6 +6264,108 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::DestroyFenceUVE(FenceHandleUVE h
     m_impl->userFences.erase(handle.value);
     return RenderOperationResultUVE::Success;
 }
+RenderOperationResultUVE VulkanRenderDeviceUVE::CreateSemaphoreUVE(const SemaphoreDescUVE &desc,
+                                                                   SemaphoreHandleUVE &output) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto &impl = *m_impl;
+    if (GetCapabilitiesUVE().timelineSemaphores != RenderFeatureSupportUVE::Native)
+        return RenderOperationResultUVE::Unsupported;
+    VkSemaphoreTypeCreateInfo typeInfo{};
+    typeInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+    typeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    typeInfo.initialValue = desc.initialValue;
+    VkSemaphoreCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    createInfo.pNext = &typeInfo;
+    if (impl.nextUserSemaphore == 0U)
+        return RenderOperationResultUVE::SystemError;
+    const SemaphoreHandleUVE handle{impl.nextUserSemaphore++};
+    auto [entry, inserted] = impl.userSemaphores.emplace(handle.value, VK_NULL_HANDLE);
+    static_cast<void>(inserted);
+    if (impl.vk.vkCreateSemaphore(impl.device, &createInfo, nullptr, &entry->second) != VK_SUCCESS) {
+        impl.userSemaphores.erase(entry);
+        return RenderOperationResultUVE::SystemError;
+    }
+    output = handle;
+    return RenderOperationResultUVE::Success;
+}
+
+RenderOperationResultUVE VulkanRenderDeviceUVE::GetSemaphoreCounterUVE(const SemaphoreHandleUVE semaphore,
+                                                                       std::uint64_t &output) const {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    const auto found = m_impl->userSemaphores.find(semaphore.value);
+    if (found == m_impl->userSemaphores.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    std::uint64_t value = 0U;
+    if (m_impl->vk.vkGetSemaphoreCounterValue(m_impl->device, found->second, &value) != VK_SUCCESS)
+        return RenderOperationResultUVE::SystemError;
+    output = value;
+    return RenderOperationResultUVE::Success;
+}
+
+RenderOperationResultUVE VulkanRenderDeviceUVE::SignalSemaphoreUVE(const SemaphoreHandleUVE semaphore,
+                                                                   const std::uint64_t value) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto &impl = *m_impl;
+    if (GetCapabilitiesUVE().timelineSemaphores != RenderFeatureSupportUVE::Native)
+        return RenderOperationResultUVE::Unsupported;
+    const auto found = impl.userSemaphores.find(semaphore.value);
+    if (found == impl.userSemaphores.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    std::uint64_t current = 0U;
+    if (impl.vk.vkGetSemaphoreCounterValue(impl.device, found->second, &current) != VK_SUCCESS)
+        return RenderOperationResultUVE::SystemError;
+    if (!IsSemaphoreSignalValueValidUVE(current, value)) {
+        // The driver would reject this as a validation error; refusing first keeps the contract
+        // and the log identical on every backend.
+        UVE_ERROR("VulkanRenderDeviceUVE: SignalSemaphoreUVE ignored a non-increasing value");
+        return RenderOperationResultUVE::InvalidArgument;
+    }
+    VkSemaphoreSignalInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
+    info.semaphore = found->second;
+    info.value = value;
+    if (impl.vk.vkSignalSemaphore(impl.device, &info) != VK_SUCCESS)
+        return RenderOperationResultUVE::SystemError;
+    return RenderOperationResultUVE::Success;
+}
+
+RenderOperationResultUVE VulkanRenderDeviceUVE::WaitSemaphoreUVE(const SemaphoreHandleUVE semaphore,
+                                                                 const std::uint64_t value,
+                                                                 const std::uint64_t timeoutNs) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    const auto found = m_impl->userSemaphores.find(semaphore.value);
+    if (found == m_impl->userSemaphores.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    VkSemaphoreWaitInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+    info.semaphoreCount = 1U;
+    info.pSemaphores = &found->second;
+    info.pValues = &value;
+    const VkResult waited = m_impl->vk.vkWaitSemaphores(m_impl->device, &info, timeoutNs);
+    if (waited == VK_SUCCESS)
+        return RenderOperationResultUVE::Success;
+    if (waited == VK_TIMEOUT)
+        return RenderOperationResultUVE::TimedOut;
+    return RenderOperationResultUVE::SystemError;
+}
+
+RenderOperationResultUVE VulkanRenderDeviceUVE::DestroySemaphoreUVE(const SemaphoreHandleUVE semaphore) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto &impl = *m_impl;
+    const auto found = impl.userSemaphores.find(semaphore.value);
+    if (found == impl.userSemaphores.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    impl.vk.vkDestroySemaphore(impl.device, found->second, nullptr);
+    impl.userSemaphores.erase(found);
+    return RenderOperationResultUVE::Success;
+}
+
 RenderOperationResultUVE VulkanRenderDeviceUVE::CopyBufferUVE(const BufferCopyDescUVE &copy) {
     if (!IsUsableUVE())
         return RenderOperationResultUVE::DeviceUnavailable;

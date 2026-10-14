@@ -86,6 +86,38 @@ public:
     [[nodiscard]] virtual RenderOperationResultUVE WaitIdleUVE() {
         return RenderOperationResultUVE::Unsupported;
     }
+    /// Creates a timeline semaphore object. Its counter starts at `desc.initialValue`; the
+    /// backend refuses (Unsupported) when it cannot provide a real counter. Output is untouched
+    /// on failure.
+    [[nodiscard]] virtual RenderOperationResultUVE CreateSemaphoreUVE(const SemaphoreDescUVE &,
+                                                                     SemaphoreHandleUVE &) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Reads the current counter value. Owner-thread, non-blocking, never invents a value:
+    /// failures leave the output untouched.
+    [[nodiscard]] virtual RenderOperationResultUVE GetSemaphoreCounterUVE(SemaphoreHandleUVE,
+                                                                         std::uint64_t &) const {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Advances the counter. A value not strictly greater than the current one is an
+    /// `InvalidArgument` (a timeline counter never moves backwards). A CPU-side signal is real
+    /// device state, not a promise that any GPU work has finished.
+    [[nodiscard]] virtual RenderOperationResultUVE SignalSemaphoreUVE(SemaphoreHandleUVE,
+                                                                     std::uint64_t) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Blocks until the counter reaches `value` (immediately, if it already has) or the timeout
+    /// expires, returning `TimedOut` on expiry. Never claims unrelated GPU work completed. May be
+    /// called from a thread other than the one that signals, exactly like a real timeline wait.
+    [[nodiscard]] virtual RenderOperationResultUVE WaitSemaphoreUVE(SemaphoreHandleUVE, std::uint64_t,
+                                                                   std::uint64_t) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Destroys the object. Callers must guarantee no submission still references it, exactly as
+    /// for buffers and textures.
+    [[nodiscard]] virtual RenderOperationResultUVE DestroySemaphoreUVE(SemaphoreHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
     [[nodiscard]] virtual RenderOperationResultUVE CreateQueryUVE(RenderQueryKindUVE, QueryHandleUVE &) {
         return RenderOperationResultUVE::Unsupported;
     }

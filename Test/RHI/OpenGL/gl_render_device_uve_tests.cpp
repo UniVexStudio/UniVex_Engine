@@ -210,6 +210,26 @@ TEST(GlFunctionsUVETest, StencilSymbolsAreLoadedAndRequiredForTheBaseline) {
     EXPECT_FALSE(Detail::LoadGlFunctionsUVE(missingStencil).IsCompleteUVE());
 }
 
+TEST_F(GlRenderDeviceUVETest, TimelineSemaphoresAreExplicitlyUnsupportedRatherThanModeled) {
+    EXPECT_EQ(renderDevice->GetCapabilitiesUVE().timelineSemaphores, RenderFeatureSupportUVE::Unsupported);
+    SemaphoreHandleUVE semaphore{7U};
+    EXPECT_EQ(renderDevice->CreateSemaphoreUVE(SemaphoreDescUVE{1U}, semaphore),
+              RenderOperationResultUVE::Unsupported);
+    EXPECT_EQ(semaphore.value, 7U) << "a refused create must leave the output untouched";
+    std::uint64_t counter = 0U;
+    EXPECT_EQ(renderDevice->GetSemaphoreCounterUVE(kInvalidSemaphoreHandleUVE, counter),
+              RenderOperationResultUVE::Unsupported);
+    EXPECT_EQ(counter, 0U);
+    EXPECT_EQ(renderDevice->SignalSemaphoreUVE(kInvalidSemaphoreHandleUVE, 1U),
+              RenderOperationResultUVE::Unsupported);
+    EXPECT_EQ(renderDevice->WaitSemaphoreUVE(kInvalidSemaphoreHandleUVE, 1U, 0U),
+              RenderOperationResultUVE::Unsupported);
+    EXPECT_EQ(renderDevice->DestroySemaphoreUVE(kInvalidSemaphoreHandleUVE),
+              RenderOperationResultUVE::Unsupported);
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR))
+        << "refusing the unsupported calls must not touch GL state";
+}
+
 TEST_F(GlRenderDeviceUVETest, GeometryStageChangesRasterizedPositionAndSurvivesShaderDeletion) {
     ASSERT_EQ(renderDevice->GetCapabilitiesUVE().geometryShaders, RenderFeatureSupportUVE::Native);
     const auto vertex = renderDevice->CreateShaderUVE({ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource)});
