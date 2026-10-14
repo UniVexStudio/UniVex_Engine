@@ -298,6 +298,13 @@ public:
                                                                 const PipelineBinaryDescUVE& desc) override;
     [[nodiscard]] std::unique_ptr<ICommandBufferUVE> CreateCommandBufferUVE() override;
     void SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer) override;
+    /// Foundation WP4: SubmitUVE plus timeline waits/signals, honoured at this backend's real
+    /// queue granularity - the frame batch. All waits of a frame's submissions gate that frame's
+    /// single vkQueueSubmit (VkTimelineSemaphoreSubmitInfo); all signals are performed when that
+    /// batch completes. Validated at submit time against the live semaphore table; see the
+    /// interface comment for the result contract.
+    [[nodiscard]] RenderOperationResultUVE SubmitWithSyncUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer,
+                                                            const SubmitDescUVE &desc) override;
 
     // --- M1 real behaviour ---
     /// Advances one frame: waits for the previous frame's fence (one frame in flight),

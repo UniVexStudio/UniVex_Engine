@@ -9,10 +9,14 @@
 
 #include "uve/rhi_null/null_render_device_uve.h"
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <memory>
+#include <span>
 #include <thread>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -149,5 +153,78 @@ TEST(TimelineSemaphoreUVETest, IndependentSemaphoresKeepIndependentCounters) {
     EXPECT_EQ(device.DestroySemaphoreUVE(second), ResultUVE::Success);
 }
 
+
+// ---- Foundation WP4: submission-level queue sync -----------------------------------------
+TEST(TimelineSemaphoreUVETest, NullSubmitDescRecordsWaitsAndSignalsVerbatim) {
+    NullRenderDeviceUVE device;
+    SemaphoreHandleUVE gate, done;
+    ASSERT_EQ(device.CreateSemaphoreUVE(SemaphoreDescUVE{2U}, gate), ResultUVE::Success);
+    ASSERT_EQ(device.CreateSemaphoreUVE(SemaphoreDescUVE{0U}, done), ResultUVE::Success);
+    const std::array<SemaphoreWaitUVE, 1U> waits{SemaphoreWaitUVE{gate, 7U}};
+    const std::array<SemaphoreSignalUVE, 1U> signals{SemaphoreSignalUVE{done, 1U}};
+    std::unique_ptr<ICommandBufferUVE> commands = device.CreateCommandBufferUVE();
+    ASSERT_NE(commands, nullptr);
+    commands->BeginRenderPassUVE(RenderPassDescUVE{});
+    commands->DrawUVE(3U, 1U);
+    commands->EndRenderPassUVE();
+    ASSERT_EQ(device.SubmitWithSyncUVE(std::move(commands), SubmitDescUVE{waits, signals}), ResultUVE::Recorded);
+    EXPECT_EQ(device.GetLastSubmittedCommandsUVE().size(), 3U) << "the work itself is submitted exactly like SubmitUVE";
+    const std::vector<RecordedDeviceOperationUVE>& operations = device.GetRecordedDeviceOperationsUVE();
+    ASSERT_FALSE(operations.empty());
+    const auto* const record = std::get_if<SubmitOperationUVE>(&operations.back());
+    ASSERT_NE(record, nullptr);
+    ASSERT_EQ(record->waits.size(), 1U);
+    EXPECT_EQ(record->waits[0].semaphore, gate);
+    EXPECT_EQ(record->waits[0].value, 7U);
+    ASSERT_EQ(record->signals.size(), 1U);
+    EXPECT_EQ(record->signals[0].semaphore, done);
+    EXPECT_EQ(record->signals[0].value, 1U);
+    std::uint64_t counter = 99U;
+    ASSERT_EQ(device.GetSemaphoreCounterUVE(done, counter), ResultUVE::Success);
+    EXPECT_EQ(counter, 0U) << "a recorded signal is a request, never invented GPU progress";
+    EXPECT_EQ(device.WaitSemaphoreUVE(done, 1U, 0U), ResultUVE::TimedOut);
+    // An empty desc is exactly SubmitUVE and records nothing extra.
+    const std::size_t before = device.GetRecordedDeviceOperationsUVE().size();
+    std::unique_ptr<ICommandBufferUVE> plain = device.CreateCommandBufferUVE();
+    ASSERT_NE(plain, nullptr);
+    EXPECT_EQ(device.SubmitWithSyncUVE(std::move(plain), SubmitDescUVE{}), ResultUVE::Recorded);
+    EXPECT_EQ(device.GetRecordedDeviceOperationsUVE().size(), before);
+    EXPECT_EQ(device.DestroySemaphoreUVE(gate), ResultUVE::Success);
+    EXPECT_EQ(device.DestroySemaphoreUVE(done), ResultUVE::Success);
+}
+
+TEST(TimelineSemaphoreUVETest, NullSubmitDescRejectsBadSemaphores) {
+    NullRenderDeviceUVE device;
+    SemaphoreHandleUVE live, destroyed;
+    ASSERT_EQ(device.CreateSemaphoreUVE(SemaphoreDescUVE{4U}, live), ResultUVE::Success);
+    ASSERT_EQ(device.CreateSemaphoreUVE(SemaphoreDescUVE{0U}, destroyed), ResultUVE::Success);
+    ASSERT_EQ(device.DestroySemaphoreUVE(destroyed), ResultUVE::Success);
+    const auto submit = [&device](const std::span<const SemaphoreWaitUVE> waits,
+                                  const std::span<const SemaphoreSignalUVE> signals) {
+        std::unique_ptr<ICommandBufferUVE> commands = device.CreateCommandBufferUVE();
+        return device.SubmitWithSyncUVE(std::move(commands), SubmitDescUVE{waits, signals});
+    };
+    const std::array<SemaphoreWaitUVE, 1U> waitDestroyed{SemaphoreWaitUVE{destroyed, 1U}};
+    const std::array<SemaphoreSignalUVE, 1U> signalDestroyed{SemaphoreSignalUVE{destroyed, 1U}};
+    const std::array<SemaphoreWaitUVE, 1U> waitLive{SemaphoreWaitUVE{live, 9U}};
+    const std::array<SemaphoreSignalUVE, 1U> signalStale{SemaphoreSignalUVE{live, 4U}};
+    const std::array<SemaphoreSignalUVE, 1U> signalLive{SemaphoreSignalUVE{live, 5U}};
+    const std::array<SemaphoreSignalUVE, 2U> signalTwice{SemaphoreSignalUVE{live, 5U}, SemaphoreSignalUVE{live, 6U}};
+    EXPECT_EQ(submit(waitDestroyed, {}), ResultUVE::InvalidHandle);
+    EXPECT_EQ(submit({}, signalDestroyed), ResultUVE::InvalidHandle);
+    EXPECT_EQ(submit({}, signalStale), ResultUVE::InvalidArgument) << "a signal must exceed the current counter";
+    EXPECT_EQ(submit(waitLive, signalLive), ResultUVE::InvalidArgument) << "one semaphore may not be in both lists";
+    EXPECT_EQ(submit({}, signalTwice), ResultUVE::InvalidArgument) << "one semaphore may not be signalled twice";
+    EXPECT_EQ(submit(waitLive, {}), ResultUVE::Recorded) << "a wait on a future value is a valid request";
+    EXPECT_TRUE(device.GetRecordedDeviceOperationsUVE().size() >= 1U);
+    std::size_t submitRecords = 0U;
+    for (const RecordedDeviceOperationUVE& operation : device.GetRecordedDeviceOperationsUVE()) {
+        if (std::holds_alternative<SubmitOperationUVE>(operation)) {
+            ++submitRecords;
+        }
+    }
+    EXPECT_EQ(submitRecords, 1U) << "refused submits record nothing";
+    EXPECT_EQ(device.DestroySemaphoreUVE(live), ResultUVE::Success);
+}
 } // namespace
 } // namespace UVE::Render::Tests

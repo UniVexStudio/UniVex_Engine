@@ -970,9 +970,31 @@ shadow pixel comparisons after correcting their sampler setup. This closes the e
 verification gap, not the explicitly unsupported Vulkan operations. Vulkan occlusion queries
 and the GPU occlusion consumer were closed by WP3 (recorded brackets above; consumer in the
 renderer reconciliation below). Semaphores/timelines
-are implemented as timeline objects (`CreateSemaphoreUVE` and friends, above); the
-`[ ]` that remains is *submission-level* queue sync (binary semaphores as `SubmitUVE`
-parameters), which is not closed by a CPU-visible counter. Vulkan texture-transfer parity and
+are implemented as timeline objects (`CreateSemaphoreUVE` and friends, above), and `[x]`
+**submission-level queue sync (WP4, 2026-10-14, drafted without a compiler)** is
+`IRenderDeviceUVE::SubmitWithSyncUVE(buffer, SubmitDescUVE{waits, signals})`: timeline
+wait/signal pairs as submit parameters (`SemaphoreWaitUVE`/`SemaphoreSignalUVE`; a timeline
+pair is strictly more expressive than a binary semaphore, so none is introduced; the method is
+not a `SubmitUVE` overload because every existing override would hide it under
+`-Woverloaded-virtual`). Contract on every backend: unknown/destroyed semaphore ->
+`InvalidHandle`; a signal value not above the counter at submit time, or one semaphore named
+twice across the lists -> `InvalidArgument`; a non-empty desc without Native timelines ->
+`Unsupported`; an empty desc is exactly `SubmitUVE`; the buffer is consumed in every case and
+a failure means the work was not queued. Granularity is the backend's real queue granularity:
+Vulkan replays every submission of a frame into ONE `vkQueueSubmit`, so the merged waits of
+the frame's submissions gate that submit (`VkTimelineSemaphoreSubmitInfo`, all-commands stage)
+and the merged signals are performed when the frame's GPU work completes - never earlier than
+asked, never claimed before the GPU reached it; a skipped frame (minimised, acquire failure)
+drops its submissions and their sync, so a waiter times out instead of being lied to. A hang
+guard bounds the in-flight fence wait (30 s): on expiry the frame's timeline waits are
+host-signalled so the queue can drain and the device goes inert with a warning; the
+destructor applies the same release before its queue drain. GL has no timeline objects and
+answers `Unsupported` for any non-empty desc (the default implementation; nothing is
+simulated); Null validates against its semaphore table and records a `SubmitOperationUVE`
+verbatim without moving a counter. Tests: `NullSubmitDescRecordsWaitsAndSignalsVerbatim`,
+`NullSubmitDescRejectsBadSemaphores` (timeline_semaphore tests),
+`SubmitDescIsUnsupportedWithoutTimelines` (GL), `SubmitSignalIsObservedAfterTheFrameCompletes`,
+`SubmitWaitBlocksTheQueueUntilHostSignal`, `SubmitDescRejectsDestroyedSemaphore` (Vulkan). Vulkan texture-transfer parity and
 Vulkan timestamps were executed on a real Vulkan 1.3 ICD on 2026-10-14 (60 of 60
 `VulkanRenderDeviceUVETest` cases pass, one unrelated SPIR-V fixture skip); the WP3 bracket
 and consumer tests named in this document were written without a compiler in the session that

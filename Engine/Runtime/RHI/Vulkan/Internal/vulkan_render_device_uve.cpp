@@ -945,7 +945,16 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     struct SubmissionUVE {
         std::vector<RecordedCommandUVE> commands;
         std::vector<std::shared_ptr<void>> resources;
+        // WP4: queue sync requested for this submission (handle values; resolved to VkSemaphore
+        // at PresentUVE so a semaphore destroyed in between is dropped, not dereferenced).
+        std::vector<SemaphoreWaitUVE> waits;
+        std::vector<SemaphoreSignalUVE> signals;
     };
+    // WP4 hang guard: the timeline waits the in-flight frame's vkQueueSubmit is gated on. If the
+    // frame fence does not signal within kInFlightFenceTimeoutNs, these are host-signalled so the
+    // queue can drain, and the device goes inert with a warning instead of hanging PresentUVE.
+    std::vector<std::pair<VkSemaphore, std::uint64_t>> inFlightWaits;
+    static constexpr std::uint64_t kInFlightFenceTimeoutNs = 30'000'000'000ULL;
     std::mutex submissionMutex;
     std::deque<SubmissionUVE> frameSubmissions;
     std::vector<std::shared_ptr<void>> inFlightResources;
@@ -2594,6 +2603,21 @@ VulkanRenderDeviceUVE::VulkanRenderDeviceUVE(Window::IWindowManagerUVE* windowMa
 VulkanRenderDeviceUVE::~VulkanRenderDeviceUVE() {
     if (m_impl->device != VK_NULL_HANDLE) {
         // Everything below requires a drained queue — never destroy objects mid-frame.
+        // WP4: a frame still gated on a timeline wait nobody signalled would make that drain
+        // hang; release such waits from the host first (same guard PresentUVE applies).
+        for (const auto& [stuckSemaphore, stuckValue] : m_impl->inFlightWaits) {
+            std::uint64_t current = 0U;
+            if (m_impl->vk.vkGetSemaphoreCounterValue != nullptr && m_impl->vk.vkSignalSemaphore != nullptr &&
+                m_impl->vk.vkGetSemaphoreCounterValue(m_impl->device, stuckSemaphore, &current) == VK_SUCCESS &&
+                current < stuckValue) {
+                VkSemaphoreSignalInfo release{};
+                release.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
+                release.semaphore = stuckSemaphore;
+                release.value = stuckValue;
+                static_cast<void>(m_impl->vk.vkSignalSemaphore(m_impl->device, &release));
+            }
+        }
+        m_impl->inFlightWaits.clear();
         if (m_impl->presentQueue != VK_NULL_HANDLE) {
             m_impl->vk.vkQueueWaitIdle(m_impl->presentQueue);
         }
@@ -5034,8 +5058,67 @@ void VulkanRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> command
         // it happens under the submission lock (PresentUVE drains under the same lock).
         const std::lock_guard<std::mutex> submissionLock(m_impl->submissionMutex);
         m_impl->frameSubmissions.push_back(ImplUVE::SubmissionUVE{
-            vulkanCommands->TakeCommandsUVE(), vulkanCommands->TakeRetainedResourcesUVE()});
+            vulkanCommands->TakeCommandsUVE(), vulkanCommands->TakeRetainedResourcesUVE(), {}, {}});
     }
+}
+
+RenderOperationResultUVE VulkanRenderDeviceUVE::SubmitWithSyncUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer,
+                                                                  const SubmitDescUVE &desc) {
+    if (desc.waits.empty() && desc.signals.empty()) {
+        SubmitUVE(std::move(commandBuffer));
+        return RenderOperationResultUVE::Success;
+    }
+    if (commandBuffer == nullptr)
+        return RenderOperationResultUVE::InvalidArgument;
+    auto* vulkanCommands = dynamic_cast<VulkanCommandBufferUVE*>(commandBuffer.get());
+    if (vulkanCommands == nullptr) {
+        UVE_WARNING("VulkanRenderDeviceUVE::SubmitWithSyncUVE: command buffer was not created by this "
+                    "device; ignoring submission");
+        return RenderOperationResultUVE::InvalidArgument;
+    }
+    if (!m_impl->usable)
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto &impl = *m_impl;
+    if (!impl.timelineSemaphoresEnabled)
+        return RenderOperationResultUVE::Unsupported;
+    // Validation against the live semaphore table. The counter read is a snapshot: a signal that
+    // is valid now stays valid, because only this queue and host signals (which the same rule
+    // guards) can move it.
+    std::vector<std::uint32_t> seen;
+    const auto unique = [&seen](const std::uint32_t handleValue) {
+        if (std::find(seen.begin(), seen.end(), handleValue) != seen.end())
+            return false;
+        seen.push_back(handleValue);
+        return true;
+    };
+    for (const SemaphoreWaitUVE &wait : desc.waits) {
+        if (impl.userSemaphores.find(wait.semaphore.value) == impl.userSemaphores.end())
+            return RenderOperationResultUVE::InvalidHandle;
+        if (!unique(wait.semaphore.value))
+            return RenderOperationResultUVE::InvalidArgument;
+    }
+    for (const SemaphoreSignalUVE &signal : desc.signals) {
+        const auto found = impl.userSemaphores.find(signal.semaphore.value);
+        if (found == impl.userSemaphores.end())
+            return RenderOperationResultUVE::InvalidHandle;
+        if (!unique(signal.semaphore.value))
+            return RenderOperationResultUVE::InvalidArgument;
+        std::uint64_t current = 0U;
+        if (impl.vk.vkGetSemaphoreCounterValue(impl.device, found->second, &current) != VK_SUCCESS)
+            return RenderOperationResultUVE::SystemError;
+        if (!IsSemaphoreSignalValueValidUVE(current, signal.value)) {
+            UVE_ERROR("VulkanRenderDeviceUVE: SubmitWithSyncUVE refused a non-increasing signal value");
+            return RenderOperationResultUVE::InvalidArgument;
+        }
+    }
+    {
+        const std::lock_guard<std::mutex> submissionLock(impl.submissionMutex);
+        impl.frameSubmissions.push_back(ImplUVE::SubmissionUVE{
+            vulkanCommands->TakeCommandsUVE(), vulkanCommands->TakeRetainedResourcesUVE(),
+            std::vector<SemaphoreWaitUVE>(desc.waits.begin(), desc.waits.end()),
+            std::vector<SemaphoreSignalUVE>(desc.signals.begin(), desc.signals.end())});
+    }
+    return RenderOperationResultUVE::Success;
 }
 
 /// Replays one submitted recorded command buffer's ops into the frame's already-open swapchain
@@ -6250,10 +6333,36 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     // completes. Only the path that truly reaches vkQueueSubmit resets it first. (Simplicity
     // over pipelining is the documented M1 trade-off; the fence starts signaled at creation so
     // the very first frame also passes.)
-    if (impl.vk.vkWaitForFences(impl.device, 1U, &impl.inFlightFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
+    // WP4 hang guard: a timeline wait nobody will ever satisfy would park this fence forever.
+    // Bounded wait; on expiry host-signal the frame's waits so the queue can drain, then go
+    // inert with a warning (the frame's work is garbage by then, but teardown stays possible).
+    VkResult fenceWait = impl.vk.vkWaitForFences(impl.device, 1U, &impl.inFlightFence, VK_TRUE,
+                                                 ImplUVE::kInFlightFenceTimeoutNs);
+    if (fenceWait == VK_TIMEOUT) {
+        UVE_WARNING("VulkanRenderDeviceUVE::PresentUVE: the previous frame did not complete within the "
+                    "in-flight timeout (an unsatisfied SubmitWithSyncUVE wait?); releasing its waits and "
+                    "going inert");
+        for (const auto& [stuckSemaphore, stuckValue] : impl.inFlightWaits) {
+            std::uint64_t current = 0U;
+            if (impl.vk.vkGetSemaphoreCounterValue(impl.device, stuckSemaphore, &current) == VK_SUCCESS &&
+                current < stuckValue) {
+                VkSemaphoreSignalInfo release{};
+                release.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
+                release.semaphore = stuckSemaphore;
+                release.value = stuckValue;
+                static_cast<void>(impl.vk.vkSignalSemaphore(impl.device, &release));
+            }
+        }
+        static_cast<void>(impl.vk.vkWaitForFences(impl.device, 1U, &impl.inFlightFence, VK_TRUE, UINT64_MAX));
+        impl.inFlightWaits.clear();
+        impl.usable = false;
+        return;
+    }
+    if (fenceWait != VK_SUCCESS) {
         impl.usable = false;
         return; // completion was not established; do not retire in-flight resources
     }
+    impl.inFlightWaits.clear();
     impl.inFlightResources.clear();
     CollectRetiredTexturesUVE();
     // The fence proves the GPU finished the previous frame's reads of the uniform ring;
@@ -6277,6 +6386,37 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     {
         const std::lock_guard<std::mutex> submissionLock(impl.submissionMutex);
         frameSubmissions.swap(impl.frameSubmissions);
+    }
+    // WP4: the frame batch's queue sync, merged per semaphore (one entry per semaphore per
+    // vkQueueSubmit; the largest value covers the smaller ones for both waits and signals) and
+    // resolved against the live table - a semaphore destroyed between submit and present is
+    // dropped here rather than dereferenced.
+    std::vector<std::pair<VkSemaphore, std::uint64_t>> frameTimelineWaits;
+    std::vector<std::pair<VkSemaphore, std::uint64_t>> frameTimelineSignals;
+    {
+        const auto mergeUVE = [&impl](std::vector<std::pair<VkSemaphore, std::uint64_t>>& list,
+                                      const std::uint32_t handleValue, const std::uint64_t value) {
+            const auto found = impl.userSemaphores.find(handleValue);
+            if (found == impl.userSemaphores.end()) {
+                impl.WarnOnceUVE(ImplUVE::kWarnedUnknownHandleUVE,
+                                 "PresentUVE: a SubmitWithSyncUVE semaphore was destroyed before the frame "
+                                 "was presented; its wait/signal is dropped");
+                return;
+            }
+            for (auto& entry : list) {
+                if (entry.first == found->second) {
+                    entry.second = std::max(entry.second, value);
+                    return;
+                }
+            }
+            list.emplace_back(found->second, value);
+        };
+        for (const auto& submission : frameSubmissions) {
+            for (const SemaphoreWaitUVE& wait : submission.waits)
+                mergeUVE(frameTimelineWaits, wait.semaphore.value, wait.value);
+            for (const SemaphoreSignalUVE& signal : submission.signals)
+                mergeUVE(frameTimelineSignals, signal.semaphore.value, signal.value);
+        }
     }
     // Retain leases before acquiring/resetting native synchronization objects: allocation failure
     // must not leave the frame fence unsignaled. A skipped frame retires at the next idle/fence drain.
@@ -6516,16 +6656,41 @@ void VulkanRenderDeviceUVE::PresentUVE() {
         return;
     }
 
-    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    // WP4: the swapchain's two binary semaphores come first; the frame's timeline waits/signals
+    // follow with their values in VkTimelineSemaphoreSubmitInfo (the binary entries carry a 0
+    // value, which the spec ignores for binary semaphores). Timeline waits gate every stage.
+    std::vector<VkSemaphore> waitSemaphores{impl.imageAvailableSemaphore};
+    std::vector<VkPipelineStageFlags> waitStages{VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    std::vector<std::uint64_t> waitValues{0U};
+    std::vector<VkSemaphore> signalSemaphores{impl.renderFinishedSemaphore};
+    std::vector<std::uint64_t> signalValues{0U};
+    for (const auto& [timelineWaitSemaphore, timelineWaitValue] : frameTimelineWaits) {
+        waitSemaphores.push_back(timelineWaitSemaphore);
+        waitStages.push_back(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+        waitValues.push_back(timelineWaitValue);
+    }
+    for (const auto& [timelineSignalSemaphore, timelineSignalValue] : frameTimelineSignals) {
+        signalSemaphores.push_back(timelineSignalSemaphore);
+        signalValues.push_back(timelineSignalValue);
+    }
+    VkTimelineSemaphoreSubmitInfo timelineInfo{};
+    timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+    timelineInfo.waitSemaphoreValueCount = static_cast<std::uint32_t>(waitValues.size());
+    timelineInfo.pWaitSemaphoreValues = waitValues.data();
+    timelineInfo.signalSemaphoreValueCount = static_cast<std::uint32_t>(signalValues.size());
+    timelineInfo.pSignalSemaphoreValues = signalValues.data();
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.waitSemaphoreCount = 1U;
-    submitInfo.pWaitSemaphores = &impl.imageAvailableSemaphore;
-    submitInfo.pWaitDstStageMask = &waitStage;
+    if (!frameTimelineWaits.empty() || !frameTimelineSignals.empty())
+        submitInfo.pNext = &timelineInfo;
+    submitInfo.waitSemaphoreCount = static_cast<std::uint32_t>(waitSemaphores.size());
+    submitInfo.pWaitSemaphores = waitSemaphores.data();
+    submitInfo.pWaitDstStageMask = waitStages.data();
     submitInfo.commandBufferCount = 1U;
     submitInfo.pCommandBuffers = &impl.commandBuffer;
-    submitInfo.signalSemaphoreCount = 1U;
-    submitInfo.pSignalSemaphores = &impl.renderFinishedSemaphore;
+    submitInfo.signalSemaphoreCount = static_cast<std::uint32_t>(signalSemaphores.size());
+    submitInfo.pSignalSemaphores = signalSemaphores.data();
+    impl.inFlightWaits = frameTimelineWaits;
     if (impl.vk.vkQueueSubmit(impl.presentQueue, 1U, &submitInfo, impl.inFlightFence) != VK_SUCCESS) {
         UVE_WARNING("VulkanRenderDeviceUVE::PresentUVE: vkQueueSubmit failed; device going inert");
         impl.usable = false;
