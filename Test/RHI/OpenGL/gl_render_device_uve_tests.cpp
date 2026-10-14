@@ -231,6 +231,23 @@ TEST_F(GlRenderDeviceUVETest, TimelineSemaphoresAreExplicitlyUnsupportedRatherTh
         << "refusing the unsupported calls must not touch GL state";
 }
 
+TEST_F(GlRenderDeviceUVETest, SubmitDescIsUnsupportedWithoutTimelines) {
+    // Foundation WP4: GL has no timeline objects, so a non-empty SubmitDescUVE is refused as
+    // Unsupported (never simulated), while an empty desc is exactly SubmitUVE.
+    ASSERT_EQ(renderDevice->GetCapabilitiesUVE().timelineSemaphores, RenderFeatureSupportUVE::Unsupported);
+    const std::array<SemaphoreSignalUVE, 1U> signals{SemaphoreSignalUVE{SemaphoreHandleUVE{1U}, 1U}};
+    auto refused = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(refused, nullptr);
+    EXPECT_EQ(renderDevice->SubmitWithSyncUVE(std::move(refused), SubmitDescUVE{{}, signals}),
+              RenderOperationResultUVE::Unsupported);
+    auto plain = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(plain, nullptr);
+    plain->BeginRenderPassUVE({});
+    plain->EndRenderPassUVE();
+    EXPECT_EQ(renderDevice->SubmitWithSyncUVE(std::move(plain), SubmitDescUVE{}), RenderOperationResultUVE::Success);
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+}
+
 TEST_F(GlRenderDeviceUVETest, GeometryStageChangesRasterizedPositionAndSurvivesShaderDeletion) {
     ASSERT_EQ(renderDevice->GetCapabilitiesUVE().geometryShaders, RenderFeatureSupportUVE::Native);
     const auto vertex = renderDevice->CreateShaderUVE({ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource)});

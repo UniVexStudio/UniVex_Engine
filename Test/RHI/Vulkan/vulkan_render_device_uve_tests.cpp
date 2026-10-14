@@ -5963,4 +5963,88 @@ TEST_F(VulkanRenderDeviceUVETest, RecordedOcclusionQueryIsNotReadyUntilCompletio
     EXPECT_EQ(device->DestroyQueryUVE(query), ResultUVE::Success);
 }
 
+// ---- Foundation WP4: submission-level queue sync on a real Vulkan ICD ------------------------
+TEST_F(VulkanRenderDeviceUVETest, SubmitSignalIsObservedAfterTheFrameCompletes) {
+    using ResultUVE = RenderOperationResultUVE;
+    ASSERT_EQ(device->GetCapabilitiesUVE().timelineSemaphores, RenderFeatureSupportUVE::Native);
+    SemaphoreHandleUVE done;
+    ASSERT_EQ(device->CreateSemaphoreUVE(SemaphoreDescUVE{0U}, done), ResultUVE::Success);
+    const std::array<SemaphoreSignalUVE, 1U> signals{SemaphoreSignalUVE{done, 3U}};
+    auto commandBuffer = device->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    commandBuffer->BeginRenderPassUVE(RenderPassDescUVE{});
+    commandBuffer->EndRenderPassUVE();
+    ASSERT_EQ(device->SubmitWithSyncUVE(std::move(commandBuffer), SubmitDescUVE{{}, signals}), ResultUVE::Success);
+    std::uint64_t counter = 99U;
+    ASSERT_EQ(device->GetSemaphoreCounterUVE(done, counter), ResultUVE::Success);
+    EXPECT_EQ(counter, 0U) << "nothing reached the queue before PresentUVE";
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+    EXPECT_EQ(device->WaitSemaphoreUVE(done, 3U, 5'000'000'000ULL), ResultUVE::Success)
+        << "the frame batch's completion performs the signal";
+    ASSERT_EQ(device->GetSemaphoreCounterUVE(done, counter), ResultUVE::Success);
+    EXPECT_EQ(counter, 3U);
+    EXPECT_EQ(device->WaitIdleUVE(), ResultUVE::Success);
+    EXPECT_EQ(device->DestroySemaphoreUVE(done), ResultUVE::Success);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, SubmitWaitBlocksTheQueueUntilHostSignal) {
+    using ResultUVE = RenderOperationResultUVE;
+    ASSERT_EQ(device->GetCapabilitiesUVE().timelineSemaphores, RenderFeatureSupportUVE::Native);
+    SemaphoreHandleUVE gate, done;
+    ASSERT_EQ(device->CreateSemaphoreUVE(SemaphoreDescUVE{0U}, gate), ResultUVE::Success);
+    ASSERT_EQ(device->CreateSemaphoreUVE(SemaphoreDescUVE{0U}, done), ResultUVE::Success);
+    const std::array<SemaphoreWaitUVE, 1U> waits{SemaphoreWaitUVE{gate, 5U}};
+    const std::array<SemaphoreSignalUVE, 1U> signals{SemaphoreSignalUVE{done, 1U}};
+    auto commandBuffer = device->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    commandBuffer->BeginRenderPassUVE(RenderPassDescUVE{});
+    commandBuffer->EndRenderPassUVE();
+    ASSERT_EQ(device->SubmitWithSyncUVE(std::move(commandBuffer), SubmitDescUVE{waits, signals}), ResultUVE::Success);
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+    // The queue is parked on `gate` reaching 5; `done` cannot move until then.
+    EXPECT_EQ(device->WaitSemaphoreUVE(done, 1U, 100'000'000ULL), ResultUVE::TimedOut)
+        << "the signal must not happen before the wait is satisfied";
+    std::uint64_t counter = 99U;
+    ASSERT_EQ(device->GetSemaphoreCounterUVE(done, counter), ResultUVE::Success);
+    EXPECT_EQ(counter, 0U);
+    ASSERT_EQ(device->SignalSemaphoreUVE(gate, 5U), ResultUVE::Success) << "host signal releases the queue";
+    EXPECT_EQ(device->WaitSemaphoreUVE(done, 1U, 5'000'000'000ULL), ResultUVE::Success);
+    ASSERT_EQ(device->GetSemaphoreCounterUVE(done, counter), ResultUVE::Success);
+    EXPECT_EQ(counter, 1U);
+    EXPECT_EQ(device->WaitIdleUVE(), ResultUVE::Success);
+    EXPECT_EQ(device->DestroySemaphoreUVE(gate), ResultUVE::Success);
+    EXPECT_EQ(device->DestroySemaphoreUVE(done), ResultUVE::Success);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, SubmitDescRejectsDestroyedSemaphore) {
+    using ResultUVE = RenderOperationResultUVE;
+    ASSERT_EQ(device->GetCapabilitiesUVE().timelineSemaphores, RenderFeatureSupportUVE::Native);
+    SemaphoreHandleUVE live, destroyed;
+    ASSERT_EQ(device->CreateSemaphoreUVE(SemaphoreDescUVE{4U}, live), ResultUVE::Success);
+    ASSERT_EQ(device->CreateSemaphoreUVE(SemaphoreDescUVE{0U}, destroyed), ResultUVE::Success);
+    ASSERT_EQ(device->DestroySemaphoreUVE(destroyed), ResultUVE::Success);
+    const auto submit = [this](const std::span<const SemaphoreWaitUVE> waits,
+                               const std::span<const SemaphoreSignalUVE> signals) {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        return device->SubmitWithSyncUVE(std::move(commandBuffer), SubmitDescUVE{waits, signals});
+    };
+    const std::array<SemaphoreWaitUVE, 1U> waitDestroyed{SemaphoreWaitUVE{destroyed, 1U}};
+    const std::array<SemaphoreSignalUVE, 1U> signalDestroyed{SemaphoreSignalUVE{destroyed, 1U}};
+    const std::array<SemaphoreWaitUVE, 1U> waitLive{SemaphoreWaitUVE{live, 9U}};
+    const std::array<SemaphoreSignalUVE, 1U> signalStale{SemaphoreSignalUVE{live, 4U}};
+    const std::array<SemaphoreSignalUVE, 1U> signalLive{SemaphoreSignalUVE{live, 5U}};
+    EXPECT_EQ(submit(waitDestroyed, {}), ResultUVE::InvalidHandle);
+    EXPECT_EQ(submit({}, signalDestroyed), ResultUVE::InvalidHandle);
+    EXPECT_EQ(submit({}, signalStale), ResultUVE::InvalidArgument) << "a signal must exceed the current counter";
+    EXPECT_EQ(submit(waitLive, signalLive), ResultUVE::InvalidArgument) << "one semaphore may not be in both lists";
+    EXPECT_EQ(submit({}, signalLive), ResultUVE::Success);
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+    EXPECT_EQ(device->WaitSemaphoreUVE(live, 5U, 5'000'000'000ULL), ResultUVE::Success);
+    EXPECT_EQ(device->WaitIdleUVE(), ResultUVE::Success);
+    EXPECT_EQ(device->DestroySemaphoreUVE(live), ResultUVE::Success);
+}
+
 } // namespace UVE::Render::Tests

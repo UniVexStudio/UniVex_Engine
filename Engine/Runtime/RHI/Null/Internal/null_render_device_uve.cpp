@@ -10,6 +10,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "null_command_buffer_uve.h"
 #include "uve/logging/assert_uve.h"
@@ -395,6 +396,43 @@ void NullRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBu
     UVE_ASSERT(nullCommandBuffer != nullptr); // only this device's own CreateCommandBufferUVE() ever produces one
     const std::lock_guard<std::mutex> submissionLock(m_impl->submissionMutex);
     m_impl->lastSubmittedCommands = nullCommandBuffer->GetRecordedCommandsUVE();
+}
+
+RenderOperationResultUVE NullRenderDeviceUVE::SubmitWithSyncUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer,
+                                                                const SubmitDescUVE &desc) {
+    if (desc.waits.empty() && desc.signals.empty()) {
+        SubmitUVE(std::move(commandBuffer));
+        return RenderOperationResultUVE::Recorded;
+    }
+    SubmitOperationUVE record;
+    {
+        const std::lock_guard lock(m_impl->semaphoreMutex);
+        std::vector<std::uint32_t> seen;
+        const auto unique = [&seen](const std::uint32_t handleValue) {
+            if (std::find(seen.begin(), seen.end(), handleValue) != seen.end())
+                return false;
+            seen.push_back(handleValue);
+            return true;
+        };
+        for (const SemaphoreWaitUVE &wait : desc.waits) {
+            if (m_impl->semaphores.find(wait.semaphore.value) == m_impl->semaphores.end())
+                return RenderOperationResultUVE::InvalidHandle;
+            if (!unique(wait.semaphore.value))
+                return RenderOperationResultUVE::InvalidArgument;
+        }
+        for (const SemaphoreSignalUVE &signal : desc.signals) {
+            const auto found = m_impl->semaphores.find(signal.semaphore.value);
+            if (found == m_impl->semaphores.end())
+                return RenderOperationResultUVE::InvalidHandle;
+            if (!unique(signal.semaphore.value) || !IsSemaphoreSignalValueValidUVE(found->second.value, signal.value))
+                return RenderOperationResultUVE::InvalidArgument;
+        }
+        record.waits.assign(desc.waits.begin(), desc.waits.end());
+        record.signals.assign(desc.signals.begin(), desc.signals.end());
+    }
+    m_impl->RecordUVE(std::move(record));
+    SubmitUVE(std::move(commandBuffer));
+    return RenderOperationResultUVE::Recorded;
 }
 
 void NullRenderDeviceUVE::PresentUVE() {
