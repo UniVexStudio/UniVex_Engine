@@ -74,6 +74,14 @@ struct VkFunctionsUVE {
     PFN_vkCmdEndRenderPass vkCmdEndRenderPass = nullptr;
     PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier = nullptr;
     PFN_vkCmdCopyImageToBuffer vkCmdCopyImageToBuffer = nullptr;
+    PFN_vkCmdBlitImage vkCmdBlitImage = nullptr; // Tier 2.6 texture blit + mip chain (core 1.0)
+    // Device-level timestamp queries (core 1.0): a transient reset+write submission makes the
+    // result readable, which is what WriteTimestampUVE/GetQueryResultUVE promise.
+    PFN_vkCreateQueryPool vkCreateQueryPool = nullptr;
+    PFN_vkDestroyQueryPool vkDestroyQueryPool = nullptr;
+    PFN_vkGetQueryPoolResults vkGetQueryPoolResults = nullptr;
+    PFN_vkCmdResetQueryPool vkCmdResetQueryPool = nullptr;
+    PFN_vkCmdWriteTimestamp vkCmdWriteTimestamp = nullptr;
     PFN_vkCreateBuffer vkCreateBuffer = nullptr;
     PFN_vkDestroyBuffer vkDestroyBuffer = nullptr;
     PFN_vkGetBufferMemoryRequirements vkGetBufferMemoryRequirements = nullptr;
@@ -84,6 +92,11 @@ struct VkFunctionsUVE {
     PFN_vkUnmapMemory vkUnmapMemory = nullptr;
     PFN_vkCreateSemaphore vkCreateSemaphore = nullptr;
     PFN_vkDestroySemaphore vkDestroySemaphore = nullptr;
+    // Timeline semaphores are core 1.2: resolved optionally (a 1.0/1.1 host must still bring the
+    // device up), and the capability stays Unsupported when any of them is missing.
+    PFN_vkGetSemaphoreCounterValue vkGetSemaphoreCounterValue = nullptr;
+    PFN_vkWaitSemaphores vkWaitSemaphores = nullptr;
+    PFN_vkSignalSemaphore vkSignalSemaphore = nullptr;
     PFN_vkCreateFence vkCreateFence = nullptr;
     PFN_vkDestroyFence vkDestroyFence = nullptr;
     PFN_vkWaitForFences vkWaitForFences = nullptr;

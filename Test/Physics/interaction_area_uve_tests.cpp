@@ -367,9 +367,10 @@ TEST_F(InteractionAreaUVETest, ADegenerateWorldRotationFallsBackToIdentityInstea
     static_cast<void>(ScanUVE());
     ASSERT_EQ(AreaUVE(area).interactorCount, 1U);
 
-    Scene::WorldTransformComponentUVE& world =
-        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(area);
+    auto world = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(area);
     world.worldRotation = Math::QuaternionUVE{0.0F, 0.0F, 0.0F, 0.0F};
+    entityManager.RemoveComponentUVE<Scene::WorldTransformComponentUVE>(area);
+    entityManager.AddComponentUVE<Scene::WorldTransformComponentUVE>(area, world);
     const InteractionAreaScanResultUVE result = ScanUVE();
     EXPECT_EQ(result.refreshedAreaCount, 1U);
     EXPECT_EQ(AreaUVE(area).interactorCount, 1U); // identity fallback, not a dropped area
@@ -381,9 +382,10 @@ TEST_F(InteractionAreaUVETest, ANonUnitWorldRotationStillTracksTheInteractor) {
     ColliderComponentUVE collider;
     collider.halfExtents = Math::Vector3UVE{0.5F, 0.5F, 0.5F};
     const EntityUVE interactor = MakeInteractorUVE({0.0F, 0.0F, 0.0F}, collider);
-    Scene::WorldTransformComponentUVE& world =
-        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(interactor);
+    auto world = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(interactor);
     world.worldRotation = Math::QuaternionUVE{0.0F, 0.1F, 0.0F, 0.99498743F}; // ~11.5 degrees
+    entityManager.RemoveComponentUVE<Scene::WorldTransformComponentUVE>(interactor);
+    entityManager.AddComponentUVE<Scene::WorldTransformComponentUVE>(interactor, world);
 
     const EntityUVE area = MakeAreaUVE({0.7000F, 0.0F, 0.0F}, {}, {0.5F, 0.5F, 0.5F});
     static_cast<void>(ScanUVE());

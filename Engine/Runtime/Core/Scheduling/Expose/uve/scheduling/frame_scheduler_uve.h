@@ -11,6 +11,7 @@
 #include <functional>
 #include <span>
 #include <string>
+#include <vector>
 
 /// The frame scheduler: a small, validated, domain-tagged task graph for per-frame work, one
 /// level above `Threading::JobGraphUVE`.
@@ -108,6 +109,10 @@ public:
 
     [[nodiscard]] FrameTaskGraphMutationResultUVE AddTaskUVE(FrameTaskDefinitionUVE task);
     [[nodiscard]] FrameTaskGraphValidationResultUVE ValidateUVE() const;
+    /// Stable topological order: choose the earliest inserted ready task on each step.
+    /// Output is unchanged for invalid graphs; no action is invoked during planning.
+    [[nodiscard]] FrameTaskGraphValidationResultUVE BuildExecutionOrderUVE(
+        std::vector<FrameTaskIdUVE>& outOrder) const;
 
     [[nodiscard]] std::size_t GetTaskCountUVE() const noexcept {
         return m_tasks.SizeUVE();
@@ -148,6 +153,9 @@ public:
     FrameSchedulerUVE& operator=(const FrameSchedulerUVE&) = delete;
 
     [[nodiscard]] FrameScheduleResultUVE ExecuteUVE(const FrameTaskGraphUVE& graph) const;
+    /// Owner-thread execution of the same validated graph. Does not create a pool or imply
+    /// parallel gameplay. Stops on an exception and reports the number of completed actions.
+    [[nodiscard]] static FrameScheduleResultUVE ExecuteSerialUVE(const FrameTaskGraphUVE& graph);
 
 private:
     Threading::IThreadPoolUVE& m_threadPool;

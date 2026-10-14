@@ -28,6 +28,40 @@ class NullRenderDeviceUVE final : public IRenderDeviceUVE {
 public:
     NullRenderDeviceUVE();
     ~NullRenderDeviceUVE() override;
+    [[nodiscard]] RenderDeviceCapabilitiesUVE GetCapabilitiesUVE() const noexcept override;
+    [[nodiscard]] RenderOperationResultUVE GetTextureDescUVE(TextureHandleUVE,
+                                                             TextureDescUVE &) const override;
+    [[nodiscard]] RenderOperationResultUVE CopyBufferUVE(const BufferCopyDescUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE BlitTextureUVE(const TextureBlitDescUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE GenerateMipmapsUVE(TextureHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE InsertFenceUVE(FenceHandleUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE WaitFenceUVE(FenceHandleUVE, std::uint64_t) override;
+    [[nodiscard]] RenderOperationResultUVE DestroyFenceUVE(FenceHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE WaitIdleUVE() override;
+    /// Timeline semaphores are the one part of the Null model that is genuinely concurrent: a
+    /// wait blocks, so the thread that signals is by definition a different one. The semaphore
+    /// table therefore carries its own mutex and condition variable instead of relying on the
+    /// device's single-threaded contract.
+    [[nodiscard]] RenderOperationResultUVE CreateSemaphoreUVE(const SemaphoreDescUVE &,
+                                                              SemaphoreHandleUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE GetSemaphoreCounterUVE(SemaphoreHandleUVE,
+                                                                  std::uint64_t &) const override;
+    [[nodiscard]] RenderOperationResultUVE SignalSemaphoreUVE(SemaphoreHandleUVE, std::uint64_t) override;
+    [[nodiscard]] RenderOperationResultUVE WaitSemaphoreUVE(SemaphoreHandleUVE, std::uint64_t,
+                                                            std::uint64_t) override;
+    [[nodiscard]] RenderOperationResultUVE DestroySemaphoreUVE(SemaphoreHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE CreateQueryUVE(RenderQueryKindUVE, QueryHandleUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE BeginQueryUVE(QueryHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE EndQueryUVE(QueryHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE WriteTimestampUVE(QueryHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE GetQueryResultUVE(QueryHandleUVE, RenderQueryResultUVE &,
+                                                             bool = false) override;
+    [[nodiscard]] RenderOperationResultUVE DestroyQueryUVE(QueryHandleUVE) override;
+    /// Bounded diagnostic history of the last 256 device operations, distinct from submitted
+    /// command lists. Model queries deliberately expose no fabricated GPU result.
+    [[nodiscard]] const std::vector<RecordedDeviceOperationUVE> &
+    GetRecordedDeviceOperationsUVE() const noexcept;
+    [[nodiscard]] std::uint64_t GetDroppedDeviceOperationCountUVE() const noexcept;
 
     NullRenderDeviceUVE(const NullRenderDeviceUVE&) = delete;
     NullRenderDeviceUVE& operator=(const NullRenderDeviceUVE&) = delete;

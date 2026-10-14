@@ -558,4 +558,160 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
     return clips;
 }
 
+namespace {
+
+/// The reading side of the material conversion, in the same file as the mesh/skeleton/animation
+/// readers so it shares their loader options: no external file is opened, no embedded payload is
+/// decoded, and every value stays a pure function of the bytes handed in.
+[[nodiscard]] std::string TextureFileUVE(const ufbx_material_map& map, bool& outNonFileTexture) {
+    const ufbx_texture* const texture = map.texture;
+    if (texture == nullptr || !map.texture_enabled) {
+        return {};
+    }
+    if (texture->type != UFBX_TEXTURE_FILE) {
+        outNonFileTexture = true; // layered/procedural/shader: no filename to report
+        return {};
+    }
+    const std::string filename = texture->relative_filename.length != 0U
+                                     ? std::string(texture->relative_filename.data,
+                                                   texture->relative_filename.length)
+                                     : (texture->filename.length != 0U
+                                            ? std::string(texture->filename.data, texture->filename.length)
+                                            : std::string{});
+    if (filename.empty()) {
+        outNonFileTexture = true; // a file texture the file itself does not name
+    }
+    return filename;
+}
+
+/// Reads a color map into MaterialAssetUVE's validated range: channels are clamped to [0,1] and
+/// `outClamped` reports that this happened, so the change is visible to callers instead of silent.
+[[nodiscard]] Math::ColorUVE ToAlbedoUVE(const double red, const double green, const double blue,
+                                         bool& outClamped) {
+    const auto unit = [&outClamped](const double channel) {
+        if (!std::isfinite(channel)) {
+            outClamped = true;
+            return 0.0F;
+        }
+        const auto value = static_cast<float>(channel);
+        if (value < 0.0F || value > 1.0F) {
+            outClamped = true;
+            return std::clamp(value, 0.0F, 1.0F);
+        }
+        return value;
+    };
+    return Math::ColorUVE{unit(red), unit(green), unit(blue)};
+}
+
+[[nodiscard]] Math::ColorUVE ToNonnegativeColorUVE(const double red, const double green,
+                                                   const double blue) {
+    const auto channel = [](const double value) {
+        if (!std::isfinite(value) || value < 0.0) {
+            return 0.0F;
+        }
+        return static_cast<float>(value);
+    };
+    return Math::ColorUVE{channel(red), channel(green), channel(blue)};
+}
+
+} // namespace
+
+std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsUVE(const std::span<const std::byte> source) {
+    // Geometry and animation are irrelevant to materials, and both are skipped so a large model
+    // does not pay for data this reader never touches.
+    const ScenePtrUVE scene = LoadSceneUVE(source, /*geometry=*/false, /*animation=*/false);
+    if (!scene) {
+        return std::nullopt;
+    }
+    try {
+        std::vector<FbxMaterialUVE> materials;
+        materials.reserve(scene->materials.count);
+        for (std::size_t index = 0U; index < scene->materials.count; ++index) {
+            const ufbx_material* const sourceMaterial = scene->materials.data[index];
+            if (sourceMaterial == nullptr) {
+                continue;
+            }
+            FbxMaterialUVE converted;
+            converted.name = sourceMaterial->name.length != 0U
+                                 ? std::string(sourceMaterial->name.data, sourceMaterial->name.length)
+                                 : std::string{};
+
+            // Base color: FBX's PBR base_color first, then the classic diffuse color. Both are
+            // authored in the file's own space; nothing here reinterprets them as linear/sRGB.
+            const ufbx_material_map& baseColor = sourceMaterial->pbr.base_color;
+            const ufbx_material_map& diffuseColor = sourceMaterial->fbx.diffuse_color;
+            if (baseColor.has_value) {
+                converted.material.albedoColor = ToAlbedoUVE(baseColor.value_vec4.x, baseColor.value_vec4.y,
+                                                             baseColor.value_vec4.z, converted.albedoClamped);
+            } else if (diffuseColor.has_value) {
+                converted.material.albedoColor = ToAlbedoUVE(diffuseColor.value_vec3.x, diffuseColor.value_vec3.y,
+                                                             diffuseColor.value_vec3.z, converted.albedoClamped);
+            }
+
+            const ufbx_material_map& metalness = sourceMaterial->pbr.metalness;
+            if (metalness.has_value && std::isfinite(metalness.value_real)) {
+                const auto value = static_cast<float>(metalness.value_real);
+                if (value < 0.0F || value > 1.0F) {
+                    converted.albedoClamped = true; // same "a validated range was enforced" signal
+                }
+                converted.material.metallic = std::clamp(value, 0.0F, 1.0F);
+            }
+            const ufbx_material_map& roughness = sourceMaterial->pbr.roughness;
+            if (roughness.has_value && std::isfinite(roughness.value_real)) {
+                converted.material.roughness = std::clamp(static_cast<float>(roughness.value_real), 0.0F, 1.0F);
+            }
+
+            // Emission: the colour and its energy are separate authored values, and so are they in
+            // MaterialAssetUVE (emissiveEnergy multiplies emissiveColor).
+            const ufbx_material_map& emissionColor = sourceMaterial->pbr.emission_color;
+            if (emissionColor.has_value) {
+                converted.material.emissiveColor = ToNonnegativeColorUVE(
+                    emissionColor.value_vec3.x, emissionColor.value_vec3.y, emissionColor.value_vec3.z);
+            }
+            const ufbx_material_map& emissionFactor = sourceMaterial->pbr.emission_factor;
+            if (emissionFactor.has_value && std::isfinite(emissionFactor.value_real) &&
+                emissionFactor.value_real >= 0.0) {
+                converted.material.emissiveEnergy = static_cast<float>(emissionFactor.value_real);
+                if (!emissionColor.has_value && emissionFactor.value_real > 0.0) {
+                    converted.material.emissiveColor = Math::ColorUVE{1.0F, 1.0F, 1.0F};
+                }
+            }
+
+            // Two honest authoring styles mean "this material blends": the classic FBX
+            // TransparencyFactor (0 opaque, 1 fully transparent, verified against the parser) and
+            // an explicit PBR opacity below one, which is what glTF/OSL-style materials carry.
+            // MaterialAssetUVE records it as a flag (RenderQueueUVE buckets on it) and keeps
+            // alphaCutoff at zero, because an FBX material holds no cutoff value.
+            const ufbx_material_map& opacity = sourceMaterial->pbr.opacity;
+            const ufbx_material_map& transparency = sourceMaterial->fbx.transparency_factor;
+            const bool pbrBlends = opacity.has_value && std::isfinite(opacity.value_real) &&
+                                   opacity.value_real >= 0.0 && opacity.value_real < 1.0;
+            const bool classicBlends = transparency.has_value &&
+                                       std::isfinite(transparency.value_real) &&
+                                       transparency.value_real > 0.0;
+            if (pbrBlends || classicBlends) {
+                converted.material.isTransparent = true;
+            }
+
+            converted.albedoTextureFile = TextureFileUVE(sourceMaterial->pbr.base_color, converted.hasNonFileTexture);
+            converted.normalTextureFile = TextureFileUVE(sourceMaterial->pbr.normal_map, converted.hasNonFileTexture);
+            converted.emissiveTextureFile =
+                TextureFileUVE(sourceMaterial->pbr.emission_color, converted.hasNonFileTexture);
+            converted.ambientOcclusionTextureFile =
+                TextureFileUVE(sourceMaterial->pbr.ambient_occlusion, converted.hasNonFileTexture);
+
+            if (!IsMaterialAssetValidUVE(converted.material)) {
+                UVE_WARNING("FbxMeshConverterUVE: material \"{}\" produced an invalid PBR descriptor; skipped",
+                            converted.name);
+                continue;
+            }
+            materials.push_back(std::move(converted));
+        }
+        return materials;
+    } catch (const std::bad_alloc&) {
+        UVE_ERROR("FbxMeshConverterUVE: out of memory while reading materials");
+        return std::nullopt;
+    }
+}
+
 } // namespace UVE::Asset

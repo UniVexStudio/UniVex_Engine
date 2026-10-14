@@ -316,8 +316,11 @@ TEST_F(CameraSystemUVETest, GetWorldPositionUVE_EntityWithoutWorldTransform_Asse
 
 TEST_F(CameraSystemUVETest, ComputeViewMatrixUVE_InvalidWorldTransform_Asserts) {
     const Scene::EntityUVE entity = MakeCameraEntityUVE(Math::Vector3UVE{}, Math::QuaternionUVE{}, Scene::CameraComponentUVE{});
-    entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).worldPosition.x =
-        std::numeric_limits<float>::quiet_NaN();
+    // Construct a malformed cache fixture; ordinary live cache access is read-only.
+    auto invalidWorld = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    invalidWorld.worldPosition.x = std::numeric_limits<float>::quiet_NaN();
+    entityManager.RemoveComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    entityManager.AddComponentUVE<Scene::WorldTransformComponentUVE>(entity, invalidWorld);
 
     EXPECT_DEATH({ static_cast<void>(cameraSystem.ComputeViewMatrixUVE(entityManager, entity)); }, "");
 }
@@ -346,8 +349,11 @@ TEST_F(CameraSystemUVETest, InvalidCameraAndAspectInputsReturnFiniteFallbacksInR
 
 TEST_F(CameraSystemUVETest, InvalidWorldTransformReturnsFiniteFallbacksInRelease) {
     const Scene::EntityUVE entity = MakeCameraEntityUVE(Math::Vector3UVE{}, Math::QuaternionUVE{}, Scene::CameraComponentUVE{});
-    entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).worldPosition.x =
-        std::numeric_limits<float>::quiet_NaN();
+    // Construct a malformed cache fixture; ordinary live cache access is read-only.
+    auto invalidWorld = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    invalidWorld.worldPosition.x = std::numeric_limits<float>::quiet_NaN();
+    entityManager.RemoveComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    entityManager.AddComponentUVE<Scene::WorldTransformComponentUVE>(entity, invalidWorld);
 
     EXPECT_EQ(cameraSystem.ComputeViewMatrixUVE(entityManager, entity), Math::Matrix4x4UVE::IdentityUVE());
     EXPECT_EQ(cameraSystem.GetWorldPositionUVE(entityManager, entity), Math::Vector3UVE{});

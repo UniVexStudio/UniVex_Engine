@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "uve/scheduling/frame_scheduler_uve.h"
+#include "uve/utilities/topological_order_uve.h"
 
 #include <algorithm>
 #include <condition_variable>
@@ -261,6 +262,47 @@ FrameTaskGraphValidationResultUVE FrameTaskGraphUVE::ValidateUVE() const {
         }
     }
     return FrameTaskGraphValidationResultUVE{FrameTaskGraphValidationCodeUVE::Valid, 0U, "valid"};
+}
+
+FrameTaskGraphValidationResultUVE FrameTaskGraphUVE::BuildExecutionOrderUVE(
+    std::vector<FrameTaskIdUVE>& outOrder) const {
+    const auto validation = ValidateUVE();
+    if (!validation.IsValidUVE()) return validation;
+    const auto tasks = GetTasksUVE();
+    std::vector<std::vector<std::uint32_t>> edges(tasks.size());
+    for (std::size_t index = 0U; index < tasks.size(); ++index) {
+        for (auto id : tasks[index].dependencies) {
+            edges[index].push_back(static_cast<std::uint32_t>(FindTaskIndexUVE(tasks, id)));
+        }
+    }
+    std::vector<std::uint32_t> indices;
+    if (Utilities::BuildTopologicalOrderUVE(edges, indices) != Utilities::TopologicalOrderCodeUVE::Ordered) {
+        return MakeValidationErrorUVE(FrameTaskGraphValidationCodeUVE::CyclicDependency, 0U,
+                                      "frame dependency planning failed");
+    }
+    std::vector<FrameTaskIdUVE> order;
+    order.reserve(indices.size());
+    for (auto index : indices) order.push_back(tasks[index].id);
+    outOrder = std::move(order);
+    return validation;
+}
+
+FrameScheduleResultUVE FrameSchedulerUVE::ExecuteSerialUVE(const FrameTaskGraphUVE& graph) {
+    std::vector<FrameTaskIdUVE> order;
+    const auto validation = graph.BuildExecutionOrderUVE(order);
+    if (!validation.IsValidUVE()) {
+        return {FrameScheduleResultCodeUVE::InvalidGraph, 0U, graph.GetTaskCountUVE(), validation.message};
+    }
+    std::size_t completed = 0U;
+    try {
+        for (const auto id : order) {
+            graph.GetTasksUVE()[FindTaskIndexUVE(graph.GetTasksUVE(), id)].action();
+            ++completed;
+        }
+    } catch (...) {
+        return {FrameScheduleResultCodeUVE::TaskFailed, completed, order.size(), ExceptionMessageUVE()};
+    }
+    return {FrameScheduleResultCodeUVE::Completed, completed, order.size(), "completed"};
 }
 
 FrameScheduleResultUVE FrameSchedulerUVE::ExecuteUVE(const FrameTaskGraphUVE& graph) const {

@@ -103,6 +103,7 @@ enum class TextureFormatUVE : std::uint8_t {
     ETC2RGB8 = 6,
     ETC2RGBA8 = 7,
     ASTC4x4RGBA = 8,
+    Depth24Stencil8 = 9,
 };
 
 /// Sampled interpretation of normalized color-channel values. This is separate from the stored
@@ -126,6 +127,7 @@ struct TextureFormatBlockInfoUVE {
     switch (format) {
         case TextureFormatUVE::RGBA8Unorm:
         case TextureFormatUVE::Depth32Float:
+        case TextureFormatUVE::Depth24Stencil8:
             return {1U, 1U, 4U, false};
         case TextureFormatUVE::RGBA16Float:
             return {1U, 1U, 8U, false};
@@ -157,9 +159,18 @@ struct TextureFormatBlockInfoUVE {
             return true;
         case TextureFormatUVE::RGBA16Float:
         case TextureFormatUVE::Depth32Float:
+        case TextureFormatUVE::Depth24Stencil8:
             return false;
     }
     return false;
+}
+
+[[nodiscard]] inline constexpr bool IsDepthFormatUVE(const TextureFormatUVE format) noexcept {
+    return format == TextureFormatUVE::Depth32Float || format == TextureFormatUVE::Depth24Stencil8;
+}
+
+[[nodiscard]] inline constexpr bool IsDepthStencilFormatUVE(const TextureFormatUVE format) noexcept {
+    return format == TextureFormatUVE::Depth24Stencil8;
 }
 
 /// Describes a GPU texture to create via IRenderDeviceUVE::CreateTextureUVE(). `mipLevels` is
@@ -324,7 +335,7 @@ struct TextureMipExtentUVE {
     const TextureFormatBlockInfoUVE block = GetTextureFormatBlockInfoUVE(desc.format);
     if (desc.width == 0U || desc.height == 0U || desc.mipLevels == 0U || block.bytes == 0U ||
         desc.mipLevels > MaximumTextureMipLevelCountUVE(desc.width, desc.height) ||
-        (desc.format == TextureFormatUVE::Depth32Float && desc.mipLevels > 1U)) {
+        (IsDepthFormatUVE(desc.format) && desc.mipLevels > 1U)) {
         return false;
     }
     // Tier 2.3 dimensionality rules. Layer-count CAPS are device properties, so backends
@@ -405,11 +416,10 @@ struct TextureMipExtentUVE {
 
 /// Which programmable stage a ShaderDescUVE belongs to. `Compute` is real since the M5a
 /// compute slice: CreateShaderUVE accepts compute-stage shaders and CreateComputePipelineUVE
-/// links exactly one of them. `Geometry` (Increment 21) is compilable standalone via
-/// Shader::ShaderSourceUVE but still has no pipeline slot — PipelineDescUVE only links a
-/// vertex+fragment pair; growing it with a geometry slot is deferred future work, not built
-/// this increment. Append-only: never renumber existing values, since ShaderStageUVE crosses
-/// the RHI boundary.
+/// links exactly one of them. `Geometry` can be attached through PipelineDescUVE's optional
+/// geometryShader slot. Query RenderDeviceCapabilitiesUVE::geometryShaders before using it:
+/// Null models it, desktop GL executes it, and unsupported backends reject it explicitly.
+/// Append-only: never renumber existing values, since ShaderStageUVE crosses the RHI boundary.
 enum class ShaderStageUVE : std::uint8_t { Vertex, Fragment, Compute, Geometry };
 
 [[nodiscard]] constexpr bool IsShaderStageValidUVE(const ShaderStageUVE stage) noexcept {
@@ -592,6 +602,64 @@ enum class DepthCompareUVE : std::uint8_t {
     return false;
 }
 
+/// What a stencil operation does to the stored stencil value.
+enum class StencilOpUVE : std::uint8_t {
+    Keep,
+    Zero,
+    Replace,
+    IncrementClamp,
+    DecrementClamp,
+    Invert,
+    IncrementWrap,
+    DecrementWrap,
+};
+
+[[nodiscard]] constexpr bool IsStencilOpValidUVE(const StencilOpUVE op) noexcept {
+    switch (op) {
+        case StencilOpUVE::Keep:
+        case StencilOpUVE::Zero:
+        case StencilOpUVE::Replace:
+        case StencilOpUVE::IncrementClamp:
+        case StencilOpUVE::DecrementClamp:
+        case StencilOpUVE::Invert:
+        case StencilOpUVE::IncrementWrap:
+        case StencilOpUVE::DecrementWrap:
+            return true;
+    }
+    return false;
+}
+
+/// One face's stencil test. The comparison is `(reference & compareMask) OP (stored & compareMask)`;
+/// masks and reference are 8-bit because Depth24Stencil8 is the stencil-carrying format.
+struct StencilFaceStateUVE {
+    DepthCompareUVE compare = DepthCompareUVE::Always;
+    StencilOpUVE stencilFail = StencilOpUVE::Keep;
+    StencilOpUVE depthFail = StencilOpUVE::Keep;
+    StencilOpUVE depthPass = StencilOpUVE::Keep;
+    std::uint32_t compareMask = 0xFFU;
+    std::uint32_t writeMask = 0xFFU;
+    std::uint32_t reference = 0U;
+};
+
+[[nodiscard]] constexpr bool IsStencilFaceStateValidUVE(const StencilFaceStateUVE& state) noexcept {
+    return IsDepthCompareValidUVE(state.compare) && IsStencilOpValidUVE(state.stencilFail) &&
+           IsStencilOpValidUVE(state.depthFail) && IsStencilOpValidUVE(state.depthPass) &&
+           state.compareMask <= 0xFFU && state.writeMask <= 0xFFU && state.reference <= 0xFFU;
+}
+
+/// Front/back stencil state. Disabled is the legacy behavior and ignores both faces. Enabled
+/// state is meaningful only for a pass whose depth attachment uses Depth24Stencil8 (or a native
+/// default surface that actually has stencil bits); backends reject malformed enum/mask values.
+struct StencilStateUVE {
+    bool enabled = false;
+    StencilFaceStateUVE front;
+    StencilFaceStateUVE back;
+};
+
+[[nodiscard]] constexpr bool IsStencilStateValidUVE(const StencilStateUVE& state) noexcept {
+    return IsStencilFaceStateValidUVE(state.front) && IsStencilFaceStateValidUVE(state.back);
+}
+
 /// Describes a pipeline state object to create via IRenderDeviceUVE::CreatePipelineUVE().
 /// Fixed-function state remains deliberately small; blending is explicit because editor visual
 /// composition is the first proven consumer rather than an implicit global OpenGL side effect.
@@ -620,6 +688,13 @@ struct PipelineDescUVE {
     float depthBiasConstantFactor = 0.0F;
     float depthBiasSlopeFactor = 0.0F;
     DepthCompareUVE depthCompare = DepthCompareUVE::Less;
+    StencilStateUVE stencil;
+
+    /// Optional live Geometry-stage shader. Invalid means the legacy vertex/fragment pair.
+    /// Appended for aggregate/source compatibility. Unsupported backends must reject a supplied
+    /// handle, never silently omit it. Shader objects need only live through pipeline creation;
+    /// shader-specific input/output topology and limits are validated by the native linker.
+    ShaderHandleUVE geometryShader = kInvalidShaderHandleUVE;
 };
 
 /// Describes a COMPUTE pipeline to create via IRenderDeviceUVE::CreateComputePipelineUVE()
@@ -655,6 +730,7 @@ struct PipelineBinaryDescUVE {
     float depthBiasConstantFactor = 0.0F;
     float depthBiasSlopeFactor = 0.0F;
     DepthCompareUVE depthCompare = DepthCompareUVE::Less;
+    StencilStateUVE stencil;
 };
 
 /// What happens to a render pass attachment's existing contents at the start of the pass.
@@ -744,6 +820,9 @@ struct RenderPassDescUVE {
     StoreOpUVE depthStoreOp = StoreOpUVE::Store;
     // Tier 2.4: locations 1..3 (see ColorAttachmentUVE). Empty by default: a single target.
     std::array<ColorAttachmentUVE, kExtraColorAttachmentCountUVE> extraColorAttachments{};
+    /// Used only when depthLoadOp is Clear and the depth attachment carries stencil bits.
+    /// The existing depth load/store operations govern both aspects of a combined attachment.
+    std::uint32_t clearStencil = 0U;
 };
 
 } // namespace UVE::Render

@@ -10,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include "uve/component/disabled_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/ui_checkbox_component_uve.h"
@@ -44,6 +45,41 @@ struct RankedWidgetUVE final {
     std::uint32_t entityGeneration = 0;
     std::vector<UIQuadUVE> quads;
 };
+
+struct FocusCandidateUVE final {
+    Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+    Math::RectUVE rect{};
+};
+
+void AppendFocusRingUVE(std::vector<UIQuadUVE>& quads, const Math::RectUVE& rect,
+                        const Math::Vector3UVE& color, const float alpha) {
+    if (!std::isfinite(rect.position.x) || !std::isfinite(rect.position.y) ||
+        !std::isfinite(rect.size.x) || !std::isfinite(rect.size.y) || rect.size.x <= 0.0F ||
+        rect.size.y <= 0.0F) {
+        return;
+    }
+    constexpr float kRingThicknessUVE = 2.0F;
+    const float left = rect.position.x - kRingThicknessUVE;
+    const float top = rect.position.y - kRingThicknessUVE;
+    const float width = rect.size.x + 2.0F * kRingThicknessUVE;
+    const float height = rect.size.y + 2.0F * kRingThicknessUVE;
+    const Math::RectUVE edges[] = {
+        Math::RectUVE{Math::Vector2UVE{left, top}, Math::Vector2UVE{width, kRingThicknessUVE}},
+        Math::RectUVE{Math::Vector2UVE{left, top + height - kRingThicknessUVE},
+                      Math::Vector2UVE{width, kRingThicknessUVE}},
+        Math::RectUVE{Math::Vector2UVE{left, top}, Math::Vector2UVE{kRingThicknessUVE, height}},
+        Math::RectUVE{Math::Vector2UVE{left + width - kRingThicknessUVE, top},
+                      Math::Vector2UVE{kRingThicknessUVE, height}},
+    };
+    for (const Math::RectUVE& edge : edges) {
+        UIQuadUVE quad{};
+        quad.rect = edge;
+        quad.color = color;
+        quad.alpha = alpha;
+        quad.kind = UIDrawItemKindUVE::SolidColor;
+        quads.push_back(quad);
+    }
+}
 
 void AppendImageQuadsUVE(const Scene::UIImageComponentUVE& image, const float alpha,
                          std::vector<UIQuadUVE>& quads) {
@@ -391,6 +427,104 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
         });
     LayoutUIScrollContainersUVE(entityManager, inputSystem, m_fontAtlas);
     TickUITweensUVE(entityManager, m_deltaTime);
+
+    // Keyboard focus is resolved after layout/tweens so it uses the same rects as hit-testing.
+    // Reading order is deliberately independent of archetype iteration order.
+    std::vector<FocusCandidateUVE> focusCandidates;
+    const auto addFocusCandidate = [&entityManager, &focusCandidates](
+                                       const Scene::EntityUVE entity, const Math::RectUVE& rect) {
+        if (!ShouldDrawUiWidgetUVE(entityManager, entity) ||
+            entityManager.HasComponentUVE<Scene::DisabledComponentUVE>(entity) ||
+            !std::isfinite(rect.position.x) || !std::isfinite(rect.position.y) ||
+            !std::isfinite(rect.size.x) || !std::isfinite(rect.size.y) || rect.size.x <= 0.0F ||
+            rect.size.y <= 0.0F) {
+            return;
+        }
+        focusCandidates.push_back(FocusCandidateUVE{entity, rect});
+    };
+    entityManager.ForEachUVE<Scene::UIButtonComponentUVE>(
+        [&addFocusCandidate](const Scene::EntityUVE entity, const Scene::UIButtonComponentUVE& button) {
+            addFocusCandidate(entity, button.rect);
+        });
+    entityManager.ForEachUVE<Scene::UISliderComponentUVE>(
+        [&addFocusCandidate](const Scene::EntityUVE entity, const Scene::UISliderComponentUVE& slider) {
+            if (IsUISliderComponentValidUVE(slider)) {
+                addFocusCandidate(entity, slider.rect);
+            }
+        });
+    entityManager.ForEachUVE<Scene::UICheckboxComponentUVE>(
+        [&addFocusCandidate](const Scene::EntityUVE entity, const Scene::UICheckboxComponentUVE& checkbox) {
+            if (IsUICheckboxComponentValidUVE(checkbox)) {
+                addFocusCandidate(entity, checkbox.rect);
+            }
+        });
+    entityManager.ForEachUVE<Scene::UIDropdownComponentUVE>(
+        [&addFocusCandidate](const Scene::EntityUVE entity, const Scene::UIDropdownComponentUVE& dropdown) {
+            if (IsUIDropdownComponentValidUVE(dropdown)) {
+                addFocusCandidate(entity, dropdown.rect);
+            }
+        });
+    entityManager.ForEachUVE<Scene::UITextInputComponentUVE>(
+        [&addFocusCandidate](const Scene::EntityUVE entity, const Scene::UITextInputComponentUVE& field) {
+            if (IsUITextInputComponentValidUVE(field)) {
+                addFocusCandidate(entity, field.rect);
+            }
+        });
+    std::sort(focusCandidates.begin(), focusCandidates.end(),
+              [](const FocusCandidateUVE& lhs, const FocusCandidateUVE& rhs) {
+                  if (lhs.rect.position.y != rhs.rect.position.y) {
+                      return lhs.rect.position.y < rhs.rect.position.y;
+                  }
+                  if (lhs.rect.position.x != rhs.rect.position.x) {
+                      return lhs.rect.position.x < rhs.rect.position.x;
+                  }
+                  if (lhs.entity.index != rhs.entity.index) {
+                      return lhs.entity.index < rhs.entity.index;
+                  }
+                  return lhs.entity.generation < rhs.entity.generation;
+              });
+    focusCandidates.erase(std::unique(focusCandidates.begin(), focusCandidates.end(),
+                                      [](const FocusCandidateUVE& lhs, const FocusCandidateUVE& rhs) {
+                                          return lhs.entity == rhs.entity;
+                                      }),
+                          focusCandidates.end());
+    const auto focusedPosition = std::find_if(
+        focusCandidates.begin(), focusCandidates.end(), [this](const FocusCandidateUVE& candidate) {
+            return candidate.entity == m_focusedEntity;
+        });
+    if (focusedPosition == focusCandidates.end()) {
+        m_focusedEntity = Scene::kInvalidEntityUVE;
+    }
+    if (inputSystem.WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Tab) && !focusCandidates.empty()) {
+        const bool backwards = inputSystem.IsKeyDownUVE(Input::KeyCodeUVE::LeftShift) ||
+                               inputSystem.IsKeyDownUVE(Input::KeyCodeUVE::RightShift);
+        if (m_focusedEntity == Scene::kInvalidEntityUVE) {
+            m_focusedEntity = backwards ? focusCandidates.back().entity : focusCandidates.front().entity;
+        } else {
+            const std::size_t current = static_cast<std::size_t>(focusedPosition - focusCandidates.begin());
+            const std::size_t next = backwards
+                                         ? (current + focusCandidates.size() - 1U) % focusCandidates.size()
+                                         : (current + 1U) % focusCandidates.size();
+            m_focusedEntity = focusCandidates[next].entity;
+        }
+    }
+    const Scene::EntityUVE focusedEntity = m_focusedEntity;
+    const bool activatePressed = focusedEntity != Scene::kInvalidEntityUVE &&
+                                 (inputSystem.WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Enter) ||
+                                  inputSystem.WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Space));
+    const bool activateDown = focusedEntity != Scene::kInvalidEntityUVE &&
+                              (inputSystem.IsKeyDownUVE(Input::KeyCodeUVE::Enter) ||
+                               inputSystem.IsKeyDownUVE(Input::KeyCodeUVE::Space));
+    const bool sliderDecreasePressed =
+        inputSystem.WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Left) ||
+        inputSystem.WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Down);
+    const bool sliderIncreasePressed =
+        inputSystem.WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Right) ||
+        inputSystem.WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Up);
+    const bool dropdownPreviousPressed = inputSystem.WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Up);
+    const bool dropdownNextPressed = inputSystem.WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Down);
+    const bool escapePressed = inputSystem.WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Escape);
+
     m_drawBatch.quads.clear();
     std::vector<RankedWidgetUVE> ranked;
 
@@ -431,27 +565,39 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
         });
 
     entityManager.ForEachUVE<Scene::UIButtonComponentUVE>(
-        [&entityManager, &ranked, &mousePosition, mouseDown, mousePressedThisFrame](
-            const Scene::EntityUVE entity, Scene::UIButtonComponentUVE& button) {
+        [this, &entityManager, &ranked, &mousePosition, mouseDown, mousePressedThisFrame, focusedEntity,
+         activatePressed, activateDown](const Scene::EntityUVE entity, Scene::UIButtonComponentUVE& button) {
             if (!ShouldDrawUiWidgetUVE(entityManager, entity)) {
                 button.isHovered = false;
                 button.wasClickedThisFrame = false;
                 return;
             }
             button.isHovered = ContainsClippedUVE(entityManager, entity, button.rect, mousePosition);
-            button.wasClickedThisFrame = button.isHovered && mousePressedThisFrame;
+            const bool keyboardFocused = entity == focusedEntity;
+            button.wasClickedThisFrame =
+                (button.isHovered && mousePressedThisFrame) || (keyboardFocused && activatePressed);
+            if (button.isHovered && mousePressedThisFrame) {
+                m_focusedEntity = entity;
+            }
 
             UIQuadUVE quad{};
             quad.rect = button.rect;
-            quad.color = button.isHovered ? (mouseDown ? button.pressedColor : button.hoverColor) : button.normalColor;
+            quad.color = button.isHovered || keyboardFocused
+                             ? ((mouseDown || activateDown) ? button.pressedColor : button.hoverColor)
+                             : button.normalColor;
             quad.alpha = TweenedAlphaUVE(entityManager, entity, 1.0F);
             quad.kind = UIDrawItemKindUVE::SolidColor;
-            RankWidgetUVE(entity, ResolveCanvasAncestryUVE(entityManager, entity), 1, {quad}, ranked);
+            std::vector<UIQuadUVE> quads{quad};
+            if (keyboardFocused) {
+                AppendFocusRingUVE(quads, button.rect, button.hoverColor, quad.alpha);
+            }
+            RankWidgetUVE(entity, ResolveCanvasAncestryUVE(entityManager, entity), 1, std::move(quads), ranked);
         });
 
     entityManager.ForEachUVE<Scene::UISliderComponentUVE>(
-        [&entityManager, &ranked, &mousePosition, mouseDown, mousePressedThisFrame](
-            const Scene::EntityUVE entity, Scene::UISliderComponentUVE& slider) {
+        [this, &entityManager, &ranked, &mousePosition, mouseDown, mousePressedThisFrame, focusedEntity,
+         sliderDecreasePressed, sliderIncreasePressed](const Scene::EntityUVE entity,
+                                                       Scene::UISliderComponentUVE& slider) {
             if (!ShouldDrawUiWidgetUVE(entityManager, entity) || !IsUISliderComponentValidUVE(slider)) {
                 slider.isHovered = false;
                 slider.isDragging = false;
@@ -460,6 +606,24 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
             }
             slider.isHovered = ContainsClippedUVE(entityManager, entity, slider.rect, mousePosition);
             slider.wasChangedThisFrame = false;
+            if (slider.isHovered && mousePressedThisFrame) {
+                m_focusedEntity = entity;
+            }
+            if (entity == focusedEntity && (sliderDecreasePressed || sliderIncreasePressed)) {
+                const float increment = slider.step > 0.0F
+                                            ? slider.step
+                                            : (slider.maxValue - slider.minValue) * 0.01F;
+                float adjusted = slider.value + (sliderIncreasePressed ? increment : -increment);
+                if (slider.step > 0.0F) {
+                    adjusted = slider.minValue +
+                               std::round((adjusted - slider.minValue) / slider.step) * slider.step;
+                }
+                adjusted = std::clamp(adjusted, slider.minValue, slider.maxValue);
+                if (adjusted != slider.value) {
+                    slider.value = adjusted;
+                    slider.wasChangedThisFrame = true;
+                }
+            }
             if (slider.isDragging && !mouseDown) {
                 slider.isDragging = false;
             }
@@ -512,6 +676,9 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
             sliderQuads.push_back(track);
             sliderQuads.push_back(fill);
             sliderQuads.push_back(thumb);
+            if (entity == focusedEntity) {
+                AppendFocusRingUVE(sliderQuads, slider.rect, slider.thumbColor, track.alpha);
+            }
             RankWidgetUVE(entity, ResolveCanvasAncestryUVE(entityManager, entity), 1, std::move(sliderQuads), ranked);
         });
 
@@ -566,7 +733,7 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
         });
 
     entityManager.ForEachUVE<Scene::UICheckboxComponentUVE>(
-        [&entityManager, &ranked, &mousePosition, mousePressedThisFrame](
+        [this, &entityManager, &ranked, &mousePosition, mousePressedThisFrame, focusedEntity, activatePressed](
             const Scene::EntityUVE entity, Scene::UICheckboxComponentUVE& checkbox) {
             if (!ShouldDrawUiWidgetUVE(entityManager, entity) || !IsUICheckboxComponentValidUVE(checkbox)) {
                 checkbox.isHovered = false;
@@ -574,7 +741,11 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
                 return;
             }
             checkbox.isHovered = ContainsClippedUVE(entityManager, entity, checkbox.rect, mousePosition);
-            checkbox.wasToggledThisFrame = checkbox.isHovered && mousePressedThisFrame;
+            checkbox.wasToggledThisFrame =
+                (checkbox.isHovered && mousePressedThisFrame) || (entity == focusedEntity && activatePressed);
+            if (checkbox.isHovered && mousePressedThisFrame) {
+                m_focusedEntity = entity;
+            }
             if (checkbox.wasToggledThisFrame) {
                 checkbox.checked = !checkbox.checked;
             }
@@ -594,6 +765,9 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
                 check.alpha = alpha;
                 check.kind = UIDrawItemKindUVE::SolidColor;
                 checkboxQuads.push_back(check);
+            }
+            if (entity == focusedEntity) {
+                AppendFocusRingUVE(checkboxQuads, checkbox.rect, checkbox.hoverColor, alpha);
             }
             RankWidgetUVE(entity, ResolveCanvasAncestryUVE(entityManager, entity), 1, std::move(checkboxQuads),
                           ranked);
@@ -696,7 +870,8 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
 
     entityManager.ForEachUVE<Scene::UIDropdownComponentUVE>(
         [this, &entityManager, &ranked, &mousePosition, mousePressedThisFrame, &glyphQuads, &localization,
-         &translated](const Scene::EntityUVE entity, Scene::UIDropdownComponentUVE& dropdown) {
+         &translated, focusedEntity, activatePressed, dropdownPreviousPressed, dropdownNextPressed,
+         escapePressed](const Scene::EntityUVE entity, Scene::UIDropdownComponentUVE& dropdown) {
             dropdown.wasSelectionChangedThisFrame = false;
             dropdown.hoveredIndex = -1;
             if (!ShouldDrawUiWidgetUVE(entityManager, entity) || !IsUIDropdownComponentValidUVE(dropdown)) {
@@ -716,8 +891,44 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
                     dropdown.hoveredIndex = index;
                 }
             }
+            const bool keyboardFocused = entity == focusedEntity;
+            if (keyboardFocused && m_dropdownKeyboardEntity != entity) {
+                m_dropdownKeyboardEntity = entity;
+                m_dropdownKeyboardIndex = -1;
+            }
+            if (keyboardFocused && dropdown.open && !options.empty() &&
+                (dropdownPreviousPressed || dropdownNextPressed || activatePressed || escapePressed)) {
+                std::int32_t keyboardIndex = m_dropdownKeyboardIndex >= 0
+                                                 ? m_dropdownKeyboardIndex
+                                                 : std::clamp(dropdown.selectedIndex, 0,
+                                                              static_cast<std::int32_t>(options.size()) - 1);
+                if (dropdownPreviousPressed) {
+                    keyboardIndex = std::max(0, keyboardIndex - 1);
+                }
+                if (dropdownNextPressed) {
+                    keyboardIndex =
+                        std::min(static_cast<std::int32_t>(options.size()) - 1, keyboardIndex + 1);
+                }
+                m_dropdownKeyboardIndex = keyboardIndex;
+                dropdown.hoveredIndex = keyboardIndex;
+                if (activatePressed) {
+                    dropdown.selectedIndex = keyboardIndex;
+                    dropdown.open = false;
+                    dropdown.wasSelectionChangedThisFrame = true;
+                    m_dropdownKeyboardIndex = -1;
+                } else if (escapePressed) {
+                    dropdown.open = false;
+                    m_dropdownKeyboardIndex = -1;
+                }
+            } else if (keyboardFocused && activatePressed && !options.empty()) {
+                dropdown.open = true;
+                m_dropdownKeyboardIndex =
+                    std::clamp(dropdown.selectedIndex, 0, static_cast<std::int32_t>(options.size()) - 1);
+                dropdown.hoveredIndex = m_dropdownKeyboardIndex;
+            }
             if (mousePressedThisFrame) {
                 if (dropdown.isHovered) {
+                    m_focusedEntity = entity;
                     dropdown.open = !dropdown.open;
                 } else if (dropdown.open && dropdown.hoveredIndex >= 0) {
                     dropdown.selectedIndex = dropdown.hoveredIndex;
@@ -731,7 +942,7 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
             const CanvasAncestryUVE ancestry = ResolveCanvasAncestryUVE(entityManager, entity);
             UIQuadUVE box{};
             box.rect = dropdown.rect;
-            box.color = dropdown.isHovered ? dropdown.boxHoverColor : dropdown.boxColor;
+            box.color = dropdown.isHovered || keyboardFocused ? dropdown.boxHoverColor : dropdown.boxColor;
             box.alpha = alpha;
             box.kind = UIDrawItemKindUVE::SolidColor;
             RankWidgetUVE(entity, ancestry, 1, std::vector<UIQuadUVE>{box}, ranked);
@@ -805,14 +1016,19 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
         });
 
     entityManager.ForEachUVE<Scene::UITextInputComponentUVE>(
-        [this, &entityManager, &inputSystem, &ranked, &mousePosition, mousePressedThisFrame, &glyphQuads](
-            const Scene::EntityUVE entity, Scene::UITextInputComponentUVE& field) {
+        [this, &entityManager, &inputSystem, &ranked, &mousePosition, mousePressedThisFrame, &glyphQuads,
+         focusedEntity](const Scene::EntityUVE entity, Scene::UITextInputComponentUVE& field) {
             field.wasSubmittedThisFrame = false;
             if (!ShouldDrawUiWidgetUVE(entityManager, entity) || !IsUITextInputComponentValidUVE(field)) {
                 field.focused = false;
                 field.blinkTime = 0.0F;
                 field.scrollOffset = 0.0F;
                 return;
+            }
+            if (entity == focusedEntity) {
+                field.focused = true;
+            } else if (focusedEntity != Scene::kInvalidEntityUVE) {
+                field.focused = false;
             }
             if (mousePressedThisFrame) {
                 const bool hovered = ContainsClippedUVE(entityManager, entity, field.rect, mousePosition);
@@ -928,6 +1144,23 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
             }
             RankWidgetUVE(entity, ancestry, 2, std::move(fieldQuads), ranked);
         });
+
+    // Mouse focus and Escape live in the text-field pass; adopt or release keyboard focus here
+    // so the next Tab starts from the widget the user is actually editing.
+    bool textFieldHasFocus = false;
+    entityManager.ForEachUVE<Scene::UITextInputComponentUVE>(
+        [this, &textFieldHasFocus](const Scene::EntityUVE entity,
+                                   const Scene::UITextInputComponentUVE& field) {
+            if (field.focused) {
+                m_focusedEntity = entity;
+                textFieldHasFocus = true;
+            }
+        });
+    if (!textFieldHasFocus && m_focusedEntity != Scene::kInvalidEntityUVE &&
+        entityManager.IsAliveUVE(m_focusedEntity) &&
+        entityManager.HasComponentUVE<Scene::UITextInputComponentUVE>(m_focusedEntity)) {
+        m_focusedEntity = Scene::kInvalidEntityUVE;
+    }
 
     std::sort(ranked.begin(), ranked.end(), [](const RankedWidgetUVE& lhs, const RankedWidgetUVE& rhs) {
         if (lhs.sortOrder != rhs.sortOrder) {

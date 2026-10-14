@@ -11,6 +11,7 @@ add_library(uve_threading STATIC
     Internal/job_counter_uve.cpp
     Internal/job_graph_uve.cpp
     Internal/thread_naming_uve.cpp
+    Internal/thread_control_uve.cpp
     Internal/thread_pool_uve.cpp
 )
 # pthread_setname_np/getname_np are glibc extensions: visible only with _GNU_SOURCE.

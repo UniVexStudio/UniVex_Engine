@@ -148,6 +148,12 @@ bool VkFunctionsUVE::LoadDeviceUVE(const VkDevice device) {
     allResolved &= ResolveDevice(vkResetCommandBuffer, gdpa, device, "vkResetCommandBuffer");
     allResolved &= ResolveDevice(vkCmdPipelineBarrier, gdpa, device, "vkCmdPipelineBarrier");
     allResolved &= ResolveDevice(vkCmdCopyImageToBuffer, gdpa, device, "vkCmdCopyImageToBuffer");
+    allResolved &= ResolveDevice(vkCmdBlitImage, gdpa, device, "vkCmdBlitImage");
+    allResolved &= ResolveDevice(vkCreateQueryPool, gdpa, device, "vkCreateQueryPool");
+    allResolved &= ResolveDevice(vkDestroyQueryPool, gdpa, device, "vkDestroyQueryPool");
+    allResolved &= ResolveDevice(vkGetQueryPoolResults, gdpa, device, "vkGetQueryPoolResults");
+    allResolved &= ResolveDevice(vkCmdResetQueryPool, gdpa, device, "vkCmdResetQueryPool");
+    allResolved &= ResolveDevice(vkCmdWriteTimestamp, gdpa, device, "vkCmdWriteTimestamp");
     allResolved &= ResolveDevice(vkCreateBuffer, gdpa, device, "vkCreateBuffer");
     allResolved &= ResolveDevice(vkDestroyBuffer, gdpa, device, "vkDestroyBuffer");
     allResolved &= ResolveDevice(vkGetBufferMemoryRequirements, gdpa, device, "vkGetBufferMemoryRequirements");
@@ -160,6 +166,11 @@ bool VkFunctionsUVE::LoadDeviceUVE(const VkDevice device) {
     allResolved &= ResolveDevice(vkCmdEndRenderPass, gdpa, device, "vkCmdEndRenderPass");
     allResolved &= ResolveDevice(vkCreateSemaphore, gdpa, device, "vkCreateSemaphore");
     allResolved &= ResolveDevice(vkDestroySemaphore, gdpa, device, "vkDestroySemaphore");
+    // OPTIONAL timeline-semaphore entries (core 1.2, additive): absence only disables the
+    // timelineSemaphores capability, never the device.
+    (void)ResolveDevice(vkGetSemaphoreCounterValue, gdpa, device, "vkGetSemaphoreCounterValue");
+    (void)ResolveDevice(vkWaitSemaphores, gdpa, device, "vkWaitSemaphores");
+    (void)ResolveDevice(vkSignalSemaphore, gdpa, device, "vkSignalSemaphore");
     allResolved &= ResolveDevice(vkCreateFence, gdpa, device, "vkCreateFence");
     allResolved &= ResolveDevice(vkDestroyFence, gdpa, device, "vkDestroyFence");
     allResolved &= ResolveDevice(vkWaitForFences, gdpa, device, "vkWaitForFences");

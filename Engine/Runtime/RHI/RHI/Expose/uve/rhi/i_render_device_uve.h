@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "uve/rhi/buffer_handle_uve.h"
+#include "uve/rhi/device_operations_uve.h"
 #include "uve/rhi/i_command_buffer_uve.h"
 #include "uve/rhi/pipeline_handle_uve.h"
 #include "uve/rhi/render_resource_descs_uve.h"
@@ -36,7 +37,112 @@ namespace UVE::Render {
 /// concrete implementation states otherwise.
 class IRenderDeviceUVE {
 public:
-    virtual ~IRenderDeviceUVE() = default;
+    IRenderDeviceUVE();
+    virtual ~IRenderDeviceUVE();
+    IRenderDeviceUVE(const IRenderDeviceUVE&) = delete;
+    IRenderDeviceUVE& operator=(const IRenderDeviceUVE&) = delete;
+
+    /// Takes exclusive retirement responsibility for newly allocated, distinct live textures.
+    /// Attach the returned lease to every command buffer that uses them. The input vector stays
+    /// owned by the caller on rejection/exception. Releasing a lease on any thread only enqueues
+    /// retirement; native destruction occurs on the owner thread at a safe backend boundary.
+    /// No device pointer survives device destruction. Requires retainedTextures capability.
+    [[nodiscard]] std::shared_ptr<void> AdoptTransientTexturesUVE(std::vector<TextureHandleUVE>&& textures);
+    /// Owner-thread drain; only backend-completed/discarded leases arrive here. Present/WaitIdle
+    /// call it automatically. Clients may also drain discarded, unsubmitted command-buffer leases.
+    std::size_t CollectRetiredTexturesUVE();
+
+    /// Optional capabilities are explicit. The default is unsupported for third-party adapters;
+    /// it never fabricates success or changes output. Model recording is distinct from GPU work.
+    [[nodiscard]] virtual RenderDeviceCapabilitiesUVE GetCapabilitiesUVE() const noexcept { return {}; }
+    [[nodiscard]] virtual RenderOperationResultUVE GetTextureDescUVE(TextureHandleUVE,
+                                                                     TextureDescUVE &) const {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE CopyBufferUVE(const BufferCopyDescUVE &) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE BlitTextureUVE(const TextureBlitDescUVE &) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Rebuilds already allocated lower levels from level zero. Does not change texture shape.
+    [[nodiscard]] virtual RenderOperationResultUVE GenerateMipmapsUVE(TextureHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Owner-thread fence after ALREADY SUBMITTED GPU work. A retained backend rejects a fence
+    /// while its CPU submission FIFO is nonempty; Present must drain that FIFO first. Fences
+    /// are one-shot, device-owned and non-recycled. Destroy may return NotReady until completion.
+    [[nodiscard]] virtual RenderOperationResultUVE InsertFenceUVE(FenceHandleUVE &) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE WaitFenceUVE(FenceHandleUVE, std::uint64_t) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE DestroyFenceUVE(FenceHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Does not pretend that deferred CPU command lists have executed. Retained backends return
+    /// InvalidState until they have been presented; owner-thread resource lifetime boundary.
+    [[nodiscard]] virtual RenderOperationResultUVE WaitIdleUVE() {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Creates a timeline semaphore object. Its counter starts at `desc.initialValue`; the
+    /// backend refuses (Unsupported) when it cannot provide a real counter. Output is untouched
+    /// on failure.
+    [[nodiscard]] virtual RenderOperationResultUVE CreateSemaphoreUVE(const SemaphoreDescUVE &,
+                                                                     SemaphoreHandleUVE &) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Reads the current counter value. Owner-thread, non-blocking, never invents a value:
+    /// failures leave the output untouched.
+    [[nodiscard]] virtual RenderOperationResultUVE GetSemaphoreCounterUVE(SemaphoreHandleUVE,
+                                                                         std::uint64_t &) const {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Advances the counter. A value not strictly greater than the current one is an
+    /// `InvalidArgument` (a timeline counter never moves backwards). A CPU-side signal is real
+    /// device state, not a promise that any GPU work has finished.
+    [[nodiscard]] virtual RenderOperationResultUVE SignalSemaphoreUVE(SemaphoreHandleUVE,
+                                                                     std::uint64_t) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Blocks until the counter reaches `value` (immediately, if it already has) or the timeout
+    /// expires, returning `TimedOut` on expiry. Never claims unrelated GPU work completed. May be
+    /// called from a thread other than the one that signals, exactly like a real timeline wait.
+    [[nodiscard]] virtual RenderOperationResultUVE WaitSemaphoreUVE(SemaphoreHandleUVE, std::uint64_t,
+                                                                   std::uint64_t) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Destroys the object. Callers must guarantee no submission still references it, exactly as
+    /// for buffers and textures.
+    [[nodiscard]] virtual RenderOperationResultUVE DestroySemaphoreUVE(SemaphoreHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE CreateQueryUVE(RenderQueryKindUVE, QueryHandleUVE &) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE BeginQueryUVE(QueryHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE EndQueryUVE(QueryHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE WriteTimestampUVE(QueryHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Nonblocking by default; NotReady/Unsupported leave output untouched. Null never returns
+    /// invented zero timings or visibility results. wait=true is an explicitly blocking cold path.
+    [[nodiscard]] virtual RenderOperationResultUVE GetQueryResultUVE(QueryHandleUVE, RenderQueryResultUVE &,
+                                                                     bool = false) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE DestroyQueryUVE(QueryHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// Describes the existing device-owned default surface/swapchain; no second window owner.
+    [[nodiscard]] virtual RenderOperationResultUVE GetSurfaceInfoUVE(RenderSurfaceInfoUVE &) const {
+        return RenderOperationResultUVE::Unsupported;
+    }
 
     /// Creates a GPU buffer per `desc`, optionally uploading `initialData` (must be no larger
     /// than `desc.sizeBytes`). Never returns kInvalidBufferHandleUVE on success.
@@ -191,6 +297,9 @@ public:
 
     /// A short human-readable backend name (e.g. `"Null"`), for logging/diagnostics.
     [[nodiscard]] virtual std::string_view GetBackendNameUVE() const noexcept = 0;
+private:
+    struct TextureRetirementStateUVE;
+    std::shared_ptr<TextureRetirementStateUVE> m_textureRetirement;
 };
 
 } // namespace UVE::Render

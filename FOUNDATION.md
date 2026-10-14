@@ -263,8 +263,19 @@ degenerate quaternion all return `false` and leave the out-parameter untouched.
   serializable) — deliberately: the math layer carries the functions, an asset is authoring
   work for a later tier. Tests in `Test/Math/easing_uve_tests.cpp`, `Test/Math/curves_uve_tests.cpp`
   and `Test/Math/noise_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
-- `[ ]` **SIMD** — no alignment attributes and no vectorised path on any type,
-  documented as deferred.
+- `[x]` **Deliberate SIMD boundary with scalar ABI/fallback** — `point_transform_batch_uve.h`
+  and its private implementation add `TryTransformPointsUVE`; `AabbUVE::TransformUVE` is the
+  first real consumer. SSE2 is selected only when the compiler target guarantees it, including
+  the corresponding MSVC target macros. Two rows accumulate in double in the scalar operation
+  order; other targets use `TransformPointUVE`. Public vector/quaternion/matrix sizes and float
+  alignment do not change, no intrinsic type is exposed, and no CPU/fast-math build flags are
+  enabled. This is not blanket vectorization or a measured speedup claim. Exact in-place and
+  adjacent disjoint spans work; partial overlap, invalid sizes/paths and unsupported explicit
+  SIMD fail before mutation. Seven `PointTransformBatchUVETest` cases pin layout, unaligned-
+  to-16-byte storage, odd tails, scalar equivalence, cancellation/non-finite policy and AABB
+  consumer parity. They also pass with focused ASan+UBSan and a separately compiled `-mno-sse2`
+  fallback on this host. Full verification: 69 focused math cases and **4,076 CTest cases,
+  zero failures, seven existing Vulkan skips** (2026-10-13).
 
 ## 2. Containers — `Engine/Runtime/Core/Containers`
 
@@ -412,12 +423,13 @@ say so**; only `MemoryManagerUVE` is.
   Audio, Assets, Scripting, Editor), named for profiling, capacity-capped, and
   validated before execution with result codes instead of asserts.
 
-`[~]` **The capability is built and gameplay does not use it.** The entire
-`Update()` / `LateUpdate()` chain in `EngineCoreUVE` is single-threaded main-thread
-code. The job graph is used by asset import and shader preprocessing only. Nothing
-is broken; the parallelism is simply not claimed yet. Making a system parallel is
-therefore a wiring problem, not a missing-infrastructure problem — which is a much
-better place to be, and worth knowing before anyone proposes building a job system.
+`[x]` **The frame graph has a runtime foundation consumer:** `WorldUVE` uses its stable
+execution plan and `FrameSchedulerUVE::ExecuteSerialUVE` for registered scene systems and
+transform propagation. This deliberately preserves deterministic main-thread ownership.
+`EngineCoreUVE`'s overall update chain is not converted to parallel gameplay; that is a separate
+system-integration choice, not a missing job primitive. Existing worker consumers also include
+particles, so the older "only assets and shaders" claim was too narrow. Serial planning/action
+failure tests live in `frame_serial_uve_tests.cpp`; existing parallel scheduler tests are unchanged.
 
 Missing primitives:
 
@@ -439,12 +451,23 @@ Missing primitives:
   module depends on zero `uve/*` targets by design, and naming this type would be the forbidden
   edge; `ValueUVE()` is the bridge at emission. Tests in
   `Test/Core/Threading/thread_id_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
-- `[~]` **Thread naming / affinity / priority** — naming landed: `thread_naming_uve.h` +
-  `Internal/thread_naming_uve.cpp` (`SetCurrentThreadNameUVE`/`TryGetCurrentThreadNameUVE`, Win32
-  / pthread / false-stub with Linux's 15-byte truncation documented), and the pool's workers now
-  self-name (`UVEWorkerN`) instead of going through the old Linux-only helper, which is deleted.
-  Affinity and priority are still nothing — genuinely future. Tests in
-  `Test/Core/Threading/thread_naming_uve_tests.cpp`. Verified: full suite green (3998 ctest cases, 2026-10-12).
+- `[x]` **Capability-aware thread control** — new `thread_control_uve.h/.cpp` adds affinity
+  and priority without changing existing naming or pool defaults. Current-thread and caller-owned
+  `std::thread&` operations report Applied/Unsupported/InvalidThread/InvalidArgument/PermissionDenied/
+  SystemError; no raw native handles or silent downgrades. Non-joinable threads are rejected before
+  native access. Reads publish output only on success, and callers synchronize join/move/detach.
+  Linux uses pthread affinity and explicit OTHER/BATCH/RR scheduler classes; realtime may be denied.
+  Windows x64 uses processor-group masks (one group per request); priority never changes the
+  process class, and Realtime is unsupported unless that process is already realtime. MSVC native
+  thread handles are supported; MinGW's different std::thread ABI reports Unsupported for that
+  overload rather than casting a pthread descriptor to HANDLE. Other platforms honestly report
+  unsupported operations. GetThreadControlCapabilitiesUVE distinguishes these boundaries.
+  Six new `ThreadControlUVETest` cases cover invalid requests/handles, real affinity and priority
+  readback, permission failure and worker-name preservation; 22 focused threading tests pass.
+  Full Linux verification: **4,056 CTest cases, zero failures, seven existing Vulkan skips**.
+  Windows x64 current-thread code also compiles to a COFF object using Zig/Clang's Windows-GNU
+  target with strict warnings; this is a compile check, **not** Windows/MSVC execution coverage.
+  Nothing here makes gameplay parallel or automatically assigns worker affinity/priority.
 
 ## 5. Utilities and diagnostics
 
@@ -543,10 +566,21 @@ Missing primitives:
   `Core::TypeIdUVE` aliases `Strings::StringIdUVE` in `type_metadata_uve.h`, and every entry,
   property and lookup signature in that header spells it. Verified: full suite green
   (3998 ctest cases, 2026-10-12).
-- `[ ]` **No object/handle layer** — no base object, no registry of live instances.
-  (The earlier "no reference counting" clause is stale: `Memory::RefCountedUVE` now exists — but
-  it is a memory primitive, not an object system, so the module itself stays metadata only, which
-  is a legitimate choice; it is recorded here so nobody goes looking for the rest of it.)
+- `[x]` **Opt-in native identity/lifetime registry** — `Core::ObjectUVE`, `ObjectHandleUVE`
+  and `ObjectRegistryUVE` in `Objects/Core/Expose/uve/object/`. The non-owning registry uses
+  `HandleTableUVE<ObjectUVE*>` privately and tags handles with a non-recycled registry identity.
+  It rejects stale/foreign/duplicate handles, detaches without deleting caller objects, supports
+  either destruction order, and permanently closes registration at Shutdown. Objects cannot
+  move/copy; lookup pointers are borrowed and all access/destruction is caller-synchronized.
+  ECS, asset, GPU handles, reflection and `Memory::RefCountedUVE` are not replaced. Handles are
+  runtime-only, not serialized or a native-plugin ABI. Nine `ObjectRegistryUVETest` cases cover
+  ownership, both shutdown orders, growth, foreign/duplicate/stale ids and externally locked
+  cross-thread destruction. Eight `HandleTableLifetimeUVETest` cases additionally verify clear/
+  reuse, small-domain rollover, constructor failure, move/copy and iteration. The shared table
+  now retains generations on Clear, retires exhausted slots and keeps its free list in dead
+  slots, so Release/Clear allocate nothing. Its raw handles remain table-relative, not owner-tagged.
+  Both stale-handle regressions failed before this fix. Normal verification: 28 focused cases;
+  **4,015 CTest cases, zero failures, seven existing Vulkan skips** (2026-10-13).
 
 ---
 
@@ -595,41 +629,89 @@ plan for reimport), `AssetBundleUVE` (`.uvbundle` pack/unpack), and
 Prefab, Blob, Bundle, Mesh, Texture, Shader, Material, Save, DataTable, Audio and
 Animation.
 
-`[~]` **`HotReloadUVE`** polls mtimes. There is no OS file-watcher backend, so
-reload latency is the poll interval and a rename reads as remove-plus-create.
+`[x]` **Capability-detected hot reload with polling fallback** — `HotReloadUVE` now
+supplements path/existence/mtime/size snapshots with nonblocking Linux inotify in
+`Asset/Internal/native_file_watcher_uve.{h,cpp}`. Automatic reports the backend that actually
+initialized; forced Polling and unsupported/unwatchable native paths retain real snapshot
+polling. There is no new worker or duplicate project scanner. Parent and symlink-target
+directories are watched; native bursts coalesce at the existing interval, requests are GUID-
+sorted, and real queue overflow/directory replacement forces a bounded-drain rescan. Duplicate
+Track does not erase history; epoch timestamps are valid; deletion retains last-good data;
+recreation/DB relocation reloads, and a change during Loading remains pending. Manager/event
+callbacks are outside the lock. Events mean triggered, not succeeded. Shutdown closes watches.
+Polling alone still cannot see identical-metadata content changes entirely between scans;
+Windows/macOS use that explicit fallback, not a pretend native watcher. Thirteen new
+`hot_reload_backend_uve_tests.cpp` cases cover these contracts, including a real kernel queue
+overflow, symlink target writes and descriptor cleanup. All 17 hot-reload tests pass, the
+in-flight-load case passes 20 repetitions, and the full strict build/CTest passes **4,069 cases,
+zero failures, seven existing Vulkan skips**, with no watcher skips on this host (2026-10-13).
 
 ## 8. Asset types
 
 | Asset | Holds | Importer | Status |
 |---|---|---|---|
-| `MeshAssetUVE` | `MeshVertexUVE` array (position, normal, uv, tangent, handedness), `uint32` indices, `AabbUVE localBounds`, skinning influences, joints | **OBJ** and **glTF/GLB**, plus a `.uvmodel` envelope | `[x]` |
+| `MeshAssetUVE` | `MeshVertexUVE` array (position, normal, uv, tangent, handedness), `uint32` indices, `AabbUVE localBounds`, skinning influences, joints | **OBJ**, **glTF/GLB** and **FBX**, plus a `.uvmodel` envelope | `[x]` |
 | `TextureAssetUVE` | width, height, format, pixels, a CPU-generated mip chain and Basis-compressed uploads | **PNG, JPEG, BMP, TGA**, plus `.uvtex` | `[x]` mips + compression landed (see below) |
-| `MaterialAssetUVE` | albedo colour, albedo/normal/AO texture GUIDs, metallic, roughness, emissive colour, shader GUIDs, transparency flag | **MTL**, plus `.uvmat` | `[~]` see below |
+| `MaterialAssetUVE` | albedo colour, albedo/normal/AO texture GUIDs, metallic, roughness, emissive colour, shader GUIDs, transparency flag | **MTL**, plus `.uvmat` | `[x]` PBR payload and renderer consumer; see below |
 | `ShaderAssetUVE` | stage, source text, entry point — stored as-is, not compiled at asset level | source importer + `.uvshader` | `[x]` |
-| `AudioAssetUVE` | channels, sample rate, interleaved normalized float samples | **WAV** | `[~]` WAV only |
-| `AnimationClipAssetUVE` | clip id, duration, sampled TRS poses, timed string events | envelope only | `[~]` see below |
+| `AudioAssetUVE` | channels, sample rate, bounded interleaved normalized float samples | **WAV, FLAC, MP3, OGG/Vorbis** | `[x]` bounded import/validation; streaming is a separate runtime contract |
+| `AnimationClipAssetUVE` | clip id, duration, sampled TRS/bone tracks, timed events and skeleton metadata | glTF channels + envelope | `[x]` sampled clip path; see below |
 | `DataTableUVE` | typed schema'd rows (bool / int64 / double / string) | **CSV, TSV, JSON** | `[x]` the most built-out asset in the module |
 | `BlobAssetUVE` | raw bytes, unparsed | — | `[x]` |
 
 Three things about this table matter more than the rest:
 
-- `[x]` **`AnimationClipAssetUVE` stores a single TRS track.** Connected since Tier 2.6:
+- `[x]` **`AnimationClipAssetUVE` supports TRS and skeletal tracks.** Connected since Tier 2.6:
   per-joint `AnimationAssetBoneTrackUVE` channels, a separate `SkeletonAssetUVE`, a glTF skin
   converter and `TrySkinMeshUVE` output — the two halves join through the skinning path, and the
   renderer CPU-skins posed skeletons (Tier 3.1).
-- `[x]` **`MaterialAssetUVE` has three of the six PBR texture slots** its own doc
-  comment describes. Complete since Tier 2.7: metallic/roughness/emissive map slots sit on the
+- `[x]` **`MaterialAssetUVE`'s PBR texture payload has a renderer consumer.**
+  Connected since Tier 2.7: metallic/roughness/emissive map slots sit on the
   asset, the renderer binds slots 12/13, and `lit_shadowed_3d` samples them (B metallic, G
   roughness).
-- `[x]` **A WAV importer does exist**, in `Engine/Runtime/Audio/` rather than in
-  `Asset/` — `RegisterWavImporterUVE`, registered from `engine_core_uve.cpp:260`.
-  *(An earlier survey reported no audio importer at all, having searched only
-  `Asset/Internal/`. Corrected here.)* OGG, MP3 and FLAC are genuinely absent.
+- `[x]` **Audio format import** — existing `RegisterWavImporterUVE` is unchanged; new
+  `RegisterCompressedAudioImportersUVE` / `DecodeEncodedAudioUVE` in `Runtime/Audio` add
+  FLAC, MP3 and OGG/Vorbis and are registered by `engine_core_uve.cpp`. The already pinned
+  miniaudio 0.11.25 supplies FLAC/MP3 plus its bundled `extras/stb_vorbis.c`; decoder support
+  is now enabled without another engine dependency or a change to warning policy. Vendor
+  sources retain their existing MIT/Unlicense terms. There is no claim of AAC/Opus support.
+  Bounds: 64 MiB encoded input, 1..32 channels, the existing 1,048,576-sample asset cap,
+  nonzero rate and finite normalized samples (lossy overshoot is explicitly clipped). Explicit
+  format selection never falls back to a different codec. Rejected input preserves the output;
+  import publishes the existing version-one `.uvaudio` envelope by temporary rename and
+  preserves an existing destination on failure. This is import, not long-file streaming.
+  Seventeen `compressed_audio_importer_uve_tests.cpp` cases cover real decoding, classification,
+  GUID publication, format mismatch, malformed/truncated headers, size/output bounds and failed
+  publication cleanup; the three existing WAV importer tests are unchanged. Fixtures in
+  `Test/Audio/Fixtures/` are self-generated 440 Hz mathematical tones, with a reproducible
+  FFmpeg 7.0.2 generation script; no recording was copied and no FFmpeg binary/code is shipped
+  or linked. All 20 focused cases and **4,050 CTest cases** pass, with zero failures and the
+  same seven explicit Vulkan skips (2026-10-13).
 
-Also missing, as of the last audit: `[~]` an FBX importer (static meshes convert via vendored
-ufbx; skins, materials and animation are explicitly out of scope), `[x]` any animation importer
-(`gltf_animation_converter_uve` samples glTF animation channels into clips), `[x]` a skeleton
-asset separate from the mesh (Tier 2.6: `skeleton_asset_uve`), and `[x]` a font asset —
+Importer reconciliation (2026-10-14): `[~]` **FBX** already uses vendored ufbx for
+triangulated static/skinned meshes, bone hierarchy/rest poses and sampled animation takes.
+`ConvertFbxMeshUVE`, `ReadFbxSkeletonUVE` and `ReadFbxAnimationsUVE` have real implementations;
+mesh import publishes `.uvmodel`, while editor/retarget consumers use the skeleton/take readers.
+Eight `FbxMeshConverterUVETest` cases cover axis/unit conversion, instances, skins, skeletons,
+animation-only files, takes, failure atomicity and publication. The previous static-only claim
+was stale. `[/]` Materials are now converted: `ReadFbxMaterialsUVE` returns `FbxMaterialUVE`
+(name, `MaterialAssetUVE` PBR factors, and the authored texture references) for every material
+in the file, mapping albedo from PBR base color or the classic diffuse color, roughness from the
+parser's values (including its Shininess derivation), emission colour plus its authored energy,
+and transparency from the classic `TransparencyFactor` or a PBR opacity below one. Texture
+*payloads* are still never read (no external files, `ignore_embedded`), so the reader reports the
+file's own relative filenames and never fabricates an `AssetGuidUVE`; a map with no usable file
+reference (procedural/layered/unnamed) leaves its filename empty and sets
+`hasNonFileTexture`. Albedo channels outside `MaterialAssetUVE`'s validated [0,1] range are
+clamped with `albedoClamped` set, and each expected value was measured against the vendored
+ufbx parser rather than assumed. Six `FbxMaterialConverterUVETest` cases cover malformed input,
+material-free files, classic transparency, PBR factors with a file reference and an unnamed
+procedural map, clamping, and multi-material order. Publishing FBX materials as `.uvmat` assets
+(and resolving their texture references to GUIDs) is not part of this step, and broader
+binary/DCC fixture coverage remains partial; no new importer is needed to duplicate those
+working mesh/skin/animation paths. `[x]` **glTF animation conversion** samples channels
+into clips. `[x]` A skeleton asset exists separately from the mesh (`skeleton_asset_uve`).
+`[x]` A font asset exists —
 `FontAssetUVE` (raw sfnt bytes + family name, `.uvfont` envelope, `AssetKindUVE::Font`) with a
 `.ttf`/`.otf` importer, and `UIFontAtlasUVE` bakes from caller bytes now (the embedded Liberation
 Sans subset stays the default, exposed for the equivalence test). Tests in
@@ -659,7 +741,7 @@ render-pass attachment.
 | `BufferDescUVE` | size, usage (`Vertex`/`Index`/`Uniform`/`Storage`/`IndirectStorage`) | no memory/CPU-access/lifetime hint |
 | `TextureDescUVE` | width, height, format, mipLevels, array layers, cubemap shape | no depth, no sample count, no usage flags (Tier 2.3 landed layers + cubes) |
 | `TextureFormatUVE` | `RGBA8Unorm`, `RGBA16Float`, `Depth32Float`, BC1/BC3/BC7, ETC2/ETC2A8 | eight formats; no sRGB, no single/two-channel |
-| `ShaderDescUVE` | stage, source, entry point | `Geometry` compiles but has no pipeline slot |
+| `ShaderDescUVE` | stage, source, entry point | `Geometry` has an optional `PipelineDescUVE::geometryShader` slot (Null/desktop GL); Vulkan reports `geometryShaders = Unsupported` |
 | `PipelineDescUVE` | vertex+fragment shader, vertex layout, stride, topology, depth test/write/compare, cull/winding/fill/bias, blend mode | rasterizer tail landed (Tier 2.1, RHI side) |
 | `RenderPassDescUVE` | up to 4 colour attachments, one depth attachment, load+store ops, clear values, optional viewport override | multi-target + `StoreOpUVE` landed (Tiers 2.4/2.5) |
 | `PrimitiveTopologyUVE` | `Triangles`, `Lines` | no points or strips (lines serve the debug renderer) |
@@ -681,14 +763,137 @@ because each one blocks a whole feature:
   render-into-layer. (Image-based lighting itself is still absent — see §10.)
 
 Also absent: `[x]` a sampler object — landed (Tier 2.2: `SamplerDescUVE` with Point filtering
-in all three backends); and still genuinely `[ ]` descriptor sets or bind groups (binding is flat
-global slot indices), `[ ]` any synchronisation primitive (no fence, semaphore, barrier or
-timeline — `SubmitUVE` + `PresentUVE` is the entire model), `[ ]` a swapchain/surface
-abstraction, `[ ]` stencil state, `[ ]` GPU mip generation (CPU chains landed; no GPU path),
-`[ ]` copy/blit operations (only `UpdateBufferUVE` and `ReadbackBufferUVE`), and `[ ]` timestamp
-or occlusion queries — which is precisely why the occlusion-culling note elsewhere says its
-payoff cannot be demonstrated. None of these is claimed by any tier below; each is future
-subsystem work with its own design pass. (Verified present-or-absent by source read, 2026-10-12.)
+in all three backends). `[x]` **Validated bind-group packets** now live in
+`RHI/RHI/Expose/uve/rhi/bind_group_uve.h`: bounded borrowed packets reuse existing typed resource
+commands, reject invalid/duplicate bindings or incompatible declared layouts before any bind,
+and retain input ordering. The material renderer consumes the packet for its five PBR textures.
+GL applies the same resource calls, Vulkan retains/replays them and Null records them; no new
+GPU resource lifetime or arbitrary native descriptor-set numbering is pretended. Unlisted slots,
+resource ownership, hardware limits and graphics/compute pass rules keep their existing meaning.
+Five new `BindGroupUVETest` cases and 88 renderer cases pass; full CPU-only CTest has **4,093
+cases, zero failures, seven expected Vulkan skips**. A new native GL binding-state case and the
+existing Vulkan point-sampler pixel assertions exercise this packet in graphics-capable CI.
+The native Ubuntu/GCC/Debug workflow for `37f0b0b` passed (run `38402183962`); the earlier
+pending-verification label is now resolved, without reimplementing the packet.
+
+`[x]` **Explicit device-operation contracts** — `device_operations_uve.h`, optional methods
+on `IRenderDeviceUVE`, and `ICommandBufferUVE::MemoryBarrierUVE` add capability-aware operations.
+`Success` means the host call/native command was accepted, not implicit GPU completion;
+`Recorded` distinguishes a retained command or Null model. Failures leave output arguments
+untouched. Missing capabilities explicitly return `Unsupported`, never pretend success.
+
+- **Fences / idle:** real GL sync objects and Vulkan queue fences, non-recycled handles,
+  finite/zero waits, stale rejection and safe retirement. Vulkan rejects fence/idle/copy calls
+  while CPU submissions still await Present; it cannot signal completion before that work runs.
+- **Barriers:** validated outside-pass visibility masks; GL memory barriers, Vulkan global
+  memory dependencies on its dynamic-rendering path, and exact Null command records. Existing
+  pass/texture binding owns image layout transitions; queue-family transfers are not implied.
+- **Buffer copy:** native GL/Vulkan range copies plus actual Null host-byte copying/recording;
+  overlap/overflow/zero-length rejection. Vulkan advertises 4-byte copy alignment. No hidden
+  CPU readback fallback is used for the native paths.
+- **Texture blit / mipgen:** real GL color blits (point/exact copy or linear scale), mip/layer/
+  extent/format checks, caller-binding/scissor preservation, and lower-mip generation on
+  preallocated color textures. Null validates/records. `[/]` Vulkan now implements both
+  through `vkCmdBlitImage` on a transient one-time command buffer: per-format
+  `BLIT_SRC`/`BLIT_DST`/linear-filter feature checks (otherwise `Unsupported`, never a silent
+  filter change), identical-format enforcement, tracked-layout transitions per touched
+  mip/layer with both subresources restored to the sampling layout, and a mip chain that
+  linear-blits each level from the one above for every array layer
+  (`TextureTransferCapabilitiesAreAdvertisedOnARealDevice`,
+  `BlitTextureCopiesAnExactRegionAndReadbackMatchesTheSource`,
+  `BlitTextureLinearScalingAndRejectionsKeepTheirContracts`,
+  `GenerateMipmapsRebuildsEveryLevelWithTheDownsampledAverage`, plus strict syntax checks and
+  a driver-free Null/`GeometryPipeline`-style CPU path). The Vulkan cases need a real ICD —
+  the development host has none, so native CI verified them: run `38518413266` on `91cb7d0a`
+  passed the native GL geometry pixel test and the Vulkan point/linear blit, refusal and
+  readback assertions, and failed only two of the three new fixture cases, both of which were
+  test bugs rather than backend bugs — a `TextureRegionUVE` initializer with `y` in the wrong
+  position, "untouched texel" assertions against a Vulkan image whose contents were never
+  defined, and a multi-mip texture created without the initial upload that
+  `ValidateTextureUploadUVE` requires. Those fixtures now seed every level and region they
+  assert on, and are awaiting a green rerun.
+  Depth/stencil blits and format conversion stay outside this color-transfer contract.
+- **Queries:** real GL GPU timestamps and any-sample occlusion with state/lifetime validation
+  and nonblocking result polling. Null records query operations but NEVER invents visibility or
+  GPU nanoseconds. `[/]` Vulkan now implements timestamp queries: one
+  `VK_QUERY_TYPE_TIMESTAMP` pool per handle, `WriteTimestampUVE` riding a transient
+  reset+write submission (the queue-ordered point in time a CPU-visible timestamp means),
+  results converted from the device's tick period to nanoseconds with `NotReady` for a
+  non-blocking read, gated on the chosen queue family's `timestampValidBits`
+  (`TimestampQueriesReportRealTicksAndRefuseOcclusion`). Occlusion queries stay explicitly
+  `Unsupported` there: `vkCmdBeginQuery`/`vkCmdEndQuery` must bracket the caller's own draws in
+  ONE command buffer, and a device-level begin/end pair that reported "0 samples" would be an
+  invented visibility result rather than information about real geometry.
+- **Timeline semaphores:** `SemaphoreDescUVE` plus `CreateSemaphoreUVE` /
+  `GetSemaphoreCounterUVE` / `SignalSemaphoreUVE` / `WaitSemaphoreUVE` /
+  `DestroySemaphoreUVE` carry a monotonic 64-bit counter through the common API.
+  `RenderDeviceCapabilitiesUVE::timelineSemaphores` defaults to `Unsupported`, so no backend
+  claims the feature implicitly. Null keeps real counters and real blocking waits (a dedicated
+  mutex and condition variable, `TimedOut` on expiry, refused non-increasing signals, and
+  `InvalidHandle` when the semaphore is destroyed under a waiter), which makes
+  `TimelineSemaphoreUVETest`'s six cases genuine concurrency tests. Vulkan creates its own
+  timeline semaphores when the 1.2 feature and entry points are present and reports
+  `Unsupported` otherwise; GL reports `Unsupported` for every call instead of modelling a
+  queue-sync primitive it cannot honor. Binary (queue-to-queue) semaphores remain outside the
+  API on purpose: they only mean something as submission parameters, and `SubmitUVE` owns the
+  backend's frame submission — an explicit boundary, not a silent gap.
+- **Surface view:** `RenderSurfaceUVE` exposes the backend-owned default surface/swapchain's
+  current drawable extent and presentation boundary, without duplicating window or swapchain
+  ownership. GL/Vulkan provide actual surface metadata; Null explicitly has no native surface.
+  Present acceptance is not a claim of completed scan-out.
+
+Ten new CPU `DeviceOperationsUVETest` cases pass, alongside existing binding tests. Full strict
+Debug build/CTest: **4,103 cases, zero failures, seven existing Vulkan skips**. Added three GL
+native tests assert copied bytes, generated/blitted pixels, preserved state, real 0/1 visibility
+and timestamp ordering; two Vulkan tests verify copies/fences and the deferred-CPU-FIFO guard.
+Native sources/tests pass strict syntax checks against real headers. Graphics-capable CI run
+`38429697106` on `012f69f` passed the native suite, including the new operations and the unchanged
+shadow pixel comparisons after correcting their sampler setup. This closes the earlier execution-
+verification gap, not the explicitly unsupported Vulkan operations. Semaphores/timelines
+are implemented as timeline objects (`CreateSemaphoreUVE` and friends, above); the
+`[ ]` that remains is *submission-level* queue sync (binary semaphores as `SubmitUVE`
+parameters), which is not closed by a CPU-visible counter. Vulkan texture-transfer parity is
+implemented and awaiting native CI execution; Vulkan timestamps are implemented and awaiting
+the same native run, while Vulkan occlusion queries and GPU/Hi-Z occlusion consumers remain
+explicitly unsupported/absent.
+
+`[/]` **Stencil state** — `StencilStateUVE`/`StencilFaceStateUVE` are appended to both
+pipeline descriptors with disabled legacy defaults. Front/back compare, operations,
+8-bit masks and references are validated before publication. `Depth24Stencil8` is the
+combined attachment format, and `RenderPassDescUVE::clearStencil` is governed by the
+existing depth load/store operations. Null validates and records the exact state/pass;
+GL creates the packed attachment and applies separate front/back state; Vulkan maps
+`D24_UNORM_S8_UINT`, pipeline front/back state and dynamic depth/stencil attachments,
+while stencil pipelines on its classic path fail explicitly. Five CPU
+`StencilStateUVETest` cases, one GL pixel-mask test and one Vulkan creation test were
+added. Local full verification: **4,133 CTest cases, zero failures, seven existing
+Vulkan skips** (2026-10-13); native GL/Vulkan execution is pending graphics CI and is
+not claimed from the local Null result. The subsequent native CI build failed before tests;
+local strict GL syntax checks reproduced missing post-1.1 stencil symbols and a shifted
+compute-record aggregate initializer. Stencil functions now use `GlFunctionsUVE`'s required
+proc table; compute records use named field assignment. Packed depth/stencil discard now
+passes separate depth and stencil invalidation tokens, with capacity for both aspects.
+`GlFunctionsUVETest.StencilSymbolsAreLoadedAndRequiredForTheBaseline` passed locally
+without a driver; strict syntax checks passed for the GL loader, command buffer, render
+device and full GL test translation unit. A native depth/stencil discard regression joins
+the pixel-mask test. After these corrections (2026-10-14), full CPU build/CTest passed:
+**4,144 cases, zero failures, seven existing Vulkan skips**. Status remains `[/]` until
+native graphics CI verifies the backend tests; downloaded headers used for syntax checks
+are ignored build artifacts, not a replacement for GL/Vulkan execution.
+
+Native follow-up: CI run `38515088834` on `bec9f6cf` passed the full native build, then
+reported **one failure in 4,861 CTest cases**:
+`EngineCoreUVETest.WindowedMode_UIOverlayRendersAuthoredUIAndRegistersARealButtonClick`.
+The explicit native-driver guard steps did not run after that failure. The UI fixture
+asserts first-frame pixels but inherited asynchronous shader compilation. A deterministic
+`ShaderManagerUVETest.UIOverlayFirstUpdateCannotGuaranteeReadinessBeforeAsyncJobsRun`
+now demonstrates the pending-program state with held preprocessing jobs, and verifies
+that the existing synchronous policy yields a valid UI program before returning.
+The native pixel fixture explicitly selects that production policy; none of its pixel,
+mouse or click assertions were removed or relaxed, and production defaults are unchanged.
+Local verification: **22 focused shader/debugger cases; 4,145 full CTest cases, zero
+failures, seven existing Vulkan skips**. Native execution after this fixture correction
+is pending; the failed CI run is not reported as a green graphics verification.
 
 ### Command recording and backends
 
@@ -715,25 +920,70 @@ bloom, SSAO, tone mapping, instancing, CPU frustum culling (clustered), GPU
 frustum culling, GPU indirect culling, distance/LOD culling, GPU skinning, GPU
 particle simulation.
 
-`[~]` **Render graph** — `RenderGraphUVE` exists but imports externally-owned
-textures and executes passes **in insertion order**, with no culling, aliasing,
-barriers, transient allocation or reordering. It is a validation and sequencing
-layer, not a frame graph.
+`[/]` **Render graph** — the former insertion-only layer now compiles explicit pass dependencies
+and RAW/WAR/WAW texture hazards into stable topological order. `topological_order_uve.h` is shared
+with the existing frame scheduler, not another job-system implementation. Duplicate native imports
+coalesce; graph-owner/generation tags reject foreign/stale resources and passes. Compilation is
+failure-atomic, validates unknown access/dependencies/cycles/read-before-write, and bounds work.
+Pure passes may be culled from side-effect/output roots; legacy passes stay side-effecting by default.
+Per-resource first/last use drives exact-shape, non-overlapping transient texture reuse; exported
+outputs remain live to frame end. Callbacks resolve transient handles through a borrowed execution
+context. Explicit execution preflights barrier and retirement support before allocating or recording.
+`Renderer3DUVE` now consumes planned barriers where supported and retains its implicit backend path
+otherwise. Unlinked tone mapping is not declared as a phantom read, preserving the original empty-
+scene command-sequence assertions without changing the tests.
 
-`[ ]` Not real: occlusion culling (`Occluder3D` data is consumed by the
-eligibility path but no occlusion test runs — Tier 3.6, needs the GPU query path above),
-image-based lighting, geometry shaders (`ShaderStageUVE::Geometry` compiles standalone but still
-has no pipeline slot, deferred by its own header comment), and the particle GPU upload path
-(`ParticleRenderBridgeUVE` still states it performs no GPU work). Texture compression and
-mipmaps left this list: Basis Universal transcoding plus CPU mip chains are real (`[x]`).
+Transient GPU lifetimes follow recorded work, not `RenderGraphUVE::ClearUVE`: RHI texture leases
+retire through an allocation-free, thread-safe queue. GL/Null collect on the owner thread; Vulkan
+moves leases with deferred submissions and retains them until its frame fence/idle wait proves
+completion. Discarding a recording after device destruction cannot call a dead device. Imported
+textures remain caller-owned. This is a single-queue, whole-texture graph with one-level transient
+render targets, not implicit cross-queue ownership transfer or a new image-layout manager.
 
-`[ ]` Missing renderer-level types: no material system (material→program binding
-is inlined in the renderer), no text renderer, no skybox, no terrain. Landed since: `[x]` the 2D
-renderer and sprite batcher (`Renderer2D v1`: Sprite2D + Camera2D + viewport split, Oct 2026),
-`[x]` the debug/line renderer (Tier 2.8: `DebugRendererUVE::DrawBox3D` from one call over a 16K-line
-batch), `[x]` reflection probe capture (a capture scheduler with per-camera influence mixing and a
-budgeted recapture latch), and `[x]` a decal system (CPU-built receive patches plus draw commands
-with frustum culling). (Verified present-or-absent by source read, 2026-10-12.)
+Eleven compiler/consumer tests, four resource-lifetime tests and three shared topology tests were
+added. All 88 existing renderer cases remain unchanged and pass; focused graph/renderer execution
+passes 102 cases. Strict full CTest: **4,121 cases, zero failures, seven existing Vulkan skips**.
+The four lifetime cases also pass focused ASan+UBSan. New GL pixel/worker-retirement and Vulkan
+CPU-FIFO/GPU-completion tests are awaiting native CI before this batch is marked fully verified.
+
+Renderer presence reconciliation (source and existing tests, 2026-10-14):
+
+- `[x]` **CPU occlusion** already runs: `MeshRendererUVE` and `Renderer3DUVE` use
+  `IsOccluder3DAabbDrawHiddenUVE`; mesh visibility, primitive and decal tests verify
+  actual rejection, disabled occluders and the ignore-occlusion override.
+  `[ ]` GPU/Hi-Z occlusion is a separate gap; a query API alone does not implement it.
+- `[x]` **Particle upload/draw** already runs through
+  `Renderer3DUVE::ImplUVE::RecordParticleItemsUVE`: copied particle commands become
+  bounded vertex data, `UpdateBufferUVE`, vertex binding and a draw. `EngineCoreUVE`
+  calls `RenderFrameWithParticleRuntimeUVE`; its renderer test verifies extraction,
+  submission and no stale frame data. `ParticleRenderBridgeUVE` is deliberately CPU-only
+  extraction, not evidence that its renderer consumer is absent. This does not claim
+  that the separate compute simulation helper drives gameplay particles.
+- `[x]` **Material binding** is a real renderer consumer, including the validated
+  bind-group packet described above; a separate class named "material system" is not
+  required. Existing renderer tests verify fallback/real textures, managed programs and
+  material-driven uniform/map settings.
+- `[x]` **Text/UI draw** uses the renderer's glyph-atlas quads and preserves canvas order
+  across glyph/image textures (`RenderFrameUVE_UIOverlay_PreservesCanvasOrderAcrossGlyphAndImageTextures`).
+- `[x]` **Sky rendering** has procedural and texture-backed environment paths; the
+  renderer's `SkyAssetDrivesEnvironmentMapAmbientAndSky` and fallback tests cover them.
+  `[~]` Environment-map ambient lighting and reflection probes are narrower than full
+  prefiltered diffuse/specular IBL. `[ ]` No terrain renderer exists.
+  `[/]` `PipelineDescUVE::geometryShader` now carries the stage through the common API:
+  `NullRenderDeviceUVE` validates and records it, desktop GL attaches it to the linked program
+  (local strict syntax plus `GlRenderDeviceUVETest.GeometryStageChangesRasterizedPositionAndSurvivesShaderDeletion`
+  assert a real position change; the pixel probe needs the native CI software GL runner),
+  and Vulkan/GLES reject a supplied handle explicitly instead of dropping the stage
+  (`VulkanRenderDeviceUVETest.GeometryPipelineIsExplicitlyUnsupportedRatherThanIgnored`,
+  `GeometryPipelineUVETest.*`). `RenderDeviceCapabilitiesUVE::geometryShaders` reports
+  `Model` for Null and `Native` only for a usable desktop GL 3.2+ context.
+  Geometry-stage *execution* on Vulkan, stage reflection and a renderer consumer remain absent.
+- `[x]` Basis Universal transcoding, CPU mip chains, 2D/sprite batching, debug/line
+  drawing, reflection-probe capture scheduling and CPU-built decal receive patches
+  also exist. These are pre-existing paths, not newly implemented by this reconciliation.
+
+The renderer evidence is in `Test/RHI/RenderSystems/{renderer_3d,mesh_renderer,decal_renderer}_uve_tests.cpp`.
+Local Null/CPU tests verify command contracts, not native pixel parity for every path.
 
 ---
 
@@ -759,7 +1009,7 @@ One inconsistency to know: every component lives in `namespace UVE::Scene`, not
 | `[x]` `EntityUVE` (`entity_uve.h`) | — | everything. Index + generation; no data, no behaviour, no manager binding. Deliberately lives in Component, not Entity, so component headers do not depend on the manager |
 | `[x]` `ComponentTypeInfoUVE` | registration | archetype storage. Type-erased size/align/construct/move/destroy vtable |
 | `[x]` `TransformComponentUVE` | authoring, gizmo drag, scripts | `SceneGraphUVE`. Local TRS plus `RotationEditModeUVE` recording whether Euler or quaternion is the source of truth |
-| `[~]` `WorldTransformComponentUVE` | **`SceneGraphUVE` only** | renderer, physics, audio, picking. Cached world TRS + dirty flag. The single-writer rule is documented but **not enforced** |
+| `[x]` `WorldTransformComponentUVE` | Scene-graph-authorized live pose writes | Get/ForEach/View expose const live poses; mutable erased access is rejected. `SceneGraphWriteAccessUVE` is available only to graph implementations. Initial component value construction stays supported; the mutable dirty bit is explicitly an invalidation request, not a pose writer. Renderer/physics/audio readers keep scalar layouts unchanged |
 | `[x]` `HierarchyComponentUVE` | scene graph, reparenting | scene graph. **Parent link only** — children are found by linear scan, so `GetChildrenUVE` is O(n) in entity count |
 | `[x]` `NameComponentUVE`, `VisibilityComponentUVE` | authoring | editor, renderer |
 
@@ -779,17 +1029,29 @@ append-only, capsule height is total end-to-end including caps) · `[x]`
 `RigidBodyComponentUVE` (mass, velocity, kinematic flag — **a collider without one
 means static world geometry**, an overload worth knowing) · `[x]`
 `AreaComponentUVE` (non-solid trigger volume; never enters collision resolution)
-· `[x]` `CharacterControllerComponentUVE` · `[~]`
-`PhysicsInterpolationComponentUVE` (previous/current pose cache for render
-smoothing; optional per entity).
+· `[x]` `CharacterControllerComponentUVE` · `[x]`
+`PhysicsInterpolationComponentUVE` (optional render smoothing, not authoritative simulation).
+`ISceneGraphUVE::TryTeleportLocalTransformUVE` and `ResetInterpolationSubtreeUVE` reset history
+without changing serialized modes; reparenting snaps the affected subtree, idempotent setters
+preserve useful history, and an unchanged reset pose is seeded correctly. Disabled simulation
+tags keep world transforms current but discard their own interpolation history (the existing
+non-inherited disabled-tag policy is unchanged); World scene resume also reseeds history.
+Unknown modes/non-finite poses fail without output mutation, and double weighted interpolation
+avoids overflow between large finite endpoints. Ordinary motion still records previous/current
+poses for the existing renderer consumer. Twelve new tests in
+`Test/Integration/Scene/derived_pose_contract_uve_tests.cpp` cover access authority, invalidation,
+teleport/reparent/mode/reset/disable/resume, finite bounds and byte-identical serialized snapshots.
+Existing corruption tests now construct malformed cache values rather than mutating const live
+poses; every prior assertion remains. Verified: 106 focused cases and **4,088 CTest cases,
+zero failures, seven existing Vulkan skips** (2026-10-13).
 
 ### Audio, animation, scripting, UI
 
 `[x]` `AudioSourceComponentUVE` + `AudioAttenuationCurveUVE` · `[x]`
 `AnimationPlayerComponentUVE` (Tier 3.1: step functions sample clips, `SyncAnimationUVE` ticks
 every frame and physics step, the renderer CPU-skins the poses)
-· `[~]` `ParticleEmitterComponentUVE` (authored parameters; the CPU runtime
-consumes them, the GPU upload path does not) · `[x]` `ScriptComponentUVE` · `[x]`
+· `[x]` `ParticleEmitterComponentUVE` (authored parameters feed the CPU runtime;
+its copied particles reach the bounded renderer upload/draw path above) · `[x]` `ScriptComponentUVE` · `[x]`
 `CanvasComponentUVE`, `UITextComponentUVE`, `UIImageComponentUVE`,
 `UIButtonComponentUVE`.
 
@@ -846,56 +1108,139 @@ types.
 
 # Part IV — Systems, in one line each
 
-Detail for these lives in `ROADMAP.md`; this is an index, and a note of what is
-driven by nothing.
+This index distinguishes live runtime paths from narrower helper APIs and genuinely absent
+work. References to other roadmaps are background, not additional Foundation scope. The
+2026-10-14 reconciliation below describes already-merged implementations unless explicitly
+identified as a new Foundation batch; it does not count those implementations as new work.
 
 - `[x]` **Entity/Scene** — archetype ECS (`EntityManagerUVE`, PIMPL), stateless
   `SceneGraphUVE`, `SceneSerializerUVE` (explicit-roots, never implicit
   whole-world), `PrefabSystemUVE`, `ParticleRuntimeUVE`.
-- `[~]` **`WorldUVE`** — owns one entity manager and one scene graph; `TickUVE`
-  bumps counters and propagates transforms. No system registration, no multi-scene,
-  no scene-unload. `[ ]` **There is no `SceneUVE` type at all** — no object
-  representing a loaded level.
+- `[x]` **World/scene lifecycle and system registration** — `WorldUVE` now owns a persistent
+  primary scene and independently unloadable `World::SceneUVE` instances, each reusing the
+  existing EntityManager/SceneGraph. Scene identity reuses `ObjectRegistryUVE`; secondary entity
+  event buses are isolated so equal numeric entity ids cannot notify the wrong scene. Existing
+  constructor, Tick counters, primary entity-manager access and serialized scene formats remain
+  compatible. Optional population callbacks use the existing SceneSerializer/PrefabSystem.
+  `WorldSystemDescUVE` registers start/tick/stop callbacks, named dependencies, priority and
+  Before/AfterTransforms phases. The existing FrameTaskGraph/FrameScheduler now supplies stable
+  topological planning and owner-thread serial execution; this is not parallel gameplay.
+  Graph validation precedes initialization; failed starts roll back (including the failing
+  start); reentrant world mutation is rejected; tick exceptions fail closed; unloading stops
+  systems while the scene is alive, invalidates its handle and destroys entities in index order.
+  Shutdown is permanent/idempotent, and scene pause preserves its contents. No second ECS,
+  scene serializer, or general-purpose job graph was introduced. Fifteen tests in
+  `Test/Integration/World/world_lifecycle_uve_tests.cpp` and three
+  `Test/Core/Scheduling/frame_serial_uve_tests.cpp` cases cover these contracts, including old
+  snapshot loading, stale/foreign scene handles, callback failure and event isolation. The two
+  original World tests remain unchanged. Full verification: **4,033 CTest cases, zero failures,
+  seven existing Vulkan skips** (2026-10-13).
 - `[x]` **Physics** — box/sphere/capsule shapes, raycast, sphere/box/capsule casts,
   area overlap, character controller with CCD, fixed-step integration with
   positional resolution, island-partitioned distance and hinge constraints.
-  `[ ]` No convex/mesh/heightfield shapes, no friction or restitution impulse model
-  despite `PhysicsMaterialUVE` carrying the fields, no body sleeping, no layer
-  filtering.
-- `[~]` **Animation** — **the entire module is dead code at runtime.** Clip, state
-  machine, blend tree, pose buffer and time contracts all exist and are tested;
-  `EngineCoreUVE` never calls any of them. There is no clip sampler and no skinning
-  pass. See Part II §8 for why the asset format blocks it.
+  `[x]` Layer/mask filtering is already consumed by `CollisionSystemUVE`, character
+  queries and area overlap; `Test/Physics/collision_system_uve_tests.cpp` checks compatible,
+  incompatible and one-sided masks. The material fields are also consumed:
+  `physics_system_uve.cpp::MoveAndDeflectUVE` combines materials and calls
+  `Rigid3DUVE::DeflectVelocityUVE`; restitution and friction tests in
+  `Test/Physics/physics_system_uve_tests.cpp` verify bounce and tangential damping.
+  `[~]` This is mass-weighted positional correction plus per-body velocity deflection,
+  not a general contact impulse/friction solver. `[ ]` Convex/mesh/heightfield shapes
+  and automatic body sleeping remain absent.
+- `[x]` **Animation runtime path** — `EngineCoreUVE::SyncAnimationUVE` is called on
+  fixed and frame ticks. The existing `Objects/Animation` sequencer and graph sample
+  `AnimationClipAssetUVE`, blend skeletal poses and apply root motion/events.
+  `Renderer3DUVE` resolves the skeleton pose, calls `Asset::TrySkinMeshUVE`, and uploads
+  deformed vertices. Evidence: `Test/Objects/3D/animation_objects_uve_tests.cpp`,
+  `Test/Core/Asset/mesh_skinning_uve_tests.cpp` and
+  `Renderer3DUVETest.RenderFrameUVE_ASkinnedMeshUnderASkeletonIsDrawnInTheSkeletonsPose`.
+  The earlier blanket "no sampler/skinning/runtime animation" claim was wrong.
+  `[~]` The separate `Core::AnimationClipUVE`/state-machine/pose-graph helper APIs in
+  `Runtime/Animation` are not that runtime graph; their tests do not prove a consumer.
+  `MeshSkinComputeUVE` is also a tested optional compute helper, not the current
+  renderer's CPU-skinning path. No duplicate animation runtime is needed.
 - `[x]` **Audio** — voice allocation, listener pose, attenuation, real miniaudio
-  backend plus a recording null device. `[~]` `AudioMixerGroupUVE` (the whole bus
-  graph), the PCM streaming path and the gain-ramp scheduler have no consumers.
+  backend plus a recording null device. `AudioSourceSystemUVE` routes mixer groups;
+  `AudioSystemUVE::UpdateUVE` applies group gain/pitch before device submission.
+  `Test/Audio/audio_system_uve_tests.cpp` covers gain/pitch, rerouting and group lifetime.
+  `[~]` PCM refill/gain-effect schedulers have explicit per-source AudioSystem APIs
+  and caller-owned-window tests (`SourceStreamAndPcmEffects_UseBoundedCallerOwnedRuntimeState`),
+  but automatic file refill and effect application in the device playback callback remain
+  unwired. Do not describe mixer routing as unused or those manual APIs as automatic streaming.
 - `[x]` **Input** — keyboard, mouse, gamepad, action bindings, touch and gesture
   recognition. `[~]` Gesture output is computed and read by nobody; mobile input
   has no platform backend pushing snapshots.
-- `[x]` **UI** — `UIRuntimeUVE` hit-tests buttons against real input and emits a
-  quad batch; font atlas via stb_truetype. `[ ]` No layout, no clipping, no focus
-  or keyboard navigation, no widgets beyond text/image/button.
+- `[x]` **UI** — layout, scroll clipping, text/image/button/slider/checkbox/dropdown/
+  progress/tooltip/tween widgets already exist with focused suites under `Test/UI`.
+  `UIRuntimeUVE` now also owns deterministic keyboard focus: visible, non-disabled
+  button/slider/checkbox/dropdown/text-input widgets are ordered top-to-bottom then
+  left-to-right (entity handle breaks ties), Tab/Shift+Tab wraps, and stale focus is
+  dropped. Enter/Space activates buttons and checkboxes, arrows step sliders, a
+  dropdown opens/moves/selects/closes from the keyboard, and text fields adopt mouse
+  focus or receive Tab focus for typing; Escape releases text focus. Focus is runtime
+  state exposed by `GetFocusedEntityUVE`, never serialized. Seven new
+  `UIFocusNavigationUVETest` cases cover ordering, activation, slider/dropdown/text
+  behavior, mouse adoption and destroyed-widget cleanup. Full verification: **4,128
+  CTest cases, zero failures, seven existing Vulkan skips** (2026-10-13). This does
+  not claim gamepad navigation or a native mobile backend.
 - `[x]` **Scripting** — UVScript (`Engine/Runtime/UVScript`): parser, type checker,
   bytecode VM, engine binding with reload on save, and a text editor. The node-graph
   scripting module was removed. Collections and tuples have landed (typed lists, maps,
-  tuples, `for`-in, unpacking, native-code parity). `[ ]` No cross-node calls, no debugger.
-- `[~]` **Network** — one header of reliable-packet-window value logic with **no
-  consumer anywhere**. No socket, no transport, no replication.
-- `[~]` **Plugins** — manifest validation and an in-memory registry that **never
-  calls `dlopen`**. No plugin is ever loaded.
+  tuples, `for`-in, unpacking, native-code parity). The old "no cross-node calls" claim
+  was stale: `UVScriptObjectHostUVE::CallMethodUVE` already routes calls to another node's
+  script, then built-in object methods; `Test/Script/uvscript_cross_node_uve_tests.cpp`
+  covers dispatch, missing targets, overrides and the recursion cap. This is pre-existing
+  merged work, not a new implementation.
+  `[x]` **Interpreted runtime debugger API** — `ScriptInstanceUVE` now provides source-line
+  breakpoints, Continue/StepInto/StepOver and copied line/function/instruction/depth/local-slot/
+  named-field snapshots. Per-frame line transitions prevent stopping twice on a caller's
+  line after returning from its callee; explicit callee breakpoints still interrupt StepOver.
+  Paused execution rejects ordinary Call/Raise/Advance, and debugging blocks same-instance
+  host callback reentry. Waits retain their coroutine and rejoin Advance's existing queue;
+  other ready handlers stay queued if one pauses. Disable abandons only the paused coroutine
+  and clears its breakpoints; completed calls return their values through the resume result.
+  Native execution explicitly refuses debugger enablement; `ExecutionUVE::Interpreted`
+  selects the debuggable path. Serialized programs and non-debug execution are unchanged.
+  Eleven `UVScriptDebuggerUVETest` cases cover these contracts, including loops, runtime
+  failure/recovery, snapshot copying, multiple waits and native rejection. Verification
+  (2026-10-14): **30 focused debugger/VM/native tests passed; 4,144 full CTest cases,
+  zero failures, seven existing Vulkan capability skips**.
+  `[~]` Debugger scope is the instance API: no editor debugger frontend, local source names,
+  native-code debugging or stepping across node/instance boundaries is claimed.
+- `[~]` **Network** — real loopback/UDP transports, a UDP listener, session handshake,
+  RPC, replication, prediction and relay/interest paths already exist in `Runtime/Network`.
+  `Test/Network/network_udp_uve_tests.cpp` exercises real socket/session/RPC round trips;
+  session, RPC and replication suites cover their higher-level contracts. The old "one
+  header/no sockets/no replication" description (also repeated in an obsolete reliable-
+  window header comment) is false. Reliable packet-window/fragment helpers still have
+  no production transport consumer: retransmission/ack/fragment integration remains
+  partial and is not implied by working UDP or session handshakes.
+- `[x]` **Native plugin host** — `NativePluginHostUVE` in `Runtime/Plugins` opens real
+  shared libraries (`dlopen` on POSIX, `LoadLibraryW` on Windows), validates the entry ABI,
+  initializes, registers and unloads plugins. Scoped uses prevent premature unload.
+  `Test/Plugins/native_plugin_host_uve_tests.cpp` loads built fixture libraries and
+  checks missing files/entries, protocol errors, duplicates, scope protection and reload.
+  This corrects a stale claim; it does not claim automatic editor plugin discovery or
+  validation of the Windows branch on this Linux host.
 - `[x]` **Save / Pack / ProjectCheck** — slot-based saves with atomic temp-file
   rename, a bounded migration chain, RLE compression; project packaging and launch;
   a standalone project checker CLI.
-- `[~]` **Platform** — the name oversells it: compiler macros plus the project
-  package codec. There is no platform abstraction layer for filesystem, process,
-  time or dynamic libraries.
+- `[~]` **Platform** — no unified filesystem/process/time/dynamic-library service
+  abstraction yet. Existing implementations must be reused rather than duplicated:
+  `Asset::FileSystemUVE` handles directory/bundle mounts and bounded paths (tests under
+  `Test/Core/Asset/file_system_uve_tests.cpp`), `Utilities::TimerUVE` uses a steady clock,
+  and the native plugin host owns real dynamic-library operations. These distributed
+  implementations are not evidence that a unified process/service API is complete.
 
-**Empty module directories** (README only, zero code): `Core/Containers`,
-`Core/Types`, `Core/Strings`, `Core/Delegates`, `FileSystem`, `Gameplay`,
-`Networking`, `Renderer`, `Serialization`, `VFX`, `Objects/2D`, `Objects/AI`. Two of
-those are placeholders guarding against duplication — `Renderer/README.md`
-explicitly says not to start a second renderer there — and the rest are
-unimplemented intent.
+**README-only module placeholders**: `Core/Types`, `Core/Delegates`, `FileSystem`,
+`Networking`, `Renderer`, `Serialization`, `VFX`. The old list was stale:
+`Core/Containers`, `Core/Strings`, `Gameplay`, `Objects/2D` and `Objects/AI` contain
+real implementation/header files. Placeholder names are not additional work requests:
+for example, `Renderer/README.md` explicitly guards against starting a second renderer.
+The Part IV reconciliation above was checked against source and the **4,144-case full
+CTest run (zero failures, seven existing Vulkan skips)** on 2026-10-14; native graphics
+verification remains separate. Remaining partial/absent entries elsewhere in this file
+are not closed by this reconciliation.
 
 ---
 
@@ -986,3 +1331,34 @@ Arm3D,
 InteractionArea3D, LevelStreamer3D, WorldPartition3D, VisibilityRegion3D,
 LODGroup3D, Occluder3D, and partially ReflectionProbe3D. That correction belongs
 in that file and is not folded in here.
+
+## 2026-10-13 implementation ledger
+
+Work is based on merged `master` commit `e26f91d`, whose Foundation blob is
+`394f389235e2606e5703d21ae45031a55bed795d`. Earlier interrupted-run outputs were not
+present in the current checkout; this baseline was rerun, not assumed.
+
+- Debian 12 / GCC 12.2 / CMake 3.31.10, Debug with the existing `-Werror` policy.
+  Native desktop GL/Vulkan SDK/runtime dependencies are unavailable locally; the
+  existing CPU-only configuration is used. Tool installations and logs stay in ignored `build/`.
+- Baseline build: 948 steps completed. CTest: 3,998 cases, one UDP setup failure,
+  seven existing `ComputeWorkloadsVulkanUVETest` capability skips. Focused parallel
+  execution reproduced contention for fixed ports 41741/41742 before RPC logic.
+- `Test/Support/ctest_resource_locks.cmake` declares the shared ports after discovery.
+  No socket behavior or assertion was changed. All 14 UDP cases passed 20 repeats;
+  the subsequent full build/CTest passed: **3,991 passed, 7 expected skips, 0 failures**.
+- Initial math-boundary, vocabulary, panel-include and whitespace checks passed.
+  The remaining markers above are work to resolve, not a completion claim.
+
+### Native baseline reconciliation (2026-10-13)
+
+The saved Foundation branch was integrated with `master` through `9f0a039`, retaining upstream
+UDP pair isolation and default-framebuffer routing rather than reimplementing them. The strict
+CPU-only baseline was rerun: **4,103 cases, zero failures, seven existing Vulkan skips**.
+Native CI run `38426263544` reported one failure, the same shadow pixel test failing on master.
+The full lighting shader keeps `uReflectionProbeCube` active; the direct-RHI test left that
+samplerCube at unit 0 alongside a sampler2D. Its fixture now mirrors the real renderer's separate
+cubemap unit, with a real complete cube texture and additional GL-error assertions. Neither
+shadow pixel assertion nor either shader copy was weakened/changed. Local full CTest and all
+16 embedded/physical shader-parity cases pass; native re-execution is required before marking
+this correction or the pending device-operations batch fully verified.
