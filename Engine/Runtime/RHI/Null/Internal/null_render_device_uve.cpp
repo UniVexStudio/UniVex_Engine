@@ -243,6 +243,24 @@ PipelineHandleUVE NullRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& 
         UVE_ERROR("NullRenderDeviceUVE: CreatePipelineUVE referenced an unknown vertex or fragment shader handle");
         return kInvalidPipelineHandleUVE;
     }
+    const auto rejectStage = [outInfoLog](const char* message) {
+        UVE_ERROR("NullRenderDeviceUVE: CreatePipelineUVE {}", message);
+        if (outInfoLog != nullptr) *outInfoLog = message;
+        return kInvalidPipelineHandleUVE;
+    };
+    if (m_impl->shaders.at(desc.vertexShader.value).stage != ShaderStageUVE::Vertex ||
+        m_impl->shaders.at(desc.fragmentShader.value).stage != ShaderStageUVE::Fragment) {
+        return rejectStage("vertex/fragment shader handles are bound to the wrong stages");
+    }
+    if (desc.geometryShader != kInvalidShaderHandleUVE) {
+        const auto geometry = m_impl->shaders.find(desc.geometryShader.value);
+        if (geometry == m_impl->shaders.end()) {
+            return rejectStage("geometry shader handle does not reference a live shader");
+        }
+        if (geometry->second.stage != ShaderStageUVE::Geometry) {
+            return rejectStage("geometry shader slot requires a Geometry-stage shader");
+        }
+    }
     const std::uint32_t handleValue = m_impl->nextPipelineHandle++;
     m_impl->pipelines.emplace(handleValue, desc);
     return PipelineHandleUVE{handleValue};
@@ -414,7 +432,10 @@ std::uint64_t NullRenderDeviceUVE::GetPresentCallCountUVE() const noexcept {
 namespace UVE::Render {
 RenderDeviceCapabilitiesUVE NullRenderDeviceUVE::GetCapabilitiesUVE() const noexcept {
     const auto model = RenderFeatureSupportUVE::Model;
-    return {model, model, model, model, model, model, model, RenderFeatureSupportUVE::Unsupported, model};
+    RenderDeviceCapabilitiesUVE caps{model, model, model, model, model, model, model,
+                                     RenderFeatureSupportUVE::Unsupported, model};
+    caps.geometryShaders = model;
+    return caps;
 }
 RenderOperationResultUVE NullRenderDeviceUVE::GetTextureDescUVE(TextureHandleUVE handle,
                                                                 TextureDescUVE &output) const {

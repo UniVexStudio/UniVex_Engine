@@ -3504,8 +3504,8 @@ ShaderHandleUVE VulkanRenderDeviceUVE::CreateShaderUVE(const ShaderDescUVE& desc
     if (!impl.usable) {
         return fail("device is not usable");
     }
-    // M5a: Compute is real now (CreateComputePipelineUVE consumes it). Geometry stays rejected —
-    // it needs a tessellation/geometry pipeline-state story this RHI does not have yet.
+    // Geometry remains unsupported: the device feature, reflection and stage visibility paths
+    // are not enabled here. The common optional pipeline slot must not silently drop the stage.
     if (!IsShaderStageValidUVE(desc.stage) || desc.stage == ShaderStageUVE::Geometry) {
         return fail("only Vertex/Fragment/Compute stages are supported (Geometry needs a future slice)");
     }
@@ -3565,6 +3565,9 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
         }
         return kInvalidPipelineHandleUVE;
     };
+    if (desc.geometryShader != kInvalidShaderHandleUVE) {
+        return fail("geometry shader pipelines are unsupported by this Vulkan backend");
+    }
     if (!impl.usable) {
         return fail("device is not usable");
     }

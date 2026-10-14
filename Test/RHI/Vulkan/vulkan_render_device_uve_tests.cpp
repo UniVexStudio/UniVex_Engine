@@ -375,6 +375,24 @@ TEST_F(VulkanRenderDeviceUVETest, ShaderCreationRejectsGlslTextAndAcceptsSpirv) 
     device->DestroyShaderUVE(shader);
 }
 
+TEST_F(VulkanRenderDeviceUVETest, GeometryPipelineIsExplicitlyUnsupportedRatherThanIgnored) {
+    EXPECT_EQ(device->GetCapabilitiesUVE().geometryShaders, RenderFeatureSupportUVE::Unsupported);
+    const auto vertex = device->CreateShaderUVE({ShaderStageUVE::Vertex, kTriangleVertexSpirvUVE});
+    const auto fragment = device->CreateShaderUVE({ShaderStageUVE::Fragment, kTriangleFragmentSpirvUVE});
+    ASSERT_NE(vertex, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragment, kInvalidShaderHandleUVE);
+    PipelineDescUVE desc;
+    desc.vertexShader = vertex;
+    desc.fragmentShader = fragment;
+    // Even a live handle must not make an unsupported optional stage silently disappear.
+    desc.geometryShader = vertex;
+    std::string info;
+    EXPECT_EQ(device->CreatePipelineUVE(desc, &info), kInvalidPipelineHandleUVE);
+    EXPECT_NE(info.find("geometry shader pipelines are unsupported"), std::string::npos);
+    device->DestroyShaderUVE(fragment);
+    device->DestroyShaderUVE(vertex);
+}
+
 TEST_F(VulkanRenderDeviceUVETest, StencilPipelineAndDepthStencilTextureCreateOnDynamicDevice) {
     ShaderDescUVE vertexDesc{};
     vertexDesc.stage = ShaderStageUVE::Vertex;
