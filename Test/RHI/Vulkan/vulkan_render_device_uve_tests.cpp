@@ -121,15 +121,24 @@ class VulkanRenderDeviceUVETest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Real-device path A: a windowed device on a live OS display (GLFW + swapchain WSI).
+        // A valid window is not enough on its own: GLFW's Null platform (the headless sandbox,
+        // where contexts come from OSMesa) hands out a perfectly valid window that has no Vulkan
+        // WSI behind it. IVulkanWindowSurfaceUVE's documented signal for that is an empty
+        // required-extension list, so ask before committing to the windowed path - otherwise
+        // CreateUVE() would bail on surface creation and these tests would skip on a host that
+        // does have a Vulkan device.
         windowManager = std::make_unique<Window::WindowManagerUVE>(eventSystem, MakeTestWindowDescUVE());
-        if (windowManager->IsValidUVE()) {
+        const bool windowHasVulkanWsi =
+            windowManager->IsValidUVE() && !windowManager->GetRequiredVulkanInstanceExtensionsUVE().empty();
+        if (windowHasVulkanWsi) {
             device = VulkanRenderDeviceUVE::CreateUVE(*windowManager);
         } else {
-            // Real-device path B: displayless host (CI without Xvfb, containers, servers) —
-            // the engine's self-contained headless factory builds the identical device over a
-            // VK_EXT_headless_surface instead of skipping. The window manager is dropped: the
-            // device owns no window in this mode, and every pixel assertion below reads the
-            // headless swapchain exactly as it would the windowed one.
+            // Real-device path B: displayless host (CI without Xvfb, containers, servers) or a
+            // window whose platform cannot present through Vulkan — the engine's self-contained
+            // headless factory builds the identical device over a VK_EXT_headless_surface instead
+            // of skipping. The window manager is dropped: the device owns no window in this mode,
+            // and every pixel assertion below reads the headless swapchain exactly as it would
+            // the windowed one.
             windowManager.reset();
             device = VulkanRenderDeviceUVE::CreateHeadlessUVE();
         }
