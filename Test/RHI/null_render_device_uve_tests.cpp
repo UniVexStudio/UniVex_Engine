@@ -268,6 +268,65 @@ TEST(NullRenderDeviceUVETest, CreateTextureUVE_ValidatesAndRetainsCompleteMipCha
     device.DestroyTextureUVE(texture);
 }
 
+TEST(NullRenderDeviceUVETest, SingleTwoChannelAndFloatFormatsUseTightlyPackedTexelSizes) {
+    // One-/two-channel and float formats: byte counts come from the shared block table (tightly packed rows, no
+    // alignment padding), they are linear-only, and the Null device accepts exactly-sized uploads
+    // for every one of them while rejecting an sRGB request. A 3-wide level is the case GL's
+    // default unpack alignment would mis-stride, so it is the width used here.
+    struct FormatCaseUVE final {
+        TextureFormatUVE format;
+        std::uint32_t bytesPerTexel;
+        std::uint32_t channels;
+    };
+    constexpr std::array<FormatCaseUVE, 7U> kCases{{
+        {TextureFormatUVE::R8Unorm, 1U, 1U},      {TextureFormatUVE::RG8Unorm, 2U, 2U},
+        {TextureFormatUVE::R16Float, 2U, 1U},     {TextureFormatUVE::RG16Float, 4U, 2U},
+        {TextureFormatUVE::R32Float, 4U, 1U},     {TextureFormatUVE::RG32Float, 8U, 2U},
+        {TextureFormatUVE::RGBA32Float, 16U, 4U},
+    }};
+    NullRenderDeviceUVE device;
+    for (const FormatCaseUVE &testCase : kCases) {
+        const TextureFormatBlockInfoUVE info = GetTextureFormatBlockInfoUVE(testCase.format);
+        EXPECT_EQ(info.width, 1U);
+        EXPECT_EQ(info.height, 1U);
+        EXPECT_EQ(info.bytes, testCase.bytesPerTexel);
+        EXPECT_FALSE(info.compressed);
+        EXPECT_TRUE(IsUncompressedColorFormatUVE(testCase.format));
+        EXPECT_EQ(GetTextureFormatChannelCountUVE(testCase.format), testCase.channels);
+        EXPECT_FALSE(IsTextureFormatSrgbCapableUVE(testCase.format));
+        EXPECT_FALSE(IsDepthFormatUVE(testCase.format));
+        EXPECT_TRUE(device.SupportsTextureFormatUVE(testCase.format));
+        EXPECT_FALSE(device.SupportsTextureFormatUVE(testCase.format, TextureColorSpaceUVE::Srgb));
+
+        const TextureDescUVE desc{3U, 2U, testCase.format, 2U};
+        std::uint64_t expectedBytes = 0U;
+        ASSERT_TRUE(CalculateTextureUploadByteCountUVE(desc, expectedBytes));
+        EXPECT_EQ(expectedBytes, static_cast<std::uint64_t>(3U * 2U + 1U * 1U) * testCase.bytesPerTexel)
+            << "3x2 base level plus a 1x1 mip, no row padding";
+        std::vector<std::byte> texels(static_cast<std::size_t>(expectedBytes));
+        EXPECT_FALSE(ValidateTextureUploadUVE(
+            desc, std::span<const std::byte>(texels.data(), texels.size() - 1U)));
+        EXPECT_TRUE(ValidateTextureUploadUVE(desc, texels));
+        const TextureHandleUVE texture = device.CreateTextureUVE(desc, texels);
+        ASSERT_NE(texture, kInvalidTextureHandleUVE);
+        device.DestroyTextureUVE(texture);
+
+        const TextureDescUVE srgbDesc{3U, 2U, testCase.format, 1U, TextureColorSpaceUVE::Srgb};
+        EXPECT_FALSE(ValidateTextureUploadUVE(srgbDesc, {}))
+            << "single/two-channel and float formats have no sRGB encoding";
+        EXPECT_EQ(device.CreateTextureUVE(srgbDesc, {}), kInvalidTextureHandleUVE);
+    }
+    // The legacy formats keep their byte sizes: the table change is append-only.
+    EXPECT_EQ(GetTextureFormatBlockInfoUVE(TextureFormatUVE::RGBA8Unorm).bytes, 4U);
+    EXPECT_EQ(GetTextureFormatBlockInfoUVE(TextureFormatUVE::RGBA16Float).bytes, 8U);
+    EXPECT_EQ(GetTextureFormatChannelCountUVE(TextureFormatUVE::RGBA8Unorm), 4U);
+    EXPECT_EQ(GetTextureFormatChannelCountUVE(TextureFormatUVE::Depth32Float), 0U);
+    EXPECT_EQ(GetTextureFormatChannelCountUVE(TextureFormatUVE::BC7RGBA), 0U);
+    EXPECT_FALSE(IsUncompressedColorFormatUVE(TextureFormatUVE::Depth24Stencil8));
+    EXPECT_FALSE(IsUncompressedColorFormatUVE(TextureFormatUVE::ETC2RGB8));
+    EXPECT_FALSE(IsUncompressedColorFormatUVE(static_cast<TextureFormatUVE>(255U)));
+}
+
 TEST(NullRenderDeviceUVETest, CompressedTextureUploadsUseBlockAwareMipSizesWithoutAdvertisingSupport) {
     NullRenderDeviceUVE device;
     const TextureDescUVE bc1Desc{7U, 5U, TextureFormatUVE::BC1RGB, 2U, TextureColorSpaceUVE::Srgb};

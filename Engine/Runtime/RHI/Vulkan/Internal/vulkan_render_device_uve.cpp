@@ -2164,6 +2164,43 @@ namespace {
     }
 }
 
+/// The one VkFormat an RHI one/two-channel or 32-bit float colour format maps to. These formats
+/// are linear-only and never alias the swapchain, so image, sampled view and attachment view
+/// all share it. UNDEFINED for every other TextureFormatUVE.
+[[nodiscard]] VkFormat NativeColorFormatUVE(const TextureFormatUVE format) noexcept {
+    switch (format) {
+        case TextureFormatUVE::R8Unorm: return VK_FORMAT_R8_UNORM;
+        case TextureFormatUVE::RG8Unorm: return VK_FORMAT_R8G8_UNORM;
+        case TextureFormatUVE::R16Float: return VK_FORMAT_R16_SFLOAT;
+        case TextureFormatUVE::RG16Float: return VK_FORMAT_R16G16_SFLOAT;
+        case TextureFormatUVE::R32Float: return VK_FORMAT_R32_SFLOAT;
+        case TextureFormatUVE::RG32Float: return VK_FORMAT_R32G32_SFLOAT;
+        case TextureFormatUVE::RGBA32Float: return VK_FORMAT_R32G32B32A32_SFLOAT;
+        case TextureFormatUVE::RGBA8Unorm:
+        case TextureFormatUVE::RGBA16Float:
+        case TextureFormatUVE::Depth32Float:
+        case TextureFormatUVE::Depth24Stencil8:
+        case TextureFormatUVE::BC1RGB:
+        case TextureFormatUVE::BC3RGBA:
+        case TextureFormatUVE::BC7RGBA:
+        case TextureFormatUVE::ETC2RGB8:
+        case TextureFormatUVE::ETC2RGBA8:
+        case TextureFormatUVE::ASTC4x4RGBA:
+            return VK_FORMAT_UNDEFINED;
+    }
+    return VK_FORMAT_UNDEFINED;
+}
+
+/// Optimal-tiling features every native colour format (NativeColorFormatUVE) must advertise
+/// before a texture of it is created or reported as supported: sampled + linear-filtered (the
+/// device's samplers filter linearly), a transfer destination for the staging upload and a
+/// colour attachment so the format is render-target ready once pipelines carry per-target
+/// formats. Storage-image use is opt-in per device, not required (the spec guarantees it only
+/// for the 32-bit float members).
+constexpr VkFormatFeatureFlags kNativeColorFormatFeaturesUVE =
+    VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+    VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+
 /// Maps one reflected block member to the RHI's public ShaderDataTypeUVE; unsupported types
 /// return Unsupported and are skipped by the builder below (a shader boolean is 4 bytes in
 /// SPIR-V blocks, a Mat3 stride rule is honored by the reflected offset metadata, so the
@@ -2890,6 +2927,32 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
             sampledFormat = format;
             usage |= VK_IMAGE_USAGE_STORAGE_BIT;
             break;
+        case TextureFormatUVE::R8Unorm:
+        case TextureFormatUVE::RG8Unorm:
+        case TextureFormatUVE::R16Float:
+        case TextureFormatUVE::RG16Float:
+        case TextureFormatUVE::R32Float:
+        case TextureFormatUVE::RG32Float:
+        case TextureFormatUVE::RGBA32Float: {
+            // Native-format colour textures: image, sampled and attachment views share one
+            // VkFormat (never a swapchain alias), uploads are tightly packed rows of the format's
+            // texel size, and a missing channel samples as 0 (alpha 1) per the Vulkan component
+            // defaults. The storage usage bit joins only when the device advertises
+            // STORAGE_IMAGE for the format (guaranteed for the 32-bit floats, optional for the
+            // rest) — asking for it unconditionally would make image creation invalid there.
+            // Attaching one still skips with the M2d warning until pipelines carry per-target
+            // formats; the COLOR_ATTACHMENT usage is requested now so that slice needs no
+            // texture re-creation.
+            format = NativeColorFormatUVE(desc.format);
+            sampledFormat = format;
+            VkFormatProperties nativeProperties{};
+            impl.vk.vkGetPhysicalDeviceFormatProperties(impl.physicalDevice, format, &nativeProperties);
+            if ((nativeProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0U) {
+                usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+            }
+            usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+            break;
+        }
         case TextureFormatUVE::BC1RGB:
             format = sampledFormat = desc.colorSpace == TextureColorSpaceUVE::Srgb
                                          ? VK_FORMAT_BC1_RGB_SRGB_BLOCK
@@ -2966,6 +3029,8 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
                    VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)
             : IsTextureFormatCompressedUVE(desc.format)
                 ? (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT)
+            : (NativeColorFormatUVE(desc.format) != VK_FORMAT_UNDEFINED)
+                ? kNativeColorFormatFeaturesUVE
                 : (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
                    VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT);
         if ((formatProperties.optimalTilingFeatures & required) != required) {
@@ -3444,6 +3509,13 @@ bool VulkanRenderDeviceUVE::SupportsTextureFormatUVE(const TextureFormatUVE form
         default:
             return false;
     }
+    if (const VkFormat nativeFormat = NativeColorFormatUVE(format); nativeFormat != VK_FORMAT_UNDEFINED) {
+        // Same gate CreateTextureUVE applies, so "supported" and "creatable" never disagree.
+        VkFormatProperties properties{};
+        m_impl->vk.vkGetPhysicalDeviceFormatProperties(m_impl->physicalDevice, nativeFormat, &properties);
+        return (properties.optimalTilingFeatures & kNativeColorFormatFeaturesUVE) ==
+               kNativeColorFormatFeaturesUVE;
+    }
     if (!IsTextureFormatCompressedUVE(format)) {
         return true;
     }
@@ -3470,6 +3542,13 @@ bool VulkanRenderDeviceUVE::SupportsTextureFormatUVE(const TextureFormatUVE form
         case TextureFormatUVE::RGBA16Float:
         case TextureFormatUVE::Depth32Float:
         case TextureFormatUVE::Depth24Stencil8:
+        case TextureFormatUVE::R8Unorm:
+        case TextureFormatUVE::RG8Unorm:
+        case TextureFormatUVE::R16Float:
+        case TextureFormatUVE::RG16Float:
+        case TextureFormatUVE::R32Float:
+        case TextureFormatUVE::RG32Float:
+        case TextureFormatUVE::RGBA32Float:
             return false;
     }
 
@@ -3503,6 +3582,13 @@ bool VulkanRenderDeviceUVE::SupportsTextureFormatUVE(const TextureFormatUVE form
         case TextureFormatUVE::RGBA16Float:
         case TextureFormatUVE::Depth32Float:
         case TextureFormatUVE::Depth24Stencil8:
+        case TextureFormatUVE::R8Unorm:
+        case TextureFormatUVE::RG8Unorm:
+        case TextureFormatUVE::R16Float:
+        case TextureFormatUVE::RG16Float:
+        case TextureFormatUVE::R32Float:
+        case TextureFormatUVE::RG32Float:
+        case TextureFormatUVE::RGBA32Float:
             return false;
     }
     if (vkFormat == VK_FORMAT_UNDEFINED) {
@@ -6820,8 +6906,7 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::GenerateMipmapsUVE(const Texture
     const TextureDescUVE &desc = found->second.desc;
     // GL parity: level zero plus at least one lower level, and only the formats the blit path
     // accepts. Anything else is a caller error, not a capability limit.
-    if (desc.mipLevels < 2U || (desc.format != TextureFormatUVE::RGBA8Unorm &&
-                                desc.format != TextureFormatUVE::RGBA16Float)) {
+    if (desc.mipLevels < 2U || !IsUncompressedColorFormatUVE(desc.format)) {
         return RenderOperationResultUVE::InvalidArgument;
     }
     constexpr VkImageUsageFlags kChainFeatures =

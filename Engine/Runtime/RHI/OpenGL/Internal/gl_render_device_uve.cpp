@@ -133,6 +133,20 @@ struct GlTextureFormatUVE {
                     GL_RGBA, GL_UNSIGNED_BYTE};
         case TextureFormatUVE::RGBA16Float:
             return {GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT};
+        case TextureFormatUVE::R8Unorm:
+            return {GL_R8, GL_RED, GL_UNSIGNED_BYTE};
+        case TextureFormatUVE::RG8Unorm:
+            return {GL_RG8, GL_RG, GL_UNSIGNED_BYTE};
+        case TextureFormatUVE::R16Float:
+            return {GL_R16F, GL_RED, GL_HALF_FLOAT};
+        case TextureFormatUVE::RG16Float:
+            return {GL_RG16F, GL_RG, GL_HALF_FLOAT};
+        case TextureFormatUVE::R32Float:
+            return {GL_R32F, GL_RED, GL_FLOAT};
+        case TextureFormatUVE::RG32Float:
+            return {GL_RG32F, GL_RG, GL_FLOAT};
+        case TextureFormatUVE::RGBA32Float:
+            return {GL_RGBA32F, GL_RGBA, GL_FLOAT};
         case TextureFormatUVE::Depth32Float:
             return {GL_DEPTH_COMPONENT32F, GL_DEPTH_COMPONENT, GL_FLOAT};
         case TextureFormatUVE::Depth24Stencil8:
@@ -639,6 +653,12 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
     GLuint glTexture = 0;
     glGenTextures(1, &glTexture);
     glBindTexture(textureTarget, glTexture);
+    // The upload contract is tightly packed rows. GL's default unpack alignment of 4 would
+    // misread one- and two-byte texel rows whose width is not a multiple of 4 (a 3-wide
+    // R8Unorm level is 3 bytes per row), so align to the byte for the upload and restore after.
+    GLint previousUnpackAlignment = 4;
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     std::size_t dataOffset = 0U;
     std::uint32_t levelWidth = desc.width;
     std::uint32_t levelHeight = desc.height;
@@ -704,6 +724,7 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
         levelWidth = levelWidth > 1U ? levelWidth / 2U : 1U;
         levelHeight = levelHeight > 1U ? levelHeight / 2U : 1U;
     }
+    glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
     glTexParameteri(textureTarget, GL_TEXTURE_MIN_FILTER,
                     desc.mipLevels > 1U ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
     glTexParameteri(textureTarget, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -1499,8 +1520,7 @@ RenderOperationResultUVE GlRenderDeviceUVE::GenerateMipmapsUVE(TextureHandleUVE 
     if (found == state.textures.end())
         return RenderOperationResultUVE::InvalidHandle;
     const auto &desc = found->second.desc;
-    if (desc.mipLevels < 2U ||
-        (desc.format != TextureFormatUVE::RGBA8Unorm && desc.format != TextureFormatUVE::RGBA16Float))
+    if (desc.mipLevels < 2U || !IsUncompressedColorFormatUVE(desc.format))
         return RenderOperationResultUVE::InvalidArgument;
     const GLenum target = OperationTextureTargetUVE(desc.type);
     const GLenum query = desc.type == TextureTypeUVE::Cubemap          ? GL_TEXTURE_BINDING_CUBE_MAP

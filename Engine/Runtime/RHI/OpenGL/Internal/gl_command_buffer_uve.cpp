@@ -855,6 +855,27 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
                     case TextureFormatUVE::RGBA16Float:
                         imageFormat = GL_RGBA16F;
                         break;
+                    case TextureFormatUVE::R8Unorm:
+                        imageFormat = GL_R8;
+                        break;
+                    case TextureFormatUVE::RG8Unorm:
+                        imageFormat = GL_RG8;
+                        break;
+                    case TextureFormatUVE::R16Float:
+                        imageFormat = GL_R16F;
+                        break;
+                    case TextureFormatUVE::RG16Float:
+                        imageFormat = GL_RG16F;
+                        break;
+                    case TextureFormatUVE::R32Float:
+                        imageFormat = GL_R32F;
+                        break;
+                    case TextureFormatUVE::RG32Float:
+                        imageFormat = GL_RG32F;
+                        break;
+                    case TextureFormatUVE::RGBA32Float:
+                        imageFormat = GL_RGBA32F;
+                        break;
                     case TextureFormatUVE::Depth32Float:
                     case TextureFormatUVE::Depth24Stencil8:
                     case TextureFormatUVE::BC1RGB:
