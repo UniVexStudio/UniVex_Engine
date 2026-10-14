@@ -37,6 +37,56 @@ TEST(NullRenderDeviceUVETest, CreateBufferUVE_UnknownUsage_ReturnsInvalidBeforeA
     EXPECT_EQ(valid.value, 1U);
 }
 
+TEST(NullRenderDeviceUVETest, BufferMemoryHintsAreValidatedRecordedAndNeverChangeTheContract) {
+    // Buffer memory/update hints: unknown values are refused before allocation (like an unknown
+    // usage), known ones are recorded verbatim and reported by GetBufferDescUVE, and the
+    // upload/update/readback contract is identical for every placement — the hint steers where
+    // a real backend puts the bytes, never what the caller observes.
+    NullRenderDeviceUVE device;
+    EXPECT_EQ(device.CreateBufferUVE(BufferDescUVE{16U, BufferUsageUVE::Storage,
+                                                   static_cast<BufferMemoryUVE>(0xFFU)}),
+              kInvalidBufferHandleUVE);
+    EXPECT_EQ(device.CreateBufferUVE(BufferDescUVE{16U, BufferUsageUVE::Storage, BufferMemoryUVE::Auto,
+                                                   static_cast<BufferUpdateFrequencyUVE>(0xFFU)}),
+              kInvalidBufferHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+    EXPECT_FALSE(IsBufferDescValidUVE(BufferDescUVE{16U, BufferUsageUVE::Storage,
+                                                    static_cast<BufferMemoryUVE>(4U)}));
+    EXPECT_TRUE(IsBufferDescValidUVE(BufferDescUVE{16U, BufferUsageUVE::Storage, BufferMemoryUVE::Readback,
+                                                   BufferUpdateFrequencyUVE::Stream}));
+
+    const std::array<std::byte, 8> bytes{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4},
+                                         std::byte{5}, std::byte{6}, std::byte{7}, std::byte{8}};
+    for (const BufferMemoryUVE memory : {BufferMemoryUVE::Auto, BufferMemoryUVE::DeviceLocal,
+                                         BufferMemoryUVE::Upload, BufferMemoryUVE::Readback}) {
+        for (const BufferUpdateFrequencyUVE frequency :
+             {BufferUpdateFrequencyUVE::Static, BufferUpdateFrequencyUVE::Dynamic, BufferUpdateFrequencyUVE::Stream}) {
+            const BufferDescUVE desc{8U, BufferUsageUVE::Vertex, memory, frequency};
+            const BufferHandleUVE buffer = device.CreateBufferUVE(desc, bytes);
+            ASSERT_NE(buffer, kInvalidBufferHandleUVE);
+            BufferDescUVE reported{};
+            ASSERT_EQ(device.GetBufferDescUVE(buffer, reported), RenderOperationResultUVE::Success);
+            EXPECT_EQ(reported.sizeBytes, 8U);
+            EXPECT_EQ(reported.usage, BufferUsageUVE::Vertex);
+            EXPECT_EQ(reported.memory, memory);
+            EXPECT_EQ(reported.updateFrequency, frequency);
+            const std::array<std::byte, 2> patch{std::byte{9}, std::byte{10}};
+            ASSERT_TRUE(device.UpdateBufferUVE(buffer, patch, 6U));
+            std::array<std::byte, 8> observed{};
+            ASSERT_TRUE(device.ReadbackBufferUVE(buffer, observed));
+            EXPECT_EQ(observed[0], std::byte{1});
+            EXPECT_EQ(observed[5], std::byte{6});
+            EXPECT_EQ(observed[6], std::byte{9});
+            EXPECT_EQ(observed[7], std::byte{10});
+            device.DestroyBufferUVE(buffer);
+        }
+    }
+    BufferDescUVE untouched{99U, BufferUsageUVE::Index};
+    EXPECT_EQ(device.GetBufferDescUVE(BufferHandleUVE{12345U}, untouched), RenderOperationResultUVE::InvalidHandle);
+    EXPECT_EQ(untouched.sizeBytes, 99U) << "failure leaves the output untouched";
+    EXPECT_EQ(untouched.usage, BufferUsageUVE::Index);
+}
+
 TEST(NullRenderDeviceUVETest, CreateBufferUVE_ZeroSize_ReturnsInvalidBeforeAllocation) {
     NullRenderDeviceUVE device;
 

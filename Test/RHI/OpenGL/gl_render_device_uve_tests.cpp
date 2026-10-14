@@ -477,6 +477,60 @@ TEST_F(GlRenderDeviceUVETest, CreateBufferUVE_UnknownUsage_ReturnsInvalidBeforeA
     EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
 }
 
+TEST_F(GlRenderDeviceUVETest, BufferMemoryHintsBecomeTheGlUsageTokenAndEveryPlacementReadsBack) {
+    // GL has one memory, so the two hints fold into glBufferData's usage token — read back from
+    // the GL object through GL_BUFFER_USAGE after a real bind — and the unchanged default
+    // (Auto/Static) still allocates GL_STATIC_DRAW exactly as every buffer did before.
+    struct TokenCaseUVE final {
+        BufferMemoryUVE memory;
+        BufferUpdateFrequencyUVE frequency;
+        GLint expectedToken;
+    };
+    constexpr std::array<TokenCaseUVE, 6> kCases{{
+        {BufferMemoryUVE::Auto, BufferUpdateFrequencyUVE::Static, GL_STATIC_DRAW},
+        {BufferMemoryUVE::DeviceLocal, BufferUpdateFrequencyUVE::Dynamic, GL_DYNAMIC_DRAW},
+        {BufferMemoryUVE::Upload, BufferUpdateFrequencyUVE::Stream, GL_STREAM_DRAW},
+        {BufferMemoryUVE::Readback, BufferUpdateFrequencyUVE::Static, GL_STATIC_READ},
+        {BufferMemoryUVE::Readback, BufferUpdateFrequencyUVE::Dynamic, GL_DYNAMIC_READ},
+        {BufferMemoryUVE::Readback, BufferUpdateFrequencyUVE::Stream, GL_STREAM_READ},
+    }};
+    const std::array<std::uint32_t, 4> values{7U, 11U, 23U, 42U};
+    auto commands = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commands, nullptr);
+    commands->BeginRenderPassUVE({});
+    for (const TokenCaseUVE &testCase : kCases) {
+        const BufferDescUVE desc{sizeof(values), BufferUsageUVE::Uniform, testCase.memory, testCase.frequency};
+        const BufferHandleUVE buffer = renderDevice->CreateBufferUVE(desc, std::as_bytes(std::span(values)));
+        ASSERT_NE(buffer, kInvalidBufferHandleUVE);
+        BufferDescUVE reported{};
+        ASSERT_EQ(renderDevice->GetBufferDescUVE(buffer, reported), RenderOperationResultUVE::Success);
+        EXPECT_EQ(reported.memory, testCase.memory);
+        EXPECT_EQ(reported.updateFrequency, testCase.frequency);
+        EXPECT_EQ(reported.usage, BufferUsageUVE::Uniform);
+        commands->BindUniformBufferUVE(buffer, 0U); // glBindBufferBase also sets the generic binding
+        GLint token = 0;
+        glGetBufferParameteriv(GL_UNIFORM_BUFFER, GL_BUFFER_USAGE, &token);
+        EXPECT_EQ(token, testCase.expectedToken)
+            << "memory " << static_cast<int>(testCase.memory) << " / frequency "
+            << static_cast<int>(testCase.frequency);
+        const std::array<std::uint32_t, 1> patch{99U};
+        ASSERT_TRUE(renderDevice->UpdateBufferUVE(buffer, std::as_bytes(std::span(patch)), 4U));
+        std::array<std::uint32_t, 4> observed{};
+        ASSERT_TRUE(renderDevice->ReadbackBufferUVE(buffer, std::as_writable_bytes(std::span(observed))));
+        EXPECT_EQ(observed, (std::array<std::uint32_t, 4>{7U, 99U, 23U, 42U}));
+        renderDevice->DestroyBufferUVE(buffer);
+    }
+    commands->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commands));
+    EXPECT_EQ(renderDevice->CreateBufferUVE(BufferDescUVE{16U, BufferUsageUVE::Vertex,
+                                                          static_cast<BufferMemoryUVE>(0xFFU)}),
+              kInvalidBufferHandleUVE);
+    EXPECT_EQ(renderDevice->CreateBufferUVE(BufferDescUVE{16U, BufferUsageUVE::Vertex, BufferMemoryUVE::Auto,
+                                                          static_cast<BufferUpdateFrequencyUVE>(0xFFU)}),
+              kInvalidBufferHandleUVE);
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+}
+
 TEST_F(GlRenderDeviceUVETest, CreateBufferUVE_SizeExceedsGlsizeiptr_ReturnsInvalidBeforeAllocation) {
     ASSERT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
     const BufferDescUVE oversizedDesc{

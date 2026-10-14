@@ -504,7 +504,35 @@ struct VulkanRenderDeviceUVE::ImplUVE {
         std::uint64_t sizeBytes = 0;
         BufferUsageUVE usage = BufferUsageUVE::Vertex;
         void* mapped = nullptr; // persistently mapped HOST_VISIBLE buffers; nullptr = DEVICE_LOCAL (M3)
+        BufferMemoryUVE memoryHint = BufferMemoryUVE::Auto;            // as requested, for GetBufferDescUVE
+        BufferUpdateFrequencyUVE updateFrequency = BufferUpdateFrequencyUVE::Static;
     };
+    /// The access/stage pair the buffer's consumers use, for the barriers around staging copies
+    /// into and out of device-local placements. No geometry stage: the device never enables it.
+    struct BufferConsumerSyncUVE {
+        VkAccessFlags access = 0U;
+        VkPipelineStageFlags stages = 0U;
+    };
+    [[nodiscard]] static BufferConsumerSyncUVE ConsumerSyncForUVE(const BufferUsageUVE usage) noexcept {
+        constexpr VkPipelineStageFlags kShaderStages = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                                                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                                                       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        switch (usage) {
+            case BufferUsageUVE::Vertex:
+                return {VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT};
+            case BufferUsageUVE::Index:
+                return {VK_ACCESS_INDEX_READ_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT};
+            case BufferUsageUVE::Uniform:
+                return {VK_ACCESS_UNIFORM_READ_BIT, kShaderStages};
+            case BufferUsageUVE::Storage:
+                return {VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, kShaderStages};
+            case BufferUsageUVE::IndirectStorage:
+                return {VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_SHADER_READ_BIT |
+                            VK_ACCESS_SHADER_WRITE_BIT,
+                        kShaderStages | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT};
+        }
+        return {VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+    }
 
     // M3: one-shot staging upload into a DEVICE_LOCAL buffer (vertex/index). Mirrors the M2c
     // texture-staging discipline exactly: a transient HOST_VISIBLE|COHERENT TRANSFER_SRC
@@ -580,19 +608,20 @@ struct VulkanRenderDeviceUVE::ImplUVE {
             freeStaging();
             return false;
         }
-        const VkAccessFlags readAccess = (record.usage == BufferUsageUVE::Index)
-                                             ? VK_ACCESS_INDEX_READ_BIT
-                                             : VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+        // Buffer memory hints: any usage may be device-local now, so the barriers name the
+        // usage's own consumers (vertex input, shader stages, indirect draw) instead of assuming
+        // a vertex/index buffer.
+        const BufferConsumerSyncUVE consumer = ConsumerSyncForUVE(record.usage);
         VkBufferMemoryBarrier acquireDst{};
         acquireDst.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-        acquireDst.srcAccessMask = 0U;
+        acquireDst.srcAccessMask = consumer.access;
         acquireDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         acquireDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         acquireDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         acquireDst.buffer = record.buffer;
         acquireDst.offset = static_cast<VkDeviceSize>(offset);
         acquireDst.size = data.size();
-        vk.vkCmdPipelineBarrier(transferCommands, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        vk.vkCmdPipelineBarrier(transferCommands, consumer.stages,
                                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, nullptr, 1U, &acquireDst,
                                 0U, nullptr);
         VkBufferCopy copyRegion{};
@@ -603,14 +632,14 @@ struct VulkanRenderDeviceUVE::ImplUVE {
         VkBufferMemoryBarrier publishCopy{};
         publishCopy.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
         publishCopy.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        publishCopy.dstAccessMask = readAccess;
+        publishCopy.dstAccessMask = consumer.access;
         publishCopy.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         publishCopy.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         publishCopy.buffer = record.buffer;
         publishCopy.offset = static_cast<VkDeviceSize>(offset);
         publishCopy.size = data.size();
         vk.vkCmdPipelineBarrier(transferCommands, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0U, 0U, nullptr, 1U,
+                                consumer.stages, 0U, 0U, nullptr, 1U,
                                 &publishCopy, 0U, nullptr);
         if (vk.vkEndCommandBuffer(transferCommands) != VK_SUCCESS) {
             freeCommands();
@@ -627,6 +656,126 @@ struct VulkanRenderDeviceUVE::ImplUVE {
             freeStaging();
             return false;
         }
+        freeCommands();
+        freeStaging();
+        return true;
+    }
+    /// The mirror of UploadToDeviceLocalBufferUVE: a one-shot copy out of a device-local buffer
+    /// into a transient host-visible staging buffer, drained before the host reads it. Every
+    /// buffer carries TRANSFER_SRC usage, so any placement can be read back this way; the
+    /// visibility barrier names the usage's own writers so a compute-written storage buffer is
+    /// complete before the copy. Same cold-path cost class as the mapped readback's queue drain.
+    [[nodiscard]] bool ReadbackFromDeviceLocalBufferUVE(const BufferRecordUVE& record,
+                                                        std::span<std::byte> outData,
+                                                        std::uint64_t offset) {
+        if (outData.empty()) {
+            return true;
+        }
+        VkBuffer stagingBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+        const auto freeStaging = [&]() {
+            if (stagingBuffer != VK_NULL_HANDLE) {
+                vk.vkDestroyBuffer(device, stagingBuffer, nullptr);
+            }
+            if (stagingMemory != VK_NULL_HANDLE) {
+                vk.vkFreeMemory(device, stagingMemory, nullptr);
+            }
+        };
+        VkBufferCreateInfo stagingInfo{};
+        stagingInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        stagingInfo.size = outData.size();
+        stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        stagingInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        if (vk.vkCreateBuffer(device, &stagingInfo, nullptr, &stagingBuffer) != VK_SUCCESS) {
+            return false;
+        }
+        VkMemoryRequirements stagingRequirements{};
+        vk.vkGetBufferMemoryRequirements(device, stagingBuffer, &stagingRequirements);
+        const std::uint32_t stagingMemoryType = FindMemoryTypeUVE(
+            stagingRequirements.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        VkMemoryAllocateInfo stagingAllocateInfo{};
+        stagingAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        stagingAllocateInfo.allocationSize = stagingRequirements.size;
+        stagingAllocateInfo.memoryTypeIndex = stagingMemoryType;
+        if (stagingMemoryType == UINT32_MAX ||
+            vk.vkAllocateMemory(device, &stagingAllocateInfo, nullptr, &stagingMemory) != VK_SUCCESS ||
+            vk.vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0U) != VK_SUCCESS) {
+            freeStaging();
+            return false;
+        }
+        VkCommandBufferAllocateInfo commandAllocateInfo{};
+        commandAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        commandAllocateInfo.commandPool = commandPool;
+        commandAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        commandAllocateInfo.commandBufferCount = 1U;
+        VkCommandBuffer transferCommands = VK_NULL_HANDLE;
+        if (vk.vkAllocateCommandBuffers(device, &commandAllocateInfo, &transferCommands) != VK_SUCCESS ||
+            transferCommands == VK_NULL_HANDLE) {
+            freeStaging();
+            return false;
+        }
+        const auto freeCommands = [&]() {
+            vk.vkFreeCommandBuffers(device, commandPool, 1U, &transferCommands);
+        };
+        VkCommandBufferBeginInfo transferBegin{};
+        transferBegin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        transferBegin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        if (vk.vkBeginCommandBuffer(transferCommands, &transferBegin) != VK_SUCCESS) {
+            freeCommands();
+            freeStaging();
+            return false;
+        }
+        const BufferConsumerSyncUVE consumer = ConsumerSyncForUVE(record.usage);
+        VkBufferMemoryBarrier acquireSrc{};
+        acquireSrc.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        acquireSrc.srcAccessMask = consumer.access | VK_ACCESS_TRANSFER_WRITE_BIT;
+        acquireSrc.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        acquireSrc.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        acquireSrc.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        acquireSrc.buffer = record.buffer;
+        acquireSrc.offset = static_cast<VkDeviceSize>(offset);
+        acquireSrc.size = outData.size();
+        vk.vkCmdPipelineBarrier(transferCommands, consumer.stages | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, nullptr, 1U, &acquireSrc,
+                                0U, nullptr);
+        VkBufferCopy copyRegion{};
+        copyRegion.srcOffset = static_cast<VkDeviceSize>(offset);
+        copyRegion.dstOffset = 0U;
+        copyRegion.size = outData.size();
+        vk.vkCmdCopyBuffer(transferCommands, record.buffer, stagingBuffer, 1U, &copyRegion);
+        VkBufferMemoryBarrier publishToHost{};
+        publishToHost.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        publishToHost.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        publishToHost.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+        publishToHost.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        publishToHost.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        publishToHost.buffer = stagingBuffer;
+        publishToHost.offset = 0U;
+        publishToHost.size = outData.size();
+        vk.vkCmdPipelineBarrier(transferCommands, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                VK_PIPELINE_STAGE_HOST_BIT, 0U, 0U, nullptr, 1U, &publishToHost,
+                                0U, nullptr);
+        if (vk.vkEndCommandBuffer(transferCommands) != VK_SUCCESS) {
+            freeCommands();
+            freeStaging();
+            return false;
+        }
+        VkSubmitInfo transferSubmit{};
+        transferSubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        transferSubmit.commandBufferCount = 1U;
+        transferSubmit.pCommandBuffers = &transferCommands;
+        void* stagingMapped = nullptr;
+        if (vk.vkQueueSubmit(presentQueue, 1U, &transferSubmit, VK_NULL_HANDLE) != VK_SUCCESS ||
+            vk.vkQueueWaitIdle(presentQueue) != VK_SUCCESS ||
+            vk.vkMapMemory(device, stagingMemory, 0U, outData.size(), 0U, &stagingMapped) != VK_SUCCESS ||
+            stagingMapped == nullptr) {
+            freeCommands();
+            freeStaging();
+            return false;
+        }
+        std::memcpy(outData.data(), stagingMapped, outData.size());
+        vk.vkUnmapMemory(device, stagingMemory);
         freeCommands();
         freeStaging();
         return true;
@@ -2647,10 +2796,11 @@ BufferHandleUVE VulkanRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc
     if (!impl.usable) {
         return kInvalidBufferHandleUVE;
     }
-    if (!ValidateBufferUploadUVE(desc, initialData) || !IsBufferUsageValidUVE(desc.usage)) {
+    if (!ValidateBufferUploadUVE(desc, initialData) || !IsBufferDescValidUVE(desc)) {
         UVE_WARNING("VulkanRenderDeviceUVE::CreateBufferUVE: invalid buffer descriptor "
-                    "(size {} bytes, {} bytes initial data, usage {})",
-                    desc.sizeBytes, initialData.size(), static_cast<int>(desc.usage));
+                    "(size {} bytes, {} bytes initial data, usage {}, memory {}, update frequency {})",
+                    desc.sizeBytes, initialData.size(), static_cast<int>(desc.usage),
+                    static_cast<int>(desc.memory), static_cast<int>(desc.updateFrequency));
         return kInvalidBufferHandleUVE;
     }
 
@@ -2690,15 +2840,40 @@ BufferHandleUVE VulkanRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc
     // this slice as well — SSBO traffic (whole-buffer author-side writes, frequent updates)
     // benefits least from device placement, and the M2f zero-fallback contract stays simple.
     // The exposed behavior (copy-on-update correctness) is identical for every usage.
-    const bool deviceLocal =
-        (desc.usage == BufferUsageUVE::Vertex || desc.usage == BufferUsageUVE::Index);
+    // Buffer memory hints refine that policy without changing any contract: `Auto` is the
+    // usage rule above; `DeviceLocal` puts any usage behind the staging copies (uploads AND
+    // readbacks — ReadbackFromDeviceLocalBufferUVE); `Upload` keeps a vertex/index buffer
+    // host-visible and persistently mapped so a per-frame rewrite is a memcpy instead of a
+    // staging submit; `Readback` is host-visible too and prefers HOST_CACHED memory when the
+    // device offers it, falling back to plain coherent memory otherwise.
+    bool deviceLocal = (desc.usage == BufferUsageUVE::Vertex || desc.usage == BufferUsageUVE::Index);
+    bool preferCached = false;
+    switch (desc.memory) {
+        case BufferMemoryUVE::Auto:
+            break;
+        case BufferMemoryUVE::DeviceLocal:
+            deviceLocal = true;
+            break;
+        case BufferMemoryUVE::Upload:
+            deviceLocal = false;
+            break;
+        case BufferMemoryUVE::Readback:
+            deviceLocal = false;
+            preferCached = true;
+            break;
+    }
+    constexpr VkMemoryPropertyFlags kHostFlags =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     const VkMemoryPropertyFlags wantedFlags =
-        deviceLocal
-            ? VkMemoryPropertyFlags{VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT}
-            : VkMemoryPropertyFlags{VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT};
-    const std::uint32_t memoryTypeIndex =
-        impl.FindMemoryTypeUVE(requirements.memoryTypeBits, wantedFlags);
+        deviceLocal ? VkMemoryPropertyFlags{VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT} : kHostFlags;
+    std::uint32_t memoryTypeIndex = UINT32_MAX;
+    if (preferCached) {
+        memoryTypeIndex = impl.FindMemoryTypeUVE(requirements.memoryTypeBits,
+                                                 kHostFlags | VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
+    }
+    if (memoryTypeIndex == UINT32_MAX) {
+        memoryTypeIndex = impl.FindMemoryTypeUVE(requirements.memoryTypeBits, wantedFlags);
+    }
     if (memoryTypeIndex == UINT32_MAX) {
         impl.vk.vkDestroyBuffer(impl.device, buffer, nullptr);
         UVE_WARNING("VulkanRenderDeviceUVE::CreateBufferUVE: no {} memory type satisfies the "
@@ -2737,7 +2912,8 @@ BufferHandleUVE VulkanRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc
     }
 
     const std::uint32_t handleValue = impl.nextHandleValue++;
-    impl.buffers.emplace(handleValue, ImplUVE::BufferRecordUVE{buffer, memory, desc.sizeBytes, desc.usage, mapped});
+    impl.buffers.emplace(handleValue, ImplUVE::BufferRecordUVE{buffer, memory, desc.sizeBytes, desc.usage, mapped,
+                                                               desc.memory, desc.updateFrequency});
     if (!initialData.empty() && !UpdateBufferUVE(BufferHandleUVE{handleValue}, initialData, 0U)) {
         // Creation did succeed — the failed upload is reported but the handle stays valid,
         // following GlRenderDeviceUVE's convention of treating upload failure as non-fatal.
@@ -2839,14 +3015,15 @@ bool VulkanRenderDeviceUVE::ReadbackBufferUVE(const BufferHandleUVE buffer,
         return true;
     }
     if (record.mapped == nullptr) {
-        // M3 placement: VERTEX/INDEX buffers are DEVICE_LOCAL with no TRANSFER_SRC usage, so
-        // there is no legal way to copy out of them. Refusing loudly is the honest answer - the
-        // interface documents readback as guaranteed for Uniform/Storage only, which is exactly
-        // the set this backend keeps host-visible (and Storage is what compute writes through).
-        UVE_WARNING("VulkanRenderDeviceUVE::ReadbackBufferUVE: buffer is device-local "
-                    "(vertex/index placement) and cannot be read back; readback is supported for "
-                    "Uniform and Storage buffers");
-        return false;
+        // Device-local placement (Auto vertex/index, or an explicit DeviceLocal hint): copy out
+        // through a transient staging buffer. Every buffer is created with TRANSFER_SRC usage,
+        // so this is a real readback of what the GPU last wrote, not a refusal.
+        if (!impl.ReadbackFromDeviceLocalBufferUVE(record, outData, offsetBytes)) {
+            UVE_WARNING("VulkanRenderDeviceUVE::ReadbackBufferUVE: staged device-local readback "
+                        "failed ({} bytes at offset {})", outData.size(), offsetBytes);
+            return false;
+        }
+        return true;
     }
     // Cold path, as documented: drain the queue so any submitted compute/graphics work that
     // could still be writing this buffer has completed before the host reads it. The memory is
@@ -6359,6 +6536,19 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::GetTextureDescUVE(TextureHandleU
     if (found == m_impl->textures.end())
         return RenderOperationResultUVE::InvalidHandle;
     out = found->second.desc;
+    return RenderOperationResultUVE::Success;
+}
+RenderOperationResultUVE VulkanRenderDeviceUVE::GetBufferDescUVE(BufferHandleUVE buffer,
+                                                                 BufferDescUVE &out) const {
+    if (!IsUsableUVE()) {
+        return RenderOperationResultUVE::DeviceUnavailable;
+    }
+    const auto found = m_impl->buffers.find(buffer.value);
+    if (found == m_impl->buffers.end()) {
+        return RenderOperationResultUVE::InvalidHandle;
+    }
+    out = BufferDescUVE{found->second.sizeBytes, found->second.usage, found->second.memoryHint,
+                        found->second.updateFrequency};
     return RenderOperationResultUVE::Success;
 }
 RenderOperationResultUVE VulkanRenderDeviceUVE::WaitIdleUVE() {

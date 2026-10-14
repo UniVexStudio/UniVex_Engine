@@ -31,6 +31,8 @@ public:
     [[nodiscard]] RenderDeviceCapabilitiesUVE GetCapabilitiesUVE() const noexcept override;
     [[nodiscard]] RenderOperationResultUVE GetTextureDescUVE(TextureHandleUVE,
                                                              TextureDescUVE &) const override;
+    [[nodiscard]] RenderOperationResultUVE GetBufferDescUVE(BufferHandleUVE,
+                                                            BufferDescUVE &) const override;
     [[nodiscard]] RenderOperationResultUVE CopyBufferUVE(const BufferCopyDescUVE &) override;
     [[nodiscard]] RenderOperationResultUVE BlitTextureUVE(const TextureBlitDescUVE &) override;
     [[nodiscard]] RenderOperationResultUVE GenerateMipmapsUVE(TextureHandleUVE) override;

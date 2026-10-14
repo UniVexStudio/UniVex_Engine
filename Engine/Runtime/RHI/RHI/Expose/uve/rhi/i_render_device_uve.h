@@ -59,6 +59,12 @@ public:
                                                                      TextureDescUVE &) const {
         return RenderOperationResultUVE::Unsupported;
     }
+    /// The descriptor a live buffer was created with — size, usage and the memory/update hints
+    /// exactly as requested (not the placement the backend chose). Output untouched on failure.
+    [[nodiscard]] virtual RenderOperationResultUVE GetBufferDescUVE(BufferHandleUVE,
+                                                                    BufferDescUVE &) const {
+        return RenderOperationResultUVE::Unsupported;
+    }
     [[nodiscard]] virtual RenderOperationResultUVE CopyBufferUVE(const BufferCopyDescUVE &) {
         return RenderOperationResultUVE::Unsupported;
     }
@@ -167,12 +173,11 @@ public:
     /// tooling, tests, and deliberate CPU-readback steps — never in a per-frame hot loop.
     ///
     /// Returns false (logging the reason) if `buffer` is unknown, the range would exceed the
-    /// buffer's size, or the backend cannot read that buffer's memory. Readback is guaranteed
-    /// only for `BufferUsageUVE::Uniform` and `BufferUsageUVE::Storage`: those are the usages
-    /// every backend keeps host-readable, and Storage is the one compute writes through.
-    /// Vertex/Index buffers may live in device-local memory with no transfer-source capability,
-    /// so a backend is free to refuse them loudly rather than pretend. An empty `outData` is a
-    /// successful no-op.
+    /// buffer's size, or the backend cannot read that buffer's memory. Every usage and every
+    /// `BufferMemoryUVE` placement reads back on the shipped backends (device-local memory goes
+    /// through a staging copy); `BufferMemoryUVE::Readback` is the hint for buffers the CPU reads
+    /// routinely. This is a cold path — it drains the queue so what the GPU last wrote is what
+    /// the host sees. An empty `outData` is a successful no-op.
     [[nodiscard]] virtual bool ReadbackBufferUVE(BufferHandleUVE buffer, std::span<std::byte> outData,
                                                   std::uint64_t offsetBytes = 0) = 0;
 

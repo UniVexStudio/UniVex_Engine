@@ -125,6 +125,24 @@ struct GlTextureFormatUVE {
     GLenum type;
 };
 
+/// glBufferData's usage token is exactly the (frequency x access) product of the two RHI hints:
+/// `Readback` is the one GPU-written/CPU-read case (*_READ); every other placement is CPU-written
+/// (*_DRAW). `Auto` with the default `Static` frequency is GL_STATIC_DRAW — the token every
+/// buffer used before the hints existed — so unchanged callers allocate exactly as before.
+[[nodiscard]] GLenum BufferHintsToGlUsageUVE(const BufferMemoryUVE memory,
+                                             const BufferUpdateFrequencyUVE frequency) noexcept {
+    const bool read = memory == BufferMemoryUVE::Readback;
+    switch (frequency) {
+        case BufferUpdateFrequencyUVE::Static:
+            return read ? GL_STATIC_READ : GL_STATIC_DRAW;
+        case BufferUpdateFrequencyUVE::Dynamic:
+            return read ? GL_DYNAMIC_READ : GL_DYNAMIC_DRAW;
+        case BufferUpdateFrequencyUVE::Stream:
+            return read ? GL_STREAM_READ : GL_STREAM_DRAW;
+    }
+    return GL_STATIC_DRAW;
+}
+
 [[nodiscard]] GlTextureFormatUVE TextureFormatToGlUVE(TextureFormatUVE format,
                                                         TextureColorSpaceUVE colorSpace) noexcept {
     switch (format) {
@@ -462,8 +480,9 @@ BufferHandleUVE GlRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc, st
         UVE_ERROR("GlRenderDeviceUVE: CreateBufferUVE initial data exceeds buffer size");
         return kInvalidBufferHandleUVE;
     }
-    if (!IsBufferUsageValidUVE(desc.usage)) {
-        UVE_ERROR("GlRenderDeviceUVE: CreateBufferUVE received an unknown buffer usage");
+    if (!IsBufferDescValidUVE(desc)) {
+        UVE_ERROR("GlRenderDeviceUVE: CreateBufferUVE received an unknown buffer usage, memory or "
+                  "update-frequency value");
         return kInvalidBufferHandleUVE;
     }
     if (IsStorageBindableUsageUVE(desc.usage) && !m_impl->state.supportsComputeShadersUVE) {
@@ -493,13 +512,15 @@ BufferHandleUVE GlRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc, st
     m_impl->state.gl.glGenBuffers(1, &glBuffer);
     m_impl->state.gl.glBindBuffer(target, glBuffer);
     m_impl->state.gl.glBufferData(target, static_cast<GLsizeiptr>(desc.sizeBytes),
-                                    initialData.empty() ? nullptr : initialData.data(), GL_STATIC_DRAW);
+                                    initialData.empty() ? nullptr : initialData.data(),
+                                    BufferHintsToGlUsageUVE(desc.memory, desc.updateFrequency));
     UVE_GL_CHECK_ERROR_UVE("CreateBufferUVE");
     m_impl->state.gl.glBindBuffer(target, static_cast<GLuint>(previousBufferBinding));
 
     const std::uint32_t handleValue = m_impl->state.nextBufferHandle++;
     m_impl->state.buffers.emplace(handleValue,
-                                    Detail::GlDeviceStateUVE::BufferRecordUVE{glBuffer, target, desc.sizeBytes, desc.usage});
+                                    Detail::GlDeviceStateUVE::BufferRecordUVE{glBuffer, target, desc.sizeBytes, desc.usage,
+                                                                               desc.memory, desc.updateFrequency});
     return BufferHandleUVE{handleValue};
 }
 
@@ -1405,6 +1426,17 @@ RenderOperationResultUVE GlRenderDeviceUVE::GetTextureDescUVE(TextureHandleUVE t
     if (found == m_impl->state.textures.end())
         return RenderOperationResultUVE::InvalidHandle;
     out = found->second.desc;
+    return RenderOperationResultUVE::Success;
+}
+RenderOperationResultUVE GlRenderDeviceUVE::GetBufferDescUVE(BufferHandleUVE buffer,
+                                                             BufferDescUVE &out) const {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    const auto found = m_impl->state.buffers.find(buffer.value);
+    if (found == m_impl->state.buffers.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    out = BufferDescUVE{found->second.sizeBytes, found->second.usage, found->second.memory,
+                        found->second.updateFrequency};
     return RenderOperationResultUVE::Success;
 }
 RenderOperationResultUVE GlRenderDeviceUVE::CopyBufferUVE(const BufferCopyDescUVE &copy) {

@@ -161,9 +161,12 @@ bool DebugRendererUVE::SubmitUVE(IRenderDeviceUVE& device, Shader::IShaderManage
         return true;
     }
     if (m_vertexBuffer == kInvalidBufferHandleUVE) {
+        // Rewritten from the CPU every submit: host-visible, streamed placement (on Vulkan a
+        // memcpy into mapped memory instead of a staging submit per frame; GL_STREAM_DRAW on GL).
         m_vertexBuffer = device.CreateBufferUVE(
             BufferDescUVE{sizeof(DebugLineVertexUVE) * kMaximumDebugLineVerticesUVE,
-                          BufferUsageUVE::Vertex});
+                          BufferUsageUVE::Vertex, BufferMemoryUVE::Upload,
+                          BufferUpdateFrequencyUVE::Stream});
         if (m_vertexBuffer == kInvalidBufferHandleUVE) {
             return false;
         }

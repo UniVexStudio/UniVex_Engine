@@ -738,7 +738,7 @@ render-pass attachment.
 
 | Descriptor | Carries | Gap |
 |---|---|---|
-| `BufferDescUVE` | size, usage (`Vertex`/`Index`/`Uniform`/`Storage`/`IndirectStorage`) | no memory/CPU-access/lifetime hint |
+| `BufferDescUVE` | size, usage (`Vertex`/`Index`/`Uniform`/`Storage`/`IndirectStorage`), memory placement (`Auto`/`DeviceLocal`/`Upload`/`Readback`), update frequency (`Static`/`Dynamic`/`Stream`) | no sub-allocation or aliasing control (one allocation per buffer) |
 | `TextureDescUVE` | width, height, format, mipLevels, array layers, cubemap shape | no depth, no sample count, no usage flags (Tier 2.3 landed layers + cubes) |
 | `TextureFormatUVE` | `RGBA8Unorm`, `RGBA16Float`, `RGBA32Float`, `R8Unorm`/`RG8Unorm`, `R16Float`/`RG16Float`, `R32Float`/`RG32Float`, `Depth32Float`, `Depth24Stencil8`, BC1/BC3/BC7, ETC2/ETC2A8, ASTC 4x4 | seventeen formats; sRGB only where the data has an sRGB encoding (RGBA8 and the compressed families); no integer or packed (10:10:10:2) formats |
 | `ShaderDescUVE` | stage, source, entry point | `Geometry` has an optional `PipelineDescUVE::geometryShader` slot (Null/desktop GL); Vulkan reports `geometryShaders = Unsupported` |
@@ -780,6 +780,24 @@ because each one blocks a whole feature:
   M2d warning until pipelines carry per-target formats — the same boundary `RGBA16Float`
   already sits behind, listed under §9's Vulkan parity items. Deliberately not added: sRGB
   variants (these formats carry linear data), integer and packed formats, `Depth16`.
+- `[x]` **No buffer memory hint.** Landed (2026-10-14): `BufferMemoryUVE` (`Auto`,
+  `DeviceLocal`, `Upload`, `Readback`) and `BufferUpdateFrequencyUVE` (`Static`, `Dynamic`,
+  `Stream`) on `BufferDescUVE`, defaulting to today's behaviour so aggregate-initialised
+  callers are unchanged, validated like `usage` (unknown values refused before allocation)
+  and reported back verbatim by the new optional `GetBufferDescUVE`. They are placement
+  requests, not contract changes: create-with-data, windowed update and readback behave
+  identically for every (usage, hint) pair on all three backends — the Vulkan case runs all
+  twenty. GL folds the pair into `glBufferData`'s token (`Readback` → `*_READ`, everything
+  else `*_DRAW`; the default is still `GL_STATIC_DRAW`), read back from the GL object through
+  `GL_BUFFER_USAGE`. Vulkan keeps its usage rule under `Auto`, puts any usage behind staging
+  for `DeviceLocal`, keeps an `Upload` vertex/index buffer host-visible and persistently mapped
+  (a per-frame rewrite becomes a memcpy instead of a staging submit + queue drain), prefers
+  `HOST_CACHED` memory for `Readback`, and gained the missing half of the staging discipline:
+  `ReadbackBufferUVE` copies out of device-local memory through a transient staging buffer with
+  usage-accurate barriers instead of refusing vertex/index buffers. First consumers: the debug
+  line batch and the 2D sprite quad (`Upload`/`Stream`) and the frustum-cull visibility buffer
+  (`Readback`). Not added: sub-allocation, aliasing or persistent-map exposure — one allocation
+  per buffer remains the model.
 
 Also absent: `[x]` a sampler object — landed (Tier 2.2: `SamplerDescUVE` with Point filtering
 in all three backends). `[x]` **Validated bind-group packets** now live in
@@ -941,9 +959,11 @@ is pending; the failed CI run is not reported as a green graphics verification.
 - `[~]` **`VulkanRenderDeviceUVE`** — real but milestone-sliced, and unusually
   honest about it: instance/device/swapchain/present, buffers, SPIR-V, pipelines,
   reflection and dynamic-rendering offscreen targets all work, while >1 descriptor
-  set, load-op semantics beyond clear, per-op depth compare, device-local staging
-  and sampling `Depth32Float` **warn and fail loudly rather than silently
-  degrading**. On pre-1.3 devices offscreen passes are skipped entirely. Two silent
+  set, load-op semantics beyond clear, per-op depth compare and sampling
+  `Depth32Float` **warn and fail loudly rather than silently degrading**. (Device-local
+  staging left that list on 2026-10-14: uploads and readbacks both travel through
+  one-shot staging copies for any placement, so a device-local buffer reads back instead of
+  refusing.) On pre-1.3 devices offscreen passes are skipped entirely. Two silent
   format assumptions were removed on 2026-10-14 when the device first ran on a Vulkan ICD
   outside CI: RGBA8 images no longer inherit the swapchain's sRGB encoding when the descriptor
   says linear, and the packed depth/stencil format is resolved per device instead of assumed.
@@ -1434,3 +1454,14 @@ missing channels, `RG8` mip chain + linear blit). On the same two software stack
 `GlFunctionsUVETest` + `VulkanRenderDeviceUVETest` 174 passed / 3 skipped / 1 failed (the
 softpipe occlusion defect already recorded above, unrelated to formats). The GL unpack
 alignment defect was confirmed by reverting the fix and watching the new case fail.
+
+**Buffer memory hints (same day).** One Null case (unknown hints refused, twelve
+(placement, frequency) pairs recorded and read back, untouched output on failure), one native
+GL case (six hint pairs → the expected `GL_BUFFER_USAGE` token on the live object, each with a
+windowed update + readback), and two native Vulkan cases (the former "device-local buffers
+refuse readback" test now asserts the staged readback returns the uploaded floats and offset
+windows; a new case drives all five usages × four placements through create/update/readback,
+plus a host→device-local `CopyBufferUVE` observed through the staged readback). Suite totals
+after the change on the same stacks: Null + device-operations + GL + Vulkan device suites 261
+passed / 3 skipped / 1 (softpipe) failed; `uve_integration_tests` (debug renderer, 2D
+renderer, frustum-cull consumers) all green.

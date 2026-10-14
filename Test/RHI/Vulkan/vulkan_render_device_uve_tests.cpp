@@ -370,6 +370,59 @@ TEST_F(VulkanRenderDeviceUVETest, BuffersAreRealDeviceMemoriesWithStagedUpdates)
                                    sizeof(replacement))));
 }
 
+TEST_F(VulkanRenderDeviceUVETest, BufferMemoryHintsPlaceBuffersWithoutChangingTheUpdateReadbackContract) {
+    // The memory/update hints steer placement (device-local behind staging, host-visible mapped,
+    // host-cached readback) and are reported back verbatim; the observable contract — create
+    // with data, update a window, read back exactly that — holds for every (usage, hint) pair,
+    // including the ones that are new placements for this backend: a device-local storage
+    // buffer and a host-visible (Upload) vertex buffer. Unknown hint values are refused.
+    const std::array<std::uint32_t, 4> values{7U, 11U, 23U, 42U};
+    for (const BufferUsageUVE usage : {BufferUsageUVE::Vertex, BufferUsageUVE::Index, BufferUsageUVE::Uniform,
+                                       BufferUsageUVE::Storage, BufferUsageUVE::IndirectStorage}) {
+        for (const BufferMemoryUVE memory : {BufferMemoryUVE::Auto, BufferMemoryUVE::DeviceLocal,
+                                             BufferMemoryUVE::Upload, BufferMemoryUVE::Readback}) {
+            const BufferDescUVE desc{sizeof(values), usage, memory, BufferUpdateFrequencyUVE::Dynamic};
+            const BufferHandleUVE buffer = device->CreateBufferUVE(desc, std::as_bytes(std::span(values)));
+            ASSERT_NE(buffer, kInvalidBufferHandleUVE)
+                << "usage " << static_cast<int>(usage) << " memory " << static_cast<int>(memory);
+            BufferDescUVE reported{};
+            ASSERT_EQ(device->GetBufferDescUVE(buffer, reported), RenderOperationResultUVE::Success);
+            EXPECT_EQ(reported.sizeBytes, sizeof(values));
+            EXPECT_EQ(reported.usage, usage);
+            EXPECT_EQ(reported.memory, memory);
+            EXPECT_EQ(reported.updateFrequency, BufferUpdateFrequencyUVE::Dynamic);
+            const std::array<std::uint32_t, 1> patch{99U};
+            ASSERT_TRUE(device->UpdateBufferUVE(buffer, std::as_bytes(std::span(patch)), 8U));
+            std::array<std::uint32_t, 4> observed{};
+            ASSERT_TRUE(device->ReadbackBufferUVE(buffer, std::as_writable_bytes(std::span(observed))))
+                << "usage " << static_cast<int>(usage) << " memory " << static_cast<int>(memory);
+            EXPECT_EQ(observed, (std::array<std::uint32_t, 4>{7U, 11U, 99U, 42U}));
+            device->DestroyBufferUVE(buffer);
+        }
+    }
+    // A device-local destination still takes CopyBufferUVE from a host-visible source, and the
+    // copy is visible through the staged readback.
+    const BufferHandleUVE source = device->CreateBufferUVE(
+        {sizeof(values), BufferUsageUVE::Storage, BufferMemoryUVE::Upload}, std::as_bytes(std::span(values)));
+    const BufferHandleUVE target = device->CreateBufferUVE({sizeof(values), BufferUsageUVE::Storage,
+                                                            BufferMemoryUVE::DeviceLocal});
+    ASSERT_NE(source, kInvalidBufferHandleUVE);
+    ASSERT_NE(target, kInvalidBufferHandleUVE);
+    ASSERT_EQ(device->CopyBufferUVE({source, target, 4U, 0U, 12U}), RenderOperationResultUVE::Success);
+    std::array<std::uint32_t, 4> copied{};
+    ASSERT_TRUE(device->ReadbackBufferUVE(target, std::as_writable_bytes(std::span(copied))));
+    EXPECT_EQ(copied[0], 11U);
+    EXPECT_EQ(copied[1], 23U);
+    EXPECT_EQ(copied[2], 42U);
+    device->DestroyBufferUVE(target);
+    device->DestroyBufferUVE(source);
+    EXPECT_EQ(device->CreateBufferUVE({16U, BufferUsageUVE::Vertex, static_cast<BufferMemoryUVE>(0xFFU)}),
+              kInvalidBufferHandleUVE);
+    EXPECT_EQ(device->CreateBufferUVE({16U, BufferUsageUVE::Vertex, BufferMemoryUVE::Auto,
+                                       static_cast<BufferUpdateFrequencyUVE>(0xFFU)}),
+              kInvalidBufferHandleUVE);
+}
+
 TEST_F(VulkanRenderDeviceUVETest, ShaderCreationRejectsGlslTextAndAcceptsSpirv) {
     ShaderDescUVE glslDesc{};
     glslDesc.stage = ShaderStageUVE::Vertex;
@@ -3794,11 +3847,12 @@ TEST_F(VulkanRenderDeviceUVETest, ReadbackBufferUVE_ReadsComputeWrittenPaletteDi
     device->DestroyShaderUVE(computeShader);
 }
 
-TEST_F(VulkanRenderDeviceUVETest, ReadbackBufferUVE_RefusesDeviceLocalAndOutOfRangeReads) {
-    // The interface guarantees readback for Uniform/Storage only. This backend places
-    // VERTEX/INDEX buffers in DEVICE_LOCAL memory with no TRANSFER_SRC usage (the M3 policy),
-    // so it must refuse loudly rather than hand back something it cannot legally read.
-    const float vertices[6] = {};
+TEST_F(VulkanRenderDeviceUVETest, ReadbackBufferUVE_ReadsDeviceLocalThroughStagingAndRefusesOutOfRangeReads) {
+    // Device-local placement (the Auto rule for VERTEX/INDEX) used to be refused; with the
+    // buffer memory hints every placement reads back — here through a one-shot staging copy —
+    // and what comes back is what the staged upload wrote. Out-of-range and unknown-handle
+    // reads stay refused, and the empty read stays a no-op.
+    const float vertices[6] = {1.5F, -2.0F, 3.25F, 4.0F, 0.0F, 6.5F};
     BufferDescUVE vertexDesc{};
     vertexDesc.sizeBytes = sizeof(vertices);
     vertexDesc.usage = BufferUsageUVE::Vertex;
@@ -3806,8 +3860,17 @@ TEST_F(VulkanRenderDeviceUVETest, ReadbackBufferUVE_RefusesDeviceLocalAndOutOfRa
         vertexDesc,
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(vertices), sizeof(vertices)));
     ASSERT_NE(vertexBuffer, kInvalidBufferHandleUVE);
-    std::array<std::byte, sizeof(vertices)> readback{};
-    EXPECT_FALSE(device->ReadbackBufferUVE(vertexBuffer, readback));
+    std::array<float, 6> readback{};
+    ASSERT_TRUE(device->ReadbackBufferUVE(vertexBuffer, std::as_writable_bytes(std::span(readback))))
+        << "a device-local buffer reads back through staging now";
+    EXPECT_EQ(readback[0], 1.5F);
+    EXPECT_EQ(readback[5], 6.5F);
+    std::array<float, 2> window2{};
+    ASSERT_TRUE(device->ReadbackBufferUVE(vertexBuffer, std::as_writable_bytes(std::span(window2)), 8U));
+    EXPECT_EQ(window2[0], 3.25F) << "offset reads copy the requested window";
+    EXPECT_EQ(window2[1], 4.0F);
+    std::array<std::byte, sizeof(vertices) + 4U> tooLargeForVertex{};
+    EXPECT_FALSE(device->ReadbackBufferUVE(vertexBuffer, tooLargeForVertex));
 
     BufferDescUVE storageDesc{};
     storageDesc.sizeBytes = 16U;
