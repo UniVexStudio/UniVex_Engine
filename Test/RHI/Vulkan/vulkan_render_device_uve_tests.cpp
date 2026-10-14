@@ -4767,9 +4767,19 @@ TEST_F(VulkanRenderDeviceUVETest, FoundationFencesDoNotPretendPendingCpuSubmissi
     EXPECT_TRUE(surface.drawable);
     EXPECT_GT(surface.width, 0U);
     EXPECT_GT(surface.imageCount, 0U);
+    // The refusal path is exercised with the still-unpinned occlusion kind; the timestamp kind
+    // is implemented and must agree with its own capability report instead of a fixed answer.
     QueryHandleUVE query{73U};
-    EXPECT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::Timestamp, query), ResultUVE::Unsupported);
-    EXPECT_EQ(query.value, 73U);
+    EXPECT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, query), ResultUVE::Unsupported);
+    EXPECT_EQ(query.value, 73U) << "a refused create must leave the output handle untouched";
+    if (device->GetCapabilitiesUVE().timestampQueries == RenderFeatureSupportUVE::Native) {
+        QueryHandleUVE timestamp{};
+        ASSERT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::Timestamp, timestamp), ResultUVE::Success);
+        EXPECT_EQ(device->DestroyQueryUVE(timestamp), ResultUVE::Success);
+    } else {
+        EXPECT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::Timestamp, query), ResultUVE::Unsupported);
+        EXPECT_EQ(query.value, 73U) << "an unsupported capability must not hand out a handle";
+    }
     // Tier 2.6 landed the transfer paths; what remains "not yet" is result queries. The
     // transfer ops now validate handles like every other implemented device call.
     EXPECT_EQ(device->BlitTextureUVE({}), ResultUVE::InvalidHandle);
