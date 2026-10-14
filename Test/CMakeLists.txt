@@ -43,8 +43,10 @@ add_executable(uve_core_tests
     Core/Threading/semaphore_uve_tests.cpp
     Core/Threading/thread_id_uve_tests.cpp
     Core/Threading/thread_naming_uve_tests.cpp
+    Core/Threading/thread_control_uve_tests.cpp
     Core/Utilities/timer_uve_tests.cpp
     Core/Utilities/hash_uve_tests.cpp
+    Core/Utilities/topological_order_uve_tests.cpp
     Core/Utilities/binary_buffer_uve_tests.cpp
     Core/Utilities/uuid_uve_tests.cpp
     Core/Utilities/scope_guard_uve_tests.cpp
@@ -53,12 +55,15 @@ add_executable(uve_core_tests
     Core/Containers/fixed_array_uve_tests.cpp
     Core/Containers/small_vector_uve_tests.cpp
     Core/Containers/handle_table_uve_tests.cpp
+    Core/Containers/handle_table_lifetime_uve_tests.cpp
+    Core/Object/object_registry_uve_tests.cpp
     Core/Containers/sparse_set_uve_tests.cpp
     Core/Containers/ring_buffer_uve_tests.cpp
     Core/Containers/bit_set_uve_tests.cpp
     Core/Strings/string_id_uve_tests.cpp
     Core/Strings/string_utils_uve_tests.cpp
     Core/Scheduling/frame_scheduler_uve_tests.cpp
+    Core/Scheduling/frame_serial_uve_tests.cpp
     Core/Diagnostics/profiler_diagnostics_uve_tests.cpp
     Core/Events/event_system_uve_tests.cpp
     Core/Asset/uve_file_envelope_uve_tests.cpp
@@ -66,6 +71,7 @@ add_executable(uve_core_tests
     Core/Asset/legacy_extension_migration_uve_tests.cpp
     UVScript/uvscript_parser_uve_tests.cpp
     UVScript/uvscript_vm_uve_tests.cpp
+    UVScript/uvscript_debugger_uve_tests.cpp
     UVScript/uvscript_collections_uve_tests.cpp
     Core/Asset/asset_manager_uve_tests.cpp
     Core/Asset/file_system_uve_tests.cpp
@@ -87,6 +93,7 @@ add_executable(uve_core_tests
     Core/Asset/jpeg_metadata_uve_tests.cpp
     Core/Asset/obj_importer_uve_tests.cpp
     Core/Asset/fbx_mesh_converter_uve_tests.cpp
+    Core/Asset/fbx_material_converter_uve_tests.cpp
     Core/Asset/obj_mesh_converter_uve_tests.cpp
     Core/Asset/obj_metadata_uve_tests.cpp
     Core/Asset/gltf_importer_uve_tests.cpp
@@ -101,6 +108,7 @@ add_executable(uve_core_tests
     Core/Asset/mtl_material_converter_uve_tests.cpp
     Core/Asset/mtl_metadata_uve_tests.cpp
     Core/Asset/hot_reload_uve_tests.cpp
+    Core/Asset/hot_reload_backend_uve_tests.cpp
     Core/Asset/asset_import_queue_uve_tests.cpp
     Core/Asset/project_change_watcher_uve_tests.cpp
     Core/Asset/project_file_index_uve_tests.cpp
@@ -163,6 +171,12 @@ add_executable(uve_core_tests
     Input/mobile_gesture_system_uve_tests.cpp
     Input/mobile_gesture_recognizer_uve_tests.cpp
     RHI/null_render_device_uve_tests.cpp
+    RHI/device_operations_uve_tests.cpp
+    RHI/stencil_state_uve_tests.cpp
+    RHI/timeline_semaphore_uve_tests.cpp
+    RHI/geometry_pipeline_uve_tests.cpp
+    RHI/render_resource_lifetime_uve_tests.cpp
+    RHI/bind_group_uve_tests.cpp
     RHI/Vulkan/vulkan_composite_alpha_policy_uve_tests.cpp
     RHI/Vulkan/vulkan_present_mode_policy_uve_tests.cpp
     RHI/Vulkan/vulkan_validation_policy_uve_tests.cpp
@@ -189,6 +203,7 @@ add_executable(uve_core_tests
     Math/vector4_uve_tests.cpp
     Math/quaternion_uve_tests.cpp
     Math/matrix4x4_uve_tests.cpp
+    Math/point_transform_batch_uve_tests.cpp
     Math/matrix3x3_uve_tests.cpp
     Math/trs_uve_tests.cpp
     Math/color_uve_tests.cpp
@@ -220,6 +235,7 @@ if(UVE_HAS_DESKTOP_GL)
     )
 endif()
 target_link_libraries(uve_core_tests PRIVATE
+    uve_object
     uve_uvscript
     uve_retarget
     nlohmann_json::nlohmann_json
@@ -302,6 +318,9 @@ target_compile_definitions(uve_core_tests PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(uve_core_tests)
+# Apply resource ownership after discovery populates uve_core_tests_TESTS.
+set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/Support/ctest_resource_locks.cmake")
 
 #
 # uve_integration_tests covers Entity/Component/Scene/World - the node system - since the
@@ -345,6 +364,7 @@ add_executable(uve_integration_tests
     Integration/Entity/entity_view_uve_tests.cpp
     Integration/Localization/localization_uve_tests.cpp
     Integration/Scene/scene_graph_uve_tests.cpp
+    Integration/Scene/derived_pose_contract_uve_tests.cpp
     Integration/Scene/children_index_uve_tests.cpp
     Integration/Script/contact_script_events_uve_tests.cpp
     Integration/Scene/bone_attachment_pass_uve_tests.cpp
@@ -367,6 +387,7 @@ add_executable(uve_integration_tests
     Integration/Animation/pose_graph_uve_tests.cpp
     Integration/Animation/animation_state_machine_uve_tests.cpp
     Integration/World/world_uve_tests.cpp
+    Integration/World/world_lifecycle_uve_tests.cpp
     Integration/Object/type_metadata_uve_tests.cpp
     Integration/Object/property_accessor_uve_tests.cpp
     Integration/Object/type_metadata_bridge_uve_tests.cpp
@@ -434,6 +455,7 @@ add_executable(uve_integration_tests
     Audio/wav_metadata_uve_tests.cpp
     Audio/wav_pcm16_decoder_uve_tests.cpp
     Audio/wav_importer_uve_tests.cpp
+    Audio/compressed_audio_importer_uve_tests.cpp
     RHI/RenderSystems/camera_2d_system_uve_tests.cpp
     RHI/RenderSystems/camera_system_uve_tests.cpp
     RHI/RenderSystems/render_batch_uve_tests.cpp
@@ -446,6 +468,7 @@ add_executable(uve_integration_tests
     RHI/RenderSystems/mesh_render_eligibility_uve_tests.cpp
     RHI/RenderSystems/primitive_geometry_uve_tests.cpp
     RHI/RenderSystems/render_graph_uve_tests.cpp
+    RHI/RenderSystems/render_graph_compiler_uve_tests.cpp
     RHI/RenderSystems/render_queue_uve_tests.cpp
     RHI/RenderSystems/render_system_uve_tests.cpp
     RHI/RenderSystems/renderer_2d_uve_tests.cpp
@@ -464,6 +487,7 @@ add_executable(uve_integration_tests
     UI/ui_checkbox_tooltip_uve_tests.cpp
     UI/ui_dropdown_uve_tests.cpp
     UI/ui_text_input_uve_tests.cpp
+    UI/ui_focus_navigation_uve_tests.cpp
     UI/ui_scroll_uve_tests.cpp
 )
 if(UVE_HAS_DESKTOP_GL)

@@ -4,6 +4,8 @@
 #include "uve/rhi_null/null_render_device_uve.h"
 
 #include <algorithm>
+#include <chrono>
+#include <condition_variable>
 #include <iterator>
 #include <mutex>
 #include <unordered_map>
@@ -43,9 +45,38 @@ struct NullRenderDeviceUVE::ImplUVE {
     std::mutex submissionMutex;
     std::vector<RecordedCommandUVE> lastSubmittedCommands;
     std::uint64_t presentCallCount = 0;
+    std::unordered_map<std::uint32_t, bool> fences;
+    std::uint32_t nextFence = 1U;
+    struct QueryRecordUVE {
+        RenderQueryKindUVE kind;
+        bool issued = false;
+    };
+    // Timeline semaphores: real counters, real blocking waits. `condition` is notified on every
+    // signal and on destruction so no waiter can outlive the device.
+    struct SemaphoreRecordUVE {
+        std::uint64_t value = 0U;
+    };
+    mutable std::mutex semaphoreMutex;
+    std::condition_variable semaphoreCondition;
+    std::unordered_map<std::uint32_t, SemaphoreRecordUVE> semaphores;
+    std::uint32_t nextSemaphore = 1U;
+    std::unordered_map<std::uint32_t, QueryRecordUVE> queries;
+    std::uint32_t nextQuery = 1U, activeOcclusion = 0U;
+    std::vector<RecordedDeviceOperationUVE> operations;
+    std::uint64_t droppedOperations = 0U;
+    void RecordUVE(RecordedDeviceOperationUVE operation) {
+        if (operations.size() == 256U) {
+            operations.erase(operations.begin());
+            if (droppedOperations != UINT64_MAX)
+                ++droppedOperations;
+        }
+        operations.push_back(std::move(operation));
+    }
 };
 
-NullRenderDeviceUVE::NullRenderDeviceUVE() : m_impl(std::make_unique<ImplUVE>()) {}
+NullRenderDeviceUVE::NullRenderDeviceUVE() : m_impl(std::make_unique<ImplUVE>()) {
+    m_impl->operations.reserve(256U);
+}
 
 NullRenderDeviceUVE::~NullRenderDeviceUVE() = default;
 
@@ -215,9 +246,31 @@ PipelineHandleUVE NullRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& 
         UVE_ERROR("NullRenderDeviceUVE: CreatePipelineUVE received an unknown depth comparison");
         return kInvalidPipelineHandleUVE;
     }
+    if (!IsStencilStateValidUVE(desc.stencil)) {
+        UVE_ERROR("NullRenderDeviceUVE: CreatePipelineUVE received an unknown stencil state");
+        return kInvalidPipelineHandleUVE;
+    }
     if (!m_impl->shaders.contains(desc.vertexShader.value) || !m_impl->shaders.contains(desc.fragmentShader.value)) {
         UVE_ERROR("NullRenderDeviceUVE: CreatePipelineUVE referenced an unknown vertex or fragment shader handle");
         return kInvalidPipelineHandleUVE;
+    }
+    const auto rejectStage = [outInfoLog](const char* message) {
+        UVE_ERROR("NullRenderDeviceUVE: CreatePipelineUVE {}", message);
+        if (outInfoLog != nullptr) *outInfoLog = message;
+        return kInvalidPipelineHandleUVE;
+    };
+    if (m_impl->shaders.at(desc.vertexShader.value).stage != ShaderStageUVE::Vertex ||
+        m_impl->shaders.at(desc.fragmentShader.value).stage != ShaderStageUVE::Fragment) {
+        return rejectStage("vertex/fragment shader handles are bound to the wrong stages");
+    }
+    if (desc.geometryShader != kInvalidShaderHandleUVE) {
+        const auto geometry = m_impl->shaders.find(desc.geometryShader.value);
+        if (geometry == m_impl->shaders.end()) {
+            return rejectStage("geometry shader handle does not reference a live shader");
+        }
+        if (geometry->second.stage != ShaderStageUVE::Geometry) {
+            return rejectStage("geometry shader slot requires a Geometry-stage shader");
+        }
     }
     const std::uint32_t handleValue = m_impl->nextPipelineHandle++;
     m_impl->pipelines.emplace(handleValue, desc);
@@ -293,6 +346,10 @@ PipelineHandleUVE NullRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<con
         UVE_ERROR("NullRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown depth comparison");
         return kInvalidPipelineHandleUVE;
     }
+    if (!IsStencilStateValidUVE(desc.stencil)) {
+        UVE_ERROR("NullRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown stencil state");
+        return kInvalidPipelineHandleUVE;
+    }
     static_cast<void>(binary); // NullRenderDeviceUVE never inspects binary contents.
     static_cast<void>(format);
     PipelineDescUVE bookkeepingDesc;
@@ -311,6 +368,7 @@ PipelineHandleUVE NullRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<con
     bookkeepingDesc.depthBiasConstantFactor = desc.depthBiasConstantFactor;
     bookkeepingDesc.depthBiasSlopeFactor = desc.depthBiasSlopeFactor;
     bookkeepingDesc.depthCompare = desc.depthCompare;
+    bookkeepingDesc.stencil = desc.stencil;
 
     const std::uint32_t handleValue = m_impl->nextPipelineHandle++;
     m_impl->pipelines.emplace(handleValue, bookkeepingDesc);
@@ -330,6 +388,7 @@ void NullRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBu
 }
 
 void NullRenderDeviceUVE::PresentUVE() {
+    CollectRetiredTexturesUVE();
     ++m_impl->presentCallCount;
 }
 
@@ -346,8 +405,9 @@ const std::vector<RecordedCommandUVE>& NullRenderDeviceUVE::GetLastSubmittedComm
 }
 
 std::size_t NullRenderDeviceUVE::GetLiveResourceCountUVE() const noexcept {
-    return m_impl->buffers.size() + m_impl->textures.size() + m_impl->samplers.size() + m_impl->shaders.size() +
-           m_impl->pipelines.size() + m_impl->computePipelines.size();
+    return m_impl->buffers.size() + m_impl->textures.size() + m_impl->samplers.size() +
+           m_impl->shaders.size() + m_impl->pipelines.size() + m_impl->computePipelines.size() +
+           m_impl->fences.size() + m_impl->queries.size();
 }
 
 std::vector<TextureDescUVE> NullRenderDeviceUVE::GetLiveTextureDescsUVE() const {
@@ -378,4 +438,223 @@ std::uint64_t NullRenderDeviceUVE::GetPresentCallCountUVE() const noexcept {
     return m_impl->presentCallCount;
 }
 
+} // namespace UVE::Render
+
+namespace UVE::Render {
+RenderDeviceCapabilitiesUVE NullRenderDeviceUVE::GetCapabilitiesUVE() const noexcept {
+    const auto model = RenderFeatureSupportUVE::Model;
+    RenderDeviceCapabilitiesUVE caps{model, model, model, model, model, model, model,
+                                     RenderFeatureSupportUVE::Unsupported, model};
+    caps.geometryShaders = model;
+    caps.timelineSemaphores = model;
+    return caps;
+}
+RenderOperationResultUVE NullRenderDeviceUVE::GetTextureDescUVE(TextureHandleUVE handle,
+                                                                TextureDescUVE &output) const {
+    const auto found = m_impl->textures.find(handle.value);
+    if (found == m_impl->textures.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    output = found->second;
+    return RenderOperationResultUVE::Success;
+}
+RenderOperationResultUVE NullRenderDeviceUVE::CopyBufferUVE(const BufferCopyDescUVE &copy) {
+    const auto source = m_impl->buffers.find(copy.source.value);
+    const auto target = m_impl->buffers.find(copy.destination.value);
+    if (source == m_impl->buffers.end() || target == m_impl->buffers.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (!IsBufferCopyRangeValidUVE(copy, source->second.bytes.size(), target->second.bytes.size()))
+        return RenderOperationResultUVE::InvalidArgument;
+    std::copy_n(source->second.bytes.data() + static_cast<std::size_t>(copy.sourceOffset),
+                static_cast<std::size_t>(copy.sizeBytes),
+                target->second.bytes.data() + static_cast<std::size_t>(copy.destinationOffset));
+    m_impl->RecordUVE(copy);
+    return RenderOperationResultUVE::Recorded;
+}
+RenderOperationResultUVE NullRenderDeviceUVE::BlitTextureUVE(const TextureBlitDescUVE &blit) {
+    const auto source = m_impl->textures.find(blit.source.value);
+    const auto target = m_impl->textures.find(blit.destination.value);
+    if (source == m_impl->textures.end() || target == m_impl->textures.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (!IsTextureBlitValidUVE(blit, source->second, target->second))
+        return RenderOperationResultUVE::InvalidArgument;
+    m_impl->RecordUVE(blit);
+    return RenderOperationResultUVE::Recorded;
+}
+RenderOperationResultUVE NullRenderDeviceUVE::GenerateMipmapsUVE(TextureHandleUVE texture) {
+    const auto found = m_impl->textures.find(texture.value);
+    if (found == m_impl->textures.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    const auto &desc = found->second;
+    if (desc.mipLevels < 2U ||
+        (desc.format != TextureFormatUVE::RGBA8Unorm && desc.format != TextureFormatUVE::RGBA16Float))
+        return RenderOperationResultUVE::InvalidArgument;
+    m_impl->RecordUVE(GenerateMipsOperationUVE{texture});
+    return RenderOperationResultUVE::Recorded;
+}
+RenderOperationResultUVE NullRenderDeviceUVE::InsertFenceUVE(FenceHandleUVE &output) {
+    if (m_impl->nextFence == 0U)
+        return RenderOperationResultUVE::SystemError;
+    const FenceHandleUVE handle{m_impl->nextFence++};
+    m_impl->fences.emplace(handle.value, true); // host model only; no claim about a GPU
+    m_impl->RecordUVE(FenceOperationUVE{handle});
+    output = handle;
+    return RenderOperationResultUVE::Recorded;
+}
+RenderOperationResultUVE NullRenderDeviceUVE::WaitFenceUVE(FenceHandleUVE handle, std::uint64_t) {
+    return m_impl->fences.contains(handle.value) ? RenderOperationResultUVE::Recorded
+                                                 : RenderOperationResultUVE::InvalidHandle;
+}
+RenderOperationResultUVE NullRenderDeviceUVE::DestroyFenceUVE(FenceHandleUVE handle) {
+    return m_impl->fences.erase(handle.value) != 0U ? RenderOperationResultUVE::Recorded
+                                                    : RenderOperationResultUVE::InvalidHandle;
+}
+RenderOperationResultUVE NullRenderDeviceUVE::WaitIdleUVE() {
+    CollectRetiredTexturesUVE();
+    return RenderOperationResultUVE::Recorded;
+}
+RenderOperationResultUVE NullRenderDeviceUVE::CreateSemaphoreUVE(const SemaphoreDescUVE &desc,
+                                                                    SemaphoreHandleUVE &output) {
+    const std::uint32_t handleValue = m_impl->nextSemaphore++;
+    {
+        const std::lock_guard lock(m_impl->semaphoreMutex);
+        m_impl->semaphores.emplace(handleValue, ImplUVE::SemaphoreRecordUVE{desc.initialValue});
+    }
+    output = SemaphoreHandleUVE{handleValue};
+    return RenderOperationResultUVE::Success;
+}
+
+RenderOperationResultUVE NullRenderDeviceUVE::GetSemaphoreCounterUVE(const SemaphoreHandleUVE semaphore,
+                                                                     std::uint64_t &output) const {
+    const std::lock_guard lock(m_impl->semaphoreMutex);
+    const auto found = m_impl->semaphores.find(semaphore.value);
+    if (found == m_impl->semaphores.end()) {
+        return RenderOperationResultUVE::InvalidHandle;
+    }
+    output = found->second.value;
+    return RenderOperationResultUVE::Success;
+}
+
+RenderOperationResultUVE NullRenderDeviceUVE::SignalSemaphoreUVE(const SemaphoreHandleUVE semaphore,
+                                                                 const std::uint64_t value) {
+    {
+        const std::lock_guard lock(m_impl->semaphoreMutex);
+        const auto found = m_impl->semaphores.find(semaphore.value);
+        if (found == m_impl->semaphores.end()) {
+            return RenderOperationResultUVE::InvalidHandle;
+        }
+        if (!IsSemaphoreSignalValueValidUVE(found->second.value, value)) {
+            UVE_ERROR("NullRenderDeviceUVE: SignalSemaphoreUVE ignored a non-increasing value");
+            return RenderOperationResultUVE::InvalidArgument;
+        }
+        found->second.value = value;
+    }
+    m_impl->RecordUVE(SignalSemaphoreOperationUVE{semaphore, value});
+    m_impl->semaphoreCondition.notify_all();
+    return RenderOperationResultUVE::Success;
+}
+
+RenderOperationResultUVE NullRenderDeviceUVE::WaitSemaphoreUVE(const SemaphoreHandleUVE semaphore,
+                                                               const std::uint64_t value,
+                                                               const std::uint64_t timeoutNs) {
+    const auto reached = [this, semaphore, value] {
+        const auto found = m_impl->semaphores.find(semaphore.value);
+        return found != m_impl->semaphores.end() && found->second.value >= value;
+    };
+    bool satisfied = false;
+    {
+        std::unique_lock lock(m_impl->semaphoreMutex);
+        if (m_impl->semaphores.find(semaphore.value) == m_impl->semaphores.end()) {
+            return RenderOperationResultUVE::InvalidHandle;
+        }
+        satisfied = m_impl->semaphoreCondition.wait_for(lock, std::chrono::nanoseconds(timeoutNs),
+                                                        reached);
+        if (!satisfied && m_impl->semaphores.find(semaphore.value) == m_impl->semaphores.end()) {
+            return RenderOperationResultUVE::InvalidHandle; // destroyed while waiting
+        }
+    }
+    m_impl->RecordUVE(WaitSemaphoreOperationUVE{semaphore, value, timeoutNs, satisfied});
+    return satisfied ? RenderOperationResultUVE::Success : RenderOperationResultUVE::TimedOut;
+}
+
+RenderOperationResultUVE NullRenderDeviceUVE::DestroySemaphoreUVE(const SemaphoreHandleUVE semaphore) {
+    {
+        const std::lock_guard lock(m_impl->semaphoreMutex);
+        if (m_impl->semaphores.erase(semaphore.value) == 0) {
+            UVE_ERROR("NullRenderDeviceUVE: DestroySemaphoreUVE called with an unknown or "
+                      "already-destroyed handle ({})",
+                      semaphore.value);
+            return RenderOperationResultUVE::InvalidHandle;
+        }
+    }
+    m_impl->semaphoreCondition.notify_all();
+    return RenderOperationResultUVE::Success;
+}
+
+RenderOperationResultUVE NullRenderDeviceUVE::CreateQueryUVE(RenderQueryKindUVE kind,
+                                                             QueryHandleUVE &output) {
+    if (kind != RenderQueryKindUVE::Timestamp && kind != RenderQueryKindUVE::AnySamplesPassed)
+        return RenderOperationResultUVE::InvalidArgument;
+    if (m_impl->nextQuery == 0U)
+        return RenderOperationResultUVE::SystemError;
+    const QueryHandleUVE handle{m_impl->nextQuery++};
+    m_impl->queries.emplace(handle.value, ImplUVE::QueryRecordUVE{kind});
+    output = handle;
+    return RenderOperationResultUVE::Recorded;
+}
+RenderOperationResultUVE NullRenderDeviceUVE::BeginQueryUVE(QueryHandleUVE handle) {
+    const auto found = m_impl->queries.find(handle.value);
+    if (found == m_impl->queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (found->second.kind != RenderQueryKindUVE::AnySamplesPassed)
+        return RenderOperationResultUVE::InvalidArgument;
+    if (m_impl->activeOcclusion != 0U)
+        return RenderOperationResultUVE::InvalidState;
+    m_impl->activeOcclusion = handle.value;
+    found->second.issued = false;
+    m_impl->RecordUVE(QueryOperationUVE{handle, found->second.kind, true});
+    return RenderOperationResultUVE::Recorded;
+}
+RenderOperationResultUVE NullRenderDeviceUVE::EndQueryUVE(QueryHandleUVE handle) {
+    const auto found = m_impl->queries.find(handle.value);
+    if (found == m_impl->queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (m_impl->activeOcclusion != handle.value)
+        return RenderOperationResultUVE::InvalidState;
+    m_impl->activeOcclusion = 0U;
+    found->second.issued = true;
+    m_impl->RecordUVE(QueryOperationUVE{handle, found->second.kind, false});
+    return RenderOperationResultUVE::Recorded;
+}
+RenderOperationResultUVE NullRenderDeviceUVE::WriteTimestampUVE(QueryHandleUVE handle) {
+    const auto found = m_impl->queries.find(handle.value);
+    if (found == m_impl->queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (found->second.kind != RenderQueryKindUVE::Timestamp)
+        return RenderOperationResultUVE::InvalidArgument;
+    found->second.issued = true;
+    m_impl->RecordUVE(QueryOperationUVE{handle, found->second.kind, false});
+    return RenderOperationResultUVE::Recorded;
+}
+RenderOperationResultUVE NullRenderDeviceUVE::GetQueryResultUVE(QueryHandleUVE handle, RenderQueryResultUVE &,
+                                                                bool) {
+    const auto found = m_impl->queries.find(handle.value);
+    if (found == m_impl->queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (!found->second.issued || m_impl->activeOcclusion == handle.value)
+        return RenderOperationResultUVE::NotReady;
+    return RenderOperationResultUVE::Unsupported; // no fabricated timing or visibility
+}
+RenderOperationResultUVE NullRenderDeviceUVE::DestroyQueryUVE(QueryHandleUVE handle) {
+    if (handle.value != 0U && m_impl->activeOcclusion == handle.value)
+        return RenderOperationResultUVE::InvalidState;
+    return m_impl->queries.erase(handle.value) != 0U ? RenderOperationResultUVE::Recorded
+                                                     : RenderOperationResultUVE::InvalidHandle;
+}
+const std::vector<RecordedDeviceOperationUVE> &
+NullRenderDeviceUVE::GetRecordedDeviceOperationsUVE() const noexcept {
+    return m_impl->operations;
+}
+std::uint64_t NullRenderDeviceUVE::GetDroppedDeviceOperationCountUVE() const noexcept {
+    return m_impl->droppedOperations;
+}
 } // namespace UVE::Render

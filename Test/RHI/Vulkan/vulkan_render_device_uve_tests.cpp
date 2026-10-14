@@ -21,6 +21,7 @@
 
 #include <array>
 #include <cstdlib>
+#include <cstdint>
 #include <cstring>
 #include <map>
 #include <memory>
@@ -31,6 +32,7 @@
 
 #include "uve/events/event_system_uve.h"
 #include "uve/rhi/i_command_buffer_uve.h"
+#include "uve/rhi/bind_group_uve.h"
 #include "uve/window/i_vulkan_window_surface_uve.h"
 #include "spirv_test_shaders_uve.h"
 #include "uve/window/null_window_manager_uve.h"
@@ -146,6 +148,33 @@ protected:
     std::unique_ptr<Window::WindowManagerUVE> windowManager;
     std::unique_ptr<VulkanRenderDeviceUVE> device;
 };
+
+TEST_F(VulkanRenderDeviceUVETest, TextureLeaseSurvivesDeferredSubmissionUntilGpuCompletion) {
+    const auto texture = device->CreateTextureUVE({1U, 1U, TextureFormatUVE::RGBA8Unorm});
+    ASSERT_NE(texture, kInvalidTextureHandleUVE);
+    auto lease = device->AdoptTransientTexturesUVE(std::vector<TextureHandleUVE>{texture});
+    ASSERT_NE(lease, nullptr);
+    std::weak_ptr<void> observer = lease;
+    auto commands = device->CreateCommandBufferUVE();
+    commands->RetainResourcesUVE(std::move(lease));
+    RenderPassDescUVE pass;
+    // Dynamic rendering can clear an offscreen transient; classic devices still exercise the
+    // same completion lifetime through a default-surface pass rather than claiming that feature.
+    if (device->GetCapabilitiesUVE().memoryBarriers == RenderFeatureSupportUVE::Native)
+        pass.colorAttachment = texture;
+    commands->BeginRenderPassUVE(pass); commands->EndRenderPassUVE();
+    std::thread worker([this, commands = std::move(commands)]() mutable { device->SubmitUVE(std::move(commands)); });
+    worker.join();
+    EXPECT_FALSE(observer.expired());
+    EXPECT_EQ(device->WaitIdleUVE(), RenderOperationResultUVE::InvalidState);
+    TextureDescUVE description;
+    EXPECT_EQ(device->GetTextureDescUVE(texture, description), RenderOperationResultUVE::Success);
+    device->PresentUVE();
+    EXPECT_FALSE(observer.expired());
+    EXPECT_EQ(device->WaitIdleUVE(), RenderOperationResultUVE::Success);
+    EXPECT_TRUE(observer.expired());
+    EXPECT_EQ(device->GetTextureDescUVE(texture, description), RenderOperationResultUVE::InvalidHandle);
+}
 
 TEST_F(VulkanRenderDeviceUVETest, DeviceReportsUsableWithHonestBootstrapName) {
     EXPECT_TRUE(device->IsUsableUVE());
@@ -345,6 +374,135 @@ TEST_F(VulkanRenderDeviceUVETest, ShaderCreationRejectsGlslTextAndAcceptsSpirv) 
     const ShaderHandleUVE shader = device->CreateShaderUVE(spirvDesc);
     ASSERT_NE(shader, kInvalidShaderHandleUVE);
     device->DestroyShaderUVE(shader);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, GeometryPipelineIsExplicitlyUnsupportedRatherThanIgnored) {
+    EXPECT_EQ(device->GetCapabilitiesUVE().geometryShaders, RenderFeatureSupportUVE::Unsupported);
+    const auto vertex = device->CreateShaderUVE({ShaderStageUVE::Vertex, kTriangleVertexSpirvUVE});
+    const auto fragment = device->CreateShaderUVE({ShaderStageUVE::Fragment, kTriangleFragmentSpirvUVE});
+    ASSERT_NE(vertex, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragment, kInvalidShaderHandleUVE);
+    PipelineDescUVE desc;
+    desc.vertexShader = vertex;
+    desc.fragmentShader = fragment;
+    // Even a live handle must not make an unsupported optional stage silently disappear.
+    desc.geometryShader = vertex;
+    std::string info;
+    EXPECT_EQ(device->CreatePipelineUVE(desc, &info), kInvalidPipelineHandleUVE);
+    EXPECT_NE(info.find("geometry shader pipelines are unsupported"), std::string::npos);
+    device->DestroyShaderUVE(fragment);
+    device->DestroyShaderUVE(vertex);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, TimestampQueriesReportRealTicksAndRefuseOcclusion) {
+    using ResultUVE = RenderOperationResultUVE;
+    const auto caps = device->GetCapabilitiesUVE();
+    ASSERT_EQ(caps.timestampQueries, RenderFeatureSupportUVE::Native);
+    EXPECT_EQ(caps.occlusionQueries, RenderFeatureSupportUVE::Unsupported)
+        << "a device-level begin/end pair cannot bracket the caller's draws in one command buffer";
+
+    QueryHandleUVE query;
+    ASSERT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::Timestamp, query), ResultUVE::Success);
+    EXPECT_EQ(device->BeginQueryUVE(query), ResultUVE::Unsupported);
+    EXPECT_EQ(device->EndQueryUVE(query), ResultUVE::Unsupported);
+    ASSERT_EQ(device->WriteTimestampUVE(query), ResultUVE::Success);
+    RenderQueryResultUVE result{};
+    ASSERT_EQ(device->GetQueryResultUVE(query, result, false), ResultUVE::Success);
+    EXPECT_EQ(result.kind, RenderQueryKindUVE::Timestamp);
+    const std::uint64_t first = result.value;
+    // A later write cannot report an earlier time; a coarse clock may legitimately repeat a tick.
+    ASSERT_EQ(device->WriteTimestampUVE(query), ResultUVE::Success);
+    ASSERT_EQ(device->GetQueryResultUVE(query, result, true), ResultUVE::Success);
+    EXPECT_GE(result.value, first);
+
+    QueryHandleUVE occlusion{};
+    EXPECT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, occlusion), ResultUVE::Unsupported);
+    EXPECT_EQ(occlusion, kInvalidQueryHandleUVE) << "a refused create must leave the output untouched";
+    EXPECT_EQ(device->CreateQueryUVE(static_cast<RenderQueryKindUVE>(0xFFU), occlusion), ResultUVE::InvalidArgument);
+    RenderQueryResultUVE untouched{};
+    untouched.value = 4321U;
+    EXPECT_EQ(device->WriteTimestampUVE(QueryHandleUVE{999999U}), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->GetQueryResultUVE(QueryHandleUVE{999999U}, untouched, false), ResultUVE::InvalidHandle);
+    EXPECT_EQ(untouched.value, 4321U) << "a refused read must leave the output untouched";
+    EXPECT_EQ(device->DestroyQueryUVE(QueryHandleUVE{999999U}), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->DestroyQueryUVE(query), ResultUVE::Success);
+    EXPECT_EQ(device->DestroyQueryUVE(query), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->GetQueryResultUVE(query, untouched, false), ResultUVE::InvalidHandle);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, TimelineSemaphoresProvideRealCountersAndHonestTimeouts) {
+    using ResultUVE = RenderOperationResultUVE;
+    ASSERT_EQ(device->GetCapabilitiesUVE().timelineSemaphores, RenderFeatureSupportUVE::Native)
+        << "the CI ICD (lavapipe) exposes Vulkan 1.2+ timeline semaphores";
+
+    SemaphoreHandleUVE semaphore;
+    ASSERT_EQ(device->CreateSemaphoreUVE(SemaphoreDescUVE{3U}, semaphore), ResultUVE::Success);
+    std::uint64_t counter = 0U;
+    ASSERT_EQ(device->GetSemaphoreCounterUVE(semaphore, counter), ResultUVE::Success);
+    EXPECT_EQ(counter, 3U);
+    EXPECT_EQ(device->WaitSemaphoreUVE(semaphore, 3U, 0U), ResultUVE::Success)
+        << "an already-reached value resolves without waiting";
+    EXPECT_EQ(device->WaitSemaphoreUVE(semaphore, 4U, 0U), ResultUVE::TimedOut);
+    EXPECT_EQ(device->SignalSemaphoreUVE(semaphore, 3U), ResultUVE::InvalidArgument)
+        << "a timeline counter never moves backwards";
+    EXPECT_EQ(device->SignalSemaphoreUVE(semaphore, 2U), ResultUVE::InvalidArgument);
+    ASSERT_EQ(device->SignalSemaphoreUVE(semaphore, 4U), ResultUVE::Success);
+    EXPECT_EQ(device->WaitSemaphoreUVE(semaphore, 4U, 1'000'000'000ULL), ResultUVE::Success);
+    ASSERT_EQ(device->GetSemaphoreCounterUVE(semaphore, counter), ResultUVE::Success);
+    EXPECT_EQ(counter, 4U);
+
+    std::uint64_t untouched = 55U;
+    EXPECT_EQ(device->GetSemaphoreCounterUVE(SemaphoreHandleUVE{999999U}, untouched), ResultUVE::InvalidHandle);
+    EXPECT_EQ(untouched, 55U) << "a refused counter read must leave the output untouched";
+    EXPECT_EQ(device->WaitSemaphoreUVE(SemaphoreHandleUVE{999999U}, 0U, 0U), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->SignalSemaphoreUVE(SemaphoreHandleUVE{999999U}, 5U), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->DestroySemaphoreUVE(SemaphoreHandleUVE{999999U}), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->DestroySemaphoreUVE(semaphore), ResultUVE::Success);
+    EXPECT_EQ(device->DestroySemaphoreUVE(semaphore), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->GetSemaphoreCounterUVE(semaphore, untouched), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->WaitIdleUVE(), ResultUVE::Success);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, StencilPipelineAndDepthStencilTextureCreateOnDynamicDevice) {
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kTriangleVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kTriangleFragmentSpirvUVE;
+    const ShaderHandleUVE vertexShader = device->CreateShaderUVE(vertexDesc);
+    const ShaderHandleUVE fragmentShader = device->CreateShaderUVE(fragmentDesc);
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+
+    TextureDescUVE depthDesc{};
+    depthDesc.width = 8U;
+    depthDesc.height = 8U;
+    depthDesc.format = TextureFormatUVE::Depth24Stencil8;
+    const TextureHandleUVE depthStencil = device->CreateTextureUVE(depthDesc);
+    ASSERT_NE(depthStencil, kInvalidTextureHandleUVE);
+
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.vertexStride = 24U;
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U});
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"COLOR", VertexAttributeFormatUVE::Float3, 12U});
+    pipelineDesc.depthTestEnabled = false;
+    pipelineDesc.depthWriteEnabled = false;
+    pipelineDesc.stencil.enabled = true;
+    pipelineDesc.stencil.front.compare = DepthCompareUVE::Equal;
+    pipelineDesc.stencil.front.depthPass = StencilOpUVE::Replace;
+    pipelineDesc.stencil.front.reference = 7U;
+    pipelineDesc.stencil.back.compare = DepthCompareUVE::Always;
+    pipelineDesc.stencil.back.depthPass = StencilOpUVE::Keep;
+    const PipelineHandleUVE pipeline = device->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyTextureUVE(depthStencil);
+    device->DestroyShaderUVE(fragmentShader);
+    device->DestroyShaderUVE(vertexShader);
 }
 
 TEST_F(VulkanRenderDeviceUVETest, SubmittedTriangleCommandBufferReallyRendersPixels) {
@@ -1465,8 +1623,10 @@ TEST_F(VulkanRenderDeviceUVETest, BoundSamplerSelectsPointFiltering) {
         commandBuffer->BeginRenderPassUVE(passDesc);
         commandBuffer->BindPipelineUVE(texturedPipeline);
         commandBuffer->BindVertexBufferUVE(quadBuffer);
-        commandBuffer->BindTextureUVE(splitTexture, 0U);
-        commandBuffer->BindSamplerUVE(pointSampler, 0U);
+        const std::array<ResourceBindingUVE, 2> group{
+            BindTextureCommandUVE{splitTexture, 0U}, BindSamplerCommandUVE{pointSampler, 0U}};
+        ASSERT_EQ(ValidateBindGroupUVE({group, {}}), BindGroupValidationUVE::Valid);
+        BindGroupUVE(*commandBuffer, {group, {}});
         commandBuffer->DrawUVE(6U);
         commandBuffer->EndRenderPassUVE();
         device->SubmitUVE(std::move(commandBuffer));
@@ -4556,6 +4716,266 @@ TEST_F(VulkanRenderDeviceUVETest, OffscreenPass_DontCareStore_StaysUsable) {
     device->DestroyTextureUVE(target0);
     device->DestroyTextureUVE(target1);
     device->DestroyTextureUVE(depth);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, FoundationCopyAndFencesOrderRealGpuWork) {
+    using ResultUVE = RenderOperationResultUVE;
+    EXPECT_EQ(device->GetCapabilitiesUVE().fences, RenderFeatureSupportUVE::Native);
+    EXPECT_EQ(device->GetCapabilitiesUVE().bufferCopy, RenderFeatureSupportUVE::Native);
+    const std::array<std::uint32_t, 4> values{7, 11, 23, 42};
+    const auto source =
+        device->CreateBufferUVE({sizeof(values), BufferUsageUVE::Storage}, std::as_bytes(std::span(values)));
+    const auto target = device->CreateBufferUVE({sizeof(values), BufferUsageUVE::Storage});
+    ASSERT_NE(source, kInvalidBufferHandleUVE);
+    ASSERT_NE(target, kInvalidBufferHandleUVE);
+    EXPECT_EQ(device->CopyBufferUVE({source, target, 1, 0, 3}), ResultUVE::InvalidArgument);
+    ASSERT_EQ(device->CopyBufferUVE({source, target, 4, 0, 12}), ResultUVE::Success);
+    FenceHandleUVE fence;
+    ASSERT_EQ(device->InsertFenceUVE(fence), ResultUVE::Success);
+    ASSERT_EQ(device->WaitFenceUVE(fence, 1'000'000'000ULL), ResultUVE::Success);
+    std::array<std::uint32_t, 4> output{};
+    ASSERT_TRUE(device->ReadbackBufferUVE(target, std::as_writable_bytes(std::span(output))));
+    EXPECT_EQ(output[0], 11U);
+    EXPECT_EQ(output[1], 23U);
+    EXPECT_EQ(output[2], 42U);
+    ASSERT_EQ(device->DestroyFenceUVE(fence), ResultUVE::Success);
+    EXPECT_EQ(device->WaitFenceUVE(fence, 0), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->WaitIdleUVE(), ResultUVE::Success);
+    device->DestroyBufferUVE(source);
+    device->DestroyBufferUVE(target);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, FoundationFencesDoNotPretendPendingCpuSubmissionsHaveExecuted) {
+    using ResultUVE = RenderOperationResultUVE;
+    auto commands = device->CreateCommandBufferUVE();
+    const auto expected = device->GetCapabilitiesUVE().memoryBarriers == RenderFeatureSupportUVE::Native
+                              ? ResultUVE::Recorded
+                              : ResultUVE::Unsupported;
+    EXPECT_EQ(commands->MemoryBarrierUVE(MemoryBarrierMaskUVE::All), expected);
+    device->SubmitUVE(std::move(commands));
+    FenceHandleUVE untouched{42U};
+    EXPECT_EQ(device->InsertFenceUVE(untouched), ResultUVE::InvalidState);
+    EXPECT_EQ(untouched.value, 42U);
+    EXPECT_EQ(device->WaitIdleUVE(), ResultUVE::InvalidState);
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+    EXPECT_EQ(device->InsertFenceUVE(untouched), ResultUVE::Success);
+    ASSERT_EQ(device->WaitFenceUVE(untouched, 1'000'000'000ULL), ResultUVE::Success);
+    EXPECT_EQ(device->DestroyFenceUVE(untouched), ResultUVE::Success);
+    RenderSurfaceInfoUVE surface;
+    ASSERT_EQ(device->GetSurfaceInfoUVE(surface), ResultUVE::Success);
+    EXPECT_TRUE(surface.drawable);
+    EXPECT_GT(surface.width, 0U);
+    EXPECT_GT(surface.imageCount, 0U);
+    QueryHandleUVE query{73U};
+    EXPECT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::Timestamp, query), ResultUVE::Unsupported);
+    EXPECT_EQ(query.value, 73U);
+    // Tier 2.6 landed the transfer paths; what remains "not yet" is result queries. The
+    // transfer ops now validate handles like every other implemented device call.
+    EXPECT_EQ(device->BlitTextureUVE({}), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->GenerateMipmapsUVE({}), ResultUVE::InvalidHandle);
+}
+
+namespace {
+
+// Fills a 4x4 RGBA8 image with four uniform 2x2 blocks so a bilinear 2x downsample has an
+// exactly predictable answer at every level.
+[[nodiscard]] std::array<std::byte, 4U * 4U * 4U> MakeBlockedSourceUVE() {
+    std::array<std::byte, 4U * 4U * 4U> bytes{};
+    constexpr std::array<std::uint8_t, 4> kBlockRed{40U, 80U, 120U, 160U};
+    for (std::uint32_t y = 0U; y < 4U; ++y) {
+        for (std::uint32_t x = 0U; x < 4U; ++x) {
+            const std::size_t block = static_cast<std::size_t>(y / 2U) * 2U + x / 2U;
+            const std::size_t texel = (static_cast<std::size_t>(y) * 4U + x) * 4U;
+            bytes[texel + 0U] = static_cast<std::byte>(kBlockRed[block]);
+            bytes[texel + 1U] = static_cast<std::byte>(7U);
+            bytes[texel + 2U] = static_cast<std::byte>(200U);
+            bytes[texel + 3U] = std::byte{0xFF};
+        }
+    }
+    return bytes;
+}
+
+[[nodiscard]] TextureDescUVE MakeTransferTextureDescUVE(const std::uint32_t size,
+                                                        const std::uint32_t mipLevels = 1U) {
+    TextureDescUVE desc{};
+    desc.width = size;
+    desc.height = size;
+    desc.mipLevels = mipLevels;
+    desc.format = TextureFormatUVE::RGBA8Unorm;
+    return desc;
+}
+
+} // namespace
+
+TEST_F(VulkanRenderDeviceUVETest, TextureTransferCapabilitiesAreAdvertisedOnARealDevice) {
+    const auto caps = device->GetCapabilitiesUVE();
+    EXPECT_EQ(caps.textureBlit, RenderFeatureSupportUVE::Native);
+    EXPECT_EQ(caps.mipGeneration, RenderFeatureSupportUVE::Native);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, BlitTextureCopiesAnExactRegionAndReadbackMatchesTheSource) {
+    using ResultUVE = RenderOperationResultUVE;
+    constexpr std::uint32_t kSize = 4U;
+    const auto sourceBytes = MakeBlockedSourceUVE();
+    const auto source = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize), sourceBytes);
+    // A Vulkan image created without an upload has undefined contents, so the "untouched texels"
+    // assertions below need a destination whose zeroes are real, not assumed.
+    const std::array<std::byte, kSize * kSize * 4U> zeroes{};
+    const auto destination = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize), zeroes);
+    ASSERT_NE(source, kInvalidTextureHandleUVE);
+    ASSERT_NE(destination, kInvalidTextureHandleUVE);
+
+    // The readback hook is the same transfer machinery in reverse, so pinning it here makes the
+    // blit assertions below meaningful.
+    std::array<std::byte, kSize * kSize * 4U> sourceReadback{};
+    ASSERT_TRUE(device->ReadbackTextureRGBA8UVE(source, 0U, 0U, sourceReadback));
+    EXPECT_EQ(sourceReadback, sourceBytes);
+
+    TextureBlitDescUVE blit{};
+    blit.source = source;
+    blit.destination = destination;
+    blit.sourceRegion = {0U, 0U, 0U, 0U, 2U, 2U}; // mip, layer, x, y, width, height
+    blit.destinationRegion = {0U, 0U, 2U, 2U, 2U, 2U};
+    blit.filter = BlitFilterUVE::Point;
+    EXPECT_EQ(device->BlitTextureUVE(blit), ResultUVE::Success);
+
+    std::array<std::byte, kSize * kSize * 4U> destinationReadback{};
+    ASSERT_TRUE(device->ReadbackTextureRGBA8UVE(destination, 0U, 0U, destinationReadback));
+    for (std::uint32_t y = 0U; y < 2U; ++y) {
+        for (std::uint32_t x = 0U; x < 2U; ++x) {
+            for (std::uint32_t channel = 0U; channel < 4U; ++channel) {
+                EXPECT_EQ(destinationReadback[((static_cast<std::size_t>(y) + 2U) * kSize + x + 2U) * 4U + channel],
+                          sourceBytes[(static_cast<std::size_t>(y) * kSize + x) * 4U + channel]);
+            }
+        }
+    }
+    for (std::uint32_t texel = 0U; texel < 2U * kSize + 2U; ++texel) {
+        EXPECT_EQ(destinationReadback[texel * 4U], std::byte{0}) << "texels outside the destination region must stay untouched";
+    }
+    device->DestroyTextureUVE(destination);
+    device->DestroyTextureUVE(source);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, BlitTextureLinearScalingAndRejectionsKeepTheirContracts) {
+    using ResultUVE = RenderOperationResultUVE;
+    constexpr std::uint32_t kSize = 4U;
+    const auto sourceBytes = MakeBlockedSourceUVE();
+    const auto source = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize), sourceBytes);
+    const auto uniformTarget = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize));
+    const auto floatTarget = device->CreateTextureUVE(
+        [] {
+            TextureDescUVE desc = MakeTransferTextureDescUVE(kSize);
+            desc.format = TextureFormatUVE::RGBA16Float;
+            return desc;
+        }());
+    const auto singleLevelSource = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize), sourceBytes);
+    ASSERT_NE(source, kInvalidTextureHandleUVE);
+    ASSERT_NE(uniformTarget, kInvalidTextureHandleUVE);
+    ASSERT_NE(floatTarget, kInvalidTextureHandleUVE);
+    ASSERT_NE(singleLevelSource, kInvalidTextureHandleUVE);
+
+    // A single-texel source region scaled up by 2 with LINEAR must stay exactly that texel.
+    TextureBlitDescUVE blit{};
+    blit.source = source;
+    blit.destination = uniformTarget;
+    blit.sourceRegion = {0U, 0U, 0U, 0U, 1U, 1U};
+    blit.destinationRegion = {0U, 0U, 0U, 0U, 2U, 2U};
+    blit.filter = BlitFilterUVE::Linear;
+    EXPECT_EQ(device->BlitTextureUVE(blit), ResultUVE::Success);
+    std::array<std::byte, kSize * kSize * 4U> readback{};
+    ASSERT_TRUE(device->ReadbackTextureRGBA8UVE(uniformTarget, 0U, 0U, readback));
+    for (std::uint32_t y = 0U; y < 2U; ++y) {
+        for (std::uint32_t x = 0U; x < 2U; ++x) {
+            const std::size_t texel = (static_cast<std::size_t>(y) * kSize + x) * 4U;
+            EXPECT_EQ(readback[texel + 0U], sourceBytes[0U]);
+            EXPECT_EQ(readback[texel + 1U], sourceBytes[1U]);
+            EXPECT_EQ(readback[texel + 2U], sourceBytes[2U]);
+            EXPECT_EQ(readback[texel + 3U], sourceBytes[3U]);
+        }
+    }
+
+    // Downsampling the whole image by 2 with LINEAR: bilinear weights average each uniform
+    // 2x2 block, so 40/80/120/160 must come back as themselves (rounding tolerance of 1).
+    const auto downsampleTarget = device->CreateTextureUVE(MakeTransferTextureDescUVE(2U));
+    ASSERT_NE(downsampleTarget, kInvalidTextureHandleUVE);
+    blit.destination = downsampleTarget;
+    blit.sourceRegion = {0U, 0U, 0U, 0U, 4U, 4U};
+    blit.destinationRegion = {0U, 0U, 0U, 0U, 2U, 2U};
+    EXPECT_EQ(device->BlitTextureUVE(blit), ResultUVE::Success);
+    std::array<std::byte, 2U * 2U * 4U> downsampled{};
+    ASSERT_TRUE(device->ReadbackTextureRGBA8UVE(downsampleTarget, 0U, 0U, downsampled));
+    constexpr std::array<std::uint8_t, 4> kExpectedRed{40U, 80U, 120U, 160U};
+    for (std::uint32_t block = 0U; block < 4U; ++block) {
+        const int actual = std::to_integer<int>(downsampled[block * 4U]);
+        EXPECT_NEAR(actual, kExpectedRed[block], 1) << "block " << block;
+    }
+
+    blit.source = source;
+    blit.destination = floatTarget;
+    blit.sourceRegion = {0U, 0U, 0U, 0U, 2U, 2U};
+    blit.destinationRegion = {0U, 0U, 0U, 0U, 2U, 2U};
+    EXPECT_EQ(device->BlitTextureUVE(blit), ResultUVE::InvalidArgument) << "format conversion is refused";
+    blit.destination = source;
+    EXPECT_EQ(device->BlitTextureUVE(blit), ResultUVE::InvalidArgument) << "self-blits are refused";
+    blit.source = singleLevelSource;
+    blit.destination = uniformTarget;
+    blit.sourceRegion = {1U, 0U, 0U, 0U, 1U, 1U};
+    EXPECT_EQ(device->BlitTextureUVE(blit), ResultUVE::InvalidArgument) << "missing mip levels are refused";
+    blit.source = TextureHandleUVE{999999U};
+    blit.sourceRegion = {0U, 0U, 0U, 0U, 2U, 2U};
+    EXPECT_EQ(device->BlitTextureUVE(blit), ResultUVE::InvalidHandle);
+
+    device->DestroyTextureUVE(singleLevelSource);
+    device->DestroyTextureUVE(floatTarget);
+    device->DestroyTextureUVE(uniformTarget);
+    device->DestroyTextureUVE(downsampleTarget);
+    device->DestroyTextureUVE(source);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, GenerateMipmapsRebuildsEveryLevelWithTheDownsampledAverage) {
+    using ResultUVE = RenderOperationResultUVE;
+    constexpr std::uint32_t kSize = 4U;
+    constexpr std::uint32_t kMipLevels = 3U;
+    const auto sourceBytes = MakeBlockedSourceUVE();
+    const auto source = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize), sourceBytes);
+    // The common upload contract requires every declared level up front
+    // (ValidateTextureUploadUVE), so the mip chain starts from a real, zeroed allocation that the
+    // seeding blit then overwrites at level 0.
+    const std::array<std::byte, (4U * 4U + 2U * 2U + 1U) * 4U> mipmappedBytes{};
+    const auto mipmapped = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize, kMipLevels), mipmappedBytes);
+    const auto singleLevel = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize), sourceBytes);
+    ASSERT_NE(source, kInvalidTextureHandleUVE);
+    ASSERT_NE(mipmapped, kInvalidTextureHandleUVE);
+    ASSERT_NE(singleLevel, kInvalidTextureHandleUVE);
+
+    TextureBlitDescUVE seed{};
+    seed.source = source;
+    seed.destination = mipmapped;
+    seed.sourceRegion = {0U, 0U, 0U, 0U, kSize, kSize};
+    seed.destinationRegion = {0U, 0U, 0U, 0U, kSize, kSize};
+    seed.filter = BlitFilterUVE::Point;
+    ASSERT_EQ(device->BlitTextureUVE(seed), ResultUVE::Success);
+    EXPECT_EQ(device->GenerateMipmapsUVE(mipmapped), ResultUVE::Success);
+
+    std::array<std::byte, 2U * 2U * 4U> levelOne{};
+    ASSERT_TRUE(device->ReadbackTextureRGBA8UVE(mipmapped, 1U, 0U, levelOne));
+    constexpr std::array<std::uint8_t, 4> kBlockRed{40U, 80U, 120U, 160U};
+    for (std::uint32_t block = 0U; block < 4U; ++block) {
+        EXPECT_NEAR(std::to_integer<int>(levelOne[block * 4U]), kBlockRed[block], 1) << "level 1 block " << block;
+        EXPECT_EQ(levelOne[block * 4U + 1U], std::byte{7U});
+        EXPECT_EQ(levelOne[block * 4U + 3U], std::byte{0xFF});
+    }
+    std::array<std::byte, 1U * 1U * 4U> levelTwo{};
+    ASSERT_TRUE(device->ReadbackTextureRGBA8UVE(mipmapped, 2U, 0U, levelTwo));
+    EXPECT_NEAR(std::to_integer<int>(levelTwo[0U]), 100, 1) << "level 2 averages the four blocks";
+
+    EXPECT_EQ(device->GenerateMipmapsUVE(singleLevel), ResultUVE::InvalidArgument);
+    EXPECT_EQ(device->GenerateMipmapsUVE(TextureHandleUVE{999999U}), ResultUVE::InvalidHandle);
+
+    device->DestroyTextureUVE(singleLevel);
+    device->DestroyTextureUVE(mipmapped);
+    device->DestroyTextureUVE(source);
 }
 
 } // namespace UVE::Render::Tests

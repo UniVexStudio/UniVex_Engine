@@ -199,3 +199,14 @@ const std::vector<RecordedCommandUVE>& NullCommandBufferUVE::GetRecordedCommands
 }
 
 } // namespace UVE::Render
+
+namespace UVE::Render {
+RenderOperationResultUVE NullCommandBufferUVE::MemoryBarrierUVE(MemoryBarrierMaskUVE mask) {
+    if (!IsMemoryBarrierMaskValidUVE(mask))
+        return RenderOperationResultUVE::InvalidArgument;
+    if (m_insideRenderPass)
+        return RenderOperationResultUVE::InvalidState;
+    m_commands.emplace_back(MemoryBarrierCommandUVE{mask});
+    return RenderOperationResultUVE::Recorded;
+}
+} // namespace UVE::Render

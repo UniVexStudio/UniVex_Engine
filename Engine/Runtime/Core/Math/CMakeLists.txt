@@ -7,6 +7,7 @@ add_library(uve_math STATIC
     Internal/vector4_uve.cpp
     Internal/quaternion_uve.cpp
     Internal/matrix4x4_uve.cpp
+    Internal/point_transform_batch_uve.cpp
     Internal/matrix3x3_uve.cpp
     Internal/trs_uve.cpp
     Internal/color_uve.cpp

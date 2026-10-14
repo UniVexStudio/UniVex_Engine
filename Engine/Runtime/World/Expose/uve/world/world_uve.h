@@ -1,59 +1,65 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
-
 #pragma once
-
+#include <cstddef>
 #include <cstdint>
-
-#include "uve/events/i_event_system_uve.h"
-#include "uve/memory/i_allocator_uve.h"
-#include "uve/entity/entity_manager_uve.h"
-#include "uve/scene/scene_graph_uve.h"
+#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include "uve/world/world_system_uve.h"
 
 namespace UVE::World {
-
-/// WorldUVE is the runtime container the docx's target architecture calls for: it owns one
-/// EntityManagerUVE (the actual, single loaded scene's entity/component storage) and drives its
-/// per-frame update, so Scene::SceneGraphUVE/EntityManagerUVE themselves stay non-ticking pure
-/// data-and-operations types, exactly as they already are. This is deliberately new code, not a
-/// port - UNIVEX-ENGINE's EngineCoreUVE (~500 lines) also owns rendering, windowing, and audio
-/// lifecycle, none of which exist in this slice, so porting it would pull in everything this
-/// restructuring explicitly defers.
+/// Owns a persistent primary scene plus independently unloadable scenes. Each uses the existing
+/// ECS/SceneGraph; there is no new serialization format. The primary uses the constructor's
+/// event bus, preserving old callers; secondary scenes isolate entity events on their own buses.
+/// Systems register before Start; names/dependencies are validated before any start callback.
+/// The existing FrameTaskGraph/FrameScheduler provide deterministic owner-thread execution:
+/// dependency order, then phase/priority/registration order, scenes in creation order, one graph
+/// propagation between BeforeTransforms and AfterTransforms. No parallel gameplay is implied.
 ///
-/// TickUVE() today only advances frame/time bookkeeping and propagates the scene's transform
-/// hierarchy (Scene::ISceneGraphUVE::UpdateUVE) - there is no gameplay/physics/animation *system*
-/// to run yet, since those modules are out of scope for this slice; a future Gameplay/Physics
-/// module would plug into TickUVE() the same way SceneGraphUVE does today.
-///
-/// Deliberately not a singleton: whatever hosts a WorldUVE (a future Application/Engine class, or
-/// a test) owns and passes it explicitly - see the restructuring plan's stated preference for
-/// minimal global state.
-///
-/// Thread-safety: not thread-safe; TickUVE() and the entity manager must be driven from a single
-/// owning thread, matching EntityManagerUVE's own contract.
+/// Start rolls back failed initialization in reverse order (including the failing start).
+/// Unload/shutdown stop systems while their scene is alive, detach its identity, then destroy
+/// entities in index order. The primary cannot be unloaded independently; Shutdown clears it.
+/// Structural world mutation during callbacks fails Busy. Mutating an unloading scene from its
+/// entity-destruction notifications is not permitted. Scene/entity borrows expire at unload;
+/// all operations and lifetimes are controlled by one owning thread.
 class WorldUVE final {
-public:
-    WorldUVE(Memory::IAllocatorUVE& allocator, Events::IEventSystemUVE& eventSystem);
+  public:
+    static constexpr std::size_t kMaximumSystemsUVE = 128U;
+    static constexpr std::size_t kMaximumScenesUVE = 256U;
+    WorldUVE(Memory::IAllocatorUVE &allocator, Events::IEventSystemUVE &eventSystem);
+    ~WorldUVE();
+    WorldUVE(const WorldUVE &) = delete;
+    WorldUVE &operator=(const WorldUVE &) = delete;
 
-    WorldUVE(const WorldUVE&) = delete;
-    WorldUVE& operator=(const WorldUVE&) = delete;
-
-    /// Advances frame bookkeeping (frame count, accumulated time) and propagates the scene's
-    /// parent/child transform hierarchy. `deltaTimeSeconds` must be finite and non-negative;
-    /// violations are asserted in debug builds and clamped to 0 in release, matching
-    /// EntityManagerUVE's own fail-safe conventions elsewhere in this codebase.
+    [[nodiscard]] WorldResultUVE RegisterSystemUVE(WorldSystemDescUVE system);
+    [[nodiscard]] WorldResultUVE UnregisterSystemUVE(std::string_view name);
+    [[nodiscard]] WorldResultUVE StartUVE();
+    [[nodiscard]] WorldResultUVE TryTickUVE(float deltaTimeSeconds);
+    /// Legacy wrapper: invalid deltas assert in Debug and clamp to zero in Release as before;
+    /// lifecycle/system failure is logged rather than silently reported as a successful tick.
     void TickUVE(float deltaTimeSeconds);
+    [[nodiscard]] WorldResultUVE ShutdownUVE() noexcept;
 
-    [[nodiscard]] Scene::IEntityManagerUVE& GetEntityManagerUVE() noexcept { return m_entityManager; }
-    [[nodiscard]] const Scene::IEntityManagerUVE& GetEntityManagerUVE() const noexcept { return m_entityManager; }
+    /// Optional population callback can use SceneSerializerUVE/PrefabSystemUVE on the new scene.
+    /// Rejection/exception discards that scene without altering existing scenes or outHandle.
+    [[nodiscard]] WorldResultUVE CreateSceneUVE(std::string name, SceneHandleUVE &outHandle,
+                                                std::function<bool(SceneUVE &)> populate = {});
+    [[nodiscard]] WorldResultUVE UnloadSceneUVE(SceneHandleUVE handle);
+    [[nodiscard]] WorldResultUVE SetSceneEnabledUVE(SceneHandleUVE handle, bool enabled);
+    [[nodiscard]] SceneUVE *GetSceneUVE(SceneHandleUVE handle) noexcept;
+    [[nodiscard]] const SceneUVE *GetSceneUVE(SceneHandleUVE handle) const noexcept;
+    [[nodiscard]] SceneHandleUVE GetPrimarySceneHandleUVE() const noexcept;
+    [[nodiscard]] std::size_t GetSceneCountUVE() const noexcept;
+    [[nodiscard]] WorldStateUVE GetStateUVE() const noexcept;
+    /// Persistent primary storage, retained (empty) after Shutdown for legacy reference stability.
+    [[nodiscard]] Scene::IEntityManagerUVE &GetEntityManagerUVE() noexcept;
+    [[nodiscard]] const Scene::IEntityManagerUVE &GetEntityManagerUVE() const noexcept;
+    [[nodiscard]] std::uint64_t GetFrameCountUVE() const noexcept;
+    [[nodiscard]] float GetTotalTimeSecondsUVE() const noexcept;
 
-    [[nodiscard]] std::uint64_t GetFrameCountUVE() const noexcept { return m_frameCount; }
-    [[nodiscard]] float GetTotalTimeSecondsUVE() const noexcept { return m_totalTimeSeconds; }
-
-private:
-    Scene::EntityManagerUVE m_entityManager;
-    Scene::SceneGraphUVE m_sceneGraph;
-    std::uint64_t m_frameCount = 0;
-    float m_totalTimeSeconds = 0.0F;
+  private:
+    struct ImplUVE;
+    std::unique_ptr<ImplUVE> m_impl;
 };
-
 } // namespace UVE::World

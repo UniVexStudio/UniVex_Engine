@@ -60,6 +60,7 @@
 #include "uve/audio/miniaudio_audio_device_uve.h"
 #include "uve/audio/null_audio_device_uve.h"
 #include "uve/audio/wav_importer_uve.h"
+#include "uve/audio/compressed_audio_importer_uve.h"
 #include "uve/commandline/command_line_uve.h"
 #include "uve/config/config_manager_uve.h"
 #include "uve/core/engine_project_settings_uve.h"
@@ -630,6 +631,7 @@ void EngineCoreUVE::Init() {
     // AssetImporter fourteenth: retains the existing extension-selected synchronous import behavior.
     m_assetImporter = std::make_unique<Asset::AssetImporterUVE>();
     Audio::RegisterWavImporterUVE(*m_assetImporter);
+    Audio::RegisterCompressedAudioImportersUVE(*m_assetImporter);
     Asset::RegisterTtfImporterUVE(*m_assetImporter);
 
     // Compose the schema-driven Data Table importers and typed loader onto the existing generic

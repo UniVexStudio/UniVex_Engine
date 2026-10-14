@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <unordered_set>
 #include <utility>
 
 #include "uve/uvscript/uvscript_native_uve.h"
@@ -30,6 +31,10 @@ struct FrameUVE final {
     const ChunkUVE* chunk = nullptr;
     std::size_t ip = 0U;
     std::size_t base = 0U;
+    /// Source line of the previous instruction checked in this frame. Breakpoints and steps
+    /// trigger on arriving at a line, so the instructions after a `Call` on the caller's line
+    /// do not re-trigger the breakpoint that the call already passed.
+    std::uint32_t debugLine = 0U;
 };
 
 /// A handler that is running or paused on `wait`. Interpreted, it is a value stack and call
@@ -80,6 +85,68 @@ struct ScriptInstanceUVE::StateUVE final {
     std::vector<CoroutineUVE> waiting;
     std::string lastError;
 
+    enum class DebugActionUVE : std::uint8_t { Continue, StepInto, StepOver };
+    bool debuggerEnabled = false;
+    std::size_t executionDepth = 0U;
+    std::unordered_set<std::uint32_t> breakpoints;
+    DebugActionUVE debugAction = DebugActionUVE::Continue;
+    std::size_t debugStepDepth = 0U;
+    bool debugSkipFirstInstruction = false;
+    bool debugPaused = false;
+    std::optional<CoroutineUVE> pausedCoroutine;
+    bool pausedFromCall = false;
+    std::optional<ScriptDebugSnapshotUVE> debugSnapshot;
+
+    [[nodiscard]] ScriptDebugSnapshotUVE MakeDebugSnapshotUVE(const CoroutineUVE& co,
+                                                            const FrameUVE& frame,
+                                                            const std::size_t instructionIndex) const {
+        ScriptDebugSnapshotUVE snapshot;
+        snapshot.line = frame.chunk->code[instructionIndex].line;
+        snapshot.functionName = frame.chunk->name;
+        snapshot.instructionIndex = instructionIndex;
+        snapshot.callDepth = co.frames.size();
+        const std::size_t begin = std::min(frame.base, co.stack.size());
+        const std::size_t end = std::min(co.stack.size(), frame.base + frame.chunk->localCount);
+        snapshot.locals.assign(co.stack.begin() + static_cast<std::ptrdiff_t>(begin),
+                               co.stack.begin() + static_cast<std::ptrdiff_t>(end));
+        snapshot.fields.reserve(program->fields.size());
+        for (std::size_t i = 0U; i < program->fields.size(); ++i) {
+            snapshot.fields.emplace_back(program->fields[i].name, fields[i]);
+        }
+        return snapshot;
+    }
+
+    [[nodiscard]] ScriptDebugResumeResultUVE ResumePausedUVE(const DebugActionUVE action) {
+        if (!pausedCoroutine.has_value()) {
+            return {ScriptDebugStateUVE::NotPaused, std::nullopt};
+        }
+        debugAction = action;
+        debugStepDepth = pausedCoroutine->frames.size();
+        lastError.clear();
+        debugSkipFirstInstruction = true;
+        debugPaused = false;
+        CoroutineUVE co = std::move(*pausedCoroutine);
+        pausedCoroutine.reset();
+        const bool fromCall = pausedFromCall;
+        std::optional<ValueUVE> result = Resume(co);
+        if (debugPaused) {
+            pausedCoroutine = std::move(co);
+            return {ScriptDebugStateUVE::Paused, std::nullopt};
+        }
+        if (co.IsRunningUVE()) {
+            waiting.push_back(std::move(co));
+            return {ScriptDebugStateUVE::Waiting, std::nullopt};
+        }
+        if (!lastError.empty()) {
+            return {ScriptDebugStateUVE::Failed, std::nullopt};
+        }
+        return {ScriptDebugStateUVE::Completed, fromCall ? result : std::nullopt};
+    }
+
+    [[nodiscard]] bool DebuggerBusyUVE() const noexcept {
+        return debugPaused || (debuggerEnabled && executionDepth != 0U);
+    }
+
     /// Starts `chunk` with `args` on a fresh coroutine.
     CoroutineUVE Start(const ChunkUVE& chunk, const std::span<const ValueUVE> args) const {
         CoroutineUVE co;
@@ -100,8 +167,29 @@ struct ScriptInstanceUVE::StateUVE final {
                     throw ErrorUVE{"this ran too long without stopping - is a loop missing its exit?"};
                 }
                 FrameUVE& frame = co.frames.back();
-                const InstructionUVE& in = frame.chunk->code[frame.ip++];
+                const std::size_t instructionIndex = frame.ip;
+                const InstructionUVE& in = frame.chunk->code[instructionIndex];
                 line = in.line;
+                if (debuggerEnabled) {
+                    const bool arrivedAtLine = frame.debugLine != line;
+                    bool pause = false;
+                    if (debugSkipFirstInstruction) {
+                        debugSkipFirstInstruction = false;
+                    } else if (arrivedAtLine && breakpoints.contains(line)) {
+                        pause = true;
+                    } else if (debugAction == DebugActionUVE::StepInto) {
+                        pause = arrivedAtLine;
+                    } else if (debugAction == DebugActionUVE::StepOver) {
+                        pause = co.frames.size() <= debugStepDepth && arrivedAtLine;
+                    }
+                    frame.debugLine = line;
+                    if (pause) {
+                        debugPaused = true;
+                        debugSnapshot = MakeDebugSnapshotUVE(co, frame, instructionIndex);
+                        return std::nullopt;
+                    }
+                }
+                ++frame.ip;
                 std::vector<ValueUVE>& s = co.stack;
                 const auto pop = [&s] {
                     ValueUVE v = std::move(s.back());
@@ -248,6 +336,7 @@ struct ScriptInstanceUVE::StateUVE final {
         } catch (const std::bad_variant_access&) {
             lastError = "line " + std::to_string(line) + ": a value had an unexpected type";
         }
+        debugPaused = false;
         co.frames.clear();
         return std::nullopt;
     }
@@ -268,8 +357,17 @@ struct ScriptInstanceUVE::StateUVE final {
 
     /// Run, for either form of coroutine.
     std::optional<ValueUVE> Resume(CoroutineUVE& co) {
+        struct ExecutionGuardUVE final {
+            std::size_t& depth;
+            explicit ExecutionGuardUVE(std::size_t& value) : depth(value) { ++depth; }
+            ~ExecutionGuardUVE() { --depth; }
+        } guard{executionDepth};
         if (!co.nativeRunning) {
-            return Run(co);
+            std::optional<ValueUVE> result = Run(co);
+            if (!debugPaused) {
+                debugAction = DebugActionUVE::Continue;
+            }
+            return result;
         }
         Native::ContextUVE context{fields, *host, kInstructionBudgetUVE, 0U, 0U};
         try {
@@ -334,6 +432,7 @@ ScriptInstanceUVE::ScriptInstanceUVE(std::shared_ptr<const ProgramUVE> program, 
 ScriptInstanceUVE::~ScriptInstanceUVE() = default;
 
 bool ScriptInstanceUVE::RaiseEventUVE(const std::string_view event, const std::span<const ValueUVE> args) {
+    if (m_state->DebuggerBusyUVE()) return false;
     const auto& handlers = m_state->program->handlers;
     const auto it = std::ranges::find_if(handlers, [event](const auto& h) { return h.first == event; });
     if (it == handlers.end()) {
@@ -352,7 +451,10 @@ bool ScriptInstanceUVE::RaiseEventUVE(const std::string_view event, const std::s
     m_state->lastError.clear();
     CoroutineUVE co = m_state->StartChunk(it->second, args);
     static_cast<void>(m_state->Resume(co));
-    if (co.IsRunningUVE()) {
+    if (m_state->debugPaused) {
+        m_state->pausedCoroutine = std::move(co);
+        m_state->pausedFromCall = false;
+    } else if (co.IsRunningUVE()) {
         m_state->waiting.push_back(std::move(co));
     }
     const bool ok = m_state->lastError.empty();
@@ -363,18 +465,28 @@ bool ScriptInstanceUVE::RaiseEventUVE(const std::string_view event, const std::s
 }
 
 void ScriptInstanceUVE::AdvanceUVE(const double seconds) {
+    if (m_state->DebuggerBusyUVE()) return;
     // Only those already waiting when this call starts count down now; a handler that waits again
     // while resuming joins the back of the line for the next call.
     std::vector<CoroutineUVE> waiting = std::move(m_state->waiting);
     m_state->waiting.clear();
     for (CoroutineUVE& co : waiting) {
         co.waitRemaining -= seconds;
+        // Keep other ready handlers queued once one owns the debugger pause. Time still
+        // advances once for every handler that was waiting on entry to this tick.
+        if (m_state->debugPaused) {
+            m_state->waiting.push_back(std::move(co));
+            continue;
+        }
         if (co.waitRemaining > 1e-9) {
             m_state->waiting.push_back(std::move(co));
             continue;
         }
         static_cast<void>(m_state->Resume(co));
-        if (co.IsRunningUVE()) {
+        if (m_state->debugPaused) {
+            m_state->pausedCoroutine = std::move(co);
+            m_state->pausedFromCall = false;
+        } else if (co.IsRunningUVE()) {
             m_state->waiting.push_back(std::move(co));
         }
     }
@@ -390,6 +502,7 @@ bool ScriptInstanceUVE::HasFunctionUVE(const std::string_view name, const std::s
 }
 
 std::optional<ValueUVE> ScriptInstanceUVE::CallUVE(const std::string_view name, const std::span<const ValueUVE> args) {
+    if (m_state->DebuggerBusyUVE()) return std::nullopt;
     if (g_callDepthUVE >= kMaximumCallDepthUVE) {
         // Fail closed like a missing method, without an error: the chain stops, and every call
         // already entered still completes. Writing lastError here would fail the outer calls too,
@@ -408,6 +521,10 @@ std::optional<ValueUVE> ScriptInstanceUVE::CallUVE(const std::string_view name, 
             m_state->lastError.clear();
             CoroutineUVE co = m_state->StartChunk(index, args);
             std::optional<ValueUVE> result = m_state->Resume(co);
+            if (m_state->debugPaused) {
+                m_state->pausedCoroutine = std::move(co);
+                m_state->pausedFromCall = true;
+            }
             return m_state->lastError.empty() ? result : std::nullopt;
         }
     }
@@ -449,6 +566,47 @@ std::size_t ScriptInstanceUVE::GetWaitingCountUVE() const noexcept {
 
 const std::string& ScriptInstanceUVE::GetLastErrorUVE() const noexcept {
     return m_state->lastError;
+}
+
+bool ScriptInstanceUVE::EnableDebuggerUVE() {
+    if (IsNativeUVE() || m_state->executionDepth != 0U) return false;
+    m_state->debuggerEnabled = true;
+    return true;
+}
+
+void ScriptInstanceUVE::DisableDebuggerUVE() noexcept {
+    m_state->debuggerEnabled = false;
+    m_state->breakpoints.clear();
+    m_state->pausedCoroutine.reset();
+    m_state->debugSnapshot.reset();
+    m_state->debugPaused = false;
+    m_state->debugSkipFirstInstruction = false;
+    m_state->debugAction = StateUVE::DebugActionUVE::Continue;
+}
+
+bool ScriptInstanceUVE::SetDebuggerBreakpointsUVE(const std::span<const std::uint32_t> lines) {
+    if (!EnableDebuggerUVE()) return false;
+    m_state->breakpoints.clear();
+    for (const std::uint32_t line : lines) {
+        if (line != 0U) m_state->breakpoints.insert(line);
+    }
+    return true;
+}
+
+void ScriptInstanceUVE::ClearDebuggerBreakpointsUVE() noexcept { m_state->breakpoints.clear(); }
+bool ScriptInstanceUVE::IsDebuggerEnabledUVE() const noexcept { return m_state->debuggerEnabled; }
+bool ScriptInstanceUVE::IsDebugPausedUVE() const noexcept { return m_state->debugPaused; }
+std::optional<ScriptDebugSnapshotUVE> ScriptInstanceUVE::GetDebugSnapshotUVE() const {
+    return m_state->debugPaused ? m_state->debugSnapshot : std::nullopt;
+}
+ScriptDebugResumeResultUVE ScriptInstanceUVE::ContinueDebugUVE() {
+    return m_state->ResumePausedUVE(StateUVE::DebugActionUVE::Continue);
+}
+ScriptDebugResumeResultUVE ScriptInstanceUVE::StepIntoDebugUVE() {
+    return m_state->ResumePausedUVE(StateUVE::DebugActionUVE::StepInto);
+}
+ScriptDebugResumeResultUVE ScriptInstanceUVE::StepOverDebugUVE() {
+    return m_state->ResumePausedUVE(StateUVE::DebugActionUVE::StepOver);
 }
 
 } // namespace UVE::UVScript

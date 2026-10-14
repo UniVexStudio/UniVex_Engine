@@ -114,6 +114,7 @@ add_library(uve_asset STATIC
     Internal/mtl_metadata_uve.cpp
     Internal/shader_source_importer_uve.cpp
     Internal/hot_reload_uve.cpp
+    Internal/native_file_watcher_uve.cpp
     Internal/asset_import_queue_uve.cpp
     Internal/project_change_watcher_uve.cpp
     Internal/project_file_index_uve.cpp

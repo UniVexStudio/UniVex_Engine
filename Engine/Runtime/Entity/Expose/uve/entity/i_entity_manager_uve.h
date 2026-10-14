@@ -11,6 +11,8 @@
 
 #include "uve/logging/assert_uve.h"
 #include "uve/component/component_type_info_uve.h"
+#include "uve/component/component_access_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/entity/entity_view_uve.h"
 
@@ -77,7 +79,7 @@ public:
     /// non-brace-enclosed initializer, i.e. exactly this call copy-constructing `T` from a single
     /// existing value — confirmed by direct testing across both compilers this project targets.
     template <typename T, typename... TArgs>
-    T& AddComponentUVE(EntityUVE entity, TArgs&&... args) {
+    PublicComponentUVE<T>& AddComponentUVE(EntityUVE entity, TArgs&&... args) {
         void* const slot = AddComponentErased(entity, std::type_index(typeid(T)), MakeComponentTypeInfoUVE<T>());
         return *(::new (slot) T(std::forward<TArgs>(args)...));
     }
@@ -91,6 +93,8 @@ public:
     /// only knows by std::type_index.
     [[nodiscard]] void* AddComponentUVE(EntityUVE entity, std::type_index componentType,
                                         const ComponentTypeInfoUVE& typeInfo) {
+        // Runtime-derived caches are not generic authoring/serialization destinations.
+        if (componentType == std::type_index(typeid(WorldTransformComponentUVE))) return nullptr;
         void* const slot = AddComponentErased(entity, componentType, typeInfo);
         typeInfo.constructDefault(slot);
         return slot;
@@ -119,7 +123,14 @@ public:
 
     /// Returns a reference to `entity`'s `T`. Asserts `entity` is alive and currently has one.
     template <typename T>
-    [[nodiscard]] T& GetComponentUVE(EntityUVE entity) {
+    [[nodiscard]] PublicComponentUVE<T>& GetComponentUVE(EntityUVE entity) {
+        return *static_cast<PublicComponentUVE<T>*>(GetComponentErased(entity, std::type_index(typeid(T))));
+    }
+
+    /// Scene-graph authority is required for mutable live derived caches. The access key cannot
+    /// be constructed by ordinary consumers; the type-erased lookup stays implementation-private.
+    template <typename T>
+    [[nodiscard]] T& GetSceneGraphComponentUVE(EntityUVE entity, SceneGraphWriteAccessUVE) {
         return *static_cast<T*>(GetComponentErased(entity, std::type_index(typeid(T))));
     }
 
@@ -144,12 +155,17 @@ public:
             UVE_ASSERT(HasComponentErased(entity, componentType));
             return nullptr;
         }
+        if (componentType == std::type_index(typeid(WorldTransformComponentUVE))) return nullptr;
         return GetComponentErased(entity, componentType);
     }
 
-    /// Const overload of GetComponentPointerUVE().
+    /// Const erased reads include derived caches; mutable erased access above rejects them.
     [[nodiscard]] const void* GetComponentPointerUVE(EntityUVE entity, std::type_index componentType) const {
-        return const_cast<IEntityManagerUVE*>(this)->GetComponentPointerUVE(entity, componentType);
+        if (!IsAliveUVE(entity) || !HasComponentErased(entity, componentType)) {
+            UVE_ASSERT(IsAliveUVE(entity) && HasComponentErased(entity, componentType));
+            return nullptr;
+        }
+        return const_cast<IEntityManagerUVE*>(this)->GetComponentErased(entity, componentType);
     }
 
     /// Invokes `callback(EntityUVE, TComponents&...)` once for every entity whose current
@@ -159,8 +175,18 @@ public:
     void ForEachUVE(TFunc&& callback) {
         const std::vector<std::type_index> types{std::type_index(typeid(TComponents))...};
         ForEachErased(types, [&callback](EntityUVE entity, const std::vector<void*>& pointers) {
-            Detail::InvokeForEachCallbackUVE<TComponents...>(callback, entity, pointers,
-                                                               std::index_sequence_for<TComponents...>{});
+            Detail::InvokeForEachCallbackUVE<PublicComponentUVE<TComponents>...>(
+                callback, entity, pointers, std::index_sequence_for<TComponents...>{});
+        });
+    }
+
+    /// Same stable-archetype iteration rule, but mutable cache references require scene-graph authority.
+    template <typename... TComponents, typename TFunc>
+    void ForEachSceneGraphUVE(SceneGraphWriteAccessUVE, TFunc&& callback) {
+        const std::vector<std::type_index> types{std::type_index(typeid(TComponents))...};
+        ForEachErased(types, [&callback](EntityUVE entity, const std::vector<void*>& pointers) {
+            Detail::InvokeForEachCallbackUVE<TComponents...>(
+                callback, entity, pointers, std::index_sequence_for<TComponents...>{});
         });
     }
 

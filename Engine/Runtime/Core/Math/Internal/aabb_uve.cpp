@@ -2,6 +2,7 @@
 
 
 #include "uve/math/aabb_uve.h"
+#include "uve/math/point_transform_batch_uve.h"
 
 #include <algorithm>
 #include <array>
@@ -16,10 +17,18 @@ AabbUVE AabbUVE::TransformUVE(const Matrix4x4UVE& matrix) const noexcept {
         Vector3UVE{min.x, max.y, max.z}, Vector3UVE{max.x, max.y, max.z},
     };
 
-    Vector3UVE newMin = TransformPointUVE(matrix, corners[0]);
+    std::array<Vector3UVE, 8> transformedCorners{};
+    if (!TryTransformPointsUVE(matrix, corners, transformedCorners)) {
+        // Matching disjoint arrays satisfy the current batch contract; preserve the scalar
+        // result even if a future kernel introduces additional validation requirements.
+        for (std::size_t index = 0U; index < corners.size(); ++index) {
+            transformedCorners[index] = TransformPointUVE(matrix, corners[index]);
+        }
+    }
+    Vector3UVE newMin = transformedCorners[0];
     Vector3UVE newMax = newMin;
     for (std::size_t index = 1; index < corners.size(); ++index) {
-        const Vector3UVE transformed = TransformPointUVE(matrix, corners[index]);
+        const Vector3UVE transformed = transformedCorners[index];
         newMin.x = std::min(newMin.x, transformed.x);
         newMin.y = std::min(newMin.y, transformed.y);
         newMin.z = std::min(newMin.z, transformed.z);

@@ -15,7 +15,8 @@ template <typename TFunctionPointer>
 } // namespace
 
 bool GlFunctionsUVE::IsCompleteUVE() const noexcept {
-    return glGenBuffers != nullptr && glDeleteBuffers != nullptr && glBindBuffer != nullptr &&
+    return glStencilFuncSeparate != nullptr && glStencilOpSeparate != nullptr &&
+           glStencilMaskSeparate != nullptr && glGenBuffers != nullptr && glDeleteBuffers != nullptr && glBindBuffer != nullptr &&
            glBufferData != nullptr && glBufferSubData != nullptr && glGetBufferSubData != nullptr &&
            glBindBufferBase != nullptr &&
            glGenVertexArrays != nullptr && glDeleteVertexArrays != nullptr && glBindVertexArray != nullptr &&
@@ -36,6 +37,31 @@ bool GlFunctionsUVE::IsCompleteUVE() const noexcept {
 GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
     GlFunctionsUVE functions;
 
+    functions.glCopyBufferSubData =
+        LoadOneUVE<PFNGLCOPYBUFFERSUBDATAPROC>(getProcAddress, "glCopyBufferSubData");
+    functions.glBlitFramebuffer = LoadOneUVE<PFNGLBLITFRAMEBUFFERPROC>(getProcAddress, "glBlitFramebuffer");
+    functions.glGenerateMipmap = LoadOneUVE<PFNGLGENERATEMIPMAPPROC>(getProcAddress, "glGenerateMipmap");
+    functions.glFenceSync = LoadOneUVE<PFNGLFENCESYNCPROC>(getProcAddress, "glFenceSync");
+    functions.glClientWaitSync = LoadOneUVE<PFNGLCLIENTWAITSYNCPROC>(getProcAddress, "glClientWaitSync");
+    functions.glDeleteSync = LoadOneUVE<PFNGLDELETESYNCPROC>(getProcAddress, "glDeleteSync");
+    functions.glGenQueries = LoadOneUVE<PFNGLGENQUERIESPROC>(getProcAddress, "glGenQueries");
+    functions.glDeleteQueries = LoadOneUVE<PFNGLDELETEQUERIESPROC>(getProcAddress, "glDeleteQueries");
+    functions.glBeginQuery = LoadOneUVE<PFNGLBEGINQUERYPROC>(getProcAddress, "glBeginQuery");
+    functions.glEndQuery = LoadOneUVE<PFNGLENDQUERYPROC>(getProcAddress, "glEndQuery");
+    functions.glGetQueryiv = LoadOneUVE<PFNGLGETQUERYIVPROC>(getProcAddress, "glGetQueryiv");
+    functions.glGetQueryObjectuiv =
+        LoadOneUVE<PFNGLGETQUERYOBJECTUIVPROC>(getProcAddress, "glGetQueryObjectuiv");
+#if !defined(__ANDROID__)
+    functions.glQueryCounter = LoadOneUVE<PFNGLQUERYCOUNTERPROC>(getProcAddress, "glQueryCounter");
+    functions.glGetQueryObjectui64v =
+        LoadOneUVE<PFNGLGETQUERYOBJECTUI64VPROC>(getProcAddress, "glGetQueryObjectui64v");
+#endif
+    functions.glStencilFuncSeparate =
+        LoadOneUVE<PFNGLSTENCILFUNCSEPARATEPROC>(getProcAddress, "glStencilFuncSeparate");
+    functions.glStencilOpSeparate =
+        LoadOneUVE<PFNGLSTENCILOPSEPARATEPROC>(getProcAddress, "glStencilOpSeparate");
+    functions.glStencilMaskSeparate =
+        LoadOneUVE<PFNGLSTENCILMASKSEPARATEPROC>(getProcAddress, "glStencilMaskSeparate");
     functions.glGenBuffers = LoadOneUVE<PFNGLGENBUFFERSPROC>(getProcAddress, "glGenBuffers");
     functions.glDeleteBuffers = LoadOneUVE<PFNGLDELETEBUFFERSPROC>(getProcAddress, "glDeleteBuffers");
     functions.glBindBuffer = LoadOneUVE<PFNGLBINDBUFFERPROC>(getProcAddress, "glBindBuffer");

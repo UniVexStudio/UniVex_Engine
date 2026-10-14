@@ -219,6 +219,47 @@ public:
         bool enableValidationLayersUVE = false);
 
     ~VulkanRenderDeviceUVE() override;
+    [[nodiscard]] RenderDeviceCapabilitiesUVE GetCapabilitiesUVE() const noexcept override;
+    [[nodiscard]] RenderOperationResultUVE GetTextureDescUVE(TextureHandleUVE,
+                                                             TextureDescUVE &) const override;
+    [[nodiscard]] RenderOperationResultUVE CopyBufferUVE(const BufferCopyDescUVE &) override;
+    /// Tier 2.6 color blit: one recorded vkCmdBlitImage on a transient command buffer, gated on
+    /// the per-format blit/filter feature bits, with both subresources restored to the layout the
+    /// backend samples from. Rejects mid-pass calls and open CPU submission FIFOs like CopyBuffer.
+    [[nodiscard]] RenderOperationResultUVE BlitTextureUVE(const TextureBlitDescUVE &) override;
+    /// Rebuilds levels 1..n-1 by linear-blitting each level from the one above, for every array
+    /// layer. Requires mipLevels >= 2 plus BLIT_SRC|BLIT_DST|LINEAR_FILTER on the image format.
+    [[nodiscard]] RenderOperationResultUVE GenerateMipmapsUVE(TextureHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE InsertFenceUVE(FenceHandleUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE WaitFenceUVE(FenceHandleUVE, std::uint64_t) override;
+    [[nodiscard]] RenderOperationResultUVE DestroyFenceUVE(FenceHandleUVE) override;
+    /// Timestamp queries: one single-sample `VK_QUERY_TYPE_TIMESTAMP` pool per handle.
+    /// `WriteTimestampUVE` rides a transient reset+write submission (the queue-ordered point in
+    /// time), and results are converted from the device's tick period to nanoseconds. Occlusion
+    /// queries stay Unsupported: `vkCmdBeginQuery`/`vkCmdEndQuery` must bracket the caller's own
+    /// draws inside ONE command buffer, which this device-level API cannot promise.
+    [[nodiscard]] RenderOperationResultUVE CreateQueryUVE(RenderQueryKindUVE, QueryHandleUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE BeginQueryUVE(QueryHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE EndQueryUVE(QueryHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE WriteTimestampUVE(QueryHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE GetQueryResultUVE(QueryHandleUVE, RenderQueryResultUVE &,
+                                                             bool = false) override;
+    [[nodiscard]] RenderOperationResultUVE DestroyQueryUVE(QueryHandleUVE) override;
+    /// Timeline semaphores (Vulkan 1.2 feature): real device counters with CPU-visible waits.
+    /// Every call reports Unsupported until the feature is enabled and its entry points resolve,
+    /// so a 1.0/1.1 host never half-implements the contract.
+    [[nodiscard]] RenderOperationResultUVE CreateSemaphoreUVE(const SemaphoreDescUVE &,
+                                                              SemaphoreHandleUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE GetSemaphoreCounterUVE(SemaphoreHandleUVE,
+                                                                  std::uint64_t &) const override;
+    [[nodiscard]] RenderOperationResultUVE SignalSemaphoreUVE(SemaphoreHandleUVE, std::uint64_t) override;
+    [[nodiscard]] RenderOperationResultUVE WaitSemaphoreUVE(SemaphoreHandleUVE, std::uint64_t,
+                                                            std::uint64_t) override;
+    [[nodiscard]] RenderOperationResultUVE DestroySemaphoreUVE(SemaphoreHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE WaitIdleUVE() override;
+    [[nodiscard]] RenderOperationResultUVE GetSurfaceInfoUVE(RenderSurfaceInfoUVE &) const override;
+    // Occlusion queries retain the interface's explicit Unsupported contract; the capability
+    // never advertises them.
 
     VulkanRenderDeviceUVE(const VulkanRenderDeviceUVE&) = delete;
     VulkanRenderDeviceUVE& operator=(const VulkanRenderDeviceUVE&) = delete;
@@ -281,6 +322,14 @@ public:
     [[nodiscard]] bool ReadbackLatestPresentedImageUVE(std::span<std::byte> outRGBA8,
                                                        std::uint32_t& outWidth,
                                                        std::uint32_t& outHeight);
+
+    /// Copies one mip/layer of a byte-per-channel color texture into `outRGBA8` (R,G,B,A byte
+    /// order, like the surface readback). The caller sizes the span to
+    /// max(1, width >> mip) * max(1, height >> mip) * 4 bytes. Cold path: drains the queue and
+    /// rides the same transient-command-buffer transfer path as the blit; returns false with a
+    /// logged reason on any validation or Vulkan failure.
+    [[nodiscard]] bool ReadbackTextureRGBA8UVE(TextureHandleUVE texture, std::uint32_t mipLevel,
+                                               std::uint32_t layer, std::span<std::byte> outRGBA8);
 
 private:
     /// Creates the 1x1 white fallback texture after device initialisation (M2c sampler

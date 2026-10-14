@@ -3024,8 +3024,11 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidCameraParametersAreSafeNoOpInRel
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidCameraWorldTransformIsSafeNoOpInRelease) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(cameraEntity).worldPosition.x =
-        std::numeric_limits<float>::quiet_NaN();
+    // Construct a malformed cache fixture; ordinary live cache access is read-only.
+    auto invalidWorld = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(cameraEntity);
+    invalidWorld.worldPosition.x = std::numeric_limits<float>::quiet_NaN();
+    entityManager.RemoveComponentUVE<Scene::WorldTransformComponentUVE>(cameraEntity);
+    entityManager.AddComponentUVE<Scene::WorldTransformComponentUVE>(cameraEntity, invalidWorld);
     const std::size_t submittedCommandCountBefore = renderDevice.GetLastSubmittedCommandsUVE().size();
 
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
