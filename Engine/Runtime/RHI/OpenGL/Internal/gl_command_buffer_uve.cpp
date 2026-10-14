@@ -283,6 +283,16 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
             UVE_ERROR("GlCommandBufferUVE: depthAttachment must use a depth texture format");
             return;
         }
+        // Usage set: a texture created without RenderTarget (a sampled-only asset, a volume)
+        // is refused here, before any FBO state changes, instead of failing completeness later.
+        if ((colorIt != m_state->textures.end() &&
+             !HasTextureUsageUVE(GetEffectiveTextureUsageUVE(colorIt->second.desc), TextureUsageUVE::RenderTarget)) ||
+            (depthIt != m_state->textures.end() &&
+             !HasTextureUsageUVE(GetEffectiveTextureUsageUVE(depthIt->second.desc), TextureUsageUVE::RenderTarget))) {
+            UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE attachment was created without "
+                      "TextureUsageUVE::RenderTarget");
+            return;
+        }
         // Tier 2.4: extras need location 0 (a pass with extras but no colorAttachment is
         // malformed — the swapchain/default framebuffer never takes extras).
         if (hasExtraAttachments && colorIt == m_state->textures.end()) {
@@ -352,6 +362,12 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
                     IsTextureFormatCompressedUVE(extraIt->second.desc.format)) {
                     UVE_ERROR("GlCommandBufferUVE: extra color attachments must use a color texture "
                               "format (block-compressed textures are sampled-only)");
+                    return;
+                }
+                if (!HasTextureUsageUVE(GetEffectiveTextureUsageUVE(extraIt->second.desc),
+                                        TextureUsageUVE::RenderTarget)) {
+                    UVE_ERROR("GlCommandBufferUVE: extra color attachment was created without "
+                              "TextureUsageUVE::RenderTarget");
                     return;
                 }
                 if (extraIt->second.desc.width != colorIt->second.desc.width ||
@@ -852,6 +868,12 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
         UVE_ERROR("GlCommandBufferUVE: BindTextureUVE referenced an unknown texture handle");
         return;
     }
+    const TextureUsageUVE textureUsage = GetEffectiveTextureUsageUVE(textureIt->second.desc);
+    if (!HasTextureUsageUVE(textureUsage, TextureUsageUVE::Sampled)) {
+        UVE_ERROR("GlCommandBufferUVE: BindTextureUVE texture was created without TextureUsageUVE::Sampled; "
+                  "the slot keeps its previous binding");
+        return;
+    }
     const auto boundTextureIt = m_boundTextures.find(slot);
     const bool alreadyBoundToSlot =
         boundTextureIt != m_boundTextures.end() && boundTextureIt->second == texture;
@@ -863,6 +885,8 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
                                       ? GL_TEXTURE_CUBE_MAP
                                   : textureIt->second.desc.type == TextureTypeUVE::Texture2DArray
                                       ? GL_TEXTURE_2D_ARRAY
+                                  : textureIt->second.desc.type == TextureTypeUVE::Texture3D
+                                      ? GL_TEXTURE_3D
                                       : GL_TEXTURE_2D;
         glBindTexture(bindTarget, textureIt->second.glTexture);
         m_boundTextures[slot] = texture;
@@ -932,14 +956,18 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
                 }
                 // Tier 2.3: layered storage images are out of scope — arrays/cubes stay
                 // sampler-only, matching the Vulkan backend's black-sink fallback.
-                if (imageFormat != 0 && textureIt->second.desc.arrayLayers <= 1U) {
+                const bool storageAllowed = HasTextureUsageUVE(textureUsage, TextureUsageUVE::Storage);
+                if (imageFormat != 0 && textureIt->second.desc.arrayLayers <= 1U && storageAllowed) {
                     m_state->gl.glBindImageTexture(slot, textureIt->second.glTexture, 0, GL_FALSE,
                                                    0, GL_READ_WRITE, imageFormat);
                 } else {
                     // Do not leave a prior command's image binding live when the new sampled
                     // texture cannot legally serve as a storage image.
                     m_state->gl.glBindImageTexture(slot, 0U, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8);
-                    if (textureIt->second.desc.arrayLayers > 1U) {
+                    if (!storageAllowed) {
+                        UVE_ERROR("GlCommandBufferUVE: texture was created without TextureUsageUVE::Storage; "
+                                  "the image unit is left unbound");
+                    } else if (textureIt->second.desc.arrayLayers > 1U) {
                         UVE_ERROR("GlCommandBufferUVE: array/cubemap textures cannot be bound as "
                                   "storage images in Tier 2.3; the image unit is left unbound");
                     } else if (IsTextureFormatCompressedUVE(textureIt->second.desc.format)) {

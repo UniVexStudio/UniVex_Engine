@@ -5530,4 +5530,285 @@ TEST_F(VulkanRenderDeviceUVETest, SingleTwoChannelAndFloatFormatsCreateUploadAnd
     device->DestroyShaderUVE(fragmentShader);
 }
 
+TEST_F(VulkanRenderDeviceUVETest, Texture3DSamplesSliceColoursAndUsageFlagsGateOperationsOnTheRealDevice) {
+    // Texture3D + usage flags on a real Vulkan device:
+    //   1. a 4x4x4 RGBA8 volume with one solid colour per slice is sampled through a sampler3D
+    //      whose w is the quad's u — a left-to-right scan of the presented frame must read
+    //      red, green, blue, white at the four slice centres (VK_IMAGE_TYPE_3D + VIEW_TYPE_3D
+    //      and the slice-major staging copy, proven by pixels);
+    //   2. the 3D mip chain builds with the ordinary blit chain (depth halves with the axes) and
+    //      the 2D readback helper honestly declines a volume;
+    //   3. usage gates: a Sampled-only texture is refused as a colour attachment (its texels
+    //      stay zero while the Default-usage control is cleared green through the same pass),
+    //      is refused as a blit source and by the readback, and mip generation needs both
+    //      transfer bits.
+    using ResultUVE = RenderOperationResultUVE;
+    constexpr std::uint8_t kSliceColors[4][4] = {
+        {255U, 0U, 0U, 255U}, {0U, 255U, 0U, 255U}, {0U, 0U, 255U, 255U}, {255U, 255U, 255U, 255U},
+    };
+    std::array<std::byte, 4U * 4U * 4U * 4U> upload{};
+    for (std::size_t slice = 0U; slice < 4U; ++slice) {
+        for (std::size_t texel = 0U; texel < 16U; ++texel) {
+            for (std::size_t channel = 0U; channel < 4U; ++channel) {
+                upload[(slice * 16U + texel) * 4U + channel] = std::byte{kSliceColors[slice][channel]};
+            }
+        }
+    }
+    TextureDescUVE volumeDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U};
+    volumeDesc.type = TextureTypeUVE::Texture3D;
+    volumeDesc.depth = 4U;
+    const TextureHandleUVE volume = device->CreateTextureUVE(volumeDesc, upload);
+    ASSERT_NE(volume, kInvalidTextureHandleUVE);
+    TextureDescUVE reported{};
+    ASSERT_EQ(device->GetTextureDescUVE(volume, reported), ResultUVE::Success);
+    EXPECT_EQ(reported.type, TextureTypeUVE::Texture3D);
+    EXPECT_EQ(reported.depth, 4U);
+    EXPECT_EQ(GetEffectiveTextureUsageUVE(reported),
+              TextureUsageUVE::Sampled | TextureUsageUVE::TransferSrc | TextureUsageUVE::TransferDst);
+
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kTexturedVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kVolumeSampleFragmentSpirvUVE;
+    const ShaderHandleUVE vertexShader = device->CreateShaderUVE(vertexDesc);
+    std::string infoLog;
+    const ShaderHandleUVE fragmentShader = device->CreateShaderUVE(fragmentDesc, &infoLog);
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE) << infoLog;
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.vertexStride = 20U;
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U});
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"TEXCOORD", VertexAttributeFormatUVE::Float2, 12U});
+    pipelineDesc.depthTestEnabled = false;
+    pipelineDesc.depthWriteEnabled = false;
+    const PipelineHandleUVE volumePipeline = device->CreatePipelineUVE(pipelineDesc, &infoLog);
+    ASSERT_NE(volumePipeline, kInvalidPipelineHandleUVE) << infoLog;
+    const BufferHandleUVE quadBuffer = CreateM2fQuadBufferUVE(*device);
+    ASSERT_NE(quadBuffer, kInvalidBufferHandleUVE);
+
+    {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        ASSERT_NE(commandBuffer, nullptr);
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.5F, 0.5F, 0.5F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.clearDepth = 1.0F;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(volumePipeline);
+        commandBuffer->BindVertexBufferUVE(quadBuffer);
+        commandBuffer->BindTextureUVE(volume, 0U);
+        commandBuffer->DrawUVE(6U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+        device->PresentUVE();
+        ASSERT_TRUE(device->IsUsableUVE());
+        std::vector<std::byte> pixels(1280U * 720U * 4U);
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        if (width == 0U || height == 0U) { GTEST_SKIP() << "zero-sized extent; no pixels"; }
+        // u = 0.125, 0.375, 0.625, 0.875 are the slice centres of a 4-deep volume.
+        constexpr float kSliceNdcX[4] = {-0.75F, -0.25F, 0.25F, 0.75F};
+        for (std::size_t slice = 0U; slice < 4U; ++slice) {
+            const auto sample = ChannelAtNdcUVE(pixels, width, height, kSliceNdcX[slice], 0.0F);
+            for (std::size_t channel = 0U; channel < 3U; ++channel) {
+                // 0 and 255 are fixed points of the sRGB encode the swapchain may apply.
+                if (kSliceColors[slice][channel] == 255U) {
+                    EXPECT_GT(sample[channel], 215) << "slice " << slice << " channel " << channel;
+                } else {
+                    EXPECT_LT(sample[channel], 40) << "slice " << slice << " channel " << channel;
+                }
+            }
+        }
+    }
+
+    // 2. Mip chain on a volume and the readback helper's honest refusal.
+    std::vector<std::byte> chain(292U);
+    for (std::size_t texel = 0U; texel < 64U; ++texel) {
+        chain[texel * 4U] = std::byte{200};
+        chain[texel * 4U + 3U] = std::byte{255};
+    }
+    TextureDescUVE mipDesc = volumeDesc;
+    mipDesc.mipLevels = 3U;
+    const TextureHandleUVE mipVolume = device->CreateTextureUVE(mipDesc, chain);
+    ASSERT_NE(mipVolume, kInvalidTextureHandleUVE);
+    EXPECT_EQ(device->GenerateMipmapsUVE(mipVolume), ResultUVE::Success);
+    std::array<std::byte, 4U * 4U * 4U> sliceBytes{};
+    EXPECT_FALSE(device->ReadbackTextureRGBA8UVE(volume, 0U, 0U, sliceBytes)) << "volumes are not 2D-readable";
+    const TextureHandleUVE flat = device->CreateTextureUVE(TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U});
+    ASSERT_NE(flat, kInvalidTextureHandleUVE);
+    EXPECT_EQ(device->BlitTextureUVE({volume, flat, {0U, 0U, 0U, 0U, 4U, 4U}, {0U, 0U, 0U, 0U, 4U, 4U},
+                                      BlitFilterUVE::Point}),
+              ResultUVE::InvalidArgument) << "volumes never take part in blits";
+
+    // 3. Usage gates. Both targets start zeroed; only the Default-usage control may be attached.
+    const std::array<std::byte, 4U * 4U * 4U> zeroPixels{};
+    TextureDescUVE sampledOnlyDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U};
+    sampledOnlyDesc.usage = TextureUsageUVE::Sampled;
+    const TextureHandleUVE sampledOnly = device->CreateTextureUVE(sampledOnlyDesc, zeroPixels);
+    const TextureHandleUVE control = device->CreateTextureUVE(TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U}, zeroPixels);
+    ASSERT_NE(sampledOnly, kInvalidTextureHandleUVE);
+    ASSERT_NE(control, kInvalidTextureHandleUVE);
+    ShaderHandleUVE texturedVertex{}, texturedFragment{};
+    const PipelineHandleUVE samplerPipeline = CreateTexturedSamplerPipelineUVE(*device, &texturedVertex, &texturedFragment);
+    ASSERT_NE(samplerPipeline, kInvalidPipelineHandleUVE);
+    const auto clearThenSample = [&](const TextureHandleUVE target, std::array<int, 4>& outCenter) {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        ASSERT_NE(commandBuffer, nullptr);
+        RenderPassDescUVE offscreen{};
+        offscreen.colorAttachment = target;
+        offscreen.colorLoadOp = LoadOpUVE::Clear;
+        offscreen.clearColor = {0.0F, 1.0F, 0.0F, 1.0F};
+        offscreen.depthLoadOp = LoadOpUVE::DontCare;
+        commandBuffer->BeginRenderPassUVE(offscreen);
+        commandBuffer->EndRenderPassUVE();
+        RenderPassDescUVE swapchain{};
+        swapchain.colorLoadOp = LoadOpUVE::Clear;
+        swapchain.clearColor = {0.5F, 0.0F, 0.5F, 1.0F};
+        swapchain.depthLoadOp = LoadOpUVE::Clear;
+        swapchain.clearDepth = 1.0F;
+        commandBuffer->BeginRenderPassUVE(swapchain);
+        commandBuffer->BindPipelineUVE(samplerPipeline);
+        commandBuffer->BindVertexBufferUVE(quadBuffer);
+        commandBuffer->BindTextureUVE(target, 0U);
+        commandBuffer->DrawUVE(6U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+        device->PresentUVE();
+        ASSERT_TRUE(device->IsUsableUVE());
+        std::vector<std::byte> pixels(1280U * 720U * 4U);
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        outCenter = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+    };
+    std::array<int, 4> controlCenter{};
+    clearThenSample(control, controlCenter);
+    EXPECT_LT(controlCenter[0], 40);
+    EXPECT_GT(controlCenter[1], 215) << "control: a Default-usage texture takes the green clear";
+    std::array<int, 4> sealedCenter{};
+    clearThenSample(sampledOnly, sealedCenter);
+    EXPECT_LT(sealedCenter[1], 40) << "a Sampled-only texture must not be cleared through a render pass";
+    EXPECT_LT(sealedCenter[0], 40);
+
+    std::array<std::byte, 4U * 4U * 4U> readback{};
+    EXPECT_TRUE(device->ReadbackTextureRGBA8UVE(control, 0U, 0U, readback));
+    EXPECT_EQ(readback[1], std::byte{255}) << "the control really was cleared green";
+    EXPECT_FALSE(device->ReadbackTextureRGBA8UVE(sampledOnly, 0U, 0U, readback)) << "no TransferSrc, no readback";
+    EXPECT_EQ(device->BlitTextureUVE({sampledOnly, flat, {0U, 0U, 0U, 0U, 4U, 4U}, {0U, 0U, 0U, 0U, 4U, 4U},
+                                      BlitFilterUVE::Point}),
+              ResultUVE::InvalidArgument);
+    EXPECT_EQ(device->BlitTextureUVE({control, sampledOnly, {0U, 0U, 0U, 0U, 4U, 4U}, {0U, 0U, 0U, 0U, 4U, 4U},
+                                      BlitFilterUVE::Point}),
+              ResultUVE::InvalidArgument) << "no TransferDst, no blit destination";
+    EXPECT_EQ(device->BlitTextureUVE({control, flat, {0U, 0U, 0U, 0U, 4U, 4U}, {0U, 0U, 0U, 0U, 4U, 4U},
+                                      BlitFilterUVE::Point}),
+              ResultUVE::Success);
+    TextureDescUVE sealedChainDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 3U};
+    sealedChainDesc.usage = TextureUsageUVE::Sampled | TextureUsageUVE::TransferDst;
+    const TextureHandleUVE sealedChain = device->CreateTextureUVE(sealedChainDesc, std::vector<std::byte>(84U));
+    ASSERT_NE(sealedChain, kInvalidTextureHandleUVE);
+    EXPECT_EQ(device->GenerateMipmapsUVE(sealedChain), ResultUVE::InvalidArgument);
+    TextureDescUVE unsupportedDesc{4U, 4U, TextureFormatUVE::Depth32Float, 1U};
+    unsupportedDesc.usage = TextureUsageUVE::Storage;
+    EXPECT_EQ(device->CreateTextureUVE(unsupportedDesc), kInvalidTextureHandleUVE);
+
+    device->DestroyTextureUVE(sealedChain);
+    device->DestroyPipelineUVE(samplerPipeline);
+    device->DestroyShaderUVE(texturedFragment);
+    device->DestroyShaderUVE(texturedVertex);
+    device->DestroyTextureUVE(control);
+    device->DestroyTextureUVE(sampledOnly);
+    device->DestroyTextureUVE(flat);
+    device->DestroyTextureUVE(mipVolume);
+    device->DestroyBufferUVE(quadBuffer);
+    device->DestroyPipelineUVE(volumePipeline);
+    device->DestroyShaderUVE(fragmentShader);
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyTextureUVE(volume);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, StorageImageBindWithoutStorageUsageWritesTheBlackSinkInstead) {
+    // The storage-image usage gate, as pixels: the M5b image-fill dispatch paints GREEN into a
+    // Default-usage texture (the positive proof lives in ComputeImageStoreFillsTexture…), but a
+    // texture created without TextureUsageUVE::Storage bound to the same slot sends the
+    // imageStore to the 1x1 black sink — the texture samples back exactly as uploaded (black).
+    ShaderHandleUVE vertexShader{}, fragmentShader{};
+    const PipelineHandleUVE samplerPipeline = CreateTexturedSamplerPipelineUVE(*device, &vertexShader, &fragmentShader);
+    ASSERT_NE(samplerPipeline, kInvalidPipelineHandleUVE);
+    ShaderDescUVE computeDesc{};
+    computeDesc.stage = ShaderStageUVE::Compute;
+    computeDesc.sourceCode = kImageFillComputeSpirvUVE;
+    std::string infoLog;
+    const ShaderHandleUVE computeShader = device->CreateShaderUVE(computeDesc, &infoLog);
+    ASSERT_NE(computeShader, kInvalidShaderHandleUVE) << infoLog;
+    ComputePipelineDescUVE computePipelineDesc{};
+    computePipelineDesc.computeShader = computeShader;
+    const PipelineHandleUVE computePipeline = device->CreateComputePipelineUVE(computePipelineDesc, &infoLog);
+    ASSERT_NE(computePipeline, kInvalidPipelineHandleUVE) << infoLog;
+    const BufferHandleUVE quadBuffer = CreateM2fQuadBufferUVE(*device);
+    ASSERT_NE(quadBuffer, kInvalidBufferHandleUVE);
+
+    const std::array<std::byte, 4U * 4U * 4U> zeroPixels{};
+    TextureDescUVE noStorageDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U};
+    noStorageDesc.usage = TextureUsageUVE::Sampled | TextureUsageUVE::RenderTarget |
+                          TextureUsageUVE::TransferSrc | TextureUsageUVE::TransferDst;
+    const TextureHandleUVE noStorage = device->CreateTextureUVE(noStorageDesc, zeroPixels);
+    const TextureHandleUVE withStorage = device->CreateTextureUVE(TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U}, zeroPixels);
+    ASSERT_NE(noStorage, kInvalidTextureHandleUVE);
+    ASSERT_NE(withStorage, kInvalidTextureHandleUVE);
+
+    const auto dispatchThenSample = [&](const TextureHandleUVE texture, std::array<int, 4>& outCenter) {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        ASSERT_NE(commandBuffer, nullptr);
+        commandBuffer->BindPipelineUVE(computePipeline);
+        commandBuffer->BindTextureUVE(texture, 0U);
+        commandBuffer->DispatchUVE(1U, 1U, 1U);
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.5F, 0.0F, 0.5F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.clearDepth = 1.0F;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(samplerPipeline);
+        commandBuffer->BindVertexBufferUVE(quadBuffer);
+        commandBuffer->BindTextureUVE(texture, 0U);
+        commandBuffer->DrawUVE(6U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+        device->PresentUVE();
+        ASSERT_TRUE(device->IsUsableUVE());
+        std::vector<std::byte> pixels(1280U * 720U * 4U);
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        outCenter = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+    };
+    std::array<int, 4> storageCenter{};
+    dispatchThenSample(withStorage, storageCenter);
+    EXPECT_GT(storageCenter[1], 215) << "control: the Default-usage texture takes the imageStore";
+    std::array<int, 4> sealedCenter{};
+    dispatchThenSample(noStorage, sealedCenter);
+    EXPECT_LT(sealedCenter[1], 40) << "without Storage usage the imageStore must not reach the texture";
+    EXPECT_LT(sealedCenter[0], 40);
+    EXPECT_LT(sealedCenter[2], 40);
+    std::array<std::byte, 4U * 4U * 4U> readback{};
+    ASSERT_TRUE(device->ReadbackTextureRGBA8UVE(noStorage, 0U, 0U, readback));
+    EXPECT_EQ(readback, zeroPixels) << "the sealed texture's bytes are untouched";
+
+    device->DestroyTextureUVE(withStorage);
+    device->DestroyTextureUVE(noStorage);
+    device->DestroyBufferUVE(quadBuffer);
+    device->DestroyPipelineUVE(computePipeline);
+    device->DestroyShaderUVE(computeShader);
+    device->DestroyPipelineUVE(samplerPipeline);
+    device->DestroyShaderUVE(fragmentShader);
+    device->DestroyShaderUVE(vertexShader);
+}
+
 } // namespace UVE::Render::Tests

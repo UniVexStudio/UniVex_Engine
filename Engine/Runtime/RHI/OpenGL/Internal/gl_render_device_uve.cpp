@@ -35,6 +35,30 @@ namespace UVE::Render {
 
 namespace {
 
+/// GL binding target of an RHI texture type, and the glGet query that reads that target's
+/// current binding (shared by creation, mip generation and blits).
+GLenum OperationTextureTargetUVE(TextureTypeUVE type) {
+    if (type == TextureTypeUVE::Cubemap)
+        return GL_TEXTURE_CUBE_MAP;
+    if (type == TextureTypeUVE::Texture2DArray)
+        return GL_TEXTURE_2D_ARRAY;
+    if (type == TextureTypeUVE::Texture3D)
+        return GL_TEXTURE_3D;
+    return GL_TEXTURE_2D;
+}
+GLenum TextureBindingQueryForTargetUVE(GLenum target) {
+    switch (target) {
+        case GL_TEXTURE_CUBE_MAP:
+            return GL_TEXTURE_BINDING_CUBE_MAP;
+        case GL_TEXTURE_2D_ARRAY:
+            return GL_TEXTURE_BINDING_2D_ARRAY;
+        case GL_TEXTURE_3D:
+            return GL_TEXTURE_BINDING_3D;
+        default:
+            return GL_TEXTURE_BINDING_2D;
+    }
+}
+
 #if defined(__ANDROID__)
 constexpr char kAndroidGlLogTagUVE[] = "UVEAndroidGLES";
 
@@ -638,28 +662,30 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
     // (POSITIVE_X + face); arrays upload whole levels, all layers contiguous.
     const bool isCube = desc.type == TextureTypeUVE::Cubemap;
     const bool isArray = desc.type == TextureTypeUVE::Texture2DArray;
-    const GLenum textureTarget = isCube ? GL_TEXTURE_CUBE_MAP
-                                 : isArray ? GL_TEXTURE_2D_ARRAY
-                                           : GL_TEXTURE_2D;
-    const GLenum bindingQuery = isCube ? GL_TEXTURE_BINDING_CUBE_MAP
-                                 : isArray ? GL_TEXTURE_BINDING_2D_ARRAY
-                                           : GL_TEXTURE_BINDING_2D;
-    if (isArray || isCube) {
+    const bool isVolume = desc.type == TextureTypeUVE::Texture3D;
+    const GLenum textureTarget = OperationTextureTargetUVE(desc.type);
+    const GLenum bindingQuery = TextureBindingQueryForTargetUVE(textureTarget);
+    if (isArray || isCube || isVolume) {
         GLint maxLayers = 0;
         glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &maxLayers);
         GLint maxCubeSize = 0;
         glGetIntegerv(GL_MAX_CUBE_MAP_TEXTURE_SIZE, &maxCubeSize);
+        GLint max3DSize = 0;
+        glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &max3DSize);
         if ((isArray && desc.arrayLayers > static_cast<std::uint32_t>(maxLayers)) ||
-            (isCube && desc.width > static_cast<std::uint32_t>(maxCubeSize))) {
-            UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE array/cubemap exceeds GL limits");
+            (isCube && desc.width > static_cast<std::uint32_t>(maxCubeSize)) ||
+            (isVolume && (desc.width > static_cast<std::uint32_t>(max3DSize) ||
+                          desc.height > static_cast<std::uint32_t>(max3DSize) ||
+                          desc.depth > static_cast<std::uint32_t>(max3DSize)))) {
+            UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE array/cubemap/volume exceeds GL limits");
             return kInvalidTextureHandleUVE;
         }
-        if (isArray && m_impl->state.gl.glTexImage3D == nullptr &&
+        if ((isArray || isVolume) && m_impl->state.gl.glTexImage3D == nullptr &&
             !IsTextureFormatCompressedUVE(desc.format)) {
-            UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE needs glTexImage3D for arrays");
+            UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE needs glTexImage3D for arrays and volumes");
             return kInvalidTextureHandleUVE;
         }
-        if (isArray && m_impl->state.gl.glCompressedTexImage3D == nullptr &&
+        if ((isArray || isVolume) && m_impl->state.gl.glCompressedTexImage3D == nullptr &&
             IsTextureFormatCompressedUVE(desc.format)) {
             UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE needs glCompressedTexImage3D");
             return kInvalidTextureHandleUVE;
@@ -709,26 +735,28 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
                 }
             }
             dataOffset += static_cast<std::size_t>(mipImageSizes[level]) * 6U;
-        } else if (isArray) {
-            // Whole-level upload: all layers contiguous (level-major, per the RHI contract).
-            // The size_t intermediate keeps huge levels out of signed-overflow UB; the driver
-            // reports oversized allocations through the standard GL error path below.
-            const GLsizei levelBytesAllLayers = static_cast<GLsizei>(
-                static_cast<std::size_t>(mipImageSizes[level]) * desc.arrayLayers);
+        } else if (isArray || isVolume) {
+            // Whole-level upload: all layers (or, for a volume, all slices of this level's
+            // depth) contiguous — level-major, per the RHI contract. The size_t intermediate
+            // keeps huge levels out of signed-overflow UB; the driver reports oversized
+            // allocations through the standard GL error path below.
+            const std::uint32_t levelSlices = isVolume ? GetTextureMipDepthUVE(desc.depth, level) : desc.arrayLayers;
+            const GLsizei levelBytesAllSlices = static_cast<GLsizei>(
+                static_cast<std::size_t>(mipImageSizes[level]) * levelSlices);
             if (IsTextureFormatCompressedUVE(desc.format)) {
                 m_impl->state.gl.glCompressedTexImage3D(
-                    GL_TEXTURE_2D_ARRAY, static_cast<GLint>(level),
+                    textureTarget, static_cast<GLint>(level),
                     static_cast<GLenum>(glFormat.internalFormat), static_cast<GLsizei>(levelWidth),
-                    static_cast<GLsizei>(levelHeight), static_cast<GLsizei>(desc.arrayLayers), 0,
-                    levelBytesAllLayers, levelData);
+                    static_cast<GLsizei>(levelHeight), static_cast<GLsizei>(levelSlices), 0,
+                    levelBytesAllSlices, levelData);
             } else {
                 m_impl->state.gl.glTexImage3D(
-                    GL_TEXTURE_2D_ARRAY, static_cast<GLint>(level), glFormat.internalFormat,
+                    textureTarget, static_cast<GLint>(level), glFormat.internalFormat,
                     static_cast<GLsizei>(levelWidth), static_cast<GLsizei>(levelHeight),
-                    static_cast<GLsizei>(desc.arrayLayers), 0, glFormat.format, glFormat.type,
+                    static_cast<GLsizei>(levelSlices), 0, glFormat.format, glFormat.type,
                     levelData);
             }
-            dataOffset += static_cast<std::size_t>(mipImageSizes[level]) * desc.arrayLayers;
+            dataOffset += static_cast<std::size_t>(mipImageSizes[level]) * levelSlices;
         } else {
             if (IsTextureFormatCompressedUVE(desc.format)) {
                 m_impl->state.gl.glCompressedTexImage2D(
@@ -751,7 +779,7 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
     glTexParameteri(textureTarget, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(textureTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(textureTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    if (isArray) {
+    if (isArray || isVolume) {
         glTexParameteri(textureTarget, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
     }
     glTexParameteri(textureTarget, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(desc.mipLevels - 1U));
@@ -1382,13 +1410,6 @@ RenderOperationResultUVE FinishDeviceOperationUVE() {
     UVE_ERROR("GL device operation failed (error {})", static_cast<unsigned>(error));
     return RenderOperationResultUVE::SystemError;
 }
-GLenum OperationTextureTargetUVE(TextureTypeUVE type) {
-    if (type == TextureTypeUVE::Cubemap)
-        return GL_TEXTURE_CUBE_MAP;
-    if (type == TextureTypeUVE::Texture2DArray)
-        return GL_TEXTURE_2D_ARRAY;
-    return GL_TEXTURE_2D;
-}
 } // namespace
 RenderDeviceCapabilitiesUVE GlRenderDeviceUVE::GetCapabilitiesUVE() const noexcept {
     RenderDeviceCapabilitiesUVE caps;
@@ -1568,12 +1589,10 @@ RenderOperationResultUVE GlRenderDeviceUVE::GenerateMipmapsUVE(TextureHandleUVE 
     if (found == state.textures.end())
         return RenderOperationResultUVE::InvalidHandle;
     const auto &desc = found->second.desc;
-    if (desc.mipLevels < 2U || !IsUncompressedColorFormatUVE(desc.format))
+    if (!CanGenerateMipmapsUVE(desc))
         return RenderOperationResultUVE::InvalidArgument;
     const GLenum target = OperationTextureTargetUVE(desc.type);
-    const GLenum query = desc.type == TextureTypeUVE::Cubemap          ? GL_TEXTURE_BINDING_CUBE_MAP
-                         : desc.type == TextureTypeUVE::Texture2DArray ? GL_TEXTURE_BINDING_2D_ARRAY
-                                                                       : GL_TEXTURE_BINDING_2D;
+    const GLenum query = TextureBindingQueryForTargetUVE(target);
     GLint previous = 0;
     glGetIntegerv(query, &previous);
     glBindTexture(target, found->second.glTexture);

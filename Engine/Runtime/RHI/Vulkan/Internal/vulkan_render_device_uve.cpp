@@ -315,6 +315,7 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     // Tier 2.3: array/cubemap caps, queried once at init; CreateTextureUVE rejects above them.
     std::uint32_t maxTextureArrayLayers = 1U;
     std::uint32_t maxCubemapSize = 0U;
+    std::uint32_t maxTexture3DSize = 0U;
     std::uint32_t maxColorAttachments = 1U; // Tier 2.4: limits.maxColorAttachments
     bool textureCompressionETC2Enabled = false;
     bool textureCompressionASTCLdrEnabled = false;
@@ -970,6 +971,8 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     static constexpr std::uint32_t kWarnedSamplerSlotOobUVE = 1U << 26U; // Tier 2.2
     static constexpr std::uint32_t kWarnedSamplerAnisoClampedUVE = 1U << 27U; // Tier 2.2
     static constexpr std::uint32_t kWarnedStorageImageLayeredUVE = 1U << 28U; // Tier 2.3
+    static constexpr std::uint32_t kWarnedTextureUsageSampledUVE = 1U << 29U; // usage flags
+    static constexpr std::uint32_t kWarnedTextureUsageStorageUVE = 1U << 30U; // usage flags
     std::uint32_t replayWarningsEmitted = 0U;
 
     // Replay-local pipeline binding state (valid only inside PresentUVE()'s record window).
@@ -1918,6 +1921,7 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     maxSamplerAnisotropy = deviceProperties.limits.maxSamplerAnisotropy;
     maxTextureArrayLayers = deviceProperties.limits.maxImageArrayLayers;
     maxCubemapSize = deviceProperties.limits.maxImageDimensionCube;
+    maxTexture3DSize = deviceProperties.limits.maxImageDimension3D;
     // ns per timestamp tick (Vulkan reports raw ticks); kept for GetQueryResultUVE.
     timestampPeriodNs = deviceProperties.limits.timestampPeriod > 0.0F
                             ? static_cast<double>(deviceProperties.limits.timestampPeriod)
@@ -3192,6 +3196,34 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
             }
             break;
     }
+    // Usage set: the switch above computed what the format CAN do on this device; the
+    // descriptor's effective usage narrows the VkImage to what the caller declared (Default
+    // keeps everything, so pre-flag textures allocate exactly as before). TRANSFER_DST stays
+    // whenever the format allows it (uploads), and the image keeps SAMPLED when the caller
+    // asked for no view-bearing usage at all, since a view needs at least one.
+    const TextureUsageUVE effectiveUsage = GetEffectiveTextureUsageUVE(desc);
+    {
+        VkImageUsageFlags requested = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        if (HasTextureUsageUVE(effectiveUsage, TextureUsageUVE::Sampled)) {
+            requested |= VK_IMAGE_USAGE_SAMPLED_BIT;
+        }
+        if (HasTextureUsageUVE(effectiveUsage, TextureUsageUVE::RenderTarget)) {
+            requested |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        }
+        if (HasTextureUsageUVE(effectiveUsage, TextureUsageUVE::Storage)) {
+            requested |= VK_IMAGE_USAGE_STORAGE_BIT;
+        }
+        if (HasTextureUsageUVE(effectiveUsage, TextureUsageUVE::TransferSrc)) {
+            requested |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        }
+        usage &= requested;
+        constexpr VkImageUsageFlags kViewBearing = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                                                   VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                   VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        if ((usage & kViewBearing) == 0U) {
+            usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+        }
+    }
     if (attachmentFormat == VK_FORMAT_UNDEFINED) {
         attachmentFormat = format;
     }
@@ -3255,8 +3287,10 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
         mipUploadOffsets[level] = uploadOffset;
         mipLevelBytes[level] = static_cast<VkDeviceSize>(levelBytes);
         // Level-major: all layers of L0, then all of L1, … (the shared upload validator
-        // already bounded this total).
-        uploadOffset += static_cast<VkDeviceSize>(levelBytes) * desc.arrayLayers;
+        // already bounded this total). A volume's level holds its mip depth of slices.
+        uploadOffset += static_cast<VkDeviceSize>(levelBytes) *
+                        (desc.type == TextureTypeUVE::Texture3D ? GetTextureMipDepthUVE(desc.depth, level)
+                                                                : desc.arrayLayers);
         uploadExtent.width = uploadExtent.width > 1U ? uploadExtent.width / 2U : 1U;
         uploadExtent.height = uploadExtent.height > 1U ? uploadExtent.height / 2U : 1U;
     }
@@ -3269,14 +3303,19 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     if (desc.type == TextureTypeUVE::Cubemap && desc.width > impl.maxCubemapSize) {
         return fail("cubemap face size exceeds the device's maxImageDimensionCube limit");
     }
+    const bool isVolume = desc.type == TextureTypeUVE::Texture3D;
+    if (isVolume && (desc.width > impl.maxTexture3DSize || desc.height > impl.maxTexture3DSize ||
+                     desc.depth > impl.maxTexture3DSize)) {
+        return fail("volume extent exceeds the device's maxImageDimension3D limit");
+    }
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.flags = imageFlags |
                       (desc.type == TextureTypeUVE::Cubemap ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT
                                                             : 0U);
-    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.imageType = isVolume ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
     imageInfo.format = format;
-    imageInfo.extent = {desc.width, desc.height, 1U};
+    imageInfo.extent = {desc.width, desc.height, isVolume ? desc.depth : 1U};
     imageInfo.mipLevels = desc.mipLevels;
     imageInfo.arrayLayers = desc.arrayLayers; // Tier 2.3: 1 for 2D, N for arrays, 6 for cubes
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -3448,7 +3487,9 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
                 copyRegion.bufferImageHeight = 0U; // zero means use the extent/block geometry
                 copyRegion.imageSubresource = {aspect, level, layer, 1U};
                 copyRegion.imageOffset = {0, 0, 0};
-                copyRegion.imageExtent = {mipExtent.width, mipExtent.height, 1U};
+                // A volume level copies all of its slices in one region (slice-major bytes).
+                copyRegion.imageExtent = {mipExtent.width, mipExtent.height,
+                                          isVolume ? GetTextureMipDepthUVE(desc.depth, level) : 1U};
                 copyRegions.push_back(copyRegion);
             }
             mipExtent.width = mipExtent.width > 1U ? mipExtent.width / 2U : 1U;
@@ -3508,6 +3549,7 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     // Tier 2.3: cubes sample through a CUBE view, arrays through 2D_ARRAY, 2D unchanged.
     viewInfo.viewType = desc.type == TextureTypeUVE::Cubemap          ? VK_IMAGE_VIEW_TYPE_CUBE
                         : desc.type == TextureTypeUVE::Texture2DArray ? VK_IMAGE_VIEW_TYPE_2D_ARRAY
+                        : isVolume                                    ? VK_IMAGE_VIEW_TYPE_3D
                                                                       : VK_IMAGE_VIEW_TYPE_2D;
     viewInfo.format = sampledFormat;
     viewInfo.subresourceRange = {desc.format == TextureFormatUVE::Depth24Stencil8
@@ -3521,7 +3563,10 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
         return fail("vkCreateImageView failed for the texture");
     }
     VkImageView attachmentView = VK_NULL_HANDLE;
-    if (!IsTextureFormatCompressedUVE(desc.format)) {
+    // Only render-target-capable textures carry an attachment view (volumes and textures created
+    // without TextureUsageUVE::RenderTarget are refused at BeginRenderPassUVE, so they need none).
+    if (!IsTextureFormatCompressedUVE(desc.format) && !isVolume &&
+        HasTextureUsageUVE(effectiveUsage, TextureUsageUVE::RenderTarget)) {
         viewInfo.format = attachmentFormat; // the view dynamic rendering attaches (pipeline contract)
         viewInfo.subresourceRange.aspectMask = aspect;
         viewInfo.subresourceRange.levelCount = 1U; // render-target attachment is always level 0
@@ -3540,9 +3585,10 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     // multiple mips, keeping sampled chains intact without exposing a multi-level storage view.
     VkImageView storageView = VK_NULL_HANDLE;
     const bool storageViewNeeded =
-        (desc.format == TextureFormatUVE::RGBA8Unorm &&
-         (desc.mipLevels > 1U || sampledFormat != VK_FORMAT_R8G8B8A8_UNORM)) ||
-        (desc.format == TextureFormatUVE::RGBA16Float && desc.mipLevels > 1U);
+        HasTextureUsageUVE(effectiveUsage, TextureUsageUVE::Storage) &&
+        ((desc.format == TextureFormatUVE::RGBA8Unorm &&
+          (desc.mipLevels > 1U || sampledFormat != VK_FORMAT_R8G8B8A8_UNORM)) ||
+         (desc.format == TextureFormatUVE::RGBA16Float && desc.mipLevels > 1U));
     if (storageViewNeeded) {
         viewInfo.format = desc.format == TextureFormatUVE::RGBA8Unorm
                               ? VK_FORMAT_R8G8B8A8_UNORM
@@ -5110,7 +5156,20 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                     value = bound->second; // destroyed-after-bind resolves to the fallback
                 }
                 ImplUVE::TextureRecordUVE& slotRecord = impl.textures.at(value);
-                if (storageImageSlot && IsTextureFormatCompressedUVE(slotRecord.desc.format)) {
+                const TextureUsageUVE slotUsage = GetEffectiveTextureUsageUVE(slotRecord.desc);
+                if (storageImageSlot && !HasTextureUsageUVE(slotUsage, TextureUsageUVE::Storage)) {
+                    impl.WarnOnceUVE(
+                        VulkanRenderDeviceUVE::ImplUVE::kWarnedTextureUsageStorageUVE,
+                        "BindTextureUVE: a texture created without TextureUsageUVE::Storage was bound "
+                        "to a storage-image slot; the 1x1 black storage sink receives the writes instead");
+                    value = impl.fallbackStorageImageValue;
+                } else if (!storageImageSlot && !HasTextureUsageUVE(slotUsage, TextureUsageUVE::Sampled)) {
+                    impl.WarnOnceUVE(
+                        VulkanRenderDeviceUVE::ImplUVE::kWarnedTextureUsageSampledUVE,
+                        "BindTextureUVE: a texture created without TextureUsageUVE::Sampled was bound "
+                        "to a sampler slot; the 1x1 white fallback is sampled instead");
+                    value = impl.fallbackTextureValue;
+                } else if (storageImageSlot && IsTextureFormatCompressedUVE(slotRecord.desc.format)) {
                     impl.WarnOnceUVE(
                         VulkanRenderDeviceUVE::ImplUVE::kWarnedStorageImageCompressedUVE,
                         "BindTextureUVE: a block-compressed texture was bound to a storage-image "
@@ -5551,6 +5610,14 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                                     "BeginRenderPassUVE: block-compressed textures are sampled-only "
                                     "and cannot be color attachments; submission's draws are skipped");
                                 skipPass = true;
+                            } else if (!HasTextureUsageUVE(
+                                           GetEffectiveTextureUsageUVE(foundColor->second.desc),
+                                           TextureUsageUVE::RenderTarget)) {
+                                impl.WarnOnceUVE(
+                                    VulkanRenderDeviceUVE::ImplUVE::kWarnedOffscreenUnsupportedUVE,
+                                    "BeginRenderPassUVE: the color attachment was created without "
+                                    "TextureUsageUVE::RenderTarget; submission's draws are skipped");
+                                skipPass = true;
                             } else if (foundColor->second.attachmentFormat != impl.swapchainFormat) {
                                 // RGBA16Float and RGBA8 textures created while the swapchain
                                 // was not a 4x8 RGBA format cannot be attached (the device
@@ -5588,6 +5655,14 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                                         "depth texture format; the pass runs depth-tested on "
                                         "an internal target instead");
                                     degradeToScratchDepth = true;
+                                } else if (!HasTextureUsageUVE(
+                                               GetEffectiveTextureUsageUVE(foundDepth->second.desc),
+                                               TextureUsageUVE::RenderTarget)) {
+                                    impl.WarnOnceUVE(
+                                        VulkanRenderDeviceUVE::ImplUVE::kWarnedOffscreenUnsupportedUVE,
+                                        "BeginRenderPassUVE: the depth attachment was created without "
+                                        "TextureUsageUVE::RenderTarget; submission's draws are skipped");
+                                    skipPass = true;
                                 } else if (IsDepthStencilFormatUVE(foundDepth->second.desc.format)) {
                                     depthRecord = &foundDepth->second;
                                 } else if (impl.depthFormat != VK_FORMAT_D32_SFLOAT) {
@@ -5649,13 +5724,17 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                                     }
                                     if (IsTextureFormatCompressedUVE(
                                             foundExtra->second.desc.format) ||
+                                        !HasTextureUsageUVE(
+                                            GetEffectiveTextureUsageUVE(foundExtra->second.desc),
+                                            TextureUsageUVE::RenderTarget) ||
                                         foundExtra->second.attachmentFormat != impl.swapchainFormat) {
                                         impl.WarnOnceUVE(
                                             VulkanRenderDeviceUVE::ImplUVE::
                                                 kWarnedOffscreenUnsupportedUVE,
                                             "BeginRenderPassUVE: an extra color attachment is not "
                                             "attachable (same rule as location 0 — an RGBA8Unorm "
-                                            "texture in the swapchain's format; the submission's "
+                                            "texture in the swapchain's format, created with "
+                                            "TextureUsageUVE::RenderTarget; the submission's "
                                             "draws are skipped)");
                                         skipPass = true;
                                         break;
@@ -7115,9 +7194,10 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::GenerateMipmapsUVE(const Texture
         return RenderOperationResultUVE::InvalidHandle;
     }
     const TextureDescUVE &desc = found->second.desc;
-    // GL parity: level zero plus at least one lower level, and only the formats the blit path
-    // accepts. Anything else is a caller error, not a capability limit.
-    if (desc.mipLevels < 2U || !IsUncompressedColorFormatUVE(desc.format)) {
+    // GL parity: level zero plus at least one lower level, the formats the blit path accepts and
+    // a usage set that permits transfers in both directions (the shared rule). Anything else is
+    // a caller error, not a capability limit. Volumes run the same chain with depth halving.
+    if (!CanGenerateMipmapsUVE(desc)) {
         return RenderOperationResultUVE::InvalidArgument;
     }
     constexpr VkImageUsageFlags kChainFeatures =
@@ -7142,10 +7222,12 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::GenerateMipmapsUVE(const Texture
     };
     std::uint32_t sourceWidth = desc.width;
     std::uint32_t sourceHeight = desc.height;
+    std::uint32_t sourceDepth = desc.type == TextureTypeUVE::Texture3D ? desc.depth : 1U;
     bool sourceIsLevelZero = true;
     for (std::uint32_t mip = 1U; mip < desc.mipLevels; ++mip) {
         const std::uint32_t destinationWidth = sourceWidth > 1U ? sourceWidth / 2U : 1U;
         const std::uint32_t destinationHeight = sourceHeight > 1U ? sourceHeight / 2U : 1U;
+        const std::uint32_t destinationDepth = sourceDepth > 1U ? sourceDepth / 2U : 1U;
         const VkImageMemoryBarrier toSources[2] = {
             levelBarrier(mip - 1U,
                          sourceIsLevelZero ? found->second.currentLayout : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -7162,11 +7244,13 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::GenerateMipmapsUVE(const Texture
             region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mip - 1U, layer, 1U};
             region.srcOffsets[0] = {0, 0, 0};
             region.srcOffsets[1] = {static_cast<std::int32_t>(sourceWidth),
-                                    static_cast<std::int32_t>(sourceHeight), 1};
+                                    static_cast<std::int32_t>(sourceHeight),
+                                    static_cast<std::int32_t>(sourceDepth)};
             region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mip, layer, 1U};
             region.dstOffsets[0] = {0, 0, 0};
             region.dstOffsets[1] = {static_cast<std::int32_t>(destinationWidth),
-                                    static_cast<std::int32_t>(destinationHeight), 1};
+                                    static_cast<std::int32_t>(destinationHeight),
+                                    static_cast<std::int32_t>(destinationDepth)};
             impl.vk.vkCmdBlitImage(commands, found->second.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                    found->second.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &region,
                                    VK_FILTER_LINEAR);
@@ -7184,6 +7268,7 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::GenerateMipmapsUVE(const Texture
                                      0U, 0U, nullptr, 0U, nullptr, 1U, &settle);
         sourceWidth = destinationWidth;
         sourceHeight = destinationHeight;
+        sourceDepth = destinationDepth;
         sourceIsLevelZero = false;
     }
     // Level zero was the chain's first source and must return to the sampling layout too.
@@ -7215,6 +7300,16 @@ bool VulkanRenderDeviceUVE::ReadbackTextureRGBA8UVE(const TextureHandleUVE textu
     const TextureDescUVE &desc = found->second.desc;
     if (mipLevel >= desc.mipLevels || layer >= desc.arrayLayers) {
         UVE_WARNING("VulkanRenderDeviceUVE::ReadbackTextureRGBA8UVE: mip/layer is outside the texture");
+        return false;
+    }
+    if (desc.type == TextureTypeUVE::Texture3D) {
+        UVE_WARNING("VulkanRenderDeviceUVE::ReadbackTextureRGBA8UVE: volume textures are not readable "
+                    "through this 2D helper");
+        return false;
+    }
+    if (!HasTextureUsageUVE(GetEffectiveTextureUsageUVE(desc), TextureUsageUVE::TransferSrc)) {
+        UVE_WARNING("VulkanRenderDeviceUVE::ReadbackTextureRGBA8UVE: the texture was created without "
+                    "TextureUsageUVE::TransferSrc");
         return false;
     }
     const std::uint32_t mipWidth = std::max(1U, desc.width >> mipLevel);

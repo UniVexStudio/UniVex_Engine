@@ -293,16 +293,54 @@ struct TextureFormatBlockInfoUVE {
 /// `arrayLayers` same-sized 2D slices (shadow cascades, texture atlases), and cubemaps are the
 /// 6-face sampling shape (reflection probes, sky). Cube faces upload and attach in
 /// `CubemapFaceUVE` order (+X,-X,+Y,-Y,+Z,-Z), which matches the GL/VK hardware face order.
-enum class TextureTypeUVE : std::uint8_t { Texture2D, Texture2DArray, Cubemap };
+/// `Texture3D` is a volume of `depth` slices (LUTs, volumetric noise): sampled with a 3D
+/// coordinate, uploaded slice-major per level, mip levels halve depth as well as width and
+/// height; it is never a render target or storage image in this slice.
+enum class TextureTypeUVE : std::uint8_t { Texture2D, Texture2DArray, Cubemap, Texture3D };
 
 [[nodiscard]] constexpr bool IsTextureTypeValidUVE(const TextureTypeUVE type) noexcept {
     switch (type) {
         case TextureTypeUVE::Texture2D:
         case TextureTypeUVE::Texture2DArray:
         case TextureTypeUVE::Cubemap:
+        case TextureTypeUVE::Texture3D:
             return true;
     }
     return false;
+}
+
+/// How a texture may be used, as a bit set. `Default` means "everything this format and shape
+/// can honour" (see `GetSupportedTextureUsageUVE`), which is exactly what every texture was
+/// before the flags existed, so aggregate-initialised descriptors are unchanged. A narrower set
+/// lets Vulkan allocate with precisely those `VkImageUsageFlags`, and every backend refuses a
+/// use outside the set at the operation that would need it (attach, sample, image-bind, blit,
+/// mip generation, readback) instead of letting the driver fail silently.
+enum class TextureUsageUVE : std::uint8_t {
+    None = 0U,
+    Sampled = 1U << 0U,      ///< bound through BindTextureUVE / sampled in shaders
+    RenderTarget = 1U << 1U, ///< attached by RenderPassDescUVE (colour or depth)
+    Storage = 1U << 2U,      ///< bound as a storage image (imageLoad/imageStore)
+    TransferSrc = 1U << 3U,  ///< blit source, mip-generation source, readback
+    TransferDst = 1U << 4U,  ///< blit destination, mip-generation destination (uploads are always allowed)
+    Default = Sampled | RenderTarget | Storage | TransferSrc | TransferDst,
+};
+
+[[nodiscard]] constexpr TextureUsageUVE operator|(const TextureUsageUVE left, const TextureUsageUVE right) noexcept {
+    return static_cast<TextureUsageUVE>(static_cast<std::uint8_t>(left) | static_cast<std::uint8_t>(right));
+}
+
+[[nodiscard]] constexpr TextureUsageUVE operator&(const TextureUsageUVE left, const TextureUsageUVE right) noexcept {
+    return static_cast<TextureUsageUVE>(static_cast<std::uint8_t>(left) & static_cast<std::uint8_t>(right));
+}
+
+[[nodiscard]] constexpr bool HasTextureUsageUVE(const TextureUsageUVE usage, const TextureUsageUVE flag) noexcept {
+    return (usage & flag) == flag && flag != TextureUsageUVE::None;
+}
+
+/// Non-empty and made only of known bits.
+[[nodiscard]] constexpr bool IsTextureUsageValidUVE(const TextureUsageUVE usage) noexcept {
+    const auto bits = static_cast<std::uint8_t>(usage);
+    return bits != 0U && (bits & ~static_cast<std::uint8_t>(TextureUsageUVE::Default)) == 0U;
 }
 
 struct TextureDescUVE {
@@ -315,7 +353,42 @@ struct TextureDescUVE {
     // Tier 2.3: dimensionality. Defaults describe the only pre-2.3 shape (one 2D slice).
     TextureTypeUVE type = TextureTypeUVE::Texture2D;
     std::uint32_t arrayLayers = 1;
+    // Usage set (Default = everything the format/shape supports) and the Texture3D depth
+    // (must be 1 for every other type). Appended for the same aggregate-initialisation reason.
+    TextureUsageUVE usage = TextureUsageUVE::Default;
+    std::uint32_t depth = 1;
 };
+
+/// The usage set a format/shape pair can honour on every backend: compressed formats are
+/// sampled and copied but never rendered to or image-bound, depth formats are never storage
+/// images or transfer sources, volumes are sampled and copied only.
+[[nodiscard]] constexpr TextureUsageUVE GetSupportedTextureUsageUVE(const TextureFormatUVE format,
+                                                                   const TextureTypeUVE type) noexcept {
+    if (IsTextureFormatCompressedUVE(format) || type == TextureTypeUVE::Texture3D) {
+        return TextureUsageUVE::Sampled | TextureUsageUVE::TransferSrc | TextureUsageUVE::TransferDst;
+    }
+    if (IsDepthFormatUVE(format)) {
+        return TextureUsageUVE::Sampled | TextureUsageUVE::RenderTarget | TextureUsageUVE::TransferDst;
+    }
+    return TextureUsageUVE::Default;
+}
+
+/// The usage a texture created from `desc` actually carries: the supported set under
+/// `Default`, otherwise the requested set verbatim (validation guarantees it is a subset).
+[[nodiscard]] constexpr TextureUsageUVE GetEffectiveTextureUsageUVE(const TextureDescUVE& desc) noexcept {
+    return desc.usage == TextureUsageUVE::Default ? GetSupportedTextureUsageUVE(desc.format, desc.type) : desc.usage;
+}
+
+/// Valid when the bits are known and, unless `Default`, a subset of what the format/shape
+/// supports: asking for a render-target BC1 or a storage volume is a caller error, not a
+/// backend limitation to warn about later.
+[[nodiscard]] constexpr bool IsTextureUsageSupportedUVE(const TextureDescUVE& desc) noexcept {
+    if (!IsTextureUsageValidUVE(desc.usage)) {
+        return false;
+    }
+    const TextureUsageUVE supported = GetSupportedTextureUsageUVE(desc.format, desc.type);
+    return desc.usage == TextureUsageUVE::Default || (desc.usage & supported) == desc.usage;
+}
 
 /// How a sampler reads within one mip level. Shared by magnification and minification: GL and
 /// Vulkan both take the same NEAREST/LINEAR choice on each axis, so one enum serves both.
@@ -427,17 +500,27 @@ struct TextureMipExtentUVE {
 }
 
 [[nodiscard]] inline constexpr std::uint32_t MaximumTextureMipLevelCountUVE(
-    std::uint32_t width, std::uint32_t height) noexcept {
-    if (width == 0U || height == 0U) {
+    std::uint32_t width, std::uint32_t height, std::uint32_t depth = 1U) noexcept {
+    if (width == 0U || height == 0U || depth == 0U) {
         return 0U;
     }
     std::uint32_t count = 1U;
-    while (width > 1U || height > 1U) {
+    while (width > 1U || height > 1U || depth > 1U) {
         width = width > 1U ? width / 2U : 1U;
         height = height > 1U ? height / 2U : 1U;
+        depth = depth > 1U ? depth / 2U : 1U;
         ++count;
     }
     return count;
+}
+
+/// Depth of mip `level` of a volume `depth` slices deep (1 for every non-volume texture).
+[[nodiscard]] inline constexpr std::uint32_t GetTextureMipDepthUVE(std::uint32_t depth, std::uint32_t level) noexcept {
+    while (level > 0U && depth > 1U) {
+        depth /= 2U;
+        --level;
+    }
+    return depth == 0U ? 1U : depth;
 }
 
 /// Computes the byte count for a tightly packed level-0..N upload. The output is unchanged on
@@ -446,27 +529,33 @@ struct TextureMipExtentUVE {
 [[nodiscard]] inline bool CalculateTextureUploadByteCountUVE(const TextureDescUVE& desc,
                                                               std::uint64_t& outBytes) noexcept {
     const TextureFormatBlockInfoUVE block = GetTextureFormatBlockInfoUVE(desc.format);
-    if (desc.width == 0U || desc.height == 0U || desc.mipLevels == 0U || block.bytes == 0U ||
-        desc.mipLevels > MaximumTextureMipLevelCountUVE(desc.width, desc.height) ||
+    if (desc.width == 0U || desc.height == 0U || desc.depth == 0U || desc.mipLevels == 0U || block.bytes == 0U ||
+        desc.mipLevels > MaximumTextureMipLevelCountUVE(desc.width, desc.height, desc.depth) ||
         (IsDepthFormatUVE(desc.format) && desc.mipLevels > 1U)) {
         return false;
     }
     // Tier 2.3 dimensionality rules. Layer-count CAPS are device properties, so backends
     // enforce them at creation; these shape rules hold on every device. (Cube arrays — 6N
-    // layers with cube sampling — are a follow-up; v1 cubes are exactly one cube.)
+    // layers with cube sampling — are a follow-up; v1 cubes are exactly one cube.) Only a
+    // volume carries depth; a volume never carries layers.
     switch (desc.type) {
         case TextureTypeUVE::Texture2D:
-            if (desc.arrayLayers != 1U) {
+            if (desc.arrayLayers != 1U || desc.depth != 1U) {
                 return false;
             }
             break;
         case TextureTypeUVE::Texture2DArray:
-            if (desc.arrayLayers == 0U) {
+            if (desc.arrayLayers == 0U || desc.depth != 1U) {
                 return false;
             }
             break;
         case TextureTypeUVE::Cubemap:
-            if (desc.width != desc.height || desc.arrayLayers != 6U) {
+            if (desc.width != desc.height || desc.arrayLayers != 6U || desc.depth != 1U) {
+                return false;
+            }
+            break;
+        case TextureTypeUVE::Texture3D:
+            if (desc.arrayLayers != 1U || IsDepthFormatUVE(desc.format)) {
                 return false;
             }
             break;
@@ -476,15 +565,21 @@ struct TextureMipExtentUVE {
 
     std::uint64_t totalBytes = 0U;
     TextureMipExtentUVE extent{desc.width, desc.height};
+    std::uint32_t levelDepth = desc.depth;
     for (std::uint32_t level = 0U; level < desc.mipLevels; ++level) {
         std::uint64_t levelBytes = 0U;
         if (!CalculateTextureMipByteCountUVE(desc.format, extent.width, extent.height, levelBytes) ||
-            levelBytes > std::numeric_limits<std::uint64_t>::max() - totalBytes) {
+            levelBytes > std::numeric_limits<std::uint64_t>::max() / levelDepth) {
+            return false;
+        }
+        levelBytes *= levelDepth; // slice-major: every slice of this level, then the next level
+        if (levelBytes > std::numeric_limits<std::uint64_t>::max() - totalBytes) {
             return false;
         }
         totalBytes += levelBytes;
         extent.width = extent.width > 1U ? extent.width / 2U : 1U;
         extent.height = extent.height > 1U ? extent.height / 2U : 1U;
+        levelDepth = levelDepth > 1U ? levelDepth / 2U : 1U;
     }
     // Every layer carries the full mip chain (level-major upload: all layers of L0, then L1…).
     if (desc.arrayLayers > 0U &&
@@ -517,6 +612,9 @@ struct TextureMipExtentUVE {
             break;
         default:
             return false;
+    }
+    if (!IsTextureUsageSupportedUVE(desc)) {
+        return false;
     }
     std::uint64_t expectedBytes = 0U;
     if (!CalculateTextureUploadByteCountUVE(desc, expectedBytes) ||
