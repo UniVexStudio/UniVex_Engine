@@ -176,7 +176,12 @@ void GizmoRenderer::UploadAndDrawTriangles(const GizmoMesh& mesh, const GizmoDra
     solidProgram_.SetFloat("uOpacity", params.opacity);
     solidProgram_.SetVec3("uViewDir", params.viewDirection.x, params.viewDirection.y, params.viewDirection.z);
 
-    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(mesh.triangles.size() * 3));
+    // Only this pass's triangles were uploaded above, so the draw count is `selected`, not the
+    // whole mesh. Drawing mesh.triangles.size() * 3 here fetched vertices past the end of the
+    // buffer: drivers with robust buffer access read zeros and hid it, softpipe (the headless
+    // sandbox renderer) reads whatever follows, which showed up as random viewport-sized
+    // triangles in the gizmo's colours.
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(selected.size() * 3));
     glBindVertexArray(0);
 }
 
