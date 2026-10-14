@@ -3989,6 +3989,155 @@ TEST_F(GlRenderDeviceUVETest, FoundationMipsAndBlitProducePixelsAndPreserveSciss
     renderDevice->DestroyTextureUVE(target);
 }
 
+TEST_F(GlRenderDeviceUVETest, SingleTwoChannelAndFloatFormatsUploadRenderBlitAndMipOnTheRealContext) {
+    // One-/two-channel and 32-bit float formats on a real GL context. Every claim is read back from the GL object itself
+    // (glGetTexImage on the native name), not inferred from a result code:
+    //   1. a 3-wide R8Unorm / RG8Unorm upload is stored texel-for-texel (the tightly packed row
+    //      contract: GL's default UNPACK_ALIGNMENT of 4 would have skewed rows 2 and 3);
+    //   2. an R16Float texture is a real colour attachment: the pass clears it and a draw
+    //      writes into it, the missing channels read back as 0/0/1;
+    //   3. BlitTextureUVE copies R32Float texels exactly and GenerateMipmapsUVE averages an RG8
+    //      chain — both paths used to be limited to RGBA8/RGBA16F by a format list.
+    using ResultUVE = RenderOperationResultUVE;
+    constexpr std::array<TextureFormatUVE, 7> kFormats{
+        TextureFormatUVE::R8Unorm,  TextureFormatUVE::RG8Unorm, TextureFormatUVE::R16Float,
+        TextureFormatUVE::RG16Float, TextureFormatUVE::R32Float, TextureFormatUVE::RG32Float,
+        TextureFormatUVE::RGBA32Float};
+    for (const TextureFormatUVE format : kFormats) {
+        EXPECT_TRUE(renderDevice->SupportsTextureFormatUVE(format)) << static_cast<int>(format);
+        EXPECT_FALSE(renderDevice->SupportsTextureFormatUVE(format, TextureColorSpaceUVE::Srgb))
+            << static_cast<int>(format);
+        const std::vector<std::byte> texel(GetTextureFormatBlockInfoUVE(format).bytes);
+        const auto texture = renderDevice->CreateTextureUVE({1U, 1U, format, 1U}, texel);
+        ASSERT_NE(texture, kInvalidTextureHandleUVE) << static_cast<int>(format);
+        EXPECT_EQ(renderDevice->CreateTextureUVE({1U, 1U, format, 1U, TextureColorSpaceUVE::Srgb}, texel),
+                  kInvalidTextureHandleUVE);
+        renderDevice->DestroyTextureUVE(texture);
+    }
+    GLint previousPackAlignment = 4;
+    glGetIntegerv(GL_PACK_ALIGNMENT, &previousPackAlignment);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+
+    // 1. Odd-width uploads survive byte for byte.
+    constexpr std::array<std::uint8_t, 6> kR8Rows{10U, 20U, 30U, 40U, 50U, 60U};
+    const auto r8 = renderDevice->CreateTextureUVE({3U, 2U, TextureFormatUVE::R8Unorm, 1U},
+                                                   std::as_bytes(std::span(kR8Rows)));
+    ASSERT_NE(r8, kInvalidTextureHandleUVE);
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(r8));
+    std::array<std::uint8_t, 6> observedR8{};
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_UNSIGNED_BYTE, observedR8.data());
+    EXPECT_EQ(observedR8, kR8Rows) << "3-byte rows must not be read with a 4-byte stride";
+    constexpr std::array<std::uint8_t, 6> kRg8Row{1U, 2U, 3U, 4U, 5U, 6U};
+    const auto rg8 = renderDevice->CreateTextureUVE({3U, 1U, TextureFormatUVE::RG8Unorm, 1U},
+                                                    std::as_bytes(std::span(kRg8Row)));
+    ASSERT_NE(rg8, kInvalidTextureHandleUVE);
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(rg8));
+    std::array<std::uint8_t, 6> observedRg8{};
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RG, GL_UNSIGNED_BYTE, observedRg8.data());
+    EXPECT_EQ(observedRg8, kRg8Row);
+    GLint unpackAlignment = 0;
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &unpackAlignment);
+    EXPECT_EQ(unpackAlignment, 4) << "the upload path restores the context's unpack alignment";
+
+    // 2. R16Float is a real colour attachment on GL.
+    const auto halfTarget = renderDevice->CreateTextureUVE({4U, 4U, TextureFormatUVE::R16Float, 1U});
+    ASSERT_NE(halfTarget, kInvalidTextureHandleUVE);
+    const ShaderHandleUVE vertexShader =
+        renderDevice->CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource)});
+    const ShaderHandleUVE fragmentShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Fragment, std::string(kValidFragmentShaderSource)});
+    PipelineDescUVE pipelineDesc;
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0}};
+    pipelineDesc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
+    pipelineDesc.depthTestEnabled = false;
+    pipelineDesc.depthWriteEnabled = false;
+    const PipelineHandleUVE pipeline = renderDevice->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+    // Covers the whole right half of clip space (x >= 0): texels 2..3 of every row are drawn
+    // white, texels 0..1 keep the clear value.
+    constexpr float kRightHalf[] = {0.0F, -1.0F, 0.0F, 3.0F, -1.0F, 0.0F, 0.0F, 3.0F, 0.0F};
+    const std::span<const std::byte> vertexBytes = std::as_bytes(std::span<const float>(kRightHalf));
+    const BufferHandleUVE vertexBuffer =
+        renderDevice->CreateBufferUVE(BufferDescUVE{vertexBytes.size(), BufferUsageUVE::Vertex}, vertexBytes);
+    ASSERT_NE(vertexBuffer, kInvalidBufferHandleUVE);
+    {
+        std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+        ASSERT_NE(commandBuffer, nullptr);
+        RenderPassDescUVE passDesc;
+        passDesc.colorAttachment = halfTarget;
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.25F, 0.5F, 0.75F, 0.125F}; // only .r can land in an R16F target
+        passDesc.depthLoadOp = LoadOpUVE::DontCare;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(pipeline);
+        commandBuffer->BindVertexBufferUVE(vertexBuffer);
+        commandBuffer->DrawUVE(3);
+        commandBuffer->EndRenderPassUVE();
+        renderDevice->SubmitUVE(std::move(commandBuffer));
+        glFinish();
+    }
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(halfTarget));
+    std::array<float, 16U * 4U> halfTexels{};
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, halfTexels.data());
+    for (std::size_t y = 0; y < 4U; ++y) {
+        for (std::size_t x = 0; x < 4U; ++x) {
+            const float *texel = &halfTexels[(y * 4U + x) * 4U];
+            EXPECT_FLOAT_EQ(texel[0], x < 2U ? 0.25F : 1.0F) << "texel " << x << "," << y;
+            EXPECT_FLOAT_EQ(texel[1], 0.0F) << "a one-channel format has no green";
+            EXPECT_FLOAT_EQ(texel[2], 0.0F);
+            EXPECT_FLOAT_EQ(texel[3], 1.0F) << "missing alpha reads as 1";
+        }
+    }
+
+    // 3. Exact R32Float blit and an RG8 mip chain.
+    constexpr std::array<float, 4> kFloatTexels{0.5F, -2.0F, 1024.25F, 3.0e-5F};
+    const auto floatSource = renderDevice->CreateTextureUVE({2U, 2U, TextureFormatUVE::R32Float, 1U},
+                                                            std::as_bytes(std::span(kFloatTexels)));
+    const auto floatTarget = renderDevice->CreateTextureUVE({2U, 2U, TextureFormatUVE::R32Float, 1U});
+    ASSERT_NE(floatSource, kInvalidTextureHandleUVE);
+    ASSERT_NE(floatTarget, kInvalidTextureHandleUVE);
+    ASSERT_EQ(renderDevice->BlitTextureUVE(
+                  {floatSource, floatTarget, {0, 0, 0, 0, 2, 2}, {0, 0, 0, 0, 2, 2}, BlitFilterUVE::Point}),
+              ResultUVE::Success);
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(floatTarget));
+    std::array<float, 4> observedFloats{};
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_FLOAT, observedFloats.data());
+    EXPECT_EQ(observedFloats, kFloatTexels) << "a point blit of 32-bit floats is bit-exact";
+    EXPECT_EQ(renderDevice->BlitTextureUVE(
+                  {floatSource, rg8, {0, 0, 0, 0, 2, 1}, {0, 0, 0, 0, 2, 1}, BlitFilterUVE::Point}),
+              ResultUVE::InvalidArgument)
+        << "format conversion is still refused";
+    std::vector<std::byte> rgChain(static_cast<std::size_t>((16U + 4U + 1U) * 2U));
+    for (std::size_t texel = 0; texel < 16U; ++texel) {
+        rgChain[texel * 2U] = std::byte{200};
+        rgChain[texel * 2U + 1U] = std::byte{40};
+    }
+    const auto rgMips = renderDevice->CreateTextureUVE({4U, 4U, TextureFormatUVE::RG8Unorm, 3U}, rgChain);
+    ASSERT_NE(rgMips, kInvalidTextureHandleUVE);
+    ASSERT_EQ(renderDevice->GenerateMipmapsUVE(rgMips), ResultUVE::Success);
+    EXPECT_EQ(renderDevice->GenerateMipmapsUVE(rg8), ResultUVE::InvalidArgument) << "single level";
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(rgMips));
+    std::array<std::uint8_t, 2> lastLevel{};
+    glGetTexImage(GL_TEXTURE_2D, 2, GL_RG, GL_UNSIGNED_BYTE, lastLevel.data());
+    EXPECT_NEAR(static_cast<int>(lastLevel[0]), 200, 1);
+    EXPECT_NEAR(static_cast<int>(lastLevel[1]), 40, 1);
+
+    glPixelStorei(GL_PACK_ALIGNMENT, previousPackAlignment);
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+    renderDevice->DestroyTextureUVE(rgMips);
+    renderDevice->DestroyTextureUVE(floatTarget);
+    renderDevice->DestroyTextureUVE(floatSource);
+    renderDevice->DestroyBufferUVE(vertexBuffer);
+    renderDevice->DestroyPipelineUVE(pipeline);
+    renderDevice->DestroyShaderUVE(fragmentShader);
+    renderDevice->DestroyShaderUVE(vertexShader);
+    renderDevice->DestroyTextureUVE(halfTarget);
+    renderDevice->DestroyTextureUVE(rg8);
+    renderDevice->DestroyTextureUVE(r8);
+}
+
 TEST_F(GlRenderDeviceUVETest, FoundationQueriesMeasureRealVisibilityAndGpuTimestamps) {
     using ResultUVE = RenderOperationResultUVE;
     ASSERT_EQ(renderDevice->GetCapabilitiesUVE().timestampQueries, RenderFeatureSupportUVE::Native);

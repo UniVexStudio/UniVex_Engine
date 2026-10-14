@@ -486,7 +486,7 @@ RenderOperationResultUVE NullRenderDeviceUVE::GenerateMipmapsUVE(TextureHandleUV
         return RenderOperationResultUVE::InvalidHandle;
     const auto &desc = found->second;
     if (desc.mipLevels < 2U ||
-        (desc.format != TextureFormatUVE::RGBA8Unorm && desc.format != TextureFormatUVE::RGBA16Float))
+        !IsUncompressedColorFormatUVE(desc.format))
         return RenderOperationResultUVE::InvalidArgument;
     m_impl->RecordUVE(GenerateMipsOperationUVE{texture});
     return RenderOperationResultUVE::Recorded;

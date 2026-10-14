@@ -143,8 +143,7 @@ struct TextureBlitDescUVE final {
                                                    const TextureDescUVE &destination) noexcept {
     return blit.source != blit.destination && source.format == destination.format &&
            source.colorSpace == destination.colorSpace &&
-           (source.format == TextureFormatUVE::RGBA8Unorm ||
-            source.format == TextureFormatUVE::RGBA16Float) &&
+           IsUncompressedColorFormatUVE(source.format) &&
            (blit.filter == BlitFilterUVE::Point || blit.filter == BlitFilterUVE::Linear) &&
            IsTextureRegionValidUVE(source, blit.sourceRegion) &&
            IsTextureRegionValidUVE(destination, blit.destinationRegion);

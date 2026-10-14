@@ -93,6 +93,10 @@ struct BufferDescUVE {
 /// loadable asset ever uses it — see the deliberately separate Asset::TextureAssetFormatUVE) because
 /// depth render targets are created directly through this RHI, never loaded from disk. Compressed
 /// formats are sampled resources only: they cannot be framebuffer attachments or storage images.
+/// The one- and two-channel formats (10..16) are linear-only: a missing channel samples as 0
+/// (alpha as 1), uploads are tightly packed rows (a 3-wide `R8Unorm` level is 3 bytes per row),
+/// and they are color-renderable on desktop GL; Vulkan attachment of any non-swapchain format
+/// still waits on per-target pipeline formats. Append-only: values cross the RHI boundary.
 enum class TextureFormatUVE : std::uint8_t {
     RGBA8Unorm = 0,
     RGBA16Float = 1,
@@ -104,6 +108,13 @@ enum class TextureFormatUVE : std::uint8_t {
     ETC2RGBA8 = 7,
     ASTC4x4RGBA = 8,
     Depth24Stencil8 = 9,
+    R8Unorm = 10,
+    RG8Unorm = 11,
+    R16Float = 12,
+    RG16Float = 13,
+    R32Float = 14,
+    RG32Float = 15,
+    RGBA32Float = 16,
 };
 
 /// Sampled interpretation of normalized color-channel values. This is separate from the stored
@@ -125,12 +136,22 @@ struct TextureFormatBlockInfoUVE {
 [[nodiscard]] inline constexpr TextureFormatBlockInfoUVE GetTextureFormatBlockInfoUVE(
     const TextureFormatUVE format) noexcept {
     switch (format) {
+        case TextureFormatUVE::R8Unorm:
+            return {1U, 1U, 1U, false};
+        case TextureFormatUVE::RG8Unorm:
+        case TextureFormatUVE::R16Float:
+            return {1U, 1U, 2U, false};
         case TextureFormatUVE::RGBA8Unorm:
         case TextureFormatUVE::Depth32Float:
         case TextureFormatUVE::Depth24Stencil8:
+        case TextureFormatUVE::RG16Float:
+        case TextureFormatUVE::R32Float:
             return {1U, 1U, 4U, false};
         case TextureFormatUVE::RGBA16Float:
+        case TextureFormatUVE::RG32Float:
             return {1U, 1U, 8U, false};
+        case TextureFormatUVE::RGBA32Float:
+            return {1U, 1U, 16U, false};
         case TextureFormatUVE::BC1RGB:
         case TextureFormatUVE::ETC2RGB8:
             return {4U, 4U, 8U, true};
@@ -160,6 +181,13 @@ struct TextureFormatBlockInfoUVE {
         case TextureFormatUVE::RGBA16Float:
         case TextureFormatUVE::Depth32Float:
         case TextureFormatUVE::Depth24Stencil8:
+        case TextureFormatUVE::R8Unorm:
+        case TextureFormatUVE::RG8Unorm:
+        case TextureFormatUVE::R16Float:
+        case TextureFormatUVE::RG16Float:
+        case TextureFormatUVE::R32Float:
+        case TextureFormatUVE::RG32Float:
+        case TextureFormatUVE::RGBA32Float:
             return false;
     }
     return false;
@@ -167,6 +195,41 @@ struct TextureFormatBlockInfoUVE {
 
 [[nodiscard]] inline constexpr bool IsDepthFormatUVE(const TextureFormatUVE format) noexcept {
     return format == TextureFormatUVE::Depth32Float || format == TextureFormatUVE::Depth24Stencil8;
+}
+
+/// An uncompressed colour format: sampled, filterable where the device allows, and the only kind
+/// a colour attachment, storage image, colour blit or generated mip chain may use.
+[[nodiscard]] inline constexpr bool IsUncompressedColorFormatUVE(const TextureFormatUVE format) noexcept {
+    const TextureFormatBlockInfoUVE info = GetTextureFormatBlockInfoUVE(format);
+    return info.bytes != 0U && !info.compressed && !IsDepthFormatUVE(format);
+}
+
+/// Number of colour channels an uncompressed colour format stores (0 for anything else).
+[[nodiscard]] inline constexpr std::uint32_t GetTextureFormatChannelCountUVE(const TextureFormatUVE format) noexcept {
+    switch (format) {
+        case TextureFormatUVE::R8Unorm:
+        case TextureFormatUVE::R16Float:
+        case TextureFormatUVE::R32Float:
+            return 1U;
+        case TextureFormatUVE::RG8Unorm:
+        case TextureFormatUVE::RG16Float:
+        case TextureFormatUVE::RG32Float:
+            return 2U;
+        case TextureFormatUVE::RGBA8Unorm:
+        case TextureFormatUVE::RGBA16Float:
+        case TextureFormatUVE::RGBA32Float:
+            return 4U;
+        case TextureFormatUVE::Depth32Float:
+        case TextureFormatUVE::Depth24Stencil8:
+        case TextureFormatUVE::BC1RGB:
+        case TextureFormatUVE::BC3RGBA:
+        case TextureFormatUVE::BC7RGBA:
+        case TextureFormatUVE::ETC2RGB8:
+        case TextureFormatUVE::ETC2RGBA8:
+        case TextureFormatUVE::ASTC4x4RGBA:
+            return 0U;
+    }
+    return 0U;
 }
 
 [[nodiscard]] inline constexpr bool IsDepthStencilFormatUVE(const TextureFormatUVE format) noexcept {

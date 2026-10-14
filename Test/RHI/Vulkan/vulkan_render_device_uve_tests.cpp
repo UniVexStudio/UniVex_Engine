@@ -25,6 +25,7 @@
 #include <cstring>
 #include <map>
 #include <memory>
+#include <span>
 #include <string>
 #include <thread>
 #include <type_traits>
@@ -4995,6 +4996,165 @@ TEST_F(VulkanRenderDeviceUVETest, GenerateMipmapsRebuildsEveryLevelWithTheDownsa
     device->DestroyTextureUVE(singleLevel);
     device->DestroyTextureUVE(mipmapped);
     device->DestroyTextureUVE(source);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, SingleTwoChannelAndFloatFormatsCreateUploadAndSampleOnTheRealDevice) {
+    // One-/two-channel and 32-bit float formats on a real Vulkan device:
+    //   1. SupportsTextureFormatUVE answers from the device's format features, and creation
+    //      agrees with it format by format (never "supported" yet uncreatable, or the reverse);
+    //      an sRGB request is refused up front and the RGBA8 readback honestly declines them;
+    //   2. a 2x2 R8Unorm and a 2x2 RG8Unorm upload are sampled by the textured quad with the
+    //      missing channels reading 0 — pixel proof that the one-/two-channel staging rows
+    //      (1 and 2 bytes per texel) land where the shader expects them;
+    //   3. GenerateMipmapsUVE builds an RG8 chain (R8G8_UNORM's blit + linear-filter features
+    //      are spec-mandatory, so this is Success on every conformant device, not a skip).
+    constexpr std::array<TextureFormatUVE, 7> kFormats{
+        TextureFormatUVE::R8Unorm,  TextureFormatUVE::RG8Unorm, TextureFormatUVE::R16Float,
+        TextureFormatUVE::RG16Float, TextureFormatUVE::R32Float, TextureFormatUVE::RG32Float,
+        TextureFormatUVE::RGBA32Float};
+    for (const TextureFormatUVE format : kFormats) {
+        const bool supported = device->SupportsTextureFormatUVE(format);
+        EXPECT_FALSE(device->SupportsTextureFormatUVE(format, TextureColorSpaceUVE::Srgb));
+        const std::vector<std::byte> texel(GetTextureFormatBlockInfoUVE(format).bytes);
+        const TextureHandleUVE texture = device->CreateTextureUVE({1U, 1U, format, 1U}, texel);
+        EXPECT_EQ(texture != kInvalidTextureHandleUVE, supported)
+            << "format " << static_cast<int>(format) << " support and creation must agree";
+        EXPECT_EQ(device->CreateTextureUVE({1U, 1U, format, 1U, TextureColorSpaceUVE::Srgb}, texel),
+                  kInvalidTextureHandleUVE);
+        if (texture != kInvalidTextureHandleUVE) {
+            std::array<std::byte, 4> rgba{};
+            EXPECT_FALSE(device->ReadbackTextureRGBA8UVE(texture, 0U, 0U, rgba))
+                << "the RGBA8 readback must not reinterpret a " << static_cast<int>(format) << " image";
+            device->DestroyTextureUVE(texture);
+        }
+    }
+    // The 8-bit members carry spec-mandatory sampled/linear/transfer/colour-attachment features.
+    ASSERT_TRUE(device->SupportsTextureFormatUVE(TextureFormatUVE::R8Unorm));
+    ASSERT_TRUE(device->SupportsTextureFormatUVE(TextureFormatUVE::RG8Unorm));
+
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kTexturedVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kTexturedFragmentSpirvUVE;
+    const ShaderHandleUVE vertexShader = device->CreateShaderUVE(vertexDesc);
+    const ShaderHandleUVE fragmentShader = device->CreateShaderUVE(fragmentDesc);
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.vertexStride = 20U;
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U});
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"TEXCOORD", VertexAttributeFormatUVE::Float2, 12U});
+    pipelineDesc.depthTestEnabled = false;
+    pipelineDesc.depthWriteEnabled = false;
+    const PipelineHandleUVE pipeline = device->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+    const float vertices[30] = {
+        -0.5F, -0.5F, 0.0F,  0.0F, 0.0F,
+         0.5F, -0.5F, 0.0F,  1.0F, 0.0F,
+        -0.5F,  0.5F, 0.0F,  0.0F, 1.0F,
+         0.5F, -0.5F, 0.0F,  1.0F, 0.0F,
+         0.5F,  0.5F, 0.0F,  1.0F, 1.0F,
+        -0.5F,  0.5F, 0.0F,  0.0F, 1.0F,
+    };
+    BufferDescUVE bufferDesc{};
+    bufferDesc.sizeBytes = sizeof(vertices);
+    bufferDesc.usage = BufferUsageUVE::Vertex;
+    const BufferHandleUVE vertexBuffer = device->CreateBufferUVE(bufferDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(vertices), sizeof(vertices)));
+    ASSERT_NE(vertexBuffer, kInvalidBufferHandleUVE);
+    // Only 0/255 texels: the presented image is sRGB-encoded, and those two values are the
+    // fixed points of the transfer function. Reads of a 255 texel and of a channel the format
+    // does not store are exact; a 0 texel next to a 255 one picks up a sub-texel bilinear
+    // bleed that the sRGB encode amplifies (a few units), hence the looser bound there.
+    constexpr std::array<std::uint8_t, 4> kR8Texels{255U, 0U, 0U, 255U};          // (0,0) (1,0) (0,1) (1,1)
+    constexpr std::array<std::uint8_t, 8> kRg8Texels{255U, 0U, 0U, 255U, 0U, 255U, 255U, 0U};
+    const TextureHandleUVE r8 = device->CreateTextureUVE({2U, 2U, TextureFormatUVE::R8Unorm, 1U},
+                                                         std::as_bytes(std::span(kR8Texels)));
+    const TextureHandleUVE rg8 = device->CreateTextureUVE({2U, 2U, TextureFormatUVE::RG8Unorm, 1U},
+                                                          std::as_bytes(std::span(kRg8Texels)));
+    ASSERT_NE(r8, kInvalidTextureHandleUVE);
+    ASSERT_NE(rg8, kInvalidTextureHandleUVE);
+    const auto drawAndRead = [&](const TextureHandleUVE texture, std::vector<std::byte>& pixels,
+                                 std::uint32_t& width, std::uint32_t& height) {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.5F, 0.5F, 0.5F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.clearDepth = 1.0F;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(pipeline);
+        commandBuffer->BindVertexBufferUVE(vertexBuffer);
+        commandBuffer->BindTextureUVE(texture, 0U);
+        commandBuffer->DrawUVE(6U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+        device->PresentUVE();
+        ASSERT_TRUE(device->IsUsableUVE());
+        pixels.assign(1280U * 720U * 4U, std::byte{});
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        ASSERT_GT(width, 0U);
+        ASSERT_GT(height, 0U);
+    };
+    std::vector<std::byte> pixels;
+    std::uint32_t width = 0U;
+    std::uint32_t height = 0U;
+    drawAndRead(r8, pixels, width, height);
+    if (HasFatalFailure()) { return; }
+    {
+        const auto topLeft = ChannelAtNdcUVE(pixels, width, height, -0.25F, -0.25F);
+        const auto topRight = ChannelAtNdcUVE(pixels, width, height, 0.25F, -0.25F);
+        const auto bottomRight = ChannelAtNdcUVE(pixels, width, height, 0.25F, 0.25F);
+        EXPECT_GT(topLeft[0], 250) << "R8 texel (0,0) = 255 must sample as full red";
+        EXPECT_LT(topLeft[1], 5) << "an R8 texture has no green";
+        EXPECT_LT(topLeft[2], 5) << "an R8 texture has no blue";
+        EXPECT_GT(topLeft[3], 250) << "missing alpha samples as 1";
+        EXPECT_LT(topRight[0], 40) << "R8 texel (1,0) = 0";
+        EXPECT_GT(bottomRight[0], 250) << "R8 texel (1,1) = 255: the second 2-byte row landed";
+    }
+    drawAndRead(rg8, pixels, width, height);
+    if (HasFatalFailure()) { return; }
+    {
+        const auto topLeft = ChannelAtNdcUVE(pixels, width, height, -0.25F, -0.25F);
+        const auto topRight = ChannelAtNdcUVE(pixels, width, height, 0.25F, -0.25F);
+        const auto bottomLeft = ChannelAtNdcUVE(pixels, width, height, -0.25F, 0.25F);
+        EXPECT_GT(topLeft[0], 250);
+        EXPECT_LT(topLeft[1], 40) << "RG8 texel (0,0) = (255,0)";
+        EXPECT_LT(topRight[0], 40);
+        EXPECT_GT(topRight[1], 250) << "RG8 texel (1,0) = (0,255)";
+        EXPECT_GT(bottomLeft[1], 250) << "RG8 texel (0,1) = (0,255): the 4-byte second row landed";
+        EXPECT_LT(topLeft[2], 5);
+        EXPECT_LT(topRight[2], 5) << "an RG8 texture has no blue";
+    }
+
+    std::vector<std::byte> rgChain(static_cast<std::size_t>((16U + 4U + 1U) * 2U));
+    for (std::size_t texel = 0; texel < 16U; ++texel) {
+        rgChain[texel * 2U] = std::byte{200};
+        rgChain[texel * 2U + 1U] = std::byte{40};
+    }
+    const TextureHandleUVE rgMips = device->CreateTextureUVE({4U, 4U, TextureFormatUVE::RG8Unorm, 3U}, rgChain);
+    ASSERT_NE(rgMips, kInvalidTextureHandleUVE);
+    EXPECT_EQ(device->GenerateMipmapsUVE(rgMips), RenderOperationResultUVE::Success);
+    EXPECT_EQ(device->GenerateMipmapsUVE(rg8), RenderOperationResultUVE::InvalidArgument) << "single level";
+    const TextureHandleUVE rgCopy = device->CreateTextureUVE({2U, 2U, TextureFormatUVE::RG8Unorm, 1U});
+    ASSERT_NE(rgCopy, kInvalidTextureHandleUVE);
+    EXPECT_EQ(device->BlitTextureUVE({rgMips, rgCopy, {0, 0, 0, 0, 4, 4}, {0, 0, 0, 0, 2, 2}, BlitFilterUVE::Linear}),
+              RenderOperationResultUVE::Success);
+    EXPECT_EQ(device->BlitTextureUVE({r8, rgCopy, {0, 0, 0, 0, 2, 2}, {0, 0, 0, 0, 2, 2}, BlitFilterUVE::Point}),
+              RenderOperationResultUVE::InvalidArgument) << "format conversion is still refused";
+
+    device->DestroyTextureUVE(rgCopy);
+    device->DestroyTextureUVE(rgMips);
+    device->DestroyTextureUVE(rg8);
+    device->DestroyTextureUVE(r8);
+    device->DestroyBufferUVE(vertexBuffer);
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyShaderUVE(fragmentShader);
 }
 
 } // namespace UVE::Render::Tests

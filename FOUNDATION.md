@@ -740,7 +740,7 @@ render-pass attachment.
 |---|---|---|
 | `BufferDescUVE` | size, usage (`Vertex`/`Index`/`Uniform`/`Storage`/`IndirectStorage`) | no memory/CPU-access/lifetime hint |
 | `TextureDescUVE` | width, height, format, mipLevels, array layers, cubemap shape | no depth, no sample count, no usage flags (Tier 2.3 landed layers + cubes) |
-| `TextureFormatUVE` | `RGBA8Unorm`, `RGBA16Float`, `Depth32Float`, BC1/BC3/BC7, ETC2/ETC2A8 | eight formats; no sRGB, no single/two-channel |
+| `TextureFormatUVE` | `RGBA8Unorm`, `RGBA16Float`, `RGBA32Float`, `R8Unorm`/`RG8Unorm`, `R16Float`/`RG16Float`, `R32Float`/`RG32Float`, `Depth32Float`, `Depth24Stencil8`, BC1/BC3/BC7, ETC2/ETC2A8, ASTC 4x4 | seventeen formats; sRGB only where the data has an sRGB encoding (RGBA8 and the compressed families); no integer or packed (10:10:10:2) formats |
 | `ShaderDescUVE` | stage, source, entry point | `Geometry` has an optional `PipelineDescUVE::geometryShader` slot (Null/desktop GL); Vulkan reports `geometryShaders = Unsupported` |
 | `PipelineDescUVE` | vertex+fragment shader, vertex layout, stride, topology, depth test/write/compare, cull/winding/fill/bias, blend mode | rasterizer tail landed (Tier 2.1, RHI side) |
 | `RenderPassDescUVE` | up to 4 colour attachments, one depth attachment, load+store ops, clear values, optional viewport override | multi-target + `StoreOpUVE` landed (Tiers 2.4/2.5) |
@@ -761,6 +761,25 @@ because each one blocks a whole feature:
 - `[x]` **No texture dimensionality.** Landed (Tier 2.3): `TextureTypeUVE::Cubemap` +
   `Texture2DArray` with creation-time shape validation, HW-ordered `CubemapFaceUVE` and
   render-into-layer. (Image-based lighting itself is still absent — see §10.)
+- `[x]` **No single/two-channel or 32-bit float formats.** Landed (2026-10-14): `R8Unorm`,
+  `RG8Unorm`, `R16Float`, `RG16Float`, `R32Float`, `RG32Float`, `RGBA32Float` join
+  `TextureFormatUVE` (append-only values 10..16), linear-only, with the shared block table
+  giving tightly packed 1/2/4/8/16-byte texels. The blit and mip validators and all three
+  mip-generation gates now key on `IsUncompressedColorFormatUVE` instead of a two-format list,
+  so every uncompressed colour format blits, builds mip chains and (on GL) attaches. GL maps
+  them to `GL_R8`..`GL_RGBA32F` and uploads under byte unpack alignment — nothing set
+  `GL_UNPACK_ALIGNMENT` before, so an odd-width one- or two-byte texel row was read with a
+  4-byte stride (the native test's 3x2 `R8Unorm` came back `50,60,4` for its second row until
+  the fix) — and an `R16Float` target is cleared, drawn and read back as `1/0/0/1` with the
+  missing channels zero. Vulkan maps them to their native `VkFormat`s, answers
+  `SupportsTextureFormatUVE` from the device's optimal-tiling features (sampled + linear filter
+  + transfer destination + colour attachment: the same gate creation applies, so "supported"
+  and "creatable" cannot disagree), requests storage usage only where the device advertises
+  it, refuses the RGBA8 readback for them, and samples R8/RG8 with zeroed missing channels
+  (pixel-verified through the textured quad). Attaching one on Vulkan still skips with the
+  M2d warning until pipelines carry per-target formats — the same boundary `RGBA16Float`
+  already sits behind, listed under §9's Vulkan parity items. Deliberately not added: sRGB
+  variants (these formats carry linear data), integer and packed formats, `Depth16`.
 
 Also absent: `[x]` a sampler object — landed (Tier 2.2: `SamplerDescUVE` with Point filtering
 in all three backends). `[x]` **Validated bind-group packets** now live in
@@ -1402,3 +1421,16 @@ in the swapchain's sRGB format (gamma-wrong blits and mip chains), and `Depth24S
 assuming `D24_UNORM_S8_UINT` exists (it is optional; the 32+8 layout is the only one some
 devices offer). Nothing in this ledger claims pixel parity with a hardware GPU; it claims the
 contracts hold on two independent conformant implementations.
+
+**Texture formats (same day).** The one-/two-channel and 32-bit float formats landed with one
+Null case (block sizes, exact-size uploads, sRGB refusal for all seven), one device-operations
+case (blit + mips accepted for every uncompressed colour format, still refused for depth and
+for format conversion), one native GL case (odd-width `R8`/`RG8` uploads read back texel for
+texel through `glGetTexImage`, an `R16Float` colour attachment cleared + drawn + read back, a
+bit-exact `R32Float` point blit, an `RG8` mip chain) and one native Vulkan case (support ==
+creation for all seven, sRGB and RGBA8-readback refusal, R8/RG8 quadrants sampled with zeroed
+missing channels, `RG8` mip chain + linear blit). On the same two software stacks:
+`NullRenderDeviceUVETest` + `DeviceOperationsUVETest` 86 passed; `GlRenderDeviceUVETest` +
+`GlFunctionsUVETest` + `VulkanRenderDeviceUVETest` 174 passed / 3 skipped / 1 failed (the
+softpipe occlusion defect already recorded above, unrelated to formats). The GL unpack
+alignment defect was confirmed by reverting the fix and watching the new case fail.

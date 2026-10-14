@@ -83,6 +83,41 @@ TEST(DeviceOperationsUVETest, BlitValidatesMipLayerFormatAndRegionsBeforeRecordi
     device.DestroyTextureUVE(source);
     EXPECT_EQ(device.BlitTextureUVE(blit), ResultUVE::InvalidHandle);
 }
+TEST(DeviceOperationsUVETest, BlitAndMipsAcceptEveryUncompressedColorFormatAndNothingElse) {
+    // Format slice: the shared validators gate on "uncompressed colour", not on a two-format list,
+    // so one- and two-channel and 32-bit float textures blit and build mip chains while depth
+    // and block-compressed textures still cannot. Formats must still match between the two ends.
+    NullRenderDeviceUVE device;
+    for (const TextureFormatUVE format : {TextureFormatUVE::R8Unorm, TextureFormatUVE::RG8Unorm,
+                                          TextureFormatUVE::R16Float, TextureFormatUVE::RG16Float,
+                                          TextureFormatUVE::R32Float, TextureFormatUVE::RG32Float,
+                                          TextureFormatUVE::RGBA32Float}) {
+        // Mip chains must be uploaded in full (the existing contract), so size the data from
+        // the shared block table: (16 + 4 + 1) texels of the format's byte size.
+        const std::vector<std::byte> chain(static_cast<std::size_t>(21U * GetTextureFormatBlockInfoUVE(format).bytes));
+        const auto source = device.CreateTextureUVE({4, 4, format, 3}, chain);
+        const auto target = device.CreateTextureUVE({2, 2, format});
+        ASSERT_NE(source, kInvalidTextureHandleUVE);
+        ASSERT_NE(target, kInvalidTextureHandleUVE);
+        const TextureBlitDescUVE blit{source, target, {0, 0, 0, 0, 4, 4}, {0, 0, 0, 0, 2, 2}, BlitFilterUVE::Linear};
+        EXPECT_EQ(device.BlitTextureUVE(blit), ResultUVE::Recorded) << static_cast<int>(format);
+        EXPECT_EQ(device.GenerateMipmapsUVE(source), ResultUVE::Recorded) << static_cast<int>(format);
+        EXPECT_EQ(device.GenerateMipmapsUVE(target), ResultUVE::InvalidArgument) << "single level";
+        device.DestroyTextureUVE(source);
+        device.DestroyTextureUVE(target);
+    }
+    const auto r8 = device.CreateTextureUVE({2, 2, TextureFormatUVE::R8Unorm});
+    const auto rg8 = device.CreateTextureUVE({2, 2, TextureFormatUVE::RG8Unorm});
+    EXPECT_EQ(device.BlitTextureUVE({r8, rg8, {0, 0, 0, 0, 2, 2}, {0, 0, 0, 0, 2, 2}, BlitFilterUVE::Point}),
+              ResultUVE::InvalidArgument)
+        << "format conversion stays rejected";
+    const auto depth = device.CreateTextureUVE({2, 2, TextureFormatUVE::Depth32Float});
+    ASSERT_NE(depth, kInvalidTextureHandleUVE);
+    EXPECT_EQ(device.GenerateMipmapsUVE(depth), ResultUVE::InvalidArgument) << "depth never builds mips";
+    EXPECT_EQ(device.BlitTextureUVE({depth, depth, {0, 0, 0, 0, 2, 2}, {0, 0, 0, 0, 2, 2}, BlitFilterUVE::Point}),
+              ResultUVE::InvalidArgument);
+}
+
 TEST(DeviceOperationsUVETest, MipsRequireAllocatedColorLevelsAndDescriptorReadPreservesFailureOutput) {
     NullRenderDeviceUVE device;
     const std::vector<std::byte> pixels(84U);
