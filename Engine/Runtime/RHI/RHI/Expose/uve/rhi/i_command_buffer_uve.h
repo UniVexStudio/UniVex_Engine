@@ -59,6 +59,26 @@ public:
         return RenderOperationResultUVE::Unsupported;
     }
 
+    /// Recorded query brackets (Foundation WP3). Unlike the device-level
+    /// IRenderDeviceUVE::BeginQueryUVE/EndQueryUVE pair, these bracket the draws recorded
+    /// between them in THIS command buffer, which is the condition a Vulkan occlusion query
+    /// needs (vkCmdBeginQuery/vkCmdEndQuery around the caller's own draws in one command
+    /// buffer). Rules shared by every backend: the handle must come from CreateQueryUVE
+    /// (InvalidHandle), Begin/End take an AnySamplesPassed query and WriteTimestamp a Timestamp
+    /// query (InvalidArgument), brackets do not nest and must begin and end between the same
+    /// pass markers (InvalidState). Results are read with IRenderDeviceUVE::GetQueryResultUVE
+    /// after the buffer was submitted and the frame presented; NotReady until then. Backends
+    /// without the feature return Unsupported without recording anything.
+    [[nodiscard]] virtual RenderOperationResultUVE BeginQueryUVE(QueryHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE EndQueryUVE(QueryHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE WriteTimestampUVE(QueryHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+
     /// Begins a render pass targeting `renderPassDesc`'s attachments. Must not be called while
     /// already inside a render pass (no nested passes).
     virtual void BeginRenderPassUVE(const RenderPassDescUVE& renderPassDesc) = 0;

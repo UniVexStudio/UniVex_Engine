@@ -34,6 +34,12 @@ extern const std::string_view kProceduralSkySource;
 inline constexpr std::string_view kShadowDepthVirtualPath = "shaders/shadow_depth.glsl";
 extern const std::string_view kShadowDepthSource;
 
+/// Renderer3DUVE's occlusion proxy (Foundation WP3): a position-only box drawn depth-tested with
+/// depth writes off and an all-zero additive colour, so it changes neither attachment and only
+/// feeds the AnySamplesPassed bracket it is recorded inside.
+inline constexpr std::string_view kOcclusionProxyVirtualPath = "shaders/occlusion_proxy.glsl";
+extern const std::string_view kOcclusionProxySource;
+
 inline constexpr std::string_view kLitShadowed3DVirtualPath = "shaders/lit_shadowed_3d.glsl";
 extern const std::string_view kLitShadowed3DSource;
 

@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <map>
 #include <optional>
 #include <utility>
@@ -1050,6 +1051,31 @@ struct Renderer3DUVE::ImplUVE {
     /// Depth-write off, source-alpha blend. Used when SurfaceInstance3D fades or transparents a
     /// primitive; the ordinary program stays opaque so solid cubes keep early-z.
     std::shared_ptr<Shader::ShaderProgramUVE> primitiveBlendedProgram;
+
+    /// Foundation WP3: the GPU occlusion stage's proxy program (built_in/occlusion_proxy.glsl).
+    /// Depth-tested LessOrEqual against everything the main pass has written, no depth write, and
+    /// an additive all-zero colour, so the attachments are untouched and only the query bracket
+    /// around each proxy draw observes it.
+    std::shared_ptr<Shader::ShaderProgramUVE> occlusionProxyProgram;
+    /// One probe per opaque mesh item, keyed by mesh GUID + world matrix bits: a moved object is a
+    /// new probe, so no stale verdict can hide it. Two query slots alternate between frames - the
+    /// frame that records slot N reads slot N^1 - so a bracket is never re-recorded (which resets
+    /// it in queue order) before its result was consumed.
+    struct OcclusionProbeUVE final {
+        std::array<QueryHandleUVE, 2U> queries{};
+        std::array<bool, 2U> issued{{false, false}};
+        std::array<Math::Matrix4x4UVE, 2U> viewProjections{};
+        std::uint64_t lastSeenFrame = 0U;
+    };
+    struct OcclusionProxyDrawUVE final {
+        std::uint64_t key = 0U;
+        Math::Matrix4x4UVE worldMatrix;
+        std::uint32_t slot = 0U;
+    };
+    std::unordered_map<std::uint64_t, OcclusionProbeUVE> occlusionProbes;
+    std::vector<OcclusionProxyDrawUVE> occlusionProxyDraws;
+    std::uint64_t occlusionFrame = 0U;
+    bool occlusionQueryCreationFailed = false;
 
     /// A 1x1 opaque-white texture, used whenever a material leaves albedoTexture/aoTexture unset
     /// (kInvalidAssetGuidUVE) — sampling it always yields {1,1,1,1}, so
@@ -2572,6 +2598,194 @@ struct Renderer3DUVE::ImplUVE {
         return commandCount;
     }
 
+    /// Foundation WP3: stable probe identity for an opaque mesh item - FNV-1a over the mesh GUID
+    /// and the world-matrix bits. The same object in the same place maps to the same probe frame
+    /// after frame; a moved one starts fresh and is therefore drawn, never skipped on old data.
+    [[nodiscard]] static std::uint64_t OcclusionProbeKeyUVE(const RenderItemUVE& item) noexcept {
+        std::uint64_t hash = 1469598103934665603ULL;
+        const auto mix = [&hash](const std::uint64_t value) noexcept {
+            for (std::uint32_t byteIndex = 0U; byteIndex < 8U; ++byteIndex) {
+                hash ^= (value >> (byteIndex * 8U)) & 0xFFULL;
+                hash *= 1099511628211ULL;
+            }
+        };
+        mix(item.meshHandle.GetGuidUVE().value);
+        for (const auto& row : item.worldMatrix.m) {
+            for (const float element : row) {
+                std::uint32_t bits = 0U;
+                std::memcpy(&bits, &element, sizeof(bits));
+                mix(bits);
+            }
+        }
+        return hash;
+    }
+
+    /// The unit cube spans [-0.5, 0.5]; scaled by the world box's size and inflated a little, so a
+    /// face lying exactly on a flat mesh (a floor plane has a zero-thickness box) still sits in
+    /// front of it under LessOrEqual instead of tying with it at the edge of depth precision.
+    [[nodiscard]] static Math::Matrix4x4UVE OcclusionProxyMatrixUVE(const Math::AabbUVE& worldBounds) noexcept {
+        const Math::Vector3UVE size = worldBounds.max - worldBounds.min;
+        const float inflate = std::max(0.01F, 0.02F * std::max(size.x, std::max(size.y, size.z)));
+        const Math::Vector3UVE scale{size.x + inflate, size.y + inflate, size.z + inflate};
+        return Math::Matrix4x4UVE::ComposeTrsUVE(worldBounds.GetCenterUVE(), Math::QuaternionUVE{}, scale);
+    }
+
+    void DestroyOcclusionProbeQueriesUVE(OcclusionProbeUVE& probe) {
+        for (QueryHandleUVE& query : probe.queries) {
+            if (query != kInvalidQueryHandleUVE) {
+                static_cast<void>(renderDevice.DestroyQueryUVE(query));
+                query = kInvalidQueryHandleUVE;
+            }
+        }
+        probe.issued = {{false, false}};
+    }
+
+    void DestroyOcclusionProbesUVE() {
+        for (auto& [key, probe] : occlusionProbes) {
+            static_cast<void>(key);
+            DestroyOcclusionProbeQueriesUVE(probe);
+        }
+        occlusionProbes.clear();
+        occlusionProxyDraws.clear();
+    }
+
+    /// Foundation WP3: applies last frame's completed brackets to this frame's opaque items and
+    /// plans this frame's proxy draws from the same walk. Conservative by construction - see
+    /// CullingSettingsUVE::gpuOcclusionCullingEnabledUVE for the exact skip rule. Never called for
+    /// a reflection-probe capture; that view keeps its own full item list.
+    void ApplyOcclusionVerdictsUVE(RenderQueueUVE& queue, const Math::Matrix4x4UVE& viewProjection,
+                                   const bool enabled) {
+        occlusionProxyDraws.clear();
+        lastFrameDiagnostics.occludedItemsSkipped = 0U;
+        const bool supported =
+            renderDevice.GetCapabilitiesUVE().occlusionQueries != RenderFeatureSupportUVE::Unsupported;
+        lastFrameDiagnostics.occlusionQueriesSupported = supported;
+        if (!enabled || !supported || occlusionQueryCreationFailed || occlusionProxyProgram == nullptr ||
+            !occlusionProxyProgram->IsValidUVE()) {
+            if (!occlusionProbes.empty()) {
+                DestroyOcclusionProbesUVE();
+            }
+            return;
+        }
+        ++occlusionFrame;
+        const std::uint32_t writeSlot = static_cast<std::uint32_t>(occlusionFrame & 1U);
+        const std::uint32_t readSlot = writeSlot ^ 1U;
+        std::vector<RenderItemUVE> kept;
+        kept.reserve(queue.opaqueItems.size());
+        std::size_t skipped = 0U;
+        for (const RenderItemUVE& item : queue.opaqueItems) {
+            const Asset::MeshAssetUVE* const mesh = item.meshHandle.TryGetUVE();
+            if (occlusionQueryCreationFailed || mesh == nullptr || !IsOrderedFiniteAabbUVE(mesh->localBounds)) {
+                kept.push_back(item);
+                continue;
+            }
+            const Math::AabbUVE worldBounds = mesh->localBounds.TransformUVE(item.worldMatrix);
+            if (!IsOrderedFiniteAabbUVE(worldBounds)) {
+                kept.push_back(item);
+                continue;
+            }
+            const std::uint64_t key = OcclusionProbeKeyUVE(item);
+            auto probeIt = occlusionProbes.find(key);
+            if (probeIt == occlusionProbes.end()) {
+                OcclusionProbeUVE probe;
+                bool created = true;
+                for (QueryHandleUVE& query : probe.queries) {
+                    const RenderOperationResultUVE result =
+                        renderDevice.CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, query);
+                    if (result != RenderOperationResultUVE::Success && result != RenderOperationResultUVE::Recorded) {
+                        created = false;
+                        break;
+                    }
+                }
+                if (!created) {
+                    DestroyOcclusionProbeQueriesUVE(probe);
+                    occlusionQueryCreationFailed = true;
+                    UVE_WARNING("Renderer3DUVE: the device refused an occlusion query; GPU occlusion culling is "
+                                "off for the rest of this renderer's life");
+                    kept.push_back(item);
+                    continue;
+                }
+                probeIt = occlusionProbes.emplace(key, probe).first;
+            }
+            OcclusionProbeUVE& probe = probeIt->second;
+            probe.lastSeenFrame = occlusionFrame;
+            bool occluded = false;
+            if (probe.issued[readSlot]) {
+                RenderQueryResultUVE result{};
+                const RenderOperationResultUVE status =
+                    renderDevice.GetQueryResultUVE(probe.queries[readSlot], result, false);
+                occluded = status == RenderOperationResultUVE::Success && result.value == 0U &&
+                           probe.viewProjections[readSlot] == viewProjection;
+            }
+            occlusionProxyDraws.push_back(OcclusionProxyDrawUVE{key, OcclusionProxyMatrixUVE(worldBounds), writeSlot});
+            if (occluded) {
+                ++skipped;
+            } else {
+                kept.push_back(item);
+            }
+        }
+        if (occlusionQueryCreationFailed) {
+            DestroyOcclusionProbesUVE();
+            kept = queue.opaqueItems;
+            skipped = 0U;
+        }
+        queue.opaqueItems.swap(kept);
+        // Probes nobody referenced for two frames belong to objects that moved, left the view or
+        // were destroyed; their queries go back to the device.
+        for (auto it = occlusionProbes.begin(); it != occlusionProbes.end();) {
+            if (it->second.lastSeenFrame + 2U < occlusionFrame) {
+                DestroyOcclusionProbeQueriesUVE(it->second);
+                it = occlusionProbes.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        lastFrameDiagnostics.occludedItemsSkipped = skipped;
+    }
+
+    /// Foundation WP3: records this frame's proxy brackets at the end of the main colour pass, after
+    /// every opaque writer. Each proxy is one depth-tested, colour-less cube under a
+    /// BeginQueryUVE/EndQueryUVE pair; a backend that refuses the bracket leaves the probe
+    /// unissued, which reads as "draw it" next frame.
+    [[nodiscard]] std::size_t RecordOcclusionProxiesUVE(const FrameUniformsUVE& frameUniforms,
+                                                        ICommandBufferUVE& commandBuffer) {
+        if (occlusionProxyDraws.empty() || occlusionProxyProgram == nullptr || !occlusionProxyProgram->IsValidUVE()) {
+            return 0U;
+        }
+        const MeshGpuResourcesUVE& cube = ResolvePrimitiveMeshGpuResourcesUVE(Scene::PrimitiveMeshKindUVE::Cube);
+        if (!IsValidMeshGpuResourcesUVE(cube)) {
+            return 0U;
+        }
+        std::size_t issued = 0U;
+        for (const OcclusionProxyDrawUVE& draw : occlusionProxyDraws) {
+            const auto probeIt = occlusionProbes.find(draw.key);
+            if (probeIt == occlusionProbes.end()) {
+                continue;
+            }
+            OcclusionProbeUVE& probe = probeIt->second;
+            const QueryHandleUVE query = probe.queries[draw.slot];
+            occlusionProxyProgram->SetMatrix4x4UVE("uModel", draw.worldMatrix);
+            occlusionProxyProgram->SetMatrix4x4UVE("uViewProjection", frameUniforms.viewProjection);
+            occlusionProxyProgram->ApplyToUVE(commandBuffer);
+            commandBuffer.BindVertexBufferUVE(cube.vertexBuffer);
+            commandBuffer.BindIndexBufferUVE(cube.indexBuffer);
+            const RenderOperationResultUVE begun = commandBuffer.BeginQueryUVE(query);
+            if (begun != RenderOperationResultUVE::Recorded && begun != RenderOperationResultUVE::Success) {
+                probe.issued[draw.slot] = false;
+                continue;
+            }
+            commandBuffer.DrawIndexedUVE(cube.indexCount);
+            const RenderOperationResultUVE ended = commandBuffer.EndQueryUVE(query);
+            probe.issued[draw.slot] =
+                ended == RenderOperationResultUVE::Recorded || ended == RenderOperationResultUVE::Success;
+            probe.viewProjections[draw.slot] = frameUniforms.viewProjection;
+            if (probe.issued[draw.slot]) {
+                ++issued;
+            }
+        }
+        return issued;
+    }
+
     [[nodiscard]] std::size_t RecordPrimitiveItemsUVE(const std::vector<PrimitiveRenderItemUVE>& items,
                                                        const FrameUniformsUVE& frameUniforms,
                                                        ICommandBufferUVE& commandBuffer) {
@@ -2903,6 +3117,20 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     primitiveBlendedDesc.debugNameUVE = "BuiltInPrimitiveVisual blended";
     m_impl->primitiveBlendedProgram = shaderManager.CreateProgramUVE(primitiveBlendedDesc);
 
+    // WP3 occlusion proxy: the mesh vertex layout (only aPosition is read, like shadow_depth),
+    // depth-tested but never written, and an additive zero colour so nothing visible changes.
+    Shader::ShaderProgramDescUVE occlusionProxyDesc;
+    occlusionProxyDesc.virtualFilePath = std::string(Shader::BuiltIn::kOcclusionProxyVirtualPath);
+    occlusionProxyDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kOcclusionProxySource);
+    occlusionProxyDesc.vertexLayout = MeshVertexLayoutUVE();
+    occlusionProxyDesc.vertexStride = static_cast<std::uint32_t>(sizeof(Asset::MeshVertexUVE));
+    occlusionProxyDesc.depthTestEnabled = true;
+    occlusionProxyDesc.depthWriteEnabled = false;
+    occlusionProxyDesc.depthCompare = DepthCompareUVE::LessOrEqual;
+    occlusionProxyDesc.blendMode = PipelineBlendModeUVE::Additive;
+    occlusionProxyDesc.debugNameUVE = "OcclusionProxy";
+    m_impl->occlusionProxyProgram = shaderManager.CreateProgramUVE(occlusionProxyDesc);
+
     Shader::ShaderProgramDescUVE uiOverlayProgramDesc;
     uiOverlayProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kUIOverlayVirtualPath);
     uiOverlayProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kUIOverlaySource);
@@ -2928,6 +3156,7 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
 
 Renderer3DUVE::~Renderer3DUVE() {
     m_impl->eventSystem.Unsubscribe(m_impl->reloadSubscription);
+    m_impl->DestroyOcclusionProbesUVE();
     for (const auto& [guid, meshResources] : m_impl->meshCache) {
         DestroyBufferIfValidUVE(m_impl->renderDevice, meshResources.vertexBuffer);
         DestroyBufferIfValidUVE(m_impl->renderDevice, meshResources.indexBuffer);
@@ -3453,6 +3682,15 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         m_impl->lastFrameDiagnostics.particleItemsTruncated = particleSnapshot.truncated;
     }
     queue.SortUVE();
+    // WP3: last frame's completed occlusion brackets decide which opaque items this frame skips;
+    // this frame's proxies are planned from the same walk and recorded at the end of MainColor.
+    // A reflection-probe capture is left alone: it is a different view with its own full list.
+    if (!capturingProbe) {
+        m_impl->ApplyOcclusionVerdictsUVE(queue, frameUniforms.viewProjection,
+                                          m_impl->cullingSettings.gpuOcclusionCullingEnabledUVE);
+    } else {
+        m_impl->occlusionProxyDraws.clear();
+    }
     ParticleDrawRecorderUVE::RecordIntoUVE(queue, kMaximumParticleGpuDrawCommandsUVE,
                                             m_impl->particleDrawRecording);
     m_impl->lastFrameDiagnostics.particleDrawCommandsRecorded = m_impl->particleDrawRecording.commands.size();
@@ -3551,12 +3789,17 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->lastFrameDiagnostics.particleDrawCommandsSubmitted > 0U ? 1U : 0U;
             m_impl->lastFrameDiagnostics.primitiveDrawCallsRecorded +=
                 m_impl->RecordPrimitiveItemsUVE(m_impl->primitiveItems, frameUniforms, commandBuffer);
+            // WP3: the occlusion proxies go last, after every opaque writer of this pass, so a
+            // zero-sample bracket means "behind everything that was drawn this frame".
+            m_impl->lastFrameDiagnostics.occlusionQueriesIssued =
+                m_impl->probeCaptureViewActive ? 0U : m_impl->RecordOcclusionProxiesUVE(frameUniforms, commandBuffer);
             if (m_impl->renderDevice.GetBackendNameUVE() == "OpenGL") {
                 m_impl->lastFrameDiagnostics.glDrawCallsIssued =
                     m_impl->lastFrameDiagnostics.meshDrawCallsRecorded +
                     m_impl->lastFrameDiagnostics.primitiveDrawCallsRecorded +
                     m_impl->lastFrameDiagnostics.particleDrawCallsRecorded +
-                    m_impl->lastFrameDiagnostics.decalDrawCallsRecorded;
+                    m_impl->lastFrameDiagnostics.decalDrawCallsRecorded +
+                    m_impl->lastFrameDiagnostics.occlusionQueriesIssued;
             }
             commandBuffer.EndRenderPassUVE();
         });

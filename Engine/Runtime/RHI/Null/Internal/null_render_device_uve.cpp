@@ -377,7 +377,16 @@ PipelineHandleUVE NullRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<con
 }
 
 std::unique_ptr<ICommandBufferUVE> NullRenderDeviceUVE::CreateCommandBufferUVE() {
-    return std::make_unique<NullCommandBufferUVE>();
+    // Recorded query brackets validate against this device's query table (owner-thread
+    // recording, like GL); the lookup reads the table without mutating it.
+    ImplUVE* const impl = m_impl.get();
+    return std::make_unique<NullCommandBufferUVE>(
+        [impl](const QueryHandleUVE query) -> std::optional<RenderQueryKindUVE> {
+            const auto found = impl->queries.find(query.value);
+            if (found == impl->queries.end())
+                return std::nullopt;
+            return found->second.kind;
+        });
 }
 
 void NullRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer) {

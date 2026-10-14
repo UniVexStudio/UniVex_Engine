@@ -918,10 +918,30 @@ untouched. Missing capabilities explicitly return `Unsupported`, never pretend s
   reset+write submission (the queue-ordered point in time a CPU-visible timestamp means),
   results converted from the device's tick period to nanoseconds with `NotReady` for a
   non-blocking read, gated on the chosen queue family's `timestampValidBits`
-  (`TimestampQueriesReportRealTicksAndRefuseOcclusion`). Occlusion queries stay explicitly
-  `Unsupported` there: `vkCmdBeginQuery`/`vkCmdEndQuery` must bracket the caller's own draws in
-  ONE command buffer, and a device-level begin/end pair that reported "0 samples" would be an
-  invented visibility result rather than information about real geometry.
+  (`TimestampQueriesReportRealTicksAndRefuseOcclusion`). `[x]` **Recorded query brackets
+  (WP3, 2026-10-14):** `ICommandBufferUVE` gained `BeginQueryUVE` / `EndQueryUVE` /
+  `WriteTimestampUVE(QueryHandleUVE)` (default `Unsupported`, `Recorded` on success) with three
+  new `RecordedCommandUVE` alternatives, so a bracket surrounds the caller's OWN draws inside
+  one command buffer - the thing the device-level pair could never do honestly. Shared
+  validation across the three backends: unknown handle -> `InvalidHandle`, wrong kind ->
+  `InvalidArgument`, nested / unmatched / cross-pass bracket -> `InvalidState`, and a pass end
+  with a bracket still open closes it (logged) rather than leaking GL/Vulkan query state. Null
+  validates against the device's query table (a kind lookup handed to the command buffer) and
+  keeps results `NotReady`, never a number (`NullCommandBufferRecordsQueryBracketsInOrder`,
+  `NullCommandBufferRejectsBadQueryBrackets`, `NullRecordedQueriesNeverInventResults`); GL
+  issues `glBeginQuery(GL_ANY_SAMPLES_PASSED)` / `glEndQuery` / `glQueryCounter` immediately
+  through the same `activeOcclusion` slot the device-level bracket uses
+  (`RecordedOcclusionQueryCountsOnlyVisibleDraws`, `RecordedTimestampsAreMonotonic`); Vulkan
+  now creates `VK_QUERY_TYPE_OCCLUSION` pools for `AnySamplesPassed`, reports
+  `occlusionQueries = Native`, replays the brackets as `vkCmdBeginQuery` / `vkCmdEndQuery` /
+  `vkCmdWriteTimestamp` inside the frame's pass, resets every pool named by the frame in a
+  prologue after `vkBeginCommandBuffer` and before the pass (a reset is illegal inside one), and
+  normalises an imprecise occlusion count to the 0/1 contract; a query whose bracket is still
+  queued for the next `PresentUVE` reads `NotReady`
+  (`RecordedOcclusionQueryDistinguishesHiddenAndVisibleTriangles`,
+  `RecordedOcclusionQueryIsNotReadyUntilCompletion`). The device-level Vulkan
+  `BeginQueryUVE`/`EndQueryUVE` pair stays `Unsupported` for the reason it always had: outside a
+  command buffer there is no geometry for it to measure.
 - **Timeline semaphores:** `SemaphoreDescUVE` plus `CreateSemaphoreUVE` /
   `GetSemaphoreCounterUVE` / `SignalSemaphoreUVE` / `WaitSemaphoreUVE` /
   `DestroySemaphoreUVE` carry a monotonic 64-bit counter through the common API.
@@ -947,13 +967,16 @@ and timestamp ordering; two Vulkan tests verify copies/fences and the deferred-C
 Native sources/tests pass strict syntax checks against real headers. Graphics-capable CI run
 `38429697106` on `012f69f` passed the native suite, including the new operations and the unchanged
 shadow pixel comparisons after correcting their sampler setup. This closes the earlier execution-
-verification gap, not the explicitly unsupported Vulkan operations. Semaphores/timelines
+verification gap, not the explicitly unsupported Vulkan operations. Vulkan occlusion queries
+and the GPU occlusion consumer were closed by WP3 (recorded brackets above; consumer in the
+renderer reconciliation below). Semaphores/timelines
 are implemented as timeline objects (`CreateSemaphoreUVE` and friends, above); the
 `[ ]` that remains is *submission-level* queue sync (binary semaphores as `SubmitUVE`
 parameters), which is not closed by a CPU-visible counter. Vulkan texture-transfer parity and
 Vulkan timestamps were executed on a real Vulkan 1.3 ICD on 2026-10-14 (60 of 60
-`VulkanRenderDeviceUVETest` cases pass, one unrelated SPIR-V fixture skip), while Vulkan
-occlusion queries and GPU/Hi-Z occlusion consumers remain explicitly unsupported/absent. The GL
+`VulkanRenderDeviceUVETest` cases pass, one unrelated SPIR-V fixture skip); the WP3 bracket
+and consumer tests named in this document were written without a compiler in the session that
+lost its toolchain and must be built and run before this paragraph is read as evidence. The GL
 occlusion case `FoundationQueriesMeasureRealVisibilityAndGpuTimestamps` passes on the CI's
 software GL runner but not on the sandbox's softpipe rasterizer, where a standalone program
 reproduces the cause outside the engine: once any `glQueryCounter(GL_TIMESTAMP)` has been
@@ -1068,7 +1091,22 @@ Renderer presence reconciliation (source and existing tests, 2026-10-14):
 - `[x]` **CPU occlusion** already runs: `MeshRendererUVE` and `Renderer3DUVE` use
   `IsOccluder3DAabbDrawHiddenUVE`; mesh visibility, primitive and decal tests verify
   actual rejection, disabled occluders and the ignore-occlusion override.
-  `[ ]` GPU/Hi-Z occlusion is a separate gap; a query API alone does not implement it.
+  `[x]` **GPU occlusion (WP3, 2026-10-14)** — `CullingSettingsUVE::gpuOcclusionCullingEnabledUVE`
+  (default off) makes `Renderer3DUVE` end its MainColor pass with one proxy box per opaque mesh
+  item (`built_in/occlusion_proxy.glsl`: depth-tested `LessOrEqual`, no depth write, additive
+  zero colour - the attachments are untouched, only the bracket's sample count sees the draw;
+  the box is the item's world AABB inflated by 2 % so a flat mesh's zero-thickness box still
+  passes in front of itself) under a recorded `BeginQueryUVE`/`EndQueryUVE` bracket. Probes are
+  keyed by mesh GUID + world-matrix bits and double-buffered (the frame that records slot N
+  reads slot N^1), and an item is skipped only when its last bracket completed with zero
+  samples, the view-projection is unchanged since that bracket, and the item has not moved;
+  `NotReady`, a moved camera, a moved object, a refused query or a device without queries all
+  draw it. Diagnostics: `occlusionQueriesSupported` / `occlusionQueriesIssued` /
+  `occludedItemsSkipped`. The Null proof
+  (`GpuOcclusionCullingRecordsProxyBracketsAfterOpaqueDrawsAndNeverSkipsWithoutAVerdict`) pins
+  the recording order and the never-skip-without-a-verdict rule; the real-GPU halves are the GL
+  and Vulkan bracket tests. `[ ]` Hi-Z (a depth pyramid tested on the GPU without per-item
+  brackets) is a different design and stays a ROADMAP item, not a foundation gap.
 - `[x]` **Particle upload/draw** already runs through
   `Renderer3DUVE::ImplUVE::RecordParticleItemsUVE`: copied particle commands become
   bounded vertex data, `UpdateBufferUVE`, vertex binding and a draw. `EngineCoreUVE`
@@ -1419,7 +1457,7 @@ consumer. They are cheap relative to how large they look.
 | 3.3 | Audio mixer routing | — | Landed (verified Oct 2026 by source read): AudioSystemUVE::UpdateUVE applies group multipliers to every live voice per frame; component mixerGroup syncs incl. live reassignment |
 | 3.4 | Script bytecode execution | — | Landed (verified Oct 2026): the bytecode VM executes (editor instant reload) and release builds generate C++23 from the same bytecode; the visual graph was removed. Decision made: execute. |
 | 3.5 | Plugin host | — | Landed: NativePluginHostUVE loads/unloads native plugins (dlopen + LoadLibrary), negotiates the ABI, registers manifests, rolls back failed loads; tested incl. real .so fixtures |
-| 3.6 | Occlusion culling | 2.8 (to see it) and GPU queries | Still open (Oct 2026): frustum culling live (camera, decal, compute); occlusion queries explicitly deferred, GL-side (needs a GPU query path in a real backend). |
+| 3.6 | Occlusion culling | 2.8 (to see it) and GPU queries | Closed by WP3 (2026-10-14, drafted without a compiler - build and run before trusting): recorded query brackets on all three backends, Vulkan occlusion pools, and `Renderer3DUVE`'s opt-in proxy-box consumer with the conservative skip rule (see the renderer reconciliation). Hi-Z remains a ROADMAP design. |
 
 ## Tier 4 — genuinely new subsystems
 
