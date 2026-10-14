@@ -867,19 +867,24 @@ ShaderHandleUVE GlRenderDeviceUVE::CreateShaderUVE(const ShaderDescUVE& desc, st
     }
 #if defined(__ANDROID__)
     if (desc.stage == ShaderStageUVE::Compute || desc.stage == ShaderStageUVE::Geometry) {
+        if (outInfoLog != nullptr) *outInfoLog = "GLES3 does not support requested compute/geometry shader stage.";
         UVE_ERROR("GlRenderDeviceUVE: GLES3 does not support requested compute/geometry shader stage");
         return kInvalidShaderHandleUVE;
     }
 #else
-    // Geometry shaders are core since GL 3.2, below this engine's desktop baseline, so no gate is
-    // needed there - but compute shaders are GL 4.3+ only (Phase 2a), and the negotiated context
-    // is not guaranteed to have cleared that bar just because this isn't Android.
+    // Compute shaders need GL 4.3+, not merely a requested modern desktop context.
     if (desc.stage == ShaderStageUVE::Compute && !m_impl->state.supportsComputeShadersUVE) {
         UVE_ERROR("GlRenderDeviceUVE: compute shaders require an OpenGL 4.3+ context; the negotiated "
                   "context does not support them");
         return kInvalidShaderHandleUVE;
     }
 #endif
+    if (desc.stage == ShaderStageUVE::Geometry &&
+        GetCapabilitiesUVE().geometryShaders != RenderFeatureSupportUVE::Native) {
+        if (outInfoLog != nullptr) *outInfoLog = "Geometry shaders require a usable desktop GL 3.2+ context.";
+        UVE_ERROR("GlRenderDeviceUVE: geometry shaders are unsupported by this context");
+        return kInvalidShaderHandleUVE;
+    }
     if (desc.sourceCode.size() > static_cast<std::size_t>(std::numeric_limits<GLint>::max())) {
         if (outInfoLog != nullptr) {
             *outInfoLog = "Shader source exceeds the GLsizei length range.";
@@ -929,6 +934,15 @@ void GlRenderDeviceUVE::DestroyShaderUVE(ShaderHandleUVE shader) {
 }
 
 PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& desc, std::string* outInfoLog) {
+    const auto rejectStage = [outInfoLog](const char* message) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE {}", message);
+        if (outInfoLog != nullptr) *outInfoLog = message;
+        return kInvalidPipelineHandleUVE;
+    };
+    if (desc.geometryShader != kInvalidShaderHandleUVE &&
+        GetCapabilitiesUVE().geometryShaders != RenderFeatureSupportUVE::Native) {
+        return rejectStage("geometry shader pipelines are unsupported by this context");
+    }
     if (!IsVertexLayoutValidUVE(desc.vertexLayout)) {
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown vertex attribute format");
         return kInvalidPipelineHandleUVE;
@@ -979,9 +993,25 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
         return kInvalidPipelineHandleUVE;
     }
 
+    if (vertexIt->second.stage != ShaderStageUVE::Vertex || fragmentIt->second.stage != ShaderStageUVE::Fragment) {
+        return rejectStage("vertex/fragment shader handles are bound to the wrong stages");
+    }
+    const auto geometryIt = m_impl->state.shaders.find(desc.geometryShader.value);
+    if (desc.geometryShader != kInvalidShaderHandleUVE) {
+        if (geometryIt == m_impl->state.shaders.end()) {
+            return rejectStage("geometry shader handle does not reference a live shader");
+        }
+        if (geometryIt->second.stage != ShaderStageUVE::Geometry) {
+            return rejectStage("geometry shader slot requires a Geometry-stage shader");
+        }
+    }
+
     const GLuint glProgram = m_impl->state.gl.glCreateProgram();
     m_impl->state.gl.glAttachShader(glProgram, vertexIt->second.glShader);
     m_impl->state.gl.glAttachShader(glProgram, fragmentIt->second.glShader);
+    if (geometryIt != m_impl->state.shaders.end()) {
+        m_impl->state.gl.glAttachShader(glProgram, geometryIt->second.glShader);
+    }
     m_impl->state.gl.glLinkProgram(glProgram);
 
     const std::string infoLog = GetProgramInfoLogUVE(m_impl->state.gl, glProgram);
@@ -1318,6 +1348,7 @@ RenderDeviceCapabilitiesUVE GlRenderDeviceUVE::GetCapabilitiesUVE() const noexce
     const bool copyVersion = major > 3 || (major == 3 && minor >= 1);
     const bool syncVersion = major > 3 || (major == 3 && minor >= 2);
     const bool queryVersion = major > 3 || (major == 3 && minor >= 3);
+    if (syncVersion) caps.geometryShaders = native; // Geometry is core since desktop GL 3.2.
     if (m_impl->state.supportsComputeShadersUVE && gl.glMemoryBarrier)
         caps.memoryBarriers = native;
 #endif

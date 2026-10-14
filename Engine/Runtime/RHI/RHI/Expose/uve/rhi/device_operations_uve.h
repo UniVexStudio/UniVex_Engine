@@ -37,6 +37,8 @@ struct RenderDeviceCapabilitiesUVE final {
     RenderFeatureSupportUVE retainedTextures = RenderFeatureSupportUVE::Unsupported;
     /// Copy source/destination offsets and byte count must satisfy this backend's alignment.
     std::uint32_t bufferCopyAlignment = 1U;
+    /// Optional geometry stage in a graphics pipeline; Model never means GPU execution.
+    RenderFeatureSupportUVE geometryShaders = RenderFeatureSupportUVE::Unsupported;
 };
 struct FenceTagUVE {};
 struct QueryTagUVE {};

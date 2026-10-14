@@ -416,11 +416,10 @@ struct TextureMipExtentUVE {
 
 /// Which programmable stage a ShaderDescUVE belongs to. `Compute` is real since the M5a
 /// compute slice: CreateShaderUVE accepts compute-stage shaders and CreateComputePipelineUVE
-/// links exactly one of them. `Geometry` (Increment 21) is compilable standalone via
-/// Shader::ShaderSourceUVE but still has no pipeline slot — PipelineDescUVE only links a
-/// vertex+fragment pair; growing it with a geometry slot is deferred future work, not built
-/// this increment. Append-only: never renumber existing values, since ShaderStageUVE crosses
-/// the RHI boundary.
+/// links exactly one of them. `Geometry` can be attached through PipelineDescUVE's optional
+/// geometryShader slot. Query RenderDeviceCapabilitiesUVE::geometryShaders before using it:
+/// Null models it, desktop GL executes it, and unsupported backends reject it explicitly.
+/// Append-only: never renumber existing values, since ShaderStageUVE crosses the RHI boundary.
 enum class ShaderStageUVE : std::uint8_t { Vertex, Fragment, Compute, Geometry };
 
 [[nodiscard]] constexpr bool IsShaderStageValidUVE(const ShaderStageUVE stage) noexcept {
@@ -690,6 +689,12 @@ struct PipelineDescUVE {
     float depthBiasSlopeFactor = 0.0F;
     DepthCompareUVE depthCompare = DepthCompareUVE::Less;
     StencilStateUVE stencil;
+
+    /// Optional live Geometry-stage shader. Invalid means the legacy vertex/fragment pair.
+    /// Appended for aggregate/source compatibility. Unsupported backends must reject a supplied
+    /// handle, never silently omit it. Shader objects need only live through pipeline creation;
+    /// shader-specific input/output topology and limits are validated by the native linker.
+    ShaderHandleUVE geometryShader = kInvalidShaderHandleUVE;
 };
 
 /// Describes a COMPUTE pipeline to create via IRenderDeviceUVE::CreateComputePipelineUVE()

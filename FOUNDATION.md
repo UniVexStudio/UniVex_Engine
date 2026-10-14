@@ -728,7 +728,7 @@ render-pass attachment.
 | `BufferDescUVE` | size, usage (`Vertex`/`Index`/`Uniform`/`Storage`/`IndirectStorage`) | no memory/CPU-access/lifetime hint |
 | `TextureDescUVE` | width, height, format, mipLevels, array layers, cubemap shape | no depth, no sample count, no usage flags (Tier 2.3 landed layers + cubes) |
 | `TextureFormatUVE` | `RGBA8Unorm`, `RGBA16Float`, `Depth32Float`, BC1/BC3/BC7, ETC2/ETC2A8 | eight formats; no sRGB, no single/two-channel |
-| `ShaderDescUVE` | stage, source, entry point | `Geometry` compiles but has no pipeline slot |
+| `ShaderDescUVE` | stage, source, entry point | `Geometry` has an optional `PipelineDescUVE::geometryShader` slot (Null/desktop GL); Vulkan reports `geometryShaders = Unsupported` |
 | `PipelineDescUVE` | vertex+fragment shader, vertex layout, stride, topology, depth test/write/compare, cull/winding/fill/bias, blend mode | rasterizer tail landed (Tier 2.1, RHI side) |
 | `RenderPassDescUVE` | up to 4 colour attachments, one depth attachment, load+store ops, clear values, optional viewport override | multi-target + `StoreOpUVE` landed (Tiers 2.4/2.5) |
 | `PrimitiveTopologyUVE` | `Triangles`, `Lines` | no points or strips (lines serve the debug renderer) |
@@ -913,8 +913,16 @@ Renderer presence reconciliation (source and existing tests, 2026-10-14):
 - `[x]` **Sky rendering** has procedural and texture-backed environment paths; the
   renderer's `SkyAssetDrivesEnvironmentMapAmbientAndSky` and fallback tests cover them.
   `[~]` Environment-map ambient lighting and reflection probes are narrower than full
-  prefiltered diffuse/specular IBL. `[ ]` No terrain renderer or geometry-shader pipeline
-  slot exists; `ShaderStageUVE::Geometry` standalone compilation is not a pipeline consumer.
+  prefiltered diffuse/specular IBL. `[ ]` No terrain renderer exists.
+  `[/]` `PipelineDescUVE::geometryShader` now carries the stage through the common API:
+  `NullRenderDeviceUVE` validates and records it, desktop GL attaches it to the linked program
+  (local strict syntax plus `GlRenderDeviceUVETest.GeometryStageChangesRasterizedPositionAndSurvivesShaderDeletion`
+  assert a real position change; the pixel probe needs the native CI software GL runner),
+  and Vulkan/GLES reject a supplied handle explicitly instead of dropping the stage
+  (`VulkanRenderDeviceUVETest.GeometryPipelineIsExplicitlyUnsupportedRatherThanIgnored`,
+  `GeometryPipelineUVETest.*`). `RenderDeviceCapabilitiesUVE::geometryShaders` reports
+  `Model` for Null and `Native` only for a usable desktop GL 3.2+ context.
+  Geometry-stage *execution* on Vulkan, stage reflection and a renderer consumer remain absent.
 - `[x]` Basis Universal transcoding, CPU mip chains, 2D/sprite batching, debug/line
   drawing, reflection-probe capture scheduling and CPU-built decal receive patches
   also exist. These are pre-existing paths, not newly implemented by this reconciliation.

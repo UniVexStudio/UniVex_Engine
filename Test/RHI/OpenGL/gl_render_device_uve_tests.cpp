@@ -18,6 +18,7 @@
 #include <span>
 #include <string>
 #include <thread>
+#include <utility>
 
 #ifndef GL_GLEXT_PROTOTYPES
 #define GL_GLEXT_PROTOTYPES 1
@@ -207,6 +208,96 @@ TEST(GlFunctionsUVETest, StencilSymbolsAreLoadedAndRequiredForTheBaseline) {
         return reinterpret_cast<void*>(&LoaderSentinelUVE);
     };
     EXPECT_FALSE(Detail::LoadGlFunctionsUVE(missingStencil).IsCompleteUVE());
+}
+
+TEST_F(GlRenderDeviceUVETest, GeometryStageChangesRasterizedPositionAndSurvivesShaderDeletion) {
+    ASSERT_EQ(renderDevice->GetCapabilitiesUVE().geometryShaders, RenderFeatureSupportUVE::Native);
+    const auto vertex = renderDevice->CreateShaderUVE({ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource)});
+    const auto fragment = renderDevice->CreateShaderUVE({ShaderStageUVE::Fragment, std::string(kValidFragmentShaderSource)});
+    const auto geometry = renderDevice->CreateShaderUVE({ShaderStageUVE::Geometry, R"(#version 330 core
+layout(triangles) in;
+layout(triangle_strip, max_vertices = 3) out;
+void main() {
+    for (int i = 0; i < 3; ++i) {
+        gl_Position = gl_in[i].gl_Position + vec4(1.0, 0.0, 0.0, 0.0);
+        EmitVertex();
+    }
+    EndPrimitive();
+}
+)"});
+    ASSERT_NE(vertex, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragment, kInvalidShaderHandleUVE);
+    ASSERT_NE(geometry, kInvalidShaderHandleUVE);
+    PipelineDescUVE desc;
+    desc.vertexShader = vertex;
+    desc.fragmentShader = fragment;
+    desc.geometryShader = geometry;
+    desc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U}};
+    desc.vertexStride = 3U * sizeof(float);
+    desc.depthTestEnabled = false;
+    std::string info;
+    const auto pipeline = renderDevice->CreatePipelineUVE(desc, &info);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE) << info;
+    renderDevice->DestroyShaderUVE(geometry);
+    renderDevice->DestroyShaderUVE(fragment);
+    renderDevice->DestroyShaderUVE(vertex);
+
+    // The source triangle occupies the left half; only execution of the GS moves it right.
+    constexpr std::array<float, 9> vertices{-1.0F, -1.0F, 0.0F, 0.0F, -1.0F, 0.0F, -1.0F, 1.0F, 0.0F};
+    const auto buffer = renderDevice->CreateBufferUVE({sizeof(vertices), BufferUsageUVE::Vertex},
+                                                      std::as_bytes(std::span(vertices)));
+    const auto target = renderDevice->CreateTextureUVE({8U, 8U, TextureFormatUVE::RGBA8Unorm});
+    ASSERT_NE(buffer, kInvalidBufferHandleUVE);
+    ASSERT_NE(target, kInvalidTextureHandleUVE);
+    auto commands = renderDevice->CreateCommandBufferUVE();
+    RenderPassDescUVE pass;
+    pass.colorAttachment = target;
+    pass.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+    commands->BeginRenderPassUVE(pass);
+    commands->BindPipelineUVE(pipeline);
+    commands->BindVertexBufferUVE(buffer);
+    commands->DrawUVE(3U);
+    commands->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commands));
+    std::array<std::uint8_t, 8U * 8U * 4U> pixels{};
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(target));
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+    EXPECT_LT(pixels[(1U * 8U + 0U) * 4U], 8U);
+    EXPECT_GT(pixels[(1U * 8U + 4U) * 4U], 240U);
+    renderDevice->DestroyPipelineUVE(pipeline);
+    renderDevice->DestroyTextureUVE(target);
+    renderDevice->DestroyBufferUVE(buffer);
+}
+
+TEST_F(GlRenderDeviceUVETest, GeometryPipelineRejectsUnknownDestroyedAndWrongStageHandles) {
+    const auto vertex = renderDevice->CreateShaderUVE({ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource)});
+    const auto fragment = renderDevice->CreateShaderUVE({ShaderStageUVE::Fragment, std::string(kValidFragmentShaderSource)});
+    ASSERT_NE(vertex, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragment, kInvalidShaderHandleUVE);
+    PipelineDescUVE desc;
+    desc.vertexShader = vertex;
+    desc.fragmentShader = fragment;
+    desc.geometryShader = vertex;
+    std::string info;
+    EXPECT_EQ(renderDevice->CreatePipelineUVE(desc, &info), kInvalidPipelineHandleUVE);
+    EXPECT_NE(info.find("Geometry-stage"), std::string::npos);
+    desc.geometryShader = ShaderHandleUVE{999999U};
+    EXPECT_EQ(renderDevice->CreatePipelineUVE(desc, &info), kInvalidPipelineHandleUVE);
+    EXPECT_NE(info.find("live shader"), std::string::npos);
+    const auto deleted = renderDevice->CreateShaderUVE({ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource)});
+    ASSERT_NE(deleted, kInvalidShaderHandleUVE);
+    renderDevice->DestroyShaderUVE(deleted);
+    desc.geometryShader = deleted;
+    EXPECT_EQ(renderDevice->CreatePipelineUVE(desc, &info), kInvalidPipelineHandleUVE);
+    EXPECT_NE(info.find("live shader"), std::string::npos);
+    desc.geometryShader = kInvalidShaderHandleUVE;
+    std::swap(desc.vertexShader, desc.fragmentShader);
+    EXPECT_EQ(renderDevice->CreatePipelineUVE(desc, &info), kInvalidPipelineHandleUVE);
+    EXPECT_NE(info.find("wrong stages"), std::string::npos);
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+    renderDevice->DestroyShaderUVE(fragment);
+    renderDevice->DestroyShaderUVE(vertex);
 }
 
 TEST_F(GlRenderDeviceUVETest, DepthStencilDiscardUsesSeparateAttachmentAspects) {
