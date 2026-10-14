@@ -73,10 +73,60 @@ static_assert(alignof(DrawIndexedIndirectCommandUVE) == alignof(std::uint32_t),
 
 /// Describes a GPU buffer to create via IRenderDeviceUVE::CreateBufferUVE(). A buffer must have
 /// positive byte capacity; zero-sized GL buffers are not useful to any supported draw/update path.
+/// Where a buffer's memory should live and which side writes it. A placement request, never a
+/// behavioural switch: UpdateBufferUVE and ReadbackBufferUVE keep the same copy-on-call contract
+/// for every value, and a backend that cannot offer the placement picks one that satisfies the
+/// usage. `Auto` keeps each backend's usage-derived policy (Vulkan today: vertex/index
+/// device-local behind a staging copy, uniform/storage/indirect host-visible and persistently
+/// mapped; GL has one memory and folds the hint into glBufferData's usage token).
+enum class BufferMemoryUVE : std::uint8_t {
+    Auto = 0,
+    /// GPU-resident; host updates and readbacks travel through staging copies on Vulkan.
+    DeviceLocal,
+    /// Host-visible and CPU-written, usually often: streamed vertices, uniform rings.
+    Upload,
+    /// Host-visible and GPU-written for the CPU to read (cached memory when the device offers it).
+    Readback,
+};
+
+/// How often the host rewrites the buffer after creation. glBufferData's STATIC/DYNAMIC/STREAM
+/// token on GL; recorded (not acted on) by Vulkan, where placement is BufferMemoryUVE's job.
+enum class BufferUpdateFrequencyUVE : std::uint8_t { Static = 0, Dynamic, Stream };
+
+[[nodiscard]] constexpr bool IsBufferMemoryValidUVE(const BufferMemoryUVE memory) noexcept {
+    switch (memory) {
+        case BufferMemoryUVE::Auto:
+        case BufferMemoryUVE::DeviceLocal:
+        case BufferMemoryUVE::Upload:
+        case BufferMemoryUVE::Readback:
+            return true;
+    }
+    return false;
+}
+
+[[nodiscard]] constexpr bool IsBufferUpdateFrequencyValidUVE(const BufferUpdateFrequencyUVE frequency) noexcept {
+    switch (frequency) {
+        case BufferUpdateFrequencyUVE::Static:
+        case BufferUpdateFrequencyUVE::Dynamic:
+        case BufferUpdateFrequencyUVE::Stream:
+            return true;
+    }
+    return false;
+}
+
 struct BufferDescUVE {
     std::uint64_t sizeBytes = 0;
     BufferUsageUVE usage = BufferUsageUVE::Vertex;
+    BufferMemoryUVE memory = BufferMemoryUVE::Auto;
+    BufferUpdateFrequencyUVE updateFrequency = BufferUpdateFrequencyUVE::Static;
 };
+
+/// Every enumerator on the descriptor is a known one. Backends check this before allocating so
+/// an out-of-range value coming across the RHI boundary is refused instead of hitting a default.
+[[nodiscard]] constexpr bool IsBufferDescValidUVE(const BufferDescUVE& desc) noexcept {
+    return IsBufferUsageValidUVE(desc.usage) && IsBufferMemoryValidUVE(desc.memory) &&
+           IsBufferUpdateFrequencyValidUVE(desc.updateFrequency);
+}
 
 [[nodiscard]] constexpr bool ValidateBufferUploadUVE(const BufferDescUVE& desc,
                                                        const std::span<const std::byte> initialData) noexcept {

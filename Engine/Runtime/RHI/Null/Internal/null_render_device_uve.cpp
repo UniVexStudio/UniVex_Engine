@@ -86,8 +86,9 @@ BufferHandleUVE NullRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc,
         UVE_ERROR("NullRenderDeviceUVE: CreateBufferUVE initial data exceeds buffer size");
         return kInvalidBufferHandleUVE;
     }
-    if (!IsBufferUsageValidUVE(desc.usage)) {
-        UVE_ERROR("NullRenderDeviceUVE: CreateBufferUVE received an unknown buffer usage");
+    if (!IsBufferDescValidUVE(desc)) {
+        UVE_ERROR("NullRenderDeviceUVE: CreateBufferUVE received an unknown buffer usage, memory or "
+                  "update-frequency value");
         return kInvalidBufferHandleUVE;
     }
     const std::uint32_t handleValue = m_impl->nextBufferHandle++;
@@ -455,6 +456,14 @@ RenderOperationResultUVE NullRenderDeviceUVE::GetTextureDescUVE(TextureHandleUVE
     if (found == m_impl->textures.end())
         return RenderOperationResultUVE::InvalidHandle;
     output = found->second;
+    return RenderOperationResultUVE::Success;
+}
+RenderOperationResultUVE NullRenderDeviceUVE::GetBufferDescUVE(BufferHandleUVE handle,
+                                                               BufferDescUVE &output) const {
+    const auto found = m_impl->buffers.find(handle.value);
+    if (found == m_impl->buffers.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    output = found->second.desc;
     return RenderOperationResultUVE::Success;
 }
 RenderOperationResultUVE NullRenderDeviceUVE::CopyBufferUVE(const BufferCopyDescUVE &copy) {

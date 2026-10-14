@@ -222,6 +222,8 @@ public:
     [[nodiscard]] RenderDeviceCapabilitiesUVE GetCapabilitiesUVE() const noexcept override;
     [[nodiscard]] RenderOperationResultUVE GetTextureDescUVE(TextureHandleUVE,
                                                              TextureDescUVE &) const override;
+    [[nodiscard]] RenderOperationResultUVE GetBufferDescUVE(BufferHandleUVE,
+                                                            BufferDescUVE &) const override;
     [[nodiscard]] RenderOperationResultUVE CopyBufferUVE(const BufferCopyDescUVE &) override;
     /// Tier 2.6 color blit: one recorded vkCmdBlitImage on a transient command buffer, gated on
     /// the per-format blit/filter feature bits, with both subresources restored to the layout the
