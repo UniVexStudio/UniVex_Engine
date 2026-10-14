@@ -1024,9 +1024,19 @@ driven by nothing.
 - `[x]` **Input** — keyboard, mouse, gamepad, action bindings, touch and gesture
   recognition. `[~]` Gesture output is computed and read by nobody; mobile input
   has no platform backend pushing snapshots.
-- `[x]` **UI** — `UIRuntimeUVE` hit-tests buttons against real input and emits a
-  quad batch; font atlas via stb_truetype. `[ ]` No layout, no clipping, no focus
-  or keyboard navigation, no widgets beyond text/image/button.
+- `[x]` **UI** — layout, scroll clipping, text/image/button/slider/checkbox/dropdown/
+  progress/tooltip/tween widgets already exist with focused suites under `Test/UI`.
+  `UIRuntimeUVE` now also owns deterministic keyboard focus: visible, non-disabled
+  button/slider/checkbox/dropdown/text-input widgets are ordered top-to-bottom then
+  left-to-right (entity handle breaks ties), Tab/Shift+Tab wraps, and stale focus is
+  dropped. Enter/Space activates buttons and checkboxes, arrows step sliders, a
+  dropdown opens/moves/selects/closes from the keyboard, and text fields adopt mouse
+  focus or receive Tab focus for typing; Escape releases text focus. Focus is runtime
+  state exposed by `GetFocusedEntityUVE`, never serialized. Seven new
+  `UIFocusNavigationUVETest` cases cover ordering, activation, slider/dropdown/text
+  behavior, mouse adoption and destroyed-widget cleanup. Full verification: **4,128
+  CTest cases, zero failures, seven existing Vulkan skips** (2026-10-13). This does
+  not claim gamepad navigation or a native mobile backend.
 - `[x]` **Scripting** — UVScript (`Engine/Runtime/UVScript`): parser, type checker,
   bytecode VM, engine binding with reload on save, and a text editor. The node-graph
   scripting module was removed. Collections and tuples have landed (typed lists, maps,
