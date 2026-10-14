@@ -826,6 +826,20 @@ the pixel-mask test. After these corrections (2026-10-14), full CPU build/CTest 
 native graphics CI verifies the backend tests; downloaded headers used for syntax checks
 are ignored build artifacts, not a replacement for GL/Vulkan execution.
 
+Native follow-up: CI run `38515088834` on `bec9f6cf` passed the full native build, then
+reported **one failure in 4,861 CTest cases**:
+`EngineCoreUVETest.WindowedMode_UIOverlayRendersAuthoredUIAndRegistersARealButtonClick`.
+The explicit native-driver guard steps did not run after that failure. The UI fixture
+asserts first-frame pixels but inherited asynchronous shader compilation. A deterministic
+`ShaderManagerUVETest.UIOverlayFirstUpdateCannotGuaranteeReadinessBeforeAsyncJobsRun`
+now demonstrates the pending-program state with held preprocessing jobs, and verifies
+that the existing synchronous policy yields a valid UI program before returning.
+The native pixel fixture explicitly selects that production policy; none of its pixel,
+mouse or click assertions were removed or relaxed, and production defaults are unchanged.
+Local verification: **22 focused shader/debugger cases; 4,145 full CTest cases, zero
+failures, seven existing Vulkan skips**. Native execution after this fixture correction
+is pending; the failed CI run is not reported as a green graphics verification.
+
 ### Command recording and backends
 
 - `[x]` **`ICommandBufferUVE`** — a **retained** command buffer. Recorded commands

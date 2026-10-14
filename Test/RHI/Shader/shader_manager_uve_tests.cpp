@@ -183,6 +183,43 @@ TEST_F(ShaderManagerUVETest, SynchronousOnDemandCreationCompletesSourceAndProgra
     EXPECT_EQ(threadPool->GetPendingJobCountUVE(), 0U);
 }
 
+TEST_F(ShaderManagerUVETest, UIOverlayFirstUpdateCannotGuaranteeReadinessBeforeAsyncJobsRun) {
+    RetainingThreadPoolUVE pool;
+    ShaderManagerUVE manager{pool, *eventSystem, *renderDevice, *fileSystem, ShaderManagerConfigUVE{}};
+    ShaderProgramDescUVE desc;
+    desc.virtualFilePath = std::string(BuiltIn::kUIOverlayVirtualPath);
+    desc.embeddedFallbackSourceCode = std::string(BuiltIn::kUIOverlaySource);
+    desc.vertexLayout = {
+        VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float2, 0U},
+        VertexAttributeUVE{"TEXCOORD", VertexAttributeFormatUVE::Float2, 2U * sizeof(float)},
+        VertexAttributeUVE{"COLOR", VertexAttributeFormatUVE::Float4, 4U * sizeof(float)}};
+    desc.vertexStride = 8U * sizeof(float);
+    desc.depthTestEnabled = false;
+    desc.depthWriteEnabled = false;
+    desc.blendMode = PipelineBlendModeUVE::SourceAlphaOver;
+    const auto program = manager.CreateProgramUVE(desc);
+    manager.UpdateUVE(0.0);
+    EXPECT_FALSE(program->IsReadyUVE());
+    EXPECT_FALSE(program->IsValidUVE());
+    EXPECT_EQ(program->GetPipelineHandleUVE(), kInvalidPipelineHandleUVE);
+
+    // Release every job before fatal assertions: the manager drains its job counter on teardown.
+    pool.RunQueuedJobsUVE();
+    pool.ReleaseFinishedJobsUVE();
+    manager.UpdateUVE(0.0);
+    ASSERT_TRUE(program->IsReadyUVE());
+    EXPECT_TRUE(program->IsValidUVE());
+    EXPECT_NE(program->GetPipelineHandleUVE(), kInvalidPipelineHandleUVE);
+
+    ShaderManagerConfigUVE synchronous;
+    synchronous.compileSynchronouslyUVE = true;
+    ShaderManagerUVE syncManager{pool, *eventSystem, *renderDevice, *fileSystem, synchronous};
+    const auto synchronousProgram = syncManager.CreateProgramUVE(desc);
+    EXPECT_TRUE(synchronousProgram->IsReadyUVE());
+    EXPECT_TRUE(synchronousProgram->IsValidUVE());
+    EXPECT_EQ(pool.GetPendingJobCountUVE(), 0U);
+}
+
 TEST_F(ShaderManagerUVETest, CreateProgramUVE_BuiltInBasic3D_BecomesReadyAndValid) {
     const std::unique_ptr<ShaderManagerUVE> shaderManager = MakeManagerUVE();
 
