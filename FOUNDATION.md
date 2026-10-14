@@ -739,7 +739,7 @@ render-pass attachment.
 | Descriptor | Carries | Gap |
 |---|---|---|
 | `BufferDescUVE` | size, usage (`Vertex`/`Index`/`Uniform`/`Storage`/`IndirectStorage`), memory placement (`Auto`/`DeviceLocal`/`Upload`/`Readback`), update frequency (`Static`/`Dynamic`/`Stream`) | no sub-allocation or aliasing control (one allocation per buffer) |
-| `TextureDescUVE` | width, height, format, mipLevels, array layers, cubemap shape | no depth, no sample count, no usage flags (Tier 2.3 landed layers + cubes) |
+| `TextureDescUVE` | width, height, format, mipLevels, array layers, cubemap shape, `Texture3D` depth, usage set (`Sampled`/`RenderTarget`/`Storage`/`TransferSrc`/`TransferDst`, `Default` = all the format/shape supports) | no sample count (MSAA stays out of scope); storage volumes and volume attachments are refused by design |
 | `TextureFormatUVE` | `RGBA8Unorm`, `RGBA16Float`, `RGBA32Float`, `R8Unorm`/`RG8Unorm`, `R16Float`/`RG16Float`, `R32Float`/`RG32Float`, `Depth32Float`, `Depth24Stencil8`, BC1/BC3/BC7, ETC2/ETC2A8, ASTC 4x4 | seventeen formats; sRGB only where the data has an sRGB encoding (RGBA8 and the compressed families); no integer or packed (10:10:10:2) formats |
 | `ShaderDescUVE` | stage, source, entry point | `Geometry` has an optional `PipelineDescUVE::geometryShader` slot (Null/desktop GL); Vulkan reports `geometryShaders = Unsupported` |
 | `PipelineDescUVE` | vertex+fragment shader, vertex layout, stride, topology, depth test/write/compare, cull/winding/fill/bias, blend mode | rasterizer tail landed (Tier 2.1, RHI side) |
@@ -812,6 +812,35 @@ because each one blocks a whole feature:
   new `debug_point` built-in with a batch-wide, clamped pixel size, as a second draw after the
   lines; sphere circles stay expanded into the line list on purpose (one draw per frame beats
   one strip per circle). Not added: fans, adjacency, primitive restart, line width.
+- `[x]` **No texture usage flags, no 3D textures.** Landed (2026-10-14): `TextureUsageUVE`
+  (`Sampled`, `RenderTarget`, `Storage`, `TransferSrc`, `TransferDst`) and `depth` join
+  `TextureDescUVE`, both appended so aggregate-initialised descriptors still mean "one 2D slice,
+  every use the format allows". `Default` resolves through `GetSupportedTextureUsageUVE` —
+  compressed formats and volumes are sampled + copied, depth formats are sampled + attached +
+  uploaded, everything else is the full set — and an explicit set must be a subset of that
+  (`IsTextureUsageSupportedUVE`, checked by the shared upload validator, so a render-target BC1
+  or a storage volume is refused before any backend allocates). Enforcement is at the operation
+  that would need the bit, on every backend alike: `IsTextureBlitValidUVE` wants `TransferSrc`
+  on the source and `TransferDst` on the destination, the new `CanGenerateMipmapsUVE` wants both
+  on the one texture, the Vulkan RGBA8 readback wants `TransferSrc`; GL and Vulkan refuse an
+  attachment created without `RenderTarget` (the pass does not open — the GL FBO binding is
+  untouched, the Vulkan texels stay as uploaded while the Default-usage control is cleared through
+  the same pass), leave a sampler unit alone for a texture without `Sampled`, and keep a texture
+  without `Storage` off the image unit / send its `imageStore` to the black sink. Vulkan now
+  allocates with exactly the `VkImageUsageFlags` the effective set names (intersected with what
+  the format can do on the device), and creates the attachment and storage alias views only when
+  the set contains the matching bit. Null enforces the device-level gates and records; it cannot
+  see descriptors at command-buffer level, so its bind/attach calls stay model-only.
+  `TextureTypeUVE::Texture3D` is a volume of `depth` slices (one layer, colour formats only):
+  uploads are slice-major per level, mips halve depth with the other axes
+  (`GetTextureMipDepthUVE`, depth-aware `MaximumTextureMipLevelCountUVE` and byte count), GL
+  creates it as `GL_TEXTURE_3D` under `GL_MAX_3D_TEXTURE_SIZE` and binds it under that target,
+  Vulkan as `VK_IMAGE_TYPE_3D` + `VK_IMAGE_VIEW_TYPE_3D` under `maxImageDimension3D` with one
+  copy region per level, and both build its mip chain through the ordinary `GenerateMipmapsUVE`
+  (the Vulkan blit chain halves depth too). Volumes never blit, never attach and are not
+  readable through the 2D RGBA8 helper. Proved by pixels on both native drivers: a 4x4x4 volume
+  with one colour per slice sampled through `sampler3D` at the four slice centres. Not added:
+  sample counts, volume render targets, storage volumes, cube arrays.
 - `[x]` **Float-only vertex attributes.** Landed (2026-10-14): `VertexAttributeFormatUVE`
   gains `UByte4Norm` (colours), `Short2Norm` (packed UVs / octahedral normals), `Half2` /
   `Half4`, and the integer pair `UShort4` / `UInt4` (joint indices, declared `uvec4` in the
@@ -1513,3 +1542,21 @@ float fetch cannot reproduce. GL runs them on softpipe; Vulkan on SwiftShader wi
 `uvec4` vertex shader, accepting the linear or sRGB-encoded byte per the suite's swapchain rule.
 The Null suite pins the byte widths, component counts, integer flag and the stride check for
 all nine formats.
+
+**Texture usage flags and `Texture3D` (same day).** Null pins the resolution rules (Default per
+format/shape, unknown and empty sets refused, subset rule — a render-target BC1, a storage or
+transfer-source depth texture and a render-target volume all refused before allocation, a narrow
+set reported back verbatim), the volume byte math (4x4x4 → 2x2x2 → 1 = 292 bytes, depth-only
+chains, layered / deep-2D / zero-depth / depth-format volumes refused) and the device-level
+gates (blit refused without `TransferSrc` / `TransferDst` and with a volume at either end, mip
+generation refused without both bits and accepted on a volume). On GL (softpipe) a 4x4x4 volume
+reads back slice-major through `glGetTexImage(GL_TEXTURE_3D)`, a `sampler3D` draw into a 4x1
+target returns red/green/blue/white at the slice centres, its 3-level chain ends in a 1x1x1
+tail with level 1 two deep, and the usage case watches `GL_FRAMEBUFFER_BINDING` stay put for a
+Sampled-only colour or depth attachment, a texture unit keep its previous texture when one
+without `Sampled` is bound, the image unit stay empty for one without `Storage`, and a green
+clear cross a `RenderTarget|TransferSrc` → `TransferDst` blit. On Vulkan (SwiftShader) the same
+four slice colours are sampled through a freshly baked `sampler3D` fragment, the volume mip
+chain succeeds, and the gate case pairs every refusal with a Default-usage control inside the
+same frame sequence (offscreen clear reaches the control and not the Sampled-only texture; the
+image-fill dispatch paints the control green and leaves the no-`Storage` texture's bytes zero).

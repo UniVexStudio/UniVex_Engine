@@ -1471,6 +1471,205 @@ TEST(NullRenderDeviceUVETest, CreateTextureUVE_RejectsBadDimensionality) {
     EXPECT_TRUE(device.GetLiveTextureDescsUVE().empty());
 }
 
+TEST(NullRenderDeviceUVETest, TextureUsageUVE_DefaultResolvesToWhatTheFormatAndShapeSupport) {
+    // Usage flags: an aggregate-initialised descriptor still means "everything the format/shape
+    // can honour", so pre-flag call sites keep their behaviour; narrower sets are kept verbatim.
+    const TextureDescUVE legacy{4U, 4U, TextureFormatUVE::RGBA8Unorm};
+    EXPECT_EQ(legacy.usage, TextureUsageUVE::Default);
+    EXPECT_EQ(legacy.depth, 1U);
+    EXPECT_EQ(GetEffectiveTextureUsageUVE(legacy), TextureUsageUVE::Default);
+
+    const TextureDescUVE bc1{4U, 4U, TextureFormatUVE::BC1RGB};
+    EXPECT_EQ(GetEffectiveTextureUsageUVE(bc1),
+              TextureUsageUVE::Sampled | TextureUsageUVE::TransferSrc | TextureUsageUVE::TransferDst);
+    EXPECT_FALSE(HasTextureUsageUVE(GetEffectiveTextureUsageUVE(bc1), TextureUsageUVE::RenderTarget));
+    EXPECT_FALSE(HasTextureUsageUVE(GetEffectiveTextureUsageUVE(bc1), TextureUsageUVE::Storage));
+
+    const TextureDescUVE depth{4U, 4U, TextureFormatUVE::Depth32Float};
+    EXPECT_EQ(GetEffectiveTextureUsageUVE(depth),
+              TextureUsageUVE::Sampled | TextureUsageUVE::RenderTarget | TextureUsageUVE::TransferDst);
+
+    TextureDescUVE volume{4U, 4U, TextureFormatUVE::RGBA8Unorm};
+    volume.type = TextureTypeUVE::Texture3D;
+    volume.depth = 4U;
+    EXPECT_EQ(GetEffectiveTextureUsageUVE(volume),
+              TextureUsageUVE::Sampled | TextureUsageUVE::TransferSrc | TextureUsageUVE::TransferDst);
+
+    TextureDescUVE sampledOnly{4U, 4U, TextureFormatUVE::RGBA8Unorm};
+    sampledOnly.usage = TextureUsageUVE::Sampled;
+    EXPECT_EQ(GetEffectiveTextureUsageUVE(sampledOnly), TextureUsageUVE::Sampled);
+    EXPECT_TRUE(IsTextureUsageSupportedUVE(sampledOnly));
+
+    EXPECT_FALSE(IsTextureUsageValidUVE(TextureUsageUVE::None));
+    EXPECT_FALSE(IsTextureUsageValidUVE(static_cast<TextureUsageUVE>(0x80U)));
+    EXPECT_TRUE(IsTextureUsageValidUVE(TextureUsageUVE::Sampled | TextureUsageUVE::TransferSrc));
+    EXPECT_FALSE(HasTextureUsageUVE(TextureUsageUVE::Default, TextureUsageUVE::None));
+}
+
+TEST(NullRenderDeviceUVETest, CreateTextureUVE_RefusesUsageOutsideTheSupportedSet) {
+    // Asking for a use the format/shape can never honour is a caller error caught by the shared
+    // validator before any backend allocates, on every backend alike.
+    NullRenderDeviceUVE device;
+    const std::vector<std::byte> bc1Block(8U);
+    TextureDescUVE renderTargetBc1{4U, 4U, TextureFormatUVE::BC1RGB};
+    renderTargetBc1.usage = TextureUsageUVE::Sampled | TextureUsageUVE::RenderTarget;
+    EXPECT_EQ(device.CreateTextureUVE(renderTargetBc1, bc1Block), kInvalidTextureHandleUVE);
+
+    TextureDescUVE storageDepth{4U, 4U, TextureFormatUVE::Depth32Float};
+    storageDepth.usage = TextureUsageUVE::Storage;
+    EXPECT_EQ(device.CreateTextureUVE(storageDepth), kInvalidTextureHandleUVE);
+
+    TextureDescUVE transferSrcDepth{4U, 4U, TextureFormatUVE::Depth32Float};
+    transferSrcDepth.usage = TextureUsageUVE::TransferSrc;
+    EXPECT_EQ(device.CreateTextureUVE(transferSrcDepth), kInvalidTextureHandleUVE);
+
+    TextureDescUVE unknownBit{4U, 4U, TextureFormatUVE::RGBA8Unorm};
+    unknownBit.usage = static_cast<TextureUsageUVE>(0x40U);
+    EXPECT_EQ(device.CreateTextureUVE(unknownBit), kInvalidTextureHandleUVE);
+
+    TextureDescUVE emptyUsage{4U, 4U, TextureFormatUVE::RGBA8Unorm};
+    emptyUsage.usage = TextureUsageUVE::None;
+    EXPECT_EQ(device.CreateTextureUVE(emptyUsage), kInvalidTextureHandleUVE);
+
+    TextureDescUVE renderTargetVolume{4U, 4U, TextureFormatUVE::RGBA8Unorm};
+    renderTargetVolume.type = TextureTypeUVE::Texture3D;
+    renderTargetVolume.depth = 2U;
+    renderTargetVolume.usage = TextureUsageUVE::RenderTarget;
+    EXPECT_EQ(device.CreateTextureUVE(renderTargetVolume, std::vector<std::byte>(128U)),
+              kInvalidTextureHandleUVE);
+    EXPECT_TRUE(device.GetLiveTextureDescsUVE().empty());
+
+    // A supported narrow set round-trips verbatim through the live descriptor.
+    TextureDescUVE sampledOnly{4U, 4U, TextureFormatUVE::RGBA8Unorm};
+    sampledOnly.usage = TextureUsageUVE::Sampled | TextureUsageUVE::TransferDst;
+    const TextureHandleUVE texture = device.CreateTextureUVE(sampledOnly);
+    ASSERT_NE(texture, kInvalidTextureHandleUVE);
+    TextureDescUVE reported{};
+    ASSERT_EQ(device.GetTextureDescUVE(texture, reported), RenderOperationResultUVE::Success);
+    EXPECT_EQ(reported.usage, TextureUsageUVE::Sampled | TextureUsageUVE::TransferDst);
+    EXPECT_EQ(reported.depth, 1U);
+    device.DestroyTextureUVE(texture);
+}
+
+TEST(NullRenderDeviceUVETest, CalculateTextureUploadByteCountUVE_VolumeIsSliceMajorWithHalvingDepth) {
+    // 4x4x4 RGBA8 with the full chain: 4*4*4*4 (256) + 2*2*2*4 (32) + 1*1*1*4 (4) = 292 bytes.
+    TextureDescUVE volume{4U, 4U, TextureFormatUVE::RGBA8Unorm, 3U};
+    volume.type = TextureTypeUVE::Texture3D;
+    volume.depth = 4U;
+    std::uint64_t bytes = 0U;
+    ASSERT_TRUE(CalculateTextureUploadByteCountUVE(volume, bytes));
+    EXPECT_EQ(bytes, 292U);
+    EXPECT_EQ(MaximumTextureMipLevelCountUVE(4U, 4U, 4U), 3U);
+    EXPECT_EQ(MaximumTextureMipLevelCountUVE(4U, 4U, 16U), 5U); // depth alone extends the chain
+    EXPECT_EQ(MaximumTextureMipLevelCountUVE(4U, 4U, 0U), 0U);
+    EXPECT_EQ(GetTextureMipDepthUVE(4U, 0U), 4U);
+    EXPECT_EQ(GetTextureMipDepthUVE(4U, 1U), 2U);
+    EXPECT_EQ(GetTextureMipDepthUVE(4U, 2U), 1U);
+    EXPECT_EQ(GetTextureMipDepthUVE(4U, 9U), 1U);
+    EXPECT_EQ(GetTextureMipDepthUVE(1U, 0U), 1U);
+
+    // A deep-but-flat volume: 1x1x8, four levels = 8 + 4 + 2 + 1 texels.
+    TextureDescUVE column{1U, 1U, TextureFormatUVE::R8Unorm, 4U};
+    column.type = TextureTypeUVE::Texture3D;
+    column.depth = 8U;
+    ASSERT_TRUE(CalculateTextureUploadByteCountUVE(column, bytes));
+    EXPECT_EQ(bytes, 15U);
+
+    // Shape rules: only a volume carries depth, a volume never carries layers or a depth format,
+    // and a zero depth is as invalid as a zero width.
+    TextureDescUVE layeredVolume = volume;
+    layeredVolume.arrayLayers = 2U;
+    EXPECT_FALSE(CalculateTextureUploadByteCountUVE(layeredVolume, bytes));
+    TextureDescUVE deep2D{4U, 4U, TextureFormatUVE::RGBA8Unorm};
+    deep2D.depth = 2U;
+    EXPECT_FALSE(CalculateTextureUploadByteCountUVE(deep2D, bytes));
+    TextureDescUVE zeroDepth = volume;
+    zeroDepth.depth = 0U;
+    EXPECT_FALSE(CalculateTextureUploadByteCountUVE(zeroDepth, bytes));
+    TextureDescUVE depthVolume = volume;
+    depthVolume.format = TextureFormatUVE::Depth32Float;
+    depthVolume.mipLevels = 1U;
+    EXPECT_FALSE(CalculateTextureUploadByteCountUVE(depthVolume, bytes));
+    TextureDescUVE tooManyMips = volume;
+    tooManyMips.mipLevels = 4U;
+    EXPECT_FALSE(CalculateTextureUploadByteCountUVE(tooManyMips, bytes));
+    EXPECT_EQ(bytes, 15U); // failure leaves the output untouched
+}
+
+TEST(NullRenderDeviceUVETest, CreateTextureUVE_VolumeRequiresEverySliceAndRoundTripsDepth) {
+    NullRenderDeviceUVE device;
+    TextureDescUVE volume{4U, 4U, TextureFormatUVE::RGBA8Unorm, 3U};
+    volume.type = TextureTypeUVE::Texture3D;
+    volume.depth = 4U;
+    // One slice short of the full chain is refused; the exact 292-byte chain is accepted.
+    EXPECT_EQ(device.CreateTextureUVE(volume, std::vector<std::byte>(292U - 64U)), kInvalidTextureHandleUVE);
+    EXPECT_EQ(device.CreateTextureUVE(volume, {}), kInvalidTextureHandleUVE); // multi-level needs data
+    const TextureHandleUVE texture = device.CreateTextureUVE(volume, std::vector<std::byte>(292U));
+    ASSERT_NE(texture, kInvalidTextureHandleUVE);
+    TextureDescUVE reported{};
+    ASSERT_EQ(device.GetTextureDescUVE(texture, reported), RenderOperationResultUVE::Success);
+    EXPECT_EQ(reported.type, TextureTypeUVE::Texture3D);
+    EXPECT_EQ(reported.depth, 4U);
+    EXPECT_EQ(reported.arrayLayers, 1U);
+    EXPECT_EQ(reported.mipLevels, 3U);
+    EXPECT_EQ(reported.usage, TextureUsageUVE::Default);
+    device.DestroyTextureUVE(texture);
+    EXPECT_TRUE(device.GetLiveTextureDescsUVE().empty());
+}
+
+TEST(NullRenderDeviceUVETest, BlitAndMipGenerationRequireTransferUsageAndRefuseVolumes) {
+    // Device-level enforcement shared by every backend: a blit needs TransferSrc on its source and
+    // TransferDst on its destination, mip generation needs both on the same texture, and volumes
+    // never take part (the blit model is 2D). Null sees descriptors here, so it enforces too.
+    NullRenderDeviceUVE device;
+    TextureDescUVE sampledOnly{4U, 4U, TextureFormatUVE::RGBA8Unorm};
+    sampledOnly.usage = TextureUsageUVE::Sampled;
+    TextureDescUVE noTransferDst{4U, 4U, TextureFormatUVE::RGBA8Unorm};
+    noTransferDst.usage = TextureUsageUVE::Sampled | TextureUsageUVE::TransferSrc;
+    const TextureHandleUVE sealed = device.CreateTextureUVE(sampledOnly);
+    const TextureHandleUVE readable = device.CreateTextureUVE(noTransferDst);
+    const TextureHandleUVE open = device.CreateTextureUVE(TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm});
+    ASSERT_NE(sealed, kInvalidTextureHandleUVE);
+    ASSERT_NE(readable, kInvalidTextureHandleUVE);
+    ASSERT_NE(open, kInvalidTextureHandleUVE);
+    const TextureRegionUVE whole{0U, 0U, 0U, 0U, 4U, 4U};
+    EXPECT_EQ(device.BlitTextureUVE({sealed, open, whole, whole, BlitFilterUVE::Point}),
+              RenderOperationResultUVE::InvalidArgument); // source lacks TransferSrc
+    EXPECT_EQ(device.BlitTextureUVE({open, readable, whole, whole, BlitFilterUVE::Point}),
+              RenderOperationResultUVE::InvalidArgument); // destination lacks TransferDst
+    EXPECT_EQ(device.BlitTextureUVE({readable, open, whole, whole, BlitFilterUVE::Point}),
+              RenderOperationResultUVE::Recorded);
+    EXPECT_EQ(device.GetRecordedDeviceOperationsUVE().size(), 1U);
+
+    TextureDescUVE sampledChain{4U, 4U, TextureFormatUVE::RGBA8Unorm, 3U};
+    sampledChain.usage = TextureUsageUVE::Sampled | TextureUsageUVE::TransferDst;
+    const TextureHandleUVE chain = device.CreateTextureUVE(sampledChain, std::vector<std::byte>(84U));
+    ASSERT_NE(chain, kInvalidTextureHandleUVE);
+    EXPECT_FALSE(CanGenerateMipmapsUVE(sampledChain));
+    EXPECT_EQ(device.GenerateMipmapsUVE(chain), RenderOperationResultUVE::InvalidArgument);
+    const TextureHandleUVE fullChain =
+        device.CreateTextureUVE(TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 3U}, std::vector<std::byte>(84U));
+    ASSERT_NE(fullChain, kInvalidTextureHandleUVE);
+    EXPECT_EQ(device.GenerateMipmapsUVE(fullChain), RenderOperationResultUVE::Recorded);
+
+    // A volume never blits (the blit model is 2D) but does build its own mip chain: 4x4x2 with
+    // two levels = 128 + 16 bytes, depth halving with the other axes.
+    TextureDescUVE volumeDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 2U};
+    volumeDesc.type = TextureTypeUVE::Texture3D;
+    volumeDesc.depth = 2U;
+    const TextureHandleUVE volume = device.CreateTextureUVE(volumeDesc, std::vector<std::byte>(144U));
+    ASSERT_NE(volume, kInvalidTextureHandleUVE);
+    EXPECT_EQ(device.BlitTextureUVE({volume, open, whole, whole, BlitFilterUVE::Point}),
+              RenderOperationResultUVE::InvalidArgument);
+    EXPECT_EQ(device.BlitTextureUVE({open, volume, whole, whole, BlitFilterUVE::Point}),
+              RenderOperationResultUVE::InvalidArgument);
+    EXPECT_TRUE(CanGenerateMipmapsUVE(volumeDesc));
+    EXPECT_EQ(device.GenerateMipmapsUVE(volume), RenderOperationResultUVE::Recorded);
+    for (const TextureHandleUVE handle : {sealed, readable, open, chain, fullChain, volume}) {
+        device.DestroyTextureUVE(handle);
+    }
+}
+
 TEST(NullRenderDeviceUVETest, RenderPassDescUVE_LayersDefaultToZero) {
     const RenderPassDescUVE desc;
     EXPECT_EQ(desc.colorLayer, 0U);

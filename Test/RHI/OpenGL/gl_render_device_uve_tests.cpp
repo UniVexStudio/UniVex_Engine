@@ -4469,6 +4469,298 @@ TEST_F(GlRenderDeviceUVETest, SingleTwoChannelAndFloatFormatsUploadRenderBlitAnd
     renderDevice->DestroyTextureUVE(r8);
 }
 
+constexpr std::string_view kVolumeSampleFragmentSource = R"(#version 330 core
+uniform sampler3D uVolume;
+out vec4 FragColor;
+void main() {
+    // Target is 4x1: pixel x samples the centre of slice x (w = (x + 0.5) / 4).
+    FragColor = texture(uVolume, vec3(0.5, 0.5, gl_FragCoord.x / 4.0));
+}
+)";
+
+TEST_F(GlRenderDeviceUVETest, Texture3D_UploadsSliceMajorSamplesThroughSampler3DAndBuildsMips) {
+    // Texture3D on the real context: four solid 4x4 slices upload slice-major into a
+    // GL_TEXTURE_3D object (read back whole through glGetTexImage), a sampler3D draw returns
+    // each slice's colour at its centre w, and GenerateMipmapsUVE averages the volume down to
+    // its 1x1x1 tail with the same device call every other type uses.
+    using ResultUVE = RenderOperationResultUVE;
+    constexpr std::uint8_t kSliceColors[4][4] = {
+        {255U, 0U, 0U, 255U}, {0U, 255U, 0U, 255U}, {0U, 0U, 255U, 255U}, {255U, 255U, 255U, 255U},
+    };
+    std::array<std::uint8_t, 4U * 4U * 4U * 4U> upload{};
+    for (std::uint32_t slice = 0U; slice < 4U; ++slice) {
+        for (std::uint32_t texel = 0U; texel < 16U; ++texel) {
+            const std::size_t base = (static_cast<std::size_t>(slice) * 16U + texel) * 4U;
+            for (std::size_t channel = 0U; channel < 4U; ++channel) {
+                upload[base + channel] = kSliceColors[slice][channel];
+            }
+        }
+    }
+    TextureDescUVE volumeDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U};
+    volumeDesc.type = TextureTypeUVE::Texture3D;
+    volumeDesc.depth = 4U;
+    const TextureHandleUVE volume = renderDevice->CreateTextureUVE(volumeDesc, std::as_bytes(std::span(upload)));
+    ASSERT_NE(volume, kInvalidTextureHandleUVE);
+    TextureDescUVE reported{};
+    ASSERT_EQ(renderDevice->GetTextureDescUVE(volume, reported), ResultUVE::Success);
+    EXPECT_EQ(reported.type, TextureTypeUVE::Texture3D);
+    EXPECT_EQ(reported.depth, 4U);
+    EXPECT_EQ(reported.usage, TextureUsageUVE::Default);
+
+    GLint previousPackAlignment = 4;
+    glGetIntegerv(GL_PACK_ALIGNMENT, &previousPackAlignment);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    const GLuint native = static_cast<GLuint>(renderDevice->GetNativeTextureIdUVE(volume));
+    ASSERT_NE(native, 0U);
+    glBindTexture(GL_TEXTURE_3D, native);
+    GLint storedDepth = 0;
+    glGetTexLevelParameteriv(GL_TEXTURE_3D, 0, GL_TEXTURE_DEPTH, &storedDepth);
+    EXPECT_EQ(storedDepth, 4);
+    std::array<std::uint8_t, 4U * 4U * 4U * 4U> readback{};
+    glGetTexImage(GL_TEXTURE_3D, 0, GL_RGBA, GL_UNSIGNED_BYTE, readback.data());
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    EXPECT_EQ(readback, upload) << "slices must land in order, slice-major";
+
+    // Sample every slice centre in one draw into a 4x1 target.
+    const TextureHandleUVE target = renderDevice->CreateTextureUVE(TextureDescUVE{4U, 1U});
+    ASSERT_NE(target, kInvalidTextureHandleUVE);
+    const ShaderHandleUVE vertexShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kSrgbSampleVertexSource)});
+    const ShaderHandleUVE fragmentShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Fragment, std::string(kVolumeSampleFragmentSource)});
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.depthTestEnabled = false;
+    pipelineDesc.depthWriteEnabled = false;
+    const PipelineHandleUVE pipeline = renderDevice->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+    {
+        std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+        ASSERT_NE(commandBuffer, nullptr);
+        RenderPassDescUVE passDesc{};
+        passDesc.colorAttachment = target;
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::DontCare;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(pipeline);
+        commandBuffer->BindTextureUVE(volume, 0U);
+        commandBuffer->DrawUVE(3U);
+        commandBuffer->EndRenderPassUVE();
+        renderDevice->SubmitUVE(std::move(commandBuffer));
+        glFinish();
+    }
+    glActiveTexture(GL_TEXTURE0);
+    GLint boundVolume = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_3D, &boundVolume);
+    EXPECT_EQ(boundVolume, static_cast<GLint>(native)) << "a volume binds under GL_TEXTURE_3D";
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(target));
+    std::array<std::uint8_t, 4U * 4U> sampled{};
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, sampled.data());
+    for (std::size_t slice = 0U; slice < 4U; ++slice) {
+        for (std::size_t channel = 0U; channel < 4U; ++channel) {
+            EXPECT_NEAR(static_cast<int>(sampled[slice * 4U + channel]),
+                        static_cast<int>(kSliceColors[slice][channel]), 1)
+                << "slice " << slice << " channel " << channel;
+        }
+    }
+
+    // Mip chain on a volume: 4x4x4 -> 2x2x2 -> 1x1x1 (292 bytes), level 0 solid, tail averaged.
+    std::vector<std::byte> chain(292U);
+    for (std::size_t texel = 0U; texel < 64U; ++texel) {
+        chain[texel * 4U] = std::byte{200};
+        chain[texel * 4U + 1U] = std::byte{100};
+        chain[texel * 4U + 2U] = std::byte{50};
+        chain[texel * 4U + 3U] = std::byte{255};
+    }
+    TextureDescUVE mipDesc = volumeDesc;
+    mipDesc.mipLevels = 3U;
+    const TextureHandleUVE mipVolume = renderDevice->CreateTextureUVE(mipDesc, chain);
+    ASSERT_NE(mipVolume, kInvalidTextureHandleUVE);
+    EXPECT_TRUE(CanGenerateMipmapsUVE(mipDesc));
+    ASSERT_EQ(renderDevice->GenerateMipmapsUVE(mipVolume), ResultUVE::Success);
+    glBindTexture(GL_TEXTURE_3D, renderDevice->GetNativeTextureIdUVE(mipVolume));
+    GLint tailDepth = 0;
+    glGetTexLevelParameteriv(GL_TEXTURE_3D, 2, GL_TEXTURE_DEPTH, &tailDepth);
+    EXPECT_EQ(tailDepth, 1) << "the chain's tail is a single texel";
+    GLint middleDepth = 0;
+    glGetTexLevelParameteriv(GL_TEXTURE_3D, 1, GL_TEXTURE_DEPTH, &middleDepth);
+    EXPECT_EQ(middleDepth, 2) << "depth halves with the other axes";
+    std::array<std::uint8_t, 4> tail{};
+    glGetTexImage(GL_TEXTURE_3D, 2, GL_RGBA, GL_UNSIGNED_BYTE, tail.data());
+    EXPECT_NEAR(static_cast<int>(tail[0]), 200, 1);
+    EXPECT_NEAR(static_cast<int>(tail[1]), 100, 1);
+    EXPECT_NEAR(static_cast<int>(tail[2]), 50, 1);
+    EXPECT_EQ(tail[3], 255U);
+
+    // Volumes never take part in blits and are never attachments.
+    EXPECT_EQ(renderDevice->BlitTextureUVE({volume, target, {0, 0, 0, 0, 4, 1}, {0, 0, 0, 0, 4, 1},
+                                            BlitFilterUVE::Point}),
+              ResultUVE::InvalidArgument);
+    {
+        std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+        ASSERT_NE(commandBuffer, nullptr);
+        GLint before = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &before);
+        RenderPassDescUVE volumePass{};
+        volumePass.colorAttachment = volume;
+        commandBuffer->BeginRenderPassUVE(volumePass);
+        GLint after = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &after);
+        EXPECT_EQ(after, before) << "a volume (no RenderTarget usage) must not open a pass";
+    }
+    glPixelStorei(GL_PACK_ALIGNMENT, previousPackAlignment);
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+    renderDevice->DestroyTextureUVE(mipVolume);
+    renderDevice->DestroyPipelineUVE(pipeline);
+    renderDevice->DestroyShaderUVE(fragmentShader);
+    renderDevice->DestroyShaderUVE(vertexShader);
+    renderDevice->DestroyTextureUVE(target);
+    renderDevice->DestroyTextureUVE(volume);
+}
+
+TEST_F(GlRenderDeviceUVETest, TextureUsageUVE_GatesAttachSampleStorageAndTransfersOnTheRealContext) {
+    // Usage flags on the real context. Each gate is observed through GL state, not a result code
+    // alone: a Sampled-only texture never becomes a framebuffer attachment, a texture without
+    // Sampled never lands on a texture unit, one without Storage never lands on an image unit,
+    // and the device-level transfer gates (blit, mip generation) refuse without TransferSrc/Dst.
+    using ResultUVE = RenderOperationResultUVE;
+    TextureDescUVE sampledOnlyDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U};
+    sampledOnlyDesc.usage = TextureUsageUVE::Sampled;
+    const TextureHandleUVE sampledOnly = renderDevice->CreateTextureUVE(sampledOnlyDesc);
+    ASSERT_NE(sampledOnly, kInvalidTextureHandleUVE);
+    TextureDescUVE targetOnlyDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U};
+    targetOnlyDesc.usage = TextureUsageUVE::RenderTarget | TextureUsageUVE::TransferSrc;
+    const TextureHandleUVE targetOnly = renderDevice->CreateTextureUVE(targetOnlyDesc);
+    ASSERT_NE(targetOnly, kInvalidTextureHandleUVE);
+    TextureDescUVE sinkDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U};
+    sinkDesc.usage = TextureUsageUVE::Sampled | TextureUsageUVE::TransferDst;
+    const TextureHandleUVE sink = renderDevice->CreateTextureUVE(sinkDesc);
+    ASSERT_NE(sink, kInvalidTextureHandleUVE);
+    TextureDescUVE sampledDepthDesc{4U, 4U, TextureFormatUVE::Depth32Float, 1U};
+    sampledDepthDesc.usage = TextureUsageUVE::Sampled;
+    const TextureHandleUVE sampledDepth = renderDevice->CreateTextureUVE(sampledDepthDesc);
+    ASSERT_NE(sampledDepth, kInvalidTextureHandleUVE);
+    TextureDescUVE unsupportedDesc{4U, 4U, TextureFormatUVE::Depth32Float, 1U};
+    unsupportedDesc.usage = TextureUsageUVE::Storage;
+    EXPECT_EQ(renderDevice->CreateTextureUVE(unsupportedDesc), kInvalidTextureHandleUVE)
+        << "the shared validator refuses unsupported usage before any GL allocation";
+
+    // 1. Attach gate: Sampled-only colour, Sampled-only depth, and an explicit RenderTarget texture.
+    {
+        std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+        ASSERT_NE(commandBuffer, nullptr);
+        GLint before = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &before);
+        RenderPassDescUVE sampledPass{};
+        sampledPass.colorAttachment = sampledOnly;
+        commandBuffer->BeginRenderPassUVE(sampledPass);
+        GLint after = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &after);
+        EXPECT_EQ(after, before) << "Sampled-only colour must not open a pass";
+        RenderPassDescUVE depthPass{};
+        depthPass.colorAttachment = targetOnly;
+        depthPass.depthAttachment = sampledDepth;
+        commandBuffer->BeginRenderPassUVE(depthPass);
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &after);
+        EXPECT_EQ(after, before) << "Sampled-only depth must not open a pass";
+        RenderPassDescUVE validPass{};
+        validPass.colorAttachment = targetOnly;
+        validPass.colorLoadOp = LoadOpUVE::Clear;
+        validPass.clearColor = {0.0F, 1.0F, 0.0F, 1.0F};
+        validPass.depthLoadOp = LoadOpUVE::DontCare;
+        commandBuffer->BeginRenderPassUVE(validPass);
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &after);
+        EXPECT_NE(after, 0) << "an explicit RenderTarget texture attaches";
+        commandBuffer->EndRenderPassUVE();
+        renderDevice->SubmitUVE(std::move(commandBuffer));
+        glFinish();
+    }
+
+    // 2. Sample gate: a texture without Sampled leaves its unit's binding alone.
+    {
+        std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+        ASSERT_NE(commandBuffer, nullptr);
+        RenderPassDescUVE passDesc{};
+        passDesc.colorAttachment = targetOnly;
+        passDesc.colorLoadOp = LoadOpUVE::Load;
+        passDesc.depthLoadOp = LoadOpUVE::DontCare;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindTextureUVE(sampledOnly, 5U);
+        commandBuffer->BindTextureUVE(sink, 5U); // Sampled|TransferDst: replaces the binding
+        commandBuffer->BindTextureUVE(targetOnly, 5U); // no Sampled: refused, unit keeps `sink`
+        commandBuffer->EndRenderPassUVE();
+        renderDevice->SubmitUVE(std::move(commandBuffer));
+        glActiveTexture(static_cast<GLenum>(GL_TEXTURE0 + 5));
+        GLint bound = 0;
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound);
+        EXPECT_EQ(bound, static_cast<GLint>(renderDevice->GetNativeTextureIdUVE(sink)))
+            << "a texture created without Sampled must not reach a sampler unit";
+        glActiveTexture(GL_TEXTURE0);
+    }
+
+    // 3. Transfer gates: the green clear in `targetOnly` (RenderTarget|TransferSrc) blits into
+    // `sink` (TransferDst), while a Sampled-only source and a destination without TransferDst
+    // are refused before any GL call; mip generation needs both transfer bits.
+    const TextureRegionUVE whole{0U, 0U, 0U, 0U, 4U, 4U};
+    EXPECT_EQ(renderDevice->BlitTextureUVE({sampledOnly, sink, whole, whole, BlitFilterUVE::Point}),
+              ResultUVE::InvalidArgument);
+    EXPECT_EQ(renderDevice->BlitTextureUVE({targetOnly, sampledOnly, whole, whole, BlitFilterUVE::Point}),
+              ResultUVE::InvalidArgument);
+    ASSERT_EQ(renderDevice->BlitTextureUVE({targetOnly, sink, whole, whole, BlitFilterUVE::Point}),
+              ResultUVE::Success);
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(sink));
+    std::array<std::uint8_t, 4U * 4U * 4U> sinkTexels{};
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, sinkTexels.data());
+    EXPECT_EQ(sinkTexels[0], 0U);
+    EXPECT_EQ(sinkTexels[1], 255U) << "the blit carried the green clear across";
+    EXPECT_EQ(sinkTexels[2], 0U);
+    TextureDescUVE sealedChainDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm, 3U};
+    sealedChainDesc.usage = TextureUsageUVE::Sampled | TextureUsageUVE::TransferDst;
+    const TextureHandleUVE sealedChain = renderDevice->CreateTextureUVE(sealedChainDesc, std::vector<std::byte>(84U));
+    ASSERT_NE(sealedChain, kInvalidTextureHandleUVE);
+    EXPECT_EQ(renderDevice->GenerateMipmapsUVE(sealedChain), ResultUVE::InvalidArgument)
+        << "mip generation needs TransferSrc as well";
+
+    // 4. Storage gate: without Storage the image unit stays empty while the texture unit keeps
+    // the texture for sampling (compute contexts only).
+    const ShaderHandleUVE computeShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Compute, std::string(kImageFillComputeSource)});
+    if (computeShader != kInvalidShaderHandleUVE) {
+        ComputePipelineDescUVE computeDesc{};
+        computeDesc.computeShader = computeShader;
+        const PipelineHandleUVE computePipeline = renderDevice->CreateComputePipelineUVE(computeDesc);
+        if (computePipeline != kInvalidPipelineHandleUVE) {
+            std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+            ASSERT_NE(commandBuffer, nullptr);
+            while (glGetError() != GL_NO_ERROR) {
+            }
+            commandBuffer->BindPipelineUVE(computePipeline);
+            commandBuffer->BindTextureUVE(sampledOnly, 0U);
+            renderDevice->SubmitUVE(std::move(commandBuffer));
+            glActiveTexture(GL_TEXTURE0);
+            GLint textureName = 0;
+            glGetIntegerv(GL_TEXTURE_BINDING_2D, &textureName);
+            EXPECT_EQ(textureName, static_cast<GLint>(renderDevice->GetNativeTextureIdUVE(sampledOnly)))
+                << "the texture stays sampler-visible";
+            GLint imageName = -1;
+            glGetIntegeri_v(GL_IMAGE_BINDING_NAME, 0U, &imageName);
+            EXPECT_EQ(imageName, 0) << "no Storage usage: the image unit must stay unbound";
+            renderDevice->DestroyPipelineUVE(computePipeline);
+        }
+        renderDevice->DestroyShaderUVE(computeShader);
+    }
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+    renderDevice->DestroyTextureUVE(sealedChain);
+    renderDevice->DestroyTextureUVE(sampledDepth);
+    renderDevice->DestroyTextureUVE(sink);
+    renderDevice->DestroyTextureUVE(targetOnly);
+    renderDevice->DestroyTextureUVE(sampledOnly);
+}
+
 TEST_F(GlRenderDeviceUVETest, FoundationQueriesMeasureRealVisibilityAndGpuTimestamps) {
     using ResultUVE = RenderOperationResultUVE;
     ASSERT_EQ(renderDevice->GetCapabilitiesUVE().timestampQueries, RenderFeatureSupportUVE::Native);

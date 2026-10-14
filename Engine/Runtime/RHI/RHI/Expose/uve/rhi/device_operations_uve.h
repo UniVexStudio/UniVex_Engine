@@ -144,9 +144,20 @@ struct TextureBlitDescUVE final {
     return blit.source != blit.destination && source.format == destination.format &&
            source.colorSpace == destination.colorSpace &&
            IsUncompressedColorFormatUVE(source.format) &&
+           source.type != TextureTypeUVE::Texture3D && destination.type != TextureTypeUVE::Texture3D &&
+           HasTextureUsageUVE(GetEffectiveTextureUsageUVE(source), TextureUsageUVE::TransferSrc) &&
+           HasTextureUsageUVE(GetEffectiveTextureUsageUVE(destination), TextureUsageUVE::TransferDst) &&
            (blit.filter == BlitFilterUVE::Point || blit.filter == BlitFilterUVE::Linear) &&
            IsTextureRegionValidUVE(source, blit.sourceRegion) &&
            IsTextureRegionValidUVE(destination, blit.destinationRegion);
+}
+/// The shared gate of every backend's GenerateMipmapsUVE: a multi-level, uncompressed colour
+/// texture (volumes included) whose usage allows both ends of the level-to-level copy.
+[[nodiscard]] constexpr bool CanGenerateMipmapsUVE(const TextureDescUVE &texture) noexcept {
+    const TextureUsageUVE usage = GetEffectiveTextureUsageUVE(texture);
+    return texture.mipLevels >= 2U && IsUncompressedColorFormatUVE(texture.format) &&
+           HasTextureUsageUVE(usage, TextureUsageUVE::TransferSrc) &&
+           HasTextureUsageUVE(usage, TextureUsageUVE::TransferDst);
 }
 enum class RenderQueryKindUVE : std::uint8_t { Timestamp = 0, AnySamplesPassed };
 struct RenderQueryResultUVE final {
