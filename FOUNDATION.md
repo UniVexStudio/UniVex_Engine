@@ -650,23 +650,23 @@ zero failures, seven existing Vulkan skips**, with no watcher skips on this host
 
 | Asset | Holds | Importer | Status |
 |---|---|---|---|
-| `MeshAssetUVE` | `MeshVertexUVE` array (position, normal, uv, tangent, handedness), `uint32` indices, `AabbUVE localBounds`, skinning influences, joints | **OBJ** and **glTF/GLB**, plus a `.uvmodel` envelope | `[x]` |
+| `MeshAssetUVE` | `MeshVertexUVE` array (position, normal, uv, tangent, handedness), `uint32` indices, `AabbUVE localBounds`, skinning influences, joints | **OBJ**, **glTF/GLB** and **FBX**, plus a `.uvmodel` envelope | `[x]` |
 | `TextureAssetUVE` | width, height, format, pixels, a CPU-generated mip chain and Basis-compressed uploads | **PNG, JPEG, BMP, TGA**, plus `.uvtex` | `[x]` mips + compression landed (see below) |
-| `MaterialAssetUVE` | albedo colour, albedo/normal/AO texture GUIDs, metallic, roughness, emissive colour, shader GUIDs, transparency flag | **MTL**, plus `.uvmat` | `[~]` see below |
+| `MaterialAssetUVE` | albedo colour, albedo/normal/AO texture GUIDs, metallic, roughness, emissive colour, shader GUIDs, transparency flag | **MTL**, plus `.uvmat` | `[x]` PBR payload and renderer consumer; see below |
 | `ShaderAssetUVE` | stage, source text, entry point — stored as-is, not compiled at asset level | source importer + `.uvshader` | `[x]` |
 | `AudioAssetUVE` | channels, sample rate, bounded interleaved normalized float samples | **WAV, FLAC, MP3, OGG/Vorbis** | `[x]` bounded import/validation; streaming is a separate runtime contract |
-| `AnimationClipAssetUVE` | clip id, duration, sampled TRS poses, timed string events | envelope only | `[~]` see below |
+| `AnimationClipAssetUVE` | clip id, duration, sampled TRS/bone tracks, timed events and skeleton metadata | glTF channels + envelope | `[x]` sampled clip path; see below |
 | `DataTableUVE` | typed schema'd rows (bool / int64 / double / string) | **CSV, TSV, JSON** | `[x]` the most built-out asset in the module |
 | `BlobAssetUVE` | raw bytes, unparsed | — | `[x]` |
 
 Three things about this table matter more than the rest:
 
-- `[x]` **`AnimationClipAssetUVE` stores a single TRS track.** Connected since Tier 2.6:
+- `[x]` **`AnimationClipAssetUVE` supports TRS and skeletal tracks.** Connected since Tier 2.6:
   per-joint `AnimationAssetBoneTrackUVE` channels, a separate `SkeletonAssetUVE`, a glTF skin
   converter and `TrySkinMeshUVE` output — the two halves join through the skinning path, and the
   renderer CPU-skins posed skeletons (Tier 3.1).
-- `[x]` **`MaterialAssetUVE` has three of the six PBR texture slots** its own doc
-  comment describes. Complete since Tier 2.7: metallic/roughness/emissive map slots sit on the
+- `[x]` **`MaterialAssetUVE`'s PBR texture payload has a renderer consumer.**
+  Connected since Tier 2.7: metallic/roughness/emissive map slots sit on the
   asset, the renderer binds slots 12/13, and `lit_shadowed_3d` samples them (B metallic, G
   roughness).
 - `[x]` **Audio format import** — existing `RegisterWavImporterUVE` is unchanged; new
@@ -688,10 +688,17 @@ Three things about this table matter more than the rest:
   or linked. All 20 focused cases and **4,050 CTest cases** pass, with zero failures and the
   same seven explicit Vulkan skips (2026-10-13).
 
-Also missing, as of the last audit: `[~]` an FBX importer (static meshes convert via vendored
-ufbx; skins, materials and animation are explicitly out of scope), `[x]` any animation importer
-(`gltf_animation_converter_uve` samples glTF animation channels into clips), `[x]` a skeleton
-asset separate from the mesh (Tier 2.6: `skeleton_asset_uve`), and `[x]` a font asset —
+Importer reconciliation (2026-10-14): `[~]` **FBX** already uses vendored ufbx for
+triangulated static/skinned meshes, bone hierarchy/rest poses and sampled animation takes.
+`ConvertFbxMeshUVE`, `ReadFbxSkeletonUVE` and `ReadFbxAnimationsUVE` have real implementations;
+mesh import publishes `.uvmodel`, while editor/retarget consumers use the skeleton/take readers.
+Eight `FbxMeshConverterUVETest` cases cover axis/unit conversion, instances, skins, skeletons,
+animation-only files, takes, failure atomicity and publication. The previous static-only claim
+was stale. Materials/textures are not converted (external/embedded file reads are disabled),
+and broader binary/DCC fixture coverage remains partial; no new importer is needed to duplicate
+those working mesh/skin/animation paths. `[x]` **glTF animation conversion** samples channels
+into clips. `[x]` A skeleton asset exists separately from the mesh (`skeleton_asset_uve`).
+`[x]` A font asset exists —
 `FontAssetUVE` (raw sfnt bytes + family name, `.uvfont` envelope, `AssetKindUVE::Font`) with a
 `.ttf`/`.otf` importer, and `UIFontAtlasUVE` bakes from caller bytes now (the embedded Liberation
 Sans subset stays the default, exposed for the equivalence test). Tests in
@@ -870,20 +877,36 @@ passes 102 cases. Strict full CTest: **4,121 cases, zero failures, seven existin
 The four lifetime cases also pass focused ASan+UBSan. New GL pixel/worker-retirement and Vulkan
 CPU-FIFO/GPU-completion tests are awaiting native CI before this batch is marked fully verified.
 
-`[ ]` Not real: occlusion culling (`Occluder3D` data is consumed by the
-eligibility path but no occlusion test runs — Tier 3.6, needs the GPU query path above),
-image-based lighting, geometry shaders (`ShaderStageUVE::Geometry` compiles standalone but still
-has no pipeline slot, deferred by its own header comment), and the particle GPU upload path
-(`ParticleRenderBridgeUVE` still states it performs no GPU work). Texture compression and
-mipmaps left this list: Basis Universal transcoding plus CPU mip chains are real (`[x]`).
+Renderer presence reconciliation (source and existing tests, 2026-10-14):
 
-`[ ]` Missing renderer-level types: no material system (material→program binding
-is inlined in the renderer), no text renderer, no skybox, no terrain. Landed since: `[x]` the 2D
-renderer and sprite batcher (`Renderer2D v1`: Sprite2D + Camera2D + viewport split, Oct 2026),
-`[x]` the debug/line renderer (Tier 2.8: `DebugRendererUVE::DrawBox3D` from one call over a 16K-line
-batch), `[x]` reflection probe capture (a capture scheduler with per-camera influence mixing and a
-budgeted recapture latch), and `[x]` a decal system (CPU-built receive patches plus draw commands
-with frustum culling). (Verified present-or-absent by source read, 2026-10-12.)
+- `[x]` **CPU occlusion** already runs: `MeshRendererUVE` and `Renderer3DUVE` use
+  `IsOccluder3DAabbDrawHiddenUVE`; mesh visibility, primitive and decal tests verify
+  actual rejection, disabled occluders and the ignore-occlusion override.
+  `[ ]` GPU/Hi-Z occlusion is a separate gap; a query API alone does not implement it.
+- `[x]` **Particle upload/draw** already runs through
+  `Renderer3DUVE::ImplUVE::RecordParticleItemsUVE`: copied particle commands become
+  bounded vertex data, `UpdateBufferUVE`, vertex binding and a draw. `EngineCoreUVE`
+  calls `RenderFrameWithParticleRuntimeUVE`; its renderer test verifies extraction,
+  submission and no stale frame data. `ParticleRenderBridgeUVE` is deliberately CPU-only
+  extraction, not evidence that its renderer consumer is absent. This does not claim
+  that the separate compute simulation helper drives gameplay particles.
+- `[x]` **Material binding** is a real renderer consumer, including the validated
+  bind-group packet described above; a separate class named "material system" is not
+  required. Existing renderer tests verify fallback/real textures, managed programs and
+  material-driven uniform/map settings.
+- `[x]` **Text/UI draw** uses the renderer's glyph-atlas quads and preserves canvas order
+  across glyph/image textures (`RenderFrameUVE_UIOverlay_PreservesCanvasOrderAcrossGlyphAndImageTextures`).
+- `[x]` **Sky rendering** has procedural and texture-backed environment paths; the
+  renderer's `SkyAssetDrivesEnvironmentMapAmbientAndSky` and fallback tests cover them.
+  `[~]` Environment-map ambient lighting and reflection probes are narrower than full
+  prefiltered diffuse/specular IBL. `[ ]` No terrain renderer or geometry-shader pipeline
+  slot exists; `ShaderStageUVE::Geometry` standalone compilation is not a pipeline consumer.
+- `[x]` Basis Universal transcoding, CPU mip chains, 2D/sprite batching, debug/line
+  drawing, reflection-probe capture scheduling and CPU-built decal receive patches
+  also exist. These are pre-existing paths, not newly implemented by this reconciliation.
+
+The renderer evidence is in `Test/RHI/RenderSystems/{renderer_3d,mesh_renderer,decal_renderer}_uve_tests.cpp`.
+Local Null/CPU tests verify command contracts, not native pixel parity for every path.
 
 ---
 
@@ -950,8 +973,8 @@ zero failures, seven existing Vulkan skips** (2026-10-13).
 `[x]` `AudioSourceComponentUVE` + `AudioAttenuationCurveUVE` · `[x]`
 `AnimationPlayerComponentUVE` (Tier 3.1: step functions sample clips, `SyncAnimationUVE` ticks
 every frame and physics step, the renderer CPU-skins the poses)
-· `[~]` `ParticleEmitterComponentUVE` (authored parameters; the CPU runtime
-consumes them, the GPU upload path does not) · `[x]` `ScriptComponentUVE` · `[x]`
+· `[x]` `ParticleEmitterComponentUVE` (authored parameters feed the CPU runtime;
+its copied particles reach the bounded renderer upload/draw path above) · `[x]` `ScriptComponentUVE` · `[x]`
 `CanvasComponentUVE`, `UITextComponentUVE`, `UIImageComponentUVE`,
 `UIButtonComponentUVE`.
 
@@ -1008,8 +1031,10 @@ types.
 
 # Part IV — Systems, in one line each
 
-Detail for these lives in `ROADMAP.md`; this is an index, and a note of what is
-driven by nothing.
+This index distinguishes live runtime paths from narrower helper APIs and genuinely absent
+work. References to other roadmaps are background, not additional Foundation scope. The
+2026-10-14 reconciliation below describes already-merged implementations unless explicitly
+identified as a new Foundation batch; it does not count those implementations as new work.
 
 - `[x]` **Entity/Scene** — archetype ECS (`EntityManagerUVE`, PIMPL), stateless
   `SceneGraphUVE`, `SceneSerializerUVE` (explicit-roots, never implicit
@@ -1036,16 +1061,35 @@ driven by nothing.
 - `[x]` **Physics** — box/sphere/capsule shapes, raycast, sphere/box/capsule casts,
   area overlap, character controller with CCD, fixed-step integration with
   positional resolution, island-partitioned distance and hinge constraints.
-  `[ ]` No convex/mesh/heightfield shapes, no friction or restitution impulse model
-  despite `PhysicsMaterialUVE` carrying the fields, no body sleeping, no layer
-  filtering.
-- `[~]` **Animation** — **the entire module is dead code at runtime.** Clip, state
-  machine, blend tree, pose buffer and time contracts all exist and are tested;
-  `EngineCoreUVE` never calls any of them. There is no clip sampler and no skinning
-  pass. See Part II §8 for why the asset format blocks it.
+  `[x]` Layer/mask filtering is already consumed by `CollisionSystemUVE`, character
+  queries and area overlap; `Test/Physics/collision_system_uve_tests.cpp` checks compatible,
+  incompatible and one-sided masks. The material fields are also consumed:
+  `physics_system_uve.cpp::MoveAndDeflectUVE` combines materials and calls
+  `Rigid3DUVE::DeflectVelocityUVE`; restitution and friction tests in
+  `Test/Physics/physics_system_uve_tests.cpp` verify bounce and tangential damping.
+  `[~]` This is mass-weighted positional correction plus per-body velocity deflection,
+  not a general contact impulse/friction solver. `[ ]` Convex/mesh/heightfield shapes
+  and automatic body sleeping remain absent.
+- `[x]` **Animation runtime path** — `EngineCoreUVE::SyncAnimationUVE` is called on
+  fixed and frame ticks. The existing `Objects/Animation` sequencer and graph sample
+  `AnimationClipAssetUVE`, blend skeletal poses and apply root motion/events.
+  `Renderer3DUVE` resolves the skeleton pose, calls `Asset::TrySkinMeshUVE`, and uploads
+  deformed vertices. Evidence: `Test/Objects/3D/animation_objects_uve_tests.cpp`,
+  `Test/Core/Asset/mesh_skinning_uve_tests.cpp` and
+  `Renderer3DUVETest.RenderFrameUVE_ASkinnedMeshUnderASkeletonIsDrawnInTheSkeletonsPose`.
+  The earlier blanket "no sampler/skinning/runtime animation" claim was wrong.
+  `[~]` The separate `Core::AnimationClipUVE`/state-machine/pose-graph helper APIs in
+  `Runtime/Animation` are not that runtime graph; their tests do not prove a consumer.
+  `MeshSkinComputeUVE` is also a tested optional compute helper, not the current
+  renderer's CPU-skinning path. No duplicate animation runtime is needed.
 - `[x]` **Audio** — voice allocation, listener pose, attenuation, real miniaudio
-  backend plus a recording null device. `[~]` `AudioMixerGroupUVE` (the whole bus
-  graph), the PCM streaming path and the gain-ramp scheduler have no consumers.
+  backend plus a recording null device. `AudioSourceSystemUVE` routes mixer groups;
+  `AudioSystemUVE::UpdateUVE` applies group gain/pitch before device submission.
+  `Test/Audio/audio_system_uve_tests.cpp` covers gain/pitch, rerouting and group lifetime.
+  `[~]` PCM refill/gain-effect schedulers have explicit per-source AudioSystem APIs
+  and caller-owned-window tests (`SourceStreamAndPcmEffects_UseBoundedCallerOwnedRuntimeState`),
+  but automatic file refill and effect application in the device playback callback remain
+  unwired. Do not describe mixer routing as unused or those manual APIs as automatic streaming.
 - `[x]` **Input** — keyboard, mouse, gamepad, action bindings, touch and gesture
   recognition. `[~]` Gesture output is computed and read by nobody; mobile input
   has no platform backend pushing snapshots.
@@ -1086,23 +1130,40 @@ driven by nothing.
   zero failures, seven existing Vulkan capability skips**.
   `[~]` Debugger scope is the instance API: no editor debugger frontend, local source names,
   native-code debugging or stepping across node/instance boundaries is claimed.
-- `[~]` **Network** — one header of reliable-packet-window value logic with **no
-  consumer anywhere**. No socket, no transport, no replication.
-- `[~]` **Plugins** — manifest validation and an in-memory registry that **never
-  calls `dlopen`**. No plugin is ever loaded.
+- `[~]` **Network** — real loopback/UDP transports, a UDP listener, session handshake,
+  RPC, replication, prediction and relay/interest paths already exist in `Runtime/Network`.
+  `Test/Network/network_udp_uve_tests.cpp` exercises real socket/session/RPC round trips;
+  session, RPC and replication suites cover their higher-level contracts. The old "one
+  header/no sockets/no replication" description (also repeated in an obsolete reliable-
+  window header comment) is false. Reliable packet-window/fragment helpers still have
+  no production transport consumer: retransmission/ack/fragment integration remains
+  partial and is not implied by working UDP or session handshakes.
+- `[x]` **Native plugin host** — `NativePluginHostUVE` in `Runtime/Plugins` opens real
+  shared libraries (`dlopen` on POSIX, `LoadLibraryW` on Windows), validates the entry ABI,
+  initializes, registers and unloads plugins. Scoped uses prevent premature unload.
+  `Test/Plugins/native_plugin_host_uve_tests.cpp` loads built fixture libraries and
+  checks missing files/entries, protocol errors, duplicates, scope protection and reload.
+  This corrects a stale claim; it does not claim automatic editor plugin discovery or
+  validation of the Windows branch on this Linux host.
 - `[x]` **Save / Pack / ProjectCheck** — slot-based saves with atomic temp-file
   rename, a bounded migration chain, RLE compression; project packaging and launch;
   a standalone project checker CLI.
-- `[~]` **Platform** — the name oversells it: compiler macros plus the project
-  package codec. There is no platform abstraction layer for filesystem, process,
-  time or dynamic libraries.
+- `[~]` **Platform** — no unified filesystem/process/time/dynamic-library service
+  abstraction yet. Existing implementations must be reused rather than duplicated:
+  `Asset::FileSystemUVE` handles directory/bundle mounts and bounded paths (tests under
+  `Test/Core/Asset/file_system_uve_tests.cpp`), `Utilities::TimerUVE` uses a steady clock,
+  and the native plugin host owns real dynamic-library operations. These distributed
+  implementations are not evidence that a unified process/service API is complete.
 
-**Empty module directories** (README only, zero code): `Core/Containers`,
-`Core/Types`, `Core/Strings`, `Core/Delegates`, `FileSystem`, `Gameplay`,
-`Networking`, `Renderer`, `Serialization`, `VFX`, `Objects/2D`, `Objects/AI`. Two of
-those are placeholders guarding against duplication — `Renderer/README.md`
-explicitly says not to start a second renderer there — and the rest are
-unimplemented intent.
+**README-only module placeholders**: `Core/Types`, `Core/Delegates`, `FileSystem`,
+`Networking`, `Renderer`, `Serialization`, `VFX`. The old list was stale:
+`Core/Containers`, `Core/Strings`, `Gameplay`, `Objects/2D` and `Objects/AI` contain
+real implementation/header files. Placeholder names are not additional work requests:
+for example, `Renderer/README.md` explicitly guards against starting a second renderer.
+The Part IV reconciliation above was checked against source and the **4,144-case full
+CTest run (zero failures, seven existing Vulkan skips)** on 2026-10-14; native graphics
+verification remains separate. Remaining partial/absent entries elsewhere in this file
+are not closed by this reconciliation.
 
 ---
 
