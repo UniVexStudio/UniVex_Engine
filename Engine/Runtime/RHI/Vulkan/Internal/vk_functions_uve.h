@@ -74,6 +74,7 @@ struct VkFunctionsUVE {
     PFN_vkCmdEndRenderPass vkCmdEndRenderPass = nullptr;
     PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier = nullptr;
     PFN_vkCmdCopyImageToBuffer vkCmdCopyImageToBuffer = nullptr;
+    PFN_vkCmdBlitImage vkCmdBlitImage = nullptr; // Tier 2.6 texture blit + mip chain (core 1.0)
     PFN_vkCreateBuffer vkCreateBuffer = nullptr;
     PFN_vkDestroyBuffer vkDestroyBuffer = nullptr;
     PFN_vkGetBufferMemoryRequirements vkGetBufferMemoryRequirements = nullptr;

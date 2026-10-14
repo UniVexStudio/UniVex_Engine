@@ -223,12 +223,19 @@ public:
     [[nodiscard]] RenderOperationResultUVE GetTextureDescUVE(TextureHandleUVE,
                                                              TextureDescUVE &) const override;
     [[nodiscard]] RenderOperationResultUVE CopyBufferUVE(const BufferCopyDescUVE &) override;
+    /// Tier 2.6 color blit: one recorded vkCmdBlitImage on a transient command buffer, gated on
+    /// the per-format blit/filter feature bits, with both subresources restored to the layout the
+    /// backend samples from. Rejects mid-pass calls and open CPU submission FIFOs like CopyBuffer.
+    [[nodiscard]] RenderOperationResultUVE BlitTextureUVE(const TextureBlitDescUVE &) override;
+    /// Rebuilds levels 1..n-1 by linear-blitting each level from the one above, for every array
+    /// layer. Requires mipLevels >= 2 plus BLIT_SRC|BLIT_DST|LINEAR_FILTER on the image format.
+    [[nodiscard]] RenderOperationResultUVE GenerateMipmapsUVE(TextureHandleUVE) override;
     [[nodiscard]] RenderOperationResultUVE InsertFenceUVE(FenceHandleUVE &) override;
     [[nodiscard]] RenderOperationResultUVE WaitFenceUVE(FenceHandleUVE, std::uint64_t) override;
     [[nodiscard]] RenderOperationResultUVE DestroyFenceUVE(FenceHandleUVE) override;
     [[nodiscard]] RenderOperationResultUVE WaitIdleUVE() override;
     [[nodiscard]] RenderOperationResultUVE GetSurfaceInfoUVE(RenderSurfaceInfoUVE &) const override;
-    // Texture blit/mip generation and result queries retain the interface's explicit Unsupported
+    // Result queries (timestamps / occlusion) retain the interface's explicit Unsupported
     // contract until their native paths are supported; capabilities never advertise them.
 
     VulkanRenderDeviceUVE(const VulkanRenderDeviceUVE&) = delete;
@@ -292,6 +299,14 @@ public:
     [[nodiscard]] bool ReadbackLatestPresentedImageUVE(std::span<std::byte> outRGBA8,
                                                        std::uint32_t& outWidth,
                                                        std::uint32_t& outHeight);
+
+    /// Copies one mip/layer of a byte-per-channel color texture into `outRGBA8` (R,G,B,A byte
+    /// order, like the surface readback). The caller sizes the span to
+    /// max(1, width >> mip) * max(1, height >> mip) * 4 bytes. Cold path: drains the queue and
+    /// rides the same transient-command-buffer transfer path as the blit; returns false with a
+    /// logged reason on any validation or Vulkan failure.
+    [[nodiscard]] bool ReadbackTextureRGBA8UVE(TextureHandleUVE texture, std::uint32_t mipLevel,
+                                               std::uint32_t layer, std::span<std::byte> outRGBA8);
 
 private:
     /// Creates the 1x1 white fallback texture after device initialisation (M2c sampler

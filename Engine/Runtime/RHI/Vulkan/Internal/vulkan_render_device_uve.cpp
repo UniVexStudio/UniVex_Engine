@@ -2762,7 +2762,10 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     // Uncompressed color resources may be storage-bound. Block-compressed textures are sampled
     // only (Vulkan does not allow compressed formats as storage images or color attachments),
     // and the depth arm below reassigns usage without STORAGE as well.
-    VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    // Tier 2.6: TRANSFER_SRC joins unconditionally so blit sources and mip chains work; the
+    // depth arm below reassigns usage because depth textures are never transfer sources here.
+    VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                              VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
     VkImageLayout finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     switch (desc.format) {
@@ -6135,7 +6138,14 @@ RenderDeviceCapabilitiesUVE VulkanRenderDeviceUVE::GetCapabilitiesUVE() const no
     RenderDeviceCapabilitiesUVE caps;
     if (!IsUsableUVE())
         return caps;
-    caps.fences = caps.bufferCopy = caps.surface = caps.retainedTextures = RenderFeatureSupportUVE::Native;
+    caps.fences = caps.bufferCopy = caps.surface = caps.retainedTextures =
+        RenderFeatureSupportUVE::Native;
+    // Core-since-1.0 blit entry: format-specific blit support is still checked per call, so the
+    // capabilities advertise the transfer paths this backend actually implements.
+    if (m_impl->vk.vkCmdBlitImage != nullptr) {
+        caps.textureBlit = RenderFeatureSupportUVE::Native;
+        caps.mipGeneration = RenderFeatureSupportUVE::Native;
+    }
     caps.bufferCopyAlignment = 4U;
     if (m_impl->useDynamicRendering)
         caps.memoryBarriers = RenderFeatureSupportUVE::Native;
@@ -6276,6 +6286,417 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::CopyBufferUVE(const BufferCopyDe
     impl.vk.vkFreeCommandBuffers(impl.device, impl.commandPool, 1U, &commands);
     return ok ? RenderOperationResultUVE::Success : RenderOperationResultUVE::SystemError;
 }
+namespace {
+/// One image-layout transition for the Tier 2.6 transfer paths. The range is always an explicit
+/// subresource set so a blit never rewrites the tracked layout of untouched mips or layers.
+[[nodiscard]] VkImageMemoryBarrier MakeTransferBarrierUVE(const VkImage image,
+                                                          const VkImageLayout oldLayout,
+                                                          const VkImageLayout newLayout,
+                                                          const VkAccessFlags sourceAccess,
+                                                          const VkAccessFlags destinationAccess,
+                                                          const VkImageSubresourceRange range) {
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.srcAccessMask = sourceAccess;
+    barrier.dstAccessMask = destinationAccess;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange = range;
+    return barrier;
+}
+
+[[nodiscard]] VkImageSubresourceRange MakeColorSubresourceRangeUVE(const VkImageSubresourceLayers layers,
+                                                                   const std::uint32_t layerCount) {
+    return {VK_IMAGE_ASPECT_COLOR_BIT, layers.mipLevel, 1U, layers.baseArrayLayer, layerCount};
+}
+
+/// True when the image's channel order stores B before R in memory, i.e. the byte-order rule the
+/// RHI's R,G,B,A contract has to compensate for on both upload and readback.
+[[nodiscard]] bool IsBgraOrderFormatUVE(const VkFormat format) noexcept {
+    return format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB;
+}
+
+/// Formats whose linear-tiling features must honor both blit directions plus the filter the
+/// caller asked for, or the operation is refused instead of silently changing filter.
+[[nodiscard]] bool SupportsBlitUVE(const VkFunctionsUVE &vk, const VkPhysicalDevice physicalDevice,
+                                   const VkFormat format, const VkImageUsageFlags requiredFeature) {
+    VkFormatProperties properties{};
+    vk.vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &properties);
+    return (properties.optimalTilingFeatures & requiredFeature) == requiredFeature;
+}
+} // namespace
+
+/// Transient-command helpers for the Tier 2.6 transfer paths. They are templates over the
+/// deduced ImplUVE type on purpose: the public device header stays free of Vulkan types, and the
+/// instantiation point (inside VulkanRenderDeviceUVE members) has access to the private impl.
+template <typename ImplLikeUVE>
+[[nodiscard]] VkCommandBuffer BeginTransientCommandsUVE(ImplLikeUVE &impl) {
+    VkCommandBufferAllocateInfo allocate{};
+    allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocate.commandPool = impl.commandPool;
+    allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocate.commandBufferCount = 1U;
+    VkCommandBuffer commands = VK_NULL_HANDLE;
+    if (impl.vk.vkAllocateCommandBuffers(impl.device, &allocate, &commands) != VK_SUCCESS ||
+        commands == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    VkCommandBufferBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (impl.vk.vkBeginCommandBuffer(commands, &begin) != VK_SUCCESS) {
+        impl.vk.vkFreeCommandBuffers(impl.device, impl.commandPool, 1U, &commands);
+        return VK_NULL_HANDLE;
+    }
+    return commands;
+}
+
+template <typename ImplLikeUVE>
+[[nodiscard]] RenderOperationResultUVE SubmitTransientCommandsUVE(ImplLikeUVE &impl,
+                                                                 VkCommandBuffer commands) {
+    bool ok = impl.vk.vkEndCommandBuffer(commands) == VK_SUCCESS;
+    if (ok) {
+        VkSubmitInfo submit{};
+        submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit.commandBufferCount = 1U;
+        submit.pCommandBuffers = &commands;
+        ok = impl.vk.vkQueueSubmit(impl.presentQueue, 1U, &submit, VK_NULL_HANDLE) == VK_SUCCESS;
+        if (ok) {
+            ok = impl.vk.vkQueueWaitIdle(impl.presentQueue) == VK_SUCCESS;
+        }
+    }
+    impl.vk.vkFreeCommandBuffers(impl.device, impl.commandPool, 1U, &commands);
+    return ok ? RenderOperationResultUVE::Success : RenderOperationResultUVE::SystemError;
+}
+
+RenderOperationResultUVE VulkanRenderDeviceUVE::BlitTextureUVE(const TextureBlitDescUVE &blit) {
+    if (!IsUsableUVE()) {
+        return RenderOperationResultUVE::DeviceUnavailable;
+    }
+    auto &impl = *m_impl;
+    {
+        const std::lock_guard lock(impl.submissionMutex);
+        if (!impl.frameSubmissions.empty()) {
+            return RenderOperationResultUVE::InvalidState;
+        }
+    }
+    if (impl.framePassState.passOpen) {
+        return RenderOperationResultUVE::InvalidState; // mid-pass layouts cannot be trusted
+    }
+    const auto source = impl.textures.find(blit.source.value);
+    const auto destination = impl.textures.find(blit.destination.value);
+    if (source == impl.textures.end() || destination == impl.textures.end()) {
+        return RenderOperationResultUVE::InvalidHandle;
+    }
+    if (!IsTextureBlitValidUVE(blit, source->second.desc, destination->second.desc)) {
+        return RenderOperationResultUVE::InvalidArgument;
+    }
+    if (source->second.vkFormat != destination->second.vkFormat) {
+        // Same RHI descriptor, different image format: the swapchain-format aliasing policy can
+        // pair a B8G8R8A8-family image with an R8G8B8A8 one, and vkCmdBlitImage would need
+        // format-compatible classes. Refuse instead of issuing a validation error.
+        UVE_WARNING("VulkanRenderDeviceUVE::BlitTextureUVE: source and destination images were "
+                    "allocated with different Vulkan formats");
+        return RenderOperationResultUVE::Unsupported;
+    }
+    const bool linearFilter = blit.filter == BlitFilterUVE::Linear;
+    VkImageUsageFlags sourceFeatures = VK_FORMAT_FEATURE_BLIT_SRC_BIT;
+    if (linearFilter) {
+        sourceFeatures |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+    }
+    if (!SupportsBlitUVE(impl.vk, impl.physicalDevice, source->second.vkFormat, sourceFeatures)) {
+        UVE_WARNING("VulkanRenderDeviceUVE::BlitTextureUVE: source format cannot be sampled by a "
+                    "{}blit on this device",
+                    linearFilter ? "linear-filtered " : "nearest-filtered ");
+        return RenderOperationResultUVE::Unsupported;
+    }
+    if (!SupportsBlitUVE(impl.vk, impl.physicalDevice, destination->second.vkFormat,
+                         VK_FORMAT_FEATURE_BLIT_DST_BIT)) {
+        UVE_WARNING("VulkanRenderDeviceUVE::BlitTextureUVE: destination format cannot be a blit target");
+        return RenderOperationResultUVE::Unsupported;
+    }
+    const VkCommandBuffer commands = BeginTransientCommandsUVE(impl);
+    if (commands == VK_NULL_HANDLE) {
+        return RenderOperationResultUVE::SystemError;
+    }
+    const VkAccessFlags priorAccess = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    const TextureRegionUVE &sourceRegion = blit.sourceRegion;
+    const TextureRegionUVE &destinationRegion = blit.destinationRegion;
+    const VkImageSubresourceLayers sourceLayers =
+        {VK_IMAGE_ASPECT_COLOR_BIT, sourceRegion.mip, sourceRegion.layer, 1U};
+    const VkImageSubresourceLayers destinationLayers =
+        {VK_IMAGE_ASPECT_COLOR_BIT, destinationRegion.mip, destinationRegion.layer, 1U};
+    const VkImageMemoryBarrier toTransfer[2] = {
+        MakeTransferBarrierUVE(source->second.image, source->second.currentLayout,
+                               VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, priorAccess, VK_ACCESS_TRANSFER_READ_BIT,
+                               MakeColorSubresourceRangeUVE(sourceLayers, 1U)),
+        MakeTransferBarrierUVE(destination->second.image, destination->second.currentLayout,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, priorAccess, VK_ACCESS_TRANSFER_WRITE_BIT,
+                               MakeColorSubresourceRangeUVE(destinationLayers, 1U))};
+    impl.vk.vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 0U, 0U, nullptr, 0U, nullptr, 2U, toTransfer);
+
+    VkImageBlit region{};
+    region.srcSubresource = sourceLayers;
+    region.srcOffsets[0] = {static_cast<std::int32_t>(sourceRegion.x),
+                            static_cast<std::int32_t>(sourceRegion.y), 0};
+    region.srcOffsets[1] = {static_cast<std::int32_t>(sourceRegion.x + sourceRegion.width),
+                            static_cast<std::int32_t>(sourceRegion.y + sourceRegion.height), 1};
+    region.dstSubresource = destinationLayers;
+    region.dstOffsets[0] = {static_cast<std::int32_t>(destinationRegion.x),
+                            static_cast<std::int32_t>(destinationRegion.y), 0};
+    region.dstOffsets[1] = {static_cast<std::int32_t>(destinationRegion.x + destinationRegion.width),
+                            static_cast<std::int32_t>(destinationRegion.y + destinationRegion.height), 1};
+    impl.vk.vkCmdBlitImage(commands, source->second.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           destination->second.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &region,
+                           linearFilter ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
+
+    // Both textures return to the layout the rest of the backend assumes between passes; the
+    // destination's contents are what later sampling sees.
+    const VkImageMemoryBarrier toSample[2] = {
+        MakeTransferBarrierUVE(source->second.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_READ_BIT,
+                               VK_ACCESS_MEMORY_READ_BIT, MakeColorSubresourceRangeUVE(sourceLayers, 1U)),
+        MakeTransferBarrierUVE(destination->second.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
+                               VK_ACCESS_MEMORY_READ_BIT, MakeColorSubresourceRangeUVE(destinationLayers, 1U))};
+    impl.vk.vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                 0U, 0U, nullptr, 0U, nullptr, 2U, toSample);
+
+    const auto result = SubmitTransientCommandsUVE(impl, commands);
+    if (result == RenderOperationResultUVE::Success) {
+        source->second.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        destination->second.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+    return result;
+}
+
+RenderOperationResultUVE VulkanRenderDeviceUVE::GenerateMipmapsUVE(const TextureHandleUVE texture) {
+    if (!IsUsableUVE()) {
+        return RenderOperationResultUVE::DeviceUnavailable;
+    }
+    auto &impl = *m_impl;
+    {
+        const std::lock_guard lock(impl.submissionMutex);
+        if (!impl.frameSubmissions.empty()) {
+            return RenderOperationResultUVE::InvalidState;
+        }
+    }
+    if (impl.framePassState.passOpen) {
+        return RenderOperationResultUVE::InvalidState;
+    }
+    const auto found = impl.textures.find(texture.value);
+    if (found == impl.textures.end()) {
+        return RenderOperationResultUVE::InvalidHandle;
+    }
+    const TextureDescUVE &desc = found->second.desc;
+    // GL parity: level zero plus at least one lower level, and only the formats the blit path
+    // accepts. Anything else is a caller error, not a capability limit.
+    if (desc.mipLevels < 2U || (desc.format != TextureFormatUVE::RGBA8Unorm &&
+                                desc.format != TextureFormatUVE::RGBA16Float)) {
+        return RenderOperationResultUVE::InvalidArgument;
+    }
+    constexpr VkImageUsageFlags kChainFeatures =
+        VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT |
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+    if (!SupportsBlitUVE(impl.vk, impl.physicalDevice, found->second.vkFormat, kChainFeatures)) {
+        UVE_WARNING("VulkanRenderDeviceUVE::GenerateMipmapsUVE: this format cannot be downsampled by "
+                    "a linear blit chain on this device");
+        return RenderOperationResultUVE::Unsupported;
+    }
+    const VkCommandBuffer commands = BeginTransientCommandsUVE(impl);
+    if (commands == VK_NULL_HANDLE) {
+        return RenderOperationResultUVE::SystemError;
+    }
+    const VkAccessFlags priorAccess = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    const auto levelBarrier = [&](const std::uint32_t mip, const VkImageLayout oldLayout,
+                                  const VkImageLayout newLayout, const VkAccessFlags sourceAccess,
+                                  const VkAccessFlags destinationAccess) {
+        return MakeTransferBarrierUVE(found->second.image, oldLayout, newLayout, sourceAccess,
+                                      destinationAccess,
+                                      {VK_IMAGE_ASPECT_COLOR_BIT, mip, 1U, 0U, desc.arrayLayers});
+    };
+    std::uint32_t sourceWidth = desc.width;
+    std::uint32_t sourceHeight = desc.height;
+    bool sourceIsLevelZero = true;
+    for (std::uint32_t mip = 1U; mip < desc.mipLevels; ++mip) {
+        const std::uint32_t destinationWidth = sourceWidth > 1U ? sourceWidth / 2U : 1U;
+        const std::uint32_t destinationHeight = sourceHeight > 1U ? sourceHeight / 2U : 1U;
+        const VkImageMemoryBarrier toSources[2] = {
+            levelBarrier(mip - 1U,
+                         sourceIsLevelZero ? found->second.currentLayout : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                         sourceIsLevelZero ? priorAccess : VK_ACCESS_TRANSFER_WRITE_BIT,
+                         VK_ACCESS_TRANSFER_READ_BIT),
+            levelBarrier(mip, found->second.currentLayout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, priorAccess,
+                         VK_ACCESS_TRANSFER_WRITE_BIT)};
+        impl.vk.vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                     VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, nullptr, 0U, nullptr, 2U,
+                                     toSources);
+        for (std::uint32_t layer = 0U; layer < desc.arrayLayers; ++layer) {
+            VkImageBlit region{};
+            region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mip - 1U, layer, 1U};
+            region.srcOffsets[0] = {0, 0, 0};
+            region.srcOffsets[1] = {static_cast<std::int32_t>(sourceWidth),
+                                    static_cast<std::int32_t>(sourceHeight), 1};
+            region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mip, layer, 1U};
+            region.dstOffsets[0] = {0, 0, 0};
+            region.dstOffsets[1] = {static_cast<std::int32_t>(destinationWidth),
+                                    static_cast<std::int32_t>(destinationHeight), 1};
+            impl.vk.vkCmdBlitImage(commands, found->second.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                   found->second.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &region,
+                                   VK_FILTER_LINEAR);
+        }
+        const bool lastLevel = mip + 1U == desc.mipLevels;
+        const VkImageMemoryBarrier settle =
+            levelBarrier(mip, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         lastLevel ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                                   : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                         VK_ACCESS_TRANSFER_WRITE_BIT,
+                         lastLevel ? VK_ACCESS_MEMORY_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT);
+        impl.vk.vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                     lastLevel ? VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
+                                               : VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                     0U, 0U, nullptr, 0U, nullptr, 1U, &settle);
+        sourceWidth = destinationWidth;
+        sourceHeight = destinationHeight;
+        sourceIsLevelZero = false;
+    }
+    // Level zero was the chain's first source and must return to the sampling layout too.
+    const VkImageMemoryBarrier levelZeroSettle =
+        levelBarrier(0U, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                     VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_MEMORY_READ_BIT);
+    impl.vk.vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                 0U, 0U, nullptr, 0U, nullptr, 1U, &levelZeroSettle);
+    const auto result = SubmitTransientCommandsUVE(impl, commands);
+    if (result == RenderOperationResultUVE::Success) {
+        found->second.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+    return result;
+}
+
+bool VulkanRenderDeviceUVE::ReadbackTextureRGBA8UVE(const TextureHandleUVE texture,
+                                                    const std::uint32_t mipLevel,
+                                                    const std::uint32_t layer,
+                                                    const std::span<std::byte> outRGBA8) {
+    if (!IsUsableUVE()) {
+        return false;
+    }
+    auto &impl = *m_impl;
+    const auto found = impl.textures.find(texture.value);
+    if (found == impl.textures.end()) {
+        UVE_WARNING("VulkanRenderDeviceUVE::ReadbackTextureRGBA8UVE: unknown or destroyed texture");
+        return false;
+    }
+    const TextureDescUVE &desc = found->second.desc;
+    if (mipLevel >= desc.mipLevels || layer >= desc.arrayLayers) {
+        UVE_WARNING("VulkanRenderDeviceUVE::ReadbackTextureRGBA8UVE: mip/layer is outside the texture");
+        return false;
+    }
+    const std::uint32_t mipWidth = std::max(1U, desc.width >> mipLevel);
+    const std::uint32_t mipHeight = std::max(1U, desc.height >> mipLevel);
+    const std::size_t requiredBytes = static_cast<std::size_t>(mipWidth) * mipHeight * 4U;
+    if (outRGBA8.size() != requiredBytes) {
+        UVE_WARNING("VulkanRenderDeviceUVE::ReadbackTextureRGBA8UVE: output span must hold {} bytes",
+                    requiredBytes);
+        return false;
+    }
+    if ((found->second.vkFormat != VK_FORMAT_R8G8B8A8_UNORM &&
+         found->second.vkFormat != VK_FORMAT_R8G8B8A8_SRGB &&
+         !IsBgraOrderFormatUVE(found->second.vkFormat))) {
+        UVE_WARNING("VulkanRenderDeviceUVE::ReadbackTextureRGBA8UVE: only byte-per-channel color "
+                    "textures are readable");
+        return false;
+    }
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = requiredBytes;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    VkBuffer staging = VK_NULL_HANDLE;
+    VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+    if (impl.vk.vkCreateBuffer(impl.device, &bufferInfo, nullptr, &staging) != VK_SUCCESS ||
+        staging == VK_NULL_HANDLE) {
+        return false;
+    }
+    VkMemoryRequirements requirements{};
+    impl.vk.vkGetBufferMemoryRequirements(impl.device, staging, &requirements);
+    const std::uint32_t memoryType = impl.FindMemoryTypeUVE(
+        requirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    VkMemoryAllocateInfo allocate{};
+    allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocate.allocationSize = requirements.size;
+    allocate.memoryTypeIndex = memoryType;
+    if (memoryType == UINT32_MAX ||
+        impl.vk.vkAllocateMemory(impl.device, &allocate, nullptr, &stagingMemory) != VK_SUCCESS ||
+        impl.vk.vkBindBufferMemory(impl.device, staging, stagingMemory, 0U) != VK_SUCCESS) {
+        impl.vk.vkDestroyBuffer(impl.device, staging, nullptr);
+        if (stagingMemory != VK_NULL_HANDLE) {
+            impl.vk.vkFreeMemory(impl.device, stagingMemory, nullptr);
+        }
+        return false;
+    }
+    bool ok = true;
+    const VkCommandBuffer commands = BeginTransientCommandsUVE(impl);
+    if (commands == VK_NULL_HANDLE) {
+        ok = false;
+    }
+    if (ok) {
+        const VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, mipLevel, 1U, layer, 1U};
+        const VkImageMemoryBarrier toTransfer = MakeTransferBarrierUVE(
+            found->second.image, found->second.currentLayout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, range);
+        impl.vk.vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                     VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, nullptr, 0U, nullptr, 1U,
+                                     &toTransfer);
+        VkBufferImageCopy copy{};
+        copy.bufferOffset = 0U;
+        copy.bufferRowLength = 0U;   // tightly packed
+        copy.bufferImageHeight = 0U;
+        copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mipLevel, layer, 1U};
+        copy.imageOffset = {0, 0, 0};
+        copy.imageExtent = {mipWidth, mipHeight, 1U};
+        impl.vk.vkCmdCopyImageToBuffer(commands, found->second.image,
+                                       VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, staging, 1U, &copy);
+        const VkImageMemoryBarrier backToSample = MakeTransferBarrierUVE(
+            found->second.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_READ_BIT,
+            VK_ACCESS_MEMORY_READ_BIT, range);
+        impl.vk.vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                     VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0U, 0U, nullptr, 0U, nullptr, 1U,
+                                     &backToSample);
+        ok = SubmitTransientCommandsUVE(impl, commands) == RenderOperationResultUVE::Success;
+        if (ok) {
+            found->second.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        }
+    }
+    if (ok) {
+        void *mapped = nullptr;
+        ok = impl.vk.vkMapMemory(impl.device, stagingMemory, 0U, requiredBytes, 0U, &mapped) == VK_SUCCESS &&
+             mapped != nullptr;
+        if (ok) {
+            const auto *sourceBytes = static_cast<const std::byte *>(mapped);
+            if (IsBgraOrderFormatUVE(found->second.vkFormat)) {
+                for (std::size_t texel = 0U; texel < requiredBytes / 4U; ++texel) {
+                    outRGBA8[texel * 4U + 0U] = sourceBytes[texel * 4U + 2U];
+                    outRGBA8[texel * 4U + 1U] = sourceBytes[texel * 4U + 1U];
+                    outRGBA8[texel * 4U + 2U] = sourceBytes[texel * 4U + 0U];
+                    outRGBA8[texel * 4U + 3U] = sourceBytes[texel * 4U + 3U];
+                }
+            } else {
+                std::memcpy(outRGBA8.data(), sourceBytes, requiredBytes);
+            }
+            impl.vk.vkUnmapMemory(impl.device, stagingMemory);
+        }
+    }
+    impl.vk.vkDestroyBuffer(impl.device, staging, nullptr);
+    impl.vk.vkFreeMemory(impl.device, stagingMemory, nullptr);
+    return ok;
+}
+
 RenderOperationResultUVE VulkanRenderDeviceUVE::GetSurfaceInfoUVE(RenderSurfaceInfoUVE &output) const {
     if (!IsUsableUVE())
         return RenderOperationResultUVE::DeviceUnavailable;

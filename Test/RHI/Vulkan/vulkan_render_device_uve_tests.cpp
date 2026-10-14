@@ -21,6 +21,7 @@
 
 #include <array>
 #include <cstdlib>
+#include <cstdint>
 #include <cstring>
 #include <map>
 #include <memory>
@@ -4700,8 +4701,205 @@ TEST_F(VulkanRenderDeviceUVETest, FoundationFencesDoNotPretendPendingCpuSubmissi
     QueryHandleUVE query{73U};
     EXPECT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::Timestamp, query), ResultUVE::Unsupported);
     EXPECT_EQ(query.value, 73U);
-    EXPECT_EQ(device->BlitTextureUVE({}), ResultUVE::Unsupported);
-    EXPECT_EQ(device->GenerateMipmapsUVE({}), ResultUVE::Unsupported);
+    // Tier 2.6 landed the transfer paths; what remains "not yet" is result queries. The
+    // transfer ops now validate handles like every other implemented device call.
+    EXPECT_EQ(device->BlitTextureUVE({}), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device->GenerateMipmapsUVE({}), ResultUVE::InvalidHandle);
+}
+
+namespace {
+
+// Fills a 4x4 RGBA8 image with four uniform 2x2 blocks so a bilinear 2x downsample has an
+// exactly predictable answer at every level.
+[[nodiscard]] std::array<std::byte, 4U * 4U * 4U> MakeBlockedSourceUVE() {
+    std::array<std::byte, 4U * 4U * 4U> bytes{};
+    constexpr std::array<std::uint8_t, 4> kBlockRed{40U, 80U, 120U, 160U};
+    for (std::uint32_t y = 0U; y < 4U; ++y) {
+        for (std::uint32_t x = 0U; x < 4U; ++x) {
+            const std::size_t block = static_cast<std::size_t>(y / 2U) * 2U + x / 2U;
+            const std::size_t texel = (static_cast<std::size_t>(y) * 4U + x) * 4U;
+            bytes[texel + 0U] = static_cast<std::byte>(kBlockRed[block]);
+            bytes[texel + 1U] = static_cast<std::byte>(7U);
+            bytes[texel + 2U] = static_cast<std::byte>(200U);
+            bytes[texel + 3U] = std::byte{0xFF};
+        }
+    }
+    return bytes;
+}
+
+[[nodiscard]] TextureDescUVE MakeTransferTextureDescUVE(const std::uint32_t size,
+                                                        const std::uint32_t mipLevels = 1U) {
+    TextureDescUVE desc{};
+    desc.width = size;
+    desc.height = size;
+    desc.mipLevels = mipLevels;
+    desc.format = TextureFormatUVE::RGBA8Unorm;
+    return desc;
+}
+
+} // namespace
+
+TEST_F(VulkanRenderDeviceUVETest, TextureTransferCapabilitiesAreAdvertisedOnARealDevice) {
+    const auto caps = device->GetCapabilitiesUVE();
+    EXPECT_EQ(caps.textureBlit, RenderFeatureSupportUVE::Native);
+    EXPECT_EQ(caps.mipGeneration, RenderFeatureSupportUVE::Native);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, BlitTextureCopiesAnExactRegionAndReadbackMatchesTheSource) {
+    using ResultUVE = RenderOperationResultUVE;
+    constexpr std::uint32_t kSize = 4U;
+    const auto sourceBytes = MakeBlockedSourceUVE();
+    const auto source = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize), sourceBytes);
+    const auto destination = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize));
+    ASSERT_NE(source, kInvalidTextureHandleUVE);
+    ASSERT_NE(destination, kInvalidTextureHandleUVE);
+
+    // The readback hook is the same transfer machinery in reverse, so pinning it here makes the
+    // blit assertions below meaningful.
+    std::array<std::byte, kSize * kSize * 4U> sourceReadback{};
+    ASSERT_TRUE(device->ReadbackTextureRGBA8UVE(source, 0U, 0U, sourceReadback));
+    EXPECT_EQ(sourceReadback, sourceBytes);
+
+    TextureBlitDescUVE blit{};
+    blit.source = source;
+    blit.destination = destination;
+    blit.sourceRegion = {0U, 0U, 0U, 1U, 2U, 2U};
+    blit.destinationRegion = {0U, 0U, 2U, 2U, 2U, 2U};
+    blit.filter = BlitFilterUVE::Point;
+    EXPECT_EQ(device->BlitTextureUVE(blit), ResultUVE::Success);
+
+    std::array<std::byte, kSize * kSize * 4U> destinationReadback{};
+    ASSERT_TRUE(device->ReadbackTextureRGBA8UVE(destination, 0U, 0U, destinationReadback));
+    for (std::uint32_t y = 0U; y < 2U; ++y) {
+        for (std::uint32_t x = 0U; x < 2U; ++x) {
+            for (std::uint32_t channel = 0U; channel < 4U; ++channel) {
+                EXPECT_EQ(destinationReadback[((static_cast<std::size_t>(y) + 2U) * kSize + x + 2U) * 4U + channel],
+                          sourceBytes[(static_cast<std::size_t>(y) * kSize + x) * 4U + channel]);
+            }
+        }
+    }
+    for (std::uint32_t texel = 0U; texel < 2U * kSize + 2U; ++texel) {
+        EXPECT_EQ(destinationReadback[texel * 4U], std::byte{0}) << "texels outside the destination region must stay untouched";
+    }
+    device->DestroyTextureUVE(destination);
+    device->DestroyTextureUVE(source);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, BlitTextureLinearScalingAndRejectionsKeepTheirContracts) {
+    using ResultUVE = RenderOperationResultUVE;
+    constexpr std::uint32_t kSize = 4U;
+    const auto sourceBytes = MakeBlockedSourceUVE();
+    const auto source = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize), sourceBytes);
+    const auto uniformTarget = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize));
+    const auto floatTarget = device->CreateTextureUVE(
+        [] {
+            TextureDescUVE desc = MakeTransferTextureDescUVE(kSize);
+            desc.format = TextureFormatUVE::RGBA16Float;
+            return desc;
+        }());
+    const auto singleLevelSource = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize), sourceBytes);
+    ASSERT_NE(source, kInvalidTextureHandleUVE);
+    ASSERT_NE(uniformTarget, kInvalidTextureHandleUVE);
+    ASSERT_NE(floatTarget, kInvalidTextureHandleUVE);
+    ASSERT_NE(singleLevelSource, kInvalidTextureHandleUVE);
+
+    // A single-texel source region scaled up by 2 with LINEAR must stay exactly that texel.
+    TextureBlitDescUVE blit{};
+    blit.source = source;
+    blit.destination = uniformTarget;
+    blit.sourceRegion = {0U, 0U, 0U, 0U, 1U, 1U};
+    blit.destinationRegion = {0U, 0U, 0U, 0U, 2U, 2U};
+    blit.filter = BlitFilterUVE::Linear;
+    EXPECT_EQ(device->BlitTextureUVE(blit), ResultUVE::Success);
+    std::array<std::byte, kSize * kSize * 4U> readback{};
+    ASSERT_TRUE(device->ReadbackTextureRGBA8UVE(uniformTarget, 0U, 0U, readback));
+    for (std::uint32_t y = 0U; y < 2U; ++y) {
+        for (std::uint32_t x = 0U; x < 2U; ++x) {
+            const std::size_t texel = (static_cast<std::size_t>(y) * kSize + x) * 4U;
+            EXPECT_EQ(readback[texel + 0U], sourceBytes[0U]);
+            EXPECT_EQ(readback[texel + 1U], sourceBytes[1U]);
+            EXPECT_EQ(readback[texel + 2U], sourceBytes[2U]);
+            EXPECT_EQ(readback[texel + 3U], sourceBytes[3U]);
+        }
+    }
+
+    // Downsampling the whole image by 2 with LINEAR: bilinear weights average each uniform
+    // 2x2 block, so 40/80/120/160 must come back as themselves (rounding tolerance of 1).
+    const auto downsampleTarget = device->CreateTextureUVE(MakeTransferTextureDescUVE(2U));
+    ASSERT_NE(downsampleTarget, kInvalidTextureHandleUVE);
+    blit.destination = downsampleTarget;
+    blit.sourceRegion = {0U, 0U, 0U, 0U, 4U, 4U};
+    blit.destinationRegion = {0U, 0U, 0U, 0U, 2U, 2U};
+    EXPECT_EQ(device->BlitTextureUVE(blit), ResultUVE::Success);
+    std::array<std::byte, 2U * 2U * 4U> downsampled{};
+    ASSERT_TRUE(device->ReadbackTextureRGBA8UVE(downsampleTarget, 0U, 0U, downsampled));
+    constexpr std::array<std::uint8_t, 4> kExpectedRed{40U, 80U, 120U, 160U};
+    for (std::uint32_t block = 0U; block < 4U; ++block) {
+        const int actual = std::to_integer<int>(downsampled[block * 4U]);
+        EXPECT_NEAR(actual, kExpectedRed[block], 1) << "block " << block;
+    }
+
+    blit.source = source;
+    blit.destination = floatTarget;
+    blit.sourceRegion = {0U, 0U, 0U, 0U, 2U, 2U};
+    blit.destinationRegion = {0U, 0U, 0U, 0U, 2U, 2U};
+    EXPECT_EQ(device->BlitTextureUVE(blit), ResultUVE::InvalidArgument) << "format conversion is refused";
+    blit.destination = source;
+    EXPECT_EQ(device->BlitTextureUVE(blit), ResultUVE::InvalidArgument) << "self-blits are refused";
+    blit.source = singleLevelSource;
+    blit.destination = uniformTarget;
+    blit.sourceRegion = {1U, 0U, 0U, 0U, 1U, 1U};
+    EXPECT_EQ(device->BlitTextureUVE(blit), ResultUVE::InvalidArgument) << "missing mip levels are refused";
+    blit.source = TextureHandleUVE{999999U};
+    blit.sourceRegion = {0U, 0U, 0U, 0U, 2U, 2U};
+    EXPECT_EQ(device->BlitTextureUVE(blit), ResultUVE::InvalidHandle);
+
+    device->DestroyTextureUVE(singleLevelSource);
+    device->DestroyTextureUVE(floatTarget);
+    device->DestroyTextureUVE(uniformTarget);
+    device->DestroyTextureUVE(downsampleTarget);
+    device->DestroyTextureUVE(source);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, GenerateMipmapsRebuildsEveryLevelWithTheDownsampledAverage) {
+    using ResultUVE = RenderOperationResultUVE;
+    constexpr std::uint32_t kSize = 4U;
+    constexpr std::uint32_t kMipLevels = 3U;
+    const auto sourceBytes = MakeBlockedSourceUVE();
+    const auto source = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize), sourceBytes);
+    const auto mipmapped = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize, kMipLevels));
+    const auto singleLevel = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize), sourceBytes);
+    ASSERT_NE(source, kInvalidTextureHandleUVE);
+    ASSERT_NE(mipmapped, kInvalidTextureHandleUVE);
+    ASSERT_NE(singleLevel, kInvalidTextureHandleUVE);
+
+    TextureBlitDescUVE seed{};
+    seed.source = source;
+    seed.destination = mipmapped;
+    seed.sourceRegion = {0U, 0U, 0U, 0U, kSize, kSize};
+    seed.destinationRegion = {0U, 0U, 0U, 0U, kSize, kSize};
+    seed.filter = BlitFilterUVE::Point;
+    ASSERT_EQ(device->BlitTextureUVE(seed), ResultUVE::Success);
+    EXPECT_EQ(device->GenerateMipmapsUVE(mipmapped), ResultUVE::Success);
+
+    std::array<std::byte, 2U * 2U * 4U> levelOne{};
+    ASSERT_TRUE(device->ReadbackTextureRGBA8UVE(mipmapped, 1U, 0U, levelOne));
+    constexpr std::array<std::uint8_t, 4> kBlockRed{40U, 80U, 120U, 160U};
+    for (std::uint32_t block = 0U; block < 4U; ++block) {
+        EXPECT_NEAR(std::to_integer<int>(levelOne[block * 4U]), kBlockRed[block], 1) << "level 1 block " << block;
+        EXPECT_EQ(levelOne[block * 4U + 1U], std::byte{7U});
+        EXPECT_EQ(levelOne[block * 4U + 3U], std::byte{0xFF});
+    }
+    std::array<std::byte, 1U * 1U * 4U> levelTwo{};
+    ASSERT_TRUE(device->ReadbackTextureRGBA8UVE(mipmapped, 2U, 0U, levelTwo));
+    EXPECT_NEAR(std::to_integer<int>(levelTwo[0U]), 100, 1) << "level 2 averages the four blocks";
+
+    EXPECT_EQ(device->GenerateMipmapsUVE(singleLevel), ResultUVE::InvalidArgument);
+    EXPECT_EQ(device->GenerateMipmapsUVE(TextureHandleUVE{999999U}), ResultUVE::InvalidHandle);
+
+    device->DestroyTextureUVE(singleLevel);
+    device->DestroyTextureUVE(mipmapped);
+    device->DestroyTextureUVE(source);
 }
 
 } // namespace UVE::Render::Tests

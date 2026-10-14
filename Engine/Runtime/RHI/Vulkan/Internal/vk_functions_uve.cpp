@@ -148,6 +148,7 @@ bool VkFunctionsUVE::LoadDeviceUVE(const VkDevice device) {
     allResolved &= ResolveDevice(vkResetCommandBuffer, gdpa, device, "vkResetCommandBuffer");
     allResolved &= ResolveDevice(vkCmdPipelineBarrier, gdpa, device, "vkCmdPipelineBarrier");
     allResolved &= ResolveDevice(vkCmdCopyImageToBuffer, gdpa, device, "vkCmdCopyImageToBuffer");
+    allResolved &= ResolveDevice(vkCmdBlitImage, gdpa, device, "vkCmdBlitImage");
     allResolved &= ResolveDevice(vkCreateBuffer, gdpa, device, "vkCreateBuffer");
     allResolved &= ResolveDevice(vkDestroyBuffer, gdpa, device, "vkDestroyBuffer");
     allResolved &= ResolveDevice(vkGetBufferMemoryRequirements, gdpa, device, "vkGetBufferMemoryRequirements");

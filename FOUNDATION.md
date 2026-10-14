@@ -780,9 +780,19 @@ untouched. Missing capabilities explicitly return `Unsupported`, never pretend s
   CPU readback fallback is used for the native paths.
 - **Texture blit / mipgen:** real GL color blits (point/exact copy or linear scale), mip/layer/
   extent/format checks, caller-binding/scissor preservation, and lower-mip generation on
-  preallocated color textures. Null validates/records; Vulkan explicitly reports these paths
-  unsupported instead of accepting a no-op. Depth/stencil blits and format conversion are not
-  part of this color-transfer contract.
+  preallocated color textures. Null validates/records. `[/]` Vulkan now implements both
+  through `vkCmdBlitImage` on a transient one-time command buffer: per-format
+  `BLIT_SRC`/`BLIT_DST`/linear-filter feature checks (otherwise `Unsupported`, never a silent
+  filter change), identical-format enforcement, tracked-layout transitions per touched
+  mip/layer with both subresources restored to the sampling layout, and a mip chain that
+  linear-blits each level from the one above for every array layer
+  (`TextureTransferCapabilitiesAreAdvertisedOnARealDevice`,
+  `BlitTextureCopiesAnExactRegionAndReadbackMatchesTheSource`,
+  `BlitTextureLinearScalingAndRejectionsKeepTheirContracts`,
+  `GenerateMipmapsRebuildsEveryLevelWithTheDownsampledAverage`, plus strict syntax checks and
+  a driver-free Null/`GeometryPipeline`-style CPU path). The Vulkan cases need a real ICD —
+  the development host has none — so their execution is verified by native CI, not locally.
+  Depth/stencil blits and format conversion stay outside this color-transfer contract.
 - **Queries:** real GL GPU timestamps and any-sample occlusion with state/lifetime validation
   and nonblocking result polling. Null records query operations but NEVER invents visibility or
   GPU nanoseconds. Vulkan currently advertises queries unsupported.
@@ -799,8 +809,9 @@ Native sources/tests pass strict syntax checks against real headers. Graphics-ca
 `38429697106` on `012f69f` passed the native suite, including the new operations and the unchanged
 shadow pixel comparisons after correcting their sampler setup. This closes the earlier execution-
 verification gap, not the explicitly unsupported Vulkan operations. Semaphores/timelines
-remain `[ ]`; they are not closed by a binary fence or a surface metadata view. General
-Vulkan texture-transfer/query parity remains explicitly partial.
+remain `[ ]`; they are not closed by a binary fence or a surface metadata view. Vulkan
+texture-transfer parity is implemented and awaiting native CI execution; Vulkan query parity
+(timestamps / any-samples-passed) remains explicitly partial.
 
 `[/]` **Stencil state** — `StencilStateUVE`/`StencilFaceStateUVE` are appended to both
 pipeline descriptors with disabled legacy defaults. Front/back compare, operations,
