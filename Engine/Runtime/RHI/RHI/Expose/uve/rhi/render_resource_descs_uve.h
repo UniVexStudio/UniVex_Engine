@@ -1,6 +1,5 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-
 #pragma once
 
 #include <array>
@@ -37,12 +36,12 @@ enum class BufferUsageUVE : std::uint8_t { Vertex, Index, Uniform, Storage, Indi
 
 [[nodiscard]] constexpr bool IsBufferUsageValidUVE(const BufferUsageUVE usage) noexcept {
     switch (usage) {
-        case BufferUsageUVE::Vertex:
-        case BufferUsageUVE::Index:
-        case BufferUsageUVE::Uniform:
-        case BufferUsageUVE::Storage:
-        case BufferUsageUVE::IndirectStorage:
-            return true;
+    case BufferUsageUVE::Vertex:
+    case BufferUsageUVE::Index:
+    case BufferUsageUVE::Uniform:
+    case BufferUsageUVE::Storage:
+    case BufferUsageUVE::IndirectStorage:
+        return true;
     }
     return false;
 }
@@ -78,14 +77,14 @@ struct BufferDescUVE {
     BufferUsageUVE usage = BufferUsageUVE::Vertex;
 };
 
-[[nodiscard]] constexpr bool ValidateBufferUploadUVE(const BufferDescUVE& desc,
-                                                       const std::span<const std::byte> initialData) noexcept {
+[[nodiscard]] constexpr bool ValidateBufferUploadUVE(const BufferDescUVE &desc,
+                                                     const std::span<const std::byte> initialData) noexcept {
     return desc.sizeBytes > 0U && initialData.size() <= desc.sizeBytes;
 }
 
 [[nodiscard]] constexpr bool ValidateBufferUpdateUVE(const std::uint64_t bufferSizeBytes,
-                                                       const std::size_t dataSize,
-                                                       const std::uint64_t offsetBytes) noexcept {
+                                                     const std::size_t dataSize,
+                                                     const std::uint64_t offsetBytes) noexcept {
     return offsetBytes <= bufferSizeBytes && dataSize <= bufferSizeBytes - offsetBytes;
 }
 
@@ -103,6 +102,7 @@ enum class TextureFormatUVE : std::uint8_t {
     ETC2RGB8 = 6,
     ETC2RGBA8 = 7,
     ASTC4x4RGBA = 8,
+    Depth24Stencil8 = 9,
 };
 
 /// Sampled interpretation of normalized color-channel values. This is separate from the stored
@@ -121,22 +121,23 @@ struct TextureFormatBlockInfoUVE {
     bool compressed = false;
 };
 
-[[nodiscard]] inline constexpr TextureFormatBlockInfoUVE GetTextureFormatBlockInfoUVE(
-    const TextureFormatUVE format) noexcept {
+[[nodiscard]] inline constexpr TextureFormatBlockInfoUVE
+GetTextureFormatBlockInfoUVE(const TextureFormatUVE format) noexcept {
     switch (format) {
-        case TextureFormatUVE::RGBA8Unorm:
-        case TextureFormatUVE::Depth32Float:
-            return {1U, 1U, 4U, false};
-        case TextureFormatUVE::RGBA16Float:
-            return {1U, 1U, 8U, false};
-        case TextureFormatUVE::BC1RGB:
-        case TextureFormatUVE::ETC2RGB8:
-            return {4U, 4U, 8U, true};
-        case TextureFormatUVE::BC3RGBA:
-        case TextureFormatUVE::BC7RGBA:
-        case TextureFormatUVE::ETC2RGBA8:
-        case TextureFormatUVE::ASTC4x4RGBA:
-            return {4U, 4U, 16U, true};
+    case TextureFormatUVE::RGBA8Unorm:
+    case TextureFormatUVE::Depth32Float:
+    case TextureFormatUVE::Depth24Stencil8:
+        return {1U, 1U, 4U, false};
+    case TextureFormatUVE::RGBA16Float:
+        return {1U, 1U, 8U, false};
+    case TextureFormatUVE::BC1RGB:
+    case TextureFormatUVE::ETC2RGB8:
+        return {4U, 4U, 8U, true};
+    case TextureFormatUVE::BC3RGBA:
+    case TextureFormatUVE::BC7RGBA:
+    case TextureFormatUVE::ETC2RGBA8:
+    case TextureFormatUVE::ASTC4x4RGBA:
+        return {4U, 4U, 16U, true};
     }
     return {};
 }
@@ -147,19 +148,28 @@ struct TextureFormatBlockInfoUVE {
 
 [[nodiscard]] inline constexpr bool IsTextureFormatSrgbCapableUVE(const TextureFormatUVE format) noexcept {
     switch (format) {
-        case TextureFormatUVE::RGBA8Unorm:
-        case TextureFormatUVE::BC1RGB:
-        case TextureFormatUVE::BC3RGBA:
-        case TextureFormatUVE::BC7RGBA:
-        case TextureFormatUVE::ETC2RGB8:
-        case TextureFormatUVE::ETC2RGBA8:
-        case TextureFormatUVE::ASTC4x4RGBA:
-            return true;
-        case TextureFormatUVE::RGBA16Float:
-        case TextureFormatUVE::Depth32Float:
-            return false;
+    case TextureFormatUVE::RGBA8Unorm:
+    case TextureFormatUVE::BC1RGB:
+    case TextureFormatUVE::BC3RGBA:
+    case TextureFormatUVE::BC7RGBA:
+    case TextureFormatUVE::ETC2RGB8:
+    case TextureFormatUVE::ETC2RGBA8:
+    case TextureFormatUVE::ASTC4x4RGBA:
+        return true;
+    case TextureFormatUVE::RGBA16Float:
+    case TextureFormatUVE::Depth32Float:
+    case TextureFormatUVE::Depth24Stencil8:
+        return false;
     }
     return false;
+}
+
+[[nodiscard]] inline constexpr bool IsDepthFormatUVE(const TextureFormatUVE format) noexcept {
+    return format == TextureFormatUVE::Depth32Float || format == TextureFormatUVE::Depth24Stencil8;
+}
+
+[[nodiscard]] inline constexpr bool IsDepthStencilFormatUVE(const TextureFormatUVE format) noexcept {
+    return format == TextureFormatUVE::Depth24Stencil8;
 }
 
 /// Describes a GPU texture to create via IRenderDeviceUVE::CreateTextureUVE(). `mipLevels` is
@@ -173,10 +183,10 @@ enum class TextureTypeUVE : std::uint8_t { Texture2D, Texture2DArray, Cubemap };
 
 [[nodiscard]] constexpr bool IsTextureTypeValidUVE(const TextureTypeUVE type) noexcept {
     switch (type) {
-        case TextureTypeUVE::Texture2D:
-        case TextureTypeUVE::Texture2DArray:
-        case TextureTypeUVE::Cubemap:
-            return true;
+    case TextureTypeUVE::Texture2D:
+    case TextureTypeUVE::Texture2DArray:
+    case TextureTypeUVE::Cubemap:
+        return true;
     }
     return false;
 }
@@ -199,9 +209,9 @@ enum class SamplerFilterUVE : std::uint8_t { Point, Linear };
 
 [[nodiscard]] constexpr bool IsSamplerFilterValidUVE(const SamplerFilterUVE filter) noexcept {
     switch (filter) {
-        case SamplerFilterUVE::Point:
-        case SamplerFilterUVE::Linear:
-            return true;
+    case SamplerFilterUVE::Point:
+    case SamplerFilterUVE::Linear:
+        return true;
     }
     return false;
 }
@@ -212,10 +222,10 @@ enum class SamplerMipModeUVE : std::uint8_t { None, Point, Linear };
 
 [[nodiscard]] constexpr bool IsSamplerMipModeValidUVE(const SamplerMipModeUVE mode) noexcept {
     switch (mode) {
-        case SamplerMipModeUVE::None:
-        case SamplerMipModeUVE::Point:
-        case SamplerMipModeUVE::Linear:
-            return true;
+    case SamplerMipModeUVE::None:
+    case SamplerMipModeUVE::Point:
+    case SamplerMipModeUVE::Linear:
+        return true;
     }
     return false;
 }
@@ -227,10 +237,10 @@ enum class SamplerWrapUVE : std::uint8_t { ClampToEdge, Repeat, MirroredRepeat }
 
 [[nodiscard]] constexpr bool IsSamplerWrapValidUVE(const SamplerWrapUVE wrap) noexcept {
     switch (wrap) {
-        case SamplerWrapUVE::ClampToEdge:
-        case SamplerWrapUVE::Repeat:
-        case SamplerWrapUVE::MirroredRepeat:
-            return true;
+    case SamplerWrapUVE::ClampToEdge:
+    case SamplerWrapUVE::Repeat:
+    case SamplerWrapUVE::MirroredRepeat:
+        return true;
     }
     return false;
 }
@@ -253,7 +263,7 @@ struct SamplerDescUVE {
     float maxAnisotropy = 1.0F;
 };
 
-[[nodiscard]] inline bool IsSamplerDescValidUVE(const SamplerDescUVE& desc) noexcept {
+[[nodiscard]] inline bool IsSamplerDescValidUVE(const SamplerDescUVE &desc) noexcept {
     return IsSamplerFilterValidUVE(desc.magFilter) && IsSamplerFilterValidUVE(desc.minFilter) &&
            IsSamplerMipModeValidUVE(desc.mipMode) && IsSamplerWrapValidUVE(desc.wrapU) &&
            IsSamplerWrapValidUVE(desc.wrapV) && IsSamplerWrapValidUVE(desc.wrapW) &&
@@ -265,16 +275,16 @@ struct TextureMipExtentUVE {
     std::uint32_t height = 0U;
 };
 
-[[nodiscard]] inline constexpr std::uint64_t TextureFormatBytesPerPixelUVE(
-    const TextureFormatUVE format) noexcept {
+[[nodiscard]] inline constexpr std::uint64_t
+TextureFormatBytesPerPixelUVE(const TextureFormatUVE format) noexcept {
     const TextureFormatBlockInfoUVE block = GetTextureFormatBlockInfoUVE(format);
     return !block.compressed && block.width == 1U && block.height == 1U ? block.bytes : 0U;
 }
 
 [[nodiscard]] inline bool CalculateTextureMipByteCountUVE(const TextureFormatUVE format,
-                                                           const std::uint32_t width,
-                                                           const std::uint32_t height,
-                                                           std::uint64_t& outBytes) noexcept {
+                                                          const std::uint32_t width,
+                                                          const std::uint32_t height,
+                                                          std::uint64_t &outBytes) noexcept {
     const TextureFormatBlockInfoUVE block = GetTextureFormatBlockInfoUVE(format);
     if (width == 0U || height == 0U || block.width == 0U || block.height == 0U || block.bytes == 0U) {
         return false;
@@ -292,8 +302,8 @@ struct TextureMipExtentUVE {
     return outBytes <= std::numeric_limits<std::size_t>::max();
 }
 
-[[nodiscard]] inline constexpr TextureMipExtentUVE GetTextureMipExtentUVE(
-    std::uint32_t width, std::uint32_t height, std::uint32_t level) noexcept {
+[[nodiscard]] inline constexpr TextureMipExtentUVE
+GetTextureMipExtentUVE(std::uint32_t width, std::uint32_t height, std::uint32_t level) noexcept {
     while (level > 0U && (width > 1U || height > 1U)) {
         width = width > 1U ? width / 2U : 1U;
         height = height > 1U ? height / 2U : 1U;
@@ -302,8 +312,8 @@ struct TextureMipExtentUVE {
     return {width, height};
 }
 
-[[nodiscard]] inline constexpr std::uint32_t MaximumTextureMipLevelCountUVE(
-    std::uint32_t width, std::uint32_t height) noexcept {
+[[nodiscard]] inline constexpr std::uint32_t MaximumTextureMipLevelCountUVE(std::uint32_t width,
+                                                                            std::uint32_t height) noexcept {
     if (width == 0U || height == 0U) {
         return 0U;
     }
@@ -319,35 +329,35 @@ struct TextureMipExtentUVE {
 /// Computes the byte count for a tightly packed level-0..N upload. The output is unchanged on
 /// failure; mips beyond the complete dimension-derived chain and multi-level depth textures are
 /// rejected because this slice does not expose depth-mip attachment selection.
-[[nodiscard]] inline bool CalculateTextureUploadByteCountUVE(const TextureDescUVE& desc,
-                                                              std::uint64_t& outBytes) noexcept {
+[[nodiscard]] inline bool CalculateTextureUploadByteCountUVE(const TextureDescUVE &desc,
+                                                             std::uint64_t &outBytes) noexcept {
     const TextureFormatBlockInfoUVE block = GetTextureFormatBlockInfoUVE(desc.format);
     if (desc.width == 0U || desc.height == 0U || desc.mipLevels == 0U || block.bytes == 0U ||
         desc.mipLevels > MaximumTextureMipLevelCountUVE(desc.width, desc.height) ||
-        (desc.format == TextureFormatUVE::Depth32Float && desc.mipLevels > 1U)) {
+        (IsDepthFormatUVE(desc.format) && desc.mipLevels > 1U)) {
         return false;
     }
     // Tier 2.3 dimensionality rules. Layer-count CAPS are device properties, so backends
     // enforce them at creation; these shape rules hold on every device. (Cube arrays — 6N
     // layers with cube sampling — are a follow-up; v1 cubes are exactly one cube.)
     switch (desc.type) {
-        case TextureTypeUVE::Texture2D:
-            if (desc.arrayLayers != 1U) {
-                return false;
-            }
-            break;
-        case TextureTypeUVE::Texture2DArray:
-            if (desc.arrayLayers == 0U) {
-                return false;
-            }
-            break;
-        case TextureTypeUVE::Cubemap:
-            if (desc.width != desc.height || desc.arrayLayers != 6U) {
-                return false;
-            }
-            break;
-        default:
+    case TextureTypeUVE::Texture2D:
+        if (desc.arrayLayers != 1U) {
             return false;
+        }
+        break;
+    case TextureTypeUVE::Texture2DArray:
+        if (desc.arrayLayers == 0U) {
+            return false;
+        }
+        break;
+    case TextureTypeUVE::Cubemap:
+        if (desc.width != desc.height || desc.arrayLayers != 6U) {
+            return false;
+        }
+        break;
+    default:
+        return false;
     }
 
     std::uint64_t totalBytes = 0U;
@@ -363,8 +373,7 @@ struct TextureMipExtentUVE {
         extent.height = extent.height > 1U ? extent.height / 2U : 1U;
     }
     // Every layer carries the full mip chain (level-major upload: all layers of L0, then L1…).
-    if (desc.arrayLayers > 0U &&
-        totalBytes > std::numeric_limits<std::uint64_t>::max() / desc.arrayLayers) {
+    if (desc.arrayLayers > 0U && totalBytes > std::numeric_limits<std::uint64_t>::max() / desc.arrayLayers) {
         return false;
     }
     totalBytes *= desc.arrayLayers;
@@ -378,26 +387,25 @@ struct TextureMipExtentUVE {
 /// Validates a descriptor and optional tightly concatenated upload before a backend allocates a
 /// GPU resource. Empty data is legal only for one-level render targets; a non-empty upload must
 /// exactly match the sum of all declared levels. The helper performs no allocation or backend calls.
-[[nodiscard]] inline bool ValidateTextureUploadUVE(const TextureDescUVE& desc,
-                                                    const std::span<const std::byte> initialData) noexcept {
+[[nodiscard]] inline bool ValidateTextureUploadUVE(const TextureDescUVE &desc,
+                                                   const std::span<const std::byte> initialData) noexcept {
     if (desc.width == 0U || desc.height == 0U || desc.mipLevels == 0U) {
         return false;
     }
     switch (desc.colorSpace) {
-        case TextureColorSpaceUVE::Linear:
-            break;
-        case TextureColorSpaceUVE::Srgb:
-            if (!IsTextureFormatSrgbCapableUVE(desc.format)) {
-                return false;
-            }
-            break;
-        default:
+    case TextureColorSpaceUVE::Linear:
+        break;
+    case TextureColorSpaceUVE::Srgb:
+        if (!IsTextureFormatSrgbCapableUVE(desc.format)) {
             return false;
+        }
+        break;
+    default:
+        return false;
     }
     std::uint64_t expectedBytes = 0U;
     if (!CalculateTextureUploadByteCountUVE(desc, expectedBytes) ||
-        (initialData.empty() &&
-         (desc.mipLevels > 1U || IsTextureFormatCompressedUVE(desc.format)))) {
+        (initialData.empty() && (desc.mipLevels > 1U || IsTextureFormatCompressedUVE(desc.format)))) {
         return false;
     }
     return initialData.empty() || initialData.size() == static_cast<std::size_t>(expectedBytes);
@@ -414,11 +422,11 @@ enum class ShaderStageUVE : std::uint8_t { Vertex, Fragment, Compute, Geometry }
 
 [[nodiscard]] constexpr bool IsShaderStageValidUVE(const ShaderStageUVE stage) noexcept {
     switch (stage) {
-        case ShaderStageUVE::Vertex:
-        case ShaderStageUVE::Fragment:
-        case ShaderStageUVE::Compute:
-        case ShaderStageUVE::Geometry:
-            return true;
+    case ShaderStageUVE::Vertex:
+    case ShaderStageUVE::Fragment:
+    case ShaderStageUVE::Compute:
+    case ShaderStageUVE::Geometry:
+        return true;
     }
     return false;
 }
@@ -444,16 +452,17 @@ struct VertexAttributeUVE {
 
 [[nodiscard]] constexpr bool IsVertexAttributeFormatValidUVE(const VertexAttributeFormatUVE format) noexcept {
     switch (format) {
-        case VertexAttributeFormatUVE::Float2:
-        case VertexAttributeFormatUVE::Float3:
-        case VertexAttributeFormatUVE::Float4:
-            return true;
+    case VertexAttributeFormatUVE::Float2:
+    case VertexAttributeFormatUVE::Float3:
+    case VertexAttributeFormatUVE::Float4:
+        return true;
     }
     return false;
 }
 
-[[nodiscard]] inline bool IsVertexLayoutValidUVE(const std::span<const VertexAttributeUVE> vertexLayout) noexcept {
-    for (const VertexAttributeUVE& attribute : vertexLayout) {
+[[nodiscard]] inline bool
+IsVertexLayoutValidUVE(const std::span<const VertexAttributeUVE> vertexLayout) noexcept {
+    for (const VertexAttributeUVE &attribute : vertexLayout) {
         if (!IsVertexAttributeFormatValidUVE(attribute.format)) {
             return false;
         }
@@ -461,20 +470,21 @@ struct VertexAttributeUVE {
     return true;
 }
 
-[[nodiscard]] inline bool IsVertexLayoutWithinStrideUVE(const std::span<const VertexAttributeUVE> vertexLayout,
-                                                         const std::uint32_t vertexStride) noexcept {
-    for (const VertexAttributeUVE& attribute : vertexLayout) {
+[[nodiscard]] inline bool
+IsVertexLayoutWithinStrideUVE(const std::span<const VertexAttributeUVE> vertexLayout,
+                              const std::uint32_t vertexStride) noexcept {
+    for (const VertexAttributeUVE &attribute : vertexLayout) {
         std::uint32_t componentCount = 0;
         switch (attribute.format) {
-            case VertexAttributeFormatUVE::Float2:
-                componentCount = 2U;
-                break;
-            case VertexAttributeFormatUVE::Float3:
-                componentCount = 3U;
-                break;
-            case VertexAttributeFormatUVE::Float4:
-                componentCount = 4U;
-                break;
+        case VertexAttributeFormatUVE::Float2:
+            componentCount = 2U;
+            break;
+        case VertexAttributeFormatUVE::Float3:
+            componentCount = 3U;
+            break;
+        case VertexAttributeFormatUVE::Float4:
+            componentCount = 4U;
+            break;
         }
         const std::uint32_t attributeByteWidth = componentCount * static_cast<std::uint32_t>(sizeof(float));
         if (attribute.offset > vertexStride || attributeByteWidth > vertexStride - attribute.offset) {
@@ -491,9 +501,9 @@ enum class PrimitiveTopologyUVE : std::uint8_t { Triangles, Lines };
 
 [[nodiscard]] constexpr bool IsPrimitiveTopologyValidUVE(const PrimitiveTopologyUVE topology) noexcept {
     switch (topology) {
-        case PrimitiveTopologyUVE::Triangles:
-        case PrimitiveTopologyUVE::Lines:
-            return true;
+    case PrimitiveTopologyUVE::Triangles:
+    case PrimitiveTopologyUVE::Lines:
+        return true;
     }
     return false;
 }
@@ -508,11 +518,11 @@ enum class PipelineBlendModeUVE : std::uint8_t { Opaque, SourceAlphaOver, Additi
 
 [[nodiscard]] constexpr bool IsPipelineBlendModeValidUVE(const PipelineBlendModeUVE blendMode) noexcept {
     switch (blendMode) {
-        case PipelineBlendModeUVE::Opaque:
-        case PipelineBlendModeUVE::SourceAlphaOver:
-        case PipelineBlendModeUVE::Additive:
-        case PipelineBlendModeUVE::Multiply:
-            return true;
+    case PipelineBlendModeUVE::Opaque:
+    case PipelineBlendModeUVE::SourceAlphaOver:
+    case PipelineBlendModeUVE::Additive:
+    case PipelineBlendModeUVE::Multiply:
+        return true;
     }
     return false;
 }
@@ -524,11 +534,11 @@ enum class CullModeUVE : std::uint8_t { None, Front, Back, FrontAndBack };
 
 [[nodiscard]] constexpr bool IsCullModeValidUVE(const CullModeUVE mode) noexcept {
     switch (mode) {
-        case CullModeUVE::None:
-        case CullModeUVE::Front:
-        case CullModeUVE::Back:
-        case CullModeUVE::FrontAndBack:
-            return true;
+    case CullModeUVE::None:
+    case CullModeUVE::Front:
+    case CullModeUVE::Back:
+    case CullModeUVE::FrontAndBack:
+        return true;
     }
     return false;
 }
@@ -539,9 +549,9 @@ enum class FrontFaceUVE : std::uint8_t { CounterClockwise, Clockwise };
 
 [[nodiscard]] constexpr bool IsFrontFaceValidUVE(const FrontFaceUVE face) noexcept {
     switch (face) {
-        case FrontFaceUVE::CounterClockwise:
-        case FrontFaceUVE::Clockwise:
-            return true;
+    case FrontFaceUVE::CounterClockwise:
+    case FrontFaceUVE::Clockwise:
+        return true;
     }
     return false;
 }
@@ -552,9 +562,9 @@ enum class FillModeUVE : std::uint8_t { Fill, Wireframe };
 
 [[nodiscard]] constexpr bool IsFillModeValidUVE(const FillModeUVE mode) noexcept {
     switch (mode) {
-        case FillModeUVE::Fill:
-        case FillModeUVE::Wireframe:
-            return true;
+    case FillModeUVE::Fill:
+    case FillModeUVE::Wireframe:
+        return true;
     }
     return false;
 }
@@ -579,17 +589,75 @@ enum class DepthCompareUVE : std::uint8_t {
 
 [[nodiscard]] constexpr bool IsDepthCompareValidUVE(const DepthCompareUVE compare) noexcept {
     switch (compare) {
-        case DepthCompareUVE::Never:
-        case DepthCompareUVE::Less:
-        case DepthCompareUVE::Equal:
-        case DepthCompareUVE::LessOrEqual:
-        case DepthCompareUVE::Greater:
-        case DepthCompareUVE::NotEqual:
-        case DepthCompareUVE::GreaterOrEqual:
-        case DepthCompareUVE::Always:
-            return true;
+    case DepthCompareUVE::Never:
+    case DepthCompareUVE::Less:
+    case DepthCompareUVE::Equal:
+    case DepthCompareUVE::LessOrEqual:
+    case DepthCompareUVE::Greater:
+    case DepthCompareUVE::NotEqual:
+    case DepthCompareUVE::GreaterOrEqual:
+    case DepthCompareUVE::Always:
+        return true;
     }
     return false;
+}
+
+/// What a stencil operation does to the stored stencil value.
+enum class StencilOpUVE : std::uint8_t {
+    Keep,
+    Zero,
+    Replace,
+    IncrementClamp,
+    DecrementClamp,
+    Invert,
+    IncrementWrap,
+    DecrementWrap,
+};
+
+[[nodiscard]] constexpr bool IsStencilOpValidUVE(const StencilOpUVE op) noexcept {
+    switch (op) {
+    case StencilOpUVE::Keep:
+    case StencilOpUVE::Zero:
+    case StencilOpUVE::Replace:
+    case StencilOpUVE::IncrementClamp:
+    case StencilOpUVE::DecrementClamp:
+    case StencilOpUVE::Invert:
+    case StencilOpUVE::IncrementWrap:
+    case StencilOpUVE::DecrementWrap:
+        return true;
+    }
+    return false;
+}
+
+/// One face's stencil test. The comparison is `(reference & compareMask) OP (stored & compareMask)`;
+/// masks and reference are 8-bit because Depth24Stencil8 is the stencil-carrying format.
+struct StencilFaceStateUVE {
+    DepthCompareUVE compare = DepthCompareUVE::Always;
+    StencilOpUVE stencilFail = StencilOpUVE::Keep;
+    StencilOpUVE depthFail = StencilOpUVE::Keep;
+    StencilOpUVE depthPass = StencilOpUVE::Keep;
+    std::uint32_t compareMask = 0xFFU;
+    std::uint32_t writeMask = 0xFFU;
+    std::uint32_t reference = 0U;
+};
+
+[[nodiscard]] constexpr bool IsStencilFaceStateValidUVE(const StencilFaceStateUVE &state) noexcept {
+    return IsDepthCompareValidUVE(state.compare) && IsStencilOpValidUVE(state.stencilFail) &&
+           IsStencilOpValidUVE(state.depthFail) && IsStencilOpValidUVE(state.depthPass) &&
+           state.compareMask <= 0xFFU && state.writeMask <= 0xFFU && state.reference <= 0xFFU;
+}
+
+/// Front/back stencil state. Disabled is the legacy behavior and ignores both faces. Enabled
+/// state is meaningful only for a pass whose depth attachment uses Depth24Stencil8 (or a native
+/// default surface that actually has stencil bits); backends reject malformed enum/mask values.
+struct StencilStateUVE {
+    bool enabled = false;
+    StencilFaceStateUVE front;
+    StencilFaceStateUVE back;
+};
+
+[[nodiscard]] constexpr bool IsStencilStateValidUVE(const StencilStateUVE &state) noexcept {
+    return IsStencilFaceStateValidUVE(state.front) && IsStencilFaceStateValidUVE(state.back);
 }
 
 /// Describes a pipeline state object to create via IRenderDeviceUVE::CreatePipelineUVE().
@@ -620,6 +688,7 @@ struct PipelineDescUVE {
     float depthBiasConstantFactor = 0.0F;
     float depthBiasSlopeFactor = 0.0F;
     DepthCompareUVE depthCompare = DepthCompareUVE::Less;
+    StencilStateUVE stencil;
 };
 
 /// Describes a COMPUTE pipeline to create via IRenderDeviceUVE::CreateComputePipelineUVE()
@@ -655,6 +724,7 @@ struct PipelineBinaryDescUVE {
     float depthBiasConstantFactor = 0.0F;
     float depthBiasSlopeFactor = 0.0F;
     DepthCompareUVE depthCompare = DepthCompareUVE::Less;
+    StencilStateUVE stencil;
 };
 
 /// What happens to a render pass attachment's existing contents at the start of the pass.
@@ -662,10 +732,10 @@ enum class LoadOpUVE : std::uint8_t { Clear, Load, DontCare };
 
 [[nodiscard]] constexpr bool IsLoadOpValidUVE(const LoadOpUVE loadOp) noexcept {
     switch (loadOp) {
-        case LoadOpUVE::Clear:
-        case LoadOpUVE::Load:
-        case LoadOpUVE::DontCare:
-            return true;
+    case LoadOpUVE::Clear:
+    case LoadOpUVE::Load:
+    case LoadOpUVE::DontCare:
+        return true;
     }
     return false;
 }
@@ -679,9 +749,9 @@ enum class StoreOpUVE : std::uint8_t { Store, DontCare };
 
 [[nodiscard]] constexpr bool IsStoreOpValidUVE(const StoreOpUVE storeOp) noexcept {
     switch (storeOp) {
-        case StoreOpUVE::Store:
-        case StoreOpUVE::DontCare:
-            return true;
+    case StoreOpUVE::Store:
+    case StoreOpUVE::DontCare:
+        return true;
     }
     return false;
 }
@@ -744,6 +814,9 @@ struct RenderPassDescUVE {
     StoreOpUVE depthStoreOp = StoreOpUVE::Store;
     // Tier 2.4: locations 1..3 (see ColorAttachmentUVE). Empty by default: a single target.
     std::array<ColorAttachmentUVE, kExtraColorAttachmentCountUVE> extraColorAttachments{};
+    /// Used only when depthLoadOp is Clear and the depth attachment carries stencil bits.
+    /// The existing depth load/store operations govern both aspects of a combined attachment.
+    std::uint32_t clearStencil = 0U;
 };
 
 } // namespace UVE::Render

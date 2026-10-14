@@ -235,6 +235,10 @@ PipelineHandleUVE NullRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& 
         UVE_ERROR("NullRenderDeviceUVE: CreatePipelineUVE received an unknown depth comparison");
         return kInvalidPipelineHandleUVE;
     }
+    if (!IsStencilStateValidUVE(desc.stencil)) {
+        UVE_ERROR("NullRenderDeviceUVE: CreatePipelineUVE received an unknown stencil state");
+        return kInvalidPipelineHandleUVE;
+    }
     if (!m_impl->shaders.contains(desc.vertexShader.value) || !m_impl->shaders.contains(desc.fragmentShader.value)) {
         UVE_ERROR("NullRenderDeviceUVE: CreatePipelineUVE referenced an unknown vertex or fragment shader handle");
         return kInvalidPipelineHandleUVE;
@@ -313,6 +317,10 @@ PipelineHandleUVE NullRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<con
         UVE_ERROR("NullRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown depth comparison");
         return kInvalidPipelineHandleUVE;
     }
+    if (!IsStencilStateValidUVE(desc.stencil)) {
+        UVE_ERROR("NullRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown stencil state");
+        return kInvalidPipelineHandleUVE;
+    }
     static_cast<void>(binary); // NullRenderDeviceUVE never inspects binary contents.
     static_cast<void>(format);
     PipelineDescUVE bookkeepingDesc;
@@ -331,6 +339,7 @@ PipelineHandleUVE NullRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<con
     bookkeepingDesc.depthBiasConstantFactor = desc.depthBiasConstantFactor;
     bookkeepingDesc.depthBiasSlopeFactor = desc.depthBiasSlopeFactor;
     bookkeepingDesc.depthCompare = desc.depthCompare;
+    bookkeepingDesc.stencil = desc.stencil;
 
     const std::uint32_t handleValue = m_impl->nextPipelineHandle++;
     m_impl->pipelines.emplace(handleValue, bookkeepingDesc);

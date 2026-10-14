@@ -175,6 +175,7 @@ struct GlDeviceStateUVE {
         float depthBiasConstantFactor = 0.0F;
         float depthBiasSlopeFactor = 0.0F;
         DepthCompareUVE depthCompare = DepthCompareUVE::Less;
+        StencilStateUVE stencil;
 
         /// Tier 2.8: the draw mode, read by Draw*UVE at record time — GL takes topology as a
         /// draw-call parameter rather than pipeline state, so the record carries what Vulkan

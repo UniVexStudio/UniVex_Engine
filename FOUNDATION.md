@@ -791,8 +791,22 @@ and timestamp ordering; two Vulkan tests verify copies/fences and the deferred-C
 Native sources/tests pass strict syntax checks against real headers. Graphics-capable CI run
 `38429697106` on `012f69f` passed the native suite, including the new operations and the unchanged
 shadow pixel comparisons after correcting their sampler setup. This closes the earlier execution-
-verification gap, not the explicitly unsupported Vulkan operations. Semaphores/timelines and stencil state remain `[ ]`; they are not closed by a binary fence or a
-surface metadata view. General Vulkan texture-transfer/query parity remains explicitly partial.
+verification gap, not the explicitly unsupported Vulkan operations. Semaphores/timelines
+remain `[ ]`; they are not closed by a binary fence or a surface metadata view. General
+Vulkan texture-transfer/query parity remains explicitly partial.
+
+`[x]` **Stencil state** — `StencilStateUVE`/`StencilFaceStateUVE` are appended to both
+pipeline descriptors with disabled legacy defaults. Front/back compare, operations,
+8-bit masks and references are validated before publication. `Depth24Stencil8` is the
+combined attachment format, and `RenderPassDescUVE::clearStencil` is governed by the
+existing depth load/store operations. Null validates and records the exact state/pass;
+GL creates the packed attachment and applies separate front/back state; Vulkan maps
+`D24_UNORM_S8_UINT`, pipeline front/back state and dynamic depth/stencil attachments,
+while stencil pipelines on its classic path fail explicitly. Five CPU
+`StencilStateUVETest` cases, one GL pixel-mask test and one Vulkan creation test were
+added. Local full verification: **4,133 CTest cases, zero failures, seven existing
+Vulkan skips** (2026-10-13); native GL/Vulkan execution is pending graphics CI and is
+not claimed from the local Null result.
 
 ### Command recording and backends
 
