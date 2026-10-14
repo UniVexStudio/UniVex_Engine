@@ -1054,7 +1054,27 @@ driven by nothing.
 - `[x]` **Scripting** — UVScript (`Engine/Runtime/UVScript`): parser, type checker,
   bytecode VM, engine binding with reload on save, and a text editor. The node-graph
   scripting module was removed. Collections and tuples have landed (typed lists, maps,
-  tuples, `for`-in, unpacking, native-code parity). `[ ]` No cross-node calls, no debugger.
+  tuples, `for`-in, unpacking, native-code parity). The old "no cross-node calls" claim
+  was stale: `UVScriptObjectHostUVE::CallMethodUVE` already routes calls to another node's
+  script, then built-in object methods; `Test/Script/uvscript_cross_node_uve_tests.cpp`
+  covers dispatch, missing targets, overrides and the recursion cap. This is pre-existing
+  merged work, not a new implementation.
+  `[x]` **Interpreted runtime debugger API** — `ScriptInstanceUVE` now provides source-line
+  breakpoints, Continue/StepInto/StepOver and copied line/function/instruction/depth/local-slot/
+  named-field snapshots. Per-frame line transitions prevent stopping twice on a caller's
+  line after returning from its callee; explicit callee breakpoints still interrupt StepOver.
+  Paused execution rejects ordinary Call/Raise/Advance, and debugging blocks same-instance
+  host callback reentry. Waits retain their coroutine and rejoin Advance's existing queue;
+  other ready handlers stay queued if one pauses. Disable abandons only the paused coroutine
+  and clears its breakpoints; completed calls return their values through the resume result.
+  Native execution explicitly refuses debugger enablement; `ExecutionUVE::Interpreted`
+  selects the debuggable path. Serialized programs and non-debug execution are unchanged.
+  Eleven `UVScriptDebuggerUVETest` cases cover these contracts, including loops, runtime
+  failure/recovery, snapshot copying, multiple waits and native rejection. Verification
+  (2026-10-14): **30 focused debugger/VM/native tests passed; 4,144 full CTest cases,
+  zero failures, seven existing Vulkan capability skips**.
+  `[~]` Debugger scope is the instance API: no editor debugger frontend, local source names,
+  native-code debugging or stepping across node/instance boundaries is claimed.
 - `[~]` **Network** — one header of reliable-packet-window value logic with **no
   consumer anywhere**. No socket, no transport, no replication.
 - `[~]` **Plugins** — manifest validation and an in-memory registry that **never
