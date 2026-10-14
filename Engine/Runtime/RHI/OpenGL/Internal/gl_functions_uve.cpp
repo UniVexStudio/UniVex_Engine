@@ -15,7 +15,8 @@ template <typename TFunctionPointer>
 } // namespace
 
 bool GlFunctionsUVE::IsCompleteUVE() const noexcept {
-    return glGenBuffers != nullptr && glDeleteBuffers != nullptr && glBindBuffer != nullptr &&
+    return glStencilFuncSeparate != nullptr && glStencilOpSeparate != nullptr &&
+           glStencilMaskSeparate != nullptr && glGenBuffers != nullptr && glDeleteBuffers != nullptr && glBindBuffer != nullptr &&
            glBufferData != nullptr && glBufferSubData != nullptr && glGetBufferSubData != nullptr &&
            glBindBufferBase != nullptr &&
            glGenVertexArrays != nullptr && glDeleteVertexArrays != nullptr && glBindVertexArray != nullptr &&
@@ -55,6 +56,12 @@ GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
     functions.glGetQueryObjectui64v =
         LoadOneUVE<PFNGLGETQUERYOBJECTUI64VPROC>(getProcAddress, "glGetQueryObjectui64v");
 #endif
+    functions.glStencilFuncSeparate =
+        LoadOneUVE<PFNGLSTENCILFUNCSEPARATEPROC>(getProcAddress, "glStencilFuncSeparate");
+    functions.glStencilOpSeparate =
+        LoadOneUVE<PFNGLSTENCILOPSEPARATEPROC>(getProcAddress, "glStencilOpSeparate");
+    functions.glStencilMaskSeparate =
+        LoadOneUVE<PFNGLSTENCILMASKSEPARATEPROC>(getProcAddress, "glStencilMaskSeparate");
     functions.glGenBuffers = LoadOneUVE<PFNGLGENBUFFERSPROC>(getProcAddress, "glGenBuffers");
     functions.glDeleteBuffers = LoadOneUVE<PFNGLDELETEBUFFERSPROC>(getProcAddress, "glDeleteBuffers");
     functions.glBindBuffer = LoadOneUVE<PFNGLBINDBUFFERPROC>(getProcAddress, "glBindBuffer");

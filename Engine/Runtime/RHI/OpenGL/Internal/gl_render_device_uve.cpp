@@ -1077,12 +1077,9 @@ PipelineHandleUVE GlRenderDeviceUVE::CreateComputePipelineUVE(const ComputePipel
 
     // No VAO for compute records — glDeleteVertexArrays silently ignores name 0 on destroy, and
     // GlCommandBufferUVE skips glBindVertexArray() for isCompute pipelines entirely.
-    Detail::GlDeviceStateUVE::PipelineRecordUVE record{
-        glProgram, /*glVao=*/0U, {}, /*vertexStride=*/0U, /*depthTestEnabled=*/true,
-        /*depthWriteEnabled=*/true, PipelineBlendModeUVE::Opaque, CullModeUVE::None,
-        FrontFaceUVE::CounterClockwise, FillModeUVE::Fill, /*depthBiasEnabled=*/false,
-        /*depthBiasConstantFactor=*/0.0F, /*depthBiasSlopeFactor=*/0.0F, DepthCompareUVE::Less,
-        PrimitiveTopologyUVE::Triangles, /*isCompute=*/true, {}};
+    Detail::GlDeviceStateUVE::PipelineRecordUVE record;
+    record.glProgram = glProgram;
+    record.isCompute = true;
     // Active-uniform reflection works identically for compute programs, so SetUniform*UVE on a
     // compute pipeline needs no special-casing.
     ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms);

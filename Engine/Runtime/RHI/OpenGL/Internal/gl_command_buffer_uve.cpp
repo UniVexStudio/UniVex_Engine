@@ -75,12 +75,13 @@ namespace {
     return GL_KEEP;
 }
 
-void ApplyStencilFaceUVE(const GLenum face, const StencilFaceStateUVE& state) noexcept {
-    glStencilFuncSeparate(face, ToGlCompareUVE(state.compare), static_cast<GLint>(state.reference),
+void ApplyStencilFaceUVE(const Detail::GlFunctionsUVE& gl, const GLenum face,
+                         const StencilFaceStateUVE& state) noexcept {
+    gl.glStencilFuncSeparate(face, ToGlCompareUVE(state.compare), static_cast<GLint>(state.reference),
                           static_cast<GLuint>(state.compareMask));
-    glStencilOpSeparate(face, ToGlStencilOpUVE(state.stencilFail), ToGlStencilOpUVE(state.depthFail),
+    gl.glStencilOpSeparate(face, ToGlStencilOpUVE(state.stencilFail), ToGlStencilOpUVE(state.depthFail),
                         ToGlStencilOpUVE(state.depthPass));
-    glStencilMaskSeparate(face, static_cast<GLuint>(state.writeMask));
+    gl.glStencilMaskSeparate(face, static_cast<GLuint>(state.writeMask));
 }
 
 [[nodiscard]] GLenum ToGlDrawModeUVE(PrimitiveTopologyUVE topology) noexcept {
@@ -532,9 +533,11 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
         }
         if (renderPassDesc.depthStoreOp == StoreOpUVE::DontCare &&
             depthIt != m_state->textures.end()) {
-            m_passDiscardAttachments[m_passDiscardCount++] =
-                IsDepthStencilFormatUVE(depthIt->second.desc.format) ? GL_DEPTH_STENCIL_ATTACHMENT
-                                                                     : GL_DEPTH_ATTACHMENT;
+            // Invalidation takes individual aspects, not the combined FBO attachment token.
+            m_passDiscardAttachments[m_passDiscardCount++] = GL_DEPTH_ATTACHMENT;
+            if (IsDepthStencilFormatUVE(depthIt->second.desc.format)) {
+                m_passDiscardAttachments[m_passDiscardCount++] = GL_STENCIL_ATTACHMENT;
+            }
         }
         m_tempFramebuffer = framebuffer;
     }
@@ -712,8 +715,8 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
     }
     if (pipelineIt->second.stencil.enabled) {
         glEnable(GL_STENCIL_TEST);
-        ApplyStencilFaceUVE(GL_FRONT, pipelineIt->second.stencil.front);
-        ApplyStencilFaceUVE(GL_BACK, pipelineIt->second.stencil.back);
+        ApplyStencilFaceUVE(m_state->gl, GL_FRONT, pipelineIt->second.stencil.front);
+        ApplyStencilFaceUVE(m_state->gl, GL_BACK, pipelineIt->second.stencil.back);
     } else {
         glDisable(GL_STENCIL_TEST);
         glStencilMask(0U);

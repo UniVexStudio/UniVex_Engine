@@ -23,6 +23,7 @@
 #define GL_GLEXT_PROTOTYPES 1
 #endif
 #include <GL/gl.h>
+#include "uve/rhi_opengl/gl_functions_uve.h"
 #include <gtest/gtest.h>
 
 #include "Support/test_scratch_uve.h"
@@ -178,6 +179,53 @@ TEST_F(GlRenderDeviceUVETest, BindGroupAppliesRealTextureSamplerAndBufferBinding
     renderDevice->DestroyBufferUVE(storage);
     renderDevice->DestroyTextureUVE(texture);
     renderDevice->DestroySamplerUVE(sampler);
+}
+
+// These sentinels are only used to check symbol resolution, never invoked as GL calls.
+void LoaderSentinelUVE() {}
+
+TEST(GlFunctionsUVETest, StencilSymbolsAreLoadedAndRequiredForTheBaseline) {
+    const auto resolve = +[](const char*) -> void* {
+        return reinterpret_cast<void*>(&LoaderSentinelUVE);
+    };
+    const Detail::GlFunctionsUVE loaded = Detail::LoadGlFunctionsUVE(resolve);
+    ASSERT_TRUE(loaded.IsCompleteUVE());
+    ASSERT_NE(loaded.glStencilFuncSeparate, nullptr);
+    ASSERT_NE(loaded.glStencilOpSeparate, nullptr);
+    ASSERT_NE(loaded.glStencilMaskSeparate, nullptr);
+    auto missing = loaded;
+    missing.glStencilFuncSeparate = nullptr;
+    EXPECT_FALSE(missing.IsCompleteUVE());
+    missing = loaded;
+    missing.glStencilOpSeparate = nullptr;
+    EXPECT_FALSE(missing.IsCompleteUVE());
+    missing = loaded;
+    missing.glStencilMaskSeparate = nullptr;
+    EXPECT_FALSE(missing.IsCompleteUVE());
+    const auto missingStencil = +[](const char* name) -> void* {
+        if (std::string_view{name}.starts_with("glStencil")) return nullptr;
+        return reinterpret_cast<void*>(&LoaderSentinelUVE);
+    };
+    EXPECT_FALSE(Detail::LoadGlFunctionsUVE(missingStencil).IsCompleteUVE());
+}
+
+TEST_F(GlRenderDeviceUVETest, DepthStencilDiscardUsesSeparateAttachmentAspects) {
+    const auto color = renderDevice->CreateTextureUVE({4U, 4U, TextureFormatUVE::RGBA8Unorm});
+    const auto depth = renderDevice->CreateTextureUVE({4U, 4U, TextureFormatUVE::Depth24Stencil8});
+    ASSERT_NE(color, kInvalidTextureHandleUVE);
+    ASSERT_NE(depth, kInvalidTextureHandleUVE);
+    RenderPassDescUVE pass;
+    pass.colorAttachment = color;
+    pass.depthAttachment = depth;
+    pass.colorStoreOp = StoreOpUVE::DontCare;
+    pass.depthStoreOp = StoreOpUVE::DontCare;
+    auto commands = renderDevice->CreateCommandBufferUVE();
+    commands->BeginRenderPassUVE(pass);
+    commands->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commands));
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+    renderDevice->DestroyTextureUVE(depth);
+    renderDevice->DestroyTextureUVE(color);
 }
 
 TEST_F(GlRenderDeviceUVETest, StencilPipelineMasksSecondDrawThroughDepthStencilAttachment) {
