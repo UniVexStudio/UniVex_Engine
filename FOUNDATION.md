@@ -793,7 +793,7 @@ untouched. Missing capabilities explicitly return `Unsupported`, never pretend s
   CPU readback fallback is used for the native paths.
 - **Texture blit / mipgen:** real GL color blits (point/exact copy or linear scale), mip/layer/
   extent/format checks, caller-binding/scissor preservation, and lower-mip generation on
-  preallocated color textures. Null validates/records. `[/]` Vulkan now implements both
+  preallocated color textures. Null validates/records. `[x]` Vulkan now implements both
   through `vkCmdBlitImage` on a transient one-time command buffer: per-format
   `BLIT_SRC`/`BLIT_DST`/linear-filter feature checks (otherwise `Unsupported`, never a silent
   filter change), identical-format enforcement, tracked-layout transitions per touched
@@ -811,11 +811,17 @@ untouched. Missing capabilities explicitly return `Unsupported`, never pretend s
   position, "untouched texel" assertions against a Vulkan image whose contents were never
   defined, and a multi-mip texture created without the initial upload that
   `ValidateTextureUploadUVE` requires. Those fixtures now seed every level and region they
-  assert on, and are awaiting a green rerun.
+  assert on. Native execution (2026-10-14, Vulkan 1.3 CPU ICD in the sandbox): the four cases
+  pass, after one real backend defect the mip test exposed was fixed — RGBA8 images were
+  allocated in the swapchain's *sRGB* format regardless of the descriptor's colour space, so
+  `vkCmdBlitImage` filtered linear data through an sRGB decode/encode (a 40/80/120/160 chain's
+  last level read 111 instead of 100). The image now lives in the colour space the descriptor
+  declares, the attachment view keeps the swapchain format for the pipeline contract, and the
+  sampled view reads the image's own format; rendering output is byte-identical to before.
   Depth/stencil blits and format conversion stay outside this color-transfer contract.
 - **Queries:** real GL GPU timestamps and any-sample occlusion with state/lifetime validation
   and nonblocking result polling. Null records query operations but NEVER invents visibility or
-  GPU nanoseconds. `[/]` Vulkan now implements timestamp queries: one
+  GPU nanoseconds. `[x]` Vulkan now implements timestamp queries: one
   `VK_QUERY_TYPE_TIMESTAMP` pool per handle, `WriteTimestampUVE` riding a transient
   reset+write submission (the queue-ordered point in time a CPU-visible timestamp means),
   results converted from the device's tick period to nanoseconds with `NotReady` for a
@@ -852,12 +858,17 @@ shadow pixel comparisons after correcting their sampler setup. This closes the e
 verification gap, not the explicitly unsupported Vulkan operations. Semaphores/timelines
 are implemented as timeline objects (`CreateSemaphoreUVE` and friends, above); the
 `[ ]` that remains is *submission-level* queue sync (binary semaphores as `SubmitUVE`
-parameters), which is not closed by a CPU-visible counter. Vulkan texture-transfer parity is
-implemented and awaiting native CI execution; Vulkan timestamps are implemented and awaiting
-the same native run, while Vulkan occlusion queries and GPU/Hi-Z occlusion consumers remain
-explicitly unsupported/absent.
+parameters), which is not closed by a CPU-visible counter. Vulkan texture-transfer parity and
+Vulkan timestamps were executed on a real Vulkan 1.3 ICD on 2026-10-14 (60 of 60
+`VulkanRenderDeviceUVETest` cases pass, one unrelated SPIR-V fixture skip), while Vulkan
+occlusion queries and GPU/Hi-Z occlusion consumers remain explicitly unsupported/absent. The GL
+occlusion case `FoundationQueriesMeasureRealVisibilityAndGpuTimestamps` passes on the CI's
+software GL runner but not on the sandbox's softpipe rasterizer, where a standalone program
+reproduces the cause outside the engine: once any `glQueryCounter(GL_TIMESTAMP)` has been
+issued, that driver reports zero for every later `GL_ANY_SAMPLES_PASSED` / `GL_SAMPLES_PASSED`
+result although the triangle visibly rasterizes — a driver defect, not an RHI one.
 
-`[/]` **Stencil state** — `StencilStateUVE`/`StencilFaceStateUVE` are appended to both
+`[x]` **Stencil state** — `StencilStateUVE`/`StencilFaceStateUVE` are appended to both
 pipeline descriptors with disabled legacy defaults. Front/back compare, operations,
 8-bit masks and references are validated before publication. `Depth24Stencil8` is the
 combined attachment format, and `RenderPassDescUVE::clearStencil` is governed by the
@@ -877,9 +888,15 @@ passes separate depth and stencil invalidation tokens, with capacity for both as
 without a driver; strict syntax checks passed for the GL loader, command buffer, render
 device and full GL test translation unit. A native depth/stencil discard regression joins
 the pixel-mask test. After these corrections (2026-10-14), full CPU build/CTest passed:
-**4,144 cases, zero failures, seven existing Vulkan skips**. Status remains `[/]` until
-native graphics CI verifies the backend tests; downloaded headers used for syntax checks
-are ignored build artifacts, not a replacement for GL/Vulkan execution.
+**4,144 cases, zero failures, seven existing Vulkan skips**. Native execution (2026-10-14,
+software GL 3.3 core + Vulkan 1.3 CPU ICD): `StencilPipelineMasksSecondDrawThroughDepthStencilAttachment`
+and `DepthStencilDiscardUsesSeparateAttachmentAspects` pass on GL;
+`StencilPipelineAndDepthStencilTextureCreateOnDynamicDevice` passes on Vulkan after a real
+defect it exposed was fixed — `Depth24Stencil8` was hard-wired to `D24_UNORM_S8_UINT`, which
+the specification does not require (it guarantees that format *or* `D32_SFLOAT_S8_UINT`, and
+a whole family of desktop GPUs plus the CPU ICD only offer the latter). The device now resolves
+the packed format once at creation (24-bit preferred, 32+8 fallback) and both stencil textures
+and stencil pipelines use that resolved format; a device with neither refuses both explicitly.
 
 Native follow-up: CI run `38515088834` on `bec9f6cf` passed the full native build, then
 reported **one failure in 4,861 CTest cases**:
@@ -907,7 +924,10 @@ is pending; the failed CI run is not reported as a green graphics verification.
   reflection and dynamic-rendering offscreen targets all work, while >1 descriptor
   set, load-op semantics beyond clear, per-op depth compare, device-local staging
   and sampling `Depth32Float` **warn and fail loudly rather than silently
-  degrading**. On pre-1.3 devices offscreen passes are skipped entirely.
+  degrading**. On pre-1.3 devices offscreen passes are skipped entirely. Two silent
+  format assumptions were removed on 2026-10-14 when the device first ran on a Vulkan ICD
+  outside CI: RGBA8 images no longer inherit the swapchain's sRGB encoding when the descriptor
+  says linear, and the packed depth/stencil format is resolved per device instead of assumed.
 - `[x]` **`NullRenderDeviceUVE`** — a deliberate no-op that validates every call
   and records the exact RHI call sequence through a spy command buffer. It is what
   CI runs against, which is worth remembering: a green test suite proves the call
@@ -920,7 +940,7 @@ bloom, SSAO, tone mapping, instancing, CPU frustum culling (clustered), GPU
 frustum culling, GPU indirect culling, distance/LOD culling, GPU skinning, GPU
 particle simulation.
 
-`[/]` **Render graph** — the former insertion-only layer now compiles explicit pass dependencies
+`[x]` **Render graph** — the former insertion-only layer now compiles explicit pass dependencies
 and RAW/WAR/WAW texture hazards into stable topological order. `topological_order_uve.h` is shared
 with the existing frame scheduler, not another job-system implementation. Duplicate native imports
 coalesce; graph-owner/generation tags reject foreign/stale resources and passes. Compilation is
@@ -944,7 +964,10 @@ Eleven compiler/consumer tests, four resource-lifetime tests and three shared to
 added. All 88 existing renderer cases remain unchanged and pass; focused graph/renderer execution
 passes 102 cases. Strict full CTest: **4,121 cases, zero failures, seven existing Vulkan skips**.
 The four lifetime cases also pass focused ASan+UBSan. New GL pixel/worker-retirement and Vulkan
-CPU-FIFO/GPU-completion tests are awaiting native CI before this batch is marked fully verified.
+CPU-FIFO/GPU-completion tests ran natively on 2026-10-14 (software GL + Vulkan 1.3 CPU ICD):
+`TextureLeaseRetiresOnOwnerThreadAfterWorkerSubmission`,
+`TextureLeaseSurvivesDeferredSubmissionUntilGpuCompletion` and the 14 graph compiler/consumer
+cases pass.
 
 Renderer presence reconciliation (source and existing tests, 2026-10-14):
 
@@ -969,10 +992,11 @@ Renderer presence reconciliation (source and existing tests, 2026-10-14):
   renderer's `SkyAssetDrivesEnvironmentMapAmbientAndSky` and fallback tests cover them.
   `[~]` Environment-map ambient lighting and reflection probes are narrower than full
   prefiltered diffuse/specular IBL. `[ ]` No terrain renderer exists.
-  `[/]` `PipelineDescUVE::geometryShader` now carries the stage through the common API:
+  `[x]` `PipelineDescUVE::geometryShader` now carries the stage through the common API:
   `NullRenderDeviceUVE` validates and records it, desktop GL attaches it to the linked program
   (local strict syntax plus `GlRenderDeviceUVETest.GeometryStageChangesRasterizedPositionAndSurvivesShaderDeletion`
-  assert a real position change; the pixel probe needs the native CI software GL runner),
+  assert a real position change; the pixel probe passed on a software GL 3.3 core context on
+  2026-10-14),
   and Vulkan/GLES reject a supplied handle explicitly instead of dropping the stage
   (`VulkanRenderDeviceUVETest.GeometryPipelineIsExplicitlyUnsupportedRatherThanIgnored`,
   `GeometryPipelineUVETest.*`). `RenderDeviceCapabilitiesUVE::geometryShaders` reports
@@ -1362,3 +1386,19 @@ cubemap unit, with a real complete cube texture and additional GL-error assertio
 shadow pixel assertion nor either shader copy was weakened/changed. Local full CTest and all
 16 embedded/physical shader-parity cases pass; native re-execution is required before marking
 this correction or the pending device-operations batch fully verified.
+
+### Native verification outside CI (2026-10-14)
+
+The five `[/]` paragraphs above (Vulkan texture transfer, Vulkan timestamps, stencil state,
+render graph lifetimes, the geometry stage) were executed on real driver stacks in a headless
+sandbox — software GL (3.3 core context, Mesa softpipe, advertised as 4.6 through the version
+override the GL fixtures require) and a Vulkan 1.3 CPU ICD — rather than being left to wait
+for a graphics CI rerun. Results: `VulkanRenderDeviceUVETest` 60 passed / 1 skipped (a SPIR-V
+fixture not baked yet); `GlRenderDeviceUVETest` + `GlFunctionsUVETest` 112 passed / 2
+capability skips (no S3TC, no program binaries) / 1 driver defect (occlusion queries after a
+timestamp counter, reproduced standalone); render graph 14 passed. Two backend defects were
+found by running on a second ICD and fixed in the same change: linear RGBA8 images allocated
+in the swapchain's sRGB format (gamma-wrong blits and mip chains), and `Depth24Stencil8`
+assuming `D24_UNORM_S8_UINT` exists (it is optional; the 32+8 layout is the only one some
+devices offer). Nothing in this ledger claims pixel parity with a hardware GPU; it claims the
+contracts hold on two independent conformant implementations.

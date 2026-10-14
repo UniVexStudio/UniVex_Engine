@@ -425,6 +425,10 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     VkDeviceMemory depthImageMemory = VK_NULL_HANDLE;
     VkImageView depthImageView = VK_NULL_HANDLE;
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
+    /// The packed depth+stencil format `Depth24Stencil8` resolves to on this device. The spec
+    /// guarantees D24_UNORM_S8_UINT *or* D32_SFLOAT_S8_UINT, never both; UNDEFINED means neither
+    /// advertised depth/stencil attachment support, so stencil textures and pipelines refuse.
+    VkFormat depthStencilFormat = VK_FORMAT_UNDEFINED;
 
     // Frame uniform ring: one large persistently-mapped HOST_VISIBLE uniform buffer. Per draw,
     // each reflected block's shadow is snapshot-copied into a cursor-aligned region and bound
@@ -685,7 +689,12 @@ struct VulkanRenderDeviceUVE::ImplUVE {
         // a single-level R8G8B8A8_UNORM view (descriptor writes use `view`).
         VkImageView storageView = VK_NULL_HANDLE;
         VkSampler sampler = VK_NULL_HANDLE;
-        VkFormat vkFormat = VK_FORMAT_UNDEFINED; // the IMAGE's format (may be swapchain-typed)
+        VkFormat vkFormat = VK_FORMAT_UNDEFINED; // the IMAGE's format: what transfers/blits operate on
+        // The format `attachmentView` (and the per-layer attachment views) are created with — the
+        // one dynamic-rendering pipelines declare. For the 4x8 RGBA family this is the swapchain
+        // format; the image itself stays in the colour space the descriptor asked for, so blits
+        // and mip generation filter linear data linearly instead of through an sRGB transfer.
+        VkFormat attachmentFormat = VK_FORMAT_UNDEFINED;
         TextureDescUVE desc{};
         VkImageLayout currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         // M5b: set once the texture has been transitioned to GENERAL for storage-image use.
@@ -990,7 +999,7 @@ VkImageView VulkanRenderDeviceUVE::ImplUVE::GetOrCreateLayerAttachmentViewUVE(
     layerViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     layerViewInfo.image = record.image;
     layerViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    layerViewInfo.format = record.vkFormat; // image-native, matching attachmentView
+    layerViewInfo.format = record.attachmentFormat; // matching attachmentView (pipeline contract)
     layerViewInfo.subresourceRange = {
         IsDepthFormatUVE(record.desc.format)
             ? DepthAspectUVE(record.desc.format)
@@ -1896,6 +1905,17 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     }
     if (depthFormat == VK_FORMAT_UNDEFINED) {
         return LogBailUVE("no supported depth format (D32_SFLOAT / D24_UNORM) on this physical device");
+    }
+    // Packed depth+stencil: prefer the 24-bit layout `Depth24Stencil8` is named after, fall back
+    // to the 32-bit float + 8-bit stencil layout devices without it must offer instead.
+    depthStencilFormat = VK_FORMAT_UNDEFINED;
+    for (const VkFormat candidate : {VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT_S8_UINT}) {
+        VkFormatProperties formatProperties{};
+        vk.vkGetPhysicalDeviceFormatProperties(physicalDevice, candidate, &formatProperties);
+        if ((formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U) {
+            depthStencilFormat = candidate;
+            break;
+        }
     }
 
     // --- render pass + swapchain -------------------------------------------------------------
@@ -2835,19 +2855,27 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
                               VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
     VkImageLayout finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkFormat attachmentFormat = VK_FORMAT_UNDEFINED; // resolved below; defaults to `format`
     switch (desc.format) {
         case TextureFormatUVE::RGBA8Unorm: {
-            const VkFormat sampledSibling = desc.colorSpace == TextureColorSpaceUVE::Srgb
+            // The IMAGE is allocated in the colour space the descriptor declares (the unorm or
+            // sRGB sibling of the swapchain's channel order), because vkCmdBlitImage and the mip
+            // chain filter through the image format: an sRGB image would decode, average and
+            // re-encode data the caller declared linear (measured: a 40/80/120/160 chain's last
+            // level came out 111 instead of 100 on an sRGB swapchain). The ATTACHMENT view keeps
+            // the swapchain format so every pipeline's dynamic-rendering contract still holds,
+            // and the sampled view reads the image's own format.
+            const VkFormat storageSibling = desc.colorSpace == TextureColorSpaceUVE::Srgb
                                                 ? SrgbSiblingFormatUVE(impl.swapchainFormat)
                                                 : UnormSiblingFormatUVE(impl.swapchainFormat);
-            if (sampledSibling != VK_FORMAT_UNDEFINED) {
-                format = impl.swapchainFormat;
-                sampledFormat = sampledSibling;
+            if (storageSibling != VK_FORMAT_UNDEFINED) {
+                format = storageSibling;
+                sampledFormat = storageSibling;
+                attachmentFormat = impl.swapchainFormat;
             } else {
-                format = VK_FORMAT_R8G8B8A8_UNORM;
-                sampledFormat = desc.colorSpace == TextureColorSpaceUVE::Srgb
-                                    ? VK_FORMAT_R8G8B8A8_SRGB
-                                    : format;
+                format = desc.colorSpace == TextureColorSpaceUVE::Srgb ? VK_FORMAT_R8G8B8A8_SRGB
+                                                                        : VK_FORMAT_R8G8B8A8_UNORM;
+                sampledFormat = format;
             }
             // M5b fix: RGBA8 images are ALWAYS mutable-format — the storage alias view
             // (R8G8B8A8_UNORM over a B,G,R,A-family or sRGB image) needs
@@ -2909,7 +2937,11 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
             }
             break;
         case TextureFormatUVE::Depth24Stencil8:
-            format = VK_FORMAT_D24_UNORM_S8_UINT;
+            if (impl.depthStencilFormat == VK_FORMAT_UNDEFINED) {
+                return fail("this device advertises neither D24_UNORM_S8_UINT nor D32_SFLOAT_S8_UINT "
+                            "as a depth/stencil attachment; Depth24Stencil8 textures are unavailable");
+            }
+            format = impl.depthStencilFormat;
             sampledFormat = format;
             aspect = DepthAspectUVE(desc.format);
             usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -2919,6 +2951,9 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
                             "only; the render-target slice owns population)");
             }
             break;
+    }
+    if (attachmentFormat == VK_FORMAT_UNDEFINED) {
+        attachmentFormat = format;
     }
     {
         VkFormatProperties formatProperties{};
@@ -3245,7 +3280,7 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     }
     VkImageView attachmentView = VK_NULL_HANDLE;
     if (!IsTextureFormatCompressedUVE(desc.format)) {
-        viewInfo.format = format; // image-native: this is the view dynamic rendering attaches
+        viewInfo.format = attachmentFormat; // the view dynamic rendering attaches (pipeline contract)
         viewInfo.subresourceRange.aspectMask = aspect;
         viewInfo.subresourceRange.levelCount = 1U; // render-target attachment is always level 0
         viewInfo.subresourceRange.layerCount = 1U; // …and always layer 0 (deeper layers attach
@@ -3320,7 +3355,7 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     const std::uint32_t handleValue = impl.nextHandleValue++;
     impl.textures.emplace(handleValue,
         ImplUVE::TextureRecordUVE{image, imageMemory, view, attachmentView, storageView,
-                                  sampler, format, desc, finalLayout});
+                                  sampler, format, attachmentFormat, desc, finalLayout});
     return TextureHandleUVE{handleValue};
 }
 
@@ -3660,6 +3695,10 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
     }
     if (desc.stencil.enabled && !impl.useDynamicRendering) {
         return fail("stencil pipelines require the dynamic-rendering depth/stencil attachment path");
+    }
+    if (desc.stencil.enabled && impl.depthStencilFormat == VK_FORMAT_UNDEFINED) {
+        return fail("stencil pipelines need a packed depth/stencil attachment format and this device "
+                    "advertises neither D24_UNORM_S8_UINT nor D32_SFLOAT_S8_UINT");
     }
 
     VkPipelineShaderStageCreateInfo stages[2]{};
@@ -4157,9 +4196,9 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
     renderingCreateInfo.colorAttachmentCount = 1U;
     renderingCreateInfo.pColorAttachmentFormats = &impl.swapchainFormat;
     renderingCreateInfo.depthAttachmentFormat =
-        desc.stencil.enabled ? VK_FORMAT_D24_UNORM_S8_UINT : impl.depthFormat;
+        desc.stencil.enabled ? impl.depthStencilFormat : impl.depthFormat;
     renderingCreateInfo.stencilAttachmentFormat =
-        desc.stencil.enabled ? VK_FORMAT_D24_UNORM_S8_UINT : VK_FORMAT_UNDEFINED;
+        desc.stencil.enabled ? impl.depthStencilFormat : VK_FORMAT_UNDEFINED;
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -5228,7 +5267,7 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                                     "BeginRenderPassUVE: block-compressed textures are sampled-only "
                                     "and cannot be color attachments; submission's draws are skipped");
                                 skipPass = true;
-                            } else if (foundColor->second.vkFormat != impl.swapchainFormat) {
+                            } else if (foundColor->second.attachmentFormat != impl.swapchainFormat) {
                                 // RGBA16Float and RGBA8 textures created while the swapchain
                                 // was not a 4x8 RGBA format cannot be attached (the device
                                 // pipeline contract is the swapchain format).
@@ -5326,7 +5365,7 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                                     }
                                     if (IsTextureFormatCompressedUVE(
                                             foundExtra->second.desc.format) ||
-                                        foundExtra->second.vkFormat != impl.swapchainFormat) {
+                                        foundExtra->second.attachmentFormat != impl.swapchainFormat) {
                                         impl.WarnOnceUVE(
                                             VulkanRenderDeviceUVE::ImplUVE::
                                                 kWarnedOffscreenUnsupportedUVE,
