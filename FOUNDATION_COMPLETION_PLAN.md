@@ -1,10 +1,16 @@
 # Foundation completion plan
 
-**Status (2026-10-14, end of WP2):** WP1 done (`0003`), WP2a–e done (`0004`–`0008`), delivered
-as the patch series in `handoff/` on top of `origin/master` `10455561`. Open: WP3 (recorded
-queries + occlusion consumer — implementation survey done, see §2 WP3; code not started because
-the originating sandbox lost GitHub egress, see §4), WP4 (submit sync), WP5 (Vulkan parity),
-WP6 (overlay pipelines), WP7 (FBX `.uvmat`).
+**Status (2026-10-14, end of the originating session):** WP1 done (`0003`), WP2a–e done
+(`0004`–`0008`) — built and verified green. **`0010`–`0014` are UNCOMPILED DRAFTS**: WP3
+(`0010`), WP4 (`0011`), WP7 (`0012`), WP5c + the WP5 audit verdicts (`0013`), WP6 step 1
+(`0014`) were written after the sandbox lost GitHub egress (no toolchain, see §4). Null /
+renderer / shader / asset / test translation units passed a real `g++ -std=c++23 -fsyntax-only`
+pass with the project's `-Werror` warning set against stand-in fmt/gtest headers; the GL and
+Vulkan backend TUs and their tests could NOT be checked. **The next session must build, fix
+and run every test before any of these commits is called done.** Still open after the drafts:
+WP5 slices 5a/5b/5d/5e (5b+5e share one fix and block Vulkan shadows), WP6 step 2 (outline/
+backdrop/render-pass sites + pixel evidence). Delivered as the patch series in `handoff/` on
+top of `origin/master` `10455561`.
 
 Target: close every open marker that is **inside the scope of `FOUNDATION.md`** (Parts I–II and
 the Part V tiers 0–3) and nothing beyond it. System-level gaps that `FOUNDATION.md` only names
@@ -106,7 +112,7 @@ and `Test/RHI/Vulkan`.
 
 Each slice updates the §9 descriptor table row it closes.
 
-### WP3 — Recorded queries + the occlusion-culling consumer (size M)
+### WP3 — Recorded queries + the occlusion-culling consumer (size M) — DRAFTED in `0010` (uncompiled)
 
 Design: queries move from device-level bracketing to **recorded commands**:
 `ICommandBufferUVE::BeginQueryUVE/EndQueryUVE/WriteTimestampUVE` become `RecordedCommandUVE`
@@ -236,7 +242,7 @@ Facts that fix the shape of the change (file:line as of the survey):
 - **Effort:** one working day in a sandbox with the headless toolchain: RHI half (three
   backends + pins), consumer half (pass, policy, diagnostics, integration pins, docs).
 
-### WP4 — Submission-level queue sync (size S/M)
+### WP4 — Submission-level queue sync (size S/M) — DRAFTED in `0011` (uncompiled; final API `SubmitWithSyncUVE` + `SubmitDescUVE`)
 
 Design: `SubmitDescUVE { span<SemaphoreWaitUVE{handle, value, stageMask}> waits;
 span<SemaphoreSignalUVE{handle, value}> signals; FenceHandleUVE fence; }` and a new
@@ -310,7 +316,7 @@ Done when: the `[ ]` sentence in §9 is replaced by the contract and the test na
   `SubmitDescIsUnsupportedWithoutTimelines`. Doc: replace the `[ ]` sentence at
   `FOUNDATION.md:950-953` with the batch-granularity contract and these names.
 
-### WP5 — Vulkan parity on the remaining honest gaps (size M/L, audit first)
+### WP5 — Vulkan parity on the remaining honest gaps (size M/L) — audit verdicts + 5c DRAFTED in `0013`; 5a/5b/5d/5e OPEN
 
 The doc's list is partly stale (per-op depth compare now lives on the pipeline; device-local
 staging is closed by WP2c). First step is a one-page audit of `vulkan_render_device_uve.cpp`
@@ -357,7 +363,7 @@ Order inside WP5: 5b (unblocks the most), 5d, 5c, 5a-or-decision, 5e-or-decision
 §9 rewrite. Done-when unchanged: the `[~]` bullet at `FOUNDATION.md:1014` reads `[x]` or lists
 decisions only.
 
-### WP6 — Overlay depth state through RHI pipelines (size L, design pass first)
+### WP6 — Overlay depth state through RHI pipelines (size L) — candidate B chosen; step 1 DRAFTED in `0014` (gizmo + grid); step 2 + pixel evidence OPEN
 
 Facts read: `univex_viewport_core` is host-independent (no GL), `univex_viewport_gl` holds the
 raw-GL `GizmoRenderer`, `InfiniteGridRenderer`, `SelectionOutlineRenderer` (the `glDepthFunc`/
@@ -414,7 +420,7 @@ pixel tests (headless capture) prove the gizmo overlay depth modes are unchanged
   tool plus the frame-dump shim (`Engine/Tools/headless_framedump.c`) before/after, byte-equal
   for every gizmo depth mode.
 
-### WP7 — Publish FBX materials as `.uvmat` with GUID texture references (size S/M)
+### WP7 — Publish FBX materials as `.uvmat` with GUID texture references (size S/M) — DRAFTED in `0012` (uncompiled; the importer gains `RegisterDatabaseAwareImporterUVE` instead of changing every importer signature)
 
 `ReadFbxMaterialsUVE` already yields `FbxMaterialUVE`. Add the publication step beside mesh
 publication: write one `.uvmat` per material, resolve each authored relative texture filename
