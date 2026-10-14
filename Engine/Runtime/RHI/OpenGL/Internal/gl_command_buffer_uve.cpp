@@ -100,16 +100,36 @@ void ApplyStencilFaceUVE(const Detail::GlFunctionsUVE& gl, const GLenum face,
     return GL_TRIANGLES;
 }
 
-[[nodiscard]] GLint VertexAttributeComponentCountUVE(VertexAttributeFormatUVE format) noexcept {
+/// The glVertexAttrib(I)Pointer arguments for one RHI attribute format.
+struct GlVertexAttributeFetchUVE final {
+    GLint componentCount = 3;
+    GLenum type = GL_FLOAT;
+    GLboolean normalized = GL_FALSE;
+    bool integer = false; ///< glVertexAttribIPointer instead of glVertexAttribPointer
+};
+
+[[nodiscard]] GlVertexAttributeFetchUVE VertexAttributeFetchUVE(VertexAttributeFormatUVE format) noexcept {
     switch (format) {
         case VertexAttributeFormatUVE::Float2:
-            return 2;
+            return {2, GL_FLOAT, GL_FALSE, false};
         case VertexAttributeFormatUVE::Float3:
-            return 3;
+            return {3, GL_FLOAT, GL_FALSE, false};
         case VertexAttributeFormatUVE::Float4:
-            return 4;
+            return {4, GL_FLOAT, GL_FALSE, false};
+        case VertexAttributeFormatUVE::UByte4Norm:
+            return {4, GL_UNSIGNED_BYTE, GL_TRUE, false};
+        case VertexAttributeFormatUVE::UShort4:
+            return {4, GL_UNSIGNED_SHORT, GL_FALSE, true};
+        case VertexAttributeFormatUVE::UInt4:
+            return {4, GL_UNSIGNED_INT, GL_FALSE, true};
+        case VertexAttributeFormatUVE::Short2Norm:
+            return {2, GL_SHORT, GL_TRUE, false};
+        case VertexAttributeFormatUVE::Half2:
+            return {2, GL_HALF_FLOAT, GL_FALSE, false};
+        case VertexAttributeFormatUVE::Half4:
+            return {4, GL_HALF_FLOAT, GL_FALSE, false};
     }
-    return 3;
+    return {};
 }
 
 [[nodiscard]] bool IsFiniteVector3UVE(const Math::Vector3UVE& value) noexcept {
@@ -772,10 +792,17 @@ void GlCommandBufferUVE::BindVertexBufferUVE(BufferHandleUVE buffer, std::uint32
     for (std::size_t index = 0; index < pipelineRecord->vertexLayout.size(); ++index) {
         const VertexAttributeUVE& attribute = pipelineRecord->vertexLayout[index];
         const auto attributeIndex = static_cast<GLuint>(index);
-        m_state->gl.glVertexAttribPointer(
-            attributeIndex, VertexAttributeComponentCountUVE(attribute.format), GL_FLOAT, GL_FALSE,
-            static_cast<GLsizei>(m_currentVertexStride),
-            reinterpret_cast<const void*>(static_cast<std::uintptr_t>(attribute.offset)));
+        const GlVertexAttributeFetchUVE fetch = VertexAttributeFetchUVE(attribute.format);
+        const auto* const pointer = reinterpret_cast<const void*>(static_cast<std::uintptr_t>(attribute.offset));
+        if (fetch.integer) {
+            // Pipeline creation refused integer layouts when this entry point is absent.
+            UVE_ASSERT(m_state->gl.glVertexAttribIPointer != nullptr);
+            m_state->gl.glVertexAttribIPointer(attributeIndex, fetch.componentCount, fetch.type,
+                                               static_cast<GLsizei>(m_currentVertexStride), pointer);
+        } else {
+            m_state->gl.glVertexAttribPointer(attributeIndex, fetch.componentCount, fetch.type, fetch.normalized,
+                                              static_cast<GLsizei>(m_currentVertexStride), pointer);
+        }
         m_state->gl.glEnableVertexAttribArray(attributeIndex);
     }
     m_boundVertexBuffer = buffer;

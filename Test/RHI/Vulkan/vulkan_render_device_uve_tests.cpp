@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cmath>
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
@@ -3931,6 +3932,162 @@ TEST_F(VulkanRenderDeviceUVETest, PointAndStripTopologiesAssemblePrimitivesOnThe
     device->DestroyShaderUVE(fragmentShader);
     device->DestroyShaderUVE(pointVertexShader);
     device->DestroyShaderUVE(vertexShader);
+}
+
+// IEEE binary16 of a float in the normal range (enough for test vertex data: ±1, 0.5, 0).
+[[nodiscard]] static std::uint16_t HalfFromFloatUVE(const float value) {
+    std::uint32_t bits = 0U;
+    std::memcpy(&bits, &value, sizeof(bits));
+    const std::uint32_t sign = (bits >> 16U) & 0x8000U;
+    const std::int32_t exponent = static_cast<std::int32_t>((bits >> 23U) & 0xFFU) - 127 + 15;
+    const std::uint32_t mantissa = (bits >> 13U) & 0x3FFU;
+    if (exponent <= 0) {
+        return static_cast<std::uint16_t>(sign);
+    }
+    return static_cast<std::uint16_t>(sign | (static_cast<std::uint32_t>(exponent) << 10U) | mantissa);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, PackedVertexAttributeFormatsFetchNormalizedHalfAndIntegerData) {
+    // The GL proof's twin on SwiftShader: a lower-left triangle per layout, NDC (-0.5, -0.5)
+    // sampled from the presented image. The colour-triangle vertex shader takes a vec3
+    // position / vec3 colour, which Vulkan legally feeds from two-component (z = 0) and
+    // four-component (w dropped) formats; the integer layouts use the baked uvec4 shader.
+    ShaderDescUVE floatVertexDesc{};
+    floatVertexDesc.stage = ShaderStageUVE::Vertex;
+    floatVertexDesc.sourceCode = kTriangleVertexSpirvUVE;
+    ShaderDescUVE integerVertexDesc{};
+    integerVertexDesc.stage = ShaderStageUVE::Vertex;
+    integerVertexDesc.sourceCode = kIntegerJointsVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kTriangleFragmentSpirvUVE;
+    const ShaderHandleUVE floatVertexShader = device->CreateShaderUVE(floatVertexDesc);
+    const ShaderHandleUVE integerVertexShader = device->CreateShaderUVE(integerVertexDesc);
+    const ShaderHandleUVE fragmentShader = device->CreateShaderUVE(fragmentDesc);
+    ASSERT_NE(floatVertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(integerVertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+
+#pragma pack(push, 1)
+    struct SnormVertexUVE final {
+        std::int16_t x, y;
+        std::uint8_t r, g, b, a;
+    };
+    struct HalfVertexUVE final {
+        std::uint16_t x, y;
+        std::uint16_t r, g, b, a;
+    };
+    struct UShortJointVertexUVE final {
+        float x, y, z;
+        std::uint16_t j0, j1, j2, j3;
+    };
+    struct UIntJointVertexUVE final {
+        float x, y, z;
+        std::uint32_t j0, j1, j2, j3;
+    };
+#pragma pack(pop)
+    constexpr std::int16_t kSnormOne = 32767;
+    const std::array<SnormVertexUVE, 3> snormTriangle{{{-kSnormOne, -kSnormOne, 255U, 128U, 0U, 255U},
+                                                       {kSnormOne, -kSnormOne, 255U, 128U, 0U, 255U},
+                                                       {-kSnormOne, kSnormOne, 255U, 128U, 0U, 255U}}};
+    const std::uint16_t hNeg = HalfFromFloatUVE(-1.0F);
+    const std::uint16_t hPos = HalfFromFloatUVE(1.0F);
+    const std::uint16_t hHalf = HalfFromFloatUVE(0.5F);
+    const std::uint16_t hZero = HalfFromFloatUVE(0.0F);
+    const std::array<HalfVertexUVE, 3> halfTriangle{{{hNeg, hNeg, hZero, hHalf, hPos, hPos},
+                                                     {hPos, hNeg, hZero, hHalf, hPos, hPos},
+                                                     {hNeg, hPos, hZero, hHalf, hPos, hPos}}};
+    const std::array<UShortJointVertexUVE, 3> ushortTriangle{{{-1.0F, -1.0F, 0.0F, 200U, 100U, 0U, 7U},
+                                                              {1.0F, -1.0F, 0.0F, 200U, 100U, 0U, 7U},
+                                                              {-1.0F, 1.0F, 0.0F, 200U, 100U, 0U, 7U}}};
+    const std::array<UIntJointVertexUVE, 3> uintTriangle{{{-1.0F, -1.0F, 0.0F, 65536U + 200U, 3U * 65536U + 100U, 0U, 7U},
+                                                          {1.0F, -1.0F, 0.0F, 65536U + 200U, 3U * 65536U + 100U, 0U, 7U},
+                                                          {-1.0F, 1.0F, 0.0F, 65536U + 200U, 3U * 65536U + 100U, 0U, 7U}}};
+    struct LayoutCaseUVE final {
+        ShaderHandleUVE vertexShader;
+        std::vector<VertexAttributeUVE> layout;
+        std::uint32_t stride;
+        std::span<const std::byte> vertices;
+        std::array<int, 3> expected;
+        const char* name;
+    };
+    const std::array<LayoutCaseUVE, 4> cases{{
+        {floatVertexShader,
+         {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Short2Norm, 0U},
+          VertexAttributeUVE{"COLOR", VertexAttributeFormatUVE::UByte4Norm, 4U}},
+         sizeof(SnormVertexUVE), std::as_bytes(std::span(snormTriangle)), {255, 128, 0}, "Short2Norm+UByte4Norm"},
+        {floatVertexShader,
+         {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Half2, 0U},
+          VertexAttributeUVE{"COLOR", VertexAttributeFormatUVE::Half4, 4U}},
+         sizeof(HalfVertexUVE), std::as_bytes(std::span(halfTriangle)), {0, 128, 255}, "Half2+Half4"},
+        {integerVertexShader,
+         {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U},
+          VertexAttributeUVE{"JOINTS", VertexAttributeFormatUVE::UShort4, 12U}},
+         sizeof(UShortJointVertexUVE), std::as_bytes(std::span(ushortTriangle)), {200, 100, 0}, "UShort4"},
+        {integerVertexShader,
+         {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U},
+          VertexAttributeUVE{"JOINTS", VertexAttributeFormatUVE::UInt4, 12U}},
+         sizeof(UIntJointVertexUVE), std::as_bytes(std::span(uintTriangle)), {200, 100, 0}, "UInt4"},
+    }};
+    for (const LayoutCaseUVE& testCase : cases) {
+        SCOPED_TRACE(testCase.name);
+        PipelineDescUVE desc{};
+        desc.vertexShader = testCase.vertexShader;
+        desc.fragmentShader = fragmentShader;
+        desc.vertexLayout = testCase.layout;
+        desc.vertexStride = testCase.stride;
+        desc.depthTestEnabled = false;
+        desc.depthWriteEnabled = false;
+        const PipelineHandleUVE pipeline = device->CreatePipelineUVE(desc);
+        ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+        const BufferHandleUVE vertexBuffer =
+            device->CreateBufferUVE({testCase.vertices.size(), BufferUsageUVE::Vertex}, testCase.vertices);
+        ASSERT_NE(vertexBuffer, kInvalidBufferHandleUVE);
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(pipeline);
+        commandBuffer->BindVertexBufferUVE(vertexBuffer);
+        commandBuffer->DrawUVE(3U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+        device->PresentUVE();
+        ASSERT_TRUE(device->IsUsableUVE());
+        std::vector<std::byte> pixels(1280U * 720U * 4U);
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        if (width == 0U || height == 0U) { GTEST_SKIP() << "zero-sized extent; no pixels"; }
+        const auto inside = ChannelAtNdcUVE(pixels, width, height, -0.5F, -0.5F);
+        // The shader's linear value is stored either linearly (UNORM-typed swapchain, lavapipe)
+        // or sRGB-encoded (SRGB-typed swapchain, SwiftShader) — the suite's standing rule for
+        // mid-range bytes. 0 and 255 are fixed points of both, so the half/integer proofs that
+        // hinge on them (0 vs 255, 200 vs anything else) are unaffected.
+        const auto srgbEncode = [](const int linearByte) {
+            const float linear = static_cast<float>(linearByte) / 255.0F;
+            const float encoded = linear <= 0.0031308F ? linear * 12.92F
+                                                       : 1.055F * std::pow(linear, 1.0F / 2.4F) - 0.055F;
+            return static_cast<int>(std::lround(encoded * 255.0F));
+        };
+        for (std::size_t channel = 0U; channel < 3U; ++channel) {
+            const int linearExpected = testCase.expected[channel];
+            const int srgbExpected = srgbEncode(linearExpected);
+            const bool storedLinear = std::abs(inside[channel] - linearExpected) <= 3;
+            const bool storedSrgb = std::abs(inside[channel] - srgbExpected) <= 3;
+            EXPECT_TRUE(storedLinear || storedSrgb)
+                << "channel " << channel << " read " << inside[channel] << ", expected " << linearExpected
+                << " (linear swapchain) or " << srgbExpected << " (sRGB swapchain)";
+        }
+        const auto outside = ChannelAtNdcUVE(pixels, width, height, 0.5F, 0.5F);
+        EXPECT_LT(outside[0] + outside[1] + outside[2], 20) << "the triangle covers only one half";
+        device->DestroyBufferUVE(vertexBuffer);
+        device->DestroyPipelineUVE(pipeline);
+    }
+    device->DestroyShaderUVE(fragmentShader);
+    device->DestroyShaderUVE(integerVertexShader);
+    device->DestroyShaderUVE(floatVertexShader);
 }
 
 TEST_F(VulkanRenderDeviceUVETest, ReadbackBufferUVE_ReadsComputeWrittenPaletteDirectly) {

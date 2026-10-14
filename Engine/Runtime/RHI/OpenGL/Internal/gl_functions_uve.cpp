@@ -130,6 +130,8 @@ GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
     // Tier 2.4/2.5 MRT entries (kept out of IsCompleteUVE: optional capability).
     functions.glDrawBuffers =
         LoadOneUVE<PFNGLDRAWBUFFERSPROC>(getProcAddress, "glDrawBuffers");
+    functions.glVertexAttribIPointer =
+        LoadOneUVE<PFNGLVERTEXATTRIBIPOINTERPROC>(getProcAddress, "glVertexAttribIPointer");
     functions.glClearBufferfv =
         LoadOneUVE<PFNGLCLEARBUFFERFVPROC>(getProcAddress, "glClearBufferfv");
     functions.glInvalidateFramebuffer =

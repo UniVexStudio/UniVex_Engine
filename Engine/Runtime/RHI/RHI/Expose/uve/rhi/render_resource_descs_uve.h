@@ -555,8 +555,75 @@ struct ShaderDescUVE {
     std::string entryPointName = "main";
 };
 
-/// The shape of one vertex attribute inside a PipelineDescUVE's vertex layout.
-enum class VertexAttributeFormatUVE : std::uint8_t { Float2, Float3, Float4 };
+/// The shape of one vertex attribute inside a PipelineDescUVE's vertex layout. The three
+/// `Float*` entries are 32-bit floats; the packed entries reach the shader as floats too
+/// (`UByte4Norm` / `Short2Norm` normalised to [0,1] / [-1,1], `Half2` / `Half4` converted),
+/// except the two integer entries `UShort4` / `UInt4`, which stay integers and must be declared
+/// `uvec4` in the shader — joint indices, not weights. Each entry's byte width comes from
+/// `GetVertexAttributeFormatByteSizeUVE`; backends fetch every one through their native
+/// attribute-pointer / VkFormat path, so a layout never needs CPU repacking.
+enum class VertexAttributeFormatUVE : std::uint8_t {
+    Float2,
+    Float3,
+    Float4,
+    UByte4Norm, ///< 4 x uint8, normalised (vertex colours)
+    UShort4,    ///< 4 x uint16, integer (joint indices)
+    UInt4,      ///< 4 x uint32, integer (joint indices)
+    Short2Norm, ///< 2 x int16, normalised (packed UVs / octahedral normals)
+    Half2,      ///< 2 x float16
+    Half4,      ///< 4 x float16
+};
+
+/// Byte width of one attribute of `format`; 0 for unknown values.
+[[nodiscard]] constexpr std::uint32_t GetVertexAttributeFormatByteSizeUVE(const VertexAttributeFormatUVE format) noexcept {
+    switch (format) {
+        case VertexAttributeFormatUVE::Float2:
+            return 8U;
+        case VertexAttributeFormatUVE::Float3:
+            return 12U;
+        case VertexAttributeFormatUVE::Float4:
+            return 16U;
+        case VertexAttributeFormatUVE::UByte4Norm:
+            return 4U;
+        case VertexAttributeFormatUVE::UShort4:
+            return 8U;
+        case VertexAttributeFormatUVE::UInt4:
+            return 16U;
+        case VertexAttributeFormatUVE::Short2Norm:
+            return 4U;
+        case VertexAttributeFormatUVE::Half2:
+            return 4U;
+        case VertexAttributeFormatUVE::Half4:
+            return 8U;
+    }
+    return 0U;
+}
+
+/// Component count of `format` (2, 3 or 4); 0 for unknown values.
+[[nodiscard]] constexpr std::uint32_t GetVertexAttributeFormatComponentCountUVE(
+    const VertexAttributeFormatUVE format) noexcept {
+    switch (format) {
+        case VertexAttributeFormatUVE::Float2:
+        case VertexAttributeFormatUVE::Short2Norm:
+        case VertexAttributeFormatUVE::Half2:
+            return 2U;
+        case VertexAttributeFormatUVE::Float3:
+            return 3U;
+        case VertexAttributeFormatUVE::Float4:
+        case VertexAttributeFormatUVE::UByte4Norm:
+        case VertexAttributeFormatUVE::UShort4:
+        case VertexAttributeFormatUVE::UInt4:
+        case VertexAttributeFormatUVE::Half4:
+            return 4U;
+    }
+    return 0U;
+}
+
+/// True for the formats a shader must declare as an integer vector (`uvec4`): the fetch skips
+/// float conversion entirely.
+[[nodiscard]] constexpr bool IsVertexAttributeFormatIntegerUVE(const VertexAttributeFormatUVE format) noexcept {
+    return format == VertexAttributeFormatUVE::UShort4 || format == VertexAttributeFormatUVE::UInt4;
+}
 
 /// One vertex attribute (e.g. "position", "normal", "uv") within a pipeline's vertex layout.
 struct VertexAttributeUVE {
@@ -566,13 +633,7 @@ struct VertexAttributeUVE {
 };
 
 [[nodiscard]] constexpr bool IsVertexAttributeFormatValidUVE(const VertexAttributeFormatUVE format) noexcept {
-    switch (format) {
-        case VertexAttributeFormatUVE::Float2:
-        case VertexAttributeFormatUVE::Float3:
-        case VertexAttributeFormatUVE::Float4:
-            return true;
-    }
-    return false;
+    return GetVertexAttributeFormatByteSizeUVE(format) != 0U;
 }
 
 [[nodiscard]] inline bool IsVertexLayoutValidUVE(const std::span<const VertexAttributeUVE> vertexLayout) noexcept {
@@ -587,19 +648,7 @@ struct VertexAttributeUVE {
 [[nodiscard]] inline bool IsVertexLayoutWithinStrideUVE(const std::span<const VertexAttributeUVE> vertexLayout,
                                                          const std::uint32_t vertexStride) noexcept {
     for (const VertexAttributeUVE& attribute : vertexLayout) {
-        std::uint32_t componentCount = 0;
-        switch (attribute.format) {
-            case VertexAttributeFormatUVE::Float2:
-                componentCount = 2U;
-                break;
-            case VertexAttributeFormatUVE::Float3:
-                componentCount = 3U;
-                break;
-            case VertexAttributeFormatUVE::Float4:
-                componentCount = 4U;
-                break;
-        }
-        const std::uint32_t attributeByteWidth = componentCount * static_cast<std::uint32_t>(sizeof(float));
+        const std::uint32_t attributeByteWidth = GetVertexAttributeFormatByteSizeUVE(attribute.format);
         if (attribute.offset > vertexStride || attributeByteWidth > vertexStride - attribute.offset) {
             return false;
         }

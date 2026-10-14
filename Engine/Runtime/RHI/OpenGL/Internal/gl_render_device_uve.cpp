@@ -989,6 +989,14 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown vertex attribute format");
         return kInvalidPipelineHandleUVE;
     }
+    if (m_impl->state.gl.glVertexAttribIPointer == nullptr &&
+        std::any_of(desc.vertexLayout.begin(), desc.vertexLayout.end(), [](const VertexAttributeUVE& attribute) {
+            return IsVertexAttributeFormatIntegerUVE(attribute.format);
+        })) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE needs glVertexAttribIPointer for an integer vertex attribute "
+                  "format, which this context does not provide");
+        return kInvalidPipelineHandleUVE;
+    }
     if (!IsPipelineBlendModeValidUVE(desc.blendMode)) {
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown blend mode");
         return kInvalidPipelineHandleUVE;
@@ -1225,6 +1233,14 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<const
     }
     if (!IsVertexLayoutValidUVE(desc.vertexLayout)) {
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown vertex attribute format");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (m_impl->state.gl.glVertexAttribIPointer == nullptr &&
+        std::any_of(desc.vertexLayout.begin(), desc.vertexLayout.end(), [](const VertexAttributeUVE& attribute) {
+            return IsVertexAttributeFormatIntegerUVE(attribute.format);
+        })) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE needs glVertexAttribIPointer for an integer vertex attribute "
+                  "format, which this context does not provide");
         return kInvalidPipelineHandleUVE;
     }
     if (!IsPipelineBlendModeValidUVE(desc.blendMode)) {
