@@ -35,6 +35,8 @@ public:
         std::function<bool(const std::filesystem::path&, const std::filesystem::path&,
                             const AssetImportSettingsUVE&)>
             importFunc) override;
+    void RegisterDatabaseAwareImporterUVE(std::string sourceExtension,
+                                          DatabaseAwareImportFuncUVE importFunc) override;
     [[nodiscard]] AssetImportSourceClassificationUVE ClassifySourceUVE(
         const std::filesystem::path& sourcePath) const override;
     [[nodiscard]] AssetGuidUVE ImportUVE(const std::filesystem::path& sourcePath,

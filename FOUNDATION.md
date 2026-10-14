@@ -650,7 +650,7 @@ zero failures, seven existing Vulkan skips**, with no watcher skips on this host
 
 | Asset | Holds | Importer | Status |
 |---|---|---|---|
-| `MeshAssetUVE` | `MeshVertexUVE` array (position, normal, uv, tangent, handedness), `uint32` indices, `AabbUVE localBounds`, skinning influences, joints | **OBJ**, **glTF/GLB** and **FBX**, plus a `.uvmodel` envelope | `[x]` |
+| `MeshAssetUVE` | `MeshVertexUVE` array (position, normal, uv, tangent, handedness), `uint32` indices, `AabbUVE localBounds`, skinning influences, joints, `materialGuids` (WP7, tagged trailing section) | **OBJ**, **glTF/GLB** and **FBX**, plus a `.uvmodel` envelope | `[x]` |
 | `TextureAssetUVE` | width, height, format, pixels, a CPU-generated mip chain and Basis-compressed uploads | **PNG, JPEG, BMP, TGA**, plus `.uvtex` | `[x]` mips + compression landed (see below) |
 | `MaterialAssetUVE` | albedo colour, albedo/normal/AO texture GUIDs, metallic, roughness, emissive colour, shader GUIDs, transparency flag | **MTL**, plus `.uvmat` | `[x]` PBR payload and renderer consumer; see below |
 | `ShaderAssetUVE` | stage, source text, entry point — stored as-is, not compiled at asset level | source importer + `.uvshader` | `[x]` |
@@ -688,13 +688,13 @@ Three things about this table matter more than the rest:
   or linked. All 20 focused cases and **4,050 CTest cases** pass, with zero failures and the
   same seven explicit Vulkan skips (2026-10-13).
 
-Importer reconciliation (2026-10-14): `[~]` **FBX** already uses vendored ufbx for
+Importer reconciliation (2026-10-14): `[x]` **FBX** already uses vendored ufbx for
 triangulated static/skinned meshes, bone hierarchy/rest poses and sampled animation takes.
 `ConvertFbxMeshUVE`, `ReadFbxSkeletonUVE` and `ReadFbxAnimationsUVE` have real implementations;
 mesh import publishes `.uvmodel`, while editor/retarget consumers use the skeleton/take readers.
 Eight `FbxMeshConverterUVETest` cases cover axis/unit conversion, instances, skins, skeletons,
 animation-only files, takes, failure atomicity and publication. The previous static-only claim
-was stale. `[/]` Materials are now converted: `ReadFbxMaterialsUVE` returns `FbxMaterialUVE`
+was stale. `[x]` Materials are converted: `ReadFbxMaterialsUVE` returns `FbxMaterialUVE`
 (name, `MaterialAssetUVE` PBR factors, and the authored texture references) for every material
 in the file, mapping albedo from PBR base color or the classic diffuse color, roughness from the
 parser's values (including its Shininess derivation), emission colour plus its authored energy,
@@ -706,10 +706,26 @@ reference (procedural/layered/unnamed) leaves its filename empty and sets
 clamped with `albedoClamped` set, and each expected value was measured against the vendored
 ufbx parser rather than assumed. Six `FbxMaterialConverterUVETest` cases cover malformed input,
 material-free files, classic transparency, PBR factors with a file reference and an unnamed
-procedural map, clamping, and multi-material order. Publishing FBX materials as `.uvmat` assets
-(and resolving their texture references to GUIDs) is not part of this step, and broader
-binary/DCC fixture coverage remains partial; no new importer is needed to duplicate those
-working mesh/skin/animation paths. `[x]` **glTF animation conversion** samples channels
+procedural map, clamping, and multi-material order. `[x]` **Publication (WP7, 2026-10-14,
+drafted without a compiler):** the FBX importer now receives the asset database
+(`IAssetImporterUVE::RegisterDatabaseAwareImporterUVE`, an additive registration kind that
+`AssetImporterUVE::ImportUVE` dispatches with the same database it registers the destination
+in; plain importers are untouched) and publishes one `<model-stem>.<sanitised-material-name>.uvmat`
+per material beside the `.uvmodel`, in FBX order, before the mesh is written (a failure leaves no
+model pointing at missing materials). Each authored texture filename is resolved by
+`Detail::ResolveImportedSiblingTextureGuidUVE`: the only accepted evidence is a registered
+`.uvtex` with the same stem in the destination's directory; otherwise the slot stays
+`kInvalidAssetGuidUVE` and a warning names the material, slot and file - the importer never
+registers, creates or guesses a texture GUID. `MeshAssetUVE::materialGuids` carries the slots
+(serialised as a tagged `UVMT` trailing section, so meshes without materials still write
+byte-identical files and older files load unchanged). Re-import is idempotent because the
+material paths are deterministic and `RegisterUVE` is idempotent per path. Tests:
+`FbxImportPublishesOneUvmatPerMaterial`, `FbxImportWithoutMaterialsPublishesOnlyTheModel`,
+`FbxImportResolvesSiblingTextureGuid`, `FbxImportLeavesUnresolvedTextureEmptyWithDiagnostic`,
+`FbxImportIsIdempotentAcrossReimport` (`FbxImporterUVETest`), `MeshAssetRoundTripsMaterialGuids`,
+`RegisterDatabaseAwareImporterUVE_ReceivesTheDatabaseAndSharesTheKeySpace`. Broader binary/DCC
+fixture coverage remains partial; no new importer is needed to duplicate those working
+mesh/skin/animation paths. `[x]` **glTF animation conversion** samples channels
 into clips. `[x]` A skeleton asset exists separately from the mesh (`skeleton_asset_uve`).
 `[x]` A font asset exists —
 `FontAssetUVE` (raw sfnt bytes + family name, `.uvfont` envelope, `AssetKindUVE::Font`) with a

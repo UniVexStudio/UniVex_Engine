@@ -224,6 +224,9 @@ using ImportFuncUVE = std::function<bool(const std::filesystem::path&, const std
 struct AssetImporterUVE::ImplUVE {
     mutable std::mutex mutex;
     std::unordered_map<std::string, ImportFuncUVE> importers;
+    /// WP7: importers that need the asset database (the FBX importer). Shares the key space with
+    /// `importers`: registering either kind erases the other for that extension.
+    std::unordered_map<std::string, IAssetImporterUVE::DatabaseAwareImportFuncUVE> databaseAwareImporters;
 };
 
 AssetImporterUVE::AssetImporterUVE() : m_impl(std::make_unique<ImplUVE>()) {
@@ -276,7 +279,20 @@ void AssetImporterUVE::RegisterImporterUVE(
         return;
     }
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
+    m_impl->databaseAwareImporters.erase(normalizedExtension);
     m_impl->importers[std::move(normalizedExtension)] = std::move(importFunc);
+}
+
+void AssetImporterUVE::RegisterDatabaseAwareImporterUVE(std::string sourceExtension,
+                                                        DatabaseAwareImportFuncUVE importFunc) {
+    std::string normalizedExtension = NormalizeExtensionUVE(std::move(sourceExtension));
+    if (normalizedExtension.empty() || !importFunc) {
+        UVE_ERROR("AssetImporterUVE: rejected database-aware importer registration with an empty extension or callback");
+        return;
+    }
+    const std::lock_guard<std::mutex> lock(m_impl->mutex);
+    m_impl->importers.erase(normalizedExtension);
+    m_impl->databaseAwareImporters[std::move(normalizedExtension)] = std::move(importFunc);
 }
 
 AssetImportSourceClassificationUVE AssetImporterUVE::ClassifySourceUVE(
@@ -288,7 +304,9 @@ AssetImportSourceClassificationUVE AssetImporterUVE::ClassifySourceUVE(
     {
         const std::lock_guard<std::mutex> lock(m_impl->mutex);
         classification.importerRegistered =
-            m_impl->importers.find(classification.normalizedExtension) != m_impl->importers.end();
+            m_impl->importers.find(classification.normalizedExtension) != m_impl->importers.end() ||
+            m_impl->databaseAwareImporters.find(classification.normalizedExtension) !=
+                m_impl->databaseAwareImporters.end();
     }
 
     if (classification.requiresFormatSpecificParser) {
@@ -316,22 +334,29 @@ AssetGuidUVE AssetImporterUVE::ImportUVE(const std::filesystem::path& sourcePath
                                           IAssetDatabaseUVE& assetDatabase,
                                           const AssetImportSettingsUVE& settings) {
     ImportFuncUVE importFunc;
+    DatabaseAwareImportFuncUVE databaseAwareImportFunc;
     const std::string key = NormalizeExtensionUVE(sourcePath.extension().string());
     {
         const std::lock_guard<std::mutex> lock(m_impl->mutex);
         const auto it = m_impl->importers.find(key);
-        if (it == m_impl->importers.end()) {
+        const auto awareIt = m_impl->databaseAwareImporters.find(key);
+        if (it == m_impl->importers.end() && awareIt == m_impl->databaseAwareImporters.end()) {
             UVE_ERROR("AssetImporterUVE: no importer registered for extension \"{}\" (source \"{}\")", key,
                        sourcePath.string());
             return kInvalidAssetGuidUVE;
         }
-        importFunc = it->second;
+        if (awareIt != m_impl->databaseAwareImporters.end()) {
+            databaseAwareImportFunc = awareIt->second;
+        } else {
+            importFunc = it->second;
+        }
     }
 
     bool imported = false;
     std::string failureReason;
     try {
-        imported = importFunc(sourcePath, destinationPath, settings);
+        imported = databaseAwareImportFunc ? databaseAwareImportFunc(sourcePath, destinationPath, assetDatabase, settings)
+                                           : importFunc(sourcePath, destinationPath, settings);
     } catch (const std::exception& exception) {
         failureReason = "importer threw: " + std::string(exception.what());
     } catch (...) {
