@@ -694,9 +694,22 @@ triangulated static/skinned meshes, bone hierarchy/rest poses and sampled animat
 mesh import publishes `.uvmodel`, while editor/retarget consumers use the skeleton/take readers.
 Eight `FbxMeshConverterUVETest` cases cover axis/unit conversion, instances, skins, skeletons,
 animation-only files, takes, failure atomicity and publication. The previous static-only claim
-was stale. Materials/textures are not converted (external/embedded file reads are disabled),
-and broader binary/DCC fixture coverage remains partial; no new importer is needed to duplicate
-those working mesh/skin/animation paths. `[x]` **glTF animation conversion** samples channels
+was stale. `[/]` Materials are now converted: `ReadFbxMaterialsUVE` returns `FbxMaterialUVE`
+(name, `MaterialAssetUVE` PBR factors, and the authored texture references) for every material
+in the file, mapping albedo from PBR base color or the classic diffuse color, roughness from the
+parser's values (including its Shininess derivation), emission colour plus its authored energy,
+and transparency from the classic `TransparencyFactor` or a PBR opacity below one. Texture
+*payloads* are still never read (no external files, `ignore_embedded`), so the reader reports the
+file's own relative filenames and never fabricates an `AssetGuidUVE`; a map with no usable file
+reference (procedural/layered/unnamed) leaves its filename empty and sets
+`hasNonFileTexture`. Albedo channels outside `MaterialAssetUVE`'s validated [0,1] range are
+clamped with `albedoClamped` set, and each expected value was measured against the vendored
+ufbx parser rather than assumed. Six `FbxMaterialConverterUVETest` cases cover malformed input,
+material-free files, classic transparency, PBR factors with a file reference and an unnamed
+procedural map, clamping, and multi-material order. Publishing FBX materials as `.uvmat` assets
+(and resolving their texture references to GUIDs) is not part of this step, and broader
+binary/DCC fixture coverage remains partial; no new importer is needed to duplicate those
+working mesh/skin/animation paths. `[x]` **glTF animation conversion** samples channels
 into clips. `[x]` A skeleton asset exists separately from the mesh (`skeleton_asset_uve`).
 `[x]` A font asset exists —
 `FontAssetUVE` (raw sfnt bytes + family name, `.uvfont` envelope, `AssetKindUVE::Font`) with a
