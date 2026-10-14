@@ -401,6 +401,13 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     // Timeline semaphores, when the device enabled the 1.2 feature and resolved its entries.
     std::unordered_map<std::uint32_t, VkSemaphore> userSemaphores;
     std::uint32_t nextUserSemaphore = 1U;
+    // Timestamp queries: one single-sample pool per handle (created by CreateQueryUVE) plus the
+    // device's tick length, so results can be reported in nanoseconds like every other backend.
+    std::unordered_map<std::uint32_t, VkQueryPool> userQueries;
+    std::unordered_map<std::uint32_t, RenderQueryKindUVE> userQueryKinds;
+    std::uint32_t nextUserQuery = 1U;
+    double timestampPeriodNs = 1.0;
+    bool timestampQueriesSupported = false;
 
     bool usable = false; // signed-off only by the very last bring-up step
     std::uint32_t lastPresentedImageIndex = UINT32_MAX; // UINT32_MAX = no frame presented yet
@@ -1712,6 +1719,8 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
             }
             physicalDevice = candidate;
             queueFamilyIndex = family;
+            // Timestamp queries need a queue family whose timestamps are actually valid.
+            timestampQueriesSupported = queueFamilies[family].timestampValidBits != 0U;
             found = true;
             break;
         }
@@ -1746,6 +1755,10 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     maxSamplerAnisotropy = deviceProperties.limits.maxSamplerAnisotropy;
     maxTextureArrayLayers = deviceProperties.limits.maxImageArrayLayers;
     maxCubemapSize = deviceProperties.limits.maxImageDimensionCube;
+    // ns per timestamp tick (Vulkan reports raw ticks); kept for GetQueryResultUVE.
+    timestampPeriodNs = deviceProperties.limits.timestampPeriod > 0.0F
+                            ? static_cast<double>(deviceProperties.limits.timestampPeriod)
+                            : 1.0;
     maxColorAttachments = // Tier 2.4: fail closed past the device's color limit
         deviceProperties.limits.maxColorAttachments > 0U
             ? deviceProperties.limits.maxColorAttachments
@@ -2196,6 +2209,12 @@ void CollectBlockMembersUVE(const SpvReflectBlockVariable& block, const VkShader
 void VulkanRenderDeviceUVE::ImplUVE::DestroyAllResourcesUVE() {
     // Caller (the destructor) has already drained the queue — destruction must never race an
     // in-flight submit holding any of these objects.
+    for (const auto &[id, pool] : userQueries) {
+        (void)id;
+        vk.vkDestroyQueryPool(device, pool, nullptr);
+    }
+    userQueries.clear();
+    userQueryKinds.clear();
     for (const auto &[id, semaphore] : userSemaphores) {
         (void)id;
         vk.vkDestroySemaphore(device, semaphore, nullptr);
@@ -6176,6 +6195,11 @@ RenderDeviceCapabilitiesUVE VulkanRenderDeviceUVE::GetCapabilitiesUVE() const no
     if (m_impl->timelineSemaphoresRequested) {
         caps.timelineSemaphores = RenderFeatureSupportUVE::Native;
     }
+    if (m_impl->timestampQueriesSupported) {
+        caps.timestampQueries = RenderFeatureSupportUVE::Native;
+    }
+    // occlusionQueries stays Unsupported: vkCmdBeginQuery/vkCmdEndQuery must bracket the caller's
+    // own draws inside ONE command buffer, and this device-level API cannot promise that.
     // Core-since-1.0 blit entry: format-specific blit support is still checked per call, so the
     // capabilities advertise the transfer paths this backend actually implements.
     if (m_impl->vk.vkCmdBlitImage != nullptr) {
@@ -6264,6 +6288,201 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::DestroyFenceUVE(FenceHandleUVE h
     m_impl->userFences.erase(handle.value);
     return RenderOperationResultUVE::Success;
 }
+namespace {
+/// One image-layout transition for the Tier 2.6 transfer paths. The range is always an explicit
+/// subresource set so a blit never rewrites the tracked layout of untouched mips or layers.
+[[nodiscard]] VkImageMemoryBarrier MakeTransferBarrierUVE(const VkImage image,
+                                                          const VkImageLayout oldLayout,
+                                                          const VkImageLayout newLayout,
+                                                          const VkAccessFlags sourceAccess,
+                                                          const VkAccessFlags destinationAccess,
+                                                          const VkImageSubresourceRange range) {
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.srcAccessMask = sourceAccess;
+    barrier.dstAccessMask = destinationAccess;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange = range;
+    return barrier;
+}
+
+[[nodiscard]] VkImageSubresourceRange MakeColorSubresourceRangeUVE(const VkImageSubresourceLayers layers,
+                                                                   const std::uint32_t layerCount) {
+    return {VK_IMAGE_ASPECT_COLOR_BIT, layers.mipLevel, 1U, layers.baseArrayLayer, layerCount};
+}
+
+/// True when the image's channel order stores B before R in memory, i.e. the byte-order rule the
+/// RHI's R,G,B,A contract has to compensate for on both upload and readback.
+[[nodiscard]] bool IsBgraOrderFormatUVE(const VkFormat format) noexcept {
+    return format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB;
+}
+
+/// Formats whose linear-tiling features must honor both blit directions plus the filter the
+/// caller asked for, or the operation is refused instead of silently changing filter.
+[[nodiscard]] bool SupportsBlitUVE(const VkFunctionsUVE &vk, const VkPhysicalDevice physicalDevice,
+                                   const VkFormat format, const VkImageUsageFlags requiredFeature) {
+    VkFormatProperties properties{};
+    vk.vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &properties);
+    return (properties.optimalTilingFeatures & requiredFeature) == requiredFeature;
+}
+} // namespace
+
+/// Transient-command helpers for the Tier 2.6 transfer paths. They are templates over the
+/// deduced ImplUVE type on purpose: the public device header stays free of Vulkan types, and the
+/// instantiation point (inside VulkanRenderDeviceUVE members) has access to the private impl.
+template <typename ImplLikeUVE>
+[[nodiscard]] VkCommandBuffer BeginTransientCommandsUVE(ImplLikeUVE &impl) {
+    VkCommandBufferAllocateInfo allocate{};
+    allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocate.commandPool = impl.commandPool;
+    allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocate.commandBufferCount = 1U;
+    VkCommandBuffer commands = VK_NULL_HANDLE;
+    if (impl.vk.vkAllocateCommandBuffers(impl.device, &allocate, &commands) != VK_SUCCESS ||
+        commands == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    VkCommandBufferBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (impl.vk.vkBeginCommandBuffer(commands, &begin) != VK_SUCCESS) {
+        impl.vk.vkFreeCommandBuffers(impl.device, impl.commandPool, 1U, &commands);
+        return VK_NULL_HANDLE;
+    }
+    return commands;
+}
+
+template <typename ImplLikeUVE>
+[[nodiscard]] RenderOperationResultUVE SubmitTransientCommandsUVE(ImplLikeUVE &impl,
+                                                                 VkCommandBuffer commands) {
+    bool ok = impl.vk.vkEndCommandBuffer(commands) == VK_SUCCESS;
+    if (ok) {
+        VkSubmitInfo submit{};
+        submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit.commandBufferCount = 1U;
+        submit.pCommandBuffers = &commands;
+        ok = impl.vk.vkQueueSubmit(impl.presentQueue, 1U, &submit, VK_NULL_HANDLE) == VK_SUCCESS;
+        if (ok) {
+            ok = impl.vk.vkQueueWaitIdle(impl.presentQueue) == VK_SUCCESS;
+        }
+    }
+    impl.vk.vkFreeCommandBuffers(impl.device, impl.commandPool, 1U, &commands);
+    return ok ? RenderOperationResultUVE::Success : RenderOperationResultUVE::SystemError;
+}
+
+RenderOperationResultUVE VulkanRenderDeviceUVE::CreateQueryUVE(const RenderQueryKindUVE kind,
+                                                              QueryHandleUVE &output) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    if (kind != RenderQueryKindUVE::Timestamp && kind != RenderQueryKindUVE::AnySamplesPassed)
+        return RenderOperationResultUVE::InvalidArgument;
+    if (kind == RenderQueryKindUVE::AnySamplesPassed) {
+        // Documented boundary: an occlusion query is only meaningful around the caller's own
+        // draws, which this device-level API cannot bracket in one command buffer.
+        return RenderOperationResultUVE::Unsupported;
+    }
+    auto &impl = *m_impl;
+    if (GetCapabilitiesUVE().timestampQueries != RenderFeatureSupportUVE::Native)
+        return RenderOperationResultUVE::Unsupported;
+    if (impl.nextUserQuery == 0U)
+        return RenderOperationResultUVE::SystemError;
+    VkQueryPoolCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+    info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    info.queryCount = 1U;
+    VkQueryPool pool = VK_NULL_HANDLE;
+    if (impl.vk.vkCreateQueryPool(impl.device, &info, nullptr, &pool) != VK_SUCCESS ||
+        pool == VK_NULL_HANDLE) {
+        return RenderOperationResultUVE::SystemError;
+    }
+    const QueryHandleUVE handle{impl.nextUserQuery++};
+    impl.userQueries.emplace(handle.value, pool);
+    impl.userQueryKinds.emplace(handle.value, kind);
+    output = handle;
+    return RenderOperationResultUVE::Success;
+}
+
+RenderOperationResultUVE VulkanRenderDeviceUVE::BeginQueryUVE(const QueryHandleUVE query) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    if (!m_impl->userQueries.contains(query.value))
+        return RenderOperationResultUVE::InvalidHandle;
+    return RenderOperationResultUVE::Unsupported; // occlusion bracket, see CreateQueryUVE
+}
+
+RenderOperationResultUVE VulkanRenderDeviceUVE::EndQueryUVE(const QueryHandleUVE query) {
+    return BeginQueryUVE(query);
+}
+
+RenderOperationResultUVE VulkanRenderDeviceUVE::WriteTimestampUVE(const QueryHandleUVE query) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto &impl = *m_impl;
+    const auto found = impl.userQueries.find(query.value);
+    if (found == impl.userQueries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    const auto kind = impl.userQueryKinds.find(query.value);
+    if (kind == impl.userQueryKinds.end() || kind->second != RenderQueryKindUVE::Timestamp)
+        return RenderOperationResultUVE::InvalidArgument;
+    // A transient submission is the queue-ordered point in time a CPU-visible timestamp means:
+    // reset it, write it at the end of everything submitted so far, and let the caller read the
+    // result when this returns.
+    const VkCommandBuffer commands = BeginTransientCommandsUVE(impl);
+    if (commands == VK_NULL_HANDLE)
+        return RenderOperationResultUVE::SystemError;
+    impl.vk.vkCmdResetQueryPool(commands, found->second, 0U, 1U);
+    impl.vk.vkCmdWriteTimestamp(commands, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, found->second, 0U);
+    return SubmitTransientCommandsUVE(impl, commands);
+}
+
+RenderOperationResultUVE VulkanRenderDeviceUVE::GetQueryResultUVE(const QueryHandleUVE query,
+                                                                  RenderQueryResultUVE &output,
+                                                                  const bool wait) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto &impl = *m_impl;
+    const auto found = impl.userQueries.find(query.value);
+    if (found == impl.userQueries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    const auto kind = impl.userQueryKinds.find(query.value);
+    if (kind == impl.userQueryKinds.end() || kind->second != RenderQueryKindUVE::Timestamp)
+        return RenderOperationResultUVE::InvalidArgument;
+    std::uint64_t ticks = 0U;
+    VkQueryResultFlags flags = VK_QUERY_RESULT_64_BIT;
+    if (wait) {
+        flags |= VK_QUERY_RESULT_WAIT_BIT;
+    }
+    const VkResult result = impl.vk.vkGetQueryPoolResults(impl.device, found->second, 0U, 1U,
+                                                          sizeof(ticks), &ticks, sizeof(ticks), flags);
+    if (result == VK_NOT_READY)
+        return RenderOperationResultUVE::NotReady;
+    if (result != VK_SUCCESS)
+        return RenderOperationResultUVE::SystemError;
+    RenderQueryResultUVE value{};
+    value.kind = RenderQueryKindUVE::Timestamp;
+    value.value = static_cast<std::uint64_t>(
+        static_cast<double>(ticks) * impl.timestampPeriodNs + 0.5);
+    output = value;
+    return RenderOperationResultUVE::Success;
+}
+
+RenderOperationResultUVE VulkanRenderDeviceUVE::DestroyQueryUVE(const QueryHandleUVE query) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto &impl = *m_impl;
+    const auto found = impl.userQueries.find(query.value);
+    if (found == impl.userQueries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    impl.vk.vkDestroyQueryPool(impl.device, found->second, nullptr);
+    impl.userQueries.erase(found);
+    impl.userQueryKinds.erase(query.value);
+    return RenderOperationResultUVE::Success;
+}
+
 RenderOperationResultUVE VulkanRenderDeviceUVE::CreateSemaphoreUVE(const SemaphoreDescUVE &desc,
                                                                    SemaphoreHandleUVE &output) {
     if (!IsUsableUVE())
@@ -6424,92 +6643,6 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::CopyBufferUVE(const BufferCopyDe
     impl.vk.vkFreeCommandBuffers(impl.device, impl.commandPool, 1U, &commands);
     return ok ? RenderOperationResultUVE::Success : RenderOperationResultUVE::SystemError;
 }
-namespace {
-/// One image-layout transition for the Tier 2.6 transfer paths. The range is always an explicit
-/// subresource set so a blit never rewrites the tracked layout of untouched mips or layers.
-[[nodiscard]] VkImageMemoryBarrier MakeTransferBarrierUVE(const VkImage image,
-                                                          const VkImageLayout oldLayout,
-                                                          const VkImageLayout newLayout,
-                                                          const VkAccessFlags sourceAccess,
-                                                          const VkAccessFlags destinationAccess,
-                                                          const VkImageSubresourceRange range) {
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.srcAccessMask = sourceAccess;
-    barrier.dstAccessMask = destinationAccess;
-    barrier.oldLayout = oldLayout;
-    barrier.newLayout = newLayout;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = image;
-    barrier.subresourceRange = range;
-    return barrier;
-}
-
-[[nodiscard]] VkImageSubresourceRange MakeColorSubresourceRangeUVE(const VkImageSubresourceLayers layers,
-                                                                   const std::uint32_t layerCount) {
-    return {VK_IMAGE_ASPECT_COLOR_BIT, layers.mipLevel, 1U, layers.baseArrayLayer, layerCount};
-}
-
-/// True when the image's channel order stores B before R in memory, i.e. the byte-order rule the
-/// RHI's R,G,B,A contract has to compensate for on both upload and readback.
-[[nodiscard]] bool IsBgraOrderFormatUVE(const VkFormat format) noexcept {
-    return format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB;
-}
-
-/// Formats whose linear-tiling features must honor both blit directions plus the filter the
-/// caller asked for, or the operation is refused instead of silently changing filter.
-[[nodiscard]] bool SupportsBlitUVE(const VkFunctionsUVE &vk, const VkPhysicalDevice physicalDevice,
-                                   const VkFormat format, const VkImageUsageFlags requiredFeature) {
-    VkFormatProperties properties{};
-    vk.vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &properties);
-    return (properties.optimalTilingFeatures & requiredFeature) == requiredFeature;
-}
-} // namespace
-
-/// Transient-command helpers for the Tier 2.6 transfer paths. They are templates over the
-/// deduced ImplUVE type on purpose: the public device header stays free of Vulkan types, and the
-/// instantiation point (inside VulkanRenderDeviceUVE members) has access to the private impl.
-template <typename ImplLikeUVE>
-[[nodiscard]] VkCommandBuffer BeginTransientCommandsUVE(ImplLikeUVE &impl) {
-    VkCommandBufferAllocateInfo allocate{};
-    allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocate.commandPool = impl.commandPool;
-    allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocate.commandBufferCount = 1U;
-    VkCommandBuffer commands = VK_NULL_HANDLE;
-    if (impl.vk.vkAllocateCommandBuffers(impl.device, &allocate, &commands) != VK_SUCCESS ||
-        commands == VK_NULL_HANDLE) {
-        return VK_NULL_HANDLE;
-    }
-    VkCommandBufferBeginInfo begin{};
-    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    if (impl.vk.vkBeginCommandBuffer(commands, &begin) != VK_SUCCESS) {
-        impl.vk.vkFreeCommandBuffers(impl.device, impl.commandPool, 1U, &commands);
-        return VK_NULL_HANDLE;
-    }
-    return commands;
-}
-
-template <typename ImplLikeUVE>
-[[nodiscard]] RenderOperationResultUVE SubmitTransientCommandsUVE(ImplLikeUVE &impl,
-                                                                 VkCommandBuffer commands) {
-    bool ok = impl.vk.vkEndCommandBuffer(commands) == VK_SUCCESS;
-    if (ok) {
-        VkSubmitInfo submit{};
-        submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit.commandBufferCount = 1U;
-        submit.pCommandBuffers = &commands;
-        ok = impl.vk.vkQueueSubmit(impl.presentQueue, 1U, &submit, VK_NULL_HANDLE) == VK_SUCCESS;
-        if (ok) {
-            ok = impl.vk.vkQueueWaitIdle(impl.presentQueue) == VK_SUCCESS;
-        }
-    }
-    impl.vk.vkFreeCommandBuffers(impl.device, impl.commandPool, 1U, &commands);
-    return ok ? RenderOperationResultUVE::Success : RenderOperationResultUVE::SystemError;
-}
-
 RenderOperationResultUVE VulkanRenderDeviceUVE::BlitTextureUVE(const TextureBlitDescUVE &blit) {
     if (!IsUsableUVE()) {
         return RenderOperationResultUVE::DeviceUnavailable;

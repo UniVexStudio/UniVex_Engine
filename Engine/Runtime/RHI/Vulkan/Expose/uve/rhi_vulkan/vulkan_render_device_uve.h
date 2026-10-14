@@ -233,6 +233,18 @@ public:
     [[nodiscard]] RenderOperationResultUVE InsertFenceUVE(FenceHandleUVE &) override;
     [[nodiscard]] RenderOperationResultUVE WaitFenceUVE(FenceHandleUVE, std::uint64_t) override;
     [[nodiscard]] RenderOperationResultUVE DestroyFenceUVE(FenceHandleUVE) override;
+    /// Timestamp queries: one single-sample `VK_QUERY_TYPE_TIMESTAMP` pool per handle.
+    /// `WriteTimestampUVE` rides a transient reset+write submission (the queue-ordered point in
+    /// time), and results are converted from the device's tick period to nanoseconds. Occlusion
+    /// queries stay Unsupported: `vkCmdBeginQuery`/`vkCmdEndQuery` must bracket the caller's own
+    /// draws inside ONE command buffer, which this device-level API cannot promise.
+    [[nodiscard]] RenderOperationResultUVE CreateQueryUVE(RenderQueryKindUVE, QueryHandleUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE BeginQueryUVE(QueryHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE EndQueryUVE(QueryHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE WriteTimestampUVE(QueryHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE GetQueryResultUVE(QueryHandleUVE, RenderQueryResultUVE &,
+                                                             bool = false) override;
+    [[nodiscard]] RenderOperationResultUVE DestroyQueryUVE(QueryHandleUVE) override;
     /// Timeline semaphores (Vulkan 1.2 feature): real device counters with CPU-visible waits.
     /// Every call reports Unsupported until the feature is enabled and its entry points resolve,
     /// so a 1.0/1.1 host never half-implements the contract.
@@ -246,8 +258,8 @@ public:
     [[nodiscard]] RenderOperationResultUVE DestroySemaphoreUVE(SemaphoreHandleUVE) override;
     [[nodiscard]] RenderOperationResultUVE WaitIdleUVE() override;
     [[nodiscard]] RenderOperationResultUVE GetSurfaceInfoUVE(RenderSurfaceInfoUVE &) const override;
-    // Result queries (timestamps / occlusion) retain the interface's explicit Unsupported
-    // contract until their native paths are supported; capabilities never advertise them.
+    // Occlusion queries retain the interface's explicit Unsupported contract; the capability
+    // never advertises them.
 
     VulkanRenderDeviceUVE(const VulkanRenderDeviceUVE&) = delete;
     VulkanRenderDeviceUVE& operator=(const VulkanRenderDeviceUVE&) = delete;

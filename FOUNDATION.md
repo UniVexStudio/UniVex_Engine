@@ -795,7 +795,15 @@ untouched. Missing capabilities explicitly return `Unsupported`, never pretend s
   Depth/stencil blits and format conversion stay outside this color-transfer contract.
 - **Queries:** real GL GPU timestamps and any-sample occlusion with state/lifetime validation
   and nonblocking result polling. Null records query operations but NEVER invents visibility or
-  GPU nanoseconds. Vulkan currently advertises queries unsupported.
+  GPU nanoseconds. `[/]` Vulkan now implements timestamp queries: one
+  `VK_QUERY_TYPE_TIMESTAMP` pool per handle, `WriteTimestampUVE` riding a transient
+  reset+write submission (the queue-ordered point in time a CPU-visible timestamp means),
+  results converted from the device's tick period to nanoseconds with `NotReady` for a
+  non-blocking read, gated on the chosen queue family's `timestampValidBits`
+  (`TimestampQueriesReportRealTicksAndRefuseOcclusion`). Occlusion queries stay explicitly
+  `Unsupported` there: `vkCmdBeginQuery`/`vkCmdEndQuery` must bracket the caller's own draws in
+  ONE command buffer, and a device-level begin/end pair that reported "0 samples" would be an
+  invented visibility result rather than information about real geometry.
 - **Timeline semaphores:** `SemaphoreDescUVE` plus `CreateSemaphoreUVE` /
   `GetSemaphoreCounterUVE` / `SignalSemaphoreUVE` / `WaitSemaphoreUVE` /
   `DestroySemaphoreUVE` carry a monotonic 64-bit counter through the common API.
@@ -825,8 +833,9 @@ verification gap, not the explicitly unsupported Vulkan operations. Semaphores/t
 are implemented as timeline objects (`CreateSemaphoreUVE` and friends, above); the
 `[ ]` that remains is *submission-level* queue sync (binary semaphores as `SubmitUVE`
 parameters), which is not closed by a CPU-visible counter. Vulkan texture-transfer parity is
-implemented and awaiting native CI execution; Vulkan query parity (timestamps /
-any-samples-passed) remains explicitly partial.
+implemented and awaiting native CI execution; Vulkan timestamps are implemented and awaiting
+the same native run, while Vulkan occlusion queries and GPU/Hi-Z occlusion consumers remain
+explicitly unsupported/absent.
 
 `[/]` **Stencil state** — `StencilStateUVE`/`StencilFaceStateUVE` are appended to both
 pipeline descriptors with disabled legacy defaults. Front/back compare, operations,
