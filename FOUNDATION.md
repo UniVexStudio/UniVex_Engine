@@ -795,7 +795,7 @@ verification gap, not the explicitly unsupported Vulkan operations. Semaphores/t
 remain `[ ]`; they are not closed by a binary fence or a surface metadata view. General
 Vulkan texture-transfer/query parity remains explicitly partial.
 
-`[x]` **Stencil state** — `StencilStateUVE`/`StencilFaceStateUVE` are appended to both
+`[/]` **Stencil state** — `StencilStateUVE`/`StencilFaceStateUVE` are appended to both
 pipeline descriptors with disabled legacy defaults. Front/back compare, operations,
 8-bit masks and references are validated before publication. `Depth24Stencil8` is the
 combined attachment format, and `RenderPassDescUVE::clearStencil` is governed by the
@@ -806,7 +806,18 @@ while stencil pipelines on its classic path fail explicitly. Five CPU
 `StencilStateUVETest` cases, one GL pixel-mask test and one Vulkan creation test were
 added. Local full verification: **4,133 CTest cases, zero failures, seven existing
 Vulkan skips** (2026-10-13); native GL/Vulkan execution is pending graphics CI and is
-not claimed from the local Null result.
+not claimed from the local Null result. The subsequent native CI build failed before tests;
+local strict GL syntax checks reproduced missing post-1.1 stencil symbols and a shifted
+compute-record aggregate initializer. Stencil functions now use `GlFunctionsUVE`'s required
+proc table; compute records use named field assignment. Packed depth/stencil discard now
+passes separate depth and stencil invalidation tokens, with capacity for both aspects.
+`GlFunctionsUVETest.StencilSymbolsAreLoadedAndRequiredForTheBaseline` passed locally
+without a driver; strict syntax checks passed for the GL loader, command buffer, render
+device and full GL test translation unit. A native depth/stencil discard regression joins
+the pixel-mask test. After these corrections (2026-10-14), full CPU build/CTest passed:
+**4,144 cases, zero failures, seven existing Vulkan skips**. Status remains `[/]` until
+native graphics CI verifies the backend tests; downloaded headers used for syntax checks
+are ignored build artifacts, not a replacement for GL/Vulkan execution.
 
 ### Command recording and backends
 

@@ -78,7 +78,7 @@ private:
     // Tier 2.5: GL_COLOR_ATTACHMENTi/GL_DEPTH_ATTACHMENT enums of the open FBO pass's DontCare
     // attachments (built at Begin, consumed at End; empty for default-framebuffer passes — the
     // window system owns that storage). A null invalidate entry only skips the hint.
-    std::array<GLenum, 1U + kExtraColorAttachmentCountUVE + 1U> m_passDiscardAttachments{};
+    std::array<GLenum, 1U + kExtraColorAttachmentCountUVE + 2U> m_passDiscardAttachments{};
     std::uint32_t m_passDiscardCount = 0U;
     GLuint m_currentProgram = 0;
     GLuint m_currentVao = 0;
