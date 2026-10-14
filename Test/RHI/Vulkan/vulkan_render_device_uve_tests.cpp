@@ -4819,7 +4819,10 @@ TEST_F(VulkanRenderDeviceUVETest, BlitTextureCopiesAnExactRegionAndReadbackMatch
     constexpr std::uint32_t kSize = 4U;
     const auto sourceBytes = MakeBlockedSourceUVE();
     const auto source = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize), sourceBytes);
-    const auto destination = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize));
+    // A Vulkan image created without an upload has undefined contents, so the "untouched texels"
+    // assertions below need a destination whose zeroes are real, not assumed.
+    const std::array<std::byte, kSize * kSize * 4U> zeroes{};
+    const auto destination = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize), zeroes);
     ASSERT_NE(source, kInvalidTextureHandleUVE);
     ASSERT_NE(destination, kInvalidTextureHandleUVE);
 
@@ -4832,7 +4835,7 @@ TEST_F(VulkanRenderDeviceUVETest, BlitTextureCopiesAnExactRegionAndReadbackMatch
     TextureBlitDescUVE blit{};
     blit.source = source;
     blit.destination = destination;
-    blit.sourceRegion = {0U, 0U, 0U, 1U, 2U, 2U};
+    blit.sourceRegion = {0U, 0U, 0U, 0U, 2U, 2U}; // mip, layer, x, y, width, height
     blit.destinationRegion = {0U, 0U, 2U, 2U, 2U, 2U};
     blit.filter = BlitFilterUVE::Point;
     EXPECT_EQ(device->BlitTextureUVE(blit), ResultUVE::Success);
@@ -4936,7 +4939,11 @@ TEST_F(VulkanRenderDeviceUVETest, GenerateMipmapsRebuildsEveryLevelWithTheDownsa
     constexpr std::uint32_t kMipLevels = 3U;
     const auto sourceBytes = MakeBlockedSourceUVE();
     const auto source = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize), sourceBytes);
-    const auto mipmapped = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize, kMipLevels));
+    // The common upload contract requires every declared level up front
+    // (ValidateTextureUploadUVE), so the mip chain starts from a real, zeroed allocation that the
+    // seeding blit then overwrites at level 0.
+    const std::array<std::byte, (4U * 4U + 2U * 2U + 1U) * 4U> mipmappedBytes{};
+    const auto mipmapped = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize, kMipLevels), mipmappedBytes);
     const auto singleLevel = device->CreateTextureUVE(MakeTransferTextureDescUVE(kSize), sourceBytes);
     ASSERT_NE(source, kInvalidTextureHandleUVE);
     ASSERT_NE(mipmapped, kInvalidTextureHandleUVE);
