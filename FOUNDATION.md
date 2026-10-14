@@ -791,7 +791,14 @@ untouched. Missing capabilities explicitly return `Unsupported`, never pretend s
   `BlitTextureLinearScalingAndRejectionsKeepTheirContracts`,
   `GenerateMipmapsRebuildsEveryLevelWithTheDownsampledAverage`, plus strict syntax checks and
   a driver-free Null/`GeometryPipeline`-style CPU path). The Vulkan cases need a real ICD —
-  the development host has none — so their execution is verified by native CI, not locally.
+  the development host has none, so native CI verified them: run `38518413266` on `91cb7d0a`
+  passed the native GL geometry pixel test and the Vulkan point/linear blit, refusal and
+  readback assertions, and failed only two of the three new fixture cases, both of which were
+  test bugs rather than backend bugs — a `TextureRegionUVE` initializer with `y` in the wrong
+  position, "untouched texel" assertions against a Vulkan image whose contents were never
+  defined, and a multi-mip texture created without the initial upload that
+  `ValidateTextureUploadUVE` requires. Those fixtures now seed every level and region they
+  assert on, and are awaiting a green rerun.
   Depth/stencil blits and format conversion stay outside this color-transfer contract.
 - **Queries:** real GL GPU timestamps and any-sample occlusion with state/lifetime validation
   and nonblocking result polling. Null records query operations but NEVER invents visibility or
