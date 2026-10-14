@@ -724,6 +724,59 @@ TEST(NullRenderDeviceUVETest, PointAndStripTopologiesAreAcceptedAndTheirPrimitiv
     EXPECT_FALSE(IsVertexCountCompleteForTopologyUVE(static_cast<PrimitiveTopologyUVE>(0xFFU), 0U));
 }
 
+TEST(NullRenderDeviceUVETest, PackedVertexAttributeFormatsHaveExactWidthsAndFitStrideChecks) {
+    // Byte widths drive the stride validation, so a packed layout that would have been
+    // rejected under the old float-only arithmetic is accepted exactly when it fits.
+    struct FormatCaseUVE final {
+        VertexAttributeFormatUVE format;
+        std::uint32_t bytes;
+        std::uint32_t components;
+        bool integer;
+    };
+    constexpr std::array<FormatCaseUVE, 9> kCases{{
+        {VertexAttributeFormatUVE::Float2, 8U, 2U, false},
+        {VertexAttributeFormatUVE::Float3, 12U, 3U, false},
+        {VertexAttributeFormatUVE::Float4, 16U, 4U, false},
+        {VertexAttributeFormatUVE::UByte4Norm, 4U, 4U, false},
+        {VertexAttributeFormatUVE::UShort4, 8U, 4U, true},
+        {VertexAttributeFormatUVE::UInt4, 16U, 4U, true},
+        {VertexAttributeFormatUVE::Short2Norm, 4U, 2U, false},
+        {VertexAttributeFormatUVE::Half2, 4U, 2U, false},
+        {VertexAttributeFormatUVE::Half4, 8U, 4U, false},
+    }};
+    NullRenderDeviceUVE device;
+    const ShaderHandleUVE vertexShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, "vs"});
+    const ShaderHandleUVE fragmentShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Fragment, "fs"});
+    for (const FormatCaseUVE& testCase : kCases) {
+        EXPECT_TRUE(IsVertexAttributeFormatValidUVE(testCase.format));
+        EXPECT_EQ(GetVertexAttributeFormatByteSizeUVE(testCase.format), testCase.bytes);
+        EXPECT_EQ(GetVertexAttributeFormatComponentCountUVE(testCase.format), testCase.components);
+        EXPECT_EQ(IsVertexAttributeFormatIntegerUVE(testCase.format), testCase.integer);
+        const std::array<VertexAttributeUVE, 1> layout{VertexAttributeUVE{"ATTR", testCase.format, 4U}};
+        EXPECT_TRUE(IsVertexLayoutWithinStrideUVE(layout, 4U + testCase.bytes));
+        EXPECT_FALSE(IsVertexLayoutWithinStrideUVE(layout, 4U + testCase.bytes - 1U));
+        PipelineDescUVE desc;
+        desc.vertexShader = vertexShader;
+        desc.fragmentShader = fragmentShader;
+        desc.vertexLayout = {layout.begin(), layout.end()};
+        desc.vertexStride = 4U + testCase.bytes;
+        EXPECT_NE(device.CreatePipelineUVE(desc), kInvalidPipelineHandleUVE);
+    }
+    const auto unknown = static_cast<VertexAttributeFormatUVE>(0xFFU);
+    EXPECT_FALSE(IsVertexAttributeFormatValidUVE(unknown));
+    EXPECT_EQ(GetVertexAttributeFormatByteSizeUVE(unknown), 0U);
+    EXPECT_EQ(GetVertexAttributeFormatComponentCountUVE(unknown), 0U);
+    EXPECT_FALSE(IsVertexAttributeFormatIntegerUVE(unknown));
+    // A 16-byte skinned-vertex tail: colour (4) + joints (8) + padding fits where four floats of
+    // colour alone (16) at the same offset would not.
+    const std::array<VertexAttributeUVE, 2> packedTail{
+        VertexAttributeUVE{"COLOR", VertexAttributeFormatUVE::UByte4Norm, 12U},
+        VertexAttributeUVE{"JOINTS", VertexAttributeFormatUVE::UShort4, 16U}};
+    EXPECT_TRUE(IsVertexLayoutWithinStrideUVE(packedTail, 24U));
+    const std::array<VertexAttributeUVE, 1> floatColour{VertexAttributeUVE{"COLOR", VertexAttributeFormatUVE::Float4, 12U}};
+    EXPECT_FALSE(IsVertexLayoutWithinStrideUVE(floatColour, 24U));
+}
+
 TEST(NullRenderDeviceUVETest, CreatePipelineFromBinaryUVE_UnknownBlendMode_ReturnsInvalidBeforePublication) {
     NullRenderDeviceUVE device;
     const std::array<std::byte, 4> binary{};

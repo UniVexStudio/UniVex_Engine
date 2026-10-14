@@ -128,6 +128,10 @@ struct GlFunctionsUVE {
     PFNGLDRAWBUFFERSPROC glDrawBuffers = nullptr;
     PFNGLCLEARBUFFERFVPROC glClearBufferfv = nullptr;
     PFNGLINVALIDATEFRAMEBUFFERPROC glInvalidateFramebuffer = nullptr;
+    // Integer vertex attributes (GL 3.0 / GLES 3.0 core): the fetch path for UShort4 / UInt4
+    // layouts. Optional like the entries above — a pipeline whose layout needs it is refused
+    // at creation when getProcAddress cannot supply it; IsCompleteUVE() ignores it.
+    PFNGLVERTEXATTRIBIPOINTERPROC glVertexAttribIPointer = nullptr;
 
     // Uniform-related (Increment 21: ShaderManagerUVE's reflection + ICommandBufferUVE's
     // SetUniform*UVE calls) and program-binary-cache (Increment 21's on-disk shader cache).

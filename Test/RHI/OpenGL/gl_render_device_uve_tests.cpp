@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <span>
 #include <string>
@@ -1294,6 +1295,164 @@ void main() {
     renderDevice->DestroyShaderUVE(fragmentShader);
     renderDevice->DestroyShaderUVE(vertexShader);
     renderDevice->DestroyShaderUVE(pointVertexShader);
+}
+
+// IEEE binary16 of a float in the normal range (enough for test vertex data: ±1, 0.5, 0).
+[[nodiscard]] std::uint16_t HalfFromFloatUVE(const float value) {
+    std::uint32_t bits = 0U;
+    std::memcpy(&bits, &value, sizeof(bits));
+    const std::uint32_t sign = (bits >> 16U) & 0x8000U;
+    const std::int32_t exponent = static_cast<std::int32_t>((bits >> 23U) & 0xFFU) - 127 + 15;
+    const std::uint32_t mantissa = (bits >> 13U) & 0x3FFU;
+    if (exponent <= 0) {
+        return static_cast<std::uint16_t>(sign);
+    }
+    return static_cast<std::uint16_t>(sign | (static_cast<std::uint32_t>(exponent) << 10U) | mantissa);
+}
+
+TEST_F(GlRenderDeviceUVETest, PackedVertexAttributeFormatsFetchNormalizedHalfAndIntegerDataOnTheDriver) {
+    // Three vertex layouts, one lower-left triangle each on the 64x64 default framebuffer,
+    // pixel (16, 16) sampled: Short2Norm positions + UByte4Norm colours must land the exact
+    // colour bytes (normalised fetch); Half2 positions + Half4 colours must decode binary16;
+    // UShort4 and UInt4 joint indices go through glVertexAttribIPointer into a uvec4 — the low
+    // byte of each lane becomes the colour, so a 32-bit lane holding 65536 + 200 reads 200 only
+    // when the fetch is really 32-bit and really integer.
+    constexpr std::string_view kNormVertexShader = R"(#version 330 core
+layout(location = 0) in vec2 aPosition;
+layout(location = 1) in vec4 aColor;
+out vec4 vColor;
+void main() { vColor = aColor; gl_Position = vec4(aPosition, 0.0, 1.0); }
+)";
+    constexpr std::string_view kIntegerVertexShader = R"(#version 330 core
+layout(location = 0) in vec2 aPosition;
+layout(location = 1) in uvec4 aJoints;
+out vec4 vColor;
+void main() {
+    vColor = vec4(float(aJoints.x & 255u), float(aJoints.y & 255u), float(aJoints.z & 255u), 255.0) / 255.0;
+    gl_Position = vec4(aPosition, 0.0, 1.0);
+}
+)";
+    constexpr std::string_view kPassColorFragmentShader = R"(#version 330 core
+in vec4 vColor;
+out vec4 FragColor;
+void main() { FragColor = vColor; }
+)";
+    const ShaderHandleUVE normVertexShader =
+        renderDevice->CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kNormVertexShader)});
+    const ShaderHandleUVE integerVertexShader =
+        renderDevice->CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kIntegerVertexShader)});
+    const ShaderHandleUVE fragmentShader =
+        renderDevice->CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Fragment, std::string(kPassColorFragmentShader)});
+    ASSERT_NE(normVertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(integerVertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+
+#pragma pack(push, 1)
+    struct SnormVertexUVE final {
+        std::int16_t x, y;
+        std::uint8_t r, g, b, a;
+    };
+    struct HalfVertexUVE final {
+        std::uint16_t x, y;
+        std::uint16_t r, g, b, a;
+    };
+    struct UShortJointVertexUVE final {
+        float x, y;
+        std::uint16_t j0, j1, j2, j3;
+    };
+    struct UIntJointVertexUVE final {
+        float x, y;
+        std::uint32_t j0, j1, j2, j3;
+    };
+#pragma pack(pop)
+    static_assert(sizeof(SnormVertexUVE) == 8U);
+    static_assert(sizeof(HalfVertexUVE) == 12U);
+    static_assert(sizeof(UShortJointVertexUVE) == 16U);
+    static_assert(sizeof(UIntJointVertexUVE) == 24U);
+    constexpr std::int16_t kSnormOne = 32767;
+    const std::array<SnormVertexUVE, 3> snormTriangle{{{-kSnormOne, -kSnormOne, 255U, 128U, 0U, 255U},
+                                                       {kSnormOne, -kSnormOne, 255U, 128U, 0U, 255U},
+                                                       {-kSnormOne, kSnormOne, 255U, 128U, 0U, 255U}}};
+    const std::uint16_t hNeg = HalfFromFloatUVE(-1.0F);
+    const std::uint16_t hPos = HalfFromFloatUVE(1.0F);
+    const std::uint16_t hHalf = HalfFromFloatUVE(0.5F);
+    const std::uint16_t hZero = HalfFromFloatUVE(0.0F);
+    const std::array<HalfVertexUVE, 3> halfTriangle{{{hNeg, hNeg, hZero, hHalf, hPos, hPos},
+                                                     {hPos, hNeg, hZero, hHalf, hPos, hPos},
+                                                     {hNeg, hPos, hZero, hHalf, hPos, hPos}}};
+    const std::array<UShortJointVertexUVE, 3> ushortTriangle{{{-1.0F, -1.0F, 200U, 100U, 0U, 7U},
+                                                              {1.0F, -1.0F, 200U, 100U, 0U, 7U},
+                                                              {-1.0F, 1.0F, 200U, 100U, 0U, 7U}}};
+    const std::array<UIntJointVertexUVE, 3> uintTriangle{{{-1.0F, -1.0F, 65536U + 200U, 3U * 65536U + 100U, 0U, 7U},
+                                                          {1.0F, -1.0F, 65536U + 200U, 3U * 65536U + 100U, 0U, 7U},
+                                                          {-1.0F, 1.0F, 65536U + 200U, 3U * 65536U + 100U, 0U, 7U}}};
+    struct LayoutCaseUVE final {
+        ShaderHandleUVE vertexShader;
+        std::vector<VertexAttributeUVE> layout;
+        std::uint32_t stride;
+        std::span<const std::byte> vertices;
+        std::array<std::uint8_t, 3> expected;
+        const char* name;
+    };
+    const std::array<LayoutCaseUVE, 4> cases{{
+        {normVertexShader,
+         {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Short2Norm, 0U},
+          VertexAttributeUVE{"COLOR", VertexAttributeFormatUVE::UByte4Norm, 4U}},
+         sizeof(SnormVertexUVE), std::as_bytes(std::span(snormTriangle)), {255U, 128U, 0U}, "Short2Norm+UByte4Norm"},
+        {normVertexShader,
+         {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Half2, 0U},
+          VertexAttributeUVE{"COLOR", VertexAttributeFormatUVE::Half4, 4U}},
+         sizeof(HalfVertexUVE), std::as_bytes(std::span(halfTriangle)), {0U, 128U, 255U}, "Half2+Half4"},
+        {integerVertexShader,
+         {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float2, 0U},
+          VertexAttributeUVE{"JOINTS", VertexAttributeFormatUVE::UShort4, 8U}},
+         sizeof(UShortJointVertexUVE), std::as_bytes(std::span(ushortTriangle)), {200U, 100U, 0U}, "UShort4"},
+        {integerVertexShader,
+         {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float2, 0U},
+          VertexAttributeUVE{"JOINTS", VertexAttributeFormatUVE::UInt4, 8U}},
+         sizeof(UIntJointVertexUVE), std::as_bytes(std::span(uintTriangle)), {200U, 100U, 0U}, "UInt4"},
+    }};
+    for (const LayoutCaseUVE& testCase : cases) {
+        SCOPED_TRACE(testCase.name);
+        PipelineDescUVE desc;
+        desc.vertexShader = testCase.vertexShader;
+        desc.fragmentShader = fragmentShader;
+        desc.vertexLayout = testCase.layout;
+        desc.vertexStride = testCase.stride;
+        desc.depthTestEnabled = false;
+        desc.depthWriteEnabled = false;
+        const PipelineHandleUVE pipeline = renderDevice->CreatePipelineUVE(desc);
+        ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+        const BufferHandleUVE vertexBuffer = renderDevice->CreateBufferUVE(
+            BufferDescUVE{testCase.vertices.size(), BufferUsageUVE::Vertex}, testCase.vertices);
+        ASSERT_NE(vertexBuffer, kInvalidBufferHandleUVE);
+        std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+        ASSERT_NE(commandBuffer, nullptr);
+        RenderPassDescUVE passDesc;
+        passDesc.colorAttachment = kInvalidTextureHandleUVE;
+        passDesc.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::DontCare;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(pipeline);
+        commandBuffer->BindVertexBufferUVE(vertexBuffer);
+        commandBuffer->DrawUVE(3U);
+        commandBuffer->EndRenderPassUVE();
+        renderDevice->SubmitUVE(std::move(commandBuffer));
+        std::array<std::uint8_t, 3> pixel{};
+        glReadPixels(16, 16, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, pixel.data());
+        EXPECT_NEAR(static_cast<int>(pixel[0]), static_cast<int>(testCase.expected[0]), 2);
+        EXPECT_NEAR(static_cast<int>(pixel[1]), static_cast<int>(testCase.expected[1]), 2);
+        EXPECT_NEAR(static_cast<int>(pixel[2]), static_cast<int>(testCase.expected[2]), 2);
+        std::array<std::uint8_t, 3> outside{};
+        glReadPixels(60, 60, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, outside.data());
+        EXPECT_LT(outside[0] + outside[1] + outside[2], 20) << "the triangle covers only the lower-left half";
+        EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+        renderDevice->DestroyBufferUVE(vertexBuffer);
+        renderDevice->DestroyPipelineUVE(pipeline);
+    }
+    renderDevice->DestroyShaderUVE(fragmentShader);
+    renderDevice->DestroyShaderUVE(integerVertexShader);
+    renderDevice->DestroyShaderUVE(normVertexShader);
 }
 
 TEST_F(GlRenderDeviceUVETest, BeginRenderPassUVE_UnknownAttachmentDoesNotBindOrCacheFramebuffer) {

@@ -3984,6 +3984,12 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
             case VertexAttributeFormatUVE::Float2: format = VK_FORMAT_R32G32_SFLOAT; break;
             case VertexAttributeFormatUVE::Float3: format = VK_FORMAT_R32G32B32_SFLOAT; break;
             case VertexAttributeFormatUVE::Float4: format = VK_FORMAT_R32G32B32A32_SFLOAT; break;
+            case VertexAttributeFormatUVE::UByte4Norm: format = VK_FORMAT_R8G8B8A8_UNORM; break;
+            case VertexAttributeFormatUVE::UShort4: format = VK_FORMAT_R16G16B16A16_UINT; break;
+            case VertexAttributeFormatUVE::UInt4: format = VK_FORMAT_R32G32B32A32_UINT; break;
+            case VertexAttributeFormatUVE::Short2Norm: format = VK_FORMAT_R16G16_SNORM; break;
+            case VertexAttributeFormatUVE::Half2: format = VK_FORMAT_R16G16_SFLOAT; break;
+            case VertexAttributeFormatUVE::Half4: format = VK_FORMAT_R16G16B16A16_SFLOAT; break;
         }
         attributes[index].location = static_cast<std::uint32_t>(index);
         attributes[index].binding = 0U;

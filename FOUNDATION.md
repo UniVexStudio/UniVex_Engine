@@ -743,6 +743,7 @@ render-pass attachment.
 | `TextureFormatUVE` | `RGBA8Unorm`, `RGBA16Float`, `RGBA32Float`, `R8Unorm`/`RG8Unorm`, `R16Float`/`RG16Float`, `R32Float`/`RG32Float`, `Depth32Float`, `Depth24Stencil8`, BC1/BC3/BC7, ETC2/ETC2A8, ASTC 4x4 | seventeen formats; sRGB only where the data has an sRGB encoding (RGBA8 and the compressed families); no integer or packed (10:10:10:2) formats |
 | `ShaderDescUVE` | stage, source, entry point | `Geometry` has an optional `PipelineDescUVE::geometryShader` slot (Null/desktop GL); Vulkan reports `geometryShaders = Unsupported` |
 | `PipelineDescUVE` | vertex+fragment shader, vertex layout, stride, topology, depth test/write/compare, cull/winding/fill/bias, blend mode | rasterizer tail landed (Tier 2.1, RHI side) |
+| `VertexAttributeFormatUVE` | `Float2/3/4`, `UByte4Norm`, `Short2Norm`, `Half2/4`, integer `UShort4`/`UInt4` (+ byte-size / component / integer helpers) | one binding, per-vertex rate only (no instanced attribute streams) |
 | `RenderPassDescUVE` | up to 4 colour attachments, one depth attachment, load+store ops, clear values, optional viewport override | multi-target + `StoreOpUVE` landed (Tiers 2.4/2.5) |
 | `PrimitiveTopologyUVE` | `Triangles`, `Lines`, `Points`, `LineStrip`, `TriangleStrip` (+ `GetPrimitiveCountUVE` / `IsVertexCountCompleteForTopologyUVE`) | no fan, adjacency, primitive restart or line-width state |
 
@@ -811,6 +812,18 @@ because each one blocks a whole feature:
   new `debug_point` built-in with a batch-wide, clamped pixel size, as a second draw after the
   lines; sphere circles stay expanded into the line list on purpose (one draw per frame beats
   one strip per circle). Not added: fans, adjacency, primitive restart, line width.
+- `[x]` **Float-only vertex attributes.** Landed (2026-10-14): `VertexAttributeFormatUVE`
+  gains `UByte4Norm` (colours), `Short2Norm` (packed UVs / octahedral normals), `Half2` /
+  `Half4`, and the integer pair `UShort4` / `UInt4` (joint indices, declared `uvec4` in the
+  shader). `GetVertexAttributeFormatByteSizeUVE` replaces the float arithmetic inside the
+  stride validation, so a packed layout is accepted exactly when it fits. GL fetches each
+  format through the matching `glVertexAttribPointer(type, normalized)` arguments and the
+  integer pair through `glVertexAttribIPointer` (loaded as an optional GL 3.0 / GLES 3.0 entry;
+  a pipeline whose layout needs it is refused at creation when the context lacks it); Vulkan
+  maps each to its mandatory vertex-buffer `VkFormat`. No engine vertex struct changed: the
+  intended first consumer is the skinned mesh vertex when Tier 3.1 wires GPU skinning (joint
+  indices as `UShort4`, weights as `UByte4Norm`), and the table says so rather than repacking
+  `MeshVertexUVE` ahead of that. Not added: a second vertex binding or per-instance rate.
 
 Also absent: `[x]` a sampler object — landed (Tier 2.2: `SamplerDescUVE` with Point filtering
 in all three backends). `[x]` **Validated bind-group packets** now live in
@@ -1490,3 +1503,13 @@ sandbox now carries a glslang build, so Vulkan test shaders can be baked in-sess
 Null suite pins the count helpers and the Null/debug-renderer tests pin the two-draw submit
 (lines then points, `uPointSize` flushed, both batches cleared, all resources released). The
 built-in parity test covers `debug_point.glsl`.
+
+**Packed vertex attribute formats (same day).** Four layouts drawn as a half-screen triangle
+on each native driver, one pixel inside and one outside sampled: `Short2Norm` positions with
+`UByte4Norm` colours land the exact colour bytes (255, 128, 0), `Half2` positions with `Half4`
+colours decode binary16 (0, 128, 255), and `UShort4` / `UInt4` joint lanes reach a `uvec4`
+input — the 32-bit case stores 65536 + 200 and reads 200 through `& 255`, which a 16-bit or
+float fetch cannot reproduce. GL runs them on softpipe; Vulkan on SwiftShader with a baked
+`uvec4` vertex shader, accepting the linear or sRGB-encoded byte per the suite's swapchain rule.
+The Null suite pins the byte widths, component counts, integer flag and the stride check for
+all nine formats.
