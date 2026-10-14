@@ -117,6 +117,53 @@ TEST_F(AssetImporterUVETest, ClassifySourceUVE_ReportsAuthorityAndRawParserBound
     EXPECT_EQ(custom.diagnostic, "custom importer is registered without built-in classification");
 }
 
+TEST_F(AssetImporterUVETest, RegisterDatabaseAwareImporterUVE_ReceivesTheDatabaseAndSharesTheKeySpace) {
+    // Foundation WP7: a database-aware importer gets the same database the destination is
+    // registered in afterwards, and the two registration kinds replace each other per extension.
+    const std::filesystem::path source = "uve_asset_importer_tests_aware.custom";
+    const std::filesystem::path destination = "uve_asset_importer_tests_aware.out";
+    std::filesystem::remove(source);
+    std::filesystem::remove(destination);
+    WriteFixtureFileUVE(source, "payload");
+
+    IAssetDatabaseUVE* seenDatabase = nullptr;
+    importer.RegisterDatabaseAwareImporterUVE(
+        "custom", [&seenDatabase](const std::filesystem::path& sourcePath, const std::filesystem::path& destinationPath,
+                                  IAssetDatabaseUVE& db, const AssetImportSettingsUVE&) {
+            seenDatabase = &db;
+            std::filesystem::copy_file(sourcePath, destinationPath, std::filesystem::copy_options::overwrite_existing);
+            return true;
+        });
+    EXPECT_TRUE(importer.ClassifySourceUVE(source).importerRegistered);
+    const AssetGuidUVE guid = importer.ImportUVE(source, destination, assetDatabase);
+    ASSERT_NE(guid, kInvalidAssetGuidUVE);
+    EXPECT_EQ(seenDatabase, &assetDatabase);
+    EXPECT_EQ(assetDatabase.ResolveUVE(guid), destination);
+
+    // A plain registration for the same extension replaces the aware one.
+    bool plainCalled = false;
+    importer.RegisterImporterUVE("custom", [&plainCalled](const std::filesystem::path&, const std::filesystem::path&,
+                                                          const AssetImportSettingsUVE&) {
+        plainCalled = true;
+        return true;
+    });
+    seenDatabase = nullptr;
+    ASSERT_NE(importer.ImportUVE(source, destination, assetDatabase), kInvalidAssetGuidUVE);
+    EXPECT_TRUE(plainCalled);
+    EXPECT_EQ(seenDatabase, nullptr);
+
+    // Invalid aware registrations are refused without disturbing the existing importer.
+    importer.RegisterDatabaseAwareImporterUVE("custom", nullptr);
+    importer.RegisterDatabaseAwareImporterUVE("", [](const std::filesystem::path&, const std::filesystem::path&,
+                                                     IAssetDatabaseUVE&, const AssetImportSettingsUVE&) { return true; });
+    plainCalled = false;
+    ASSERT_NE(importer.ImportUVE(source, destination, assetDatabase), kInvalidAssetGuidUVE);
+    EXPECT_TRUE(plainCalled);
+
+    std::filesystem::remove(source);
+    std::filesystem::remove(destination);
+}
+
 TEST_F(AssetImporterUVETest, ImportUVE_RegistrationFailureReturnsInvalidAfterSuccessfulConversion) {
     const std::filesystem::path sourcePath = "uve_asset_importer_registration_failure_source.custom";
     const std::filesystem::path destinationPath = "uve_asset_importer_registration_failure_dest.custom";

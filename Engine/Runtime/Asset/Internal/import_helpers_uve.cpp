@@ -10,6 +10,30 @@
 
 namespace UVE::Asset::Detail {
 
+AssetGuidUVE ResolveImportedSiblingTextureGuidUVE(const std::filesystem::path& destinationPath,
+                                                  const std::string_view authoredTextureFile,
+                                                  const IAssetDatabaseUVE& assetDatabase) {
+    if (authoredTextureFile.empty()) {
+        return kInvalidAssetGuidUVE;
+    }
+    const std::filesystem::path authored{std::string(authoredTextureFile)};
+    const std::string stem = authored.stem().string();
+    if (stem.empty()) {
+        return kInvalidAssetGuidUVE;
+    }
+    const std::filesystem::path siblingDirectory = destinationPath.parent_path().lexically_normal();
+    for (const AssetRecordUVE& record : assetDatabase.GetRegisteredAssetsUVE()) {
+        if (record.path.extension() != ".uvtex" || record.path.stem().string() != stem) {
+            continue;
+        }
+        if (record.path.parent_path().lexically_normal() != siblingDirectory) {
+            continue;
+        }
+        return record.guid;
+    }
+    return kInvalidAssetGuidUVE;
+}
+
 [[nodiscard]] bool PrepareTextureForImportUVE(TextureAssetUVE& texture,
                                                const TextureImportSettingsUVE& settings) {
     if (settings.generateMipmaps &&

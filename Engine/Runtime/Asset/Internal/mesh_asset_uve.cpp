@@ -15,6 +15,18 @@ namespace UVE::Asset {
 
 namespace {
 
+/// WP7: tag that opens the optional material-reference section ('UVMT' little-endian). It is
+/// unambiguous against the skin section's joint count because a count this large fails the
+/// joint-count bound check on any real file.
+constexpr std::uint32_t kMeshMaterialSectionTagUVE = 0x544D5655U;
+constexpr std::uint32_t kMaximumMeshMaterialSlotsUVE = 4096U;
+
+[[nodiscard]] bool PeeksMaterialSectionUVE(const std::vector<std::byte>& payload, const std::size_t offset) {
+    std::size_t peekOffset = offset;
+    std::uint32_t tag = 0U;
+    return Utilities::ReadUint32LeFromBufferUVE(payload, peekOffset, tag) && tag == kMeshMaterialSectionTagUVE;
+}
+
 [[nodiscard]] bool ReadVector3FromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
                                              Math::Vector3UVE& outValue) {
     return Utilities::ReadFloatLeFromBufferUVE(buffer, offset, outValue.x) &&
@@ -322,7 +334,7 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
     // detect "this file predates skinning". A file that stops here is a static mesh, not an error.
     std::vector<MeshSkinningInfluenceUVE> skinningInfluences;
     std::vector<MeshJointUVE> joints;
-    if (offset < payload.size()) {
+    if (offset < payload.size() && !PeeksMaterialSectionUVE(payload, offset)) {
         std::uint32_t jointCount = 0;
         if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, jointCount)) {
             UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated joint count", path.string());
@@ -374,7 +386,7 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
             skinningInfluences.push_back(influence);
         }
 
-        if (offset < payload.size()) {
+        if (offset < payload.size() && !PeeksMaterialSectionUVE(payload, offset)) {
             std::uint32_t nameCount = 0;
             if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, nameCount) || nameCount != joints.size()) {
                 UVE_ERROR("MeshAssetUVE: \"{}\" has a joint name table that does not match its joints", path.string());
@@ -394,6 +406,31 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
         }
     }
 
+    // WP7: the material references trail everything else behind their tag. A file that ends
+    // before the tag simply has none; bytes after an unknown tag are ignored exactly as trailing
+    // bytes after the joint names always were.
+    std::vector<AssetGuidUVE> materialGuids;
+    if (offset < payload.size() && PeeksMaterialSectionUVE(payload, offset)) {
+        std::uint32_t tag = 0U;
+        std::uint32_t materialCount = 0U;
+        if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, tag) ||
+            !Utilities::ReadUint32LeFromBufferUVE(payload, offset, materialCount) ||
+            materialCount > kMaximumMeshMaterialSlotsUVE ||
+            materialCount > (payload.size() - offset) / sizeof(std::uint64_t)) {
+            UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated or impossible material reference table", path.string());
+            return false;
+        }
+        materialGuids.reserve(materialCount);
+        for (std::uint32_t materialIndex = 0U; materialIndex < materialCount; ++materialIndex) {
+            std::uint64_t guidValue = 0U;
+            if (!Utilities::ReadUint64LeFromBufferUVE(payload, offset, guidValue)) {
+                UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated material reference", path.string());
+                return false;
+            }
+            materialGuids.push_back(AssetGuidUVE{guidValue});
+        }
+    }
+
     if (!TryGenerateMeshTangentsUVE(vertices, indices)) {
         UVE_ERROR("MeshAssetUVE: \"{}\" has non-finite generated tangent data", path.string());
         return false;
@@ -406,6 +443,7 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
     candidate.localBounds = localBounds;
     candidate.skinningInfluences = std::move(skinningInfluences);
     candidate.joints = std::move(joints);
+    candidate.materialGuids = std::move(materialGuids);
     if (!IsMeshSkinningDataValidUVE(candidate)) {
         UVE_ERROR("MeshAssetUVE: \"{}\" has structurally invalid skinning data", path.string());
         return false;
@@ -460,6 +498,21 @@ bool SaveMeshAssetUVE(const MeshAssetUVE& mesh, const std::filesystem::path& pat
             Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(joint.name.size()));
             const auto* const bytes = reinterpret_cast<const std::byte*>(joint.name.data());
             payload.insert(payload.end(), bytes, bytes + joint.name.size());
+        }
+    }
+
+    // WP7: material references, tagged, and only when there are any - a mesh without materials
+    // keeps writing the exact bytes it always did.
+    if (!mesh.materialGuids.empty()) {
+        if (mesh.materialGuids.size() > kMaximumMeshMaterialSlotsUVE) {
+            UVE_ERROR("MeshAssetUVE: \"{}\" references {} materials; the format caps slots at {}", path.string(),
+                      mesh.materialGuids.size(), kMaximumMeshMaterialSlotsUVE);
+            return false;
+        }
+        Utilities::AppendUint32LeUVE(payload, kMeshMaterialSectionTagUVE);
+        Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(mesh.materialGuids.size()));
+        for (const AssetGuidUVE guid : mesh.materialGuids) {
+            Utilities::AppendUint64LeUVE(payload, guid.value);
         }
     }
 

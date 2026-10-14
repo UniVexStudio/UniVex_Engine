@@ -22,6 +22,8 @@
 #include <utility>
 #include <vector>
 
+#include "uve/asset/asset_guid_uve.h"
+#include "uve/asset/i_asset_database_uve.h"
 #include "uve/asset/texture_asset_uve.h"
 #include "uve/asset/texture_import_settings_uve.h"
 #include "uve/logging/logging_macros_uve.h"
@@ -35,6 +37,17 @@ namespace UVE::Asset::Detail {
                                              const char* importerName,
                                              std::uint64_t maximumBytes,
                                              std::vector<std::byte>& outBytes);
+
+/// Foundation WP7: turns a texture filename authored inside a model file (FBX today, MTL when it
+/// adopts this) into the GUID of an ALREADY IMPORTED texture, or `kInvalidAssetGuidUVE`.
+/// The only evidence accepted is a registered `.uvtex` record whose stem equals the authored
+/// file's stem and whose directory is the destination's directory (the import's siblings):
+/// first match in the database's deterministic order wins. Nothing is registered, created or
+/// guessed - an unresolved reference stays empty and the caller reports it, because inventing a
+/// GUID for a texture nobody imported would be a dangling reference with a confident face.
+[[nodiscard]] AssetGuidUVE ResolveImportedSiblingTextureGuidUVE(const std::filesystem::path& destinationPath,
+                                                                std::string_view authoredTextureFile,
+                                                                const IAssetDatabaseUVE& assetDatabase);
 
 /// Applies the shared texture post-decode pipeline: generate configured mip levels, encode the
 /// optional portable Basis/KTX2 payload, then validate the complete asset before publication.
