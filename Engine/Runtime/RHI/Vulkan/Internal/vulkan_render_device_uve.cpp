@@ -328,9 +328,14 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     // through-dynamic-rendering decisions branch on useDynamicRendering, never on the probe.
     bool dynamicRenderingSupported = false;
     /// Timeline semaphores: queried from VkPhysicalDeviceVulkan12Features and, when supported,
-    /// requested at device creation. Capability reporting additionally requires the 1.2 entry
-    /// points, so a loader without them can never claim the feature.
+    /// requested at device creation. The three entry points are device-level, so they cannot be
+    /// resolved before vkCreateDevice: the probe only decides what to request, and the
+    /// capability may only be advertised once the entries actually resolved after bring-up
+    /// (see timelineSemaphoresEnabled below) — a loader without them never claims the feature.
     bool timelineSemaphoresRequested = false;
+    /// True only when the feature was requested AND its three device-level entries resolved.
+    /// Capability reporting and the semaphore calls themselves gate on this, never on the probe.
+    bool timelineSemaphoresEnabled = false;
     bool useDynamicRendering = false;
 
     // M2d scratch depth for color-only offscreen passes: one DEVICE_LOCAL depth image per
@@ -1779,7 +1784,9 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     }
 
     // Timeline-semaphore probe: the same feature2 query, one API version lower. A 1.1-or-lower
-    // host reports nothing here and keeps the capability Unsupported.
+    // host reports nothing here and keeps the capability Unsupported. Only the feature bit is
+    // read here — the vkGetSemaphoreCounterValue/vkWaitSemaphores/vkSignalSemaphore entries are
+    // device-level and are verified after vkCreateDevice (timelineSemaphoresEnabled).
     if (apiVersion >= VK_API_VERSION_1_2 && vk.vkGetPhysicalDeviceFeatures2 != nullptr) {
         VkPhysicalDeviceVulkan12Features v12Features{};
         v12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
@@ -1787,9 +1794,7 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
         features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         features2.pNext = &v12Features;
         vk.vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
-        timelineSemaphoresRequested = v12Features.timelineSemaphore == VK_TRUE &&
-                                      vk.vkGetSemaphoreCounterValue != nullptr &&
-                                      vk.vkWaitSemaphores != nullptr && vk.vkSignalSemaphore != nullptr;
+        timelineSemaphoresRequested = v12Features.timelineSemaphore == VK_TRUE;
     }
 
     const float queuePriority = 1.0F;
@@ -1837,6 +1842,16 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
         UVE_WARNING("VulkanRenderDeviceUVE: dynamic rendering was reported but its device "
                     "entry points did not resolve; the device continues without offscreen "
                     "render-target support (classic render-pass mode)");
+    }
+    // Timeline semaphores are advertised only when the feature was actually enabled and all
+    // three device-level entries resolved — the pre-create probe cannot see those entries, so
+    // this is the earliest honest point to decide.
+    timelineSemaphoresEnabled = timelineSemaphoresRequested && vk.vkGetSemaphoreCounterValue != nullptr &&
+                                vk.vkWaitSemaphores != nullptr && vk.vkSignalSemaphore != nullptr;
+    if (timelineSemaphoresRequested && !timelineSemaphoresEnabled) {
+        UVE_WARNING("VulkanRenderDeviceUVE: the timeline-semaphore feature was enabled but its "
+                    "device entry points did not resolve; the device continues with the "
+                    "timelineSemaphores capability reported as unsupported");
     }
 
     // --- surface format/present-mode picks ---------------------------------------------------
@@ -6192,7 +6207,7 @@ RenderDeviceCapabilitiesUVE VulkanRenderDeviceUVE::GetCapabilitiesUVE() const no
         return caps;
     caps.fences = caps.bufferCopy = caps.surface = caps.retainedTextures =
         RenderFeatureSupportUVE::Native;
-    if (m_impl->timelineSemaphoresRequested) {
+    if (m_impl->timelineSemaphoresEnabled) {
         caps.timelineSemaphores = RenderFeatureSupportUVE::Native;
     }
     if (m_impl->timestampQueriesSupported) {
