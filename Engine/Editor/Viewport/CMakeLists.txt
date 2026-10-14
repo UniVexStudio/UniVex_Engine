@@ -80,6 +80,7 @@ find_package(GLEW REQUIRED)
 
 add_library(univex_viewport_gl STATIC
     Internal/ShaderProgram.cpp
+    Internal/OverlayRasterStateGl.cpp
     Internal/InfiniteGridRenderer.cpp
     Internal/GizmoRenderer.cpp
     Internal/SelectionOutlineRenderer.cpp
@@ -105,6 +106,7 @@ target_compile_options(univex_viewport_app_support PRIVATE -Wall -Wextra -Wpedan
 # ---------------------------------------------------------------------------
 add_library(univex_viewport_engine_bridge STATIC
     Internal/integration/EditorMeshLayer.cpp
+    Internal/integration/OverlayRasterStateToPipeline.cpp
     Internal/integration/EntityPicker.cpp
     Internal/integration/SelectionOutlineGeometry.cpp)
 target_include_directories(univex_viewport_engine_bridge PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Internal)
