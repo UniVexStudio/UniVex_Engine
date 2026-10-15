@@ -3212,24 +3212,22 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     VkFormat attachmentFormat = VK_FORMAT_UNDEFINED; // resolved below; defaults to `format`
     switch (desc.format) {
         case TextureFormatUVE::RGBA8Unorm: {
-            // The IMAGE is allocated in the colour space the descriptor declares (the unorm or
-            // sRGB sibling of the swapchain's channel order), because vkCmdBlitImage and the mip
-            // chain filter through the image format: an sRGB image would decode, average and
-            // re-encode data the caller declared linear (measured: a 40/80/120/160 chain's last
-            // level came out 111 instead of 100 on an sRGB swapchain). The ATTACHMENT view keeps
-            // the swapchain format so every pipeline's dynamic-rendering contract still holds,
-            // and the sampled view reads the image's own format.
-            const VkFormat storageSibling = desc.colorSpace == TextureColorSpaceUVE::Srgb
-                                                ? SrgbSiblingFormatUVE(impl.swapchainFormat)
-                                                : UnormSiblingFormatUVE(impl.swapchainFormat);
-            if (storageSibling != VK_FORMAT_UNDEFINED) {
-                format = storageSibling;
-                sampledFormat = storageSibling;
+            // Allocate the image in the swapchain's unorm sibling so storage-image usage remains
+            // legal on devices that expose sRGB only as a sampled format. The sampled view uses
+            // the descriptor's requested sRGB sibling, so hardware decoding still occurs at
+            // sampling; the ATTACHMENT view keeps the swapchain format for dynamic rendering.
+            const VkFormat unormSibling = UnormSiblingFormatUVE(impl.swapchainFormat);
+            const VkFormat srgbSibling = SrgbSiblingFormatUVE(impl.swapchainFormat);
+            if (unormSibling != VK_FORMAT_UNDEFINED &&
+                (desc.colorSpace == TextureColorSpaceUVE::Linear || srgbSibling != VK_FORMAT_UNDEFINED)) {
+                format = unormSibling;
+                sampledFormat = desc.colorSpace == TextureColorSpaceUVE::Srgb ? srgbSibling : unormSibling;
                 attachmentFormat = impl.swapchainFormat;
             } else {
-                format = desc.colorSpace == TextureColorSpaceUVE::Srgb ? VK_FORMAT_R8G8B8A8_SRGB
-                                                                        : VK_FORMAT_R8G8B8A8_UNORM;
-                sampledFormat = format;
+                format = VK_FORMAT_R8G8B8A8_UNORM;
+                sampledFormat = desc.colorSpace == TextureColorSpaceUVE::Srgb
+                                     ? VK_FORMAT_R8G8B8A8_SRGB
+                                     : format;
             }
             // M5b fix: RGBA8 images are ALWAYS mutable-format — the storage alias view
             // (R8G8B8A8_UNORM over a B,G,R,A-family or sRGB image) needs
@@ -3371,7 +3369,7 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
                 ? VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
             : (desc.format == TextureFormatUVE::RGBA8Unorm)
                 ? (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
-                   VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)
+                   VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)
             : IsTextureFormatCompressedUVE(desc.format)
                 ? (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT)
             : (NativeColorFormatUVE(desc.format) != VK_FORMAT_UNDEFINED)
