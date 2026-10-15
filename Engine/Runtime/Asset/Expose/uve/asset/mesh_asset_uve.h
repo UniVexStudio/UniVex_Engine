@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "uve/asset/asset_guid_uve.h"
 #include "uve/math/aabb_uve.h"
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/vector3_uve.h"
@@ -96,6 +97,13 @@ struct MeshAssetUVE {
 
     /// Empty for a static mesh. Parents precede children.
     std::vector<MeshJointUVE> joints;
+
+    /// Foundation WP7: the materials this mesh was authored with, one GUID per source material
+    /// slot in source order (FBX material order). Empty when the source had no materials or the
+    /// mesh predates this field; an entry is `kInvalidAssetGuidUVE` only when the importer could
+    /// not publish that slot. Serialised as a tagged trailing section so older files load
+    /// unchanged and a mesh without materials still writes byte-identical files.
+    std::vector<AssetGuidUVE> materialGuids;
 
     /// True when this mesh carries skinning data. Both arrays are populated together or not at
     /// all; IsMeshSkinningDataValidUVE() is what verifies that, this only asks the question.

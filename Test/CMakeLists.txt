@@ -94,6 +94,7 @@ add_executable(uve_core_tests
     Core/Asset/obj_importer_uve_tests.cpp
     Core/Asset/fbx_mesh_converter_uve_tests.cpp
     Core/Asset/fbx_material_converter_uve_tests.cpp
+    Core/Asset/fbx_importer_uve_tests.cpp
     Core/Asset/obj_mesh_converter_uve_tests.cpp
     Core/Asset/obj_metadata_uve_tests.cpp
     Core/Asset/gltf_importer_uve_tests.cpp
@@ -645,6 +646,7 @@ add_executable(uve_editor_tests
     Editor/editor_commands_uve_tests.cpp
     Editor/editor_hierarchy_view_uve_tests.cpp
     Editor/entity_picker_uve_tests.cpp
+    Editor/overlay_raster_state_uve_tests.cpp
     Editor/inspector_drawer_registry_uve_tests.cpp
     Editor/data_table_registry_bridge_uve_tests.cpp
     Editor/prefab_maturity_editor_uve_tests.cpp

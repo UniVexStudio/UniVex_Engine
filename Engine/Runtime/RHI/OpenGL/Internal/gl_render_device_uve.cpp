@@ -35,6 +35,30 @@ namespace UVE::Render {
 
 namespace {
 
+/// GL binding target of an RHI texture type, and the glGet query that reads that target's
+/// current binding (shared by creation, mip generation and blits).
+GLenum OperationTextureTargetUVE(TextureTypeUVE type) {
+    if (type == TextureTypeUVE::Cubemap)
+        return GL_TEXTURE_CUBE_MAP;
+    if (type == TextureTypeUVE::Texture2DArray)
+        return GL_TEXTURE_2D_ARRAY;
+    if (type == TextureTypeUVE::Texture3D)
+        return GL_TEXTURE_3D;
+    return GL_TEXTURE_2D;
+}
+GLenum TextureBindingQueryForTargetUVE(GLenum target) {
+    switch (target) {
+        case GL_TEXTURE_CUBE_MAP:
+            return GL_TEXTURE_BINDING_CUBE_MAP;
+        case GL_TEXTURE_2D_ARRAY:
+            return GL_TEXTURE_BINDING_2D_ARRAY;
+        case GL_TEXTURE_3D:
+            return GL_TEXTURE_BINDING_3D;
+        default:
+            return GL_TEXTURE_BINDING_2D;
+    }
+}
+
 #if defined(__ANDROID__)
 constexpr char kAndroidGlLogTagUVE[] = "UVEAndroidGLES";
 
@@ -125,6 +149,24 @@ struct GlTextureFormatUVE {
     GLenum type;
 };
 
+/// glBufferData's usage token is exactly the (frequency x access) product of the two RHI hints:
+/// `Readback` is the one GPU-written/CPU-read case (*_READ); every other placement is CPU-written
+/// (*_DRAW). `Auto` with the default `Static` frequency is GL_STATIC_DRAW — the token every
+/// buffer used before the hints existed — so unchanged callers allocate exactly as before.
+[[nodiscard]] GLenum BufferHintsToGlUsageUVE(const BufferMemoryUVE memory,
+                                             const BufferUpdateFrequencyUVE frequency) noexcept {
+    const bool read = memory == BufferMemoryUVE::Readback;
+    switch (frequency) {
+        case BufferUpdateFrequencyUVE::Static:
+            return read ? GL_STATIC_READ : GL_STATIC_DRAW;
+        case BufferUpdateFrequencyUVE::Dynamic:
+            return read ? GL_DYNAMIC_READ : GL_DYNAMIC_DRAW;
+        case BufferUpdateFrequencyUVE::Stream:
+            return read ? GL_STREAM_READ : GL_STREAM_DRAW;
+    }
+    return GL_STATIC_DRAW;
+}
+
 [[nodiscard]] GlTextureFormatUVE TextureFormatToGlUVE(TextureFormatUVE format,
                                                         TextureColorSpaceUVE colorSpace) noexcept {
     switch (format) {
@@ -133,6 +175,20 @@ struct GlTextureFormatUVE {
                     GL_RGBA, GL_UNSIGNED_BYTE};
         case TextureFormatUVE::RGBA16Float:
             return {GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT};
+        case TextureFormatUVE::R8Unorm:
+            return {GL_R8, GL_RED, GL_UNSIGNED_BYTE};
+        case TextureFormatUVE::RG8Unorm:
+            return {GL_RG8, GL_RG, GL_UNSIGNED_BYTE};
+        case TextureFormatUVE::R16Float:
+            return {GL_R16F, GL_RED, GL_HALF_FLOAT};
+        case TextureFormatUVE::RG16Float:
+            return {GL_RG16F, GL_RG, GL_HALF_FLOAT};
+        case TextureFormatUVE::R32Float:
+            return {GL_R32F, GL_RED, GL_FLOAT};
+        case TextureFormatUVE::RG32Float:
+            return {GL_RG32F, GL_RG, GL_FLOAT};
+        case TextureFormatUVE::RGBA32Float:
+            return {GL_RGBA32F, GL_RGBA, GL_FLOAT};
         case TextureFormatUVE::Depth32Float:
             return {GL_DEPTH_COMPONENT32F, GL_DEPTH_COMPONENT, GL_FLOAT};
         case TextureFormatUVE::Depth24Stencil8:
@@ -448,8 +504,9 @@ BufferHandleUVE GlRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc, st
         UVE_ERROR("GlRenderDeviceUVE: CreateBufferUVE initial data exceeds buffer size");
         return kInvalidBufferHandleUVE;
     }
-    if (!IsBufferUsageValidUVE(desc.usage)) {
-        UVE_ERROR("GlRenderDeviceUVE: CreateBufferUVE received an unknown buffer usage");
+    if (!IsBufferDescValidUVE(desc)) {
+        UVE_ERROR("GlRenderDeviceUVE: CreateBufferUVE received an unknown buffer usage, memory or "
+                  "update-frequency value");
         return kInvalidBufferHandleUVE;
     }
     if (IsStorageBindableUsageUVE(desc.usage) && !m_impl->state.supportsComputeShadersUVE) {
@@ -479,13 +536,15 @@ BufferHandleUVE GlRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc, st
     m_impl->state.gl.glGenBuffers(1, &glBuffer);
     m_impl->state.gl.glBindBuffer(target, glBuffer);
     m_impl->state.gl.glBufferData(target, static_cast<GLsizeiptr>(desc.sizeBytes),
-                                    initialData.empty() ? nullptr : initialData.data(), GL_STATIC_DRAW);
+                                    initialData.empty() ? nullptr : initialData.data(),
+                                    BufferHintsToGlUsageUVE(desc.memory, desc.updateFrequency));
     UVE_GL_CHECK_ERROR_UVE("CreateBufferUVE");
     m_impl->state.gl.glBindBuffer(target, static_cast<GLuint>(previousBufferBinding));
 
     const std::uint32_t handleValue = m_impl->state.nextBufferHandle++;
     m_impl->state.buffers.emplace(handleValue,
-                                    Detail::GlDeviceStateUVE::BufferRecordUVE{glBuffer, target, desc.sizeBytes, desc.usage});
+                                    Detail::GlDeviceStateUVE::BufferRecordUVE{glBuffer, target, desc.sizeBytes, desc.usage,
+                                                                               desc.memory, desc.updateFrequency});
     return BufferHandleUVE{handleValue};
 }
 
@@ -603,28 +662,30 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
     // (POSITIVE_X + face); arrays upload whole levels, all layers contiguous.
     const bool isCube = desc.type == TextureTypeUVE::Cubemap;
     const bool isArray = desc.type == TextureTypeUVE::Texture2DArray;
-    const GLenum textureTarget = isCube ? GL_TEXTURE_CUBE_MAP
-                                 : isArray ? GL_TEXTURE_2D_ARRAY
-                                           : GL_TEXTURE_2D;
-    const GLenum bindingQuery = isCube ? GL_TEXTURE_BINDING_CUBE_MAP
-                                 : isArray ? GL_TEXTURE_BINDING_2D_ARRAY
-                                           : GL_TEXTURE_BINDING_2D;
-    if (isArray || isCube) {
+    const bool isVolume = desc.type == TextureTypeUVE::Texture3D;
+    const GLenum textureTarget = OperationTextureTargetUVE(desc.type);
+    const GLenum bindingQuery = TextureBindingQueryForTargetUVE(textureTarget);
+    if (isArray || isCube || isVolume) {
         GLint maxLayers = 0;
         glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &maxLayers);
         GLint maxCubeSize = 0;
         glGetIntegerv(GL_MAX_CUBE_MAP_TEXTURE_SIZE, &maxCubeSize);
+        GLint max3DSize = 0;
+        glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &max3DSize);
         if ((isArray && desc.arrayLayers > static_cast<std::uint32_t>(maxLayers)) ||
-            (isCube && desc.width > static_cast<std::uint32_t>(maxCubeSize))) {
-            UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE array/cubemap exceeds GL limits");
+            (isCube && desc.width > static_cast<std::uint32_t>(maxCubeSize)) ||
+            (isVolume && (desc.width > static_cast<std::uint32_t>(max3DSize) ||
+                          desc.height > static_cast<std::uint32_t>(max3DSize) ||
+                          desc.depth > static_cast<std::uint32_t>(max3DSize)))) {
+            UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE array/cubemap/volume exceeds GL limits");
             return kInvalidTextureHandleUVE;
         }
-        if (isArray && m_impl->state.gl.glTexImage3D == nullptr &&
+        if ((isArray || isVolume) && m_impl->state.gl.glTexImage3D == nullptr &&
             !IsTextureFormatCompressedUVE(desc.format)) {
-            UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE needs glTexImage3D for arrays");
+            UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE needs glTexImage3D for arrays and volumes");
             return kInvalidTextureHandleUVE;
         }
-        if (isArray && m_impl->state.gl.glCompressedTexImage3D == nullptr &&
+        if ((isArray || isVolume) && m_impl->state.gl.glCompressedTexImage3D == nullptr &&
             IsTextureFormatCompressedUVE(desc.format)) {
             UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE needs glCompressedTexImage3D");
             return kInvalidTextureHandleUVE;
@@ -639,6 +700,12 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
     GLuint glTexture = 0;
     glGenTextures(1, &glTexture);
     glBindTexture(textureTarget, glTexture);
+    // The upload contract is tightly packed rows. GL's default unpack alignment of 4 would
+    // misread one- and two-byte texel rows whose width is not a multiple of 4 (a 3-wide
+    // R8Unorm level is 3 bytes per row), so align to the byte for the upload and restore after.
+    GLint previousUnpackAlignment = 4;
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     std::size_t dataOffset = 0U;
     std::uint32_t levelWidth = desc.width;
     std::uint32_t levelHeight = desc.height;
@@ -668,26 +735,28 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
                 }
             }
             dataOffset += static_cast<std::size_t>(mipImageSizes[level]) * 6U;
-        } else if (isArray) {
-            // Whole-level upload: all layers contiguous (level-major, per the RHI contract).
-            // The size_t intermediate keeps huge levels out of signed-overflow UB; the driver
-            // reports oversized allocations through the standard GL error path below.
-            const GLsizei levelBytesAllLayers = static_cast<GLsizei>(
-                static_cast<std::size_t>(mipImageSizes[level]) * desc.arrayLayers);
+        } else if (isArray || isVolume) {
+            // Whole-level upload: all layers (or, for a volume, all slices of this level's
+            // depth) contiguous — level-major, per the RHI contract. The size_t intermediate
+            // keeps huge levels out of signed-overflow UB; the driver reports oversized
+            // allocations through the standard GL error path below.
+            const std::uint32_t levelSlices = isVolume ? GetTextureMipDepthUVE(desc.depth, level) : desc.arrayLayers;
+            const GLsizei levelBytesAllSlices = static_cast<GLsizei>(
+                static_cast<std::size_t>(mipImageSizes[level]) * levelSlices);
             if (IsTextureFormatCompressedUVE(desc.format)) {
                 m_impl->state.gl.glCompressedTexImage3D(
-                    GL_TEXTURE_2D_ARRAY, static_cast<GLint>(level),
+                    textureTarget, static_cast<GLint>(level),
                     static_cast<GLenum>(glFormat.internalFormat), static_cast<GLsizei>(levelWidth),
-                    static_cast<GLsizei>(levelHeight), static_cast<GLsizei>(desc.arrayLayers), 0,
-                    levelBytesAllLayers, levelData);
+                    static_cast<GLsizei>(levelHeight), static_cast<GLsizei>(levelSlices), 0,
+                    levelBytesAllSlices, levelData);
             } else {
                 m_impl->state.gl.glTexImage3D(
-                    GL_TEXTURE_2D_ARRAY, static_cast<GLint>(level), glFormat.internalFormat,
+                    textureTarget, static_cast<GLint>(level), glFormat.internalFormat,
                     static_cast<GLsizei>(levelWidth), static_cast<GLsizei>(levelHeight),
-                    static_cast<GLsizei>(desc.arrayLayers), 0, glFormat.format, glFormat.type,
+                    static_cast<GLsizei>(levelSlices), 0, glFormat.format, glFormat.type,
                     levelData);
             }
-            dataOffset += static_cast<std::size_t>(mipImageSizes[level]) * desc.arrayLayers;
+            dataOffset += static_cast<std::size_t>(mipImageSizes[level]) * levelSlices;
         } else {
             if (IsTextureFormatCompressedUVE(desc.format)) {
                 m_impl->state.gl.glCompressedTexImage2D(
@@ -704,12 +773,13 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
         levelWidth = levelWidth > 1U ? levelWidth / 2U : 1U;
         levelHeight = levelHeight > 1U ? levelHeight / 2U : 1U;
     }
+    glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
     glTexParameteri(textureTarget, GL_TEXTURE_MIN_FILTER,
                     desc.mipLevels > 1U ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
     glTexParameteri(textureTarget, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(textureTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(textureTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    if (isArray) {
+    if (isArray || isVolume) {
         glTexParameteri(textureTarget, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
     }
     glTexParameteri(textureTarget, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(desc.mipLevels - 1U));
@@ -945,6 +1015,14 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
     }
     if (!IsVertexLayoutValidUVE(desc.vertexLayout)) {
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown vertex attribute format");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (m_impl->state.gl.glVertexAttribIPointer == nullptr &&
+        std::any_of(desc.vertexLayout.begin(), desc.vertexLayout.end(), [](const VertexAttributeUVE& attribute) {
+            return IsVertexAttributeFormatIntegerUVE(attribute.format);
+        })) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE needs glVertexAttribIPointer for an integer vertex attribute "
+                  "format, which this context does not provide");
         return kInvalidPipelineHandleUVE;
     }
     if (!IsPipelineBlendModeValidUVE(desc.blendMode)) {
@@ -1185,6 +1263,14 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<const
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown vertex attribute format");
         return kInvalidPipelineHandleUVE;
     }
+    if (m_impl->state.gl.glVertexAttribIPointer == nullptr &&
+        std::any_of(desc.vertexLayout.begin(), desc.vertexLayout.end(), [](const VertexAttributeUVE& attribute) {
+            return IsVertexAttributeFormatIntegerUVE(attribute.format);
+        })) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE needs glVertexAttribIPointer for an integer vertex attribute "
+                  "format, which this context does not provide");
+        return kInvalidPipelineHandleUVE;
+    }
     if (!IsPipelineBlendModeValidUVE(desc.blendMode)) {
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown blend mode");
         return kInvalidPipelineHandleUVE;
@@ -1324,13 +1410,6 @@ RenderOperationResultUVE FinishDeviceOperationUVE() {
     UVE_ERROR("GL device operation failed (error {})", static_cast<unsigned>(error));
     return RenderOperationResultUVE::SystemError;
 }
-GLenum OperationTextureTargetUVE(TextureTypeUVE type) {
-    if (type == TextureTypeUVE::Cubemap)
-        return GL_TEXTURE_CUBE_MAP;
-    if (type == TextureTypeUVE::Texture2DArray)
-        return GL_TEXTURE_2D_ARRAY;
-    return GL_TEXTURE_2D;
-}
 } // namespace
 RenderDeviceCapabilitiesUVE GlRenderDeviceUVE::GetCapabilitiesUVE() const noexcept {
     RenderDeviceCapabilitiesUVE caps;
@@ -1384,6 +1463,17 @@ RenderOperationResultUVE GlRenderDeviceUVE::GetTextureDescUVE(TextureHandleUVE t
     if (found == m_impl->state.textures.end())
         return RenderOperationResultUVE::InvalidHandle;
     out = found->second.desc;
+    return RenderOperationResultUVE::Success;
+}
+RenderOperationResultUVE GlRenderDeviceUVE::GetBufferDescUVE(BufferHandleUVE buffer,
+                                                             BufferDescUVE &out) const {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    const auto found = m_impl->state.buffers.find(buffer.value);
+    if (found == m_impl->state.buffers.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    out = BufferDescUVE{found->second.sizeBytes, found->second.usage, found->second.memory,
+                        found->second.updateFrequency};
     return RenderOperationResultUVE::Success;
 }
 RenderOperationResultUVE GlRenderDeviceUVE::CopyBufferUVE(const BufferCopyDescUVE &copy) {
@@ -1499,13 +1589,10 @@ RenderOperationResultUVE GlRenderDeviceUVE::GenerateMipmapsUVE(TextureHandleUVE 
     if (found == state.textures.end())
         return RenderOperationResultUVE::InvalidHandle;
     const auto &desc = found->second.desc;
-    if (desc.mipLevels < 2U ||
-        (desc.format != TextureFormatUVE::RGBA8Unorm && desc.format != TextureFormatUVE::RGBA16Float))
+    if (!CanGenerateMipmapsUVE(desc))
         return RenderOperationResultUVE::InvalidArgument;
     const GLenum target = OperationTextureTargetUVE(desc.type);
-    const GLenum query = desc.type == TextureTypeUVE::Cubemap          ? GL_TEXTURE_BINDING_CUBE_MAP
-                         : desc.type == TextureTypeUVE::Texture2DArray ? GL_TEXTURE_BINDING_2D_ARRAY
-                                                                       : GL_TEXTURE_BINDING_2D;
+    const GLenum query = TextureBindingQueryForTargetUVE(target);
     GLint previous = 0;
     glGetIntegerv(query, &previous);
     glBindTexture(target, found->second.glTexture);

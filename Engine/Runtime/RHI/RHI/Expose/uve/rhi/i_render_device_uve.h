@@ -9,6 +9,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "uve/rhi/buffer_handle_uve.h"
@@ -57,6 +58,12 @@ public:
     [[nodiscard]] virtual RenderDeviceCapabilitiesUVE GetCapabilitiesUVE() const noexcept { return {}; }
     [[nodiscard]] virtual RenderOperationResultUVE GetTextureDescUVE(TextureHandleUVE,
                                                                      TextureDescUVE &) const {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    /// The descriptor a live buffer was created with — size, usage and the memory/update hints
+    /// exactly as requested (not the placement the backend chose). Output untouched on failure.
+    [[nodiscard]] virtual RenderOperationResultUVE GetBufferDescUVE(BufferHandleUVE,
+                                                                    BufferDescUVE &) const {
         return RenderOperationResultUVE::Unsupported;
     }
     [[nodiscard]] virtual RenderOperationResultUVE CopyBufferUVE(const BufferCopyDescUVE &) {
@@ -167,12 +174,11 @@ public:
     /// tooling, tests, and deliberate CPU-readback steps — never in a per-frame hot loop.
     ///
     /// Returns false (logging the reason) if `buffer` is unknown, the range would exceed the
-    /// buffer's size, or the backend cannot read that buffer's memory. Readback is guaranteed
-    /// only for `BufferUsageUVE::Uniform` and `BufferUsageUVE::Storage`: those are the usages
-    /// every backend keeps host-readable, and Storage is the one compute writes through.
-    /// Vertex/Index buffers may live in device-local memory with no transfer-source capability,
-    /// so a backend is free to refuse them loudly rather than pretend. An empty `outData` is a
-    /// successful no-op.
+    /// buffer's size, or the backend cannot read that buffer's memory. Every usage and every
+    /// `BufferMemoryUVE` placement reads back on the shipped backends (device-local memory goes
+    /// through a staging copy); `BufferMemoryUVE::Readback` is the hint for buffers the CPU reads
+    /// routinely. This is a cold path — it drains the queue so what the GPU last wrote is what
+    /// the host sees. An empty `outData` is a successful no-op.
     [[nodiscard]] virtual bool ReadbackBufferUVE(BufferHandleUVE buffer, std::span<std::byte> outData,
                                                   std::uint64_t offsetBytes = 0) = 0;
 
@@ -281,6 +287,29 @@ public:
     /// under the same discipline, and GL simply releases the object. PresentUVE() itself
     /// stays single-threaded (the GPU-timeline owner).
     virtual void SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer) = 0;
+
+    /// Foundation WP4: SubmitUVE with submission-level queue synchronisation (SubmitDescUVE).
+    /// The command buffer is consumed in every case; a result other than Success/Recorded means
+    /// the work was NOT queued (the buffer is dropped). Validation on every backend: an unknown
+    /// or destroyed semaphore -> InvalidHandle; a signal value not greater than the counter at
+    /// submit time, or the same semaphore named twice across the two lists -> InvalidArgument; a
+    /// non-empty desc on a device whose `timelineSemaphores` capability is not Native ->
+    /// Unsupported. An empty desc is exactly SubmitUVE. Granularity is the backend's real queue
+    /// granularity: Vulkan replays every submission of a frame into one native submission, so
+    /// the waits of all submissions gate that frame's vkQueueSubmit and the signals of all of
+    /// them are performed when that frame's GPU work completes - never earlier than asked, never
+    /// claimed before the GPU reached it. A frame the backend skips (minimised window, acquire
+    /// failure) drops its submissions AND their sync; a waiter on such a signal times out rather
+    /// than being lied to. Named differently from SubmitUVE on purpose: an overload would be
+    /// hidden by every existing SubmitUVE override (-Woverloaded-virtual).
+    [[nodiscard]] virtual RenderOperationResultUVE SubmitWithSyncUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer,
+                                                                    const SubmitDescUVE &desc) {
+        if (desc.waits.empty() && desc.signals.empty()) {
+            SubmitUVE(std::move(commandBuffer));
+            return RenderOperationResultUVE::Success;
+        }
+        return RenderOperationResultUVE::Unsupported;
+    }
 
     /// Presents the backend's default framebuffer (the window's back buffer), analogous to a
     /// real Vulkan/D3D12 swapchain's present call — a distinct, explicit step after command

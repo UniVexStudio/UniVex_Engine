@@ -95,6 +95,24 @@ public:
                             const AssetImportSettingsUVE&)>
             importFunc) = 0;
 
+    /// Importer callback that also receives the asset database (Foundation WP7). Importers that
+    /// publish MORE than the destination file - the FBX importer writes one `.uvmat` per material
+    /// and must know those GUIDs before it writes the `.uvmodel` that references them - register
+    /// through this overload; `ImportUVE` hands them the same database it registers the
+    /// destination in afterwards. Everything else about the contract matches `RegisterImporterUVE`.
+    using DatabaseAwareImportFuncUVE =
+        std::function<bool(const std::filesystem::path& sourcePath, const std::filesystem::path& destinationPath,
+                           IAssetDatabaseUVE& assetDatabase, const AssetImportSettingsUVE& settings)>;
+
+    /// Registers a database-aware importer for `sourceExtension` (same key normalisation and
+    /// replacement rules as `RegisterImporterUVE`; the two registrations share one key space, so
+    /// the latest registration of either kind wins). The default refuses: a double that cannot
+    /// pass a database to an importer must not pretend to have registered one.
+    virtual void RegisterDatabaseAwareImporterUVE(std::string sourceExtension, DatabaseAwareImportFuncUVE importFunc) {
+        static_cast<void>(sourceExtension);
+        static_cast<void>(importFunc);
+    }
+
     /// Classifies a source path without touching the filesystem. Raw model/texture/material/shader/audio kinds
     /// explicitly report that a format-specific parser is required; current built-in UVE envelope
     /// kinds report deterministic generic copy authority, while PlainText reports the

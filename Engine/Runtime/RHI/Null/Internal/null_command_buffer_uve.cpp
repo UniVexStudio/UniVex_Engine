@@ -67,6 +67,7 @@ void NullCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPas
         }
     }
     m_insideRenderPass = true;
+    ++m_passEpoch;
     m_commands.emplace_back(BeginRenderPassCommandUVE{renderPassDesc});
 }
 
@@ -74,7 +75,15 @@ void NullCommandBufferUVE::EndRenderPassUVE() {
     if (!RequireInsideRenderPassUVE(m_insideRenderPass, "EndRenderPassUVE")) {
         return;
     }
+    if (m_activeQuery != 0U) {
+        // A bracket may not span the pass boundary: close it here (loudly) so the recorded
+        // sequence stays valid, and let the caller's late EndQueryUVE report InvalidState.
+        UVE_ERROR("NullCommandBufferUVE: EndRenderPassUVE closed an occlusion query that was still open");
+        m_commands.emplace_back(EndQueryCommandUVE{QueryHandleUVE{m_activeQuery}});
+        m_activeQuery = 0U;
+    }
     m_insideRenderPass = false;
+    ++m_passEpoch;
     m_commands.emplace_back(EndRenderPassCommandUVE{});
 }
 
@@ -207,6 +216,58 @@ RenderOperationResultUVE NullCommandBufferUVE::MemoryBarrierUVE(MemoryBarrierMas
     if (m_insideRenderPass)
         return RenderOperationResultUVE::InvalidState;
     m_commands.emplace_back(MemoryBarrierCommandUVE{mask});
+    return RenderOperationResultUVE::Recorded;
+}
+
+std::optional<RenderQueryKindUVE> NullCommandBufferUVE::LookupQueryKindUVE(const QueryHandleUVE query) const {
+    if (query.value == 0U)
+        return std::nullopt;
+    if (!m_queryKindLookup)
+        return std::nullopt;
+    return m_queryKindLookup(query);
+}
+
+RenderOperationResultUVE NullCommandBufferUVE::BeginQueryUVE(const QueryHandleUVE query) {
+    if (query.value == 0U)
+        return RenderOperationResultUVE::InvalidHandle;
+    if (m_queryKindLookup) {
+        const auto kind = LookupQueryKindUVE(query);
+        if (!kind.has_value())
+            return RenderOperationResultUVE::InvalidHandle;
+        if (*kind != RenderQueryKindUVE::AnySamplesPassed)
+            return RenderOperationResultUVE::InvalidArgument;
+    }
+    if (m_activeQuery != 0U)
+        return RenderOperationResultUVE::InvalidState;
+    m_activeQuery = query.value;
+    m_activeQueryPassEpoch = m_passEpoch;
+    m_commands.emplace_back(BeginQueryCommandUVE{query});
+    return RenderOperationResultUVE::Recorded;
+}
+
+RenderOperationResultUVE NullCommandBufferUVE::EndQueryUVE(const QueryHandleUVE query) {
+    if (query.value == 0U)
+        return RenderOperationResultUVE::InvalidHandle;
+    if (m_activeQuery != query.value)
+        return RenderOperationResultUVE::InvalidState;
+    if (m_activeQueryPassEpoch != m_passEpoch)
+        return RenderOperationResultUVE::InvalidState;
+    m_activeQuery = 0U;
+    m_commands.emplace_back(EndQueryCommandUVE{query});
+    return RenderOperationResultUVE::Recorded;
+}
+
+RenderOperationResultUVE NullCommandBufferUVE::WriteTimestampUVE(const QueryHandleUVE query) {
+    if (query.value == 0U)
+        return RenderOperationResultUVE::InvalidHandle;
+    if (m_queryKindLookup) {
+        const auto kind = LookupQueryKindUVE(query);
+        if (!kind.has_value())
+            return RenderOperationResultUVE::InvalidHandle;
+        if (*kind != RenderQueryKindUVE::Timestamp)
+            return RenderOperationResultUVE::InvalidArgument;
+    }
+    m_commands.emplace_back(WriteTimestampCommandUVE{query});
     return RenderOperationResultUVE::Recorded;
 }
 } // namespace UVE::Render

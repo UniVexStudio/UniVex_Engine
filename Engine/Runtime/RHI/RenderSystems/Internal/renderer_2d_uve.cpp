@@ -248,8 +248,10 @@ void Renderer2DUVE::RenderFrameToTargetUVE(Scene::IEntityManagerUVE& entityManag
         }
     }
     if (m_vertexBuffer == kInvalidBufferHandleUVE) {
+        // One quad rewritten per sprite draw: host-visible, streamed placement.
         m_vertexBuffer = m_renderDevice.CreateBufferUVE(
-            BufferDescUVE{sizeof(Sprite2DVertexUVE) * 6U, BufferUsageUVE::Vertex});
+            BufferDescUVE{sizeof(Sprite2DVertexUVE) * 6U, BufferUsageUVE::Vertex,
+                          BufferMemoryUVE::Upload, BufferUpdateFrequencyUVE::Stream});
         if (m_vertexBuffer == kInvalidBufferHandleUVE) {
             UVE_ERROR("Renderer2DUVE: sprite vertex buffer creation failed; frame recording will be skipped");
             return;

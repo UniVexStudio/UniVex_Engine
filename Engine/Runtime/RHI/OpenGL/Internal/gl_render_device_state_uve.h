@@ -85,6 +85,10 @@ struct GlDeviceStateUVE {
         /// IndirectStorage buffer's home target is GL_SHADER_STORAGE_BUFFER, exactly like a plain
         /// Storage buffer's, and DrawIndexedIndirectUVE must be able to tell them apart.
         BufferUsageUVE usage = BufferUsageUVE::Vertex;
+        /// The placement/update hints as requested (GL folds them into the glBufferData token;
+        /// GetBufferDescUVE reports them back unchanged).
+        BufferMemoryUVE memory = BufferMemoryUVE::Auto;
+        BufferUpdateFrequencyUVE updateFrequency = BufferUpdateFrequencyUVE::Static;
     };
     std::unordered_map<std::uint32_t, BufferRecordUVE> buffers;
     std::uint32_t nextBufferHandle = 1;

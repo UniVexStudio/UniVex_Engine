@@ -10,6 +10,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "null_command_buffer_uve.h"
 #include "uve/logging/assert_uve.h"
@@ -86,8 +87,9 @@ BufferHandleUVE NullRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc,
         UVE_ERROR("NullRenderDeviceUVE: CreateBufferUVE initial data exceeds buffer size");
         return kInvalidBufferHandleUVE;
     }
-    if (!IsBufferUsageValidUVE(desc.usage)) {
-        UVE_ERROR("NullRenderDeviceUVE: CreateBufferUVE received an unknown buffer usage");
+    if (!IsBufferDescValidUVE(desc)) {
+        UVE_ERROR("NullRenderDeviceUVE: CreateBufferUVE received an unknown buffer usage, memory or "
+                  "update-frequency value");
         return kInvalidBufferHandleUVE;
     }
     const std::uint32_t handleValue = m_impl->nextBufferHandle++;
@@ -376,7 +378,16 @@ PipelineHandleUVE NullRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<con
 }
 
 std::unique_ptr<ICommandBufferUVE> NullRenderDeviceUVE::CreateCommandBufferUVE() {
-    return std::make_unique<NullCommandBufferUVE>();
+    // Recorded query brackets validate against this device's query table (owner-thread
+    // recording, like GL); the lookup reads the table without mutating it.
+    ImplUVE* const impl = m_impl.get();
+    return std::make_unique<NullCommandBufferUVE>(
+        [impl](const QueryHandleUVE query) -> std::optional<RenderQueryKindUVE> {
+            const auto found = impl->queries.find(query.value);
+            if (found == impl->queries.end())
+                return std::nullopt;
+            return found->second.kind;
+        });
 }
 
 void NullRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer) {
@@ -385,6 +396,43 @@ void NullRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBu
     UVE_ASSERT(nullCommandBuffer != nullptr); // only this device's own CreateCommandBufferUVE() ever produces one
     const std::lock_guard<std::mutex> submissionLock(m_impl->submissionMutex);
     m_impl->lastSubmittedCommands = nullCommandBuffer->GetRecordedCommandsUVE();
+}
+
+RenderOperationResultUVE NullRenderDeviceUVE::SubmitWithSyncUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer,
+                                                                const SubmitDescUVE &desc) {
+    if (desc.waits.empty() && desc.signals.empty()) {
+        SubmitUVE(std::move(commandBuffer));
+        return RenderOperationResultUVE::Recorded;
+    }
+    SubmitOperationUVE record;
+    {
+        const std::lock_guard lock(m_impl->semaphoreMutex);
+        std::vector<std::uint32_t> seen;
+        const auto unique = [&seen](const std::uint32_t handleValue) {
+            if (std::find(seen.begin(), seen.end(), handleValue) != seen.end())
+                return false;
+            seen.push_back(handleValue);
+            return true;
+        };
+        for (const SemaphoreWaitUVE &wait : desc.waits) {
+            if (m_impl->semaphores.find(wait.semaphore.value) == m_impl->semaphores.end())
+                return RenderOperationResultUVE::InvalidHandle;
+            if (!unique(wait.semaphore.value))
+                return RenderOperationResultUVE::InvalidArgument;
+        }
+        for (const SemaphoreSignalUVE &signal : desc.signals) {
+            const auto found = m_impl->semaphores.find(signal.semaphore.value);
+            if (found == m_impl->semaphores.end())
+                return RenderOperationResultUVE::InvalidHandle;
+            if (!unique(signal.semaphore.value) || !IsSemaphoreSignalValueValidUVE(found->second.value, signal.value))
+                return RenderOperationResultUVE::InvalidArgument;
+        }
+        record.waits.assign(desc.waits.begin(), desc.waits.end());
+        record.signals.assign(desc.signals.begin(), desc.signals.end());
+    }
+    m_impl->RecordUVE(std::move(record));
+    SubmitUVE(std::move(commandBuffer));
+    return RenderOperationResultUVE::Recorded;
 }
 
 void NullRenderDeviceUVE::PresentUVE() {
@@ -457,6 +505,14 @@ RenderOperationResultUVE NullRenderDeviceUVE::GetTextureDescUVE(TextureHandleUVE
     output = found->second;
     return RenderOperationResultUVE::Success;
 }
+RenderOperationResultUVE NullRenderDeviceUVE::GetBufferDescUVE(BufferHandleUVE handle,
+                                                               BufferDescUVE &output) const {
+    const auto found = m_impl->buffers.find(handle.value);
+    if (found == m_impl->buffers.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    output = found->second.desc;
+    return RenderOperationResultUVE::Success;
+}
 RenderOperationResultUVE NullRenderDeviceUVE::CopyBufferUVE(const BufferCopyDescUVE &copy) {
     const auto source = m_impl->buffers.find(copy.source.value);
     const auto target = m_impl->buffers.find(copy.destination.value);
@@ -485,8 +541,7 @@ RenderOperationResultUVE NullRenderDeviceUVE::GenerateMipmapsUVE(TextureHandleUV
     if (found == m_impl->textures.end())
         return RenderOperationResultUVE::InvalidHandle;
     const auto &desc = found->second;
-    if (desc.mipLevels < 2U ||
-        (desc.format != TextureFormatUVE::RGBA8Unorm && desc.format != TextureFormatUVE::RGBA16Float))
+    if (!CanGenerateMipmapsUVE(desc))
         return RenderOperationResultUVE::InvalidArgument;
     m_impl->RecordUVE(GenerateMipsOperationUVE{texture});
     return RenderOperationResultUVE::Recorded;

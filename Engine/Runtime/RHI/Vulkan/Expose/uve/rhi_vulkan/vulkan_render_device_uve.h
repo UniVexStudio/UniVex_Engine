@@ -222,6 +222,8 @@ public:
     [[nodiscard]] RenderDeviceCapabilitiesUVE GetCapabilitiesUVE() const noexcept override;
     [[nodiscard]] RenderOperationResultUVE GetTextureDescUVE(TextureHandleUVE,
                                                              TextureDescUVE &) const override;
+    [[nodiscard]] RenderOperationResultUVE GetBufferDescUVE(BufferHandleUVE,
+                                                            BufferDescUVE &) const override;
     [[nodiscard]] RenderOperationResultUVE CopyBufferUVE(const BufferCopyDescUVE &) override;
     /// Tier 2.6 color blit: one recorded vkCmdBlitImage on a transient command buffer, gated on
     /// the per-format blit/filter feature bits, with both subresources restored to the layout the
@@ -296,6 +298,13 @@ public:
                                                                 const PipelineBinaryDescUVE& desc) override;
     [[nodiscard]] std::unique_ptr<ICommandBufferUVE> CreateCommandBufferUVE() override;
     void SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer) override;
+    /// Foundation WP4: SubmitUVE plus timeline waits/signals, honoured at this backend's real
+    /// queue granularity - the frame batch. All waits of a frame's submissions gate that frame's
+    /// single vkQueueSubmit (VkTimelineSemaphoreSubmitInfo); all signals are performed when that
+    /// batch completes. Validated at submit time against the live semaphore table; see the
+    /// interface comment for the result contract.
+    [[nodiscard]] RenderOperationResultUVE SubmitWithSyncUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer,
+                                                            const SubmitDescUVE &desc) override;
 
     // --- M1 real behaviour ---
     /// Advances one frame: waits for the previous frame's fence (one frame in flight),

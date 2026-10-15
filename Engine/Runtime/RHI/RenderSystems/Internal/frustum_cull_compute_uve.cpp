@@ -146,6 +146,8 @@ bool FrustumCullComputeUVE::EnsureBufferCapacityUVE(const std::size_t boxCount) 
     BufferDescUVE visibilityDesc;
     visibilityDesc.usage = BufferUsageUVE::Storage;
     visibilityDesc.sizeBytes = boxCount * sizeof(std::uint32_t);
+    visibilityDesc.memory = BufferMemoryUVE::Readback; // compute writes it, the CPU reads it every pass
+    visibilityDesc.updateFrequency = BufferUpdateFrequencyUVE::Dynamic;
     m_visibilityBuffer = m_device.CreateBufferUVE(visibilityDesc);
 
     if (m_boxBuffer == kInvalidBufferHandleUVE || m_visibilityBuffer == kInvalidBufferHandleUVE) {

@@ -30,6 +30,12 @@ public:
 
     [[nodiscard]] RenderFeatureSupportUVE GetMemoryBarrierSupportUVE() const noexcept override;
     [[nodiscard]] RenderOperationResultUVE MemoryBarrierUVE(MemoryBarrierMaskUVE mask) override;
+    // Foundation WP3: recorded query brackets. GL issues immediately, so these are the same
+    // glBeginQuery/glEndQuery/glQueryCounter calls the device-level entry points make, minus
+    // the device path's glFinish — a finish inside a recorded stream would serialise every draw.
+    [[nodiscard]] RenderOperationResultUVE BeginQueryUVE(QueryHandleUVE query) override;
+    [[nodiscard]] RenderOperationResultUVE EndQueryUVE(QueryHandleUVE query) override;
+    [[nodiscard]] RenderOperationResultUVE WriteTimestampUVE(QueryHandleUVE query) override;
     void BeginRenderPassUVE(const RenderPassDescUVE& renderPassDesc) override;
     void EndRenderPassUVE() override;
     void BindPipelineUVE(PipelineHandleUVE pipeline) override;
@@ -71,6 +77,11 @@ private:
 
     Detail::GlDeviceStateUVE* m_state;
     bool m_insideRenderPass = false;
+    // Pass epoch of the open recorded occlusion bracket (0 = none open through this buffer);
+    // brackets may not span pass markers (the rule Vulkan enforces, kept identical here).
+    std::uint64_t m_passEpoch = 0U;
+    std::uint64_t m_activeQueryPassEpoch = 0U;
+    std::uint32_t m_activeQuery = 0U;
     GLuint m_tempFramebuffer = 0; // Nonzero while a real-texture-backed pass is active; the FBO
                                    // name comes from GlDeviceStateUVE's attachment-pair cache and
                                    // is released only when a dependent texture or the device is

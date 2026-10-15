@@ -90,20 +90,46 @@ void ApplyStencilFaceUVE(const Detail::GlFunctionsUVE& gl, const GLenum face,
             return GL_TRIANGLES;
         case PrimitiveTopologyUVE::Lines:
             return GL_LINES;
+        case PrimitiveTopologyUVE::Points:
+            return GL_POINTS;
+        case PrimitiveTopologyUVE::LineStrip:
+            return GL_LINE_STRIP;
+        case PrimitiveTopologyUVE::TriangleStrip:
+            return GL_TRIANGLE_STRIP;
     }
     return GL_TRIANGLES;
 }
 
-[[nodiscard]] GLint VertexAttributeComponentCountUVE(VertexAttributeFormatUVE format) noexcept {
+/// The glVertexAttrib(I)Pointer arguments for one RHI attribute format.
+struct GlVertexAttributeFetchUVE final {
+    GLint componentCount = 3;
+    GLenum type = GL_FLOAT;
+    GLboolean normalized = GL_FALSE;
+    bool integer = false; ///< glVertexAttribIPointer instead of glVertexAttribPointer
+};
+
+[[nodiscard]] GlVertexAttributeFetchUVE VertexAttributeFetchUVE(VertexAttributeFormatUVE format) noexcept {
     switch (format) {
         case VertexAttributeFormatUVE::Float2:
-            return 2;
+            return {2, GL_FLOAT, GL_FALSE, false};
         case VertexAttributeFormatUVE::Float3:
-            return 3;
+            return {3, GL_FLOAT, GL_FALSE, false};
         case VertexAttributeFormatUVE::Float4:
-            return 4;
+            return {4, GL_FLOAT, GL_FALSE, false};
+        case VertexAttributeFormatUVE::UByte4Norm:
+            return {4, GL_UNSIGNED_BYTE, GL_TRUE, false};
+        case VertexAttributeFormatUVE::UShort4:
+            return {4, GL_UNSIGNED_SHORT, GL_FALSE, true};
+        case VertexAttributeFormatUVE::UInt4:
+            return {4, GL_UNSIGNED_INT, GL_FALSE, true};
+        case VertexAttributeFormatUVE::Short2Norm:
+            return {2, GL_SHORT, GL_TRUE, false};
+        case VertexAttributeFormatUVE::Half2:
+            return {2, GL_HALF_FLOAT, GL_FALSE, false};
+        case VertexAttributeFormatUVE::Half4:
+            return {4, GL_HALF_FLOAT, GL_FALSE, false};
     }
-    return 3;
+    return {};
 }
 
 [[nodiscard]] bool IsFiniteVector3UVE(const Math::Vector3UVE& value) noexcept {
@@ -161,6 +187,7 @@ void ApplyStencilFaceUVE(const Detail::GlFunctionsUVE& gl, const GLenum face,
 GlCommandBufferUVE::GlCommandBufferUVE(Detail::GlDeviceStateUVE& state) : m_state(&state) {}
 
 void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassDesc) {
+    ++m_passEpoch;
     if (!RequireOutsideRenderPassUVE(m_insideRenderPass)) {
         return;
     }
@@ -257,6 +284,16 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
             UVE_ERROR("GlCommandBufferUVE: depthAttachment must use a depth texture format");
             return;
         }
+        // Usage set: a texture created without RenderTarget (a sampled-only asset, a volume)
+        // is refused here, before any FBO state changes, instead of failing completeness later.
+        if ((colorIt != m_state->textures.end() &&
+             !HasTextureUsageUVE(GetEffectiveTextureUsageUVE(colorIt->second.desc), TextureUsageUVE::RenderTarget)) ||
+            (depthIt != m_state->textures.end() &&
+             !HasTextureUsageUVE(GetEffectiveTextureUsageUVE(depthIt->second.desc), TextureUsageUVE::RenderTarget))) {
+            UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE attachment was created without "
+                      "TextureUsageUVE::RenderTarget");
+            return;
+        }
         // Tier 2.4: extras need location 0 (a pass with extras but no colorAttachment is
         // malformed — the swapchain/default framebuffer never takes extras).
         if (hasExtraAttachments && colorIt == m_state->textures.end()) {
@@ -326,6 +363,12 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
                     IsTextureFormatCompressedUVE(extraIt->second.desc.format)) {
                     UVE_ERROR("GlCommandBufferUVE: extra color attachments must use a color texture "
                               "format (block-compressed textures are sampled-only)");
+                    return;
+                }
+                if (!HasTextureUsageUVE(GetEffectiveTextureUsageUVE(extraIt->second.desc),
+                                        TextureUsageUVE::RenderTarget)) {
+                    UVE_ERROR("GlCommandBufferUVE: extra color attachment was created without "
+                              "TextureUsageUVE::RenderTarget");
                     return;
                 }
                 if (extraIt->second.desc.width != colorIt->second.desc.width ||
@@ -590,6 +633,18 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
 }
 
 void GlCommandBufferUVE::EndRenderPassUVE() {
+    ++m_passEpoch;
+    if (m_activeQuery != 0U && m_state != nullptr && m_state->activeOcclusion == m_activeQuery) {
+        // A bracket may not span the pass boundary: close it loudly so the GL query object is
+        // left in a valid state; the caller's late EndQueryUVE reports InvalidState.
+        UVE_ERROR("GlCommandBufferUVE: EndRenderPassUVE closed an occlusion query that was still open");
+        m_state->gl.glEndQuery(GL_ANY_SAMPLES_PASSED);
+        const auto found = m_state->queries.find(m_activeQuery);
+        if (found != m_state->queries.end())
+            found->second.issued = true;
+        m_state->activeOcclusion = 0U;
+        m_activeQuery = 0U;
+    }
     if (!RequireInsideRenderPassUVE(m_insideRenderPass, "EndRenderPassUVE")) {
         return;
     }
@@ -696,6 +751,16 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
             break;
     }
+#if !defined(__ANDROID__)
+    // Points take their size from the vertex shader's gl_PointSize, which desktop GL ignores
+    // unless program point size is enabled (GLES always honours it). Toggled per pipeline so a
+    // Points pipeline never leaks the mode into the next triangle pipeline's state.
+    if (pipelineIt->second.topology == PrimitiveTopologyUVE::Points) {
+        glEnable(GL_PROGRAM_POINT_SIZE);
+    } else {
+        glDisable(GL_PROGRAM_POINT_SIZE);
+    }
+#endif
     if (pipelineIt->second.depthBiasEnabled) {
         glEnable(GL_POLYGON_OFFSET_FILL);
         // NOTE the argument order: glPolygonOffset takes (slopeFactor, constantUnits).
@@ -756,10 +821,17 @@ void GlCommandBufferUVE::BindVertexBufferUVE(BufferHandleUVE buffer, std::uint32
     for (std::size_t index = 0; index < pipelineRecord->vertexLayout.size(); ++index) {
         const VertexAttributeUVE& attribute = pipelineRecord->vertexLayout[index];
         const auto attributeIndex = static_cast<GLuint>(index);
-        m_state->gl.glVertexAttribPointer(
-            attributeIndex, VertexAttributeComponentCountUVE(attribute.format), GL_FLOAT, GL_FALSE,
-            static_cast<GLsizei>(m_currentVertexStride),
-            reinterpret_cast<const void*>(static_cast<std::uintptr_t>(attribute.offset)));
+        const GlVertexAttributeFetchUVE fetch = VertexAttributeFetchUVE(attribute.format);
+        const auto* const pointer = reinterpret_cast<const void*>(static_cast<std::uintptr_t>(attribute.offset));
+        if (fetch.integer) {
+            // Pipeline creation refused integer layouts when this entry point is absent.
+            UVE_ASSERT(m_state->gl.glVertexAttribIPointer != nullptr);
+            m_state->gl.glVertexAttribIPointer(attributeIndex, fetch.componentCount, fetch.type,
+                                               static_cast<GLsizei>(m_currentVertexStride), pointer);
+        } else {
+            m_state->gl.glVertexAttribPointer(attributeIndex, fetch.componentCount, fetch.type, fetch.normalized,
+                                              static_cast<GLsizei>(m_currentVertexStride), pointer);
+        }
         m_state->gl.glEnableVertexAttribArray(attributeIndex);
     }
     m_boundVertexBuffer = buffer;
@@ -809,6 +881,12 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
         UVE_ERROR("GlCommandBufferUVE: BindTextureUVE referenced an unknown texture handle");
         return;
     }
+    const TextureUsageUVE textureUsage = GetEffectiveTextureUsageUVE(textureIt->second.desc);
+    if (!HasTextureUsageUVE(textureUsage, TextureUsageUVE::Sampled)) {
+        UVE_ERROR("GlCommandBufferUVE: BindTextureUVE texture was created without TextureUsageUVE::Sampled; "
+                  "the slot keeps its previous binding");
+        return;
+    }
     const auto boundTextureIt = m_boundTextures.find(slot);
     const bool alreadyBoundToSlot =
         boundTextureIt != m_boundTextures.end() && boundTextureIt->second == texture;
@@ -820,6 +898,8 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
                                       ? GL_TEXTURE_CUBE_MAP
                                   : textureIt->second.desc.type == TextureTypeUVE::Texture2DArray
                                       ? GL_TEXTURE_2D_ARRAY
+                                  : textureIt->second.desc.type == TextureTypeUVE::Texture3D
+                                      ? GL_TEXTURE_3D
                                       : GL_TEXTURE_2D;
         glBindTexture(bindTarget, textureIt->second.glTexture);
         m_boundTextures[slot] = texture;
@@ -855,6 +935,27 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
                     case TextureFormatUVE::RGBA16Float:
                         imageFormat = GL_RGBA16F;
                         break;
+                    case TextureFormatUVE::R8Unorm:
+                        imageFormat = GL_R8;
+                        break;
+                    case TextureFormatUVE::RG8Unorm:
+                        imageFormat = GL_RG8;
+                        break;
+                    case TextureFormatUVE::R16Float:
+                        imageFormat = GL_R16F;
+                        break;
+                    case TextureFormatUVE::RG16Float:
+                        imageFormat = GL_RG16F;
+                        break;
+                    case TextureFormatUVE::R32Float:
+                        imageFormat = GL_R32F;
+                        break;
+                    case TextureFormatUVE::RG32Float:
+                        imageFormat = GL_RG32F;
+                        break;
+                    case TextureFormatUVE::RGBA32Float:
+                        imageFormat = GL_RGBA32F;
+                        break;
                     case TextureFormatUVE::Depth32Float:
                     case TextureFormatUVE::Depth24Stencil8:
                     case TextureFormatUVE::BC1RGB:
@@ -868,14 +969,18 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
                 }
                 // Tier 2.3: layered storage images are out of scope — arrays/cubes stay
                 // sampler-only, matching the Vulkan backend's black-sink fallback.
-                if (imageFormat != 0 && textureIt->second.desc.arrayLayers <= 1U) {
+                const bool storageAllowed = HasTextureUsageUVE(textureUsage, TextureUsageUVE::Storage);
+                if (imageFormat != 0 && textureIt->second.desc.arrayLayers <= 1U && storageAllowed) {
                     m_state->gl.glBindImageTexture(slot, textureIt->second.glTexture, 0, GL_FALSE,
                                                    0, GL_READ_WRITE, imageFormat);
                 } else {
                     // Do not leave a prior command's image binding live when the new sampled
                     // texture cannot legally serve as a storage image.
                     m_state->gl.glBindImageTexture(slot, 0U, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8);
-                    if (textureIt->second.desc.arrayLayers > 1U) {
+                    if (!storageAllowed) {
+                        UVE_ERROR("GlCommandBufferUVE: texture was created without TextureUsageUVE::Storage; "
+                                  "the image unit is left unbound");
+                    } else if (textureIt->second.desc.arrayLayers > 1U) {
                         UVE_ERROR("GlCommandBufferUVE: array/cubemap textures cannot be bound as "
                                   "storage images in Tier 2.3; the image unit is left unbound");
                     } else if (IsTextureFormatCompressedUVE(textureIt->second.desc.format)) {
@@ -1290,6 +1395,67 @@ RenderOperationResultUVE GlCommandBufferUVE::MemoryBarrierUVE(MemoryBarrierMaskU
     m_state->gl.glMemoryBarrier(native);
     return glGetError() == GL_NO_ERROR ? RenderOperationResultUVE::Success
                                        : RenderOperationResultUVE::SystemError;
+#endif
+}
+} // namespace UVE::Render
+
+namespace UVE::Render {
+RenderOperationResultUVE GlCommandBufferUVE::BeginQueryUVE(const QueryHandleUVE query) {
+    if (m_state == nullptr)
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto& state = *m_state;
+    if (state.gl.glBeginQuery == nullptr || state.gl.glEndQuery == nullptr)
+        return RenderOperationResultUVE::Unsupported;
+    const auto found = state.queries.find(query.value);
+    if (found == state.queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (found->second.kind != RenderQueryKindUVE::AnySamplesPassed)
+        return RenderOperationResultUVE::InvalidArgument;
+    if (state.activeOcclusion != 0U || m_activeQuery != 0U)
+        return RenderOperationResultUVE::InvalidState;
+    state.gl.glBeginQuery(GL_ANY_SAMPLES_PASSED, found->second.native);
+    state.activeOcclusion = query.value;
+    found->second.issued = false;
+    m_activeQuery = query.value;
+    m_activeQueryPassEpoch = m_passEpoch;
+    return RenderOperationResultUVE::Recorded;
+}
+
+RenderOperationResultUVE GlCommandBufferUVE::EndQueryUVE(const QueryHandleUVE query) {
+    if (m_state == nullptr)
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto& state = *m_state;
+    const auto found = state.queries.find(query.value);
+    if (found == state.queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (m_activeQuery != query.value || state.activeOcclusion != query.value)
+        return RenderOperationResultUVE::InvalidState;
+    if (m_activeQueryPassEpoch != m_passEpoch)
+        return RenderOperationResultUVE::InvalidState;
+    state.gl.glEndQuery(GL_ANY_SAMPLES_PASSED);
+    state.activeOcclusion = 0U;
+    m_activeQuery = 0U;
+    found->second.issued = true;
+    return RenderOperationResultUVE::Recorded;
+}
+
+RenderOperationResultUVE GlCommandBufferUVE::WriteTimestampUVE(const QueryHandleUVE query) {
+    if (m_state == nullptr)
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto& state = *m_state;
+    const auto found = state.queries.find(query.value);
+    if (found == state.queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (found->second.kind != RenderQueryKindUVE::Timestamp)
+        return RenderOperationResultUVE::InvalidArgument;
+#if defined(__ANDROID__)
+    return RenderOperationResultUVE::Unsupported;
+#else
+    if (state.gl.glQueryCounter == nullptr)
+        return RenderOperationResultUVE::Unsupported;
+    state.gl.glQueryCounter(found->second.native, GL_TIMESTAMP);
+    found->second.issued = true;
+    return RenderOperationResultUVE::Recorded;
 #endif
 }
 } // namespace UVE::Render

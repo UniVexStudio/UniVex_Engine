@@ -31,6 +31,8 @@ public:
     [[nodiscard]] RenderDeviceCapabilitiesUVE GetCapabilitiesUVE() const noexcept override;
     [[nodiscard]] RenderOperationResultUVE GetTextureDescUVE(TextureHandleUVE,
                                                              TextureDescUVE &) const override;
+    [[nodiscard]] RenderOperationResultUVE GetBufferDescUVE(BufferHandleUVE,
+                                                            BufferDescUVE &) const override;
     [[nodiscard]] RenderOperationResultUVE CopyBufferUVE(const BufferCopyDescUVE &) override;
     [[nodiscard]] RenderOperationResultUVE BlitTextureUVE(const TextureBlitDescUVE &) override;
     [[nodiscard]] RenderOperationResultUVE GenerateMipmapsUVE(TextureHandleUVE) override;
@@ -100,6 +102,11 @@ public:
 
     [[nodiscard]] std::unique_ptr<ICommandBufferUVE> CreateCommandBufferUVE() override;
     void SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer) override;
+    /// Foundation WP4: validates the desc against this device's semaphore table, records a
+    /// SubmitOperationUVE with the exact waits/signals, then submits like SubmitUVE. No counter
+    /// moves: a recorded signal is evidence of a request, never of GPU progress.
+    [[nodiscard]] RenderOperationResultUVE SubmitWithSyncUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer,
+                                                            const SubmitDescUVE &desc) override;
     void PresentUVE() override;
 
     [[nodiscard]] bool IsUsableUVE() const noexcept override;
