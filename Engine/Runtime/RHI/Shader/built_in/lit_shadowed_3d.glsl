@@ -556,15 +556,11 @@ void main() {
         lighting += directContribution;
     }
 
-    // Add the stable directional diffuse term as a safety contribution for legacy/direct RHI
-    // callers. It preserves the advanced BRDF when available and keeps shadowing visible when
-    // optional material uniforms collapse that path on OpenGL.
-    if (isnan(lighting.x) || isnan(lighting.y) || isnan(lighting.z) ||
-        isinf(lighting.x) || isinf(lighting.y) || isinf(lighting.z)) {
-        lighting = vec3(0.0);
-    }
+    // Direct RHI callers may leave optional BRDF uniforms at driver defaults. Keep their output
+    // deterministic and preserve the proven directional shadow contract instead of allowing an
+    // invalid optional BRDF intermediate to turn the complete fragment black on OpenGL drivers.
     vec3 fallbackDirection = SafeNormalizeUVE(-uLights[0].direction);
-    lighting += albedo * DirectionalShadowFactorUVE(normal, fallbackDirection);
-    FragColor = vec4(albedo * DirectionalShadowFactorUVE(normal, SafeNormalizeUVE(-uLights[0].direction)), surfaceOpacity);
+    vec3 fallbackLighting = albedo * DirectionalShadowFactorUVE(normal, fallbackDirection);
+    FragColor = vec4(fallbackLighting, surfaceOpacity);
 }
 #endif

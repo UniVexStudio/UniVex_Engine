@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "uve/component/entity_uve.h"
+#include "uve/component/component_access_uve.h"
 
 namespace UVE::Scene {
 
@@ -47,12 +48,12 @@ public:
     /// One iterated match: the entity plus live references to its matched components.
     struct EntryUVE final {
         EntityUVE entity = kInvalidEntityUVE;
-        std::tuple<TComponents&...> components;
+        std::tuple<PublicComponentUVE<TComponents>&...> components;
 
         /// The live `T` for this entry. `T` must be one of the view's component types.
         template <typename T>
-        [[nodiscard]] T& GetUVE() {
-            return std::get<T&>(components);
+        [[nodiscard]] PublicComponentUVE<T>& GetUVE() {
+            return std::get<PublicComponentUVE<T>&>(components);
         }
     };
 
@@ -98,7 +99,7 @@ public:
 
         template <std::size_t... Is>
         [[nodiscard]] static EntryUVE MakeEntryUVE(const RowUVE& row, std::index_sequence<Is...>) {
-            return EntryUVE{row.entity, std::tie(*static_cast<TComponents*>(row.pointers[Is])...)};
+            return EntryUVE{row.entity, std::tie(*static_cast<PublicComponentUVE<TComponents>*>(row.pointers[Is])...)};
         }
 
         const EntityViewUVE* m_view = nullptr;

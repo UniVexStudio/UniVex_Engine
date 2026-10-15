@@ -3650,6 +3650,12 @@ TEST(EngineCoreUVETest, WindowedMode_UIOverlayRendersAuthoredUIAndRegistersAReal
     config.windowGlVersionMajor = 4U;
     config.windowGlVersionMinor = 5U;
 
+    // This fixture asserts pixels on frame one, not eventual shader readiness. Request the
+    // production synchronous policy explicitly: the default async policy may legitimately
+    // still be preprocessing UIOverlay when its first Update runs on a loaded CI worker.
+    // Keep every pixel and real-input assertion below unchanged.
+    config.shaderCompilationModeUVE = ShaderCompilationModeUVE::SynchronousOnDemandUVE;
+
     EngineCoreUVE engine(config);
     engine.Init();
     if (!engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {

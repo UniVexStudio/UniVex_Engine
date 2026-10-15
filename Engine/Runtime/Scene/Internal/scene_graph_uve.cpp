@@ -20,6 +20,7 @@
 #include "uve/platform/platform_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
+#include "uve/entity/entity_enabled_uve.h"
 
 namespace UVE::Scene {
 
@@ -54,6 +55,40 @@ bool IsAncestorOrMalformedUVE(IEntityManagerUVE& entityManager, EntityUVE potent
 }
 
 } // namespace
+
+bool ISceneGraphUVE::ResetInterpolationSubtreeUVE(IEntityManagerUVE& entityManager, const EntityUVE root) {
+    if (!entityManager.IsAliveUVE(root)) return false;
+    ChildrenIndexUVE children;
+    children.RebuildUVE(entityManager);
+    std::vector<EntityUVE> pending{root};
+    std::unordered_set<EntityUVE> visited;
+    std::vector<EntityUVE> reset;
+    while (!pending.empty()) {
+        const auto entity = pending.back();
+        pending.pop_back();
+        if (!visited.insert(entity).second || !entityManager.IsAliveUVE(entity)) continue;
+        if (entityManager.HasComponentUVE<PhysicsInterpolationComponentUVE>(entity)) reset.push_back(entity);
+        for (const auto child : children.GetChildrenUVE(entity)) pending.push_back(child);
+    }
+    // Complete all allocations before invalidating any history.
+    for (const auto entity : reset) {
+        entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(entity).hasPreviousPose = false;
+    }
+    return true;
+}
+
+bool ISceneGraphUVE::TryTeleportLocalTransformUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                                  const TransformComponentUVE& transform) {
+    if (!entityManager.IsAliveUVE(entity) || !entityManager.HasComponentUVE<TransformComponentUVE>(entity) ||
+        !entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity) ||
+        !entityManager.HasComponentUVE<HierarchyComponentUVE>(entity) ||
+        !IsTransformComponentValidUVE(transform)) return false;
+    // Build/reset the subtree before publishing the authored change, so allocation failure in
+    // the temporary index cannot leave a changed transform with stale smoothing history.
+    if (!ResetInterpolationSubtreeUVE(entityManager, entity)) return false;
+    SetLocalTransformUVE(entityManager, entity, transform);
+    return true;
+}
 
 void SceneGraphUVE::AttachTransformUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                         const TransformComponentUVE& localTransform) {
@@ -104,6 +139,7 @@ void SceneGraphUVE::SetParentUVE(IEntityManagerUVE& entityManager, EntityUVE chi
 
     HierarchyComponentUVE& hierarchy = entityManager.GetComponentUVE<HierarchyComponentUVE>(child);
     if (hierarchy.parent != newParent) {
+        static_cast<void>(ResetInterpolationSubtreeUVE(entityManager, child));
         hierarchy.parent = newParent;
         hierarchy.siblingOrder = NextSiblingOrderUVE(); // after the siblings already there
     }
@@ -189,9 +225,9 @@ bool SceneGraphUVE::ResolveInterpolationModeUVE(const PendingEntityUVE& item, co
     return resolved;
 }
 
-bool SceneGraphUVE::ResolveInterpolationUVE(const PendingEntityUVE& item, const bool parentInterpolated,
-                                            const WorldTransformComponentUVE& world,
-                                            const bool poseChanged) noexcept {
+bool SceneGraphUVE::ResolveInterpolationUVE(IEntityManagerUVE& entityManager, const PendingEntityUVE& item,
+                                            const bool parentInterpolated, const WorldTransformComponentUVE& world,
+                                            const bool poseChanged, const bool poseValid) {
     // No component means the entity is drawn at its simulated pose, and means the parent's answer
     // passes straight through - an intermediate object that never opted in must not break a rig's
     // inheritance chain, the same rule visibility follows.
@@ -200,13 +236,28 @@ bool SceneGraphUVE::ResolveInterpolationUVE(const PendingEntityUVE& item, const 
     }
 
     PhysicsInterpolationComponentUVE& interpolation = *item.interpolation;
+    const bool wasBlended = interpolation.interpolatedInHierarchy;
     const bool resolved = ResolveInterpolationModeUVE(item, parentInterpolated);
+    if (!IsPhysicsInterpolationComponentValidUVE(interpolation)) {
+        interpolation.hasPreviousPose = false;
+        interpolation.interpolatedInHierarchy = false;
+        return false;
+    }
+    // DisabledComponent is deliberately a per-entity simulation tag, not visibility or
+    // inherited disabling. Keep that existing policy; only discard this entity's smoothing.
+    if (!IsEntityEnabledUVE(entityManager, item.entity)) {
+        interpolation.hasPreviousPose = false;
+        return resolved;
+    }
+    if (resolved && !wasBlended) interpolation.hasPreviousPose = false;
+    if (!poseValid) return resolved;
 
-    // Poses are recorded only when the transform actually changed. Recording on every sweep would
-    // collapse previous onto current for a stationary object, and the first frame after it began
-    // moving would then have nothing to blend from - a visible hitch at exactly the moment motion
-    // starts, which is the worst place for one.
-    if (poseChanged) {
+    const bool differentPose = world.worldPosition != interpolation.currentPosition ||
+                               world.worldRotation != interpolation.currentRotation ||
+                               world.worldScale != interpolation.currentScale;
+    // Recompute is not necessarily motion (e.g. an idempotent setter). Do not collapse a useful
+    // previous/current pair on a stationary pass. Explicit reset seeds even when nothing moved.
+    if ((poseChanged && differentPose) || !interpolation.hasPreviousPose) {
         if (interpolation.hasPreviousPose) {
             interpolation.previousPosition = interpolation.currentPosition;
             interpolation.previousRotation = interpolation.currentRotation;
@@ -307,8 +358,8 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
     m_pendingScratch.clear();
     // Recounted every update: entities and their redirects change between frames.
     m_visibilityRedirectCount = 0U;
-    entityManager.ForEachUVE<HierarchyComponentUVE, TransformComponentUVE, WorldTransformComponentUVE>(
-        [this, &entityManager](EntityUVE entity, HierarchyComponentUVE& hierarchy, TransformComponentUVE& local,
+    entityManager.ForEachSceneGraphUVE<HierarchyComponentUVE, TransformComponentUVE, WorldTransformComponentUVE>(
+        GetCacheWriteAccessUVE(), [this, &entityManager](EntityUVE entity, HierarchyComponentUVE& hierarchy, TransformComponentUVE& local,
                                WorldTransformComponentUVE& world) {
             // The component pointers are captured during the walk that already found them. The ECS
             // guarantees they stay valid for the rest of this function because nothing here
@@ -444,8 +495,8 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
                 // No pose recorded on this arm: the world transform is not valid, so storing it
                 // would hand the renderer a NaN to blend towards and drag the object off over the
                 // following frames. Keeping the last good pose freezes it, which is recoverable.
-                const bool interpolated = ResolveInterpolationUVE(item, parentIt->second.interpolatedInHierarchy,
-                                                                  world, /*poseChanged=*/false);
+                const bool interpolated = ResolveInterpolationUVE(entityManager, item, parentIt->second.interpolatedInHierarchy,
+                                                                  world, /*poseChanged=*/false, /*poseValid=*/false);
                 // Designated initializers, deliberately: this aggregate has four same-typed bools
                 // and grew one in the middle, which silently rewired every positional call site
                 // here. Naming the fields makes the next addition a compile error instead.
@@ -505,8 +556,8 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
             // would describe motion it does not have.
             const bool parentInterpolated = !composesFromParent || parentIt->second.interpolatedInHierarchy;
             const bool interpolated =
-                ResolveInterpolationUVE(item, parentInterpolated, world,
-                                        /*poseChanged=*/shouldRecompute && publishedValid);
+                ResolveInterpolationUVE(entityManager, item, parentInterpolated, world,
+                                        /*poseChanged=*/shouldRecompute && publishedValid, publishedValid);
             WorldTransformPassStateUVE state{.valid = publishedValid,
                                              .recomputed = shouldRecompute && publishedValid,
                                              .interpolatedInHierarchy = interpolated,

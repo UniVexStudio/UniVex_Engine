@@ -154,8 +154,9 @@ private:
     /// spatial path (which also records poses) and the pure-Object path (which has no pose).
     static bool ResolveInterpolationModeUVE(const PendingEntityUVE& item, bool parentInterpolated) noexcept;
 
-    static bool ResolveInterpolationUVE(const PendingEntityUVE& item, bool parentInterpolated,
-                                        const WorldTransformComponentUVE& world, bool poseChanged) noexcept;
+    static bool ResolveInterpolationUVE(IEntityManagerUVE& entityManager, const PendingEntityUVE& item,
+                                        bool parentInterpolated, const WorldTransformComponentUVE& world,
+                                        bool poseChanged, bool poseValid);
 
     /// Resolves the three inheriting modes for one entity and publishes each to its component.
     ///

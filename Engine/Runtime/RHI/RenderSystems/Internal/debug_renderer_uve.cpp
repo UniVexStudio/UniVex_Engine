@@ -2,6 +2,7 @@
 
 #include "uve/render_systems/debug_renderer_uve.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -33,7 +34,8 @@ DebugRendererUVE::~DebugRendererUVE() {
     // The program is RAII (its deleter destroys the pipeline on the device), but the vertex
     // buffer is a raw handle: a renderer that submitted and never shut down leaks it, which is
     // a programming error worth aborting a debug build over rather than hiding.
-    UVE_ASSERT(m_vertexBuffer == kInvalidBufferHandleUVE);
+    UVE_ASSERT(m_lineResources.vertexBuffer == kInvalidBufferHandleUVE);
+    UVE_ASSERT(m_pointResources.vertexBuffer == kInvalidBufferHandleUVE);
 }
 
 void DebugRendererUVE::DrawLine3D(const Math::Vector3UVE& from, const Math::Vector3UVE& to,
@@ -115,29 +117,91 @@ void DebugRendererUVE::DrawRect2D(const Math::Vector2UVE& min, const Math::Vecto
     PushLineUVE(Math::Vector3UVE{min.x, max.y, 0.0F}, Math::Vector3UVE{min.x, min.y, 0.0F}, color);
 }
 
+void DebugRendererUVE::DrawPoint3D(const Math::Vector3UVE& position, const Math::Vector3UVE& color) {
+    if (!Math::IsFiniteUVE(position) || !Math::IsFiniteUVE(color)) {
+        UVE_WARNING("DebugRendererUVE: ignoring a point with a non-finite position or color");
+        return;
+    }
+    if (m_points.size() + 1U > kMaximumDebugPointVerticesUVE) {
+        ++m_droppedPoints;
+        return;
+    }
+    m_points.push_back(DebugLineVertexUVE{position, color});
+}
+
+void DebugRendererUVE::SetPointSizeUVE(const float pixels) {
+    if (!std::isfinite(pixels)) {
+        UVE_WARNING("DebugRendererUVE: ignoring a non-finite point size");
+        return;
+    }
+    m_pointSizePixels = std::clamp(pixels, kMinimumDebugPointSizeUVE, kMaximumDebugPointSizeUVE);
+}
+
+float DebugRendererUVE::PointSizeUVE() const noexcept {
+    return m_pointSizePixels;
+}
+
 std::span<const DebugLineVertexUVE> DebugRendererUVE::LinesUVE() const noexcept {
     return m_lines;
+}
+
+std::span<const DebugLineVertexUVE> DebugRendererUVE::PointsUVE() const noexcept {
+    return m_points;
 }
 
 std::size_t DebugRendererUVE::DroppedLineCountUVE() const noexcept {
     return m_droppedLines;
 }
 
+std::size_t DebugRendererUVE::DroppedPointCountUVE() const noexcept {
+    return m_droppedPoints;
+}
+
 void DebugRendererUVE::ClearUVE() noexcept {
     m_lines.clear();
+    m_points.clear();
     m_droppedLines = 0U;
+    m_droppedPoints = 0U;
 }
 
 bool DebugRendererUVE::SubmitUVE(IRenderDeviceUVE& device, Shader::IShaderManagerUVE& shaders,
                                  ICommandBufferUVE& commands,
                                  const Math::Matrix4x4UVE& viewProjection) {
-    if (m_lines.empty()) {
+    if (m_lines.empty() && m_points.empty()) {
         return true;
     }
-    if (m_program == nullptr) {
+    bool deferred = false;
+    if (!m_lines.empty() &&
+        !SubmitBatchUVE(device, shaders, commands, viewProjection, m_lineResources, m_lines,
+                        PrimitiveTopologyUVE::Lines, deferred)) {
+        return false;
+    }
+    if (!m_points.empty() &&
+        !SubmitBatchUVE(device, shaders, commands, viewProjection, m_pointResources, m_points,
+                        PrimitiveTopologyUVE::Points, deferred)) {
+        return false;
+    }
+    if (deferred) {
+        // At least one program's async compile is still in flight: keep both batches so the
+        // next submit draws the frame whole rather than lines now and points later.
+        return true;
+    }
+    ClearUVE();
+    return true;
+}
+
+bool DebugRendererUVE::SubmitBatchUVE(IRenderDeviceUVE& device, Shader::IShaderManagerUVE& shaders,
+                                      ICommandBufferUVE& commands, const Math::Matrix4x4UVE& viewProjection,
+                                      BatchResourcesUVE& resources,
+                                      const std::span<const DebugLineVertexUVE> vertices,
+                                      const PrimitiveTopologyUVE topology, bool& deferred) {
+    const bool points = topology == PrimitiveTopologyUVE::Points;
+    if (resources.program == nullptr) {
         Shader::ShaderProgramDescUVE desc;
-        desc.virtualFilePath = std::string(Shader::BuiltIn::kDebugLineVirtualPath);
-        desc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kDebugLineSource);
+        desc.virtualFilePath = std::string(points ? Shader::BuiltIn::kDebugPointVirtualPath
+                                                  : Shader::BuiltIn::kDebugLineVirtualPath);
+        desc.embeddedFallbackSourceCode = std::string(points ? Shader::BuiltIn::kDebugPointSource
+                                                             : Shader::BuiltIn::kDebugLineSource);
         desc.vertexLayout = {
             VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3,
                                offsetof(DebugLineVertexUVE, position)},
@@ -145,48 +209,56 @@ bool DebugRendererUVE::SubmitUVE(IRenderDeviceUVE& device, Shader::IShaderManage
                                offsetof(DebugLineVertexUVE, color)},
         };
         desc.vertexStride = static_cast<std::uint32_t>(sizeof(DebugLineVertexUVE));
-        desc.topology = PrimitiveTopologyUVE::Lines;
+        desc.topology = topology;
         desc.depthTestEnabled = true;
         // Paint, not geometry (the decal rule): debug lines hide behind the scene but never
         // occlude each other, so coplanar lines don't z-fight.
         desc.depthWriteEnabled = false;
-        desc.debugNameUVE = "DebugLine";
-        m_program = shaders.CreateProgramUVE(desc);
-        if (m_program == nullptr) {
+        desc.debugNameUVE = points ? "DebugPoint" : "DebugLine";
+        resources.program = shaders.CreateProgramUVE(desc);
+        if (resources.program == nullptr) {
             return false;
         }
     }
-    if (!m_program->IsValidUVE()) {
+    if (!resources.program->IsValidUVE()) {
         // Async compile still in flight: keep the batch and let the next submit retry.
+        deferred = true;
         return true;
     }
-    if (m_vertexBuffer == kInvalidBufferHandleUVE) {
-        m_vertexBuffer = device.CreateBufferUVE(
-            BufferDescUVE{sizeof(DebugLineVertexUVE) * kMaximumDebugLineVerticesUVE,
-                          BufferUsageUVE::Vertex});
-        if (m_vertexBuffer == kInvalidBufferHandleUVE) {
+    if (resources.vertexBuffer == kInvalidBufferHandleUVE) {
+        // Rewritten from the CPU every submit: host-visible, streamed placement (on Vulkan a
+        // memcpy into mapped memory instead of a staging submit per frame; GL_STREAM_DRAW on GL).
+        const std::size_t capacity = points ? kMaximumDebugPointVerticesUVE : kMaximumDebugLineVerticesUVE;
+        resources.vertexBuffer = device.CreateBufferUVE(
+            BufferDescUVE{sizeof(DebugLineVertexUVE) * capacity, BufferUsageUVE::Vertex,
+                          BufferMemoryUVE::Upload, BufferUpdateFrequencyUVE::Stream});
+        if (resources.vertexBuffer == kInvalidBufferHandleUVE) {
             return false;
         }
     }
-    if (!device.UpdateBufferUVE(m_vertexBuffer, std::as_bytes(std::span{m_lines}), 0U)) {
+    if (!device.UpdateBufferUVE(resources.vertexBuffer, std::as_bytes(vertices), 0U)) {
         return false;
     }
-    m_program->SetMatrix4x4UVE("uViewProjection", viewProjection);
-    // Binds the Lines pipeline and flushes the queued uniforms; then the batch draws as one.
-    m_program->ApplyToUVE(commands);
-    commands.BindVertexBufferUVE(m_vertexBuffer);
-    commands.DrawUVE(static_cast<std::uint32_t>(m_lines.size()));
-    ClearUVE();
+    resources.program->SetMatrix4x4UVE("uViewProjection", viewProjection);
+    if (points) {
+        resources.program->SetFloatUVE("uPointSize", m_pointSizePixels);
+    }
+    // Binds the pipeline and flushes the queued uniforms; then the batch draws as one.
+    resources.program->ApplyToUVE(commands);
+    commands.BindVertexBufferUVE(resources.vertexBuffer);
+    commands.DrawUVE(static_cast<std::uint32_t>(vertices.size()));
     return true;
 }
 
 void DebugRendererUVE::ShutdownUVE(IRenderDeviceUVE& device) {
-    if (m_vertexBuffer != kInvalidBufferHandleUVE) {
-        device.DestroyBufferUVE(m_vertexBuffer);
-        m_vertexBuffer = kInvalidBufferHandleUVE;
+    for (BatchResourcesUVE* const resources : {&m_lineResources, &m_pointResources}) {
+        if (resources->vertexBuffer != kInvalidBufferHandleUVE) {
+            device.DestroyBufferUVE(resources->vertexBuffer);
+            resources->vertexBuffer = kInvalidBufferHandleUVE;
+        }
+        // Releasing the program destroys its pipeline on the device through the manager's deleter.
+        resources->program.reset();
     }
-    // Releasing the program destroys its pipeline on the device through the manager's deleter.
-    m_program.reset();
     ClearUVE();
 }
 

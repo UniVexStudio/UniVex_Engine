@@ -32,6 +32,27 @@ namespace UVE::Render::Detail {
 /// "only build what the current consumer needs" discipline (see docs/CODING_STANDARDS.md,
 /// Matrix4x4UVE's minimal API for the established precedent).
 struct GlFunctionsUVE {
+    // Optional foundation operations; absent pointers do not disable the baseline renderer.
+    PFNGLCOPYBUFFERSUBDATAPROC glCopyBufferSubData = nullptr;
+    PFNGLBLITFRAMEBUFFERPROC glBlitFramebuffer = nullptr;
+    PFNGLGENERATEMIPMAPPROC glGenerateMipmap = nullptr;
+    PFNGLFENCESYNCPROC glFenceSync = nullptr;
+    PFNGLCLIENTWAITSYNCPROC glClientWaitSync = nullptr;
+    PFNGLDELETESYNCPROC glDeleteSync = nullptr;
+    PFNGLGENQUERIESPROC glGenQueries = nullptr;
+    PFNGLDELETEQUERIESPROC glDeleteQueries = nullptr;
+    PFNGLBEGINQUERYPROC glBeginQuery = nullptr;
+    PFNGLENDQUERYPROC glEndQuery = nullptr;
+    PFNGLGETQUERYIVPROC glGetQueryiv = nullptr;
+    PFNGLGETQUERYOBJECTUIVPROC glGetQueryObjectuiv = nullptr;
+#if !defined(__ANDROID__)
+    PFNGLQUERYCOUNTERPROC glQueryCounter = nullptr;
+    PFNGLGETQUERYOBJECTUI64VPROC glGetQueryObjectui64v = nullptr;
+#endif
+    // Core since GL 2.0; loaded like the other post-1.1 baseline entry points.
+    PFNGLSTENCILFUNCSEPARATEPROC glStencilFuncSeparate = nullptr;
+    PFNGLSTENCILOPSEPARATEPROC glStencilOpSeparate = nullptr;
+    PFNGLSTENCILMASKSEPARATEPROC glStencilMaskSeparate = nullptr;
     PFNGLGENBUFFERSPROC glGenBuffers = nullptr;
     PFNGLDELETEBUFFERSPROC glDeleteBuffers = nullptr;
     PFNGLBINDBUFFERPROC glBindBuffer = nullptr;
@@ -107,6 +128,10 @@ struct GlFunctionsUVE {
     PFNGLDRAWBUFFERSPROC glDrawBuffers = nullptr;
     PFNGLCLEARBUFFERFVPROC glClearBufferfv = nullptr;
     PFNGLINVALIDATEFRAMEBUFFERPROC glInvalidateFramebuffer = nullptr;
+    // Integer vertex attributes (GL 3.0 / GLES 3.0 core): the fetch path for UShort4 / UInt4
+    // layouts. Optional like the entries above — a pipeline whose layout needs it is refused
+    // at creation when getProcAddress cannot supply it; IsCompleteUVE() ignores it.
+    PFNGLVERTEXATTRIBIPOINTERPROC glVertexAttribIPointer = nullptr;
 
     // Uniform-related (Increment 21: ShaderManagerUVE's reflection + ICommandBufferUVE's
     // SetUniform*UVE calls) and program-binary-cache (Increment 21's on-disk shader cache).

@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -151,6 +152,93 @@ TEST(DebugRendererShapeUVETest, NonFiniteInput_IsIgnored) {
     renderer.DrawRect2D(Math::Vector2UVE{0.0F, nan}, Math::Vector2UVE{1.0F, 1.0F}, kWhiteUVE);
     EXPECT_TRUE(renderer.LinesUVE().empty());
     EXPECT_EQ(renderer.DroppedLineCountUVE(), 0U);
+}
+
+TEST(DebugRendererShapeUVETest, DrawPoint3D_BatchesSeparatelyWithCapAndClampedSize) {
+    DebugRendererUVE renderer;
+    EXPECT_FLOAT_EQ(renderer.PointSizeUVE(), kDefaultDebugPointSizeUVE);
+    renderer.SetPointSizeUVE(9.0F);
+    EXPECT_FLOAT_EQ(renderer.PointSizeUVE(), 9.0F);
+    renderer.SetPointSizeUVE(0.0F);
+    EXPECT_FLOAT_EQ(renderer.PointSizeUVE(), kMinimumDebugPointSizeUVE) << "clamped, not refused";
+    renderer.SetPointSizeUVE(1000.0F);
+    EXPECT_FLOAT_EQ(renderer.PointSizeUVE(), kMaximumDebugPointSizeUVE);
+    renderer.SetPointSizeUVE(std::numeric_limits<float>::quiet_NaN());
+    EXPECT_FLOAT_EQ(renderer.PointSizeUVE(), kMaximumDebugPointSizeUVE) << "non-finite sizes are ignored";
+
+    renderer.DrawPoint3D(Math::Vector3UVE{1.0F, 2.0F, 3.0F}, kWhiteUVE);
+    renderer.DrawPoint3D(Math::Vector3UVE{std::numeric_limits<float>::infinity(), 0.0F, 0.0F}, kWhiteUVE);
+    renderer.DrawLine3D(Math::Vector3UVE{}, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, kWhiteUVE);
+    ASSERT_EQ(renderer.PointsUVE().size(), 1U) << "non-finite points are ignored; lines don't mix in";
+    ExpectVertexUVE(renderer.PointsUVE()[0], 1.0F, 2.0F, 3.0F);
+    EXPECT_EQ(renderer.LinesUVE().size(), 2U);
+    for (std::size_t i = 1U; i < kMaximumDebugPointVerticesUVE + 5U; ++i) {
+        renderer.DrawPoint3D(Math::Vector3UVE{static_cast<float>(i), 0.0F, 0.0F}, kWhiteUVE);
+    }
+    EXPECT_EQ(renderer.PointsUVE().size(), kMaximumDebugPointVerticesUVE);
+    EXPECT_EQ(renderer.DroppedPointCountUVE(), 5U);
+    EXPECT_EQ(renderer.DroppedLineCountUVE(), 0U);
+    renderer.ClearUVE();
+    EXPECT_TRUE(renderer.PointsUVE().empty());
+    EXPECT_EQ(renderer.DroppedPointCountUVE(), 0U);
+}
+
+TEST_F(DebugRendererUVETest, Submit_PointsAndLines_RecordTwoDrawsWithPointSizeAndClearBoth) {
+    renderer->DrawLine3D(Math::Vector3UVE{}, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, kWhiteUVE);
+    renderer->DrawPoint3D(Math::Vector3UVE{0.5F, 0.5F, 0.5F}, kWhiteUVE);
+    renderer->DrawPoint3D(Math::Vector3UVE{1.5F, 0.5F, 0.5F}, kWhiteUVE);
+    renderer->DrawPoint3D(Math::Vector3UVE{2.5F, 0.5F, 0.5F}, kWhiteUVE);
+    renderer->SetPointSizeUVE(6.0F);
+    const TextureHandleUVE colorTarget =
+        renderDevice->CreateTextureUVE(TextureDescUVE{64U, 64U, TextureFormatUVE::RGBA8Unorm});
+    std::unique_ptr<ICommandBufferUVE> commands = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commands, nullptr);
+    RenderPassDescUVE passDesc;
+    passDesc.colorAttachment = colorTarget;
+    commands->BeginRenderPassUVE(passDesc);
+    EXPECT_TRUE(renderer->SubmitUVE(*renderDevice, *shaderManager, *commands,
+                                    Math::Matrix4x4UVE::IdentityUVE()));
+    EXPECT_TRUE(renderer->LinesUVE().empty());
+    EXPECT_TRUE(renderer->PointsUVE().empty());
+    commands->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commands));
+    // Two programs, two streamed vertex buffers: 2 shaders + 1 pipeline each, 2 buffers.
+    std::vector<std::uint32_t> drawCounts;
+    std::vector<PipelineHandleUVE> boundPipelines;
+    bool sawPointSize = false;
+    for (const RecordedCommandUVE& command : renderDevice->GetLastSubmittedCommandsUVE()) {
+        if (const auto* const draw = std::get_if<DrawCommandUVE>(&command)) {
+            drawCounts.push_back(draw->vertexCount);
+        } else if (const auto* const bind = std::get_if<BindPipelineCommandUVE>(&command)) {
+            boundPipelines.push_back(bind->pipeline);
+        } else if (const auto* const uniform = std::get_if<SetUniformFloatCommandUVE>(&command)) {
+            if (uniform->name == "uPointSize") {
+                sawPointSize = true;
+                EXPECT_FLOAT_EQ(uniform->value, 6.0F);
+            }
+        }
+    }
+    ASSERT_EQ(drawCounts.size(), 2U) << "one Lines draw then one Points draw";
+    EXPECT_EQ(drawCounts[0], 2U);
+    EXPECT_EQ(drawCounts[1], 3U);
+    ASSERT_EQ(boundPipelines.size(), 2U);
+    EXPECT_NE(boundPipelines[0], boundPipelines[1]) << "points draw through their own pipeline";
+    EXPECT_TRUE(sawPointSize);
+    // A points-only frame records exactly one draw.
+    renderer->DrawPoint3D(Math::Vector3UVE{}, kWhiteUVE);
+    std::unique_ptr<ICommandBufferUVE> second = renderDevice->CreateCommandBufferUVE();
+    second->BeginRenderPassUVE(passDesc);
+    EXPECT_TRUE(renderer->SubmitUVE(*renderDevice, *shaderManager, *second, Math::Matrix4x4UVE::IdentityUVE()));
+    second->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(second));
+    std::size_t draws = 0U;
+    for (const RecordedCommandUVE& command : renderDevice->GetLastSubmittedCommandsUVE()) {
+        draws += std::holds_alternative<DrawCommandUVE>(command) ? 1U : 0U;
+    }
+    EXPECT_EQ(draws, 1U);
+    renderer->ShutdownUVE(*renderDevice);
+    renderDevice->DestroyTextureUVE(colorTarget);
+    EXPECT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U) << "both buffers and both programs released";
 }
 
 TEST_F(DebugRendererUVETest, Submit_EmptyBatch_TouchesNoGpu) {

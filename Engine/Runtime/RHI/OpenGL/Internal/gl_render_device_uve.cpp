@@ -35,6 +35,30 @@ namespace UVE::Render {
 
 namespace {
 
+/// GL binding target of an RHI texture type, and the glGet query that reads that target's
+/// current binding (shared by creation, mip generation and blits).
+GLenum OperationTextureTargetUVE(TextureTypeUVE type) {
+    if (type == TextureTypeUVE::Cubemap)
+        return GL_TEXTURE_CUBE_MAP;
+    if (type == TextureTypeUVE::Texture2DArray)
+        return GL_TEXTURE_2D_ARRAY;
+    if (type == TextureTypeUVE::Texture3D)
+        return GL_TEXTURE_3D;
+    return GL_TEXTURE_2D;
+}
+GLenum TextureBindingQueryForTargetUVE(GLenum target) {
+    switch (target) {
+        case GL_TEXTURE_CUBE_MAP:
+            return GL_TEXTURE_BINDING_CUBE_MAP;
+        case GL_TEXTURE_2D_ARRAY:
+            return GL_TEXTURE_BINDING_2D_ARRAY;
+        case GL_TEXTURE_3D:
+            return GL_TEXTURE_BINDING_3D;
+        default:
+            return GL_TEXTURE_BINDING_2D;
+    }
+}
+
 #if defined(__ANDROID__)
 constexpr char kAndroidGlLogTagUVE[] = "UVEAndroidGLES";
 
@@ -125,6 +149,24 @@ struct GlTextureFormatUVE {
     GLenum type;
 };
 
+/// glBufferData's usage token is exactly the (frequency x access) product of the two RHI hints:
+/// `Readback` is the one GPU-written/CPU-read case (*_READ); every other placement is CPU-written
+/// (*_DRAW). `Auto` with the default `Static` frequency is GL_STATIC_DRAW — the token every
+/// buffer used before the hints existed — so unchanged callers allocate exactly as before.
+[[nodiscard]] GLenum BufferHintsToGlUsageUVE(const BufferMemoryUVE memory,
+                                             const BufferUpdateFrequencyUVE frequency) noexcept {
+    const bool read = memory == BufferMemoryUVE::Readback;
+    switch (frequency) {
+        case BufferUpdateFrequencyUVE::Static:
+            return read ? GL_STATIC_READ : GL_STATIC_DRAW;
+        case BufferUpdateFrequencyUVE::Dynamic:
+            return read ? GL_DYNAMIC_READ : GL_DYNAMIC_DRAW;
+        case BufferUpdateFrequencyUVE::Stream:
+            return read ? GL_STREAM_READ : GL_STREAM_DRAW;
+    }
+    return GL_STATIC_DRAW;
+}
+
 [[nodiscard]] GlTextureFormatUVE TextureFormatToGlUVE(TextureFormatUVE format,
                                                         TextureColorSpaceUVE colorSpace) noexcept {
     switch (format) {
@@ -133,8 +175,24 @@ struct GlTextureFormatUVE {
                     GL_RGBA, GL_UNSIGNED_BYTE};
         case TextureFormatUVE::RGBA16Float:
             return {GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT};
+        case TextureFormatUVE::R8Unorm:
+            return {GL_R8, GL_RED, GL_UNSIGNED_BYTE};
+        case TextureFormatUVE::RG8Unorm:
+            return {GL_RG8, GL_RG, GL_UNSIGNED_BYTE};
+        case TextureFormatUVE::R16Float:
+            return {GL_R16F, GL_RED, GL_HALF_FLOAT};
+        case TextureFormatUVE::RG16Float:
+            return {GL_RG16F, GL_RG, GL_HALF_FLOAT};
+        case TextureFormatUVE::R32Float:
+            return {GL_R32F, GL_RED, GL_FLOAT};
+        case TextureFormatUVE::RG32Float:
+            return {GL_RG32F, GL_RG, GL_FLOAT};
+        case TextureFormatUVE::RGBA32Float:
+            return {GL_RGBA32F, GL_RGBA, GL_FLOAT};
         case TextureFormatUVE::Depth32Float:
             return {GL_DEPTH_COMPONENT32F, GL_DEPTH_COMPONENT, GL_FLOAT};
+        case TextureFormatUVE::Depth24Stencil8:
+            return {GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8};
         case TextureFormatUVE::BC1RGB:
             return {colorSpace == TextureColorSpaceUVE::Srgb ? kGlCompressedSrgbS3tcDxt1UVE
                                                               : kGlCompressedRgbS3tcDxt1UVE,
@@ -392,6 +450,17 @@ GlRenderDeviceUVE::~GlRenderDeviceUVE() {
     if (!IsUsableUVE()) {
         return;
     }
+    CollectRetiredTexturesUVE();
+    if (m_impl->state.activeOcclusion != 0U)
+        m_impl->state.gl.glEndQuery(GL_ANY_SAMPLES_PASSED);
+    for (const auto &[id, query] : m_impl->state.queries) {
+        static_cast<void>(id);
+        m_impl->state.gl.glDeleteQueries(1, &query.native);
+    }
+    for (const auto &[id, fence] : m_impl->state.fences) {
+        static_cast<void>(id);
+        m_impl->state.gl.glDeleteSync(fence);
+    }
     for (const auto& [key, framebuffer] : m_impl->state.framebufferCache) {
         static_cast<void>(key);
         m_impl->state.gl.glDeleteFramebuffers(1, &framebuffer);
@@ -435,8 +504,9 @@ BufferHandleUVE GlRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc, st
         UVE_ERROR("GlRenderDeviceUVE: CreateBufferUVE initial data exceeds buffer size");
         return kInvalidBufferHandleUVE;
     }
-    if (!IsBufferUsageValidUVE(desc.usage)) {
-        UVE_ERROR("GlRenderDeviceUVE: CreateBufferUVE received an unknown buffer usage");
+    if (!IsBufferDescValidUVE(desc)) {
+        UVE_ERROR("GlRenderDeviceUVE: CreateBufferUVE received an unknown buffer usage, memory or "
+                  "update-frequency value");
         return kInvalidBufferHandleUVE;
     }
     if (IsStorageBindableUsageUVE(desc.usage) && !m_impl->state.supportsComputeShadersUVE) {
@@ -466,13 +536,15 @@ BufferHandleUVE GlRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc, st
     m_impl->state.gl.glGenBuffers(1, &glBuffer);
     m_impl->state.gl.glBindBuffer(target, glBuffer);
     m_impl->state.gl.glBufferData(target, static_cast<GLsizeiptr>(desc.sizeBytes),
-                                    initialData.empty() ? nullptr : initialData.data(), GL_STATIC_DRAW);
+                                    initialData.empty() ? nullptr : initialData.data(),
+                                    BufferHintsToGlUsageUVE(desc.memory, desc.updateFrequency));
     UVE_GL_CHECK_ERROR_UVE("CreateBufferUVE");
     m_impl->state.gl.glBindBuffer(target, static_cast<GLuint>(previousBufferBinding));
 
     const std::uint32_t handleValue = m_impl->state.nextBufferHandle++;
     m_impl->state.buffers.emplace(handleValue,
-                                    Detail::GlDeviceStateUVE::BufferRecordUVE{glBuffer, target, desc.sizeBytes, desc.usage});
+                                    Detail::GlDeviceStateUVE::BufferRecordUVE{glBuffer, target, desc.sizeBytes, desc.usage,
+                                                                               desc.memory, desc.updateFrequency});
     return BufferHandleUVE{handleValue};
 }
 
@@ -590,28 +662,30 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
     // (POSITIVE_X + face); arrays upload whole levels, all layers contiguous.
     const bool isCube = desc.type == TextureTypeUVE::Cubemap;
     const bool isArray = desc.type == TextureTypeUVE::Texture2DArray;
-    const GLenum textureTarget = isCube ? GL_TEXTURE_CUBE_MAP
-                                 : isArray ? GL_TEXTURE_2D_ARRAY
-                                           : GL_TEXTURE_2D;
-    const GLenum bindingQuery = isCube ? GL_TEXTURE_BINDING_CUBE_MAP
-                                 : isArray ? GL_TEXTURE_BINDING_2D_ARRAY
-                                           : GL_TEXTURE_BINDING_2D;
-    if (isArray || isCube) {
+    const bool isVolume = desc.type == TextureTypeUVE::Texture3D;
+    const GLenum textureTarget = OperationTextureTargetUVE(desc.type);
+    const GLenum bindingQuery = TextureBindingQueryForTargetUVE(textureTarget);
+    if (isArray || isCube || isVolume) {
         GLint maxLayers = 0;
         glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &maxLayers);
         GLint maxCubeSize = 0;
         glGetIntegerv(GL_MAX_CUBE_MAP_TEXTURE_SIZE, &maxCubeSize);
+        GLint max3DSize = 0;
+        glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &max3DSize);
         if ((isArray && desc.arrayLayers > static_cast<std::uint32_t>(maxLayers)) ||
-            (isCube && desc.width > static_cast<std::uint32_t>(maxCubeSize))) {
-            UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE array/cubemap exceeds GL limits");
+            (isCube && desc.width > static_cast<std::uint32_t>(maxCubeSize)) ||
+            (isVolume && (desc.width > static_cast<std::uint32_t>(max3DSize) ||
+                          desc.height > static_cast<std::uint32_t>(max3DSize) ||
+                          desc.depth > static_cast<std::uint32_t>(max3DSize)))) {
+            UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE array/cubemap/volume exceeds GL limits");
             return kInvalidTextureHandleUVE;
         }
-        if (isArray && m_impl->state.gl.glTexImage3D == nullptr &&
+        if ((isArray || isVolume) && m_impl->state.gl.glTexImage3D == nullptr &&
             !IsTextureFormatCompressedUVE(desc.format)) {
-            UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE needs glTexImage3D for arrays");
+            UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE needs glTexImage3D for arrays and volumes");
             return kInvalidTextureHandleUVE;
         }
-        if (isArray && m_impl->state.gl.glCompressedTexImage3D == nullptr &&
+        if ((isArray || isVolume) && m_impl->state.gl.glCompressedTexImage3D == nullptr &&
             IsTextureFormatCompressedUVE(desc.format)) {
             UVE_ERROR("GlRenderDeviceUVE: CreateTextureUVE needs glCompressedTexImage3D");
             return kInvalidTextureHandleUVE;
@@ -626,6 +700,12 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
     GLuint glTexture = 0;
     glGenTextures(1, &glTexture);
     glBindTexture(textureTarget, glTexture);
+    // The upload contract is tightly packed rows. GL's default unpack alignment of 4 would
+    // misread one- and two-byte texel rows whose width is not a multiple of 4 (a 3-wide
+    // R8Unorm level is 3 bytes per row), so align to the byte for the upload and restore after.
+    GLint previousUnpackAlignment = 4;
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     std::size_t dataOffset = 0U;
     std::uint32_t levelWidth = desc.width;
     std::uint32_t levelHeight = desc.height;
@@ -655,26 +735,28 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
                 }
             }
             dataOffset += static_cast<std::size_t>(mipImageSizes[level]) * 6U;
-        } else if (isArray) {
-            // Whole-level upload: all layers contiguous (level-major, per the RHI contract).
-            // The size_t intermediate keeps huge levels out of signed-overflow UB; the driver
-            // reports oversized allocations through the standard GL error path below.
-            const GLsizei levelBytesAllLayers = static_cast<GLsizei>(
-                static_cast<std::size_t>(mipImageSizes[level]) * desc.arrayLayers);
+        } else if (isArray || isVolume) {
+            // Whole-level upload: all layers (or, for a volume, all slices of this level's
+            // depth) contiguous — level-major, per the RHI contract. The size_t intermediate
+            // keeps huge levels out of signed-overflow UB; the driver reports oversized
+            // allocations through the standard GL error path below.
+            const std::uint32_t levelSlices = isVolume ? GetTextureMipDepthUVE(desc.depth, level) : desc.arrayLayers;
+            const GLsizei levelBytesAllSlices = static_cast<GLsizei>(
+                static_cast<std::size_t>(mipImageSizes[level]) * levelSlices);
             if (IsTextureFormatCompressedUVE(desc.format)) {
                 m_impl->state.gl.glCompressedTexImage3D(
-                    GL_TEXTURE_2D_ARRAY, static_cast<GLint>(level),
+                    textureTarget, static_cast<GLint>(level),
                     static_cast<GLenum>(glFormat.internalFormat), static_cast<GLsizei>(levelWidth),
-                    static_cast<GLsizei>(levelHeight), static_cast<GLsizei>(desc.arrayLayers), 0,
-                    levelBytesAllLayers, levelData);
+                    static_cast<GLsizei>(levelHeight), static_cast<GLsizei>(levelSlices), 0,
+                    levelBytesAllSlices, levelData);
             } else {
                 m_impl->state.gl.glTexImage3D(
-                    GL_TEXTURE_2D_ARRAY, static_cast<GLint>(level), glFormat.internalFormat,
+                    textureTarget, static_cast<GLint>(level), glFormat.internalFormat,
                     static_cast<GLsizei>(levelWidth), static_cast<GLsizei>(levelHeight),
-                    static_cast<GLsizei>(desc.arrayLayers), 0, glFormat.format, glFormat.type,
+                    static_cast<GLsizei>(levelSlices), 0, glFormat.format, glFormat.type,
                     levelData);
             }
-            dataOffset += static_cast<std::size_t>(mipImageSizes[level]) * desc.arrayLayers;
+            dataOffset += static_cast<std::size_t>(mipImageSizes[level]) * levelSlices;
         } else {
             if (IsTextureFormatCompressedUVE(desc.format)) {
                 m_impl->state.gl.glCompressedTexImage2D(
@@ -691,12 +773,13 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
         levelWidth = levelWidth > 1U ? levelWidth / 2U : 1U;
         levelHeight = levelHeight > 1U ? levelHeight / 2U : 1U;
     }
+    glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
     glTexParameteri(textureTarget, GL_TEXTURE_MIN_FILTER,
                     desc.mipLevels > 1U ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
     glTexParameteri(textureTarget, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(textureTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(textureTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    if (isArray) {
+    if (isArray || isVolume) {
         glTexParameteri(textureTarget, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
     }
     glTexParameteri(textureTarget, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(desc.mipLevels - 1U));
@@ -854,19 +937,24 @@ ShaderHandleUVE GlRenderDeviceUVE::CreateShaderUVE(const ShaderDescUVE& desc, st
     }
 #if defined(__ANDROID__)
     if (desc.stage == ShaderStageUVE::Compute || desc.stage == ShaderStageUVE::Geometry) {
+        if (outInfoLog != nullptr) *outInfoLog = "GLES3 does not support requested compute/geometry shader stage.";
         UVE_ERROR("GlRenderDeviceUVE: GLES3 does not support requested compute/geometry shader stage");
         return kInvalidShaderHandleUVE;
     }
 #else
-    // Geometry shaders are core since GL 3.2, below this engine's desktop baseline, so no gate is
-    // needed there - but compute shaders are GL 4.3+ only (Phase 2a), and the negotiated context
-    // is not guaranteed to have cleared that bar just because this isn't Android.
+    // Compute shaders need GL 4.3+, not merely a requested modern desktop context.
     if (desc.stage == ShaderStageUVE::Compute && !m_impl->state.supportsComputeShadersUVE) {
         UVE_ERROR("GlRenderDeviceUVE: compute shaders require an OpenGL 4.3+ context; the negotiated "
                   "context does not support them");
         return kInvalidShaderHandleUVE;
     }
 #endif
+    if (desc.stage == ShaderStageUVE::Geometry &&
+        GetCapabilitiesUVE().geometryShaders != RenderFeatureSupportUVE::Native) {
+        if (outInfoLog != nullptr) *outInfoLog = "Geometry shaders require a usable desktop GL 3.2+ context.";
+        UVE_ERROR("GlRenderDeviceUVE: geometry shaders are unsupported by this context");
+        return kInvalidShaderHandleUVE;
+    }
     if (desc.sourceCode.size() > static_cast<std::size_t>(std::numeric_limits<GLint>::max())) {
         if (outInfoLog != nullptr) {
             *outInfoLog = "Shader source exceeds the GLsizei length range.";
@@ -916,8 +1004,25 @@ void GlRenderDeviceUVE::DestroyShaderUVE(ShaderHandleUVE shader) {
 }
 
 PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& desc, std::string* outInfoLog) {
+    const auto rejectStage = [outInfoLog](const char* message) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE {}", message);
+        if (outInfoLog != nullptr) *outInfoLog = message;
+        return kInvalidPipelineHandleUVE;
+    };
+    if (desc.geometryShader != kInvalidShaderHandleUVE &&
+        GetCapabilitiesUVE().geometryShaders != RenderFeatureSupportUVE::Native) {
+        return rejectStage("geometry shader pipelines are unsupported by this context");
+    }
     if (!IsVertexLayoutValidUVE(desc.vertexLayout)) {
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown vertex attribute format");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (m_impl->state.gl.glVertexAttribIPointer == nullptr &&
+        std::any_of(desc.vertexLayout.begin(), desc.vertexLayout.end(), [](const VertexAttributeUVE& attribute) {
+            return IsVertexAttributeFormatIntegerUVE(attribute.format);
+        })) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE needs glVertexAttribIPointer for an integer vertex attribute "
+                  "format, which this context does not provide");
         return kInvalidPipelineHandleUVE;
     }
     if (!IsPipelineBlendModeValidUVE(desc.blendMode)) {
@@ -944,6 +1049,10 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown depth comparison");
         return kInvalidPipelineHandleUVE;
     }
+    if (!IsStencilStateValidUVE(desc.stencil)) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown stencil state");
+        return kInvalidPipelineHandleUVE;
+    }
     if (m_impl->state.maxVertexAttribs <= 0 ||
         desc.vertexLayout.size() > static_cast<std::size_t>(m_impl->state.maxVertexAttribs)) {
         UVE_ERROR("GlRenderDeviceUVE: pipeline vertex layout exceeds GL vertex-attrib limits");
@@ -962,9 +1071,25 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
         return kInvalidPipelineHandleUVE;
     }
 
+    if (vertexIt->second.stage != ShaderStageUVE::Vertex || fragmentIt->second.stage != ShaderStageUVE::Fragment) {
+        return rejectStage("vertex/fragment shader handles are bound to the wrong stages");
+    }
+    const auto geometryIt = m_impl->state.shaders.find(desc.geometryShader.value);
+    if (desc.geometryShader != kInvalidShaderHandleUVE) {
+        if (geometryIt == m_impl->state.shaders.end()) {
+            return rejectStage("geometry shader handle does not reference a live shader");
+        }
+        if (geometryIt->second.stage != ShaderStageUVE::Geometry) {
+            return rejectStage("geometry shader slot requires a Geometry-stage shader");
+        }
+    }
+
     const GLuint glProgram = m_impl->state.gl.glCreateProgram();
     m_impl->state.gl.glAttachShader(glProgram, vertexIt->second.glShader);
     m_impl->state.gl.glAttachShader(glProgram, fragmentIt->second.glShader);
+    if (geometryIt != m_impl->state.shaders.end()) {
+        m_impl->state.gl.glAttachShader(glProgram, geometryIt->second.glShader);
+    }
     m_impl->state.gl.glLinkProgram(glProgram);
 
     const std::string infoLog = GetProgramInfoLogUVE(m_impl->state.gl, glProgram);
@@ -1001,6 +1126,7 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
     record.depthBiasConstantFactor = desc.depthBiasConstantFactor;
     record.depthBiasSlopeFactor = desc.depthBiasSlopeFactor;
     record.depthCompare = desc.depthCompare;
+    record.stencil = desc.stencil;
     record.topology = desc.topology;
     ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms);
 
@@ -1059,12 +1185,9 @@ PipelineHandleUVE GlRenderDeviceUVE::CreateComputePipelineUVE(const ComputePipel
 
     // No VAO for compute records — glDeleteVertexArrays silently ignores name 0 on destroy, and
     // GlCommandBufferUVE skips glBindVertexArray() for isCompute pipelines entirely.
-    Detail::GlDeviceStateUVE::PipelineRecordUVE record{
-        glProgram, /*glVao=*/0U, {}, /*vertexStride=*/0U, /*depthTestEnabled=*/true,
-        /*depthWriteEnabled=*/true, PipelineBlendModeUVE::Opaque, CullModeUVE::None,
-        FrontFaceUVE::CounterClockwise, FillModeUVE::Fill, /*depthBiasEnabled=*/false,
-        /*depthBiasConstantFactor=*/0.0F, /*depthBiasSlopeFactor=*/0.0F, DepthCompareUVE::Less,
-        PrimitiveTopologyUVE::Triangles, /*isCompute=*/true, {}};
+    Detail::GlDeviceStateUVE::PipelineRecordUVE record;
+    record.glProgram = glProgram;
+    record.isCompute = true;
     // Active-uniform reflection works identically for compute programs, so SetUniform*UVE on a
     // compute pipeline needs no special-casing.
     ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms);
@@ -1140,6 +1263,14 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<const
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown vertex attribute format");
         return kInvalidPipelineHandleUVE;
     }
+    if (m_impl->state.gl.glVertexAttribIPointer == nullptr &&
+        std::any_of(desc.vertexLayout.begin(), desc.vertexLayout.end(), [](const VertexAttributeUVE& attribute) {
+            return IsVertexAttributeFormatIntegerUVE(attribute.format);
+        })) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE needs glVertexAttribIPointer for an integer vertex attribute "
+                  "format, which this context does not provide");
+        return kInvalidPipelineHandleUVE;
+    }
     if (!IsPipelineBlendModeValidUVE(desc.blendMode)) {
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown blend mode");
         return kInvalidPipelineHandleUVE;
@@ -1162,6 +1293,10 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<const
     }
     if (!IsDepthCompareValidUVE(desc.depthCompare)) {
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown depth comparison");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (!IsStencilStateValidUVE(desc.stencil)) {
+        UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown stencil state");
         return kInvalidPipelineHandleUVE;
     }
     if (m_impl->state.maxVertexAttribs <= 0 ||
@@ -1213,6 +1348,7 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<const
     record.depthBiasConstantFactor = desc.depthBiasConstantFactor;
     record.depthBiasSlopeFactor = desc.depthBiasSlopeFactor;
     record.depthCompare = desc.depthCompare;
+    record.stencil = desc.stencil;
     record.topology = desc.topology;
     // Uniform locations are not guaranteed portable across a binary load even though behavior
     // is - reflection must always be re-run here, never assumed inherited from the original
@@ -1238,6 +1374,7 @@ void GlRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBuff
 
 void GlRenderDeviceUVE::PresentUVE() {
     if (IsUsableUVE()) {
+        CollectRetiredTexturesUVE();
         m_impl->state.windowManager->SwapBuffersUVE();
     }
 }
@@ -1253,7 +1390,8 @@ bool GlRenderDeviceUVE::IsUsableUVE() const noexcept {
 
 std::size_t GlRenderDeviceUVE::GetLiveResourceCountUVE() const noexcept {
     return m_impl->state.buffers.size() + m_impl->state.textures.size() + m_impl->state.samplers.size() +
-           m_impl->state.shaders.size() + m_impl->state.pipelines.size();
+           m_impl->state.shaders.size() + m_impl->state.pipelines.size() + m_impl->state.fences.size() +
+           m_impl->state.queries.size();
 }
 
 std::uint32_t GlRenderDeviceUVE::GetNativeTextureIdUVE(const TextureHandleUVE texture) const noexcept {
@@ -1261,4 +1399,395 @@ std::uint32_t GlRenderDeviceUVE::GetNativeTextureIdUVE(const TextureHandleUVE te
     return it == m_impl->state.textures.end() ? 0U : it->second.glTexture;
 }
 
+} // namespace UVE::Render
+
+namespace UVE::Render {
+namespace {
+RenderOperationResultUVE FinishDeviceOperationUVE() {
+    const GLenum error = glGetError();
+    if (error == GL_NO_ERROR)
+        return RenderOperationResultUVE::Success;
+    UVE_ERROR("GL device operation failed (error {})", static_cast<unsigned>(error));
+    return RenderOperationResultUVE::SystemError;
+}
+} // namespace
+RenderDeviceCapabilitiesUVE GlRenderDeviceUVE::GetCapabilitiesUVE() const noexcept {
+    RenderDeviceCapabilitiesUVE caps;
+    if (!IsUsableUVE())
+        return caps;
+    const auto native = RenderFeatureSupportUVE::Native;
+    caps.retainedTextures = native;
+    const auto &gl = m_impl->state.gl;
+    GLint major = 0, minor = 0;
+    glGetIntegerv(GL_MAJOR_VERSION, &major);
+    glGetIntegerv(GL_MINOR_VERSION, &minor);
+#if defined(__ANDROID__)
+    const bool copyVersion = major >= 3, syncVersion = major >= 3, queryVersion = major >= 3;
+#else
+    const bool copyVersion = major > 3 || (major == 3 && minor >= 1);
+    const bool syncVersion = major > 3 || (major == 3 && minor >= 2);
+    const bool queryVersion = major > 3 || (major == 3 && minor >= 3);
+    if (syncVersion) caps.geometryShaders = native; // Geometry is core since desktop GL 3.2.
+    if (m_impl->state.supportsComputeShadersUVE && gl.glMemoryBarrier)
+        caps.memoryBarriers = native;
+#endif
+    if (copyVersion && gl.glCopyBufferSubData)
+        caps.bufferCopy = native;
+    if (gl.glBlitFramebuffer && gl.glGenFramebuffers && gl.glDeleteFramebuffers && gl.glBindFramebuffer &&
+        gl.glFramebufferTexture2D && gl.glCheckFramebufferStatus && gl.glDrawBuffers)
+        caps.textureBlit = native;
+    if (gl.glGenerateMipmap)
+        caps.mipGeneration = native;
+    if (syncVersion && gl.glFenceSync && gl.glClientWaitSync && gl.glDeleteSync)
+        caps.fences = native;
+    if (queryVersion && gl.glGenQueries && gl.glDeleteQueries && gl.glBeginQuery && gl.glEndQuery &&
+        gl.glGetQueryiv && gl.glGetQueryObjectuiv) {
+        caps.occlusionQueries = native;
+#if !defined(__ANDROID__)
+        if (gl.glQueryCounter && gl.glGetQueryObjectui64v) {
+            GLint bits = 0;
+            gl.glGetQueryiv(GL_TIMESTAMP, GL_QUERY_COUNTER_BITS, &bits);
+            if (bits > 0)
+                caps.timestampQueries = native;
+        }
+#endif
+    }
+    caps.surface = native;
+    return caps;
+}
+RenderOperationResultUVE GlRenderDeviceUVE::GetTextureDescUVE(TextureHandleUVE texture,
+                                                              TextureDescUVE &out) const {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    const auto found = m_impl->state.textures.find(texture.value);
+    if (found == m_impl->state.textures.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    out = found->second.desc;
+    return RenderOperationResultUVE::Success;
+}
+RenderOperationResultUVE GlRenderDeviceUVE::GetBufferDescUVE(BufferHandleUVE buffer,
+                                                             BufferDescUVE &out) const {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    const auto found = m_impl->state.buffers.find(buffer.value);
+    if (found == m_impl->state.buffers.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    out = BufferDescUVE{found->second.sizeBytes, found->second.usage, found->second.memory,
+                        found->second.updateFrequency};
+    return RenderOperationResultUVE::Success;
+}
+RenderOperationResultUVE GlRenderDeviceUVE::CopyBufferUVE(const BufferCopyDescUVE &copy) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    if (GetCapabilitiesUVE().bufferCopy != RenderFeatureSupportUVE::Native)
+        return RenderOperationResultUVE::Unsupported;
+    auto &state = m_impl->state;
+    const auto source = state.buffers.find(copy.source.value),
+               target = state.buffers.find(copy.destination.value);
+    if (source == state.buffers.end() || target == state.buffers.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    constexpr auto maximum = static_cast<std::uint64_t>(std::numeric_limits<GLintptr>::max());
+    if (!IsBufferCopyRangeValidUVE(copy, source->second.sizeBytes, target->second.sizeBytes) ||
+        copy.sourceOffset > maximum || copy.destinationOffset > maximum || copy.sizeBytes > maximum)
+        return RenderOperationResultUVE::InvalidArgument;
+    GLint oldRead = 0, oldWrite = 0;
+    glGetIntegerv(GL_COPY_READ_BUFFER_BINDING, &oldRead);
+    glGetIntegerv(GL_COPY_WRITE_BUFFER_BINDING, &oldWrite);
+    state.gl.glBindBuffer(GL_COPY_READ_BUFFER, source->second.glBuffer);
+    state.gl.glBindBuffer(GL_COPY_WRITE_BUFFER, target->second.glBuffer);
+    state.gl.glCopyBufferSubData(
+        GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, static_cast<GLintptr>(copy.sourceOffset),
+        static_cast<GLintptr>(copy.destinationOffset), static_cast<GLsizeiptr>(copy.sizeBytes));
+    state.gl.glBindBuffer(GL_COPY_READ_BUFFER, static_cast<GLuint>(oldRead));
+    state.gl.glBindBuffer(GL_COPY_WRITE_BUFFER, static_cast<GLuint>(oldWrite));
+    return FinishDeviceOperationUVE();
+}
+RenderOperationResultUVE GlRenderDeviceUVE::BlitTextureUVE(const TextureBlitDescUVE &blit) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    if (GetCapabilitiesUVE().textureBlit != RenderFeatureSupportUVE::Native)
+        return RenderOperationResultUVE::Unsupported;
+    auto &state = m_impl->state;
+    const auto source = state.textures.find(blit.source.value),
+               target = state.textures.find(blit.destination.value);
+    if (source == state.textures.end() || target == state.textures.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (!IsTextureBlitValidUVE(blit, source->second.desc, target->second.desc))
+        return RenderOperationResultUVE::InvalidArgument;
+    if ((source->second.desc.type == TextureTypeUVE::Texture2DArray ||
+         target->second.desc.type == TextureTypeUVE::Texture2DArray) &&
+        !state.gl.glFramebufferTextureLayer)
+        return RenderOperationResultUVE::Unsupported;
+    GLint oldRead = 0, oldDraw = 0;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &oldRead);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &oldDraw);
+#if !defined(__ANDROID__)
+    const GLboolean oldSrgb = glIsEnabled(GL_FRAMEBUFFER_SRGB);
+    if (target->second.desc.colorSpace == TextureColorSpaceUVE::Srgb)
+        glEnable(GL_FRAMEBUFFER_SRGB);
+    else
+        glDisable(GL_FRAMEBUFFER_SRGB);
+#endif
+    const GLboolean oldScissor = glIsEnabled(GL_SCISSOR_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    GLuint framebuffers[2]{};
+    state.gl.glGenFramebuffers(2, framebuffers);
+    const auto attach = [&](GLenum binding, const auto &texture, const TextureRegionUVE &region, GLuint fbo) {
+        state.gl.glBindFramebuffer(binding, fbo);
+        if (texture.desc.type == TextureTypeUVE::Texture2DArray) {
+            state.gl.glFramebufferTextureLayer(binding, GL_COLOR_ATTACHMENT0, texture.glTexture,
+                                               static_cast<GLint>(region.mip),
+                                               static_cast<GLint>(region.layer));
+        } else {
+            const GLenum type = texture.desc.type == TextureTypeUVE::Cubemap
+                                    ? GL_TEXTURE_CUBE_MAP_POSITIVE_X + region.layer
+                                    : GL_TEXTURE_2D;
+            state.gl.glFramebufferTexture2D(binding, GL_COLOR_ATTACHMENT0, type, texture.glTexture,
+                                            static_cast<GLint>(region.mip));
+        }
+        return state.gl.glCheckFramebufferStatus(binding) == GL_FRAMEBUFFER_COMPLETE;
+    };
+    const bool readReady = framebuffers[0] != 0U &&
+                           attach(GL_READ_FRAMEBUFFER, source->second, blit.sourceRegion, framebuffers[0]);
+    const bool drawReady = framebuffers[1] != 0U && attach(GL_DRAW_FRAMEBUFFER, target->second,
+                                                           blit.destinationRegion, framebuffers[1]);
+    if (readReady && drawReady) {
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+        const GLenum attachment = GL_COLOR_ATTACHMENT0;
+        state.gl.glDrawBuffers(1, &attachment);
+        const auto &a = blit.sourceRegion;
+        const auto &b = blit.destinationRegion;
+        state.gl.glBlitFramebuffer(
+            static_cast<GLint>(a.x), static_cast<GLint>(a.y), static_cast<GLint>(a.x + a.width),
+            static_cast<GLint>(a.y + a.height), static_cast<GLint>(b.x), static_cast<GLint>(b.y),
+            static_cast<GLint>(b.x + b.width), static_cast<GLint>(b.y + b.height), GL_COLOR_BUFFER_BIT,
+            blit.filter == BlitFilterUVE::Point ? GL_NEAREST : GL_LINEAR);
+    }
+    state.gl.glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(oldRead));
+    state.gl.glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(oldDraw));
+    state.gl.glDeleteFramebuffers(2, framebuffers);
+    if (oldScissor)
+        glEnable(GL_SCISSOR_TEST);
+    else
+        glDisable(GL_SCISSOR_TEST);
+#if !defined(__ANDROID__)
+    if (oldSrgb)
+        glEnable(GL_FRAMEBUFFER_SRGB);
+    else
+        glDisable(GL_FRAMEBUFFER_SRGB);
+#endif
+    const auto result = FinishDeviceOperationUVE();
+    return readReady && drawReady ? result : RenderOperationResultUVE::SystemError;
+}
+RenderOperationResultUVE GlRenderDeviceUVE::GenerateMipmapsUVE(TextureHandleUVE texture) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    if (GetCapabilitiesUVE().mipGeneration != RenderFeatureSupportUVE::Native)
+        return RenderOperationResultUVE::Unsupported;
+    auto &state = m_impl->state;
+    const auto found = state.textures.find(texture.value);
+    if (found == state.textures.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    const auto &desc = found->second.desc;
+    if (!CanGenerateMipmapsUVE(desc))
+        return RenderOperationResultUVE::InvalidArgument;
+    const GLenum target = OperationTextureTargetUVE(desc.type);
+    const GLenum query = TextureBindingQueryForTargetUVE(target);
+    GLint previous = 0;
+    glGetIntegerv(query, &previous);
+    glBindTexture(target, found->second.glTexture);
+    state.gl.glGenerateMipmap(target);
+    glBindTexture(target, static_cast<GLuint>(previous));
+    return FinishDeviceOperationUVE();
+}
+RenderOperationResultUVE GlRenderDeviceUVE::InsertFenceUVE(FenceHandleUVE &output) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    if (GetCapabilitiesUVE().fences != RenderFeatureSupportUVE::Native)
+        return RenderOperationResultUVE::Unsupported;
+    auto &state = m_impl->state;
+    if (state.nextFence == 0U)
+        return RenderOperationResultUVE::SystemError;
+    const FenceHandleUVE handle{state.nextFence++};
+    auto [entry, inserted] = state.fences.emplace(handle.value, nullptr);
+    static_cast<void>(inserted);
+    entry->second = state.gl.glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0U);
+    if (entry->second == nullptr) {
+        state.fences.erase(entry);
+        return RenderOperationResultUVE::SystemError;
+    }
+    output = handle;
+    return RenderOperationResultUVE::Success;
+}
+RenderOperationResultUVE GlRenderDeviceUVE::WaitFenceUVE(FenceHandleUVE handle, std::uint64_t timeoutNs) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto &state = m_impl->state;
+    const auto found = state.fences.find(handle.value);
+    if (found == state.fences.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    const GLenum result = state.gl.glClientWaitSync(found->second, GL_SYNC_FLUSH_COMMANDS_BIT, timeoutNs);
+    if (result == GL_ALREADY_SIGNALED || result == GL_CONDITION_SATISFIED)
+        return RenderOperationResultUVE::Success;
+    if (result == GL_TIMEOUT_EXPIRED)
+        return RenderOperationResultUVE::TimedOut;
+    return RenderOperationResultUVE::SystemError;
+}
+RenderOperationResultUVE GlRenderDeviceUVE::DestroyFenceUVE(FenceHandleUVE handle) {
+    const auto waited = WaitFenceUVE(handle, 0U);
+    if (waited == RenderOperationResultUVE::TimedOut)
+        return RenderOperationResultUVE::NotReady;
+    if (waited != RenderOperationResultUVE::Success)
+        return waited;
+    m_impl->state.gl.glDeleteSync(m_impl->state.fences.at(handle.value));
+    m_impl->state.fences.erase(handle.value);
+    return FinishDeviceOperationUVE();
+}
+RenderOperationResultUVE GlRenderDeviceUVE::WaitIdleUVE() {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    glFinish();
+    const auto waited = FinishDeviceOperationUVE();
+    if (waited == RenderOperationResultUVE::Success) CollectRetiredTexturesUVE();
+    return waited;
+}
+RenderOperationResultUVE GlRenderDeviceUVE::CreateQueryUVE(RenderQueryKindUVE kind, QueryHandleUVE &output) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    if (kind != RenderQueryKindUVE::Timestamp && kind != RenderQueryKindUVE::AnySamplesPassed)
+        return RenderOperationResultUVE::InvalidArgument;
+    const auto caps = GetCapabilitiesUVE();
+    if ((kind == RenderQueryKindUVE::Timestamp ? caps.timestampQueries : caps.occlusionQueries) !=
+        RenderFeatureSupportUVE::Native)
+        return RenderOperationResultUVE::Unsupported;
+    auto &state = m_impl->state;
+    if (state.nextQuery == 0U)
+        return RenderOperationResultUVE::SystemError;
+    const QueryHandleUVE handle{state.nextQuery++};
+    auto [entry, inserted] =
+        state.queries.emplace(handle.value, Detail::GlDeviceStateUVE::QueryRecordUVE{0U, kind, false});
+    static_cast<void>(inserted);
+    state.gl.glGenQueries(1, &entry->second.native);
+    if (entry->second.native == 0U) {
+        state.queries.erase(entry);
+        return RenderOperationResultUVE::SystemError;
+    }
+    output = handle;
+    return RenderOperationResultUVE::Success;
+}
+RenderOperationResultUVE GlRenderDeviceUVE::BeginQueryUVE(QueryHandleUVE handle) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto &state = m_impl->state;
+    const auto found = state.queries.find(handle.value);
+    if (found == state.queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (found->second.kind != RenderQueryKindUVE::AnySamplesPassed)
+        return RenderOperationResultUVE::InvalidArgument;
+    GLint active = 0;
+    state.gl.glGetQueryiv(GL_ANY_SAMPLES_PASSED, GL_CURRENT_QUERY, &active);
+    if (active != 0 || state.activeOcclusion != 0U)
+        return RenderOperationResultUVE::InvalidState;
+    state.gl.glBeginQuery(GL_ANY_SAMPLES_PASSED, found->second.native);
+    const auto result = FinishDeviceOperationUVE();
+    if (result == RenderOperationResultUVE::Success) {
+        state.activeOcclusion = handle.value;
+        found->second.issued = false;
+    }
+    return result;
+}
+RenderOperationResultUVE GlRenderDeviceUVE::EndQueryUVE(QueryHandleUVE handle) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto &state = m_impl->state;
+    const auto found = state.queries.find(handle.value);
+    if (found == state.queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (state.activeOcclusion != handle.value)
+        return RenderOperationResultUVE::InvalidState;
+    state.gl.glEndQuery(GL_ANY_SAMPLES_PASSED);
+    state.activeOcclusion = 0U;
+    const auto result = FinishDeviceOperationUVE();
+    found->second.issued = result == RenderOperationResultUVE::Success;
+    return result;
+}
+RenderOperationResultUVE GlRenderDeviceUVE::WriteTimestampUVE(QueryHandleUVE handle) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto &state = m_impl->state;
+    const auto found = state.queries.find(handle.value);
+    if (found == state.queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (found->second.kind != RenderQueryKindUVE::Timestamp)
+        return RenderOperationResultUVE::InvalidArgument;
+#if defined(__ANDROID__)
+    return RenderOperationResultUVE::Unsupported;
+#else
+    state.gl.glQueryCounter(found->second.native, GL_TIMESTAMP);
+    const auto result = FinishDeviceOperationUVE();
+    found->second.issued = result == RenderOperationResultUVE::Success;
+    return result;
+#endif
+}
+RenderOperationResultUVE GlRenderDeviceUVE::GetQueryResultUVE(QueryHandleUVE handle,
+                                                              RenderQueryResultUVE &output, bool wait) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto &state = m_impl->state;
+    const auto found = state.queries.find(handle.value);
+    if (found == state.queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (!found->second.issued || state.activeOcclusion == handle.value)
+        return RenderOperationResultUVE::NotReady;
+    GLuint available = GL_FALSE;
+    state.gl.glGetQueryObjectuiv(found->second.native, GL_QUERY_RESULT_AVAILABLE, &available);
+    if (!wait && available == GL_FALSE)
+        return RenderOperationResultUVE::NotReady;
+    RenderQueryResultUVE candidate{found->second.kind, 0U};
+    if (found->second.kind == RenderQueryKindUVE::AnySamplesPassed) {
+        GLuint value = 0U;
+        state.gl.glGetQueryObjectuiv(found->second.native, GL_QUERY_RESULT, &value);
+        candidate.value = value != 0U ? 1U : 0U;
+    } else {
+#if defined(__ANDROID__)
+        return RenderOperationResultUVE::Unsupported;
+#else
+        GLuint64 value = 0U;
+        state.gl.glGetQueryObjectui64v(found->second.native, GL_QUERY_RESULT, &value);
+        candidate.value = value;
+#endif
+    }
+    const auto result = FinishDeviceOperationUVE();
+    if (result == RenderOperationResultUVE::Success)
+        output = candidate;
+    return result;
+}
+RenderOperationResultUVE GlRenderDeviceUVE::DestroyQueryUVE(QueryHandleUVE handle) {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto &state = m_impl->state;
+    const auto found = state.queries.find(handle.value);
+    if (found == state.queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (state.activeOcclusion == handle.value)
+        return RenderOperationResultUVE::InvalidState;
+    state.gl.glDeleteQueries(1, &found->second.native);
+    state.queries.erase(found);
+    return FinishDeviceOperationUVE();
+}
+RenderOperationResultUVE GlRenderDeviceUVE::GetSurfaceInfoUVE(RenderSurfaceInfoUVE &output) const {
+    if (!IsUsableUVE())
+        return RenderOperationResultUVE::DeviceUnavailable;
+    RenderSurfaceInfoUVE candidate;
+    candidate.width = m_impl->state.windowManager->GetWidthUVE();
+    candidate.height = m_impl->state.windowManager->GetHeightUVE();
+    candidate.drawable = candidate.width != 0U && candidate.height != 0U;
+#if !defined(__ANDROID__)
+    GLboolean doubleBuffered = GL_FALSE;
+    glGetBooleanv(GL_DOUBLEBUFFER, &doubleBuffered);
+    candidate.imageCount = doubleBuffered ? 2U : 1U;
+#endif
+    output = candidate;
+    return RenderOperationResultUVE::Success;
+}
 } // namespace UVE::Render

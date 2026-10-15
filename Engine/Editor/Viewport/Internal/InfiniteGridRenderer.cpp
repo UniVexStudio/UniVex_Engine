@@ -1,4 +1,5 @@
 #include "univex/render/InfiniteGridRenderer.h"
+#include "univex/render/OverlayRasterStateGl.h"
 
 #include "univex/camera/ViewportMetrics.h"
 
@@ -93,10 +94,10 @@ void InfiniteGridRenderer::Draw(const GridFrameParams& frame) const {
     glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSrcAlpha);
     glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDstAlpha);
 
-    glEnable(GL_BLEND);
-    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE); // test against the scene, but never occlude it
+    GLint depthFunc = GL_LESS;
+    glGetIntegerv(GL_DEPTH_FUNC, &depthFunc);
+    // Foundation WP6: test against the scene, never occlude it - as data, applied table-driven.
+    ApplyOverlayRasterState(kInfiniteGridState);
 
     program_.Use();
     program_.SetMat4("uViewProj", frame.viewProjection.Data());
@@ -131,6 +132,7 @@ void InfiniteGridRenderer::Draw(const GridFrameParams& frame) const {
 
     // ---- put it back ------------------------------------------------------
     glDepthMask(depthMask);
+    glDepthFunc(static_cast<GLenum>(depthFunc));
     if (hadDepthTest == GL_FALSE) glDisable(GL_DEPTH_TEST);
     glBlendFuncSeparate(static_cast<GLenum>(blendSrcRgb), static_cast<GLenum>(blendDstRgb),
                         static_cast<GLenum>(blendSrcAlpha), static_cast<GLenum>(blendDstAlpha));
