@@ -707,7 +707,7 @@ clamped with `albedoClamped` set, and each expected value was measured against t
 ufbx parser rather than assumed. Six `FbxMaterialConverterUVETest` cases cover malformed input,
 material-free files, classic transparency, PBR factors with a file reference and an unnamed
 procedural map, clamping, and multi-material order. `[x]` **Publication (WP7, 2026-10-14,
-drafted without a compiler):** the FBX importer now receives the asset database
+compiled and suite-tested):** the FBX importer now receives the asset database
 (`IAssetImporterUVE::RegisterDatabaseAwareImporterUVE`, an additive registration kind that
 `AssetImporterUVE::ImportUVE` dispatches with the same database it registers the destination
 in; plain importers are untouched) and publishes one `<model-stem>.<sanitised-material-name>.uvmat`
@@ -723,8 +723,9 @@ material paths are deterministic and `RegisterUVE` is idempotent per path. Tests
 `FbxImportPublishesOneUvmatPerMaterial`, `FbxImportWithoutMaterialsPublishesOnlyTheModel`,
 `FbxImportResolvesSiblingTextureGuid`, `FbxImportLeavesUnresolvedTextureEmptyWithDiagnostic`,
 `FbxImportIsIdempotentAcrossReimport` (`FbxImporterUVETest`), `MeshAssetRoundTripsMaterialGuids`,
-`RegisterDatabaseAwareImporterUVE_ReceivesTheDatabaseAndSharesTheKeySpace`. Broader binary/DCC
-fixture coverage remains partial; no new importer is needed to duplicate those working
+`RegisterDatabaseAwareImporterUVE_ReceivesTheDatabaseAndSharesTheKeySpace`. These publication
+cases now compile and run in the current four-suite build; broader binary/DCC fixture coverage
+remains partial; no new importer is needed to duplicate those working
 mesh/skin/animation paths. `[x]` **glTF animation conversion** samples channels
 into clips. `[x]` A skeleton asset exists separately from the mesh (`skeleton_asset_uve`).
 `[x]` A font asset exists —
@@ -769,7 +770,7 @@ because each one blocks a whole feature:
 - `[~]` **No rasterizer state.** The RHI side landed (Tier 2.1): cull/winding/fill/bias plus a
   full `DepthCompareUVE` sit on `PipelineDescUVE` and all three backends apply them. The
   consumer is being closed by **WP6 (design decided 2026-10-14: candidate B, "depth state becomes
-  data"; step 1 drafted without a compiler):** `univex::render::OverlayRasterState`
+  data"; step 1 compiled and suite-tested, with step 2 and pixel evidence still open):** `univex::render::OverlayRasterState`
   (`Viewport/Expose/univex/render/OverlayRasterState.h`, pure data in viewport-core: depth test,
   write, compare, blend, cull with an explicit `Inherit`) with one named preset per overlay pass
   (`kGizmoOpaqueSolidState`, `kGizmoTranslucentSolidState`, `kGizmoStrokeState`,
@@ -1005,7 +1006,7 @@ verification gap, not the explicitly unsupported Vulkan operations. Vulkan occlu
 and the GPU occlusion consumer were closed by WP3 (recorded brackets above; consumer in the
 renderer reconciliation below). Semaphores/timelines
 are implemented as timeline objects (`CreateSemaphoreUVE` and friends, above), and `[x]`
-**submission-level queue sync (WP4, 2026-10-14, drafted without a compiler)** is
+**submission-level queue sync (WP4, 2026-10-14, compiled and verified)** is
 `IRenderDeviceUVE::SubmitWithSyncUVE(buffer, SubmitDescUVE{waits, signals})`: timeline
 wait/signal pairs as submit parameters (`SemaphoreWaitUVE`/`SemaphoreSignalUVE`; a timeline
 pair is strictly more expressive than a binary semaphore, so none is introduced; the method is
@@ -1030,9 +1031,13 @@ verbatim without moving a counter. Tests: `NullSubmitDescRecordsWaitsAndSignalsV
 `SubmitDescIsUnsupportedWithoutTimelines` (GL), `SubmitSignalIsObservedAfterTheFrameCompletes`,
 `SubmitWaitBlocksTheQueueUntilHostSignal`, `SubmitDescRejectsDestroyedSemaphore` (Vulkan). Vulkan texture-transfer parity and
 Vulkan timestamps were executed on a real Vulkan 1.3 ICD on 2026-10-14 (60 of 60
-`VulkanRenderDeviceUVETest` cases pass, one unrelated SPIR-V fixture skip); the WP3 bracket
-and consumer tests named in this document were written without a compiler in the session that
-lost its toolchain and must be built and run before this paragraph is read as evidence. The GL
+`VulkanRenderDeviceUVETest` cases pass, one unrelated SPIR-V fixture skip); the current build
+also compiles and runs the WP3 recorded-bracket and GPU-occlusion consumer tests. The full
+four-suite run is: engine 154/154, editor 340/340, integration 2139/2139, and core 2297 passed
+with 3 skips. Core still has the documented softpipe GL occlusion defect below, plus
+`VulkanRenderDeviceUVETest.FoundationFencesDoNotPretendPendingCpuSubmissionsHaveExecuted`,
+whose expectation conflicts with the documented WP3 contract that device-level Vulkan occlusion
+remains unsupported while recorded occlusion is native. The GL
 occlusion case `FoundationQueriesMeasureRealVisibilityAndGpuTimestamps` passes on the CI's
 software GL runner but not on the sandbox's softpipe rasterizer, where a standalone program
 reproduces the cause outside the engine: once any `glQueryCounter(GL_TIMESTAMP)` has been
@@ -1107,7 +1112,7 @@ is pending; the failed CI run is not reported as a green graphics verification.
     Explicit sinks remain for layered storage images, depth-as-storage and compressed-as-storage
     (warned once, writes land in the 1×1 black sink), and the frame uniform ring (1 MiB) and
     descriptor pool are capacity limits reported loudly, not silently.
-  - *Closed by WP5c (2026-10-14, drafted without a compiler):* **load-op semantics on the
+  - *Closed by WP5c (2026-10-14, compiled and native-test verified):* **load-op semantics on the
     swapchain path.** The first swapchain pass of a frame now drives the attachment load ops
     of the dynamic arm: `Load` keeps the acquired image's previous content (the image enters
     from `PRESENT_SRC` with a real transition instead of `UNDEFINED`) and the per-swapchain
@@ -1528,7 +1533,7 @@ call sites are already allocating from the wrong place.
 
 | # | Item | Module | Unblocks | Done when |
 |---|---|---|---|---|
-| 2.1 | Rasterizer state on `PipelineDescUVE` — cull, winding, fill, depth bias, **depth-compare function** | `RHI/RHI` + all three backends | shadow bias; removes the editor's direct GL depth-function call | the gizmo overlay expresses its depth mode through the pipeline - PARTIAL (verified Oct 2026 by source read): RHI side landed — rasterizer tail (cull/winding/fill/bias/depth-compare) on PipelineDescUVE + PipelineBinaryDescUVE, all three backends validate/apply (GL state, VK ToVk* incl. depthCompareOp, Null validation); the done-when consumer is in progress — WP6 decided the layering (Oct 2026): overlay depth state is data (`OverlayRasterState` in viewport-core), applied by one GL function and mapped onto `PipelineDescUVE` in the engine bridge; gizmo + grid converted (uncompiled draft), outline/backdrop/render-pass sites and the pixel evidence remain (see §8 rasterizer bullet) |
+| 2.1 | Rasterizer state on `PipelineDescUVE` — cull, winding, fill, depth bias, **depth-compare function** | `RHI/RHI` + all three backends | shadow bias; removes the editor's direct GL depth-function call | the gizmo overlay expresses its depth mode through the pipeline - PARTIAL (verified Oct 2026 by source read): RHI side landed — rasterizer tail (cull/winding/fill/bias/depth-compare) on PipelineDescUVE + PipelineBinaryDescUVE, all three backends validate/apply (GL state, VK ToVk* incl. depthCompareOp, Null validation); the done-when consumer is in progress — WP6 decided the layering (Oct 2026): overlay depth state is data (`OverlayRasterState` in viewport-core), applied by one GL function and mapped onto `PipelineDescUVE` in the engine bridge; gizmo + grid converted and compiled/tested, outline/backdrop/render-pass sites and the pixel evidence remain (see §8 rasterizer bullet) |
 | 2.2 | Sampler object + descriptor | `RHI/RHI` + backends | point filtering, wrapping, anisotropy | a texture can be sampled point-filtered - landed (verified Oct 2026 by source read): SamplerDescUVE (mag/min/mip/wrapU/V/W/maxAnisotropy) + SamplerFilterUVE::Point threaded through all three backend devices; GL maps Point to GL_NEAREST and GL creation tests cover Point filters |
 | 2.3 | Texture dimensionality — array layers, cubemaps | `RHI/RHI` + backends | image-based lighting; cascade arrays | a cubemap is created and sampled - landed (verified Oct 2026 by source read): TextureTypeUVE::Cubemap + Texture2DArray with arrayLayers, creation-time shape validation (cube: square + 6 layers), CubemapFaceUVE order matching HW face order, render-into-layer (colorLayer/depthLayer); GL cube paths + VK maxImageDimensionCube query; cube coverage in the GL/VK device tests |
 | 2.4 | Multiple render targets on `RenderPassDescUVE` | `RHI/RHI` + backends | any deferred/G-buffer path | a two-attachment pass records and replays - landed (verified Oct 2026 by source read): ColorAttachmentUVE slots 1..3 on RenderPassDescUVE (gap-rejecting); VulkanRenderDeviceUVETest.MultiTargetCaptureAndSample_RendersPerTargetColors records a multi-target pass and samples per-target colors, plus Null/GL attachment coverage |
@@ -1549,7 +1554,7 @@ consumer. They are cheap relative to how large they look.
 | 3.3 | Audio mixer routing | — | Landed (verified Oct 2026 by source read): AudioSystemUVE::UpdateUVE applies group multipliers to every live voice per frame; component mixerGroup syncs incl. live reassignment |
 | 3.4 | Script bytecode execution | — | Landed (verified Oct 2026): the bytecode VM executes (editor instant reload) and release builds generate C++23 from the same bytecode; the visual graph was removed. Decision made: execute. |
 | 3.5 | Plugin host | — | Landed: NativePluginHostUVE loads/unloads native plugins (dlopen + LoadLibrary), negotiates the ABI, registers manifests, rolls back failed loads; tested incl. real .so fixtures |
-| 3.6 | Occlusion culling | 2.8 (to see it) and GPU queries | Closed by WP3 (2026-10-14, drafted without a compiler - build and run before trusting): recorded query brackets on all three backends, Vulkan occlusion pools, and `Renderer3DUVE`'s opt-in proxy-box consumer with the conservative skip rule (see the renderer reconciliation). Hi-Z remains a ROADMAP design. |
+| 3.6 | Occlusion culling | 2.8 (to see it) and GPU queries | Closed by WP3 (2026-10-14, compiled and suite-tested): recorded query brackets on all three backends, Vulkan occlusion pools, and `Renderer3DUVE`'s opt-in proxy-box consumer with the conservative skip rule (see the renderer reconciliation). Hi-Z remains a ROADMAP design. |
 
 ## Tier 4 — genuinely new subsystems
 

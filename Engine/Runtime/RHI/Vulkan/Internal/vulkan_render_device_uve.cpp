@@ -6702,11 +6702,21 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     // WP4: the swapchain's two binary semaphores come first; the frame's timeline waits/signals
     // follow with their values in VkTimelineSemaphoreSubmitInfo (the binary entries carry a 0
     // value, which the spec ignores for binary semaphores). Timeline waits gate every stage.
+    // SwiftShader's headless present implementation waits synchronously for the render-finished
+    // semaphore. That is incompatible with a deliberately unsatisfied SubmitWithSyncUVE wait:
+    // the queue submit must return so the host can signal the gate. Keep the real queue wait and
+    // signal, but defer the headless presentation bridge for this gated frame; ordinary headless
+    // frames and all windowed frames retain the normal acquire/submit/present sequence.
+    const bool deferHeadlessPresentUVE = impl.headless && !frameTimelineWaits.empty();
     std::vector<VkSemaphore> waitSemaphores{impl.imageAvailableSemaphore};
     std::vector<VkPipelineStageFlags> waitStages{VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     std::vector<std::uint64_t> waitValues{0U};
-    std::vector<VkSemaphore> signalSemaphores{impl.renderFinishedSemaphore};
-    std::vector<std::uint64_t> signalValues{0U};
+    std::vector<VkSemaphore> signalSemaphores;
+    std::vector<std::uint64_t> signalValues;
+    if (!deferHeadlessPresentUVE) {
+        signalSemaphores.push_back(impl.renderFinishedSemaphore);
+        signalValues.push_back(0U);
+    }
     for (const auto& [timelineWaitSemaphore, timelineWaitValue] : frameTimelineWaits) {
         waitSemaphores.push_back(timelineWaitSemaphore);
         waitStages.push_back(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
@@ -6740,32 +6750,34 @@ void VulkanRenderDeviceUVE::PresentUVE() {
         return;
     }
 
-    VkPresentInfoKHR presentInfo{};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1U;
-    presentInfo.pWaitSemaphores = &impl.renderFinishedSemaphore;
-    presentInfo.swapchainCount = 1U;
-    presentInfo.pSwapchains = &impl.swapchain;
-    presentInfo.pImageIndices = &imageIndex;
-    const VkResult presentResult = impl.vk.vkQueuePresentKHR(impl.presentQueue, &presentInfo);
-    if (presentResult == VK_SUCCESS || presentResult == VK_SUBOPTIMAL_KHR) {
-        impl.lastPresentedImageIndex = imageIndex;
-        if (imageIndex < impl.swapchainImagePresented.size()) {
-            impl.swapchainImagePresented[imageIndex] = 1U;
+    if (!deferHeadlessPresentUVE) {
+        VkPresentInfoKHR presentInfo{};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.waitSemaphoreCount = 1U;
+        presentInfo.pWaitSemaphores = &impl.renderFinishedSemaphore;
+        presentInfo.swapchainCount = 1U;
+        presentInfo.pSwapchains = &impl.swapchain;
+        presentInfo.pImageIndices = &imageIndex;
+        const VkResult presentResult = impl.vk.vkQueuePresentKHR(impl.presentQueue, &presentInfo);
+        if (presentResult == VK_SUCCESS || presentResult == VK_SUBOPTIMAL_KHR) {
+            impl.lastPresentedImageIndex = imageIndex;
+            if (imageIndex < impl.swapchainImagePresented.size()) {
+                impl.swapchainImagePresented[imageIndex] = 1U;
+            }
+            impl.depthImageHoldsFrame = true;
         }
-        impl.depthImageHoldsFrame = true;
-    }
-    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
-        // Resize visible to the driver after acquire: rebuild now so next frame uses a valid
-        // swapchain (the just-completed present attempt was still in sync — the fence stands).
-        (void)impl.vk.vkQueueWaitIdle(impl.presentQueue);
-        impl.DestroySwapchainResourcesUVE();
-        if (!impl.CreateSwapchainResourcesUVE()) {
-            impl.usable = false;
+        if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
+            // Resize visible to the driver after acquire: rebuild now so next frame uses a valid
+            // swapchain (the just-completed present attempt was still in sync — the fence stands).
+            (void)impl.vk.vkQueueWaitIdle(impl.presentQueue);
+            impl.DestroySwapchainResourcesUVE();
+            if (!impl.CreateSwapchainResourcesUVE()) {
+                impl.usable = false;
+            }
+        } else if (presentResult != VK_SUCCESS) {
+            UVE_WARNING("VulkanRenderDeviceUVE::PresentUVE: vkQueuePresentKHR failed (result {})",
+                        static_cast<int>(presentResult));
         }
-    } else if (presentResult != VK_SUCCESS) {
-        UVE_WARNING("VulkanRenderDeviceUVE::PresentUVE: vkQueuePresentKHR failed (result {})",
-                    static_cast<int>(presentResult));
     }
 }
 
