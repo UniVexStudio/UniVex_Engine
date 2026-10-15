@@ -5163,11 +5163,13 @@ TEST_F(VulkanRenderDeviceUVETest, FoundationFencesDoNotPretendPendingCpuSubmissi
     EXPECT_TRUE(surface.drawable);
     EXPECT_GT(surface.width, 0U);
     EXPECT_GT(surface.imageCount, 0U);
-    // The refusal path is exercised with the still-unpinned occlusion kind; the timestamp kind
-    // is implemented and must agree with its own capability report instead of a fixed answer.
+    // Recorded occlusion queries allocate a handle at device level; their begin/end/result
+    // lifecycle is validated by the dedicated recorded-query tests below. The old expectation
+    // that creation itself was unsupported became stale when that path landed.
     QueryHandleUVE query{73U};
-    EXPECT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, query), ResultUVE::Unsupported);
-    EXPECT_EQ(query.value, 73U) << "a refused create must leave the output handle untouched";
+    ASSERT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, query), ResultUVE::Success);
+    ASSERT_NE(query, kInvalidQueryHandleUVE);
+    EXPECT_EQ(device->DestroyQueryUVE(query), ResultUVE::Success);
     if (device->GetCapabilitiesUVE().timestampQueries == RenderFeatureSupportUVE::Native) {
         QueryHandleUVE timestamp{};
         ASSERT_EQ(device->CreateQueryUVE(RenderQueryKindUVE::Timestamp, timestamp), ResultUVE::Success);
