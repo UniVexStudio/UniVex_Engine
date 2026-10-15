@@ -32,6 +32,14 @@ inline constexpr std::size_t kMaximumDebugLineVerticesUVE = 32768U;
 /// Segments per great circle of a debug sphere: 3 circles x 24 segments x 2 vertices.
 inline constexpr std::size_t kDebugSphereSegmentsUVE = 24U;
 
+/// Point batch bound: 8K points (192KB) per submit, dropped and counted past the cap like lines.
+inline constexpr std::size_t kMaximumDebugPointVerticesUVE = 8192U;
+
+/// Default and clamp range of the batch-wide point size, in pixels.
+inline constexpr float kDefaultDebugPointSizeUVE = 4.0F;
+inline constexpr float kMinimumDebugPointSizeUVE = 1.0F;
+inline constexpr float kMaximumDebugPointSizeUVE = 64.0F;
+
 /// Batches debug lines and shapes for one frame and submits them as a single 1px line-list
 /// draw through the `debug_line` built-in (world-space positions, per-vertex colors, one
 /// uViewProjection). Depth-tested against the scene but never depth-writing, so debug paint
@@ -39,8 +47,11 @@ inline constexpr std::size_t kDebugSphereSegmentsUVE = 24U;
 ///
 /// Lines are the whole vocabulary: a box is 12 lines from one call (the Tier 2.8 done-when),
 /// a 2D rect is 4 lines at z = 0, a sphere 3 axis circles, and anything else (frusta, contacts,
-/// paths) composes from DrawLine3D. There is no strip/fan mode, no line width, and no x-ray
-/// overlay pass — those are follow-up increments, not missing features.
+/// paths) composes from DrawLine3D. Points are the one other vocabulary: DrawPoint3D batches
+/// into a second, `Points`-topology draw through the `debug_point` built-in, sized batch-wide
+/// in pixels. There is no line width and no x-ray overlay pass — follow-up increments, not
+/// missing features. Polylines (sphere circles) stay expanded into the line list on purpose:
+/// one strip per circle would cost a draw each, the list keeps the whole frame in one.
 ///
 /// Lifetime: GPU resources (line program, vertex buffer) are created lazily on first SubmitUVE
 /// and released by ShutdownUVE, which must run while the device and shader manager are still
@@ -76,37 +87,69 @@ public:
     void DrawRect2D(const Math::Vector2UVE& min, const Math::Vector2UVE& max,
                     const Math::Vector3UVE& color);
 
+    /// Appends one point, drawn as a screen-aligned square of PointSizeUVE() pixels. Ignored
+    /// (counted, warned) past the point cap or on non-finite input.
+    void DrawPoint3D(const Math::Vector3UVE& position, const Math::Vector3UVE& color);
+
+    /// Batch-wide point size in pixels, clamped to [1, 64]; non-finite values are ignored with
+    /// a warning. Applies to every point of the next submit.
+    void SetPointSizeUVE(float pixels);
+    [[nodiscard]] float PointSizeUVE() const noexcept;
+
     /// The current batch: pairs of vertices, one pair per line, in submission order.
     [[nodiscard]] std::span<const DebugLineVertexUVE> LinesUVE() const noexcept;
+
+    /// The current point batch, one vertex per point, in submission order.
+    [[nodiscard]] std::span<const DebugLineVertexUVE> PointsUVE() const noexcept;
 
     /// Lines dropped from the current batch by the cap (DrawLine3D past 16K lines). Resets on
     /// ClearUVE and after every successful submit.
     [[nodiscard]] std::size_t DroppedLineCountUVE() const noexcept;
 
+    /// Points dropped from the current batch by the point cap; same reset rule.
+    [[nodiscard]] std::size_t DroppedPointCountUVE() const noexcept;
+
     /// Discards the batch and the drop counter without touching the GPU.
     void ClearUVE() noexcept;
 
-    /// Uploads the batch and records bind + draw into `commands` (which must already be inside
-    /// a render pass), then clears the batch. Returns false — leaving the batch intact for a
-    /// retry — only when GPU resources fail to create or the upload fails. A program whose
-    /// async compile is still in flight defers instead of failing: the batch is kept and the
-    /// call returns true. Empty batches return true without touching the GPU.
+    /// Uploads the batches and records bind + draw into `commands` (which must already be
+    /// inside a render pass) — one Lines draw, then one Points draw, each only when its batch
+    /// is non-empty — then clears both. Returns false — leaving the batches intact for a
+    /// retry — only when GPU resources fail to create or an upload fails. A program whose
+    /// async compile is still in flight defers instead of failing: the batches are kept and
+    /// the call returns true. Empty batches return true without touching the GPU.
     [[nodiscard]] bool SubmitUVE(IRenderDeviceUVE& device, Shader::IShaderManagerUVE& shaders,
                                  ICommandBufferUVE& commands,
                                  const Math::Matrix4x4UVE& viewProjection);
 
-    /// Releases the vertex buffer and line program; safe to call twice and safe with no
+    /// Releases the vertex buffers and programs; safe to call twice and safe with no
     /// resources (a renderer that never submitted). Call before the device dies.
     void ShutdownUVE(IRenderDeviceUVE& device);
 
 private:
+    /// One (program, streamed vertex buffer) pair per topology; created lazily on first use.
+    struct BatchResourcesUVE final {
+        std::shared_ptr<Shader::ShaderProgramUVE> program;
+        BufferHandleUVE vertexBuffer = kInvalidBufferHandleUVE;
+    };
+
     void PushLineUVE(const Math::Vector3UVE& from, const Math::Vector3UVE& to,
                      const Math::Vector3UVE& color);
+    /// Creates the batch's resources on first use, uploads `vertices` and records bind + draw.
+    /// Returns false on a resource/upload failure; sets `deferred` (and returns true) when the
+    /// program is still compiling so the caller keeps the batch.
+    [[nodiscard]] bool SubmitBatchUVE(IRenderDeviceUVE& device, Shader::IShaderManagerUVE& shaders,
+                                      ICommandBufferUVE& commands, const Math::Matrix4x4UVE& viewProjection,
+                                      BatchResourcesUVE& resources, std::span<const DebugLineVertexUVE> vertices,
+                                      PrimitiveTopologyUVE topology, bool& deferred);
 
     std::vector<DebugLineVertexUVE> m_lines;
+    std::vector<DebugLineVertexUVE> m_points;
     std::size_t m_droppedLines = 0U;
-    std::shared_ptr<Shader::ShaderProgramUVE> m_program;
-    BufferHandleUVE m_vertexBuffer = kInvalidBufferHandleUVE;
+    std::size_t m_droppedPoints = 0U;
+    float m_pointSizePixels = kDefaultDebugPointSizeUVE;
+    BatchResourcesUVE m_lineResources;
+    BatchResourcesUVE m_pointResources;
 };
 
 } // namespace UVE::Render

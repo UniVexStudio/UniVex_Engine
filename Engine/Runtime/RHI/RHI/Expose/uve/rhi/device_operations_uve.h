@@ -1,7 +1,9 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #pragma once
 #include <cstdint>
+#include <span>
 #include <variant>
+#include <vector>
 #include "uve/rhi/buffer_handle_uve.h"
 #include "uve/rhi/texture_handle_uve.h"
 #include "uve/rhi/render_resource_descs_uve.h"
@@ -143,11 +145,21 @@ struct TextureBlitDescUVE final {
                                                    const TextureDescUVE &destination) noexcept {
     return blit.source != blit.destination && source.format == destination.format &&
            source.colorSpace == destination.colorSpace &&
-           (source.format == TextureFormatUVE::RGBA8Unorm ||
-            source.format == TextureFormatUVE::RGBA16Float) &&
+           IsUncompressedColorFormatUVE(source.format) &&
+           source.type != TextureTypeUVE::Texture3D && destination.type != TextureTypeUVE::Texture3D &&
+           HasTextureUsageUVE(GetEffectiveTextureUsageUVE(source), TextureUsageUVE::TransferSrc) &&
+           HasTextureUsageUVE(GetEffectiveTextureUsageUVE(destination), TextureUsageUVE::TransferDst) &&
            (blit.filter == BlitFilterUVE::Point || blit.filter == BlitFilterUVE::Linear) &&
            IsTextureRegionValidUVE(source, blit.sourceRegion) &&
            IsTextureRegionValidUVE(destination, blit.destinationRegion);
+}
+/// The shared gate of every backend's GenerateMipmapsUVE: a multi-level, uncompressed colour
+/// texture (volumes included) whose usage allows both ends of the level-to-level copy.
+[[nodiscard]] constexpr bool CanGenerateMipmapsUVE(const TextureDescUVE &texture) noexcept {
+    const TextureUsageUVE usage = GetEffectiveTextureUsageUVE(texture);
+    return texture.mipLevels >= 2U && IsUncompressedColorFormatUVE(texture.format) &&
+           HasTextureUsageUVE(usage, TextureUsageUVE::TransferSrc) &&
+           HasTextureUsageUVE(usage, TextureUsageUVE::TransferDst);
 }
 enum class RenderQueryKindUVE : std::uint8_t { Timestamp = 0, AnySamplesPassed };
 struct RenderQueryResultUVE final {
@@ -185,7 +197,32 @@ struct QueryOperationUVE {
     RenderQueryKindUVE kind;
     bool begin = false;
 };
+/// Foundation WP4: submission-level queue synchronisation, expressed with the timeline objects
+/// above (a timeline wait/signal pair is strictly more expressive than a binary semaphore, so no
+/// second semaphore type exists). A wait gates the GPU execution of the submitted work until the
+/// semaphore's counter reaches `value`; a signal sets the counter to `value` once that work has
+/// completed on the GPU. `value` for a signal must exceed the counter at submit time.
+struct SemaphoreWaitUVE {
+    SemaphoreHandleUVE semaphore;
+    std::uint64_t value = 0U;
+};
+struct SemaphoreSignalUVE {
+    SemaphoreHandleUVE semaphore;
+    std::uint64_t value = 0U;
+};
+/// Parameters of IRenderDeviceUVE::SubmitWithSyncUVE. Both spans are borrowed only for the
+/// duration of the call. Every semaphore handle must be unique across BOTH lists.
+struct SubmitDescUVE {
+    std::span<const SemaphoreWaitUVE> waits;
+    std::span<const SemaphoreSignalUVE> signals;
+};
+/// Null's verbatim record of one SubmitWithSyncUVE call. Recorded, never simulated: no counter
+/// moves because a signal was recorded here.
+struct SubmitOperationUVE {
+    std::vector<SemaphoreWaitUVE> waits;
+    std::vector<SemaphoreSignalUVE> signals;
+};
 using RecordedDeviceOperationUVE =
     std::variant<BufferCopyDescUVE, TextureBlitDescUVE, GenerateMipsOperationUVE, FenceOperationUVE,
-                 QueryOperationUVE, SignalSemaphoreOperationUVE, WaitSemaphoreOperationUVE>;
+                 QueryOperationUVE, SignalSemaphoreOperationUVE, WaitSemaphoreOperationUVE, SubmitOperationUVE>;
 } // namespace UVE::Render

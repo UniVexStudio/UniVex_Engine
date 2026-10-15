@@ -145,6 +145,61 @@ TEST(MeshAssetUVETest, SaveThenLoad_RoundTripsByteExact) {
     std::filesystem::remove(path);
 }
 
+TEST(MeshAssetUVETest, MeshAssetRoundTripsMaterialGuids) {
+    // Foundation WP7: material references are a tagged trailing section - present only when the
+    // mesh has any, read back verbatim, and absent from a mesh without materials so that file's
+    // bytes stay exactly what they were before the field existed.
+    const std::filesystem::path withPath = "uve_mesh_asset_tests_materials.uvmodel";
+    const std::filesystem::path withoutPath = "uve_mesh_asset_tests_no_materials.uvmodel";
+    const std::filesystem::path legacyPath = "uve_mesh_asset_tests_legacy_bytes.uvmodel";
+    std::filesystem::remove(withPath);
+    std::filesystem::remove(withoutPath);
+    std::filesystem::remove(legacyPath);
+
+    MeshAssetUVE original = MakeTestMeshUVE();
+    original.materialGuids = {AssetGuidUVE{0x1122334455667788ULL}, kInvalidAssetGuidUVE, AssetGuidUVE{7U}};
+    ASSERT_TRUE(SaveMeshAssetUVE(original, withPath));
+    MeshAssetUVE loaded;
+    ASSERT_TRUE(LoadMeshAssetUVE(withPath, loaded));
+    ASSERT_EQ(loaded.materialGuids.size(), 3U);
+    EXPECT_EQ(loaded.materialGuids[0], AssetGuidUVE{0x1122334455667788ULL});
+    EXPECT_EQ(loaded.materialGuids[1], kInvalidAssetGuidUVE) << "an unpublished slot survives as the invalid GUID";
+    EXPECT_EQ(loaded.materialGuids[2], AssetGuidUVE{7U});
+    EXPECT_EQ(loaded.indices, original.indices);
+    EXPECT_FALSE(loaded.IsSkinnedUVE()) << "the material tag must not be mistaken for a joint count";
+
+    const MeshAssetUVE plain = MakeTestMeshUVE();
+    ASSERT_TRUE(SaveMeshAssetUVE(plain, withoutPath));
+    MeshAssetUVE loadedPlain;
+    ASSERT_TRUE(LoadMeshAssetUVE(withoutPath, loadedPlain));
+    EXPECT_TRUE(loadedPlain.materialGuids.empty());
+    EXPECT_LT(std::filesystem::file_size(withoutPath), std::filesystem::file_size(withPath))
+        << "a mesh without materials writes no material section";
+
+    // A mesh that carries materials AND skinning keeps both.
+    MeshAssetUVE skinned = MakeTestMeshUVE();
+    skinned.joints.push_back(MeshJointUVE{});
+    skinned.joints.back().parentIndex = kInvalidJointParentUVE;
+    skinned.joints.back().name = "root";
+    skinned.skinningInfluences.assign(skinned.vertices.size(), MeshSkinningInfluenceUVE{});
+    for (MeshSkinningInfluenceUVE& influence : skinned.skinningInfluences) {
+        influence.weights[0] = 1.0F;
+    }
+    skinned.materialGuids = {AssetGuidUVE{42U}};
+    ASSERT_TRUE(SaveMeshAssetUVE(skinned, legacyPath));
+    MeshAssetUVE loadedSkinned;
+    ASSERT_TRUE(LoadMeshAssetUVE(legacyPath, loadedSkinned));
+    EXPECT_TRUE(loadedSkinned.IsSkinnedUVE());
+    ASSERT_EQ(loadedSkinned.joints.size(), 1U);
+    EXPECT_EQ(loadedSkinned.joints[0].name, "root");
+    ASSERT_EQ(loadedSkinned.materialGuids.size(), 1U);
+    EXPECT_EQ(loadedSkinned.materialGuids[0], AssetGuidUVE{42U});
+
+    std::filesystem::remove(withPath);
+    std::filesystem::remove(withoutPath);
+    std::filesystem::remove(legacyPath);
+}
+
 TEST(MeshAssetUVETest, LoadMeshAssetUVE_WrongAssetKind_FailsCleanlyAndLogsError) {
     const std::filesystem::path path = "uve_mesh_asset_tests_wrong_kind.uvblob";
     std::filesystem::remove(path);

@@ -93,12 +93,25 @@ struct SetUniformMatrix4x4CommandUVE {
     Math::Matrix4x4UVE value;
 };
 
+/// Recorded query brackets and timestamps (Foundation WP3): the backend brackets the draws
+/// recorded between Begin and End with the query at replay/issue time.
+struct BeginQueryCommandUVE {
+    QueryHandleUVE query;
+};
+struct EndQueryCommandUVE {
+    QueryHandleUVE query;
+};
+struct WriteTimestampCommandUVE {
+    QueryHandleUVE query;
+};
+
 /// A single recorded ICommandBufferUVE call, tagged by which method it came from.
 using RecordedCommandUVE = std::variant<
     BeginRenderPassCommandUVE, EndRenderPassCommandUVE, BindPipelineCommandUVE, BindVertexBufferCommandUVE,
     BindIndexBufferCommandUVE, BindTextureCommandUVE, BindSamplerCommandUVE, BindUniformBufferCommandUVE,
     BindStorageBufferCommandUVE, DrawIndexedCommandUVE, DrawCommandUVE, DrawIndexedIndirectCommandRecordUVE,
     DispatchCommandUVE, SetUniformFloatCommandUVE, SetUniformIntCommandUVE, SetUniformBoolCommandUVE,
-    SetUniformVector3CommandUVE, SetUniformMatrix4x4CommandUVE, MemoryBarrierCommandUVE>;
+    SetUniformVector3CommandUVE, SetUniformMatrix4x4CommandUVE, MemoryBarrierCommandUVE,
+    BeginQueryCommandUVE, EndQueryCommandUVE, WriteTimestampCommandUVE>;
 
 } // namespace UVE::Render

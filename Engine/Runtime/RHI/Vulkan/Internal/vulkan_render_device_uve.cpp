@@ -32,6 +32,8 @@
 #include <cstdint>
 #include <cstring>
 #include <deque>
+#include <functional>
+#include <optional>
 #include <map>
 #include <mutex>
 #include <span>
@@ -315,6 +317,7 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     // Tier 2.3: array/cubemap caps, queried once at init; CreateTextureUVE rejects above them.
     std::uint32_t maxTextureArrayLayers = 1U;
     std::uint32_t maxCubemapSize = 0U;
+    std::uint32_t maxTexture3DSize = 0U;
     std::uint32_t maxColorAttachments = 1U; // Tier 2.4: limits.maxColorAttachments
     bool textureCompressionETC2Enabled = false;
     bool textureCompressionASTCLdrEnabled = false;
@@ -328,9 +331,14 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     // through-dynamic-rendering decisions branch on useDynamicRendering, never on the probe.
     bool dynamicRenderingSupported = false;
     /// Timeline semaphores: queried from VkPhysicalDeviceVulkan12Features and, when supported,
-    /// requested at device creation. Capability reporting additionally requires the 1.2 entry
-    /// points, so a loader without them can never claim the feature.
+    /// requested at device creation. The three entry points are device-level, so they cannot be
+    /// resolved before vkCreateDevice: the probe only decides what to request, and the
+    /// capability may only be advertised once the entries actually resolved after bring-up
+    /// (see timelineSemaphoresEnabled below) — a loader without them never claims the feature.
     bool timelineSemaphoresRequested = false;
+    /// True only when the feature was requested AND its three device-level entries resolved.
+    /// Capability reporting and the semaphore calls themselves gate on this, never on the probe.
+    bool timelineSemaphoresEnabled = false;
     bool useDynamicRendering = false;
 
     // M2d scratch depth for color-only offscreen passes: one DEVICE_LOCAL depth image per
@@ -351,6 +359,9 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     struct TextureRecordUVE; // fwd: FramePassStateUVE carries a pointer to it (M2e)
     struct FramePassStateUVE {
         VkClearValue clearValues[2]{}; // 0: color, 1: depth — swapchain load-CLEAR contents
+        // WP5c: the load ops the frame's first swapchain pass asked for (dynamic arm only).
+        VkAttachmentLoadOp swapchainColorLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        VkAttachmentLoadOp swapchainDepthLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         std::uint32_t swapchainImageIndex = 0U;
         bool barrierDoneForSwapchain = false;   // per-frame image/depth entry transitions
         bool swapchainPassBegunThisFrame = false;
@@ -388,6 +399,11 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     VkExtent2D swapchainExtent{0U, 0U};
     std::vector<VkImage> swapchainImages;
     std::vector<VkImageView> swapchainImageViews;
+    // WP5c: which swapchain images have been presented at least once (their content and
+    // PRESENT_SRC layout are known), and whether the per-swapchain depth image holds a frame.
+    // A Load-op on an image without a known previous state falls back to the pass's clear.
+    std::vector<std::uint8_t> swapchainImagePresented;
+    bool depthImageHoldsFrame = false;
     VkRenderPass renderPass = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> framebuffers;
 
@@ -405,6 +421,14 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     // device's tick length, so results can be reported in nanoseconds like every other backend.
     std::unordered_map<std::uint32_t, VkQueryPool> userQueries;
     std::unordered_map<std::uint32_t, RenderQueryKindUVE> userQueryKinds;
+    // WP3: a query whose pool was never reset+written has undefined contents, so results are
+    // only read once a transient timestamp write or a replayed recorded bracket/timestamp has
+    // reached the native command stream (NotReady before that, exactly like GL's `issued`).
+    std::unordered_map<std::uint32_t, bool> userQueryIssued;
+    // Replay bookkeeping for recorded occlusion brackets: the open query (0 = none) and its
+    // pool, so a rendering instance that must close mid-bracket can end the query first.
+    std::uint32_t replayOpenQuery = 0U;
+    VkQueryPool replayOpenQueryPool = VK_NULL_HANDLE;
     std::uint32_t nextUserQuery = 1U;
     double timestampPeriodNs = 1.0;
     bool timestampQueriesSupported = false;
@@ -420,6 +444,10 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     VkDeviceMemory depthImageMemory = VK_NULL_HANDLE;
     VkImageView depthImageView = VK_NULL_HANDLE;
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
+    /// The packed depth+stencil format `Depth24Stencil8` resolves to on this device. The spec
+    /// guarantees D24_UNORM_S8_UINT *or* D32_SFLOAT_S8_UINT, never both; UNDEFINED means neither
+    /// advertised depth/stencil attachment support, so stencil textures and pipelines refuse.
+    VkFormat depthStencilFormat = VK_FORMAT_UNDEFINED;
 
     // Frame uniform ring: one large persistently-mapped HOST_VISIBLE uniform buffer. Per draw,
     // each reflected block's shadow is snapshot-copied into a cursor-aligned region and bound
@@ -495,7 +523,35 @@ struct VulkanRenderDeviceUVE::ImplUVE {
         std::uint64_t sizeBytes = 0;
         BufferUsageUVE usage = BufferUsageUVE::Vertex;
         void* mapped = nullptr; // persistently mapped HOST_VISIBLE buffers; nullptr = DEVICE_LOCAL (M3)
+        BufferMemoryUVE memoryHint = BufferMemoryUVE::Auto;            // as requested, for GetBufferDescUVE
+        BufferUpdateFrequencyUVE updateFrequency = BufferUpdateFrequencyUVE::Static;
     };
+    /// The access/stage pair the buffer's consumers use, for the barriers around staging copies
+    /// into and out of device-local placements. No geometry stage: the device never enables it.
+    struct BufferConsumerSyncUVE {
+        VkAccessFlags access = 0U;
+        VkPipelineStageFlags stages = 0U;
+    };
+    [[nodiscard]] static BufferConsumerSyncUVE ConsumerSyncForUVE(const BufferUsageUVE usage) noexcept {
+        constexpr VkPipelineStageFlags kShaderStages = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                                                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                                                       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        switch (usage) {
+            case BufferUsageUVE::Vertex:
+                return {VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT};
+            case BufferUsageUVE::Index:
+                return {VK_ACCESS_INDEX_READ_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT};
+            case BufferUsageUVE::Uniform:
+                return {VK_ACCESS_UNIFORM_READ_BIT, kShaderStages};
+            case BufferUsageUVE::Storage:
+                return {VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, kShaderStages};
+            case BufferUsageUVE::IndirectStorage:
+                return {VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_SHADER_READ_BIT |
+                            VK_ACCESS_SHADER_WRITE_BIT,
+                        kShaderStages | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT};
+        }
+        return {VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+    }
 
     // M3: one-shot staging upload into a DEVICE_LOCAL buffer (vertex/index). Mirrors the M2c
     // texture-staging discipline exactly: a transient HOST_VISIBLE|COHERENT TRANSFER_SRC
@@ -571,19 +627,20 @@ struct VulkanRenderDeviceUVE::ImplUVE {
             freeStaging();
             return false;
         }
-        const VkAccessFlags readAccess = (record.usage == BufferUsageUVE::Index)
-                                             ? VK_ACCESS_INDEX_READ_BIT
-                                             : VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+        // Buffer memory hints: any usage may be device-local now, so the barriers name the
+        // usage's own consumers (vertex input, shader stages, indirect draw) instead of assuming
+        // a vertex/index buffer.
+        const BufferConsumerSyncUVE consumer = ConsumerSyncForUVE(record.usage);
         VkBufferMemoryBarrier acquireDst{};
         acquireDst.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-        acquireDst.srcAccessMask = 0U;
+        acquireDst.srcAccessMask = consumer.access;
         acquireDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         acquireDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         acquireDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         acquireDst.buffer = record.buffer;
         acquireDst.offset = static_cast<VkDeviceSize>(offset);
         acquireDst.size = data.size();
-        vk.vkCmdPipelineBarrier(transferCommands, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        vk.vkCmdPipelineBarrier(transferCommands, consumer.stages,
                                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, nullptr, 1U, &acquireDst,
                                 0U, nullptr);
         VkBufferCopy copyRegion{};
@@ -594,14 +651,14 @@ struct VulkanRenderDeviceUVE::ImplUVE {
         VkBufferMemoryBarrier publishCopy{};
         publishCopy.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
         publishCopy.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        publishCopy.dstAccessMask = readAccess;
+        publishCopy.dstAccessMask = consumer.access;
         publishCopy.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         publishCopy.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         publishCopy.buffer = record.buffer;
         publishCopy.offset = static_cast<VkDeviceSize>(offset);
         publishCopy.size = data.size();
         vk.vkCmdPipelineBarrier(transferCommands, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0U, 0U, nullptr, 1U,
+                                consumer.stages, 0U, 0U, nullptr, 1U,
                                 &publishCopy, 0U, nullptr);
         if (vk.vkEndCommandBuffer(transferCommands) != VK_SUCCESS) {
             freeCommands();
@@ -618,6 +675,126 @@ struct VulkanRenderDeviceUVE::ImplUVE {
             freeStaging();
             return false;
         }
+        freeCommands();
+        freeStaging();
+        return true;
+    }
+    /// The mirror of UploadToDeviceLocalBufferUVE: a one-shot copy out of a device-local buffer
+    /// into a transient host-visible staging buffer, drained before the host reads it. Every
+    /// buffer carries TRANSFER_SRC usage, so any placement can be read back this way; the
+    /// visibility barrier names the usage's own writers so a compute-written storage buffer is
+    /// complete before the copy. Same cold-path cost class as the mapped readback's queue drain.
+    [[nodiscard]] bool ReadbackFromDeviceLocalBufferUVE(const BufferRecordUVE& record,
+                                                        std::span<std::byte> outData,
+                                                        std::uint64_t offset) {
+        if (outData.empty()) {
+            return true;
+        }
+        VkBuffer stagingBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+        const auto freeStaging = [&]() {
+            if (stagingBuffer != VK_NULL_HANDLE) {
+                vk.vkDestroyBuffer(device, stagingBuffer, nullptr);
+            }
+            if (stagingMemory != VK_NULL_HANDLE) {
+                vk.vkFreeMemory(device, stagingMemory, nullptr);
+            }
+        };
+        VkBufferCreateInfo stagingInfo{};
+        stagingInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        stagingInfo.size = outData.size();
+        stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        stagingInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        if (vk.vkCreateBuffer(device, &stagingInfo, nullptr, &stagingBuffer) != VK_SUCCESS) {
+            return false;
+        }
+        VkMemoryRequirements stagingRequirements{};
+        vk.vkGetBufferMemoryRequirements(device, stagingBuffer, &stagingRequirements);
+        const std::uint32_t stagingMemoryType = FindMemoryTypeUVE(
+            stagingRequirements.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        VkMemoryAllocateInfo stagingAllocateInfo{};
+        stagingAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        stagingAllocateInfo.allocationSize = stagingRequirements.size;
+        stagingAllocateInfo.memoryTypeIndex = stagingMemoryType;
+        if (stagingMemoryType == UINT32_MAX ||
+            vk.vkAllocateMemory(device, &stagingAllocateInfo, nullptr, &stagingMemory) != VK_SUCCESS ||
+            vk.vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0U) != VK_SUCCESS) {
+            freeStaging();
+            return false;
+        }
+        VkCommandBufferAllocateInfo commandAllocateInfo{};
+        commandAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        commandAllocateInfo.commandPool = commandPool;
+        commandAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        commandAllocateInfo.commandBufferCount = 1U;
+        VkCommandBuffer transferCommands = VK_NULL_HANDLE;
+        if (vk.vkAllocateCommandBuffers(device, &commandAllocateInfo, &transferCommands) != VK_SUCCESS ||
+            transferCommands == VK_NULL_HANDLE) {
+            freeStaging();
+            return false;
+        }
+        const auto freeCommands = [&]() {
+            vk.vkFreeCommandBuffers(device, commandPool, 1U, &transferCommands);
+        };
+        VkCommandBufferBeginInfo transferBegin{};
+        transferBegin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        transferBegin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        if (vk.vkBeginCommandBuffer(transferCommands, &transferBegin) != VK_SUCCESS) {
+            freeCommands();
+            freeStaging();
+            return false;
+        }
+        const BufferConsumerSyncUVE consumer = ConsumerSyncForUVE(record.usage);
+        VkBufferMemoryBarrier acquireSrc{};
+        acquireSrc.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        acquireSrc.srcAccessMask = consumer.access | VK_ACCESS_TRANSFER_WRITE_BIT;
+        acquireSrc.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        acquireSrc.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        acquireSrc.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        acquireSrc.buffer = record.buffer;
+        acquireSrc.offset = static_cast<VkDeviceSize>(offset);
+        acquireSrc.size = outData.size();
+        vk.vkCmdPipelineBarrier(transferCommands, consumer.stages | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, nullptr, 1U, &acquireSrc,
+                                0U, nullptr);
+        VkBufferCopy copyRegion{};
+        copyRegion.srcOffset = static_cast<VkDeviceSize>(offset);
+        copyRegion.dstOffset = 0U;
+        copyRegion.size = outData.size();
+        vk.vkCmdCopyBuffer(transferCommands, record.buffer, stagingBuffer, 1U, &copyRegion);
+        VkBufferMemoryBarrier publishToHost{};
+        publishToHost.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        publishToHost.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        publishToHost.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+        publishToHost.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        publishToHost.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        publishToHost.buffer = stagingBuffer;
+        publishToHost.offset = 0U;
+        publishToHost.size = outData.size();
+        vk.vkCmdPipelineBarrier(transferCommands, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                VK_PIPELINE_STAGE_HOST_BIT, 0U, 0U, nullptr, 1U, &publishToHost,
+                                0U, nullptr);
+        if (vk.vkEndCommandBuffer(transferCommands) != VK_SUCCESS) {
+            freeCommands();
+            freeStaging();
+            return false;
+        }
+        VkSubmitInfo transferSubmit{};
+        transferSubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        transferSubmit.commandBufferCount = 1U;
+        transferSubmit.pCommandBuffers = &transferCommands;
+        void* stagingMapped = nullptr;
+        if (vk.vkQueueSubmit(presentQueue, 1U, &transferSubmit, VK_NULL_HANDLE) != VK_SUCCESS ||
+            vk.vkQueueWaitIdle(presentQueue) != VK_SUCCESS ||
+            vk.vkMapMemory(device, stagingMemory, 0U, outData.size(), 0U, &stagingMapped) != VK_SUCCESS ||
+            stagingMapped == nullptr) {
+            freeCommands();
+            freeStaging();
+            return false;
+        }
+        std::memcpy(outData.data(), stagingMapped, outData.size());
+        vk.vkUnmapMemory(device, stagingMemory);
         freeCommands();
         freeStaging();
         return true;
@@ -680,7 +857,12 @@ struct VulkanRenderDeviceUVE::ImplUVE {
         // a single-level R8G8B8A8_UNORM view (descriptor writes use `view`).
         VkImageView storageView = VK_NULL_HANDLE;
         VkSampler sampler = VK_NULL_HANDLE;
-        VkFormat vkFormat = VK_FORMAT_UNDEFINED; // the IMAGE's format (may be swapchain-typed)
+        VkFormat vkFormat = VK_FORMAT_UNDEFINED; // the IMAGE's format: what transfers/blits operate on
+        // The format `attachmentView` (and the per-layer attachment views) are created with — the
+        // one dynamic-rendering pipelines declare. For the 4x8 RGBA family this is the swapchain
+        // format; the image itself stays in the colour space the descriptor asked for, so blits
+        // and mip generation filter linear data linearly instead of through an sRGB transfer.
+        VkFormat attachmentFormat = VK_FORMAT_UNDEFINED;
         TextureDescUVE desc{};
         VkImageLayout currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         // M5b: set once the texture has been transitioned to GENERAL for storage-image use.
@@ -771,7 +953,16 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     struct SubmissionUVE {
         std::vector<RecordedCommandUVE> commands;
         std::vector<std::shared_ptr<void>> resources;
+        // WP4: queue sync requested for this submission (handle values; resolved to VkSemaphore
+        // at PresentUVE so a semaphore destroyed in between is dropped, not dereferenced).
+        std::vector<SemaphoreWaitUVE> waits;
+        std::vector<SemaphoreSignalUVE> signals;
     };
+    // WP4 hang guard: the timeline waits the in-flight frame's vkQueueSubmit is gated on. If the
+    // frame fence does not signal within kInFlightFenceTimeoutNs, these are host-signalled so the
+    // queue can drain, and the device goes inert with a warning instead of hanging PresentUVE.
+    std::vector<std::pair<VkSemaphore, std::uint64_t>> inFlightWaits;
+    static constexpr std::uint64_t kInFlightFenceTimeoutNs = 30'000'000'000ULL;
     std::mutex submissionMutex;
     std::deque<SubmissionUVE> frameSubmissions;
     std::vector<std::shared_ptr<void>> inFlightResources;
@@ -807,6 +998,9 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     static constexpr std::uint32_t kWarnedSamplerSlotOobUVE = 1U << 26U; // Tier 2.2
     static constexpr std::uint32_t kWarnedSamplerAnisoClampedUVE = 1U << 27U; // Tier 2.2
     static constexpr std::uint32_t kWarnedStorageImageLayeredUVE = 1U << 28U; // Tier 2.3
+    static constexpr std::uint32_t kWarnedTextureUsageSampledUVE = 1U << 29U; // usage flags
+    static constexpr std::uint32_t kWarnedTextureUsageStorageUVE = 1U << 30U; // usage flags
+    static constexpr std::uint32_t kWarnedQueryReplayUVE = 1U << 31U;         // WP3 brackets
     std::uint32_t replayWarningsEmitted = 0U;
 
     // Replay-local pipeline binding state (valid only inside PresentUVE()'s record window).
@@ -833,29 +1027,51 @@ struct VulkanRenderDeviceUVE::ImplUVE {
 
 bool VulkanRenderDeviceUVE::ImplUVE::BeginSwapchainPassDynamicUVE() {
     FramePassStateUVE& state = framePassState;
+    // WP5c: a Load-op is honoured only when the previous content is actually known - the image
+    // was presented before (it sits in PRESENT_SRC with last frame's pixels) / the depth image
+    // rendered a frame. Otherwise the pass's clear values apply, exactly as before this slice.
+    const bool colorPreserved = state.swapchainImageIndex < swapchainImagePresented.size() &&
+                                swapchainImagePresented[state.swapchainImageIndex] != 0U;
+    const bool loadColor = state.swapchainColorLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD && colorPreserved;
+    const bool loadDepth = state.swapchainDepthLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD && depthImageHoldsFrame;
+    const VkAttachmentLoadOp firstColorLoadOp =
+        state.swapchainColorLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD
+            ? (loadColor ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR)
+            : state.swapchainColorLoadOp;
+    const VkAttachmentLoadOp firstDepthLoadOp =
+        state.swapchainDepthLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD
+            ? (loadDepth ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR)
+            : state.swapchainDepthLoadOp;
     if (!state.barrierDoneForSwapchain) {
         // Per-frame entry transitions (once): the acquired image and the per-swapchain depth
         // target enter their attachment layouts. oldLayout=UNDEFINED is always legal (it only
-        // forfeits content preservation), which frees us from per-image layout bookkeeping.
+        // forfeits content preservation); a honoured Load names the real previous layout so the
+        // content survives the transition.
         VkImageMemoryBarrier entryBarriers[2]{};
         for (VkImageMemoryBarrier& barrier : entryBarriers) {
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         }
-        entryBarriers[0].srcAccessMask = 0U;
-        entryBarriers[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        entryBarriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        entryBarriers[0].srcAccessMask = loadColor ? VK_ACCESS_MEMORY_READ_BIT : 0U;
+        entryBarriers[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+        entryBarriers[0].oldLayout = loadColor ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_UNDEFINED;
         entryBarriers[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         entryBarriers[0].image = swapchainImages[state.swapchainImageIndex];
         entryBarriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 1U, 0U, 1U};
-        entryBarriers[1].srcAccessMask = 0U;
-        entryBarriers[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        entryBarriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        entryBarriers[1].srcAccessMask = loadDepth ? VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : 0U;
+        entryBarriers[1].dstAccessMask =
+            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+        entryBarriers[1].oldLayout = loadDepth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
         entryBarriers[1].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         entryBarriers[1].image = depthImage;
         entryBarriers[1].subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0U, 1U, 0U, 1U};
-        vk.vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        const VkPipelineStageFlags entrySourceStage =
+            (loadColor || loadDepth)
+                ? static_cast<VkPipelineStageFlags>(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                                    VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT)
+                : static_cast<VkPipelineStageFlags>(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+        vk.vkCmdPipelineBarrier(commandBuffer, entrySourceStage,
                                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
                                     VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
                                 0U, 0U, nullptr, 0U, nullptr, 2U, entryBarriers);
@@ -866,14 +1082,14 @@ bool VulkanRenderDeviceUVE::ImplUVE::BeginSwapchainPassDynamicUVE() {
     colorAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     colorAttachmentInfo.imageView = swapchainImageViews[state.swapchainImageIndex];
     colorAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttachmentInfo.loadOp = resume ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachmentInfo.loadOp = resume ? VK_ATTACHMENT_LOAD_OP_LOAD : firstColorLoadOp;
     colorAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachmentInfo.clearValue = state.clearValues[0];
     VkRenderingAttachmentInfo depthAttachmentInfo{};
     depthAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     depthAttachmentInfo.imageView = depthImageView;
     depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depthAttachmentInfo.loadOp = resume ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachmentInfo.loadOp = resume ? VK_ATTACHMENT_LOAD_OP_LOAD : firstDepthLoadOp;
     depthAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachmentInfo.clearValue = state.clearValues[1];
     VkRenderingInfo renderingInfo{};
@@ -985,7 +1201,7 @@ VkImageView VulkanRenderDeviceUVE::ImplUVE::GetOrCreateLayerAttachmentViewUVE(
     layerViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     layerViewInfo.image = record.image;
     layerViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    layerViewInfo.format = record.vkFormat; // image-native, matching attachmentView
+    layerViewInfo.format = record.attachmentFormat; // matching attachmentView (pipeline contract)
     layerViewInfo.subresourceRange = {
         IsDepthFormatUVE(record.desc.format)
             ? DepthAspectUVE(record.desc.format)
@@ -1171,6 +1387,17 @@ void VulkanRenderDeviceUVE::ImplUVE::CloseCurrentPassDynamicUVE() {
     if (!state.passOpen) {
         return;
     }
+    if (replayOpenQuery != 0U) {
+        // A query may not span rendering instances (VUID vkCmdEndQuery-None-01923); end it
+        // with the draws it has seen so far rather than record an invalid stream.
+        WarnOnceUVE(kWarnedQueryReplayUVE,
+                    "submit replay: a rendering instance closed while an occlusion bracket was open "
+                    "(in-pass layout transition); the bracket ends early");
+        vk.vkCmdEndQuery(commandBuffer, replayOpenQueryPool, 0U);
+        userQueryIssued[replayOpenQuery] = true;
+        replayOpenQuery = 0U;
+        replayOpenQueryPool = VK_NULL_HANDLE;
+    }
     vk.vkCmdEndRendering(commandBuffer);
     if (!state.openPassIsSwapchain && state.openOffscreenColorImage != VK_NULL_HANDLE) {
         // Restore the color image's invariant sampling layout so later passes may bind it.
@@ -1269,6 +1496,8 @@ void VulkanRenderDeviceUVE::ImplUVE::DestroySwapchainResourcesUVE() {
     }
     swapchainImageViews.clear();
     swapchainImages.clear(); // the swapchain owns the images themselves; nothing to destroy here
+    swapchainImagePresented.clear();
+    depthImageHoldsFrame = false;
     if (depthImageView != VK_NULL_HANDLE) {
         vk.vkDestroyImageView(device, depthImageView, nullptr);
         depthImageView = VK_NULL_HANDLE;
@@ -1444,6 +1673,8 @@ bool VulkanRenderDeviceUVE::ImplUVE::CreateSwapchainResourcesUVE() {
     vk.vkGetSwapchainImagesKHR(device, swapchain, &actualImageCount, nullptr);
     swapchainImages.resize(actualImageCount);
     vk.vkGetSwapchainImagesKHR(device, swapchain, &actualImageCount, swapchainImages.data());
+    swapchainImagePresented.assign(actualImageCount, 0U);
+    depthImageHoldsFrame = false;
 
     swapchainImageViews.resize(actualImageCount, VK_NULL_HANDLE);
     for (std::uint32_t index = 0; index < actualImageCount; ++index) {
@@ -1755,6 +1986,7 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     maxSamplerAnisotropy = deviceProperties.limits.maxSamplerAnisotropy;
     maxTextureArrayLayers = deviceProperties.limits.maxImageArrayLayers;
     maxCubemapSize = deviceProperties.limits.maxImageDimensionCube;
+    maxTexture3DSize = deviceProperties.limits.maxImageDimension3D;
     // ns per timestamp tick (Vulkan reports raw ticks); kept for GetQueryResultUVE.
     timestampPeriodNs = deviceProperties.limits.timestampPeriod > 0.0F
                             ? static_cast<double>(deviceProperties.limits.timestampPeriod)
@@ -1779,7 +2011,9 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     }
 
     // Timeline-semaphore probe: the same feature2 query, one API version lower. A 1.1-or-lower
-    // host reports nothing here and keeps the capability Unsupported.
+    // host reports nothing here and keeps the capability Unsupported. Only the feature bit is
+    // read here — the vkGetSemaphoreCounterValue/vkWaitSemaphores/vkSignalSemaphore entries are
+    // device-level and are verified after vkCreateDevice (timelineSemaphoresEnabled).
     if (apiVersion >= VK_API_VERSION_1_2 && vk.vkGetPhysicalDeviceFeatures2 != nullptr) {
         VkPhysicalDeviceVulkan12Features v12Features{};
         v12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
@@ -1787,9 +2021,7 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
         features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         features2.pNext = &v12Features;
         vk.vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
-        timelineSemaphoresRequested = v12Features.timelineSemaphore == VK_TRUE &&
-                                      vk.vkGetSemaphoreCounterValue != nullptr &&
-                                      vk.vkWaitSemaphores != nullptr && vk.vkSignalSemaphore != nullptr;
+        timelineSemaphoresRequested = v12Features.timelineSemaphore == VK_TRUE;
     }
 
     const float queuePriority = 1.0F;
@@ -1838,6 +2070,16 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
                     "entry points did not resolve; the device continues without offscreen "
                     "render-target support (classic render-pass mode)");
     }
+    // Timeline semaphores are advertised only when the feature was actually enabled and all
+    // three device-level entries resolved — the pre-create probe cannot see those entries, so
+    // this is the earliest honest point to decide.
+    timelineSemaphoresEnabled = timelineSemaphoresRequested && vk.vkGetSemaphoreCounterValue != nullptr &&
+                                vk.vkWaitSemaphores != nullptr && vk.vkSignalSemaphore != nullptr;
+    if (timelineSemaphoresRequested && !timelineSemaphoresEnabled) {
+        UVE_WARNING("VulkanRenderDeviceUVE: the timeline-semaphore feature was enabled but its "
+                    "device entry points did not resolve; the device continues with the "
+                    "timelineSemaphores capability reported as unsupported");
+    }
 
     // --- surface format/present-mode picks ---------------------------------------------------
     std::uint32_t formatCount = 0;
@@ -1881,6 +2123,17 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     }
     if (depthFormat == VK_FORMAT_UNDEFINED) {
         return LogBailUVE("no supported depth format (D32_SFLOAT / D24_UNORM) on this physical device");
+    }
+    // Packed depth+stencil: prefer the 24-bit layout `Depth24Stencil8` is named after, fall back
+    // to the 32-bit float + 8-bit stencil layout devices without it must offer instead.
+    depthStencilFormat = VK_FORMAT_UNDEFINED;
+    for (const VkFormat candidate : {VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT_S8_UINT}) {
+        VkFormatProperties formatProperties{};
+        vk.vkGetPhysicalDeviceFormatProperties(physicalDevice, candidate, &formatProperties);
+        if ((formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U) {
+            depthStencilFormat = candidate;
+            break;
+        }
     }
 
     // --- render pass + swapchain -------------------------------------------------------------
@@ -2129,6 +2382,43 @@ namespace {
     }
 }
 
+/// The one VkFormat an RHI one/two-channel or 32-bit float colour format maps to. These formats
+/// are linear-only and never alias the swapchain, so image, sampled view and attachment view
+/// all share it. UNDEFINED for every other TextureFormatUVE.
+[[nodiscard]] VkFormat NativeColorFormatUVE(const TextureFormatUVE format) noexcept {
+    switch (format) {
+        case TextureFormatUVE::R8Unorm: return VK_FORMAT_R8_UNORM;
+        case TextureFormatUVE::RG8Unorm: return VK_FORMAT_R8G8_UNORM;
+        case TextureFormatUVE::R16Float: return VK_FORMAT_R16_SFLOAT;
+        case TextureFormatUVE::RG16Float: return VK_FORMAT_R16G16_SFLOAT;
+        case TextureFormatUVE::R32Float: return VK_FORMAT_R32_SFLOAT;
+        case TextureFormatUVE::RG32Float: return VK_FORMAT_R32G32_SFLOAT;
+        case TextureFormatUVE::RGBA32Float: return VK_FORMAT_R32G32B32A32_SFLOAT;
+        case TextureFormatUVE::RGBA8Unorm:
+        case TextureFormatUVE::RGBA16Float:
+        case TextureFormatUVE::Depth32Float:
+        case TextureFormatUVE::Depth24Stencil8:
+        case TextureFormatUVE::BC1RGB:
+        case TextureFormatUVE::BC3RGBA:
+        case TextureFormatUVE::BC7RGBA:
+        case TextureFormatUVE::ETC2RGB8:
+        case TextureFormatUVE::ETC2RGBA8:
+        case TextureFormatUVE::ASTC4x4RGBA:
+            return VK_FORMAT_UNDEFINED;
+    }
+    return VK_FORMAT_UNDEFINED;
+}
+
+/// Optimal-tiling features every native colour format (NativeColorFormatUVE) must advertise
+/// before a texture of it is created or reported as supported: sampled + linear-filtered (the
+/// device's samplers filter linearly), a transfer destination for the staging upload and a
+/// colour attachment so the format is render-target ready once pipelines carry per-target
+/// formats. Storage-image use is opt-in per device, not required (the spec guarantees it only
+/// for the 32-bit float members).
+constexpr VkFormatFeatureFlags kNativeColorFormatFeaturesUVE =
+    VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+    VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+
 /// Maps one reflected block member to the RHI's public ShaderDataTypeUVE; unsupported types
 /// return Unsupported and are skipped by the builder below (a shader boolean is 4 bytes in
 /// SPIR-V blocks, a Mat3 stride rule is honored by the reflected offset metadata, so the
@@ -2347,6 +2637,21 @@ VulkanRenderDeviceUVE::VulkanRenderDeviceUVE(Window::IWindowManagerUVE* windowMa
 VulkanRenderDeviceUVE::~VulkanRenderDeviceUVE() {
     if (m_impl->device != VK_NULL_HANDLE) {
         // Everything below requires a drained queue — never destroy objects mid-frame.
+        // WP4: a frame still gated on a timeline wait nobody signalled would make that drain
+        // hang; release such waits from the host first (same guard PresentUVE applies).
+        for (const auto& [stuckSemaphore, stuckValue] : m_impl->inFlightWaits) {
+            std::uint64_t current = 0U;
+            if (m_impl->vk.vkGetSemaphoreCounterValue != nullptr && m_impl->vk.vkSignalSemaphore != nullptr &&
+                m_impl->vk.vkGetSemaphoreCounterValue(m_impl->device, stuckSemaphore, &current) == VK_SUCCESS &&
+                current < stuckValue) {
+                VkSemaphoreSignalInfo release{};
+                release.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
+                release.semaphore = stuckSemaphore;
+                release.value = stuckValue;
+                static_cast<void>(m_impl->vk.vkSignalSemaphore(m_impl->device, &release));
+            }
+        }
+        m_impl->inFlightWaits.clear();
         if (m_impl->presentQueue != VK_NULL_HANDLE) {
             m_impl->vk.vkQueueWaitIdle(m_impl->presentQueue);
         }
@@ -2474,7 +2779,49 @@ std::unique_ptr<VulkanRenderDeviceUVE> VulkanRenderDeviceUVE::CreateHeadlessUVE(
 // ---------------------------------------------------------------------------
 class VulkanCommandBufferUVE final : public ICommandBufferUVE {
 public:
-  explicit VulkanCommandBufferUVE(bool supportsBarriers) : m_supportsBarriers(supportsBarriers) {}
+  /// Resolves a query handle to its kind (nullopt = unknown/destroyed); supplied by the device
+  /// so recorded brackets validate against the real query table at record time.
+  using QueryKindLookupUVE = std::function<std::optional<RenderQueryKindUVE>(QueryHandleUVE)>;
+
+  explicit VulkanCommandBufferUVE(bool supportsBarriers, QueryKindLookupUVE queryKindLookup = {})
+      : m_supportsBarriers(supportsBarriers), m_queryKindLookup(std::move(queryKindLookup)) {}
+
+  // ---- Foundation WP3: recorded query brackets -------------------------------------------
+  [[nodiscard]] RenderOperationResultUVE BeginQueryUVE(const QueryHandleUVE query) override {
+      if (query.value == 0U)
+          return RenderOperationResultUVE::InvalidHandle;
+      const auto kind = m_queryKindLookup ? m_queryKindLookup(query) : std::nullopt;
+      if (!kind.has_value())
+          return RenderOperationResultUVE::InvalidHandle;
+      if (*kind != RenderQueryKindUVE::AnySamplesPassed)
+          return RenderOperationResultUVE::InvalidArgument;
+      if (m_activeQuery != 0U)
+          return RenderOperationResultUVE::InvalidState;
+      m_activeQuery = query.value;
+      m_activeQueryPassEpoch = m_passEpoch;
+      m_commands.emplace_back(BeginQueryCommandUVE{query});
+      return RenderOperationResultUVE::Recorded;
+  }
+  [[nodiscard]] RenderOperationResultUVE EndQueryUVE(const QueryHandleUVE query) override {
+      if (query.value == 0U)
+          return RenderOperationResultUVE::InvalidHandle;
+      if (m_activeQuery != query.value || m_activeQueryPassEpoch != m_passEpoch)
+          return RenderOperationResultUVE::InvalidState;
+      m_activeQuery = 0U;
+      m_commands.emplace_back(EndQueryCommandUVE{query});
+      return RenderOperationResultUVE::Recorded;
+  }
+  [[nodiscard]] RenderOperationResultUVE WriteTimestampUVE(const QueryHandleUVE query) override {
+      if (query.value == 0U)
+          return RenderOperationResultUVE::InvalidHandle;
+      const auto kind = m_queryKindLookup ? m_queryKindLookup(query) : std::nullopt;
+      if (!kind.has_value())
+          return RenderOperationResultUVE::InvalidHandle;
+      if (*kind != RenderQueryKindUVE::Timestamp)
+          return RenderOperationResultUVE::InvalidArgument;
+      m_commands.emplace_back(WriteTimestampCommandUVE{query});
+      return RenderOperationResultUVE::Recorded;
+  }
   RenderFeatureSupportUVE GetMemoryBarrierSupportUVE() const noexcept override {
       return m_supportsBarriers ? RenderFeatureSupportUVE::Native : RenderFeatureSupportUVE::Unsupported;
   }
@@ -2490,10 +2837,20 @@ public:
   }
     void BeginRenderPassUVE(const RenderPassDescUVE& renderPassDesc) override {
         m_insidePass = true;
+        ++m_passEpoch;
         m_commands.emplace_back(BeginRenderPassCommandUVE{renderPassDesc});
     }
     void EndRenderPassUVE() override {
+        if (m_activeQuery != 0U) {
+            // A bracket may not span the pass boundary (Vulkan: begin and end in the same
+            // rendering instance). Close it loudly; the caller's late EndQueryUVE reports
+            // InvalidState.
+            UVE_ERROR("VulkanCommandBufferUVE: EndRenderPassUVE closed an occlusion query that was still open");
+            m_commands.emplace_back(EndQueryCommandUVE{QueryHandleUVE{m_activeQuery}});
+            m_activeQuery = 0U;
+        }
         m_insidePass = false;
+        ++m_passEpoch;
         m_commands.emplace_back(EndRenderPassCommandUVE{});
     }
     void BindPipelineUVE(const PipelineHandleUVE pipeline) override {
@@ -2561,6 +2918,10 @@ private:
   bool m_supportsBarriers = false;
   bool m_insidePass = false;
   std::vector<RecordedCommandUVE> m_commands;
+  QueryKindLookupUVE m_queryKindLookup;
+  std::uint32_t m_activeQuery = 0U;
+  std::uint64_t m_activeQueryPassEpoch = 0U;
+  std::uint64_t m_passEpoch = 0U;
 };
 
 // ---------------------------------------------------------------------------
@@ -2575,10 +2936,11 @@ BufferHandleUVE VulkanRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc
     if (!impl.usable) {
         return kInvalidBufferHandleUVE;
     }
-    if (!ValidateBufferUploadUVE(desc, initialData) || !IsBufferUsageValidUVE(desc.usage)) {
+    if (!ValidateBufferUploadUVE(desc, initialData) || !IsBufferDescValidUVE(desc)) {
         UVE_WARNING("VulkanRenderDeviceUVE::CreateBufferUVE: invalid buffer descriptor "
-                    "(size {} bytes, {} bytes initial data, usage {})",
-                    desc.sizeBytes, initialData.size(), static_cast<int>(desc.usage));
+                    "(size {} bytes, {} bytes initial data, usage {}, memory {}, update frequency {})",
+                    desc.sizeBytes, initialData.size(), static_cast<int>(desc.usage),
+                    static_cast<int>(desc.memory), static_cast<int>(desc.updateFrequency));
         return kInvalidBufferHandleUVE;
     }
 
@@ -2618,15 +2980,40 @@ BufferHandleUVE VulkanRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc
     // this slice as well — SSBO traffic (whole-buffer author-side writes, frequent updates)
     // benefits least from device placement, and the M2f zero-fallback contract stays simple.
     // The exposed behavior (copy-on-update correctness) is identical for every usage.
-    const bool deviceLocal =
-        (desc.usage == BufferUsageUVE::Vertex || desc.usage == BufferUsageUVE::Index);
+    // Buffer memory hints refine that policy without changing any contract: `Auto` is the
+    // usage rule above; `DeviceLocal` puts any usage behind the staging copies (uploads AND
+    // readbacks — ReadbackFromDeviceLocalBufferUVE); `Upload` keeps a vertex/index buffer
+    // host-visible and persistently mapped so a per-frame rewrite is a memcpy instead of a
+    // staging submit; `Readback` is host-visible too and prefers HOST_CACHED memory when the
+    // device offers it, falling back to plain coherent memory otherwise.
+    bool deviceLocal = (desc.usage == BufferUsageUVE::Vertex || desc.usage == BufferUsageUVE::Index);
+    bool preferCached = false;
+    switch (desc.memory) {
+        case BufferMemoryUVE::Auto:
+            break;
+        case BufferMemoryUVE::DeviceLocal:
+            deviceLocal = true;
+            break;
+        case BufferMemoryUVE::Upload:
+            deviceLocal = false;
+            break;
+        case BufferMemoryUVE::Readback:
+            deviceLocal = false;
+            preferCached = true;
+            break;
+    }
+    constexpr VkMemoryPropertyFlags kHostFlags =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     const VkMemoryPropertyFlags wantedFlags =
-        deviceLocal
-            ? VkMemoryPropertyFlags{VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT}
-            : VkMemoryPropertyFlags{VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT};
-    const std::uint32_t memoryTypeIndex =
-        impl.FindMemoryTypeUVE(requirements.memoryTypeBits, wantedFlags);
+        deviceLocal ? VkMemoryPropertyFlags{VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT} : kHostFlags;
+    std::uint32_t memoryTypeIndex = UINT32_MAX;
+    if (preferCached) {
+        memoryTypeIndex = impl.FindMemoryTypeUVE(requirements.memoryTypeBits,
+                                                 kHostFlags | VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
+    }
+    if (memoryTypeIndex == UINT32_MAX) {
+        memoryTypeIndex = impl.FindMemoryTypeUVE(requirements.memoryTypeBits, wantedFlags);
+    }
     if (memoryTypeIndex == UINT32_MAX) {
         impl.vk.vkDestroyBuffer(impl.device, buffer, nullptr);
         UVE_WARNING("VulkanRenderDeviceUVE::CreateBufferUVE: no {} memory type satisfies the "
@@ -2665,7 +3052,8 @@ BufferHandleUVE VulkanRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc
     }
 
     const std::uint32_t handleValue = impl.nextHandleValue++;
-    impl.buffers.emplace(handleValue, ImplUVE::BufferRecordUVE{buffer, memory, desc.sizeBytes, desc.usage, mapped});
+    impl.buffers.emplace(handleValue, ImplUVE::BufferRecordUVE{buffer, memory, desc.sizeBytes, desc.usage, mapped,
+                                                               desc.memory, desc.updateFrequency});
     if (!initialData.empty() && !UpdateBufferUVE(BufferHandleUVE{handleValue}, initialData, 0U)) {
         // Creation did succeed — the failed upload is reported but the handle stays valid,
         // following GlRenderDeviceUVE's convention of treating upload failure as non-fatal.
@@ -2767,14 +3155,15 @@ bool VulkanRenderDeviceUVE::ReadbackBufferUVE(const BufferHandleUVE buffer,
         return true;
     }
     if (record.mapped == nullptr) {
-        // M3 placement: VERTEX/INDEX buffers are DEVICE_LOCAL with no TRANSFER_SRC usage, so
-        // there is no legal way to copy out of them. Refusing loudly is the honest answer - the
-        // interface documents readback as guaranteed for Uniform/Storage only, which is exactly
-        // the set this backend keeps host-visible (and Storage is what compute writes through).
-        UVE_WARNING("VulkanRenderDeviceUVE::ReadbackBufferUVE: buffer is device-local "
-                    "(vertex/index placement) and cannot be read back; readback is supported for "
-                    "Uniform and Storage buffers");
-        return false;
+        // Device-local placement (Auto vertex/index, or an explicit DeviceLocal hint): copy out
+        // through a transient staging buffer. Every buffer is created with TRANSFER_SRC usage,
+        // so this is a real readback of what the GPU last wrote, not a refusal.
+        if (!impl.ReadbackFromDeviceLocalBufferUVE(record, outData, offsetBytes)) {
+            UVE_WARNING("VulkanRenderDeviceUVE::ReadbackBufferUVE: staged device-local readback "
+                        "failed ({} bytes at offset {})", outData.size(), offsetBytes);
+            return false;
+        }
+        return true;
     }
     // Cold path, as documented: drain the queue so any submitted compute/graphics work that
     // could still be writing this buffer has completed before the host reads it. The memory is
@@ -2820,19 +3209,27 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
                               VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
     VkImageLayout finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkFormat attachmentFormat = VK_FORMAT_UNDEFINED; // resolved below; defaults to `format`
     switch (desc.format) {
         case TextureFormatUVE::RGBA8Unorm: {
-            const VkFormat sampledSibling = desc.colorSpace == TextureColorSpaceUVE::Srgb
+            // The IMAGE is allocated in the colour space the descriptor declares (the unorm or
+            // sRGB sibling of the swapchain's channel order), because vkCmdBlitImage and the mip
+            // chain filter through the image format: an sRGB image would decode, average and
+            // re-encode data the caller declared linear (measured: a 40/80/120/160 chain's last
+            // level came out 111 instead of 100 on an sRGB swapchain). The ATTACHMENT view keeps
+            // the swapchain format so every pipeline's dynamic-rendering contract still holds,
+            // and the sampled view reads the image's own format.
+            const VkFormat storageSibling = desc.colorSpace == TextureColorSpaceUVE::Srgb
                                                 ? SrgbSiblingFormatUVE(impl.swapchainFormat)
                                                 : UnormSiblingFormatUVE(impl.swapchainFormat);
-            if (sampledSibling != VK_FORMAT_UNDEFINED) {
-                format = impl.swapchainFormat;
-                sampledFormat = sampledSibling;
+            if (storageSibling != VK_FORMAT_UNDEFINED) {
+                format = storageSibling;
+                sampledFormat = storageSibling;
+                attachmentFormat = impl.swapchainFormat;
             } else {
-                format = VK_FORMAT_R8G8B8A8_UNORM;
-                sampledFormat = desc.colorSpace == TextureColorSpaceUVE::Srgb
-                                    ? VK_FORMAT_R8G8B8A8_SRGB
-                                    : format;
+                format = desc.colorSpace == TextureColorSpaceUVE::Srgb ? VK_FORMAT_R8G8B8A8_SRGB
+                                                                        : VK_FORMAT_R8G8B8A8_UNORM;
+                sampledFormat = format;
             }
             // M5b fix: RGBA8 images are ALWAYS mutable-format — the storage alias view
             // (R8G8B8A8_UNORM over a B,G,R,A-family or sRGB image) needs
@@ -2847,6 +3244,32 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
             sampledFormat = format;
             usage |= VK_IMAGE_USAGE_STORAGE_BIT;
             break;
+        case TextureFormatUVE::R8Unorm:
+        case TextureFormatUVE::RG8Unorm:
+        case TextureFormatUVE::R16Float:
+        case TextureFormatUVE::RG16Float:
+        case TextureFormatUVE::R32Float:
+        case TextureFormatUVE::RG32Float:
+        case TextureFormatUVE::RGBA32Float: {
+            // Native-format colour textures: image, sampled and attachment views share one
+            // VkFormat (never a swapchain alias), uploads are tightly packed rows of the format's
+            // texel size, and a missing channel samples as 0 (alpha 1) per the Vulkan component
+            // defaults. The storage usage bit joins only when the device advertises
+            // STORAGE_IMAGE for the format (guaranteed for the 32-bit floats, optional for the
+            // rest) — asking for it unconditionally would make image creation invalid there.
+            // Attaching one still skips with the M2d warning until pipelines carry per-target
+            // formats; the COLOR_ATTACHMENT usage is requested now so that slice needs no
+            // texture re-creation.
+            format = NativeColorFormatUVE(desc.format);
+            sampledFormat = format;
+            VkFormatProperties nativeProperties{};
+            impl.vk.vkGetPhysicalDeviceFormatProperties(impl.physicalDevice, format, &nativeProperties);
+            if ((nativeProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0U) {
+                usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+            }
+            usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+            break;
+        }
         case TextureFormatUVE::BC1RGB:
             format = sampledFormat = desc.colorSpace == TextureColorSpaceUVE::Srgb
                                          ? VK_FORMAT_BC1_RGB_SRGB_BLOCK
@@ -2894,7 +3317,11 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
             }
             break;
         case TextureFormatUVE::Depth24Stencil8:
-            format = VK_FORMAT_D24_UNORM_S8_UINT;
+            if (impl.depthStencilFormat == VK_FORMAT_UNDEFINED) {
+                return fail("this device advertises neither D24_UNORM_S8_UINT nor D32_SFLOAT_S8_UINT "
+                            "as a depth/stencil attachment; Depth24Stencil8 textures are unavailable");
+            }
+            format = impl.depthStencilFormat;
             sampledFormat = format;
             aspect = DepthAspectUVE(desc.format);
             usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -2904,6 +3331,37 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
                             "only; the render-target slice owns population)");
             }
             break;
+    }
+    // Usage set: the switch above computed what the format CAN do on this device; the
+    // descriptor's effective usage narrows the VkImage to what the caller declared (Default
+    // keeps everything, so pre-flag textures allocate exactly as before). TRANSFER_DST stays
+    // whenever the format allows it (uploads), and the image keeps SAMPLED when the caller
+    // asked for no view-bearing usage at all, since a view needs at least one.
+    const TextureUsageUVE effectiveUsage = GetEffectiveTextureUsageUVE(desc);
+    {
+        VkImageUsageFlags requested = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        if (HasTextureUsageUVE(effectiveUsage, TextureUsageUVE::Sampled)) {
+            requested |= VK_IMAGE_USAGE_SAMPLED_BIT;
+        }
+        if (HasTextureUsageUVE(effectiveUsage, TextureUsageUVE::RenderTarget)) {
+            requested |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        }
+        if (HasTextureUsageUVE(effectiveUsage, TextureUsageUVE::Storage)) {
+            requested |= VK_IMAGE_USAGE_STORAGE_BIT;
+        }
+        if (HasTextureUsageUVE(effectiveUsage, TextureUsageUVE::TransferSrc)) {
+            requested |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        }
+        usage &= requested;
+        constexpr VkImageUsageFlags kViewBearing = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                                                   VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                   VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        if ((usage & kViewBearing) == 0U) {
+            usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+        }
+    }
+    if (attachmentFormat == VK_FORMAT_UNDEFINED) {
+        attachmentFormat = format;
     }
     {
         VkFormatProperties formatProperties{};
@@ -2916,6 +3374,8 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
                    VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)
             : IsTextureFormatCompressedUVE(desc.format)
                 ? (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT)
+            : (NativeColorFormatUVE(desc.format) != VK_FORMAT_UNDEFINED)
+                ? kNativeColorFormatFeaturesUVE
                 : (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
                    VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT);
         if ((formatProperties.optimalTilingFeatures & required) != required) {
@@ -2963,8 +3423,10 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
         mipUploadOffsets[level] = uploadOffset;
         mipLevelBytes[level] = static_cast<VkDeviceSize>(levelBytes);
         // Level-major: all layers of L0, then all of L1, … (the shared upload validator
-        // already bounded this total).
-        uploadOffset += static_cast<VkDeviceSize>(levelBytes) * desc.arrayLayers;
+        // already bounded this total). A volume's level holds its mip depth of slices.
+        uploadOffset += static_cast<VkDeviceSize>(levelBytes) *
+                        (desc.type == TextureTypeUVE::Texture3D ? GetTextureMipDepthUVE(desc.depth, level)
+                                                                : desc.arrayLayers);
         uploadExtent.width = uploadExtent.width > 1U ? uploadExtent.width / 2U : 1U;
         uploadExtent.height = uploadExtent.height > 1U ? uploadExtent.height / 2U : 1U;
     }
@@ -2977,14 +3439,19 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     if (desc.type == TextureTypeUVE::Cubemap && desc.width > impl.maxCubemapSize) {
         return fail("cubemap face size exceeds the device's maxImageDimensionCube limit");
     }
+    const bool isVolume = desc.type == TextureTypeUVE::Texture3D;
+    if (isVolume && (desc.width > impl.maxTexture3DSize || desc.height > impl.maxTexture3DSize ||
+                     desc.depth > impl.maxTexture3DSize)) {
+        return fail("volume extent exceeds the device's maxImageDimension3D limit");
+    }
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.flags = imageFlags |
                       (desc.type == TextureTypeUVE::Cubemap ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT
                                                             : 0U);
-    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.imageType = isVolume ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
     imageInfo.format = format;
-    imageInfo.extent = {desc.width, desc.height, 1U};
+    imageInfo.extent = {desc.width, desc.height, isVolume ? desc.depth : 1U};
     imageInfo.mipLevels = desc.mipLevels;
     imageInfo.arrayLayers = desc.arrayLayers; // Tier 2.3: 1 for 2D, N for arrays, 6 for cubes
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -3156,7 +3623,9 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
                 copyRegion.bufferImageHeight = 0U; // zero means use the extent/block geometry
                 copyRegion.imageSubresource = {aspect, level, layer, 1U};
                 copyRegion.imageOffset = {0, 0, 0};
-                copyRegion.imageExtent = {mipExtent.width, mipExtent.height, 1U};
+                // A volume level copies all of its slices in one region (slice-major bytes).
+                copyRegion.imageExtent = {mipExtent.width, mipExtent.height,
+                                          isVolume ? GetTextureMipDepthUVE(desc.depth, level) : 1U};
                 copyRegions.push_back(copyRegion);
             }
             mipExtent.width = mipExtent.width > 1U ? mipExtent.width / 2U : 1U;
@@ -3216,6 +3685,7 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     // Tier 2.3: cubes sample through a CUBE view, arrays through 2D_ARRAY, 2D unchanged.
     viewInfo.viewType = desc.type == TextureTypeUVE::Cubemap          ? VK_IMAGE_VIEW_TYPE_CUBE
                         : desc.type == TextureTypeUVE::Texture2DArray ? VK_IMAGE_VIEW_TYPE_2D_ARRAY
+                        : isVolume                                    ? VK_IMAGE_VIEW_TYPE_3D
                                                                       : VK_IMAGE_VIEW_TYPE_2D;
     viewInfo.format = sampledFormat;
     viewInfo.subresourceRange = {desc.format == TextureFormatUVE::Depth24Stencil8
@@ -3229,8 +3699,11 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
         return fail("vkCreateImageView failed for the texture");
     }
     VkImageView attachmentView = VK_NULL_HANDLE;
-    if (!IsTextureFormatCompressedUVE(desc.format)) {
-        viewInfo.format = format; // image-native: this is the view dynamic rendering attaches
+    // Only render-target-capable textures carry an attachment view (volumes and textures created
+    // without TextureUsageUVE::RenderTarget are refused at BeginRenderPassUVE, so they need none).
+    if (!IsTextureFormatCompressedUVE(desc.format) && !isVolume &&
+        HasTextureUsageUVE(effectiveUsage, TextureUsageUVE::RenderTarget)) {
+        viewInfo.format = attachmentFormat; // the view dynamic rendering attaches (pipeline contract)
         viewInfo.subresourceRange.aspectMask = aspect;
         viewInfo.subresourceRange.levelCount = 1U; // render-target attachment is always level 0
         viewInfo.subresourceRange.layerCount = 1U; // …and always layer 0 (deeper layers attach
@@ -3248,9 +3721,10 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     // multiple mips, keeping sampled chains intact without exposing a multi-level storage view.
     VkImageView storageView = VK_NULL_HANDLE;
     const bool storageViewNeeded =
-        (desc.format == TextureFormatUVE::RGBA8Unorm &&
-         (desc.mipLevels > 1U || sampledFormat != VK_FORMAT_R8G8B8A8_UNORM)) ||
-        (desc.format == TextureFormatUVE::RGBA16Float && desc.mipLevels > 1U);
+        HasTextureUsageUVE(effectiveUsage, TextureUsageUVE::Storage) &&
+        ((desc.format == TextureFormatUVE::RGBA8Unorm &&
+          (desc.mipLevels > 1U || sampledFormat != VK_FORMAT_R8G8B8A8_UNORM)) ||
+         (desc.format == TextureFormatUVE::RGBA16Float && desc.mipLevels > 1U));
     if (storageViewNeeded) {
         viewInfo.format = desc.format == TextureFormatUVE::RGBA8Unorm
                               ? VK_FORMAT_R8G8B8A8_UNORM
@@ -3305,7 +3779,7 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     const std::uint32_t handleValue = impl.nextHandleValue++;
     impl.textures.emplace(handleValue,
         ImplUVE::TextureRecordUVE{image, imageMemory, view, attachmentView, storageView,
-                                  sampler, format, desc, finalLayout});
+                                  sampler, format, attachmentFormat, desc, finalLayout});
     return TextureHandleUVE{handleValue};
 }
 
@@ -3394,6 +3868,13 @@ bool VulkanRenderDeviceUVE::SupportsTextureFormatUVE(const TextureFormatUVE form
         default:
             return false;
     }
+    if (const VkFormat nativeFormat = NativeColorFormatUVE(format); nativeFormat != VK_FORMAT_UNDEFINED) {
+        // Same gate CreateTextureUVE applies, so "supported" and "creatable" never disagree.
+        VkFormatProperties properties{};
+        m_impl->vk.vkGetPhysicalDeviceFormatProperties(m_impl->physicalDevice, nativeFormat, &properties);
+        return (properties.optimalTilingFeatures & kNativeColorFormatFeaturesUVE) ==
+               kNativeColorFormatFeaturesUVE;
+    }
     if (!IsTextureFormatCompressedUVE(format)) {
         return true;
     }
@@ -3420,6 +3901,13 @@ bool VulkanRenderDeviceUVE::SupportsTextureFormatUVE(const TextureFormatUVE form
         case TextureFormatUVE::RGBA16Float:
         case TextureFormatUVE::Depth32Float:
         case TextureFormatUVE::Depth24Stencil8:
+        case TextureFormatUVE::R8Unorm:
+        case TextureFormatUVE::RG8Unorm:
+        case TextureFormatUVE::R16Float:
+        case TextureFormatUVE::RG16Float:
+        case TextureFormatUVE::R32Float:
+        case TextureFormatUVE::RG32Float:
+        case TextureFormatUVE::RGBA32Float:
             return false;
     }
 
@@ -3453,6 +3941,13 @@ bool VulkanRenderDeviceUVE::SupportsTextureFormatUVE(const TextureFormatUVE form
         case TextureFormatUVE::RGBA16Float:
         case TextureFormatUVE::Depth32Float:
         case TextureFormatUVE::Depth24Stencil8:
+        case TextureFormatUVE::R8Unorm:
+        case TextureFormatUVE::RG8Unorm:
+        case TextureFormatUVE::R16Float:
+        case TextureFormatUVE::RG16Float:
+        case TextureFormatUVE::R32Float:
+        case TextureFormatUVE::RG32Float:
+        case TextureFormatUVE::RGBA32Float:
             return false;
     }
     if (vkFormat == VK_FORMAT_UNDEFINED) {
@@ -3646,6 +4141,10 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
     if (desc.stencil.enabled && !impl.useDynamicRendering) {
         return fail("stencil pipelines require the dynamic-rendering depth/stencil attachment path");
     }
+    if (desc.stencil.enabled && impl.depthStencilFormat == VK_FORMAT_UNDEFINED) {
+        return fail("stencil pipelines need a packed depth/stencil attachment format and this device "
+                    "advertises neither D24_UNORM_S8_UINT nor D32_SFLOAT_S8_UINT");
+    }
 
     VkPipelineShaderStageCreateInfo stages[2]{};
     stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -3667,6 +4166,12 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
             case VertexAttributeFormatUVE::Float2: format = VK_FORMAT_R32G32_SFLOAT; break;
             case VertexAttributeFormatUVE::Float3: format = VK_FORMAT_R32G32B32_SFLOAT; break;
             case VertexAttributeFormatUVE::Float4: format = VK_FORMAT_R32G32B32A32_SFLOAT; break;
+            case VertexAttributeFormatUVE::UByte4Norm: format = VK_FORMAT_R8G8B8A8_UNORM; break;
+            case VertexAttributeFormatUVE::UShort4: format = VK_FORMAT_R16G16B16A16_UINT; break;
+            case VertexAttributeFormatUVE::UInt4: format = VK_FORMAT_R32G32B32A32_UINT; break;
+            case VertexAttributeFormatUVE::Short2Norm: format = VK_FORMAT_R16G16_SNORM; break;
+            case VertexAttributeFormatUVE::Half2: format = VK_FORMAT_R16G16_SFLOAT; break;
+            case VertexAttributeFormatUVE::Half4: format = VK_FORMAT_R16G16B16A16_SFLOAT; break;
         }
         attributes[index].location = static_cast<std::uint32_t>(index);
         attributes[index].binding = 0U;
@@ -3686,9 +4191,24 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
 
     VkPipelineInputAssemblyStateCreateInfo assembly{};
     assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    // desc.topology passed IsPrimitiveTopologyValidUVE above, so only the two RHI modes arrive.
-    assembly.topology = desc.topology == PrimitiveTopologyUVE::Lines ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST
-                                                                     : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    // desc.topology passed IsPrimitiveTopologyValidUVE above, so only the RHI modes arrive.
+    switch (desc.topology) {
+        case PrimitiveTopologyUVE::Lines:
+            assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+            break;
+        case PrimitiveTopologyUVE::Points:
+            assembly.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+            break;
+        case PrimitiveTopologyUVE::LineStrip:
+            assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
+            break;
+        case PrimitiveTopologyUVE::TriangleStrip:
+            assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+            break;
+        case PrimitiveTopologyUVE::Triangles:
+            assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+            break;
+    }
     assembly.primitiveRestartEnable = VK_FALSE;
 
     // Viewport/scissor are DYNAMIC (set once per frame inside PresentUVE): the swapchain
@@ -4142,9 +4662,9 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
     renderingCreateInfo.colorAttachmentCount = 1U;
     renderingCreateInfo.pColorAttachmentFormats = &impl.swapchainFormat;
     renderingCreateInfo.depthAttachmentFormat =
-        desc.stencil.enabled ? VK_FORMAT_D24_UNORM_S8_UINT : impl.depthFormat;
+        desc.stencil.enabled ? impl.depthStencilFormat : impl.depthFormat;
     renderingCreateInfo.stencilAttachmentFormat =
-        desc.stencil.enabled ? VK_FORMAT_D24_UNORM_S8_UINT : VK_FORMAT_UNDEFINED;
+        desc.stencil.enabled ? impl.depthStencilFormat : VK_FORMAT_UNDEFINED;
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -4541,7 +5061,15 @@ std::unique_ptr<ICommandBufferUVE> VulkanRenderDeviceUVE::CreateCommandBufferUVE
     if (!m_impl->usable) {
         return nullptr;
     }
-    return std::make_unique<VulkanCommandBufferUVE>(m_impl->useDynamicRendering);
+    ImplUVE* const impl = m_impl.get();
+    return std::make_unique<VulkanCommandBufferUVE>(
+        impl->useDynamicRendering,
+        [impl](const QueryHandleUVE query) -> std::optional<RenderQueryKindUVE> {
+            const auto found = impl->userQueryKinds.find(query.value);
+            if (found == impl->userQueryKinds.end())
+                return std::nullopt;
+            return found->second;
+        });
 }
 
 void VulkanRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer) {
@@ -4564,8 +5092,67 @@ void VulkanRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> command
         // it happens under the submission lock (PresentUVE drains under the same lock).
         const std::lock_guard<std::mutex> submissionLock(m_impl->submissionMutex);
         m_impl->frameSubmissions.push_back(ImplUVE::SubmissionUVE{
-            vulkanCommands->TakeCommandsUVE(), vulkanCommands->TakeRetainedResourcesUVE()});
+            vulkanCommands->TakeCommandsUVE(), vulkanCommands->TakeRetainedResourcesUVE(), {}, {}});
     }
+}
+
+RenderOperationResultUVE VulkanRenderDeviceUVE::SubmitWithSyncUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer,
+                                                                  const SubmitDescUVE &desc) {
+    if (desc.waits.empty() && desc.signals.empty()) {
+        SubmitUVE(std::move(commandBuffer));
+        return RenderOperationResultUVE::Success;
+    }
+    if (commandBuffer == nullptr)
+        return RenderOperationResultUVE::InvalidArgument;
+    auto* vulkanCommands = dynamic_cast<VulkanCommandBufferUVE*>(commandBuffer.get());
+    if (vulkanCommands == nullptr) {
+        UVE_WARNING("VulkanRenderDeviceUVE::SubmitWithSyncUVE: command buffer was not created by this "
+                    "device; ignoring submission");
+        return RenderOperationResultUVE::InvalidArgument;
+    }
+    if (!m_impl->usable)
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto &impl = *m_impl;
+    if (!impl.timelineSemaphoresEnabled)
+        return RenderOperationResultUVE::Unsupported;
+    // Validation against the live semaphore table. The counter read is a snapshot: a signal that
+    // is valid now stays valid, because only this queue and host signals (which the same rule
+    // guards) can move it.
+    std::vector<std::uint32_t> seen;
+    const auto unique = [&seen](const std::uint32_t handleValue) {
+        if (std::find(seen.begin(), seen.end(), handleValue) != seen.end())
+            return false;
+        seen.push_back(handleValue);
+        return true;
+    };
+    for (const SemaphoreWaitUVE &wait : desc.waits) {
+        if (impl.userSemaphores.find(wait.semaphore.value) == impl.userSemaphores.end())
+            return RenderOperationResultUVE::InvalidHandle;
+        if (!unique(wait.semaphore.value))
+            return RenderOperationResultUVE::InvalidArgument;
+    }
+    for (const SemaphoreSignalUVE &signal : desc.signals) {
+        const auto found = impl.userSemaphores.find(signal.semaphore.value);
+        if (found == impl.userSemaphores.end())
+            return RenderOperationResultUVE::InvalidHandle;
+        if (!unique(signal.semaphore.value))
+            return RenderOperationResultUVE::InvalidArgument;
+        std::uint64_t current = 0U;
+        if (impl.vk.vkGetSemaphoreCounterValue(impl.device, found->second, &current) != VK_SUCCESS)
+            return RenderOperationResultUVE::SystemError;
+        if (!IsSemaphoreSignalValueValidUVE(current, signal.value)) {
+            UVE_ERROR("VulkanRenderDeviceUVE: SubmitWithSyncUVE refused a non-increasing signal value");
+            return RenderOperationResultUVE::InvalidArgument;
+        }
+    }
+    {
+        const std::lock_guard<std::mutex> submissionLock(impl.submissionMutex);
+        impl.frameSubmissions.push_back(ImplUVE::SubmissionUVE{
+            vulkanCommands->TakeCommandsUVE(), vulkanCommands->TakeRetainedResourcesUVE(),
+            std::vector<SemaphoreWaitUVE>(desc.waits.begin(), desc.waits.end()),
+            std::vector<SemaphoreSignalUVE>(desc.signals.begin(), desc.signals.end())});
+    }
+    return RenderOperationResultUVE::Success;
 }
 
 /// Replays one submitted recorded command buffer's ops into the frame's already-open swapchain
@@ -4772,7 +5359,20 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                     value = bound->second; // destroyed-after-bind resolves to the fallback
                 }
                 ImplUVE::TextureRecordUVE& slotRecord = impl.textures.at(value);
-                if (storageImageSlot && IsTextureFormatCompressedUVE(slotRecord.desc.format)) {
+                const TextureUsageUVE slotUsage = GetEffectiveTextureUsageUVE(slotRecord.desc);
+                if (storageImageSlot && !HasTextureUsageUVE(slotUsage, TextureUsageUVE::Storage)) {
+                    impl.WarnOnceUVE(
+                        VulkanRenderDeviceUVE::ImplUVE::kWarnedTextureUsageStorageUVE,
+                        "BindTextureUVE: a texture created without TextureUsageUVE::Storage was bound "
+                        "to a storage-image slot; the 1x1 black storage sink receives the writes instead");
+                    value = impl.fallbackStorageImageValue;
+                } else if (!storageImageSlot && !HasTextureUsageUVE(slotUsage, TextureUsageUVE::Sampled)) {
+                    impl.WarnOnceUVE(
+                        VulkanRenderDeviceUVE::ImplUVE::kWarnedTextureUsageSampledUVE,
+                        "BindTextureUVE: a texture created without TextureUsageUVE::Sampled was bound "
+                        "to a sampler slot; the 1x1 white fallback is sampled instead");
+                    value = impl.fallbackTextureValue;
+                } else if (storageImageSlot && IsTextureFormatCompressedUVE(slotRecord.desc.format)) {
                     impl.WarnOnceUVE(
                         VulkanRenderDeviceUVE::ImplUVE::kWarnedStorageImageCompressedUVE,
                         "BindTextureUVE: a block-compressed texture was bound to a storage-image "
@@ -5213,7 +5813,15 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                                     "BeginRenderPassUVE: block-compressed textures are sampled-only "
                                     "and cannot be color attachments; submission's draws are skipped");
                                 skipPass = true;
-                            } else if (foundColor->second.vkFormat != impl.swapchainFormat) {
+                            } else if (!HasTextureUsageUVE(
+                                           GetEffectiveTextureUsageUVE(foundColor->second.desc),
+                                           TextureUsageUVE::RenderTarget)) {
+                                impl.WarnOnceUVE(
+                                    VulkanRenderDeviceUVE::ImplUVE::kWarnedOffscreenUnsupportedUVE,
+                                    "BeginRenderPassUVE: the color attachment was created without "
+                                    "TextureUsageUVE::RenderTarget; submission's draws are skipped");
+                                skipPass = true;
+                            } else if (foundColor->second.attachmentFormat != impl.swapchainFormat) {
                                 // RGBA16Float and RGBA8 textures created while the swapchain
                                 // was not a 4x8 RGBA format cannot be attached (the device
                                 // pipeline contract is the swapchain format).
@@ -5250,6 +5858,14 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                                         "depth texture format; the pass runs depth-tested on "
                                         "an internal target instead");
                                     degradeToScratchDepth = true;
+                                } else if (!HasTextureUsageUVE(
+                                               GetEffectiveTextureUsageUVE(foundDepth->second.desc),
+                                               TextureUsageUVE::RenderTarget)) {
+                                    impl.WarnOnceUVE(
+                                        VulkanRenderDeviceUVE::ImplUVE::kWarnedOffscreenUnsupportedUVE,
+                                        "BeginRenderPassUVE: the depth attachment was created without "
+                                        "TextureUsageUVE::RenderTarget; submission's draws are skipped");
+                                    skipPass = true;
                                 } else if (IsDepthStencilFormatUVE(foundDepth->second.desc.format)) {
                                     depthRecord = &foundDepth->second;
                                 } else if (impl.depthFormat != VK_FORMAT_D32_SFLOAT) {
@@ -5311,13 +5927,17 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                                     }
                                     if (IsTextureFormatCompressedUVE(
                                             foundExtra->second.desc.format) ||
-                                        foundExtra->second.vkFormat != impl.swapchainFormat) {
+                                        !HasTextureUsageUVE(
+                                            GetEffectiveTextureUsageUVE(foundExtra->second.desc),
+                                            TextureUsageUVE::RenderTarget) ||
+                                        foundExtra->second.attachmentFormat != impl.swapchainFormat) {
                                         impl.WarnOnceUVE(
                                             VulkanRenderDeviceUVE::ImplUVE::
                                                 kWarnedOffscreenUnsupportedUVE,
                                             "BeginRenderPassUVE: an extra color attachment is not "
                                             "attachable (same rule as location 0 — an RGBA8Unorm "
-                                            "texture in the swapchain's format; the submission's "
+                                            "texture in the swapchain's format, created with "
+                                            "TextureUsageUVE::RenderTarget; the submission's "
                                             "draws are skipped)");
                                         skipPass = true;
                                         break;
@@ -5450,6 +6070,44 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                                                  nullptr, 0U, nullptr);
                 } else {
                     UVE_ERROR("Vulkan replay: unsupported or invalid explicit memory barrier");
+                }
+            } else if constexpr (std::is_same_v<OpT, BeginQueryCommandUVE>) {
+                // ------------- Foundation WP3: recorded occlusion bracket ----------------
+                // The pool was reset in this frame's prologue (PresentUVE, outside any
+                // rendering instance); the bracket itself may sit inside or outside one.
+                const auto foundPool = impl.userQueries.find(op.query.value);
+                if (foundPool == impl.userQueries.end() || impl.vk.vkCmdBeginQuery == nullptr) {
+                    impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedQueryReplayUVE,
+                                     "submit replay: BeginQueryUVE named an unknown or destroyed query; "
+                                     "the bracket is dropped and its result stays NotReady");
+                } else if (impl.replayOpenQuery != 0U) {
+                    impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedQueryReplayUVE,
+                                     "submit replay: nested occlusion brackets across submissions; "
+                                     "the inner bracket is dropped");
+                } else {
+                    impl.vk.vkCmdBeginQuery(impl.commandBuffer, foundPool->second, 0U, 0U);
+                    impl.replayOpenQuery = op.query.value;
+                    impl.replayOpenQueryPool = foundPool->second;
+                }
+            } else if constexpr (std::is_same_v<OpT, EndQueryCommandUVE>) {
+                if (impl.replayOpenQuery == op.query.value && impl.replayOpenQuery != 0U) {
+                    impl.vk.vkCmdEndQuery(impl.commandBuffer, impl.replayOpenQueryPool, 0U);
+                    impl.userQueryIssued[op.query.value] = true;
+                    impl.replayOpenQuery = 0U;
+                    impl.replayOpenQueryPool = VK_NULL_HANDLE;
+                }
+                // Otherwise the bracket was already closed (dropped begin, or ended early by a
+                // rendering-instance switch); nothing to end.
+            } else if constexpr (std::is_same_v<OpT, WriteTimestampCommandUVE>) {
+                const auto foundPool = impl.userQueries.find(op.query.value);
+                if (foundPool == impl.userQueries.end()) {
+                    impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedQueryReplayUVE,
+                                     "submit replay: WriteTimestampUVE named an unknown or destroyed query; "
+                                     "the write is dropped");
+                } else {
+                    impl.vk.vkCmdWriteTimestamp(impl.commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                                                foundPool->second, 0U);
+                    impl.userQueryIssued[op.query.value] = true;
                 }
             } else if constexpr (std::is_same_v<OpT, DispatchCommandUVE>) {
                 // ------------- M5a compute dispatch (outside pass markers) --------------
@@ -5709,10 +6367,36 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     // completes. Only the path that truly reaches vkQueueSubmit resets it first. (Simplicity
     // over pipelining is the documented M1 trade-off; the fence starts signaled at creation so
     // the very first frame also passes.)
-    if (impl.vk.vkWaitForFences(impl.device, 1U, &impl.inFlightFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
+    // WP4 hang guard: a timeline wait nobody will ever satisfy would park this fence forever.
+    // Bounded wait; on expiry host-signal the frame's waits so the queue can drain, then go
+    // inert with a warning (the frame's work is garbage by then, but teardown stays possible).
+    VkResult fenceWait = impl.vk.vkWaitForFences(impl.device, 1U, &impl.inFlightFence, VK_TRUE,
+                                                 ImplUVE::kInFlightFenceTimeoutNs);
+    if (fenceWait == VK_TIMEOUT) {
+        UVE_WARNING("VulkanRenderDeviceUVE::PresentUVE: the previous frame did not complete within the "
+                    "in-flight timeout (an unsatisfied SubmitWithSyncUVE wait?); releasing its waits and "
+                    "going inert");
+        for (const auto& [stuckSemaphore, stuckValue] : impl.inFlightWaits) {
+            std::uint64_t current = 0U;
+            if (impl.vk.vkGetSemaphoreCounterValue(impl.device, stuckSemaphore, &current) == VK_SUCCESS &&
+                current < stuckValue) {
+                VkSemaphoreSignalInfo release{};
+                release.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
+                release.semaphore = stuckSemaphore;
+                release.value = stuckValue;
+                static_cast<void>(impl.vk.vkSignalSemaphore(impl.device, &release));
+            }
+        }
+        static_cast<void>(impl.vk.vkWaitForFences(impl.device, 1U, &impl.inFlightFence, VK_TRUE, UINT64_MAX));
+        impl.inFlightWaits.clear();
+        impl.usable = false;
+        return;
+    }
+    if (fenceWait != VK_SUCCESS) {
         impl.usable = false;
         return; // completion was not established; do not retire in-flight resources
     }
+    impl.inFlightWaits.clear();
     impl.inFlightResources.clear();
     CollectRetiredTexturesUVE();
     // The fence proves the GPU finished the previous frame's reads of the uniform ring;
@@ -5736,6 +6420,37 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     {
         const std::lock_guard<std::mutex> submissionLock(impl.submissionMutex);
         frameSubmissions.swap(impl.frameSubmissions);
+    }
+    // WP4: the frame batch's queue sync, merged per semaphore (one entry per semaphore per
+    // vkQueueSubmit; the largest value covers the smaller ones for both waits and signals) and
+    // resolved against the live table - a semaphore destroyed between submit and present is
+    // dropped here rather than dereferenced.
+    std::vector<std::pair<VkSemaphore, std::uint64_t>> frameTimelineWaits;
+    std::vector<std::pair<VkSemaphore, std::uint64_t>> frameTimelineSignals;
+    {
+        const auto mergeUVE = [&impl](std::vector<std::pair<VkSemaphore, std::uint64_t>>& list,
+                                      const std::uint32_t handleValue, const std::uint64_t value) {
+            const auto found = impl.userSemaphores.find(handleValue);
+            if (found == impl.userSemaphores.end()) {
+                impl.WarnOnceUVE(ImplUVE::kWarnedUnknownHandleUVE,
+                                 "PresentUVE: a SubmitWithSyncUVE semaphore was destroyed before the frame "
+                                 "was presented; its wait/signal is dropped");
+                return;
+            }
+            for (auto& entry : list) {
+                if (entry.first == found->second) {
+                    entry.second = std::max(entry.second, value);
+                    return;
+                }
+            }
+            list.emplace_back(found->second, value);
+        };
+        for (const auto& submission : frameSubmissions) {
+            for (const SemaphoreWaitUVE& wait : submission.waits)
+                mergeUVE(frameTimelineWaits, wait.semaphore.value, wait.value);
+            for (const SemaphoreSignalUVE& signal : submission.signals)
+                mergeUVE(frameTimelineSignals, signal.semaphore.value, signal.value);
+        }
     }
     // Retain leases before acquiring/resetting native synchronization objects: allocation failure
     // must not leave the frame fence unsignaled. A skipped frame retires at the next idle/fence drain.
@@ -5826,18 +6541,55 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     clearValues[0].color.float32[2] = kBootstrapClearBlueUVE;
     clearValues[0].color.float32[3] = kBootstrapClearAlphaUVE;
     clearValues[1].depthStencil = {1.0F, 0U}; // far plane, matching the GL depth-clear default
+    // Foundation WP3: every query pool a recorded bracket or timestamp of this frame names is
+    // reset ONCE here — after vkBeginCommandBuffer and before any rendering instance opens
+    // (vkCmdResetQueryPool is illegal inside one). Re-recording a handle therefore destroys the
+    // previous frame's result in queue order, which is why consumers double-buffer handles.
+    impl.replayOpenQuery = 0U;
+    impl.replayOpenQueryPool = VK_NULL_HANDLE;
+    {
+        std::vector<std::uint32_t> resetQueries;
+        for (const auto& submission : frameSubmissions) {
+            for (const RecordedCommandUVE& command : submission.commands) {
+                std::uint32_t queryValue = 0U;
+                if (const auto* begin = std::get_if<BeginQueryCommandUVE>(&command)) {
+                    queryValue = begin->query.value;
+                } else if (const auto* stamp = std::get_if<WriteTimestampCommandUVE>(&command)) {
+                    queryValue = stamp->query.value;
+                }
+                if (queryValue == 0U ||
+                    std::find(resetQueries.begin(), resetQueries.end(), queryValue) != resetQueries.end()) {
+                    continue;
+                }
+                const auto foundPool = impl.userQueries.find(queryValue);
+                if (foundPool == impl.userQueries.end()) {
+                    continue;
+                }
+                impl.vk.vkCmdResetQueryPool(impl.commandBuffer, foundPool->second, 0U, 1U);
+                impl.userQueryIssued[queryValue] = false;
+                resetQueries.push_back(queryValue);
+            }
+        }
+    }
+    VkAttachmentLoadOp firstSwapchainColorLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    VkAttachmentLoadOp firstSwapchainDepthLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     for (const auto& submission : frameSubmissions) {
         bool clearPicked = false;
         for (const RecordedCommandUVE& command : submission.commands) {
             if (const auto* begin = std::get_if<BeginRenderPassCommandUVE>(&command)) {
                 if (begin->desc.colorAttachment == kInvalidTextureHandleUVE &&
                     begin->desc.depthAttachment == kInvalidTextureHandleUVE) {
-                    if (begin->desc.colorLoadOp != LoadOpUVE::Clear ||
-                        begin->desc.depthLoadOp != LoadOpUVE::Clear) {
+                    // WP5c: the dynamic arm honours the first swapchain pass's load ops; the
+                    // classic (pre-1.3) arm keeps its baked clear and says so once.
+                    firstSwapchainColorLoadOp = ToVkLoadOpUVE(begin->desc.colorLoadOp);
+                    firstSwapchainDepthLoadOp = ToVkLoadOpUVE(begin->desc.depthLoadOp);
+                    if (!impl.useDynamicRendering && (begin->desc.colorLoadOp != LoadOpUVE::Clear ||
+                                                      begin->desc.depthLoadOp != LoadOpUVE::Clear)) {
                         impl.WarnOnceUVE(ImplUVE::kWarnedLoadOpUnhonoredUVE,
-                            "BeginRenderPassUVE requested Load/DontCare, but the swapchain "
-                            "render pass bakes a full-frame clear (later slices make loadOps "
-                            "real); the frame still starts from the pass's clear values");
+                            "BeginRenderPassUVE requested Load/DontCare, but the classic (pre-1.3) "
+                            "swapchain render pass bakes a full-frame clear; the frame still "
+                            "starts from the pass's clear values (decision: 1.3 dynamic rendering "
+                            "is the floor for load-op semantics)");
                     }
                     const std::array<float, 4U>& requested = begin->desc.clearColor;
                     for (std::size_t channel = 0; channel < 4U; ++channel) {
@@ -5889,6 +6641,8 @@ void VulkanRenderDeviceUVE::PresentUVE() {
         ImplUVE::FramePassStateUVE& state = impl.framePassState;
         state.clearValues[0] = clearValues[0];
         state.clearValues[1] = clearValues[1];
+        state.swapchainColorLoadOp = firstSwapchainColorLoadOp;
+        state.swapchainDepthLoadOp = firstSwapchainDepthLoadOp;
         state.swapchainImageIndex = imageIndex;
         state.barrierDoneForSwapchain = false;
         state.swapchainPassBegunThisFrame = false;
@@ -5945,44 +6699,85 @@ void VulkanRenderDeviceUVE::PresentUVE() {
         return;
     }
 
-    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    // WP4: the swapchain's two binary semaphores come first; the frame's timeline waits/signals
+    // follow with their values in VkTimelineSemaphoreSubmitInfo (the binary entries carry a 0
+    // value, which the spec ignores for binary semaphores). Timeline waits gate every stage.
+    // SwiftShader's headless present implementation waits synchronously for the render-finished
+    // semaphore. That is incompatible with a deliberately unsatisfied SubmitWithSyncUVE wait:
+    // the queue submit must return so the host can signal the gate. Keep the real queue wait and
+    // signal, but defer the headless presentation bridge for this gated frame; ordinary headless
+    // frames and all windowed frames retain the normal acquire/submit/present sequence.
+    const bool deferHeadlessPresentUVE = impl.headless && !frameTimelineWaits.empty();
+    std::vector<VkSemaphore> waitSemaphores{impl.imageAvailableSemaphore};
+    std::vector<VkPipelineStageFlags> waitStages{VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    std::vector<std::uint64_t> waitValues{0U};
+    std::vector<VkSemaphore> signalSemaphores;
+    std::vector<std::uint64_t> signalValues;
+    if (!deferHeadlessPresentUVE) {
+        signalSemaphores.push_back(impl.renderFinishedSemaphore);
+        signalValues.push_back(0U);
+    }
+    for (const auto& [timelineWaitSemaphore, timelineWaitValue] : frameTimelineWaits) {
+        waitSemaphores.push_back(timelineWaitSemaphore);
+        waitStages.push_back(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+        waitValues.push_back(timelineWaitValue);
+    }
+    for (const auto& [timelineSignalSemaphore, timelineSignalValue] : frameTimelineSignals) {
+        signalSemaphores.push_back(timelineSignalSemaphore);
+        signalValues.push_back(timelineSignalValue);
+    }
+    VkTimelineSemaphoreSubmitInfo timelineInfo{};
+    timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+    timelineInfo.waitSemaphoreValueCount = static_cast<std::uint32_t>(waitValues.size());
+    timelineInfo.pWaitSemaphoreValues = waitValues.data();
+    timelineInfo.signalSemaphoreValueCount = static_cast<std::uint32_t>(signalValues.size());
+    timelineInfo.pSignalSemaphoreValues = signalValues.data();
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.waitSemaphoreCount = 1U;
-    submitInfo.pWaitSemaphores = &impl.imageAvailableSemaphore;
-    submitInfo.pWaitDstStageMask = &waitStage;
+    if (!frameTimelineWaits.empty() || !frameTimelineSignals.empty())
+        submitInfo.pNext = &timelineInfo;
+    submitInfo.waitSemaphoreCount = static_cast<std::uint32_t>(waitSemaphores.size());
+    submitInfo.pWaitSemaphores = waitSemaphores.data();
+    submitInfo.pWaitDstStageMask = waitStages.data();
     submitInfo.commandBufferCount = 1U;
     submitInfo.pCommandBuffers = &impl.commandBuffer;
-    submitInfo.signalSemaphoreCount = 1U;
-    submitInfo.pSignalSemaphores = &impl.renderFinishedSemaphore;
+    submitInfo.signalSemaphoreCount = static_cast<std::uint32_t>(signalSemaphores.size());
+    submitInfo.pSignalSemaphores = signalSemaphores.data();
+    impl.inFlightWaits = frameTimelineWaits;
     if (impl.vk.vkQueueSubmit(impl.presentQueue, 1U, &submitInfo, impl.inFlightFence) != VK_SUCCESS) {
         UVE_WARNING("VulkanRenderDeviceUVE::PresentUVE: vkQueueSubmit failed; device going inert");
         impl.usable = false;
         return;
     }
 
-    VkPresentInfoKHR presentInfo{};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1U;
-    presentInfo.pWaitSemaphores = &impl.renderFinishedSemaphore;
-    presentInfo.swapchainCount = 1U;
-    presentInfo.pSwapchains = &impl.swapchain;
-    presentInfo.pImageIndices = &imageIndex;
-    const VkResult presentResult = impl.vk.vkQueuePresentKHR(impl.presentQueue, &presentInfo);
-    if (presentResult == VK_SUCCESS || presentResult == VK_SUBOPTIMAL_KHR) {
-        impl.lastPresentedImageIndex = imageIndex;
-    }
-    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
-        // Resize visible to the driver after acquire: rebuild now so next frame uses a valid
-        // swapchain (the just-completed present attempt was still in sync — the fence stands).
-        (void)impl.vk.vkQueueWaitIdle(impl.presentQueue);
-        impl.DestroySwapchainResourcesUVE();
-        if (!impl.CreateSwapchainResourcesUVE()) {
-            impl.usable = false;
+    if (!deferHeadlessPresentUVE) {
+        VkPresentInfoKHR presentInfo{};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.waitSemaphoreCount = 1U;
+        presentInfo.pWaitSemaphores = &impl.renderFinishedSemaphore;
+        presentInfo.swapchainCount = 1U;
+        presentInfo.pSwapchains = &impl.swapchain;
+        presentInfo.pImageIndices = &imageIndex;
+        const VkResult presentResult = impl.vk.vkQueuePresentKHR(impl.presentQueue, &presentInfo);
+        if (presentResult == VK_SUCCESS || presentResult == VK_SUBOPTIMAL_KHR) {
+            impl.lastPresentedImageIndex = imageIndex;
+            if (imageIndex < impl.swapchainImagePresented.size()) {
+                impl.swapchainImagePresented[imageIndex] = 1U;
+            }
+            impl.depthImageHoldsFrame = true;
         }
-    } else if (presentResult != VK_SUCCESS) {
-        UVE_WARNING("VulkanRenderDeviceUVE::PresentUVE: vkQueuePresentKHR failed (result {})",
-                    static_cast<int>(presentResult));
+        if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
+            // Resize visible to the driver after acquire: rebuild now so next frame uses a valid
+            // swapchain (the just-completed present attempt was still in sync — the fence stands).
+            (void)impl.vk.vkQueueWaitIdle(impl.presentQueue);
+            impl.DestroySwapchainResourcesUVE();
+            if (!impl.CreateSwapchainResourcesUVE()) {
+                impl.usable = false;
+            }
+        } else if (presentResult != VK_SUCCESS) {
+            UVE_WARNING("VulkanRenderDeviceUVE::PresentUVE: vkQueuePresentKHR failed (result {})",
+                        static_cast<int>(presentResult));
+        }
     }
 }
 
@@ -6192,14 +6987,19 @@ RenderDeviceCapabilitiesUVE VulkanRenderDeviceUVE::GetCapabilitiesUVE() const no
         return caps;
     caps.fences = caps.bufferCopy = caps.surface = caps.retainedTextures =
         RenderFeatureSupportUVE::Native;
-    if (m_impl->timelineSemaphoresRequested) {
+    if (m_impl->timelineSemaphoresEnabled) {
         caps.timelineSemaphores = RenderFeatureSupportUVE::Native;
     }
     if (m_impl->timestampQueriesSupported) {
         caps.timestampQueries = RenderFeatureSupportUVE::Native;
     }
-    // occlusionQueries stays Unsupported: vkCmdBeginQuery/vkCmdEndQuery must bracket the caller's
-    // own draws inside ONE command buffer, and this device-level API cannot promise that.
+    // Occlusion queries are Native through the RECORDED bracket (ICommandBufferUVE::BeginQueryUVE/
+    // EndQueryUVE replayed as vkCmdBeginQuery/vkCmdEndQuery around the caller's own draws);
+    // the device-level begin/end pair stays Unsupported because it cannot bracket draws.
+    if (m_impl->vk.vkCmdBeginQuery != nullptr && m_impl->vk.vkCmdEndQuery != nullptr &&
+        m_impl->vk.vkCreateQueryPool != nullptr) {
+        caps.occlusionQueries = RenderFeatureSupportUVE::Native;
+    }
     // Core-since-1.0 blit entry: format-specific blit support is still checked per call, so the
     // capabilities advertise the transfer paths this backend actually implements.
     if (m_impl->vk.vkCmdBlitImage != nullptr) {
@@ -6219,6 +7019,19 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::GetTextureDescUVE(TextureHandleU
     if (found == m_impl->textures.end())
         return RenderOperationResultUVE::InvalidHandle;
     out = found->second.desc;
+    return RenderOperationResultUVE::Success;
+}
+RenderOperationResultUVE VulkanRenderDeviceUVE::GetBufferDescUVE(BufferHandleUVE buffer,
+                                                                 BufferDescUVE &out) const {
+    if (!IsUsableUVE()) {
+        return RenderOperationResultUVE::DeviceUnavailable;
+    }
+    const auto found = m_impl->buffers.find(buffer.value);
+    if (found == m_impl->buffers.end()) {
+        return RenderOperationResultUVE::InvalidHandle;
+    }
+    out = BufferDescUVE{found->second.sizeBytes, found->second.usage, found->second.memoryHint,
+                        found->second.updateFrequency};
     return RenderOperationResultUVE::Success;
 }
 RenderOperationResultUVE VulkanRenderDeviceUVE::WaitIdleUVE() {
@@ -6380,19 +7193,21 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::CreateQueryUVE(const RenderQuery
         return RenderOperationResultUVE::DeviceUnavailable;
     if (kind != RenderQueryKindUVE::Timestamp && kind != RenderQueryKindUVE::AnySamplesPassed)
         return RenderOperationResultUVE::InvalidArgument;
+    auto &impl = *m_impl;
     if (kind == RenderQueryKindUVE::AnySamplesPassed) {
-        // Documented boundary: an occlusion query is only meaningful around the caller's own
-        // draws, which this device-level API cannot bracket in one command buffer.
+        // WP3: occlusion queries are issued through the recorded command-buffer bracket; the
+        // device-level BeginQueryUVE/EndQueryUVE pair stays Unsupported (it cannot bracket draws).
+        if (GetCapabilitiesUVE().occlusionQueries != RenderFeatureSupportUVE::Native)
+            return RenderOperationResultUVE::Unsupported;
+    } else if (GetCapabilitiesUVE().timestampQueries != RenderFeatureSupportUVE::Native) {
         return RenderOperationResultUVE::Unsupported;
     }
-    auto &impl = *m_impl;
-    if (GetCapabilitiesUVE().timestampQueries != RenderFeatureSupportUVE::Native)
-        return RenderOperationResultUVE::Unsupported;
     if (impl.nextUserQuery == 0U)
         return RenderOperationResultUVE::SystemError;
     VkQueryPoolCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-    info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    info.queryType = kind == RenderQueryKindUVE::AnySamplesPassed ? VK_QUERY_TYPE_OCCLUSION
+                                                                  : VK_QUERY_TYPE_TIMESTAMP;
     info.queryCount = 1U;
     VkQueryPool pool = VK_NULL_HANDLE;
     if (impl.vk.vkCreateQueryPool(impl.device, &info, nullptr, &pool) != VK_SUCCESS ||
@@ -6402,6 +7217,7 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::CreateQueryUVE(const RenderQuery
     const QueryHandleUVE handle{impl.nextUserQuery++};
     impl.userQueries.emplace(handle.value, pool);
     impl.userQueryKinds.emplace(handle.value, kind);
+    impl.userQueryIssued.emplace(handle.value, false);
     output = handle;
     return RenderOperationResultUVE::Success;
 }
@@ -6436,7 +7252,10 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::WriteTimestampUVE(const QueryHan
         return RenderOperationResultUVE::SystemError;
     impl.vk.vkCmdResetQueryPool(commands, found->second, 0U, 1U);
     impl.vk.vkCmdWriteTimestamp(commands, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, found->second, 0U);
-    return SubmitTransientCommandsUVE(impl, commands);
+    const auto submitted = SubmitTransientCommandsUVE(impl, commands);
+    if (submitted == RenderOperationResultUVE::Success)
+        impl.userQueryIssued[query.value] = true;
+    return submitted;
 }
 
 RenderOperationResultUVE VulkanRenderDeviceUVE::GetQueryResultUVE(const QueryHandleUVE query,
@@ -6449,8 +7268,13 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::GetQueryResultUVE(const QueryHan
     if (found == impl.userQueries.end())
         return RenderOperationResultUVE::InvalidHandle;
     const auto kind = impl.userQueryKinds.find(query.value);
-    if (kind == impl.userQueryKinds.end() || kind->second != RenderQueryKindUVE::Timestamp)
+    if (kind == impl.userQueryKinds.end())
         return RenderOperationResultUVE::InvalidArgument;
+    // WP3: a pool that was never reset+written (or whose bracket is still queued for the next
+    // PresentUVE) has no defined contents — NotReady, never a number.
+    const auto issued = impl.userQueryIssued.find(query.value);
+    if (issued == impl.userQueryIssued.end() || !issued->second)
+        return RenderOperationResultUVE::NotReady;
     std::uint64_t ticks = 0U;
     VkQueryResultFlags flags = VK_QUERY_RESULT_64_BIT;
     if (wait) {
@@ -6463,9 +7287,15 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::GetQueryResultUVE(const QueryHan
     if (result != VK_SUCCESS)
         return RenderOperationResultUVE::SystemError;
     RenderQueryResultUVE value{};
-    value.kind = RenderQueryKindUVE::Timestamp;
-    value.value = static_cast<std::uint64_t>(
-        static_cast<double>(ticks) * impl.timestampPeriodNs + 0.5);
+    value.kind = kind->second;
+    if (kind->second == RenderQueryKindUVE::AnySamplesPassed) {
+        // An imprecise occlusion query is zero iff no sample passed, which is the whole
+        // AnySamplesPassed contract; GL reports the same boolean.
+        value.value = ticks != 0U ? 1U : 0U;
+    } else {
+        value.value = static_cast<std::uint64_t>(
+            static_cast<double>(ticks) * impl.timestampPeriodNs + 0.5);
+    }
     output = value;
     return RenderOperationResultUVE::Success;
 }
@@ -6480,6 +7310,7 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::DestroyQueryUVE(const QueryHandl
     impl.vk.vkDestroyQueryPool(impl.device, found->second, nullptr);
     impl.userQueries.erase(found);
     impl.userQueryKinds.erase(query.value);
+    impl.userQueryIssued.erase(query.value);
     return RenderOperationResultUVE::Success;
 }
 
@@ -6764,10 +7595,10 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::GenerateMipmapsUVE(const Texture
         return RenderOperationResultUVE::InvalidHandle;
     }
     const TextureDescUVE &desc = found->second.desc;
-    // GL parity: level zero plus at least one lower level, and only the formats the blit path
-    // accepts. Anything else is a caller error, not a capability limit.
-    if (desc.mipLevels < 2U || (desc.format != TextureFormatUVE::RGBA8Unorm &&
-                                desc.format != TextureFormatUVE::RGBA16Float)) {
+    // GL parity: level zero plus at least one lower level, the formats the blit path accepts and
+    // a usage set that permits transfers in both directions (the shared rule). Anything else is
+    // a caller error, not a capability limit. Volumes run the same chain with depth halving.
+    if (!CanGenerateMipmapsUVE(desc)) {
         return RenderOperationResultUVE::InvalidArgument;
     }
     constexpr VkImageUsageFlags kChainFeatures =
@@ -6792,10 +7623,12 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::GenerateMipmapsUVE(const Texture
     };
     std::uint32_t sourceWidth = desc.width;
     std::uint32_t sourceHeight = desc.height;
+    std::uint32_t sourceDepth = desc.type == TextureTypeUVE::Texture3D ? desc.depth : 1U;
     bool sourceIsLevelZero = true;
     for (std::uint32_t mip = 1U; mip < desc.mipLevels; ++mip) {
         const std::uint32_t destinationWidth = sourceWidth > 1U ? sourceWidth / 2U : 1U;
         const std::uint32_t destinationHeight = sourceHeight > 1U ? sourceHeight / 2U : 1U;
+        const std::uint32_t destinationDepth = sourceDepth > 1U ? sourceDepth / 2U : 1U;
         const VkImageMemoryBarrier toSources[2] = {
             levelBarrier(mip - 1U,
                          sourceIsLevelZero ? found->second.currentLayout : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -6812,11 +7645,13 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::GenerateMipmapsUVE(const Texture
             region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mip - 1U, layer, 1U};
             region.srcOffsets[0] = {0, 0, 0};
             region.srcOffsets[1] = {static_cast<std::int32_t>(sourceWidth),
-                                    static_cast<std::int32_t>(sourceHeight), 1};
+                                    static_cast<std::int32_t>(sourceHeight),
+                                    static_cast<std::int32_t>(sourceDepth)};
             region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mip, layer, 1U};
             region.dstOffsets[0] = {0, 0, 0};
             region.dstOffsets[1] = {static_cast<std::int32_t>(destinationWidth),
-                                    static_cast<std::int32_t>(destinationHeight), 1};
+                                    static_cast<std::int32_t>(destinationHeight),
+                                    static_cast<std::int32_t>(destinationDepth)};
             impl.vk.vkCmdBlitImage(commands, found->second.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                    found->second.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &region,
                                    VK_FILTER_LINEAR);
@@ -6834,6 +7669,7 @@ RenderOperationResultUVE VulkanRenderDeviceUVE::GenerateMipmapsUVE(const Texture
                                      0U, 0U, nullptr, 0U, nullptr, 1U, &settle);
         sourceWidth = destinationWidth;
         sourceHeight = destinationHeight;
+        sourceDepth = destinationDepth;
         sourceIsLevelZero = false;
     }
     // Level zero was the chain's first source and must return to the sampling layout too.
@@ -6865,6 +7701,16 @@ bool VulkanRenderDeviceUVE::ReadbackTextureRGBA8UVE(const TextureHandleUVE textu
     const TextureDescUVE &desc = found->second.desc;
     if (mipLevel >= desc.mipLevels || layer >= desc.arrayLayers) {
         UVE_WARNING("VulkanRenderDeviceUVE::ReadbackTextureRGBA8UVE: mip/layer is outside the texture");
+        return false;
+    }
+    if (desc.type == TextureTypeUVE::Texture3D) {
+        UVE_WARNING("VulkanRenderDeviceUVE::ReadbackTextureRGBA8UVE: volume textures are not readable "
+                    "through this 2D helper");
+        return false;
+    }
+    if (!HasTextureUsageUVE(GetEffectiveTextureUsageUVE(desc), TextureUsageUVE::TransferSrc)) {
+        UVE_WARNING("VulkanRenderDeviceUVE::ReadbackTextureRGBA8UVE: the texture was created without "
+                    "TextureUsageUVE::TransferSrc");
         return false;
     }
     const std::uint32_t mipWidth = std::max(1U, desc.width >> mipLevel);

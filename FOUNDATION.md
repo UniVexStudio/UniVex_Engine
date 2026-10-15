@@ -650,7 +650,7 @@ zero failures, seven existing Vulkan skips**, with no watcher skips on this host
 
 | Asset | Holds | Importer | Status |
 |---|---|---|---|
-| `MeshAssetUVE` | `MeshVertexUVE` array (position, normal, uv, tangent, handedness), `uint32` indices, `AabbUVE localBounds`, skinning influences, joints | **OBJ**, **glTF/GLB** and **FBX**, plus a `.uvmodel` envelope | `[x]` |
+| `MeshAssetUVE` | `MeshVertexUVE` array (position, normal, uv, tangent, handedness), `uint32` indices, `AabbUVE localBounds`, skinning influences, joints, `materialGuids` (WP7, tagged trailing section) | **OBJ**, **glTF/GLB** and **FBX**, plus a `.uvmodel` envelope | `[x]` |
 | `TextureAssetUVE` | width, height, format, pixels, a CPU-generated mip chain and Basis-compressed uploads | **PNG, JPEG, BMP, TGA**, plus `.uvtex` | `[x]` mips + compression landed (see below) |
 | `MaterialAssetUVE` | albedo colour, albedo/normal/AO texture GUIDs, metallic, roughness, emissive colour, shader GUIDs, transparency flag | **MTL**, plus `.uvmat` | `[x]` PBR payload and renderer consumer; see below |
 | `ShaderAssetUVE` | stage, source text, entry point — stored as-is, not compiled at asset level | source importer + `.uvshader` | `[x]` |
@@ -688,13 +688,13 @@ Three things about this table matter more than the rest:
   or linked. All 20 focused cases and **4,050 CTest cases** pass, with zero failures and the
   same seven explicit Vulkan skips (2026-10-13).
 
-Importer reconciliation (2026-10-14): `[~]` **FBX** already uses vendored ufbx for
+Importer reconciliation (2026-10-14): `[x]` **FBX** already uses vendored ufbx for
 triangulated static/skinned meshes, bone hierarchy/rest poses and sampled animation takes.
 `ConvertFbxMeshUVE`, `ReadFbxSkeletonUVE` and `ReadFbxAnimationsUVE` have real implementations;
 mesh import publishes `.uvmodel`, while editor/retarget consumers use the skeleton/take readers.
 Eight `FbxMeshConverterUVETest` cases cover axis/unit conversion, instances, skins, skeletons,
 animation-only files, takes, failure atomicity and publication. The previous static-only claim
-was stale. `[/]` Materials are now converted: `ReadFbxMaterialsUVE` returns `FbxMaterialUVE`
+was stale. `[x]` Materials are converted: `ReadFbxMaterialsUVE` returns `FbxMaterialUVE`
 (name, `MaterialAssetUVE` PBR factors, and the authored texture references) for every material
 in the file, mapping albedo from PBR base color or the classic diffuse color, roughness from the
 parser's values (including its Shininess derivation), emission colour plus its authored energy,
@@ -706,10 +706,27 @@ reference (procedural/layered/unnamed) leaves its filename empty and sets
 clamped with `albedoClamped` set, and each expected value was measured against the vendored
 ufbx parser rather than assumed. Six `FbxMaterialConverterUVETest` cases cover malformed input,
 material-free files, classic transparency, PBR factors with a file reference and an unnamed
-procedural map, clamping, and multi-material order. Publishing FBX materials as `.uvmat` assets
-(and resolving their texture references to GUIDs) is not part of this step, and broader
-binary/DCC fixture coverage remains partial; no new importer is needed to duplicate those
-working mesh/skin/animation paths. `[x]` **glTF animation conversion** samples channels
+procedural map, clamping, and multi-material order. `[x]` **Publication (WP7, 2026-10-14,
+compiled and suite-tested):** the FBX importer now receives the asset database
+(`IAssetImporterUVE::RegisterDatabaseAwareImporterUVE`, an additive registration kind that
+`AssetImporterUVE::ImportUVE` dispatches with the same database it registers the destination
+in; plain importers are untouched) and publishes one `<model-stem>.<sanitised-material-name>.uvmat`
+per material beside the `.uvmodel`, in FBX order, before the mesh is written (a failure leaves no
+model pointing at missing materials). Each authored texture filename is resolved by
+`Detail::ResolveImportedSiblingTextureGuidUVE`: the only accepted evidence is a registered
+`.uvtex` with the same stem in the destination's directory; otherwise the slot stays
+`kInvalidAssetGuidUVE` and a warning names the material, slot and file - the importer never
+registers, creates or guesses a texture GUID. `MeshAssetUVE::materialGuids` carries the slots
+(serialised as a tagged `UVMT` trailing section, so meshes without materials still write
+byte-identical files and older files load unchanged). Re-import is idempotent because the
+material paths are deterministic and `RegisterUVE` is idempotent per path. Tests:
+`FbxImportPublishesOneUvmatPerMaterial`, `FbxImportWithoutMaterialsPublishesOnlyTheModel`,
+`FbxImportResolvesSiblingTextureGuid`, `FbxImportLeavesUnresolvedTextureEmptyWithDiagnostic`,
+`FbxImportIsIdempotentAcrossReimport` (`FbxImporterUVETest`), `MeshAssetRoundTripsMaterialGuids`,
+`RegisterDatabaseAwareImporterUVE_ReceivesTheDatabaseAndSharesTheKeySpace`. These publication
+cases now compile and run in the current four-suite build; broader binary/DCC fixture coverage
+remains partial; no new importer is needed to duplicate those working
+mesh/skin/animation paths. `[x]` **glTF animation conversion** samples channels
 into clips. `[x]` A skeleton asset exists separately from the mesh (`skeleton_asset_uve`).
 `[x]` A font asset exists —
 `FontAssetUVE` (raw sfnt bytes + family name, `.uvfont` envelope, `AssetKindUVE::Font`) with a
@@ -738,29 +755,139 @@ render-pass attachment.
 
 | Descriptor | Carries | Gap |
 |---|---|---|
-| `BufferDescUVE` | size, usage (`Vertex`/`Index`/`Uniform`/`Storage`/`IndirectStorage`) | no memory/CPU-access/lifetime hint |
-| `TextureDescUVE` | width, height, format, mipLevels, array layers, cubemap shape | no depth, no sample count, no usage flags (Tier 2.3 landed layers + cubes) |
-| `TextureFormatUVE` | `RGBA8Unorm`, `RGBA16Float`, `Depth32Float`, BC1/BC3/BC7, ETC2/ETC2A8 | eight formats; no sRGB, no single/two-channel |
+| `BufferDescUVE` | size, usage (`Vertex`/`Index`/`Uniform`/`Storage`/`IndirectStorage`), memory placement (`Auto`/`DeviceLocal`/`Upload`/`Readback`), update frequency (`Static`/`Dynamic`/`Stream`) | no sub-allocation or aliasing control (one allocation per buffer) |
+| `TextureDescUVE` | width, height, format, mipLevels, array layers, cubemap shape, `Texture3D` depth, usage set (`Sampled`/`RenderTarget`/`Storage`/`TransferSrc`/`TransferDst`, `Default` = all the format/shape supports) | no sample count (MSAA stays out of scope); storage volumes and volume attachments are refused by design |
+| `TextureFormatUVE` | `RGBA8Unorm`, `RGBA16Float`, `RGBA32Float`, `R8Unorm`/`RG8Unorm`, `R16Float`/`RG16Float`, `R32Float`/`RG32Float`, `Depth32Float`, `Depth24Stencil8`, BC1/BC3/BC7, ETC2/ETC2A8, ASTC 4x4 | seventeen formats; sRGB only where the data has an sRGB encoding (RGBA8 and the compressed families); no integer or packed (10:10:10:2) formats |
 | `ShaderDescUVE` | stage, source, entry point | `Geometry` has an optional `PipelineDescUVE::geometryShader` slot (Null/desktop GL); Vulkan reports `geometryShaders = Unsupported` |
 | `PipelineDescUVE` | vertex+fragment shader, vertex layout, stride, topology, depth test/write/compare, cull/winding/fill/bias, blend mode | rasterizer tail landed (Tier 2.1, RHI side) |
+| `VertexAttributeFormatUVE` | `Float2/3/4`, `UByte4Norm`, `Short2Norm`, `Half2/4`, integer `UShort4`/`UInt4` (+ byte-size / component / integer helpers) | one binding, per-vertex rate only (no instanced attribute streams) |
 | `RenderPassDescUVE` | up to 4 colour attachments, one depth attachment, load+store ops, clear values, optional viewport override | multi-target + `StoreOpUVE` landed (Tiers 2.4/2.5) |
-| `PrimitiveTopologyUVE` | `Triangles`, `Lines` | no points or strips (lines serve the debug renderer) |
+| `PrimitiveTopologyUVE` | `Triangles`, `Lines`, `Points`, `LineStrip`, `TriangleStrip` (+ `GetPrimitiveCountUVE` / `IsVertexCountCompleteForTopologyUVE`) | no fan, adjacency, primitive restart or line-width state |
 
 Three consequences follow directly from that table and are worth stating plainly,
 because each one blocks a whole feature:
 
 - `[~]` **No rasterizer state.** The RHI side landed (Tier 2.1): cull/winding/fill/bias plus a
-  full `DepthCompareUVE` sit on `PipelineDescUVE` and all three backends apply them. What stays
-  open is the consumer: the gizmo overlay and the studio backdrop still drive raw GL depth state
-  — and both live in host-independent `univex/` viewport-core, which cannot see the RHI by
-  contract. The migration is a design pass (how viewport-core overlays adopt RHI pipelines), not
-  a missing API.
+  full `DepthCompareUVE` sit on `PipelineDescUVE` and all three backends apply them. The
+  consumer is being closed by **WP6 (design decided 2026-10-14: candidate B, "depth state becomes
+  data"; step 1 compiled and suite-tested, with step 2 and pixel evidence still open):** `univex::render::OverlayRasterState`
+  (`Viewport/Expose/univex/render/OverlayRasterState.h`, pure data in viewport-core: depth test,
+  write, compare, blend, cull with an explicit `Inherit`) with one named preset per overlay pass
+  (`kGizmoOpaqueSolidState`, `kGizmoTranslucentSolidState`, `kGizmoStrokeState`,
+  `kInfiniteGridState`, `kStudioBackdropSkyState`, `kScreenSpaceCompositeState`). The GL target
+  applies a value through exactly one function, `ApplyOverlayRasterState`
+  (`OverlayRasterStateGl.cpp`), and the engine bridge maps the same value onto
+  `PipelineDescUVE` field by field (`integration/OverlayRasterStateToPipeline.h`,
+  `ApplyOverlayRasterStateUVE`) so a host that draws the overlays through `IRenderDeviceUVE` on
+  any backend gets identical depth modes by construction. Converted in step 1: `GizmoRenderer`
+  (its five `glDepthMask` calls; it now also pins `GL_LESS` explicitly instead of inheriting the
+  previous pass's depth function, and restores the function it found) and `InfiniteGridRenderer`.
+  Still raw GL (step 2, listed so nobody has to re-audit): `SelectionOutlineRenderer.cpp` (2
+  calls, composite = `kScreenSpaceCompositeState`), `StudioBackdropRenderer.cpp` (6 calls, sky =
+  `kStudioBackdropSkyState`), `app/ViewportRenderPass.cpp` (7 calls, the pass's clears and
+  save/restore), and `EditorCore/Internal/mesh_thumbnail_renderer_uve.cpp` (thumbnails, not an
+  overlay - stays). Tests: `OverlayRasterStateUVETest.PresetsPinTheOverlayDepthModes`,
+  `BridgeMapsTheStateOntoPipelineDescFieldByField`. The done-when's pixel evidence (headless
+  capture of every gizmo depth mode before/after, byte-equal) is owed by the session that
+  builds this draft; the data step was written to be pixel-neutral (`Inherit` where a pass never
+  touched cull, no blend-equation change).
 - `[x]` **No multiple render targets.** Landed (Tier 2.4): gap-rejecting colour slots 1..3 on
   `RenderPassDescUVE`, with a Vulkan test recording a multi-target pass and sampling per-target
   colours.
 - `[x]` **No texture dimensionality.** Landed (Tier 2.3): `TextureTypeUVE::Cubemap` +
   `Texture2DArray` with creation-time shape validation, HW-ordered `CubemapFaceUVE` and
   render-into-layer. (Image-based lighting itself is still absent — see §10.)
+- `[x]` **No single/two-channel or 32-bit float formats.** Landed (2026-10-14): `R8Unorm`,
+  `RG8Unorm`, `R16Float`, `RG16Float`, `R32Float`, `RG32Float`, `RGBA32Float` join
+  `TextureFormatUVE` (append-only values 10..16), linear-only, with the shared block table
+  giving tightly packed 1/2/4/8/16-byte texels. The blit and mip validators and all three
+  mip-generation gates now key on `IsUncompressedColorFormatUVE` instead of a two-format list,
+  so every uncompressed colour format blits, builds mip chains and (on GL) attaches. GL maps
+  them to `GL_R8`..`GL_RGBA32F` and uploads under byte unpack alignment — nothing set
+  `GL_UNPACK_ALIGNMENT` before, so an odd-width one- or two-byte texel row was read with a
+  4-byte stride (the native test's 3x2 `R8Unorm` came back `50,60,4` for its second row until
+  the fix) — and an `R16Float` target is cleared, drawn and read back as `1/0/0/1` with the
+  missing channels zero. Vulkan maps them to their native `VkFormat`s, answers
+  `SupportsTextureFormatUVE` from the device's optimal-tiling features (sampled + linear filter
+  + transfer destination + colour attachment: the same gate creation applies, so "supported"
+  and "creatable" cannot disagree), requests storage usage only where the device advertises
+  it, refuses the RGBA8 readback for them, and samples R8/RG8 with zeroed missing channels
+  (pixel-verified through the textured quad). Attaching one on Vulkan still skips with the
+  M2d warning until pipelines carry per-target formats — the same boundary `RGBA16Float`
+  already sits behind, listed under §9's Vulkan parity items. Deliberately not added: sRGB
+  variants (these formats carry linear data), integer and packed formats, `Depth16`.
+- `[x]` **No buffer memory hint.** Landed (2026-10-14): `BufferMemoryUVE` (`Auto`,
+  `DeviceLocal`, `Upload`, `Readback`) and `BufferUpdateFrequencyUVE` (`Static`, `Dynamic`,
+  `Stream`) on `BufferDescUVE`, defaulting to today's behaviour so aggregate-initialised
+  callers are unchanged, validated like `usage` (unknown values refused before allocation)
+  and reported back verbatim by the new optional `GetBufferDescUVE`. They are placement
+  requests, not contract changes: create-with-data, windowed update and readback behave
+  identically for every (usage, hint) pair on all three backends — the Vulkan case runs all
+  twenty. GL folds the pair into `glBufferData`'s token (`Readback` → `*_READ`, everything
+  else `*_DRAW`; the default is still `GL_STATIC_DRAW`), read back from the GL object through
+  `GL_BUFFER_USAGE`. Vulkan keeps its usage rule under `Auto`, puts any usage behind staging
+  for `DeviceLocal`, keeps an `Upload` vertex/index buffer host-visible and persistently mapped
+  (a per-frame rewrite becomes a memcpy instead of a staging submit + queue drain), prefers
+  `HOST_CACHED` memory for `Readback`, and gained the missing half of the staging discipline:
+  `ReadbackBufferUVE` copies out of device-local memory through a transient staging buffer with
+  usage-accurate barriers instead of refusing vertex/index buffers. First consumers: the debug
+  line batch and the 2D sprite quad (`Upload`/`Stream`) and the frustum-cull visibility buffer
+  (`Readback`). Not added: sub-allocation, aliasing or persistent-map exposure — one allocation
+  per buffer remains the model.
+- `[x]` **No points or strips.** Landed (2026-10-14): `Points`, `LineStrip` and
+  `TriangleStrip` join `PrimitiveTopologyUVE`, mapped to the native draw mode on GL and to
+  `VkPrimitiveTopology` on Vulkan, with the Null device accepting them from source and binary
+  descriptors. A `Points` pipeline on desktop GL enables `GL_PROGRAM_POINT_SIZE` at bind and
+  every other topology disables it, so the vertex shader's `gl_PointSize` is the one point-size
+  story on both backends and the mode never leaks between pipelines. Two constexpr helpers,
+  `GetPrimitiveCountUVE` and `IsVertexCountCompleteForTopologyUVE`, state how a draw's count is
+  consumed (lists need multiples, strips a minimum, points anything); the backends still let
+  the driver drop an incomplete trailing primitive as the APIs specify rather than refusing the
+  draw. First consumer: `DebugRendererUVE::DrawPoint3D` — an 8K-point batch drawn through the
+  new `debug_point` built-in with a batch-wide, clamped pixel size, as a second draw after the
+  lines; sphere circles stay expanded into the line list on purpose (one draw per frame beats
+  one strip per circle). Not added: fans, adjacency, primitive restart, line width.
+- `[x]` **No texture usage flags, no 3D textures.** Landed (2026-10-14): `TextureUsageUVE`
+  (`Sampled`, `RenderTarget`, `Storage`, `TransferSrc`, `TransferDst`) and `depth` join
+  `TextureDescUVE`, both appended so aggregate-initialised descriptors still mean "one 2D slice,
+  every use the format allows". `Default` resolves through `GetSupportedTextureUsageUVE` —
+  compressed formats and volumes are sampled + copied, depth formats are sampled + attached +
+  uploaded, everything else is the full set — and an explicit set must be a subset of that
+  (`IsTextureUsageSupportedUVE`, checked by the shared upload validator, so a render-target BC1
+  or a storage volume is refused before any backend allocates). Enforcement is at the operation
+  that would need the bit, on every backend alike: `IsTextureBlitValidUVE` wants `TransferSrc`
+  on the source and `TransferDst` on the destination, the new `CanGenerateMipmapsUVE` wants both
+  on the one texture, the Vulkan RGBA8 readback wants `TransferSrc`; GL and Vulkan refuse an
+  attachment created without `RenderTarget` (the pass does not open — the GL FBO binding is
+  untouched, the Vulkan texels stay as uploaded while the Default-usage control is cleared through
+  the same pass), leave a sampler unit alone for a texture without `Sampled`, and keep a texture
+  without `Storage` off the image unit / send its `imageStore` to the black sink. Vulkan now
+  allocates with exactly the `VkImageUsageFlags` the effective set names (intersected with what
+  the format can do on the device), and creates the attachment and storage alias views only when
+  the set contains the matching bit. Null enforces the device-level gates and records; it cannot
+  see descriptors at command-buffer level, so its bind/attach calls stay model-only.
+  `TextureTypeUVE::Texture3D` is a volume of `depth` slices (one layer, colour formats only):
+  uploads are slice-major per level, mips halve depth with the other axes
+  (`GetTextureMipDepthUVE`, depth-aware `MaximumTextureMipLevelCountUVE` and byte count), GL
+  creates it as `GL_TEXTURE_3D` under `GL_MAX_3D_TEXTURE_SIZE` and binds it under that target,
+  Vulkan as `VK_IMAGE_TYPE_3D` + `VK_IMAGE_VIEW_TYPE_3D` under `maxImageDimension3D` with one
+  copy region per level, and both build its mip chain through the ordinary `GenerateMipmapsUVE`
+  (the Vulkan blit chain halves depth too). Volumes never blit, never attach and are not
+  readable through the 2D RGBA8 helper. Proved by pixels on both native drivers: a 4x4x4 volume
+  with one colour per slice sampled through `sampler3D` at the four slice centres. Not added:
+  sample counts, volume render targets, storage volumes, cube arrays.
+- `[x]` **Float-only vertex attributes.** Landed (2026-10-14): `VertexAttributeFormatUVE`
+  gains `UByte4Norm` (colours), `Short2Norm` (packed UVs / octahedral normals), `Half2` /
+  `Half4`, and the integer pair `UShort4` / `UInt4` (joint indices, declared `uvec4` in the
+  shader). `GetVertexAttributeFormatByteSizeUVE` replaces the float arithmetic inside the
+  stride validation, so a packed layout is accepted exactly when it fits. GL fetches each
+  format through the matching `glVertexAttribPointer(type, normalized)` arguments and the
+  integer pair through `glVertexAttribIPointer` (loaded as an optional GL 3.0 / GLES 3.0 entry;
+  a pipeline whose layout needs it is refused at creation when the context lacks it); Vulkan
+  maps each to its mandatory vertex-buffer `VkFormat`. No engine vertex struct changed: the
+  intended first consumer is the skinned mesh vertex when Tier 3.1 wires GPU skinning (joint
+  indices as `UShort4`, weights as `UByte4Norm`), and the table says so rather than repacking
+  `MeshVertexUVE` ahead of that. Not added: a second vertex binding or per-instance rate.
 
 Also absent: `[x]` a sampler object — landed (Tier 2.2: `SamplerDescUVE` with Point filtering
 in all three backends). `[x]` **Validated bind-group packets** now live in
@@ -793,7 +920,7 @@ untouched. Missing capabilities explicitly return `Unsupported`, never pretend s
   CPU readback fallback is used for the native paths.
 - **Texture blit / mipgen:** real GL color blits (point/exact copy or linear scale), mip/layer/
   extent/format checks, caller-binding/scissor preservation, and lower-mip generation on
-  preallocated color textures. Null validates/records. `[/]` Vulkan now implements both
+  preallocated color textures. Null validates/records. `[x]` Vulkan now implements both
   through `vkCmdBlitImage` on a transient one-time command buffer: per-format
   `BLIT_SRC`/`BLIT_DST`/linear-filter feature checks (otherwise `Unsupported`, never a silent
   filter change), identical-format enforcement, tracked-layout transitions per touched
@@ -811,19 +938,45 @@ untouched. Missing capabilities explicitly return `Unsupported`, never pretend s
   position, "untouched texel" assertions against a Vulkan image whose contents were never
   defined, and a multi-mip texture created without the initial upload that
   `ValidateTextureUploadUVE` requires. Those fixtures now seed every level and region they
-  assert on, and are awaiting a green rerun.
+  assert on. Native execution (2026-10-14, Vulkan 1.3 CPU ICD in the sandbox): the four cases
+  pass, after one real backend defect the mip test exposed was fixed — RGBA8 images were
+  allocated in the swapchain's *sRGB* format regardless of the descriptor's colour space, so
+  `vkCmdBlitImage` filtered linear data through an sRGB decode/encode (a 40/80/120/160 chain's
+  last level read 111 instead of 100). The image now lives in the colour space the descriptor
+  declares, the attachment view keeps the swapchain format for the pipeline contract, and the
+  sampled view reads the image's own format; rendering output is byte-identical to before.
   Depth/stencil blits and format conversion stay outside this color-transfer contract.
 - **Queries:** real GL GPU timestamps and any-sample occlusion with state/lifetime validation
   and nonblocking result polling. Null records query operations but NEVER invents visibility or
-  GPU nanoseconds. `[/]` Vulkan now implements timestamp queries: one
+  GPU nanoseconds. `[x]` Vulkan now implements timestamp queries: one
   `VK_QUERY_TYPE_TIMESTAMP` pool per handle, `WriteTimestampUVE` riding a transient
   reset+write submission (the queue-ordered point in time a CPU-visible timestamp means),
   results converted from the device's tick period to nanoseconds with `NotReady` for a
   non-blocking read, gated on the chosen queue family's `timestampValidBits`
-  (`TimestampQueriesReportRealTicksAndRefuseOcclusion`). Occlusion queries stay explicitly
-  `Unsupported` there: `vkCmdBeginQuery`/`vkCmdEndQuery` must bracket the caller's own draws in
-  ONE command buffer, and a device-level begin/end pair that reported "0 samples" would be an
-  invented visibility result rather than information about real geometry.
+  (`TimestampQueriesReportRealTicksAndRefuseOcclusion`). `[x]` **Recorded query brackets
+  (WP3, 2026-10-14):** `ICommandBufferUVE` gained `BeginQueryUVE` / `EndQueryUVE` /
+  `WriteTimestampUVE(QueryHandleUVE)` (default `Unsupported`, `Recorded` on success) with three
+  new `RecordedCommandUVE` alternatives, so a bracket surrounds the caller's OWN draws inside
+  one command buffer - the thing the device-level pair could never do honestly. Shared
+  validation across the three backends: unknown handle -> `InvalidHandle`, wrong kind ->
+  `InvalidArgument`, nested / unmatched / cross-pass bracket -> `InvalidState`, and a pass end
+  with a bracket still open closes it (logged) rather than leaking GL/Vulkan query state. Null
+  validates against the device's query table (a kind lookup handed to the command buffer) and
+  keeps results `NotReady`, never a number (`NullCommandBufferRecordsQueryBracketsInOrder`,
+  `NullCommandBufferRejectsBadQueryBrackets`, `NullRecordedQueriesNeverInventResults`); GL
+  issues `glBeginQuery(GL_ANY_SAMPLES_PASSED)` / `glEndQuery` / `glQueryCounter` immediately
+  through the same `activeOcclusion` slot the device-level bracket uses
+  (`RecordedOcclusionQueryCountsOnlyVisibleDraws`, `RecordedTimestampsAreMonotonic`); Vulkan
+  now creates `VK_QUERY_TYPE_OCCLUSION` pools for `AnySamplesPassed`, reports
+  `occlusionQueries = Native`, replays the brackets as `vkCmdBeginQuery` / `vkCmdEndQuery` /
+  `vkCmdWriteTimestamp` inside the frame's pass, resets every pool named by the frame in a
+  prologue after `vkBeginCommandBuffer` and before the pass (a reset is illegal inside one), and
+  normalises an imprecise occlusion count to the 0/1 contract; a query whose bracket is still
+  queued for the next `PresentUVE` reads `NotReady`
+  (`RecordedOcclusionQueryDistinguishesHiddenAndVisibleTriangles`,
+  `RecordedOcclusionQueryIsNotReadyUntilCompletion`). The device-level Vulkan
+  `BeginQueryUVE`/`EndQueryUVE` pair stays `Unsupported` for the reason it always had: outside a
+  command buffer there is no geometry for it to measure.
 - **Timeline semaphores:** `SemaphoreDescUVE` plus `CreateSemaphoreUVE` /
   `GetSemaphoreCounterUVE` / `SignalSemaphoreUVE` / `WaitSemaphoreUVE` /
   `DestroySemaphoreUVE` carry a monotonic 64-bit counter through the common API.
@@ -849,15 +1002,49 @@ and timestamp ordering; two Vulkan tests verify copies/fences and the deferred-C
 Native sources/tests pass strict syntax checks against real headers. Graphics-capable CI run
 `38429697106` on `012f69f` passed the native suite, including the new operations and the unchanged
 shadow pixel comparisons after correcting their sampler setup. This closes the earlier execution-
-verification gap, not the explicitly unsupported Vulkan operations. Semaphores/timelines
-are implemented as timeline objects (`CreateSemaphoreUVE` and friends, above); the
-`[ ]` that remains is *submission-level* queue sync (binary semaphores as `SubmitUVE`
-parameters), which is not closed by a CPU-visible counter. Vulkan texture-transfer parity is
-implemented and awaiting native CI execution; Vulkan timestamps are implemented and awaiting
-the same native run, while Vulkan occlusion queries and GPU/Hi-Z occlusion consumers remain
-explicitly unsupported/absent.
+verification gap, not the explicitly unsupported Vulkan operations. Vulkan occlusion queries
+and the GPU occlusion consumer were closed by WP3 (recorded brackets above; consumer in the
+renderer reconciliation below). Semaphores/timelines
+are implemented as timeline objects (`CreateSemaphoreUVE` and friends, above), and `[x]`
+**submission-level queue sync (WP4, 2026-10-14, compiled and verified)** is
+`IRenderDeviceUVE::SubmitWithSyncUVE(buffer, SubmitDescUVE{waits, signals})`: timeline
+wait/signal pairs as submit parameters (`SemaphoreWaitUVE`/`SemaphoreSignalUVE`; a timeline
+pair is strictly more expressive than a binary semaphore, so none is introduced; the method is
+not a `SubmitUVE` overload because every existing override would hide it under
+`-Woverloaded-virtual`). Contract on every backend: unknown/destroyed semaphore ->
+`InvalidHandle`; a signal value not above the counter at submit time, or one semaphore named
+twice across the lists -> `InvalidArgument`; a non-empty desc without Native timelines ->
+`Unsupported`; an empty desc is exactly `SubmitUVE`; the buffer is consumed in every case and
+a failure means the work was not queued. Granularity is the backend's real queue granularity:
+Vulkan replays every submission of a frame into ONE `vkQueueSubmit`, so the merged waits of
+the frame's submissions gate that submit (`VkTimelineSemaphoreSubmitInfo`, all-commands stage)
+and the merged signals are performed when the frame's GPU work completes - never earlier than
+asked, never claimed before the GPU reached it; a skipped frame (minimised, acquire failure)
+drops its submissions and their sync, so a waiter times out instead of being lied to. A hang
+guard bounds the in-flight fence wait (30 s): on expiry the frame's timeline waits are
+host-signalled so the queue can drain and the device goes inert with a warning; the
+destructor applies the same release before its queue drain. GL has no timeline objects and
+answers `Unsupported` for any non-empty desc (the default implementation; nothing is
+simulated); Null validates against its semaphore table and records a `SubmitOperationUVE`
+verbatim without moving a counter. Tests: `NullSubmitDescRecordsWaitsAndSignalsVerbatim`,
+`NullSubmitDescRejectsBadSemaphores` (timeline_semaphore tests),
+`SubmitDescIsUnsupportedWithoutTimelines` (GL), `SubmitSignalIsObservedAfterTheFrameCompletes`,
+`SubmitWaitBlocksTheQueueUntilHostSignal`, `SubmitDescRejectsDestroyedSemaphore` (Vulkan). Vulkan texture-transfer parity and
+Vulkan timestamps were executed on a real Vulkan 1.3 ICD on 2026-10-14 (60 of 60
+`VulkanRenderDeviceUVETest` cases pass, one unrelated SPIR-V fixture skip); the current build
+also compiles and runs the WP3 recorded-bracket and GPU-occlusion consumer tests. The full
+four-suite run is: engine 154/154, editor 340/340, integration 2139/2139, and core 2297 passed
+with 3 skips. Core still has the documented softpipe GL occlusion defect below, plus
+`VulkanRenderDeviceUVETest.FoundationFencesDoNotPretendPendingCpuSubmissionsHaveExecuted`,
+whose expectation conflicts with the documented WP3 contract that device-level Vulkan occlusion
+remains unsupported while recorded occlusion is native. The GL
+occlusion case `FoundationQueriesMeasureRealVisibilityAndGpuTimestamps` passes on the CI's
+software GL runner but not on the sandbox's softpipe rasterizer, where a standalone program
+reproduces the cause outside the engine: once any `glQueryCounter(GL_TIMESTAMP)` has been
+issued, that driver reports zero for every later `GL_ANY_SAMPLES_PASSED` / `GL_SAMPLES_PASSED`
+result although the triangle visibly rasterizes — a driver defect, not an RHI one.
 
-`[/]` **Stencil state** — `StencilStateUVE`/`StencilFaceStateUVE` are appended to both
+`[x]` **Stencil state** — `StencilStateUVE`/`StencilFaceStateUVE` are appended to both
 pipeline descriptors with disabled legacy defaults. Front/back compare, operations,
 8-bit masks and references are validated before publication. `Depth24Stencil8` is the
 combined attachment format, and `RenderPassDescUVE::clearStencil` is governed by the
@@ -877,9 +1064,15 @@ passes separate depth and stencil invalidation tokens, with capacity for both as
 without a driver; strict syntax checks passed for the GL loader, command buffer, render
 device and full GL test translation unit. A native depth/stencil discard regression joins
 the pixel-mask test. After these corrections (2026-10-14), full CPU build/CTest passed:
-**4,144 cases, zero failures, seven existing Vulkan skips**. Status remains `[/]` until
-native graphics CI verifies the backend tests; downloaded headers used for syntax checks
-are ignored build artifacts, not a replacement for GL/Vulkan execution.
+**4,144 cases, zero failures, seven existing Vulkan skips**. Native execution (2026-10-14,
+software GL 3.3 core + Vulkan 1.3 CPU ICD): `StencilPipelineMasksSecondDrawThroughDepthStencilAttachment`
+and `DepthStencilDiscardUsesSeparateAttachmentAspects` pass on GL;
+`StencilPipelineAndDepthStencilTextureCreateOnDynamicDevice` passes on Vulkan after a real
+defect it exposed was fixed — `Depth24Stencil8` was hard-wired to `D24_UNORM_S8_UINT`, which
+the specification does not require (it guarantees that format *or* `D32_SFLOAT_S8_UINT`, and
+a whole family of desktop GPUs plus the CPU ICD only offer the latter). The device now resolves
+the packed format once at creation (24-bit preferred, 32+8 fallback) and both stencil textures
+and stencil pipelines use that resolved format; a device with neither refuses both explicitly.
 
 Native follow-up: CI run `38515088834` on `bec9f6cf` passed the full native build, then
 reported **one failure in 4,861 CTest cases**:
@@ -904,10 +1097,51 @@ is pending; the failed CI run is not reported as a green graphics verification.
   creation, FBO render passes, program-binary cache, indirect draw, SSBO, dispatch.
 - `[~]` **`VulkanRenderDeviceUVE`** — real but milestone-sliced, and unusually
   honest about it: instance/device/swapchain/present, buffers, SPIR-V, pipelines,
-  reflection and dynamic-rendering offscreen targets all work, while >1 descriptor
-  set, load-op semantics beyond clear, per-op depth compare, device-local staging
-  and sampling `Depth32Float` **warn and fail loudly rather than silently
-  degrading**. On pre-1.3 devices offscreen passes are skipped entirely.
+  reflection, dynamic-rendering offscreen targets, timeline semaphores with
+  submission-level sync (WP4), occlusion queries (WP3) and device-local staging all work.
+  **WP5 audit (2026-10-14; every `Unsupported` return and warning site was listed and given
+  a verdict in `FOUNDATION_COMPLETION_PLAN.md` §2):**
+  - *Decisions (not gaps):* **Vulkan 1.3 dynamic rendering is the floor.** The classic
+    (pre-1.3) arm presents and draws the swapchain only: offscreen passes, compute, storage
+    images, `Depth32Float` sampling and load-op semantics are 1.3-arm features, and the
+    classic arm says so once per feature instead of degrading silently. No reachable test
+    device is pre-1.3 (SwiftShader 1.3, lavapipe 1.3). "Sampling `Depth32Float`" and "per-op
+    depth compare" were stale entries in the old list: the former works on the 1.3 arm
+    (a `Depth32Float` texture binds as a sampled image; what still blocks shadows on Vulkan is
+    5e below, not sampling), the latter lives on `PipelineDescUVE::depthCompare`.
+    Explicit sinks remain for layered storage images, depth-as-storage and compressed-as-storage
+    (warned once, writes land in the 1×1 black sink), and the frame uniform ring (1 MiB) and
+    descriptor pool are capacity limits reported loudly, not silently.
+  - *Closed by WP5c (2026-10-14, compiled and native-test verified):* **load-op semantics on the
+    swapchain path.** The first swapchain pass of a frame now drives the attachment load ops
+    of the dynamic arm: `Load` keeps the acquired image's previous content (the image enters
+    from `PRESENT_SRC` with a real transition instead of `UNDEFINED`) and the per-swapchain
+    depth image's previous depth; `DontCare` maps to `VK_ATTACHMENT_LOAD_OP_DONT_CARE`.
+    `Load` on an image that has never been presented, or depth before the first frame, falls
+    back to the pass's clear values (there is nothing to load). Because the swapchain rotates
+    images, "previous content" means that *image's* last presented frame, so a caller wanting
+    frame-to-frame accumulation must own an offscreen target; the pixel test
+    `SwapchainLoadOpKeepsThePreviouslyPresentedImage` renders a clear-colour frame per swapchain
+    image, then a `Load` frame without draws, and reads the colour back.
+  - *Open, real gaps (each with its design in the plan):* **5b** offscreen colour targets are
+    still limited to the swapchain's RGBA8 format (pipelines are created against that format;
+    the fix is per-target-format pipeline variants keyed by colour/depth formats via
+    `VkPipelineRenderingCreateInfo`); **5d** `BindUniformBufferUVE` is a warned no-op on Vulkan
+    (uniforms travel through `SetUniform*` + the reflected frame ring; the fix routes a bound
+    `Uniform`-usage buffer into the block's dynamic-UBO descriptor through the per-tuple set
+    cache with a `u`-section in the tuple key); **5a** SPIR-V that uses descriptor set ≥ 1 fails
+    pipeline creation (all engine shaders are set-0; per-set layouts from reflection are the
+    fix); **5e** depth-only offscreen passes are refused — and `Renderer3DUVE::RecordShadowPassUVE`
+    is depth-only, so **cascaded shadow maps do not render on Vulkan today** (the shadow
+    submission's draws are skipped with a one-shot warning; the main pass still draws). Closing
+    5e needs the same mechanism as 5b, because a depth-only rendering instance requires a
+    pipeline created with zero colour attachments: one pipeline-variant cache keyed by the
+    pass's attachment formats closes 5b and 5e together. These are the only remaining items
+    behind the `[~]`, and 5b+5e is the one that matters to the renderer.
+  Two silent format assumptions were removed on 2026-10-14 when the device first ran on a
+  Vulkan ICD outside CI: RGBA8 images no longer inherit the swapchain's sRGB encoding when the
+  descriptor says linear, and the packed depth/stencil format is resolved per device instead of
+  assumed.
 - `[x]` **`NullRenderDeviceUVE`** — a deliberate no-op that validates every call
   and records the exact RHI call sequence through a spy command buffer. It is what
   CI runs against, which is worth remembering: a green test suite proves the call
@@ -920,7 +1154,7 @@ bloom, SSAO, tone mapping, instancing, CPU frustum culling (clustered), GPU
 frustum culling, GPU indirect culling, distance/LOD culling, GPU skinning, GPU
 particle simulation.
 
-`[/]` **Render graph** — the former insertion-only layer now compiles explicit pass dependencies
+`[x]` **Render graph** — the former insertion-only layer now compiles explicit pass dependencies
 and RAW/WAR/WAW texture hazards into stable topological order. `topological_order_uve.h` is shared
 with the existing frame scheduler, not another job-system implementation. Duplicate native imports
 coalesce; graph-owner/generation tags reject foreign/stale resources and passes. Compilation is
@@ -944,14 +1178,32 @@ Eleven compiler/consumer tests, four resource-lifetime tests and three shared to
 added. All 88 existing renderer cases remain unchanged and pass; focused graph/renderer execution
 passes 102 cases. Strict full CTest: **4,121 cases, zero failures, seven existing Vulkan skips**.
 The four lifetime cases also pass focused ASan+UBSan. New GL pixel/worker-retirement and Vulkan
-CPU-FIFO/GPU-completion tests are awaiting native CI before this batch is marked fully verified.
+CPU-FIFO/GPU-completion tests ran natively on 2026-10-14 (software GL + Vulkan 1.3 CPU ICD):
+`TextureLeaseRetiresOnOwnerThreadAfterWorkerSubmission`,
+`TextureLeaseSurvivesDeferredSubmissionUntilGpuCompletion` and the 14 graph compiler/consumer
+cases pass.
 
 Renderer presence reconciliation (source and existing tests, 2026-10-14):
 
 - `[x]` **CPU occlusion** already runs: `MeshRendererUVE` and `Renderer3DUVE` use
   `IsOccluder3DAabbDrawHiddenUVE`; mesh visibility, primitive and decal tests verify
   actual rejection, disabled occluders and the ignore-occlusion override.
-  `[ ]` GPU/Hi-Z occlusion is a separate gap; a query API alone does not implement it.
+  `[x]` **GPU occlusion (WP3, 2026-10-14)** — `CullingSettingsUVE::gpuOcclusionCullingEnabledUVE`
+  (default off) makes `Renderer3DUVE` end its MainColor pass with one proxy box per opaque mesh
+  item (`built_in/occlusion_proxy.glsl`: depth-tested `LessOrEqual`, no depth write, additive
+  zero colour - the attachments are untouched, only the bracket's sample count sees the draw;
+  the box is the item's world AABB inflated by 2 % so a flat mesh's zero-thickness box still
+  passes in front of itself) under a recorded `BeginQueryUVE`/`EndQueryUVE` bracket. Probes are
+  keyed by mesh GUID + world-matrix bits and double-buffered (the frame that records slot N
+  reads slot N^1), and an item is skipped only when its last bracket completed with zero
+  samples, the view-projection is unchanged since that bracket, and the item has not moved;
+  `NotReady`, a moved camera, a moved object, a refused query or a device without queries all
+  draw it. Diagnostics: `occlusionQueriesSupported` / `occlusionQueriesIssued` /
+  `occludedItemsSkipped`. The Null proof
+  (`GpuOcclusionCullingRecordsProxyBracketsAfterOpaqueDrawsAndNeverSkipsWithoutAVerdict`) pins
+  the recording order and the never-skip-without-a-verdict rule; the real-GPU halves are the GL
+  and Vulkan bracket tests. `[ ]` Hi-Z (a depth pyramid tested on the GPU without per-item
+  brackets) is a different design and stays a ROADMAP item, not a foundation gap.
 - `[x]` **Particle upload/draw** already runs through
   `Renderer3DUVE::ImplUVE::RecordParticleItemsUVE`: copied particle commands become
   bounded vertex data, `UpdateBufferUVE`, vertex binding and a draw. `EngineCoreUVE`
@@ -969,10 +1221,11 @@ Renderer presence reconciliation (source and existing tests, 2026-10-14):
   renderer's `SkyAssetDrivesEnvironmentMapAmbientAndSky` and fallback tests cover them.
   `[~]` Environment-map ambient lighting and reflection probes are narrower than full
   prefiltered diffuse/specular IBL. `[ ]` No terrain renderer exists.
-  `[/]` `PipelineDescUVE::geometryShader` now carries the stage through the common API:
+  `[x]` `PipelineDescUVE::geometryShader` now carries the stage through the common API:
   `NullRenderDeviceUVE` validates and records it, desktop GL attaches it to the linked program
   (local strict syntax plus `GlRenderDeviceUVETest.GeometryStageChangesRasterizedPositionAndSurvivesShaderDeletion`
-  assert a real position change; the pixel probe needs the native CI software GL runner),
+  assert a real position change; the pixel probe passed on a software GL 3.3 core context on
+  2026-10-14),
   and Vulkan/GLES reject a supplied handle explicitly instead of dropping the stage
   (`VulkanRenderDeviceUVETest.GeometryPipelineIsExplicitlyUnsupportedRatherThanIgnored`,
   `GeometryPipelineUVETest.*`). `RenderDeviceCapabilitiesUVE::geometryShaders` reports
@@ -1280,7 +1533,7 @@ call sites are already allocating from the wrong place.
 
 | # | Item | Module | Unblocks | Done when |
 |---|---|---|---|---|
-| 2.1 | Rasterizer state on `PipelineDescUVE` — cull, winding, fill, depth bias, **depth-compare function** | `RHI/RHI` + all three backends | shadow bias; removes the editor's direct GL depth-function call | the gizmo overlay expresses its depth mode through the pipeline - PARTIAL (verified Oct 2026 by source read): RHI side landed — rasterizer tail (cull/winding/fill/bias/depth-compare) on PipelineDescUVE + PipelineBinaryDescUVE, all three backends validate/apply (GL state, VK ToVk* incl. depthCompareOp, Null validation); the done-when consumer is still open — and audited (Oct 2026) as a design pass, not a small migration: both consumers live in host-independent `univex/` viewport-core (raw GL by contract, cannot see the RHI), so expressing their depth state through pipelines needs a layering decision first |
+| 2.1 | Rasterizer state on `PipelineDescUVE` — cull, winding, fill, depth bias, **depth-compare function** | `RHI/RHI` + all three backends | shadow bias; removes the editor's direct GL depth-function call | the gizmo overlay expresses its depth mode through the pipeline - PARTIAL (verified Oct 2026 by source read): RHI side landed — rasterizer tail (cull/winding/fill/bias/depth-compare) on PipelineDescUVE + PipelineBinaryDescUVE, all three backends validate/apply (GL state, VK ToVk* incl. depthCompareOp, Null validation); the done-when consumer is in progress — WP6 decided the layering (Oct 2026): overlay depth state is data (`OverlayRasterState` in viewport-core), applied by one GL function and mapped onto `PipelineDescUVE` in the engine bridge; gizmo + grid converted and compiled/tested, outline/backdrop/render-pass sites and the pixel evidence remain (see §8 rasterizer bullet) |
 | 2.2 | Sampler object + descriptor | `RHI/RHI` + backends | point filtering, wrapping, anisotropy | a texture can be sampled point-filtered - landed (verified Oct 2026 by source read): SamplerDescUVE (mag/min/mip/wrapU/V/W/maxAnisotropy) + SamplerFilterUVE::Point threaded through all three backend devices; GL maps Point to GL_NEAREST and GL creation tests cover Point filters |
 | 2.3 | Texture dimensionality — array layers, cubemaps | `RHI/RHI` + backends | image-based lighting; cascade arrays | a cubemap is created and sampled - landed (verified Oct 2026 by source read): TextureTypeUVE::Cubemap + Texture2DArray with arrayLayers, creation-time shape validation (cube: square + 6 layers), CubemapFaceUVE order matching HW face order, render-into-layer (colorLayer/depthLayer); GL cube paths + VK maxImageDimensionCube query; cube coverage in the GL/VK device tests |
 | 2.4 | Multiple render targets on `RenderPassDescUVE` | `RHI/RHI` + backends | any deferred/G-buffer path | a two-attachment pass records and replays - landed (verified Oct 2026 by source read): ColorAttachmentUVE slots 1..3 on RenderPassDescUVE (gap-rejecting); VulkanRenderDeviceUVETest.MultiTargetCaptureAndSample_RendersPerTargetColors records a multi-target pass and samples per-target colors, plus Null/GL attachment coverage |
@@ -1301,7 +1554,7 @@ consumer. They are cheap relative to how large they look.
 | 3.3 | Audio mixer routing | — | Landed (verified Oct 2026 by source read): AudioSystemUVE::UpdateUVE applies group multipliers to every live voice per frame; component mixerGroup syncs incl. live reassignment |
 | 3.4 | Script bytecode execution | — | Landed (verified Oct 2026): the bytecode VM executes (editor instant reload) and release builds generate C++23 from the same bytecode; the visual graph was removed. Decision made: execute. |
 | 3.5 | Plugin host | — | Landed: NativePluginHostUVE loads/unloads native plugins (dlopen + LoadLibrary), negotiates the ABI, registers manifests, rolls back failed loads; tested incl. real .so fixtures |
-| 3.6 | Occlusion culling | 2.8 (to see it) and GPU queries | Still open (Oct 2026): frustum culling live (camera, decal, compute); occlusion queries explicitly deferred, GL-side (needs a GPU query path in a real backend). |
+| 3.6 | Occlusion culling | 2.8 (to see it) and GPU queries | Closed by WP3 (2026-10-14, compiled and suite-tested): recorded query brackets on all three backends, Vulkan occlusion pools, and `Renderer3DUVE`'s opt-in proxy-box consumer with the conservative skip rule (see the renderer reconciliation). Hi-Z remains a ROADMAP design. |
 
 ## Tier 4 — genuinely new subsystems
 
@@ -1362,3 +1615,83 @@ cubemap unit, with a real complete cube texture and additional GL-error assertio
 shadow pixel assertion nor either shader copy was weakened/changed. Local full CTest and all
 16 embedded/physical shader-parity cases pass; native re-execution is required before marking
 this correction or the pending device-operations batch fully verified.
+
+### Native verification outside CI (2026-10-14)
+
+The five `[/]` paragraphs above (Vulkan texture transfer, Vulkan timestamps, stencil state,
+render graph lifetimes, the geometry stage) were executed on real driver stacks in a headless
+sandbox — software GL (3.3 core context, Mesa softpipe, advertised as 4.6 through the version
+override the GL fixtures require) and a Vulkan 1.3 CPU ICD — rather than being left to wait
+for a graphics CI rerun. Results: `VulkanRenderDeviceUVETest` 60 passed / 1 skipped (a SPIR-V
+fixture not baked yet); `GlRenderDeviceUVETest` + `GlFunctionsUVETest` 112 passed / 2
+capability skips (no S3TC, no program binaries) / 1 driver defect (occlusion queries after a
+timestamp counter, reproduced standalone); render graph 14 passed. Two backend defects were
+found by running on a second ICD and fixed in the same change: linear RGBA8 images allocated
+in the swapchain's sRGB format (gamma-wrong blits and mip chains), and `Depth24Stencil8`
+assuming `D24_UNORM_S8_UINT` exists (it is optional; the 32+8 layout is the only one some
+devices offer). Nothing in this ledger claims pixel parity with a hardware GPU; it claims the
+contracts hold on two independent conformant implementations.
+
+**Texture formats (same day).** The one-/two-channel and 32-bit float formats landed with one
+Null case (block sizes, exact-size uploads, sRGB refusal for all seven), one device-operations
+case (blit + mips accepted for every uncompressed colour format, still refused for depth and
+for format conversion), one native GL case (odd-width `R8`/`RG8` uploads read back texel for
+texel through `glGetTexImage`, an `R16Float` colour attachment cleared + drawn + read back, a
+bit-exact `R32Float` point blit, an `RG8` mip chain) and one native Vulkan case (support ==
+creation for all seven, sRGB and RGBA8-readback refusal, R8/RG8 quadrants sampled with zeroed
+missing channels, `RG8` mip chain + linear blit). On the same two software stacks:
+`NullRenderDeviceUVETest` + `DeviceOperationsUVETest` 86 passed; `GlRenderDeviceUVETest` +
+`GlFunctionsUVETest` + `VulkanRenderDeviceUVETest` 174 passed / 3 skipped / 1 failed (the
+softpipe occlusion defect already recorded above, unrelated to formats). The GL unpack
+alignment defect was confirmed by reverting the fix and watching the new case fail.
+
+**Buffer memory hints (same day).** One Null case (unknown hints refused, twelve
+(placement, frequency) pairs recorded and read back, untouched output on failure), one native
+GL case (six hint pairs → the expected `GL_BUFFER_USAGE` token on the live object, each with a
+windowed update + readback), and two native Vulkan cases (the former "device-local buffers
+refuse readback" test now asserts the staged readback returns the uploaded floats and offset
+windows; a new case drives all five usages × four placements through create/update/readback,
+plus a host→device-local `CopyBufferUVE` observed through the staged readback). Suite totals
+after the change on the same stacks: Null + device-operations + GL + Vulkan device suites 261
+passed / 3 skipped / 1 (softpipe) failed; `uve_integration_tests` (debug renderer, 2D
+renderer, frustum-cull consumers) all green.
+
+**Point and strip topologies (same day).** Every new topology is proved by a pixel the list
+topology could not have painted, with the list drawn as the control inside the same test: on
+GL (softpipe, 64×64 default framebuffer) a 16-case run covers the 8px point block vs. the clear
+pixels outside it, the strip's far corner vs. the four-vertex triangle list that leaves it
+clear, the line strip's second segment vs. nothing, and `GL_PROGRAM_POINT_SIZE` observed
+enabled only while the Points pipeline is bound; on Vulkan (SwiftShader, swapchain readback)
+the same three proofs run with a freshly baked point vertex shader (`gl_PointSize = 16`) — the
+sandbox now carries a glslang build, so Vulkan test shaders can be baked in-session again. The
+Null suite pins the count helpers and the Null/debug-renderer tests pin the two-draw submit
+(lines then points, `uPointSize` flushed, both batches cleared, all resources released). The
+built-in parity test covers `debug_point.glsl`.
+
+**Packed vertex attribute formats (same day).** Four layouts drawn as a half-screen triangle
+on each native driver, one pixel inside and one outside sampled: `Short2Norm` positions with
+`UByte4Norm` colours land the exact colour bytes (255, 128, 0), `Half2` positions with `Half4`
+colours decode binary16 (0, 128, 255), and `UShort4` / `UInt4` joint lanes reach a `uvec4`
+input — the 32-bit case stores 65536 + 200 and reads 200 through `& 255`, which a 16-bit or
+float fetch cannot reproduce. GL runs them on softpipe; Vulkan on SwiftShader with a baked
+`uvec4` vertex shader, accepting the linear or sRGB-encoded byte per the suite's swapchain rule.
+The Null suite pins the byte widths, component counts, integer flag and the stride check for
+all nine formats.
+
+**Texture usage flags and `Texture3D` (same day).** Null pins the resolution rules (Default per
+format/shape, unknown and empty sets refused, subset rule — a render-target BC1, a storage or
+transfer-source depth texture and a render-target volume all refused before allocation, a narrow
+set reported back verbatim), the volume byte math (4x4x4 → 2x2x2 → 1 = 292 bytes, depth-only
+chains, layered / deep-2D / zero-depth / depth-format volumes refused) and the device-level
+gates (blit refused without `TransferSrc` / `TransferDst` and with a volume at either end, mip
+generation refused without both bits and accepted on a volume). On GL (softpipe) a 4x4x4 volume
+reads back slice-major through `glGetTexImage(GL_TEXTURE_3D)`, a `sampler3D` draw into a 4x1
+target returns red/green/blue/white at the slice centres, its 3-level chain ends in a 1x1x1
+tail with level 1 two deep, and the usage case watches `GL_FRAMEBUFFER_BINDING` stay put for a
+Sampled-only colour or depth attachment, a texture unit keep its previous texture when one
+without `Sampled` is bound, the image unit stay empty for one without `Storage`, and a green
+clear cross a `RenderTarget|TransferSrc` → `TransferDst` blit. On Vulkan (SwiftShader) the same
+four slice colours are sampled through a freshly baked `sampler3D` fragment, the volume mip
+chain succeeds, and the gate case pairs every refusal with a Default-usage control inside the
+same frame sequence (offscreen clear reaches the control and not the Sampled-only texture; the
+image-fill dispatch paints the control green and leaves the no-`Storage` texture's bytes zero).
