@@ -4,6 +4,7 @@
 
 #include <functional>
 
+#include "uve/component/entity_uve.h"
 #include "uve/input/i_input_system_uve.h"
 #include "uve/localization/localization_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
@@ -77,9 +78,19 @@ public:
     [[nodiscard]] const UIDrawBatchUVE& GetDrawBatchUVE() const noexcept { return m_drawBatch; }
     [[nodiscard]] const UIFontAtlasUVE& GetFontAtlasUVE() const noexcept { return m_fontAtlas; }
 
+    /// The widget that currently owns keyboard focus, or kInvalidEntityUVE. Focus moves in
+    /// deterministic reading order (top-to-bottom, left-to-right, then entity handle) with
+    /// Tab / Shift+Tab and wraps. It is runtime state only: it is never serialized, stale or
+    /// hidden/disabled widgets lose it automatically, and mouse focus in a text field adopts it.
+    [[nodiscard]] Scene::EntityUVE GetFocusedEntityUVE() const noexcept { return m_focusedEntity; }
+    void ClearFocusUVE() noexcept { m_focusedEntity = Scene::kInvalidEntityUVE; }
+
 private:
     UIFontAtlasUVE m_fontAtlas;
     UIDrawBatchUVE m_drawBatch;
+    Scene::EntityUVE m_focusedEntity = Scene::kInvalidEntityUVE;
+    Scene::EntityUVE m_dropdownKeyboardEntity = Scene::kInvalidEntityUVE;
+    std::int32_t m_dropdownKeyboardIndex = -1;
     UICoordinateTransformUVE m_coordinateTransform{};
     Math::Vector2UVE m_viewportSize{};
     float m_deltaTime = 0.0F;

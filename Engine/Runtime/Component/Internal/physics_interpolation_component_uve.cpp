@@ -6,17 +6,20 @@
 
 namespace UVE::Scene {
 
-bool IsPhysicsInterpolationComponentValidUVE(const PhysicsInterpolationComponentUVE&) noexcept {
-    // Plain values with no representable invalid state. The poses are copies of world transforms
-    // that were already validated when they were produced, so re-checking them here would report
-    // a fault against the wrong component.
-    return true;
+bool IsPhysicsInterpolationComponentValidUVE(const PhysicsInterpolationComponentUVE& component) noexcept {
+    // Only the authored setting is persisted. Runtime pose validation belongs at the read/write
+    // boundary and must not make serialization depend on transient cache contents.
+    return component.mode == PoseSmoothingUVE::Inherit || component.mode == PoseSmoothingUVE::Blended ||
+           component.mode == PoseSmoothingUVE::Exact;
 }
 
 bool TryGetInterpolatedPoseUVE(const PhysicsInterpolationComponentUVE& component, const float alpha,
                                Math::Vector3UVE& outPosition, Math::QuaternionUVE& outRotation,
                                Math::Vector3UVE& outScale) noexcept {
-    if (!component.interpolatedInHierarchy || !component.hasPreviousPose || !std::isfinite(alpha)) {
+    if (!IsPhysicsInterpolationComponentValidUVE(component) || !component.interpolatedInHierarchy ||
+        !component.hasPreviousPose || !std::isfinite(alpha) ||
+        !Math::IsFiniteUVE(component.previousPosition) || !Math::IsFiniteUVE(component.currentPosition) ||
+        !Math::IsFiniteUVE(component.previousScale) || !Math::IsFiniteUVE(component.currentScale)) {
         return false;
     }
     // Clamped, not rejected: a timer that overshoots after a long frame should keep drawing
@@ -31,8 +34,20 @@ bool TryGetInterpolatedPoseUVE(const PhysicsInterpolationComponentUVE& component
         return false;
     }
 
-    outPosition = component.previousPosition + (component.currentPosition - component.previousPosition) * blend;
-    outScale = component.previousScale + (component.currentScale - component.previousScale) * blend;
+    // Finite endpoints can still overflow a float subtraction (e.g. -FLT_MAX to +FLT_MAX).
+    // Double weighted sums keep the convex blend finite without changing stored scalar layouts.
+    const auto lerp = [blend](const Math::Vector3UVE& a, const Math::Vector3UVE& b) {
+        const double t = static_cast<double>(blend);
+        return Math::Vector3UVE{
+            static_cast<float>((1.0 - t) * a.x + t * b.x),
+            static_cast<float>((1.0 - t) * a.y + t * b.y),
+            static_cast<float>((1.0 - t) * a.z + t * b.z)};
+    };
+    const auto position = lerp(component.previousPosition, component.currentPosition);
+    const auto scale = lerp(component.previousScale, component.currentScale);
+    if (!Math::IsFiniteUVE(position) || !Math::IsFiniteUVE(scale)) return false;
+    outPosition = position;
+    outScale = scale;
     outRotation = rotation;
     return true;
 }

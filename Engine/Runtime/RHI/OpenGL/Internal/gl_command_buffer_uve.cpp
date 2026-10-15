@@ -47,26 +47,89 @@ namespace {
     return true;
 }
 
+[[nodiscard]] GLenum ToGlCompareUVE(const DepthCompareUVE compare) noexcept {
+    switch (compare) {
+        case DepthCompareUVE::Never: return GL_NEVER;
+        case DepthCompareUVE::Less: return GL_LESS;
+        case DepthCompareUVE::Equal: return GL_EQUAL;
+        case DepthCompareUVE::LessOrEqual: return GL_LEQUAL;
+        case DepthCompareUVE::Greater: return GL_GREATER;
+        case DepthCompareUVE::NotEqual: return GL_NOTEQUAL;
+        case DepthCompareUVE::GreaterOrEqual: return GL_GEQUAL;
+        case DepthCompareUVE::Always: return GL_ALWAYS;
+    }
+    return GL_ALWAYS;
+}
+
+[[nodiscard]] GLenum ToGlStencilOpUVE(const StencilOpUVE op) noexcept {
+    switch (op) {
+        case StencilOpUVE::Keep: return GL_KEEP;
+        case StencilOpUVE::Zero: return GL_ZERO;
+        case StencilOpUVE::Replace: return GL_REPLACE;
+        case StencilOpUVE::IncrementClamp: return GL_INCR;
+        case StencilOpUVE::DecrementClamp: return GL_DECR;
+        case StencilOpUVE::Invert: return GL_INVERT;
+        case StencilOpUVE::IncrementWrap: return GL_INCR_WRAP;
+        case StencilOpUVE::DecrementWrap: return GL_DECR_WRAP;
+    }
+    return GL_KEEP;
+}
+
+void ApplyStencilFaceUVE(const Detail::GlFunctionsUVE& gl, const GLenum face,
+                         const StencilFaceStateUVE& state) noexcept {
+    gl.glStencilFuncSeparate(face, ToGlCompareUVE(state.compare), static_cast<GLint>(state.reference),
+                          static_cast<GLuint>(state.compareMask));
+    gl.glStencilOpSeparate(face, ToGlStencilOpUVE(state.stencilFail), ToGlStencilOpUVE(state.depthFail),
+                        ToGlStencilOpUVE(state.depthPass));
+    gl.glStencilMaskSeparate(face, static_cast<GLuint>(state.writeMask));
+}
+
 [[nodiscard]] GLenum ToGlDrawModeUVE(PrimitiveTopologyUVE topology) noexcept {
     switch (topology) {
         case PrimitiveTopologyUVE::Triangles:
             return GL_TRIANGLES;
         case PrimitiveTopologyUVE::Lines:
             return GL_LINES;
+        case PrimitiveTopologyUVE::Points:
+            return GL_POINTS;
+        case PrimitiveTopologyUVE::LineStrip:
+            return GL_LINE_STRIP;
+        case PrimitiveTopologyUVE::TriangleStrip:
+            return GL_TRIANGLE_STRIP;
     }
     return GL_TRIANGLES;
 }
 
-[[nodiscard]] GLint VertexAttributeComponentCountUVE(VertexAttributeFormatUVE format) noexcept {
+/// The glVertexAttrib(I)Pointer arguments for one RHI attribute format.
+struct GlVertexAttributeFetchUVE final {
+    GLint componentCount = 3;
+    GLenum type = GL_FLOAT;
+    GLboolean normalized = GL_FALSE;
+    bool integer = false; ///< glVertexAttribIPointer instead of glVertexAttribPointer
+};
+
+[[nodiscard]] GlVertexAttributeFetchUVE VertexAttributeFetchUVE(VertexAttributeFormatUVE format) noexcept {
     switch (format) {
         case VertexAttributeFormatUVE::Float2:
-            return 2;
+            return {2, GL_FLOAT, GL_FALSE, false};
         case VertexAttributeFormatUVE::Float3:
-            return 3;
+            return {3, GL_FLOAT, GL_FALSE, false};
         case VertexAttributeFormatUVE::Float4:
-            return 4;
+            return {4, GL_FLOAT, GL_FALSE, false};
+        case VertexAttributeFormatUVE::UByte4Norm:
+            return {4, GL_UNSIGNED_BYTE, GL_TRUE, false};
+        case VertexAttributeFormatUVE::UShort4:
+            return {4, GL_UNSIGNED_SHORT, GL_FALSE, true};
+        case VertexAttributeFormatUVE::UInt4:
+            return {4, GL_UNSIGNED_INT, GL_FALSE, true};
+        case VertexAttributeFormatUVE::Short2Norm:
+            return {2, GL_SHORT, GL_TRUE, false};
+        case VertexAttributeFormatUVE::Half2:
+            return {2, GL_HALF_FLOAT, GL_FALSE, false};
+        case VertexAttributeFormatUVE::Half4:
+            return {4, GL_HALF_FLOAT, GL_FALSE, false};
     }
-    return 3;
+    return {};
 }
 
 [[nodiscard]] bool IsFiniteVector3UVE(const Math::Vector3UVE& value) noexcept {
@@ -124,6 +187,7 @@ namespace {
 GlCommandBufferUVE::GlCommandBufferUVE(Detail::GlDeviceStateUVE& state) : m_state(&state) {}
 
 void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassDesc) {
+    ++m_passEpoch;
     if (!RequireOutsideRenderPassUVE(m_insideRenderPass)) {
         return;
     }
@@ -177,6 +241,18 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
         }
         m_state->gl.glBindFramebuffer(GL_FRAMEBUFFER, 0);
         m_tempFramebuffer = 0;
+#if !defined(__ANDROID__)
+        // A preceding depth-only FBO explicitly uses GL_NONE for both buffers. Explicitly route
+        // every default-framebuffer pass to the window back buffer; using the loaded entry also
+        // avoids relying on the driver's legacy glDrawBuffer dispatch after an FBO transition.
+        const GLenum defaultDrawBuffer = GL_BACK;
+        if (m_state->gl.glDrawBuffers != nullptr) {
+            m_state->gl.glDrawBuffers(1, &defaultDrawBuffer);
+        } else {
+            glDrawBuffer(defaultDrawBuffer);
+        }
+        glReadBuffer(GL_BACK);
+#endif
         if (!ApplyViewportUVE(renderPassDesc, width, height)) {
             return;
         }
@@ -195,7 +271,7 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
             UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE referenced an unknown depthAttachment handle");
             return;
         }
-        if (colorIt != m_state->textures.end() && colorIt->second.desc.format == TextureFormatUVE::Depth32Float) {
+        if (colorIt != m_state->textures.end() && IsDepthFormatUVE(colorIt->second.desc.format)) {
             UVE_ERROR("GlCommandBufferUVE: colorAttachment must use a color texture format");
             return;
         }
@@ -204,8 +280,18 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
             UVE_ERROR("GlCommandBufferUVE: block-compressed textures are sampled-only and cannot be color attachments");
             return;
         }
-        if (depthIt != m_state->textures.end() && depthIt->second.desc.format != TextureFormatUVE::Depth32Float) {
-            UVE_ERROR("GlCommandBufferUVE: depthAttachment must use TextureFormatUVE::Depth32Float");
+        if (depthIt != m_state->textures.end() && !IsDepthFormatUVE(depthIt->second.desc.format)) {
+            UVE_ERROR("GlCommandBufferUVE: depthAttachment must use a depth texture format");
+            return;
+        }
+        // Usage set: a texture created without RenderTarget (a sampled-only asset, a volume)
+        // is refused here, before any FBO state changes, instead of failing completeness later.
+        if ((colorIt != m_state->textures.end() &&
+             !HasTextureUsageUVE(GetEffectiveTextureUsageUVE(colorIt->second.desc), TextureUsageUVE::RenderTarget)) ||
+            (depthIt != m_state->textures.end() &&
+             !HasTextureUsageUVE(GetEffectiveTextureUsageUVE(depthIt->second.desc), TextureUsageUVE::RenderTarget))) {
+            UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE attachment was created without "
+                      "TextureUsageUVE::RenderTarget");
             return;
         }
         // Tier 2.4: extras need location 0 (a pass with extras but no colorAttachment is
@@ -273,10 +359,16 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
                               "color attachment handle");
                     return;
                 }
-                if (extraIt->second.desc.format == TextureFormatUVE::Depth32Float ||
+                if (IsDepthFormatUVE(extraIt->second.desc.format) ||
                     IsTextureFormatCompressedUVE(extraIt->second.desc.format)) {
                     UVE_ERROR("GlCommandBufferUVE: extra color attachments must use a color texture "
                               "format (block-compressed textures are sampled-only)");
+                    return;
+                }
+                if (!HasTextureUsageUVE(GetEffectiveTextureUsageUVE(extraIt->second.desc),
+                                        TextureUsageUVE::RenderTarget)) {
+                    UVE_ERROR("GlCommandBufferUVE: extra color attachment was created without "
+                              "TextureUsageUVE::RenderTarget");
                     return;
                 }
                 if (extraIt->second.desc.width != colorIt->second.desc.width ||
@@ -427,6 +519,9 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
 #endif
             }
             if (depthIt != m_state->textures.end()) {
+                const GLenum depthAttachmentPoint =
+                    IsDepthStencilFormatUVE(depthIt->second.desc.format) ? GL_DEPTH_STENCIL_ATTACHMENT
+                                                                          : GL_DEPTH_ATTACHMENT;
                 const bool depthIsLayered =
                     depthIt->second.desc.type != TextureTypeUVE::Texture2D;
                 if (depthIsLayered && m_state->gl.glFramebufferTextureLayer == nullptr) {
@@ -434,10 +529,10 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
                               "glFramebufferTextureLayer (GL 3.2+)");
                 } else if (depthIsLayered) {
                     m_state->gl.glFramebufferTextureLayer(
-                        GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthIt->second.glTexture, 0,
+                        GL_FRAMEBUFFER, depthAttachmentPoint, depthIt->second.glTexture, 0,
                         static_cast<GLint>(renderPassDesc.depthLayer));
                 } else {
-                    m_state->gl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                    m_state->gl.glFramebufferTexture2D(GL_FRAMEBUFFER, depthAttachmentPoint,
                                                        GL_TEXTURE_2D, depthIt->second.glTexture, 0);
                 }
             }
@@ -481,7 +576,11 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
         }
         if (renderPassDesc.depthStoreOp == StoreOpUVE::DontCare &&
             depthIt != m_state->textures.end()) {
+            // Invalidation takes individual aspects, not the combined FBO attachment token.
             m_passDiscardAttachments[m_passDiscardCount++] = GL_DEPTH_ATTACHMENT;
+            if (IsDepthStencilFormatUVE(depthIt->second.desc.format)) {
+                m_passDiscardAttachments[m_passDiscardCount++] = GL_STENCIL_ATTACHMENT;
+            }
         }
         m_tempFramebuffer = framebuffer;
     }
@@ -518,6 +617,13 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
         glClearDepth(static_cast<GLdouble>(renderPassDesc.clearDepth));
 #endif
         clearMask |= GL_DEPTH_BUFFER_BIT;
+        const auto clearDepthIt = m_state->textures.find(renderPassDesc.depthAttachment.value);
+        if (clearDepthIt != m_state->textures.end() &&
+            IsDepthStencilFormatUVE(clearDepthIt->second.desc.format)) {
+            glStencilMask(0xFFU);
+            glClearStencil(static_cast<GLint>(renderPassDesc.clearStencil & 0xFFU));
+            clearMask |= GL_STENCIL_BUFFER_BIT;
+        }
     }
     if (clearMask != 0) {
         glClear(clearMask);
@@ -527,6 +633,18 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
 }
 
 void GlCommandBufferUVE::EndRenderPassUVE() {
+    ++m_passEpoch;
+    if (m_activeQuery != 0U && m_state != nullptr && m_state->activeOcclusion == m_activeQuery) {
+        // A bracket may not span the pass boundary: close it loudly so the GL query object is
+        // left in a valid state; the caller's late EndQueryUVE reports InvalidState.
+        UVE_ERROR("GlCommandBufferUVE: EndRenderPassUVE closed an occlusion query that was still open");
+        m_state->gl.glEndQuery(GL_ANY_SAMPLES_PASSED);
+        const auto found = m_state->queries.find(m_activeQuery);
+        if (found != m_state->queries.end())
+            found->second.issued = true;
+        m_state->activeOcclusion = 0U;
+        m_activeQuery = 0U;
+    }
     if (!RequireInsideRenderPassUVE(m_insideRenderPass, "EndRenderPassUVE")) {
         return;
     }
@@ -633,6 +751,16 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
             break;
     }
+#if !defined(__ANDROID__)
+    // Points take their size from the vertex shader's gl_PointSize, which desktop GL ignores
+    // unless program point size is enabled (GLES always honours it). Toggled per pipeline so a
+    // Points pipeline never leaks the mode into the next triangle pipeline's state.
+    if (pipelineIt->second.topology == PrimitiveTopologyUVE::Points) {
+        glEnable(GL_PROGRAM_POINT_SIZE);
+    } else {
+        glDisable(GL_PROGRAM_POINT_SIZE);
+    }
+#endif
     if (pipelineIt->second.depthBiasEnabled) {
         glEnable(GL_POLYGON_OFFSET_FILL);
         // NOTE the argument order: glPolygonOffset takes (slopeFactor, constantUnits).
@@ -649,6 +777,14 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
         case DepthCompareUVE::NotEqual:       glDepthFunc(GL_NOTEQUAL); break;
         case DepthCompareUVE::GreaterOrEqual: glDepthFunc(GL_GEQUAL);  break;
         case DepthCompareUVE::Always:         glDepthFunc(GL_ALWAYS);  break;
+    }
+    if (pipelineIt->second.stencil.enabled) {
+        glEnable(GL_STENCIL_TEST);
+        ApplyStencilFaceUVE(m_state->gl, GL_FRONT, pipelineIt->second.stencil.front);
+        ApplyStencilFaceUVE(m_state->gl, GL_BACK, pipelineIt->second.stencil.back);
+    } else {
+        glDisable(GL_STENCIL_TEST);
+        glStencilMask(0U);
     }
 }
 
@@ -685,10 +821,17 @@ void GlCommandBufferUVE::BindVertexBufferUVE(BufferHandleUVE buffer, std::uint32
     for (std::size_t index = 0; index < pipelineRecord->vertexLayout.size(); ++index) {
         const VertexAttributeUVE& attribute = pipelineRecord->vertexLayout[index];
         const auto attributeIndex = static_cast<GLuint>(index);
-        m_state->gl.glVertexAttribPointer(
-            attributeIndex, VertexAttributeComponentCountUVE(attribute.format), GL_FLOAT, GL_FALSE,
-            static_cast<GLsizei>(m_currentVertexStride),
-            reinterpret_cast<const void*>(static_cast<std::uintptr_t>(attribute.offset)));
+        const GlVertexAttributeFetchUVE fetch = VertexAttributeFetchUVE(attribute.format);
+        const auto* const pointer = reinterpret_cast<const void*>(static_cast<std::uintptr_t>(attribute.offset));
+        if (fetch.integer) {
+            // Pipeline creation refused integer layouts when this entry point is absent.
+            UVE_ASSERT(m_state->gl.glVertexAttribIPointer != nullptr);
+            m_state->gl.glVertexAttribIPointer(attributeIndex, fetch.componentCount, fetch.type,
+                                               static_cast<GLsizei>(m_currentVertexStride), pointer);
+        } else {
+            m_state->gl.glVertexAttribPointer(attributeIndex, fetch.componentCount, fetch.type, fetch.normalized,
+                                              static_cast<GLsizei>(m_currentVertexStride), pointer);
+        }
         m_state->gl.glEnableVertexAttribArray(attributeIndex);
     }
     m_boundVertexBuffer = buffer;
@@ -738,6 +881,12 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
         UVE_ERROR("GlCommandBufferUVE: BindTextureUVE referenced an unknown texture handle");
         return;
     }
+    const TextureUsageUVE textureUsage = GetEffectiveTextureUsageUVE(textureIt->second.desc);
+    if (!HasTextureUsageUVE(textureUsage, TextureUsageUVE::Sampled)) {
+        UVE_ERROR("GlCommandBufferUVE: BindTextureUVE texture was created without TextureUsageUVE::Sampled; "
+                  "the slot keeps its previous binding");
+        return;
+    }
     const auto boundTextureIt = m_boundTextures.find(slot);
     const bool alreadyBoundToSlot =
         boundTextureIt != m_boundTextures.end() && boundTextureIt->second == texture;
@@ -749,6 +898,8 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
                                       ? GL_TEXTURE_CUBE_MAP
                                   : textureIt->second.desc.type == TextureTypeUVE::Texture2DArray
                                       ? GL_TEXTURE_2D_ARRAY
+                                  : textureIt->second.desc.type == TextureTypeUVE::Texture3D
+                                      ? GL_TEXTURE_3D
                                       : GL_TEXTURE_2D;
         glBindTexture(bindTarget, textureIt->second.glTexture);
         m_boundTextures[slot] = texture;
@@ -784,7 +935,29 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
                     case TextureFormatUVE::RGBA16Float:
                         imageFormat = GL_RGBA16F;
                         break;
+                    case TextureFormatUVE::R8Unorm:
+                        imageFormat = GL_R8;
+                        break;
+                    case TextureFormatUVE::RG8Unorm:
+                        imageFormat = GL_RG8;
+                        break;
+                    case TextureFormatUVE::R16Float:
+                        imageFormat = GL_R16F;
+                        break;
+                    case TextureFormatUVE::RG16Float:
+                        imageFormat = GL_RG16F;
+                        break;
+                    case TextureFormatUVE::R32Float:
+                        imageFormat = GL_R32F;
+                        break;
+                    case TextureFormatUVE::RG32Float:
+                        imageFormat = GL_RG32F;
+                        break;
+                    case TextureFormatUVE::RGBA32Float:
+                        imageFormat = GL_RGBA32F;
+                        break;
                     case TextureFormatUVE::Depth32Float:
+                    case TextureFormatUVE::Depth24Stencil8:
                     case TextureFormatUVE::BC1RGB:
                     case TextureFormatUVE::BC3RGBA:
                     case TextureFormatUVE::BC7RGBA:
@@ -796,14 +969,18 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
                 }
                 // Tier 2.3: layered storage images are out of scope — arrays/cubes stay
                 // sampler-only, matching the Vulkan backend's black-sink fallback.
-                if (imageFormat != 0 && textureIt->second.desc.arrayLayers <= 1U) {
+                const bool storageAllowed = HasTextureUsageUVE(textureUsage, TextureUsageUVE::Storage);
+                if (imageFormat != 0 && textureIt->second.desc.arrayLayers <= 1U && storageAllowed) {
                     m_state->gl.glBindImageTexture(slot, textureIt->second.glTexture, 0, GL_FALSE,
                                                    0, GL_READ_WRITE, imageFormat);
                 } else {
                     // Do not leave a prior command's image binding live when the new sampled
                     // texture cannot legally serve as a storage image.
                     m_state->gl.glBindImageTexture(slot, 0U, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8);
-                    if (textureIt->second.desc.arrayLayers > 1U) {
+                    if (!storageAllowed) {
+                        UVE_ERROR("GlCommandBufferUVE: texture was created without TextureUsageUVE::Storage; "
+                                  "the image unit is left unbound");
+                    } else if (textureIt->second.desc.arrayLayers > 1U) {
                         UVE_ERROR("GlCommandBufferUVE: array/cubemap textures cannot be bound as "
                                   "storage images in Tier 2.3; the image unit is left unbound");
                     } else if (IsTextureFormatCompressedUVE(textureIt->second.desc.format)) {
@@ -1180,4 +1357,105 @@ void GlCommandBufferUVE::DispatchUVE(std::uint32_t groupCountX, std::uint32_t gr
     UVE_GL_CHECK_ERROR_UVE("DispatchUVE");
 }
 
+} // namespace UVE::Render
+
+namespace UVE::Render {
+RenderFeatureSupportUVE GlCommandBufferUVE::GetMemoryBarrierSupportUVE() const noexcept {
+#if defined(__ANDROID__)
+    return RenderFeatureSupportUVE::Unsupported;
+#else
+    return m_state->supportsComputeShadersUVE && m_state->gl.glMemoryBarrier
+        ? RenderFeatureSupportUVE::Native : RenderFeatureSupportUVE::Unsupported;
+#endif
+}
+RenderOperationResultUVE GlCommandBufferUVE::MemoryBarrierUVE(MemoryBarrierMaskUVE mask) {
+    if (!IsMemoryBarrierMaskValidUVE(mask))
+        return RenderOperationResultUVE::InvalidArgument;
+    if (m_insideRenderPass)
+        return RenderOperationResultUVE::InvalidState;
+#if defined(__ANDROID__)
+    return RenderOperationResultUVE::Unsupported;
+#else
+    if (!m_state->supportsComputeShadersUVE || !m_state->gl.glMemoryBarrier)
+        return RenderOperationResultUVE::Unsupported;
+    const auto bits = static_cast<std::uint32_t>(mask);
+    GLbitfield native = 0U;
+    if ((bits & 1U) != 0U)
+        native |= GL_SHADER_STORAGE_BARRIER_BIT;
+    if ((bits & 2U) != 0U)
+        native |= GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT;
+    if ((bits & 4U) != 0U)
+        native |= GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_ELEMENT_ARRAY_BARRIER_BIT | GL_UNIFORM_BARRIER_BIT;
+    if ((bits & 8U) != 0U)
+        native |= GL_COMMAND_BARRIER_BIT;
+    if ((bits & 16U) != 0U)
+        native |= GL_BUFFER_UPDATE_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT;
+    if ((bits & 32U) != 0U)
+        native |= GL_FRAMEBUFFER_BARRIER_BIT;
+    m_state->gl.glMemoryBarrier(native);
+    return glGetError() == GL_NO_ERROR ? RenderOperationResultUVE::Success
+                                       : RenderOperationResultUVE::SystemError;
+#endif
+}
+} // namespace UVE::Render
+
+namespace UVE::Render {
+RenderOperationResultUVE GlCommandBufferUVE::BeginQueryUVE(const QueryHandleUVE query) {
+    if (m_state == nullptr)
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto& state = *m_state;
+    if (state.gl.glBeginQuery == nullptr || state.gl.glEndQuery == nullptr)
+        return RenderOperationResultUVE::Unsupported;
+    const auto found = state.queries.find(query.value);
+    if (found == state.queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (found->second.kind != RenderQueryKindUVE::AnySamplesPassed)
+        return RenderOperationResultUVE::InvalidArgument;
+    if (state.activeOcclusion != 0U || m_activeQuery != 0U)
+        return RenderOperationResultUVE::InvalidState;
+    state.gl.glBeginQuery(GL_ANY_SAMPLES_PASSED, found->second.native);
+    state.activeOcclusion = query.value;
+    found->second.issued = false;
+    m_activeQuery = query.value;
+    m_activeQueryPassEpoch = m_passEpoch;
+    return RenderOperationResultUVE::Recorded;
+}
+
+RenderOperationResultUVE GlCommandBufferUVE::EndQueryUVE(const QueryHandleUVE query) {
+    if (m_state == nullptr)
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto& state = *m_state;
+    const auto found = state.queries.find(query.value);
+    if (found == state.queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (m_activeQuery != query.value || state.activeOcclusion != query.value)
+        return RenderOperationResultUVE::InvalidState;
+    if (m_activeQueryPassEpoch != m_passEpoch)
+        return RenderOperationResultUVE::InvalidState;
+    state.gl.glEndQuery(GL_ANY_SAMPLES_PASSED);
+    state.activeOcclusion = 0U;
+    m_activeQuery = 0U;
+    found->second.issued = true;
+    return RenderOperationResultUVE::Recorded;
+}
+
+RenderOperationResultUVE GlCommandBufferUVE::WriteTimestampUVE(const QueryHandleUVE query) {
+    if (m_state == nullptr)
+        return RenderOperationResultUVE::DeviceUnavailable;
+    auto& state = *m_state;
+    const auto found = state.queries.find(query.value);
+    if (found == state.queries.end())
+        return RenderOperationResultUVE::InvalidHandle;
+    if (found->second.kind != RenderQueryKindUVE::Timestamp)
+        return RenderOperationResultUVE::InvalidArgument;
+#if defined(__ANDROID__)
+    return RenderOperationResultUVE::Unsupported;
+#else
+    if (state.gl.glQueryCounter == nullptr)
+        return RenderOperationResultUVE::Unsupported;
+    state.gl.glQueryCounter(found->second.native, GL_TIMESTAMP);
+    found->second.issued = true;
+    return RenderOperationResultUVE::Recorded;
+#endif
+}
 } // namespace UVE::Render

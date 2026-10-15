@@ -153,9 +153,10 @@ TEST_F(AudioSourceSystemUVETest, MovingEntity_UpdatesPushedPositionAndGain) {
     audioSourceSystem.SyncUVE(entityManager, audioSystem);
     audioSystem.UpdateUVE();
 
-    Scene::WorldTransformComponentUVE& worldTransform =
-        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
-    worldTransform.worldPosition = Math::Vector3UVE{5.0F, 0.0F, 0.0F};
+    auto local = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+    local.localPosition = Math::Vector3UVE{5.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, entity, local);
+    sceneGraph.UpdateUVE(entityManager);
 
     device.ClearRecordedCallsUVE();
     audioSourceSystem.SyncUVE(entityManager, audioSystem);

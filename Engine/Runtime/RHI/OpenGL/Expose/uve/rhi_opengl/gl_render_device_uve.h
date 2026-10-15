@@ -31,6 +31,26 @@ public:
     /// context windowManager owns is still valid.
     explicit GlRenderDeviceUVE(Window::IWindowManagerUVE& windowManager);
     ~GlRenderDeviceUVE() override;
+    [[nodiscard]] RenderDeviceCapabilitiesUVE GetCapabilitiesUVE() const noexcept override;
+    [[nodiscard]] RenderOperationResultUVE GetTextureDescUVE(TextureHandleUVE,
+                                                             TextureDescUVE &) const override;
+    [[nodiscard]] RenderOperationResultUVE GetBufferDescUVE(BufferHandleUVE,
+                                                            BufferDescUVE &) const override;
+    [[nodiscard]] RenderOperationResultUVE CopyBufferUVE(const BufferCopyDescUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE BlitTextureUVE(const TextureBlitDescUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE GenerateMipmapsUVE(TextureHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE InsertFenceUVE(FenceHandleUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE WaitFenceUVE(FenceHandleUVE, std::uint64_t) override;
+    [[nodiscard]] RenderOperationResultUVE DestroyFenceUVE(FenceHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE WaitIdleUVE() override;
+    [[nodiscard]] RenderOperationResultUVE CreateQueryUVE(RenderQueryKindUVE, QueryHandleUVE &) override;
+    [[nodiscard]] RenderOperationResultUVE BeginQueryUVE(QueryHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE EndQueryUVE(QueryHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE WriteTimestampUVE(QueryHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE GetQueryResultUVE(QueryHandleUVE, RenderQueryResultUVE &,
+                                                             bool = false) override;
+    [[nodiscard]] RenderOperationResultUVE DestroyQueryUVE(QueryHandleUVE) override;
+    [[nodiscard]] RenderOperationResultUVE GetSurfaceInfoUVE(RenderSurfaceInfoUVE &) const override;
 
     GlRenderDeviceUVE(const GlRenderDeviceUVE&) = delete;
     GlRenderDeviceUVE& operator=(const GlRenderDeviceUVE&) = delete;

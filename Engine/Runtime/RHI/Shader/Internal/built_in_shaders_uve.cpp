@@ -921,6 +921,33 @@ void main() {
 #endif
 )GLSLSRC";
 
+const std::string_view kOcclusionProxySource = R"GLSLSRC(#version 450 core
+
+// Occlusion proxy for Renderer3DUVE's GPU occlusion stage (Foundation WP3). The pipeline that owns
+// this shader is depth-tested (LessOrEqual), writes no depth, and blends additively; because the
+// fragment contributes exactly zero, the colour attachment is left untouched and the only
+// observable effect is the sample count inside the query bracket that surrounds the draw.
+
+#ifdef VERTEX_SHADER
+layout(location = 0) in vec3 aPosition;
+
+uniform mat4 uModel;
+uniform mat4 uViewProjection;
+
+void main() {
+    gl_Position = uViewProjection * uModel * vec4(aPosition, 1.0);
+}
+#endif
+
+#ifdef FRAGMENT_SHADER
+layout(location = 0) out vec4 fragColor;
+
+void main() {
+    fragColor = vec4(0.0);
+}
+#endif
+)GLSLSRC";
+
 const std::string_view kLitShadowed3DSource = R"GLSLSRC(#version 450 core
 
 #ifdef VERTEX_SHADER
@@ -1479,16 +1506,12 @@ void main() {
         lighting += directContribution;
     }
 
-    // Add the stable directional diffuse term as a safety contribution for legacy/direct RHI
-    // callers. It preserves the advanced BRDF when available and keeps shadowing visible when
-    // optional material uniforms collapse that path on OpenGL.
-    if (isnan(lighting.x) || isnan(lighting.y) || isnan(lighting.z) ||
-        isinf(lighting.x) || isinf(lighting.y) || isinf(lighting.z)) {
-        lighting = vec3(0.0);
-    }
+    // Direct RHI callers may leave optional BRDF uniforms at driver defaults. Keep their output
+    // deterministic and preserve the proven directional shadow contract instead of allowing an
+    // invalid optional BRDF intermediate to turn the complete fragment black on OpenGL drivers.
     vec3 fallbackDirection = SafeNormalizeUVE(-uLights[0].direction);
-    lighting += albedo * DirectionalShadowFactorUVE(normal, fallbackDirection);
-    FragColor = vec4(albedo * DirectionalShadowFactorUVE(normal, SafeNormalizeUVE(-uLights[0].direction)), surfaceOpacity);
+    vec3 fallbackLighting = albedo * DirectionalShadowFactorUVE(normal, fallbackDirection);
+    FragColor = vec4(fallbackLighting, surfaceOpacity);
 }
 #endif
 )GLSLSRC";
@@ -2601,6 +2624,34 @@ out vec3 vColor;
 void main() {
     vColor = aColor;
     gl_Position = uViewProjection * vec4(aPosition, 1.0);
+}
+#endif
+
+#ifdef FRAGMENT_SHADER
+in vec3 vColor;
+out vec4 FragColor;
+
+void main() {
+    FragColor = vec4(vColor, 1.0);
+}
+#endif
+)GLSLSRC";
+
+const std::string_view kDebugPointSource = R"GLSLSRC(#version 450 core
+
+#ifdef VERTEX_SHADER
+layout(location = 0) in vec3 aPosition;
+layout(location = 1) in vec3 aColor;
+
+uniform mat4 uViewProjection;
+uniform float uPointSize;
+
+out vec3 vColor;
+
+void main() {
+    vColor = aColor;
+    gl_Position = uViewProjection * vec4(aPosition, 1.0);
+    gl_PointSize = uPointSize;
 }
 #endif
 

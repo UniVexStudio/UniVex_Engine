@@ -66,16 +66,14 @@ struct PhysicsInterpolationComponentUVE final {
     Math::QuaternionUVE currentRotation{};
     Math::Vector3UVE currentScale{1.0F, 1.0F, 1.0F};
 
-    /// False until two poses have been recorded. Until then there is nothing to blend BETWEEN, and
-    /// blending from a default-constructed "previous" would fling a freshly spawned object in from
-    /// the origin on its first visible frame - a bug that only appears at spawn, which is exactly
-    /// when nobody is looking for it.
+    /// False until seeded, or after an explicit reset/disable. The first valid update seeds both
+    /// poses to the same authoritative value; later changed poses produce a useful pair. Never
+    /// blend from an uninitialized origin or across a teleport/reparent/disabled interval.
     bool hasPreviousPose = false;
 };
 
-/// Always true: every field is a plain value with no invalid state, and the poses are validated
-/// where they are produced rather than here. Present so the component has the same validate seam
-/// as every other one.
+/// Validates the authored mode. Runtime poses are not serialized and are checked when produced
+/// or sampled, so an invalid transient cache cannot silently publish a non-finite drawn pose.
 [[nodiscard]] bool IsPhysicsInterpolationComponentValidUVE(
     const PhysicsInterpolationComponentUVE& component) noexcept;
 

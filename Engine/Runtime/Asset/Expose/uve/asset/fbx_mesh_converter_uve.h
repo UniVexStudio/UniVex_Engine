@@ -6,11 +6,13 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 
 #include <vector>
 
 #include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/asset/gltf_skeleton_uve.h"
+#include "uve/asset/material_asset_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
 
 namespace UVE::Asset {
@@ -75,5 +77,35 @@ struct FbxSourceSummaryUVE final {
 /// empty or produce a non-finite pose are skipped; no bones, or bytes that do not parse, give none.
 [[nodiscard]] std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(std::span<const std::byte> source,
                                                                       std::size_t maximumBones);
+
+/// One FBX material: the engine's PBR material type plus the texture files it references.
+struct FbxMaterialUVE final {
+    std::string name;
+
+    /// Albedo, emission, metalness, roughness and transparency mapped from FBX's PBR values
+    /// (ufbx derives them from the classic properties when a material is not authored as PBR).
+    /// Texture GUID slots stay invalid on purpose: this reader never opens an external file and
+    /// never decodes an embedded payload (`ignore_embedded`), so turning a path into an asset
+    /// identity belongs to the import pipeline, not to a converter that must stay side-effect free.
+    MaterialAssetUVE material;
+
+    /// Authored references, taken from the texture element's relative filename. Empty when the
+    /// map is unconnected, disabled, or backed by a layered/procedural/shader texture.
+    std::string albedoTextureFile;
+    std::string normalTextureFile;
+    std::string emissiveTextureFile;
+    std::string ambientOcclusionTextureFile;
+
+    /// True when at least one connected map has no usable file reference: it is a layered/
+    /// procedural/shader texture, or a file texture the FBX itself does not name — which is also
+    /// why the matching filename field above is empty. `albedoClamped` records that a channel had
+    /// to be clamped into `MaterialAssetUVE`'s validated [0,1] range rather than hiding it.
+    bool hasNonFileTexture = false;
+    bool albedoClamped = false;
+};
+
+/// Reads every material in the file, in file order. `std::nullopt` when the bytes do not parse or
+/// exceed kMaximumFbxMeshSourceBytesUVE; an empty vector means the file has no materials at all.
+[[nodiscard]] std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsUVE(std::span<const std::byte> source);
 
 } // namespace UVE::Asset

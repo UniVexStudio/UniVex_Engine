@@ -14,10 +14,13 @@
 # cache, ShaderManagerUVE, built-in shaders) - none of that is RHI, it's the renderer built on
 # top of RHI, and stays future work.
 
+find_package(Threads REQUIRED)
 add_library(uve_rhi STATIC
     Internal/shader_data_type_uve.cpp
+    Internal/bind_group_uve.cpp
+    Internal/render_resource_lifetime_uve.cpp
 )
 target_include_directories(uve_rhi PUBLIC Expose)
-target_link_libraries(uve_rhi PUBLIC uve_math uve_logging)
+target_link_libraries(uve_rhi PUBLIC uve_math uve_logging PRIVATE Threads::Threads)
 target_compile_features(uve_rhi PUBLIC cxx_std_23)
 uve_set_warnings(uve_rhi)

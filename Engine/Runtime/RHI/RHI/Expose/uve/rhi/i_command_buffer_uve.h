@@ -4,11 +4,15 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/rhi/buffer_handle_uve.h"
+#include "uve/rhi/device_operations_uve.h"
 #include "uve/rhi/pipeline_handle_uve.h"
 #include "uve/rhi/render_resource_descs_uve.h"
 #include "uve/rhi/sampler_handle_uve.h"
@@ -35,6 +39,45 @@ namespace UVE::Render {
 class ICommandBufferUVE {
 public:
     virtual ~ICommandBufferUVE() = default;
+    /// Retained backends transfer these leases alongside commands and release them only after
+    /// completion/discard. Immediate/model backends release after submit/discard. Lease deletion
+    /// never performs native resource calls on a worker thread.
+    void RetainResourcesUVE(std::shared_ptr<void> resources) {
+        if (resources) m_retainedResources.push_back(std::move(resources));
+    }
+    [[nodiscard]] std::vector<std::shared_ptr<void>> TakeRetainedResourcesUVE() noexcept {
+        auto result = std::move(m_retainedResources);
+        m_retainedResources.clear();
+        return result;
+    }
+    [[nodiscard]] virtual RenderFeatureSupportUVE GetMemoryBarrierSupportUVE() const noexcept {
+        return RenderFeatureSupportUVE::Unsupported;
+    }
+    /// Visibility dependency outside render passes; no queue-family or image-layout ownership
+    /// transfer is implied. Unsupported adapters return explicitly without recording anything.
+    [[nodiscard]] virtual RenderOperationResultUVE MemoryBarrierUVE(MemoryBarrierMaskUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+
+    /// Recorded query brackets (Foundation WP3). Unlike the device-level
+    /// IRenderDeviceUVE::BeginQueryUVE/EndQueryUVE pair, these bracket the draws recorded
+    /// between them in THIS command buffer, which is the condition a Vulkan occlusion query
+    /// needs (vkCmdBeginQuery/vkCmdEndQuery around the caller's own draws in one command
+    /// buffer). Rules shared by every backend: the handle must come from CreateQueryUVE
+    /// (InvalidHandle), Begin/End take an AnySamplesPassed query and WriteTimestamp a Timestamp
+    /// query (InvalidArgument), brackets do not nest and must begin and end between the same
+    /// pass markers (InvalidState). Results are read with IRenderDeviceUVE::GetQueryResultUVE
+    /// after the buffer was submitted and the frame presented; NotReady until then. Backends
+    /// without the feature return Unsupported without recording anything.
+    [[nodiscard]] virtual RenderOperationResultUVE BeginQueryUVE(QueryHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE EndQueryUVE(QueryHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
+    [[nodiscard]] virtual RenderOperationResultUVE WriteTimestampUVE(QueryHandleUVE) {
+        return RenderOperationResultUVE::Unsupported;
+    }
 
     /// Begins a render pass targeting `renderPassDesc`'s attachments. Must not be called while
     /// already inside a render pass (no nested passes).
@@ -145,6 +188,8 @@ public:
     /// each backend inserts the barriers that guarantee it.
     virtual void DispatchUVE(std::uint32_t groupCountX, std::uint32_t groupCountY,
                              std::uint32_t groupCountZ) = 0;
+private:
+    std::vector<std::shared_ptr<void>> m_retainedResources;
 };
 
 } // namespace UVE::Render
