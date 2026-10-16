@@ -103,11 +103,17 @@
 #include "uve/component/animation_driver_component_uve.h"
 #include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/animation_sequencer_component_uve.h"
+#include "uve/component/camera_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/process_component_uve.h"
+#include "uve/objects/3d/abstract_animation_objects_3d_uve.h"
 #include "uve/objects/3d/animation_sequencer_uve.h"
+#include "uve/objects/3d/audio_listener_3d_uve.h"
+#include "uve/objects/3d/camera_3d_uve.h"
+#include "uve/objects/3d/csg_shape_3d_uve.h"
+#include "uve/objects/3d/grid_map_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/animation_graph_uve.h"
 #include "uve/objects/3d/decal_3d_events_uve.h"
@@ -117,17 +123,40 @@
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
 #include "uve/objects/3d/interaction_area_3d_uve.h"
+#include "uve/objects/3d/joint_3d_uve.h"
+#include "uve/objects/3d/label_3d_uve.h"
 #include "uve/objects/3d/health_uve.h"
+#include "uve/objects/3d/multi_mesh_instance_3d_uve.h"
+#include "uve/objects/3d/nav_obstacle_3d_uve.h"
+#include "uve/objects/3d/physical_bone_3d_uve.h"
 #include "uve/objects/3d/player_3d_uve.h"
 #include "uve/objects/3d/character_3d_uve.h"
 #include "uve/objects/3d/kinematic_3d_uve.h"
 #include "uve/objects/3d/level_streamer_3d_uve.h"
+#include "uve/objects/3d/particle_emitter_3d_uve.h"
+#include "uve/objects/3d/path_3d_uve.h"
+#include "uve/objects/3d/path_follow_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/reflection_probe_3d_uve.h"
+#include "uve/objects/3d/remote_transform_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
+#include "uve/objects/3d/shape_cast_3d_uve.h"
+#include "uve/objects/3d/soft_body_3d_uve.h"
+#include "uve/objects/3d/script_uve.h"
+#include "uve/objects/3d/smart_object_3d_uve.h"
 #include "uve/objects/3d/spring_arm_3d_uve.h"
+#include "uve/objects/3d/spring_bone_simulator_3d_uve.h"
+#include "uve/objects/3d/sprite_3d_uve.h"
+#include "uve/objects/3d/state_tree_3d_uve.h"
+#include "uve/objects/3d/vehicle_3d_uve.h"
 #include "uve/objects/3d/visibility_region_3d_uve.h"
+#include "uve/objects/3d/visible_on_screen_notifier_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
+#include "uve/objects/3d/gi_probes_3d_uve.h"
+#include "uve/objects/3d/xr_objects_3d_uve.h"
+#include "uve/objects/2d/all_objects_2d_uve.h"
+#include "uve/objects/canvas/ui_extended_containers_uve.h"
+#include "uve/objects/canvas/ui_extended_controls_uve.h"
 #include "uve/physics/detail/shape_narrow_phase_uve.h"
 #include "uve/physics/character_body_motion_uve.h"
 #include "uve/physics/character_controller_uve.h"
@@ -895,6 +924,58 @@ void EngineCoreUVE::Init() {
     // EngineCore-owned constraint registry before publishing the system through EngineServices.
     auto physicsSystem = std::make_unique<Physics::PhysicsSystemUVE>(*m_collisionSystem, m_config.gravity);
     physicsSystem->SetConstraintSystemUVE(m_physicsConstraintSystem.get());
+    const auto isSettingCustomizedUVE = [&settings](const std::string_view settingId) noexcept {
+        const auto resolved = settings.ResolveUVE(settingId);
+        return resolved.has_value() && resolved->source != Config::SettingValueSourceUVE::EngineDefault;
+    };
+    const auto syncPhysicsSimulationSettingsUVE =
+        [this](Physics::IPhysicsSystemUVE& targetPhysics, const bool forceApplyAll) noexcept {
+            const EngineConfigUVE defaultConfig{};
+            Physics::PhysicsSimulationSettingsUVE simSettings = targetPhysics.GetSimulationSettingsUVE();
+            if (forceApplyAll || m_config.defaultLinearDampingUVE != defaultConfig.defaultLinearDampingUVE ||
+                m_projectSettings.IsModifiedUVE("physics.common.defaultLinearDamping")) {
+                simSettings.defaultLinearDamping =
+                    static_cast<float>(std::max(0.0, m_config.defaultLinearDampingUVE));
+            }
+            if (forceApplyAll || m_config.defaultAngularDampingUVE != defaultConfig.defaultAngularDampingUVE ||
+                m_projectSettings.IsModifiedUVE("physics.common.defaultAngularDamping")) {
+                simSettings.defaultAngularDamping =
+                    static_cast<float>(std::max(0.0, m_config.defaultAngularDampingUVE));
+            }
+            if (forceApplyAll || m_config.sleepThresholdUVE != defaultConfig.sleepThresholdUVE ||
+                m_projectSettings.IsModifiedUVE("physics.common.sleepThreshold") ||
+                m_projectSettings.IsModifiedUVE("physics.common.allowSleepingDefault")) {
+                simSettings.sleepThreshold = static_cast<float>(std::max(0.0, m_config.sleepThresholdUVE));
+                simSettings.allowSleeping = m_config.allowSleepingDefaultUVE;
+            }
+            if (forceApplyAll || m_config.physicsPositionIterationsUVE != defaultConfig.physicsPositionIterationsUVE ||
+                m_projectSettings.IsModifiedUVE("physics.solver.positionIterations")) {
+                simSettings.solverIterations =
+                    static_cast<std::size_t>(std::max<std::int64_t>(1, m_config.physicsPositionIterationsUVE));
+            }
+            if (forceApplyAll || m_config.physicsPenetrationSlopUVE != defaultConfig.physicsPenetrationSlopUVE ||
+                m_projectSettings.IsModifiedUVE("physics.contacts.penetrationSlop")) {
+                simSettings.penetrationSlop =
+                    static_cast<float>(std::max(0.0, m_config.physicsPenetrationSlopUVE));
+            }
+            if (forceApplyAll ||
+                m_config.physicsMaxDepenetrationVelocityUVE != defaultConfig.physicsMaxDepenetrationVelocityUVE ||
+                m_projectSettings.IsModifiedUVE("physics.contacts.maxDepenetrationVelocity")) {
+                simSettings.maxDepenetrationVelocity =
+                    static_cast<float>(std::max(0.0, m_config.physicsMaxDepenetrationVelocityUVE));
+            }
+            targetPhysics.SetGravityUVE(m_config.gravity);
+            targetPhysics.SetSimulationSettingsUVE(simSettings);
+        };
+    const bool anyPhysicsSettingCustomized =
+        isSettingCustomizedUVE("physics.common.defaultLinearDamping") ||
+        isSettingCustomizedUVE("physics.common.defaultAngularDamping") ||
+        isSettingCustomizedUVE("physics.common.sleepThreshold") ||
+        isSettingCustomizedUVE("physics.common.allowSleepingDefault") ||
+        isSettingCustomizedUVE("physics.solver.positionIterations") ||
+        isSettingCustomizedUVE("physics.contacts.penetrationSlop") ||
+        isSettingCustomizedUVE("physics.contacts.maxDepenetrationVelocity");
+    syncPhysicsSimulationSettingsUVE(*physicsSystem, anyPhysicsSettingCustomized);
     m_physicsSystem = std::move(physicsSystem);
 
     // PhysicsQuerySystem twenty-eighth: stateless façade over existing shape-cast, overlap, and
@@ -912,6 +993,11 @@ void EngineCoreUVE::Init() {
     // NavigationRuntime: owns the baked navmesh per region entity and one steering state per agent
     // entity. Nothing else in the engine keeps a navmesh, so a rebuild is this object's business.
     m_navigationRuntime = std::make_unique<Navigation::NavigationRuntimeUVE>();
+    {
+        Navigation::NavigationRuntimeConfigUVE navRuntimeConfig{};
+        navRuntimeConfig.globalAvoidanceEnabled = m_config.navAvoidanceEnabledUVE;
+        m_navigationRuntime->SetRuntimeConfigUVE(navRuntimeConfig);
+    }
 
     // GamepadInputSystem thirtieth: owns only bounded injectable current/previous snapshots.
     m_gamepadInputSystem = std::make_unique<Input::GamepadInputSystemUVE>();
@@ -948,12 +1034,86 @@ void EngineCoreUVE::Init() {
 
     // AudioSystem thirtieth: needs AudioDevice (it pushes computed gain/position through it).
     m_audioSystem = std::make_unique<Audio::AudioSystemUVE>(*m_audioDevice);
+    const auto syncAudioBusVolumeUVE = [this](const std::string_view busName, const double volume,
+                                              const bool configured) noexcept {
+        if (!configured || m_audioSystem == nullptr) {
+            return;
+        }
+        const float clampedVolume = static_cast<float>(std::clamp(volume, 0.0, 2.0));
+        if (!m_audioSystem->SetMixerGroupVolumeUVE(busName, clampedVolume)) {
+            static_cast<void>(m_audioSystem->RegisterMixerGroupUVE(busName, clampedVolume, 1.0F));
+        }
+    };
+    {
+        const EngineConfigUVE defaultConfig{};
+        syncAudioBusVolumeUVE("Master", m_config.audioMasterVolumeUVE,
+                              m_config.audioMasterVolumeUVE != defaultConfig.audioMasterVolumeUVE ||
+                                  isSettingCustomizedUVE("audio.buses.masterVolume"));
+        syncAudioBusVolumeUVE("Music", m_config.audioMusicVolumeUVE,
+                              m_config.audioMusicVolumeUVE != defaultConfig.audioMusicVolumeUVE ||
+                                  isSettingCustomizedUVE("audio.buses.musicVolume"));
+        syncAudioBusVolumeUVE("SFX", m_config.audioSfxVolumeUVE,
+                              m_config.audioSfxVolumeUVE != defaultConfig.audioSfxVolumeUVE ||
+                                  isSettingCustomizedUVE("audio.buses.sfxVolume"));
+        syncAudioBusVolumeUVE("Voice", m_config.audioVoiceVolumeUVE,
+                              m_config.audioVoiceVolumeUVE != defaultConfig.audioVoiceVolumeUVE ||
+                                  isSettingCustomizedUVE("audio.buses.voiceVolume"));
+    }
 
     // AudioSourceSystem thirty-first: stateful but takes no constructor dependencies —
     // EntityManager and AudioSystem are passed to SyncUVE() per call, like
     // MeshRendererUVE::ExtractRenderQueueUVE().
     m_audioSourceSystem = std::make_unique<Audio::AudioSourceSystemUVE>();
 
+    // Subscribe live project settings observers so runtime edits to Physics, Audio, and Navigation
+    // in m_projectSettings immediately propagate into the active subsystems.
+    m_projectSettingsSubscriptions.clear();
+    if (const auto sub = m_projectSettings.SubscribeToCategoryUVE(
+            "Physics",
+            [this, syncPhysicsSimulationSettingsUVE](const Config::SettingChangedEventUVE& event) {
+                ApplyEngineProjectSettingsUVE(m_projectSettings, m_config);
+                if (m_physicsSystem != nullptr) {
+                    syncPhysicsSimulationSettingsUVE(*m_physicsSystem, true);
+                }
+                if (m_timer != nullptr && event.id == EngineProjectSettingIdUVE::kPhysicsTicksPerSecondUVE) {
+                    m_timer->SetFixedTimestepUVE(
+                        m_config.fixedUpdateFps > 0.0 ? (1.0 / m_config.fixedUpdateFps) : 0.0);
+                }
+            });
+        sub.IsValidUVE()) {
+        m_projectSettingsSubscriptions.push_back(sub);
+    }
+    if (const auto sub = m_projectSettings.SubscribeToCategoryUVE(
+            "Audio",
+            [this, syncAudioBusVolumeUVE](const Config::SettingChangedEventUVE& event) {
+                ApplyEngineProjectSettingsUVE(m_projectSettings, m_config);
+                if (event.id == "audio.buses.masterVolume") {
+                    syncAudioBusVolumeUVE("Master", m_config.audioMasterVolumeUVE, true);
+                } else if (event.id == "audio.buses.musicVolume") {
+                    syncAudioBusVolumeUVE("Music", m_config.audioMusicVolumeUVE, true);
+                } else if (event.id == "audio.buses.sfxVolume") {
+                    syncAudioBusVolumeUVE("SFX", m_config.audioSfxVolumeUVE, true);
+                } else if (event.id == "audio.buses.voiceVolume") {
+                    syncAudioBusVolumeUVE("Voice", m_config.audioVoiceVolumeUVE, true);
+                }
+            });
+        sub.IsValidUVE()) {
+        m_projectSettingsSubscriptions.push_back(sub);
+    }
+    if (const auto sub = m_projectSettings.SubscribeToCategoryUVE(
+            "Navigation",
+            [this](const Config::SettingChangedEventUVE&) {
+                ApplyEngineProjectSettingsUVE(m_projectSettings, m_config);
+                if (m_navigationRuntime != nullptr) {
+                    Navigation::NavigationRuntimeConfigUVE navRuntimeConfig =
+                        m_navigationRuntime->GetRuntimeConfigUVE();
+                    navRuntimeConfig.globalAvoidanceEnabled = m_config.navAvoidanceEnabledUVE;
+                    m_navigationRuntime->SetRuntimeConfigUVE(navRuntimeConfig);
+                }
+            });
+        sub.IsValidUVE()) {
+        m_projectSettingsSubscriptions.push_back(sub);
+    }
 
     // SaveGameSystem thirty-second: needs SceneSerializer (composed by reference) and
     // EngineConfigUVE::saveDirectoryPath.
@@ -1087,7 +1247,7 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
             }
             const bool ticking =
                 Scene::IsTickingUVE(ResolvedTickModeUVE(*m_sceneGraph, entity), simulationPaused);
-            if (!ticking || !component.emitting) {
+            if (!ticking || !Scene::ParticleEmitter3DUVE::IsEmittingUVE(component)) {
                 m_particleEmitRemainder.erase(entity);
                 continue;
             }
@@ -1115,8 +1275,8 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
                 continue;
             }
 
-            const std::uint32_t count = Scene::ConsumeParticleEmitterAutoEmitCountUVE(
-                m_particleEmitRemainder[entity], component, deltaSeconds, liveParticles);
+            const std::uint32_t count = Scene::ParticleEmitter3DUVE::AccumulateSpawnCountUVE(
+                component, deltaSeconds, m_particleEmitRemainder[entity], liveParticles);
             if (count == 0U) {
                 continue;
             }
@@ -1301,7 +1461,9 @@ void EngineCoreUVE::SyncUIRuntimeUVE() {
 
 namespace {
 
-[[nodiscard]] bool IsUVScriptPathUVE(const std::string_view path) noexcept { return path.ends_with(".uvs"); }
+[[nodiscard]] bool IsUVScriptPathUVE(const std::string_view path) noexcept {
+    return Scene::ScriptUVE::IsUVScriptPathUVE(path);
+}
 
 } // namespace
 
@@ -1312,7 +1474,7 @@ void EngineCoreUVE::SyncScriptRuntimeUVE() {
     SyncUVScriptsUVE(m_simulationExecutionMode == SimulationExecutionModeUVE::Paused);
 }
 
-void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
+void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
     // Edits are picked up by re-reading every script in use a few times a second: a script whose
     // text changed is dropped (and so recompiled and restarted below), and a failed one is retried.
     // The files are small and few, so this is cheaper than wiring every writer to a notification.
@@ -1348,9 +1510,8 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
                    entry.second.exportValues;
     });
 
-    std::vector<Scene::EntityUVE> order;
     m_entityManager->ForEachUVE<Scene::ScriptComponentUVE>(
-        [this, &order](const Scene::EntityUVE entity, const Scene::ScriptComponentUVE& component) {
+        [this](const Scene::EntityUVE entity, const Scene::ScriptComponentUVE& component) {
             if (!IsUVScriptPathUVE(component.scriptAssetPath)) {
                 // Object-graph scripts were removed; say so once per object rather than run nothing
                 // silently.
@@ -1363,7 +1524,6 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
                 }
                 return;
             }
-            order.push_back(entity);
             if (m_uvScripts.contains(entity)) {
                 return;
             }
@@ -1418,6 +1578,16 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
             slot.host = std::move(host);
             m_uvScripts.emplace(entity, std::move(slot));
         });
+}
+
+void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
+    ReconcileUVScriptInstancesUVE();
+
+    std::vector<Scene::EntityUVE> order;
+    order.reserve(m_uvScripts.size());
+    for (const auto& [entity, slot] : m_uvScripts) {
+        order.push_back(entity);
+    }
 
     std::ranges::stable_sort(order, [this](const Scene::EntityUVE a, const Scene::EntityUVE b) {
         return ProcessSettingsUVE(*m_entityManager, a).priority < ProcessSettingsUVE(*m_entityManager, b).priority;
@@ -1607,9 +1777,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
     std::vector<Scene::EntityUVE> posedSkeletons;
     // A player or tree loaded without its mixer (an older save) runs with the mixer's defaults.
     const auto mixerOf = [this](const Scene::EntityUVE entity) {
-        return m_entityManager->HasComponentUVE<Scene::AnimationDriverComponentUVE>(entity)
-                   ? m_entityManager->GetComponentUVE<Scene::AnimationDriverComponentUVE>(entity)
-                   : Scene::AnimationDriverComponentUVE{};
+        return Scene::ResolveAnimationDriverUVE(*m_entityManager, entity);
     };
     const Scene::AnimationProcessCallbackUVE callback =
         physicsStep ? Scene::AnimationProcessCallbackUVE::Physics : Scene::AnimationProcessCallbackUVE::Frame;
@@ -1641,7 +1809,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         Scene::AnimationSequencerComponentUVE& player =
             m_entityManager->GetComponentUVE<Scene::AnimationSequencerComponentUVE>(entity);
         const Scene::AnimationDriverComponentUVE mixer = mixerOf(entity);
-        if (!mixer.active || mixer.processCallback != callback) {
+        if (!Scene::IsAnimationDriverRunningOnClockUVE(mixer, callback)) {
             continue;
         }
         const Asset::AnimationClipAssetUVE* const clip = clipFor(player.clip);
@@ -1752,6 +1920,8 @@ void EngineCoreUVE::SyncBoneAttachment3DObjectsUVE() {
     // purpose - an attachment that could not resolve recorded why in its own runtime fields, which is
     // what the Inspector reads and what a test can pin.
     static_cast<void>(Scene::SyncBoneAttachment3DObjectsUVE(*m_entityManager, *m_sceneGraph));
+    static_cast<void>(Scene::UpdateSpringBoneSimulator3DObjectsUVE(
+        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
 }
 
 void EngineCoreUVE::SyncCameraFollowUVE() {
@@ -1760,6 +1930,21 @@ void EngineCoreUVE::SyncCameraFollowUVE() {
     // world transforms, so the follow reads the freshest target pose available and the camera's
     // own world transform is current for this frame's render.
     Scene::UpdateCameraFollowUVE(*m_entityManager);
+    static_cast<void>(Scene::UpdatePathFollow3DObjectsUVE(
+        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
+    static_cast<void>(Scene::UpdatePathFollow2DObjectsUVE(
+        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
+    static_cast<void>(Scene::UpdateSprite3DObjectsUVE(
+        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
+    static_cast<void>(Scene::UpdateAnimatedSprite2DObjectsUVE(
+        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
+    static_cast<void>(Scene::UpdateAudioAnimNavInput2DObjectsUVE(
+        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
+    static_cast<void>(Scene::UpdateXRObjects3DUVE(*m_entityManager));
+    static_cast<void>(Scene::UpdateUIExtendedObjectsUVE(
+        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
+    static_cast<void>(Scene::UpdateRemoteTransform3DObjectsUVE(*m_entityManager));
+    static_cast<void>(Scene::UpdateRemoteTransform2DObjectsUVE(*m_entityManager));
 }
 
 void EngineCoreUVE::SyncKinematic3DObjectsUVE(const float fixedDeltaTimeSeconds) {
@@ -1883,6 +2068,7 @@ void EngineCoreUVE::SyncRayCast3DObjectsUVE() {
         [this](const Scene::EntityUVE entity, Scene::RayCast3DComponentUVE&) {
             static_cast<void>(Physics::StepRayCast3DUVE(*m_entityManager, *m_raycastSystem, entity));
         });
+    static_cast<void>(Scene::UpdateShapeCast3DObjectsUVE(*m_entityManager));
 }
 
 void EngineCoreUVE::SyncSpringArm3DObjectsUVE(const float fixedDeltaTimeSeconds) {
@@ -1911,6 +2097,7 @@ void EngineCoreUVE::SyncNavigationUVE(const float fixedDeltaTimeSeconds) {
         CollectFixedStepOrderUVE<Scene::NavSeeker3DComponentUVE>(*m_entityManager, *m_sceneGraph);
     const Navigation::NavigationSyncReportUVE report =
         m_navigationRuntime->SyncUVE(*m_entityManager, *m_raycastSystem, agents, fixedDeltaTimeSeconds);
+    static_cast<void>(Scene::ApplyNavigationObstacles3DToAgentsUVE(*m_entityManager));
     // A bake is hundreds of rays, so it is worth a log line: a region that re-rasterizes every frame
     // (a moving volume, or a request nobody clears) is otherwise only visible as a frame-time cliff.
     if (report.bakes > 0U) {
@@ -1991,7 +2178,9 @@ void EngineCoreUVE::SyncPerceptionUVE(const float deltaSeconds) {
     }
 }
 
-void EngineCoreUVE::SyncAiBrainsUVE(const float) {
+void EngineCoreUVE::SyncAiBrainsUVE(const float deltaSeconds) {
+    static_cast<void>(Scene::UpdateSmartObjectAndWorldQuery3DUVE(*m_entityManager, deltaSeconds));
+    static_cast<void>(Scene::UpdateStateTree3DObjectsUVE(*m_entityManager, deltaSeconds));
     const Scene::BlackboardComponentUVE empty;
     for (const Scene::EntityUVE entity :
          CollectFixedStepOrderUVE<Scene::AiBrainComponentUVE>(*m_entityManager, *m_sceneGraph)) {
@@ -2319,22 +2508,9 @@ void EngineCoreUVE::SyncLevelStreamer3DObjectsUVE() {
             continue; // an invalid authoring piece never decides anything
         }
 
-        Scene::LevelStreamer3DStreamingFrameUVE frame;
-        frame.enabled = streamer.enabled;
-        frame.loaded = streamer.loaded;
-        frame.loadRequested = streamer.loadRequested;
-        frame.loadDistance = streamer.loadDistance;
-        frame.unloadDistance = streamer.unloadDistance;
-        if (const std::optional<float> nearest =
-                Scene::ResolveLevelStreamer3DNearestViewerDistanceSquaredUVE(
-                    snapshot.worldPosition, viewerPositions);
-            nearest.has_value()) {
-            frame.hasViewer = true;
-            frame.nearestViewerDistanceSquared = *nearest;
-        }
-
         const Scene::LevelStreamer3DActionUVE action =
-            Scene::ResolveLevelStreamer3DStreamingActionUVE(frame);
+            Scene::LevelStreamer3DUVE::EvaluateActionUVE(streamer, snapshot.worldPosition,
+                                                         viewerPositions);
         if (action == Scene::LevelStreamer3DActionUVE::RequestLoad) {
             if (m_levelStreamerLoadFailures.find(snapshot.entity) != m_levelStreamerLoadFailures.end()) {
                 continue; // latched earlier failure: fail-closed, never a retry storm
@@ -2996,10 +3172,21 @@ void EngineCoreUVE::Update() {
     }
     UVE_TRACE("Update: {} fixed step(s), alpha={}", fixedStep.stepsToRun, fixedStep.alpha);
     m_eventSystem->DispatchQueuedUVE();
+    ReconcileUVScriptInstancesUVE();
 
     const float fixedDeltaTimeSeconds =
         m_config.fixedUpdateFps > 0.0 ? static_cast<float>(1.0 / m_config.fixedUpdateFps) : 0.0F;
     for (int step = 0; step < fixedStep.stepsToRun; ++step) {
+        static_cast<void>(Scene::UpdateJoint3DObjectsUVE(
+            *m_entityManager, *m_sceneGraph, fixedDeltaTimeSeconds));
+        static_cast<void>(Scene::UpdateVehicle3DObjectsUVE(
+            *m_entityManager, fixedDeltaTimeSeconds));
+        static_cast<void>(Scene::UpdatePhysicalBone3DObjectsUVE(
+            *m_entityManager, m_config.gravity, fixedDeltaTimeSeconds));
+        static_cast<void>(Scene::UpdateSoftBody3DObjectsUVE(
+            *m_entityManager, m_config.gravity, fixedDeltaTimeSeconds));
+        static_cast<void>(Scene::UpdatePhysics2DObjectsUVE(
+            *m_entityManager, fixedDeltaTimeSeconds, m_config.gravity2DUVE));
         m_physicsSystem->StepUVE(*m_entityManager, *m_sceneGraph, fixedDeltaTimeSeconds);
         SyncKinematic3DObjectsUVE(fixedDeltaTimeSeconds);
         SyncCharacterControllersUVE(fixedDeltaTimeSeconds);
@@ -3054,6 +3241,21 @@ void EngineCoreUVE::Update() {
     SyncReflectionProbe3DObjectsUVE();
     SyncWorldPartition3DObjectsUVE();
     SyncVisibilityRegion3DObjectsUVE();
+    {
+        std::optional<Math::FrustumUVE> activeFrustum{};
+        if (m_activeCamera != Scene::kInvalidEntityUVE &&
+            m_entityManager->IsAliveUVE(m_activeCamera) &&
+            m_entityManager->HasComponentUVE<Scene::CameraComponentUVE>(m_activeCamera) &&
+            m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)) {
+            activeFrustum = Math::FrustumUVE::FromViewProjectionUVE(
+                Scene::Camera3DUVE::BuildViewProjectionMatrixUVE(
+                    m_entityManager->GetComponentUVE<Scene::CameraComponentUVE>(m_activeCamera),
+                    m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(
+                        m_activeCamera)));
+        }
+        static_cast<void>(Scene::UpdateVisibleOnScreenNotifier3DObjectsUVE(
+            *m_entityManager, activeFrustum.has_value() ? &(*activeFrustum) : nullptr));
+    }
     SyncScriptRuntimeUVE();
 
     if (m_config.hotReloadEnabledUVE) {
@@ -3126,13 +3328,11 @@ void EngineCoreUVE::LateUpdate() {
 
     PublishAreaOverlapLifecycleEventsUVE();
 
-    if (m_activeCamera != Scene::kInvalidEntityUVE) {
-        const auto& worldTransform =
-            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera);
-        m_audioSystem->SetListenerPositionUVE(worldTransform.worldPosition);
-        m_audioSystem->SetListenerOrientationUVE(
-            Math::RotateVectorUVE(worldTransform.worldRotation, Math::Vector3UVE{0.0F, 0.0F, -1.0F}),
-            Math::RotateVectorUVE(worldTransform.worldRotation, Math::Vector3UVE{0.0F, 1.0F, 0.0F}));
+    Scene::ResolvedAudioListener3DPoseUVE listenerPose{};
+    if (Scene::AudioListener3DUVE::TryResolveActiveListenerPoseUVE(
+            *m_entityManager, m_activeCamera, listenerPose)) {
+        m_audioSystem->SetListenerPositionUVE(listenerPose.position);
+        m_audioSystem->SetListenerOrientationUVE(listenerPose.forward, listenerPose.up);
     }
     m_audioSourceSystem->SyncUVE(*m_entityManager, *m_audioSystem);
     m_audioSystem->UpdateUVE();
@@ -3380,6 +3580,10 @@ void EngineCoreUVE::Shutdown() {
     // ConfigManager (loaded early so its settings can override project values),
     // then Logger, then CommandLine. The final log message is emitted before the
     // logger itself is torn down, so it is guaranteed to be recorded.
+    for (const Config::SettingsObserverSubscriptionUVE& sub : m_projectSettingsSubscriptions) {
+        static_cast<void>(m_projectSettings.UnsubscribeUVE(sub));
+    }
+    m_projectSettingsSubscriptions.clear();
     m_uvScriptFailedSources.clear();
     m_uvScripts.clear(); // hosts point into the entity manager, so they go first
     m_services.reset();

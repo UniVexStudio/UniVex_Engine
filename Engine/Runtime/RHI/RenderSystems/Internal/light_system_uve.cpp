@@ -17,6 +17,7 @@
 #include "uve/component/light_emitter_component_uve.h"
 #include "uve/objects/3d/abstract_objects_3d_uve.h"
 #include "uve/objects/3d/directional_light_3d_uve.h"
+#include "uve/objects/3d/light_3d_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 
 namespace UVE::Render {
@@ -37,31 +38,8 @@ namespace {
 /// nearby point light would remove the scene's key light and all of its shadows at once.
 [[nodiscard]] float EstimateLightContributionUVE(const LightDataUVE& light,
                                                  const Math::Vector3UVE& viewPosition) noexcept {
-    if (light.type == Scene::LightTypeUVE::Directional) {
-        return std::numeric_limits<float>::infinity();
-    }
-    // Rec. 709 luminance: the eye's own weighting, so a green light is not ranked equal to a blue
-    // one of the same numeric intensity.
-    const float luminance =
-        0.2126F * light.color.r + 0.7152F * light.color.g + 0.0722F * light.color.b;
-    const float emitted = light.intensity * std::max(luminance, 0.0F);
-    if (emitted <= 0.0F) {
-        return 0.0F;
-    }
-
-    const Math::Vector3UVE toLight{light.position.x - viewPosition.x, light.position.y - viewPosition.y,
-                                   light.position.z - viewPosition.z};
-    const float distanceSquared =
-        toLight.x * toLight.x + toLight.y * toLight.y + toLight.z * toLight.z;
-
-    // Outside its own range a light contributes exactly nothing - the shader zeroes it - so it must
-    // rank below every light that contributes anything at all, rather than merely ranking low.
-    if (light.range > 0.0F && distanceSquared > light.range * light.range) {
-        return 0.0F;
-    }
-    // One metre floor: inside that radius the estimate saturates rather than exploding, which keeps
-    // a light the camera is sitting on top of from being infinitely important.
-    return emitted / std::max(distanceSquared, 1.0F);
+    return Scene::Light3DUVE::EstimateViewContributionUVE(
+        light.type, light.color, light.intensity, light.range, light.position, viewPosition);
 }
 
 /// The single definition of "is this a usable light, and what are its frame values" - shared by
@@ -89,7 +67,7 @@ namespace {
     }
     outLight.type = light.type;
     outLight.position = worldTransform.worldPosition;
-    outLight.direction = Math::RotateVectorUVE(normalizedRotation, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+    outLight.direction = Scene::Light3DUVE::ResolveWorldDirectionUVE(normalizedRotation);
     outLight.rotation = normalizedRotation;
     outLight.color = light.color;
     outLight.intensity = light.intensity;

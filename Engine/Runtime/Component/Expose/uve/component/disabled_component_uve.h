@@ -33,4 +33,17 @@ struct DisabledComponentUVE final {
 /// have to special-case which components can be checked.
 [[nodiscard]] bool IsDisabledComponentValidUVE(const DisabledComponentUVE& component) noexcept;
 
+/// True when the tag pointer is non-null (the entity carries the disabled simulation tag).
+[[nodiscard]] bool IsDisabledTagPresentUVE(const DisabledComponentUVE* component) noexcept;
+
+/// True when the entity is enabled for simulation (`component == nullptr`).
+[[nodiscard]] bool ShouldSimulateEntityUVE(const DisabledComponentUVE* component) noexcept;
+
+/// True when gameplay, AI, physics, and particle systems should skip the entity.
+[[nodiscard]] bool ShouldSkipEntitySimulationUVE(const DisabledComponentUVE* component) noexcept;
+
+/// Scene-graph transform propagation always runs even when `DisabledComponentUVE` is present.
+[[nodiscard]] bool ShouldPropagateTransformWhenDisabledUVE(
+    const DisabledComponentUVE* component) noexcept;
+
 } // namespace UVE::Scene

@@ -5,6 +5,9 @@
 #include <array>
 #include <utility>
 
+#include "univex/render/OverlayRasterState.h"
+#include "univex/render/OverlayRasterStateGl.h"
+
 namespace univex::render {
 namespace {
 
@@ -144,13 +147,8 @@ std::optional<StudioBackdropRenderer> StudioBackdropRenderer::Create(std::string
 void StudioBackdropRenderer::DrawBackdrop(const univex::camera::OrbitCamera& camera, const int width,
                                           const int height) const {
     if (width <= 0 || height <= 0) return;
-    const GLboolean hadDepthTest = glIsEnabled(GL_DEPTH_TEST);
-    const GLboolean hadBlend = glIsEnabled(GL_BLEND);
-    GLint depthMask = GL_TRUE;
-    glGetIntegerv(GL_DEPTH_WRITEMASK, &depthMask);
-    glDisable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
-    glDisable(GL_BLEND);
+    const SavedOverlayRasterState savedState = SaveOverlayRasterState();
+    ApplyOverlayRasterState(WithDepthTest(kStudioBackdropSkyState, false));
 
     const StudioSettings& s = settings_;
     backdropProgram_.Use();
@@ -164,27 +162,16 @@ void StudioBackdropRenderer::DrawBackdrop(const univex::camera::OrbitCamera& cam
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindVertexArray(0);
 
-    glDepthMask(static_cast<GLboolean>(depthMask));
-    if (hadDepthTest == GL_TRUE) glEnable(GL_DEPTH_TEST);
-    if (hadBlend == GL_TRUE) glEnable(GL_BLEND);
+    RestoreOverlayRasterState(savedState);
 }
 
 void StudioBackdropRenderer::DrawFloor(const univex::camera::OrbitCamera& camera, const int width,
                                        const int height) const {
     if (width <= 0 || height <= 0) return;
-    const GLboolean hadDepthTest = glIsEnabled(GL_DEPTH_TEST);
-    const GLboolean hadBlend = glIsEnabled(GL_BLEND);
-    const GLboolean hadCull = glIsEnabled(GL_CULL_FACE);
-    GLint depthMask = GL_TRUE;
-    glGetIntegerv(GL_DEPTH_WRITEMASK, &depthMask);
+    const SavedOverlayRasterState savedState = SaveOverlayRasterState();
     // Tests against the scene so feet hide the floor under them; writes nothing, so its faded
     // edge never hides what is drawn after it.
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LEQUAL);
-    glDepthMask(GL_FALSE);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDisable(GL_CULL_FACE);
+    ApplyOverlayRasterState(kStudioBackdropFloorState);
 
     const StudioSettings& s = settings_;
     floorProgram_.Use();
@@ -198,11 +185,7 @@ void StudioBackdropRenderer::DrawFloor(const univex::camera::OrbitCamera& camera
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
 
-    glDepthFunc(GL_LESS);
-    glDepthMask(static_cast<GLboolean>(depthMask));
-    if (hadDepthTest == GL_FALSE) glDisable(GL_DEPTH_TEST);
-    if (hadBlend == GL_FALSE) glDisable(GL_BLEND);
-    if (hadCull == GL_TRUE) glEnable(GL_CULL_FACE);
+    RestoreOverlayRasterState(savedState);
 }
 
 } // namespace univex::render

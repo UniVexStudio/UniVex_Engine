@@ -58,4 +58,20 @@ struct LightEmitterComponentUVE final {
 /// [0, 1]; and fade distances not negative.
 [[nodiscard]] bool IsLightEmitterComponentValidUVE(const LightEmitterComponentUVE& component) noexcept;
 
+/// Sanitizes `component` so bake mode, color, energies, shadow opacity, and fade distances are valid.
+[[nodiscard]] LightEmitterComponentUVE SanitizeLightEmitterComponentUVE(
+    const LightEmitterComponentUVE& component) noexcept;
+
+/// True when `component.cullMask` shares at least one bit with `surfaceLayerMask`.
+[[nodiscard]] bool DoesLightEmitterAffectSurfaceLayerMaskUVE(
+    const LightEmitterComponentUVE& component, std::uint32_t surfaceLayerMask) noexcept;
+
+/// True when the light casts runtime shadows (`shadowEnabled`, `shadowOpacity > 0`, and `cullMask != 0`).
+[[nodiscard]] bool DoesLightEmitterCastActiveShadowUVE(
+    const LightEmitterComponentUVE& component) noexcept;
+
+/// Evaluates the distance fade multiplier in `[0, 1]` at `cameraDistanceMeters` (`1` when `distanceFadeEnabled` is false).
+[[nodiscard]] float EvaluateLightEmitterDistanceFadeUVE(
+    const LightEmitterComponentUVE& component, float cameraDistanceMeters) noexcept;
+
 } // namespace UVE::Scene

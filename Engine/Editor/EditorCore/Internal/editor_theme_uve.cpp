@@ -56,11 +56,11 @@ void ApplyEditorVisualThemeUVE() noexcept {
     colors[ImGuiCol_Separator] = ImVec4{0.196F, 0.216F, 0.235F, 1.0F};    // #32373C
     colors[ImGuiCol_SeparatorHovered] = ImVec4{0.329F, 0.380F, 0.431F, 1.0F};
     colors[ImGuiCol_SeparatorActive] = ImVec4{0.392F, 0.478F, 0.565F, 1.0F};
-    colors[ImGuiCol_Tab] = ImVec4{0.102F, 0.114F, 0.125F, 1.0F};           // #1A1D20
-    colors[ImGuiCol_TabHovered] = ImVec4{0.204F, 0.231F, 0.259F, 1.0F};    // #343B42
-    colors[ImGuiCol_TabActive] = ImVec4{0.161F, 0.188F, 0.216F, 1.0F};     // #293036
-    colors[ImGuiCol_TabUnfocused] = ImVec4{0.067F, 0.071F, 0.078F, 1.0F};  // #111214
-    colors[ImGuiCol_TabUnfocusedActive] = ImVec4{0.122F, 0.137F, 0.153F, 1.0F};
+    colors[ImGuiCol_Tab] = ImVec4{0.102F, 0.114F, 0.125F, 1.0F};               // #1A1D20
+    colors[ImGuiCol_TabHovered] = ImVec4{0.204F, 0.231F, 0.259F, 1.0F};        // #343B42
+    colors[ImGuiCol_TabSelected] = ImVec4{0.161F, 0.188F, 0.216F, 1.0F};       // #293036
+    colors[ImGuiCol_TabDimmed] = ImVec4{0.067F, 0.071F, 0.078F, 1.0F};         // #111214
+    colors[ImGuiCol_TabDimmedSelected] = ImVec4{0.122F, 0.137F, 0.153F, 1.0F}; // #1F2327
     colors[ImGuiCol_ResizeGrip] = ImVec4{0.267F, 0.302F, 0.337F, 0.55F};
     colors[ImGuiCol_ResizeGripHovered] = ImVec4{0.416F, 0.478F, 0.541F, 0.80F};
     colors[ImGuiCol_ResizeGripActive] = ImVec4{0.580F, 0.686F, 0.792F, 0.98F};
@@ -69,7 +69,7 @@ void ApplyEditorVisualThemeUVE() noexcept {
     colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4{0.302F, 0.333F, 0.365F, 1.0F};
     colors[ImGuiCol_ScrollbarGrabActive] = ImVec4{0.424F, 0.471F, 0.518F, 1.0F};
     colors[ImGuiCol_TextSelectedBg] = ImVec4{0.239F, 0.361F, 0.478F, 0.72F};
-    colors[ImGuiCol_NavHighlight] = ImVec4{0.392F, 0.620F, 0.816F, 0.92F};
+    colors[ImGuiCol_NavCursor] = ImVec4{0.392F, 0.620F, 0.816F, 0.92F};
 }
 
 } // namespace UVE::Editor

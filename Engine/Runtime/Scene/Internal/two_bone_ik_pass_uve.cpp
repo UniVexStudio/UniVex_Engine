@@ -14,6 +14,7 @@
 #include "uve/component/process_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/objects/3d/abstract_animation_objects_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/two_bone_ik_3d_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
@@ -104,13 +105,9 @@ TwoBoneIKPassReportUVE SyncTwoBoneIK3DObjectsUVE(IEntityManagerUVE& entityManage
         chain.reached = false;
         chain.endToTargetDistanceMetres = 0.0F;
 
-        const bool active = !entityManager.HasComponentUVE<BoneModifierComponentUVE>(entity) ||
-                            entityManager.GetComponentUVE<BoneModifierComponentUVE>(entity).active;
-        const float influence =
-            entityManager.HasComponentUVE<BoneModifierComponentUVE>(entity)
-                ? entityManager.GetComponentUVE<BoneModifierComponentUVE>(entity).influence
-                : 1.0F;
-        if (!active || !(influence > 0.0F) || !IsTwoBoneIK3DObjectComponentResolvableUVE(chain)) {
+        const float influence = ResolveBoneModifierInfluenceUVE(entityManager, entity);
+        if (!IsBoneModifierActiveUVE(entityManager, entity) ||
+            !IsTwoBoneIK3DObjectComponentResolvableUVE(chain)) {
             ++report.refused;
             continue;
         }

@@ -4,8 +4,29 @@
 
 namespace UVE::Scene {
 
-// Deliberately empty today: this component is pure authored/cached data with no
-// value semantics to validate yet. This file is its single home the moment real
-// behavior exists — matching the one .h + .cpp pair per component convention.
+bool IsEditorInternalEntityComponentValidUVE(
+    const EditorInternalEntityComponentUVE& /*component*/) noexcept {
+    return true;
+}
+
+bool IsEditorInternalEntityTagPresentUVE(
+    const EditorInternalEntityComponentUVE* const component) noexcept {
+    return component != nullptr;
+}
+
+bool ShouldIncludeInDocumentHierarchyUVE(
+    const EditorInternalEntityComponentUVE* const component) noexcept {
+    return !IsEditorInternalEntityTagPresentUVE(component);
+}
+
+bool ShouldSerializeDocumentEntityUVE(
+    const EditorInternalEntityComponentUVE* const component) noexcept {
+    return !IsEditorInternalEntityTagPresentUVE(component);
+}
+
+bool ShouldClearWithDocumentSceneUVE(
+    const EditorInternalEntityComponentUVE* const component) noexcept {
+    return !IsEditorInternalEntityTagPresentUVE(component);
+}
 
 } // namespace UVE::Scene

@@ -53,6 +53,10 @@ inline constexpr OverlayRasterState kInfiniteGridState{true, false, OverlayDepth
 /// depth of 1), opaque, never written.
 inline constexpr OverlayRasterState kStudioBackdropSkyState{true, false, OverlayDepthCompare::LessOrEqual,
                                                             OverlayBlendMode::Opaque, OverlayCullMode::Inherit};
+/// Studio backdrop floor: tested against the scene (LessOrEqual so floor lines sit on z = 0),
+/// never written so its faded rim never hides later geometry, alpha-faded, visible from both sides.
+inline constexpr OverlayRasterState kStudioBackdropFloorState{true, false, OverlayDepthCompare::LessOrEqual,
+                                                              OverlayBlendMode::Alpha, OverlayCullMode::None};
 /// Screen-space composites (selection outline, 2D overlays): no depth at all.
 inline constexpr OverlayRasterState kScreenSpaceCompositeState{false, false, OverlayDepthCompare::Always,
                                                                OverlayBlendMode::Alpha, OverlayCullMode::Inherit};
@@ -63,6 +67,10 @@ inline constexpr OverlayRasterState kScreenSpaceCompositeState{false, false, Ove
 }
 [[nodiscard]] constexpr OverlayRasterState WithDepthWrite(OverlayRasterState state, const bool depthWrite) {
     state.depthWrite = depthWrite;
+    return state;
+}
+[[nodiscard]] constexpr OverlayRasterState WithCullMode(OverlayRasterState state, const OverlayCullMode cull) {
+    state.cull = cull;
     return state;
 }
 

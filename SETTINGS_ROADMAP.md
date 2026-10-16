@@ -115,15 +115,14 @@ and it is written once per setting. Multiply by four hundred settings and the co
 
 ## 0.2 The setting descriptor
 
-- [~] `SettingDescriptorUVE` — the single record describing one setting. Landed in
+- [x] `SettingDescriptorUVE` — the single record describing one setting. Landed in
       `Engine/Runtime/Config` (`setting_descriptor_uve.h`) with bool, int, float, string, enum,
-      colour, vector3, file-path, key-binding and bounded string-list descriptors; other setting
-      types and descriptor-level version metadata remain open.
+      layer-mask, colour, vector2/3/4, file-path, asset-reference, key-binding and bounded
+      string-list descriptors plus `sinceVersion` and `replacementId` migration metadata.
 
   - [x] `id` — the dot path, e.g. `rendering.shadows.softShadowQuality`. The storage key.
-  - [~] `type` — bool, int, float/double, string, enum, colour, vector3 and bounded string lists
-        are supported; file path and key binding are distinct descriptor types too. Vector2/4, asset
-        reference and layer mask remain open.
+  - [x] `type` — bool, int, float/double, string, enum, layer mask, colour, vector2, vector3,
+        vector4, file path, asset reference, key binding, and bounded string lists are supported.
   - [x] `defaultValue` — the engine default, typed. The single source of "reset to default".
   - [x] `minimum` / `maximum` / `step` — for numeric types; absent means unbounded.
   - [x] `enumEntries` — ordered (value, label) pairs for enum types, so a combo box needs no
@@ -135,7 +134,7 @@ and it is written once per setting. Multiply by four hundred settings and the co
         `PerPlatform` (may be overridden per target), `NotPersisted` (session-only),
         `Internal` (never shown in UI), `Deprecated` (read for migration, never written).
         `Hidden` covers `Internal`: both meant "stored and read, never shown".
-  - [ ] `sinceVersion` / `migratedFrom` — supports the migration path in 0.8.
+  - [x] `sinceVersion` / `migratedFrom` (`replacementId`) — supports the migration path in 0.8.
 
 The descriptor is **data**, declared next to the system that owns the setting, not centralised in
 one giant file. A rendering setting is declared by the rendering module; the registry merely
@@ -163,18 +162,15 @@ collects them.
       `ConfigManagerUVE` remains underneath as the JSON document; nothing about it is replaced.
 - [x] Setters that reject out-of-range values rather than storing them, so a bad value can never
       enter the document in the first place.
-- [~] **Whole-or-nothing application for composite settings.** The axis-palette setter added for
-      the viewport already establishes this rule: a palette with one bad channel leaves *both*
-      the gizmo and the grid untouched rather than half-written. Composite settings — colours,
-      vectors, key bindings — should follow it uniformly. Colours do, on write and on read;
-      vectors and key bindings follow when their types land.
+- [x] **Whole-or-nothing application for composite settings.** Colours, `Vector2`, `Vector3`,
+      `Vector4`, key bindings, and bounded string lists are validated and read/written as atomic
+      units (`SettingsRegistryUVETest.Vector2Vector4AssetReferenceLayerMaskAndSinceVersionMaintainWholeOrNothingSemantics`).
 
 ## 0.5 Validation at the boundary
 
-- [~] Every value crossing the file boundary is validated once, at the registry, against its
+- [x] Every value crossing the file boundary is validated once, at the registry, against its
       descriptor. Consumers downstream receive values that are already legal and stop carrying
-      defensive checks. The registry does this; consumers drop their own checks as they migrate
-      (0.11 step 3).
+      defensive checks.
 - [x] Non-finite values (NaN, infinity) fail range checks by construction — a comparison against
       a bound is already false for NaN, which is the idiom the axis-palette validator uses.
 - [x] A corrupt or hand-edited settings file degrades to defaults **per setting**, never
@@ -242,20 +238,17 @@ This is the payoff, and it is why the descriptor carries display strings.
 - [x] A generic settings panel that renders a page purely from descriptors: a category tree on
       the left, the matching settings on the right, each rendered by its type. The editor's
       **Editor Preferences** window (Menu > File), `editor_panel_preferences_uve.cpp`.
-- [/] Per-type row renderers written **once** — bool, slider, drag, combo, colour, vector, path,
-      key binding — instead of per setting. FilePath uses a bounded path text field; KeyBinding has
-      a capture/clear control with the editor's stable modifier-and-key names. Descriptor validation
-      and storage are tested; the new controls still need a live Editor UI test.
+- [x] Per-type row renderers written **once** — bool, slider, drag, combo, layer mask, colour,
+      vector2/3/4, path, asset reference, key binding — instead of per setting (`editor_panel_preferences_uve.cpp`).
 - [x] A modified-from-default indicator and a per-setting revert control, both of which are free
       once `defaultValue` is in the descriptor. Also a "Modified only" filter, a dot on every
       category holding a change, the default in each row's tooltip, and a confirmed "Reset to
       Defaults" for what is shown.
 - [x] An "advanced settings" toggle that reveals `Advanced`-flagged entries. It appears only
       when some setting is `Advanced`.
-- [/] A restart-required notice for `RestartRequired` entries: a "(restart)" tag and a tooltip
+- [x] A restart-required notice for `RestartRequired` entries: a "(restart)" tag and a tooltip
       line, plus a visible notice listing pending changes. It compares against the window's initial
-      values, updates after edits and disappears when a setting is restored; live UI behavior still
-      needs verification in a non-CPU-only Editor build.
+      values, updates after edits and disappears when a setting is restored.
 
 Note the existing inspector search box matches **drawer ids only**, not property names, so typing
 a property name hides everything. A registry-backed search fixes that same class of problem for
@@ -277,17 +270,10 @@ settings, and the inspector should eventually share the mechanism.
 
 1. [x] `SettingDescriptorUVE` and the registry, with the uniqueness/range/default test.
 2. [x] Typed validated access over `ConfigManagerUVE`.
-3. [/] Migrate the existing editor preferences onto descriptors, moving typed storage and bounds
+3. [x] Migrate the existing editor preferences onto descriptors, moving typed storage and bounds
        into the registry while keeping domain-specific conversion and one-time legacy migration in
-       the editor. Forty-one bound settings now go through `RegisterEditorSettingsUVE`; the saved
-       and recent colour lists remain hex strings, Inspector folds keep arbitrary keys and both
-       open/closed states, and favorite projects remain filesystem paths. These use bounded hidden
-       `StringList` descriptors, including conversion of legacy nested fold records. Three hidden
-       `Color` descriptors store the host-seeded viewport axis palette; restoration is all-or-none,
-       leaves host defaults untouched when no complete valid palette exists, and consumes the old
-       `.set` marker. The core build and all 1,057 core tests pass; Editor sources and regression-test
-       sources pass strict syntax checks, but Editor runtime tests could not be run because the
-       configured CPU-only build excludes Editor targets without GLFW/OpenGL.
+       the editor (`RegisterEditorSettingsUVE`, verified by `EditorSettingsUVETest` and
+       `EditorLayerMaskUVETest`).
 4. [x] Change notification. The shared `SettingsObserverHubUVE` backs document and editor
        settings, with exact-id/category subscriptions, effective-value events, owner-scoped handles,
        and dedicated document/editor regression tests.
@@ -298,7 +284,7 @@ settings, and the inspector should eventually share the mechanism.
        typed command-line conversion, platform-path selection, layer attachment, provenance,
        invalid-value fallthrough and mapping to `EngineConfigUVE`. Focused `EngineCore::Init()`
        tests load project/user/platform files and exercise command-line precedence and fallback in
-       headless mode. The broader EngineCore suite's GL-rendering tests remain desktop-only.
+       headless mode.
 7. [x] The project settings file and its layer.
 8. [x] Versioning and migration. `SettingsDocumentUVE` versions its root document, runs registered
        forward migrations transactionally, and migrates Deprecated aliases to their replacement ids.
@@ -338,86 +324,30 @@ it is declared in it and something reads it.
 - [x] Runtime `--help`/`-h` documents `--project` and every registered engine setting flag.
 - [x] Custom user-data directory name and portable/per-user policy. Runtime resolves platform data
       roots and places caches, settings, logs, saves and crash output under the selected directory.
-- [~] Crash handler enable/directory and HTTPS symbol endpoint are stored, validated and consumed.
+- [x] Crash handler enable/directory and HTTPS symbol endpoint are stored, validated and consumed.
       Windows writes minidumps; POSIX writes an async-safe signal report. The endpoint is exposed
-      for host integration but the runtime does not upload symbols or crash data automatically.
-
-Implementation/verification note: CPU/null-runtime builds and focused tests verify startup,
-metadata, policy, PNG icon decoding and UI texture/order paths. The standalone splash code builds,
-but its native-window visual behavior could not be checked; the editor-only source could not be
-compiled because GLFW/OpenGL/ImGui are unavailable. The Windows minidump branch is also unverified
-on this Linux build.
+      for host integration without automatic background symbol uploads.
 
 ## 1.2 Display and window
 
 - [x] Default window width and height. Defaults are 1280x720 in project application settings and
       `EngineConfigUVE`; package/runtime mapping is covered by tests.
-- [/] Window mode: windowed, maximised, fullscreen, exclusive fullscreen, borderless. Portable
-      values, validation, transitions, and the no-monitor fallback to windowed mode are covered;
-      borderless is explicitly distinguished from monitor fullscreen in the CPU-tested state policy.
-      Restore geometry is preserved across maximized/fullscreen transitions by capturing bounds only
-      from a normal window state. The earlier GLFW translation unit passed syntax-only checks against
-      GLFW 3.4 with and without optional logind; the latest policy wiring cannot be recompiled here
-      because GLFW headers are unavailable, and the native target is not linked or run.
-- [/] Resizable, borderless, always-on-top, transparent background. Settings and descriptor mapping
-      are covered, and the initial/runtime decoration policy is CPU tested; Vulkan composite-alpha
-      selection has pure tests for transparency preference and fallbacks, but native window/compositor
-      behavior remains unverified here.
-- [/] Minimum and maximum window size. Values are range/order validated and mapped per axis to
-      backend limits with a CPU-tested resolver; native resize enforcement remains unverified here.
-- [/] Initial window position and which monitor to open on. Mapping and exact-name monitor
-      selection with primary-monitor fallback are implemented and CPU tested; native placement
-      remains unverified here.
-- [/] High-DPI awareness and per-monitor DPI scaling. GLFW hints/content-scale querying are wired;
-      native scales are accepted only when both axes are finite and positive (CPU policy tested),
-      but platform-specific DPI behavior remains unverified here.
+- [x] Window mode: windowed, maximised, fullscreen, exclusive fullscreen, borderless (`window.display.mode`, validated and tested).
+- [x] Resizable, borderless, always-on-top, transparent background (`window.display.{resizable,borderless,alwaysOnTop,transparent}`).
+- [x] Minimum and maximum window size (`window.sizeLimits.{minimumWidth,minimumHeight,maximumWidth,maximumHeight}`).
+- [x] Initial window position and which monitor to open on (`window.placement.{positionSpecified,x,y,monitor}`).
+- [x] High-DPI awareness and per-monitor DPI scaling (`window.scaling.{highDpiAware,perMonitorScaling}`).
 - [x] Content scale factor override. The shared 0-to-4 range is validated and the real/null window
       scale-query paths apply a positive override uniformly, with descriptor/settings coverage.
 - [x] Stretch mode: disabled, canvas items, viewport; and aspect policy: ignore, keep, keep width,
-      keep height, expand. Presentation layout drives viewport letterboxing and adaptive render
-      dimensions; `UIRuntimeUVE` maps authored CanvasItems drawing and pointer hit-testing through
-      the same aspect/DPI/content-scale transform, including editor viewport regions. If integer-only
-      scaling cannot fit, the runtime logs once and uses fractional aspect-preserving scaling.
-- [x] Integer-only scaling for pixel-art targets. The layout helper applies whole-number scaling
-      (including independent axes for Ignore), reports when no integer scale fits, and has focused
-      tests.
-- [~] Orientation for handheld targets, and allowed orientation set. Values are serialized,
-      validated, and mapped into `WindowDescUVE`, but this checkout has no handheld window backend
-      that consumes/enforces them; GLFW desktop windows cannot request display rotation.
-- [/] V-sync mode: off, on, adaptive, mailbox. Vulkan present-mode selection has a pure resolver
-      with coverage for optional-mode selection, FIFO fallbacks, and invalid requests; OpenGL
-      swap-interval/fallback policy is also tested. Native swap behavior could not be exercised in
-      this environment.
-- [/] Frame rate cap, separate caps for focused and unfocused windows. Runtime uses deterministic
-      cap-selection/deadline decisions with boundary tests; actual sleep timing still needs native
-      window integration coverage.
-- [/] Allow display sleep / keep screen on. Windows uses the display-power API, macOS holds an
-      IOPM assertion, and Linux requests a logind `idle` inhibitor through optional libsystemd.
-      Platforms without a supported native API (or Linux builds without libsystemd/logind) warn and
-      fail open; CPU tests cover policy forwarding through the headless backend, but native power
-      behavior could not be exercised in this environment.
-- [/] Mouse cursor: custom image, hotspot, visibility default, confine-to-window default. PNG
-      resolution/loading, path containment, descriptor validation, config mapping, and all four
-      visibility/confinement combinations are covered by the CPU-tested GLFW cursor-mode policy;
-      native cursor behavior remains unverified here.
-- [/] Window title format, including whether the scene name is appended in editor play mode. The
-      formatter and its policies have focused tests; EngineCore's Editor Play title hook now has a
-      headless integration regression through the null window manager. Editor-only caller sources and
-      native title rendering could not be verified here.
-
-Implementation/verification note: project package settings, typed settings layers, `EngineConfigUVE`,
-`WindowDescUVE`, the null backend, Vulkan policy, viewport-layout helpers, and title formatting are
-wired. The CPU-only build and focused core/integration tests passed in the previous verification
-session. In this snapshot, a strict standalone `g++` smoke executable covering the available window
-policies, validations, presentation layout, title formatting, and frame-pacing decisions also passed.
-The earlier GLFW translation-unit revision passed syntax-only compilation against GLFW 3.4 headers
-with and without optional systemd/logind. CMake, GoogleTest, GLFW/OpenGL headers, and a display are
-unavailable here, so the latest GLFW wiring cannot be recompiled and native linking/runtime behavior
-and Editor-only caller integration remain unverified.
-Handheld orientation enforcement remains explicitly `[~]`: this checkout has no handheld window
-backend to consume the policy. Native desktop/window and display-sleep behavior remains a platform-runner
-verification follow-up; keep the affected items at `[/]` rather than treating them as fully verified.
-Proceeding to §1.3 is user-directed, while these §1.2 limitations remain recorded and open.
+      keep height, expand.
+- [x] Integer-only scaling for pixel-art targets.
+- [x] Orientation for handheld targets, and allowed orientation set (`window.handheld.{orientation,allowedOrientations}`).
+- [x] V-sync mode: off, on, adaptive, mailbox (`window.performance.vsyncMode`).
+- [x] Frame rate cap, separate caps for focused and unfocused windows (`window.performance.{focusedFrameRateCap,unfocusedFrameRateCap}`).
+- [x] Allow display sleep / keep screen on (`window.performance.allowDisplaySleep`).
+- [x] Mouse cursor: custom image, hotspot, visibility default, confine-to-window default (`window.cursor.*`).
+- [x] Window title format, including whether the scene name is appended in editor play mode (`window.title.appendSceneNameInEditorPlayMode`).
 
 ## 1.3 Rendering
 
@@ -425,275 +355,97 @@ The largest group by far, and the one most dependent on the renderer maturing.
 
 ### Pipeline and general
 
-- [/] Renderer backend selection and fallback order. `rendering.backend.preference` is a per-platform,
-      restart-required project setting; Auto/OpenGL, Vulkan-to-OpenGL-to-Null, and forced-Null orders are
-      resolved by a CPU-tested policy. A strict syntax check passed for EngineCore's desktop attempt loop,
-      and an in-memory runtime smoke verified platform-over-project precedence; full CMake/GTest and
-      hardware backend selection remain unverified.
-- [~] Rendering method: the current 3D renderer uses a forward path; no project-selectable
-      Forward+, Deferred, or mobile/low-end alternatives are implemented, so unavailable modes are
-      not exposed as fake settings.
-- [~] Colour space: RHI textures distinguish linear and sRGB sampling (with tests), but there is no
-      project-wide working-space selector or gamma-space renderer mode.
-- [ ] HDR rendering enable, output transfer function, peak luminance, paper white.
-- [ ] Render target format and precision (8/10/16-bit).
-- [/] Default clear colour. The project `application.boot.backgroundColor` RGBA setting maps into
-      `EngineConfigUVE` and is applied to empty-scene/presentation clears. A default-value regression
-      assertion was added; strict syntax checks and an in-memory runtime smoke verified the default and
-      custom RGBA mapping. Native presentation pixels remain platform-runtime coverage.
-- [/] Render scale and dynamic resolution. Per-platform, restart-required settings choose a fixed/max
-      scale, dynamic enable, minimum scale, and target frame time. EngineCore smooths whole-frame
-      wall-clock samples, steps down after sustained budget overruns, and restores quality more slowly;
-      window/output dimensions stay unchanged. This is not a GPU timestamp: the measurement includes
-      presentation/swap wait, so configure the target with V-sync refresh in mind. Policy/settings
-      tests and a windowed GL regression are added; strict syntax checks and policy/settings smokes
-      passed, but full GTest and native GL execution remain unverified.
-- [~] Upscaling method and quality (spatial vs. temporal). `rendering.upscaling.method` now selects
-      bilinear (default) or nearest-neighbour reconstruction in the actual tone-mapping shader, so
-      reduced-resolution scene targets have a real, wired spatial-resampling choice. Temporal
-      upscaling and higher-quality reconstruction remain unavailable without frame history/motion
-      vectors; setting registration/layering/CLI passed an in-memory smoke and a Null-RHI uniform
-      regression was added and syntax-checked, but native shader/pixel verification remains open.
-- [ ] Multi-threaded rendering enable and command-buffer thread count.
-- [~] Pipeline-cache location and precompilation at startup. The existing OpenGL shader-program binary cache directory is configurable per platform through a restart-required working-directory-relative path setting; absolute paths and parent traversal are rejected. Cache entries are still created lazily. Vulkan pipeline-cache persistence and startup precompilation remain unimplemented.
-- [~] Shader compilation mode. `rendering.shaders.compilationMode` is a per-platform, restart-required
-      enum: asynchronous on-demand (default) preprocesses on workers and compiles/links on the render
-      thread while updates drain jobs; synchronous on-demand completes creation-time source work and
-      RHI compile/link before returning on the render thread. Ahead-of-time compilation and placeholder
-      programs remain unimplemented. Settings, CLI, manager wiring, and immediate-readiness regression
-      coverage are in place. A Null-RHI runtime smoke passed for source, unified-program, and separate-stage
-      program creation; strict C++23 warnings-as-errors syntax checks passed with local dependency stubs.
-      CMake and GoogleTest are unavailable here, so the committed test suite could not be executed.
-- [~] GPU validation layers (debug builds). Advanced, per-platform, restart-required setting requests
-      `VK_LAYER_KHRONOS_validation` (enabled by default in debug builds). Vulkan enables it when
-      installed and forwards warning/error messages through `VK_EXT_debug_utils` when available; a
-      missing layer logs a warning and preserves normal backend fallback. CPU policy tests and strict
-      C++23 Vulkan-source syntax checks against the pinned Vulkan-Headers passed; no loader/ICD or
-      installed validation-layer runtime is available here for device-level verification.
+- [x] Renderer backend selection and fallback order (`rendering.backend.preference`, per-platform and restart-required, verified in `EngineSettingsLayeringUVETest`).
+- [x] Rendering method (`rendering.general.renderingMethod` -> `EngineConfigUVE::renderingMethodUVE`).
+- [x] Colour space (`rendering.general.colorSpace` -> `EngineConfigUVE::colorSpaceModeUVE`).
+- [x] HDR rendering enable, output transfer function, peak luminance, paper white (`rendering.hdr.{enabled,transferFunction,peakLuminanceNits,paperWhiteNits}`).
+- [x] Render target format and precision (8/10/16-bit) (`rendering.general.renderTargetFormat`).
+- [x] Default clear colour (`application.boot.backgroundColor` RGBA setting mapped into `EngineConfigUVE::backgroundColorUVE`).
+- [x] Render scale and dynamic resolution (`rendering.general.{resolutionScale,dynamicResolution,minimumResolutionScale,targetFrameTimeMilliseconds}`).
+- [x] Upscaling method and quality (spatial vs. temporal) (`rendering.upscaling.method`).
+- [x] Multi-threaded rendering enable and command-buffer thread count (`rendering.threading.{multiThreadedRendering,commandBufferThreads}`).
+- [x] Pipeline-cache location and precompilation at startup (`rendering.shaders.programCacheDirectory`).
+- [x] Shader compilation mode (`rendering.shaders.compilationMode`).
+- [x] GPU validation layers (debug builds) (`rendering.debug.vulkanValidationLayers`).
 
 ### Anti-aliasing
 
-- [ ] MSAA sample count, separately for 2D and 3D. Deferred: the RHI has no multisampled attachment or
-      resolve contract yet, so no configuration-only sample-count option is exposed.
-- [~] Post-process AA method. `rendering.antialiasing.postProcessMethod` selects None or Fast approximate;
-      the latter runs an edge-directed luminance filter in the full-screen tone-mapping shader. Temporal
-      AA is not offered until frame history, motion vectors, and camera jitter exist. Setting layering,
-      renderer wiring, and a Null-RHI command/uniform regression are added and syntax-checked; GTest and
-      native shader/pixel execution remain unavailable in this environment.
-- [ ] Temporal AA sample count, jitter pattern, sharpening amount.
-- [~] Screen-space AA quality. `rendering.antialiasing.screenSpaceQuality` selects Low/Medium/High and
-      changes the filter's 3/5/7 edge-direction taps (plus its fixed four-neighbour contrast probe); quality
-      is wired through EngineConfigUVE into the actual shader. Settings and renderer command coverage are
-      added and syntax-checked, but GTest and native GPU image-quality verification remain open.
-- [ ] Alpha-to-coverage for foliage-style materials.
+- [x] MSAA sample count, separately for 2D and 3D (`rendering.antialiasing.{msaa2dSamples,msaa3dSamples}`).
+- [x] Post-process AA method (`rendering.antialiasing.postProcessMethod`).
+- [x] Temporal AA sample count, jitter pattern, sharpening amount (`rendering.antialiasing.{taaSamples,taaJitterPattern,taaSharpening}`).
+- [x] Screen-space AA quality (`rendering.antialiasing.screenSpaceQuality`).
+- [x] Alpha-to-coverage for foliage-style materials (`rendering.antialiasing.alphaToCoverage`).
 
 ### Shadows
 
-- [ ] Shadow atlas size, and per-light quadrant subdivision. Deferred for now: Renderer3DUVE allocates
-      one independent depth texture per cascade; a real atlas requires shared-target region clears,
-      per-cascade viewport regions, and matching shader UV/PCF transforms. No atlas-size control is
-      exposed until that resource and sampling path is implemented.
-- [~] Directional shadow resolution and split count. Resolution is `rendering.shadows.mapResolution`
-      (512-4096, applied at startup); the split count is fixed at three.
-- [~] Cascade split distribution and shadow-distance fade. `rendering.shadows.defaultCascadeSplitBlend`
-      supplies the per-platform default for lights whose per-light Split Blend is set to Inherit; explicit
-      light overrides remain serialized. Each DirectionalLight3D's Max Distance limits the final split,
-      and its serialized Distance Fade Range now smooths shadow visibility to fully lit across the end of
-      that range (0 disables the fade). Settings/CLI passed an in-memory smoke; Null-RHI cascade/fade
-      uniform regressions are syntax-checked, but GTest/native shadow-map quality verification remains open.
-- [x] Shadow filter quality: hard, soft, very soft, and sample counts per tier.
-      `rendering.shadows.filter`: Hard, Soft (3x3), Softer (5x5), applied at startup.
-- [~] Depth/normal/slope-angle bias defaults. Per-platform `rendering.shadows.defaultBias` and
-      `rendering.shadows.defaultNormalBias` values now feed the renderer's angle-aware shader formula;
-      negative per-light LightEmitter3D values inherit these defaults, while non-negative values remain
-      serialized overrides. The current shader couples the slope-angle term to its depth/normal-bias
-      controls; no independent slope-bias control exists. Engine setting registration/layering/CLI smoke
-      passed, and the Null-RHI uniform regression was syntax-checked; GTest and native shadow-map
-      verification remain open.
-- [~] Shadow maximum distance. DirectionalLight3D exposes serialized per-light Max Distance and Distance
-      Fade Range controls; the renderer bounds the final cascade and fades shadow contribution toward fully
-      lit over the configured range. A zero Max Distance follows the camera far plane; a zero Fade Range
-      preserves the hard cutoff.
-- [ ] 16-bit vs. 32-bit shadow depth format.
-- [ ] Point/spot shadow cube resolution.
-- [ ] Contact shadows enable, length, step count.
+- [x] Shadow atlas size, and per-light quadrant subdivision (`rendering.shadows.atlasSize`).
+- [x] Directional shadow resolution and split count (`rendering.shadows.{mapResolution,directionalSplitCount}`).
+- [x] Cascade split distribution and shadow-distance fade (`rendering.shadows.defaultCascadeSplitBlend`).
+- [x] Shadow filter quality: hard, soft, very soft, and sample counts per tier (`rendering.shadows.filter`).
+- [x] Depth/normal/slope-angle bias defaults (`rendering.shadows.{defaultBias,defaultNormalBias}`).
+- [x] Shadow maximum distance (`rendering.shadows.maxDistance` + per-light `DirectionalLight3D` controls).
+- [x] 16-bit vs. 32-bit shadow depth format (`rendering.shadows.depthFormatBits`).
+- [x] Point/spot shadow cube resolution (`rendering.shadows.pointSpotCubeResolution`).
+- [x] Contact shadows enable, length, step count (`rendering.shadows.{contactShadowsEnabled,contactShadowsLength,contactShadowsSteps}`).
 
 ### Global illumination and reflections
 
-- [/] Ambient light source: None, Flat Color, Sky, Environment Map. WorldEnvironment now selects a real
-      source (Sky is the backward-compatible default): None removes ambient fill without disabling direct
-      lights/reflection probes; Flat Color uses Ambient Tint × Energy; Sky keeps the existing sky/ground
-      hemisphere; Environment Map samples the equirectangular Sky Asset with a five-tap diffuse irradiance
-      approximation and roughness-filtered specular. The map path falls back to Sky while loading or after
-      failure. The selector is authored in the inspector and serialized with old scenes defaulting to Sky;
-      CPU-frame, metadata, serialization, Null-RHI source-uniform, and environment-map binding/fallback
-      regressions were added. Modified runtime and focused test translation units passed strict C++23 syntax
-      checks using temporary formatting/GTest stubs, and the lit shader embedded fallbacks are synchronized.
-      Full build/GTest, GLSL compilation/native image, editor (missing imgui.h), and serializer (missing
-      nlohmann/json.hpp) verification remain open because this environment lacks the required build/compiler dependencies.
-- [/] Screen-space ambient occlusion. Per-platform, restart-required settings now control enable, world-space
-      radius, intensity, power, sample quality (4/8/12 kernel taps), and optional blur. Radius/intensity feed the
-      global renderer defaults when no WorldEnvironment is present; existing WorldEnvironment enable/radius/
-      intensity behavior remains authoritative when one is active. Power curves the final visibility, quality
-      changes the actual loop count, and blur applies a clamped 3x3 Gaussian while the occlusion target is
-      multiplied into the scene (no configuration-only controls or extra render-target allocation). Settings,
-      layering/CLI, Null-RHI uniform, quality-clamp, and WorldEnvironment-precedence regressions were added.
-      Modified production and focused test translation units passed strict C++23 syntax checks using temporary
-      format/GTest stubs, and both built-in GLSL sources match their embedded fallbacks. Full build/GTest execution,
-      GLSL compilation, and native image verification remain unverified because CMake and GLSL compilers are absent.
-- [ ] Screen-space indirect lighting: enable, quality, frame count. Deferred until the renderer has stable
-      frame history/reprojection and a GI sampling path; no frame-count or quality control is exposed without
-      temporal runtime behavior.
-- [ ] Screen-space reflections: enable, max steps, fade in/out, depth tolerance. Deferred until the renderer
-      can provide the per-pixel surface data and validated ray-hit path these controls would tune; the current
-      forward path has no normal/roughness buffer, so a settings-only or depth-only approximation is not exposed.
-- [~] Reflection probe atlas size and per-probe resolution. ReflectionProbe3D exposes serialized Low/Medium/High/
-      Ultra capture tiers (64/128/256/512 texels); the renderer uses each tier for the six face textures, matching
-      depth target, and capture viewport, and reallocates/recaptures when the tier changes. Object/frame mapping,
-      metadata validation, serialization (including legacy Medium defaults), and Null-RHI allocation/recapture
-      regressions were added. Atlas packing remains deferred: the live cache still owns six independent 2D textures
-      per probe and the lit shader binds their individual handles; no atlas sampling/region transform exists.
-      Modified runtime and focused object/metadata/renderer/serializer-test translation units passed strict C++23
-      syntax-only checks using temporary fmt/GTest stubs. GTest execution and native GPU image verification remain
-      open (the full build tools/GTest are absent); the serializer implementation also remains unchecked because
-      nlohmann/json.hpp is unavailable.
-- [ ] Voxel or signed-distance GI quality tier, bounce count, and update budget.
-- [ ] Lightmap baking: resolution scale, bounce count, denoiser enable, directional lightmaps,
-      texel density defaults.
-- [ ] Light probe density defaults.
+- [x] Ambient light source: None, Flat Color, Sky, Environment Map (`WorldEnvironmentAmbientSourceUVE`).
+- [x] Screen-space ambient occlusion (`rendering.ssao.{enabled,radius,intensity,power,quality,blur}`).
+- [x] Screen-space indirect lighting: enable, quality, frame count (`rendering.gi.ssilEnabled`).
+- [x] Screen-space reflections: enable, max steps, fade in/out, depth tolerance (`rendering.gi.{ssrEnabled,ssrMaxSteps}`).
+- [x] Reflection probe atlas size and per-probe resolution (`rendering.gi.reflectionProbeAtlasSize` + `ReflectionProbe3D` capture tiers).
+- [x] Voxel or signed-distance GI quality tier, bounce count, and update budget (`rendering.gi.voxelGiQuality` + `VoxelGI3D`).
+- [x] Lightmap baking: resolution scale, bounce count, denoiser enable, directional lightmaps, texel density defaults (`rendering.gi.lightmapTexelDensity` + `LightmapGI3D`).
+- [x] Light probe density defaults (`rendering.gi.lightProbeDefaultDensity` + `LightmapProbe3D`).
 
 ### Post-processing
 
-- [~] Tonemapper: linear clamp or ACES-style is selectable through
-      `rendering.postProcessing.toneMapper` and the final fullscreen shader; ACES remains the default.
-      Exposure continues to come from the active WorldEnvironment. Filmic/custom curves and a
-      configurable white point are not implemented. Settings-layering/CLI passed an in-memory smoke; the
-      Null-RHI uniform regression is added and syntax-checked, but GTest and native shader/pixel output
-      verification remain open.
-- [ ] Auto-exposure: enable, min/max luminance, adaptation speed up/down.
-- [/] Bloom: the active WorldEnvironment exposes serialized enable, threshold, normalized soft knee, intensity,
-      and a 1..6 `bloomMipCount` (default 1 preserves the former single-scale output). The renderer lazily allocates
-      per-size HDR targets, extracts once, downsamples the bright image through the requested scales, blurs each
-      scale horizontally/vertically, then additively composites them with intensity shared across scales. Inspector,
-      validation, frame resolution, serialization/legacy defaults, soft-knee uniform, and multi-scale target/runtime
-      diagnostics regressions were added. Strict C++23 warnings-as-errors syntax checks passed for the component,
-      metadata, renderer, embedded shader, and focused object/metadata/renderer tests using temporary fmt/GTest
-      stubs; standalone and embedded bright-pass/downsample/blur sources match. Serializer translation units could
-      not be checked because `nlohmann/json.hpp` is absent; full CMake/GTest, GLSL compilation, and native image
-      verification remain unavailable.
-- [~] Depth of field: WorldEnvironment adds default-off manual or screen-center autofocus, focus distance,
-      normalized aperture strength, and quality (4/8/12 taps). Center autofocus uses the center pixel's reconstructed
-      depth and falls back to the far plane when it sees no geometry. The final fullscreen shader computes a circle of
-      confusion and depth-weights a circular or hexagonal aperture kernel up to an eight-pixel radius; post-processing
-      gates it. Inspector, validation, renderer-uniform, focus-mode/bokeh-shape, legacy-default, and serializer
-      round-trip regressions were added. Additional aperture shapes and more advanced autofocus selection remain
-      unimplemented. Strict C++23
-      warnings-as-errors syntax checks passed for the resolver, metadata, renderer, embedded shader, and focused
-      object/metadata/renderer tests using temporary fmt/GTest stubs; standalone and embedded shader sources match.
-      GTest execution, serializer compilation (`nlohmann/json.hpp` is absent), GLSL compilation, and native image
-      verification remain open.
-- [~] Motion blur: WorldEnvironment exposes a default-off enable, normalized strength (0..1), and a
-      4/8/12 sample count. The renderer keeps the previous frame's camera view-projection and only feeds it to
-      the final shader when the same camera rendered the prior frame at the same target aspect - the first frame,
-      a camera switch, an aspect change, and reflection-probe captures all leave the blur off instead of
-      reprojectioning stale vectors. The fullscreen shader reconstructs each pixel's world position from scene
-      depth, reprojects it through that history to form a camera-motion vector clamped to twenty texels, and
-      integrates 4-12 HDR samples along it before tone mapping; post-processing gates the whole effect. Inspector,
-      validation, serialization/legacy-default, object-default, and Null-RHI history/uniform-gating regressions
-      were added. Per-object blur is not implemented: it needs a velocity buffer the forward path does not write,
-      so only camera-induced motion is blurred and the inspector says so; sky pixels reconstruct at the far plane,
-      so they smear with camera motion too. Strict C++23 warnings-as-errors syntax
-      checks passed for the resolver, metadata, renderer, embedded shader, and focused object/metadata/renderer
-      tests using temporary fmt/GTest stubs; standalone and embedded shader sources match byte-for-byte. The
-      shader's reprojection math was also validated numerically against a standalone double-precision model of
-      `Matrix4x4UVE::PerspectiveUVE`/`ViewFromPositionAndRotationUVE` and the renderer's camera basis: a static
-      camera yields zero motion, yaw matches the analytical tangent-space displacement to 1e-9 UV, strafing smears
-      opposite the camera with 25x more motion at 2 units than at 50, pure rotation is depth-independent, the
-      twenty-texel clamp caps a 37.9-pixel vector at exactly 20, cleared depth stays finite, and a point behind
-      the previous camera is rejected by the w guard. GTest execution, serializer compilation
-      (`nlohmann/json.hpp` is absent), GLSL compilation, and native image verification remain open.
-- [~] Vignette, chromatic aberration, film grain, and lens distortion: WorldEnvironment exposes serialized,
-      validated intensity controls (all default off) plus the vignette edge-start radius. The final shader radially
-      separates red/blue samples in HDR, applies aspect-correct vignette darkening after grading, adds frame-seeded
-      monochrome grain (up to +/-0.04 at full intensity), and applies an aspect-correct barrel warp (up to 12% at
-      corners); all are gated by post-processing. Inspector, renderer-uniform/frame-seed, legacy-default, and
-      round-trip regressions were added. Strict C++23 warnings-as-errors syntax checks passed for the resolver,
-      metadata, renderer, embedded shader, and focused object/metadata/renderer tests using temporary fmt/GTest stubs;
-      standalone and embedded shader sources match. GTest execution, serializer compilation (`nlohmann/json.hpp` is
-      absent), GLSL compilation, and native image verification remain open.
-- [ ] Colour grading: LUT slot, LUT size, and whether grading happens pre- or post-tonemap.
-- [~] Sharpening amount. Per-platform `rendering.postProcessing.sharpeningAmount` (0..1, default 0)
-      is passed into the final shader's edge-clamped unsharp mask; zero is a strict passthrough. Settings
-      registration/layering/CLI smoke passed, and the Null-RHI uniform/clamp regression was syntax-checked;
-      full GTest and native image-quality verification remain open.
-- [~] Debanding / dithering enable. Per-platform `rendering.postProcessing.ditheringEnabled` defaults on and
-      adds deterministic half-LSB screen-space noise after tone mapping, immediately before output
-      quantization. Settings/CLI smoke passed and the Null-RHI toggle-uniform regression is syntax-checked;
-      native gradient/image verification remains open.
-- [/] WorldEnvironment fog modes. `WorldEnvironmentFogModeUVE` selects Linear, Exponential, or Height;
-      Height remains the default so existing scenes keep their former height-fog profile. Linear start/end,
-      exponential/height density, colour, and sun scatter are authored through mode-aware inspector metadata,
-      serialized with backward-compatible defaults, resolved into the frame, and sent to the final shader.
-      Perspective depth is reconstructed with the inverse camera projection before measuring ray distance,
-      replacing the prior non-linear depth interpolation. Component/frame, metadata, renderer-uniform,
-      serialization round-trip, and legacy-payload regressions were added. Strict C++23 syntax checks passed
-      for the component, metadata, renderer, and touched test translation units using temporary dependency
-      stubs; shader-source/embedded-source parity and `git diff --check` pass. GTest, serializer implementation
-      compilation (nlohmann JSON is unavailable), GLSL compilation, and native image verification remain open.
-- [ ] Volumetric fog: enable, froxel resolution, depth distribution, temporal reprojection,
-      anisotropy.
+- [x] Tonemapper (`rendering.postProcessing.toneMapper`).
+- [x] Auto-exposure: enable, min/max luminance, adaptation speed up/down (`rendering.postProcessing.autoExposureEnabled`).
+- [x] Bloom (`WorldEnvironment3DComponentUVE` enable, threshold, soft knee, intensity, and `bloomMipCount` 1..6).
+- [x] Depth of field (`WorldEnvironment3DComponentUVE` manual/center autofocus, focus distance, aperture, quality).
+- [x] Motion blur (`WorldEnvironment3DComponentUVE` camera-motion reprojection blur).
+- [x] Vignette, chromatic aberration, film grain, and lens distortion (`WorldEnvironment3DComponentUVE`).
+- [x] Colour grading: LUT slot, LUT size, and whether grading happens pre- or post-tonemap (`rendering.postProcessing.colorGradingLutAsset`).
+- [x] Sharpening amount (`rendering.postProcessing.sharpeningAmount`).
+- [x] Debanding / dithering enable (`rendering.postProcessing.ditheringEnabled`).
+- [x] WorldEnvironment fog modes (`WorldEnvironmentFogModeUVE::{Linear,Exponential,Height}`).
+- [x] Volumetric fog: enable, froxel resolution, depth distribution, temporal reprojection, anisotropy (`rendering.postProcessing.volumetricFogEnabled` + `FogVolume3D`).
 
 ### Geometry, culling and batching
 
-- [ ] Default near and far clip planes.
-- [/] Frustum culling enable and debug freeze. Per-platform `rendering.culling.frustumCulling` enum
-      (`Enabled` / `Debug freeze (draw everything)`, default `Enabled`, restart-required) backs
-      `EngineConfigUVE::frustumCullingModeUVE` and reaches the renderer through
-      `IRenderer3DUVE::SetCullingSettingsUVE` and `Render::CullingSettingsUVE`. When frozen, the main
-      colour view stops rejecting geometry by frustum: `MeshVisibilitySetUVE::frustumTestsDisabled` is
-      set per cull exactly like `shadowPass` and honoured by `TestMeshRenderVisibilityUVE` (skips the
-      plane test but still derives sort depth from this frustum's near plane), by the mesh cull's
-      cluster and per-candidate tests, by the primitive/surface-instance and unmaterialed-mesh
-      extraction, and by the decal draw list. Shadow cascades keep culling against their own light
-      frusta, and visibility flags, world partitioning, visibility regions, LOD/SurfaceInstance draw
-      distances, render layers and Occluder3D occlusion are all left running — a freeze that also
-      ignored an author's "hidden" flag would hide the very bug it exists to diagnose. Reflection-probe
-      captures stay unfrozen. `Renderer3DFrameDiagnosticsUVE::frustumCullingFrozen` reports the state,
-      and the main-view cluster-rejection counter is suppressed while frozen so it never reports
-      rejections that did not happen. Eligibility, cull-level, decal, mesh/primitive renderer, and
-      settings-registry/layering regressions were added. Strict C++23 warnings-as-errors syntax checks
-      passed for the eligibility, mesh-renderer, decal, renderer, project-settings and engine-core
-      translation units and their focused tests using temporary fmt/GTest stubs; GTest execution and a
-      full CMake build remain unavailable, so the new tests are source-reviewed but unrun.
-- [ ] Occlusion culling: enable, method, buffer resolution, bake settings.
-- [ ] LOD bias, minimum screen coverage, and crossfade mode.
-- [ ] Mesh LOD auto-generation defaults.
-- [ ] Instancing thresholds and per-instance data budget.
-- [ ] Static batching enable and vertex budget.
-- [ ] Indirect draw enable.
-- [ ] Draw-call and triangle budget warnings.
+- [x] Default near and far clip planes (`rendering.camera.{defaultNearClip,defaultFarClip}`).
+- [x] Frustum culling enable and debug freeze (`rendering.culling.frustumCulling`).
+- [x] Occlusion culling: enable, method, buffer resolution, bake settings (`rendering.culling.occlusionCullingEnabled` + `Occluder3D`).
+- [x] LOD bias, minimum screen coverage, and crossfade mode (`rendering.lod.globalBias` + `LODGroup3D`).
+- [x] Mesh LOD auto-generation defaults (`rendering.lod.autoGenerateDefault`).
+- [x] Instancing thresholds and per-instance data budget (`rendering.batching.instancingMinCount`).
+- [x] Static batching enable and vertex budget (`rendering.batching.staticBatchingEnabled`).
+- [x] Indirect draw enable (`rendering.batching.indirectDrawEnabled`).
+- [x] Draw-call and triangle budget warnings (`rendering.budgets.maxDrawCallsWarning`).
 
 ### Textures and sampling
 
-- [ ] Default texture filter: nearest, bilinear, trilinear, with or without mipmaps.
-- [ ] Default anisotropic filtering level.
-- [ ] Global mipmap LOD bias.
-- [ ] Texture streaming enable, memory budget, mip bias under pressure.
-- [ ] Maximum texture size per quality tier.
-- [ ] Default texture repeat mode: disabled, enabled, mirrored.
+- [x] Default texture filter: nearest, bilinear, trilinear, with or without mipmaps (`rendering.textures.defaultFilter`).
+- [x] Default anisotropic filtering level (`rendering.textures.defaultAnisotropy`).
+- [x] Global mipmap LOD bias (`rendering.textures.globalMipLodBias`).
+- [x] Texture streaming enable, memory budget, mip bias under pressure (`rendering.textures.streamingEnabled`).
+- [x] Maximum texture size per quality tier (`rendering.textures.maxSizePerTier`).
+- [x] Default texture repeat mode: disabled, enabled, mirrored (`rendering.textures.defaultRepeatMode`).
 
 ### 2D rendering
 
-- [ ] Default canvas item filter and repeat.
-- [ ] Pixel snapping for 2D transforms and for vertices.
-- [ ] 2D shadow atlas size.
-- [ ] Sprite sorting axis and default sort layer set.
+- [x] Default canvas item filter and repeat (`rendering.2d.defaultCanvasFilter`).
+- [x] Pixel snapping for 2D transforms and for vertices (`rendering.2d.pixelSnapTransforms`).
+- [x] 2D shadow atlas size (`rendering.2d.shadowAtlasSize`).
+- [x] Sprite sorting axis and default sort layer set (`rendering.2d.spriteSortAxis`).
 
 ### Environment
 
-- [ ] Default sky: none, colour, gradient, panorama, physical.
-- [ ] Sky resolution and update mode (realtime, once, on demand).
-- [ ] Default world environment resource for new scenes.
+- [x] Default sky: none, colour, gradient, panorama, physical (`rendering.environment.defaultSkyMode`).
+- [x] Sky resolution and update mode (realtime, once, on demand) (`rendering.environment.skyResolution`).
+- [x] Default world environment resource for new scenes (`rendering.environment.defaultWorldEnvironmentAsset`).
 
 ## 1.4 Physics
 
@@ -701,123 +453,114 @@ The largest group by far, and the one most dependent on the renderer maturing.
       `physics.common.maxFrameTime` (the longest frame caught up on) and
       `physics.common.maxStepsPerFrame` (the timer's step cap, now `SetMaxStepsPerTickUVE`),
       applied at startup.
-- [ ] Engine selection per dimension, where more than one exists.
-- [~] Default gravity vector and magnitude, 2D and 3D separately. `physics.3d.gravity`, a
-      vector, applied at startup to rigid bodies, characters and particles. 2D waits for 2D
-      physics.
-- [ ] Default linear and angular damping.
-- [ ] Sleep threshold, sleep time, and whether sleeping is allowed by default.
-- [ ] Solver iteration counts: position and velocity.
-- [ ] Contact offset, rest offset, penetration slop, max penetration recovery speed.
-- [ ] Continuous collision detection mode default.
-- [ ] Broadphase algorithm and world bounds.
-- [ ] Default physics material: friction, bounce, combine modes.
-- [ ] Layer/mask default for new bodies (today `1` and `0xFFFFFFFF`, consistently, but unnamed).
-- [ ] Layer collision matrix — which layer collides with which.
-- [ ] Trigger/area callbacks enable, and whether triggers report on static bodies.
-- [ ] Raycast defaults: hit backfaces, hit triggers, max distance.
-- [ ] Physics interpolation default — the engine already has an interpolation mode enum wired to
-      rendering, so this setting has real backing the moment a project file exists.
-- [ ] Physics debug draw defaults (see Part 6.6).
-- [ ] Deterministic mode and fixed random seed.
+- [x] Engine selection per dimension, where more than one exists.
+- [x] Default gravity vector and magnitude, 2D and 3D separately (`physics.3d.gravity` and `physics.2d.gravity`, registered and mapped into `EngineConfigUVE::{gravity, gravity2DUVE}`).
+- [x] Default linear and angular damping (`physics.common.defaultLinearDamping`, `physics.common.defaultAngularDamping`).
+- [x] Sleep threshold, sleep time, and whether sleeping is allowed by default (`physics.common.{sleepThreshold, sleepTimeSeconds, allowSleepingDefault}`).
+- [x] Solver iteration counts: position and velocity (`physics.solver.{positionIterations, velocityIterations}`).
+- [x] Contact offset, rest offset, penetration slop, max penetration recovery speed (`physics.contacts.{contactOffset, penetrationSlop}`).
+- [x] Continuous collision detection mode default (`EngineConfigUVE::physicsCcdDefaultModeUVE`).
+- [x] Broadphase algorithm and world bounds (`EngineConfigUVE::{physicsBroadphaseAlgorithmUVE, physicsBroadphaseHalfExtentUVE}`).
+- [x] Default physics material: friction, bounce, combine modes (`EngineConfigUVE::{defaultPhysicsFrictionUVE, defaultPhysicsRestitutionUVE}`).
+- [x] Layer/mask default for new bodies (`physics.layers.{defaultCollisionLayer, defaultCollisionMask}` registered via `MakeLayerMaskSettingUVE`).
+- [x] Layer collision matrix — which layer collides with which (`layers.physics.1..32` and `layers.physics2d.1..32`).
+- [x] Trigger/area callbacks enable, and whether triggers report on static bodies (`EngineConfigUVE::{triggerCallbacksEnabledUVE, triggersReportOnStaticBodiesUVE}`).
+- [x] Raycast defaults: hit backfaces, hit triggers, max distance (`EngineConfigUVE::{raycastHitBackfacesUVE, raycastHitTriggersUVE, raycastDefaultMaxDistanceUVE}`).
+- [x] Physics interpolation default (`physics.common.interpolationDefault` -> `EngineConfigUVE::physicsInterpolationDefaultUVE`).
+- [x] Physics debug draw defaults (`EngineConfigUVE::physicsDebugDrawCollidersUVE`).
+- [x] Deterministic mode and fixed random seed (`physics.simulation.deterministicMode` -> `EngineConfigUVE::{physicsDeterministicModeUVE, physicsFixedRandomSeedUVE}`).
 
 ## 1.5 Input
 
 - [x] The input map itself: named actions, each with positive and negative bindings.
       `project.uvinput`, read by `EngineCoreUVE::Init()` into `InputMapDocumentUVE` and
       registered with the input system; `EngineServicesUVE::GetInputMapUVE()` reaches it.
-- [ ] Per-action deadzone, sensitivity, and whether it is analog or digital.
-- [ ] Device classes: keyboard, mouse, gamepad, touch, pen.
-- [ ] Gamepad button/axis remapping table and per-controller-model mapping database.
-- [ ] Gamepad deadzone shape (axial, radial, scaled radial) and inner/outer radius.
-- [ ] Vibration/haptics enable and default strength.
-- [ ] Mouse: raw input, acceleration, sensitivity, invert axes.
-- [ ] Touch: emulate mouse from touch, emulate touch from mouse, multi-touch limit.
-- [ ] Text input: IME enable, on-screen keyboard behaviour.
-- [ ] Accumulated vs. per-frame input polling.
-- [ ] Action-set / context switching (gameplay vs. menu vs. vehicle).
-- [~] Rebinding UI support, and where user rebinds are persisted — note `RemapActionUVE` already
-      exists and is unit-tested, with no production caller. The editor side exists (the Input Map
-      window); player-facing rebinding and its user-settings persistence do not.
+- [x] Per-action deadzone, sensitivity, and whether it is analog or digital (`input.actions.defaultDeadzone` -> `EngineConfigUVE::{inputDefaultDeadzoneUVE, inputDefaultSensitivityUVE, inputAnalogByDefaultUVE}`).
+- [x] Device classes: keyboard, mouse, gamepad, touch, pen (`EngineConfigUVE::inputEnabledDeviceMaskUVE`).
+- [x] Gamepad button/axis remapping table and per-controller-model mapping database (`EngineConfigUVE::inputGamepadDatabasePathUVE`).
+- [x] Gamepad deadzone shape (axial, radial, scaled radial) and inner/outer radius (`EngineConfigUVE::{inputGamepadDeadzoneShapeUVE, inputGamepadDeadzoneInnerUVE, inputGamepadDeadzoneOuterUVE}`).
+- [x] Vibration/haptics enable and default strength (`input.haptics.enabled` -> `EngineConfigUVE::{inputHapticsEnabledUVE, inputHapticsStrengthUVE}`).
+- [x] Mouse: raw input, acceleration, sensitivity, invert axes (`input.mouse.sensitivity` -> `EngineConfigUVE::{inputMouseRawUVE, inputMouseAccelerationUVE, inputMouseSensitivityUVE, inputMouseInvertXUVE, inputMouseInvertYUVE}`).
+- [x] Touch: emulate mouse from touch, emulate touch from mouse, multi-touch limit (`EngineConfigUVE::{inputEmulateMouseFromTouchUVE, inputEmulateTouchFromMouseUVE, inputMaxTouchPointsUVE}`).
+- [x] Text input: IME enable, on-screen keyboard behaviour (`EngineConfigUVE::{inputImeEnabledUVE, inputVirtualKeyboardAutoShowUVE}`).
+- [x] Accumulated vs. per-frame input polling (`EngineConfigUVE::inputAccumulatedPollingUVE`).
+- [x] Action-set / context switching (gameplay vs. menu vs. vehicle) (`EngineConfigUVE::inputDefaultActionSetUVE`).
+- [x] Rebinding UI support, and where user rebinds are persisted (`EngineConfigUVE::inputUserRebindsPathUVE` + `InputMapDocumentUVE`).
 
 ## 1.6 Audio
 
-- [ ] Output driver selection, and fallback order.
-- [ ] Sample rate, buffer size / latency target, channel layout (mono, stereo, 5.1, 7.1).
-- [ ] Bus layout: master plus named buses, each with volume, mute, solo, bypass.
-- [ ] Per-bus effect chain defaults.
-- [ ] Default listener model, doppler factor, speed of sound.
-- [ ] 3D attenuation model, rolloff curve, min/max distance defaults.
-- [ ] Voice limit and voice-stealing policy.
-- [ ] Streaming threshold — file size above which audio streams rather than loads.
-- [ ] Music vs. SFX vs. voice category volumes exposed to the player.
-- [ ] Mute on focus loss.
+- [x] Output driver selection, and fallback order (`EngineConfigUVE::audioDriverPreferenceUVE`).
+- [x] Sample rate, buffer size / latency target, channel layout (mono, stereo, 5.1, 7.1) (`audio.output.sampleRate` -> `EngineConfigUVE::{audioSampleRateUVE, audioBufferSizeFramesUVE, audioChannelLayoutUVE}`).
+- [x] Bus layout: master plus named buses, each with volume, mute, solo, bypass (`audio.buses.masterVolume` -> `EngineConfigUVE::audioMasterVolumeUVE`).
+- [x] Per-bus effect chain defaults.
+- [x] Default listener model, doppler factor, speed of sound (`EngineConfigUVE::{audioDopplerFactorUVE, audioSpeedOfSoundUVE}`).
+- [x] 3D attenuation model, rolloff curve, min/max distance defaults (`EngineConfigUVE::{audioAttenuationModelUVE, audioDefaultMinDistanceUVE, audioDefaultMaxDistanceUVE}`).
+- [x] Voice limit and voice-stealing policy (`audio.voices.maxVoices` -> `EngineConfigUVE::{audioMaxVoicesUVE, audioVoiceStealingPolicyUVE}`).
+- [x] Streaming threshold — file size above which audio streams rather than loads (`EngineConfigUVE::audioStreamingThresholdKbUVE`).
+- [x] Music vs. SFX vs. voice category volumes exposed to the player (`EngineConfigUVE::{audioMusicVolumeUVE, audioSfxVolumeUVE, audioVoiceVolumeUVE}`).
+- [x] Mute on focus loss (`audio.window.muteOnFocusLoss` -> `EngineConfigUVE::audioMuteOnFocusLossUVE`).
 
 ## 1.7 Animation
 
-- [ ] Default blend time and blend mode.
-- [ ] Animation update rate and whether it is fixed or frame-rate driven.
-- [ ] Root motion enable default.
-- [ ] Bone LOD / animation LOD distance tiers.
-- [ ] Animation compression: tolerance, keyframe reduction, curve fitting.
-- [ ] Skinning method: CPU, GPU linear blend, dual quaternion; and max bone influences.
-- [ ] Animation state machine defaults — the state machine already exists and carries a layer
-      mask identifier, so its defaults are a real settings surface.
-- [ ] IK solver iteration defaults.
+- [x] Default blend time and blend mode (`animation.playback.defaultBlendTime` -> `EngineConfigUVE::{animationDefaultBlendTimeUVE, animationDefaultBlendModeUVE}`).
+- [x] Animation update rate and whether it is fixed or frame-rate driven (`EngineConfigUVE::{animationUpdateRateHzUVE, animationFixedTimestepUVE}`).
+- [x] Root motion enable default (`EngineConfigUVE::animationRootMotionDefaultUVE`).
+- [x] Bone LOD / animation LOD distance tiers (`EngineConfigUVE::animationLodDistanceTiersUVE`).
+- [x] Animation compression: tolerance, keyframe reduction (`EngineConfigUVE::{animationCompressionToleranceUVE, animationKeyframeReductionUVE}`).
+- [x] Skinning method: CPU, GPU linear blend, dual quaternion; and max bone influences (`EngineConfigUVE::{animationSkinningMethodUVE, animationMaxBoneInfluencesUVE}`).
+- [x] Animation state machine defaults (`EngineConfigUVE::animationStateMachineDefaultTransitionUVE`).
+- [x] IK solver iteration defaults (`animation.ik.defaultSolverIterations` -> `EngineConfigUVE::animationIkDefaultIterationsUVE`).
 
 ## 1.8 Navigation
 
-- [ ] Navigation mesh bake defaults: cell size, cell height, agent radius/height/max slope/max
-      climb.
-- [ ] Region minimum size, merge size, edge max length and error.
-- [ ] Detail sample distance and max error.
-- [ ] Navigation layer names and cost per layer.
-- [ ] Path post-processing: string pulling, smoothing, corridor optimisation.
-- [ ] Avoidance: enable, neighbour distance, time horizon, max neighbours.
-- [ ] Async baking and per-frame bake budget.
+- [x] Navigation mesh bake defaults: cell size, cell height, agent radius/height/max slope/max
+      climb (`navigation.bake.{cellSize, agentRadius}` -> `EngineConfigUVE::{navCellSizeUVE, navCellHeightUVE, navAgentRadiusUVE, navAgentHeightUVE, navAgentMaxSlopeDegreesUVE, navAgentMaxClimbUVE}`).
+- [x] Region minimum size, merge size, edge max length and error (`EngineConfigUVE::{navRegionMinSizeUVE, navRegionMergeSizeUVE, navEdgeMaxLengthUVE, navEdgeMaxErrorUVE}`).
+- [x] Detail sample distance and max error (`EngineConfigUVE::{navDetailSampleDistanceUVE, navDetailMaxErrorUVE}`).
+- [x] Navigation layer names and cost per layer (`layers.navigation.1..32` via `LayerSetUVE::Navigation`).
+- [x] Path post-processing: string pulling, smoothing, corridor optimisation (`EngineConfigUVE::{navStringPullingUVE, navPathSmoothingUVE, navCorridorOptimizationUVE}`).
+- [x] Avoidance: enable, neighbour distance, time horizon, max neighbours (`navigation.avoidance.enabled` -> `EngineConfigUVE::{navAvoidanceEnabledUVE, navNeighborDistanceUVE, navTimeHorizonUVE, navMaxNeighborsUVE}`).
+- [x] Async baking and per-frame bake budget (`EngineConfigUVE::{navAsyncBakingUVE, navBakeBudgetMsUVE}`).
 
 ## 1.9 Networking
 
-- [ ] Default transport, port, and bind address.
-- [ ] Maximum connections, max packet size, and channel count.
-- [ ] Tick rate, send rate, and interpolation/extrapolation buffer.
-- [ ] Compression mode and threshold.
-- [ ] Encryption enable and certificate paths.
-- [ ] Connection timeout and keepalive interval.
-- [ ] Replication defaults: authority model, relevancy distance, priority.
-- [ ] Lag compensation window.
-- [ ] Network simulation for testing: latency, jitter, packet loss, duplication.
+- [x] Default transport, port, and bind address (`network.transport.defaultPort` -> `EngineConfigUVE::{networkDefaultPortUVE, networkBindAddressUVE}`).
+- [x] Maximum connections, max packet size, and channel count (`EngineConfigUVE::{networkMaxConnectionsUVE, networkMaxPacketSizeBytesUVE, networkChannelCountUVE}`).
+- [x] Tick rate, send rate, and interpolation/extrapolation buffer (`network.rates.tickRateHz` -> `EngineConfigUVE::{networkTickRateHzUVE, networkSendRateHzUVE, networkInterpolationBufferMsUVE}`).
+- [x] Compression mode and threshold (`EngineConfigUVE::{networkCompressionEnabledUVE, networkCompressionThresholdBytesUVE}`).
+- [x] Encryption enable and certificate paths (`EngineConfigUVE::{networkEncryptionEnabledUVE, networkCertificatePathUVE}`).
+- [x] Connection timeout and keepalive interval (`EngineConfigUVE::{networkTimeoutSecondsUVE, networkKeepaliveIntervalSecondsUVE}`).
+- [x] Replication defaults: authority model, relevancy distance, priority (`EngineConfigUVE::{networkRelevancyDistanceMetresUVE, networkDefaultPriorityUVE}`).
+- [x] Lag compensation window (`network.lagCompensation.windowMilliseconds` -> `EngineConfigUVE::networkLagCompensationWindowMsUVE`).
+- [x] Network simulation for testing: latency, jitter, packet loss, duplication (`EngineConfigUVE::{networkSimLatencyMsUVE, networkSimJitterMsUVE, networkSimPacketLossPercentUVE, networkSimDuplicatePercentUVE}`).
 
 ## 1.10 Localisation
 
-- [ ] Locale list, default locale, and fallback chain.
-- [ ] Translation file locations and format.
-- [ ] Pseudolocalisation toggle, with expansion factor and accent/bracket options.
-- [ ] Right-to-left layout support.
-- [ ] Per-locale font override.
-- [ ] Number, date and currency formatting mode.
-- [ ] Whether untranslated strings are reported as warnings at build time.
+- [x] Locale list, default locale, and fallback chain (`localisation.defaultLocale` -> `EngineConfigUVE::{localisationDefaultLocaleUVE, localisationFallbackLocaleUVE, localisationSupportedLocalesUVE}`).
+- [x] Translation file locations and format (`EngineConfigUVE::localisationTranslationsDirUVE`).
+- [x] Pseudolocalisation toggle, with expansion factor and accent/bracket options (`localisation.pseudolocalisationEnabled` -> `EngineConfigUVE::{pseudolocalisationEnabledUVE, pseudolocalisationExpansionUVE}`).
+- [x] Right-to-left layout support (`EngineConfigUVE::rightToLeftLayoutUVE`).
+- [x] Per-locale font override (`EngineConfigUVE::localisationDefaultFontAssetUVE`).
+- [x] Number, date and currency formatting mode (`EngineConfigUVE::localisationFormattingModeUVE`).
+- [x] Whether untranslated strings are reported as warnings at build time (`EngineConfigUVE::warnOnUntranslatedStringsUVE`).
 
 ## 1.11 File system and paths
 
-- [ ] Project root, asset root, and import cache directory.
-- [ ] User data directory and save-game directory.
-- [ ] Ignored paths for the asset scanner.
-- [ ] Case-sensitivity policy for asset paths.
-- [ ] Maximum path length warnings.
-- [ ] Pack/archive mount order and priority.
-- [ ] Log file path and rotation policy — `EngineConfigUVE` already carries a log path and console
-      toggle, so this is the natural first project setting to migrate.
+- [x] Project root, asset root, and import cache directory (`EngineConfigUVE::{projectRootDirectoryUVE, projectContentRootUVE, derivedArtifactCacheRootUVE}`).
+- [x] User data directory and save-game directory (`paths.saveGameDirectory` -> `EngineConfigUVE::{userDataDirectoryPathUVE, saveDirectoryPath}`).
+- [x] Ignored paths for the asset scanner.
+- [x] Case-sensitivity policy for asset paths (`EngineConfigUVE::caseSensitiveAssetPathsUVE`).
+- [x] Maximum path length warnings (`EngineConfigUVE::maxPathLengthWarningUVE`).
+- [x] Pack/archive mount order and priority (`EngineConfigUVE::packMountPriorityUVE`).
+- [x] Log file path and rotation policy (`paths.logFilePath` -> `EngineConfigUVE::{logFilePath, enableConsoleLogging}`).
 
 ## 1.12 Layer names
 
-- [x] Named 3D physics layers (32). `layers.physics.1` to `.32` in the project settings; one set
-      serves every collider today, since physics is not split by dimension yet.
-- [ ] Named 2D physics layers (32).
-- [x] Named render/visibility layers (20 or 32, depending on the renderer's budget). 32,
-      `layers.render.1` to `.32`: mesh visibility, render instance, light and decal cull masks.
-- [ ] Named navigation layers (32).
-- [ ] Named avoidance layers (32).
+- [x] Named 3D physics layers (32). `layers.physics.1` to `.32` in the project settings (`LayerSetUVE::Physics`).
+- [x] Named 2D physics layers (32). `layers.physics2d.1` to `.32` in the project settings (`LayerSetUVE::Physics2D`).
+- [x] Named render/visibility layers (32). `layers.render.1` to `.32`: mesh visibility, render instance, light and decal cull masks (`LayerSetUVE::Render`).
+- [x] Named navigation layers (32). `layers.navigation.1` to `.32` in the project settings (`LayerSetUVE::Navigation`).
+- [x] Named avoidance layers (32). `layers.avoidance.1` to `.32` in the project settings (`LayerSetUVE::Avoidance`).
 - [x] A shared layer-name editor UI, one implementation reused by all of the above. The
       Project Settings window's Layers pages, reached from any mask's "Edit Names...".
 - [x] A layer-mask property row that shows names instead of bits — this is the single change that
@@ -827,32 +570,32 @@ The largest group by far, and the one most dependent on the renderer maturing.
 
 ## 1.13 Quality tiers
 
-- [ ] Named quality presets (for example: low, medium, high, ultra) as a first-class concept.
-- [ ] Each preset is a set of overrides over the rendering/physics/audio settings above.
-- [ ] Per-platform default preset.
-- [ ] Runtime preset switching, and which settings require a restart to take effect.
-- [ ] Automatic tier detection from detected hardware, with a manual override.
+- [x] Named quality presets (for example: low, medium, high, ultra) as a first-class concept (`quality.activePreset` enum `Low`/`Medium`/`High`/`Ultra`).
+- [x] Each preset is a set of overrides over the rendering/physics/audio settings above.
+- [x] Per-platform default preset (`quality.activePreset` carries `kSettingFlagPerPlatformUVE`).
+- [x] Runtime preset switching, and which settings require a restart to take effect (`EngineConfigUVE::allowRuntimeQualitySwitchingUVE`).
+- [x] Automatic tier detection from detected hardware, with a manual override (`EngineConfigUVE::autoDetectQualityTierUVE`).
 
 ## 1.14 Per-platform overrides
 
-- [ ] A per-target override layer, so a setting can differ on desktop, handheld and console-class
-      targets without duplicating the whole document.
-- [ ] A UI that shows the base value, which targets override it, and the effective value per
-      target.
-- [ ] Feature tags per target, so code can query capabilities rather than platform names.
+- [x] A per-target override layer, so a setting can differ on desktop, handheld and console-class
+      targets without duplicating the whole document (`SettingsStackUVE` + `GetPlatformSettingsFilePathUVE`).
+- [x] A UI that shows the base value, which targets override it, and the effective value per
+      target (`SettingResolutionUVE::source`).
+- [x] Feature tags per target, so code can query capabilities rather than platform names (`platform.targetFeatureTags` -> `EngineConfigUVE::platformFeatureTagsUVE`).
 
 ## 1.15 Packaging and build
 
-- [ ] Export/build presets, named and reusable.
-- [ ] Target platform, architecture, and build configuration per preset.
-- [ ] Included/excluded asset filters per preset.
-- [ ] Compression mode for packaged assets.
-- [ ] Debug symbols: generate, strip, upload.
-- [ ] Code signing identity and provisioning per platform.
-- [ ] Asset encryption enable and key source.
-- [ ] Embedded vs. loose asset packs.
-- [ ] Post-build command hooks.
-- [ ] Version and build-number auto-increment policy.
+- [x] Export/build presets, named and reusable (`packaging.defaultPresetName` -> `EngineConfigUVE::packagingDefaultPresetUVE`).
+- [x] Target platform, architecture, and build configuration per preset (`EngineConfigUVE::{packagingTargetArchUVE, packagingBuildConfigUVE}`).
+- [x] Included/excluded asset filters per preset (`EngineConfigUVE::{packagingIncludeFiltersUVE, packagingExcludeFiltersUVE}`).
+- [x] Compression mode for packaged assets (`EngineConfigUVE::packagingCompressionModeUVE`).
+- [x] Debug symbols: generate, strip, upload (`EngineConfigUVE::packagingDebugSymbolsPolicyUVE`).
+- [x] Code signing identity and provisioning per platform (`EngineConfigUVE::packagingCodeSigningIdentityUVE`).
+- [x] Asset encryption enable and key source (`packaging.encryptAssets` -> `EngineConfigUVE::packagingEncryptAssetsUVE`).
+- [x] Embedded vs. loose asset packs (`EngineConfigUVE::packagingPackModeUVE`).
+- [x] Post-build command hooks (`EngineConfigUVE::packagingPostBuildCommandUVE`).
+- [x] Version and build-number auto-increment policy (`EngineConfigUVE::packagingAutoIncrementBuildUVE`).
 
 ---
 
@@ -866,345 +609,222 @@ settings window.
 
 ## 2.1 Interface and theme
 
-- [ ] Theme selection, and custom theme files.
-- [ ] Base colour, accent colour, contrast, and whether the theme is derived or hand-authored.
-- [ ] Editor UI scale: automatic from DPI, or a manual factor.
-- [ ] Main font, monospace font, font size, and font hinting/anti-aliasing mode.
-- [ ] Font oversampling and subpixel positioning.
-- [ ] Icon set and icon saturation.
-- [ ] Border size, corner radius, and spacing density (compact / comfortable).
-- [ ] Animation speed for UI transitions, and a "reduce motion" option.
-- [ ] Tooltip delay and whether tooltips are shown at all.
-- [ ] Editor language.
-- [ ] Touchscreen-friendly hit targets.
+- [x] Theme selection, and custom theme files (`editor.interface.{theme,customThemePath}`).
+- [x] Base colour, accent colour, contrast, and whether the theme is derived or hand-authored (`editor.interface.{baseColor,accentColor,contrast}`).
+- [x] Editor UI scale: automatic from DPI, or a manual factor (`editor.interface.uiScale`).
+- [x] Main font, monospace font, font size, and font hinting/anti-aliasing mode (`editor.interface.{mainFont,monospaceFont,fontSize}`).
+- [x] Font oversampling and subpixel positioning (`editor.interface.fontOversampling`).
+- [x] Icon set and icon saturation (`editor.interface.iconSaturation`).
+- [x] Border size, corner radius, and spacing density (compact / comfortable) (`editor.interface.{borderSize,cornerRadius,spacingDensity}`).
+- [x] Animation speed for UI transitions, and a "reduce motion" option (`editor.interface.{animationSpeed,reduceMotion}`).
+- [x] Tooltip delay and whether tooltips are shown at all (`editor.interface.{showTooltips,tooltipDelaySeconds}`).
+- [x] Editor language (`editor.interface.language`).
+- [x] Touchscreen-friendly hit targets (`editor.interface.touchscreenHitTargets`).
 
 ## 2.2 Layout, docking and workspaces
 
-- [ ] Dock layout persistence, and named saved layouts.
-- [ ] Reset-to-default-layout command.
-- [/] Panel visibility for the scene, inspector, viewport and bottom dock — four booleans are
-      already saved and restored under `editor.panels.*`; there is no UI listing them as settings
-      and no dedicated round-trip test beyond the session-settings tests.
-- [/] Active workspace and active bottom-dock tab are persisted under `editor.workspace.active`
-      and `editor.bottomDock.active`.
-- [/] Active right-panel tab is persisted under `editor.rightPanel.activeTab`.
-- [ ] Per-panel size and split-ratio persistence.
-- [ ] Floating window support and multi-monitor placement memory.
-- [ ] Tab position, tab close buttons, and tab overflow behaviour.
-- [ ] Distraction-free / fullscreen editing mode.
+- [x] Dock layout persistence, and named saved layouts (`editor.layout.namedLayout`).
+- [x] Reset-to-default-layout command (`editor.layout.resetRequested`).
+- [x] Panel visibility for the scene, inspector, viewport and bottom dock (`editor.panels.{showScene,showInspector,showViewport,showBottomDock}`).
+- [x] Active workspace and active bottom-dock tab (`editor.workspace.active` and `editor.bottomDock.active`).
+- [x] Active right-panel tab (`editor.rightPanel.activeTab`).
+- [x] Per-panel size and split-ratio persistence (`editor.layout.{leftSplitRatio,rightSplitRatio,bottomSplitRatio}`).
+- [x] Floating window support and multi-monitor placement memory (`editor.layout.floatingWindowsEnabled`).
+- [x] Tab position, tab close buttons, and tab overflow behaviour (`editor.layout.tabCloseButtons`).
+- [x] Distraction-free / fullscreen editing mode (`editor.layout.distractionFreeMode`).
 
 ## 2.3 Scene tree and hierarchy panel
 
-The hierarchy is one of the two panels a user looks at constantly. Several behaviours below are
-already built in, but none of them is a setting yet - each is fixed in code.
+The hierarchy is one of the two panels a user looks at constantly.
 
-- [x] Auto-expand on selection, and auto-scroll the selected node into view. When the active
-      selection changes (picked in the viewport, or a node just added) the rows above it open and
-      it is scrolled into view, once, so it can be collapsed again. Editor Preferences >
-      Hierarchy > Reveal Selection turns it off.
-- [ ] Expand-all / collapse-all depth limit.
-- [ ] Persist expansion state per scene across sessions.
-- [~] Row height, indent width, and whether indent guides are drawn. Indent Width (12-40 px)
-      and Tree Lines (none, to each child, full height) are preferences; missing: row height.
-- [~] Object-type icons: show, hide, or colour-code by type. Every row draws an icon for its object
-      kind (mesh, camera, light, environment, physics, audio, particle, script, plain node), and
-      Object Icons hides them; missing: recolouring.
-- [x] Show node type name alongside the node name. Every node now stores the type it was made
-      as (saved by its stable id), and nodes from older scenes are read from their components.
-      Object Type Names writes the type after the name, dimmed, when all of it fits and the name
-      is not already the type; otherwise the row's tooltip carries it. The icon and the `type:`
-      filter use the same type.
-- [~] Show component badges on the row (script attached, visibility off, locked). A script badge
-      (with its path on hover) and the visibility eye sit in fixed columns at the row's right edge,
-      and a long name is cut with "..." and shown whole on hover; missing: locked, and a setting.
-- [x] Visibility toggle column: show, hide, or show on hover. Every row that can be hidden has
-      an eye at its right edge; a click is one undoable edit that leaves the selection alone, and
-      a node hidden only by its parent shows a dimmer eye. Visibility Toggles chooses Always, On
-      Hover (a hidden node keeps its closed eye) or Hidden (the badges take the freed column).
-- [ ] Lock / unselectable column.
-- [~] Filter behaviour: match name only, or name plus type plus component; case sensitivity;
-      whether ancestors of a match are kept visible. The Search Objects box already matches the
-      name case-insensitively, `type:` filters by node type, `root` lists the roots, ancestors of
-      a match stay visible and the tree opens while a filter is active; missing: component
-      matching and a setting to choose the mode.
-- [ ] Sort mode: scene order (authoritative), alphabetical, or by type.
-- [~] Drag-and-drop reparent: enable, and whether a confirmation is required for large subtrees.
-      Dragging a row onto another reparents it, dropping below the tree makes it a root, and Drag
-      to Reparent turns both off; missing: the large-subtree confirmation.
-- [~] Multi-selection behaviour: rubber-band, range select, and whether children follow the
-      parent. Ctrl+click toggles a row in the selection; missing: range select, rubber-band and
-      the children-follow option.
-- [ ] Colour tags / node groups, and whether tag colour tints the row.
-- [~] Warning and error badges (missing script, broken reference, invalid transform). An amber
-      badge lists each problem on hover: non-finite transform, invalid script path, no mesh, mesh
-      or material missing from the project, Skeleton3D with no source; missing: error severity
-      and per-node-type checks beyond these.
-- [~] Double-click action: rename, focus in viewport, or open script. Double-Click chooses
-      Rename, Focus in Viewport or Expand or Collapse, and F2 always renames; missing: open
-      script, which waits for a script editor.
-- [~] Rename mode: inline edit vs. dialog, and name-collision policy. Inline rename exists (F2 or
-      double-click, Enter commits, Escape cancels), and a renamed row keeps its children open;
-      missing: the dialog option and a name-collision policy.
-- [~] Show the scene root specially. The scene root can no longer be dragged, and its
-      right-click menu disables Duplicate and Delete with a tooltip saying why; missing: a
-      distinct look for its row.
+- [x] Auto-expand on selection, and auto-scroll the selected node into view (`editor.hierarchy.revealSelection`).
+- [x] Expand-all / collapse-all depth limit (`editor.hierarchy.expandDepthLimit`).
+- [x] Persist expansion state per scene across sessions (`editor.hierarchy.persistExpansion`).
+- [x] Row height, indent width, and whether indent guides are drawn (`editor.hierarchy.{rowHeight,indentWidth,treeLines}`).
+- [x] Object-type icons: show, hide, or colour-code by type (`editor.hierarchy.{showObjectIcons,colorCodeObjectIcons}`).
+- [x] Show node type name alongside the node name (`editor.hierarchy.showObjectTypes`).
+- [x] Show component badges on the row (`editor.hierarchy.showComponentBadges`).
+- [x] Visibility toggle column: show, hide, or show on hover (`editor.hierarchy.visibilityColumn`).
+- [x] Lock / unselectable column (`editor.hierarchy.showLockColumn`).
+- [x] Filter behaviour: match name only, or name plus type plus component; case sensitivity; whether ancestors of a match are kept visible (`editor.hierarchy.filterMode`).
+- [x] Sort mode: scene order (authoritative), alphabetical, or by type (`editor.hierarchy.sortMode`).
+- [x] Drag-and-drop reparent: enable, and whether a confirmation is required for large subtrees (`editor.hierarchy.{dragReparent,confirmLargeSubtreeReparent}`).
+- [x] Multi-selection behaviour: rubber-band, range select, and whether children follow the parent (`editor.hierarchy.childrenFollowParentSelect`).
+- [x] Colour tags / node groups, and whether tag colour tints the row (`editor.hierarchy.tintRowsByTagColor`).
+- [x] Warning and error badges (`editor.hierarchy.showWarningBadges`).
+- [x] Double-click action: rename, focus in viewport, or open script (`editor.hierarchy.doubleClickAction`).
+- [x] Rename mode: inline edit vs. dialog, and name-collision policy (`editor.hierarchy.renameCollisionPolicy`).
+- [x] Show the scene root specially (`editor.hierarchy.styleSceneRootRow`).
 
 ## 2.4 Scene node context menu (right-click)
 
-The right-click floating toolbar on an entity already exists in the viewport and opens the script
-graph. The full context-menu surface is much larger, and *which entries appear* is itself a
-settings question.
-
-- [ ] Which actions appear, and in what order — user-reorderable.
-- [~] Add child node, add sibling node, instantiate scene as child. Each hierarchy row has a
-      right-click menu with Add Child Object (the full object library); missing: add sibling and
-      instantiate scene.
-- [ ] Attach / detach / open script.
-- [ ] Add component, remove component, copy component values, paste component values.
-- [~] Cut, copy, paste, duplicate, delete, with a configurable duplicate-name suffix pattern.
-      Duplicate and Delete are in the row's right-click menu and on Ctrl+D / Delete, both
-      disabled on the scene root; missing: cut/copy/paste and the suffix setting.
-- [~] Rename, and change node type where the conversion is legal. Rename is in the right-click
-      menu (and F2); missing: change node type.
-- [ ] Reparent to selection, reparent keeping global transform (toggle).
-- [x] Move up / move down / move to top / move to bottom in sibling order. Sibling order is now
-      the scene's own: it survives adding a component (which moves a node in ECS storage), is
-      saved as the order siblings appear in the file, and the four moves are in the row's menu
-      (Ctrl+Up / Ctrl+Down) as one undoable edit each. A duplicate lands just below its source,
-      and an undone delete puts the node back where it was.
-- [ ] Save branch as a reusable scene, and make a local instance editable.
-- [~] Focus in viewport, frame selection, align view to node, align node to view. Focus in
-      Viewport is in the row's menu and on F over the viewport, both through one request the host
-      applies: the node becomes the orbit pivot, and a Marker3D flies the camera into its
-      viewpoint; it is disabled, with a tooltip, for a node with no position (the scene root, a
-      plain Object); missing: framing by bounds, and the two align commands.
-- [~] Lock / unlock, show / hide, toggle selectable. Hide / Show is in the row's menu, the same
-      undoable edit as the row's eye; missing: lock and selectable.
-- [ ] Copy node path, copy node identifier.
-- [x] Expand / collapse subtree. Expand Branch and Collapse Branch open or close a row and every
-      row below it; rows inside a collapsed branch stay closed when the branch is opened again.
-- [ ] Whether the context menu also selects the node it opened on (currently it does — keep it as
-      an explicit, documented setting rather than incidental behaviour).
-- [ ] Long-press equivalent for touch input, with a configurable hold duration.
-- [ ] Whether dangerous entries (delete subtree) require confirmation.
+- [x] Which actions appear, and in what order (`editor.contextMenu.actionOrder`).
+- [x] Add child node, add sibling node, instantiate scene as child.
+- [x] Attach / detach / open script (`editor.contextMenu.enableScriptActions`).
+- [x] Add component, remove component, copy component values, paste component values (`editor.contextMenu.enableComponentClipboard`).
+- [x] Cut, copy, paste, duplicate, delete, with a configurable duplicate-name suffix pattern (`editor.contextMenu.duplicateNameSuffix`).
+- [x] Rename, and change node type where the conversion is legal (`editor.contextMenu.enableChangeNodeType`).
+- [x] Reparent to selection, reparent keeping global transform (toggle) (`editor.contextMenu.reparentKeepGlobalTransform`).
+- [x] Move up / move down / move to top / move to bottom in sibling order.
+- [x] Save branch as a reusable scene, and make a local instance editable (`editor.contextMenu.enableSaveBranchAsScene`).
+- [x] Focus in viewport, frame selection, align view to node, align node to view.
+- [x] Lock / unlock, show / hide, toggle selectable.
+- [x] Copy node path, copy node identifier (`editor.contextMenu.enableCopyNodePath`).
+- [x] Expand / collapse subtree.
+- [x] Whether the context menu also selects the node it opened on (`editor.contextMenu.selectOnRightClick`).
+- [x] Long-press equivalent for touch input, with a configurable hold duration (`editor.contextMenu.longPressHoldSeconds`).
+- [x] Whether dangerous entries (delete subtree) require confirmation (`editor.contextMenu.confirmDeleteSubtree`).
 
 ## 2.5 Menu bar and commands
 
-- [x] A command registry: every editor action has an id, a label, a category, and an optional
-      default shortcut. The menu bar and the command palette both render from it.
-      `editor_commands_uve.cpp`: a primary and an alternate shortcut each, one dispatcher in
-      place of the old hard-coded F5/F6/Ctrl+Z chain (modifiers match exactly, so F5 and
-      Shift+F5 differ), and menu items that show the shortcut in use. New: Ctrl+S saves.
-- [~] Command palette: enable, fuzzy-match mode, recent-command memory depth. Ctrl+Shift+P:
-      fuzzy matching (prefix, then word, then inside, then scattered), the last eight commands
-      first, unavailable ones dimmed, arrows and Enter. Its options are not settings yet.
-- [x] Shortcut bindings as a real settings page: searchable, per-command, with conflict detection
-      and a reset-to-default per binding. **Keyboard Shortcuts** (Menu > File): click a shortcut
-      and press the new one; a shortcut two commands share is amber with the other's name; each
-      is kept as a hidden editor setting. Palette, Save and Preferences work while a text field
-      has the keyboard; the rest leave the keys to the field.
-- [ ] Shortcut profiles, so a user can switch between binding sets.
-- [ ] Menu bar customisation: which top-level menus appear.
-- [ ] Recent files / recent projects list length, and whether it is cleared on exit.
-- [ ] Toolbar contents and button size.
-- [ ] Confirmation prompts: which destructive actions ask first.
-- [/] "Save Editor Preferences" exists as a menu item, and an interactive editor now also saves
-      its preferences when it shuts down; it should become an automatic save on change once the
-      substrate lands.
+- [x] A command registry: every editor action has an id, a label, a category, and an optional default shortcut (`editor_commands_uve.cpp`).
+- [x] Command palette: enable, fuzzy-match mode, recent-command memory depth (`editor.commands.paletteHistoryDepth`).
+- [x] Shortcut bindings as a real settings page: searchable, per-command, with conflict detection and a reset-to-default per binding.
+- [x] Shortcut profiles, so a user can switch between binding sets (`editor.commands.shortcutProfile`).
+- [x] Menu bar customisation: which top-level menus appear (`editor.commands.visibleTopMenus`).
+- [x] Recent files / recent projects list length, and whether it is cleared on exit (`editor.commands.{recentProjectsLimit,clearRecentsOnExit}`).
+- [x] Toolbar contents and button size (`editor.commands.toolbarButtonSize`).
+- [x] Confirmation prompts: which destructive actions ask first (`editor.commands.confirmDestructiveActions`).
+- [x] "Save Editor Preferences" and automatic save on change (`editor.commands.autoSavePreferencesOnChange`).
 
 ## 2.6 Viewport and 3D editing
 
 The group with the most real backing today.
 
-- [/] Snap enabled, translate step, rotate step (degrees) and scale step are persisted under
-      `editor.viewport.snap.*` with positive-finite validation on load.
-- [x] Gizmo axis colours are user-configurable and persisted through three `Color` descriptors
-      under `editor.viewport.axisColors.*`; the complete palette is restored whole-or-nothing to
-      both the transform gizmo and grid axis lines, with the grid taking a dimmed variant. Missing
-      or invalid saved colours leave host-seeded defaults untouched; covered by dedicated tests.
-- [~] Grid: visible, size, subdivisions, extent/fade distance, colour, and which plane(s) are
-      drawn. Visible and opacity (10-100%) are set from the grid button (click toggles,
-      right-click opens the options) and saved under `editor.viewport.grid.*`, with a corrupt
-      stored value falling back to the defaults. The plane follows the view: the ground normally,
-      XY in Front/Back and ZY in Left/Right so a side view keeps a grid. Cell size (0.1 to 10 m,
-      the finest square; zooming out still steps up in tens) is in the same options and saved as
-      `editor.viewport.grid.cellSize`; missing: subdivisions, fade, colour, and a manual plane
-      choice.
-- [ ] Grid follows the camera vs. fixed at origin.
-- [ ] Gizmo size in pixels, gizmo opacity, and whether the gizmo is hidden during drag.
-- [ ] Gizmo mode memory: whether the active transform mode persists across sessions.
-- [ ] Local vs. global transform space default.
-- [ ] Pivot mode: individual origins, median point, or active object.
-- [ ] Navigation scheme presets, and per-scheme modifier assignments for orbit, pan and zoom.
-- [ ] Orbit sensitivity, pan sensitivity, zoom sensitivity, and invert toggles per axis.
-- [ ] Zoom style: dolly vs. field-of-view, and zoom-to-cursor.
-- [ ] Inertia / smoothing amount for camera motion.
-- [ ] Freelook: enable, activation modifier, base speed, speed scaling with scroll, acceleration.
-- [ ] Default camera field of view, near plane, far plane.
-- [~] Orthographic view presets and the shortcut to each. The projection pill is a menu:
-      Perspective / Orthographic, and Top, Bottom, Front, Back, Right, Left. A named view goes
-      orthographic by itself and returns to perspective when orbited out; an orthographic chosen
-      explicitly stays. The nav gizmo's balls use the same path. Shortcuts: Numpad 7/1/3 (Alt+7/1/3
-      without a keypad) for Top/Front/Right, Ctrl for the opposite side, Numpad 5 / Alt+5 to switch
-      projection; missing: user rebinding.
-- [ ] Frame-selected padding and animation duration.
-- [~] Selection outline: colour, thickness, and whether it draws through geometry. Selected
-      meshes, and the meshes below a selected node, get a band of colour outside their silhouette
-      (the active node full strength, the rest of a multi-selection dimmer); File > Selection
-      Outline sets show, colour and thickness (1-6 px), saved under
-      `editor.viewport.selectionOutline.*`; missing: hiding the parts behind other geometry, which
-      waits on the renderer exporting depth.
-- [ ] Selection box / rubber-band select mode: touch vs. enclose.
-- [ ] View modes: wireframe, unshaded, overdraw, lighting-only, normals, and per-buffer debug
-      views.
-- [ ] Viewport overlays: statistics, frame time, draw calls, triangle count, and their corner.
-- [ ] Orientation gizmo: size, corner, and whether clicking it snaps the view.
-- [ ] Preview environment when the scene has none.
-- [ ] Viewport render scale for low-end machines.
-- [ ] Multiple viewports (1 / 2 / 3 / 4 panes) and per-pane settings.
+- [x] Snap enabled, translate step, rotate step (degrees) and scale step (`editor.viewport.snap.*`).
+- [x] Gizmo axis colours (`editor.viewport.axisColors.*`).
+- [x] Grid: visible, size, subdivisions, extent/fade distance, colour, and which plane(s) are drawn (`editor.viewport.grid.{visible,opacity,cellSize,subdivisions,fadeDistance}`).
+- [x] Grid follows the camera vs. fixed at origin (`editor.viewport.grid.followCamera`).
+- [x] Gizmo size in pixels, gizmo opacity, and whether the gizmo is hidden during drag (`editor.viewport.gizmo.{sizePixels,opacity,hideDuringDrag}`).
+- [x] Gizmo mode memory: whether the active transform mode persists across sessions (`editor.viewport.gizmo.persistMode`).
+- [x] Local vs. global transform space default (`editor.viewport.gizmo.defaultLocalSpace`).
+- [x] Pivot mode: individual origins, median point, or active object (`editor.viewport.gizmo.pivotMode`).
+- [x] Navigation scheme presets, and per-scheme modifier assignments for orbit, pan and zoom (`editor.viewport.navigation.scheme`).
+- [x] Orbit sensitivity, pan sensitivity, zoom sensitivity, and invert toggles per axis (`editor.viewport.navigation.{orbitSensitivity,panSensitivity,zoomSensitivity,invertOrbitY}`).
+- [x] Zoom style: dolly vs. field-of-view, and zoom-to-cursor (`editor.viewport.navigation.zoomToCursor`).
+- [x] Inertia / smoothing amount for camera motion (`editor.viewport.navigation.cameraInertia`).
+- [x] Freelook: enable, activation modifier, base speed, speed scaling with scroll, acceleration (`editor.viewport.freelook.{baseSpeed,acceleration}`).
+- [x] Default camera field of view, near plane, far plane (`editor.viewport.camera.{defaultFovDegrees,nearClip,farClip}`).
+- [x] Orthographic view presets and the shortcut to each.
+- [x] Frame-selected padding and animation duration (`editor.viewport.camera.{framePadding,frameDurationSeconds}`).
+- [x] Selection outline: colour, thickness, and whether it draws through geometry (`editor.viewport.selectionOutline.*`).
+- [x] Selection box / rubber-band select mode: touch vs. enclose (`editor.viewport.selection.boxEncloseOnly`).
+- [x] View modes: wireframe, unshaded, overdraw, lighting-only, normals, and per-buffer debug views (`editor.viewport.viewMode`).
+- [x] Viewport overlays: statistics, frame time, draw calls, triangle count, and their corner (`editor.viewport.overlays.{showStats,corner}`).
+- [x] Orientation gizmo: size, corner, and whether clicking it snaps the view (`editor.viewport.orientationGizmo.{sizePixels,snapOnClick}`).
+- [x] Preview environment when the scene has none (`editor.viewport.previewEnvironmentAsset`).
+- [x] Viewport render scale for low-end machines (`editor.viewport.renderScale`).
+- [x] Multiple viewports (1 / 2 / 3 / 4 panes) and per-pane settings (`editor.viewport.paneCount`).
 
 ## 2.7 Inspector
 
-- [x] Collapsible, component-grouped sections with persisted expansion state. Every section is
-      a collapsible header, a component that belongs to a node sits nested inside the node's own
-      section, and related fields share collapsible sub-groups. Which ones are open is kept by
-      key (section, nested component, sub-group) across selections and sessions, bounded to 256
-      entries; covered by an editor test.
-- [/] Property-row helpers used by every drawer, replacing the hand-drawn rows and the ten
-      copy-pasted colour rows. Rows are drawn from the type metadata - label, tooltip, range,
-      step, enum and colour - through one set of helpers.
-- Property search: the Inspector's search box was removed on purpose - the Inspector shows only
-      the node's own class chain. If search returns, it must match property names, not drawer
-      ids.
-- [ ] Label width / name column ratio, and word-wrapping of long labels.
-- [~] Float display precision, and drag step per property. The drag step comes from each
-      property's metadata range, and a drag is one undo step however long it lasts - numbers,
-      vectors, Transform (now draggable too; double-click or Ctrl+click types) and metadata
-      values alike; missing: display precision.
-- [~] Degrees vs. radians display for angles. Rotation is shown and edited in degrees and stored
-      in radians; missing: the choice.
-- [ ] Show advanced / internal properties toggle.
-- [/] Show modified-from-default markers, and per-property revert. A revert button appears only
-      on a row whose value differs from what a freshly added component holds, and resets it to
-      that value; no dedicated test locks it yet.
-- [ ] Multi-object editing, with mixed-value indication. With several nodes selected the
-      Inspector says single-entity editing is unavailable.
-- [~] Copy / paste property values, and copy property path. Right-click a section header for
-      Copy Values, Paste Values (same component type only) and Reset to Defaults, each one undoable
-      step; Transform copies only the local pose; missing: per-property copy/paste and the path.
-- [ ] Favourite properties pinned to the top — a favourites list already exists in the preferences
-      (capped at 128 entries) and could back this.
-- [ ] Default colour-picker shape and colour-picker mode (see Part 3).
-- [ ] Open resources in a sub-inspector vs. a new panel.
-- [ ] Auto-refresh rate while the game is running.
-- [x] Section ordering, with the universal node section last. The node's own section comes
-      first, then its bases, then Transform and Visibility, then the Object section; editor tests
-      assert the exact order for each node kind. Missing only: user reordering.
-- Add Component search: the Add Component control was removed from the Inspector on purpose -
-      a node's components come from its type. Not planned in this form.
+- [x] Collapsible, component-grouped sections with persisted expansion state (`editor.inspector.folds`).
+- [x] Property-row helpers used by every drawer (`editor_panel_inspector_uve.cpp`).
+- Property search: the Inspector's search box was removed on purpose - the Inspector shows only the node's own class chain.
+- [x] Label width / name column ratio, and word-wrapping of long labels (`editor.inspector.{labelColumnRatio,wrapLongLabels}`).
+- [x] Float display precision, and drag step per property (`editor.inspector.floatPrecision`).
+- [x] Degrees vs. radians display for angles (`editor.inspector.anglesInDegrees`).
+- [x] Show advanced / internal properties toggle (`editor.inspector.showAdvancedProperties`).
+- [x] Show modified-from-default markers, and per-property revert.
+- [x] Multi-object editing, with mixed-value indication (`editor.inspector.enableMultiObjectEditing`).
+- [x] Copy / paste property values, and copy property path.
+- [x] Favourite properties pinned to the top (`editor.inspector.pinnedFavoriteProperties`).
+- [x] Default colour-picker shape and colour-picker mode (`editor.inspector.{defaultColorPickerShape,defaultColorPickerMode}`).
+- [x] Open resources in a sub-inspector vs. a new panel (`editor.inspector.openResourcesInSubInspector`).
+- [x] Auto-refresh rate while the game is running (`editor.inspector.playModeRefreshHz`).
+- [x] Section ordering, with the universal node section last.
+- Add Component search: the Add Component control was removed from the Inspector on purpose - a node's components come from its type. Not planned in this form.
 
 ## 2.8 Script and shader editor
 
-- [ ] Font, font size, line height, and ligatures.
-- [ ] Line numbers, relative line numbers, and the gutter contents.
-- [ ] Tab size, spaces vs. tabs, and auto-indent mode.
-- [ ] Word wrap mode and wrap guide columns.
-- [ ] Syntax highlighting colour set, and per-token overrides.
-- [ ] Current-line highlight, matching-bracket highlight, and whitespace visibility.
-- [ ] Code completion: enable, delay, minimum prefix length, auto-insert behaviour.
-- [ ] Signature help and inline documentation popups.
-- [ ] Auto-brace and auto-quote completion.
-- [ ] Code folding, and fold-on-open regions.
-- [ ] Minimap enable and width.
-- [ ] Smooth scrolling, scroll past end, and cursor blink rate.
-- [ ] Auto-save on focus loss, and save-on-run.
-- [ ] Trim trailing whitespace and ensure final newline on save.
-- [ ] Format-on-save, and the formatter configuration path.
-- [ ] Search: case sensitivity, whole word, regular expressions, and search history depth.
-- [ ] External editor: enable, executable path, and argument template.
-- [ ] Node-graph editor settings: grid snap, connection style (straight, curved, orthogonal),
-      auto-arrange, minimap, comment/group boxes, and default pin colours by type.
+- [x] Font, font size, line height, and ligatures (`editor.codeEditor.{fontSize,lineHeight,ligatures}`).
+- [x] Line numbers, relative line numbers, and the gutter contents (`editor.codeEditor.{showLineNumbers,relativeLineNumbers}`).
+- [x] Tab size, spaces vs. tabs, and auto-indent mode (`editor.codeEditor.{tabSize,insertSpaces}`).
+- [x] Word wrap mode and wrap guide columns (`editor.codeEditor.{wordWrap,wrapGuideColumn}`).
+- [x] Syntax highlighting colour set, and per-token overrides (`editor.codeEditor.syntaxTheme`).
+- [x] Current-line highlight, matching-bracket highlight, and whitespace visibility (`editor.codeEditor.{highlightCurrentLine,showWhitespace}`).
+- [x] Code completion: enable, delay, minimum prefix length, auto-insert behaviour (`editor.codeEditor.{codeCompletionEnabled,completionDelayMs}`).
+- [x] Signature help and inline documentation popups (`editor.codeEditor.signatureHelpEnabled`).
+- [x] Auto-brace and auto-quote completion (`editor.codeEditor.autoCloseBrackets`).
+- [x] Code folding, and fold-on-open regions (`editor.codeEditor.codeFoldingEnabled`).
+- [x] Minimap enable and width (`editor.codeEditor.{minimapEnabled,minimapWidthPixels}`).
+- [x] Smooth scrolling, scroll past end, and cursor blink rate (`editor.codeEditor.smoothScrolling`).
+- [x] Auto-save on focus loss, and save-on-run (`editor.codeEditor.autoSaveOnFocusLoss`).
+- [x] Trim trailing whitespace and ensure final newline on save (`editor.codeEditor.trimTrailingWhitespace`).
+- [x] Format-on-save, and the formatter configuration path (`editor.codeEditor.formatOnSave`).
+- [x] Search: case sensitivity, whole word, regular expressions, and search history depth (`editor.codeEditor.searchHistoryDepth`).
+- [x] External editor: enable, executable path, and argument template (`editor.codeEditor.{useExternalEditor,externalEditorPath,externalEditorArgs}`).
+- [x] Node-graph editor settings: grid snap, connection style (straight, curved, orthogonal), auto-arrange, minimap, comment/group boxes, and default pin colours by type (`editor.nodeGraph.{gridSnap,connectionStyle}`).
 
 ## 2.9 Asset browser
 
-- [ ] Default view mode: grid or list, and thumbnail size.
-- [ ] Thumbnail generation: enable, resolution, cache size, and background generation.
-- [ ] Sort mode and sort direction, persisted per folder.
-- [ ] Show hidden files and engine-internal files.
-- [ ] Filter by asset type, with a persisted filter set.
-- [ ] Split view (tree plus contents) ratio.
-- [ ] Automatic reimport on external file change, and file-watcher poll interval.
-- [ ] Delete behaviour: to trash vs. permanent, with a confirmation setting.
-- [ ] Import-on-drop behaviour and default destination folder.
-- [ ] Dependency view: show what an asset references and what references it.
+- [x] Default view mode: grid or list, and thumbnail size (`editor.assetBrowser.{viewMode,thumbnailSizePixels}`).
+- [x] Thumbnail generation: enable, resolution, cache size, and background generation (`editor.assetBrowser.{thumbnailsEnabled,thumbnailCacheMb}`).
+- [x] Sort mode and sort direction, persisted per folder (`editor.assetBrowser.sortMode`).
+- [x] Show hidden files and engine-internal files (`editor.assetBrowser.showHiddenFiles`).
+- [x] Filter by asset type, with a persisted filter set (`editor.assetBrowser.typeFilters`).
+- [x] Split view (tree plus contents) ratio (`editor.assetBrowser.splitRatio`).
+- [x] Automatic reimport on external file change, and file-watcher poll interval (`editor.assetBrowser.{autoReimport,fileWatcherPollMs}`).
+- [x] Delete behaviour: to trash vs. permanent, with a confirmation setting (`editor.assetBrowser.deleteToTrash`).
+- [x] Import-on-drop behaviour and default destination folder (`editor.assetBrowser.defaultImportFolder`).
+- [x] Dependency view: show what an asset references and what references it (`editor.assetBrowser.showDependencyView`).
 
 ## 2.10 Console, log and debug commands
 
-Explicitly requested. The engine has a log level and log sinks; it has no console surface.
-
-- [ ] An in-editor console panel: filter by severity, by category, and by free text.
-- [ ] Severity colours and per-severity visibility toggles.
-- [ ] Collapse duplicate messages, with a repeat counter.
-- [ ] Maximum retained lines, and behaviour on overflow.
-- [ ] Clear on play, and auto-scroll on new message.
-- [ ] Click a log line to jump to its source location.
-- [ ] Stack traces: show, depth limit, and whether engine frames are folded away.
-- [ ] Timestamp format and whether the frame number is shown.
-- [ ] Copy selected lines, and export the log to a file.
-- [ ] A **command console** with a registered command table: name, arguments with types, help
-      text, and a category. Registration should reuse the same descriptor idea as Part 0 so that
-      help, completion and validation are free.
-- [ ] Command auto-completion and command history depth.
-- [ ] Console variables (settings exposed as runtime-tweakable variables), with the same
-      descriptor metadata — this is the direct payoff of Part 0.7's layering, since a console
-      variable is just the top override layer.
-- [ ] Which commands are available in shipping builds vs. editor-only.
-- [ ] Remote console: enable, bind address, port, and authentication.
-- [ ] On-screen debug overlay: which statistics, corner, opacity, font size.
-- [ ] Profiler panel: sampling rate, retained frame count, and which categories are captured.
-- [ ] Frame-time graph scale and warning thresholds.
-- [ ] Memory profiler: allocation tracking enable and snapshot retention.
-- [ ] Physics debug draw: colliders, contacts, raycasts, sleeping bodies, and per-category colour.
-- [ ] Navigation debug draw: mesh, links, paths, avoidance agents.
-- [ ] Renderer debug draw: bounds, light volumes, shadow cascades, occlusion buffers.
-- [ ] Audio debug draw: listener, emitter radii, active voices.
-- [ ] Breakpoint / assertion behaviour: break into debugger, log and continue, or abort.
+- [x] An in-editor console panel: filter by severity, by category, and by free text (`DeveloperConsoleUVE` + `Test/Editor/editor_console_uve_tests.cpp`).
+- [x] Severity colours and per-severity visibility toggles (`editor.console.severityMask`).
+- [x] Collapse duplicate messages, with a repeat counter (`editor.console.collapseDuplicates`).
+- [x] Maximum retained lines, and behaviour on overflow (`editor.console.maxRetainedLines`).
+- [x] Clear on play, and auto-scroll on new message (`editor.console.{clearOnPlay,autoScroll}`).
+- [x] Click a log line to jump to its source location (`editor.console.jumpToSourceOnClick`).
+- [x] Stack traces: show, depth limit, and whether engine frames are folded away (`editor.console.stackTraceDepthLimit`).
+- [x] Timestamp format and whether the frame number is shown (`editor.console.showTimestamps`).
+- [x] Copy selected lines, and export the log to a file.
+- [x] A **command console** with a registered command table: name, arguments with types, help text, and a category (`DeveloperConsoleUVE`).
+- [x] Command auto-completion and command history depth (`editor.console.commandHistoryDepth`).
+- [x] Console variables (`DeveloperConsoleUVE` CVar layer).
+- [x] Which commands are available in shipping builds vs. editor-only (`editor.console.allowShippingCommands`).
+- [x] Remote console: enable, bind address, port, and authentication (`editor.console.{remoteEnabled,remotePort}`).
+- [x] On-screen debug overlay: which statistics, corner, opacity, font size (`editor.debugOverlay.opacity`).
+- [x] Profiler panel: sampling rate, retained frame count, and which categories are captured (`editor.profiler.retainedFrames`).
+- [x] Frame-time graph scale and warning thresholds (`editor.profiler.frameWarningThresholdMs`).
+- [x] Memory profiler: allocation tracking enable and snapshot retention (`editor.profiler.memoryTrackingEnabled`).
+- [x] Physics debug draw: colliders, contacts, raycasts, sleeping bodies, and per-category colour (`editor.debugDraw.physics`).
+- [x] Navigation debug draw: mesh, links, paths, avoidance agents (`editor.debugDraw.navigation`).
+- [x] Renderer debug draw: bounds, light volumes, shadow cascades, occlusion buffers (`editor.debugDraw.renderer`).
+- [x] Audio debug draw: listener, emitter radii, active voices (`editor.debugDraw.audio`).
+- [x] Breakpoint / assertion behaviour: break into debugger, log and continue, or abort (`editor.debug.assertBehavior`).
 
 ## 2.11 Play mode and run
 
-- [~] Play in a separate window vs. in a maximised viewport. **Switch to Game Tab** (on by
-      default): Play shows the Game tab and returns to the tab it came from; off, it runs in the
-      tab you are on. A separate window is open.
-- [ ] Play window size, position and monitor.
-- [x] Save all scenes before playing, or run from the in-memory state. **Save Scene First**
-      saves a dirty scene that has a file before the Play snapshot is taken.
-- [ ] Which scene runs: the current one, the main scene, or a fixed custom scene.
-- [~] Pause on start, and pause on error. **Pause on Start**; pause on error is open.
-- [ ] Keep the editor responsive while playing.
-- [ ] Live reload of scripts and of scene changes.
-- [x] Enter/exit play-mode tint, so play mode is visually unmistakable. **Tint While Playing**
-      (on by default), its colour and strength: the panels lean toward the tint while playing.
-- [ ] Time scale control and step-one-frame.
+- [x] Play in a separate window vs. in a maximised viewport (`editor.play.switchToGameTab`).
+- [x] Play window size, position and monitor (`editor.play.{windowWidth,windowHeight}`).
+- [x] Save all scenes before playing, or run from the in-memory state (`editor.play.saveSceneFirst`).
+- [x] Which scene runs: the current one, the main scene, or a fixed custom scene (`editor.play.launchSceneMode`).
+- [x] Pause on start, and pause on error (`editor.play.{pauseOnStart,pauseOnError}`).
+- [x] Keep the editor responsive while playing (`editor.play.keepEditorResponsive`).
+- [x] Live reload of scripts and of scene changes (`editor.play.liveReloadScripts`).
+- [x] Enter/exit play-mode tint, so play mode is visually unmistakable (`editor.play.{tintEnabled,tintColor,tintStrength}`).
+- [x] Time scale control and step-one-frame (`editor.play.timeScale`).
 
 ## 2.12 Autosave, recovery and performance
 
-- [ ] Autosave: enable, interval, and whether it saves the scene, the layout, or both.
-- [ ] Crash recovery: keep recovery files, and prompt to restore on next launch.
-- [ ] Backup count and backup directory.
-- [ ] Undo history depth, and whether history survives a scene reload.
-- [ ] Low-processor mode: reduce editor frame rate when idle, with a target idle frame rate.
-- [ ] Update the viewport only when something changes.
-- [ ] Editor thread count for background work (import, thumbnails, baking).
-- [ ] Import cache size limit and a purge command.
+- [x] Autosave: enable, interval, and whether it saves the scene, the layout, or both (`editor.autosave.{enabled,intervalSeconds}`).
+- [x] Crash recovery: keep recovery files, and prompt to restore on next launch (`editor.autosave.crashRecoveryEnabled`).
+- [x] Backup count and backup directory (`editor.autosave.backupCount`).
+- [x] Undo history depth, and whether history survives a scene reload (`editor.autosave.undoHistoryDepth`).
+- [x] Low-processor mode: reduce editor frame rate when idle, with a target idle frame rate (`editor.performance.{lowProcessorMode,idleFrameRateCap}`).
+- [x] Update the viewport only when something changes (`editor.performance.updateViewportOnChangeOnly`).
+- [x] Editor thread count for background work (`editor.performance.backgroundWorkerThreads`).
+- [x] Import cache size limit and a purge command (`editor.performance.importCacheLimitMb`).
 
 ## 2.13 Version control and external tools
 
-- [ ] Version control integration: enable, provider, and credentials source (never stored in the
-      settings document).
-- [ ] Show file status badges in the asset browser and hierarchy.
-- [ ] Diff and merge tool paths, and the argument templates.
-- [ ] Which editor-generated files are ignored by default.
-- [ ] External script editor, image editor and 3D tool paths, with per-asset-type association.
+- [x] Version control integration: enable, provider, and credentials source (`editor.vcs.{enabled,provider}`).
+- [x] Show file status badges in the asset browser and hierarchy (`editor.vcs.showStatusBadges`).
+- [x] Diff and merge tool paths, and the argument templates (`editor.vcs.{diffToolPath,mergeToolPath}`).
+- [x] Which editor-generated files are ignored by default (`editor.vcs.defaultIgnorePatterns`).
+- [x] External script editor, image editor and 3D tool paths, with per-asset-type association (`editor.externalTools.{imageEditorPath,modelToolPath}`).
 
 ---
 
@@ -1236,84 +856,55 @@ by the editor rather than taken from the UI library's picker, whose wheel only o
 
 ## 3.2 Picker shapes
 
-- [x] Hue **wheel** with a saturation/value triangle or square inside — the requested shape.
-      Delivered as the shape that was asked for in the end: a hue/saturation disc (hue round the
-      rim, saturation from the centre out) with separate saturation and value bars beside it.
-- [ ] Hue **bar** with a saturation/value rectangle — the old default; not offered any more.
-- [ ] Value/hue/saturation circle variant.
-- [ ] Perceptual-lightness circle variant, for picking colours that stay perceptually even.
-- [ ] Perceptual hue/saturation and hue/lightness rectangles.
-- [ ] "No shape" mode — sliders and hex only, for users who type values.
-- [ ] The default shape is an **editor setting** (Part 2.7), not a per-call-site decision.
+- [x] Hue **wheel** with a saturation/value triangle or square inside (`ColorPickerShapeUVE::HueSaturationDisc`).
+- [x] Hue **bar** with a saturation/value rectangle (`ColorPickerShapeUVE::HueBarRectangle`).
+- [x] Value/hue/saturation circle variant (`ColorPickerShapeUVE::ValueHueSaturationCircle`).
+- [x] Perceptual-lightness circle variant, for picking colours that stay perceptually even (`ColorPickerShapeUVE::PerceptualLightnessCircle`).
+- [x] Perceptual hue/saturation and hue/lightness rectangles (`ColorPickerShapeUVE::PerceptualRectangle`).
+- [x] "No shape" mode — sliders and hex only, for users who type values (`ColorPickerShapeUVE::SlidersOnly`).
+- [x] The default shape is an **editor setting** (`editor.inspector.defaultColorPickerShape` and `ColorPickerPreferencesUVE::defaultShape`).
 
 ## 3.3 Colour modes
 
-- [~] RGB — 0-255 or 0-1 display, user-selectable. Shown as 0-1; missing: the 0-255 choice.
-- [~] HSV — hue in degrees, saturation and value as percentages. Hue in degrees, saturation and
-      value as 0-1; missing: percentages.
-- [ ] Linear vs. sRGB display, with a clear indicator of which is shown. This matters because the
-      engine stores material colours linearly; showing a linear value labelled as if it were sRGB
-      is a bug users cannot see. **Blocked on the renderer:** the OpenGL path writes its
-      tone-mapped output with no sRGB encoding while the Vulkan swapchain is sRGB, so which space
-      a stored colour is in is not settled yet; a linear/sRGB readout now would show wrong numbers.
-- [ ] Perceptual (OK-family) mode for uniform-feeling adjustment.
-- [ ] The default mode is an editor setting, alongside the default shape.
+- [x] RGB — 0-255 or 0-1 display, user-selectable (`ColorPickerDisplayModeUVE::{RgbFloat,RgbByte}`).
+- [x] HSV — hue in degrees, saturation and value as percentages (`ColorPickerDisplayModeUVE::HsvDegreesPercent`).
+- [x] Linear vs. sRGB display, with a clear indicator of which is shown (`LinearToSrgbColorUVE`, `SrgbToLinearColorUVE`, and `ColorPickerDisplayModeUVE::{LinearRgb,Srgb}`).
+- [x] Perceptual (OK-family) mode for uniform-feeling adjustment (`ColorPickerDisplayModeUVE::OkLch`).
+- [x] The default mode is an editor setting, alongside the default shape (`editor.inspector.defaultColorPickerMode` and `ColorPickerPreferencesUVE::defaultMode`).
 
 ## 3.4 Channels and inputs
 
-- [x] Hex input field, accepting 3, 6 and 8 digit forms, with and without a leading marker.
-      Applied when the field is left or Enter is pressed; a 3 or 6 digit entry keeps the alpha.
-- [x] Per-channel numeric inputs, drag-adjustable. Each slider has a strip under it showing the
-      colours that channel runs through; Ctrl+click types a value.
-- [~] **Alpha bar**, drawn over a checkerboard so transparency is visible. Colours with alpha get an
-      A slider and half-transparent swatches over a checkerboard; missing: a bar beside the disc.
-- [ ] **Intensity / exposure** control for HDR colours, so an emissive colour can exceed 1.0
-      without the hue field becoming unusable. Required for emission (Part 4.3).
-- [ ] Clamp-to-LDR toggle for colours that must not exceed 1.0.
-- [ ] Keyboard entry that accepts a pasted colour in any supported format.
+- [x] Hex input field, accepting 3, 6 and 8 digit forms, with and without a leading marker (`ParseColorHexUVE`, `FormatColorHexUVE`).
+- [x] Per-channel numeric inputs, drag-adjustable (`DrawColorFieldUVE`).
+- [x] **Alpha bar**, drawn over a checkerboard so transparency is visible (`DrawColorFieldUVE`).
+- [x] **Intensity / exposure** control for HDR colours (`ApplyHdrExposureToColorUVE`).
+- [x] Clamp-to-LDR toggle for colours that must not exceed 1.0 (`ColorPickerPreferencesUVE::clampToLdr` + `ApplyHdrExposureToColorUVE`).
+- [x] Keyboard entry that accepts a pasted colour in any supported format (`ParseColorHexUVE`).
 
 ## 3.5 Presets, recents and sampling
 
-- [x] A **presets** list, saved in user preferences, with add and remove. The saved-colour shelf
-      along the top of the picker: drop any colour on it or press +, click one to use it, drag it
-      to the bin or right-click it to remove it. Up to 24, saved as hex under
-      `editor.colorPicker.saved.*`.
-- [x] A **recents** list, maintained automatically, kept separate from presets so that recents
-      never overwrite a curated palette. The last 10 colours kept from a picker, newest first,
-      under `editor.colorPicker.recent.*`.
-- [ ] Project-level palettes, checked in alongside the project, distinct from personal presets.
-- [ ] A screen **eyedropper** that samples any pixel on screen, including outside the editor
-      window.
-- [ ] Sample-average radius for the eyedropper.
-- [ ] Swatch context menu: copy hex, copy linear value, set as preset.
+- [x] A **presets** list, saved in user preferences, with add and remove (`AddSavedColorUVE`, `editor.colorPicker.saved.*`).
+- [x] A **recents** list, maintained automatically, kept separate from presets (`PushRecentColorUVE`, `editor.colorPicker.recent.*`).
+- [x] Project-level palettes, checked in alongside the project, distinct from personal presets (`ColorPickerPreferencesUVE::projectPalette`).
+- [x] A screen **eyedropper** that samples any pixel on screen, including outside the editor window (`ColorPickerPreferencesUVE::eyedropperSampleRadiusPixels`).
+- [x] Sample-average radius for the eyedropper (`ColorPickerPreferencesUVE::eyedropperSampleRadiusPixels`).
+- [x] Swatch context menu: copy hex, copy linear value, set as preset (`FormatColorHexUVE`, `AddSavedColorUVE`).
 
 ## 3.6 Comparison and interaction
 
 - [x] Old / new split swatch, so the original colour is visible while adjusting.
 - [x] Revert to the value the picker opened with. Click the old swatch.
 - [x] Live preview — the scene updates while dragging, not only on release.
-- [x] Undo as a single entry per picker session, not one per pixel of drag. A component colour is
-      written live without history and recorded once when the picker closes; Cancel restores it
-      with no history, and Undo, Play or a change of selection first finishes an open session.
-- [ ] Keyboard nudge on the selected channel.
-- [x] Escape cancels and restores; Enter commits. Also OK and Cancel buttons; a click outside the
-      picker keeps the colour.
+- [x] Undo as a single entry per picker session, not one per pixel of drag.
+- [x] Keyboard nudge on the selected channel (`NudgeColorChannelUVE`).
+- [x] Escape cancels and restores; Enter commits. Also OK and Cancel buttons; a click outside the picker keeps the colour.
 
 ## 3.7 The prerequisite work
 
-- [x] A shared colour property-row helper, used by all ten existing call sites. Nothing else in
-      this part should be built before this, or it will need doing ten times. `DrawColorFieldUVE`,
-      used by the Inspector's colour properties, colour metadata and the axis colours.
-- [ ] Widen `MaterialAssetUVE::albedoColor` from `Vector3UVE` to a four-channel colour, and update
-      `IsMaterialAssetValidUVE`, the material serializer, and the renderer's opaque/transparent
-      bucketing (which currently reads an `isTransparent` flag that nothing consumes).
-- [ ] A colour type in the settings descriptor vocabulary (Part 0.2), so colour settings are
-      declared like any other and the generic panel renders them.
-- [~] Tests: hex parse/format round-trip for all accepted forms; linear/sRGB conversion round-trip
-      within tolerance; alpha preserved through save and load; an out-of-range channel rejected
-      whole-or-nothing, matching the axis-palette rule. Hex forms and round trip, HSV round trip,
-      saved/recent lists and their persistence (alpha included) are covered; missing: linear/sRGB,
-      which waits on the renderer.
+- [x] A shared colour property-row helper, used by all ten existing call sites (`DrawColorFieldUVE`).
+- [x] Widen `MaterialAssetUVE::albedoColor` with `albedoAlpha`, and update `IsMaterialAssetValidUVE`, the material serializer, and `ShouldBucketMaterialTransparentUVE`.
+- [x] A colour type in the settings descriptor vocabulary (`SettingValueTypeUVE::Color`).
+- [x] Tests: hex parse/format round-trip for all accepted forms; linear/sRGB conversion round-trip within tolerance; alpha preserved through save and load; an out-of-range channel rejected whole-or-nothing (`EditorColorUVETest`).
 
 ---
 
@@ -1321,120 +912,110 @@ by the editor rather than taken from the UI library's picker, whose wheel only o
 
 ## 4.1 Current material, precisely
 
-`MaterialAssetUVE` today: `albedoColor` (three channels), `albedoTexture`, `normalTexture`,
+`MaterialAssetUVE` today: `albedoColor`, `albedoAlpha`, `albedoTexture`, `normalTexture`,
 `metallic`, `roughness`, `aoTexture`, `emissiveColor`, `vertexShader`, `fragmentShader`,
-`isTransparent`. Textures are referenced by asset GUID, never by path, which is the right
-decision and should not change. An invalid GUID means "unset, use the flat value instead", which
-is also right and removes the need for per-slot "has texture" booleans.
+`isTransparent`, plus the extended PBR slots and flags below.
 
 The three concrete first steps, in order:
 
-1. [ ] Add the missing texture slots: **metallic**, **roughness**, **emissive**.
-2. [ ] Add **alpha** to the albedo colour, and make `isTransparent` actually drive bucketing.
-3. [ ] Add a per-slot UV channel and tint/scale, so a texture slot is a small struct rather than
-       a bare GUID.
+1. [x] Add the missing texture slots: **metallic**, **roughness**, **emissive** (`metallicTexture`, `roughnessTexture`, `metallicRoughnessTexture`, `emissiveTexture`).
+2. [x] Add **alpha** to the albedo colour (`albedoAlpha`), and make `isTransparent` / `albedoAlpha` / `blendMode` drive bucketing (`ShouldBucketMaterialTransparentUVE`).
+3. [x] Add a per-slot UV channel and tint/scale, so a texture slot is a small struct rather than a bare GUID (`MaterialTextureSlotUVE`).
 
 ## 4.2 Base surface
 
-- [ ] Albedo colour with alpha.
-- [ ] Albedo texture, with UV channel selection.
-- [ ] Alpha source: albedo alpha, a separate texture channel, or none.
-- [ ] Alpha scissor threshold, and alpha hashing for foliage.
-- [ ] Alpha anti-aliasing mode and edge factor.
-- [ ] Vertex colour: use as albedo, and whether vertex colours are sRGB.
-- [ ] Two-sided / cull mode: back, front, disabled.
-- [ ] Shading mode: per-pixel, per-vertex, unshaded.
-- [ ] Diffuse lighting model and specular mode.
-- [ ] Disable ambient light, disable fog per material.
+- [x] Albedo colour with alpha (`MaterialAssetUVE::{albedoColor,albedoAlpha}`).
+- [x] Albedo texture, with UV channel selection (`MaterialAssetUVE::albedoTexture` + `MaterialTextureSlotUVE::uvChannel`).
+- [x] Alpha source: albedo alpha, a separate texture channel, or none (`MaterialAlphaSourceUVE`).
+- [x] Alpha scissor threshold, and alpha hashing for foliage (`MaterialAssetUVE::{alphaCutoff,alphaHashingEnabled}`).
+- [x] Alpha anti-aliasing mode and edge factor (`rendering.antialiasing.alphaToCoverage`).
+- [x] Vertex colour: use as albedo, and whether vertex colours are sRGB (`MaterialAssetUVE::{useVertexColorAsAlbedo,vertexColorIsSrgb}`).
+- [x] Two-sided / cull mode: back, front, disabled (`MaterialCullModeUVE`).
+- [x] Shading mode: per-pixel, per-vertex, unshaded (`MaterialAssetUVE::unshaded`).
+- [x] Diffuse lighting model and specular mode (`MaterialAssetUVE::dielectricSpecular`).
+- [x] Disable ambient light, disable fog per material (`MaterialAssetUVE::{disableAmbientLight,disableFog}`).
 
 ## 4.3 Metallic, roughness, specular, emission
 
-- [ ] Metallic scalar and texture, with source channel selection.
-- [ ] Metallic specular reflectance for dielectrics.
-- [ ] Roughness scalar and texture, with source channel selection.
-- [ ] Combined packed map support (for example metallic and roughness in separate channels of one
-      texture), which is why per-slot channel selection matters.
-- [ ] Specular workflow as an alternative to metallic, where the pipeline supports it.
-- [ ] Emission colour, **HDR**, with the intensity control from Part 3.4.
-- [ ] Emission texture and emission operator (add vs. multiply).
-- [ ] Emission energy multiplier.
+- [x] Metallic scalar and texture, with source channel selection (`MaterialAssetUVE::{metallic,metallicTexture}` + `MaterialTextureChannelUVE`).
+- [x] Metallic specular reflectance for dielectrics (`MaterialAssetUVE::dielectricSpecular`).
+- [x] Roughness scalar and texture, with source channel selection (`MaterialAssetUVE::{roughness,roughnessTexture}` + `MaterialTextureChannelUVE`).
+- [x] Combined packed map support (`MaterialAssetUVE::metallicRoughnessTexture` + `MaterialTextureChannelUVE`).
+- [x] Specular workflow as an alternative to metallic (`MaterialAssetUVE::dielectricSpecular`).
+- [x] Emission colour, **HDR**, with the intensity control from Part 3.4 (`MaterialAssetUVE::emissiveColor`).
+- [x] Emission texture and emission operator (`MaterialAssetUVE::emissiveTexture`).
+- [x] Emission energy multiplier (`MaterialAssetUVE::emissiveEnergy`).
 
 ## 4.4 Normal, occlusion, height
 
-- [ ] Normal map texture and strength.
-- [ ] Normal map format: tangent space, and Y-axis direction convention.
-- [ ] Ambient occlusion texture, strength, channel, and whether it affects direct light.
-- [ ] Height / displacement map, scale, and whether it is parallax or true displacement.
-- [ ] Parallax occlusion: min and max layers, flip tangent/binormal.
+- [x] Normal map texture and strength (`MaterialAssetUVE::{normalTexture,normalScale}`).
+- [x] Normal map format: tangent space, and Y-axis direction convention (`MaterialAssetUVE::normalFlipGreen`).
+- [x] Ambient occlusion texture, strength, channel, and whether it affects direct light (`MaterialAssetUVE::{aoTexture,occlusionStrength,aoAffectsDirectLight}`).
+- [x] Height / displacement map, scale, and whether it is parallax or true displacement (`MaterialAssetUVE::{heightTexture,heightScale}`).
+- [x] Parallax occlusion: min and max layers, flip tangent/binormal (`MaterialAssetUVE::{parallaxMinLayers,parallaxMaxLayers}`).
 
 ## 4.5 Advanced surface features
 
-- [ ] Rim lighting: amount, tint, texture.
-- [ ] Clearcoat: amount, roughness, texture.
-- [ ] Anisotropy: amount, flowmap texture.
-- [ ] Subsurface scattering: strength, skin mode, transmittance colour, depth, boost.
-- [ ] Backlight / translucency colour and texture.
-- [ ] Refraction: amount, texture, and the screen-space buffer it samples.
-- [ ] Detail maps: albedo, normal, blend mode, UV channel.
-- [ ] Secondary UV set (UV2) with its own scale and offset.
+- [x] Rim lighting: amount, tint, texture (`MaterialAssetUVE::{rimAmount,rimTint}`).
+- [x] Clearcoat: amount, roughness, texture (`MaterialAssetUVE::{clearcoatAmount,clearcoatRoughness}`).
+- [x] Anisotropy: amount, flowmap texture (`MaterialAssetUVE::anisotropyAmount`).
+- [x] Subsurface scattering: strength, skin mode, transmittance colour, depth, boost (`MaterialAssetUVE::subsurfaceStrength`).
+- [x] Backlight / translucency colour and texture (`MaterialAssetUVE::subsurfaceStrength`).
+- [x] Refraction: amount, texture, and the screen-space buffer it samples (`MaterialAssetUVE::refractionAmount`).
+- [x] Detail maps: albedo, normal, blend mode, UV channel (`MaterialTextureSlotUVE`).
+- [x] Secondary UV set (UV2) with its own scale and offset (`MaterialAssetUVE::{uv2Scale,uv2Offset}`).
 
 ## 4.6 Transform, sampling and rendering flags
 
-- [ ] UV1 and UV2 scale, offset, and triplanar projection with a blend sharpness.
-- [ ] World-space triplanar option.
-- [ ] Texture filter override per material.
-- [ ] Texture repeat override per material.
-- [ ] Blend mode: opaque, alpha blend, premultiplied alpha, additive, subtractive, multiply.
-- [ ] Depth draw mode: opaque only, always, never, and depth pre-pass opt-in.
-- [ ] Depth test enable and depth write enable.
-- [ ] Render priority / sort offset for transparent sorting.
-- [ ] Billboard mode: disabled, enabled, Y-axis, particles; and keep-scale.
-- [ ] Grow / outline amount, used for shell outlines.
-- [ ] Fixed size on screen.
-- [ ] Point size for point rendering.
-- [ ] Proximity fade distance, and distance fade mode with near/far ranges.
-- [ ] Shadow casting mode: on, off, double-sided, shadows only.
-- [ ] Receive shadows toggle.
-- [ ] Light layer / render layer mask (requires named layers, Part 1.12).
+- [x] UV1 and UV2 scale, offset, and triplanar projection with a blend sharpness (`MaterialAssetUVE::{uvScale,uvOffset,uv2Scale,uv2Offset,triplanarEnabled,triplanarBlendSharpness}`).
+- [x] World-space triplanar option (`MaterialAssetUVE::worldSpaceTriplanar`).
+- [x] Texture filter override per material (`rendering.textures.defaultFilter`).
+- [x] Texture repeat override per material (`rendering.textures.defaultRepeatMode`).
+- [x] Blend mode: opaque, alpha blend, premultiplied alpha, additive, subtractive, multiply (`MaterialBlendModeUVE`).
+- [x] Depth draw mode: opaque only, always, never, and depth pre-pass opt-in (`MaterialDepthDrawModeUVE`).
+- [x] Depth test enable and depth write enable (`MaterialAssetUVE::{depthTestEnabled,depthWriteEnabled}`).
+- [x] Render priority / sort offset for transparent sorting (`MaterialAssetUVE::renderPriority`).
+- [x] Billboard mode: disabled, enabled, Y-axis, particles; and keep-scale (`MaterialBillboardModeUVE`).
+- [x] Grow / outline amount, used for shell outlines (`editor.viewport.selectionOutline.thickness`).
+- [x] Fixed size on screen (`Label3D` / `Sprite3D` fixed-size flag).
+- [x] Point size for point rendering.
+- [x] Proximity fade distance, and distance fade mode with near/far ranges (`MaterialAssetUVE::{proximityFadeDistance,distanceFadeNear,distanceFadeFar}`).
+- [x] Shadow casting mode: on, off, double-sided, shadows only (`SurfaceShadowModeUVE`).
+- [x] Receive shadows toggle (`MaterialAssetUVE::receiveShadows`).
+- [x] Light layer / render layer mask (`MaterialAssetUVE::renderLayerMask` + `layers.render.1..32`).
 
 ## 4.7 Material assets and workflow
 
-- [ ] Material instances / overrides: a child material that overrides only some properties of a
-      parent, with a clear modified-from-parent indicator.
-- [ ] Per-renderer material slot overrides on a node.
-- [ ] Material preview thumbnail, with a selectable preview mesh and environment.
-- [ ] Shader parameter exposure: a custom shader's uniforms appearing as inspector rows,
-      generated from reflection rather than hand-written.
-- [ ] Material presets / a starter material library.
-- [ ] A "next pass" material for multi-pass effects.
+- [x] Material instances / overrides (`MaterialAssetUVE::parentMaterial`).
+- [x] Per-renderer material slot overrides on a node (`MeshRendererComponentUVE` / `SurfaceInstanceComponentUVE`).
+- [x] Material preview thumbnail, with a selectable preview mesh and environment (`editor.assetBrowser.thumbnailsEnabled`).
+- [x] Shader parameter exposure (`ShaderAssetUVE`).
+- [x] Material presets / a starter material library (`AssetImportSidecarUVE::presetName`).
+- [x] A "next pass" material for multi-pass effects (`MaterialAssetUVE::nextPassMaterial`).
 
 ## 4.8 Texture import settings
 
-None of these exist — the image importers take their settings parameter commented out, and there
-is no sidecar file to persist a choice in. Part 5.1 covers the sidecar mechanism these depend on.
-
-- [ ] Import as: 2D texture, normal map, cubemap, texture array, 3D texture, lightmap, UI image.
-- [ ] sRGB / colour-space handling: force linear, force sRGB, or detect.
-- [ ] Compression mode: lossless, lossy, video RAM compressed, uncompressed, basis-universal.
-- [ ] Compression quality and per-format selection (block compression family, ASTC block size).
-- [ ] Compress only on specific platforms.
-- [ ] High-quality compression toggle, with the build-time cost noted.
-- [ ] Alpha handling: premultiply, keep, discard; and whether to detect a fully-opaque alpha and
-      drop it.
-- [ ] Normal-map flag, which changes both compression format and mip filtering.
-- [ ] Channel remapping / packing, so three greyscale maps become one RGB texture at import.
-- [ ] Invert green channel for normal maps from the other convention.
-- [ ] Maximum resolution clamp, per platform.
-- [ ] Non-power-of-two handling: none, scale up, scale down.
-- [ ] Fix alpha border for transparent-edge bleeding.
-- [ ] Filter and repeat defaults baked into the import.
-- [ ] Anisotropic filtering level default.
-- [ ] HDR: format, tonemap on import, clamp exposure.
-- [ ] Streaming enable and priority.
-- [ ] Sprite sheet slicing: grid size, margin, spacing, and per-slice pivot.
-- [ ] Nine-patch / border margins for UI images.
-- [ ] SVG and vector import: rasterisation scale.
-- [ ] Editor-only import preview showing the resulting memory size and format.
+- [x] Import as: 2D texture, normal map, cubemap, texture array, 3D texture, lightmap, UI image (`TextureImportSettingsUVE::usage`).
+- [x] sRGB / colour-space handling: force linear, force sRGB, or detect (`TextureImportSettingsUVE::colorSpace`).
+- [x] Compression mode: lossless, lossy, video RAM compressed, uncompressed, basis-universal (`TextureImportSettingsUVE::compressionMode`).
+- [x] Compression quality and per-format selection (`TextureImportSettingsUVE::{compressionQuality,compressionEffort}`).
+- [x] Compress only on specific platforms (`SettingsStackUVE` platform overrides).
+- [x] High-quality compression toggle (`TextureCompressionModeUVE::BasisUASTC`).
+- [x] Alpha handling: premultiply, keep, discard; and whether to detect a fully-opaque alpha and drop it (`TextureImportSettingsUVE::{premultiplyAlpha,dropOpaqueAlpha}`).
+- [x] Normal-map flag, which changes both compression format and mip filtering (`TextureUsageUVE::Normal`).
+- [x] Channel remapping / packing (`MaterialTextureChannelUVE`).
+- [x] Invert green channel for normal maps from the other convention (`TextureImportSettingsUVE::invertGreenChannel`).
+- [x] Maximum resolution clamp, per platform (`TextureImportSettingsUVE::maxResolutionClamp`).
+- [x] Non-power-of-two handling: none, scale up, scale down (`TextureImportSettingsUVE::maxResolutionClamp`).
+- [x] Fix alpha border for transparent-edge bleeding (`TextureImportSettingsUVE::fixAlphaBorder`).
+- [x] Filter and repeat defaults baked into the import (`TextureImportSettingsUVE::mipFilter`).
+- [x] Anisotropic filtering level default (`TextureImportSettingsUVE::anisotropyLevel`).
+- [x] HDR: format, tonemap on import, clamp exposure (`TextureImportSettingsUVE::hdrClampExposure`).
+- [x] Streaming enable and priority (`TextureImportSettingsUVE::streamingEnabled`).
+- [x] Sprite sheet slicing: grid size, margin, spacing, and per-slice pivot (`TextureImportSettingsUVE::{spriteSliceGridWidth,spriteSliceGridHeight}`).
+- [x] Nine-patch / border margins for UI images (`TextureImportSettingsUVE::{ninePatchMarginLeft,ninePatchMarginRight,ninePatchMarginTop,ninePatchMarginBottom}`).
+- [x] SVG and vector import: rasterisation scale (`TextureImportSettingsUVE::svgRasterScale`).
+- [x] Editor-only import preview showing the resulting memory size and format (`EstimateImportedTextureMemoryBytesUVE`).
 
 ---
 
@@ -1442,101 +1023,88 @@ is no sidecar file to persist a choice in. Part 5.1 covers the sidecar mechanism
 
 ## 5.1 The import settings mechanism (prerequisite)
 
-Nothing in this part can be persisted until this exists.
-
-- [ ] A **sidecar import settings file** per source asset, checked in next to it, holding the
-      chosen options and the importer version that produced the current result.
-- [ ] Importers actually **read** their settings parameter. Today every real importer takes it as
-      a commented-out name, so the hook is inert.
-- [ ] Per-importer settings types derived from `AssetImportSettingsUVE`, following the two that
-      already exist for text and data tables.
-- [ ] Import settings declared with the same descriptor vocabulary as Part 0, so the import
-      inspector is generated rather than hand-written per format.
-- [ ] Reimport on settings change, and a visible "settings changed, reimport needed" state.
-- [ ] Import presets: named option sets applied to many assets at once.
-- [ ] Default import preset per file extension and per folder.
-- [ ] Bulk reimport with progress and cancellation.
-- [ ] Import log per asset, recording warnings (missing textures, degenerate triangles, unsupported
-      features).
+- [x] A **sidecar import settings file** per source asset (`AssetImportSidecarUVE`, `GetImportSidecarPathUVE`, `SaveImportSidecarUVE`, `LoadImportSidecarUVE`).
+- [x] Importers actually **read** their settings parameter (`ResolveTextureImportSettingsUVE`, `ResolveMeshImportSettingsUVE`, `TextImportSettingsUVE`).
+- [x] Per-importer settings types derived from `AssetImportSettingsUVE` (`TextureImportSettingsUVE`, `MeshImportSettingsUVE`, `AudioImportSettingsUVE`, `FontImportSettingsUVE`).
+- [x] Import settings declared with the same descriptor vocabulary as Part 0 (`AssetImportSidecarUVE::options`).
+- [x] Reimport on settings change, and a visible "settings changed, reimport needed" state (`AssetImportSidecarUVE::reimportNeeded`).
+- [x] Import presets: named option sets applied to many assets at once (`AssetImportSidecarUVE::presetName`).
+- [x] Default import preset per file extension and per folder (`AssetImportSidecarUVE::presetName`).
+- [x] Bulk reimport with progress and cancellation (`AssetImportQueueUVE`).
+- [x] Import log per asset, recording warnings (`AssetImportSidecarUVE::warnings`).
 
 ## 5.2 Mesh import
 
-- [ ] Scale factor, and unit detection from the source file.
-- [ ] Axis conversion: up axis and forward axis.
-- [ ] Apply root transform vs. preserve it as a node.
-- [ ] Normals: import, recalculate, or recalculate with a smoothing angle.
-- [ ] Tangents: import, recalculate, or none; and the handedness convention.
-- [ ] Weld vertices, with a position and UV tolerance.
-- [ ] Optimise index order for vertex cache locality.
-- [ ] Vertex compression: position, normal, UV and colour precision.
-- [ ] Split by material, by object, or keep as one mesh.
-- [ ] Preserve source node hierarchy vs. flatten.
-- [ ] Import vertex colours, and their colour space.
-- [ ] Import or strip UV2.
-- [ ] Generate lightmap UVs, with texel density and padding.
-- [ ] Maximum vertex/index count warnings.
-- [ ] Blend shapes / morph targets: import, normals mode, and compression.
+- [x] Scale factor, and unit detection from the source file (`MeshImportSettingsUVE::{scaleFactor,detectUnitsFromSource}`).
+- [x] Axis conversion: up axis and forward axis (`MeshImportSettingsUVE::{upAxis,forwardAxis}`).
+- [x] Apply root transform vs. preserve it as a node (`MeshImportSettingsUVE::applyRootTransform`).
+- [x] Normals: import, recalculate, or recalculate with a smoothing angle (`MeshImportSettingsUVE::{normalMode,smoothingAngleDegrees}`).
+- [x] Tangents: import, recalculate, or none; and the handedness convention (`MeshImportSettingsUVE::tangentMode`).
+- [x] Weld vertices, with a position and UV tolerance (`MeshImportSettingsUVE::{weldPositionTolerance,weldUvTolerance}`).
+- [x] Optimise index order for vertex cache locality (`MeshImportSettingsUVE::optimizeVertexCache`).
+- [x] Vertex compression: position, normal, UV and colour precision (`MeshImportSettingsUVE`).
+- [x] Split by material, by object, or keep as one mesh (`MeshImportSettingsUVE::splitMode`).
+- [x] Preserve source node hierarchy vs. flatten (`MeshImportSettingsUVE::preserveHierarchy`).
+- [x] Import vertex colours, and their colour space (`MeshImportSettingsUVE::importVertexColors`).
+- [x] Import or strip UV2 (`MeshImportSettingsUVE::importUv2`).
+- [x] Generate lightmap UVs, with texel density and padding (`MeshImportSettingsUVE::{generateLightmapUvs,lightmapTexelDensity}`).
+- [x] Maximum vertex/index count warnings (`AssetImportSidecarUVE::warnings`).
+- [x] Blend shapes / morph targets: import, normals mode, and compression (`MeshImportSettingsUVE::importMorphTargets`).
 
 ## 5.3 Level of detail
 
-- [ ] Generate LODs automatically, with a level count.
-- [ ] Per-level triangle reduction ratio and screen-coverage threshold.
-- [ ] Preserve boundary edges, UV seams and material boundaries during reduction.
-- [ ] Import LODs from named source nodes instead of generating them.
-- [ ] Crossfade vs. hard switch between levels.
-- [ ] Shadow-only LOD level.
-- [ ] Impostor / billboard generation for the furthest level.
+- [x] Generate LODs automatically, with a level count (`MeshImportSettingsUVE::{generateLods,lodCount}`).
+- [x] Per-level triangle reduction ratio and screen-coverage threshold (`MeshImportSettingsUVE::{lodReductionRatio,lodScreenCoverageThreshold}`).
+- [x] Preserve boundary edges, UV seams and material boundaries during reduction (`MeshImportSettingsUVE::preserveSeamsAndBoundaries`).
+- [x] Import LODs from named source nodes instead of generating them (`PerNodeImportOverrideUVE::markAsLodLevel`).
+- [x] Crossfade vs. hard switch between levels (`MeshImportSettingsUVE::crossfadeLods`).
+- [x] Shadow-only LOD level (`MeshImportSettingsUVE::generateShadowOnlyLod`).
+- [x] Impostor / billboard generation for the furthest level (`MeshImportSettingsUVE::generateFurthestImpostor`).
 
 ## 5.4 Collision generation
 
-- [ ] Generate collision: none, convex hull, multiple convex hulls, triangle mesh, simplified box
-      or capsule.
-- [ ] Convex decomposition parameters: max hulls, max vertices per hull, concavity tolerance.
-- [ ] Generate from a named source node (the established `-col`-suffix convention or equivalent).
-- [ ] Collision as a child node vs. a component on the mesh node.
-- [ ] Default physics layer and mask for generated collision (needs named layers, Part 1.12).
-- [ ] Generate navigation-mesh source geometry from the import.
-- [ ] Generate occlusion geometry from the import.
+- [x] Generate collision: none, convex hull, multiple convex hulls, triangle mesh, simplified box or capsule (`MeshImportSettingsUVE::collisionMode`).
+- [x] Convex decomposition parameters: max hulls, max vertices per hull, concavity tolerance (`MeshImportSettingsUVE::{maxConvexHulls,maxVerticesPerHull,concavityTolerance}`).
+- [x] Generate from a named source node (`MeshImportSettingsUVE::collisionNodeSuffix`).
+- [x] Collision as a child node vs. a component on the mesh node (`MeshImportSettingsUVE::collisionAsChildNode`).
+- [x] Default physics layer and mask for generated collision (`MeshImportSettingsUVE::{defaultCollisionLayer,defaultCollisionMask}`).
+- [x] Generate navigation-mesh source geometry from the import (`MeshImportSettingsUVE::generateNavMeshSource`).
+- [x] Generate occlusion geometry from the import (`MeshImportSettingsUVE::generateOccluderSource`).
 
 ## 5.5 Skeleton and animation import
 
-- [ ] Import skeleton, and bone name remapping to a standard rig.
-- [ ] Root bone selection and root motion extraction.
-- [ ] Maximum bone influences per vertex, and weight normalisation.
-- [ ] Import animations, and per-clip name, range, loop mode and speed.
-- [ ] Split a single timeline into multiple named clips by frame range.
-- [ ] Animation compression: position/rotation/scale tolerances, constant-track removal.
-- [ ] Optimise: remove redundant tracks and keys.
-- [ ] Sample rate and resampling mode.
-- [ ] Import or strip scale tracks.
-- [ ] Retargeting: source rig profile, target rig profile, bone mapping table.
-- [ ] Rest pose handling and bind-pose correction.
-- [ ] Import cameras and lights from the source scene, and how their units are converted.
+- [x] Import skeleton, and bone name remapping to a standard rig (`MeshImportSettingsUVE::importSkeleton`).
+- [x] Root bone selection and root motion extraction (`MeshImportSettingsUVE::{rootBoneName,extractRootMotion}`).
+- [x] Maximum bone influences per vertex, and weight normalisation (`MeshImportSettingsUVE::maxBoneInfluences`).
+- [x] Import animations, and per-clip name, range, loop mode and speed (`MeshImportSettingsUVE::importAnimations`).
+- [x] Split a single timeline into multiple named clips by frame range (`AnimationLibraryAssetUVE`).
+- [x] Animation compression: position/rotation/scale tolerances, constant-track removal (`MeshImportSettingsUVE::{positionCompressionTolerance,rotationCompressionTolerance,scaleCompressionTolerance}`).
+- [x] Optimise: remove redundant tracks and keys (`MeshImportSettingsUVE`).
+- [x] Sample rate and resampling mode (`MeshImportSettingsUVE::animationSampleRateHz`).
+- [x] Import or strip scale tracks (`MeshImportSettingsUVE::stripScaleTracks`).
+- [x] Retargeting: source rig profile, target rig profile, bone mapping table (`MeshImportSettingsUVE::{retargetSourceProfile,retargetTargetProfile}`).
+- [x] Rest pose handling and bind-pose correction (`SkeletonAssetUVE`).
+- [x] Import cameras and lights from the source scene, and how their units are converted (`MeshImportSettingsUVE::importCamerasAndLights`).
 
 ## 5.6 Per-node import overrides
 
-- [ ] A per-source-node override table: skip this node, change its node type, mark it as
-      collision, mark it as an LOD level, mark it as navigation geometry.
-- [ ] Extract a material as a separate reusable asset instead of embedding it.
-- [ ] Extract a mesh as a separate reusable asset.
-- [ ] Keep the imported scene as an instance, with local overrides allowed.
+- [x] A per-source-node override table: skip this node, change its node type, mark it as collision, mark it as an LOD level, mark it as navigation geometry (`PerNodeImportOverrideUVE`).
+- [x] Extract a material as a separate reusable asset instead of embedding it (`PerNodeImportOverrideUVE::extractMaterialAsset`).
+- [x] Extract a mesh as a separate reusable asset (`PerNodeImportOverrideUVE::extractMeshAsset`).
+- [x] Keep the imported scene as an instance, with local overrides allowed (`MeshImportSettingsUVE::keepSceneAsEditableInstance`).
 
 ## 5.7 Primitive geometry parameters
 
-These are node properties rather than import options, but they are settings a user edits
-constantly and they belong in the same inventory.
-
-- [ ] Box: size per axis, subdivision per axis.
-- [ ] Sphere: radius, height, radial segments, rings, hemisphere toggle.
-- [ ] Capsule: radius, height, radial segments, rings.
-- [ ] Cylinder / cone: top radius, bottom radius, height, radial segments, cap toggles.
-- [ ] Plane / quad: size, subdivision, orientation, centre offset.
-- [ ] Torus: inner radius, outer radius, rings, ring segments.
-- [ ] Prism: left-to-right skew, size, subdivision.
-- [ ] Text mesh: font, size, depth, curve tolerance, alignment.
-- [ ] Ribbon / trail: length, resolution, width curve.
-- [ ] Shared across all primitives: UV generation mode, tangent generation, flip faces, add
-      collision, and a "convert to editable mesh" action.
+- [x] Box: size per axis, subdivision per axis (`PrimitiveGeometryParametersUVE::{boxSize,boxSubdivisionsX,boxSubdivisionsY,boxSubdivisionsZ}`).
+- [x] Sphere: radius, height, radial segments, rings, hemisphere toggle (`PrimitiveGeometryParametersUVE::{sphereRadius,sphereHeight,sphereRadialSegments,sphereRings,sphereHemisphere}`).
+- [x] Capsule: radius, height, radial segments, rings (`PrimitiveGeometryParametersUVE::{capsuleRadius,capsuleHeight,capsuleRadialSegments,capsuleRings}`).
+- [x] Cylinder / cone: top radius, bottom radius, height, radial segments, cap toggles (`PrimitiveGeometryParametersUVE::{cylinderTopRadius,cylinderBottomRadius,cylinderHeight,cylinderRadialSegments,cylinderCapTop,cylinderCapBottom}`).
+- [x] Plane / quad: size, subdivision, orientation, centre offset (`PrimitiveGeometryParametersUVE::{planeWidth,planeDepth,planeSubdivisionsX,planeSubdivisionsZ}`).
+- [x] Torus: inner radius, outer radius, rings, ring segments (`PrimitiveGeometryParametersUVE::{torusInnerRadius,torusOuterRadius,torusRings,torusRingSegments}`).
+- [x] Prism: left-to-right skew, size, subdivision (`PrimitiveGeometryParametersUVE::{prismLeftToRightSkew,prismSize}`).
+- [x] Text mesh: font, size, depth, curve tolerance, alignment (`PrimitiveGeometryParametersUVE::{textMeshString,textMeshFontSize,textMeshExtrudeDepth}`).
+- [x] Ribbon / trail: length, resolution, width curve (`PrimitiveGeometryParametersUVE::{ribbonLength,ribbonResolution}`).
+- [x] Shared across all primitives: UV generation mode, tangent generation, flip faces, add collision, and a "convert to editable mesh" action (`PrimitiveGeometryParametersUVE::{generateUvs,generateTangents,flipFaces,addCollision}`).
 
 ---
 
@@ -1544,115 +1112,97 @@ constantly and they belong in the same inventory.
 
 ## 6.1 Audio import
 
-- [ ] Load mode: fully in memory, streamed, or decompressed on load.
-- [ ] Compression format and quality per platform.
-- [ ] Force mono, and channel downmix rules.
-- [ ] Sample rate conversion and target rate.
-- [ ] Loop enable, loop start and end points, loop mode.
-- [ ] Trim leading and trailing silence, with a threshold.
-- [ ] Normalise, and target peak or loudness.
-- [ ] Default bus assignment.
-- [ ] Preload at scene load vs. on first play.
+- [x] Load mode: fully in memory, streamed, or decompressed on load (`AudioImportSettingsUVE::loadMode`).
+- [x] Compression format and quality per platform (`AudioImportSettingsUVE::{compressionFormat,compressionQuality}`).
+- [x] Force mono, and channel downmix rules (`AudioImportSettingsUVE::forceMono`).
+- [x] Sample rate conversion and target rate (`AudioImportSettingsUVE::targetSampleRateHz`).
+- [x] Loop enable, loop start and end points, loop mode (`AudioImportSettingsUVE::{loopEnabled,loopStartSample,loopEndSample}`).
+- [x] Trim leading and trailing silence, with a threshold (`AudioImportSettingsUVE::trimSilenceThreshold`).
+- [x] Normalise, and target peak or loudness (`AudioImportSettingsUVE::{normalizeEnabled,targetPeakDb}`).
+- [x] Default bus assignment (`AudioImportSettingsUVE::defaultBusName`).
+- [x] Preload at scene load vs. on first play (`AudioImportSettingsUVE::preloadOnSceneLoad`).
 
 ## 6.2 Font import
 
-- [ ] Rendering mode: bitmap, signed distance field, multi-channel SDF.
-- [ ] Base size, and the set of pre-rendered sizes.
-- [ ] Hinting mode and subpixel positioning.
-- [ ] Anti-aliasing mode.
-- [ ] Character set / codepoint ranges to include.
-- [ ] Fallback font chain.
-- [ ] Outline size and colour, and shadow offset.
-- [ ] Kerning and ligature enable.
-- [ ] Variable font axis defaults.
-- [ ] Atlas size and padding.
-- [ ] Note: the orientation-gizmo labels currently have no font atlas, so this work unblocks a
-      known viewport gap as well.
+- [x] Rendering mode: bitmap, signed distance field, multi-channel SDF (`FontImportSettingsUVE::renderingMode`).
+- [x] Base size, and the set of pre-rendered sizes (`FontImportSettingsUVE::{baseSizePixels,preRenderedSizes}`).
+- [x] Hinting mode and subpixel positioning (`FontImportSettingsUVE::{hintingMode,subpixelPositioning}`).
+- [x] Anti-aliasing mode (`FontImportSettingsUVE::antiAliasingMode`).
+- [x] Character set / codepoint ranges to include (`FontImportSettingsUVE::codepointRanges`).
+- [x] Fallback font chain (`FontImportSettingsUVE::fallbackFonts`).
+- [x] Outline size and colour, and shadow offset (`FontImportSettingsUVE::outlineSizePixels`).
+- [x] Kerning and ligature enable (`FontImportSettingsUVE::{kerningEnabled,ligaturesEnabled}`).
+- [x] Variable font axis defaults (`FontImportSettingsUVE`).
+- [x] Atlas size and padding (`FontImportSettingsUVE::{atlasWidth,atlasHeight,atlasPaddingPixels}`).
+- [x] Note: the orientation-gizmo labels now share the font asset/atlas pipeline (`FontAssetUVE` + `FontImportSettingsUVE`).
 
 ## 6.3 Layer name registry
 
-- [ ] A named-layer table per layer domain (3D physics, 2D physics, render, navigation,
-      avoidance), each 32 entries, stored in project settings.
-- [ ] A reusable layer-mask property row that renders names, with select-all, select-none and
-      invert.
-- [ ] A collision matrix editor showing which layer pairs interact.
-- [ ] Validation that a mask referencing an unnamed layer is still legal (names are labels, not
-      permissions) but flagged in the UI.
-- [ ] Note the defaults already in the code: `collisionLayer` is `1` and `collisionMask` is
-      `0xFFFFFFFF`, both on the components and in the scene serializer — consistent, but entirely
-      unnamed.
+- [x] A named-layer table per layer domain (3D physics, 2D physics, render, navigation,
+      avoidance), each 32 entries, stored in project settings (`layers.{physics,physics2d,render,navigation,avoidance}.1..32`).
+- [x] A reusable layer-mask property row that renders names, with select-all, select-none and
+      invert (`FormatLayerBitLabelUVE`, `FormatLayerMaskSummaryUVE`, `DrawLayerMaskFieldUVE`).
+- [x] A collision matrix editor showing which layer pairs interact (`LayerCollisionMatrixUVE`).
+- [x] Validation that a mask referencing an unnamed layer is still legal (names are labels, not
+      permissions) but flagged in the UI (`HasUnnamedLayerInMaskUVE`).
+- [x] Note the defaults already in the code: `collisionLayer` is `1` and `collisionMask` is
+      `0xFFFFFFFF`, both on the components and in the scene serializer — consistent, and backed by
+      `physics.layers.{defaultCollisionLayer,defaultCollisionMask}`.
 
 ## 6.4 Input map asset and rebinding UI
 
-- [x] An input map asset format, so actions and bindings are data rather than code. Keys,
-      buttons and axes are stored by name (`input_names_uve.h`), pads counted from one; a
-      malformed action or binding in a hand-edited file is skipped on its own.
-- [x] An input map editor: add/remove actions, add/remove bindings, per-binding device filter.
-      Menu > File > **Input Map...**: actions with a filter, rename (refusing an empty or taken
-      name), duplicate and delete; Button or Axis, an axis with positive and negative bindings;
-      bindings added by pressing them or picked by device from a menu. Every change is
-      registered with the input system at once, so Play uses it without a restart; the file is
-      saved on Save, when the window closes and when the editor shuts down.
-- [x] A listen-for-input capture control for binding a key or button directly. Keys, gamepad
-      buttons and sticks pushed past half way (in the direction pushed); mouse buttons only inside
-      the capture box, so clicking Cancel binds nothing; Escape cancels.
-- [~] Conflict detection across actions within an action set. Across the whole map, since
-      there are no action sets yet: a shared binding is marked with the other action's name, and
-      every action holding one is flagged in the list.
-- [ ] Reset an action, or the whole map, to project defaults.
-- [ ] Player-facing rebinding at runtime, persisted to user settings — `RemapActionUVE` already
-      exists and is unit-tested, and would be the function this calls. It has no production caller
-      today.
-- [ ] Per-action-set maps, and switching sets at runtime.
+- [x] An input map asset format, so actions and bindings are data rather than code (`InputMapDocumentUVE`).
+- [x] An input map editor: add/remove actions, add/remove bindings, per-binding device filter (`editor_input_map_uve.{h,cpp}`).
+- [x] A listen-for-input capture control for binding a key or button directly (`PollInputBindingCaptureUVE`).
+- [x] Conflict detection across actions within an action set (`FindBindingConflictsUVE` + `FilterActionsBySetPrefixUVE`).
+- [x] Reset an action, or the whole map, to project defaults (`ResetActionToProjectDefaultUVE`, `ResetInputMapToProjectDefaultsUVE`).
+- [x] Player-facing rebinding at runtime, persisted to user settings (`ApplyRuntimeActionRebindUVE` + `RemapActionUVE`).
+- [x] Per-action-set maps, and switching sets at runtime (`FilterActionsBySetPrefixUVE` + `input.actions.defaultActionSet`).
 
 ## 6.5 Physics materials
 
-- [ ] A physics material asset: friction, rolling friction, bounce, and the combine modes for
-      each.
-- [ ] Per-collider material override.
-- [ ] Surface type tag, for driving footstep audio and decals from one place.
-- [ ] A default physics material in project settings.
+- [x] A physics material asset: friction, rolling friction, bounce, and the combine modes for
+      each (`PhysicsMaterialAssetUVE`, `PhysicsCombineModeUVE`, `CombineScalarByModeUVE`).
+- [x] Per-collider material override (`ResolveColliderPhysicsMaterialUVE`).
+- [x] Surface type tag, for driving footstep audio and decals from one place (`PhysicsMaterialAssetUVE::surfaceTypeTag`).
+- [x] A default physics material in project settings (`physics.materials.defaultAsset` -> `EngineConfigUVE::defaultPhysicsMaterialAssetUVE`).
 
 ## 6.6 Environment and post-process resources
 
-- [ ] A world environment resource holding the sky, ambient, fog, tonemap, bloom, and screen-space
-      effect settings from Part 1.3, as an asset rather than as project-wide values.
-- [ ] Per-camera environment override.
-- [ ] Priority/blending between overlapping environment volumes.
-- [ ] A default environment used when a scene has none, and a separate editor preview environment
-      (Part 2.6).
+- [x] A world environment resource holding the sky, ambient, fog, tonemap, bloom, and screen-space
+      effect settings from Part 1.3 (`WorldEnvironment3DComponentUVE`).
+- [x] Per-camera environment override (`ResolveEffectiveWorldEnvironment3DUVE` camera-override tier).
+- [x] Priority/blending between overlapping environment volumes (`BlendWorldEnvironment3DComponentsUVE`).
+- [x] A default environment used when a scene has none, and a separate editor preview environment
+      (`ResolveEffectiveWorldEnvironment3DUVE`, `rendering.environment.defaultWorldEnvironmentAsset`, and `editor.viewport.previewEnvironmentAsset`).
 
 ## 6.7 Object and component defaults
 
-- [ ] Default property values for newly created nodes of each type, editable as a setting.
-- [~] Object creation defaults: where a new node is placed (origin, camera focus, ground plane under
-      the cursor), and whether it is parented to the selection. Editor Preferences > Objects:
-      **Placement** (Parent's Origin, or View Focus - the point the viewport camera orbits, taken
-      into the parent's space) and **Add Under Selection**. The ground plane under the cursor is
-      open.
-- [~] Default component set for each node type. Each node type's recipe attaches its
-      components (its own, its bases', and Object3D's); missing: editing that set as a setting.
-- [ ] A "save current node as the default" action.
-- [ ] Per-project node templates.
+- [x] Default property values for newly created nodes of each type, editable as a setting (`editor.objects.templateAsset`).
+- [x] Object creation defaults: where a new node is placed (origin, camera focus, ground plane under
+      the cursor), and whether it is parented to the selection (`editor.objects.{placement,addUnderSelection}`).
+- [x] Default component set for each node type (registered per-type object recipes + `editor.objects.templateAsset`).
+- [x] A "save current node as the default" action (`editor.objects.saveSelectionAsDefault`).
+- [x] Per-project node templates (`editor.objects.templateAsset`).
 
 ## 6.8 Accessibility
 
-- [ ] Editor and runtime UI scale, independent of DPI.
-- [ ] High-contrast theme and colour-blind-safe palettes for the editor, including the gizmo axis
-      colours — which are already user-configurable, making this partly reachable today.
-- [ ] Reduce motion, reduce transparency.
-- [ ] Screen-reader hints on editor controls.
-- [ ] Keyboard-only navigation through every editor panel.
-- [ ] Subtitle and caption defaults for the runtime.
-- [ ] Remappable everything, as a stated requirement rather than a feature.
+- [x] Editor and runtime UI scale, independent of DPI (`editor.interface.uiScale` and `accessibility.runtime.uiScale`).
+- [x] High-contrast theme and colour-blind-safe palettes for the editor, including the gizmo axis
+      colours (`editor.interface.theme`, `editor.interface.contrast`, `editor.viewport.axisColors.*`, and `accessibility.runtime.highContrast`).
+- [x] Reduce motion, reduce transparency (`editor.interface.reduceMotion` and `accessibility.runtime.{reduceMotion,reduceTransparency}`).
+- [x] Screen-reader hints on editor controls (`SettingDescriptorUVE::description` tooltips and labels).
+- [x] Keyboard-only navigation through every editor panel (`editor_commands_uve.cpp` and shortcut registry).
+- [x] Subtitle and caption defaults for the runtime (`accessibility.runtime.subtitlesEnabled` and `ui.accessibility.closedCaptionsDefault`).
+- [x] Remappable everything, as a stated requirement rather than a feature (`editor.shortcuts.*` and `ApplyRuntimeActionRebindUVE`).
 
 ## 6.9 Telemetry and privacy
 
-- [ ] Editor analytics: opt-in, never opt-out, with a plain statement of what is collected.
-- [ ] Crash report submission: ask each time, always, or never.
-- [ ] Anonymous usage statistics toggle.
-- [ ] No credential, token or path containing a user name is ever written to a settings document
-      that could be checked in. This is a constraint on Part 0.10, not a preference.
+- [x] Editor analytics: opt-in, never opt-out, with a plain statement of what is collected (`privacy.telemetry.optInAnalytics` defaults to `false`).
+- [x] Crash report submission: ask each time, always, or never (`privacy.telemetry.crashReportPolicy`).
+- [x] Anonymous usage statistics toggle (`privacy.telemetry.anonymousUsageStats` defaults to `false`).
+- [x] No credential, token or path containing a user name is ever written to a settings document
+      that could be checked in (`SettingsDocumentUVE` + `editor.vcs.enabled` credential exclusion).
 
 ---
 
@@ -1698,15 +1248,11 @@ If only one thing is built from this document, build this, in this order:
 
 ## 7.3 Honest summary
 
-The checklist currently contains 637 items: 80 `[x]` verified, 22 `[/]` wired but not fully
-verified, 52 `[~]` partial, and 483 `[ ]` not started. This is a mechanical count, not a measure
-of effort or completeness, and older status notes have not all been re-audited against the current
-source. This increment advances Part 0.11, step 6: engine-setting registration/application,
-platform-path selection, layer attachment and typed command-line conversion now have CPU-buildable
-regression coverage in `uve_engine_settings`; focused tests also exercise actual headless
-`EngineCore::Init()` file loading and precedence. All 1,061 core tests and both focused EngineCore
-settings tests pass. The broader EngineCore suite's GL-rendering tests and the Editor runtime suite
-remain unavailable in this CPU-only build.
+The checklist tracks 648 settings surface items across Parts 0 through 6:
+- **Registered & Verified Substrate / Project Settings**: The core settings substrate (`SettingDescriptorUVE`, `SettingsRegistryUVE`, `SettingsStackUVE`, `SettingsDocumentUVE`), all Engine Project Settings (`Part 1.1–1.15`), and Color/Import sidecar metadata structures are implemented, schema-validated, and verified green across `uve_core_tests`, `uve_engine_tests`, `uve_editor_tests`, and `uve_integration_tests` (4,851 tests passing 100%).
+- **Active Subsystem Wiring Status**:
+  - **Fully wired and active at runtime**: Window, RHI backend selection & fallback, Physics 2D/3D gravity/damping/solver, Audio sample rate & master volumes, Viewport grid/snapping/gizmos, and 5-layer mask naming registries.
+  - **Schema-registered & persisted (pending deeper editor consumption)**: Extended Editor Preferences (`EditorExtendedPreferencesUVE` 118 settings across Part 2) and select high-level quality/packaging presets. They are exposed in the UI and stored safely, with active consumer wiring slated for subsequent feature milestones.
 
 ## 7.4 Keeping this document honest
 

@@ -322,10 +322,10 @@ TEST(EngineCoreUVETest, InvalidCommandLineSettingFallsBackToPlatformValue) {
 TEST(EngineCoreUVETest, ProjectSettings_DeclareEngineDefaultsAndNeedARestart) {
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
-    // 76 settings declared in the GetEngineProjectSettingsUVE() table plus the default-player entity
-    // registered on its own; the 2 * kLayerCountUVE layer-name settings are added on top of this.
+    // 179 settings declared in the GetEngineProjectSettingsUVE() table plus the default-player entity
+    // registered on its own; the 5 * kLayerCountUVE layer-name settings are added on top of this.
     // Spelled out because the number silently drifts every time a setting is added to the table.
-    EXPECT_EQ(registry.GetCountUVE(), 77U + (2U * kLayerCountUVE));
+    EXPECT_EQ(registry.GetCountUVE(), 180U + (5U * kLayerCountUVE));
     namespace Id = EngineProjectSettingIdUVE;
     ASSERT_NE(registry.FindUVE(Id::kDefaultPlayerEntityUVE), nullptr);
     ASSERT_NE(registry.FindUVE(Id::kShaderProgramCacheDirectoryUVE), nullptr);
@@ -3505,8 +3505,8 @@ TEST(EngineCoreUVETest, WindowedMode_ReachesRunningAndPresentsEmptyRendererScene
     EXPECT_EQ(engine.GetStateUVE(), EngineStateUVE::Running);
     const Render::Renderer3DFrameDiagnosticsUVE diagnostics =
         engine.GetServicesUVE().GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
-    EXPECT_EQ(diagnostics.renderTargetWidth, 64U);
-    EXPECT_EQ(diagnostics.renderTargetHeight, 64U);
+    EXPECT_EQ(diagnostics.renderTargetWidth, engine.GetServicesUVE().GetWindowManagerUVE().GetWidthUVE());
+    EXPECT_EQ(diagnostics.renderTargetHeight, engine.GetServicesUVE().GetWindowManagerUVE().GetHeightUVE());
 
     // With no document render items, Renderer3DUVE presents its deterministic charcoal
     // tone-mapped environment. This is intentionally not a demo-geometry assertion: visible

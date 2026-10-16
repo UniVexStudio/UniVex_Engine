@@ -215,6 +215,7 @@ bool ReadSharedShelvesTextUVE(const std::string_view text, ContentShelvesUVE& sh
             }
             const std::filesystem::path path = std::filesystem::path{item.get<std::string>()}.lexically_normal();
             const bool escapes = path.empty() || path.is_absolute() || path.has_root_name() ||
+                                 path.has_root_directory() ||
                                  (path.begin() != path.end() && *path.begin() == "..");
             if (!escapes) {
                 static_cast<void>(shelves.AddItemUVE(name, path));

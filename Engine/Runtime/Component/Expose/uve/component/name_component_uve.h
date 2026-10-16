@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <string>
+#include <string_view>
 
 namespace UVE::Scene {
 
@@ -18,6 +19,24 @@ struct NameComponentUVE final {
     std::string name;
 };
 
+/// True when `name` is at most `kMaximumEntityNameBytesUVE` bytes and contains no embedded NULs.
+[[nodiscard]] bool IsEntityNameStringValidUVE(std::string_view name) noexcept;
+
 [[nodiscard]] bool IsNameComponentValidUVE(const NameComponentUVE& component) noexcept;
+
+/// True when `component` is non-null and holds a non-empty, valid entity name.
+[[nodiscard]] bool HasNonEmptyEntityNameUVE(const NameComponentUVE* component) noexcept;
+
+/// Strips embedded NUL bytes, truncates to `kMaximumEntityNameBytesUVE`, and applies `fallbackName` when empty.
+[[nodiscard]] std::string SanitizeEntityNameStringUVE(
+    std::string_view rawName, std::string_view fallbackName = {});
+
+/// Returns a sanitized `NameComponentUVE` guaranteed to pass `IsNameComponentValidUVE`.
+[[nodiscard]] NameComponentUVE SanitizeNameComponentUVE(
+    const NameComponentUVE& component, std::string_view fallbackName = {});
+
+/// Returns `component->name` when present and non-empty, or `fallbackName` otherwise.
+[[nodiscard]] std::string_view ResolveEntityDisplayNameOrFallbackUVE(
+    const NameComponentUVE* component, std::string_view fallbackName) noexcept;
 
 } // namespace UVE::Scene

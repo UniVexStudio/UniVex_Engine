@@ -55,4 +55,19 @@ struct AudioSourceComponentUVE final {
 /// any path/database policy. Distance ordering is required only for spatial sources because 2D sources ignore it.
 [[nodiscard]] bool IsAudioSourceComponentValidUVE(const AudioSourceComponentUVE& source) noexcept;
 
+/// True when `source.audioAssetPath` is non-empty and within `kMaximumAudioAssetPathBytesUVE`.
+[[nodiscard]] bool HasAudioSourceAssetPathUVE(const AudioSourceComponentUVE& source) noexcept;
+
+/// Sanitizes `source` so volume, pitch, distances, curve, and string fields pass validation.
+[[nodiscard]] AudioSourceComponentUVE SanitizeAudioSourceComponentUVE(
+    const AudioSourceComponentUVE& source);
+
+/// Computes the distance-attenuation factor in `[0, 1]` for `source` at `distance`.
+[[nodiscard]] float ComputeAudioSourceDistanceAttenuationUVE(
+    const AudioSourceComponentUVE& source, float distance) noexcept;
+
+/// Computes the effective linear gain (`source.volume * attenuation * busVolume`).
+[[nodiscard]] float ComputeEffectiveAudioSourceGainUVE(
+    const AudioSourceComponentUVE& source, float distance, float busVolume = 1.0F) noexcept;
+
 } // namespace UVE::Scene

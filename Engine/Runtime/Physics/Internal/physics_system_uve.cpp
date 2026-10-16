@@ -79,7 +79,8 @@ void MoveAndDeflectUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGra
 /// collider-only-static side gets 0% of the correction; two dynamic bodies split proportionally
 /// to inverse mass) plus per-body velocity deflection using both sides' combined material.
 void ResolvePairUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-                    const CollisionPairUVE& pair) {
+                    const CollisionPairUVE& pair, const PhysicsSimulationSettingsUVE& settings,
+                    float fixedDeltaTimeSeconds) {
     const auto InverseMassOfUVE = [&entityManager](Scene::EntityUVE entity) {
         if (!entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(entity)) {
             return Scene::Static3DUVE::InverseMassUVE();
@@ -110,6 +111,16 @@ void ResolvePairUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphU
     const float firstShare = firstWeight / totalWeight;
     const float secondShare = secondWeight / totalWeight;
 
+    const float slop = (std::isfinite(settings.penetrationSlop) && settings.penetrationSlop > 0.0F)
+                           ? settings.penetrationSlop
+                           : 0.0F;
+    float effectivePenetration = std::max(0.0F, pair.penetrationDepth - slop);
+    if (std::isfinite(settings.maxDepenetrationVelocity) && settings.maxDepenetrationVelocity > 0.0F &&
+        std::isfinite(fixedDeltaTimeSeconds) && fixedDeltaTimeSeconds > 0.0F) {
+        effectivePenetration =
+            std::min(effectivePenetration, settings.maxDepenetrationVelocity * fixedDeltaTimeSeconds);
+    }
+
     // Both entities in `pair` are guaranteed to have ColliderComponentUVE — DetectCollisionsUVE
     // only ever returns pairs where both sides have one.
     const PhysicsMaterialUVE combinedMaterial = CombineMaterialsUVE(
@@ -118,12 +129,12 @@ void ResolvePairUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphU
 
     if (firstShare > 0.0F) {
         MoveAndDeflectUVE(entityManager, sceneGraph, pair.first,
-                          -pair.separationAxis * (pair.penetrationDepth * firstShare), pair.separationAxis,
+                          -pair.separationAxis * (effectivePenetration * firstShare), pair.separationAxis,
                           combinedMaterial);
     }
     if (secondShare > 0.0F) {
         MoveAndDeflectUVE(entityManager, sceneGraph, pair.second,
-                          pair.separationAxis * (pair.penetrationDepth * secondShare), -pair.separationAxis,
+                          pair.separationAxis * (effectivePenetration * secondShare), -pair.separationAxis,
                           combinedMaterial);
     }
 }
@@ -135,6 +146,24 @@ PhysicsSystemUVE::PhysicsSystemUVE(ICollisionSystemUVE& collisionSystem, Math::V
 
 void PhysicsSystemUVE::SetConstraintSystemUVE(PhysicsConstraintSystemUVE* constraintSystem) noexcept {
     m_constraintSystem = constraintSystem;
+}
+
+void PhysicsSystemUVE::SetGravityUVE(Math::Vector3UVE gravity) noexcept {
+    if (IsFiniteVector3UVE(gravity)) {
+        m_gravity = gravity;
+    }
+}
+
+Math::Vector3UVE PhysicsSystemUVE::GetGravityUVE() const noexcept {
+    return m_gravity;
+}
+
+void PhysicsSystemUVE::SetSimulationSettingsUVE(const PhysicsSimulationSettingsUVE& settings) noexcept {
+    m_settings = settings;
+}
+
+PhysicsSimulationSettingsUVE PhysicsSystemUVE::GetSimulationSettingsUVE() const noexcept {
+    return m_settings;
 }
 
 void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
@@ -163,8 +192,16 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
             }
 
             Math::Vector3UVE gravity = m_gravity;
-            float linearDamp = rigidBody.drag;
-            float angularDamp = 0.0F;
+            float linearDamp = rigidBody.drag > 0.0F
+                                   ? rigidBody.drag
+                                   : ((std::isfinite(m_settings.defaultLinearDamping) &&
+                                       m_settings.defaultLinearDamping > 0.0F)
+                                          ? m_settings.defaultLinearDamping
+                                          : 0.0F);
+            float angularDamp = (std::isfinite(m_settings.defaultAngularDamping) &&
+                                 m_settings.defaultAngularDamping > 0.0F)
+                                    ? m_settings.defaultAngularDamping
+                                    : 0.0F;
             if (const Area3DBodySpaceUVE* space = FindArea3DBodySpaceUVE(areaSpaces, entity)) {
                 gravity = space->gravity;
                 linearDamp = space->linearDamp;
@@ -206,8 +243,22 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
                 }
             }
 
+            Math::Vector3UVE finalLinearVelocity = *candidateVelocity;
+            if (m_settings.allowSleeping && std::isfinite(m_settings.sleepThreshold) &&
+                m_settings.sleepThreshold > 0.0F) {
+                const float thresholdSq = m_settings.sleepThreshold * m_settings.sleepThreshold;
+                const float priorLinearSq = Math::LengthSquaredUVE(rigidBody.velocity);
+                const float nextLinearSq = Math::LengthSquaredUVE(finalLinearVelocity);
+                const float nextAngularSq = Math::LengthSquaredUVE(candidateAngularVelocity);
+                if (priorLinearSq > 0.0F && nextLinearSq <= priorLinearSq &&
+                    nextLinearSq < thresholdSq && nextAngularSq < thresholdSq) {
+                    finalLinearVelocity = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+                    candidateAngularVelocity = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+                }
+            }
+
             Scene::TransformComponentUVE newTransform = transform;
-            if (!TryIntegratePositionUVE(transform.localPosition, *candidateVelocity, fixedDeltaTimeSeconds,
+            if (!TryIntegratePositionUVE(transform.localPosition, finalLinearVelocity, fixedDeltaTimeSeconds,
                                          newTransform.localPosition)) {
                 return;
             }
@@ -226,7 +277,7 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
                     }
                 }
             }
-            rigidBody.velocity = *candidateVelocity;
+            rigidBody.velocity = finalLinearVelocity;
             rigidBody.angularVelocity = candidateAngularVelocity;
             sceneGraph.SetLocalTransformUVE(entityManager, entity, newTransform);
         });
@@ -238,11 +289,15 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
 
     const std::vector<CollisionPairUVE> pairs = m_collisionSystem->DetectCollisionsUVE(entityManager);
     for (const CollisionPairUVE& pair : pairs) {
-        ResolvePairUVE(entityManager, sceneGraph, pair);
+        ResolvePairUVE(entityManager, sceneGraph, pair, m_settings, fixedDeltaTimeSeconds);
     }
 
     if (m_constraintSystem != nullptr) {
-        static_cast<void>(m_constraintSystem->SolveUVE(entityManager, sceneGraph));
+        const std::size_t solverIterations =
+            m_settings.solverIterations > 0U
+                ? m_settings.solverIterations
+                : PhysicsConstraintSystemUVE::kMaximumSolverIterationsUVE;
+        static_cast<void>(m_constraintSystem->SolveUVE(entityManager, sceneGraph, solverIterations));
     }
 
     // Propagate resolution positions too, so a caller inspecting WorldTransformComponentUVE

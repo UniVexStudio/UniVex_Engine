@@ -631,7 +631,7 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
         const ImGuiStyle& style = ImGui::GetStyle();
         for (const TabUVE& tab : kTabs) {
             const bool active = m_bottomDockVisible && m_activeBottomDock == tab.dock;
-            ImGui::PushStyleColor(ImGuiCol_Button, active ? style.Colors[ImGuiCol_TabActive] : ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
+            ImGui::PushStyleColor(ImGuiCol_Button, active ? style.Colors[ImGuiCol_TabSelected] : ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
             ImGui::PushStyleColor(ImGuiCol_Text, active ? style.Colors[ImGuiCol_Text] : style.Colors[ImGuiCol_TextDisabled]);
             if (ImGui::Button(tab.label, ImVec2{0.0F, layout.dockTabBarSize.y - 4.0F})) {
                 // Clicking the tab already showing folds the dock away; any other tab shows it.

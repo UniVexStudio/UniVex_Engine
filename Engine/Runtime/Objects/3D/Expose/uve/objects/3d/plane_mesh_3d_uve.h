@@ -7,6 +7,9 @@
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
+#include "uve/math/aabb_uve.h"
+#include "uve/math/quaternion_uve.h"
+#include "uve/math/vector3_uve.h"
 
 namespace UVE::Scene {
 
@@ -14,30 +17,47 @@ class IEntityManagerUVE;
 
 /// Authoring definition for the PlaneMesh3D scene object: the component set and defaults a freshly
 /// created PlaneMesh3D entity attaches — a ground-plane primitive mesh plus a thin flat collider
-/// (0.5 X/Z half-extents, 0.025 Y — a walkable floor slab rather than a full box). This recipe
-/// (including its neutral white base color) used to be hardcoded in EditorUVE's creation
-/// switch behind the legacy EditorEntityKindUVE::Plane case; it now has the same per-file home
-/// every other object kind has. Per Engine/Runtime/Scene/README.md's "one truth per concept" rule
-/// this holds the *recipe*, not a second copy of component storage: the mesh record still lives
-/// only in PrimitiveMeshComponentUVE (geometry itself is renderer-owned).
+/// (`0.5 x 0.025 x 0.5`).
 struct PlaneMesh3DObjectDefinitionUVE final {
-    /// Default document-entity name for a freshly created object of this kind. "Plane" preserves
-    /// the exact name the legacy editor entity kind has always produced.
     static constexpr std::string_view defaultName = "Plane";
 
-    /// Ground-plane primitive authored defaults (neutral white; materials/colors can be authored later).
     PrimitiveMeshComponentUVE mesh{PrimitiveMeshKindUVE::Plane, Math::Vector3UVE{1.0F, 1.0F, 1.0F}};
-    /// Thin flat collision authored defaults: a floor slab, not a full-height box.
     ColliderComponentUVE collider{Math::Vector3UVE{0.5F, 0.025F, 0.5F}};
 };
 
 [[nodiscard]] bool IsPlaneMesh3DObjectDefinitionValidUVE(const PlaneMesh3DObjectDefinitionUVE& value) noexcept;
 
-/// Attaches this object's components to `entity` using the definition's authored defaults. The
-/// entity must be alive and must not already have any of the attached component types.
-/// Every application first guarantees the Object3D baseline (Transform/WorldTransform/
-/// Hierarchy/Name) through EnsureObject3DBaselineUVE - this kind is Object3D plus its recipe.
 void ApplyPlaneMesh3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                       const PlaneMesh3DObjectDefinitionUVE& value);
+                                         const PlaneMesh3DObjectDefinitionUVE& value);
+
+/// Node policy for a `PlaneMesh3D` primitive object.
+class PlaneMesh3DUVE final {
+public:
+    PlaneMesh3DUVE() = delete;
+
+    static constexpr Math::Vector3UVE kDefaultColliderHalfExtentsUVE{0.5F, 0.025F, 0.5F};
+    static constexpr Math::Vector3UVE kLocalNormalUVE{0.0F, 1.0F, 0.0F};
+
+    /// True when `mesh` is valid and configured as a `Plane` primitive.
+    [[nodiscard]] static bool IsPlaneMeshUVE(const PrimitiveMeshComponentUVE& mesh) noexcept;
+
+    /// Returns the authored floor-slab collider half-extents `{0.5, 0.025, 0.5}`.
+    [[nodiscard]] static Math::Vector3UVE DefaultColliderHalfExtentsUVE() noexcept;
+
+    /// Returns the local-space AABB enclosing the plane slab.
+    [[nodiscard]] static Math::AabbUVE LocalBoundsUVE() noexcept;
+
+    /// Resolves the plane's world-space surface normal (`+Y` rotated by `worldRotation`).
+    /// Falls back to `{0, 1, 0}` if `worldRotation` cannot be normalized.
+    [[nodiscard]] static Math::Vector3UVE WorldNormalUVE(
+        const Math::QuaternionUVE& worldRotation) noexcept;
+
+    /// Computes the world-space area of the unit XZ plane scaled by `worldScale`. Returns `0.0F`
+    /// when `worldScale.x` or `worldScale.z` is non-finite or non-positive.
+    [[nodiscard]] static float SurfaceAreaFromScaleUVE(const Math::Vector3UVE& worldScale) noexcept;
+
+    /// Synchronises `collider` half-extents to the thin floor-slab default.
+    static void SyncColliderHalfExtentsUVE(ColliderComponentUVE& collider) noexcept;
+};
 
 } // namespace UVE::Scene

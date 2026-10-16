@@ -49,4 +49,17 @@ struct LightComponentUVE final {
 /// finite positive policy values even when a given light type ignores one of them.
 [[nodiscard]] bool IsLightComponentValidUVE(const LightComponentUVE& light) noexcept;
 
+/// Sanitizes `light` so enum, color, intensity, range, and spot cone angle are valid.
+[[nodiscard]] LightComponentUVE SanitizeLightComponentUVE(const LightComponentUVE& light) noexcept;
+
+/// Computes the radiant linear RGB color (`color * max(0, intensity)`).
+[[nodiscard]] Math::ColorUVE EvaluateLightRadiantColorUVE(const LightComponentUVE& light) noexcept;
+
+/// Computes smooth distance attenuation in `[0, 1]` (`1` for directional lights, `0` beyond `range`).
+[[nodiscard]] float EvaluateLightDistanceAttenuationUVE(const LightComponentUVE& light,
+                                                        float distanceMeters) noexcept;
+
+/// Returns the cosine of the spot cone angle (`cos(DegToRadUVE(spotAngleDegrees))`).
+[[nodiscard]] float ResolveSpotLightConeCosineUVE(const LightComponentUVE& light) noexcept;
+
 } // namespace UVE::Scene

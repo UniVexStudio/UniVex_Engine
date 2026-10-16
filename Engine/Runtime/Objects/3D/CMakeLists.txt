@@ -21,6 +21,7 @@ add_library(uve_objects_3d STATIC
     ../Animation/Internal/animation_graph_uve.cpp
     ../Animation/Internal/skeleton_3d_uve.cpp
     ../Animation/Internal/bone_attachment_3d_uve.cpp
+    ../Animation/Internal/spring_bone_simulator_3d_uve.cpp
     ../Animation/Internal/two_bone_ik_3d_uve.cpp
     Physics/Internal/abstract_physics_objects_3d_uve.cpp
     Physics/Internal/kinematic_3d_uve.cpp
@@ -34,15 +35,34 @@ add_library(uve_objects_3d STATIC
     Physics/Internal/hitbox_3d_uve.cpp
     Physics/Internal/hurtbox_3d_uve.cpp
     Physics/Internal/interaction_area_3d_uve.cpp
+    Physics/Internal/joint_3d_uve.cpp
+    Physics/Internal/physical_bone_3d_uve.cpp
     Physics/Internal/projectile_3d_uve.cpp
     Physics/Internal/ray_cast_3d_uve.cpp
+    Physics/Internal/shape_cast_3d_uve.cpp
+    Physics/Internal/soft_body_3d_uve.cpp
     Physics/Internal/rigid_3d_uve.cpp
     Physics/Internal/spring_arm_3d_uve.cpp
     Physics/Internal/static_3d_uve.cpp
+    Physics/Internal/vehicle_3d_uve.cpp
+    Internal/csg_shape_3d_uve.cpp
     Internal/fog_volume_3d_uve.cpp
+    Internal/gi_probes_3d_uve.cpp
+    Internal/grid_map_3d_uve.cpp
     ../AI/3D/Internal/nav_mesh_volume_3d_uve.cpp
+    ../AI/3D/Internal/nav_obstacle_3d_uve.cpp
     ../AI/3D/Internal/nav_seeker_3d_uve.cpp
+    ../AI/3D/Internal/smart_object_3d_uve.cpp
+    ../AI/3D/Internal/state_tree_3d_uve.cpp
     Internal/marker_3d_uve.cpp
+    Internal/audio_listener_3d_uve.cpp
+    Internal/label_3d_uve.cpp
+    Internal/multi_mesh_instance_3d_uve.cpp
+    Internal/path_3d_uve.cpp
+    Internal/path_follow_3d_uve.cpp
+    Internal/remote_transform_3d_uve.cpp
+    Internal/sprite_3d_uve.cpp
+    Internal/visible_on_screen_notifier_3d_uve.cpp
     Internal/world_environment_3d_uve.cpp
     Internal/reflection_probe_3d_uve.cpp
     Internal/decal_3d_uve.cpp
@@ -55,6 +75,7 @@ add_library(uve_objects_3d STATIC
     Internal/player_3d_uve.cpp
     Internal/level_streamer_3d_uve.cpp
     Internal/world_partition_3d_uve.cpp
+    Internal/xr_objects_3d_uve.cpp
     Internal/object_3d_uve.cpp
     Internal/camera_3d_uve.cpp
     Internal/light_3d_uve.cpp

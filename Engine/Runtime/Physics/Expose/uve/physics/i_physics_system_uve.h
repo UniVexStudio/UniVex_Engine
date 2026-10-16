@@ -3,10 +3,24 @@
 
 #pragma once
 
+#include <cstddef>
+
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/math/vector3_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 
 namespace UVE::Physics {
+
+/// Runtime solver, damping, sleeping, and contact-resolution parameters consumed by PhysicsSystemUVE.
+struct PhysicsSimulationSettingsUVE final {
+    float defaultLinearDamping = 0.0F;
+    float defaultAngularDamping = 0.0F;
+    float sleepThreshold = 0.0F;
+    bool allowSleeping = false;
+    std::size_t solverIterations = 8U;
+    float penetrationSlop = 0.0F;
+    float maxDepenetrationVelocity = 0.0F;
+};
 
 /// IPhysicsSystemUVE is the spec's `PhysicsSystemUVE` (Part 7.5): dynamics integration +
 /// collision resolution, driven once per fixed simulation step by `EngineCoreUVE::Update()`
@@ -35,6 +49,22 @@ public:
     /// dirty-flag propagation stays correct throughout.
     virtual void StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
                           float fixedDeltaTimeSeconds) = 0;
+
+    virtual void SetGravityUVE(Math::Vector3UVE gravity) noexcept {
+        static_cast<void>(gravity);
+    }
+
+    [[nodiscard]] virtual Math::Vector3UVE GetGravityUVE() const noexcept {
+        return Math::Vector3UVE{0.0F, -9.81F, 0.0F};
+    }
+
+    virtual void SetSimulationSettingsUVE(const PhysicsSimulationSettingsUVE& settings) noexcept {
+        static_cast<void>(settings);
+    }
+
+    [[nodiscard]] virtual PhysicsSimulationSettingsUVE GetSimulationSettingsUVE() const noexcept {
+        return PhysicsSimulationSettingsUVE{};
+    }
 };
 
 } // namespace UVE::Physics

@@ -37,16 +37,6 @@ void AppendUniqueOccupantUVE(std::array<EntityUVE, kCapacity>& occupants, std::u
     ++count;
 }
 
-[[nodiscard]] bool ContainsOccupantUVE(const EntityUVE* occupants, const std::uint8_t count,
-                                       const EntityUVE entity) noexcept {
-    for (std::uint8_t index = 0U; index < count; ++index) {
-        if (occupants[index] == entity) {
-            return true;
-        }
-    }
-    return false;
-}
-
 [[nodiscard]] Math::Vector3UVE DirectionOrZeroUVE(const Math::Vector3UVE& value) noexcept {
     if (!Math::IsFiniteUVE(value)) {
         return {};
@@ -89,14 +79,11 @@ bool IsArea3DObjectDefinitionValidUVE(const Area3DObjectDefinitionUVE& value) no
 void ApplyArea3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                                     const Area3DObjectDefinitionUVE& value) {
     EnsureObject3DBaselineUVE(entityManager, entity, Area3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<AreaComponentUVE>(entity, value.area);
+    entityManager.AddComponentUVE<AreaComponentUVE>(entity, SanitizeAreaComponentUVE(value.area));
 }
 
 void Area3DUVE::ClearOccupancyUVE(AreaComponentUVE& area) noexcept {
-    area.overlappingBodyCount = 0U;
-    area.overlappingBodiesTruncated = false;
-    area.overlappingAreaCount = 0U;
-    area.overlappingAreasTruncated = false;
+    ClearAreaRuntimeOverlapsUVE(area);
 }
 
 void Area3DUVE::RefreshOccupancyUVE(AreaComponentUVE& area,
@@ -117,11 +104,11 @@ void Area3DUVE::RefreshOccupancyUVE(AreaComponentUVE& area,
 }
 
 bool Area3DUVE::HasOverlappingBodyUVE(const AreaComponentUVE& area, const EntityUVE entity) noexcept {
-    return ContainsOccupantUVE(area.overlappingBodies.data(), area.overlappingBodyCount, entity);
+    return ContainsAreaOverlappingBodyUVE(area, entity);
 }
 
 bool Area3DUVE::HasOverlappingAreaUVE(const AreaComponentUVE& area, const EntityUVE entity) noexcept {
-    return ContainsOccupantUVE(area.overlappingAreas.data(), area.overlappingAreaCount, entity);
+    return ContainsAreaOverlappingAreaUVE(area, entity);
 }
 
 const EntityUVE* Area3DUVE::GetOverlappingBodyUVE(const AreaComponentUVE& area,

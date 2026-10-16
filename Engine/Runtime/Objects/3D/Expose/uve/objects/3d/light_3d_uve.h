@@ -6,27 +6,19 @@
 
 #include "uve/component/entity_uve.h"
 #include "uve/component/light_component_uve.h"
+#include "uve/math/color_uve.h"
+#include "uve/math/quaternion_uve.h"
+#include "uve/math/vector3_uve.h"
 
 namespace UVE::Scene {
 
 class IEntityManagerUVE;
 
 /// Authoring definition for the Light3D scene object: the component set and defaults a freshly
-/// created Light3D entity attaches — one directional light (the classic "sun light" the legacy
-/// editor kind produced; Point and Spot stay one inspector edit away, since LightComponentUVE
-/// always carries the full record and never branches on which fields are meaningful). This
-/// recipe used to be hardcoded in EditorUVE's creation switch behind the legacy
-/// EditorEntityKindUVE::DirectionalLight case; it now has the same per-file home every other object
-/// kind has. Per Engine/Runtime/Scene/README.md's "one truth per concept" rule this holds the
-/// *recipe*, not a second copy of component storage: light state itself still lives only in
-/// LightComponentUVE (and is consumed by Render/LightSystemUVE).
+/// created Light3D entity attaches — one directional light.
 struct Light3DObjectDefinitionUVE final {
-    /// Default document-entity name for a freshly created object of this kind. "Directional Light"
-    /// preserves the exact name the legacy editor entity kind has always produced.
     static constexpr std::string_view defaultName = "Directional Light";
 
-    /// Light authored defaults: white, intensity 1, directional (LightComponentUVE's own default
-    /// type — the recipe states it explicitly because the legacy recipe did).
     LightComponentUVE light = MakeDefaultLightUVE();
 
     [[nodiscard]] static LightComponentUVE MakeDefaultLightUVE() noexcept {
@@ -38,11 +30,41 @@ struct Light3DObjectDefinitionUVE final {
 
 [[nodiscard]] bool IsLight3DObjectDefinitionValidUVE(const Light3DObjectDefinitionUVE& value) noexcept;
 
-/// Attaches this object's components to `entity` using the definition's authored defaults. The
-/// entity must be alive and must not already have any of the attached component types.
-/// Every application first guarantees the Object3D baseline (Transform/WorldTransform/
-/// Hierarchy/Name) through EnsureObject3DBaselineUVE - this kind is Object3D plus its recipe.
 void ApplyLight3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                   const Light3DObjectDefinitionUVE& value);
+                                     const Light3DObjectDefinitionUVE& value);
+
+/// Node policy for a `Light3D` object.
+///
+/// Owns the Rec.709 luminance, forward-axis world direction, view-contribution ranking, and spot
+/// cone evaluation shared by `LightSystemUVE` and light inspection tools.
+class Light3DUVE final {
+public:
+    Light3DUVE() = delete;
+
+    static constexpr Math::Vector3UVE kLocalForwardDirectionUVE{0.0F, 0.0F, -1.0F};
+
+    /// True when `light` is valid and has strictly positive intensity.
+    [[nodiscard]] static bool IsEmittingUVE(const LightComponentUVE& light) noexcept;
+
+    /// Computes the non-negative Rec.709 perceptual luminance of `color`.
+    [[nodiscard]] static float ComputeRec709LuminanceUVE(const Math::ColorUVE& color) noexcept;
+
+    /// Rotates the light's local `-Z` forward axis by `normalizedWorldRotation`.
+    [[nodiscard]] static Math::Vector3UVE ResolveWorldDirectionUVE(
+        const Math::QuaternionUVE& normalizedWorldRotation) noexcept;
+
+    /// Estimates how strongly a light of `(type, color, intensity, range)` at `lightPosition`
+    /// contributes at `viewPosition` for `LightSystemUVE`'s top-K light selection.
+    /// Directional lights return `+infinity` so they are never dropped for a nearby point light.
+    [[nodiscard]] static float EstimateViewContributionUVE(
+        LightTypeUVE type, const Math::ColorUVE& color, float intensity, float range,
+        const Math::Vector3UVE& lightPosition, const Math::Vector3UVE& viewPosition) noexcept;
+
+    /// Evaluates the spot cone weight in `[0, 1]` for a unit vector `lightToTargetDirection`
+    /// against `lightWorldDirection` and `spotAngleDegrees` (full cone angle in degrees).
+    [[nodiscard]] static float EvaluateSpotConeWeightUVE(
+        float spotAngleDegrees, const Math::Vector3UVE& lightWorldDirection,
+        const Math::Vector3UVE& lightToTargetDirection) noexcept;
+};
 
 } // namespace UVE::Scene

@@ -2,6 +2,7 @@
 
 #include "uve/component/ui_dropdown_component_uve.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace UVE::Scene {
@@ -29,6 +30,57 @@ namespace UVE::Scene {
            std::isfinite(component.selectedColor.z) && std::isfinite(component.textColor.x) &&
            std::isfinite(component.textColor.y) && std::isfinite(component.textColor.z) &&
            component.hoveredIndex >= -1;
+}
+
+std::vector<std::string> SplitUIDropdownOptionsUVE(const UIDropdownComponentUVE& component) {
+    std::vector<std::string> out;
+    std::size_t start = 0U;
+    while (start <= component.options.size()) {
+        const std::size_t end = component.options.find('\n', start);
+        const std::size_t len =
+            (end == std::string::npos) ? (component.options.size() - start) : (end - start);
+        if (len > 0U) {
+            out.push_back(component.options.substr(start, len));
+        }
+        if (end == std::string::npos) {
+            break;
+        }
+        start = end + 1U;
+    }
+    return out;
+}
+
+std::string ResolveUIDropdownDisplayLabelUVE(const UIDropdownComponentUVE& component) {
+    const std::vector<std::string> parsed = SplitUIDropdownOptionsUVE(component);
+    if (parsed.empty()) {
+        return component.placeholder;
+    }
+    const std::int32_t clampedIdx =
+        std::clamp<std::int32_t>(component.selectedIndex, 0,
+                                 static_cast<std::int32_t>(parsed.size() - 1U));
+    return parsed[static_cast<std::size_t>(clampedIdx)];
+}
+
+bool SelectUIDropdownOptionUVE(UIDropdownComponentUVE& component,
+                               const std::int32_t optionIndex) noexcept {
+    const std::vector<std::string> parsed = SplitUIDropdownOptionsUVE(component);
+    if (parsed.empty() || optionIndex < 0 ||
+        static_cast<std::size_t>(optionIndex) >= parsed.size()) {
+        component.open = false;
+        return false;
+    }
+    const bool changed = (component.selectedIndex != optionIndex);
+    component.selectedIndex = optionIndex;
+    component.wasSelectionChangedThisFrame = changed;
+    component.open = false;
+    return changed;
+}
+
+void ResetUIDropdownRuntimeStateUVE(UIDropdownComponentUVE& component) noexcept {
+    component.open = false;
+    component.isHovered = false;
+    component.hoveredIndex = -1;
+    component.wasSelectionChangedThisFrame = false;
 }
 
 } // namespace UVE::Scene

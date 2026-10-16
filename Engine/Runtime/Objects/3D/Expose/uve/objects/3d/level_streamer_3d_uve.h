@@ -7,11 +7,16 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 
+#include "uve/component/entity_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/objects/3d/object_3d_common_uve.h"
+#include "uve/objects/3d/object_3d_uve.h"
 
 namespace UVE::Scene {
+
+class IEntityManagerUVE;
 
 struct LevelStreamer3DComponentUVE final {
     std::string levelPath;
@@ -29,9 +34,28 @@ struct LevelStreamer3DComponentUVE final {
     // always reads false between ticks - a documented invariant, measured by the engine tests.
     bool loaded = false;
     bool loadRequested = false;
+
+    [[nodiscard]] bool operator==(const LevelStreamer3DComponentUVE&) const = default;
 };
 
 [[nodiscard]] bool IsLevelStreamer3DObjectComponentValidUVE(const LevelStreamer3DComponentUVE& value) noexcept;
+
+/// LevelStreamer3D's creation recipe — the Object3D baseline plus a default
+/// `LevelStreamer3DComponentUVE`.
+struct LevelStreamer3DObjectDefinitionUVE final {
+    static constexpr std::string_view typeName = "LevelStreamer3D";
+    static constexpr std::string_view defaultName = "LevelStreamer3D";
+
+    LevelStreamer3DComponentUVE streamer{};
+
+    [[nodiscard]] bool operator==(const LevelStreamer3DObjectDefinitionUVE&) const = default;
+};
+
+[[nodiscard]] bool IsLevelStreamer3DObjectDefinitionValidUVE(
+    const LevelStreamer3DObjectDefinitionUVE& value) noexcept;
+
+void ApplyLevelStreamer3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                             const LevelStreamer3DObjectDefinitionUVE& value);
 
 // The budget of streaming loads serviced per tick. Godot gives a distant scene nothing at all;
 // Unreal's streaming volumes issue loads immediately and let the renderer hitch. Time-sliced
@@ -92,5 +116,26 @@ struct LevelStreamer3DStreamingFrameUVE final {
 // the camera seesawing around a distance can never flick a level on and off every frame.
 [[nodiscard]] LevelStreamer3DActionUVE ResolveLevelStreamer3DStreamingActionUVE(
     const LevelStreamer3DStreamingFrameUVE& frame) noexcept;
+
+/// Node policy for a `LevelStreamer3D` scene object.
+class LevelStreamer3DUVE final {
+public:
+    LevelStreamer3DUVE() = delete;
+
+    /// Builds a `LevelStreamer3DStreamingFrameUVE` for `streamer` at `streamerWorldPosition`
+    /// against `viewerPositions`.
+    [[nodiscard]] static LevelStreamer3DStreamingFrameUVE BuildStreamingFrameUVE(
+        const LevelStreamer3DComponentUVE& streamer, const Math::Vector3UVE& streamerWorldPosition,
+        std::span<const Math::Vector3UVE> viewerPositions) noexcept;
+
+    /// Evaluates the per-tick streaming action for `streamer` at `streamerWorldPosition`.
+    [[nodiscard]] static LevelStreamer3DActionUVE EvaluateActionUVE(
+        const LevelStreamer3DComponentUVE& streamer, const Math::Vector3UVE& streamerWorldPosition,
+        std::span<const Math::Vector3UVE> viewerPositions) noexcept;
+
+    /// Width of the hysteresis band (`unloadDistance - loadDistance`), or `0.0F` if invalid.
+    [[nodiscard]] static float HysteresisBandWidthUVE(
+        const LevelStreamer3DComponentUVE& streamer) noexcept;
+};
 
 } // namespace UVE::Scene

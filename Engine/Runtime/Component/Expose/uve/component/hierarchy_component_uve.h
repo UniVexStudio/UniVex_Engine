@@ -29,4 +29,25 @@ struct HierarchyComponentUVE final {
     std::int64_t siblingOrder = NextSiblingOrderUVE();
 };
 
+/// True when `component` is a scene root (`parent == kInvalidEntityUVE`).
+[[nodiscard]] bool IsHierarchyRootUVE(const HierarchyComponentUVE& component) noexcept;
+
+/// True when `component` does not parent `selfEntity` to itself.
+[[nodiscard]] bool IsHierarchyComponentValidForEntityUVE(
+    const HierarchyComponentUVE& component, EntityUVE selfEntity = kInvalidEntityUVE) noexcept;
+
+/// Deterministic tie-break order between two `EntityUVE` handles (`index`, then `generation`).
+[[nodiscard]] bool CompareEntityHandleOrderUVE(EntityUVE lhs, EntityUVE rhs) noexcept;
+
+/// Canonical sibling ordering shared by `SceneGraphUVE::GetChildrenUVE` and `ChildrenIndexUVE`:
+/// lower `siblingOrder` first, then `CompareEntityHandleOrderUVE`.
+[[nodiscard]] bool CompareSiblingHierarchyOrderUVE(std::int64_t lhsOrder, EntityUVE lhsEntity,
+                                                   std::int64_t rhsOrder,
+                                                   EntityUVE rhsEntity) noexcept;
+
+/// Updates `component.parent` to `newParent` and hands out a fresh `NextSiblingOrderUVE()` when
+/// the parent link changed. Returns true when `parent` changed.
+bool AssignParentAndAdvanceSiblingOrderUVE(HierarchyComponentUVE& component,
+                                           EntityUVE newParent) noexcept;
+
 } // namespace UVE::Scene

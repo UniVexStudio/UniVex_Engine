@@ -173,4 +173,50 @@ struct WorldEnvironmentObjectDefinitionUVE final {
 void ApplyWorldEnvironmentObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                             const WorldEnvironmentObjectDefinitionUVE& value);
 
+/// Blends two environment profiles by `weightB` (clamped to 0..1) for overlapping environment volumes.
+[[nodiscard]] inline WorldEnvironment3DComponentUVE BlendWorldEnvironment3DComponentsUVE(
+    const WorldEnvironment3DComponentUVE& a, const WorldEnvironment3DComponentUVE& b,
+    const float weightB) noexcept {
+    const float t = weightB < 0.0F ? 0.0F : (weightB > 1.0F ? 1.0F : weightB);
+    const float s = 1.0F - t;
+    WorldEnvironment3DComponentUVE result = t >= 0.5F ? b : a;
+    result.ambientColor = Math::Vector3UVE{a.ambientColor.x * s + b.ambientColor.x * t,
+                                           a.ambientColor.y * s + b.ambientColor.y * t,
+                                           a.ambientColor.z * s + b.ambientColor.z * t};
+    result.fogColor = Math::Vector3UVE{a.fogColor.x * s + b.fogColor.x * t,
+                                       a.fogColor.y * s + b.fogColor.y * t,
+                                       a.fogColor.z * s + b.fogColor.z * t};
+    result.ambientEnergy = a.ambientEnergy * s + b.ambientEnergy * t;
+    result.exposure = a.exposure * s + b.exposure * t;
+    result.fogDensity = a.fogDensity * s + b.fogDensity * t;
+    result.bloomIntensity = a.bloomIntensity * s + b.bloomIntensity * t;
+    result.bloomThreshold = a.bloomThreshold * s + b.bloomThreshold * t;
+    result.ssaoIntensity = a.ssaoIntensity * s + b.ssaoIntensity * t;
+    result.ssaoRadius = a.ssaoRadius * s + b.ssaoRadius * t;
+    result.vignetteIntensity = a.vignetteIntensity * s + b.vignetteIntensity * t;
+    return result;
+}
+
+/// Resolves the active environment resource with precedence:
+/// per-camera override > scene volume > project default > editor preview fallback.
+[[nodiscard]] inline WorldEnvironment3DComponentUVE ResolveEffectiveWorldEnvironment3DUVE(
+    const WorldEnvironment3DComponentUVE* const cameraOverride,
+    const WorldEnvironment3DComponentUVE* const sceneVolume,
+    const WorldEnvironment3DComponentUVE* const projectDefault,
+    const WorldEnvironment3DComponentUVE* const editorPreviewFallback) {
+    if (cameraOverride != nullptr) {
+        return *cameraOverride;
+    }
+    if (sceneVolume != nullptr) {
+        return *sceneVolume;
+    }
+    if (projectDefault != nullptr) {
+        return *projectDefault;
+    }
+    if (editorPreviewFallback != nullptr) {
+        return *editorPreviewFallback;
+    }
+    return WorldEnvironment3DComponentUVE{};
+}
+
 } // namespace UVE::Scene

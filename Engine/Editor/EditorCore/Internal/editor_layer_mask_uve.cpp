@@ -6,7 +6,12 @@
 #include <bit>
 #include <string>
 
+#if __has_include(<imgui.h>)
 #include <imgui.h>
+#define UVE_HAS_IMGUI_HEADER_UVE 1
+#else
+#define UVE_HAS_IMGUI_HEADER_UVE 0
+#endif
 
 #include "editor_layer_mask_field_uve.h"
 
@@ -51,6 +56,39 @@ std::string FormatLayerMaskSummaryUVE(const std::uint32_t mask, const LayerNames
     return summary;
 }
 
+bool HasUnnamedLayerInMaskUVE(const std::uint32_t mask, const LayerNamesUVE& names) noexcept {
+    for (std::size_t index = 0U; index < kLayerCountUVE; ++index) {
+        if (IsLayerSetUVE(mask, index) && names[index].empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool LayerCollisionMatrixUVE::CanCollideUVE(const std::size_t layerA, const std::size_t layerB) const noexcept {
+    if (layerA >= kLayerCountUVE || layerB >= kLayerCountUVE) {
+        return false;
+    }
+    return ((rowMasks[layerA] >> layerB) & 1U) != 0U;
+}
+
+void LayerCollisionMatrixUVE::SetCollisionUVE(const std::size_t layerA, const std::size_t layerB,
+                                              const bool enabled) noexcept {
+    if (layerA >= kLayerCountUVE || layerB >= kLayerCountUVE) {
+        return;
+    }
+    const std::uint32_t bitA = (1U << static_cast<std::uint32_t>(layerA));
+    const std::uint32_t bitB = (1U << static_cast<std::uint32_t>(layerB));
+    if (enabled) {
+        rowMasks[layerA] |= bitB;
+        rowMasks[layerB] |= bitA;
+    } else {
+        rowMasks[layerA] &= ~bitB;
+        rowMasks[layerB] &= ~bitA;
+    }
+}
+
+#if UVE_HAS_IMGUI_HEADER_UVE
 LayerMaskFieldEventUVE DrawLayerMaskFieldUVE(const char* const id, std::uint32_t& mask, const LayerNamesUVE& names) {
     LayerMaskFieldEventUVE event = LayerMaskFieldEventUVE::None;
     const float fontSize = ImGui::GetFontSize();
@@ -128,5 +166,6 @@ LayerMaskFieldEventUVE DrawLayerMaskFieldUVE(const char* const id, std::uint32_t
     }
     return event;
 }
+#endif // UVE_HAS_IMGUI_HEADER_UVE
 
 } // namespace UVE::Editor

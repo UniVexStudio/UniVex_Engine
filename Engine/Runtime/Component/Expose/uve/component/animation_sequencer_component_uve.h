@@ -99,7 +99,26 @@ struct AnimationSequencerComponentUVE final {
     [[nodiscard]] bool operator==(const AnimationSequencerComponentUVE&) const = default;
 };
 
+[[nodiscard]] bool IsAnimationLoopModeValidUVE(AnimationLoopModeUVE mode) noexcept;
+
+[[nodiscard]] bool IsAnimationFinishActionValidUVE(AnimationFinishActionUVE action) noexcept;
+
 /// Every setting finite and in range, and every runtime value finite.
 [[nodiscard]] bool IsAnimationSequencerComponentValidUVE(const AnimationSequencerComponentUVE& component) noexcept;
+
+/// True when `component.clip` references a valid asset GUID.
+[[nodiscard]] bool HasPlayableAnimationClipUVE(
+    const AnimationSequencerComponentUVE& component) noexcept;
+
+/// Computes the normalized blend-in progress in `[0, 1]` (`1.0F` when `blendInSeconds <= 0`).
+[[nodiscard]] float ResolveAnimationBlendInWeightUVE(
+    const AnimationSequencerComponentUVE& component) noexcept;
+
+/// Resets runtime playback state (`isPlaying`, `currentTimeSeconds`, `finished`, inertial buffers, etc.).
+void ResetAnimationSequencerRuntimeStateUVE(AnimationSequencerComponentUVE& component) noexcept;
+
+/// Sanitizes authored and runtime fields so the returned component passes `IsAnimationSequencerComponentValidUVE`.
+[[nodiscard]] AnimationSequencerComponentUVE SanitizeAnimationSequencerComponentUVE(
+    const AnimationSequencerComponentUVE& component);
 
 } // namespace UVE::Scene

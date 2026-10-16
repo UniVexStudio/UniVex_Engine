@@ -8,4 +8,21 @@ bool IsDisabledComponentValidUVE(const DisabledComponentUVE& /*component*/) noex
     return true;
 }
 
+bool IsDisabledTagPresentUVE(const DisabledComponentUVE* const component) noexcept {
+    return component != nullptr;
+}
+
+bool ShouldSimulateEntityUVE(const DisabledComponentUVE* const component) noexcept {
+    return !IsDisabledTagPresentUVE(component);
+}
+
+bool ShouldSkipEntitySimulationUVE(const DisabledComponentUVE* const component) noexcept {
+    return IsDisabledTagPresentUVE(component);
+}
+
+bool ShouldPropagateTransformWhenDisabledUVE(
+    const DisabledComponentUVE* const /*component*/) noexcept {
+    return true;
+}
+
 } // namespace UVE::Scene

@@ -32,4 +32,23 @@ namespace UVE::Editor {
 [[nodiscard]] std::string MakeUniqueActionNameUVE(const std::vector<Input::InputActionUVE>& actions,
                                                   std::string_view base);
 
+/// Restores one named action in `actions` from `projectDefaults`. Returns false if `actionName`
+/// is not present in `projectDefaults`.
+bool ResetActionToProjectDefaultUVE(std::vector<Input::InputActionUVE>& actions,
+                                    const std::vector<Input::InputActionUVE>& projectDefaults,
+                                    std::string_view actionName);
+
+/// Replaces `actions` with `projectDefaults`.
+void ResetInputMapToProjectDefaultsUVE(std::vector<Input::InputActionUVE>& actions,
+                                       const std::vector<Input::InputActionUVE>& projectDefaults);
+
+/// Applies a player-facing runtime rebinding on `input` via `RemapActionUVE`.
+bool ApplyRuntimeActionRebindUVE(Input::IInputSystemUVE& input, std::string_view actionName,
+                                 const Input::InputBindingUVE& newBinding);
+
+/// Returns actions belonging to `actionSetPrefix` (e.g. "gameplay" matches "gameplay.*" or
+/// unprefixed actions when `actionSetPrefix == "gameplay"`).
+[[nodiscard]] std::vector<Input::InputActionUVE> FilterActionsBySetPrefixUVE(
+    const std::vector<Input::InputActionUVE>& actions, std::string_view actionSetPrefix);
+
 } // namespace UVE::Editor
