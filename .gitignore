@@ -21,6 +21,8 @@ imgui.ini
 .uvsettings
 *.ppm
 DerivedData/
+assets/
+.uvassetdb
 
 # .NET build output (Engine/Editor/EditorCoreCs and any future C# project) - dotnet publish's own
 # output lands under build/ (already ignored above) via each project's own -o flag, never here.
