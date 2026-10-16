@@ -135,8 +135,9 @@ TEST(ThreadControlUVETest, CurrentThreadOperationsRunOnPoolWorkerWithoutRenaming
             EXPECT_TRUE(TryGetCurrentThreadNameUVE(name));
             EXPECT_EQ(name, "UVEWorker0");
 #else
-            if (TryGetCurrentThreadNameUVE(name))
+            if (TryGetCurrentThreadNameUVE(name)) {
                 EXPECT_EQ(name, "UVEWorker0");
+            }
 #endif
         },
         counter);

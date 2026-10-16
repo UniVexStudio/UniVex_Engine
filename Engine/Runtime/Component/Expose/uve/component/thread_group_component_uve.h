@@ -41,11 +41,31 @@ struct ThreadGroupComponentUVE final {
     ThreadGroupModeUVE resolvedModeInHierarchy = ThreadGroupModeUVE::MainThread;
 };
 
+[[nodiscard]] bool IsThreadGroupModeValidUVE(ThreadGroupModeUVE mode) noexcept;
+
 [[nodiscard]] bool IsThreadGroupComponentValidUVE(const ThreadGroupComponentUVE& component) noexcept;
 
 /// Resolves `mode` against the parent's already-resolved answer. Inherit passes through; SubThread
 /// is honoured only where the parent also permits it.
 [[nodiscard]] ThreadGroupModeUVE ResolveThreadGroupModeUVE(ThreadGroupModeUVE mode,
                                                            ThreadGroupModeUVE parentMode) noexcept;
+
+/// Resolves and writes `component->resolvedModeInHierarchy` against `parentResolvedMode`
+/// (passes through when `component` is null).
+[[nodiscard]] ThreadGroupModeUVE ResolveHierarchyThreadGroupModeUVE(
+    ThreadGroupComponentUVE* component, ThreadGroupModeUVE parentResolvedMode) noexcept;
+
+/// True when `component` is non-null and its resolved hierarchy mode permits worker execution (`SubThread`).
+[[nodiscard]] bool CanDispatchOnSubThreadUVE(const ThreadGroupComponentUVE* component) noexcept;
+
+/// Deterministic execution-order comparator (`order` ascending, then `tieBreak`).
+[[nodiscard]] bool CompareThreadGroupExecutionOrderUVE(const ThreadGroupComponentUVE& lhs,
+                                                       std::uint32_t lhsTieBreak,
+                                                       const ThreadGroupComponentUVE& rhs,
+                                                       std::uint32_t rhsTieBreak) noexcept;
+
+/// Sanitizes `component` so invalid enum values fall back to `Inherit` / `MainThread`.
+[[nodiscard]] ThreadGroupComponentUVE SanitizeThreadGroupComponentUVE(
+    const ThreadGroupComponentUVE& component) noexcept;
 
 } // namespace UVE::Scene

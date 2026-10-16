@@ -10,6 +10,8 @@
 
 add_library(uve_objects_canvas STATIC
     Internal/canvas_uve.cpp
+    Internal/ui_extended_containers_uve.cpp
+    Internal/ui_extended_controls_uve.cpp
     Internal/ui_text_uve.cpp
     Internal/ui_image_uve.cpp
     Internal/ui_button_uve.cpp

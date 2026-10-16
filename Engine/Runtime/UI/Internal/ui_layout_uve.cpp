@@ -221,10 +221,11 @@ void PositionContainerItemsUVE(Scene::IEntityManagerUVE& entityManager,
                                const Scene::UILayoutContainerComponentUVE& layout,
                                const std::vector<PositionableChildUVE>& items) {
     const bool vertical = layout.direction == Scene::UILayoutDirectionUVE::Vertical;
-    const float innerMinX = layout.rect.position.x + layout.padding;
-    const float innerMinY = layout.rect.position.y + layout.padding;
-    const float innerWidth = std::max(0.0F, layout.rect.size.x - 2.0F * layout.padding);
-    const float innerHeight = std::max(0.0F, layout.rect.size.y - 2.0F * layout.padding);
+    const Math::RectUVE innerRect = Scene::ResolveUILayoutContentRectUVE(layout);
+    const float innerMinX = innerRect.position.x;
+    const float innerMinY = innerRect.position.y;
+    const float innerWidth = innerRect.size.x;
+    const float innerHeight = innerRect.size.y;
     const float alignFactor = layout.alignment == Scene::UILayoutAlignmentUVE::Start
                                   ? 0.0F
                                   : (layout.alignment == Scene::UILayoutAlignmentUVE::Center ? 0.5F : 1.0F);
@@ -360,16 +361,10 @@ void LayoutUIScrollContainersUVE(Scene::IEntityManagerUVE& entityManager, const 
             stored.scrollOffset = Math::Vector2UVE{0.0F, 0.0F};
         } else {
             if (wheel != 0.0F && Math::ContainsUVE(scroll.rect, mouse)) {
-                if (horizontal) {
-                    stored.scrollOffset.x -= wheel * scroll.wheelStep;
-                } else {
-                    stored.scrollOffset.y -= wheel * scroll.wheelStep;
-                }
+                (void)Scene::ApplyUIScrollWheelDeltaUVE(stored, wheel, horizontal);
+            } else {
+                stored.scrollOffset = Scene::ClampUIScrollOffsetUVE(stored, stored.scrollOffset);
             }
-            stored.scrollOffset.x = std::clamp(stored.scrollOffset.x, 0.0F,
-                                               std::max(0.0F, stored.contentSize.x - scroll.rect.size.x));
-            stored.scrollOffset.y = std::clamp(stored.scrollOffset.y, 0.0F,
-                                               std::max(0.0F, stored.contentSize.y - scroll.rect.size.y));
         }
         float cursor = scroll.padding - stored.scrollOffset.y;
         for (const PositionableChildUVE& item : items) {

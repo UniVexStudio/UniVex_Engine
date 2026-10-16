@@ -1305,7 +1305,11 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             }
             const std::time_t time = static_cast<std::time_t>(seconds);
             std::tm local{};
+#if defined(_WIN32)
+            localtime_s(&local, &time);
+#else
             localtime_r(&time, &local);
+#endif
             char text[32];
             std::strftime(text, sizeof(text), format, &local);
             return std::string{text};
@@ -1422,7 +1426,11 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                 SortContentFactsUVE(order, facts, ContentSortKeyUVE::Modified, false);
                 const std::time_t now = std::time(nullptr);
                 std::tm midnight{};
+#if defined(_WIN32)
+                localtime_s(&midnight, &now);
+#else
                 localtime_r(&now, &midnight);
+#endif
                 midnight.tm_hour = 0;
                 midnight.tm_min = 0;
                 midnight.tm_sec = 0;

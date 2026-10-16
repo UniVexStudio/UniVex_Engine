@@ -50,4 +50,23 @@ struct UISliderComponentUVE final {
 
 [[nodiscard]] bool IsUISliderComponentValidUVE(const UISliderComponentUVE& component) noexcept;
 
+/// Sanitizes `component` so `rect`, `minValue <= maxValue`, `step >= 0`, `thumbWidth >= 0`, and `value` are valid.
+[[nodiscard]] UISliderComponentUVE SanitizeUISliderComponentUVE(
+    const UISliderComponentUVE& component) noexcept;
+
+/// Returns the normalized slider ratio `(clampedValue - minValue) / (maxValue - minValue)` in `[0, 1]`.
+[[nodiscard]] float ResolveUISliderNormalizedRatioUVE(
+    const UISliderComponentUVE& component) noexcept;
+
+/// Snaps and clamps `rawValue` into `[minValue, maxValue]` using `component.step` (when `step > 0`).
+[[nodiscard]] float SnapAndClampUISliderValueUVE(const UISliderComponentUVE& component,
+                                                 float rawValue) noexcept;
+
+/// Maps a screen-space pointer X coordinate onto `[minValue, maxValue]` (with `step` snapping).
+[[nodiscard]] float ResolveUISliderValueFromPointerXUVE(const UISliderComponentUVE& component,
+                                                        float pointerXPixels) noexcept;
+
+/// Resets runtime flags (`isHovered = false`, `isDragging = false`, `wasChangedThisFrame = false`).
+void ResetUISliderRuntimeStateUVE(UISliderComponentUVE& component) noexcept;
+
 } // namespace UVE::Scene

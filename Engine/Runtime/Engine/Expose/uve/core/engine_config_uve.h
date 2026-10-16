@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "uve/logging/log_level_uve.h"
+#include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/platform/platform_uve.h"
 #include "uve/platform/application_window_settings_uve.h"
@@ -495,6 +496,279 @@ struct EngineConfigUVE {
     /// Frustum culling for the renderer's main colour view. DebugFreezeUVE submits everything the
     /// scene placed, wherever the camera looks; EnabledUVE preserves the shipped culling behaviour.
     FrustumCullingModeUVE frustumCullingModeUVE = FrustumCullingModeUVE::EnabledUVE;
+
+    /// Extended Part 1 Project Settings (Physics 2D/3D, Input, Audio, Animation, Navigation,
+    /// Networking, Localisation, Quality Tiers, and Packaging).
+    Math::Vector2UVE gravity2DUVE{0.0F, -980.0F};
+    double defaultLinearDampingUVE = 0.01;
+    double defaultAngularDampingUVE = 0.05;
+    double sleepThresholdUVE = 0.05;
+    double sleepTimeSecondsUVE = 0.5;
+    bool allowSleepingDefaultUVE = true;
+    std::int64_t physicsPositionIterationsUVE = 6;
+    std::int64_t physicsVelocityIterationsUVE = 8;
+    double physicsContactOffsetUVE = 0.01;
+    double physicsRestOffsetUVE = 0.0;
+    double physicsPenetrationSlopUVE = 0.005;
+    double physicsMaxDepenetrationVelocityUVE = 10.0;
+    std::int64_t physicsCcdDefaultModeUVE = 0;
+    std::int64_t physicsBroadphaseAlgorithmUVE = 0;
+    double physicsBroadphaseHalfExtentUVE = 1000.0;
+    double defaultPhysicsFrictionUVE = 0.5;
+    double defaultPhysicsRestitutionUVE = 0.0;
+    std::uint32_t defaultCollisionLayerUVE = 1U;
+    std::uint32_t defaultCollisionMaskUVE = 0xFFFFFFFFU;
+    bool triggerCallbacksEnabledUVE = true;
+    bool triggersReportOnStaticBodiesUVE = false;
+    bool raycastHitBackfacesUVE = false;
+    bool raycastHitTriggersUVE = false;
+    double raycastDefaultMaxDistanceUVE = 1000.0;
+    bool physicsInterpolationDefaultUVE = true;
+    bool physicsDebugDrawCollidersUVE = false;
+    bool physicsDeterministicModeUVE = true;
+    std::int64_t physicsFixedRandomSeedUVE = 1337;
+
+    double inputDefaultDeadzoneUVE = 0.2;
+    double inputDefaultSensitivityUVE = 1.0;
+    bool inputAnalogByDefaultUVE = true;
+    std::uint32_t inputEnabledDeviceMaskUVE = 0x1FU;
+    std::string inputGamepadDatabasePathUVE;
+    std::int64_t inputGamepadDeadzoneShapeUVE = 1;
+    double inputGamepadDeadzoneInnerUVE = 0.15;
+    double inputGamepadDeadzoneOuterUVE = 0.95;
+    bool inputHapticsEnabledUVE = true;
+    double inputHapticsStrengthUVE = 1.0;
+    bool inputMouseRawUVE = false;
+    bool inputMouseAccelerationUVE = false;
+    double inputMouseSensitivityUVE = 1.0;
+    bool inputMouseInvertXUVE = false;
+    bool inputMouseInvertYUVE = false;
+    bool inputEmulateMouseFromTouchUVE = true;
+    bool inputEmulateTouchFromMouseUVE = false;
+    std::int64_t inputMaxTouchPointsUVE = 10;
+    bool inputImeEnabledUVE = true;
+    bool inputVirtualKeyboardAutoShowUVE = true;
+    bool inputAccumulatedPollingUVE = true;
+    std::string inputDefaultActionSetUVE = "gameplay";
+    std::string inputUserRebindsPathUVE = "user_input.uvinput";
+
+    std::int64_t audioDriverPreferenceUVE = 0;
+    std::int64_t audioSampleRateUVE = 48000;
+    std::int64_t audioBufferSizeFramesUVE = 512;
+    std::int64_t audioChannelLayoutUVE = 1;
+    double audioMasterVolumeUVE = 1.0;
+    double audioMusicVolumeUVE = 1.0;
+    double audioSfxVolumeUVE = 1.0;
+    double audioVoiceVolumeUVE = 1.0;
+    double audioDopplerFactorUVE = 1.0;
+    double audioSpeedOfSoundUVE = 343.0;
+    std::int64_t audioAttenuationModelUVE = 0;
+    double audioDefaultMinDistanceUVE = 1.0;
+    double audioDefaultMaxDistanceUVE = 50.0;
+    std::int64_t audioMaxVoicesUVE = 64;
+    std::int64_t audioVoiceStealingPolicyUVE = 0;
+    std::int64_t audioStreamingThresholdKbUVE = 512;
+    bool audioMuteOnFocusLossUVE = false;
+
+    double animationDefaultBlendTimeUVE = 0.2;
+    std::int64_t animationDefaultBlendModeUVE = 0;
+    double animationUpdateRateHzUVE = 60.0;
+    bool animationFixedTimestepUVE = true;
+    bool animationRootMotionDefaultUVE = false;
+    Math::Vector3UVE animationLodDistanceTiersUVE{15.0F, 35.0F, 70.0F};
+    double animationCompressionToleranceUVE = 0.001;
+    bool animationKeyframeReductionUVE = true;
+    std::int64_t animationSkinningMethodUVE = 1;
+    std::int64_t animationMaxBoneInfluencesUVE = 4;
+    double animationStateMachineDefaultTransitionUVE = 0.15;
+    std::int64_t animationIkDefaultIterationsUVE = 10;
+
+    double navCellSizeUVE = 0.3;
+    double navCellHeightUVE = 0.2;
+    double navAgentRadiusUVE = 0.5;
+    double navAgentHeightUVE = 2.0;
+    double navAgentMaxSlopeDegreesUVE = 45.0;
+    double navAgentMaxClimbUVE = 0.4;
+    double navRegionMinSizeUVE = 8.0;
+    double navRegionMergeSizeUVE = 20.0;
+    double navEdgeMaxLengthUVE = 12.0;
+    double navEdgeMaxErrorUVE = 1.3;
+    double navDetailSampleDistanceUVE = 6.0;
+    double navDetailMaxErrorUVE = 1.0;
+    bool navStringPullingUVE = true;
+    bool navPathSmoothingUVE = false;
+    bool navCorridorOptimizationUVE = true;
+    bool navAvoidanceEnabledUVE = true;
+    double navNeighborDistanceUVE = 5.0;
+    double navTimeHorizonUVE = 1.5;
+    std::int64_t navMaxNeighborsUVE = 8;
+    bool navAsyncBakingUVE = true;
+    double navBakeBudgetMsUVE = 2.0;
+
+    std::int64_t networkDefaultPortUVE = 7777;
+    std::string networkBindAddressUVE = "0.0.0.0";
+    std::int64_t networkMaxConnectionsUVE = 64;
+    std::int64_t networkMaxPacketSizeBytesUVE = 1200;
+    std::int64_t networkChannelCountUVE = 4;
+    double networkTickRateHzUVE = 60.0;
+    double networkSendRateHzUVE = 30.0;
+    double networkInterpolationBufferMsUVE = 100.0;
+    bool networkCompressionEnabledUVE = true;
+    std::int64_t networkCompressionThresholdBytesUVE = 128;
+    bool networkEncryptionEnabledUVE = false;
+    std::string networkCertificatePathUVE;
+    double networkTimeoutSecondsUVE = 10.0;
+    double networkKeepaliveIntervalSecondsUVE = 1.0;
+    double networkRelevancyDistanceMetresUVE = 150.0;
+    double networkDefaultPriorityUVE = 1.0;
+    double networkLagCompensationWindowMsUVE = 250.0;
+    double networkSimLatencyMsUVE = 0.0;
+    double networkSimJitterMsUVE = 0.0;
+    double networkSimPacketLossPercentUVE = 0.0;
+    double networkSimDuplicatePercentUVE = 0.0;
+
+    std::string localisationDefaultLocaleUVE = "en";
+    std::string localisationFallbackLocaleUVE = "en";
+    std::vector<std::string> localisationSupportedLocalesUVE{"en"};
+    std::string localisationTranslationsDirUVE = "Content/Locales";
+    bool pseudolocalisationEnabledUVE = false;
+    double pseudolocalisationExpansionUVE = 0.3;
+    bool rightToLeftLayoutUVE = false;
+    std::string localisationDefaultFontAssetUVE;
+    std::int64_t localisationFormattingModeUVE = 0;
+    bool warnOnUntranslatedStringsUVE = true;
+
+    bool caseSensitiveAssetPathsUVE = true;
+    std::int64_t maxPathLengthWarningUVE = 240;
+    std::int64_t packMountPriorityUVE = 100;
+    std::int64_t activeQualityTierUVE = 2; // 0=Low, 1=Medium, 2=High, 3=Ultra
+    bool autoDetectQualityTierUVE = false;
+    bool allowRuntimeQualitySwitchingUVE = true;
+    std::vector<std::string> platformFeatureTagsUVE{"desktop", "gpu_compute"};
+
+    std::string packagingDefaultPresetUVE = "Shipping";
+    std::string packagingTargetArchUVE = "x86_64";
+    std::int64_t packagingBuildConfigUVE = 2; // 0=Debug, 1=Development, 2=Shipping
+    std::vector<std::string> packagingIncludeFiltersUVE{"*"};
+    std::vector<std::string> packagingExcludeFiltersUVE{"*.tmp", "*.bak"};
+    std::int64_t packagingCompressionModeUVE = 1;
+    std::int64_t packagingDebugSymbolsPolicyUVE = 1;
+    std::string packagingCodeSigningIdentityUVE;
+    bool packagingEncryptAssetsUVE = false;
+    std::int64_t packagingPackModeUVE = 0;
+    std::string packagingPostBuildCommandUVE;
+    bool packagingAutoIncrementBuildUVE = false;
+
+    /// Extended Part 1.3 Rendering & Part 6.5/6.8/6.9 Project Settings.
+    std::int64_t renderingMethodUVE = 0; // 0=Forward, 1=ForwardPlus, 2=Deferred, 3=Mobile
+    std::int64_t colorSpaceModeUVE = 0; // 0=LinearSrgb, 1=GammaSrgb
+    bool hdrRenderingEnabledUVE = false;
+    std::int64_t hdrTransferFunctionUVE = 0; // 0=PQ_ST2084, 1=HLG, 2=scRGB
+    double hdrPeakLuminanceNitsUVE = 1000.0;
+    double hdrPaperWhiteNitsUVE = 200.0;
+    std::int64_t renderTargetFormatUVE = 2; // 0=RGBA8, 1=RGB10A2, 2=RGBA16F
+    bool multiThreadedRenderingUVE = true;
+    std::int64_t commandBufferThreadCountUVE = 4;
+
+    std::int64_t msaa2dSamplesUVE = 1;
+    std::int64_t msaa3dSamplesUVE = 1;
+    std::int64_t taaSampleCountUVE = 8;
+    std::int64_t taaJitterPatternUVE = 0; // 0=Halton23, 1=BlueNoise, 2=Uniform2x
+    double taaSharpeningAmountUVE = 0.25;
+    bool alphaToCoverageEnabledUVE = false;
+
+    std::int64_t shadowAtlasSizeUVE = 4096;
+    std::int64_t shadowAtlasSubdivisionUVE = 4;
+    std::int64_t directionalShadowSplitCountUVE = 3;
+    double shadowMaxDistanceUVE = 150.0;
+    std::int64_t shadowDepthFormatBitsUVE = 32;
+    std::int64_t pointSpotShadowResolutionUVE = 1024;
+    bool contactShadowsEnabledUVE = false;
+    double contactShadowsLengthUVE = 0.15;
+    std::int64_t contactShadowsStepCountUVE = 16;
+
+    bool ssilEnabledUVE = false;
+    std::int64_t ssilQualityUVE = 1;
+    std::int64_t ssilFrameCountUVE = 4;
+    bool ssrEnabledUVE = false;
+    std::int64_t ssrMaxStepsUVE = 32;
+    double ssrFadeInUVE = 0.1;
+    double ssrFadeOutUVE = 0.8;
+    double ssrDepthToleranceUVE = 0.2;
+    std::int64_t reflectionProbeAtlasSizeUVE = 2048;
+    std::int64_t reflectionProbeDefaultResolutionUVE = 128;
+    std::int64_t voxelGiQualityUVE = 1;
+    std::int64_t voxelGiBounceCountUVE = 2;
+    double voxelGiUpdateBudgetMsUVE = 2.0;
+    double lightmapResolutionScaleUVE = 1.0;
+    std::int64_t lightmapBounceCountUVE = 3;
+    bool lightmapDenoiserEnabledUVE = true;
+    bool lightmapDirectionalEnabledUVE = true;
+    double lightmapTexelDensityUVE = 16.0;
+    double lightProbeDefaultDensityUVE = 2.0;
+
+    bool autoExposureEnabledUVE = false;
+    double autoExposureMinLuminanceUVE = -4.0;
+    double autoExposureMaxLuminanceUVE = 8.0;
+    double autoExposureSpeedUpUVE = 3.0;
+    double autoExposureSpeedDownUVE = 1.0;
+    std::string colorGradingLutAssetUVE;
+    std::int64_t colorGradingLutSizeUVE = 32;
+    bool colorGradingPreTonemapUVE = true;
+    bool volumetricFogEnabledUVE = false;
+    std::int64_t volumetricFogFroxelResolutionUVE = 128;
+    double volumetricFogDepthDistributionUVE = 2.0;
+    bool volumetricFogTemporalReprojectionUVE = true;
+    double volumetricFogAnisotropyUVE = 0.2;
+
+    double defaultNearClipPlaneUVE = 0.1;
+    double defaultFarClipPlaneUVE = 1000.0;
+    bool occlusionCullingEnabledUVE = true;
+    std::int64_t occlusionCullingMethodUVE = 0; // 0=RasterSoftware, 1=HiZHardware
+    std::int64_t occlusionBufferResolutionUVE = 256;
+    double globalLodBiasUVE = 0.0;
+    double minLodScreenCoverageUVE = 0.02;
+    std::int64_t lodCrossfadeModeUVE = 1; // 0=None, 1=Dither, 2=AlphaBlend
+    bool meshLodAutoGenerateDefaultUVE = false;
+    std::int64_t instancingMinCountUVE = 4;
+    std::int64_t perInstanceDataBudgetKbUVE = 4096;
+    bool staticBatchingEnabledUVE = true;
+    std::int64_t staticBatchVertexBudgetUVE = 65536;
+    bool indirectDrawEnabledUVE = true;
+    std::int64_t maxDrawCallsWarningUVE = 3000;
+    std::int64_t maxTrianglesWarningUVE = 2500000;
+
+    std::int64_t defaultTextureFilterUVE = 2; // 0=Nearest, 1=Bilinear, 2=Trilinear
+    std::int64_t defaultAnisotropyLevelUVE = 8;
+    double globalMipLodBiasUVE = 0.0;
+    bool textureStreamingEnabledUVE = true;
+    std::int64_t textureStreamingBudgetMbUVE = 512;
+    double textureStreamingPressureMipBiasUVE = 1.0;
+    std::int64_t maxTextureSizePerTierUVE = 4096;
+    std::int64_t defaultTextureRepeatModeUVE = 1; // 0=Disabled, 1=Enabled, 2=Mirrored
+
+    std::int64_t defaultCanvasFilterUVE = 1; // 0=Nearest, 1=Linear
+    std::int64_t defaultCanvasRepeatUVE = 0; // 0=Disabled, 1=Enabled, 2=Mirror
+    bool pixelSnap2dTransformsUVE = false;
+    bool pixelSnap2dVerticesUVE = false;
+    std::int64_t shadowAtlas2dSizeUVE = 2048;
+    std::int64_t spriteSortAxisUVE = 1; // 0=ZIndexOnly, 1=YAxis, 2=CustomAxis
+    std::string defaultSpriteSortLayerUVE = "Default";
+
+    std::int64_t defaultSkyModeUVE = 3; // 0=None, 1=Colour, 2=Gradient, 3=Physical, 4=Panorama
+    std::int64_t defaultSkyResolutionUVE = 512;
+    std::int64_t defaultSkyUpdateModeUVE = 2; // 0=Realtime, 1=Once, 2=OnDemand
+    std::string defaultWorldEnvironmentAssetUVE;
+
+    std::string defaultPhysicsMaterialAssetUVE;
+    double runtimeUiScaleUVE = 1.0;
+    bool runtimeSubtitlesEnabledUVE = true;
+    double runtimeCaptionFontScaleUVE = 1.0;
+    bool runtimeHighContrastUiUVE = false;
+    bool runtimeReduceMotionUVE = false;
+    bool telemetryAnalyticsOptInUVE = false;
+    std::int64_t crashReportSubmissionPolicyUVE = 0; // 0=AskEachTime, 1=Always, 2=Never
+    bool anonymousUsageStatsOptInUVE = false;
 };
 
 } // namespace UVE::Core

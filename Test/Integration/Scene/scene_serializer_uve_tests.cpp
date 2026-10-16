@@ -3015,9 +3015,11 @@ TEST_F(SceneSerializerUVETest, SaveUVE_NeverSerializesWorldTransformComponent_An
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
 
-    std::ifstream rawFile(path, std::ios::binary);
-    const std::string contents((std::istreambuf_iterator<char>(rawFile)), std::istreambuf_iterator<char>());
-    EXPECT_EQ(contents.find("WorldTransformComponentUVE"), std::string::npos);
+    {
+        std::ifstream rawFile(path, std::ios::binary);
+        const std::string contents((std::istreambuf_iterator<char>(rawFile)), std::istreambuf_iterator<char>());
+        EXPECT_EQ(contents.find("WorldTransformComponentUVE"), std::string::npos);
+    }
 
     EntityManagerUVE loadedManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
     const std::vector<EntityUVE> roots = serializer.LoadUVE(loadedManager, path);

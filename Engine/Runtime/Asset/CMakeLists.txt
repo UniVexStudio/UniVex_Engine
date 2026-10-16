@@ -68,6 +68,7 @@ endif()
 
 add_library(uve_asset STATIC
     Internal/asset_guid_uve.cpp
+    Internal/asset_import_sidecar_uve.cpp
     Internal/audio_asset_uve.cpp
     Internal/font_asset_uve.cpp
     Internal/uve_file_envelope_uve.cpp

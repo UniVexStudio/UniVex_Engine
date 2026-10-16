@@ -411,5 +411,31 @@ TEST(WorldEnvironmentSunUVETest, HorizonSunWarmsTheGround) {
     EXPECT_GT(frame.groundAmbient.x, frame.groundAmbient.z);
 }
 
+TEST(WorldEnvironmentSunUVETest, VolumeBlendingAndCameraDefaultPreviewPrecedenceWorkDeterministically) {
+    WorldEnvironment3DComponentUVE envA{};
+    envA.exposure = 1.0F;
+    envA.bloomIntensity = 0.2F;
+    WorldEnvironment3DComponentUVE envB{};
+    envB.exposure = 2.0F;
+    envB.bloomIntensity = 0.8F;
+
+    const WorldEnvironment3DComponentUVE blended = BlendWorldEnvironment3DComponentsUVE(envA, envB, 0.25F);
+    EXPECT_NEAR(blended.exposure, 1.25F, 1.0e-5F);
+    EXPECT_NEAR(blended.bloomIntensity, 0.35F, 1.0e-5F);
+
+    WorldEnvironment3DComponentUVE preview{};
+    preview.exposure = 0.9F;
+    WorldEnvironment3DComponentUVE projectDefault{};
+    projectDefault.exposure = 1.1F;
+    WorldEnvironment3DComponentUVE cameraOverride{};
+    cameraOverride.exposure = 1.75F;
+
+    EXPECT_FLOAT_EQ(ResolveEffectiveWorldEnvironment3DUVE(&cameraOverride, &envB, &projectDefault, &preview).exposure,
+                    1.75F);
+    EXPECT_FLOAT_EQ(ResolveEffectiveWorldEnvironment3DUVE(nullptr, &envB, &projectDefault, &preview).exposure, 2.0F);
+    EXPECT_FLOAT_EQ(ResolveEffectiveWorldEnvironment3DUVE(nullptr, nullptr, &projectDefault, &preview).exposure, 1.1F);
+    EXPECT_FLOAT_EQ(ResolveEffectiveWorldEnvironment3DUVE(nullptr, nullptr, nullptr, &preview).exposure, 0.9F);
+}
+
 } // namespace
 } // namespace UVE::Scene::Tests

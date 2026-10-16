@@ -219,5 +219,23 @@ TEST_F(ReflectionProbe3DImageryUVETest, GizmoSkipsEditorInternalAndDisabled) {
     EXPECT_NEAR(gizmos[0].halfExtents.x, 2.5F, 1.0e-5F);
 }
 
+TEST_F(ReflectionProbe3DImageryUVETest, FramePreservesVisibilityLayersAndResolutionForRendererCapture) {
+    ReflectionProbe3DComponentUVE probe{};
+    probe.size = Math::Vector3UVE{8.0F, 6.0F, 10.0F};
+    probe.visibilityLayers = 0x00000004U;
+    probe.resolution = ReflectionProbeResolutionUVE::High;
+    probe.capturedOnce = true;
+    probe.captureGeneration = 3U;
+
+    ReflectionProbe3DFrameUVE frame{};
+    ASSERT_TRUE(TryMakeReflectionProbe3DFrameUVE(probe, Math::Vector3UVE{1.0F, 2.0F, 3.0F},
+                                                 Math::QuaternionUVE{}, frame));
+    EXPECT_EQ(frame.visibilityLayers, 0x00000004U);
+    EXPECT_EQ(frame.captureResolution, 256U);
+    EXPECT_FLOAT_EQ(frame.halfExtents.x, 4.0F);
+    EXPECT_FLOAT_EQ(frame.halfExtents.y, 3.0F);
+    EXPECT_FLOAT_EQ(frame.halfExtents.z, 5.0F);
+}
+
 } // namespace
 } // namespace UVE::Scene::Tests

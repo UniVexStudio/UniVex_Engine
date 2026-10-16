@@ -520,8 +520,10 @@ private:
     /// path is not a `.uvs` file is reported once in m_scriptReconcileFailedEntities and skipped.
     void SyncScriptRuntimeUVE();
     /// Compiles each object's text script once, drops the
-    /// instance when the object loses it, raises `ready` once and then `tick(dt)` every frame.
     void SyncUVScriptsUVE(bool simulationPaused);
+    /// Reconciles script components with instances in m_uvScripts so event receivers are ready
+    /// before any physics or animation step evaluates.
+    void ReconcileUVScriptInstancesUVE();
 
     /// Steps every Character3D (CharacterControllerComponentUVE) once per fixed step: velocity
     /// from the built-in movement when it is on (keyboard, with air control, coyote time and a
@@ -918,6 +920,7 @@ private:
     // The project's settings file, declared at construction and read at the start of Init(), before
     // anything reads the EngineConfigUVE fields it overrides.
     Config::SettingsDocumentUVE m_projectSettings;
+    std::vector<Config::SettingsObserverSubscriptionUVE> m_projectSettingsSubscriptions;
     // The project's input map, read and registered with the input system during Init().
     InputMapDocumentUVE m_inputMap;
     std::optional<EngineServicesUVE> m_services;

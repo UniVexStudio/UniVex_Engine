@@ -6,6 +6,7 @@
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/objects/canvas/canvas_uve.h"
 
 namespace UVE::UI {
 
@@ -24,17 +25,13 @@ CanvasAncestryUVE ResolveCanvasAncestryUVE(Scene::IEntityManagerUVE& entityManag
         if (entityManager.HasComponentUVE<Scene::CanvasComponentUVE>(current)) {
             const Scene::CanvasComponentUVE& canvas =
                 entityManager.GetComponentUVE<Scene::CanvasComponentUVE>(current);
-            if (!canvas.visible) {
-                ancestry.visible = false;
-            }
-            if (entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(current) &&
-                !entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(current).visibleInHierarchy) {
+            if (!Scene::CanvasUVE::IsEntityCanvasVisibleUVE(entityManager, current)) {
                 ancestry.visible = false;
             }
             if (!ancestry.hasCanvas) {
                 ancestry.hasCanvas = true;
                 ancestry.canvas = current;
-                ancestry.sortOrder = canvas.sortOrder;
+                ancestry.sortOrder = Scene::CanvasUVE::EffectiveSortOrderUVE(canvas);
             }
         }
         if (!entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(current)) {
@@ -53,8 +50,11 @@ bool ShouldDrawUiWidgetUVE(Scene::IEntityManagerUVE& entityManager, const Scene:
     if (!entityManager.IsAliveUVE(entity)) {
         return false;
     }
-    if (entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity) &&
-        !entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity).visibleInHierarchy) {
+    const Scene::VisibilityComponentUVE* const visibility =
+        entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity)
+            ? &entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity)
+            : nullptr;
+    if (!Scene::IsEffectivelyVisibleUVE(visibility)) {
         return false;
     }
     return ResolveCanvasAncestryUVE(entityManager, entity).visible;

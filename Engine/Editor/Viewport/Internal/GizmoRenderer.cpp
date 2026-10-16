@@ -226,13 +226,7 @@ void GizmoRenderer::UploadAndDrawLines(const GizmoMesh& mesh, const GizmoDrawPar
 void GizmoRenderer::Draw(const GizmoMesh& mesh, const GizmoDrawParams& params) const {
     if (!Valid() || mesh.Empty()) return;
 
-    const GLboolean hadBlend = glIsEnabled(GL_BLEND);
-    const GLboolean hadDepthTest = glIsEnabled(GL_DEPTH_TEST);
-    const GLboolean hadCullFace = glIsEnabled(GL_CULL_FACE);
-    GLboolean depthMask = GL_TRUE;
-    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
-    GLint depthFunc = GL_LESS;
-    glGetIntegerv(GL_DEPTH_FUNC, &depthFunc);
+    const SavedOverlayRasterState savedState = SaveOverlayRasterState();
 
     // Foundation WP6: the depth/blend/cull modes are data (OverlayRasterState presets) applied by
     // one table-driven function; this renderer no longer issues glDepthMask/glDepthFunc itself.
@@ -261,11 +255,7 @@ void GizmoRenderer::Draw(const GizmoMesh& mesh, const GizmoDrawParams& params) c
         UploadAndDrawLines(mesh, params);
     }
 
-    glDepthMask(depthMask);
-    glDepthFunc(static_cast<GLenum>(depthFunc));
-    if (hadDepthTest == GL_FALSE) glDisable(GL_DEPTH_TEST); else glEnable(GL_DEPTH_TEST);
-    if (hadCullFace == GL_TRUE) glEnable(GL_CULL_FACE);
-    if (hadBlend == GL_FALSE) glDisable(GL_BLEND);
+    RestoreOverlayRasterState(savedState);
 }
 
 float GizmoRenderer::ScaleForPixelRadius(const univex::camera::OrbitCamera& camera,

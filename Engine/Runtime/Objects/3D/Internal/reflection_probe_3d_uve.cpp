@@ -204,6 +204,7 @@ bool TryMakeReflectionProbe3DFrameUVE(const ReflectionProbe3DComponentUVE& value
     out.axisY = axisY;
     out.axisZ = axisZ;
     out.halfExtents = Math::Vector3UVE{value.size.x * 0.5F, value.size.y * 0.5F, value.size.z * 0.5F};
+    out.visibilityLayers = value.visibilityLayers;
     out.captureResolution = GetReflectionProbeResolutionPixelsUVE(value.resolution);
     out.captureGeneration = value.captureGeneration;
     out.capturedOnce = value.capturedOnce;

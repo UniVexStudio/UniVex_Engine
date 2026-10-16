@@ -6,6 +6,8 @@
 
 namespace UVE::Scene {
 
+inline constexpr float kDefaultPhysicsCollisionPriorityUVE = 1.0F;
+
 /// What happens to a PhysicsObject3D's body while its Process mode stops it from running.
 enum class PhysicsObjectDisableModeUVE : std::uint8_t {
     /// Taken out of the physics world: nothing collides with it until it runs again.
@@ -26,7 +28,7 @@ enum class PhysicsObjectDisableModeUVE : std::uint8_t {
 struct PhysicsObjectComponentUVE final {
     PhysicsObjectDisableModeUVE disableMode = PhysicsObjectDisableModeUVE::Remove;
     /// How strongly this object is pushed out when it overlaps another; higher yields less.
-    float collisionPriority = 1.0F;
+    float collisionPriority = kDefaultPhysicsCollisionPriorityUVE;
     /// Whether a pointer ray (a mouse or touch pick) can hit this object.
     bool inputRayPickable = true;
     /// Whether a drag that started on this object keeps reporting to it after leaving it.
@@ -35,7 +37,31 @@ struct PhysicsObjectComponentUVE final {
     [[nodiscard]] bool operator==(const PhysicsObjectComponentUVE&) const = default;
 };
 
+/// True when `mode` is one of `Remove`, `MakeStatic`, or `KeepActive`.
+[[nodiscard]] bool IsPhysicsObjectDisableModeValidUVE(PhysicsObjectDisableModeUVE mode) noexcept;
+
 /// A known disable mode and a finite, non-negative priority.
 [[nodiscard]] bool IsPhysicsObjectComponentValidUVE(const PhysicsObjectComponentUVE& component) noexcept;
+
+/// Clamps negative/non-finite priorities and resets unknown disable modes to `Remove`.
+[[nodiscard]] PhysicsObjectComponentUVE SanitizePhysicsObjectComponentUVE(
+    const PhysicsObjectComponentUVE& component) noexcept;
+
+/// True when a disabled entity's body remains in the broadphase (`MakeStatic` or `KeepActive`).
+[[nodiscard]] bool ShouldKeepPhysicsBodyInWorldWhenDisabledUVE(
+    const PhysicsObjectComponentUVE& component) noexcept;
+
+/// True when a disabled entity's body still steps dynamically (`KeepActive`).
+[[nodiscard]] bool ShouldSimulatePhysicsBodyWhenDisabledUVE(
+    const PhysicsObjectComponentUVE& component) noexcept;
+
+/// True when a pointer ray is allowed to pick `component` given its enabled state.
+[[nodiscard]] bool CanPickPhysicsObjectWithRayUVE(
+    const PhysicsObjectComponentUVE& component, bool entityEnabled = true) noexcept;
+
+/// Computes how much of a pair's overlap `self` absorbs in `[0, 1]` relative to `other`.
+/// Higher priority yields less (absorbs a smaller share of the depenetration push).
+[[nodiscard]] float ResolvePairDepenetrationShareUVE(
+    const PhysicsObjectComponentUVE& self, const PhysicsObjectComponentUVE& other) noexcept;
 
 } // namespace UVE::Scene

@@ -2,10 +2,15 @@
 
 #pragma once
 
+#include <optional>
 #include <string_view>
 
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/entity_uve.h"
+#include "uve/component/world_transform_component_uve.h"
+#include "uve/math/aabb_uve.h"
+#include "uve/math/ray_uve.h"
+#include "uve/math/vector3_uve.h"
 
 namespace UVE::Scene {
 
@@ -35,13 +40,27 @@ struct Static3DObjectDefinitionUVE final {
 /// Every application first guarantees the Object3D baseline (Transform/WorldTransform/
 /// Hierarchy/Name) through EnsureObject3DBaselineUVE - this kind is Object3D plus its recipe.
 void ApplyStatic3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                        const Static3DObjectDefinitionUVE& value);
+                                      const Static3DObjectDefinitionUVE& value);
 
 class Static3DUVE final {
 public:
     [[nodiscard]] static bool IsImmovableUVE() noexcept;
     [[nodiscard]] static float InverseMassUVE() noexcept;
-    [[nodiscard]] static bool IsWorldGeometryUVE(const IEntityManagerUVE& entityManager, EntityUVE entity) noexcept;
+    [[nodiscard]] static Math::Vector3UVE ResolveZeroVelocityUVE() noexcept;
+    [[nodiscard]] static Math::Vector3UVE ResolveZeroAngularVelocityUVE() noexcept;
+    [[nodiscard]] static bool IsWorldGeometryUVE(const IEntityManagerUVE& entityManager,
+                                                 EntityUVE entity) noexcept;
+    [[nodiscard]] static Math::AabbUVE ComputeWorldAabbUVE(
+        const ColliderComponentUVE& collider,
+        const WorldTransformComponentUVE& worldTransform) noexcept;
+    [[nodiscard]] static bool ContainsWorldPointUVE(
+        const ColliderComponentUVE& collider,
+        const WorldTransformComponentUVE& worldTransform,
+        const Math::Vector3UVE& worldPoint) noexcept;
+    [[nodiscard]] static std::optional<Math::RayHitUVE> IntersectWorldRayUVE(
+        const ColliderComponentUVE& collider,
+        const WorldTransformComponentUVE& worldTransform,
+        const Math::RayUVE& ray, float maxDistance) noexcept;
 };
 
 } // namespace UVE::Scene

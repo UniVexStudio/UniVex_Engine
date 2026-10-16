@@ -30,4 +30,16 @@ struct UIProgressBarComponentUVE final {
 
 [[nodiscard]] bool IsUIProgressBarComponentValidUVE(const UIProgressBarComponentUVE& component) noexcept;
 
+/// Sanitizes `component` so `rect`, `minValue <= maxValue`, `value`, and colors are valid.
+[[nodiscard]] UIProgressBarComponentUVE SanitizeUIProgressBarComponentUVE(
+    const UIProgressBarComponentUVE& component) noexcept;
+
+/// Computes the normalized progress ratio in `[0, 1]` (degenerate `minValue == maxValue` returns `1` when `value >= maxValue`).
+[[nodiscard]] float ResolveUIProgressRatioUVE(
+    const UIProgressBarComponentUVE& component) noexcept;
+
+/// Computes the left-to-right fill rectangle inside `component.rect`.
+[[nodiscard]] Math::RectUVE ResolveUIProgressFillRectUVE(
+    const UIProgressBarComponentUVE& component) noexcept;
+
 } // namespace UVE::Scene

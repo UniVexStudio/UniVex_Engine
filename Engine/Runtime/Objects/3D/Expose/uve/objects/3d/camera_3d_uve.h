@@ -7,6 +7,8 @@
 
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/entity_uve.h"
+#include "uve/component/world_transform_component_uve.h"
+#include "uve/math/matrix4x4_uve.h"
 
 namespace UVE::Scene {
 
@@ -35,12 +37,31 @@ struct Camera3DObjectDefinitionUVE final {
 /// Every application first guarantees the Object3D baseline (Transform/WorldTransform/
 /// Hierarchy/Name) through EnsureObject3DBaselineUVE - this kind is Object3D plus its recipe.
 void ApplyCamera3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                    const Camera3DObjectDefinitionUVE& value);
+                                      const Camera3DObjectDefinitionUVE& value);
 
 [[nodiscard]] bool IsDocumentCameraEntityUVE(const IEntityManagerUVE& entityManager, EntityUVE entity);
 
 [[nodiscard]] std::optional<EntityUVE> FindCurrentCameraEntityUVE(IEntityManagerUVE& entityManager);
 
 void MakeCameraCurrentUVE(IEntityManagerUVE& entityManager, EntityUVE entity);
+
+class Camera3DUVE final {
+public:
+    [[nodiscard]] static bool IsDocumentCameraEntityUVE(const IEntityManagerUVE& entityManager,
+                                                        EntityUVE entity);
+    [[nodiscard]] static std::optional<EntityUVE> FindCurrentCameraEntityUVE(
+        IEntityManagerUVE& entityManager);
+    static void MakeCameraCurrentUVE(IEntityManagerUVE& entityManager, EntityUVE entity);
+
+    [[nodiscard]] static bool IsDepthWithinClipPlanesUVE(const CameraComponentUVE& camera,
+                                                         float viewDepth) noexcept;
+    [[nodiscard]] static Math::Matrix4x4UVE BuildViewMatrixUVE(
+        const WorldTransformComponentUVE& worldTransform) noexcept;
+    [[nodiscard]] static Math::Matrix4x4UVE BuildProjectionMatrixUVE(
+        const CameraComponentUVE& camera, float aspectRatio = 16.0F / 9.0F) noexcept;
+    [[nodiscard]] static Math::Matrix4x4UVE BuildViewProjectionMatrixUVE(
+        const CameraComponentUVE& camera, const WorldTransformComponentUVE& worldTransform,
+        float aspectRatio = 16.0F / 9.0F) noexcept;
+};
 
 } // namespace UVE::Scene

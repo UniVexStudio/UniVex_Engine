@@ -38,4 +38,22 @@ struct UIScrollContainerComponentUVE final {
 
 [[nodiscard]] bool IsUIScrollContainerComponentValidUVE(const UIScrollContainerComponentUVE& component) noexcept;
 
+/// Computes the maximum valid scroll offset (`max(0, contentSize - rect.size)` per axis).
+[[nodiscard]] Math::Vector2UVE ResolveUIScrollMaxOffsetUVE(
+    const UIScrollContainerComponentUVE& component) noexcept;
+
+/// Clamps `desiredScrollOffset` into `[0, ResolveUIScrollMaxOffsetUVE(component)]` per axis.
+[[nodiscard]] Math::Vector2UVE ClampUIScrollOffsetUVE(
+    const UIScrollContainerComponentUVE& component,
+    const Math::Vector2UVE& desiredScrollOffset) noexcept;
+
+/// True when `contentSize.y > rect.size.y` (vertical content overflows the viewport).
+[[nodiscard]] bool HasUIScrollVerticalOverflowUVE(
+    const UIScrollContainerComponentUVE& component) noexcept;
+
+/// Applies a mouse-wheel delta (`wheelDeltaUnits`) along Y (or X when `horizontalWheel` is true) and clamps `scrollOffset`.
+Math::Vector2UVE ApplyUIScrollWheelDeltaUVE(UIScrollContainerComponentUVE& component,
+                                            float wheelDeltaUnits,
+                                            bool horizontalWheel = false) noexcept;
+
 } // namespace UVE::Scene

@@ -42,4 +42,18 @@ struct Rigid3DComponentUVE final {
 /// kinematic state is orthogonal to mass and remains an explicit authoring choice.
 [[nodiscard]] bool IsRigid3DComponentValidUVE(const Rigid3DComponentUVE& rigidBody) noexcept;
 
+/// Sanitizes `rigidBody` so mass, drag, gravityScale, inverseInertia, and motion vectors are valid.
+[[nodiscard]] Rigid3DComponentUVE SanitizeRigid3DComponentUVE(
+    const Rigid3DComponentUVE& rigidBody) noexcept;
+
+/// Returns the effective inverse mass (`0` when `isKinematic` or `mass <= 0`, otherwise `1 / mass`).
+[[nodiscard]] float ResolveRigid3DInverseMassUVE(const Rigid3DComponentUVE& rigidBody) noexcept;
+
+/// Applies an instantaneous linear impulse (`impulseNs * inverseMass`) when dynamic (`!isKinematic && mass > 0`).
+void ApplyRigid3DLinearImpulseUVE(Rigid3DComponentUVE& rigidBody,
+                                  const Math::Vector3UVE& impulseNs) noexcept;
+
+/// Clears accumulated persistent `force` and `torque` vectors to zero.
+void ClearRigid3DForcesAndTorquesUVE(Rigid3DComponentUVE& rigidBody) noexcept;
+
 } // namespace UVE::Scene

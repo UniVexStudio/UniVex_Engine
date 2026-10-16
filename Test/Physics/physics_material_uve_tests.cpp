@@ -106,5 +106,34 @@ TEST(PhysicsMaterialUVETest, MaterialOfUVE_NegativeFriction_ClampsToZero) {
     EXPECT_NEAR(MaterialOfUVE(collider).friction, 0.0F, kEpsilon);
 }
 
+TEST(PhysicsMaterialUVETest, CombineModesOverridePrecedenceAndSurfaceTagWorkDeterministically) {
+    EXPECT_NEAR(CombineScalarByModeUVE(0.2F, 0.8F, PhysicsCombineModeUVE::Average, PhysicsCombineModeUVE::Minimum),
+                0.2F, kEpsilon);
+    EXPECT_NEAR(CombineScalarByModeUVE(0.5F, 0.5F, PhysicsCombineModeUVE::Minimum, PhysicsCombineModeUVE::Multiply),
+                0.25F, kEpsilon);
+    EXPECT_NEAR(CombineScalarByModeUVE(0.2F, 0.9F, PhysicsCombineModeUVE::Multiply, PhysicsCombineModeUVE::Maximum),
+                0.9F, kEpsilon);
+
+    Scene::ColliderComponentUVE collider{};
+    collider.friction = 0.35F;
+    PhysicsMaterialAssetUVE projectDefault{};
+    projectDefault.friction = 0.6F;
+    projectDefault.surfaceTypeTag = "concrete";
+    PhysicsMaterialAssetUVE perColliderOverride{};
+    perColliderOverride.friction = 0.1F;
+    perColliderOverride.rollingFriction = 0.002F;
+    perColliderOverride.surfaceTypeTag = "ice";
+
+    const PhysicsMaterialAssetUVE resolvedOverride =
+        ResolveColliderPhysicsMaterialUVE(collider, &perColliderOverride, &projectDefault);
+    EXPECT_NEAR(resolvedOverride.friction, 0.1F, kEpsilon);
+    EXPECT_EQ(resolvedOverride.surfaceTypeTag, "ice");
+
+    const PhysicsMaterialAssetUVE resolvedDefault =
+        ResolveColliderPhysicsMaterialUVE(collider, nullptr, &projectDefault);
+    EXPECT_NEAR(resolvedDefault.friction, 0.6F, kEpsilon);
+    EXPECT_EQ(resolvedDefault.surfaceTypeTag, "concrete");
+}
+
 } // namespace
 } // namespace UVE::Physics::Tests

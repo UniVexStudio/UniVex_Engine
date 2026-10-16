@@ -77,4 +77,14 @@ struct UITweenComponentUVE final {
 /// known target/ease/loop values.
 [[nodiscard]] bool IsUITweenComponentValidUVE(const UITweenComponentUVE& value) noexcept;
 
+/// True when `value.elapsed` is still within the initial `delay` window (`elapsed < delay`).
+[[nodiscard]] bool IsUITweenInDelayPhaseUVE(const UITweenComponentUVE& value) noexcept;
+
+/// Computes the normalized cycle progress `t` in `[0, 1]` after subtracting `delay` (`Once`, `Loop`, or `PingPong`).
+[[nodiscard]] float ResolveUITweenNormalizedCycleProgressUVE(
+    const UITweenComponentUVE& value) noexcept;
+
+/// Resets runtime tween playback (`elapsed = 0`, `playing = startPlaying`, `completedThisFrame = false`, `currentAlpha = 1`).
+void ResetUITweenRuntimeStateUVE(UITweenComponentUVE& value, bool startPlaying = true) noexcept;
+
 } // namespace UVE::Scene

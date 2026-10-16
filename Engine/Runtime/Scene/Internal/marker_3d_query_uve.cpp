@@ -47,10 +47,8 @@ Marker3DQueryResultsUVE QueryMarkers3DUVE(IEntityManagerUVE& entityManager, cons
 
     entityManager.ForEachUVE<Marker3DComponentUVE>(
         [&entityManager, &query, &results](const EntityUVE entity, Marker3DComponentUVE& marker) {
-            if (!marker.enabled || !IsMarker3DObjectComponentValidUVE(marker)) {
-                return;
-            }
-            if (!query.name.empty() && marker.markerName != query.name) {
+            if (!Marker3DUVE::IsQueryableUVE(marker) ||
+                !Marker3DUVE::MatchesNameFilterUVE(marker, query.name)) {
                 return;
             }
             if (!entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
@@ -59,8 +57,8 @@ Marker3DQueryResultsUVE QueryMarkers3DUVE(IEntityManagerUVE& entityManager, cons
 
             const WorldTransformComponentUVE& world =
                 entityManager.GetComponentUVE<WorldTransformComponentUVE>(entity);
-            const std::optional<Marker3DPoseUVE> pose = ComposeMarker3DPoseUVE(
-                world.worldPosition, world.worldRotation, marker.localPosition, marker.localRotation);
+            const std::optional<Marker3DPoseUVE> pose =
+                Marker3DUVE::ResolveWorldPoseUVE(marker, world.worldPosition, world.worldRotation);
             if (!pose.has_value()) {
                 return;
             }

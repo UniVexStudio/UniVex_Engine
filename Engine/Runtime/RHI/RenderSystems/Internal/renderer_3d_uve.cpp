@@ -894,6 +894,7 @@ struct Renderer3DUVE::ImplUVE {
     // moving between probe tiers in the same frame could invalidate an earlier capture's handle.
     std::unordered_map<std::uint32_t, TextureHandleUVE> reflectionProbeCaptureDepths;
     bool probeCaptureViewActive = false;
+    std::uint32_t probeCaptureVisibilityLayers = 0xFFFFFFFFU;
     Math::Vector3UVE probeCapturePosition{};
     Math::QuaternionUVE probeCaptureRotation{};
     float probeCaptureNear = 0.05F;
@@ -1939,6 +1940,15 @@ struct Renderer3DUVE::ImplUVE {
                     Scene::IsVisibilityRegion3DDrawHiddenUVE(entityManager, entity)) {
                     return;
                 }
+                if (probeCaptureViewActive) {
+                    const std::uint32_t entityLayers =
+                        entityManager.HasComponentUVE<Scene::RenderInstanceComponentUVE>(entity)
+                            ? entityManager.GetComponentUVE<Scene::RenderInstanceComponentUVE>(entity).renderLayers
+                            : meshComponent.visibilityLayers;
+                    if (!Scene::IsRenderInstance3DOnViewLayersUVE(entityLayers, probeCaptureVisibilityLayers)) {
+                        return;
+                    }
+                }
                 named[meshComponent.meshGuid] = true;
                 auto handleIt = unmaterialedMeshHandles.find(meshComponent.meshGuid);
                 if (handleIt == unmaterialedMeshHandles.end()) {
@@ -2020,6 +2030,15 @@ struct Renderer3DUVE::ImplUVE {
                     // so an entity that stays dirty or invalid is pruned rather than kept alive by
                     // a placement nobody can use.
                     return;
+                }
+                if (probeCaptureViewActive) {
+                    const std::uint32_t entityLayers =
+                        entityManager.HasComponentUVE<Scene::RenderInstanceComponentUVE>(entity)
+                            ? entityManager.GetComponentUVE<Scene::RenderInstanceComponentUVE>(entity).renderLayers
+                            : 1U;
+                    if (!Scene::IsRenderInstance3DOnViewLayersUVE(entityLayers, probeCaptureVisibilityLayers)) {
+                        return;
+                    }
                 }
 
                 const Scene::SurfaceInstanceComponentUVE* surface = nullptr;
@@ -3276,6 +3295,7 @@ void Renderer3DUVE::CaptureDueReflectionProbesUVE(Scene::IEntityManagerUVE& enti
         }
         const float maxHalf = std::fmax(candidate.frame.halfExtents.x,
                                         std::fmax(candidate.frame.halfExtents.y, candidate.frame.halfExtents.z));
+        m_impl->probeCaptureVisibilityLayers = candidate.frame.visibilityLayers;
         m_impl->probeCapturePosition = candidate.frame.worldPosition;
         m_impl->probeCaptureNear = 0.05F;
         m_impl->probeCaptureFar = std::fmax(50.0F, maxHalf * 8.0F);
@@ -3304,6 +3324,7 @@ void Renderer3DUVE::CaptureDueReflectionProbesUVE(Scene::IEntityManagerUVE& enti
         }
     }
     m_impl->probeCaptureViewActive = false;
+    m_impl->probeCaptureVisibilityLayers = 0xFFFFFFFFU;
     static_cast<void>(m_impl->ResizeTargetsUVE(savedWidth, savedHeight));
 }
 
@@ -3481,6 +3502,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->lastFrameDiagnostics.frustumCullingFrozen = frustumCullingFrozen;
     // Set before the build, like shadowPass and viewLayerMask: this flag is per-cull state on a set
     // that survives across frames, and every cull below states its own value explicitly.
+    m_impl->visibilitySet.viewLayerMask =
+        capturingProbe ? m_impl->probeCaptureVisibilityLayers : 0xFFFFFFFFU;
     m_impl->visibilitySet.frustumTestsDisabled = frustumCullingFrozen;
     m_impl->meshRenderer.BuildVisibilitySetUVE(entityManager, m_impl->assetManager, m_impl->assetDatabase,
                                                m_impl->visibilitySet);

@@ -1079,5 +1079,55 @@ TEST_F(SettingsDocumentUVETest, RefusesIllegalValuesAndSurvivesAReload) {
     EXPECT_FALSE(reloaded.IsModifiedUVE("rendering.clear"));
 }
 
+TEST_F(SettingsRegistryUVETest,
+       Vector2Vector4AssetReferenceLayerMaskAndSinceVersionMaintainWholeOrNothingSemantics) {
+    SettingDescriptorUVE vec2Desc =
+        MakeVector2SettingUVE("physics.2d.gravity", SettingVector2UVE{0.0, -980.0}, -10000.0,
+                              10000.0, "2D Gravity", "Physics/2D");
+    vec2Desc.sinceVersion = 2U;
+    ASSERT_TRUE(registry.RegisterUVE(vec2Desc));
+    EXPECT_EQ(registry.FindUVE("physics.2d.gravity")->sinceVersion, 2U);
+
+    ASSERT_TRUE(registry.RegisterUVE(
+        MakeVector4SettingUVE("rendering.viewport.margins", SettingVector4UVE{1.0, 2.0, 3.0, 4.0},
+                              0.0, 100.0, "Margins", "Rendering")));
+    ASSERT_TRUE(registry.RegisterUVE(MakeAssetReferenceSettingUVE(
+        "rendering.environment.defaultResource", "Environments/default.uvenv", 256U,
+        "Default Environment", "Rendering/Environment")));
+    ASSERT_TRUE(registry.RegisterUVE(
+        MakeLayerMaskSettingUVE("physics.defaultCollisionMask", 0xFFFFFFFFU,
+                                "Default Collision Mask", "Physics")));
+
+    ASSERT_TRUE(registry.SetValueUVE(store, "physics.2d.gravity", SettingVector2UVE{10.0, -500.0}));
+    EXPECT_EQ(registry.GetVector2UVE(store, "physics.2d.gravity"),
+              (SettingVector2UVE{10.0, -500.0}));
+    EXPECT_FALSE(
+        registry.SetValueUVE(store, "physics.2d.gravity", SettingVector2UVE{10.0, 50000.0}));
+    EXPECT_EQ(registry.GetVector2UVE(store, "physics.2d.gravity"),
+              (SettingVector2UVE{10.0, -500.0}))
+        << "an out-of-range component must leave the entire Vector2 untouched";
+
+    // Removing one component from storage causes ReadStoredUVE to fall back to the default as a whole.
+    ASSERT_TRUE(store.RemoveKeyUVE("physics.2d.gravity.y"));
+    EXPECT_EQ(registry.GetVector2UVE(store, "physics.2d.gravity"),
+              (SettingVector2UVE{0.0, -980.0}));
+
+    ASSERT_TRUE(registry.SetValueUVE(store, "rendering.viewport.margins",
+                                     SettingVector4UVE{5.0, 6.0, 7.0, 8.0}));
+    EXPECT_EQ(registry.GetVector4UVE(store, "rendering.viewport.margins"),
+              (SettingVector4UVE{5.0, 6.0, 7.0, 8.0}));
+
+    ASSERT_TRUE(registry.SetValueUVE(store, "rendering.environment.defaultResource",
+                                     std::string{"Environments/sky.uvenv"}));
+    EXPECT_EQ(registry.GetStringUVE(store, "rendering.environment.defaultResource"),
+              "Environments/sky.uvenv");
+    EXPECT_FALSE(registry.SetValueUVE(store, "rendering.environment.defaultResource",
+                                      std::string{"../escape.uvenv"}));
+
+    ASSERT_TRUE(registry.SetValueUVE(store, "physics.defaultCollisionMask", std::int64_t{0x00FFLL}));
+    EXPECT_EQ(registry.GetLayerMaskUVE(store, "physics.defaultCollisionMask"), 0x00FFU);
+    EXPECT_FALSE(registry.SetValueUVE(store, "physics.defaultCollisionMask", std::int64_t{-1}));
+}
+
 } // namespace
 } // namespace UVE::Config::Tests

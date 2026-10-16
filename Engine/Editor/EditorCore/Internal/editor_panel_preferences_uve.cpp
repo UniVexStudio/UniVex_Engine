@@ -92,12 +92,17 @@ void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float si
         bool value = std::get<bool>(current);
         return ImGui::Checkbox("##value", &value) ? std::optional<SettingValueUVE>(value) : std::nullopt;
     }
-    case SettingTypeUVE::Int: {
+    case SettingTypeUVE::Int:
+    case SettingTypeUVE::LayerMask: {
         std::int64_t value = std::get<std::int64_t>(current);
-        const auto minimum = descriptor.minimum ? static_cast<std::int64_t>(*descriptor.minimum)
-                                                : std::numeric_limits<std::int64_t>::lowest();
-        const auto maximum = descriptor.maximum ? static_cast<std::int64_t>(*descriptor.maximum)
-                                                : std::numeric_limits<std::int64_t>::max();
+        const auto minimum = descriptor.type == SettingTypeUVE::LayerMask
+                                 ? std::int64_t{0}
+                                 : (descriptor.minimum ? static_cast<std::int64_t>(*descriptor.minimum)
+                                                       : std::numeric_limits<std::int64_t>::lowest());
+        const auto maximum = descriptor.type == SettingTypeUVE::LayerMask
+                                 ? std::int64_t{0xFFFFFFFFLL}
+                                 : (descriptor.maximum ? static_cast<std::int64_t>(*descriptor.maximum)
+                                                       : std::numeric_limits<std::int64_t>::max());
         const float speed = descriptor.step ? static_cast<float>(*descriptor.step * 0.2) : 0.2F;
         return ImGui::DragScalar("##value", ImGuiDataType_S64, &value, speed, &minimum, &maximum, "%lld",
                                  ImGuiSliderFlags_AlwaysClamp)
@@ -114,11 +119,13 @@ void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float si
                    : std::nullopt;
     }
     case SettingTypeUVE::String:
-    case SettingTypeUVE::FilePath: {
+    case SettingTypeUVE::FilePath:
+    case SettingTypeUVE::AssetReference: {
         std::string buffer = std::get<std::string>(current);
         const std::size_t capacity = descriptor.maxLength != 0U ? descriptor.maxLength : 256U;
         buffer.resize(std::max(capacity, buffer.size()) + 1U, '\0');
-        const bool changed = descriptor.type == SettingTypeUVE::FilePath
+        const bool changed = (descriptor.type == SettingTypeUVE::FilePath ||
+                              descriptor.type == SettingTypeUVE::AssetReference)
                                  ? ImGui::InputTextWithHint("##value", "File or directory path", buffer.data(),
                                                             capacity + 1U)
                                  : ImGui::InputText("##value", buffer.data(), capacity + 1U);
@@ -201,6 +208,18 @@ void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float si
         }
         return SettingValueUVE{Config::SettingColorUVE{color.r, color.g, color.b, color.a}};
     }
+    case SettingTypeUVE::Vector2: {
+        const auto& vector = std::get<Config::SettingVector2UVE>(current);
+        std::array<float, 2> components{static_cast<float>(vector.x), static_cast<float>(vector.y)};
+        const float speed = descriptor.step ? static_cast<float>(*descriptor.step * 0.2) : 0.01F;
+        const bool bounded = descriptor.minimum && descriptor.maximum;
+        const float minimum = bounded ? static_cast<float>(*descriptor.minimum) : 0.0F;
+        const float maximum = bounded ? static_cast<float>(*descriptor.maximum) : 0.0F;
+        if (!DrawAxisVectorInputUVE("##value", components.data(), 2, speed, minimum, maximum)) {
+            return std::nullopt;
+        }
+        return SettingValueUVE{Config::SettingVector2UVE{components[0], components[1]}};
+    }
     case SettingTypeUVE::Vector3: {
         const auto& vector = std::get<Config::SettingVector3UVE>(current);
         std::array<float, 3> components{static_cast<float>(vector.x), static_cast<float>(vector.y),
@@ -215,6 +234,20 @@ void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float si
             return std::nullopt;
         }
         return SettingValueUVE{Config::SettingVector3UVE{components[0], components[1], components[2]}};
+    }
+    case SettingTypeUVE::Vector4: {
+        const auto& vector = std::get<Config::SettingVector4UVE>(current);
+        std::array<float, 4> components{static_cast<float>(vector.x), static_cast<float>(vector.y),
+                                        static_cast<float>(vector.z), static_cast<float>(vector.w)};
+        const float speed = descriptor.step ? static_cast<float>(*descriptor.step * 0.2) : 0.01F;
+        const bool bounded = descriptor.minimum && descriptor.maximum;
+        const float minimum = bounded ? static_cast<float>(*descriptor.minimum) : 0.0F;
+        const float maximum = bounded ? static_cast<float>(*descriptor.maximum) : 0.0F;
+        if (!DrawAxisVectorInputUVE("##value", components.data(), 4, speed, minimum, maximum)) {
+            return std::nullopt;
+        }
+        return SettingValueUVE{
+            Config::SettingVector4UVE{components[0], components[1], components[2], components[3]}};
     }
     }
     return std::nullopt;

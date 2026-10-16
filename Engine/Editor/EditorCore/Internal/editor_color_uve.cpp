@@ -151,4 +151,68 @@ EditorColorUVE HsvToRgbUVE(const EditorHsvUVE& hsv, const float alpha) {
     }
 }
 
+float LinearToSrgbChannelUVE(const float linear) noexcept {
+    if (!std::isfinite(linear) || linear <= 0.0F) {
+        return 0.0F;
+    }
+    if (linear >= 1.0F) {
+        return 1.0F;
+    }
+    return (linear <= 0.0031308F) ? (linear * 12.92F) : (1.055F * std::pow(linear, 1.0F / 2.4F) - 0.055F);
+}
+
+float SrgbToLinearChannelUVE(const float srgb) noexcept {
+    if (!std::isfinite(srgb) || srgb <= 0.0F) {
+        return 0.0F;
+    }
+    if (srgb >= 1.0F) {
+        return 1.0F;
+    }
+    return (srgb <= 0.04045F) ? (srgb / 12.92F) : std::pow((srgb + 0.055F) / 1.055F, 2.4F);
+}
+
+EditorColorUVE LinearToSrgbColorUVE(const EditorColorUVE& linearColor) noexcept {
+    return EditorColorUVE{LinearToSrgbChannelUVE(linearColor.r), LinearToSrgbChannelUVE(linearColor.g),
+                          LinearToSrgbChannelUVE(linearColor.b), std::clamp(linearColor.a, 0.0F, 1.0F)};
+}
+
+EditorColorUVE SrgbToLinearColorUVE(const EditorColorUVE& srgbColor) noexcept {
+    return EditorColorUVE{SrgbToLinearChannelUVE(srgbColor.r), SrgbToLinearChannelUVE(srgbColor.g),
+                          SrgbToLinearChannelUVE(srgbColor.b), std::clamp(srgbColor.a, 0.0F, 1.0F)};
+}
+
+EditorColorUVE ApplyHdrExposureToColorUVE(const EditorColorUVE& color, const float exposureStops,
+                                          const bool clampToLdr) noexcept {
+    const float scale = std::isfinite(exposureStops) ? std::exp2(exposureStops) : 1.0F;
+    EditorColorUVE out{
+        std::max(0.0F, color.r * scale),
+        std::max(0.0F, color.g * scale),
+        std::max(0.0F, color.b * scale),
+        std::clamp(color.a, 0.0F, 1.0F),
+    };
+    if (clampToLdr) {
+        out.r = std::min(out.r, 1.0F);
+        out.g = std::min(out.g, 1.0F);
+        out.b = std::min(out.b, 1.0F);
+    }
+    return out;
+}
+
+void NudgeColorChannelUVE(EditorColorUVE& color, const std::size_t channelIndex, const float delta,
+                          const bool clampToLdr) noexcept {
+    if (!std::isfinite(delta)) {
+        return;
+    }
+    float* channel = nullptr;
+    switch (channelIndex) {
+        case 0U: channel = &color.r; break;
+        case 1U: channel = &color.g; break;
+        case 2U: channel = &color.b; break;
+        case 3U: channel = &color.a; break;
+        default: return;
+    }
+    const float maxVal = (channelIndex == 3U || clampToLdr) ? 1.0F : 100.0F;
+    *channel = std::clamp(*channel + delta, 0.0F, maxVal);
+}
+
 } // namespace UVE::Editor

@@ -49,4 +49,22 @@ struct UIScrollbarComponentUVE final {
 
 [[nodiscard]] bool IsUIScrollbarComponentValidUVE(const UIScrollbarComponentUVE& component) noexcept;
 
+/// Computes the vertical thumb height inside `component.rect.size.y` for `viewportHeight / contentHeight`.
+[[nodiscard]] float ResolveUIScrollbarThumbHeightUVE(const UIScrollbarComponentUVE& component,
+                                                     float viewportHeight,
+                                                     float contentHeight) noexcept;
+
+/// Computes the vertical thumb rectangle for `scrollOffsetY` given `viewportHeight` and `contentHeight`.
+[[nodiscard]] Math::RectUVE ResolveUIScrollbarThumbRectUVE(
+    const UIScrollbarComponentUVE& component, float scrollOffsetY, float viewportHeight,
+    float contentHeight) noexcept;
+
+/// Maps a vertical pointer Y coordinate inside `component.rect` to a scroll offset in `[0, maxScrollY]`.
+[[nodiscard]] float ResolveUIScrollbarOffsetFromPointerYUVE(
+    const UIScrollbarComponentUVE& component, float pointerYPixels, float viewportHeight,
+    float contentHeight) noexcept;
+
+/// Resets runtime flags (`isHovered = false`, `isDragging = false`, `wasChangedThisFrame = false`).
+void ResetUIScrollbarRuntimeStateUVE(UIScrollbarComponentUVE& component) noexcept;
+
 } // namespace UVE::Scene

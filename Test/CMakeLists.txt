@@ -229,8 +229,12 @@ add_executable(uve_core_tests
     Retarget/retarget_files_uve_tests.cpp
 )
 if(UVE_HAS_DESKTOP_GL)
+    if(NOT WIN32)
+        target_sources(uve_core_tests PRIVATE
+            RHI/OpenGL/gl_render_device_uve_tests.cpp
+        )
+    endif()
     target_sources(uve_core_tests PRIVATE
-        RHI/OpenGL/gl_render_device_uve_tests.cpp
         RHI/Vulkan/vulkan_render_device_uve_tests.cpp
         Window/window_manager_uve_tests.cpp
     )
@@ -707,16 +711,38 @@ if(NOT UVE_HAS_DESKTOP_GL)
         Engine/engine_core_settings_layering_uve_tests.cpp
         Pack/project_packager_uve_tests.cpp
         Pack/project_launcher_uve_tests.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_color_uve.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_settings_uve.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_layer_mask_uve.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_input_map_uve.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_hierarchy_view_uve.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/developer_console_uve.cpp
+        Editor/editor_color_uve_tests.cpp
+        Editor/editor_layer_mask_uve_tests.cpp
+        Editor/editor_input_map_uve_tests.cpp
+        Editor/editor_hierarchy_view_uve_tests.cpp
+        Editor/developer_console_uve_tests.cpp
     )
     target_link_libraries(uve_engine_settings_integration_tests PRIVATE
         uve_core
+        uve_diagnostics
+        uve_network
+        uve_plugins
+        uve_retarget
         uve_pack_lib
         GTest::gtest
         GTest::gtest_main
     )
-    target_include_directories(uve_engine_settings_integration_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_include_directories(uve_engine_settings_integration_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Expose
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal
+    )
     target_compile_features(uve_engine_settings_integration_tests PRIVATE cxx_std_23)
-    target_compile_definitions(uve_engine_settings_integration_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_compile_definitions(uve_engine_settings_integration_tests PRIVATE
+        UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+        UVE_EDITOR_SETTINGS_STANDALONE_UVE=1
+    )
     uve_set_warnings(uve_engine_settings_integration_tests)
     gtest_discover_tests(uve_engine_settings_integration_tests)
 endif()

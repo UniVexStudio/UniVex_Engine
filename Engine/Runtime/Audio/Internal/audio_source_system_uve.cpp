@@ -9,6 +9,7 @@
 #include "uve/logging/logging_macros_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
+#include "uve/objects/3d/audio_source_3d_uve.h"
 
 namespace UVE::Audio {
 
@@ -31,8 +32,8 @@ namespace {
     const Scene::AudioSourceComponentUVE& audioSource) {
     AudioSourceDescUVE desc;
     desc.audioAssetPath = audioSource.audioAssetPath;
-    desc.mixerGroup = audioSource.mixerGroup.empty() ? std::string(kMasterAudioMixerGroupNameUVE)
-                                                      : audioSource.mixerGroup;
+    desc.mixerGroup = std::string{
+        Scene::AudioSource3DUVE::ResolveEffectiveMixerGroupUVE(audioSource, kMasterAudioMixerGroupNameUVE)};
     desc.looping = audioSource.looping;
     desc.volume = audioSource.volume;
     desc.pitch = audioSource.pitch;

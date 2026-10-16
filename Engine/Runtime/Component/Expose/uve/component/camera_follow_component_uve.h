@@ -38,4 +38,20 @@ struct CameraFollowComponentUVE final {
 /// A finite offset. The target is dynamic, not structural: any entity id validates.
 [[nodiscard]] bool IsCameraFollowComponentValidUVE(const CameraFollowComponentUVE& value) noexcept;
 
+/// True when `value.target != kInvalidEntityUVE` and `value.target != cameraEntity`.
+[[nodiscard]] bool HasCameraFollowTargetUVE(const CameraFollowComponentUVE& value,
+                                            EntityUVE cameraEntity = kInvalidEntityUVE) noexcept;
+
+/// Sanitizes `value` by replacing any non-finite `offset` axis with `0.0F` and clearing a self-target.
+[[nodiscard]] CameraFollowComponentUVE SanitizeCameraFollowComponentUVE(
+    const CameraFollowComponentUVE& value, EntityUVE cameraEntity = kInvalidEntityUVE) noexcept;
+
+/// Computes the desired world-space camera position (`targetWorldPosition + value.offset`).
+[[nodiscard]] Math::Vector3UVE ResolveCameraFollowDesiredPositionUVE(
+    const CameraFollowComponentUVE& value, const Math::Vector3UVE& targetWorldPosition) noexcept;
+
+/// Applies player-possession retargeting when `value.followPossessedPawn` is true.
+void ApplyPlayerPossessionToCameraFollowUVE(CameraFollowComponentUVE& value,
+                                            EntityUVE possessedPawn) noexcept;
+
 } // namespace UVE::Scene

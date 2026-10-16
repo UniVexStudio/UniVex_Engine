@@ -1,0 +1,6 @@
+* text=auto
+*.glsl text eol=lf
+*.cpp text
+*.h text
+*.hpp text
+*.md text

@@ -33,7 +33,7 @@ bool Rigid3DUVE::IsDynamicUVE(const Rigid3DComponentUVE& rigidBody) noexcept {
 }
 
 float Rigid3DUVE::InverseMassUVE(const Rigid3DComponentUVE& rigidBody) noexcept {
-    return (!IsDynamicUVE(rigidBody) || rigidBody.mass <= 0.0F) ? 0.0F : 1.0F / rigidBody.mass;
+    return ResolveRigid3DInverseMassUVE(rigidBody);
 }
 
 bool Rigid3DUVE::ApplyForceUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,

@@ -34,4 +34,20 @@ struct UIButtonComponentUVE final {
 
 [[nodiscard]] bool IsUIButtonComponentValidUVE(const UIButtonComponentUVE& component) noexcept;
 
+/// Returns the active display color (`pressedColor` when hovered & mouseDown, `hoverColor` when hovered, else `normalColor`).
+[[nodiscard]] Math::Vector3UVE ResolveUIButtonActiveColorUVE(const UIButtonComponentUVE& component,
+                                                             bool isMouseButtonDown = false) noexcept;
+
+/// True when `pointPixels` lies inside `component.rect`.
+[[nodiscard]] bool HitTestUIButtonUVE(const UIButtonComponentUVE& component,
+                                      const Math::Vector2UVE& pointPixels) noexcept;
+
+/// Resets runtime state (`isHovered = false`, `wasClickedThisFrame = false`).
+void ResetUIButtonRuntimeStateUVE(UIButtonComponentUVE& component) noexcept;
+
+/// Steps `isHovered` and `wasClickedThisFrame` from `pointerPixels` and `mouseJustPressed`.
+bool StepUIButtonInteractionUVE(UIButtonComponentUVE& component,
+                                const Math::Vector2UVE& pointerPixels,
+                                bool mouseJustPressed) noexcept;
+
 } // namespace UVE::Scene

@@ -50,15 +50,30 @@ bool IsMaterialAssetValidUVE(const MaterialAssetUVE& material) noexcept {
     return IsFiniteUnitIntervalUVE(material.albedoColor.r) &&
            IsFiniteUnitIntervalUVE(material.albedoColor.g) &&
            IsFiniteUnitIntervalUVE(material.albedoColor.b) &&
+           IsFiniteUnitIntervalUVE(material.albedoAlpha) &&
            IsFiniteUnitIntervalUVE(material.metallic) && IsFiniteUnitIntervalUVE(material.roughness) &&
            IsFiniteNonNegativeColorUVE(material.emissiveColor) &&
            material.billboardMode <= MaterialBillboardModeUVE::Y &&
+           material.alphaSource <= MaterialAlphaSourceUVE::None &&
+           material.cullMode <= MaterialCullModeUVE::Disabled &&
+           material.blendMode <= MaterialBlendModeUVE::Multiply &&
+           material.depthDrawMode <= MaterialDepthDrawModeUVE::DepthPrePass &&
            std::isfinite(material.emissiveEnergy) && material.emissiveEnergy >= 0.0F &&
            std::isfinite(material.normalScale) && material.normalScale >= 0.0F &&
            IsFiniteUnitIntervalUVE(material.occlusionStrength) &&
            std::isfinite(material.uvScale.x) && std::isfinite(material.uvScale.y) &&
            std::isfinite(material.uvOffset.x) && std::isfinite(material.uvOffset.y) &&
-           IsFiniteUnitIntervalUVE(material.alphaCutoff);
+           std::isfinite(material.uv2Scale.x) && std::isfinite(material.uv2Scale.y) &&
+           std::isfinite(material.uv2Offset.x) && std::isfinite(material.uv2Offset.y) &&
+           IsFiniteUnitIntervalUVE(material.alphaCutoff) &&
+           IsFiniteUnitIntervalUVE(material.dielectricSpecular) &&
+           std::isfinite(material.heightScale) && material.heightScale >= 0.0F &&
+           IsFiniteUnitIntervalUVE(material.rimAmount) &&
+           IsFiniteUnitIntervalUVE(material.clearcoatAmount) &&
+           IsFiniteUnitIntervalUVE(material.clearcoatRoughness) &&
+           IsFiniteUnitIntervalUVE(material.anisotropyAmount) &&
+           IsFiniteUnitIntervalUVE(material.subsurfaceStrength) &&
+           IsFiniteUnitIntervalUVE(material.refractionAmount);
 }
 
 bool TryMakeMaterialBillboardRotationUVE(const MaterialBillboardModeUVE mode,
@@ -147,6 +162,30 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
         if (payload.contains("alphaCutoff")) {
             material.alphaCutoff = payload.at("alphaCutoff").get<float>();
         }
+        if (payload.contains("albedoAlpha")) {
+            material.albedoAlpha = payload.at("albedoAlpha").get<float>();
+        }
+        if (payload.contains("metallicTexture")) {
+            material.metallicTexture = AssetGuidUVE{payload.at("metallicTexture").get<std::uint64_t>()};
+        }
+        if (payload.contains("roughnessTexture")) {
+            material.roughnessTexture = AssetGuidUVE{payload.at("roughnessTexture").get<std::uint64_t>()};
+        }
+        if (payload.contains("cullMode")) {
+            material.cullMode = static_cast<MaterialCullModeUVE>(payload.at("cullMode").get<std::uint8_t>());
+        }
+        if (payload.contains("blendMode")) {
+            material.blendMode = static_cast<MaterialBlendModeUVE>(payload.at("blendMode").get<std::uint8_t>());
+        }
+        if (payload.contains("clearcoatAmount")) {
+            material.clearcoatAmount = payload.at("clearcoatAmount").get<float>();
+        }
+        if (payload.contains("parentMaterial")) {
+            material.parentMaterial = AssetGuidUVE{payload.at("parentMaterial").get<std::uint64_t>()};
+        }
+        if (payload.contains("nextPassMaterial")) {
+            material.nextPassMaterial = AssetGuidUVE{payload.at("nextPassMaterial").get<std::uint64_t>()};
+        }
     } catch (const nlohmann::json::exception& fieldError) {
         UVE_ERROR("MaterialAssetUVE: \"{}\" is missing an expected field: {}", path.string(), fieldError.what());
         return false;
@@ -186,6 +225,30 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     payload["uvOffset"] = Vector2ToJsonUVE(material.uvOffset);
     payload["unshaded"] = material.unshaded;
     payload["alphaCutoff"] = material.alphaCutoff;
+    if (material.albedoAlpha != 1.0F) {
+        payload["albedoAlpha"] = material.albedoAlpha;
+    }
+    if (material.metallicTexture != kInvalidAssetGuidUVE) {
+        payload["metallicTexture"] = material.metallicTexture.value;
+    }
+    if (material.roughnessTexture != kInvalidAssetGuidUVE) {
+        payload["roughnessTexture"] = material.roughnessTexture.value;
+    }
+    if (material.cullMode != MaterialCullModeUVE::Back) {
+        payload["cullMode"] = static_cast<std::uint8_t>(material.cullMode);
+    }
+    if (material.blendMode != MaterialBlendModeUVE::Opaque) {
+        payload["blendMode"] = static_cast<std::uint8_t>(material.blendMode);
+    }
+    if (material.clearcoatAmount != 0.0F) {
+        payload["clearcoatAmount"] = material.clearcoatAmount;
+    }
+    if (material.parentMaterial != kInvalidAssetGuidUVE) {
+        payload["parentMaterial"] = material.parentMaterial.value;
+    }
+    if (material.nextPassMaterial != kInvalidAssetGuidUVE) {
+        payload["nextPassMaterial"] = material.nextPassMaterial.value;
+    }
 
     const std::string payloadText = payload.dump();
     const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());

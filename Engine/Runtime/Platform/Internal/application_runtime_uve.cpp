@@ -208,6 +208,7 @@ SingleInstanceLockResultUVE SingleInstanceLockUVE::AcquireUVE(
         return {SingleInstanceLockCodeUVE::Acquired, "This process already owns the instance lock."};
     }
 #if defined(_WIN32)
+    static_cast<void>(userDataDirectory);
     std::wstring mutexName = L"Local\\UniVex_";
     for (const char character : HashIdentifierHexUVE(applicationIdentifier)) {
         mutexName.push_back(static_cast<wchar_t>(character));

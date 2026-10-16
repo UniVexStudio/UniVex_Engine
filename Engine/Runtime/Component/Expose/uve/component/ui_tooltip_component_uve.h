@@ -7,6 +7,7 @@
 #include <string>
 
 #include "uve/component/ui_text_component_uve.h"
+#include "uve/math/rect_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
 
@@ -42,5 +43,20 @@ struct UITooltipComponentUVE final {
 /// Text within the shared UI byte cap, non-negative finite delay/padding/hoverTime, finite
 /// offset, font size within the shared UI range, and finite colors.
 [[nodiscard]] bool IsUITooltipComponentValidUVE(const UITooltipComponentUVE& component) noexcept;
+
+/// True when `component` has non-empty valid text and has met or exceeded `delay`.
+[[nodiscard]] bool ShouldDisplayUITooltipUVE(const UITooltipComponentUVE& component) noexcept;
+
+/// Advances `hoverTime` while `isPointerInside` is true (or resets it to `0`), updating `visibleThisFrame`.
+bool StepUITooltipHoverStateUVE(UITooltipComponentUVE& component, bool isPointerInside,
+                                float deltaSeconds) noexcept;
+
+/// Resets runtime hover state (`hoverTime = 0`, `visibleThisFrame = false`).
+void ResetUITooltipRuntimeStateUVE(UITooltipComponentUVE& component) noexcept;
+
+/// Computes the viewport-clamped popup background rectangle for a measured text width.
+[[nodiscard]] Math::RectUVE ResolveUITooltipPopupRectUVE(
+    const UITooltipComponentUVE& component, const Math::Vector2UVE& pointerPosition,
+    float measuredTextWidthPixels, const Math::Vector2UVE& viewportSizePixels) noexcept;
 
 } // namespace UVE::Scene
