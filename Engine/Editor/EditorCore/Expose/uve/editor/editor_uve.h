@@ -1203,9 +1203,7 @@ public:
     [[nodiscard]] const EditorExtendedPreferencesUVE& GetExtendedPreferencesUVE() const noexcept {
         return m_extendedPreferences;
     }
-    void SetExtendedPreferencesUVE(EditorExtendedPreferencesUVE preferences) noexcept {
-        m_extendedPreferences = std::move(preferences);
-    }
+    void SetExtendedPreferencesUVE(EditorExtendedPreferencesUVE preferences) noexcept;
 
     void SetInspectorFoldOpenUVE(const std::string& key, bool open);
     [[nodiscard]] bool IsInspectorFoldOpenUVE(const std::string& key, bool defaultOpen) const;
@@ -2588,6 +2586,7 @@ private:
     std::unordered_map<Scene::EntityUVE, bool> m_hierarchyPendingRowOpen;
     ColorPickerPreferencesUVE m_colorPickerPreferences;
     EditorExtendedPreferencesUVE m_extendedPreferences{};
+    std::chrono::steady_clock::time_point m_lastAutosaveTime{std::chrono::steady_clock::now()};
     // The property edit in flight; see PreviewSelectedComponentPropertyUVE.
     struct ComponentPropertyPreviewUVE final {
         Scene::EntityUVE entity = Scene::kInvalidEntityUVE;

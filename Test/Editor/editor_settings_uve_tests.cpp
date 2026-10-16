@@ -371,5 +371,35 @@ TEST(EditorSettingsUVETest, EditorSettingObserverReentrantChangesDispatchImmedia
     engine.Shutdown();
 }
 
+TEST(EditorSettingsUVETest, ExtendedPreferences_SetAndPropagateThroughEditor) {
+    Core::EngineCoreUVE engine(MakeEditorSettingsObserverTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE());
+        EditorExtendedPreferencesUVE prefs = editor.GetExtendedPreferencesUVE();
+        prefs.themePreset = 2;
+        prefs.cornerRadiusPx = 8.0;
+        prefs.spacingDensity = 0;
+        prefs.orbitSensitivity = 2.0;
+        prefs.panSensitivity = 1.5;
+        prefs.zoomSensitivity = 1.2;
+        prefs.hierarchyColorCodeIcons = true;
+        prefs.hierarchyExpandDepthLimit = 4;
+        editor.SetExtendedPreferencesUVE(prefs);
+
+        const EditorExtendedPreferencesUVE& updated = editor.GetExtendedPreferencesUVE();
+        EXPECT_EQ(updated.themePreset, 2);
+        EXPECT_DOUBLE_EQ(updated.cornerRadiusPx, 8.0);
+        EXPECT_EQ(updated.spacingDensity, 0);
+        EXPECT_DOUBLE_EQ(updated.orbitSensitivity, 2.0);
+        EXPECT_DOUBLE_EQ(updated.panSensitivity, 1.5);
+        EXPECT_DOUBLE_EQ(updated.zoomSensitivity, 1.2);
+        EXPECT_TRUE(updated.hierarchyColorCodeIcons);
+        EXPECT_EQ(updated.hierarchyExpandDepthLimit, 4);
+    }
+    engine.Shutdown();
+}
+
 } // namespace
 } // namespace UVE::Editor::Tests

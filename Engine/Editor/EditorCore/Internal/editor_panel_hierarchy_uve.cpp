@@ -385,9 +385,68 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
         if (icon != 0U) {
             const ImVec2 iconMin{std::floor(rowMin.x + ImGui::GetTreeNodeToLabelSpacing()),
                                  std::floor(((rowMin.y + rowMax.y) - kHierarchyObjectIconSizeUVE) * 0.5F)};
+            ImU32 iconTint = IM_COL32_WHITE;
+            if (m_extendedPreferences.hierarchyColorCodeIcons) {
+                using Kind = Scene::Objects::SceneObjectKindUVE;
+                switch (Scene::ResolveSceneObjectKindUVE(entityManager, entity)) {
+                    case Kind::MeshInstance3D:
+                    case Kind::BoxMesh3D:
+                    case Kind::SphereMesh3D:
+                    case Kind::PlaneMesh3D:
+                        iconTint = IM_COL32(100, 180, 255, 255);
+                        break;
+                    case Kind::Light3D:
+                    case Kind::DirectionalLight3D:
+                    case Kind::WorldEnvironment3D:
+                    case Kind::ReflectionProbe3D:
+                    case Kind::FogVolume3D:
+                        iconTint = IM_COL32(255, 215, 80, 255);
+                        break;
+                    case Kind::Camera3D:
+                    case Kind::Camera2D:
+                    case Kind::AudioSource3D:
+                        iconTint = IM_COL32(95, 220, 130, 255);
+                        break;
+                    case Kind::Static3D:
+                    case Kind::Kinematic3D:
+                    case Kind::Rigid3D:
+                    case Kind::Collider3D:
+                    case Kind::Area3D:
+                    case Kind::Hitbox3D:
+                    case Kind::Hurtbox3D:
+                    case Kind::Projectile3D:
+                        iconTint = IM_COL32(240, 110, 110, 255);
+                        break;
+                    case Kind::Canvas:
+                    case Kind::UIText:
+                    case Kind::UIImage:
+                    case Kind::UIButton:
+                        iconTint = IM_COL32(75, 225, 240, 255);
+                        break;
+                    case Kind::Skeleton3D:
+                    case Kind::BoneAttachment3D:
+                    case Kind::AnimationGraph:
+                    case Kind::AnimationSequencer:
+                    case Kind::TwoBoneIK3D:
+                        iconTint = IM_COL32(215, 130, 255, 255);
+                        break;
+                    case Kind::NavMeshVolume3D:
+                    case Kind::NavSeeker3D:
+                        iconTint = IM_COL32(255, 150, 70, 255);
+                        break;
+                    case Kind::ParticleEmitter3D:
+                    case Kind::Decal3D:
+                        iconTint = IM_COL32(255, 130, 190, 255);
+                        break;
+                    default:
+                        iconTint = IM_COL32(255, 255, 255, 255);
+                        break;
+                }
+            }
             ImGui::GetWindowDrawList()->AddImage(
                 static_cast<ImTextureID>(icon), iconMin,
-                ImVec2{iconMin.x + kHierarchyObjectIconSizeUVE, iconMin.y + kHierarchyObjectIconSizeUVE});
+                ImVec2{iconMin.x + kHierarchyObjectIconSizeUVE, iconMin.y + kHierarchyObjectIconSizeUVE},
+                ImVec2{0.0F, 0.0F}, ImVec2{1.0F, 1.0F}, iconTint);
         }
     }
     const bool typeHidden = m_hierarchyView.showTypeName && !typeHint.empty() && !typeHintShown;
@@ -568,17 +627,25 @@ bool EditorUVE::SetHierarchyBranchOpenUVE(const Scene::EntityUVE entity, const b
 
     // Only rows with children have an open state; a leaf has nothing to open. The visited set
     // keeps a malformed parent loop from walking forever.
-    std::vector<Scene::EntityUVE> pending{entity};
+    std::vector<std::pair<Scene::EntityUVE, std::int64_t>> pending{{entity, 0}};
     std::unordered_set<Scene::EntityUVE> visited;
+    const std::int64_t depthLimit = m_extendedPreferences.hierarchyExpandDepthLimit > 0
+                                        ? m_extendedPreferences.hierarchyExpandDepthLimit
+                                        : 16;
     while (!pending.empty()) {
-        const Scene::EntityUVE current = pending.back();
+        const auto [current, depth] = pending.back();
         pending.pop_back();
+        if (open && depth >= depthLimit) {
+            continue;
+        }
         const auto children = childrenOf.find(current);
         if (!visited.insert(current).second || children == childrenOf.end()) {
             continue;
         }
         m_hierarchyPendingRowOpen[current] = open;
-        pending.insert(pending.end(), children->second.begin(), children->second.end());
+        for (const Scene::EntityUVE child : children->second) {
+            pending.emplace_back(child, depth + 1);
+        }
     }
     return true;
 }
