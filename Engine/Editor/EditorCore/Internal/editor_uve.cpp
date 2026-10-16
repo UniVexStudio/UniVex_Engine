@@ -279,7 +279,7 @@ void EditorUVE::InitUVE() {
         // cannot be dragged out.
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_ViewportsEnable;
         ImGui::StyleColorsDark();
-        ApplyEditorVisualThemeUVE();
+        ApplyEditorVisualThemeUVE(&m_extendedPreferences);
 
         // Font setup must happen before ImGui_ImplOpenGL3_Init() below: that call builds and
         // uploads the font atlas texture immediately, so any fonts merged in afterward would be
@@ -360,6 +360,16 @@ void EditorUVE::TickUVE() {
         (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() ||
          !IsDocumentEntityUVE(m_hierarchyRenameEntity) || m_hierarchyRenameEntity != m_selectedEntity)) {
         CancelHierarchyRenameUVE();
+    }
+
+    if (m_extendedPreferences.autosaveEnabled && m_sceneDirty && !m_activeScenePath.empty() &&
+        m_playModeState == EditorPlayModeStateUVE::Edit && IsAuthoringCommandAllowedUVE()) {
+        const auto now = std::chrono::steady_clock::now();
+        const double elapsed = std::chrono::duration<double>(now - m_lastAutosaveTime).count();
+        if (elapsed >= m_extendedPreferences.autosaveIntervalSeconds) {
+            m_lastAutosaveTime = now;
+            static_cast<void>(SaveSceneUVE());
+        }
     }
 }
 
@@ -4227,6 +4237,11 @@ void EditorUVE::SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferenc
     m_colorPickerPreferences = std::move(preferences);
     NotifyEditorSettingChangedUVE(EditorSettingIdUVE::kColorPickerAdvancedOpenUVE, previousAdvancedOpen,
                                   m_colorPickerPreferences.advancedOpen);
+}
+
+void EditorUVE::SetExtendedPreferencesUVE(EditorExtendedPreferencesUVE preferences) noexcept {
+    m_extendedPreferences = std::move(preferences);
+    ApplyEditorVisualThemeUVE(&m_extendedPreferences);
 }
 
 void EditorUVE::ShutdownUVE() {

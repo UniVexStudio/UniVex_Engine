@@ -994,6 +994,11 @@ private:
         settings.viewGrid = overlayState.gridVisible && !overlayState.gameWorkspaceActive;
         renderPass_->SetGridOpacityUVE(overlayState.gridOpacity);
         renderPass_->SetGridCellSizeUVE(overlayState.gridCellSize);
+        const auto& prefs = editor_.GetExtendedPreferencesUVE();
+        if (prefs.gridFadeDistance > 0.0) {
+            renderPass_->Grid().Settings().fadeEndDistanceScale =
+                static_cast<float>(std::clamp(prefs.gridFadeDistance * 0.25, 10.0, 500.0));
+        }
         constexpr float kSelectionOutlineVisualScaleUVE = 0.20F;
         renderPass_->SetSelectionOutlineUVE(univex::render::SelectionOutlineSettings{
             overlayState.selectionOutlineVisible, overlayState.selectionOutlineColor.r,
@@ -1584,16 +1589,21 @@ private:
         if (pointerOverOverlay_ || !ImGui::IsWindowHovered()) {
             return;
         }
+        const auto& prefs = editor_.GetExtendedPreferencesUVE();
+        const float orbitSens = static_cast<float>(std::clamp(prefs.orbitSensitivity, 0.05, 10.0));
+        const float panSens = static_cast<float>(std::clamp(prefs.panSensitivity, 0.05, 10.0));
+        const float zoomSens = static_cast<float>(std::clamp(prefs.zoomSensitivity, 0.05, 10.0));
+
         const ImGuiIO& io = ImGui::GetIO();
         if (!suppressOrbit && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0F)) {
-            camera_.Orbit(io.MouseDelta.x, io.MouseDelta.y);
+            camera_.Orbit(io.MouseDelta.x * orbitSens, io.MouseDelta.y * orbitSens);
             editor_.NotifyViewportOrbitedUVE();
         } else if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0F) ||
                    ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.0F)) {
-            camera_.Pan(io.MouseDelta.x, io.MouseDelta.y, framebufferHeight);
+            camera_.Pan(io.MouseDelta.x * panSens, io.MouseDelta.y * panSens, framebufferHeight);
         }
         if (io.MouseWheel != 0.0F) {
-            camera_.Dolly(io.MouseWheel);
+            camera_.Dolly(io.MouseWheel * zoomSens);
         }
     }
 

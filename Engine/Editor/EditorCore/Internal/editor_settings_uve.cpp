@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "uve/editor/editor_settings_uve.h"
+#include "uve/editor/editor_theme_uve.h"
 
 #include <algorithm>
 #include <cctype>
@@ -1558,6 +1559,9 @@ void EditorUVE::NotifyEditorSettingChangedUVE(const std::string_view id,
                                                const Config::SettingValueUVE& previousValue,
                                                const Config::SettingValueUVE& newValue) {
     m_settingsObservers.NotifyChangedUVE(id, previousValue, newValue);
+    if (id.starts_with("editor.interface.")) {
+        ApplyEditorVisualThemeUVE(&m_extendedPreferences);
+    }
 }
 
 namespace {
