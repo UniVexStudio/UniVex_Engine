@@ -518,6 +518,9 @@ public:
         std::array<float, 3> studioTarget{0.0F, 1.0F, 0.0F};
         float studioRadius = 1.5F;
         std::uint32_t studioFramingSerial = 0U;
+        bool is2DMode = false;
+        int shadingMode = 0;
+        bool physicsPaused = false;
     };
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available

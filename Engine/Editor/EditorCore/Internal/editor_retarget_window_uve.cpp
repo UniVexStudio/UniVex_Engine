@@ -367,6 +367,17 @@ void EditorUVE::DrawRetargetWindowUVE() {
         ImGui::SetTooltip("The character the animations are for. Its bones, its rest pose and its skin are conformed to the UniVex humanoid (missing bones are auto-generated).");
     }
     if (window.planStale) {
+        if (window.animations.empty()) {
+            for (const Asset::ProjectFileEntryUVE& entry : project.entries) {
+                if (entry.kind != Asset::ProjectFileEntryKindUVE::Directory &&
+                    LowerUVE(entry.relativePath.extension().string()) == ".uvanim") {
+                    const std::filesystem::path full = project.contentRoot / entry.relativePath;
+                    if (std::ranges::find(window.animations, full) == window.animations.end()) {
+                        window.animations.push_back(full);
+                    }
+                }
+            }
+        }
         const std::filesystem::path modelFile = ResolveRetargetModelFileUVE(window.target);
         window.plan = PlanRetargetUVE(modelFile, window.animations);
         window.planStale = false;

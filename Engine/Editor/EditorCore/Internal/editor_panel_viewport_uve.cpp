@@ -455,9 +455,9 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
     }
 
     // ---- projection mode pill, top-left (right after the gizmo bubble) ---------------------
+    const ImVec2 pillMin{gizmoBubbleMax.x + kBubbleGapUVE, topY};
+    const ImVec2 pillMax{pillMin.x + pillWidth, pillMin.y + unifiedHeight};
     {
-        const ImVec2 pillMin{gizmoBubbleMax.x + kBubbleGapUVE, topY};
-        const ImVec2 pillMax{pillMin.x + pillWidth, pillMin.y + unifiedHeight};
         ImGui::SetCursorScreenPos(pillMin);
         ImGui::PushID("##viewport-projection-toggle");
         const bool pressed = ImGui::InvisibleButton("##pill", ImVec2{pillWidth, unifiedHeight});
@@ -542,6 +542,140 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
             ImGui::EndPopup();
         }
         ImGui::PopStyleVar(3);
+    }
+
+    // ---- 2D / 3D mode toggle pill ---------------------------------------------------------
+    const ImVec2 modePillMin{pillMax.x + kBubbleGapUVE, topY};
+    constexpr float modePillWidth = 56.0F;
+    const ImVec2 modePillMax{modePillMin.x + modePillWidth, modePillMin.y + unifiedHeight};
+    {
+        drawList->AddRectFilled(modePillMin, modePillMax, IM_COL32(18, 21, 28, 200), unifiedHeight * 0.5F);
+        drawList->AddRect(modePillMin, modePillMax, IM_COL32(255, 255, 255, 24), unifiedHeight * 0.5F);
+        constexpr float segWidth = modePillWidth * 0.5F;
+        const ImVec2 btn2DMin = modePillMin;
+        const ImVec2 btn2DMax{btn2DMin.x + segWidth, btn2DMin.y + unifiedHeight};
+        const ImVec2 btn3DMin{btn2DMin.x + segWidth, btn2DMin.y};
+        const ImVec2 btn3DMax = modePillMax;
+
+        ImGui::SetCursorScreenPos(btn2DMin);
+        if (ImGui::InvisibleButton("##mode-2d", ImVec2{segWidth, unifiedHeight})) {
+            m_viewportOverlayState.is2DMode = true;
+            m_viewportOverlayState.orthographic = true;
+            RequestViewportViewUVE(ViewportViewUVE::Front);
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+            ImGui::SetTooltip("2D View (Front Orthographic)");
+        }
+        const bool hovered2D = ImGui::IsItemHovered();
+
+        ImGui::SetCursorScreenPos(btn3DMin);
+        if (ImGui::InvisibleButton("##mode-3d", ImVec2{segWidth, unifiedHeight})) {
+            m_viewportOverlayState.is2DMode = false;
+            SetViewportOrthographicUVE(false);
+            m_viewportOverlayState.view = ViewportViewUVE::User;
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+            ImGui::SetTooltip("3D View (Free Orbit Perspective)");
+        }
+        const bool hovered3D = ImGui::IsItemHovered();
+
+        if (m_viewportOverlayState.is2DMode) {
+            drawList->AddRectFilled(btn2DMin, btn2DMax, IM_COL32(50, 100, 180, 220), unifiedHeight * 0.5F);
+        } else {
+            drawList->AddRectFilled(btn3DMin, btn3DMax, IM_COL32(50, 100, 180, 220), unifiedHeight * 0.5F);
+        }
+        const ImVec2 text2DSize = ImGui::CalcTextSize("2D");
+        const ImVec2 text3DSize = ImGui::CalcTextSize("3D");
+        drawList->AddText(
+            ImVec2{btn2DMin.x + (segWidth - text2DSize.x) * 0.5F, btn2DMin.y + (unifiedHeight - text2DSize.y) * 0.5F},
+            m_viewportOverlayState.is2DMode || hovered2D ? IM_COL32(255, 255, 255, 255) : IM_COL32(180, 185, 195, 200),
+            "2D");
+        drawList->AddText(
+            ImVec2{btn3DMin.x + (segWidth - text3DSize.x) * 0.5F, btn3DMin.y + (unifiedHeight - text3DSize.y) * 0.5F},
+            !m_viewportOverlayState.is2DMode || hovered3D ? IM_COL32(255, 255, 255, 255)
+                                                           : IM_COL32(180, 185, 195, 200),
+            "3D");
+    }
+
+    // ---- Shading Mode pill -----------------------------------------------------------------
+    static constexpr std::array<const char*, 5> kShadingNames{"Lit", "Unshaded", "Wireframe", "Lighting", "Normals"};
+    const char* const shadingLabel =
+        kShadingNames[std::clamp(static_cast<std::size_t>(m_viewportOverlayState.shadingMode), 0ULL,
+                                 kShadingNames.size() - 1ULL)];
+    const ImVec2 shadingTextSize = ImGui::CalcTextSize(shadingLabel);
+    const float shadingPillWidth = shadingTextSize.x + kBubblePaddingXUVE * 2.0F + 8.0F;
+    const ImVec2 shadingPillMin{modePillMax.x + kBubbleGapUVE, topY};
+    const ImVec2 shadingPillMax{shadingPillMin.x + shadingPillWidth, shadingPillMin.y + unifiedHeight};
+    {
+        ImGui::SetCursorScreenPos(shadingPillMin);
+        const bool pressedShading =
+            ImGui::InvisibleButton("##shading-mode-btn", ImVec2{shadingPillWidth, unifiedHeight});
+        const bool hoveredShading = ImGui::IsItemHovered();
+        drawList->AddRectFilled(shadingPillMin, shadingPillMax,
+                                hoveredShading ? IM_COL32(30, 34, 44, 220) : IM_COL32(18, 21, 28, 200),
+                                unifiedHeight * 0.5F);
+        drawList->AddRect(shadingPillMin, shadingPillMax, IM_COL32(255, 255, 255, 24), unifiedHeight * 0.5F);
+        drawList->AddText(ImVec2{shadingPillMin.x + kBubblePaddingXUVE + 4.0F,
+                                 shadingPillMin.y + (unifiedHeight - shadingTextSize.y) * 0.5F},
+                          IM_COL32(224, 228, 236, 255), shadingLabel);
+        if (pressedShading) {
+            ImGui::OpenPopup("##viewport-shading-menu");
+        }
+        if (hoveredShading && !ImGui::IsPopupOpen("##viewport-shading-menu")) {
+            ImGui::SetTooltip("Viewport Shading Mode");
+        }
+        if (ImGui::BeginPopup("##viewport-shading-menu")) {
+            ImGui::TextDisabled("VIEWPORT SHADING");
+            ImGui::Separator();
+            for (std::size_t i = 0U; i < kShadingNames.size(); ++i) {
+                const bool current = m_viewportOverlayState.shadingMode == static_cast<int>(i);
+                if (ImGui::MenuItem(kShadingNames[i], nullptr, current)) {
+                    m_viewportOverlayState.shadingMode = static_cast<int>(i);
+                }
+            }
+            ImGui::EndPopup();
+        }
+    }
+
+    // ---- Physics Simulation Toggle pill ----------------------------------------------------
+    const bool physicsPaused =
+        m_simulationControl != nullptr
+            ? m_simulationControl->GetSimulationExecutionModeUVE() == Core::SimulationExecutionModeUVE::Paused
+            : m_viewportOverlayState.physicsPaused;
+    const char* const physLabel = physicsPaused ? "Physics: OFF" : "Physics: ON";
+    const ImVec2 physTextSize = ImGui::CalcTextSize(physLabel);
+    constexpr float kIndicatorRadius = 3.5F;
+    const float physPillWidth = physTextSize.x + kBubblePaddingXUVE * 2.0F + kIndicatorRadius * 2.0F + 8.0F;
+    const ImVec2 physPillMin{shadingPillMax.x + kBubbleGapUVE, topY};
+    const ImVec2 physPillMax{physPillMin.x + physPillWidth, physPillMin.y + unifiedHeight};
+    {
+        ImGui::SetCursorScreenPos(physPillMin);
+        const bool pressedPhys =
+            ImGui::InvisibleButton("##physics-toggle-btn", ImVec2{physPillWidth, unifiedHeight});
+        const bool hoveredPhys = ImGui::IsItemHovered();
+        drawList->AddRectFilled(physPillMin, physPillMax,
+                                hoveredPhys ? IM_COL32(30, 34, 44, 220) : IM_COL32(18, 21, 28, 200),
+                                unifiedHeight * 0.5F);
+        drawList->AddRect(physPillMin, physPillMax, IM_COL32(255, 255, 255, 24), unifiedHeight * 0.5F);
+        const float dotY = (physPillMin.y + physPillMax.y) * 0.5F;
+        const float dotX = physPillMin.x + kBubblePaddingXUVE + kIndicatorRadius + 2.0F;
+        const ImU32 dotColor = physicsPaused ? IM_COL32(236, 172, 52, 255) : IM_COL32(76, 217, 100, 255);
+        drawList->AddCircleFilled(ImVec2{dotX, dotY}, kIndicatorRadius, dotColor, 12);
+        drawList->AddText(
+            ImVec2{dotX + kIndicatorRadius + 6.0F, physPillMin.y + (unifiedHeight - physTextSize.y) * 0.5F},
+            IM_COL32(224, 228, 236, 255), physLabel);
+        if (pressedPhys) {
+            const bool newPaused = !physicsPaused;
+            m_viewportOverlayState.physicsPaused = newPaused;
+            if (m_simulationControl != nullptr) {
+                static_cast<void>(m_simulationControl->SetSimulationExecutionModeUVE(
+                    newPaused ? Core::SimulationExecutionModeUVE::Paused : Core::SimulationExecutionModeUVE::Running));
+            }
+        }
+        if (hoveredPhys) {
+            ImGui::SetTooltip(physicsPaused ? "Resume physics and fixed simulation steps"
+                                            : "Pause physics simulation in the viewport");
+        }
     }
 }
 
