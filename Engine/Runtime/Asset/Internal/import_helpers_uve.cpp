@@ -21,17 +21,43 @@ AssetGuidUVE ResolveImportedSiblingTextureGuidUVE(const std::filesystem::path& d
     if (stem.empty()) {
         return kInvalidAssetGuidUVE;
     }
+    const auto toLower = [](std::string_view s) {
+        std::string res;
+        res.reserve(s.size());
+        for (const char c : s) {
+            res.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        }
+        return res;
+    };
+    const std::string stemLower = toLower(stem);
     const std::filesystem::path siblingDirectory = destinationPath.parent_path().lexically_normal();
+    const std::filesystem::path texturesDir1 = (siblingDirectory / "textures").lexically_normal();
+    const std::filesystem::path texturesDir2 = (siblingDirectory / "Textures").lexically_normal();
+    const std::filesystem::path fbmDir =
+        (siblingDirectory / (destinationPath.stem().string() + ".fbm")).lexically_normal();
+
+    AssetGuidUVE fallbackGuid = kInvalidAssetGuidUVE;
+
     for (const AssetRecordUVE& record : assetDatabase.GetRegisteredAssetsUVE()) {
-        if (record.path.extension() != ".uvtex" || record.path.stem().string() != stem) {
+        if (record.path.extension() != ".uvtex") {
             continue;
         }
-        if (record.path.parent_path().lexically_normal() != siblingDirectory) {
+        const std::string recStem = record.path.stem().string();
+        const std::string recStemLower = toLower(recStem);
+        if (recStemLower != stemLower && recStemLower.find(stemLower) == std::string::npos &&
+            stemLower.find(recStemLower) == std::string::npos) {
             continue;
         }
-        return record.guid;
+        const std::filesystem::path recParent = record.path.parent_path().lexically_normal();
+        if (recParent == siblingDirectory || recParent == texturesDir1 || recParent == texturesDir2 ||
+            recParent == fbmDir) {
+            return record.guid;
+        }
+        if (fallbackGuid == kInvalidAssetGuidUVE && recStemLower == stemLower) {
+            fallbackGuid = record.guid;
+        }
     }
-    return kInvalidAssetGuidUVE;
+    return fallbackGuid;
 }
 
 [[nodiscard]] bool PrepareTextureForImportUVE(TextureAssetUVE& texture,

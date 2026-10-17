@@ -54,12 +54,12 @@ vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
 
     vec3 sky = mix(horizon, zenith, pow(clamp(viewY, 0.0, 1.0), max(uSkyCurve, 0.001)));
     sky *= mix(1.0, 1.55, day * (1.0 - sunset));
-    sky = mix(sky, max(uGroundColor, vec3(0.0)) * (0.18 * day), pow(1.0 - clamp(viewY, 0.0, 1.0), 6.0) * 0.22);
+    sky = mix(sky, max(uGroundColor, vec3(0.0)) * (0.05 * day), pow(1.0 - clamp(viewY, 0.0, 1.0), 8.0) * 0.08);
 
     float g = mix(0.76, 0.93, sunset);
     float mieDen = 1.0 + g * g - 2.0 * g * mu;
     float mie = (1.0 - g * g) / max(pow(max(mieDen, 0.001), 1.5), 0.001);
-    vec3 sunCol = max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0);
+    vec3 sunCol = max(uSunColor, vec3(1.0)) * max(uSunEnergy, 1.0);
     sky += sunCol * mie * mix(0.012, 0.09, sunset) * day;
 
     float disk = smoothstep(0.99945, 0.99982, mu) * smoothstep(-0.02, 0.04, sunY);
@@ -74,12 +74,18 @@ vec3 ProceduralSkyUVE(vec3 viewDir) {
     vec3 upperSky = AtmosphereUpperUVE(upperDir, sun);
     vec3 horizonDir = normalize(vec3(dir.x, 0.001, dir.z));
     vec3 horizon = AtmosphereUpperUVE(horizonDir, sun);
+
     float day = smoothstep(-0.08, 0.18, sun.y);
-    vec3 ground = max(uGroundColor, vec3(0.0)) * (0.12 + 0.88 * day);
-    float effectiveGroundCurve = clamp(max(uGroundCurve, 0.001) * 6.0, 0.15, 4.0);
-    float groundT = pow(clamp(-dir.y, 0.0, 1.0), effectiveGroundCurve);
-    vec3 lowerGround = mix(horizon, ground, groundT);
-    float horizonBlend = smoothstep(-0.12, 0.12, dir.y);
+    vec3 groundBase = max(uGroundColor, vec3(0.0));
+    vec3 ambientHaze = horizon * 0.28;
+    vec3 groundLit = mix(groundBase * 0.35 + ambientHaze, groundBase * 1.15 + ambientHaze, day);
+
+    float groundT = clamp(-dir.y, 0.0, 1.0);
+    float groundCurve = clamp(max(uGroundCurve, 0.001) * 3.5, 0.45, 3.0);
+    float groundFalloff = pow(groundT, groundCurve);
+    vec3 lowerGround = mix(horizon, groundLit, groundFalloff);
+
+    float horizonBlend = smoothstep(-0.02, 0.02, dir.y);
     return mix(lowerGround, upperSky, horizonBlend);
 }
 

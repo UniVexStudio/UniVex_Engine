@@ -44,7 +44,7 @@ using ScenePtrUVE = std::unique_ptr<ufbx_scene, SceneDeleterUVE>;
     options.space_conversion = UFBX_SPACE_CONVERSION_MODIFY_GEOMETRY;
     options.generate_missing_normals = true;
     options.load_external_files = false;
-    options.ignore_embedded = true;
+    options.ignore_embedded = false;
     options.ignore_animation = !animation;
     options.ignore_geometry = !geometry;
     // FBX only: the parser also reads OBJ, which has its own importer and rules here.

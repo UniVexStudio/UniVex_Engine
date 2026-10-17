@@ -390,6 +390,19 @@ void EditorUVE::AcceptContentEntityDropUVE(Scene::EntityUVE parent) {
             m_contentStatusMessage = "Could not place " + std::filesystem::path{path}.filename().string() + ".";
         }
     }
+    if (const ImGuiPayload* const payload = ImGui::AcceptDragDropPayload(kContentItemPayloadUVE);
+        payload != nullptr && payload->DataSize > 1) {
+        const std::string relativePath(static_cast<const char*>(payload->Data), static_cast<std::size_t>(payload->DataSize - 1));
+        const std::filesystem::path p{relativePath};
+        if (IsModelSourcePathUVE(p) || p.extension() == ".uvmodel") {
+            if (parent == Scene::kInvalidEntityUVE) {
+                parent = ResolveNewObjectParentUVE();
+            }
+            if (PlaceModelSourceUVE(p, parent) == Scene::kInvalidEntityUVE && m_contentStatusMessage.empty()) {
+                m_contentStatusMessage = "Could not place " + p.filename().string() + ".";
+            }
+        }
+    }
     ImGui::EndDragDropTarget();
 }
 

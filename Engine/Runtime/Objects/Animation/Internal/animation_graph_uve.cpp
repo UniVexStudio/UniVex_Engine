@@ -64,6 +64,32 @@ struct ResultUVE final {
                    LerpUVE(from.scale, to.scale, alpha)};
 }
 
+[[nodiscard]] const Asset::AnimationAssetBoneTrackUVE* FindTrackForBoneUVE(
+    const std::unordered_map<std::string_view, const Asset::AnimationAssetBoneTrackUVE*>& tracks,
+    const std::string_view boneName) noexcept {
+    if (const auto found = tracks.find(boneName); found != tracks.end()) {
+        return found->second;
+    }
+    std::string_view boneClean = boneName;
+    if (const auto pos = boneClean.find_last_of(":|"); pos != std::string_view::npos) {
+        boneClean = boneClean.substr(pos + 1U);
+    }
+    for (const auto& [trackBoneName, trackPtr] : tracks) {
+        std::string_view trackClean = trackBoneName;
+        if (const auto pos = trackClean.find_last_of(":|"); pos != std::string_view::npos) {
+            trackClean = trackClean.substr(pos + 1U);
+        }
+        if (trackClean.size() == boneClean.size() &&
+            std::equal(trackClean.begin(), trackClean.end(), boneClean.begin(), [](char a, char b) {
+                return std::tolower(static_cast<unsigned char>(a)) ==
+                       std::tolower(static_cast<unsigned char>(b));
+            })) {
+            return trackPtr;
+        }
+    }
+    return nullptr;
+}
+
 /// Mixes two results channel by channel; a side without a pose leaves the other as it is.
 [[nodiscard]] ResultUVE MixUVE(const ResultUVE& from, const ResultUVE& to, const float weight) {
     const float alpha = std::clamp(weight, 0.0F, 1.0F);
@@ -322,10 +348,10 @@ private:
         ChannelsUVE pose(m_skeleton->bones.size());
         for (std::size_t bone = 0U; bone < pose.size(); ++bone) {
             const SkeletonBoneUVE& rest = m_skeleton->bones[bone];
-            const auto found = tracks.find(rest.name);
-            pose[bone] = found != tracks.end() ? SampleAnimationTrackUVE(found->second->samples, time)
-                                               : PoseUVE{rest.localPosition, rest.localRotation, rest.localScale};
-            if (found != tracks.end()) {
+            const auto* track = FindTrackForBoneUVE(tracks, rest.name);
+            pose[bone] = track != nullptr ? SampleAnimationTrackUVE(track->samples, time)
+                                          : PoseUVE{rest.localPosition, rest.localRotation, rest.localScale};
+            if (track != nullptr) {
                 pose[bone].position = conformed.PositionUVE(rest.name, pose[bone].position, rest.localPosition);
                 pose[bone].scale = conformed.ScaleUVE(pose[bone].scale, rest.localScale);
             }
@@ -334,22 +360,24 @@ private:
         // this step - across a loop's wrap too - is handed up to be mixed like the pose.
         if (m_mixer.rootMotion != AnimationRootMotionModeUVE::Off && m_mixer.animatePosition) {
             if (const std::optional<std::size_t> root = ResolveRootMotionBoneUVE(*m_skeleton, *clip, m_mixer.rootMotionBone)) {
-                const auto& samples = tracks.at(m_skeleton->bones[*root].name)->samples;
-                const std::string& rootName = m_skeleton->bones[*root].name;
-                const auto at = [&](const double t) {
-                    return conformed.PositionUVE(rootName, SampleAnimationTrackUVE(samples, t).position, Math::Vector3UVE{});
-                };
-                const Math::Vector3UVE first = at(0.0);
-                Math::Vector3UVE travel = at(time) - at(before);
-                if (wrapped) {
-                    travel = forward ? (at(duration) - at(before)) + (at(time) - first)
-                                     : (first - at(before)) + (at(time) - at(duration));
+                if (const auto* rootTrack = FindTrackForBoneUVE(tracks, m_skeleton->bones[*root].name); rootTrack != nullptr) {
+                    const auto& samples = rootTrack->samples;
+                    const std::string& rootName = m_skeleton->bones[*root].name;
+                    const auto at = [&](const double t) {
+                        return conformed.PositionUVE(rootName, SampleAnimationTrackUVE(samples, t).position, Math::Vector3UVE{});
+                    };
+                    const Math::Vector3UVE first = at(0.0);
+                    Math::Vector3UVE travel = at(time) - at(before);
+                    if (wrapped) {
+                        travel = forward ? (at(duration) - at(before)) + (at(time) - first)
+                                         : (first - at(before)) + (at(time) - at(duration));
+                    }
+                    if (!firstStep) {
+                        result.rootMotion = Math::Vector3UVE{travel.x, 0.0F, travel.z};
+                    }
+                    pose[*root].position.x = first.x;
+                    pose[*root].position.z = first.z;
                 }
-                if (!firstStep) {
-                    result.rootMotion = Math::Vector3UVE{travel.x, 0.0F, travel.z};
-                }
-                pose[*root].position.x = first.x;
-                pose[*root].position.z = first.z;
             }
         }
         result.pose = std::move(pose);

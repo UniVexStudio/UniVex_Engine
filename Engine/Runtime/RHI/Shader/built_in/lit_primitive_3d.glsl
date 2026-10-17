@@ -73,7 +73,11 @@ vec3 HemisphereAmbientUVE(vec3 normal) {
         return uAmbientColor;
     }
     float hemi = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
-    return mix(uGroundAmbient, uSkyAmbient, hemi);
+    vec3 skyLum = vec3(dot(uSkyAmbient, vec3(0.2126, 0.7152, 0.0722)));
+    vec3 groundLum = vec3(dot(uGroundAmbient, vec3(0.2126, 0.7152, 0.0722)));
+    vec3 balancedSky = mix(skyLum, uSkyAmbient, 0.32);
+    vec3 balancedGround = mix(groundLum, uGroundAmbient, 0.38);
+    return mix(balancedGround, balancedSky, hemi);
 }
 
 vec2 AmbientEnvironmentUvUVE(vec3 direction) {
