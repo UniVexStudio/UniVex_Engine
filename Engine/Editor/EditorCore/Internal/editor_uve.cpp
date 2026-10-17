@@ -5400,7 +5400,8 @@ void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& sn
         const std::filesystem::path source = snapshot.contentRoot / entry.relativePath;
         const EditorModelSourceInfoUVE& info = m_modelSources[key] = ReadModelSourceInfoUVE(source);
         // An FBX's takes (the extension is compared as the model check compares it: any case).
-        if (info.animationCount > 0U) {
+        // Also extract a static T-pose .uvanim when a skeleton-bearing FBX has 0 AnimStacks.
+        if (info.animationCount > 0U || info.hasSkeleton) {
             static_cast<void>(ImportModelAnimationsUVE(source));
         }
         if (info.animationOnly) {

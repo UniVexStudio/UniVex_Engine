@@ -13,6 +13,7 @@
 #include "uve/logging/logging_macros_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/component/editor_internal_entity_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/light_emitter_component_uve.h"
 #include "uve/objects/3d/abstract_objects_3d_uve.h"
@@ -139,19 +140,29 @@ void ApplyLightEmitter3DViewFadeUVE(LightDataUVE& light, const Math::Vector3UVE&
 template <typename Visit>
 void ForEachLightDataUVE(Scene::IEntityManagerUVE& entityManager, const Visit& visit) {
     entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::LightComponentUVE>(
-        [&](Scene::EntityUVE, const Scene::WorldTransformComponentUVE& worldTransform,
+        [&](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
             const Scene::LightComponentUVE& light) {
             LightDataUVE slot;
             if (TryBuildLightDataUVE(worldTransform, light, slot)) {
+                slot.isEditorInternal =
+                    entityManager.HasComponentUVE<Scene::EditorInternalEntityComponentUVE>(entity);
+                if (slot.isEditorInternal) {
+                    slot.castsShadows = false;
+                }
                 visit(slot);
             }
         });
     entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::DirectionalLight3DComponentUVE,
                              Scene::LightEmitterComponentUVE>(
-        [&](Scene::EntityUVE, const Scene::WorldTransformComponentUVE& worldTransform,
+        [&](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
             const Scene::DirectionalLight3DComponentUVE& directional, const Scene::LightEmitterComponentUVE& emitter) {
             LightDataUVE slot;
             if (TryBuildDirectionalLightDataUVE(worldTransform, directional, emitter, slot)) {
+                slot.isEditorInternal =
+                    entityManager.HasComponentUVE<Scene::EditorInternalEntityComponentUVE>(entity);
+                if (slot.isEditorInternal) {
+                    slot.castsShadows = false;
+                }
                 visit(slot);
             }
         });

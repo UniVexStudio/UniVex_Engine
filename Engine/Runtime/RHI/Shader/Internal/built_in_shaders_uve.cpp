@@ -762,7 +762,7 @@ void main() {
         float dither = ScreenSpaceDitherNoiseUVE(floor(gl_FragCoord.xy)) / 255.0;
         ldr = clamp(ldr + vec3(dither), 0.0, 1.0);
     }
-    float covered = (depth < 1.0 || uSkyCovers != 0) ? 1.0 : 0.0;
+    float covered = depth < 1.0 ? 1.0 : (uSkyCovers != 0 ? 0.75 : 0.0);
     float alpha = uWriteCoverageAlpha != 0 ? covered : 1.0;
     FragColor = vec4(ldr, alpha);
 }
@@ -842,15 +842,17 @@ vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
 vec3 ProceduralSkyUVE(vec3 viewDir) {
     vec3 dir = normalize(viewDir);
     vec3 sun = length(uSunDirection) > 1.0e-5 ? normalize(uSunDirection) : vec3(0.0, 1.0, 0.0);
-    if (dir.y >= 0.0) {
-        return AtmosphereUpperUVE(dir, sun);
-    }
+    vec3 upperDir = normalize(vec3(dir.x, max(dir.y, 0.0), dir.z));
+    vec3 upperSky = AtmosphereUpperUVE(upperDir, sun);
     vec3 horizonDir = normalize(vec3(dir.x, 0.001, dir.z));
     vec3 horizon = AtmosphereUpperUVE(horizonDir, sun);
     float day = smoothstep(-0.08, 0.18, sun.y);
     vec3 ground = max(uGroundColor, vec3(0.0)) * (0.12 + 0.88 * day);
-    float groundT = pow(clamp(-dir.y, 0.0, 1.0), max(uGroundCurve, 0.001));
-    return mix(horizon, ground, groundT);
+    float effectiveGroundCurve = clamp(max(uGroundCurve, 0.001) * 6.0, 0.15, 4.0);
+    float groundT = pow(clamp(-dir.y, 0.0, 1.0), effectiveGroundCurve);
+    vec3 lowerGround = mix(horizon, ground, groundT);
+    float horizonBlend = smoothstep(-0.12, 0.12, dir.y);
+    return mix(lowerGround, upperSky, horizonBlend);
 }
 
 vec2 SkyEquirectUvUVE(vec3 dir) {
@@ -1389,7 +1391,9 @@ void main() {
     vec3 viewDirection = SafeNormalizeUVE(uViewPosition - vWorldPosition);
     // Meshes authored with the opposite winding/normal convention are still valid two-sided
     // surfaces. Orient the final mapped normal toward the viewer before evaluating the BRDF.
-    normal = faceforward(normal, viewDirection, normal);
+    if (dot(normal, viewDirection) < 0.0) {
+        normal = -normal;
+    }
     vec3 metallicRoughnessSample = texture(uMetallicRoughnessTexture, uv).rgb;
     float metallic = clamp(uMetallic * metallicRoughnessSample.b, 0.0, 1.0);
     float roughness = clamp(uRoughness * metallicRoughnessSample.g, 0.04, 1.0);
@@ -1480,8 +1484,8 @@ void main() {
         // Treat the material as two-sided for direct lighting. Imported meshes and legacy RHI
         // callers can disagree on winding; using the absolute cosine prevents a valid back-face
         // normal from collapsing the entire BRDF to black while shadowing remains directional.
-        float normalDotLight = abs(dot(normal, lightDirection));
-        float normalDotView = abs(dot(normal, viewDirection));
+        float normalDotLight = mix(abs(dot(normal, lightDirection)), 1.0, 0.18);
+        float normalDotView = max(abs(dot(normal, viewDirection)), 0.08);
         if (normalDotLight <= 0.0 || normalDotView <= 0.0 || attenuation <= 0.0) {
             continue;
         }
@@ -1501,7 +1505,7 @@ void main() {
         vec3 directContribution = (diffuse + specular) * radiance * normalDotLight;
 
         if (light.type == 0) {
-            directContribution *= DirectionalShadowFactorUVE(normal, lightDirection);
+            directContribution *= mix(0.28, 1.0, DirectionalShadowFactorUVE(normal, lightDirection));
         }
         lighting += directContribution;
     }
@@ -1510,8 +1514,15 @@ void main() {
     // deterministic and preserve the proven directional shadow contract instead of allowing an
     // invalid optional BRDF intermediate to turn the complete fragment black on OpenGL drivers.
     vec3 fallbackDirection = SafeNormalizeUVE(-uLights[0].direction);
-    vec3 fallbackLighting = albedo * DirectionalShadowFactorUVE(normal, fallbackDirection);
-    FragColor = vec4(fallbackLighting, surfaceOpacity);
+    float shadowFactor = DirectionalShadowFactorUVE(normal, fallbackDirection);
+    if (uAmbientSource == 0 && dot(uAmbientColor, uAmbientColor) <= 1.0e-8) {
+        FragColor = vec4(albedo * shadowFactor, surfaceOpacity);
+    } else {
+        float wrapNdotL = mix(abs(dot(normal, fallbackDirection)), 1.0, 0.25);
+        vec3 minFill = albedo * max(ambientColor, vec3(0.18)) * ambientOcclusion;
+        vec3 safeLighting = max(lighting, minFill + albedo * (0.65 * wrapNdotL * mix(0.32, 1.0, shadowFactor)));
+        FragColor = vec4(safeLighting, surfaceOpacity);
+    }
 }
 #endif
 )GLSLSRC";
@@ -2261,7 +2272,7 @@ void main() {
             }
         }
 
-        float diffuse = max(dot(normal, lightDirection), 0.0);
+        float diffuse = mix(abs(dot(normal, lightDirection)), 1.0, 0.22);
         accumulated += uColor * light.color * (light.intensity * attenuation * diffuse);
     }
 
@@ -2566,6 +2577,9 @@ void main() {
         }
 
         float sampledDepth = texture(uDepthTexture, sampleUv).r;
+        if (sampledDepth >= 0.99999) {
+            continue;
+        }
         vec3 sampledViewPos = ReconstructViewPositionUVE(sampleUv, sampledDepth);
 
         float rangeCheck = smoothstep(0.0, 1.0, uRadius / max(abs(centerViewPos.z - sampledViewPos.z), 0.0001));

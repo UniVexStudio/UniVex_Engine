@@ -153,8 +153,9 @@ std::string MakeBoneKeyUVE(const std::string_view rawName) {
     const std::vector<std::string> split = SplitWordsUVE(name);
     for (std::size_t i = 0U; i < split.size(); ++i) {
         const std::string& word = split[i];
-        // "Bip01" and "Character1_" are a rig's prefix, number included.
-        if ((word == "bip" || word == "character") && i + 1U < split.size() && IsAllDigitsUVE(split[i + 1U])) {
+        // "Bip01", "Character1_", and "mixamorig1" are a rig's prefix, number included.
+        if ((word == "bip" || word == "character" || word == "mixamorig") && i + 1U < split.size() &&
+            IsAllDigitsUVE(split[i + 1U])) {
             ++i;
             continue;
         }

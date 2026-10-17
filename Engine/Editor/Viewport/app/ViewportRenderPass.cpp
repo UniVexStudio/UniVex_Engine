@@ -174,7 +174,7 @@ Mat4 ViewportRenderPass::NavViewMatrix(const OrbitCamera& camera) {
     // the origin: the widget shows which way the world is facing, not where
     // the camera happens to be.
     const Vec3 offset = Normalize(camera.Eye() - camera.Target());
-    return Mat4::LookAt(offset * 3.f, Vec3{0.f, 0.f, 0.f}, Vec3{0.f, 1.f, 0.f});
+    return Mat4::LookAt(offset * 3.f, Vec3{0.f, 0.f, 0.f}, camera.Up());
 }
 
 Mat4 ViewportRenderPass::NavViewProjection(const GizmoStyle& style, const OrbitCamera& camera) {
@@ -267,7 +267,8 @@ void ViewportRenderPass::DrawTransformGizmo(const OrbitCamera& camera, int width
     const float worldPerPixel =
         univex::camera::WorldPerPixelAtPointUVE(camera, height, pivot);
     const float unitsPerPixel = (scale > 0.f) ? worldPerPixel / scale : 1.f;
-    const auto mesh = BuildGizmoMesh(gizmoMode_, style_, viewDirection, unitsPerPixel);
+    const auto mesh =
+        BuildGizmoMesh(gizmoMode_, style_, viewDirection, unitsPerPixel, highlightedGizmoHandle_);
 
     GizmoDrawParams params;
     params.viewProjection = camera.ViewProjection(static_cast<float>(width) / static_cast<float>(height));
