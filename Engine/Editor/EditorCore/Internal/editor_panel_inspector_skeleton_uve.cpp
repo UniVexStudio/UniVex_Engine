@@ -179,15 +179,48 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
     };
     const Asset::AssetGuidUVE meshGuid =
         hasMesh ? m_services->GetAssetDatabaseUVE().RegisterUVE(importedModel) : Asset::kInvalidAssetGuidUVE;
+    const bool isParentCharacterOrEntityRoot =
+        parent != Scene::kInvalidEntityUVE &&
+        (Scene::ResolveSceneObjectKindUVE(entityManager, parent) == Scene::Objects::SceneObjectKindUVE::Character3D ||
+         Scene::ResolveSceneObjectKindUVE(entityManager, parent) == Scene::Objects::SceneObjectKindUVE::Player3D ||
+         (m_entityEditSession.has_value() && parent == GetEntityEditorRootUVE()));
+
     Scene::EntityUVE root = Scene::kInvalidEntityUVE;
     if (!skeleton.has_value()) {
-        Scene::MeshInstance3DObjectDefinitionUVE definition;
-        definition.mesh.meshGuid = meshGuid;
-        root = make(stem, Kind::MeshInstance3D, definition, Scene::ApplyMeshInstance3DObjectDefinitionUVE, parent);
+        if (isParentCharacterOrEntityRoot) {
+            Scene::EntityUVE existingMesh = Scene::kInvalidEntityUVE;
+            if (entityManager.HasComponentUVE<Scene::MeshComponentUVE>(parent)) {
+                existingMesh = parent;
+            } else {
+                for (const Scene::EntityUVE child : sceneGraph.GetChildrenUVE(entityManager, parent)) {
+                    if (entityManager.HasComponentUVE<Scene::MeshComponentUVE>(child)) {
+                        existingMesh = child;
+                        break;
+                    }
+                }
+            }
+            if (existingMesh != Scene::kInvalidEntityUVE) {
+                Scene::MeshComponentUVE meshComp = entityManager.GetComponentUVE<Scene::MeshComponentUVE>(existingMesh);
+                meshComp.meshGuid = meshGuid;
+                entityManager.AddComponentUVE<Scene::MeshComponentUVE>(existingMesh, meshComp);
+                root = existingMesh;
+            } else {
+                Scene::MeshInstance3DObjectDefinitionUVE definition;
+                definition.mesh.meshGuid = meshGuid;
+                root = make(stem, Kind::MeshInstance3D, definition, Scene::ApplyMeshInstance3DObjectDefinitionUVE, parent);
+            }
+        } else {
+            Scene::MeshInstance3DObjectDefinitionUVE definition;
+            definition.mesh.meshGuid = meshGuid;
+            root = make(stem, Kind::MeshInstance3D, definition, Scene::ApplyMeshInstance3DObjectDefinitionUVE, parent);
+        }
     } else {
-        root = make(stem, Kind::Object3D, Scene::Object3DObjectDefinitionUVE{}, Scene::ApplyObject3DObjectDefinitionUVE, parent);
+        const Scene::EntityUVE rootContainer = isParentCharacterOrEntityRoot
+            ? parent
+            : make(stem, Kind::Object3D, Scene::Object3DObjectDefinitionUVE{}, Scene::ApplyObject3DObjectDefinitionUVE, parent);
+        root = rootContainer;
         const Scene::EntityUVE modelEntity =
-            make(hasMesh ? "model" : "Armature", Kind::Object3D, Scene::Object3DObjectDefinitionUVE{}, Scene::ApplyObject3DObjectDefinitionUVE, root);
+            make(hasMesh ? "model" : "Armature", Kind::Object3D, Scene::Object3DObjectDefinitionUVE{}, Scene::ApplyObject3DObjectDefinitionUVE, rootContainer);
         Scene::Skeleton3DObjectDefinitionUVE skeletonDefinition;
         skeletonDefinition.skeleton.skeletonAssetPath = relativeSource.generic_string();
         for (const Asset::GltfJointUVE& joint : skeleton->joints) {
@@ -213,7 +246,7 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
             }
             player.player.clip = player.player.library.front();
             player.player.loopMode = Scene::AnimationLoopModeUVE::Loop;
-            static_cast<void>(make("AnimationSequencer", Kind::AnimationSequencer, player, Scene::ApplyAnimationSequencerObjectDefinitionUVE, root));
+            static_cast<void>(make("AnimationSequencer", Kind::AnimationSequencer, player, Scene::ApplyAnimationSequencerObjectDefinitionUVE, rootContainer));
         }
     }
     if (root == Scene::kInvalidEntityUVE) {
