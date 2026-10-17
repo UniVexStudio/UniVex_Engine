@@ -39,6 +39,32 @@ using PoseUVE = Core::TransformPoseUVE;
     return 1.0F - x * x * x * (x * (x * 6.0F - 15.0F) + 10.0F);
 }
 
+[[nodiscard]] const Asset::AnimationAssetBoneTrackUVE* FindTrackForBoneUVE(
+    const std::unordered_map<std::string_view, const Asset::AnimationAssetBoneTrackUVE*>& tracks,
+    const std::string_view boneName) noexcept {
+    if (const auto found = tracks.find(boneName); found != tracks.end()) {
+        return found->second;
+    }
+    std::string_view boneClean = boneName;
+    if (const auto pos = boneClean.find_last_of(":|"); pos != std::string_view::npos) {
+        boneClean = boneClean.substr(pos + 1U);
+    }
+    for (const auto& [trackBoneName, trackPtr] : tracks) {
+        std::string_view trackClean = trackBoneName;
+        if (const auto pos = trackClean.find_last_of(":|"); pos != std::string_view::npos) {
+            trackClean = trackClean.substr(pos + 1U);
+        }
+        if (trackClean.size() == boneClean.size() &&
+            std::equal(trackClean.begin(), trackClean.end(), boneClean.begin(), [](char a, char b) {
+                return std::tolower(static_cast<unsigned char>(a)) ==
+                       std::tolower(static_cast<unsigned char>(b));
+            })) {
+            return trackPtr;
+        }
+    }
+    return nullptr;
+}
+
 [[nodiscard]] Math::QuaternionUVE SlerpOrKeepUVE(const Math::QuaternionUVE& from, const Math::QuaternionUVE& to,
                                                  const float alpha) noexcept {
     Math::QuaternionUVE result = to;
@@ -325,8 +351,8 @@ bool StepSkeletalAnimationSequencerUVE(AnimationSequencerComponentUVE& player, c
         const SkeletonBoneUVE& bone = skeleton.bones[index];
         PoseUVE target{bone.localPosition, bone.localRotation, bone.localScale};
         if (!returnToRest) {
-            if (const auto found = tracks.find(bone.name); found != tracks.end()) {
-                target = SampleTrackUVE(found->second->samples, time);
+            if (const auto* track = FindTrackForBoneUVE(tracks, bone.name); track != nullptr) {
+                target = SampleTrackUVE(track->samples, time);
                 target.position = conformed.PositionUVE(bone.name, target.position, bone.localPosition);
                 target.scale = conformed.ScaleUVE(target.scale, bone.localScale);
             }

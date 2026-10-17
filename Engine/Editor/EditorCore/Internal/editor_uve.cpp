@@ -2455,7 +2455,7 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
 }
 
 Scene::EntityUVE EditorUVE::CreateDocumentSceneObjectUVE(
-    const Scene::Objects::SceneObjectKindUVE kind) {
+    const Scene::Objects::SceneObjectKindUVE kind, const Scene::EntityUVE explicitParent) {
     if (!IsAuthoringCommandAllowedUVE() || m_selectedEntities.size() > 1U) {
         return Scene::kInvalidEntityUVE;
     }
@@ -2481,10 +2481,74 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneObjectUVE(
 
     // New objects join the hierarchy instead of becoming document roots, and are placed before the
     // snapshot below is taken, so undo and redo restore the same place.
-    const Scene::EntityUVE parentObject = ResolveNewObjectParentForUVE(kind);
+    Scene::EntityUVE parentObject = explicitParent;
+    if (parentObject == Scene::kInvalidEntityUVE || !IsDocumentEntityUVE(parentObject)) {
+        parentObject = ResolveNewObjectParentForUVE(kind);
+    }
+    if (m_entityEditSession.has_value()) {
+        const Scene::EntityUVE entityRoot = GetEntityEditorRootUVE();
+        if (entityRoot != Scene::kInvalidEntityUVE &&
+            (parentObject == Scene::kInvalidEntityUVE || parentObject == GetDocumentSceneRootUVE())) {
+            parentObject = entityRoot;
+        }
+    }
     if (parentObject != Scene::kInvalidEntityUVE) {
         m_services->GetSceneGraphUVE().SetParentUVE(entityManager, entity, parentObject);
         InvalidateHierarchyFilterCacheUVE();
+
+        // Auto-link skeleton references for BoneAttachment3D and TwoBoneIK3D if present in hierarchy
+        Scene::EntityUVE foundSkeleton = Scene::kInvalidEntityUVE;
+        if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(parentObject)) {
+            foundSkeleton = parentObject;
+        } else {
+            for (const Scene::EntityUVE child : m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, parentObject)) {
+                if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(child)) {
+                    foundSkeleton = child;
+                    break;
+                }
+            }
+            if (foundSkeleton == Scene::kInvalidEntityUVE) {
+                for (Scene::EntityUVE cur = parentObject, p = Scene::kInvalidEntityUVE;
+                     cur != Scene::kInvalidEntityUVE && TryGetDocumentParentUVE(cur, p) && p != Scene::kInvalidEntityUVE;
+                     cur = p) {
+                    if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(p)) {
+                        foundSkeleton = p;
+                        break;
+                    }
+                }
+            }
+        }
+        if (foundSkeleton != Scene::kInvalidEntityUVE) {
+            if (kind == Scene::Objects::SceneObjectKindUVE::BoneAttachment3D &&
+                entityManager.HasComponentUVE<Scene::BoneAttachment3DComponentUVE>(entity)) {
+                Scene::BoneAttachment3DComponentUVE attachment =
+                    entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(entity);
+                attachment.skeleton = foundSkeleton;
+                const Scene::Skeleton3DComponentUVE& skel =
+                    entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(foundSkeleton);
+                if (!skel.bones.empty()) {
+                    attachment.boneIndex = 0U;
+                    attachment.boneName = skel.bones.front().name;
+                }
+                entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(entity) = attachment;
+            } else if (kind == Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D &&
+                       entityManager.HasComponentUVE<Scene::TwoBoneIK3DComponentUVE>(entity)) {
+                Scene::TwoBoneIK3DComponentUVE ik =
+                    entityManager.GetComponentUVE<Scene::TwoBoneIK3DComponentUVE>(entity);
+                ik.skeleton = foundSkeleton;
+                const Scene::Skeleton3DComponentUVE& skel =
+                    entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(foundSkeleton);
+                if (skel.bones.size() >= 3U) {
+                    ik.rootBoneIndex = 0U;
+                    ik.rootBoneName = skel.bones[0].name;
+                    ik.middleBoneIndex = 1U;
+                    ik.middleBoneName = skel.bones[1].name;
+                    ik.endBoneIndex = 2U;
+                    ik.endBoneName = skel.bones[2].name;
+                }
+                entityManager.GetComponentUVE<Scene::TwoBoneIK3DComponentUVE>(entity) = ik;
+            }
+        }
     }
     PlaceNewDocumentObjectUVE(entity);
 
@@ -2573,6 +2637,12 @@ bool EditorUVE::DeleteSelectedEntityUVE() {
 
     const std::size_t siblingIndex =
         m_services->GetSceneGraphUVE().GetSiblingIndexUVE(m_services->GetEntityManagerUVE(), target).value_or(0U);
+    if (m_hierarchyRenameEntity == target) {
+        CancelHierarchyRenameUVE();
+    }
+    ClearEntityContextToolbarUVE();
+    m_hierarchyPendingRowOpen.erase(target);
+
     const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
     const bool dirtyBefore = m_sceneDirty;
     DestroyDocumentSubtreeUVE(target);
@@ -4846,6 +4916,15 @@ void EditorUVE::AcceptHierarchyDropTargetUVE(const Scene::EntityUVE targetParent
         const std::string path(static_cast<const char*>(asset->Data), static_cast<std::size_t>(asset->DataSize - 1));
         static_cast<void>(PlaceEntityAssetUVE(
             path, targetParent != Scene::kInvalidEntityUVE ? targetParent : ResolveNewObjectParentUVE()));
+    }
+    const ImGuiPayload* const item = ImGui::AcceptDragDropPayload(kContentItemPayloadUVE);
+    if (item != nullptr && item->DataSize > 1) {
+        const std::string relativePath(static_cast<const char*>(item->Data), static_cast<std::size_t>(item->DataSize - 1));
+        const std::filesystem::path p{relativePath};
+        if (IsModelSourcePathUVE(p) || p.extension() == ".uvmodel") {
+            static_cast<void>(PlaceModelSourceUVE(
+                p, targetParent != Scene::kInvalidEntityUVE ? targetParent : ResolveNewObjectParentUVE()));
+        }
     }
     ImGui::EndDragDropTarget();
 }

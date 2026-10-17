@@ -27,8 +27,8 @@ namespace {
 [[nodiscard]] WindowDescUVE MakeTestWindowDescUVE() {
     WindowDescUVE desc;
     desc.title = "uve_window_manager_uve_tests";
-    desc.width = 64;
-    desc.height = 64;
+    desc.width = 128;
+    desc.height = 128;
     desc.glVersionMajor = 4;
     desc.glVersionMinor = 5;
     return desc;
@@ -53,8 +53,8 @@ protected:
 
 TEST_F(WindowManagerUVETest, Construction_SucceedsAndReportsRequestedSize) {
     EXPECT_TRUE(windowManager->IsValidUVE());
-    EXPECT_EQ(windowManager->GetWidthUVE(), 64U);
-    EXPECT_EQ(windowManager->GetHeightUVE(), 64U);
+    EXPECT_EQ(windowManager->GetWidthUVE(), 128U);
+    EXPECT_EQ(windowManager->GetHeightUVE(), 128U);
 }
 
 TEST_F(WindowManagerUVETest, GetBackendNameUVE_ReturnsGlfw3) {

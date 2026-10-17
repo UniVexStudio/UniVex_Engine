@@ -1845,15 +1845,50 @@ struct Renderer3DUVE::ImplUVE {
                                                               const Asset::AssetGuidUVE guid,
                                                               const Asset::MeshAssetUVE& mesh, Math::AabbUVE& outBounds) {
         const Scene::Skeleton3DComponentUVE* skeleton = nullptr;
-        Scene::EntityUVE cursor = entity;
-        for (std::size_t depth = 0U; depth < 256U && cursor != Scene::kInvalidEntityUVE; ++depth) {
-            if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(cursor)) {
-                skeleton = &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(cursor);
-                break;
+        // Search entity itself, child, sibling, or parent
+        if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(entity)) {
+            skeleton = &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(entity);
+        }
+        if (skeleton == nullptr) {
+            entityManager.ForEachUVE<Scene::Skeleton3DComponentUVE>(
+                [&](const Scene::EntityUVE skelEntity, const Scene::Skeleton3DComponentUVE& skelComp) {
+                    if (skeleton != nullptr || !skelComp.enabled || skelComp.bones.empty()) {
+                        return;
+                    }
+                    if (skelEntity == entity) {
+                        skeleton = &skelComp;
+                        return;
+                    }
+                    if (entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(skelEntity)) {
+                        const Scene::EntityUVE skelParent =
+                            entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(skelEntity).parent;
+                        if (skelParent == entity) {
+                            skeleton = &skelComp;
+                            return;
+                        }
+                        if (entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
+                            const Scene::EntityUVE entityParent =
+                                entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent;
+                            if (entityParent != Scene::kInvalidEntityUVE &&
+                                (skelParent == entityParent || skelEntity == entityParent)) {
+                                skeleton = &skelComp;
+                                return;
+                            }
+                        }
+                    }
+                });
+        }
+        if (skeleton == nullptr) {
+            Scene::EntityUVE cursor = entity;
+            for (std::size_t depth = 0U; depth < 256U && cursor != Scene::kInvalidEntityUVE; ++depth) {
+                if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(cursor)) {
+                    skeleton = &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(cursor);
+                    break;
+                }
+                cursor = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(cursor)
+                             ? entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(cursor).parent
+                             : Scene::kInvalidEntityUVE;
             }
-            cursor = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(cursor)
-                         ? entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(cursor).parent
-                         : Scene::kInvalidEntityUVE;
         }
         if (skeleton == nullptr || !skeleton->enabled || skeleton->bones.empty()) {
             return nullptr;
@@ -1866,11 +1901,34 @@ struct Renderer3DUVE::ImplUVE {
         std::vector<Math::Matrix4x4UVE> locals;
         locals.reserve(mesh.joints.size());
         for (const Asset::MeshJointUVE& joint : mesh.joints) {
-            const auto bone = boneOfName.find(joint.name);
-            if (joint.name.empty() || bone == boneOfName.end()) {
-                return nullptr;
+            std::size_t foundIndex = std::numeric_limits<std::size_t>::max();
+            if (const auto bone = boneOfName.find(joint.name); bone != boneOfName.end()) {
+                foundIndex = bone->second;
+            } else {
+                std::string_view jointClean = joint.name;
+                if (const auto pos = jointClean.find_last_of(":|"); pos != std::string_view::npos) {
+                    jointClean = jointClean.substr(pos + 1U);
+                }
+                for (std::size_t index = 0U; index < skeleton->bones.size(); ++index) {
+                    std::string_view skelName = skeleton->bones[index].name;
+                    if (const auto pos = skelName.find_last_of(":|"); pos != std::string_view::npos) {
+                        skelName = skelName.substr(pos + 1U);
+                    }
+                    if (skelName.size() == jointClean.size() &&
+                        std::equal(skelName.begin(), skelName.end(), jointClean.begin(), [](char a, char b) {
+                            return std::tolower(static_cast<unsigned char>(a)) ==
+                                   std::tolower(static_cast<unsigned char>(b));
+                        })) {
+                        foundIndex = index;
+                        break;
+                    }
+                }
             }
-            const Scene::SkeletonBonePoseUVE& local = pose[bone->second];
+            if (foundIndex >= pose.size()) {
+                locals.push_back(Math::Matrix4x4UVE::IdentityUVE());
+                continue;
+            }
+            const Scene::SkeletonBonePoseUVE& local = pose[foundIndex];
             locals.push_back(Math::Matrix4x4UVE::ComposeTrsUVE(local.position, local.rotation, local.scale));
         }
         std::vector<Math::Matrix4x4UVE> skinning;
@@ -3469,7 +3527,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     const LightListUVE lights =
         m_impl->lightSystem.ExtractActiveLightsForViewUVE(entityManager, viewPosition);
     m_impl->environmentCameraPosition = viewPosition;
-    m_impl->sunEnergy = 0.0F;
+    m_impl->sunEnergy = 1.0F;
     m_impl->sunVolumetricFogEnergy = 1.0F;
     m_impl->sunDirection = Math::NormalizeUVE(Math::Vector3UVE{0.35F, 0.80F, 0.48F});
     m_impl->sunColor = Math::Vector3UVE{1.0F, 1.0F, 1.0F};

@@ -518,6 +518,9 @@ public:
         std::array<float, 3> studioTarget{0.0F, 1.0F, 0.0F};
         float studioRadius = 1.5F;
         std::uint32_t studioFramingSerial = 0U;
+        bool is2DMode = false;
+        int shadingMode = 0;
+        bool physicsPaused = false;
     };
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available
@@ -998,7 +1001,8 @@ public:
 
     /// Creates a user-facing object from the centralized SceneObject registry. Runtime ownership remains
     /// in core/physics/render/audio/scripting; this method only creates the authored scene façade.
-    [[nodiscard]] Scene::EntityUVE CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE kind);
+    [[nodiscard]] Scene::EntityUVE CreateDocumentSceneObjectUVE(
+        Scene::Objects::SceneObjectKindUVE kind, Scene::EntityUVE explicitParent = Scene::kInvalidEntityUVE);
 
     /// Duplicates the selected live document entity and all descendants under the selected root's
     /// current parent, assigns the duplicate root a deterministic available name when it has name

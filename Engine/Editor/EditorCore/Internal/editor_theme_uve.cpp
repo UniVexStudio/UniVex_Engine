@@ -16,7 +16,7 @@ void ApplyEditorVisualThemeUVE(const EditorExtendedPreferencesUVE* const prefere
 
     const float rounding = preferences != nullptr
                                ? static_cast<float>(std::clamp(preferences->cornerRadiusPx, 0.0, 32.0))
-                               : 0.0F;
+                               : 5.0F;
     const std::int64_t density = preferences != nullptr ? preferences->spacingDensity : 1;
 
     // Spacing density: 0=Compact, 1=Comfortable

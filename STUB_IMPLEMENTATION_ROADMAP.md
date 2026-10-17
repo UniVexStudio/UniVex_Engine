@@ -47,10 +47,8 @@ tests. An item's row here is retired to "Done" (bottom of file) only once it rea
 
 | # | Object | Status | Component | Arrays to give work | The work | Depends on | Size |
 |---|------|--------|-----------|---------------------|----------|------------|------|
-| — | *done items* | — | — | — | rows retired to the Done section at the bottom: 1–11, 15 (12 stays — the renderer-side half is still open). Their numbered write-ups stay below as the audit trail. | — | — |
+| — | *done items* | — | — | — | rows retired to the Done section at the bottom: 1–11, 13–15 (12 stays — the renderer-side half is still open). Their numbered write-ups stay below as the audit trail. | — | — |
 | 12 | ReflectionProbe3D | `[x]` (sync half) | `ReflectionProbe3DComponentUVE` | — | probe capture scheduling — **done**, five dedicated tests; renderer-side sampling still `[~]` | renderer (big) | L |
-| 13 | NavigationRegion3D + NavigationAgent3D | `[~]` | `NavigationRegion3DComponentUVE` / `NavigationAgent3DComponentUVE` | — | navmesh bake + pathfind + steer | new Navigation subsystem | L |
-| 14 | Skeleton3D + BoneAttachment3D + AnimationSequencer + AnimationGraph | `[~]` | `Skeleton3DComponentUVE`, `BoneAttachment3DComponentUVE`, `AnimationPlayerComponentUVE`, `AnimationTreeUVE` | `bones` vector | clip sampling → bone pose → skinning | new Animation pipeline | L |
 | — | Marker3D | — | `Marker3DComponentUVE` | — | **none, by design** — read by tools/scripts, never ticked | — | — |
 
 ---
@@ -685,3 +683,5 @@ correctly stays unticked. Listed here so the audit trail shows it was considered
 ### Projectile3D — swept-sphere hit resolution with an authored stop/bounce motion policy and a typed hit event — done in the change that gave `radius` and `collisionMask` something to do (16 dedicated step cases, 2 engine-core end-to-end cases)
 ### RayCast3D — `exclusions` honored: multi-entity exclusions with save/load-stable references, locked by 5 physics + 3 serializer + 2 metadata/validator + 1 engine-core test — done in the change that gave the array real references
 ### SpawnPoint3D — the spawn query seam (`Scene::QuerySpawnPointsUVE`, `Scene::ConsumeSpawnPointUVE`) — done in the change that rewired the editor's play-entry spawn onto it (12 dedicated tests in `Test/Integration/Scene/spawn_point_query_uve_tests.cpp`)
+### NavigationRegion3D + NavigationAgent3D — navmesh baking via raycast volume rasterization, A* pathfinding with string-pulling, and obstacle/agent avoidance steering — done (46 Nav* cases + engine-core fixed-step sync test)
+### Skeleton3D + BoneAttachment3D + AnimationSequencer + AnimationGraph — skeletal animation pipeline: multi-track .uvanim clip sampling, root motion, BoneAttachment3D parenting, TwoBoneIK3D, resilient bone naming (Mixamo/Blender/Unreal), and CPU/GPU linear blend skinning — done (51 animation-object cases, 30 integration, 17 skinning, 8 GPU compute)
