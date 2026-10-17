@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <utility>
 
+#include "univex/render/OverlayRasterState.h"
+#include "univex/render/OverlayRasterStateGl.h"
 #include "univex/render/SelectionOutlineShaderSources.h"
 
 namespace univex::render {
@@ -136,19 +138,7 @@ void SelectionOutlineRenderer::Draw(const univex::math::Mat4& viewProjection, co
     glGetIntegerv(GL_VIEWPORT, viewport.data());
     std::array<GLfloat, 4> clearColor{};
     glGetFloatv(GL_COLOR_CLEAR_VALUE, clearColor.data());
-    const GLboolean hadBlend = glIsEnabled(GL_BLEND);
-    const GLboolean hadDepthTest = glIsEnabled(GL_DEPTH_TEST);
-    const GLboolean hadCull = glIsEnabled(GL_CULL_FACE);
-    GLboolean depthMask = GL_TRUE;
-    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
-    GLint blendEquationRgb = GL_FUNC_ADD, blendEquationAlpha = GL_FUNC_ADD;
-    glGetIntegerv(GL_BLEND_EQUATION_RGB, &blendEquationRgb);
-    glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &blendEquationAlpha);
-    GLint blendSrcRgb = GL_ONE, blendDstRgb = GL_ZERO, blendSrcAlpha = GL_ONE, blendDstAlpha = GL_ZERO;
-    glGetIntegerv(GL_BLEND_SRC_RGB, &blendSrcRgb);
-    glGetIntegerv(GL_BLEND_DST_RGB, &blendDstRgb);
-    glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSrcAlpha);
-    glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDstAlpha);
+    const SavedOverlayRasterState savedRasterState = SaveOverlayRasterState();
     GLint activeTexture = GL_TEXTURE0;
     glGetIntegerv(GL_ACTIVE_TEXTURE, &activeTexture);
 
@@ -160,9 +150,7 @@ void SelectionOutlineRenderer::Draw(const univex::math::Mat4& viewProjection, co
         glViewport(0, 0, width, height);
         glClearColor(0.f, 0.f, 0.f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT);
-        glDisable(GL_DEPTH_TEST);
-        glDisable(GL_CULL_FACE);
-        glEnable(GL_BLEND);
+        ApplyOverlayRasterState(WithCullMode(kScreenSpaceCompositeState, OverlayCullMode::None));
         glBlendEquation(GL_MAX);
         glBlendFunc(GL_ONE, GL_ONE);
         maskProgram_.Use();
@@ -179,8 +167,7 @@ void SelectionOutlineRenderer::Draw(const univex::math::Mat4& viewProjection, co
         glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(readFbo));
         glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
         glBlendEquation(GL_FUNC_ADD);
-        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-        glDepthMask(GL_FALSE);
+        ApplyOverlayRasterState(kScreenSpaceCompositeState);
         outlineProgram_.Use();
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, maskTexture_);
@@ -200,13 +187,7 @@ void SelectionOutlineRenderer::Draw(const univex::math::Mat4& viewProjection, co
     glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
     glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
     glActiveTexture(static_cast<GLenum>(activeTexture));
-    glDepthMask(depthMask);
-    if (hadDepthTest == GL_TRUE) glEnable(GL_DEPTH_TEST);
-    if (hadCull == GL_TRUE) glEnable(GL_CULL_FACE);
-    glBlendEquationSeparate(static_cast<GLenum>(blendEquationRgb), static_cast<GLenum>(blendEquationAlpha));
-    glBlendFuncSeparate(static_cast<GLenum>(blendSrcRgb), static_cast<GLenum>(blendDstRgb),
-                        static_cast<GLenum>(blendSrcAlpha), static_cast<GLenum>(blendDstAlpha));
-    if (hadBlend == GL_FALSE) glDisable(GL_BLEND);
+    RestoreOverlayRasterState(savedRasterState);
 }
 
 } // namespace univex::render

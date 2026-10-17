@@ -58,6 +58,9 @@ struct ScriptRpcPairUVE final {
 
 [[nodiscard]] Network::RpcMethodHandlerUVE AddHandlerUVE() {
     return [](const std::span<const UVScript::ValueUVE> args) {
+        if (args.size() < 2) {
+            return Network::RpcErrorUVE("add requires 2 arguments");
+        }
         const std::int64_t lhs = std::get<std::int64_t>(args[0]);
         const std::int64_t rhs = std::get<std::int64_t>(args[1]);
         return Network::RpcOkUVE(UVScript::ValueUVE{lhs + rhs});
@@ -321,9 +324,12 @@ TEST_F(UVScriptRpcBindingsUVETest, Host_CancelsPendingCallsOnDestruction) {
         const std::int64_t staged =
             std::get<std::int64_t>(host.CallFunctionUVE("rpc.begin", begin));
         ASSERT_NE(staged, 0);
-        const std::array<UVScript::ValueUVE, 2> push{UVScript::ValueUVE{staged},
+        const std::array<UVScript::ValueUVE, 2> push1{UVScript::ValueUVE{staged},
                                                      UVScript::ValueUVE{std::int64_t{1}}};
-        ASSERT_TRUE(std::get<bool>(host.CallFunctionUVE("rpc.push_int", push)));
+        ASSERT_TRUE(std::get<bool>(host.CallFunctionUVE("rpc.push_int", push1)));
+        const std::array<UVScript::ValueUVE, 2> push2{UVScript::ValueUVE{staged},
+                                                     UVScript::ValueUVE{std::int64_t{2}}};
+        ASSERT_TRUE(std::get<bool>(host.CallFunctionUVE("rpc.push_int", push2)));
         const std::array<UVScript::ValueUVE, 1> send{UVScript::ValueUVE{staged}};
         call = std::get<std::int64_t>(host.CallFunctionUVE("rpc.send", send));
         ASSERT_NE(call, 0);

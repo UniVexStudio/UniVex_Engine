@@ -121,15 +121,9 @@ void ResolveUIAnchorsUVE(Scene::IEntityManagerUVE& entityManager,
             continue;
         }
         const Math::RectUVE parent = AnchorParentRectUVE(entityManager, widget.entity, viewportSize);
-        // No component-wise Vector2 multiply: each axis resolves explicitly.
-        const Math::Vector2UVE resolvedMin{
-            parent.position.x + anchor.anchorMin.x * parent.size.x + anchor.offsetMin.x,
-            parent.position.y + anchor.anchorMin.y * parent.size.y + anchor.offsetMin.y};
-        const Math::Vector2UVE resolvedMax{
-            parent.position.x + anchor.anchorMax.x * parent.size.x + anchor.offsetMax.x,
-            parent.position.y + anchor.anchorMax.y * parent.size.y + anchor.offsetMax.y};
-        const Math::Vector2UVE resolvedSize{std::max(0.0F, resolvedMax.x - resolvedMin.x),
-                                            std::max(0.0F, resolvedMax.y - resolvedMin.y)};
+        const Math::RectUVE resolvedRect = Scene::ResolveUIAnchoredRectUVE(anchor, parent);
+        const Math::Vector2UVE resolvedMin = resolvedRect.position;
+        const Math::Vector2UVE resolvedSize = resolvedRect.size;
         if (isButton) {
             entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(widget.entity).rect = {resolvedMin,
                                                                                               resolvedSize};

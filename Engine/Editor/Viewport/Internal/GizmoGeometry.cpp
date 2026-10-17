@@ -236,44 +236,77 @@ constexpr float kScreenRingLiftPixelsUVE = 6.f;
     return normalAxisColor * 0.55f + style.planeColor * 0.45f;
 }
 
-void AddMovePlaneHandles(GizmoMesh& mesh, const GizmoStyle& style) {
+constexpr Vec3 kHighlightColorUVE{1.0f, 0.92f, 0.28f};
+
+[[nodiscard]] bool IsAxisHighlightedUVE(const std::size_t axisIndex,
+                                        const GizmoHandleUVE highlightedHandle) noexcept {
+    if (highlightedHandle == GizmoHandleUVE::Uniform) {
+        return true;
+    }
+    return (axisIndex == 0U && highlightedHandle == GizmoHandleUVE::AxisX) ||
+           (axisIndex == 1U && highlightedHandle == GizmoHandleUVE::AxisY) ||
+           (axisIndex == 2U && highlightedHandle == GizmoHandleUVE::AxisZ);
+}
+
+[[nodiscard]] bool IsPlanePairHighlightedUVE(const int first, const int second,
+                                             const GizmoHandleUVE highlightedHandle) noexcept {
+    if ((first == 0 && second == 1) || (first == 1 && second == 0)) {
+        return highlightedHandle == GizmoHandleUVE::PlaneXY;
+    }
+    if ((first == 1 && second == 2) || (first == 2 && second == 1)) {
+        return highlightedHandle == GizmoHandleUVE::PlaneYZ;
+    }
+    return highlightedHandle == GizmoHandleUVE::PlaneZX;
+}
+
+void AddMovePlaneHandles(GizmoMesh& mesh, const GizmoStyle& style,
+                         const GizmoHandleUVE highlightedHandle) {
     const auto axes = AxesOf(style);
     const std::array<std::pair<int, int>, 3> pairs = {{{0, 1}, {1, 2}, {2, 0}}};
     for (const auto& [i, j] : pairs) {
         const Vec3 a = axes[static_cast<std::size_t>(i)].direction;
         const Vec3 b = axes[static_cast<std::size_t>(j)].direction;
+        const bool highlighted = IsPlanePairHighlightedUVE(i, j, highlightedHandle);
         // The third axis is the one this plane is normal to, and the one that names its colour.
         const Vec3 normalColor = axes[static_cast<std::size_t>(3 - i - j)].color;
-        const Vec3 fill = PlaneFillColor(normalColor, style);
-        const Vec3 edge = PlaneEdgeColor(normalColor, style);
+        const Vec3 fill = highlighted ? kHighlightColorUVE : PlaneFillColor(normalColor, style);
+        const Vec3 edge = highlighted ? kHighlightColorUVE : PlaneEdgeColor(normalColor, style);
+        const float alpha = highlighted ? 0.85f : style.planeHandleAlpha;
+        const float edgeWidth = highlighted ? style.planeHandleEdgeWidthPx + 1.2f : style.planeHandleEdgeWidthPx;
         const float o = style.planeHandleOffset;
         const float s = style.planeHandleSize;
         const Vec3 p0 = a * o + b * o;
         const Vec3 p1 = a * (o + s) + b * o;
         const Vec3 p2 = a * (o + s) + b * (o + s);
         const Vec3 p3 = a * o + b * (o + s);
-        AddQuad(mesh, p0, p1, p2, p3, fill, style.planeHandleAlpha);
-        AddLine(mesh, p0, p1, edge, style.planeHandleEdgeWidthPx);
-        AddLine(mesh, p1, p2, edge, style.planeHandleEdgeWidthPx);
-        AddLine(mesh, p2, p3, edge, style.planeHandleEdgeWidthPx);
-        AddLine(mesh, p3, p0, edge, style.planeHandleEdgeWidthPx);
+        AddQuad(mesh, p0, p1, p2, p3, fill, alpha);
+        AddLine(mesh, p0, p1, edge, edgeWidth);
+        AddLine(mesh, p1, p2, edge, edgeWidth);
+        AddLine(mesh, p2, p3, edge, edgeWidth);
+        AddLine(mesh, p3, p0, edge, edgeWidth);
     }
 }
 
-void AddScalePlaneHandles(GizmoMesh& mesh, const GizmoStyle& style) {
+void AddScalePlaneHandles(GizmoMesh& mesh, const GizmoStyle& style,
+                          const GizmoHandleUVE highlightedHandle) {
     const auto axes = AxesOf(style);
     const std::array<std::pair<int, int>, 3> pairs = {{{0, 1}, {1, 2}, {2, 0}}};
     for (const auto& [i, j] : pairs) {
         const Vec3 a = axes[static_cast<std::size_t>(i)].direction;
         const Vec3 b = axes[static_cast<std::size_t>(j)].direction;
+        const bool highlighted = IsPlanePairHighlightedUVE(i, j, highlightedHandle);
         // Same normal-axis tint as the move gizmo's plane handles, so Move and Scale read off one
         // basis instead of each inventing their own.
         const Vec3 normalColor = axes[static_cast<std::size_t>(3 - i - j)].color;
+        const Vec3 fill = highlighted ? kHighlightColorUVE : PlaneFillColor(normalColor, style);
+        const Vec3 edge = highlighted ? kHighlightColorUVE : PlaneEdgeColor(normalColor, style);
+        const float alpha = highlighted ? 0.85f : style.planeHandleAlpha;
+        const float edgeWidth = highlighted ? style.planeHandleEdgeWidthPx + 1.2f : style.planeHandleEdgeWidthPx;
         const Vec3 p0 = a * style.scalePlaneOffset;
         const Vec3 p1 = b * style.scalePlaneOffset;
         const Vec3 p2 = (a + b) * style.scalePlanePull;
-        AddTriangle(mesh, p0, p1, p2, PlaneFillColor(normalColor, style), style.planeHandleAlpha);
-        AddLine(mesh, p0, p1, PlaneEdgeColor(normalColor, style), style.planeHandleEdgeWidthPx);
+        AddTriangle(mesh, p0, p1, p2, fill, alpha);
+        AddLine(mesh, p0, p1, edge, edgeWidth);
     }
 }
 
@@ -284,10 +317,13 @@ constexpr float kPivotDotLiftPixelsUVE = 2.f;
 
 // A thin ring at the pivot - see GizmoStyle::pivotDotRadiusPx for why this replaced a solid cube.
 // View-aligned, so it stays a circle from every angle instead of foreshortening into an ellipse.
-void AddPivotDot(GizmoMesh& mesh, const GizmoStyle& style, const Vec3& view, float scale) {
-    AddFullRing(mesh, view * (-kPivotDotLiftPixelsUVE * scale), view, style.centerColor,
+void AddPivotDot(GizmoMesh& mesh, const GizmoStyle& style, const Vec3& view, float scale,
+                 const bool highlighted) {
+    const Vec3 color = highlighted ? kHighlightColorUVE : style.centerColor;
+    const float widthBoost = highlighted ? 1.4f : 1.0f;
+    AddFullRing(mesh, view * (-kPivotDotLiftPixelsUVE * scale), view, color,
                 style.pivotDotRadiusPx * scale, style.pivotDotSegments,
-                style.pivotDotWidthPx * 0.5f * scale);
+                style.pivotDotWidthPx * widthBoost * 0.5f * scale);
 }
 
 } // namespace
@@ -304,9 +340,15 @@ const char* GizmoModeName(GizmoMode mode) {
 }
 
 GizmoMesh BuildGizmoMesh(GizmoMode mode, const GizmoStyle& style, const Vec3& viewDirection,
-                         float unitsPerPixel) {
+                         float unitsPerPixel, const GizmoHandleUVE highlightedHandle) {
     GizmoMesh mesh;
-    const auto axes = AxesOf(style);
+    auto axes = AxesOf(style);
+    for (std::size_t i = 0; i < axes.size(); ++i) {
+        if (IsAxisHighlightedUVE(i, highlightedHandle)) {
+            axes[i].color = kHighlightColorUVE;
+        }
+    }
+    const bool centerHighlighted = highlightedHandle == GizmoHandleUVE::Uniform;
     const Vec3 view = Normalize(viewDirection);
 
     // Ring strokes are solid geometry, so their pixel widths have to be
@@ -318,61 +360,76 @@ GizmoMesh BuildGizmoMesh(GizmoMode mode, const GizmoStyle& style, const Vec3& vi
 
     switch (mode) {
         case GizmoMode::Select:
-            AddPivotDot(mesh, style, view, scale);
+            AddPivotDot(mesh, style, view, scale, centerHighlighted);
             break;
 
         case GizmoMode::Move:
-            AddPivotDot(mesh, style, view, scale);
-            for (const Axis& axis : axes) {
-                AddMoveArrow(mesh, axis, style,
+            AddPivotDot(mesh, style, view, scale, centerHighlighted);
+            for (std::size_t i = 0; i < axes.size(); ++i) {
+                const float widthPx = IsAxisHighlightedUVE(i, highlightedHandle)
+                                          ? style.axisLineWidthPx + 1.5f
+                                          : style.axisLineWidthPx;
+                AddMoveArrow(mesh, axes[i], style,
                              style.moveShaftStart, style.moveShaftEnd,
                              style.moveConeLength, style.moveConeRadius,
-                             style.axisLineWidthPx, view, scale);
+                             widthPx, view, scale);
             }
-            AddMovePlaneHandles(mesh, style);
+            AddMovePlaneHandles(mesh, style, highlightedHandle);
             break;
 
         case GizmoMode::Rotate:
-            AddPivotDot(mesh, style, view, scale);
-            for (const Axis& axis : axes) {
-                AddRingArc(mesh, axis.direction, axis.color, style.ringRadius,
-                           style.ringSegments, view, ringHalfWidth, style, scale);
+            AddPivotDot(mesh, style, view, scale, centerHighlighted);
+            for (std::size_t i = 0; i < axes.size(); ++i) {
+                const float halfW = IsAxisHighlightedUVE(i, highlightedHandle)
+                                        ? ringHalfWidth * 1.35f
+                                        : ringHalfWidth;
+                AddRingArc(mesh, axes[i].direction, axes[i].color, style.ringRadius,
+                           style.ringSegments, view, halfW, style, scale);
             }
             // The free ring always faces the viewer, so it is built in the
             // plane perpendicular to the view direction rather than to an axis,
             // and lifted toward the eye so it bounds the widget instead of
             // slicing through it.
             AddFullRing(mesh, view * (-kScreenRingLiftPixelsUVE * scale), view,
-                        style.freeRingColor, style.freeRingRadius,
-                        style.ringSegments, freeRingHalfWidth);
+                        highlightedHandle == GizmoHandleUVE::ScreenRing ? kHighlightColorUVE
+                                                                        : style.freeRingColor,
+                        style.freeRingRadius, style.ringSegments,
+                        highlightedHandle == GizmoHandleUVE::ScreenRing ? freeRingHalfWidth * 1.35f
+                                                                        : freeRingHalfWidth);
             break;
 
         case GizmoMode::Scale:
-            AddPivotDot(mesh, style, view, scale);
-            for (const Axis& axis : axes) {
-                AddOutlinedLine(mesh, axis.direction * style.scaleShaftStart,
-                                axis.direction * style.scaleShaftEnd, axis.color, style.axisLineWidthPx,
+            AddPivotDot(mesh, style, view, scale, centerHighlighted);
+            for (std::size_t i = 0; i < axes.size(); ++i) {
+                const float widthPx = IsAxisHighlightedUVE(i, highlightedHandle)
+                                          ? style.axisLineWidthPx + 1.5f
+                                          : style.axisLineWidthPx;
+                AddOutlinedLine(mesh, axes[i].direction * style.scaleShaftStart,
+                                axes[i].direction * style.scaleShaftEnd, axes[i].color, widthPx,
                                 style, view, scale);
-                AddSolidCube(mesh, axis.direction * style.scaleShaftEnd, style.scaleBoxSize,
-                             axis.color, style.cubeEdgeWidthPx);
+                AddSolidCube(mesh, axes[i].direction * style.scaleShaftEnd, style.scaleBoxSize,
+                             axes[i].color, style.cubeEdgeWidthPx);
             }
-            AddScalePlaneHandles(mesh, style);
+            AddScalePlaneHandles(mesh, style, highlightedHandle);
             break;
 
         case GizmoMode::Universal:
-            AddPivotDot(mesh, style, view, scale);
-            for (const Axis& axis : axes) {
+            AddPivotDot(mesh, style, view, scale, centerHighlighted);
+            for (std::size_t i = 0; i < axes.size(); ++i) {
+                const bool axisHi = IsAxisHighlightedUVE(i, highlightedHandle);
+                const float halfW = axisHi ? universalRingHalfWidth * 1.35f : universalRingHalfWidth;
+                const float widthPx = axisHi ? style.universalLineWidthPx + 1.5f : style.universalLineWidthPx;
                 // rotate: smallest radius, closest to the pivot
-                AddRingArc(mesh, axis.direction, axis.color, style.universalRingRadius,
-                           style.ringSegments, view, universalRingHalfWidth, style, scale);
+                AddRingArc(mesh, axes[i].direction, axes[i].color, style.universalRingRadius,
+                           style.ringSegments, view, halfW, style, scale);
                 // move: reaches well out past the ring
-                AddMoveArrow(mesh, axis, style,
+                AddMoveArrow(mesh, axes[i], style,
                              style.universalShaftStart, style.universalShaftEnd,
                              style.universalConeLength, style.universalConeRadius,
-                             style.universalLineWidthPx, view, scale);
+                             widthPx, view, scale);
                 // scale: sits clear of the arrow tip, further out again
-                AddSolidCube(mesh, axis.direction * style.universalScaleBoxOffset,
-                             style.universalScaleBoxSize, axis.color, style.cubeEdgeWidthPx);
+                AddSolidCube(mesh, axes[i].direction * style.universalScaleBoxOffset,
+                             style.universalScaleBoxSize, axes[i].color, style.cubeEdgeWidthPx);
             }
             break;
     }

@@ -180,6 +180,7 @@ struct ReflectionProbe3DFrameUVE final {
     Math::Vector3UVE axisY{0.0F, 1.0F, 0.0F};
     Math::Vector3UVE axisZ{0.0F, 0.0F, 1.0F};
     Math::Vector3UVE halfExtents{2.5F, 2.5F, 2.5F};
+    std::uint32_t visibilityLayers = 0xFFFFFFFFU;
     std::uint32_t captureResolution = kReflectionProbeCaptureResolutionUVE;
     float influenceWeight = 0.0F;
     std::uint32_t captureGeneration = 0;

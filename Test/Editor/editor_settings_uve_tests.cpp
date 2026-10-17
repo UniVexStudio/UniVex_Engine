@@ -40,7 +40,7 @@ TEST(EditorSettingsUVETest, EveryEditorSettingRegistersOnceWithALegalDefault) {
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEditorSettingsUVE(registry));
     // Every declared preference, the three viewport axis colours, and one alias per renamed id.
-    EXPECT_EQ(registry.GetCountUVE(), 41U + 3U + std::size(kRenamedSettingIdsUVE));
+    EXPECT_EQ(registry.GetCountUVE(), 159U + 3U + std::size(kRenamedSettingIdsUVE));
     for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
         EXPECT_EQ(Config::ValidateSettingDescriptorUVE(*descriptor), "") << descriptor->id;
         EXPECT_TRUE(descriptor->id.starts_with("editor.")) << descriptor->id;
@@ -49,7 +49,7 @@ TEST(EditorSettingsUVETest, EveryEditorSettingRegistersOnceWithALegalDefault) {
     }
     // A second declaration of the same settings is refused as duplicates.
     EXPECT_FALSE(RegisterEditorSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 41U + 3U + std::size(kRenamedSettingIdsUVE));
+    EXPECT_EQ(registry.GetCountUVE(), 159U + 3U + std::size(kRenamedSettingIdsUVE));
 }
 
 TEST(EditorSettingsUVETest, EveryIdIsDeclaredWithTheTypeTheEditorReadsItAs) {
@@ -367,6 +367,36 @@ TEST(EditorSettingsUVETest, EditorSettingObserverReentrantChangesDispatchImmedia
         EXPECT_EQ(dispatchOrder, (std::vector<std::string>{std::string{Id::kPlayPauseOnStartUVE},
                                                            std::string{Id::kPlaySaveSceneFirstUVE}}));
         EXPECT_TRUE(editor.UnsubscribeUVE(subscription));
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorSettingsUVETest, ExtendedPreferences_SetAndPropagateThroughEditor) {
+    Core::EngineCoreUVE engine(MakeEditorSettingsObserverTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE());
+        EditorExtendedPreferencesUVE prefs = editor.GetExtendedPreferencesUVE();
+        prefs.themePreset = 2;
+        prefs.cornerRadiusPx = 8.0;
+        prefs.spacingDensity = 0;
+        prefs.orbitSensitivity = 2.0;
+        prefs.panSensitivity = 1.5;
+        prefs.zoomSensitivity = 1.2;
+        prefs.hierarchyColorCodeIcons = true;
+        prefs.hierarchyExpandDepthLimit = 4;
+        editor.SetExtendedPreferencesUVE(prefs);
+
+        const EditorExtendedPreferencesUVE& updated = editor.GetExtendedPreferencesUVE();
+        EXPECT_EQ(updated.themePreset, 2);
+        EXPECT_DOUBLE_EQ(updated.cornerRadiusPx, 8.0);
+        EXPECT_EQ(updated.spacingDensity, 0);
+        EXPECT_DOUBLE_EQ(updated.orbitSensitivity, 2.0);
+        EXPECT_DOUBLE_EQ(updated.panSensitivity, 1.5);
+        EXPECT_DOUBLE_EQ(updated.zoomSensitivity, 1.2);
+        EXPECT_TRUE(updated.hierarchyColorCodeIcons);
+        EXPECT_EQ(updated.hierarchyExpandDepthLimit, 4);
     }
     engine.Shutdown();
 }

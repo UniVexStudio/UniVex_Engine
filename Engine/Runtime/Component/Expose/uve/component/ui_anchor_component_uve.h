@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "uve/math/rect_uve.h"
 #include "uve/math/vector2_uve.h"
 
 namespace UVE::Scene {
@@ -34,5 +35,20 @@ struct UIAnchorComponentUVE final {
 
 /// All four corners finite. Out-of-range anchors validate: overflow is a feature.
 [[nodiscard]] bool IsUIAnchorComponentValidUVE(const UIAnchorComponentUVE& value) noexcept;
+
+/// Replaces non-finite anchor/offset fields with default full-stretch `(0,0)->(1,1)` values.
+[[nodiscard]] UIAnchorComponentUVE SanitizeUIAnchorComponentUVE(
+    const UIAnchorComponentUVE& value) noexcept;
+
+/// True when `anchorMin != anchorMax` along either X or Y (stretches with parent resize).
+[[nodiscard]] bool IsUIAnchorStretchingUVE(const UIAnchorComponentUVE& value) noexcept;
+
+/// Resolves the anchored rectangle inside `parentRect` using `anchorMin/Max` and `offsetMin/Max`.
+[[nodiscard]] Math::RectUVE ResolveUIAnchoredRectUVE(const UIAnchorComponentUVE& value,
+                                                     const Math::RectUVE& parentRect) noexcept;
+
+/// Resolves the top-left anchored position (used by point-anchored widgets such as `UITextComponentUVE`).
+[[nodiscard]] Math::Vector2UVE ResolveUIAnchoredPositionUVE(
+    const UIAnchorComponentUVE& value, const Math::RectUVE& parentRect) noexcept;
 
 } // namespace UVE::Scene

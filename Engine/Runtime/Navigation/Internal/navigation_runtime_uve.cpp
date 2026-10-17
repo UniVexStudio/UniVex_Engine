@@ -51,7 +51,9 @@ const NavmeshUVE kNoMeshUVE{};
            left.max.x == right.max.x && left.max.y == right.max.y && left.max.z == right.max.z;
 }
 
-[[nodiscard]] NavAgentSettingsUVE SettingsFromSeekerUVE(const Scene::NavSeeker3DComponentUVE& seeker) noexcept {
+[[nodiscard]] NavAgentSettingsUVE SettingsFromSeekerUVE(
+    const Scene::NavSeeker3DComponentUVE& seeker,
+    const NavigationRuntimeConfigUVE& runtimeConfig) noexcept {
     NavAgentSettingsUVE settings{};
     settings.radius = seeker.radius;
     settings.height = seeker.height;
@@ -64,7 +66,9 @@ const NavmeshUVE kNoMeshUVE{};
     settings.navigationLayers = seeker.navigationLayers;
     // Avoidance off is a zero radius, which is the steering's own way of saying "no push": the flag
     // and the number never disagree about whether this agent steps aside.
-    settings.avoidanceRadiusMetres = seeker.avoidanceEnabled ? seeker.avoidanceRadius : 0.0F;
+    settings.avoidanceRadiusMetres = runtimeConfig.globalAvoidanceEnabled
+                                         ? Scene::NavSeeker3DUVE::EffectiveAvoidanceRadiusUVE(seeker)
+                                         : 0.0F;
     return settings;
 }
 
@@ -80,25 +84,6 @@ const NavmeshUVE kNoMeshUVE{};
         break;
     }
     return Scene::NavigationAgentPathStatusUVE::Idle;
-}
-
-/// Distance from `point` to a box, zero when inside it. The diagonal is deliberate: an agent above a
-/// region whose floor is lower than the box's top is off the mesh by that much of its own height.
-[[nodiscard]] float DistanceToBoundsUVE(const Math::AabbUVE& bounds, const Math::Vector3UVE& point) noexcept {
-    const float deltaX = std::max(std::max(bounds.min.x - point.x, point.x - bounds.max.x), 0.0F);
-    const float deltaY = std::max(std::max(bounds.min.y - point.y, point.y - bounds.max.y), 0.0F);
-    const float deltaZ = std::max(std::max(bounds.min.z - point.z, point.z - bounds.max.z), 0.0F);
-    return std::sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
-}
-
-/// What a disabled agent publishes: nothing, said explicitly. A consumer that reads the component's
-/// velocity without checking `enabled` sees a stopped agent, never last step's motion.
-void PublishIdleUVE(Scene::NavSeeker3DComponentUVE& seeker, const Math::Vector3UVE& position) noexcept {
-    seeker.desiredVelocity = Math::Vector3UVE{};
-    seeker.nextPathPosition = position;
-    seeker.pathStatus = Scene::NavigationAgentPathStatusUVE::Idle;
-    seeker.pathChanged = false;
-    seeker.targetReached = false;
 }
 
 } // namespace
@@ -130,7 +115,8 @@ Scene::EntityUVE NavigationRuntimeUVE::FindRegionForPositionUVE(const Math::Vect
             // can walk - however close it is.
             continue;
         }
-        const float distance = DistanceToBoundsUVE(found->second.mesh.bounds, position);
+        const float distance =
+            Scene::NavMeshVolume3DUVE::DistanceToVolumeBoundsUVE(found->second.mesh.bounds, position);
         if (distance <= 0.0F) {
             // Inside a region's own volume. First one wins, in the order regions were seen, so
             // overlapping volumes resolve the same way every run.
@@ -178,7 +164,8 @@ NavigationSyncReportUVE NavigationRuntimeUVE::SyncUVE(Scene::IEntityManagerUVE& 
 
             const Scene::WorldTransformComponentUVE& world =
                 entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
-            const Math::AabbUVE bounds = Math::AabbUVE::FromCenterExtentsUVE(world.worldPosition, region.boundsHalfExtents);
+            const Math::AabbUVE bounds =
+                Scene::NavMeshVolume3DUVE::ResolveWorldBoundsUVE(region, world.worldPosition);
             const NavmeshBakeSettingsUVE settings = SettingsFromRegionUVE(region);
 
             RegionEntryUVE& entry = m_regions[entity];
@@ -187,7 +174,7 @@ NavigationSyncReportUVE NavigationRuntimeUVE::SyncUVE(Scene::IEntityManagerUVE& 
             // An explicit request is an author saying the collision world moved under a region whose
             // own volume did not, so it is honoured even when every input this class can see is
             // identical - that is the whole reason the field exists.
-            if (!inputsChanged && !region.rebuildRequested) {
+            if (!inputsChanged && !Scene::NavMeshVolume3DUVE::ConsumeRebuildRequestUVE(region)) {
                 return;
             }
             entry.report = BakeNavmeshUVE(entityManager, raycasts, settings, bounds, entry.mesh);
@@ -249,7 +236,7 @@ NavigationSyncReportUVE NavigationRuntimeUVE::SyncUVE(Scene::IEntityManagerUVE& 
                 entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)
                     ? entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).worldPosition
                     : Math::Vector3UVE{};
-            PublishIdleUVE(seeker, position);
+            Scene::NavSeeker3DUVE::PublishIdleStateUVE(seeker, position);
             continue;
         }
         if (!entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
@@ -260,7 +247,7 @@ NavigationSyncReportUVE NavigationRuntimeUVE::SyncUVE(Scene::IEntityManagerUVE& 
 
         const Math::Vector3UVE position =
             entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).worldPosition;
-        const NavAgentSettingsUVE settings = SettingsFromSeekerUVE(seeker);
+        const NavAgentSettingsUVE settings = SettingsFromSeekerUVE(seeker, m_config);
         const Scene::EntityUVE region = FindRegionForPositionUVE(position, settings.offMeshToleranceMetres);
         const NavmeshUVE* mesh = region == Scene::kInvalidEntityUVE ? &kNoMeshUVE : FindRegionMeshUVE(region);
         if (mesh == nullptr) {

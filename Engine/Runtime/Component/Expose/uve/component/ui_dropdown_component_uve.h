@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "uve/component/ui_text_component_uve.h"
 #include "uve/math/rect_uve.h"
@@ -60,5 +61,20 @@ struct UIDropdownComponentUVE final {
 };
 
 [[nodiscard]] bool IsUIDropdownComponentValidUVE(const UIDropdownComponentUVE& component) noexcept;
+
+/// Splits `component.options` on `'\n'`, skipping empty lines.
+[[nodiscard]] std::vector<std::string> SplitUIDropdownOptionsUVE(
+    const UIDropdownComponentUVE& component);
+
+/// Returns the selected option label (clamping a stale index to the last option), or `placeholder` when empty.
+[[nodiscard]] std::string ResolveUIDropdownDisplayLabelUVE(
+    const UIDropdownComponentUVE& component);
+
+/// Selects `optionIndex` (clamped into `[0, count - 1]`), closes `open`, and sets `wasSelectionChangedThisFrame`.
+bool SelectUIDropdownOptionUVE(UIDropdownComponentUVE& component,
+                               std::int32_t optionIndex) noexcept;
+
+/// Resets runtime popup state (`open = false`, `isHovered = false`, `hoveredIndex = -1`, `wasSelectionChangedThisFrame = false`).
+void ResetUIDropdownRuntimeStateUVE(UIDropdownComponentUVE& component) noexcept;
 
 } // namespace UVE::Scene

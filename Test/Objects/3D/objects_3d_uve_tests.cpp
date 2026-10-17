@@ -8,7 +8,30 @@
 
 #include "uve/objects/3d/all_objects_3d_uve.h"
 #include "uve/objects/3d/bone_attachment_3d_uve.h"
+#include "uve/objects/2d/sprite_2d_uve.h"
+#include "uve/component/animation_driver_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/area_component_uve.h"
+#include "uve/component/audio_source_component_uve.h"
+#include "uve/component/auto_translate_component_uve.h"
+#include "uve/component/bone_modifier_component_uve.h"
+#include "uve/component/canvas_component_uve.h"
+#include "uve/component/editor_description_component_uve.h"
+#include "uve/component/editor_internal_entity_component_uve.h"
+#include "uve/component/hierarchy_component_uve.h"
+#include "uve/component/mesh_component_uve.h"
+#include "uve/component/name_component_uve.h"
+#include "uve/component/physics_object_component_uve.h"
+#include "uve/component/primitive_mesh_component_uve.h"
+#include "uve/component/render_instance_component_uve.h"
+#include "uve/component/surface_instance_component_uve.h"
+#include "uve/component/thread_group_component_uve.h"
+#include "uve/component/ui_text_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
+#include "uve/entity/entity_manager_uve.h"
+#include "uve/events/event_system_uve.h"
+#include "uve/memory/memory_manager_uve.h"
 
 namespace UVE::Scene::Tests {
 namespace {
@@ -1615,6 +1638,359 @@ TEST(Occluder3DFullyHiddenUVETest, CoverIsAboutTheSegmentNotAboutDistance) {
     EXPECT_FALSE(ResolveOccluder3DFullyHiddenUVE(wall, wallOrigin, viewer,
                                                  Math::Vector3UVE{3000.0F, 0.0F, -10000.0F}))
         << "10 km away outside the silhouette cone: still drawn";
+}
+
+TEST(Object3DCommonHelpersUVETest, PositiveVectorNormalizableQuaternionAndWorldComposition) {
+    EXPECT_TRUE(IsPositive3DObjectVectorUVE(Math::Vector3UVE{1.0F, 2.0F, 3.0F}));
+    EXPECT_FALSE(IsPositive3DObjectVectorUVE(Math::Vector3UVE{1.0F, 0.0F, 3.0F}));
+    EXPECT_TRUE(IsNormalizable3DObjectQuaternionUVE(Math::QuaternionUVE{}));
+    EXPECT_FALSE(IsNormalizable3DObjectQuaternionUVE(Math::QuaternionUVE{0.0F, 0.0F, 0.0F, 0.0F}));
+    EXPECT_TRUE(Is3DObjectLayerMaskNonZeroUVE(1U));
+    EXPECT_FALSE(Is3DObjectLayerMaskNonZeroUVE(0U));
+
+    const Math::QuaternionUVE quarterTurnY{0.0F, 0.70710678F, 0.0F, 0.70710678F};
+    const std::optional<Math::Vector3UVE> worldPoint =
+        Compose3DObjectWorldPointUVE(Math::Vector3UVE{10.0F, 2.0F, 0.0F}, quarterTurnY,
+                                     Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+    ASSERT_TRUE(worldPoint.has_value());
+    EXPECT_NEAR(worldPoint->x, 10.0F, 1e-4F);
+    EXPECT_NEAR(worldPoint->y, 2.0F, 1e-4F);
+    EXPECT_NEAR(worldPoint->z, -1.0F, 1e-4F);
+
+    const std::optional<Math::QuaternionUVE> worldRot =
+        Compose3DObjectWorldRotationUVE(quarterTurnY, Math::QuaternionUVE{});
+    ASSERT_TRUE(worldRot.has_value());
+    EXPECT_NEAR(worldRot->y, 0.70710678F, 1e-4F);
+    EXPECT_NEAR(worldRot->w, 0.70710678F, 1e-4F);
+}
+
+TEST(MeshAndPrimitiveNodePoliciesUVETest, MeshInstanceBoxSphereAndPlanePolicies) {
+    MeshComponentUVE mesh{};
+    EXPECT_FALSE(MeshInstance3DUVE::HasAssignedMeshUVE(mesh));
+    EXPECT_FALSE(MeshInstance3DUVE::HasAssignedMaterialUVE(mesh));
+    mesh.meshGuid = Asset::AssetGuidUVE{11ULL};
+    mesh.materialGuid = Asset::AssetGuidUVE{22ULL};
+    EXPECT_TRUE(MeshInstance3DUVE::HasAssignedMeshUVE(mesh));
+    EXPECT_TRUE(MeshInstance3DUVE::HasAssignedMaterialUVE(mesh));
+    EXPECT_EQ(MeshInstance3DUVE::ResolveEffectiveMaterialGuidUVE(mesh, Asset::kInvalidAssetGuidUVE),
+              Asset::AssetGuidUVE{22ULL});
+    EXPECT_EQ(MeshInstance3DUVE::ResolveEffectiveMaterialGuidUVE(mesh, Asset::AssetGuidUVE{99ULL}),
+              Asset::AssetGuidUVE{99ULL});
+    EXPECT_TRUE(MeshInstance3DUVE::HasRenderableAssetPairUVE(
+        Asset::AssetGuidUVE{11ULL}, Asset::AssetGuidUVE{22ULL}));
+    EXPECT_FALSE(MeshInstance3DUVE::HasRenderableAssetPairUVE(
+        Asset::kInvalidAssetGuidUVE, Asset::AssetGuidUVE{22ULL}));
+
+    SurfaceInstanceComponentUVE surface{};
+    surface.materialOverridePath = "materials/override.uvmaterial";
+    EXPECT_TRUE(MeshInstance3DUVE::HasSurfaceMaterialOverrideUVE(&surface));
+    EXPECT_TRUE(MeshInstance3DUVE::ParticipatesInPassUVE(&surface, /*shadowPass=*/false));
+    EXPECT_TRUE(MeshInstance3DUVE::ParticipatesInPassUVE(&surface, /*shadowPass=*/true));
+    surface.castShadow = SurfaceShadowModeUVE::ShadowsOnly;
+    EXPECT_FALSE(MeshInstance3DUVE::ParticipatesInPassUVE(&surface, /*shadowPass=*/false));
+    EXPECT_TRUE(MeshInstance3DUVE::ParticipatesInPassUVE(&surface, /*shadowPass=*/true));
+
+    // BoxMesh3DUVE
+    const BoxMesh3DObjectDefinitionUVE boxDef{};
+    EXPECT_TRUE(BoxMesh3DUVE::IsBoxMeshUVE(boxDef.mesh));
+    EXPECT_FLOAT_EQ(BoxMesh3DUVE::VolumeFromScaleUVE(Math::Vector3UVE{2.0F, 3.0F, 4.0F}), 24.0F);
+    EXPECT_FLOAT_EQ(BoxMesh3DUVE::VolumeFromScaleUVE(Math::Vector3UVE{0.0F, 3.0F, 4.0F}), 0.0F);
+
+    // SphereMesh3DUVE
+    const SphereMesh3DObjectDefinitionUVE sphereDef{};
+    EXPECT_TRUE(SphereMesh3DUVE::IsSphereMeshUVE(sphereDef.mesh));
+    EXPECT_FLOAT_EQ(SphereMesh3DUVE::EffectiveRadiusFromScaleUVE(Math::Vector3UVE{2.0F, 6.0F, 4.0F}), 3.0F);
+
+    // PlaneMesh3DUVE
+    const PlaneMesh3DObjectDefinitionUVE planeDef{};
+    EXPECT_TRUE(PlaneMesh3DUVE::IsPlaneMeshUVE(planeDef.mesh));
+    EXPECT_FLOAT_EQ(PlaneMesh3DUVE::SurfaceAreaFromScaleUVE(Math::Vector3UVE{5.0F, 1.0F, 4.0F}), 20.0F);
+    const Math::Vector3UVE normal = PlaneMesh3DUVE::WorldNormalUVE(Math::QuaternionUVE{});
+    EXPECT_NEAR(normal.y, 1.0F, 1e-5F);
+}
+
+TEST(LightAudioParticleAndScriptNodePoliciesUVETest, DomainRulesMatchRuntimeSystems) {
+    // Light3DUVE
+    LightComponentUVE light{};
+    light.type = LightTypeUVE::Spot;
+    light.intensity = 2.0F;
+    light.range = 10.0F;
+    light.spotAngleDegrees = 60.0F;
+    EXPECT_TRUE(Light3DUVE::IsEmittingUVE(light));
+    EXPECT_NEAR(Light3DUVE::ComputeRec709LuminanceUVE(Math::ColorUVE{1.0F, 1.0F, 1.0F}), 1.0F, 1e-4F);
+    const Math::Vector3UVE forward = Light3DUVE::ResolveWorldDirectionUVE(Math::QuaternionUVE{});
+    EXPECT_NEAR(forward.z, -1.0F, 1e-5F);
+    EXPECT_FLOAT_EQ(Light3DUVE::EvaluateSpotConeWeightUVE(60.0F, forward, forward), 1.0F);
+    EXPECT_FLOAT_EQ(Light3DUVE::EvaluateSpotConeWeightUVE(
+                        60.0F, forward, Math::Vector3UVE{1.0F, 0.0F, 0.0F}),
+                    0.0F);
+    EXPECT_TRUE(std::isinf(Light3DUVE::EstimateViewContributionUVE(
+        LightTypeUVE::Directional, light.color, 1.0F, 10.0F, {}, {})));
+
+    // AudioSource3DUVE
+    AudioSourceComponentUVE audio{};
+    EXPECT_FALSE(AudioSource3DUVE::IsPlayableUVE(audio));
+    audio.audioAssetPath = "sfx/step.wav";
+    audio.playOnAwake = true;
+    audio.spatial = true;
+    audio.minDistance = 2.0F;
+    audio.maxDistance = 12.0F;
+    audio.attenuationCurve = AudioAttenuationCurveUVE::Linear;
+    EXPECT_TRUE(AudioSource3DUVE::IsPlayableUVE(audio));
+    EXPECT_TRUE(AudioSource3DUVE::ShouldAutoPlayOnAwakeUVE(audio));
+    EXPECT_EQ(AudioSource3DUVE::ResolveEffectiveMixerGroupUVE(audio, "Master"), "Master");
+    EXPECT_FLOAT_EQ(AudioSource3DUVE::EvaluateDistanceGainUVE(audio, 1.0F), 1.0F);
+    EXPECT_NEAR(AudioSource3DUVE::EvaluateDistanceGainUVE(audio, 7.0F), 0.5F, 1e-4F);
+    EXPECT_FLOAT_EQ(AudioSource3DUVE::EvaluateDistanceGainUVE(audio, 15.0F), 0.0F);
+    AudioSourceComponentUVE changedAudio = audio;
+    changedAudio.looping = !audio.looping;
+    EXPECT_TRUE(AudioSource3DUVE::RequiresVoiceReplacementUVE(audio, changedAudio));
+
+    // ParticleEmitter3DUVE
+    ParticleEmitterComponentUVE emitter{};
+    emitter.maxParticles = 10U;
+    emitter.emissionRate = 20.0F;
+    emitter.lifetimeSeconds = 2.0F;
+    emitter.emitting = true;
+    EXPECT_TRUE(ParticleEmitter3DUVE::IsEmittingUVE(emitter));
+    EXPECT_FLOAT_EQ(ParticleEmitter3DUVE::SpawnIntervalSecondsUVE(emitter), 0.05F);
+    float remainder = 0.0F;
+    EXPECT_EQ(ParticleEmitter3DUVE::AccumulateSpawnCountUVE(emitter, 0.125F, remainder, 0U), 2U);
+    EXPECT_NEAR(remainder, 0.5F, 1e-4F);
+    const Math::Vector3UVE steppedVel = ParticleEmitter3DUVE::StepVelocityUVE(
+        Math::Vector3UVE{1.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, -9.8F, 0.0F}, 0.5F);
+    EXPECT_NEAR(steppedVel.y, -4.9F, 1e-4F);
+    EXPECT_FLOAT_EQ(ParticleEmitter3DUVE::NormalizedAgeUVE(emitter, 1.0F), 0.5F);
+
+    // ScriptUVE
+    ScriptComponentUVE script{};
+    EXPECT_FALSE(ScriptUVE::HasScriptPathUVE(script));
+    script.scriptAssetPath = "scripts/player_controller.uvs";
+    EXPECT_TRUE(ScriptUVE::HasScriptPathUVE(script));
+    EXPECT_TRUE(ScriptUVE::IsRunnableUVScriptUVE(script));
+    ASSERT_TRUE(ScriptUVE::TrySetExportedPropertyUVE(script, "moveSpeed", "6.5"));
+    ASSERT_NE(ScriptUVE::FindExportedPropertyUVE(script, "moveSpeed"), nullptr);
+    EXPECT_EQ(*ScriptUVE::FindExportedPropertyUVE(script, "moveSpeed"), "6.5");
+    EXPECT_TRUE(ScriptUVE::RemoveExportedPropertyUVE(script, "moveSpeed"));
+    EXPECT_EQ(ScriptUVE::FindExportedPropertyUVE(script, "moveSpeed"), nullptr);
+}
+
+TEST(MarkerLevelStreamerNavAndAnimationNodePoliciesUVETest, DomainHelpersRespectContracts) {
+    // Marker3DUVE
+    Marker3DComponentUVE marker{};
+    marker.markerName = "BossArenaCenter";
+    marker.localPosition = Math::Vector3UVE{0.0F, 2.0F, -3.0F};
+    EXPECT_TRUE(Marker3DUVE::IsQueryableUVE(marker));
+    EXPECT_TRUE(Marker3DUVE::MatchesNameFilterUVE(marker, ""));
+    EXPECT_TRUE(Marker3DUVE::MatchesNameFilterUVE(marker, "BossArenaCenter"));
+    EXPECT_FALSE(Marker3DUVE::MatchesNameFilterUVE(marker, "Other"));
+    const std::optional<Marker3DPoseUVE> pose =
+        Marker3DUVE::ResolveWorldPoseUVE(marker, Math::Vector3UVE{10.0F, 0.0F, 0.0F}, Math::QuaternionUVE{});
+    ASSERT_TRUE(pose.has_value());
+    EXPECT_FLOAT_EQ(pose->position.x, 10.0F);
+    EXPECT_FLOAT_EQ(pose->position.y, 2.0F);
+    EXPECT_FLOAT_EQ(pose->position.z, -3.0F);
+    EXPECT_NEAR(Marker3DUVE::ForwardDirectionUVE(*pose).z, -1.0F, 1e-5F);
+    EXPECT_NEAR(Marker3DUVE::UpDirectionUVE(*pose).y, 1.0F, 1e-5F);
+
+    // LevelStreamer3DUVE
+    LevelStreamer3DComponentUVE streamer{};
+    streamer.levelPath = "levels/dungeon.uvscene";
+    streamer.loadDistance = 100.0F;
+    streamer.unloadDistance = 150.0F;
+    streamer.enabled = true;
+    EXPECT_FLOAT_EQ(LevelStreamer3DUVE::HysteresisBandWidthUVE(streamer), 50.0F);
+    const std::array<Math::Vector3UVE, 1> closeViewer{Math::Vector3UVE{50.0F, 0.0F, 0.0F}};
+    EXPECT_EQ(LevelStreamer3DUVE::EvaluateActionUVE(streamer, Math::Vector3UVE{}, closeViewer),
+              LevelStreamer3DActionUVE::RequestLoad);
+
+    // NavMeshVolume3DUVE & NavSeeker3DUVE
+    NavMeshVolume3DComponentUVE volume{};
+    volume.boundsHalfExtents = Math::Vector3UVE{10.0F, 2.0F, 10.0F};
+    volume.navigationLayers = 0b0010U;
+    volume.rebuildRequested = true;
+    EXPECT_TRUE(NavMeshVolume3DUVE::IsBakingEnabledUVE(volume));
+    EXPECT_TRUE(NavMeshVolume3DUVE::ContainsWorldPointUVE(volume, Math::Vector3UVE{}, Math::Vector3UVE{5.0F, 1.0F, -5.0F}));
+    EXPECT_FALSE(NavMeshVolume3DUVE::ContainsWorldPointUVE(volume, Math::Vector3UVE{}, Math::Vector3UVE{15.0F, 1.0F, 0.0F}));
+    EXPECT_TRUE(NavMeshVolume3DUVE::SharesNavigationLayerUVE(volume, 0b0011U));
+    EXPECT_TRUE(NavMeshVolume3DUVE::ConsumeRebuildRequestUVE(volume));
+    EXPECT_FALSE(volume.rebuildRequested);
+
+    NavSeeker3DComponentUVE seeker{};
+    ASSERT_TRUE(NavSeeker3DUVE::TrySetTargetPositionUVE(seeker, Math::Vector3UVE{3.0F, 0.0F, 4.0F}));
+    EXPECT_NEAR(NavSeeker3DUVE::PlanarDistanceToTargetUVE(seeker, Math::Vector3UVE{}), 5.0F, 1e-4F);
+    EXPECT_FALSE(NavSeeker3DUVE::IsWithinTargetToleranceUVE(seeker, Math::Vector3UVE{}));
+    EXPECT_TRUE(NavSeeker3DUVE::IsWithinTargetToleranceUVE(seeker, Math::Vector3UVE{2.5F, 0.0F, 3.5F}));
+    NavSeeker3DUVE::PublishIdleStateUVE(seeker, Math::Vector3UVE{1.0F, 2.0F, 3.0F});
+    EXPECT_EQ(seeker.pathStatus, NavigationAgentPathStatusUVE::Idle);
+    EXPECT_EQ(seeker.nextPathPosition, (Math::Vector3UVE{1.0F, 2.0F, 3.0F}));
+
+    // Abstract animation helpers
+    Memory::MemoryManagerUVE memoryManager;
+    Events::EventSystemUVE eventSystem;
+    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const EntityUVE ikEntity = entityManager.CreateEntityUVE();
+    ApplyBoneModifier3DBaseUVE(entityManager, ikEntity, "IK");
+    EXPECT_FLOAT_EQ(ResolveBoneModifierInfluenceUVE(entityManager, ikEntity), 1.0F);
+    EXPECT_TRUE(IsBoneModifierActiveUVE(entityManager, ikEntity));
+    entityManager.GetComponentUVE<BoneModifierComponentUVE>(ikEntity).influence = 0.0F;
+    EXPECT_FALSE(IsBoneModifierActiveUVE(entityManager, ikEntity));
+
+    const EntityUVE parentEntity = entityManager.CreateEntityUVE();
+    const EntityUVE driverEntity = entityManager.CreateEntityUVE();
+    ApplyAnimationDriverBaseUVE(entityManager, driverEntity, "Driver");
+    entityManager.GetComponentUVE<HierarchyComponentUVE>(driverEntity).parent = parentEntity;
+    const AnimationDriverComponentUVE driver = ResolveAnimationDriverUVE(entityManager, driverEntity);
+    EXPECT_TRUE(IsAnimationDriverRunningOnClockUVE(driver, AnimationProcessCallbackUVE::Frame));
+    EXPECT_EQ(ResolveAnimationDriverTargetEntityUVE(entityManager, driverEntity, driver), parentEntity);
+}
+
+TEST(Expanded3DObjectComponentsUVETest, ComponentAndObjectHelpersValidateSanitizeAndEvaluateCorrectly) {
+    // EditorInternalEntityComponentUVE
+    const EditorInternalEntityComponentUVE internalTag{};
+    EXPECT_TRUE(IsEditorInternalEntityComponentValidUVE(internalTag));
+    EXPECT_TRUE(IsEditorInternalEntityTagPresentUVE(&internalTag));
+    EXPECT_FALSE(ShouldIncludeInDocumentHierarchyUVE(&internalTag));
+    EXPECT_TRUE(ShouldIncludeInDocumentHierarchyUVE(nullptr));
+    EXPECT_FALSE(ShouldSerializeDocumentEntityUVE(&internalTag));
+    EXPECT_FALSE(ShouldClearWithDocumentSceneUVE(&internalTag));
+
+    // WorldTransformComponentUVE
+    TransformComponentUVE local{};
+    local.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
+    local.localScale = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    const WorldTransformComponentUVE rootWorld = MakeWorldTransformFromLocalUVE(local);
+    EXPECT_TRUE(IsWorldTransformComponentValidUVE(rootWorld));
+    EXPECT_TRUE(HasSameWorldPoseUVE(rootWorld, rootWorld));
+    const Math::Vector3UVE transformed =
+        TransformWorldPointUVE(rootWorld, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+    EXPECT_FLOAT_EQ(transformed.x, 3.0F);
+    Math::Vector3UVE roundTrip{};
+    ASSERT_TRUE(TryInverseTransformWorldPointUVE(rootWorld, transformed, roundTrip));
+    EXPECT_NEAR(roundTrip.x, 1.0F, 1e-5F);
+    EXPECT_NEAR(ResolveWorldForwardUVE(rootWorld).z, -1.0F, 1e-5F);
+
+    // CanvasComponentUVE
+    CanvasComponentUVE canvas{.visible = true, .sortOrder = 50000};
+    EXPECT_FALSE(IsCanvasSortOrderInRangeUVE(canvas.sortOrder));
+    const CanvasComponentUVE sanitizedCanvas = SanitizeCanvasComponentUVE(canvas);
+    EXPECT_EQ(sanitizedCanvas.sortOrder, kMaximumCanvasSortOrderUVE);
+    EXPECT_TRUE(ResolveInheritedCanvasVisibilityUVE(&sanitizedCanvas, true));
+    EXPECT_FALSE(ResolveInheritedCanvasVisibilityUVE(&sanitizedCanvas, false));
+
+    // BoneModifierComponentUVE
+    BoneModifierComponentUVE boneMod{.active = true, .influence = 0.5F};
+    EXPECT_TRUE(IsBoneModifierEffectiveUVE(boneMod));
+    const Math::Vector3UVE blendedPos = BlendBoneModifierPositionUVE(
+        boneMod, Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{10.0F, 0.0F, 0.0F});
+    EXPECT_FLOAT_EQ(blendedPos.x, 5.0F);
+
+    // RenderInstanceComponentUVE & MeshComponentUVE & SurfaceInstanceComponentUVE
+    RenderInstanceComponentUVE renderInst{};
+    SetRenderInstanceLayerBitUVE(renderInst, 3U, true);
+    EXPECT_TRUE(IsRenderInstanceOnLayerUVE(renderInst, 3U));
+    EXPECT_TRUE(MatchesRenderInstanceLayerMaskUVE(renderInst, (1U << 3U)));
+    renderInst.sortingOffset = 2.5F;
+    EXPECT_FLOAT_EQ(ComputeRenderInstanceSortDepthUVE(renderInst, 10.0F), 12.5F);
+
+    MeshComponentUVE meshComp{};
+    meshComp.materialGuid = Asset::AssetGuidUVE{42ULL};
+    EXPECT_FALSE(IsMeshComponentValidUVE(meshComp));
+    const MeshComponentUVE sanitizedMesh = SanitizeMeshComponentUVE(meshComp);
+    EXPECT_TRUE(IsMeshComponentValidUVE(sanitizedMesh));
+    EXPECT_FALSE(HasAssignedMaterialAssetUVE(sanitizedMesh));
+
+    SurfaceInstanceComponentUVE surfaceComp{};
+    surfaceComp.transparency = 0.25F;
+    surfaceComp.visibilityRangeBegin = 5.0F;
+    surfaceComp.visibilityRangeEnd = 20.0F;
+    EXPECT_FLOAT_EQ(ResolveSurfaceInstanceOpacityUVE(surfaceComp), 0.75F);
+    EXPECT_TRUE(CastsSurfaceShadowUVE(surfaceComp));
+    EXPECT_TRUE(DrawsMainPassSurfaceGeometryUVE(surfaceComp));
+    EXPECT_TRUE(IsDistanceWithinSurfaceVisibilityRangeUVE(surfaceComp, 10.0F));
+    EXPECT_FALSE(IsDistanceWithinSurfaceVisibilityRangeUVE(surfaceComp, 25.0F));
+
+    // PhysicsObjectComponentUVE
+    PhysicsObjectComponentUVE physA{.disableMode = PhysicsObjectDisableModeUVE::MakeStatic, .collisionPriority = 3.0F};
+    PhysicsObjectComponentUVE physB{.disableMode = PhysicsObjectDisableModeUVE::Remove, .collisionPriority = 1.0F};
+    EXPECT_TRUE(ShouldKeepPhysicsBodyInWorldWhenDisabledUVE(physA));
+    EXPECT_FALSE(ShouldSimulatePhysicsBodyWhenDisabledUVE(physA));
+    EXPECT_NEAR(ResolvePairDepenetrationShareUVE(physA, physB), 0.25F, 1e-5F);
+
+    // VisibilityComponentUVE & NameComponentUVE & HierarchyComponentUVE & EditorDescriptionComponentUVE
+    VisibilityComponentUVE vis{.visible = false, .visibleInHierarchy = true, .visibilityParent = EntityUVE{4U, 1U}};
+    EXPECT_FALSE(IsVisibilityComponentValidForEntityUVE(vis, EntityUVE{4U, 1U}));
+    const VisibilityComponentUVE sanitizedVis = SanitizeVisibilityComponentForEntityUVE(vis, EntityUVE{4U, 1U});
+    EXPECT_FALSE(HasVisibilityRedirectUVE(sanitizedVis));
+    EXPECT_FALSE(ResolveInheritedVisibilityUVE(&vis, true));
+
+    const NameComponentUVE sanitizedName = SanitizeNameComponentUVE(NameComponentUVE{""}, "FallbackNode");
+    EXPECT_EQ(sanitizedName.name, "FallbackNode");
+    EXPECT_EQ(ResolveEntityDisplayNameOrFallbackUVE(&sanitizedName, "Other"), "FallbackNode");
+
+    HierarchyComponentUVE hierarchy{};
+    EXPECT_TRUE(IsHierarchyRootUVE(hierarchy));
+    EXPECT_TRUE(AssignParentAndAdvanceSiblingOrderUVE(hierarchy, EntityUVE{2U, 1U}));
+    EXPECT_FALSE(IsHierarchyRootUVE(hierarchy));
+
+    EditorDescriptionComponentUVE desc{.description = "  First summary line\nSecond line"};
+    EXPECT_TRUE(HasNonEmptyEditorDescriptionUVE(desc));
+    EXPECT_EQ(CountEditorDescriptionLinesUVE(desc), 2U);
+    EXPECT_EQ(BuildEditorDescriptionPreviewUVE(desc, 64U), "First summary line");
+
+    // AutoTranslateComponentUVE & ThreadGroupComponentUVE
+    AutoTranslateComponentUVE autoTrans{.mode = LocalizeModeUVE::Inherit};
+    EXPECT_EQ(ResolveHierarchyLocalizeModeUVE(&autoTrans, LocalizeModeUVE::Literal), LocalizeModeUVE::Literal);
+    EXPECT_FALSE(ShouldTranslateEntityTextUVE(&autoTrans));
+
+    ThreadGroupComponentUVE threadGroup{.mode = ThreadGroupModeUVE::SubThread};
+    EXPECT_EQ(ResolveHierarchyThreadGroupModeUVE(&threadGroup, ThreadGroupModeUVE::Inherit),
+              ThreadGroupModeUVE::SubThread);
+    EXPECT_TRUE(CanDispatchOnSubThreadUVE(&threadGroup));
+
+    // UITextComponentUVE & PrimitiveMeshComponentUVE & AudioSourceComponentUVE
+    UITextComponentUVE uiText{.text = "Hello\nWorld", .fontSize = 20.0F, .alpha = 1.0F};
+    EXPECT_TRUE(IsUITextVisibleForDrawUVE(uiText));
+    EXPECT_EQ(CountUITextLinesUVE(uiText), 2U);
+    EXPECT_GT(EstimateUITextBoundsSizePixelsUVE(uiText).x, 0.0F);
+
+    PrimitiveMeshComponentUVE prim{.kind = PrimitiveMeshKindUVE::Plane, .baseColor = Math::Vector3UVE{2.0F, -1.0F, 0.5F}};
+    const PrimitiveMeshComponentUVE sanitizedPrim = SanitizePrimitiveMeshComponentUVE(prim);
+    EXPECT_TRUE(IsPrimitiveMeshComponentValidUVE(sanitizedPrim));
+    EXPECT_EQ(GetPrimitiveMeshKindDisplayNameUVE(sanitizedPrim.kind), "Plane");
+
+    AudioSourceComponentUVE audio{};
+    audio.audioAssetPath = "sfx/explosion.wav";
+    audio.minDistance = 2.0F;
+    audio.maxDistance = 12.0F;
+    EXPECT_TRUE(HasAudioSourceAssetPathUVE(audio));
+    EXPECT_NEAR(ComputeAudioSourceDistanceAttenuationUVE(audio, 7.0F), 0.5F, 1e-5F);
+
+    // AnimationDriverComponentUVE & AnimationSequencerComponentUVE
+    AnimationDriverComponentUVE animDriver{};
+    animDriver.speedScale = 2.0F;
+    EXPECT_TRUE(HasAnyAnimatedTransformChannelUVE(animDriver));
+    EXPECT_FLOAT_EQ(ComputeScaledAnimationDeltaTimeUVE(animDriver, 0.25F), 0.5F);
+
+    AnimationSequencerComponentUVE seq{};
+    seq.blendInSeconds = 2.0F;
+    seq.blendElapsedSeconds = 0.5F;
+    seq.isPlaying = true;
+    EXPECT_FLOAT_EQ(ResolveAnimationBlendInWeightUVE(seq), 0.25F);
+    ResetAnimationSequencerRuntimeStateUVE(seq);
+    EXPECT_FALSE(seq.isPlaying);
+
+    // Static3DUVE, Camera3DUVE, Sprite2DUVE
+    ColliderComponentUVE staticCollider = Collider3DUVE::MakeBoxUVE(Math::Vector3UVE{2.0F, 2.0F, 2.0F});
+    EXPECT_TRUE(Static3DUVE::ContainsWorldPointUVE(staticCollider, WorldTransformComponentUVE{},
+                                                   Math::Vector3UVE{1.0F, 1.0F, 1.0F}));
+    CameraComponentUVE cam3d{};
+    EXPECT_TRUE(Camera3DUVE::IsDepthWithinClipPlanesUVE(cam3d, 10.0F));
+    EXPECT_FALSE(Camera3DUVE::IsDepthWithinClipPlanesUVE(cam3d, 0.01F));
+    Sprite2DComponentUVE sprite2d{};
+    EXPECT_TRUE(Sprite2DUVE::UsesWholeTextureRegionUVE(sprite2d));
+    EXPECT_TRUE(Sprite2DUVE::ContainsLocalPointUVE(sprite2d, Math::Vector2UVE{64.0F, 64.0F},
+                                                   Math::Vector2UVE{0.0F, 0.0F}));
 }
 
 } // namespace UVE::Scene::Tests

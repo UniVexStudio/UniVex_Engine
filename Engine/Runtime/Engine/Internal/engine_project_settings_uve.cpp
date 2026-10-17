@@ -570,6 +570,607 @@ struct EngineProjectSettingUVE final {
                                     defaults.appendSceneNameInEditorPlayModeUVE, "Append Scene in Editor Play",
                                     "Window/Title", "Append the active scene name while the editor is playing.")),
          [](EngineConfigUVE& config, const SettingValueUVE& value) { config.appendSceneNameInEditorPlayModeUVE = std::get<bool>(value); }},
+        {RestartRequiredUVE(Config::MakeVector2SettingUVE(
+             "physics.2d.gravity", Config::SettingVector2UVE{0.0, -980.0}, -100000.0, 100000.0,
+             "2D Gravity", "Physics/2D", "Default 2D gravity acceleration in pixels/s^2.")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             const auto& g = std::get<Config::SettingVector2UVE>(value);
+             config.gravity2DUVE = Math::Vector2UVE{static_cast<float>(g.x), static_cast<float>(g.y)};
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("physics.common.defaultLinearDamping",
+                                     defaults.defaultLinearDampingUVE, 0.0, 100.0,
+                                     "Default Linear Damping", "Physics/Common")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.defaultLinearDampingUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("physics.common.defaultAngularDamping",
+                                     defaults.defaultAngularDampingUVE, 0.0, 100.0,
+                                     "Default Angular Damping", "Physics/Common")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.defaultAngularDampingUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("physics.common.sleepThreshold", defaults.sleepThresholdUVE,
+                                     0.0, 10.0, "Sleep Threshold", "Physics/Common")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.sleepThresholdUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("physics.common.sleepTimeSeconds", defaults.sleepTimeSecondsUVE,
+                                     0.0, 60.0, "Sleep Time", "Physics/Common")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.sleepTimeSecondsUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeBoolSettingUVE("physics.common.allowSleepingDefault",
+                                    defaults.allowSleepingDefaultUVE, "Allow Sleeping by Default",
+                                    "Physics/Common")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.allowSleepingDefaultUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeIntSettingUVE("physics.solver.positionIterations",
+                                   defaults.physicsPositionIterationsUVE, 1, 64,
+                                   "Position Iterations", "Physics/Solver")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.physicsPositionIterationsUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeIntSettingUVE("physics.solver.velocityIterations",
+                                   defaults.physicsVelocityIterationsUVE, 1, 64,
+                                   "Velocity Iterations", "Physics/Solver")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.physicsVelocityIterationsUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("physics.contacts.contactOffset",
+                                     defaults.physicsContactOffsetUVE, 0.0001, 1.0,
+                                     "Contact Offset", "Physics/Contacts")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.physicsContactOffsetUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("physics.contacts.penetrationSlop",
+                                     defaults.physicsPenetrationSlopUVE, 0.0, 1.0,
+                                     "Penetration Slop", "Physics/Contacts")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.physicsPenetrationSlopUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("physics.contacts.maxDepenetrationVelocity",
+                                     defaults.physicsMaxDepenetrationVelocityUVE, 0.0, 1000.0,
+                                     "Max Depenetration Velocity", "Physics/Contacts")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.physicsMaxDepenetrationVelocityUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeLayerMaskSettingUVE("physics.layers.defaultCollisionLayer",
+                                         defaults.defaultCollisionLayerUVE,
+                                         "Default Collision Layer", "Physics/Layers")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.defaultCollisionLayerUVE =
+                 static_cast<std::uint32_t>(std::get<std::int64_t>(value));
+         }},
+        {RestartRequiredUVE(Config::MakeLayerMaskSettingUVE("physics.layers.defaultCollisionMask",
+                                         defaults.defaultCollisionMaskUVE,
+                                         "Default Collision Mask", "Physics/Layers")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.defaultCollisionMaskUVE =
+                 static_cast<std::uint32_t>(std::get<std::int64_t>(value));
+         }},
+        {RestartRequiredUVE(Config::MakeBoolSettingUVE("physics.common.interpolationDefault",
+                                    defaults.physicsInterpolationDefaultUVE,
+                                    "Physics Interpolation Default", "Physics/Common")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.physicsInterpolationDefaultUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeBoolSettingUVE("physics.simulation.deterministicMode",
+                                    defaults.physicsDeterministicModeUVE, "Deterministic Mode",
+                                    "Physics/Simulation")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.physicsDeterministicModeUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("input.actions.defaultDeadzone",
+                                     defaults.inputDefaultDeadzoneUVE, 0.0, 0.95,
+                                     "Default Action Deadzone", "Input/Actions")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.inputDefaultDeadzoneUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("input.mouse.sensitivity", defaults.inputMouseSensitivityUVE,
+                                     0.01, 20.0, "Mouse Sensitivity", "Input/Mouse")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.inputMouseSensitivityUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeBoolSettingUVE("input.haptics.enabled", defaults.inputHapticsEnabledUVE,
+                                    "Enable Haptics", "Input/Haptics")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.inputHapticsEnabledUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeIntSettingUVE("audio.output.sampleRate", defaults.audioSampleRateUVE, 8000,
+                                   192000, "Sample Rate", "Audio/Output")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.audioSampleRateUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("audio.buses.masterVolume", defaults.audioMasterVolumeUVE, 0.0,
+                                     2.0, "Master Volume", "Audio/Buses")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.audioMasterVolumeUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("audio.buses.musicVolume", defaults.audioMusicVolumeUVE, 0.0,
+                                     2.0, "Music Volume", "Audio/Buses")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.audioMusicVolumeUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("audio.buses.sfxVolume", defaults.audioSfxVolumeUVE, 0.0,
+                                     2.0, "SFX Volume", "Audio/Buses")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.audioSfxVolumeUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("audio.buses.voiceVolume", defaults.audioVoiceVolumeUVE, 0.0,
+                                     2.0, "Voice Volume", "Audio/Buses")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.audioVoiceVolumeUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeIntSettingUVE("audio.voices.maxVoices", defaults.audioMaxVoicesUVE, 1, 512,
+                                   "Max Voices", "Audio/Voices")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.audioMaxVoicesUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeBoolSettingUVE("audio.window.muteOnFocusLoss",
+                                    defaults.audioMuteOnFocusLossUVE, "Mute on Focus Loss",
+                                    "Audio/Window")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.audioMuteOnFocusLossUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("animation.playback.defaultBlendTime",
+                                     defaults.animationDefaultBlendTimeUVE, 0.0, 10.0,
+                                     "Default Blend Time", "Animation/Playback")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.animationDefaultBlendTimeUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeIntSettingUVE("animation.ik.defaultSolverIterations",
+                                   defaults.animationIkDefaultIterationsUVE, 1, 128,
+                                   "Default IK Iterations", "Animation/IK")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.animationIkDefaultIterationsUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("navigation.bake.cellSize", defaults.navCellSizeUVE, 0.05,
+                                     10.0, "Cell Size", "Navigation/Bake")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.navCellSizeUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("navigation.bake.agentRadius", defaults.navAgentRadiusUVE,
+                                     0.05, 10.0, "Agent Radius", "Navigation/Bake")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.navAgentRadiusUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeBoolSettingUVE("navigation.avoidance.enabled", defaults.navAvoidanceEnabledUVE,
+                                    "Enable Avoidance", "Navigation/Avoidance")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.navAvoidanceEnabledUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeIntSettingUVE("network.transport.defaultPort", defaults.networkDefaultPortUVE,
+                                   1, 65535, "Default Port", "Networking/Transport")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.networkDefaultPortUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("network.rates.tickRateHz", defaults.networkTickRateHzUVE, 1.0,
+                                     240.0, "Network Tick Rate", "Networking/Rates")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.networkTickRateHzUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("network.lagCompensation.windowMilliseconds",
+                                     defaults.networkLagCompensationWindowMsUVE, 0.0, 2000.0,
+                                     "Lag Compensation Window", "Networking/LagCompensation")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.networkLagCompensationWindowMsUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeStringSettingUVE("localisation.defaultLocale",
+                                      defaults.localisationDefaultLocaleUVE, 32U, "Default Locale",
+                                      "Localisation/General")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.localisationDefaultLocaleUVE = std::get<std::string>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeBoolSettingUVE("localisation.pseudolocalisationEnabled",
+                                    defaults.pseudolocalisationEnabledUVE, "Pseudolocalisation",
+                                    "Localisation/Debug")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.pseudolocalisationEnabledUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFilePathSettingUVE(
+             "paths.saveGameDirectory", defaults.saveDirectoryPath.generic_string(), 256U,
+             "Save Game Directory", "Paths/Directories")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.saveDirectoryPath = std::get<std::string>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFilePathSettingUVE(
+             "paths.logFilePath", defaults.logFilePath.generic_string(), 256U, "Log File Path",
+             "Paths/Logging")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.logFilePath = std::get<std::string>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
+             "quality.activePreset", defaults.activeQualityTierUVE,
+             {{0, "Low"}, {1, "Medium"}, {2, "High"}, {3, "Ultra"}}, "Quality Preset",
+             "Quality/Presets"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.activeQualityTierUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeStringListSettingUVE(
+             "platform.targetFeatureTags", defaults.platformFeatureTagsUVE, 32U, 64U,
+             "Target Feature Tags", "Platform/Capabilities"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.platformFeatureTagsUVE = std::get<Config::SettingStringListUVE>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeStringSettingUVE("packaging.defaultPresetName",
+                                      defaults.packagingDefaultPresetUVE, 64U, "Default Preset",
+                                      "Packaging/Presets")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.packagingDefaultPresetUVE = std::get<std::string>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeBoolSettingUVE("packaging.encryptAssets", defaults.packagingEncryptAssetsUVE,
+                                    "Encrypt Packaged Assets", "Packaging/Security")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.packagingEncryptAssetsUVE = std::get<bool>(value);
+         }},
+        // Part 1.3 Extended Rendering Settings
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
+             "rendering.general.renderingMethod", defaults.renderingMethodUVE,
+             {{0, "Forward"}, {1, "Forward+"}, {2, "Deferred"}, {3, "Mobile"}}, "Rendering Method",
+             "Rendering/General"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.renderingMethodUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeEnumSettingUVE(
+             "rendering.general.colorSpace", defaults.colorSpaceModeUVE,
+             {{0, "Linear sRGB"}, {1, "Gamma sRGB"}}, "Working Colour Space", "Rendering/General")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.colorSpaceModeUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeBoolSettingUVE(
+             "rendering.hdr.enabled", defaults.hdrRenderingEnabledUVE, "HDR Output", "Rendering/HDR"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.hdrRenderingEnabledUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
+             "rendering.hdr.transferFunction", defaults.hdrTransferFunctionUVE,
+             {{0, "PQ (ST.2084)"}, {1, "HLG"}, {2, "scRGB Linear"}}, "HDR Transfer Function", "Rendering/HDR"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.hdrTransferFunctionUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("rendering.hdr.peakLuminanceNits", defaults.hdrPeakLuminanceNitsUVE,
+                                     100.0, 10000.0, "Peak Luminance (nits)", "Rendering/HDR")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.hdrPeakLuminanceNitsUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("rendering.hdr.paperWhiteNits", defaults.hdrPaperWhiteNitsUVE,
+                                     80.0, 1000.0, "Paper White (nits)", "Rendering/HDR")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.hdrPaperWhiteNitsUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
+             "rendering.general.renderTargetFormat", defaults.renderTargetFormatUVE,
+             {{0, "RGBA8 UNorm"}, {1, "RGB10A2 UNorm"}, {2, "RGBA16 Float"}}, "Render Target Precision",
+             "Rendering/General"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.renderTargetFormatUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeBoolSettingUVE(
+             "rendering.threading.multiThreadedRendering", defaults.multiThreadedRenderingUVE,
+             "Multi-Threaded Rendering", "Rendering/Threading"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.multiThreadedRenderingUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeIntSettingUVE(
+             "rendering.threading.commandBufferThreads", defaults.commandBufferThreadCountUVE,
+             1, 64, "Command Buffer Threads", "Rendering/Threading"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.commandBufferThreadCountUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
+             "rendering.antialiasing.msaa2dSamples", defaults.msaa2dSamplesUVE,
+             {{1, "Disabled (1x)"}, {2, "2x"}, {4, "4x"}, {8, "8x"}}, "2D MSAA Samples",
+             "Rendering/AntiAliasing"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.msaa2dSamplesUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
+             "rendering.antialiasing.msaa3dSamples", defaults.msaa3dSamplesUVE,
+             {{1, "Disabled (1x)"}, {2, "2x"}, {4, "4x"}, {8, "8x"}}, "3D MSAA Samples",
+             "Rendering/AntiAliasing"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.msaa3dSamplesUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeIntSettingUVE(
+             "rendering.antialiasing.taaSamples", defaults.taaSampleCountUVE, 2, 16, "TAA Sample Count",
+             "Rendering/AntiAliasing"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.taaSampleCountUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
+             "rendering.antialiasing.taaJitterPattern", defaults.taaJitterPatternUVE,
+             {{0, "Halton (2,3)"}, {1, "Blue Noise"}, {2, "Uniform 2x"}}, "TAA Jitter Pattern",
+             "Rendering/AntiAliasing"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.taaJitterPatternUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeFloatSettingUVE(
+             "rendering.antialiasing.taaSharpening", defaults.taaSharpeningAmountUVE, 0.0, 1.0,
+             "TAA Sharpening", "Rendering/AntiAliasing"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.taaSharpeningAmountUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeBoolSettingUVE(
+             "rendering.antialiasing.alphaToCoverage", defaults.alphaToCoverageEnabledUVE,
+             "Alpha-to-Coverage", "Rendering/AntiAliasing"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.alphaToCoverageEnabledUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
+             "rendering.shadows.atlasSize", defaults.shadowAtlasSizeUVE,
+             {{1024, "1024"}, {2048, "2048"}, {4096, "4096"}, {8192, "8192"}}, "Shadow Atlas Size",
+             "Rendering/Shadows"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.shadowAtlasSizeUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeIntSettingUVE(
+             "rendering.shadows.directionalSplitCount", defaults.directionalShadowSplitCountUVE, 1, 4,
+             "Directional Split Count", "Rendering/Shadows"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.directionalShadowSplitCountUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeFloatSettingUVE(
+             "rendering.shadows.maxDistance", defaults.shadowMaxDistanceUVE, 1.0, 10000.0,
+             "Shadow Max Distance", "Rendering/Shadows"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.shadowMaxDistanceUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
+             "rendering.shadows.depthFormatBits", defaults.shadowDepthFormatBitsUVE,
+             {{16, "16-bit"}, {32, "32-bit"}}, "Shadow Depth Format", "Rendering/Shadows"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.shadowDepthFormatBitsUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
+             "rendering.shadows.pointSpotCubeResolution", defaults.pointSpotShadowResolutionUVE,
+             {{256, "256"}, {512, "512"}, {1024, "1024"}, {2048, "2048"}}, "Point/Spot Cube Resolution",
+             "Rendering/Shadows"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.pointSpotShadowResolutionUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeBoolSettingUVE(
+             "rendering.shadows.contactShadowsEnabled", defaults.contactShadowsEnabledUVE,
+             "Contact Shadows", "Rendering/Shadows"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.contactShadowsEnabledUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeFloatSettingUVE(
+             "rendering.shadows.contactShadowsLength", defaults.contactShadowsLengthUVE, 0.01, 2.0,
+             "Contact Shadow Length", "Rendering/Shadows"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.contactShadowsLengthUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeIntSettingUVE(
+             "rendering.shadows.contactShadowsSteps", defaults.contactShadowsStepCountUVE, 4, 64,
+             "Contact Shadow Steps", "Rendering/Shadows"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.contactShadowsStepCountUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeBoolSettingUVE(
+             "rendering.gi.ssilEnabled", defaults.ssilEnabledUVE, "Screen-Space Indirect Lighting",
+             "Rendering/GI"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.ssilEnabledUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeBoolSettingUVE(
+             "rendering.gi.ssrEnabled", defaults.ssrEnabledUVE, "Screen-Space Reflections",
+             "Rendering/GI"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.ssrEnabledUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeIntSettingUVE(
+             "rendering.gi.ssrMaxSteps", defaults.ssrMaxStepsUVE, 8, 256, "SSR Max Steps",
+             "Rendering/GI"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.ssrMaxStepsUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
+             "rendering.gi.reflectionProbeAtlasSize", defaults.reflectionProbeAtlasSizeUVE,
+             {{512, "512"}, {1024, "1024"}, {2048, "2048"}, {4096, "4096"}}, "Reflection Probe Atlas Size",
+             "Rendering/GI"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.reflectionProbeAtlasSizeUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
+             "rendering.gi.voxelGiQuality", defaults.voxelGiQualityUVE,
+             {{0, "Low"}, {1, "Medium"}, {2, "High"}, {3, "Ultra"}}, "Voxel GI Quality",
+             "Rendering/GI"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.voxelGiQualityUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("rendering.gi.lightmapTexelDensity", defaults.lightmapTexelDensityUVE,
+                                      1.0, 256.0, "Lightmap Texel Density", "Rendering/GI")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.lightmapTexelDensityUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("rendering.gi.lightProbeDefaultDensity", defaults.lightProbeDefaultDensityUVE,
+                                      0.1, 64.0, "Light Probe Default Density", "Rendering/GI")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.lightProbeDefaultDensityUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeBoolSettingUVE(
+             "rendering.postProcessing.autoExposureEnabled", defaults.autoExposureEnabledUVE,
+             "Auto-Exposure", "Rendering/PostProcessing"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.autoExposureEnabledUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeAssetReferenceSettingUVE(
+             "rendering.postProcessing.colorGradingLutAsset", defaults.colorGradingLutAssetUVE, 256U,
+             "Colour Grading LUT", "Rendering/PostProcessing")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.colorGradingLutAssetUVE = std::get<std::string>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeBoolSettingUVE(
+             "rendering.postProcessing.volumetricFogEnabled", defaults.volumetricFogEnabledUVE,
+             "Volumetric Fog", "Rendering/PostProcessing"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.volumetricFogEnabledUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("rendering.camera.defaultNearClip", defaults.defaultNearClipPlaneUVE,
+                                      0.001, 10.0, "Default Near Clip Plane", "Rendering/Culling")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.defaultNearClipPlaneUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("rendering.camera.defaultFarClip", defaults.defaultFarClipPlaneUVE,
+                                      10.0, 1000000.0, "Default Far Clip Plane", "Rendering/Culling")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.defaultFarClipPlaneUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeBoolSettingUVE(
+             "rendering.culling.occlusionCullingEnabled", defaults.occlusionCullingEnabledUVE,
+             "Occlusion Culling", "Rendering/Culling"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.occlusionCullingEnabledUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeFloatSettingUVE(
+             "rendering.lod.globalBias", defaults.globalLodBiasUVE, -4.0, 4.0, "Global LOD Bias",
+             "Rendering/LOD"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.globalLodBiasUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeBoolSettingUVE("rendering.lod.autoGenerateDefault", defaults.meshLodAutoGenerateDefaultUVE,
+                                     "Auto-Generate Mesh LODs", "Rendering/LOD")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.meshLodAutoGenerateDefaultUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeIntSettingUVE("rendering.batching.instancingMinCount", defaults.instancingMinCountUVE,
+                                    2, 1024, "Instancing Threshold", "Rendering/Batching")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.instancingMinCountUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeBoolSettingUVE("rendering.batching.staticBatchingEnabled", defaults.staticBatchingEnabledUVE,
+                                     "Static Batching", "Rendering/Batching")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.staticBatchingEnabledUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeBoolSettingUVE(
+             "rendering.batching.indirectDrawEnabled", defaults.indirectDrawEnabledUVE,
+             "GPU Indirect Draw", "Rendering/Batching"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.indirectDrawEnabledUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeIntSettingUVE("rendering.budgets.maxDrawCallsWarning", defaults.maxDrawCallsWarningUVE,
+                                   100, 100000, "Max Draw Calls Warning", "Rendering/Budgets")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.maxDrawCallsWarningUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
+             "rendering.textures.defaultFilter", defaults.defaultTextureFilterUVE,
+             {{0, "Nearest"}, {1, "Bilinear"}, {2, "Trilinear"}}, "Default Texture Filter",
+             "Rendering/Textures"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.defaultTextureFilterUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
+             "rendering.textures.defaultAnisotropy", defaults.defaultAnisotropyLevelUVE,
+             {{1, "1x"}, {2, "2x"}, {4, "4x"}, {8, "8x"}, {16, "16x"}}, "Default Anisotropy",
+             "Rendering/Textures"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.defaultAnisotropyLevelUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeFloatSettingUVE(
+             "rendering.textures.globalMipLodBias", defaults.globalMipLodBiasUVE, -4.0, 4.0,
+             "Global Mipmap LOD Bias", "Rendering/Textures"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.globalMipLodBiasUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeBoolSettingUVE(
+             "rendering.textures.streamingEnabled", defaults.textureStreamingEnabledUVE,
+             "Texture Streaming", "Rendering/Textures"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.textureStreamingEnabledUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeIntSettingUVE(
+             "rendering.textures.maxSizePerTier", defaults.maxTextureSizePerTierUVE,
+             256, 16384, "Max Texture Resolution", "Rendering/Textures"))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.maxTextureSizePerTierUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeEnumSettingUVE(
+             "rendering.textures.defaultRepeatMode", defaults.defaultTextureRepeatModeUVE,
+             {{0, "Clamp"}, {1, "Repeat"}, {2, "Mirror"}}, "Default Texture Repeat", "Rendering/Textures")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.defaultTextureRepeatModeUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeEnumSettingUVE(
+             "rendering.2d.defaultCanvasFilter", defaults.defaultCanvasFilterUVE,
+             {{0, "Nearest"}, {1, "Linear"}}, "2D Canvas Filter", "Rendering/2D")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.defaultCanvasFilterUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeBoolSettingUVE("rendering.2d.pixelSnapTransforms", defaults.pixelSnap2dTransformsUVE,
+                                    "2D Transform Pixel Snap", "Rendering/2D")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.pixelSnap2dTransformsUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeIntSettingUVE("rendering.2d.shadowAtlasSize", defaults.shadowAtlas2dSizeUVE,
+                                   256, 8192, "2D Shadow Atlas Size", "Rendering/2D")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.shadowAtlas2dSizeUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeEnumSettingUVE(
+             "rendering.2d.spriteSortAxis", defaults.spriteSortAxisUVE,
+             {{0, "Z-Index Only"}, {1, "Y-Axis"}, {2, "Custom Axis"}}, "Sprite Sort Axis", "Rendering/2D")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.spriteSortAxisUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeEnumSettingUVE(
+             "rendering.environment.defaultSkyMode", defaults.defaultSkyModeUVE,
+             {{0, "None"}, {1, "Colour"}, {2, "Gradient"}, {3, "Physical"}, {4, "Panorama"}},
+             "Default Sky Mode", "Rendering/Environment")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.defaultSkyModeUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeIntSettingUVE("rendering.environment.skyResolution", defaults.defaultSkyResolutionUVE,
+                                   64, 4096, "Default Sky Resolution", "Rendering/Environment")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.defaultSkyResolutionUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeAssetReferenceSettingUVE(
+             "rendering.environment.defaultWorldEnvironmentAsset", defaults.defaultWorldEnvironmentAssetUVE, 256U,
+             "Default WorldEnvironment Asset", "Rendering/Environment")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.defaultWorldEnvironmentAssetUVE = std::get<std::string>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeAssetReferenceSettingUVE(
+             "physics.materials.defaultAsset", defaults.defaultPhysicsMaterialAssetUVE, 256U,
+             "Default Physics Material Asset", "Physics/Materials")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.defaultPhysicsMaterialAssetUVE = std::get<std::string>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeFloatSettingUVE("accessibility.runtime.uiScale", defaults.runtimeUiScaleUVE,
+                                     0.5, 3.0, "Runtime UI Scale", "Accessibility/Runtime")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.runtimeUiScaleUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeBoolSettingUVE("accessibility.runtime.subtitlesEnabled", defaults.runtimeSubtitlesEnabledUVE,
+                                    "Subtitles Enabled by Default", "Accessibility/Runtime")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.runtimeSubtitlesEnabledUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeBoolSettingUVE("accessibility.runtime.reduceMotion", defaults.runtimeReduceMotionUVE,
+                                    "Reduce Motion", "Accessibility/Runtime")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.runtimeReduceMotionUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeBoolSettingUVE("privacy.telemetry.analyticsOptIn", defaults.telemetryAnalyticsOptInUVE,
+                                    "Editor & Runtime Analytics Opt-In", "Privacy/Telemetry")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.telemetryAnalyticsOptInUVE = std::get<bool>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeEnumSettingUVE(
+             "privacy.telemetry.crashReportPolicy", defaults.crashReportSubmissionPolicyUVE,
+             {{0, "Ask Each Time"}, {1, "Always"}, {2, "Never"}}, "Crash Report Submission",
+             "Privacy/Telemetry")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.crashReportSubmissionPolicyUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(Config::MakeBoolSettingUVE("privacy.telemetry.anonymousUsageStats", defaults.anonymousUsageStatsOptInUVE,
+                                    "Anonymous Usage Statistics", "Privacy/Telemetry")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.anonymousUsageStatsOptInUVE = std::get<bool>(value);
+         }},
         {RestartRequiredUVE(CommandLineOnlyUVE(Config::MakeBoolSettingUVE(
              std::string(Id::kHeadlessUVE), defaults.headlessUVE, "Headless", "Application/Runtime",
              "Run without a visible window. Command-line-only; use --headless."))),
@@ -654,7 +1255,8 @@ struct EngineProjectSettingUVE final {
             return Config::SettingValueUVE{false};
         }
         return std::nullopt;
-    case Config::SettingTypeUVE::Int: {
+    case Config::SettingTypeUVE::Int:
+    case Config::SettingTypeUVE::LayerMask: {
         std::int64_t value = 0;
         return ParseCommandLineNumberUVE(text, value) ? std::optional<Config::SettingValueUVE>{value} : std::nullopt;
     }
@@ -664,6 +1266,7 @@ struct EngineProjectSettingUVE final {
     }
     case Config::SettingTypeUVE::String:
     case Config::SettingTypeUVE::FilePath:
+    case Config::SettingTypeUVE::AssetReference:
     case Config::SettingTypeUVE::KeyBinding:
         return Config::SettingValueUVE{std::string{text}};
     case Config::SettingTypeUVE::StringList:
@@ -693,6 +1296,14 @@ struct EngineProjectSettingUVE final {
         }
         return Config::SettingValueUVE{color};
     }
+    case Config::SettingTypeUVE::Vector2: {
+        std::array<double, 2U> components{};
+        const std::optional<std::size_t> count = ParseCommaSeparatedNumbersUVE(text, components);
+        if (!count.has_value() || *count != components.size()) {
+            return std::nullopt;
+        }
+        return Config::SettingValueUVE{Config::SettingVector2UVE{components[0U], components[1U]}};
+    }
     case Config::SettingTypeUVE::Vector3: {
         std::array<double, 3U> components{};
         const std::optional<std::size_t> count = ParseCommaSeparatedNumbersUVE(text, components);
@@ -700,6 +1311,15 @@ struct EngineProjectSettingUVE final {
             return std::nullopt;
         }
         return Config::SettingValueUVE{Config::SettingVector3UVE{components[0U], components[1U], components[2U]}};
+    }
+    case Config::SettingTypeUVE::Vector4: {
+        std::array<double, 4U> components{};
+        const std::optional<std::size_t> count = ParseCommaSeparatedNumbersUVE(text, components);
+        if (!count.has_value() || *count != components.size()) {
+            return std::nullopt;
+        }
+        return Config::SettingValueUVE{
+            Config::SettingVector4UVE{components[0U], components[1U], components[2U], components[3U]}};
     }
     }
     return std::nullopt;
@@ -723,8 +1343,25 @@ void PopulateEngineCommandLineSettingsUVEInternal(const Config::SettingsRegistry
 } // namespace
 
 std::string GetLayerNameSettingIdUVE(const LayerSetUVE set, const std::size_t index) {
-    return std::string(set == LayerSetUVE::Physics ? "layers.physics." : "layers.render.") +
-           std::to_string(index + 1U);
+    std::string_view prefix = "layers.render.";
+    switch (set) {
+    case LayerSetUVE::Physics:
+        prefix = "layers.physics.";
+        break;
+    case LayerSetUVE::Physics2D:
+        prefix = "layers.physics2d.";
+        break;
+    case LayerSetUVE::Render:
+        prefix = "layers.render.";
+        break;
+    case LayerSetUVE::Navigation:
+        prefix = "layers.navigation.";
+        break;
+    case LayerSetUVE::Avoidance:
+        prefix = "layers.avoidance.";
+        break;
+    }
+    return std::string(prefix) + std::to_string(index + 1U);
 }
 
 std::string GetLayerNameUVE(const Config::SettingsDocumentUVE& document, const LayerSetUVE set,
@@ -751,15 +1388,38 @@ bool RegisterEngineProjectSettingsUVE(Config::SettingsRegistryUVE& registry) {
                     allRegistered;
     // Layer names, 1 to 32 as a person counts them; bit 0 is layer 1.
     constexpr std::size_t kMaximumLayerNameBytesUVE = 32U;
-    for (const LayerSetUVE set : {LayerSetUVE::Physics, LayerSetUVE::Render}) {
-        const bool physics = set == LayerSetUVE::Physics;
+    for (const LayerSetUVE set : {LayerSetUVE::Physics, LayerSetUVE::Physics2D, LayerSetUVE::Render,
+                                  LayerSetUVE::Navigation, LayerSetUVE::Avoidance}) {
+        std::string_view category = "Layers/Render";
+        std::string_view tooltip = "Shown wherever a mesh's, light's or decal's render layers are picked.";
+        switch (set) {
+        case LayerSetUVE::Physics:
+            category = "Layers/Physics";
+            tooltip = "Shown wherever a 3D collider's layer or mask is picked.";
+            break;
+        case LayerSetUVE::Physics2D:
+            category = "Layers/Physics2D";
+            tooltip = "Shown wherever a 2D collider's layer or mask is picked.";
+            break;
+        case LayerSetUVE::Render:
+            category = "Layers/Render";
+            tooltip = "Shown wherever a mesh's, light's or decal's render layers are picked.";
+            break;
+        case LayerSetUVE::Navigation:
+            category = "Layers/Navigation";
+            tooltip = "Shown wherever a navigation region or seeker layer mask is picked.";
+            break;
+        case LayerSetUVE::Avoidance:
+            category = "Layers/Avoidance";
+            tooltip = "Shown wherever an avoidance obstacle or agent mask is picked.";
+            break;
+        }
         for (std::size_t index = 0U; index < kLayerCountUVE; ++index) {
             allRegistered =
                 registry.RegisterUVE(Config::MakeStringSettingUVE(
                     GetLayerNameSettingIdUVE(set, index), "", kMaximumLayerNameBytesUVE,
-                    "Layer " + std::to_string(index + 1U), physics ? "Layers/Physics" : "Layers/Render",
-                    physics ? "Shown wherever a collider's layer or mask is picked."
-                            : "Shown wherever a mesh's, light's or decal's render layers are picked.")) &&
+                    "Layer " + std::to_string(index + 1U), std::string{category},
+                    std::string{tooltip})) &&
                 allRegistered;
         }
     }

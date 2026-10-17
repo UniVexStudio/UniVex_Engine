@@ -32,12 +32,19 @@ TEST(OverlayRasterStateUVETest, PresetsPinTheOverlayDepthModes) {
     EXPECT_EQ(univex::render::kStudioBackdropSkyState.depthCompare, OverlayDepthCompare::LessOrEqual)
         << "the sky sits exactly at the cleared far plane";
     EXPECT_EQ(univex::render::kStudioBackdropSkyState.blend, OverlayBlendMode::Opaque);
+    EXPECT_TRUE(univex::render::kStudioBackdropFloorState.depthTest);
+    EXPECT_FALSE(univex::render::kStudioBackdropFloorState.depthWrite);
+    EXPECT_EQ(univex::render::kStudioBackdropFloorState.depthCompare, OverlayDepthCompare::LessOrEqual);
+    EXPECT_EQ(univex::render::kStudioBackdropFloorState.blend, OverlayBlendMode::Alpha);
+    EXPECT_EQ(univex::render::kStudioBackdropFloorState.cull, OverlayCullMode::None);
     EXPECT_FALSE(univex::render::kScreenSpaceCompositeState.depthTest);
 
     const OverlayRasterState hidden = univex::render::WithDepthTest(univex::render::kGizmoStrokeState, false);
     EXPECT_FALSE(hidden.depthTest);
     EXPECT_EQ(univex::render::WithDepthTest(hidden, true), univex::render::kGizmoStrokeState);
     EXPECT_TRUE(univex::render::WithDepthWrite(univex::render::kGizmoStrokeState, true).depthWrite);
+    EXPECT_EQ(univex::render::WithCullMode(univex::render::kScreenSpaceCompositeState, OverlayCullMode::None).cull,
+              OverlayCullMode::None);
 }
 
 TEST(OverlayRasterStateUVETest, BridgeMapsTheStateOntoPipelineDescFieldByField) {
@@ -68,6 +75,14 @@ TEST(OverlayRasterStateUVETest, BridgeMapsTheStateOntoPipelineDescFieldByField) 
     EXPECT_EQ(sky.depthCompare, DepthCompareUVE::LessOrEqual);
     EXPECT_EQ(sky.blendMode, PipelineBlendModeUVE::Opaque);
     EXPECT_FALSE(sky.depthWriteEnabled);
+
+    const PipelineDescUVE floor =
+        univex::integration::ApplyOverlayRasterStateUVE(base, univex::render::kStudioBackdropFloorState);
+    EXPECT_TRUE(floor.depthTestEnabled);
+    EXPECT_FALSE(floor.depthWriteEnabled);
+    EXPECT_EQ(floor.depthCompare, DepthCompareUVE::LessOrEqual);
+    EXPECT_EQ(floor.blendMode, PipelineBlendModeUVE::SourceAlphaOver);
+    EXPECT_EQ(floor.cullMode, CullModeUVE::None);
 
     const PipelineDescUVE composite =
         univex::integration::ApplyOverlayRasterStateUVE(base, univex::render::kScreenSpaceCompositeState);

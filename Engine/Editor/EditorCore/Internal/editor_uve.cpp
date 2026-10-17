@@ -134,20 +134,20 @@ constexpr ImWchar kIconFontGlyphRangesUVE[] = {
 // not a literal token, so " File" adjacency wouldn't compile).
 
 [[nodiscard]] Math::Vector3UVE PrimitiveColliderHalfExtentsUVE(const Scene::PrimitiveMeshKindUVE kind) noexcept {
-    // Sourced from the object definitions rather than restated here. These half-extents are the same
+    // Sourced from the object policies rather than restated here. These half-extents are the same
     // authored defaults BoxMesh3D/SphereMesh3D/PlaneMesh3D attach at creation, and a second copy
     // of them is a second place to edit: changing a primitive's collider in its definition while
     // this switch kept the old number would give an entity different collision depending on
     // whether it was created as that kind or converted to it - a difference nothing would report.
     switch (kind) {
         case Scene::PrimitiveMeshKindUVE::Cube:
-            return Scene::BoxMesh3DObjectDefinitionUVE{}.collider.halfExtents;
+            return Scene::BoxMesh3DUVE::DefaultColliderHalfExtentsUVE();
         case Scene::PrimitiveMeshKindUVE::UVSphere:
-            return Scene::SphereMesh3DObjectDefinitionUVE{}.collider.halfExtents;
+            return Scene::SphereMesh3DUVE::DefaultColliderHalfExtentsUVE();
         case Scene::PrimitiveMeshKindUVE::Plane:
-            return Scene::PlaneMesh3DObjectDefinitionUVE{}.collider.halfExtents;
+            return Scene::PlaneMesh3DUVE::DefaultColliderHalfExtentsUVE();
     }
-    return Scene::BoxMesh3DObjectDefinitionUVE{}.collider.halfExtents;
+    return Scene::BoxMesh3DUVE::DefaultColliderHalfExtentsUVE();
 }
 constexpr float kGizmoAxisLengthUVE = 1.25F;
 constexpr float kGizmoHandleRadiusPixelsUVE = 12.0F;
@@ -279,7 +279,7 @@ void EditorUVE::InitUVE() {
         // cannot be dragged out.
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_ViewportsEnable;
         ImGui::StyleColorsDark();
-        ApplyEditorVisualThemeUVE();
+        ApplyEditorVisualThemeUVE(&m_extendedPreferences);
 
         // Font setup must happen before ImGui_ImplOpenGL3_Init() below: that call builds and
         // uploads the font atlas texture immediately, so any fonts merged in afterward would be
@@ -360,6 +360,16 @@ void EditorUVE::TickUVE() {
         (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() ||
          !IsDocumentEntityUVE(m_hierarchyRenameEntity) || m_hierarchyRenameEntity != m_selectedEntity)) {
         CancelHierarchyRenameUVE();
+    }
+
+    if (m_extendedPreferences.autosaveEnabled && m_sceneDirty && !m_activeScenePath.empty() &&
+        m_playModeState == EditorPlayModeStateUVE::Edit && IsAuthoringCommandAllowedUVE()) {
+        const auto now = std::chrono::steady_clock::now();
+        const double elapsed = std::chrono::duration<double>(now - m_lastAutosaveTime).count();
+        if (elapsed >= m_extendedPreferences.autosaveIntervalSeconds) {
+            m_lastAutosaveTime = now;
+            static_cast<void>(SaveSceneUVE());
+        }
     }
 }
 
@@ -2322,10 +2332,14 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
                                                             Scene::ApplyKinematic3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::NavMeshVolume3D:
-            entity = createObjectWithComponent(Scene::NavMeshVolume3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(
+                Scene::NavMeshVolume3DObjectDefinitionUVE{},
+                Scene::ApplyNavMeshVolume3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::NavSeeker3D:
-            entity = createObjectWithComponent(Scene::NavSeeker3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(
+                Scene::NavSeeker3DObjectDefinitionUVE{},
+                Scene::ApplyNavSeeker3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::Skeleton3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::Skeleton3DObjectDefinitionUVE{},
@@ -2346,7 +2360,9 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
                                                             Scene::ApplySpringArm3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::Marker3D:
-            entity = createObjectWithComponent(Scene::Marker3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(
+                Scene::Marker3DObjectDefinitionUVE{},
+                Scene::ApplyMarker3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::Hitbox3D:
             entity = createObjectWithComponent(Scene::Hitbox3DComponentUVE{});
@@ -2396,7 +2412,9 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
             entity = createObjectWithComponent(Scene::SpawnPoint3DComponentUVE{});
             break;
         case Scene::Objects::SceneObjectKindUVE::LevelStreamer3D:
-            entity = createObjectWithComponent(Scene::LevelStreamer3DComponentUVE{});
+            entity = CreateObjectDefinitionEntityInternalUVE(
+                Scene::LevelStreamer3DObjectDefinitionUVE{},
+                Scene::ApplyLevelStreamer3DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::WorldPartition3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::WorldPartition3DObjectDefinitionUVE{},
@@ -4221,6 +4239,11 @@ void EditorUVE::SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferenc
                                   m_colorPickerPreferences.advancedOpen);
 }
 
+void EditorUVE::SetExtendedPreferencesUVE(EditorExtendedPreferencesUVE preferences) noexcept {
+    m_extendedPreferences = std::move(preferences);
+    ApplyEditorVisualThemeUVE(&m_extendedPreferences);
+}
+
 void EditorUVE::ShutdownUVE() {
     if (m_state == EditorStateUVE::Shutdown || m_state == EditorStateUVE::Uninitialized) {
         return;
@@ -5377,7 +5400,8 @@ void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& sn
         const std::filesystem::path source = snapshot.contentRoot / entry.relativePath;
         const EditorModelSourceInfoUVE& info = m_modelSources[key] = ReadModelSourceInfoUVE(source);
         // An FBX's takes (the extension is compared as the model check compares it: any case).
-        if (info.animationCount > 0U) {
+        // Also extract a static T-pose .uvanim when a skeleton-bearing FBX has 0 AnimStacks.
+        if (info.animationCount > 0U || info.hasSkeleton) {
             static_cast<void>(ImportModelAnimationsUVE(source));
         }
         if (info.animationOnly) {

@@ -53,16 +53,31 @@ void SetErrorUVE(std::string* error, std::string text) {
             r[row][column] = matrix.m[row][column] / scales[column];
         }
     }
-    const float scale = scales[0];
-    if (std::abs(scales[1] - scale) > 1e-3F * scale || std::abs(scales[2] - scale) > 1e-3F * scale) {
-        return false; // not uniform
+    const float scale = (scales[0] + scales[1] + scales[2]) / 3.0F;
+    if (std::abs(scales[0] - scale) > 0.15F * scale || std::abs(scales[1] - scale) > 0.15F * scale ||
+        std::abs(scales[2] - scale) > 0.15F * scale) {
+        return false; // strongly non-uniform
     }
     const float determinant = r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1]) -
                               r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0]) +
                               r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0]);
-    if (determinant < 0.99F || determinant > 1.01F) {
-        return false; // mirrored or sheared
+    if (determinant < 0.85F || determinant > 1.15F) {
+        return false; // mirrored or heavily sheared
     }
+    // Orthonormalize columns via Gram-Schmidt so minor FBX bind-matrix drift produces a pure rotation.
+    const float dot01 = r[0][0] * r[0][1] + r[1][0] * r[1][1] + r[2][0] * r[2][1];
+    r[0][1] -= dot01 * r[0][0];
+    r[1][1] -= dot01 * r[1][0];
+    r[2][1] -= dot01 * r[2][0];
+    const float len1 = std::sqrt(r[0][1] * r[0][1] + r[1][1] * r[1][1] + r[2][1] * r[2][1]);
+    if (len1 > 1e-6F) {
+        r[0][1] /= len1;
+        r[1][1] /= len1;
+        r[2][1] /= len1;
+    }
+    r[0][2] = r[1][0] * r[2][1] - r[2][0] * r[1][1];
+    r[1][2] = r[2][0] * r[0][1] - r[0][0] * r[2][1];
+    r[2][2] = r[0][0] * r[1][1] - r[1][0] * r[0][1];
     Math::QuaternionUVE q{};
     const float trace = r[0][0] + r[1][1] + r[2][2];
     if (trace > 0.0F) {

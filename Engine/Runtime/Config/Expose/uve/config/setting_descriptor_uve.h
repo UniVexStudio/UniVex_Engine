@@ -27,15 +27,23 @@ enum class SettingTypeUVE {
     String,
     /// A filesystem path stored as text, with no requirement that it exist yet.
     FilePath,
+    /// A content-relative asset path or GUID string referencing an engine asset (empty = none).
+    AssetReference,
     /// A stable keyboard chord such as "Ctrl+Shift+S"; an empty string means unbound.
     KeyBinding,
     /// An ordered list of strings, stored as a count and numbered values beneath the setting id.
     StringList,
     /// A 64-bit value that must be one of the descriptor's enumEntries.
     Enum,
+    /// A 32-bit unsigned bitmask (stored as int64 in 0..0xFFFFFFFF) for physics/render/nav layers.
+    LayerMask,
     Color,
+    /// Two numbers; the descriptor's bounds, if any, apply to each component.
+    Vector2,
     /// Three numbers; the descriptor's bounds, if any, apply to each component.
     Vector3,
+    /// Four numbers; the descriptor's bounds, if any, apply to each component.
+    Vector4,
 };
 
 /// A colour setting's value: channels in 0..1. `a` is ignored for a colour without alpha.
@@ -48,7 +56,15 @@ struct SettingColorUVE final {
     [[nodiscard]] bool operator==(const SettingColorUVE&) const = default;
 };
 
-/// A vector setting's value.
+/// A 2D vector setting's value.
+struct SettingVector2UVE final {
+    double x = 0.0;
+    double y = 0.0;
+
+    [[nodiscard]] bool operator==(const SettingVector2UVE&) const = default;
+};
+
+/// A 3D vector setting's value.
 struct SettingVector3UVE final {
     double x = 0.0;
     double y = 0.0;
@@ -57,14 +73,25 @@ struct SettingVector3UVE final {
     [[nodiscard]] bool operator==(const SettingVector3UVE&) const = default;
 };
 
+/// A 4D vector setting's value.
+struct SettingVector4UVE final {
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
+    double w = 0.0;
+
+    [[nodiscard]] bool operator==(const SettingVector4UVE&) const = default;
+};
+
 using SettingStringListUVE = std::vector<std::string>;
 inline constexpr std::size_t kMaximumSettingStringListItemsUVE = 4096U;
 
 /// One setting's value. The alternative in use always matches the descriptor's type: bool for
-/// Bool, int64 for Int and Enum, double for Float, string for String/FilePath/KeyBinding,
-/// SettingStringListUVE for StringList, SettingColorUVE for Color, SettingVector3UVE for Vector3.
+/// Bool, int64 for Int/Enum/LayerMask, double for Float, string for String/FilePath/AssetReference/KeyBinding,
+/// SettingStringListUVE for StringList, SettingColorUVE for Color, SettingVector2UVE/3UVE/4UVE for vectors.
 using SettingValueUVE =
-    std::variant<bool, std::int64_t, double, std::string, SettingStringListUVE, SettingColorUVE, SettingVector3UVE>;
+    std::variant<bool, std::int64_t, double, std::string, SettingStringListUVE, SettingColorUVE,
+                 SettingVector2UVE, SettingVector3UVE, SettingVector4UVE>;
 
 /// Flags that describe a setting to the tools around it. The registry stores them; the settings
 /// panel, layering and migration act on them.
@@ -119,6 +146,8 @@ struct SettingDescriptorUVE final {
     /// Where it appears in the settings tree, as a slash path, e.g. "Editor/Viewport/Grid".
     std::string category;
     std::uint32_t flags = kSettingFlagNoneUVE;
+    /// Schema version in which this setting was introduced (0 = initial baseline).
+    std::uint32_t sinceVersion = 0U;
     /// For a Deprecated descriptor, the live setting that replaces this old id. Its stored value
     /// is read through the replacement and migrated to that id on the next document load/save.
     std::string replacementId;
@@ -156,6 +185,9 @@ struct SettingDescriptorUVE final {
 [[nodiscard]] SettingDescriptorUVE MakeFilePathSettingUVE(std::string id, std::string defaultValue,
                                                           std::size_t maxLength, std::string displayName,
                                                           std::string category, std::string tooltip = {});
+[[nodiscard]] SettingDescriptorUVE MakeAssetReferenceSettingUVE(std::string id, std::string defaultValue,
+                                                                std::size_t maxLength, std::string displayName,
+                                                                std::string category, std::string tooltip = {});
 [[nodiscard]] SettingDescriptorUVE MakeKeyBindingSettingUVE(std::string id, std::string defaultValue,
                                                             std::string displayName, std::string category,
                                                             std::string tooltip = {});
@@ -163,10 +195,21 @@ struct SettingDescriptorUVE final {
                                                       std::vector<SettingEnumEntryUVE> entries,
                                                       std::string displayName, std::string category,
                                                       std::string tooltip = {});
+[[nodiscard]] SettingDescriptorUVE MakeLayerMaskSettingUVE(std::string id, std::uint32_t defaultMask,
+                                                           std::string displayName, std::string category,
+                                                           std::string tooltip = {});
 [[nodiscard]] SettingDescriptorUVE MakeColorSettingUVE(std::string id, SettingColorUVE defaultValue, bool hasAlpha,
                                                        std::string displayName, std::string category,
                                                        std::string tooltip = {});
+[[nodiscard]] SettingDescriptorUVE MakeVector2SettingUVE(std::string id, SettingVector2UVE defaultValue,
+                                                         std::optional<double> minimum, std::optional<double> maximum,
+                                                         std::string displayName, std::string category,
+                                                         std::string tooltip = {});
 [[nodiscard]] SettingDescriptorUVE MakeVector3SettingUVE(std::string id, SettingVector3UVE defaultValue,
+                                                         std::optional<double> minimum, std::optional<double> maximum,
+                                                         std::string displayName, std::string category,
+                                                         std::string tooltip = {});
+[[nodiscard]] SettingDescriptorUVE MakeVector4SettingUVE(std::string id, SettingVector4UVE defaultValue,
                                                          std::optional<double> minimum, std::optional<double> maximum,
                                                          std::string displayName, std::string category,
                                                          std::string tooltip = {});

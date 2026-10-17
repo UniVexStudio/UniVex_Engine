@@ -40,17 +40,20 @@ void UpdateCameraFollowUVE(IEntityManagerUVE& entityManager) {
         if (entityManager.GetComponentUVE<HierarchyComponentUVE>(camera).parent != kInvalidEntityUVE) {
             continue; // rig-driven: a spring arm, vehicle, or bone owns this camera's pose
         }
-        const EntityUVE target =
-            entityManager.GetComponentUVE<CameraFollowComponentUVE>(camera).target;
-        if (!HasLiveFollowComponentUVE<WorldTransformComponentUVE>(entityManager, target)) {
+        const CameraFollowComponentUVE& follow =
+            entityManager.GetComponentUVE<CameraFollowComponentUVE>(camera);
+        if (!HasCameraFollowTargetUVE(follow, camera) ||
+            !HasLiveFollowComponentUVE<WorldTransformComponentUVE>(entityManager, follow.target) ||
+            !IsCameraFollowComponentValidUVE(follow)) {
             continue; // parked, destroyed, or never given a world pose: hold the last one
         }
         const Math::Vector3UVE targetPosition =
-            entityManager.GetComponentUVE<WorldTransformComponentUVE>(target).worldPosition;
-        const Math::Vector3UVE offset =
-            entityManager.GetComponentUVE<CameraFollowComponentUVE>(camera).offset;
+            entityManager.GetComponentUVE<WorldTransformComponentUVE>(follow.target).worldPosition;
+        if (!Math::IsFiniteUVE(targetPosition)) {
+            continue;
+        }
         TransformComponentUVE pose = entityManager.GetComponentUVE<TransformComponentUVE>(camera);
-        pose.localPosition = targetPosition + offset;
+        pose.localPosition = ResolveCameraFollowDesiredPositionUVE(follow, targetPosition);
         if (!IsTransformComponentValidUVE(pose)) {
             continue; // NaN in, nothing out: a poisoned target must not teleport the camera
         }
@@ -72,9 +75,7 @@ void RetargetPossessionFollowersUVE(IEntityManagerUVE& entityManager, const Enti
         [&followers](const EntityUVE entity, const CameraFollowComponentUVE&) { followers.push_back(entity); });
     for (const EntityUVE camera : followers) {
         CameraFollowComponentUVE& follow = entityManager.GetComponentUVE<CameraFollowComponentUVE>(camera);
-        if (follow.followPossessedPawn) {
-            follow.target = pawn;
-        }
+        ApplyPlayerPossessionToCameraFollowUVE(follow, pawn);
     }
 }
 

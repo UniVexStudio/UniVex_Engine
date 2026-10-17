@@ -61,8 +61,37 @@ struct SurfaceInstanceComponentUVE final {
     [[nodiscard]] bool operator==(const SurfaceInstanceComponentUVE&) const = default;
 };
 
+[[nodiscard]] bool IsSurfaceShadowModeValidUVE(SurfaceShadowModeUVE mode) noexcept;
+
+[[nodiscard]] bool IsSurfaceLightingModeValidUVE(SurfaceLightingModeUVE mode) noexcept;
+
+[[nodiscard]] bool IsSurfaceFadeModeValidUVE(SurfaceFadeModeUVE mode) noexcept;
+
 /// Known enumerators; finite values; transparency within [0, 1]; a positive LOD bias; no negative
 /// margin or distance; and a range end, when set, not before its beginning.
 [[nodiscard]] bool IsSurfaceInstanceComponentValidUVE(const SurfaceInstanceComponentUVE& component) noexcept;
+
+/// Clamps out-of-range transparency, distances, margins, and LOD bias into valid bounds.
+[[nodiscard]] SurfaceInstanceComponentUVE SanitizeSurfaceInstanceComponentUVE(
+    const SurfaceInstanceComponentUVE& component);
+
+/// Returns `1.0F - clamp(transparency, 0, 1)` in `[0, 1]`.
+[[nodiscard]] float ResolveSurfaceInstanceOpacityUVE(
+    const SurfaceInstanceComponentUVE& component) noexcept;
+
+/// True when `castShadow` is `On`, `DoubleSided`, or `ShadowsOnly`.
+[[nodiscard]] bool CastsSurfaceShadowUVE(const SurfaceInstanceComponentUVE& component) noexcept;
+
+/// True when main-pass geometry is drawn (`castShadow != ShadowsOnly` and `opacity > 0`).
+[[nodiscard]] bool DrawsMainPassSurfaceGeometryUVE(
+    const SurfaceInstanceComponentUVE& component) noexcept;
+
+/// True when `cameraDistance` falls inside `[visibilityRangeBegin, visibilityRangeEnd]` (`end == 0` = unbounded).
+[[nodiscard]] bool IsDistanceWithinSurfaceVisibilityRangeUVE(
+    const SurfaceInstanceComponentUVE& component, float cameraDistance) noexcept;
+
+/// Computes the visibility-range fade weight in `[0, 1]` at `cameraDistance`.
+[[nodiscard]] float ComputeSurfaceVisibilityRangeFadeFactorUVE(
+    const SurfaceInstanceComponentUVE& component, float cameraDistance) noexcept;
 
 } // namespace UVE::Scene

@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <string_view>
 
 #include "uve/math/vector3_uve.h"
 
@@ -32,5 +33,20 @@ struct PrimitiveMeshComponentUVE final {
 [[nodiscard]] bool IsPrimitiveBaseColorValidUVE(const Math::Vector3UVE& color) noexcept;
 
 [[nodiscard]] bool IsPrimitiveMeshComponentValidUVE(const PrimitiveMeshComponentUVE& component) noexcept;
+
+/// Clamps `color` channels into `[0, 1]` (or neutral white if any channel is non-finite).
+[[nodiscard]] Math::Vector3UVE ClampPrimitiveBaseColorUVE(const Math::Vector3UVE& color) noexcept;
+
+/// Returns a sanitized `PrimitiveMeshComponentUVE` with a valid kind and clamped base color.
+[[nodiscard]] PrimitiveMeshComponentUVE SanitizePrimitiveMeshComponentUVE(
+    const PrimitiveMeshComponentUVE& component) noexcept;
+
+/// Human-readable display label for `kind` (`"Cube"`, `"UVSphere"`, `"Plane"`).
+[[nodiscard]] std::string_view GetPrimitiveMeshKindDisplayNameUVE(
+    PrimitiveMeshKindUVE kind) noexcept;
+
+/// Local-space half-extents of the built-in unit primitive geometry for `kind`.
+[[nodiscard]] Math::Vector3UVE ResolvePrimitiveLocalHalfExtentsUVE(
+    PrimitiveMeshKindUVE kind) noexcept;
 
 } // namespace UVE::Scene

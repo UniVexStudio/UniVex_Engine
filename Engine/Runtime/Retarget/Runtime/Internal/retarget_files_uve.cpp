@@ -75,8 +75,11 @@ struct PlannedFileUVE final {
     std::error_code error;
     fs::rename(temporary, file, error);
     if (error) {
-        fs::remove(temporary, error);
-        return false;
+        error.clear();
+        fs::copy_file(temporary, file, fs::copy_options::overwrite_existing, error);
+        std::error_code removeError;
+        fs::remove(temporary, removeError);
+        return !error;
     }
     return true;
 }
@@ -147,16 +150,22 @@ RetargetAnimationCheckUVE CheckAnimationForRetargetUVE(const fs::path& file) {
 RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, const HumanoidReferenceUVE& reference,
                                         const RetargetProgressUVE& progress) {
     RetargetFilesResultUVE result;
-    const std::size_t total = 1U + request.animations.size();
+    const bool hasModel = !request.model.empty();
+    const std::size_t total = (hasModel ? 1U : 0U) + request.animations.size();
     const auto report = [&](const std::size_t done, const std::string& what) {
         if (progress) {
             progress(done, total, what);
         }
     };
 
+    if (!hasModel && request.animations.empty()) {
+        result.error = "nothing to retarget: no character or animations were given";
+        return result;
+    }
+
     // ---- 1. Read and conform everything in memory ----------------------------------------------
     std::vector<PlannedFileUVE> planned;
-    {
+    if (hasModel) {
         report(0U, request.model.filename().string());
         PlannedFileUVE model;
         model.file = request.model;
@@ -190,7 +199,7 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
     }
     for (std::size_t index = 0U; index < request.animations.size(); ++index) {
         const fs::path& path = request.animations[index];
-        report(index + 1U, path.filename().string());
+        report((hasModel ? 1U : 0U) + index, path.filename().string());
         PlannedFileUVE animation;
         animation.file = path;
         Asset::AnimationClipAssetUVE clip;
@@ -206,6 +215,9 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
             const std::optional<ConformedRigUVE> conformed = ConformSkeletonUVE(rig, match, reference, &error);
             std::optional<Asset::AnimationClipAssetUVE> converted;
             if (conformed.has_value()) {
+                if (!hasModel && result.heightScale == 1.0F) {
+                    result.heightScale = conformed->heightScale;
+                }
                 converted = ConformClipUVE(clip, rig, *conformed, reference, &error);
             }
             if (!converted.has_value()) {

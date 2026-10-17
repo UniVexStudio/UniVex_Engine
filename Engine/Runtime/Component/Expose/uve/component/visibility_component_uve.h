@@ -61,4 +61,22 @@ struct VisibilityComponentUVE final {
 /// have to special-case which components can be checked.
 [[nodiscard]] bool IsVisibilityComponentValidUVE(const VisibilityComponentUVE& component) noexcept;
 
+/// True when `component` does not redirect visibility to `selfEntity` (no immediate self-cycle).
+[[nodiscard]] bool IsVisibilityComponentValidForEntityUVE(
+    const VisibilityComponentUVE& component, EntityUVE selfEntity) noexcept;
+
+/// True when `component.visibilityParent` is set (`!= kInvalidEntityUVE`).
+[[nodiscard]] bool HasVisibilityRedirectUVE(const VisibilityComponentUVE& component) noexcept;
+
+/// Resolves and writes `visibility->visibleInHierarchy` from `parentVisible` (passes through when null).
+[[nodiscard]] bool ResolveInheritedVisibilityUVE(VisibilityComponentUVE* visibility,
+                                                 bool parentVisible) noexcept;
+
+/// True when `visibility` is null (optional component absent -> visible) or `visibleInHierarchy` is true.
+[[nodiscard]] bool IsEffectivelyVisibleUVE(const VisibilityComponentUVE* visibility) noexcept;
+
+/// Clears a self-redirecting `visibilityParent` (`visibilityParent == selfEntity`).
+[[nodiscard]] VisibilityComponentUVE SanitizeVisibilityComponentForEntityUVE(
+    const VisibilityComponentUVE& component, EntityUVE selfEntity) noexcept;
+
 } // namespace UVE::Scene

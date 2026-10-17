@@ -6,6 +6,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/logging/assert_uve.h"
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/objects/2d/camera_2d_uve.h"
 
 namespace UVE::Render {
 namespace {
@@ -50,10 +51,12 @@ Math::Matrix4x4UVE Camera2DSystemUVE::ComputeProjectionMatrixUVE(const Scene::IE
         UVE_ERROR("Camera2DSystemUVE: ComputeProjectionMatrixUVE received an invalid viewport size");
         return Math::Matrix4x4UVE::IdentityUVE();
     }
-    const float halfWidth = viewportSize.x / (2.0F * camera.zoom.x);
-    const float halfHeight = viewportSize.y / (2.0F * camera.zoom.y);
-    return Math::Matrix4x4UVE::OrthographicUVE(camera.offset.x - halfWidth, camera.offset.x + halfWidth,
-                                               camera.offset.y - halfHeight, camera.offset.y + halfHeight,
+    Scene::Camera2DOrthoBoundsUVE orthoBounds{};
+    if (!Scene::Camera2DUVE::TryResolveOrthoBoundsUVE(camera, viewportSize, orthoBounds)) {
+        return Math::Matrix4x4UVE::IdentityUVE();
+    }
+    return Math::Matrix4x4UVE::OrthographicUVE(orthoBounds.left, orthoBounds.right,
+                                               orthoBounds.bottom, orthoBounds.top,
                                                kCamera2DViewNearUVE, kCamera2DViewFarUVE);
 }
 

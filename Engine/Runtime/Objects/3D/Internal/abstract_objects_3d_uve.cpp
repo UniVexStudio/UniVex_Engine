@@ -106,7 +106,7 @@ void ExpandSurfaceInstance3DCullBoundsUVE(const SurfaceInstanceComponentUVE& sur
 }
 
 bool SurfaceInstance3DCastsShadowUVE(const SurfaceInstanceComponentUVE& surface) noexcept {
-    return surface.castShadow != SurfaceShadowModeUVE::Off;
+    return CastsSurfaceShadowUVE(surface);
 }
 
 bool SurfaceInstance3DDrawsInViewUVE(const SurfaceInstanceComponentUVE& surface) noexcept {
@@ -114,13 +114,7 @@ bool SurfaceInstance3DDrawsInViewUVE(const SurfaceInstanceComponentUVE& surface)
 }
 
 float SurfaceInstance3DOpacityUVE(const SurfaceInstanceComponentUVE& surface) noexcept {
-    if (!std::isfinite(surface.transparency) || surface.transparency <= 0.0F) {
-        return 1.0F;
-    }
-    if (surface.transparency >= 1.0F) {
-        return 0.0F;
-    }
-    return 1.0F - surface.transparency;
+    return ResolveSurfaceInstanceOpacityUVE(surface);
 }
 
 float SurfaceInstance3DVisibilityFadeWeightUVE(const SurfaceInstanceComponentUVE& surface,

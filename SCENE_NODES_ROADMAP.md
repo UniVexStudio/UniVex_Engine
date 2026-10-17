@@ -190,7 +190,7 @@ there).
   answers (`solved`, `reached`, `endToTargetDistanceMetres`, the resolved indices) are runtime-only and
   shown in the Inspector. Locked by 9 solver cases, 8 pass cases, the serializer's reference round trip
   and an engine-core tick test.
-- [~] Marker3D — a plain position/orientation hint, has no behavior by design (this one may never need a "system" — it's meant to be read by other tools/scripts, not ticked itself).
+- [x] Marker3D — position/orientation hint with `Marker3DUVE` world-pose composition/axis helpers, `Scene::QueryMarkers3DUVE` / `TryFindMarker3DPoseByNameUVE` query seam, UVScript `find_marker_position` host binding, and Editor viewport fly-to-marker support.
 - [x] Hitbox3D — real per-frame strike detection: `EngineCoreUVE::SyncHitbox3DObjectsUVE()`
   (the same engine-core home the RayCast3D/Projectile3D syncs use) pairs every enabled hitbox
   against every enabled Hurtbox3D with an exact 15-axis oriented-box-vs-oriented-box test (the
@@ -240,110 +240,103 @@ there).
   1D and 2D blend spaces, additive layers, one-shots and time scaling, all locked by the pose-graph
   and state-machine suites.
 
-### Missing entirely
+### Implemented in Batch 3–5 (Particles, GI Probes, Instancing, Billboards, Physics, AI/Nav, CSG, GridMap, and XR)
 
-- [ ] GPUParticles3D / CPUParticles3D — distinct hardware-accelerated vs. CPU-simulated particle emitters (clarify whether the existing ParticleEmitter3D should absorb this distinction or split in two).
-- [ ] MultiMeshInstance3D — cheap mass-instanced mesh rendering.
-- [ ] FogVolume — localized volumetric fog contribution.
-- [ ] VoxelGI — real-time voxel-based global illumination probe.
-- [ ] LightmapGI / LightmapProbe — baked static lighting + manual dynamic-object probes.
-- [ ] Sprite3D / AnimatedSprite3D — billboard sprites in 3D space.
-- [ ] Label3D — billboard 3D text.
-- [ ] VehicleBody3D / VehicleWheel3D — raycast-vehicle car physics.
-- [ ] PhysicalBone3D — ragdoll physics bone driven by a Skeleton3D.
-- [ ] SoftBody3D — deformable cloth/jelly physics mesh.
-- [ ] PinJoint3D / HingeJoint3D / SliderJoint3D / ConeTwistJoint3D / Generic6DOFJoint3D — 3D physics joint/constraint types.
-- [ ] CollisionPolygon3D — extruded-polygon collision shape.
-- [ ] NavigationObstacle3D / NavigationLink3D — navmesh obstacle carving and off-mesh links.
-- [ ] RemoteTransform3D — pushes this node's transform onto another remote node.
-- [ ] Path3D / PathFollow3D — curve authoring + travel-along-curve node.
-- [ ] ShapeCast3D — swept-shape collision query node.
-- [ ] VisibleOnScreenNotifier3D — signals when a region enters/exits camera view.
-- [ ] AudioListener3D — overrides the point 3D audio is heard from.
-- [ ] SpringBoneSimulator3D / SpringBoneCollision3D — secondary-motion "jiggle bone" simulation.
-- [ ] GridMap — grid-based block/tile 3D level building.
-- [ ] CSGBox3D / CSGSphere3D / CSGCylinder3D / CSGTorus3D / CSGMesh3D / CSGPolygon3D / CSGCombiner3D — constructive-solid-geometry primitives and boolean combiner for quick level blockouts.
-- [ ] XROrigin3D / XRCamera3D / XRController3D / XRFaceModifier3D — AR/VR tracking-space origin, headset camera, controller, and face tracking.
+- [x] GPUParticles3D / CPUParticles3D — distinct hardware-accelerated (`ParticleSimulationBackend3DUVE::GPU`) vs. CPU-simulated (`ParticleSimulationBackend3DUVE::CPU`) particle emitter recipes (`GPUParticles3DObjectDefinitionUVE` / `CPUParticles3DObjectDefinitionUVE` + `ParticleBackendTagComponentUVE` on top of `ParticleEmitterComponentUVE`, locked by `Object3DDefinitionsUVETest.AppliesBatch5Particles3DGIProbes3DAndXRObjects3DUVE`).
+- [x] MultiMeshInstance3D — mass-instanced mesh rendering built on `SurfaceInstance3DBaseUVE` (`MultiMeshInstance3DComponentUVE` + `MultiMeshInstance3DUVE::{ResolveActiveInstanceCountUVE, BuildInstanceWorldMatrixUVE, ComputeCombinedWorldBoundsUVE}`, locked by `Object3DDefinitionsUVETest.MultiMeshInstance3DSprite3DAnimatedSprite3DAndLabel3DExtendSurfaceInstanceBase`).
+- [x] FogVolume — localized volumetric fog contribution (`FogVolume3DComponentUVE` + `FogVolume3DObjectDefinitionUVE`, uploaded as localized 3D fog volumes by `Renderer3DUVE` and locked by `Test/Objects/3D/fog_volume_3d_uve_tests.cpp`).
+- [x] VoxelGI — real-time voxel-based global illumination probe (`VoxelGI3DComponentUVE` + `VoxelGI3DObjectDefinitionUVE` + `EvaluateIndirectGI3DIrradianceAtPointUVE()`, locked by `Object3DDefinitionsUVETest.AppliesBatch5Particles3DGIProbes3DAndXRObjects3DUVE`).
+- [x] LightmapGI / LightmapProbe — baked static lighting + manual dynamic-object irradiance probes (`LightmapGI3DComponentUVE` + `LightmapProbe3DComponentUVE` + `EvaluateIndirectGI3DIrradianceAtPointUVE()`, locked by `Object3DDefinitionsUVETest.AppliesBatch5Particles3DGIProbes3DAndXRObjects3DUVE`).
+- [x] Sprite3D / AnimatedSprite3D — billboard sprites and sprite-sheet frame animation in 3D space built on `SurfaceInstance3DBaseUVE` (`Sprite3DComponentUVE` + `Sprite3DUVE::{ResolveBillboardWorldRotationUVE, ResolveFrameUVRectUVE, StepAnimationUVE}` + `UpdateSprite3DObjectsUVE()`, wired into `EngineCoreUVE::SyncCameraFollowUVE()` and locked by `Object3DDefinitionsUVETest.MultiMeshInstance3DSprite3DAnimatedSprite3DAndLabel3DExtendSurfaceInstanceBase`).
+- [x] Label3D — billboard 3D text built on `SurfaceInstance3DBaseUVE` (`Label3DComponentUVE` + `Label3DUVE::EstimateWorldSizeMetresUVE()`, locked by `Object3DDefinitionsUVETest.MultiMeshInstance3DSprite3DAnimatedSprite3DAndLabel3DExtendSurfaceInstanceBase`).
+- [x] VehicleBody3D / VehicleWheel3D — raycast-vehicle car physics (`VehicleBody3DComponentUVE`, `VehicleWheel3DComponentUVE`, `EvaluateVehicleWheelSuspensionForceUVE()`, and `UpdateVehicle3DObjectsUVE()`, wired into `EngineCoreUVE::Update()` and locked by `Object3DDefinitionsUVETest.Vehicle3DPhysicalBone3DSoftBody3DAndCollisionPolygon3DContracts`).
+- [x] PhysicalBone3D — ragdoll physics bone driven by or driving a `Skeleton3D` (`PhysicalBone3DComponentUVE` + `UpdatePhysicalBone3DObjectsUVE()`, wired into `EngineCoreUVE::Update()` and locked by `Object3DDefinitionsUVETest.Vehicle3DPhysicalBone3DSoftBody3DAndCollisionPolygon3DContracts`).
+- [x] SoftBody3D — deformable cloth/jelly physics mesh built on `SurfaceInstance3DBaseUVE` (`SoftBody3DComponentUVE` + `UpdateSoftBody3DObjectsUVE()`, wired into `EngineCoreUVE::Update()` and locked by `Object3DDefinitionsUVETest.Vehicle3DPhysicalBone3DSoftBody3DAndCollisionPolygon3DContracts`).
+- [x] PinJoint3D / HingeJoint3D / SliderJoint3D / ConeTwistJoint3D / Generic6DOFJoint3D — 3D physics joint/constraint nodes (`Joint3DComponentUVE` + per-joint `*ObjectDefinitionUVE` recipes + `UpdateJoint3DObjectsUVE()` syncing with `PhysicsConstraintSystemUVE` and `EvaluateHingeMotorLimitUVE`, wired into `EngineCoreUVE::Update()` and locked by `Object3DDefinitionsUVETest.Joint3DDefinitionsSyncWithPhysicsConstraintSystemAndHingeMotorLimits`).
+- [x] CollisionPolygon3D — extruded-polygon collision shape (`CollisionPolygon3DComponentUVE` + `CollisionPolygon3DUVE::{ComputeLocalAabbUVE, ContainsLocalPointUVE}`, locked by `Object3DDefinitionsUVETest.Vehicle3DPhysicalBone3DSoftBody3DAndCollisionPolygon3DContracts`).
+- [x] NavigationObstacle3D / NavigationLink3D — dynamic navigation obstacle avoidance repulsion (`NavigationObstacle3DComponentUVE` + `ApplyNavigationObstacles3DToAgentsUVE()`) and off-mesh traversal link (`NavigationLink3DComponentUVE` + `ResolveNavigationLink3DWorldEndpointsAndCostUVE()`), wired into `EngineCoreUVE::SyncNavigationUVE()` and locked by `Object3DDefinitionsUVETest.NavigationObstacle3DNavigationLink3DSmartObject3DAndWorldQuery3DContracts`.
+- [x] RemoteTransform3D — pushes this node's transform channels (`position`, `rotation`, `scale`) onto another remote entity (`RemoteTransform3DComponentUVE` + `UpdateRemoteTransform3DObjectsUVE()`, wired into `EngineCoreUVE::SyncCameraFollowUVE()` and locked by `Object3DDefinitionsUVETest.RemoteTransform3DPushesSelectedChannelsToTargetEntity`).
+- [x] Path3D / PathFollow3D — curve authoring + travel-along-curve node (`Path3DComponentUVE` + `Path3DUVE::SampleWorldPoseAtDistanceUVE` + `PathFollow3DComponentUVE` + `UpdatePathFollow3DObjectsUVE()`, wired into `EngineCoreUVE::SyncCameraFollowUVE()` and locked by `Object3DDefinitionsUVETest.Path3DAndPathFollow3DSampleAndStepFollowerTransform`).
+- [x] ShapeCast3D — swept-shape (`Sphere`, `Box`, `Capsule`) collision query node (`ShapeCast3DComponentUVE` + `UpdateShapeCast3DObjectsUVE()` backed by `Physics::ShapeCastSystemUVE`, wired into `EngineCoreUVE::SyncRayCast3DObjectsUVE()` and locked by `Object3DDefinitionsUVETest.ShapeCast3DSweepsSphereAgainstColliderAndRecordsHit`).
+- [x] VisibleOnScreenNotifier3D — tracks when a local-space AABB enters or exits the active camera frustum (`VisibleOnScreenNotifier3DComponentUVE` + `UpdateVisibleOnScreenNotifier3DObjectsUVE()`, wired into `EngineCoreUVE::Update()` and locked by `Object3DDefinitionsUVETest.VisibleOnScreenNotifier3DTracksCameraFrustumTransitions`).
+- [x] AudioListener3D — overrides the point and orientation 3D spatial audio is heard from (`AudioListener3DComponentUVE` + `AudioListener3DUVE::TryResolveActiveListenerPoseUVE()`, wired into `EngineCoreUVE::LateUpdate()` and locked by `Object3DDefinitionsUVETest.AudioListener3DRecipeAndActiveResolutionOverrideCameraPose`).
+- [x] SpringBoneSimulator3D / SpringBoneCollision3D — secondary-motion "jiggle bone" spring simulation with sphere obstacle push-out (`SpringBoneSimulator3DComponentUVE` + `SpringBoneCollision3DComponentUVE` + `UpdateSpringBoneSimulator3DObjectsUVE()`, wired into `EngineCoreUVE::SyncBoneAttachment3DObjectsUVE()` and locked by `Object3DDefinitionsUVETest.SpringBoneSimulator3DStepsTipAndPushesOutOfCollisionSphere`).
+- [x] GridMap — grid-based block/tile 3D level building (`GridMap3DComponentUVE` + `GridMap3DUVE::{MapToLocalPositionUVE, LocalPositionToMapUVE, SetCellItemUVE, GetCellItemUVE}`, locked by `Object3DDefinitionsUVETest.CSGShapesGridMap3DAndStateTree3DContracts`).
+- [x] CSGBox3D / CSGSphere3D / CSGCylinder3D / CSGTorus3D / CSGMesh3D / CSGPolygon3D / CSGCombiner3D — constructive-solid-geometry primitives and boolean combiner built on `SurfaceInstance3DBaseUVE` (`CSGShape3DComponentUVE` + per-kind `*ObjectDefinitionUVE` recipes + `CSGShape3DUVE::{ComputeLocalAabbUVE, EvaluateLocalSignedDistanceUVE, CombineSignedDistanceUVE}`, locked by `Object3DDefinitionsUVETest.CSGShapesGridMap3DAndStateTree3DContracts`).
+- [x] XROrigin3D / XRCamera3D / XRController3D / XRFaceModifier3D — AR/VR tracking-space origin, headset camera, controller, and face-expression tracking (`XROrigin3DComponentUVE`, `XRCamera3DComponentUVE`, `XRController3DComponentUVE`, `XRFaceModifier3DComponentUVE`, and `UpdateXRObjects3DUVE()`, wired into `EngineCoreUVE::SyncCameraFollowUVE()` and locked by `Object3DDefinitionsUVETest.AppliesBatch5Particles3DGIProbes3DAndXRObjects3DUVE`).
 
 ---
 
 ## 2D Objects
 
 Sprite2D v1 has landed as scene data (component + definition + quad composer + registry +
-editor creation + save/load), and Renderer2D v1 + Camera2DSystem v1 draw it — but this engine
-still has no 2D physics/nav pipeline to simulate it.
+editor creation + save/load), and Renderer2D v1 + Camera2DSystem v1 draw it, alongside 2D physics, lighting, navigation, audio, animation, and input runtime evaluators.
 
 - [x] Sprite2D — 2D texture display (v1: data + quad composer; drawn by Renderer2D v1).
-- [ ] AnimatedSprite2D — frame-based 2D sprite animation.
-- [ ] MeshInstance2D / MultiMeshInstance2D — 2D mesh rendering, single and instanced.
-- [ ] Polygon2D — filled 2D polygon shape.
-- [ ] Line2D — segmented, textured 2D polyline.
-- [ ] CanvasModulate — global color tint for a canvas.
-- [ ] CanvasGroup — merges child draw calls into one composite.
-- [ ] BackBufferCopy — copies a screen region into a shader-readable buffer.
-- [ ] LightOccluder2D — shadow-casting occluder for Light2D.
-- [ ] Light2D / PointLight2D / DirectionalLight2D — 2D lighting with shadows.
-- [ ] AudioListener2D / AudioStreamPlayer2D — 2D positional audio listener + player.
-- [ ] RemoteTransform2D — pushes this node's transform onto a remote node.
-- [ ] Marker2D — non-rendering 2D position/orientation hint.
-- [ ] Path2D / PathFollow2D — 2D curve authoring + travel-along-curve.
-- [ ] Parallax2D — scrolling-background depth effect.
-- [ ] Bone2D / Skeleton2D — 2D skeletal animation hierarchy.
-- [ ] CollisionShape2D / CollisionPolygon2D — 2D collision shape sources.
-- [ ] Area2D — 2D overlap-detection trigger volume.
-- [ ] StaticBody2D / RigidBody2D / CharacterBody2D — 2D physics bodies (static, simulated, kinematic-character).
-- [ ] RayCast2D / ShapeCast2D — 2D raycast and swept-shape queries.
-- [ ] PinJoint2D / GrooveJoint2D / DampedSpringJoint2D — 2D physics joints.
-- [ ] NavigationRegion2D / NavigationAgent2D / NavigationObstacle2D / NavigationLink2D — 2D pathfinding region, agent, obstacle, and off-mesh link.
+- [x] AnimatedSprite2D — frame-based 2D sprite animation (`AnimatedSprite2DComponentUVE` + `UpdateAnimatedSprite2DObjectsUVE()`, wired into `EngineCoreUVE::SyncCameraFollowUVE()` and locked by `Camera2DObjectUVETest.Physics2DAnimatedSprite2DParallax2DAndTileMapLayerContractsUVE`).
+- [x] MeshInstance2D / MultiMeshInstance2D — 2D mesh rendering, single and instanced (`MeshInstance2DComponentUVE`, `MultiMeshInstance2DComponentUVE`, and `MultiMeshInstance2DUVE::ComputeCombinedLocalBoundsUVE()`, locked by `Camera2DObjectDefinitionTest.AppliesBatch5RenderingLightingAudioAnimNavAndInput2DObjectsUVE`).
+- [x] Polygon2D — filled 2D polygon shape (`Polygon2DComponentUVE` + `Polygon2DUVE::{ComputeSignedAreaUVE, ContainsLocalPointUVE}`, locked by `Camera2DObjectUVETest.Path2DPathFollow2DLine2DPolygon2DAndCanvasModulateContractsUVE`).
+- [x] Line2D — segmented 2D polyline (`Line2DComponentUVE` + `Line2DUVE::{ResolveSegmentCountUVE, ComputeLocalBoundingRectUVE}`, locked by `Camera2DObjectUVETest.Path2DPathFollow2DLine2DPolygon2DAndCanvasModulateContractsUVE`).
+- [x] CanvasModulate — global color and alpha tint for a 2D canvas (`CanvasModulateComponentUVE` + `ResolveActiveCanvasModulateUVE()`, locked by `Camera2DObjectUVETest.Path2DPathFollow2DLine2DPolygon2DAndCanvasModulateContractsUVE`).
+- [x] CanvasGroup — merges child draw calls into one composite (`CanvasGroupComponentUVE` + `CanvasGroupObjectDefinitionUVE`, locked by `Camera2DObjectDefinitionTest.AppliesBatch5RenderingLightingAudioAnimNavAndInput2DObjectsUVE`).
+- [x] BackBufferCopy — copies a screen region into a shader-readable buffer (`BackBufferCopyComponentUVE` + `BackBufferCopyObjectDefinitionUVE`, locked by `Camera2DObjectDefinitionTest.AppliesBatch5RenderingLightingAudioAnimNavAndInput2DObjectsUVE`).
+- [x] LightOccluder2D — shadow-casting occluder for Light2D (`LightOccluder2DComponentUVE` + segment-blocking occlusion in `EvaluateLight2DIlluminationAtPointUVE()`).
+- [x] Light2D / PointLight2D / DirectionalLight2D — 2D lighting with shadows (`Light2DComponentUVE` + `Light2DObjectDefinitionUVE` / `PointLight2DObjectDefinitionUVE` / `DirectionalLight2DObjectDefinitionUVE` + `EvaluateLight2DIlluminationAtPointUVE()`, locked by `Camera2DObjectDefinitionTest.AppliesBatch5RenderingLightingAudioAnimNavAndInput2DObjectsUVE`).
+- [x] AudioListener2D / AudioStreamPlayer2D — 2D positional audio listener + player (`AudioListener2DComponentUVE`, `AudioStreamPlayer2DComponentUVE`, and `UpdateAudioAnimNavInput2DObjectsUVE()` distance attenuation, wired into `EngineCoreUVE::SyncCameraFollowUVE()`).
+- [x] RemoteTransform2D — pushes this 2D node's X/Y position, rotation, and X/Y scale channels onto a remote entity (`RemoteTransform2DComponentUVE` + `UpdateRemoteTransform2DObjectsUVE()`, wired into `EngineCoreUVE::SyncCameraFollowUVE()` and locked by `Camera2DObjectUVETest.Marker2DRemoteTransform2DAndVisibleOnScreenNotifier2DContractsUVE`).
+- [x] Marker2D — non-rendering 2D position/orientation hint (`Marker2DComponentUVE` + `Marker2DUVE::{ComposeWorldPositionUVE, ResolveForwardDirectionUVE}`, locked by `Camera2DObjectUVETest.Marker2DRemoteTransform2DAndVisibleOnScreenNotifier2DContractsUVE`).
+- [x] Path2D / PathFollow2D — 2D curve authoring + travel-along-curve (`Path2DComponentUVE` + `Path2DUVE::SamplePoseAtDistanceUVE` + `PathFollow2DComponentUVE` + `UpdatePathFollow2DObjectsUVE()`, wired into `EngineCoreUVE::SyncCameraFollowUVE()` and locked by `Camera2DObjectUVETest.Path2DPathFollow2DLine2DPolygon2DAndCanvasModulateContractsUVE`).
+- [x] Parallax2D — scrolling-background depth effect (`Parallax2DComponentUVE` + `Parallax2DUVE::ComputeEffectiveOffsetUVE()`, locked by `Camera2DObjectUVETest.Physics2DAnimatedSprite2DParallax2DAndTileMapLayerContractsUVE`).
+- [x] Bone2D / Skeleton2D — 2D skeletal animation hierarchy (`Bone2DComponentUVE` + `Skeleton2DComponentUVE` + forward-kinematics evaluation in `UpdateAudioAnimNavInput2DObjectsUVE()`).
+- [x] CollisionShape2D / CollisionPolygon2D — 2D collision shape sources (`CollisionShape2DComponentUVE`, `CollisionPolygon2DComponentUVE`, locked by `Camera2DObjectUVETest.Physics2DAnimatedSprite2DParallax2DAndTileMapLayerContractsUVE`).
+- [x] Area2D — 2D overlap-detection trigger volume (`Area2DComponentUVE` + `UpdatePhysics2DObjectsUVE()`, wired into `EngineCoreUVE::Update()` and locked by `Camera2DObjectUVETest.Physics2DAnimatedSprite2DParallax2DAndTileMapLayerContractsUVE`).
+- [x] StaticBody2D / RigidBody2D / CharacterBody2D — 2D physics bodies (`PhysicsBody2DComponentUVE` + `Static2DObjectDefinitionUVE` / `Rigid2DObjectDefinitionUVE` / `Character2DObjectDefinitionUVE` + `UpdatePhysics2DObjectsUVE()`, wired into `EngineCoreUVE::Update()` and locked by `Camera2DObjectUVETest.Physics2DAnimatedSprite2DParallax2DAndTileMapLayerContractsUVE`).
+- [x] RayCast2D / ShapeCast2D — 2D raycast and swept-shape queries (`RayCast2DComponentUVE`, `ShapeCast2DComponentUVE`, evaluated by `UpdatePhysics2DObjectsUVE()` and locked by `Camera2DObjectUVETest.Physics2DAnimatedSprite2DParallax2DAndTileMapLayerContractsUVE`).
+- [x] PinJoint2D / GrooveJoint2D / DampedSpringJoint2D — 2D physics joints (`Joint2DComponentUVE` + per-joint `*ObjectDefinitionUVE` recipes solved in `UpdatePhysics2DObjectsUVE()`).
+- [x] NavigationRegion2D / NavigationAgent2D / NavigationObstacle2D / NavigationLink2D — 2D pathfinding region, agent, obstacle repulsion, and off-mesh link (`NavigationRegion2DComponentUVE`, `NavigationAgent2DComponentUVE`, `NavigationObstacle2DComponentUVE`, `NavigationLink2DComponentUVE`, and `UpdateAudioAnimNavInput2DObjectsUVE()`, wired into `EngineCoreUVE::SyncCameraFollowUVE()` and locked by `Camera2DObjectDefinitionTest.AppliesBatch5RenderingLightingAudioAnimNavAndInput2DObjectsUVE`).
 - [x] Camera2D — 2D scrolling camera (v1: data; consumed by Renderer2D v1 through Camera2DSystem v1).
-- [ ] VisibleOnScreenNotifier2D — signals when a region enters/exits the visible screen.
-- [ ] GPUParticles2D / CPUParticles2D — 2D particle emitters.
-- [ ] TouchScreenButton — on-screen touch input button.
-- [ ] TileMapLayer — grid-based tile authoring/rendering.
+- [x] VisibleOnScreenNotifier2D — signals when a 2D bounding rectangle enters/exits the visible screen (`VisibleOnScreenNotifier2DComponentUVE` + `UpdateVisibleOnScreenNotifier2DObjectsUVE()`, locked by `Camera2DObjectUVETest.Marker2DRemoteTransform2DAndVisibleOnScreenNotifier2DContractsUVE`).
+- [x] GPUParticles2D / CPUParticles2D — 2D particle emitters (`Particles2DComponentUVE` + `GPUParticles2DObjectDefinitionUVE` / `CPUParticles2DObjectDefinitionUVE` + `UpdateAudioAnimNavInput2DObjectsUVE()`).
+- [x] TouchScreenButton — on-screen touch input button (`TouchScreenButtonComponentUVE` + `TouchScreenButtonUVE::EvaluateTouchHitUVE()`, locked by `Camera2DObjectDefinitionTest.AppliesBatch5RenderingLightingAudioAnimNavAndInput2DObjectsUVE`).
+- [x] TileMapLayer — grid-based tile authoring/rendering (`TileMapLayerComponentUVE` + `TileMapLayerUVE::{MapToLocalPositionUVE, LocalPositionToMapUVE, SetCellTileUVE, GetCellTileUVE}`, locked by `Camera2DObjectUVETest.Physics2DAnimatedSprite2DParallax2DAndTileMapLayerContractsUVE`).
 
 ---
 
 ## CanvasLayer / UI Objects
 
-### Working today (Inspector-addable components, not yet promoted to the Scene node registry)
+### Working today
 
-- [x] Canvas — UI root/layer concept.
-- [x] UI Text — plain text label, real font-atlas rendering.
-- [x] UI Image — textured rectangle, real rendering.
-- [x] UI Button — real hover/press hit-testing against actual input.
-
-These four are real and GPU-rendered (including in the live editor's own Viewport panel during
-Play), but are only reachable via the Inspector's "Add Component" list today, not the Scene
-panel's node-creation popup — worth reconciling later so UI authoring has one consistent entry
-point.
-
-### Missing entirely
-
-- [ ] Layout containers — horizontal/vertical box, grid, flow-wrap, panel, center, margin, scroll, split, tab, aspect-ratio, sub-viewport containers.
-- [ ] More buttons — checkbox, toggle switch, dropdown/option button, menu button, hyperlink button, texture-based button, color-picker button.
-- [ ] More text/display — rich (formatted) text, single-line text input, multiline text editor, code editor, solid color rect, 9-slice panel, plain panel, reference/debug rect, video player.
-- [ ] Value/range controls — scrollbar, slider, progress bar, texture-based progress bar, numeric spin box.
-- [ ] Selection/lists — item list, hierarchical tree view, tab bar.
-- [ ] Menus/windows/dialogs — sub-window, popup panel, popup menu, menu bar, accept dialog, confirmation dialog, file picker dialog.
-- [ ] Color picker widget, on-screen virtual joystick.
-- [ ] Node-graph editing canvas (graph editor + connectable graph nodes) — useful for building this engine's own future visual tools, not just player-facing UI.
+- [x] Canvas — UI root/layer concept (`CanvasObjectDefinitionUVE` + `CanvasComponentUVE`, creatable from the Scene node registry).
+- [x] UI Text — plain text label, real font-atlas rendering (`UITextObjectDefinitionUVE` + `UITextComponentUVE`).
+- [x] UI Image — textured rectangle and 9-slice panel (`UIImageObjectDefinitionUVE` + `UIImageComponentUVE`).
+- [x] UI Button — real hover/press hit-testing against actual input (`UIButtonObjectDefinitionUVE` + `UIButtonComponentUVE`).
+- [x] Layout containers (horizontal/vertical box, grid, scroll, anchor) — `UILayoutContainerComponentUVE`, `UIScrollContainerComponentUVE`, and `UIAnchorComponentUVE` driven every frame by `UIRuntimeUVE` and covered by UI runtime + component domain tests.
+- [x] Checkbox, dropdown, and tooltip controls — `UICheckboxComponentUVE`, `UIDropdownComponentUVE`, and `UITooltipComponentUVE` driven by `UIRuntimeUVE` hit-testing, focus, and draw generation.
+- [x] Single-line text input — `UITextInputComponentUVE` with cursor, selection, max-length clamping, and keyboard editing in `UIRuntimeUVE`.
+- [x] Value/range controls & UI tweens — `UIScrollbarComponentUVE`, `UISliderComponentUVE`, `UIProgressBarComponentUVE`, and `UITweenComponentUVE` evaluated and rendered by `UIRuntimeUVE`.
+- [x] Additional layout containers — flow-wrap, panel, center, margin, split, tab, aspect-ratio, sub-viewport containers (`UIExtendedContainerComponentUVE` + `UIExtendedContainerUVE::ResolveContentRectUVE()`, locked by `CanvasObjectDefinitionsUVETest`).
+- [x] Additional buttons — toggle switch, menu button, hyperlink button, texture-based button, color-picker button (`UIExtendedButtonComponentUVE` + `UIExtendedButtonObjectDefinitionUVE`).
+- [x] Additional text/display — rich (formatted) text, multiline text editor, code editor, solid color rect, plain panel, reference/debug rect, video player (`UIDisplayWidgetComponentUVE` + `UpdateUIExtendedObjectsUVE()`).
+- [x] Additional value/range controls — texture-based progress bar, numeric spin box (`UIRangeControlComponentUVE` + step quantization in `UpdateUIExtendedObjectsUVE()`, locked by `CanvasObjectDefinitionsUVETest`).
+- [x] Selection/lists — item list, hierarchical tree view, tab bar (`UISelectionWidgetComponentUVE` + `UISelectionWidgetObjectDefinitionUVE`).
+- [x] Menus/windows/dialogs — sub-window, popup panel, popup menu, menu bar, accept dialog, confirmation dialog, file picker dialog (`UIDialogWindowComponentUVE` + `UIDialogWindowObjectDefinitionUVE`).
+- [x] Color picker widget, on-screen virtual joystick (`UISpecialInputComponentUVE` + radial deadzone normalization in `UpdateUIExtendedObjectsUVE()`).
+- [x] Node-graph editing canvas (graph editor + connectable graph nodes) — `UIGraphEditComponentUVE` + `UIGraphEditUVE::TryConnectPortsUVE()`, locked by `CanvasObjectDefinitionsUVETest`.
 
 ---
 
 ## AI Objects / Components
 
-Nothing placeable exists yet. `NavigationAgent3D`/`NavigationRegion3D` (listed above, 3D section)
-are the closest existing pieces, and they are themselves still data-only stubs with no pathfinding
-system behind them.
+`NavigationRegion3D` (`NavMeshVolume3D`) and `NavigationAgent3D` (`NavSeeker3D`) are listed above in the 3D section, and the core AI decision, memory, and sensing components below are live and ticked by `EngineCoreUVE`:
 
-- [ ] AI controller — a non-rendering "brain" that possesses and drives an entity's behavior.
-- [ ] Behavior tree (asset + runtime component) — data-driven decision tree of tasks/decorators/services.
-- [ ] Blackboard (component + data asset) — typed shared memory for a behavior tree / decision system.
-- [ ] Perception component (sight / hearing / damage stimuli) — detects other entities and world events.
-- [ ] World-query system — queries the world for tactical decisions (best cover point, best target, etc.).
-- [ ] Navigation crowd-following / avoidance component — follows a computed path while avoiding other agents.
-- [ ] Smart object component — marks an entity as something an AI agent can discover and use.
-- [ ] State tree / state-machine behavior — hierarchical state-machine authoring for behavior, as an alternative to a full behavior tree.
+- [x] AI controller / Utility AI brain — `AiBrainComponentUVE` evaluated every step by `EngineCoreUVE::SyncAiBrainsUVE()` (`SelectAiActionUVE()` scores considerations against `BlackboardComponentUVE` and emits `Ai::AiActionSelectedUVE`).
+- [x] Behavior tree (asset + runtime component) — `BehaviorTreeComponentUVE` evaluated against `BlackboardComponentUVE` with sequence/selector/action/condition nodes (`Test/AI/behavior_tree_uve_tests.cpp`).
+- [x] Blackboard (component + data asset) — `BlackboardComponentUVE` typed shared memory (`int`, `float`, `bool`, `Vector3UVE`, `EntityUVE`) read and written by perception, behavior trees, and utility AI.
+- [x] Perception component (sight / hearing stimuli) — `PerceptionComponentUVE` and `NoiseEmitterComponentUVE` ticked by `EngineCoreUVE::SyncPerceptionUVE()` (sight cone + raycast occlusion and hearing radius decay written into `BlackboardComponentUVE`).
+- [x] World-query system — `WorldQuery3DComponentUVE` (`WorldQuery3DObjectDefinitionUVE` + `UpdateSmartObjectAndWorldQuery3DUVE()`, wired into `EngineCoreUVE::SyncAiBrainsUVE()` and locked by `Object3DDefinitionsUVETest.NavigationObstacle3DNavigationLink3DSmartObject3DAndWorldQuery3DContracts`).
+- [x] Navigation crowd-following / avoidance component — `NavSeeker3DComponentUVE` (`NavAgentUVE` path following + neighbor avoidance radius separation in `EngineCoreUVE::SyncNavigationUVE()`).
+- [x] Smart object component — `SmartObject3DComponentUVE` (`SmartObject3DObjectDefinitionUVE` + `SmartObject3DUVE::{CanClaimUVE, TryClaimUVE, ReleaseUVE, ResolveWorldInteractionPointUVE}`, wired into `EngineCoreUVE::SyncAiBrainsUVE()` and locked by `Object3DDefinitionsUVETest.NavigationObstacle3DNavigationLink3DSmartObject3DAndWorldQuery3DContracts`).
+- [x] State tree / state-machine behavior — `StateTree3DComponentUVE` (`StateTree3DObjectDefinitionUVE` + `StateTree3DUVE::{SetParameterUVE, GetParameterUVE, StepUVE}` + `UpdateStateTree3DObjectsUVE()`, wired into `EngineCoreUVE::SyncAiBrainsUVE()` and locked by `Object3DDefinitionsUVETest.CSGShapesGridMap3DAndStateTree3DContracts`).
 
 ---
 

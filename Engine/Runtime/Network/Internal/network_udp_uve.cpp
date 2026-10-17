@@ -45,7 +45,7 @@ void CloseSocketUVE(const SocketHandleUVE handle) noexcept {
 
 bool SetNonBlockingUVE(const SocketHandleUVE handle) noexcept {
     u_long mode = 1UL;
-    return ::ioctlsocket(handle, FIONBIO, &mode) == 0;
+    return ::ioctlsocket(handle, static_cast<long>(FIONBIO), &mode) == 0;
 }
 #else
 using SocketHandleUVE = int;

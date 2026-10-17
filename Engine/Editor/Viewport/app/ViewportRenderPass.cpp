@@ -1,6 +1,8 @@
 #include "ViewportRenderPass.h"
 
 #include "univex/camera/ViewportMetrics.h"
+#include "univex/render/OverlayRasterState.h"
+#include "univex/render/OverlayRasterStateGl.h"
 
 #include <algorithm>
 #include <array>
@@ -172,7 +174,7 @@ Mat4 ViewportRenderPass::NavViewMatrix(const OrbitCamera& camera) {
     // the origin: the widget shows which way the world is facing, not where
     // the camera happens to be.
     const Vec3 offset = Normalize(camera.Eye() - camera.Target());
-    return Mat4::LookAt(offset * 3.f, Vec3{0.f, 0.f, 0.f}, Vec3{0.f, 1.f, 0.f});
+    return Mat4::LookAt(offset * 3.f, Vec3{0.f, 0.f, 0.f}, camera.Up());
 }
 
 Mat4 ViewportRenderPass::NavViewProjection(const GizmoStyle& style, const OrbitCamera& camera) {
@@ -196,17 +198,14 @@ NavViewportRect ViewportRenderPass::NavViewportRectFor(const GizmoStyle& style,
 }
 
 void ViewportRenderPass::DrawBackground() const {
-    const GLboolean hadDepthTest = glIsEnabled(GL_DEPTH_TEST);
-    const GLboolean hadBlend = glIsEnabled(GL_BLEND);
-    GLint depthMask = GL_TRUE;
-    glGetIntegerv(GL_DEPTH_WRITEMASK, &depthMask);
+    const univex::render::SavedOverlayRasterState savedState =
+        univex::render::SaveOverlayRasterState();
 
     // The backdrop sits behind everything by construction, so it neither tests
     // nor writes depth - writing far-plane depth here would be indistinguishable
     // from the clear, and testing would only cost fill rate.
-    glDisable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
-    glDisable(GL_BLEND);
+    univex::render::ApplyOverlayRasterState(
+        univex::render::WithDepthTest(univex::render::kStudioBackdropSkyState, false));
     backgroundProgram_.Use();
     glBindVertexArray(backgroundVao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -214,9 +213,7 @@ void ViewportRenderPass::DrawBackground() const {
 
     // Restore: anything drawn after this pass (the host's own scene geometry,
     // in the interleaved ordering) must not inherit a disabled depth test.
-    glDepthMask(static_cast<GLboolean>(depthMask));
-    if (hadDepthTest == GL_TRUE) glEnable(GL_DEPTH_TEST);
-    if (hadBlend == GL_TRUE) glEnable(GL_BLEND);
+    univex::render::RestoreOverlayRasterState(savedState);
 }
 
 void ViewportRenderPass::DrawCameraFrustums(const OrbitCamera& camera, int width, int height) const {
@@ -231,7 +228,7 @@ void ViewportRenderPass::DrawCameraFrustums(const OrbitCamera& camera, int width
     params.viewDirection = viewDirection;
     params.viewportWidth = static_cast<float>(width);
     params.viewportHeight = static_cast<float>(height);
-    glDepthMask(GL_TRUE);
+    univex::render::EnableOverlayDepthWrite();
     glClear(GL_DEPTH_BUFFER_BIT);
     params.depthTest = true;
     params.depthWrite = true;
@@ -250,7 +247,7 @@ void ViewportRenderPass::DrawBones(const OrbitCamera& camera, int width, int hei
     params.viewportHeight = static_cast<float>(height);
     // X-ray, like the gizmo: a rig is normally inside its mesh, and a bone you cannot see is one
     // you cannot check. Depth is cleared so the bones still sort against each other.
-    glDepthMask(GL_TRUE);
+    univex::render::EnableOverlayDepthWrite();
     glClear(GL_DEPTH_BUFFER_BIT);
     params.depthTest = true;
     params.depthWrite = true;
@@ -270,7 +267,8 @@ void ViewportRenderPass::DrawTransformGizmo(const OrbitCamera& camera, int width
     const float worldPerPixel =
         univex::camera::WorldPerPixelAtPointUVE(camera, height, pivot);
     const float unitsPerPixel = (scale > 0.f) ? worldPerPixel / scale : 1.f;
-    const auto mesh = BuildGizmoMesh(gizmoMode_, style_, viewDirection, unitsPerPixel);
+    const auto mesh =
+        BuildGizmoMesh(gizmoMode_, style_, viewDirection, unitsPerPixel, highlightedGizmoHandle_);
 
     GizmoDrawParams params;
     params.viewProjection = camera.ViewProjection(static_cast<float>(width) / static_cast<float>(height));
@@ -286,7 +284,7 @@ void ViewportRenderPass::DrawTransformGizmo(const OrbitCamera& camera, int width
     // Discarding scene depth is only safe because the overlay is the last pass
     // of the frame - RenderOverlayUVE is documented as such, and RenderFrame
     // calls it last. Anything that needs scene depth must run before it.
-    glDepthMask(GL_TRUE);
+    univex::render::EnableOverlayDepthWrite();
     glClear(GL_DEPTH_BUFFER_BIT);
     params.depthTest = true;
     params.depthWrite = true;
@@ -321,7 +319,7 @@ void ViewportRenderPass::DrawNavGizmo(const OrbitCamera& camera, int width, int 
     const GLboolean hadScissor = glIsEnabled(GL_SCISSOR_TEST);
     glEnable(GL_SCISSOR_TEST);
     glScissor(rect.x, rect.y, rect.size, rect.size);
-    glDepthMask(GL_TRUE);
+    univex::render::EnableOverlayDepthWrite();
     glClear(GL_DEPTH_BUFFER_BIT);
     if (hadScissor == GL_FALSE) glDisable(GL_SCISSOR_TEST);
     params.depthTest = true;
@@ -334,7 +332,7 @@ void ViewportRenderPass::DrawNavGizmo(const OrbitCamera& camera, int width, int 
 void ViewportRenderPass::ClearUVE(int framebufferWidth, int framebufferHeight) const {
     if (framebufferWidth <= 0 || framebufferHeight <= 0) return;
     glViewport(0, 0, framebufferWidth, framebufferHeight);
-    glDepthMask(GL_TRUE); // clearing depth requires the write mask on
+    univex::render::EnableOverlayDepthWrite(); // clearing depth requires the write mask on
     glClearColor(0.043F, 0.055F, 0.086F, 1.0F);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }

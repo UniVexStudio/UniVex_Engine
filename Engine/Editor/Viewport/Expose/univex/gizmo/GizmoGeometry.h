@@ -31,6 +31,19 @@ enum class GizmoMode {
     Universal,
 };
 
+/// Which part of the widget a ray hit or is highlighted.
+enum class GizmoHandleUVE {
+    None,
+    AxisX,
+    AxisY,
+    AxisZ,
+    PlaneXY,
+    PlaneYZ,
+    PlaneZX,
+    ScreenRing,
+    Uniform,
+};
+
 [[nodiscard]] const char* GizmoModeName(GizmoMode mode);
 
 struct GizmoLine {
@@ -70,6 +83,7 @@ struct GizmoMesh {
 [[nodiscard]] GizmoMesh BuildGizmoMesh(GizmoMode mode,
                                        const GizmoStyle& style,
                                        const Vec3& viewDirection,
-                                       float unitsPerPixel);
+                                       float unitsPerPixel,
+                                       GizmoHandleUVE highlightedHandle = GizmoHandleUVE::None);
 
 } // namespace univex::gizmo

@@ -8,6 +8,7 @@
 
 #include "uve/component/entity_uve.h"
 #include "uve/component/sprite_2d_component_uve.h"
+#include "uve/math/rect_uve.h"
 #include "uve/math/vector2_uve.h"
 
 namespace UVE::Scene {
@@ -56,5 +57,20 @@ struct Sprite2DQuadUVE final {
 /// garbage.
 [[nodiscard]] std::optional<Sprite2DQuadUVE> ComposeSprite2DQuadUVE(
     const Sprite2DComponentUVE& sprite, const Math::Vector2UVE& textureSize) noexcept;
+
+class Sprite2DUVE final {
+public:
+    [[nodiscard]] static bool UsesWholeTextureRegionUVE(
+        const Sprite2DComponentUVE& sprite) noexcept;
+    [[nodiscard]] static Math::Vector2UVE ResolveDrawExtentPixelsUVE(
+        const Sprite2DComponentUVE& sprite, const Math::Vector2UVE& textureSize) noexcept;
+    [[nodiscard]] static std::optional<Sprite2DQuadUVE> ComposeQuadUVE(
+        const Sprite2DComponentUVE& sprite, const Math::Vector2UVE& textureSize) noexcept;
+    [[nodiscard]] static std::optional<Math::RectUVE> ComputeLocalBoundingRectUVE(
+        const Sprite2DComponentUVE& sprite, const Math::Vector2UVE& textureSize) noexcept;
+    [[nodiscard]] static bool ContainsLocalPointUVE(
+        const Sprite2DComponentUVE& sprite, const Math::Vector2UVE& textureSize,
+        const Math::Vector2UVE& localPoint) noexcept;
+};
 
 } // namespace UVE::Scene

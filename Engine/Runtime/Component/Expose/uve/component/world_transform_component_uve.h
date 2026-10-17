@@ -3,7 +3,10 @@
 
 #pragma once
 
+#include "uve/component/transform_component_uve.h"
+#include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
+#include "uve/math/trs_uve.h"
 #include "uve/math/vector3_uve.h"
 
 namespace UVE::Scene {
@@ -25,5 +28,54 @@ struct WorldTransformComponentUVE final {
     Math::Vector3UVE worldScale{1.0F, 1.0F, 1.0F};
     mutable bool dirty = true;
 };
+
+/// True when `worldPosition`, `worldRotation`, and `worldScale` are all finite.
+[[nodiscard]] bool IsWorldTransformComponentValidUVE(
+    const WorldTransformComponentUVE& transform) noexcept;
+
+/// Compares the cached world pose (position, rotation, scale) while ignoring the `dirty` flag.
+[[nodiscard]] bool HasSameWorldPoseUVE(const WorldTransformComponentUVE& lhs,
+                                       const WorldTransformComponentUVE& rhs) noexcept;
+
+/// Converts the cached world pose into a `Math::TrsUVE` value.
+[[nodiscard]] Math::TrsUVE ToWorldTrsUVE(const WorldTransformComponentUVE& transform) noexcept;
+
+/// Builds a `WorldTransformComponentUVE` from a `Math::TrsUVE` value.
+[[nodiscard]] WorldTransformComponentUVE FromWorldTrsUVE(const Math::TrsUVE& trs,
+                                                         bool dirty = false) noexcept;
+
+/// Copies a local transform directly as a root/top-level world transform candidate.
+[[nodiscard]] WorldTransformComponentUVE MakeWorldTransformFromLocalUVE(
+    const TransformComponentUVE& local, bool dirty = false) noexcept;
+
+/// Composes `local` under `parentWorld` using the scene graph's TRS composition rule.
+[[nodiscard]] WorldTransformComponentUVE ComposeWorldTransformUVE(
+    const WorldTransformComponentUVE& parentWorld, const TransformComponentUVE& local,
+    bool dirty = false) noexcept;
+
+/// Builds the 4x4 world matrix (`ComposeTrsUVE`) for `transform`.
+[[nodiscard]] Math::Matrix4x4UVE BuildWorldTransformMatrixUVE(
+    const WorldTransformComponentUVE& transform) noexcept;
+
+/// Transforms a local-space point into world space using `transform`.
+[[nodiscard]] Math::Vector3UVE TransformWorldPointUVE(
+    const WorldTransformComponentUVE& transform, const Math::Vector3UVE& localPoint) noexcept;
+
+/// Transforms a world-space point into `transform`'s local space when invertible.
+[[nodiscard]] bool TryInverseTransformWorldPointUVE(
+    const WorldTransformComponentUVE& transform, const Math::Vector3UVE& worldPoint,
+    Math::Vector3UVE& outLocalPoint) noexcept;
+
+/// Resolves the unit world-space forward direction (`-Z` rotated by `worldRotation`).
+[[nodiscard]] Math::Vector3UVE ResolveWorldForwardUVE(
+    const WorldTransformComponentUVE& transform) noexcept;
+
+/// Resolves the unit world-space right direction (`+X` rotated by `worldRotation`).
+[[nodiscard]] Math::Vector3UVE ResolveWorldRightUVE(
+    const WorldTransformComponentUVE& transform) noexcept;
+
+/// Resolves the unit world-space up direction (`+Y` rotated by `worldRotation`).
+[[nodiscard]] Math::Vector3UVE ResolveWorldUpUVE(
+    const WorldTransformComponentUVE& transform) noexcept;
 
 } // namespace UVE::Scene

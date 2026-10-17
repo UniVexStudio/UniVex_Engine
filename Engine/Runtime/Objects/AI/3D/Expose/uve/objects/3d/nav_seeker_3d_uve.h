@@ -3,10 +3,15 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 
+#include "uve/component/entity_uve.h"
 #include "uve/objects/3d/object_3d_common_uve.h"
+#include "uve/objects/3d/object_3d_uve.h"
 
 namespace UVE::Scene {
+
+class IEntityManagerUVE;
 
 /// What the agent's own steering last reported. Runtime state: written by the navigation step, never
 /// authored and never saved - the route is a fact about the scene as it stands, not about the file.
@@ -48,8 +53,67 @@ struct NavSeeker3DComponentUVE final {
     bool enabled = true;
     bool pathChanged = false;
     bool targetReached = false;
+
+    [[nodiscard]] bool operator==(const NavSeeker3DComponentUVE&) const = default;
 };
 
 [[nodiscard]] bool IsNavSeeker3DObjectComponentValidUVE(const NavSeeker3DComponentUVE& value) noexcept;
+
+/// NavSeeker3D's creation recipe — the Object3D baseline plus a default
+/// `NavSeeker3DComponentUVE`.
+struct NavSeeker3DObjectDefinitionUVE final {
+    static constexpr std::string_view typeName = "NavSeeker3D";
+    static constexpr std::string_view defaultName = "NavSeeker3D";
+
+    NavSeeker3DComponentUVE seeker{};
+
+    [[nodiscard]] bool operator==(const NavSeeker3DObjectDefinitionUVE&) const = default;
+};
+
+[[nodiscard]] bool IsNavSeeker3DObjectDefinitionValidUVE(
+    const NavSeeker3DObjectDefinitionUVE& value) noexcept;
+
+void ApplyNavSeeker3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                         const NavSeeker3DObjectDefinitionUVE& value);
+
+/// Node policy for a `NavSeeker3D` navigation agent object.
+///
+/// Owns effective avoidance radius, planar target-distance / arrival tolerance checks, slow-down
+/// speed scaling, and idle state publishing shared by `NavigationRuntimeUVE` and gameplay steering.
+class NavSeeker3DUVE final {
+public:
+    NavSeeker3DUVE() = delete;
+
+    /// True when `seeker` is enabled and passes `IsNavSeeker3DObjectComponentValidUVE`.
+    [[nodiscard]] static bool IsActiveUVE(const NavSeeker3DComponentUVE& seeker) noexcept;
+
+    /// Returns `seeker.avoidanceRadius` when `seeker.avoidanceEnabled` is true, else `0.0F`.
+    [[nodiscard]] static float EffectiveAvoidanceRadiusUVE(
+        const NavSeeker3DComponentUVE& seeker) noexcept;
+
+    /// Computes the horizontal (XZ-plane) distance in metres from `currentPosition` to
+    /// `seeker.targetPosition`.
+    [[nodiscard]] static float PlanarDistanceToTargetUVE(
+        const NavSeeker3DComponentUVE& seeker, const Math::Vector3UVE& currentPosition) noexcept;
+
+    /// True when `currentPosition` is within `seeker.targetTolerance` horizontally of
+    /// `seeker.targetPosition`.
+    [[nodiscard]] static bool IsWithinTargetToleranceUVE(
+        const NavSeeker3DComponentUVE& seeker, const Math::Vector3UVE& currentPosition) noexcept;
+
+    /// Computes the arrival speed multiplier in `[0, 1]` for `distanceToTargetMetres` given
+    /// `seeker.targetTolerance` and `seeker.slowDownRadius`.
+    [[nodiscard]] static float ResolveArrivalSpeedScaleUVE(
+        const NavSeeker3DComponentUVE& seeker, float distanceToTargetMetres) noexcept;
+
+    /// Resets `seeker`'s runtime steering outputs to `Idle` at `currentPosition` (zero velocity,
+    /// `nextPathPosition = currentPosition`, `pathChanged = false`, `targetReached = false`).
+    static void PublishIdleStateUVE(
+        NavSeeker3DComponentUVE& seeker, const Math::Vector3UVE& currentPosition) noexcept;
+
+    /// Assigns a new finite `targetPosition` on `seeker` and clears `targetReached`.
+    static bool TrySetTargetPositionUVE(
+        NavSeeker3DComponentUVE& seeker, const Math::Vector3UVE& targetPosition) noexcept;
+};
 
 } // namespace UVE::Scene

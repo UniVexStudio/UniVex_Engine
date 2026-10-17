@@ -487,15 +487,15 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
         std::set<std::string> usedIds;
         for (const ufbx_anim_stack* const stack : scene->anim_stacks) {
             const double begin = stack->time_begin;
-            const double duration = stack->time_end - stack->time_begin;
-            if (!std::isfinite(begin) || !std::isfinite(duration) || duration <= 0.0) {
-                continue; // a take with no length has nothing to play
+            const double rawDuration = stack->time_end - stack->time_begin;
+            if (!std::isfinite(begin) || !std::isfinite(rawDuration) || rawDuration < 0.0) {
+                continue;
             }
+            const double duration = rawDuration > 1.0e-6 ? rawDuration : (1.0 / framesPerSecond);
             // One sample a frame, fewer when the take is longer than the per-track bound allows.
             const double wanted = std::ceil(duration * framesPerSecond) + 1.0;
             const std::size_t count = static_cast<std::size_t>(
                 std::clamp(wanted, 2.0, static_cast<double>(kMaximumAnimationAssetSamplesUVE)));
-            const double step = duration / static_cast<double>(count - 1U);
 
             AnimationClipAssetUVE clip;
             std::string id(stack->name.data, stack->name.length);
@@ -522,8 +522,9 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
                 track.bone = bone.name;
                 track.samples.reserve(count);
                 for (std::size_t frame = 0U; frame < count && valid; ++frame) {
-                    const double local = frame + 1U == count ? duration : static_cast<double>(frame) * step;
-                    const double time = begin + local;
+                    const double sampleLocal = frame + 1U == count ? duration : static_cast<double>(frame) * (duration / static_cast<double>(count - 1U));
+                    const double evalLocal = rawDuration > 1.0e-6 ? sampleLocal : 0.0;
+                    const double time = begin + evalLocal;
                     ufbx_transform evaluated = ufbx_evaluate_transform(stack->anim, bone.object, time);
                     ufbx_matrix matrix = ufbx_transform_to_matrix(&evaluated);
                     for (const ufbx_node* const between : bone.between) {
@@ -533,7 +534,7 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
                     }
                     const ufbx_transform pose = ufbx_matrix_to_transform(&matrix);
                     valid = IsFiniteTransformUVE(pose);
-                    track.samples.push_back(AnimationAssetSampleUVE{local, ToAnimationPoseUVE(pose)});
+                    track.samples.push_back(AnimationAssetSampleUVE{sampleLocal, ToAnimationPoseUVE(pose)});
                 }
                 // A bone that does not move keeps one sample: its pose for the whole take.
                 const bool still = std::all_of(track.samples.begin(), track.samples.end(),
@@ -549,6 +550,23 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
                 clips.push_back(std::move(clip));
             } else {
                 UVE_WARNING("FbxMeshConverterUVE: take \"{}\" produced a non-finite or oversized clip; skipped", stem);
+            }
+        }
+        if (clips.empty() && !rest.empty()) {
+            AnimationClipAssetUVE clip;
+            clip.clipId = "TPose";
+            clip.durationSeconds = 1.0 / framesPerSecond;
+            clip.rest = rest;
+            clip.bones.reserve(rest.size());
+            for (const AnimationAssetRestBoneUVE& bone : rest) {
+                AnimationAssetBoneTrackUVE track;
+                track.bone = bone.bone;
+                track.samples.push_back(
+                    AnimationAssetSampleUVE{0.0, AnimationAssetPoseUVE{bone.position, bone.rotation, bone.scale}});
+                clip.bones.push_back(std::move(track));
+            }
+            if (IsAnimationClipAssetValidUVE(clip)) {
+                clips.push_back(std::move(clip));
             }
         }
     } catch (const std::bad_alloc&) {

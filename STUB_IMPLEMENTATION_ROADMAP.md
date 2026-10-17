@@ -500,21 +500,23 @@ with/beside the renderer's own roadmap, not alone.
 
 **Depends on:** renderer decal pass. **Size: L.**
 
-### 12. ReflectionProbe3D — probe capture scheduling (done) + sampling (still open)
+### 12. ReflectionProbe3D — probe capture scheduling (done) + sampling (done)
 
 - [x] Implement capture scheduling — `EngineCoreUVE::SyncReflectionProbe3DNodesUVE()`:
       `updateMode` (`Once`/`Always`/on-demand), `cameraInfluenceWeight`, capture budget with
       starvation aging.
 - [x] Tests lock the scheduling half — five dedicated `EngineCoreUVETest` cases.
 - [x] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]` — done for the sync half.
-- [ ] Implement the renderer-side sampling half — still `[~]`: capture the probe's volume
-      into a reflection texture and feed ambient/reflection sampling.
+- [x] Implement the renderer-side sampling half — `Renderer3DUVE::CaptureDueReflectionProbesUVE()`
+      renders the six cubemap faces into `cache.cube` at the authored `resolution` tier while
+      filtering meshes and primitives by `probe.visibilityLayers`, and
+      `BindReflectionProbeForViewUVE()` binds `uReflectionProbeCube` + box-projection uniforms
+      (`halfExtents` from `size`) for `lit_shadowed_3d.glsl`.
 
 **Component:** `ReflectionProbe3DComponentUVE` — own file pair.
-**Remaining fields:** `size`, `visibilityLayers` are scheduled but not yet consumed by any
-renderer capture.
-**The work:** capture the probe's volume into a reflection texture and feed ambient/reflection
-sampling. Also a rendering-lane feature.
+**Landed:** `size`, `visibilityLayers`, `resolution`, `updateMode`, and `captureGeneration` are
+all consumed end to end across `EngineCoreUVE` scheduling, `Renderer3DUVE` cubemap capture, and
+box-projected shader sampling.
 **Depends on:** renderer cubemap capture. **Size: L.**
 
 ### 13. NavigationRegion3D + NavigationAgent3D — navmesh, pathfinding, steering (paired)
@@ -669,6 +671,7 @@ correctly stays unticked. Listed here so the audit trail shows it was considered
 
 ## Done (moved here when the last box ticks)
 
+### ReflectionProbe3D — cubemap capture (`CaptureDueReflectionProbesUVE`) honoring `visibilityLayers` and `resolution`, plus box-projected shader sampling (`BindReflectionProbeForViewUVE` / `uReflectionProbeCube`) — done
 ### Decal3D — the projected patches are painted: `decal.glsl` evaluates the authored fades per pixel against the CPU's own world-to-unit matrix, each decal draws from its own buffers, and the plan's caps/refusals are reported — done in the change that gave the patch stream a program to bind (8 plan cases, 1 end-to-end frame case that asserts the recorded draw, 2 F1 rows with their own case)
 ### LODGroup3D — the resolved level draws its own mesh: per-level `lodMeshGuids` with the object's own mesh as the fallback, a hysteresis band on every threshold and on the cull point, locked by 12 resolver + 2 mesh-fetch + 1 renderer-swap + 2 serializer + 1 metadata case — done in the change that gave `distanceThresholds` something to draw (drawer census 44 → 45)
 

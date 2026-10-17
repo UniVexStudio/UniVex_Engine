@@ -88,4 +88,52 @@ std::string MakeUniqueActionNameUVE(const std::vector<Input::InputActionUVE>& ac
     return name;
 }
 
+bool ResetActionToProjectDefaultUVE(std::vector<Input::InputActionUVE>& actions,
+                                    const std::vector<Input::InputActionUVE>& projectDefaults,
+                                    const std::string_view actionName) {
+    const auto defaultIt = std::find_if(projectDefaults.begin(), projectDefaults.end(),
+                                        [actionName](const Input::InputActionUVE& candidate) {
+                                            return candidate.name == actionName;
+                                        });
+    if (defaultIt == projectDefaults.end()) {
+        return false;
+    }
+    const auto targetIt = std::find_if(actions.begin(), actions.end(),
+                                       [actionName](const Input::InputActionUVE& candidate) {
+                                           return candidate.name == actionName;
+                                       });
+    if (targetIt != actions.end()) {
+        *targetIt = *defaultIt;
+    } else {
+        actions.push_back(*defaultIt);
+    }
+    return true;
+}
+
+void ResetInputMapToProjectDefaultsUVE(std::vector<Input::InputActionUVE>& actions,
+                                       const std::vector<Input::InputActionUVE>& projectDefaults) {
+    actions = projectDefaults;
+}
+
+bool ApplyRuntimeActionRebindUVE(Input::IInputSystemUVE& input, const std::string_view actionName,
+                                 const Input::InputBindingUVE& newBinding) {
+    if (actionName.empty()) {
+        return false;
+    }
+    return input.RemapActionUVE(actionName, {newBinding}, {});
+}
+
+std::vector<Input::InputActionUVE> FilterActionsBySetPrefixUVE(
+    const std::vector<Input::InputActionUVE>& actions, const std::string_view actionSetPrefix) {
+    std::vector<Input::InputActionUVE> filtered;
+    const std::string dotPrefix = std::string(actionSetPrefix) + ".";
+    for (const Input::InputActionUVE& action : actions) {
+        if (actionSetPrefix.empty() || action.name.starts_with(dotPrefix) ||
+            (actionSetPrefix == "gameplay" && action.name.find('.') == std::string::npos)) {
+            filtered.push_back(action);
+        }
+    }
+    return filtered;
+}
+
 } // namespace UVE::Editor

@@ -18,7 +18,11 @@ namespace {
 std::string FormatTimestampUVE(std::chrono::system_clock::time_point timePoint) {
     const std::time_t timeT = std::chrono::system_clock::to_time_t(timePoint);
     std::tm tmValue{};
+#if defined(_WIN32)
+    gmtime_s(&tmValue, &timeT);
+#else
     gmtime_r(&timeT, &tmValue);
+#endif
     std::ostringstream stream;
     stream << std::put_time(&tmValue, "%Y-%m-%dT%H:%M:%SZ");
     return stream.str();

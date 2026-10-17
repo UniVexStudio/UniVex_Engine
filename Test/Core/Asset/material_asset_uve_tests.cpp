@@ -16,7 +16,9 @@
 
 #include "uve/asset/asset_database_uve.h"
 #include "uve/asset/asset_handle_uve.h"
+#include "uve/asset/asset_import_sidecar_uve.h"
 #include "uve/asset/asset_manager_uve.h"
+#include "uve/asset/texture_import_settings_uve.h"
 #include "uve/asset/uve_file_envelope_uve.h"
 #include "uve/logging/log_sink_uve.h"
 #include "uve/logging/logger_uve.h"
@@ -318,6 +320,77 @@ TEST(MaterialAssetUVETest, TryMakeMaterialBillboardRotationUVE_YIgnoresCameraHei
     EXPECT_NEAR(localZ.x, 1.0F, 1.0e-4F);
     EXPECT_NEAR(localZ.y, 0.0F, 1.0e-4F);
     EXPECT_NEAR(localZ.z, 0.0F, 1.0e-4F);
+}
+
+TEST(MaterialAssetUVETest, ExtendedMaterialTextureAndImportSidecarRoundTripAndValidateDeterministically) {
+    MaterialAssetUVE material = MakeTestMaterialUVE();
+    material.albedoAlpha = 0.5F;
+    material.metallicTexture = AssetGuidUVE{101U};
+    material.roughnessTexture = AssetGuidUVE{102U};
+    material.cullMode = MaterialCullModeUVE::Disabled;
+    material.blendMode = MaterialBlendModeUVE::AlphaBlend;
+    material.clearcoatAmount = 0.6F;
+    material.parentMaterial = AssetGuidUVE{103U};
+    material.nextPassMaterial = AssetGuidUVE{104U};
+
+    EXPECT_TRUE(ShouldBucketMaterialTransparentUVE(material));
+    const std::filesystem::path matPath = "uve_extended_material_asset_test.uvmat";
+    std::filesystem::remove(matPath);
+    ASSERT_TRUE(SaveMaterialAssetUVE(material, matPath));
+
+    MaterialAssetUVE loadedMat;
+    ASSERT_TRUE(LoadMaterialAssetUVE(matPath, loadedMat));
+    EXPECT_FLOAT_EQ(loadedMat.albedoAlpha, 0.5F);
+    EXPECT_EQ(loadedMat.metallicTexture, AssetGuidUVE{101U});
+    EXPECT_EQ(loadedMat.roughnessTexture, AssetGuidUVE{102U});
+    EXPECT_EQ(loadedMat.cullMode, MaterialCullModeUVE::Disabled);
+    EXPECT_EQ(loadedMat.blendMode, MaterialBlendModeUVE::AlphaBlend);
+    EXPECT_FLOAT_EQ(loadedMat.clearcoatAmount, 0.6F);
+    EXPECT_EQ(loadedMat.parentMaterial, AssetGuidUVE{103U});
+    EXPECT_EQ(loadedMat.nextPassMaterial, AssetGuidUVE{104U});
+    std::filesystem::remove(matPath);
+
+    TextureImportSettingsUVE texSettings{};
+    texSettings.generateMipmaps = false;
+    texSettings.compressionMode = TextureCompressionModeUVE::None;
+    EXPECT_EQ(EstimateImportedTextureMemoryBytesUVE(64U, 64U, texSettings), 64U * 64U * 4U);
+
+    const std::filesystem::path sidecarPath = GetImportSidecarPathUVE("hero_mesh.fbx");
+    EXPECT_EQ(sidecarPath.filename(), "hero_mesh.fbx.uvimport");
+    AssetImportSidecarUVE sidecar{};
+    sidecar.importerVersion = "v2";
+    sidecar.presetName = "CharacterHigh";
+    sidecar.reimportNeeded = true;
+    sidecar.warnings.push_back("Degenerate triangle skipped");
+    sidecar.options["scaleFactor"] = "0.01";
+    ASSERT_TRUE(SaveImportSidecarUVE(sidecar, sidecarPath));
+
+    AssetImportSidecarUVE loadedSidecar{};
+    ASSERT_TRUE(LoadImportSidecarUVE(sidecarPath, loadedSidecar));
+    EXPECT_EQ(loadedSidecar.importerVersion, "v2");
+    EXPECT_EQ(loadedSidecar.presetName, "CharacterHigh");
+    EXPECT_TRUE(loadedSidecar.reimportNeeded);
+    ASSERT_EQ(loadedSidecar.warnings.size(), 1U);
+    EXPECT_EQ(loadedSidecar.options.at("scaleFactor"), "0.01");
+    std::filesystem::remove(sidecarPath);
+
+    MeshImportSettingsUVE meshSettings{};
+    meshSettings.generateLods = true;
+    meshSettings.lodCount = 4U;
+    EXPECT_NE(meshSettings.GetCacheVersionUVE().find("lods=4"), std::string::npos);
+
+    PrimitiveGeometryParametersUVE primitives{};
+    EXPECT_TRUE(IsPrimitiveGeometryParametersValidUVE(primitives));
+    primitives.torusOuterRadius = 0.1F;
+    EXPECT_FALSE(IsPrimitiveGeometryParametersValidUVE(primitives));
+
+    AudioImportSettingsUVE audioSettings{};
+    audioSettings.forceMono = true;
+    EXPECT_NE(audioSettings.GetCacheVersionUVE().find("mono=1"), std::string::npos);
+
+    FontImportSettingsUVE fontSettings{};
+    fontSettings.baseSizePixels = 48U;
+    EXPECT_NE(fontSettings.GetCacheVersionUVE().find("size=48"), std::string::npos);
 }
 
 } // namespace

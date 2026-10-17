@@ -125,6 +125,9 @@ TEST_F(ProjectPackagerUVETest, PackUVE_RejectsMissingReferencedApplicationIcon) 
 }
 
 TEST_F(ProjectPackagerUVETest, PackUVE_PreservesRuntimeExecutablePermissionBits) {
+#if defined(_WIN32)
+    GTEST_SKIP() << "POSIX execute permissions are not represented on Windows filesystem";
+#else
     ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
 
     ASSERT_TRUE(ProjectPackagerUVE::PackUVE(MakeOptionsUVE()).IsSuccessUVE());
@@ -132,6 +135,7 @@ TEST_F(ProjectPackagerUVETest, PackUVE_PreservesRuntimeExecutablePermissionBits)
     const std::filesystem::perms copiedPermissions =
         std::filesystem::status(outputDirectory / "fake_uve_runtime").permissions();
     EXPECT_NE((copiedPermissions & std::filesystem::perms::owner_exec), std::filesystem::perms::none);
+#endif
 }
 
 TEST_F(ProjectPackagerUVETest, PackUVE_RejectsProjectWithNoStartupSceneConfigured) {

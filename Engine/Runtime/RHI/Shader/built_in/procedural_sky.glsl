@@ -70,15 +70,17 @@ vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
 vec3 ProceduralSkyUVE(vec3 viewDir) {
     vec3 dir = normalize(viewDir);
     vec3 sun = length(uSunDirection) > 1.0e-5 ? normalize(uSunDirection) : vec3(0.0, 1.0, 0.0);
-    if (dir.y >= 0.0) {
-        return AtmosphereUpperUVE(dir, sun);
-    }
+    vec3 upperDir = normalize(vec3(dir.x, max(dir.y, 0.0), dir.z));
+    vec3 upperSky = AtmosphereUpperUVE(upperDir, sun);
     vec3 horizonDir = normalize(vec3(dir.x, 0.001, dir.z));
     vec3 horizon = AtmosphereUpperUVE(horizonDir, sun);
     float day = smoothstep(-0.08, 0.18, sun.y);
     vec3 ground = max(uGroundColor, vec3(0.0)) * (0.12 + 0.88 * day);
-    float groundT = pow(clamp(-dir.y, 0.0, 1.0), max(uGroundCurve, 0.001));
-    return mix(horizon, ground, groundT);
+    float effectiveGroundCurve = clamp(max(uGroundCurve, 0.001) * 6.0, 0.15, 4.0);
+    float groundT = pow(clamp(-dir.y, 0.0, 1.0), effectiveGroundCurve);
+    vec3 lowerGround = mix(horizon, ground, groundT);
+    float horizonBlend = smoothstep(-0.12, 0.12, dir.y);
+    return mix(lowerGround, upperSky, horizonBlend);
 }
 
 vec2 SkyEquirectUvUVE(vec3 dir) {
