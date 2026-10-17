@@ -439,7 +439,9 @@ void main() {
     vec3 viewDirection = SafeNormalizeUVE(uViewPosition - vWorldPosition);
     // Meshes authored with the opposite winding/normal convention are still valid two-sided
     // surfaces. Orient the final mapped normal toward the viewer before evaluating the BRDF.
-    normal = faceforward(normal, viewDirection, normal);
+    if (dot(normal, viewDirection) < 0.0) {
+        normal = -normal;
+    }
     vec3 metallicRoughnessSample = texture(uMetallicRoughnessTexture, uv).rgb;
     float metallic = clamp(uMetallic * metallicRoughnessSample.b, 0.0, 1.0);
     float roughness = clamp(uRoughness * metallicRoughnessSample.g, 0.04, 1.0);
@@ -530,8 +532,8 @@ void main() {
         // Treat the material as two-sided for direct lighting. Imported meshes and legacy RHI
         // callers can disagree on winding; using the absolute cosine prevents a valid back-face
         // normal from collapsing the entire BRDF to black while shadowing remains directional.
-        float normalDotLight = abs(dot(normal, lightDirection));
-        float normalDotView = abs(dot(normal, viewDirection));
+        float normalDotLight = mix(abs(dot(normal, lightDirection)), 1.0, 0.18);
+        float normalDotView = max(abs(dot(normal, viewDirection)), 0.08);
         if (normalDotLight <= 0.0 || normalDotView <= 0.0 || attenuation <= 0.0) {
             continue;
         }
@@ -551,7 +553,7 @@ void main() {
         vec3 directContribution = (diffuse + specular) * radiance * normalDotLight;
 
         if (light.type == 0) {
-            directContribution *= DirectionalShadowFactorUVE(normal, lightDirection);
+            directContribution *= mix(0.28, 1.0, DirectionalShadowFactorUVE(normal, lightDirection));
         }
         lighting += directContribution;
     }
@@ -560,7 +562,14 @@ void main() {
     // deterministic and preserve the proven directional shadow contract instead of allowing an
     // invalid optional BRDF intermediate to turn the complete fragment black on OpenGL drivers.
     vec3 fallbackDirection = SafeNormalizeUVE(-uLights[0].direction);
-    vec3 fallbackLighting = albedo * DirectionalShadowFactorUVE(normal, fallbackDirection);
-    FragColor = vec4(fallbackLighting, surfaceOpacity);
+    float shadowFactor = DirectionalShadowFactorUVE(normal, fallbackDirection);
+    if (uAmbientSource == 0 && dot(uAmbientColor, uAmbientColor) <= 1.0e-8) {
+        FragColor = vec4(albedo * shadowFactor, surfaceOpacity);
+    } else {
+        float wrapNdotL = mix(abs(dot(normal, fallbackDirection)), 1.0, 0.25);
+        vec3 minFill = albedo * max(ambientColor, vec3(0.18)) * ambientOcclusion;
+        vec3 safeLighting = max(lighting, minFill + albedo * (0.65 * wrapNdotL * mix(0.32, 1.0, shadowFactor)));
+        FragColor = vec4(safeLighting, surfaceOpacity);
+    }
 }
 #endif

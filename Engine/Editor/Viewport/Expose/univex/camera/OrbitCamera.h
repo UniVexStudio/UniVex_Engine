@@ -45,6 +45,10 @@ struct OrbitCameraSettings {
     float nearPlaneScale = 0.002f;
     float farPlaneScale = 2000.f;
     float nearPlaneMin = 0.001f;
+
+    // When true, vertical orbit is not clamped at the poles and the camera's
+    // up vector rotates smoothly over the top and bottom for full 360-degree orbit.
+    bool allowFullOrbit = false;
 };
 
 class OrbitCamera {
@@ -74,10 +78,12 @@ public:
     [[nodiscard]] float Yaw() const { return yaw_; }
     [[nodiscard]] float Pitch() const { return pitch_; }
     [[nodiscard]] float Distance() const { return distance_; }
+    [[nodiscard]] OrbitCameraSettings& Settings() { return settings_; }
     [[nodiscard]] const OrbitCameraSettings& Settings() const { return settings_; }
 
-    // World-space camera position.
+    // World-space camera position and orientation up vector.
     [[nodiscard]] Vec3 Eye() const;
+    [[nodiscard]] Vec3 Up() const;
 
     [[nodiscard]] float NearPlane() const;
     [[nodiscard]] float FarPlane() const;

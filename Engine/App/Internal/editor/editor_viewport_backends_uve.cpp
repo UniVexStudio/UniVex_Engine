@@ -88,11 +88,11 @@ uniform sampler2D uMeshColor;
 out vec4 FragColor;
 void main() {
     vec4 meshColor = texelFetch(uMeshColor, ivec2(gl_FragCoord.xy), 0);
-    if (meshColor.a < 0.5) {
+    if (meshColor.a < 0.25) {
         discard; // the renderer drew nothing here; leave the backdrop and its depth alone
     }
     FragColor = vec4(meshColor.rgb, 1.0);
-    gl_FragDepth = 0.0;
+    gl_FragDepth = (meshColor.a > 0.875) ? 0.0 : 0.999999;
 }
 )";
 
@@ -551,7 +551,9 @@ public:
     ViewportPanelBackendUVE(UVE::Editor::EditorUVE& editor, UVE::Core::EngineCoreUVE& engine,
                             const UVE::Editor::EditorUVE::ViewportContextUVE context)
         : editor_(editor), engine_(engine), entityManager_(engine.GetServicesUVE().GetEntityManagerUVE()),
-          meshLayer_(engine.GetServicesUVE()), context_(context) {}
+          meshLayer_(engine.GetServicesUVE()), context_(context) {
+        camera_.Settings().allowFullOrbit = true;
+    }
 
     ~ViewportPanelBackendUVE() {
         DestroyFramebuffersUVE();
@@ -608,6 +610,7 @@ public:
         if (studioView_) {
             // Looked at, not edited: nothing is selected or moved, and the view does not turn.
             renderPass_->Settings().viewTransformGizmo = false;
+            renderPass_->SetHighlightedGizmoHandleUVE(univex::gizmo::GizmoHandleUVE::None);
             if (ImGui::IsWindowHovered() && ImGui::GetIO().MouseWheel != 0.0F) {
                 camera_.Dolly(ImGui::GetIO().MouseWheel);
             }
@@ -618,6 +621,7 @@ public:
             // A handle drag outranks both: grabbing an arrow must not also orbit the camera or, on
             // release, register as a click that selects whatever is behind the gizmo.
             const bool gizmoOwnsGesture = !navGizmoOwnsGesture && UpdateGizmoDragUVE(width, height);
+            UpdateGizmoHoverHighlightUVE(width, height, navGizmoOwnsGesture);
             const bool pointerTaken = navGizmoOwnsGesture || gizmoOwnsGesture;
             UpdateSelectionFromMouseUVE(width, height, pointerTaken);
             UpdateEntityContextToolbarFromMouseUVE(width, height, pointerTaken);
@@ -1172,6 +1176,32 @@ private:
         return TryBeginGizmoDragUVE(width, height);
     }
 
+    void UpdateGizmoHoverHighlightUVE(const int width, const int height, const bool navGizmoOwnsGesture) {
+        if (dragHandle_ != univex::gizmo::GizmoHandleUVE::None) {
+            renderPass_->SetHighlightedGizmoHandleUVE(dragHandle_);
+            return;
+        }
+        if (navGizmoOwnsGesture || pointerOverOverlay_ || !ImGui::IsWindowHovered()) {
+            renderPass_->SetHighlightedGizmoHandleUVE(univex::gizmo::GizmoHandleUVE::None);
+            return;
+        }
+        const std::optional<GizmoPlacementUVE> placement = CurrentGizmoPlacementUVE(height);
+        if (!placement.has_value()) {
+            renderPass_->SetHighlightedGizmoHandleUVE(univex::gizmo::GizmoHandleUVE::None);
+            return;
+        }
+        const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
+        const ImGuiIO& io = ImGui::GetIO();
+        univex::math::Vec3 rayOrigin{};
+        univex::math::Vec3 rayDirection{};
+        CursorRayUVE(width, height, io.MousePos.x - imageOrigin.x, io.MousePos.y - imageOrigin.y,
+                     rayOrigin, rayDirection);
+        const univex::gizmo::GizmoPickResultUVE pick = univex::gizmo::PickGizmoHandleUVE(
+            renderPass_->Mode(), renderPass_->Style(), rayOrigin, rayDirection, placement->pivot,
+            placement->scale, placement->viewDirection, placement->unitsPerPixel);
+        renderPass_->SetHighlightedGizmoHandleUVE(pick.handle);
+    }
+
     /// The gizmo's placement this frame: the pivot it is drawn at, the world size of one gizmo
     /// unit, and how many gizmo units a pixel spans. Empty when no gizmo is on screen.
     struct GizmoPlacementUVE final {
@@ -1215,13 +1245,9 @@ private:
         if (!placement.has_value()) {
             return false;
         }
-        // Universal mode stacks a ring, an arrow and a scale cube on the same axis, and the pick
-        // reports only which axis was hit - not which of the three tools. Rather than guess at
-        // what the user grabbed, dragging is offered in the explicit Move/Rotate/Scale tools; the
-        // universal widget stays a display of all three.
         const univex::gizmo::GizmoMode mode = renderPass_->Mode();
         if (mode != univex::gizmo::GizmoMode::Move && mode != univex::gizmo::GizmoMode::Rotate &&
-            mode != univex::gizmo::GizmoMode::Scale) {
+            mode != univex::gizmo::GizmoMode::Scale && mode != univex::gizmo::GizmoMode::Universal) {
             return false;
         }
 
@@ -1239,8 +1265,40 @@ private:
             return false;
         }
 
+        univex::gizmo::GizmoMode effectiveMode = mode;
+        if (mode == univex::gizmo::GizmoMode::Universal) {
+            if (pick.handle == univex::gizmo::GizmoHandleUVE::Uniform) {
+                effectiveMode = univex::gizmo::GizmoMode::Scale;
+            } else {
+                // Disambiguate whether the click landed on the rotate ring, scale cube, or move arrow/shaft.
+                univex::gizmo::GizmoStyle universalStyle = renderPass_->Style();
+                universalStyle.ringRadius = universalStyle.universalRingRadius;
+                universalStyle.ringLineWidthPx = universalStyle.universalRingWidthPx;
+                const auto rotatePick = univex::gizmo::PickGizmoHandleUVE(
+                    univex::gizmo::GizmoMode::Rotate, universalStyle, rayOrigin, rayDirection,
+                    placement->pivot, placement->scale, placement->viewDirection, placement->unitsPerPixel);
+                if (rotatePick.handle == pick.handle) {
+                    effectiveMode = univex::gizmo::GizmoMode::Rotate;
+                } else {
+                    if (const auto axisDir = univex::gizmo::AxisDirectionForHandleUVE(pick.handle)) {
+                        const auto along = univex::gizmo::ProjectRayOntoAxisUVE(
+                            rayOrigin, rayDirection, placement->pivot, *axisDir);
+                        const float splitOffset =
+                            (universalStyle.universalShaftEnd + universalStyle.universalConeLength +
+                             universalStyle.universalScaleBoxOffset) *
+                            0.5f * placement->scale;
+                        effectiveMode = (along.has_value() && *along >= splitOffset)
+                                            ? univex::gizmo::GizmoMode::Scale
+                                            : univex::gizmo::GizmoMode::Move;
+                    } else {
+                        effectiveMode = univex::gizmo::GizmoMode::Move;
+                    }
+                }
+            }
+        }
+
         UVE::Editor::EditorToolSessionModeUVE sessionMode{};
-        switch (mode) {
+        switch (effectiveMode) {
             case univex::gizmo::GizmoMode::Move:
                 sessionMode = UVE::Editor::EditorToolSessionModeUVE::Translate;
                 break;
@@ -1255,7 +1313,7 @@ private:
         // Capture where the drag started, in the handle's own terms. Every later frame reports its
         // value the same way and subtracts this one, so the amount fed to the gesture is always
         // measured from the press rather than accumulated frame to frame.
-        if (!CaptureDragReferenceUVE(*placement, mode, pick.handle, rayOrigin, rayDirection,
+        if (!CaptureDragReferenceUVE(*placement, effectiveMode, pick.handle, rayOrigin, rayDirection,
                                      dragPressValue_)) {
             return false;
         }
@@ -1264,7 +1322,7 @@ private:
         }
 
         dragHandle_ = pick.handle;
-        dragMode_ = mode;
+        dragMode_ = effectiveMode;
         dragPivot_ = placement->pivot;
         return true;
     }

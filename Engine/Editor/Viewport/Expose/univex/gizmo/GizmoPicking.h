@@ -25,21 +25,6 @@ namespace univex::gizmo {
 
 using univex::math::Vec3;
 
-/// Which part of the widget a ray hit. The axis and plane handles name the axis (or axis pair)
-/// they act along; Uniform is the centre handle, which acts on all three at once; ScreenRing is
-/// the outer ring of the rotate gizmo, which turns around the view direction.
-enum class GizmoHandleUVE {
-    None,
-    AxisX,
-    AxisY,
-    AxisZ,
-    PlaneXY,
-    PlaneYZ,
-    PlaneZX,
-    ScreenRing,
-    Uniform,
-};
-
 /// True for the three single-axis handles, which is the distinction almost every caller wants.
 [[nodiscard]] bool IsAxisHandleUVE(GizmoHandleUVE handle) noexcept;
 

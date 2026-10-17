@@ -251,7 +251,7 @@ GizmoPickResultUVE PickGizmoHandleUVE(const GizmoMode mode, const GizmoStyle& st
 
     const auto worldPoint = [&](const Vec3& gizmoSpace) { return pivot + gizmoSpace * scale; };
 
-    // ---- axis shafts -----------------------------------------------------
+    // ---- axis shafts & heads (cones / scale cubes) -----------------------
     if (mode == GizmoMode::Move || mode == GizmoMode::Scale || mode == GizmoMode::Universal) {
         const float shaftStart = mode == GizmoMode::Move      ? style.moveShaftStart
                                  : mode == GizmoMode::Scale   ? style.scaleShaftStart
@@ -272,6 +272,32 @@ GizmoPickResultUVE PickGizmoHandleUVE(const GizmoMode mode, const GizmoStyle& st
                                        worldPoint(axes[index] * shaftEnd));
             if (approach.separation <= grabRadius) {
                 ConsiderUVE(best, AxisHandleForIndexUVE(index), approach.rayDistance);
+            }
+
+            // Explicitly test the arrow cone head (ulo ng gizmo) with its full cone base radius
+            // so clicking anywhere on the arrow head reliably grabs the axis.
+            if (mode == GizmoMode::Move || mode == GizmoMode::Universal) {
+                const float coneBase = mode == GizmoMode::Move ? style.moveShaftEnd : style.universalShaftEnd;
+                const float coneLength = mode == GizmoMode::Move ? style.moveConeLength : style.universalConeLength;
+                const float coneRadius = mode == GizmoMode::Move ? style.moveConeRadius : style.universalConeRadius;
+                const float headRadius = (coneRadius * 1.45f) * scale + grabRadius;
+                const ClosestApproachUVE headApproach =
+                    ClosestRayToSegmentUVE(ray, worldPoint(axes[index] * coneBase),
+                                           worldPoint(axes[index] * (coneBase + coneLength)));
+                if (headApproach.separation <= headRadius) {
+                    ConsiderUVE(best, AxisHandleForIndexUVE(index), headApproach.rayDistance);
+                }
+            }
+
+            // Explicitly test the scale cube head with its 3D bounding sphere radius.
+            if (mode == GizmoMode::Scale || mode == GizmoMode::Universal) {
+                const float boxCenter =
+                    mode == GizmoMode::Scale ? style.scaleShaftEnd : style.universalScaleBoxOffset;
+                const float boxSize =
+                    mode == GizmoMode::Scale ? style.scaleBoxSize : style.universalScaleBoxSize;
+                const float boxRadius = (boxSize * 0.95f) * scale + grabRadius;
+                ConsiderUVE(best, AxisHandleForIndexUVE(index),
+                            RaySphereDistanceUVE(ray, worldPoint(axes[index] * boxCenter), boxRadius));
             }
         }
     }

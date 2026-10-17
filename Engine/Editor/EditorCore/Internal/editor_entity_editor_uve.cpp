@@ -427,7 +427,8 @@ void EditorUVE::DrawEntityEditorMiddleUVE(EntityEditSessionUVE& session) {
     const float tabsHeight = ImGui::GetContentRegionAvail().y - problemsHeight - (showProblems ? 4.0F : 0.0F);
 
     ImGui::BeginChild("##entity-tabs", ImVec2{0.0F, tabsHeight}, false,
-                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+                          ImGuiWindowFlags_NoMove);
     if (ImGui::BeginTabBar("##entity-middle-tabs")) {
         const auto tab = [&session](const char* label, const EntityEditorTabUVE which) {
             // The tab the session names is forced once; after that clicks decide.
@@ -441,7 +442,8 @@ void EditorUVE::DrawEntityEditorMiddleUVE(EntityEditSessionUVE& session) {
         if (tab("Viewport", EntityEditorTabUVE::Viewport)) {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
             ImGui::BeginChild("##entity-view", ImVec2{0.0F, 0.0F}, true,
-                              ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+                              ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+                                  ImGuiWindowFlags_NoMove);
             DrawViewportImageUVE(ViewportContextUVE::EntityEditor);
             ImGui::EndChild();
             ImGui::PopStyleVar();
@@ -724,6 +726,7 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
     const bool unsaved = HasEntityEditorUnsavedChangesUVE();
     const std::string title = "Entity Editor - " + session.assetPath.filename().string() + (unsaved ? " *" : "") +
                               "###entity-editor";
+    ImGui::GetIO().ConfigWindowsMoveFromTitleBarOnly = true;
     bool open = true;
     ImGui::Begin(title.c_str(), &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
 

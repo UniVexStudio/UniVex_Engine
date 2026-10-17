@@ -147,7 +147,7 @@ void main() {
             }
         }
 
-        float diffuse = max(dot(normal, lightDirection), 0.0);
+        float diffuse = mix(abs(dot(normal, lightDirection)), 1.0, 0.22);
         accumulated += uColor * light.color * (light.intensity * attenuation * diffuse);
     }
 

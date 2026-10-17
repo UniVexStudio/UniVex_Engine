@@ -119,6 +119,8 @@ public:
 
     void SetGizmoMode(GizmoMode mode) { gizmoMode_ = mode; }
     [[nodiscard]] GizmoMode Mode() const { return gizmoMode_; }
+    void SetHighlightedGizmoHandleUVE(univex::gizmo::GizmoHandleUVE handle) { highlightedGizmoHandle_ = handle; }
+    [[nodiscard]] univex::gizmo::GizmoHandleUVE HighlightedGizmoHandleUVE() const { return highlightedGizmoHandle_; }
 
     // The transform gizmo's world-space pivot defaults to the camera's own orbit target - fine
     // for this module's own standalone demo (there is no independent "selected object" concept
@@ -161,6 +163,7 @@ private:
     univex::viewport::ViewportSettings settings_{};
     GizmoStyle style_{};
     GizmoMode gizmoMode_ = GizmoMode::Universal;
+    univex::gizmo::GizmoHandleUVE highlightedGizmoHandle_ = univex::gizmo::GizmoHandleUVE::None;
     std::optional<Vec3> gizmoPivotOverride_;
     std::vector<univex::gizmo::BoneOverlayUVE> bones_;
     univex::gizmo::GizmoMesh cameraFrustumMesh_;

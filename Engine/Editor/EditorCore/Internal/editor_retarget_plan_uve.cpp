@@ -3,7 +3,9 @@
 #include "uve/editor/editor_retarget_plan_uve.h"
 
 #include <algorithm>
+#include <optional>
 
+#include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
 #include "uve/retarget/retarget_conform_uve.h"
 #include "uve/retarget/retarget_humanoid_uve.h"
@@ -34,21 +36,49 @@ RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile, const st
     plan.model = modelFile;
     const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
 
-    Asset::MeshAssetUVE mesh;
-    std::error_code exists;
-    if (!std::filesystem::is_regular_file(modelFile, exists) || !Asset::LoadMeshAssetUVE(modelFile, mesh)) {
-        plan.modelError = "cannot read " + modelFile.filename().string();
-    } else if (std::string error; !Retarget::RigFromMeshUVE(mesh, &error).has_value()) {
-        plan.modelError = error;
+    std::optional<Retarget::RetargetSkeletonUVE> resolvedRig;
+    if (!modelFile.empty()) {
+        Asset::MeshAssetUVE mesh;
+        std::error_code exists;
+        if (!std::filesystem::is_regular_file(modelFile, exists) || !Asset::LoadMeshAssetUVE(modelFile, mesh)) {
+            plan.modelError = "cannot read " + modelFile.filename().string();
+        } else if (std::string error; !Retarget::RigFromMeshUVE(mesh, &error).has_value()) {
+            plan.modelError = error;
+        } else {
+            resolvedRig = *Retarget::RigFromMeshUVE(mesh);
+        }
     } else {
-        const Retarget::RetargetSkeletonUVE rig = *Retarget::RigFromMeshUVE(mesh);
+        for (const std::filesystem::path& file : animations) {
+            Asset::AnimationClipAssetUVE clip;
+            if (Asset::LoadAnimationClipAssetUVE(file, clip) && !clip.rest.empty()) {
+                Retarget::RetargetSkeletonUVE rig;
+                for (const Asset::AnimationAssetRestBoneUVE& rest : clip.rest) {
+                    Retarget::RetargetBoneUVE bone;
+                    bone.name = rest.bone;
+                    bone.parent = rest.parent;
+                    bone.position = rest.position;
+                    bone.rotation = rest.rotation;
+                    bone.scale = rest.scale.x;
+                    rig.bones.push_back(std::move(bone));
+                }
+                resolvedRig = std::move(rig);
+                break;
+            }
+        }
+        if (!resolvedRig.has_value()) {
+            plan.modelError = "cannot read a skeleton from the selected files";
+        }
+    }
+
+    if (resolvedRig.has_value()) {
+        const Retarget::RetargetSkeletonUVE& rig = *resolvedRig;
         const Retarget::HumanoidMatchUVE match = Retarget::MatchHumanoidUVE(rig, reference);
         std::vector<std::string> names;
         for (const Retarget::RetargetBoneUVE& bone : rig.bones) {
             names.push_back(bone.name);
         }
         plan.modelReadable = true;
-        plan.modelAlreadyConformed = Retarget::AreHumanoidNamesUVE(names, reference);
+        plan.modelAlreadyConformed = !modelFile.empty() && Retarget::AreHumanoidNamesUVE(names, reference);
         plan.heightScale = match.heightScale;
         plan.counts = match.counts;
         std::vector<std::int32_t> depth(reference.skeleton.bones.size(), 0);
@@ -80,3 +110,4 @@ RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile, const st
 }
 
 } // namespace UVE::Editor
+
