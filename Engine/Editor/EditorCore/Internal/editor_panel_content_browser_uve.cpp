@@ -1270,18 +1270,80 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             const bool selected = isSelected(entry);
             selectedShown += selected ? 1U : 0U;
             const ImVec2 cardMin = ImGui::GetCursorScreenPos();
-            const bool clicked = ImGui::Selectable("##card", selected, ImGuiSelectableFlags_AllowDoubleClick,
-                                                   ImVec2{tileWidth - kPadding, tileHeight - kPadding});
+            const ImVec2 cardSize{tileWidth - kPadding, tileHeight - kPadding};
+            const ImVec2 cardMax{cardMin.x + cardSize.x, cardMin.y + cardSize.y};
+            const bool clicked = ImGui::Selectable("##card", selected, ImGuiSelectableFlags_AllowDoubleClick, cardSize);
+            const bool hovered = ImGui::IsItemHovered();
             interact(entry, look, clicked);
             ImDrawList& drawList = *ImGui::GetWindowDrawList();
+
+            // 1. Unreal-style card background
+            constexpr float rounding = 5.0F;
+            const ImU32 cardBg = selected ? IM_COL32(38, 52, 78, 240)
+                                          : (hovered ? IM_COL32(34, 38, 48, 220) : IM_COL32(24, 26, 32, 200));
+            const ImU32 cardBorder = selected ? IM_COL32(80, 150, 250, 255)
+                                              : (hovered ? IM_COL32(65, 80, 105, 180) : IM_COL32(40, 44, 52, 140));
+            drawList.AddRectFilled(cardMin, cardMax, cardBg, rounding);
+            drawList.AddRect(cardMin, cardMax, cardBorder, rounding, 0, selected ? 1.5F : 1.0F);
+
+            // 2. Inset frame for thumbnail/icon (darker recessed box)
+            constexpr float thumbPadding = 3.0F;
+            const float thumbHeight = iconSize + 8.0F;
+            const ImVec2 thumbMin{cardMin.x + thumbPadding, cardMin.y + thumbPadding};
+            const ImVec2 thumbMax{cardMax.x - thumbPadding, cardMin.y + thumbHeight};
+            constexpr ImU32 thumbBg = IM_COL32(16, 17, 21, 255);
+            drawList.AddRectFilled(thumbMin, thumbMax, thumbBg, rounding * 0.8F);
+
             if (look.icon != 0U) {
-                const float iconX = std::floor(cardMin.x + (tileWidth - iconSize) * 0.5F);
-                const float iconY = std::floor(cardMin.y + 6.0F);
-                drawList.AddImage(static_cast<ImTextureID>(look.icon), ImVec2{iconX, iconY}, ImVec2{iconX + iconSize, iconY + iconSize});
+                const float iconX = std::floor(thumbMin.x + (thumbMax.x - thumbMin.x - iconSize) * 0.5F);
+                const float iconY = std::floor(thumbMin.y + (thumbMax.y - thumbMin.y - iconSize) * 0.5F);
+                drawList.AddImage(static_cast<ImTextureID>(look.icon), ImVec2{iconX, iconY},
+                                  ImVec2{iconX + iconSize, iconY + iconSize});
             }
-            const float textMax = tileWidth - kPadding - 6.0F;
-            const float nameY = cardMin.y + iconSize + 10.0F;
-            if (!DrawContentRenameFieldUVE(snapshot.contentRoot, entry, cardMin.x + 2.0F, nameY - 2.0F, textMax)) {
+
+            // 3. UE5-style accent color bar separating thumbnail from text
+            ImU32 accentColor = IM_COL32(100, 116, 139, 255);
+            switch (look.type) {
+                case ContentBrowserItemTypeUVE::Mesh:
+                case ContentBrowserItemTypeUVE::Model:
+                    accentColor = IM_COL32(0, 168, 255, 255);
+                    break;
+                case ContentBrowserItemTypeUVE::Texture:
+                    accentColor = IM_COL32(230, 81, 0, 255);
+                    break;
+                case ContentBrowserItemTypeUVE::Material:
+                case ContentBrowserItemTypeUVE::Shader:
+                    accentColor = IM_COL32(76, 175, 80, 255);
+                    break;
+                case ContentBrowserItemTypeUVE::Animation:
+                case ContentBrowserItemTypeUVE::AnimationLibrary:
+                    accentColor = IM_COL32(171, 71, 188, 255);
+                    break;
+                case ContentBrowserItemTypeUVE::Scene:
+                case ContentBrowserItemTypeUVE::Prefab:
+                case ContentBrowserItemTypeUVE::Entity:
+                case ContentBrowserItemTypeUVE::Bundle:
+                    accentColor = IM_COL32(255, 179, 0, 255);
+                    break;
+                case ContentBrowserItemTypeUVE::Script:
+                    accentColor = IM_COL32(38, 198, 218, 255);
+                    break;
+                case ContentBrowserItemTypeUVE::Audio:
+                    accentColor = IM_COL32(239, 83, 80, 255);
+                    break;
+                case ContentBrowserItemTypeUVE::Folder:
+                    accentColor = IM_COL32(120, 144, 156, 255);
+                    break;
+                default:
+                    break;
+            }
+            const float barY = thumbMax.y + 1.0F;
+            drawList.AddLine(ImVec2{cardMin.x + 2.0F, barY}, ImVec2{cardMax.x - 2.0F, barY}, accentColor, 2.0F);
+
+            // 4. Text labels: Name and Type
+            const float textMax = cardSize.x - 8.0F;
+            const float nameY = barY + 4.0F;
+            if (!DrawContentRenameFieldUVE(snapshot.contentRoot, entry, cardMin.x + 4.0F, nameY - 2.0F, textMax)) {
                 drawList.AddText(ImVec2{cardMin.x + 5.0F, nameY}, ImGui::GetColorU32(ImGuiCol_Text),
                                  FitLabelUVE(entry.relativePath.filename().generic_string(), textMax).c_str());
             }
@@ -1316,7 +1378,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
         };
         const float tileIcon = m_contentBrowserViewMode == ContentBrowserViewModeUVE::LargeTiles ? 72.0F : 44.0F;
         const float tileWidth = tileIcon + 40.0F;
-        const float tileHeight = tileIcon + 14.0F + line * 2.0F;
+        const float tileHeight = tileIcon + 18.0F + line * 2.0F;
         if (mode == ContentBrowserModeUVE::Recent) {
             drawPlacesStrip();
         }

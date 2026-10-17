@@ -674,8 +674,10 @@ void EditorUVE::DrawObjectPickerUVE() {
     // the sun and the sky. Everything else is made in the Content Browser ("+ Add" or right-click)
     // and dragged into the level, so the world is built from assets instead of loose objects.
     constexpr const char* kPopupId = "##object-picker";
+    static char s_filter[64] = "";
     if (m_objectPickerOpenRequested) {
         m_objectPickerOpenRequested = false;
+        s_filter[0] = '\0';
         ImGui::OpenPopup(kPopupId);
     }
     if (!ImGui::BeginPopup(kPopupId)) {
@@ -694,6 +696,11 @@ void EditorUVE::DrawObjectPickerUVE() {
         ImGui::TextDisabled("%s", parent != Scene::kInvalidEntityUVE
                                       ? ("Add to " + GetEntityDisplayLabelUVE(parent)).c_str()
                                       : "Add to the scene");
+        ImGui::SetNextItemWidth(220.0F);
+        if (ImGui::IsWindowAppearing()) {
+            ImGui::SetKeyboardFocusHere();
+        }
+        ImGui::InputTextWithHint("##picker_search", "Search objects & components...", s_filter, sizeof(s_filter));
     }
     ImGui::Separator();
     const auto item = [this](const Scene::Objects::SceneObjectKindUVE kind, const char* const label,
@@ -725,113 +732,169 @@ void EditorUVE::DrawObjectPickerUVE() {
             static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D));
         }
     } else {
-        if (ImGui::BeginMenu("3D Visuals & Geometry")) {
-            if (item(Scene::Objects::SceneObjectKindUVE::MeshInstance3D, "MeshInstance3D", nullptr, "A 3D mesh instance.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::MeshInstance3D, parent));
+        struct PickerEntryUVE {
+            Scene::Objects::SceneObjectKindUVE kind;
+            const char* label;
+            const char* category;
+            const char* tooltip;
+        };
+        static constexpr std::array<PickerEntryUVE, 29> kPickerEntries{{
+            {Scene::Objects::SceneObjectKindUVE::MeshInstance3D, "MeshInstance3D", "3D Visuals & Geometry", "A 3D mesh instance."},
+            {Scene::Objects::SceneObjectKindUVE::BoxMesh3D, "BoxMesh3D", "3D Visuals & Geometry", "A 3D box primitive."},
+            {Scene::Objects::SceneObjectKindUVE::SphereMesh3D, "SphereMesh3D", "3D Visuals & Geometry", "A 3D sphere primitive."},
+            {Scene::Objects::SceneObjectKindUVE::PlaneMesh3D, "PlaneMesh3D", "3D Visuals & Geometry", "A 3D plane primitive."},
+            {Scene::Objects::SceneObjectKindUVE::Object3D, "Object3D", "Structure & Organization", "An empty 3D node / container."},
+            {Scene::Objects::SceneObjectKindUVE::Marker3D, "Marker3D", "Structure & Organization", "A spatial marker or transform anchor."},
+            {Scene::Objects::SceneObjectKindUVE::Folder, "Folder", "Structure & Organization", "A folder grouping."},
+            {Scene::Objects::SceneObjectKindUVE::Camera3D, "Camera3D", "Camera", "A 3D perspective or orthographic camera."},
+            {Scene::Objects::SceneObjectKindUVE::SpringArm3D, "SpringArm3D", "Camera", "A boom arm for third-person cameras."},
+            {Scene::Objects::SceneObjectKindUVE::Skeleton3D, "Skeleton3D", "Animation & Rigging", "A skeletal bone hierarchy."},
+            {Scene::Objects::SceneObjectKindUVE::AnimationSequencer, "AnimationSequencer", "Animation & Rigging", "Plays animation clips."},
+            {Scene::Objects::SceneObjectKindUVE::AnimationGraph, "AnimationGraph", "Animation & Rigging", "Animation state machine and blending graph."},
+            {Scene::Objects::SceneObjectKindUVE::BoneAttachment3D, "BoneAttachment3D", "Animation & Rigging", "Attaches objects to a specific bone."},
+            {Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D, "TwoBoneIK3D", "Animation & Rigging", "Two-bone inverse kinematics solver constraint."},
+            {Scene::Objects::SceneObjectKindUVE::DirectionalLight3D, "DirectionalLight3D", "Lighting", "A directional light source."},
+            {Scene::Objects::SceneObjectKindUVE::Light3D, "Light3D (Omni / Spot)", "Lighting", "An omni or spot light."},
+            {Scene::Objects::SceneObjectKindUVE::ReflectionProbe3D, "ReflectionProbe3D", "Lighting", "Captures reflections for the area around it."},
+            {Scene::Objects::SceneObjectKindUVE::FogVolume3D, "FogVolume3D", "Lighting", "Local volumetric fog."},
+            {Scene::Objects::SceneObjectKindUVE::Character3D, "Character3D", "Physics & Collision", "A kinematic character controller body."},
+            {Scene::Objects::SceneObjectKindUVE::Rigid3D, "Rigid3D", "Physics & Collision", "A dynamic simulated physics body."},
+            {Scene::Objects::SceneObjectKindUVE::Static3D, "Static3D", "Physics & Collision", "A static collidable body."},
+            {Scene::Objects::SceneObjectKindUVE::Collider3D, "Collider3D", "Physics & Collision", "A collision shape."},
+            {Scene::Objects::SceneObjectKindUVE::Area3D, "Area3D", "Physics & Collision", "Trigger volume."},
+            {Scene::Objects::SceneObjectKindUVE::RayCast3D, "RayCast3D", "Physics & Collision", "Raycast query."},
+            {Scene::Objects::SceneObjectKindUVE::Hitbox3D, "Hitbox3D", "Physics & Collision", "A combat attack hitbox."},
+            {Scene::Objects::SceneObjectKindUVE::Hurtbox3D, "Hurtbox3D", "Physics & Collision", "A combat damage receiver."},
+            {Scene::Objects::SceneObjectKindUVE::AudioSource3D, "AudioSource3D", "Audio & Effects", "Spatial 3D audio emitter."},
+            {Scene::Objects::SceneObjectKindUVE::ParticleEmitter3D, "ParticleEmitter3D", "Audio & Effects", "3D particle effect system."},
+            {Scene::Objects::SceneObjectKindUVE::Decal3D, "Decal3D", "Audio & Effects", "Projects a texture onto geometry."}
+        }};
+
+        if (s_filter[0] != '\0') {
+            const std::string_view query{s_filter};
+            int matched = 0;
+            for (const auto& entry : kPickerEntries) {
+                if (ContainsCaseInsensitiveUVE(entry.label, query) ||
+                    ContainsCaseInsensitiveUVE(entry.category, query) ||
+                    ContainsCaseInsensitiveUVE(entry.tooltip, query)) {
+                    matched++;
+                    if (item(entry.kind, entry.label, nullptr, entry.tooltip)) {
+                        static_cast<void>(CreateDocumentSceneObjectUVE(entry.kind, parent));
+                    }
+                }
             }
-            if (item(Scene::Objects::SceneObjectKindUVE::BoxMesh3D, "BoxMesh3D", nullptr, "A 3D box primitive.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::BoxMesh3D, parent));
+            if (matched == 0) {
+                ImGui::TextDisabled("No matching objects");
             }
-            if (item(Scene::Objects::SceneObjectKindUVE::SphereMesh3D, "SphereMesh3D", nullptr, "A 3D sphere primitive.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::SphereMesh3D, parent));
+        } else {
+            if (ImGui::BeginMenu("3D Visuals & Geometry")) {
+                if (item(Scene::Objects::SceneObjectKindUVE::MeshInstance3D, "MeshInstance3D", nullptr, "A 3D mesh instance.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::MeshInstance3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::BoxMesh3D, "BoxMesh3D", nullptr, "A 3D box primitive.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::BoxMesh3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::SphereMesh3D, "SphereMesh3D", nullptr, "A 3D sphere primitive.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::SphereMesh3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::PlaneMesh3D, "PlaneMesh3D", nullptr, "A 3D plane primitive.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::PlaneMesh3D, parent));
+                }
+                ImGui::EndMenu();
             }
-            if (item(Scene::Objects::SceneObjectKindUVE::PlaneMesh3D, "PlaneMesh3D", nullptr, "A 3D plane primitive.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::PlaneMesh3D, parent));
+            if (ImGui::BeginMenu("Structure & Organization")) {
+                if (item(Scene::Objects::SceneObjectKindUVE::Object3D, "Object3D", nullptr, "An empty 3D node / container.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Object3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::Marker3D, "Marker3D", nullptr, "A spatial marker or transform anchor.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Marker3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::Folder, "Folder", nullptr, "A folder grouping.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Folder, parent));
+                }
+                ImGui::EndMenu();
             }
-            ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu("Structure & Organization")) {
-            if (item(Scene::Objects::SceneObjectKindUVE::Object3D, "Object3D", nullptr, "An empty 3D node / container.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Object3D, parent));
+            if (ImGui::BeginMenu("Camera")) {
+                if (item(Scene::Objects::SceneObjectKindUVE::Camera3D, "Camera3D", nullptr, "A 3D perspective or orthographic camera.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Camera3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::SpringArm3D, "SpringArm3D", nullptr, "A boom arm for third-person cameras.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::SpringArm3D, parent));
+                }
+                ImGui::EndMenu();
             }
-            if (item(Scene::Objects::SceneObjectKindUVE::Marker3D, "Marker3D", nullptr, "A spatial marker or transform anchor.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Marker3D, parent));
+            if (ImGui::BeginMenu("Animation & Rigging")) {
+                if (item(Scene::Objects::SceneObjectKindUVE::Skeleton3D, "Skeleton3D", nullptr, "A skeletal bone hierarchy.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Skeleton3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::AnimationSequencer, "AnimationSequencer", nullptr, "Plays animation clips.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AnimationSequencer, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::AnimationGraph, "AnimationGraph", nullptr, "Animation state machine and blending graph.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AnimationGraph, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::BoneAttachment3D, "BoneAttachment3D", nullptr, "Attaches objects to a specific bone.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::BoneAttachment3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D, "TwoBoneIK3D", nullptr, "Two-bone inverse kinematics solver constraint.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D, parent));
+                }
+                ImGui::EndMenu();
             }
-            if (item(Scene::Objects::SceneObjectKindUVE::Folder, "Folder", nullptr, "A folder grouping.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Folder, parent));
+            if (ImGui::BeginMenu("Lighting")) {
+                if (item(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D, "DirectionalLight3D", nullptr, "A directional light source.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::Light3D, "Light3D (Omni / Spot)", nullptr, "An omni or spot light.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Light3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::ReflectionProbe3D, "ReflectionProbe3D", nullptr, "Captures reflections for the area around it.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::ReflectionProbe3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::FogVolume3D, "FogVolume3D", nullptr, "Local volumetric fog.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::FogVolume3D, parent));
+                }
+                ImGui::EndMenu();
             }
-            ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu("Camera")) {
-            if (item(Scene::Objects::SceneObjectKindUVE::Camera3D, "Camera3D", nullptr, "A 3D perspective or orthographic camera.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Camera3D, parent));
+            if (ImGui::BeginMenu("Physics & Collision")) {
+                if (item(Scene::Objects::SceneObjectKindUVE::Character3D, "Character3D", nullptr, "A kinematic character controller body.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Character3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::Rigid3D, "Rigid3D", nullptr, "A dynamic simulated physics body.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Rigid3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::Static3D, "Static3D", nullptr, "A static collidable body.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Static3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::Collider3D, "Collider3D", nullptr, "A collision shape.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Collider3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::Area3D, "Area3D", nullptr, "Trigger volume.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Area3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::RayCast3D, "RayCast3D", nullptr, "Raycast query.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::RayCast3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::Hitbox3D, "Hitbox3D", nullptr, "A combat attack hitbox.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Hitbox3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::Hurtbox3D, "Hurtbox3D", nullptr, "A combat damage receiver.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Hurtbox3D, parent));
+                }
+                ImGui::EndMenu();
             }
-            if (item(Scene::Objects::SceneObjectKindUVE::SpringArm3D, "SpringArm3D", nullptr, "A boom arm for third-person cameras.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::SpringArm3D, parent));
+            if (ImGui::BeginMenu("Audio & Effects")) {
+                if (item(Scene::Objects::SceneObjectKindUVE::AudioSource3D, "AudioSource3D", nullptr, "Spatial 3D audio emitter.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AudioSource3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::ParticleEmitter3D, "ParticleEmitter3D", nullptr, "3D particle effect system.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::ParticleEmitter3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::Decal3D, "Decal3D", nullptr, "Projects a texture onto geometry.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Decal3D, parent));
+                }
+                ImGui::EndMenu();
             }
-            ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu("Animation & Rigging")) {
-            if (item(Scene::Objects::SceneObjectKindUVE::Skeleton3D, "Skeleton3D", nullptr, "A skeletal bone hierarchy.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Skeleton3D, parent));
-            }
-            if (item(Scene::Objects::SceneObjectKindUVE::AnimationSequencer, "AnimationSequencer", nullptr, "Plays animation clips.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AnimationSequencer, parent));
-            }
-            if (item(Scene::Objects::SceneObjectKindUVE::AnimationGraph, "AnimationGraph", nullptr, "Animation state machine and blending graph.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AnimationGraph, parent));
-            }
-            if (item(Scene::Objects::SceneObjectKindUVE::BoneAttachment3D, "BoneAttachment3D", nullptr, "Attaches objects to a specific bone.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::BoneAttachment3D, parent));
-            }
-            if (item(Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D, "TwoBoneIK3D", nullptr, "Two-bone inverse kinematics solver constraint.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D, parent));
-            }
-            ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu("Lighting")) {
-            if (item(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D, "DirectionalLight3D", nullptr, "A directional light source.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D, parent));
-            }
-            if (item(Scene::Objects::SceneObjectKindUVE::Light3D, "Light3D (Omni / Spot)", nullptr, "An omni or spot light.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Light3D, parent));
-            }
-            if (item(Scene::Objects::SceneObjectKindUVE::ReflectionProbe3D, "ReflectionProbe3D", nullptr, "Captures reflections for the area around it.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::ReflectionProbe3D, parent));
-            }
-            if (item(Scene::Objects::SceneObjectKindUVE::FogVolume3D, "FogVolume3D", nullptr, "Local volumetric fog.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::FogVolume3D, parent));
-            }
-            ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu("Physics & Collision")) {
-            if (item(Scene::Objects::SceneObjectKindUVE::Character3D, "Character3D", nullptr, "A kinematic character controller body.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Character3D, parent));
-            }
-            if (item(Scene::Objects::SceneObjectKindUVE::Rigid3D, "Rigid3D", nullptr, "A dynamic simulated physics body.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Rigid3D, parent));
-            }
-            if (item(Scene::Objects::SceneObjectKindUVE::Static3D, "Static3D", nullptr, "A static collidable body.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Static3D, parent));
-            }
-            if (item(Scene::Objects::SceneObjectKindUVE::Collider3D, "Collider3D", nullptr, "A collision shape.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Collider3D, parent));
-            }
-            if (item(Scene::Objects::SceneObjectKindUVE::Area3D, "Area3D", nullptr, "Trigger volume.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Area3D, parent));
-            }
-            if (item(Scene::Objects::SceneObjectKindUVE::RayCast3D, "RayCast3D", nullptr, "Raycast query.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::RayCast3D, parent));
-            }
-            if (item(Scene::Objects::SceneObjectKindUVE::Hitbox3D, "Hitbox3D", nullptr, "A combat attack hitbox.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Hitbox3D, parent));
-            }
-            if (item(Scene::Objects::SceneObjectKindUVE::Hurtbox3D, "Hurtbox3D", nullptr, "A combat damage receiver.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Hurtbox3D, parent));
-            }
-            ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu("Audio & Effects")) {
-            if (item(Scene::Objects::SceneObjectKindUVE::AudioSource3D, "AudioSource3D", nullptr, "Spatial 3D audio emitter.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AudioSource3D, parent));
-            }
-            if (item(Scene::Objects::SceneObjectKindUVE::ParticleEmitter3D, "ParticleEmitter3D", nullptr, "3D particle effect system.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::ParticleEmitter3D, parent));
-            }
-            if (item(Scene::Objects::SceneObjectKindUVE::Decal3D, "Decal3D", nullptr, "Projects a texture onto geometry.")) {
-                static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Decal3D, parent));
-            }
-            ImGui::EndMenu();
         }
     }
     ImGui::EndPopup();
