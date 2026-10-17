@@ -157,7 +157,11 @@ vec3 HemisphereAmbientUVE(vec3 normal) {
         return uAmbientColor;
     }
     float hemi = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
-    return mix(uGroundAmbient, uSkyAmbient, hemi);
+    vec3 skyLum = vec3(dot(uSkyAmbient, vec3(0.2126, 0.7152, 0.0722)));
+    vec3 groundLum = vec3(dot(uGroundAmbient, vec3(0.2126, 0.7152, 0.0722)));
+    vec3 balancedSky = mix(skyLum, uSkyAmbient, 0.32);
+    vec3 balancedGround = mix(groundLum, uGroundAmbient, 0.38);
+    return mix(balancedGround, balancedSky, hemi);
 }
 
 vec2 AmbientEnvironmentUvUVE(vec3 direction) {
@@ -567,8 +571,8 @@ void main() {
         FragColor = vec4(albedo * shadowFactor, surfaceOpacity);
     } else {
         float wrapNdotL = mix(abs(dot(normal, fallbackDirection)), 1.0, 0.25);
-        vec3 minFill = albedo * max(ambientColor, vec3(0.18)) * ambientOcclusion;
-        vec3 safeLighting = max(lighting, minFill + albedo * (0.65 * wrapNdotL * mix(0.32, 1.0, shadowFactor)));
+        vec3 minFill = albedo * ambientColor * ambientOcclusion;
+        vec3 safeLighting = max(lighting, minFill + albedo * (0.45 * wrapNdotL * mix(0.32, 1.0, shadowFactor)));
         FragColor = vec4(safeLighting, surfaceOpacity);
     }
 }
