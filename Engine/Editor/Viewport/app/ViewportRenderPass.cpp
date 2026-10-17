@@ -34,11 +34,10 @@ in vec2 vClipPos;
 out vec4 fragColor;
 uniform bool uNeutralEditorFallback;
 void main() {
-    // Main's empty authoring scene is deliberately achromatic. Other viewport users retain the
-    // established navy presentation; a real WorldEnvironment is composited over either backdrop.
+    // Viewport background is clean neutral achromatic tones. A real WorldEnvironment is composited over it.
     float t = clamp(vClipPos.y * 0.5 + 0.5, 0.0, 1.0);
-    vec3 top = uNeutralEditorFallback ? vec3(0.205, 0.210, 0.220) : vec3(0.043, 0.055, 0.086);
-    vec3 bottom = uNeutralEditorFallback ? vec3(0.285, 0.290, 0.300) : vec3(0.086, 0.102, 0.145);
+    vec3 top = uNeutralEditorFallback ? vec3(0.205, 0.210, 0.220) : vec3(0.125, 0.130, 0.140);
+    vec3 bottom = uNeutralEditorFallback ? vec3(0.285, 0.290, 0.300) : vec3(0.185, 0.190, 0.200);
     fragColor = vec4(mix(bottom, top, t), 1.0);
 }
 )GLSL";

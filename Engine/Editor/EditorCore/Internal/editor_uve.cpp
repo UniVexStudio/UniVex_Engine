@@ -2573,6 +2573,12 @@ bool EditorUVE::DeleteSelectedEntityUVE() {
 
     const std::size_t siblingIndex =
         m_services->GetSceneGraphUVE().GetSiblingIndexUVE(m_services->GetEntityManagerUVE(), target).value_or(0U);
+    if (m_hierarchyRenameEntity == target) {
+        CancelHierarchyRenameUVE();
+    }
+    ClearEntityContextToolbarUVE();
+    m_hierarchyPendingRowOpen.erase(target);
+
     const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
     const bool dirtyBefore = m_sceneDirty;
     DestroyDocumentSubtreeUVE(target);

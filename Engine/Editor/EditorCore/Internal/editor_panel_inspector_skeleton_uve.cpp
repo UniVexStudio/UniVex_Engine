@@ -186,20 +186,24 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         root = make(stem, Kind::MeshInstance3D, definition, Scene::ApplyMeshInstance3DObjectDefinitionUVE, parent);
     } else {
         root = make(stem, Kind::Object3D, Scene::Object3DObjectDefinitionUVE{}, Scene::ApplyObject3DObjectDefinitionUVE, parent);
-        const Scene::EntityUVE armature =
-            make("Armature", Kind::Object3D, Scene::Object3DObjectDefinitionUVE{}, Scene::ApplyObject3DObjectDefinitionUVE, root);
+        const Scene::EntityUVE modelEntity =
+            make(hasMesh ? "model" : "Armature", Kind::Object3D, Scene::Object3DObjectDefinitionUVE{}, Scene::ApplyObject3DObjectDefinitionUVE, root);
         Scene::Skeleton3DObjectDefinitionUVE skeletonDefinition;
         skeletonDefinition.skeleton.skeletonAssetPath = relativeSource.generic_string();
         for (const Asset::GltfJointUVE& joint : skeleton->joints) {
             skeletonDefinition.skeleton.bones.push_back(
                 Scene::SkeletonBoneUVE{joint.name, joint.parentIndex, joint.translation, joint.rotation, joint.scale});
         }
-        const Scene::EntityUVE skeletonEntity =
-            make("Skeleton3D", Kind::Skeleton3D, skeletonDefinition, Scene::ApplySkeleton3DObjectDefinitionUVE, armature);
         if (hasMesh) {
             Scene::MeshInstance3DObjectDefinitionUVE mesh;
             mesh.mesh.meshGuid = meshGuid;
-            static_cast<void>(make(stem + " Mesh", Kind::MeshInstance3D, mesh, Scene::ApplyMeshInstance3DObjectDefinitionUVE, skeletonEntity));
+            const Scene::EntityUVE characterEntity =
+                make("character", Kind::MeshInstance3D, mesh, Scene::ApplyMeshInstance3DObjectDefinitionUVE, modelEntity);
+            static_cast<void>(
+                make("skeleton3d", Kind::Skeleton3D, skeletonDefinition, Scene::ApplySkeleton3DObjectDefinitionUVE, characterEntity));
+        } else {
+            static_cast<void>(
+                make("Skeleton3D", Kind::Skeleton3D, skeletonDefinition, Scene::ApplySkeleton3DObjectDefinitionUVE, modelEntity));
         }
         if (!clips.empty()) {
             Scene::AnimationSequencerObjectDefinitionUVE player;

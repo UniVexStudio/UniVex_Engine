@@ -101,18 +101,13 @@ void main() {
     return UVE::Scene::FindCurrentCameraEntityUVE(entityManager);
 }
 
-[[nodiscard]] bool IsUnlitEmptyEnvironmentUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
+[[nodiscard]] bool HasActiveWorldEnvironmentUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
     bool hasEnvironment = false;
     entityManager.ForEachUVE<UVE::Scene::WorldEnvironment3DComponentUVE>(
         [&hasEnvironment](UVE::Scene::EntityUVE, const UVE::Scene::WorldEnvironment3DComponentUVE& value) {
             hasEnvironment |= UVE::Scene::IsWorldEnvironment3DObjectComponentValidUVE(value);
         });
-    bool hasDirectionalLight = false;
-    entityManager.ForEachUVE<UVE::Scene::DirectionalLight3DComponentUVE>(
-        [&hasDirectionalLight](UVE::Scene::EntityUVE, const UVE::Scene::DirectionalLight3DComponentUVE& value) {
-            hasDirectionalLight |= UVE::Scene::IsDirectionalLight3DComponentValidUVE(value);
-        });
-    return !hasEnvironment && !hasDirectionalLight;
+    return hasEnvironment;
 }
 
 [[nodiscard]] univex::gizmo::GizmoMesh BuildCameraFrustumMeshUVE(
@@ -699,9 +694,7 @@ public:
         if (studio != nullptr) {
             studio->DrawBackdrop(camera_, width, height);
         } else {
-            const bool neutralMainFallback =
-                context_ == UVE::Editor::EditorUVE::ViewportContextUVE::Main &&
-                IsUnlitEmptyEnvironmentUVE(entityManager_);
+            const bool neutralMainFallback = !HasActiveWorldEnvironmentUVE(entityManager_);
             renderPass_->RenderBackgroundUVE(neutralMainFallback);
         }
         if (meshResult.colorTextureId != 0U && EnsureMeshBlitResourcesUVE()) {

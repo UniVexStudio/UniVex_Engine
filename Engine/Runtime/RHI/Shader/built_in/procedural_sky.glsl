@@ -74,12 +74,18 @@ vec3 ProceduralSkyUVE(vec3 viewDir) {
     vec3 upperSky = AtmosphereUpperUVE(upperDir, sun);
     vec3 horizonDir = normalize(vec3(dir.x, 0.001, dir.z));
     vec3 horizon = AtmosphereUpperUVE(horizonDir, sun);
+
     float day = smoothstep(-0.08, 0.18, sun.y);
-    vec3 ground = max(uGroundColor, vec3(0.0)) * (0.12 + 0.88 * day);
-    float effectiveGroundCurve = clamp(max(uGroundCurve, 0.001) * 6.0, 0.15, 4.0);
-    float groundT = pow(clamp(-dir.y, 0.0, 1.0), effectiveGroundCurve);
-    vec3 lowerGround = mix(horizon, ground, groundT);
-    float horizonBlend = smoothstep(-0.12, 0.12, dir.y);
+    vec3 groundBase = max(uGroundColor, vec3(0.0));
+    vec3 ambientHaze = horizon * 0.28;
+    vec3 groundLit = mix(groundBase * 0.35 + ambientHaze, groundBase * 1.15 + ambientHaze, day);
+
+    float groundT = clamp(-dir.y, 0.0, 1.0);
+    float groundCurve = clamp(max(uGroundCurve, 0.001) * 3.5, 0.45, 3.0);
+    float groundFalloff = pow(groundT, groundCurve);
+    vec3 lowerGround = mix(horizon, groundLit, groundFalloff);
+
+    float horizonBlend = smoothstep(-0.10, 0.10, dir.y);
     return mix(lowerGround, upperSky, horizonBlend);
 }
 

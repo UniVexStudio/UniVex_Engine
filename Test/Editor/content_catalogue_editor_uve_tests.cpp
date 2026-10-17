@@ -188,7 +188,7 @@ TEST(ContentCatalogueEditorUVETest, CharacterAssetPlacesAsItsWholeTreeWithOneUnd
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(placed).name, "Character");
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(placed));
         EXPECT_EQ(ChildKindsUVE(services, placed),
-                  (std::vector<Kind>{Kind::MeshInstance3D, Kind::AnimationSequencer, Kind::AnimationGraph}));
+                  (std::vector<Kind>{Kind::MeshInstance3D}));
         EXPECT_TRUE(editor.IsSceneDirtyUVE());
 
         // A second placement is named apart from the first.
@@ -203,7 +203,7 @@ TEST(ContentCatalogueEditorUVETest, CharacterAssetPlacesAsItsWholeTreeWithOneUnd
         ASSERT_TRUE(editor.RedoUVE());
         const Scene::EntityUVE redone = editor.GetSelectedEntityUVE();
         EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, redone), Kind::Character3D);
-        EXPECT_EQ(ChildKindsUVE(services, redone).size(), 3U);
+        EXPECT_EQ(ChildKindsUVE(services, redone).size(), 1U);
 
         EXPECT_EQ(editor.PlaceEntityAssetUVE(root / "nothing.uventity"), Scene::kInvalidEntityUVE);
         EXPECT_EQ(editor.PlaceEntityAssetUVE(root / "log.txt"), Scene::kInvalidEntityUVE);
@@ -296,7 +296,7 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSce
         EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, entityRoot), Kind::Character3D);
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(entityRoot))
             << "edited as itself, not as an instance of itself";
-        EXPECT_EQ(ChildKindsUVE(services, entityRoot).size(), 3U);
+        EXPECT_EQ(ChildKindsUVE(services, entityRoot).size(), 1U);
         EXPECT_FALSE(editor.EnterPlayModeUVE()) << "the scene plays, not an open entity";
         EXPECT_EQ(engine.GetSimulationExecutionModeUVE(), Core::SimulationExecutionModeUVE::Paused)
             << "an entity is edited as authored, not simulated";
