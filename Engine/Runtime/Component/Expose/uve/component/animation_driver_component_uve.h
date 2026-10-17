@@ -64,7 +64,38 @@ struct AnimationDriverComponentUVE final {
     [[nodiscard]] bool operator==(const AnimationDriverComponentUVE&) const = default;
 };
 
+/// True when `callback` is `Frame` or `Physics`.
+[[nodiscard]] bool IsAnimationProcessCallbackValidUVE(
+    AnimationProcessCallbackUVE callback) noexcept;
+
+/// True when `mode` is `Off`, `InPlace`, or `ApplyToTarget`.
+[[nodiscard]] bool IsAnimationRootMotionModeValidUVE(AnimationRootMotionModeUVE mode) noexcept;
+
+/// True when `mode` is `Inertialize` or `Crossfade`.
+[[nodiscard]] bool IsAnimationTransitionModeValidUVE(AnimationTransitionModeUVE mode) noexcept;
+
 /// A finite, non-negative speed scale and a known clock.
-[[nodiscard]] bool IsAnimationDriverComponentValidUVE(const AnimationDriverComponentUVE& component) noexcept;
+[[nodiscard]] bool IsAnimationDriverComponentValidUVE(
+    const AnimationDriverComponentUVE& component) noexcept;
+
+/// True when at least one transform channel (`animatePosition`, `animateRotation`, `animateScale`) is enabled.
+[[nodiscard]] bool HasAnyAnimatedTransformChannelUVE(
+    const AnimationDriverComponentUVE& component) noexcept;
+
+/// True when `component` is active and configured to step on `clock`.
+[[nodiscard]] bool ShouldStepAnimationDriverOnClockUVE(
+    const AnimationDriverComponentUVE& component, AnimationProcessCallbackUVE clock) noexcept;
+
+/// Resolves the target entity (`component.target` when valid, or `fallbackParentEntity`).
+[[nodiscard]] EntityUVE ResolveAnimationDriverTargetEntityUVE(
+    const AnimationDriverComponentUVE& component, EntityUVE fallbackParentEntity) noexcept;
+
+/// Multiplies a non-negative `deltaSeconds` by `component.speedScale` when active (`0.0F` otherwise).
+[[nodiscard]] float ComputeScaledAnimationDeltaTimeUVE(
+    const AnimationDriverComponentUVE& component, float deltaSeconds) noexcept;
+
+/// Clamps negative/non-finite `speedScale` and resets invalid enum values to defaults.
+[[nodiscard]] AnimationDriverComponentUVE SanitizeAnimationDriverComponentUVE(
+    const AnimationDriverComponentUVE& component);
 
 } // namespace UVE::Scene

@@ -104,5 +104,33 @@ TEST(InputMapEditorUVETest, NewActionNamesNeverCollide) {
     EXPECT_EQ(MakeUniqueActionNameUVE(actions, "new_action"), "new_action_3");
 }
 
+TEST_F(InputCaptureUVETest, ResetActionMapRuntimeRebindAndActionSetFilteringWorkDeterministically) {
+    const std::vector<InputActionUVE> projectDefaults{
+        {"jump", InputActionTypeUVE::Button, {KeyBindingUVE(KeyCodeUVE::Space)}, {}},
+        {"ui.accept", InputActionTypeUVE::Button, {KeyBindingUVE(KeyCodeUVE::Enter)}, {}},
+    };
+    std::vector<InputActionUVE> actions = projectDefaults;
+    actions[0U].positiveBindings = {KeyBindingUVE(KeyCodeUVE::E)};
+
+    EXPECT_TRUE(ResetActionToProjectDefaultUVE(actions, projectDefaults, "jump"));
+    ASSERT_EQ(actions[0U].positiveBindings.size(), 1U);
+    EXPECT_EQ(actions[0U].positiveBindings[0U].key, KeyCodeUVE::Space);
+    EXPECT_FALSE(ResetActionToProjectDefaultUVE(actions, projectDefaults, "unknown"));
+
+    actions.clear();
+    ResetInputMapToProjectDefaultsUVE(actions, projectDefaults);
+    EXPECT_EQ(actions.size(), 2U);
+
+    const std::vector<InputActionUVE> uiSet = FilterActionsBySetPrefixUVE(actions, "ui");
+    ASSERT_EQ(uiSet.size(), 1U);
+    EXPECT_EQ(uiSet[0U].name, "ui.accept");
+
+    input.RegisterActionUVE(InputActionUVE{projectDefaults[0U]});
+    EXPECT_TRUE(ApplyRuntimeActionRebindUVE(input, "jump", KeyBindingUVE(KeyCodeUVE::J)));
+    input.SetKeyStateUVE(KeyCodeUVE::J, true);
+    FrameUVE();
+    EXPECT_TRUE(input.IsActionHeldUVE("jump"));
+}
+
 } // namespace
 } // namespace UVE::Editor::Tests

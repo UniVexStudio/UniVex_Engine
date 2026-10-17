@@ -52,7 +52,14 @@ target_include_directories(uve_rhi_vulkan PUBLIC Expose)
 # compatibility macros under this repo's -Werror regime) and PRIVATE (never visible to consumers
 # of uve_rhi_vulkan, preserving the uintptr_t confinement at the public boundary).
 target_include_directories(uve_rhi_vulkan SYSTEM PRIVATE ${vulkanheaders_SOURCE_DIR}/include)
-target_link_libraries(uve_rhi_vulkan
-    PUBLIC uve_rhi uve_window uve_platform uve_logging
-    PRIVATE ${CMAKE_DL_LIBS} spirv-reflect-static
-)
+if(WIN32)
+    target_link_libraries(uve_rhi_vulkan
+        PUBLIC uve_rhi uve_window uve_platform uve_logging dl
+        PRIVATE spirv-reflect-static
+    )
+else()
+    target_link_libraries(uve_rhi_vulkan
+        PUBLIC uve_rhi uve_window uve_platform uve_logging
+        PRIVATE ${CMAKE_DL_LIBS} spirv-reflect-static
+    )
+endif()

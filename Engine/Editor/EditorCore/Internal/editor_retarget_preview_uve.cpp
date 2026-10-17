@@ -15,6 +15,7 @@
 
 #include <imgui.h>
 
+#include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/asset/i_asset_database_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
 #include "uve/component/name_component_uve.h"
@@ -230,6 +231,32 @@ void EditorUVE::RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std
         const Scene::EntityUVE meshEntity = shell("Character Mesh");
         Scene::ApplyMeshInstance3DObjectDefinitionUVE(entityManager, meshEntity, meshDefinition);
         place(meshEntity, "Character Mesh", Kind::MeshInstance3D, meshParent);
+    } else if (m_retargetWindow.has_value()) {
+        for (const std::filesystem::path& animPath : m_retargetWindow->animations) {
+            Asset::AnimationClipAssetUVE clip;
+            if (Asset::LoadAnimationClipAssetUVE(animPath, clip) && !clip.rest.empty() &&
+                clip.rest.size() <= Scene::kMaximumSkeletonBonesUVE) {
+                Retarget::RetargetSkeletonUVE rig;
+                for (const Asset::AnimationAssetRestBoneUVE& rest : clip.rest) {
+                    Retarget::RetargetBoneUVE bone;
+                    bone.name = rest.bone;
+                    bone.parent = rest.parent;
+                    bone.position = rest.position;
+                    bone.rotation = rest.rotation;
+                    bone.scale = rest.scale.x;
+                    rig.bones.push_back(std::move(bone));
+                }
+                const Scene::EntityUVE figure = shell("Character");
+                Scene::ApplyObject3DObjectDefinitionUVE(entityManager, figure, Scene::Object3DObjectDefinitionUVE{});
+                place(figure, "Character", Kind::Object3D, figures, Math::Vector3UVE{kFigureOffsetUVE, 0.0F, 0.0F});
+                Scene::Skeleton3DObjectDefinitionUVE definition;
+                definition.skeleton.bones = BonesOfUVE(rig);
+                const Scene::EntityUVE skeleton = shell("Character Skeleton");
+                Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skeleton, definition);
+                preview.targetSkeleton = place(skeleton, "Character Skeleton", Kind::Skeleton3D, figure);
+                break;
+            }
+        }
     }
     ClearHistoryUVE();
     m_sceneDirty = false;

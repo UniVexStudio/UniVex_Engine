@@ -111,6 +111,9 @@ void main() {
         }
 
         float sampledDepth = texture(uDepthTexture, sampleUv).r;
+        if (sampledDepth >= 0.99999) {
+            continue;
+        }
         vec3 sampledViewPos = ReconstructViewPositionUVE(sampleUv, sampledDepth);
 
         float rangeCheck = smoothstep(0.0, 1.0, uRadius / max(abs(centerViewPos.z - sampledViewPos.z), 0.0001));

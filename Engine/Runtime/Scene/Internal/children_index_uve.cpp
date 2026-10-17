@@ -25,15 +25,10 @@ void ChildrenIndexUVE::RebuildUVE(IEntityManagerUVE& entityManager) {
     // generation), with the parent as the outermost key so each parent's run is contiguous.
     std::sort(links.begin(), links.end(), [](const auto& a, const auto& b) {
         if (a.first != b.first) {
-            return a.first.index != b.first.index ? a.first.index < b.first.index
-                                                  : a.first.generation < b.first.generation;
+            return CompareEntityHandleOrderUVE(a.first, b.first);
         }
-        if (a.second.first != b.second.first) {
-            return a.second.first < b.second.first;
-        }
-        return a.second.second.index != b.second.second.index
-                   ? a.second.second.index < b.second.second.index
-                   : a.second.second.generation < b.second.second.generation;
+        return CompareSiblingHierarchyOrderUVE(a.second.first, a.second.second, b.second.first,
+                                               b.second.second);
     });
     for (const auto& [parent, ordered] : links) {
         m_children[parent].push_back(ordered.second);

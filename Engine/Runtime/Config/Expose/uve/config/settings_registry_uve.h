@@ -79,8 +79,14 @@ public:
                                                         SettingStringListUVE fallback = {}) const;
     [[nodiscard]] SettingColorUVE GetColorUVE(const IConfigManagerUVE& store, std::string_view id,
                                               SettingColorUVE fallback = {}) const;
+    [[nodiscard]] std::uint32_t GetLayerMaskUVE(const IConfigManagerUVE& store, std::string_view id,
+                                                std::uint32_t fallback = 0U) const;
+    [[nodiscard]] SettingVector2UVE GetVector2UVE(const IConfigManagerUVE& store, std::string_view id,
+                                                  SettingVector2UVE fallback = {}) const;
     [[nodiscard]] SettingVector3UVE GetVector3UVE(const IConfigManagerUVE& store, std::string_view id,
                                                   SettingVector3UVE fallback = {}) const;
+    [[nodiscard]] SettingVector4UVE GetVector4UVE(const IConfigManagerUVE& store, std::string_view id,
+                                                  SettingVector4UVE fallback = {}) const;
 
 private:
     std::vector<std::unique_ptr<SettingDescriptorUVE>> m_descriptors;

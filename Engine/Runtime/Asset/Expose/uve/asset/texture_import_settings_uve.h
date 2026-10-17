@@ -42,8 +42,45 @@ struct TextureImportSettingsUVE final : AssetImportSettingsUVE {
     std::uint8_t compressionQuality = 85U; // Basis quality [0,100]
     std::uint8_t compressionEffort = 5U;   // Basis effort [0,10]
 
+    // Part 4.8 extended texture import options.
+    bool premultiplyAlpha = false;
+    bool dropOpaqueAlpha = false;
+    bool invertGreenChannel = false;
+    std::uint32_t maxResolutionClamp = 4096U;
+    bool fixAlphaBorder = false;
+    std::uint8_t anisotropyLevel = 1U;
+    float hdrClampExposure = 0.0F;
+    bool streamingEnabled = true;
+    std::uint32_t spriteSliceGridWidth = 0U;
+    std::uint32_t spriteSliceGridHeight = 0U;
+    std::uint16_t ninePatchMarginLeft = 0U;
+    std::uint16_t ninePatchMarginRight = 0U;
+    std::uint16_t ninePatchMarginTop = 0U;
+    std::uint16_t ninePatchMarginBottom = 0U;
+    float svgRasterScale = 1.0F;
+
     [[nodiscard]] std::string GetCacheVersionUVE() const override;
 };
+
+/// Estimates the imported texture's GPU/storage footprint in bytes for editor import preview (Part 4.8).
+[[nodiscard]] constexpr std::size_t EstimateImportedTextureMemoryBytesUVE(
+    const std::uint32_t width, const std::uint32_t height,
+    const TextureImportSettingsUVE& settings) noexcept {
+    const std::uint32_t clampedWidth =
+        (settings.maxResolutionClamp > 0U && width > settings.maxResolutionClamp) ? settings.maxResolutionClamp : width;
+    const std::uint32_t clampedHeight =
+        (settings.maxResolutionClamp > 0U && height > settings.maxResolutionClamp) ? settings.maxResolutionClamp
+                                                                                   : height;
+    const std::size_t baseBytes = static_cast<std::size_t>(clampedWidth) * static_cast<std::size_t>(clampedHeight) * 4U;
+    const std::size_t mipExpandedBytes = settings.generateMipmaps ? ((baseBytes * 4U) / 3U) : baseBytes;
+    if (settings.compressionMode == TextureCompressionModeUVE::BasisETC1S) {
+        return mipExpandedBytes / 8U;
+    }
+    if (settings.compressionMode == TextureCompressionModeUVE::BasisUASTC) {
+        return mipExpandedBytes / 4U;
+    }
+    return mipExpandedBytes;
+}
 
 /// Resolves texture-specific settings passed through the generic importer interface. Other
 /// settings types use the raster-image defaults above.

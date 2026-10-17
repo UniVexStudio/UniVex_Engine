@@ -665,7 +665,7 @@ void main() {
         float dither = ScreenSpaceDitherNoiseUVE(floor(gl_FragCoord.xy)) / 255.0;
         ldr = clamp(ldr + vec3(dither), 0.0, 1.0);
     }
-    float covered = (depth < 1.0 || uSkyCovers != 0) ? 1.0 : 0.0;
+    float covered = depth < 1.0 ? 1.0 : (uSkyCovers != 0 ? 0.75 : 0.0);
     float alpha = uWriteCoverageAlpha != 0 ? covered : 1.0;
     FragColor = vec4(ldr, alpha);
 }

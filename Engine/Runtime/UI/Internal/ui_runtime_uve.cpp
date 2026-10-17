@@ -25,6 +25,9 @@
 #include "uve/component/ui_tooltip_component_uve.h"
 #include "uve/input/key_code_uve.h"
 #include "uve/input/mouse_button_uve.h"
+#include "uve/objects/canvas/ui_button_uve.h"
+#include "uve/objects/canvas/ui_image_uve.h"
+#include "uve/objects/canvas/ui_text_uve.h"
 #include "uve/ui/canvas_ancestry_uve.h"
 #include "uve/ui/ui_anchors_uve.h"
 #include "uve/ui/ui_layout_uve.h"
@@ -83,8 +86,9 @@ void AppendFocusRingUVE(std::vector<UIQuadUVE>& quads, const Math::RectUVE& rect
 
 void AppendImageQuadsUVE(const Scene::UIImageComponentUVE& image, const float alpha,
                          std::vector<UIQuadUVE>& quads) {
-    const UIDrawItemKindUVE kind = image.textureAssetGuid.value == 0U ? UIDrawItemKindUVE::SolidColor
-                                                                      : UIDrawItemKindUVE::Image;
+    const UIDrawItemKindUVE kind = !Scene::UIImageUVE::HasTextureUVE(image)
+                                       ? UIDrawItemKindUVE::SolidColor
+                                       : UIDrawItemKindUVE::Image;
     UIQuadUVE base{};
     base.rect = image.rect;
     base.color = image.tintColor;
@@ -93,47 +97,20 @@ void AppendImageQuadsUVE(const Scene::UIImageComponentUVE& image, const float al
     base.imageAssetGuid = image.textureAssetGuid;
     // Flat fills slice invisibly (one color everywhere), so they always stay one quad; anything
     // non-finite falls back to the plain stretched quad rather than emitting garbage.
-    const bool marginsSane =
-        std::isfinite(image.sliceMarginMin.x) && std::isfinite(image.sliceMarginMin.y) &&
-        std::isfinite(image.sliceMarginMax.x) && std::isfinite(image.sliceMarginMax.y) &&
-        std::isfinite(image.sliceUVMin.x) && std::isfinite(image.sliceUVMin.y) &&
-        std::isfinite(image.sliceUVMax.x) && std::isfinite(image.sliceUVMax.y);
-    if (!image.nineSliceEnabled || kind != UIDrawItemKindUVE::Image || !marginsSane) {
+    if (!Scene::UIImageUVE::UsesNineSliceUVE(image)) {
         quads.push_back(base);
         return;
     }
-    float marginLeft = std::max(0.0F, image.sliceMarginMin.x);
-    float marginTop = std::max(0.0F, image.sliceMarginMin.y);
-    float marginRight = std::max(0.0F, image.sliceMarginMax.x);
-    float marginBottom = std::max(0.0F, image.sliceMarginMax.y);
-    float uvLeft = std::clamp(image.sliceUVMin.x, 0.0F, 1.0F);
-    float uvTop = std::clamp(image.sliceUVMin.y, 0.0F, 1.0F);
-    float uvRight = std::clamp(image.sliceUVMax.x, 0.0F, 1.0F);
-    float uvBottom = std::clamp(image.sliceUVMax.y, 0.0F, 1.0F);
-    // Over-wide borders shrink proportionally instead of overlapping: a 120px border pair on a
-    // 100px panel becomes 50/50, and the swallowed middle column drops out below.
-    const float drawnWide = marginLeft + marginRight;
-    if (drawnWide > image.rect.size.x && drawnWide > 0.0F) {
-        const float scale = image.rect.size.x / drawnWide;
-        marginLeft *= scale;
-        marginRight *= scale;
-    }
-    const float drawnTall = marginTop + marginBottom;
-    if (drawnTall > image.rect.size.y && drawnTall > 0.0F) {
-        const float scale = image.rect.size.y / drawnTall;
-        marginTop *= scale;
-        marginBottom *= scale;
-    }
-    const float uvWide = uvLeft + uvRight;
-    if (uvWide > 1.0F) {
-        uvLeft /= uvWide;
-        uvRight /= uvWide;
-    }
-    const float uvTall = uvTop + uvBottom;
-    if (uvTall > 1.0F) {
-        uvTop /= uvTall;
-        uvBottom /= uvTall;
-    }
+    const Scene::UIImageNineSliceSplitsUVE splits =
+        Scene::UIImageUVE::ResolveNineSliceSplitsUVE(image);
+    const float marginLeft = splits.marginLeft;
+    const float marginTop = splits.marginTop;
+    const float marginRight = splits.marginRight;
+    const float marginBottom = splits.marginBottom;
+    const float uvLeft = splits.uvLeft;
+    const float uvTop = splits.uvTop;
+    const float uvRight = splits.uvRight;
+    const float uvBottom = splits.uvBottom;
     const float x0 = image.rect.position.x;
     const float y0 = image.rect.position.y;
     const float x1 = x0 + image.rect.size.x;
@@ -568,23 +545,21 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
         [this, &entityManager, &ranked, &mousePosition, mouseDown, mousePressedThisFrame, focusedEntity,
          activatePressed, activateDown](const Scene::EntityUVE entity, Scene::UIButtonComponentUVE& button) {
             if (!ShouldDrawUiWidgetUVE(entityManager, entity)) {
-                button.isHovered = false;
-                button.wasClickedThisFrame = false;
+                Scene::UIButtonUVE::ClearRuntimeStateUVE(button);
                 return;
             }
-            button.isHovered = ContainsClippedUVE(entityManager, entity, button.rect, mousePosition);
+            const bool hovered = ContainsClippedUVE(entityManager, entity, button.rect, mousePosition);
             const bool keyboardFocused = entity == focusedEntity;
-            button.wasClickedThisFrame =
-                (button.isHovered && mousePressedThisFrame) || (keyboardFocused && activatePressed);
+            Scene::UIButtonUVE::UpdateInteractionStateUVE(
+                button, hovered, mousePressedThisFrame, keyboardFocused, activatePressed);
             if (button.isHovered && mousePressedThisFrame) {
                 m_focusedEntity = entity;
             }
 
             UIQuadUVE quad{};
             quad.rect = button.rect;
-            quad.color = button.isHovered || keyboardFocused
-                             ? ((mouseDown || activateDown) ? button.pressedColor : button.hoverColor)
-                             : button.normalColor;
+            quad.color = Scene::UIButtonUVE::ResolveVisualColorUVE(
+                button, keyboardFocused, mouseDown || activateDown);
             quad.alpha = TweenedAlphaUVE(entityManager, entity, 1.0F);
             quad.kind = UIDrawItemKindUVE::SolidColor;
             std::vector<UIQuadUVE> quads{quad};
@@ -788,8 +763,9 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
                 translated = localization.service->TranslateUVE(text.text);
                 shown = &translated;
             }
-            float cursorX = text.positionPixels.x;
-            float cursorY = text.positionPixels.y + text.fontSize;
+            const Math::Vector2UVE baselineCursor = Scene::UITextUVE::BaselineCursorPixelsUVE(text);
+            float cursorX = baselineCursor.x;
+            float cursorY = baselineCursor.y;
             m_fontAtlas.AppendTextQuadsUVE(*shown, cursorX, cursorY, text.fontSize, glyphQuads);
             std::vector<UIQuadUVE> quads;
             quads.reserve(glyphQuads.size());

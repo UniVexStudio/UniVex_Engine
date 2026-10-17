@@ -245,11 +245,11 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
         // A preceding depth-only FBO explicitly uses GL_NONE for both buffers. Explicitly route
         // every default-framebuffer pass to the window back buffer; using the loaded entry also
         // avoids relying on the driver's legacy glDrawBuffer dispatch after an FBO transition.
-        const GLenum defaultDrawBuffer = GL_BACK;
+        const GLenum defaultDrawBuffer = GL_BACK_LEFT;
         if (m_state->gl.glDrawBuffers != nullptr) {
             m_state->gl.glDrawBuffers(1, &defaultDrawBuffer);
         } else {
-            glDrawBuffer(defaultDrawBuffer);
+            glDrawBuffer(GL_BACK);
         }
         glReadBuffer(GL_BACK);
 #endif

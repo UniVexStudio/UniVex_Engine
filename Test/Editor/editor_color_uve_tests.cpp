@@ -125,5 +125,26 @@ TEST(EditorColorUVETest, HsvConversion_RoundTripsAndKeepsHueThroughGreyAndBlack)
     ExpectColorNear(HsvToRgbUVE(EditorHsvUVE{1.0F, 1.0F, 1.0F}, 1.0F), EditorColorUVE{1.0F, 0.0F, 0.0F, 1.0F});
 }
 
+TEST(EditorColorUVETest, LinearSrgbHdrExposureAndChannelNudgeWorkDeterministically) {
+    const EditorColorUVE linear{0.214041F, 0.5F, 0.01F, 0.75F};
+    const EditorColorUVE srgb = LinearToSrgbColorUVE(linear);
+    const EditorColorUVE roundTripped = SrgbToLinearColorUVE(srgb);
+    ExpectColorNear(roundTripped, linear, 1e-5F);
+
+    const EditorColorUVE hdr = ApplyHdrExposureToColorUVE(EditorColorUVE{0.5F, 0.25F, 0.1F, 0.8F}, 2.0F, false);
+    EXPECT_FLOAT_EQ(hdr.r, 2.0F);
+    EXPECT_FLOAT_EQ(hdr.g, 1.0F);
+    EXPECT_FLOAT_EQ(hdr.a, 0.8F);
+
+    const EditorColorUVE ldrClamped = ApplyHdrExposureToColorUVE(EditorColorUVE{0.5F, 0.25F, 0.1F, 0.8F}, 2.0F, true);
+    EXPECT_FLOAT_EQ(ldrClamped.r, 1.0F);
+
+    EditorColorUVE nudged{0.95F, 0.5F, 0.2F, 1.0F};
+    NudgeColorChannelUVE(nudged, 0U, 0.2F, true);
+    EXPECT_FLOAT_EQ(nudged.r, 1.0F);
+    NudgeColorChannelUVE(nudged, 0U, 0.5F, false);
+    EXPECT_FLOAT_EQ(nudged.r, 1.5F);
+}
+
 } // namespace
 } // namespace UVE::Editor::Tests

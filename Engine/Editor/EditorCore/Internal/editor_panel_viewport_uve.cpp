@@ -256,9 +256,22 @@ void EditorUVE::DrawViewportImageUVE(const ViewportContextUVE context) {
         }
         const Math::Vector2UVE available{availableRegion.x, availableRegion.y};
         Math::Vector2UVE used{0.0F, 0.0F};
-        // Whatever this particular view's overlay changed last frame is applied only to that
-        // view's backend. Camera requests and toolbar state can no longer leak between windows.
-        const std::uint64_t textureId = m_viewportPanelRenderer(context, available, used, *state);
+        // Temporarily swap this view's overlay state into m_viewportOverlayState before running
+        // the viewport panel renderer and overlay bubbles so RequestViewportViewUVE,
+        // NotifyViewportOrbitedUVE, and SetViewportAxisColorsUVE inside the callback mutate the
+        // active viewport's state (e.g., Entity Editor) instead of the main scene viewport.
+        const bool auxiliaryState = state != &m_viewportOverlayState;
+        if (auxiliaryState) {
+            if (!state->axisColorsValid && m_viewportOverlayState.axisColorsValid) {
+                state->axisColorsValid = true;
+                state->axisColorX = m_viewportOverlayState.axisColorX;
+                state->axisColorY = m_viewportOverlayState.axisColorY;
+                state->axisColorZ = m_viewportOverlayState.axisColorZ;
+            }
+            std::swap(*state, m_viewportOverlayState);
+        }
+        const std::uint64_t textureId =
+            m_viewportPanelRenderer(context, available, used, m_viewportOverlayState);
         if (textureId != 0U && used.x > 0.0F && used.y > 0.0F) {
             const ImVec2 cursorBeforeImage = ImGui::GetCursorScreenPos();
             // The viewport renderer's framebuffer texture is a normal OpenGL render target
@@ -271,26 +284,18 @@ void EditorUVE::DrawViewportImageUVE(const ViewportContextUVE context) {
             // The projection/gizmo-mode overlay bubbles are editor-authoring chrome - hidden while
             // the Game workspace tab is active, matching Unity's own Scene/Game split where the
             // Game view previews what a player would see with no editor overlays on top.
-            if (!state->gameWorkspaceActive && !state->studioView) {
-                // The existing toolbar helpers operate on the canonical member. Temporarily put
-                // this view's state there while they draw, then return both states to their owners.
-                // This keeps the large, proven toolbar implementation unchanged while preserving
-                // strict state isolation for the Entity Editor.
-                const bool auxiliaryState = state != &m_viewportOverlayState;
-                if (auxiliaryState) {
-                    std::swap(*state, m_viewportOverlayState);
-                }
+            if (!m_viewportOverlayState.gameWorkspaceActive && !m_viewportOverlayState.studioView) {
                 DrawViewportOverlayBubblesUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},
                                               Math::Vector2UVE{used.x, used.y});
                 DrawEntityContextToolbarUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},
                                             Math::Vector2UVE{used.x, used.y});
                 m_viewportOverlayState.pointerOverOverlay = ImGui::IsAnyItemHovered();
-                if (auxiliaryState) {
-                    std::swap(*state, m_viewportOverlayState);
-                }
             } else {
-                state->pointerOverOverlay = false;
+                m_viewportOverlayState.pointerOverOverlay = false;
             }
+        }
+        if (auxiliaryState) {
+            std::swap(*state, m_viewportOverlayState);
         }
     }
     if (availableRegion.x > 0.0F && availableRegion.y > 0.0F) {

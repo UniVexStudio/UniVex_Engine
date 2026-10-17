@@ -2,6 +2,7 @@
 
 #include "uve/component/ui_tween_component_uve.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace UVE::Scene {
@@ -17,6 +18,42 @@ bool IsUITweenComponentValidUVE(const UITweenComponentUVE& value) noexcept {
            value.duration > 0.0F && std::isfinite(value.delay) && value.delay >= 0.0F &&
            std::isfinite(value.elapsed) && value.elapsed >= 0.0F && std::isfinite(value.currentAlpha) && knownTarget &&
            knownLoop && knownEase;
+}
+
+bool IsUITweenInDelayPhaseUVE(const UITweenComponentUVE& value) noexcept {
+    return IsUITweenComponentValidUVE(value) && value.elapsed < value.delay;
+}
+
+float ResolveUITweenNormalizedCycleProgressUVE(const UITweenComponentUVE& value) noexcept {
+    if (!IsUITweenComponentValidUVE(value) || value.elapsed <= value.delay) {
+        return 0.0F;
+    }
+    const float activeTime = value.elapsed - value.delay;
+    switch (value.loop) {
+    case UITweenLoopUVE::Once:
+        return std::clamp(activeTime / value.duration, 0.0F, 1.0F);
+    case UITweenLoopUVE::Loop:
+        return std::clamp(std::fmod(activeTime, value.duration) / value.duration, 0.0F, 1.0F);
+    case UITweenLoopUVE::PingPong: {
+        const float period = value.duration * 2.0F;
+        const float wrapped = std::fmod(activeTime, period);
+        const float t = (wrapped <= value.duration)
+                            ? (wrapped / value.duration)
+                            : (2.0F - wrapped / value.duration);
+        return std::clamp(t, 0.0F, 1.0F);
+    }
+    }
+    return 0.0F;
+}
+
+void ResetUITweenRuntimeStateUVE(UITweenComponentUVE& value, const bool startPlaying) noexcept {
+    value.elapsed = 0.0F;
+    value.playing = startPlaying;
+    value.completedThisFrame = false;
+    value.currentAlpha =
+        (value.target == UITweenTargetUVE::Alpha && std::isfinite(value.fromAlpha))
+            ? std::clamp(value.fromAlpha, 0.0F, 1.0F)
+            : 1.0F;
 }
 
 } // namespace UVE::Scene

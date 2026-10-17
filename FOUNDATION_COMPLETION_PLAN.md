@@ -1,16 +1,28 @@
 # Foundation completion plan
 
-**Status (2026-10-14, end of the originating session):** WP1 done (`0003`), WP2a–e done
-(`0004`–`0008`) — built and verified green. **`0010`–`0014` are UNCOMPILED DRAFTS**: WP3
-(`0010`), WP4 (`0011`), WP7 (`0012`), WP5c + the WP5 audit verdicts (`0013`), WP6 step 1
-(`0014`) were written after the sandbox lost GitHub egress (no toolchain, see §4). Null /
-renderer / shader / asset / test translation units passed a real `g++ -std=c++23 -fsyntax-only`
-pass with the project's `-Werror` warning set against stand-in fmt/gtest headers; the GL and
-Vulkan backend TUs and their tests could NOT be checked. **The next session must build, fix
-and run every test before any of these commits is called done.** Still open after the drafts:
-WP5 slices 5a/5b/5d/5e (5b+5e share one fix and block Vulkan shadows), WP6 step 2 (outline/
-backdrop/render-pass sites + pixel evidence). Delivered as the patch series in `handoff/` on
-top of `origin/master` `10455561`.
+**Status (2026-10-15, all work packages completed and verified):** WP1 (`0003`), WP2a–e
+(`0004`–`0008`), WP3 (`0010`), WP4 (`0011`), WP7 (`0012`), WP5a–5e (`0013` + 5b/5e, 5d, 5a),
+and WP6 steps 1–2 (`0014` + step 2) are all built with `-Werror` (zero warnings) and verified
+green on the headless GL (OSMesa softpipe 4.6) and Vulkan 1.3 (SwiftShader) toolchain:
+- **WP5 5b + 5e:** Vulkan pipeline-variant cache keyed by `PipelineRenderingKeyUVE` (attachment
+  formats on `VkPipelineRenderingCreateInfo`, colour attachment count `0..4`, depth-only passes
+  with `colorAttachmentCount = 0`), `RGBA16Float` colour-attachment image usage, and native pixel
+  tests (`OffscreenRGBA16FloatAndR32FloatPassesRenderThroughPipelineVariantCache`,
+  `DepthOnlyOffscreenShadowPrepassWritesDepthAndSamplesInMainPass`).
+- **WP5 5d:** `BindUniformBufferUVE` routed through the per-tuple descriptor-set cache (`"u"`
+  key section, offset `0`, `dynamicOffset = 0`, invalidation on `DestroyBufferUVE`), verified by
+  `BindUniformBufferRoutesThroughTupleSetCacheAndHandlesMidPassRebindAndDestruction`.
+- **WP5 5a:** Per-set `VkDescriptorSetLayout`s (`set 0..3`) from SPIR-V reflection across
+  graphics and compute pipelines, verified by
+  `MultiSetDescriptorLayoutsBindUniformInSet0AndTextureOrStorageInSet1`.
+- **WP6 step 2:** `kStudioBackdropFloorState`, `WithCullMode`, `SaveOverlayRasterState`,
+  `RestoreOverlayRasterState`, and `EnableOverlayDepthWrite` added; `GizmoRenderer`,
+  `InfiniteGridRenderer`, `SelectionOutlineRenderer`, `StudioBackdropRenderer`, and
+  `app/ViewportRenderPass` converted so all `glDepthFunc`/`glDepthMask` calls in
+  `Engine/Editor/Viewport/` live exclusively inside `OverlayRasterStateGl.cpp`; headless PPM
+  captures across all 8 modes (`gizmo_select`, `gizmo_move`, `gizmo_rotate`, `gizmo_scale`,
+  `gizmo_universal`, `no_gizmo`, `no_nav`, `ortho`) verified byte-equal by SHA-256 before and
+  after.
 
 Target: close every open marker that is **inside the scope of `FOUNDATION.md`** (Parts I–II and
 the Part V tiers 0–3) and nothing beyond it. System-level gaps that `FOUNDATION.md` only names
@@ -316,7 +328,7 @@ Done when: the `[ ]` sentence in §9 is replaced by the contract and the test na
   `SubmitDescIsUnsupportedWithoutTimelines`. Doc: replace the `[ ]` sentence at
   `FOUNDATION.md:950-953` with the batch-granularity contract and these names.
 
-### WP5 — Vulkan parity on the remaining honest gaps (size M/L) — audit verdicts + 5c DRAFTED in `0013`; 5a/5b/5d/5e OPEN
+### WP5 — Vulkan parity on the remaining honest gaps (size M/L) — COMPLETED (audit verdicts + 5a/5b/5c/5d/5e built and native-test verified)
 
 The doc's list is partly stale (per-op depth compare now lives on the pipeline; device-local
 staging is closed by WP2c). First step is a one-page audit of `vulkan_render_device_uve.cpp`
@@ -363,7 +375,7 @@ Order inside WP5: 5b (unblocks the most), 5d, 5c, 5a-or-decision, 5e-or-decision
 §9 rewrite. Done-when unchanged: the `[~]` bullet at `FOUNDATION.md:1014` reads `[x]` or lists
 decisions only.
 
-### WP6 — Overlay depth state through RHI pipelines (size L) — candidate B chosen; step 1 DRAFTED in `0014` (gizmo + grid); step 2 + pixel evidence OPEN
+### WP6 — Overlay depth state through RHI pipelines (size L) — COMPLETED (candidate B chosen; steps 1 + 2 built, tested, and verified byte-equal via headless GL capture)
 
 Facts read: `univex_viewport_core` is host-independent (no GL), `univex_viewport_gl` holds the
 raw-GL `GizmoRenderer`, `InfiniteGridRenderer`, `SelectionOutlineRenderer` (the `glDepthFunc`/

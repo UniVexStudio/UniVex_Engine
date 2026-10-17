@@ -141,8 +141,12 @@ constexpr double kNoValueUVE = std::numeric_limits<double>::quiet_NaN();
     switch (type) {
     case SettingTypeUVE::Color:
         return "rgba";
+    case SettingTypeUVE::Vector2:
+        return "xy";
     case SettingTypeUVE::Vector3:
         return "xyz";
+    case SettingTypeUVE::Vector4:
+        return "xyzw";
     default:
         return {};
     }
@@ -174,7 +178,8 @@ constexpr double kNoValueUVE = std::numeric_limits<double>::quiet_NaN();
         return stored == store.GetBoolUVE(id, true) ? std::optional<SettingValueUVE>(stored) : std::nullopt;
     }
     case SettingTypeUVE::Int:
-    case SettingTypeUVE::Enum: {
+    case SettingTypeUVE::Enum:
+    case SettingTypeUVE::LayerMask: {
         constexpr auto kSentinel = std::numeric_limits<std::int64_t>::min();
         const std::int64_t stored = store.GetIntUVE(id, kSentinel);
         if (stored != kSentinel || store.GetIntUVE(id, 0) == kSentinel) {
@@ -196,6 +201,7 @@ constexpr double kNoValueUVE = std::numeric_limits<double>::quiet_NaN();
     }
     case SettingTypeUVE::String:
     case SettingTypeUVE::FilePath:
+    case SettingTypeUVE::AssetReference:
     case SettingTypeUVE::KeyBinding: {
         std::string stored = store.GetStringUVE(id, "");
         // An empty read is a real empty string only if a second, non-empty fallback reads empty too.
@@ -235,14 +241,32 @@ constexpr double kNoValueUVE = std::numeric_limits<double>::quiet_NaN();
         color.a = descriptor.colorHasAlpha ? ReadChannelUVE(store, ChannelKeyUVE(id, 'a')) : 1.0F;
         return color;
     }
+    case SettingTypeUVE::Vector2: {
+        if (!store.HasKeyUVE(ChannelKeyUVE(id, 'x')) || !store.HasKeyUVE(ChannelKeyUVE(id, 'y'))) {
+            return std::nullopt;
+        }
+        return SettingVector2UVE{store.GetDoubleUVE(ChannelKeyUVE(id, 'x'), kNoValueUVE),
+                                 store.GetDoubleUVE(ChannelKeyUVE(id, 'y'), kNoValueUVE)};
+    }
     case SettingTypeUVE::Vector3: {
-        if (!store.HasKeyUVE(ChannelKeyUVE(id, 'x'))) {
+        if (!store.HasKeyUVE(ChannelKeyUVE(id, 'x')) || !store.HasKeyUVE(ChannelKeyUVE(id, 'y')) ||
+            !store.HasKeyUVE(ChannelKeyUVE(id, 'z'))) {
             return std::nullopt;
         }
         // As with a colour, a missing or non-numeric component reads as NaN and fails the vector.
         return SettingVector3UVE{store.GetDoubleUVE(ChannelKeyUVE(id, 'x'), kNoValueUVE),
                                  store.GetDoubleUVE(ChannelKeyUVE(id, 'y'), kNoValueUVE),
                                  store.GetDoubleUVE(ChannelKeyUVE(id, 'z'), kNoValueUVE)};
+    }
+    case SettingTypeUVE::Vector4: {
+        if (!store.HasKeyUVE(ChannelKeyUVE(id, 'x')) || !store.HasKeyUVE(ChannelKeyUVE(id, 'y')) ||
+            !store.HasKeyUVE(ChannelKeyUVE(id, 'z')) || !store.HasKeyUVE(ChannelKeyUVE(id, 'w'))) {
+            return std::nullopt;
+        }
+        return SettingVector4UVE{store.GetDoubleUVE(ChannelKeyUVE(id, 'x'), kNoValueUVE),
+                                 store.GetDoubleUVE(ChannelKeyUVE(id, 'y'), kNoValueUVE),
+                                 store.GetDoubleUVE(ChannelKeyUVE(id, 'z'), kNoValueUVE),
+                                 store.GetDoubleUVE(ChannelKeyUVE(id, 'w'), kNoValueUVE)};
     }
     }
     return std::nullopt;
@@ -316,6 +340,12 @@ bool IsSettingValueValidUVE(const SettingDescriptorUVE& descriptor, const Settin
         return path != nullptr && path->find('\0') == std::string::npos &&
                (descriptor.maxLength == 0U || path->size() <= descriptor.maxLength);
     }
+    case SettingTypeUVE::AssetReference: {
+        const auto* ref = std::get_if<std::string>(&value);
+        return ref != nullptr && ref->find('\0') == std::string::npos &&
+               ref->find("..") == std::string::npos &&
+               (descriptor.maxLength == 0U || ref->size() <= descriptor.maxLength);
+    }
     case SettingTypeUVE::KeyBinding: {
         const auto* binding = std::get_if<std::string>(&value);
         return binding != nullptr && IsKeyBindingValueValidUVE(*binding);
@@ -335,15 +365,30 @@ bool IsSettingValueValidUVE(const SettingDescriptorUVE& descriptor, const Settin
         const auto* integer = std::get_if<std::int64_t>(&value);
         return integer != nullptr && IsEnumValueValidUVE(descriptor, *integer);
     }
+    case SettingTypeUVE::LayerMask: {
+        const auto* mask = std::get_if<std::int64_t>(&value);
+        return mask != nullptr && *mask >= 0 && *mask <= 0xFFFFFFFFLL;
+    }
     case SettingTypeUVE::Color: {
         const auto* color = std::get_if<SettingColorUVE>(&value);
         return color != nullptr && IsChannelValidUVE(color->r) && IsChannelValidUVE(color->g) &&
                IsChannelValidUVE(color->b) && (!descriptor.colorHasAlpha || IsChannelValidUVE(color->a));
     }
+    case SettingTypeUVE::Vector2: {
+        const auto* vector = std::get_if<SettingVector2UVE>(&value);
+        return vector != nullptr && IsWithinBoundsUVE(descriptor, vector->x) &&
+               IsWithinBoundsUVE(descriptor, vector->y);
+    }
     case SettingTypeUVE::Vector3: {
         const auto* vector = std::get_if<SettingVector3UVE>(&value);
         return vector != nullptr && IsWithinBoundsUVE(descriptor, vector->x) &&
                IsWithinBoundsUVE(descriptor, vector->y) && IsWithinBoundsUVE(descriptor, vector->z);
+    }
+    case SettingTypeUVE::Vector4: {
+        const auto* vector = std::get_if<SettingVector4UVE>(&value);
+        return vector != nullptr && IsWithinBoundsUVE(descriptor, vector->x) &&
+               IsWithinBoundsUVE(descriptor, vector->y) && IsWithinBoundsUVE(descriptor, vector->z) &&
+               IsWithinBoundsUVE(descriptor, vector->w);
     }
     }
     return false;
@@ -365,7 +410,8 @@ std::string ValidateSettingDescriptorUVE(const SettingDescriptorUVE& descriptor)
         }
     }
     const bool numeric = descriptor.type == SettingTypeUVE::Int || descriptor.type == SettingTypeUVE::Float ||
-                         descriptor.type == SettingTypeUVE::Vector3;
+                         descriptor.type == SettingTypeUVE::Vector2 || descriptor.type == SettingTypeUVE::Vector3 ||
+                         descriptor.type == SettingTypeUVE::Vector4;
     if (!numeric && (descriptor.minimum || descriptor.maximum || descriptor.step)) {
         return "'" + descriptor.id + "' declares numeric bounds or a step but is not a numeric setting";
     }
@@ -399,6 +445,7 @@ std::string ValidateSettingDescriptorUVE(const SettingDescriptorUVE& descriptor)
     }
     const bool hasStringLength = descriptor.type == SettingTypeUVE::String ||
                                  descriptor.type == SettingTypeUVE::FilePath ||
+                                 descriptor.type == SettingTypeUVE::AssetReference ||
                                  descriptor.type == SettingTypeUVE::StringList;
     if (!hasStringLength && descriptor.maxLength != 0U) {
         return "'" + descriptor.id + "' declares a maximum length but has no string value";
@@ -480,6 +527,16 @@ SettingDescriptorUVE MakeFilePathSettingUVE(std::string id, std::string defaultV
     return descriptor;
 }
 
+SettingDescriptorUVE MakeAssetReferenceSettingUVE(std::string id, std::string defaultValue,
+                                                  const std::size_t maxLength, std::string displayName,
+                                                  std::string category, std::string tooltip) {
+    SettingDescriptorUVE descriptor =
+        MakeSettingUVE(std::move(id), SettingTypeUVE::AssetReference, std::move(defaultValue),
+                       std::move(displayName), std::move(category), std::move(tooltip));
+    descriptor.maxLength = maxLength;
+    return descriptor;
+}
+
 SettingDescriptorUVE MakeKeyBindingSettingUVE(std::string id, std::string defaultValue, std::string displayName,
                                               std::string category, std::string tooltip) {
     return MakeSettingUVE(std::move(id), SettingTypeUVE::KeyBinding, std::move(defaultValue),
@@ -495,6 +552,14 @@ SettingDescriptorUVE MakeEnumSettingUVE(std::string id, const std::int64_t defau
     return descriptor;
 }
 
+SettingDescriptorUVE MakeLayerMaskSettingUVE(std::string id, const std::uint32_t defaultMask,
+                                             std::string displayName, std::string category,
+                                             std::string tooltip) {
+    return MakeSettingUVE(std::move(id), SettingTypeUVE::LayerMask,
+                          static_cast<std::int64_t>(defaultMask), std::move(displayName),
+                          std::move(category), std::move(tooltip));
+}
+
 SettingDescriptorUVE MakeColorSettingUVE(std::string id, const SettingColorUVE defaultValue, const bool hasAlpha,
                                          std::string displayName, std::string category, std::string tooltip) {
     SettingDescriptorUVE descriptor = MakeSettingUVE(std::move(id), SettingTypeUVE::Color, defaultValue,
@@ -503,10 +568,30 @@ SettingDescriptorUVE MakeColorSettingUVE(std::string id, const SettingColorUVE d
     return descriptor;
 }
 
+SettingDescriptorUVE MakeVector2SettingUVE(std::string id, const SettingVector2UVE defaultValue,
+                                           const std::optional<double> minimum, const std::optional<double> maximum,
+                                           std::string displayName, std::string category, std::string tooltip) {
+    SettingDescriptorUVE descriptor = MakeSettingUVE(std::move(id), SettingTypeUVE::Vector2, defaultValue,
+                                                     std::move(displayName), std::move(category), std::move(tooltip));
+    descriptor.minimum = minimum;
+    descriptor.maximum = maximum;
+    return descriptor;
+}
+
 SettingDescriptorUVE MakeVector3SettingUVE(std::string id, const SettingVector3UVE defaultValue,
                                            const std::optional<double> minimum, const std::optional<double> maximum,
                                            std::string displayName, std::string category, std::string tooltip) {
     SettingDescriptorUVE descriptor = MakeSettingUVE(std::move(id), SettingTypeUVE::Vector3, defaultValue,
+                                                     std::move(displayName), std::move(category), std::move(tooltip));
+    descriptor.minimum = minimum;
+    descriptor.maximum = maximum;
+    return descriptor;
+}
+
+SettingDescriptorUVE MakeVector4SettingUVE(std::string id, const SettingVector4UVE defaultValue,
+                                           const std::optional<double> minimum, const std::optional<double> maximum,
+                                           std::string displayName, std::string category, std::string tooltip) {
+    SettingDescriptorUVE descriptor = MakeSettingUVE(std::move(id), SettingTypeUVE::Vector4, defaultValue,
                                                      std::move(displayName), std::move(category), std::move(tooltip));
     descriptor.minimum = minimum;
     descriptor.maximum = maximum;
@@ -603,6 +688,7 @@ bool SettingsRegistryUVE::SetValueUVE(IConfigManagerUVE& store, const std::strin
         break;
     case SettingTypeUVE::Int:
     case SettingTypeUVE::Enum:
+    case SettingTypeUVE::LayerMask:
         store.SetIntUVE(key, std::get<std::int64_t>(value));
         break;
     case SettingTypeUVE::Float:
@@ -610,6 +696,7 @@ bool SettingsRegistryUVE::SetValueUVE(IConfigManagerUVE& store, const std::strin
         break;
     case SettingTypeUVE::String:
     case SettingTypeUVE::FilePath:
+    case SettingTypeUVE::AssetReference:
     case SettingTypeUVE::KeyBinding:
         store.SetStringUVE(key, std::get<std::string>(value));
         break;
@@ -635,11 +722,25 @@ bool SettingsRegistryUVE::SetValueUVE(IConfigManagerUVE& store, const std::strin
         }
         break;
     }
+    case SettingTypeUVE::Vector2: {
+        const auto& vector = std::get<SettingVector2UVE>(value);
+        store.SetDoubleUVE(ChannelKeyUVE(key, 'x'), vector.x);
+        store.SetDoubleUVE(ChannelKeyUVE(key, 'y'), vector.y);
+        break;
+    }
     case SettingTypeUVE::Vector3: {
         const auto& vector = std::get<SettingVector3UVE>(value);
         store.SetDoubleUVE(ChannelKeyUVE(key, 'x'), vector.x);
         store.SetDoubleUVE(ChannelKeyUVE(key, 'y'), vector.y);
         store.SetDoubleUVE(ChannelKeyUVE(key, 'z'), vector.z);
+        break;
+    }
+    case SettingTypeUVE::Vector4: {
+        const auto& vector = std::get<SettingVector4UVE>(value);
+        store.SetDoubleUVE(ChannelKeyUVE(key, 'x'), vector.x);
+        store.SetDoubleUVE(ChannelKeyUVE(key, 'y'), vector.y);
+        store.SetDoubleUVE(ChannelKeyUVE(key, 'z'), vector.z);
+        store.SetDoubleUVE(ChannelKeyUVE(key, 'w'), vector.w);
         break;
     }
     }
@@ -752,7 +853,8 @@ bool SettingsRegistryUVE::GetBoolUVE(const IConfigManagerUVE& store, const std::
 
 std::int64_t SettingsRegistryUVE::GetIntUVE(const IConfigManagerUVE& store, const std::string_view id,
                                             const std::int64_t fallback) const {
-    return GetTypedUVE<std::int64_t>(*this, store, id, {SettingTypeUVE::Int, SettingTypeUVE::Enum}, fallback);
+    return GetTypedUVE<std::int64_t>(
+        *this, store, id, {SettingTypeUVE::Int, SettingTypeUVE::Enum, SettingTypeUVE::LayerMask}, fallback);
 }
 
 double SettingsRegistryUVE::GetFloatUVE(const IConfigManagerUVE& store, const std::string_view id,
@@ -763,7 +865,8 @@ double SettingsRegistryUVE::GetFloatUVE(const IConfigManagerUVE& store, const st
 std::string SettingsRegistryUVE::GetStringUVE(const IConfigManagerUVE& store, const std::string_view id,
                                               std::string fallback) const {
     return GetTypedUVE<std::string>(*this, store, id,
-                                    {SettingTypeUVE::String, SettingTypeUVE::FilePath, SettingTypeUVE::KeyBinding},
+                                    {SettingTypeUVE::String, SettingTypeUVE::FilePath,
+                                     SettingTypeUVE::AssetReference, SettingTypeUVE::KeyBinding},
                                     std::move(fallback));
 }
 
@@ -778,9 +881,29 @@ SettingColorUVE SettingsRegistryUVE::GetColorUVE(const IConfigManagerUVE& store,
     return GetTypedUVE<SettingColorUVE>(*this, store, id, {SettingTypeUVE::Color}, fallback);
 }
 
+std::uint32_t SettingsRegistryUVE::GetLayerMaskUVE(const IConfigManagerUVE& store,
+                                                   const std::string_view id,
+                                                   const std::uint32_t fallback) const {
+    const std::int64_t value =
+        GetTypedUVE<std::int64_t>(*this, store, id, {SettingTypeUVE::LayerMask}, static_cast<std::int64_t>(fallback));
+    return static_cast<std::uint32_t>(value & 0xFFFFFFFFLL);
+}
+
+SettingVector2UVE SettingsRegistryUVE::GetVector2UVE(const IConfigManagerUVE& store,
+                                                     const std::string_view id,
+                                                     const SettingVector2UVE fallback) const {
+    return GetTypedUVE<SettingVector2UVE>(*this, store, id, {SettingTypeUVE::Vector2}, fallback);
+}
+
 SettingVector3UVE SettingsRegistryUVE::GetVector3UVE(const IConfigManagerUVE& store, const std::string_view id,
                                                      const SettingVector3UVE fallback) const {
     return GetTypedUVE<SettingVector3UVE>(*this, store, id, {SettingTypeUVE::Vector3}, fallback);
+}
+
+SettingVector4UVE SettingsRegistryUVE::GetVector4UVE(const IConfigManagerUVE& store,
+                                                     const std::string_view id,
+                                                     const SettingVector4UVE fallback) const {
+    return GetTypedUVE<SettingVector4UVE>(*this, store, id, {SettingTypeUVE::Vector4}, fallback);
 }
 
 } // namespace UVE::Config

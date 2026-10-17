@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <GL/gl.h>
+#include <GL/glext.h>
 
 #include "editor_icon_set_uve.h"
 

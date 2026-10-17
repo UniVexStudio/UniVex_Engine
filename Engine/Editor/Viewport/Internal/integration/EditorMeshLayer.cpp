@@ -15,9 +15,11 @@
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/editor_internal_entity_component_uve.h"
 #include "uve/component/light_component_uve.h"
+#include "uve/component/light_emitter_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 
 namespace univex::integration {
@@ -80,6 +82,14 @@ bool EditorMeshLayerUVE::SyncHeadlightUVE(const univex::camera::OrbitCamera& cam
                 sceneHasItsOwnLight = true;
             }
         });
+    entityManager.ForEachUVE<UVE::Scene::DirectionalLight3DComponentUVE, UVE::Scene::LightEmitterComponentUVE>(
+        [this, &sceneHasItsOwnLight](const UVE::Scene::EntityUVE entity,
+                                     const UVE::Scene::DirectionalLight3DComponentUVE&,
+                                     const UVE::Scene::LightEmitterComponentUVE& emitter) {
+            if (entity != headlightEntity_ && !emitter.negative && emitter.energy > 0.0F) {
+                sceneHasItsOwnLight = true;
+            }
+        });
 
     UVE::Scene::LightComponentUVE& headlight =
         entityManager.GetComponentUVE<UVE::Scene::LightComponentUVE>(headlightEntity_);
@@ -94,13 +104,13 @@ bool EditorMeshLayerUVE::SyncHeadlightUVE(const univex::camera::OrbitCamera& cam
 
     const univex::math::Vec3 backward =
         univex::math::Normalize(camera.Eye() - camera.Target());
-    const univex::math::Vec3 worldUp{0.0F, 1.0F, 0.0F};
-    const univex::math::Vec3 right = univex::math::Normalize(univex::math::Cross(worldUp, backward));
+    const univex::math::Vec3 cameraUp = camera.Up();
+    const univex::math::Vec3 right = univex::math::Normalize(univex::math::Cross(cameraUp, backward));
     const univex::math::Vec3 offsetBackward =
-        univex::math::Normalize(backward + right * 0.40F + worldUp * 0.55F);
+        univex::math::Normalize(backward + right * 0.40F + cameraUp * 0.55F);
 
     UVE::Math::QuaternionUVE rotation{};
-    if (!UVE::Math::TryMakeLookAtUVE(ToUveVector3UVE(offsetBackward), UVE::Math::Vector3UVE{0.0F, 1.0F, 0.0F},
+    if (!UVE::Math::TryMakeLookAtUVE(ToUveVector3UVE(offsetBackward), ToUveVector3UVE(cameraUp),
                                      rotation)) {
         rotation = UVE::Math::QuaternionUVE{};
     }
@@ -148,8 +158,9 @@ void EditorMeshLayerUVE::SyncCameraFromOrbitUVE(const univex::camera::OrbitCamer
     const univex::math::Vec3 eye = camera.Eye();
     const univex::math::Vec3 target = camera.Target();
     const univex::math::Vec3 backward{eye.x - target.x, eye.y - target.y, eye.z - target.z};
+    const univex::math::Vec3 cameraUp = camera.Up();
     UVE::Math::QuaternionUVE rotation{};
-    if (!UVE::Math::TryMakeLookAtUVE(ToUveVector3UVE(backward), UVE::Math::Vector3UVE{0.0F, 1.0F, 0.0F}, rotation)) {
+    if (!UVE::Math::TryMakeLookAtUVE(ToUveVector3UVE(backward), ToUveVector3UVE(cameraUp), rotation)) {
         rotation = UVE::Math::QuaternionUVE{};
     }
 

@@ -476,20 +476,28 @@ struct RendererUniformNamesUVE {
     }
     ShadowCascadeSplitsUVE splits{};
     const float clampedLambda = std::clamp(validLambda ? splitLambda : 0.5F, 0.0F, 1.0F);
+    float previousSplit = nearPlane;
     for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCountUVE; ++cascadeIndex) {
+        if (cascadeIndex + 1U == kShadowCascadeCountUVE) {
+            splits[cascadeIndex] = farPlane;
+            break;
+        }
         const float progress = static_cast<float>(cascadeIndex + 1U) / static_cast<float>(kShadowCascadeCountUVE);
         const float uniformSplit = nearPlane + (farPlane - nearPlane) * progress;
         const float logarithmicSplit = nearPlane * std::pow(farPlane / nearPlane, progress);
-        splits[cascadeIndex] = uniformSplit * (1.0F - clampedLambda) + logarithmicSplit * clampedLambda;
+        const float rawSplit = uniformSplit * (1.0F - clampedLambda) + logarithmicSplit * clampedLambda;
+        splits[cascadeIndex] = std::clamp(rawSplit, std::nextafter(previousSplit, farPlane), farPlane);
+        previousSplit = splits[cascadeIndex];
     }
     return splits;
 }
 
 [[nodiscard]] bool AreCascadeSplitsValidUVE(const ShadowCascadeSplitsUVE& splits, float nearPlane,
                                              float farPlane) noexcept {
+    const float maxAllowed = farPlane + std::max(1.0e-4F, std::abs(farPlane) * 1.0e-5F);
     float previousSplit = nearPlane;
     for (const float split : splits) {
-        if (!std::isfinite(split) || split <= previousSplit || split > farPlane) {
+        if (!std::isfinite(split) || split <= previousSplit || split > maxAllowed) {
             return false;
         }
         previousSplit = split;
@@ -894,6 +902,7 @@ struct Renderer3DUVE::ImplUVE {
     // moving between probe tiers in the same frame could invalidate an earlier capture's handle.
     std::unordered_map<std::uint32_t, TextureHandleUVE> reflectionProbeCaptureDepths;
     bool probeCaptureViewActive = false;
+    std::uint32_t probeCaptureVisibilityLayers = 0xFFFFFFFFU;
     Math::Vector3UVE probeCapturePosition{};
     Math::QuaternionUVE probeCaptureRotation{};
     float probeCaptureNear = 0.05F;
@@ -1939,6 +1948,15 @@ struct Renderer3DUVE::ImplUVE {
                     Scene::IsVisibilityRegion3DDrawHiddenUVE(entityManager, entity)) {
                     return;
                 }
+                if (probeCaptureViewActive) {
+                    const std::uint32_t entityLayers =
+                        entityManager.HasComponentUVE<Scene::RenderInstanceComponentUVE>(entity)
+                            ? entityManager.GetComponentUVE<Scene::RenderInstanceComponentUVE>(entity).renderLayers
+                            : meshComponent.visibilityLayers;
+                    if (!Scene::IsRenderInstance3DOnViewLayersUVE(entityLayers, probeCaptureVisibilityLayers)) {
+                        return;
+                    }
+                }
                 named[meshComponent.meshGuid] = true;
                 auto handleIt = unmaterialedMeshHandles.find(meshComponent.meshGuid);
                 if (handleIt == unmaterialedMeshHandles.end()) {
@@ -2020,6 +2038,15 @@ struct Renderer3DUVE::ImplUVE {
                     // so an entity that stays dirty or invalid is pruned rather than kept alive by
                     // a placement nobody can use.
                     return;
+                }
+                if (probeCaptureViewActive) {
+                    const std::uint32_t entityLayers =
+                        entityManager.HasComponentUVE<Scene::RenderInstanceComponentUVE>(entity)
+                            ? entityManager.GetComponentUVE<Scene::RenderInstanceComponentUVE>(entity).renderLayers
+                            : 1U;
+                    if (!Scene::IsRenderInstance3DOnViewLayersUVE(entityLayers, probeCaptureVisibilityLayers)) {
+                        return;
+                    }
                 }
 
                 const Scene::SurfaceInstanceComponentUVE* surface = nullptr;
@@ -3276,6 +3303,7 @@ void Renderer3DUVE::CaptureDueReflectionProbesUVE(Scene::IEntityManagerUVE& enti
         }
         const float maxHalf = std::fmax(candidate.frame.halfExtents.x,
                                         std::fmax(candidate.frame.halfExtents.y, candidate.frame.halfExtents.z));
+        m_impl->probeCaptureVisibilityLayers = candidate.frame.visibilityLayers;
         m_impl->probeCapturePosition = candidate.frame.worldPosition;
         m_impl->probeCaptureNear = 0.05F;
         m_impl->probeCaptureFar = std::fmax(50.0F, maxHalf * 8.0F);
@@ -3304,6 +3332,7 @@ void Renderer3DUVE::CaptureDueReflectionProbesUVE(Scene::IEntityManagerUVE& enti
         }
     }
     m_impl->probeCaptureViewActive = false;
+    m_impl->probeCaptureVisibilityLayers = 0xFFFFFFFFU;
     static_cast<void>(m_impl->ResizeTargetsUVE(savedWidth, savedHeight));
 }
 
@@ -3442,10 +3471,10 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->environmentCameraPosition = viewPosition;
     m_impl->sunEnergy = 0.0F;
     m_impl->sunVolumetricFogEnergy = 1.0F;
-    m_impl->sunDirection = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    m_impl->sunDirection = Math::NormalizeUVE(Math::Vector3UVE{0.35F, 0.80F, 0.48F});
     m_impl->sunColor = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
     for (const LightDataUVE& light : lights) {
-        if (light.type != Scene::LightTypeUVE::Directional || light.intensity <= 0.0F) {
+        if (light.isEditorInternal || light.type != Scene::LightTypeUVE::Directional || light.intensity <= 0.0F) {
             continue;
         }
         const Math::Vector3UVE incoming = Math::Vector3UVE{-light.direction.x, -light.direction.y, -light.direction.z};
@@ -3481,6 +3510,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->lastFrameDiagnostics.frustumCullingFrozen = frustumCullingFrozen;
     // Set before the build, like shadowPass and viewLayerMask: this flag is per-cull state on a set
     // that survives across frames, and every cull below states its own value explicitly.
+    m_impl->visibilitySet.viewLayerMask =
+        capturingProbe ? m_impl->probeCaptureVisibilityLayers : 0xFFFFFFFFU;
     m_impl->visibilitySet.frustumTestsDisabled = frustumCullingFrozen;
     m_impl->meshRenderer.BuildVisibilitySetUVE(entityManager, m_impl->assetManager, m_impl->assetDatabase,
                                                m_impl->visibilitySet);
@@ -3498,14 +3529,14 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     if (shadowsReady) {
         // The caster may keep its shadow closer than the camera sees (a sharper shadow where it
         // matters) and choose how its cascades share that distance.
+        const float minShadowFar = std::min(camera.nearPlane * 2.0F, camera.farPlane);
         const float shadowFar = shadowCaster->shadowMaxDistance > 0.0F
-                                    ? std::clamp(shadowCaster->shadowMaxDistance, camera.nearPlane * 2.0F, camera.farPlane)
+                                    ? std::clamp(shadowCaster->shadowMaxDistance, minShadowFar, camera.farPlane)
                                     : camera.farPlane;
         const float splitLambda =
             shadowCaster->shadowSplitBlend >= 0.0F ? shadowCaster->shadowSplitBlend : m_impl->shadowCascadeSplitLambda;
         cascadeSplits = ComputeCascadeSplitsUVE(camera.nearPlane, shadowFar, splitLambda);
-        const bool cascadeSplitsValid = AreCascadeSplitsValidUVE(cascadeSplits, camera.nearPlane, camera.farPlane);
-        UVE_ASSERT(cascadeSplitsValid);
+        const bool cascadeSplitsValid = AreCascadeSplitsValidUVE(cascadeSplits, camera.nearPlane, shadowFar);
         if (!cascadeSplitsValid) {
             UVE_ERROR("Renderer3DUVE: shadow cascade split math produced invalid output; skipping shadow cascades");
             shadowsReady = false;
@@ -3519,7 +3550,6 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                                                            [](const Math::Vector3UVE& corner) {
                                                                return Math::IsFiniteUVE(corner);
                                                            });
-            UVE_ASSERT(shadowViewInputsValid);
             if (!shadowViewInputsValid) {
                 UVE_ERROR("Renderer3DUVE: shadow view inputs are non-finite; skipping shadow cascades");
                 shadowsReady = false;
@@ -3543,7 +3573,6 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                                              IsOrderedFiniteAabbUVE(stabilizedBounds) &&
                                              IsFiniteMatrixUVE(lightProjection) &&
                                              IsFiniteMatrixUVE(lightSpaceMatrices[cascadeIndex]);
-            UVE_ASSERT(cascadeBoundsValid);
             if (!cascadeBoundsValid) {
                 UVE_ERROR("Renderer3DUVE: shadow cascade bounds produced non-finite output; skipping cascades");
                 shadowsReady = false;

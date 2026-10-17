@@ -84,18 +84,7 @@ void InfiniteGridRenderer::Draw(const GridFrameParams& frame) const {
     if (!Valid()) return;
 
     // ---- remember the state we are about to change ------------------------
-    const GLboolean hadBlend = glIsEnabled(GL_BLEND);
-    const GLboolean hadDepthTest = glIsEnabled(GL_DEPTH_TEST);
-    GLboolean depthMask = GL_TRUE;
-    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
-    GLint blendSrcRgb = GL_ONE, blendDstRgb = GL_ZERO, blendSrcAlpha = GL_ONE, blendDstAlpha = GL_ZERO;
-    glGetIntegerv(GL_BLEND_SRC_RGB, &blendSrcRgb);
-    glGetIntegerv(GL_BLEND_DST_RGB, &blendDstRgb);
-    glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSrcAlpha);
-    glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDstAlpha);
-
-    GLint depthFunc = GL_LESS;
-    glGetIntegerv(GL_DEPTH_FUNC, &depthFunc);
+    const SavedOverlayRasterState savedState = SaveOverlayRasterState();
     // Foundation WP6: test against the scene, never occlude it - as data, applied table-driven.
     ApplyOverlayRasterState(kInfiniteGridState);
 
@@ -131,12 +120,7 @@ void InfiniteGridRenderer::Draw(const GridFrameParams& frame) const {
     glBindVertexArray(0);
 
     // ---- put it back ------------------------------------------------------
-    glDepthMask(depthMask);
-    glDepthFunc(static_cast<GLenum>(depthFunc));
-    if (hadDepthTest == GL_FALSE) glDisable(GL_DEPTH_TEST);
-    glBlendFuncSeparate(static_cast<GLenum>(blendSrcRgb), static_cast<GLenum>(blendDstRgb),
-                        static_cast<GLenum>(blendSrcAlpha), static_cast<GLenum>(blendDstAlpha));
-    if (hadBlend == GL_FALSE) glDisable(GL_BLEND);
+    RestoreOverlayRasterState(savedState);
 }
 
 void InfiniteGridRenderer::Draw(const univex::camera::OrbitCamera& camera,

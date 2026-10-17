@@ -34,6 +34,7 @@
 #include "uve/editor/animation_clip_editing_uve.h"
 #include "uve/editor/editor_color_uve.h"
 #include "uve/editor/editor_commands_uve.h"
+#include "uve/editor/editor_settings_uve.h"
 #include "uve/asset/animation_library_asset_uve.h"
 #include "uve/asset/gltf_skeleton_uve.h"
 #include "uve/editor/editor_content_browser_model_uve.h"
@@ -1198,6 +1199,11 @@ public:
         return m_colorPickerPreferences;
     }
     void SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferences);
+
+    [[nodiscard]] const EditorExtendedPreferencesUVE& GetExtendedPreferencesUVE() const noexcept {
+        return m_extendedPreferences;
+    }
+    void SetExtendedPreferencesUVE(EditorExtendedPreferencesUVE preferences) noexcept;
 
     void SetInspectorFoldOpenUVE(const std::string& key, bool open);
     [[nodiscard]] bool IsInspectorFoldOpenUVE(const std::string& key, bool defaultOpen) const;
@@ -2579,6 +2585,8 @@ private:
     // time it is drawn. A row is erased once applied (see SetHierarchyBranchOpenUVE).
     std::unordered_map<Scene::EntityUVE, bool> m_hierarchyPendingRowOpen;
     ColorPickerPreferencesUVE m_colorPickerPreferences;
+    EditorExtendedPreferencesUVE m_extendedPreferences{};
+    std::chrono::steady_clock::time_point m_lastAutosaveTime{std::chrono::steady_clock::now()};
     // The property edit in flight; see PreviewSelectedComponentPropertyUVE.
     struct ComponentPropertyPreviewUVE final {
         Scene::EntityUVE entity = Scene::kInvalidEntityUVE;

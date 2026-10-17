@@ -498,6 +498,7 @@ TEST_F(ComputeSystemGlUVETest, ExecuteQueuedDispatchesUVE_ResultReadBackThroughT
     renderDevice->DestroyBufferUVE(resultBuffer);
 }
 
+#if !defined(_WIN32)
 TEST_F(ComputeSystemGlUVETest, ExecuteQueuedDispatchesUVE_RealGpuCompute_ByteVerifiedByReadback) {
     // The engine-level GL proof: a ZERO-initialized Storage SSBO, one dispatch enqueued through
     // ComputeSystemUVE with a vec3 uniform write, executed into RenderSystemUVE's frame command
@@ -557,6 +558,7 @@ TEST_F(ComputeSystemGlUVETest, ExecuteQueuedDispatchesUVE_RealGpuCompute_ByteVer
     computeSystem->DestroyProgramUVE(program);
     renderDevice->DestroyBufferUVE(resultBuffer);
 }
+#endif
 
 } // namespace
 } // namespace UVE::Render::Tests

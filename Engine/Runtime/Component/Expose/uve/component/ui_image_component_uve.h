@@ -45,4 +45,19 @@ struct UIImageComponentUVE final {
 
 [[nodiscard]] bool IsUIImageComponentValidUVE(const UIImageComponentUVE& component) noexcept;
 
+/// Sanitizes `component` so `rect`, `tintColor`, `alpha`, and 9-slice margins/UVs pass `IsUIImageComponentValidUVE`.
+[[nodiscard]] UIImageComponentUVE SanitizeUIImageComponentUVE(
+    const UIImageComponentUVE& component) noexcept;
+
+/// True when `component.textureAssetGuid != Asset::kInvalidAssetGuidUVE`.
+[[nodiscard]] bool HasAssignedUIImageTextureUVE(const UIImageComponentUVE& component) noexcept;
+
+/// True when `nineSliceEnabled` is true, a texture is assigned, and the component is valid.
+[[nodiscard]] bool UsesUIImageNineSliceSplittingUVE(
+    const UIImageComponentUVE& component) noexcept;
+
+/// Computes the inner center-slice rectangle of `component.rect` (after proportional margin clamping).
+[[nodiscard]] Math::RectUVE ResolveUIImageNineSliceCenterRectUVE(
+    const UIImageComponentUVE& component) noexcept;
+
 } // namespace UVE::Scene

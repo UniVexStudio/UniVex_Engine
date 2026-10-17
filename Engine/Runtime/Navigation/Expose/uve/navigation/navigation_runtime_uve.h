@@ -41,6 +41,11 @@ struct NavigationSyncReportUVE final {
     std::size_t agentsWithoutMesh = 0U;
 };
 
+/// Project-level navigation runtime defaults and gates consumed by NavigationRuntimeUVE.
+struct NavigationRuntimeConfigUVE final {
+    bool globalAvoidanceEnabled = true;
+};
+
 /// The navigation half of the ECS: it bakes each region into a mesh once and keeps it, then steps
 /// every agent the caller lists against the mesh under it.
 ///
@@ -58,6 +63,9 @@ struct NavigationSyncReportUVE final {
 /// exist - or no longer hold the component - drop their cache on the next step.
 class NavigationRuntimeUVE final {
 public:
+    void SetRuntimeConfigUVE(const NavigationRuntimeConfigUVE& config) noexcept { m_config = config; }
+    [[nodiscard]] NavigationRuntimeConfigUVE GetRuntimeConfigUVE() const noexcept { return m_config; }
+
     /// Bakes whatever needs baking, then steps `agentsInStepOrder` in the order given.
     ///
     /// `agentsInStepOrder` is handed in rather than collected here because the order is a frame
@@ -96,6 +104,7 @@ private:
         bool baked = false;
     };
 
+    NavigationRuntimeConfigUVE m_config{};
     std::unordered_map<Scene::EntityUVE, RegionEntryUVE> m_regions;
     /// Region entities in the order they were first seen. Deterministic iteration for the queries
     /// above, which an unordered_map cannot promise.

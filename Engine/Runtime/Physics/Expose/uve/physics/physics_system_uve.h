@@ -35,10 +35,17 @@ public:
     /// collision resolution; passing nullptr restores the legacy integration-only behavior.
     void SetConstraintSystemUVE(PhysicsConstraintSystemUVE* constraintSystem) noexcept;
 
+    void SetGravityUVE(Math::Vector3UVE gravity) noexcept override;
+    [[nodiscard]] Math::Vector3UVE GetGravityUVE() const noexcept override;
+
+    void SetSimulationSettingsUVE(const PhysicsSimulationSettingsUVE& settings) noexcept override;
+    [[nodiscard]] PhysicsSimulationSettingsUVE GetSimulationSettingsUVE() const noexcept override;
+
 private:
     ICollisionSystemUVE* m_collisionSystem;
     PhysicsConstraintSystemUVE* m_constraintSystem = nullptr;
     Math::Vector3UVE m_gravity;
+    PhysicsSimulationSettingsUVE m_settings{};
 };
 
 } // namespace UVE::Physics

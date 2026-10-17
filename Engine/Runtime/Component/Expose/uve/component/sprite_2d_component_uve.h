@@ -37,4 +37,19 @@ struct Sprite2DComponentUVE final {
 
 [[nodiscard]] bool IsSprite2DComponentValidUVE(const Sprite2DComponentUVE& component) noexcept;
 
+/// Sanitizes `component` so `sourceRect`, `modulate`, `alpha`, and `offset` pass `IsSprite2DComponentValidUVE`.
+[[nodiscard]] Sprite2DComponentUVE SanitizeSprite2DComponentUVE(
+    const Sprite2DComponentUVE& component) noexcept;
+
+/// True when `component.textureAssetGuid != Asset::kInvalidAssetGuidUVE`.
+[[nodiscard]] bool HasAssignedSprite2DTextureUVE(const Sprite2DComponentUVE& component) noexcept;
+
+/// True when `component.sourceRect` has positive width and height (uses a sub-rectangle of the texture).
+[[nodiscard]] bool HasCustomSprite2DSourceRegionUVE(
+    const Sprite2DComponentUVE& component) noexcept;
+
+/// Computes the local-space quad rectangle centered on `component.offset` for `drawSizePixels`.
+[[nodiscard]] Math::RectUVE ResolveSprite2DLocalQuadRectUVE(
+    const Sprite2DComponentUVE& component, const Math::Vector2UVE& fallbackSizePixels) noexcept;
+
 } // namespace UVE::Scene

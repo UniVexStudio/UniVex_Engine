@@ -64,4 +64,16 @@ struct UILayoutContainerComponentUVE final {
 /// and known direction/alignment values.
 [[nodiscard]] bool IsUILayoutContainerComponentValidUVE(const UILayoutContainerComponentUVE& value) noexcept;
 
+/// Sanitizes `value` so `direction`, `alignment`, `rect`, `padding`, and `spacing` are valid.
+[[nodiscard]] UILayoutContainerComponentUVE SanitizeUILayoutContainerComponentUVE(
+    const UILayoutContainerComponentUVE& value) noexcept;
+
+/// Computes the padded inner content rectangle (`rect` inset by `padding` on all four sides).
+[[nodiscard]] Math::RectUVE ResolveUILayoutContentRectUVE(
+    const UILayoutContainerComponentUVE& value) noexcept;
+
+/// Computes the number of wrapped lines needed for `childCount` items (`1` when `wrapAfter == 0` and `childCount > 0`).
+[[nodiscard]] std::uint32_t ComputeUILayoutLineCountUVE(
+    const UILayoutContainerComponentUVE& value, std::uint32_t childCount) noexcept;
+
 } // namespace UVE::Scene

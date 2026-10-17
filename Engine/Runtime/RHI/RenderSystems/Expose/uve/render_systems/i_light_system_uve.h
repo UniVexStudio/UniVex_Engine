@@ -63,6 +63,8 @@ struct LightDataUVE {
 
     /// Directional only: whether this light may be the frame's shadow caster.
     bool castsShadows = true;
+    /// True when the light entity carries EditorInternalEntityComponentUVE (e.g. viewport headlight).
+    bool isEditorInternal = false;
     /// Directional only: shadows reach this far from the camera; 0 follows the camera's far plane.
     float shadowMaxDistance = 0.0F;
     /// Directional only: how cascades share the shadow distance, 0 evenly .. 1 packed near the

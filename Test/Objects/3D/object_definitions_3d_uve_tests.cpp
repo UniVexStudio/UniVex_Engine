@@ -18,6 +18,7 @@
 #include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/collider_component_uve.h"
+#include "uve/component/disabled_component_uve.h"
 #include "uve/component/editor_description_component_uve.h"
 #include "uve/component/editor_internal_entity_component_uve.h"
 #include "uve/component/entity_uve.h"
@@ -1496,6 +1497,579 @@ TEST(ObjectDefinitions3DUVETest, PrimitiveCollidersMatchTheKindTheyBelongTo) {
     EXPECT_TRUE(IsBoxMesh3DObjectDefinitionValidUVE(BoxMesh3DObjectDefinitionUVE{}));
     EXPECT_TRUE(IsSphereMesh3DObjectDefinitionValidUVE(SphereMesh3DObjectDefinitionUVE{}));
     EXPECT_TRUE(IsPlaneMesh3DObjectDefinitionValidUVE(PlaneMesh3DObjectDefinitionUVE{}));
+}
+
+TEST(ObjectDefinitions3DUVETest, ComponentDomainHelpersCoverDisabledLightRigidAreaAndFollow) {
+    DisabledComponentUVE tag{};
+    EXPECT_FALSE(ShouldSimulateEntityUVE(&tag));
+    EXPECT_TRUE(ShouldSimulateEntityUVE(nullptr));
+    EXPECT_TRUE(ShouldSkipEntitySimulationUVE(&tag));
+    EXPECT_TRUE(ShouldPropagateTransformWhenDisabledUVE(&tag));
+
+    LightComponentUVE light{};
+    light.type = LightTypeUVE::Point;
+    light.color = Math::ColorUVE{2.0F, 1.0F, 0.5F};
+    light.intensity = 3.0F;
+    light.range = 10.0F;
+    const Math::ColorUVE radiant = EvaluateLightRadiantColorUVE(light);
+    EXPECT_FLOAT_EQ(radiant.r, 6.0F);
+    EXPECT_GT(EvaluateLightDistanceAttenuationUVE(light, 5.0F), 0.0F);
+    EXPECT_FLOAT_EQ(EvaluateLightDistanceAttenuationUVE(light, 12.0F), 0.0F);
+
+    LightEmitterComponentUVE emitter{};
+    emitter.shadowEnabled = true;
+    emitter.distanceFadeEnabled = true;
+    emitter.distanceFadeBegin = 20.0F;
+    emitter.distanceFadeLength = 10.0F;
+    EXPECT_TRUE(DoesLightEmitterCastActiveShadowUVE(emitter));
+    EXPECT_TRUE(DoesLightEmitterAffectSurfaceLayerMaskUVE(emitter, 1U));
+    EXPECT_FLOAT_EQ(EvaluateLightEmitterDistanceFadeUVE(emitter, 25.0F), 0.5F);
+
+    Rigid3DComponentUVE body{};
+    body.mass = 2.0F;
+    EXPECT_FLOAT_EQ(ResolveRigid3DInverseMassUVE(body), 0.5F);
+    ApplyRigid3DLinearImpulseUVE(body, Math::Vector3UVE{4.0F, 0.0F, 0.0F});
+    EXPECT_FLOAT_EQ(body.velocity.x, 2.0F);
+
+    AreaComponentUVE area{};
+    area.gravityDirection = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    area.gravityMagnitude = 9.81F;
+    const Math::Vector3UVE g = EvaluateAreaGravityVectorUVE(
+        area, Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 2.0F, 3.0F});
+    EXPECT_FLOAT_EQ(g.y, -9.81F);
+}
+
+TEST_F(Object3DDefinitionsUVETest, AudioListener3DRecipeAndActiveResolutionOverrideCameraPose) {
+    const auto setWorldTransform = [this](const EntityUVE entity,
+                                          const WorldTransformComponentUVE& world) {
+        if (entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
+            entityManager.RemoveComponentUVE<WorldTransformComponentUVE>(entity);
+        }
+        entityManager.AddComponentUVE<WorldTransformComponentUVE>(entity, world);
+    };
+
+    const EntityUVE camera = CreateEntityUVE();
+    ApplyCamera3DObjectDefinitionUVE(entityManager, camera, Camera3DObjectDefinitionUVE{});
+    setWorldTransform(camera, WorldTransformComponentUVE{Math::Vector3UVE{1.0F, 2.0F, 3.0F}});
+
+    const EntityUVE listenerA = CreateEntityUVE();
+    AudioListener3DObjectDefinitionUVE defA{};
+    defA.listener.current = true;
+    defA.listener.positionOffset = Math::Vector3UVE{0.0F, 1.5F, 0.0F};
+    ApplyAudioListener3DObjectDefinitionUVE(entityManager, listenerA, defA);
+    ExpectObject3DBaselineUVE(entityManager, listenerA, "AudioListener3D");
+    setWorldTransform(listenerA,
+                      WorldTransformComponentUVE{Math::Vector3UVE{10.0F, 20.0F, 30.0F}});
+
+    const EntityUVE listenerB = CreateEntityUVE();
+    AudioListener3DObjectDefinitionUVE defB{};
+    defB.listener.current = true;
+    defB.listener.ignoreRotation = true;
+    ApplyAudioListener3DObjectDefinitionUVE(entityManager, listenerB, defB);
+    setWorldTransform(listenerB,
+                      WorldTransformComponentUVE{
+                          Math::Vector3UVE{-4.0F, 5.0F, -6.0F},
+                          Math::QuaternionUVE{0.0F, 0.70710678F, 0.0F, 0.70710678F}});
+
+    // Applying listenerB with current=true clears listenerA.current.
+    EXPECT_FALSE(entityManager.GetComponentUVE<AudioListener3DComponentUVE>(listenerA).current);
+    EXPECT_TRUE(entityManager.GetComponentUVE<AudioListener3DComponentUVE>(listenerB).current);
+
+    ResolvedAudioListener3DPoseUVE pose{};
+    ASSERT_TRUE(AudioListener3DUVE::TryResolveActiveListenerPoseUVE(entityManager, camera, pose));
+    EXPECT_EQ(pose.entity, listenerB);
+    EXPECT_FLOAT_EQ(pose.position.x, -4.0F);
+    EXPECT_FLOAT_EQ(pose.position.y, 5.0F);
+    EXPECT_FLOAT_EQ(pose.position.z, -6.0F);
+    // ignoreRotation keeps world-aligned forward/up.
+    EXPECT_FLOAT_EQ(pose.forward.z, -1.0F);
+    EXPECT_FLOAT_EQ(pose.up.y, 1.0F);
+
+    AudioListener3DUVE::MakeCurrentUVE(entityManager, listenerA);
+    ASSERT_TRUE(AudioListener3DUVE::TryResolveActiveListenerPoseUVE(entityManager, camera, pose));
+    EXPECT_EQ(pose.entity, listenerA);
+    EXPECT_FLOAT_EQ(pose.position.y, 21.5F);
+}
+
+TEST_F(Object3DDefinitionsUVETest, RemoteTransform3DPushesSelectedChannelsToTargetEntity) {
+    const EntityUVE source = CreateEntityUVE();
+    const EntityUVE target = CreateEntityUVE();
+    ApplyObject3DObjectDefinitionUVE(entityManager, target, Object3DObjectDefinitionUVE{});
+    entityManager.GetComponentUVE<TransformComponentUVE>(target).localScale =
+        Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+
+    RemoteTransform3DObjectDefinitionUVE def{};
+    def.remoteTransform.remoteTarget = target;
+    def.remoteTransform.useGlobalCoordinates = true;
+    def.remoteTransform.updatePosition = true;
+    def.remoteTransform.updateRotation = true;
+    def.remoteTransform.updateScale = false;
+    ApplyRemoteTransform3DObjectDefinitionUVE(entityManager, source, def);
+    ExpectObject3DBaselineUVE(entityManager, source, "RemoteTransform3D");
+
+    entityManager.RemoveComponentUVE<WorldTransformComponentUVE>(source);
+    entityManager.AddComponentUVE<WorldTransformComponentUVE>(
+        source, WorldTransformComponentUVE{Math::Vector3UVE{7.0F, 8.0F, 9.0F},
+                                           Math::QuaternionUVE{},
+                                           Math::Vector3UVE{5.0F, 5.0F, 5.0F}});
+
+    EXPECT_EQ(UpdateRemoteTransform3DObjectsUVE(entityManager), 1U);
+    const TransformComponentUVE& targetLocal =
+        entityManager.GetComponentUVE<TransformComponentUVE>(target);
+    EXPECT_FLOAT_EQ(targetLocal.localPosition.x, 7.0F);
+    EXPECT_FLOAT_EQ(targetLocal.localPosition.y, 8.0F);
+    EXPECT_FLOAT_EQ(targetLocal.localPosition.z, 9.0F);
+    // Scale channel was disabled so target keeps its authored scale.
+    EXPECT_FLOAT_EQ(targetLocal.localScale.x, 2.0F);
+}
+
+TEST_F(Object3DDefinitionsUVETest, VisibleOnScreenNotifier3DTracksCameraFrustumTransitions) {
+    const auto setWorldPosition = [this](const EntityUVE entity, const Math::Vector3UVE& pos) {
+        if (entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
+            entityManager.RemoveComponentUVE<WorldTransformComponentUVE>(entity);
+        }
+        entityManager.AddComponentUVE<WorldTransformComponentUVE>(
+            entity, WorldTransformComponentUVE{pos});
+    };
+
+    const EntityUVE camera = CreateEntityUVE();
+    ApplyCamera3DObjectDefinitionUVE(entityManager, camera, Camera3DObjectDefinitionUVE{});
+    const Math::FrustumUVE frustum = Math::FrustumUVE::FromViewProjectionUVE(
+        Camera3DUVE::BuildViewProjectionMatrixUVE(
+            entityManager.GetComponentUVE<CameraComponentUVE>(camera),
+            entityManager.GetComponentUVE<WorldTransformComponentUVE>(camera)));
+
+    const EntityUVE notifierEntity = CreateEntityUVE();
+    VisibleOnScreenNotifier3DObjectDefinitionUVE def{};
+    def.notifier.aabbHalfExtents = Math::Vector3UVE{0.5F, 0.5F, 0.5F};
+    ApplyVisibleOnScreenNotifier3DObjectDefinitionUVE(entityManager, notifierEntity, def);
+    ExpectObject3DBaselineUVE(entityManager, notifierEntity, "VisibleOnScreenNotifier3D");
+
+    // Place in front of default camera (looking down -Z).
+    setWorldPosition(notifierEntity, Math::Vector3UVE{0.0F, 0.0F, -5.0F});
+    EXPECT_EQ(UpdateVisibleOnScreenNotifier3DObjectsUVE(entityManager, &frustum), 1U);
+    const auto& state1 =
+        entityManager.GetComponentUVE<VisibleOnScreenNotifier3DComponentUVE>(notifierEntity);
+    EXPECT_TRUE(state1.isOnScreen);
+    EXPECT_TRUE(state1.enteredScreenThisFrame);
+    EXPECT_FALSE(state1.exitedScreenThisFrame);
+
+    // Second frame still visible: entered pulse clears.
+    EXPECT_EQ(UpdateVisibleOnScreenNotifier3DObjectsUVE(entityManager, &frustum), 1U);
+    EXPECT_TRUE(state1.isOnScreen);
+    EXPECT_FALSE(state1.enteredScreenThisFrame);
+    EXPECT_FALSE(state1.exitedScreenThisFrame);
+
+    // Move behind the camera (+Z): exits frustum.
+    setWorldPosition(notifierEntity, Math::Vector3UVE{0.0F, 0.0F, 20.0F});
+    EXPECT_EQ(UpdateVisibleOnScreenNotifier3DObjectsUVE(entityManager, &frustum), 0U);
+    EXPECT_FALSE(state1.isOnScreen);
+    EXPECT_FALSE(state1.enteredScreenThisFrame);
+    EXPECT_TRUE(state1.exitedScreenThisFrame);
+}
+
+TEST_F(Object3DDefinitionsUVETest, Path3DAndPathFollow3DSampleAndStepFollowerTransform) {
+    const EntityUVE pathEntity = CreateEntityUVE();
+    Path3DObjectDefinitionUVE pathDef{};
+    pathDef.path.points = {Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+                           Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+                           Math::Vector3UVE{10.0F, 0.0F, -10.0F}};
+    pathDef.path.closed = false;
+    ApplyPath3DObjectDefinitionUVE(entityManager, pathEntity, pathDef);
+    ExpectObject3DBaselineUVE(entityManager, pathEntity, "Path3D");
+    EXPECT_FLOAT_EQ(
+        Path3DUVE::ComputeTotalLengthUVE(entityManager.GetComponentUVE<Path3DComponentUVE>(pathEntity)),
+        20.0F);
+
+    const EntityUVE followerEntity = CreateEntityUVE();
+    PathFollow3DObjectDefinitionUVE followDef{};
+    followDef.follower.pathEntity = pathEntity;
+    followDef.follower.speedMetresPerSecond = 5.0F;
+    followDef.follower.hOffset = 1.0F;
+    followDef.follower.loop = false;
+    ApplyPathFollow3DObjectDefinitionUVE(entityManager, followerEntity, followDef);
+    ExpectObject3DBaselineUVE(entityManager, followerEntity, "PathFollow3D");
+
+    EXPECT_EQ(UpdatePathFollow3DObjectsUVE(entityManager, 1.0F), 1U);
+    const auto& follower = entityManager.GetComponentUVE<PathFollow3DComponentUVE>(followerEntity);
+    EXPECT_FLOAT_EQ(follower.progressMetres, 5.0F);
+    EXPECT_FLOAT_EQ(follower.progressRatio, 0.25F);
+    const auto& local = entityManager.GetComponentUVE<TransformComponentUVE>(followerEntity);
+    EXPECT_NEAR(local.localPosition.x, 1.0F, 1.0e-4F);
+    EXPECT_NEAR(local.localPosition.z, -5.0F, 1.0e-4F);
+}
+
+TEST_F(Object3DDefinitionsUVETest, ShapeCast3DSweepsSphereAgainstColliderAndRecordsHit) {
+    const auto setWorldPosition = [this](const EntityUVE entity, const Math::Vector3UVE& pos) {
+        if (entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
+            entityManager.RemoveComponentUVE<WorldTransformComponentUVE>(entity);
+        }
+        entityManager.AddComponentUVE<WorldTransformComponentUVE>(
+            entity, WorldTransformComponentUVE{pos});
+    };
+
+    const EntityUVE floorEntity = CreateEntityUVE();
+    ApplyStatic3DObjectDefinitionUVE(entityManager, floorEntity, Static3DObjectDefinitionUVE{});
+    entityManager.GetComponentUVE<ColliderComponentUVE>(floorEntity).shapeType =
+        ColliderShapeTypeUVE::Sphere;
+    entityManager.GetComponentUVE<ColliderComponentUVE>(floorEntity).radius = 1.0F;
+    setWorldPosition(floorEntity, Math::Vector3UVE{0.0F, -4.0F, 0.0F});
+
+    const EntityUVE casterEntity = CreateEntityUVE();
+    ShapeCast3DObjectDefinitionUVE castDef{};
+    castDef.shapeCast.shapeKind = ShapeCast3DShapeKindUVE::Sphere;
+    castDef.shapeCast.direction = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    castDef.shapeCast.radius = 0.5F;
+    castDef.shapeCast.maxDistance = 10.0F;
+    ApplyShapeCast3DObjectDefinitionUVE(entityManager, casterEntity, castDef);
+    ExpectObject3DBaselineUVE(entityManager, casterEntity, "ShapeCast3D");
+    setWorldPosition(casterEntity, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+
+    EXPECT_EQ(UpdateShapeCast3DObjectsUVE(entityManager), 1U);
+    const auto& castState = entityManager.GetComponentUVE<ShapeCast3DComponentUVE>(casterEntity);
+    EXPECT_TRUE(castState.hit);
+    EXPECT_EQ(castState.hitEntity, floorEntity);
+    EXPECT_NEAR(castState.hitDistance, 2.5F, 1.0e-4F);
+}
+
+TEST_F(Object3DDefinitionsUVETest, SpringBoneSimulator3DStepsTipAndPushesOutOfCollisionSphere) {
+    const EntityUVE simEntity = CreateEntityUVE();
+    SpringBoneSimulator3DObjectDefinitionUVE simDef{};
+    simDef.simulator.tipOffsetLocal = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    simDef.simulator.stiffness = 20.0F;
+    simDef.simulator.damping = 0.3F;
+    simDef.simulator.hitRadius = 0.1F;
+    ApplySpringBoneSimulator3DObjectDefinitionUVE(entityManager, simEntity, simDef);
+    ExpectObject3DBaselineUVE(entityManager, simEntity, "SpringBoneSimulator3D");
+    EXPECT_TRUE(entityManager.HasComponentUVE<BoneModifierComponentUVE>(simEntity));
+
+    const EntityUVE colEntity = CreateEntityUVE();
+    SpringBoneCollision3DObjectDefinitionUVE colDef{};
+    colDef.collision.centerOffset = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    colDef.collision.radius = 0.4F;
+    ApplySpringBoneCollision3DObjectDefinitionUVE(entityManager, colEntity, colDef);
+    ExpectObject3DBaselineUVE(entityManager, colEntity, "SpringBoneCollision3D");
+
+    EXPECT_EQ(UpdateSpringBoneSimulator3DObjectsUVE(entityManager, 0.016F), 1U);
+    const auto& sim = entityManager.GetComponentUVE<SpringBoneSimulator3DComponentUVE>(simEntity);
+    EXPECT_TRUE(sim.initialized);
+    // Sphere at (0, -1, 0) with radius 0.4 + hitRadius 0.1 = 0.5 pushes tip away from (0, -1, 0).
+    const Math::Vector3UVE deltaFromSphere =
+        sim.currentTipWorldPosition - Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    EXPECT_GT(Math::LengthSquaredUVE(deltaFromSphere), 0.01F);
+}
+
+TEST_F(Object3DDefinitionsUVETest, Joint3DDefinitionsSyncWithPhysicsConstraintSystemAndHingeMotorLimits) {
+    const EntityUVE bodyA = CreateEntityUVE();
+    const EntityUVE bodyB = CreateEntityUVE();
+    ApplyRigid3DObjectDefinitionUVE(entityManager, bodyA, Rigid3DObjectDefinitionUVE{});
+    ApplyRigid3DObjectDefinitionUVE(entityManager, bodyB, Rigid3DObjectDefinitionUVE{});
+
+    const EntityUVE pinEntity = CreateEntityUVE();
+    PinJoint3DObjectDefinitionUVE pinDef{};
+    pinDef.joint.nodeA = bodyA;
+    pinDef.joint.nodeB = bodyB;
+    pinDef.joint.restLength = 2.0F;
+    ApplyPinJoint3DObjectDefinitionUVE(entityManager, pinEntity, pinDef);
+    ExpectObject3DBaselineUVE(entityManager, pinEntity, "PinJoint3D");
+
+    const EntityUVE hingeEntity = CreateEntityUVE();
+    HingeJoint3DObjectDefinitionUVE hingeDef{};
+    hingeDef.joint.nodeA = bodyA;
+    hingeDef.joint.nodeB = bodyB;
+    hingeDef.joint.motorEnabled = true;
+    hingeDef.joint.motorTargetVelocity = 2.0F;
+    hingeDef.joint.motorMaxImpulse = 10.0F;
+    hingeDef.joint.limitsEnabled = true;
+    hingeDef.joint.lowerLimit = -0.5F;
+    hingeDef.joint.upperLimit = 0.5F;
+    ApplyHingeJoint3DObjectDefinitionUVE(entityManager, hingeEntity, hingeDef);
+    ExpectObject3DBaselineUVE(entityManager, hingeEntity, "HingeJoint3D");
+
+    const EntityUVE sliderEntity = CreateEntityUVE();
+    ApplySliderJoint3DObjectDefinitionUVE(entityManager, sliderEntity,
+                                          SliderJoint3DObjectDefinitionUVE{});
+    ExpectObject3DBaselineUVE(entityManager, sliderEntity, "SliderJoint3D");
+
+    const EntityUVE coneEntity = CreateEntityUVE();
+    ApplyConeTwistJoint3DObjectDefinitionUVE(entityManager, coneEntity,
+                                             ConeTwistJoint3DObjectDefinitionUVE{});
+    ExpectObject3DBaselineUVE(entityManager, coneEntity, "ConeTwistJoint3D");
+
+    const EntityUVE dofEntity = CreateEntityUVE();
+    ApplyGeneric6DOFJoint3DObjectDefinitionUVE(entityManager, dofEntity,
+                                               Generic6DOFJoint3DObjectDefinitionUVE{});
+    ExpectObject3DBaselineUVE(entityManager, dofEntity, "Generic6DOFJoint3D");
+
+    EXPECT_EQ(UpdateJoint3DObjectsUVE(entityManager, sceneGraph, 0.1F), 2U);
+    const auto& hingeState = entityManager.GetComponentUVE<Joint3DComponentUVE>(hingeEntity);
+    EXPECT_TRUE(hingeState.solvedLastStep);
+    EXPECT_GT(hingeState.lastAppliedAngularSpeedDeltaRadians, 0.0F);
+}
+
+TEST_F(Object3DDefinitionsUVETest, MultiMeshInstance3DSprite3DAnimatedSprite3DAndLabel3DExtendSurfaceInstanceBase) {
+    const EntityUVE multiMeshEntity = CreateEntityUVE();
+    MultiMeshInstance3DObjectDefinitionUVE mmDef{};
+    mmDef.multiMesh.instances.push_back(MultiMeshInstanceTransform3DUVE{
+        Math::Vector3UVE{-2.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
+        Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+    mmDef.multiMesh.instances.push_back(MultiMeshInstanceTransform3DUVE{
+        Math::Vector3UVE{2.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
+        Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+    ApplyMultiMeshInstance3DObjectDefinitionUVE(entityManager, multiMeshEntity, mmDef);
+    ExpectObject3DBaselineUVE(entityManager, multiMeshEntity, "MultiMeshInstance3D");
+    EXPECT_TRUE(entityManager.HasComponentUVE<SurfaceInstanceComponentUVE>(multiMeshEntity));
+    const auto& mmComp =
+        entityManager.GetComponentUVE<MultiMeshInstance3DComponentUVE>(multiMeshEntity);
+    EXPECT_EQ(MultiMeshInstance3DUVE::ResolveActiveInstanceCountUVE(mmComp), 2U);
+    const Math::AabbUVE bounds = MultiMeshInstance3DUVE::ComputeCombinedWorldBoundsUVE(
+        mmComp, entityManager.GetComponentUVE<WorldTransformComponentUVE>(multiMeshEntity),
+        Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+    EXPECT_FLOAT_EQ(bounds.min.x, -2.5F);
+    EXPECT_FLOAT_EQ(bounds.max.x, 2.5F);
+
+    const EntityUVE animSpriteEntity = CreateEntityUVE();
+    AnimatedSprite3DObjectDefinitionUVE animDef{};
+    animDef.sprite.hframes = 4U;
+    animDef.sprite.vframes = 2U;
+    animDef.sprite.framesPerSecond = 10.0F;
+    ApplyAnimatedSprite3DObjectDefinitionUVE(entityManager, animSpriteEntity, animDef);
+    ExpectObject3DBaselineUVE(entityManager, animSpriteEntity, "AnimatedSprite3D");
+    EXPECT_TRUE(entityManager.HasComponentUVE<SurfaceInstanceComponentUVE>(animSpriteEntity));
+    EXPECT_EQ(UpdateSprite3DObjectsUVE(entityManager, 0.25F), 1U);
+    const auto& spriteComp =
+        entityManager.GetComponentUVE<Sprite3DComponentUVE>(animSpriteEntity);
+    EXPECT_EQ(spriteComp.frame, 2U);
+    const Math::RectUVE uvRect = Sprite3DUVE::ResolveFrameUVRectUVE(spriteComp);
+    EXPECT_FLOAT_EQ(uvRect.position.x, 0.5F);
+    EXPECT_FLOAT_EQ(uvRect.size.x, 0.25F);
+
+    const EntityUVE labelEntity = CreateEntityUVE();
+    Label3DObjectDefinitionUVE labelDef{};
+    labelDef.label.text = "Hello\nWorld";
+    ApplyLabel3DObjectDefinitionUVE(entityManager, labelEntity, labelDef);
+    ExpectObject3DBaselineUVE(entityManager, labelEntity, "Label3D");
+    EXPECT_TRUE(entityManager.HasComponentUVE<SurfaceInstanceComponentUVE>(labelEntity));
+    const Math::Vector2UVE labelSize = Label3DUVE::EstimateWorldSizeMetresUVE(
+        entityManager.GetComponentUVE<Label3DComponentUVE>(labelEntity));
+    EXPECT_GT(labelSize.x, 0.5F);
+    EXPECT_GT(labelSize.y, 0.5F);
+}
+
+TEST_F(Object3DDefinitionsUVETest, NavigationObstacle3DNavigationLink3DSmartObject3DAndWorldQuery3DContracts) {
+    const auto setWorldPos = [&](const EntityUVE entity, const Math::Vector3UVE& pos) {
+        WorldTransformComponentUVE world =
+            entityManager.GetComponentUVE<WorldTransformComponentUVE>(entity);
+        world.worldPosition = pos;
+        world.dirty = false;
+        entityManager.RemoveComponentUVE<WorldTransformComponentUVE>(entity);
+        entityManager.AddComponentUVE<WorldTransformComponentUVE>(entity, world);
+    };
+
+    const EntityUVE obsEntity = CreateEntityUVE();
+    NavigationObstacle3DObjectDefinitionUVE obsDef{};
+    obsDef.obstacle.radius = 2.0F;
+    ApplyNavigationObstacle3DObjectDefinitionUVE(entityManager, obsEntity, obsDef);
+    ExpectObject3DBaselineUVE(entityManager, obsEntity, "NavigationObstacle3D");
+    setWorldPos(obsEntity, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+
+    const EntityUVE seekerEntity = CreateEntityUVE();
+    NavSeeker3DObjectDefinitionUVE seekerDef{};
+    seekerDef.seeker.avoidanceEnabled = true;
+    seekerDef.seeker.avoidanceRadius = 1.0F;
+    seekerDef.seeker.maxSpeed = 5.0F;
+    ApplyNavSeeker3DObjectDefinitionUVE(entityManager, seekerEntity, seekerDef);
+    setWorldPos(seekerEntity, Math::Vector3UVE{1.5F, 0.0F, 0.0F});
+
+    EXPECT_EQ(ApplyNavigationObstacles3DToAgentsUVE(entityManager), 1U);
+    EXPECT_GT(
+        entityManager.GetComponentUVE<NavSeeker3DComponentUVE>(seekerEntity).desiredVelocity.x,
+        0.0F);
+
+    const EntityUVE linkEntity = CreateEntityUVE();
+    NavigationLink3DObjectDefinitionUVE linkDef{};
+    linkDef.link.startOffset = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    linkDef.link.endOffset = Math::Vector3UVE{0.0F, 0.0F, -4.0F};
+    linkDef.link.travelCostMultiplier = 1.5F;
+    ApplyNavigationLink3DObjectDefinitionUVE(entityManager, linkEntity, linkDef);
+    ExpectObject3DBaselineUVE(entityManager, linkEntity, "NavigationLink3D");
+    Math::Vector3UVE wStart{};
+    Math::Vector3UVE wEnd{};
+    const float cost = ResolveNavigationLink3DWorldEndpointsAndCostUVE(
+        entityManager.GetComponentUVE<NavigationLink3DComponentUVE>(linkEntity),
+        entityManager.GetComponentUVE<WorldTransformComponentUVE>(linkEntity), wStart, wEnd);
+    EXPECT_FLOAT_EQ(cost, 6.0F);
+
+    const EntityUVE smartEntity = CreateEntityUVE();
+    SmartObject3DObjectDefinitionUVE smartDef{};
+    smartDef.smartObject.interactionTag = "Cover";
+    smartDef.smartObject.interactionOffset = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    ApplySmartObject3DObjectDefinitionUVE(entityManager, smartEntity, smartDef);
+    ExpectObject3DBaselineUVE(entityManager, smartEntity, "SmartObject3D");
+    setWorldPos(smartEntity, Math::Vector3UVE{5.0F, 0.0F, 0.0F});
+
+    const EntityUVE queryEntity = CreateEntityUVE();
+    WorldQuery3DObjectDefinitionUVE queryDef{};
+    queryDef.query.requiredTag = "Cover";
+    queryDef.query.optimalDistanceMetres = 5.0F;
+    queryDef.query.searchRadiusMetres = 20.0F;
+    ApplyWorldQuery3DObjectDefinitionUVE(entityManager, queryEntity, queryDef);
+    ExpectObject3DBaselineUVE(entityManager, queryEntity, "WorldQuery3D");
+    setWorldPos(queryEntity, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+
+    EXPECT_EQ(UpdateSmartObjectAndWorldQuery3DUVE(entityManager, 0.016F), 1U);
+    const auto& qState = entityManager.GetComponentUVE<WorldQuery3DComponentUVE>(queryEntity);
+    EXPECT_EQ(qState.bestEntity, smartEntity);
+    EXPECT_NEAR(qState.bestScore, 1.0F, 1.0e-4F);
+}
+
+TEST_F(Object3DDefinitionsUVETest, Vehicle3DPhysicalBone3DSoftBody3DAndCollisionPolygon3DContracts) {
+    const EntityUVE vehicleEntity = CreateEntityUVE();
+    VehicleBody3DObjectDefinitionUVE vehDef{};
+    vehDef.vehicle.mass = 1000.0F;
+    vehDef.vehicle.engineForce = 2000.0F;
+    ApplyVehicleBody3DObjectDefinitionUVE(entityManager, vehicleEntity, vehDef);
+    ExpectObject3DBaselineUVE(entityManager, vehicleEntity, "VehicleBody3D");
+
+    const EntityUVE wheelEntity = CreateEntityUVE();
+    VehicleWheel3DObjectDefinitionUVE wheelDef{};
+    wheelDef.wheel.vehicleBodyEntity = vehicleEntity;
+    wheelDef.wheel.currentSuspensionLength = 0.2F;
+    ApplyVehicleWheel3DObjectDefinitionUVE(entityManager, wheelEntity, wheelDef);
+    ExpectObject3DBaselineUVE(entityManager, wheelEntity, "VehicleWheel3D");
+
+    EXPECT_EQ(UpdateVehicle3DObjectsUVE(entityManager, 0.5F), 1U);
+    EXPECT_GT(
+        entityManager.GetComponentUVE<VehicleBody3DComponentUVE>(vehicleEntity)
+            .currentSpeedMetresPerSecond,
+        0.5F);
+    EXPECT_GT(
+        entityManager.GetComponentUVE<VehicleWheel3DComponentUVE>(wheelEntity).suspensionForce,
+        0.0F);
+
+    const EntityUVE skelEntity = CreateEntityUVE();
+    ApplySkeleton3DObjectDefinitionUVE(entityManager, skelEntity, Skeleton3DObjectDefinitionUVE{});
+    SkeletonBoneUVE rootBone{};
+    rootBone.name = "Root";
+    rootBone.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
+    entityManager.GetComponentUVE<Skeleton3DComponentUVE>(skelEntity).bones.push_back(rootBone);
+
+    const EntityUVE pbEntity = CreateEntityUVE();
+    PhysicalBone3DObjectDefinitionUVE pbDef{};
+    pbDef.physicalBone.skeletonEntity = skelEntity;
+    pbDef.physicalBone.boneIndex = 0;
+    pbDef.physicalBone.simulatePhysics = false;
+    ApplyPhysicalBone3DObjectDefinitionUVE(entityManager, pbEntity, pbDef);
+    ExpectObject3DBaselineUVE(entityManager, pbEntity, "PhysicalBone3D");
+    EXPECT_EQ(UpdatePhysicalBone3DObjectsUVE(entityManager, Math::Vector3UVE{0.0F, -9.81F, 0.0F},
+                                             0.1F),
+              1U);
+    EXPECT_FLOAT_EQ(
+        entityManager.GetComponentUVE<TransformComponentUVE>(pbEntity).localPosition.y, 2.0F);
+
+    const EntityUVE softEntity = CreateEntityUVE();
+    SoftBody3DObjectDefinitionUVE sbDef{};
+    sbDef.softBody.points = {SoftBody3DPointUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, {}, true},
+                             SoftBody3DPointUVE{Math::Vector3UVE{0.0F, -1.0F, 0.0F}, {}, false}};
+    sbDef.softBody.restSegmentLength = 0.5F;
+    ApplySoftBody3DObjectDefinitionUVE(entityManager, softEntity, sbDef);
+    ExpectObject3DBaselineUVE(entityManager, softEntity, "SoftBody3D");
+    EXPECT_EQ(
+        UpdateSoftBody3DObjectsUVE(entityManager, Math::Vector3UVE{0.0F, -9.81F, 0.0F}, 0.016F),
+        1U);
+
+    const EntityUVE colPolyEntity = CreateEntityUVE();
+    CollisionPolygon3DObjectDefinitionUVE colPolyDef{};
+    colPolyDef.polygon.vertices2D = {Math::Vector2UVE{-1.0F, -1.0F}, Math::Vector2UVE{1.0F, -1.0F},
+                                     Math::Vector2UVE{1.0F, 1.0F}, Math::Vector2UVE{-1.0F, 1.0F}};
+    colPolyDef.polygon.depthMetres = 2.0F;
+    ApplyCollisionPolygon3DObjectDefinitionUVE(entityManager, colPolyEntity, colPolyDef);
+    ExpectObject3DBaselineUVE(entityManager, colPolyEntity, "CollisionPolygon3D");
+    const auto& colPoly =
+        entityManager.GetComponentUVE<CollisionPolygon3DComponentUVE>(colPolyEntity);
+    EXPECT_TRUE(CollisionPolygon3DUVE::ContainsLocalPointUVE(colPoly,
+                                                             Math::Vector3UVE{0.0F, 0.0F, 0.5F}));
+    EXPECT_FALSE(CollisionPolygon3DUVE::ContainsLocalPointUVE(colPoly,
+                                                              Math::Vector3UVE{0.0F, 0.0F, 2.5F}));
+}
+
+TEST_F(Object3DDefinitionsUVETest, CSGShapesGridMap3DAndStateTree3DContracts) {
+    const EntityUVE csgBoxEntity = CreateEntityUVE();
+    ApplyCSGBox3DObjectDefinitionUVE(entityManager, csgBoxEntity, CSGBox3DObjectDefinitionUVE{});
+    ExpectObject3DBaselineUVE(entityManager, csgBoxEntity, "CSGBox3D");
+    const auto& boxCsg = entityManager.GetComponentUVE<CSGShape3DComponentUVE>(csgBoxEntity);
+    EXPECT_LT(
+        CSGShape3DUVE::EvaluateLocalSignedDistanceUVE(boxCsg, Math::Vector3UVE{0.0F, 0.0F, 0.0F}),
+        0.0F);
+    EXPECT_GT(
+        CSGShape3DUVE::EvaluateLocalSignedDistanceUVE(boxCsg, Math::Vector3UVE{2.0F, 0.0F, 0.0F}),
+        0.0F);
+    EXPECT_FLOAT_EQ(
+        CSGShape3DUVE::CombineSignedDistanceUVE(CSGOperationUVE::Subtraction, -0.5F, -0.2F), 0.2F);
+
+    const EntityUVE gridEntity = CreateEntityUVE();
+    ApplyGridMap3DObjectDefinitionUVE(entityManager, gridEntity, GridMap3DObjectDefinitionUVE{});
+    ExpectObject3DBaselineUVE(entityManager, gridEntity, "GridMap");
+    auto& gridComp = entityManager.GetComponentUVE<GridMap3DComponentUVE>(gridEntity);
+    GridMap3DUVE::SetCellItemUVE(gridComp, Math::Vector3iUVE{1, 2, 3}, 7);
+    EXPECT_EQ(GridMap3DUVE::GetCellItemUVE(gridComp, Math::Vector3iUVE{1, 2, 3}), 7);
+    const Math::Vector3UVE cellCenter =
+        GridMap3DUVE::MapToLocalPositionUVE(gridComp, Math::Vector3iUVE{1, 2, 3});
+    EXPECT_EQ(GridMap3DUVE::LocalPositionToMapUVE(gridComp, cellCenter),
+              (Math::Vector3iUVE{1, 2, 3}));
+
+    const EntityUVE treeEntity = CreateEntityUVE();
+    StateTree3DObjectDefinitionUVE treeDef{};
+    treeDef.stateTree.initialStateId = "Idle";
+    treeDef.stateTree.states = {"Idle", "Alert"};
+    treeDef.stateTree.transitions = {
+        StateTreeTransition3DUVE{"Idle", "Alert", "alertLevel", 0.5F, 0.1F}};
+    ApplyStateTree3DObjectDefinitionUVE(entityManager, treeEntity, treeDef);
+    ExpectObject3DBaselineUVE(entityManager, treeEntity, "StateTree3D");
+    auto& treeComp = entityManager.GetComponentUVE<StateTree3DComponentUVE>(treeEntity);
+    StateTree3DUVE::SetParameterUVE(treeComp, "alertLevel", 0.8F);
+    EXPECT_EQ(UpdateStateTree3DObjectsUVE(entityManager, 0.2F), 1U);
+    EXPECT_EQ(treeComp.activeStateId, "Alert");
+}
+
+TEST_F(Object3DDefinitionsUVETest,
+       AppliesBatch5Particles3DGIProbes3DAndXRObjects3DUVE) {
+    const EntityUVE gpuParticles = CreateEntityUVE();
+    ApplyGPUParticles3DObjectDefinitionUVE(entityManager, gpuParticles,
+                                           GPUParticles3DObjectDefinitionUVE{});
+    ExpectObject3DBaselineUVE(entityManager, gpuParticles, "GPUParticles3D");
+    EXPECT_EQ(entityManager.GetComponentUVE<ParticleBackendTagComponentUVE>(gpuParticles).backend,
+              ParticleSimulationBackend3DUVE::GPU);
+
+    const EntityUVE cpuParticles = CreateEntityUVE();
+    ApplyCPUParticles3DObjectDefinitionUVE(entityManager, cpuParticles,
+                                           CPUParticles3DObjectDefinitionUVE{});
+    ExpectObject3DBaselineUVE(entityManager, cpuParticles, "CPUParticles3D");
+    EXPECT_EQ(entityManager.GetComponentUVE<ParticleBackendTagComponentUVE>(cpuParticles).backend,
+              ParticleSimulationBackend3DUVE::CPU);
+
+    const EntityUVE voxelEntity = CreateEntityUVE();
+    ApplyVoxelGI3DObjectDefinitionUVE(entityManager, voxelEntity, VoxelGI3DObjectDefinitionUVE{});
+    ExpectObject3DBaselineUVE(entityManager, voxelEntity, "VoxelGI");
+    const EntityUVE probeEntity = CreateEntityUVE();
+    ApplyLightmapProbe3DObjectDefinitionUVE(entityManager, probeEntity,
+                                            LightmapProbe3DObjectDefinitionUVE{});
+    ExpectObject3DBaselineUVE(entityManager, probeEntity, "LightmapProbe");
+    const Math::ColorUVE irradiance =
+        EvaluateIndirectGI3DIrradianceAtPointUVE(entityManager, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    EXPECT_GT(irradiance.r, 0.0F);
+
+    const EntityUVE xrOrigin = CreateEntityUVE();
+    ApplyXROrigin3DObjectDefinitionUVE(entityManager, xrOrigin, XROrigin3DObjectDefinitionUVE{});
+    ExpectObject3DBaselineUVE(entityManager, xrOrigin, "XROrigin3D");
+    const EntityUVE xrCam = CreateEntityUVE();
+    XRCamera3DObjectDefinitionUVE camDef{};
+    camDef.tracker.trackedLocalPosition = Math::Vector3UVE{0.0F, 1.6F, 0.0F};
+    ApplyXRCamera3DObjectDefinitionUVE(entityManager, xrCam, camDef);
+    ExpectObject3DBaselineUVE(entityManager, xrCam, "XRCamera3D");
+    EXPECT_GE(UpdateXRObjects3DUVE(entityManager), 1U);
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<TransformComponentUVE>(xrCam).localPosition.y,
+                    1.6F);
 }
 
 } // namespace UVE::Scene::Tests

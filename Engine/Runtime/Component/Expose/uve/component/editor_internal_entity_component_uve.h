@@ -14,4 +14,25 @@ namespace UVE::Scene {
 /// Thread-safety: empty value type; trivially safe to copy/move.
 struct EditorInternalEntityComponentUVE final {};
 
+/// Always true: a tag has no fields and therefore no invalid state. Present so the component has
+/// the same validate seam every other component has.
+[[nodiscard]] bool IsEditorInternalEntityComponentValidUVE(
+    const EditorInternalEntityComponentUVE& component) noexcept;
+
+/// True when the tag pointer is non-null (the entity carries the internal-tooling tag).
+[[nodiscard]] bool IsEditorInternalEntityTagPresentUVE(
+    const EditorInternalEntityComponentUVE* component) noexcept;
+
+/// True when an entity should be shown in the authored Scene Hierarchy panel (no internal tag).
+[[nodiscard]] bool ShouldIncludeInDocumentHierarchyUVE(
+    const EditorInternalEntityComponentUVE* component) noexcept;
+
+/// True when an entity belongs to the authored document for save/export and Play-mode snapshots.
+[[nodiscard]] bool ShouldSerializeDocumentEntityUVE(
+    const EditorInternalEntityComponentUVE* component) noexcept;
+
+/// True when an entity should be destroyed during a document-scene clear (internal proxies survive).
+[[nodiscard]] bool ShouldClearWithDocumentSceneUVE(
+    const EditorInternalEntityComponentUVE* component) noexcept;
+
 } // namespace UVE::Scene

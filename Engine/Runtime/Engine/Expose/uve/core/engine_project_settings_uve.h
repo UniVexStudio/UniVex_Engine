@@ -101,11 +101,14 @@ inline constexpr std::string_view kDefaultPlayerEntityUVE = "game.player.default
 inline constexpr std::string_view kHeadlessUVE = "headless";
 } // namespace EngineProjectSettingIdUVE
 
-/// The two sets of 32 layers a project names: physics layers (what a collider is on and looks
-/// for) and render layers (what a camera, light or decal sees).
+/// The sets of 32 layers a project names: 3D physics layers, 2D physics layers, render layers,
+/// navigation layers, and avoidance layers.
 enum class LayerSetUVE {
     Physics,
+    Physics2D,
     Render,
+    Navigation,
+    Avoidance,
 };
 inline constexpr std::size_t kLayerCountUVE = 32U;
 

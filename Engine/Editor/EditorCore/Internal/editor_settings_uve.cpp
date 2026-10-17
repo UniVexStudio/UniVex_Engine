@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "uve/editor/editor_settings_uve.h"
+#include "uve/editor/editor_theme_uve.h"
 
 #include <algorithm>
 #include <cctype>
@@ -553,6 +554,950 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              editor.m_hierarchyView.indentWidth = FloatUVE(value);
              return true;
          }},
+
+        // Part 2.1 Interface & Theme
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kThemePresetUVE), 0,
+                                    {{0, "Dark"}, {1, "Light"}, {2, "High Contrast"}, {3, "Custom"}},
+                                    "Theme Preset", "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.themePreset; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.themePreset = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeFilePathSettingUVE(IdUVE(Id::kCustomThemeFileUVE), "", 512U, "Custom Theme File",
+                                        "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.customThemeFile; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.customThemeFile = std::get<std::string>(value);
+             return true;
+         }},
+        {Config::MakeColorSettingUVE(IdUVE(Id::kThemeBaseColorUVE),
+                                     SettingColorUVE{0.14F, 0.15F, 0.18F, 1.0F}, false, "Base Colour",
+                                     "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.themeBaseColor; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.themeBaseColor = std::get<SettingColorUVE>(value);
+             return true;
+         }},
+        {Config::MakeColorSettingUVE(IdUVE(Id::kThemeAccentColorUVE),
+                                     SettingColorUVE{0.22F, 0.56F, 0.96F, 1.0F}, false, "Accent Colour",
+                                     "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.themeAccentColor; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.themeAccentColor = std::get<SettingColorUVE>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kThemeContrastUVE), 1.0, 0.5, 2.0, "Theme Contrast",
+                                     "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.themeContrast; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.themeContrast = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kUiScaleModeUVE), 0, {{0, "Auto from DPI"}, {1, "Manual"}},
+                                    "UI Scale Mode", "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.uiScaleMode; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.uiScaleMode = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kUiScaleFactorUVE), 1.0, 0.5, 3.0, "UI Scale Factor",
+                                     "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.uiScaleFactor; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.uiScaleFactor = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeIntSettingUVE(IdUVE(Id::kFontSizePxUVE), 14, 10, 32, "Font Size (px)", "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.fontSizePx; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.fontSizePx = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kFontHintingModeUVE), 2,
+                                    {{0, "None"}, {1, "Slight"}, {2, "Normal"}, {3, "Subpixel"}},
+                                    "Font Hinting", "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.fontHintingMode; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.fontHintingMode = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeIntSettingUVE(IdUVE(Id::kFontOversamplingUVE), 2, 1, 4, "Font Oversampling",
+                                   "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.fontOversampling; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.fontOversampling = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kIconSaturationUVE), 1.0, 0.0, 1.0, "Icon Saturation",
+                                     "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.iconSaturation; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.iconSaturation = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kCornerRadiusPxUVE), 4.0, 0.0, 12.0, "Corner Radius (px)",
+                                     "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.cornerRadiusPx; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.cornerRadiusPx = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kSpacingDensityUVE), 1, {{0, "Compact"}, {1, "Comfortable"}},
+                                    "Spacing Density", "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.spacingDensity; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.spacingDensity = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kUiAnimationSpeedUVE), 1.0, 0.0, 4.0, "UI Animation Speed",
+                                     "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.uiAnimationSpeed; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.uiAnimationSpeed = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kReduceMotionUVE), false, "Reduce Motion", "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.reduceMotion; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.reduceMotion = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kTooltipDelaySecondsUVE), 0.35, 0.0, 5.0, "Tooltip Delay (s)",
+                                     "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.tooltipDelaySeconds; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.tooltipDelaySeconds = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeStringSettingUVE(IdUVE(Id::kEditorLanguageUVE), "en", 32U, "Editor Language",
+                                      "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.editorLanguage; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.editorLanguage = std::get<std::string>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kTouchFriendlyTargetsUVE), false, "Touch-Friendly Hit Targets",
+                                    "Editor/Interface"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.touchFriendlyTargets; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.touchFriendlyTargets = std::get<bool>(value);
+             return true;
+         }},
+
+        // Part 2.2 Layout, Docking & Workspaces
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kPersistDockLayoutUVE), true, "Persist Dock Layout",
+                                    "Editor/Layout"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.persistDockLayout; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.persistDockLayout = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kLeftSplitRatioUVE), 0.2, 0.1, 0.5, "Left Dock Split Ratio",
+                                     "Editor/Layout"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.leftSplitRatio; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.leftSplitRatio = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kRightSplitRatioUVE), 0.25, 0.1, 0.5, "Right Dock Split Ratio",
+                                     "Editor/Layout"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.rightSplitRatio; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.rightSplitRatio = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kAllowFloatingWindowsUVE), true, "Allow Floating Windows",
+                                    "Editor/Layout"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.allowFloatingWindows; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.allowFloatingWindows = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kTabPositionUVE), 0, {{0, "Top"}, {1, "Bottom"}},
+                                    "Tab Bar Position", "Editor/Layout"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.tabPosition; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.tabPosition = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kDistractionFreeModeUVE), false, "Distraction-Free Mode",
+                                    "Editor/Layout"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.distractionFreeMode; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.distractionFreeMode = std::get<bool>(value);
+             return true;
+         }},
+
+        // Part 2.3 Hierarchy Extended
+        {Config::MakeIntSettingUVE(IdUVE(Id::kHierarchyExpandDepthLimitUVE), 16, 1, 64, "Expand Depth Limit",
+                                   kHierarchyCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.hierarchyExpandDepthLimit;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.hierarchyExpandDepthLimit = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyPersistExpansionUVE), true, "Persist Expansion State",
+                                    kHierarchyCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.hierarchyPersistExpansion;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.hierarchyPersistExpansion = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kHierarchyRowHeightPxUVE), 22.0, 18.0, 40.0, "Row Height (px)",
+                                     kHierarchyCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.hierarchyRowHeightPx; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.hierarchyRowHeightPx = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyColorCodeIconsUVE), true, "Colour-Code Icons by Type",
+                                    kHierarchyCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.hierarchyColorCodeIcons;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.hierarchyColorCodeIcons = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyShowLockColumnUVE), true, "Show Lock Column",
+                                    kHierarchyCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.hierarchyShowLockColumn;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.hierarchyShowLockColumn = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kHierarchyFilterModeUVE), 2,
+                                    {{0, "Name Only"}, {1, "Name + Type"}, {2, "Name + Type + Component"}},
+                                    "Filter Matching Mode", kHierarchyCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.hierarchyFilterMode; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.hierarchyFilterMode = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kHierarchySortModeUVE), 0,
+                                    {{0, "Scene Order"}, {1, "Alphabetical"}, {2, "By Object Type"}},
+                                    "Sort Mode", kHierarchyCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.hierarchySortMode; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.hierarchySortMode = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyTintByTagColorUVE), true, "Tint Rows by Tag Colour",
+                                    kHierarchyCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.hierarchyTintByTagColor;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.hierarchyTintByTagColor = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kHierarchyRenameModeUVE), 0, {{0, "Inline"}, {1, "Dialog"}},
+                                    "Rename Mode", kHierarchyCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.hierarchyRenameMode; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.hierarchyRenameMode = std::get<std::int64_t>(value);
+             return true;
+         }},
+
+        // Part 2.4 Context Menu
+        {Config::MakeStringSettingUVE(IdUVE(Id::kContextDuplicateSuffixUVE), "_{n}", 32U,
+                                      "Duplicate Name Suffix", "Editor/Context Menu"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.contextDuplicateSuffix;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.contextDuplicateSuffix = std::get<std::string>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kContextReparentKeepGlobalUVE), true,
+                                    "Reparent Keeps Global Transform", "Editor/Context Menu"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.contextReparentKeepGlobal;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.contextReparentKeepGlobal = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kContextSelectOnOpenUVE), true, "Select Object on Context Menu",
+                                    "Editor/Context Menu"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.contextSelectOnOpen; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.contextSelectOnOpen = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kContextTouchHoldSecondsUVE), 0.5, 0.2, 2.0,
+                                     "Touch Long-Press Duration (s)", "Editor/Context Menu"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.contextTouchHoldSeconds;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.contextTouchHoldSeconds = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kContextConfirmDeleteSubtreeUVE), true,
+                                    "Confirm Delete Subtree", "Editor/Context Menu"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.contextConfirmDeleteSubtree;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.contextConfirmDeleteSubtree = std::get<bool>(value);
+             return true;
+         }},
+
+        // Part 2.5 Commands & Menu Bar
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kCommandPaletteFuzzyModeUVE), 0,
+                                    {{0, "Smart Fuzzy"}, {1, "Prefix Only"}, {2, "Substring"}},
+                                    "Command Palette Matching", "Editor/Commands"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.commandPaletteFuzzyMode;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.commandPaletteFuzzyMode = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeIntSettingUVE(IdUVE(Id::kCommandPaletteRecentDepthUVE), 8, 0, 32,
+                                   "Recent Command History Depth", "Editor/Commands"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.commandPaletteRecentDepth;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.commandPaletteRecentDepth = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeStringSettingUVE(IdUVE(Id::kShortcutProfileUVE), "Default", 64U, "Shortcut Profile",
+                                      "Editor/Commands"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.shortcutProfile; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.shortcutProfile = std::get<std::string>(value);
+             return true;
+         }},
+        {Config::MakeIntSettingUVE(IdUVE(Id::kRecentFilesLimitUVE), 15, 1, 50, "Recent Files Limit",
+                                   "Editor/Commands"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.recentFilesLimit; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.recentFilesLimit = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeIntSettingUVE(IdUVE(Id::kToolbarButtonSizePxUVE), 24, 16, 48, "Toolbar Button Size (px)",
+                                   "Editor/Commands"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.toolbarButtonSizePx;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.toolbarButtonSizePx = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kAutoSavePreferencesUVE), true, "Auto-Save Preferences on Change",
+                                    "Editor/Commands"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.autoSavePreferences; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.autoSavePreferences = std::get<bool>(value);
+             return true;
+         }},
+
+        // Part 2.6 Viewport Extended
+        {Config::MakeIntSettingUVE(IdUVE(Id::kGridSubdivisionsUVE), 10, 1, 16, "Subdivisions", kGridCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.gridSubdivisions; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.gridSubdivisions = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kGridFadeDistanceUVE), 200.0, 10.0, 1000.0, "Fade Distance (m)",
+                                     kGridCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.gridFadeDistance; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.gridFadeDistance = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kGridFollowsCameraUVE), true, "Grid Follows Camera",
+                                    kGridCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.gridFollowsCamera; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.gridFollowsCamera = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kGizmoSizePxUVE), 96.0, 40.0, 200.0, "Gizmo Size (px)",
+                                     "Editor/Viewport/Gizmo"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.gizmoSizePx; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.gizmoSizePx = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kGizmoOpacityUVE), 0.95, 0.2, 1.0, "Gizmo Opacity",
+                                     "Editor/Viewport/Gizmo"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.gizmoOpacity; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.gizmoOpacity = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kRememberGizmoModeUVE), true, "Remember Active Transform Mode",
+                                    "Editor/Viewport/Gizmo"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.rememberGizmoMode; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.rememberGizmoMode = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kDefaultTransformSpaceUVE), 0, {{0, "Local"}, {1, "World"}},
+                                    "Default Transform Space", "Editor/Viewport/Gizmo"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.defaultTransformSpace;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.defaultTransformSpace = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kPivotModeUVE), 0,
+                                    {{0, "Median Point"}, {1, "Active Object"}, {2, "Individual Origins"}},
+                                    "Transform Pivot Mode", "Editor/Viewport/Gizmo"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.pivotMode; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.pivotMode = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kNavigationSchemeUVE), 0,
+                                    {{0, "UniVex Default"}, {1, "Maya (Alt)"}, {2, "Blender (Middle Mouse)"}, {3, "Right-Click Fly"}},
+                                    "Navigation Scheme", "Editor/Viewport/Navigation"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.navigationScheme; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.navigationScheme = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kOrbitSensitivityUVE), 1.0, 0.1, 5.0, "Orbit Sensitivity",
+                                     "Editor/Viewport/Navigation"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.orbitSensitivity; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.orbitSensitivity = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kPanSensitivityUVE), 1.0, 0.1, 5.0, "Pan Sensitivity",
+                                     "Editor/Viewport/Navigation"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.panSensitivity; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.panSensitivity = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kZoomSensitivityUVE), 1.0, 0.1, 5.0, "Zoom Sensitivity",
+                                     "Editor/Viewport/Navigation"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.zoomSensitivity; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.zoomSensitivity = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kCameraInertiaSmoothingUVE), 0.15, 0.0, 1.0,
+                                     "Camera Inertia Smoothing", "Editor/Viewport/Navigation"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.cameraInertiaSmoothing;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.cameraInertiaSmoothing = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kFreelookBaseSpeedUVE), 8.0, 0.5, 100.0,
+                                     "Freelook Base Speed (m/s)", "Editor/Viewport/Navigation"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.freelookBaseSpeed; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.freelookBaseSpeed = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kDefaultCameraFovUVE), 60.0, 20.0, 120.0,
+                                     "Default Camera FOV (deg)", "Editor/Viewport"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.defaultCameraFovDegrees;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.defaultCameraFovDegrees = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kBoxSelectModeUVE), 0, {{0, "Touch / Intersect"}, {1, "Enclose"}},
+                                    "Box Select Mode", "Editor/Viewport"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.boxSelectMode; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.boxSelectMode = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kDefaultViewModeUVE), 0,
+                                    {{0, "Lit"}, {1, "Unshaded"}, {2, "Wireframe"}, {3, "Overdraw"}, {4, "Normals"}},
+                                    "Default View Mode", "Editor/Viewport"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.defaultViewMode; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.defaultViewMode = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kViewportRenderScaleUVE), 1.0, 0.25, 2.0,
+                                     "Viewport Render Scale", "Editor/Viewport"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.viewportRenderScale; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.viewportRenderScale = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeIntSettingUVE(IdUVE(Id::kViewportPaneCountUVE), 1, 1, 4, "Viewport Pane Count",
+                                   "Editor/Viewport"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.viewportPaneCount; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.viewportPaneCount = std::get<std::int64_t>(value);
+             return true;
+         }},
+
+        // Part 2.7 Inspector Extended
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kInspectorLabelRatioUVE), 0.38, 0.2, 0.7, "Label Column Ratio",
+                                     "Editor/Inspector"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.inspectorLabelRatio; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.inspectorLabelRatio = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeIntSettingUVE(IdUVE(Id::kInspectorFloatPrecisionUVE), 3, 1, 8, "Float Display Precision",
+                                   "Editor/Inspector"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.inspectorFloatPrecision;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.inspectorFloatPrecision = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kInspectorAngleUnitUVE), 0, {{0, "Degrees"}, {1, "Radians"}},
+                                    "Angle Display Unit", "Editor/Inspector"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.inspectorAngleUnit; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.inspectorAngleUnit = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kInspectorShowAdvancedUVE), false, "Show Advanced Properties",
+                                    "Editor/Inspector"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.inspectorShowAdvanced;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.inspectorShowAdvanced = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kInspectorColorPickerShapeUVE), 0,
+                                    {{0, "Hue Wheel & Disc"}, {1, "Hue Bar & Rectangle"}, {2, "Value/Hue Circle"},
+                                     {3, "Perceptual Lightness Circle"}, {4, "Sliders & Hex Only"}},
+                                    "Default Colour Picker Shape", "Editor/Inspector"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.inspectorColorPickerShape;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.inspectorColorPickerShape = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kInspectorColorPickerModeUVE), 0,
+                                    {{0, "RGB (0..1)"}, {1, "RGB (0..255)"}, {2, "HSV (deg / %)"}, {3, "Perceptual OKLab"}},
+                                    "Default Colour Picker Mode", "Editor/Inspector"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.inspectorColorPickerMode;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.inspectorColorPickerMode = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kInspectorOpenResourcesModeUVE), 0,
+                                    {{0, "Inline Sub-Inspector"}, {1, "New Panel"}},
+                                    "Open Resources In", "Editor/Inspector"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.inspectorOpenResourcesMode;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.inspectorOpenResourcesMode = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kInspectorPlayRefreshHzUVE), 15.0, 1.0, 60.0,
+                                     "Play Mode Auto-Refresh (Hz)", "Editor/Inspector"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.inspectorPlayRefreshHz;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.inspectorPlayRefreshHz = std::get<double>(value);
+             return true;
+         }},
+
+        // Part 2.8 Script & Shader Editor
+        {Config::MakeIntSettingUVE(IdUVE(Id::kScriptFontSizePxUVE), 14, 8, 36, "Script Font Size (px)",
+                                   "Editor/Script Editor"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.scriptFontSizePx; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.scriptFontSizePx = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kScriptLineNumbersUVE), true, "Show Line Numbers",
+                                    "Editor/Script Editor"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.scriptShowLineNumbers;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.scriptShowLineNumbers = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeIntSettingUVE(IdUVE(Id::kScriptTabSizeUVE), 4, 1, 8, "Tab Size", "Editor/Script Editor"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.scriptTabSize; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.scriptTabSize = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kScriptWordWrapModeUVE), 0,
+                                    {{0, "Off"}, {1, "Viewport Width"}, {2, "Wrap Column"}},
+                                    "Word Wrap Mode", "Editor/Script Editor"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.scriptWordWrapMode; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.scriptWordWrapMode = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeStringSettingUVE(IdUVE(Id::kScriptSyntaxThemeUVE), "UniVex Dark", 64U,
+                                      "Syntax Highlighting Theme", "Editor/Script Editor"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.scriptSyntaxTheme; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.scriptSyntaxTheme = std::get<std::string>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kScriptCodeCompletionUVE), true, "Code Completion",
+                                    "Editor/Script Editor"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.scriptCodeCompletion;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.scriptCodeCompletion = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kScriptMinimapEnabledUVE), true, "Show Minimap",
+                                    "Editor/Script Editor"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.scriptMinimapEnabled;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.scriptMinimapEnabled = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kScriptFormatOnSaveUVE), false, "Format on Save",
+                                    "Editor/Script Editor"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.scriptFormatOnSave; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.scriptFormatOnSave = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeFilePathSettingUVE(IdUVE(Id::kScriptExternalEditorPathUVE), "", 512U,
+                                        "External Script Editor Executable", "Editor/Script Editor"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.scriptExternalExecutable;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.scriptExternalExecutable = std::get<std::string>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kNodeGraphWireStyleUVE), 0,
+                                    {{0, "Curved"}, {1, "Straight"}, {2, "Orthogonal"}},
+                                    "Visual Graph Connection Style", "Editor/Script Editor"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.nodeGraphWireStyle; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.nodeGraphWireStyle = std::get<std::int64_t>(value);
+             return true;
+         }},
+
+        // Part 2.9 Asset Browser
+        {Config::MakeIntSettingUVE(IdUVE(Id::kAssetThumbnailSizePxUVE), 96, 32, 256, "Thumbnail Size (px)",
+                                   "Editor/Asset Browser"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.assetThumbnailSizePx;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.assetThumbnailSizePx = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kAssetSortModeUVE), 0,
+                                    {{0, "Name"}, {1, "Type"}, {2, "Modified Time"}, {3, "Size"}},
+                                    "Default Sort Mode", "Editor/Asset Browser"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.assetSortMode; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.assetSortMode = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kAssetShowHiddenFilesUVE), false, "Show Hidden & Internal Files",
+                                    "Editor/Asset Browser"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.assetShowHiddenFiles;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.assetShowHiddenFiles = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kAssetSplitRatioUVE), 0.25, 0.1, 0.6, "Tree / Contents Split Ratio",
+                                     "Editor/Asset Browser"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.assetSplitRatio; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.assetSplitRatio = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kAssetAutoReimportUVE), true, "Auto-Reimport on External Change",
+                                    "Editor/Asset Browser"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.assetAutoReimport; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.assetAutoReimport = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kAssetDeleteToTrashUVE), true, "Move Deleted Assets to Trash",
+                                    "Editor/Asset Browser"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.assetDeleteToTrash; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.assetDeleteToTrash = std::get<bool>(value);
+             return true;
+         }},
+
+        // Part 2.10 Console, Log & Debug
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kConsoleCollapseDuplicatesUVE), true, "Collapse Duplicate Messages",
+                                    "Editor/Console"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.consoleCollapseDuplicates;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.consoleCollapseDuplicates = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeIntSettingUVE(IdUVE(Id::kConsoleMaxLinesUVE), 5000, 100, 100000, "Max Retained Log Lines",
+                                   "Editor/Console"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.consoleMaxLines; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.consoleMaxLines = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kConsoleClearOnPlayUVE), false, "Clear Console on Play",
+                                    "Editor/Console"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.consoleClearOnPlay; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.consoleClearOnPlay = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kConsoleShowStackTracesUVE), true, "Show Stack Traces",
+                                    "Editor/Console"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.consoleShowStackTraces;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.consoleShowStackTraces = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeIntSettingUVE(IdUVE(Id::kConsoleHistoryDepthUVE), 64, 8, 512, "Command History Depth",
+                                   "Editor/Console"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.consoleHistoryDepth;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.consoleHistoryDepth = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeIntSettingUVE(IdUVE(Id::kConsoleRemotePortUVE), 9229, 1024, 65535, "Remote Console Port",
+                                   "Editor/Console"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.consoleRemotePort; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.consoleRemotePort = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kDebugPhysicsDrawUVE), false, "Physics Debug Draw", "Editor/Debug"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.debugPhysicsDraw; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.debugPhysicsDraw = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kDebugNavigationDrawUVE), false, "Navigation Debug Draw",
+                                    "Editor/Debug"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.debugNavigationDraw;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.debugNavigationDraw = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kDebugRendererBoundsUVE), false, "Renderer Bounds & Volumes",
+                                    "Editor/Debug"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.debugRendererBounds;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.debugRendererBounds = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kDebugAudioRadiiUVE), false, "Audio Emitter Radii", "Editor/Debug"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.debugAudioRadii; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.debugAudioRadii = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kDebugAssertionBehaviorUVE), 0,
+                                    {{0, "Break into Debugger"}, {1, "Log and Continue"}, {2, "Abort"}},
+                                    "Assertion Behaviour", "Editor/Debug"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.debugAssertionBehavior;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.debugAssertionBehavior = std::get<std::int64_t>(value);
+             return true;
+         }},
+
+        // Part 2.11 Play Mode Extended
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kPlayWindowModeUVE), 0,
+                                    {{0, "Embedded Viewport"}, {1, "Maximised Viewport"}, {2, "Separate Window"}},
+                                    "Play Window Mode", kPlayCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.playWindowMode; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.playWindowMode = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeVector2SettingUVE(IdUVE(Id::kPlayWindowSizeUVE), Config::SettingVector2UVE{1280.0, 720.0},
+                                       64.0, 16384.0, "Standalone Play Window Size", kPlayCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.playWindowSize; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.playWindowSize = std::get<Config::SettingVector2UVE>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kPlaySceneSourceUVE), 0,
+                                    {{0, "Current Scene"}, {1, "Project Main Scene"}, {2, "Custom Scene"}},
+                                    "Scene to Run", kPlayCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.playSceneSource; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.playSceneSource = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kPlayPauseOnErrorUVE), true, "Pause on Script Error",
+                                    kPlayCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.playPauseOnError; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.playPauseOnError = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kPlayLiveReloadUVE), true, "Live Reload Scripts & Scenes",
+                                    kPlayCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.playLiveReload; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.playLiveReload = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kPlayTimeScaleUVE), 1.0, 0.05, 4.0, "Default Play Time Scale",
+                                     kPlayCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.playTimeScale; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.playTimeScale = std::get<double>(value);
+             return true;
+         }},
+
+        // Part 2.12 Autosave, Recovery & Performance
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kAutosaveEnabledUVE), true, "Enable Autosave", "Editor/Autosave"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.autosaveEnabled; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.autosaveEnabled = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeFloatSettingUVE(IdUVE(Id::kAutosaveIntervalSecondsUVE), 300.0, 15.0, 3600.0,
+                                     "Autosave Interval (s)", "Editor/Autosave"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.autosaveIntervalSeconds;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.autosaveIntervalSeconds = std::get<double>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kCrashRecoveryEnabledUVE), true, "Keep Crash Recovery Snapshots",
+                                    "Editor/Autosave"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.crashRecoveryEnabled;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.crashRecoveryEnabled = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeIntSettingUVE(IdUVE(Id::kBackupFileCountUVE), 5, 0, 32, "Backup File Count",
+                                   "Editor/Autosave"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.backupFileCount; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.backupFileCount = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeIntSettingUVE(IdUVE(Id::kUndoHistoryDepthUVE), 128, 16, 1024, "Undo History Depth",
+                                   "Editor/Autosave"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.undoHistoryDepth; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.undoHistoryDepth = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kLowProcessorModeUVE), false, "Low-Processor Mode When Idle",
+                                    "Editor/Autosave"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.lowProcessorMode; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.lowProcessorMode = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeIntSettingUVE(IdUVE(Id::kBackgroundWorkerThreadsUVE), 4, 1, 64,
+                                   "Background Worker Threads", "Editor/Autosave"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.backgroundWorkerThreads;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.backgroundWorkerThreads = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeIntSettingUVE(IdUVE(Id::kImportCacheLimitMbUVE), 2048, 128, 32768,
+                                   "Import Cache Size Limit (MB)", "Editor/Autosave"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.importCacheLimitMb; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.importCacheLimitMb = std::get<std::int64_t>(value);
+             return true;
+         }},
+
+        // Part 2.13 Version Control & External Tools
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kVcsEnabledUVE), true, "Enable Version Control Integration",
+                                    "Editor/Version Control"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.vcsEnabled; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.vcsEnabled = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kVcsProviderUVE), 1,
+                                    {{0, "None"}, {1, "Git"}, {2, "Perforce"}, {3, "Plastic SCM"}},
+                                    "VCS Provider", "Editor/Version Control"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.vcsProvider; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.vcsProvider = std::get<std::int64_t>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kVcsShowStatusBadgesUVE), true, "Show File Status Badges",
+                                    "Editor/Version Control"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.vcsShowStatusBadges;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.vcsShowStatusBadges = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeFilePathSettingUVE(IdUVE(Id::kVcsDiffToolPathUVE), "", 512U, "External Diff Tool Path",
+                                        "Editor/Version Control"),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.vcsDiffToolPath; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.vcsDiffToolPath = std::get<std::string>(value);
+             return true;
+         }},
+        {Config::MakeFilePathSettingUVE(IdUVE(Id::kExternalImageEditorPathUVE), "", 512U,
+                                        "External Image Editor Path", "Editor/Version Control"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.externalImageEditorPath;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.externalImageEditorPath = std::get<std::string>(value);
+             return true;
+         }},
+        {Config::MakeFilePathSettingUVE(IdUVE(Id::kExternal3dToolPathUVE), "", 512U,
+                                        "External 3D Tool Path", "Editor/Version Control"),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return editor.m_extendedPreferences.external3dToolPath;
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_extendedPreferences.external3dToolPath = std::get<std::string>(value);
+             return true;
+         }},
     };
     return bindings;
 }
@@ -614,6 +1559,9 @@ void EditorUVE::NotifyEditorSettingChangedUVE(const std::string_view id,
                                                const Config::SettingValueUVE& previousValue,
                                                const Config::SettingValueUVE& newValue) {
     m_settingsObservers.NotifyChangedUVE(id, previousValue, newValue);
+    if (id.starts_with("editor.interface.")) {
+        ApplyEditorVisualThemeUVE(&m_extendedPreferences);
+    }
 }
 
 namespace {
@@ -710,9 +1658,19 @@ std::string FormatSettingValueUVE(const Config::SettingDescriptorUVE& descriptor
     if (const auto* color = std::get_if<Config::SettingColorUVE>(&value)) {
         return FormatColorHexUVE(EditorColorUVE{color->r, color->g, color->b, color->a}, descriptor.colorHasAlpha);
     }
+    if (const auto* vector2 = std::get_if<Config::SettingVector2UVE>(&value)) {
+        char text[64];
+        std::snprintf(text, sizeof(text), "(%.6g, %.6g)", vector2->x, vector2->y);
+        return text;
+    }
     if (const auto* vector = std::get_if<Config::SettingVector3UVE>(&value)) {
         char text[96];
         std::snprintf(text, sizeof(text), "(%.6g, %.6g, %.6g)", vector->x, vector->y, vector->z);
+        return text;
+    }
+    if (const auto* vector4 = std::get_if<Config::SettingVector4UVE>(&value)) {
+        char text[128];
+        std::snprintf(text, sizeof(text), "(%.6g, %.6g, %.6g, %.6g)", vector4->x, vector4->y, vector4->z, vector4->w);
         return text;
     }
     if (const auto* list = std::get_if<Config::SettingStringListUVE>(&value)) {
@@ -769,5 +1727,19 @@ bool RegisterEditorSettingsUVE(Config::SettingsRegistryUVE& registry) {
                         kSessionCategoryUVE))) && allRegistered;
     return allRegistered;
 }
+
+#if defined(UVE_EDITOR_SETTINGS_STANDALONE_UVE)
+void EditorUVE::SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferences) {
+    m_colorPickerPreferences = std::move(preferences);
+}
+
+std::optional<Config::SettingValueUVE> EditorUVE::GetShortcutSettingUVE(const std::string_view) const {
+    return std::nullopt;
+}
+
+bool EditorUVE::SetShortcutSettingUVE(const std::string_view, const Config::SettingValueUVE&) {
+    return false;
+}
+#endif
 
 } // namespace UVE::Editor

@@ -1305,7 +1305,11 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             }
             const std::time_t time = static_cast<std::time_t>(seconds);
             std::tm local{};
+#if defined(_WIN32)
+            localtime_s(&local, &time);
+#else
             localtime_r(&time, &local);
+#endif
             char text[32];
             std::strftime(text, sizeof(text), format, &local);
             return std::string{text};
@@ -1422,7 +1426,11 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                 SortContentFactsUVE(order, facts, ContentSortKeyUVE::Modified, false);
                 const std::time_t now = std::time(nullptr);
                 std::tm midnight{};
+#if defined(_WIN32)
+                localtime_s(&midnight, &now);
+#else
                 localtime_r(&now, &midnight);
+#endif
                 midnight.tm_hour = 0;
                 midnight.tm_min = 0;
                 midnight.tm_sec = 0;
@@ -1611,8 +1619,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
         if (mode == ContentBrowserModeUVE::Board) {
             drawPlacesStrip();
         }
-        // The floating Retarget button: there while animations are picked. Picking a character too
-        // (a model source or a .uvmodel) chooses it for the window.
+        // The floating Retarget button: there while animations or a rigged/skeleton model are picked.
         {
             std::vector<std::filesystem::path> pickedAnimations;
             std::filesystem::path pickedCharacter;
@@ -1626,21 +1633,28 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                     std::string extension = relative.extension().string();
                     std::ranges::transform(extension, extension.begin(),
                                            [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                    const EditorModelSourceInfoUVE* const modelInfo =
+                        IsModelSourcePathUVE(relative) ? FindModelSourceInfoUVE(relative) : nullptr;
                     if (extension == ".uvanim") {
                         pickedAnimations.push_back(snapshot.contentRoot / relative);
-                    } else if (pickedCharacter.empty() && (extension == ".uvmodel" || IsRiggedModelSourceUVE(relative))) {
+                    } else if (pickedCharacter.empty() &&
+                               (extension == ".uvmodel" || IsRiggedModelSourceUVE(relative) ||
+                                (modelInfo != nullptr && modelInfo->hasSkeleton))) {
                         pickedCharacter = relative;
                     }
                 }
             }
+            const bool canShowRetarget = !pickedAnimations.empty() || !pickedCharacter.empty();
             const ImVec2 below = ImGui::GetCursorScreenPos();
-            const std::string label = "Retarget " + std::to_string(pickedAnimations.size()) +
-                                      (pickedAnimations.size() == 1U ? " animation" : " animations");
+            const std::string label = !pickedAnimations.empty()
+                                          ? ("Retarget " + std::to_string(pickedAnimations.size()) +
+                                             (pickedAnimations.size() == 1U ? " animation" : " animations"))
+                                          : ("Retarget " + pickedCharacter.filename().string());
             constexpr float kHeight = 28.0F;
             const float width = ImGui::CalcTextSize(label.c_str()).x + 40.0F;
             const ImVec2 windowMin = ImGui::GetWindowPos();
             const float windowWidth = ImGui::GetWindowSize().x;
-            if (!pickedAnimations.empty() && below.y - windowMin.y > kHeight + 90.0F) {
+            if (canShowRetarget && below.y - windowMin.y > kHeight + 90.0F) {
                 ImGui::SetCursorScreenPos(ImVec2{std::floor(windowMin.x + (windowWidth - width) * 0.5F),
                                                  std::floor(below.y - kHeight - 6.0F)});
                 ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0F);
@@ -1655,7 +1669,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                     ImGui::PopStyleVar();
                     ImGui::PopStyleColor(2);
                     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                        ImGui::SetTooltip("Make these animations and a character the UniVex humanoid's.\nFiles change in place; a backup is kept.");
+                        ImGui::SetTooltip("Conform skeleton and animations to the UniVex humanoid (missing bones are auto-generated).\nFiles change in place; a backup is kept.");
                     }
                 }
                 ImGui::EndChild();

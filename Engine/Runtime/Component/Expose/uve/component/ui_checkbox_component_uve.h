@@ -37,4 +37,18 @@ struct UICheckboxComponentUVE final {
 
 [[nodiscard]] bool IsUICheckboxComponentValidUVE(const UICheckboxComponentUVE& component) noexcept;
 
+/// Returns the outer box color (`hoverColor` while `isHovered`, otherwise `boxColor`).
+[[nodiscard]] Math::Vector3UVE ResolveUICheckboxBoxColorUVE(
+    const UICheckboxComponentUVE& component) noexcept;
+
+/// Computes the inset checkmark rectangle inside `component.rect` (`insetRatio` defaults to `0.25F`).
+[[nodiscard]] Math::RectUVE ResolveUICheckboxMarkRectUVE(const UICheckboxComponentUVE& component,
+                                                         float insetRatio = 0.25F) noexcept;
+
+/// Flips `component.checked` and marks `wasToggledThisFrame = true`.
+bool ToggleUICheckboxUVE(UICheckboxComponentUVE& component) noexcept;
+
+/// Resets transient runtime flags (`isHovered = false`, `wasToggledThisFrame = false`).
+void ResetUICheckboxRuntimeStateUVE(UICheckboxComponentUVE& component) noexcept;
+
 } // namespace UVE::Scene

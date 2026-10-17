@@ -60,4 +60,22 @@ struct UITextInputComponentUVE final {
 
 [[nodiscard]] bool IsUITextInputComponentValidUVE(const UITextInputComponentUVE& component) noexcept;
 
+/// Clamps `caretIndex` into `[0, static_cast<int32_t>(text.size())]`.
+[[nodiscard]] std::int32_t ClampUITextInputCaretIndexUVE(
+    const UITextInputComponentUVE& component) noexcept;
+
+/// True when `text` is empty and `placeholder` is non-empty.
+[[nodiscard]] bool ShouldDisplayUITextInputPlaceholderUVE(
+    const UITextInputComponentUVE& component) noexcept;
+
+/// Inserts printable ASCII bytes (`0x20..0x7E`) from `typedAscii` at `caretIndex` up to `maxLength`.
+bool InsertUITextInputCharactersUVE(UITextInputComponentUVE& component,
+                                    const std::string& typedAscii);
+
+/// Erases the character immediately before `caretIndex` (Backspace semantics).
+bool ApplyUITextInputBackspaceUVE(UITextInputComponentUVE& component) noexcept;
+
+/// Resets runtime focus/caret/blink state.
+void ResetUITextInputRuntimeStateUVE(UITextInputComponentUVE& component) noexcept;
+
 } // namespace UVE::Scene

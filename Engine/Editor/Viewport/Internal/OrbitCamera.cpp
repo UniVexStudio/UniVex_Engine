@@ -35,6 +35,13 @@ float EaseOutCubic(float t) {
 
 void OrbitCamera::Orbit(float dxPixels, float dyPixels) {
     animating_ = false; // a manual drag always wins over an in-flight snap
+    if (settings_.allowFullOrbit) {
+        constexpr float kTwoPi = 2.f * std::numbers::pi_v<float>;
+        const float upSign = std::cos(pitch_) >= 0.f ? 1.f : -1.f;
+        yaw_ = std::remainder(yaw_ + dxPixels * settings_.orbitRadiansPerPixel * upSign, kTwoPi);
+        pitch_ = std::remainder(pitch_ + dyPixels * settings_.orbitRadiansPerPixel, kTwoPi);
+        return;
+    }
     yaw_ += dxPixels * settings_.orbitRadiansPerPixel;
     pitch_ = std::clamp(pitch_ + dyPixels * settings_.orbitRadiansPerPixel,
                         settings_.pitchMin, settings_.pitchMax);
@@ -48,7 +55,8 @@ void OrbitCamera::Pan(float dxPixels, float dyPixels, int viewportHeightPixels) 
         (2.f * distance_ * std::tan(settings_.fovYRadians * 0.5f)) / static_cast<float>(viewportHeightPixels);
 
     const Vec3 forward = Normalize(target_ - Eye());
-    const Vec3 right = Normalize(Cross(forward, kWorldUp));
+    const Vec3 cameraUp = Up();
+    const Vec3 right = Normalize(Cross(forward, cameraUp));
     const Vec3 up = Cross(right, forward);
 
     target_ += right * (-dxPixels * worldPerPixel);
@@ -65,6 +73,11 @@ void OrbitCamera::SetDistance(float distance) {
 
 void OrbitCamera::SetYawPitch(float yaw, float pitch) {
     yaw_ = yaw;
+    if (settings_.allowFullOrbit) {
+        constexpr float kTwoPi = 2.f * std::numbers::pi_v<float>;
+        pitch_ = std::remainder(pitch, kTwoPi);
+        return;
+    }
     pitch_ = std::clamp(pitch, settings_.pitchMin, settings_.pitchMax);
 }
 
@@ -78,6 +91,19 @@ Vec3 OrbitCamera::Eye() const {
     return target_ + offset * distance_;
 }
 
+Vec3 OrbitCamera::Up() const {
+    if (!settings_.allowFullOrbit) {
+        return kWorldUp;
+    }
+    const float sinPitch = std::sin(pitch_);
+    const float cosPitch = std::cos(pitch_);
+    return Normalize(Vec3{
+        -std::cos(yaw_) * sinPitch,
+        cosPitch,
+        -std::sin(yaw_) * sinPitch,
+    });
+}
+
 float OrbitCamera::NearPlane() const {
     return std::max(settings_.nearPlaneMin, distance_ * settings_.nearPlaneScale);
 }
@@ -87,7 +113,7 @@ float OrbitCamera::FarPlane() const {
 }
 
 Mat4 OrbitCamera::ViewMatrix() const {
-    return Mat4::LookAt(Eye(), target_, kWorldUp);
+    return Mat4::LookAt(Eye(), target_, Up());
 }
 
 float OrbitCamera::OrthographicHalfHeight() const {
@@ -114,7 +140,10 @@ void OrbitCamera::SnapToYawPitch(float yaw, float pitch) {
     fromYaw_ = yaw_;
     fromPitch_ = pitch_;
     deltaYaw_ = WrapAngleDelta(yaw - yaw_);
-    deltaPitch_ = std::clamp(pitch, settings_.pitchMin, settings_.pitchMax) - pitch_;
+    const float clampedPitch = settings_.allowFullOrbit
+                                   ? pitch
+                                   : std::clamp(pitch, settings_.pitchMin, settings_.pitchMax);
+    deltaPitch_ = settings_.allowFullOrbit ? WrapAngleDelta(clampedPitch - pitch_) : (clampedPitch - pitch_);
     elapsedSeconds_ = 0.f;
     durationSeconds_ = std::max(0.001f, static_cast<float>(settings_.snapDurationMs) / 1000.f);
     animating_ = true;
@@ -126,7 +155,12 @@ bool OrbitCamera::Update(float deltaSeconds) {
     const float t = std::min(1.f, elapsedSeconds_ / durationSeconds_);
     const float eased = EaseOutCubic(t);
     yaw_ = fromYaw_ + deltaYaw_ * eased;
-    pitch_ = std::clamp(fromPitch_ + deltaPitch_ * eased, settings_.pitchMin, settings_.pitchMax);
+    if (settings_.allowFullOrbit) {
+        constexpr float kTwoPi = 2.f * std::numbers::pi_v<float>;
+        pitch_ = std::remainder(fromPitch_ + deltaPitch_ * eased, kTwoPi);
+    } else {
+        pitch_ = std::clamp(fromPitch_ + deltaPitch_ * eased, settings_.pitchMin, settings_.pitchMax);
+    }
     if (t >= 1.f) animating_ = false;
     return animating_;
 }

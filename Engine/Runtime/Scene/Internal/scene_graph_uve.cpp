@@ -47,13 +47,6 @@ bool IsAncestorOrMalformedUVE(IEntityManagerUVE& entityManager, EntityUVE potent
     return false;
 }
 
-[[nodiscard]] bool IsFiniteWorldTransformUVE(const WorldTransformComponentUVE& transform) noexcept {
-    return std::isfinite(transform.worldPosition.x) && std::isfinite(transform.worldPosition.y) &&
-           std::isfinite(transform.worldPosition.z) && Math::IsFiniteUVE(transform.worldRotation) &&
-           std::isfinite(transform.worldScale.x) && std::isfinite(transform.worldScale.y) &&
-           std::isfinite(transform.worldScale.z);
-}
-
 } // namespace
 
 bool ISceneGraphUVE::ResetInterpolationSubtreeUVE(IEntityManagerUVE& entityManager, const EntityUVE root) {
@@ -140,8 +133,7 @@ void SceneGraphUVE::SetParentUVE(IEntityManagerUVE& entityManager, EntityUVE chi
     HierarchyComponentUVE& hierarchy = entityManager.GetComponentUVE<HierarchyComponentUVE>(child);
     if (hierarchy.parent != newParent) {
         static_cast<void>(ResetInterpolationSubtreeUVE(entityManager, child));
-        hierarchy.parent = newParent;
-        hierarchy.siblingOrder = NextSiblingOrderUVE(); // after the siblings already there
+        static_cast<void>(AssignParentAndAdvanceSiblingOrderUVE(hierarchy, newParent));
     }
     // A pure Object (no transform of its own) moves in the hierarchy only; nothing composes from it.
     if (entityManager.HasComponentUVE<WorldTransformComponentUVE>(child)) {
@@ -306,38 +298,17 @@ void SceneGraphUVE::ResolveInheritedModesUVE(const PendingEntityUVE& item,
     }
 
     outState.threadGroupModeInHierarchy =
-        item.threadGroup == nullptr
-            ? ResolveThreadGroupModeUVE(ThreadGroupModeUVE::Inherit, parentState.threadGroupModeInHierarchy)
-            : ResolveThreadGroupModeUVE(item.threadGroup->mode, parentState.threadGroupModeInHierarchy);
-    if (item.threadGroup != nullptr) {
-        item.threadGroup->resolvedModeInHierarchy = outState.threadGroupModeInHierarchy;
-    }
+        ResolveHierarchyThreadGroupModeUVE(item.threadGroup, parentState.threadGroupModeInHierarchy);
 
     outState.autoTranslateModeInHierarchy =
-        item.autoTranslate == nullptr
-            ? ResolveLocalizeModeUVE(LocalizeModeUVE::Inherit,
-                                          parentState.autoTranslateModeInHierarchy)
-            : ResolveLocalizeModeUVE(item.autoTranslate->mode,
-                                          parentState.autoTranslateModeInHierarchy);
-    if (item.autoTranslate != nullptr) {
-        item.autoTranslate->resolvedModeInHierarchy = outState.autoTranslateModeInHierarchy;
-    }
+        ResolveHierarchyLocalizeModeUVE(item.autoTranslate, parentState.autoTranslateModeInHierarchy);
 }
 
 bool SceneGraphUVE::ResolveVisibilityUVE(const PendingEntityUVE& item, const bool parentVisible) noexcept {
     // No component means visible, and means the parent's state passes straight through. An entity
     // without the component is not a break in the chain - hiding a parent must still hide a
     // grandchild whose intermediate object never opted into having a visibility flag.
-    if (item.visibility == nullptr) {
-        return parentVisible;
-    }
-
-    // Two fields, one derived: `visible` is the author's switch and is never written here, while
-    // `visibleInHierarchy` is the answer. Writing only the derived field is what lets a child stay
-    // hidden after its parent is shown again - the child's own choice was never overwritten.
-    const bool resolved = parentVisible && item.visibility->visible;
-    item.visibility->visibleInHierarchy = resolved;
-    return resolved;
+    return ResolveInheritedVisibilityUVE(item.visibility, parentVisible);
 }
 
 void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
@@ -372,7 +343,7 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
                 entityManager.HasComponentUVE<VisibilityComponentUVE>(entity)
                     ? &entityManager.GetComponentUVE<VisibilityComponentUVE>(entity)
                     : nullptr;
-            if (visibility != nullptr && visibility->visibilityParent != kInvalidEntityUVE) {
+            if (visibility != nullptr && HasVisibilityRedirectUVE(*visibility)) {
                 ++m_visibilityRedirectCount;
             }
             PhysicsInterpolationComponentUVE* const interpolation =
@@ -411,7 +382,7 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
                                                                          : nullptr;
             };
             VisibilityComponentUVE* const visibility = optional.template operator()<VisibilityComponentUVE>();
-            if (visibility != nullptr && visibility->visibilityParent != kInvalidEntityUVE) {
+            if (visibility != nullptr && HasVisibilityRedirectUVE(*visibility)) {
                 ++m_visibilityRedirectCount;
             }
             m_pendingScratch.push_back(PendingEntityUVE{
@@ -516,27 +487,16 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
             // Only a parent this entity actually composes from can force it to recompute.
             const bool parentWasRecomputed = composesFromParent && parentIt->second.recomputed;
             const bool shouldRecompute = world.dirty || parentWasRecomputed;
-            bool publishedValid = IsFiniteWorldTransformUVE(world);
+            bool publishedValid = IsWorldTransformComponentValidUVE(world);
             if (shouldRecompute) {
                 const TransformComponentUVE& local = *item.local;
-                WorldTransformComponentUVE candidate = world;
-                if (!composesFromParent) {
-                    // Local values ARE world values - the same arithmetic a real root gets.
-                    candidate.worldPosition = local.localPosition;
-                    candidate.worldRotation = local.localRotation;
-                    candidate.worldScale = local.localScale;
-                } else {
-                    const WorldTransformComponentUVE& parentWorld =
-                        entityManager.GetComponentUVE<WorldTransformComponentUVE>(item.parent);
-                    const Math::TrsUVE composed = Math::ComposeUVE(
-                        Math::TrsUVE{parentWorld.worldPosition, parentWorld.worldRotation,
-                                     parentWorld.worldScale},
-                        Math::TrsUVE{local.localPosition, local.localRotation, local.localScale});
-                    candidate.worldPosition = composed.translation;
-                    candidate.worldRotation = composed.rotation;
-                    candidate.worldScale = composed.scale;
-                }
-                publishedValid = IsFiniteWorldTransformUVE(candidate);
+                WorldTransformComponentUVE candidate =
+                    !composesFromParent
+                        ? MakeWorldTransformFromLocalUVE(local, world.dirty)
+                        : ComposeWorldTransformUVE(
+                              entityManager.GetComponentUVE<WorldTransformComponentUVE>(item.parent),
+                              local, world.dirty);
+                publishedValid = IsWorldTransformComponentValidUVE(candidate);
                 if (publishedValid) {
                     candidate.dirty = false;
                     world = candidate;
@@ -604,11 +564,7 @@ std::vector<EntityUVE> SceneGraphUVE::GetChildrenUVE(IEntityManagerUVE& entityMa
             }
         });
     std::sort(ordered.begin(), ordered.end(), [](const auto& a, const auto& b) {
-        if (a.first != b.first) {
-            return a.first < b.first;
-        }
-        return a.second.index != b.second.index ? a.second.index < b.second.index
-                                                : a.second.generation < b.second.generation;
+        return CompareSiblingHierarchyOrderUVE(a.first, a.second, b.first, b.second);
     });
     std::vector<EntityUVE> children;
     children.reserve(ordered.size());

@@ -514,7 +514,25 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         }
         ImGui::EndDisabled();
     }
-    if (entityAsset || directory || modelReady || uvmodel || placeable) {
+    std::string extLower = contextEntry.relativePath.extension().string();
+    std::ranges::transform(extLower, extLower.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const bool isUvanim = extLower == ".uvanim";
+    const bool canRetargetItem = isUvanim || uvmodel || (sourceInfo != nullptr && (sourceInfo->rigged || sourceInfo->hasSkeleton));
+    if (canRetargetItem) {
+        ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
+        if (ImGui::MenuItem("Retarget...")) {
+            if (isUvanim) {
+                OpenRetargetWindowUVE({absolute}, {});
+            } else {
+                OpenRetargetWindowUVE({}, contextEntry.relativePath);
+            }
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Conform skeleton and animations to the UniVex humanoid (auto-generating any missing bones).");
+        }
+    }
+    if (entityAsset || directory || modelReady || uvmodel || placeable || canRetargetItem) {
         ImGui::Separator();
     }
 

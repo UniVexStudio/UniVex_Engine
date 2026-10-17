@@ -26,6 +26,7 @@
 #include "uve/utilities/hash_uve.h"
 #include "uve/objects/3d/abstract_objects_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
+#include "uve/objects/3d/mesh_instance_3d_uve.h"
 #include "uve/objects/3d/occluder_3d_uve.h"
 #include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
@@ -374,7 +375,7 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             }
 
             Asset::AssetGuidUVE effectiveMaterialGuid = meshComponent.materialGuid;
-            if (surface != nullptr && !surface->materialOverridePath.empty()) {
+            if (Scene::MeshInstance3DUVE::HasSurfaceMaterialOverrideUVE(surface)) {
                 Asset::AssetGuidUVE overrideGuid = Asset::kInvalidAssetGuidUVE;
                 if (!TryResolveMaterialOverridePathUVE(surface->materialOverridePath, assetDatabase,
                                                        materialOverridePathIndex, materialOverridePathIndexBuilt,
@@ -382,7 +383,8 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                     ++outVisibilitySet.invalidAssetReferences;
                     return;
                 }
-                effectiveMaterialGuid = overrideGuid;
+                effectiveMaterialGuid =
+                    Scene::MeshInstance3DUVE::ResolveEffectiveMaterialGuidUVE(meshComponent, overrideGuid);
             }
 
             if (effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
@@ -395,8 +397,8 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                 effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
                 ++outVisibilitySet.invalidAssetReferences;
             }
-            if (effectiveMeshGuid == Asset::kInvalidAssetGuidUVE ||
-                effectiveMaterialGuid == Asset::kInvalidAssetGuidUVE) {
+            if (!Scene::MeshInstance3DUVE::HasRenderableAssetPairUVE(effectiveMeshGuid,
+                                                                     effectiveMaterialGuid)) {
                 return;
             }
 

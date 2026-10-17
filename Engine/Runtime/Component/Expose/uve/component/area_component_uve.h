@@ -59,4 +59,23 @@ struct AreaComponentUVE final {
 
 [[nodiscard]] bool IsAreaComponentValidUVE(const AreaComponentUVE& area) noexcept;
 
+/// Sanitizes `area` so `halfExtents`, collision layers, space-override modes, gravity, and damping fields are valid.
+[[nodiscard]] AreaComponentUVE SanitizeAreaComponentUVE(const AreaComponentUVE& area) noexcept;
+
+/// True when `entity` is currently in `area.overlappingBodies` (`[0, overlappingBodyCount)`).
+[[nodiscard]] bool ContainsAreaOverlappingBodyUVE(const AreaComponentUVE& area,
+                                                  EntityUVE entity) noexcept;
+
+/// True when `entity` is currently in `area.overlappingAreas` (`[0, overlappingAreaCount)`).
+[[nodiscard]] bool ContainsAreaOverlappingAreaUVE(const AreaComponentUVE& area,
+                                                  EntityUVE entity) noexcept;
+
+/// Evaluates the local gravity acceleration vector at `bodyWorldPosition` relative to `areaWorldPosition`.
+[[nodiscard]] Math::Vector3UVE EvaluateAreaGravityVectorUVE(
+    const AreaComponentUVE& area, const Math::Vector3UVE& areaWorldPosition,
+    const Math::Vector3UVE& bodyWorldPosition) noexcept;
+
+/// Clears runtime overlap buffers (`overlappingBodyCount`, `overlappingAreaCount`, and truncation flags).
+void ClearAreaRuntimeOverlapsUVE(AreaComponentUVE& area) noexcept;
+
 } // namespace UVE::Scene
