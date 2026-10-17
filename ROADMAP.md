@@ -409,15 +409,13 @@ and one of the highest-priority areas below.
 - [x] Animation retargeting done properly, as its own scoped system with real bone-mapping
   validation. It landed as its own module, `Engine/Runtime/Retarget` - a humanoid reference, bone-name
   matching, joint checks, A-pose conforming for both the skeleton and the mesh, a playback plan, and
-  the editor's Retarget window on top - locked by the plan, conform and playback tests. The shape it
-  was built to, kept here as the record:
-  - The base is a skeleton read from an imported rig (FBX or glTF, through `ReadFbxSkeletonUVE` /
-    `ReadGltfSkeletonUVE`), IK bones included - `ik_*` chains are kept, not stripped.
-  - When the target rig has no IK bones of its own, they are generated automatically from its
-    limb chains, so every target ends up with the same IK set as the source.
-  - Both rigs are brought to a common A-pose automatically before mapping, so a source and a
-    target authored in different rest poses (A vs T) still line up.
-  - Needs a multi-track (per-bone) clip format first: `.uvanim` holds one track today.
+  the editor's Retarget window on top - locked by the plan, conform and playback tests. Hardened with:
+  - Multi-track skeletal clip support with per-bone tracks in `.uvanim` and auto-discovery of
+    existing project animation clips during retarget planning.
+  - Resilient joint-to-bone name matching (handling `mixamorig:`, `Armature|`, case-folding, and
+    differing third-party naming conventions without T-pose freezes).
+  - Entity Editor live retargeting preview session (fixing previous blackout bug).
+  - Both rigs brought to a common A-pose automatically before mapping.
 - [ ] Animation compression (both curve compression and a runtime decompression path)
 - [x] Additive animation layers (e.g. aim offsets, lean, breathing) on top of a base pose - an
   Additive graph node adds its clip's pose over the base at the parameter's weight, locked by the
@@ -580,9 +578,9 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 - [x] A data-table asset family (structured tabular game data, with its own importer and
   registry)
 - [x] A binary shader cache
-- [ ] A mesh/animation interchange format importer beyond glTF/OBJ (an FBX-class importer,
-  since most DCC tool exports still default to it in many pipelines) — or a documented,
-  deliberate decision to standardize on glTF only and require artists to export to it
+- [x] A mesh/animation interchange format importer beyond glTF/OBJ (an FBX-class importer,
+  with embedded texture extraction, folder searching across textures/, Textures/, and .fbm/, and skeleton/animation
+  conversion — verified and production-grade in `ReadFbxSkeletonUVE`, `FbxMeshConverterUVE`, and import helpers).
 - [ ] Texture compression (BCn on desktop, ASTC/ETC on mobile) baked at import time, not
   just raw decoded pixels
 - [ ] SVG/vector asset support (a real rasterizer — confirmed not to exist anywhere in this
@@ -644,15 +642,21 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 ## 10. Editor & Tooling
 
 ### 10.1 What exists today
-- [x] A real, docked-looking (though not true-docking — see below) ImGui-based editor
-  shell: title bar with a consolidated menu, workspace tabs, a real 3D Viewport panel with
-  gizmos, overlay bubbles, and orbit/pan/zoom camera control
+- [x] A real, docked-looking ImGui-based editor shell: title bar with a consolidated menu, workspace tabs,
+  a real 3D/2D Viewport panel with gizmos, overlay bubbles, orbit/pan/zoom camera control,
+  and dedicated Viewport Toolbar controls:
+  - 2D / 3D mode segmented toggle
+  - Shading Mode selector (Lit, Unlit, Wireframe, Lighting Only, Normals)
+  - Physics simulation toggle (live pause/resume with visual indicator)
+  - Procedural sky with radiant sun disc and sharpened horizon blend
 - [x] A Scene Hierarchy panel with per-category node icons and a centralized node-creation
-  registry covering dozens of node kinds
+  registry covering dozens of node kinds, plus real-time search filtering in the Entity Editor
+  and main editor hierarchy popups.
 - [x] An Inspector panel with per-component drawers, add/remove/undo/redo authoring, and a
   contextual component list (only offers components relevant to what an entity already is)
-- [x] A merged Content Browser (file tree + thumbnail grid) with real thumbnails, search,
-  and favorites
+- [x] A merged Content Browser (file tree + thumbnail grid) with UE5-style rounded card thumbnails,
+  dark inset previews, colored category badges (Cyan: Mesh, Orange: Texture, Green: Material,
+  Purple: Animation, Gold: Scene), search, and favorites
 - [x] Content Browser layout: one toolbar (Add, Import, Save All, back/forward, a path whose
   arrows list the folders inside), a sidebar with Pinned, the project's folder tree (with its own
   folder search) and Shelves (hand-picked groups of files, saved per user), a type filter, a search
@@ -778,24 +782,29 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 
 ---
 
-## Suggested near-term focus (once this document itself is in place)
+## Version 0.2 Roadmap — Core Milestones
 
-The items below are the ones most likely to unblock the largest number of *other* items on
-this list, and are a reasonable place to resume work first:
+With Version 0.1 foundations, core 3D scene objects, skeletal skinning, FBX importing, resilient retargeting,
+and modern editor tooling fully delivered and tested, Version 0.2 shifts focus toward end-to-end production
+capabilities:
 
-1. Real skeletal animation + skinning (section 4) — almost every "character game" feature
-   downstream of it (ragdoll, IK, cloth bones, proper retargeting) is blocked without it.
-2. A physically-based material model and cascaded shadows (section 1.1) — the single
-   biggest visible quality gap against current-generation visual bars.
-3. A true docking window system for the editor (section 10.1) — every future editor tool
-   (material editor, sequencer, profiler) is more valuable once panels can be freely
-   arranged, and building each new tool against the current fixed-position system means
-   redoing layout work later.
-4. Navmesh + pathfinding (section 7.3) — DONE and checked above (bake, A*, string-pulling,
-   agents with separation steering, 48 tests green). Behavior trees and perception remain.
-5. A minimal real networking transport + replication slice (section 6) — currently the
-   least-built major system in the entire engine, and the one most games eventually need
-   in some form.
+1. **Dedicated 2D Engine Pipeline & Viewport (Section 1.1 & 2D Objects)**
+   - Dedicated 2D orthographic canvas and camera controls inside the Viewport.
+   - Tilemap authoring and rendering (`TileMapLayerComponentUVE`), tileset slicing, and autotiling.
+   - 2D Physics integration (Box2D / custom 2D colliders, RigidBody2D, Area2D triggers).
+   - Sprite sheet frame-by-frame animation sequencer.
 
-This list is a starting suggestion, not a mandate — revisit it whenever priorities change,
-and keep the checkboxes above as the durable record either way.
+2. **Visual Scripting & Gameplay Node Graph (Section 7.1 & 7.2)**
+   - Visual event graph canvas for node-based scripting (events, math, branching, and node calls).
+   - Seamless interoperability between UVScript text scripts and visual nodes.
+   - Gameplay variable management, timer nodes, character movement controllers, and health/damage dispatch.
+
+3. **AAA Post-Processing & Real-Time Lighting (Section 1.1)**
+   - Cascaded Shadow Maps (CSM) for directional lights across multiple depth splits.
+   - Post-processing pipeline maturity: Bloom, ACES Filmic Tone Mapping, Screen-Space Ambient Occlusion (SSAO), and Fast Approximate Anti-Aliasing (FXAA).
+   - Volumetric fog integration (`FogVolume3DComponentUVE`).
+
+4. **Standalone Packaging & Shipping Pipeline (Section 12)**
+   - One-click build and export wizard from the editor to produce standalone Windows `.exe` game distributions.
+   - Asset cooking step packaging optimized assets into compact archive blobs (`.uvpackage`).
+   - Clean shipping build configuration that strips editor debugging symbols and tools.
