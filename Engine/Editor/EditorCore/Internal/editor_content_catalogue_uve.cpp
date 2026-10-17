@@ -18,10 +18,8 @@ using Tree = std::array<Object, N>;
 constexpr Tree<1> kOne(Kind kind) { return {Object{kind, -1, {}}}; }
 
 // Templates with more than one object. Everything else is a single object of the kind it names.
-constexpr Tree<4> kCharacter{{{Kind::Character3D, -1, {}},
-                              {Kind::MeshInstance3D, 0, "Mesh"},
-                              {Kind::AnimationSequencer, 0, "AnimationSequencer"},
-                              {Kind::AnimationGraph, 0, "AnimationGraph"}}};
+constexpr Tree<2> kCharacter{{{Kind::Character3D, -1, {}},
+                              {Kind::MeshInstance3D, 0, "Mesh"}}};
 constexpr Tree<3> kPlayer{{{Kind::Player3D, -1, {}},
                            {Kind::SpringArm3D, 0, "SpringArm"},
                            {Kind::Camera3D, 1, "Camera"}}};
@@ -68,7 +66,7 @@ constexpr std::array<ContentCatalogueItemUVE, 36> kItems{{
     {"viewport_3d", "Viewport3D", "Basic", "A new scene 3D Viewport with an empty World folder", Action::SceneAsset, kViewport3D},
 
     {"character", "Character", "Entity",
-     "A playable body: Character3D with a Mesh, an AnimationSequencer and an AnimationGraph", Action::EntityAsset,
+     "A playable body: Character3D with a Mesh ready for animation", Action::EntityAsset,
      kCharacter},
     {"player", "Player", "Entity",
      "The possessed body: Player3D with a SpringArm3D and a Camera3D", Action::EntityAsset, kPlayer},
