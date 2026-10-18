@@ -313,6 +313,16 @@ public:
         static_cast<void>(normalBias);
     }
 
+    /// Sets the viewport shading mode (0: Lit, 1: Unshaded, 2: Wireframe, 3: Lighting, 4: Normals).
+    virtual void SetShadingModeUVE(std::int32_t shadingMode) noexcept {
+        static_cast<void>(shadingMode);
+    }
+
+    /// Sets the rendering scalability / quality preset (0: Low, 1: Medium, 2: High/Ultra).
+    virtual void SetScalabilityModeUVE(std::int32_t scalabilityMode) noexcept {
+        static_cast<void>(scalabilityMode);
+    }
+
     /// Updates the culling controls used by later frames. The default implementation is a no-op so
     /// non-Renderer3D test doubles need not own culling state; a double that never culls already
     /// behaves the way a disabled setting asks for.

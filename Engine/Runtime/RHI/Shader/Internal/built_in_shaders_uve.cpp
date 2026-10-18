@@ -849,15 +849,17 @@ vec3 ProceduralSkyUVE(vec3 viewDir) {
 
     float day = smoothstep(-0.08, 0.18, sun.y);
     vec3 groundBase = max(uGroundColor, vec3(0.0));
-    vec3 ambientHaze = horizon * 0.28;
-    vec3 groundLit = mix(groundBase * 0.35 + ambientHaze, groundBase * 1.15 + ambientHaze, day);
+    // Ground lit by sun + sky irradiance, preserving the authored earthy ground color without washed-out haze
+    vec3 groundLit = groundBase * mix(0.35, 1.0, day);
 
     float groundT = clamp(-dir.y, 0.0, 1.0);
-    float groundCurve = clamp(max(uGroundCurve, 0.001) * 3.5, 0.45, 3.0);
+    float groundCurve = clamp(max(uGroundCurve, 0.001), 0.2, 2.0);
     float groundFalloff = pow(groundT, groundCurve);
-    vec3 lowerGround = mix(horizon, groundLit, groundFalloff);
+    // Soft blend from horizon seam into authored ground color
+    vec3 horizonGroundSeam = mix(horizon * 0.45, groundLit, 0.4);
+    vec3 lowerGround = mix(horizonGroundSeam, groundLit, groundFalloff);
 
-    float horizonBlend = smoothstep(-0.02, 0.02, dir.y);
+    float horizonBlend = smoothstep(-0.015, 0.015, dir.y);
     return mix(lowerGround, upperSky, horizonBlend);
 }
 
@@ -1074,6 +1076,7 @@ uniform float uOcclusionStrength = 1.0;
 uniform vec3 uUvScale = vec3(1.0, 1.0, 0.0);
 uniform vec3 uUvOffset = vec3(0.0, 0.0, 0.0);
 uniform int uUnshaded = 0;
+uniform int uShadingMode = 0;
 uniform float uAlphaCutoff = 0.0;
 // Legacy Increment 27 pair retained for project-authored shaders and direct single-map tests.
 uniform sampler2D uShadowMapTexture;
@@ -1376,8 +1379,12 @@ void main() {
     }
     vec3 albedo = albedoSample.rgb * uAlbedoColor;
     float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0);
-    if (uUnshaded != 0) {
+    if (uShadingMode == 1 || uUnshaded != 0) {
         FragColor = vec4(albedo, surfaceOpacity);
+        return;
+    }
+    if (uShadingMode == 2) {
+        FragColor = vec4(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity);
         return;
     }
     float ambientOcclusion = mix(1.0, texture(uAOTexture, uv).r, clamp(uOcclusionStrength, 0.0, 1.0));
@@ -1398,15 +1405,26 @@ void main() {
     vec3 tangentSpaceNormal = texture(uNormalTexture, uv).xyz * 2.0 - 1.0;
     tangentSpaceNormal.xy *= uNormalScale;
     normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
+
+    if (uShadingMode == 4) {
+        FragColor = vec4(normal * 0.5 + 0.5, surfaceOpacity);
+        return;
+    }
+
     vec3 viewDirection = SafeNormalizeUVE(uViewPosition - vWorldPosition);
     // Meshes authored with the opposite winding/normal convention are still valid two-sided
     // surfaces. Orient the final mapped normal toward the viewer before evaluating the BRDF.
     if (dot(normal, viewDirection) < 0.0) {
         normal = -normal;
     }
+
+    if (uShadingMode == 3) {
+        albedo = vec3(0.82);
+    }
+
     vec3 metallicRoughnessSample = texture(uMetallicRoughnessTexture, uv).rgb;
-    float metallic = clamp(uMetallic * metallicRoughnessSample.b, 0.0, 1.0);
-    float roughness = clamp(uRoughness * metallicRoughnessSample.g, 0.04, 1.0);
+    float metallic = uShadingMode == 3 ? 0.0 : clamp(uMetallic * metallicRoughnessSample.b, 0.0, 1.0);
+    float roughness = uShadingMode == 3 ? 0.5 : clamp(uRoughness * metallicRoughnessSample.g, 0.04, 1.0);
     // Ambient, split into diffuse and specular exactly as the direct term is.
     //
     // The old ambient was purely diffuse: albedo * ambient * ao. For a dielectric that is roughly
@@ -1520,19 +1538,11 @@ void main() {
         lighting += directContribution;
     }
 
-    // Direct RHI callers may leave optional BRDF uniforms at driver defaults. Keep their output
-    // deterministic and preserve the proven directional shadow contract instead of allowing an
-    // invalid optional BRDF intermediate to turn the complete fragment black on OpenGL drivers.
-    vec3 fallbackDirection = SafeNormalizeUVE(-uLights[0].direction);
-    float shadowFactor = DirectionalShadowFactorUVE(normal, fallbackDirection);
-    if (uAmbientSource == 0 && dot(uAmbientColor, uAmbientColor) <= 1.0e-8) {
-        FragColor = vec4(albedo * shadowFactor, surfaceOpacity);
-    } else {
-        float wrapNdotL = mix(abs(dot(normal, fallbackDirection)), 1.0, 0.25);
-        vec3 minFill = albedo * ambientColor * ambientOcclusion;
-        vec3 safeLighting = max(lighting, minFill + albedo * (0.45 * wrapNdotL * mix(0.32, 1.0, shadowFactor)));
-        FragColor = vec4(safeLighting, surfaceOpacity);
-    }
+    // Safe baseline ambient fill so unlit back-faces or scenes without an explicit sky are never pitch black.
+    // Preserves the accumulated PBR direct lighting and highlights instead of discarding them.
+    vec3 baselineAmbient = max(ambientColor, vec3(0.04)) * albedo * ambientOcclusion;
+    vec3 finalColor = max(lighting, baselineAmbient);
+    FragColor = vec4(finalColor, surfaceOpacity);
 }
 #endif
 )GLSLSRC";
@@ -2553,18 +2563,22 @@ float HashUVE(vec2 value) {
 
 void main() {
     float centerDepth = texture(uDepthTexture, vTexCoord).r;
-    if (centerDepth >= 1.0) {
+    if (centerDepth >= 0.9999) {
         FragColor = vec4(1.0, 1.0, 1.0, 1.0); // Background/far plane: never occluded.
         return;
     }
     vec3 centerViewPos = ReconstructViewPositionUVE(vTexCoord, centerDepth);
 
-    // View-space normal from screen-space derivatives of the reconstructed position - avoids
-    // needing a dedicated normal G-buffer in this forward renderer.
-    // dFdx/dFdy face the +Z view direction (camera looks down -Z) for a screen-space quad that
-    // covers increasing x left-to-right and increasing y bottom-to-top, matching this engine's
-    // vTexCoord/gl_Position convention - no winding-based flip needed, unlike a mesh normal.
-    vec3 viewNormal = normalize(cross(dFdx(centerViewPos), dFdy(centerViewPos)));
+    // View-space normal from screen-space derivatives of the reconstructed position.
+    vec3 dx = dFdx(centerViewPos);
+    vec3 dy = dFdy(centerViewPos);
+    vec3 n = cross(dx, dy);
+    float nLenSq = dot(n, n);
+    vec3 viewNormal = nLenSq > 1.0e-8 ? n * inversesqrt(nLenSq) : vec3(0.0, 0.0, 1.0);
+    if (isnan(viewNormal.x) || isnan(viewNormal.y) || isnan(viewNormal.z) ||
+        isinf(viewNormal.x) || isinf(viewNormal.y) || isinf(viewNormal.z)) {
+        viewNormal = vec3(0.0, 0.0, 1.0);
+    }
     if (viewNormal.z < 0.0) {
         viewNormal = -viewNormal;
     }
@@ -2573,34 +2587,56 @@ void main() {
     float cosAngle = cos(rotationAngle);
     float sinAngle = sin(rotationAngle);
     vec3 randomTangent = normalize(vec3(cosAngle, sinAngle, 0.0));
-    vec3 tangent = normalize(randomTangent - viewNormal * dot(randomTangent, viewNormal));
+    vec3 perp = randomTangent - viewNormal * dot(randomTangent, viewNormal);
+    float pLenSq = dot(perp, perp);
+    vec3 tangent = pLenSq > 1.0e-8 ? perp * inversesqrt(pLenSq) : vec3(1.0, 0.0, 0.0);
     vec3 bitangent = cross(viewNormal, tangent);
     mat3 tbn = mat3(tangent, bitangent, viewNormal);
 
     float occlusion = 0.0;
     int sampleCount = clamp(uSampleCount, 1, kKernelSizeUVE);
+    int validSamples = 0;
     for (int sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex) {
         vec3 samplePos = centerViewPos + (tbn * kKernelUVE[sampleIndex]) * uRadius;
 
         // Re-project the sample point with uProjection to look up what's actually in the depth
         // buffer at that screen location.
         vec4 sampleClip = uProjection * vec4(samplePos, 1.0);
+        if (abs(sampleClip.w) < 0.0001) {
+            continue;
+        }
         vec2 sampleUv = (sampleClip.xy / sampleClip.w) * 0.5 + 0.5;
-        if (sampleUv.x < 0.0 || sampleUv.x > 1.0 || sampleUv.y < 0.0 || sampleUv.y > 1.0) {
+        if (isnan(sampleUv.x) || isnan(sampleUv.y) || isinf(sampleUv.x) || isinf(sampleUv.y) ||
+            sampleUv.x < 0.001 || sampleUv.x > 0.999 || sampleUv.y < 0.001 || sampleUv.y > 0.999) {
             continue;
         }
 
         float sampledDepth = texture(uDepthTexture, sampleUv).r;
-        if (sampledDepth >= 0.99999) {
+        if (sampledDepth >= 0.9999) {
             continue;
         }
         vec3 sampledViewPos = ReconstructViewPositionUVE(sampleUv, sampledDepth);
 
-        float rangeCheck = smoothstep(0.0, 1.0, uRadius / max(abs(centerViewPos.z - sampledViewPos.z), 0.0001));
+        float depthDelta = abs(centerViewPos.z - sampledViewPos.z);
+        if (depthDelta > uRadius * 2.5) {
+            continue;
+        }
+        float rangeCheck = smoothstep(0.0, 1.0, uRadius / max(depthDelta, 0.0001));
         occlusion += (sampledViewPos.z >= samplePos.z + uBias ? 1.0 : 0.0) * rangeCheck;
+        ++validSamples;
     }
-    float visibility = clamp(1.0 - (occlusion / float(sampleCount)) * max(uIntensity, 0.0), 0.0, 1.0);
+    float rawOcc = validSamples > 0 ? (occlusion / float(sampleCount)) : 0.0;
+    float visibility = clamp(1.0 - rawOcc * max(uIntensity, 0.0), 0.0, 1.0);
     visibility = pow(visibility, clamp(uPower, 0.1, 4.0));
+    if (isnan(visibility) || isinf(visibility)) {
+        visibility = 1.0;
+    }
+
+    // Edge fade prevents glancing angle blackouts at screen/viewport borders
+    vec2 edgeDist = min(vTexCoord, 1.0 - vTexCoord);
+    float edgeFade = smoothstep(0.0, 0.02, min(edgeDist.x, edgeDist.y));
+    visibility = mix(1.0, visibility, edgeFade);
+
     FragColor = vec4(vec3(visibility), 1.0);
 }
 #endif

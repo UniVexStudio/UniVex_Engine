@@ -116,6 +116,7 @@ uniform float uOcclusionStrength = 1.0;
 uniform vec3 uUvScale = vec3(1.0, 1.0, 0.0);
 uniform vec3 uUvOffset = vec3(0.0, 0.0, 0.0);
 uniform int uUnshaded = 0;
+uniform int uShadingMode = 0;
 uniform float uAlphaCutoff = 0.0;
 // Legacy Increment 27 pair retained for project-authored shaders and direct single-map tests.
 uniform sampler2D uShadowMapTexture;
@@ -418,8 +419,12 @@ void main() {
     }
     vec3 albedo = albedoSample.rgb * uAlbedoColor;
     float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0);
-    if (uUnshaded != 0) {
+    if (uShadingMode == 1 || uUnshaded != 0) {
         FragColor = vec4(albedo, surfaceOpacity);
+        return;
+    }
+    if (uShadingMode == 2) {
+        FragColor = vec4(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity);
         return;
     }
     float ambientOcclusion = mix(1.0, texture(uAOTexture, uv).r, clamp(uOcclusionStrength, 0.0, 1.0));
@@ -440,15 +445,26 @@ void main() {
     vec3 tangentSpaceNormal = texture(uNormalTexture, uv).xyz * 2.0 - 1.0;
     tangentSpaceNormal.xy *= uNormalScale;
     normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
+
+    if (uShadingMode == 4) {
+        FragColor = vec4(normal * 0.5 + 0.5, surfaceOpacity);
+        return;
+    }
+
     vec3 viewDirection = SafeNormalizeUVE(uViewPosition - vWorldPosition);
     // Meshes authored with the opposite winding/normal convention are still valid two-sided
     // surfaces. Orient the final mapped normal toward the viewer before evaluating the BRDF.
     if (dot(normal, viewDirection) < 0.0) {
         normal = -normal;
     }
+
+    if (uShadingMode == 3) {
+        albedo = vec3(0.82);
+    }
+
     vec3 metallicRoughnessSample = texture(uMetallicRoughnessTexture, uv).rgb;
-    float metallic = clamp(uMetallic * metallicRoughnessSample.b, 0.0, 1.0);
-    float roughness = clamp(uRoughness * metallicRoughnessSample.g, 0.04, 1.0);
+    float metallic = uShadingMode == 3 ? 0.0 : clamp(uMetallic * metallicRoughnessSample.b, 0.0, 1.0);
+    float roughness = uShadingMode == 3 ? 0.5 : clamp(uRoughness * metallicRoughnessSample.g, 0.04, 1.0);
     // Ambient, split into diffuse and specular exactly as the direct term is.
     //
     // The old ambient was purely diffuse: albedo * ambient * ao. For a dielectric that is roughly
@@ -562,18 +578,10 @@ void main() {
         lighting += directContribution;
     }
 
-    // Direct RHI callers may leave optional BRDF uniforms at driver defaults. Keep their output
-    // deterministic and preserve the proven directional shadow contract instead of allowing an
-    // invalid optional BRDF intermediate to turn the complete fragment black on OpenGL drivers.
-    vec3 fallbackDirection = SafeNormalizeUVE(-uLights[0].direction);
-    float shadowFactor = DirectionalShadowFactorUVE(normal, fallbackDirection);
-    if (uAmbientSource == 0 && dot(uAmbientColor, uAmbientColor) <= 1.0e-8) {
-        FragColor = vec4(albedo * shadowFactor, surfaceOpacity);
-    } else {
-        float wrapNdotL = mix(abs(dot(normal, fallbackDirection)), 1.0, 0.25);
-        vec3 minFill = albedo * ambientColor * ambientOcclusion;
-        vec3 safeLighting = max(lighting, minFill + albedo * (0.45 * wrapNdotL * mix(0.32, 1.0, shadowFactor)));
-        FragColor = vec4(safeLighting, surfaceOpacity);
-    }
+    // Safe baseline ambient fill so unlit back-faces or scenes without an explicit sky are never pitch black.
+    // Preserves the accumulated PBR direct lighting and highlights instead of discarding them.
+    vec3 baselineAmbient = max(ambientColor, vec3(0.04)) * albedo * ambientOcclusion;
+    vec3 finalColor = max(lighting, baselineAmbient);
+    FragColor = vec4(finalColor, surfaceOpacity);
 }
 #endif

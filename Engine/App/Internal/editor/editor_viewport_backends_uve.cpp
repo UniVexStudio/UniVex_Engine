@@ -972,6 +972,7 @@ private:
     }
 
     void ApplyOverlayStateUVE(const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
+        engine_.GetServicesUVE().GetRenderer3DUVE().SetShadingModeUVE(overlayState.shadingMode);
         auto& settings = renderPass_->Settings();
         settings.projection = overlayState.orthographic ? univex::viewport::ProjectionMode::Orthographic
                                                         : univex::viewport::ProjectionMode::Perspective;

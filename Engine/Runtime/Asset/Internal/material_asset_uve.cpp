@@ -73,7 +73,8 @@ bool IsMaterialAssetValidUVE(const MaterialAssetUVE& material) noexcept {
            IsFiniteUnitIntervalUVE(material.clearcoatRoughness) &&
            IsFiniteUnitIntervalUVE(material.anisotropyAmount) &&
            IsFiniteUnitIntervalUVE(material.subsurfaceStrength) &&
-           IsFiniteUnitIntervalUVE(material.refractionAmount);
+           IsFiniteUnitIntervalUVE(material.refractionAmount) &&
+           std::isfinite(material.textureTileX) && std::isfinite(material.textureTileY);
 }
 
 bool TryMakeMaterialBillboardRotationUVE(const MaterialBillboardModeUVE mode,
@@ -186,6 +187,21 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
         if (payload.contains("nextPassMaterial")) {
             material.nextPassMaterial = AssetGuidUVE{payload.at("nextPassMaterial").get<std::uint64_t>()};
         }
+        if (payload.contains("useCustomShaderCode")) {
+            material.useCustomShaderCode = payload.at("useCustomShaderCode").get<bool>();
+        }
+        if (payload.contains("customShader")) {
+            material.customShader = AssetGuidUVE{payload.at("customShader").get<std::uint64_t>()};
+        }
+        if (payload.contains("textureTint")) {
+            material.textureTint = JsonToColorUVE(payload.at("textureTint"));
+        }
+        if (payload.contains("textureTileX")) {
+            material.textureTileX = payload.at("textureTileX").get<float>();
+        }
+        if (payload.contains("textureTileY")) {
+            material.textureTileY = payload.at("textureTileY").get<float>();
+        }
     } catch (const nlohmann::json::exception& fieldError) {
         UVE_ERROR("MaterialAssetUVE: \"{}\" is missing an expected field: {}", path.string(), fieldError.what());
         return false;
@@ -248,6 +264,18 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     }
     if (material.nextPassMaterial != kInvalidAssetGuidUVE) {
         payload["nextPassMaterial"] = material.nextPassMaterial.value;
+    }
+    if (material.useCustomShaderCode) {
+        payload["useCustomShaderCode"] = material.useCustomShaderCode;
+    }
+    if (material.customShader != kInvalidAssetGuidUVE) {
+        payload["customShader"] = material.customShader.value;
+    }
+    if (material.textureTileX != 1.0F) {
+        payload["textureTileX"] = material.textureTileX;
+    }
+    if (material.textureTileY != 1.0F) {
+        payload["textureTileY"] = material.textureTileY;
     }
 
     const std::string payloadText = payload.dump();

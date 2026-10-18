@@ -862,6 +862,8 @@ struct Renderer3DUVE::ImplUVE {
     /// Frustum-culling controls for the main colour view (see CullingSettingsUVE). Consulted every
     /// frame rather than baked into the render graph, so a host can freeze culling between frames.
     CullingSettingsUVE cullingSettings{};
+    std::int32_t shadingMode = 0;
+    std::int32_t scalabilityMode = 2;
     bool humanEyeEnabled = false;
     float humanEyeCenterScale = 1.0F;
     float humanEyeTexelX = 0.0F;
@@ -2361,6 +2363,7 @@ struct Renderer3DUVE::ImplUVE {
         program.SetVector3UVE("uUvScale", Math::Vector3UVE{material.uvScale.x, material.uvScale.y, 0.0F});
         program.SetVector3UVE("uUvOffset", Math::Vector3UVE{material.uvOffset.x, material.uvOffset.y, 0.0F});
         program.SetIntUVE("uUnshaded", material.unshaded ? 1 : 0);
+        program.SetIntUVE("uShadingMode", shadingMode);
         program.SetFloatUVE("uAlphaCutoff", material.alphaCutoff);
         program.SetIntUVE("uAlbedoTexture", static_cast<std::int32_t>(kAlbedoTextureSlotUVE));
         program.SetIntUVE("uNormalTexture", static_cast<std::int32_t>(kNormalTextureSlotUVE));
@@ -4528,6 +4531,31 @@ void Renderer3DUVE::SetShadowBiasDefaultsUVE(const float depthBias, const float 
 
 void Renderer3DUVE::SetCullingSettingsUVE(const CullingSettingsUVE& settings) noexcept {
     m_impl->cullingSettings = settings;
+}
+
+void Renderer3DUVE::SetShadingModeUVE(const std::int32_t shadingMode) noexcept {
+    m_impl->shadingMode = std::clamp(shadingMode, 0, 4);
+}
+
+void Renderer3DUVE::SetScalabilityModeUVE(const std::int32_t scalabilityMode) noexcept {
+    const std::int32_t clampedLevel = std::clamp(scalabilityMode, 0, 2);
+    m_impl->scalabilityMode = clampedLevel;
+    if (clampedLevel == 0) {
+        m_impl->postProcessSettings.ssaoQualityUVE = 0U;
+        m_impl->postProcessSettings.ssaoBlurEnabledUVE = false;
+        m_impl->postProcessSettings.bloomEnabledUVE = false;
+        m_impl->shadowPcfKernelRadius = 0;
+    } else if (clampedLevel == 1) {
+        m_impl->postProcessSettings.ssaoQualityUVE = 1U;
+        m_impl->postProcessSettings.ssaoBlurEnabledUVE = true;
+        m_impl->postProcessSettings.bloomEnabledUVE = true;
+        m_impl->shadowPcfKernelRadius = 1;
+    } else {
+        m_impl->postProcessSettings.ssaoQualityUVE = 2U;
+        m_impl->postProcessSettings.ssaoBlurEnabledUVE = true;
+        m_impl->postProcessSettings.bloomEnabledUVE = true;
+        m_impl->shadowPcfKernelRadius = 2;
+    }
 }
 
 void Renderer3DUVE::SetSceneClearColorUVE(const std::array<float, 4U>& color) noexcept {
