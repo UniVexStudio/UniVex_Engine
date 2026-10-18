@@ -152,6 +152,13 @@ struct MaterialAssetUVE {
     std::uint32_t renderLayerMask = 0xFFFFFFFFU;
     AssetGuidUVE parentMaterial;
     AssetGuidUVE nextPassMaterial;
+
+    /// Advanced custom shader code injection and texture overrides
+    bool useCustomShaderCode = false;
+    AssetGuidUVE customShader;
+    Math::ColorUVE textureTint{1.0F, 1.0F, 1.0F};
+    float textureTileX = 1.0F;
+    float textureTileY = 1.0F;
 };
 
 /// Returns true when the material should be bucketed into the transparent render pass (Part 3.7 / 4.1).

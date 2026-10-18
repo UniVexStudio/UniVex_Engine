@@ -77,15 +77,17 @@ vec3 ProceduralSkyUVE(vec3 viewDir) {
 
     float day = smoothstep(-0.08, 0.18, sun.y);
     vec3 groundBase = max(uGroundColor, vec3(0.0));
-    vec3 ambientHaze = horizon * 0.28;
-    vec3 groundLit = mix(groundBase * 0.35 + ambientHaze, groundBase * 1.15 + ambientHaze, day);
+    // Ground lit by sun + sky irradiance, preserving the authored earthy ground color without washed-out haze
+    vec3 groundLit = groundBase * mix(0.35, 1.0, day);
 
     float groundT = clamp(-dir.y, 0.0, 1.0);
-    float groundCurve = clamp(max(uGroundCurve, 0.001) * 3.5, 0.45, 3.0);
+    float groundCurve = clamp(max(uGroundCurve, 0.001), 0.2, 2.0);
     float groundFalloff = pow(groundT, groundCurve);
-    vec3 lowerGround = mix(horizon, groundLit, groundFalloff);
+    // Soft blend from horizon seam into authored ground color
+    vec3 horizonGroundSeam = mix(horizon * 0.45, groundLit, 0.4);
+    vec3 lowerGround = mix(horizonGroundSeam, groundLit, groundFalloff);
 
-    float horizonBlend = smoothstep(-0.02, 0.02, dir.y);
+    float horizonBlend = smoothstep(-0.015, 0.015, dir.y);
     return mix(lowerGround, upperSky, horizonBlend);
 }
 

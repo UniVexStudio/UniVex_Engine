@@ -31,6 +31,7 @@ constexpr Tree<2> kFollowCamera{{{Kind::SpringArm3D, -1, {}}, {Kind::Camera3D, 0
 
 constexpr Tree<1> kEmpty = kOne(Kind::Object3D);
 constexpr Tree<1> kViewport3D = kOne(Kind::Viewport3D);
+constexpr Tree<1> kViewport2D = kOne(Kind::Viewport3D);
 constexpr Tree<1> kSpawner = kOne(Kind::SpawnPoint3D);
 constexpr Tree<1> kBox = kOne(Kind::BoxMesh3D);
 constexpr Tree<1> kSphere = kOne(Kind::SphereMesh3D);
@@ -60,10 +61,11 @@ constexpr Tree<1> kOccluder = kOne(Kind::Occluder3D);
 constexpr std::array<std::string_view, 9> kGroups{"Basic",     "Entity",    "Shapes",     "Lighting", "Camera",
                                                   "Physics",   "Animation", "Audio, VFX & UI", "World"};
 
-constexpr std::array<ContentCatalogueItemUVE, 36> kItems{{
+constexpr std::array<ContentCatalogueItemUVE, 37> kItems{{
     {"folder", "Folder", "Basic", "A new folder here in Content", Action::Folder, {}},
     {"empty", "Empty Entity", "Basic", "A bare Object3D to build your own tree on", Action::EntityAsset, kEmpty},
     {"viewport_3d", "Viewport3D", "Basic", "A new scene 3D Viewport with an empty World folder", Action::SceneAsset, kViewport3D},
+    {"viewport_2d", "Viewport2D", "Basic", "A new flat 2D Viewport scene with an empty World folder", Action::SceneAsset, kViewport2D},
 
     {"character", "Character", "Entity",
      "A playable body: Character3D with a Mesh ready for animation", Action::EntityAsset,

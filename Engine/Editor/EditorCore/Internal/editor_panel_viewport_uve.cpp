@@ -544,59 +544,6 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
         ImGui::PopStyleVar(3);
     }
 
-    // ---- 2D / 3D mode toggle pill ---------------------------------------------------------
-    const ImVec2 modePillMin{pillMax.x + kBubbleGapUVE, topY};
-    constexpr float modePillWidth = 56.0F;
-    const ImVec2 modePillMax{modePillMin.x + modePillWidth, modePillMin.y + unifiedHeight};
-    {
-        drawList->AddRectFilled(modePillMin, modePillMax, IM_COL32(18, 21, 28, 200), unifiedHeight * 0.5F);
-        drawList->AddRect(modePillMin, modePillMax, IM_COL32(255, 255, 255, 24), unifiedHeight * 0.5F);
-        constexpr float segWidth = modePillWidth * 0.5F;
-        const ImVec2 btn2DMin = modePillMin;
-        const ImVec2 btn2DMax{btn2DMin.x + segWidth, btn2DMin.y + unifiedHeight};
-        const ImVec2 btn3DMin{btn2DMin.x + segWidth, btn2DMin.y};
-        const ImVec2 btn3DMax = modePillMax;
-
-        ImGui::SetCursorScreenPos(btn2DMin);
-        if (ImGui::InvisibleButton("##mode-2d", ImVec2{segWidth, unifiedHeight})) {
-            m_viewportOverlayState.is2DMode = true;
-            m_viewportOverlayState.orthographic = true;
-            RequestViewportViewUVE(ViewportViewUVE::Front);
-        }
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-            ImGui::SetTooltip("2D View (Front Orthographic)");
-        }
-        const bool hovered2D = ImGui::IsItemHovered();
-
-        ImGui::SetCursorScreenPos(btn3DMin);
-        if (ImGui::InvisibleButton("##mode-3d", ImVec2{segWidth, unifiedHeight})) {
-            m_viewportOverlayState.is2DMode = false;
-            SetViewportOrthographicUVE(false);
-            m_viewportOverlayState.view = ViewportViewUVE::User;
-        }
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-            ImGui::SetTooltip("3D View (Free Orbit Perspective)");
-        }
-        const bool hovered3D = ImGui::IsItemHovered();
-
-        if (m_viewportOverlayState.is2DMode) {
-            drawList->AddRectFilled(btn2DMin, btn2DMax, IM_COL32(50, 100, 180, 220), unifiedHeight * 0.5F);
-        } else {
-            drawList->AddRectFilled(btn3DMin, btn3DMax, IM_COL32(50, 100, 180, 220), unifiedHeight * 0.5F);
-        }
-        const ImVec2 text2DSize = ImGui::CalcTextSize("2D");
-        const ImVec2 text3DSize = ImGui::CalcTextSize("3D");
-        drawList->AddText(
-            ImVec2{btn2DMin.x + (segWidth - text2DSize.x) * 0.5F, btn2DMin.y + (unifiedHeight - text2DSize.y) * 0.5F},
-            m_viewportOverlayState.is2DMode || hovered2D ? IM_COL32(255, 255, 255, 255) : IM_COL32(180, 185, 195, 200),
-            "2D");
-        drawList->AddText(
-            ImVec2{btn3DMin.x + (segWidth - text3DSize.x) * 0.5F, btn3DMin.y + (unifiedHeight - text3DSize.y) * 0.5F},
-            !m_viewportOverlayState.is2DMode || hovered3D ? IM_COL32(255, 255, 255, 255)
-                                                           : IM_COL32(180, 185, 195, 200),
-            "3D");
-    }
-
     // ---- Shading Mode pill -----------------------------------------------------------------
     static constexpr std::array<const char*, 5> kShadingNames{"Lit", "Unshaded", "Wireframe", "Lighting", "Normals"};
     const char* const shadingLabel =
@@ -604,7 +551,7 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
                                  kShadingNames.size() - 1ULL)];
     const ImVec2 shadingTextSize = ImGui::CalcTextSize(shadingLabel);
     const float shadingPillWidth = shadingTextSize.x + kBubblePaddingXUVE * 2.0F + 8.0F;
-    const ImVec2 shadingPillMin{modePillMax.x + kBubbleGapUVE, topY};
+    const ImVec2 shadingPillMin{pillMax.x + kBubbleGapUVE, topY};
     const ImVec2 shadingPillMax{shadingPillMin.x + shadingPillWidth, shadingPillMin.y + unifiedHeight};
     {
         ImGui::SetCursorScreenPos(shadingPillMin);

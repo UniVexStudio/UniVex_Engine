@@ -1162,6 +1162,16 @@ bool EditorUVE::OpenSceneAssetUVE(const std::filesystem::path& path) {
     const std::filesystem::path previous = m_activeScenePath;
     m_activeScenePath = path;
     if (LoadSceneUVE()) {
+        const std::string stem = path.stem().string();
+        if (stem.find("2D") != std::string::npos || stem.find("2d") != std::string::npos) {
+            m_viewportOverlayState.is2DMode = true;
+            m_viewportOverlayState.orthographic = true;
+            RequestViewportViewUVE(ViewportViewUVE::Front);
+        } else {
+            m_viewportOverlayState.is2DMode = false;
+            SetViewportOrthographicUVE(false);
+            m_viewportOverlayState.view = ViewportViewUVE::User;
+        }
         return true;
     }
     m_activeScenePath = previous;

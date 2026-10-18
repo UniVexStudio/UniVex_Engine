@@ -57,7 +57,10 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
 - [x] Bloom (bright-pass + blur) and SSAO post-process passes, tonemapping
 - [x] Basic unlit/textured 2D and 3D shaders, a fullscreen-quad/copy utility pass
 - [x] A screen-space UI overlay draw path (quads + a baked font atlas)
-- [ ] Cascaded shadow maps for directional lights (multiple shadow-distance bands)
+- [x] Cascaded shadow maps for directional lights (3-cascade directional shadow mapping with PCF and distance fade)
+- [x] Viewport shading modes (Lit, Unshaded, Wireframe, Lighting Only, Normals) wired directly from editor overlay pill to Renderer3DUVE and shaders
+- [x] Low-end device scalability presets (Low, Medium, High) with adaptive shadow resolution, PCF kernel, and SSAO/bloom LOD
+- [x] Dedicated 2D Viewport scene creation in Content Browser (+ Add Viewport2D) with flat orthographic navigation, separating 2D and 3D scenes cleanly
 - [ ] Shadow maps for point/spot lights (cube-map and perspective shadow variants)
 - [ ] Contact shadows / screen-space shadow refinement
 - [x] A true physically-based material model — verified rather than assumed: lit_shadowed_3d.glsl

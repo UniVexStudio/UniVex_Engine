@@ -73,18 +73,22 @@ float HashUVE(vec2 value) {
 
 void main() {
     float centerDepth = texture(uDepthTexture, vTexCoord).r;
-    if (centerDepth >= 1.0) {
+    if (centerDepth >= 0.9999) {
         FragColor = vec4(1.0, 1.0, 1.0, 1.0); // Background/far plane: never occluded.
         return;
     }
     vec3 centerViewPos = ReconstructViewPositionUVE(vTexCoord, centerDepth);
 
-    // View-space normal from screen-space derivatives of the reconstructed position - avoids
-    // needing a dedicated normal G-buffer in this forward renderer.
-    // dFdx/dFdy face the +Z view direction (camera looks down -Z) for a screen-space quad that
-    // covers increasing x left-to-right and increasing y bottom-to-top, matching this engine's
-    // vTexCoord/gl_Position convention - no winding-based flip needed, unlike a mesh normal.
-    vec3 viewNormal = normalize(cross(dFdx(centerViewPos), dFdy(centerViewPos)));
+    // View-space normal from screen-space derivatives of the reconstructed position.
+    vec3 dx = dFdx(centerViewPos);
+    vec3 dy = dFdy(centerViewPos);
+    vec3 n = cross(dx, dy);
+    float nLenSq = dot(n, n);
+    vec3 viewNormal = nLenSq > 1.0e-8 ? n * inversesqrt(nLenSq) : vec3(0.0, 0.0, 1.0);
+    if (isnan(viewNormal.x) || isnan(viewNormal.y) || isnan(viewNormal.z) ||
+        isinf(viewNormal.x) || isinf(viewNormal.y) || isinf(viewNormal.z)) {
+        viewNormal = vec3(0.0, 0.0, 1.0);
+    }
     if (viewNormal.z < 0.0) {
         viewNormal = -viewNormal;
     }
@@ -93,34 +97,56 @@ void main() {
     float cosAngle = cos(rotationAngle);
     float sinAngle = sin(rotationAngle);
     vec3 randomTangent = normalize(vec3(cosAngle, sinAngle, 0.0));
-    vec3 tangent = normalize(randomTangent - viewNormal * dot(randomTangent, viewNormal));
+    vec3 perp = randomTangent - viewNormal * dot(randomTangent, viewNormal);
+    float pLenSq = dot(perp, perp);
+    vec3 tangent = pLenSq > 1.0e-8 ? perp * inversesqrt(pLenSq) : vec3(1.0, 0.0, 0.0);
     vec3 bitangent = cross(viewNormal, tangent);
     mat3 tbn = mat3(tangent, bitangent, viewNormal);
 
     float occlusion = 0.0;
     int sampleCount = clamp(uSampleCount, 1, kKernelSizeUVE);
+    int validSamples = 0;
     for (int sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex) {
         vec3 samplePos = centerViewPos + (tbn * kKernelUVE[sampleIndex]) * uRadius;
 
         // Re-project the sample point with uProjection to look up what's actually in the depth
         // buffer at that screen location.
         vec4 sampleClip = uProjection * vec4(samplePos, 1.0);
+        if (abs(sampleClip.w) < 0.0001) {
+            continue;
+        }
         vec2 sampleUv = (sampleClip.xy / sampleClip.w) * 0.5 + 0.5;
-        if (sampleUv.x < 0.0 || sampleUv.x > 1.0 || sampleUv.y < 0.0 || sampleUv.y > 1.0) {
+        if (isnan(sampleUv.x) || isnan(sampleUv.y) || isinf(sampleUv.x) || isinf(sampleUv.y) ||
+            sampleUv.x < 0.001 || sampleUv.x > 0.999 || sampleUv.y < 0.001 || sampleUv.y > 0.999) {
             continue;
         }
 
         float sampledDepth = texture(uDepthTexture, sampleUv).r;
-        if (sampledDepth >= 0.99999) {
+        if (sampledDepth >= 0.9999) {
             continue;
         }
         vec3 sampledViewPos = ReconstructViewPositionUVE(sampleUv, sampledDepth);
 
-        float rangeCheck = smoothstep(0.0, 1.0, uRadius / max(abs(centerViewPos.z - sampledViewPos.z), 0.0001));
+        float depthDelta = abs(centerViewPos.z - sampledViewPos.z);
+        if (depthDelta > uRadius * 2.5) {
+            continue;
+        }
+        float rangeCheck = smoothstep(0.0, 1.0, uRadius / max(depthDelta, 0.0001));
         occlusion += (sampledViewPos.z >= samplePos.z + uBias ? 1.0 : 0.0) * rangeCheck;
+        ++validSamples;
     }
-    float visibility = clamp(1.0 - (occlusion / float(sampleCount)) * max(uIntensity, 0.0), 0.0, 1.0);
+    float rawOcc = validSamples > 0 ? (occlusion / float(sampleCount)) : 0.0;
+    float visibility = clamp(1.0 - rawOcc * max(uIntensity, 0.0), 0.0, 1.0);
     visibility = pow(visibility, clamp(uPower, 0.1, 4.0));
+    if (isnan(visibility) || isinf(visibility)) {
+        visibility = 1.0;
+    }
+
+    // Edge fade prevents glancing angle blackouts at screen/viewport borders
+    vec2 edgeDist = min(vTexCoord, 1.0 - vTexCoord);
+    float edgeFade = smoothstep(0.0, 0.02, min(edgeDist.x, edgeDist.y));
+    visibility = mix(1.0, visibility, edgeFade);
+
     FragColor = vec4(vec3(visibility), 1.0);
 }
 #endif

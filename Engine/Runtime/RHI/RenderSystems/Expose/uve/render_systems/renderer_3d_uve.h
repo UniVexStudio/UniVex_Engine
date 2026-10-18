@@ -70,6 +70,8 @@ public:
     void SetPostProcessSettingsUVE(const PostProcessSettingsUVE& settings) override;
     void SetShadowBiasDefaultsUVE(float depthBias, float normalBias) noexcept override;
     void SetCullingSettingsUVE(const CullingSettingsUVE& settings) noexcept override;
+    void SetShadingModeUVE(std::int32_t shadingMode) noexcept override;
+    void SetScalabilityModeUVE(std::int32_t scalabilityMode) noexcept override;
     void SetUIRuntimeUVE(const UI::UIRuntimeUVE* uiRuntime) noexcept override;
     void SetPhysicsInterpolationAlphaUVE(float alpha) noexcept override;
 
