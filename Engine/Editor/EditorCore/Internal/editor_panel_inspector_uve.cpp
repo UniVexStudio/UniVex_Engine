@@ -128,7 +128,8 @@ void EditorUVE::DrawInspectorPanelUVE() {
         return;
     }
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
+    const EditorChromeLayoutUVE layout =
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
     // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change.
     ImGui::SetNextWindowPos(layout.inspectorPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.inspectorSize, ImGuiCond_Always);

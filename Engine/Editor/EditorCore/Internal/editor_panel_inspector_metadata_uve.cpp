@@ -52,13 +52,17 @@
 #include "uve/component/transform_component_uve.h"
 #include "uve/objects/3d/camera_3d_uve.h"
 #include "uve/component/visibility_component_uve.h"
+#include "uve/asset/material_asset_uve.h"
 #include "uve/core/engine_project_settings_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/color_uve.h"
 #include "uve/math/rect_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/objects/3d/bone_attachment_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/two_bone_ik_3d_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -687,54 +691,115 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
             edited = SetSelectedComponentPropertyUVE(entry, property, &value);
         }
     } else if (property.typeId == Scene::kPropertyTypeStringUVE) {
-        // A "file:ext,..." row also browses: the text stays editable, and Browse opens the
-        // floating picker on the file kinds the property declares.
-        constexpr std::string_view kFilePrefix = "file:";
-        const bool isFileRow = property.customDrawerId.rfind(kFilePrefix, 0U) == 0U;
-        if (isFileRow) {
-            // A browse that landed since last frame commits like a typed edit, before the field
-            // is drawn, so the new path shows at once.
-            const std::uint32_t widget = ImGui::GetID("##value");
-            if (const auto found = m_fileRowPendingPicks.find(widget); found != m_fileRowPendingPicks.end()) {
-                edited = SetSelectedComponentPropertyUVE(entry, property, &found->second);
-                m_fileRowPendingPicks.erase(found);
+        const bool isBoneProperty = (property.name == "boneName" || property.name == "rootBoneName" ||
+                                     property.name == "middleBoneName" || property.name == "endBoneName" ||
+                                     property.customDrawerId == "bone");
+        Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+        Scene::EntityUVE skeletonEntity = Scene::kInvalidEntityUVE;
+        if (isBoneProperty) {
+            if (entityManager.HasComponentUVE<Scene::BoneAttachment3DComponentUVE>(m_selectedEntity)) {
+                skeletonEntity = entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(m_selectedEntity).skeleton;
+            } else if (entityManager.HasComponentUVE<Scene::TwoBoneIK3DComponentUVE>(m_selectedEntity)) {
+                skeletonEntity = entityManager.GetComponentUVE<Scene::TwoBoneIK3DComponentUVE>(m_selectedEntity).skeleton;
+            }
+            if (skeletonEntity == Scene::kInvalidEntityUVE || !entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity)) {
+                Scene::EntityUVE current = m_selectedEntity;
+                Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+                while (TryGetDocumentParentUVE(current, parent) && parent != Scene::kInvalidEntityUVE) {
+                    if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(parent)) {
+                        skeletonEntity = parent;
+                        break;
+                    }
+                    current = parent;
+                }
+            }
+            if (skeletonEntity == Scene::kInvalidEntityUVE || !entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity)) {
+                for (const Scene::EntityUVE root : GetDocumentRootsUVE()) {
+                    if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(root)) {
+                        skeletonEntity = root;
+                        break;
+                    }
+                }
             }
         }
-        std::string value;
-        property.getValue(instance, &value);
-        // Committed once when the author finishes, so an edit is one history entry and clicking
-        // away keeps it. The bound is the one this row always had.
-        constexpr std::size_t kMaximumGenericStringBytesUVE = 255U;
-        if (isFileRow) {
-            ImGui::SetNextItemWidth(-80.0F);
-        }
-        if (const std::optional<std::string> committed =
-                DrawCommittedTextInputUVE("##value", value, false, 0.0F, kMaximumGenericStringBytesUVE);
-            committed.has_value()) {
-            edited = SetSelectedComponentPropertyUVE(entry, property, &*committed);
-        }
-        if (isFileRow) {
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Browse...")) {
-                FilePickerRequestUVE request;
-                request.mode = FilePickerModeUVE::Open;
-                request.title = property.displayName.empty() ? "Pick File" : property.displayName;
-                request.extensions = FileDrawerExtensionsUVE(property.customDrawerId);
-                const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-                request.startDirectory =
-                    ClampPickerStartDirectoryUVE(project, std::filesystem::path{value}.parent_path());
+
+        if (isBoneProperty && skeletonEntity != Scene::kInvalidEntityUVE &&
+            entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity) &&
+            !entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity).bones.empty()) {
+            const Scene::Skeleton3DComponentUVE& skel =
+                entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
+            std::string value;
+            property.getValue(instance, &value);
+            const std::string preview = value.empty() ? std::string{"[ <Select Bone> ]"} : value;
+            if (ImGui::BeginCombo("##value", preview.c_str())) {
+                if (ImGui::Selectable("[ <Clear / Unassigned> ]", value.empty())) {
+                    std::string emptyName{};
+                    edited = SetSelectedComponentPropertyUVE(entry, property, &emptyName);
+                }
+                ImGui::Separator();
+                for (std::size_t boneIdx = 0U; boneIdx < skel.bones.size(); ++boneIdx) {
+                    const Scene::SkeletonBoneUVE& bone = skel.bones[boneIdx];
+                    const bool isSelected = (bone.name == value);
+                    const std::string boneLabel = std::to_string(boneIdx) + ": " + bone.name + "##b_" + std::to_string(boneIdx);
+                    if (ImGui::Selectable(boneLabel.c_str(), isSelected)) {
+                        edited = SetSelectedComponentPropertyUVE(entry, property, &bone.name);
+                    }
+                    if (isSelected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        } else {
+            // A "file:ext,..." row also browses: the text stays editable, and Browse opens the
+            // floating picker on the file kinds the property declares.
+            constexpr std::string_view kFilePrefix = "file:";
+            const bool isFileRow = property.customDrawerId.rfind(kFilePrefix, 0U) == 0U;
+            if (isFileRow) {
+                // A browse that landed since last frame commits like a typed edit, before the field
+                // is drawn, so the new path shows at once.
                 const std::uint32_t widget = ImGui::GetID("##value");
-                request.onPick = [this, widget](const std::filesystem::path& absolute) {
-                    // Applies to the selection, re-resolved: whatever is selected when the pick
-                    // lands receives it.
-                    const Asset::ProjectFileSnapshotUVE current =
-                        m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-                    const std::filesystem::path relative = absolute.lexically_relative(current.contentRoot);
-                    m_fileRowPendingPicks[widget] = (relative.empty() || *relative.begin() == "..")
-                                                        ? absolute.generic_string()
-                                                        : relative.generic_string();
-                };
-                OpenFilePickerUVE(std::move(request));
+                if (const auto found = m_fileRowPendingPicks.find(widget); found != m_fileRowPendingPicks.end()) {
+                    edited = SetSelectedComponentPropertyUVE(entry, property, &found->second);
+                    m_fileRowPendingPicks.erase(found);
+                }
+            }
+            std::string value;
+            property.getValue(instance, &value);
+            // Committed once when the author finishes, so an edit is one history entry and clicking
+            // away keeps it. The bound is the one this row always had.
+            constexpr std::size_t kMaximumGenericStringBytesUVE = 255U;
+            if (isFileRow) {
+                ImGui::SetNextItemWidth(-80.0F);
+            }
+            if (const std::optional<std::string> committed =
+                    DrawCommittedTextInputUVE("##value", value, false, 0.0F, kMaximumGenericStringBytesUVE);
+                committed.has_value()) {
+                edited = SetSelectedComponentPropertyUVE(entry, property, &*committed);
+            }
+            if (isFileRow) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Browse...")) {
+                    FilePickerRequestUVE request;
+                    request.mode = FilePickerModeUVE::Open;
+                    request.title = property.displayName.empty() ? "Pick File" : property.displayName;
+                    request.extensions = FileDrawerExtensionsUVE(property.customDrawerId);
+                    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                    request.startDirectory =
+                        ClampPickerStartDirectoryUVE(project, std::filesystem::path{value}.parent_path());
+                    const std::uint32_t widget = ImGui::GetID("##value");
+                    request.onPick = [this, widget](const std::filesystem::path& absolute) {
+                        // Applies to the selection, re-resolved: whatever is selected when the pick
+                        // lands receives it.
+                        const Asset::ProjectFileSnapshotUVE current =
+                            m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                        const std::filesystem::path relative = absolute.lexically_relative(current.contentRoot);
+                        m_fileRowPendingPicks[widget] = (relative.empty() || *relative.begin() == "..")
+                                                            ? absolute.generic_string()
+                                                            : relative.generic_string();
+                    };
+                    OpenFilePickerUVE(std::move(request));
+                }
             }
         }
     } else if (property.typeId == Scene::kPropertyTypeAssetGuidUVE) {
@@ -861,12 +926,56 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
         m_assetPickerPendingPicks.erase(found);
     }
     const Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
-    std::string preview = "(none)";
+    std::string preview = "[ <Empty> ]";
     if (value != Asset::kInvalidAssetGuidUVE) {
         const std::filesystem::path path = database.ResolveUVE(value);
         preview = path.empty() ? "(missing asset)" : path.stem().string();
     }
     if (ImGui::BeginCombo(id, preview.c_str())) {
+        if (extension == ".uvmaterial") {
+            ImGui::TextDisabled("CREATE MATERIAL");
+            if (ImGui::Selectable("+ New StandardMaterial3D (PBR)")) {
+                const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                const std::filesystem::path matDir = project.contentRoot / "Materials";
+                std::error_code ec;
+                std::filesystem::create_directories(matDir, ec);
+                const std::filesystem::path matPath = MakeUniqueContentPathUVE(matDir, "M_Standard", ".uvmaterial");
+                Asset::MaterialAssetUVE mat{};
+                if (Asset::SaveMaterialAssetUVE(mat, matPath)) {
+                    picked = m_services->GetAssetDatabaseUVE().RegisterUVE(matPath);
+                    RefreshProjectFileIndexUVE();
+                }
+            }
+            if (ImGui::Selectable("+ New ORMMaterial3D")) {
+                const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                const std::filesystem::path matDir = project.contentRoot / "Materials";
+                std::error_code ec;
+                std::filesystem::create_directories(matDir, ec);
+                const std::filesystem::path matPath = MakeUniqueContentPathUVE(matDir, "M_ORM", ".uvmaterial");
+                Asset::MaterialAssetUVE mat{};
+                mat.roughness = 0.5F;
+                mat.metallic = 1.0F;
+                mat.occlusionStrength = 1.0F;
+                if (Asset::SaveMaterialAssetUVE(mat, matPath)) {
+                    picked = m_services->GetAssetDatabaseUVE().RegisterUVE(matPath);
+                    RefreshProjectFileIndexUVE();
+                }
+            }
+            if (ImGui::Selectable("+ New ShaderMaterial (Custom Shader)")) {
+                const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                const std::filesystem::path matDir = project.contentRoot / "Materials";
+                std::error_code ec;
+                std::filesystem::create_directories(matDir, ec);
+                const std::filesystem::path matPath = MakeUniqueContentPathUVE(matDir, "M_CustomShader", ".uvmaterial");
+                Asset::MaterialAssetUVE mat{};
+                mat.useCustomShaderCode = true;
+                if (Asset::SaveMaterialAssetUVE(mat, matPath)) {
+                    picked = m_services->GetAssetDatabaseUVE().RegisterUVE(matPath);
+                    RefreshProjectFileIndexUVE();
+                }
+            }
+            ImGui::Separator();
+        }
         if (ImGui::Selectable("Browse...")) {
             FilePickerRequestUVE request;
             request.mode = FilePickerModeUVE::Open;
@@ -880,10 +989,28 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             OpenFilePickerUVE(std::move(request));
             ImGui::CloseCurrentPopup();
         }
-        if (ImGui::Selectable("(none)", value == Asset::kInvalidAssetGuidUVE) &&
+        if (ImGui::Selectable("Quick Import...")) {
+            FilePickerRequestUVE request;
+            request.mode = FilePickerModeUVE::Open;
+            request.title = "Quick Import";
+            request.extensions = extension == ".uvmaterial" ? std::vector<std::string>{".png", ".jpg", ".jpeg", ".tga"}
+                                 : extension == ".uvmodel" ? std::vector<std::string>{".fbx", ".glb", ".gltf", ".obj"}
+                                                           : std::vector<std::string>{extension};
+            const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+            request.startDirectory = project.contentRoot;
+            request.onPick = [this](const std::filesystem::path& absolute) {
+                m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
+                RefreshProjectFileIndexUVE();
+            };
+            OpenFilePickerUVE(std::move(request));
+            ImGui::CloseCurrentPopup();
+        }
+        if (ImGui::Selectable("[ <Clear / Empty> ]", value == Asset::kInvalidAssetGuidUVE) &&
             value != Asset::kInvalidAssetGuidUVE) {
             picked = Asset::kInvalidAssetGuidUVE;
         }
+        ImGui::Separator();
+        ImGui::TextDisabled("PROJECT ASSETS");
         // Registered assets plus every project file of the kind, so a model imported in an
         // earlier session is offered too; picking an unregistered file registers it.
         struct CandidateUVE {

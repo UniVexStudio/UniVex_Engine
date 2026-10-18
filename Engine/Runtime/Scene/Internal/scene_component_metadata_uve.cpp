@@ -418,18 +418,55 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                     "None disables only ambient lighting; Flat Color uses Ambient Tint and Energy; Sky keeps "
                     "the existing hemispherical sky/ground fill; Environment Map samples the Sky Asset for "
                     "diffuse and specular ambient light."),
-                DeclareUVE<&WorldEnvironment3DComponentUVE::skyColor>("skyColor", "Sky Color",
-                                                                          kPropertyTypeColorUVE),
-                DeclareUVE<&WorldEnvironment3DComponentUVE::horizonColor>(
-                    "horizonColor", "Horizon Color", kPropertyTypeColorUVE),
-                DeclareUVE<&WorldEnvironment3DComponentUVE::groundColor>(
-                    "groundColor", "Ground Color", kPropertyTypeColorUVE),
-                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::skyCurve>(
-                                 "skyCurve", "Sky Curve", kPropertyTypeFloatUVE),
-                             0.001, 4.0, 0.01),
-                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::groundCurve>(
-                                 "groundCurve", "Ground Curve", kPropertyTypeFloatUVE),
-                             0.001, 4.0, 0.01),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::skyColor>(
+                        "skyColor", "Sky Color", kPropertyTypeColorUVE);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->ambientSource ==
+                               WorldEnvironmentAmbientSourceUVE::Sky;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::horizonColor>(
+                        "horizonColor", "Horizon Color", kPropertyTypeColorUVE);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->ambientSource ==
+                               WorldEnvironmentAmbientSourceUVE::Sky;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::groundColor>(
+                        "groundColor", "Ground Color", kPropertyTypeColorUVE);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->ambientSource ==
+                               WorldEnvironmentAmbientSourceUVE::Sky;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::skyCurve>(
+                                         "skyCurve", "Sky Curve", kPropertyTypeFloatUVE),
+                                     0.001, 4.0, 0.01);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->ambientSource ==
+                               WorldEnvironmentAmbientSourceUVE::Sky;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::groundCurve>(
+                                         "groundCurve", "Ground Curve", kPropertyTypeFloatUVE),
+                                     0.001, 4.0, 0.01);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->ambientSource ==
+                               WorldEnvironmentAmbientSourceUVE::Sky;
+                    };
+                    return property;
+                }(),
                 [] {
                     TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::ambientColor>(
                         "ambientColor", "Ambient Tint", kPropertyTypeColorUVE);

@@ -21,6 +21,7 @@
 
 #include <imgui.h>
 
+#include "uve/component/name_component_uve.h"
 #include "uve/editor/editor_content_catalogue_uve.h"
 #include "editor_chrome_layout_uve.h"
 #include "editor_object_icons_uve.h"
@@ -155,6 +156,17 @@ std::optional<std::filesystem::path> EditorUVE::RenameContentAssetUVE(const std:
     for (const Asset::AssetRecordUVE& record : assetDatabase.GetRegisteredAssetsUVE()) {
         if (record.path == file.lexically_normal()) {
             static_cast<void>(assetDatabase.RelocateUVE(record.guid, *target));
+        }
+    }
+    if (m_entityEditSession.has_value() && m_entityEditSession->assetPath == file) {
+        m_entityEditSession->assetPath = *target;
+        const Scene::EntityUVE entityRoot = GetEntityEditorRootUVE();
+        if (entityRoot != Scene::kInvalidEntityUVE) {
+            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+            const std::string newName = target->stem().string();
+            if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(entityRoot)) {
+                entityManager.GetComponentUVE<Scene::NameComponentUVE>(entityRoot).name = newName;
+            }
         }
     }
     return target;

@@ -167,7 +167,11 @@ void ApplySunToWorldEnvironmentFrameUVE(WorldEnvironmentFrameUVE& frame, const M
 
 struct WorldEnvironmentObjectDefinitionUVE final {
     static constexpr std::string_view defaultName = "WorldEnvironment";
-    WorldEnvironment3DComponentUVE environment{};
+    WorldEnvironment3DComponentUVE environment = [] {
+        WorldEnvironment3DComponentUVE env{};
+        env.ambientSource = WorldEnvironmentAmbientSourceUVE::None;
+        return env;
+    }();
 };
 
 void ApplyWorldEnvironmentObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
