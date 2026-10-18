@@ -21,6 +21,7 @@
 
 #include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/animation_graph_component_uve.h"
+#include "uve/component/name_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/core/uvscript_object_host_uve.h"
@@ -39,15 +40,25 @@ constexpr ImVec4 kCleanColourUVE{0.45F, 0.80F, 0.55F, 1.0F};
 
 Scene::EntityUVE EditorUVE::LoadEntityIntoDocumentUVE(const Asset::AssetGuidUVE guid) {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    const Scene::EntityUVE sceneRoot = EnsureDocumentSceneRootUVE();
     const Scene::EntityUVE root = m_services->GetPrefabSystemUVE().InstantiateUVE(
-        entityManager, m_services->GetSceneGraphUVE(), m_services->GetAssetDatabaseUVE(), guid, sceneRoot);
+        entityManager, m_services->GetSceneGraphUVE(), m_services->GetAssetDatabaseUVE(), guid, Scene::kInvalidEntityUVE);
     if (root == Scene::kInvalidEntityUVE) {
         return root;
     }
     // Edited as itself, not as an instance of itself: saving writes a plain tree.
     if (entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(root)) {
         entityManager.RemoveComponentUVE<Scene::PrefabInstanceComponentUVE>(root);
+    }
+    // Synchronize root entity name with the open asset filename stem
+    if (m_entityEditSession.has_value() && !m_entityEditSession->assetPath.empty()) {
+        const std::string assetStem = m_entityEditSession->assetPath.stem().string();
+        if (!assetStem.empty()) {
+            if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(root)) {
+                entityManager.GetComponentUVE<Scene::NameComponentUVE>(root).name = assetStem;
+            } else {
+                entityManager.AddComponentUVE<Scene::NameComponentUVE>(root, Scene::NameComponentUVE{assetStem});
+            }
+        }
     }
     InvalidateHierarchyFilterCacheUVE();
     SelectEntityUVE(root);
@@ -89,29 +100,33 @@ bool EditorUVE::OpenEntityEditorUVE(const std::filesystem::path& assetPath) {
         return false;
     }
 
-    ClearDocumentSceneUVE();
-    if (LoadEntityIntoDocumentUVE(session.guid) == Scene::kInvalidEntityUVE) {
-        // Could not read the entity: put the scene back as it was.
-        ClearDocumentSceneUVE();
-        if (!session.sceneWasEmpty) {
-            const std::vector<Scene::EntityUVE> restored =
-                m_services->GetSceneSerializerUVE().RestoreUVE(m_services->GetEntityManagerUVE(), session.sceneSnapshot);
-            RestoreSelectionUVE(ResolveSelectionPathsUVE(session.selectionBefore, restored));
-        }
-        m_sceneDirty = session.sceneDirtyBefore;
-        InvalidateHierarchyFilterCacheUVE();
-        return false;
-    }
-    ClearHistoryUVE();
-    m_sceneDirty = false;
-    // The script editor worked on scene objects; the entity brings its own.
-    CloseOpenUVScriptUVE();
-    // Nothing runs on its own while an entity is edited: it is saved as authored.
     if (m_simulationControl != nullptr) {
         session.simulationBefore = m_simulationControl->GetSimulationExecutionModeUVE();
         static_cast<void>(m_simulationControl->SetSimulationExecutionModeUVE(Core::SimulationExecutionModeUVE::Paused));
     }
     m_entityEditSession = std::move(session);
+
+    ClearDocumentSceneUVE();
+    const Scene::EntityUVE loadedRoot = LoadEntityIntoDocumentUVE(m_entityEditSession->guid);
+    if (loadedRoot == Scene::kInvalidEntityUVE) {
+        // Could not read the entity: put the scene back as it was.
+        ClearDocumentSceneUVE();
+        const EntityEditSessionUVE failedSession = std::move(*m_entityEditSession);
+        m_entityEditSession.reset();
+        if (!failedSession.sceneWasEmpty) {
+            const std::vector<Scene::EntityUVE> restored =
+                m_services->GetSceneSerializerUVE().RestoreUVE(m_services->GetEntityManagerUVE(), failedSession.sceneSnapshot);
+            RestoreSelectionUVE(ResolveSelectionPathsUVE(failedSession.selectionBefore, restored));
+        }
+        m_sceneDirty = failedSession.sceneDirtyBefore;
+        InvalidateHierarchyFilterCacheUVE();
+        return false;
+    }
+    m_entityEditSession->rootEntity = loadedRoot;
+    ClearHistoryUVE();
+    m_sceneDirty = false;
+    // The script editor worked on scene objects; the entity brings its own.
+    CloseOpenUVScriptUVE();
     return true;
 }
 
@@ -128,12 +143,13 @@ Scene::EntityUVE EditorUVE::GetEntityEditorRootUVE() {
         return Scene::kInvalidEntityUVE;
     }
     const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
-    if (sceneRoot == Scene::kInvalidEntityUVE) {
-        return Scene::kInvalidEntityUVE;
+    if (sceneRoot != Scene::kInvalidEntityUVE) {
+        const std::vector<Scene::EntityUVE> children =
+            m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), sceneRoot);
+        return children.size() == 1U ? children.front() : Scene::kInvalidEntityUVE;
     }
-    const std::vector<Scene::EntityUVE> children =
-        m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), sceneRoot);
-    return children.size() == 1U ? children.front() : Scene::kInvalidEntityUVE;
+    const std::vector<Scene::EntityUVE> roots = GetDocumentRootsUVE();
+    return roots.size() == 1U ? roots.front() : Scene::kInvalidEntityUVE;
 }
 
 bool EditorUVE::SaveEntityEditorUVE() {
@@ -167,10 +183,12 @@ bool EditorUVE::RevertEntityEditorUVE() {
     }
     m_componentPropertyPreview.reset();
     ClearDocumentSceneUVE();
-    if (LoadEntityIntoDocumentUVE(m_entityEditSession->guid) == Scene::kInvalidEntityUVE) {
+    const Scene::EntityUVE loadedRoot = LoadEntityIntoDocumentUVE(m_entityEditSession->guid);
+    if (loadedRoot == Scene::kInvalidEntityUVE) {
         m_contentStatusMessage = "Could not read " + m_entityEditSession->assetPath.filename().string() + " again.";
         return false;
     }
+    m_entityEditSession->rootEntity = loadedRoot;
     ClearHistoryUVE();
     m_sceneDirty = false;
     // Object handles are new; the script text goes back to what is on disk.
@@ -268,13 +286,15 @@ std::vector<Scene::EntityUVE> EditorUVE::CollectEntityEditorObjectsUVE() {
     if (!m_entityEditSession.has_value()) {
         return objects;
     }
-    const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
-    if (sceneRoot == Scene::kInvalidEntityUVE) {
-        return objects;
-    }
     // Depth first, children in their authored order: the order the Scene tree shows.
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    std::vector<Scene::EntityUVE> pending = m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, sceneRoot);
+    const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
+    std::vector<Scene::EntityUVE> pending;
+    if (sceneRoot != Scene::kInvalidEntityUVE) {
+        pending = m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, sceneRoot);
+    } else {
+        pending = GetDocumentRootsUVE();
+    }
     std::reverse(pending.begin(), pending.end());
     while (!pending.empty()) {
         const Scene::EntityUVE entity = pending.back();

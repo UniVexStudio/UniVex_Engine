@@ -35,8 +35,13 @@
 #include "editor_fonts_uve.h"
 #include "editor_object_icons_uve.h"
 
+#include "uve/component/light_emitter_component_uve.h"
 #include "uve/component/script_component_uve.h"
+#include "uve/component/transform_component_uve.h"
 #include "uve/editor/editor_settings_uve.h"
+#include "uve/math/quaternion_uve.h"
+#include "uve/objects/3d/world_environment_3d_uve.h"
+#include "uve/scene/objects/scene_object_registry_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -208,7 +213,8 @@ void EditorUVE::DrawViewportPanelUVE() {
     // fills the gap those two leave between them, matching the space actually visible on screen
     // rather than an arbitrary default ImGui would otherwise cascade this window into.
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
+    const EditorChromeLayoutUVE layout =
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
     // Always, not FirstUseEver: this is one of the 5 core structural panels that must tile the
     // screen with zero gaps/overlaps on every single launch, regardless of any stale imgui.ini
     // from a previous version of this layout (see the other 4 core panels' own identical comment
@@ -622,6 +628,118 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
         if (hoveredPhys) {
             ImGui::SetTooltip(physicsPaused ? "Resume physics and fixed simulation steps"
                                             : "Pause physics simulation in the viewport");
+        }
+    }
+
+    // ---- Preview Sun & Environment (Godot-style Preview Toolbar Button) ---------------------
+    const bool previewActive = m_viewportOverlayState.previewSun || m_viewportOverlayState.previewEnvironment;
+    const char* const previewLabel = "Preview \xe2\x96\xbe";
+    const ImVec2 previewTextSize = ImGui::CalcTextSize(previewLabel);
+    const float previewPillWidth = previewTextSize.x + kBubblePaddingXUVE * 2.0F + 6.0F;
+    const ImVec2 previewPillMin{physPillMax.x + kBubbleGapUVE, topY};
+    const ImVec2 previewPillMax{previewPillMin.x + previewPillWidth, previewPillMin.y + unifiedHeight};
+    {
+        ImGui::SetCursorScreenPos(previewPillMin);
+        const bool pressedPreview =
+            ImGui::InvisibleButton("##preview-sun-env-btn", ImVec2{previewPillWidth, unifiedHeight});
+        const bool hoveredPreview = ImGui::IsItemHovered();
+        drawList->AddRectFilled(previewPillMin, previewPillMax,
+                                previewActive
+                                    ? IM_COL32(45, 75, 120, 230)
+                                    : (hoveredPreview ? IM_COL32(30, 34, 44, 220) : IM_COL32(18, 21, 28, 200)),
+                                unifiedHeight * 0.5F);
+        drawList->AddRect(previewPillMin, previewPillMax,
+                          previewActive ? IM_COL32(90, 160, 245, 180) : IM_COL32(255, 255, 255, 24),
+                          unifiedHeight * 0.5F);
+        drawList->AddText(
+            ImVec2{previewPillMin.x + kBubblePaddingXUVE, previewPillMin.y + (unifiedHeight - previewTextSize.y) * 0.5F},
+            previewActive ? IM_COL32(240, 245, 255, 255) : IM_COL32(224, 228, 236, 255), previewLabel);
+        if (pressedPreview) {
+            ImGui::OpenPopup("##preview-sun-env-popup");
+        }
+        if (hoveredPreview) {
+            ImGui::SetTooltip("Preview Sun and Environment settings (Godot-style)");
+        }
+
+        if (ImGui::BeginPopup("##preview-sun-env-popup")) {
+            ImGui::TextDisabled("PREVIEW SUN");
+            ImGui::Checkbox("Preview Sun##chk", &m_viewportOverlayState.previewSun);
+            if (m_viewportOverlayState.previewSun) {
+                ImGui::SliderFloat("Azimuth##sun", &m_viewportOverlayState.previewSunAzimuth, -180.0F, 180.0F, "%.1f deg");
+                ImGui::SliderFloat("Altitude##sun", &m_viewportOverlayState.previewSunAltitude, -90.0F, 90.0F, "%.1f deg");
+                ImGui::SliderFloat("Energy##sun", &m_viewportOverlayState.previewSunEnergy, 0.0F, 10.0F, "%.2f");
+                ImGui::ColorEdit3("Color##sun", m_viewportOverlayState.previewSunColor.data());
+            }
+            if (ImGui::Button("Add Sun to Scene")) {
+                Scene::EntityUVE sunEntity =
+                    FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
+                if (sunEntity == Scene::kInvalidEntityUVE) {
+                    sunEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
+                }
+                if (sunEntity != Scene::kInvalidEntityUVE) {
+                    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+                    constexpr float kDegToRad = 0.01745329251994329577F;
+                    const float pitch = m_viewportOverlayState.previewSunAltitude * kDegToRad;
+                    const float yaw = m_viewportOverlayState.previewSunAzimuth * kDegToRad;
+                    Math::QuaternionUVE rot{};
+                    if (Math::TryMakeEulerUVE(Math::Vector3UVE{pitch, yaw, 0.0F}, rot)) {
+                        if (entityManager.HasComponentUVE<Scene::TransformComponentUVE>(sunEntity)) {
+                            auto tf = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(sunEntity);
+                            tf.localRotation = rot;
+                            m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, sunEntity, tf);
+                        }
+                    }
+                    if (entityManager.HasComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity)) {
+                        auto& emitter = entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity);
+                        emitter.color = Math::ColorUVE{m_viewportOverlayState.previewSunColor[0],
+                                                       m_viewportOverlayState.previewSunColor[1],
+                                                       m_viewportOverlayState.previewSunColor[2]};
+                        emitter.energy = m_viewportOverlayState.previewSunEnergy;
+                        emitter.shadowEnabled = true;
+                    }
+                    m_sceneDirty = true;
+                    SelectEntityUVE(sunEntity);
+                    m_contentStatusMessage = "Configured and added DirectionalLight3D to the scene.";
+                }
+            }
+
+            ImGui::Separator();
+            ImGui::TextDisabled("PREVIEW ENVIRONMENT");
+            ImGui::Checkbox("Preview Environment##chk", &m_viewportOverlayState.previewEnvironment);
+            if (m_viewportOverlayState.previewEnvironment) {
+                ImGui::ColorEdit3("Sky Color##env", m_viewportOverlayState.previewSkyColor.data());
+                ImGui::ColorEdit3("Horizon Color##env", m_viewportOverlayState.previewHorizonColor.data());
+                ImGui::ColorEdit3("Ground Color##env", m_viewportOverlayState.previewGroundColor.data());
+            }
+            if (ImGui::Button("Add Environment to Scene")) {
+                Scene::EntityUVE envEntity =
+                    FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D);
+                if (envEntity == Scene::kInvalidEntityUVE) {
+                    envEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D);
+                }
+                if (envEntity != Scene::kInvalidEntityUVE) {
+                    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+                    if (entityManager.HasComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity)) {
+                        auto& env = entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity);
+                        env.ambientSource = Scene::WorldEnvironmentAmbientSourceUVE::Sky;
+                        env.skyColor = Math::Vector3UVE{m_viewportOverlayState.previewSkyColor[0],
+                                                        m_viewportOverlayState.previewSkyColor[1],
+                                                        m_viewportOverlayState.previewSkyColor[2]};
+                        env.horizonColor = Math::Vector3UVE{m_viewportOverlayState.previewHorizonColor[0],
+                                                            m_viewportOverlayState.previewHorizonColor[1],
+                                                            m_viewportOverlayState.previewHorizonColor[2]};
+                        env.groundColor = Math::Vector3UVE{m_viewportOverlayState.previewGroundColor[0],
+                                                           m_viewportOverlayState.previewGroundColor[1],
+                                                           m_viewportOverlayState.previewGroundColor[2]};
+                        env.ambientEnergy = 1.0F;
+                        env.postProcessingEnabled = true;
+                    }
+                    m_sceneDirty = true;
+                    SelectEntityUVE(envEntity);
+                    m_contentStatusMessage = "Configured and added WorldEnvironment to the scene.";
+                }
+            }
+            ImGui::EndPopup();
         }
     }
 }

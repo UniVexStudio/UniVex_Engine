@@ -98,7 +98,9 @@ constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
 /// viewport keeps its minimum.
 [[nodiscard]] inline EditorChromeLayoutUVE ComputeEditorChromeLayoutUVE(const ImGuiViewport& viewport,
                                                                         const bool bottomDockVisible,
-                                                                        const float dockHeight = kAssetsPanelHeightUVE) {
+                                                                        const float dockHeight = kAssetsPanelHeightUVE,
+                                                                        const float sceneWidthCustom = -1.0F,
+                                                                        const float inspectorWidthCustom = -1.0F) {
     const float originX = viewport.WorkPos.x;
     const float originY = viewport.WorkPos.y;
     const float totalWidth = viewport.WorkSize.x;
@@ -115,10 +117,24 @@ constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
     const float dock =
         bottomDockVisible ? std::clamp(dockHeight, kMinimumBottomDockHeightUVE, maximumDock) : 0.0F;
 
-    const float sceneWidth =
+    const float defaultSceneWidth =
         std::clamp(totalWidth * kScenePanelWidthFractionUVE, kScenePanelWidthMinUVE, kScenePanelWidthMaxUVE);
-    const float inspectorWidth = std::clamp(totalWidth * kInspectorPanelWidthFractionUVE,
-                                            kInspectorPanelWidthMinUVE, kInspectorPanelWidthMaxUVE);
+    const float defaultInspectorWidth = std::clamp(totalWidth * kInspectorPanelWidthFractionUVE,
+                                                   kInspectorPanelWidthMinUVE, kInspectorPanelWidthMaxUVE);
+
+    float sceneWidth = defaultSceneWidth;
+    if (sceneWidthCustom > 0.0F) {
+        const float minScene = 140.0F;
+        const float maxScene = std::max(minScene, totalWidth * 0.45F);
+        sceneWidth = std::clamp(sceneWidthCustom, minScene, maxScene);
+    }
+
+    float inspectorWidth = defaultInspectorWidth;
+    if (inspectorWidthCustom > 0.0F) {
+        const float minInspector = 180.0F;
+        const float maxInspector = std::max(minInspector, totalWidth * 0.45F);
+        inspectorWidth = std::clamp(inspectorWidthCustom, minInspector, maxInspector);
+    }
     const float viewportWidth =
         std::max(kMinimumViewportWidthUVE, totalWidth - sceneWidth - inspectorWidth);
     const float top = originY + chromeHeight;

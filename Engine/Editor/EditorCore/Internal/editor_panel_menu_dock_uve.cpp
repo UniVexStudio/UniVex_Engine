@@ -320,7 +320,7 @@ void EditorUVE::DrawMenuBarUVE() {
     const bool sidePanelsShown = m_activeWorkspace != EditorWorkspaceUVE::Scripting && !m_entityEditSession.has_value() &&
                                  !m_retargetPreview.has_value();
     const EditorChromeLayoutUVE stripLayout =
-        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
     const ImVec2 stripPos = sidePanelsShown ? stripLayout.viewportHeaderPos
                                             : ImVec2{mainViewport->WorkPos.x, mainViewport->WorkPos.y + kEditorTitleBarHeightUVE};
     const ImVec2 stripSize = sidePanelsShown ? stripLayout.viewportHeaderSize : ImVec2{mainViewport->WorkSize.x, kEditorToolbarHeightUVE};
@@ -525,7 +525,8 @@ void EditorUVE::DrawBottomDockContentUVE() {
     }
 
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
+    const EditorChromeLayoutUVE layout =
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
     // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change. This
     // window is the Content Browser's mutually-exclusive alternate, so it shares the exact same
     // bottom rect (via the centralized layout helper) and re-tiling guarantee.
@@ -582,11 +583,57 @@ void EditorUVE::DrawBottomDockContentUVE() {
 void EditorUVE::DrawBottomDockTabBarUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
-        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
     constexpr ImGuiWindowFlags stripFlags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse |
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
+
+    // The splitter between the outliner and the viewport: drag horizontally to resize.
+    if (m_scenePanelVisible) {
+        constexpr float kGripWidth = 6.0F;
+        ImGui::SetNextWindowPos(ImVec2{layout.scenePos.x + layout.sceneSize.x - (kGripWidth * 0.5F), layout.scenePos.y},
+                                ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2{kGripWidth, layout.sceneSize.y}, ImGuiCond_Always);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2{1.0F, 1.0F});
+        ImGui::SetNextWindowBgAlpha(0.0F);
+        if (ImGui::Begin("##left-scene-splitter", nullptr, stripFlags)) {
+            ImGui::InvisibleButton("##grip-left", ImVec2{kGripWidth, layout.sceneSize.y});
+            if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            }
+            if (ImGui::IsItemActive()) {
+                m_scenePanelWidth = std::clamp(m_scenePanelWidth + ImGui::GetIO().MouseDelta.x, 140.0F,
+                                               mainViewport->WorkSize.x * 0.45F);
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+    }
+
+    // The splitter between the viewport and the inspector: drag horizontally to resize.
+    if (m_inspectorPanelVisible) {
+        constexpr float kGripWidth = 6.0F;
+        ImGui::SetNextWindowPos(ImVec2{layout.inspectorPos.x - (kGripWidth * 0.5F), layout.inspectorPos.y},
+                                ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2{kGripWidth, layout.inspectorSize.y}, ImGuiCond_Always);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2{1.0F, 1.0F});
+        ImGui::SetNextWindowBgAlpha(0.0F);
+        if (ImGui::Begin("##right-inspector-splitter", nullptr, stripFlags)) {
+            ImGui::InvisibleButton("##grip-right", ImVec2{kGripWidth, layout.inspectorSize.y});
+            if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            }
+            if (ImGui::IsItemActive()) {
+                m_inspectorPanelWidth = std::clamp(m_inspectorPanelWidth - ImGui::GetIO().MouseDelta.x, 180.0F,
+                                                   mainViewport->WorkSize.x * 0.45F);
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+    }
 
     // The splitter between the viewport and the dock: drag its edge to resize, like any panel seam.
     if (m_bottomDockVisible) {
@@ -662,7 +709,7 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
 void EditorUVE::DrawConsoleDockUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
-        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
     ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
@@ -730,7 +777,7 @@ const Core::DiagnosticCaptureBundleUVE& EditorUVE::ProfilerBundleUVE() const noe
 void EditorUVE::DrawCaptureDockUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
-        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
     ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
@@ -868,7 +915,7 @@ static std::uint64_t ProfilerNowNsUVE() {
 void EditorUVE::DrawProfilerDockUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
-        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
     ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |

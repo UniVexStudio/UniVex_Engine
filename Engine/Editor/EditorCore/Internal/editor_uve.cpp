@@ -2484,23 +2484,23 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneObjectUVE(
     const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
     const bool dirtyBefore = m_sceneDirty;
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    const Scene::EntityUVE entity = CreateSceneObjectEntityInternalUVE(kind);
-    if (entity == Scene::kInvalidEntityUVE) {
-        return Scene::kInvalidEntityUVE;
-    }
 
     // New objects join the hierarchy instead of becoming document roots, and are placed before the
     // snapshot below is taken, so undo and redo restore the same place.
     Scene::EntityUVE parentObject = explicitParent;
-    if (parentObject == Scene::kInvalidEntityUVE || !IsDocumentEntityUVE(parentObject)) {
-        parentObject = ResolveNewObjectParentForUVE(kind);
-    }
     if (m_entityEditSession.has_value()) {
         const Scene::EntityUVE entityRoot = GetEntityEditorRootUVE();
-        if (entityRoot != Scene::kInvalidEntityUVE &&
-            (parentObject == Scene::kInvalidEntityUVE || parentObject == GetDocumentSceneRootUVE())) {
+        if (parentObject == Scene::kInvalidEntityUVE || !IsDocumentEntityUVE(parentObject) ||
+            parentObject == GetDocumentSceneRootUVE()) {
             parentObject = entityRoot;
         }
+    } else if (parentObject == Scene::kInvalidEntityUVE || !IsDocumentEntityUVE(parentObject)) {
+        parentObject = ResolveNewObjectParentForUVE(kind);
+    }
+
+    const Scene::EntityUVE entity = CreateSceneObjectEntityInternalUVE(kind);
+    if (entity == Scene::kInvalidEntityUVE) {
+        return Scene::kInvalidEntityUVE;
     }
     if (parentObject != Scene::kInvalidEntityUVE) {
         m_services->GetSceneGraphUVE().SetParentUVE(entityManager, entity, parentObject);
@@ -2534,28 +2534,20 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneObjectUVE(
                 Scene::BoneAttachment3DComponentUVE attachment =
                     entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(entity);
                 attachment.skeleton = foundSkeleton;
-                const Scene::Skeleton3DComponentUVE& skel =
-                    entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(foundSkeleton);
-                if (!skel.bones.empty()) {
-                    attachment.boneIndex = 0U;
-                    attachment.boneName = skel.bones.front().name;
-                }
+                attachment.boneIndex = Scene::kInvalidSkeletonBoneIndexUVE;
+                attachment.boneName.clear();
                 entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(entity) = attachment;
             } else if (kind == Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D &&
                        entityManager.HasComponentUVE<Scene::TwoBoneIK3DComponentUVE>(entity)) {
                 Scene::TwoBoneIK3DComponentUVE ik =
                     entityManager.GetComponentUVE<Scene::TwoBoneIK3DComponentUVE>(entity);
                 ik.skeleton = foundSkeleton;
-                const Scene::Skeleton3DComponentUVE& skel =
-                    entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(foundSkeleton);
-                if (skel.bones.size() >= 3U) {
-                    ik.rootBoneIndex = 0U;
-                    ik.rootBoneName = skel.bones[0].name;
-                    ik.middleBoneIndex = 1U;
-                    ik.middleBoneName = skel.bones[1].name;
-                    ik.endBoneIndex = 2U;
-                    ik.endBoneName = skel.bones[2].name;
-                }
+                ik.rootBoneIndex = Scene::kInvalidSkeletonBoneIndexUVE;
+                ik.rootBoneName.clear();
+                ik.middleBoneIndex = Scene::kInvalidSkeletonBoneIndexUVE;
+                ik.middleBoneName.clear();
+                ik.endBoneIndex = Scene::kInvalidSkeletonBoneIndexUVE;
+                ik.endBoneName.clear();
                 entityManager.GetComponentUVE<Scene::TwoBoneIK3DComponentUVE>(entity) = ik;
             }
         }

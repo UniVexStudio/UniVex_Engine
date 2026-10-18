@@ -149,7 +149,8 @@ void EditorUVE::DrawHierarchyPanelUVE() {
         return;
     }
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
+    const EditorChromeLayoutUVE layout =
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
     // Always, not FirstUseEver: this is one of the 5 core structural panels that must tile the
     // screen with zero gaps/overlaps on every single launch, regardless of any stale imgui.ini
     // from a previous version of this layout - an earlier version of this code used FirstUseEver
@@ -215,9 +216,15 @@ void EditorUVE::DrawHierarchyBodyUVE() {
         // In the Entity Editor the entity is the top of the tree; the scene root is not shown.
         if (m_entityEditSession.has_value()) {
             const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
-            for (const Scene::EntityUVE top :
-                 m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), sceneRoot)) {
-                DrawHierarchyObjectUVE(top);
+            if (sceneRoot != Scene::kInvalidEntityUVE) {
+                for (const Scene::EntityUVE top :
+                     m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), sceneRoot)) {
+                    DrawHierarchyObjectUVE(top);
+                }
+            } else {
+                for (const Scene::EntityUVE root : GetDocumentRootsUVE()) {
+                    DrawHierarchyObjectUVE(root);
+                }
             }
         } else if (GetDocumentViewportUVE() != Scene::kInvalidEntityUVE) {
             // The level: the scene root is not shown; its Viewport, sun and environment are the top.
@@ -236,10 +243,11 @@ void EditorUVE::DrawHierarchyBodyUVE() {
             // The hint is for an empty scene only; once there are objects the rest of the panel is still
             // the drop area for "move to the top", just without words in the way.
             const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
-            const bool sceneEmpty = sceneRoot == Scene::kInvalidEntityUVE ||
-                                    m_services->GetSceneGraphUVE()
-                                        .GetChildrenUVE(m_services->GetEntityManagerUVE(), sceneRoot)
-                                        .empty();
+            const bool sceneEmpty = sceneRoot == Scene::kInvalidEntityUVE
+                                        ? GetDocumentRootsUVE().empty()
+                                        : m_services->GetSceneGraphUVE()
+                                              .GetChildrenUVE(m_services->GetEntityManagerUVE(), sceneRoot)
+                                              .empty();
             if (sceneEmpty && !m_entityEditSession.has_value()) {
                 ImGui::Separator();
                 ImGui::TextDisabled("Drop entity here to make it a root");

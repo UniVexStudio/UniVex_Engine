@@ -521,6 +521,15 @@ public:
         bool is2DMode = false;
         int shadingMode = 0;
         bool physicsPaused = false;
+        bool previewSun = true;
+        bool previewEnvironment = true;
+        float previewSunAzimuth = 45.0F;
+        float previewSunAltitude = 45.0F;
+        float previewSunEnergy = 1.0F;
+        std::array<float, 3> previewSunColor{1.0F, 1.0F, 1.0F};
+        std::array<float, 3> previewSkyColor{0.31F, 0.54F, 0.91F};
+        std::array<float, 3> previewHorizonColor{0.78F, 0.86F, 0.94F};
+        std::array<float, 3> previewGroundColor{0.24F, 0.21F, 0.18F};
     };
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available
@@ -1327,6 +1336,7 @@ private:
     struct EntityEditSessionUVE final {
         std::filesystem::path assetPath;
         Asset::AssetGuidUVE guid = Asset::kInvalidAssetGuidUVE;
+        Scene::EntityUVE rootEntity = Scene::kInvalidEntityUVE;
         Scene::SceneSnapshotUVE sceneSnapshot;
         bool sceneWasEmpty = false;
         bool sceneDirtyBefore = false;
@@ -2647,6 +2657,8 @@ private:
     bool m_bottomDockVisible = true;
     /// The dock body's height, dragged from its top edge; the layout clamps it (kAssetsPanelHeightUVE default).
     float m_bottomDockHeight = 192.0F;
+    float m_scenePanelWidth = 240.0F;
+    float m_inspectorPanelWidth = 320.0F;
     std::array<char, 512> m_consoleInput{};
     bool m_consoleScrollToBottom = false;
     bool m_viewportPanelVisible = true;

@@ -260,7 +260,8 @@ bool SidebarSectionUVE(const char* id, const char* icon, const std::string& titl
 
 void EditorUVE::DrawContentBrowserPanelUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
+    const EditorChromeLayoutUVE layout =
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
     ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
     // The dock tab strip along the bottom names this panel, so it has no title bar of its own: the
