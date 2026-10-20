@@ -115,6 +115,7 @@ add_executable(uve_core_tests
     Core/Asset/project_file_index_uve_tests.cpp
     Core/Asset/resource_dependency_graph_uve_tests.cpp
     Core/Asset/animation_clip_asset_uve_tests.cpp
+    Core/Asset/animation_clip_compression_uve_tests.cpp
     Core/Asset/data_table_uve_tests.cpp
     Core/Asset/data_table_asset_uve_tests.cpp
     Core/Asset/data_table_asset_manager_uve_tests.cpp
