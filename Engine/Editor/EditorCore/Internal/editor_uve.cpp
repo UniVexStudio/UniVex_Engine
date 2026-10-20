@@ -2362,6 +2362,10 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::TwoBoneIK3DObjectDefinitionUVE{},
                                                             Scene::ApplyTwoBoneIK3DObjectDefinitionUVE);
             break;
+        case Scene::Objects::SceneObjectKindUVE::FullBodyIK3D:
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::FullBodyIK3DObjectDefinitionUVE{},
+                                                            Scene::ApplyFullBodyIK3DObjectDefinitionUVE);
+            break;
         // SpringArm3D carries its own component like its neighbours, but its recipe
         // (Object3D baseline plus seeding currentLength to the authored armLength the same way the
         // deserializer seeds it) is a definition's worth of behaviour, so it reads like the rest.
@@ -2549,6 +2553,14 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneObjectUVE(
                 ik.endBoneIndex = Scene::kInvalidSkeletonBoneIndexUVE;
                 ik.endBoneName.clear();
                 entityManager.GetComponentUVE<Scene::TwoBoneIK3DComponentUVE>(entity) = ik;
+            } else if (kind == Scene::Objects::SceneObjectKindUVE::FullBodyIK3D &&
+                       entityManager.HasComponentUVE<Scene::FullBodyIK3DComponentUVE>(entity)) {
+                Scene::FullBodyIK3DComponentUVE solve =
+                    entityManager.GetComponentUVE<Scene::FullBodyIK3DComponentUVE>(entity);
+                solve.skeleton = foundSkeleton;
+                solve.rootBoneIndex = Scene::kInvalidSkeletonBoneIndexUVE;
+                solve.rootBoneName.clear();
+                entityManager.GetComponentUVE<Scene::FullBodyIK3DComponentUVE>(entity) = solve;
             }
         }
     }
