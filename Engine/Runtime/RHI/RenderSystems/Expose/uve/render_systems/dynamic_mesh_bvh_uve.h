@@ -55,6 +55,9 @@ public:
         std::int32_t leftChild = kInvalidNodeIndex;
         std::int32_t rightChild = kInvalidNodeIndex;
         std::int32_t parentIndex = kInvalidNodeIndex;
+        /// Subtree height, leaves at 0. Maintained bottom-up by every refit so insertion-time
+        /// rebalancing can compare sibling heights in O(1) instead of walking subtrees.
+        std::int32_t height = 0;
         std::array<EntityEntry, kLeafCapacity> entries{};
         std::uint32_t entryCount = 0U;
 
@@ -166,6 +169,16 @@ private:
 
     [[nodiscard]] std::int32_t FindBestLeafForInsertion(const Math::AabbUVE& bounds) const noexcept;
     void SplitLeaf(std::int32_t leafIndex, const EntityEntry& newEntry);
+
+    /// Walks from a node to the root, rotating wherever sibling subtree heights differ by two
+    /// or more (AVL-style). Bounds and heights are refit along the way, so the tree stays
+    /// O(log N) deep under ordered incremental insertion instead of degenerating into a spine.
+    /// Leaf content never moves during a rotation, so the entity-to-leaf map stays valid.
+    void RebalanceTowardRootUVE(std::int32_t nodeIndex) noexcept;
+
+    /// Promotes the taller grandchild of `nodeIndex`'s heavier child, taking that child's place
+    /// in the tree. `heavyIsLeft` selects which child of `nodeIndex` is the tall one.
+    void RotateHeavyChildUVE(std::int32_t nodeIndex, bool heavyIsLeft) noexcept;
 
     std::vector<Node> m_nodes;
     std::unordered_map<Scene::EntityUVE, std::int32_t> m_entityToLeafNode;

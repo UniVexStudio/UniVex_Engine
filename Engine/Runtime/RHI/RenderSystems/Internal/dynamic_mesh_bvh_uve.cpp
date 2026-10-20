@@ -168,6 +168,9 @@ std::int32_t DynamicMeshBvhUVE::BuildRecursive(std::vector<EntityEntry>& entries
     internalNode.entryCount = 0U;
     internalNode.bounds = m_nodes[static_cast<std::size_t>(leftChild)].bounds.UnionUVE(
         m_nodes[static_cast<std::size_t>(rightChild)].bounds);
+    const std::int32_t leftHeight = m_nodes[static_cast<std::size_t>(leftChild)].height;
+    const std::int32_t rightHeight = m_nodes[static_cast<std::size_t>(rightChild)].height;
+    internalNode.height = 1 + (leftHeight > rightHeight ? leftHeight : rightHeight);
 
     return internalIndex;
 }
@@ -202,6 +205,7 @@ void DynamicMeshBvhUVE::RefitFromLeafUVE(const std::size_t leafIndex) noexcept {
     while (current != kInvalidNodeIndex && static_cast<std::size_t>(current) < m_nodes.size()) {
         Node& node = m_nodes[static_cast<std::size_t>(current)];
         if (node.IsLeaf()) {
+            node.height = 0;
             if (node.entryCount > 0U) {
                 Math::AabbUVE bounds = node.entries[0].bounds;
                 for (std::uint32_t i = 1U; i < node.entryCount; ++i) {
@@ -215,12 +219,18 @@ void DynamicMeshBvhUVE::RefitFromLeafUVE(const std::size_t leafIndex) noexcept {
             const bool hasRight = node.rightChild != kInvalidNodeIndex &&
                                   static_cast<std::size_t>(node.rightChild) < m_nodes.size();
             if (hasLeft && hasRight) {
-                node.bounds = m_nodes[static_cast<std::size_t>(node.leftChild)].bounds.UnionUVE(
-                    m_nodes[static_cast<std::size_t>(node.rightChild)].bounds);
+                const Node& leftNode = m_nodes[static_cast<std::size_t>(node.leftChild)];
+                const Node& rightNode = m_nodes[static_cast<std::size_t>(node.rightChild)];
+                node.bounds = leftNode.bounds.UnionUVE(rightNode.bounds);
+                node.height = 1 + (leftNode.height > rightNode.height ? leftNode.height : rightNode.height);
             } else if (hasLeft) {
-                node.bounds = m_nodes[static_cast<std::size_t>(node.leftChild)].bounds;
+                const Node& leftNode = m_nodes[static_cast<std::size_t>(node.leftChild)];
+                node.bounds = leftNode.bounds;
+                node.height = 1 + leftNode.height;
             } else if (hasRight) {
-                node.bounds = m_nodes[static_cast<std::size_t>(node.rightChild)].bounds;
+                const Node& rightNode = m_nodes[static_cast<std::size_t>(node.rightChild)];
+                node.bounds = rightNode.bounds;
+                node.height = 1 + rightNode.height;
             }
         }
         current = node.parentIndex;
@@ -357,6 +367,94 @@ void DynamicMeshBvhUVE::SplitLeaf(const std::int32_t leafIndex, const EntityEntr
 
     ++m_entityCount;
     RefitFromLeafUVE(static_cast<std::size_t>(leafIndex));
+    RebalanceTowardRootUVE(leafIndex);
+}
+
+void DynamicMeshBvhUVE::RebalanceTowardRootUVE(const std::int32_t nodeIndex) noexcept {
+    std::int32_t current = nodeIndex;
+    while (current != kInvalidNodeIndex && static_cast<std::size_t>(current) < m_nodes.size()) {
+        const std::int32_t parentIndex = m_nodes[static_cast<std::size_t>(current)].parentIndex;
+        if (parentIndex == kInvalidNodeIndex || static_cast<std::size_t>(parentIndex) >= m_nodes.size()) {
+            break;
+        }
+        const Node& parent = m_nodes[static_cast<std::size_t>(parentIndex)];
+        const std::int32_t leftHeight = parent.leftChild != kInvalidNodeIndex
+                                            ? m_nodes[static_cast<std::size_t>(parent.leftChild)].height
+                                            : -1;
+        const std::int32_t rightHeight = parent.rightChild != kInvalidNodeIndex
+                                             ? m_nodes[static_cast<std::size_t>(parent.rightChild)].height
+                                             : -1;
+        if (leftHeight >= rightHeight + 2) {
+            RotateHeavyChildUVE(parentIndex, true);
+        } else if (rightHeight >= leftHeight + 2) {
+            RotateHeavyChildUVE(parentIndex, false);
+        }
+        current = parentIndex;
+    }
+}
+
+void DynamicMeshBvhUVE::RotateHeavyChildUVE(const std::int32_t nodeIndex, const bool heavyIsLeft) noexcept {
+    if (nodeIndex < 0 || static_cast<std::size_t>(nodeIndex) >= m_nodes.size()) {
+        return;
+    }
+    const std::int32_t heavyIndex =
+        heavyIsLeft ? m_nodes[static_cast<std::size_t>(nodeIndex)].leftChild
+                    : m_nodes[static_cast<std::size_t>(nodeIndex)].rightChild;
+    if (heavyIndex == kInvalidNodeIndex || static_cast<std::size_t>(heavyIndex) >= m_nodes.size()) {
+        return;
+    }
+    Node& heavy = m_nodes[static_cast<std::size_t>(heavyIndex)];
+    if (heavy.IsLeaf()) {
+        return; // Nothing to promote; a leaf sibling pair cannot differ in height by two.
+    }
+
+    // Promote whichever grandchild stands taller (the left one wins ties).
+    const std::int32_t leftGrandChild = heavy.leftChild;
+    const std::int32_t rightGrandChild = heavy.rightChild;
+    const std::int32_t leftHeight = leftGrandChild != kInvalidNodeIndex
+                                        ? m_nodes[static_cast<std::size_t>(leftGrandChild)].height
+                                        : -1;
+    const std::int32_t rightHeight = rightGrandChild != kInvalidNodeIndex
+                                         ? m_nodes[static_cast<std::size_t>(rightGrandChild)].height
+                                         : -1;
+    const bool promoteLeft = leftHeight >= rightHeight;
+    const std::int32_t demotedIndex = promoteLeft ? rightGrandChild : leftGrandChild;
+
+    const std::int32_t grandParentIndex = m_nodes[static_cast<std::size_t>(nodeIndex)].parentIndex;
+
+    // The demoted grandchild takes the heavy child's old slot under nodeIndex.
+    if (heavyIsLeft) {
+        m_nodes[static_cast<std::size_t>(nodeIndex)].leftChild = demotedIndex;
+    } else {
+        m_nodes[static_cast<std::size_t>(nodeIndex)].rightChild = demotedIndex;
+    }
+    if (demotedIndex != kInvalidNodeIndex) {
+        m_nodes[static_cast<std::size_t>(demotedIndex)].parentIndex = nodeIndex;
+    }
+
+    // nodeIndex hangs under the heavy child, in the slot the demoted grandchild vacated.
+    if (promoteLeft) {
+        m_nodes[static_cast<std::size_t>(heavyIndex)].rightChild = nodeIndex;
+    } else {
+        m_nodes[static_cast<std::size_t>(heavyIndex)].leftChild = nodeIndex;
+    }
+    m_nodes[static_cast<std::size_t>(nodeIndex)].parentIndex = heavyIndex;
+
+    // The heavy child takes nodeIndex's place in the tree.
+    m_nodes[static_cast<std::size_t>(heavyIndex)].parentIndex = grandParentIndex;
+    if (grandParentIndex != kInvalidNodeIndex && static_cast<std::size_t>(grandParentIndex) < m_nodes.size()) {
+        if (m_nodes[static_cast<std::size_t>(grandParentIndex)].leftChild == nodeIndex) {
+            m_nodes[static_cast<std::size_t>(grandParentIndex)].leftChild = heavyIndex;
+        } else if (m_nodes[static_cast<std::size_t>(grandParentIndex)].rightChild == nodeIndex) {
+            m_nodes[static_cast<std::size_t>(grandParentIndex)].rightChild = heavyIndex;
+        }
+    } else {
+        m_root = heavyIndex;
+    }
+
+    // nodeIndex sits deeper now; the refit walks from it up to the root, repairing bounds and
+    // heights across the rotated subtree and every ancestor above it.
+    RefitFromLeafUVE(static_cast<std::size_t>(nodeIndex));
 }
 
 void DynamicMeshBvhUVE::InsertOrUpdateUVE(const Scene::EntityUVE entity, const Math::AabbUVE& worldBounds) {
@@ -407,6 +505,7 @@ void DynamicMeshBvhUVE::InsertOrUpdateUVE(const Scene::EntityUVE entity, const M
         m_entityToLeafNode[entity] = targetLeafIndex;
         ++m_entityCount;
         RefitFromLeafUVE(static_cast<std::size_t>(targetLeafIndex));
+        RebalanceTowardRootUVE(targetLeafIndex);
     } else {
         SplitLeaf(targetLeafIndex, newEntry);
     }
@@ -482,6 +581,7 @@ bool DynamicMeshBvhUVE::RemoveEntityUVE(const Scene::EntityUVE entity) {
             m_nodes[static_cast<std::size_t>(siblingIndex)].parentIndex = grandParentIndex;
         }
         RefitFromLeafUVE(static_cast<std::size_t>(siblingIndex));
+        RebalanceTowardRootUVE(siblingIndex);
     }
 
     FreeNode(leafIndex);
