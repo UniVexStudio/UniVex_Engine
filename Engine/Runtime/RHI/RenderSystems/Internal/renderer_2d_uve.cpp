@@ -21,6 +21,7 @@
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/objects/2d/sprite_2d_uve.h"
+#include "uve/objects/2d/tile_parallax_sprite_2d_uve.h"
 #include "uve/rhi/i_command_buffer_uve.h"
 #include "uve/rhi_shader/built_in_shaders_uve.h"
 #include "uve/rhi_shader/shader_program_desc_uve.h"
