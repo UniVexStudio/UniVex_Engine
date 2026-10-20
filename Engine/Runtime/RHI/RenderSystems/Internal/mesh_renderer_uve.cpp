@@ -2,6 +2,7 @@
 
 #include "uve/render_systems/mesh_renderer_uve.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -297,13 +298,14 @@ void MeshRendererUVE::UpdateEntitySpatialIndexUVE(Scene::IEntityManagerUVE& enti
         !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity) ||
         !entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
         m_spatialBvh.RemoveUVE(entity);
+        ForgetUnindexableUVE(entity);
         return;
     }
 
     const auto& worldTransform = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
     const auto& meshComponent = entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity);
     if (!Scene::IsMeshComponentValidUVE(meshComponent)) {
-        m_spatialBvh.RemoveUVE(entity);
+        MarkUnindexableUVE(entity);
         return;
     }
 
@@ -331,21 +333,48 @@ void MeshRendererUVE::UpdateEntitySpatialIndexUVE(Scene::IEntityManagerUVE& enti
     if (std::isfinite(worldBounds.min.x) && std::isfinite(worldBounds.max.x) &&
         worldBounds.min.x <= worldBounds.max.x) {
         m_spatialBvh.InsertOrUpdateUVE(entity, worldBounds);
+        ForgetUnindexableUVE(entity);
+    } else {
+        MarkUnindexableUVE(entity);
     }
 }
 
 void MeshRendererUVE::RemoveEntitySpatialIndexUVE(const Scene::EntityUVE entity) const {
     m_spatialBvh.RemoveUVE(entity);
+    ForgetUnindexableUVE(entity);
+}
+
+void MeshRendererUVE::MarkUnindexableUVE(const Scene::EntityUVE entity) const {
+    m_spatialBvh.RemoveUVE(entity);
+    const auto existing = std::find(m_unindexableEntities.begin(), m_unindexableEntities.end(), entity);
+    if (existing == m_unindexableEntities.end()) {
+        m_unindexableEntities.push_back(entity);
+    }
+}
+
+void MeshRendererUVE::ForgetUnindexableUVE(const Scene::EntityUVE entity) const {
+    const auto existing = std::find(m_unindexableEntities.begin(), m_unindexableEntities.end(), entity);
+    if (existing != m_unindexableEntities.end()) {
+        *existing = m_unindexableEntities.back();
+        m_unindexableEntities.pop_back();
+    }
+}
+
+void MeshRendererUVE::AppendUnindexableEntitiesUVE(std::vector<Scene::EntityUVE>& survivingEntities) const {
+    survivingEntities.insert(survivingEntities.end(), m_unindexableEntities.begin(),
+                             m_unindexableEntities.end());
 }
 
 void MeshRendererUVE::SynchronizeSpatialAccelerationUVE(Scene::IEntityManagerUVE& entityManager,
-                                                       Asset::IAssetManagerUVE& assetManager,
-                                                       Asset::IAssetDatabaseUVE& assetDatabase) const {
+                                                        Asset::IAssetManagerUVE& assetManager,
+                                                        Asset::IAssetDatabaseUVE& assetDatabase) const {
     std::vector<DynamicMeshBvhUVE::EntityEntry> entries;
+    m_unindexableEntities.clear();
     entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
         [&](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
             const Scene::MeshComponentUVE& meshComponent) {
             if (!Scene::IsMeshComponentValidUVE(meshComponent)) {
+                m_unindexableEntities.push_back(entity);
                 return;
             }
 
@@ -373,6 +402,8 @@ void MeshRendererUVE::SynchronizeSpatialAccelerationUVE(Scene::IEntityManagerUVE
             if (std::isfinite(worldBounds.min.x) && std::isfinite(worldBounds.max.x) &&
                 worldBounds.min.x <= worldBounds.max.x) {
                 entries.push_back(DynamicMeshBvhUVE::EntityEntry{entity, worldBounds});
+            } else {
+                m_unindexableEntities.push_back(entity);
             }
         });
 
@@ -388,6 +419,7 @@ void MeshRendererUVE::RebuildSpatialAccelerationUVE(Scene::IEntityManagerUVE& en
 
 void MeshRendererUVE::ClearSpatialAccelerationUVE() const noexcept {
     m_spatialBvh.ClearUVE();
+    m_unindexableEntities.clear();
     m_activeCullFrustum.reset();
     m_activeCullFrustums.clear();
     m_activeBoundingRegion.reset();
@@ -802,6 +834,7 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
         m_spatialBvh.QueryFrustumUVE(cullFrustum, survivingEntities);
     }
 
+    AppendUnindexableEntitiesUVE(survivingEntities);
     BuildCandidatesFromSurvivingEntitiesUVE(survivingEntities, entityManager, assetManager, assetDatabase,
                                            outVisibilitySet);
 }
@@ -822,6 +855,7 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
         QueryFrustumsUVE(cullFrustums, survivingEntities);
     }
 
+    AppendUnindexableEntitiesUVE(survivingEntities);
     BuildCandidatesFromSurvivingEntitiesUVE(survivingEntities, entityManager, assetManager, assetDatabase,
                                            outVisibilitySet);
 }
@@ -842,6 +876,7 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
         m_spatialBvh.QueryAabbUVE(boundingRegion, survivingEntities);
     }
 
+    AppendUnindexableEntitiesUVE(survivingEntities);
     BuildCandidatesFromSurvivingEntitiesUVE(survivingEntities, entityManager, assetManager, assetDatabase,
                                            outVisibilitySet);
 }
@@ -865,6 +900,7 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
         GetAllIndexedEntitiesUVE(survivingEntities);
     }
 
+    AppendUnindexableEntitiesUVE(survivingEntities);
     BuildCandidatesFromSurvivingEntitiesUVE(survivingEntities, entityManager, assetManager, assetDatabase,
                                            outVisibilitySet);
 }

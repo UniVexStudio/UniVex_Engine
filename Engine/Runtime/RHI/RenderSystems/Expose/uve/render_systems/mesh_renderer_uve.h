@@ -124,6 +124,18 @@ private:
     void QueryFrustumsUVE(const std::vector<Math::FrustumUVE>& frustums,
                           std::vector<Scene::EntityUVE>& outEntities) const;
 
+    /// Drops any BVH entry and records the entity as unindexable. Entities without a finite
+    /// spatial index (an invalid material-without-mesh pair, or non-finite placement bounds)
+    /// cannot be frustum-tested, but they must still reach the visibility walk: that is where
+    /// Debug builds assert the misconfiguration and where the diagnostics count it.
+    void MarkUnindexableUVE(Scene::EntityUVE entity) const;
+
+    /// Removes the unindexable record once the entity is indexable again (or gone entirely).
+    void ForgetUnindexableUVE(Scene::EntityUVE entity) const;
+
+    /// Appends every unindexable entity to a BVH survivor list so the walk always sees them.
+    void AppendUnindexableEntitiesUVE(std::vector<Scene::EntityUVE>& survivingEntities) const;
+
     void BuildCandidatesFromSurvivingEntitiesUVE(
         const std::vector<Scene::EntityUVE>& survivingEntities,
         Scene::IEntityManagerUVE& entityManager,
@@ -132,6 +144,7 @@ private:
         MeshVisibilitySetUVE& outVisibilitySet) const;
 
     mutable DynamicMeshBvhUVE m_spatialBvh;
+    mutable std::vector<Scene::EntityUVE> m_unindexableEntities;
     mutable std::optional<Math::FrustumUVE> m_activeCullFrustum;
     mutable std::vector<Math::FrustumUVE> m_activeCullFrustums;
     mutable std::optional<Math::AabbUVE> m_activeBoundingRegion;
