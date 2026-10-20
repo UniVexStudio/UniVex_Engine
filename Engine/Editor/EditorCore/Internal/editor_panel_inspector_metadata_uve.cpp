@@ -1268,7 +1268,7 @@ void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& abso
         }
 
         if (changed) {
-            Asset::SaveMaterialAssetUVE(mat, absolutePath);
+            static_cast<void>(Asset::SaveMaterialAssetUVE(mat, absolutePath));
         }
         ImGui::TreePop();
     }
@@ -1301,7 +1301,7 @@ bool EditorUVE::DrawStandardMaterialSlotUVE(const char* const label, const char*
         ImGui::SameLine();
     }
     const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    const Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
 
     Asset::AssetGuidUVE guid = Asset::kInvalidAssetGuidUVE;
     if (!inOutPath.empty()) {
@@ -1309,10 +1309,7 @@ bool EditorUVE::DrawStandardMaterialSlotUVE(const char* const label, const char*
         if (absPath.is_relative()) {
             absPath = (project.contentRoot / absPath).lexically_normal();
         }
-        guid = database.FindAssetGuidUVE(absPath).value_or(Asset::kInvalidAssetGuidUVE);
-        if (guid == Asset::kInvalidAssetGuidUVE) {
-            guid = database.RegisterUVE(absPath);
-        }
+        guid = database.RegisterUVE(absPath);
     }
 
     if (const std::optional<Asset::AssetGuidUVE> picked = DrawAssetPickerUVE(id, guid, ".uvmaterial", label ? label : "Material")) {
@@ -1551,7 +1548,7 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
             std::optional<Asset::AssetGuidUVE> guid;
         };
         std::vector<ModelCandidateUVE> candidates;
-        const auto& database = m_services->GetAssetDatabaseUVE();
+        auto& database = m_services->GetAssetDatabaseUVE();
         for (const Asset::AssetRecordUVE& record : database.GetRegisteredAssetsUVE()) {
             const std::string ext = record.path.extension().string();
             if (ext == ".uvmodel" || ext == ".glb" || ext == ".gltf" || ext == ".fbx" || ext == ".obj") {
@@ -1692,7 +1689,7 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
                                 skinChanged = true;
                             }
                             if (ImGui::Button("Remove")) {
-                                skin.boneBinds.erase(skin.boneBinds.begin() + i);
+                                skin.boneBinds.erase(skin.boneBinds.begin() + static_cast<std::ptrdiff_t>(i));
                                 skin.bindCount = static_cast<std::uint32_t>(skin.boneBinds.size());
                                 skinChanged = true;
                                 ImGui::TreePop();
@@ -1732,7 +1729,7 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
                 const auto project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
                 std::filesystem::path p = surfaceComp.materialOverridePath;
                 if (p.is_relative()) p = (project.contentRoot / p).lexically_normal();
-                meshComp.materialGuid = m_services->GetAssetDatabaseUVE().FindAssetGuidUVE(p).value_or(Asset::kInvalidAssetGuidUVE);
+                meshComp.materialGuid = m_services->GetAssetDatabaseUVE().RegisterUVE(p);
             } else {
                 meshComp.materialGuid = Asset::kInvalidAssetGuidUVE;
             }
@@ -1744,7 +1741,12 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
     // 4. Visibility Layers
     ImGui::Spacing();
     std::uint32_t layers = meshComp.visibilityLayers;
-    if (DrawLayerMaskFieldUVE("Visibility Layers", &layers, Scene::kMaximumMeshVisibilityLayerIndexUVE)) {
+    const Config::SettingsDocumentUVE& projectSettings = m_services->GetProjectSettingsUVE();
+    LayerNamesUVE layerNames{};
+    for (std::size_t index = 0U; index < layerNames.size(); ++index) {
+        layerNames[index] = Core::GetLayerNameUVE(projectSettings, Core::LayerSetUVE::Render, index);
+    }
+    if (DrawLayerMaskFieldUVE("Visibility Layers", layers, layerNames) == LayerMaskFieldEventUVE::Changed) {
         meshComp.visibilityLayers = layers;
         entityManager.AddComponentUVE<Scene::MeshComponentUVE>(entity, meshComp);
     }
