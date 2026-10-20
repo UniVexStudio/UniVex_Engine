@@ -293,7 +293,7 @@ void MeshRendererUVE::UpdateEntitySpatialIndexUVE(Scene::IEntityManagerUVE& enti
                                                   Asset::IAssetManagerUVE& assetManager,
                                                   Asset::IAssetDatabaseUVE& assetDatabase,
                                                   const Scene::EntityUVE entity) const {
-    if (!entityManager.IsEntityValidUVE(entity) ||
+    if (!entityManager.IsAliveUVE(entity) ||
         !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity) ||
         !entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
         m_spatialBvh.RemoveUVE(entity);
@@ -487,7 +487,7 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
     bool materialOverridePathIndexBuilt = false;
 
     for (const Scene::EntityUVE entity : survivingEntities) {
-        if (!entityManager.IsEntityValidUVE(entity) ||
+        if (!entityManager.IsAliveUVE(entity) ||
             !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity) ||
             !entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
             m_spatialBvh.RemoveUVE(entity);

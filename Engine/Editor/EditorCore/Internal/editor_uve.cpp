@@ -146,6 +146,9 @@ constexpr ImWchar kIconFontGlyphRangesUVE[] = {
             return Scene::SphereMesh3DUVE::DefaultColliderHalfExtentsUVE();
         case Scene::PrimitiveMeshKindUVE::Plane:
             return Scene::PlaneMesh3DUVE::DefaultColliderHalfExtentsUVE();
+        case Scene::PrimitiveMeshKindUVE::Capsule:
+        case Scene::PrimitiveMeshKindUVE::Cylinder:
+            return Math::Vector3UVE{0.5F, 1.0F, 0.5F};
     }
     return Scene::BoxMesh3DUVE::DefaultColliderHalfExtentsUVE();
 }
@@ -3081,6 +3084,10 @@ std::string EditorUVE::GetOutlinerTypeTagUVE(const Scene::EntityUVE entity) cons
                 return std::string{Scene::SphereMesh3DObjectDefinitionUVE::defaultName};
             case Scene::PrimitiveMeshKindUVE::Cube:
                 return std::string{Scene::BoxMesh3DObjectDefinitionUVE::defaultName};
+            case Scene::PrimitiveMeshKindUVE::Capsule:
+                return "CapsuleMesh";
+            case Scene::PrimitiveMeshKindUVE::Cylinder:
+                return "CylinderMesh";
         }
     }
     if (entityManager.HasComponentUVE<Scene::CameraComponentUVE>(entity)) {
