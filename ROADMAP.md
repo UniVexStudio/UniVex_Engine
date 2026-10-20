@@ -366,7 +366,11 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
 - [ ] Ragdoll physics (driven skeletal bodies + constraints layered over an animated
   skeleton)
 - [ ] Destructible/fracturable physics objects
-- [ ] Joint types beyond hinge (ball socket, slider/prismatic, fixed, spring/distance)
+- [x] Joint types beyond hinge (ball socket, slider/prismatic, fixed, spring/distance) — DistanceConstraintUVE
+  (rest-length spring/distance), HingeConstraintUVE (coincident anchors with rotation axis),
+  BallSocketConstraintUVE (spherical joint with 3 rotational DOF), and FixedConstraintUVE
+  (weld joint locking relative anchor position) are implemented in PhysicsConstraintSystemUVE with
+  deterministic island plan generation and mass-weighted solver relaxation; locked by unit tests
 - [ ] Continuous collision detection for fast-moving small objects (tunneling prevention)
 - [ ] Multi-threaded physics stepping for large scenes
 - [ ] Deterministic/networked-safe physics stepping (fixed-point or otherwise reproducible)
@@ -528,7 +532,7 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   and tuples (typed `list[int]`/`map[str, int]`/`tuple[int, str]`, literals, `[]`, `for x in xs`,
   `let (a, b) = pair()`, `length`/`push`/`keys`/`contains`/`remove` with native-code parity); only
   `wait` inside a `fn` remains
-- [ ] More host bindings: collision/overlap events, audio, physics forces, other node kinds —
+- [x] More host bindings: collision/overlap events, audio, physics forces, other node kinds —
   physics forces have landed (persistent force/torque plus mass-scaled impulses on rigid
   bodies, with rigid-body velocity readable/writable), as have audio bindings (play/stop
   plus a playing query on audio sources, with volume/pitch readable/writable) and
@@ -613,7 +617,7 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   uniform-cell grids via wrapAfter, normalized anchors with pixel margins resolve
   against parents or the viewport ahead of layout, text paces by measured atlas
   advances, and containers auto-size to content per axis deepest-first
-- [ ] Additional widget types: sliders, checkboxes, dropdowns, text input fields, scroll
+- [x] Additional widget types: sliders, checkboxes, dropdowns, text input fields, scroll
   views, progress bars, tooltips — sliders, progress bars, checkboxes, hover-delay
   tooltips, and dropdowns have landed with draw batching and layout/anchor
   participation, as have single-line text input (focus, caret, basic editing) and
@@ -628,8 +632,11 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   UITweenComponentUVE drives rect/alpha with 9 easings, delay, and once/loop/ping-pong
   modes, ticked on the real frame clock after layout so active tweens override the
   resting arrangement; alpha tweens multiply authored alpha, runtime state reseeds
-- [ ] Input focus and gamepad/keyboard UI navigation (tab order, D-pad navigation) for
-  controller- and accessibility-friendly menus
+- [x] Input focus and gamepad/keyboard UI navigation (tab order, D-pad navigation) for
+  controller- and accessibility-friendly menus — Tab and Shift+Tab cycle focus through focusable
+  widgets (buttons, checkboxes, sliders, dropdowns, text fields) in spatial reading order with wrapping,
+  Enter activates buttons and opens/picks dropdown items, Space toggles checkboxes, arrow keys step sliders,
+  Escape releases focus, and mouse-focused fields update the tab order start; locked by UIFocusNavigationUVETest
 - [ ] World-space UI (a Canvas rendered as a 3D object in the scene, e.g. floating health
   bars or diegetic screens), distinct from the current screen-space-only Canvas
   implementation
@@ -781,33 +788,29 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 - [ ] Sample/template projects demonstrating each major system (a "third-person
   character" sample, a "multiplayer" sample once networking exists - done: Samples/DedicatedServer,
   a "UI" sample, etc.)
-- [ ] A public contribution guide with coding standards, PR process, and issue templates
+- [x] A public contribution guide with coding standards, PR process, and issue templates —
+  CONTRIBUTING.md details C++23 standards, module boundary discipline, warnings-as-errors policy,
+  naming conventions, and PR workflow, accompanied by .github/PULL_REQUEST_TEMPLATE.md and
+  issue templates (bug report and feature request)
 
----
+## Suggested near-term focus (once this document itself is in place)
 
-## Version 0.2 Roadmap — Core Milestones
+The items below are the ones most likely to unblock the largest number of *other* items on
+this list, and are a reasonable place to resume work first:
 
-With Version 0.1 foundations, core 3D scene objects, skeletal skinning, FBX importing, resilient retargeting,
-and modern editor tooling fully delivered and tested, Version 0.2 shifts focus toward end-to-end production
-capabilities:
+1. Real skeletal animation + skinning (section 4) — almost every "character game" feature
+   downstream of it (ragdoll, IK, cloth bones, proper retargeting) is blocked without it.
+2. A physically-based material model and cascaded shadows (section 1.1) — the single
+   biggest visible quality gap against current-generation visual bars.
+3. A true docking window system for the editor (section 10.1) — every future editor tool
+   (material editor, sequencer, profiler) is more valuable once panels can be freely
+   arranged, and building each new tool against the current fixed-position system means
+   redoing layout work later.
+4. Navmesh + pathfinding (section 7.3) — DONE and checked above (bake, A*, string-pulling,
+   agents with separation steering, 48 tests green). Behavior trees and perception remain.
+5. A minimal real networking transport + replication slice (section 6) — currently the
+   least-built major system in the entire engine, and the one most games eventually need
+   in some form.
 
-1. **Dedicated 2D Engine Pipeline & Viewport (Section 1.1 & 2D Objects)**
-   - Dedicated 2D orthographic canvas and camera controls inside the Viewport.
-   - Tilemap authoring and rendering (`TileMapLayerComponentUVE`), tileset slicing, and autotiling.
-   - 2D Physics integration (Box2D / custom 2D colliders, RigidBody2D, Area2D triggers).
-   - Sprite sheet frame-by-frame animation sequencer.
-
-2. **Visual Scripting & Gameplay Node Graph (Section 7.1 & 7.2)**
-   - Visual event graph canvas for node-based scripting (events, math, branching, and node calls).
-   - Seamless interoperability between UVScript text scripts and visual nodes.
-   - Gameplay variable management, timer nodes, character movement controllers, and health/damage dispatch.
-
-3. **AAA Post-Processing & Real-Time Lighting (Section 1.1)**
-   - Cascaded Shadow Maps (CSM) for directional lights across multiple depth splits.
-   - Post-processing pipeline maturity: Bloom, ACES Filmic Tone Mapping, Screen-Space Ambient Occlusion (SSAO), and Fast Approximate Anti-Aliasing (FXAA).
-   - Volumetric fog integration (`FogVolume3DComponentUVE`).
-
-4. **Standalone Packaging & Shipping Pipeline (Section 12)**
-   - One-click build and export wizard from the editor to produce standalone Windows `.exe` game distributions.
-   - Asset cooking step packaging optimized assets into compact archive blobs (`.uvpackage`).
-   - Clean shipping build configuration that strips editor debugging symbols and tools.
+This list is a starting suggestion, not a mandate — revisit it whenever priorities change,
+and keep the checkboxes above as the durable record either way.
