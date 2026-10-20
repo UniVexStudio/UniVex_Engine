@@ -14,6 +14,7 @@ namespace UVE::Scene {
     case ColliderShapeTypeUVE::Sphere:
         return {collider.radius, collider.radius, collider.radius};
     case ColliderShapeTypeUVE::Capsule:
+    case ColliderShapeTypeUVE::Cylinder:
         return {collider.radius, collider.height * 0.5F, collider.radius};
     case ColliderShapeTypeUVE::Box:
     default:
@@ -41,6 +42,9 @@ namespace UVE::Scene {
     case ColliderShapeTypeUVE::Capsule:
         return std::isfinite(collider.radius) && collider.radius > 0.0F &&
                std::isfinite(collider.height) && collider.height >= 2.0F * collider.radius;
+    case ColliderShapeTypeUVE::Cylinder:
+        return std::isfinite(collider.radius) && collider.radius > 0.0F &&
+               std::isfinite(collider.height) && collider.height > 0.0F;
     default:
         return false;
     }

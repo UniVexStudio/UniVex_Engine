@@ -4354,6 +4354,12 @@ void EditorUVE::ShutdownUVE() {
         ClearMeshThumbnailCacheUVE();
         m_meshThumbnailRenderer.ShutdownUVE();
         m_uiAssets.ShutdownUVE();
+        if (ImGui::GetCurrentContext() != nullptr) {
+            const char* const iniFilename = ImGui::GetIO().IniFilename;
+            if (iniFilename != nullptr && iniFilename[0] != '\0') {
+                ImGui::SaveIniSettingsToDisk(iniFilename);
+            }
+        }
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplGlfw_Shutdown();
         ImGui::DestroyContext();
@@ -4646,6 +4652,7 @@ void EditorUVE::ApplyLayoutPresetUVE(const EditorLayoutPresetUVE preset) noexcep
             m_bottomDockVisible = true;
             m_activeRightPanelTab = EditorRightPanelTabUVE::Inspector;
             m_activeBottomDock = EditorBottomDockUVE::FileSystem;
+            RequestResetDockingLayoutUVE();
             break;
         case EditorLayoutPresetUVE::FocusViewport:
             m_scenePanelVisible = false;

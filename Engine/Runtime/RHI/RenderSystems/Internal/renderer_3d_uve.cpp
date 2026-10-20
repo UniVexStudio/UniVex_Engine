@@ -45,8 +45,10 @@
 #include "uve/math/scalar_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
+#include "uve/render_systems/compute_system_uve.h"
 #include "uve/render_systems/decal_draw_command_uve.h"
 #include "uve/render_systems/decal_renderer_uve.h"
+#include "uve/render_systems/frustum_cull_indirect_uve.h"
 #include "uve/render_systems/i_light_system_uve.h"
 #include "uve/render_systems/particle_draw_command_uve.h"
 #include "uve/render_systems/particle_render_bridge_uve.h"
@@ -54,6 +56,7 @@
 #include "uve/render_systems/render_batch_uve.h"
 #include "uve/render_systems/render_graph_uve.h"
 #include "uve/render_systems/render_queue_uve.h"
+#include "uve/render_systems/renderer_3d_frame_diagnostics_uve.h"
 #include "uve/rhi_shader/built_in_shaders_uve.h"
 #include "uve/rhi_shader/shader_program_desc_uve.h"
 #include "uve/rhi_shader/shader_program_uve.h"
@@ -232,6 +235,7 @@ struct UIVertexUVE {
 inline constexpr std::uint32_t kInstanceTransformSlotUVE = 0U;
 inline constexpr std::uint32_t kInstanceNormalTransformSlotUVE = 1U;
 inline constexpr std::uint32_t kInstanceBaseSlotUVE = 2U;
+inline constexpr std::uint32_t kInstanceVisibleIndexSlotUVE = 3U;
 
 /// The most instances one frame may upload. Bounds the per-frame upload the same way
 /// kMaximumParticleGpuDrawCommandsUVE bounds particles; a batch that would exceed it is recorded
@@ -1054,6 +1058,40 @@ struct Renderer3DUVE::ImplUVE {
     /// main pass because the shadow passes are where the draw-call count was actually worst - one
     /// per caster per cascade - and a single combined number would hide which half improved.
     std::size_t shadowInstancedDrawCallsThisFrame = 0U;
+    std::size_t indirectInstancedDrawCallsThisFrame = 0U;
+
+    /// CS8 Compute indirect instancing systems.
+    ComputeSystemUVE computeSystem;
+    FrustumCullIndirectUVE indirectCull;
+    std::vector<std::unique_ptr<FrustumCullIndirectUVE>> indirectCullPool;
+    std::size_t nextIndirectCullIndex = 0U;
+    std::vector<Math::AabbUVE> instanceBoundsScratch;
+
+    [[nodiscard]] FrustumCullIndirectUVE* AcquireIndirectCullUVE() {
+        if (nextIndirectCullIndex == 0U) {
+            ++nextIndirectCullIndex;
+            if (!indirectCull.IsReadyUVE()) {
+                indirectCull.InitializeUVE();
+            }
+            return indirectCull.IsReadyUVE() ? &indirectCull : nullptr;
+        }
+        const std::size_t poolSlot = nextIndirectCullIndex - 1U;
+        ++nextIndirectCullIndex;
+        if (poolSlot < indirectCullPool.size()) {
+            FrustumCullIndirectUVE* const pooled = indirectCullPool[poolSlot].get();
+            if (pooled != nullptr && !pooled->IsReadyUVE()) {
+                pooled->InitializeUVE();
+            }
+            return (pooled != nullptr && pooled->IsReadyUVE()) ? pooled : nullptr;
+        }
+        auto newCull = std::make_unique<FrustumCullIndirectUVE>(renderDevice, computeSystem);
+        if (!newCull->InitializeUVE()) {
+            return nullptr;
+        }
+        FrustumCullIndirectUVE* const rawPtr = newCull.get();
+        indirectCullPool.push_back(std::move(newCull));
+        return rawPtr;
+    }
 
     /// Built-in primitive visualization program. Its Basic3D contract contains only model,
     /// view-projection, and authored base-color uniforms; primitives intentionally do not bind
@@ -1241,7 +1279,9 @@ struct Renderer3DUVE::ImplUVE {
                                                             "shadowCascadeSplitLambda")),
           shadowCascadeBlendRatio(SanitizeFiniteClampedUVE(shadowCascadeBlendRatioIn, 0.0F, 0.0F, 0.25F,
                                                             "shadowCascadeBlendRatio")),
-          shadowPcfKernelRadius(static_cast<std::int32_t>(std::min(shadowPcfKernelRadiusIn, 2U))) {}
+          shadowPcfKernelRadius(static_cast<std::int32_t>(std::min(shadowPcfKernelRadiusIn, 2U))),
+          computeSystem(renderDeviceIn),
+          indirectCull(renderDeviceIn, computeSystem) {}
 
     /// Creates the base target set for `width`x`height`, or returns nullopt having destroyed any
     /// partial allocation. The six base targets are created together because a half-built set is
@@ -2499,11 +2539,46 @@ struct Renderer3DUVE::ImplUVE {
             commandBuffer.BindStorageBufferUVE(instanceBaseBuffer, kInstanceBaseSlotUVE);
             commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
             commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
-            commandBuffer.DrawIndexedUVE(meshResources.indexCount,
-                                         static_cast<std::uint32_t>(batch.itemCount));
-            ++drawCalls;
-            instancedDrawCallsThisFrame += 1U;
-            instancedObjectsThisFrame += batch.itemCount;
+            bool indirectRecorded = false;
+            if (cullingSettings.frustumCullingEnabledUVE) {
+                FrustumCullIndirectUVE* const cullIndirect = AcquireIndirectCullUVE();
+                if (cullIndirect != nullptr && cullIndirect->IsReadyUVE()) {
+                    const Asset::MeshAssetUVE* const meshAsset = representative.meshHandle.TryGetUVE();
+                    const Math::AabbUVE localBounds =
+                        meshAsset != nullptr ? meshAsset->localBounds : Math::AabbUVE{};
+                    instanceBoundsScratch.resize(batch.itemCount);
+                    for (std::size_t i = 0U; i < batch.itemCount; ++i) {
+                        instanceBoundsScratch[i] =
+                            localBounds.TransformUVE(items[batch.firstItem + i].worldMatrix);
+                    }
+                    const Math::FrustumUVE cullFrustum =
+                        Math::FrustumUVE::FromViewProjectionUVE(frameUniforms.viewProjection);
+                    DrawIndexedIndirectCommandUVE meshParams{};
+                    meshParams.indexCount = meshResources.indexCount;
+                    meshParams.instanceCount = 0U;
+                    meshParams.firstIndex = 0U;
+                    meshParams.vertexOffset = 0;
+                    meshParams.firstInstance = 0U;
+                    if (cullIndirect->PrepareUVE(instanceBoundsScratch, cullFrustum, meshParams)) {
+                        commandBuffer.BindStorageBufferUVE(cullIndirect->GetVisibleIndexBufferUVE(),
+                                                           kInstanceVisibleIndexSlotUVE);
+                        commandBuffer.DrawIndexedIndirectUVE(cullIndirect->GetDrawCommandBufferUVE(), 0U);
+                        indirectRecorded = true;
+                        ++drawCalls;
+                        instancedDrawCallsThisFrame += 1U;
+                        indirectInstancedDrawCallsThisFrame += 1U;
+                        instancedObjectsThisFrame += batch.itemCount;
+                    }
+                }
+            }
+
+            if (!indirectRecorded) {
+                commandBuffer.DrawIndexedUVE(meshResources.indexCount,
+                                             static_cast<std::uint32_t>(batch.itemCount));
+                ++drawCalls;
+                instancedDrawCallsThisFrame += 1U;
+                instancedObjectsThisFrame += batch.itemCount;
+            }
         }
         return drawCalls;
     }
@@ -2900,6 +2975,7 @@ struct Renderer3DUVE::ImplUVE {
             program->SetMatrix3x3UVE("uNormalMatrix", ComputeNormalMatrixUVE(item.worldMatrix));
             program->SetVector3UVE("uColor", item.baseColor);
             program->SetFloatUVE("uSurfaceOpacity", item.opacity);
+            program->SetIntUVE("uShadingMode", shadingMode);
             ApplyLightingUniformsUVE(*program, frameUniforms);
             program->ApplyToUVE(commandBuffer);
             const TextureHandleUVE ambientEnvironmentTexture =
@@ -3238,6 +3314,7 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
         BufferDescUVE{sizeof(UIVertexUVE) * kMaximumUIQuadsUVE * kUIVerticesPerQuadUVE, BufferUsageUVE::Vertex});
 
     ImplUVE* const implPtr = m_impl.get();
+    m_impl->indirectCull.InitializeUVE();
     m_impl->reloadSubscription = eventSystem.Subscribe<Asset::AssetReloadedEventUVE>(
         [implPtr](const Asset::AssetReloadedEventUVE& event) { implPtr->OnAssetReloadedUVE(event); });
 }
@@ -3404,6 +3481,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         // Reset here, not beside the main pass: the shadow cascades are recorded BEFORE it, so a reset
         // at the main pass would discard the count this counter exists to report.
         m_impl->shadowInstancedDrawCallsThisFrame = 0U;
+        m_impl->indirectInstancedDrawCallsThisFrame = 0U;
+        m_impl->nextIndirectCullIndex = 0U;
         m_impl->lastFrameDiagnostics.renderTargetWidth = m_impl->targetWidth;
         m_impl->lastFrameDiagnostics.renderTargetHeight = m_impl->targetHeight;
     }
@@ -3437,6 +3516,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         CaptureDueReflectionProbesUVE(entityManager, cameraEntity);
         m_impl->lastFrameDiagnostics = Renderer3DFrameDiagnosticsUVE{};
         m_impl->shadowInstancedDrawCallsThisFrame = 0U;
+        m_impl->indirectInstancedDrawCallsThisFrame = 0U;
+        m_impl->nextIndirectCullIndex = 0U;
         m_impl->lastFrameDiagnostics.renderTargetWidth = m_impl->targetWidth;
         m_impl->lastFrameDiagnostics.renderTargetHeight = m_impl->targetHeight;
     } else {
@@ -3534,19 +3615,36 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->sunVolumetricFogEnergy = 1.0F;
     m_impl->sunDirection = Math::NormalizeUVE(Math::Vector3UVE{0.35F, 0.80F, 0.48F});
     m_impl->sunColor = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+    const LightDataUVE* fallbackInternalDirectional = nullptr;
     for (const LightDataUVE& light : lights) {
-        if (light.isEditorInternal || light.type != Scene::LightTypeUVE::Directional || light.intensity <= 0.0F) {
+        if (light.type != Scene::LightTypeUVE::Directional || light.intensity <= 0.0F) {
             continue;
         }
         const Math::Vector3UVE incoming = Math::Vector3UVE{-light.direction.x, -light.direction.y, -light.direction.z};
         if (!Math::IsFiniteUVE(incoming) || Math::LengthSquaredUVE(incoming) < 1.0e-8F) {
             continue;
         }
+        if (light.isEditorInternal) {
+            if (fallbackInternalDirectional == nullptr) {
+                fallbackInternalDirectional = &light;
+            }
+            continue;
+        }
         m_impl->sunDirection = Math::NormalizeUVE(incoming);
         m_impl->sunColor = Math::ToVector3UVE(light.color);
         m_impl->sunEnergy = light.intensity;
         m_impl->sunVolumetricFogEnergy = light.volumetricFogEnergy;
+        fallbackInternalDirectional = nullptr;
         break;
+    }
+    if (fallbackInternalDirectional != nullptr) {
+        const Math::Vector3UVE incoming = Math::Vector3UVE{-fallbackInternalDirectional->direction.x,
+                                                          -fallbackInternalDirectional->direction.y,
+                                                          -fallbackInternalDirectional->direction.z};
+        m_impl->sunDirection = Math::NormalizeUVE(incoming);
+        m_impl->sunColor = Math::ToVector3UVE(fallbackInternalDirectional->color);
+        m_impl->sunEnergy = fallbackInternalDirectional->intensity;
+        m_impl->sunVolumetricFogEnergy = fallbackInternalDirectional->volumetricFogEnergy;
     }
     Scene::ApplySunToWorldEnvironmentFrameUVE(m_impl->environmentFrame, m_impl->sunDirection, m_impl->sunColor,
                                               m_impl->sunEnergy);
@@ -3859,12 +3957,16 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             commandBuffer.BeginRenderPassUVE(passDesc);
             m_impl->instancedDrawCallsThisFrame = 0U;
             m_impl->instancedObjectsThisFrame = 0U;
+            m_impl->indirectInstancedDrawCallsThisFrame = 0U;
+            m_impl->nextIndirectCullIndex = 0U;
             m_impl->lastFrameDiagnostics.meshDrawCallsRecorded += m_impl->RecordItemsInstancedUVE(
                 queue.opaqueItems, m_impl->opaqueBatches, frameUniforms, commandBuffer);
             m_impl->lastFrameDiagnostics.meshDrawCallsRecorded += m_impl->RecordItemsInstancedUVE(
                 queue.transparentItems, m_impl->transparentBatches, frameUniforms, commandBuffer);
             m_impl->lastFrameDiagnostics.instancedDrawCallsRecorded = m_impl->instancedDrawCallsThisFrame;
             m_impl->lastFrameDiagnostics.instancedObjectsRecorded = m_impl->instancedObjectsThisFrame;
+            m_impl->lastFrameDiagnostics.indirectInstancedDrawCallsRecorded =
+                m_impl->indirectInstancedDrawCallsThisFrame;
             m_impl->lastFrameDiagnostics.shadowInstancedDrawCallsRecorded =
                 m_impl->shadowInstancedDrawCallsThisFrame;
             m_impl->lastFrameDiagnostics.decalDrawCallsRecorded =

@@ -16,6 +16,7 @@ enum class ColliderShapeTypeUVE : std::uint8_t {
     Box = 0,
     Sphere = 1,
     Capsule = 2,
+    Cylinder = 3,
 };
 
 /// One of the master spec's named built-in components. The original halfExtents/layer/material

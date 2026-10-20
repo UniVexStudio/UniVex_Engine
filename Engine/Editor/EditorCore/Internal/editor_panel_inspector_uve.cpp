@@ -27,6 +27,7 @@
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <system_error>
 #include <optional>
 #include <string>
 #include <utility>
@@ -67,8 +68,6 @@
 namespace UVE::Editor {
 
 namespace {
-
-constexpr const char* kPanelLabelInspectorUVE = "\xEE\xA8\x83 Inspector##right-panel";
 
 // File-local to the inspector, exactly as they were file-local to editor_uve.cpp. Verified before
 // moving that nothing outside this panel calls them - unlike the chrome layout and the icon
@@ -130,16 +129,15 @@ void EditorUVE::DrawInspectorPanelUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
-    // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change.
-    ImGui::SetNextWindowPos(layout.inspectorPos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(layout.inspectorSize, ImGuiCond_Always);
-    // No title row: the Inspector / Import / Events tabs are the panel's top edge, so the name is
-    // not said twice. The panel is fixed in the layout, so there is nothing to drag it by anyway.
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
+    // In native ImGui docking, FirstUseEver sets the initial fallback position and size,
+    // allowing the window to dock into the right dock node, tab, split, float, and persist in imgui.ini.
+    ImGui::SetNextWindowPos(layout.inspectorPos, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(layout.inspectorSize, ImGuiCond_FirstUseEver);
+    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
     // Match the Outliner panel's neutral charcoal surface. Inputs and nested fields keep the
     // darker FrameBg/ChildBg layers from the shared theme, so depth and editability remain clear.
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{0.106F, 0.118F, 0.129F, 1.0F});
-    ImGui::Begin(kPanelLabelInspectorUVE, nullptr, flags);
+    ImGui::Begin(kPanelLabelInspectorUVE, &m_inspectorPanelVisible, flags);
 
     // Real tabs rather than three selectable labels. The active tab can also be changed from
     // elsewhere (the Content Browser opens the Inspector), so a change made outside the strip is
@@ -217,8 +215,96 @@ void EditorUVE::DrawImportQueueMonitorUVE() {
     ImGui::EndChild();
 }
 
+void EditorUVE::DrawContentAssetCardInspectorUVE(const Asset::ProjectFileEntryUVE& entry) {
+    ImGui::BeginChild("##inspector-asset-card", ImVec2{0.0F, 0.0F}, true);
+
+    const std::filesystem::path contentRoot = m_services->GetProjectUVE().GetContentDirectoryUVE();
+    const std::filesystem::path fullPath = contentRoot / entry.relativePath;
+    const std::string filename = entry.relativePath.filename().string();
+    const ContentBrowserItemTypeUVE type = ClassifyContentBrowserEntryUVE(entry);
+    const char* const typeLabel = GetContentBrowserItemTypeLabelUVE(type);
+
+    // Header with Icon & Name
+    std::uintptr_t iconId = 0U;
+    if (type == ContentBrowserItemTypeUVE::Texture) {
+        iconId = GetTextureThumbnailUVE(entry.relativePath);
+    } else if (type == ContentBrowserItemTypeUVE::Mesh || type == ContentBrowserItemTypeUVE::Model) {
+        iconId = GetMeshThumbnailUVE(entry.relativePath);
+    }
+    if (iconId == 0U) {
+        if (type == ContentBrowserItemTypeUVE::Entity || type == ContentBrowserItemTypeUVE::Prefab) {
+            const auto objectKind = GetEntityAssetIconKindUVE(entry.relativePath);
+            iconId = m_uiAssets.GetObjectIconTextureIdUVE(objectKind.value_or(Scene::Objects::SceneObjectKindUVE::Object3D));
+        } else {
+            iconId = m_uiAssets.GetContentTypeIconTextureIdUVE(typeLabel);
+        }
+    }
+
+    if (iconId != 0U) {
+        ImGui::Image(reinterpret_cast<ImTextureID>(iconId), ImVec2{48.0F, 48.0F});
+        ImGui::SameLine();
+    }
+    ImGui::BeginGroup();
+    ImGui::TextColored(ImVec4{0.95F, 0.95F, 0.98F, 1.0F}, "%s", filename.c_str());
+    ImGui::TextColored(ImVec4{0.4F, 0.75F, 0.95F, 1.0F}, "[ %s ]", typeLabel);
+    ImGui::EndGroup();
+
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Details: Path, Size, GUID
+    ImGui::TextDisabled("FILE INFORMATION");
+    ImGui::TextWrapped("Path: %s", entry.relativePath.generic_string().c_str());
+
+    std::error_code ec;
+    const auto fileSize = std::filesystem::file_size(fullPath, ec);
+    if (!ec) {
+        if (fileSize < 1024U) {
+            ImGui::Text("Size: %llu B", static_cast<unsigned long long>(fileSize));
+        } else if (fileSize < 1024U * 1024U) {
+            ImGui::Text("Size: %.1f KB", static_cast<double>(fileSize) / 1024.0);
+        } else {
+            ImGui::Text("Size: %.2f MB", static_cast<double>(fileSize) / (1024.0 * 1024.0));
+        }
+    }
+
+    if (entry.registeredAssetGuid.has_value()) {
+        ImGui::Text("Asset GUID: %016llX", static_cast<unsigned long long>(entry.registeredAssetGuid->value));
+    } else {
+        ImGui::TextDisabled("Asset GUID: (Unregistered)");
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Action buttons
+    ImGui::TextDisabled("ACTIONS");
+    if (type == ContentBrowserItemTypeUVE::Entity || type == ContentBrowserItemTypeUVE::Prefab) {
+        if (ImGui::Button("Open in Entity Editor", ImVec2{-1.0F, 28.0F})) {
+            OpenEntityEditorUVE(fullPath);
+        }
+    } else if (type == ContentBrowserItemTypeUVE::Mesh || type == ContentBrowserItemTypeUVE::Model ||
+               IsModelSourcePathUVE(entry.relativePath)) {
+        if (ImGui::Button("Reimport Model", ImVec2{-1.0F, 28.0F})) {
+            QueueModelAutoImportsUVE(m_services->GetProjectFileIndexUVE().GetSnapshotUVE());
+            m_contentStatusMessage = "Queued model reimport for " + filename;
+        }
+    } else if (type == ContentBrowserItemTypeUVE::Scene) {
+        if (ImGui::Button("Open Scene", ImVec2{-1.0F, 28.0F})) {
+            OpenSceneAssetUVE(fullPath);
+        }
+    }
+
+    ImGui::EndChild();
+}
+
 void EditorUVE::DrawInspectorContentUVE() {
     if (m_selectedEntities.empty()) {
+        if (m_selectedProjectFile.has_value() && !m_selectedProjectFile->relativePath.empty()) {
+            DrawContentAssetCardInspectorUVE(*m_selectedProjectFile);
+            return;
+        }
         ImGui::BeginChild("##inspector-empty-state", ImVec2{0.0F, 64.0F}, true);
         ImGui::TextColored(ImVec4{0.80F, 0.82F, 0.85F, 1.0F}, "NO ENTITY SELECTED");
         ImGui::TextDisabled("Select an entity in the Outliner or the Viewport to inspect it.");
