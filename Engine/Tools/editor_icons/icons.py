@@ -389,6 +389,28 @@ def two_bone_ik_3d(ic):
     sphere(ic, 14, 12, 3.4, PURPLE, gloss=0.9)
 
 
+@scene_object("full_body_ik_3d", "FullBodyIK3D", "Animation")
+def full_body_ik_3d(ic):
+    shadow(ic, 32, 58, 24, 4.5)
+    # The whole body the solve drives at once: hips, spine and two arms, so several limbs share
+    # one answer - the read that separates this from the single bent limb of two_bone_ik_3d.
+    bone(ic, 32, 52, 32, 30, 6.4)
+    bone(ic, 32, 34, 17, 40, 5.2)
+    bone(ic, 32, 34, 47, 40, 5.2)
+    sphere(ic, 32, 30, 5.0, IVORY, gloss=0.8)
+    sphere(ic, 32, 52, 4.6, IVORY, gloss=0.8)
+    # Two targets, one per hand: the reticle every DCC tool draws for what an effector is aimed at.
+    ring = ic.linear([(0, shade(PURPLE, 0.32)), (1, shade(PURPLE, -0.28))], 0, 0, 1, 1)
+    for (cx, cy) in ((15, 41), (49, 41)):
+        ic.add(f'<circle cx="{cx}" cy="{cy}" r="7.2" fill="none" stroke="{OUTLINE}" stroke-opacity="0.7" '
+               f'stroke-width="3.6"/>')
+        ic.add(f'<circle cx="{cx}" cy="{cy}" r="7.2" fill="none" stroke="{ring}" stroke-width="1.9" '
+               f'stroke-dasharray="3.6 2.4"/>')
+        for (tx, ty, dx, dy) in ((cx + 8.8, cy, 2.6, 0), (cx - 8.8, cy, -2.6, 0),
+                                 (cx, cy + 8.8, 0, 2.6), (cx, cy - 8.8, 0, -2.6)):
+            stroke_line(ic, [(tx, ty), (tx + dx, ty + dy)], shade(PURPLE, 0.1), 1.7)
+
+
 @scene_object("animation_sequencer", "AnimationSequencer", "Animation")
 def animation_sequencer(ic):
     shadow(ic, 32, 57, 26, 4.5)
