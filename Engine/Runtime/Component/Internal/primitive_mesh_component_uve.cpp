@@ -14,6 +14,8 @@ namespace UVE::Scene {
         case PrimitiveMeshKindUVE::Cube:
         case PrimitiveMeshKindUVE::UVSphere:
         case PrimitiveMeshKindUVE::Plane:
+        case PrimitiveMeshKindUVE::Capsule:
+        case PrimitiveMeshKindUVE::Cylinder:
             return true;
     }
     return false;
@@ -60,6 +62,10 @@ namespace UVE::Scene {
             return "UVSphere";
         case PrimitiveMeshKindUVE::Plane:
             return "Plane";
+        case PrimitiveMeshKindUVE::Capsule:
+            return "Capsule";
+        case PrimitiveMeshKindUVE::Cylinder:
+            return "Cylinder";
     }
     return "Cube";
 }
@@ -72,6 +78,9 @@ namespace UVE::Scene {
             return Math::Vector3UVE{0.5F, 0.5F, 0.5F};
         case PrimitiveMeshKindUVE::Plane:
             return Math::Vector3UVE{0.5F, 0.01F, 0.5F};
+        case PrimitiveMeshKindUVE::Capsule:
+        case PrimitiveMeshKindUVE::Cylinder:
+            return Math::Vector3UVE{0.5F, 1.0F, 0.5F};
     }
     return Math::Vector3UVE{0.5F, 0.5F, 0.5F};
 }
