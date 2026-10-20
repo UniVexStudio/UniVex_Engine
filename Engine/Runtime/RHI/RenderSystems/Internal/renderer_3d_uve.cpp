@@ -1071,7 +1071,7 @@ struct Renderer3DUVE::ImplUVE {
         if (nextIndirectCullIndex == 0U) {
             ++nextIndirectCullIndex;
             if (!indirectCull.IsReadyUVE()) {
-                indirectCull.InitializeUVE();
+                static_cast<void>(indirectCull.InitializeUVE());
             }
             return indirectCull.IsReadyUVE() ? &indirectCull : nullptr;
         }
@@ -1080,7 +1080,7 @@ struct Renderer3DUVE::ImplUVE {
         if (poolSlot < indirectCullPool.size()) {
             FrustumCullIndirectUVE* const pooled = indirectCullPool[poolSlot].get();
             if (pooled != nullptr && !pooled->IsReadyUVE()) {
-                pooled->InitializeUVE();
+                static_cast<void>(pooled->InitializeUVE());
             }
             return (pooled != nullptr && pooled->IsReadyUVE()) ? pooled : nullptr;
         }
@@ -3314,7 +3314,7 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
         BufferDescUVE{sizeof(UIVertexUVE) * kMaximumUIQuadsUVE * kUIVerticesPerQuadUVE, BufferUsageUVE::Vertex});
 
     ImplUVE* const implPtr = m_impl.get();
-    m_impl->indirectCull.InitializeUVE();
+    static_cast<void>(m_impl->indirectCull.InitializeUVE());
     m_impl->reloadSubscription = eventSystem.Subscribe<Asset::AssetReloadedEventUVE>(
         [implPtr](const Asset::AssetReloadedEventUVE& event) { implPtr->OnAssetReloadedUVE(event); });
 }
