@@ -218,8 +218,8 @@ void EditorUVE::DrawImportQueueMonitorUVE() {
 void EditorUVE::DrawContentAssetCardInspectorUVE(const Asset::ProjectFileEntryUVE& entry) {
     ImGui::BeginChild("##inspector-asset-card", ImVec2{0.0F, 0.0F}, true);
 
-    const std::filesystem::path contentRoot = m_services->GetProjectUVE().GetContentDirectoryUVE();
-    const std::filesystem::path fullPath = contentRoot / entry.relativePath;
+    const auto snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path fullPath = snapshot.contentRoot / entry.relativePath;
     const std::string filename = entry.relativePath.filename().string();
     const ContentBrowserItemTypeUVE type = ClassifyContentBrowserEntryUVE(entry);
     const char* const typeLabel = GetContentBrowserItemTypeLabelUVE(type);
@@ -233,15 +233,14 @@ void EditorUVE::DrawContentAssetCardInspectorUVE(const Asset::ProjectFileEntryUV
     }
     if (iconId == 0U) {
         if (type == ContentBrowserItemTypeUVE::Entity || type == ContentBrowserItemTypeUVE::Prefab) {
-            const auto objectKind = GetEntityAssetIconKindUVE(entry.relativePath);
-            iconId = m_uiAssets.GetObjectIconTextureIdUVE(objectKind.value_or(Scene::Objects::SceneObjectKindUVE::Object3D));
+            iconId = m_uiAssets.GetObjectIconTextureIdUVE(Scene::Objects::SceneObjectKindUVE::Object3D);
         } else {
             iconId = m_uiAssets.GetContentTypeIconTextureIdUVE(typeLabel);
         }
     }
 
     if (iconId != 0U) {
-        ImGui::Image(reinterpret_cast<ImTextureID>(iconId), ImVec2{48.0F, 48.0F});
+        ImGui::Image(static_cast<ImTextureID>(iconId), ImVec2{48.0F, 48.0F});
         ImGui::SameLine();
     }
     ImGui::BeginGroup();
@@ -292,7 +291,7 @@ void EditorUVE::DrawContentAssetCardInspectorUVE(const Asset::ProjectFileEntryUV
         }
     } else if (type == ContentBrowserItemTypeUVE::Scene) {
         if (ImGui::Button("Open Scene", ImVec2{-1.0F, 28.0F})) {
-            OpenSceneAssetUVE(fullPath);
+            static_cast<void>(OpenSceneAssetUVE(fullPath));
         }
     }
 
