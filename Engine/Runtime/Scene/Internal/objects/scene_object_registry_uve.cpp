@@ -24,6 +24,7 @@ constexpr std::array<std::string_view, 1U> kNavMeshVolumeContracts{"NavMeshVolum
 constexpr std::array<std::string_view, 1U> kNavSeekerContracts{"NavSeeker3DComponentUVE"};
 constexpr std::array<std::string_view, 1U> kSkeletonContracts{"Skeleton3DComponentUVE"};
 constexpr std::array<std::string_view, 1U> kTwoBoneIKContracts{"TwoBoneIK3DComponentUVE"};
+constexpr std::array<std::string_view, 1U> kFullBodyIKContracts{"FullBodyIK3DComponentUVE"};
 constexpr std::array<std::string_view, 1U> kBoneAttachmentContracts{"BoneAttachment3DComponentUVE"};
 constexpr std::array<std::string_view, 1U> kSpringArmContracts{"SpringArm3DComponentUVE"};
 constexpr std::array<std::string_view, 1U> kMarkerContracts{"Marker3DComponentUVE"};
@@ -53,7 +54,7 @@ constexpr std::array<std::string_view, 1U> kUIButtonContracts{"UIButtonComponent
 constexpr std::array<std::string_view, 1U> kSprite2DContracts{"Sprite2DComponentUVE"};
 constexpr std::array<std::string_view, 1U> kCamera2DContracts{"Camera2DComponentUVE"};
 
-constexpr std::array<SceneObjectDescriptorUVE, 51U> kDescriptors{
+constexpr std::array<SceneObjectDescriptorUVE, 52U> kDescriptors{
     // The document's structural root: created by the document lifecycle (new document,
     // load-time migration), never through the Add-Object library - libraryCreatable is false.
     SceneObjectDescriptorUVE{SceneObjectKindUVE::SceneRoot, "scene_root", "SceneRoot", "Scene", "Scene/SceneRootObjectDefinitionUVE", kNoContracts, false},
@@ -70,6 +71,7 @@ constexpr std::array<SceneObjectDescriptorUVE, 51U> kDescriptors{
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Skeleton3D, "skeleton_3d", "Skeleton3D", "Animation", "Scene/Skeleton3DComponentUVE", kSkeletonContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::BoneAttachment3D, "bone_attachment_3d", "BoneAttachment3D", "Animation", "Scene/BoneAttachment3DComponentUVE", kBoneAttachmentContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::TwoBoneIK3D, "two_bone_ik_3d", "TwoBoneIK3D", "Animation", "Scene/TwoBoneIK3DComponentUVE", kTwoBoneIKContracts, true},
+    SceneObjectDescriptorUVE{SceneObjectKindUVE::FullBodyIK3D, "full_body_ik_3d", "FullBodyIK3D", "Animation", "Scene/FullBodyIK3DComponentUVE", kFullBodyIKContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::SpringArm3D, "spring_arm_3d", "SpringArm3D", "Camera", "Physics/SpringArmUVE", kSpringArmContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Marker3D, "marker_3d", "Marker3D", "Scene", "Scene/Marker3DComponentUVE", kMarkerContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Hitbox3D, "hitbox_3d", "Hitbox3D", "Combat", "Physics/Hitbox3DComponentUVE", kHitboxContracts, true},
@@ -183,6 +185,7 @@ SceneObjectPlacementUVE GetSceneObjectPlacementUVE(const SceneObjectKindUVE kind
         case SceneObjectKindUVE::AnimationGraph:
         case SceneObjectKindUVE::Skeleton3D:
         case SceneObjectKindUVE::TwoBoneIK3D:
+        case SceneObjectKindUVE::FullBodyIK3D:
         case SceneObjectKindUVE::BoneAttachment3D:
         case SceneObjectKindUVE::NavSeeker3D:
         case SceneObjectKindUVE::SpringArm3D:
