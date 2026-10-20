@@ -123,6 +123,9 @@ struct Renderer3DFrameDiagnosticsUVE final {
     /// from reading the material assets.
     std::size_t instancedDrawCallsRecorded = 0U;
     std::size_t instancedObjectsRecorded = 0U;
+    /// Indirect instanced draws recorded this frame via GPU compute culling (FrustumCullIndirectUVE)
+    /// and ICommandBufferUVE::DrawIndexedIndirectUVE.
+    std::size_t indirectInstancedDrawCallsRecorded = 0U;
     /// Placement-cache outcome for this frame's extraction walk. Surfaced because a cache whose
     /// hit rate nobody can see is a cache nobody can tell is broken: a key bug that misses every
     /// frame costs an extra comparison on top of the original work and otherwise looks identical

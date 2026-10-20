@@ -246,5 +246,71 @@ TEST_F(PhysicsConstraintSystemUVETest, PhysicsSystemStepUVE_InvokesAttachedConst
     EXPECT_NEAR(WorldPositionUVE(second).x, 3.0F, kEpsilon);
 }
 
+TEST_F(PhysicsConstraintSystemUVETest, AddBallSocketAndSolveUVE_MassWeightedCorrectionKeepsAnchorsCoincident) {
+    const Scene::EntityUVE first = MakeBodyUVE({0.0F, 0.0F, 0.0F}, 1.0F);
+    const Scene::EntityUVE second = MakeBodyUVE({6.0F, 0.0F, 0.0F}, 1.0F);
+
+    const PhysicsConstraintMutationResultUVE added = constraintSystem.AddBallSocketConstraintUVE(
+        BallSocketConstraintUVE{first, second, {}, {}});
+    ASSERT_TRUE(added.IsAcceptedUVE());
+
+    const PhysicsConstraintSolveResultUVE solved = constraintSystem.SolveUVE(entityManager, sceneGraph);
+    EXPECT_TRUE(solved.islandPlanValid);
+    EXPECT_EQ(solved.islandCount, 1U);
+    EXPECT_GT(solved.solvedConstraintCount, 0U);
+    EXPECT_NEAR(WorldPositionUVE(first).x, 3.0F, kEpsilon);
+    EXPECT_NEAR(WorldPositionUVE(second).x, 3.0F, kEpsilon);
+}
+
+TEST_F(PhysicsConstraintSystemUVETest, AddFixedAndSolveUVE_MassWeightedCorrectionKeepsAnchorsCoincident) {
+    const Scene::EntityUVE first = MakeBodyUVE({0.0F, 0.0F, 0.0F}, 1.0F);
+    const Scene::EntityUVE second = MakeBodyUVE({8.0F, 0.0F, 0.0F}, 3.0F);
+
+    const PhysicsConstraintMutationResultUVE added = constraintSystem.AddFixedConstraintUVE(
+        FixedConstraintUVE{first, second, {}, {}});
+    ASSERT_TRUE(added.IsAcceptedUVE());
+
+    const PhysicsConstraintSolveResultUVE solved = constraintSystem.SolveUVE(entityManager, sceneGraph);
+    EXPECT_TRUE(solved.islandPlanValid);
+    EXPECT_EQ(solved.islandCount, 1U);
+    EXPECT_GT(solved.solvedConstraintCount, 0U);
+    // first (mass 1, invMass 1) takes 3/4 of the 8.0 delta = moves +6.0 to 6.0
+    // second (mass 3, invMass 1/3) takes 1/4 of the 8.0 delta = moves -2.0 to 6.0
+    EXPECT_NEAR(WorldPositionUVE(first).x, 6.0F, kEpsilon);
+    EXPECT_NEAR(WorldPositionUVE(second).x, 6.0F, kEpsilon);
+}
+
+TEST_F(PhysicsConstraintSystemUVETest, AddBallSocketConstraintUVE_RejectsDegenerateOrNonFiniteParameters) {
+    const Scene::EntityUVE first = MakeBodyUVE({});
+    const Scene::EntityUVE second = MakeBodyUVE({2.0F, 0.0F, 0.0F});
+
+    EXPECT_FALSE(constraintSystem.AddBallSocketConstraintUVE(
+        BallSocketConstraintUVE{Scene::kInvalidEntityUVE, second, {}, {}}).IsAcceptedUVE());
+    EXPECT_FALSE(constraintSystem.AddBallSocketConstraintUVE(
+        BallSocketConstraintUVE{first, Scene::kInvalidEntityUVE, {}, {}}).IsAcceptedUVE());
+    EXPECT_FALSE(constraintSystem.AddBallSocketConstraintUVE(
+        BallSocketConstraintUVE{first, first, {}, {}}).IsAcceptedUVE());
+
+    const float inf = std::numeric_limits<float>::infinity();
+    EXPECT_FALSE(constraintSystem.AddBallSocketConstraintUVE(
+        BallSocketConstraintUVE{first, second, {inf, 0.0F, 0.0F}, {}}).IsAcceptedUVE());
+}
+
+TEST_F(PhysicsConstraintSystemUVETest, AddFixedConstraintUVE_RejectsDegenerateOrNonFiniteParameters) {
+    const Scene::EntityUVE first = MakeBodyUVE({});
+    const Scene::EntityUVE second = MakeBodyUVE({2.0F, 0.0F, 0.0F});
+
+    EXPECT_FALSE(constraintSystem.AddFixedConstraintUVE(
+        FixedConstraintUVE{Scene::kInvalidEntityUVE, second, {}, {}}).IsAcceptedUVE());
+    EXPECT_FALSE(constraintSystem.AddFixedConstraintUVE(
+        FixedConstraintUVE{first, Scene::kInvalidEntityUVE, {}, {}}).IsAcceptedUVE());
+    EXPECT_FALSE(constraintSystem.AddFixedConstraintUVE(
+        FixedConstraintUVE{first, first, {}, {}}).IsAcceptedUVE());
+
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(constraintSystem.AddFixedConstraintUVE(
+        FixedConstraintUVE{first, second, {}, {0.0F, nan, 0.0F}}).IsAcceptedUVE());
+}
+
 } // namespace
 } // namespace UVE::Physics::Tests
