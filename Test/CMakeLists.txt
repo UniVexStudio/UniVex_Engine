@@ -359,6 +359,7 @@ add_executable(uve_integration_tests
     Objects/3D/animation_objects_uve_tests.cpp
     Objects/3D/conformed_playback_uve_tests.cpp
     Objects/3D/two_bone_ik_3d_uve_tests.cpp
+    Objects/3D/full_body_ik_3d_uve_tests.cpp
     Objects/UI/object_definitions_canvas_uve_tests.cpp
     Objects/2D/sprite_2d_uve_tests.cpp
     Objects/2D/camera_2d_uve_tests.cpp
@@ -375,6 +376,7 @@ add_executable(uve_integration_tests
     Integration/Script/contact_script_events_uve_tests.cpp
     Integration/Scene/bone_attachment_pass_uve_tests.cpp
     Integration/Scene/two_bone_ik_pass_uve_tests.cpp
+    Integration/Scene/full_body_ik_pass_uve_tests.cpp
     Integration/Scene/object_common_components_uve_tests.cpp
     Integration/Scene/scene_component_metadata_uve_tests.cpp
     Integration/Scene/scene_serializer_uve_tests.cpp

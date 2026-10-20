@@ -35,6 +35,7 @@
 #include "uve/objects/3d/health_uve.h"
 #include "uve/objects/3d/player_3d_uve.h"
 #include "uve/objects/3d/two_bone_ik_3d_uve.h"
+#include "uve/objects/3d/full_body_ik_3d_uve.h"
 #include "uve/math/vector3_uve.h"
 
 namespace UVE::Scene::Tests {
@@ -994,6 +995,59 @@ TEST(SceneComponentMetadataUVETest, TheTwoBoneIKSectionDeclaresThreeReferencesTh
     EXPECT_FALSE(entry->isInstanceValid(&forgedName));
     TwoBoneIK3DComponentUVE notFinite = valid;
     notFinite.targetPosition.z = std::numeric_limits<float>::infinity();
+    EXPECT_FALSE(entry->isInstanceValid(&notFinite));
+}
+
+TEST(SceneComponentMetadataUVETest, TheFullBodyIKSectionDeclaresThePullsTheBudgetAndTheAnswer) {
+    // The skeleton is an entity reference carrying the flag the serializer reads to remap it through
+    // its file-local id table; the effectors are a list drawn by their own drawer; the solver's
+    // budget is three bounded numbers. The answers one solve writes back - did it run, did it
+    // converge, what the budget cost - are runtime state, so authoring cannot write them and the
+    // Inspector still shows them.
+    const TypeMetadataEntryUVE* entry =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(FullBodyIK3DComponentUVE)));
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(entry->typeId, "component.full_body_ik_3d");
+    EXPECT_EQ(entry->displayName, "FullBodyIK3D");
+
+    const TypeMetadataPropertyUVE* reference = FindPropertyUVE(*entry, "skeleton");
+    ASSERT_NE(reference, nullptr);
+    EXPECT_TRUE(reference->flags.HasUVE(TypeMetadataPropertyFlagsUVE::EntityReference));
+    EXPECT_EQ(reference->typeId, kPropertyTypeEntityUVE);
+    EXPECT_FALSE(reference->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState));
+
+    for (const char* const name : {"enabled", "effectors", "rootBoneName", "rootBoneIndex", "maxIterations",
+                                   "toleranceMetres", "rootTranslationWeight", "maxJointStepRadians"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*entry, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_FALSE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
+    }
+    for (const char* const name : {"solved", "converged", "iterationsUsed"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*entry, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_TRUE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
+    }
+
+    // The root bone index defaults to "ask the name": the sentinel the pass reads, so a solve nobody
+    // has edited binds by name instead of silently to bone zero.
+    const Core::TypeInstanceUVE defaults = Core::TypeInstanceUVE::MakeDefaultUVE(*entry);
+    ASSERT_TRUE(defaults.IsValidUVE());
+    const TypeMetadataPropertyUVE* index = FindPropertyUVE(*entry, "rootBoneIndex");
+    ASSERT_NE(index, nullptr);
+    std::uint32_t value = 0U;
+    index->getValue(defaults.GetUVE(), &value);
+    EXPECT_EQ(value, kInvalidSkeletonBoneIndexUVE);
+
+    // The component's own validity rule travels with the declaration, so a generic writer cannot
+    // author a budget outside its bounds and have it accepted.
+    ASSERT_NE(entry->isInstanceValid, nullptr);
+    const FullBodyIK3DComponentUVE valid{};
+    EXPECT_TRUE(entry->isInstanceValid(&valid));
+    FullBodyIK3DComponentUVE wrongBudget = valid;
+    wrongBudget.maxIterations = kMaximumFullBodyIKIterationsUVE + 1U;
+    EXPECT_FALSE(entry->isInstanceValid(&wrongBudget));
+    FullBodyIK3DComponentUVE notFinite = valid;
+    notFinite.toleranceMetres = std::numeric_limits<float>::infinity();
     EXPECT_FALSE(entry->isInstanceValid(&notFinite));
 }
 

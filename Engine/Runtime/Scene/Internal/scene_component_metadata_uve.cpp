@@ -79,6 +79,7 @@
 #include "uve/objects/3d/health_uve.h"
 #include "uve/objects/3d/player_3d_uve.h"
 #include "uve/objects/3d/two_bone_ik_3d_uve.h"
+#include "uve/objects/3d/full_body_ik_3d_uve.h"
 #include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
@@ -2942,6 +2943,79 @@ void DeclareTwoBoneIKUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 }
 
+/// FullBodyIK3D: the whole skeleton solved at once so several limbs share one answer. The root
+/// bone pair is the same index-or-name reference the chain carries, the effectors are a list of
+/// bone/target/weight pulls drawn by their own drawer, and the solver's budget is authored as
+/// three numbers rather than discovered by a profiler. The answers the solve writes back each
+/// pass - did it run, did it converge, what the budget cost - are runtime state, so an author can
+/// see what a solve did without a debugger.
+void DeclareFullBodyIKUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    using A = FullBodyIK3DComponentUVE;
+    const auto entityReference = [](TypeMetadataPropertyUVE property) {
+        property.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+        return property;
+    };
+    AddValidatedUVE<FullBodyIK3DComponentUVE, &IsFullBodyIK3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE("component.full_body_ik_3d", "FullBodyIK3DComponentUVE", "FullBodyIK3D", kSectionOrderTypeSpecificUVE,
+            {
+                entityReference(WithTooltipUVE(DeclareUVE<&A::skeleton>("skeleton", "Skeleton",
+                                                                       kPropertyTypeEntityUVE),
+                                               "The object whose skeleton this solve poses. Empty leaves "
+                                               "the pose exactly as the animation wrote it.")),
+                WithTooltipUVE(DeclareUVE<&A::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off stops solving without removing the object."),
+                WithTooltipUVE(DeclareUVE<&A::effectors>("effectors", "Effectors", "FullBodyIKEffectors"),
+                               "Where each limb should end up, and how hard it pulls. Sweeps run in "
+                               "list order, so an earlier effector is answered first."),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::rootBoneName>("rootBoneName", "Root Bone",
+                                                                      kPropertyTypeStringUVE),
+                                          "The joint the solve pivots around and may translate - the "
+                                          "hips. Every effector must sit in this bone's subtree."),
+                           "Root"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::rootBoneIndex>("rootBoneIndex", "Root Index",
+                                                                        kPropertyTypeUInt32UVE),
+                                          "The root bone's index in the skeleton. 4294967295 means \"ask "
+                                          "the name\"; any other value wins over it when it names a real bone."),
+                           "Root"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&A::maxIterations>("maxIterations",
+                                                                                     "Max Iterations",
+                                                                                     kPropertyTypeUInt32UVE),
+                                                       1.0, 64.0, 1.0),
+                                          "How many full sweeps over every effector the solve may run. "
+                                          "The cap is what makes the frame's cost bounded."),
+                           "Solver"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&A::toleranceMetres>("toleranceMetres",
+                                                                                       "Tolerance (m)",
+                                                                                       kPropertyTypeFloatUVE),
+                                                       0.000001, 1.0, 0.0001),
+                                          "How close an effector has to land before it counts as placed."),
+                           "Solver"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&A::rootTranslationWeight>(
+                                                           "rootTranslationWeight", "Root Translation",
+                                                           kPropertyTypeFloatUVE),
+                                                       0.0, 1.0, 0.05),
+                                          "How much of the average pull each iteration may spend moving "
+                                          "the root instead of bending joints. 0 pins the character in "
+                                          "place; 1 lets it step toward its targets."),
+                           "Solver"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&A::maxJointStepRadians>(
+                                                           "maxJointStepRadians", "Max Joint Step (rad)",
+                                                           kPropertyTypeFloatUVE),
+                                                       0.017453292519943295, 3.14159265358979323846, 0.017453292519943295),
+                                          "The most any one joint may rotate in a single sweep. A hard "
+                                          "pull arrives over a few frames instead of snapping through "
+                                          "a fold in one."),
+                           "Solver"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::solved>("solved", "Solved", kPropertyTypeBoolUVE), "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::converged>("converged", "Converged", kPropertyTypeBoolUVE),
+                           "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::iterationsUsed>("iterationsUsed", "Iterations Used",
+                                                                      kPropertyTypeUInt32UVE),
+                           "State"),
+            }));
+}
+
 /// Concrete RenderInstance3D children. Each brings exactly its own section; everything above it
 /// comes from the bases.
 void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
@@ -3309,6 +3383,7 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     DeclareSkeletonUVE(entries);
     DeclareBoneAttachmentUVE(entries);
     DeclareTwoBoneIKUVE(entries);
+    DeclareFullBodyIKUVE(entries);
     DeclareObjectCommonUVE(entries);
 
     TypeMetadataRegistryUVE registry;

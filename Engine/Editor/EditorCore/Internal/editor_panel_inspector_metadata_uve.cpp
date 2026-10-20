@@ -148,7 +148,7 @@ void DrawTooltipUVE(const TypeMetadataPropertyUVE& property) {
 /// Custom drawers that lay out their own rows - a multi-line box, a slot with an action strip, a
 /// list with an add button - rather than filling a value cell. Any other id falls back to the
 /// generic editor for its value type, which is where the rotation and entity-picker ids still go.
-constexpr std::array<std::string_view, 11> kBlockPropertyDrawerIdsUVE{
+constexpr std::array<std::string_view, 12> kBlockPropertyDrawerIdsUVE{
     "animation-parameters",
     "animation-graph",
     "multiline-text",
@@ -158,6 +158,7 @@ constexpr std::array<std::string_view, 11> kBlockPropertyDrawerIdsUVE{
     "skeleton-source",
     "skeleton-bones",
     "entity-reference-list",
+    "full-body-effectors",
     "lod-group-thresholds",
     "lod-group-meshes",
 };
@@ -701,6 +702,8 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
                 skeletonEntity = entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(m_selectedEntity).skeleton;
             } else if (entityManager.HasComponentUVE<Scene::TwoBoneIK3DComponentUVE>(m_selectedEntity)) {
                 skeletonEntity = entityManager.GetComponentUVE<Scene::TwoBoneIK3DComponentUVE>(m_selectedEntity).skeleton;
+            } else if (entityManager.HasComponentUVE<Scene::FullBodyIK3DComponentUVE>(m_selectedEntity)) {
+                skeletonEntity = entityManager.GetComponentUVE<Scene::FullBodyIK3DComponentUVE>(m_selectedEntity).skeleton;
             }
             if (skeletonEntity == Scene::kInvalidEntityUVE || !entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity)) {
                 Scene::EntityUVE current = m_selectedEntity;
@@ -1110,6 +1113,10 @@ bool EditorUVE::DrawCustomPropertyUVE(const TypeMetadataEntryUVE& entry, const T
     }
     if (property.customDrawerId == "entity-reference-list") {
         DrawEntityReferenceListPropertyUVE(entry, property, instance);
+        return true;
+    }
+    if (property.customDrawerId == "full-body-effectors") {
+        DrawFullBodyEffectorsPropertyUVE(entry, property, instance);
         return true;
     }
     if (property.customDrawerId == "lod-group-thresholds") {
@@ -1721,6 +1728,166 @@ void EditorUVE::DrawEntityReferenceListPropertyUVE(const TypeMetadataEntryUVE& e
         }
     }
     static_cast<void>(SetSelectedComponentPropertyUVE(entry, property, written.data()));
+}
+
+void EditorUVE::DrawFullBodyEffectorsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                                 const Core::TypeMetadataPropertyUVE& property,
+                                                 const void* const instance) {
+    if (property.typeId != Strings::StringIdUVE{"FullBodyIKEffectors"} || property.getValue == nullptr ||
+        property.setValue == nullptr || instance == nullptr) {
+        return;
+    }
+
+    // The whole effector list, copied out and written back through the property's own typed
+    // accessor - one undo step per edit and the component's validator as the last word. Rows carry
+    // a bone reference, a target reference or authored point, and a pull weight; the runtime
+    // answers the solve writes back live in the State group, not here.
+    std::vector<Scene::FullBodyIKEffectorUVE> effectors;
+    property.getValue(instance, &effectors);
+
+    const bool writable = property.IsAuthoringWritableUVE() && IsAuthoringCommandAllowedUVE();
+    std::optional<std::size_t> removeIndex;
+    bool added = false;
+    bool edited = false;
+
+    ImGui::BeginDisabled(!writable);
+    {
+        const std::string header = "Effectors (" + std::to_string(effectors.size()) + ")##full-body-effectors";
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(header.c_str());
+        if (ImGui::IsItemHovered()) {
+            DrawTooltipUVE(property);
+        }
+        if (effectors.size() < Scene::kMaximumFullBodyIKEffectorsUVE) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Add")) {
+                effectors.push_back(Scene::FullBodyIKEffectorUVE{});
+                added = true;
+                edited = true;
+            }
+        }
+    }
+    if (BeginPropertyRowsUVE("##full-body-effectors")) {
+        const std::vector<Scene::EntityUVE> candidates = GetEntityReferenceCandidatesUVE();
+        for (std::size_t index = 0U; index < effectors.size(); ++index) {
+            Scene::FullBodyIKEffectorUVE& effector = effectors[index];
+            ImGui::PushID(static_cast<int>(index));
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Bone");
+            ImGui::TableSetColumnIndex(1);
+            {
+                std::array<char, 128> boneName{};
+                const std::size_t copyLength = std::min(effector.boneName.size(), boneName.size() - 1U);
+                std::memcpy(boneName.data(), effector.boneName.data(), copyLength);
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                if (ImGui::InputText("##bone-name", boneName.data(), boneName.size())) {
+                    effector.boneName = boneName.data();
+                    edited = true;
+                }
+            }
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted("Bone Index");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            {
+                int boneIndex = static_cast<int>(effector.boneIndex);
+                if (ImGui::InputInt("##bone-index", &boneIndex, 1)) {
+                    effector.boneIndex = boneIndex < 0
+                                             ? Scene::kInvalidSkeletonBoneIndexUVE
+                                             : static_cast<std::uint32_t>(boneIndex);
+                    edited = true;
+                }
+            }
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted("Target");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            {
+                const std::string preview = effector.target != Scene::kInvalidEntityUVE && IsDocumentEntityUVE(effector.target)
+                                                ? GetEntityDisplayLabelUVE(effector.target)
+                                                : std::string{"(authored point)"};
+                if (ImGui::BeginCombo("##target", preview.c_str())) {
+                    if (ImGui::Selectable("(authored point)")) {
+                        effector.target = Scene::kInvalidEntityUVE;
+                        edited = true;
+                    }
+                    for (const Scene::EntityUVE candidate : candidates) {
+                        const bool isSelected = candidate == effector.target;
+                        const std::string label = GetEntityDisplayLabelUVE(candidate) + "##" +
+                                                  std::to_string(candidate.index) + "_" +
+                                                  std::to_string(candidate.generation);
+                        if (ImGui::Selectable(label.c_str(), isSelected) && !isSelected) {
+                            effector.target = candidate;
+                            edited = true;
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted("Target Point");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            {
+                float point[3] = {effector.targetPosition.x, effector.targetPosition.y,
+                                  effector.targetPosition.z};
+                if (ImGui::DragFloat3("##target-point", point, 0.01F)) {
+                    effector.targetPosition = Math::Vector3UVE{point[0], point[1], point[2]};
+                    edited = true;
+                }
+            }
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted("Weight");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            {
+                float weight = effector.positionWeight;
+                if (ImGui::SliderFloat("##weight", &weight, 0.0F, 1.0F, "%.3f")) {
+                    effector.positionWeight = weight;
+                    edited = true;
+                }
+            }
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted("");
+            ImGui::TableSetColumnIndex(1);
+            if (ImGui::SmallButton("Remove")) {
+                removeIndex = index;
+                edited = true;
+            }
+            ImGui::PopID();
+        }
+        if (effectors.empty()) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextDisabled("None");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextDisabled("Add a limb to pull on: a bone, a target, and how hard it pulls.");
+        } else {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextDisabled("Sweeps");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextDisabled("Effectors are answered in this order each pass.");
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndDisabled();
+    static_cast<void>(added);
+
+    if (!edited) {
+        return;
+    }
+    if (removeIndex.has_value()) {
+        effectors.erase(effectors.begin() + static_cast<std::ptrdiff_t>(*removeIndex));
+    }
+    static_cast<void>(SetSelectedComponentPropertyUVE(entry, property, &effectors));
 }
 
 void EditorUVE::DrawLodGroupThresholdsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
