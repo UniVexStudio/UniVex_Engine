@@ -423,7 +423,18 @@ and one of the highest-priority areas below.
     differing third-party naming conventions without T-pose freezes).
   - Entity Editor live retargeting preview session (fixing previous blackout bug).
   - Both rigs brought to a common A-pose automatically before mapping.
-- [ ] Animation compression (both curve compression and a runtime decompression path)
+- [x] Animation compression (both curve compression and a runtime decompression path) -
+  `CompressAnimationClipAssetUVE` keyframe-reduces each track with a greedy error-bounded pass
+  (worst-key insertion until every source key reconstructs inside the reduction budget) and
+  quantizes what remains into fixed-stride packed key records: smallest-three 16-bit rotations
+  plus range-quantized 16/32-bit position and scale channels picked adaptively so the stated
+  tolerance holds even on huge-range tracks. The runtime
+  `TrySampleCompressedAnimationTrackUVE` path decodes on the fly with a binary search and exactly
+  mirrors the uncompressed clip sampler's clamp/loop and lerp/nlerp semantics; events and the
+  rest skeleton stay lossless so retargeting and gameplay timing are unchanged.
+  `MeasureAnimationCompressionErrorUVE` proves the bounds on a uniform probe grid, and the suite
+  covers error budgets, determinism, quaternion sign flips, root-motion travel, constant-axis
+  exactness, and corrupt-stream rejection.
 - [x] Additive animation layers (e.g. aim offsets, lean, breathing) on top of a base pose - an
   Additive graph node adds its clip's pose over the base at the parameter's weight, locked by the
   layer cases in the graph suite.
