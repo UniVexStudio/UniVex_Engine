@@ -2438,8 +2438,8 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                               nlohmann::json bindsJson = nlohmann::json::array();
                               for (const auto& bind : skin.boneBinds) {
                                   nlohmann::json matJson = nlohmann::json::array();
-                                  for (int r = 0; r < 4; ++r) {
-                                      for (int c = 0; c < 4; ++c) {
+                                  for (std::size_t r = 0U; r < 4U; ++r) {
+                                      for (std::size_t c = 0U; c < 4U; ++c) {
                                           matJson.push_back(bind.inverseBindPose.m[r][c]);
                                       }
                                   }
@@ -2467,10 +2467,10 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                                       bind.boneIndex = bindJson.value("boneIndex", -1);
                                       if (bindJson.contains("inverseBindPose") && bindJson["inverseBindPose"].is_array() &&
                                           bindJson["inverseBindPose"].size() == 16U) {
-                                          for (int r = 0; r < 4; ++r) {
-                                              for (int c = 0; c < 4; ++c) {
+                                          for (std::size_t r = 0U; r < 4U; ++r) {
+                                              for (std::size_t c = 0U; c < 4U; ++c) {
                                                   bind.inverseBindPose.m[r][c] =
-                                                      bindJson["inverseBindPose"][r * 4 + c].get<float>();
+                                                      bindJson["inverseBindPose"][r * 4U + c].get<float>();
                                               }
                                           }
                                       }
