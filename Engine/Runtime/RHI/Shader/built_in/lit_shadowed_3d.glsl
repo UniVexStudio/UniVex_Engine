@@ -14,7 +14,7 @@ out vec2 vTexCoord;
 out vec4 vLightSpacePosition;
 out vec4 vLightSpacePositions[3];
 
-#if defined(UVE_INSTANCED) || defined(UVE_INDIRECT_INSTANCED)
+#ifdef UVE_INSTANCED
 // The instanced variant reads its per-object transforms from a storage buffer indexed by
 // gl_InstanceID instead of from a uniform set once per draw. That is the entire difference
 // between the two variants, and it is why this is a #define rather than a second shader file:
@@ -36,11 +36,6 @@ layout(std430, binding = 1) readonly buffer InstanceNormalTransformBlock {
 layout(std430, binding = 2) readonly buffer InstanceBaseBlock {
     int uInstanceBaseIndex;
 };
-#ifdef UVE_INDIRECT_INSTANCED
-layout(std430, binding = 3) readonly buffer VisibleIndexBlock {
-    uint visibleIndices[];
-};
-#endif
 #else
 uniform mat4 uModel;
 // Transpose(inverse(uModel)): correctly transforms normals under non-uniform scale, unlike
@@ -54,11 +49,7 @@ uniform mat4 uLightSpaceMatrix;
 uniform mat4 uLightSpaceMatrices[3];
 
 void main() {
-#if defined(UVE_INDIRECT_INSTANCED)
-    int instanceSlot = uInstanceBaseIndex + int(visibleIndices[gl_InstanceID]);
-    mat4 model = instanceModels[instanceSlot];
-    mat4 normalMatrix = instanceNormalModels[instanceSlot];
-#elif defined(UVE_INSTANCED)
+#ifdef UVE_INSTANCED
     int instanceSlot = uInstanceBaseIndex + gl_InstanceID;
     mat4 model = instanceModels[instanceSlot];
     mat4 normalMatrix = instanceNormalModels[instanceSlot];
@@ -150,12 +141,6 @@ uniform vec3 uReflectionProbeAxisY;
 uniform vec3 uReflectionProbeAxisZ;
 uniform vec3 uReflectionProbeHalfExtents;
 uniform samplerCube uReflectionProbeCube;
-
-// Unified 2D Shadow Atlas for Spot & Point Lights (Texture slot 7)
-uniform sampler2D uShadowAtlasTexture;
-uniform mat4 uLightShadowMatrices[4];
-uniform vec4 uLightShadowTileRects[4];
-uniform int uLightShadowEnabled[4];
 
 const float kPiUVE = 3.14159265359;
 const float kBrdfEpsilonUVE = 0.0001;
@@ -323,15 +308,13 @@ float SampleCascadeDepthUVE(int cascadeIndex, vec2 texCoord) {
 }
 
 vec2 CascadeTexelSizeUVE(int cascadeIndex) {
-    ivec2 sz = ivec2(1);
     if (cascadeIndex == 0) {
-        sz = textureSize(uShadowMapTextures[0], 0);
-    } else if (cascadeIndex == 1) {
-        sz = textureSize(uShadowMapTextures[1], 0);
-    } else {
-        sz = textureSize(uShadowMapTextures[2], 0);
+        return 1.0 / vec2(textureSize(uShadowMapTextures[0], 0));
     }
-    return 1.0 / max(vec2(sz), vec2(1.0));
+    if (cascadeIndex == 1) {
+        return 1.0 / vec2(textureSize(uShadowMapTextures[1], 0));
+    }
+    return 1.0 / vec2(textureSize(uShadowMapTextures[2], 0));
 }
 
 vec4 CascadeLightSpacePositionUVE(int cascadeIndex) {
@@ -356,14 +339,8 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
         return 1.0;
     }
 
-    ivec2 mapSize = cascadeIndex < 0 ? textureSize(uShadowMapTexture, 0)
-                                     : textureSize(uShadowMapTextures[clamp(cascadeIndex, 0, 2)], 0);
-    if (mapSize.x <= 1 || mapSize.y <= 1) {
-        return 1.0;
-    }
-
     int kernelRadius = clamp(uShadowPcfKernelRadius, 0, 2);
-    vec2 texelSize = cascadeIndex < 0 ? 1.0 / max(vec2(mapSize), vec2(1.0))
+    vec2 texelSize = cascadeIndex < 0 ? 1.0 / vec2(textureSize(uShadowMapTexture, 0))
                                       : CascadeTexelSizeUVE(cascadeIndex);
     float currentDepth = projected.z;
     float bias = max(uShadowBias * (1.0 - max(dot(normal, lightDirection), 0.0)) * max(uShadowNormalBias, 0.0),
@@ -384,11 +361,7 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
         }
     }
 
-    float factor = mix(1.0, visibleSamples / float(sampleCount), clamp(uShadowOpacity, 0.0, 1.0));
-    if (isnan(factor) || isinf(factor)) {
-        return 1.0;
-    }
-    return factor;
+    return mix(1.0, visibleSamples / float(sampleCount), clamp(uShadowOpacity, 0.0, 1.0));
 }
 
 float FadeShadowToLitAtDistanceUVE(float shadowFactor, float viewDepth, float finalCascadeFarDepth) {
@@ -403,7 +376,7 @@ float FadeShadowToLitAtDistanceUVE(float shadowFactor, float viewDepth, float fi
 
 float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
     if (uShadowCascadeCount <= 0) {
-        return 1.0;
+        return ShadowFactorFromPositionUVE(vLightSpacePosition, normal, lightDirection, -1);
     }
 
     float viewDepth = length(vWorldPosition - uViewPosition);
@@ -435,127 +408,7 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
             shadowFactor = mix(shadowFactor, nextCascadeShadowFactor, blendWeight);
         }
     }
-    float finalFactor = FadeShadowToLitAtDistanceUVE(shadowFactor, viewDepth, finalCascadeFarDepth);
-    if (isnan(finalFactor) || isinf(finalFactor)) {
-        return 1.0;
-    }
-    return finalFactor;
-}
-
-vec2 OctahedralWrapUVE(vec2 v) {
-    return (1.0 - abs(v.yx)) * vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
-}
-
-vec2 OctahedralEncodeUVE(vec3 dir) {
-    float l1 = abs(dir.x) + abs(dir.y) + abs(dir.z);
-    if (l1 <= 0.00001) {
-        return vec2(0.5, 0.5);
-    }
-    dir /= l1;
-    vec2 uv = (dir.z >= 0.0) ? dir.xy : OctahedralWrapUVE(dir.xy);
-    return uv * 0.5 + 0.5;
-}
-
-vec3 OctahedralDecodeUVE(vec2 uv) {
-    vec2 p = uv * 2.0 - 1.0;
-    vec3 v = vec3(p.x, p.y, 1.0 - abs(p.x) - abs(p.y));
-    if (v.z < 0.0) {
-        v.xy = OctahedralWrapUVE(v.xy);
-    }
-    return normalize(v);
-}
-
-float SpotShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightDirection) {
-    if (uLightShadowEnabled[lightIndex] == 0) {
-        return 1.0;
-    }
-    vec4 lightSpacePos = uLightShadowMatrices[lightIndex] * vec4(vWorldPosition, 1.0);
-    if (abs(lightSpacePos.w) <= 0.0001) {
-        return 1.0;
-    }
-    vec3 projected = lightSpacePos.xyz / lightSpacePos.w;
-    projected.xy = projected.xy * 0.5 + 0.5;
-    if (projected.x < 0.0 || projected.x > 1.0 || projected.y < 0.0 || projected.y > 1.0 ||
-        projected.z < 0.0 || projected.z > 1.0) {
-        return 1.0;
-    }
-    vec4 tileRect = uLightShadowTileRects[lightIndex];
-    vec2 tileSize = tileRect.zw - tileRect.xy;
-    if (tileSize.x <= 0.0 || tileSize.y <= 0.0) {
-        return 1.0;
-    }
-
-    float currentDepth = projected.z;
-    float bias = max(uShadowBias * (1.0 - max(dot(normal, lightDirection), 0.0)) * max(uShadowNormalBias, 0.0),
-                     uShadowBias * 0.2);
-    vec2 atlasTexelSize = vec2(1.0 / 4096.0);
-    int kernelRadius = clamp(uShadowPcfKernelRadius, 0, 2);
-    float visibleSamples = 0.0;
-    int sampleCount = 0;
-
-    vec2 minUv = tileRect.xy + atlasTexelSize * 0.5;
-    vec2 maxUv = tileRect.zw - atlasTexelSize * 0.5;
-
-    for (int offsetY = -2; offsetY <= 2; ++offsetY) {
-        for (int offsetX = -2; offsetX <= 2; ++offsetX) {
-            if (abs(offsetX) > kernelRadius || abs(offsetY) > kernelRadius) {
-                continue;
-            }
-            vec2 sampleUv = tileRect.xy + projected.xy * tileSize + vec2(offsetX, offsetY) * atlasTexelSize;
-            sampleUv = clamp(sampleUv, minUv, maxUv);
-            float sampledDepth = texture(uShadowAtlasTexture, sampleUv).r;
-            visibleSamples += (currentDepth - bias > sampledDepth) ? 0.0 : 1.0;
-            ++sampleCount;
-        }
-    }
-    float factor = mix(1.0, visibleSamples / float(max(sampleCount, 1)), clamp(uShadowOpacity, 0.0, 1.0));
-    return (isnan(factor) || isinf(factor)) ? 1.0 : factor;
-}
-
-float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, float lightRange) {
-    if (uLightShadowEnabled[lightIndex] == 0) {
-        return 1.0;
-    }
-    vec3 toFrag = vWorldPosition - lightPosition;
-    float dist = length(toFrag);
-    if (dist <= 0.0001 || dist > lightRange) {
-        return 1.0;
-    }
-    vec4 tileRect = uLightShadowTileRects[lightIndex];
-    vec2 tileSize = tileRect.zw - tileRect.xy;
-    if (tileSize.x <= 0.0 || tileSize.y <= 0.0) {
-        return 1.0;
-    }
-
-    vec3 dir = toFrag / dist;
-    vec2 tileUv = OctahedralEncodeUVE(dir);
-    float currentDepth = clamp(dist / max(lightRange, 0.0001), 0.0, 1.0);
-    vec3 lightDir = -dir;
-    float bias = max(uShadowBias * (1.0 - max(dot(normal, lightDir), 0.0)) * max(uShadowNormalBias, 0.0),
-                     uShadowBias * 0.2);
-
-    vec2 atlasTexelSize = vec2(1.0 / 4096.0);
-    int kernelRadius = clamp(uShadowPcfKernelRadius, 0, 2);
-    float visibleSamples = 0.0;
-    int sampleCount = 0;
-
-    vec2 minUv = tileRect.xy + atlasTexelSize * 0.5;
-    vec2 maxUv = tileRect.zw - atlasTexelSize * 0.5;
-
-    for (int offsetY = -2; offsetY <= 2; ++offsetY) {
-        for (int offsetX = -2; offsetX <= 2; ++offsetX) {
-            if (abs(offsetX) > kernelRadius || abs(offsetY) > kernelRadius) {
-                continue;
-            }
-            vec2 sampleUv = tileRect.xy + tileUv * tileSize + vec2(offsetX, offsetY) * atlasTexelSize;
-            sampleUv = clamp(sampleUv, minUv, maxUv);
-            float sampledDepth = texture(uShadowAtlasTexture, sampleUv).r;
-            visibleSamples += (currentDepth - bias > sampledDepth) ? 0.0 : 1.0;
-            ++sampleCount;
-        }
-    }
-    float factor = mix(1.0, visibleSamples / float(max(sampleCount, 1)), clamp(uShadowOpacity, 0.0, 1.0));
-    return (isnan(factor) || isinf(factor)) ? 1.0 : factor;
+    return FadeShadowToLitAtDistanceUVE(shadowFactor, viewDepth, finalCascadeFarDepth);
 }
 
 void main() {
@@ -720,23 +573,9 @@ void main() {
         vec3 directContribution = (diffuse + specular) * radiance * normalDotLight;
 
         if (light.type == 0) {
-            float shadowFactor = DirectionalShadowFactorUVE(normal, lightDirection);
-            if (isnan(shadowFactor) || isinf(shadowFactor)) {
-                shadowFactor = 1.0;
-            }
-            directContribution *= mix(0.28, 1.0, clamp(shadowFactor, 0.0, 1.0));
-        } else if (light.type == 1) {
-            float shadowFactor = PointShadowFactorUVE(lightIndex, normal, light.position, light.range);
-            directContribution *= mix(0.28, 1.0, clamp(shadowFactor, 0.0, 1.0));
-        } else if (light.type == 2) {
-            float shadowFactor = SpotShadowFactorUVE(lightIndex, normal, lightDirection);
-            directContribution *= mix(0.28, 1.0, clamp(shadowFactor, 0.0, 1.0));
+            directContribution *= mix(0.28, 1.0, DirectionalShadowFactorUVE(normal, lightDirection));
         }
-        if (!isnan(directContribution.r) && !isinf(directContribution.r) &&
-            !isnan(directContribution.g) && !isinf(directContribution.g) &&
-            !isnan(directContribution.b) && !isinf(directContribution.b)) {
-            lighting += directContribution;
-        }
+        lighting += directContribution;
     }
 
     // Safe baseline ambient fill so unlit back-faces or scenes without an explicit sky are never pitch black.

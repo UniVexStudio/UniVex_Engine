@@ -19,8 +19,6 @@
 #include <system_error>
 #include <vector>
 
-#include <nlohmann/json.hpp>
-#include "uve/asset/uve_file_envelope_uve.h"
 #include <imgui.h>
 
 #include "uve/component/name_component_uve.h"
@@ -160,9 +158,6 @@ std::optional<std::filesystem::path> EditorUVE::RenameContentAssetUVE(const std:
             static_cast<void>(assetDatabase.RelocateUVE(record.guid, *target));
         }
     }
-    const std::string ext = LowerExtensionUVE(*target);
-    const bool isSceneOrEntityOrPrefab = (ext == ".uventity" || ext == ".uvprefab" || ext == ".uvscene");
-
     if (m_entityEditSession.has_value() && m_entityEditSession->assetPath == file) {
         m_entityEditSession->assetPath = *target;
         const Scene::EntityUVE entityRoot = GetEntityEditorRootUVE();
@@ -171,52 +166,6 @@ std::optional<std::filesystem::path> EditorUVE::RenameContentAssetUVE(const std:
             const std::string newName = target->stem().string();
             if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(entityRoot)) {
                 entityManager.GetComponentUVE<Scene::NameComponentUVE>(entityRoot).name = newName;
-            }
-            static_cast<void>(SaveEntityEditorUVE());
-        }
-    } else if (m_activeScenePath == file) {
-        m_activeScenePath = *target;
-        const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
-        if (sceneRoot != Scene::kInvalidEntityUVE) {
-            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-            const std::string newName = target->stem().string();
-            if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(sceneRoot)) {
-                entityManager.GetComponentUVE<Scene::NameComponentUVE>(sceneRoot).name = newName;
-            }
-        }
-    }
-
-    if (isSceneOrEntityOrPrefab) {
-        if (const auto fileData = Asset::ReadUveFileUVE(*target); fileData.has_value()) {
-            const auto& [header, payload] = *fileData;
-            const std::string payloadText(reinterpret_cast<const char*>(payload.data()), payload.size());
-            nlohmann::json payloadJson = nlohmann::json::parse(payloadText, nullptr, false);
-            if (!payloadJson.is_discarded() && payloadJson.contains("entities") &&
-                payloadJson["entities"].is_array() && !payloadJson["entities"].empty()) {
-                const std::string newName = target->stem().string();
-                for (auto& entityObj : payloadJson["entities"]) {
-                    bool isRoot = true;
-                    if (entityObj.contains("components") && entityObj["components"].contains("HierarchyComponentUVE")) {
-                        const auto& h = entityObj["components"]["HierarchyComponentUVE"];
-                        if (h.contains("parentLocalId") && h["parentLocalId"].get<std::int64_t>() >= 0) {
-                            isRoot = false;
-                        }
-                    }
-                    if (isRoot) {
-                        if (!entityObj.contains("components") || !entityObj["components"].is_object()) {
-                            entityObj["components"] = nlohmann::json::object();
-                        }
-                        if (!entityObj["components"].contains("NameComponentUVE") || !entityObj["components"]["NameComponentUVE"].is_object()) {
-                            entityObj["components"]["NameComponentUVE"] = nlohmann::json::object();
-                        }
-                        entityObj["components"]["NameComponentUVE"]["name"] = newName;
-                        break;
-                    }
-                }
-                const std::string dumped = payloadJson.dump(4);
-                std::vector<std::byte> payloadBytes(dumped.size());
-                std::memcpy(payloadBytes.data(), dumped.data(), dumped.size());
-                static_cast<void>(Asset::WriteUveFileUVE(*target, header.assetType, payloadBytes));
             }
         }
     }

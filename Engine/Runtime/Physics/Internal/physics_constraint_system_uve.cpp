@@ -69,31 +69,18 @@ void ApplyLocalDeltaUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGr
 
 PhysicsConstraintMutationResultUVE PhysicsConstraintSystemUVE::AddDistanceConstraintUVE(
     const DistanceConstraintUVE& constraint) {
-    return AddUVE(KindUVE::Distance, &constraint, nullptr, nullptr, nullptr);
+    return AddUVE(KindUVE::Distance, &constraint, nullptr);
 }
 
 PhysicsConstraintMutationResultUVE PhysicsConstraintSystemUVE::AddHingeConstraintUVE(
     const HingeConstraintUVE& constraint) {
-    return AddUVE(KindUVE::Hinge, nullptr, &constraint, nullptr, nullptr);
-}
-
-PhysicsConstraintMutationResultUVE PhysicsConstraintSystemUVE::AddBallSocketConstraintUVE(
-    const BallSocketConstraintUVE& constraint) {
-    return AddUVE(KindUVE::BallSocket, nullptr, nullptr, &constraint, nullptr);
-}
-
-PhysicsConstraintMutationResultUVE PhysicsConstraintSystemUVE::AddFixedConstraintUVE(
-    const FixedConstraintUVE& constraint) {
-    return AddUVE(KindUVE::Fixed, nullptr, nullptr, nullptr, &constraint);
+    return AddUVE(KindUVE::Hinge, nullptr, &constraint);
 }
 
 PhysicsConstraintMutationResultUVE PhysicsConstraintSystemUVE::AddUVE(
-    KindUVE kind, const DistanceConstraintUVE* distance, const HingeConstraintUVE* hinge,
-    const BallSocketConstraintUVE* ballSocket, const FixedConstraintUVE* fixed) {
+    KindUVE kind, const DistanceConstraintUVE* distance, const HingeConstraintUVE* hinge) {
     if ((kind == KindUVE::Distance && (distance == nullptr || !IsValidDistanceUVE(*distance))) ||
-        (kind == KindUVE::Hinge && (hinge == nullptr || !IsValidHingeUVE(*hinge))) ||
-        (kind == KindUVE::BallSocket && (ballSocket == nullptr || !IsValidBallSocketUVE(*ballSocket))) ||
-        (kind == KindUVE::Fixed && (fixed == nullptr || !IsValidFixedUVE(*fixed)))) {
+        (kind == KindUVE::Hinge && (hinge == nullptr || !IsValidHingeUVE(*hinge)))) {
         return PhysicsConstraintMutationResultUVE{PhysicsConstraintCodeUVE::InvalidConstraint, {}};
     }
     for (std::size_t index = 0U; index < slots_.size(); ++index) {
@@ -104,12 +91,8 @@ PhysicsConstraintMutationResultUVE PhysicsConstraintSystemUVE::AddUVE(
         slot.kind = kind;
         if (kind == KindUVE::Distance) {
             slot.distance = *distance;
-        } else if (kind == KindUVE::Hinge) {
+        } else {
             slot.hinge = *hinge;
-        } else if (kind == KindUVE::BallSocket) {
-            slot.ballSocket = *ballSocket;
-        } else if (kind == KindUVE::Fixed) {
-            slot.fixed = *fixed;
         }
         slot.occupied = true;
         return PhysicsConstraintMutationResultUVE{
@@ -167,20 +150,6 @@ bool PhysicsConstraintSystemUVE::IsValidHingeUVE(const HingeConstraintUVE& const
            worldAxisLength > PhysicsConstraintSystemUVE::kConstraintEpsilonUVE;
 }
 
-bool PhysicsConstraintSystemUVE::IsValidBallSocketUVE(const BallSocketConstraintUVE& constraint) noexcept {
-    return constraint.firstEntity != Scene::kInvalidEntityUVE &&
-           constraint.secondEntity != Scene::kInvalidEntityUVE &&
-           constraint.firstEntity != constraint.secondEntity && Math::IsFiniteUVE(constraint.firstAnchor) &&
-           Math::IsFiniteUVE(constraint.secondAnchor);
-}
-
-bool PhysicsConstraintSystemUVE::IsValidFixedUVE(const FixedConstraintUVE& constraint) noexcept {
-    return constraint.firstEntity != Scene::kInvalidEntityUVE &&
-           constraint.secondEntity != Scene::kInvalidEntityUVE &&
-           constraint.firstEntity != constraint.secondEntity && Math::IsFiniteUVE(constraint.firstAnchor) &&
-           Math::IsFiniteUVE(constraint.secondAnchor);
-}
-
 PhysicsConstraintSolveResultUVE PhysicsConstraintSystemUVE::SolveUVE(
     Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
     std::size_t maximumIterations) const {
@@ -194,17 +163,9 @@ PhysicsConstraintSolveResultUVE PhysicsConstraintSystemUVE::SolveUVE(
     std::array<ConstraintIslandEdgeUVE, kMaximumConstraintsUVE> edges{};
     std::size_t edgeCount = 0U;
     const auto getEntities = [](const SlotUVE& slot) noexcept {
-        switch (slot.kind) {
-            case KindUVE::Distance:
-                return std::pair<Scene::EntityUVE, Scene::EntityUVE>{slot.distance.firstEntity, slot.distance.secondEntity};
-            case KindUVE::Hinge:
-                return std::pair<Scene::EntityUVE, Scene::EntityUVE>{slot.hinge.firstEntity, slot.hinge.secondEntity};
-            case KindUVE::BallSocket:
-                return std::pair<Scene::EntityUVE, Scene::EntityUVE>{slot.ballSocket.firstEntity, slot.ballSocket.secondEntity};
-            case KindUVE::Fixed:
-                return std::pair<Scene::EntityUVE, Scene::EntityUVE>{slot.fixed.firstEntity, slot.fixed.secondEntity};
-        }
-        return std::pair<Scene::EntityUVE, Scene::EntityUVE>{Scene::kInvalidEntityUVE, Scene::kInvalidEntityUVE};
+        return std::pair<Scene::EntityUVE, Scene::EntityUVE>{
+            slot.kind == KindUVE::Distance ? slot.distance.firstEntity : slot.hinge.firstEntity,
+            slot.kind == KindUVE::Distance ? slot.distance.secondEntity : slot.hinge.secondEntity};
     };
     for (const SlotUVE& slot : slots_) {
         if (!slot.occupied) {
@@ -259,7 +220,10 @@ PhysicsConstraintSolveResultUVE PhysicsConstraintSystemUVE::SolveUVE(
             if (!slot.occupied) {
                 continue;
             }
-            const auto [firstEntity, secondEntity] = getEntities(slot);
+            const Scene::EntityUVE firstEntity =
+                slot.kind == KindUVE::Distance ? slot.distance.firstEntity : slot.hinge.firstEntity;
+            const Scene::EntityUVE secondEntity =
+                slot.kind == KindUVE::Distance ? slot.distance.secondEntity : slot.hinge.secondEntity;
             if (!entityManager.IsAliveUVE(firstEntity) || !entityManager.IsAliveUVE(secondEntity) ||
                 !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(firstEntity) ||
                 !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(secondEntity) ||
@@ -276,22 +240,10 @@ PhysicsConstraintSolveResultUVE PhysicsConstraintSystemUVE::SolveUVE(
                 entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(firstEntity);
             const Scene::WorldTransformComponentUVE& secondWorld =
                 entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(secondEntity);
-            const auto getAnchorOffsets = [](const SlotUVE& s) noexcept {
-                switch (s.kind) {
-                    case KindUVE::Distance:
-                        return std::pair<Math::Vector3UVE, Math::Vector3UVE>{s.distance.firstAnchor, s.distance.secondAnchor};
-                    case KindUVE::Hinge:
-                        return std::pair<Math::Vector3UVE, Math::Vector3UVE>{s.hinge.firstAnchor, s.hinge.secondAnchor};
-                    case KindUVE::BallSocket:
-                        return std::pair<Math::Vector3UVE, Math::Vector3UVE>{s.ballSocket.firstAnchor, s.ballSocket.secondAnchor};
-                    case KindUVE::Fixed:
-                        return std::pair<Math::Vector3UVE, Math::Vector3UVE>{s.fixed.firstAnchor, s.fixed.secondAnchor};
-                }
-                return std::pair<Math::Vector3UVE, Math::Vector3UVE>{Math::Vector3UVE{}, Math::Vector3UVE{}};
-            };
-            const auto [firstAnchorOffset, secondAnchorOffset] = getAnchorOffsets(slot);
-            const Math::Vector3UVE firstAnchor = firstWorld.worldPosition + firstAnchorOffset;
-            const Math::Vector3UVE secondAnchor = secondWorld.worldPosition + secondAnchorOffset;
+            const Math::Vector3UVE firstAnchor = firstWorld.worldPosition +
+                (slot.kind == KindUVE::Distance ? slot.distance.firstAnchor : slot.hinge.firstAnchor);
+            const Math::Vector3UVE secondAnchor = secondWorld.worldPosition +
+                (slot.kind == KindUVE::Distance ? slot.distance.secondAnchor : slot.hinge.secondAnchor);
             const Math::Vector3UVE delta = secondAnchor - firstAnchor;
             if (!Math::IsFiniteUVE(delta)) {
                 if (!reportedSkipped[index]) {

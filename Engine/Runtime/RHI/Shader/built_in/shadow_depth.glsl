@@ -3,7 +3,7 @@
 #ifdef VERTEX_SHADER
 layout(location = 0) in vec3 aPosition;
 
-#if defined(UVE_INSTANCED) || defined(UVE_INDIRECT_INSTANCED)
+#ifdef UVE_INSTANCED
 // The instanced shadow variant, mirroring lit_shadowed_3d.glsl's arrangement: same define name,
 // same binding 0, same transposed upload convention, same uInstanceBaseIndex + gl_InstanceID
 // indexing. One rule across both shaders rather than two.
@@ -17,20 +17,13 @@ layout(std430, binding = 0) readonly buffer InstanceTransformBlock {
 layout(std430, binding = 2) readonly buffer InstanceBaseBlock {
     int uInstanceBaseIndex;
 };
-#ifdef UVE_INDIRECT_INSTANCED
-layout(std430, binding = 3) readonly buffer VisibleIndexBlock {
-    uint visibleIndices[];
-};
-#endif
 #else
 uniform mat4 uModel;
 #endif
 uniform mat4 uLightSpaceMatrix;
 
 void main() {
-#if defined(UVE_INDIRECT_INSTANCED)
-    mat4 model = instanceModels[uInstanceBaseIndex + int(visibleIndices[gl_InstanceID])];
-#elif defined(UVE_INSTANCED)
+#ifdef UVE_INSTANCED
     mat4 model = instanceModels[uInstanceBaseIndex + gl_InstanceID];
 #else
     mat4 model = uModel;

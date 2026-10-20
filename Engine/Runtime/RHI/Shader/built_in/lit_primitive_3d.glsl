@@ -62,7 +62,6 @@ uniform sampler2D uAmbientEnvironmentMap;
 uniform int uAmbientEnvironmentMapEnabled;
 uniform vec3 uColor;
 uniform float uSurfaceOpacity = 1.0;
-uniform int uShadingMode = 0; // 0=Lit, 1=Unshaded, 2=Wireframe, 3=Lighting, 4=Normals
 
 vec3 SafeNormalizeUVE(vec3 value) {
     float lengthValue = length(value);
@@ -120,24 +119,9 @@ vec3 AmbientFromSourceUVE(vec3 normal) {
 }
 
 void main() {
-    float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0);
-    if (uShadingMode == 1) {
-        FragColor = vec4(uColor, surfaceOpacity);
-        return;
-    }
-    if (uShadingMode == 2) {
-        FragColor = vec4(mix(uColor * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity);
-        return;
-    }
     vec3 normal = SafeNormalizeUVE(vNormal);
-    if (uShadingMode == 4) {
-        FragColor = vec4(normal * 0.5 + 0.5, surfaceOpacity);
-        return;
-    }
-
-    vec3 baseColor = uShadingMode == 3 ? vec3(0.82) : uColor;
     vec3 ambient = AmbientFromSourceUVE(normal);
-    vec3 accumulated = baseColor * ambient;
+    vec3 accumulated = uColor * ambient;
 
     for (int lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
         LightUVE light = uLights[lightIndex];
@@ -168,9 +152,9 @@ void main() {
         }
 
         float diffuse = mix(abs(dot(normal, lightDirection)), 1.0, 0.22);
-        accumulated += baseColor * light.color * (light.intensity * attenuation * diffuse);
+        accumulated += uColor * light.color * (light.intensity * attenuation * diffuse);
     }
 
-    FragColor = vec4(accumulated, surfaceOpacity);
+    FragColor = vec4(accumulated, clamp(uSurfaceOpacity, 0.0, 1.0));
 }
 #endif

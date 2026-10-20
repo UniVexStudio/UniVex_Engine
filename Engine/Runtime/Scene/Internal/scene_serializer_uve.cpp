@@ -53,7 +53,6 @@
 #include "uve/component/canvas_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
-#include "uve/component/skin_component_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
 #include "uve/scene/objects/scene_object_type_uve.h"
 #include "uve/scene/objects/scene_folder_uve.h"
@@ -2430,64 +2429,6 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                     MakeRegistrationUVE<SceneRootComponentUVE>([](const nlohmann::json&) {
                         return SceneRootComponentUVE{};
                     }, IsSceneRootComponentValidUVE));
-        table.emplace("SkinComponentUVE",
-                      ComponentRegistrationUVE{
-                          std::type_index(typeid(SkinComponentUVE)),
-                          [](IEntityManagerUVE& entityManager, EntityUVE entity) -> nlohmann::json {
-                              const auto& skin = entityManager.GetComponentUVE<SkinComponentUVE>(entity);
-                              nlohmann::json bindsJson = nlohmann::json::array();
-                              for (const auto& bind : skin.boneBinds) {
-                                  nlohmann::json matJson = nlohmann::json::array();
-                                  for (std::size_t r = 0U; r < 4U; ++r) {
-                                      for (std::size_t c = 0U; c < 4U; ++c) {
-                                          matJson.push_back(bind.inverseBindPose.m[r][c]);
-                                      }
-                                  }
-                                  bindsJson.push_back({
-                                      {"boneName", bind.boneName},
-                                      {"boneIndex", bind.boneIndex},
-                                      {"inverseBindPose", matJson}
-                                  });
-                              }
-                              return nlohmann::json{
-                                  {"bindCount", skin.bindCount},
-                                  {"boneBinds", bindsJson}
-                              };
-                          },
-                          [](IEntityManagerUVE& entityManager, EntityUVE entity) {
-                              return IsSkinComponentValidUVE(entityManager.GetComponentUVE<SkinComponentUVE>(entity));
-                          },
-                          [](IEntityManagerUVE& entityManager, EntityUVE entity, const nlohmann::json& json) {
-                              SkinComponentUVE skin{};
-                              skin.bindCount = json.value("bindCount", 0U);
-                              if (json.contains("boneBinds") && json["boneBinds"].is_array()) {
-                                  for (const auto& bindJson : json["boneBinds"]) {
-                                      SkinBoneBindUVE bind{};
-                                      bind.boneName = bindJson.value("boneName", "");
-                                      bind.boneIndex = bindJson.value("boneIndex", -1);
-                                      if (bindJson.contains("inverseBindPose") && bindJson["inverseBindPose"].is_array() &&
-                                          bindJson["inverseBindPose"].size() == 16U) {
-                                          for (std::size_t r = 0U; r < 4U; ++r) {
-                                              for (std::size_t c = 0U; c < 4U; ++c) {
-                                                  bind.inverseBindPose.m[r][c] =
-                                                      bindJson["inverseBindPose"][r * 4U + c].get<float>();
-                                              }
-                                          }
-                                      }
-                                      skin.boneBinds.push_back(std::move(bind));
-                                  }
-                              }
-                              if (skin.boneBinds.empty() && skin.bindCount > 0U) {
-                                  skin.boneBinds.resize(skin.bindCount);
-                                  for (std::size_t i = 0; i < skin.boneBinds.size(); ++i) {
-                                      skin.boneBinds[i].boneIndex = static_cast<std::int32_t>(i);
-                                  }
-                              } else {
-                                  skin.bindCount = static_cast<std::uint32_t>(skin.boneBinds.size());
-                              }
-                              entityManager.AddComponentUVE<SkinComponentUVE>(entity, std::move(skin));
-                          },
-                      });
         table.emplace("Hitbox3DComponentUVE", MakeRegistrationUVE<Hitbox3DComponentUVE>(
             [](const nlohmann::json& json) {
                 const Hitbox3DComponentUVE value = Hitbox3DObjectFromJsonUVE(json);

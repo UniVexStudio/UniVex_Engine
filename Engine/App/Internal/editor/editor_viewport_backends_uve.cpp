@@ -38,11 +38,8 @@
 #include "uve/editor/editor_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/component/camera_component_uve.h"
-#include "uve/component/collider_component_uve.h"
-#include "uve/component/editor_internal_entity_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/math/quaternion_uve.h"
 #include "uve/objects/3d/camera_3d_uve.h"
 #include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/objects/3d/fog_volume_3d_uve.h"
@@ -523,158 +520,6 @@ void AppendOccluderGizmoUVE(univex::gizmo::GizmoMesh& mesh, const UVE::Scene::Oc
     add(-hx, -hy, hz, -hx, hy, hz);
 }
 
-[[nodiscard]] univex::gizmo::GizmoMesh BuildColliderMeshUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
-    univex::gizmo::GizmoMesh mesh;
-    entityManager.ForEachUVE<UVE::Scene::WorldTransformComponentUVE, UVE::Scene::ColliderComponentUVE>(
-        [&](const UVE::Scene::EntityUVE, const UVE::Scene::WorldTransformComponentUVE& worldTransform,
-            const UVE::Scene::ColliderComponentUVE& collider) {
-            const univex::math::Vec3 color =
-                collider.disabled ? univex::math::Vec3{0.5F, 0.5F, 0.5F} : univex::math::Vec3{0.35F, 0.9F, 0.35F};
-            const float lineWidth = 1.5F;
-
-            const auto toWorld = [&](const float lx, const float ly, const float lz) -> univex::math::Vec3 {
-                const UVE::Math::Vector3UVE w =
-                    UVE::Scene::TransformWorldPointUVE(worldTransform, {lx, ly, lz});
-                return univex::integration::FromUveVector3UVE(w);
-            };
-            const auto addEdge = [&](const univex::math::Vec3& p1, const univex::math::Vec3& p2) {
-                mesh.lines.push_back(univex::gizmo::GizmoLine{p1, p2, color, lineWidth});
-            };
-            constexpr float kPi = 3.14159265358979323846F;
-            constexpr int kRingSegments = 24;
-            const auto addRing = [&](const float yCenter, const float ringRadius) {
-                if (ringRadius <= 1e-4F) {
-                    return;
-                }
-                univex::math::Vec3 prev = toWorld(ringRadius, yCenter, 0.0F);
-                for (int i = 1; i <= kRingSegments; ++i) {
-                    const float theta = static_cast<float>(i) * (2.0F * kPi / static_cast<float>(kRingSegments));
-                    const univex::math::Vec3 curr =
-                        toWorld(std::cos(theta) * ringRadius, yCenter, std::sin(theta) * ringRadius);
-                    addEdge(prev, curr);
-                    prev = curr;
-                }
-            };
-
-            switch (collider.shapeType) {
-                case UVE::Scene::ColliderShapeTypeUVE::Box: {
-                    const float hx = collider.halfExtents.x;
-                    const float hy = collider.halfExtents.y;
-                    const float hz = collider.halfExtents.z;
-                    const univex::math::Vec3 c[8] = {
-                        toWorld(-hx, -hy, -hz), toWorld(hx, -hy, -hz),
-                        toWorld(hx, -hy, hz),  toWorld(-hx, -hy, hz),
-                        toWorld(-hx, hy, -hz),  toWorld(hx, hy, -hz),
-                        toWorld(hx, hy, hz),   toWorld(-hx, hy, hz),
-                    };
-                    addEdge(c[0], c[1]); addEdge(c[1], c[2]); addEdge(c[2], c[3]); addEdge(c[3], c[0]);
-                    addEdge(c[4], c[5]); addEdge(c[5], c[6]); addEdge(c[6], c[7]); addEdge(c[7], c[4]);
-                    addEdge(c[0], c[4]); addEdge(c[1], c[5]); addEdge(c[2], c[6]); addEdge(c[3], c[7]);
-                    break;
-                }
-                case UVE::Scene::ColliderShapeTypeUVE::Sphere: {
-                    const float r = std::max(0.001F, collider.radius);
-                    addRing(0.0F, r);
-                    const float angles[2] = {kPi / 6.0F, kPi / 3.0F};
-                    for (const float a : angles) {
-                        const float y = r * std::sin(a);
-                        const float subR = r * std::cos(a);
-                        addRing(y, subR);
-                        addRing(-y, subR);
-                    }
-                    constexpr int kMeridians = 4;
-                    for (int m = 0; m < kMeridians; ++m) {
-                        const float phi = static_cast<float>(m) * (kPi / static_cast<float>(kMeridians));
-                        const float cosPhi = std::cos(phi);
-                        const float sinPhi = std::sin(phi);
-                        univex::math::Vec3 prev = toWorld(r * cosPhi, 0.0F, r * sinPhi);
-                        for (int i = 1; i <= kRingSegments; ++i) {
-                            const float theta = static_cast<float>(i) * (2.0F * kPi / static_cast<float>(kRingSegments));
-                            const float x = r * std::cos(theta) * cosPhi;
-                            const float y = r * std::sin(theta);
-                            const float z = r * std::cos(theta) * sinPhi;
-                            const univex::math::Vec3 curr = toWorld(x, y, z);
-                            addEdge(prev, curr);
-                            prev = curr;
-                        }
-                    }
-                    break;
-                }
-                case UVE::Scene::ColliderShapeTypeUVE::Capsule: {
-                    const float r = std::max(0.001F, collider.radius);
-                    const float h = std::max(0.0F, collider.height);
-                    const float cylH = std::max(0.0F, h - 2.0F * r);
-                    const float halfH = cylH * 0.5F;
-
-                    if (halfH > 1e-4F) {
-                        addRing(0.0F, r);
-                    }
-                    addRing(halfH, r);
-                    addRing(-halfH, r);
-                    const float latAngles[2] = {kPi / 6.0F, kPi / 3.0F};
-                    for (const float a : latAngles) {
-                        const float dy = r * std::sin(a);
-                        const float domeR = r * std::cos(a);
-                        addRing(halfH + dy, domeR);
-                        addRing(-halfH - dy, domeR);
-                    }
-
-                    constexpr int kMeridianCount = 8;
-                    constexpr int kDomeSteps = 8;
-                    for (int m = 0; m < kMeridianCount; ++m) {
-                        const float phi = static_cast<float>(m) * (2.0F * kPi / static_cast<float>(kMeridianCount));
-                        const float cosPhi = std::cos(phi);
-                        const float sinPhi = std::sin(phi);
-
-                        if (halfH > 1e-4F) {
-                            addEdge(toWorld(r * cosPhi, -halfH, r * sinPhi),
-                                    toWorld(r * cosPhi, halfH, r * sinPhi));
-                        }
-
-                        univex::math::Vec3 prevTop = toWorld(r * cosPhi, halfH, r * sinPhi);
-                        for (int s = 1; s <= kDomeSteps; ++s) {
-                            const float alpha = static_cast<float>(s) * (0.5F * kPi / static_cast<float>(kDomeSteps));
-                            const float x = r * std::cos(alpha) * cosPhi;
-                            const float y = halfH + r * std::sin(alpha);
-                            const float z = r * std::cos(alpha) * sinPhi;
-                            const univex::math::Vec3 curr = toWorld(x, y, z);
-                            addEdge(prevTop, curr);
-                            prevTop = curr;
-                        }
-
-                        univex::math::Vec3 prevBottom = toWorld(r * cosPhi, -halfH, r * sinPhi);
-                        for (int s = 1; s <= kDomeSteps; ++s) {
-                            const float alpha = static_cast<float>(s) * (0.5F * kPi / static_cast<float>(kDomeSteps));
-                            const float x = r * std::cos(alpha) * cosPhi;
-                            const float y = -halfH - r * std::sin(alpha);
-                            const float z = r * std::cos(alpha) * sinPhi;
-                            const univex::math::Vec3 curr = toWorld(x, y, z);
-                            addEdge(prevBottom, curr);
-                            prevBottom = curr;
-                        }
-                    }
-                    break;
-                }
-                case UVE::Scene::ColliderShapeTypeUVE::Cylinder: {
-                    const float r = std::max(0.001F, collider.radius);
-                    const float halfH = std::max(0.001F, collider.height * 0.5F);
-                    addRing(halfH, r);
-                    addRing(-halfH, r);
-                    addRing(0.0F, r);
-                    constexpr int kSideLines = 8;
-                    for (int s = 0; s < kSideLines; ++s) {
-                        const float phi = static_cast<float>(s) * (2.0F * kPi / static_cast<float>(kSideLines));
-                        const float x = r * std::cos(phi);
-                        const float z = r * std::sin(phi);
-                        addEdge(toWorld(x, -halfH, z), toWorld(x, halfH, z));
-                    }
-                    break;
-                }
-            }
-        });
-    return mesh;
-}
-
 [[nodiscard]] univex::gizmo::GizmoMesh BuildOccluderMeshUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
     univex::gizmo::GizmoMesh mesh;
     std::vector<UVE::Scene::Occluder3DGizmoUVE> gizmos;
@@ -831,9 +676,6 @@ public:
             univex::gizmo::GizmoMesh occluders = BuildOccluderMeshUVE(entityManager_);
             overlay.lines.insert(overlay.lines.end(), occluders.lines.begin(), occluders.lines.end());
             overlay.triangles.insert(overlay.triangles.end(), occluders.triangles.begin(), occluders.triangles.end());
-            univex::gizmo::GizmoMesh colliders = BuildColliderMeshUVE(entityManager_);
-            overlay.lines.insert(overlay.lines.end(), colliders.lines.begin(), colliders.lines.end());
-            overlay.triangles.insert(overlay.triangles.end(), colliders.triangles.begin(), colliders.triangles.end());
             renderPass_->SetCameraFrustumMeshUVE(std::move(overlay));
         } else {
             renderPass_->SetCameraFrustumMeshUVE({});

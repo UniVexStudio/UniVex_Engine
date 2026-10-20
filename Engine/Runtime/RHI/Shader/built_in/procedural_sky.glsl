@@ -70,24 +70,25 @@ vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
 vec3 ProceduralSkyUVE(vec3 viewDir) {
     vec3 dir = normalize(viewDir);
     vec3 sun = length(uSunDirection) > 1.0e-5 ? normalize(uSunDirection) : vec3(0.0, 1.0, 0.0);
+    vec3 upperDir = normalize(vec3(dir.x, max(dir.y, 0.0), dir.z));
+    vec3 upperSky = AtmosphereUpperUVE(upperDir, sun);
+    vec3 horizonDir = normalize(vec3(dir.x, 0.001, dir.z));
+    vec3 horizon = AtmosphereUpperUVE(horizonDir, sun);
 
     float day = smoothstep(-0.08, 0.18, sun.y);
     vec3 groundBase = max(uGroundColor, vec3(0.0));
-    vec3 groundLit = groundBase * mix(0.40, 1.0, day);
-    vec3 horizonLit = max(uHorizonColor, vec3(0.0)) * mix(0.35, 1.0, day);
+    // Ground lit by sun + sky irradiance, preserving the authored earthy ground color without washed-out haze
+    vec3 groundLit = groundBase * mix(0.35, 1.0, day);
 
-    if (dir.y < -0.001) {
-        float groundT = clamp(-dir.y, 0.0, 1.0);
-        float groundCurve = clamp(max(uGroundCurve, 0.01), 0.1, 4.0);
-        float falloff = pow(groundT, groundCurve);
-        vec3 ground = mix(horizonLit, groundLit, falloff);
-        float seamBlend = smoothstep(-0.015, 0.0, dir.y);
-        return mix(ground, horizonLit, seamBlend);
-    }
+    float groundT = clamp(-dir.y, 0.0, 1.0);
+    float groundCurve = clamp(max(uGroundCurve, 0.001), 0.2, 2.0);
+    float groundFalloff = pow(groundT, groundCurve);
+    // Soft blend from horizon seam into authored ground color
+    vec3 horizonGroundSeam = mix(horizon * 0.45, groundLit, 0.4);
+    vec3 lowerGround = mix(horizonGroundSeam, groundLit, groundFalloff);
 
-    vec3 upperSky = AtmosphereUpperUVE(dir, sun);
-    float horizonBlend = smoothstep(0.0, 0.015, dir.y);
-    return mix(horizonLit, upperSky, horizonBlend);
+    float horizonBlend = smoothstep(-0.015, 0.015, dir.y);
+    return mix(lowerGround, upperSky, horizonBlend);
 }
 
 vec2 SkyEquirectUvUVE(vec3 dir) {

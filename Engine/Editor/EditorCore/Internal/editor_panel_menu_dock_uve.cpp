@@ -272,10 +272,6 @@ void EditorUVE::DrawMenuBarUVE() {
                 if (ImGui::MenuItem("Content Review")) {
                     ApplyLayoutPresetUVE(EditorLayoutPresetUVE::ContentReview);
                 }
-                if (ImGui::MenuItem("Reset Default Layout")) {
-                    RequestResetDockingLayoutUVE();
-                    ApplyLayoutPresetUVE(EditorLayoutPresetUVE::Default);
-                }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Scene Workspace", nullptr,
                                     m_activeWorkspace == EditorWorkspaceUVE::Library)) {
@@ -531,12 +527,15 @@ void EditorUVE::DrawBottomDockContentUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
-    // In native ImGui docking, FirstUseEver sets the initial fallback position and size,
-    // allowing the window to dock into the bottom dock node, tab, split, float, and persist in imgui.ini.
-    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_FirstUseEver);
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
-    ImGui::Begin(kPanelLabelDebugUVE, nullptr, flags);
+    // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change. This
+    // window is the Content Browser's mutually-exclusive alternate, so it shares the exact same
+    // bottom rect (via the centralized layout helper) and re-tiling guarantee.
+    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
+    // The dock tab strip names what is showing, so the dock windows carry no title bar of their own.
+    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                                       ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+    ImGui::Begin("Debug##lower-workspace", nullptr, flags);
     switch (m_activeBottomDock) {
         case EditorBottomDockUVE::Debugger: {
             ImGui::TextUnformatted("Debug Output");
@@ -590,7 +589,75 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse |
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
 
-    // Manual 6px splitters retired: ImGui native docking manages split boundaries between docked nodes.
+    // The splitter between the outliner and the viewport: drag horizontally to resize.
+    if (m_scenePanelVisible) {
+        constexpr float kGripWidth = 6.0F;
+        ImGui::SetNextWindowPos(ImVec2{layout.scenePos.x + layout.sceneSize.x - (kGripWidth * 0.5F), layout.scenePos.y},
+                                ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2{kGripWidth, layout.sceneSize.y}, ImGuiCond_Always);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2{1.0F, 1.0F});
+        ImGui::SetNextWindowBgAlpha(0.0F);
+        if (ImGui::Begin("##left-scene-splitter", nullptr, stripFlags)) {
+            ImGui::InvisibleButton("##grip-left", ImVec2{kGripWidth, layout.sceneSize.y});
+            if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            }
+            if (ImGui::IsItemActive()) {
+                m_scenePanelWidth = std::clamp(m_scenePanelWidth + ImGui::GetIO().MouseDelta.x, 140.0F,
+                                               mainViewport->WorkSize.x * 0.45F);
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+    }
+
+    // The splitter between the viewport and the inspector: drag horizontally to resize.
+    if (m_inspectorPanelVisible) {
+        constexpr float kGripWidth = 6.0F;
+        ImGui::SetNextWindowPos(ImVec2{layout.inspectorPos.x - (kGripWidth * 0.5F), layout.inspectorPos.y},
+                                ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2{kGripWidth, layout.inspectorSize.y}, ImGuiCond_Always);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2{1.0F, 1.0F});
+        ImGui::SetNextWindowBgAlpha(0.0F);
+        if (ImGui::Begin("##right-inspector-splitter", nullptr, stripFlags)) {
+            ImGui::InvisibleButton("##grip-right", ImVec2{kGripWidth, layout.inspectorSize.y});
+            if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            }
+            if (ImGui::IsItemActive()) {
+                m_inspectorPanelWidth = std::clamp(m_inspectorPanelWidth - ImGui::GetIO().MouseDelta.x, 180.0F,
+                                                   mainViewport->WorkSize.x * 0.45F);
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+    }
+
+    // The splitter between the viewport and the dock: drag its edge to resize, like any panel seam.
+    if (m_bottomDockVisible) {
+        constexpr float kGripHeight = 6.0F;
+        ImGui::SetNextWindowPos(ImVec2{layout.contentBrowserPos.x, layout.contentBrowserPos.y - (kGripHeight * 0.5F)},
+                                ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2{layout.contentBrowserSize.x, kGripHeight}, ImGuiCond_Always);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2{1.0F, 1.0F});
+        ImGui::SetNextWindowBgAlpha(0.0F);
+        if (ImGui::Begin("##bottom-dock-splitter", nullptr, stripFlags)) {
+            ImGui::InvisibleButton("##grip", ImVec2{layout.contentBrowserSize.x, kGripHeight});
+            if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+            }
+            if (ImGui::IsItemActive()) {
+                // Dragging up grows the dock; the layout clamps it to leave the viewport its minimum.
+                m_bottomDockHeight = std::max(kMinimumBottomDockHeightUVE, m_bottomDockHeight - ImGui::GetIO().MouseDelta.y);
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+    }
+
     ImGui::SetNextWindowPos(layout.dockTabBarPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.dockTabBarSize, ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{6.0F, 2.0F});
@@ -643,12 +710,11 @@ void EditorUVE::DrawConsoleDockUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
-    // In native ImGui docking, FirstUseEver sets the initial fallback position and size,
-    // allowing the window to dock into the bottom dock node, tab, split, float, and persist in imgui.ini.
-    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_FirstUseEver);
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
-    if (ImGui::Begin(kPanelLabelConsoleUVE, nullptr, flags)) {
+    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
+    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                                       ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+    if (ImGui::Begin("Console##lower-workspace-console", nullptr, flags)) {
         const DeveloperConsoleSnapshotUVE snapshot = m_developerConsole.GetSnapshotUVE();
         const float inputHeight = ImGui::GetFrameHeightWithSpacing();
         ImGui::BeginChild("##console-output", ImVec2{0.0F, -inputHeight}, false);
@@ -712,12 +778,11 @@ void EditorUVE::DrawCaptureDockUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
-    // In native ImGui docking, FirstUseEver sets the initial fallback position and size,
-    // allowing the window to dock into the bottom dock node, tab, split, float, and persist in imgui.ini.
-    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_FirstUseEver);
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
-    if (!ImGui::Begin(kPanelLabelCaptureUVE, nullptr, flags)) {
+    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
+    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                                       ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+    if (!ImGui::Begin("Capture##lower-workspace-capture", nullptr, flags)) {
         ImGui::End();
         return;
     }
@@ -851,12 +916,11 @@ void EditorUVE::DrawProfilerDockUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
-    // In native ImGui docking, FirstUseEver sets the initial fallback position and size,
-    // allowing the window to dock into the bottom dock node, tab, split, float, and persist in imgui.ini.
-    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_FirstUseEver);
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
-    if (!ImGui::Begin(kPanelLabelProfilerUVE, nullptr, flags)) {
+    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
+    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                                       ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+    if (!ImGui::Begin("Profiler##lower-workspace-profiler", nullptr, flags)) {
         ImGui::End();
         return;
     }
