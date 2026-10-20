@@ -50,20 +50,6 @@ struct HingeConstraintUVE final {
     Math::Vector3UVE worldAxis{0.0F, 1.0F, 0.0F};
 };
 
-struct BallSocketConstraintUVE final {
-    Scene::EntityUVE firstEntity;
-    Scene::EntityUVE secondEntity;
-    Math::Vector3UVE firstAnchor{};
-    Math::Vector3UVE secondAnchor{};
-};
-
-struct FixedConstraintUVE final {
-    Scene::EntityUVE firstEntity;
-    Scene::EntityUVE secondEntity;
-    Math::Vector3UVE firstAnchor{};
-    Math::Vector3UVE secondAnchor{};
-};
-
 struct PhysicsConstraintMutationResultUVE final {
     PhysicsConstraintCodeUVE code = PhysicsConstraintCodeUVE::InvalidConstraint;
     PhysicsConstraintHandleUVE handle;
@@ -187,10 +173,6 @@ public:
         const DistanceConstraintUVE& constraint);
     [[nodiscard]] PhysicsConstraintMutationResultUVE AddHingeConstraintUVE(
         const HingeConstraintUVE& constraint);
-    [[nodiscard]] PhysicsConstraintMutationResultUVE AddBallSocketConstraintUVE(
-        const BallSocketConstraintUVE& constraint);
-    [[nodiscard]] PhysicsConstraintMutationResultUVE AddFixedConstraintUVE(
-        const FixedConstraintUVE& constraint);
     [[nodiscard]] PhysicsConstraintMutationResultUVE RemoveConstraintUVE(
         PhysicsConstraintHandleUVE handle) noexcept;
     void ClearUVE() noexcept;
@@ -202,25 +184,20 @@ public:
         std::size_t maximumIterations = kMaximumSolverIterationsUVE) const;
 
 private:
-    enum class KindUVE : std::uint8_t { Distance = 0, Hinge, BallSocket, Fixed };
+    enum class KindUVE : std::uint8_t { Distance = 0, Hinge };
 
     struct SlotUVE final {
         KindUVE kind = KindUVE::Distance;
         DistanceConstraintUVE distance;
         HingeConstraintUVE hinge;
-        BallSocketConstraintUVE ballSocket;
-        FixedConstraintUVE fixed;
         std::uint32_t generation = 1U;
         bool occupied = false;
     };
 
     [[nodiscard]] PhysicsConstraintMutationResultUVE AddUVE(
-        KindUVE kind, const DistanceConstraintUVE* distance, const HingeConstraintUVE* hinge,
-        const BallSocketConstraintUVE* ballSocket = nullptr, const FixedConstraintUVE* fixed = nullptr);
+        KindUVE kind, const DistanceConstraintUVE* distance, const HingeConstraintUVE* hinge);
     [[nodiscard]] static bool IsValidDistanceUVE(const DistanceConstraintUVE& constraint) noexcept;
     [[nodiscard]] static bool IsValidHingeUVE(const HingeConstraintUVE& constraint) noexcept;
-    [[nodiscard]] static bool IsValidBallSocketUVE(const BallSocketConstraintUVE& constraint) noexcept;
-    [[nodiscard]] static bool IsValidFixedUVE(const FixedConstraintUVE& constraint) noexcept;
 
     std::array<SlotUVE, kMaximumConstraintsUVE> slots_{};
 };

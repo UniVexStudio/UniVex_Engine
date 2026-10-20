@@ -39,16 +39,9 @@ bool StepCharacterIntentUVE(Scene::CharacterControllerComponentUVE& c, const Cha
     const float gravity = floating ? 0.0F : gravityY * c.gravityScale;
     bool jumped = false;
     if (c.builtInMovement) {
-        constexpr float kGroundAccelerationRate = 14.0F;
-        constexpr float kGroundDecelerationRate = 18.0F;
-        const float targetX = input.move.x * c.moveSpeed;
-        const float targetZ = input.move.z * c.moveSpeed;
-        const bool moving = std::abs(targetX) > 1.0e-4F || std::abs(targetZ) > 1.0e-4F;
-        const float rate = moving ? kGroundAccelerationRate : kGroundDecelerationRate;
-        const float effectiveRate = floating || c.grounded ? rate : rate * std::clamp(c.airControl, 0.05F, 1.0F);
-        const float alpha = std::clamp(effectiveRate * deltaTimeSeconds, 0.0F, 1.0F);
-        c.velocity.x += (targetX - c.velocity.x) * alpha;
-        c.velocity.z += (targetZ - c.velocity.z) * alpha;
+        const float steering = floating || c.grounded ? 1.0F : c.airControl;
+        c.velocity.x += (input.move.x * c.moveSpeed - c.velocity.x) * steering;
+        c.velocity.z += (input.move.z * c.moveSpeed - c.velocity.z) * steering;
         if (floating) {
             SetAlongUpUVE(c.velocity, up, std::clamp(input.rise, -1.0F, 1.0F) * c.moveSpeed);
         } else {

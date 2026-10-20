@@ -17,8 +17,6 @@ enum class PrimitiveMeshKindUVE : std::uint8_t {
     Cube = 0U,
     UVSphere = 1U,
     Plane = 2U,
-    Capsule = 3U,
-    Cylinder = 4U,
 };
 
 /// A serializable, editor-authored reference to one deterministic built-in primitive mesh.

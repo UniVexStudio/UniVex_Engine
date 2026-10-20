@@ -146,9 +146,6 @@ constexpr ImWchar kIconFontGlyphRangesUVE[] = {
             return Scene::SphereMesh3DUVE::DefaultColliderHalfExtentsUVE();
         case Scene::PrimitiveMeshKindUVE::Plane:
             return Scene::PlaneMesh3DUVE::DefaultColliderHalfExtentsUVE();
-        case Scene::PrimitiveMeshKindUVE::Capsule:
-        case Scene::PrimitiveMeshKindUVE::Cylinder:
-            return Math::Vector3UVE{0.5F, 1.0F, 0.5F};
     }
     return Scene::BoxMesh3DUVE::DefaultColliderHalfExtentsUVE();
 }
@@ -3084,10 +3081,6 @@ std::string EditorUVE::GetOutlinerTypeTagUVE(const Scene::EntityUVE entity) cons
                 return std::string{Scene::SphereMesh3DObjectDefinitionUVE::defaultName};
             case Scene::PrimitiveMeshKindUVE::Cube:
                 return std::string{Scene::BoxMesh3DObjectDefinitionUVE::defaultName};
-            case Scene::PrimitiveMeshKindUVE::Capsule:
-                return "CapsuleMesh";
-            case Scene::PrimitiveMeshKindUVE::Cylinder:
-                return "CylinderMesh";
         }
     }
     if (entityManager.HasComponentUVE<Scene::CameraComponentUVE>(entity)) {
@@ -4361,12 +4354,6 @@ void EditorUVE::ShutdownUVE() {
         ClearMeshThumbnailCacheUVE();
         m_meshThumbnailRenderer.ShutdownUVE();
         m_uiAssets.ShutdownUVE();
-        if (ImGui::GetCurrentContext() != nullptr) {
-            const char* const iniFilename = ImGui::GetIO().IniFilename;
-            if (iniFilename != nullptr && iniFilename[0] != '\0') {
-                ImGui::SaveIniSettingsToDisk(iniFilename);
-            }
-        }
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplGlfw_Shutdown();
         ImGui::DestroyContext();
@@ -4659,7 +4646,6 @@ void EditorUVE::ApplyLayoutPresetUVE(const EditorLayoutPresetUVE preset) noexcep
             m_bottomDockVisible = true;
             m_activeRightPanelTab = EditorRightPanelTabUVE::Inspector;
             m_activeBottomDock = EditorBottomDockUVE::FileSystem;
-            RequestResetDockingLayoutUVE();
             break;
         case EditorLayoutPresetUVE::FocusViewport:
             m_scenePanelVisible = false;

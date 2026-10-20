@@ -23,9 +23,7 @@
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <cfloat>
-#include <cstring>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -65,13 +63,6 @@
 #include "uve/objects/3d/lod_group_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/two_bone_ik_3d_uve.h"
-#include "uve/component/hierarchy_component_uve.h"
-#include "uve/component/mesh_component_uve.h"
-#include "uve/component/primitive_mesh_component_uve.h"
-#include "uve/component/skin_component_uve.h"
-#include "uve/component/surface_instance_component_uve.h"
-#include "uve/asset/gltf_skeleton_uve.h"
-#include "uve/asset/mesh_asset_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -392,11 +383,7 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
     const bool sectionOpen = DrawInspectorFoldUVE(header.c_str(), "section:" + std::string(entry.typeId.ToStringUVE()), true, true, 0);
     DrawInspectorSectionMenuUVE(&entry, sectionTitle.c_str());
     if (sectionOpen) {
-        if (entry.typeId == "component.mesh") {
-            DrawMeshInstance3DInspectorUVE(entity);
-        } else {
-            DrawMetadataPropertyRowsUVE(entry, instance);
-        }
+        DrawMetadataPropertyRowsUVE(entry, instance);
         if (entry.typeIndex == std::type_index(typeid(Scene::CameraComponentUVE))) {
             bool preview = GetPreviewCameraUVE() == entity;
             if (ImGui::Checkbox("Preview", &preview)) {
@@ -409,11 +396,6 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
         }
         for (const NestedMetadataSectionUVE& section : nested) {
             const TypeMetadataEntryUVE* const child = section.entry;
-            if (entry.typeId == "component.mesh" &&
-                (child->typeId == "component.skin" || child->typeId == "component.primitive_mesh" ||
-                 child->typeId == "component.surface_instance")) {
-                continue;
-            }
             if (!entityManager.HasComponentUVE(entity, child->typeIndex) ||
                 std::any_of(section.preferredHosts.begin(), section.preferredHosts.end(),
                             [&](const TypeMetadataEntryUVE* const host) {
@@ -769,78 +751,54 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
                 ImGui::EndCombo();
             }
         } else {
-            const auto isMaterialProperty = [](const TypeMetadataPropertyUVE& prop) {
-                if (prop.customDrawerId == "file:uvmat" || prop.customDrawerId == "file:uvmaterial" ||
-                    prop.customDrawerId == "asset:uvmat" || prop.customDrawerId == "asset:uvmaterial" ||
-                    prop.name == "materialOverridePath" || prop.name == "materialOverlayPath" ||
-                    prop.name == "materialGuid") {
-                    return true;
+            // A "file:ext,..." row also browses: the text stays editable, and Browse opens the
+            // floating picker on the file kinds the property declares.
+            constexpr std::string_view kFilePrefix = "file:";
+            const bool isFileRow = property.customDrawerId.rfind(kFilePrefix, 0U) == 0U;
+            if (isFileRow) {
+                // A browse that landed since last frame commits like a typed edit, before the field
+                // is drawn, so the new path shows at once.
+                const std::uint32_t widget = ImGui::GetID("##value");
+                if (const auto found = m_fileRowPendingPicks.find(widget); found != m_fileRowPendingPicks.end()) {
+                    edited = SetSelectedComponentPropertyUVE(entry, property, &found->second);
+                    m_fileRowPendingPicks.erase(found);
                 }
-                const auto containsMaterial = [](const std::string_view s) {
-                    if (s.empty()) return false;
-                    auto it = std::search(s.begin(), s.end(), "material", "material" + 8,
-                        [](char ch1, char ch2) { return std::tolower(static_cast<unsigned char>(ch1)) == std::tolower(static_cast<unsigned char>(ch2)); });
-                    return it != s.end();
-                };
-                return containsMaterial(prop.name) || containsMaterial(prop.displayName);
-            };
-            const bool isMaterialRow = isMaterialProperty(property);
-            if (isMaterialRow) {
-                std::string value;
-                property.getValue(instance, &value);
-                if (DrawStandardMaterialSlotUVE(nullptr, "##value", value)) {
-                    edited = SetSelectedComponentPropertyUVE(entry, property, &value);
-                }
-            } else {
-                // A "file:ext,..." row also browses: the text stays editable, and Browse opens the
-                // floating picker on the file kinds the property declares.
-                constexpr std::string_view kFilePrefix = "file:";
-                const bool isFileRow = property.customDrawerId.rfind(kFilePrefix, 0U) == 0U;
-                if (isFileRow) {
-                    // A browse that landed since last frame commits like a typed edit, before the field
-                    // is drawn, so the new path shows at once.
+            }
+            std::string value;
+            property.getValue(instance, &value);
+            // Committed once when the author finishes, so an edit is one history entry and clicking
+            // away keeps it. The bound is the one this row always had.
+            constexpr std::size_t kMaximumGenericStringBytesUVE = 255U;
+            if (isFileRow) {
+                ImGui::SetNextItemWidth(-80.0F);
+            }
+            if (const std::optional<std::string> committed =
+                    DrawCommittedTextInputUVE("##value", value, false, 0.0F, kMaximumGenericStringBytesUVE);
+                committed.has_value()) {
+                edited = SetSelectedComponentPropertyUVE(entry, property, &*committed);
+            }
+            if (isFileRow) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Browse...")) {
+                    FilePickerRequestUVE request;
+                    request.mode = FilePickerModeUVE::Open;
+                    request.title = property.displayName.empty() ? "Pick File" : property.displayName;
+                    request.extensions = FileDrawerExtensionsUVE(property.customDrawerId);
+                    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                    request.startDirectory =
+                        ClampPickerStartDirectoryUVE(project, std::filesystem::path{value}.parent_path());
                     const std::uint32_t widget = ImGui::GetID("##value");
-                    if (const auto found = m_fileRowPendingPicks.find(widget); found != m_fileRowPendingPicks.end()) {
-                        edited = SetSelectedComponentPropertyUVE(entry, property, &found->second);
-                        m_fileRowPendingPicks.erase(found);
-                    }
-                }
-                std::string value;
-                property.getValue(instance, &value);
-                // Committed once when the author finishes, so an edit is one history entry and clicking
-                // away keeps it. The bound is the one this row always had.
-                constexpr std::size_t kMaximumGenericStringBytesUVE = 255U;
-                if (isFileRow) {
-                    ImGui::SetNextItemWidth(-80.0F);
-                }
-                if (const std::optional<std::string> committed =
-                        DrawCommittedTextInputUVE("##value", value, false, 0.0F, kMaximumGenericStringBytesUVE);
-                    committed.has_value()) {
-                    edited = SetSelectedComponentPropertyUVE(entry, property, &*committed);
-                }
-                if (isFileRow) {
-                    ImGui::SameLine();
-                    if (ImGui::SmallButton("Browse...")) {
-                        FilePickerRequestUVE request;
-                        request.mode = FilePickerModeUVE::Open;
-                        request.title = property.displayName.empty() ? "Pick File" : property.displayName;
-                        request.extensions = FileDrawerExtensionsUVE(property.customDrawerId);
-                        const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-                        request.startDirectory =
-                            ClampPickerStartDirectoryUVE(project, std::filesystem::path{value}.parent_path());
-                        const std::uint32_t widget = ImGui::GetID("##value");
-                        request.onPick = [this, widget](const std::filesystem::path& absolute) {
-                            // Applies to the selection, re-resolved: whatever is selected when the pick
-                            // lands receives it.
-                            const Asset::ProjectFileSnapshotUVE current =
-                                m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-                            const std::filesystem::path relative = absolute.lexically_relative(current.contentRoot);
-                            m_fileRowPendingPicks[widget] = (relative.empty() || *relative.begin() == "..")
-                                                                ? absolute.generic_string()
-                                                                : relative.generic_string();
-                        };
-                        OpenFilePickerUVE(std::move(request));
-                    }
+                    request.onPick = [this, widget](const std::filesystem::path& absolute) {
+                        // Applies to the selection, re-resolved: whatever is selected when the pick
+                        // lands receives it.
+                        const Asset::ProjectFileSnapshotUVE current =
+                            m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                        const std::filesystem::path relative = absolute.lexically_relative(current.contentRoot);
+                        m_fileRowPendingPicks[widget] = (relative.empty() || *relative.begin() == "..")
+                                                            ? absolute.generic_string()
+                                                            : relative.generic_string();
+                    };
+                    OpenFilePickerUVE(std::move(request));
                 }
             }
         }
@@ -851,27 +809,7 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
         Asset::AssetGuidUVE value{};
         property.getValue(instance, &value);
         constexpr std::string_view kAssetPrefix = "asset:";
-        const auto isMaterialProperty = [](const TypeMetadataPropertyUVE& prop) {
-            if (prop.customDrawerId == "file:uvmat" || prop.customDrawerId == "file:uvmaterial" ||
-                prop.customDrawerId == "asset:uvmat" || prop.customDrawerId == "asset:uvmaterial" ||
-                prop.name == "materialOverridePath" || prop.name == "materialOverlayPath" ||
-                prop.name == "materialGuid") {
-                return true;
-            }
-            const auto containsMaterial = [](const std::string_view s) {
-                if (s.empty()) return false;
-                auto it = std::search(s.begin(), s.end(), "material", "material" + 8,
-                    [](char ch1, char ch2) { return std::tolower(static_cast<unsigned char>(ch1)) == std::tolower(static_cast<unsigned char>(ch2)); });
-                return it != s.end();
-            };
-            return containsMaterial(prop.name) || containsMaterial(prop.displayName);
-        };
-        const bool isMaterialGuid = isMaterialProperty(property);
-        if (isMaterialGuid) {
-            if (DrawStandardMaterialSlotUVE(nullptr, "##value", value)) {
-                edited = SetSelectedComponentPropertyUVE(entry, property, &value);
-            }
-        } else if (property.customDrawerId.rfind(kAssetPrefix, 0U) != 0U) {
+        if (property.customDrawerId.rfind(kAssetPrefix, 0U) != 0U) {
             ImGui::BeginDisabled();
             ImGui::Text("%016llX", static_cast<unsigned long long>(value.value));
             ImGui::EndDisabled();
@@ -993,20 +931,8 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
         const std::filesystem::path path = database.ResolveUVE(value);
         preview = path.empty() ? "(missing asset)" : path.stem().string();
     }
-    const bool isMaterial = (extension == ".uvmaterial" || extension == ".uvmat");
-    const bool isTexture = (extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".tga");
-    const bool isModel = (extension == ".uvmodel" || extension == ".glb" || extension == ".gltf" || extension == ".fbx" || extension == ".obj");
-    const bool isShader = (extension == ".uvshader" || extension == ".glsl");
-    const auto matchesExt = [&](const std::string& ext) {
-        if (isMaterial) return ext == ".uvmaterial" || ext == ".uvmat";
-        if (isTexture) return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga";
-        if (isModel) return ext == ".uvmodel" || ext == ".glb" || ext == ".gltf" || ext == ".fbx" || ext == ".obj";
-        if (isShader) return ext == ".uvshader" || ext == ".glsl";
-        return ext == extension;
-    };
-
     if (ImGui::BeginCombo(id, preview.c_str())) {
-        if (isMaterial) {
+        if (extension == ".uvmaterial") {
             ImGui::TextDisabled("CREATE MATERIAL");
             if (ImGui::Selectable("+ New StandardMaterial3D (PBR)")) {
                 const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
@@ -1053,12 +979,8 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
         if (ImGui::Selectable("Browse...")) {
             FilePickerRequestUVE request;
             request.mode = FilePickerModeUVE::Open;
-            request.title = title.empty() ? (isMaterial ? "Browse Material" : ("Browse " + extension)) : title;
-            request.extensions = isMaterial ? std::vector<std::string>{".uvmaterial", ".uvmat"}
-                               : isTexture ? std::vector<std::string>{".png", ".jpg", ".jpeg", ".tga"}
-                               : isModel ? std::vector<std::string>{".glb", ".gltf", ".fbx", ".obj", ".uvmodel"}
-                               : isShader ? std::vector<std::string>{".uvshader", ".glsl"}
-                               : std::vector<std::string>{extension};
+            request.title = title.empty() ? "Browse " + extension : title;
+            request.extensions = {extension};
             const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
             request.startDirectory = PickerStartDirectoryUVE(project, value);
             request.onPick = [this, widget](const std::filesystem::path& absolute) {
@@ -1071,19 +993,14 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             FilePickerRequestUVE request;
             request.mode = FilePickerModeUVE::Open;
             request.title = "Quick Import";
-            request.extensions = isMaterial ? std::vector<std::string>{".uvmaterial", ".uvmat", ".mtl", ".png", ".jpg", ".jpeg", ".tga"}
-                                 : isTexture ? std::vector<std::string>{".png", ".jpg", ".jpeg", ".tga"}
-                                 : isModel ? std::vector<std::string>{".fbx", ".glb", ".gltf", ".obj"}
-                                 : isShader ? std::vector<std::string>{".uvshader", ".glsl"}
-                                 : std::vector<std::string>{extension};
+            request.extensions = extension == ".uvmaterial" ? std::vector<std::string>{".png", ".jpg", ".jpeg", ".tga"}
+                                 : extension == ".uvmodel" ? std::vector<std::string>{".fbx", ".glb", ".gltf", ".obj"}
+                                                           : std::vector<std::string>{extension};
             const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
             request.startDirectory = project.contentRoot;
-            request.onPick = [this, widget, isMaterial](const std::filesystem::path& absolute) {
-                const auto guid = m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
+            request.onPick = [this](const std::filesystem::path& absolute) {
+                m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
                 RefreshProjectFileIndexUVE();
-                if (isMaterial && (absolute.extension() == ".uvmaterial" || absolute.extension() == ".uvmat")) {
-                    m_assetPickerPendingPicks[widget] = guid;
-                }
             };
             OpenFilePickerUVE(std::move(request));
             ImGui::CloseCurrentPopup();
@@ -1093,7 +1010,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             picked = Asset::kInvalidAssetGuidUVE;
         }
         ImGui::Separator();
-        ImGui::TextDisabled(isMaterial ? "PROJECT MATERIALS" : "PROJECT ASSETS");
+        ImGui::TextDisabled("PROJECT ASSETS");
         // Registered assets plus every project file of the kind, so a model imported in an
         // earlier session is offered too; picking an unregistered file registers it.
         struct CandidateUVE {
@@ -1102,7 +1019,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
         };
         std::vector<CandidateUVE> candidates;
         for (const Asset::AssetRecordUVE& record : database.GetRegisteredAssetsUVE()) {
-            if (matchesExt(record.path.extension().string())) {
+            if (record.path.extension().string() == extension) {
                 candidates.push_back({record.path.lexically_normal(), record.guid});
             }
         }
@@ -1114,13 +1031,13 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             // A model source (.glb/.gltf/.obj) stands for the mesh it was imported to, once
             // that import has produced it; the author picks the file they know.
             std::filesystem::path path;
-            if (isModel && IsModelSourcePathUVE(file.relativePath)) {
+            if (extension == ".uvmodel" && IsModelSourcePathUVE(file.relativePath)) {
                 path = GetImportedModelPathUVE(file.relativePath);
                 std::error_code error;
                 if (!std::filesystem::is_regular_file(path, error)) {
                     continue;
                 }
-            } else if (matchesExt(file.relativePath.extension().string())) {
+            } else if (file.relativePath.extension().string() == extension) {
                 path = (project.contentRoot / file.relativePath).lexically_normal();
             } else {
                 continue;
@@ -1150,606 +1067,11 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             }
         }
         if (!any) {
-            ImGui::TextDisabled("No %s assets yet. Import one from the Content Browser.", isMaterial ? "material" : extension.c_str());
+            ImGui::TextDisabled("No %s assets yet. Import one from the Content Browser.", extension.c_str());
         }
         ImGui::EndCombo();
     }
     return picked;
-}
-
-void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& absolutePath, const char* const idPrefix) {
-    std::error_code ec;
-    if (absolutePath.empty() || !std::filesystem::is_regular_file(absolutePath, ec)) {
-        return;
-    }
-    Asset::MaterialAssetUVE mat{};
-    if (!Asset::LoadMaterialAssetUVE(absolutePath, mat)) {
-        return;
-    }
-
-    ImGui::PushID(idPrefix);
-    const std::string foldLabel = "Material Properties (" + absolutePath.stem().string() + ")";
-    const std::string foldKey = "mat_inline:" + absolutePath.generic_string();
-    constexpr ImGuiTreeNodeFlags kFlags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding;
-    if (DrawInspectorFoldUVE(foldLabel.c_str(), foldKey.c_str(), false, false, kFlags)) {
-        bool changed = false;
-
-        // 1. Albedo
-        ImGui::TextDisabled("ALBEDO");
-        float albedo[3] = {mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b};
-        if (ImGui::ColorEdit3("Albedo Color", albedo)) {
-            mat.albedoColor = Math::ColorUVE{albedo[0], albedo[1], albedo[2]};
-            changed = true;
-        }
-        if (const auto picked = DrawAssetPickerUVE("##albedoTex", mat.albedoTexture, ".png", "Pick Albedo Texture")) {
-            mat.albedoTexture = *picked;
-            changed = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("Albedo Texture");
-
-        // 2. Normal Map & Scale
-        ImGui::Spacing();
-        ImGui::TextDisabled("NORMAL");
-        if (const auto picked = DrawAssetPickerUVE("##normalTex", mat.normalTexture, ".png", "Pick Normal Texture")) {
-            mat.normalTexture = *picked;
-            changed = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("Normal Map");
-        if (ImGui::SliderFloat("Normal Scale", &mat.normalScale, 0.0F, 4.0F)) {
-            changed = true;
-        }
-
-        // 3. Roughness & Metallic & ORM Map
-        ImGui::Spacing();
-        ImGui::TextDisabled("SURFACE / PBR");
-        if (ImGui::SliderFloat("Roughness", &mat.roughness, 0.0F, 1.0F)) {
-            changed = true;
-        }
-        if (const auto picked = DrawAssetPickerUVE("##roughnessTex", mat.roughnessTexture, ".png", "Pick Roughness Texture")) {
-            mat.roughnessTexture = *picked;
-            changed = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("Roughness Map");
-
-        if (ImGui::SliderFloat("Metallic", &mat.metallic, 0.0F, 1.0F)) {
-            changed = true;
-        }
-        if (const auto picked = DrawAssetPickerUVE("##metallicTex", mat.metallicTexture, ".png", "Pick Metallic Texture")) {
-            mat.metallicTexture = *picked;
-            changed = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("Metallic Map");
-
-        if (const auto picked = DrawAssetPickerUVE("##ormTex", mat.metallicRoughnessTexture, ".png", "Pick ORM Texture")) {
-            mat.metallicRoughnessTexture = *picked;
-            changed = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("ORM Map (AO/Rough/Metal)");
-        if (ImGui::SliderFloat("Occlusion Strength", &mat.occlusionStrength, 0.0F, 2.0F)) {
-            changed = true;
-        }
-
-        // 4. Emission
-        ImGui::Spacing();
-        ImGui::TextDisabled("EMISSION");
-        float emissive[3] = {mat.emissiveColor.r, mat.emissiveColor.g, mat.emissiveColor.b};
-        if (ImGui::ColorEdit3("Emission Color", emissive)) {
-            mat.emissiveColor = Math::ColorUVE{emissive[0], emissive[1], emissive[2]};
-            changed = true;
-        }
-        if (ImGui::DragFloat("Emission Energy", &mat.emissiveEnergy, 0.1F, 0.0F, 100.0F)) {
-            changed = true;
-        }
-        if (const auto picked = DrawAssetPickerUVE("##emissiveTex", mat.emissiveTexture, ".png", "Pick Emission Texture")) {
-            mat.emissiveTexture = *picked;
-            changed = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("Emission Texture");
-
-        // 5. Custom Shader
-        ImGui::Spacing();
-        ImGui::TextDisabled("CUSTOM SHADER");
-        if (ImGui::Checkbox("Use Custom Shader", &mat.useCustomShaderCode)) {
-            changed = true;
-        }
-        if (mat.useCustomShaderCode) {
-            if (const auto picked = DrawAssetPickerUVE("##customShaderAsset", mat.customShader, ".uvshader", "Pick Shader Asset")) {
-                mat.customShader = *picked;
-                changed = true;
-            }
-            ImGui::SameLine();
-            ImGui::TextUnformatted("Shader Asset");
-        }
-
-        if (changed) {
-            static_cast<void>(Asset::SaveMaterialAssetUVE(mat, absolutePath));
-        }
-        ImGui::TreePop();
-    }
-    ImGui::PopID();
-}
-
-bool EditorUVE::DrawStandardMaterialSlotUVE(const char* const label, const char* const id,
-                                           Asset::AssetGuidUVE& inOutGuid) {
-    bool edited = false;
-    if (label != nullptr && label[0] != '\0') {
-        ImGui::TextUnformatted(label);
-        ImGui::SameLine();
-    }
-    if (const std::optional<Asset::AssetGuidUVE> picked = DrawAssetPickerUVE(id, inOutGuid, ".uvmaterial", label ? label : "Material")) {
-        inOutGuid = *picked;
-        edited = true;
-    }
-    if (inOutGuid != Asset::kInvalidAssetGuidUVE) {
-        const std::filesystem::path absPath = m_services->GetAssetDatabaseUVE().ResolveUVE(inOutGuid);
-        DrawMaterialPbrEditorInlineUVE(absPath, id);
-    }
-    return edited;
-}
-
-bool EditorUVE::DrawStandardMaterialSlotUVE(const char* const label, const char* const id,
-                                           std::string& inOutPath) {
-    bool edited = false;
-    if (label != nullptr && label[0] != '\0') {
-        ImGui::TextUnformatted(label);
-        ImGui::SameLine();
-    }
-    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
-
-    Asset::AssetGuidUVE guid = Asset::kInvalidAssetGuidUVE;
-    if (!inOutPath.empty()) {
-        std::filesystem::path absPath = inOutPath;
-        if (absPath.is_relative()) {
-            absPath = (project.contentRoot / absPath).lexically_normal();
-        }
-        guid = database.RegisterUVE(absPath);
-    }
-
-    if (const std::optional<Asset::AssetGuidUVE> picked = DrawAssetPickerUVE(id, guid, ".uvmaterial", label ? label : "Material")) {
-        if (*picked == Asset::kInvalidAssetGuidUVE) {
-            inOutPath.clear();
-        } else {
-            const std::filesystem::path absPath = database.ResolveUVE(*picked);
-            const std::filesystem::path rel = absPath.lexically_relative(project.contentRoot);
-            inOutPath = (rel.empty() || *rel.begin() == "..") ? absPath.generic_string() : rel.generic_string();
-        }
-        edited = true;
-    }
-
-    if (!inOutPath.empty()) {
-        std::filesystem::path absPath = inOutPath;
-        if (absPath.is_relative()) {
-            absPath = (project.contentRoot / absPath).lexically_normal();
-        }
-        DrawMaterialPbrEditorInlineUVE(absPath, id);
-    }
-    return edited;
-}
-
-bool EditorUVE::AutoPopulateSkinFromModelUVE(const Scene::EntityUVE entity, Scene::SkinComponentUVE& skin) {
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-
-    // 1. Try to find Skeleton3D on entity or parent
-    const Scene::Skeleton3DComponentUVE* skelComp = nullptr;
-    if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(entity)) {
-        skelComp = &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(entity);
-    } else if (entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
-        const Scene::EntityUVE parent = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent;
-        if (parent != Scene::kInvalidEntityUVE && entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(parent)) {
-            skelComp = &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(parent);
-        }
-    }
-    if (skelComp != nullptr && !skelComp->bones.empty()) {
-        skin.boneBinds.clear();
-        skin.boneBinds.reserve(skelComp->bones.size());
-        for (std::size_t i = 0; i < skelComp->bones.size(); ++i) {
-            Scene::SkinBoneBindUVE bind;
-            bind.boneName = skelComp->bones[i].name;
-            bind.boneIndex = static_cast<std::int32_t>(i);
-            bind.inverseBindPose = Math::Matrix4x4UVE::IdentityUVE();
-            skin.boneBinds.push_back(std::move(bind));
-        }
-        skin.bindCount = static_cast<std::uint32_t>(skin.boneBinds.size());
-        return true;
-    }
-
-    // 2. Read skeleton from assigned model in MeshComponentUVE
-    if (entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
-        const Scene::MeshComponentUVE& meshComp = entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity);
-        if (meshComp.meshGuid != Asset::kInvalidAssetGuidUVE) {
-            const std::filesystem::path resolved = m_services->GetAssetDatabaseUVE().ResolveUVE(meshComp.meshGuid);
-            const Asset::ProjectFileSnapshotUVE snap = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-            std::filesystem::path relative = resolved.lexically_relative(snap.contentRoot);
-            if (relative.empty() || *relative.begin() == "..") {
-                relative = resolved;
-            }
-
-            std::error_code ec;
-            // 2a. Check if resolved file itself is a .uvmodel with joints
-            if (std::filesystem::is_regular_file(resolved, ec) && resolved.extension() == ".uvmodel") {
-                Asset::MeshAssetUVE meshAsset;
-                if (Asset::LoadMeshAssetUVE(resolved, meshAsset) && !meshAsset.joints.empty()) {
-                    skin.boneBinds.clear();
-                    skin.boneBinds.reserve(meshAsset.joints.size());
-                    for (std::size_t i = 0; i < meshAsset.joints.size(); ++i) {
-                        Scene::SkinBoneBindUVE bind;
-                        bind.boneName = meshAsset.joints[i].name.empty()
-                                            ? ("Bone_" + std::to_string(i))
-                                            : meshAsset.joints[i].name;
-                        bind.boneIndex = static_cast<std::int32_t>(i);
-                        bind.inverseBindPose = meshAsset.joints[i].inverseBindMatrix;
-                        skin.boneBinds.push_back(std::move(bind));
-                    }
-                    skin.bindCount = static_cast<std::uint32_t>(skin.boneBinds.size());
-                    return true;
-                }
-            }
-
-            // 2b. Check if there is an imported .uvmodel corresponding to this model source
-            const std::filesystem::path imported = GetImportedModelPathUVE(relative);
-            if (std::filesystem::is_regular_file(imported, ec)) {
-                Asset::MeshAssetUVE meshAsset;
-                if (Asset::LoadMeshAssetUVE(imported, meshAsset) && !meshAsset.joints.empty()) {
-                    skin.boneBinds.clear();
-                    skin.boneBinds.reserve(meshAsset.joints.size());
-                    for (std::size_t i = 0; i < meshAsset.joints.size(); ++i) {
-                        Scene::SkinBoneBindUVE bind;
-                        bind.boneName = meshAsset.joints[i].name.empty()
-                                            ? ("Bone_" + std::to_string(i))
-                                            : meshAsset.joints[i].name;
-                        bind.boneIndex = static_cast<std::int32_t>(i);
-                        bind.inverseBindPose = meshAsset.joints[i].inverseBindMatrix;
-                        skin.boneBinds.push_back(std::move(bind));
-                    }
-                    skin.bindCount = static_cast<std::uint32_t>(skin.boneBinds.size());
-                    return true;
-                }
-            }
-
-            // 2c. Fallback to glTF skeleton parsing
-            std::optional<Asset::GltfSkeletonUVE> gltfSkel =
-                ReadSkeletonForSourceUVE(relative, Scene::kMaximumSkeletonBonesUVE);
-            if (!gltfSkel.has_value() && IsModelSourcePathUVE(resolved)) {
-                gltfSkel = Asset::ReadGltfSkeletonUVE(resolved, Scene::kMaximumSkeletonBonesUVE);
-            }
-            if (gltfSkel.has_value() && !gltfSkel->joints.empty()) {
-                skin.boneBinds.clear();
-                skin.boneBinds.reserve(gltfSkel->joints.size());
-                for (std::size_t i = 0; i < gltfSkel->joints.size(); ++i) {
-                    Scene::SkinBoneBindUVE bind;
-                    bind.boneName = gltfSkel->joints[i].name.empty()
-                                        ? ("Bone_" + std::to_string(i))
-                                        : gltfSkel->joints[i].name;
-                    bind.boneIndex = static_cast<std::int32_t>(i);
-                    bind.inverseBindPose = Math::Matrix4x4UVE::IdentityUVE();
-                    skin.boneBinds.push_back(std::move(bind));
-                }
-                skin.bindCount = static_cast<std::uint32_t>(skin.boneBinds.size());
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
-        return;
-    }
-    Scene::MeshComponentUVE meshComp = entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity);
-    bool meshChanged = false;
-
-    // 1. Mesh Picker
-    ImGui::TextUnformatted("Mesh");
-    ImGui::SameLine();
-
-    std::string meshPreview = "[ <Empty> ]";
-    const bool hasPrimitive = entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
-    if (hasPrimitive) {
-        const auto& prim = entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
-        switch (prim.kind) {
-            case Scene::PrimitiveMeshKindUVE::Cube: meshPreview = "BoxMesh"; break;
-            case Scene::PrimitiveMeshKindUVE::UVSphere: meshPreview = "SphereMesh"; break;
-            case Scene::PrimitiveMeshKindUVE::Capsule: meshPreview = "CapsuleMesh"; break;
-            case Scene::PrimitiveMeshKindUVE::Cylinder: meshPreview = "CylinderMesh"; break;
-            case Scene::PrimitiveMeshKindUVE::Plane: meshPreview = "PlaneMesh"; break;
-        }
-    } else if (meshComp.meshGuid != Asset::kInvalidAssetGuidUVE) {
-        const std::filesystem::path p = m_services->GetAssetDatabaseUVE().ResolveUVE(meshComp.meshGuid);
-        meshPreview = p.empty() ? "(missing mesh)" : p.stem().string();
-    }
-
-    if (ImGui::BeginCombo("##meshPicker", meshPreview.c_str())) {
-        ImGui::TextDisabled("PROCEDURAL SHAPES");
-        const auto setProcedural = [&](Scene::PrimitiveMeshKindUVE kind) {
-            Scene::PrimitiveMeshComponentUVE prim{kind};
-            entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity, prim);
-            meshComp.meshGuid = Asset::kInvalidAssetGuidUVE;
-            meshChanged = true;
-        };
-        if (ImGui::Selectable("BoxMesh", hasPrimitive && entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity).kind == Scene::PrimitiveMeshKindUVE::Cube)) {
-            setProcedural(Scene::PrimitiveMeshKindUVE::Cube);
-        }
-        if (ImGui::Selectable("SphereMesh", hasPrimitive && entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity).kind == Scene::PrimitiveMeshKindUVE::UVSphere)) {
-            setProcedural(Scene::PrimitiveMeshKindUVE::UVSphere);
-        }
-        if (ImGui::Selectable("CapsuleMesh", hasPrimitive && entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity).kind == Scene::PrimitiveMeshKindUVE::Capsule)) {
-            setProcedural(Scene::PrimitiveMeshKindUVE::Capsule);
-        }
-        if (ImGui::Selectable("CylinderMesh", hasPrimitive && entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity).kind == Scene::PrimitiveMeshKindUVE::Cylinder)) {
-            setProcedural(Scene::PrimitiveMeshKindUVE::Cylinder);
-        }
-        if (ImGui::Selectable("PlaneMesh", hasPrimitive && entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity).kind == Scene::PrimitiveMeshKindUVE::Plane)) {
-            setProcedural(Scene::PrimitiveMeshKindUVE::Plane);
-        }
-
-        ImGui::Separator();
-        if (ImGui::Selectable("Browse...")) {
-            FilePickerRequestUVE request;
-            request.mode = FilePickerModeUVE::Open;
-            request.title = "Browse Model";
-            request.extensions = {".glb", ".gltf", ".fbx", ".obj", ".uvmodel"};
-            const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-            request.startDirectory = PickerStartDirectoryUVE(project, meshComp.meshGuid);
-            request.onPick = [this, entity](const std::filesystem::path& absolute) {
-                const Asset::AssetGuidUVE guid = m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
-                Scene::IEntityManagerUVE& em = m_services->GetEntityManagerUVE();
-                if (em.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
-                    auto mesh = em.GetComponentUVE<Scene::MeshComponentUVE>(entity);
-                    mesh.meshGuid = guid;
-                    em.AddComponentUVE<Scene::MeshComponentUVE>(entity, mesh);
-                    if (em.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
-                        em.RemoveComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
-                    }
-                    if (em.HasComponentUVE<Scene::SkinComponentUVE>(entity)) {
-                        auto skin = em.GetComponentUVE<Scene::SkinComponentUVE>(entity);
-                        AutoPopulateSkinFromModelUVE(entity, skin);
-                        em.AddComponentUVE<Scene::SkinComponentUVE>(entity, skin);
-                    }
-                }
-            };
-            OpenFilePickerUVE(std::move(request));
-            ImGui::CloseCurrentPopup();
-        }
-        if (ImGui::Selectable("Quick Import...")) {
-            FilePickerRequestUVE request;
-            request.mode = FilePickerModeUVE::Open;
-            request.title = "Quick Import Model";
-            request.extensions = {".fbx", ".glb", ".gltf", ".obj"};
-            const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-            request.startDirectory = project.contentRoot;
-            request.onPick = [this](const std::filesystem::path& absolute) {
-                m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
-                RefreshProjectFileIndexUVE();
-            };
-            OpenFilePickerUVE(std::move(request));
-            ImGui::CloseCurrentPopup();
-        }
-        if (ImGui::Selectable("[ <Clear / Empty> ]")) {
-            meshComp.meshGuid = Asset::kInvalidAssetGuidUVE;
-            if (entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
-                entityManager.RemoveComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
-            }
-            meshChanged = true;
-        }
-
-        ImGui::Separator();
-        ImGui::TextDisabled("PROJECT MODELS");
-        struct ModelCandidateUVE {
-            std::filesystem::path path;
-            std::optional<Asset::AssetGuidUVE> guid;
-        };
-        std::vector<ModelCandidateUVE> candidates;
-        auto& database = m_services->GetAssetDatabaseUVE();
-        for (const Asset::AssetRecordUVE& record : database.GetRegisteredAssetsUVE()) {
-            const std::string ext = record.path.extension().string();
-            if (ext == ".uvmodel" || ext == ".glb" || ext == ".gltf" || ext == ".fbx" || ext == ".obj") {
-                candidates.push_back({record.path.lexically_normal(), record.guid});
-            }
-        }
-        const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-        for (const Asset::ProjectFileEntryUVE& file : project.entries) {
-            if (file.kind == Asset::ProjectFileEntryKindUVE::Directory) continue;
-            std::filesystem::path p;
-            const std::string ext = file.relativePath.extension().string();
-            if (ext == ".uvmodel" || ext == ".glb" || ext == ".gltf" || ext == ".fbx" || ext == ".obj") {
-                p = (project.contentRoot / file.relativePath).lexically_normal();
-            } else {
-                continue;
-            }
-            const bool known = std::any_of(candidates.begin(), candidates.end(),
-                                           [&p](const ModelCandidateUVE& c) { return c.path == p; });
-            if (!known) {
-                candidates.push_back({p, std::nullopt});
-            }
-        }
-        std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
-            return a.path.generic_string() < b.path.generic_string();
-        });
-        for (const auto& c : candidates) {
-            const bool isSelected = c.guid.has_value() && *c.guid == meshComp.meshGuid;
-            const std::string label = c.path.stem().string() + " (" + c.path.extension().string() + ")##" + c.path.generic_string();
-            if (ImGui::Selectable(label.c_str(), isSelected) && !isSelected) {
-                const Asset::AssetGuidUVE chosen = c.guid.has_value() ? *c.guid : database.RegisterUVE(c.path);
-                meshComp.meshGuid = chosen;
-                if (entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
-                    entityManager.RemoveComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
-                }
-                meshChanged = true;
-                if (entityManager.HasComponentUVE<Scene::SkinComponentUVE>(entity)) {
-                    auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(entity);
-                    AutoPopulateSkinFromModelUVE(entity, skin);
-                    entityManager.AddComponentUVE<Scene::SkinComponentUVE>(entity, skin);
-                }
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("%s", c.path.generic_string().c_str());
-            }
-        }
-        ImGui::EndCombo();
-    }
-
-    if (meshChanged) {
-        entityManager.AddComponentUVE<Scene::MeshComponentUVE>(entity, meshComp);
-    }
-
-    // 2. Expandable Skeleton Section with Skin Slot
-    constexpr ImGuiTreeNodeFlags kSectionFlags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding;
-    if (DrawInspectorFoldUVE("Skeleton", "meshinstance:skeleton", false, false, kSectionFlags)) {
-        const bool hasSkin = entityManager.HasComponentUVE<Scene::SkinComponentUVE>(entity);
-        std::string skinPreview = "[ <Empty> ]";
-        if (hasSkin) {
-            auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(entity);
-            if (skin.bindCount == 0 && skin.boneBinds.empty()) {
-                if (AutoPopulateSkinFromModelUVE(entity, skin)) {
-                    entityManager.AddComponentUVE<Scene::SkinComponentUVE>(entity, skin);
-                }
-            }
-            skinPreview = "Skin (" + std::to_string(skin.bindCount) + " binds)";
-        }
-        ImGui::TextUnformatted("Skin");
-        ImGui::SameLine();
-        if (ImGui::BeginCombo("##skinSlot", skinPreview.c_str())) {
-            if (!hasSkin) {
-                if (ImGui::Selectable("Skin") || ImGui::Selectable("+ New Skin")) {
-                    Scene::SkinComponentUVE skin{};
-                    AutoPopulateSkinFromModelUVE(entity, skin);
-                    entityManager.AddComponentUVE<Scene::SkinComponentUVE>(entity, skin);
-                }
-            } else {
-                if (ImGui::Selectable("Re-populate from Model / Skeleton")) {
-                    auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(entity);
-                    AutoPopulateSkinFromModelUVE(entity, skin);
-                    entityManager.AddComponentUVE<Scene::SkinComponentUVE>(entity, skin);
-                }
-                if (ImGui::Selectable("[ <Clear / Empty> ]")) {
-                    entityManager.RemoveComponentUVE<Scene::SkinComponentUVE>(entity);
-                }
-            }
-            ImGui::EndCombo();
-        }
-
-        // When assigned, expanding skin settings shows bindCount and boneBinds:
-        if (entityManager.HasComponentUVE<Scene::SkinComponentUVE>(entity)) {
-            auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(entity);
-            bool skinChanged = false;
-            if (DrawInspectorFoldUVE("Skin Settings", "meshinstance:skin_settings", true, false, kSectionFlags)) {
-                int bindCountInt = static_cast<int>(skin.bindCount);
-                if (ImGui::InputInt("Bind Count", &bindCountInt)) {
-                    const std::uint32_t newCount = static_cast<std::uint32_t>(std::max(0, bindCountInt));
-                    if (newCount != skin.bindCount) {
-                        skin.bindCount = newCount;
-                        skin.boneBinds.resize(newCount);
-                        for (std::size_t i = 0; i < skin.boneBinds.size(); ++i) {
-                            if (skin.boneBinds[i].inverseBindPose == Math::Matrix4x4UVE{}) {
-                                skin.boneBinds[i].inverseBindPose = Math::Matrix4x4UVE::IdentityUVE();
-                            }
-                        }
-                        skinChanged = true;
-                    }
-                }
-
-                if (ImGui::Button("+ Add Bone Bind")) {
-                    Scene::SkinBoneBindUVE newBind;
-                    newBind.boneIndex = static_cast<std::int32_t>(skin.boneBinds.size());
-                    newBind.inverseBindPose = Math::Matrix4x4UVE::IdentityUVE();
-                    skin.boneBinds.push_back(std::move(newBind));
-                    skin.bindCount = static_cast<std::uint32_t>(skin.boneBinds.size());
-                    skinChanged = true;
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Clear Binds") && !skin.boneBinds.empty()) {
-                    skin.boneBinds.clear();
-                    skin.bindCount = 0;
-                    skinChanged = true;
-                }
-
-                if (ImGui::TreeNodeEx("Bone Binds", ImGuiTreeNodeFlags_SpanAvailWidth)) {
-                    for (std::size_t i = 0; i < skin.boneBinds.size(); ++i) {
-                        ImGui::PushID(static_cast<int>(i));
-                        auto& bind = skin.boneBinds[i];
-                        const std::string label = "Bone " + std::to_string(i) + ": " + (bind.boneName.empty() ? "(unnamed)" : bind.boneName);
-                        if (ImGui::TreeNodeEx(label.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth)) {
-                            char nameBuf[128];
-                            std::strncpy(nameBuf, bind.boneName.c_str(), sizeof(nameBuf) - 1);
-                            nameBuf[sizeof(nameBuf) - 1] = '\0';
-                            if (ImGui::InputText("Bone Name", nameBuf, sizeof(nameBuf))) {
-                                bind.boneName = nameBuf;
-                                skinChanged = true;
-                            }
-                            if (ImGui::InputInt("Bone Index", &bind.boneIndex)) {
-                                skinChanged = true;
-                            }
-                            if (ImGui::Button("Remove")) {
-                                skin.boneBinds.erase(skin.boneBinds.begin() + static_cast<std::ptrdiff_t>(i));
-                                skin.bindCount = static_cast<std::uint32_t>(skin.boneBinds.size());
-                                skinChanged = true;
-                                ImGui::TreePop();
-                                ImGui::PopID();
-                                break;
-                            }
-                            ImGui::TreePop();
-                        }
-                        ImGui::PopID();
-                    }
-                    ImGui::TreePop();
-                }
-                ImGui::TreePop();
-            }
-            if (skinChanged) {
-                entityManager.AddComponentUVE<Scene::SkinComponentUVE>(entity, skin);
-            }
-        }
-        ImGui::TreePop();
-    }
-
-    // 3. Expandable Surface Material Override Section
-    if (DrawInspectorFoldUVE("Surface Material Override", "meshinstance:surface_override", false, false, kSectionFlags)) {
-        if (!entityManager.HasComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity)) {
-            entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, Scene::SurfaceInstanceComponentUVE{});
-        }
-        auto surfaceComp = entityManager.GetComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity);
-        if (surfaceComp.materialOverridePath.empty() && meshComp.materialGuid != Asset::kInvalidAssetGuidUVE) {
-            const std::filesystem::path absPath = m_services->GetAssetDatabaseUVE().ResolveUVE(meshComp.materialGuid);
-            const auto project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-            const std::filesystem::path rel = absPath.lexically_relative(project.contentRoot);
-            surfaceComp.materialOverridePath = (rel.empty() || *rel.begin() == "..") ? absPath.generic_string() : rel.generic_string();
-        }
-        if (DrawStandardMaterialSlotUVE("Material Override", "##materialOverride", surfaceComp.materialOverridePath)) {
-            entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surfaceComp);
-            if (!surfaceComp.materialOverridePath.empty()) {
-                const auto project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-                std::filesystem::path p = surfaceComp.materialOverridePath;
-                if (p.is_relative()) p = (project.contentRoot / p).lexically_normal();
-                meshComp.materialGuid = m_services->GetAssetDatabaseUVE().RegisterUVE(p);
-            } else {
-                meshComp.materialGuid = Asset::kInvalidAssetGuidUVE;
-            }
-            entityManager.AddComponentUVE<Scene::MeshComponentUVE>(entity, meshComp);
-        }
-        ImGui::TreePop();
-    }
-
-    // 4. Visibility Layers
-    ImGui::Spacing();
-    std::uint32_t layers = meshComp.visibilityLayers;
-    const Config::SettingsDocumentUVE& projectSettings = m_services->GetProjectSettingsUVE();
-    LayerNamesUVE layerNames{};
-    for (std::size_t index = 0U; index < layerNames.size(); ++index) {
-        layerNames[index] = Core::GetLayerNameUVE(projectSettings, Core::LayerSetUVE::Render, index);
-    }
-    if (DrawLayerMaskFieldUVE("Visibility Layers", layers, layerNames) == LayerMaskFieldEventUVE::Changed) {
-        meshComp.visibilityLayers = layers;
-        entityManager.AddComponentUVE<Scene::MeshComponentUVE>(entity, meshComp);
-    }
 }
 
 bool EditorUVE::DrawCustomPropertyUVE(const TypeMetadataEntryUVE& entry, const TypeMetadataPropertyUVE& property,

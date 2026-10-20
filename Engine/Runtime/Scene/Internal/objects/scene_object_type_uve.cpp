@@ -86,9 +86,6 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
                 return Kind::SphereMesh3D;
             case PrimitiveMeshKindUVE::Plane:
                 return Kind::PlaneMesh3D;
-            case PrimitiveMeshKindUVE::Capsule:
-            case PrimitiveMeshKindUVE::Cylinder:
-                return Kind::MeshInstance3D;
         }
     }
 

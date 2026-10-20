@@ -42,6 +42,7 @@
 namespace UVE::Editor {
 namespace {
 
+constexpr const char* kPanelLabelContentBrowserUVE = "\xEE\xAA\xAD Content Browser##content-browser-panel";
 constexpr const char* kIconStarUVE = "\xEE\xAC\xAE";
 constexpr const char* kIconFolderUVE = "\xEE\xAA\xAD";
 constexpr const char* kIconAdjustmentsUVE = "\xEE\xA8\x83";
@@ -261,11 +262,12 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
-    // In native ImGui docking, FirstUseEver sets the initial fallback position and size,
-    // allowing the window to dock into the bottom dock node, tab, split, float, and persist in imgui.ini.
-    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_FirstUseEver);
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
+    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
+    // The dock tab strip along the bottom names this panel, so it has no title bar of its own: the
+    // toolbar row is its top edge.
+    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                                       ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
     ImGui::Begin(kPanelLabelContentBrowserUVE, nullptr, flags);
     DrawContentBrowserBodyUVE();
     ImGui::End();

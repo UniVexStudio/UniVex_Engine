@@ -151,11 +151,20 @@ void EditorUVE::DrawHierarchyPanelUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
-    // In native ImGui docking, FirstUseEver sets the initial fallback position and size,
-    // allowing the window to dock into the left dock node, tab, split, float, and persist in imgui.ini.
-    ImGui::SetNextWindowPos(layout.scenePos, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(layout.sceneSize, ImGuiCond_FirstUseEver);
-    ImGui::Begin(kPanelLabelSceneUVE, &m_scenePanelVisible, ImGuiWindowFlags_NoCollapse);
+    // Always, not FirstUseEver: this is one of the 5 core structural panels that must tile the
+    // screen with zero gaps/overlaps on every single launch, regardless of any stale imgui.ini
+    // from a previous version of this layout - an earlier version of this code used FirstUseEver
+    // reasoning about a real docking system that was never actually built (this editor's panels
+    // are independently-positioned floating windows arranged to look tiled, not a real
+    // DockSpace/DockBuilder tree), so a stale ini entry from any prior layout formula change
+    // permanently froze this panel at an outdated position/size - exactly the "sira at di align"
+    // seams reported against a live build. Only secondary/optional windows (Plugin Tools, the
+    // Scripting canvas) keep FirstUseEver, since those are genuinely meant to be
+    // user-repositionable extras rather than part of the fixed chrome.
+    ImGui::SetNextWindowPos(layout.scenePos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.sceneSize, ImGuiCond_Always);
+    // No title row: the Outliner's name sits in the header row beside the logo.
+    ImGui::Begin(kPanelLabelSceneUVE, nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse);
     DrawHierarchyBodyUVE();
     ImGui::End();
 }
@@ -206,13 +215,12 @@ void EditorUVE::DrawHierarchyBodyUVE() {
         ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, m_hierarchyView.indentWidth);
         // In the Entity Editor the entity is the top of the tree; the scene root is not shown.
         if (m_entityEditSession.has_value()) {
-            Scene::IEntityManagerUVE& em = m_services->GetEntityManagerUVE();
-            const Scene::EntityUVE entityRoot = (m_entityEditSession->rootEntity != Scene::kInvalidEntityUVE &&
-                                                 em.IsAliveUVE(m_entityEditSession->rootEntity))
-                                                    ? m_entityEditSession->rootEntity
-                                                    : GetEntityEditorRootUVE();
-            if (entityRoot != Scene::kInvalidEntityUVE) {
-                DrawHierarchyObjectUVE(entityRoot);
+            const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
+            if (sceneRoot != Scene::kInvalidEntityUVE) {
+                for (const Scene::EntityUVE top :
+                     m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), sceneRoot)) {
+                    DrawHierarchyObjectUVE(top);
+                }
             } else {
                 for (const Scene::EntityUVE root : GetDocumentRootsUVE()) {
                     DrawHierarchyObjectUVE(root);
@@ -695,7 +703,7 @@ void EditorUVE::DrawObjectPickerUVE() {
     } else {
         ImGui::TextDisabled("%s", parent != Scene::kInvalidEntityUVE
                                       ? ("Add to " + GetEntityDisplayLabelUVE(parent)).c_str()
-                                      : (m_entityEditSession.has_value() ? "Add to Entity" : "Add to the scene"));
+                                      : "Add to the scene");
         ImGui::SetNextItemWidth(220.0F);
         if (ImGui::IsWindowAppearing()) {
             ImGui::SetKeyboardFocusHere();
