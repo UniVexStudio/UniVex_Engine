@@ -271,9 +271,11 @@ TEST_F(MeshRendererSpatialBvhTest, DynamicMovement_UpdatesSpatialIndexAndVisibil
         EXPECT_EQ(visibilitySet.placementCache.count(movingEntity), 0U);
     }
 
-    // Move entity dynamically into view (-15 Z)
-    auto& localTransform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(movingEntity);
-    localTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -15.0F};
+    // Move entity dynamically into view (-15 Z). SetLocalTransformUVE marks the world transform
+    // dirty so the scene graph sweep recomputes it - direct member writes would leave it stale.
+    sceneGraph.SetLocalTransformUVE(
+        entityManager, movingEntity,
+        Scene::TransformComponentUVE{.localPosition = Math::Vector3UVE{0.0F, 0.0F, -15.0F}});
     sceneGraph.UpdateUVE(entityManager);
 
     // Update spatial index with moved entity's new bounds
@@ -289,7 +291,9 @@ TEST_F(MeshRendererSpatialBvhTest, DynamicMovement_UpdatesSpatialIndexAndVisibil
     }
 
     // Move entity off-screen to the right (+500 X)
-    localTransform.localPosition = Math::Vector3UVE{500.0F, 0.0F, -15.0F};
+    sceneGraph.SetLocalTransformUVE(
+        entityManager, movingEntity,
+        Scene::TransformComponentUVE{.localPosition = Math::Vector3UVE{500.0F, 0.0F, -15.0F}});
     sceneGraph.UpdateUVE(entityManager);
 
     // Update spatial index with explicit bounds
@@ -317,10 +321,11 @@ TEST_F(MeshRendererSpatialBvhTest, MultiFrustum_RetainsEntitiesInAnyActiveFrustu
     // Camera view points down -Z
     const Math::FrustumUVE mainCameraFrustum = MakeCameraFrustumUVE();
 
-    // Directional light cascade tilted toward +X
+    // Directional light cascade looking down from +Y (a -90 degree turn about X sends the
+    // camera's -Z forward to -Y; +90 would aim it at the sky and see nothing).
     Math::QuaternionUVE lightRotation{};
     static_cast<void>(Math::TryMakeAxisAngleUVE(
-        Math::Vector3UVE{1.0F, 0.0F, 0.0F}, std::numbers::pi_v<float> / 2.0F, lightRotation));
+        Math::Vector3UVE{1.0F, 0.0F, 0.0F}, -std::numbers::pi_v<float> / 2.0F, lightRotation));
     const Math::Matrix4x4UVE lightView = Math::Matrix4x4UVE::ViewFromPositionAndRotationUVE(
         Math::Vector3UVE{0.0F, 50.0F, 0.0F}, lightRotation);
     const Math::Matrix4x4UVE lightProjection = Math::Matrix4x4UVE::OrthographicUVE(-20.0F, 20.0F, -20.0F, 20.0F, 0.1F, 100.0F);
