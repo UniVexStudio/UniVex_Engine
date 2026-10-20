@@ -842,25 +842,24 @@ vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
 vec3 ProceduralSkyUVE(vec3 viewDir) {
     vec3 dir = normalize(viewDir);
     vec3 sun = length(uSunDirection) > 1.0e-5 ? normalize(uSunDirection) : vec3(0.0, 1.0, 0.0);
-    vec3 upperDir = normalize(vec3(dir.x, max(dir.y, 0.0), dir.z));
-    vec3 upperSky = AtmosphereUpperUVE(upperDir, sun);
-    vec3 horizonDir = normalize(vec3(dir.x, 0.001, dir.z));
-    vec3 horizon = AtmosphereUpperUVE(horizonDir, sun);
 
     float day = smoothstep(-0.08, 0.18, sun.y);
     vec3 groundBase = max(uGroundColor, vec3(0.0));
-    // Ground lit by sun + sky irradiance, preserving the authored earthy ground color without washed-out haze
-    vec3 groundLit = groundBase * mix(0.35, 1.0, day);
+    vec3 groundLit = groundBase * mix(0.40, 1.0, day);
+    vec3 horizonLit = max(uHorizonColor, vec3(0.0)) * mix(0.35, 1.0, day);
 
-    float groundT = clamp(-dir.y, 0.0, 1.0);
-    float groundCurve = clamp(max(uGroundCurve, 0.001), 0.2, 2.0);
-    float groundFalloff = pow(groundT, groundCurve);
-    // Soft blend from horizon seam into authored ground color
-    vec3 horizonGroundSeam = mix(horizon * 0.45, groundLit, 0.4);
-    vec3 lowerGround = mix(horizonGroundSeam, groundLit, groundFalloff);
+    if (dir.y < -0.001) {
+        float groundT = clamp(-dir.y, 0.0, 1.0);
+        float groundCurve = clamp(max(uGroundCurve, 0.01), 0.1, 4.0);
+        float falloff = pow(groundT, groundCurve);
+        vec3 ground = mix(horizonLit, groundLit, falloff);
+        float seamBlend = smoothstep(-0.015, 0.0, dir.y);
+        return mix(ground, horizonLit, seamBlend);
+    }
 
-    float horizonBlend = smoothstep(-0.015, 0.015, dir.y);
-    return mix(lowerGround, upperSky, horizonBlend);
+    vec3 upperSky = AtmosphereUpperUVE(dir, sun);
+    float horizonBlend = smoothstep(0.0, 0.015, dir.y);
+    return mix(horizonLit, upperSky, horizonBlend);
 }
 
 vec2 SkyEquirectUvUVE(vec3 dir) {
@@ -895,7 +894,7 @@ const std::string_view kShadowDepthSource = R"GLSLSRC(#version 450 core
 #ifdef VERTEX_SHADER
 layout(location = 0) in vec3 aPosition;
 
-#ifdef UVE_INSTANCED
+#if defined(UVE_INSTANCED) || defined(UVE_INDIRECT_INSTANCED)
 // The instanced shadow variant, mirroring lit_shadowed_3d.glsl's arrangement: same define name,
 // same binding 0, same transposed upload convention, same uInstanceBaseIndex + gl_InstanceID
 // indexing. One rule across both shaders rather than two.
@@ -909,13 +908,20 @@ layout(std430, binding = 0) readonly buffer InstanceTransformBlock {
 layout(std430, binding = 2) readonly buffer InstanceBaseBlock {
     int uInstanceBaseIndex;
 };
+#ifdef UVE_INDIRECT_INSTANCED
+layout(std430, binding = 3) readonly buffer VisibleIndexBlock {
+    uint visibleIndices[];
+};
+#endif
 #else
 uniform mat4 uModel;
 #endif
 uniform mat4 uLightSpaceMatrix;
 
 void main() {
-#ifdef UVE_INSTANCED
+#if defined(UVE_INDIRECT_INSTANCED)
+    mat4 model = instanceModels[uInstanceBaseIndex + int(visibleIndices[gl_InstanceID])];
+#elif defined(UVE_INSTANCED)
     mat4 model = instanceModels[uInstanceBaseIndex + gl_InstanceID];
 #else
     mat4 model = uModel;
@@ -974,7 +980,7 @@ out vec2 vTexCoord;
 out vec4 vLightSpacePosition;
 out vec4 vLightSpacePositions[3];
 
-#ifdef UVE_INSTANCED
+#if defined(UVE_INSTANCED) || defined(UVE_INDIRECT_INSTANCED)
 // The instanced variant reads its per-object transforms from a storage buffer indexed by
 // gl_InstanceID instead of from a uniform set once per draw. That is the entire difference
 // between the two variants, and it is why this is a #define rather than a second shader file:
@@ -996,6 +1002,11 @@ layout(std430, binding = 1) readonly buffer InstanceNormalTransformBlock {
 layout(std430, binding = 2) readonly buffer InstanceBaseBlock {
     int uInstanceBaseIndex;
 };
+#ifdef UVE_INDIRECT_INSTANCED
+layout(std430, binding = 3) readonly buffer VisibleIndexBlock {
+    uint visibleIndices[];
+};
+#endif
 #else
 uniform mat4 uModel;
 // Transpose(inverse(uModel)): correctly transforms normals under non-uniform scale, unlike
@@ -1009,7 +1020,11 @@ uniform mat4 uLightSpaceMatrix;
 uniform mat4 uLightSpaceMatrices[3];
 
 void main() {
-#ifdef UVE_INSTANCED
+#if defined(UVE_INDIRECT_INSTANCED)
+    int instanceSlot = uInstanceBaseIndex + int(visibleIndices[gl_InstanceID]);
+    mat4 model = instanceModels[instanceSlot];
+    mat4 normalMatrix = instanceNormalModels[instanceSlot];
+#elif defined(UVE_INSTANCED)
     int instanceSlot = uInstanceBaseIndex + gl_InstanceID;
     mat4 model = instanceModels[instanceSlot];
     mat4 normalMatrix = instanceNormalModels[instanceSlot];
@@ -1101,6 +1116,12 @@ uniform vec3 uReflectionProbeAxisY;
 uniform vec3 uReflectionProbeAxisZ;
 uniform vec3 uReflectionProbeHalfExtents;
 uniform samplerCube uReflectionProbeCube;
+
+// Unified 2D Shadow Atlas for Spot & Point Lights (Texture slot 7)
+uniform sampler2D uShadowAtlasTexture;
+uniform mat4 uLightShadowMatrices[4];
+uniform vec4 uLightShadowTileRects[4];
+uniform int uLightShadowEnabled[4];
 
 const float kPiUVE = 3.14159265359;
 const float kBrdfEpsilonUVE = 0.0001;
@@ -1268,13 +1289,15 @@ float SampleCascadeDepthUVE(int cascadeIndex, vec2 texCoord) {
 }
 
 vec2 CascadeTexelSizeUVE(int cascadeIndex) {
+    ivec2 sz = ivec2(1);
     if (cascadeIndex == 0) {
-        return 1.0 / vec2(textureSize(uShadowMapTextures[0], 0));
+        sz = textureSize(uShadowMapTextures[0], 0);
+    } else if (cascadeIndex == 1) {
+        sz = textureSize(uShadowMapTextures[1], 0);
+    } else {
+        sz = textureSize(uShadowMapTextures[2], 0);
     }
-    if (cascadeIndex == 1) {
-        return 1.0 / vec2(textureSize(uShadowMapTextures[1], 0));
-    }
-    return 1.0 / vec2(textureSize(uShadowMapTextures[2], 0));
+    return 1.0 / max(vec2(sz), vec2(1.0));
 }
 
 vec4 CascadeLightSpacePositionUVE(int cascadeIndex) {
@@ -1299,8 +1322,14 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
         return 1.0;
     }
 
+    ivec2 mapSize = cascadeIndex < 0 ? textureSize(uShadowMapTexture, 0)
+                                     : textureSize(uShadowMapTextures[clamp(cascadeIndex, 0, 2)], 0);
+    if (mapSize.x <= 1 || mapSize.y <= 1) {
+        return 1.0;
+    }
+
     int kernelRadius = clamp(uShadowPcfKernelRadius, 0, 2);
-    vec2 texelSize = cascadeIndex < 0 ? 1.0 / vec2(textureSize(uShadowMapTexture, 0))
+    vec2 texelSize = cascadeIndex < 0 ? 1.0 / max(vec2(mapSize), vec2(1.0))
                                       : CascadeTexelSizeUVE(cascadeIndex);
     float currentDepth = projected.z;
     float bias = max(uShadowBias * (1.0 - max(dot(normal, lightDirection), 0.0)) * max(uShadowNormalBias, 0.0),
@@ -1321,7 +1350,11 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
         }
     }
 
-    return mix(1.0, visibleSamples / float(sampleCount), clamp(uShadowOpacity, 0.0, 1.0));
+    float factor = mix(1.0, visibleSamples / float(sampleCount), clamp(uShadowOpacity, 0.0, 1.0));
+    if (isnan(factor) || isinf(factor)) {
+        return 1.0;
+    }
+    return factor;
 }
 
 float FadeShadowToLitAtDistanceUVE(float shadowFactor, float viewDepth, float finalCascadeFarDepth) {
@@ -1336,7 +1369,7 @@ float FadeShadowToLitAtDistanceUVE(float shadowFactor, float viewDepth, float fi
 
 float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
     if (uShadowCascadeCount <= 0) {
-        return ShadowFactorFromPositionUVE(vLightSpacePosition, normal, lightDirection, -1);
+        return 1.0;
     }
 
     float viewDepth = length(vWorldPosition - uViewPosition);
@@ -1368,7 +1401,127 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
             shadowFactor = mix(shadowFactor, nextCascadeShadowFactor, blendWeight);
         }
     }
-    return FadeShadowToLitAtDistanceUVE(shadowFactor, viewDepth, finalCascadeFarDepth);
+    float finalFactor = FadeShadowToLitAtDistanceUVE(shadowFactor, viewDepth, finalCascadeFarDepth);
+    if (isnan(finalFactor) || isinf(finalFactor)) {
+        return 1.0;
+    }
+    return finalFactor;
+}
+
+vec2 OctahedralWrapUVE(vec2 v) {
+    return (1.0 - abs(v.yx)) * vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
+}
+
+vec2 OctahedralEncodeUVE(vec3 dir) {
+    float l1 = abs(dir.x) + abs(dir.y) + abs(dir.z);
+    if (l1 <= 0.00001) {
+        return vec2(0.5, 0.5);
+    }
+    dir /= l1;
+    vec2 uv = (dir.z >= 0.0) ? dir.xy : OctahedralWrapUVE(dir.xy);
+    return uv * 0.5 + 0.5;
+}
+
+vec3 OctahedralDecodeUVE(vec2 uv) {
+    vec2 p = uv * 2.0 - 1.0;
+    vec3 v = vec3(p.x, p.y, 1.0 - abs(p.x) - abs(p.y));
+    if (v.z < 0.0) {
+        v.xy = OctahedralWrapUVE(v.xy);
+    }
+    return normalize(v);
+}
+
+float SpotShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightDirection) {
+    if (uLightShadowEnabled[lightIndex] == 0) {
+        return 1.0;
+    }
+    vec4 lightSpacePos = uLightShadowMatrices[lightIndex] * vec4(vWorldPosition, 1.0);
+    if (abs(lightSpacePos.w) <= 0.0001) {
+        return 1.0;
+    }
+    vec3 projected = lightSpacePos.xyz / lightSpacePos.w;
+    projected.xy = projected.xy * 0.5 + 0.5;
+    if (projected.x < 0.0 || projected.x > 1.0 || projected.y < 0.0 || projected.y > 1.0 ||
+        projected.z < 0.0 || projected.z > 1.0) {
+        return 1.0;
+    }
+    vec4 tileRect = uLightShadowTileRects[lightIndex];
+    vec2 tileSize = tileRect.zw - tileRect.xy;
+    if (tileSize.x <= 0.0 || tileSize.y <= 0.0) {
+        return 1.0;
+    }
+
+    float currentDepth = projected.z;
+    float bias = max(uShadowBias * (1.0 - max(dot(normal, lightDirection), 0.0)) * max(uShadowNormalBias, 0.0),
+                     uShadowBias * 0.2);
+    vec2 atlasTexelSize = vec2(1.0 / 4096.0);
+    int kernelRadius = clamp(uShadowPcfKernelRadius, 0, 2);
+    float visibleSamples = 0.0;
+    int sampleCount = 0;
+
+    vec2 minUv = tileRect.xy + atlasTexelSize * 0.5;
+    vec2 maxUv = tileRect.zw - atlasTexelSize * 0.5;
+
+    for (int offsetY = -2; offsetY <= 2; ++offsetY) {
+        for (int offsetX = -2; offsetX <= 2; ++offsetX) {
+            if (abs(offsetX) > kernelRadius || abs(offsetY) > kernelRadius) {
+                continue;
+            }
+            vec2 sampleUv = tileRect.xy + projected.xy * tileSize + vec2(offsetX, offsetY) * atlasTexelSize;
+            sampleUv = clamp(sampleUv, minUv, maxUv);
+            float sampledDepth = texture(uShadowAtlasTexture, sampleUv).r;
+            visibleSamples += (currentDepth - bias > sampledDepth) ? 0.0 : 1.0;
+            ++sampleCount;
+        }
+    }
+    float factor = mix(1.0, visibleSamples / float(max(sampleCount, 1)), clamp(uShadowOpacity, 0.0, 1.0));
+    return (isnan(factor) || isinf(factor)) ? 1.0 : factor;
+}
+
+float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, float lightRange) {
+    if (uLightShadowEnabled[lightIndex] == 0) {
+        return 1.0;
+    }
+    vec3 toFrag = vWorldPosition - lightPosition;
+    float dist = length(toFrag);
+    if (dist <= 0.0001 || dist > lightRange) {
+        return 1.0;
+    }
+    vec4 tileRect = uLightShadowTileRects[lightIndex];
+    vec2 tileSize = tileRect.zw - tileRect.xy;
+    if (tileSize.x <= 0.0 || tileSize.y <= 0.0) {
+        return 1.0;
+    }
+
+    vec3 dir = toFrag / dist;
+    vec2 tileUv = OctahedralEncodeUVE(dir);
+    float currentDepth = clamp(dist / max(lightRange, 0.0001), 0.0, 1.0);
+    vec3 lightDir = -dir;
+    float bias = max(uShadowBias * (1.0 - max(dot(normal, lightDir), 0.0)) * max(uShadowNormalBias, 0.0),
+                     uShadowBias * 0.2);
+
+    vec2 atlasTexelSize = vec2(1.0 / 4096.0);
+    int kernelRadius = clamp(uShadowPcfKernelRadius, 0, 2);
+    float visibleSamples = 0.0;
+    int sampleCount = 0;
+
+    vec2 minUv = tileRect.xy + atlasTexelSize * 0.5;
+    vec2 maxUv = tileRect.zw - atlasTexelSize * 0.5;
+
+    for (int offsetY = -2; offsetY <= 2; ++offsetY) {
+        for (int offsetX = -2; offsetX <= 2; ++offsetX) {
+            if (abs(offsetX) > kernelRadius || abs(offsetY) > kernelRadius) {
+                continue;
+            }
+            vec2 sampleUv = tileRect.xy + tileUv * tileSize + vec2(offsetX, offsetY) * atlasTexelSize;
+            sampleUv = clamp(sampleUv, minUv, maxUv);
+            float sampledDepth = texture(uShadowAtlasTexture, sampleUv).r;
+            visibleSamples += (currentDepth - bias > sampledDepth) ? 0.0 : 1.0;
+            ++sampleCount;
+        }
+    }
+    float factor = mix(1.0, visibleSamples / float(max(sampleCount, 1)), clamp(uShadowOpacity, 0.0, 1.0));
+    return (isnan(factor) || isinf(factor)) ? 1.0 : factor;
 }
 
 void main() {
@@ -1533,9 +1686,23 @@ void main() {
         vec3 directContribution = (diffuse + specular) * radiance * normalDotLight;
 
         if (light.type == 0) {
-            directContribution *= mix(0.28, 1.0, DirectionalShadowFactorUVE(normal, lightDirection));
+            float shadowFactor = DirectionalShadowFactorUVE(normal, lightDirection);
+            if (isnan(shadowFactor) || isinf(shadowFactor)) {
+                shadowFactor = 1.0;
+            }
+            directContribution *= mix(0.28, 1.0, clamp(shadowFactor, 0.0, 1.0));
+        } else if (light.type == 1) {
+            float shadowFactor = PointShadowFactorUVE(lightIndex, normal, light.position, light.range);
+            directContribution *= mix(0.28, 1.0, clamp(shadowFactor, 0.0, 1.0));
+        } else if (light.type == 2) {
+            float shadowFactor = SpotShadowFactorUVE(lightIndex, normal, lightDirection);
+            directContribution *= mix(0.28, 1.0, clamp(shadowFactor, 0.0, 1.0));
         }
-        lighting += directContribution;
+        if (!isnan(directContribution.r) && !isinf(directContribution.r) &&
+            !isnan(directContribution.g) && !isinf(directContribution.g) &&
+            !isnan(directContribution.b) && !isinf(directContribution.b)) {
+            lighting += directContribution;
+        }
     }
 
     // Safe baseline ambient fill so unlit back-faces or scenes without an explicit sky are never pitch black.
@@ -2207,6 +2374,7 @@ uniform sampler2D uAmbientEnvironmentMap;
 uniform int uAmbientEnvironmentMapEnabled;
 uniform vec3 uColor;
 uniform float uSurfaceOpacity = 1.0;
+uniform int uShadingMode = 0; // 0=Lit, 1=Unshaded, 2=Wireframe, 3=Lighting, 4=Normals
 
 vec3 SafeNormalizeUVE(vec3 value) {
     float lengthValue = length(value);
@@ -2264,9 +2432,24 @@ vec3 AmbientFromSourceUVE(vec3 normal) {
 }
 
 void main() {
+    float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0);
+    if (uShadingMode == 1) {
+        FragColor = vec4(uColor, surfaceOpacity);
+        return;
+    }
+    if (uShadingMode == 2) {
+        FragColor = vec4(mix(uColor * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity);
+        return;
+    }
     vec3 normal = SafeNormalizeUVE(vNormal);
+    if (uShadingMode == 4) {
+        FragColor = vec4(normal * 0.5 + 0.5, surfaceOpacity);
+        return;
+    }
+
+    vec3 baseColor = uShadingMode == 3 ? vec3(0.82) : uColor;
     vec3 ambient = AmbientFromSourceUVE(normal);
-    vec3 accumulated = uColor * ambient;
+    vec3 accumulated = baseColor * ambient;
 
     for (int lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
         LightUVE light = uLights[lightIndex];
@@ -2297,10 +2480,10 @@ void main() {
         }
 
         float diffuse = mix(abs(dot(normal, lightDirection)), 1.0, 0.22);
-        accumulated += uColor * light.color * (light.intensity * attenuation * diffuse);
+        accumulated += baseColor * light.color * (light.intensity * attenuation * diffuse);
     }
 
-    FragColor = vec4(accumulated, clamp(uSurfaceOpacity, 0.0, 1.0));
+    FragColor = vec4(accumulated, surfaceOpacity);
 }
 #endif
 )GLSLSRC";
@@ -2579,7 +2762,7 @@ void main() {
         isinf(viewNormal.x) || isinf(viewNormal.y) || isinf(viewNormal.z)) {
         viewNormal = vec3(0.0, 0.0, 1.0);
     }
-    if (viewNormal.z < 0.0) {
+    if (dot(viewNormal, -centerViewPos) < 0.0) {
         viewNormal = -viewNormal;
     }
 
@@ -2592,6 +2775,9 @@ void main() {
     vec3 tangent = pLenSq > 1.0e-8 ? perp * inversesqrt(pLenSq) : vec3(1.0, 0.0, 0.0);
     vec3 bitangent = cross(viewNormal, tangent);
     mat3 tbn = mat3(tangent, bitangent, viewNormal);
+
+    float normalViewDot = max(dot(viewNormal, normalize(-centerViewPos)), 0.15);
+    float angleBias = max(uBias, uBias / normalViewDot);
 
     float occlusion = 0.0;
     int sampleCount = clamp(uSampleCount, 1, kKernelSizeUVE);
@@ -2622,11 +2808,11 @@ void main() {
             continue;
         }
         float rangeCheck = smoothstep(0.0, 1.0, uRadius / max(depthDelta, 0.0001));
-        occlusion += (sampledViewPos.z >= samplePos.z + uBias ? 1.0 : 0.0) * rangeCheck;
+        occlusion += (sampledViewPos.z >= samplePos.z + angleBias ? 1.0 : 0.0) * rangeCheck;
         ++validSamples;
     }
     float rawOcc = validSamples > 0 ? (occlusion / float(sampleCount)) : 0.0;
-    float visibility = clamp(1.0 - rawOcc * max(uIntensity, 0.0), 0.0, 1.0);
+    float visibility = clamp(1.0 - rawOcc * max(uIntensity, 0.0), 0.15, 1.0);
     visibility = pow(visibility, clamp(uPower, 0.1, 4.0));
     if (isnan(visibility) || isinf(visibility)) {
         visibility = 1.0;

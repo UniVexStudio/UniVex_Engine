@@ -21,6 +21,7 @@
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/objects/2d/sprite_2d_uve.h"
+#include "uve/objects/2d/tile_parallax_sprite_2d_uve.h"
 #include "uve/rhi/i_command_buffer_uve.h"
 #include "uve/rhi_shader/built_in_shaders_uve.h"
 #include "uve/rhi_shader/shader_program_desc_uve.h"
@@ -216,6 +217,91 @@ void Renderer2DUVE::RenderFrameToTargetUVE(Scene::IEntityManagerUVE& entityManag
                 }
                 m_sprites.push_back(draw);
             });
+
+        entityManager.ForEachUVE<Scene::TileMapLayerComponentUVE>(
+            [this, &entityManager, &viewProjection](Scene::EntityUVE entity, Scene::TileMapLayerComponentUVE& tileMap) {
+                if (!tileMap.enabled || tileMap.cells.empty()) {
+                    return;
+                }
+                if (!entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+                    return;
+                }
+                if (entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity) &&
+                    !entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity).visibleInHierarchy) {
+                    return;
+                }
+                const Scene::WorldTransformComponentUVE& world =
+                    entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+
+                const Math::Vector2UVE tileSize =
+                    (Math::IsFiniteUVE(tileMap.tileSizePixels) && tileMap.tileSizePixels.x > 0.0F &&
+                     tileMap.tileSizePixels.y > 0.0F)
+                        ? tileMap.tileSizePixels
+                        : Math::Vector2UVE{16.0F, 16.0F};
+
+                TextureHandleUVE texture = m_fallbackWhiteTexture;
+                if (tileMap.tileSetAssetGuid != Asset::kInvalidAssetGuidUVE) {
+                    const auto found = m_textureCache.find(tileMap.tileSetAssetGuid);
+                    if (found != m_textureCache.end()) {
+                        texture = found->second.texture;
+                    }
+                }
+
+                for (const auto& cell : tileMap.cells) {
+                    if (m_sprites.size() >= kMaximumSpritesPerFrame2DUVE) {
+                        ++m_diagnostics.spritesDroppedPastBatchCap;
+                        break;
+                    }
+                    if (cell.tileId < 0) {
+                        continue;
+                    }
+
+                    const Math::Vector2UVE cellCenter =
+                        Scene::TileMapLayerUVE::MapToLocalPositionUVE(tileMap, cell.coord);
+                    const float halfW = tileSize.x * 0.5F;
+                    const float halfH = tileSize.y * 0.5F;
+
+                    const std::array<Math::Vector2UVE, 4U> localCorners{
+                        Math::Vector2UVE{cellCenter.x - halfW, cellCenter.y - halfH},
+                        Math::Vector2UVE{cellCenter.x + halfW, cellCenter.y - halfH},
+                        Math::Vector2UVE{cellCenter.x + halfW, cellCenter.y + halfH},
+                        Math::Vector2UVE{cellCenter.x - halfW, cellCenter.y + halfH},
+                    };
+
+                    std::array<Math::Vector3UVE, 4U> worldCorners{};
+                    for (std::size_t c = 0U; c < 4U; ++c) {
+                        const Math::Vector3UVE local{localCorners[c].x * world.worldScale.x,
+                                                     -localCorners[c].y * world.worldScale.y, 0.0F};
+                        worldCorners[c] = world.worldPosition + Math::RotateVectorUVE(world.worldRotation, local);
+                    }
+
+                    if (m_culling.viewCullingEnabledUVE && !QuadOverlapsViewUVE(viewProjection, worldCorners)) {
+                        ++m_diagnostics.spritesCulled;
+                        continue;
+                    }
+
+                    Sprite2DDrawUVE draw{};
+                    draw.entity = entity;
+                    draw.sortDepth = world.worldPosition.z;
+                    draw.texture = texture;
+                    const Math::Vector4UVE color{1.0F, 1.0F, 1.0F, 1.0F};
+
+                    const std::size_t order[6] = {0U, 2U, 1U, 0U, 3U, 2U};
+                    const std::array<Math::Vector2UVE, 4U> uvs{
+                        Math::Vector2UVE{0.0F, 0.0F},
+                        Math::Vector2UVE{1.0F, 0.0F},
+                        Math::Vector2UVE{1.0F, 1.0F},
+                        Math::Vector2UVE{0.0F, 1.0F},
+                    };
+                    for (std::size_t vertex = 0U; vertex < 6U; ++vertex) {
+                        draw.vertices[vertex].position = worldCorners[order[vertex]];
+                        draw.vertices[vertex].texCoord = uvs[order[vertex]];
+                        draw.vertices[vertex].color = color;
+                    }
+                    m_sprites.push_back(draw);
+                }
+            });
+
         std::stable_sort(m_sprites.begin(), m_sprites.end(), [](const Sprite2DDrawUVE& left,
                                                                  const Sprite2DDrawUVE& right) {
             return left.sortDepth < right.sortDepth;

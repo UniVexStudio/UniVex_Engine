@@ -9,6 +9,7 @@
 #include <functional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -238,10 +239,225 @@ RenderQueueUVE MeshRendererUVE::ExtractRenderQueueUVE(Scene::IEntityManagerUVE& 
     return queue;
 }
 
-void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityManager,
-                                            Asset::IAssetManagerUVE& assetManager,
-                                            Asset::IAssetDatabaseUVE& assetDatabase,
-                                            MeshVisibilitySetUVE& outVisibilitySet) const {
+void MeshRendererUVE::SetActiveCullFrustumUVE(const Math::FrustumUVE& frustum) const noexcept {
+    m_activeCullFrustum = frustum;
+}
+
+void MeshRendererUVE::SetActiveCullFrustumsUVE(std::vector<Math::FrustumUVE> frustums) const noexcept {
+    m_activeCullFrustums = std::move(frustums);
+}
+
+void MeshRendererUVE::SetActiveSceneBoundingRegionUVE(const Math::AabbUVE& region) const noexcept {
+    m_activeBoundingRegion = region;
+}
+
+void MeshRendererUVE::ClearActiveCullFrustumUVE() const noexcept {
+    m_activeCullFrustum.reset();
+    m_activeCullFrustums.clear();
+}
+
+void MeshRendererUVE::ClearActiveSceneBoundingRegionUVE() const noexcept {
+    m_activeBoundingRegion.reset();
+}
+
+bool MeshRendererUVE::HasActiveCullFrustumUVE() const noexcept {
+    return m_activeCullFrustum.has_value() || !m_activeCullFrustums.empty();
+}
+
+const Math::FrustumUVE& MeshRendererUVE::GetActiveCullFrustumUVE() const noexcept {
+    static const Math::FrustumUVE kDefaultFrustum{};
+    if (m_activeCullFrustum.has_value()) {
+        return *m_activeCullFrustum;
+    }
+    if (!m_activeCullFrustums.empty()) {
+        return m_activeCullFrustums.front();
+    }
+    return kDefaultFrustum;
+}
+
+bool MeshRendererUVE::HasActiveSceneBoundingRegionUVE() const noexcept {
+    return m_activeBoundingRegion.has_value();
+}
+
+const Math::AabbUVE& MeshRendererUVE::GetActiveSceneBoundingRegionUVE() const noexcept {
+    static const Math::AabbUVE kDefaultAabb{};
+    return m_activeBoundingRegion.has_value() ? *m_activeBoundingRegion : kDefaultAabb;
+}
+
+void MeshRendererUVE::UpdateEntitySpatialIndexUVE(const Scene::EntityUVE entity,
+                                                  const Math::AabbUVE& worldBounds) const {
+    m_spatialBvh.InsertOrUpdateUVE(entity, worldBounds);
+}
+
+void MeshRendererUVE::UpdateEntitySpatialIndexUVE(Scene::IEntityManagerUVE& entityManager,
+                                                  Asset::IAssetManagerUVE& assetManager,
+                                                  Asset::IAssetDatabaseUVE& assetDatabase,
+                                                  const Scene::EntityUVE entity) const {
+    if (!entityManager.IsAliveUVE(entity) ||
+        !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity) ||
+        !entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
+        m_spatialBvh.RemoveUVE(entity);
+        return;
+    }
+
+    const auto& worldTransform = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    const auto& meshComponent = entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity);
+    if (!Scene::IsMeshComponentValidUVE(meshComponent)) {
+        m_spatialBvh.RemoveUVE(entity);
+        return;
+    }
+
+    Math::AabbUVE worldBounds{};
+    bool boundsDetermined = false;
+    if (meshComponent.meshGuid != Asset::kInvalidAssetGuidUVE) {
+        Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle =
+            assetManager.LoadUVE<Asset::MeshAssetUVE>(meshComponent.meshGuid, assetDatabase);
+        if (meshHandle.IsReadyUVE()) {
+            if (const Asset::MeshAssetUVE* const mesh = meshHandle.TryGetUVE()) {
+                MeshRenderPlacementUVE placement;
+                if (EvaluateMeshRenderPlacementUVE(meshComponent, worldTransform, *mesh, placement)) {
+                    worldBounds = placement.worldBounds;
+                    boundsDetermined = true;
+                }
+            }
+        }
+    }
+
+    if (!boundsDetermined) {
+        const Math::Vector3UVE halfExtents{0.5F, 0.5F, 0.5F};
+        worldBounds = Math::AabbUVE::FromCenterExtentsUVE(worldTransform.worldPosition, halfExtents);
+    }
+
+    if (std::isfinite(worldBounds.min.x) && std::isfinite(worldBounds.max.x) &&
+        worldBounds.min.x <= worldBounds.max.x) {
+        m_spatialBvh.InsertOrUpdateUVE(entity, worldBounds);
+    }
+}
+
+void MeshRendererUVE::RemoveEntitySpatialIndexUVE(const Scene::EntityUVE entity) const {
+    m_spatialBvh.RemoveUVE(entity);
+}
+
+void MeshRendererUVE::SynchronizeSpatialAccelerationUVE(Scene::IEntityManagerUVE& entityManager,
+                                                       Asset::IAssetManagerUVE& assetManager,
+                                                       Asset::IAssetDatabaseUVE& assetDatabase) const {
+    std::vector<DynamicMeshBvhUVE::EntityEntry> entries;
+    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
+        [&](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
+            const Scene::MeshComponentUVE& meshComponent) {
+            if (!Scene::IsMeshComponentValidUVE(meshComponent)) {
+                return;
+            }
+
+            Math::AabbUVE worldBounds{};
+            bool boundsDetermined = false;
+            if (meshComponent.meshGuid != Asset::kInvalidAssetGuidUVE) {
+                Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle =
+                    assetManager.LoadUVE<Asset::MeshAssetUVE>(meshComponent.meshGuid, assetDatabase);
+                if (meshHandle.IsReadyUVE()) {
+                    if (const Asset::MeshAssetUVE* const mesh = meshHandle.TryGetUVE()) {
+                        MeshRenderPlacementUVE placement;
+                        if (EvaluateMeshRenderPlacementUVE(meshComponent, worldTransform, *mesh, placement)) {
+                            worldBounds = placement.worldBounds;
+                            boundsDetermined = true;
+                        }
+                    }
+                }
+            }
+
+            if (!boundsDetermined) {
+                const Math::Vector3UVE halfExtents{0.5F, 0.5F, 0.5F};
+                worldBounds = Math::AabbUVE::FromCenterExtentsUVE(worldTransform.worldPosition, halfExtents);
+            }
+
+            if (std::isfinite(worldBounds.min.x) && std::isfinite(worldBounds.max.x) &&
+                worldBounds.min.x <= worldBounds.max.x) {
+                entries.push_back(DynamicMeshBvhUVE::EntityEntry{entity, worldBounds});
+            }
+        });
+
+    m_spatialBvh.BuildUVE(std::move(entries));
+}
+
+void MeshRendererUVE::RebuildSpatialAccelerationUVE(Scene::IEntityManagerUVE& entityManager,
+                                                    Asset::IAssetManagerUVE& assetManager,
+                                                    Asset::IAssetDatabaseUVE& assetDatabase) const {
+    m_spatialBvh.ClearUVE();
+    SynchronizeSpatialAccelerationUVE(entityManager, assetManager, assetDatabase);
+}
+
+void MeshRendererUVE::ClearSpatialAccelerationUVE() const noexcept {
+    m_spatialBvh.ClearUVE();
+    m_activeCullFrustum.reset();
+    m_activeCullFrustums.clear();
+    m_activeBoundingRegion.reset();
+}
+
+void MeshRendererUVE::GetAllIndexedEntitiesUVE(std::vector<Scene::EntityUVE>& outEntities) const {
+    outEntities.clear();
+    if (m_spatialBvh.IsEmptyUVE()) {
+        return;
+    }
+    const std::int32_t root = m_spatialBvh.GetRootIndexUVE();
+    if (root == DynamicMeshBvhUVE::kInvalidNodeIndex) {
+        return;
+    }
+    std::vector<std::int32_t> stack;
+    stack.reserve(64U);
+    stack.push_back(root);
+    const auto& nodes = m_spatialBvh.GetNodesUVE();
+    while (!stack.empty()) {
+        const std::int32_t current = stack.back();
+        stack.pop_back();
+        if (current < 0 || static_cast<std::size_t>(current) >= nodes.size()) {
+            continue;
+        }
+        const DynamicMeshBvhUVE::Node& node = nodes[static_cast<std::size_t>(current)];
+        if (node.IsLeaf()) {
+            for (std::uint32_t i = 0U; i < node.entryCount; ++i) {
+                outEntities.push_back(node.entries[i].entity);
+            }
+        } else {
+            if (node.rightChild != DynamicMeshBvhUVE::kInvalidNodeIndex) {
+                stack.push_back(node.rightChild);
+            }
+            if (node.leftChild != DynamicMeshBvhUVE::kInvalidNodeIndex) {
+                stack.push_back(node.leftChild);
+            }
+        }
+    }
+}
+
+void MeshRendererUVE::QueryFrustumsUVE(const std::vector<Math::FrustumUVE>& frustums,
+                                       std::vector<Scene::EntityUVE>& outEntities) const {
+    outEntities.clear();
+    if (frustums.empty() || m_spatialBvh.IsEmptyUVE()) {
+        return;
+    }
+    if (frustums.size() == 1U) {
+        m_spatialBvh.QueryFrustumUVE(frustums[0], outEntities);
+        return;
+    }
+
+    std::unordered_set<Scene::EntityUVE> seen;
+    std::vector<Scene::EntityUVE> perFrustum;
+    for (const auto& frustum : frustums) {
+        perFrustum.clear();
+        m_spatialBvh.QueryFrustumUVE(frustum, perFrustum);
+        for (const Scene::EntityUVE entity : perFrustum) {
+            if (seen.insert(entity).second) {
+                outEntities.push_back(entity);
+            }
+        }
+    }
+}
+
+void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
+    const std::vector<Scene::EntityUVE>& survivingEntities,
+    Scene::IEntityManagerUVE& entityManager,
+    Asset::IAssetManagerUVE& assetManager,
+    Asset::IAssetDatabaseUVE& assetDatabase,
+    MeshVisibilitySetUVE& outVisibilitySet) const {
     outVisibilitySet.ClearUVE();
     // Pre-increment, so no live entry can carry the new stamp before the walk assigns it. Starting
     // at 1 also lets 0 mean "never populated", which is how a default-constructed cache entry -
@@ -270,282 +486,295 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
     std::unordered_map<std::string, Asset::AssetGuidUVE> materialOverridePathIndex;
     bool materialOverridePathIndexBuilt = false;
 
-    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
-        [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
-            const Scene::MeshComponentUVE& meshComponent) {
-            UVE_ASSERT(Scene::IsMeshComponentValidUVE(meshComponent));
+    for (const Scene::EntityUVE entity : survivingEntities) {
+        if (!entityManager.IsAliveUVE(entity) ||
+            !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity) ||
+            !entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
+            m_spatialBvh.RemoveUVE(entity);
+            continue;
+        }
 
-            // Hidden first, before anything is resolved or counted. A hidden mesh must cost as
-            // close to nothing as the walk allows, so this sits ahead of the asset resolution and
-            // the placement cache rather than filtering at cull time - culling a candidate that
-            // was never going to be drawn still pays to have built it.
-            //
-            // Also deliberately ahead of the diagnostics: a hidden object is not a scene problem,
-            // and counting its unresolved assets as invalid references would make the stats panel
-            // report faults for objects the author has simply switched off.
-            if (entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity) &&
-                !entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity).visibleInHierarchy) {
-                ++outVisibilitySet.hiddenEntities;
-                return;
-            }
+        const auto& worldTransform = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+        const auto& meshComponent = entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity);
+        UVE_ASSERT(Scene::IsMeshComponentValidUVE(meshComponent));
 
-            const Scene::SurfaceInstanceComponentUVE* surface = nullptr;
-            if (entityManager.HasComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity)) {
-                const Scene::SurfaceInstanceComponentUVE& surfaceComponent =
-                    entityManager.GetComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity);
-                if (!Scene::IsSurfaceInstanceComponentValidUVE(surfaceComponent)) {
-                    ++outVisibilitySet.invalidRenderEligibility;
-                    return;
-                }
-                surface = &surfaceComponent;
-            }
+        // Hidden first, before anything is resolved or counted. A hidden mesh must cost as
+        // close to nothing as the walk allows, so this sits ahead of the asset resolution and
+        // the placement cache rather than filtering at cull time - culling a candidate that
+        // was never going to be drawn still pays to have built it.
+        //
+        // Also deliberately ahead of the diagnostics: a hidden object is not a scene problem,
+        // and counting its unresolved assets as invalid references would make the stats panel
+        // report faults for objects the author has simply switched off.
+        if (entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity) &&
+            !entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity).visibleInHierarchy) {
+            ++outVisibilitySet.hiddenEntities;
+            continue;
+        }
 
-            std::uint32_t renderLayers = 1U;
-            float sortingOffset = 0.0F;
-            bool sortingUseAabbCenter = true;
-            if (entityManager.HasComponentUVE<Scene::RenderInstanceComponentUVE>(entity)) {
-                const Scene::RenderInstanceComponentUVE& instance =
-                    entityManager.GetComponentUVE<Scene::RenderInstanceComponentUVE>(entity);
-                if (!Scene::IsRenderInstanceComponentValidUVE(instance)) {
-                    ++outVisibilitySet.invalidRenderEligibility;
-                    return;
-                }
-                renderLayers = instance.renderLayers;
-                sortingOffset = instance.sortingOffset;
-                sortingUseAabbCenter = instance.sortingUseAabbCenter;
+        const Scene::SurfaceInstanceComponentUVE* surface = nullptr;
+        if (entityManager.HasComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity)) {
+            const Scene::SurfaceInstanceComponentUVE& surfaceComponent =
+                entityManager.GetComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity);
+            if (!Scene::IsSurfaceInstanceComponentValidUVE(surfaceComponent)) {
+                ++outVisibilitySet.invalidRenderEligibility;
+                continue;
             }
-            if (!Scene::IsRenderInstance3DOnViewLayersUVE(renderLayers, outVisibilitySet.viewLayerMask)) {
-                ++outVisibilitySet.layerCulledEntities;
-                return;
-            }
+            surface = &surfaceComponent;
+        }
 
-            // Distance detail, resolved before anything is loaded or computed. A LodGroup3D past
-            // the end of its chain costs a subtraction and a length here, and nothing else - no
-            // asset resolution, no placement, no plane test, no draw call. Measured on a
-            // 2000-object 200 m scene: 74% culled at a 50 m draw distance, 50% at 100 m.
-            //
-            // The level is resolved even for entities that are NOT culled, because currentLevel is
-            // what a future mesh swap indexes by and the Inspector shows. Resolving it only on the
-            // cull path would make the field correct exactly when nobody can see the object.
-            // The mesh this entity draws with is the level the group resolved to, not necessarily
-            // the MeshComponentUVE mesh: a level the group overrides names its own asset, and every
-            // other level falls back to the component's own mesh. Resolved once here so the
-            // diagnostics, the asset resolution, the placement cache key and the asset-pair bucket
-            // below all speak about the mesh that was actually chosen - a shared resolution would
-            // otherwise be reused under the identity of the wrong asset.
-            Asset::AssetGuidUVE effectiveMeshGuid = meshComponent.meshGuid;
-            if (entityManager.HasComponentUVE<Scene::LodGroup3DComponentUVE>(entity)) {
-                Scene::LodGroup3DComponentUVE& lodGroup =
-                    entityManager.GetComponentUVE<Scene::LodGroup3DComponentUVE>(entity);
-                const Math::Vector3UVE toCamera =
-                    worldTransform.worldPosition - outVisibilitySet.cameraWorldPosition;
-                float lodDistance = Math::LengthUVE(toCamera);
-                if (surface != nullptr) {
-                    lodDistance = Scene::SurfaceInstance3DLodDistanceUVE(*surface, lodDistance);
-                }
-                Scene::ResolveLodGroup3DLevelUVE(lodGroup, lodDistance);
-                if (lodGroup.culledByDistance) {
-                    ++outVisibilitySet.distanceCulledEntities;
-                    return;
-                }
-                effectiveMeshGuid = Scene::ResolveLodGroup3DMeshGuidUVE(lodGroup, meshComponent.meshGuid);
+        std::uint32_t renderLayers = 1U;
+        float sortingOffset = 0.0F;
+        bool sortingUseAabbCenter = true;
+        if (entityManager.HasComponentUVE<Scene::RenderInstanceComponentUVE>(entity)) {
+            const Scene::RenderInstanceComponentUVE& instance =
+                entityManager.GetComponentUVE<Scene::RenderInstanceComponentUVE>(entity);
+            if (!Scene::IsRenderInstanceComponentValidUVE(instance)) {
+                ++outVisibilitySet.invalidRenderEligibility;
+                continue;
             }
+            renderLayers = instance.renderLayers;
+            sortingOffset = instance.sortingOffset;
+            sortingUseAabbCenter = instance.sortingUseAabbCenter;
+        }
+        if (!Scene::IsRenderInstance3DOnViewLayersUVE(renderLayers, outVisibilitySet.viewLayerMask)) {
+            ++outVisibilitySet.layerCulledEntities;
+            continue;
+        }
 
-            // World partition vis-budget: a faded cell skips this draw. A membership whose owner
-            // was destroyed fails open so a residual opinion cannot hide content forever.
-            if (Scene::IsWorldPartition3DDrawHiddenUVE(entityManager, entity)) {
-                ++outVisibilitySet.partitionCulledEntities;
-                return;
-            }
-
-            // Visibility region room box: an inactive room skips this draw. A dead region fails
-            // open so a residual opinion cannot hide content forever.
-            if (Scene::IsVisibilityRegion3DDrawHiddenUVE(entityManager, entity)) {
-                ++outVisibilitySet.regionCulledEntities;
-                return;
-            }
-
+        // Distance detail, resolved before anything is loaded or computed. A LodGroup3D past
+        // the end of its chain costs a subtraction and a length here, and nothing else - no
+        // asset resolution, no placement, no plane test, no draw call. Measured on a
+        // 2000-object 200 m scene: 74% culled at a 50 m draw distance, 50% at 100 m.
+        //
+        // The level is resolved even for entities that are NOT culled, because currentLevel is
+        // what a future mesh swap indexes by and the Inspector shows. Resolving it only on the
+        // cull path would make the field correct exactly when nobody can see the object.
+        // The mesh this entity draws with is the level the group resolved to, not necessarily
+        // the MeshComponentUVE mesh: a level the group overrides names its own asset, and every
+        // other level falls back to the component's own mesh. Resolved once here so the
+        // diagnostics, the asset resolution, the placement cache key and the asset-pair bucket
+        // below all speak about the mesh that was actually chosen - a shared resolution would
+        // otherwise be reused under the identity of the wrong asset.
+        Asset::AssetGuidUVE effectiveMeshGuid = meshComponent.meshGuid;
+        if (entityManager.HasComponentUVE<Scene::LodGroup3DComponentUVE>(entity)) {
+            Scene::LodGroup3DComponentUVE& lodGroup =
+                entityManager.GetComponentUVE<Scene::LodGroup3DComponentUVE>(entity);
+            const Math::Vector3UVE toCamera =
+                worldTransform.worldPosition - outVisibilitySet.cameraWorldPosition;
+            float lodDistance = Math::LengthUVE(toCamera);
             if (surface != nullptr) {
-                const Math::Vector3UVE toCamera =
-                    worldTransform.worldPosition - outVisibilitySet.cameraWorldPosition;
-                if (Scene::IsSurfaceInstance3DOutsideVisibilityRangeUVE(*surface, Math::LengthUVE(toCamera))) {
-                    ++outVisibilitySet.rangeCulledEntities;
-                    return;
-                }
+                lodDistance = Scene::SurfaceInstance3DLodDistanceUVE(*surface, lodDistance);
             }
+            Scene::ResolveLodGroup3DLevelUVE(lodGroup, lodDistance);
+            if (lodGroup.culledByDistance) {
+                ++outVisibilitySet.distanceCulledEntities;
+                continue;
+            }
+            effectiveMeshGuid = Scene::ResolveLodGroup3DMeshGuidUVE(lodGroup, meshComponent.meshGuid);
+        }
 
-            Asset::AssetGuidUVE effectiveMaterialGuid = meshComponent.materialGuid;
-            if (Scene::MeshInstance3DUVE::HasSurfaceMaterialOverrideUVE(surface)) {
-                Asset::AssetGuidUVE overrideGuid = Asset::kInvalidAssetGuidUVE;
-                if (!TryResolveMaterialOverridePathUVE(surface->materialOverridePath, assetDatabase,
-                                                       materialOverridePathIndex, materialOverridePathIndexBuilt,
-                                                       overrideGuid)) {
-                    ++outVisibilitySet.invalidAssetReferences;
-                    return;
-                }
-                effectiveMaterialGuid =
-                    Scene::MeshInstance3DUVE::ResolveEffectiveMaterialGuidUVE(meshComponent, overrideGuid);
-            }
+        // World partition vis-budget: a faded cell skips this draw. A membership whose owner
+        // was destroyed fails open so a residual opinion cannot hide content forever.
+        if (Scene::IsWorldPartition3DDrawHiddenUVE(entityManager, entity)) {
+            ++outVisibilitySet.partitionCulledEntities;
+            continue;
+        }
 
-            if (effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
-                ++outVisibilitySet.invalidAssetReferences;
-            }
-            // A mesh with no material is not a broken reference: the renderer draws it with the
-            // built-in lit shader (Renderer3DUVE's unmaterialed path), so only an unassigned pair
-            // counts its material as missing. An override path that resolved is a material.
-            if (effectiveMaterialGuid == Asset::kInvalidAssetGuidUVE &&
-                effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
-                ++outVisibilitySet.invalidAssetReferences;
-            }
-            if (!Scene::MeshInstance3DUVE::HasRenderableAssetPairUVE(effectiveMeshGuid,
-                                                                     effectiveMaterialGuid)) {
-                return;
-            }
+        // Visibility region room box: an inactive room skips this draw. A dead region fails
+        // open so a residual opinion cannot hide content forever.
+        if (Scene::IsVisibilityRegion3DDrawHiddenUVE(entityManager, entity)) {
+            ++outVisibilitySet.regionCulledEntities;
+            continue;
+        }
 
-            const ResolvedAssetUVE<Asset::MeshAssetUVE>& resolvedMesh =
-                ResolveOnceUVE(resolvedMeshes, effectiveMeshGuid, assetManager, assetDatabase);
-            const ResolvedAssetUVE<Asset::MaterialAssetUVE>& resolvedMaterial =
-                ResolveOnceUVE(resolvedMaterials, effectiveMaterialGuid, assetManager, assetDatabase);
+        if (surface != nullptr) {
+            const Math::Vector3UVE toCamera =
+                worldTransform.worldPosition - outVisibilitySet.cameraWorldPosition;
+            if (Scene::IsSurfaceInstance3DOutsideVisibilityRangeUVE(*surface, Math::LengthUVE(toCamera))) {
+                ++outVisibilitySet.rangeCulledEntities;
+                continue;
+            }
+        }
 
-            // Counted per ENTITY, not per resolution. Sharing the resolution is an implementation
-            // detail of how the answer was obtained; the diagnostic answers "how many entities
-            // could not be drawn this frame", and ten entities blocked on one pending mesh is ten
-            // entities that did not draw. Folding these into the resolution would silently change
-            // every one of these counters to mean something else.
-            outVisibilitySet.failedAssetLoads += static_cast<std::size_t>(resolvedMesh.failed) +
-                                                 static_cast<std::size_t>(resolvedMaterial.failed);
-            outVisibilitySet.pendingAssetLoads += static_cast<std::size_t>(resolvedMesh.pending) +
-                                                  static_cast<std::size_t>(resolvedMaterial.pending);
-            if (!resolvedMesh.IsUsableUVE() || !resolvedMaterial.IsUsableUVE()) {
-                return;
-            }
-
-            const Asset::MeshAssetUVE* const mesh = resolvedMesh.value;
-            const Asset::MaterialAssetUVE* const material = resolvedMaterial.value;
-
-            // The cache lookup. Placement is the frame's dominant cost - measured at roughly 29x
-            // the price of comparing this key and reusing the answer - and most objects in most
-            // scenes do not move, so most of that cost is recomputing last frame's answer.
-            const MeshPlacementKeyUVE key{worldTransform.worldPosition, worldTransform.worldRotation,
-                                          worldTransform.worldScale, effectiveMeshGuid, mesh->localBounds};
-
-            MeshPlacementCacheEntryUVE& cacheEntry = outVisibilitySet.placementCache[entity];
-            const bool reusable = cacheEntry.lastSeenFrame != 0U && cacheEntry.key.MatchesUVE(key);
-            if (reusable) {
-                ++outVisibilitySet.placementCacheHits;
-            } else {
-                ++outVisibilitySet.placementCacheMisses;
-                cacheEntry.key = key;
-                Scene::MeshComponentUVE placementMesh = meshComponent;
-                placementMesh.meshGuid = effectiveMeshGuid;
-                placementMesh.materialGuid = effectiveMaterialGuid;
-                static_cast<void>(
-                    EvaluateMeshRenderPlacementUVE(placementMesh, worldTransform, *mesh, cacheEntry.placement));
-            }
-            // Stamped on hit as well as miss: the stamp records "seen this frame", which is what
-            // the prune reads. Only stamping misses would evict every stationary object.
-            cacheEntry.lastSeenFrame = outVisibilitySet.frameIndex;
-
-            const MeshRenderPlacementUVE& placement = cacheEntry.placement;
-            if (!placement.IsPlacedUVE()) {
-                if (placement.reason == MeshRenderEligibilityReasonUVE::InvalidWorldTransform ||
-                    placement.reason == MeshRenderEligibilityReasonUVE::InvalidLocalBounds) {
-                    ++outVisibilitySet.invalidRenderEligibility;
-                }
-                return;
-            }
-
-            Math::AabbUVE occlusionBounds = placement.worldBounds;
-            if (surface != nullptr) {
-                Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, occlusionBounds);
-            }
-            if (!(surface != nullptr && surface->ignoreOcclusionCulling) &&
-                Scene::IsOccluder3DAabbDrawHiddenUVE(occluders, outVisibilitySet.cameraWorldPosition,
-                                                     occlusionBounds)) {
-                ++outVisibilitySet.occlusionCulledEntities;
-                return;
-            }
-
-            // Bucketing is decided here, not per frustum: transparency is a property of the
-            // material and of SurfaceInstance3D, and no frustum can change it.
-            //
-            // The candidate stores an INDEX, not a pair of handles. The set holds one reference
-            // per distinct mesh+material pair and that is what keeps the assets alive across the
-            // frame; a reference per entity would be the same two records counted thousands of
-            // times, at a mutex and a hash each way.
-            const std::size_t assetPairIndex = ResolveAssetPairIndexUVE(
-                assetPairSlots, outVisibilitySet.assetPairs, effectiveMeshGuid, effectiveMaterialGuid,
-                resolvedMesh.handle, resolvedMaterial.handle);
-            // Physics interpolation, applied to the CANDIDATE rather than to the cached placement.
-            //
-            // The placement cache is keyed on the simulated world transform, which changes once
-            // per fixed step. Keying it on the interpolated pose instead would miss on every frame
-            // for every moving object - the cache is worth about 29x, and an interpolated scene
-            // would give all of that back. So the expensive part (matrix compose, bounds
-            // transform) stays cached against the simulated pose, and only the cheap part - a
-            // position lerp and a rotation slerp - is redone per frame. Measured at 15.6x cheaper
-            // than recomputing the placement.
-            MeshRenderPlacementUVE posedPlacement = placement;
-            if (ApplyInterpolatedPoseUVE(entityManager, entity, outVisibilitySet.physicsInterpolationAlpha,
-                                         *mesh, posedPlacement)) {
-                ++outVisibilitySet.interpolatedCandidates;
-            }
-            MeshRenderPlacementUVE candidatePlacement = posedPlacement;
-            ApplyMaterialBillboardToPlacementUVE(material->billboardMode, outVisibilitySet.cameraWorldPosition,
-                                                 mesh->localBounds, candidatePlacement);
-            if (surface != nullptr) {
-                Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, candidatePlacement.worldBounds);
-            }
-            bool castsShadow = true;
-            bool drawsInView = true;
-            float opacity = 1.0F;
-            if (surface != nullptr) {
-                castsShadow = Scene::SurfaceInstance3DCastsShadowUVE(*surface);
-                drawsInView = Scene::SurfaceInstance3DDrawsInViewUVE(*surface);
-                opacity = Scene::SurfaceInstance3DOpacityUVE(*surface);
-                const Math::Vector3UVE toCamera =
-                    worldTransform.worldPosition - outVisibilitySet.cameraWorldPosition;
-                opacity *= Scene::SurfaceInstance3DVisibilityFadeWeightUVE(*surface, Math::LengthUVE(toCamera));
-                if (opacity <= 0.0F) {
-                    drawsInView = false;
-                }
-            }
-            const bool isTransparent = material->isTransparent || opacity < 1.0F;
-            outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
-                assetPairIndex, candidatePlacement, isTransparent, entity, renderLayers, sortingOffset,
-                sortingUseAabbCenter, castsShadow, drawsInView, opacity, false});
-
-            if (surface == nullptr || !drawsInView || !Scene::SurfaceInstance3DHasOverlayUVE(*surface)) {
-                return;
-            }
-            Asset::AssetGuidUVE overlayGuid = Asset::kInvalidAssetGuidUVE;
-            if (!TryResolveMaterialOverridePathUVE(surface->materialOverlayPath, assetDatabase,
+        Asset::AssetGuidUVE effectiveMaterialGuid = meshComponent.materialGuid;
+        if (Scene::MeshInstance3DUVE::HasSurfaceMaterialOverrideUVE(surface)) {
+            Asset::AssetGuidUVE overrideGuid = Asset::kInvalidAssetGuidUVE;
+            if (!TryResolveMaterialOverridePathUVE(surface->materialOverridePath, assetDatabase,
                                                    materialOverridePathIndex, materialOverridePathIndexBuilt,
-                                                   overlayGuid)) {
+                                                   overrideGuid)) {
                 ++outVisibilitySet.invalidAssetReferences;
-                return;
+                continue;
             }
-            const ResolvedAssetUVE<Asset::MaterialAssetUVE>& resolvedOverlay =
-                ResolveOnceUVE(resolvedMaterials, overlayGuid, assetManager, assetDatabase);
-            outVisibilitySet.failedAssetLoads += static_cast<std::size_t>(resolvedOverlay.failed);
-            outVisibilitySet.pendingAssetLoads += static_cast<std::size_t>(resolvedOverlay.pending);
-            if (!resolvedOverlay.IsUsableUVE()) {
-                return;
+            effectiveMaterialGuid =
+                Scene::MeshInstance3DUVE::ResolveEffectiveMaterialGuidUVE(meshComponent, overrideGuid);
+        }
+
+        if (effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
+            ++outVisibilitySet.invalidAssetReferences;
+        }
+        // A mesh with no material is not a broken reference: the renderer draws it with the
+        // built-in lit shader (Renderer3DUVE's unmaterialed path), so only an unassigned pair
+        // counts its material as missing. An override path that resolved is a material.
+        if (effectiveMaterialGuid == Asset::kInvalidAssetGuidUVE &&
+            effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
+            ++outVisibilitySet.invalidAssetReferences;
+        }
+        if (!Scene::MeshInstance3DUVE::HasRenderableAssetPairUVE(effectiveMeshGuid,
+                                                                 effectiveMaterialGuid)) {
+            continue;
+        }
+
+        const ResolvedAssetUVE<Asset::MeshAssetUVE>& resolvedMesh =
+            ResolveOnceUVE(resolvedMeshes, effectiveMeshGuid, assetManager, assetDatabase);
+        const ResolvedAssetUVE<Asset::MaterialAssetUVE>& resolvedMaterial =
+            ResolveOnceUVE(resolvedMaterials, effectiveMaterialGuid, assetManager, assetDatabase);
+
+        // Counted per ENTITY, not per resolution. Sharing the resolution is an implementation
+        // detail of how the answer was obtained; the diagnostic answers "how many entities
+        // could not be drawn this frame", and ten entities blocked on one pending mesh is ten
+        // entities that did not draw. Folding these into the resolution would silently change
+        // every one of these counters to mean something else.
+        outVisibilitySet.failedAssetLoads += static_cast<std::size_t>(resolvedMesh.failed) +
+                                             static_cast<std::size_t>(resolvedMaterial.failed);
+        outVisibilitySet.pendingAssetLoads += static_cast<std::size_t>(resolvedMesh.pending) +
+                                              static_cast<std::size_t>(resolvedMaterial.pending);
+        if (!resolvedMesh.IsUsableUVE() || !resolvedMaterial.IsUsableUVE()) {
+            continue;
+        }
+
+        const Asset::MeshAssetUVE* const mesh = resolvedMesh.value;
+        const Asset::MaterialAssetUVE* const material = resolvedMaterial.value;
+
+        // The cache lookup. Placement is the frame's dominant cost - measured at roughly 29x
+        // the price of comparing this key and reusing the answer - and most objects in most
+        // scenes do not move, so most of that cost is recomputing last frame's answer.
+        const MeshPlacementKeyUVE key{worldTransform.worldPosition, worldTransform.worldRotation,
+                                      worldTransform.worldScale, effectiveMeshGuid, mesh->localBounds};
+
+        MeshPlacementCacheEntryUVE& cacheEntry = outVisibilitySet.placementCache[entity];
+        const bool reusable = cacheEntry.lastSeenFrame != 0U && cacheEntry.key.MatchesUVE(key);
+        if (reusable) {
+            ++outVisibilitySet.placementCacheHits;
+        } else {
+            ++outVisibilitySet.placementCacheMisses;
+            cacheEntry.key = key;
+            Scene::MeshComponentUVE placementMesh = meshComponent;
+            placementMesh.meshGuid = effectiveMeshGuid;
+            placementMesh.materialGuid = effectiveMaterialGuid;
+            static_cast<void>(
+                EvaluateMeshRenderPlacementUVE(placementMesh, worldTransform, *mesh, cacheEntry.placement));
+        }
+        // Stamped on hit as well as miss: the stamp records "seen this frame", which is what
+        // the prune reads. Only stamping misses would evict every stationary object.
+        cacheEntry.lastSeenFrame = outVisibilitySet.frameIndex;
+
+        const MeshRenderPlacementUVE& placement = cacheEntry.placement;
+        if (!placement.IsPlacedUVE()) {
+            if (placement.reason == MeshRenderEligibilityReasonUVE::InvalidWorldTransform ||
+                placement.reason == MeshRenderEligibilityReasonUVE::InvalidLocalBounds) {
+                ++outVisibilitySet.invalidRenderEligibility;
             }
-            MeshRenderPlacementUVE overlayPlacement = posedPlacement;
-            ApplyMaterialBillboardToPlacementUVE(resolvedOverlay.value->billboardMode,
-                                                 outVisibilitySet.cameraWorldPosition, mesh->localBounds,
-                                                 overlayPlacement);
-            if (surface != nullptr) {
-                Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, overlayPlacement.worldBounds);
+            continue;
+        }
+
+        // Keep spatial BVH updated if bounds drifted
+        const auto bvhBoundsOpt = m_spatialBvh.GetEntityBoundsUVE(entity);
+        if (bvhBoundsOpt.has_value() && placement.worldBounds != *bvhBoundsOpt) {
+            m_spatialBvh.InsertOrUpdateUVE(entity, placement.worldBounds);
+        }
+
+        Math::AabbUVE occlusionBounds = placement.worldBounds;
+        if (surface != nullptr) {
+            Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, occlusionBounds);
+        }
+        if (!(surface != nullptr && surface->ignoreOcclusionCulling) &&
+            Scene::IsOccluder3DAabbDrawHiddenUVE(occluders, outVisibilitySet.cameraWorldPosition,
+                                                 occlusionBounds)) {
+            ++outVisibilitySet.occlusionCulledEntities;
+            continue;
+        }
+
+        // Bucketing is decided here, not per frustum: transparency is a property of the
+        // material and of SurfaceInstance3D, and no frustum can change it.
+        //
+        // The candidate stores an INDEX, not a pair of handles. The set holds one reference
+        // per distinct mesh+material pair and that is what keeps the assets alive across the
+        // frame; a reference per entity would be the same two records counted thousands of
+        // times, at a mutex and a hash each way.
+        const std::size_t assetPairIndex = ResolveAssetPairIndexUVE(
+            assetPairSlots, outVisibilitySet.assetPairs, effectiveMeshGuid, effectiveMaterialGuid,
+            resolvedMesh.handle, resolvedMaterial.handle);
+        // Physics interpolation, applied to the CANDIDATE rather than to the cached placement.
+        //
+        // The placement cache is keyed on the simulated world transform, which changes once
+        // per fixed step. Keying it on the interpolated pose instead would miss on every frame
+        // for every moving object - the cache is worth about 29x, and an interpolated scene
+        // would give all of that back. So the expensive part (matrix compose, bounds
+        // transform) stays cached against the simulated pose, and only the cheap part - a
+        // position lerp and a rotation slerp - is redone per frame. Measured at 15.6x cheaper
+        // than recomputing the placement.
+        MeshRenderPlacementUVE posedPlacement = placement;
+        if (ApplyInterpolatedPoseUVE(entityManager, entity, outVisibilitySet.physicsInterpolationAlpha,
+                                     *mesh, posedPlacement)) {
+            ++outVisibilitySet.interpolatedCandidates;
+        }
+        MeshRenderPlacementUVE candidatePlacement = posedPlacement;
+        ApplyMaterialBillboardToPlacementUVE(material->billboardMode, outVisibilitySet.cameraWorldPosition,
+                                             mesh->localBounds, candidatePlacement);
+        if (surface != nullptr) {
+            Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, candidatePlacement.worldBounds);
+        }
+        bool castsShadow = true;
+        bool drawsInView = true;
+        float opacity = 1.0F;
+        if (surface != nullptr) {
+            castsShadow = Scene::SurfaceInstance3DCastsShadowUVE(*surface);
+            drawsInView = Scene::SurfaceInstance3DDrawsInViewUVE(*surface);
+            opacity = Scene::SurfaceInstance3DOpacityUVE(*surface);
+            const Math::Vector3UVE toCamera =
+                worldTransform.worldPosition - outVisibilitySet.cameraWorldPosition;
+            opacity *= Scene::SurfaceInstance3DVisibilityFadeWeightUVE(*surface, Math::LengthUVE(toCamera));
+            if (opacity <= 0.0F) {
+                drawsInView = false;
             }
-            const std::size_t overlayPairIndex = ResolveAssetPairIndexUVE(
-                assetPairSlots, outVisibilitySet.assetPairs, effectiveMeshGuid, overlayGuid, resolvedMesh.handle,
-                resolvedOverlay.handle);
-            outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
-                overlayPairIndex, overlayPlacement, true, entity, renderLayers, sortingOffset,
-                sortingUseAabbCenter, false, true, opacity, true});
-        });
+        }
+        const bool isTransparent = material->isTransparent || opacity < 1.0F;
+        outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
+            assetPairIndex, candidatePlacement, isTransparent, entity, renderLayers, sortingOffset,
+            sortingUseAabbCenter, castsShadow, drawsInView, opacity, false});
+
+        if (surface == nullptr || !drawsInView || !Scene::SurfaceInstance3DHasOverlayUVE(*surface)) {
+            continue;
+        }
+        Asset::AssetGuidUVE overlayGuid = Asset::kInvalidAssetGuidUVE;
+        if (!TryResolveMaterialOverridePathUVE(surface->materialOverlayPath, assetDatabase,
+                                               materialOverridePathIndex, materialOverridePathIndexBuilt,
+                                               overlayGuid)) {
+            ++outVisibilitySet.invalidAssetReferences;
+            continue;
+        }
+        const ResolvedAssetUVE<Asset::MaterialAssetUVE>& resolvedOverlay =
+            ResolveOnceUVE(resolvedMaterials, overlayGuid, assetManager, assetDatabase);
+        outVisibilitySet.failedAssetLoads += static_cast<std::size_t>(resolvedOverlay.failed);
+        outVisibilitySet.pendingAssetLoads += static_cast<std::size_t>(resolvedOverlay.pending);
+        if (!resolvedOverlay.IsUsableUVE()) {
+            continue;
+        }
+        MeshRenderPlacementUVE overlayPlacement = posedPlacement;
+        ApplyMaterialBillboardToPlacementUVE(resolvedOverlay.value->billboardMode,
+                                             outVisibilitySet.cameraWorldPosition, mesh->localBounds,
+                                             overlayPlacement);
+        if (surface != nullptr) {
+            Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, overlayPlacement.worldBounds);
+        }
+        const std::size_t overlayPairIndex = ResolveAssetPairIndexUVE(
+            assetPairSlots, outVisibilitySet.assetPairs, effectiveMeshGuid, overlayGuid, resolvedMesh.handle,
+            resolvedOverlay.handle);
+        outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
+            overlayPairIndex, overlayPlacement, true, entity, renderLayers, sortingOffset,
+            sortingUseAabbCenter, false, true, opacity, true});
+    }
 
     // Bound the cache. Without this it retains an entry for every entity the scene has ever had,
     // which for a streaming world is a slow leak rather than a cache.
@@ -554,8 +783,90 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
     // Built once here, consumed by every cull this set feeds. This reorders candidates, which is
     // safe precisely because nothing downstream may depend on their order - each cull sorts its
     // own queue by depth.
-    // TEMP-DISABLED-FOR-BISECT
     outVisibilitySet.BuildSpatialClustersUVE();
+}
+
+void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityManager,
+                                            Asset::IAssetManagerUVE& assetManager,
+                                            Asset::IAssetDatabaseUVE& assetDatabase,
+                                            const Math::FrustumUVE& cullFrustum,
+                                            MeshVisibilitySetUVE& outVisibilitySet) const {
+    if (m_spatialBvh.IsEmptyUVE()) {
+        SynchronizeSpatialAccelerationUVE(entityManager, assetManager, assetDatabase);
+    }
+
+    std::vector<Scene::EntityUVE> survivingEntities;
+    if (outVisibilitySet.frustumTestsDisabled) {
+        GetAllIndexedEntitiesUVE(survivingEntities);
+    } else {
+        m_spatialBvh.QueryFrustumUVE(cullFrustum, survivingEntities);
+    }
+
+    BuildCandidatesFromSurvivingEntitiesUVE(survivingEntities, entityManager, assetManager, assetDatabase,
+                                           outVisibilitySet);
+}
+
+void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityManager,
+                                            Asset::IAssetManagerUVE& assetManager,
+                                            Asset::IAssetDatabaseUVE& assetDatabase,
+                                            const std::vector<Math::FrustumUVE>& cullFrustums,
+                                            MeshVisibilitySetUVE& outVisibilitySet) const {
+    if (m_spatialBvh.IsEmptyUVE()) {
+        SynchronizeSpatialAccelerationUVE(entityManager, assetManager, assetDatabase);
+    }
+
+    std::vector<Scene::EntityUVE> survivingEntities;
+    if (outVisibilitySet.frustumTestsDisabled || cullFrustums.empty()) {
+        GetAllIndexedEntitiesUVE(survivingEntities);
+    } else {
+        QueryFrustumsUVE(cullFrustums, survivingEntities);
+    }
+
+    BuildCandidatesFromSurvivingEntitiesUVE(survivingEntities, entityManager, assetManager, assetDatabase,
+                                           outVisibilitySet);
+}
+
+void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityManager,
+                                            Asset::IAssetManagerUVE& assetManager,
+                                            Asset::IAssetDatabaseUVE& assetDatabase,
+                                            const Math::AabbUVE& boundingRegion,
+                                            MeshVisibilitySetUVE& outVisibilitySet) const {
+    if (m_spatialBvh.IsEmptyUVE()) {
+        SynchronizeSpatialAccelerationUVE(entityManager, assetManager, assetDatabase);
+    }
+
+    std::vector<Scene::EntityUVE> survivingEntities;
+    if (outVisibilitySet.frustumTestsDisabled) {
+        GetAllIndexedEntitiesUVE(survivingEntities);
+    } else {
+        m_spatialBvh.QueryAabbUVE(boundingRegion, survivingEntities);
+    }
+
+    BuildCandidatesFromSurvivingEntitiesUVE(survivingEntities, entityManager, assetManager, assetDatabase,
+                                           outVisibilitySet);
+}
+
+void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityManager,
+                                            Asset::IAssetManagerUVE& assetManager,
+                                            Asset::IAssetDatabaseUVE& assetDatabase,
+                                            MeshVisibilitySetUVE& outVisibilitySet) const {
+    if (m_spatialBvh.IsEmptyUVE()) {
+        SynchronizeSpatialAccelerationUVE(entityManager, assetManager, assetDatabase);
+    }
+
+    std::vector<Scene::EntityUVE> survivingEntities;
+    if (!outVisibilitySet.frustumTestsDisabled && m_activeCullFrustum.has_value()) {
+        m_spatialBvh.QueryFrustumUVE(*m_activeCullFrustum, survivingEntities);
+    } else if (!outVisibilitySet.frustumTestsDisabled && !m_activeCullFrustums.empty()) {
+        QueryFrustumsUVE(m_activeCullFrustums, survivingEntities);
+    } else if (!outVisibilitySet.frustumTestsDisabled && m_activeBoundingRegion.has_value()) {
+        m_spatialBvh.QueryAabbUVE(*m_activeBoundingRegion, survivingEntities);
+    } else {
+        GetAllIndexedEntitiesUVE(survivingEntities);
+    }
+
+    BuildCandidatesFromSurvivingEntitiesUVE(survivingEntities, entityManager, assetManager, assetDatabase,
+                                           outVisibilitySet);
 }
 
 void MeshRendererUVE::CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visibilitySet,
@@ -653,7 +964,7 @@ void MeshRendererUVE::ExtractRenderQueueIntoUVE(Scene::IEntityManagerUVE& entity
     // second copy of the walk. A caller that culls once pays nothing for the split; a caller that
     // culls four times calls the two halves directly and pays the walk once.
     MeshVisibilitySetUVE visibilitySet;
-    BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, cullFrustum, visibilitySet);
     CullVisibilitySetIntoUVE(visibilitySet, cullFrustum, outQueue);
 }
 
