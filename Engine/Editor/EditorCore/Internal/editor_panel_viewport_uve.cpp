@@ -331,7 +331,9 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
     // of scattered bottom-left/bottom-center - a single visual row reads as one toolbar, not two.
     constexpr float kBubbleGapUVE = 8.0F;
     ImDrawList* const drawList = ImGui::GetWindowDrawList();
-    const float topY = imageOrigin.y + kBubbleMarginUVE;
+    const float rulerInset =
+        (m_viewportOverlayState.is2DMode && m_viewportOverlayState.viewport2DShowRulers) ? 24.0F : 0.0F;
+    const float topY = imageOrigin.y + kBubbleMarginUVE + rulerInset;
 
     // A vertical-dots glyph (U+22EE) drawn as text came out as "?" - the current base UI font
     // has no glyph for it. Drawn procedurally instead, matching every other icon in this toolbar -
@@ -361,7 +363,7 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
         std::max(kBubblePaddingYUVE * 2.0F + diameter, kBubblePaddingYUVE * 2.0F + textSize.y);
 
     // ---- gizmo-mode + snap + grid bubble, top-left ------------------------------------------
-    const ImVec2 gizmoBubbleMin{imageOrigin.x + kBubbleMarginUVE, topY};
+    const ImVec2 gizmoBubbleMin{imageOrigin.x + kBubbleMarginUVE + rulerInset, topY};
     const ImVec2 gizmoBubbleMax{gizmoBubbleMin.x + gizmoBubbleWidth, gizmoBubbleMin.y + unifiedHeight};
     {
         drawList->AddRectFilled(gizmoBubbleMin, gizmoBubbleMax, IM_COL32(18, 21, 28, 200), unifiedHeight * 0.5F);
@@ -737,6 +739,83 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
                     SelectEntityUVE(envEntity);
                     m_contentStatusMessage = "Configured and added WorldEnvironment to the scene.";
                 }
+            }
+            ImGui::EndPopup();
+        }
+    }
+
+    // ---- 2D / 3D Mode Toggle & 2D Viewport Options Pill -------------------------------------
+    const char* const mode2DLabel = m_viewportOverlayState.is2DMode ? "2D \xe2\x96\xbe" : "3D";
+    const ImVec2 mode2DTextSize = ImGui::CalcTextSize(mode2DLabel);
+    const float mode2DPillWidth = mode2DTextSize.x + kBubblePaddingXUVE * 2.0F + 8.0F;
+    const ImVec2 mode2DPillMin{previewPillMax.x + kBubbleGapUVE, topY};
+    const ImVec2 mode2DPillMax{mode2DPillMin.x + mode2DPillWidth, mode2DPillMin.y + unifiedHeight};
+    {
+        ImGui::SetCursorScreenPos(mode2DPillMin);
+        const bool pressedMode2D =
+            ImGui::InvisibleButton("##viewport-2d-mode-btn", ImVec2{mode2DPillWidth, unifiedHeight});
+        const bool rightClickedMode2D = ImGui::IsItemClicked(ImGuiMouseButton_Right);
+        const bool hoveredMode2D = ImGui::IsItemHovered();
+        drawList->AddRectFilled(
+            mode2DPillMin, mode2DPillMax,
+            m_viewportOverlayState.is2DMode
+                ? IM_COL32(64, 132, 214, 235)
+                : (hoveredMode2D ? IM_COL32(30, 34, 44, 220) : IM_COL32(18, 21, 28, 200)),
+            unifiedHeight * 0.5F);
+        drawList->AddRect(mode2DPillMin, mode2DPillMax,
+                          m_viewportOverlayState.is2DMode ? IM_COL32(120, 185, 255, 200) : IM_COL32(255, 255, 255, 24),
+                          unifiedHeight * 0.5F);
+        drawList->AddText(ImVec2{mode2DPillMin.x + kBubblePaddingXUVE + 4.0F,
+                                 mode2DPillMin.y + (unifiedHeight - mode2DTextSize.y) * 0.5F},
+                          IM_COL32(240, 245, 255, 255), mode2DLabel);
+        if (pressedMode2D) {
+            m_viewportOverlayState.is2DMode = !m_viewportOverlayState.is2DMode;
+        }
+        if (rightClickedMode2D && m_viewportOverlayState.is2DMode) {
+            ImGui::OpenPopup("##viewport-2d-options-popup");
+        }
+        if (hoveredMode2D && !ImGui::IsPopupOpen("##viewport-2d-options-popup")) {
+            ImGui::SetTooltip(m_viewportOverlayState.is2DMode
+                                  ? "2D Viewport active (click for 3D, right-click for 2D options)"
+                                  : "Switch to 2D Viewport");
+        }
+        if (ImGui::BeginPopup("##viewport-2d-options-popup")) {
+            ImGui::TextDisabled("2D VIEWPORT TOOL");
+            if (ImGui::RadioButton("Select / Transform (Q/W)", !m_viewportOverlayState.viewport2DPanTool)) {
+                m_viewportOverlayState.viewport2DPanTool = false;
+            }
+            if (ImGui::RadioButton("Hand / Pan (H / Space)", m_viewportOverlayState.viewport2DPanTool)) {
+                m_viewportOverlayState.viewport2DPanTool = true;
+            }
+            ImGui::Checkbox("Edit Pivot Offset", &m_viewportOverlayState.viewport2DPivotEditing);
+            ImGui::Separator();
+            ImGui::TextDisabled("2D SNAPPING");
+            ImGui::Checkbox("Pixel Snap (1 px)", &m_viewportOverlayState.viewport2DPixelSnap);
+            ImGui::Checkbox("Grid Snap", &m_viewportOverlayState.viewport2DGridSnap);
+            if (m_viewportOverlayState.viewport2DGridSnap) {
+                ImGui::SliderFloat("Grid Step (px)", &m_viewportOverlayState.viewport2DGridStep, 1.0F, 256.0F, "%.0f px");
+            }
+            ImGui::Checkbox("Smart Guide Snap", &m_viewportOverlayState.viewport2DGuideSnap);
+            ImGui::Checkbox("Rotation Snap", &m_viewportOverlayState.viewport2DRotationSnap);
+            if (m_viewportOverlayState.viewport2DRotationSnap) {
+                ImGui::SliderFloat("Angle Step", &m_viewportOverlayState.viewport2DRotationStepDeg, 1.0F, 90.0F, "%.0f deg");
+            }
+            ImGui::Separator();
+            ImGui::TextDisabled("2D OVERLAYS & VIEW");
+            ImGui::Checkbox("Show Rulers", &m_viewportOverlayState.viewport2DShowRulers);
+            ImGui::Checkbox("Show Guides", &m_viewportOverlayState.viewport2DShowGuides);
+            ImGui::Checkbox("Show 2D Gizmos & Colliders", &m_viewportOverlayState.viewport2DShowCollision);
+            ImGui::Checkbox("Show Coordinates HUD", &m_viewportOverlayState.viewport2DShowHud);
+            if (ImGui::Button("Zoom 100% (1:1)")) {
+                ++m_viewportOverlayState.viewport2DZoom100Serial;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Fit Canvas")) {
+                ++m_viewportOverlayState.viewport2DZoomFitSerial;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Clear Guides")) {
+                ++m_viewportOverlayState.viewport2DClearGuidesSerial;
             }
             ImGui::EndPopup();
         }
