@@ -38,6 +38,7 @@ if(UVE_HAS_DESKTOP_GL)
         Internal/editor/main.cpp
         Internal/editor/editor_viewport_backends_uve.cpp
         Internal/editor/editor_viewport_backends_uve.h
+        Internal/editor/editor_viewport_2d_backend_uve.h
     )
     set_target_properties(uve_editor_app PROPERTIES OUTPUT_NAME uve_editor)
     target_link_libraries(uve_editor_app PRIVATE uve_editor univex_viewport_engine_bridge uve_editor_imgui)
