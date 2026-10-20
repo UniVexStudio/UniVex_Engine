@@ -553,8 +553,7 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
     // ---- Shading Mode pill -----------------------------------------------------------------
     static constexpr std::array<const char*, 5> kShadingNames{"Lit", "Unshaded", "Wireframe", "Lighting", "Normals"};
     const char* const shadingLabel =
-        kShadingNames[std::clamp(static_cast<std::size_t>(m_viewportOverlayState.shadingMode), 0ULL,
-                                 kShadingNames.size() - 1ULL)];
+        kShadingNames[std::clamp(static_cast<std::size_t>(m_viewportOverlayState.shadingMode), static_cast<std::size_t>(0), kShadingNames.size() - 1)];
     const ImVec2 shadingTextSize = ImGui::CalcTextSize(shadingLabel);
     const float shadingPillWidth = shadingTextSize.x + kBubblePaddingXUVE * 2.0F + 8.0F;
     const ImVec2 shadingPillMin{pillMax.x + kBubbleGapUVE, topY};
@@ -985,3 +984,4 @@ void EditorUVE::DrawEntityContextToolbarUVE(const Math::Vector2UVE imageOriginUV
 }
 
 } // namespace UVE::Editor
+
