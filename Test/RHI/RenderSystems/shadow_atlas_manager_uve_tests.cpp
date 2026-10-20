@@ -195,7 +195,7 @@ TEST(ShadowAtlasManagerUVETest, ResetUVE_ClearsAllAllocations) {
     ShadowAtlasManagerUVE manager(nullptr);
 
     for (int i = 0; i < 8; ++i) {
-        manager.AllocateTileUVE(512U);
+        static_cast<void>(manager.AllocateTileUVE(512U));
     }
     EXPECT_EQ(manager.GetAllocatedTileCountUVE(), 8U);
 
@@ -210,8 +210,9 @@ TEST(ShadowAtlasManagerUVETest, ResetUVE_ClearsAllAllocations) {
 
 TEST(ShadowAtlasManagerUVETest, SpotLightPerspectiveMatrixMath) {
     const Math::Vector3UVE position{0.0F, 10.0F, 0.0F};
-    const Math::QuaternionUVE rotation = Math::QuaternionUVE::FromAxisAngleUVE(
-        Math::Vector3UVE{1.0F, 0.0F, 0.0F}, -3.14159265358979323846F * 0.5F); // Look down -Y
+    Math::QuaternionUVE rotation{};
+    EXPECT_TRUE(Math::TryMakeAxisAngleUVE(
+        Math::Vector3UVE{1.0F, 0.0F, 0.0F}, -3.14159265358979323846F * 0.5F, rotation)); // Look down -Y
     const float spotAngleDegrees = 45.0F;
     const float range = 50.0F;
 

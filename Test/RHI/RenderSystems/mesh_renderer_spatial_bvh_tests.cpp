@@ -422,8 +422,8 @@ TEST_F(MeshRendererSpatialBvhTest, FrustumTestsDisabled_PreservesAllEntities) {
     const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("bvh_compat.uvmodel");
     const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("bvh_compat.uvmat");
 
-    const auto inFront = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
-    const auto behind = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 500.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 500.0F}, meshGuid, materialGuid);
 
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
     meshRenderer.SynchronizeSpatialAccelerationUVE(entityManager, assetManager, assetDatabase);
