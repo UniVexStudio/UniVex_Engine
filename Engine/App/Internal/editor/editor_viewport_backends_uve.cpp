@@ -53,6 +53,7 @@
 #include "univex/gizmo/GizmoGeometry.h"
 
 #include "editor_viewport_backends_uve.h"
+#include "editor_viewport_2d_backend_uve.h"
 
 namespace {
 
@@ -574,6 +575,30 @@ public:
         const int height = std::max(1, static_cast<int>(availableSize.y));
         if (!EnsureFramebuffersUVE(width, height)) {
             return 0U;
+        }
+
+        if (overlayState.is2DMode && !overlayState.studioView &&
+            context_ != UVE::Editor::EditorUVE::ViewportContextUVE::InspectorCameraPreview) {
+            if (!viewport2dHost_.has_value()) {
+                viewport2dHost_.emplace(editor_, engine_);
+            }
+            if (!overlayState.axisColorsValid) {
+                SeedEditorAxisColorsFromDefaultsUVE();
+            }
+            outUsedSize = UVE::Math::Vector2UVE{static_cast<float>(width), static_cast<float>(height)};
+            GLint previousFbo = 0;
+            glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
+            glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
+            glEnable(GL_MULTISAMPLE);
+            viewport2dHost_->RenderToBoundFramebufferUVE(width, height, overlayState);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFbo_);
+            glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
+            if (overlayState.gameWorkspaceActive) {
+                DrawUIOverlayUVE();
+            }
+            return static_cast<std::uint64_t>(resolveColorTexture_);
         }
 
         ApplyOverlayStateUVE(overlayState);
@@ -1925,6 +1950,7 @@ private:
     // one (created only inside its "UIOverlay" render-graph pass, which this panel deliberately
     // never runs - see EditorMeshLayerUVE::RenderUVE()'s own call site comment).
     GLuint uiFontAtlasTexture_ = 0U;
+    std::optional<UVE::App::Viewport2DIntegration::Viewport2DHostUVE> viewport2dHost_;
 };
 
 } // namespace
