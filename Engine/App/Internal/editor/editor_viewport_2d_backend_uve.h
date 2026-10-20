@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -553,7 +554,7 @@ private:
         }
         if (entityManager_.HasComponentUVE<Scene::VisibilityComponentUVE>(entity)) {
             const auto& vis = entityManager_.GetComponentUVE<Scene::VisibilityComponentUVE>(entity);
-            if (!vis.visible || !vis.effectiveVisible) {
+            if (!vis.visible || !vis.visibleInHierarchy) {
                 return false;
             }
         }
@@ -570,18 +571,19 @@ private:
         CachedTexture2DUVE entry{};
         entry.attempted = true;
 
-        const std::optional<std::filesystem::path> pathOpt =
-            engine_.GetServicesUVE().GetAssetDatabaseUVE().GetPathUVE(guid);
-        if (!pathOpt.has_value()) {
+        const std::filesystem::path registeredPath =
+            engine_.GetServicesUVE().GetAssetDatabaseUVE().ResolveUVE(guid);
+        if (registeredPath.empty()) {
             textureCache_[guid] = entry;
             return entry;
         }
-        std::filesystem::path resolvedPath = *pathOpt;
+        std::filesystem::path resolvedPath = registeredPath;
         std::error_code ec;
         if (!std::filesystem::exists(resolvedPath, ec)) {
             const std::filesystem::path contentCandidate =
-                engine_.GetServicesUVE().GetFileSystemUVE().ResolveUVE("content://" + pathOpt->generic_string());
-            if (std::filesystem::exists(contentCandidate, ec)) {
+                engine_.GetServicesUVE().GetFileSystemUVE().ResolveRealPathUVE(
+                    "content://" + registeredPath.generic_string());
+            if (!contentCandidate.empty() && std::filesystem::exists(contentCandidate, ec)) {
                 resolvedPath = contentCandidate;
             }
         }
@@ -599,8 +601,22 @@ private:
             height = texAsset.height;
             rgbaPixels = std::move(texAsset.pixels);
         } else {
-            const std::vector<std::byte> rawBytes =
-                engine_.GetServicesUVE().GetFileSystemUVE().ReadBinaryUVE(resolvedPath.string());
+            std::vector<std::byte> rawBytes;
+            if (const auto vfsBytes = engine_.GetServicesUVE().GetFileSystemUVE().ReadFileUVE(
+                    "content://" + registeredPath.generic_string());
+                vfsBytes.has_value()) {
+                rawBytes = *vfsBytes;
+            } else {
+                std::ifstream file(resolvedPath, std::ios::binary | std::ios::ate);
+                if (file.is_open()) {
+                    const std::streamsize sz = file.tellg();
+                    if (sz > 0) {
+                        rawBytes.resize(static_cast<std::size_t>(sz));
+                        file.seekg(0, std::ios::beg);
+                        file.read(reinterpret_cast<char*>(rawBytes.data()), sz);
+                    }
+                }
+            }
             if (!rawBytes.empty()) {
                 Asset::PngRgba8ImageUVE pngImg{};
                 Asset::JpegRgba8ImageUVE jpgImg{};
