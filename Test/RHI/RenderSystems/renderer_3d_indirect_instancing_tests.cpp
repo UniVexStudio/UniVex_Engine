@@ -538,10 +538,13 @@ TEST_F(Renderer3DIndirectInstancingTest, RenderFrameUVE_TransformedAabbsPassedTo
     const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("indirect_aabbs_mat.uvmat");
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
 
-    // Create 5 instances positioned at varying coordinates and depths.
+    // Create 5 instances positioned at varying coordinates and depths. Every one of them stays
+    // inside the default 60 degree camera frustum: the CPU visibility cull runs before instancing
+    // whenever frustum culling is enabled, so an off-camera instance would never reach the
+    // compute kernel and the count would drop below five.
     for (int index = 0; index < 5; ++index) {
-        const float x = static_cast<float>(index) * 1.5F - 3.0F;
-        const float z = -2.0F - static_cast<float>(index) * 2.0F;
+        const float x = static_cast<float>(index) * 0.4F - 0.8F;
+        const float z = -3.0F - static_cast<float>(index) * 1.5F;
         MakeMeshEntityUVE(Math::Vector3UVE{x, 0.0F, z}, meshGuid, materialGuid);
     }
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
