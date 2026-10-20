@@ -700,6 +700,15 @@ uve_set_warnings(uve_editor_tests)
 target_include_directories(uve_editor_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 gtest_discover_tests(uve_editor_tests)
+
+add_executable(univex_viewport_2d_tests
+    ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/tests/Viewport2DTests.cpp
+)
+target_link_libraries(univex_viewport_2d_tests PRIVATE univex_viewport_core GTest::gtest_main)
+target_include_directories(univex_viewport_2d_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Expose)
+target_compile_features(univex_viewport_2d_tests PRIVATE cxx_std_23)
+target_compile_options(univex_viewport_2d_tests PRIVATE -Wall -Wextra -Wpedantic)
+gtest_discover_tests(univex_viewport_2d_tests)
 endif()
 
 if(NOT UVE_HAS_DESKTOP_GL)

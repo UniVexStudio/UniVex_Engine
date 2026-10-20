@@ -68,7 +68,12 @@ add_library(univex_viewport_core STATIC
     Internal/GizmoPicking.cpp
     Internal/ViewportMetrics.cpp
     Internal/GizmoDrag.cpp
-    Internal/BoneShape.cpp)
+    Internal/BoneShape.cpp
+    Internal/Viewport2D/Camera2D.cpp
+    Internal/Viewport2D/GridRuler.cpp
+    Internal/Viewport2D/Snapping.cpp
+    Internal/Viewport2D/TransformGizmo.cpp
+    Internal/Viewport2D/Viewport2D.cpp)
 target_include_directories(univex_viewport_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Expose)
 target_compile_options(univex_viewport_core PRIVATE -Wall -Wextra -Wpedantic)
 
