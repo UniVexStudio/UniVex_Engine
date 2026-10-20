@@ -213,7 +213,7 @@ std::int32_t ShadowAtlasManagerUVE::FindAndAllocateNodeUVE(std::int32_t nodeInde
     const std::uint32_t py = node.y;
 
     std::array<std::int32_t, 4> children{-1, -1, -1, -1};
-    for (int i = 0; i < 4; ++i) {
+    for (std::size_t i = 0U; i < 4U; ++i) {
         children[i] = AllocateNodeSlotUVE();
     }
 
