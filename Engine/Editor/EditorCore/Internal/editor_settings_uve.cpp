@@ -1729,6 +1729,10 @@ bool RegisterEditorSettingsUVE(Config::SettingsRegistryUVE& registry) {
 }
 
 #if defined(UVE_EDITOR_SETTINGS_STANDALONE_UVE)
+// Standalone CPU-only suites link without ImGui, so there is no visual theme to apply.
+// The full editor build uses the real implementation in editor_theme_uve.cpp.
+void ApplyEditorVisualThemeUVE(const EditorExtendedPreferencesUVE* const) noexcept {}
+
 void EditorUVE::SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferences) {
     m_colorPickerPreferences = std::move(preferences);
 }
