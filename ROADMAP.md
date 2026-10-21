@@ -65,15 +65,14 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
   unified 4096x4096 Depth32F atlas, allocated by a quadtree buddy allocator (power-of-two tiles
   from 4096 down to 128, with recursive four-way coalescing on free so a scene that drops a light
   leaves no fragmentation behind). `ShadowAtlasManagerUVE` landed first and sat unused for a
-  while - the type, the octahedral math, the tile-rect math and twelve tests all existed with
-  ZERO call sites, which is exactly the shape of a feature that looks finished when read and
-  does nothing when run. The renderer half is what this closes: the atlas is created lazily on
-  the first frame that has an eligible spot light (64 MiB of Depth32F is not a cost an empty
-  scene should pay) and the planner decides the layout. Eligibility is a pure function - type,
+  while - the type, the tile-rect math and twelve tests all existed with ZERO call sites, which is
+  exactly the shape of a feature that looks finished when read and does nothing when run. The renderer half is what this closes: the atlas is created lazily on
+  the first frame that has an eligible spot or point light (64 MiB of Depth32F is not a cost an
+  empty scene should pay) and the planner decides the layout. Eligibility is a pure function - type,
   positive intensity, the light's own shadow switch, finite transform, a cone angle the shader
   can represent, and an influence sphere that actually reaches the view frustum. The tile size
-  is the project's existing "Point/Spot Cube Resolution" setting, halved until every caster fits;
-  the 128 floor still leaves 1024 tiles in a 4096 atlas and there are at most four casters, so the
+  is the project's existing "Point/Spot Cube Resolution" setting, halved until the frame's tiles
+  fit; the 128 floor still leaves 1024 tiles in a 4096 atlas against a worst case of 24, so the
   budget can only ever reduce quality, never drop a light - which is why there is no per-light
   priority scheme to get wrong. Casters are culled against each light's own
   frustum, and a tile that culled nothing is skipped entirely rather than recording a draw-less
@@ -97,14 +96,29 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
   slot in the middle is one rebinding away from shadowing a cascade. Frame diagnostics report
   candidates, active tiles, the resolution actually used, passes recorded and draws issued, so
   "why is there no shadow here?" is answerable from a number instead of from the scene graph.
-- [ ] Shadow maps for point lights — omnidirectional. `lit_shadowed_3d.glsl` already carries an
-  octahedral encode/decode pair and a `PointShadowFactorUVE` that samples one tile by
-  `dist / range`, and the atlas, the tile rects and the uniform contract it consumes are all real
-  and tested. What does not exist is the producer: a 2D octahedral map cannot be rasterized
-  directly (the mapping is rational, so it needs either a six-face render plus a resolve pass, or
-  six perspective faces packed into the tile with the shader selecting by dominant axis). Until
-  one of those lands, `uLightShadowEnabled[]` is 0 for every point light and the shader honestly
-  returns "fully lit".
+- [x] Shadow maps for point lights — omnidirectional, as six perspective faces. The atlas, the
+  tile allocator and the per-light uniform contract were already shared with the spot path, so the
+  only question was how to rasterize a light that has no single frustum. A 2D octahedral map is
+  what such a light "wants" - and it is what the shader carried first - but the mapping is rational,
+  so NOTHING in a plain depth-only pipeline can write it: producing one needs a cube render plus a
+  resolve pass or a geometry shader, and a shader function whose producer does not exist is a
+  feature that reads as done and samples nothing. Six perspective faces are the shape a depth pass
+  can actually write, so the shader's octahedral pair was deleted rather than kept as a comment
+  claiming a producer that was never coming. Each point light allocates six tiles in ascending
+  face order (+X, -X, +Y, -Y, +Z, -Z), one per face, and the material shader picks a face by
+  dominant axis - the same rule a cube-map sampler uses internally, which is why the six faces have
+  no seams to fade. The face basis lives in ONE table (`PointLightShadowFaceTableUVE`) that the
+  renderer builds each face's view matrix from and the shader mirrors line for line, and the tests
+  pin the two together: a one-face disagreement would sample a neighbouring face's depth, which
+  reads as a plausible shadow in the wrong direction instead of as a bug. Depth is compared along
+  the face axis, not along the ray, because clip-space w - what the depth attachment actually
+  stores - is the axis distance; comparing true euclidean distance instead would under-shadow
+  every surface near a face corner by a factor of up to sqrt(3). Each face is culled and recorded
+  independently, so the five faces that contain no caster cost nothing, and a point light whose six
+  allocations cannot all be satisfied is rolled back rather than rendered three-faced. Budget: a
+  point light spends six tiles against a spot light's one, so four point lights is the 24-tile worst
+  case the shader's fixed arrays describe - and 24 tiles still fit at 512 in a 4096 atlas, which is
+  why the resolution policy needs no per-type special case.
 - [ ] Contact shadows / screen-space shadow refinement
 - [x] A true physically-based material model — verified rather than assumed: lit_shadowed_3d.glsl
   already implements real Cook-Torrance (GGX distribution, Smith geometry, Schlick Fresnel), the
