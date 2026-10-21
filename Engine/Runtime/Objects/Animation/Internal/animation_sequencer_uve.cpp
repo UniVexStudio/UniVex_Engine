@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <vector>
 #include <unordered_map>
 #include <optional>
@@ -174,6 +175,47 @@ namespace {
 Core::TransformPoseUVE SampleAnimationTrackUVE(const std::vector<Asset::AnimationAssetSampleUVE>& samples,
                                                const double timeSeconds) noexcept {
     return SampleTrackUVE(samples, timeSeconds);
+}
+
+bool SampleMorphWeightTrackUVE(const Asset::AnimationAssetMorphTrackUVE& track, const double timeSeconds,
+                              std::vector<float>& outWeights) {
+    const std::vector<Asset::AnimationAssetMorphWeightSampleUVE>& samples = track.samples;
+    if (samples.empty()) {
+        return false;
+    }
+    if (samples.size() == 1U || timeSeconds <= samples.front().timeSeconds) {
+        outWeights = samples.front().weights;
+        return true;
+    }
+    if (timeSeconds >= samples.back().timeSeconds) {
+        outWeights = samples.back().weights;
+        return true;
+    }
+    // upper_bound finds the first key strictly after the time, so `before` is always a valid
+    // predecessor: the two early returns above guarantee the time lies inside the key range.
+    const auto after = std::upper_bound(
+        samples.begin(), samples.end(), timeSeconds,
+        [](const double time, const Asset::AnimationAssetMorphWeightSampleUVE& sample) {
+            return time < sample.timeSeconds;
+        });
+    const auto before = std::prev(after);
+    const double span = after->timeSeconds - before->timeSeconds;
+    if (span <= 0.0) {
+        // Duplicate keys cannot come from a validated clip, but a hand-built track can have them.
+        // Taking the later key is the only answer that does not divide by zero.
+        outWeights = after->weights;
+        return true;
+    }
+    const auto alpha = static_cast<float>((timeSeconds - before->timeSeconds) / span);
+    std::vector<float> blended = before->weights;
+    if (blended.size() != after->weights.size()) {
+        return false;
+    }
+    for (std::size_t index = 0U; index < blended.size(); ++index) {
+        blended[index] += (after->weights[index] - before->weights[index]) * alpha;
+    }
+    outWeights = std::move(blended);
+    return true;
 }
 
 float AnimationInertialDecayUVE(const float progress) noexcept {

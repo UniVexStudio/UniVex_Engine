@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -1188,6 +1189,64 @@ TEST(AnimationGraphUVETest, OldBlendSpaceInputsFoldIntoTheirPoints) {
     AnimationGraphComponentUVE tree;
     tree.nodes = objects;
     EXPECT_TRUE(DescribeAnimationGraphProblemUVE(tree).empty()) << DescribeAnimationGraphProblemUVE(tree);
+}
+
+TEST(AnimationMorphSamplingUVETest, SampleMorphWeightTrackUVE_InterpolatesLinearlyBetweenKeys) {
+    Asset::AnimationAssetMorphTrackUVE track;
+    track.node = "Head";
+    track.samples = {
+        Asset::AnimationAssetMorphWeightSampleUVE{0.0, {0.0F, 1.0F}},
+        Asset::AnimationAssetMorphWeightSampleUVE{1.0, {1.0F, 0.0F}},
+    };
+
+    std::vector<float> weights;
+    ASSERT_TRUE(SampleMorphWeightTrackUVE(track, 0.25, weights));
+    ASSERT_EQ(weights.size(), 2U);
+    EXPECT_FLOAT_EQ(weights[0], 0.25F);
+    EXPECT_FLOAT_EQ(weights[1], 0.75F);
+
+    // Both ends of the range are exact - a face has to be able to reach a shape fully.
+    ASSERT_TRUE(SampleMorphWeightTrackUVE(track, 1.0, weights));
+    EXPECT_FLOAT_EQ(weights[0], 1.0F);
+    EXPECT_FLOAT_EQ(weights[1], 0.0F);
+}
+
+TEST(AnimationMorphSamplingUVETest, SampleMorphWeightTrackUVE_ClampsOutsideTheKeyRange) {
+    Asset::AnimationAssetMorphTrackUVE track;
+    track.node = "Head";
+    track.samples = {
+        Asset::AnimationAssetMorphWeightSampleUVE{0.5, {0.2F}},
+        Asset::AnimationAssetMorphWeightSampleUVE{1.5, {0.8F}},
+    };
+    std::vector<float> weights;
+    // Before the first key and after the last, the nearest key holds - the same rule the pose
+    // sampler uses, so a held facial expression behaves like a held pose.
+    ASSERT_TRUE(SampleMorphWeightTrackUVE(track, 0.0, weights));
+    EXPECT_FLOAT_EQ(weights[0], 0.2F);
+    ASSERT_TRUE(SampleMorphWeightTrackUVE(track, 10.0, weights));
+    EXPECT_FLOAT_EQ(weights[0], 0.8F);
+}
+
+TEST(AnimationMorphSamplingUVETest, SampleMorphWeightTrackUVE_SingleKeyHoldsEverywhere) {
+    Asset::AnimationAssetMorphTrackUVE track;
+    track.node = "Head";
+    track.samples = {Asset::AnimationAssetMorphWeightSampleUVE{0.3, {0.4F, 0.6F}}};
+    std::vector<float> weights;
+    ASSERT_TRUE(SampleMorphWeightTrackUVE(track, -5.0, weights));
+    EXPECT_FLOAT_EQ(weights[0], 0.4F);
+    ASSERT_TRUE(SampleMorphWeightTrackUVE(track, 5.0, weights));
+    EXPECT_FLOAT_EQ(weights[1], 0.6F);
+}
+
+TEST(AnimationMorphSamplingUVETest, SampleMorphWeightTrackUVE_EmptyTrackFailsRatherThanRelaxing) {
+    Asset::AnimationAssetMorphTrackUVE track;
+    track.node = "Head";
+    std::vector<float> weights{7.0F};
+    EXPECT_FALSE(SampleMorphWeightTrackUVE(track, 0.0, weights));
+    // Untouched on failure: a caller that keeps one buffer for the clip must not lose the previous
+    // frame's expression because a track turned out to be empty.
+    ASSERT_EQ(weights.size(), 1U);
+    EXPECT_FLOAT_EQ(weights[0], 7.0F);
 }
 
 } // namespace
