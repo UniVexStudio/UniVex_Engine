@@ -5018,8 +5018,13 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     if (extension == ".uvanimlib") {
         return ContentBrowserItemTypeUVE::AnimationLibrary;
     }
-    // Imported clips and the WAV sources the importer reads them from.
-    if (extension == ".uvaudio" || extension == ".wav") {
+    // The envelope the audio importer writes, and every source format an importer can turn into
+    // one: WAV, plus the compressed Ogg/Vorbis, MP3 and FLAC streams RegisterCompressedAudioImportersUVE
+    // reads (compressed_audio_importer_uve.h). A container with no registered importer - .m4a, .aac,
+    // .wma - deliberately stays a plain File: showing it as audio would promise playback the engine
+    // cannot give it.
+    if (extension == ".uvaudio" || extension == ".wav" || extension == ".ogg" || extension == ".mp3" ||
+        extension == ".flac") {
         return ContentBrowserItemTypeUVE::Audio;
     }
     if (extension == ".ttf" || extension == ".otf") {
