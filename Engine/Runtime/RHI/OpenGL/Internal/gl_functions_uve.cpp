@@ -31,7 +31,8 @@ bool GlFunctionsUVE::IsCompleteUVE() const noexcept {
            glDeleteRenderbuffers != nullptr && glBindRenderbuffer != nullptr && glRenderbufferStorage != nullptr &&
            glActiveTexture != nullptr &&
            glGetUniformLocation != nullptr && glUniform1f != nullptr && glUniform1i != nullptr &&
-           glUniform3fv != nullptr && glUniformMatrix4fv != nullptr && glGetActiveUniform != nullptr;
+           glUniform2fv != nullptr && glUniform3fv != nullptr && glUniform4fv != nullptr &&
+           glUniformMatrix4fv != nullptr && glGetActiveUniform != nullptr;
 }
 
 GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
@@ -140,7 +141,9 @@ GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
     functions.glGetUniformLocation = LoadOneUVE<PFNGLGETUNIFORMLOCATIONPROC>(getProcAddress, "glGetUniformLocation");
     functions.glUniform1f = LoadOneUVE<PFNGLUNIFORM1FPROC>(getProcAddress, "glUniform1f");
     functions.glUniform1i = LoadOneUVE<PFNGLUNIFORM1IPROC>(getProcAddress, "glUniform1i");
+    functions.glUniform2fv = LoadOneUVE<PFNGLUNIFORM2FVPROC>(getProcAddress, "glUniform2fv");
     functions.glUniform3fv = LoadOneUVE<PFNGLUNIFORM3FVPROC>(getProcAddress, "glUniform3fv");
+    functions.glUniform4fv = LoadOneUVE<PFNGLUNIFORM4FVPROC>(getProcAddress, "glUniform4fv");
     functions.glUniformMatrix4fv = LoadOneUVE<PFNGLUNIFORMMATRIX4FVPROC>(getProcAddress, "glUniformMatrix4fv");
     functions.glGetActiveUniform = LoadOneUVE<PFNGLGETACTIVEUNIFORMPROC>(getProcAddress, "glGetActiveUniform");
     functions.glGetProgramBinary = LoadOneUVE<PFNGLGETPROGRAMBINARYPROC>(getProcAddress, "glGetProgramBinary");
