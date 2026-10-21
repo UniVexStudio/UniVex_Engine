@@ -3338,4 +3338,141 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_DisabledTag_RoundTripsAsPresen
     EXPECT_FALSE(entityManager.HasComponentUVE<DisabledComponentUVE>(restoredAwake));
 }
 
+TEST_F(SceneSerializerUVETest, FullBodyIKReferencesRoundTripThroughTheFileLocalIds) {
+    // A solve's skeleton plus one entity target per effector: a file has no entities, only
+    // file-local ids, and each effector's target rides inside its own entry so one unresolvable id
+    // leaves that limb inert instead of shifting every other one.
+    const EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    Skeleton3DComponentUVE skeleton;
+    skeleton.skeletonAssetPath = "assets/archer.uvskel";
+    skeleton.bones.push_back(SkeletonBoneUVE{"Hips", -1, {}, {}, {1.0F, 1.0F, 1.0F}});
+    entityManager.AddComponentUVE<Skeleton3DComponentUVE>(skeletonEntity, skeleton);
+    const EntityUVE leftTargetEntity = entityManager.CreateEntityUVE();
+    TransformComponentUVE leftTargetTransform;
+    leftTargetTransform.localPosition = Math::Vector3UVE{-1.0F, 0.0F, 0.0F};
+    entityManager.AddComponentUVE<TransformComponentUVE>(leftTargetEntity, leftTargetTransform);
+    const EntityUVE rightTargetEntity = entityManager.CreateEntityUVE();
+    TransformComponentUVE rightTargetTransform;
+    rightTargetTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    entityManager.AddComponentUVE<TransformComponentUVE>(rightTargetEntity, rightTargetTransform);
+    const EntityUVE solveEntity = entityManager.CreateEntityUVE();
+    FullBodyIK3DComponentUVE solve;
+    solve.skeleton = skeletonEntity;
+    solve.rootBoneIndex = kInvalidSkeletonBoneIndexUVE;
+    solve.rootBoneName = "Hips";
+    FullBodyIKEffectorUVE left;
+    left.boneName = "HandL";
+    left.target = leftTargetEntity;
+    left.targetPosition = Math::Vector3UVE{0.25F, 1.0F, 0.0F};
+    left.positionWeight = 0.75F;
+    FullBodyIKEffectorUVE right;
+    right.boneName = "HandR";
+    right.target = rightTargetEntity;
+    right.positionWeight = 0.5F;
+    solve.effectors = {left, right};
+    solve.maxIterations = 24U;
+    solve.toleranceMetres = 0.002F;
+    solve.rootTranslationWeight = 0.25F;
+    solve.maxJointStepRadians = 0.5F;
+    solve.enabled = false;
+    // Runtime answers on the source: none of them may reach the file - a restored solve has run
+    // zero times, and a stale `converged` would report a solve that never happened.
+    solve.solved = true;
+    solve.converged = true;
+    solve.iterationsUsed = 7U;
+    solve.effectors[0].resolvedBoneIndex = 9U;
+    solve.effectors[0].reached = true;
+    solve.effectors[0].distanceMetres = 0.1F;
+    entityManager.AddComponentUVE<FullBodyIK3DComponentUVE>(solveEntity, solve);
+
+    const std::optional<SceneSnapshotUVE> snapshot = serializer.CaptureUVE(
+        entityManager, {skeletonEntity, leftTargetEntity, rightTargetEntity, solveEntity},
+        SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE fresh{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(fresh, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 4U);
+
+    EntityUVE restoredSkeleton = kInvalidEntityUVE;
+    EntityUVE restoredLeftTarget = kInvalidEntityUVE;
+    EntityUVE restoredRightTarget = kInvalidEntityUVE;
+    EntityUVE restoredSolve = kInvalidEntityUVE;
+    for (const EntityUVE entity : restoredRoots) {
+        if (fresh.HasComponentUVE<Skeleton3DComponentUVE>(entity)) {
+            restoredSkeleton = entity;
+            continue;
+        }
+        if (fresh.HasComponentUVE<FullBodyIK3DComponentUVE>(entity)) {
+            restoredSolve = entity;
+            continue;
+        }
+        const Math::Vector3UVE position = fresh.GetComponentUVE<TransformComponentUVE>(entity).localPosition;
+        if (position.x == -1.0F) {
+            restoredLeftTarget = entity;
+        } else if (position.x == 1.0F) {
+            restoredRightTarget = entity;
+        }
+    }
+    ASSERT_NE(restoredSkeleton, kInvalidEntityUVE);
+    ASSERT_NE(restoredLeftTarget, kInvalidEntityUVE);
+    ASSERT_NE(restoredRightTarget, kInvalidEntityUVE);
+    ASSERT_NE(restoredSolve, kInvalidEntityUVE);
+
+    const FullBodyIK3DComponentUVE restored = fresh.GetComponentUVE<FullBodyIK3DComponentUVE>(restoredSolve);
+    EXPECT_EQ(restored.skeleton, restoredSkeleton);
+    EXPECT_EQ(restored.rootBoneName, "Hips");
+    ASSERT_EQ(restored.effectors.size(), 2U);
+    EXPECT_EQ(restored.effectors[0].target, restoredLeftTarget) << "id in the file -> restored target";
+    EXPECT_EQ(restored.effectors[1].target, restoredRightTarget);
+    EXPECT_NE(restored.effectors[0].target, restored.effectors[1].target)
+        << "two effectors that named different objects still do";
+    EXPECT_EQ(restored.effectors[0].boneName, "HandL");
+    EXPECT_FLOAT_EQ(restored.effectors[0].targetPosition.x, 0.25F);
+    EXPECT_FLOAT_EQ(restored.effectors[0].positionWeight, 0.75F);
+    EXPECT_FLOAT_EQ(restored.effectors[1].positionWeight, 0.5F);
+    EXPECT_EQ(restored.maxIterations, 24U);
+    EXPECT_FLOAT_EQ(restored.toleranceMetres, 0.002F);
+    EXPECT_FLOAT_EQ(restored.rootTranslationWeight, 0.25F);
+    EXPECT_FLOAT_EQ(restored.maxJointStepRadians, 0.5F);
+    EXPECT_FALSE(restored.enabled);
+    EXPECT_FALSE(restored.solved) << "the file carries authored data, never the last frame's answer";
+    EXPECT_FALSE(restored.converged);
+    EXPECT_EQ(restored.iterationsUsed, 0U);
+    EXPECT_EQ(restored.effectors[0].resolvedBoneIndex, kInvalidSkeletonBoneIndexUVE);
+    EXPECT_FALSE(restored.effectors[0].reached);
+    EXPECT_FLOAT_EQ(restored.effectors[0].distanceMetres, 0.0F);
+}
+
+TEST_F(SceneSerializerUVETest, FullBodyIKPointingOutsideTheSavedSetLoadsInert) {
+    // Nothing the solve names was part of what was saved, so there are no ids in the file. Each
+    // reference has to load pointing at nothing rather than at whichever entity happens to share
+    // the slot it used to occupy, and an effector target that names nothing stays inert - the
+    // authored point is what the solver would read, never a stranger's position.
+    const EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Skeleton3DComponentUVE>(skeletonEntity, Skeleton3DComponentUVE{});
+    const EntityUVE targetEntity = entityManager.CreateEntityUVE();
+    const EntityUVE solveEntity = entityManager.CreateEntityUVE();
+    FullBodyIK3DComponentUVE solve;
+    solve.skeleton = skeletonEntity;
+    solve.rootBoneName = "Hips";
+    FullBodyIKEffectorUVE effector;
+    effector.boneName = "Hand";
+    effector.target = targetEntity;
+    solve.effectors = {effector};
+    entityManager.AddComponentUVE<FullBodyIK3DComponentUVE>(solveEntity, solve);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {solveEntity}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE fresh{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(fresh, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+    ASSERT_TRUE(fresh.HasComponentUVE<FullBodyIK3DComponentUVE>(restoredRoots[0]));
+    const FullBodyIK3DComponentUVE restored =
+        fresh.GetComponentUVE<FullBodyIK3DComponentUVE>(restoredRoots[0]);
+    EXPECT_EQ(restored.skeleton, kInvalidEntityUVE);
+    ASSERT_EQ(restored.effectors.size(), 1U);
+    EXPECT_EQ(restored.effectors[0].target, kInvalidEntityUVE);
+}
+
 } // namespace UVE::Scene::Tests

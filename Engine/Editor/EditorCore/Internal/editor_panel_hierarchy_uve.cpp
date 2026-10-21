@@ -431,6 +431,7 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
                     case Kind::AnimationGraph:
                     case Kind::AnimationSequencer:
                     case Kind::TwoBoneIK3D:
+                    case Kind::FullBodyIK3D:
                         iconTint = IM_COL32(215, 130, 255, 255);
                         break;
                     case Kind::NavMeshVolume3D:
@@ -738,7 +739,7 @@ void EditorUVE::DrawObjectPickerUVE() {
             const char* category;
             const char* tooltip;
         };
-        static constexpr std::array<PickerEntryUVE, 29> kPickerEntries{{
+        static constexpr std::array<PickerEntryUVE, 30> kPickerEntries{{
             {Scene::Objects::SceneObjectKindUVE::MeshInstance3D, "MeshInstance3D", "3D Visuals & Geometry", "A 3D mesh instance."},
             {Scene::Objects::SceneObjectKindUVE::BoxMesh3D, "BoxMesh3D", "3D Visuals & Geometry", "A 3D box primitive."},
             {Scene::Objects::SceneObjectKindUVE::SphereMesh3D, "SphereMesh3D", "3D Visuals & Geometry", "A 3D sphere primitive."},
@@ -753,6 +754,7 @@ void EditorUVE::DrawObjectPickerUVE() {
             {Scene::Objects::SceneObjectKindUVE::AnimationGraph, "AnimationGraph", "Animation & Rigging", "Animation state machine and blending graph."},
             {Scene::Objects::SceneObjectKindUVE::BoneAttachment3D, "BoneAttachment3D", "Animation & Rigging", "Attaches objects to a specific bone."},
             {Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D, "TwoBoneIK3D", "Animation & Rigging", "Two-bone inverse kinematics solver constraint."},
+            {Scene::Objects::SceneObjectKindUVE::FullBodyIK3D, "FullBodyIK3D", "Animation & Rigging", "Whole-body inverse kinematics with multiple effectors."},
             {Scene::Objects::SceneObjectKindUVE::DirectionalLight3D, "DirectionalLight3D", "Lighting", "A directional light source."},
             {Scene::Objects::SceneObjectKindUVE::Light3D, "Light3D (Omni / Spot)", "Lighting", "An omni or spot light."},
             {Scene::Objects::SceneObjectKindUVE::ReflectionProbe3D, "ReflectionProbe3D", "Lighting", "Captures reflections for the area around it."},
@@ -838,6 +840,9 @@ void EditorUVE::DrawObjectPickerUVE() {
                 }
                 if (item(Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D, "TwoBoneIK3D", nullptr, "Two-bone inverse kinematics solver constraint.")) {
                     static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::FullBodyIK3D, "FullBodyIK3D", nullptr, "Whole-body inverse kinematics with multiple effectors.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::FullBodyIK3D, parent));
                 }
                 ImGui::EndMenu();
             }

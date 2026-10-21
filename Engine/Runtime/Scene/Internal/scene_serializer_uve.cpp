@@ -1259,6 +1259,79 @@ template <typename VectorT>
     return value;
 }
 
+[[nodiscard]] nlohmann::json ToJsonUVE(const FullBodyIK3DComponentUVE& value) {
+    nlohmann::json effectors = nlohmann::json::array();
+    for (const FullBodyIKEffectorUVE& effector : value.effectors) {
+        effectors.push_back({{"boneIndex", effector.boneIndex},
+                             {"boneName", effector.boneName},
+                             {"targetPosition", ToJsonUVE(effector.targetPosition)},
+                             {"positionWeight", effector.positionWeight}});
+    }
+    return {{"rootBoneIndex", value.rootBoneIndex},
+            {"rootBoneName", value.rootBoneName},
+            {"effectors", std::move(effectors)},
+            {"maxIterations", value.maxIterations},
+            {"toleranceMetres", value.toleranceMetres},
+            {"rootTranslationWeight", value.rootTranslationWeight},
+            {"maxJointStepRadians", value.maxJointStepRadians},
+            {"enabled", value.enabled}};
+}
+
+[[nodiscard]] FullBodyIK3DComponentUVE FullBodyIK3DObjectFromJsonUVE(const nlohmann::json& json) {
+    FullBodyIK3DComponentUVE value;
+    // The references themselves are left unset here: they are file-local ids in the document, and
+    // the load pass below turns them into entities. An id this file does not contain leaves that
+    // reference inert rather than pointing at whatever entity shares the id elsewhere.
+    value.rootBoneIndex = json.value("rootBoneIndex", kInvalidSkeletonBoneIndexUVE);
+    value.rootBoneName = json.value("rootBoneName", std::string{});
+    const auto effectors = json.find("effectors");
+    if (effectors != json.end() && effectors->is_array()) {
+        for (const nlohmann::json& entry : *effectors) {
+            FullBodyIKEffectorUVE effector;
+            effector.boneIndex = entry.value("boneIndex", kInvalidSkeletonBoneIndexUVE);
+            effector.boneName = entry.value("boneName", std::string{});
+            effector.targetPosition = Vector3FromJsonUVE(entry.at("targetPosition"));
+            effector.positionWeight = entry.value("positionWeight", 1.0F);
+            value.effectors.push_back(std::move(effector));
+        }
+    }
+    value.maxIterations = json.value("maxIterations", FullBodyIK3DComponentUVE{}.maxIterations);
+    value.toleranceMetres = json.value("toleranceMetres", FullBodyIK3DComponentUVE{}.toleranceMetres);
+    value.rootTranslationWeight =
+        json.value("rootTranslationWeight", FullBodyIK3DComponentUVE{}.rootTranslationWeight);
+    value.maxJointStepRadians =
+        json.value("maxJointStepRadians", FullBodyIK3DComponentUVE{}.maxJointStepRadians);
+    value.enabled = json.value("enabled", true);
+    return value;
+}
+
+/// The load-side half of every reference a solve has: an authored file-local id becomes the entity
+/// it names, and one that names nothing in this file stays the sentinel - which the solver reads as
+/// "the authored target position is what I solve toward". Effector targets resolve inside their own
+/// entries so one gone target leaves that limb inert instead of shifting every other one.
+[[nodiscard]] FullBodyIK3DComponentUVE FullBodyIK3DComponentWithResolvedReferencesUVE(
+    const nlohmann::json& json, const std::unordered_map<std::uint32_t, EntityUVE>& localIdToEntity) {
+    FullBodyIK3DComponentUVE value = FullBodyIK3DObjectFromJsonUVE(json);
+    const auto resolve = [&json, &localIdToEntity](const char* key) {
+        const std::uint32_t localId =
+            json.value(key, std::numeric_limits<std::uint32_t>::max());
+        const auto found = localIdToEntity.find(localId);
+        return found != localIdToEntity.end() ? found->second : kInvalidEntityUVE;
+    };
+    value.skeleton = resolve("skeletonLocalId");
+    const auto effectors = json.find("effectors");
+    if (effectors != json.end() && effectors->is_array()) {
+        for (std::size_t index = 0U; index < value.effectors.size() && index < effectors->size(); ++index) {
+            const std::uint32_t localId =
+                (*effectors)[index].value("targetLocalId", std::numeric_limits<std::uint32_t>::max());
+            const auto found = localIdToEntity.find(localId);
+            value.effectors[index].target =
+                found != localIdToEntity.end() ? found->second : kInvalidEntityUVE;
+        }
+    }
+    return value;
+}
+
 
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const Marker3DComponentUVE& value) {
@@ -2038,7 +2111,8 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
         // - Entity references (the registrations never see the file-local id tables, and the
         //   bespoke *LocalId keys have no generic spelling yet): AnimationDriver, BoneAttachment3D,
         //   Hitbox3D, Hurtbox3D, InteractionArea3D, Projectile3D, RayCast3D (plus its exclusions
-        //   list), TwoBoneIK3D, Cinematic (parallel cut-camera and animation-target local ids;
+        //   list), TwoBoneIK3D, FullBodyIK3D (per-effector target local ids), Cinematic (parallel
+//   cut-camera and animation-target local ids;
 //   unresolvable keys drop on load). Unlock: metadata-driven remap plumbed through Save/Load.
         // - Custom JSON shapes (nested objects, derived counts, dynamic lists): AnimationGraph,
         //   LodGroup3D (prefix-encoded level arrays with a derived levelCount), ObjectMetadata,
@@ -2380,6 +2454,14 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                 }
                 return value;
             }, IsTwoBoneIK3DObjectComponentValidUVE));
+        table.emplace("FullBodyIK3DComponentUVE", MakeRegistrationUVE<FullBodyIK3DComponentUVE>(
+            [](const nlohmann::json& json) {
+                const FullBodyIK3DComponentUVE value = FullBodyIK3DObjectFromJsonUVE(json);
+                if (!IsFullBodyIK3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid FullBodyIK3DComponentUVE payload");
+                }
+                return value;
+            }, IsFullBodyIK3DObjectComponentValidUVE));
         table.emplace("SpringArm3DComponentUVE", MakeRegistrationUVE<SpringArm3DComponentUVE>(
             [](const nlohmann::json& json) {
                 const SpringArm3DComponentUVE value = SpringArm3DObjectFromJsonUVE(json);
@@ -2912,6 +2994,31 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                 componentsJson[*name]["targetLocalId"] = localIdOfUVE(chain.target);
                 componentsJson[*name]["poleLocalId"] = localIdOfUVE(chain.poleTarget);
             }
+            if (type == std::type_index(typeid(FullBodyIK3DComponentUVE))) {
+                // A solve's skeleton and every effector's target are entity references like a
+                // chain's, written as file-local ids and resolved back on load. Effector targets
+                // ride inside their own entries so one unresolvable id leaves that limb inert
+                // instead of shifting every other one.
+                const FullBodyIK3DComponentUVE& solve =
+                    entityManager.GetComponentUVE<FullBodyIK3DComponentUVE>(entity);
+                const auto localIdOfUVE = [&entityToLocalId](const EntityUVE referenced) {
+                    std::uint32_t localId = std::numeric_limits<std::uint32_t>::max();
+                    if (referenced != kInvalidEntityUVE) {
+                        const auto found = entityToLocalId.find(referenced);
+                        if (found != entityToLocalId.end()) {
+                            localId = found->second;
+                        }
+                    }
+                    return localId;
+                };
+                componentsJson[*name]["skeletonLocalId"] = localIdOfUVE(solve.skeleton);
+                nlohmann::json& effectorsJson = componentsJson[*name]["effectors"];
+                if (effectorsJson.is_array() && effectorsJson.size() == solve.effectors.size()) {
+                    for (std::size_t index = 0U; index < solve.effectors.size(); ++index) {
+                        effectorsJson[index]["targetLocalId"] = localIdOfUVE(solve.effectors[index].target);
+                    }
+                }
+            }
             if (type == std::type_index(typeid(RayCast3DComponentUVE))) {
                 // The ray's exclusions are entity references too: written as file-local ids, with
                 // targets outside the saved set dropped exactly like an animation target. The
@@ -3344,6 +3451,11 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
                 if (CanonicalComponentNameUVE(componentName) == "TwoBoneIK3DComponentUVE") {
                     entityManager.AddComponentUVE<TwoBoneIK3DComponentUVE>(
                         entity, TwoBoneIK3DComponentWithResolvedReferencesUVE(componentJson, localIdToEntity));
+                    continue;
+                }
+                if (CanonicalComponentNameUVE(componentName) == "FullBodyIK3DComponentUVE") {
+                    entityManager.AddComponentUVE<FullBodyIK3DComponentUVE>(
+                        entity, FullBodyIK3DComponentWithResolvedReferencesUVE(componentJson, localIdToEntity));
                     continue;
                 }
                 if (CanonicalComponentNameUVE(componentName) == "CinematicComponentUVE") {

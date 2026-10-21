@@ -481,7 +481,11 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // references, its target and pole, and the answers one solve writes back; the current
         // The metadata-driven registry now includes the expanded navigation, animation, and
         // world-authoring declarations in addition to the original 57 drawers.
+        // 71 with FullBodyIK3D's: the root bone pair, its effector list (drawn by its own list
+        // drawer rather than typed rows - each row is a bone, a target and a pull weight), the
+        // solver's authored budget, and the answers one solve writes back.
         EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 71U);
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "full-body-ik-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "directional-light-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-mixer"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "solid-body"));
