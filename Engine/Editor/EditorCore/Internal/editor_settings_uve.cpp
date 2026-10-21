@@ -207,7 +207,8 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              IdUVE(Id::kActiveBottomDockUVE), static_cast<std::int64_t>(BottomDock::FileSystem),
              {EntryUVE(BottomDock::Debugger, "Debugger"), EntryUVE(BottomDock::Animator, "Animator"),
               EntryUVE(BottomDock::AIToolbar, "AI Toolbar"), EntryUVE(BottomDock::FileSystem, "File System"),
-              EntryUVE(BottomDock::Console, "Console")},
+              EntryUVE(BottomDock::Console, "Console"), EntryUVE(BottomDock::Capture, "Capture"),
+              EntryUVE(BottomDock::Profiler, "Profiler"), EntryUVE(BottomDock::Audio, "Audio")},
              "Bottom Dock Panel", kSessionCategoryUVE)),
          [](const EditorUVE& editor) -> SettingValueUVE { return static_cast<std::int64_t>(editor.m_activeBottomDock); },
          [](EditorUVE& editor, const SettingValueUVE& value) {

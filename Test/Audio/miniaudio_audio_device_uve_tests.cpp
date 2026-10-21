@@ -305,5 +305,52 @@ TEST(MiniaudioAudioDeviceUVETest, MovingTheLowPassCornerBetweenFramesIsSafe) {
 }
 
 
+TEST(MiniaudioAudioDeviceUVETest, TheMeterReportsWhatTheVoiceContributed) {
+    const auto device = MiniaudioAudioDeviceUVE::CreateUVE(TestOptionsUVE());
+    ASSERT_NE(device, nullptr);
+    const auto path = WriteTestClipUVE("meter_constant", ConstantClipUVE(48000U, 0.5F));
+    ASSERT_FALSE(path.empty());
+    AudioVoiceDescUVE desc;
+    desc.audioAssetPath = path.string();
+    desc.looping = true;
+    const VoiceHandleUVE voice = device->CreateVoiceUVE(desc);
+    ASSERT_NE(voice, kInvalidVoiceHandleUVE);
+
+    AudioVoiceParamsUVE params;
+    params.gain = 0.5F;
+    ASSERT_TRUE(device->SetVoiceParamsUVE(voice, params));
+    ASSERT_TRUE(device->PlayUVE(voice));
+
+    // A looping half-scale mono clip at gain 0.5 contributes 0.25: measured after gain and pan,
+    // which is exactly what makes the number trustworthy in a mixer. The peak shows on the first
+    // block; the average needs a few windows to converge, which is the point of averaging at all.
+    ASSERT_TRUE(WaitForUVE([&device, voice] {
+        const AudioMeterReadingUVE reading = device->ReadVoiceMeterUVE(voice);
+        return reading.peak > 0.2F && reading.rms > 0.235F; // 95 % of the way through the window
+    }));
+    const AudioMeterReadingUVE meter = device->ReadVoiceMeterUVE(voice);
+    EXPECT_NEAR(meter.peak, 0.25F, 0.02F);
+    EXPECT_NEAR(meter.rms, 0.25F, 0.02F);
+    EXPECT_FALSE(IsAudioMeterClippingUVE(meter));
+
+    // Reading is idempotent, so a panel drawing the same voice twice per frame sees one reading.
+    EXPECT_EQ(device->ReadVoiceMeterUVE(voice), meter);
+
+    ASSERT_TRUE(device->StopUVE(voice));
+    // The peak releases instead of freezing: a stopped voice falls back to silence on its own, so
+    // a mixer does not show a level for something that is no longer playing.
+    ASSERT_TRUE(WaitForUVE([&device, voice] {
+        return device->ReadVoiceMeterUVE(voice).peak < 0.05F;
+    }));
+    device->DestroyVoiceUVE(voice);
+    RemoveScratchUVE({path});
+}
+
+TEST(MiniaudioAudioDeviceUVETest, TheMeterOfAnUnknownVoiceIsSilence) {
+    const auto device = MiniaudioAudioDeviceUVE::CreateUVE(TestOptionsUVE());
+    ASSERT_NE(device, nullptr);
+    EXPECT_EQ(device->ReadVoiceMeterUVE(VoiceHandleUVE{4242U}), kSilentAudioMeterUVE);
+}
+
 } // namespace
 } // namespace UVE::Audio::Tests

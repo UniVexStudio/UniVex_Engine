@@ -942,6 +942,12 @@ public:
     }
     void UpdateUVE(float) override { ++updateCallCount; }
     void SetOcclusionProviderUVE(const Audio::IAudioOcclusionProviderUVE*) override {}
+    [[nodiscard]] Audio::AudioMeterReadingUVE GetSourceMeterUVE(Audio::VoiceHandleUVE) const override {
+        return Audio::kSilentAudioMeterUVE;
+    }
+    [[nodiscard]] Audio::AudioMeterReadingUVE GetMixerGroupMeterUVE(std::string_view) const override {
+        return Audio::kSilentAudioMeterUVE;
+    }
     [[nodiscard]] Audio::VoiceHandleUVE CreateStreamingSourceUVE(const Audio::AudioSourceDescUVE&,
                                                                  Audio::IAudioStreamSourceUVE&) override {
         return Audio::VoiceHandleUVE{1};

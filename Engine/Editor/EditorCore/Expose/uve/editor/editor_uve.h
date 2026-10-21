@@ -35,6 +35,7 @@
 #include "uve/editor/animation_clip_editing_uve.h"
 #include "uve/editor/editor_color_uve.h"
 #include "uve/editor/editor_commands_uve.h"
+#include "uve/editor/editor_audio_mixer_uve.h"
 #include "uve/editor/editor_settings_uve.h"
 #include "uve/asset/animation_library_asset_uve.h"
 #include "uve/asset/gltf_skeleton_uve.h"
@@ -1482,6 +1483,9 @@ private:
         /// The profiler viewer: capture spans, counters, and breadcrumbs. Appended so
         /// persisted values keep meaning.
         Profiler,
+        /// The audio authoring dock: the mixer tree with live meters, and the selected source's
+        /// attenuation curve. Appended so persisted values keep meaning.
+        Audio,
     };
 
     /// Session-only Content Browser focus. This filters copied ProjectFileIndexUVE entries and
@@ -1902,6 +1906,11 @@ private:
     /// The Capture dock: filter toolbar, packet list, and the selected decode.
     void DrawCaptureDockUVE();
     void DrawProfilerDockUVE();
+    /// The audio authoring dock. The model is built by editor_audio_mixer_uve.h; these only draw.
+    void DrawAudioMixerDockUVE();
+    void DrawAudioMixerBusTableUVE(Audio::IAudioSystemUVE& audioSystem,
+                                   const EditorAudioMixerSnapshotUVE& snapshot);
+    void DrawAudioAttenuationEditorUVE();
     void DrawHierarchyPanelUVE();
     /// The Scene tree with its "+" and search, filling the rest of the current window.
     void DrawHierarchyBodyUVE();

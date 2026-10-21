@@ -18,6 +18,7 @@ struct NullAudioDeviceUVE::ImplUVE {
         VoicePlaybackStateUVE state = VoicePlaybackStateUVE::Stopped;
         AudioStreamRingBufferUVE stream;
         bool endRequested = false;
+        AudioMeterReadingUVE meter{};
         [[nodiscard]] bool IsStreamingUVE() const noexcept { return stream.IsConfiguredUVE(); }
     };
 
@@ -30,6 +31,18 @@ struct NullAudioDeviceUVE::ImplUVE {
 NullAudioDeviceUVE::NullAudioDeviceUVE() : m_impl(std::make_unique<ImplUVE>()) {}
 
 NullAudioDeviceUVE::~NullAudioDeviceUVE() = default;
+
+AudioMeterReadingUVE NullAudioDeviceUVE::ReadVoiceMeterUVE(const VoiceHandleUVE voice) const {
+    const ImplUVE::VoiceUVE* const entry = m_impl->voices.FindUVE(voice);
+    return entry != nullptr ? entry->meter : kSilentAudioMeterUVE;
+}
+
+void NullAudioDeviceUVE::SetVoiceMeterUVE(const VoiceHandleUVE voice, const AudioMeterReadingUVE reading) {
+    ImplUVE::VoiceUVE* const entry = m_impl->voices.FindUVE(voice);
+    if (entry != nullptr) {
+        entry->meter = reading;
+    }
+}
 
 VoiceHandleUVE NullAudioDeviceUVE::CreateVoiceUVE(const AudioVoiceDescUVE& desc) {
     static_cast<void>(desc); // NullAudioDeviceUVE performs no real audio output, bookkeeping only.
