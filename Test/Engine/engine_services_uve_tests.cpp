@@ -892,10 +892,14 @@ public:
     void SetSourcePositionUVE(Audio::VoiceHandleUVE, Math::Vector3UVE) override {}
     void SetSourceVolumeUVE(Audio::VoiceHandleUVE, float) override {}
     void SetSourcePitchUVE(Audio::VoiceHandleUVE, float) override {}
+    bool RegisterMixerGroupUVE(std::string_view, std::string_view, float, float) override { return false; }
     bool RegisterMixerGroupUVE(std::string_view, float, float) override { return false; }
     bool RemoveMixerGroupUVE(std::string_view) override { return false; }
+    bool SetMixerGroupParentUVE(std::string_view, std::string_view) override { return false; }
     bool SetMixerGroupVolumeUVE(std::string_view, float) override { return false; }
     bool SetMixerGroupPitchUVE(std::string_view, float) override { return false; }
+    bool SetMixerGroupMutedUVE(std::string_view, bool) override { return false; }
+    bool SetMixerGroupSoloedUVE(std::string_view, bool) override { return false; }
     bool SetSourceMixerGroupUVE(Audio::VoiceHandleUVE, std::string_view) override { return false; }
     [[nodiscard]] Audio::AudioMixerDiagnosticsUVE GetMixerDiagnosticsUVE(std::size_t) const override { return {}; }
     [[nodiscard]] bool ResetSourceStreamUVE(Audio::VoiceHandleUVE, std::size_t, bool, std::size_t,
@@ -915,6 +919,10 @@ public:
     }
     [[nodiscard]] bool ApplySourcePcmGainEffectsUVE(
         Audio::VoiceHandleUVE, const std::vector<float>&, std::vector<float>&) override {
+        return false;
+    }
+    [[nodiscard]] bool ApplySourceBusGainChainUVE(
+        Audio::VoiceHandleUVE, const std::vector<float>&, std::vector<float>&) const override {
         return false;
     }
     void UpdateUVE() override { ++updateCallCount; }

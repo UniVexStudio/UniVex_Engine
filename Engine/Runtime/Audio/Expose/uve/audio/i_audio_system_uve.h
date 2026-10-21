@@ -53,12 +53,25 @@ public:
     virtual void SetSourceVolumeUVE(VoiceHandleUVE source, float volume) = 0;
     virtual void SetSourcePitchUVE(VoiceHandleUVE source, float pitch) = 0;
 
-    // --- Bounded mixer-group routing. ---
+    // --- Bounded mixer bus graph and routing. ---
+    /// Registers a bus under `parentName` (empty means Master). False on an invalid or duplicate
+    /// name, an out-of-range multiplier, an unknown parent, or a full bus table.
+    virtual bool RegisterMixerGroupUVE(std::string_view name, std::string_view parentName,
+                                       float volumeMultiplier = 1.0F,
+                                       float pitchMultiplier = 1.0F) = 0;
+    /// Registers the bus directly under Master.
     virtual bool RegisterMixerGroupUVE(std::string_view name, float volumeMultiplier = 1.0F,
                                        float pitchMultiplier = 1.0F) = 0;
+    /// Refuses Master, unknown buses, and buses that still have sources routed to them.
     virtual bool RemoveMixerGroupUVE(std::string_view name) = 0;
+    /// Reparents a bus; refused when the move would create a cycle or either name is unknown.
+    virtual bool SetMixerGroupParentUVE(std::string_view name, std::string_view parentName) = 0;
     virtual bool SetMixerGroupVolumeUVE(std::string_view name, float volumeMultiplier) = 0;
     virtual bool SetMixerGroupPitchUVE(std::string_view name, float pitchMultiplier) = 0;
+    /// Silences a bus and every bus under it without disturbing the authored multipliers.
+    virtual bool SetMixerGroupMutedUVE(std::string_view name, bool muted) = 0;
+    /// While any bus is soloed, only its chain stays audible; see AudioMixerGroupUVE's own contract.
+    virtual bool SetMixerGroupSoloedUVE(std::string_view name, bool soloed) = 0;
     virtual bool SetSourceMixerGroupUVE(VoiceHandleUVE source, std::string_view name) = 0;
     [[nodiscard]] virtual AudioMixerDiagnosticsUVE GetMixerDiagnosticsUVE(
         std::size_t maximumGroups = kMaximumAudioMixerGroupsUVE) const = 0;
@@ -83,6 +96,12 @@ public:
     [[nodiscard]] virtual bool ApplySourcePcmGainEffectsUVE(
         VoiceHandleUVE source, const std::vector<float>& inputSamples,
         std::vector<float>& outputSamples) = 0;
+    /// Runs copied caller-owned PCM through the bus chain of the bus `source` is routed to: the bus's
+    /// effective volume (ancestors, mute and solo included) then its fixed-order insert slots. This is
+    /// the submix step; device submission and sample ownership stay with the caller.
+    [[nodiscard]] virtual bool ApplySourceBusGainChainUVE(
+        VoiceHandleUVE source, const std::vector<float>& inputSamples,
+        std::vector<float>& outputSamples) const = 0;
 
     // --- Frame advance. ---
     /// Recomputes ComputeDistanceAttenuationUVE() for every live spatial source against the

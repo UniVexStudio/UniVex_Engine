@@ -1040,7 +1040,9 @@ void EngineCoreUVE::Init() {
         if (!configured || m_audioSystem == nullptr) {
             return;
         }
-        const float clampedVolume = static_cast<float>(std::clamp(volume, 0.0, 2.0));
+        // The mixer's ceiling is 1: a value above it must still register the bus at full volume
+        // instead of failing validation and silently leaving every source on Master.
+        const float clampedVolume = static_cast<float>(std::clamp(volume, 0.0, 1.0));
         if (!m_audioSystem->SetMixerGroupVolumeUVE(busName, clampedVolume)) {
             static_cast<void>(m_audioSystem->RegisterMixerGroupUVE(busName, clampedVolume, 1.0F));
         }

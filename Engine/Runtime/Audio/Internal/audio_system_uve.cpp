@@ -191,6 +191,11 @@ void AudioSystemUVE::SetSourcePitchUVE(VoiceHandleUVE source, float pitch) {
     iterator->second.pitch = pitch;
 }
 
+bool AudioSystemUVE::RegisterMixerGroupUVE(const std::string_view name, const std::string_view parentName,
+                                            const float volumeMultiplier, const float pitchMultiplier) {
+    return m_impl->mixerGroups.RegisterGroupUVE(name, parentName, volumeMultiplier, pitchMultiplier);
+}
+
 bool AudioSystemUVE::RegisterMixerGroupUVE(const std::string_view name, const float volumeMultiplier,
                                             const float pitchMultiplier) {
     return m_impl->mixerGroups.RegisterGroupUVE(name, volumeMultiplier, pitchMultiplier);
@@ -200,12 +205,24 @@ bool AudioSystemUVE::RemoveMixerGroupUVE(const std::string_view name) {
     return m_impl->mixerGroups.RemoveGroupUVE(name);
 }
 
+bool AudioSystemUVE::SetMixerGroupParentUVE(const std::string_view name, const std::string_view parentName) {
+    return m_impl->mixerGroups.SetGroupParentUVE(name, parentName);
+}
+
 bool AudioSystemUVE::SetMixerGroupVolumeUVE(const std::string_view name, const float volumeMultiplier) {
     return m_impl->mixerGroups.SetGroupVolumeUVE(name, volumeMultiplier);
 }
 
 bool AudioSystemUVE::SetMixerGroupPitchUVE(const std::string_view name, const float pitchMultiplier) {
     return m_impl->mixerGroups.SetGroupPitchUVE(name, pitchMultiplier);
+}
+
+bool AudioSystemUVE::SetMixerGroupMutedUVE(const std::string_view name, const bool muted) {
+    return m_impl->mixerGroups.SetGroupMutedUVE(name, muted);
+}
+
+bool AudioSystemUVE::SetMixerGroupSoloedUVE(const std::string_view name, const bool soloed) {
+    return m_impl->mixerGroups.SetGroupSoloedUVE(name, soloed);
 }
 
 bool AudioSystemUVE::SetSourceMixerGroupUVE(const VoiceHandleUVE source, const std::string_view name) {
@@ -282,10 +299,24 @@ bool AudioSystemUVE::ApplySourcePcmGainEffectsUVE(const VoiceHandleUVE source,
     return iterator->second.effectSchedule.ApplyPendingUVE(inputSamples, outputSamples);
 }
 
+bool AudioSystemUVE::ApplySourceBusGainChainUVE(const VoiceHandleUVE source,
+                                                 const std::vector<float>& inputSamples,
+                                                 std::vector<float>& outputSamples) const {
+    const auto iterator = m_impl->sources.find(source.value);
+    if (iterator == m_impl->sources.end()) {
+        UVE_ERROR("AudioSystemUVE: ApplySourceBusGainChainUVE called with an unknown handle ({})", source.value);
+        return false;
+    }
+    return m_impl->mixerGroups.ApplyBusGainChainUVE(iterator->second.mixerGroup, inputSamples, outputSamples);
+}
+
 void AudioSystemUVE::UpdateUVE() {
     for (auto& [handleValue, state] : m_impl->sources) {
-        const float groupVolume = m_impl->mixerGroups.GetGroupVolumeUVE(state.mixerGroup);
-        const float groupPitch = m_impl->mixerGroups.GetGroupPitchUVE(state.mixerGroup);
+        // Effective, not authored: the source hears its bus composed with every ancestor, muted and
+        // solo-silenced buses included. The flat case (one bus under Master) is unchanged because
+        // Master contributes unity.
+        const float groupVolume = m_impl->mixerGroups.GetEffectiveVolumeUVE(state.mixerGroup);
+        const float groupPitch = m_impl->mixerGroups.GetEffectivePitchUVE(state.mixerGroup);
         float attenuation = 1.0F;
         if (state.desc.spatial) {
             const Math::Vector3UVE listenerDelta = state.position - m_impl->listenerPosition;
