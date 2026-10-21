@@ -166,6 +166,7 @@ add_library(uve_editor STATIC
     Internal/editor_script_exports_uve.cpp
     Internal/editor_panel_inspector_skeleton_uve.cpp
     Internal/editor_panel_timeline_uve.cpp
+    Internal/editor_timeline_tracks_uve.cpp
     Internal/editor_panel_timeline_library_uve.cpp
     Internal/animation_clip_editing_uve.cpp
     Internal/animation_graph_editing_uve.cpp
