@@ -403,7 +403,8 @@ float FadeShadowToLitAtDistanceUVE(float shadowFactor, float viewDepth, float fi
 
 float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
     if (uShadowCascadeCount <= 0) {
-        return 1.0;
+        // No cascades: one map in uShadowMapTexture, projected by vLightSpacePosition.
+        return ShadowFactorFromPositionUVE(vLightSpacePosition, normal, lightDirection, -1);
     }
 
     float viewDepth = length(vWorldPosition - uViewPosition);
