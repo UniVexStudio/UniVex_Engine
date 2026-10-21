@@ -468,10 +468,15 @@ and one of the highest-priority areas below.
   `importMorphTargets`, and `MorphTargetComponentUVE` addresses shapes BY NAME so re-exporting a
   face with an inserted shape cannot animate the wrong muscle. Locked by 27 cases across the mesh
   asset, the glTF converter, the importer, the component and the scene serializer.
-- [ ] Facial animation: weight tracks that drive morph targets over time. The data, import,
-  evaluation, authoring and persistence landed with the morph-target item above; what is missing is
-  a clip-level weight track (the `.uvanim` schema has no morph channel yet) and the glTF `weights`
-  animation channel, which is the path that carries lip-sync out of a DCC tool.
+- [x] Facial animation: weight tracks that drive morph targets over time - `AnimationClipAssetUVE`
+  carries `AnimationAssetMorphTrackUVE` tracks, one per named mesh, each holding the whole weight
+  vector at every key (the shape glTF's `weights` channel defines, so an exporter's keys survive the
+  round trip). The clip schema gains `uve-animation-v4`, written ONLY when a clip has morph tracks,
+  so every existing clip keeps its exact bytes. `SampleMorphWeightTrackUVE` interpolates linearly
+  between keys and clamps outside them, and a facial clip with no object and no bone movement is
+  valid for the first time - the validator's "nothing moves" rule counted only those two.
+- [ ] glTF `weights` animation channel: the one path that carries lip-sync out of a DCC tool. The
+  engine can hold, sample and play facial animation today; it cannot yet import one.
 - [ ] Physically-simulated secondary motion (cloth bones, jiggle, spring bones)
 - [ ] A dedicated animation-authoring/preview tool in the editor (a timeline/sequencer for
   scrubbing clips and state machines is covered again under Editor Tooling below)
