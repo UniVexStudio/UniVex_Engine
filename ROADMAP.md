@@ -582,8 +582,47 @@ and one of the highest-priority areas below.
   item. Locked by 16 DSP cases (validation, DC/stop-band response, EQ gain at centre, compressor
   slope and 1:1 transparency, limiter ceiling, reverb tail decay, bypass identity, slot order,
   single-clamp, non-finite scrubbing) and the 12 bus-graph cases that drive them through the mixer.
-- [ ] Full 3D spatialization (HRTF-based or at minimum proper distance/cone/doppler
-  modeling beyond basic attenuation)
+- [x] Full 3D spatialization (HRTF-based or at minimum proper distance/cone/doppler
+  modeling beyond basic attenuation) - distance attenuation is now joined by a stereo pan, a
+  directional emitter cone and Doppler. The pan is the classic equal-power law, normalised so pan 0
+  is EXACTLY unity on both channels: centred content mixes at the level it had before panning
+  existed, hard left is sqrt(2) on the left and exact zero on the right (a float cos(pi/2) is a hair
+  below zero, and a negative gain would invert one channel instead of silencing it, so the ends are
+  pinned), and the power sum is constant across the range. Azimuth comes from the source offset
+  projected onto the listener's right axis, derived from the same forward/up pair the listener
+  already carries, with +X when both the default orientation and a degenerate pair ask for it; a
+  source sitting exactly on the listener pans centre rather than dividing by zero. The cone takes
+  full cone angles in degrees measured from the emitter's own axis: full volume inside the inner
+  angle, `coneOuterGain` beyond the outer one, linear in angle between - and the omnidirectional
+  360/360 default multiplies by unity, so a source that never sets a cone behaves exactly as before.
+  A zero-length axis or offset reports 0 degrees (full volume), so an unset direction can never be
+  the reason a source goes silent, while a non-finite angle fails closed to silence. Doppler is the
+  classic moving-source/moving-listener form at 343 m/s: motion along listener-to-source is measured
+  for both parties, so a source closing on the listener raises pitch and a receding one lowers it,
+  and a listener running at a stationary source shifts it too. Velocities are derived from the frame
+  delta the engine now hands `UpdateUVE(deltaSeconds)`, capped at 0.1 s so a frame hitch cannot
+  fabricate a 200 m/s source, and a source's first frame after it appears is treated as stationary
+  rather than as a displacement from the origin. A caller that passes 0 (or a non-finite delta) gets
+  exactly 1.0 - no
+  division by zero and no Doppler, which is what headless tests and any caller that does not track
+  frame time want. The factor is per source ([0, 1], 0 disabling it), the result is clamped to [0.5, 2] so a
+  supersonic or impossible velocity can never hand the device a poisoned pitch, and a source sitting
+  on the listener is exactly unity. The mixed pitch is the source pitch times the Doppler shift,
+  still through the one `EvaluateAudioMixParametersUVE` contract, and the finished gain/pitch/pan
+  triple is what reaches `IAudioDeviceUVE::SetVoiceParamsUVE` - the device never re-derives any of
+  it. miniaudio applies the pan gains per output channel while mixing (a centred voice is
+  bit-identical to the pre-pan mix), and both backends validate the finished pan in [-1, 1] like
+  every other parameter. HRTF, ambisonics and occlusion are deliberately NOT claimed here: a head-
+  related transfer function needs a binaural renderer and per-listener HRIR data, which belongs to
+  the ambisonics/VR item below, and occlusion belongs to the physics item. Locked by nine unit cases
+  on the laws themselves (centre exactness, constant power, clamping, monotonic pan, the right-axis
+  derivation including the degenerate fallback, cone edges and the degenerate cone, cone angle
+  geometry, static/zero-factor/coincident Doppler, approaching/receding/listener-motion symmetry,
+  and the clamp) plus eight integration cases through the real system and the real null device
+  (right/left pan, behind-is-centred, a 2D source staying centred, a cone turning a source down by
+  its outer gain at equal distance, an approaching and a receding source shifting the device-facing
+  pitch, zero delta disabling Doppler, a freshly spawned source not inventing a velocity, and the
+  descriptor rejecting an inverted cone, an out-of-range factor and a zero axis).
 - [ ] Audio occlusion/obstruction driven by the physics/collision system
 - [ ] Streaming playback for long audio (music, VO) instead of fully-decoded-in-memory
   playback only

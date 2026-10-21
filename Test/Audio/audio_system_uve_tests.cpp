@@ -230,7 +230,7 @@ TEST_F(AudioSystemUVETest, NonSpatialSource_GainEqualsVolumeRegardlessOfPosition
     audioSystem.SetListenerPositionUVE(Math::Vector3UVE{});
 
     device.ClearRecordedCallsUVE();
-    audioSystem.UpdateUVE();
+    audioSystem.UpdateUVE(0.0F);
 
     const std::vector<RecordedAudioCallUVE>& recorded = device.GetRecordedCallsUVE();
     ASSERT_EQ(recorded.size(), 1U);
@@ -251,7 +251,7 @@ TEST_F(AudioSystemUVETest, SpatialSource_GainMatchesHandComputedLinearAttenuatio
     audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{5.0F, 0.0F, 0.0F});
 
     device.ClearRecordedCallsUVE();
-    audioSystem.UpdateUVE();
+    audioSystem.UpdateUVE(0.0F);
 
     const std::vector<RecordedAudioCallUVE>& recorded = device.GetRecordedCallsUVE();
     ASSERT_EQ(recorded.size(), 1U);
@@ -272,7 +272,7 @@ TEST_F(AudioSystemUVETest, SpatialSource_OverflowedListenerDistanceFailsClosedTo
     audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{maximumFloat, 0.0F, 0.0F});
 
     device.ClearRecordedCallsUVE();
-    audioSystem.UpdateUVE();
+    audioSystem.UpdateUVE(0.0F);
 
     const std::vector<RecordedAudioCallUVE>& recorded = device.GetRecordedCallsUVE();
     ASSERT_EQ(recorded.size(), 1U);
@@ -295,7 +295,7 @@ TEST_F(AudioSystemUVETest, SpatialSource_GainMatchesHandComputedInverseSquareAtt
     audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{2.0F, 0.0F, 0.0F});
 
     device.ClearRecordedCallsUVE();
-    audioSystem.UpdateUVE();
+    audioSystem.UpdateUVE(0.0F);
 
     const std::vector<RecordedAudioCallUVE>& recorded = device.GetRecordedCallsUVE();
     ASSERT_EQ(recorded.size(), 1U);
@@ -315,7 +315,7 @@ TEST_F(AudioSystemUVETest, MixerGroup_ScalesFinalGainAndPitchBeforeDeviceSubmiss
     const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
 
     device.ClearRecordedCallsUVE();
-    audioSystem.UpdateUVE();
+    audioSystem.UpdateUVE(0.0F);
 
     const std::vector<RecordedAudioCallUVE>& recorded = device.GetRecordedCallsUVE();
     ASSERT_EQ(recorded.size(), 1U);
@@ -402,7 +402,7 @@ TEST_F(AudioSystemUVETest, InvalidSourceRuntimeParameters_PreserveLastValidState
     audioSystem.SetSourcePitchUVE(source, -1.0F);
 
     device.ClearRecordedCallsUVE();
-    audioSystem.UpdateUVE();
+    audioSystem.UpdateUVE(0.0F);
     const std::vector<RecordedAudioCallUVE>& recorded = device.GetRecordedCallsUVE();
     ASSERT_EQ(recorded.size(), 1U);
     ASSERT_TRUE(std::holds_alternative<SetVoiceParamsCallUVE>(recorded[0]));
@@ -436,7 +436,7 @@ TEST_F(AudioSystemUVETest, SourceStreamAndPcmEffects_UseBoundedCallerOwnedRuntim
 }
 
 TEST_F(AudioSystemUVETest, UpdateUVE_WithZeroSources_IsSafeNoOp) {
-    EXPECT_NO_FATAL_FAILURE(audioSystem.UpdateUVE());
+    EXPECT_NO_FATAL_FAILURE(audioSystem.UpdateUVE(0.0F));
 }
 
 
@@ -463,7 +463,7 @@ TEST_F(AudioSystemUVETest, MixerBusGraph_ParentChainScalesTheDeviceGain) {
     const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
 
     device.ClearRecordedCallsUVE();
-    audioSystem.UpdateUVE();
+    audioSystem.UpdateUVE(0.0F);
 
     const std::vector<RecordedAudioCallUVE>& recorded = device.GetRecordedCallsUVE();
     const AudioVoiceParamsUVE* params = FindRecordedParamsUVE(recorded, source);
@@ -483,14 +483,14 @@ TEST_F(AudioSystemUVETest, MixerBusGraph_MutingABusSilencesItsSourcesAndUnmuteRe
 
     ASSERT_TRUE(audioSystem.SetMixerGroupMutedUVE("Music", true));
     device.ClearRecordedCallsUVE();
-    audioSystem.UpdateUVE();
+    audioSystem.UpdateUVE(0.0F);
     const AudioVoiceParamsUVE* muted = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
     ASSERT_NE(muted, nullptr);
     EXPECT_FLOAT_EQ(muted->gain, 0.0F);
 
     ASSERT_TRUE(audioSystem.SetMixerGroupMutedUVE("Music", false));
     device.ClearRecordedCallsUVE();
-    audioSystem.UpdateUVE();
+    audioSystem.UpdateUVE(0.0F);
     const AudioVoiceParamsUVE* unmuted = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
     ASSERT_NE(unmuted, nullptr);
     EXPECT_FLOAT_EQ(unmuted->gain, 0.25F);
@@ -512,7 +512,7 @@ TEST_F(AudioSystemUVETest, MixerBusGraph_SoloDucksEveryOtherBus) {
 
     ASSERT_TRUE(audioSystem.SetMixerGroupSoloedUVE("Music", true));
     device.ClearRecordedCallsUVE();
-    audioSystem.UpdateUVE();
+    audioSystem.UpdateUVE(0.0F);
 
     const std::vector<RecordedAudioCallUVE>& recorded = device.GetRecordedCallsUVE();
     const AudioVoiceParamsUVE* musicParams = FindRecordedParamsUVE(recorded, music);
@@ -538,7 +538,7 @@ TEST_F(AudioSystemUVETest, MixerBusGraph_ReparentAndRemovalKeepLiveRoutingConsis
     // A legal move re-composes the source's chain without touching the voice.
     ASSERT_TRUE(audioSystem.SetMixerGroupParentUVE("Stem", kMasterAudioMixerGroupNameUVE));
     device.ClearRecordedCallsUVE();
-    audioSystem.UpdateUVE();
+    audioSystem.UpdateUVE(0.0F);
     const AudioVoiceParamsUVE* moved = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
     ASSERT_NE(moved, nullptr);
     EXPECT_FLOAT_EQ(moved->gain, 0.5F);
@@ -577,6 +577,182 @@ TEST_F(AudioSystemUVETest, ApplySourceBusChainUVE_RejectsUnknownHandleAtomically
     EXPECT_FALSE(audioSystem.ApplySourceBusChainUVE(VoiceHandleUVE::FromIndexAndGenerationUVE(9U, 9U),
                                                          std::vector<float>{1.0F}, output));
     EXPECT_EQ(output, sentinel);
+}
+
+// --- 3D spatialization: stereo pan, directional cone, Doppler. ---
+
+TEST_F(AudioSystemUVETest, SpatialSource_RightOfTheListenerPansRight) {
+    AudioSourceDescUVE desc;
+    desc.spatial = true;
+    desc.minDistance = 1.0F;
+    desc.maxDistance = 100.0F;
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
+
+    audioSystem.SetListenerPositionUVE(Math::Vector3UVE{});
+    audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{4.0F, 0.0F, 0.0F});
+
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(0.0F);
+
+    const AudioVoiceParamsUVE* params = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
+    ASSERT_NE(params, nullptr);
+    EXPECT_NEAR(params->pan, 1.0F, 1.0e-5F);
+    EXPECT_TRUE(ValidateAudioVoiceParamsUVE(*params));
+}
+
+TEST_F(AudioSystemUVETest, SpatialSource_LeftOfTheListenerPansLeftAndDirectlyBehindIsCentred) {
+    AudioSourceDescUVE desc;
+    desc.spatial = true;
+    desc.minDistance = 1.0F;
+    desc.maxDistance = 100.0F;
+
+    const VoiceHandleUVE left = audioSystem.CreateSourceUVE(desc);
+    const VoiceHandleUVE behind = audioSystem.CreateSourceUVE(desc);
+    audioSystem.SetListenerPositionUVE(Math::Vector3UVE{});
+    // Default listener orientation is forward (0,0,-1), so +Z is behind the listener.
+    audioSystem.SetSourcePositionUVE(left, Math::Vector3UVE{-3.0F, 0.0F, 0.0F});
+    audioSystem.SetSourcePositionUVE(behind, Math::Vector3UVE{0.0F, 0.0F, 3.0F});
+
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(0.0F);
+
+    const std::vector<RecordedAudioCallUVE>& recorded = device.GetRecordedCallsUVE();
+    const AudioVoiceParamsUVE* leftParams = FindRecordedParamsUVE(recorded, left);
+    const AudioVoiceParamsUVE* behindParams = FindRecordedParamsUVE(recorded, behind);
+    ASSERT_NE(leftParams, nullptr);
+    ASSERT_NE(behindParams, nullptr);
+    EXPECT_NEAR(leftParams->pan, -1.0F, 1.0e-5F);
+    EXPECT_NEAR(behindParams->pan, 0.0F, 1.0e-5F);
+}
+
+TEST_F(AudioSystemUVETest, NonSpatialSource_IsAlwaysCentred) {
+    AudioSourceDescUVE desc;
+    desc.spatial = false;
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
+    audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{5.0F, 0.0F, 0.0F});
+
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(0.0F);
+
+    const AudioVoiceParamsUVE* params = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
+    ASSERT_NE(params, nullptr);
+    EXPECT_FLOAT_EQ(params->pan, 0.0F);
+}
+
+TEST_F(AudioSystemUVETest, Cone_TurnsDownASourceHeardFromBehindTheEmitter) {
+    AudioSourceDescUVE facingListener;
+    facingListener.spatial = true;
+    facingListener.minDistance = 1.0F;
+    facingListener.maxDistance = 100.0F;
+    facingListener.coneInnerAngleDegrees = 30.0F;
+    facingListener.coneOuterAngleDegrees = 60.0F;
+    facingListener.coneOuterGain = 0.1F;
+    facingListener.coneDirection = Math::Vector3UVE{-1.0F, 0.0F, 0.0F}; // toward the listener
+
+    AudioSourceDescUVE facingAway = facingListener;
+    facingAway.coneDirection = Math::Vector3UVE{1.0F, 0.0F, 0.0F}; // 180 degrees from the listener
+
+    const VoiceHandleUVE near = audioSystem.CreateSourceUVE(facingListener);
+    const VoiceHandleUVE far = audioSystem.CreateSourceUVE(facingAway);
+    audioSystem.SetListenerPositionUVE(Math::Vector3UVE{});
+    audioSystem.SetSourcePositionUVE(near, Math::Vector3UVE{6.0F, 0.0F, 0.0F});
+    audioSystem.SetSourcePositionUVE(far, Math::Vector3UVE{6.0F, 0.0F, 0.0F});
+
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(0.0F);
+
+    const std::vector<RecordedAudioCallUVE>& recorded = device.GetRecordedCallsUVE();
+    const AudioVoiceParamsUVE* nearParams = FindRecordedParamsUVE(recorded, near);
+    const AudioVoiceParamsUVE* farParams = FindRecordedParamsUVE(recorded, far);
+    ASSERT_NE(nearParams, nullptr);
+    ASSERT_NE(farParams, nullptr);
+    EXPECT_GT(nearParams->gain, 0.0F);
+    // Same distance, same everything except the cone: the behind-the-emitter source is 10x quieter.
+    EXPECT_NEAR(farParams->gain / nearParams->gain, 0.1F, 1.0e-4F);
+}
+
+TEST_F(AudioSystemUVETest, Doppler_ApproachingSourceRaisesThePitch) {
+    AudioSourceDescUVE desc;
+    desc.spatial = true;
+    desc.minDistance = 1.0F;
+    desc.maxDistance = 1000.0F;
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
+    audioSystem.SetListenerPositionUVE(Math::Vector3UVE{});
+    audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{20.0F, 0.0F, 0.0F});
+
+    const float frameSeconds = 1.0F / 60.0F;
+    audioSystem.UpdateUVE(frameSeconds); // seeds the previous position, no velocity yet
+    // 20 m/s straight at the listener: 1/3 m over one frame.
+    audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{20.0F - 20.0F * frameSeconds, 0.0F, 0.0F});
+
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(frameSeconds);
+
+    const AudioVoiceParamsUVE* params = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
+    ASSERT_NE(params, nullptr);
+    // 343 / (343 - 20) = 1.0619.
+    EXPECT_NEAR(params->pitch, 343.0F / 323.0F, 1.0e-3F);
+}
+
+TEST_F(AudioSystemUVETest, Doppler_FirstFrameAfterSpawnDoesNotInventAVelocity) {
+    AudioSourceDescUVE desc;
+    desc.spatial = true;
+    desc.minDistance = 1.0F;
+    desc.maxDistance = 1000.0F;
+    // Spawned far from the origin: the very first frame must NOT read that as a displacement.
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
+    audioSystem.SetListenerPositionUVE(Math::Vector3UVE{});
+    audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{200.0F, 0.0F, 0.0F});
+
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(1.0F / 60.0F);
+
+    const AudioVoiceParamsUVE* params = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
+    ASSERT_NE(params, nullptr);
+    EXPECT_FLOAT_EQ(params->pitch, 1.0F);
+}
+
+TEST_F(AudioSystemUVETest, Doppler_RecedingSourceLowersThePitchAndZeroDeltaDisablesIt) {
+    AudioSourceDescUVE desc;
+    desc.spatial = true;
+    desc.minDistance = 1.0F;
+    desc.maxDistance = 1000.0F;
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
+    audioSystem.SetListenerPositionUVE(Math::Vector3UVE{});
+    audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{20.0F, 0.0F, 0.0F});
+
+    const float frameSeconds = 1.0F / 60.0F;
+    audioSystem.UpdateUVE(frameSeconds);
+    audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{20.0F + 20.0F * frameSeconds, 0.0F, 0.0F});
+
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(frameSeconds);
+    const AudioVoiceParamsUVE* params = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
+    ASSERT_NE(params, nullptr);
+    EXPECT_NEAR(params->pitch, 343.0F / 363.0F, 1.0e-3F);
+
+    // Same motion, but a caller that does not track time gets no Doppler at all.
+    audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{21.0F, 0.0F, 0.0F});
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(0.0F);
+    const AudioVoiceParamsUVE* still = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
+    ASSERT_NE(still, nullptr);
+    EXPECT_FLOAT_EQ(still->pitch, 1.0F);
+}
+
+TEST_F(AudioSystemUVETest, SourceDescriptor_RejectsAnInvertedConeOrAnOutOfRangeDopplerFactor) {
+    AudioSourceDescUVE desc;
+    desc.coneInnerAngleDegrees = 90.0F;
+    desc.coneOuterAngleDegrees = 45.0F;
+    EXPECT_EQ(audioSystem.CreateSourceUVE(desc), kInvalidVoiceHandleUVE);
+
+    AudioSourceDescUVE badDoppler;
+    badDoppler.dopplerFactor = 2.0F;
+    EXPECT_EQ(audioSystem.CreateSourceUVE(badDoppler), kInvalidVoiceHandleUVE);
+
+    AudioSourceDescUVE badAxis;
+    badAxis.coneDirection = Math::Vector3UVE{};
+    EXPECT_EQ(audioSystem.CreateSourceUVE(badAxis), kInvalidVoiceHandleUVE);
 }
 
 } // namespace

@@ -100,7 +100,12 @@ TEST(NullAudioDeviceUVETest, SetVoiceParamsUVE_RejectsInvalidParametersWithoutRe
     EXPECT_FALSE(device.SetVoiceParamsUVE(voice, invalidPosition));
     EXPECT_FALSE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 1.1F, 1.0F}));
     EXPECT_FALSE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, -1.0F}));
-    EXPECT_EQ(device.GetRecordedCallsUVE().size(), 1U);
+    // Pan is a finished multiplier in [-1, 1]; anything outside that would drive one channel louder
+    // than the mix ever asked for, so the device refuses it like any other bad parameter.
+    EXPECT_FALSE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, 1.0F, 1.5F}));
+    EXPECT_FALSE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, 1.0F, -2.0F}));
+    EXPECT_TRUE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, 1.0F, -1.0F}));
+    EXPECT_EQ(device.GetRecordedCallsUVE().size(), 2U);
 }
 
 TEST(NullAudioDeviceUVETest, GetVoiceStateUVE_UnknownHandle_ReturnsStoppedAndLogsError) {
