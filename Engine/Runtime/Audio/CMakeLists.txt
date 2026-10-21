@@ -34,6 +34,7 @@ add_library(uve_audio STATIC
     Internal/wav_pcm16_decoder_uve.cpp
     Internal/pcm_gain_effect_uve.cpp
     Internal/audio_mixer_group_uve.cpp
+    Internal/audio_dsp_uve.cpp
     Internal/null_audio_device_uve.cpp
     Internal/miniaudio_audio_device_uve.cpp
     Internal/miniaudio_implementation_uve.cpp

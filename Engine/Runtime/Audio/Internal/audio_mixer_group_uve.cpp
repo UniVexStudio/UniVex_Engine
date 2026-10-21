@@ -28,18 +28,19 @@ bool EvaluateAudioMixParametersUVE(const float sourceVolume, const float sourceP
 
 AudioMixerGroupUVE::GroupStateUVE AudioMixerGroupUVE::MakeGroupStateUVE(const float volumeMultiplier,
                                                                         const float pitchMultiplier,
-                                                                        std::string parentName) {
+                                                                        std::string parentName,
+                                                                        const float sampleRateHz) {
     GroupStateUVE state;
     state.volumeMultiplier = volumeMultiplier;
     state.pitchMultiplier = pitchMultiplier;
     state.parent = std::move(parentName);
-    state.gainSlots.fill(1.0F);
+    state.inserts.SetSampleRateUVE(sampleRateHz);
     return state;
 }
 
 AudioMixerGroupUVE::AudioMixerGroupUVE() {
     m_groups.emplace(std::string(kMasterAudioMixerGroupNameUVE),
-                     MakeGroupStateUVE(1.0F, 1.0F, std::string{}));
+                     MakeGroupStateUVE(1.0F, 1.0F, std::string{}, m_sampleRate));
 }
 
 bool AudioMixerGroupUVE::IsValidNameUVE(const std::string_view name) noexcept {
@@ -165,7 +166,7 @@ bool AudioMixerGroupUVE::RegisterGroupUVE(const std::string_view name, const std
         parentName.empty() ? kMasterAudioMixerGroupNameUVE : parentName;
     if (!IsValidNameUVE(resolvedParent) || !m_groups.contains(resolvedParent)) return false;
     m_groups.emplace(std::string(name), MakeGroupStateUVE(volumeMultiplier, pitchMultiplier,
-                                                          std::string(resolvedParent)));
+                                                          std::string(resolvedParent), m_sampleRate));
     return true;
 }
 
@@ -313,50 +314,57 @@ bool AudioMixerGroupUVE::DetachSourceUVE(const std::string_view name) {
     return true;
 }
 
-bool AudioMixerGroupUVE::SetGroupGainSlotUVE(const std::string_view name, const std::size_t slot,
-                                              const float gain) {
-    if (slot >= kMaximumAudioBusGainSlotsUVE || !std::isfinite(gain) || gain < 0.0F) return false;
+bool AudioMixerGroupUVE::SetGroupInsertUVE(const std::string_view name, const std::size_t slot,
+                                             const AudioInsertDescUVE& desc) {
+    GroupStateUVE* group = FindGroupUVE(name);
+    return group != nullptr && group->inserts.SetInsertUVE(slot, desc);
+}
+
+bool AudioMixerGroupUVE::GetGroupInsertUVE(const std::string_view name, const std::size_t slot,
+                                            AudioInsertDescUVE& outDesc) const {
+    const GroupStateUVE* group = FindGroupUVE(name);
+    return group != nullptr && group->inserts.GetInsertUVE(slot, outDesc);
+}
+
+bool AudioMixerGroupUVE::ClearGroupInsertUVE(const std::string_view name, const std::size_t slot) {
+    GroupStateUVE* group = FindGroupUVE(name);
+    return group != nullptr && group->inserts.ClearInsertUVE(slot);
+}
+
+bool AudioMixerGroupUVE::SetSampleRateUVE(const float sampleRateHz) {
+    if (!std::isfinite(sampleRateHz) || sampleRateHz < kMinimumAudioSampleRateUVE ||
+        sampleRateHz > kMaximumAudioSampleRateUVE) {
+        return false;
+    }
+    m_sampleRate = sampleRateHz;
+    for (auto& entry : m_groups) entry.second.inserts.SetSampleRateUVE(sampleRateHz);
+    return true;
+}
+
+float AudioMixerGroupUVE::GetSampleRateUVE() const noexcept { return m_sampleRate; }
+
+bool AudioMixerGroupUVE::ProcessBusChainUVE(const std::string_view name, float* samples,
+                                             const std::size_t frameCount) {
     GroupStateUVE* group = FindGroupUVE(name);
     if (group == nullptr) return false;
-    group->gainSlots[slot] = gain;
+    if (samples == nullptr || frameCount == 0U) return true;
+    // The bus fader, mute and solo are part of the chain: a muted bus produces silence even when it
+    // carries a reverb tail, so the inserts see exactly the signal the device would have heard.
+    const float volume = GetEffectiveVolumeUVE(name);
+    for (std::size_t index = 0U; index < frameCount; ++index) samples[index] *= volume;
+    group->inserts.ProcessInPlaceUVE(samples, frameCount);
     return true;
 }
 
-bool AudioMixerGroupUVE::GetGroupGainSlotUVE(const std::string_view name, const std::size_t slot,
-                                              float& outGain) const {
-    if (slot >= kMaximumAudioBusGainSlotsUVE) return false;
-    const GroupStateUVE* group = FindGroupUVE(name);
-    if (group == nullptr) return false;
-    outGain = group->gainSlots[slot];
-    return true;
-}
-
-bool AudioMixerGroupUVE::ClearGroupGainSlotsUVE(const std::string_view name) {
-    GroupStateUVE* group = FindGroupUVE(name);
-    if (group == nullptr) return false;
-    group->gainSlots.fill(1.0F);
-    return true;
-}
-
-bool AudioMixerGroupUVE::ApplyBusGainChainUVE(const std::string_view name,
-                                               const std::vector<float>& inputSamples,
-                                               std::vector<float>& outputSamples) const {
-    const GroupStateUVE* group = FindGroupUVE(name);
-    if (group == nullptr) return false;
+bool AudioMixerGroupUVE::ApplyBusChainUVE(const std::string_view name, const std::vector<float>& inputSamples,
+                                            std::vector<float>& outputSamples) {
+    if (FindGroupUVE(name) == nullptr) return false;
     try {
-        // Unity stages are exact no-ops because every earlier stage already clamped to [-1, 1], so
-        // skipping them keeps the common case allocation-light without changing a single sample.
-        std::vector<float> gains;
-        gains.reserve(1U + kMaximumAudioBusGainSlotsUVE);
-        const float effectiveVolume = GetEffectiveVolumeUVE(name);
-        if (effectiveVolume != 1.0F) gains.push_back(effectiveVolume);
-        for (const float slotGain : group->gainSlots) {
-            if (slotGain != 1.0F) gains.push_back(slotGain);
-        }
-        return ApplyPcmGainEffectChainUVE(inputSamples, gains, outputSamples);
+        outputSamples = inputSamples;
     } catch (...) {
         return false;
     }
+    return ProcessBusChainUVE(name, outputSamples.data(), outputSamples.size());
 }
 
 AudioMixerDiagnosticsUVE AudioMixerGroupUVE::GetDiagnosticsUVE(const std::size_t maximumGroups) const {

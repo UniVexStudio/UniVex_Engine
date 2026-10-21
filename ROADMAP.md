@@ -560,8 +560,28 @@ and one of the highest-priority areas below.
   intact, and replacement of an existing envelope. (Turning a dropped source file into an asset is
   still the importer's job rather than the Content Browser's: the editor has no audio auto-import
   action yet, exactly as for WAV, which is why that workflow is not claimed here.)
-- [ ] A real DSP effect chain beyond gain (reverb, low-pass/occlusion filtering, EQ,
-  compression/limiting)
+- [x] A real DSP effect chain beyond gain (reverb, low-pass/occlusion filtering, EQ,
+  compression/limiting) - every mixer bus now runs a fixed, ordered stack of typed inserts instead
+  of a bare gain multiplier: `Gain`, `LowPass`, `HighPass`, `PeakEq`, `Compressor`, `Limiter` and
+  `Reverb`. Filters are RBJ biquads in transposed direct form II (Robert Bristow-Johnson's Audio EQ
+  Cookbook), the reverb is a Schroeder/Freeverb comb-and-allpass network with damping in the
+  feedback path, and the dynamics are a feed-forward envelope follower with a hard knee plus a
+  brick-wall limiter whose attack is instantaneous - a sample that arrives over the ceiling is
+  already under it when it leaves. Slots run in ascending index order, which is what makes a
+  limiter-then-gain chain audibly different from gain-then-limiter, and the chain clamps into
+  [-1, 1] exactly ONCE at the end: no stage clips before the next filter runs, and a NaN or an
+  infinity is scrubbed to silence instead of reaching the device. Insert configuration - including
+  the only allocation in the whole path, the reverb delay lines - happens in `SetMixerInsertUVE()`
+  and `SetSampleRateUVE()`, never in `ProcessUVE()`: a rejected description leaves the previous
+  insert and its running state untouched, and a rate outside 8-384 kHz is refused rather than
+  silently detuning every filter. A cutoff is clamped to 0.45 of the device rate, so a value past
+  Nyquist cannot make a biquad unstable. The device rate is pushed from the project config at
+  bootstrap, and every bus registered later inherits it. This is the engine half only: occlusion
+  still has to be DRIVEN by the physics/collision system, there is no analyser/metering, and the
+  chain is mono because the PCM path it sits on is mono - stereo arrives with the spatialization
+  item. Locked by 16 DSP cases (validation, DC/stop-band response, EQ gain at centre, compressor
+  slope and 1:1 transparency, limiter ceiling, reverb tail decay, bypass identity, slot order,
+  single-clamp, non-finite scrubbing) and the 12 bus-graph cases that drive them through the mixer.
 - [ ] Full 3D spatialization (HRTF-based or at minimum proper distance/cone/doppler
   modeling beyond basic attenuation)
 - [ ] Audio occlusion/obstruction driven by the physics/collision system
@@ -581,10 +601,9 @@ and one of the highest-priority areas below.
   removing a bus that still has routed sources is refused, and removing an empty one reparents its
   children onto its own parent so no edge can dangle. `UpdateUVE()` now feeds the device the
   effective value, and a pitch product that leaves the accepted range is clamped instead of being
-  rejected into silence. Each bus also carries four fixed-order gain insert slots that run on the
-  sample path after its effective volume (`ApplyBusGainChainUVE`), reusing the existing bounded PCM
-  gain chain rather than growing a second DSP path - a submix hook that audibly carries audio, and
-  the seam the next item plugs real DSP nodes into. Locked by 11 mixer cases (parent composition,
+  rejected into silence. Each bus also carries four fixed-order insert slots that run on the sample
+  path after its effective volume (`ProcessBusChainUVE`), which is the seam the typed DSP chain
+  below plugs into. Locked by 11 mixer cases (parent composition,
   cycle refusal, mute/solo interaction, safe reparent-on-removal, the cap, slot ordering, atomic
   failure, tree-shaped diagnostics) and 6 system cases proving the graph reaches both the device and
   the sample path. Typed DSP nodes, EQ/reverb, and per-bus metering remain open below.
