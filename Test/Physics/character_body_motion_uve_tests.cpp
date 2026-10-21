@@ -85,17 +85,22 @@ TEST(CharacterBodyMotionUVETest, AJumpPressedJustBeforeLandingHappensOnLanding) 
 }
 
 TEST(CharacterBodyMotionUVETest, AirControlScalesSteeringOnlyOffTheFloor) {
+    // Built-in movement ramps velocity toward the input target instead of snapping to it: one
+    // frame of the ground acceleration rate (14/s) moves a resting body to moveSpeed * 14 * step.
+    constexpr float kGroundAccelerationRateUVE = 14.0F;
+
     CharacterControllerComponentUVE ground = OnFloorUVE();
     ground.airControl = 0.0F;
     static_cast<void>(StepCharacterIntentUVE(ground, {{1.0F, 0.0F, 0.0F}}, kGravityUVE, kStepUVE));
-    EXPECT_FLOAT_EQ(ground.velocity.x, ground.moveSpeed);
+    EXPECT_FLOAT_EQ(ground.velocity.x, ground.moveSpeed * kGroundAccelerationRateUVE * kStepUVE);
 
     CharacterControllerComponentUVE air{};
     air.timeSinceOnFloor = 1.0F;
     air.airControl = 0.25F;
     air.velocity.x = 0.0F;
     static_cast<void>(StepCharacterIntentUVE(air, {{1.0F, 0.0F, 0.0F}}, kGravityUVE, kStepUVE));
-    EXPECT_FLOAT_EQ(air.velocity.x, 0.25F * air.moveSpeed);
+    EXPECT_FLOAT_EQ(air.velocity.x,
+                    air.moveSpeed * air.airControl * kGroundAccelerationRateUVE * kStepUVE);
 
     CharacterControllerComponentUVE committed{};
     committed.timeSinceOnFloor = 1.0F;

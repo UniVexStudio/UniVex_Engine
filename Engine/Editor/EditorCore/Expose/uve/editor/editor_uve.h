@@ -68,6 +68,7 @@
 #include "uve/objects/3d/all_objects_3d_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
+#include "uve/component/skin_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
@@ -1963,6 +1964,20 @@ private:
     [[nodiscard]] std::optional<Asset::AssetGuidUVE> DrawAssetPickerUVE(const char* id, Asset::AssetGuidUVE value,
                                                                       const std::string& extension,
                                                                       const std::string& title = {});
+    /// Standardized material slot drawer offering new standard/ORM/shader materials, browsing both
+    /// .uvmat and .uvmaterial, quick import, clear, and inline PBR property editor when assigned.
+    bool DrawStandardMaterialSlotUVE(const char* label, const char* id,
+                                     std::string& inOutPath);
+    bool DrawStandardMaterialSlotUVE(const char* label, const char* id,
+                                     Asset::AssetGuidUVE& inOutGuid);
+    /// Inline expandable PBR property editor for an assigned material file. Saves immediately on edit.
+    void DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& absolutePath, const char* idPrefix);
+    /// Specialized MeshInstance3D inspector drawer: procedural shapes/models picker, expandable
+    /// Skeleton section with Skin slot and auto-populated bone binds, expandable Surface Material
+    /// Override section, and mesh material slot.
+    void DrawMeshInstance3DInspectorUVE(Scene::EntityUVE entity);
+    /// Auto-populates a SkinComponentUVE from an entity's assigned model or attached Skeleton3D.
+    bool AutoPopulateSkinFromModelUVE(Scene::EntityUVE entity, Scene::SkinComponentUVE& skin);
     /// AnimationGraph's parameter table and its graph (objects, wiring, transitions). Every edit
     /// writes the whole list back through SetSelectedComponentPropertyUVE, so it is one undo step
     /// and the graph is re-validated before it lands.
@@ -2069,6 +2084,7 @@ private:
     bool DrawUVScriptEditorBodyUVE(bool offerClose);
     /// The script's text box: line numbers in a gutter, and the text coloured by kind.
     void DrawUVScriptTextBoxUVE(UVScriptDocumentUVE& document, float height);
+    void DrawContentAssetCardInspectorUVE(const Asset::ProjectFileEntryUVE& entry);
     [[nodiscard]] static ContentBrowserItemTypeUVE ClassifyContentBrowserEntryUVE(
         const Asset::ProjectFileEntryUVE& entry);
     [[nodiscard]] static const char* GetContentBrowserItemTypeLabelUVE(ContentBrowserItemTypeUVE type) noexcept;

@@ -359,6 +359,7 @@ add_executable(uve_integration_tests
     Objects/3D/animation_objects_uve_tests.cpp
     Objects/3D/conformed_playback_uve_tests.cpp
     Objects/3D/two_bone_ik_3d_uve_tests.cpp
+    Objects/3D/skin_component_uve_tests.cpp
     Objects/3D/full_body_ik_3d_uve_tests.cpp
     Objects/UI/object_definitions_canvas_uve_tests.cpp
     Objects/2D/sprite_2d_uve_tests.cpp
@@ -484,6 +485,10 @@ add_executable(uve_integration_tests
     RHI/RenderSystems/viewport_manager_uve_tests.cpp
     RHI/RenderSystems/particle_render_bridge_uve_tests.cpp
     RHI/RenderSystems/particle_draw_command_uve_tests.cpp
+    RHI/RenderSystems/dynamic_mesh_bvh_uve_tests.cpp
+    RHI/RenderSystems/shadow_atlas_manager_uve_tests.cpp
+    RHI/RenderSystems/mesh_renderer_spatial_bvh_tests.cpp
+    RHI/RenderSystems/renderer_3d_indirect_instancing_tests.cpp
     UI/ui_font_atlas_uve_tests.cpp
     UI/ui_runtime_uve_tests.cpp
     UI/canvas_ancestry_uve_tests.cpp
@@ -666,6 +671,7 @@ add_executable(uve_editor_tests
     Editor/scene_component_authoring_uve_tests.cpp
     Editor/file_picker_uve_tests.cpp
     Editor/scene_object_editor_uve_tests.cpp
+    Editor/EditorCore/editor_docking_uve_tests.cpp
 )
 target_link_libraries(uve_editor_tests PRIVATE
     nlohmann_json::nlohmann_json

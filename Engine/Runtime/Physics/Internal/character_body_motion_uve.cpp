@@ -39,9 +39,19 @@ bool StepCharacterIntentUVE(Scene::CharacterControllerComponentUVE& c, const Cha
     const float gravity = floating ? 0.0F : gravityY * c.gravityScale;
     bool jumped = false;
     if (c.builtInMovement) {
-        const float steering = floating || c.grounded ? 1.0F : c.airControl;
-        c.velocity.x += (input.move.x * c.moveSpeed - c.velocity.x) * steering;
-        c.velocity.z += (input.move.z * c.moveSpeed - c.velocity.z) * steering;
+        constexpr float kGroundAccelerationRate = 14.0F;
+        constexpr float kGroundDecelerationRate = 18.0F;
+        const float targetX = input.move.x * c.moveSpeed;
+        const float targetZ = input.move.z * c.moveSpeed;
+        const bool moving = std::abs(targetX) > 1.0e-4F || std::abs(targetZ) > 1.0e-4F;
+        const float rate = moving ? kGroundAccelerationRate : kGroundDecelerationRate;
+        // airControl scales steering only off the floor, and 0.0F means none at all: the body
+        // keeps the momentum its jump gave it instead of drifting toward the input target.
+        // Floating bodies steer instantly - creative-flight response, not ground inertia.
+        const float airScale = c.airControl > 0.0F ? std::clamp(c.airControl, 0.0F, 1.0F) : 0.0F;
+        const float alpha = floating ? 1.0F : std::clamp((c.grounded ? rate : rate * airScale) * deltaTimeSeconds, 0.0F, 1.0F);
+        c.velocity.x += (targetX - c.velocity.x) * alpha;
+        c.velocity.z += (targetZ - c.velocity.z) * alpha;
         if (floating) {
             SetAlongUpUVE(c.velocity, up, std::clamp(input.rise, -1.0F, 1.0F) * c.moveSpeed);
         } else {

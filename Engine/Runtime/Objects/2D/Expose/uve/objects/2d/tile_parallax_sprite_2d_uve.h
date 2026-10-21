@@ -88,6 +88,7 @@ struct TileMapCell2DUVE final {
 
 /// 2D grid-based tile layer component (`tileSizePixels`, `cells`, `collisionEnabled`).
 struct TileMapLayerComponentUVE final {
+    Asset::AssetGuidUVE tileSetAssetGuid = Asset::kInvalidAssetGuidUVE;
     Math::Vector2UVE tileSizePixels{16.0F, 16.0F};
     std::vector<TileMapCell2DUVE> cells{};
     bool collisionEnabled = true;

@@ -89,7 +89,7 @@ void main() {
         isinf(viewNormal.x) || isinf(viewNormal.y) || isinf(viewNormal.z)) {
         viewNormal = vec3(0.0, 0.0, 1.0);
     }
-    if (viewNormal.z < 0.0) {
+    if (dot(viewNormal, -centerViewPos) < 0.0) {
         viewNormal = -viewNormal;
     }
 
@@ -102,6 +102,9 @@ void main() {
     vec3 tangent = pLenSq > 1.0e-8 ? perp * inversesqrt(pLenSq) : vec3(1.0, 0.0, 0.0);
     vec3 bitangent = cross(viewNormal, tangent);
     mat3 tbn = mat3(tangent, bitangent, viewNormal);
+
+    float normalViewDot = max(dot(viewNormal, normalize(-centerViewPos)), 0.15);
+    float angleBias = max(uBias, uBias / normalViewDot);
 
     float occlusion = 0.0;
     int sampleCount = clamp(uSampleCount, 1, kKernelSizeUVE);
@@ -132,11 +135,11 @@ void main() {
             continue;
         }
         float rangeCheck = smoothstep(0.0, 1.0, uRadius / max(depthDelta, 0.0001));
-        occlusion += (sampledViewPos.z >= samplePos.z + uBias ? 1.0 : 0.0) * rangeCheck;
+        occlusion += (sampledViewPos.z >= samplePos.z + angleBias ? 1.0 : 0.0) * rangeCheck;
         ++validSamples;
     }
     float rawOcc = validSamples > 0 ? (occlusion / float(sampleCount)) : 0.0;
-    float visibility = clamp(1.0 - rawOcc * max(uIntensity, 0.0), 0.0, 1.0);
+    float visibility = clamp(1.0 - rawOcc * max(uIntensity, 0.0), 0.15, 1.0);
     visibility = pow(visibility, clamp(uPower, 0.1, 4.0));
     if (isnan(visibility) || isinf(visibility)) {
         visibility = 1.0;

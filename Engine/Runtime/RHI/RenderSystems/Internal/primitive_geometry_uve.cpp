@@ -166,6 +166,9 @@ const PrimitiveGeometryUVE& GetPrimitiveGeometryUVE(const Scene::PrimitiveMeshKi
             return sphere;
         case Scene::PrimitiveMeshKindUVE::Plane:
             return plane;
+        case Scene::PrimitiveMeshKindUVE::Capsule:
+        case Scene::PrimitiveMeshKindUVE::Cylinder:
+            return cube;
     }
     return cube;
 }

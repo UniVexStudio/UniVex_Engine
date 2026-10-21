@@ -156,6 +156,97 @@ TEST(ShaderPreprocessorUVETest, IfdefDefined_KeepsTrueBranchDropsElseBranch) {
     EXPECT_EQ(result.resolvedSource.find("drop_this"), std::string::npos);
 }
 
+TEST(ShaderPreprocessorUVETest, IfDefinedOr_EitherMacroOpensTheBranch) {
+    FakeFileSystemUVE fileSystem;
+    constexpr std::string_view source =
+        "#if defined(UVE_INSTANCED) || defined(UVE_INDIRECT_INSTANCED)\nkeep_this();\n#else\ndrop_this();\n#endif\n";
+
+    const PreprocessResultUVE neither =
+        PreprocessShaderSourceUVE(fileSystem, "shaders/x.glsl", std::string(source), {});
+    ASSERT_TRUE(neither.success);
+    EXPECT_NE(neither.resolvedSource.find("drop_this"), std::string::npos);
+    EXPECT_EQ(neither.resolvedSource.find("keep_this"), std::string::npos);
+
+    const PreprocessResultUVE rightOnly = PreprocessShaderSourceUVE(
+        fileSystem, "shaders/x.glsl", std::string(source), {{"UVE_INDIRECT_INSTANCED", "1"}});
+    ASSERT_TRUE(rightOnly.success);
+    EXPECT_NE(rightOnly.resolvedSource.find("keep_this"), std::string::npos);
+    EXPECT_EQ(rightOnly.resolvedSource.find("drop_this"), std::string::npos);
+}
+
+TEST(ShaderPreprocessorUVETest, IfDefinedAnd_ParenthesisedOperands_BothRequired) {
+    FakeFileSystemUVE fileSystem;
+    constexpr std::string_view source =
+        "#if defined(UVE_A) && (defined(UVE_B) || !defined(UVE_C))\nkeep_this();\n#else\ndrop_this();\n#endif\n";
+
+    const PreprocessResultUVE oneSide =
+        PreprocessShaderSourceUVE(fileSystem, "shaders/x.glsl", std::string(source), {{"UVE_A", "1"}});
+    ASSERT_TRUE(oneSide.success);
+    EXPECT_NE(oneSide.resolvedSource.find("keep_this"), std::string::npos);
+
+    const PreprocessResultUVE andFails =
+        PreprocessShaderSourceUVE(fileSystem, "shaders/x.glsl", std::string(source),
+                                  {{"UVE_A", "1"}, {"UVE_C", "1"}});
+    ASSERT_TRUE(andFails.success);
+    EXPECT_EQ(andFails.resolvedSource.find("keep_this"), std::string::npos); // No UVE_B, and UVE_C kills the !defined term.
+    EXPECT_NE(andFails.resolvedSource.find("drop_this"), std::string::npos);
+}
+
+TEST(ShaderPreprocessorUVETest, IfElifElseChain_TakesFirstMatchingBranchOnly) {
+    FakeFileSystemUVE fileSystem;
+    constexpr std::string_view source =
+        "#if defined(UVE_MODE) && UVE_MODE == 2\nbranch_two();\n#elif defined(UVE_MODE)\nbranch_one();\n#else\n"
+        "branch_default();\n#endif\n";
+
+    const PreprocessResultUVE defaultBranch = PreprocessShaderSourceUVE(fileSystem, "shaders/x.glsl", std::string(source), {});
+    ASSERT_TRUE(defaultBranch.success);
+    EXPECT_NE(defaultBranch.resolvedSource.find("branch_default"), std::string::npos);
+    EXPECT_EQ(defaultBranch.resolvedSource.find("branch_one"), std::string::npos);
+    EXPECT_EQ(defaultBranch.resolvedSource.find("branch_two"), std::string::npos);
+
+    const PreprocessResultUVE oneBranch =
+        PreprocessShaderSourceUVE(fileSystem, "shaders/x.glsl", std::string(source), {{"UVE_MODE", "1"}});
+    ASSERT_TRUE(oneBranch.success);
+    EXPECT_NE(oneBranch.resolvedSource.find("branch_one"), std::string::npos);
+    EXPECT_EQ(oneBranch.resolvedSource.find("branch_two"), std::string::npos);
+
+    const PreprocessResultUVE twoBranch =
+        PreprocessShaderSourceUVE(fileSystem, "shaders/x.glsl", std::string(source), {{"UVE_MODE", "2"}});
+    ASSERT_TRUE(twoBranch.success);
+    EXPECT_NE(twoBranch.resolvedSource.find("branch_two"), std::string::npos);
+    EXPECT_EQ(twoBranch.resolvedSource.find("branch_one"), std::string::npos);
+}
+
+TEST(ShaderPreprocessorUVETest, IfNumericMacro_EvaluatesIntegerDefinitions) {
+    FakeFileSystemUVE fileSystem;
+    constexpr std::string_view source =
+        "#define UVE_QUALITY 3\n#if UVE_QUALITY > 1 && UVE_QUALITY != 4\nhigh();\n#else\nlow();\n#endif\n"
+        "#if 0\nnever();\n#endif\n";
+
+    const PreprocessResultUVE result = PreprocessShaderSourceUVE(fileSystem, "shaders/x.glsl", std::string(source), {});
+
+    ASSERT_TRUE(result.success);
+    EXPECT_NE(result.resolvedSource.find("high"), std::string::npos);
+    EXPECT_EQ(result.resolvedSource.find("low"), std::string::npos);
+    EXPECT_EQ(result.resolvedSource.find("never"), std::string::npos);
+}
+
+TEST(ShaderPreprocessorUVETest, MalformedIfExpression_FailsCleanly) {
+    FakeFileSystemUVE fileSystem;
+    const PreprocessResultUVE result =
+        PreprocessShaderSourceUVE(fileSystem, "shaders/x.glsl", "#if defined(\nvoid main() {}\n#endif\n", {});
+
+    EXPECT_FALSE(result.success);
+}
+
+TEST(ShaderPreprocessorUVETest, UnmatchedElif_FailsCleanly) {
+    FakeFileSystemUVE fileSystem;
+    const PreprocessResultUVE result =
+        PreprocessShaderSourceUVE(fileSystem, "shaders/x.glsl", "#elif defined(UVE_A)\nvoid main() {}\n", {});
+
+    EXPECT_FALSE(result.success);
+}
+
 TEST(ShaderPreprocessorUVETest, IfndefUndefined_KeepsTrueBranch) {
     FakeFileSystemUVE fileSystem;
     constexpr std::string_view source = "#ifndef UVE_TEST_UNDEFINED_FLAG\nkeep_this();\n#else\ndrop_this();\n#endif\n";
