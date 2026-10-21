@@ -8,6 +8,7 @@
 
 #include "uve/audio/audio_attenuation_model_uve.h"
 #include "uve/audio/audio_mixer_group_uve.h"
+#include "uve/audio/audio_spatialization_uve.h"
 
 namespace UVE::Audio {
 
@@ -27,6 +28,19 @@ struct AudioSourceDescUVE {
     float minDistance = 1.0F;
     float maxDistance = 25.0F;
     AudioAttenuationModelUVE attenuationModel = AudioAttenuationModelUVE::Linear;
+
+    /// Directional-emitter cone, in full cone angles measured from `coneDirection`. The defaults
+    /// describe an omnidirectional source, so leaving them alone reproduces the old behaviour
+    /// exactly.
+    float coneInnerAngleDegrees = 360.0F;
+    float coneOuterAngleDegrees = 360.0F;
+    float coneOuterGain = 1.0F;
+    Math::Vector3UVE coneDirection{0.0F, 0.0F, -1.0F};
+
+    /// Doppler strength: 1 is the physically correct shift for a source moving through air, 0
+    /// disables it for this source. Bounded to [0, 1] because exaggerating it is a stylistic choice
+    /// this engine does not expose yet.
+    float dopplerFactor = 1.0F;
 };
 
 [[nodiscard]] inline bool IsAudioSourceDescValidUVE(const AudioSourceDescUVE& source) noexcept {
@@ -35,8 +49,21 @@ struct AudioSourceDescUVE {
                             std::isfinite(source.maxDistance) && source.maxDistance > source.minDistance);
     const bool attenuationModelValid = source.attenuationModel == AudioAttenuationModelUVE::Linear ||
                                        source.attenuationModel == AudioAttenuationModelUVE::InverseSquare;
+    // A cone only means something for a positional source; a 2D source ignores these fields
+    // entirely, so it is not forced to carry a sane direction it will never use.
+    const bool coneValid = !source.spatial ||
+                           (std::isfinite(source.coneInnerAngleDegrees) && source.coneInnerAngleDegrees >= 0.0F &&
+                            source.coneInnerAngleDegrees <= 360.0F && std::isfinite(source.coneOuterAngleDegrees) &&
+                            source.coneOuterAngleDegrees >= source.coneInnerAngleDegrees &&
+                            source.coneOuterAngleDegrees <= 360.0F && std::isfinite(source.coneOuterGain) &&
+                            source.coneOuterGain >= 0.0F && source.coneOuterGain <= 1.0F &&
+                            std::isfinite(source.coneDirection.x) && std::isfinite(source.coneDirection.y) &&
+                            std::isfinite(source.coneDirection.z) &&
+                            Math::LengthSquaredUVE(source.coneDirection) > 1.0e-12F);
+    const bool dopplerValid = std::isfinite(source.dopplerFactor) && source.dopplerFactor >= 0.0F &&
+                              source.dopplerFactor <= 1.0F;
     return std::isfinite(source.volume) && source.volume >= 0.0F && std::isfinite(source.pitch) &&
-           source.pitch > 0.0F && attenuationModelValid && spatialDistanceValid;
+           source.pitch > 0.0F && attenuationModelValid && spatialDistanceValid && coneValid && dopplerValid;
 }
 
 } // namespace UVE::Audio

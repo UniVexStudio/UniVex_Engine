@@ -3346,7 +3346,7 @@ void EngineCoreUVE::LateUpdate() {
         m_audioSystem->SetListenerOrientationUVE(listenerPose.forward, listenerPose.up);
     }
     m_audioSourceSystem->SyncUVE(*m_entityManager, *m_audioSystem);
-    m_audioSystem->UpdateUVE();
+    m_audioSystem->UpdateUVE(static_cast<float>(m_frameStats.deltaTimeSeconds));
 }
 
 void EngineCoreUVE::Render() {
