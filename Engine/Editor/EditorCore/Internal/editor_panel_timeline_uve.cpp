@@ -1,9 +1,10 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// The Entity Editor's Timeline tab: the clip of the entity's AnimationSequencer as a dope sheet - one
-// row per bone with its keys - under a ruler with a playhead, and a transport that previews the
-// clip on the entity's skeleton while the tab is open. The preview writes the skeleton's runtime
-// pose only, so it never dirties the entity or reaches its file.
+// The Entity Editor's Timeline tab: the clip of the entity's AnimationSequencer as a dope sheet -
+// one row per bone and one per blend-shape track, with their keys - under a ruler with a playhead,
+// and a transport that previews the clip on the entity's skeleton and its meshes while the tab is
+// open. The preview writes runtime state only (the skeleton's pose, the morph components' weights),
+// and puts both back when it stops, so scrubbing never dirties the entity or reaches its file.
 
 #include "uve/editor/editor_uve.h"
 #include "uve/editor/animation_clip_editing_uve.h"
@@ -18,8 +19,11 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -27,18 +31,26 @@
 #include <imgui_internal.h>
 
 #include "uve/asset/animation_clip_asset_uve.h"
+#include "uve/asset/mesh_asset_uve.h"
 #include "uve/component/animation_driver_component_uve.h"
 #include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
+#include "uve/component/mesh_component_uve.h"
+#include "uve/component/morph_target_component_uve.h"
 #include "uve/component/name_component_uve.h"
 #include "uve/objects/3d/animation_sequencer_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
+
+#include "editor_timeline_tracks_uve.h"
 
 namespace UVE::Editor {
 namespace {
 
 constexpr float kTrackListWidthUVE = 220.0F;
 constexpr std::size_t kEventNameBytesUVE = 128U;
+/// How many previewed objects' blend-shape name lists are kept: an editor session previews the
+/// faces around one character, and a bound stops a long session from holding every mesh it saw.
+constexpr std::size_t kMorphNameCacheSizeUVE = 64U;
 constexpr float kRulerHeightUVE = 24.0F;
 constexpr float kRowHeightUVE = 20.0F;
 
@@ -55,6 +67,8 @@ constexpr ImU32 kChannelColourUVE[3] = {IM_COL32(236, 146, 72, 255),  // Positio
                                         IM_COL32(150, 128, 236, 255)}; // Scale: violet
 constexpr const char* kChannelNameUVE[3] = {"Position", "Rotation", "Scale"};
 constexpr ImU32 kEventUVE = IM_COL32(112, 196, 255, 255);
+// Blend-shape keys: a colour of their own, so a facial row never reads as a bone channel.
+constexpr ImU32 kMorphUVE = IM_COL32(214, 132, 206, 255);
 constexpr ImU32 kPlayheadUVE = IM_COL32(236, 86, 86, 255);
 constexpr ImU32 kOutOfRangeUVE = IM_COL32(0, 0, 0, 70);
 
@@ -125,6 +139,9 @@ constexpr ImU32 kOutOfRangeUVE = IM_COL32(0, 0, 0, 70);
 void EditorUVE::StopAnimationTimelinePreviewUVE() {
     m_timeline.playing = false;
     m_timelineOwnsKeys = false;
+    // The blend shapes first, and unconditionally: a skin-less facial clip has no preview skeleton
+    // at all, so tying the restore to one would leave a face frozen mid-word.
+    StopAnimationTimelineMorphPreviewUVE();
     if (m_timeline.previewSkeleton == Scene::kInvalidEntityUVE) {
         return;
     }
@@ -134,6 +151,138 @@ void EditorUVE::StopAnimationTimelinePreviewUVE() {
         entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(m_timeline.previewSkeleton).pose.clear();
     }
     m_timeline.previewSkeleton = Scene::kInvalidEntityUVE;
+}
+
+void EditorUVE::StopAnimationTimelineMorphPreviewUVE() {
+    m_timeline.morphTracksNotPlaying = 0U;
+    if (m_timeline.morphPreview.empty()) {
+        return;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    for (const AnimationTimelineStateUVE::MorphPreviewTargetUVE& target : m_timeline.morphPreview) {
+        if (target.entity == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(target.entity) ||
+            !entityManager.HasComponentUVE<Scene::MorphTargetComponentUVE>(target.entity)) {
+            continue;
+        }
+        // Only the list this preview wrote: `enabled` belongs to the author and stays as it was.
+        entityManager.GetComponentUVE<Scene::MorphTargetComponentUVE>(target.entity).weights = target.previousWeights;
+    }
+    m_timeline.morphPreview.clear();
+}
+
+std::span<const std::string> EditorUVE::TimelineMorphTargetNamesUVE(const Scene::EntityUVE entity) {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (entity == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(entity) ||
+        !entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
+        return {};
+    }
+    const Asset::AssetGuidUVE meshGuid = entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity).meshGuid;
+    if (meshGuid == Asset::AssetGuidUVE{} || meshGuid == Asset::kInvalidAssetGuidUVE) {
+        return {};
+    }
+    for (const AnimationTimelineStateUVE::MorphTargetNamesUVE& cached : m_timeline.morphTargetNames) {
+        if (cached.entity == entity && cached.meshGuid == meshGuid) {
+            return cached.names;
+        }
+    }
+
+    // A .uvmodel is read once per object per mesh, never per frame: the target NAMES are all this
+    // needs, and a face mesh carries as many deltas as it does vertices.
+    AnimationTimelineStateUVE::MorphTargetNamesUVE entry;
+    entry.entity = entity;
+    entry.meshGuid = meshGuid;
+    Asset::MeshAssetUVE mesh;
+    const std::filesystem::path path = m_services->GetAssetDatabaseUVE().ResolveUVE(meshGuid);
+    if (!path.empty() && Asset::LoadMeshAssetUVE(path, mesh)) {
+        entry.names.reserve(mesh.morphTargets.size());
+        for (const Asset::MeshMorphTargetUVE& target : mesh.morphTargets) {
+            entry.names.push_back(target.name);
+        }
+    }
+    if (m_timeline.morphTargetNames.size() >= kMorphNameCacheSizeUVE) {
+        m_timeline.morphTargetNames.erase(m_timeline.morphTargetNames.begin());
+    }
+    m_timeline.morphTargetNames.push_back(std::move(entry));
+    return m_timeline.morphTargetNames.back().names;
+}
+
+void EditorUVE::PreviewAnimationTimelineMorphsUVE(const Asset::AnimationClipAssetUVE& clip,
+                                                  const Scene::EntityUVE root) {
+    if (!clip.HasMorphTracksUVE() || root == Scene::kInvalidEntityUVE) {
+        StopAnimationTimelineMorphPreviewUVE();
+        return;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+
+    // The objects under the root, by name. The walk stops as soon as every name a track asks for
+    // has an answer, and the first object in breadth-first order keeps a name two of them share -
+    // the same rule the scene's own lookups follow.
+    std::unordered_set<std::string> wanted;
+    wanted.reserve(clip.morphWeights.size());
+    for (const Asset::AnimationAssetMorphTrackUVE& track : clip.morphWeights) {
+        wanted.insert(track.node);
+    }
+    std::unordered_map<std::string, Scene::EntityUVE> byName;
+    std::vector<Scene::EntityUVE> queue{root};
+    for (std::size_t next = 0U; next < queue.size() && next < 4096U && byName.size() < wanted.size(); ++next) {
+        const Scene::EntityUVE entity = queue[next];
+        if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(entity)) {
+            const std::string& name = entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name;
+            if (wanted.contains(name)) {
+                byName.emplace(name, entity);
+            }
+        }
+        const std::vector<Scene::EntityUVE> children = sceneGraph.GetChildrenUVE(entityManager, entity);
+        queue.insert(queue.end(), children.begin(), children.end());
+    }
+
+    TimelineMorphSceneUVE scene;
+    scene.entityForNode = [&byName](const std::string_view node) -> std::optional<Scene::EntityUVE> {
+        const auto found = byName.find(std::string{node});
+        return found != byName.end() ? std::optional<Scene::EntityUVE>{found->second} : std::nullopt;
+    };
+    scene.targetNames = [this, &entityManager](const Scene::EntityUVE entity) -> std::span<const std::string> {
+        // Without the component there is nothing to write into, and the preview never adds one: a
+        // preview looks at the scene, it does not author it. Reporting "no shapes" is exactly how
+        // the resolve counts that track as unplayable.
+        if (!entityManager.HasComponentUVE<Scene::MorphTargetComponentUVE>(entity)) {
+            return {};
+        }
+        return TimelineMorphTargetNamesUVE(entity);
+    };
+
+    const TimelineMorphPreviewUVE preview = ResolveTimelineMorphPreviewUVE(clip, m_timeline.timeSeconds, scene);
+
+    // A different set of objects than the one being driven means the clip or the scene moved under
+    // the preview (an undo, a key edit, a renamed object). Put back what the old set held and
+    // capture again from what is there now, so the authored weights are what gets restored.
+    const bool sameTargets =
+        m_timeline.morphPreview.size() == preview.writes.size() &&
+        std::all_of(preview.writes.begin(), preview.writes.end(), [this](const TimelineMorphWriteUVE& write) {
+            return std::any_of(m_timeline.morphPreview.begin(), m_timeline.morphPreview.end(),
+                               [&write](const AnimationTimelineStateUVE::MorphPreviewTargetUVE& target) {
+                                   return target.entity == write.entity;
+                               });
+        });
+    if (!sameTargets) {
+        StopAnimationTimelineMorphPreviewUVE();
+        for (const TimelineMorphWriteUVE& write : preview.writes) {
+            AnimationTimelineStateUVE::MorphPreviewTargetUVE target;
+            target.entity = write.entity;
+            target.previousWeights = entityManager.GetComponentUVE<Scene::MorphTargetComponentUVE>(write.entity).weights;
+            m_timeline.morphPreview.push_back(std::move(target));
+        }
+    }
+    m_timeline.morphTracksNotPlaying = preview.unresolvedTracks;
+
+    for (const TimelineMorphWriteUVE& write : preview.writes) {
+        if (!entityManager.IsAliveUVE(write.entity) ||
+            !entityManager.HasComponentUVE<Scene::MorphTargetComponentUVE>(write.entity)) {
+            continue;
+        }
+        entityManager.GetComponentUVE<Scene::MorphTargetComponentUVE>(write.entity).weights = write.weights;
+    }
 }
 
 void EditorUVE::DrawAnimationTimelineUVE() {
@@ -212,18 +361,21 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         }
     }
 
-    // ---- The skeleton it previews on: the driver's target, else the player's parent, searched down -
+    // ---- Where the preview looks: the driver's target, else the player's parent -------------------
+    // One root for both halves of the preview - the skeleton it poses and the meshes whose blend
+    // shapes it drives - so a clip can never be posed on one rig while its face animates another.
+    Scene::EntityUVE previewRoot = driver.target;
+    if (previewRoot == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(previewRoot)) {
+        previewRoot = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(playerEntity)
+                          ? entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(playerEntity).parent
+                          : Scene::kInvalidEntityUVE;
+    }
+    // ---- The skeleton it previews on: the first one under the root --------------------------------
     Scene::EntityUVE skeletonEntity = Scene::kInvalidEntityUVE;
     {
-        Scene::EntityUVE root = driver.target;
-        if (root == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(root)) {
-            root = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(playerEntity)
-                       ? entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(playerEntity).parent
-                       : Scene::kInvalidEntityUVE;
-        }
         std::vector<Scene::EntityUVE> queue;
-        if (root != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(root)) {
-            queue.push_back(root);
+        if (previewRoot != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(previewRoot)) {
+            queue.push_back(previewRoot);
         }
         for (std::size_t next = 0U; next < queue.size() && next < 4096U; ++next) {
             if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(queue[next])) {
@@ -450,75 +602,73 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         }
     }
 
-    // ---- Rows: events first, then each bone with a track, in the skeleton's order -------------------
-    // A track row shows all three channels as stacked lanes; opened, it is followed by one row per
-    // channel.
+    // ---- Rows: events, the clip's own transform, the bones, the blend shapes -----------------------
+    // Which rows exist, in what order, and under which filter is a rule worth testing, so it lives
+    // in editor_timeline_tracks_uve.h; this function only turns those rows into widgets. A track row
+    // stacks its three channels as thin lanes; opened, it is followed by one row per channel.
     struct RowUVE {
         std::string label;
         int depth = 0;
         const std::vector<Asset::AnimationAssetSampleUVE>* samples = nullptr;
+        /// The blend-shape track a Morph row draws, else null. Such a row has no channels and no
+        /// key editing: it shows where a shape moves, which is what makes a facial clip's timing
+        /// visible at all.
+        const Asset::AnimationAssetMorphTrackUVE* morph = nullptr;
         bool events = false;
         /// -1 for the track row itself, else the channel (0 position, 1 rotation, 2 scale).
         int channel = -1;
         std::string track;
     };
-    std::vector<RowUVE> rows;
-    const auto isExpanded = [this](const std::string& track) {
-        return std::find(m_timeline.expandedTracks.begin(), m_timeline.expandedTracks.end(), track) !=
-               m_timeline.expandedTracks.end();
-    };
-    const auto pushTrack = [&rows, &isExpanded](const std::string& label, const int depth,
-                                                const std::vector<Asset::AnimationAssetSampleUVE>* samples) {
-        rows.push_back(RowUVE{label, depth, samples, false, -1, label});
-        if (isExpanded(label)) {
-            for (int channel = 0; channel < 3; ++channel) {
-                rows.push_back(RowUVE{kChannelNameUVE[channel], depth + 1, samples, false, channel, label});
-            }
-        }
-    };
-    // Always there, so the first event can be added: double-click the row.
-    rows.push_back(RowUVE{"Events", 0, nullptr, true, -1, {}});
-    if (!clip->samples.empty()) {
-        pushTrack("Transform", 0, &clip->samples);
-    }
-    std::unordered_map<std::string, const Asset::AnimationAssetBoneTrackUVE*> tracks;
-    for (const Asset::AnimationAssetBoneTrackUVE& track : clip->bones) {
-        tracks.emplace(track.bone, &track);
-    }
-    const auto matches = [this](const std::string& label) {
-        if (m_timeline.filter.empty()) {
-            return true;
-        }
-        const auto lower = [](std::string text) {
-            std::transform(text.begin(), text.end(), text.begin(),
-                           [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            return text;
-        };
-        return lower(label).find(lower(m_timeline.filter)) != std::string::npos;
-    };
     const Scene::Skeleton3DComponentUVE* const skeleton =
         skeletonEntity != Scene::kInvalidEntityUVE
             ? &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity)
             : nullptr;
+    TimelineSkeletonUVE rowSkeleton;
     if (skeleton != nullptr) {
+        rowSkeleton.present = true;
         std::vector<int> depth(skeleton->bones.size(), 0);
+        rowSkeleton.bones.reserve(skeleton->bones.size());
         for (std::size_t index = 0U; index < skeleton->bones.size(); ++index) {
             const Scene::SkeletonBoneUVE& bone = skeleton->bones[index];
             if (bone.parentIndex >= 0 && static_cast<std::size_t>(bone.parentIndex) < index) {
                 depth[index] = depth[static_cast<std::size_t>(bone.parentIndex)] + 1;
             }
-            const auto found = tracks.find(bone.name);
-            if (found != tracks.end() && matches(bone.name)) {
-                pushTrack(bone.name, depth[index], &found->second->samples);
-            }
-        }
-    } else {
-        for (const Asset::AnimationAssetBoneTrackUVE& track : clip->bones) {
-            if (matches(track.bone)) {
-                pushTrack(track.bone, 0, &track.samples);
-            }
+            rowSkeleton.bones.push_back(TimelineSkeletonUVE::BoneUVE{bone.name, depth[index]});
         }
     }
+    const std::vector<TimelineRowUVE> plan =
+        BuildTimelineRowsUVE(*clip, rowSkeleton, m_timeline.filter, m_timeline.expandedTracks);
+    std::vector<RowUVE> rows;
+    rows.reserve(plan.size());
+    for (const TimelineRowUVE& spec : plan) {
+        RowUVE row;
+        row.label = spec.label;
+        row.depth = spec.depth;
+        row.channel = spec.channel;
+        row.track = spec.track;
+        row.events = spec.kind == TimelineRowKindUVE::Events;
+        switch (spec.kind) {
+            case TimelineRowKindUVE::Transform:
+            case TimelineRowKindUVE::TransformChannel:
+                row.samples = &clip->samples;
+                break;
+            case TimelineRowKindUVE::Bone:
+            case TimelineRowKindUVE::BoneChannel:
+                // The plan resolved the index against this very clip, so it cannot miss.
+                row.samples = &clip->bones[spec.trackIndex].samples;
+                break;
+            case TimelineRowKindUVE::Morph:
+                row.morph = &clip->morphWeights[spec.trackIndex];
+                break;
+            case TimelineRowKindUVE::Events:
+                break;
+        }
+        rows.push_back(std::move(row));
+    }
+    const auto isExpanded = [this](const std::string& track) {
+        return std::find(m_timeline.expandedTracks.begin(), m_timeline.expandedTracks.end(), track) !=
+               m_timeline.expandedTracks.end();
+    };
 
     // ---- Preview on the skeleton ------------------------------------------------------------------
     if (skeletonEntity != m_timeline.previewSkeleton) {
@@ -530,6 +680,9 @@ void EditorUVE::DrawAnimationTimelineUVE() {
             m_timeline.previewSkeleton = skeletonEntity;
         }
     }
+    // The blend shapes play whether or not there is a rig: a skin-less lip-sync clip has no skeleton
+    // at all, and that is the clip this row exists for.
+    PreviewAnimationTimelineMorphsUVE(*clip, previewRoot);
 
     // ---- Track area --------------------------------------------------------------------------------
     const float bottomBarHeight = ImGui::GetFrameHeight() + 6.0F;
@@ -627,15 +780,20 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         for (int index = clipper.DisplayStart; index < clipper.DisplayEnd; ++index) {
             const RowUVE& row = rows[static_cast<std::size_t>(index)];
             const float y = rowsOrigin.y + static_cast<float>(index) * kRowHeightUVE;
-            // The selected bone's row, or its channel row when a channel was picked.
-            const bool selected = !row.events && row.track == m_selectedSkeletonBone &&
+            // The selected bone's row, or its channel row when a channel was picked. A blend-shape
+            // row is never selected as a bone: its name is a node, not a joint.
+            const bool selected = !row.events && row.morph == nullptr && row.track == m_selectedSkeletonBone &&
                                   row.channel == m_timeline.curveChannel;
             const ImU32 background = selected ? kRowSelectedUVE : (index % 2 == 0 ? kRowEvenUVE : kRowOddUVE);
             rowDraw->AddRectFilled(ImVec2{origin.x, y}, ImVec2{origin.x + area.x, y + kRowHeightUVE}, background);
             ImGui::SetCursorScreenPos(ImVec2{origin.x, y});
             ImGui::PushID(index);
             const float indent = 8.0F + static_cast<float>(std::min(row.depth, 24)) * 10.0F;
-            if (ImGui::InvisibleButton("##row", ImVec2{kTrackListWidthUVE, kRowHeightUVE}) && !row.events) {
+            // A blend-shape row's hit area still exists - it swallows the click instead of letting it
+            // fall through to the tab - but it does nothing: there are no channels to open and the
+            // node is not a bone to select.
+            if (ImGui::InvisibleButton("##row", ImVec2{kTrackListWidthUVE, kRowHeightUVE}) && !row.events &&
+                row.morph == nullptr) {
                 // The arrow opens the track into its channels; the name selects the bone.
                 const bool onArrow = row.channel < 0 && ImGui::GetIO().MousePos.x < origin.x + indent + 12.0F;
                 if (onArrow) {
@@ -655,6 +813,12 @@ void EditorUVE::DrawAnimationTimelineUVE() {
             rowDraw->PushClipRect(ImVec2{origin.x, y}, ImVec2{keysLeft - 6.0F, y + kRowHeightUVE}, true);
             if (row.events) {
                 rowDraw->AddText(ImVec2{origin.x + indent, y + 3.0F}, kEventUVE, row.label.c_str());
+            } else if (row.morph != nullptr) {
+                // Swatch where a bone row has its arrow, so every row's name starts at the same x.
+                const float sx = origin.x + indent + 2.0F;
+                rowDraw->AddRectFilled(ImVec2{sx, y + 6.0F}, ImVec2{sx + 8.0F, y + 14.0F}, kMorphUVE, 2.0F);
+                rowDraw->AddText(ImVec2{origin.x + indent + 12.0F, y + 3.0F}, ImGui::GetColorU32(ImGuiCol_Text),
+                                 row.label.c_str());
             } else if (row.channel < 0) {
                 const bool open = isExpanded(row.track);
                 const float ax = origin.x + indent + 3.0F;
@@ -759,6 +923,49 @@ void EditorUVE::DrawAnimationTimelineUVE() {
                             }
                         }
                     }
+                } else if (row.morph != nullptr && !row.morph->samples.empty()) {
+                    // One lane, one diamond per key. A facial clip is usually baked, so at a fitting
+                    // zoom neighbouring keys touch and merge into the span they hold - the same rule
+                    // the channel lanes follow.
+                    const auto& samples = row.morph->samples;
+                    const double spacing = samples.size() > 1U
+                                               ? (samples.back().timeSeconds - samples.front().timeSeconds) /
+                                                     static_cast<double>(samples.size() - 1U)
+                                               : duration;
+                    const bool dense = spacing * scale < 7.0;
+                    const float laneHeight = kRowHeightUVE - 6.0F;
+                    const float laneMid = y + 3.0F + laneHeight * 0.5F;
+                    const float half = std::max(2.0F, laneHeight * 0.5F - 1.5F);
+                    const ImU32 span = (kMorphUVE & 0x00FFFFFFU) | (110U << 24);
+                    const auto shows = [&](const std::size_t i) { return ShowsMorphKeyUVE(*row.morph, i); };
+                    if (dense) {
+                        std::size_t i = 0U;
+                        while (i < samples.size()) {
+                            if (!shows(i)) {
+                                ++i;
+                                continue;
+                            }
+                            std::size_t j = i;
+                            while (j + 1U < samples.size() && shows(j + 1U)) {
+                                ++j;
+                            }
+                            rowDraw->AddRectFilled(ImVec2{toX(samples[i].timeSeconds), laneMid - half * 0.6F},
+                                                   ImVec2{std::max(toX(samples[j].timeSeconds),
+                                                                   toX(samples[i].timeSeconds) + 2.0F),
+                                                          laneMid + half * 0.6F},
+                                                   span, 1.5F);
+                            i = j + 1U;
+                        }
+                    } else {
+                        for (std::size_t i = 0U; i < samples.size(); ++i) {
+                            const float x = toX(samples[i].timeSeconds);
+                            if (x < keysLeft - 6.0F || x > keysLeft + keysWidth + 6.0F || !shows(i)) {
+                                continue;
+                            }
+                            rowDraw->AddQuadFilled(ImVec2{x, laneMid - half}, ImVec2{x + half, laneMid},
+                                                   ImVec2{x, laneMid + half}, ImVec2{x - half, laneMid}, kMorphUVE);
+                        }
+                    }
                 }
                 // Selected keys: a white outline, drawn where a drag would put them.
                 if (!row.events && row.samples != nullptr && !m_timeline.selectedKeys.empty()) {
@@ -811,7 +1018,9 @@ void EditorUVE::DrawAnimationTimelineUVE() {
                             m_timeline.eventDragFromX = mouseX;
                         }
                     }
-                } else if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+                } else if (row.morph == nullptr && ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+                    // A blend-shape key is shown, not edited: its row is not a selection target, and
+                    // clicking it must not start a box over its neighbours either.
                     clickedRow = index;
                     m_timeline.selectedEvent = -1;
                 }
@@ -1309,8 +1518,24 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     ImGui::AlignTextToFramePadding();
     ImGui::Text("%s", clipLabel.c_str());
     ImGui::SameLine();
-    ImGui::TextDisabled("%.2f s  |  %ld frames  |  %.0f fps  |  %zu tracks", clip->durationSeconds, frameOf(duration),
-                        frameRate, clip->bones.size());
+    if (clip->HasMorphTracksUVE()) {
+        ImGui::TextDisabled("%.2f s  |  %ld frames  |  %.0f fps  |  %zu tracks  |  %zu blend shapes",
+                            clip->durationSeconds, frameOf(duration), frameRate, clip->bones.size(),
+                            clip->morphWeights.size());
+    } else {
+        ImGui::TextDisabled("%.2f s  |  %ld frames  |  %.0f fps  |  %zu tracks", clip->durationSeconds,
+                            frameOf(duration), frameRate, clip->bones.size());
+    }
+    if (m_timeline.morphTracksNotPlaying > 0U) {
+        // A face that does not move should say why, not look like a broken preview.
+        ImGui::SameLine(0.0F, 12.0F);
+        ImGui::TextDisabled("%zu blend-shape %s not playing", m_timeline.morphTracksNotPlaying,
+                            m_timeline.morphTracksNotPlaying == 1U ? "track is" : "tracks are");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("A track plays when an object under the preview root has its node name, a Mesh, and a "
+                              "Morph Targets component whose shape count matches the clip's weights.");
+        }
+    }
     if (!m_timeline.selectedKeys.empty() || !m_timeline.status.empty()) {
         ImGui::SameLine(0.0F, 16.0F);
         if (m_timeline.status.empty()) {
