@@ -290,36 +290,48 @@ Math::Matrix4x4UVE ShadowAtlasManagerUVE::ComputeSpotLightMatrixUVE(
     return proj * view;
 }
 
-Math::Vector2UVE ShadowAtlasManagerUVE::OctahedralEncodeUVE(const Math::Vector3UVE& direction) noexcept {
-    const float l1 = std::abs(direction.x) + std::abs(direction.y) + std::abs(direction.z);
-    if (l1 <= 1.0e-5F) {
-        return Math::Vector2UVE{0.5F, 0.5F};
+Math::Matrix4x4UVE ShadowAtlasManagerUVE::ComputePointLightFaceMatrixUVE(
+    const Math::Vector3UVE& position, const std::uint32_t faceIndex, const float range,
+    const float nearPlane) noexcept {
+    constexpr float kFaceFovYRadiansUVE = 3.14159265358979323846F * 0.5F;
+    const auto table = PointLightShadowFaceTableUVE();
+    const PointShadowFaceBasisUVE& basis =
+        table[std::min(faceIndex, kPointShadowFaceCountUVE - 1U)];
+
+    // View matrix built straight from the basis instead of a quaternion: the basis is already
+    // orthonormal, and going through an Euler/quaternion round trip would only add a place for the
+    // face table and the rendered image to disagree.
+    Math::Matrix4x4UVE view = Math::Matrix4x4UVE::IdentityUVE();
+    const Math::Vector3UVE rows[3] = {basis.right, basis.up, Math::Vector3UVE{-basis.forward.x,
+                                                                            -basis.forward.y,
+                                                                            -basis.forward.z}};
+    for (int row = 0; row < 3; ++row) {
+        view.m[row][0] = rows[row].x;
+        view.m[row][1] = rows[row].y;
+        view.m[row][2] = rows[row].z;
+        view.m[row][3] = -(rows[row].x * position.x + rows[row].y * position.y +
+                           rows[row].z * position.z);
     }
-    float px = direction.x / l1;
-    float py = direction.y / l1;
-    if (direction.z < 0.0F) {
-        const float oldPx = px;
-        px = (1.0F - std::abs(py)) * (oldPx >= 0.0F ? 1.0F : -1.0F);
-        py = (1.0F - std::abs(oldPx)) * (py >= 0.0F ? 1.0F : -1.0F);
-    }
-    return Math::Vector2UVE{px * 0.5F + 0.5F, py * 0.5F + 0.5F};
+
+    const float safeNear = std::max(nearPlane, 0.01F);
+    const float safeFar = std::max(range, safeNear + 0.1F);
+    const Math::Matrix4x4UVE projection =
+        Math::Matrix4x4UVE::PerspectiveUVE(kFaceFovYRadiansUVE, 1.0F, safeNear, safeFar);
+    return projection * view;
 }
 
-Math::Vector3UVE ShadowAtlasManagerUVE::OctahedralDecodeUVE(const Math::Vector2UVE& uv) noexcept {
-    float px = uv.x * 2.0F - 1.0F;
-    float py = uv.y * 2.0F - 1.0F;
-    float pz = 1.0F - std::abs(px) - std::abs(py);
-    if (pz < 0.0F) {
-        const float oldPx = px;
-        px = (1.0F - std::abs(py)) * (oldPx >= 0.0F ? 1.0F : -1.0F);
-        py = (1.0F - std::abs(oldPx)) * (py >= 0.0F ? 1.0F : -1.0F);
+std::uint32_t ShadowAtlasManagerUVE::PointLightShadowFaceForDirectionUVE(
+    const Math::Vector3UVE& direction) noexcept {
+    const float ax = std::abs(direction.x);
+    const float ay = std::abs(direction.y);
+    const float az = std::abs(direction.z);
+    if (ax >= ay && ax >= az) {
+        return direction.x >= 0.0F ? 0U : 1U;
     }
-    const Math::Vector3UVE dir{px, py, pz};
-    const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
-    if (len <= 1.0e-5F) {
-        return Math::Vector3UVE{0.0F, 0.0F, 1.0F};
+    if (ay >= az) {
+        return direction.y >= 0.0F ? 2U : 3U;
     }
-    return Math::Vector3UVE{dir.x / len, dir.y / len, dir.z / len};
+    return direction.z >= 0.0F ? 4U : 5U;
 }
 
 Math::Vector4UVE ShadowAtlasManagerUVE::ComputeTileRectUVE(

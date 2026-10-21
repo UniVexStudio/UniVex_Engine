@@ -3,6 +3,7 @@
 
 #include "uve/render_systems/shadow_atlas_manager_uve.h"
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -12,10 +13,23 @@
 
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/math/vector4_uve.h"
 #include "uve/rhi_null/null_render_device_uve.h"
 
 namespace UVE::Render::Tests {
 namespace {
+
+/// Full clip-space transform (x, y, z, w). Matrix4x4UVE exposes no matrix*vec4 operator and
+/// TransformPointUVE has already divided by w, which is exactly the value the depth assertions need.
+[[nodiscard]] Math::Vector4UVE TransformClipUVE(const Math::Matrix4x4UVE& matrix,
+                                                const Math::Vector3UVE& point) noexcept {
+    Math::Vector4UVE result{};
+    result.x = matrix.m[0][0] * point.x + matrix.m[0][1] * point.y + matrix.m[0][2] * point.z + matrix.m[0][3];
+    result.y = matrix.m[1][0] * point.x + matrix.m[1][1] * point.y + matrix.m[1][2] * point.z + matrix.m[1][3];
+    result.z = matrix.m[2][0] * point.x + matrix.m[2][1] * point.y + matrix.m[2][2] * point.z + matrix.m[2][3];
+    result.w = matrix.m[3][0] * point.x + matrix.m[3][1] * point.y + matrix.m[3][2] * point.z + matrix.m[3][3];
+    return result;
+}
 
 TEST(ShadowAtlasManagerUVETest, InitializesEmptyInCpuMode) {
     ShadowAtlasManagerUVE manager(nullptr);
@@ -228,30 +242,140 @@ TEST(ShadowAtlasManagerUVETest, SpotLightPerspectiveMatrixMath) {
     EXPECT_NE(matrix.m[3][2], 0.0F); // Perspective projection has non-zero w-term generator
 }
 
-TEST(ShadowAtlasManagerUVETest, OctahedralEncodingAndDecodingRoundTrip) {
-    const std::vector<Math::Vector3UVE> testDirections = {
-        Math::Vector3UVE{1.0F, 0.0F, 0.0F},
-        Math::Vector3UVE{-1.0F, 0.0F, 0.0F},
-        Math::Vector3UVE{0.0F, 1.0F, 0.0F},
-        Math::Vector3UVE{0.0F, -1.0F, 0.0F},
-        Math::Vector3UVE{0.0F, 0.0F, 1.0F},
-        Math::Vector3UVE{0.0F, 0.0F, -1.0F},
-        Math::NormalizeUVE(Math::Vector3UVE{1.0F, 1.0F, 1.0F}),
-        Math::NormalizeUVE(Math::Vector3UVE{-1.0F, 2.0F, -3.0F}),
-        Math::NormalizeUVE(Math::Vector3UVE{0.5F, -0.7F, 0.4F}),
+TEST(ShadowAtlasManagerUVETest, PointFaceTableIsSixRightHandedOrthonormalBases) {
+    const auto table = PointLightShadowFaceTableUVE();
+    ASSERT_EQ(table.size(), static_cast<std::size_t>(kPointShadowFaceCountUVE));
+    for (std::size_t face = 0; face < table.size(); ++face) {
+        const PointShadowFaceBasisUVE& basis = table[face];
+        EXPECT_NEAR(Math::LengthUVE(basis.forward), 1.0F, 1.0e-6F) << "face " << face;
+        EXPECT_NEAR(Math::LengthUVE(basis.right), 1.0F, 1.0e-6F) << "face " << face;
+        EXPECT_NEAR(Math::LengthUVE(basis.up), 1.0F, 1.0e-6F) << "face " << face;
+        EXPECT_NEAR(Math::DotUVE(basis.right, basis.up), 0.0F, 1.0e-6F) << "face " << face;
+        EXPECT_NEAR(Math::DotUVE(basis.right, basis.forward), 0.0F, 1.0e-6F) << "face " << face;
+        EXPECT_NEAR(Math::DotUVE(basis.up, basis.forward), 0.0F, 1.0e-6F) << "face " << face;
+        // Right-handed: right x up == forward. A flipped basis would mirror the face's image, and a
+        // mirrored depth tile still looks like a shadow - just one belonging to geometry that is not
+        // there.
+        const Math::Vector3UVE cross = Math::CrossUVE(basis.right, basis.up);
+        EXPECT_NEAR(cross.x, basis.forward.x, 1.0e-6F) << "face " << face;
+        EXPECT_NEAR(cross.y, basis.forward.y, 1.0e-6F) << "face " << face;
+        EXPECT_NEAR(cross.z, basis.forward.z, 1.0e-6F) << "face " << face;
+    }
+    // All six axes are covered exactly once - a duplicated forward would leave half the sphere
+    // unshadowed while every individual face still looked correct.
+    const std::array<Math::Vector3UVE, 6> axes = {
+        Math::Vector3UVE{1.0F, 0.0F, 0.0F}, Math::Vector3UVE{-1.0F, 0.0F, 0.0F},
+        Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::Vector3UVE{0.0F, -1.0F, 0.0F},
+        Math::Vector3UVE{0.0F, 0.0F, 1.0F}, Math::Vector3UVE{0.0F, 0.0F, -1.0F}};
+    for (std::size_t face = 0; face < table.size(); ++face) {
+        const float dot = Math::DotUVE(table[face].forward, axes[face]);
+        EXPECT_NEAR(dot, 1.0F, 1.0e-6F) << "face " << face << " faces the wrong way";
+    }
+}
+
+TEST(ShadowAtlasManagerUVETest, PointFaceSelectionUsesTheDominantAxis) {
+    const auto faceFor = [](const Math::Vector3UVE& direction) {
+        return ShadowAtlasManagerUVE::PointLightShadowFaceForDirectionUVE(direction);
     };
+    EXPECT_EQ(faceFor(Math::Vector3UVE{1.0F, 0.0F, 0.0F}), 0U);
+    EXPECT_EQ(faceFor(Math::Vector3UVE{-1.0F, 0.0F, 0.0F}), 1U);
+    EXPECT_EQ(faceFor(Math::Vector3UVE{0.0F, 1.0F, 0.0F}), 2U);
+    EXPECT_EQ(faceFor(Math::Vector3UVE{0.0F, -1.0F, 0.0F}), 3U);
+    EXPECT_EQ(faceFor(Math::Vector3UVE{0.0F, 0.0F, 1.0F}), 4U);
+    EXPECT_EQ(faceFor(Math::Vector3UVE{0.0F, 0.0F, -1.0F}), 5U);
+    // Ties break X, then Y, then Z - the same order the shader's own selector uses.
+    EXPECT_EQ(faceFor(Math::Vector3UVE{1.0F, 1.0F, 1.0F}), 0U);
+    EXPECT_EQ(faceFor(Math::Vector3UVE{0.0F, 1.0F, 1.0F}), 2U);
+    // A near-axis direction still lands on the face it is nearest to.
+    EXPECT_EQ(faceFor(Math::Vector3UVE{0.6F, 0.5F, -0.4F}), 0U);
+}
 
-    for (const auto& originalDir : testDirections) {
-        const Math::Vector2UVE uv = ShadowAtlasManagerUVE::OctahedralEncodeUVE(originalDir);
-        EXPECT_GE(uv.x, 0.0F);
-        EXPECT_LE(uv.x, 1.0F);
-        EXPECT_GE(uv.y, 0.0F);
-        EXPECT_LE(uv.y, 1.0F);
+TEST(ShadowAtlasManagerUVETest, PointFaceMatrixProjectsTheFaceAxisThroughTheTileCentre) {
+    constexpr float range = 12.0F;
+    const Math::Vector3UVE position{3.0F, -2.0F, 4.0F};
+    const auto table = PointLightShadowFaceTableUVE();
+    for (std::size_t face = 0; face < table.size(); ++face) {
+        const Math::Matrix4x4UVE matrix =
+            ShadowAtlasManagerUVE::ComputePointLightFaceMatrixUVE(position, static_cast<std::uint32_t>(face),
+                                                                  range, 0.1F);
+        // A point one unit down the face axis must land dead centre in the tile, one unit in front
+        // of the light - the exact sample the shader's face selector performs.
+        const Math::Vector3UVE target{position.x + table[face].forward.x,
+                                      position.y + table[face].forward.y,
+                                      position.z + table[face].forward.z};
+        const Math::Vector4UVE clip = TransformClipUVE(matrix, target);
+        ASSERT_GT(clip.w, 0.0F) << "face " << face;
+        EXPECT_NEAR(clip.x / clip.w, 0.0F, 1.0e-5F) << "face " << face;
+        EXPECT_NEAR(clip.y / clip.w, 0.0F, 1.0e-5F) << "face " << face;
+        const float normalizedDepth = clip.z / clip.w;
+        EXPECT_GT(normalizedDepth, 0.0F) << "face " << face;
+        EXPECT_LT(normalizedDepth, 1.0F) << "face " << face;
 
-        const Math::Vector3UVE reconstructed = ShadowAtlasManagerUVE::OctahedralDecodeUVE(uv);
-        const float dot = Math::DotUVE(originalDir, reconstructed);
-        EXPECT_GT(dot, 0.999F) << "Direction failed round-trip fidelity: ("
-                               << originalDir.x << ", " << originalDir.y << ", " << originalDir.z << ")";
+        // The face's own "right" always lands on +X in the tile, never mirrored.
+        const Math::Vector3UVE rightTarget{position.x + table[face].forward.x + table[face].right.x,
+                                           position.y + table[face].forward.y + table[face].right.y,
+                                           position.z + table[face].forward.z + table[face].right.z};
+        const Math::Vector4UVE rightClip = TransformClipUVE(matrix, rightTarget);
+        ASSERT_GT(rightClip.w, 0.0F) << "face " << face;
+        EXPECT_GT(rightClip.x / rightClip.w, 0.0F) << "face " << face;
+
+        // w is the axis distance, which is what the shader derives its depth from - not the euclidean
+        // distance to the fragment.
+        const Math::Vector4UVE axisClip = TransformClipUVE(matrix, target);
+        EXPECT_NEAR(axisClip.w, 1.0F, 1.0e-5F) << "face " << face;
+    }
+}
+
+TEST(ShadowAtlasManagerUVETest, PointFaceMatrixUsesASquareNinetyDegreeProjection) {
+    const Math::Matrix4x4UVE matrix =
+        ShadowAtlasManagerUVE::ComputePointLightFaceMatrixUVE({0.0F, 0.0F, 0.0F}, 0U, 10.0F, 0.1F);
+    const PointShadowFaceBasisUVE basis = PointLightShadowFaceTableUVE()[0];
+    // 90 degrees vertically means tan(fov/2) == 1, so the face's extent at distance d is exactly d:
+    // the direction (forward + right + up) must land on the tile's corner, and x == y proves the
+    // pixels are square. Reading m[0][0] instead would only measure the basis rotation.
+    const Math::Vector3UVE corner{basis.forward.x + basis.right.x + basis.up.x,
+                                  basis.forward.y + basis.right.y + basis.up.y,
+                                  basis.forward.z + basis.right.z + basis.up.z};
+    const Math::Vector4UVE clip = TransformClipUVE(matrix, corner);
+    ASSERT_GT(clip.w, 0.0F);
+    const float ndcX = clip.x / clip.w;
+    const float ndcY = clip.y / clip.w;
+    EXPECT_NEAR(ndcX, 1.0F, 1.0e-5F);
+    EXPECT_NEAR(ndcX, ndcY, 1.0e-6F);
+}
+
+TEST(ShadowAtlasManagerUVETest, PointFaceProjectionMatchesTheShaderNdcRule) {
+    // The shader cannot call the matrix; it derives the same sample from the face basis:
+    //   ndc = (dot(dir, right), dot(dir, up)) / dot(dir, forward)
+    // with `dir` the normalized direction from the light. This pins that rule to what the face's
+    // matrix actually projects - if the two ever disagree, the shader samples a different texel
+    // than the pass wrote, and the artifact looks like a shadow offset rather than a math error.
+    constexpr float range = 20.0F;
+    const Math::Vector3UVE position{1.0F, -3.0F, 2.0F};
+    const auto table = PointLightShadowFaceTableUVE();
+    for (std::size_t face = 0; face < table.size(); ++face) {
+        const Math::Matrix4x4UVE matrix = ShadowAtlasManagerUVE::ComputePointLightFaceMatrixUVE(
+            position, static_cast<std::uint32_t>(face), range, 0.1F);
+        const PointShadowFaceBasisUVE& basis = table[face];
+        // Deliberately asymmetric offsets so a sign error cannot cancel out.
+        for (const float along : {1.0F, 4.0F, 11.0F}) {
+            const Math::Vector3UVE offset{basis.forward.x * along + basis.right.x * 0.3F * along +
+                                              basis.up.x * -0.2F * along,
+                                          basis.forward.y * along + basis.right.y * 0.3F * along +
+                                              basis.up.y * -0.2F * along,
+                                          basis.forward.z * along + basis.right.z * 0.3F * along +
+                                              basis.up.z * -0.2F * along};
+            const Math::Vector3UVE world{position.x + offset.x, position.y + offset.y,
+                                         position.z + offset.z};
+            const Math::Vector4UVE clip = TransformClipUVE(matrix, world);
+            ASSERT_GT(clip.w, 0.0F) << "face " << face << " along " << along;
+            const float expectedNdcX = 0.3F;
+            const float expectedNdcY = -0.2F;
+            EXPECT_NEAR(clip.x / clip.w, expectedNdcX, 1.0e-5F) << "face " << face;
+            EXPECT_NEAR(clip.y / clip.w, expectedNdcY, 1.0e-5F) << "face " << face;
+            // w is the axis distance in metres, the value the shader linearizes into depth.
+            EXPECT_NEAR(clip.w, along, 1.0e-5F) << "face " << face;
+        }
     }
 }
 

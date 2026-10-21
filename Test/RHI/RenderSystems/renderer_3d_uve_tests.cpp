@@ -239,6 +239,18 @@ protected:
         return light;
     }
 
+    /// The point light every point-shadow test uses: five metres in front of the origin camera with
+    /// enough range to contain a mesh at (0, 0, -10). A point light has no cone, so its rotation is
+    /// deliberately left at identity - the six faces come from the atlas' fixed table.
+    static Scene::LightComponentUVE MakePointLightComponentUVE(float range = 20.0F) {
+        Scene::LightComponentUVE light;
+        light.type = Scene::LightTypeUVE::Point;
+        light.color = Math::ColorUVE{1.0F, 1.0F, 1.0F};
+        light.intensity = 4.0F;
+        light.range = range;
+        return light;
+    }
+
     /// Every BeginRenderPass whose depth attachment is a shadow atlas tile, recognised by the
     /// viewport override that only a tile pass sets.
     [[nodiscard]] static std::vector<BeginRenderPassCommandUVE> AtlasTilePassesUVE(
@@ -3944,10 +3956,10 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_SpotLightCasterRecordsAtlasPassesAndUpl
     const Renderer3DFrameDiagnosticsUVE& diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
     EXPECT_EQ(diagnostics.spotShadowCandidates, 1U);
     ASSERT_EQ(diagnostics.spotShadowTilesActive, 1U);
-    EXPECT_EQ(diagnostics.spotShadowTileResolution, 1024U);
+    EXPECT_EQ(diagnostics.shadowAtlasTileResolution, 1024U);
     // One full-atlas clear plus one tile pass.
-    EXPECT_EQ(diagnostics.spotShadowPassesRecorded, 2U);
-    EXPECT_GE(diagnostics.spotShadowDrawCallsRecorded, 1U);
+    EXPECT_EQ(diagnostics.shadowAtlasPassesRecorded, 2U);
+    EXPECT_GE(diagnostics.shadowAtlasDrawCallsRecorded, 1U);
 
     const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
     const std::vector<BeginRenderPassCommandUVE> tilePasses = AtlasTilePassesUVE(commands);
@@ -4030,8 +4042,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_SpotLightWithNoCasterSkipsTheAtlasPass)
     const Renderer3DFrameDiagnosticsUVE& diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
     EXPECT_EQ(diagnostics.spotShadowCandidates, 1U);
     EXPECT_EQ(diagnostics.spotShadowTilesActive, 0U);
-    EXPECT_EQ(diagnostics.spotShadowTileResolution, 0U);
-    EXPECT_EQ(diagnostics.spotShadowPassesRecorded, 0U);
+    EXPECT_EQ(diagnostics.shadowAtlasTileResolution, 0U);
+    EXPECT_EQ(diagnostics.shadowAtlasPassesRecorded, 0U);
     EXPECT_TRUE(AtlasTilePassesUVE(renderDevice.GetLastSubmittedCommandsUVE()).empty());
 
     const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
@@ -4067,7 +4079,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_DirectionalOnlySceneNeverCreatesAnAtlas
 
     const Renderer3DFrameDiagnosticsUVE& diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
     EXPECT_EQ(diagnostics.spotShadowCandidates, 0U);
-    EXPECT_EQ(diagnostics.spotShadowPassesRecorded, 0U);
+    EXPECT_EQ(diagnostics.shadowAtlasPassesRecorded, 0U);
     // The 64 MiB attachment must not exist for a scene that never asks for it.
     EXPECT_FALSE(std::any_of(renderDevice.GetLastSubmittedCommandsUVE().cbegin(),
                              renderDevice.GetLastSubmittedCommandsUVE().cend(),
@@ -4087,22 +4099,172 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_SpotShadowTileResolutionFollowsTheConfi
     WaitUntilShadowProgramReadyUVE();
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
-    renderer3D->SetSpotShadowTileResolutionUVE(512U);
+    renderer3D->SetShadowAtlasTileResolutionUVE(512U);
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
-    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().spotShadowTileResolution, 512U);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().shadowAtlasTileResolution, 512U);
     const std::vector<BeginRenderPassCommandUVE> halfResPasses =
         AtlasTilePassesUVE(renderDevice.GetLastSubmittedCommandsUVE());
     ASSERT_EQ(halfResPasses.size(), 1U);
     EXPECT_EQ(halfResPasses[0].desc.viewportOverride->size.x, 512);
 
     // A request larger than the atlas can hold for this many casters degrades rather than failing.
-    renderer3D->SetSpotShadowTileResolutionUVE(4096U);
+    renderer3D->SetShadowAtlasTileResolutionUVE(4096U);
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
-    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().spotShadowTileResolution, 4096U);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().shadowAtlasTileResolution, 4096U);
     const std::vector<BeginRenderPassCommandUVE> fullResPasses =
         AtlasTilePassesUVE(renderDevice.GetLastSubmittedCommandsUVE());
     ASSERT_EQ(fullResPasses.size(), 1U);
     EXPECT_EQ(fullResPasses[0].desc.viewportOverride->size.x, 4096);
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// Point-light atlas shadows (six cube faces per light)
+// ---------------------------------------------------------------------------------------------
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_PointLightCasterRecordsSixAtlasPasses) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    MakeLightEntityUVE(MakePointLightComponentUVE(), Math::Vector3UVE{0.0F, 0.0F, -5.0F});
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("point_shadow_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("point_shadow_material.uvmat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilShadowProgramReadyUVE();
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const Renderer3DFrameDiagnosticsUVE& diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(diagnostics.pointShadowCandidates, 1U);
+    EXPECT_EQ(diagnostics.spotShadowCandidates, 0U);
+    // Six faces, of which only the ones facing the mesh cull anything. The mesh sits on the light's
+    // -Z side, so exactly the -Z face owns a caster - the other five must not record a torn,
+    // half-rendered cube.
+    EXPECT_EQ(diagnostics.pointShadowTilesActive, 1U);
+    EXPECT_EQ(diagnostics.shadowAtlasTileResolution, 1024U);
+    // One full-atlas clear plus one pass per active face.
+    EXPECT_EQ(diagnostics.shadowAtlasPassesRecorded, 2U);
+    EXPECT_GE(diagnostics.shadowAtlasDrawCallsRecorded, 1U);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const std::vector<BeginRenderPassCommandUVE> tilePasses = AtlasTilePassesUVE(commands);
+    ASSERT_EQ(tilePasses.size(), 1U);
+    EXPECT_EQ(tilePasses[0].desc.depthLoadOp, LoadOpUVE::Load);
+    ASSERT_TRUE(tilePasses[0].desc.viewportOverride.has_value());
+    EXPECT_EQ(tilePasses[0].desc.viewportOverride->size.x, 1024);
+
+    // The light is enabled as a whole, and the face that owns the caster is the ONE cube rect with
+    // extent - the other five stay zero so the shader treats those faces as unshadowed.
+    const auto enabled = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uLightShadowEnabled[0]";
+    });
+    ASSERT_NE(enabled, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*enabled).value, 1);
+
+    std::size_t facesWithExtent = 0U;
+    for (std::size_t face = 0U; face < kPointShadowFaceCountUVE; ++face) {
+        const std::string name = "uLightShadowCubeRects[" + std::to_string(face) + "]";
+        const auto uniform = std::find_if(commands.cbegin(), commands.cend(),
+                                          [&name](const RecordedCommandUVE& command) {
+                                              return std::holds_alternative<SetUniformVector4CommandUVE>(command) &&
+                                                     std::get<SetUniformVector4CommandUVE>(command).name == name;
+                                          });
+        ASSERT_NE(uniform, commands.cend()) << name;
+        const Math::Vector4UVE rect = std::get<SetUniformVector4CommandUVE>(*uniform).value;
+        if (rect.z - rect.x > 0.0F) {
+            ++facesWithExtent;
+            constexpr float inverseAtlas = 1.0F / static_cast<float>(kShadowAtlasResolutionUVE);
+            EXPECT_NEAR(rect.z - rect.x, 1024.0F * inverseAtlas, 1.0e-6F);
+        }
+    }
+    EXPECT_EQ(facesWithExtent, 1U);
+
+    // A point light never uses the spot half of the contract.
+    const auto spotRect = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformVector4CommandUVE>(command) &&
+               std::get<SetUniformVector4CommandUVE>(command).name == "uLightShadowTileRects[0]";
+    });
+    ASSERT_NE(spotRect, commands.cend());
+    const Math::Vector4UVE spotTile = std::get<SetUniformVector4CommandUVE>(*spotRect).value;
+    EXPECT_FLOAT_EQ(spotTile.z - spotTile.x, 0.0F);
+
+    EXPECT_TRUE(std::any_of(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<BindTextureCommandUVE>(command) &&
+               std::get<BindTextureCommandUVE>(command).slot == kShadowAtlasTextureSlotUVE &&
+               std::get<BindTextureCommandUVE>(command).texture != kInvalidTextureHandleUVE;
+    }));
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_PointLightBehindTheCasterStillRendersTheWholeCube) {
+    // Same light, but the mesh is now on the +Z side. The point still matters: the face that owns
+    // the caster must follow the geometry, proving the six matrices are not all copies of one face.
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    MakeLightEntityUVE(MakePointLightComponentUVE(40.0F), Math::Vector3UVE{0.0F, 0.0F, -14.0F});
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("point_shadow_flip_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("point_shadow_flip_material.uvmat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilShadowProgramReadyUVE();
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const Renderer3DFrameDiagnosticsUVE& diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(diagnostics.pointShadowCandidates, 1U);
+    EXPECT_EQ(diagnostics.pointShadowTilesActive, 1U);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    // The mesh is at +Z relative to the light, so face 4 (+Z) is the one with a rect.
+    std::size_t expectedFaceWithExtent = 4U;
+    std::size_t facesWithExtent = 0U;
+    for (std::size_t face = 0U; face < kPointShadowFaceCountUVE; ++face) {
+        const std::string name = "uLightShadowCubeRects[" + std::to_string(face) + "]";
+        const auto uniform = std::find_if(commands.cbegin(), commands.cend(),
+                                          [&name](const RecordedCommandUVE& command) {
+                                              return std::holds_alternative<SetUniformVector4CommandUVE>(command) &&
+                                                     std::get<SetUniformVector4CommandUVE>(command).name == name;
+                                          });
+        ASSERT_NE(uniform, commands.cend()) << name;
+        const Math::Vector4UVE rect = std::get<SetUniformVector4CommandUVE>(*uniform).value;
+        if (rect.z - rect.x > 0.0F) {
+            ++facesWithExtent;
+            EXPECT_EQ(face, expectedFaceWithExtent) << "wrong face owns the caster";
+        }
+    }
+    EXPECT_EQ(facesWithExtent, 1U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_PointLightShadowSharesTheBudgetWithSpotLights) {
+    // A point light and a spot light in one frame must not fight over the same tile, and the tile
+    // resolution must fit ALL tiles, not just one light's worth.
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    MakeLightEntityUVE(MakeSpotLightComponentUVE(), Math::Vector3UVE{-2.0F, 0.0F, -5.0F});
+    MakeLightEntityUVE(MakePointLightComponentUVE(), Math::Vector3UVE{2.0F, 0.0F, -5.0F});
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mixed_shadow_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mixed_shadow_material.uvmat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilShadowProgramReadyUVE();
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    // Seven tiles at the requested 4096 do not fit; the planner must have halved the resolution.
+    renderer3D->SetShadowAtlasTileResolutionUVE(4096U);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const Renderer3DFrameDiagnosticsUVE& diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(diagnostics.spotShadowCandidates, 1U);
+    EXPECT_EQ(diagnostics.pointShadowCandidates, 1U);
+    EXPECT_EQ(diagnostics.shadowAtlasTileResolution, 1024U);
+
+    // Both halves of the contract are live: one spot rect and at least one cube rect.
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto spotRect = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformVector4CommandUVE>(command) &&
+               std::get<SetUniformVector4CommandUVE>(command).name == "uLightShadowTileRects[0]";
+    });
+    ASSERT_NE(spotRect, commands.cend());
+    EXPECT_GT(std::get<SetUniformVector4CommandUVE>(*spotRect).value.z -
+                  std::get<SetUniformVector4CommandUVE>(*spotRect).value.x,
+              0.0F);
+    EXPECT_GT(diagnostics.pointShadowTilesActive, 0U);
 }
 
 } // namespace UVE::Render::Tests
