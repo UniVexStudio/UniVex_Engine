@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cmath>
 #include <exception>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 
 #include "uve/logging/logging_macros_uve.h"
@@ -420,6 +422,50 @@ bool AudioSystemUVE::ApplySourceBusChainUVE(const VoiceHandleUVE source,
         return false;
     }
     return m_impl->mixerGroups.ApplyBusChainUVE(iterator->second.mixerGroup, inputSamples, outputSamples);
+}
+
+AudioMeterReadingUVE AudioSystemUVE::GetSourceMeterUVE(const VoiceHandleUVE source) const {
+    return m_impl->sources.contains(source.value) ? m_impl->audioDevice.ReadVoiceMeterUVE(source)
+                                                  : kSilentAudioMeterUVE;
+}
+
+AudioMeterReadingUVE AudioSystemUVE::GetMixerGroupMeterUVE(const std::string_view name) const {
+    const AudioMixerGroupUVE& mixer = m_impl->mixerGroups;
+    if (!mixer.HasGroupUVE(name)) {
+        return kSilentAudioMeterUVE;
+    }
+    // Who belongs to this bus: the bus itself plus everything under it. The tree is walked from
+    // each bus upwards instead of storing child lists, because the diagnostics already expose the
+    // parent of every group and a mixer is at most kMaximumAudioMixerGroupsUVE buses deep - so the
+    // whole membership test costs a handful of string comparisons per source.
+    const AudioMixerDiagnosticsUVE diagnostics = mixer.GetDiagnosticsUVE();
+    const auto isUnderUVE = [&diagnostics](const std::string& group, const std::string_view ancestor) {
+        // Bounded by the bus cap: every step moves to a strictly shallower parent, so this cannot
+        // loop even if the tree were somehow malformed.
+        std::string current = group;
+        for (std::size_t step = 0U; step <= diagnostics.groups.size(); ++step) {
+            if (current == ancestor) {
+                return true;
+            }
+            const auto parent = std::find_if(
+                diagnostics.groups.cbegin(), diagnostics.groups.cend(),
+                [&current](const AudioMixerGroupSnapshotUVE& snapshot) { return snapshot.name == current; });
+            if (parent == diagnostics.groups.cend() || parent->parent.empty()) {
+                return current == kMasterAudioMixerGroupNameUVE && ancestor == kMasterAudioMixerGroupNameUVE;
+            }
+            current = parent->parent;
+        }
+        return false;
+    };
+
+    AudioMeterReadingUVE meter = kSilentAudioMeterUVE;
+    for (const auto& [handleValue, state] : m_impl->sources) {
+        if (!isUnderUVE(state.mixerGroup, name)) {
+            continue;
+        }
+        meter = CombineAudioMeterReadingsUVE(meter, m_impl->audioDevice.ReadVoiceMeterUVE(VoiceHandleUVE{handleValue}));
+    }
+    return meter;
 }
 
 void AudioSystemUVE::SetOcclusionProviderUVE(const IAudioOcclusionProviderUVE* provider) {

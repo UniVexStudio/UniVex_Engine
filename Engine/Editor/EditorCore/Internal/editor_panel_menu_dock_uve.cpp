@@ -528,6 +528,11 @@ void EditorUVE::DrawBottomDockContentUVE() {
         return;
     }
 
+    if (m_activeBottomDock == EditorBottomDockUVE::Audio) {
+        DrawAudioMixerDockUVE();
+        return;
+    }
+
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
@@ -576,6 +581,7 @@ void EditorUVE::DrawBottomDockContentUVE() {
         case EditorBottomDockUVE::Console:
         case EditorBottomDockUVE::Capture:
         case EditorBottomDockUVE::Profiler:
+        case EditorBottomDockUVE::Audio:
             break;
     }
     ImGui::End();
@@ -601,12 +607,13 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
             EditorBottomDockUVE dock;
             const char* tooltip;
         };
-        constexpr std::array<TabUVE, 5> kTabs{{
+        constexpr std::array<TabUVE, 6> kTabs{{
             {"Content", EditorBottomDockUVE::FileSystem, "The project's files and assets."},
             {"Output", EditorBottomDockUVE::Debugger, "Frame statistics and editor state."},
             {"Console", EditorBottomDockUVE::Console, "Engine messages and a command line."},
             {"Capture", EditorBottomDockUVE::Capture, "Tapped session datagrams and their decode."},
             {"Profiler", EditorBottomDockUVE::Profiler, "Capture spans, counters, and breadcrumbs."},
+            {"Audio", EditorBottomDockUVE::Audio, "Mixer tree with live meters, and the selected source's falloff."},
         }};
         const ImGuiStyle& style = ImGui::GetStyle();
         for (const TabUVE& tab : kTabs) {

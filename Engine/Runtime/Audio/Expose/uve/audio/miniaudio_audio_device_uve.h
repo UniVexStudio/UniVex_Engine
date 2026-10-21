@@ -65,6 +65,11 @@ public:
     [[nodiscard]] bool StopUVE(VoiceHandleUVE voice) override;
     [[nodiscard]] bool SetVoiceParamsUVE(VoiceHandleUVE voice, const AudioVoiceParamsUVE& params) override;
     [[nodiscard]] VoicePlaybackStateUVE GetVoiceStateUVE(VoiceHandleUVE voice) const override;
+    /// Reads the voice's measured contribution to the output, updated on the audio thread once per
+    /// mixed block. Takes the same voices mutex every other voice accessor takes; an unknown voice
+    /// reads silence.
+    [[nodiscard]] AudioMeterReadingUVE ReadVoiceMeterUVE(VoiceHandleUVE voice) const override;
+
     [[nodiscard]] std::string_view GetBackendNameUVE() const noexcept override;
 
     // Streaming: the ring is consumed by miniaudio's callback and filled from the engine thread,

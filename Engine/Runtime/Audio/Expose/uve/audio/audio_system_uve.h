@@ -78,6 +78,10 @@ public:
     [[nodiscard]] std::size_t PumpStreamingSourceUVE(VoiceHandleUVE source) override;
     [[nodiscard]] std::size_t GetStreamingSourceBufferedFramesUVE(VoiceHandleUVE source) const override;
 
+    [[nodiscard]] AudioMeterReadingUVE GetSourceMeterUVE(VoiceHandleUVE source) const override;
+    [[nodiscard]] AudioMeterReadingUVE GetMixerGroupMeterUVE(std::string_view name) const override;
+
+
     void SetOcclusionProviderUVE(const IAudioOcclusionProviderUVE* provider) override;
 
     void UpdateUVE(float deltaSeconds) override;
