@@ -401,7 +401,6 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                          DeclareUVE<&PrimitiveMeshComponentUVE::baseColor>("baseColor", "Base Color",
                                                                            kPropertyTypeColorUVE),
                      });
-    primitive.nestedUnderTypeIds = {"component.mesh"};
     primitive.sectionTitle = +[](const void* instance) -> const char* {
         switch (static_cast<const PrimitiveMeshComponentUVE*>(instance)->kind) {
             case PrimitiveMeshKindUVE::UVSphere:
@@ -2721,7 +2720,6 @@ void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                           "Never hidden because something else covers it."),
                            "Culling"),
             });
-    surfaceEntry.nestedUnderTypeIds = {"component.mesh"};
     AddValidatedUVE<SurfaceInstanceComponentUVE, &IsSurfaceInstanceComponentValidUVE>(
         entries, std::move(surfaceEntry));
 

@@ -55,9 +55,13 @@ protected:
 
 TEST_F(EditorDockingUVETest, CanonicalDockSpaceIdAndPanelLabelsAreValid) {
     EXPECT_STREQ(kMainDockSpaceIdUVE, "UVEMainDockSpace");
+    // ImGui::GetID hashes against the current frame; probing before NewFrame dereferences no
+    // window and crashes. Same frame shape InitialDockTreeConstructionBuildsExpectedTopology uses.
+    ImGui::NewFrame();
     const ImGuiID expectedId = ImGui::GetID("UVEMainDockSpace");
     EXPECT_EQ(GetMainDockSpaceIdUVE(), expectedId);
     EXPECT_NE(GetMainDockSpaceIdUVE(), 0U);
+    ImGui::Render();
 
     // Verify canonical panel labels include expected identifiers
     EXPECT_NE(std::string_view(kPanelLabelViewportUVE).find("Viewport"), std::string_view::npos);
