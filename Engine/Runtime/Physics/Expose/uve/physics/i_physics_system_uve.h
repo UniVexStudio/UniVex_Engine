@@ -10,6 +10,7 @@
 #include "uve/scene/i_scene_graph_uve.h"
 
 #include "uve/physics/continuous_collision_uve.h"
+#include "uve/physics/deterministic_physics_uve.h"
 
 namespace UVE::Physics {
 
@@ -26,6 +27,10 @@ struct PhysicsSimulationSettingsUVE final {
     /// fixed steps. Off by default: the discrete path is exact for everything moving less than its
     /// own extent per step, and a sweep costs several times an integration.
     ContinuousCollisionSettingsUVE continuousCollision{};
+    /// Opt-in reproducible stepping: canonical collision-pair order plus a per-step state digest
+    /// two peers can compare. See DeterministicStepSettingsUVE for exactly what is and is not
+    /// guaranteed.
+    DeterministicStepSettingsUVE deterministic{};
 };
 
 /// IPhysicsSystemUVE is the spec's `PhysicsSystemUVE` (Part 7.5): dynamics integration +
@@ -55,6 +60,12 @@ public:
     /// dirty-flag propagation stays correct throughout.
     virtual void StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
                           float fixedDeltaTimeSeconds) = 0;
+
+    /// Digest of the world state after the most recent step, when DeterministicStepSettingsUVE is
+    /// enabled; 0 otherwise (and 0 on an implementation that does not compute one). Two peers whose
+    /// simulations agree produce the same digest for the same step number, which is what a rollback
+    /// or replay verifier compares.
+    [[nodiscard]] virtual std::uint64_t GetLastStepDigestUVE() const noexcept { return 0U; }
 
     virtual void SetGravityUVE(Math::Vector3UVE gravity) noexcept {
         static_cast<void>(gravity);

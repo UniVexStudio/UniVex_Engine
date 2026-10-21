@@ -3,9 +3,12 @@
 
 #include "uve/physics/physics_system_uve.h"
 
+#include <array>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <optional>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -686,6 +689,177 @@ TEST_F(PhysicsSystemUVETest, StepUVE_ContinuousCollisionLeavesATangentialSlideUn
 TEST_F(PhysicsSystemUVETest, StepUVE_ContinuousCollisionIsOptInByDefault) {
     PhysicsSimulationSettingsUVE settings;
     EXPECT_FALSE(settings.continuousCollision.enabled);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Deterministic stepping
+// ---------------------------------------------------------------------------------------------
+
+namespace {
+
+/// One complete, independent physics world. Two of these stepped with identical inputs model the
+/// two peers a rollback verifier compares.
+struct DeterministicWorldUVE final {
+    Memory::MemoryManagerUVE memoryManager;
+    Events::EventSystemUVE eventSystem;
+    Scene::EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    Scene::SceneGraphUVE sceneGraph;
+    CollisionSystemUVE collisionSystem;
+    PhysicsSystemUVE physicsSystem{collisionSystem};
+
+    DeterministicWorldUVE() = default;
+    DeterministicWorldUVE(const DeterministicWorldUVE&) = delete;
+    DeterministicWorldUVE& operator=(const DeterministicWorldUVE&) = delete;
+
+    /// `attachColliderFirst` changes which archetype the entity lands in, and therefore the order
+    /// the collision system discovers it in. It changes nothing about the body itself.
+    Scene::EntityUVE AddBodyUVE(const Math::Vector3UVE& position, const Math::Vector3UVE& velocity,
+                                 const Math::Vector3UVE& halfExtents,
+                                 const bool attachColliderFirst) {
+        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE local;
+        local.localPosition = position;
+        sceneGraph.AttachTransformUVE(entityManager, entity, local);
+        sceneGraph.UpdateUVE(entityManager);
+        Scene::Rigid3DComponentUVE rigidBody;
+        rigidBody.velocity = velocity;
+        if (attachColliderFirst) {
+            entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity,
+                                                                       Scene::ColliderComponentUVE{halfExtents});
+            entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(entity, rigidBody);
+        } else {
+            entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(entity, rigidBody);
+            entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity,
+                                                                       Scene::ColliderComponentUVE{halfExtents});
+        }
+        return entity;
+    }
+
+    void EnableDeterminismUVE() {
+        PhysicsSimulationSettingsUVE settings;
+        settings.deterministic.enabled = true;
+        physicsSystem.SetSimulationSettingsUVE(settings);
+    }
+
+    void StepUVE(const int steps, const float deltaSeconds) {
+        for (int index = 0; index < steps; ++index) {
+            physicsSystem.StepUVE(entityManager, sceneGraph, deltaSeconds);
+        }
+    }
+};
+
+/// The same four-body pile-up in every world: a heavy floor, a box dropped onto it, a box thrown
+/// sideways into that one, and a second box resting on the floor.
+struct PileBodyUVE final {
+    Math::Vector3UVE position;
+    Math::Vector3UVE velocity;
+    Math::Vector3UVE halfExtents;
+};
+
+[[nodiscard]] std::array<PileBodyUVE, 4> MakePileUVE() {
+    return {{
+        {Math::Vector3UVE{0.0F, -0.25F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+         Math::Vector3UVE{4.0F, 0.25F, 4.0F}},
+        {Math::Vector3UVE{0.0F, 3.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+         Math::Vector3UVE{0.75F, 0.75F, 0.75F}},
+        {Math::Vector3UVE{-2.5F, 2.0F, 0.0F}, Math::Vector3UVE{4.0F, 0.0F, 0.0F},
+         Math::Vector3UVE{0.5F, 0.5F, 0.5F}},
+        {Math::Vector3UVE{2.0F, 0.25F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+         Math::Vector3UVE{0.5F, 0.5F, 0.5F}},
+    }};
+}
+
+void BuildPileUVE(DeterministicWorldUVE& world, const bool attachColliderFirst) {
+    for (const PileBodyUVE& body : MakePileUVE()) {
+        world.AddBodyUVE(body.position, body.velocity, body.halfExtents, attachColliderFirst);
+    }
+}
+
+} // namespace
+
+TEST(DeterministicPhysicsUVETest, ComponentAttachOrderDoesNotChangeTheSimulation) {
+    DeterministicWorldUVE first;
+    DeterministicWorldUVE second;
+    // Same entity ids in the same creation order - which is what a deterministic spawn protocol
+    // gives two peers - but the components are attached in the opposite order.
+    //
+    // Honest scope: this engine currently iterates its archetypes in signature-hash order, not
+    // insertion order, so the two worlds are discovered in the same sequence TODAY and this test
+    // would pass even without CanonicalizeCollisionPairsUVE. It is here as an invariant lock on a
+    // property the solver must not owe to a container's iteration order - the day that container
+    // changes, the pair ORDER becomes observable (the solver is sequential), and this test is what
+    // notices. The canonicalization's own teeth are in deterministic_physics_uve_tests.cpp, where
+    // the sorting and the axis negation are asserted directly.
+    BuildPileUVE(first, false);
+    BuildPileUVE(second, true);
+    first.EnableDeterminismUVE();
+    second.EnableDeterminismUVE();
+
+    // 240 steps is four seconds at 60 Hz: long enough for the thrown box to land, the pile to
+    // overlap, resolve and come to rest, so the comparison covers contact resolution and not just
+    // free fall.
+    for (int step = 0; step < 240; ++step) {
+        first.StepUVE(1, 1.0F / 60.0F);
+        second.StepUVE(1, 1.0F / 60.0F);
+        ASSERT_EQ(first.physicsSystem.GetLastStepDigestUVE(),
+                  second.physicsSystem.GetLastStepDigestUVE())
+            << "diverged at step " << step;
+    }
+}
+
+TEST(DeterministicPhysicsUVETest, ReplayingTheSameWorldTwiceProducesTheSameDigests) {
+    DeterministicWorldUVE original;
+    BuildPileUVE(original, false);
+    original.EnableDeterminismUVE();
+
+    std::vector<std::uint64_t> firstRun;
+    for (int step = 0; step < 120; ++step) {
+        original.StepUVE(1, 1.0F / 60.0F);
+        firstRun.push_back(original.physicsSystem.GetLastStepDigestUVE());
+    }
+
+    DeterministicWorldUVE replay;
+    BuildPileUVE(replay, false);
+    replay.EnableDeterminismUVE();
+    for (int step = 0; step < 120; ++step) {
+        replay.StepUVE(1, 1.0F / 60.0F);
+        ASSERT_EQ(firstRun[static_cast<std::size_t>(step)],
+                  replay.physicsSystem.GetLastStepDigestUVE())
+            << "diverged at step " << step;
+    }
+}
+
+TEST(DeterministicPhysicsUVETest, DigestIsNonZeroOnlyWhenDeterminismIsEnabled) {
+    DeterministicWorldUVE world;
+    BuildPileUVE(world, false);
+
+    world.StepUVE(1, 1.0F / 60.0F);
+    EXPECT_EQ(world.physicsSystem.GetLastStepDigestUVE(), 0U);
+
+    world.EnableDeterminismUVE();
+    world.StepUVE(1, 1.0F / 60.0F);
+    EXPECT_NE(world.physicsSystem.GetLastStepDigestUVE(), 0U);
+}
+
+TEST(DeterministicPhysicsUVETest, DigestTracksRealDivergence) {
+    DeterministicWorldUVE first;
+    DeterministicWorldUVE second;
+    BuildPileUVE(first, false);
+    BuildPileUVE(second, false);
+    first.EnableDeterminismUVE();
+    second.EnableDeterminismUVE();
+
+    // One peer is nudged after the scene is built. A digest that kept matching would be reporting
+    // agreement it never checked.
+    second.entityManager.ForEachUVE<Scene::Rigid3DComponentUVE>(
+        [](Scene::EntityUVE, Scene::Rigid3DComponentUVE& rigidBody) {
+            rigidBody.velocity.x += 3.0F;
+        });
+
+    first.StepUVE(20, 1.0F / 60.0F);
+    second.StepUVE(20, 1.0F / 60.0F);
+    EXPECT_NE(first.physicsSystem.GetLastStepDigestUVE(),
+              second.physicsSystem.GetLastStepDigestUVE());
 }
 
 } // namespace

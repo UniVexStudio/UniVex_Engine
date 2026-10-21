@@ -17,6 +17,7 @@
 #include "uve/physics/area_3d_runtime_uve.h"
 #include "uve/physics/collision_pair_uve.h"
 #include "uve/physics/continuous_collision_uve.h"
+#include "uve/physics/deterministic_physics_uve.h"
 #include "uve/physics/detail/collider_world_aabb_cache_uve.h"
 #include "uve/physics/physics_material_uve.h"
 #include "uve/component/collider_component_uve.h"
@@ -377,7 +378,13 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
     // post-integration positions, not last step's stale ones.
     sceneGraph.UpdateUVE(entityManager);
 
-    const std::vector<CollisionPairUVE> pairs = m_collisionSystem->DetectCollisionsUVE(entityManager);
+    std::vector<CollisionPairUVE> pairs = m_collisionSystem->DetectCollisionsUVE(entityManager);
+    if (m_settings.deterministic.enabled) {
+        // Canonical order before resolution, not after: the solver is sequential, so every pair
+        // writes positions the next pair reads. Sorting a list that has already been resolved
+        // would change nothing, which is the mistake this line exists to not make.
+        CanonicalizeCollisionPairsUVE(pairs);
+    }
     for (const CollisionPairUVE& pair : pairs) {
         ResolvePairUVE(entityManager, sceneGraph, pair, m_settings, fixedDeltaTimeSeconds);
     }
@@ -394,6 +401,27 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
     // immediately after StepUVE() (tests, or a second StepUVE() this same frame) sees fully
     // resolved state without needing an external UpdateUVE() call first.
     sceneGraph.UpdateUVE(entityManager);
+
+    // The digest is taken from the state the step actually published - after resolution, after the
+    // constraint solver, after world propagation - because that is the state a peer would send and
+    // a replay would compare. Digging it out mid-step would describe a world that never existed.
+    if (m_settings.deterministic.enabled) {
+        std::vector<DeterministicBodySampleUVE> samples;
+        entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::Rigid3DComponentUVE>(
+            [&samples](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& world,
+                       const Scene::Rigid3DComponentUVE& rigidBody) {
+                DeterministicBodySampleUVE sample{};
+                sample.entity = entity;
+                sample.position = world.worldPosition;
+                sample.rotation = world.worldRotation;
+                sample.velocity = rigidBody.velocity;
+                sample.angularVelocity = rigidBody.angularVelocity;
+                samples.push_back(sample);
+            });
+        m_lastStepDigest = ComputeWorldDigestUVE(samples, m_settings.deterministic);
+    } else {
+        m_lastStepDigest = 0U;
+    }
 }
 
 } // namespace UVE::Physics
