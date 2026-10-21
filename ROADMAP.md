@@ -539,8 +539,27 @@ and one of the highest-priority areas below.
 - [x] WAV import/decoding, a PCM16 decoder, and an attenuation model
 - [x] A mixer-group concept and a basic gain effect
 - [x] A source/listener system with orientation validation
-- [ ] Additional common audio formats (compressed formats such as an Ogg/Vorbis- or
-  MP3-class codec, not just uncompressed WAV)
+- [x] Additional common audio formats beyond WAV - `EncodedAudioFormatUVE` (FLAC, MP3,
+  Ogg/Vorbis) decoded through the already-pinned miniaudio decoder, with Vorbis coming from its
+  bundled stb_vorbis. The format is chosen explicitly by the importer rather than sniffed from the
+  file name, so an `.ogg` that holds an MP3 stream fails instead of silently decoding as something
+  else. `DecodeEncodedAudioUVE` publishes only after every bound holds: source <= 64 MiB, 1..32
+  channels, nonzero rate, output within `kMaximumAudioAssetSamplesUVE`, every sample finite, and a
+  lossy encoder's overshoot clipped into [-1, 1]. A stream that declares its length must deliver
+  exactly that many frames, so a truncated file is refused instead of half-played; an unknown length
+  decodes under the same output cap; malformed or empty input leaves the caller's asset untouched.
+  `flac`, `mp3` and `ogg` register as importers that write the SAME `.uvaudio` envelope WAV already
+  wrote - replacing an existing one atomically through a temporary, so a failed decode never damages
+  it - and both the WAV and the compressed importers are registered at bootstrap. The Content
+  Browser shows every source format an importer can read as audio (and deliberately leaves `.m4a`,
+  `.aac` and `.wma` as plain files, since no importer can turn them into an asset). Locked by cases
+  over real fixtures for all three codecs: decode, import and GUID registration, the wrong-format
+  matrix (no fallback between codecs), a truncated header, a malformed file preserving the
+  destination, an oversize sparse source refused before its contents are read, a declared
+  larger-than-cap length refused before allocating, publication failure leaving the destination
+  intact, and replacement of an existing envelope. (Turning a dropped source file into an asset is
+  still the importer's job rather than the Content Browser's: the editor has no audio auto-import
+  action yet, exactly as for WAV, which is why that workflow is not claimed here.)
 - [ ] A real DSP effect chain beyond gain (reverb, low-pass/occlusion filtering, EQ,
   compression/limiting)
 - [ ] Full 3D spatialization (HRTF-based or at minimum proper distance/cone/doppler

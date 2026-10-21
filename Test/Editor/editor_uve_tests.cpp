@@ -728,6 +728,15 @@ TEST(EditorUVETest, ContentBrowserWorkflowUVE_ScriptsAudioAndFontsAreTheirOwnTyp
     EXPECT_EQ(labelOf("Scripts/player.uvs"), "Script");
     EXPECT_EQ(labelOf("Audio/step.uvaudio"), "Audio");
     EXPECT_EQ(labelOf("Audio/Step.WAV"), "Audio");
+    // Compressed sources are audio too: Vorbis, MP3 and FLAC each import into the same .uvaudio
+    // envelope, and the extension is matched in any case exactly as WAV is.
+    EXPECT_EQ(labelOf("Audio/theme.ogg"), "Audio");
+    EXPECT_EQ(labelOf("Audio/Theme.OGG"), "Audio");
+    EXPECT_EQ(labelOf("Audio/theme.mp3"), "Audio");
+    EXPECT_EQ(labelOf("Audio/theme.flac"), "Audio");
+    // A container no registered importer can read stays a plain file rather than promising playback.
+    EXPECT_EQ(labelOf("Audio/theme.m4a"), "File");
+    EXPECT_EQ(labelOf("Audio/theme.aac"), "File");
     EXPECT_EQ(labelOf("Fonts/title.ttf"), "Font");
     EXPECT_EQ(labelOf("Fonts/body.otf"), "Font");
     EXPECT_EQ(labelOf("Content/Hero.uventity"), "Entity");
