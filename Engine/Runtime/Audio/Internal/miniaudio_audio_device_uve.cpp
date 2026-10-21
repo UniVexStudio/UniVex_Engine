@@ -12,6 +12,7 @@
 #include <miniaudio.h>
 
 #include "uve/asset/audio_asset_uve.h"
+#include "uve/audio/audio_spatialization_uve.h"
 #include "uve/containers/handle_table_uve.h"
 #include "uve/logging/logging_macros_uve.h"
 
@@ -29,7 +30,8 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
         double stepPerOutputFrame = 0.0; // (clipRate / outputRate) * pitch, recomputed on param set
         float gain = 1.0F;
         float pitch = 1.0F;
-        float position[3] = {0.0F, 0.0F, 0.0F}; // stored; panning is a documented v1 non-goal
+        float position[3] = {0.0F, 0.0F, 0.0F}; // stored; the stereo image comes from `pan`
+        float pan = 0.0F;                       // -1 left .. +1 right, already derived by the system
         bool looping = false;
     };
 
@@ -72,6 +74,9 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
                 return; // clip-less source shell: inaudible, stays Playing until stopped
             }
             const std::size_t totalFrames = voice.samples.size() / voice.channels;
+            // Constant-power pan, computed once per block: the law is unity on both sides at centre,
+            // so a centred voice mixes exactly as it did before panning existed.
+            const AudioPanGainsUVE panGains = ComputeAudioPanGainsUVE(voice.pan);
             for (ma_uint32 frame = 0U; frame < frameCount; ++frame) {
                 const std::size_t frameIndex = static_cast<std::size_t>(voice.cursorFrames);
                 if (frameIndex >= totalFrames) {
@@ -87,8 +92,9 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
                         voice.channels == 1U ? 0U : std::min(channel, voice.channels - 1U);
                     const float sampleA = voice.samples[frameIndex * voice.channels + sourceChannel];
                     const float sampleB = voice.samples[nextIndex * voice.channels + sourceChannel];
+                    const float panGain = channel == 0U ? panGains.left : panGains.right;
                     out[frame * kOutputChannelsUVE + channel] +=
-                        (sampleA + (sampleB - sampleA) * fraction) * voice.gain;
+                        (sampleA + (sampleB - sampleA) * fraction) * voice.gain * panGain;
                 }
                 voice.cursorFrames += voice.stepPerOutputFrame;
                 if (voice.cursorFrames >= static_cast<double>(totalFrames)) {
@@ -267,6 +273,7 @@ bool MiniaudioAudioDeviceUVE::SetVoiceParamsUVE(VoiceHandleUVE voice, const Audi
     entry->voice.position[0] = params.position.x;
     entry->voice.position[1] = params.position.y;
     entry->voice.position[2] = params.position.z;
+    entry->voice.pan = params.pan;
     entry->voice.gain = params.gain;
     entry->voice.pitch = params.pitch;
     entry->voice.stepPerOutputFrame =

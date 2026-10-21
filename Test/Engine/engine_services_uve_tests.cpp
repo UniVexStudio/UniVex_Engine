@@ -930,7 +930,7 @@ public:
         Audio::VoiceHandleUVE, const std::vector<float>&, std::vector<float>&) override {
         return false;
     }
-    void UpdateUVE() override { ++updateCallCount; }
+    void UpdateUVE(float) override { ++updateCallCount; }
 
     int updateCallCount = 0;
 };
@@ -1223,7 +1223,7 @@ TEST(EngineServicesUVETest, Accessors_ProveInterfacesAreGenuinelySubstitutable) 
     services.GetMobileInputSystemUVE().UpdateUVE();
     services.GetMobileGestureSystemUVE().UpdateUVE(0.0F);
     services.GetInputSystemUVE().UpdateUVE();
-    services.GetAudioSystemUVE().UpdateUVE();
+    services.GetAudioSystemUVE().UpdateUVE(0.0F);
     services.GetAudioSourceSystemUVE().SyncUVE(services.GetEntityManagerUVE(), services.GetAudioSystemUVE());
     static_cast<void>(services.GetSaveGameSystemUVE().SaveUVE(0, services.GetEntityManagerUVE(), {},
                                                                 Save::GameStateMetadataUVE{}));

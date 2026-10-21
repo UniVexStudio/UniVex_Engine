@@ -73,7 +73,7 @@ public:
         VoiceHandleUVE source, const std::vector<float>& inputSamples,
         std::vector<float>& outputSamples) override;
 
-    void UpdateUVE() override;
+    void UpdateUVE(float deltaSeconds) override;
 
 private:
     struct ImplUVE;
