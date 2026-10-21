@@ -1035,6 +1035,10 @@ void EngineCoreUVE::Init() {
 
     // AudioSystem thirtieth: needs AudioDevice (it pushes computed gain/position through it).
     m_audioSystem = std::make_unique<Audio::AudioSystemUVE>(*m_audioDevice);
+    // Bus filters and reverb delays are built for the project's rate; without this they would assume
+    // the 48 kHz default and every cutoff would be off by the ratio between the two.
+    static_cast<void>(m_audioSystem->SetMixerSampleRateUVE(
+        static_cast<float>(m_config.audioSampleRateUVE)));
     const auto syncAudioBusVolumeUVE = [this](const std::string_view busName, const double volume,
                                               const bool configured) noexcept {
         if (!configured || m_audioSystem == nullptr) {

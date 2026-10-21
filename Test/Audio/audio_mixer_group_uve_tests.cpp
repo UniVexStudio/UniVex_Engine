@@ -280,69 +280,120 @@ TEST(AudioMixerBusGraphUVETest, BusTableIsCappedIncludingMaster) {
     EXPECT_EQ(mixer.GetDiagnosticsUVE().groupCount, kMaximumAudioMixerGroupsUVE);
 }
 
-TEST(AudioMixerBusGraphUVETest, GainSlotsRunInFixedIndexOrderAfterTheEffectiveVolume) {
+TEST(AudioMixerBusGraphUVETest, InsertsRunInFixedSlotOrderAfterTheEffectiveVolume) {
     AudioMixerGroupUVE mixer;
     ASSERT_TRUE(mixer.RegisterGroupUVE("Voice", 0.5F, 1.0F));
-    ASSERT_TRUE(mixer.SetGroupGainSlotUVE("Voice", 0U, 4.0F));
-    ASSERT_TRUE(mixer.SetGroupGainSlotUVE("Voice", 1U, 0.1F));
 
-    // 0.9 * 0.5 (bus) = 0.45, * 4 (slot 0) = 1.8 clamped to 1.0, * 0.1 (slot 1) = 0.1.
-    const std::vector<float> input{0.9F};
+    AudioInsertDescUVE gain;
+    gain.kind = AudioInsertKindUVE::Gain;
+    gain.params.gain = 4.0F;
+
+    AudioInsertDescUVE trim;
+    trim.kind = AudioInsertKindUVE::Gain;
+    trim.params.gain = 0.1F;
+
+    ASSERT_TRUE(mixer.SetGroupInsertUVE("Voice", 0U, gain));
+    ASSERT_TRUE(mixer.SetGroupInsertUVE("Voice", 1U, trim));
+
+    // 0.9 * 0.5 (bus) = 0.45, * 4 (slot 0) = 1.8, * 0.1 (slot 1) = 0.18. Nothing clips between the
+    // stages - only the chain's final clamp exists - so the intermediate 1.8 survives to be scaled.
     std::vector<float> output;
-    ASSERT_TRUE(mixer.ApplyBusGainChainUVE("Voice", input, output));
-    ASSERT_EQ(output.size(), 1U);
-    EXPECT_FLOAT_EQ(output[0], 0.1F);
-
-    // Swapping the authored values changes the result, which proves the order is the slot index
-    // and not the order the caller happened to write them.
-    ASSERT_TRUE(mixer.SetGroupGainSlotUVE("Voice", 0U, 0.1F));
-    ASSERT_TRUE(mixer.SetGroupGainSlotUVE("Voice", 1U, 4.0F));
-    ASSERT_TRUE(mixer.ApplyBusGainChainUVE("Voice", input, output));
+    ASSERT_TRUE(mixer.ApplyBusChainUVE("Voice", std::vector<float>{0.9F}, output));
     ASSERT_EQ(output.size(), 1U);
     EXPECT_FLOAT_EQ(output[0], 0.18F);
+
+    // A limiter and a gain are not commutative, which is exactly how the fixed order shows itself.
+    AudioInsertDescUVE limiter;
+    limiter.kind = AudioInsertKindUVE::Limiter;
+    limiter.params.thresholdDb = -6.0F;
+    limiter.params.releaseMs = 50.0F;
+    AudioInsertDescUVE boost;
+    boost.kind = AudioInsertKindUVE::Gain;
+    boost.params.gain = 2.0F;
+
+    ASSERT_TRUE(mixer.SetSampleRateUVE(kDefaultAudioSampleRateUVE));
+    ASSERT_TRUE(mixer.SetGroupInsertUVE("Voice", 0U, limiter));
+    ASSERT_TRUE(mixer.SetGroupInsertUVE("Voice", 1U, boost));
+    ASSERT_TRUE(mixer.ApplyBusChainUVE("Voice", std::vector<float>{1.6F}, output));
+    ASSERT_EQ(output.size(), 1U);
+    // Bus 0.5 -> 0.8; limiter holds it at -6 dB (0.5011); the +6 dB gain doubles it back past unity.
+    EXPECT_FLOAT_EQ(output[0], 1.0F);
+
+    ASSERT_TRUE(mixer.SetGroupInsertUVE("Voice", 0U, boost));
+    ASSERT_TRUE(mixer.SetGroupInsertUVE("Voice", 1U, limiter));
+    ASSERT_TRUE(mixer.ApplyBusChainUVE("Voice", std::vector<float>{1.6F}, output));
+    ASSERT_EQ(output.size(), 1U);
+    // Boost first: 0.8 * 2 = 1.6, and now the limiter is the last thing that touches it.
+    EXPECT_FLOAT_EQ(output[0], 0.50118724F);
 }
 
-TEST(AudioMixerBusGraphUVETest, GainSlotsValidateBusIndexAndGainAndClearToUnity) {
+TEST(AudioMixerBusGraphUVETest, InsertConfigurationValidatesSlotBusAndDescription) {
     AudioMixerGroupUVE mixer;
     ASSERT_TRUE(mixer.RegisterGroupUVE("Voice", 1.0F, 1.0F));
 
-    EXPECT_FALSE(mixer.SetGroupGainSlotUVE("Missing", 0U, 1.0F));
-    EXPECT_FALSE(mixer.SetGroupGainSlotUVE("Voice", kMaximumAudioBusGainSlotsUVE, 1.0F));
-    EXPECT_FALSE(mixer.SetGroupGainSlotUVE("Voice", 0U, -1.0F));
-    EXPECT_FALSE(mixer.SetGroupGainSlotUVE("Voice", 0U, std::numeric_limits<float>::quiet_NaN()));
+    AudioInsertDescUVE gain;
+    gain.kind = AudioInsertKindUVE::Gain;
+    gain.params.gain = 0.5F;
 
-    float gain = 0.0F;
-    ASSERT_TRUE(mixer.GetGroupGainSlotUVE("Voice", kMaximumAudioBusGainSlotsUVE - 1U, gain));
-    EXPECT_FLOAT_EQ(gain, 1.0F);
-    EXPECT_FALSE(mixer.GetGroupGainSlotUVE("Voice", kMaximumAudioBusGainSlotsUVE, gain));
-    EXPECT_FALSE(mixer.GetGroupGainSlotUVE("Missing", 0U, gain));
+    AudioInsertDescUVE invalidGain = gain;
+    invalidGain.params.gain = -1.0F;
 
-    ASSERT_TRUE(mixer.SetGroupGainSlotUVE("Voice", 2U, 0.25F));
-    ASSERT_TRUE(mixer.GetGroupGainSlotUVE("Voice", 2U, gain));
-    EXPECT_FLOAT_EQ(gain, 0.25F);
-    EXPECT_TRUE(mixer.ClearGroupGainSlotsUVE("Voice"));
-    ASSERT_TRUE(mixer.GetGroupGainSlotUVE("Voice", 2U, gain));
-    EXPECT_FLOAT_EQ(gain, 1.0F);
-    EXPECT_FALSE(mixer.ClearGroupGainSlotsUVE("Missing"));
+    AudioInsertDescUVE read;
+    EXPECT_FALSE(mixer.SetGroupInsertUVE("Missing", 0U, gain));
+    EXPECT_FALSE(mixer.SetGroupInsertUVE("Voice", kMaximumAudioBusInsertsUVE, gain));
+    EXPECT_FALSE(mixer.SetGroupInsertUVE("Voice", 0U, invalidGain));
+    EXPECT_FALSE(mixer.GetGroupInsertUVE("Voice", 0U, read));
+    EXPECT_FALSE(mixer.GetGroupInsertUVE("Missing", 0U, read));
+
+    ASSERT_TRUE(mixer.SetGroupInsertUVE("Voice", 0U, gain));
+    ASSERT_TRUE(mixer.GetGroupInsertUVE("Voice", 0U, read));
+    EXPECT_EQ(read, gain);
+    EXPECT_FALSE(mixer.GetGroupInsertUVE("Voice", kMaximumAudioBusInsertsUVE, read));
+
+    EXPECT_TRUE(mixer.ClearGroupInsertUVE("Voice", 0U));
+    EXPECT_FALSE(mixer.GetGroupInsertUVE("Voice", 0U, read));
+    EXPECT_FALSE(mixer.ClearGroupInsertUVE("Voice", kMaximumAudioBusInsertsUVE));
+    EXPECT_FALSE(mixer.ClearGroupInsertUVE("Missing", 0U));
 }
 
-TEST(AudioMixerBusGraphUVETest, ApplyBusGainChainFailsAtomicallyOnUnknownBusOrNonFiniteInput) {
+TEST(AudioMixerBusGraphUVETest, SampleRateIsValidatedBeforeAnyInsertUsesIt) {
+    AudioMixerGroupUVE mixer;
+    EXPECT_FLOAT_EQ(mixer.GetSampleRateUVE(), kDefaultAudioSampleRateUVE);
+    EXPECT_FALSE(mixer.SetSampleRateUVE(0.0F));
+    EXPECT_FALSE(mixer.SetSampleRateUVE(kMaximumAudioSampleRateUVE * 2.0F));
+    EXPECT_FLOAT_EQ(mixer.GetSampleRateUVE(), kDefaultAudioSampleRateUVE);
+    EXPECT_TRUE(mixer.SetSampleRateUVE(44100.0F));
+    EXPECT_FLOAT_EQ(mixer.GetSampleRateUVE(), 44100.0F);
+}
+
+TEST(AudioMixerBusGraphUVETest, BusChainFailsOnUnknownBusAndScrubsNonFiniteSamples) {
     AudioMixerGroupUVE mixer;
     ASSERT_TRUE(mixer.RegisterGroupUVE("Voice", 0.5F, 1.0F));
+
     const std::vector<float> sentinel{0.125F};
     std::vector<float> output = sentinel;
+    EXPECT_FALSE(mixer.ApplyBusChainUVE("Missing", std::vector<float>{0.5F}, output));
+    EXPECT_EQ(output, sentinel);
 
-    EXPECT_FALSE(mixer.ApplyBusGainChainUVE("Missing", std::vector<float>{0.5F}, output));
-    EXPECT_EQ(output, sentinel);
-    EXPECT_FALSE(mixer.ApplyBusGainChainUVE(
-        "Voice", std::vector<float>{std::numeric_limits<float>::quiet_NaN()}, output));
-    EXPECT_EQ(output, sentinel);
+    // A poisoned sample must not reach the device: it is replaced by silence, not propagated.
+    std::vector<float> poisoned{std::numeric_limits<float>::quiet_NaN(), 0.5F};
+    ASSERT_TRUE(mixer.ApplyBusChainUVE("Voice", poisoned, output));
+    ASSERT_EQ(output.size(), 2U);
+    EXPECT_FLOAT_EQ(output[0], 0.0F);
+    EXPECT_FLOAT_EQ(output[1], 0.25F);
 
     // A muted bus silences the samples themselves, not just the device-facing params.
     ASSERT_TRUE(mixer.SetGroupMutedUVE("Voice", true));
-    ASSERT_TRUE(mixer.ApplyBusGainChainUVE("Voice", std::vector<float>{0.8F}, output));
+    ASSERT_TRUE(mixer.ApplyBusChainUVE("Voice", std::vector<float>{0.8F}, output));
     ASSERT_EQ(output.size(), 1U);
     EXPECT_FLOAT_EQ(output[0], 0.0F);
+    ASSERT_TRUE(mixer.SetGroupMutedUVE("Voice", false));
+
+    // Zero frames is a valid no-op, an unknown bus is still an error.
+    float untouched = 0.75F;
+    EXPECT_TRUE(mixer.ProcessBusChainUVE("Voice", &untouched, 0U));
+    EXPECT_FLOAT_EQ(untouched, 0.75F);
+    EXPECT_FALSE(mixer.ProcessBusChainUVE("Missing", &untouched, 1U));
 }
 
 TEST(AudioMixerBusGraphUVETest, DiagnosticsExposeTreeShapeAndEffectiveValues) {

@@ -11,6 +11,8 @@
 #include <string_view>
 #include <vector>
 
+#include "uve/audio/audio_dsp_uve.h"
+
 namespace UVE::Audio {
 
 inline constexpr std::size_t kMaximumAudioMixerGroupsUVE = 32U;
@@ -18,10 +20,6 @@ inline constexpr std::size_t kMaximumAudioMixerGroupNameBytesUVE = 64U;
 inline constexpr float kMinimumAudioMixerPitchMultiplierUVE = 0.25F;
 inline constexpr float kMaximumAudioMixerPitchMultiplierUVE = 4.0F;
 inline constexpr std::string_view kMasterAudioMixerGroupNameUVE = "Master";
-
-/// Fixed insert-slot count per bus. Slots run in ascending index order on the audio path, and the
-/// bus's own effective volume always runs before them.
-inline constexpr std::size_t kMaximumAudioBusGainSlotsUVE = 4U;
 
 [[nodiscard]] constexpr std::size_t SaturatingAddAudioMixerSourceCountUVE(
     const std::size_t current, const std::size_t added) noexcept {
@@ -82,7 +80,8 @@ struct AudioMixerDiagnosticsUVE final {
 
 /// Owns the bounded mixer BUS TREE above the audio device. A "mixer group" is one bus: it has a
 /// parent (Master when not given), its own volume and pitch multipliers, mute and solo switches,
-/// fixed-order gain insert slots, and a count of the sources routed to it.
+/// a fixed-order typed insert stack (gain, filters, dynamics, reverb), and a count of the sources
+/// routed to it.
 ///
 /// The effective values a source receives are the product of its bus's multipliers and every
 /// ancestor's up to Master - so ducking Master ducks everything, and ducking "Music" ducks only what
@@ -165,21 +164,33 @@ public:
     [[nodiscard]] bool AttachSourceUVE(std::string_view name);
     [[nodiscard]] bool DetachSourceUVE(std::string_view name);
 
-    /// Sets one fixed-order gain insert on a bus. Slots default to unity; gains must be finite and
-    /// non-negative. False for an unknown bus or an out-of-range slot index.
-    [[nodiscard]] bool SetGroupGainSlotUVE(std::string_view name, std::size_t slot, float gain);
-    /// Reads one insert; false for an unknown bus or out-of-range slot index.
-    [[nodiscard]] bool GetGroupGainSlotUVE(std::string_view name, std::size_t slot, float& outGain) const;
-    /// Restores every insert on a bus to unity; false for an unknown bus.
-    [[nodiscard]] bool ClearGroupGainSlotsUVE(std::string_view name);
+    /// Installs one typed insert in a fixed slot (see audio_dsp_uve.h for the kinds and their
+    /// parameter ranges). Configuration happens here, never on the audio path, and a rejected
+    /// description leaves the previous insert - and its running DSP state - untouched. False for an
+    /// unknown bus, an out-of-range slot, or an invalid description.
+    [[nodiscard]] bool SetGroupInsertUVE(std::string_view name, std::size_t slot,
+                                         const AudioInsertDescUVE& desc);
+    /// Reads one configured insert; false for an unknown bus, out-of-range index, or empty slot.
+    [[nodiscard]] bool GetGroupInsertUVE(std::string_view name, std::size_t slot,
+                                         AudioInsertDescUVE& outDesc) const;
+    /// Bypasses one insert and drops its history; false for an unknown bus or out-of-range index.
+    [[nodiscard]] bool ClearGroupInsertUVE(std::string_view name, std::size_t slot);
 
-    /// Runs copied PCM through a bus's audio path: its effective volume (ancestors, mute and solo
-    /// included) first, then each authored insert slot in ascending index order, through the shared
-    /// bounded gain chain. Unity stages are skipped. It never mutates mixer state, so it is safe to
-    /// call for many buses per frame; false is returned for an unknown bus, oversized input, or
-    /// non-finite samples, and outputSamples is left untouched on failure.
-    [[nodiscard]] bool ApplyBusGainChainUVE(std::string_view name, const std::vector<float>& inputSamples,
-                                            std::vector<float>& outputSamples) const;
+    /// Device rate every bus's filters and reverb delays are built for. Buses registered later
+    /// inherit it. False (and no change) for a rate outside the accepted range.
+    [[nodiscard]] bool SetSampleRateUVE(float sampleRateHz);
+    [[nodiscard]] float GetSampleRateUVE() const noexcept;
+
+    /// Runs caller-owned samples through a bus's audio path in place: its effective volume
+    /// (ancestors, mute and solo included) first, then every configured insert in ascending slot
+    /// order, then ONE clamp into [-1, 1]. No allocation, no throw, no mixer mutation. False for an
+    /// unknown bus, and the buffer is untouched in that case.
+    [[nodiscard]] bool ProcessBusChainUVE(std::string_view name, float* samples,
+                                           std::size_t frameCount);
+    /// The copy-in/copy-out convenience around ProcessBusChainUVE(): sizes `outputSamples` to the
+    /// input and leaves it untouched when the bus is unknown.
+    [[nodiscard]] bool ApplyBusChainUVE(std::string_view name, const std::vector<float>& inputSamples,
+                                         std::vector<float>& outputSamples);
 
     [[nodiscard]] AudioMixerDiagnosticsUVE GetDiagnosticsUVE(
         std::size_t maximumGroups = kMaximumAudioMixerGroupsUVE) const;
@@ -193,13 +204,13 @@ private:
         std::string parent;
         bool muted = false;
         bool soloed = false;
-        /// Fixed-order inserts; unity by default, filled by MakeGroupStateUVE().
-        std::array<float, kMaximumAudioBusGainSlotsUVE> gainSlots{};
+        /// Fixed-order typed inserts; empty by default, configured through SetGroupInsertUVE().
+        AudioBusInsertChainUVE inserts;
     };
 
     /// Builds one bus with unity inserts, so no caller can accidentally create a silent stage.
     [[nodiscard]] static GroupStateUVE MakeGroupStateUVE(float volumeMultiplier, float pitchMultiplier,
-                                                         std::string parentName);
+                                                         std::string parentName, float sampleRateHz);
 
     [[nodiscard]] static bool IsValidNameUVE(std::string_view name) noexcept;
     [[nodiscard]] static bool IsValidVolumeMultiplierUVE(float volumeMultiplier) noexcept;
@@ -221,6 +232,7 @@ private:
     [[nodiscard]] float ComposePitchUVE(std::string_view name) const;
 
     std::map<std::string, GroupStateUVE, std::less<>> m_groups;
+    float m_sampleRate = kDefaultAudioSampleRateUVE;
 };
 
 } // namespace UVE::Audio
