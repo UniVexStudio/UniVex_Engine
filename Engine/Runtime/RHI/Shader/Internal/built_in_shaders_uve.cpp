@@ -1579,14 +1579,15 @@ float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, floa
     vec3 faceForward;
     PointShadowFaceBasisUVE(face, faceRight, faceUp, faceForward);
 
-    // Distance along the face axis, not along the ray: a vertex rendered through that face's matrix
-    // gets its clip-space w from the axis distance, so this - not `dist` - is what the depth
-    // attachment stores.
-    float axisDistance = dot(dir, faceForward) * dist;
-    if (axisDistance <= 0.0) {
+    // The face's own coordinates are the ray's components along its basis. Their RATIO is the
+    // normalized device position - dividing the absolute distance instead would make the sample
+    // drift toward the tile centre as the light's range grows, which looks like a shadow that
+    // shrinks away from the caster rather than like broken math.
+    float axisDot = dot(dir, faceForward);
+    if (axisDot <= 0.0001) {
         return 1.0;
     }
-    vec2 faceNdc = vec2(dot(dir, faceRight), dot(dir, faceUp)) / max(axisDistance, 0.0001);
+    vec2 faceNdc = vec2(dot(dir, faceRight), dot(dir, faceUp)) / axisDot;
     vec2 tileUv = faceNdc * 0.5 + 0.5;
     if (tileUv.x < 0.0 || tileUv.x > 1.0 || tileUv.y < 0.0 || tileUv.y > 1.0) {
         return 1.0;
@@ -1600,6 +1601,9 @@ float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, floa
         return 1.0;
     }
 
+    // Distance along the face axis in metres - clip-space w for a vertex rendered through this
+    // face's matrix, and therefore what the depth attachment stored.
+    float axisDistance = axisDot * dist;
     vec2 depthRange = uLightShadowDepthRange[lightIndex];
     float projectionDepth = PointShadowProjectionDepthUVE(depthRange, axisDistance);
     if (projectionDepth <= 0.0 || projectionDepth >= 1.0) {

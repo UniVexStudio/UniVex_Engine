@@ -344,6 +344,41 @@ TEST(ShadowAtlasManagerUVETest, PointFaceMatrixUsesASquareNinetyDegreeProjection
     EXPECT_NEAR(ndcX, ndcY, 1.0e-6F);
 }
 
+TEST(ShadowAtlasManagerUVETest, PointFaceProjectionMatchesTheShaderNdcRule) {
+    // The shader cannot call the matrix; it derives the same sample from the face basis:
+    //   ndc = (dot(dir, right), dot(dir, up)) / dot(dir, forward)
+    // with `dir` the normalized direction from the light. This pins that rule to what the face's
+    // matrix actually projects - if the two ever disagree, the shader samples a different texel
+    // than the pass wrote, and the artifact looks like a shadow offset rather than a math error.
+    constexpr float range = 20.0F;
+    const Math::Vector3UVE position{1.0F, -3.0F, 2.0F};
+    const auto table = PointLightShadowFaceTableUVE();
+    for (std::size_t face = 0; face < table.size(); ++face) {
+        const Math::Matrix4x4UVE matrix = ShadowAtlasManagerUVE::ComputePointLightFaceMatrixUVE(
+            position, static_cast<std::uint32_t>(face), range, 0.1F);
+        const PointShadowFaceBasisUVE& basis = table[face];
+        // Deliberately asymmetric offsets so a sign error cannot cancel out.
+        for (const float along : {1.0F, 4.0F, 11.0F}) {
+            const Math::Vector3UVE offset{basis.forward.x * along + basis.right.x * 0.3F * along +
+                                              basis.up.x * -0.2F * along,
+                                          basis.forward.y * along + basis.right.y * 0.3F * along +
+                                              basis.up.y * -0.2F * along,
+                                          basis.forward.z * along + basis.right.z * 0.3F * along +
+                                              basis.up.z * -0.2F * along};
+            const Math::Vector3UVE world{position.x + offset.x, position.y + offset.y,
+                                         position.z + offset.z};
+            const Math::Vector4UVE clip = TransformClipUVE(matrix, world);
+            ASSERT_GT(clip.w, 0.0F) << "face " << face << " along " << along;
+            const float expectedNdcX = 0.3F;
+            const float expectedNdcY = -0.2F;
+            EXPECT_NEAR(clip.x / clip.w, expectedNdcX, 1.0e-5F) << "face " << face;
+            EXPECT_NEAR(clip.y / clip.w, expectedNdcY, 1.0e-5F) << "face " << face;
+            // w is the axis distance in metres, the value the shader linearizes into depth.
+            EXPECT_NEAR(clip.w, along, 1.0e-5F) << "face " << face;
+        }
+    }
+}
+
 TEST(ShadowAtlasManagerUVETest, TileRectCalculations) {
     const Math::Vector4UVE rect = ShadowAtlasManagerUVE::ComputeTileRectUVE(1024U, 2048U, 512U);
     EXPECT_FLOAT_EQ(rect.x, 1024.0F / 4096.0F); // 0.25
