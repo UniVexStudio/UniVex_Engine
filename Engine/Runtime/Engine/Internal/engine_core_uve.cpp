@@ -11,6 +11,8 @@
 
 #include "uve/core/engine_core_uve.h"
 
+#include "uve/core/raycast_audio_occlusion_uve.h"
+
 #include "uve/core/frame_pacing_uve.h"
 #include "uve/core/render_backend_selection_uve.h"
 #include "uve/asset/legacy_extension_migration_uve.h"
@@ -1066,6 +1068,13 @@ void EngineCoreUVE::Init() {
                               m_config.audioVoiceVolumeUVE != defaultConfig.audioVoiceVolumeUVE ||
                                   isSettingCustomizedUVE("audio.buses.voiceVolume"));
     }
+
+    // Physics-driven occlusion: the audio system declares what a blocker looks like and this
+    // adapter answers with the raycast system, which was constructed before audio for exactly this
+    // kind of wiring. With no provider installed the mixer is unchanged, so this is opt-in by
+    // construction rather than by configuration.
+    m_audioOcclusion = std::make_unique<Core::RaycastAudioOcclusionUVE>(*m_entityManager, *m_raycastSystem);
+    m_audioSystem->SetOcclusionProviderUVE(m_audioOcclusion.get());
 
     // AudioSourceSystem thirty-first: stateful but takes no constructor dependencies —
     // EntityManager and AudioSystem are passed to SyncUVE() per call, like
@@ -3601,7 +3610,9 @@ void EngineCoreUVE::Shutdown() {
     m_checkpointManager.reset();
     m_saveGameSystem.reset();
     m_audioSourceSystem.reset();
+    // The provider is borrowed by the audio system, so it goes after the system that holds it.
     m_audioSystem.reset();
+    m_audioOcclusion.reset();
     m_audioDevice.reset();
     m_inputSystem.reset();
     m_mobileGestureSystem.reset();

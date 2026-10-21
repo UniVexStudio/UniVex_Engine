@@ -255,5 +255,55 @@ TEST(MiniaudioAudioDeviceUVETest, ClipVoicesRejectEveryStreamOperation) {
 }
 
 
+TEST(MiniaudioAudioDeviceUVETest, AnOccludedVoiceStillDrainsAndStops) {
+    const auto device = MiniaudioAudioDeviceUVE::CreateUVE(TestOptionsUVE());
+    ASSERT_NE(device, nullptr);
+    const VoiceHandleUVE voice = device->CreateStreamVoiceUVE(AudioStreamFormatUVE{48000U, 1U});
+    ASSERT_NE(voice, kInvalidVoiceHandleUVE);
+
+    const std::vector<float> frames(480U, 0.25F);
+    ASSERT_EQ(device->PushStreamFramesUVE(voice, frames), 480U);
+    ASSERT_TRUE(device->PlayUVE(voice));
+
+    // Heavily occluded: quiet and muffled. The end-of-stream contract must not change because the
+    // filter is engaged - the drain still stops the voice.
+    AudioVoiceParamsUVE params;
+    params.gain = 0.2F;
+    params.lowPassCutoffHz = 400.0F;
+    ASSERT_TRUE(device->SetVoiceParamsUVE(voice, params));
+    ASSERT_TRUE(device->EndStreamUVE(voice));
+
+    EXPECT_TRUE(WaitForUVE([&device, voice] {
+        return device->GetVoiceStateUVE(voice) == VoicePlaybackStateUVE::Stopped;
+    }));
+    device->DestroyVoiceUVE(voice);
+}
+
+TEST(MiniaudioAudioDeviceUVETest, MovingTheLowPassCornerBetweenFramesIsSafe) {
+    const auto device = MiniaudioAudioDeviceUVE::CreateUVE(TestOptionsUVE());
+    ASSERT_NE(device, nullptr);
+    const auto path = WriteTestClipUVE("lowpass_sweep", ConstantClipUVE(48000U, 0.4F));
+    ASSERT_FALSE(path.empty());
+    AudioVoiceDescUVE desc;
+    desc.audioAssetPath = path.string();
+    desc.looping = true;
+    const VoiceHandleUVE voice = device->CreateVoiceUVE(desc);
+    ASSERT_NE(voice, kInvalidVoiceHandleUVE);
+    ASSERT_TRUE(device->PlayUVE(voice));
+
+    // Sweep the corner the way a source crossing an occluder would, then bypass it again.
+    for (int step = 0; step <= 10; ++step) {
+        AudioVoiceParamsUVE params;
+        params.gain = 0.5F;
+        params.lowPassCutoffHz = step == 0 ? 0.0F : 200.0F + static_cast<float>(step) * 800.0F;
+        EXPECT_TRUE(device->SetVoiceParamsUVE(voice, params));
+        std::this_thread::sleep_for(std::chrono::milliseconds{2});
+    }
+    EXPECT_EQ(device->GetVoiceStateUVE(voice), VoicePlaybackStateUVE::Playing);
+    EXPECT_TRUE(device->StopUVE(voice));
+    RemoveScratchUVE({path});
+}
+
+
 } // namespace
 } // namespace UVE::Audio::Tests

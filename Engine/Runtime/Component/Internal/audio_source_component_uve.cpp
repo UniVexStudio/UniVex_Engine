@@ -44,9 +44,14 @@ namespace {
                                 source.audioAssetPath.find('\0') == std::string::npos;
     const bool mixerGroupValid = source.mixerGroup.size() <= kMaximumAudioMixerGroupNameBytesUVE &&
                                  source.mixerGroup.find('\0') == std::string::npos;
+    const bool occlusionValid =
+        !source.spatial || !source.occlusionEnabled ||
+        (std::isfinite(source.occlusionGain) && source.occlusionGain >= 0.0F && source.occlusionGain <= 1.0F &&
+         std::isfinite(source.occlusionLowPassHz) && source.occlusionLowPassHz >= 20.0F &&
+         source.occlusionLowPassHz <= 20000.0F);
     return assetPathValid && mixerGroupValid && std::isfinite(source.volume) &&
            source.volume >= 0.0F && std::isfinite(source.pitch) && source.pitch > 0.0F &&
-           IsAudioAttenuationCurveValidUVE(source.attenuationCurve) && spatialDistanceValid;
+           IsAudioAttenuationCurveValidUVE(source.attenuationCurve) && spatialDistanceValid && occlusionValid;
 }
 
 [[nodiscard]] bool HasAudioSourceAssetPathUVE(const AudioSourceComponentUVE& source) noexcept {
@@ -70,6 +75,13 @@ namespace {
     }
     if (!std::isfinite(out.maxDistance) || out.maxDistance <= out.minDistance) {
         out.maxDistance = std::max(out.minDistance + 1.0F, 25.0F);
+    }
+    if (!std::isfinite(out.occlusionGain) || out.occlusionGain < 0.0F || out.occlusionGain > 1.0F) {
+        out.occlusionGain = 0.35F;
+    }
+    if (!std::isfinite(out.occlusionLowPassHz) || out.occlusionLowPassHz < 20.0F ||
+        out.occlusionLowPassHz > 20000.0F) {
+        out.occlusionLowPassHz = 700.0F;
     }
     return out;
 }

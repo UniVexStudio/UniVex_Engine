@@ -44,6 +44,7 @@ add_library(uve_core STATIC
     Internal/version_uve.cpp
     Internal/engine_services_uve.cpp
     Internal/engine_core_uve.cpp
+    Internal/raycast_audio_occlusion_uve.cpp
     Internal/input_map_document_uve.cpp
     Internal/uvscript_object_host_uve.cpp
 )

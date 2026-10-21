@@ -46,6 +46,15 @@ struct AudioSourceComponentUVE final {
     /// entity. No scripting/event trigger consumes AudioSourceComponentUVE yet — playOnAwake is
     /// the only way an ECS-authored sound can start without one.
     bool playOnAwake = true;
+
+    /// Physics-driven occlusion. A positional source behind geometry is both quieter and muffled;
+    /// these are the values it falls to when fully blocked. Non-spatial sources ignore them, and an
+    /// engine with no occlusion provider installed plays every source exactly as before.
+    bool occlusionEnabled = true;
+    float occlusionGain = 0.35F;
+    float occlusionLowPassHz = 700.0F;
+    /// Collision layers that can block this source.
+    std::uint32_t occlusionLayerMask = 0xFFFFFFFFU;
 };
 
 [[nodiscard]] bool IsAudioAttenuationCurveValidUVE(const AudioAttenuationCurveUVE curve) noexcept;

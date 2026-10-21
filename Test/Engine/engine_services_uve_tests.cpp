@@ -941,6 +941,7 @@ public:
         return false;
     }
     void UpdateUVE(float) override { ++updateCallCount; }
+    void SetOcclusionProviderUVE(const Audio::IAudioOcclusionProviderUVE*) override {}
     [[nodiscard]] Audio::VoiceHandleUVE CreateStreamingSourceUVE(const Audio::AudioSourceDescUVE&,
                                                                  Audio::IAudioStreamSourceUVE&) override {
         return Audio::VoiceHandleUVE{1};
