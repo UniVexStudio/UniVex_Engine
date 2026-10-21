@@ -12,6 +12,7 @@
 #include <miniaudio.h>
 
 #include "uve/asset/audio_asset_uve.h"
+#include "uve/audio/audio_occlusion_uve.h"
 #include "uve/audio/audio_spatialization_uve.h"
 #include "uve/containers/handle_table_uve.h"
 #include "uve/logging/logging_macros_uve.h"
@@ -37,6 +38,9 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
         /// `cursorFrames` indexes this ring instead of `samples`.
         AudioStreamRingBufferUVE stream;
         bool streamEnded = false;
+        /// Occlusion muffling. Bypassed (touching nothing) whenever the system reports cutoff 0.
+        AudioVoiceLowPassUVE lowPass;
+        float lastLowPassCutoffHz = 0.0F;
 
         [[nodiscard]] bool IsStreamingUVE() const noexcept { return stream.IsConfiguredUVE(); }
     };
@@ -104,14 +108,20 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
                 const std::size_t nextIndex =
                     voice.looping ? ((frameIndex + 1U) % totalFrames)
                                   : std::min(frameIndex + 1U, totalFrames - 1U);
+                float mixedFrame[kOutputChannelsUVE] = {0.0F, 0.0F};
                 for (std::uint32_t channel = 0U; channel < kOutputChannelsUVE; ++channel) {
                     const std::uint32_t sourceChannel =
                         voice.channels == 1U ? 0U : std::min(channel, voice.channels - 1U);
                     const float sampleA = voice.samples[frameIndex * voice.channels + sourceChannel];
                     const float sampleB = voice.samples[nextIndex * voice.channels + sourceChannel];
+                    mixedFrame[channel] = sampleA + (sampleB - sampleA) * fraction;
+                }
+                // Filtered before gain and pan, so the muffling never depends on how loud the voice
+                // happens to be, and skipped entirely when the voice is unoccluded.
+                voice.lowPass.ProcessUVE(mixedFrame[0], mixedFrame[1]);
+                for (std::uint32_t channel = 0U; channel < kOutputChannelsUVE; ++channel) {
                     const float panGain = channel == 0U ? panGains.left : panGains.right;
-                    out[frame * kOutputChannelsUVE + channel] +=
-                        (sampleA + (sampleB - sampleA) * fraction) * voice.gain * panGain;
+                    out[frame * kOutputChannelsUVE + channel] += mixedFrame[channel] * voice.gain * panGain;
                 }
                 voice.cursorFrames += voice.stepPerOutputFrame;
                 if (voice.cursorFrames >= static_cast<double>(totalFrames)) {
@@ -157,12 +167,17 @@ void MiniaudioAudioDeviceUVE::ImplUVE::MixStreamUVE(VoiceUVE& voice, VoicePlayba
             std::copy(frameA, frameA + channels, frameB);
         }
         const float fraction = static_cast<float>(voice.cursorFrames - static_cast<double>(index));
+        float mixedFrame[kOutputChannelsUVE] = {0.0F, 0.0F};
         for (std::uint32_t channel = 0U; channel < kOutputChannelsUVE; ++channel) {
             const std::size_t sourceChannel =
                 channels == 1U ? 0U : std::min(static_cast<std::size_t>(channel), channels - 1U);
-            const float sample = frameA[sourceChannel] + (frameB[sourceChannel] - frameA[sourceChannel]) * fraction;
+            mixedFrame[channel] =
+                frameA[sourceChannel] + (frameB[sourceChannel] - frameA[sourceChannel]) * fraction;
+        }
+        voice.lowPass.ProcessUVE(mixedFrame[0], mixedFrame[1]);
+        for (std::uint32_t channel = 0U; channel < kOutputChannelsUVE; ++channel) {
             const float panGain = channel == 0U ? panGains.left : panGains.right;
-            out[frame * kOutputChannelsUVE + channel] += sample * voice.gain * panGain;
+            out[frame * kOutputChannelsUVE + channel] += mixedFrame[channel] * voice.gain * panGain;
         }
         voice.cursorFrames += voice.stepPerOutputFrame;
         const std::size_t consumed = static_cast<std::size_t>(voice.cursorFrames);
@@ -346,6 +361,16 @@ bool MiniaudioAudioDeviceUVE::SetVoiceParamsUVE(VoiceHandleUVE voice, const Audi
     entry->voice.stepPerOutputFrame =
         (static_cast<double>(entry->voice.sampleRate) / static_cast<double>(m_impl->outputSampleRate)) *
         static_cast<double>(params.pitch);
+    // Only touch the filter state when the corner actually moves: reconfiguring every frame would
+    // reset nothing but would still cost a log/exp per voice per frame for no audible gain.
+    if (params.lowPassCutoffHz != entry->voice.lastLowPassCutoffHz) {
+        entry->voice.lowPass.ConfigureUVE(params.lowPassCutoffHz,
+                                          static_cast<float>(m_impl->outputSampleRate));
+        // A corner that changes is a new acoustic path: keeping the old state would let a stale
+        // transient ring through at the new setting.
+        entry->voice.lowPass.ResetUVE();
+        entry->voice.lastLowPassCutoffHz = params.lowPassCutoffHz;
+    }
     return true;
 }
 

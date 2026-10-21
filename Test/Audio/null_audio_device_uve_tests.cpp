@@ -105,7 +105,11 @@ TEST(NullAudioDeviceUVETest, SetVoiceParamsUVE_RejectsInvalidParametersWithoutRe
     EXPECT_FALSE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, 1.0F, 1.5F}));
     EXPECT_FALSE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, 1.0F, -2.0F}));
     EXPECT_TRUE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, 1.0F, -1.0F}));
-    EXPECT_EQ(device.GetRecordedCallsUVE().size(), 2U);
+    // The low-pass corner is either the 0 bypass sentinel or a real, audible corner.
+    EXPECT_FALSE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, 1.0F, 0.0F, -5.0F}));
+    EXPECT_FALSE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, 1.0F, 0.0F, 30000.0F}));
+    EXPECT_TRUE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, 1.0F, 0.0F, 700.0F}));
+    EXPECT_EQ(device.GetRecordedCallsUVE().size(), 3U);
 }
 
 TEST(NullAudioDeviceUVETest, GetVoiceStateUVE_UnknownHandle_ReturnsStoppedAndLogsError) {
