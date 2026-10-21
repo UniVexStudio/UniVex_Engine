@@ -98,6 +98,7 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
                            OwnComponentUVE<Skeleton3DComponentUVE>{Kind::Skeleton3D},
                            OwnComponentUVE<BoneAttachment3DComponentUVE>{Kind::BoneAttachment3D},
                            OwnComponentUVE<TwoBoneIK3DComponentUVE>{Kind::TwoBoneIK3D},
+                           OwnComponentUVE<FullBodyIK3DComponentUVE>{Kind::FullBodyIK3D},
                            OwnComponentUVE<SpringArm3DComponentUVE>{Kind::SpringArm3D},
                            OwnComponentUVE<Marker3DComponentUVE>{Kind::Marker3D},
                            OwnComponentUVE<Hitbox3DComponentUVE>{Kind::Hitbox3D},

@@ -198,6 +198,7 @@
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/bone_attachment_pass_uve.h"
 #include "uve/scene/two_bone_ik_pass_uve.h"
+#include "uve/scene/full_body_ik_pass_uve.h"
 #include "uve/scene/prefab_system_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/scene/scene_serializer_uve.h"
@@ -1893,6 +1894,10 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
     // on a moving prop), and it has to happen before the attachment pass puts anything in that hand.
     // The report is discarded on purpose - a refused chain recorded why in its own runtime fields.
     static_cast<void>(Scene::SyncTwoBoneIK3DObjectsUVE(*m_entityManager, *m_sceneGraph, posedSkeletons));
+    // The whole-body solve runs after the limb chains: the chains have planted what they were asked
+    // to, and this reconciles those placements with every other pull in one pose. Its report is
+    // discarded for the same reason - a refused solve recorded why in its own runtime fields.
+    static_cast<void>(Scene::SyncFullBodyIK3DObjectsUVE(*m_entityManager, *m_sceneGraph, posedSkeletons));
 
     if (!physicsStep) {
 

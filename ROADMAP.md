@@ -408,7 +408,22 @@ and one of the highest-priority areas below.
   the gate, influence, refusals, index-beats-name, priority ordering), the serializer's
   three-reference round trip with documents whose ids name nothing, the section's metadata case, and
   an engine-core tick test that ends with an attachment on the wrist the IK moved.
-- [ ] Full-body IK, as a stretch goal beyond the two-bone object above
+- [x] Full-body IK, as a stretch goal beyond the two-bone object above - `FullBodyIK3D` is a scene
+  object that solves the whole skeleton at once so several limbs share one answer: every effector is
+  a bone/target/weight pull on the same pose, and the solve iterates until the pulls agree or the
+  budget runs out. The solver pairs bounded CCD sweeps (tip-inward, per-sweep rotation cap, inner
+  per-effector convergence) with an exact analytic two-bone finish on every chain's last two joints -
+  which removes CCD's straight-limb dilemma outright - and averages the finish where two chains
+  claim the same joints so alternating exact solves converge on the pose both can have instead of
+  oscillating between them. `rootTranslationWeight` lets the hips step toward unreachable targets
+  (the foot-planting case), `positionWeight` leans a limb part-way without leaving the animation's
+  pose, and a locked per-sweep `maxJointStepRadians` turns a hard pull into a pose that changes at
+  a rate an animator would key. It runs after the two-bone pass and before attachments, refuses
+  rather than falls back (a gone target object, a renamed bone, a skeleton no driver posed), writes
+  through the shared `BoneModifierComponentUVE` influence, and ships with its serializer
+  (per-effector target local ids), Inspector metadata with an editable effector list, and 24 cases
+  covering solver geometry, error budgets, spine sharing, root translation, weights, step limits,
+  determinism, pass integration, and file round trips.
 - [x] Root motion extraction and application - `AnimationRootMotionModeUVE`: Off, In Place (the root
   bone's ground travel is taken out of the pose) and Apply To Target (the target is moved by it, as
   velocity when it is a Character3D so collision still applies). Locked by the sequencer's travel

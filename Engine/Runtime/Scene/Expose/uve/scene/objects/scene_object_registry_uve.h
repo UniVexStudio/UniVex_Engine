@@ -74,6 +74,9 @@ enum class SceneObjectKindUVE : std::uint8_t {
     /// The 2D scrolling camera: the view a 2D scene is authored through. Appended so no
     /// existing kind's value moves.
     Camera2D,
+    /// The whole body solved at once so several limbs can share one answer. Appended so no
+    /// existing kind's value moves.
+    FullBodyIK3D,
 };
 
 struct SceneObjectDescriptorUVE final {
