@@ -507,8 +507,27 @@ and one of the highest-priority areas below.
   sphere hit also cancels the inward velocity component, so a chain cannot buzz against an obstacle.
   Locked by 5 cases: per-segment link lengths plus pose write-back, frame-rate independence, the
   per-joint angular cone, sphere push-out, and an unbound simulator being left alone.
-- [ ] A dedicated animation-authoring/preview tool in the editor (a timeline/sequencer for
-  scrubbing clips and state machines is covered again under Editor Tooling below)
+- [x] A dedicated animation-authoring/preview tool in the editor - the Timeline tab is a dope sheet
+  over the selected AnimationSequencer's clip: one row per bone, each opening into its Position /
+  Rotation / Scale lanes, under a ruler with a playhead and a transport (play, scrub, step, loop,
+  fit and zoom). Keys are selected, moved, copied, pasted and deleted, curves are edited point by
+  point, events are added, renamed and dragged, and every edit is one undo step written back to the
+  clip's `.uvanim`. Blend shapes - the part of §4 that had no face in the editor - now get a row
+  each, in the clip's own order BELOW the rig (a 90-bone character would otherwise push the face off
+  the bottom of the tab), keyed where a weight actually changes and drawn in a colour of their own;
+  a skin-less lip-sync clip, which has no bone row at all, finally shows its timing. The preview
+  writes runtime state only: the skeleton's pose, and every blend-shape track sampled through
+  `SampleMorphWeightTrackUVE` at the playhead and written into the target object's
+  `MorphTargetComponentUVE` - the weights each object held are captured before the first write and
+  put back when the preview stops, so scrubbing never dirties an entity or its file. The mesh's
+  shape names are read once per object per mesh and cached, and a track that cannot play (no object
+  with that name, no Morph Targets component, or a weight count that does not match the mesh) is
+  counted in the bottom bar instead of failing silently. Which rows the tab shows, in what order,
+  and which weights a frame puts on which object are pure decisions in
+  `editor_timeline_tracks_uve.h`, locked by 9 cases: bone-only, blend-shape-only and mixed clips,
+  the filter, the no-skeleton fallback, the key-showing rule, and the preview resolving, clamping
+  outside the key range, and counting what it cannot play. (The broader sequencer/state-machine
+  authoring item stays open under Editor Tooling below.)
 
 ---
 

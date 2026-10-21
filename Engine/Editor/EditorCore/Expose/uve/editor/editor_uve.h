@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <typeindex>
@@ -68,6 +69,7 @@
 #include "uve/objects/3d/all_objects_3d_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
+#include "uve/component/morph_target_component_uve.h"
 #include "uve/component/skin_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
@@ -2431,6 +2433,26 @@ private:
         float curveUnwrap = 0.0F;
         /// The skeleton whose pose the Timeline wrote, to put back at rest when it stops.
         Scene::EntityUVE previewSkeleton = Scene::kInvalidEntityUVE;
+        /// The objects the blend-shape preview drove, with the weights each held before it did:
+        /// put back when the preview stops, so scrubbing a clip never rewrites an entity's
+        /// authored shapes. Preview state only - nothing here reaches the document or its file.
+        struct MorphPreviewTargetUVE final {
+            Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+            std::vector<Scene::MorphTargetWeightUVE> previousWeights;
+        };
+        std::vector<MorphPreviewTargetUVE> morphPreview;
+        /// Blend-shape names of each previewed object's mesh, in the mesh's own order, read once per
+        /// object while its mesh stays the same: parsing a .uvmodel on every frame would be the
+        /// most expensive thing in the tab.
+        struct MorphTargetNamesUVE final {
+            Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+            Asset::AssetGuidUVE meshGuid{};
+            std::vector<std::string> names;
+        };
+        std::vector<MorphTargetNamesUVE> morphTargetNames;
+        /// Blend-shape tracks the last preview could not play - no object with that name, an object
+        /// with no shapes, or a key count that does not match its mesh - shown in the bottom bar.
+        std::size_t morphTracksNotPlaying = 0U;
     };
     AnimationTimelineStateUVE m_timeline;
     /// The Timeline had keyboard focus last frame: its keys (Delete, Ctrl+Z, arrows...) are its own,
@@ -2440,6 +2462,15 @@ private:
     void DrawAnimationTimelineUVE();
     /// Puts the previewed skeleton back at rest and stops the preview.
     void StopAnimationTimelinePreviewUVE();
+    /// Drives the open clip's blend-shape tracks onto the objects their node names refer to, under
+    /// `root`, at the current playhead. The weights are runtime preview state: the first frame that
+    /// drives an object captures what it held, and StopAnimationTimelinePreviewUVE puts it back.
+    void PreviewAnimationTimelineMorphsUVE(const Asset::AnimationClipAssetUVE& clip, Scene::EntityUVE root);
+    /// Puts back the weights the blend-shape preview replaced, and forgets what it drove.
+    void StopAnimationTimelineMorphPreviewUVE();
+    /// The blend-shape names of `entity`'s mesh, in the mesh's own order; cached per mesh, and empty
+    /// when the object has no mesh, no readable model or no shapes.
+    [[nodiscard]] std::span<const std::string> TimelineMorphTargetNamesUVE(Scene::EntityUVE entity);
     /// The Timeline's animation picker: the player's animations, switching, New, Add from Project,
     /// Rename, Duplicate and Remove.
     void DrawAnimationPickerUVE(Scene::EntityUVE player, Scene::EntityUVE skeleton);
