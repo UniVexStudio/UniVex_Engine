@@ -4,6 +4,7 @@
 #include "uve/asset/mesh_asset_uve.h"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <filesystem>
 #include <limits>
@@ -198,6 +199,180 @@ TEST(MeshAssetUVETest, MeshAssetRoundTripsMaterialGuids) {
     std::filesystem::remove(withPath);
     std::filesystem::remove(withoutPath);
     std::filesystem::remove(legacyPath);
+}
+
+/// A two-shape face-ish mesh: three vertices, "jawOpen" moving only vertex 2 downward and
+/// "smile" moving vertices 0 and 1 outward, plus a default weight that is deliberately off zero so
+/// the round trip has to preserve it rather than re-deriving zeroes.
+[[nodiscard]] MeshAssetUVE MakeMorphTestMeshUVE() {
+    MeshAssetUVE mesh = MakeTestMeshUVE();
+    MeshMorphTargetUVE jaw;
+    jaw.name = "jawOpen";
+    jaw.deltas.push_back(MeshMorphTargetDeltaUVE{2U, Math::Vector3UVE{0.0F, -0.25F, 0.1F},
+                                                 Math::Vector3UVE{0.0F, -1.0F, 0.0F},
+                                                 Math::Vector3UVE{}});
+    MeshMorphTargetUVE smile;
+    smile.name = "smile";
+    smile.deltas.push_back(MeshMorphTargetDeltaUVE{0U, Math::Vector3UVE{-0.1F, 0.0F, 0.0F},
+                                                   Math::Vector3UVE{}, Math::Vector3UVE{}});
+    smile.deltas.push_back(MeshMorphTargetDeltaUVE{1U, Math::Vector3UVE{0.1F, 0.0F, 0.0F},
+                                                   Math::Vector3UVE{}, Math::Vector3UVE{}});
+    mesh.morphTargets = {std::move(jaw), std::move(smile)};
+    mesh.defaultMorphWeights = {0.25F, 0.0F};
+    return mesh;
+}
+
+TEST(MeshAssetUVETest, StaticMesh_IsValidMorphTargetData) {
+    // Every mesh that existed before blend shapes must keep validating unchanged.
+    const MeshAssetUVE mesh = MakeTestMeshUVE();
+    EXPECT_FALSE(mesh.HasMorphTargetsUVE());
+    EXPECT_TRUE(IsMeshMorphTargetDataValidUVE(mesh));
+}
+
+TEST(MeshAssetUVETest, MorphTargetData_RejectsOutOfRangeVertex) {
+    MeshAssetUVE mesh = MakeMorphTestMeshUVE();
+    mesh.morphTargets[0].deltas[0].vertexIndex = 3U; // three vertices, index 3 is past the end
+    EXPECT_FALSE(IsMeshMorphTargetDataValidUVE(mesh));
+}
+
+TEST(MeshAssetUVETest, MorphTargetData_RejectsOutOfOrderAndDuplicateDeltas) {
+    MeshAssetUVE mesh = MakeMorphTestMeshUVE();
+    // "smile" lists vertices 0 then 1; swapping them makes the array descending, and repeating a
+    // vertex would double-displace it. Both are the same defect: the ascending invariant is broken.
+    std::swap(mesh.morphTargets[1].deltas[0], mesh.morphTargets[1].deltas[1]);
+    EXPECT_FALSE(IsMeshMorphTargetDataValidUVE(mesh));
+
+    MeshAssetUVE duplicated = MakeMorphTestMeshUVE();
+    duplicated.morphTargets[1].deltas[1].vertexIndex = 0U;
+    EXPECT_FALSE(IsMeshMorphTargetDataValidUVE(duplicated));
+}
+
+TEST(MeshAssetUVETest, MorphTargetData_RejectsNonFiniteDeltaAndPartiallyDefaultedWeights) {
+    MeshAssetUVE nonFinite = MakeMorphTestMeshUVE();
+    nonFinite.morphTargets[0].deltas[0].positionDelta.y = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(IsMeshMorphTargetDataValidUVE(nonFinite));
+
+    // Two shapes, one weight: the missing weight has no meaning, so it is a defect rather than a
+    // zero by omission.
+    MeshAssetUVE shortWeights = MakeMorphTestMeshUVE();
+    shortWeights.defaultMorphWeights = {0.5F};
+    EXPECT_FALSE(IsMeshMorphTargetDataValidUVE(shortWeights));
+}
+
+TEST(MeshAssetUVETest, MorphTargetData_EmptyDefaultWeightsMeansRestShapeAndIsValid) {
+    MeshAssetUVE mesh = MakeMorphTestMeshUVE();
+    mesh.defaultMorphWeights.clear();
+    EXPECT_TRUE(mesh.HasMorphTargetsUVE());
+    EXPECT_TRUE(IsMeshMorphTargetDataValidUVE(mesh));
+}
+
+TEST(MeshAssetUVETest, AccumulateMorphTargets_UsesSparseDeltasAndSkipsZeroWeights) {
+    const MeshAssetUVE mesh = MakeMorphTestMeshUVE();
+    // A zero weight on "smile" must leave its vertices exactly where they were - not merely close.
+    const std::array<float, 2U> weights{1.0F, 0.0F};
+    std::vector<MeshVertexUVE> morphed;
+    ASSERT_TRUE(AccumulateMorphTargetsUVE(mesh.vertices, mesh.morphTargets, weights, morphed));
+    ASSERT_EQ(morphed.size(), mesh.vertices.size());
+
+    EXPECT_EQ(morphed[2].position, (Math::Vector3UVE{0.0F, 0.75F, 0.1F}));
+    EXPECT_EQ(morphed[2].normal, (Math::Vector3UVE{0.0F, 0.0F, 0.0F}));
+    EXPECT_EQ(morphed[0].position, mesh.vertices[0].position);
+    EXPECT_EQ(morphed[1].position, mesh.vertices[1].position);
+}
+
+TEST(MeshAssetUVETest, AccumulateMorphTargets_ScalesByWeightAndIsOrderIndependent) {
+    const MeshAssetUVE mesh = MakeMorphTestMeshUVE();
+    const std::array<float, 2U> weights{0.5F, 1.0F};
+    std::vector<MeshVertexUVE> morphed;
+    ASSERT_TRUE(AccumulateMorphTargetsUVE(mesh.vertices, mesh.morphTargets, weights, morphed));
+    EXPECT_FLOAT_EQ(morphed[0].position.x, -0.1F);
+    EXPECT_FLOAT_EQ(morphed[1].position.x, 1.1F);
+    EXPECT_FLOAT_EQ(morphed[2].position.y, 0.875F);
+
+    // Reordering the TARGETS (and their weights) must move the same vertices the same distance.
+    // This is the property that makes two assets describing one face comparable at all.
+    MeshAssetUVE reordered = mesh;
+    std::swap(reordered.morphTargets[0], reordered.morphTargets[1]);
+    std::vector<MeshVertexUVE> reorderedVertices;
+    const std::array<float, 2U> reorderedWeights{1.0F, 0.5F};
+    ASSERT_TRUE(AccumulateMorphTargetsUVE(mesh.vertices, reordered.morphTargets, reorderedWeights,
+                                          reorderedVertices));
+    for (std::size_t index = 0U; index < morphed.size(); ++index) {
+        EXPECT_NEAR(reorderedVertices[index].position.x, morphed[index].position.x, 1.0e-6F);
+        EXPECT_NEAR(reorderedVertices[index].position.y, morphed[index].position.y, 1.0e-6F);
+        EXPECT_NEAR(reorderedVertices[index].position.z, morphed[index].position.z, 1.0e-6F);
+    }
+}
+
+TEST(MeshAssetUVETest, AccumulateMorphTargets_FailsAtomicallyOnWeightMismatch) {
+    const MeshAssetUVE mesh = MakeMorphTestMeshUVE();
+    std::vector<MeshVertexUVE> untouched(1U);
+    untouched[0].position = Math::Vector3UVE{7.0F, 7.0F, 7.0F};
+    const std::vector<MeshVertexUVE> sentinel = untouched;
+    const std::array<float, 1U> tooFewWeights{1.0F};
+    EXPECT_FALSE(AccumulateMorphTargetsUVE(mesh.vertices, mesh.morphTargets, tooFewWeights, untouched));
+    ASSERT_EQ(untouched.size(), sentinel.size());
+    EXPECT_EQ(untouched[0].position, sentinel[0].position);
+}
+
+TEST(MeshAssetUVETest, SaveThenLoad_RoundTripsMorphTargetsAndDefaultWeights) {
+    const std::filesystem::path path = "uve_mesh_asset_tests_morph_round_trip.uvmodel";
+    std::filesystem::remove(path);
+    const MeshAssetUVE original = MakeMorphTestMeshUVE();
+    ASSERT_TRUE(SaveMeshAssetUVE(original, path));
+
+    MeshAssetUVE loaded;
+    ASSERT_TRUE(LoadMeshAssetUVE(path, loaded));
+    ASSERT_EQ(loaded.morphTargets.size(), 2U);
+    EXPECT_EQ(loaded.morphTargets[0].name, "jawOpen");
+    EXPECT_EQ(loaded.morphTargets[1].name, "smile");
+    EXPECT_EQ(loaded.morphTargets[0].deltas, original.morphTargets[0].deltas);
+    EXPECT_EQ(loaded.morphTargets[1].deltas, original.morphTargets[1].deltas);
+    EXPECT_EQ(loaded.defaultMorphWeights, original.defaultMorphWeights);
+    std::filesystem::remove(path);
+}
+
+TEST(MeshAssetUVETest, SaveThenLoad_MeshWithoutShapesKeepsItsOldBytes) {
+    // A static mesh must not grow a section just because the format learned about blend shapes:
+    // that is what lets an older engine build read a newer file's geometry.
+    const std::filesystem::path path = "uve_mesh_asset_tests_static_bytes.uvmodel";
+    std::filesystem::remove(path);
+    const MeshAssetUVE mesh = MakeTestMeshUVE();
+    ASSERT_TRUE(SaveMeshAssetUVE(mesh, path));
+
+    MeshAssetUVE loaded;
+    ASSERT_TRUE(LoadMeshAssetUVE(path, loaded));
+    EXPECT_TRUE(loaded.morphTargets.empty());
+    EXPECT_TRUE(loaded.defaultMorphWeights.empty());
+    std::filesystem::remove(path);
+}
+
+TEST(MeshAssetUVETest, SaveThenLoad_RoundTripsShapesOnASkinnedMesh) {
+    // Blend shapes and skinning are independent sections and must not disturb each other; a face
+    // mesh is normally BOTH, so this is the combination that ships.
+    MeshAssetUVE mesh = MakeMorphTestMeshUVE();
+    mesh.joints.resize(1U);
+    mesh.joints[0].name = "Root";
+    mesh.joints[0].inverseBindMatrix = Math::Matrix4x4UVE::IdentityUVE();
+    mesh.skinningInfluences.assign(mesh.vertices.size(), MeshSkinningInfluenceUVE{});
+    for (MeshSkinningInfluenceUVE& influence : mesh.skinningInfluences) {
+        influence.joints[0] = 0U;
+        influence.weights[0] = 1.0F;
+    }
+    mesh.materialGuids = {AssetGuidUVE{0x1234U}};
+
+    const std::filesystem::path path = "uve_mesh_asset_tests_skinned_morph.uvmodel";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(SaveMeshAssetUVE(mesh, path));
+
+    MeshAssetUVE loaded;
+    ASSERT_TRUE(LoadMeshAssetUVE(path, loaded));
+    EXPECT_TRUE(loaded.IsSkinnedUVE());
+    ASSERT_EQ(loaded.morphTargets.size(), 2U);
+    EXPECT_EQ(loaded.morphTargets[0].name, "jawOpen");
+    ASSERT_EQ(loaded.materialGuids.size(), 1U);
+    EXPECT_EQ(loaded.materialGuids[0].value, 0x1234U);
+    std::filesystem::remove(path);
 }
 
 TEST(MeshAssetUVETest, LoadMeshAssetUVE_WrongAssetKind_FailsCleanlyAndLogsError) {

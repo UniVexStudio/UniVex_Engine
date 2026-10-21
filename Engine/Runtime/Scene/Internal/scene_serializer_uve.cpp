@@ -53,6 +53,7 @@
 #include "uve/component/canvas_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
+#include "uve/component/morph_target_component_uve.h"
 #include "uve/component/skin_component_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
 #include "uve/scene/objects/scene_object_type_uve.h"
@@ -1739,6 +1740,47 @@ struct ComponentRegistrationUVE {
             {"enabled", value.enabled}};
 }
 
+/// Blend shapes serialize as a name/value list rather than parallel arrays: a scene file is read by
+/// people as often as by the engine, and `{"target": "jawOpen", "weight": 0.4}` cannot get its two
+/// halves out of step the way two arrays can. Sparse by construction - a shape at rest is simply
+/// absent, which is also what keeps a 52-shape rig's scene payload small.
+[[nodiscard]] nlohmann::json ToJsonUVE(const MorphTargetComponentUVE& value) {
+    nlohmann::json weightsJson = nlohmann::json::array();
+    for (const MorphTargetWeightUVE& entry : value.weights) {
+        weightsJson.push_back({{"target", entry.target}, {"weight", entry.weight}});
+    }
+    return nlohmann::json{{"enabled", value.enabled}, {"weights", std::move(weightsJson)}};
+}
+
+[[nodiscard]] MorphTargetComponentUVE MorphTargetObjectFromJsonUVE(const nlohmann::json& json) {
+    MorphTargetComponentUVE value;
+    value.enabled = json.value("enabled", true);
+    if (json.contains("weights")) {
+        if (!json.at("weights").is_array() || json.at("weights").size() > kMaximumMorphTargetWeightsUVE) {
+            throw std::runtime_error("MorphTargetComponentUVE payload has an impossible weights array");
+        }
+        value.weights.reserve(json.at("weights").size());
+        for (const auto& entry : json.at("weights")) {
+            if (!entry.is_object() || !entry.contains("target") || !entry.at("target").is_string()) {
+                throw std::runtime_error("MorphTargetComponentUVE payload has a weight without a target");
+            }
+            MorphTargetWeightUVE weight;
+            weight.target = entry.at("target").get<std::string>();
+            if (entry.contains("weight")) {
+                if (!entry.at("weight").is_number()) {
+                    throw std::runtime_error("MorphTargetComponentUVE payload has a non-numeric weight");
+                }
+                weight.weight = entry.at("weight").get<float>();
+            }
+            value.weights.push_back(std::move(weight));
+        }
+    }
+    if (!IsMorphTargetComponentValidUVE(value)) {
+        throw std::runtime_error("Invalid MorphTargetComponentUVE payload");
+    }
+    return value;
+}
+
 [[nodiscard]] SpringArm3DComponentUVE SpringArm3DObjectFromJsonUVE(const nlohmann::json& json) {
     SpringArm3DComponentUVE value;
     value.armLength = json.value("armLength", 4.0F);
@@ -2570,6 +2612,9 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                               entityManager.AddComponentUVE<SkinComponentUVE>(entity, std::move(skin));
                           },
                       });
+        table.emplace("MorphTargetComponentUVE",
+                      MakeRegistrationUVE<MorphTargetComponentUVE>(MorphTargetObjectFromJsonUVE,
+                                                                   IsMorphTargetComponentValidUVE));
         table.emplace("Hitbox3DComponentUVE", MakeRegistrationUVE<Hitbox3DComponentUVE>(
             [](const nlohmann::json& json) {
                 const Hitbox3DComponentUVE value = Hitbox3DObjectFromJsonUVE(json);

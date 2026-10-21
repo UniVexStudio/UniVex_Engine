@@ -2007,6 +2007,12 @@ private:
     /// is one undo step and the component's validator is the last word before the write lands.
     void DrawFullBodyEffectorsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                           const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// MorphTargetComponentUVE's named blend-shape list: one shape-name/weight row per entry that is
+    /// off its default, plus add and remove. Shape names are typed rather than picked from an
+    /// asset, so the drawer performs no asset I/O - the component's resolver is what reports a name
+    /// the mesh does not carry, once, at the point the weights are actually evaluated.
+    void DrawMorphTargetWeightsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                           const Core::TypeMetadataPropertyUVE& property, const void* instance);
     /// LODGroup3D's distance chain: one threshold row per level in use, plus the distance the
     /// object is culled past, which is the rule those thresholds add up to. One write for the whole
     /// array, so an edit is one undo step.

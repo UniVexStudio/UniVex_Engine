@@ -360,6 +360,7 @@ add_executable(uve_integration_tests
     Objects/3D/conformed_playback_uve_tests.cpp
     Objects/3D/two_bone_ik_3d_uve_tests.cpp
     Objects/3D/skin_component_uve_tests.cpp
+    Objects/3D/morph_target_component_uve_tests.cpp
     Objects/3D/full_body_ik_3d_uve_tests.cpp
     Objects/UI/object_definitions_canvas_uve_tests.cpp
     Objects/2D/sprite_2d_uve_tests.cpp
