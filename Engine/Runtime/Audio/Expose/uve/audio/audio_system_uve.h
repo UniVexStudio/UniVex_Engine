@@ -73,6 +73,11 @@ public:
         VoiceHandleUVE source, const std::vector<float>& inputSamples,
         std::vector<float>& outputSamples) override;
 
+    [[nodiscard]] VoiceHandleUVE CreateStreamingSourceUVE(const AudioSourceDescUVE& desc,
+                                                          IAudioStreamSourceUVE& source) override;
+    [[nodiscard]] std::size_t PumpStreamingSourceUVE(VoiceHandleUVE source) override;
+    [[nodiscard]] std::size_t GetStreamingSourceBufferedFramesUVE(VoiceHandleUVE source) const override;
+
     void UpdateUVE(float deltaSeconds) override;
 
 private:

@@ -67,6 +67,15 @@ public:
     [[nodiscard]] VoicePlaybackStateUVE GetVoiceStateUVE(VoiceHandleUVE voice) const override;
     [[nodiscard]] std::string_view GetBackendNameUVE() const noexcept override;
 
+    // Streaming: the ring is consumed by miniaudio's callback and filled from the engine thread,
+    // both under the same short mutex that already guards voice parameters.
+    [[nodiscard]] VoiceHandleUVE CreateStreamVoiceUVE(const AudioStreamFormatUVE& format) override;
+    [[nodiscard]] std::size_t PushStreamFramesUVE(VoiceHandleUVE voice,
+                                                  std::span<const float> interleavedFrames) override;
+    [[nodiscard]] bool EndStreamUVE(VoiceHandleUVE voice) override;
+    [[nodiscard]] std::size_t GetStreamBufferedFramesUVE(VoiceHandleUVE voice) const override;
+    [[nodiscard]] std::size_t GetStreamFreeFramesUVE(VoiceHandleUVE voice) const override;
+
 private:
     struct ImplUVE;
     explicit MiniaudioAudioDeviceUVE(std::unique_ptr<ImplUVE> impl) noexcept;

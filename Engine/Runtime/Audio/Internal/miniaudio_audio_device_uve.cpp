@@ -33,6 +33,12 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
         float position[3] = {0.0F, 0.0F, 0.0F}; // stored; the stereo image comes from `pan`
         float pan = 0.0F;                       // -1 left .. +1 right, already derived by the system
         bool looping = false;
+        /// Configured only for streaming voices: the clip fields above stay unused for those, and
+        /// `cursorFrames` indexes this ring instead of `samples`.
+        AudioStreamRingBufferUVE stream;
+        bool streamEnded = false;
+
+        [[nodiscard]] bool IsStreamingUVE() const noexcept { return stream.IsConfiguredUVE(); }
     };
 
     ma_context context{};
@@ -51,6 +57,13 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
 
     mutable std::mutex voicesMutex;
     Containers::HandleTableUVE<VoiceEntryUVE, VoiceHandleUVE> voices;
+
+    /// Mixes a streaming voice for one callback block, consuming exactly the frames the fractional
+    /// step passed. A starved ring yields silence for the rest of the block and, once the stream has
+    /// been ended and fully drained, stops the voice - so an entity playing a finished stream reads
+    /// as stopped rather than as silently still playing.
+    static void MixStreamUVE(VoiceUVE& voice, VoicePlaybackStateUVE& state, float* out,
+                             ma_uint32 frameCount) noexcept;
 
     std::string backendName;
 
@@ -72,6 +85,10 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
             }
             if (voice.channels == 0U) {
                 return; // clip-less source shell: inaudible, stays Playing until stopped
+            }
+            if (voice.IsStreamingUVE()) {
+                MixStreamUVE(voice, entry.state, out, frameCount);
+                return;
             }
             const std::size_t totalFrames = voice.samples.size() / voice.channels;
             // Constant-power pan, computed once per block: the law is unity on both sides at centre,
@@ -110,6 +127,56 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
         });
     }
 };
+
+void MiniaudioAudioDeviceUVE::ImplUVE::MixStreamUVE(VoiceUVE& voice, VoicePlaybackStateUVE& state,
+                                                    float* const out, const ma_uint32 frameCount) noexcept {
+    const std::size_t channels = static_cast<std::size_t>(voice.stream.GetChannelsUVE());
+    if (channels == 0U) {
+        return;
+    }
+    const AudioPanGainsUVE panGains = ComputeAudioPanGainsUVE(voice.pan);
+    float frameA[kMaximumAudioStreamChannelsUVE] = {0.0F, 0.0F};
+    float frameB[kMaximumAudioStreamChannelsUVE] = {0.0F, 0.0F};
+    for (ma_uint32 frame = 0U; frame < frameCount; ++frame) {
+        const std::size_t index = static_cast<std::size_t>(voice.cursorFrames);
+        // Linear interpolation needs the frame under the cursor and the one after it, exactly like
+        // the clip path does with its resident buffer.
+        if (!voice.stream.PeekFrameUVE(index, frameA)) {
+            if (voice.streamEnded) {
+                state = VoicePlaybackStateUVE::Stopped;
+                voice.cursorFrames = 0.0;
+            }
+            break; // starved: the rest of this block stays silent
+        }
+        if (!voice.stream.PeekFrameUVE(index + 1U, frameB)) {
+            if (!voice.streamEnded) {
+                break; // mid-stream starvation: wait for the pump rather than guessing an end
+            }
+            // The stream is over and this is the final frame: play it on its own rather than
+            // dropping it for want of a successor, then let the drain below stop the voice.
+            std::copy(frameA, frameA + channels, frameB);
+        }
+        const float fraction = static_cast<float>(voice.cursorFrames - static_cast<double>(index));
+        for (std::uint32_t channel = 0U; channel < kOutputChannelsUVE; ++channel) {
+            const std::size_t sourceChannel =
+                channels == 1U ? 0U : std::min(static_cast<std::size_t>(channel), channels - 1U);
+            const float sample = frameA[sourceChannel] + (frameB[sourceChannel] - frameA[sourceChannel]) * fraction;
+            const float panGain = channel == 0U ? panGains.left : panGains.right;
+            out[frame * kOutputChannelsUVE + channel] += sample * voice.gain * panGain;
+        }
+        voice.cursorFrames += voice.stepPerOutputFrame;
+        const std::size_t consumed = static_cast<std::size_t>(voice.cursorFrames);
+        if (consumed > 0U) {
+            voice.stream.ConsumeUVE(consumed);
+            voice.cursorFrames -= static_cast<double>(consumed);
+        }
+        if (voice.streamEnded && voice.stream.GetBufferedFramesUVE() == 0U) {
+            state = VoicePlaybackStateUVE::Stopped;
+            voice.cursorFrames = 0.0;
+            break;
+        }
+    }
+}
 
 MiniaudioAudioDeviceUVE::MiniaudioAudioDeviceUVE(std::unique_ptr<ImplUVE> impl) noexcept
     : m_impl(std::move(impl)) {}
@@ -280,6 +347,80 @@ bool MiniaudioAudioDeviceUVE::SetVoiceParamsUVE(VoiceHandleUVE voice, const Audi
         (static_cast<double>(entry->voice.sampleRate) / static_cast<double>(m_impl->outputSampleRate)) *
         static_cast<double>(params.pitch);
     return true;
+}
+
+VoiceHandleUVE MiniaudioAudioDeviceUVE::CreateStreamVoiceUVE(const AudioStreamFormatUVE& format) {
+    if (!IsAudioStreamFormatValidUVE(format)) {
+        UVE_ERROR("MiniaudioAudioDeviceUVE: CreateStreamVoiceUVE rejected an invalid format ({} Hz, {} channels)",
+                  format.sampleRate, format.channels);
+        return kInvalidVoiceHandleUVE;
+    }
+    std::lock_guard<std::mutex> lock(m_impl->voicesMutex);
+    const VoiceHandleUVE voice = m_impl->voices.AcquireUVE();
+    ImplUVE::VoiceEntryUVE* const entry = m_impl->voices.FindUVE(voice);
+    if (entry == nullptr) {
+        return kInvalidVoiceHandleUVE;
+    }
+    entry->voice.stream.ConfigureUVE(kAudioStreamRingFramesUVE, format.channels);
+    entry->voice.channels = format.channels;
+    entry->voice.sampleRate = format.sampleRate;
+    entry->voice.stepPerOutputFrame =
+        (static_cast<double>(format.sampleRate) / static_cast<double>(m_impl->outputSampleRate)) *
+        static_cast<double>(entry->voice.pitch);
+    return voice;
+}
+
+std::size_t MiniaudioAudioDeviceUVE::PushStreamFramesUVE(const VoiceHandleUVE voice,
+                                                         const std::span<const float> interleavedFrames) {
+    std::lock_guard<std::mutex> lock(m_impl->voicesMutex);
+    ImplUVE::VoiceEntryUVE* const entry = m_impl->voices.FindUVE(voice);
+    if (entry == nullptr) {
+        UVE_ERROR("MiniaudioAudioDeviceUVE: PushStreamFramesUVE called with an unknown handle ({})", voice.value);
+        return 0U;
+    }
+    ImplUVE::VoiceUVE& streamVoice = entry->voice;
+    if (!streamVoice.IsStreamingUVE()) {
+        UVE_ERROR("MiniaudioAudioDeviceUVE: PushStreamFramesUVE called on a clip voice ({})", voice.value);
+        return 0U;
+    }
+    if (streamVoice.streamEnded) {
+        UVE_ERROR("MiniaudioAudioDeviceUVE: PushStreamFramesUVE called after EndStreamUVE ({})", voice.value);
+        return 0U;
+    }
+    const std::size_t channels = static_cast<std::size_t>(streamVoice.stream.GetChannelsUVE());
+    if (channels == 0U || interleavedFrames.size() % channels != 0U) {
+        UVE_ERROR("MiniaudioAudioDeviceUVE: PushStreamFramesUVE received {} samples, not a whole number of frames",
+                  interleavedFrames.size());
+        return 0U;
+    }
+    return streamVoice.stream.WriteUVE(interleavedFrames.data(), interleavedFrames.size() / channels);
+}
+
+bool MiniaudioAudioDeviceUVE::EndStreamUVE(const VoiceHandleUVE voice) {
+    std::lock_guard<std::mutex> lock(m_impl->voicesMutex);
+    ImplUVE::VoiceEntryUVE* const entry = m_impl->voices.FindUVE(voice);
+    if (entry == nullptr || !entry->voice.IsStreamingUVE()) {
+        UVE_ERROR("MiniaudioAudioDeviceUVE: EndStreamUVE called with an unknown handle or a clip voice ({})",
+                  voice.value);
+        return false;
+    }
+    entry->voice.streamEnded = true;
+    if (entry->voice.stream.GetBufferedFramesUVE() == 0U) {
+        entry->state = VoicePlaybackStateUVE::Stopped;
+    }
+    return true;
+}
+
+std::size_t MiniaudioAudioDeviceUVE::GetStreamBufferedFramesUVE(const VoiceHandleUVE voice) const {
+    std::lock_guard<std::mutex> lock(m_impl->voicesMutex);
+    const ImplUVE::VoiceEntryUVE* const entry = m_impl->voices.FindUVE(voice);
+    return entry != nullptr && entry->voice.IsStreamingUVE() ? entry->voice.stream.GetBufferedFramesUVE() : 0U;
+}
+
+std::size_t MiniaudioAudioDeviceUVE::GetStreamFreeFramesUVE(const VoiceHandleUVE voice) const {
+    std::lock_guard<std::mutex> lock(m_impl->voicesMutex);
+    const ImplUVE::VoiceEntryUVE* const entry = m_impl->voices.FindUVE(voice);
+    return entry != nullptr && entry->voice.IsStreamingUVE() ? entry->voice.stream.GetFreeFramesUVE() : 0U;
 }
 
 VoicePlaybackStateUVE MiniaudioAudioDeviceUVE::GetVoiceStateUVE(VoiceHandleUVE voice) const {

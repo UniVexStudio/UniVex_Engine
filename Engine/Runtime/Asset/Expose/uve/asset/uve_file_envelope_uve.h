@@ -32,6 +32,13 @@ namespace UVE::Asset {
 /// `assetType` value is never reused.
 inline constexpr std::size_t kMaximumUveFilePayloadBytesUVE = 512U * 1024U * 1024U;
 
+/// Fixed byte size of the header EncodeUveFileEnvelopeUVE() writes: the four magic bytes, then a
+/// little-endian `uint32` version, `uint32` assetType, `uint32` compressionMethod and `uint64`
+/// payloadLength. Exposed so a reader that streams a payload from disk can seek straight to it
+/// instead of loading the whole file - the on-disk layout still lives in exactly one place.
+inline constexpr std::size_t kUveFileEnvelopeHeaderBytesUVE =
+    4U + sizeof(std::uint32_t) + sizeof(std::uint32_t) + sizeof(std::uint32_t) + sizeof(std::uint64_t);
+
 enum class AssetKindUVE : std::uint32_t {
     Scene = 1,
     Prefab = 2,
