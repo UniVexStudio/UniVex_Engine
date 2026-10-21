@@ -156,9 +156,19 @@ void NullCommandBufferUVE::SetUniformBoolUVE(std::string_view name, bool value) 
     m_commands.emplace_back(SetUniformBoolCommandUVE{std::string(name), value});
 }
 
+void NullCommandBufferUVE::SetUniformVector2UVE(std::string_view name, const Math::Vector2UVE& value) {
+    // M5a: ungated — see the comment at BindStorageBufferUVE.
+    m_commands.emplace_back(SetUniformVector2CommandUVE{std::string(name), value});
+}
+
 void NullCommandBufferUVE::SetUniformVector3UVE(std::string_view name, const Math::Vector3UVE& value) {
     // M5a: ungated — see the comment at BindStorageBufferUVE.
     m_commands.emplace_back(SetUniformVector3CommandUVE{std::string(name), value});
+}
+
+void NullCommandBufferUVE::SetUniformVector4UVE(std::string_view name, const Math::Vector4UVE& value) {
+    // M5a: ungated — see the comment at BindStorageBufferUVE.
+    m_commands.emplace_back(SetUniformVector4CommandUVE{std::string(name), value});
 }
 
 void NullCommandBufferUVE::SetUniformMatrix4x4UVE(std::string_view name, const Math::Matrix4x4UVE& value) {

@@ -41,7 +41,15 @@ void ShaderProgramUVE::SetBoolUVE(std::string_view name, bool value) {
     SetPendingUniformUVE(name, value);
 }
 
+void ShaderProgramUVE::SetVector2UVE(std::string_view name, const Math::Vector2UVE& value) {
+    SetPendingUniformUVE(name, value);
+}
+
 void ShaderProgramUVE::SetVector3UVE(std::string_view name, const Math::Vector3UVE& value) {
+    SetPendingUniformUVE(name, value);
+}
+
+void ShaderProgramUVE::SetVector4UVE(std::string_view name, const Math::Vector4UVE& value) {
     SetPendingUniformUVE(name, value);
 }
 
@@ -71,8 +79,12 @@ void ShaderProgramUVE::ApplyToUVE(ICommandBufferUVE& commandBuffer) const {
                     commandBuffer.SetUniformIntUVE(name, concreteValue);
                 } else if constexpr (std::is_same_v<ValueTypeUVE, bool>) {
                     commandBuffer.SetUniformBoolUVE(name, concreteValue);
+                } else if constexpr (std::is_same_v<ValueTypeUVE, Math::Vector2UVE>) {
+                    commandBuffer.SetUniformVector2UVE(name, concreteValue);
                 } else if constexpr (std::is_same_v<ValueTypeUVE, Math::Vector3UVE>) {
                     commandBuffer.SetUniformVector3UVE(name, concreteValue);
+                } else if constexpr (std::is_same_v<ValueTypeUVE, Math::Vector4UVE>) {
+                    commandBuffer.SetUniformVector4UVE(name, concreteValue);
                 } else if constexpr (std::is_same_v<ValueTypeUVE, Math::Matrix4x4UVE>) {
                     commandBuffer.SetUniformMatrix4x4UVE(name, concreteValue);
                 }
