@@ -725,8 +725,43 @@ and one of the highest-priority areas below.
   cycle refusal, mute/solo interaction, safe reparent-on-removal, the cap, slot ordering, atomic
   failure, tree-shaped diagnostics) and 6 system cases proving the graph reaches both the device and
   the sample path. Typed DSP nodes, EQ/reverb, and per-bus metering remain open below.
-- [ ] An in-editor audio authoring tool (mixer view, real-time meter, attenuation curve
-  editor)
+- [x] An in-editor audio authoring tool (mixer view, real-time meter, attenuation curve editor) -
+  the mixer tree, a live level for every bus, and a falloff editor for the selected source, as an
+  `Audio` tab in the lower workspace. The parts that can be wrong live in a model with no ImGui
+  dependency (`editor_audio_mixer_uve.h`), the same split the render-stat rows already use, so a
+  mixer bug is reproducible in a unit test instead of only by opening the editor. The mixer lists
+  every bus the engine reports - name, indentation by depth, authored volume, mute, solo, routed
+  source count, live level - and flags the two rows a level alone cannot explain: a bus that
+  carries sources yet produces silence (muted, soloed out, or multiplied to zero) and one whose peak
+  is past full scale. Volume edits go through the project settings for the four registered buses
+  (Master/Music/SFX/Voice), where the engine's existing "Audio" settings subscription already
+  applies the change to the live mixer, so the running mix and the saved project can never
+  disagree; a bus with no setting is edited live and says so in its tooltip rather than pretending
+  to persist. Mute and solo are session state by nature and never persist. The meter is the real
+  sample path: the backend measures each voice's own contribution while it mixes (post-filter,
+  post-gain, post-pan) once per block, holds the peak and releases it at 20 dB/s, and averages RMS
+  over a 0.3 s window, all without allocating on the audio thread. The reading is idempotent, so one
+  frame can draw a source row and the bus above it without the second read seeing zero; a bus's
+  level is the power sum of every voice routed to it or under it, which for the uncorrelated signals
+  a game mix is made of equals what a true bus-buffer sum would show and costs no per-bus memory.
+  The falloff editor samples `ComputeAudioSourceDistanceAttenuationUVE` itself - the preview cannot
+  drift from what is heard - plots it in dBFS from 0 dB down to the meter floor, marks the authored
+  min and max distances over the plot, and draws a quarter more range past the falloff point so the
+  tail reads as a tail rather than as a clipped graph. Edits route through the same metadata-driven
+  property writes the inspector uses, so a drag is one undo step and the component's own validation
+  applies; during play the fields are read-only while the curve stays visible. Locked by 11 meter
+  cases (dB conversions, the floor as exact silence, normalized scale, hold-then-release at a
+  constant dB rate, the averaging window, zero-delta handling, non-finite containment, power sums),
+  6 system cases (source and bus readings, unknown names, sub-bus membership, read-order
+  independence, an empty bus), 2 backend cases against the real audio thread (a measured
+  contribution and its release to silence, and an unknown handle) and 10 model cases (row order and
+  levels, dB text, the silence and clipping flags, which buses persist, truncation, the curve
+  matching the engine sample for sample, the tail range, a 2D source, and degenerate sample counts).
+  Deliberately NOT claimed: the bus tree itself is still engine configuration rather than authored
+  document data, so a bus cannot be created or reparented from the panel yet; the bus level is an
+  energy sum rather than a true bus-buffer measurement, because the backend mixes straight to the
+  output and applies no per-bus inserts; and bus DSP inserts are not drawn, since they are applied by
+  callers on their own PCM rather than by the device.
 - [ ] Ambisonics / spatial audio bed support for VR/360 use cases (long-term)
 
 ---

@@ -64,6 +64,16 @@ public:
     /// Test-only hook: how many voices are currently alive (created but not yet destroyed).
     [[nodiscard]] std::size_t GetLiveVoiceCountUVE() const noexcept;
 
+    /// Reads the meter this device was told to report for `voice`, which is silence unless
+    /// SetVoiceMeterUVE() states otherwise. The null backend has no output, so silence is its
+    /// honest reading; this keeps the interface's own contract rather than special-casing it.
+    [[nodiscard]] AudioMeterReadingUVE ReadVoiceMeterUVE(VoiceHandleUVE voice) const override;
+
+    /// Test/headless hook (not part of IAudioDeviceUVE): states what a voice's meter reports.
+    /// Headless editor and system tests run on this backend, so without it a mixer panel could only
+    /// ever be exercised against real hardware.
+    void SetVoiceMeterUVE(VoiceHandleUVE voice, AudioMeterReadingUVE reading);
+
 private:
     struct ImplUVE;
     std::unique_ptr<ImplUVE> m_impl;

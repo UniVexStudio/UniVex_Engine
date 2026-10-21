@@ -21,6 +21,29 @@ namespace UVE::Audio {
 
 constexpr std::uint32_t kOutputChannelsUVE = 2U;
 
+namespace {
+
+/// One voice's measurement for one mixed block. Accumulated frame by frame as the voice is summed
+/// (so it is what the voice really added, not what its settings say it should have), then folded
+/// into the voice's held reading once per block.
+struct BlockMeterUVE final {
+    float peak = 0.0F;
+    float sumSquares = 0.0F;
+    std::uint32_t samples = 0U;
+
+    void Add(const float left, const float right) noexcept {
+        peak = std::max({peak, std::abs(left), std::abs(right)});
+        sumSquares += left * left + right * right;
+        samples += 2U;
+    }
+
+    [[nodiscard]] float MeanSquareUVE() const noexcept {
+        return samples == 0U ? 0.0F : sumSquares / static_cast<float>(samples);
+    }
+};
+
+} // namespace
+
 struct MiniaudioAudioDeviceUVE::ImplUVE {
     struct VoiceUVE {
         std::string assetPath;
@@ -41,6 +64,9 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
         /// Occlusion muffling. Bypassed (touching nothing) whenever the system reports cutoff 0.
         AudioVoiceLowPassUVE lowPass;
         float lastLowPassCutoffHz = 0.0F;
+        /// What this voice actually contributed to the output, kept as a held peak plus a windowed
+        /// average. Owned by the audio thread; every read takes voicesMutex.
+        AudioMeterReadingUVE meter{};
 
         [[nodiscard]] bool IsStreamingUVE() const noexcept { return stream.IsConfiguredUVE(); }
     };
@@ -67,7 +93,7 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
     /// been ended and fully drained, stops the voice - so an entity playing a finished stream reads
     /// as stopped rather than as silently still playing.
     static void MixStreamUVE(VoiceUVE& voice, VoicePlaybackStateUVE& state, float* out,
-                             ma_uint32 frameCount) noexcept;
+                             ma_uint32 frameCount, float blockSeconds) noexcept;
 
     std::string backendName;
 
@@ -82,22 +108,32 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
         std::memset(out, 0, frameCount * kOutputChannelsUVE * sizeof(float));
 
         std::lock_guard<std::mutex> lock(impl->voicesMutex);
+        const float blockSeconds =
+            static_cast<float>(frameCount) /
+            static_cast<float>(impl->outputSampleRate == 0U ? 48000U : impl->outputSampleRate);
         impl->voices.ForEachUVE([&](VoiceHandleUVE /*handle*/, VoiceEntryUVE& entry) {
             VoiceUVE& voice = entry.voice;
             if (entry.state != VoicePlaybackStateUVE::Playing) {
+                // A voice that is not mixing still has a meter to release, or the panel would
+                // freeze the last block it ever played forever.
+                voice.meter = IntegrateAudioMeterUVE(voice.meter, 0.0F, 0.0F, blockSeconds);
                 return;
             }
             if (voice.channels == 0U) {
-                return; // clip-less source shell: inaudible, stays Playing until stopped
+                // Clip-less source shell: inaudible, stays Playing until stopped. Its meter still
+                // releases so a shell that was never audible reads as silence, not as frozen.
+                voice.meter = IntegrateAudioMeterUVE(voice.meter, 0.0F, 0.0F, blockSeconds);
+                return;
             }
             if (voice.IsStreamingUVE()) {
-                MixStreamUVE(voice, entry.state, out, frameCount);
+                MixStreamUVE(voice, entry.state, out, frameCount, blockSeconds);
                 return;
             }
             const std::size_t totalFrames = voice.samples.size() / voice.channels;
             // Constant-power pan, computed once per block: the law is unity on both sides at centre,
             // so a centred voice mixes exactly as it did before panning existed.
             const AudioPanGainsUVE panGains = ComputeAudioPanGainsUVE(voice.pan);
+            BlockMeterUVE blockMeter;
             for (ma_uint32 frame = 0U; frame < frameCount; ++frame) {
                 const std::size_t frameIndex = static_cast<std::size_t>(voice.cursorFrames);
                 if (frameIndex >= totalFrames) {
@@ -119,10 +155,13 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
                 // Filtered before gain and pan, so the muffling never depends on how loud the voice
                 // happens to be, and skipped entirely when the voice is unoccluded.
                 voice.lowPass.ProcessUVE(mixedFrame[0], mixedFrame[1]);
+                float contribution[kOutputChannelsUVE] = {0.0F, 0.0F};
                 for (std::uint32_t channel = 0U; channel < kOutputChannelsUVE; ++channel) {
                     const float panGain = channel == 0U ? panGains.left : panGains.right;
-                    out[frame * kOutputChannelsUVE + channel] += mixedFrame[channel] * voice.gain * panGain;
+                    contribution[channel] = mixedFrame[channel] * voice.gain * panGain;
+                    out[frame * kOutputChannelsUVE + channel] += contribution[channel];
                 }
+                blockMeter.Add(contribution[0], contribution[1]);
                 voice.cursorFrames += voice.stepPerOutputFrame;
                 if (voice.cursorFrames >= static_cast<double>(totalFrames)) {
                     if (voice.looping) {
@@ -134,12 +173,15 @@ struct MiniaudioAudioDeviceUVE::ImplUVE {
                     }
                 }
             }
+            voice.meter = IntegrateAudioMeterUVE(voice.meter, blockMeter.peak, blockMeter.MeanSquareUVE(),
+                                                 blockSeconds);
         });
     }
 };
 
 void MiniaudioAudioDeviceUVE::ImplUVE::MixStreamUVE(VoiceUVE& voice, VoicePlaybackStateUVE& state,
-                                                    float* const out, const ma_uint32 frameCount) noexcept {
+                                                    float* const out, const ma_uint32 frameCount,
+                                                    const float blockSeconds) noexcept {
     const std::size_t channels = static_cast<std::size_t>(voice.stream.GetChannelsUVE());
     if (channels == 0U) {
         return;
@@ -147,6 +189,7 @@ void MiniaudioAudioDeviceUVE::ImplUVE::MixStreamUVE(VoiceUVE& voice, VoicePlayba
     const AudioPanGainsUVE panGains = ComputeAudioPanGainsUVE(voice.pan);
     float frameA[kMaximumAudioStreamChannelsUVE] = {0.0F, 0.0F};
     float frameB[kMaximumAudioStreamChannelsUVE] = {0.0F, 0.0F};
+    BlockMeterUVE blockMeter;
     for (ma_uint32 frame = 0U; frame < frameCount; ++frame) {
         const std::size_t index = static_cast<std::size_t>(voice.cursorFrames);
         // Linear interpolation needs the frame under the cursor and the one after it, exactly like
@@ -175,10 +218,13 @@ void MiniaudioAudioDeviceUVE::ImplUVE::MixStreamUVE(VoiceUVE& voice, VoicePlayba
                 frameA[sourceChannel] + (frameB[sourceChannel] - frameA[sourceChannel]) * fraction;
         }
         voice.lowPass.ProcessUVE(mixedFrame[0], mixedFrame[1]);
+        float contribution[kOutputChannelsUVE] = {0.0F, 0.0F};
         for (std::uint32_t channel = 0U; channel < kOutputChannelsUVE; ++channel) {
             const float panGain = channel == 0U ? panGains.left : panGains.right;
-            out[frame * kOutputChannelsUVE + channel] += mixedFrame[channel] * voice.gain * panGain;
+            contribution[channel] = mixedFrame[channel] * voice.gain * panGain;
+            out[frame * kOutputChannelsUVE + channel] += contribution[channel];
         }
+        blockMeter.Add(contribution[0], contribution[1]);
         voice.cursorFrames += voice.stepPerOutputFrame;
         const std::size_t consumed = static_cast<std::size_t>(voice.cursorFrames);
         if (consumed > 0U) {
@@ -191,6 +237,7 @@ void MiniaudioAudioDeviceUVE::ImplUVE::MixStreamUVE(VoiceUVE& voice, VoicePlayba
             break;
         }
     }
+    voice.meter = IntegrateAudioMeterUVE(voice.meter, blockMeter.peak, blockMeter.MeanSquareUVE(), blockSeconds);
 }
 
 MiniaudioAudioDeviceUVE::MiniaudioAudioDeviceUVE(std::unique_ptr<ImplUVE> impl) noexcept
@@ -456,6 +503,12 @@ VoicePlaybackStateUVE MiniaudioAudioDeviceUVE::GetVoiceStateUVE(VoiceHandleUVE v
         return VoicePlaybackStateUVE::Stopped;
     }
     return entry->state;
+}
+
+AudioMeterReadingUVE MiniaudioAudioDeviceUVE::ReadVoiceMeterUVE(const VoiceHandleUVE voice) const {
+    std::lock_guard<std::mutex> lock(m_impl->voicesMutex);
+    const ImplUVE::VoiceEntryUVE* const entry = m_impl->voices.FindUVE(voice);
+    return entry != nullptr ? entry->voice.meter : kSilentAudioMeterUVE;
 }
 
 std::string_view MiniaudioAudioDeviceUVE::GetBackendNameUVE() const noexcept {

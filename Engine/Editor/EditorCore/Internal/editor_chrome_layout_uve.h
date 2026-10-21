@@ -73,6 +73,7 @@ constexpr const char* kPanelLabelDebugUVE = "Debug##lower-workspace";
 constexpr const char* kPanelLabelConsoleUVE = "Console##lower-workspace-console";
 constexpr const char* kPanelLabelCaptureUVE = "Capture##lower-workspace-capture";
 constexpr const char* kPanelLabelProfilerUVE = "Profiler##lower-workspace-profiler";
+constexpr const char* kPanelLabelAudioMixerUVE = "Audio##lower-workspace-audio";
 
 constexpr float kDockSplitRatioLeftUVE = 0.18F;
 constexpr float kDockSplitRatioRightUVE = 0.22F;
@@ -214,6 +215,7 @@ inline void BuildDefaultDockingLayoutTreeUVE(const ImGuiID dockspaceId, const Im
     ImGui::DockBuilderDockWindow(kPanelLabelConsoleUVE, bottomId);
     ImGui::DockBuilderDockWindow(kPanelLabelCaptureUVE, bottomId);
     ImGui::DockBuilderDockWindow(kPanelLabelProfilerUVE, bottomId);
+    ImGui::DockBuilderDockWindow(kPanelLabelAudioMixerUVE, bottomId);
     ImGui::DockBuilderDockWindow(kPanelLabelViewportUVE, centerId);
 
     ImGui::DockBuilderFinish(dockspaceId);

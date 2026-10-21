@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <vector>
 
+#include "uve/audio/audio_meter_uve.h"
 #include "uve/audio/audio_mixer_group_uve.h"
 #include "uve/audio/audio_occlusion_uve.h"
 #include "uve/audio/audio_stream_uve.h"
@@ -130,6 +131,24 @@ public:
     /// Frames buffered in the device for `source` - the headroom a pre-buffer loop waits on and the
     /// number an underrun test watches. 0 for an unknown handle or a clip source.
     [[nodiscard]] virtual std::size_t GetStreamingSourceBufferedFramesUVE(VoiceHandleUVE source) const = 0;
+
+    // --- Metering. Both reads are idempotent picks of the current reading: reading a source row and
+    // the bus above it in the same frame shows the same measurement twice, not zero the second time.
+    // ---
+
+    /// What `source` contributed to the output, measured by the device after its gain, pan and
+    /// muffling. Silence for an unknown source, a stopped one, or a backend that does not meter.
+    [[nodiscard]] virtual AudioMeterReadingUVE GetSourceMeterUVE(VoiceHandleUVE source) const = 0;
+
+    /// The level of one bus, assembled by power-summing every source routed to it or to any bus
+    /// under it - the same set whose gain already carries this bus's effective volume. Unknown
+    /// names, including a bus that exists but carries nothing, read silence.
+    ///
+    /// This is a level indication, not a bus-buffer sum: the device mixes straight to the output and
+    /// never builds per-bus accumulators, so the number is the energy of the contributing voices
+    /// rather than the samples of a summed bus. For uncorrelated sources - which is what a game's
+    /// mix is - the two agree, and it costs no per-bus memory on the audio thread.
+    [[nodiscard]] virtual AudioMeterReadingUVE GetMixerGroupMeterUVE(std::string_view name) const = 0;
 
     /// Installs (or clears, with nullptr) the occlusion provider. The pointer is borrowed, not
     /// owned, and a provider must outlive the system. With none installed every source stays clear,
