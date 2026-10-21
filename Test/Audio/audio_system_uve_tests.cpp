@@ -439,5 +439,145 @@ TEST_F(AudioSystemUVETest, UpdateUVE_WithZeroSources_IsSafeNoOp) {
     EXPECT_NO_FATAL_FAILURE(audioSystem.UpdateUVE());
 }
 
+
+[[nodiscard]] const AudioVoiceParamsUVE* FindRecordedParamsUVE(
+    const std::vector<RecordedAudioCallUVE>& recordedCalls, const VoiceHandleUVE voice) {
+    for (const RecordedAudioCallUVE& call : recordedCalls) {
+        const auto* paramsCall = std::get_if<SetVoiceParamsCallUVE>(&call);
+        if (paramsCall != nullptr && paramsCall->voice == voice) return &paramsCall->params;
+    }
+    return nullptr;
+}
+
+
+// --- Runtime submixes: the bus tree reaches the device through UpdateUVE(). ---
+
+TEST_F(AudioSystemUVETest, MixerBusGraph_ParentChainScalesTheDeviceGain) {
+    ASSERT_TRUE(audioSystem.RegisterMixerGroupUVE("Music", kMasterAudioMixerGroupNameUVE, 0.5F, 1.0F));
+    ASSERT_TRUE(audioSystem.RegisterMixerGroupUVE("MusicStem", "Music", 0.5F, 1.0F));
+
+    AudioSourceDescUVE desc;
+    desc.spatial = false;
+    desc.volume = 1.0F;
+    desc.mixerGroup = "MusicStem";
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
+
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE();
+
+    const std::vector<RecordedAudioCallUVE>& recorded = device.GetRecordedCallsUVE();
+    const AudioVoiceParamsUVE* params = FindRecordedParamsUVE(recorded, source);
+    ASSERT_NE(params, nullptr);
+    EXPECT_FLOAT_EQ(params->gain, 0.25F);
+    EXPECT_TRUE(ValidateAudioVoiceParamsUVE(*params));
+}
+
+TEST_F(AudioSystemUVETest, MixerBusGraph_MutingABusSilencesItsSourcesAndUnmuteRestores) {
+    ASSERT_TRUE(audioSystem.RegisterMixerGroupUVE("Music", kMasterAudioMixerGroupNameUVE, 0.5F, 1.0F));
+    ASSERT_TRUE(audioSystem.RegisterMixerGroupUVE("MusicStem", "Music", 0.5F, 1.0F));
+
+    AudioSourceDescUVE desc;
+    desc.spatial = false;
+    desc.mixerGroup = "MusicStem";
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
+
+    ASSERT_TRUE(audioSystem.SetMixerGroupMutedUVE("Music", true));
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE();
+    const AudioVoiceParamsUVE* muted = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
+    ASSERT_NE(muted, nullptr);
+    EXPECT_FLOAT_EQ(muted->gain, 0.0F);
+
+    ASSERT_TRUE(audioSystem.SetMixerGroupMutedUVE("Music", false));
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE();
+    const AudioVoiceParamsUVE* unmuted = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
+    ASSERT_NE(unmuted, nullptr);
+    EXPECT_FLOAT_EQ(unmuted->gain, 0.25F);
+}
+
+TEST_F(AudioSystemUVETest, MixerBusGraph_SoloDucksEveryOtherBus) {
+    ASSERT_TRUE(audioSystem.RegisterMixerGroupUVE("Music", 0.5F, 1.0F));
+    ASSERT_TRUE(audioSystem.RegisterMixerGroupUVE("SFX", 1.0F, 1.0F));
+
+    AudioSourceDescUVE musicDesc;
+    musicDesc.spatial = false;
+    musicDesc.mixerGroup = "Music";
+    const VoiceHandleUVE music = audioSystem.CreateSourceUVE(musicDesc);
+
+    AudioSourceDescUVE sfxDesc;
+    sfxDesc.spatial = false;
+    sfxDesc.mixerGroup = "SFX";
+    const VoiceHandleUVE sfx = audioSystem.CreateSourceUVE(sfxDesc);
+
+    ASSERT_TRUE(audioSystem.SetMixerGroupSoloedUVE("Music", true));
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE();
+
+    const std::vector<RecordedAudioCallUVE>& recorded = device.GetRecordedCallsUVE();
+    const AudioVoiceParamsUVE* musicParams = FindRecordedParamsUVE(recorded, music);
+    const AudioVoiceParamsUVE* sfxParams = FindRecordedParamsUVE(recorded, sfx);
+    ASSERT_NE(musicParams, nullptr);
+    ASSERT_NE(sfxParams, nullptr);
+    EXPECT_FLOAT_EQ(musicParams->gain, 0.5F);
+    EXPECT_FLOAT_EQ(sfxParams->gain, 0.0F);
+
+    const AudioMixerDiagnosticsUVE diagnostics = audioSystem.GetMixerDiagnosticsUVE();
+    EXPECT_TRUE(diagnostics.anySoloed);
+}
+
+TEST_F(AudioSystemUVETest, MixerBusGraph_ReparentAndRemovalKeepLiveRoutingConsistent) {
+    ASSERT_TRUE(audioSystem.RegisterMixerGroupUVE("Music", 0.5F, 1.0F));
+    ASSERT_TRUE(audioSystem.RegisterMixerGroupUVE("Stem", "Music", 0.5F, 1.0F));
+
+    AudioSourceDescUVE desc;
+    desc.spatial = false;
+    desc.mixerGroup = "Stem";
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
+
+    // A legal move re-composes the source's chain without touching the voice.
+    ASSERT_TRUE(audioSystem.SetMixerGroupParentUVE("Stem", kMasterAudioMixerGroupNameUVE));
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE();
+    const AudioVoiceParamsUVE* moved = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
+    ASSERT_NE(moved, nullptr);
+    EXPECT_FLOAT_EQ(moved->gain, 0.5F);
+
+    // Removing the bus that still holds a routed source is refused.
+    EXPECT_FALSE(audioSystem.RemoveMixerGroupUVE("Stem"));
+    audioSystem.DestroySourceUVE(source);
+    EXPECT_TRUE(audioSystem.RemoveMixerGroupUVE("Stem"));
+}
+
+TEST_F(AudioSystemUVETest, ApplySourceBusGainChainUVE_RunsTheRoutedBusChain) {
+    ASSERT_TRUE(audioSystem.RegisterMixerGroupUVE("Music", kMasterAudioMixerGroupNameUVE, 0.5F, 1.0F));
+    ASSERT_TRUE(audioSystem.RegisterMixerGroupUVE("Stem", "Music", 0.5F, 1.0F));
+
+    AudioSourceDescUVE desc;
+    desc.spatial = false;
+    desc.mixerGroup = "Stem";
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
+
+    const std::vector<float> input{0.8F};
+    std::vector<float> output;
+    ASSERT_TRUE(audioSystem.ApplySourceBusGainChainUVE(source, input, output));
+    ASSERT_EQ(output.size(), 1U);
+    // Both buses compose on the sample path: 0.8 * 0.5 (Music) * 0.5 (Stem) = 0.2.
+    EXPECT_FLOAT_EQ(output[0], 0.2F);
+
+    ASSERT_TRUE(audioSystem.SetMixerGroupMutedUVE("Music", true));
+    ASSERT_TRUE(audioSystem.ApplySourceBusGainChainUVE(source, input, output));
+    ASSERT_EQ(output.size(), 1U);
+    EXPECT_FLOAT_EQ(output[0], 0.0F);
+}
+
+TEST_F(AudioSystemUVETest, ApplySourceBusGainChainUVE_RejectsUnknownHandleAtomically) {
+    const std::vector<float> sentinel{0.5F};
+    std::vector<float> output = sentinel;
+    EXPECT_FALSE(audioSystem.ApplySourceBusGainChainUVE(VoiceHandleUVE::FromIndexAndGenerationUVE(9U, 9U),
+                                                         std::vector<float>{1.0F}, output));
+    EXPECT_EQ(output, sentinel);
+}
+
 } // namespace
 } // namespace UVE::Audio::Tests

@@ -567,7 +567,27 @@ and one of the highest-priority areas below.
 - [ ] Audio occlusion/obstruction driven by the physics/collision system
 - [ ] Streaming playback for long audio (music, VO) instead of fully-decoded-in-memory
   playback only
-- [ ] A real-time audio mixing graph / bus system with runtime-adjustable submixes
+- [x] A real-time audio mixing graph / bus system with runtime-adjustable submixes - the mixer is
+  now a bounded tree instead of a flat list. Master is the root and can never be removed or
+  reparented; every other bus names a parent (Master when none is given, which is what the flat
+  registration call has always meant), and a source hears the product of its own bus and every
+  ancestor, so ducking Master ducks the whole game while ducking `Music` ducks only its subtree.
+  Mute silences a bus and everything under it. Solo keeps exactly the soloed chain alive - the
+  soloed bus, everything under it, and every bus it feeds into - and silences the rest, with mute
+  still winning over solo on the muted path. Neither switch overwrites an authored multiplier, so
+  unmuting restores precisely what the mixer had. Every structural edit is validated before it
+  lands: a move that would make a bus its own ancestor is refused rather than risking a later
+  infinite walk, unknown parents are refused, the table is capped at 32 buses including Master,
+  removing a bus that still has routed sources is refused, and removing an empty one reparents its
+  children onto its own parent so no edge can dangle. `UpdateUVE()` now feeds the device the
+  effective value, and a pitch product that leaves the accepted range is clamped instead of being
+  rejected into silence. Each bus also carries four fixed-order gain insert slots that run on the
+  sample path after its effective volume (`ApplyBusGainChainUVE`), reusing the existing bounded PCM
+  gain chain rather than growing a second DSP path - a submix hook that audibly carries audio, and
+  the seam the next item plugs real DSP nodes into. Locked by 11 mixer cases (parent composition,
+  cycle refusal, mute/solo interaction, safe reparent-on-removal, the cap, slot ordering, atomic
+  failure, tree-shaped diagnostics) and 6 system cases proving the graph reaches both the device and
+  the sample path. Typed DSP nodes, EQ/reverb, and per-bus metering remain open below.
 - [ ] An in-editor audio authoring tool (mixer view, real-time meter, attenuation curve
   editor)
 - [ ] Ambisonics / spatial audio bed support for VR/360 use cases (long-term)
