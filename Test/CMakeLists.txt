@@ -457,6 +457,7 @@ add_executable(uve_integration_tests
     Audio/audio_attenuation_model_uve_tests.cpp
     Audio/audio_listener_orientation_validation_uve_tests.cpp
     Audio/audio_mixer_group_uve_tests.cpp
+    Audio/audio_dsp_uve_tests.cpp
     Audio/audio_source_system_uve_tests.cpp
     Audio/audio_system_uve_tests.cpp
     Audio/null_audio_device_uve_tests.cpp

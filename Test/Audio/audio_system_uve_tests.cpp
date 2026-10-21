@@ -549,7 +549,7 @@ TEST_F(AudioSystemUVETest, MixerBusGraph_ReparentAndRemovalKeepLiveRoutingConsis
     EXPECT_TRUE(audioSystem.RemoveMixerGroupUVE("Stem"));
 }
 
-TEST_F(AudioSystemUVETest, ApplySourceBusGainChainUVE_RunsTheRoutedBusChain) {
+TEST_F(AudioSystemUVETest, ApplySourceBusChainUVE_RunsTheRoutedBusChain) {
     ASSERT_TRUE(audioSystem.RegisterMixerGroupUVE("Music", kMasterAudioMixerGroupNameUVE, 0.5F, 1.0F));
     ASSERT_TRUE(audioSystem.RegisterMixerGroupUVE("Stem", "Music", 0.5F, 1.0F));
 
@@ -560,21 +560,21 @@ TEST_F(AudioSystemUVETest, ApplySourceBusGainChainUVE_RunsTheRoutedBusChain) {
 
     const std::vector<float> input{0.8F};
     std::vector<float> output;
-    ASSERT_TRUE(audioSystem.ApplySourceBusGainChainUVE(source, input, output));
+    ASSERT_TRUE(audioSystem.ApplySourceBusChainUVE(source, input, output));
     ASSERT_EQ(output.size(), 1U);
     // Both buses compose on the sample path: 0.8 * 0.5 (Music) * 0.5 (Stem) = 0.2.
     EXPECT_FLOAT_EQ(output[0], 0.2F);
 
     ASSERT_TRUE(audioSystem.SetMixerGroupMutedUVE("Music", true));
-    ASSERT_TRUE(audioSystem.ApplySourceBusGainChainUVE(source, input, output));
+    ASSERT_TRUE(audioSystem.ApplySourceBusChainUVE(source, input, output));
     ASSERT_EQ(output.size(), 1U);
     EXPECT_FLOAT_EQ(output[0], 0.0F);
 }
 
-TEST_F(AudioSystemUVETest, ApplySourceBusGainChainUVE_RejectsUnknownHandleAtomically) {
+TEST_F(AudioSystemUVETest, ApplySourceBusChainUVE_RejectsUnknownHandleAtomically) {
     const std::vector<float> sentinel{0.5F};
     std::vector<float> output = sentinel;
-    EXPECT_FALSE(audioSystem.ApplySourceBusGainChainUVE(VoiceHandleUVE::FromIndexAndGenerationUVE(9U, 9U),
+    EXPECT_FALSE(audioSystem.ApplySourceBusChainUVE(VoiceHandleUVE::FromIndexAndGenerationUVE(9U, 9U),
                                                          std::vector<float>{1.0F}, output));
     EXPECT_EQ(output, sentinel);
 }
