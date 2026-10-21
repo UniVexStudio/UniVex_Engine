@@ -428,7 +428,27 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
   BallSocketConstraintUVE (spherical joint with 3 rotational DOF), and FixedConstraintUVE
   (weld joint locking relative anchor position) are implemented in PhysicsConstraintSystemUVE with
   deterministic island plan generation and mass-weighted solver relaxation; locked by unit tests
-- [ ] Continuous collision detection for fast-moving small objects (tunneling prevention)
+- [x] Continuous collision detection for fast-moving small objects (tunneling prevention).
+  The fixed step was integrate-then-resolve, which is exact for anything that moves less than its
+  own extent per step and silently wrong for anything that does not: a bullet at 100 m/s over a
+  10 Hz step travels ten metres between two samples, so a two-centimetre wall is never "between"
+  anything the integrator looks at. `continuous_collision_uve` answers the one question the
+  discrete step cannot - how far can this body travel before it touches something - with an exact
+  swept-sphere/AABB slab test (the box expanded by the mover's radius, which turns the sphere into
+  a point) and an exact swept-sphere/sphere quadratic. Both report the impact as a fraction of the
+  step with the face normal, so the caller can shorten the step AND drop the velocity component
+  pressed into the surface while keeping the tangential part - stopping outright would make every
+  wall sticky. The mover is swept as a sphere built from its own world AABB rather than its
+  authored shape: rotation-independent, so a spinning body cannot sweep a different volume on two
+  machines, and conservative by construction - it can stop a body early but never late, and early
+  is recoverable while a tunneled hit is not. Contacts report at `timeOfImpact == 0` when the body
+  is ALREADY touching, and the resolver deliberately does not clamp that case: clamping would
+  freeze every grounded body, since sliding happens entirely inside a contact. Ties between two
+  targets at the same impact time resolve to the lowest enumeration index, so the same scene
+  produces the same contact every run. Off by default and gated by a motion threshold - the sweep
+  costs several times an integration, and a scene full of slow bodies would pay it to protect
+  bodies that cannot tunnel. Layer/mask filtering reuses the collision system's two-way rule, so
+  CCD can never stop a body against geometry the discrete resolver would have ignored.
 - [ ] Multi-threaded physics stepping for large scenes
 - [ ] Deterministic/networked-safe physics stepping (fixed-point or otherwise reproducible)
   for competitive multiplayer use cases

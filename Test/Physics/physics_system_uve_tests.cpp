@@ -608,5 +608,85 @@ TEST_F(PhysicsSystemUVETest, StepUVE_AnObjectThatIsNotAPhysicsObjectStillSplitsB
     EXPECT_NEAR(secondMoved, 0.1F, 1.0e-2F);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Continuous collision detection
+// ---------------------------------------------------------------------------------------------
+
+namespace {
+
+/// One step's travel at 100 m/s is 10 m, which is far more than the 0.1 m wall it has to cross -
+/// the exact ratio at which a discrete integrator cannot see the obstacle at all.
+constexpr float kTunnelingVelocityUVE = 100.0F;
+constexpr float kTunnelingStepSecondsUVE = 0.1F;
+constexpr float kWallCenterXUVE = 2.0F;
+constexpr float kWallHalfThicknessUVE = 0.05F;
+
+} // namespace
+
+TEST_F(PhysicsSystemUVETest, StepUVE_WithoutContinuousCollisionAFastBodyPassesThroughAThinWall) {
+    Scene::Rigid3DComponentUVE fastBody;
+    fastBody.velocity = Math::Vector3UVE{kTunnelingVelocityUVE, 0.0F, 0.0F};
+    const Scene::EntityUVE body = MakeBodyEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, fastBody,
+                                                     Math::Vector3UVE{0.25F, 0.25F, 0.25F});
+    MakeStaticColliderEntityUVE(Math::Vector3UVE{kWallCenterXUVE, 0.0F, 0.0F},
+                                Math::Vector3UVE{kWallHalfThicknessUVE, 2.0F, 2.0F});
+    PhysicsSystemUVE physicsSystem(collisionSystem);
+
+    RunStepsUVE(physicsSystem, entityManager, sceneGraph, 1, kTunnelingStepSecondsUVE);
+
+    // The documented failure this feature exists to remove: the body lands ten metres away with
+    // the wall never having been in its way, because the wall was never between two samples.
+    EXPECT_GT(GetWorldPositionUVE(body).x, kWallCenterXUVE);
+}
+
+TEST_F(PhysicsSystemUVETest, StepUVE_ContinuousCollisionStopsAFastBodyBeforeTheWall) {
+    Scene::Rigid3DComponentUVE fastBody;
+    fastBody.velocity = Math::Vector3UVE{kTunnelingVelocityUVE, 0.0F, 0.0F};
+    const Scene::EntityUVE body = MakeBodyEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, fastBody,
+                                                     Math::Vector3UVE{0.25F, 0.25F, 0.25F});
+    MakeStaticColliderEntityUVE(Math::Vector3UVE{kWallCenterXUVE, 0.0F, 0.0F},
+                                Math::Vector3UVE{kWallHalfThicknessUVE, 2.0F, 2.0F});
+    PhysicsSystemUVE physicsSystem(collisionSystem);
+    PhysicsSimulationSettingsUVE settings;
+    settings.continuousCollision.enabled = true;
+    settings.continuousCollision.contactOffset = 0.001F;
+    physicsSystem.SetSimulationSettingsUVE(settings);
+
+    RunStepsUVE(physicsSystem, entityManager, sceneGraph, 1, kTunnelingStepSecondsUVE);
+
+    const float stopX = GetWorldPositionUVE(body).x;
+    // Stopped short of the wall's near face (1.95) by the body's own bounding radius, and far from
+    // the 10 m the discrete path would have travelled.
+    EXPECT_LT(stopX, kWallCenterXUVE - kWallHalfThicknessUVE);
+    EXPECT_GT(stopX, 0.5F);
+    // The velocity into the wall is gone; the body cannot re-tunnel on the next step.
+    const Scene::Rigid3DComponentUVE& after = entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body);
+    EXPECT_LE(after.velocity.x, 1.0e-3F);
+}
+
+TEST_F(PhysicsSystemUVETest, StepUVE_ContinuousCollisionLeavesATangentialSlideUntouched) {
+    Scene::Rigid3DComponentUVE slider;
+    slider.velocity = Math::Vector3UVE{kTunnelingVelocityUVE, 0.0F, 0.0F};
+    const Scene::EntityUVE body = MakeBodyEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, slider,
+                                                     Math::Vector3UVE{0.25F, 0.25F, 0.25F});
+    // A floor the body already rests on, so the very first sweep reports a zero-time contact.
+    MakeStaticColliderEntityUVE(Math::Vector3UVE{0.0F, -0.5F, 0.0F},
+                                Math::Vector3UVE{50.0F, 0.25F, 50.0F});
+    PhysicsSystemUVE physicsSystem(collisionSystem);
+    PhysicsSimulationSettingsUVE settings;
+    settings.continuousCollision.enabled = true;
+    physicsSystem.SetSimulationSettingsUVE(settings);
+
+    RunStepsUVE(physicsSystem, entityManager, sceneGraph, 1, kTunnelingStepSecondsUVE);
+
+    // A resting contact must not clamp the step to zero: that would freeze every grounded body.
+    EXPECT_GT(GetWorldPositionUVE(body).x, 1.0F);
+}
+
+TEST_F(PhysicsSystemUVETest, StepUVE_ContinuousCollisionIsOptInByDefault) {
+    PhysicsSimulationSettingsUVE settings;
+    EXPECT_FALSE(settings.continuousCollision.enabled);
+}
+
 } // namespace
 } // namespace UVE::Physics::Tests
