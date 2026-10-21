@@ -475,8 +475,22 @@ and one of the highest-priority areas below.
   so every existing clip keeps its exact bytes. `SampleMorphWeightTrackUVE` interpolates linearly
   between keys and clamps outside them, and a facial clip with no object and no bone movement is
   valid for the first time - the validator's "nothing moves" rule counted only those two.
-- [ ] glTF `weights` animation channel: the one path that carries lip-sync out of a DCC tool. The
-  engine can hold, sample and play facial animation today; it cannot yet import one.
+- [x] glTF `weights` animation channel: the one path that carries lip-sync out of a DCC tool.
+  `GltfAnimationPathUVE::Weights` reads the SCALAR stream glTF 2.0 section 3.11 defines - every
+  target's weight for one key, laid end to end - by resolving `target.node` through the node's
+  mesh to its morph-target count, rejecting a mesh whose primitives disagree about that count, and
+  lifting the key times and weights as views rather than copies. Conversion emits one
+  `morphWeights` track per node carrying the file's OWN keys: a clip's morph track already
+  interpolates linearly and clamps outside its range, which is exactly what a LINEAR weights
+  channel means, so nothing is resampled and import cannot drift from playback. STEP weights
+  channels are rejected instead of resampled - the format has no step mode, and silently lerping
+  would change the performance the animator authored. A document with no skin at all is accepted
+  when every channel is a weights channel, so an audio-driven take exported from a bare head
+  imports; a transform channel still requires a skeleton. Node names come from the whole node array
+  in document order (`name`, else "Node", uniquified with the same `_N` suffix bones use), so one
+  node keeps one track name across every animation in the file - that name is what the runtime
+  addresses. Locked by 21 cases across parse, conversion, rejection and the `uve-animation-v4`
+  round trip.
 - [ ] Physically-simulated secondary motion (cloth bones, jiggle, spring bones)
 - [ ] A dedicated animation-authoring/preview tool in the editor (a timeline/sequencer for
   scrubbing clips and state machines is covered again under Editor Tooling below)
