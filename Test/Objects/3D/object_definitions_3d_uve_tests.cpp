@@ -1732,31 +1732,171 @@ TEST_F(Object3DDefinitionsUVETest, ShapeCast3DSweepsSphereAgainstColliderAndReco
     EXPECT_NEAR(castState.hitDistance, 2.5F, 1.0e-4F);
 }
 
-TEST_F(Object3DDefinitionsUVETest, SpringBoneSimulator3DStepsTipAndPushesOutOfCollisionSphere) {
+namespace {
+
+// A vertical chain: bone 0 at the origin, every child 0.25 m below its parent.
+EntityUVE MakeSpringChainSkeletonUVE(EntityManagerUVE& entityManager, const std::size_t boneCount) {
+    const EntityUVE entity = entityManager.CreateEntityUVE();
+    Skeleton3DComponentUVE skeleton;
+    skeleton.bones.reserve(boneCount);
+    for (std::size_t index = 0U; index < boneCount; ++index) {
+        SkeletonBoneUVE bone;
+        bone.name = "Hair" + std::to_string(index);
+        bone.parentIndex = (index == 0U) ? -1 : static_cast<std::int32_t>(index - 1U);
+        bone.localPosition = (index == 0U) ? Math::Vector3UVE{0.0F, 0.0F, 0.0F}
+                                           : Math::Vector3UVE{0.0F, -0.25F, 0.0F};
+        skeleton.bones.push_back(std::move(bone));
+    }
+    entityManager.AddComponentUVE<Skeleton3DComponentUVE>(entity, std::move(skeleton));
+    entityManager.AddComponentUVE<WorldTransformComponentUVE>(entity, WorldTransformComponentUVE{});
+    return entity;
+}
+
+SpringBoneSimulator3DObjectDefinitionUVE MakeChainSimulatorUVE(const EntityUVE skeleton,
+                                                              const std::size_t chainLength) {
+    SpringBoneSimulator3DObjectDefinitionUVE definition{};
+    definition.simulator.skeleton = skeleton;
+    definition.simulator.boneName = "Hair0";
+    definition.simulator.chainLength = static_cast<std::uint32_t>(chainLength);
+    definition.simulator.tipOffsetLocal = Math::Vector3UVE{0.0F, -0.25F, 0.0F};
+    definition.simulator.gravityDirection = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    definition.simulator.gravityScale = 6.0F;
+    definition.simulator.stiffness = 20.0F;
+    definition.simulator.damping = 0.3F;
+    definition.simulator.limitAngleDegrees = 45.0F;
+    return definition;
+}
+
+} // namespace
+
+TEST_F(Object3DDefinitionsUVETest, SpringBoneChainDrivesEverySegmentAndWritesThePose) {
+    const EntityUVE skeletonEntity = MakeSpringChainSkeletonUVE(entityManager, 4U);
     const EntityUVE simEntity = CreateEntityUVE();
-    SpringBoneSimulator3DObjectDefinitionUVE simDef{};
-    simDef.simulator.tipOffsetLocal = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
-    simDef.simulator.stiffness = 20.0F;
-    simDef.simulator.damping = 0.3F;
-    simDef.simulator.hitRadius = 0.1F;
-    ApplySpringBoneSimulator3DObjectDefinitionUVE(entityManager, simEntity, simDef);
+    ApplySpringBoneSimulator3DObjectDefinitionUVE(entityManager, simEntity,
+                                                  MakeChainSimulatorUVE(skeletonEntity, 4U));
     ExpectObject3DBaselineUVE(entityManager, simEntity, "SpringBoneSimulator3D");
     EXPECT_TRUE(entityManager.HasComponentUVE<BoneModifierComponentUVE>(simEntity));
 
-    const EntityUVE colEntity = CreateEntityUVE();
-    SpringBoneCollision3DObjectDefinitionUVE colDef{};
-    colDef.collision.centerOffset = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
-    colDef.collision.radius = 0.4F;
-    ApplySpringBoneCollision3DObjectDefinitionUVE(entityManager, colEntity, colDef);
-    ExpectObject3DBaselineUVE(entityManager, colEntity, "SpringBoneCollision3D");
+    // One second at 60 fps; the chain hangs straight down and gravity swings it toward +X.
+    for (int frame = 0; frame < 60; ++frame) {
+        EXPECT_EQ(UpdateSpringBoneSimulator3DObjectsUVE(entityManager, 1.0F / 60.0F), 1U);
+    }
 
-    EXPECT_EQ(UpdateSpringBoneSimulator3DObjectsUVE(entityManager, 0.016F), 1U);
-    const auto& sim = entityManager.GetComponentUVE<SpringBoneSimulator3DComponentUVE>(simEntity);
-    EXPECT_TRUE(sim.initialized);
-    // Sphere at (0, -1, 0) with radius 0.4 + hitRadius 0.1 = 0.5 pushes tip away from (0, -1, 0).
+    const auto& simulator = entityManager.GetComponentUVE<SpringBoneSimulator3DComponentUVE>(simEntity);
+    EXPECT_TRUE(simulator.initialized);
+    EXPECT_EQ(simulator.resolvedBoneCount, 4U);
+    ASSERT_EQ(simulator.tips.size(), 4U);
+    EXPECT_GT(simulator.tips.back().position.x, 0.05F);
+
+    // Every link still spans exactly its authored length: the chain stays connected, root to tip.
+    Math::Vector3UVE pivot = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    for (const SpringBoneTipStateUVE& tip : simulator.tips) {
+        EXPECT_NEAR(Math::LengthUVE(tip.position - pivot), 0.25F, 1.0e-3F);
+        pivot = tip.position;
+    }
+
+    // And the result reached the skeleton: the pose now bends, bone by bone.
+    const auto& skeleton = entityManager.GetComponentUVE<Skeleton3DComponentUVE>(skeletonEntity);
+    ASSERT_EQ(skeleton.pose.size(), 4U);
+    for (const SkeletonBonePoseUVE& bonePose : skeleton.pose) {
+        EXPECT_GT(std::fabs(bonePose.rotation.z), 1.0e-3F);
+    }
+}
+
+TEST_F(Object3DDefinitionsUVETest, SpringBoneChainIsFrameRateIndependent) {
+    const EntityUVE slowSkeleton = MakeSpringChainSkeletonUVE(entityManager, 3U);
+    const EntityUVE slowEntity = CreateEntityUVE();
+    ApplySpringBoneSimulator3DObjectDefinitionUVE(entityManager, slowEntity,
+                                                  MakeChainSimulatorUVE(slowSkeleton, 3U));
+    const EntityUVE fastSkeleton = MakeSpringChainSkeletonUVE(entityManager, 3U);
+    const EntityUVE fastEntity = CreateEntityUVE();
+    ApplySpringBoneSimulator3DObjectDefinitionUVE(entityManager, fastEntity,
+                                                  MakeChainSimulatorUVE(fastSkeleton, 3U));
+
+    // The same second of simulation, delivered as 30 frames and as 144 frames.
+    for (int frame = 0; frame < 30; ++frame) {
+        UpdateSpringBoneSimulator3DObjectsUVE(entityManager, 1.0F / 30.0F);
+    }
+    for (int frame = 0; frame < 144; ++frame) {
+        UpdateSpringBoneSimulator3DObjectsUVE(entityManager, 1.0F / 144.0F);
+    }
+
+    const auto& slow = entityManager.GetComponentUVE<SpringBoneSimulator3DComponentUVE>(slowEntity);
+    const auto& fast = entityManager.GetComponentUVE<SpringBoneSimulator3DComponentUVE>(fastEntity);
+    ASSERT_EQ(slow.tips.size(), 3U);
+    ASSERT_EQ(fast.tips.size(), 3U);
+    for (std::size_t segment = 0U; segment < 3U; ++segment) {
+        EXPECT_NEAR(slow.tips[segment].position.x, fast.tips[segment].position.x, 5.0e-3F);
+        EXPECT_NEAR(slow.tips[segment].position.y, fast.tips[segment].position.y, 5.0e-3F);
+        EXPECT_NEAR(slow.tips[segment].position.z, fast.tips[segment].position.z, 5.0e-3F);
+    }
+}
+
+TEST_F(Object3DDefinitionsUVETest, SpringBoneChainStaysInsideItsAngularLimit) {
+    const EntityUVE skeletonEntity = MakeSpringChainSkeletonUVE(entityManager, 2U);
+    const EntityUVE simEntity = CreateEntityUVE();
+    SpringBoneSimulator3DObjectDefinitionUVE definition = MakeChainSimulatorUVE(skeletonEntity, 2U);
+    definition.simulator.limitAngleDegrees = 15.0F;
+    definition.simulator.gravityScale = 40.0F;
+    ApplySpringBoneSimulator3DObjectDefinitionUVE(entityManager, simEntity, definition);
+
+    for (int frame = 0; frame < 120; ++frame) {
+        UpdateSpringBoneSimulator3DObjectsUVE(entityManager, 1.0F / 60.0F);
+    }
+
+    const auto& simulator = entityManager.GetComponentUVE<SpringBoneSimulator3DComponentUVE>(simEntity);
+    ASSERT_EQ(simulator.tips.size(), 2U);
+    // Gravity is 40x, so without the cone the chain would lie flat. The limit is PER JOINT, so it
+    // is the angle between consecutive links that is bounded - a two-bone chain legitimately
+    // reaches 30 degrees of total world bend while no single joint exceeds 15.
+    constexpr float kCosineLimit = 0.9658F; // a hair under cos(15 degrees) for float slack
+    Math::Vector3UVE pivot = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    Math::Vector3UVE previousDirection = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    for (const SpringBoneTipStateUVE& tip : simulator.tips) {
+        const Math::Vector3UVE direction = Math::NormalizeUVE(tip.position - pivot);
+        EXPECT_GE(Math::DotUVE(direction, previousDirection), kCosineLimit);
+        previousDirection = direction;
+        pivot = tip.position;
+    }
+}
+
+TEST_F(Object3DDefinitionsUVETest, SpringBoneChainPushesItsTipOutOfACollisionSphere) {
+    const EntityUVE skeletonEntity = MakeSpringChainSkeletonUVE(entityManager, 1U);
+    const EntityUVE simEntity = CreateEntityUVE();
+    SpringBoneSimulator3DObjectDefinitionUVE definition = MakeChainSimulatorUVE(skeletonEntity, 1U);
+    definition.simulator.tipOffsetLocal = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    definition.simulator.gravityScale = 0.0F;
+    definition.simulator.hitRadius = 0.1F;
+    ApplySpringBoneSimulator3DObjectDefinitionUVE(entityManager, simEntity, definition);
+
+    const EntityUVE collisionEntity = CreateEntityUVE();
+    SpringBoneCollision3DObjectDefinitionUVE collision{};
+    collision.collision.centerOffset = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    collision.collision.radius = 0.4F;
+    ApplySpringBoneCollision3DObjectDefinitionUVE(entityManager, collisionEntity, collision);
+    ExpectObject3DBaselineUVE(entityManager, collisionEntity, "SpringBoneCollision3D");
+
+    for (int frame = 0; frame < 30; ++frame) {
+        EXPECT_EQ(UpdateSpringBoneSimulator3DObjectsUVE(entityManager, 1.0F / 60.0F), 1U);
+    }
+    const auto& simulator = entityManager.GetComponentUVE<SpringBoneSimulator3DComponentUVE>(simEntity);
+    ASSERT_EQ(simulator.tips.size(), 1U);
     const Math::Vector3UVE deltaFromSphere =
-        sim.currentTipWorldPosition - Math::Vector3UVE{0.0F, -1.0F, 0.0F};
-    EXPECT_GT(Math::LengthSquaredUVE(deltaFromSphere), 0.01F);
+        simulator.tips[0].position - Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    EXPECT_GT(Math::LengthUVE(deltaFromSphere), 0.44F);
+    // Pushed sideways, but still one link length from the bone it hangs off.
+    EXPECT_NEAR(Math::LengthUVE(simulator.tips[0].position), 1.0F, 1.0e-3F);
+}
+
+TEST_F(Object3DDefinitionsUVETest, ASpringBoneSimulatorWithoutASkeletonIsNotStepped) {
+    const EntityUVE simEntity = CreateEntityUVE();
+    SpringBoneSimulator3DObjectDefinitionUVE definition{};
+    definition.simulator.boneName = "Hair0";
+    ApplySpringBoneSimulator3DObjectDefinitionUVE(entityManager, simEntity, definition);
+    EXPECT_EQ(UpdateSpringBoneSimulator3DObjectsUVE(entityManager, 1.0F / 60.0F), 0U);
+    const auto& simulator = entityManager.GetComponentUVE<SpringBoneSimulator3DComponentUVE>(simEntity);
+    EXPECT_FALSE(simulator.initialized);
+    EXPECT_TRUE(simulator.tips.empty());
 }
 
 TEST_F(Object3DDefinitionsUVETest, Joint3DDefinitionsSyncWithPhysicsConstraintSystemAndHingeMotorLimits) {

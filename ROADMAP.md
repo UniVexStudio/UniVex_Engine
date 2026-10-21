@@ -491,7 +491,22 @@ and one of the highest-priority areas below.
   node keeps one track name across every animation in the file - that name is what the runtime
   addresses. Locked by 21 cases across parse, conversion, rejection and the `uve-animation-v4`
   round trip.
-- [ ] Physically-simulated secondary motion (cloth bones, jiggle, spring bones)
+- [x] Physically-simulated secondary motion (cloth bones, jiggle, spring bones) -
+  `SpringBoneSimulator3D` now drives a CHAIN: the bone named by the simulator plus its first-child
+  descendants, up to `chainLength` (16), solved root to tip so a displaced root carries the rest of
+  the chain instead of tearing it apart. Each segment simulates the world position of its bone's
+  tail - a spring toward where animation put it, gravity, sphere obstacles, and the link length
+  enforced - and the resulting direction is written back into the skeleton's runtime pose as a bone
+  rotation, which is what makes the simulation visible at all: the previous implementation computed
+  a tip that nothing ever read. Time is consumed in whole 1/120 s steps from a per-simulator
+  accumulator, and velocity decays as `exp(-damping * 20 * dt)` rather than `1 - damping` per call,
+  so one second of motion traces the same path at 30, 60 and 144 fps. Each joint is clamped to
+  `limitAngleDegrees` around the direction ANIMATION gave it, measured against a captured reference
+  rather than the solver's own previous output - without that the cone creeps outward a little every
+  frame until the chain hangs straight down (a defect the limit case caught on the first run). A
+  sphere hit also cancels the inward velocity component, so a chain cannot buzz against an obstacle.
+  Locked by 5 cases: per-segment link lengths plus pose write-back, frame-rate independence, the
+  per-joint angular cone, sphere push-out, and an unbound simulator being left alone.
 - [ ] A dedicated animation-authoring/preview tool in the editor (a timeline/sequencer for
   scrubbing clips and state machines is covered again under Editor Tooling below)
 
