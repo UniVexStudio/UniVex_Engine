@@ -46,8 +46,6 @@
 namespace UVE::Editor {
 namespace {
 
-constexpr const char* kPanelLabelViewportUVE = "\xEE\xA9\x94 Viewport##viewport";
-
 // ---- Viewport overlay toolbar - procedurally-drawn gizmo-mode icons -------------------------
 // Same "invisible hit-area button + custom ImDrawList paint" technique as DrawMenuBarUVE()'s own
 // playback buttons (AddTriangleFilled/AddRectFilled for Play/Pause/Stop) - kept vector-drawn
@@ -138,7 +136,11 @@ void EditorUVE::RenderOverlayUVE() {
 
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
+    ImGui::NewFrame();
+
+    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+    const bool resetLayoutRequested = ConsumeResetDockingLayoutRequestUVE();
+    SetupMainDockSpaceUVE(mainViewport, resetLayoutRequested);
     // While playing, the panels lean toward the tint colour: what is edited now is lost at Stop.
     int tintedColors = 0;
     if (m_playModeState != EditorPlayModeStateUVE::Edit && m_playTintEnabled) {
@@ -215,24 +217,17 @@ void EditorUVE::DrawViewportPanelUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
-    // Always, not FirstUseEver: this is one of the 5 core structural panels that must tile the
-    // screen with zero gaps/overlaps on every single launch, regardless of any stale imgui.ini
-    // from a previous version of this layout (see the other 4 core panels' own identical comment
-    // and the checkpoint that root-caused this - FirstUseEver only applies a fresh position/size
-    // the very first time a window ID has ever existed in a saved layout file, so any old ini
-    // permanently freezes a panel at a since-outdated position/size). Only secondary/optional
-    // windows (Plugin Tools, the Scripting canvas) keep FirstUseEver, since those are genuinely
-    // meant to be user-repositionable extras rather than part of the fixed chrome.
-    ImGui::SetNextWindowPos(layout.viewportPos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(layout.viewportSize, ImGuiCond_Always);
+    // In native ImGui docking, FirstUseEver sets the initial fallback position and size,
+    // allowing the window to dock into the central node, tab, split, float, and persist in imgui.ini.
+    ImGui::SetNextWindowPos(layout.viewportPos, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(layout.viewportSize, ImGuiCond_FirstUseEver);
     // Zero interior padding for the viewport window so the rendered 3D image fills the panel
     // edge-to-edge (the reference has the grid reaching all four edges with the toolbar floating on
     // top); with the theme's default WindowPadding the GL image is inset ~8px all around, leaving an
     // empty border band. Only this window opts out - the overlay bubbles still float on top since
     // they anchor off the image origin, which now sits flush in the panel corner.
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
-    // No title row: the header row above carries the viewport's name and the play controls.
-    if (!ImGui::Begin(kPanelLabelViewportUVE, &m_viewportPanelVisible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar)) {
+    if (!ImGui::Begin(kPanelLabelViewportUVE, &m_viewportPanelVisible, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();
         ImGui::PopStyleVar();
         return;
@@ -555,7 +550,8 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
     // ---- Shading Mode pill -----------------------------------------------------------------
     static constexpr std::array<const char*, 5> kShadingNames{"Lit", "Unshaded", "Wireframe", "Lighting", "Normals"};
     const char* const shadingLabel =
-        kShadingNames[std::clamp(static_cast<std::size_t>(m_viewportOverlayState.shadingMode), static_cast<std::size_t>(0), kShadingNames.size() - 1)];
+        kShadingNames[std::clamp(static_cast<std::size_t>(m_viewportOverlayState.shadingMode), std::size_t{0U},
+                                 kShadingNames.size() - 1U)];
     const ImVec2 shadingTextSize = ImGui::CalcTextSize(shadingLabel);
     const float shadingPillWidth = shadingTextSize.x + kBubblePaddingXUVE * 2.0F + 8.0F;
     const ImVec2 shadingPillMin{pillMax.x + kBubbleGapUVE, topY};
@@ -739,6 +735,70 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
                     SelectEntityUVE(envEntity);
                     m_contentStatusMessage = "Configured and added WorldEnvironment to the scene.";
                 }
+            }
+
+            ImGui::Separator();
+            if (ImGui::Button("Add to Scene", ImVec2{-1.0F, 26.0F})) {
+                Scene::EntityUVE sunEntity =
+                    FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
+                if (sunEntity == Scene::kInvalidEntityUVE) {
+                    sunEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
+                }
+                if (sunEntity != Scene::kInvalidEntityUVE) {
+                    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+                    constexpr float kDegToRad = 0.01745329251994329577F;
+                    const float pitch = m_viewportOverlayState.previewSunAltitude * kDegToRad;
+                    const float yaw = m_viewportOverlayState.previewSunAzimuth * kDegToRad;
+                    Math::QuaternionUVE rot{};
+                    if (Math::TryMakeEulerUVE(Math::Vector3UVE{pitch, yaw, 0.0F}, rot)) {
+                        if (entityManager.HasComponentUVE<Scene::TransformComponentUVE>(sunEntity)) {
+                            auto tf = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(sunEntity);
+                            tf.localRotation = rot;
+                            m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, sunEntity, tf);
+                        }
+                    }
+                    if (entityManager.HasComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity)) {
+                        auto& emitter = entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity);
+                        emitter.color = Math::ColorUVE{m_viewportOverlayState.previewSunColor[0],
+                                                       m_viewportOverlayState.previewSunColor[1],
+                                                       m_viewportOverlayState.previewSunColor[2]};
+                        emitter.energy = m_viewportOverlayState.previewSunEnergy;
+                        emitter.shadowEnabled = true;
+                    }
+                }
+
+                Scene::EntityUVE envEntity =
+                    FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D);
+                if (envEntity == Scene::kInvalidEntityUVE) {
+                    envEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D);
+                }
+                if (envEntity != Scene::kInvalidEntityUVE) {
+                    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+                    if (entityManager.HasComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity)) {
+                        auto& env = entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity);
+                        env.ambientSource = Scene::WorldEnvironmentAmbientSourceUVE::Sky;
+                        env.skyColor = Math::Vector3UVE{m_viewportOverlayState.previewSkyColor[0],
+                                                        m_viewportOverlayState.previewSkyColor[1],
+                                                        m_viewportOverlayState.previewSkyColor[2]};
+                        env.horizonColor = Math::Vector3UVE{m_viewportOverlayState.previewHorizonColor[0],
+                                                            m_viewportOverlayState.previewHorizonColor[1],
+                                                            m_viewportOverlayState.previewHorizonColor[2]};
+                        env.groundColor = Math::Vector3UVE{m_viewportOverlayState.previewGroundColor[0],
+                                                           m_viewportOverlayState.previewGroundColor[1],
+                                                           m_viewportOverlayState.previewGroundColor[2]};
+                        env.ambientEnergy = 1.0F;
+                        env.postProcessingEnabled = true;
+                    }
+                }
+
+                m_sceneDirty = true;
+                if (sunEntity != Scene::kInvalidEntityUVE) {
+                    SelectEntityUVE(sunEntity);
+                } else if (envEntity != Scene::kInvalidEntityUVE) {
+                    SelectEntityUVE(envEntity);
+                }
+                m_contentStatusMessage = "Configured and added DirectionalLight3D and WorldEnvironment3D to the scene.";
+                ImGui::CloseCurrentPopup();
             }
             ImGui::EndPopup();
         }

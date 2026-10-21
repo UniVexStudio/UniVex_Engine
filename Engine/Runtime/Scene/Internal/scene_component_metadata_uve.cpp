@@ -23,6 +23,7 @@
 #include "uve/component/light_component_uve.h"
 #include "uve/component/light_emitter_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
+#include "uve/component/skin_component_uve.h"
 #include "uve/component/name_component_uve.h"
 #include "uve/component/object_metadata_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
@@ -381,13 +382,23 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                              std::string(kLayerMaskDrawerRenderUVE)),
                      }));
 
+    TypeMetadataEntryUVE skinEntry =
+        MakeEntryUVE("component.skin", "SkinComponentUVE", "Skin", kSectionOrderTypeSpecificUVE,
+                     {
+                         DeclareUVE<&SkinComponentUVE::bindCount>("bindCount", "Bind Count",
+                                                                  kPropertyTypeUInt32UVE),
+                     });
+    skinEntry.nestedUnderTypeIds = {"component.mesh"};
+    AddValidatedUVE<SkinComponentUVE, &IsSkinComponentValidUVE>(entries, std::move(skinEntry));
+
     // One component behind BoxMesh3D, SphereMesh3D and PlaneMesh3D; its section carries the name
     // of the object it is on.
     TypeMetadataEntryUVE primitive =
         MakeEntryUVE("component.primitive_mesh", "PrimitiveMeshComponentUVE", "PrimitiveMesh3D", kSectionOrderTypeSpecificUVE,
                      {
                          DeclareEnumUVE<&PrimitiveMeshComponentUVE::kind>(
-                             "kind", "Shape", {{0, "Cube"}, {1, "UV Sphere"}, {2, "Plane"}}),
+                             "kind", "Shape",
+                             {{0, "Cube"}, {1, "UV Sphere"}, {2, "Plane"}, {3, "Capsule"}, {4, "Cylinder"}}),
                          DeclareUVE<&PrimitiveMeshComponentUVE::baseColor>("baseColor", "Base Color",
                                                                            kPropertyTypeColorUVE),
                      });
@@ -397,6 +408,10 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 return "SphereMesh3D";
             case PrimitiveMeshKindUVE::Plane:
                 return "PlaneMesh3D";
+            case PrimitiveMeshKindUVE::Capsule:
+                return "CapsuleMesh3D";
+            case PrimitiveMeshKindUVE::Cylinder:
+                return "CylinderMesh3D";
             case PrimitiveMeshKindUVE::Cube:
                 break;
         }
@@ -939,7 +954,8 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                           kPropertyTypeBoolUVE),
                                "Off this shape is ignored by collision, rays, and areas."),
                 DeclareEnumUVE<&ColliderComponentUVE::shapeType>(
-                    "shapeType", "Shape", {{0, "Box"}, {1, "Sphere"}, {2, "Capsule"}}),
+                    "shapeType", "Shape",
+                    {{0, "BoxShape3D"}, {1, "SphereShape3D"}, {2, "CapsuleShape3D"}, {3, "CylinderShape3D"}}),
                 [] {
                     TypeMetadataPropertyUVE property = DeclareUVE<&ColliderComponentUVE::halfExtents>(
                         "halfExtents", "Half Extents", kPropertyTypeVector3UVE);
@@ -966,8 +982,8 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                    kPropertyTypeFloatUVE),
                         0.0, 10000.0, 0.01);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const ColliderComponentUVE*>(instance)->shapeType ==
-                               ColliderShapeTypeUVE::Capsule;
+                        const auto shape = static_cast<const ColliderComponentUVE*>(instance)->shapeType;
+                        return shape == ColliderShapeTypeUVE::Capsule || shape == ColliderShapeTypeUVE::Cylinder;
                     };
                     return property;
                 }(),
@@ -1372,6 +1388,12 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                 kPropertyTypeBoolUVE),
                                "On the floor, stop at a wall instead of sliding along it - no corner slipping.")),
                            "Floor"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::maxStepHeight>("maxStepHeight", "Step Height",
+                                                                        kPropertyTypeFloatUVE),
+                                            0.0, 10.0, 0.01),
+                               "Walks up steps and kerbs up to this high without jumping. 0 turns it off.")),
+                           "Floor"),
                 InGroupUVE(WithTooltipUVE(
                                DeclareEnumUVE<&C::platformOnLeave>(
                                    "platformOnLeave", "On Leave Platform",
@@ -1386,12 +1408,6 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                "The fastest platform motion that may carry this body. Past it the platform is "
                                "treated as standing still, so a teleported platform cannot fling anyone."),
                            "Platforms"),
-                InGroupUVE(whenGrounded(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&C::maxStepHeight>("maxStepHeight", "Step Height",
-                                                                        kPropertyTypeFloatUVE),
-                                            0.0, 10.0, 0.01),
-                               "Walks up steps and kerbs up to this high without jumping. 0 turns it off.")),
-                           "Floor"),
                 InGroupUVE(WithTooltipUVE(DeclareUVE<&C::slideOnCeiling>("slideOnCeiling", "Slide On Ceiling",
                                                                          kPropertyTypeBoolUVE),
                                           "On hitting a ceiling, keep sliding along it. Off, the move stops there."),
@@ -2642,8 +2658,7 @@ void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                      }));
 
     using S = SurfaceInstanceComponentUVE;
-    AddValidatedUVE<SurfaceInstanceComponentUVE, &IsSurfaceInstanceComponentValidUVE>(
-        entries,
+    TypeMetadataEntryUVE surfaceEntry =
         MakeEntryUVE("component.surface_instance", "SurfaceInstanceComponentUVE", std::string{SurfaceInstance3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 3,
             {
                 WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&S::materialOverridePath>("materialOverridePath", "Override",
@@ -2705,7 +2720,9 @@ void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                               "ignoreOcclusionCulling", "Ignore Occlusion", kPropertyTypeBoolUVE),
                                           "Never hidden because something else covers it."),
                            "Culling"),
-            }));
+            });
+    AddValidatedUVE<SurfaceInstanceComponentUVE, &IsSurfaceInstanceComponentValidUVE>(
+        entries, std::move(surfaceEntry));
 
     using L = LightEmitterComponentUVE;
     AddValidatedUVE<LightEmitterComponentUVE, &IsLightEmitterComponentValidUVE>(

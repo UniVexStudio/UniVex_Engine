@@ -6,7 +6,7 @@
 // PreprocessShaderSourceUVE() reads the root source (a virtual file, or the caller's embedded
 // fallback string if the file doesn't exist) and expands it via a single recursive, line-based
 // pass shared by every #include'd file: directive lines (#include/#define/#undef/#ifdef/#ifndef/
-// #else/#endif) are consumed and never copied to the output; every other line, while inside an
+// #if/#elif/#else/#endif) are consumed and never copied to the output; every other line, while inside an
 // active conditional branch, has every currently-#define'd macro name substituted for its value
 // (token-boundary-aware) before being appended to the resolved source. #version/#extension/#line
 // lines are always passed through verbatim, never macro-substituted.
@@ -21,6 +21,7 @@
 #include "shader_preprocessor_uve.h"
 
 #include <cctype>
+#include <cstdlib>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -34,6 +35,7 @@ namespace {
 struct ConditionFrameUVE {
     bool parentActive = true;
     bool branchActive = true; // true while the currently-taken branch (if or else) should emit
+    bool chainTaken = false;  // some branch of this #if/#elif/#else chain already emitted
     [[nodiscard]] bool IsActiveUVE() const noexcept { return parentActive && branchActive; }
 };
 
@@ -87,6 +89,279 @@ struct PreprocessContextUVE {
 
 [[nodiscard]] bool StartsWithUVE(std::string_view text, std::string_view prefix) {
     return text.size() >= prefix.size() && text.substr(0, prefix.size()) == prefix;
+}
+
+/// GLSL/C-style #if / #elif expression evaluator. Grammar (lowest to highest precedence):
+///   or  := and ( '||' and )*
+///   and := unary ( '&&' unary )*
+///   unary := '!' unary | primary
+///   primary := '(' or ')' | 'defined' NAME | 'defined' '(' NAME ')' | NUMBER | NAME
+/// Undefined identifiers evaluate to 0, macro identifiers to their definition when it is an
+/// integer literal (decimal or 0x hex) and to 0 otherwise. Any malformed expression fails the
+/// parse; the caller reports it as a preprocessing error instead of silently emitting garbage.
+class ConditionExpressionParserUVE {
+  public:
+    ConditionExpressionParserUVE(std::string_view text,
+                                 const std::unordered_map<std::string, std::string>& definedFlags)
+        : m_text(text), m_defined(definedFlags) {}
+
+    [[nodiscard]] bool ParseUVE(bool& outValue) {
+        std::int64_t value = 0;
+        if (!ParseOrUVE(value)) {
+            return false;
+        }
+        SkipWhitespaceUVE();
+        if (m_cursor != m_text.size()) {
+            return false;
+        }
+        outValue = value != 0;
+        return true;
+    }
+
+  private:
+    std::string_view m_text;
+    const std::unordered_map<std::string, std::string>& m_defined;
+    std::size_t m_cursor = 0;
+
+    void SkipWhitespaceUVE() {
+        while (m_cursor < m_text.size() &&
+               std::isspace(static_cast<unsigned char>(m_text[m_cursor])) != 0) {
+            ++m_cursor;
+        }
+    }
+
+    [[nodiscard]] bool ConsumeUVE(std::string_view token) {
+        SkipWhitespaceUVE();
+        if (m_text.substr(m_cursor, token.size()) != token) {
+            return false;
+        }
+        m_cursor += token.size();
+        return true;
+    }
+
+    [[nodiscard]] bool ParseOrUVE(std::int64_t& outValue) {
+        std::int64_t left = 0;
+        if (!ParseAndUVE(left)) {
+            return false;
+        }
+        while (ConsumeUVE("||")) {
+            std::int64_t right = 0;
+            if (!ParseAndUVE(right)) {
+                return false;
+            }
+            left = (left != 0 || right != 0) ? 1 : 0;
+        }
+        outValue = left;
+        return true;
+    }
+
+    [[nodiscard]] bool ParseAndUVE(std::int64_t& outValue) {
+        std::int64_t left = 0;
+        if (!ParseEqualityUVE(left)) {
+            return false;
+        }
+        while (ConsumeUVE("&&")) {
+            std::int64_t right = 0;
+            if (!ParseEqualityUVE(right)) {
+                return false;
+            }
+            left = (left != 0 && right != 0) ? 1 : 0;
+        }
+        outValue = left;
+        return true;
+    }
+
+    [[nodiscard]] bool ParseEqualityUVE(std::int64_t& outValue) {
+        std::int64_t left = 0;
+        if (!ParseRelationalUVE(left)) {
+            return false;
+        }
+        for (;;) {
+            if (ConsumeUVE("==")) {
+                std::int64_t right = 0;
+                if (!ParseRelationalUVE(right)) {
+                    return false;
+                }
+                left = left == right ? 1 : 0;
+            } else if (ConsumeUVE("!=")) {
+                std::int64_t right = 0;
+                if (!ParseRelationalUVE(right)) {
+                    return false;
+                }
+                left = left != right ? 1 : 0;
+            } else {
+                outValue = left;
+                return true;
+            }
+        }
+    }
+
+    [[nodiscard]] bool ParseRelationalUVE(std::int64_t& outValue) {
+        std::int64_t left = 0;
+        if (!ParseUnaryUVE(left)) {
+            return false;
+        }
+        for (;;) {
+            enum class RelationUVE { LessEqual, GreaterEqual, Less, Greater };
+            RelationUVE relation = RelationUVE::Less;
+            if (ConsumeUVE("<=")) {
+                relation = RelationUVE::LessEqual;
+            } else if (ConsumeUVE(">=")) {
+                relation = RelationUVE::GreaterEqual;
+            } else if (ConsumeUVE("<")) {
+                relation = RelationUVE::Less;
+            } else if (ConsumeUVE(">")) {
+                relation = RelationUVE::Greater;
+            } else {
+                outValue = left;
+                return true;
+            }
+            std::int64_t right = 0;
+            if (!ParseUnaryUVE(right)) {
+                return false;
+            }
+            switch (relation) {
+                case RelationUVE::LessEqual:
+                    left = left <= right ? 1 : 0;
+                    break;
+                case RelationUVE::GreaterEqual:
+                    left = left >= right ? 1 : 0;
+                    break;
+                case RelationUVE::Less:
+                    left = left < right ? 1 : 0;
+                    break;
+                case RelationUVE::Greater:
+                    left = left > right ? 1 : 0;
+                    break;
+            }
+        }
+    }
+
+    [[nodiscard]] bool ParseUnaryUVE(std::int64_t& outValue) {
+        if (ConsumeUVE("!")) {
+            std::int64_t operand = 0;
+            if (!ParseUnaryUVE(operand)) {
+                return false;
+            }
+            outValue = operand == 0 ? 1 : 0;
+            return true;
+        }
+        return ParsePrimaryUVE(outValue);
+    }
+
+    [[nodiscard]] bool ParseIdentifierUVE(std::string& outName) {
+        SkipWhitespaceUVE();
+        if (m_cursor >= m_text.size()) {
+            return false;
+        }
+        const unsigned char first = static_cast<unsigned char>(m_text[m_cursor]);
+        if (std::isalpha(first) == 0 && first != '_') {
+            return false;
+        }
+        const std::size_t begin = m_cursor;
+        while (m_cursor < m_text.size()) {
+            const unsigned char current = static_cast<unsigned char>(m_text[m_cursor]);
+            if (std::isalnum(current) == 0 && current != '_') {
+                break;
+            }
+            ++m_cursor;
+        }
+        outName.assign(m_text.substr(begin, m_cursor - begin));
+        return true;
+    }
+
+    [[nodiscard]] bool ParsePrimaryUVE(std::int64_t& outValue) {
+        SkipWhitespaceUVE();
+        if (m_cursor >= m_text.size()) {
+            return false;
+        }
+        if (ConsumeUVE("(")) {
+            std::int64_t nested = 0;
+            if (!ParseOrUVE(nested) || !ConsumeUVE(")")) {
+                return false;
+            }
+            outValue = nested;
+            return true;
+        }
+        std::string identifier;
+        if (ParseIdentifierUVE(identifier)) {
+            if (identifier == "defined") {
+                // defined NAME and defined(NAME) both count; never expands macros.
+                const bool parenthesised = ConsumeUVE("(");
+                std::string name;
+                if (!ParseIdentifierUVE(name)) {
+                    return false;
+                }
+                if (parenthesised && !ConsumeUVE(")")) {
+                    return false;
+                }
+                outValue = m_defined.contains(name) ? 1 : 0;
+                return true;
+            }
+            const auto macroIt = m_defined.find(identifier);
+            if (macroIt == m_defined.end()) {
+                outValue = 0;
+                return true;
+            }
+            outValue = MacroValueUVE(macroIt->second);
+            return true;
+        }
+        return ParseIntegerUVE(outValue);
+    }
+
+    [[nodiscard]] bool ParseIntegerUVE(std::int64_t& outValue) {
+        SkipWhitespaceUVE();
+        if (m_cursor >= m_text.size()) {
+            return false;
+        }
+        const std::size_t begin = m_cursor;
+        if (m_text[m_cursor] == '+' || m_text[m_cursor] == '-') {
+            ++m_cursor;
+        }
+        if (m_cursor + 1 < m_text.size() && m_text[m_cursor] == '0' &&
+            (m_text[m_cursor + 1] == 'x' || m_text[m_cursor + 1] == 'X')) {
+            m_cursor += 2;
+            const std::size_t digitsBegin = m_cursor;
+            while (m_cursor < m_text.size() && std::isxdigit(static_cast<unsigned char>(m_text[m_cursor])) != 0) {
+                ++m_cursor;
+            }
+            if (m_cursor == digitsBegin) {
+                return false;
+            }
+        } else {
+            const std::size_t digitsBegin = m_cursor;
+            while (m_cursor < m_text.size() && std::isdigit(static_cast<unsigned char>(m_text[m_cursor])) != 0) {
+                ++m_cursor;
+            }
+            if (m_cursor == digitsBegin) {
+                return false;
+            }
+        }
+        outValue = static_cast<std::int64_t>(std::strtoll(std::string(m_text.substr(begin, m_cursor - begin)).c_str(),
+                                                          nullptr, 0));
+        return true;
+    }
+
+    [[nodiscard]] static std::int64_t MacroValueUVE(const std::string& definition) {
+        const std::string_view trimmed = TrimUVE(definition);
+        if (trimmed.empty()) {
+            return 0;
+        }
+        const char* const begin = trimmed.data();
+        char* end = nullptr;
+        const long long parsed = std::strtoll(begin, &end, 0);
+        if (end == begin || end != begin + trimmed.size()) {
+            return 0; // Non-integer macro definitions count as 0, like the C preprocessor.
+        }
+        return static_cast<std::int64_t>(parsed);
+    }
+};
+
+[[nodiscard]] bool EvaluateConditionUVE(std::string_view expression,
+                                        const std::unordered_map<std::string, std::string>& definedFlags,
+                                        bool& outValue) {
+    ConditionExpressionParserUVE parser(expression, definedFlags);
+    return parser.ParseUVE(outValue);
 }
 
 [[nodiscard]] std::string_view RemoveUtf8BomUVE(std::string_view text) noexcept {
@@ -284,7 +559,43 @@ bool ExpandLinesUVE(const std::vector<std::string>& lines, std::uint32_t startLi
             ConditionFrameUVE frame;
             frame.parentActive = IsAllActiveUVE(context.conditionStack);
             frame.branchActive = isPositive ? defined : !defined;
+            frame.chainTaken = frame.branchActive;
             context.conditionStack.push_back(frame);
+            continue;
+        }
+        if (StartsWithUVE(trimmed, "#if ") || StartsWithUVE(trimmed, "#if\t")) {
+            bool condition = false;
+            if (!EvaluateConditionUVE(TrimUVE(trimmed.substr(3)), context.definedFlags, condition)) {
+                context.hadError = true;
+                context.errorMessage = "malformed #if expression";
+                return false;
+            }
+            ConditionFrameUVE frame;
+            frame.parentActive = IsAllActiveUVE(context.conditionStack);
+            frame.branchActive = condition;
+            frame.chainTaken = condition;
+            context.conditionStack.push_back(frame);
+            continue;
+        }
+        if (StartsWithUVE(trimmed, "#elif ") || StartsWithUVE(trimmed, "#elif\t")) {
+            if (context.conditionStack.empty()) {
+                context.hadError = true;
+                context.errorMessage = "unmatched #elif";
+                return false;
+            }
+            ConditionFrameUVE& frame = context.conditionStack.back();
+            if (frame.chainTaken) {
+                frame.branchActive = false;
+                continue;
+            }
+            bool condition = false;
+            if (!EvaluateConditionUVE(TrimUVE(trimmed.substr(5)), context.definedFlags, condition)) {
+                context.hadError = true;
+                context.errorMessage = "malformed #elif expression";
+                return false;
+            }
+            frame.branchActive = condition;
+            frame.chainTaken = condition;
             continue;
         }
         if (trimmed == "#else") {
@@ -293,7 +604,9 @@ bool ExpandLinesUVE(const std::vector<std::string>& lines, std::uint32_t startLi
                 context.errorMessage = "unmatched #else";
                 return false;
             }
-            context.conditionStack.back().branchActive = !context.conditionStack.back().branchActive;
+            ConditionFrameUVE& frame = context.conditionStack.back();
+            frame.branchActive = !frame.chainTaken;
+            frame.chainTaken = true;
             continue;
         }
         if (trimmed == "#endif") {

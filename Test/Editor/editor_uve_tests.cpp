@@ -484,7 +484,7 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // 71 with FullBodyIK3D's: the root bone pair, its effector list (drawn by its own list
         // drawer rather than typed rows - each row is a bone, a target and a pull weight), the
         // solver's authored budget, and the answers one solve writes back.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 71U);
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 72U);  // +1: the Skin drawer from MeshInstance3D skinning
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "full-body-ik-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "directional-light-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-mixer"));

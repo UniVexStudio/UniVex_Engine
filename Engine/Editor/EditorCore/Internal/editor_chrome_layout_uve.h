@@ -6,6 +6,7 @@
 #include <cstddef>
 
 #include <imgui.h>
+#include <imgui_internal.h>
 
 namespace UVE::Editor {
 
@@ -63,7 +64,19 @@ constexpr const char* kContentItemPayloadUVE = "UVE_CONTENT_ITEM";
 /// Several files dragged out of Content together (a multi-selection): their content-relative
 /// paths, NUL-joined with a NUL after each. Acceptors that only take one path ignore this shape.
 constexpr const char* kContentItemsPayloadUVE = "UVE_CONTENT_ITEMS";
+constexpr const char* kMainDockSpaceIdUVE = "UVEMainDockSpace";
+constexpr const char* kPanelLabelViewportUVE = "\xEE\xA9\x94 Viewport##viewport";
 constexpr const char* kPanelLabelSceneUVE = "\xEF\xAB\xBA Outliner##scene-panel";
+constexpr const char* kPanelLabelInspectorUVE = "\xEE\xA8\x83 Inspector##right-panel";
+constexpr const char* kPanelLabelContentBrowserUVE = "\xEE\xAA\xAD Content Browser##content-browser-panel";
+constexpr const char* kPanelLabelDebugUVE = "Debug##lower-workspace";
+constexpr const char* kPanelLabelConsoleUVE = "Console##lower-workspace-console";
+constexpr const char* kPanelLabelCaptureUVE = "Capture##lower-workspace-capture";
+constexpr const char* kPanelLabelProfilerUVE = "Profiler##lower-workspace-profiler";
+
+constexpr float kDockSplitRatioLeftUVE = 0.18F;
+constexpr float kDockSplitRatioRightUVE = 0.22F;
+constexpr float kDockSplitRatioBottomUVE = 0.28F;
 constexpr std::size_t kMaximumEntityNameBytesUVE = 96U;
 // An object icon is 16 px: its texture is 64 px, so 16 is an exact mip level and draws crisp.
 constexpr float kHierarchyObjectIconSizeUVE = 16.0F;
@@ -158,6 +171,62 @@ constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
     layout.dockTabBarSize = ImVec2{std::max(totalWidth, sceneWidth + viewportWidth + inspectorWidth),
                                    kDockTabBarHeightUVE};
     return layout;
+}
+
+inline bool g_resetDockingLayoutRequestedUVE = false;
+
+inline void RequestResetDockingLayoutUVE() noexcept {
+    g_resetDockingLayoutRequestedUVE = true;
+}
+
+inline bool IsResetDockingLayoutRequestedUVE() noexcept {
+    return g_resetDockingLayoutRequestedUVE;
+}
+
+inline bool ConsumeResetDockingLayoutRequestUVE() noexcept {
+    const bool requested = g_resetDockingLayoutRequestedUVE;
+    g_resetDockingLayoutRequestedUVE = false;
+    return requested;
+}
+
+inline ImGuiID GetMainDockSpaceIdUVE() {
+    return ImGui::GetID(kMainDockSpaceIdUVE);
+}
+
+inline void BuildDefaultDockingLayoutTreeUVE(const ImGuiID dockspaceId, const ImVec2& workPos, const ImVec2& workSize) {
+    ImGui::DockBuilderRemoveNode(dockspaceId);
+    ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
+    ImGui::DockBuilderSetNodePos(dockspaceId, workPos);
+    ImGui::DockBuilderSetNodeSize(dockspaceId, workSize);
+
+    ImGuiID centerId = dockspaceId;
+    const ImGuiID leftId =
+        ImGui::DockBuilderSplitNode(centerId, ImGuiDir_Left, kDockSplitRatioLeftUVE, nullptr, &centerId);
+    const ImGuiID rightId =
+        ImGui::DockBuilderSplitNode(centerId, ImGuiDir_Right, kDockSplitRatioRightUVE, nullptr, &centerId);
+    const ImGuiID bottomId =
+        ImGui::DockBuilderSplitNode(centerId, ImGuiDir_Down, kDockSplitRatioBottomUVE, nullptr, &centerId);
+
+    ImGui::DockBuilderDockWindow(kPanelLabelSceneUVE, leftId);
+    ImGui::DockBuilderDockWindow(kPanelLabelInspectorUVE, rightId);
+    ImGui::DockBuilderDockWindow(kPanelLabelContentBrowserUVE, bottomId);
+    ImGui::DockBuilderDockWindow(kPanelLabelDebugUVE, bottomId);
+    ImGui::DockBuilderDockWindow(kPanelLabelConsoleUVE, bottomId);
+    ImGui::DockBuilderDockWindow(kPanelLabelCaptureUVE, bottomId);
+    ImGui::DockBuilderDockWindow(kPanelLabelProfilerUVE, bottomId);
+    ImGui::DockBuilderDockWindow(kPanelLabelViewportUVE, centerId);
+
+    ImGui::DockBuilderFinish(dockspaceId);
+}
+
+inline ImGuiID SetupMainDockSpaceUVE(const ImGuiViewport* const viewport, const bool forceReset = false) {
+    const ImGuiID dockspaceId = ImGui::GetID(kMainDockSpaceIdUVE);
+    if (forceReset || ImGui::DockBuilderGetNode(dockspaceId) == nullptr) {
+        const ImVec2 pos = viewport != nullptr ? viewport->WorkPos : ImVec2{0.0F, 0.0F};
+        const ImVec2 size = viewport != nullptr ? viewport->WorkSize : ImVec2{1920.0F, 1080.0F};
+        BuildDefaultDockingLayoutTreeUVE(dockspaceId, pos, size);
+    }
+    return ImGui::DockSpaceOverViewport(dockspaceId, viewport, ImGuiDockNodeFlags_PassthruCentralNode);
 }
 
 } // namespace UVE::Editor
