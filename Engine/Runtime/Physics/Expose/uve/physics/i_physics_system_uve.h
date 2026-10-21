@@ -9,6 +9,8 @@
 #include "uve/math/vector3_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 
+#include "uve/physics/continuous_collision_uve.h"
+
 namespace UVE::Physics {
 
 /// Runtime solver, damping, sleeping, and contact-resolution parameters consumed by PhysicsSystemUVE.
@@ -20,6 +22,10 @@ struct PhysicsSimulationSettingsUVE final {
     std::size_t solverIterations = 8U;
     float penetrationSlop = 0.0F;
     float maxDepenetrationVelocity = 0.0F;
+    /// Opt-in swept motion for bodies that would otherwise pass through thin geometry between two
+    /// fixed steps. Off by default: the discrete path is exact for everything moving less than its
+    /// own extent per step, and a sweep costs several times an integration.
+    ContinuousCollisionSettingsUVE continuousCollision{};
 };
 
 /// IPhysicsSystemUVE is the spec's `PhysicsSystemUVE` (Part 7.5): dynamics integration +

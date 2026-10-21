@@ -26,6 +26,7 @@ add_library(uve_physics STATIC
     Internal/collider_world_aabb_dynamic_bvh_uve.cpp
     Internal/collision_lifecycle_tracker_uve.cpp
     Internal/collision_system_uve.cpp
+    Internal/continuous_collision_uve.cpp
     Internal/hinge_motor_limit_uve.cpp
     Internal/physics_constraint_system_uve.cpp
     Internal/physics_query_system_uve.cpp
