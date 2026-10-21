@@ -23,6 +23,7 @@ add_library(uve_objects_3d STATIC
     ../Animation/Internal/bone_attachment_3d_uve.cpp
     ../Animation/Internal/spring_bone_simulator_3d_uve.cpp
     ../Animation/Internal/two_bone_ik_3d_uve.cpp
+    ../Animation/Internal/full_body_ik_3d_uve.cpp
     Physics/Internal/abstract_physics_objects_3d_uve.cpp
     Physics/Internal/kinematic_3d_uve.cpp
     Physics/Internal/area_3d_uve.cpp

@@ -9,6 +9,7 @@
 #include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/objects/3d/fog_volume_3d_uve.h"
+#include "uve/objects/3d/full_body_ik_3d_uve.h"
 #include "uve/objects/3d/gi_probes_3d_uve.h"
 #include "uve/objects/3d/grid_map_3d_uve.h"
 #include "uve/objects/3d/label_3d_uve.h"
