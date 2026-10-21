@@ -225,6 +225,19 @@ bool AudioSystemUVE::SetMixerGroupSoloedUVE(const std::string_view name, const b
     return m_impl->mixerGroups.SetGroupSoloedUVE(name, soloed);
 }
 
+bool AudioSystemUVE::SetMixerInsertUVE(const std::string_view name, const std::size_t slot,
+                                        const AudioInsertDescUVE& desc) {
+    return m_impl->mixerGroups.SetGroupInsertUVE(name, slot, desc);
+}
+
+bool AudioSystemUVE::ClearMixerInsertUVE(const std::string_view name, const std::size_t slot) {
+    return m_impl->mixerGroups.ClearGroupInsertUVE(name, slot);
+}
+
+bool AudioSystemUVE::SetMixerSampleRateUVE(const float sampleRateHz) {
+    return m_impl->mixerGroups.SetSampleRateUVE(sampleRateHz);
+}
+
 bool AudioSystemUVE::SetSourceMixerGroupUVE(const VoiceHandleUVE source, const std::string_view name) {
     const auto iterator = m_impl->sources.find(source.value);
     if (iterator == m_impl->sources.end() || !m_impl->mixerGroups.HasGroupUVE(name)) {
@@ -299,15 +312,15 @@ bool AudioSystemUVE::ApplySourcePcmGainEffectsUVE(const VoiceHandleUVE source,
     return iterator->second.effectSchedule.ApplyPendingUVE(inputSamples, outputSamples);
 }
 
-bool AudioSystemUVE::ApplySourceBusGainChainUVE(const VoiceHandleUVE source,
-                                                 const std::vector<float>& inputSamples,
-                                                 std::vector<float>& outputSamples) const {
+bool AudioSystemUVE::ApplySourceBusChainUVE(const VoiceHandleUVE source,
+                                             const std::vector<float>& inputSamples,
+                                             std::vector<float>& outputSamples) {
     const auto iterator = m_impl->sources.find(source.value);
     if (iterator == m_impl->sources.end()) {
-        UVE_ERROR("AudioSystemUVE: ApplySourceBusGainChainUVE called with an unknown handle ({})", source.value);
+        UVE_ERROR("AudioSystemUVE: ApplySourceBusChainUVE called with an unknown handle ({})", source.value);
         return false;
     }
-    return m_impl->mixerGroups.ApplyBusGainChainUVE(iterator->second.mixerGroup, inputSamples, outputSamples);
+    return m_impl->mixerGroups.ApplyBusChainUVE(iterator->second.mixerGroup, inputSamples, outputSamples);
 }
 
 void AudioSystemUVE::UpdateUVE() {

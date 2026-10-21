@@ -72,6 +72,14 @@ public:
     virtual bool SetMixerGroupMutedUVE(std::string_view name, bool muted) = 0;
     /// While any bus is soloed, only its chain stays audible; see AudioMixerGroupUVE's own contract.
     virtual bool SetMixerGroupSoloedUVE(std::string_view name, bool soloed) = 0;
+    /// Installs one typed DSP insert (gain, filter, dynamics, reverb) in a bus's fixed slot. This is
+    /// configuration only: the description is validated and any memory it needs is taken here, so the
+    /// audio path never allocates.
+    virtual bool SetMixerInsertUVE(std::string_view name, std::size_t slot,
+                                   const AudioInsertDescUVE& desc) = 0;
+    virtual bool ClearMixerInsertUVE(std::string_view name, std::size_t slot) = 0;
+    /// The device rate every bus builds its filter coefficients and reverb delays for.
+    virtual bool SetMixerSampleRateUVE(float sampleRateHz) = 0;
     virtual bool SetSourceMixerGroupUVE(VoiceHandleUVE source, std::string_view name) = 0;
     [[nodiscard]] virtual AudioMixerDiagnosticsUVE GetMixerDiagnosticsUVE(
         std::size_t maximumGroups = kMaximumAudioMixerGroupsUVE) const = 0;
@@ -97,11 +105,11 @@ public:
         VoiceHandleUVE source, const std::vector<float>& inputSamples,
         std::vector<float>& outputSamples) = 0;
     /// Runs copied caller-owned PCM through the bus chain of the bus `source` is routed to: the bus's
-    /// effective volume (ancestors, mute and solo included) then its fixed-order insert slots. This is
-    /// the submix step; device submission and sample ownership stay with the caller.
-    [[nodiscard]] virtual bool ApplySourceBusGainChainUVE(
+    /// effective volume (ancestors, mute and solo included) then its fixed-order inserts. This is the
+    /// submix step; device submission and sample ownership stay with the caller.
+    [[nodiscard]] virtual bool ApplySourceBusChainUVE(
         VoiceHandleUVE source, const std::vector<float>& inputSamples,
-        std::vector<float>& outputSamples) const = 0;
+        std::vector<float>& outputSamples) = 0;
 
     // --- Frame advance. ---
     /// Recomputes ComputeDistanceAttenuationUVE() for every live spatial source against the

@@ -900,6 +900,11 @@ public:
     bool SetMixerGroupPitchUVE(std::string_view, float) override { return false; }
     bool SetMixerGroupMutedUVE(std::string_view, bool) override { return false; }
     bool SetMixerGroupSoloedUVE(std::string_view, bool) override { return false; }
+    bool SetMixerInsertUVE(std::string_view, std::size_t, const Audio::AudioInsertDescUVE&) override {
+        return false;
+    }
+    bool ClearMixerInsertUVE(std::string_view, std::size_t) override { return false; }
+    bool SetMixerSampleRateUVE(float) override { return false; }
     bool SetSourceMixerGroupUVE(Audio::VoiceHandleUVE, std::string_view) override { return false; }
     [[nodiscard]] Audio::AudioMixerDiagnosticsUVE GetMixerDiagnosticsUVE(std::size_t) const override { return {}; }
     [[nodiscard]] bool ResetSourceStreamUVE(Audio::VoiceHandleUVE, std::size_t, bool, std::size_t,
@@ -921,8 +926,8 @@ public:
         Audio::VoiceHandleUVE, const std::vector<float>&, std::vector<float>&) override {
         return false;
     }
-    [[nodiscard]] bool ApplySourceBusGainChainUVE(
-        Audio::VoiceHandleUVE, const std::vector<float>&, std::vector<float>&) const override {
+    [[nodiscard]] bool ApplySourceBusChainUVE(
+        Audio::VoiceHandleUVE, const std::vector<float>&, std::vector<float>&) override {
         return false;
     }
     void UpdateUVE() override { ++updateCallCount; }
