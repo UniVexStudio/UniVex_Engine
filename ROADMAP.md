@@ -456,7 +456,22 @@ and one of the highest-priority areas below.
 - [x] Blend spaces (1D and 2D) for locomotion blending, distinct from the existing blend
   tree - `AnimationBlendSpace1DWeightsUVE()` / `AnimationBlendSpace2DWeightsUVE()` place the clips
   around the parameter, with synced points and time scaling locked by their own cases.
-- [ ] Facial animation / morph targets (blend shapes)
+- [x] Morph targets (blend shapes) - `MeshAssetUVE` carries `MeshMorphTargetUVE` shapes as sparse,
+  strictly ascending vertex-delta lists (position/normal/tangent), because a blend shape is a local
+  edit: a 50k-vertex head with 52 ARKit-style shapes stores ~100k deltas instead of 2.6M dense
+  entries, and the ascending invariant is what makes accumulation order-independent and a duplicate
+  delta a detected defect rather than a silent double displacement. The `.uvmodel` payload keeps
+  them in a tagged trailing section written only when shapes exist, so every existing file still
+  loads and a static mesh still writes the bytes it always did. `AccumulateMorphTargetsUVE` is the
+  CPU authority (bind-space accumulation, then skinning - the glTF order), glTF import reads
+  `primitives[].targets`, `mesh.weights` and `extras.targetNames` and finally honours
+  `importMorphTargets`, and `MorphTargetComponentUVE` addresses shapes BY NAME so re-exporting a
+  face with an inserted shape cannot animate the wrong muscle. Locked by 27 cases across the mesh
+  asset, the glTF converter, the importer, the component and the scene serializer.
+- [ ] Facial animation: weight tracks that drive morph targets over time. The data, import,
+  evaluation, authoring and persistence landed with the morph-target item above; what is missing is
+  a clip-level weight track (the `.uvanim` schema has no morph channel yet) and the glTF `weights`
+  animation channel, which is the path that carries lip-sync out of a DCC tool.
 - [ ] Physically-simulated secondary motion (cloth bones, jiggle, spring bones)
 - [ ] A dedicated animation-authoring/preview tool in the editor (a timeline/sequencer for
   scrubbing clips and state machines is covered again under Editor Tooling below)
