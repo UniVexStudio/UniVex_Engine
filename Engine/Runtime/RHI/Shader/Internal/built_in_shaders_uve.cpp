@@ -1125,8 +1125,13 @@ uniform samplerCube uReflectionProbeCube;
 // Every array here is indexed by the light's slot in uLights[], not by "nth shadowed light": a light
 // whose tile was dropped this frame simply has uLightShadowEnabled == 0 and its own slot stays empty.
 uniform sampler2D uShadowAtlasTexture;
+// Spot lights: one perspective tile each, sampled through this light's own matrix and rect.
 uniform mat4 uLightShadowMatrices[4];
 uniform vec4 uLightShadowTileRects[4];
+// Point lights: six tiles each, one per cube face, indexed [lightIndex * 6 + face]. A spot light's
+// entries stay all-zero and are never read - the light's type selects which half of this contract
+// applies, so the two paths cannot accidentally sample each other's tiles.
+uniform vec4 uLightShadowCubeRects[24];
 uniform int uLightShadowEnabled[4];
 // (near, far) of each light's projection, needed to convert a world-space bias into normalized
 // depth at the receiver - see AtlasShadowDepthBiasUVE.
@@ -1421,29 +1426,6 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
     return finalFactor;
 }
 
-vec2 OctahedralWrapUVE(vec2 v) {
-    return (1.0 - abs(v.yx)) * vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
-}
-
-vec2 OctahedralEncodeUVE(vec3 dir) {
-    float l1 = abs(dir.x) + abs(dir.y) + abs(dir.z);
-    if (l1 <= 0.00001) {
-        return vec2(0.5, 0.5);
-    }
-    dir /= l1;
-    vec2 uv = (dir.z >= 0.0) ? dir.xy : OctahedralWrapUVE(dir.xy);
-    return uv * 0.5 + 0.5;
-}
-
-vec3 OctahedralDecodeUVE(vec2 uv) {
-    vec2 p = uv * 2.0 - 1.0;
-    vec3 v = vec3(p.x, p.y, 1.0 - abs(p.x) - abs(p.y));
-    if (v.z < 0.0) {
-        v.xy = OctahedralWrapUVE(v.xy);
-    }
-    return normalize(v);
-}
-
 // kAtlasShadowBiasMetersPerUnitUVE keeps the atlas on the same authored scale as the cascades: the
 // directional default uShadowBias (0.0025) is authored against roughly a 40 m cascade half-extent,
 // where it is worth about 0.05 m of separation. Reusing that ratio means one authored bias value
@@ -1455,7 +1437,7 @@ const float kAtlasShadowBiasMetersPerUnitUVE = 20.0;
 /// A perspective projection's depth slope varies by orders of magnitude along one ray, so a constant
 /// normalized-depth bias is either acne beside the near plane or metres of peter-panning out at the
 /// light's range - and the same light is both, depending on where the surface is. Mirror of
-/// SpotShadowDepthSlopeUVE in light_shadow_planner_uve.h; the unit tests pin the two together.
+/// ShadowDepthSlopeUVE in light_shadow_planner_uve.h; the unit tests pin the two together.
 float AtlasShadowDepthBiasUVE(vec2 depthRange, float projectionDepth, float normalDotLight) {
     float nearPlane = max(depthRange.x, 0.01);
     float farPlane = max(depthRange.y, nearPlane + 0.1);
@@ -1526,12 +1508,61 @@ float SpotShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightDirection) {
     return (isnan(factor) || isinf(factor)) ? 1.0 : factor;
 }
 
-/// Point shadows: octahedral projection of normalized radial distance into one 2D tile.
+/// The six cube faces, in the order +X, -X, +Y, -Y, +Z, -Z.
 ///
-/// NOT YET PRODUCED BY THE RENDERER. Nothing allocates a point-light tile or renders an octahedral
-/// depth pass, so uLightShadowEnabled[] is 0 for every point light and this returns 1.0 - the
-/// function is kept (rather than deleted and re-added) because the atlas, the tile rect and the
-/// uniform contract it consumes are all real and tested; only the producer is missing.
+/// Explicit constants rather than a runtime basis build: `PointLightShadowFaceTableUVE` in
+/// shadow_atlas_manager_uve.h holds the same six triples, and the renderer rasterizes each face
+/// through exactly the one this shader samples with. A seam that lands on the wrong face reads as a
+/// plausible shadow instead of as a bug, so the two tables are pinned together by tests.
+void PointShadowFaceBasisUVE(int faceIndex, out vec3 faceRight, out vec3 faceUp,
+                             out vec3 faceForward) {
+    if (faceIndex == 0) {
+        faceRight = vec3(0.0, 0.0, -1.0); faceUp = vec3(0.0, 1.0, 0.0); faceForward = vec3(1.0, 0.0, 0.0);
+    } else if (faceIndex == 1) {
+        faceRight = vec3(0.0, 0.0, 1.0); faceUp = vec3(0.0, 1.0, 0.0); faceForward = vec3(-1.0, 0.0, 0.0);
+    } else if (faceIndex == 2) {
+        faceRight = vec3(1.0, 0.0, 0.0); faceUp = vec3(0.0, 0.0, -1.0); faceForward = vec3(0.0, 1.0, 0.0);
+    } else if (faceIndex == 3) {
+        faceRight = vec3(1.0, 0.0, 0.0); faceUp = vec3(0.0, 0.0, 1.0); faceForward = vec3(0.0, -1.0, 0.0);
+    } else if (faceIndex == 4) {
+        faceRight = vec3(1.0, 0.0, 0.0); faceUp = vec3(0.0, 1.0, 0.0); faceForward = vec3(0.0, 0.0, 1.0);
+    } else {
+        faceRight = vec3(-1.0, 0.0, 0.0); faceUp = vec3(0.0, 1.0, 0.0); faceForward = vec3(0.0, 0.0, -1.0);
+    }
+}
+
+/// Cube face a direction lands on by dominant axis, ties broken X then Y then Z - the same rule
+/// `ShadowAtlasManagerUVE::PointLightShadowFaceForDirectionUVE` implements.
+int PointShadowFaceUVE(vec3 direction) {
+    vec3 a = abs(direction);
+    if (a.x >= a.y && a.x >= a.z) {
+        return direction.x >= 0.0 ? 0 : 1;
+    }
+    if (a.y >= a.z) {
+        return direction.y >= 0.0 ? 2 : 3;
+    }
+    return direction.z >= 0.0 ? 4 : 5;
+}
+
+/// `[0, 1]` projection depth a point at `axisDistance` along the face axis writes.
+///
+/// Mirror of `PointShadowProjectionDepthUVE` in light_shadow_planner_uve.h, which the CPU uses to
+/// predict the same number with the light's own near/far. Both are the inverse of the
+/// `AtlasShadowDepthBiasUVE` linearization.
+float PointShadowProjectionDepthUVE(vec2 depthRange, float axisDistance) {
+    float nearPlane = max(depthRange.x, 0.01);
+    float farPlane = max(depthRange.y, nearPlane + 0.1);
+    return farPlane * (1.0 - nearPlane / max(axisDistance, nearPlane)) / (farPlane - nearPlane);
+}
+
+/// Point shadows: six perspective faces packed into six atlas tiles, one per cube direction.
+///
+/// A single 2D octahedral map is what an omnidirectional shadow "wants", but it cannot be
+/// rasterized directly: the mapping is rational, so producing it needs either a cube render plus a
+/// resolve pass or a geometry shader, and neither exists in this renderer. Six perspective faces
+/// are the shape a depth-only pass can actually write - the same face matrices the CPU plans with -
+/// and the shader selects a face by dominant axis, which is exactly the seam rule a cube-map
+/// sampler uses internally.
 float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, float lightRange) {
     if (uLightShadowEnabled[lightIndex] == 0) {
         return 1.0;
@@ -1541,18 +1572,45 @@ float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, floa
     if (dist <= 0.0001 || dist > lightRange) {
         return 1.0;
     }
-    vec4 tileRect = uLightShadowTileRects[lightIndex];
-    vec2 tileSize = tileRect.zw - tileRect.xy;
-    if (tileSize.x <= 0.0 || tileSize.y <= 0.0) {
+    vec3 dir = toFrag / dist;
+    int face = PointShadowFaceUVE(dir);
+    vec3 faceRight;
+    vec3 faceUp;
+    vec3 faceForward;
+    PointShadowFaceBasisUVE(face, faceRight, faceUp, faceForward);
+
+    // The face's own coordinates are the ray's components along its basis. Their RATIO is the
+    // normalized device position - dividing the absolute distance instead would make the sample
+    // drift toward the tile centre as the light's range grows, which looks like a shadow that
+    // shrinks away from the caster rather than like broken math.
+    float axisDot = dot(dir, faceForward);
+    if (axisDot <= 0.0001) {
+        return 1.0;
+    }
+    vec2 faceNdc = vec2(dot(dir, faceRight), dot(dir, faceUp)) / axisDot;
+    vec2 tileUv = faceNdc * 0.5 + 0.5;
+    if (tileUv.x < 0.0 || tileUv.x > 1.0 || tileUv.y < 0.0 || tileUv.y > 1.0) {
         return 1.0;
     }
 
-    vec3 dir = toFrag / dist;
-    vec2 tileUv = OctahedralEncodeUVE(dir);
-    float currentDepth = clamp(dist / max(lightRange, 0.0001), 0.0, 1.0);
-    vec3 lightDir = -dir;
-    float bias = max(uShadowBias * (1.0 - max(dot(normal, lightDir), 0.0)) * max(uShadowNormalBias, 0.0),
-                     uShadowBias * 0.2);
+    vec4 tileRect = uLightShadowCubeRects[lightIndex * 6 + face];
+    vec2 tileSize = tileRect.zw - tileRect.xy;
+    if (tileSize.x <= 0.0 || tileSize.y <= 0.0) {
+        // This face did not make it into the atlas this frame (its cull found nothing, or the frame
+        // budget ran out). The light stays enabled for the faces that did.
+        return 1.0;
+    }
+
+    // Distance along the face axis in metres - clip-space w for a vertex rendered through this
+    // face's matrix, and therefore what the depth attachment stored.
+    float axisDistance = axisDot * dist;
+    vec2 depthRange = uLightShadowDepthRange[lightIndex];
+    float projectionDepth = PointShadowProjectionDepthUVE(depthRange, axisDistance);
+    if (projectionDepth <= 0.0 || projectionDepth >= 1.0) {
+        return 1.0;
+    }
+    float currentDepth = projectionDepth * 0.5 + 0.5;
+    float bias = AtlasShadowDepthBiasUVE(depthRange, projectionDepth, dot(normal, -dir));
 
     vec2 atlasTexelSize = max(uShadowAtlasTexelSize, vec2(0.0));
     int kernelRadius = clamp(uShadowPcfKernelRadius, 0, 2);
@@ -1577,7 +1635,6 @@ float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, floa
     float factor = mix(1.0, visibleSamples / float(max(sampleCount, 1)), clamp(uShadowOpacity, 0.0, 1.0));
     return (isnan(factor) || isinf(factor)) ? 1.0 : factor;
 }
-
 void main() {
     vec2 uv = vTexCoord * uUvScale.xy + uUvOffset.xy;
     vec4 albedoSample = texture(uAlbedoTexture, uv);

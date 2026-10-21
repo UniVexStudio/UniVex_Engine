@@ -69,7 +69,7 @@ public:
                                 std::uint32_t colorLayer = 0U, std::uint32_t depthLayer = 0U) override;
     void SetPostProcessSettingsUVE(const PostProcessSettingsUVE& settings) override;
     void SetShadowBiasDefaultsUVE(float depthBias, float normalBias) noexcept override;
-    void SetSpotShadowTileResolutionUVE(std::uint32_t resolution) noexcept override;
+    void SetShadowAtlasTileResolutionUVE(std::uint32_t resolution) noexcept override;
     void SetCullingSettingsUVE(const CullingSettingsUVE& settings) noexcept override;
     void SetShadingModeUVE(std::int32_t shadingMode) noexcept override;
     void SetScalabilityModeUVE(std::int32_t scalabilityMode) noexcept override;
