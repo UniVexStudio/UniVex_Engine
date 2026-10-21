@@ -459,6 +459,7 @@ add_executable(uve_integration_tests
     Audio/audio_mixer_group_uve_tests.cpp
     Audio/audio_dsp_uve_tests.cpp
     Audio/audio_spatialization_uve_tests.cpp
+    Audio/audio_occlusion_uve_tests.cpp
     Audio/audio_stream_uve_tests.cpp
     Audio/audio_source_system_uve_tests.cpp
     Audio/audio_system_uve_tests.cpp
@@ -612,6 +613,7 @@ add_executable(uve_engine_tests
     Engine/engine_services_uve_tests.cpp
     Engine/engine_core_uve_tests.cpp
     Engine/engine_core_settings_layering_uve_tests.cpp
+    Engine/raycast_audio_occlusion_uve_tests.cpp
     Engine/input_map_document_uve_tests.cpp
     Pack/project_launcher_uve_tests.cpp
     Pack/project_packager_uve_tests.cpp

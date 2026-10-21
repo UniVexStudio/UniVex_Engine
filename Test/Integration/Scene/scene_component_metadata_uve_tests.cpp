@@ -94,10 +94,11 @@ TEST(SceneComponentMetadataUVETest, EveryLayerMaskNamesTheLayersItPicksFrom) {
     }
     // The collider's layer and mask, SpringArm3D's collisionMask, RayCast3D's collisionMask,
     // Projectile3D's collisionMask, Hitbox3D/Hurtbox3D's layer and mask, InteractionArea3D's
-    // layer and mask, and the navigation region/agent layers - every cast, every swept body,
-    // every strike, every interact volume and every path in the engine filters on the same
-    // layer contract, so they all belong to the same drawer set rather than a second, hand-drawn one.
-    EXPECT_EQ(physics, 15U);
+    // layer and mask, the navigation region/agent layers, and the audio source's occlusion mask -
+    // every cast, every swept body, every strike, every interact volume, every path and every
+    // sound-blocking query in the engine filters on the same layer contract, so they all belong to
+    // the same drawer set rather than a second, hand-drawn one.
+    EXPECT_EQ(physics, 16U);
     EXPECT_EQ(render, 5U); // mesh, render instance, light, decal and reflection probe
 }
 

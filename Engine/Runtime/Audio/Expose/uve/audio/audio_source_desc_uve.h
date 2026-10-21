@@ -4,9 +4,11 @@
 #pragma once
 
 #include <cmath>
+#include <cstdint>
 #include <string>
 
 #include "uve/audio/audio_attenuation_model_uve.h"
+#include "uve/audio/audio_occlusion_uve.h"
 #include "uve/audio/audio_mixer_group_uve.h"
 #include "uve/audio/audio_spatialization_uve.h"
 
@@ -41,6 +43,21 @@ struct AudioSourceDescUVE {
     /// disables it for this source. Bounded to [0, 1] because exaggerating it is a stylistic choice
     /// this engine does not expose yet.
     float dopplerFactor = 1.0F;
+
+    /// Physics-driven occlusion. Only a positional source can be occluded - a 2D source has no
+    /// path to block - and with no provider installed every source stays clear, so the defaults
+    /// reproduce the previous behaviour exactly.
+    bool occlusionEnabled = true;
+    /// Gain the source falls to when fully blocked, in [0, 1].
+    float occlusionGain = kDefaultAudioOccludedGainUVE;
+    /// Low-pass corner the source falls to when fully blocked, in [20, 20000] Hz.
+    float occlusionLowPassHz = kDefaultAudioOccludedCutoffHzUVE;
+    /// Which collision layers can block this source. Everything by default; mask out decorative or
+    /// trigger geometry in the level rather than paying for it here.
+    std::uint32_t occlusionLayerMask = 0xFFFFFFFFU;
+    /// The entity this source belongs to, when it was created for one. The occlusion provider
+    /// excludes it so an emitter's own collider cannot block its own sound.
+    Scene::EntityUVE ownerEntity = Scene::kInvalidEntityUVE;
 };
 
 [[nodiscard]] inline bool IsAudioSourceDescValidUVE(const AudioSourceDescUVE& source) noexcept {
@@ -62,8 +79,16 @@ struct AudioSourceDescUVE {
                             Math::LengthSquaredUVE(source.coneDirection) > 1.0e-12F);
     const bool dopplerValid = std::isfinite(source.dopplerFactor) && source.dopplerFactor >= 0.0F &&
                               source.dopplerFactor <= 1.0F;
+    // As with the cone: these knobs only exist for a positional, occlusion-enabled source, so a 2D
+    // or opted-out source is never rejected for carrying values it will not use.
+    const bool occlusionValid =
+        !source.spatial || !source.occlusionEnabled ||
+        (std::isfinite(source.occlusionGain) && source.occlusionGain >= 0.0F && source.occlusionGain <= 1.0F &&
+         std::isfinite(source.occlusionLowPassHz) && source.occlusionLowPassHz >= kMinimumAudioOcclusionCutoffHzUVE &&
+         source.occlusionLowPassHz <= kMaximumAudioOcclusionCutoffHzUVE);
     return std::isfinite(source.volume) && source.volume >= 0.0F && std::isfinite(source.pitch) &&
-           source.pitch > 0.0F && attenuationModelValid && spatialDistanceValid && coneValid && dopplerValid;
+           source.pitch > 0.0F && attenuationModelValid && spatialDistanceValid && coneValid && dopplerValid &&
+           occlusionValid;
 }
 
 } // namespace UVE::Audio

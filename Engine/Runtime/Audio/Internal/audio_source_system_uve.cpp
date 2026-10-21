@@ -29,8 +29,11 @@ namespace {
 }
 
 [[nodiscard]] AudioSourceDescUVE MakeAudioSourceDescUVE(
-    const Scene::AudioSourceComponentUVE& audioSource) {
+    const Scene::EntityUVE entity, const Scene::AudioSourceComponentUVE& audioSource) {
     AudioSourceDescUVE desc;
+    // Carried so the occlusion provider can exclude this emitter's own collider: a radio with a
+    // collider must not be blocked by its own geometry.
+    desc.ownerEntity = entity;
     desc.audioAssetPath = audioSource.audioAssetPath;
     desc.mixerGroup = std::string{
         Scene::AudioSource3DUVE::ResolveEffectiveMixerGroupUVE(audioSource, kMasterAudioMixerGroupNameUVE)};
@@ -41,14 +44,25 @@ namespace {
     desc.minDistance = audioSource.minDistance;
     desc.maxDistance = audioSource.maxDistance;
     desc.attenuationModel = AttenuationModelOfUVE(audioSource.attenuationCurve);
+    desc.occlusionEnabled = audioSource.occlusionEnabled;
+    desc.occlusionGain = audioSource.occlusionGain;
+    desc.occlusionLowPassHz = audioSource.occlusionLowPassHz;
+    desc.occlusionLayerMask = audioSource.occlusionLayerMask;
     return desc;
 }
 
 [[nodiscard]] bool RequiresVoiceReplacementUVE(const AudioSourceDescUVE& previous,
                                                 const AudioSourceDescUVE& current) noexcept {
+    // Everything the mixer bakes into a voice's descriptor at creation goes here. Occlusion settings
+    // are in the list for the same reason min/max distance are: they shape how the source is heard,
+    // and a runtime edit must reach the device rather than live only in the component.
     return previous.audioAssetPath != current.audioAssetPath || previous.looping != current.looping ||
            previous.spatial != current.spatial || previous.minDistance != current.minDistance ||
-           previous.maxDistance != current.maxDistance || previous.attenuationModel != current.attenuationModel;
+           previous.maxDistance != current.maxDistance || previous.attenuationModel != current.attenuationModel ||
+           previous.occlusionEnabled != current.occlusionEnabled ||
+           previous.occlusionGain != current.occlusionGain ||
+           previous.occlusionLowPassHz != current.occlusionLowPassHz ||
+           previous.occlusionLayerMask != current.occlusionLayerMask;
 }
 
 } // namespace
@@ -74,7 +88,7 @@ AudioSourceSystemUVE::EnsuredVoiceUVE AudioSourceSystemUVE::EnsureVoiceUVE(
     if (!Scene::IsAudioSourceComponentValidUVE(source)) {
         return {kInvalidVoiceHandleUVE, false};
     }
-    const AudioSourceDescUVE descriptor = MakeAudioSourceDescUVE(source);
+    const AudioSourceDescUVE descriptor = MakeAudioSourceDescUVE(entity, source);
     const VoiceHandleUVE voice = audioSystem.CreateSourceUVE(descriptor);
     if (voice == kInvalidVoiceHandleUVE) {
         return {voice, false};
@@ -136,7 +150,7 @@ void AudioSourceSystemUVE::SyncUVE(Scene::IEntityManagerUVE& entityManager, IAud
                 return;
             }
 
-            const AudioSourceDescUVE desiredDesc = MakeAudioSourceDescUVE(audioSource);
+            const AudioSourceDescUVE desiredDesc = MakeAudioSourceDescUVE(entity, audioSource);
             auto iterator = m_impl->entityToVoice.find(entity);
             if (iterator == m_impl->entityToVoice.end()) {
                 const EnsuredVoiceUVE ensured = EnsureVoiceUVE(entity, audioSource, audioSystem);

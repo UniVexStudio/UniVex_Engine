@@ -1915,6 +1915,51 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                     };
                     return property;
                 }(),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareUVE<&AudioSourceComponentUVE::occlusionEnabled>(
+                        "occlusionEnabled", "Occlusion", kPropertyTypeBoolUVE);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const AudioSourceComponentUVE*>(instance)->spatial;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property = WithTooltipUVE(
+                        WithRangeUVE(DeclareUVE<&AudioSourceComponentUVE::occlusionGain>(
+                                         "occlusionGain", "Occluded Gain", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.01),
+                        "Gain the source falls to when fully blocked.");
+                    property.isVisible = +[](const void* instance) {
+                        const auto* source = static_cast<const AudioSourceComponentUVE*>(instance);
+                        return source->spatial && source->occlusionEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property = WithTooltipUVE(
+                        WithRangeUVE(DeclareUVE<&AudioSourceComponentUVE::occlusionLowPassHz>(
+                                         "occlusionLowPassHz", "Occluded Low-Pass", kPropertyTypeFloatUVE),
+                                     20.0, 20000.0, 10.0),
+                        "Low-pass corner the source falls to when fully blocked.");
+                    property.isVisible = +[](const void* instance) {
+                        const auto* source = static_cast<const AudioSourceComponentUVE*>(instance);
+                        return source->spatial && source->occlusionEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property = WithTooltipUVE(
+                        WithCustomDrawerUVE(DeclareUVE<&AudioSourceComponentUVE::occlusionLayerMask>(
+                                                "occlusionLayerMask", "Occlusion Layers",
+                                                kPropertyTypeBitMask32UVE),
+                                            std::string(kLayerMaskDrawerPhysicsUVE)),
+                        "Which collision layers can block this source.");
+                    property.isVisible = +[](const void* instance) {
+                        const auto* source = static_cast<const AudioSourceComponentUVE*>(instance);
+                        return source->spatial && source->occlusionEnabled;
+                    };
+                    return property;
+                }(),
             }));
 
     DeclareAnimationUVE(entries);
