@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 #include "uve/math/vector3_uve.h"
 #include "uve/physics/i_collision_system_uve.h"
 #include "uve/physics/i_physics_system_uve.h"
@@ -41,11 +43,17 @@ public:
     void SetSimulationSettingsUVE(const PhysicsSimulationSettingsUVE& settings) noexcept override;
     [[nodiscard]] PhysicsSimulationSettingsUVE GetSimulationSettingsUVE() const noexcept override;
 
+    /// Digest of the state this step published, when deterministic stepping is enabled. Recorded
+    /// rather than returned from StepUVE so the interface stays one call with one job, and so a
+    /// caller driving many steps can compare digests without threading a return value through.
+    [[nodiscard]] std::uint64_t GetLastStepDigestUVE() const noexcept override { return m_lastStepDigest; }
+
 private:
     ICollisionSystemUVE* m_collisionSystem;
     PhysicsConstraintSystemUVE* m_constraintSystem = nullptr;
     Math::Vector3UVE m_gravity;
     PhysicsSimulationSettingsUVE m_settings{};
+    std::uint64_t m_lastStepDigest = 0U;
 };
 
 } // namespace UVE::Physics

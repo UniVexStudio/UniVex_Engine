@@ -450,8 +450,29 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
   bodies that cannot tunnel. Layer/mask filtering reuses the collision system's two-way rule, so
   CCD can never stop a body against geometry the discrete resolver would have ignored.
 - [ ] Multi-threaded physics stepping for large scenes
-- [ ] Deterministic/networked-safe physics stepping (fixed-point or otherwise reproducible)
-  for competitive multiplayer use cases
+- [x] Deterministic/networked-safe physics stepping (fixed-point or otherwise reproducible)
+  for competitive multiplayer use cases. Two things make a fixed step reproducible, and the
+  feature is only honest if both are stated separately. **Order** first: the solver is sequential -
+  every resolved pair writes positions the next pair reads - so the result depends on the sequence
+  pairs are resolved in, and that sequence came from entity storage, which is not a contract a
+  netcode layer should ever lean on. Collision pairs are now canonicalized before resolution:
+  sorted by their stable (index, generation) keys and re-oriented so the lower key is `first`
+  again, with `separationAxis` negated on every swap. The negation is the part that is easy to
+  get wrong and expensive to miss - the axis points from `first` toward `second`, so swapping
+  endpoints without flipping it pushes both bodies deeper into each other. Canonicalization is
+  exact: no approximation, no quality cost. **Quantization** second: identical code and identical
+  order still produce identical bits on one build, but not necessarily across compilers or CPUs
+  that contract floating-point operations differently, so every comparison happens on an integer
+  lattice - state differing by less than a quantum is treated as equal, and a NaN maps to a fixed
+  lattice point rather than a payload-dependent bit pattern. Crucially the lattice is applied to
+  the DIGEST, not to the simulation: snapping positions every step would silently stop any body
+  moving less than a quantum per step, which trades real accuracy for a guarantee that can be had
+  without paying it. The digest is FNV-1a over the sorted body keys and their quantized
+  position/rotation/velocity, taken after resolution and constraint solving - the state a peer
+  would actually send - and it sorts internally, so it describes the world rather than the
+  container the world lives in. `PhysicsSystemUVE::GetLastStepDigestUVE()` exposes it, and a
+  rollback verifier compares two peers' digests for the same step number. Opt-in, because a digest
+  is per-body per-step work that a single-player build has no use for.
 
 ---
 

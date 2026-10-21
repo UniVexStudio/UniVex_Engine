@@ -422,6 +422,7 @@ add_executable(uve_integration_tests
     Physics/collision_lifecycle_tracker_uve_tests.cpp
     Physics/collision_system_uve_tests.cpp
     Physics/continuous_collision_uve_tests.cpp
+    Physics/deterministic_physics_uve_tests.cpp
     Physics/hinge_motor_limit_uve_tests.cpp
     Physics/hitbox_3d_uve_tests.cpp
     Physics/hitbox_lag_compensation_uve_tests.cpp
