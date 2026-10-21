@@ -624,8 +624,42 @@ and one of the highest-priority areas below.
   pitch, zero delta disabling Doppler, a freshly spawned source not inventing a velocity, and the
   descriptor rejecting an inverted cone, an out-of-range factor and a zero axis).
 - [ ] Audio occlusion/obstruction driven by the physics/collision system
-- [ ] Streaming playback for long audio (music, VO) instead of fully-decoded-in-memory
-  playback only
+- [x] Streaming playback for long audio (music, VO) instead of fully-decoded-in-memory
+  playback only - a streaming voice never decodes a clip at all. The device keeps a bounded ring of
+  `kAudioStreamRingFramesUVE` frames (8192, a little under a fifth of a second at 48 kHz) per stream
+  and the caller pushes interleaved frames into it, so the cost of a ten-minute music bed is one
+  ring rather than its whole decoded length. `IAudioDeviceUVE` gained the matching contract -
+  `CreateStreamVoiceUVE(format)`, `PushStreamFramesUVE` (reports exactly how many frames it took,
+  dropping the newest when the ring is full instead of growing anything), `EndStreamUVE` (play out
+  what is buffered, then stop), and the two ring queries the pump paces itself on. Lifetime,
+  Play/Stop/state and gain/pitch/pan remain the clip voice's, so nothing above the RHI needs a
+  second code path. Both backends implement it: the null device keeps the ring and documents a
+  drain hook for tests, and miniaudio's callback mixes from the ring with the same fractional
+  stepping and linear interpolation it already used for clips - including the end-game, where the
+  final frame plays on its own instead of being dropped for want of a successor, and a drained
+  ended voice stops itself so an entity never reads as playing silence forever. Above the device,
+  `IAudioStreamSourceUVE` is a pull interface (`format`, `frameCount`, `readFrames`, `seek`) that
+  the system drives once per frame from ordinary `UpdateUVE()`: `CreateStreamingSourceUVE(desc,
+  source)` borrows the source, ignores the descriptor's asset path (the stream owns the media) and
+  keeps every other field's meaning - spatialisation, cone, Doppler, volume, pitch, mixer group - so
+  a streaming source pans, attenuates and ducks exactly like a clip. `PumpStreamingSourceUVE()` is
+  exposed for pre-buffering before `PlayUVE()` and for tests; `looping` is honoured by rewinding a
+  seekable source and end of stream is reported to the device, after which pumping is a no-op.
+  `AudioFileStreamSourceUVE` is the real decoder-facing implementation: it reads one `.uvaudio`
+  envelope header (magic, asset kind, envelope and payload versions, channels, rate, frame count),
+  checks the declared size against the bytes on disk, then seeks per window and decodes only that
+  window, validating every sample before it is published, so a truncated or corrupt file fails the
+  read instead of feeding the mixer. The envelope-header and payload-version constants now live in
+  their owning headers rather than being duplicated by the reader. Locked by 15 cases over the ring
+  and the file source (partial writes, wraparound, peek/consume, reconfiguration, mono versus stereo
+  frames, windows in order, seeking, and the missing/wrong-kind/truncated/bad-version refusals), 6
+  null-device cases (ring accounting, whole-frame rejection, clip-voice rejection, end-then-drain
+  stop), 5 system cases (one pump per frame, loop rewind, end-and-drain, clip sources staying
+  non-streams, and pan plus distance gain still applying) and 3 miniaudio cases (real audio-thread
+  drain to Stopped, invalid formats, clip voices rejecting stream calls). Deliberately NOT claimed:
+  a compressed file still goes through the importer and becomes a fully decoded `.uvaudio` asset
+  first, so streaming a 200 MB FLAC straight off disk would need an incremental decoder that this
+  item does not add, and there is no per-stream decode budget or priority yet.
 - [x] A real-time audio mixing graph / bus system with runtime-adjustable submixes - the mixer is
   now a bounded tree instead of a flat list. Master is the root and can never be removed or
   reparented; every other bus names a parent (Master when none is given, which is what the flat

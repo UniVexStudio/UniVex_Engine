@@ -873,6 +873,16 @@ public:
         return Audio::VoicePlaybackStateUVE::Stopped;
     }
     [[nodiscard]] std::string_view GetBackendNameUVE() const noexcept override { return "Fake"; }
+
+    [[nodiscard]] Audio::VoiceHandleUVE CreateStreamVoiceUVE(const Audio::AudioStreamFormatUVE&) override {
+        return Audio::VoiceHandleUVE{1};
+    }
+    [[nodiscard]] std::size_t PushStreamFramesUVE(Audio::VoiceHandleUVE, std::span<const float>) override {
+        return 0U;
+    }
+    [[nodiscard]] bool EndStreamUVE(Audio::VoiceHandleUVE) override { return true; }
+    [[nodiscard]] std::size_t GetStreamBufferedFramesUVE(Audio::VoiceHandleUVE) const override { return 0U; }
+    [[nodiscard]] std::size_t GetStreamFreeFramesUVE(Audio::VoiceHandleUVE) const override { return 0U; }
 };
 
 class FakeAudioSystemUVE final : public Audio::IAudioSystemUVE {
@@ -931,6 +941,14 @@ public:
         return false;
     }
     void UpdateUVE(float) override { ++updateCallCount; }
+    [[nodiscard]] Audio::VoiceHandleUVE CreateStreamingSourceUVE(const Audio::AudioSourceDescUVE&,
+                                                                 Audio::IAudioStreamSourceUVE&) override {
+        return Audio::VoiceHandleUVE{1};
+    }
+    [[nodiscard]] std::size_t PumpStreamingSourceUVE(Audio::VoiceHandleUVE) override { return 0U; }
+    [[nodiscard]] std::size_t GetStreamingSourceBufferedFramesUVE(Audio::VoiceHandleUVE) const override {
+        return 0U;
+    }
 
     int updateCallCount = 0;
 };

@@ -28,7 +28,36 @@ struct SourceStateUVE {
     float pitch = 1.0F;
     Pcm16StreamRefillSchedulerUVE streamScheduler;
     PcmGainEffectScheduleUVE effectSchedule;
+    /// Non-null for a streaming source: the media the pump pulls from. Borrowed, never owned - the
+    /// caller keeps the decoder's lifetime, exactly like a clip resolver is borrowed.
+    IAudioStreamSourceUVE* stream = nullptr;
+    bool streamEnded = false;
 };
+
+/// Moves one bounded window from a streaming source into its device ring. Reading only what the ring
+/// can take is what keeps memory bounded: the source never gets to decide how much is resident.
+std::size_t PumpStreamingSourceStateUVE(IAudioDeviceUVE& device, SourceStateUVE& state,
+                                        const VoiceHandleUVE handle, std::vector<float>& scratch) {
+    if (state.stream == nullptr || state.streamEnded) {
+        return 0U;
+    }
+    const std::size_t freeFrames = device.GetStreamFreeFramesUVE(handle);
+    if (freeFrames == 0U) {
+        return 0U;
+    }
+    std::size_t frames = state.stream->ReadFramesUVE(freeFrames, scratch);
+    if (frames == 0U && state.desc.looping && state.stream->SeekToFrameUVE(0U)) {
+        frames = state.stream->ReadFramesUVE(freeFrames, scratch);
+    }
+    if (frames == 0U) {
+        // The media is finished (and, for a looping source, was not seekable): let the voice drain
+        // and stop itself rather than leaving it playing silence forever.
+        state.streamEnded = true;
+        static_cast<void>(device.EndStreamUVE(handle));
+        return 0U;
+    }
+    return device.PushStreamFramesUVE(handle, std::span<const float>{scratch});
+}
 
 } // namespace
 
@@ -42,6 +71,8 @@ struct AudioSystemUVE::ImplUVE {
     Math::Vector3UVE listenerUp{0.0F, 1.0F, 0.0F};
     std::unordered_map<std::uint32_t, SourceStateUVE> sources;
     AudioMixerGroupUVE mixerGroups;
+    /// Reused by every pump call so streaming never allocates per frame on the engine thread.
+    std::vector<float> streamScratch;
 
     explicit ImplUVE(IAudioDeviceUVE& device, IAudioClipResolverUVE* resolver)
         : audioDevice(device), clipResolver(resolver) {}
@@ -122,6 +153,60 @@ VoiceHandleUVE AudioSystemUVE::CreateSourceUVE(const AudioSourceDescUVE& desc) {
     static_cast<void>(m_impl->mixerGroups.AttachSourceUVE(state.mixerGroup));
     m_impl->sources.emplace(voice.value, std::move(state));
     return voice;
+}
+
+VoiceHandleUVE AudioSystemUVE::CreateStreamingSourceUVE(const AudioSourceDescUVE& desc,
+                                                         IAudioStreamSourceUVE& source) {
+    if (!IsAudioSourceDescValidUVE(desc)) {
+        UVE_ERROR("AudioSystemUVE: CreateStreamingSourceUVE rejected an invalid source descriptor");
+        return kInvalidVoiceHandleUVE;
+    }
+    const AudioStreamFormatUVE format = source.GetFormatUVE();
+    if (!IsAudioStreamFormatValidUVE(format)) {
+        UVE_ERROR("AudioSystemUVE: CreateStreamingSourceUVE rejected a source with an invalid format ({} Hz, {} channels)",
+                  format.sampleRate, format.channels);
+        return kInvalidVoiceHandleUVE;
+    }
+
+    const VoiceHandleUVE voice = m_impl->audioDevice.CreateStreamVoiceUVE(format);
+    if (voice == kInvalidVoiceHandleUVE) {
+        UVE_ERROR("AudioSystemUVE: audio device returned an invalid streaming voice handle");
+        return kInvalidVoiceHandleUVE;
+    }
+    if (m_impl->sources.contains(voice.value)) {
+        UVE_ERROR("AudioSystemUVE: audio device returned a duplicate voice handle ({})", voice.value);
+        m_impl->audioDevice.DestroyVoiceUVE(voice);
+        return kInvalidVoiceHandleUVE;
+    }
+
+    SourceStateUVE state;
+    state.desc = desc;
+    // A stream carries its own media; a path here would only suggest a clip that is never decoded.
+    state.desc.audioAssetPath.clear();
+    state.mixerGroup = m_impl->mixerGroups.ResolveGroupNameUVE(desc.mixerGroup);
+    state.desc.mixerGroup = state.mixerGroup;
+    state.volume = desc.volume;
+    state.pitch = desc.pitch;
+    state.stream = &source;
+    static_cast<void>(m_impl->mixerGroups.AttachSourceUVE(state.mixerGroup));
+    m_impl->sources.emplace(voice.value, std::move(state));
+    return voice;
+}
+
+std::size_t AudioSystemUVE::PumpStreamingSourceUVE(const VoiceHandleUVE source) {
+    const auto iterator = m_impl->sources.find(source.value);
+    if (iterator == m_impl->sources.end() || iterator->second.stream == nullptr) {
+        return 0U;
+    }
+    return PumpStreamingSourceStateUVE(m_impl->audioDevice, iterator->second, source, m_impl->streamScratch);
+}
+
+std::size_t AudioSystemUVE::GetStreamingSourceBufferedFramesUVE(const VoiceHandleUVE source) const {
+    const auto iterator = m_impl->sources.find(source.value);
+    if (iterator == m_impl->sources.end() || iterator->second.stream == nullptr) {
+        return 0U;
+    }
+    return m_impl->audioDevice.GetStreamBufferedFramesUVE(source);
 }
 
 void AudioSystemUVE::DestroySourceUVE(VoiceHandleUVE source) {
@@ -348,6 +433,11 @@ void AudioSystemUVE::UpdateUVE(const float deltaSeconds) {
         ComputeAudioListenerRightUVE(m_impl->listenerForward, m_impl->listenerUp);
 
     for (auto& [handleValue, state] : m_impl->sources) {
+        // A streaming source is pumped once per frame, before its parameters are pushed, so the
+        // ring is as full as the device will allow when the callback next runs.
+        static_cast<void>(
+            PumpStreamingSourceStateUVE(m_impl->audioDevice, state, VoiceHandleUVE{handleValue}, m_impl->streamScratch));
+
         Math::Vector3UVE sourceVelocity{};
         if (stepSeconds > 0.0F && state.hasPreviousPosition) {
             sourceVelocity = (state.position - state.previousPosition) * (1.0F / stepSeconds);

@@ -182,5 +182,83 @@ TEST(NullAudioDeviceUVETest, ClearRecordedCallsUVE_EmptiesLogWithoutAffectingLiv
     EXPECT_EQ(device.GetLiveVoiceCountUVE(), 1U);
 }
 
+// --- Streaming voices: a bounded ring instead of a fully decoded clip. ---
+
+TEST(NullAudioDeviceStreamUVETest, CreateStreamVoiceUVE_RejectsAnInvalidFormat) {
+    NullAudioDeviceUVE device;
+    EXPECT_EQ(device.CreateStreamVoiceUVE(AudioStreamFormatUVE{0U, 1U}), kInvalidVoiceHandleUVE);
+    EXPECT_EQ(device.CreateStreamVoiceUVE(AudioStreamFormatUVE{48000U, 0U}), kInvalidVoiceHandleUVE);
+    EXPECT_EQ(device.CreateStreamVoiceUVE(AudioStreamFormatUVE{48000U, 3U}), kInvalidVoiceHandleUVE);
+    EXPECT_EQ(device.GetLiveVoiceCountUVE(), 0U);
+}
+
+TEST(NullAudioDeviceStreamUVETest, PushFillsTheRingAndReportsExactFreeSpace) {
+    NullAudioDeviceUVE device;
+    const VoiceHandleUVE voice = device.CreateStreamVoiceUVE(AudioStreamFormatUVE{48000U, 2U});
+    ASSERT_NE(voice, kInvalidVoiceHandleUVE);
+    EXPECT_EQ(device.GetStreamBufferedFramesUVE(voice), 0U);
+    EXPECT_EQ(device.GetStreamFreeFramesUVE(voice), kAudioStreamRingFramesUVE);
+
+    const std::vector<float> frames(6U, 0.25F); // three stereo frames
+    EXPECT_EQ(device.PushStreamFramesUVE(voice, frames), 3U);
+    EXPECT_EQ(device.GetStreamBufferedFramesUVE(voice), 3U);
+    EXPECT_EQ(device.GetStreamFreeFramesUVE(voice), kAudioStreamRingFramesUVE - 3U);
+}
+
+TEST(NullAudioDeviceStreamUVETest, PushRefusesAPartialFrameAndAClipVoice) {
+    NullAudioDeviceUVE device;
+    const VoiceHandleUVE stream = device.CreateStreamVoiceUVE(AudioStreamFormatUVE{48000U, 2U});
+    ASSERT_NE(stream, kInvalidVoiceHandleUVE);
+    const std::vector<float> odd(3U, 0.1F); // one and a half stereo frames
+    EXPECT_EQ(device.PushStreamFramesUVE(stream, odd), 0U);
+    EXPECT_EQ(device.GetStreamBufferedFramesUVE(stream), 0U);
+
+    const VoiceHandleUVE clip = device.CreateVoiceUVE(AudioVoiceDescUVE{});
+    const std::vector<float> frames(4U, 0.0F);
+    EXPECT_EQ(device.PushStreamFramesUVE(clip, frames), 0U);
+    EXPECT_EQ(device.GetStreamFreeFramesUVE(clip), 0U);
+    EXPECT_FALSE(device.EndStreamUVE(clip));
+}
+
+TEST(NullAudioDeviceStreamUVETest, EndStreamStopsOnlyAfterTheRingDrains) {
+    NullAudioDeviceUVE device;
+    const VoiceHandleUVE voice = device.CreateStreamVoiceUVE(AudioStreamFormatUVE{48000U, 1U});
+    ASSERT_NE(voice, kInvalidVoiceHandleUVE);
+    const std::vector<float> frames(4U, 0.5F);
+    ASSERT_EQ(device.PushStreamFramesUVE(voice, frames), 4U);
+    ASSERT_TRUE(device.PlayUVE(voice));
+    ASSERT_TRUE(device.EndStreamUVE(voice));
+
+    // Still playing: the ring still holds audio the caller asked us to finish.
+    EXPECT_EQ(device.GetVoiceStateUVE(voice), VoicePlaybackStateUVE::Playing);
+    device.ConsumeStreamFramesUVE(voice, 2U);
+    EXPECT_EQ(device.GetVoiceStateUVE(voice), VoicePlaybackStateUVE::Playing);
+    device.ConsumeStreamFramesUVE(voice, 2U);
+    EXPECT_EQ(device.GetVoiceStateUVE(voice), VoicePlaybackStateUVE::Stopped);
+    // Nothing may be pushed after the end was declared.
+    EXPECT_EQ(device.PushStreamFramesUVE(voice, frames), 0U);
+}
+
+TEST(NullAudioDeviceStreamUVETest, EndStreamOnAnEmptyRingStopsImmediately) {
+    NullAudioDeviceUVE device;
+    const VoiceHandleUVE voice = device.CreateStreamVoiceUVE(AudioStreamFormatUVE{48000U, 2U});
+    ASSERT_NE(voice, kInvalidVoiceHandleUVE);
+    ASSERT_TRUE(device.PlayUVE(voice));
+    ASSERT_TRUE(device.EndStreamUVE(voice));
+    EXPECT_EQ(device.GetVoiceStateUVE(voice), VoicePlaybackStateUVE::Stopped);
+}
+
+TEST(NullAudioDeviceStreamUVETest, UnknownHandlesAreRefusedWithoutTouchingBookkeeping) {
+    NullAudioDeviceUVE device;
+    const VoiceHandleUVE unknown{1234U};
+    const std::vector<float> frames(2U, 0.0F);
+    EXPECT_EQ(device.PushStreamFramesUVE(unknown, frames), 0U);
+    EXPECT_EQ(device.GetStreamBufferedFramesUVE(unknown), 0U);
+    EXPECT_EQ(device.GetStreamFreeFramesUVE(unknown), 0U);
+    EXPECT_FALSE(device.EndStreamUVE(unknown));
+    EXPECT_EQ(device.GetLiveVoiceCountUVE(), 0U);
+}
+
+
 } // namespace
 } // namespace UVE::Audio::Tests
