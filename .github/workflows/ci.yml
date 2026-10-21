@@ -60,7 +60,36 @@ jobs:
         run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DUVE_BUILD_TESTS=ON
 
       - name: Build
-        run: cmake --build build --parallel "$(nproc)"
+        # pipefail keeps the step's exit status the compiler's, not tee's: the log is captured so
+        # a failure can be echoed as an annotation below.
+        run: |
+          set -o pipefail
+          cmake --build build --parallel "$(nproc)" 2>&1 | tee build-output.log
+
+      - name: Surface build errors as annotations
+        # Same reason the test step annotates failing case names: the job log and the artifact
+        # blob host are not reachable from every network, and a failed check that says nothing is
+        # worse than useless. Only the first 20 error lines are echoed - the log has the rest.
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import sys
+
+          path = pathlib.Path("build-output.log")
+          if not path.exists():
+              sys.exit(0)
+          lines = [line.rstrip() for line in path.read_text(errors="replace").splitlines()]
+          errors = [
+              line
+              for line in lines
+              if "error:" in line or line.startswith("FAILED:") or "undefined reference" in line
+          ]
+          for line in errors[:20]:
+              safe = line.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error::{safe[:900]}")
+          print(f"::error::build failed with {len(errors)} captured error line(s)")
+          PY
 
       - name: Test
         # Parallel, and both things that blocked it are fixed: every test process gets its own

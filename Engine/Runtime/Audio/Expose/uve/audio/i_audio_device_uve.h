@@ -3,8 +3,11 @@
 
 #pragma once
 
+#include <cstddef>
+#include <span>
 #include <string_view>
 
+#include "uve/audio/audio_stream_uve.h"
 #include "uve/audio/audio_voice_desc_uve.h"
 #include "uve/audio/voice_handle_uve.h"
 #include "uve/audio/voice_playback_state_uve.h"
@@ -49,6 +52,34 @@ public:
     /// just been destroyed by another system this same frame), not a programmer-precondition
     /// violation, matching IConfigManagerUVE's "keyed lookup that may legitimately miss" precedent.
     [[nodiscard]] virtual VoicePlaybackStateUVE GetVoiceStateUVE(VoiceHandleUVE voice) const = 0;
+
+    // --- Streaming voices. ---
+    // A streaming voice has no clip and never decodes one: the caller pushes interleaved frames as
+    // they become available and the backend keeps a bounded ring. A long music bed therefore costs
+    // one ring, not its whole decoded length. Everything else about the voice - handle lifetime,
+    // Play/Stop/state, gain/pitch/pan through SetVoiceParamsUVE - is identical to a clip voice.
+
+    /// Creates a voice fed by PushStreamFramesUVE() instead of a decoded clip. The ring holds
+    /// kAudioStreamRingFramesUVE frames; the backend upmixes mono exactly like it does for clips.
+    [[nodiscard]] virtual VoiceHandleUVE CreateStreamVoiceUVE(const AudioStreamFormatUVE& format) = 0;
+
+    /// Appends up to `interleavedFrames.size() / format.channels` frames and returns how many were
+    /// accepted - fewer than offered means the ring is full, which is the caller's cue to pump
+    /// again later rather than to grow anything. Returns 0 (logging the reason) for an unknown
+    /// handle, a clip voice, or a frame count that is not a whole number of frames.
+    [[nodiscard]] virtual std::size_t PushStreamFramesUVE(VoiceHandleUVE voice,
+                                                          std::span<const float> interleavedFrames) = 0;
+
+    /// Declares that no more frames will be pushed: the voice plays out what is buffered, then
+    /// moves itself to VoicePlaybackStateUVE::Stopped so `IsEntityPlayingUVE` answers honestly.
+    /// Returns false (logging the reason) for an unknown handle or a clip voice.
+    [[nodiscard]] virtual bool EndStreamUVE(VoiceHandleUVE voice) = 0;
+
+    /// Frames waiting in the ring - the pump's headroom, and the number an underrun test watches.
+    [[nodiscard]] virtual std::size_t GetStreamBufferedFramesUVE(VoiceHandleUVE voice) const = 0;
+
+    /// Frames the ring can still take. Returns 0 for an unknown handle or a clip voice.
+    [[nodiscard]] virtual std::size_t GetStreamFreeFramesUVE(VoiceHandleUVE voice) const = 0;
 
     /// A short human-readable backend name (e.g. `"Null"`), for logging/diagnostics.
     [[nodiscard]] virtual std::string_view GetBackendNameUVE() const noexcept = 0;

@@ -11,6 +11,11 @@ namespace UVE::Asset {
 
 inline constexpr std::size_t kMaximumAudioAssetSamplesUVE = 1U << 20U;
 
+/// Schema version of the `.uvaudio` payload that follows the universal envelope header. Exposed
+/// because a streaming reader parses the same header from disk without going through the
+/// whole-file loader, and the version it accepts must be the version that loader writes.
+inline constexpr std::uint32_t kAudioAssetPayloadVersionUVE = 1U;
+
 /// Typed CPU audio envelope for bounded interleaved normalized floating-point PCM samples. Runtime
 /// devices, streaming cursors, mixer routing, compression, and platform codec ownership remain
 /// outside this asset contract.

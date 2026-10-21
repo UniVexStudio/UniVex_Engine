@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "uve/audio/audio_mixer_group_uve.h"
+#include "uve/audio/audio_stream_uve.h"
 #include "uve/audio/pcm_gain_effect_uve.h"
 #include "uve/audio/wav_pcm16_decoder_uve.h"
 #include "uve/audio/audio_source_desc_uve.h"
@@ -110,6 +111,24 @@ public:
     [[nodiscard]] virtual bool ApplySourceBusChainUVE(
         VoiceHandleUVE source, const std::vector<float>& inputSamples,
         std::vector<float>& outputSamples) = 0;
+
+    // --- Streaming sources: bounded memory instead of a fully decoded clip. ---
+    /// Creates a source whose samples arrive over time from `source` rather than from a decoded
+    /// `.uvaudio` clip. `desc.audioAssetPath` is ignored - the stream owns the media - while every
+    /// other field keeps its meaning: spatialisation, cone, Doppler, volume, pitch, looping and the
+    /// mixer group all behave exactly as they do for a clip source.
+    /// The source is borrowed, not owned: it must outlive the voice.
+    [[nodiscard]] virtual VoiceHandleUVE CreateStreamingSourceUVE(const AudioSourceDescUVE& desc,
+                                                                  IAudioStreamSourceUVE& source) = 0;
+    /// Moves as many frames as the device ring will take from the source into the voice, returning
+    /// how many were accepted. `UpdateUVE()` already pumps every streaming source once a frame; this
+    /// exists for a caller that wants to pre-buffer before `PlayUVE()`, and for tests that drive the
+    /// pump without a frame loop. Returns 0 for an unknown handle, a clip source, a full ring, or a
+    /// stream that has ended.
+    [[nodiscard]] virtual std::size_t PumpStreamingSourceUVE(VoiceHandleUVE source) = 0;
+    /// Frames buffered in the device for `source` - the headroom a pre-buffer loop waits on and the
+    /// number an underrun test watches. 0 for an unknown handle or a clip source.
+    [[nodiscard]] virtual std::size_t GetStreamingSourceBufferedFramesUVE(VoiceHandleUVE source) const = 0;
 
     // --- Frame advance. ---
     /// Recomputes ComputeDistanceAttenuationUVE() for every live spatial source against the
