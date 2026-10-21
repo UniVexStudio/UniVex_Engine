@@ -15,7 +15,9 @@
 
 #include "uve/math/matrix3x3_uve.h"
 #include "uve/math/matrix4x4_uve.h"
+#include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/math/vector4_uve.h"
 #include "uve/rhi/i_command_buffer_uve.h"
 #include "uve/rhi/pipeline_handle_uve.h"
 #include "uve/rhi_shader/shader_compile_diagnostics_uve.h"
@@ -52,7 +54,9 @@ public:
     void SetFloatUVE(std::string_view name, float value);
     void SetIntUVE(std::string_view name, std::int32_t value);
     void SetBoolUVE(std::string_view name, bool value);
+    void SetVector2UVE(std::string_view name, const Math::Vector2UVE& value);
     void SetVector3UVE(std::string_view name, const Math::Vector3UVE& value);
+    void SetVector4UVE(std::string_view name, const Math::Vector4UVE& value);
     void SetMatrix4x4UVE(std::string_view name, const Math::Matrix4x4UVE& value);
     /// Queues a 3x3 uniform value (the renderer's normal matrix), embedded in a 4x4 for upload:
     /// the RHI uniform chain (ICommandBufferUVE) has no mat3 setter, and every built-in shader
@@ -71,7 +75,9 @@ private:
     friend class ShaderManagerUVE;
     ShaderProgramUVE() = default;
 
-    using PendingUniformValueUVE = std::variant<float, std::int32_t, bool, Math::Vector3UVE, Math::Matrix4x4UVE>;
+    using PendingUniformValueUVE =
+        std::variant<float, std::int32_t, bool, Math::Vector2UVE, Math::Vector3UVE, Math::Vector4UVE,
+                     Math::Matrix4x4UVE>;
 
     struct TransparentStringHashUVE {
         using is_transparent = void;

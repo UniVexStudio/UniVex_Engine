@@ -138,7 +138,9 @@ struct GlFunctionsUVE {
     PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation = nullptr;
     PFNGLUNIFORM1FPROC glUniform1f = nullptr;
     PFNGLUNIFORM1IPROC glUniform1i = nullptr;
+    PFNGLUNIFORM2FVPROC glUniform2fv = nullptr;
     PFNGLUNIFORM3FVPROC glUniform3fv = nullptr;
+    PFNGLUNIFORM4FVPROC glUniform4fv = nullptr;
     PFNGLUNIFORMMATRIX4FVPROC glUniformMatrix4fv = nullptr;
     PFNGLGETACTIVEUNIFORMPROC glGetActiveUniform = nullptr;
     PFNGLGETPROGRAMBINARYPROC glGetProgramBinary = nullptr;

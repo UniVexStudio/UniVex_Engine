@@ -44,6 +44,7 @@ add_library(uve_render_systems STATIC
     Internal/viewport_manager_uve.cpp
     Internal/dynamic_mesh_bvh_uve.cpp
     Internal/shadow_atlas_manager_uve.cpp
+    Internal/light_shadow_planner_uve.cpp
 )
 target_include_directories(uve_render_systems PUBLIC Expose)
 target_link_libraries(uve_render_systems PUBLIC uve_platform uve_logging uve_containers uve_math uve_scene uve_objects_2d uve_asset uve_rhi uve_rhi_shader uve_ui)

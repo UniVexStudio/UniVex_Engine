@@ -61,7 +61,50 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
 - [x] Viewport shading modes (Lit, Unshaded, Wireframe, Lighting Only, Normals) wired directly from editor overlay pill to Renderer3DUVE and shaders
 - [x] Low-end device scalability presets (Low, Medium, High) with adaptive shadow resolution, PCF kernel, and SSAO/bloom LOD
 - [x] Dedicated 2D Viewport scene creation in Content Browser (+ Add Viewport2D) with flat orthographic navigation, separating 2D and 3D scenes cleanly
-- [ ] Shadow maps for point/spot lights (cube-map and perspective shadow variants)
+- [x] Shadow maps for spot lights — one perspective tile per shadow-casting spot light in a
+  unified 4096x4096 Depth32F atlas, allocated by a quadtree buddy allocator (power-of-two tiles
+  from 4096 down to 128, with recursive four-way coalescing on free so a scene that drops a light
+  leaves no fragmentation behind). `ShadowAtlasManagerUVE` landed first and sat unused for a
+  while - the type, the octahedral math, the tile-rect math and twelve tests all existed with
+  ZERO call sites, which is exactly the shape of a feature that looks finished when read and
+  does nothing when run. The renderer half is what this closes: the atlas is created lazily on
+  the first frame that has an eligible spot light (64 MiB of Depth32F is not a cost an empty
+  scene should pay) and the planner decides the layout. Eligibility is a pure function - type,
+  positive intensity, the light's own shadow switch, finite transform, a cone angle the shader
+  can represent, and an influence sphere that actually reaches the view frustum. The tile size
+  is the project's existing "Point/Spot Cube Resolution" setting, halved until every caster fits;
+  the 128 floor still leaves 1024 tiles in a 4096 atlas and there are at most four casters, so the
+  budget can only ever reduce quality, never drop a light - which is why there is no per-light
+  priority scheme to get wrong. Casters are culled against each light's own
+  frustum, and a tile that culled nothing is skipped entirely rather than recording a draw-less
+  pass. Rendering reuses `shadow_depth.glsl` verbatim: a tile pass is the cascade pass with a
+  viewport override and `depthLoadOp = Load`, and the atlas is cleared ONCE per frame by a
+  separate full-attachment pass - per-tile Clear is not a style choice but a bug, because a
+  Vulkan attachment clear ignores the scissor and would wipe every tile already rendered. The
+  uniforms (`uLightShadowMatrices[4]`, `uLightShadowTileRects[4]`, `uLightShadowEnabled[4]`,
+  `uLightShadowDepthRange[4]`, `uShadowAtlasTexelSize`) are uploaded for all four light slots
+  every frame, so a slot that stopped casting cannot keep sampling a tile that now belongs to a
+  different light; they are indexed by `uLights[]` slot, not by "nth shadowed light", which is
+  what ties a tile to the light it shadows. Bias is the part a naive port gets wrong: a
+  perspective projection's depth slope changes by orders of magnitude along one ray, so a
+  constant normalized-depth bias is either acne beside the near plane or metres of peter-panning
+  out at the range - and the same light is both depending on where the surface is. The shader
+  therefore converts a world-space bias through the LOCAL slope, and the CPU mirrors that exact
+  formula (`SpotShadowLinearDepthUVE` / `SpotShadowDepthSlopeUVE`) with tests that pin the two
+  together, including a finite-difference check of the slope and a round-trip against what
+  `PerspectiveUVE` actually writes. The atlas moved to texture slot 15 (the last unit inside
+  GLES3's 16-unit floor) because the built-in lit path already packs 0-14 densely and a fixed
+  slot in the middle is one rebinding away from shadowing a cascade. Frame diagnostics report
+  candidates, active tiles, the resolution actually used, passes recorded and draws issued, so
+  "why is there no shadow here?" is answerable from a number instead of from the scene graph.
+- [ ] Shadow maps for point lights — omnidirectional. `lit_shadowed_3d.glsl` already carries an
+  octahedral encode/decode pair and a `PointShadowFactorUVE` that samples one tile by
+  `dist / range`, and the atlas, the tile rects and the uniform contract it consumes are all real
+  and tested. What does not exist is the producer: a 2D octahedral map cannot be rasterized
+  directly (the mapping is rational, so it needs either a six-face render plus a resolve pass, or
+  six perspective faces packed into the tile with the shader selecting by dominant axis). Until
+  one of those lands, `uLightShadowEnabled[]` is 0 for every point light and the shader honestly
+  returns "fully lit".
 - [ ] Contact shadows / screen-space shadow refinement
 - [x] A true physically-based material model — verified rather than assumed: lit_shadowed_3d.glsl
   already implements real Cook-Torrance (GGX distribution, Smith geometry, Schlick Fresnel), the

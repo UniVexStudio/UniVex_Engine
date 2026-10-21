@@ -3002,8 +3002,14 @@ public:
     void SetUniformBoolUVE(std::string_view name, const bool value) override {
         m_commands.emplace_back(SetUniformBoolCommandUVE{std::string(name), value});
     }
+    void SetUniformVector2UVE(std::string_view name, const Math::Vector2UVE& value) override {
+        m_commands.emplace_back(SetUniformVector2CommandUVE{std::string(name), value});
+    }
     void SetUniformVector3UVE(std::string_view name, const Math::Vector3UVE& value) override {
         m_commands.emplace_back(SetUniformVector3CommandUVE{std::string(name), value});
+    }
+    void SetUniformVector4UVE(std::string_view name, const Math::Vector4UVE& value) override {
+        m_commands.emplace_back(SetUniformVector4CommandUVE{std::string(name), value});
     }
     void SetUniformMatrix4x4UVE(std::string_view name, const Math::Matrix4x4UVE& value) override {
         m_commands.emplace_back(SetUniformMatrix4x4CommandUVE{std::string(name), value});
@@ -6975,11 +6981,19 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                 // SPIR-V bool block members occupy a 4-byte slot (0/1) in every standard layout.
                 const std::int32_t packed = op.value ? 1 : 0;
                 writeUniformUVE(op.name, ShaderDataTypeUVE::Bool, &packed, sizeof(packed), true);
+            } else if constexpr (std::is_same_v<OpT, SetUniformVector2CommandUVE>) {
+                // std140 vec2 occupies 8 dense bytes (the 16-byte alignment applies to the
+                // member's slot, not to its extent), so exactly two lanes are written.
+                const float lanes[2] = {op.value.x, op.value.y};
+                writeUniformUVE(op.name, ShaderDataTypeUVE::Vec2, lanes, sizeof(lanes), false);
             } else if constexpr (std::is_same_v<OpT, SetUniformVector3CommandUVE>) {
                 // std140/std430 vec3: 12 meaningful bytes inside a 16-byte slot; the reflected
                 // member size is 16 but sits at a padded offset, so write just the three lanes.
                 const float lanes[3] = {op.value.x, op.value.y, op.value.z};
                 writeUniformUVE(op.name, ShaderDataTypeUVE::Vec3, lanes, sizeof(lanes), false);
+            } else if constexpr (std::is_same_v<OpT, SetUniformVector4CommandUVE>) {
+                const float lanes[4] = {op.value.x, op.value.y, op.value.z, op.value.w};
+                writeUniformUVE(op.name, ShaderDataTypeUVE::Vec4, lanes, sizeof(lanes), false);
             } else if constexpr (std::is_same_v<OpT, SetUniformMatrix4x4CommandUVE>) {
                 // Std140 mat4 = four vec4 columns stride-16 == 64 dense bytes, the same dense
                 // float[16] packing the RHI's matrix type stores. Column-major either way.

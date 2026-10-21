@@ -132,8 +132,16 @@ struct GlVertexAttributeFetchUVE final {
     return {};
 }
 
+[[nodiscard]] bool IsFiniteVector2UVE(const Math::Vector2UVE& value) noexcept {
+    return std::isfinite(value.x) && std::isfinite(value.y);
+}
+
 [[nodiscard]] bool IsFiniteVector3UVE(const Math::Vector3UVE& value) noexcept {
     return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+}
+
+[[nodiscard]] bool IsFiniteVector4UVE(const Math::Vector4UVE& value) noexcept {
+    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z) && std::isfinite(value.w);
 }
 
 [[nodiscard]] bool IsFiniteMatrix4x4UVE(const Math::Matrix4x4UVE& value) noexcept {
@@ -1152,6 +1160,38 @@ void GlCommandBufferUVE::SetUniformBoolUVE(std::string_view name, bool value) {
         return;
     }
     m_state->gl.glUniform1i(uniform->location, value ? 1 : 0);
+}
+
+void GlCommandBufferUVE::SetUniformVector2UVE(std::string_view name, const Math::Vector2UVE& value) {
+    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) { // M5a compute flow
+        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformVector2UVE");
+        return;
+    }
+    const UniformRecordUVE* const uniform = FindUniformUVE(name);
+    if (uniform == nullptr || !ValidateUniformTypeUVE(*uniform, ShaderDataTypeUVE::Vec2, name)) {
+        return;
+    }
+    if (!IsFiniteVector2UVE(value)) {
+        UVE_ERROR("GlCommandBufferUVE: vector uniform '{}' must be finite", name);
+        return;
+    }
+    m_state->gl.glUniform2fv(uniform->location, 1, &value.x);
+}
+
+void GlCommandBufferUVE::SetUniformVector4UVE(std::string_view name, const Math::Vector4UVE& value) {
+    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) { // M5a compute flow
+        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformVector4UVE");
+        return;
+    }
+    const UniformRecordUVE* const uniform = FindUniformUVE(name);
+    if (uniform == nullptr || !ValidateUniformTypeUVE(*uniform, ShaderDataTypeUVE::Vec4, name)) {
+        return;
+    }
+    if (!IsFiniteVector4UVE(value)) {
+        UVE_ERROR("GlCommandBufferUVE: vector uniform '{}' must be finite", name);
+        return;
+    }
+    m_state->gl.glUniform4fv(uniform->location, 1, &value.x);
 }
 
 void GlCommandBufferUVE::SetUniformVector3UVE(std::string_view name, const Math::Vector3UVE& value) {

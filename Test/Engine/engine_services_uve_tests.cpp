@@ -599,7 +599,9 @@ public:
     void SetUniformFloatUVE(std::string_view, float) override {}
     void SetUniformIntUVE(std::string_view, std::int32_t) override {}
     void SetUniformBoolUVE(std::string_view, bool) override {}
+    void SetUniformVector2UVE(std::string_view, const Math::Vector2UVE&) override {}
     void SetUniformVector3UVE(std::string_view, const Math::Vector3UVE&) override {}
+    void SetUniformVector4UVE(std::string_view, const Math::Vector4UVE&) override {}
     void SetUniformMatrix4x4UVE(std::string_view, const Math::Matrix4x4UVE&) override {}
 };
 

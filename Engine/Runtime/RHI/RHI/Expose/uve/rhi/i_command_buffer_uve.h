@@ -10,7 +10,9 @@
 #include <vector>
 
 #include "uve/math/matrix4x4_uve.h"
+#include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/math/vector4_uve.h"
 #include "uve/rhi/buffer_handle_uve.h"
 #include "uve/rhi/device_operations_uve.h"
 #include "uve/rhi/pipeline_handle_uve.h"
@@ -147,7 +149,9 @@ public:
     virtual void SetUniformFloatUVE(std::string_view name, float value) = 0;
     virtual void SetUniformIntUVE(std::string_view name, std::int32_t value) = 0;
     virtual void SetUniformBoolUVE(std::string_view name, bool value) = 0;
+    virtual void SetUniformVector2UVE(std::string_view name, const Math::Vector2UVE& value) = 0;
     virtual void SetUniformVector3UVE(std::string_view name, const Math::Vector3UVE& value) = 0;
+    virtual void SetUniformVector4UVE(std::string_view name, const Math::Vector4UVE& value) = 0;
     virtual void SetUniformMatrix4x4UVE(std::string_view name, const Math::Matrix4x4UVE& value) = 0;
 
     /// Draws using the currently bound index buffer. Must be called inside a render pass, after

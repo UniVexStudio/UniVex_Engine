@@ -910,6 +910,11 @@ void EngineCoreUVE::Init() {
     postProcessSettings.ssaoBlurEnabledUVE = m_config.ssaoBlurEnabledUVE;
     m_renderer3D->SetPostProcessSettingsUVE(postProcessSettings);
     m_renderer3D->SetShadowBiasDefaultsUVE(m_config.shadowBiasDefaultUVE, m_config.shadowNormalBiasDefaultUVE);
+    // The project's "Point/Spot Cube Resolution" is the requested atlas tile edge. Spot shadows use
+    // it as the tile size; point lights will use the same number for their six faces once their
+    // atlas path exists, so one authored setting keeps meaning one thing.
+    m_renderer3D->SetSpotShadowTileResolutionUVE(
+        static_cast<std::uint32_t>(std::max<std::int64_t>(m_config.pointSpotShadowResolutionUVE, 0)));
     Render::CullingSettingsUVE cullingSettings;
     cullingSettings.frustumCullingEnabledUVE = m_config.frustumCullingModeUVE == FrustumCullingModeUVE::EnabledUVE;
     m_renderer3D->SetCullingSettingsUVE(cullingSettings);
