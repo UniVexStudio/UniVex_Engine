@@ -1987,6 +1987,11 @@ private:
     /// (dense, no duplicates) is enforced before the write lands.
     void DrawEntityReferenceListPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                             const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// FullBodyIK3D's effector list: one bone/target/weight pull per row, plus the add and remove
+    /// rows. Every edit writes the whole list back through SetSelectedComponentPropertyUVE, so it
+    /// is one undo step and the component's validator is the last word before the write lands.
+    void DrawFullBodyEffectorsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                          const Core::TypeMetadataPropertyUVE& property, const void* instance);
     /// LODGroup3D's distance chain: one threshold row per level in use, plus the distance the
     /// object is culled past, which is the rule those thresholds add up to. One write for the whole
     /// array, so an edit is one undo step.
