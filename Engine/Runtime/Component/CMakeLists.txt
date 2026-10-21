@@ -70,6 +70,7 @@ add_library(uve_component STATIC
     Internal/ui_image_component_uve.cpp
     Internal/ui_text_component_uve.cpp
     Internal/skin_component_uve.cpp
+    Internal/morph_target_component_uve.cpp
     Internal/world_transform_component_uve.cpp
 )
 target_include_directories(uve_component PUBLIC Expose)

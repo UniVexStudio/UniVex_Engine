@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "uve/animation/time_pose_contract_uve.h"
+#include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/entity_uve.h"
 
@@ -101,6 +102,20 @@ bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, double time
 /// first and last sample. `samples` must not be empty.
 [[nodiscard]] Core::TransformPoseUVE SampleAnimationTrackUVE(const std::vector<Asset::AnimationAssetSampleUVE>& samples,
                                                              double timeSeconds) noexcept;
+
+/// A blend-shape track's weights at `timeSeconds`: linear between the two keys around it, clamped
+/// to the first and last, in the order the mesh's own morph targets are declared.
+///
+/// Linear rather than the stepped or spline interpolations a bone track can carry: glTF defines the
+/// `weights` channel as LINEAR, and facial animation is authored as dense keys precisely because the
+/// curve shape lives in the keys, not between them. Every key of a track carries the same count
+/// (IsAnimationClipAssetValidUVE enforces it), so `outWeights` is a constant size per track and the
+/// caller can hold one buffer for the whole clip.
+///
+/// Leaves `outWeights` untouched and returns false for an empty track - a track with no keys has no
+/// answer, and inventing zeroes would silently relax a face to rest.
+[[nodiscard]] bool SampleMorphWeightTrackUVE(const Asset::AnimationAssetMorphTrackUVE& track,
+                                             double timeSeconds, std::vector<float>& outWeights);
 
 /// Inertialization's fade: 1 at `progress` 0, 0 at 1, with zero speed and acceleration at both ends.
 [[nodiscard]] float AnimationInertialDecayUVE(float progress) noexcept;

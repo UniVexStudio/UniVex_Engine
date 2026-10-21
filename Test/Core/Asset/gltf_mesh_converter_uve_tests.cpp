@@ -251,4 +251,155 @@ TEST(GltfPrimitiveConverterUVETest, ConvertGltfPrimitiveUVE_WrongPositionCompone
 }
 
 } // namespace
+/// A base triangle plus two targets: "jawOpen" moves only vertex 2 (and bends its normal), and
+/// "empty" is the degenerate case an exporter still emits - a target whose displacements are all
+/// exactly zero, which must cost nothing after import.
+TEST(GltfMorphTargetConverterUVETest, ConvertGltfPrimitiveUVE_BuildsSparseTargetsAndKeepsNames) {
+    const std::vector<std::byte> positions = [&] {
+        std::vector<std::byte> bytes;
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 1.0F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 0.0F, 1.0F, 0.0F);
+        return bytes;
+    }();
+    const std::vector<std::byte> indices = [&] {
+        std::vector<std::byte> bytes;
+        AppendU16LittleEndianUVE(bytes, 0U);
+        AppendU16LittleEndianUVE(bytes, 1U);
+        AppendU16LittleEndianUVE(bytes, 2U);
+        return bytes;
+    }();
+    const std::vector<std::byte> jawPositions = [&] {
+        std::vector<std::byte> bytes;
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 0.0F, -0.5F, 0.0F);
+        return bytes;
+    }();
+    const std::vector<std::byte> jawNormals = [&] {
+        std::vector<std::byte> bytes;
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 0.0F, -1.0F, 0.0F);
+        return bytes;
+    }();
+    const std::vector<std::byte> zeroPositions = [&] {
+        std::vector<std::byte> bytes;
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+        return bytes;
+    }();
+
+    const GltfPrimitiveSourceUVE source{
+        MakeAccessorUVE(positions, 3U, GltfComponentTypeUVE::Float),
+        std::nullopt,
+        std::nullopt,
+        MakeAccessorUVE(indices, 3U, GltfComponentTypeUVE::UnsignedShort),
+        4U,
+    };
+    GltfMorphTargetSetUVE morphSet;
+    morphSet.targets.push_back(GltfMorphTargetSourceUVE{
+        MakeAccessorUVE(jawPositions, 3U, GltfComponentTypeUVE::Float),
+        MakeAccessorUVE(jawNormals, 3U, GltfComponentTypeUVE::Float), std::nullopt});
+    morphSet.targets.push_back(GltfMorphTargetSourceUVE{
+        MakeAccessorUVE(zeroPositions, 3U, GltfComponentTypeUVE::Float), std::nullopt, std::nullopt});
+    morphSet.names = {"jawOpen", "unused"};
+    morphSet.defaultWeights = {0.25F, 0.0F};
+
+    MeshAssetUVE mesh;
+    ASSERT_TRUE(ConvertGltfPrimitiveUVE(source, morphSet, mesh));
+    ASSERT_EQ(mesh.morphTargets.size(), 2U);
+    EXPECT_EQ(mesh.morphTargets[0].name, "jawOpen");
+    // Only the one moved vertex is stored: the two all-zero rows are dropped, which is what makes
+    // a sparse shape cost a fraction of a dense one.
+    ASSERT_EQ(mesh.morphTargets[0].deltas.size(), 1U);
+    EXPECT_EQ(mesh.morphTargets[0].deltas[0].vertexIndex, 2U);
+    EXPECT_EQ(mesh.morphTargets[0].deltas[0].positionDelta, (Math::Vector3UVE{0.0F, -0.5F, 0.0F}));
+    EXPECT_EQ(mesh.morphTargets[0].deltas[0].normalDelta, (Math::Vector3UVE{0.0F, -1.0F, 0.0F}));
+    // A target that moves nothing survives as a nameable, zero-cost shape rather than being
+    // silently deleted - deleting it would renumber every weight after it.
+    EXPECT_EQ(mesh.morphTargets[1].name, "unused");
+    EXPECT_TRUE(mesh.morphTargets[1].deltas.empty());
+    EXPECT_EQ(mesh.defaultMorphWeights, (std::vector<float>{0.25F, 0.0F}));
+    EXPECT_TRUE(IsMeshMorphTargetDataValidUVE(mesh));
+}
+
+TEST(GltfMorphTargetConverterUVETest, ConvertGltfPrimitiveUVE_UnnamedTargetsGetDeterministicNames) {
+    const std::vector<std::byte> positions = [&] {
+        std::vector<std::byte> bytes;
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 1.0F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 0.0F, 1.0F, 0.0F);
+        return bytes;
+    }();
+    const std::vector<std::byte> moved = [&] {
+        std::vector<std::byte> bytes;
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 0.1F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+        return bytes;
+    }();
+    const GltfPrimitiveSourceUVE source{MakeAccessorUVE(positions, 3U, GltfComponentTypeUVE::Float), std::nullopt,
+                                        std::nullopt, std::nullopt, 4U};
+    GltfMorphTargetSetUVE morphSet;
+    morphSet.targets.push_back(GltfMorphTargetSourceUVE{
+        MakeAccessorUVE(moved, 3U, GltfComponentTypeUVE::Float), std::nullopt, std::nullopt});
+
+    MeshAssetUVE mesh;
+    ASSERT_TRUE(ConvertGltfPrimitiveUVE(source, morphSet, mesh));
+    ASSERT_EQ(mesh.morphTargets.size(), 1U);
+    EXPECT_EQ(mesh.morphTargets[0].name, "target0");
+}
+
+TEST(GltfMorphTargetConverterUVETest, ConvertGltfPrimitiveUVE_RejectsTargetThatDisagreesWithBaseVertexCount) {
+    const std::vector<std::byte> positions = [&] {
+        std::vector<std::byte> bytes;
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 1.0F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 0.0F, 1.0F, 0.0F);
+        return bytes;
+    }();
+    const std::vector<std::byte> shortDeltas = [&] {
+        std::vector<std::byte> bytes;
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+        return bytes;
+    }();
+    const GltfPrimitiveSourceUVE source{MakeAccessorUVE(positions, 3U, GltfComponentTypeUVE::Float), std::nullopt,
+                                        std::nullopt, std::nullopt, 4U};
+    GltfMorphTargetSetUVE morphSet;
+    morphSet.targets.push_back(GltfMorphTargetSourceUVE{
+        MakeAccessorUVE(shortDeltas, 1U, GltfComponentTypeUVE::Float), std::nullopt, std::nullopt});
+
+    MeshAssetUVE mesh;
+    EXPECT_FALSE(ConvertGltfPrimitiveUVE(source, morphSet, mesh));
+    EXPECT_TRUE(mesh.morphTargets.empty());
+}
+
+TEST(GltfMorphTargetConverterUVETest, ConvertGltfPrimitiveUVE_RejectsWeightCountThatDoesNotMatchTargets) {
+    const std::vector<std::byte> positions = [&] {
+        std::vector<std::byte> bytes;
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 1.0F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 0.0F, 1.0F, 0.0F);
+        return bytes;
+    }();
+    const std::vector<std::byte> moved = [&] {
+        std::vector<std::byte> bytes;
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 0.1F, 0.0F, 0.0F);
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+        return bytes;
+    }();
+    const GltfPrimitiveSourceUVE source{MakeAccessorUVE(positions, 3U, GltfComponentTypeUVE::Float), std::nullopt,
+                                        std::nullopt, std::nullopt, 4U};
+    GltfMorphTargetSetUVE morphSet;
+    morphSet.targets.push_back(GltfMorphTargetSourceUVE{
+        MakeAccessorUVE(moved, 3U, GltfComponentTypeUVE::Float), std::nullopt, std::nullopt});
+    morphSet.defaultWeights = {0.5F, 0.5F}; // two weights, one target
+
+    MeshAssetUVE mesh;
+    EXPECT_FALSE(ConvertGltfPrimitiveUVE(source, morphSet, mesh));
+}
+
 } // namespace UVE::Asset::Tests

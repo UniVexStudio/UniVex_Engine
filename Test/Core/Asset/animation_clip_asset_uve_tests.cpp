@@ -3,6 +3,8 @@
 #include "uve/asset/animation_clip_asset_uve.h"
 
 #include <filesystem>
+#include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -183,6 +185,103 @@ TEST(AnimationClipAssetUVETest, AVersionOneFileStillLoads) {
     EXPECT_EQ(loaded.samples.size(), 1U);
     EXPECT_FALSE(loaded.IsSkeletalUVE());
     std::filesystem::remove(path);
+}
+
+/// A facial clip: no object samples, no bones, only two shapes on a "Head" mesh. This is the shape
+/// of a real lip-sync take, and it is why the validator's "nothing moves" rule has to count morph
+/// tracks as movement.
+[[nodiscard]] AnimationClipAssetUVE MakeFacialClipUVE() {
+    AnimationClipAssetUVE clip;
+    clip.clipId = "visemes";
+    clip.durationSeconds = 0.5;
+    AnimationAssetMorphTrackUVE track;
+    track.node = "Head";
+    track.samples = {
+        AnimationAssetMorphWeightSampleUVE{0.0, {0.0F, 1.0F}},
+        AnimationAssetMorphWeightSampleUVE{0.5, {1.0F, 0.0F}},
+    };
+    clip.morphWeights = {std::move(track)};
+    return clip;
+}
+
+TEST(AnimationClipAssetUVETest, FacialClipWithOnlyMorphTracksIsValid) {
+    const AnimationClipAssetUVE clip = MakeFacialClipUVE();
+    EXPECT_TRUE(clip.samples.empty());
+    EXPECT_TRUE(clip.bones.empty());
+    EXPECT_TRUE(clip.HasMorphTracksUVE());
+    EXPECT_TRUE(IsAnimationClipAssetValidUVE(clip));
+}
+
+TEST(AnimationClipAssetUVETest, MorphTracksRoundTripAsVersionFour) {
+    const std::filesystem::path path = TestPathUVE("morph_track_round_trip.uvanim");
+    std::filesystem::remove(path);
+    const AnimationClipAssetUVE original = MakeFacialClipUVE();
+    ASSERT_TRUE(SaveAnimationClipAssetUVE(original, path));
+
+    AnimationClipAssetUVE loaded;
+    ASSERT_TRUE(LoadAnimationClipAssetUVE(path, loaded));
+    ASSERT_EQ(loaded.morphWeights.size(), 1U);
+    EXPECT_EQ(loaded.morphWeights[0].node, "Head");
+    EXPECT_EQ(loaded.morphWeights[0].samples, original.morphWeights[0].samples);
+    std::filesystem::remove(path);
+}
+
+TEST(AnimationClipAssetUVETest, ClipWithoutMorphTracksStaysOnItsOldSchema) {
+    // The schema version is a promise about what an older engine can read. A clip with no blend
+    // shapes must not claim v4 merely because the format learned about them.
+    const std::filesystem::path path = TestPathUVE("morph_free_clip.uvanim");
+    std::filesystem::remove(path);
+    const AnimationClipAssetUVE clip = MakeValidClipUVE();
+    ASSERT_TRUE(SaveAnimationClipAssetUVE(clip, path));
+
+    const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
+    ASSERT_TRUE(file.has_value());
+    const std::string payload(reinterpret_cast<const char*>(file->second.data()), file->second.size());
+    EXPECT_NE(payload.find("uve-animation-v2"), std::string::npos);
+    EXPECT_EQ(payload.find("morphWeights"), std::string::npos);
+    std::filesystem::remove(path);
+}
+
+TEST(AnimationClipAssetUVETest, MorphTracksAreValidated) {
+    // Keys must be ordered and inside the clip.
+    AnimationClipAssetUVE outOfOrder = MakeFacialClipUVE();
+    std::swap(outOfOrder.morphWeights[0].samples[0], outOfOrder.morphWeights[0].samples[1]);
+    EXPECT_FALSE(IsAnimationClipAssetValidUVE(outOfOrder));
+
+    AnimationClipAssetUVE pastTheEnd = MakeFacialClipUVE();
+    pastTheEnd.morphWeights[0].samples[1].timeSeconds = 9.0;
+    EXPECT_FALSE(IsAnimationClipAssetValidUVE(pastTheEnd));
+
+    // Every key of a track drives the same shapes; a key that disagrees cannot be interpolated.
+    AnimationClipAssetUVE raggedWeights = MakeFacialClipUVE();
+    raggedWeights.morphWeights[0].samples[1].weights.pop_back();
+    EXPECT_FALSE(IsAnimationClipAssetValidUVE(raggedWeights));
+
+    AnimationClipAssetUVE nonFinite = MakeFacialClipUVE();
+    nonFinite.morphWeights[0].samples[0].weights[0] = std::numeric_limits<float>::infinity();
+    EXPECT_FALSE(IsAnimationClipAssetValidUVE(nonFinite));
+
+    AnimationClipAssetUVE emptyNode = MakeFacialClipUVE();
+    emptyNode.morphWeights[0].node.clear();
+    EXPECT_FALSE(IsAnimationClipAssetValidUVE(emptyNode));
+
+    AnimationClipAssetUVE noKeys = MakeFacialClipUVE();
+    noKeys.morphWeights[0].samples.clear();
+    EXPECT_FALSE(IsAnimationClipAssetValidUVE(noKeys));
+
+    // One track per mesh.
+    AnimationClipAssetUVE duplicated = MakeFacialClipUVE();
+    duplicated.morphWeights.push_back(duplicated.morphWeights[0]);
+    EXPECT_FALSE(IsAnimationClipAssetValidUVE(duplicated));
+}
+
+TEST(AnimationClipAssetUVETest, AClipWithNoMovementAtAllIsStillRejected) {
+    // The relaxation for facial clips must not turn into "anything is valid": a clip that moves
+    // nothing at all is still a defect.
+    AnimationClipAssetUVE empty;
+    empty.clipId = "nothing";
+    empty.durationSeconds = 1.0;
+    EXPECT_FALSE(IsAnimationClipAssetValidUVE(empty));
 }
 
 } // namespace UVE::Asset::Tests
