@@ -134,6 +134,8 @@ add_library(uve_editor STATIC
     Internal/developer_console_uve.cpp
     Internal/editor_tool_session_uve.cpp
     Internal/editor_render_stats_uve.cpp
+    Internal/editor_audio_mixer_uve.cpp
+    Internal/editor_panel_audio_mixer_uve.cpp
     Internal/editor_theme_uve.cpp
     Internal/editor_ui_assets_uve.cpp
     Internal/editor_icon_set_uve.cpp

@@ -7,6 +7,7 @@
 #include <limits>
 #include <memory>
 #include <stdexcept>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -68,6 +69,14 @@ public:
     [[nodiscard]] std::size_t GetStreamBufferedFramesUVE(VoiceHandleUVE) const override { return 0U; }
     [[nodiscard]] std::size_t GetStreamFreeFramesUVE(VoiceHandleUVE) const override { return 0U; }
 
+    /// The recorder has no audio thread, so the test states what each voice "contributed"; every
+    /// read is idempotent, matching the interface contract a real backend has to satisfy.
+    [[nodiscard]] AudioMeterReadingUVE ReadVoiceMeterUVE(const VoiceHandleUVE voice) const override {
+        ++meterReadCount;
+        const auto match = meterByHandle.find(voice.value);
+        return match == meterByHandle.end() ? kSilentAudioMeterUVE : match->second;
+    }
+
     AudioVoiceDescUVE lastDescription{};
     mutable VoiceHandleUVE lastHandle = kInvalidVoiceHandleUVE;
     VoiceHandleUVE nextHandle{1U};
@@ -76,6 +85,8 @@ public:
     mutable int playCount = 0;
     mutable int stopCount = 0;
     mutable int stateCount = 0;
+    mutable int meterReadCount = 0;
+    std::unordered_map<std::uint32_t, AudioMeterReadingUVE> meterByHandle;
 };
 
 class TestAudioClipResolverUVE final : public IAudioClipResolverUVE {
@@ -1123,6 +1134,84 @@ TEST_F(AudioSystemUVETest, Occlusion_DescriptorRejectsAnUnusableFloor) {
     flat.occlusionGain = 1.5F;
     flat.occlusionLowPassHz = 5.0F;
     EXPECT_NE(audioSystem.CreateSourceUVE(flat), kInvalidVoiceHandleUVE);
+}
+
+
+// --- Metering: what a mixer panel reads, assembled from what the device measured. ---
+
+TEST_F(AudioSystemUVETest, Meter_ASourceReportsWhatTheDeviceMeasured) {
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(AudioSourceDescUVE{});
+    ASSERT_NE(source, kInvalidVoiceHandleUVE);
+    device.SetVoiceMeterUVE(source, AudioMeterReadingUVE{0.5F, 0.25F});
+
+    const AudioMeterReadingUVE meter = audioSystem.GetSourceMeterUVE(source);
+    EXPECT_FLOAT_EQ(meter.peak, 0.5F);
+    EXPECT_FLOAT_EQ(meter.rms, 0.25F);
+
+    // Idempotent: reading again shows the same measurement, so one frame can draw a source row and
+    // the bus above it without the second read seeing zero.
+    EXPECT_EQ(audioSystem.GetSourceMeterUVE(source), meter);
+}
+
+TEST_F(AudioSystemUVETest, Meter_UnknownSourcesAndBusesReadSilence) {
+    EXPECT_EQ(audioSystem.GetSourceMeterUVE(VoiceHandleUVE{999U}), kSilentAudioMeterUVE);
+    EXPECT_EQ(audioSystem.GetMixerGroupMeterUVE("NoSuchBus"), kSilentAudioMeterUVE);
+    EXPECT_EQ(audioSystem.GetMixerGroupMeterUVE("Music"), kSilentAudioMeterUVE); // exists, carries nothing
+}
+
+TEST_F(AudioSystemUVETest, Meter_ABusSumsTheVoicesRoutedToIt) {
+    ASSERT_TRUE(audioSystem.RegisterMixerGroupUVE("SFX", 0.5F));
+    ASSERT_TRUE(audioSystem.RegisterMixerGroupUVE("Footsteps", "SFX", 1.0F));
+
+    const VoiceHandleUVE inSfx = audioSystem.CreateSourceUVE(AudioSourceDescUVE{});
+    const VoiceHandleUVE inFootsteps = audioSystem.CreateSourceUVE(AudioSourceDescUVE{});
+    const VoiceHandleUVE onMaster = audioSystem.CreateSourceUVE(AudioSourceDescUVE{});
+    ASSERT_NE(inSfx, kInvalidVoiceHandleUVE);
+    ASSERT_TRUE(audioSystem.SetSourceMixerGroupUVE(inSfx, "SFX"));
+    ASSERT_TRUE(audioSystem.SetSourceMixerGroupUVE(inFootsteps, "Footsteps"));
+
+    device.SetVoiceMeterUVE(inSfx, AudioMeterReadingUVE{0.3F, 0.3F});
+    device.SetVoiceMeterUVE(inFootsteps, AudioMeterReadingUVE{0.4F, 0.4F});
+    device.SetVoiceMeterUVE(onMaster, AudioMeterReadingUVE{0.5F, 0.5F});
+
+    // A bus includes everything under it: Footsteps' voice flows into SFX.
+    const AudioMeterReadingUVE sfx = audioSystem.GetMixerGroupMeterUVE("SFX");
+    EXPECT_NEAR(sfx.peak, std::sqrt(0.3F * 0.3F + 0.4F * 0.4F), 1.0e-5F);
+    EXPECT_NEAR(audioSystem.GetMixerGroupMeterUVE("Footsteps").peak, 0.4F, 1.0e-6F);
+
+    // Master carries every voice, including the sub-buses.
+    const float expectedMaster = std::sqrt(0.3F * 0.3F + 0.4F * 0.4F + 0.5F * 0.5F);
+    EXPECT_NEAR(audioSystem.GetMixerGroupMeterUVE("Master").peak, expectedMaster, 1.0e-5F);
+}
+
+TEST_F(AudioSystemUVETest, Meter_ABusMeterDoesNotDependOnReadOrder) {
+    ASSERT_TRUE(audioSystem.RegisterMixerGroupUVE("Music", 1.0F));
+    const VoiceHandleUVE music = audioSystem.CreateSourceUVE(AudioSourceDescUVE{});
+    ASSERT_TRUE(audioSystem.SetSourceMixerGroupUVE(music, "Music"));
+    device.SetVoiceMeterUVE(music, AudioMeterReadingUVE{0.8F, 0.8F});
+
+    // Reading the bus first, then Master, still reports both: a meter read consumes nothing.
+    EXPECT_NEAR(audioSystem.GetMixerGroupMeterUVE("Music").peak, 0.8F, 1.0e-6F);
+    EXPECT_NEAR(audioSystem.GetMixerGroupMeterUVE("Master").peak, 0.8F, 1.0e-6F);
+}
+
+TEST_F(AudioSystemUVETest, Meter_AFullyMutedBusStillReportsTheLevelItWouldHave) {
+    ASSERT_TRUE(audioSystem.RegisterMixerGroupUVE("Voice", 1.0F));
+    const VoiceHandleUVE voice = audioSystem.CreateSourceUVE(AudioSourceDescUVE{});
+    ASSERT_TRUE(audioSystem.SetSourceMixerGroupUVE(voice, "Voice"));
+    device.SetVoiceMeterUVE(voice, AudioMeterReadingUVE{0.6F, 0.6F});
+    ASSERT_TRUE(audioSystem.SetMixerGroupMutedUVE("Voice", true));
+
+    // The device would have mixed nothing, so a real backend reports silence - but the meter path
+    // must not double-apply the mute either. What the device says is what is shown.
+    EXPECT_NEAR(audioSystem.GetMixerGroupMeterUVE("Voice").peak, 0.6F, 1.0e-6F);
+}
+
+TEST_F(AudioSystemUVETest, Meter_ASourceShellWithNoRoutingStillBelongsToMaster) {
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(AudioSourceDescUVE{});
+    device.SetVoiceMeterUVE(source, AudioMeterReadingUVE{0.2F, 0.1F});
+    EXPECT_NEAR(audioSystem.GetMixerGroupMeterUVE("Master").peak, 0.2F, 1.0e-6F);
+    EXPECT_NEAR(audioSystem.GetMixerGroupMeterUVE("Master").rms, 0.1F, 1.0e-6F);
 }
 
 

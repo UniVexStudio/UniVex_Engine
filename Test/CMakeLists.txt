@@ -459,6 +459,7 @@ add_executable(uve_integration_tests
     Audio/audio_mixer_group_uve_tests.cpp
     Audio/audio_dsp_uve_tests.cpp
     Audio/audio_spatialization_uve_tests.cpp
+    Audio/audio_meter_uve_tests.cpp
     Audio/audio_occlusion_uve_tests.cpp
     Audio/audio_stream_uve_tests.cpp
     Audio/audio_source_system_uve_tests.cpp
@@ -654,6 +655,7 @@ add_executable(uve_editor_tests
     Editor/developer_console_bridge_uve_tests.cpp
     Editor/editor_tool_session_uve_tests.cpp
     Editor/editor_render_stats_uve_tests.cpp
+    Editor/editor_audio_mixer_uve_tests.cpp
     Editor/editor_chrome_layout_uve_tests.cpp
     Editor/editor_icon_set_uve_tests.cpp
     Editor/editor_uve_tests.cpp

@@ -7,6 +7,7 @@
 #include <span>
 #include <string_view>
 
+#include "uve/audio/audio_meter_uve.h"
 #include "uve/audio/audio_stream_uve.h"
 #include "uve/audio/audio_voice_desc_uve.h"
 #include "uve/audio/voice_handle_uve.h"
@@ -80,6 +81,21 @@ public:
 
     /// Frames the ring can still take. Returns 0 for an unknown handle or a clip voice.
     [[nodiscard]] virtual std::size_t GetStreamFreeFramesUVE(VoiceHandleUVE voice) const = 0;
+
+    /// The voice's own contribution to the output since the last audio block, as a peak that holds
+    /// and releases plus a windowed average: measured where the voice is actually summed, after its
+    /// gain, pan and muffling, so the number a mixer shows is the number that was heard.
+    ///
+    /// Reading is idempotent - it consumes nothing - which is what lets one frame draw a source row
+    /// and the bus above it without the second read seeing zero. An unknown voice reads silence.
+    ///
+    /// Deliberately NOT pure virtual. A backend with no continuous output - the null fallback, a
+    /// test double, anything that never mixes - has nothing to measure, and returning silence is
+    /// the correct answer for it rather than an unimplemented placeholder.
+    [[nodiscard]] virtual AudioMeterReadingUVE ReadVoiceMeterUVE(VoiceHandleUVE voice) const {
+        static_cast<void>(voice);
+        return kSilentAudioMeterUVE;
+    }
 
     /// A short human-readable backend name (e.g. `"Null"`), for logging/diagnostics.
     [[nodiscard]] virtual std::string_view GetBackendNameUVE() const noexcept = 0;
