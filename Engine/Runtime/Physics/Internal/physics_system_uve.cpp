@@ -16,6 +16,8 @@
 #include "uve/physics/angular_dynamics_uve.h"
 #include "uve/physics/area_3d_runtime_uve.h"
 #include "uve/physics/collision_pair_uve.h"
+#include "uve/physics/continuous_collision_uve.h"
+#include "uve/physics/detail/collider_world_aabb_cache_uve.h"
 #include "uve/physics/physics_material_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/rigid_3d_component_uve.h"
@@ -30,6 +32,24 @@ namespace {
 
 [[nodiscard]] bool IsFiniteVector3UVE(const Math::Vector3UVE& value) noexcept {
     return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+}
+
+/// Bounding sphere of a collider's world AABB: its centre plus the half-diagonal as radius.
+///
+/// Deliberately shape-agnostic. The cache also carries the authored shape, but the AABB is a
+/// superset by construction, so a sphere built from it can only ever stop a body EARLY - never
+/// late - and early is recoverable while a tunneled hit is not.
+[[nodiscard]] Physics::SweptSphereUVE MakeSweptSphereUVE(const Detail::ColliderWorldAabbUVE& collider,
+                                                        const Math::Vector3UVE& displacement) noexcept {
+    const Math::Vector3UVE center = collider.worldAabb.GetCenterUVE();
+    const Math::Vector3UVE extents{collider.worldAabb.max.x - center.x,
+                                   collider.worldAabb.max.y - center.y,
+                                   collider.worldAabb.max.z - center.z};
+    Physics::SweptSphereUVE sphere{};
+    sphere.center = center;
+    sphere.radius = std::sqrt(extents.x * extents.x + extents.y * extents.y + extents.z * extents.z);
+    sphere.displacement = displacement;
+    return sphere;
 }
 
 [[nodiscard]] bool TryIntegratePositionUVE(const Math::Vector3UVE& position,
@@ -173,8 +193,20 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
         return;
     }
     const std::vector<Area3DBodySpaceUVE> areaSpaces = CollectArea3DBodySpacesUVE(entityManager, m_gravity);
+    // One world-AABB snapshot for the whole step. Only the colliders' extents are needed, so this
+    // reuses the same deterministic cache the collision and raycast systems already build rather
+    // than introducing a second extraction path that could disagree with theirs.
+    const bool continuousCollisionEnabled = m_settings.continuousCollision.enabled;
+    std::vector<Detail::ColliderWorldAabbUVE> ccdColliders;
+    if (continuousCollisionEnabled) {
+        ccdColliders = Detail::BuildColliderWorldAabbCacheUVE(entityManager);
+    }
+    // Scratch for one mover's filtered target list, reused across entities. Cleared per body so a
+    // body that stops being fast cannot inherit the previous body's targets.
+    std::vector<Math::AabbUVE> ccdTargets;
     entityManager.ForEachUVE<Scene::TransformComponentUVE, Scene::Rigid3DComponentUVE>(
-        [&entityManager, &sceneGraph, &areaSpaces, this, fixedDeltaTimeSeconds](
+        [&entityManager, &sceneGraph, &areaSpaces, &ccdColliders, &ccdTargets, continuousCollisionEnabled,
+         this, fixedDeltaTimeSeconds](
             Scene::EntityUVE entity, const Scene::TransformComponentUVE& transform,
             Scene::Rigid3DComponentUVE& rigidBody) {
             if (!Scene::IsRigid3DComponentValidUVE(rigidBody)) {
@@ -257,8 +289,66 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
                 }
             }
 
+            // ---- continuous collision ---------------------------------------------------------
+            // The discrete step below moves the body by velocity * dt with no idea what lies
+            // between the two positions, so a body travelling more than its own extent in one step
+            // can pass clean through a wall. The sweep answers exactly one question - "how far can
+            // this body travel before it touches something?" - and shortens the step to that.
+            Math::Vector3UVE integrationVelocity = finalLinearVelocity;
+            if (continuousCollisionEnabled && fixedDeltaTimeSeconds > 0.0F) {
+                const Detail::ColliderWorldAabbUVE* ownCollider = nullptr;
+                for (const Detail::ColliderWorldAabbUVE& candidate : ccdColliders) {
+                    if (candidate.entity == entity) {
+                        ownCollider = &candidate;
+                        break;
+                    }
+                }
+                if (ownCollider != nullptr) {
+                    const Math::Vector3UVE displacement{
+                        finalLinearVelocity.x * fixedDeltaTimeSeconds,
+                        finalLinearVelocity.y * fixedDeltaTimeSeconds,
+                        finalLinearVelocity.z * fixedDeltaTimeSeconds};
+                    ccdTargets.clear();
+                    for (const Detail::ColliderWorldAabbUVE& target : ccdColliders) {
+                        if (target.entity == entity) {
+                            continue;
+                        }
+                        // Same two-way mask rule the collision system uses, so CCD cannot stop a
+                        // body against geometry the discrete resolver would have ignored.
+                        if ((ownCollider->collisionLayer & target.collisionMask) == 0U ||
+                            (target.collisionLayer & ownCollider->collisionMask) == 0U) {
+                            continue;
+                        }
+                        ccdTargets.push_back(target.worldAabb);
+                    }
+                    const ContinuousMotionResultUVE swept = ResolveContinuousMotionUVE(
+                        MakeSweptSphereUVE(*ownCollider, displacement), ccdTargets,
+                        m_settings.continuousCollision);
+                    if (swept.contact.has_value()) {
+                        const Math::Vector3UVE& normal = swept.contact->normal;
+                        const float intoSurface =
+                            finalLinearVelocity.x * normal.x + finalLinearVelocity.y * normal.y +
+                            finalLinearVelocity.z * normal.z;
+                        if (intoSurface < 0.0F) {
+                            // Remove only the component pressed into the surface: the tangential
+                            // part is what makes a body slide along a wall instead of sticking.
+                            finalLinearVelocity.x -= normal.x * intoSurface;
+                            finalLinearVelocity.y -= normal.y * intoSurface;
+                            finalLinearVelocity.z -= normal.z * intoSurface;
+                        }
+                        if (swept.contact->timeOfImpact > 0.0F) {
+                            const float inverseDelta = 1.0F / fixedDeltaTimeSeconds;
+                            integrationVelocity = Math::Vector3UVE{
+                                swept.displacement.x * inverseDelta,
+                                swept.displacement.y * inverseDelta,
+                                swept.displacement.z * inverseDelta};
+                        }
+                    }
+                }
+            }
+
             Scene::TransformComponentUVE newTransform = transform;
-            if (!TryIntegratePositionUVE(transform.localPosition, finalLinearVelocity, fixedDeltaTimeSeconds,
+            if (!TryIntegratePositionUVE(transform.localPosition, integrationVelocity, fixedDeltaTimeSeconds,
                                          newTransform.localPosition)) {
                 return;
             }
