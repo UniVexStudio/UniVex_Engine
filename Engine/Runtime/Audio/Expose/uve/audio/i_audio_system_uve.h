@@ -113,11 +113,14 @@ public:
 
     // --- Frame advance. ---
     /// Recomputes ComputeDistanceAttenuationUVE() for every live spatial source against the
-    /// current listener position (non-spatial sources use `volume` directly) and pushes the
-    /// resulting AudioVoiceParamsUVE to the underlying IAudioDeviceUVE via SetVoiceParamsUVE().
+    /// current listener position (non-spatial sources use `volume` directly), derives the stereo pan,
+    /// the directional cone gain and the Doppler pitch shift, and pushes the resulting
+    /// AudioVoiceParamsUVE to the underlying IAudioDeviceUVE via SetVoiceParamsUVE().
     /// Must be called once per frame, main-thread-only, after this frame's listener/source
-    /// positions are settled.
-    virtual void UpdateUVE() = 0;
+    /// positions are settled. `deltaSeconds` is the frame delta used to turn position changes into
+    /// velocities: 0 (or a non-finite value) disables Doppler for that frame, which is exactly what
+    /// a caller that does not track time wants.
+    virtual void UpdateUVE(float deltaSeconds) = 0;
 };
 
 } // namespace UVE::Audio

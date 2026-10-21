@@ -151,7 +151,7 @@ TEST_F(AudioSourceSystemUVETest, MovingEntity_UpdatesPushedPositionAndGain) {
     const Scene::EntityUVE entity = MakeAudioEntityUVE(audioSource);
 
     audioSourceSystem.SyncUVE(entityManager, audioSystem);
-    audioSystem.UpdateUVE();
+    audioSystem.UpdateUVE(0.0F);
 
     auto local = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
     local.localPosition = Math::Vector3UVE{5.0F, 0.0F, 0.0F};
@@ -160,7 +160,7 @@ TEST_F(AudioSourceSystemUVETest, MovingEntity_UpdatesPushedPositionAndGain) {
 
     device.ClearRecordedCallsUVE();
     audioSourceSystem.SyncUVE(entityManager, audioSystem);
-    audioSystem.UpdateUVE();
+    audioSystem.UpdateUVE(0.0F);
 
     const std::vector<RecordedAudioCallUVE>& recorded = device.GetRecordedCallsUVE();
     const auto iterator = std::find_if(recorded.begin(), recorded.end(), [](const RecordedAudioCallUVE& call) {

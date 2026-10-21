@@ -19,6 +19,11 @@ struct SourceStateUVE {
     AudioSourceDescUVE desc;
     std::string mixerGroup = std::string(kMasterAudioMixerGroupNameUVE);
     Math::Vector3UVE position{};
+    /// Last frame's position, kept only so UpdateUVE() can derive the velocity Doppler needs. The
+    /// flag exists because a source that has just appeared has not moved: treating its first
+    /// position as a displacement from the origin would invent one enormous velocity for one frame.
+    Math::Vector3UVE previousPosition{};
+    bool hasPreviousPosition = false;
     float volume = 1.0F;
     float pitch = 1.0F;
     Pcm16StreamRefillSchedulerUVE streamScheduler;
@@ -31,6 +36,8 @@ struct AudioSystemUVE::ImplUVE {
     IAudioDeviceUVE& audioDevice;
     IAudioClipResolverUVE* clipResolver = nullptr;
     Math::Vector3UVE listenerPosition{};
+    Math::Vector3UVE previousListenerPosition{};
+    bool hasPreviousListenerPosition = false;
     Math::Vector3UVE listenerForward{0.0F, 0.0F, -1.0F};
     Math::Vector3UVE listenerUp{0.0F, 1.0F, 0.0F};
     std::unordered_map<std::uint32_t, SourceStateUVE> sources;
@@ -323,14 +330,39 @@ bool AudioSystemUVE::ApplySourceBusChainUVE(const VoiceHandleUVE source,
     return m_impl->mixerGroups.ApplyBusChainUVE(iterator->second.mixerGroup, inputSamples, outputSamples);
 }
 
-void AudioSystemUVE::UpdateUVE() {
+void AudioSystemUVE::UpdateUVE(const float deltaSeconds) {
+    // A hitch must not manufacture a fast-moving source out of one late frame, and a caller that
+    // does not track time (delta 0) simply gets no Doppler - never a division by zero.
+    const float stepSeconds = (std::isfinite(deltaSeconds) && deltaSeconds > 0.0F)
+                                  ? std::min(deltaSeconds, kMaximumAudioVelocityStepSecondsUVE)
+                                  : 0.0F;
+    Math::Vector3UVE listenerVelocity{};
+    if (stepSeconds > 0.0F && m_impl->hasPreviousListenerPosition) {
+        listenerVelocity =
+            (m_impl->listenerPosition - m_impl->previousListenerPosition) * (1.0F / stepSeconds);
+    }
+    m_impl->previousListenerPosition = m_impl->listenerPosition;
+    m_impl->hasPreviousListenerPosition = true;
+    // The same forward/up pair the listener already carries; +X for the default orientation.
+    const Math::Vector3UVE listenerRight =
+        ComputeAudioListenerRightUVE(m_impl->listenerForward, m_impl->listenerUp);
+
     for (auto& [handleValue, state] : m_impl->sources) {
+        Math::Vector3UVE sourceVelocity{};
+        if (stepSeconds > 0.0F && state.hasPreviousPosition) {
+            sourceVelocity = (state.position - state.previousPosition) * (1.0F / stepSeconds);
+        }
+        state.previousPosition = state.position;
+        state.hasPreviousPosition = true;
+
         // Effective, not authored: the source hears its bus composed with every ancestor, muted and
         // solo-silenced buses included. The flat case (one bus under Master) is unchanged because
         // Master contributes unity.
         const float groupVolume = m_impl->mixerGroups.GetEffectiveVolumeUVE(state.mixerGroup);
         const float groupPitch = m_impl->mixerGroups.GetEffectivePitchUVE(state.mixerGroup);
         float attenuation = 1.0F;
+        float pan = 0.0F;
+        float dopplerPitch = 1.0F;
         if (state.desc.spatial) {
             const Math::Vector3UVE listenerDelta = state.position - m_impl->listenerPosition;
             const float distanceSquared = Math::LengthSquaredUVE(listenerDelta);
@@ -343,14 +375,26 @@ void AudioSystemUVE::UpdateUVE() {
                                                      state.desc.maxDistance, state.desc.attenuationModel)
                     : 0.0F;
             }
+            pan = ComputeAudioPanUVE(listenerDelta, listenerRight);
+            // The cone is measured from the emitter's axis to the direction it is being heard from;
+            // its gain multiplies the distance attenuation rather than replacing it.
+            const float coneAngle =
+                ComputeAudioConeAngleDegreesUVE(state.desc.coneDirection, -listenerDelta);
+            attenuation *= ComputeAudioConeAttenuationUVE(coneAngle, state.desc.coneInnerAngleDegrees,
+                                                           state.desc.coneOuterAngleDegrees,
+                                                           state.desc.coneOuterGain);
+            dopplerPitch = ComputeAudioDopplerPitchUVE(listenerVelocity, sourceVelocity, listenerDelta,
+                                                        state.desc.dopplerFactor);
         }
         AudioMixParametersUVE parameters;
-        if (!EvaluateAudioMixParametersUVE(state.volume, state.pitch, groupVolume, groupPitch, attenuation, parameters)) {
+        if (!EvaluateAudioMixParametersUVE(state.volume, state.pitch * dopplerPitch, groupVolume, groupPitch,
+                                            attenuation, parameters)) {
             UVE_ERROR("AudioSystemUVE: invalid mix parameters for source {}", handleValue);
             parameters = AudioMixParametersUVE{0.0F, 1.0F};
         }
         static_cast<void>(m_impl->audioDevice.SetVoiceParamsUVE(
-            VoiceHandleUVE{handleValue}, AudioVoiceParamsUVE{state.position, parameters.gain, parameters.pitch}));
+            VoiceHandleUVE{handleValue},
+            AudioVoiceParamsUVE{state.position, parameters.gain, parameters.pitch, pan}));
     }
 }
 
