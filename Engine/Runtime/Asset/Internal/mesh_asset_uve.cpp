@@ -21,10 +21,35 @@ namespace {
 constexpr std::uint32_t kMeshMaterialSectionTagUVE = 0x544D5655U;
 constexpr std::uint32_t kMaximumMeshMaterialSlotsUVE = 4096U;
 
+/// Tag that opens the optional morph-target section ('UVMP' little-endian), written after the
+/// material section. It carries the same unambiguity argument: read as a joint count it would be
+/// 1.3 billion, which fails the bound check on any file small enough to exist.
+constexpr std::uint32_t kMeshMorphSectionTagUVE = 0x504D5655U;
+
+/// Upper bound on a single target or joint NAME's serialized length. Names identify shapes and
+/// bones, not paragraphs; a longer one is corruption rather than content.
+constexpr std::uint32_t kMaximumMeshSectionNameBytesUVE = 256U;
+
+/// One sparse morph delta on disk: a vertex index plus three vec3s.
+constexpr std::size_t kSerializedMorphDeltaBytesUVE = sizeof(std::uint32_t) + sizeof(float) * 9U;
+
 [[nodiscard]] bool PeeksMaterialSectionUVE(const std::vector<std::byte>& payload, const std::size_t offset) {
     std::size_t peekOffset = offset;
     std::uint32_t tag = 0U;
     return Utilities::ReadUint32LeFromBufferUVE(payload, peekOffset, tag) && tag == kMeshMaterialSectionTagUVE;
+}
+
+[[nodiscard]] bool PeeksMorphSectionUVE(const std::vector<std::byte>& payload, const std::size_t offset) {
+    std::size_t peekOffset = offset;
+    std::uint32_t tag = 0U;
+    return Utilities::ReadUint32LeFromBufferUVE(payload, peekOffset, tag) && tag == kMeshMorphSectionTagUVE;
+}
+
+/// Whether a known tagged section starts here. Every "does anything trail this?" test must use
+/// this rather than one specific tag, or a file whose next section is a different one gets read as
+/// if it were not there at all.
+[[nodiscard]] bool PeeksTrailingSectionUVE(const std::vector<std::byte>& payload, const std::size_t offset) {
+    return PeeksMaterialSectionUVE(payload, offset) || PeeksMorphSectionUVE(payload, offset);
 }
 
 [[nodiscard]] bool ReadVector3FromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
@@ -253,6 +278,112 @@ bool IsMeshSkinningDataValidUVE(const MeshAssetUVE& mesh) {
     return true;
 }
 
+bool IsMeshMorphTargetDataValidUVE(const MeshAssetUVE& mesh) {
+    // A mesh with neither shapes nor default weights is valid - that is every static mesh, and
+    // every mesh from before blend shapes existed.
+    if (mesh.morphTargets.empty() && mesh.defaultMorphWeights.empty()) {
+        return true;
+    }
+    if (mesh.morphTargets.size() > kMaximumMeshMorphTargetsUVE) {
+        UVE_ERROR("MeshAssetUVE: {} morph targets exceeds the format's cap of {}",
+                  mesh.morphTargets.size(), kMaximumMeshMorphTargetsUVE);
+        return false;
+    }
+    if (!mesh.defaultMorphWeights.empty() && mesh.defaultMorphWeights.size() != mesh.morphTargets.size()) {
+        UVE_ERROR("MeshAssetUVE: {} default morph weights for {} morph targets - a partial weight "
+                  "set has no meaning for the shapes it omits",
+                  mesh.defaultMorphWeights.size(), mesh.morphTargets.size());
+        return false;
+    }
+    for (const float weight : mesh.defaultMorphWeights) {
+        if (!std::isfinite(weight)) {
+            UVE_ERROR("MeshAssetUVE: a default morph weight is non-finite");
+            return false;
+        }
+    }
+    const auto vertexCount = static_cast<std::uint32_t>(mesh.vertices.size());
+    for (std::size_t targetIndex = 0U; targetIndex < mesh.morphTargets.size(); ++targetIndex) {
+        const MeshMorphTargetUVE& target = mesh.morphTargets[targetIndex];
+        if (target.deltas.size() > kMaximumMeshMorphTargetDeltasUVE) {
+            UVE_ERROR("MeshAssetUVE: morph target {} carries {} deltas, past the cap of {}",
+                      targetIndex, target.deltas.size(), kMaximumMeshMorphTargetDeltasUVE);
+            return false;
+        }
+        std::uint32_t previousIndex = 0U;
+        bool hasPrevious = false;
+        for (const MeshMorphTargetDeltaUVE& delta : target.deltas) {
+            if (delta.vertexIndex >= vertexCount) {
+                UVE_ERROR("MeshAssetUVE: morph target {} moves vertex {} but the mesh has {}",
+                          targetIndex, delta.vertexIndex, vertexCount);
+                return false;
+            }
+            // Strictly ascending, which is what makes a duplicate entry a detectable defect and
+            // what lets an eval pass depend on accumulation order being fixed.
+            if (hasPrevious && delta.vertexIndex <= previousIndex) {
+                UVE_ERROR("MeshAssetUVE: morph target {} lists vertex {} out of order or twice",
+                          targetIndex, delta.vertexIndex);
+                return false;
+            }
+            previousIndex = delta.vertexIndex;
+            hasPrevious = true;
+            if (!Math::IsFiniteUVE(delta.positionDelta) || !Math::IsFiniteUVE(delta.normalDelta) ||
+                !Math::IsFiniteUVE(delta.tangentDelta)) {
+                UVE_ERROR("MeshAssetUVE: morph target {} has a non-finite delta on vertex {}",
+                          targetIndex, delta.vertexIndex);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool AccumulateMorphTargetsUVE(const std::span<const MeshVertexUVE> bindVertices,
+                               const std::span<const MeshMorphTargetUVE> targets,
+                               const std::span<const float> weights,
+                               std::vector<MeshVertexUVE>& outVertices) {
+    if (targets.size() != weights.size()) {
+        UVE_ERROR("MeshAssetUVE: {} morph weights for {} morph targets - the weight array is "
+                  "indexed by target, so it must match one for one",
+                  weights.size(), targets.size());
+        return false;
+    }
+    for (const float weight : weights) {
+        if (!std::isfinite(weight)) {
+            UVE_ERROR("MeshAssetUVE: a morph weight is non-finite");
+            return false;
+        }
+    }
+    std::vector<MeshVertexUVE> accumulated(bindVertices.begin(), bindVertices.end());
+    for (std::size_t targetIndex = 0U; targetIndex < targets.size(); ++targetIndex) {
+        // Exactly zero is the common case on a large rig - 52 shapes, three of them active - so
+        // skipping is what keeps an unused shape free rather than merely cheap.
+        const float weight = weights[targetIndex];
+        if (weight == 0.0F) {
+            continue;
+        }
+        for (const MeshMorphTargetDeltaUVE& delta : targets[targetIndex].deltas) {
+            // Structurally invalid input (an out-of-range index) must not read out of bounds.
+            if (delta.vertexIndex >= accumulated.size()) {
+                UVE_ERROR("MeshAssetUVE: morph target {} moves vertex {} but the mesh has {}",
+                          targetIndex, delta.vertexIndex, accumulated.size());
+                return false;
+            }
+            MeshVertexUVE& vertex = accumulated[delta.vertexIndex];
+            vertex.position += delta.positionDelta * weight;
+            vertex.normal += delta.normalDelta * weight;
+            vertex.tangent += delta.tangentDelta * weight;
+            if (!Math::IsFiniteUVE(vertex.position) || !Math::IsFiniteUVE(vertex.normal) ||
+                !Math::IsFiniteUVE(vertex.tangent)) {
+                UVE_ERROR("MeshAssetUVE: morph target {} overflowed vertex {} into a non-finite value",
+                          targetIndex, delta.vertexIndex);
+                return false;
+            }
+        }
+    }
+    outVertices = std::move(accumulated);
+    return true;
+}
+
 bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) {
     const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
     if (!file.has_value()) {
@@ -334,7 +465,7 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
     // detect "this file predates skinning". A file that stops here is a static mesh, not an error.
     std::vector<MeshSkinningInfluenceUVE> skinningInfluences;
     std::vector<MeshJointUVE> joints;
-    if (offset < payload.size() && !PeeksMaterialSectionUVE(payload, offset)) {
+    if (offset < payload.size() && !PeeksTrailingSectionUVE(payload, offset)) {
         std::uint32_t jointCount = 0;
         if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, jointCount)) {
             UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated joint count", path.string());
@@ -386,16 +517,16 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
             skinningInfluences.push_back(influence);
         }
 
-        if (offset < payload.size() && !PeeksMaterialSectionUVE(payload, offset)) {
+        if (offset < payload.size() && !PeeksTrailingSectionUVE(payload, offset)) {
             std::uint32_t nameCount = 0;
             if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, nameCount) || nameCount != joints.size()) {
                 UVE_ERROR("MeshAssetUVE: \"{}\" has a joint name table that does not match its joints", path.string());
                 return false;
             }
-            constexpr std::uint32_t kMaximumJointNameBytesUVE = 256U;
             for (MeshJointUVE& joint : joints) {
                 std::uint32_t length = 0;
-                if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, length) || length > kMaximumJointNameBytesUVE ||
+                if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, length) ||
+                    length > kMaximumMeshSectionNameBytesUVE ||
                     payload.size() - offset < length) {
                     UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated joint name", path.string());
                     return false;
@@ -431,6 +562,82 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
         }
     }
 
+    // Blend shapes trail every other section, behind their own tag, for the same reason skinning
+    // and materials do: a file written before shapes existed simply ends, and a mesh without
+    // shapes keeps writing the exact bytes it always did.
+    std::vector<MeshMorphTargetUVE> morphTargets;
+    std::vector<float> defaultMorphWeights;
+    if (offset < payload.size() && PeeksMorphSectionUVE(payload, offset)) {
+        std::uint32_t tag = 0U;
+        std::uint32_t targetCount = 0U;
+        if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, tag) ||
+            !Utilities::ReadUint32LeFromBufferUVE(payload, offset, targetCount) ||
+            targetCount > kMaximumMeshMorphTargetsUVE) {
+            UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated or impossible morph target count", path.string());
+            return false;
+        }
+        // Every target costs at least its name length + delta count, so a count larger than the
+        // bytes left cannot be honest. Checked before reserve() so a hostile file cannot make the
+        // loader allocate gigabytes it will never fill.
+        if (targetCount > (payload.size() - offset) / (sizeof(std::uint32_t) * 2U)) {
+            UVE_ERROR("MeshAssetUVE: \"{}\" claims {} morph targets with {} bytes left", path.string(),
+                      targetCount, payload.size() - offset);
+            return false;
+        }
+        morphTargets.reserve(targetCount);
+        for (std::uint32_t targetIndex = 0U; targetIndex < targetCount; ++targetIndex) {
+            MeshMorphTargetUVE target;
+            std::uint32_t nameLength = 0U;
+            std::uint32_t deltaCount = 0U;
+            if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, nameLength) ||
+                nameLength > kMaximumMeshSectionNameBytesUVE || payload.size() - offset < nameLength) {
+                UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated morph target name", path.string());
+                return false;
+            }
+            target.name.assign(reinterpret_cast<const char*>(payload.data() + offset), nameLength);
+            offset += nameLength;
+            if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, deltaCount) ||
+                deltaCount > kMaximumMeshMorphTargetDeltasUVE ||
+                deltaCount > (payload.size() - offset) / kSerializedMorphDeltaBytesUVE) {
+                UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated or impossible morph delta count", path.string());
+                return false;
+            }
+            target.deltas.reserve(deltaCount);
+            for (std::uint32_t deltaIndex = 0U; deltaIndex < deltaCount; ++deltaIndex) {
+                MeshMorphTargetDeltaUVE delta;
+                if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, delta.vertexIndex) ||
+                    !ReadVector3FromBufferUVE(payload, offset, delta.positionDelta) ||
+                    !ReadVector3FromBufferUVE(payload, offset, delta.normalDelta) ||
+                    !ReadVector3FromBufferUVE(payload, offset, delta.tangentDelta)) {
+                    UVE_ERROR("MeshAssetUVE: \"{}\" has truncated morph delta data", path.string());
+                    return false;
+                }
+                target.deltas.push_back(delta);
+            }
+            morphTargets.push_back(std::move(target));
+        }
+        // "All zero" and "the source said nothing" are different states - the first is an authored
+        // rest pose, the second is an asset that has no opinion - and an implicit size cannot tell
+        // them apart at the end of a payload. One explicit count resolves both without a sentinel.
+        std::uint32_t weightCount = 0U;
+        if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, weightCount) ||
+            (weightCount != 0U && weightCount != targetCount)) {
+            UVE_ERROR("MeshAssetUVE: \"{}\" has an impossible default morph weight count", path.string());
+            return false;
+        }
+        if (weightCount > 0U) {
+            defaultMorphWeights.reserve(weightCount);
+            for (std::uint32_t weightIndex = 0U; weightIndex < weightCount; ++weightIndex) {
+                float weight = 0.0F;
+                if (!Utilities::ReadFloatLeFromBufferUVE(payload, offset, weight)) {
+                    UVE_ERROR("MeshAssetUVE: \"{}\" has truncated default morph weights", path.string());
+                    return false;
+                }
+                defaultMorphWeights.push_back(weight);
+            }
+        }
+    }
+
     if (!TryGenerateMeshTangentsUVE(vertices, indices)) {
         UVE_ERROR("MeshAssetUVE: \"{}\" has non-finite generated tangent data", path.string());
         return false;
@@ -444,8 +651,14 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
     candidate.skinningInfluences = std::move(skinningInfluences);
     candidate.joints = std::move(joints);
     candidate.materialGuids = std::move(materialGuids);
+    candidate.morphTargets = std::move(morphTargets);
+    candidate.defaultMorphWeights = std::move(defaultMorphWeights);
     if (!IsMeshSkinningDataValidUVE(candidate)) {
         UVE_ERROR("MeshAssetUVE: \"{}\" has structurally invalid skinning data", path.string());
+        return false;
+    }
+    if (!IsMeshMorphTargetDataValidUVE(candidate)) {
+        UVE_ERROR("MeshAssetUVE: \"{}\" has structurally invalid morph target data", path.string());
         return false;
     }
     outMesh = std::move(candidate);
@@ -513,6 +726,49 @@ bool SaveMeshAssetUVE(const MeshAssetUVE& mesh, const std::filesystem::path& pat
         Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(mesh.materialGuids.size()));
         for (const AssetGuidUVE guid : mesh.materialGuids) {
             Utilities::AppendUint64LeUVE(payload, guid.value);
+        }
+    }
+
+    // Blend shapes, tagged and last, written only when the mesh has any - a mesh without shapes
+    // keeps producing the exact bytes every previous version of this engine produced.
+    if (!mesh.morphTargets.empty()) {
+        if (mesh.morphTargets.size() > kMaximumMeshMorphTargetsUVE) {
+            UVE_ERROR("MeshAssetUVE: \"{}\" carries {} morph targets; the format caps them at {}",
+                      path.string(), mesh.morphTargets.size(), kMaximumMeshMorphTargetsUVE);
+            return false;
+        }
+        if (!mesh.defaultMorphWeights.empty() && mesh.defaultMorphWeights.size() != mesh.morphTargets.size()) {
+            UVE_ERROR("MeshAssetUVE: \"{}\" has {} default morph weights for {} targets", path.string(),
+                      mesh.defaultMorphWeights.size(), mesh.morphTargets.size());
+            return false;
+        }
+        Utilities::AppendUint32LeUVE(payload, kMeshMorphSectionTagUVE);
+        Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(mesh.morphTargets.size()));
+        for (const MeshMorphTargetUVE& target : mesh.morphTargets) {
+            if (target.name.size() > kMaximumMeshSectionNameBytesUVE) {
+                UVE_ERROR("MeshAssetUVE: \"{}\" has a morph target name of {} bytes; the format caps "
+                          "names at {}", path.string(), target.name.size(), kMaximumMeshSectionNameBytesUVE);
+                return false;
+            }
+            Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(target.name.size()));
+            const auto* const bytes = reinterpret_cast<const std::byte*>(target.name.data());
+            payload.insert(payload.end(), bytes, bytes + target.name.size());
+            if (target.deltas.size() > kMaximumMeshMorphTargetDeltasUVE) {
+                UVE_ERROR("MeshAssetUVE: \"{}\" has a morph target with {} deltas; the format caps them "
+                          "at {}", path.string(), target.deltas.size(), kMaximumMeshMorphTargetDeltasUVE);
+                return false;
+            }
+            Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(target.deltas.size()));
+            for (const MeshMorphTargetDeltaUVE& delta : target.deltas) {
+                Utilities::AppendUint32LeUVE(payload, delta.vertexIndex);
+                AppendVector3UVE(payload, delta.positionDelta);
+                AppendVector3UVE(payload, delta.normalDelta);
+                AppendVector3UVE(payload, delta.tangentDelta);
+            }
+        }
+        Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(mesh.defaultMorphWeights.size()));
+        for (const float weight : mesh.defaultMorphWeights) {
+            Utilities::AppendFloatLeUVE(payload, weight);
         }
     }
 

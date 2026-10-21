@@ -3,6 +3,7 @@
 
 #include "uve/asset/asset_importer_uve.h"
 
+#include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -16,6 +17,7 @@
 #include <gtest/gtest.h>
 
 #include "uve/asset/asset_database_uve.h"
+#include "uve/asset/asset_import_sidecar_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
 
 namespace UVE::Asset::Tests {
@@ -78,6 +80,71 @@ void AppendVector3UVE(std::vector<std::byte>& bytes, const float x, const float 
            "    {\"bufferView\":3,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}\n"
            "  ],\n"
            "  \"meshes\": [{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2},\"indices\":3,\"mode\":4}]}]\n"
+           "}\n";
+}
+
+/// A triangle plus two blend shapes. Layout, all float32 unless noted:
+///   [0,36)   positions   [36,72) normals   [72,96) texcoords   [96,102) u16 indices
+///   [104,140) "jawOpen" displacements      [140,176) "blink" displacements
+/// 104 rather than 102 so the second block starts on a 4-byte boundary, which is what glTF
+/// requires of a float accessor; the two padding bytes are part of the file.
+[[nodiscard]] std::vector<std::byte> MakeTriangleWithMorphTargetsBufferUVE() {
+    std::vector<std::byte> bytes;
+    AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+    AppendVector3UVE(bytes, 1.0F, 0.0F, 0.0F);
+    AppendVector3UVE(bytes, 0.0F, 1.0F, 0.0F);
+    AppendVector3UVE(bytes, 0.0F, 0.0F, 1.0F);
+    AppendVector3UVE(bytes, 0.0F, 0.0F, 1.0F);
+    AppendVector3UVE(bytes, 0.0F, 0.0F, 1.0F);
+    for (const float value : {0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F}) {
+        AppendFloatLittleEndianUVE(bytes, value);
+    }
+    AppendU16LittleEndianUVE(bytes, 0U);
+    AppendU16LittleEndianUVE(bytes, 1U);
+    AppendU16LittleEndianUVE(bytes, 2U);
+    bytes.push_back(std::byte{0U});
+    bytes.push_back(std::byte{0U});
+    // "jawOpen": only the third vertex moves.
+    AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+    AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+    AppendVector3UVE(bytes, 0.0F, -0.5F, 0.0F);
+    // "blink": no vertex moves at all.
+    AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+    AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+    AppendVector3UVE(bytes, 0.0F, 0.0F, 0.0F);
+    return bytes;
+}
+
+[[nodiscard]] std::string MakeGltfJsonWithMorphTargetsUVE(const std::string_view uri) {
+    const std::string bufferUri = uri.empty() ? std::string{} : "\"uri\":\"" + std::string(uri) + "\",\n    ";
+    return "{\n"
+           "  \"asset\": {\"version\": \"2.0\"},\n"
+           "  \"buffers\": [{" + bufferUri + "\"byteLength\": 176}],\n"
+           "  \"bufferViews\": [\n"
+           "    {\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},\n"
+           "    {\"buffer\":0,\"byteOffset\":36,\"byteLength\":36},\n"
+           "    {\"buffer\":0,\"byteOffset\":72,\"byteLength\":24},\n"
+           "    {\"buffer\":0,\"byteOffset\":96,\"byteLength\":6},\n"
+           "    {\"buffer\":0,\"byteOffset\":104,\"byteLength\":36},\n"
+           "    {\"buffer\":0,\"byteOffset\":140,\"byteLength\":36}\n"
+           "  ],\n"
+           "  \"accessors\": [\n"
+           "    {\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},\n"
+           "    {\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},\n"
+           "    {\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"},\n"
+           "    {\"bufferView\":3,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"},\n"
+           "    {\"bufferView\":4,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},\n"
+           "    {\"bufferView\":5,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}\n"
+           "  ],\n"
+           "  \"meshes\": [{\n"
+           "    \"weights\": [0.5, 0.0],\n"
+           "    \"extras\": {\"targetNames\": [\"jawOpen\", \"blink\"]},\n"
+           "    \"primitives\":[{\n"
+           "      \"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2},\n"
+           "      \"indices\":3,\"mode\":4,\n"
+           "      \"targets\":[{\"POSITION\":4},{\"POSITION\":5}]\n"
+           "    }]\n"
+           "  }]\n"
            "}\n";
 }
 
@@ -146,6 +213,64 @@ TEST(GltfImporterUVETest, ImportUVE_ValidExternalBufferPublishesUveModelAndRegis
     EXPECT_EQ(mesh.vertices[0].normal, (Math::Vector3UVE{0.0F, 0.0F, 1.0F}));
     EXPECT_EQ(mesh.localBounds,
               (Math::AabbUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 0.0F}}));
+    RemoveFilesUVE({sourcePath, bufferPath, destinationPath});
+}
+
+TEST(GltfImporterUVETest, ImportUVE_ImportsMorphTargetsNamesAndDefaultWeights) {
+    const std::filesystem::path sourcePath = "uve_gltf_importer_tests_morph.gltf";
+    const std::filesystem::path bufferPath = "uve_gltf_importer_tests_morph.bin";
+    const std::filesystem::path destinationPath = "uve_gltf_importer_tests_morph.uvmodel";
+    RemoveFilesUVE({sourcePath, bufferPath, destinationPath});
+    WriteBytesUVE(bufferPath, MakeTriangleWithMorphTargetsBufferUVE());
+    WriteTextUVE(sourcePath, MakeGltfJsonWithMorphTargetsUVE(bufferPath.filename().string()));
+
+    AssetImporterUVE importer;
+    AssetDatabaseUVE database;
+    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, database);
+    ASSERT_NE(guid, kInvalidAssetGuidUVE);
+
+    MeshAssetUVE mesh;
+    ASSERT_TRUE(LoadMeshAssetUVE(destinationPath, mesh));
+    ASSERT_EQ(mesh.morphTargets.size(), 2U);
+    EXPECT_EQ(mesh.morphTargets[0].name, "jawOpen");
+    EXPECT_EQ(mesh.morphTargets[1].name, "blink");
+    // "jawOpen" keeps only the one vertex it actually moves; "blink" moves nothing and keeps an
+    // empty delta list so its weight slot keeps its index.
+    ASSERT_EQ(mesh.morphTargets[0].deltas.size(), 1U);
+    EXPECT_EQ(mesh.morphTargets[0].deltas[0].vertexIndex, 2U);
+    EXPECT_EQ(mesh.morphTargets[0].deltas[0].positionDelta, (Math::Vector3UVE{0.0F, -0.5F, 0.0F}));
+    EXPECT_TRUE(mesh.morphTargets[1].deltas.empty());
+    EXPECT_EQ(mesh.defaultMorphWeights, (std::vector<float>{0.5F, 0.0F}));
+
+    // And the weights actually drive the geometry through the eval path the runtime uses.
+    std::vector<MeshVertexUVE> morphed;
+    const std::array<float, 2U> weights{1.0F, 0.0F};
+    ASSERT_TRUE(AccumulateMorphTargetsUVE(mesh.vertices, mesh.morphTargets, weights, morphed));
+    EXPECT_EQ(morphed[2].position, (Math::Vector3UVE{0.0F, 0.5F, 0.0F}));
+    RemoveFilesUVE({sourcePath, bufferPath, destinationPath});
+}
+
+TEST(GltfImporterUVETest, ImportUVE_MorphTargetImportOffSkipsShapesEntirely) {
+    const std::filesystem::path sourcePath = "uve_gltf_importer_tests_morph_off.gltf";
+    const std::filesystem::path bufferPath = "uve_gltf_importer_tests_morph_off.bin";
+    const std::filesystem::path destinationPath = "uve_gltf_importer_tests_morph_off.uvmodel";
+    RemoveFilesUVE({sourcePath, bufferPath, destinationPath});
+    WriteBytesUVE(bufferPath, MakeTriangleWithMorphTargetsBufferUVE());
+    WriteTextUVE(sourcePath, MakeGltfJsonWithMorphTargetsUVE(bufferPath.filename().string()));
+
+    MeshImportSettingsUVE settings;
+    settings.importMorphTargets = false;
+    AssetImporterUVE importer;
+    AssetDatabaseUVE database;
+    ASSERT_NE(importer.ImportUVE(sourcePath, destinationPath, database, settings), kInvalidAssetGuidUVE);
+
+    MeshAssetUVE mesh;
+    ASSERT_TRUE(LoadMeshAssetUVE(destinationPath, mesh));
+    // The setting is honoured, not merely recorded: the shapes are absent from the asset, so the
+    // base mesh is all anyone downstream can see.
+    EXPECT_TRUE(mesh.morphTargets.empty());
+    EXPECT_TRUE(mesh.defaultMorphWeights.empty());
+    EXPECT_EQ(mesh.vertices.size(), 3U);
     RemoveFilesUVE({sourcePath, bufferPath, destinationPath});
 }
 

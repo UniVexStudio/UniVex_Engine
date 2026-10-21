@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -22,6 +23,7 @@
 
 #include "import_helpers_uve.h"
 #include "gltf_document_uve.h"
+#include "uve/asset/asset_import_sidecar_uve.h"
 
 #include "uve/asset/gltf_mesh_converter_uve.h"
 #include "uve/asset/gltf_metadata_uve.h"
@@ -149,8 +151,55 @@ constexpr std::string_view kGltfTemporarySuffixUVE = ".uve_gltf_tmp";
     return outBuffer.size() >= *byteLength;
 }
 
+/// Reads `mesh.extras.targetNames`, the only place glTF carries blend-shape names. A missing or
+/// malformed array yields no names, which the converter turns into deterministic `targetN` ones.
+[[nodiscard]] std::vector<std::string> ReadMorphTargetNamesUVE(const nlohmann::json& mesh) {
+    std::vector<std::string> names;
+    if (!mesh.contains("extras") || !mesh.at("extras").is_object() ||
+        !mesh.at("extras").contains("targetNames") || !mesh.at("extras").at("targetNames").is_array()) {
+        return names;
+    }
+    const auto& array = mesh.at("extras").at("targetNames");
+    if (array.size() > kMaximumMeshMorphTargetsUVE) {
+        return names;
+    }
+    names.reserve(array.size());
+    for (const auto& entry : array) {
+        names.push_back(entry.is_string() ? entry.get<std::string>() : std::string{});
+    }
+    return names;
+}
+
+/// Reads `mesh.weights`: the rest-pose weight of every morph target, or an empty vector when the
+/// source declared none (a declared all-zero array stays a declared array - the two mean different
+/// things to an author).
+[[nodiscard]] bool ReadDefaultMorphWeightsUVE(const nlohmann::json& mesh, const std::size_t targetCount,
+                                              std::vector<float>& outWeights) {
+    outWeights.clear();
+    if (!mesh.contains("weights")) {
+        return true;
+    }
+    if (!mesh.at("weights").is_array() || mesh.at("weights").size() != targetCount ||
+        targetCount > kMaximumMeshMorphTargetsUVE) {
+        return false;
+    }
+    outWeights.reserve(targetCount);
+    for (const auto& entry : mesh.at("weights")) {
+        if (!entry.is_number()) {
+            return false;
+        }
+        const double value = entry.get<double>();
+        if (!std::isfinite(value) || value < -static_cast<double>(std::numeric_limits<float>::max()) ||
+            value > static_cast<double>(std::numeric_limits<float>::max())) {
+            return false;
+        }
+        outWeights.push_back(static_cast<float>(value));
+    }
+    return true;
+}
+
 [[nodiscard]] bool ConvertDocumentUVE(const nlohmann::json& document, const std::vector<std::byte>& buffer,
-                                      MeshAssetUVE& outMesh) {
+                                      const bool importMorphTargets, MeshAssetUVE& outMesh) {
     if (!document.contains("buffers") || !document.at("buffers").is_array() ||
         document.at("buffers").size() != 1U || !document.at("buffers").at(0).is_object()) {
         return false;
@@ -203,12 +252,65 @@ constexpr std::string_view kGltfTemporarySuffixUVE = ".uve_gltf_tmp";
         if (!indices) return false;
         source.indices = *indices;
     }
-    return ConvertGltfPrimitiveUVE(source, outMesh);
+
+    // Blend shapes. The setting is honoured here rather than after the fact: a user who turned
+    // morph-target import off gets the base mesh and pays nothing for the shapes they declined.
+    GltfMorphTargetSetUVE morphSet;
+    if (importMorphTargets && primitive.contains("targets")) {
+        if (!primitive.at("targets").is_array() ||
+            primitive.at("targets").size() > kMaximumMeshMorphTargetsUVE) {
+            return false;
+        }
+        const auto& mesh = document.at("meshes").at(0);
+        morphSet.names = ReadMorphTargetNamesUVE(mesh);
+        morphSet.targets.reserve(primitive.at("targets").size());
+        for (const auto& targetJson : primitive.at("targets")) {
+            if (!targetJson.is_object()) {
+                return false;
+            }
+            // POSITION is mandatory in a glTF morph target: a shape with no displacement is not a
+            // shape, and accepting one would create a weight slot that moves nothing.
+            const auto targetPositionIndex = Detail::ReadJsonUintUVE(targetJson, "POSITION", true);
+            if (!targetPositionIndex) {
+                return false;
+            }
+            const auto targetPositions =
+                Detail::BuildAccessorViewUVE(document, buffer, *targetPositionIndex, "VEC3", false);
+            if (!targetPositions) {
+                return false;
+            }
+            GltfMorphTargetSourceUVE targetSource;
+            targetSource.positions = *targetPositions;
+            if (targetJson.contains("NORMAL")) {
+                const auto normalIndex = Detail::ReadJsonUintUVE(targetJson, "NORMAL", true);
+                if (!normalIndex) return false;
+                const auto normals = Detail::BuildAccessorViewUVE(document, buffer, *normalIndex, "VEC3", false);
+                if (!normals) return false;
+                targetSource.normals = *normals;
+            }
+            if (targetJson.contains("TANGENT")) {
+                const auto tangentIndex = Detail::ReadJsonUintUVE(targetJson, "TANGENT", true);
+                if (!tangentIndex) return false;
+                const auto tangents = Detail::BuildAccessorViewUVE(document, buffer, *tangentIndex, "VEC3", false);
+                if (!tangents) return false;
+                targetSource.tangents = *tangents;
+            }
+            morphSet.targets.push_back(std::move(targetSource));
+        }
+        if (!ReadDefaultMorphWeightsUVE(mesh, morphSet.targets.size(), morphSet.defaultWeights)) {
+            return false;
+        }
+    }
+    if (morphSet.IsEmptyUVE()) {
+        return ConvertGltfPrimitiveUVE(source, outMesh);
+    }
+    return ConvertGltfPrimitiveUVE(source, morphSet, outMesh);
 }
 
 [[nodiscard]] bool ImportGltfSourceUVE(const std::filesystem::path& sourcePath,
                                        const std::filesystem::path& destinationPath,
-                                       const AssetImportSettingsUVE& /*settings*/) {
+                                       const AssetImportSettingsUVE& settings) {
+    const MeshImportSettingsUVE meshSettings = ResolveMeshImportSettingsUVE(settings);
     try {
         if (destinationPath.extension() != ".uvmodel") {
             UVE_ERROR("GltfImporterUVE: destination \"{}\" must use the .uvmodel extension",
@@ -228,7 +330,7 @@ constexpr std::string_view kGltfTemporarySuffixUVE = ".uve_gltf_tmp";
             return false;
         }
         MeshAssetUVE mesh;
-        if (!ConvertDocumentUVE(document, buffer, mesh)) {
+        if (!ConvertDocumentUVE(document, buffer, meshSettings.importMorphTargets, mesh)) {
             UVE_ERROR("GltfImporterUVE: source \"{}\" failed bounded one-primitive mesh conversion",
                       sourcePath.string());
             return false;
