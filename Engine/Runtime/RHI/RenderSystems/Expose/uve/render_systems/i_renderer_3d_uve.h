@@ -203,6 +203,30 @@ struct Renderer3DFrameDiagnosticsUVE final {
     bool bloomPassRecorded = false;
     /// Number of bloom scales actually blurred and composited this frame, or zero when inactive.
     std::uint32_t bloomMipCountUsed = 0U;
+
+    /// Spot lights that passed the atlas-shadow eligibility test this frame, and how many of those
+    /// actually owned a tile AND culled at least one caster into it. The difference between the
+    /// two is the interesting number: an eligible light whose tile ended up empty means the light's
+    /// cone reaches the view frustum but no shadow caster is inside it, and reporting that
+    /// separately is what makes "why is there no shadow here?" answerable from a diagnostic instead
+    /// of from the scene graph.
+    std::size_t spotShadowCandidates = 0U;
+    std::size_t spotShadowTilesActive = 0U;
+    /// Edge length of the tile every active spot shadow used this frame, 0 when none did. Lower
+    /// than the configured point/spot resolution means the frame had more casters than one tile
+    /// per light could fit at that size and the planner halved it until they all fit.
+    std::uint32_t spotShadowTileResolution = 0U;
+    /// Atlas passes recorded this frame (the single clear plus one depth pass per active light), and
+    /// the spot-light depth draws those passes issued. Separate from `shadowBatchesRecorded` because
+    /// the directional cascades and the atlas have completely different cost shapes.
+    std::size_t spotShadowPassesRecorded = 0U;
+    std::size_t spotShadowDrawCallsRecorded = 0U;
+    /// Batching outcome inside the atlas passes. A spot light that culled two objects and drew them
+    /// in one instanced batch reports batches=1, items=2; a light that fell back to the
+    /// uninstanced path reports items=2, batches=0 and two draws.
+    std::size_t spotShadowBatchesRecorded = 0U;
+    std::size_t spotShadowBatchedItems = 0U;
+    std::size_t spotShadowInstancedDrawCallsRecorded = 0U;
 };
 
 /// IRenderer3DUVE is the engine's final per-frame render orchestrator (the spec's `Renderer3DUVE`,
@@ -314,6 +338,15 @@ public:
     virtual void SetShadowBiasDefaultsUVE(float depthBias, float normalBias) noexcept {
         static_cast<void>(depthBias);
         static_cast<void>(normalBias);
+    }
+
+    /// Requested atlas tile edge, in pixels, for spot-light shadows (EngineConfigUVE::
+    /// pointSpotShadowResolutionUVE / the "rendering.shadows.pointSpotCubeResolution" key). The
+    /// renderer rounds to a power of two and halves it further when the frame holds more casters than
+    /// one tile per light at that size can fit. Default: no-op, so test doubles that never render a
+    /// spot shadow need not own the state.
+    virtual void SetSpotShadowTileResolutionUVE(std::uint32_t resolution) noexcept {
+        static_cast<void>(resolution);
     }
 
     /// Sets the viewport shading mode (0: Lit, 1: Unshaded, 2: Wireframe, 3: Lighting, 4: Normals).

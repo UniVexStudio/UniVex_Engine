@@ -151,11 +151,23 @@ uniform vec3 uReflectionProbeAxisZ;
 uniform vec3 uReflectionProbeHalfExtents;
 uniform samplerCube uReflectionProbeCube;
 
-// Unified 2D Shadow Atlas for Spot & Point Lights (Texture slot 7)
+// Unified 2D shadow atlas for spot and point lights, sampled from texture slot 15 - the LAST unit
+// inside GLES3's guaranteed 16-unit floor, chosen so it cannot shadow one of the eleven dense
+// material/cascade/probe units below it. The renderer binds it there through
+// kShadowAtlasTextureSlotUVE; the two names are one contract.
+//
+// Every array here is indexed by the light's slot in uLights[], not by "nth shadowed light": a light
+// whose tile was dropped this frame simply has uLightShadowEnabled == 0 and its own slot stays empty.
 uniform sampler2D uShadowAtlasTexture;
 uniform mat4 uLightShadowMatrices[4];
 uniform vec4 uLightShadowTileRects[4];
 uniform int uLightShadowEnabled[4];
+// (near, far) of each light's projection, needed to convert a world-space bias into normalized
+// depth at the receiver - see AtlasShadowDepthBiasUVE.
+uniform vec2 uLightShadowDepthRange[4];
+// 1 / atlas resolution, so the PCF tap spacing has one source of truth. Declared with a default so
+// a direct RHI caller that never sets it keeps the spacing this shader has always assumed.
+uniform vec2 uShadowAtlasTexelSize = vec2(1.0 / 4096.0);
 
 const float kPiUVE = 3.14159265359;
 const float kBrdfEpsilonUVE = 0.0001;
@@ -466,6 +478,38 @@ vec3 OctahedralDecodeUVE(vec2 uv) {
     return normalize(v);
 }
 
+// kAtlasShadowBiasMetersPerUnitUVE keeps the atlas on the same authored scale as the cascades: the
+// directional default uShadowBias (0.0025) is authored against roughly a 40 m cascade half-extent,
+// where it is worth about 0.05 m of separation. Reusing that ratio means one authored bias value
+// keeps meaning the same "how much gap", even though the two paths store depth in different spaces.
+const float kAtlasShadowBiasMetersPerUnitUVE = 20.0;
+
+/// Converts a world-space shadow bias into normalized depth AT THE RECEIVER'S OWN DEPTH.
+///
+/// A perspective projection's depth slope varies by orders of magnitude along one ray, so a constant
+/// normalized-depth bias is either acne beside the near plane or metres of peter-panning out at the
+/// light's range - and the same light is both, depending on where the surface is. Mirror of
+/// SpotShadowDepthSlopeUVE in light_shadow_planner_uve.h; the unit tests pin the two together.
+float AtlasShadowDepthBiasUVE(vec2 depthRange, float projectionDepth, float normalDotLight) {
+    float nearPlane = max(depthRange.x, 0.01);
+    float farPlane = max(depthRange.y, nearPlane + 0.1);
+    // Same shape as the directional bias, reinterpreted in metres rather than normalized units.
+    float normalizedBias = max(uShadowBias * (1.0 - clamp(normalDotLight, 0.0, 1.0)) *
+                                   max(uShadowNormalBias, 0.0),
+                               uShadowBias * 0.2);
+    float linearDepth =
+        (nearPlane * farPlane) / max(farPlane - (farPlane - nearPlane) * projectionDepth, 1.0e-6);
+    float depthSlope =
+        (nearPlane * farPlane) / max((farPlane - nearPlane) * linearDepth * linearDepth, 1.0e-6);
+    return normalizedBias * kAtlasShadowBiasMetersPerUnitUVE * depthSlope;
+}
+
+/// Spot shadows: one perspective depth tile per light, sampled with the same receiver-plane PCF the
+/// directional cascades use.
+///
+/// Depth convention: `projectionDepth` is the engine's [0, 1] projection depth (Matrix4x4UVE::
+/// PerspectiveUVE is Vulkan-style), and GL's depth attachment stores `(ndc + 1) / 2`, which is the
+/// `* 0.5 + 0.5` below - exactly the convention ShadowFactorFromPositionUVE has always used.
 float SpotShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightDirection) {
     if (uLightShadowEnabled[lightIndex] == 0) {
         return 1.0;
@@ -475,9 +519,12 @@ float SpotShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightDirection) {
         return 1.0;
     }
     vec3 projected = lightSpacePos.xyz / lightSpacePos.w;
-    projected.xy = projected.xy * 0.5 + 0.5;
-    if (projected.x < 0.0 || projected.x > 1.0 || projected.y < 0.0 || projected.y > 1.0 ||
-        projected.z < 0.0 || projected.z > 1.0) {
+    float projectionDepth = projected.z;
+    vec2 tileUv = projected.xy * 0.5 + 0.5;
+    // Rejected outside the light's own frustum: behind its near plane, past its range, or outside
+    // the cone. Those fragments are lit by something else, never shadowed by this light.
+    if (tileUv.x < 0.0 || tileUv.x > 1.0 || tileUv.y < 0.0 || tileUv.y > 1.0 ||
+        projectionDepth <= 0.0 || projectionDepth >= 1.0) {
         return 1.0;
     }
     vec4 tileRect = uLightShadowTileRects[lightIndex];
@@ -486,10 +533,10 @@ float SpotShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightDirection) {
         return 1.0;
     }
 
-    float currentDepth = projected.z;
-    float bias = max(uShadowBias * (1.0 - max(dot(normal, lightDirection), 0.0)) * max(uShadowNormalBias, 0.0),
-                     uShadowBias * 0.2);
-    vec2 atlasTexelSize = vec2(1.0 / 4096.0);
+    float currentDepth = projectionDepth * 0.5 + 0.5;
+    float bias = AtlasShadowDepthBiasUVE(uLightShadowDepthRange[lightIndex], projectionDepth,
+                                         dot(normal, lightDirection));
+    vec2 atlasTexelSize = max(uShadowAtlasTexelSize, vec2(0.0));
     int kernelRadius = clamp(uShadowPcfKernelRadius, 0, 2);
     float visibleSamples = 0.0;
     int sampleCount = 0;
@@ -502,7 +549,7 @@ float SpotShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightDirection) {
             if (abs(offsetX) > kernelRadius || abs(offsetY) > kernelRadius) {
                 continue;
             }
-            vec2 sampleUv = tileRect.xy + projected.xy * tileSize + vec2(offsetX, offsetY) * atlasTexelSize;
+            vec2 sampleUv = tileRect.xy + tileUv * tileSize + vec2(offsetX, offsetY) * atlasTexelSize;
             sampleUv = clamp(sampleUv, minUv, maxUv);
             float sampledDepth = texture(uShadowAtlasTexture, sampleUv).r;
             visibleSamples += (currentDepth - bias > sampledDepth) ? 0.0 : 1.0;
@@ -513,6 +560,12 @@ float SpotShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightDirection) {
     return (isnan(factor) || isinf(factor)) ? 1.0 : factor;
 }
 
+/// Point shadows: octahedral projection of normalized radial distance into one 2D tile.
+///
+/// NOT YET PRODUCED BY THE RENDERER. Nothing allocates a point-light tile or renders an octahedral
+/// depth pass, so uLightShadowEnabled[] is 0 for every point light and this returns 1.0 - the
+/// function is kept (rather than deleted and re-added) because the atlas, the tile rect and the
+/// uniform contract it consumes are all real and tested; only the producer is missing.
 float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, float lightRange) {
     if (uLightShadowEnabled[lightIndex] == 0) {
         return 1.0;
@@ -535,7 +588,7 @@ float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, floa
     float bias = max(uShadowBias * (1.0 - max(dot(normal, lightDir), 0.0)) * max(uShadowNormalBias, 0.0),
                      uShadowBias * 0.2);
 
-    vec2 atlasTexelSize = vec2(1.0 / 4096.0);
+    vec2 atlasTexelSize = max(uShadowAtlasTexelSize, vec2(0.0));
     int kernelRadius = clamp(uShadowPcfKernelRadius, 0, 2);
     float visibleSamples = 0.0;
     int sampleCount = 0;

@@ -29,8 +29,15 @@ inline constexpr std::uint32_t kShadowAtlasMinTileResolutionUVE = 128U;
 /// Maximum allocatable tile resolution in the shadow atlas (4096 x 4096, the root node).
 inline constexpr std::uint32_t kShadowAtlasMaxTileResolutionUVE = 4096U;
 
-/// Texture unit slot reserved for binding the unified shadow atlas in material shaders.
-inline constexpr std::uint32_t kShadowAtlasTextureSlotUVE = 7U;
+/// Texture unit slot reserved for sampling the unified shadow atlas in material shaders.
+///
+/// Deliberately the LAST slot inside GLES3's guaranteed 16 fragment texture units rather than the
+/// first free one: the built-in lit path already packs slots 0-14 densely (three material maps,
+/// three shadow cascades, the reflection-probe cube, two more material maps and the ambient
+/// environment map), and a fixed slot in the middle of that range is one rebinding away from
+/// shadowing a cascade. The `.glsl` shader declaration names 15 explicitly and the renderer binds
+/// it there; the static assertion in the renderer's slot block is what keeps the two honest.
+inline constexpr std::uint32_t kShadowAtlasTextureSlotUVE = 15U;
 
 /// Represents an allocated tile within the unified shadow atlas.
 struct TileAllocUVE {

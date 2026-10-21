@@ -43,13 +43,16 @@
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/scalar_uve.h"
+#include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/math/vector4_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
 #include "uve/render_systems/compute_system_uve.h"
 #include "uve/render_systems/decal_draw_command_uve.h"
 #include "uve/render_systems/decal_renderer_uve.h"
 #include "uve/render_systems/frustum_cull_indirect_uve.h"
 #include "uve/render_systems/i_light_system_uve.h"
+#include "uve/render_systems/light_shadow_planner_uve.h"
 #include "uve/render_systems/particle_draw_command_uve.h"
 #include "uve/render_systems/particle_render_bridge_uve.h"
 #include "uve/render_systems/primitive_geometry_uve.h"
@@ -57,6 +60,7 @@
 #include "uve/render_systems/render_graph_uve.h"
 #include "uve/render_systems/render_queue_uve.h"
 #include "uve/render_systems/renderer_3d_frame_diagnostics_uve.h"
+#include "uve/render_systems/shadow_atlas_manager_uve.h"
 #include "uve/rhi_shader/built_in_shaders_uve.h"
 #include "uve/rhi_shader/shader_program_desc_uve.h"
 #include "uve/rhi_shader/shader_program_uve.h"
@@ -412,6 +416,13 @@ struct RendererUniformNamesUVE {
     std::array<std::string, kShadowCascadeCountUVE> shadowPasses{};
     // Tier 2.3: one cube uniform (slots 7..11, once the other five faces, are now unused).
     std::string reflectionProbeCube;
+    // Increment 32: the per-light atlas shadow contract, indexed by uLights[] slot exactly like
+    // the shader's own fixed-size arrays.
+    std::array<std::string, kMaxSpotShadowLightsUVE> lightShadowMatrices{};
+    std::array<std::string, kMaxSpotShadowLightsUVE> lightShadowTileRects{};
+    std::array<std::string, kMaxSpotShadowLightsUVE> lightShadowEnabled{};
+    std::array<std::string, kMaxSpotShadowLightsUVE> lightShadowDepthRanges{};
+    std::string shadowAtlasTexelSize;
 
     RendererUniformNamesUVE() : legacyLightSpaceMatrix("uLightSpaceMatrix") {
         for (std::size_t lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
@@ -436,6 +447,14 @@ struct RendererUniformNamesUVE {
             shadowPasses[cascadeIndex] = "DirectionalShadowCascade" + index;
         }
         reflectionProbeCube = "uReflectionProbeCube";
+        for (std::size_t lightSlot = 0; lightSlot < kMaxSpotShadowLightsUVE; ++lightSlot) {
+            const std::string index = std::to_string(lightSlot);
+            lightShadowMatrices[lightSlot] = "uLightShadowMatrices[" + index + "]";
+            lightShadowTileRects[lightSlot] = "uLightShadowTileRects[" + index + "]";
+            lightShadowEnabled[lightSlot] = "uLightShadowEnabled[" + index + "]";
+            lightShadowDepthRanges[lightSlot] = "uLightShadowDepthRange[" + index + "]";
+        }
+        shadowAtlasTexelSize = "uShadowAtlasTexelSize";
     }
 };
 
@@ -711,6 +730,16 @@ const std::vector<VertexAttributeUVE>& MeshVertexLayoutUVE() {
     return layout;
 }
 
+/// The three depth-pass instrumentation slots a shadow pass writes to. Directional cascades and
+/// atlas tiles report separately: "the cascade batcher merged 200 items into 12 draws" and "one
+/// spot light drew 3 objects" are different facts, and averaging them into one number describes
+/// neither.
+struct ShadowPassCountersUVE {
+    std::size_t* batchesRecorded;
+    std::size_t* batchedItems;
+    std::size_t* instancedDrawCalls;
+};
+
 /// Frame-constant uniform data threaded into RecordItemsUVE() for every item this frame: the
 /// view-projection matrix, the rendering camera's world position (Increment 24 — the view vector
 /// a specular term needs), up to kMaxLightsUVE active lights (Increment 25 — Point/Spot +
@@ -741,6 +770,22 @@ struct FrameUniformsUVE {
     float shadowNormalBias = 1.0F;
     float shadowOpacity = 1.0F;
     std::int32_t shadowPcfKernelRadius = 0;
+
+    /// Spot-light atlas shadows for this frame, already indexed by `uLights[]` slot. A zero tile
+    /// rect and a zero enable flag are the "this slot has no atlas shadow" defaults the shader
+    /// tests first, so a light that stopped casting last frame cannot leave a stale tile bound.
+    std::array<Math::Matrix4x4UVE, kMaxSpotShadowLightsUVE> lightShadowMatrices{};
+    std::array<Math::Vector4UVE, kMaxSpotShadowLightsUVE> lightShadowTileRects{};
+    std::array<std::int32_t, kMaxSpotShadowLightsUVE> lightShadowEnabled{};
+    std::array<Math::Vector2UVE, kMaxSpotShadowLightsUVE> lightShadowDepthRanges{};
+    /// Valid only while at least one spot light owns a tile this frame. BindMaterialTexturesUVE
+    /// binds the atlas only when this is valid; every consumer of the slot is gated by
+    /// uLightShadowEnabled[] first, so an unbound unit is never sampled.
+    TextureHandleUVE shadowAtlasTexture = kInvalidTextureHandleUVE;
+    /// 1 / atlas resolution, so the PCF tap spacing has one source of truth instead of a literal in
+    /// the shader that silently disagrees with the atlas the renderer actually allocated.
+    Math::Vector2UVE shadowAtlasTexelSize{1.0F / static_cast<float>(kShadowAtlasResolutionUVE),
+                                          1.0F / static_cast<float>(kShadowAtlasResolutionUVE)};
 };
 
 } // namespace
@@ -852,6 +897,22 @@ struct Renderer3DUVE::ImplUVE {
     /// This frame's frustum-independent candidate set, reused across frames so a scene-sized
     /// vector is not reallocated every frame.
     MeshVisibilitySetUVE visibilitySet;
+
+    /// The unified spot/point shadow atlas. Held by std::optional and created LAZILY: a 4096x4096
+    /// Depth32F attachment is 64 MiB, which is not a cost an empty scene - or a scene with only a
+    /// directional light - should pay for a feature it never uses. Created on the first frame that
+    /// has a spot-light candidate, and kept afterwards so the allocation is not per frame.
+    std::optional<ShadowAtlasManagerUVE> shadowAtlas;
+    /// Tile edge requested by EngineConfigUVE::pointSpotShadowResolutionUVE (the project-settings
+    /// "rendering.shadows.pointSpotCubeResolution" key). Sanitized on assignment.
+    std::uint32_t pointSpotShadowResolutionUVE = 1024U;
+    /// One cull queue per atlas tile. Same reuse-per-frame rationale as shadowQueues: the vectors
+    /// keep their capacity across frames.
+    std::array<RenderQueueUVE, kMaxSpotShadowLightsUVE> spotShadowQueues;
+    /// Per-tile batch scratch, matching shadowBatches.
+    std::array<RenderBatchSetUVE, kMaxSpotShadowLightsUVE> spotShadowBatches;
+    /// Decides whether the atlas is worth creating this frame, before one exists to allocate from.
+    std::size_t spotShadowCandidatesThisFrame = 0U;
     std::shared_ptr<Shader::ShaderProgramUVE> toneMappingProgram;
     std::shared_ptr<Shader::ShaderProgramUVE> proceduralSkyProgram;
 
@@ -1054,7 +1115,8 @@ struct Renderer3DUVE::ImplUVE {
     /// of legacy materials reports zero, which is the honest answer.
     std::size_t instancedDrawCallsThisFrame = 0U;
     std::size_t instancedObjectsThisFrame = 0U;
-    /// Shadow-pass instanced draws across all cascades this frame. Counted separately from the
+    /// Shadow-pass instanced draws across every depth-only shadow pass this frame (cascades and
+    /// atlas tiles alike). Counted separately from the
     /// main pass because the shadow passes are where the draw-call count was actually worst - one
     /// per caster per cascade - and a single combined number would hide which half improved.
     std::size_t shadowInstancedDrawCallsThisFrame = 0U;
@@ -1791,14 +1853,26 @@ struct Renderer3DUVE::ImplUVE {
                                             std::as_bytes(std::span(instanceTransposeStaging)));
     }
 
-    void RecordShadowPassUVE(const std::vector<RenderItemUVE>& items, const Math::Matrix4x4UVE& lightSpaceMatrix,
-                              TextureHandleUVE shadowMapTarget, bool hasCaster,
-                              RenderBatchSetUVE& batchSet, ICommandBufferUVE& commandBuffer) {
+    /// Records one depth-only shadow pass.
+    ///
+    /// `viewportOverride` confines an atlas tile pass to its own rectangle; `depthLoadOp` defaults
+    /// to Clear because a standalone cascade map is the common case, and is Load for everything
+    /// that shares the atlas. That distinction is load-bearing and not a style choice: the atlas is
+    /// cleared ONCE per frame by a dedicated full-attachment pass, because a Vulkan attachment
+    /// clear ignores the scissor and a per-tile Clear would wipe every tile rendered before it.
+    [[nodiscard]] std::size_t RecordShadowPassUVE(
+        const std::vector<RenderItemUVE>& items, const Math::Matrix4x4UVE& lightSpaceMatrix,
+        TextureHandleUVE shadowMapTarget, bool hasCaster, RenderBatchSetUVE& batchSet,
+        ICommandBufferUVE& commandBuffer, const ShadowPassCountersUVE& counters,
+        std::optional<ViewportRectUVE> viewportOverride = std::nullopt,
+        LoadOpUVE depthLoadOp = LoadOpUVE::Clear) {
+        std::size_t drawCalls = 0U;
         RenderPassDescUVE passDesc;
         passDesc.colorAttachment = kInvalidTextureHandleUVE;
         passDesc.depthAttachment = shadowMapTarget;
-        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.depthLoadOp = depthLoadOp;
         passDesc.clearDepth = 1.0F;
+        passDesc.viewportOverride = viewportOverride;
         commandBuffer.BeginRenderPassUVE(passDesc);
 
         if (hasCaster && shadowProgram->IsValidUVE()) {
@@ -1815,8 +1889,8 @@ struct Renderer3DUVE::ImplUVE {
                 // Counted here rather than at the draw loop below, because what is being reported
                 // is how well the ORDER batched - a batch that is later skipped for an unresolved
                 // mesh still tells the truth about the merge.
-                lastFrameDiagnostics.shadowBatchesRecorded += batchSet.batches.size();
-                lastFrameDiagnostics.shadowBatchedItems += items.size();
+                *counters.batchesRecorded += batchSet.batches.size();
+                *counters.batchedItems += items.size();
                 if (!batchSet.batches.empty() &&
                     batchSet.instanceMatrices.size() <= kMaximumInstancesPerFrameUVE &&
                     EnsureInstanceBufferCapacityUVE(batchSet.instanceMatrices.size()) &&
@@ -1841,10 +1915,11 @@ struct Renderer3DUVE::ImplUVE {
                         commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
                         commandBuffer.DrawIndexedUVE(meshResources.indexCount,
                                                      static_cast<std::uint32_t>(batch.itemCount));
-                        ++shadowInstancedDrawCallsThisFrame;
+                        ++*counters.instancedDrawCalls;
+                        ++drawCalls;
                     }
                     commandBuffer.EndRenderPassUVE();
-                    return;
+                    return drawCalls;
                 }
             }
 
@@ -1861,10 +1936,12 @@ struct Renderer3DUVE::ImplUVE {
                 commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
                 commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
                 commandBuffer.DrawIndexedUVE(meshResources.indexCount);
+                ++drawCalls;
             }
         }
 
         commandBuffer.EndRenderPassUVE();
+        return drawCalls;
     }
 
     /// Builds this frame's visible primitive list.
@@ -2389,6 +2466,21 @@ struct Renderer3DUVE::ImplUVE {
             program.SetIntUVE(uniformNames.shadowMapTextures[cascadeIndex],
                               static_cast<std::int32_t>(textureSlot));
         }
+        // The atlas contract. Uploaded for all four light slots every frame, not just the ones in
+        // use: a slot that had a tile last frame and does not this frame must be actively cleared,
+        // or the shader would keep sampling a tile that now belongs to a different light.
+        program.SetIntUVE("uShadowAtlasTexture", static_cast<std::int32_t>(kShadowAtlasTextureSlotUVE));
+        program.SetVector2UVE(uniformNames.shadowAtlasTexelSize, frameUniforms.shadowAtlasTexelSize);
+        for (std::size_t lightSlot = 0; lightSlot < kMaxSpotShadowLightsUVE; ++lightSlot) {
+            program.SetMatrix4x4UVE(uniformNames.lightShadowMatrices[lightSlot],
+                                    frameUniforms.lightShadowMatrices[lightSlot]);
+            program.SetVector4UVE(uniformNames.lightShadowTileRects[lightSlot],
+                                  frameUniforms.lightShadowTileRects[lightSlot]);
+            program.SetIntUVE(uniformNames.lightShadowEnabled[lightSlot],
+                              frameUniforms.lightShadowEnabled[lightSlot]);
+            program.SetVector2UVE(uniformNames.lightShadowDepthRanges[lightSlot],
+                                  frameUniforms.lightShadowDepthRanges[lightSlot]);
+        }
         program.SetIntUVE("uShadowPcfKernelRadius", frameUniforms.shadowPcfKernelRadius);
         program.SetFloatUVE("uShadowBias", frameUniforms.shadowBias);
         program.SetFloatUVE("uShadowNormalBias", frameUniforms.shadowNormalBias);
@@ -2439,6 +2531,18 @@ struct Renderer3DUVE::ImplUVE {
                         shadowPointSampler,
                         kShadowCascadeFirstTextureSlotUVE + static_cast<std::uint32_t>(cascadeIndex));
                 }
+            }
+        }
+        // The atlas is bound only on frames that own one, exactly like the cascades above: an
+        // unbound slot is not a correctness hole here, because every shader path that would read
+        // it is gated by uLightShadowEnabled[] first. Vulkan's device-wide 1x1 white fallback makes
+        // that gate's "no shadow" answer (1.0) the value an unbound unit samples, and GL keeps
+        // whatever the previous lit pass bound - which is either the atlas itself or nothing, and
+        // in both cases uLightShadowEnabled is 0, so it is never read.
+        if (frameUniforms.shadowAtlasTexture != kInvalidTextureHandleUVE) {
+            commandBuffer.BindTextureUVE(frameUniforms.shadowAtlasTexture, kShadowAtlasTextureSlotUVE);
+            if (shadowPointSampler != kInvalidSamplerHandleUVE) {
+                commandBuffer.BindSamplerUVE(shadowPointSampler, kShadowAtlasTextureSlotUVE);
             }
         }
         const std::array<ResourceBindingUVE, 5> materialBindings{
@@ -3781,7 +3885,54 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 static_cast<std::int32_t>(std::clamp(std::lround(shadowCaster->shadowBlur), 0L, 2L));
         }
     }
-    const FrameUniformsUVE frameUniforms{
+
+    // ---- Spot-light atlas shadows -------------------------------------------------------------
+    // Planned AFTER the directional block because a spot light inherits the frame's resolved bias
+    // and opacity, and BEFORE the frame uniforms because the plan is what fills them. The atlas
+    // itself is created on demand: 64 MiB of Depth32F is not a cost an empty scene should pay.
+    SpotShadowPlanUVE spotShadowPlan{};
+    std::array<std::size_t, kMaxSpotShadowLightsUVE> activeSpotShadowSlots{};
+    std::size_t activeSpotShadowCount = 0U;
+    if (!capturingProbe && m_impl->shadowProgram != nullptr && m_impl->shadowProgram->IsValidUVE()) {
+        m_impl->spotShadowCandidatesThisFrame = CountSpotShadowCandidatesUVE(lights, frustum);
+        if (m_impl->spotShadowCandidatesThisFrame > 0U) {
+            if (!m_impl->shadowAtlas.has_value()) {
+                m_impl->shadowAtlas.emplace(m_impl->renderDevice);
+                if (m_impl->shadowAtlas->GetAtlasTextureUVE() == kInvalidTextureHandleUVE) {
+                    UVE_WARNING("Renderer3DUVE: could not create the {}x{} shadow atlas; spot shadows "
+                                "disabled for this device",
+                                kShadowAtlasResolutionUVE, kShadowAtlasResolutionUVE);
+                }
+            }
+            if (m_impl->shadowAtlas->GetAtlasTextureUVE() != kInvalidTextureHandleUVE) {
+                spotShadowPlan = BuildSpotShadowPlanUVE(lights, frustum, *m_impl->shadowAtlas,
+                                                        m_impl->pointSpotShadowResolutionUVE);
+                // Cull each tile's casters now, and drop tiles that culled nothing: an empty tile
+                // still holds the frame clear's 1.0, which the shader reads as "fully lit", so the
+                // pass would cost a draw-less render pass and change nothing.
+                for (std::size_t planSlot = 0; planSlot < spotShadowPlan.count; ++planSlot) {
+                    const SpotShadowAssignmentUVE& assignment = spotShadowPlan.assignments[planSlot];
+                    const Math::FrustumUVE lightFrustum =
+                        m_impl->cameraSystem.ExtractFrustumUVE(assignment.lightViewProjection);
+                    m_impl->visibilitySet.shadowPass = true;
+                    m_impl->visibilitySet.frustumTestsDisabled = false;
+                    m_impl->meshRenderer.CullVisibilitySetIntoUVE(m_impl->visibilitySet, lightFrustum,
+                                                                  m_impl->spotShadowQueues[planSlot]);
+                    m_impl->spotShadowQueues[planSlot].SortForDepthOnlyPassUVE();
+                    if (m_impl->spotShadowQueues[planSlot].opaqueItems.empty()) {
+                        continue;
+                    }
+                    activeSpotShadowSlots[activeSpotShadowCount++] = planSlot;
+                }
+            }
+        }
+    }
+    m_impl->lastFrameDiagnostics.spotShadowCandidates = m_impl->spotShadowCandidatesThisFrame;
+    m_impl->lastFrameDiagnostics.spotShadowTilesActive = activeSpotShadowCount;
+    m_impl->lastFrameDiagnostics.spotShadowTileResolution =
+        activeSpotShadowCount > 0U ? spotShadowPlan.tileResolution : 0U;
+
+    FrameUniformsUVE frameUniforms{
         viewProjection,
         viewPosition,
         lights,
@@ -3801,6 +3952,24 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         shadowNormalBias,
         shadowOpacity,
         shadowPcfKernelRadius};
+
+    // Indexed by uLights[] slot, which is exactly how the shader indexes its own arrays - a tile
+    // for light 3 must land in slot 3 even when two other lights between them have none.
+    for (std::size_t activeIndex = 0; activeIndex < activeSpotShadowCount; ++activeIndex) {
+        const SpotShadowAssignmentUVE& assignment =
+            spotShadowPlan.assignments[activeSpotShadowSlots[activeIndex]];
+        frameUniforms.lightShadowMatrices[assignment.lightIndex] = assignment.lightViewProjection;
+        frameUniforms.lightShadowTileRects[assignment.lightIndex] = assignment.tile.normalizedRect;
+        frameUniforms.lightShadowEnabled[assignment.lightIndex] = 1;
+        // (near, far) for the shader's world-space bias conversion. See
+        // SpotShadowLinearDepthUVE / LightShadowDepthSlopeUVE - the CPU and GPU halves of one
+        // formula, pinned together by light_shadow_planner_uve_tests.cpp.
+        frameUniforms.lightShadowDepthRanges[assignment.lightIndex] =
+            Math::Vector2UVE{assignment.nearPlane, assignment.farPlane};
+    }
+    if (activeSpotShadowCount > 0U && m_impl->shadowAtlas.has_value()) {
+        frameUniforms.shadowAtlasTexture = m_impl->shadowAtlas->GetAtlasTextureUVE();
+    }
 
     RenderQueueUVE& queue = m_impl->frameQueue;
     // Counted before the cull rather than inside it: CullVisibilitySetIntoUVE runs four times a
@@ -3923,15 +4092,68 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             renderGraph.AddPassUVE(
                 passName, shadowPassResources,
                 [this, &lightSpaceMatrices, shadowCaster, cascadeIndex](ICommandBufferUVE& commandBuffer) {
-                    m_impl->RecordShadowPassUVE(m_impl->shadowQueues[cascadeIndex].opaqueItems,
-                                                lightSpaceMatrices[cascadeIndex],
-                                                m_impl->shadowMapTargets[cascadeIndex], shadowCaster != nullptr,
-                                                m_impl->shadowBatches[cascadeIndex], commandBuffer);
+                    const ShadowPassCountersUVE cascadeCounters{
+                        &m_impl->lastFrameDiagnostics.shadowBatchesRecorded,
+                        &m_impl->lastFrameDiagnostics.shadowBatchedItems,
+                        &m_impl->lastFrameDiagnostics.shadowInstancedDrawCallsRecorded};
+                    static_cast<void>(m_impl->RecordShadowPassUVE(
+                        m_impl->shadowQueues[cascadeIndex].opaqueItems, lightSpaceMatrices[cascadeIndex],
+                        m_impl->shadowMapTargets[cascadeIndex], shadowCaster != nullptr,
+                        m_impl->shadowBatches[cascadeIndex], commandBuffer, cascadeCounters));
                 });
         }
     }
 
-    std::array<RenderGraphResourceUseUVE, kShadowCascadeCountUVE + 2U> mainResources{};
+    // Atlas passes. The clear is a SEPARATE, full-attachment pass on purpose: Vulkan attachment
+    // clears ignore the scissor, so a per-tile Clear would wipe every tile rendered before it.
+    // Clearing once and loading per tile is the only shape that is correct on both backends.
+    RenderGraphResourceHandleUVE shadowAtlasResource{};
+    if (activeSpotShadowCount > 0U && m_impl->shadowAtlas.has_value()) {
+        shadowAtlasResource = renderGraph.ImportTextureUVE(
+            m_impl->shadowAtlas->GetAtlasTextureUVE(), "SpotShadowAtlas");
+        RenderGraphPassDescUVE atlasClearDesc;
+        atlasClearDesc.debugNameUVE = "SpotShadowAtlasClear";
+        atlasClearDesc.resources = {{shadowAtlasResource, RenderGraphResourceAccessUVE::Write}};
+        atlasClearDesc.recordCallbackUVE = [this](ICommandBufferUVE& commandBuffer) {
+            RenderPassDescUVE passDesc;
+            passDesc.colorAttachment = kInvalidTextureHandleUVE;
+            passDesc.depthAttachment = m_impl->shadowAtlas->GetAtlasTextureUVE();
+            passDesc.depthLoadOp = LoadOpUVE::Clear;
+            passDesc.clearDepth = 1.0F;
+            commandBuffer.BeginRenderPassUVE(passDesc);
+            commandBuffer.EndRenderPassUVE();
+            ++m_impl->lastFrameDiagnostics.spotShadowPassesRecorded;
+        };
+        RenderGraphPassHandleUVE previousAtlasPass = renderGraph.AddPassUVE(std::move(atlasClearDesc));
+        for (std::size_t activeIndex = 0; activeIndex < activeSpotShadowCount; ++activeIndex) {
+            const std::size_t planSlot = activeSpotShadowSlots[activeIndex];
+            RenderGraphPassDescUVE atlasPassDesc;
+            atlasPassDesc.debugNameUVE = "SpotShadow" + std::to_string(activeIndex);
+            atlasPassDesc.resources = {{shadowAtlasResource, RenderGraphResourceAccessUVE::Write}};
+            // Explicit WAW ordering between sibling writers. The graph orders a reader after its
+            // writers on its own, but two passes that write the same tile share no read edge, and
+            // their relative order is what decides which tile ends up where.
+            atlasPassDesc.after = {previousAtlasPass};
+            atlasPassDesc.recordCallbackUVE =
+                [this, &spotShadowPlan, planSlot](ICommandBufferUVE& commandBuffer) {
+                    const SpotShadowAssignmentUVE& assignment = spotShadowPlan.assignments[planSlot];
+                    const ShadowPassCountersUVE spotCounters{
+                        &m_impl->lastFrameDiagnostics.spotShadowBatchesRecorded,
+                        &m_impl->lastFrameDiagnostics.spotShadowBatchedItems,
+                        &m_impl->lastFrameDiagnostics.spotShadowInstancedDrawCallsRecorded};
+                    m_impl->lastFrameDiagnostics.spotShadowDrawCallsRecorded +=
+                        m_impl->RecordShadowPassUVE(
+                            m_impl->spotShadowQueues[planSlot].opaqueItems, assignment.lightViewProjection,
+                            m_impl->shadowAtlas->GetAtlasTextureUVE(), true,
+                            m_impl->spotShadowBatches[planSlot], commandBuffer, spotCounters,
+                            assignment.tile.pixelRect, LoadOpUVE::Load);
+                    ++m_impl->lastFrameDiagnostics.spotShadowPassesRecorded;
+                };
+            previousAtlasPass = renderGraph.AddPassUVE(std::move(atlasPassDesc));
+        }
+    }
+
+    std::array<RenderGraphResourceUseUVE, kShadowCascadeCountUVE + 3U> mainResources{};
     mainResources[0] = RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Write};
     mainResources[1] = RenderGraphResourceUseUVE{depthResource, RenderGraphResourceAccessUVE::Write};
     std::size_t mainResourceCount = 2U;
@@ -3940,6 +4162,12 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             mainResources[mainResourceCount++] =
                 RenderGraphResourceUseUVE{shadowResource, RenderGraphResourceAccessUVE::Read};
         }
+    }
+    if (shadowAtlasResource.IsValidUVE()) {
+        // Declared Read so the graph orders every atlas writer before the colour pass; the shader
+        // samples it through uShadowAtlasTexture.
+        mainResources[mainResourceCount++] =
+            RenderGraphResourceUseUVE{shadowAtlasResource, RenderGraphResourceAccessUVE::Read};
     }
     renderGraph.AddPassUVE(
         "MainColor", std::span<const RenderGraphResourceUseUVE>{mainResources.data(), mainResourceCount},
@@ -4629,6 +4857,15 @@ void Renderer3DUVE::SetShadowBiasDefaultsUVE(const float depthBias, const float 
     m_impl->shadowBiasDefaultUVE = std::isfinite(depthBias) ? std::clamp(depthBias, 0.0F, 10.0F) : 0.1F;
     m_impl->shadowNormalBiasDefaultUVE =
         std::isfinite(normalBias) ? std::clamp(normalBias, 0.0F, 10.0F) : 1.0F;
+}
+
+void Renderer3DUVE::SetSpotShadowTileResolutionUVE(const std::uint32_t resolution) noexcept {
+    // Floored at the atlas manager's minimum tile and capped at the atlas itself: a request outside
+    // that range is not a quality choice, it is an unrepresentable layout, and silently rounding it
+    // is better than failing every spot shadow at frame time.
+    m_impl->pointSpotShadowResolutionUVE =
+        resolution == 0U ? kShadowAtlasMinTileResolutionUVE
+                         : std::clamp(resolution, kShadowAtlasMinTileResolutionUVE, kShadowAtlasResolutionUVE);
 }
 
 void Renderer3DUVE::SetCullingSettingsUVE(const CullingSettingsUVE& settings) noexcept {

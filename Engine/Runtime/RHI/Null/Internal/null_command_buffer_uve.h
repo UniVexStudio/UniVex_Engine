@@ -11,7 +11,9 @@
 #include <vector>
 
 #include "uve/math/matrix4x4_uve.h"
+#include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/math/vector4_uve.h"
 #include "uve/rhi/i_command_buffer_uve.h"
 #include "uve/rhi/recorded_command_uve.h"
 
@@ -56,7 +58,9 @@ public:
   void SetUniformFloatUVE(std::string_view name, float value) override;
   void SetUniformIntUVE(std::string_view name, std::int32_t value) override;
   void SetUniformBoolUVE(std::string_view name, bool value) override;
+  void SetUniformVector2UVE(std::string_view name, const Math::Vector2UVE &value) override;
   void SetUniformVector3UVE(std::string_view name, const Math::Vector3UVE &value) override;
+  void SetUniformVector4UVE(std::string_view name, const Math::Vector4UVE &value) override;
   void SetUniformMatrix4x4UVE(std::string_view name, const Math::Matrix4x4UVE &value) override;
   void DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t instanceCount) override;
   void DrawIndexedIndirectUVE(BufferHandleUVE buffer, std::uint64_t offsetBytes) override;
