@@ -38,6 +38,19 @@ public:
     [[nodiscard]] VoicePlaybackStateUVE GetVoiceStateUVE(VoiceHandleUVE voice) const override;
     [[nodiscard]] std::string_view GetBackendNameUVE() const noexcept override;
 
+    [[nodiscard]] VoiceHandleUVE CreateStreamVoiceUVE(const AudioStreamFormatUVE& format) override;
+    [[nodiscard]] std::size_t PushStreamFramesUVE(VoiceHandleUVE voice,
+                                                  std::span<const float> interleavedFrames) override;
+    [[nodiscard]] bool EndStreamUVE(VoiceHandleUVE voice) override;
+    [[nodiscard]] std::size_t GetStreamBufferedFramesUVE(VoiceHandleUVE voice) const override;
+    [[nodiscard]] std::size_t GetStreamFreeFramesUVE(VoiceHandleUVE voice) const override;
+
+    /// Test-only hook (not part of IAudioDeviceUVE): drops `frames` from a streaming voice's ring,
+    /// standing in for a real backend's audio callback so tests can drive the pump without a sound
+    /// card. A null device has no playback clock, so consuming on demand is stated here rather than
+    /// pretended in the interface. Stops the voice once an ended stream has fully drained.
+    void ConsumeStreamFramesUVE(VoiceHandleUVE voice, std::size_t frames);
+
     /// Test-only hook (not part of IAudioDeviceUVE): every Play/Stop/SetVoiceParams call this
     /// device has recorded, in call order, since construction (or the last
     /// ClearRecordedCallsUVE()). There is no command-buffer-style "submit" boundary for audio —

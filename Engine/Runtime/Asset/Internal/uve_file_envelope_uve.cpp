@@ -19,8 +19,7 @@ constexpr std::array<char, 4> kUveMagicUVE{'U', 'V', 'E', '\0'};
 constexpr std::uint32_t kEnvelopeVersionUVE = 1;
 constexpr std::uint32_t kCompressionMethodNoneUVE = 0;
 constexpr std::uint64_t kMaximumPayloadBytesUVE = kMaximumUveFilePayloadBytesUVE;
-constexpr std::size_t kEnvelopeHeaderBytesUVE =
-    kUveMagicUVE.size() + sizeof(std::uint32_t) + sizeof(std::uint32_t) + sizeof(std::uint32_t) + sizeof(std::uint64_t);
+constexpr std::size_t kEnvelopeHeaderBytesUVE = kUveFileEnvelopeHeaderBytesUVE;
 
 [[nodiscard]] bool IsAssetKindValidUVE(const std::uint32_t assetType) noexcept {
     return assetType >= static_cast<std::uint32_t>(AssetKindUVE::Scene) &&

@@ -18,7 +18,7 @@
 namespace UVE::Asset {
 namespace {
 
-constexpr std::uint32_t kAudioAssetVersionUVE = 1U;
+constexpr std::uint32_t kAudioAssetVersionUVE = kAudioAssetPayloadVersionUVE;
 
 [[nodiscard]] bool IsValidAudioUVE(const std::uint16_t channels, const std::uint32_t sampleRate,
                                    const std::vector<float>& samples) noexcept {

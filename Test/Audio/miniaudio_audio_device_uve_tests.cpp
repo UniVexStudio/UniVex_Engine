@@ -204,5 +204,56 @@ TEST(MiniaudioAudioDeviceUVETest, CreateVoiceUVE_RejectsMalformedAssetChannels) 
     RemoveScratchUVE({path});
 }
 
+TEST(MiniaudioAudioDeviceUVETest, CreateStreamVoiceUVE_RejectsAnInvalidFormat) {
+    const auto device = MiniaudioAudioDeviceUVE::CreateUVE(TestOptionsUVE());
+    ASSERT_NE(device, nullptr);
+    EXPECT_EQ(device->CreateStreamVoiceUVE(AudioStreamFormatUVE{0U, 1U}), kInvalidVoiceHandleUVE);
+    EXPECT_EQ(device->CreateStreamVoiceUVE(AudioStreamFormatUVE{48000U, 3U}), kInvalidVoiceHandleUVE);
+}
+
+TEST(MiniaudioAudioDeviceUVETest, StreamingVoice_PlaysFromTheRingAndStopsWhenTheStreamEnds) {
+    const auto device = MiniaudioAudioDeviceUVE::CreateUVE(TestOptionsUVE());
+    ASSERT_NE(device, nullptr);
+    const VoiceHandleUVE voice = device->CreateStreamVoiceUVE(AudioStreamFormatUVE{48000U, 1U});
+    ASSERT_NE(voice, kInvalidVoiceHandleUVE);
+    EXPECT_EQ(device->GetStreamBufferedFramesUVE(voice), 0U);
+    EXPECT_EQ(device->GetStreamFreeFramesUVE(voice), kAudioStreamRingFramesUVE);
+
+    // Ten milliseconds at the output rate: long enough that the callback really consumes it, short
+    // enough that the whole case is a few timer ticks.
+    const std::vector<float> frames(480U, 0.25F);
+    ASSERT_EQ(device->PushStreamFramesUVE(voice, frames), 480U);
+    EXPECT_EQ(device->GetStreamBufferedFramesUVE(voice), 480U);
+    ASSERT_TRUE(device->PlayUVE(voice));
+    ASSERT_TRUE(device->EndStreamUVE(voice));
+
+    // The audio thread drains the ring; once it is empty the ended voice stops itself, which is
+    // the whole contract - the mixer must not leave a finished stream "playing" forever.
+    EXPECT_TRUE(WaitForUVE([&device, voice] {
+        return device->GetVoiceStateUVE(voice) == VoicePlaybackStateUVE::Stopped;
+    }));
+    EXPECT_EQ(device->GetStreamBufferedFramesUVE(voice), 0U);
+    device->DestroyVoiceUVE(voice);
+}
+
+TEST(MiniaudioAudioDeviceUVETest, ClipVoicesRejectEveryStreamOperation) {
+    const auto device = MiniaudioAudioDeviceUVE::CreateUVE(TestOptionsUVE());
+    ASSERT_NE(device, nullptr);
+    const auto path = WriteTestClipUVE("stream_reject", ConstantClipUVE(64U, 0.5F));
+    ASSERT_FALSE(path.empty());
+    AudioVoiceDescUVE desc;
+    desc.audioAssetPath = path.string();
+    const VoiceHandleUVE clip = device->CreateVoiceUVE(desc);
+    ASSERT_NE(clip, kInvalidVoiceHandleUVE);
+
+    const std::vector<float> frames(2U, 0.5F);
+    EXPECT_EQ(device->PushStreamFramesUVE(clip, frames), 0U);
+    EXPECT_EQ(device->GetStreamBufferedFramesUVE(clip), 0U);
+    EXPECT_EQ(device->GetStreamFreeFramesUVE(clip), 0U);
+    EXPECT_FALSE(device->EndStreamUVE(clip));
+    RemoveScratchUVE({path});
+}
+
+
 } // namespace
 } // namespace UVE::Audio::Tests

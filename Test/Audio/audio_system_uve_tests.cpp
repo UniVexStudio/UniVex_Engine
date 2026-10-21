@@ -60,6 +60,14 @@ public:
     }
     [[nodiscard]] std::string_view GetBackendNameUVE() const noexcept override { return "Recording"; }
 
+    [[nodiscard]] VoiceHandleUVE CreateStreamVoiceUVE(const AudioStreamFormatUVE&) override {
+        return kInvalidVoiceHandleUVE;
+    }
+    [[nodiscard]] std::size_t PushStreamFramesUVE(VoiceHandleUVE, std::span<const float>) override { return 0U; }
+    [[nodiscard]] bool EndStreamUVE(VoiceHandleUVE) override { return false; }
+    [[nodiscard]] std::size_t GetStreamBufferedFramesUVE(VoiceHandleUVE) const override { return 0U; }
+    [[nodiscard]] std::size_t GetStreamFreeFramesUVE(VoiceHandleUVE) const override { return 0U; }
+
     AudioVoiceDescUVE lastDescription{};
     mutable VoiceHandleUVE lastHandle = kInvalidVoiceHandleUVE;
     VoiceHandleUVE nextHandle{1U};
@@ -754,6 +762,138 @@ TEST_F(AudioSystemUVETest, SourceDescriptor_RejectsAnInvertedConeOrAnOutOfRangeD
     badAxis.coneDirection = Math::Vector3UVE{};
     EXPECT_EQ(audioSystem.CreateSourceUVE(badAxis), kInvalidVoiceHandleUVE);
 }
+
+// --- Streaming sources: bounded memory, pumped once per frame. ---
+
+class TestStreamSourceUVE final : public IAudioStreamSourceUVE {
+public:
+    [[nodiscard]] AudioStreamFormatUVE GetFormatUVE() const noexcept override { return format; }
+
+    [[nodiscard]] std::size_t GetFrameCountUVE() const noexcept override {
+        return format.channels == 0U ? 0U : frames.size() / static_cast<std::size_t>(format.channels);
+    }
+
+    [[nodiscard]] std::size_t ReadFramesUVE(const std::size_t requestedFrames,
+                                            std::vector<float>& outFrames) override {
+        outFrames.clear();
+        const std::size_t channels = static_cast<std::size_t>(format.channels);
+        const std::size_t total = channels == 0U ? 0U : frames.size() / channels;
+        const std::size_t available = total > cursor ? total - cursor : 0U;
+        const std::size_t count = std::min(requestedFrames, available);
+        outFrames.insert(outFrames.end(),
+                         frames.begin() + static_cast<std::ptrdiff_t>(cursor * channels),
+                         frames.begin() + static_cast<std::ptrdiff_t>((cursor + count) * channels));
+        cursor += count;
+        ++readCount;
+        return count;
+    }
+
+    [[nodiscard]] bool SeekToFrameUVE(const std::size_t frame) override {
+        if (!seekable || frame > GetFrameCountUVE()) {
+            return false;
+        }
+        cursor = frame;
+        ++seekCount;
+        return true;
+    }
+
+    AudioStreamFormatUVE format{48000U, 1U};
+    std::vector<float> frames;
+    std::size_t cursor = 0U;
+    bool seekable = true;
+    int readCount = 0;
+    int seekCount = 0;
+};
+
+TEST_F(AudioSystemUVETest, StreamingSource_PumpsIntoTheDeviceRingOncePerFrame) {
+    TestStreamSourceUVE source;
+    source.frames.assign(48000U, 0.1F);
+
+    AudioSourceDescUVE desc;
+    desc.spatial = false;
+    const VoiceHandleUVE voice = audioSystem.CreateStreamingSourceUVE(desc, source);
+    ASSERT_NE(voice, kInvalidVoiceHandleUVE);
+    EXPECT_EQ(audioSystem.GetStreamingSourceBufferedFramesUVE(voice), 0U);
+
+    audioSystem.UpdateUVE(0.0F);
+    EXPECT_EQ(audioSystem.GetStreamingSourceBufferedFramesUVE(voice), kAudioStreamRingFramesUVE);
+    EXPECT_EQ(source.readCount, 1);
+
+    // The ring is full, so the next frame has nothing to take - and the source is not asked again.
+    audioSystem.UpdateUVE(0.0F);
+    EXPECT_EQ(audioSystem.GetStreamingSourceBufferedFramesUVE(voice), kAudioStreamRingFramesUVE);
+    EXPECT_EQ(source.readCount, 1);
+}
+
+TEST_F(AudioSystemUVETest, StreamingSource_LoopsBackToTheFirstFrameWhenAsked) {
+    TestStreamSourceUVE source;
+    source.frames = {0.1F, 0.2F, 0.3F, 0.4F};
+
+    AudioSourceDescUVE desc;
+    desc.spatial = false;
+    desc.looping = true;
+    const VoiceHandleUVE voice = audioSystem.CreateStreamingSourceUVE(desc, source);
+    ASSERT_NE(voice, kInvalidVoiceHandleUVE);
+
+    audioSystem.UpdateUVE(0.0F); // the four frames go in
+    audioSystem.UpdateUVE(0.0F); // the source is spent, so it is rewound instead of ended
+
+    EXPECT_EQ(source.seekCount, 1);
+    EXPECT_EQ(source.cursor, 4U);
+    EXPECT_EQ(audioSystem.GetStreamingSourceBufferedFramesUVE(voice), 8U);
+}
+
+TEST_F(AudioSystemUVETest, StreamingSource_EndsAndTheVoiceStopsOnlyAfterItDrains) {
+    TestStreamSourceUVE source;
+    source.frames = {0.1F, 0.2F, 0.3F, 0.4F};
+
+    AudioSourceDescUVE desc;
+    desc.spatial = false;
+    const VoiceHandleUVE voice = audioSystem.CreateStreamingSourceUVE(desc, source);
+    ASSERT_NE(voice, kInvalidVoiceHandleUVE);
+
+    ASSERT_TRUE(audioSystem.PlayUVE(voice));
+    audioSystem.UpdateUVE(0.0F); // four frames pushed
+    audioSystem.UpdateUVE(0.0F); // source spent and not looping: the stream ends
+
+    EXPECT_EQ(audioSystem.GetSourceStateUVE(voice), VoicePlaybackStateUVE::Playing);
+    device.ConsumeStreamFramesUVE(voice, 4U);
+    EXPECT_EQ(audioSystem.GetSourceStateUVE(voice), VoicePlaybackStateUVE::Stopped);
+    // An ended stream stays ended: pumping again is a no-op rather than a silent restart.
+    EXPECT_EQ(audioSystem.PumpStreamingSourceUVE(voice), 0U);
+}
+
+TEST_F(AudioSystemUVETest, ClipSourcesAreNotStreams) {
+    const VoiceHandleUVE voice = audioSystem.CreateSourceUVE(AudioSourceDescUVE{});
+    ASSERT_NE(voice, kInvalidVoiceHandleUVE);
+    EXPECT_EQ(audioSystem.PumpStreamingSourceUVE(voice), 0U);
+    EXPECT_EQ(audioSystem.GetStreamingSourceBufferedFramesUVE(voice), 0U);
+}
+
+TEST_F(AudioSystemUVETest, StreamingSource_StillGetsPanAndDistanceGain) {
+    TestStreamSourceUVE source;
+    source.frames.assign(1000U, 0.5F);
+
+    AudioSourceDescUVE desc;
+    desc.spatial = true;
+    desc.minDistance = 1.0F;
+    desc.maxDistance = 100.0F;
+    const VoiceHandleUVE voice = audioSystem.CreateStreamingSourceUVE(desc, source);
+    ASSERT_NE(voice, kInvalidVoiceHandleUVE);
+
+    audioSystem.SetListenerPositionUVE(Math::Vector3UVE{});
+    audioSystem.SetSourcePositionUVE(voice, Math::Vector3UVE{4.0F, 0.0F, 0.0F});
+
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(0.0F);
+
+    const AudioVoiceParamsUVE* params = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), voice);
+    ASSERT_NE(params, nullptr);
+    EXPECT_NEAR(params->pan, 1.0F, 1.0e-5F);
+    EXPECT_LT(params->gain, 1.0F);
+    EXPECT_GT(params->gain, 0.0F);
+}
+
 
 } // namespace
 } // namespace UVE::Audio::Tests
