@@ -4,7 +4,9 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
+#include <utility>
+
+#include "uve/audio/pcm_gain_effect_uve.h"
 
 namespace UVE::Audio {
 
@@ -24,8 +26,20 @@ bool EvaluateAudioMixParametersUVE(const float sourceVolume, const float sourceP
     return true;
 }
 
+AudioMixerGroupUVE::GroupStateUVE AudioMixerGroupUVE::MakeGroupStateUVE(const float volumeMultiplier,
+                                                                        const float pitchMultiplier,
+                                                                        std::string parentName) {
+    GroupStateUVE state;
+    state.volumeMultiplier = volumeMultiplier;
+    state.pitchMultiplier = pitchMultiplier;
+    state.parent = std::move(parentName);
+    state.gainSlots.fill(1.0F);
+    return state;
+}
+
 AudioMixerGroupUVE::AudioMixerGroupUVE() {
-    m_groups.emplace(std::string(kMasterAudioMixerGroupNameUVE), GroupStateUVE{});
+    m_groups.emplace(std::string(kMasterAudioMixerGroupNameUVE),
+                     MakeGroupStateUVE(1.0F, 1.0F, std::string{}));
 }
 
 bool AudioMixerGroupUVE::IsValidNameUVE(const std::string_view name) noexcept {
@@ -42,100 +56,307 @@ bool AudioMixerGroupUVE::IsValidPitchMultiplierUVE(const float pitchMultiplier) 
            pitchMultiplier <= kMaximumAudioMixerPitchMultiplierUVE;
 }
 
-bool AudioMixerGroupUVE::RegisterGroupUVE(const std::string_view name, const float volumeMultiplier,
-                                          const float pitchMultiplier) {
+const AudioMixerGroupUVE::GroupStateUVE* AudioMixerGroupUVE::FindGroupUVE(const std::string_view name) const {
+    if (!IsValidNameUVE(name)) return nullptr;
+    const auto iterator = m_groups.find(name);
+    return iterator == m_groups.end() ? nullptr : &iterator->second;
+}
+
+AudioMixerGroupUVE::GroupStateUVE* AudioMixerGroupUVE::FindGroupUVE(const std::string_view name) {
+    if (!IsValidNameUVE(name)) return nullptr;
+    const auto iterator = m_groups.find(name);
+    return iterator == m_groups.end() ? nullptr : &iterator->second;
+}
+
+bool AudioMixerGroupUVE::IsDescendantOfUVE(const std::string_view name, const std::string_view ancestor) const {
+    std::string_view current = name;
+    // Parents are validated on insert and reparent, so the walk is bounded by the bus count; the cap
+    // only exists so a future invariant break degrades into `false` instead of a hang.
+    for (std::size_t hop = 0U; hop <= m_groups.size(); ++hop) {
+        const GroupStateUVE* group = FindGroupUVE(current);
+        if (group == nullptr || group->parent.empty()) return false;
+        if (group->parent == ancestor) return true;
+        current = group->parent;
+    }
+    return false;
+}
+
+bool AudioMixerGroupUVE::IsMutedOnPathUVE(const std::string_view name) const {
+    std::string_view current = name;
+    for (std::size_t hop = 0U; hop <= m_groups.size(); ++hop) {
+        const GroupStateUVE* group = FindGroupUVE(current);
+        if (group == nullptr) return false;
+        if (group->muted) return true;
+        if (group->parent.empty()) return false;
+        current = group->parent;
+    }
+    return false;
+}
+
+bool AudioMixerGroupUVE::IsSoloedOnPathUVE(const std::string_view name) const {
+    std::string_view current = name;
+    for (std::size_t hop = 0U; hop <= m_groups.size(); ++hop) {
+        const GroupStateUVE* group = FindGroupUVE(current);
+        if (group == nullptr) return false;
+        if (group->soloed) return true;
+        if (group->parent.empty()) return false;
+        current = group->parent;
+    }
+    return false;
+}
+
+bool AudioMixerGroupUVE::HasSoloInSubtreeUVE(const std::string_view name) const {
+    for (const auto& [candidateName, candidateState] : m_groups) {
+        if (!candidateState.soloed) continue;
+        if (candidateName == name || IsDescendantOfUVE(candidateName, name)) return true;
+    }
+    return false;
+}
+
+bool AudioMixerGroupUVE::IsAnyGroupSoloedUVE() const {
+    return std::any_of(m_groups.begin(), m_groups.end(),
+                       [](const auto& entry) { return entry.second.soloed; });
+}
+
+float AudioMixerGroupUVE::ComposeVolumeUVE(const std::string_view name) const {
+    float volume = 1.0F;
+    std::string_view current = name;
+    for (std::size_t hop = 0U; hop <= m_groups.size(); ++hop) {
+        const GroupStateUVE* group = FindGroupUVE(current);
+        if (group == nullptr) return volume;
+        volume *= group->volumeMultiplier;
+        if (group->parent.empty()) return volume;
+        current = group->parent;
+    }
+    return volume;
+}
+
+float AudioMixerGroupUVE::ComposePitchUVE(const std::string_view name) const {
+    float pitch = 1.0F;
+    std::string_view current = name;
+    for (std::size_t hop = 0U; hop <= m_groups.size(); ++hop) {
+        const GroupStateUVE* group = FindGroupUVE(current);
+        if (group == nullptr) break;
+        pitch *= group->pitchMultiplier;
+        if (group->parent.empty()) break;
+        current = group->parent;
+    }
+    // Clamped to the range EvaluateAudioMixParametersUVE() accepts: an unclamped product from a deep
+    // chain would fail validation and silence the voice instead of pitching it further.
+    return std::clamp(pitch, kMinimumAudioMixerPitchMultiplierUVE, kMaximumAudioMixerPitchMultiplierUVE);
+}
+
+bool AudioMixerGroupUVE::IsGroupAudibleUVE(const std::string_view name) const {
+    if (FindGroupUVE(name) == nullptr || IsMutedOnPathUVE(name)) return false;
+    if (!IsAnyGroupSoloedUVE()) return true;
+    // While something is soloed, a bus survives when it carries a soloed bus's audio (a soloed
+    // descendant exists) or feeds one (a soloed ancestor exists). Everything else is silenced.
+    return HasSoloInSubtreeUVE(name) || IsSoloedOnPathUVE(name);
+}
+
+bool AudioMixerGroupUVE::RegisterGroupUVE(const std::string_view name, const std::string_view parentName,
+                                          const float volumeMultiplier, const float pitchMultiplier) {
     if (!IsValidNameUVE(name) || !IsValidVolumeMultiplierUVE(volumeMultiplier) ||
         !IsValidPitchMultiplierUVE(pitchMultiplier) || m_groups.size() >= kMaximumAudioMixerGroupsUVE ||
-        m_groups.contains(std::string(name))) {
+        m_groups.contains(name)) {
         return false;
     }
-    m_groups.emplace(std::string(name), GroupStateUVE{volumeMultiplier, pitchMultiplier, 0U});
+    const std::string_view resolvedParent =
+        parentName.empty() ? kMasterAudioMixerGroupNameUVE : parentName;
+    if (!IsValidNameUVE(resolvedParent) || !m_groups.contains(resolvedParent)) return false;
+    m_groups.emplace(std::string(name), MakeGroupStateUVE(volumeMultiplier, pitchMultiplier,
+                                                          std::string(resolvedParent)));
     return true;
+}
+
+bool AudioMixerGroupUVE::RegisterGroupUVE(const std::string_view name, const float volumeMultiplier,
+                                          const float pitchMultiplier) {
+    return RegisterGroupUVE(name, kMasterAudioMixerGroupNameUVE, volumeMultiplier, pitchMultiplier);
 }
 
 bool AudioMixerGroupUVE::RemoveGroupUVE(const std::string_view name) {
     if (!IsValidNameUVE(name) || name == kMasterAudioMixerGroupNameUVE) {
         return false;
     }
-    const auto iterator = m_groups.find(std::string(name));
+    const auto iterator = m_groups.find(name);
     if (iterator == m_groups.end() || iterator->second.sourceCount != 0U) {
         return false;
     }
+    // Copy the survivor first: erasing invalidates the iterator, and an orphaned subtree would leave
+    // children pointing at a bus that no longer exists.
+    const std::string survivingParent = iterator->second.parent;
     m_groups.erase(iterator);
+    for (auto& [childName, childState] : m_groups) {
+        if (childState.parent == name) childState.parent = survivingParent;
+    }
+    return true;
+}
+
+bool AudioMixerGroupUVE::SetGroupParentUVE(const std::string_view name, const std::string_view parentName) {
+    if (!IsValidNameUVE(name) || name == kMasterAudioMixerGroupNameUVE) {
+        return false;
+    }
+    const auto iterator = m_groups.find(name);
+    if (iterator == m_groups.end()) return false;
+    const std::string_view resolvedParent =
+        parentName.empty() ? kMasterAudioMixerGroupNameUVE : parentName;
+    if (!IsValidNameUVE(resolvedParent) || !m_groups.contains(resolvedParent)) return false;
+    // Ask for the parent it already has: idempotent success, same as SetSourceMixerGroupUVE().
+    if (iterator->second.parent == resolvedParent) return true;
+    // Moving under itself, or under one of its own descendants, would make the tree a cycle. Rejected
+    // here so every later walk stays finite.
+    if (resolvedParent == name || IsDescendantOfUVE(resolvedParent, name)) return false;
+    iterator->second.parent = std::string(resolvedParent);
     return true;
 }
 
 bool AudioMixerGroupUVE::HasGroupUVE(const std::string_view name) const {
-    return IsValidNameUVE(name) && m_groups.contains(std::string(name));
+    return FindGroupUVE(name) != nullptr;
 }
 
 std::string AudioMixerGroupUVE::ResolveGroupNameUVE(const std::string_view name) const {
-    return IsValidNameUVE(name) && HasGroupUVE(name) ? std::string(name)
-                                                       : std::string(kMasterAudioMixerGroupNameUVE);
+    return FindGroupUVE(name) == nullptr ? std::string(kMasterAudioMixerGroupNameUVE) : std::string(name);
 }
 
 bool AudioMixerGroupUVE::SetGroupVolumeUVE(const std::string_view name, const float volumeMultiplier) {
-    if (!IsValidNameUVE(name) || !IsValidVolumeMultiplierUVE(volumeMultiplier)) {
-        return false;
-    }
-    const auto iterator = m_groups.find(std::string(name));
-    if (iterator == m_groups.end()) {
-        return false;
-    }
-    iterator->second.volumeMultiplier = volumeMultiplier;
+    if (!IsValidVolumeMultiplierUVE(volumeMultiplier)) return false;
+    GroupStateUVE* group = FindGroupUVE(name);
+    if (group == nullptr) return false;
+    group->volumeMultiplier = volumeMultiplier;
     return true;
 }
 
 bool AudioMixerGroupUVE::SetGroupPitchUVE(const std::string_view name, const float pitchMultiplier) {
-    if (!IsValidNameUVE(name) || !IsValidPitchMultiplierUVE(pitchMultiplier)) {
-        return false;
-    }
-    const auto iterator = m_groups.find(std::string(name));
-    if (iterator == m_groups.end()) {
-        return false;
-    }
-    iterator->second.pitchMultiplier = pitchMultiplier;
+    if (!IsValidPitchMultiplierUVE(pitchMultiplier)) return false;
+    GroupStateUVE* group = FindGroupUVE(name);
+    if (group == nullptr) return false;
+    group->pitchMultiplier = pitchMultiplier;
     return true;
 }
 
 float AudioMixerGroupUVE::GetGroupVolumeUVE(const std::string_view name) const {
-    if (!IsValidNameUVE(name)) {
-        return 1.0F;
-    }
-    const auto iterator = m_groups.find(std::string(name));
-    return iterator == m_groups.end() ? 1.0F : iterator->second.volumeMultiplier;
+    const GroupStateUVE* group = FindGroupUVE(name);
+    return group == nullptr ? 1.0F : group->volumeMultiplier;
 }
 
 float AudioMixerGroupUVE::GetGroupPitchUVE(const std::string_view name) const {
-    if (!IsValidNameUVE(name)) {
-        return 1.0F;
+    const GroupStateUVE* group = FindGroupUVE(name);
+    return group == nullptr ? 1.0F : group->pitchMultiplier;
+}
+
+bool AudioMixerGroupUVE::SetGroupMutedUVE(const std::string_view name, const bool muted) {
+    GroupStateUVE* group = FindGroupUVE(name);
+    if (group == nullptr) return false;
+    group->muted = muted;
+    return true;
+}
+
+bool AudioMixerGroupUVE::SetGroupSoloedUVE(const std::string_view name, const bool soloed) {
+    GroupStateUVE* group = FindGroupUVE(name);
+    if (group == nullptr) return false;
+    group->soloed = soloed;
+    return true;
+}
+
+bool AudioMixerGroupUVE::IsGroupMutedUVE(const std::string_view name) const {
+    const GroupStateUVE* group = FindGroupUVE(name);
+    return group != nullptr && group->muted;
+}
+
+bool AudioMixerGroupUVE::IsGroupSoloedUVE(const std::string_view name) const {
+    const GroupStateUVE* group = FindGroupUVE(name);
+    return group != nullptr && group->soloed;
+}
+
+std::string AudioMixerGroupUVE::GetGroupParentUVE(const std::string_view name) const {
+    const GroupStateUVE* group = FindGroupUVE(name);
+    return group == nullptr ? std::string{} : group->parent;
+}
+
+std::size_t AudioMixerGroupUVE::GetGroupDepthUVE(const std::string_view name) const {
+    const GroupStateUVE* group = FindGroupUVE(name);
+    std::size_t depth = 0U;
+    while (group != nullptr && !group->parent.empty() && depth <= m_groups.size()) {
+        ++depth;
+        group = FindGroupUVE(group->parent);
     }
-    const auto iterator = m_groups.find(std::string(name));
-    return iterator == m_groups.end() ? 1.0F : iterator->second.pitchMultiplier;
+    return depth;
+}
+
+float AudioMixerGroupUVE::GetEffectiveVolumeUVE(const std::string_view name) const {
+    // Unknown names resolve exactly like routing does, so a typo behaves like Master, which is where
+    // that voice's audio actually went.
+    const std::string_view resolved = FindGroupUVE(name) == nullptr ? kMasterAudioMixerGroupNameUVE : name;
+    return IsGroupAudibleUVE(resolved) ? ComposeVolumeUVE(resolved) : 0.0F;
+}
+
+float AudioMixerGroupUVE::GetEffectivePitchUVE(const std::string_view name) const {
+    const std::string_view resolved = FindGroupUVE(name) == nullptr ? kMasterAudioMixerGroupNameUVE : name;
+    return ComposePitchUVE(resolved);
 }
 
 bool AudioMixerGroupUVE::AttachSourceUVE(const std::string_view name) {
-    if (!IsValidNameUVE(name)) {
+    GroupStateUVE* group = FindGroupUVE(name);
+    if (group == nullptr || group->sourceCount == std::numeric_limits<std::size_t>::max()) {
         return false;
     }
-    const auto iterator = m_groups.find(std::string(name));
-    if (iterator == m_groups.end() || iterator->second.sourceCount == std::numeric_limits<std::size_t>::max()) {
-        return false;
-    }
-    ++iterator->second.sourceCount;
+    ++group->sourceCount;
     return true;
 }
 
 bool AudioMixerGroupUVE::DetachSourceUVE(const std::string_view name) {
-    if (!IsValidNameUVE(name)) {
+    GroupStateUVE* group = FindGroupUVE(name);
+    if (group == nullptr || group->sourceCount == 0U) {
         return false;
     }
-    const auto iterator = m_groups.find(std::string(name));
-    if (iterator == m_groups.end() || iterator->second.sourceCount == 0U) {
-        return false;
-    }
-    --iterator->second.sourceCount;
+    --group->sourceCount;
     return true;
+}
+
+bool AudioMixerGroupUVE::SetGroupGainSlotUVE(const std::string_view name, const std::size_t slot,
+                                              const float gain) {
+    if (slot >= kMaximumAudioBusGainSlotsUVE || !std::isfinite(gain) || gain < 0.0F) return false;
+    GroupStateUVE* group = FindGroupUVE(name);
+    if (group == nullptr) return false;
+    group->gainSlots[slot] = gain;
+    return true;
+}
+
+bool AudioMixerGroupUVE::GetGroupGainSlotUVE(const std::string_view name, const std::size_t slot,
+                                              float& outGain) const {
+    if (slot >= kMaximumAudioBusGainSlotsUVE) return false;
+    const GroupStateUVE* group = FindGroupUVE(name);
+    if (group == nullptr) return false;
+    outGain = group->gainSlots[slot];
+    return true;
+}
+
+bool AudioMixerGroupUVE::ClearGroupGainSlotsUVE(const std::string_view name) {
+    GroupStateUVE* group = FindGroupUVE(name);
+    if (group == nullptr) return false;
+    group->gainSlots.fill(1.0F);
+    return true;
+}
+
+bool AudioMixerGroupUVE::ApplyBusGainChainUVE(const std::string_view name,
+                                               const std::vector<float>& inputSamples,
+                                               std::vector<float>& outputSamples) const {
+    const GroupStateUVE* group = FindGroupUVE(name);
+    if (group == nullptr) return false;
+    try {
+        // Unity stages are exact no-ops because every earlier stage already clamped to [-1, 1], so
+        // skipping them keeps the common case allocation-light without changing a single sample.
+        std::vector<float> gains;
+        gains.reserve(1U + kMaximumAudioBusGainSlotsUVE);
+        const float effectiveVolume = GetEffectiveVolumeUVE(name);
+        if (effectiveVolume != 1.0F) gains.push_back(effectiveVolume);
+        for (const float slotGain : group->gainSlots) {
+            if (slotGain != 1.0F) gains.push_back(slotGain);
+        }
+        return ApplyPcmGainEffectChainUVE(inputSamples, gains, outputSamples);
+    } catch (...) {
+        return false;
+    }
 }
 
 AudioMixerDiagnosticsUVE AudioMixerGroupUVE::GetDiagnosticsUVE(const std::size_t maximumGroups) const {
@@ -143,6 +364,7 @@ AudioMixerDiagnosticsUVE AudioMixerGroupUVE::GetDiagnosticsUVE(const std::size_t
     diagnostics.groupCount = m_groups.size();
     diagnostics.inspectedGroupCount = std::min(maximumGroups, m_groups.size());
     diagnostics.truncated = diagnostics.inspectedGroupCount < diagnostics.groupCount;
+    diagnostics.anySoloed = IsAnyGroupSoloedUVE();
     diagnostics.groups.reserve(diagnostics.inspectedGroupCount);
 
     std::size_t inspected = 0U;
@@ -152,8 +374,18 @@ AudioMixerDiagnosticsUVE AudioMixerGroupUVE::GetDiagnosticsUVE(const std::size_t
         if (inspected >= maximumGroups) {
             continue;
         }
-        diagnostics.groups.push_back(AudioMixerGroupSnapshotUVE{name, state.volumeMultiplier,
-                                                                 state.pitchMultiplier, state.sourceCount});
+        AudioMixerGroupSnapshotUVE snapshot;
+        snapshot.name = name;
+        snapshot.volumeMultiplier = state.volumeMultiplier;
+        snapshot.pitchMultiplier = state.pitchMultiplier;
+        snapshot.sourceCount = state.sourceCount;
+        snapshot.parent = state.parent;
+        snapshot.muted = state.muted;
+        snapshot.soloed = state.soloed;
+        snapshot.effectiveVolume = GetEffectiveVolumeUVE(name);
+        snapshot.effectivePitch = GetEffectivePitchUVE(name);
+        snapshot.depth = GetGroupDepthUVE(name);
+        diagnostics.groups.push_back(std::move(snapshot));
         ++inspected;
     }
     return diagnostics;

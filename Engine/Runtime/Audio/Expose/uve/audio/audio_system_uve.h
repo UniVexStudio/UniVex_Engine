@@ -39,11 +39,16 @@ public:
     void SetSourceVolumeUVE(VoiceHandleUVE source, float volume) override;
     void SetSourcePitchUVE(VoiceHandleUVE source, float pitch) override;
 
+    bool RegisterMixerGroupUVE(std::string_view name, std::string_view parentName,
+                               float volumeMultiplier = 1.0F, float pitchMultiplier = 1.0F) override;
     bool RegisterMixerGroupUVE(std::string_view name, float volumeMultiplier = 1.0F,
                                float pitchMultiplier = 1.0F) override;
     bool RemoveMixerGroupUVE(std::string_view name) override;
+    bool SetMixerGroupParentUVE(std::string_view name, std::string_view parentName) override;
     bool SetMixerGroupVolumeUVE(std::string_view name, float volumeMultiplier) override;
     bool SetMixerGroupPitchUVE(std::string_view name, float pitchMultiplier) override;
+    bool SetMixerGroupMutedUVE(std::string_view name, bool muted) override;
+    bool SetMixerGroupSoloedUVE(std::string_view name, bool soloed) override;
     bool SetSourceMixerGroupUVE(VoiceHandleUVE source, std::string_view name) override;
     [[nodiscard]] AudioMixerDiagnosticsUVE GetMixerDiagnosticsUVE(
         std::size_t maximumGroups = kMaximumAudioMixerGroupsUVE) const override;
@@ -60,6 +65,9 @@ public:
     [[nodiscard]] bool ApplySourcePcmGainEffectsUVE(
         VoiceHandleUVE source, const std::vector<float>& inputSamples,
         std::vector<float>& outputSamples) override;
+    [[nodiscard]] bool ApplySourceBusGainChainUVE(
+        VoiceHandleUVE source, const std::vector<float>& inputSamples,
+        std::vector<float>& outputSamples) const override;
 
     void UpdateUVE() override;
 
