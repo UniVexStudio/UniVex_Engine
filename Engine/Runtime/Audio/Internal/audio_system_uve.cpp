@@ -32,6 +32,11 @@ struct SourceStateUVE {
     /// caller keeps the decoder's lifetime, exactly like a clip resolver is borrowed.
     IAudioStreamSourceUVE* stream = nullptr;
     bool streamEnded = false;
+    /// Smoothed occlusion in [0, 1] and the raw target the last physics query answered with. The
+    /// timer only exists so the query runs at ten hertz instead of once per frame.
+    float occlusion = 0.0F;
+    float occlusionTarget = 0.0F;
+    float occlusionQueryTimer = 0.0F;
 };
 
 /// Moves one bounded window from a streaming source into its device ring. Reading only what the ring
@@ -73,6 +78,8 @@ struct AudioSystemUVE::ImplUVE {
     AudioMixerGroupUVE mixerGroups;
     /// Reused by every pump call so streaming never allocates per frame on the engine thread.
     std::vector<float> streamScratch;
+    /// Borrowed; null means "nothing occludes anything", which is the pre-occlusion behaviour.
+    const IAudioOcclusionProviderUVE* occlusionProvider = nullptr;
 
     explicit ImplUVE(IAudioDeviceUVE& device, IAudioClipResolverUVE* resolver)
         : audioDevice(device), clipResolver(resolver) {}
@@ -415,6 +422,10 @@ bool AudioSystemUVE::ApplySourceBusChainUVE(const VoiceHandleUVE source,
     return m_impl->mixerGroups.ApplyBusChainUVE(iterator->second.mixerGroup, inputSamples, outputSamples);
 }
 
+void AudioSystemUVE::SetOcclusionProviderUVE(const IAudioOcclusionProviderUVE* provider) {
+    m_impl->occlusionProvider = provider;
+}
+
 void AudioSystemUVE::UpdateUVE(const float deltaSeconds) {
     // A hitch must not manufacture a fast-moving source out of one late frame, and a caller that
     // does not track time (delta 0) simply gets no Doppler - never a division by zero.
@@ -453,6 +464,7 @@ void AudioSystemUVE::UpdateUVE(const float deltaSeconds) {
         float attenuation = 1.0F;
         float pan = 0.0F;
         float dopplerPitch = 1.0F;
+        float lowPassCutoffHz = 0.0F;
         if (state.desc.spatial) {
             const Math::Vector3UVE listenerDelta = state.position - m_impl->listenerPosition;
             const float distanceSquared = Math::LengthSquaredUVE(listenerDelta);
@@ -475,6 +487,34 @@ void AudioSystemUVE::UpdateUVE(const float deltaSeconds) {
                                                            state.desc.coneOuterGain);
             dopplerPitch = ComputeAudioDopplerPitchUVE(listenerVelocity, sourceVelocity, listenerDelta,
                                                         state.desc.dopplerFactor);
+
+            // Occlusion: query at a bounded rate, smooth every frame, then fold the answer into the
+            // attenuation the mixer already understands. A source with no provider, a 2D source or
+            // one that opted out decays back to clear rather than freezing at its last blocked
+            // value, so removing the provider mid-scene fades out instead of sticking.
+            const bool occludable = m_impl->occlusionProvider != nullptr && state.desc.occlusionEnabled;
+            if (occludable) {
+                state.occlusionQueryTimer -= stepSeconds;
+                if (state.occlusionQueryTimer <= 0.0F) {
+                    AudioOcclusionQueryUVE query;
+                    query.listenerPosition = m_impl->listenerPosition;
+                    query.sourcePosition = state.position;
+                    query.listenerRight = listenerRight;
+                    query.sourceEntity = state.desc.ownerEntity;
+                    query.layerMask = state.desc.occlusionLayerMask;
+                    const float answer = m_impl->occlusionProvider->QueryOcclusionUVE(query);
+                    state.occlusionTarget =
+                        std::isfinite(answer) ? std::clamp(answer, 0.0F, 1.0F) : 0.0F;
+                    state.occlusionQueryTimer = kAudioOcclusionQueryIntervalSecondsUVE;
+                }
+            } else {
+                state.occlusionTarget = 0.0F;
+                state.occlusionQueryTimer = 0.0F;
+            }
+            state.occlusion = SmoothAudioOcclusionUVE(state.occlusion, state.occlusionTarget, deltaSeconds);
+            attenuation *= ComputeAudioOcclusionGainUVE(state.occlusion, state.desc.occlusionGain);
+            lowPassCutoffHz =
+                ComputeAudioOcclusionCutoffUVE(state.occlusion, state.desc.occlusionLowPassHz);
         }
         AudioMixParametersUVE parameters;
         if (!EvaluateAudioMixParametersUVE(state.volume, state.pitch * dopplerPitch, groupVolume, groupPitch,
@@ -484,7 +524,7 @@ void AudioSystemUVE::UpdateUVE(const float deltaSeconds) {
         }
         static_cast<void>(m_impl->audioDevice.SetVoiceParamsUVE(
             VoiceHandleUVE{handleValue},
-            AudioVoiceParamsUVE{state.position, parameters.gain, parameters.pitch, pan}));
+            AudioVoiceParamsUVE{state.position, parameters.gain, parameters.pitch, pan, lowPassCutoffHz}));
     }
 }
 

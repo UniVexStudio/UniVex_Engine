@@ -623,7 +623,52 @@ and one of the highest-priority areas below.
   its outer gain at equal distance, an approaching and a receding source shifting the device-facing
   pitch, zero delta disabling Doppler, a freshly spawned source not inventing a velocity, and the
   descriptor rejecting an inverted cone, an out-of-range factor and a zero axis).
-- [ ] Audio occlusion/obstruction driven by the physics/collision system
+- [x] Audio occlusion/obstruction driven by the physics/collision system - a blocked source is now
+  both quieter and muffled, and what decides "blocked" is geometry rather than a flag. The audio
+  module declares a one-method query interface (`IAudioOcclusionProviderUVE`, returning blockage in
+  [0, 1]) instead of depending on physics - physics has no reason to know about audio and the
+  library dependency would be a cycle - and `RaycastAudioOcclusionUVE` in `uve_core`, the module
+  that already owns both, answers it from `IRaycastSystemUVE`. It traces three paths - left ear,
+  head centre, right ear, 10 cm either side of the listener - rather than one, because a single ray
+  is a hard oracle that flips between "clear" and "fully blocked" as a source crosses a doorway
+  edge; three rays give a blocked fraction in thirds, so a source sliding out from behind a wall
+  fades instead of popping. Each trace stops one centimetre short of the emitter and excludes the
+  source's own `ownerEntity`, so a radio with a collider is not occluded by its own geometry, and
+  the query carries the source's layer mask so decorative and trigger geometry can be excluded in
+  the level rather than paid for at runtime. Cost is bounded on purpose: the system queries each
+  source at most once per `kAudioOcclusionQueryIntervalSecondsUVE` (0.1 s, ten hertz - two orders
+  below the frame rate) and smooths every frame toward the answer, with a 60 ms attack and a 250 ms
+  release so blocking is immediate and clearing is not twitchy. The smoothed value maps to gain
+  (`ComputeAudioOcclusionGainUVE`, linear to the authored floor, default 0.35 = about -9 dB, because
+  a wall is a level drop and not a switch) and to a low-pass corner
+  (`ComputeAudioOcclusionCutoffUVE`, interpolated in LOG frequency from 20 kHz to the authored floor,
+  default 700 Hz, since hertz are perceived logarithmically) and snaps to the target within the
+  bypass threshold, so an uncovered source reaches exactly the 0 sentinel the devices need to skip
+  the filter rather than staying slightly dull forever. The muffling itself is a per-voice one-pole
+  low-pass (`AudioVoiceLowPassUVE`) run by the backend on the interpolated sample before gain and
+  pan, in both the clip and the streaming mix paths; it is bypassed bit-for-bit at cutoff 0, has
+  unity DC gain so occlusion changes level only through the gain mapping, and is reconfigured only
+  when the corner actually moves. Everything is reachable from authored data:
+  `AudioSourceComponentUVE` gained `occlusionEnabled` / `occlusionGain` / `occlusionLowPassHz` /
+  `occlusionLayerMask` with inspector metadata and scene persistence through the existing
+  reflection-driven serializer, `AudioSourceSystemUVE` carries the owning entity into the descriptor
+  and treats an occlusion edit as a voice replacement exactly like a distance edit, and the engine
+  wires the provider once at startup - with no provider installed the mixer is bit-identical to
+  before, which is why every pre-existing audio test still passes untouched. Locked by 13 model
+  cases (gain and cutoff endpoints, monotonicity, the geometric-mean midpoint, non-finite and
+  out-of-range containment, the bypass threshold, attack-versus-release, the convergence snap, and
+  the filter's own DC unity, bypass bit-equality, rolloff and reset), 9 system cases (gain and
+  muffling applied, clear-path bypass sentinel, ten-hertz query throttling, smoothing ramp, provider
+  removal fading back to clear, non-spatial and opted-out sources never queried, the query carrying
+  the listener basis and owning entity, a non-finite answer failing open, and descriptor
+  validation), 8 provider cases against the real entity manager, scene graph and raycast system
+  (empty world, wall between, wall behind, own-collider exclusion, layer mask, coincident source,
+  and the one-of-three partial blocker) and 3 device cases (parameter validation on the null device,
+  a real audio-thread drain of an occluded stream, and sweeping the corner between frames).
+  Deliberately NOT claimed: obstruction is a binary per-ray hit rather than a material-aware
+  transmission model (concrete and glass block equally - `PhysicsMaterialUVE` has no acoustic
+  property yet), there is no reverb-zone or portal coupling, and the ear offset is a constant rather
+  than a per-listener setting.
 - [x] Streaming playback for long audio (music, VO) instead of fully-decoded-in-memory
   playback only - a streaming voice never decodes a clip at all. The device keeps a bounded ring of
   `kAudioStreamRingFramesUVE` frames (8192, a little under a fifth of a second at 48 kHz) per stream

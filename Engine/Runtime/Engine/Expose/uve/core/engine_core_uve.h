@@ -44,6 +44,7 @@
 #include "uve/config/settings_document_uve.h"
 #include "uve/core/input_map_document_uve.h"
 #include "uve/core/engine_config_uve.h"
+#include "uve/core/raycast_audio_occlusion_uve.h"
 #include "uve/core/engine_services_uve.h"
 #include "uve/core/i_editor_viewport_host_uve.h"
 #include "uve/core/i_simulation_control_uve.h"
@@ -890,6 +891,9 @@ private:
     std::unique_ptr<Audio::IAudioDeviceUVE> m_audioDevice;
     std::unique_ptr<Audio::IAudioSystemUVE> m_audioSystem;
     std::unique_ptr<Audio::IAudioSourceSystemUVE> m_audioSourceSystem;
+    /// Concrete physics-backed occlusion provider. Borrowed by m_audioSystem, which is why it is
+    /// declared after it and reset only once the system is gone.
+    std::unique_ptr<Core::RaycastAudioOcclusionUVE> m_audioOcclusion;
     std::unordered_map<Scene::EntityUVE, std::string> m_scriptReconcileFailedEntities;
     /// An object running a `.uvs` script: the path it was compiled from, so a changed path recompiles.
     struct UVScriptSlotUVE final {

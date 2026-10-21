@@ -895,5 +895,236 @@ TEST_F(AudioSystemUVETest, StreamingSource_StillGetsPanAndDistanceGain) {
 }
 
 
+// --- Physics-driven occlusion: the provider, the throttle, and what reaches the device. ---
+
+class TestOcclusionProviderUVE final : public IAudioOcclusionProviderUVE {
+public:
+    [[nodiscard]] float QueryOcclusionUVE(const AudioOcclusionQueryUVE& query) const override {
+        ++queryCount;
+        lastQuery = query;
+        return answer;
+    }
+
+    mutable int queryCount = 0;
+    mutable AudioOcclusionQueryUVE lastQuery{};
+    float answer = 0.0F;
+};
+
+TEST_F(AudioSystemUVETest, Occlusion_BlocksGainAndMufflesTheVoice) {
+    TestOcclusionProviderUVE provider;
+    provider.answer = 1.0F;
+    audioSystem.SetOcclusionProviderUVE(&provider);
+
+    AudioSourceDescUVE desc;
+    desc.spatial = true;
+    desc.minDistance = 1.0F;
+    desc.maxDistance = 100.0F;
+    desc.occlusionGain = 0.25F;
+    desc.occlusionLowPassHz = 600.0F;
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
+    audioSystem.SetListenerPositionUVE(Math::Vector3UVE{});
+    audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{0.0F, 0.0F, 20.0F});
+
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(0.0F); // a zero delta snaps to the quoted target
+
+    const AudioVoiceParamsUVE* params = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
+    ASSERT_NE(params, nullptr);
+    // Gain 1 at 20 m of a 100 m linear ramp is (1 - 19/99); fully blocked multiplies by 0.25.
+    EXPECT_NEAR(params->gain, (1.0F - 19.0F / 99.0F) * 0.25F, 1.0e-4F);
+    EXPECT_NEAR(params->lowPassCutoffHz, 600.0F, 1.0e-2F);
+    EXPECT_TRUE(ValidateAudioVoiceParamsUVE(*params));
+}
+
+TEST_F(AudioSystemUVETest, Occlusion_AClearPathSendsTheBypassSentinel) {
+    TestOcclusionProviderUVE provider;
+    provider.answer = 0.0F;
+    audioSystem.SetOcclusionProviderUVE(&provider);
+
+    AudioSourceDescUVE desc;
+    desc.spatial = true;
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
+    audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{0.0F, 0.0F, 0.5F}); // inside minDistance
+
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(0.0F);
+
+    const AudioVoiceParamsUVE* params = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
+    ASSERT_NE(params, nullptr);
+    EXPECT_FLOAT_EQ(params->lowPassCutoffHz, 0.0F); // bit-identical device path
+    EXPECT_FLOAT_EQ(params->gain, 1.0F);            // full distance attenuation and no occlusion
+}
+
+TEST_F(AudioSystemUVETest, Occlusion_QueriesTheProviderAtATenthOfTheFramerate) {
+    TestOcclusionProviderUVE provider;
+    audioSystem.SetOcclusionProviderUVE(&provider);
+
+    AudioSourceDescUVE desc;
+    desc.spatial = true;
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
+    audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{0.0F, 0.0F, 5.0F});
+
+    // One second of 60 Hz frames: the 0.1 s interval allows at most eleven queries, not sixty.
+    constexpr float kFrame = 1.0F / 60.0F;
+    for (int frame = 0; frame < 60; ++frame) {
+        audioSystem.UpdateUVE(kFrame);
+    }
+    EXPECT_GE(provider.queryCount, 9);
+    EXPECT_LE(provider.queryCount, 11);
+}
+
+TEST_F(AudioSystemUVETest, Occlusion_SmoothingRampsInsteadOfSwitching) {
+    TestOcclusionProviderUVE provider;
+    audioSystem.SetOcclusionProviderUVE(&provider);
+
+    AudioSourceDescUVE desc;
+    desc.spatial = true;
+    desc.minDistance = 1.0F;
+    desc.maxDistance = 100.0F;
+    desc.occlusionLowPassHz = 2000.0F;
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
+    audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{0.0F, 0.0F, 10.0F});
+
+    constexpr float kFrame = 1.0F / 60.0F;
+    provider.answer = 1.0F;
+
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(kFrame);
+    const AudioVoiceParamsUVE* first = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
+    ASSERT_NE(first, nullptr);
+    const float firstCutoff = first->lowPassCutoffHz;
+    ASSERT_GT(firstCutoff, 0.0F);
+
+    for (int frame = 0; frame < 40; ++frame) {
+        audioSystem.UpdateUVE(kFrame);
+    }
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(kFrame);
+    const AudioVoiceParamsUVE* settled = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
+    ASSERT_NE(settled, nullptr);
+    // The filter closes over time: the first frame is nowhere near the fully blocked corner.
+    EXPECT_GT(firstCutoff, settled->lowPassCutoffHz);
+    EXPECT_NEAR(settled->lowPassCutoffHz, 2000.0F, 1.0F);
+}
+
+TEST_F(AudioSystemUVETest, Occlusion_RemovingTheProviderFadesBackToClear) {
+    TestOcclusionProviderUVE provider;
+    provider.answer = 1.0F;
+    audioSystem.SetOcclusionProviderUVE(&provider);
+
+    AudioSourceDescUVE desc;
+    desc.spatial = true;
+    desc.occlusionLowPassHz = 500.0F;
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
+    audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{0.0F, 0.0F, 4.0F});
+
+    constexpr float kFrame = 1.0F / 60.0F;
+    for (int frame = 0; frame < 30; ++frame) {
+        audioSystem.UpdateUVE(kFrame);
+    }
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(kFrame);
+    const AudioVoiceParamsUVE* blocked = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
+    ASSERT_NE(blocked, nullptr);
+    EXPECT_NEAR(blocked->lowPassCutoffHz, 500.0F, 5.0F);
+
+    // No provider: the source must open back up rather than freeze at its last blocked value.
+    // Release is deliberately slower than attack (0.25 s), so this is three seconds of frames.
+    audioSystem.SetOcclusionProviderUVE(nullptr);
+    for (int frame = 0; frame < 180; ++frame) {
+        audioSystem.UpdateUVE(kFrame);
+    }
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(kFrame);
+    const AudioVoiceParamsUVE* cleared = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
+    ASSERT_NE(cleared, nullptr);
+    EXPECT_FLOAT_EQ(cleared->lowPassCutoffHz, 0.0F);
+}
+
+TEST_F(AudioSystemUVETest, Occlusion_NonSpatialAndOptedOutSourcesAreNeverQueried) {
+    TestOcclusionProviderUVE provider;
+    provider.answer = 1.0F;
+    audioSystem.SetOcclusionProviderUVE(&provider);
+
+    AudioSourceDescUVE flat;
+    flat.spatial = false;
+    const VoiceHandleUVE flatSource = audioSystem.CreateSourceUVE(flat);
+
+    AudioSourceDescUVE optedOut;
+    optedOut.spatial = true;
+    optedOut.occlusionEnabled = false;
+    const VoiceHandleUVE optedOutSource = audioSystem.CreateSourceUVE(optedOut);
+
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(0.0F);
+    EXPECT_EQ(provider.queryCount, 0);
+
+    const std::vector<RecordedAudioCallUVE>& recorded = device.GetRecordedCallsUVE();
+    const AudioVoiceParamsUVE* flatParams = FindRecordedParamsUVE(recorded, flatSource);
+    const AudioVoiceParamsUVE* optedOutParams = FindRecordedParamsUVE(recorded, optedOutSource);
+    ASSERT_NE(flatParams, nullptr);
+    ASSERT_NE(optedOutParams, nullptr);
+    EXPECT_FLOAT_EQ(flatParams->lowPassCutoffHz, 0.0F);
+    EXPECT_FLOAT_EQ(optedOutParams->lowPassCutoffHz, 0.0F);
+    EXPECT_FLOAT_EQ(optedOutParams->gain, flatParams->gain);
+}
+
+TEST_F(AudioSystemUVETest, Occlusion_TheQueryCarriesTheListenerBasisAndTheOwningEntity) {
+    TestOcclusionProviderUVE provider;
+    audioSystem.SetOcclusionProviderUVE(&provider);
+
+    AudioSourceDescUVE desc;
+    desc.spatial = true;
+    desc.occlusionLayerMask = 0x4U;
+    desc.ownerEntity = Scene::EntityUVE{7U, 3U};
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
+    audioSystem.SetListenerPositionUVE(Math::Vector3UVE{1.0F, 2.0F, 3.0F});
+    audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{4.0F, 5.0F, 6.0F});
+
+    audioSystem.UpdateUVE(0.0F);
+    EXPECT_EQ(provider.queryCount, 1);
+    EXPECT_FLOAT_EQ(provider.lastQuery.listenerPosition.x, 1.0F);
+    EXPECT_FLOAT_EQ(provider.lastQuery.sourcePosition.z, 6.0F);
+    EXPECT_FLOAT_EQ(provider.lastQuery.listenerRight.x, 1.0F); // default listener faces -Z
+    EXPECT_EQ(provider.lastQuery.sourceEntity, (Scene::EntityUVE{7U, 3U}));
+    EXPECT_EQ(provider.lastQuery.layerMask, 0x4U);
+}
+
+TEST_F(AudioSystemUVETest, Occlusion_ANonFiniteAnswerFailsOpen) {
+    TestOcclusionProviderUVE provider;
+    provider.answer = std::nanf("");
+    audioSystem.SetOcclusionProviderUVE(&provider);
+
+    AudioSourceDescUVE desc;
+    desc.spatial = true;
+    const VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
+    audioSystem.SetSourcePositionUVE(source, Math::Vector3UVE{0.0F, 0.0F, 0.5F});
+
+    device.ClearRecordedCallsUVE();
+    audioSystem.UpdateUVE(0.0F);
+    const AudioVoiceParamsUVE* params = FindRecordedParamsUVE(device.GetRecordedCallsUVE(), source);
+    ASSERT_NE(params, nullptr);
+    EXPECT_FLOAT_EQ(params->lowPassCutoffHz, 0.0F);
+    EXPECT_FLOAT_EQ(params->gain, 1.0F);
+}
+
+TEST_F(AudioSystemUVETest, Occlusion_DescriptorRejectsAnUnusableFloor) {
+    AudioSourceDescUVE badGain;
+    badGain.occlusionGain = 1.5F;
+    EXPECT_EQ(audioSystem.CreateSourceUVE(badGain), kInvalidVoiceHandleUVE);
+
+    AudioSourceDescUVE badCutoff;
+    badCutoff.occlusionLowPassHz = 5.0F;
+    EXPECT_EQ(audioSystem.CreateSourceUVE(badCutoff), kInvalidVoiceHandleUVE);
+
+    // ...but a 2D source ignores them, exactly like the cone and Doppler fields.
+    AudioSourceDescUVE flat;
+    flat.spatial = false;
+    flat.occlusionGain = 1.5F;
+    flat.occlusionLowPassHz = 5.0F;
+    EXPECT_NE(audioSystem.CreateSourceUVE(flat), kInvalidVoiceHandleUVE);
+}
+
+
 } // namespace
 } // namespace UVE::Audio::Tests

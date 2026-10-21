@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "uve/audio/audio_mixer_group_uve.h"
+#include "uve/audio/audio_occlusion_uve.h"
 #include "uve/audio/audio_stream_uve.h"
 #include "uve/audio/pcm_gain_effect_uve.h"
 #include "uve/audio/wav_pcm16_decoder_uve.h"
@@ -129,6 +130,13 @@ public:
     /// Frames buffered in the device for `source` - the headroom a pre-buffer loop waits on and the
     /// number an underrun test watches. 0 for an unknown handle or a clip source.
     [[nodiscard]] virtual std::size_t GetStreamingSourceBufferedFramesUVE(VoiceHandleUVE source) const = 0;
+
+    /// Installs (or clears, with nullptr) the occlusion provider. The pointer is borrowed, not
+    /// owned, and a provider must outlive the system. With none installed every source stays clear,
+    /// so an engine that never wires physics-driven occlusion behaves exactly as before.
+    /// A provider is queried at most once per source per kAudioOcclusionQueryIntervalSecondsUVE and
+    /// its answer is smoothed, so swapping one in never turns the mixer into a raycast loop.
+    virtual void SetOcclusionProviderUVE(const IAudioOcclusionProviderUVE* provider) = 0;
 
     // --- Frame advance. ---
     /// Recomputes ComputeDistanceAttenuationUVE() for every live spatial source against the
