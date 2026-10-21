@@ -57,9 +57,35 @@ constexpr float kMinimumNormalLengthSquaredUVE = 1.0e-12F;
     return UVE::Math::NormalizeUVE(value);
 }
 
+/// Every displacement stream of one morph target shares the base mesh's vertex count; glTF says so
+/// and an exporter that disagrees has produced data no eval pass can index safely.
+[[nodiscard]] bool ValidateMorphStreamUVE(const GltfAccessorViewUVE& stream,
+                                          const std::uint64_t vertexCount,
+                                          const std::uint64_t elementSize) noexcept {
+    return stream.componentType == GltfComponentTypeUVE::Float && stream.elementCount == vertexCount &&
+           Detail::ValidateGltfAccessorViewUVE(stream, elementSize, kMaximumGltfAccessorElementsUVE);
+}
+
+[[nodiscard]] bool IsZeroVectorUVE(const UVE::Math::Vector3UVE& value) noexcept {
+    return value.x == 0.0F && value.y == 0.0F && value.z == 0.0F;
+}
+
+/// glTF carries morph target names out-of-band in `mesh.extras.targetNames`. A missing or short
+/// array is not an error - it just means those targets need the deterministic fallback name.
+[[nodiscard]] std::string MorphTargetNameUVE(const std::vector<std::string>& names, const std::size_t index) {
+    if (index < names.size() && !names[index].empty()) {
+        return names[index];
+    }
+    return "target" + std::to_string(index);
+}
+
 } // namespace
 
-bool ConvertGltfPrimitiveUVE(const GltfPrimitiveSourceUVE& source, MeshAssetUVE& outMesh) {
+namespace {
+
+[[nodiscard]] bool ConvertGltfPrimitiveIntoUVE(const GltfPrimitiveSourceUVE& source,
+                                              const GltfMorphTargetSetUVE* const morphTargets,
+                                              MeshAssetUVE& outMesh) {
     try {
         if (source.mode != 4U || source.positions.componentType != GltfComponentTypeUVE::Float ||
         source.positions.elementCount == 0U || source.positions.elementCount > kMaximumGltfAccessorElementsUVE ||
@@ -180,11 +206,83 @@ bool ConvertGltfPrimitiveUVE(const GltfPrimitiveSourceUVE& source, MeshAssetUVE&
     if (!TryGenerateMeshTangentsUVE(candidate.vertices, candidate.indices)) {
         return false;
     }
+
+    // Morph targets, in declaration order - that order IS the weight index space, so it is never
+    // sorted or deduplicated here.
+    if (morphTargets != nullptr && morphTargets->targets.size() > kMaximumMeshMorphTargetsUVE) {
+        return false;
+    }
+    const std::size_t targetCount = morphTargets == nullptr ? 0U : morphTargets->targets.size();
+    candidate.morphTargets.reserve(targetCount);
+    for (std::size_t targetIndex = 0U; targetIndex < targetCount; ++targetIndex) {
+        const GltfMorphTargetSourceUVE& targetSource = morphTargets->targets[targetIndex];
+        if (!ValidateMorphStreamUVE(targetSource.positions, source.positions.elementCount, 12U) ||
+            (targetSource.normals.has_value() &&
+             !ValidateMorphStreamUVE(*targetSource.normals, source.positions.elementCount, 12U)) ||
+            (targetSource.tangents.has_value() &&
+             !ValidateMorphStreamUVE(*targetSource.tangents, source.positions.elementCount, 12U))) {
+            return false;
+        }
+        MeshMorphTargetUVE target;
+        target.name = MorphTargetNameUVE(morphTargets->names, targetIndex);
+        // A delta whose three streams are all exactly zero moves nothing. Exporters emit these by
+        // the thousand for the vertices a shape leaves alone, and dropping them is what makes the
+        // sparse representation pay for itself: it is lossless because a missing delta IS a zero
+        // delta, and the accumulator skips zeroes anyway.
+        for (std::size_t vertexIndex = 0U; vertexIndex < vertexCount; ++vertexIndex) {
+            const UVE::Math::Vector3UVE positionDelta = ReadVector3UVE(targetSource.positions, vertexIndex);
+            const UVE::Math::Vector3UVE normalDelta =
+                targetSource.normals.has_value() ? ReadVector3UVE(*targetSource.normals, vertexIndex)
+                                                 : UVE::Math::Vector3UVE{};
+            const UVE::Math::Vector3UVE tangentDelta =
+                targetSource.tangents.has_value() ? ReadVector3UVE(*targetSource.tangents, vertexIndex)
+                                                  : UVE::Math::Vector3UVE{};
+            if (!Math::IsFiniteUVE(positionDelta) || !Math::IsFiniteUVE(normalDelta) ||
+                !Math::IsFiniteUVE(tangentDelta)) {
+                return false;
+            }
+            if (IsZeroVectorUVE(positionDelta) && IsZeroVectorUVE(normalDelta) && IsZeroVectorUVE(tangentDelta)) {
+                continue;
+            }
+            if (target.deltas.size() >= kMaximumMeshMorphTargetDeltasUVE) {
+                return false;
+            }
+            target.deltas.push_back(MeshMorphTargetDeltaUVE{
+                static_cast<std::uint32_t>(vertexIndex), positionDelta, normalDelta, tangentDelta});
+        }
+        candidate.morphTargets.push_back(std::move(target));
+    }
+    if (morphTargets != nullptr && !morphTargets->defaultWeights.empty()) {
+        if (morphTargets->defaultWeights.size() != candidate.morphTargets.size()) {
+            return false;
+        }
+        for (const float weight : morphTargets->defaultWeights) {
+            if (!std::isfinite(weight)) {
+                return false;
+            }
+        }
+        candidate.defaultMorphWeights = morphTargets->defaultWeights;
+    }
+    if (!IsMeshMorphTargetDataValidUVE(candidate)) {
+        return false;
+    }
+
     outMesh = std::move(candidate);
     return true;
     } catch (const std::bad_alloc&) {
         return false;
     }
+}
+
+} // namespace
+
+bool ConvertGltfPrimitiveUVE(const GltfPrimitiveSourceUVE& source, MeshAssetUVE& outMesh) {
+    return ConvertGltfPrimitiveIntoUVE(source, nullptr, outMesh);
+}
+
+bool ConvertGltfPrimitiveUVE(const GltfPrimitiveSourceUVE& source, const GltfMorphTargetSetUVE& morphTargets,
+                             MeshAssetUVE& outMesh) {
+    return ConvertGltfPrimitiveIntoUVE(source, &morphTargets, outMesh);
 }
 
 } // namespace UVE::Asset

@@ -67,6 +67,7 @@
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/two_bone_ik_3d_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
+#include "uve/component/morph_target_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/skin_component_uve.h"
@@ -1798,6 +1799,10 @@ bool EditorUVE::DrawCustomPropertyUVE(const TypeMetadataEntryUVE& entry, const T
         DrawFullBodyEffectorsPropertyUVE(entry, property, instance);
         return true;
     }
+    if (property.customDrawerId == "morph-target-weights") {
+        DrawMorphTargetWeightsPropertyUVE(entry, property, instance);
+        return true;
+    }
     if (property.customDrawerId == "lod-group-thresholds") {
         DrawLodGroupThresholdsPropertyUVE(entry, property, instance);
         return true;
@@ -2567,6 +2572,110 @@ void EditorUVE::DrawFullBodyEffectorsPropertyUVE(const Core::TypeMetadataEntryUV
         effectors.erase(effectors.begin() + static_cast<std::ptrdiff_t>(*removeIndex));
     }
     static_cast<void>(SetSelectedComponentPropertyUVE(entry, property, &effectors));
+}
+
+void EditorUVE::DrawMorphTargetWeightsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                                  const Core::TypeMetadataPropertyUVE& property,
+                                                  const void* const instance) {
+    if (property.typeId != Strings::StringIdUVE{"MorphTargetWeights"} || property.getValue == nullptr ||
+        property.setValue == nullptr || instance == nullptr) {
+        return;
+    }
+
+    // The list is sparse by design: a row exists only for a shape this entity drives, and every
+    // other shape sits at the mesh's own default. Editing therefore always writes the whole array
+    // back through the property's typed accessor - one undo step per edit, and the component's
+    // validator decides whether it lands.
+    std::vector<Scene::MorphTargetWeightUVE> weights;
+    property.getValue(instance, &weights);
+
+    const bool writable = property.IsAuthoringWritableUVE() && IsAuthoringCommandAllowedUVE();
+    std::optional<std::size_t> removeIndex;
+    bool edited = false;
+
+    ImGui::BeginDisabled(!writable);
+    {
+        const std::string header = "Blend Shapes (" + std::to_string(weights.size()) + ")##morph-weights";
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(header.c_str());
+        if (ImGui::IsItemHovered()) {
+            DrawTooltipUVE(property);
+        }
+        if (weights.size() < Scene::kMaximumMorphTargetWeightsUVE) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Add")) {
+                weights.push_back(Scene::MorphTargetWeightUVE{});
+                edited = true;
+            }
+        }
+    }
+    if (BeginPropertyRowsUVE("##morph-weights")) {
+        for (std::size_t index = 0U; index < weights.size(); ++index) {
+            Scene::MorphTargetWeightUVE& row = weights[index];
+            ImGui::PushID(static_cast<int>(index));
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Shape");
+            ImGui::TableSetColumnIndex(1);
+            {
+                std::array<char, 128> targetName{};
+                const std::size_t copyLength = std::min(row.target.size(), targetName.size() - 1U);
+                std::memcpy(targetName.data(), row.target.data(), copyLength);
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                if (ImGui::InputText("##morph-target-name", targetName.data(), targetName.size())) {
+                    row.target = targetName.data();
+                    edited = true;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("The blend shape's name in the mesh asset, exactly as imported "
+                                      "(for example jawOpen). Typed rather than listed so the "
+                                      "Inspector never blocks on loading the mesh.");
+                }
+            }
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted("Weight");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            {
+                // The full authored range, not 0..1: glTF permits corrective shapes to pull in
+                // either direction, and a slider that silently clamped them would make a shape
+                // impossible to author as exported.
+                float weight = row.weight;
+                if (ImGui::DragFloat("##morph-weight", &weight, 0.01F, -4.0F, 4.0F, "%.3f")) {
+                    row.weight = weight;
+                    edited = true;
+                }
+            }
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted("");
+            ImGui::TableSetColumnIndex(1);
+            if (ImGui::SmallButton("Remove")) {
+                removeIndex = index;
+                edited = true;
+            }
+            ImGui::PopID();
+        }
+        if (weights.empty()) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextDisabled("None");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextDisabled("The mesh sits at its default shape. Add one to drive a blend shape.");
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndDisabled();
+
+    if (!edited) {
+        return;
+    }
+    if (removeIndex.has_value()) {
+        weights.erase(weights.begin() + static_cast<std::ptrdiff_t>(*removeIndex));
+    }
+    static_cast<void>(SetSelectedComponentPropertyUVE(entry, property, &weights));
 }
 
 void EditorUVE::DrawLodGroupThresholdsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,

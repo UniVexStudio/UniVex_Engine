@@ -33,6 +33,7 @@
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/canvas_component_uve.h"
+#include "uve/component/morph_target_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/disabled_component_uve.h"
@@ -3473,6 +3474,71 @@ TEST_F(SceneSerializerUVETest, FullBodyIKPointingOutsideTheSavedSetLoadsInert) {
     EXPECT_EQ(restored.skeleton, kInvalidEntityUVE);
     ASSERT_EQ(restored.effectors.size(), 1U);
     EXPECT_EQ(restored.effectors[0].target, kInvalidEntityUVE);
+}
+
+TEST_F(SceneSerializerUVETest, MorphTargetComponent_RoundTripsThroughCaptureRestore) {
+    // The component is a sparse name/value list, so the round trip has to preserve both the names
+    // (which is how shapes are addressed) and the fact that unnamed shapes simply have no row.
+    const std::filesystem::path path = "uve_scene_serializer_morph_target.uvscene";
+    std::filesystem::remove(path);
+
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    MorphTargetComponentUVE component;
+    component.enabled = true;
+    component.weights.push_back(MorphTargetWeightUVE{"jawOpen", 0.35F});
+    component.weights.push_back(MorphTargetWeightUVE{"mouthSmile_L", -0.2F});
+    ASSERT_TRUE(IsMorphTargetComponentValidUVE(component));
+    entityManager.AddComponentUVE<MorphTargetComponentUVE>(source, component);
+
+    ASSERT_TRUE(serializer.SaveUVE(entityManager, {source}, path, SceneAssetTypeUVE::Scene));
+    const std::vector<EntityUVE> restored = serializer.LoadUVE(entityManager, path);
+    ASSERT_FALSE(restored.empty());
+    ASSERT_TRUE(entityManager.HasComponentUVE<MorphTargetComponentUVE>(restored.front()));
+    const MorphTargetComponentUVE& revived =
+        entityManager.GetComponentUVE<MorphTargetComponentUVE>(restored.front());
+    EXPECT_EQ(revived, component);
+    std::filesystem::remove(path);
+}
+
+TEST_F(SceneSerializerUVETest, MorphTargetComponent_DisabledStateSurvivesTheFile) {
+    const std::filesystem::path path = "uve_scene_serializer_morph_disabled.uvscene";
+    std::filesystem::remove(path);
+
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    MorphTargetComponentUVE component;
+    component.enabled = false;
+    component.weights.push_back(MorphTargetWeightUVE{"blink", 1.0F});
+    entityManager.AddComponentUVE<MorphTargetComponentUVE>(source, component);
+
+    ASSERT_TRUE(serializer.SaveUVE(entityManager, {source}, path, SceneAssetTypeUVE::Scene));
+    const std::vector<EntityUVE> restored = serializer.LoadUVE(entityManager, path);
+    ASSERT_FALSE(restored.empty());
+    const MorphTargetComponentUVE& revived =
+        entityManager.GetComponentUVE<MorphTargetComponentUVE>(restored.front());
+    EXPECT_FALSE(revived.enabled);
+    ASSERT_EQ(revived.weights.size(), 1U);
+    EXPECT_EQ(revived.weights[0].target, "blink");
+    EXPECT_FLOAT_EQ(revived.weights[0].weight, 1.0F);
+    std::filesystem::remove(path);
+}
+
+TEST_F(SceneSerializerUVETest, MorphTargetComponent_PayloadRejectsADuplicateShape) {
+    // A hand-edited scene file naming one shape twice is a defect, not a last-writer-wins case:
+    // the component's validator is the last word, exactly as it is for an Inspector edit.
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    MorphTargetComponentUVE component;
+    component.weights.push_back(MorphTargetWeightUVE{"jawOpen", 0.1F});
+    component.weights.push_back(MorphTargetWeightUVE{"jawOpen", 0.9F});
+    EXPECT_FALSE(IsMorphTargetComponentValidUVE(component));
+
+    // Capture refuses to write a component the engine itself calls invalid.
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    entityManager.AddComponentUVE<MorphTargetComponentUVE>(source, component);
+    const std::optional<SceneSnapshotUVE> invalidSnapshot =
+        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    EXPECT_FALSE(invalidSnapshot.has_value());
 }
 
 } // namespace UVE::Scene::Tests

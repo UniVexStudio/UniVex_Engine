@@ -23,6 +23,7 @@
 #include "uve/component/light_component_uve.h"
 #include "uve/component/light_emitter_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
+#include "uve/component/morph_target_component_uve.h"
 #include "uve/component/skin_component_uve.h"
 #include "uve/component/name_component_uve.h"
 #include "uve/component/object_metadata_component_uve.h"
@@ -390,6 +391,31 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                      });
     skinEntry.nestedUnderTypeIds = {"component.mesh"};
     AddValidatedUVE<SkinComponentUVE, &IsSkinComponentValidUVE>(entries, std::move(skinEntry));
+
+    // Blend shapes. Deliberately NOT nested under component.mesh: nestable types are drawn inside
+    // their host's section, and a face rig's weights are the one thing on a mesh an animator edits
+    // continuously - burying the list in the Mesh section makes it a scroll away every time. The
+    // list itself is a custom drawer because rows carry a shape NAME (chosen from the mesh's own
+    // targets, not typed) and a weight, which no generic scalar row can express.
+    TypeMetadataEntryUVE morphTargetEntry =
+        MakeEntryUVE("component.morph_target", "MorphTargetComponentUVE", "Morph Targets",
+                     kSectionOrderTypeSpecificUVE,
+                     {
+                         WithTooltipUVE(
+                             WithCustomDrawerUVE(
+                                 DeclareUVE<&MorphTargetComponentUVE::weights>("weights", "Weights",
+                                                                               Strings::StringIdUVE{"MorphTargetWeights"}),
+                                 "morph-target-weights"),
+                             "One row per blend shape this entity drives. A shape with no row stays at "
+                             "the mesh's own default, so a 52-shape face rig stores only the few "
+                             "shapes that are off zero."),
+                         WithTooltipUVE(
+                             DeclareUVE<&MorphTargetComponentUVE::enabled>("enabled", "Enabled",
+                                                                           kPropertyTypeBoolUVE),
+                             "Off leaves the weights authored but contributes nothing, so the mesh "
+                             "sits at its default shape."),
+                     });
+    AddValidatedUVE<MorphTargetComponentUVE, &IsMorphTargetComponentValidUVE>(entries, std::move(morphTargetEntry));
 
     // One component behind BoxMesh3D, SphereMesh3D and PlaneMesh3D; its section carries the name
     // of the object it is on.
