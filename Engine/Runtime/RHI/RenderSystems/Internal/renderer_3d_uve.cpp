@@ -48,6 +48,7 @@
 #include "uve/math/vector4_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
 #include "uve/render_systems/compute_system_uve.h"
+#include "uve/render_systems/contact_shadows_uve.h"
 #include "uve/render_systems/decal_draw_command_uve.h"
 #include "uve/render_systems/decal_renderer_uve.h"
 #include "uve/render_systems/frustum_cull_indirect_uve.h"
@@ -840,6 +841,7 @@ struct Renderer3DUVE::ImplUVE {
         std::array<BloomMipTargetsUVE, kMaximumBloomMipCountUVE> bloomMipTargets{};
         std::uint32_t bloomMipTargetCount = 0U;
         TextureHandleUVE ssaoTarget = kInvalidTextureHandleUVE;
+        TextureHandleUVE contactShadowTarget = kInvalidTextureHandleUVE;
     };
 
     /// Bounded on purpose. A caller that resizes to a genuinely new size every frame - a window
@@ -1102,6 +1104,15 @@ struct Renderer3DUVE::ImplUVE {
     /// fullscreen_copy.glsl compiled with PipelineBlendModeUVE::Multiply - composites the SSAO
     /// occlusion term onto colorTarget.
     std::shared_ptr<Shader::ShaderProgramUVE> ssaoCompositeProgram;
+
+    /// Screen-space contact-shadow term at FULL resolution - unlike SSAO this is the sharpest
+    /// feature in the frame, and sampling it from a half-res target would blur away the very
+    /// centimetres it exists to recover.
+    TextureHandleUVE contactShadowTarget;
+    std::shared_ptr<Shader::ShaderProgramUVE> contactShadowProgram;
+    /// fullscreen_copy.glsl compiled with PipelineBlendModeUVE::Multiply - multiplies the contact
+    /// shadow visibility term into colorTarget.
+    std::shared_ptr<Shader::ShaderProgramUVE> contactShadowCompositeProgram;
 
     /// Minimal built-in particle program and reusable CPU-expanded vertex buffer. ShaderManagerUVE
     /// owns the linked pipeline lifetime; Renderer3DUVE owns only the buffer and releases it in its
@@ -1379,6 +1390,8 @@ struct Renderer3DUVE::ImplUVE {
             renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
         set.ssaoTarget =
             renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, TextureFormatUVE::RGBA8Unorm, 1});
+        set.contactShadowTarget =
+            renderDevice.CreateTextureUVE(TextureDescUVE{width, height, TextureFormatUVE::RGBA8Unorm, 1});
 
         // Color and depth are load-bearing: without them there is no frame at all. The
         // post-process four are not - RenderFrameUVE() guards on their validity and skips those
@@ -1390,7 +1403,8 @@ struct Renderer3DUVE::ImplUVE {
         }
         if (baseBloomTargets.bright == kInvalidTextureHandleUVE ||
             baseBloomTargets.blurA == kInvalidTextureHandleUVE ||
-            baseBloomTargets.blurB == kInvalidTextureHandleUVE || set.ssaoTarget == kInvalidTextureHandleUVE) {
+            baseBloomTargets.blurB == kInvalidTextureHandleUVE || set.ssaoTarget == kInvalidTextureHandleUVE ||
+            set.contactShadowTarget == kInvalidTextureHandleUVE) {
             for (BloomMipTargetsUVE& bloomTargets : set.bloomMipTargets) {
                 DestroyTextureIfValidUVE(renderDevice, bloomTargets.bright);
                 DestroyTextureIfValidUVE(renderDevice, bloomTargets.blurA);
@@ -1398,10 +1412,12 @@ struct Renderer3DUVE::ImplUVE {
                 bloomTargets = BloomMipTargetsUVE{};
             }
             DestroyTextureIfValidUVE(renderDevice, set.ssaoTarget);
+            DestroyTextureIfValidUVE(renderDevice, set.contactShadowTarget);
             set.bloomMipTargetCount = 0U;
             set.ssaoTarget = kInvalidTextureHandleUVE;
-            UVE_WARNING("Renderer3DUVE: post-process target creation failed at {}x{}; bloom/SSAO "
-                        "passes will be skipped at this size",
+            set.contactShadowTarget = kInvalidTextureHandleUVE;
+            UVE_WARNING("Renderer3DUVE: post-process target creation failed at {}x{}; bloom/SSAO/contact "
+                        "shadow passes will be skipped at this size",
                         halfWidth, halfHeight);
         } else {
             set.bloomMipTargetCount = 1U;
@@ -1418,6 +1434,7 @@ struct Renderer3DUVE::ImplUVE {
             DestroyTextureIfValidUVE(renderDevice, bloomTargets.blurB);
         }
         DestroyTextureIfValidUVE(renderDevice, set.ssaoTarget);
+        DestroyTextureIfValidUVE(renderDevice, set.contactShadowTarget);
     }
 
     /// Points the active target members at `set`. Every render pass reads these members, so
@@ -1429,6 +1446,7 @@ struct Renderer3DUVE::ImplUVE {
         bloomMipTargets = set.bloomMipTargets;
         bloomMipTargetCount = set.bloomMipTargetCount;
         ssaoTarget = set.ssaoTarget;
+        contactShadowTarget = set.contactShadowTarget;
         targetWidth = width;
         targetHeight = height;
     }
@@ -1514,6 +1532,7 @@ struct Renderer3DUVE::ImplUVE {
             bloomMipTargets = {};
             bloomMipTargetCount = 0U;
             ssaoTarget = kInvalidTextureHandleUVE;
+            contactShadowTarget = kInvalidTextureHandleUVE;
         }
 
         std::optional<SizedTargetSetUVE> created = CreateTargetSetUVE(newWidth, newHeight);
@@ -3360,6 +3379,24 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     ssaoCompositeProgramDesc.debugNameUVE = "SSAOComposite";
     m_impl->ssaoCompositeProgram = shaderManager.CreateProgramUVE(ssaoCompositeProgramDesc);
 
+    Shader::ShaderProgramDescUVE contactShadowProgramDesc;
+    contactShadowProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kContactShadowVirtualPath);
+    contactShadowProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kContactShadowSource);
+    contactShadowProgramDesc.depthTestEnabled = false;
+    contactShadowProgramDesc.depthWriteEnabled = false;
+    contactShadowProgramDesc.debugNameUVE = "ContactShadow";
+    m_impl->contactShadowProgram = shaderManager.CreateProgramUVE(contactShadowProgramDesc);
+
+    Shader::ShaderProgramDescUVE contactShadowCompositeProgramDesc;
+    contactShadowCompositeProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kFullscreenCopyVirtualPath);
+    contactShadowCompositeProgramDesc.embeddedFallbackSourceCode =
+        std::string(Shader::BuiltIn::kFullscreenCopySource);
+    contactShadowCompositeProgramDesc.depthTestEnabled = false;
+    contactShadowCompositeProgramDesc.depthWriteEnabled = false;
+    contactShadowCompositeProgramDesc.blendMode = PipelineBlendModeUVE::Multiply;
+    contactShadowCompositeProgramDesc.debugNameUVE = "ContactShadowComposite";
+    m_impl->contactShadowCompositeProgram = shaderManager.CreateProgramUVE(contactShadowCompositeProgramDesc);
+
     Shader::ShaderProgramDescUVE particleProgramDesc;
     particleProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kParticleVirtualPath);
     particleProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kParticleSource);
@@ -3487,6 +3524,7 @@ Renderer3DUVE::~Renderer3DUVE() {
     m_impl->bloomMipTargets = {};
     m_impl->bloomMipTargetCount = 0U;
     m_impl->ssaoTarget = kInvalidTextureHandleUVE;
+    m_impl->contactShadowTarget = kInvalidTextureHandleUVE;
     for (auto& [entity, cache] : m_impl->reflectionProbeCaptures) {
         static_cast<void>(entity);
         m_impl->DestroyReflectionProbeGpuCacheUVE(cache);
@@ -4400,6 +4438,88 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                     "uSsaoBlurEnabled", m_impl->postProcessSettings.ssaoBlurEnabledUVE ? 1 : 0);
                 m_impl->ssaoCompositeProgram->ApplyToUVE(commandBuffer);
                 commandBuffer.BindTextureUVE(m_impl->ssaoTarget, 0U);
+                commandBuffer.DrawUVE(3);
+                commandBuffer.EndRenderPassUVE();
+            });
+    }
+
+    // Contact shadows reuse the same depth buffer SSAO reads - it is already resolved and sampleable
+    // by the time post-processing runs - and need only the sun direction in view space. Deriving it
+    // from the camera basis the sky pass already uses keeps one definition of "which way the camera
+    // faces" rather than a second matrix that could disagree with it.
+    const ContactShadowSettingsUVE contactShadowSettings =
+        SanitizeContactShadowSettingsUVE(ContactShadowSettingsUVE{
+            m_impl->postProcessSettings.contactShadowsEnabledUVE,
+            m_impl->postProcessSettings.contactShadowLengthMetersUVE,
+            m_impl->postProcessSettings.contactShadowThicknessMetersUVE,
+            m_impl->postProcessSettings.contactShadowStrengthUVE,
+            m_impl->postProcessSettings.contactShadowStepCountUVE});
+    const Math::Vector3UVE sunDirectionInView{
+        Math::DotUVE(m_impl->sunDirection, m_impl->skyCameraRight),
+        Math::DotUVE(m_impl->sunDirection, m_impl->skyCameraUp),
+        -Math::DotUVE(m_impl->sunDirection, m_impl->skyCameraForward)};
+    const float sunDirectionInViewLengthSquared = Math::LengthSquaredUVE(sunDirectionInView);
+    struct ContactShadowFrameUVE final {
+        ContactShadowSettingsUVE settings;
+        Math::Vector3UVE lightDirectionView;
+    };
+    const ContactShadowFrameUVE settingsInView{
+        contactShadowSettings,
+        sunDirectionInViewLengthSquared > 1.0e-8F ? Math::NormalizeUVE(sunDirectionInView)
+                                                  : Math::Vector3UVE{0.0F, 0.0F, 0.0F}};
+    const bool contactShadowActive = !capturingProbe && environmentAllowsPost &&
+                                     contactShadowSettings.enabledUVE &&
+                                     m_impl->contactShadowTarget != kInvalidTextureHandleUVE && projectionInvertible &&
+                                     sunDirectionInViewLengthSquared > 1.0e-8F &&
+                                     m_impl->contactShadowProgram->IsValidUVE() &&
+                                     m_impl->contactShadowCompositeProgram->IsValidUVE();
+
+    if (contactShadowActive) {
+        m_impl->lastFrameDiagnostics.contactShadowPassRecorded = true;
+        const RenderGraphResourceHandleUVE contactShadowResource =
+            renderGraph.ImportTextureUVE(m_impl->contactShadowTarget, "ContactShadow");
+        const std::array<RenderGraphResourceUseUVE, 2U> contactShadowPassResources{
+            RenderGraphResourceUseUVE{depthResource, RenderGraphResourceAccessUVE::Read},
+            RenderGraphResourceUseUVE{contactShadowResource, RenderGraphResourceAccessUVE::Write}};
+        renderGraph.AddPassUVE(
+            "ContactShadows", contactShadowPassResources,
+            [this, &projection, &inverseProjection, settingsInView](ICommandBufferUVE& commandBuffer) {
+                RenderPassDescUVE passDesc;
+                passDesc.colorAttachment = m_impl->contactShadowTarget;
+                passDesc.depthAttachment = kInvalidTextureHandleUVE;
+                passDesc.colorLoadOp = LoadOpUVE::DontCare;
+                commandBuffer.BeginRenderPassUVE(passDesc);
+                m_impl->contactShadowProgram->SetIntUVE("uDepthTexture", 0);
+                m_impl->contactShadowProgram->SetMatrix4x4UVE("uProjection", projection);
+                m_impl->contactShadowProgram->SetMatrix4x4UVE("uInverseProjection", inverseProjection);
+                m_impl->contactShadowProgram->SetVector3UVE("uLightDirectionView", settingsInView.lightDirectionView);
+                m_impl->contactShadowProgram->SetFloatUVE("uLengthMeters", settingsInView.settings.lengthMetersUVE);
+                m_impl->contactShadowProgram->SetFloatUVE("uThicknessMeters", settingsInView.settings.thicknessMetersUVE);
+                m_impl->contactShadowProgram->SetFloatUVE("uStrength", settingsInView.settings.strengthUVE);
+                m_impl->contactShadowProgram->SetIntUVE("uStepCount",
+                                                        static_cast<std::int32_t>(settingsInView.settings.stepCountUVE));
+                m_impl->contactShadowProgram->SetFloatUVE("uDepthBiasMeters", kContactShadowDepthBiasMetersUVE);
+                m_impl->contactShadowProgram->ApplyToUVE(commandBuffer);
+                commandBuffer.BindTextureUVE(m_impl->depthTarget, 0U);
+                commandBuffer.DrawUVE(3);
+                commandBuffer.EndRenderPassUVE();
+            });
+        // Applied before bloom so a bright surface next to its contact shadow cannot bleed the light
+        // back over it through the bright-pass threshold.
+        const std::array<RenderGraphResourceUseUVE, 2U> contactShadowCompositeResources{
+            RenderGraphResourceUseUVE{contactShadowResource, RenderGraphResourceAccessUVE::Read},
+            RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Write}};
+        renderGraph.AddPassUVE(
+            "ContactShadowsComposite", contactShadowCompositeResources,
+            [this](ICommandBufferUVE& commandBuffer) {
+                RenderPassDescUVE passDesc;
+                passDesc.colorAttachment = m_impl->colorTarget;
+                passDesc.depthAttachment = kInvalidTextureHandleUVE;
+                passDesc.colorLoadOp = LoadOpUVE::Load;
+                commandBuffer.BeginRenderPassUVE(passDesc);
+                m_impl->contactShadowCompositeProgram->SetIntUVE("uSourceTexture", 0);
+                m_impl->contactShadowCompositeProgram->ApplyToUVE(commandBuffer);
+                commandBuffer.BindTextureUVE(m_impl->contactShadowTarget, 0U);
                 commandBuffer.DrawUVE(3);
                 commandBuffer.EndRenderPassUVE();
             });

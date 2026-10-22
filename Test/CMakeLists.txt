@@ -497,6 +497,7 @@ add_executable(uve_integration_tests
     RHI/RenderSystems/dynamic_mesh_bvh_uve_tests.cpp
     RHI/RenderSystems/shadow_atlas_manager_uve_tests.cpp
     RHI/RenderSystems/light_shadow_planner_uve_tests.cpp
+    RHI/RenderSystems/contact_shadows_uve_tests.cpp
     RHI/RenderSystems/mesh_renderer_spatial_bvh_tests.cpp
     RHI/RenderSystems/renderer_3d_indirect_instancing_tests.cpp
     UI/ui_font_atlas_uve_tests.cpp

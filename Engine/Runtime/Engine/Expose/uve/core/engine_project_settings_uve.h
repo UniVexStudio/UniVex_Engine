@@ -50,6 +50,13 @@ inline constexpr std::string_view kShadowBiasDefaultUVE = "rendering.shadows.def
 inline constexpr std::string_view kShadowNormalBiasDefaultUVE = "rendering.shadows.defaultNormalBias";
 inline constexpr std::string_view kShadowCascadeSplitBlendUVE = "rendering.shadows.defaultCascadeSplitBlend";
 inline constexpr std::string_view kShadowFilterUVE = "rendering.shadows.filter";
+/// Contact shadows: one family under Rendering/Shadows, matching the shadow settings beside it.
+/// The renderer normalises what it receives, but these bounds are the contract the editor shows.
+inline constexpr std::string_view kContactShadowsEnabledUVE = "rendering.shadows.contactShadowsEnabled";
+inline constexpr std::string_view kContactShadowsLengthUVE = "rendering.shadows.contactShadowsLength";
+inline constexpr std::string_view kContactShadowsStepsUVE = "rendering.shadows.contactShadowsSteps";
+inline constexpr std::string_view kContactShadowsThicknessUVE = "rendering.shadows.contactShadowsThickness";
+inline constexpr std::string_view kContactShadowsStrengthUVE = "rendering.shadows.contactShadowsStrength";
 inline constexpr std::string_view kFrustumCullingModeUVE = "rendering.culling.frustumCulling";
 inline constexpr std::string_view kAutoSaveIntervalUVE = "application.save.autoSaveInterval";
 inline constexpr std::string_view kQuitOnLastWindowClosedUVE = "application.quitOnLastWindowClosed";
