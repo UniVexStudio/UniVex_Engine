@@ -444,6 +444,13 @@ public:
         std::array<float, 3> colour{};
     };
 
+    /// One world-space segment of a collider wireframe, as the viewport renderer wants it: plain
+    /// float triples, because EditorCore does not link the viewport's math types.
+    struct ViewportColliderLineUVE final {
+        std::array<float, 3> from{};
+        std::array<float, 3> to{};
+    };
+
     struct ViewportOverlayStateUVE final {
         bool orthographic = false;
         // The named view the camera is in (User once it is orbited freely), and a counter bumped
@@ -513,6 +520,13 @@ public:
 
         // Every enabled, visible Skeleton3D's bones, rebuilt each frame; empty in the Game workspace.
         std::vector<ViewportBoneUVE> bones;
+        /// Unreal's "Show Collision": every collider in the document drawn as its actual shape, not
+        /// as its bounding box. Off by default and session-only, like the equivalent toggle in every
+        /// engine - it is a diagnostic, not a project setting, so it must not survive a relaunch and
+        /// silently ship in some else's build.
+        bool collisionShapesVisible = false;
+        /// This frame's wireframe, rebuilt only while `collisionShapesVisible` is set.
+        std::vector<ViewportColliderLineUVE> colliderLines;
 
         // A studio view for presenting rather than editing (the Retarget window): sky, ground and
         // a faded floor instead of the grid, no toolbar or corner gizmo, no selection, and a
@@ -2039,6 +2053,13 @@ private:
     bool BindSelectedSkeletonSourceUVE(const std::filesystem::path& relativeSource);
     /// The world-space bones of every enabled Skeleton3D in the document, for the viewport.
     void BuildSkeletonOverlayUVE(std::vector<ViewportBoneUVE>& outBones) const;
+    /// The world-space wireframe of every collider in the document, for the viewport's "Show
+    /// Collision" overlay. Empty while `collisionShapesVisible` is off. One entity pass, whole
+    /// shapes only, bounded by `ColliderDebugSceneSettingsUVE`.
+    void BuildColliderOverlayUVE(std::vector<ViewportColliderLineUVE>& outLines) const;
+    /// Turns the collider wireframe overlay on or off. Returns whether the value changed; the lines
+    /// themselves are rebuilt on the next frame that draws the viewport.
+    bool SetViewportCollisionShapesUVE(bool visible);
     /// True when `instance`'s value for `property` equals what a newly added component holds. False
     /// when that cannot be known (no equality for the type), so a revert is offered rather than hidden.
     [[nodiscard]] bool IsPropertyAtDefaultUVE(const Core::TypeMetadataEntryUVE& entry,

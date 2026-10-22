@@ -1216,6 +1216,25 @@ private:
                                                           bone.boneSelected, bone.hasColour, toVec3(bone.colour)});
         }
         renderPass_->SetBonesUVE(std::move(bones));
+        // Collision wireframes. One colour for every shape: the point of the overlay is WHERE the
+        // collider is, and a per-shape palette would make two boxes on different entities read as
+        // two different kinds of thing. The blue-green is deliberately not the selection orange, so
+        // a selected object's outline and its collider never look like the same annotation.
+        {
+            constexpr float kColliderWireRedUVE = 0.20F;
+            constexpr float kColliderWireGreenUVE = 0.95F;
+            constexpr float kColliderWireBlueUVE = 0.45F;
+            constexpr float kColliderWireWidthPixelsUVE = 1.5F;
+            const univex::math::Vec3 wireColour{kColliderWireRedUVE, kColliderWireGreenUVE,
+                                                kColliderWireBlueUVE};
+            std::vector<univex::gizmo::GizmoLine> colliderLines;
+            colliderLines.reserve(overlayState.colliderLines.size());
+            for (const auto& line : overlayState.colliderLines) {
+                colliderLines.push_back(univex::gizmo::GizmoLine{toVec3(line.from), toVec3(line.to),
+                                                                 wireColour, kColliderWireWidthPixelsUVE});
+            }
+            renderPass_->SetColliderWireframesUVE(std::move(colliderLines));
+        }
         using UVE::Editor::EditorUVE;
         switch (overlayState.gizmoMode) {
             case EditorUVE::ViewportGizmoModeUVE::Move:
