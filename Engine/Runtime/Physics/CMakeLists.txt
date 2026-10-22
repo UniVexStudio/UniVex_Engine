@@ -31,6 +31,7 @@ add_library(uve_physics STATIC
     Internal/hinge_motor_limit_uve.cpp
     Internal/physics_constraint_system_uve.cpp
     Internal/physics_islands_uve.cpp
+    Internal/collider_debug_geometry_uve.cpp
     Internal/ragdoll_solver_uve.cpp
     Internal/ragdoll_world_uve.cpp
     Internal/physics_query_system_uve.cpp
