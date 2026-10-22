@@ -543,8 +543,13 @@ private:
         double& time = state.pointTimes[to];
         bool started = false;
         time = 0.0;
-        const std::optional<float> startPhase =
-            node.blendMode == AnimationBlendModeUVE::NearestInStep ? showing.phase : std::nullopt;
+        // Built with an `if` rather than a conditional expression on purpose: GCC 12 at -O3 then
+        // reports the copy of the resulting optional as possibly uninitialized, a false positive
+        // inside the standard library's storage handling that only appears once inlining happens.
+        std::optional<float> startPhase;
+        if (node.blendMode == AnimationBlendModeUVE::NearestInStep) {
+            startPhase = showing.phase;
+        }
         // Put the point where it starts; weight 0 so no events fire for the placement.
         const ResultUVE fresh = PlayClipUVE(point.clip, point.speed, point.loop, time, started, 0.0F, 0.0F, startPhase);
         state.pointStarted[to] = started;
@@ -749,7 +754,13 @@ private:
                         const AnimationTransitionCurveUVE curve = AnimationTransitionCurveUVE::Linear,
                         const bool interruptible = true) {
         const std::uint32_t leaving = state.activeState;
-        const std::optional<std::size_t> entered = to < node.inputs.size() ? IndexOfUVE(node.inputs[to]) : std::nullopt;
+        // Filled with an `if` rather than a conditional expression for the same reason as
+        // `startPhase` below: GCC 12 at -Os/-O3 reports the copy of the resulting optional as
+        // possibly uninitialized once the standard library's storage handling is inlined.
+        std::optional<std::size_t> entered;
+        if (to < node.inputs.size()) {
+            entered = IndexOfUVE(node.inputs[to]);
+        }
         if (entered.has_value() && start != AnimationTransitionStartUVE::Continue) {
             ResetSubtreeUVE(*entered);
             if (start == AnimationTransitionStartUVE::InStep && showing.phase.has_value()) {

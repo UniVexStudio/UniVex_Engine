@@ -22,16 +22,18 @@
 /// can be swapped in without editing every declaration.
 #define UVE_INLINE inline
 
-/// UVE_DEBUG follows the named UVE profile when configured by CMake. External
-/// integrations that do not use the profile module retain the historical
-/// NDEBUG-based behavior.
-#if defined(UVE_PROFILE_ASSERTIONS_ENABLED)
+/// Pulls in Build::kProfileUVE and the static assertions that reject a self-contradictory profile.
+/// Included here so every translation unit that can assert or log also validates the variant it was
+/// actually compiled under - a check that only ran in the file that asked for it would be one
+/// forgotten include away from useless.
+#include "uve/platform/build_variant_uve.h"
+
+/// UVE_DEBUG is the profile's assertion switch, deliberately not `NDEBUG`. CMake's stock
+/// RelWithDebInfo flags define `NDEBUG`, so deriving from it would strip the assertions out of the
+/// Development profile - the one people actually playtest with. `build_variant_uve.h` above makes
+/// the profile mandatory, so there is no unconfigured case left to fall back to: a translation
+/// unit that reaches this line was built with the definitions the profile table publishes.
 #define UVE_DEBUG UVE_PROFILE_ASSERTIONS_ENABLED
-#elif !defined(NDEBUG)
-#define UVE_DEBUG 1
-#else
-#define UVE_DEBUG 0
-#endif
 
 #if defined(__linux__)
 /// UVE_DEBUG_BREAK() raises a trap signal, stopping execution under a
