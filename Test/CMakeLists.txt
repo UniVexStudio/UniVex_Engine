@@ -20,6 +20,7 @@ add_executable(uve_core_tests
     Support/test_scratch_uve.cpp
     Core/Platform/editor_project_package_uve_tests.cpp
     Core/Platform/application_runtime_uve_tests.cpp
+    Core/Platform/build_variant_uve_tests.cpp
     Core/Platform/crash_reporter_uve_tests.cpp
     Core/Logging/logger_uve_tests.cpp
     Core/Logging/log_format_uve_tests.cpp

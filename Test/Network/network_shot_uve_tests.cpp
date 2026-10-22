@@ -170,7 +170,12 @@ TEST(ShotIntentUVETest, ReceiverDropsStaleAndMalformed) {
     replay.viewTick = 10U;
     replay.fraction = 0.5F;
     const auto inject = [&](const std::vector<std::uint8_t>& payload) {
-        std::vector<std::uint8_t> datagram{static_cast<std::uint8_t>(SessionMessageTagUVE::Data)};
+        // Reserved up front instead of constructed with the tag byte already in it: GCC 12 at -O3
+        // otherwise reports the one-byte payload copy as an out-of-bounds memcpy, because the
+        // branch that grows the buffer from capacity 1 to 2 loses its bound after inlining.
+        std::vector<std::uint8_t> datagram;
+        datagram.reserve(payload.size() + 1U);
+        datagram.push_back(static_cast<std::uint8_t>(SessionMessageTagUVE::Data));
         datagram.insert(datagram.end(), payload.begin(), payload.end());
         return harness.link.a.SendUVE(datagram);
     };

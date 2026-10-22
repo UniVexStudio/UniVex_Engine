@@ -1155,8 +1155,26 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 - [x] A save-game system with checkpointing, versioned save-payload migration, and
   compression
 - [ ] Platform-store-ready packaging (installers/app bundles per OS, code signing)
-- [ ] Build variants (debug/development/shipping) with shipping builds stripping
-  debug-only code paths and assets
+- [x] Build variants (debug/development/shipping) with shipping builds stripping
+  debug-only code paths and assets. Four profiles now exist - Debug, Development, Release,
+  Shipping - and `Engine/CMake/UveBuildConfiguration.cmake` is the only place that decides
+  which one is in effect. It also fixes the reason this row went unnoticed for so long: the
+  module used to force `CMAKE_BUILD_TYPE` back to `Debug`, so `-DCMAKE_BUILD_TYPE=Release`
+  produced an unoptimized binary with assertions enabled and every test still passed. An
+  explicitly named profile now wins and drives the build type; otherwise the profile is
+  derived from `CMAKE_BUILD_TYPE`; otherwise it is Debug with a warning. The profile also
+  owns `UVE_DEBUG` instead of `NDEBUG`, because CMake's stock `RelWithDebInfo` defines
+  `NDEBUG` and would strip assertions from the Development build that playtesting needs.
+  Shipping is the profile that actually strips: `UVE_COMPILED_LOG_LEVEL=3` deletes
+  `UVE_TRACE`/`UVE_INFO` calls in the preprocessor (format strings and arguments never
+  reach the compiler; `Warning` and above survive because the runtime threshold would have
+  printed them), and the threshold is bound by a static assertion to the profile's runtime
+  default so a variant cannot delete messages it claims it can emit. The same header
+  rejects, at compile time, a shipping build carrying live assertions, two profiles
+  defined at once, or no profile at all. Assets are still not cooked or stripped per
+  variant - that stays the asset-cooking row below - and there is no per-platform
+  packaging yet. The profile table, the precedence rules and the strip thresholds are
+  documented in `BUILD_VARIANTS.md`.
 - [ ] Asset cooking integrated into packaging (see Asset Pipeline) so shipped builds don't
   carry editor-only source formats
 - [ ] Crash reporting and basic telemetry/analytics hooks
