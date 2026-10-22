@@ -906,7 +906,38 @@ and one of the highest-priority areas below.
   energy sum rather than a true bus-buffer measurement, because the backend mixes straight to the
   output and applies no per-bus inserts; and bus DSP inserts are not drawn, since they are applied by
   callers on their own PCM rather than by the device.
-- [ ] Ambisonics / spatial audio bed support for VR/360 use cases (long-term)
+- [x] Ambisonics / spatial audio bed support for VR/360 use cases - first-order ambisonics in the
+  AmbiX convention (ACN channel order, SN3D normalisation), the layout the 360/VR ecosystem actually
+  exchanges, so a bed authored for a 360 workstation or a 360 video drops in without a conversion
+  pass. Two decisions are recorded here rather than left to be discovered later. First, the adapter
+  produces STEREO instead of a new voice type: a bed is a stream whose samples happen to be a
+  decoded sound field, so it reuses the streaming ring, the once-per-frame pump, mixer routing,
+  pitch and the device path untouched, and memory stays at one ring plus one decode window no
+  matter how long the ambience is. Four-channel `.uvaudio` sources became readable for exactly
+  this: sources may now carry four channels while device voices still carry at most two, so an
+  ambisonic file can never be played as if it were plain stereo. Second, the decode is a coincident
+  cardioid pair - two virtual microphones pointing hard left and right - normalised so an
+  omnidirectional field is exactly unity on both channels, which is the engine's own "centre is
+  unchanged" pan rule, so a bed can crossfade against a mono voice without a level jump. That pair
+  cannot tell front from back; the decoder says so in as many words rather than glossing over it.
+  Elevation still rotates into the side channels, so head roll and pitch do move overhead content,
+  and a binaural decoder would replace the decode function, not the format. Rotation is one
+  orthonormal 3x3 per block with determinant +1 - W and the field's energy are preserved exactly,
+  not approximately - driven by the same forward/up pair the listener already carries, so a camera
+  or an HMD feeds both. Read windows are capped at the device ring instead of sized by an argument,
+  a source that overruns its window is dropped rather than read past, and a non-finite sample
+  becomes silence. Locked by 12 math cases (the axis mapping including cross-product preservation, a
+  default basis that must be the identity, a yaw that must land a world-front wave on the right,
+  orthonormality and determinant across seven head bases, W and energy preservation, roll bringing
+  overhead content to the side, degenerate bases, in-place rotation, decode unity and steering,
+  front/back symmetry, gain and non-finite input) and 14 adapter cases (the source/device channel
+  caps pulled apart, refused channel counts, rate and length forwarding, unity and hard-left decodes, head yaw steering, gain validation, a
+  refused orientation keeping the last good one, ring-sized windows, end-of-source and seek,
+  non-finite silence, an overrunning source, four-channel file reading, and a file-backed bed
+  pumped through AudioSystemUVE and the null device across a loop). Deliberately NOT done: nothing
+  in the ECS creates a bed automatically - no component, no editor panel, no camera-to-bed wiring -
+  and FuMa (WXYZ) input is an import-time conversion rather than a runtime layout, so a mis-ordered
+  file is refused instead of being quietly mis-localised.
 
 ---
 
