@@ -275,12 +275,21 @@ void EditorUVE::InitUVE() {
     if (windowManager.IsValidUVE() && windowManager.GetNativeWindowHandleUVE() != nullptr) {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
-        // Docking, and viewports: a window may live in its own OS window (the Entity Editor
-        // does). The extra windows share the main GL context's objects, so the viewport's
-        // rendered texture shows in them too; RenderOverlayUVE() presents them each frame.
-        // The editor's own panels stay inside the main window - they are placed there and
-        // cannot be dragged out.
-        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_ViewportsEnable;
+        // Viewports (multi-window), but deliberately NOT docking. A window may live in its own OS
+        // window - the Entity Editor does - and those extra windows share the main GL context's
+        // objects, so the viewport texture shows in them too.
+        //
+        // Docking is off because it laid a second layout over this editor's own: panels grew dock
+        // tabs and close buttons on top of headers that already named them, the bottom dock was cut
+        // from the screen edge rather than the editor frame, and imgui.ini remembered positions that
+        // then beat the computed ones. The editor's panels are regions of one fixed frame, so the
+        // frame computes them and nothing else is allowed to move them.
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+        // A NEW ini name, not a rename in place. The old imgui.ini still holds dock node ids and
+        // floating rects from the docking build, and ImGui would happily apply them to windows that
+        // no longer dock. Pointing at a fresh file means the first run after this change starts
+        // from the computed layout, and the old file is simply never read again.
+        ImGui::GetIO().IniFilename = "uve_editor_layout.ini";
         ImGui::StyleColorsDark();
         ApplyEditorVisualThemeUVE(&m_extendedPreferences);
 
@@ -4666,22 +4675,23 @@ void EditorUVE::ApplyLayoutPresetUVE(const EditorLayoutPresetUVE preset) noexcep
     switch (preset) {
         case EditorLayoutPresetUVE::Default:
             m_scenePanelVisible = true;
-            m_viewportPanelVisible = true;
             m_inspectorPanelVisible = true;
             m_bottomDockVisible = true;
             m_activeRightPanelTab = EditorRightPanelTabUVE::Inspector;
             m_activeBottomDock = EditorBottomDockUVE::FileSystem;
-            RequestResetDockingLayoutUVE();
+            // The panel widths go back to their defaults too - "Default Layout" that kept a
+            // half-collapsed Outliner would not be the default.
+            m_scenePanelWidth = -1.0F;
+            m_inspectorPanelWidth = -1.0F;
+            m_bottomDockHeight = kAssetsPanelHeightUVE;
             break;
         case EditorLayoutPresetUVE::FocusViewport:
             m_scenePanelVisible = false;
-            m_viewportPanelVisible = true;
             m_inspectorPanelVisible = false;
             m_bottomDockVisible = false;
             break;
         case EditorLayoutPresetUVE::ContentReview:
             m_scenePanelVisible = true;
-            m_viewportPanelVisible = true;
             m_inspectorPanelVisible = true;
             m_bottomDockVisible = true;
             m_activeRightPanelTab = EditorRightPanelTabUVE::Import;

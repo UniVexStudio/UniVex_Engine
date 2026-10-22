@@ -693,7 +693,6 @@ add_executable(uve_editor_tests
     Editor/scene_component_authoring_uve_tests.cpp
     Editor/file_picker_uve_tests.cpp
     Editor/scene_object_editor_uve_tests.cpp
-    Editor/EditorCore/editor_docking_uve_tests.cpp
 )
 target_link_libraries(uve_editor_tests PRIVATE
     nlohmann_json::nlohmann_json

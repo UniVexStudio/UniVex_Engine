@@ -76,10 +76,102 @@ TEST(EditorChromeLayoutUVETest, TheDockHeightIsDraggableWithinLimits) {
     const ImGuiViewport viewport = MakeViewportUVE(1920.0F, 1080.0F);
     const EditorChromeLayoutUVE tall = ComputeEditorChromeLayoutUVE(viewport, true, 400.0F);
     EXPECT_FLOAT_EQ(tall.contentBrowserSize.y, 400.0F);
-    // Too small is lifted to the minimum; too large leaves the viewport its minimum.
+    // Too small is lifted to the minimum.
     EXPECT_FLOAT_EQ(ComputeEditorChromeLayoutUVE(viewport, true, 10.0F).contentBrowserSize.y, kMinimumBottomDockHeightUVE);
+    // Too large is capped, and the cap has two ceilings: a fraction of the column, and whatever
+    // still leaves the viewport its minimum height. The tighter one wins.
     const EditorChromeLayoutUVE huge = ComputeEditorChromeLayoutUVE(viewport, true, 100000.0F);
-    EXPECT_FLOAT_EQ(huge.viewportSize.y, kMinimumViewportHeightUVE);
+    const float column = huge.viewportSize.y + huge.contentBrowserSize.y;
+    EXPECT_LE(huge.contentBrowserSize.y, column * kBottomDockMaxFractionUVE + 0.5F);
+    EXPECT_GE(huge.viewportSize.y, kMinimumViewportHeightUVE);
+}
+
+TEST(EditorChromeLayoutUVETest, HidingASidePanelGivesItsWidthToTheViewport) {
+    // The point of hiding an Outliner is a wider canvas, not a hole where the Outliner was. This is
+    // the assertion that would have caught the old layout, which had no visibility input at all and
+    // left the space reserved.
+    const ImGuiViewport viewport = MakeViewportUVE(1920.0F, 1080.0F);
+    const EditorChromeLayoutUVE both = ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE);
+    const EditorChromeLayoutUVE noOutliner =
+        ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE, -1.0F, -1.0F, false, true);
+    const EditorChromeLayoutUVE noInspector =
+        ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE, -1.0F, -1.0F, true, false);
+
+    EXPECT_FLOAT_EQ(noOutliner.sceneSize.x, 0.0F);
+    EXPECT_FLOAT_EQ(noOutliner.viewportSize.x - both.viewportSize.x, both.sceneSize.x);
+    EXPECT_FLOAT_EQ(noInspector.inspectorSize.x, 0.0F);
+    EXPECT_FLOAT_EQ(noInspector.viewportSize.x - both.viewportSize.x, both.inspectorSize.x);
+    EXPECT_FLOAT_EQ(noOutliner.viewportPos.x, viewport.WorkPos.x);
+}
+
+TEST(EditorChromeLayoutUVETest, AHiddenSidePanelLeavesAStripToBringItBack) {
+    // A close button with no visible way back is a dead end. The strip exists only while the panel
+    // is hidden, and it takes the edge the panel left behind.
+    const ImGuiViewport viewport = MakeViewportUVE(1920.0F, 1080.0F);
+    const EditorChromeLayoutUVE shown = ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE);
+    const EditorChromeLayoutUVE hidden =
+        ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE, -1.0F, -1.0F, false, false);
+
+    EXPECT_FLOAT_EQ(shown.outlinerRestoreSize.x, 0.0F) << "nothing to restore while the panel is showing";
+    EXPECT_FLOAT_EQ(shown.inspectorRestoreSize.x, 0.0F);
+    EXPECT_FLOAT_EQ(hidden.outlinerRestoreSize.x, kPanelRestoreStripWidthUVE);
+    EXPECT_FLOAT_EQ(hidden.inspectorRestoreSize.x, kPanelRestoreStripWidthUVE);
+    EXPECT_FLOAT_EQ(hidden.outlinerRestorePos.x, viewport.WorkPos.x);
+    EXPECT_FLOAT_EQ(hidden.inspectorRestorePos.x,
+                    viewport.WorkPos.x + viewport.WorkSize.x - kPanelRestoreStripWidthUVE);
+}
+
+TEST(EditorChromeLayoutUVETest, SplitterGripsExistOnlyWhereThereIsASeam) {
+    // A grip over a seam that does not exist is an invisible button that eats a click meant for the
+    // viewport. Each one is sized only while both neighbours are on screen.
+    const ImGuiViewport viewport = MakeViewportUVE(1920.0F, 1080.0F);
+    const EditorChromeLayoutUVE full = ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE);
+    EXPECT_FLOAT_EQ(full.sceneSplitterSize.x, kPanelSplitterThicknessUVE);
+    EXPECT_FLOAT_EQ(full.inspectorSplitterSize.x, kPanelSplitterThicknessUVE);
+    EXPECT_FLOAT_EQ(full.dockSplitterSize.y, kPanelSplitterThicknessUVE);
+
+    // The Outliner | viewport seam still exists when the Outliner is showing, and is at the
+    // Outliner's right edge.
+    EXPECT_FLOAT_EQ(full.sceneSplitterPos.x + (kPanelSplitterThicknessUVE * 0.5F),
+                    full.scenePos.x + full.sceneSize.x);
+
+    const EditorChromeLayoutUVE noOutliner =
+        ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE, -1.0F, -1.0F, false, true);
+    EXPECT_FLOAT_EQ(noOutliner.sceneSplitterSize.x, 0.0F) << "no Outliner, no seam";
+    EXPECT_FLOAT_EQ(noOutliner.inspectorSplitterSize.x, kPanelSplitterThicknessUVE);
+
+    const EditorChromeLayoutUVE noDock =
+        ComputeEditorChromeLayoutUVE(viewport, false, kAssetsPanelHeightUVE);
+    EXPECT_FLOAT_EQ(noDock.dockSplitterSize.y, 0.0F) << "no dock, no grab line above it";
+}
+
+TEST(EditorChromeLayoutUVETest, PanelResizeClampsAgreeWithTheLayout) {
+    // The drag handles and the layout both call these, so the two cannot disagree about how far a
+    // panel may go. That is what stops a handle from sliding away from the cursor near its travel
+    // limits.
+    constexpr float kTotalWidth = 1920.0F;
+    const float sceneMax = kTotalWidth * kScenePanelResizeMaxFractionUVE;
+    const float inspectorMax = kTotalWidth * kInspectorPanelResizeMaxFractionUVE;
+
+    EXPECT_FLOAT_EQ(ClampScenePanelWidthUVE(kTotalWidth, 100000.0F), sceneMax);
+    EXPECT_FLOAT_EQ(ClampScenePanelWidthUVE(kTotalWidth, -100.0F), kScenePanelResizeMinUVE);
+    EXPECT_FLOAT_EQ(ClampInspectorPanelWidthUVE(kTotalWidth, 100000.0F), inspectorMax);
+    EXPECT_FLOAT_EQ(ClampInspectorPanelWidthUVE(kTotalWidth, 0.0F), kInspectorPanelResizeMinUVE);
+
+    // The layout honours the same numbers, so a width the handle produced survives the next frame.
+    const EditorChromeLayoutUVE layout =
+        ComputeEditorChromeLayoutUVE(MakeViewportUVE(kTotalWidth, 1080.0F), true, kAssetsPanelHeightUVE, 100000.0F,
+                                     100000.0F);
+    EXPECT_FLOAT_EQ(layout.sceneSize.x, sceneMax);
+    EXPECT_FLOAT_EQ(layout.inspectorSize.x, inspectorMax);
+    EXPECT_GE(layout.viewportSize.x, kMinimumViewportWidthUVE);
+
+    // On a window narrow enough that the two minimums would not both fit, the viewport keeps its
+    // minimum and the layout stays usable rather than going negative.
+    const EditorChromeLayoutUVE tiny =
+        ComputeEditorChromeLayoutUVE(MakeViewportUVE(320.0F, 240.0F), true, kAssetsPanelHeightUVE);
+    EXPECT_GE(tiny.viewportSize.x, kMinimumViewportWidthUVE);
+    EXPECT_GE(tiny.viewportSize.y, kMinimumViewportHeightUVE);
 }
 
 TEST(EditorChromeLayoutUVETest, SidePanelsStayWithinTheirClampsOnExtremeWidths) {

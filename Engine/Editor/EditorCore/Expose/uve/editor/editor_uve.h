@@ -1914,17 +1914,23 @@ private:
     void DrawSettingsWindowBodyUVE(SettingsWindowStateUVE& state, const SettingsWindowSourceUVE& source);
     void DrawSettingRowUVE(SettingsWindowStateUVE& state, const Config::SettingDescriptorUVE& descriptor,
                            bool modified, const SettingsWindowSourceUVE& source);
-    void DrawBottomDockUVE();
+    /// The bottom dock's body: ONE window whose contents follow the active tab. Every section below
+    /// draws into it rather than opening a window of its own.
     void DrawBottomDockContentUVE();
-    /// The strip of dock tabs along the bottom edge - Content, Output, Console - and the dock toggle.
+    /// The strip of dock tabs along the bottom edge - Content, Output, Console, Capture, Profiler,
+    /// Audio - and the dock toggle. It is drawn even while the dock is hidden, because it is how the
+    /// dock comes back.
     void DrawBottomDockTabBarUVE();
-    /// The Console dock: the developer console's output and its command line.
-    void DrawConsoleDockUVE();
-    /// The Capture dock: filter toolbar, packet list, and the selected decode.
-    void DrawCaptureDockUVE();
-    void DrawProfilerDockUVE();
-    /// The audio authoring dock. The model is built by editor_audio_mixer_uve.h; these only draw.
-    void DrawAudioMixerDockUVE();
+    /// The drag grips between Outliner, viewport, Inspector and the dock, and the strips left behind
+    /// by a hidden side panel. Drawn last, over the panels, since the grips straddle their seams.
+    void DrawEditorChromeHandlesUVE();
+    /// The Console section: the developer console's output and its command line.
+    void DrawConsoleBodyUVE();
+    /// The Capture section: filter toolbar, packet list, and the selected decode.
+    void DrawCaptureBodyUVE();
+    void DrawProfilerBodyUVE();
+    /// The audio authoring section. The model is built by editor_audio_mixer_uve.h; these only draw.
+    void DrawAudioMixerBodyUVE();
     void DrawAudioMixerBusTableUVE(Audio::IAudioSystemUVE& audioSystem,
                                    const EditorAudioMixerSnapshotUVE& snapshot);
     void DrawAudioAttenuationEditorUVE();
@@ -2161,11 +2167,7 @@ private:
     /// generic per-type icon in that case.
     [[nodiscard]] std::uintptr_t GetMeshThumbnailUVE(const std::filesystem::path& relativePath);
     void ClearMeshThumbnailCacheUVE() noexcept;
-    /// Draws the merged Content Browser panel (folder/file list on the left, thumbnail grid on the
-    /// right, separated by a draggable splitter) - replaces the former separate Filesystem and
-    /// Contents panels, which showed the same underlying directory from two windows.
-    void DrawContentBrowserPanelUVE();
-    /// The Content Browser inside the current window: the main dock and the Entity Editor's dock.
+    /// The Content Browser inside the current window: the bottom dock and the Entity Editor's dock.
     void DrawContentBrowserBodyUVE();
     /// Refreshes the read-only project index after the engine-owned watcher observes a new
     /// filesystem baseline. It never schedules imports or mutates project files.
@@ -2767,7 +2769,6 @@ private:
     float m_inspectorPanelWidth = 320.0F;
     std::array<char, 512> m_consoleInput{};
     bool m_consoleScrollToBottom = false;
-    bool m_viewportPanelVisible = true;
     ViewportPanelRendererUVE m_viewportPanelRenderer;
     // UI/render state is isolated just like the three backend cameras and render targets. Main
     // remains the canonical settings-backed state; tool-window state is session-local.

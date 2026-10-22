@@ -140,9 +140,10 @@ void EditorUVE::RenderOverlayUVE() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const bool resetLayoutRequested = ConsumeResetDockingLayoutRequestUVE();
-    SetupMainDockSpaceUVE(mainViewport, resetLayoutRequested);
+    // No dockspace. Every panel below computes its rect from ComputeEditorChromeLayoutUVE() and
+    // pins itself there with ImGuiCond_Always; there is deliberately no second layout authority that
+    // could disagree with it. The editor frame - top bar, Outliner, viewport, Inspector, dock - is
+    // fixed, and the only things that move are the seams and the two hidable side panels.
     // While playing, the panels lean toward the tint colour: what is edited now is lost at Stop.
     int tintedColors = 0;
     if (m_playModeState != EditorPlayModeStateUVE::Edit && m_playTintEnabled) {
@@ -179,6 +180,9 @@ void EditorUVE::RenderOverlayUVE() {
         DrawInspectorPanelUVE();
         DrawBottomDockContentUVE();
         DrawBottomDockTabBarUVE();
+        // Last, so the grips sit over the seam between two panels and the restore strips sit over
+        // the edge a hidden panel left behind. Drawn first, they would be buried under both.
+        DrawEditorChromeHandlesUVE();
     }
     if (m_retargetWindow.has_value()) {
         DrawRetargetWindowUVE();
@@ -209,27 +213,26 @@ void EditorUVE::SetViewportPanelRendererUVE(ViewportPanelRendererUVE renderer) {
 }
 
 void EditorUVE::DrawViewportPanelUVE() {
-    if (!m_viewportPanelVisible) {
-        return;
-    }
-    // Same "fixed default position/size for a fresh session, never fought on later frames" shape
-    // as DrawHierarchyPanelUVE()/DrawInspectorPanelUVE() (see their own comments) - this panel
-    // fills the gap those two leave between them, matching the space actually visible on screen
-    // rather than an arbitrary default ImGui would otherwise cascade this window into.
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
-        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
-    // In native ImGui docking, FirstUseEver sets the initial fallback position and size,
-    // allowing the window to dock into the central node, tab, split, float, and persist in imgui.ini.
-    ImGui::SetNextWindowPos(layout.viewportPos, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(layout.viewportSize, ImGuiCond_FirstUseEver);
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth,
+                                     m_inspectorPanelWidth, m_scenePanelVisible, m_inspectorPanelVisible);
+    // Always: this rect is recomputed from the chrome layout every frame and the viewport never
+    // floats, so there is nothing for ImGui to remember and nothing a stale imgui.ini may override.
+    ImGui::SetNextWindowPos(layout.viewportPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.viewportSize, ImGuiCond_Always);
     // Zero interior padding for the viewport window so the rendered 3D image fills the panel
     // edge-to-edge (the reference has the grid reaching all four edges with the toolbar floating on
     // top); with the theme's default WindowPadding the GL image is inset ~8px all around, leaving an
     // empty border band. Only this window opts out - the overlay bubbles still float on top since
     // they anchor off the image origin, which now sits flush in the panel corner.
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
-    if (!ImGui::Begin(kPanelLabelViewportUVE, &m_viewportPanelVisible, ImGuiWindowFlags_NoCollapse)) {
+    // No title row and no close button. The viewport is the canvas: the header strip above already
+    // names it and carries the transport, so a second title row cost a line of image and - worse -
+    // put a close X directly under the top bar, where it read as an X on the top bar itself. The
+    // viewport is fixed, not hidable; there is no state in which hiding the canvas is useful.
+    if (!ImGui::Begin(kPanelLabelViewportUVE, nullptr,
+                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar)) {
         ImGui::End();
         ImGui::PopStyleVar();
         return;
