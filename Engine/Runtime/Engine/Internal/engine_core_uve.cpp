@@ -908,6 +908,14 @@ void EngineCoreUVE::Init() {
     postProcessSettings.ssaoPowerUVE = m_config.ssaoPowerUVE;
     postProcessSettings.ssaoQualityUVE = m_config.ssaoQualityUVE;
     postProcessSettings.ssaoBlurEnabledUVE = m_config.ssaoBlurEnabledUVE;
+    // Contact shadows: the enable/length/steps settings predate the pass that consumes them, so
+    // this is where they finally reach a renderer.
+    postProcessSettings.contactShadowsEnabledUVE = m_config.contactShadowsEnabledUVE;
+    postProcessSettings.contactShadowLengthMetersUVE = static_cast<float>(m_config.contactShadowsLengthUVE);
+    postProcessSettings.contactShadowThicknessMetersUVE = static_cast<float>(m_config.contactShadowsThicknessUVE);
+    postProcessSettings.contactShadowStrengthUVE = static_cast<float>(m_config.contactShadowsStrengthUVE);
+    postProcessSettings.contactShadowStepCountUVE =
+        static_cast<std::uint32_t>(std::max<std::int64_t>(m_config.contactShadowsStepCountUVE, 0));
     m_renderer3D->SetPostProcessSettingsUVE(postProcessSettings);
     m_renderer3D->SetShadowBiasDefaultsUVE(m_config.shadowBiasDefaultUVE, m_config.shadowNormalBiasDefaultUVE);
     // The project's "Point/Spot Cube Resolution" is the requested atlas tile edge. Spot shadows use

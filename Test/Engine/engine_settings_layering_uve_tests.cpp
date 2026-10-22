@@ -533,6 +533,90 @@ TEST(EngineSettingsLayeringUVETest, SSAOControlsHaveDefaultsBoundsAndPlatformOve
     EXPECT_TRUE(config.ssaoBlurEnabledUVE);
 }
 
+TEST(EngineSettingsLayeringUVETest, ContactShadowControlsHaveDefaultsBoundsAndPlatformOverrides) {
+    // Contact shadows landed as a pass in front of three project settings that already existed and
+    // had never been read by anything. This pins the whole family the pass now consumes: the two new
+    // knobs, the bounds the editor shows, and that a value reaches EngineConfigUVE through the
+    // ordinary layer order.
+    Config::SettingsRegistryUVE registry;
+    ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
+    namespace Id = EngineProjectSettingIdUVE;
+    const EngineConfigUVE defaults{};
+
+    Config::SettingsStackUVE defaultsStack(registry);
+    const auto enabled = defaultsStack.GetValueUVE(Id::kContactShadowsEnabledUVE);
+    ASSERT_TRUE(enabled.has_value());
+    EXPECT_FALSE(std::get<bool>(*enabled)) << "contact shadows must stay opt-in";
+    const auto length = defaultsStack.GetValueUVE(Id::kContactShadowsLengthUVE);
+    ASSERT_TRUE(length.has_value());
+    EXPECT_DOUBLE_EQ(std::get<double>(*length), defaults.contactShadowsLengthUVE);
+    const auto thickness = defaultsStack.GetValueUVE(Id::kContactShadowsThicknessUVE);
+    ASSERT_TRUE(thickness.has_value());
+    EXPECT_DOUBLE_EQ(std::get<double>(*thickness), defaults.contactShadowsThicknessUVE);
+    const auto strength = defaultsStack.GetValueUVE(Id::kContactShadowsStrengthUVE);
+    ASSERT_TRUE(strength.has_value());
+    EXPECT_DOUBLE_EQ(std::get<double>(*strength), defaults.contactShadowsStrengthUVE);
+    const auto steps = defaultsStack.GetValueUVE(Id::kContactShadowsStepsUVE);
+    ASSERT_TRUE(steps.has_value());
+    EXPECT_EQ(std::get<std::int64_t>(*steps), defaults.contactShadowsStepCountUVE);
+
+    for (const std::string_view id :
+         {Id::kContactShadowsEnabledUVE, Id::kContactShadowsLengthUVE, Id::kContactShadowsStepsUVE,
+          Id::kContactShadowsThicknessUVE, Id::kContactShadowsStrengthUVE}) {
+        const Config::SettingDescriptorUVE* const descriptor = registry.FindUVE(id);
+        ASSERT_NE(descriptor, nullptr) << id;
+        EXPECT_TRUE(descriptor->HasFlagUVE(Config::kSettingFlagPerPlatformUVE)) << id;
+        EXPECT_TRUE(descriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE)) << id;
+    }
+
+    const Config::SettingDescriptorUVE* const strengthDescriptor = registry.FindUVE(Id::kContactShadowsStrengthUVE);
+    ASSERT_NE(strengthDescriptor, nullptr);
+    ASSERT_TRUE(strengthDescriptor->minimum.has_value());
+    ASSERT_TRUE(strengthDescriptor->maximum.has_value());
+    EXPECT_DOUBLE_EQ(*strengthDescriptor->minimum, 0.0);
+    EXPECT_DOUBLE_EQ(*strengthDescriptor->maximum, 1.0);
+
+    const Config::SettingDescriptorUVE* const thicknessDescriptor = registry.FindUVE(Id::kContactShadowsThicknessUVE);
+    ASSERT_NE(thicknessDescriptor, nullptr);
+    ASSERT_TRUE(thicknessDescriptor->minimum.has_value());
+    EXPECT_DOUBLE_EQ(*thicknessDescriptor->minimum, 0.0);
+
+    // The upper bound is not a taste call: kContactShadowMaxStepCountUVE caps the pass's fixed
+    // sample loop, and a setting that offered more would be silently clamped at render time with no
+    // visible reason. The constant lives in the RHI layer this suite does not link, so the number is
+    // spelled here; Test/RHI/RenderSystems/contact_shadows_uve_tests.cpp pins the constant itself.
+    const Config::SettingDescriptorUVE* const stepsDescriptor = registry.FindUVE(Id::kContactShadowsStepsUVE);
+    ASSERT_NE(stepsDescriptor, nullptr);
+    ASSERT_TRUE(stepsDescriptor->minimum.has_value());
+    ASSERT_TRUE(stepsDescriptor->maximum.has_value());
+    EXPECT_DOUBLE_EQ(*stepsDescriptor->minimum, 1.0);
+    EXPECT_DOUBLE_EQ(*stepsDescriptor->maximum, 16.0);
+
+    ConfigManagerUVE project;
+    ConfigManagerUVE user;
+    ConfigManagerUVE platform;
+    ConfigManagerUVE commandLineValues;
+    platform.SetBoolUVE(Id::kContactShadowsEnabledUVE, true);
+    CommandLine::CommandLineUVE commandLine({
+        "--rendering.shadows.contactShadowsEnabled", "true",
+        "--rendering.shadows.contactShadowsLength", "0.4",
+        "--rendering.shadows.contactShadowsThickness", "0.05",
+        "--rendering.shadows.contactShadowsStrength", "0.9",
+        "--rendering.shadows.contactShadowsSteps", "12",
+    });
+    PopulateEngineCommandLineSettingsUVE(registry, commandLine, commandLineValues);
+    Config::SettingsStackUVE settings(registry);
+    ASSERT_TRUE(AttachEngineSettingsLayersUVE(settings, project, user, platform, commandLineValues));
+
+    EngineConfigUVE config{};
+    ApplyEngineSettingsUVE(settings, config);
+    EXPECT_TRUE(config.contactShadowsEnabledUVE);
+    EXPECT_DOUBLE_EQ(config.contactShadowsLengthUVE, 0.4);
+    EXPECT_DOUBLE_EQ(config.contactShadowsThicknessUVE, 0.05);
+    EXPECT_DOUBLE_EQ(config.contactShadowsStrengthUVE, 0.9);
+    EXPECT_EQ(config.contactShadowsStepCountUVE, 12);
+}
+
 TEST(EngineSettingsLayeringUVETest, FrustumCullingModeSettingDefaultsEnabledAndOverridesPerPlatform) {
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));

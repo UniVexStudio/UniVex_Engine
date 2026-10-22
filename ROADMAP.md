@@ -119,7 +119,29 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
   point light spends six tiles against a spot light's one, so four point lights is the 24-tile worst
   case the shader's fixed arrays describe - and 24 tiles still fit at 512 in a 4096 atlas, which is
   why the resolution policy needs no per-type special case.
-- [ ] Contact shadows / screen-space shadow refinement
+- [x] Contact shadows / screen-space shadow refinement - the last few centimetres a shadow map
+  cannot resolve. At the atlas resolutions the engine uses, one depth texel covers several
+  centimetres of the receiving surface, so geometry that touches it - a crate on a floor, a foot on
+  a stair - either never covers a whole texel and loses its shadow entirely, or loses it to the
+  normal bias pushing the comparison far enough off the surface to miss a caster standing on it.
+  Both failures read as the same thing: the object is floating. The pass asks the question against
+  the camera's own depth buffer instead, marching from the shaded surface toward the light and
+  counting samples that sit behind the ray by more than a depth bias but less than a configured
+  thickness. That upper bound is the whole trick and the part that is easy to omit: without it every
+  distant wall behind a grazing ray darkens the surface, which is the classic screen-space
+  over-shadow. The march is quadratic rather than uniform - step i is at `length * ((i+1)/n)^2` -
+  because contact is by definition at the near end of the ray, so a uniform schedule spends most of
+  its samples where nothing can be occluded. Occlusion maps to a visibility fraction capped by
+  strength, never to a binary in/out, because a hard edge between marched and unmarched pixels is
+  more visible than the shadow it draws. The pass runs at FULL resolution, unlike the half-res SSAO
+  term beside it, since it exists to recover detail a blurred buffer would erase; it composites by
+  multiplying before bloom so a bright surface next to its contact shadow cannot bleed light back
+  over it through the bright-pass threshold; and it refines rather than replaces a shadow map,
+  because an occluder that is off-screen or behind the surface is simply not in the depth buffer.
+  That limitation is why it is off by default rather than on. The CPU mirror in contact_shadows_uve.h
+  - the same schedule, bias rule and visibility mapping, testable without a GPU - is what keeps the
+  header and contact_shadow.glsl honest, since the pass has no parity harness to catch arithmetic
+  that drifts between the two.
 - [x] A true physically-based material model — verified rather than assumed: lit_shadowed_3d.glsl
   already implements real Cook-Torrance (GGX distribution, Smith geometry, Schlick Fresnel), the
   correct (1-F)(1-metallic) energy split, mix(0.04, albedo, metallic) base reflectance, and

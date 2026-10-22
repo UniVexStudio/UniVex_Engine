@@ -718,6 +718,86 @@ TEST_F(Renderer3DUVETest, SSAORadiusIntensityPowerQualityAndBlurReachTheirShader
     EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*disabledBlur).value, 0);
 }
 
+TEST_F(Renderer3DUVETest, ContactShadowSettingsReachTheirPassAndTheDiagnostics) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    WaitUntilShadowProgramReadyUVE();
+
+    PostProcessSettingsUVE settings;
+    settings.contactShadowsEnabledUVE = true;
+    settings.contactShadowLengthMetersUVE = 0.35F;
+    settings.contactShadowThicknessMetersUVE = 0.12F;
+    settings.contactShadowStrengthUVE = 0.6F;
+    settings.contactShadowStepCountUVE = 6U;
+    renderer3D->SetPostProcessSettingsUVE(settings);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    EXPECT_TRUE(renderer3D->GetLastFrameDiagnosticsUVE().contactShadowPassRecorded);
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto floatUniform = [&commands](const std::string_view name) -> std::optional<float> {
+        const auto found = std::find_if(commands.cbegin(), commands.cend(), [name](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformFloatCommandUVE>(command) &&
+                   std::get<SetUniformFloatCommandUVE>(command).name == name;
+        });
+        return found == commands.cend() ? std::nullopt
+                                        : std::optional<float>{std::get<SetUniformFloatCommandUVE>(*found).value};
+    };
+    const auto intUniform = [&commands](const std::string_view name) -> std::optional<std::int32_t> {
+        const auto found = std::find_if(commands.cbegin(), commands.cend(), [name](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+                   std::get<SetUniformIntCommandUVE>(command).name == name;
+        });
+        return found == commands.cend() ? std::nullopt
+                                        : std::optional<std::int32_t>{std::get<SetUniformIntCommandUVE>(*found).value};
+    };
+    const auto lightDirection = std::find_if(
+        commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformVector3CommandUVE>(command) &&
+                   std::get<SetUniformVector3CommandUVE>(command).name == "uLightDirectionView";
+        });
+
+    ASSERT_TRUE(floatUniform("uLengthMeters").has_value());
+    ASSERT_TRUE(floatUniform("uThicknessMeters").has_value());
+    ASSERT_TRUE(floatUniform("uStrength").has_value());
+    ASSERT_TRUE(floatUniform("uDepthBiasMeters").has_value());
+    ASSERT_TRUE(intUniform("uStepCount").has_value());
+    EXPECT_FLOAT_EQ(*floatUniform("uLengthMeters"), 0.35F);
+    EXPECT_FLOAT_EQ(*floatUniform("uThicknessMeters"), 0.12F);
+    EXPECT_FLOAT_EQ(*floatUniform("uStrength"), 0.6F);
+    EXPECT_EQ(*intUniform("uStepCount"), 6);
+    // The march direction has to arrive normalized, or every step distance would be scaled by the
+    // length of a vector the shader never re-normalizes per pixel.
+    ASSERT_NE(lightDirection, commands.cend());
+    const Math::Vector3UVE viewLightDirection = std::get<SetUniformVector3CommandUVE>(*lightDirection).value;
+    EXPECT_NEAR(Math::LengthUVE(viewLightDirection), 1.0F, 1.0e-4F);
+
+    // Untrusted API values are clamped the same way the settings sanitizer clamps them, and an
+    // out-of-range step count must not become an unbounded per-pixel loop.
+    settings.contactShadowStepCountUVE = 99U;
+    settings.contactShadowStrengthUVE = 4.0F;
+    renderer3D->SetPostProcessSettingsUVE(settings);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const std::vector<RecordedCommandUVE>& clampedCommands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto clampedSteps = std::find_if(clampedCommands.cbegin(), clampedCommands.cend(),
+                                            [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uStepCount";
+    });
+    ASSERT_NE(clampedSteps, clampedCommands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*clampedSteps).value, 16);
+}
+
+TEST_F(Renderer3DUVETest, ContactShadowsDisabledRecordsNoPass) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    WaitUntilShadowProgramReadyUVE();
+
+    // Defaults: the pass refines an existing shadow map, so a project opts in rather than paying for
+    // it in every frame that never asked.
+    PostProcessSettingsUVE settings;
+    renderer3D->SetPostProcessSettingsUVE(settings);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_FALSE(renderer3D->GetLastFrameDiagnosticsUVE().contactShadowPassRecorded);
+}
+
 TEST_F(Renderer3DUVETest, WorldEnvironmentBloomSoftKneeReachesTheBrightPassShader) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
@@ -3425,8 +3505,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_SingleInstancingAwareObject_StillDrawsE
 //
 // ViewportManagerUVE::RenderAllPanesUVE drives ONE shared renderer across every
 // pane, resizing it to each pane's pixel size in turn. Before the cache, a
-// split view of differently-sized panes destroyed and recreated all SIX
-// size-dependent textures (color, depth, bloom bright, two blur, SSAO) per pane
+// split view of differently-sized panes destroyed and recreated all SEVEN
+// size-dependent textures (color, depth, bloom bright, two blur, SSAO, contact shadow) per pane
 // per frame - permanently, not as a warm-up. These tests measure that directly
 // through the Null device's texture-creation counter rather than asserting
 // something vague about performance.
@@ -3454,8 +3534,8 @@ TEST_F(Renderer3DUVETest, ResizeTargetsUVE_NewSize_AllocatesOnceAndThenIsFree) {
     const std::uint64_t afterFirst = renderDevice.GetTextureCreateAttemptCountUVE();
 
     // A genuinely new size does cost allocations - the cache removes repeat cost, it does not
-    // conjure targets. Six of them: color, depth, bloom bright, two blur, SSAO.
-    EXPECT_EQ(afterFirst - beforeNewSize, 6U);
+    // conjure targets. Seven of them: color, depth, bloom bright, two blur, SSAO, contact shadow.
+    EXPECT_EQ(afterFirst - beforeNewSize, 7U);
 
     ASSERT_TRUE(renderer3D->ResizeTargetsUVE(800U, 600U));
     EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), afterFirst);
@@ -3470,7 +3550,7 @@ TEST_F(Renderer3DUVETest, ResizeTargetsUVE_ManyDistinctSizes_DoesNotGrowWithoutB
     }
     // Live resources are bounded by the cache limit rather than by the number of sizes seen. The
     // exact figure is not the point; that it is far below 24 sets is.
-    EXPECT_LT(renderDevice.GetLiveResourceCountUVE(), 24U * 6U);
+    EXPECT_LT(renderDevice.GetLiveResourceCountUVE(), 24U * 7U);
 }
 
 TEST_F(Renderer3DUVETest, ResizeTargetsUVE_AfterEviction_StillRendersCorrectly) {

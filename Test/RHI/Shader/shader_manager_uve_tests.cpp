@@ -451,7 +451,7 @@ class BuiltInShaderParityUVETest : public ::testing::TestWithParam<std::pair<std
 TEST_P(BuiltInShaderParityUVETest, EmbeddedSource_IsByteIdenticalToPhysicalFile) {
     const auto& [relativePath, embeddedSource] = GetParam();
     const std::filesystem::path fullPath =
-        ::UVE::Tests::RepositoryRootUVE() / ::UVE::Tests::RepositoryRootUVE() / "Engine/Runtime/RHI/Shader/built_in" / relativePath;
+        ::UVE::Tests::RepositoryRootUVE() / "Engine/Runtime/RHI/Shader/built_in" / relativePath;
     const std::optional<std::string> fileContent = ReadFileToStringUVE(fullPath);
     if (!fileContent.has_value()) {
         GTEST_SKIP() << "Could not read " << fullPath
@@ -493,7 +493,19 @@ INSTANTIATE_TEST_SUITE_P(
                                                                       BuiltIn::kFrustumCullIndirectSource},
                        std::pair<std::string_view, std::string_view>{"mesh_skin.glsl",
                                                                       BuiltIn::kMeshSkinSource},
-                       std::pair<std::string_view, std::string_view>{"ui_overlay.glsl", BuiltIn::kUIOverlaySource}));
+                       std::pair<std::string_view, std::string_view>{"bloom_bright_pass.glsl",
+                                                                      BuiltIn::kBloomBrightPassSource},
+                       std::pair<std::string_view, std::string_view>{"bloom_downsample.glsl",
+                                                                      BuiltIn::kBloomDownsampleSource},
+                       std::pair<std::string_view, std::string_view>{"bloom_blur.glsl",
+                                                                      BuiltIn::kBloomBlurSource},
+                       std::pair<std::string_view, std::string_view>{"fullscreen_copy.glsl",
+                                                                      BuiltIn::kFullscreenCopySource},
+                       std::pair<std::string_view, std::string_view>{"ssao.glsl", BuiltIn::kSsaoSource},
+                       std::pair<std::string_view, std::string_view>{"contact_shadow.glsl",
+                                                                      BuiltIn::kContactShadowSource},
+                       std::pair<std::string_view, std::string_view>{"ui_overlay.glsl",
+                                                                      BuiltIn::kUIOverlaySource}));
 
 
 // ---------------------------------------------------------------------------
