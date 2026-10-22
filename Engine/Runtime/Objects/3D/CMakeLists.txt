@@ -38,6 +38,7 @@ add_library(uve_objects_3d STATIC
     Physics/Internal/interaction_area_3d_uve.cpp
     Physics/Internal/joint_3d_uve.cpp
     Physics/Internal/physical_bone_3d_uve.cpp
+    Physics/Internal/ragdoll_3d_uve.cpp
     Physics/Internal/projectile_3d_uve.cpp
     Physics/Internal/ray_cast_3d_uve.cpp
     Physics/Internal/shape_cast_3d_uve.cpp

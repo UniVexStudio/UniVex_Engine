@@ -442,8 +442,17 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
   round-trip without drift
 - [ ] Soft-body / cloth simulation
 - [ ] Vehicle physics (wheeled at minimum)
-- [ ] Ragdoll physics (driven skeletal bodies + constraints layered over an animated
-  skeleton)
+- [x] Ragdoll physics (driven skeletal bodies + constraints layered over an animated
+  skeleton) — `RagdollSolverUVE`: sequential-impulse articulated bodies at a 1/240 s fixed step,
+  Unreal's Free/Limited/Locked per-axis model (swing1/swing2 cone + signed twist, so a knee and an
+  elbow are ranges rather than joint types), limit stiffness/damping, positional projection,
+  capsule inertia from the shape, sleeping, and bit-exact determinism. `Ragdoll3DComponentUVE`
+  builds one capsule per bone from the rig itself (length from the child bone, not a table),
+  generates the standard 18-row humanoid profile when no bones are authored, and writes the result
+  back as rotation only, root first, so the skinned mesh follows without stretching.
+  `BuildRagdollContactsUVE` resolves the body capsules against the world's collider cache
+  (sphere/capsule/oriented box/AABB, combined material), and `ApplyRagdollImpactUVE` carries a hit
+  that never became a contact into the nearest body, waking it. 32 headless tests
 - [ ] Destructible/fracturable physics objects
 - [x] Joint types beyond hinge (ball socket, slider/prismatic, fixed, spring/distance) — DistanceConstraintUVE
   (rest-length spring/distance), HingeConstraintUVE (coincident anchors with rotation axis),

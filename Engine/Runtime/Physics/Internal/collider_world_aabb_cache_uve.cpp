@@ -104,6 +104,7 @@ std::vector<ColliderWorldAabbUVE> BuildColliderWorldAabbCacheUVE(Scene::IEntityM
                 shapeRotation,
                 capsuleSegmentStart,
                 capsuleSegmentEnd,
+                PhysicsMaterialUVE{collider.friction, collider.restitution, collider.density},
             });
         });
     return cache;
