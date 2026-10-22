@@ -40,11 +40,14 @@
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/editor_internal_entity_component_uve.h"
+#include "uve/component/light_emitter_component_uve.h"
+#include "uve/math/vector3_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/objects/3d/camera_3d_uve.h"
 #include "uve/objects/3d/directional_light_3d_uve.h"
+#include "uve/objects/3d/preview_lighting_uve.h"
 #include "uve/objects/3d/fog_volume_3d_uve.h"
 #include "uve/objects/3d/occluder_3d_uve.h"
 #include "uve/objects/3d/reflection_probe_3d_uve.h"
@@ -112,6 +115,24 @@ void main() {
             hasEnvironment |= UVE::Scene::IsWorldEnvironment3DObjectComponentValidUVE(value);
         });
     return hasEnvironment;
+}
+
+/// True when the DOCUMENT carries a real DirectionalLight3D. Internal tooling entities (the
+/// mesh layer's own headlight) are excluded by their EditorInternalEntityComponentUVE tag, so the
+/// preview can never mistake its own stand-in for authored lighting and switch itself off.
+[[nodiscard]] bool HasAuthoredDirectionalLightUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
+    bool hasDirectional = false;
+    entityManager.ForEachUVE<UVE::Scene::DirectionalLight3DComponentUVE, UVE::Scene::LightEmitterComponentUVE>(
+        [&hasDirectional, &entityManager](UVE::Scene::EntityUVE entity, const UVE::Scene::DirectionalLight3DComponentUVE&,
+                                          const UVE::Scene::LightEmitterComponentUVE& emitter) {
+            if (hasDirectional) {
+                return;
+            }
+            hasDirectional = entityManager.IsAliveUVE(entity) &&
+                             !entityManager.HasComponentUVE<UVE::Scene::EditorInternalEntityComponentUVE>(entity) &&
+                             !emitter.negative && emitter.energy > 0.0F;
+        });
+    return hasDirectional;
 }
 
 [[nodiscard]] univex::gizmo::GizmoMesh BuildCameraFrustumMeshUVE(
@@ -832,6 +853,44 @@ public:
         } else if (wantPreview) {
             lookThroughCamera = previewCamera;
         }
+        // ---- Editor preview lighting (Godot's "Preview Sun and Environment") -----------------
+        // Resolved every frame from the toolbar's own state and from what the document actually
+        // contains, so the preview appears exactly while the scene lacks the real thing and
+        // disappears the moment it gains one. The Game tab is a preview of the running project,
+        // where an editor convenience must never appear, so it opts out entirely - which is also
+        // why a scene with no lights of its own looks dark there, honestly.
+        {
+            const bool previewAllowed = !overlayState.gameWorkspaceActive;
+            UVE::Scene::PreviewLightingSettingsUVE previewSettings{};
+            previewSettings.sunEnabled = overlayState.previewSun && previewAllowed;
+            previewSettings.environmentEnabled = overlayState.previewEnvironment && previewAllowed;
+            previewSettings.sunAzimuthDegrees = overlayState.previewSunAzimuth;
+            previewSettings.sunAltitudeDegrees = overlayState.previewSunAltitude;
+            previewSettings.sunEnergy = overlayState.previewSunEnergy;
+            previewSettings.sunColor = UVE::Math::Vector3UVE{overlayState.previewSunColor[0],
+                                                             overlayState.previewSunColor[1],
+                                                             overlayState.previewSunColor[2]};
+            previewSettings.skyColor = UVE::Math::Vector3UVE{overlayState.previewSkyColor[0],
+                                                             overlayState.previewSkyColor[1],
+                                                             overlayState.previewSkyColor[2]};
+            previewSettings.horizonColor = UVE::Math::Vector3UVE{overlayState.previewHorizonColor[0],
+                                                                 overlayState.previewHorizonColor[1],
+                                                                 overlayState.previewHorizonColor[2]};
+            previewSettings.groundColor = UVE::Math::Vector3UVE{overlayState.previewGroundColor[0],
+                                                                overlayState.previewGroundColor[1],
+                                                                overlayState.previewGroundColor[2]};
+            previewSettings.ambientEnergy = overlayState.previewAmbientEnergy;
+
+            const UVE::Scene::PreviewLightingFrameUVE previewFrame = UVE::Scene::ResolvePreviewLightingUVE(
+                HasAuthoredDirectionalLightUVE(entityManager_), HasActiveWorldEnvironmentUVE(entityManager_),
+                previewSettings);
+            meshLayer_.SetPreviewLightingUVE(previewFrame);
+            engine_.GetServicesUVE().GetRenderer3DUVE().SetPreviewEnvironmentUVE(
+                previewFrame.environmentActive
+                    ? std::optional<UVE::Scene::WorldEnvironmentFrameUVE>(previewFrame.environment)
+                    : std::nullopt);
+        }
+
         const univex::integration::EditorMeshLayerResultUVE meshResult = meshLayer_.RenderUVE(
             camera_, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), lookThroughCamera);
         if (!gameWorkspaceActive_ && !studioView_ && !previewing_) {

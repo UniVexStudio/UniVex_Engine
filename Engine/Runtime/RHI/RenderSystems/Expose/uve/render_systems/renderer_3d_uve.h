@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 #include "uve/asset/i_asset_database_uve.h"
 #include "uve/asset/i_asset_manager_uve.h"
@@ -68,6 +69,7 @@ public:
                                 std::uint32_t width = 0U, std::uint32_t height = 0U,
                                 std::uint32_t colorLayer = 0U, std::uint32_t depthLayer = 0U) override;
     void SetPostProcessSettingsUVE(const PostProcessSettingsUVE& settings) override;
+    void SetPreviewEnvironmentUVE(const std::optional<Scene::WorldEnvironmentFrameUVE>& frame) override;
     void SetShadowBiasDefaultsUVE(float depthBias, float normalBias) noexcept override;
     void SetShadowAtlasTileResolutionUVE(std::uint32_t resolution) noexcept override;
     void SetCullingSettingsUVE(const CullingSettingsUVE& settings) noexcept override;

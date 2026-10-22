@@ -949,6 +949,10 @@ struct Renderer3DUVE::ImplUVE {
     float humanEyeTexelX = 0.0F;
     float humanEyeTexelY = 0.0F;
     Scene::WorldEnvironmentFrameUVE environmentFrame{};
+    /// Editor preview environment (Godot's "Preview Environment"). Applied only when the scene
+    /// resolves to no WorldEnvironment of its own, so authored lighting can never be overridden by
+    /// an editor convenience - see IRenderer3DUVE::SetPreviewEnvironmentUVE.
+    std::optional<Scene::WorldEnvironmentFrameUVE> previewEnvironment{};
     Asset::AssetGuidUVE skyTextureGuid{};
     TextureHandleUVE skyTextureHandle = kInvalidTextureHandleUVE;
     bool skyTextureEnabled = false;
@@ -3695,6 +3699,12 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         return;
     }
     m_impl->environmentFrame = Scene::ResolveWorldEnvironmentFrameUVE(entityManager, m_impl->ambientColor);
+    // Editor preview environment, applied strictly in the gap a real WorldEnvironment would fill.
+    // The check is on the RESOLVED frame rather than on the injected value so a scene that gains a
+    // WorldEnvironment mid-frame immediately takes priority, with no editor bookkeeping to reset.
+    if (!m_impl->environmentFrame.hasEnvironment && m_impl->previewEnvironment.has_value()) {
+        m_impl->environmentFrame = *m_impl->previewEnvironment;
+    }
     const Asset::AssetGuidUVE previousSkyTextureGuid = m_impl->skyTextureGuid;
     m_impl->skyTextureGuid = Asset::kInvalidAssetGuidUVE;
     m_impl->skyTextureHandle = kInvalidTextureHandleUVE;
@@ -5023,6 +5033,21 @@ void Renderer3DUVE::SetPostProcessSettingsUVE(const PostProcessSettingsUVE& sett
         std::min(settings.fastApproximateAAQualityUVE, 2U);
     m_impl->postProcessSettings.sharpeningAmountUVE =
         std::isfinite(settings.sharpeningAmountUVE) ? std::clamp(settings.sharpeningAmountUVE, 0.0F, 1.0F) : 0.0F;
+}
+
+void Renderer3DUVE::SetPreviewEnvironmentUVE(const std::optional<Scene::WorldEnvironmentFrameUVE>& frame) {
+    // `hasEnvironment` is deliberately forced here rather than trusted from the caller: the whole
+    // point of the preview is that it stands in for the environment the scene does not have, and a
+    // frame that kept the flag false would silently do nothing (the procedural sky pass and the
+    // sky ambient both gate on it). The copy is per-frame data only - nothing is written back into
+    // the entity manager.
+    if (!frame.has_value()) {
+        m_impl->previewEnvironment.reset();
+        return;
+    }
+    Scene::WorldEnvironmentFrameUVE preview = *frame;
+    preview.hasEnvironment = true;
+    m_impl->previewEnvironment = preview;
 }
 
 void Renderer3DUVE::SetShadowBiasDefaultsUVE(const float depthBias, const float normalBias) noexcept {
