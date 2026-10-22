@@ -24,6 +24,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
+#include "uve/threading/thread_pool_uve.h"
 
 namespace UVE::Physics::Tests {
 namespace {
@@ -863,4 +864,190 @@ TEST(DeterministicPhysicsUVETest, DigestTracksRealDivergence) {
 }
 
 } // namespace
+namespace {
+
+constexpr float kParallelFixedDelta = 1.0F / 60.0F;
+
+/// One body's state as the equivalence tests compare it. Compared with exact equality, not a
+/// tolerance: the entire promise of island solving is that the arithmetic - and therefore the
+/// bits - are unchanged. A tolerance would hide exactly the drift these tests exist to catch.
+struct BodySnapshotUVE final {
+    Math::Vector3UVE position{};
+    Math::Vector3UVE velocity{};
+};
+
+/// Two columns of four overlapping boxes, 20 m apart: two islands (3 pairs each), which is the
+/// smallest scene that can prove anything about parallelism. The columns are far enough apart that
+/// no pair can ever connect them, so the two islands are genuinely independent.
+void BuildTwoIslandSceneUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
+                            std::vector<Scene::EntityUVE>& bodies) {
+    for (std::uint32_t column = 0U; column < 2U; ++column) {
+        for (std::uint32_t level = 0U; level < 4U; ++level) {
+            Scene::Rigid3DComponentUVE rigid;
+            rigid.velocity = Math::Vector3UVE{0.02F * static_cast<float>(column), 0.0F, 0.0F};
+            const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+            Scene::TransformComponentUVE local;
+            local.localPosition = Math::Vector3UVE{static_cast<float>(column) * 20.0F,
+                                                   static_cast<float>(level) * 0.9F, 0.0F};
+            sceneGraph.AttachTransformUVE(entityManager, entity, local);
+            entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(entity, rigid);
+            entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+                entity, Scene::ColliderComponentUVE{Math::Vector3UVE{0.5F, 0.5F, 0.5F}});
+            bodies.push_back(entity);
+        }
+    }
+    sceneGraph.UpdateUVE(entityManager);
+}
+
+[[nodiscard]] std::vector<BodySnapshotUVE> CaptureBodiesUVE(Scene::IEntityManagerUVE& entityManager,
+                                                            const std::vector<Scene::EntityUVE>& bodies) {
+    std::vector<BodySnapshotUVE> snapshots;
+    snapshots.reserve(bodies.size());
+    for (const Scene::EntityUVE entity : bodies) {
+        BodySnapshotUVE snapshot;
+        snapshot.position = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity).localPosition;
+        snapshot.velocity = entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity).velocity;
+        snapshots.push_back(snapshot);
+    }
+    return snapshots;
+}
+
+void RestoreBodiesUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
+                      const std::vector<Scene::EntityUVE>& bodies,
+                      const std::vector<BodySnapshotUVE>& snapshots) {
+    for (std::size_t index = 0U; index < bodies.size(); ++index) {
+        Scene::TransformComponentUVE transform =
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(bodies[index]);
+        transform.localPosition = snapshots[index].position;
+        sceneGraph.SetLocalTransformUVE(entityManager, bodies[index], transform);
+        entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(bodies[index]).velocity =
+            snapshots[index].velocity;
+    }
+    sceneGraph.UpdateUVE(entityManager);
+}
+
+} // namespace
+
+TEST_F(PhysicsSystemUVETest, StepUVE_TwoSeparatedStacksReportTwoIslands) {
+    std::vector<Scene::EntityUVE> bodies;
+    BuildTwoIslandSceneUVE(entityManager, sceneGraph, bodies);
+
+    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{});
+    physicsSystem.StepUVE(entityManager, sceneGraph, kParallelFixedDelta);
+
+    EXPECT_EQ(physicsSystem.GetLastStepIslandCountUVE(), 2U);
+    // Nothing was threaded: no pool, even though the setting could have allowed it.
+    EXPECT_EQ(physicsSystem.GetLastStepParallelIslandCountUVE(), 0U);
+}
+
+TEST_F(PhysicsSystemUVETest, StepUVE_IslandParallelResolutionMatchesSequentialExactly) {
+    std::vector<Scene::EntityUVE> bodies;
+    BuildTwoIslandSceneUVE(entityManager, sceneGraph, bodies);
+    const std::vector<BodySnapshotUVE> initial = CaptureBodiesUVE(entityManager, bodies);
+
+    PhysicsSimulationSettingsUVE settings;
+    settings.deterministic.enabled = true;
+    // The scene is tiny on purpose; lowering the break-even point is what lets six pairs exercise
+    // the parallel path at all.
+    settings.parallelStepping.minimumPairCount = 1U;
+
+    PhysicsSystemUVE sequential(collisionSystem, Math::Vector3UVE{});
+    sequential.SetSimulationSettingsUVE(settings);
+    std::vector<std::uint64_t> sequentialDigests;
+    sequentialDigests.reserve(30U);
+    for (int step = 0; step < 30; ++step) {
+        sequential.StepUVE(entityManager, sceneGraph, kParallelFixedDelta);
+        sequentialDigests.push_back(sequential.GetLastStepDigestUVE());
+    }
+    ASSERT_GT(sequential.GetLastStepIslandCountUVE(), 1U);
+    EXPECT_EQ(sequential.GetLastStepParallelIslandCountUVE(), 0U);
+    const std::vector<BodySnapshotUVE> sequentialState = CaptureBodiesUVE(entityManager, bodies);
+
+    RestoreBodiesUVE(entityManager, sceneGraph, bodies, initial);
+
+    Threading::ThreadPoolUVE pool(2U);
+    PhysicsSystemUVE parallel(collisionSystem, Math::Vector3UVE{});
+    parallel.SetThreadPoolUVE(&pool);
+    settings.parallelStepping.enabled = true;
+    parallel.SetSimulationSettingsUVE(settings);
+
+    for (int step = 0; step < 30; ++step) {
+        parallel.StepUVE(entityManager, sceneGraph, kParallelFixedDelta);
+        ASSERT_EQ(parallel.GetLastStepDigestUVE(), sequentialDigests[static_cast<std::size_t>(step)])
+            << "digest diverged at step " << step;
+        ASSERT_EQ(parallel.GetLastStepParallelIslandCountUVE(), parallel.GetLastStepIslandCountUVE())
+            << "every island should have been handed to the pool at step " << step;
+    }
+
+    const std::vector<BodySnapshotUVE> parallelState = CaptureBodiesUVE(entityManager, bodies);
+    for (std::size_t index = 0U; index < bodies.size(); ++index) {
+        EXPECT_EQ(parallelState[index].position.x, sequentialState[index].position.x) << "body " << index;
+        EXPECT_EQ(parallelState[index].position.y, sequentialState[index].position.y) << "body " << index;
+        EXPECT_EQ(parallelState[index].position.z, sequentialState[index].position.z) << "body " << index;
+        EXPECT_EQ(parallelState[index].velocity.x, sequentialState[index].velocity.x) << "body " << index;
+        EXPECT_EQ(parallelState[index].velocity.y, sequentialState[index].velocity.y) << "body " << index;
+        EXPECT_EQ(parallelState[index].velocity.z, sequentialState[index].velocity.z) << "body " << index;
+    }
+}
+
+TEST_F(PhysicsSystemUVETest, StepUVE_ParallelRequestedWithoutAPoolStillResolves) {
+    std::vector<Scene::EntityUVE> bodies;
+    BuildTwoIslandSceneUVE(entityManager, sceneGraph, bodies);
+
+    PhysicsSimulationSettingsUVE settings;
+    settings.parallelStepping.enabled = true;
+    settings.parallelStepping.minimumPairCount = 1U;
+
+    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{});
+    physicsSystem.SetSimulationSettingsUVE(settings);
+    physicsSystem.StepUVE(entityManager, sceneGraph, kParallelFixedDelta);
+
+    // A setting is a request, not a requirement: with no pool the step must still run, and report
+    // that it did so on the calling thread.
+    EXPECT_EQ(physicsSystem.GetLastStepParallelIslandCountUVE(), 0U);
+    EXPECT_EQ(physicsSystem.GetLastStepIslandCountUVE(), 2U);
+}
+
+TEST_F(PhysicsSystemUVETest, StepUVE_OneIslandIsNeverSplitAcrossWorkers) {
+    // A single column is one island: splitting it would put two writers on the same bodies. The
+    // guard has to hold even when the caller asks for parallelism and lowers the break-even point.
+    std::vector<Scene::EntityUVE> bodies;
+    for (std::uint32_t level = 0U; level < 4U; ++level) {
+        bodies.push_back(MakeBodyEntityUVE(
+            Math::Vector3UVE{0.0F, static_cast<float>(level) * 0.9F, 0.0F}, Scene::Rigid3DComponentUVE{},
+            Math::Vector3UVE{0.5F, 0.5F, 0.5F}));
+    }
+    sceneGraph.UpdateUVE(entityManager);
+
+    Threading::ThreadPoolUVE pool(2U);
+    PhysicsSimulationSettingsUVE settings;
+    settings.parallelStepping.enabled = true;
+    settings.parallelStepping.minimumPairCount = 1U;
+
+    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{});
+    physicsSystem.SetThreadPoolUVE(&pool);
+    physicsSystem.SetSimulationSettingsUVE(settings);
+    physicsSystem.StepUVE(entityManager, sceneGraph, kParallelFixedDelta);
+
+    EXPECT_EQ(physicsSystem.GetLastStepIslandCountUVE(), 1U);
+    EXPECT_EQ(physicsSystem.GetLastStepParallelIslandCountUVE(), 0U);
+}
+
+TEST_F(PhysicsSystemUVETest, StepUVE_AHandfulOfPairsStaysOnTheCallingThreadByDefault) {
+    std::vector<Scene::EntityUVE> bodies;
+    BuildTwoIslandSceneUVE(entityManager, sceneGraph, bodies);
+
+    Threading::ThreadPoolUVE pool(2U);
+    PhysicsSimulationSettingsUVE settings;
+    settings.parallelStepping.enabled = true; // break-even point left at its default of 64 pairs
+
+    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{});
+    physicsSystem.SetThreadPoolUVE(&pool);
+    physicsSystem.SetSimulationSettingsUVE(settings);
+    physicsSystem.StepUVE(entityManager, sceneGraph, kParallelFixedDelta);
+
+    EXPECT_EQ(physicsSystem.GetLastStepParallelIslandCountUVE(), 0U);
+    EXPECT_EQ(physicsSystem.GetLastStepIslandCountUVE(), 2U);
+}
+
 } // namespace UVE::Physics::Tests

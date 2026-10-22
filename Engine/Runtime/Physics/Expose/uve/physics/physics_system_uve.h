@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "uve/math/vector3_uve.h"
 #include "uve/physics/i_collision_system_uve.h"
@@ -11,6 +12,10 @@
 
 namespace UVE::Physics {
 class PhysicsConstraintSystemUVE;
+}
+
+namespace UVE::Threading {
+class IThreadPoolUVE;
 }
 
 namespace UVE::Physics {
@@ -37,6 +42,24 @@ public:
     /// collision resolution; passing nullptr restores the legacy integration-only behavior.
     void SetConstraintSystemUVE(PhysicsConstraintSystemUVE* constraintSystem) noexcept;
 
+    /// Attaches the pool island-parallel contact resolution runs on. `nullptr` (the default) keeps
+    /// every step on the calling thread. The pool is borrowed, not owned, and must outlive this
+    /// system - the same non-owning contract as the constraint system above.
+    void SetThreadPoolUVE(Threading::IThreadPoolUVE* threadPool) noexcept;
+
+    /// How many simulation islands the last step's pair list formed. Zero when there were no pairs.
+    /// Reported so a caller can see whether a scene is even shaped to benefit from parallelism.
+    [[nodiscard]] std::uint32_t GetLastStepIslandCountUVE() const noexcept {
+        return m_lastStepIslandCountUVE;
+    }
+
+    /// How many of those islands were actually solved on the worker pool last step. Zero means the
+    /// step ran single-threaded: parallelism disabled, no pool, one worker, too few pairs, or a
+    /// single island - all of which are legitimate outcomes, not failures.
+    [[nodiscard]] std::uint32_t GetLastStepParallelIslandCountUVE() const noexcept {
+        return m_lastStepParallelIslandCountUVE;
+    }
+
     void SetGravityUVE(Math::Vector3UVE gravity) noexcept override;
     [[nodiscard]] Math::Vector3UVE GetGravityUVE() const noexcept override;
 
@@ -49,11 +72,20 @@ public:
     [[nodiscard]] std::uint64_t GetLastStepDigestUVE() const noexcept override { return m_lastStepDigest; }
 
 private:
+    /// Resolves every pair in the step's list, island by island. Sequential order and island order
+    /// produce identical state (islands share no bodies), so this is the one place parallelism is
+    /// allowed to change how the work runs without changing what it computes.
+    void ResolveCollisionPairsUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
+                                  const std::vector<CollisionPairUVE>& pairs, float fixedDeltaTimeSeconds);
+
     ICollisionSystemUVE* m_collisionSystem;
     PhysicsConstraintSystemUVE* m_constraintSystem = nullptr;
+    Threading::IThreadPoolUVE* m_threadPool = nullptr;
     Math::Vector3UVE m_gravity;
     PhysicsSimulationSettingsUVE m_settings{};
     std::uint64_t m_lastStepDigest = 0U;
+    std::uint32_t m_lastStepIslandCountUVE = 0U;
+    std::uint32_t m_lastStepParallelIslandCountUVE = 0U;
 };
 
 } // namespace UVE::Physics
