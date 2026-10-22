@@ -68,6 +68,11 @@ UVE::Scene::EntityUVE EditorMeshLayerUVE::CreateHeadlightEntityUVE() {
 // It follows the camera rather than the world, so whatever is being looked at is lit, and it is
 // deliberately offset up and to the right of the view direction: a light exactly along the view
 // axis lights every visible face equally and flattens the shape it is meant to reveal.
+void EditorMeshLayerUVE::SetPreviewLightingUVE(const UVE::Scene::PreviewLightingFrameUVE& frame) {
+    previewLighting_ = frame;
+    previewLightingSet_ = true;
+}
+
 bool EditorMeshLayerUVE::SyncHeadlightUVE(const univex::camera::OrbitCamera& camera) {
     UVE::Scene::IEntityManagerUVE& entityManager = services_.GetEntityManagerUVE();
     if (!entityManager.IsAliveUVE(headlightEntity_)) {
@@ -94,6 +99,26 @@ bool EditorMeshLayerUVE::SyncHeadlightUVE(const univex::camera::OrbitCamera& cam
     UVE::Scene::LightComponentUVE& headlight =
         entityManager.GetComponentUVE<UVE::Scene::LightComponentUVE>(headlightEntity_);
     headlight.type = UVE::Scene::LightTypeUVE::Directional;
+
+    // The editor's preview sun (Godot's "Preview Sun"), when the host supplies one. Authored
+    // lighting still wins here even though the resolver already accounted for it: this layer runs
+    // after the frame's settings were resolved, so a light added in between must not be overridden.
+    if (previewLightingSet_) {
+        const bool previewSun = previewLighting_.sunActive && !sceneHasItsOwnLight && previewLighting_.sunEnergy > 0.0F;
+        headlight.intensity = previewSun ? previewLighting_.sunEnergy : 0.0F;
+        if (!previewSun) {
+            return false;
+        }
+        // Display-authored colour, converted on the way into linear storage - the same rule the
+        // legacy headlight below follows.
+        headlight.color = UVE::Math::ColorFromDisplayUVE(previewLighting_.sunColor);
+        UVE::Scene::TransformComponentUVE previewTransform;
+        previewTransform.localPosition = ToUveVector3UVE(camera.Eye());
+        previewTransform.localRotation = previewLighting_.sunRotation;
+        services_.GetSceneGraphUVE().SetLocalTransformUVE(entityManager, headlightEntity_, previewTransform);
+        return true;
+    }
+
     // Warm-white display tint, converted: the headlight is authored, not measured, so what the
     // author picked is a display shade and linear storage must hold its conversion.
     headlight.color = UVE::Math::ColorFromDisplayUVE(UVE::Math::Vector3UVE{1.0F, 0.98F, 0.94F});

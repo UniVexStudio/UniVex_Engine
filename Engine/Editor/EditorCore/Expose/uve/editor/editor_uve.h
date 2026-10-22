@@ -563,6 +563,9 @@ public:
         std::array<float, 3> previewSkyColor{0.31F, 0.54F, 0.91F};
         std::array<float, 3> previewHorizonColor{0.78F, 0.86F, 0.94F};
         std::array<float, 3> previewGroundColor{0.24F, 0.21F, 0.18F};
+        /// How much of the preview sky and ground bands light the scene, matching
+        /// WorldEnvironment3DComponentUVE::ambientEnergy so "Add Environment to Scene" copies it.
+        float previewAmbientEnergy = 1.0F;
     };
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available

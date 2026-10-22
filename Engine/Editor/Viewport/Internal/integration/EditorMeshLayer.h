@@ -19,6 +19,7 @@
 #include "uve/core/engine_services_uve.h"
 #include "uve/rhi/texture_handle_uve.h"
 #include "uve/component/entity_uve.h"
+#include "uve/objects/3d/preview_lighting_uve.h"
 
 namespace univex::camera {
 class OrbitCamera;
@@ -65,6 +66,16 @@ public:
         const univex::camera::OrbitCamera& camera, std::uint32_t width, std::uint32_t height,
         std::optional<UVE::Scene::EntityUVE> gameCameraOverride = std::nullopt);
 
+    /// Editor preview lighting for this frame (see Scene::PreviewLightingFrameUVE).
+    ///
+    /// Until this is called the layer keeps its historical behaviour - a warm-white light that
+    /// follows the camera whenever the scene has none of its own - so the standalone demo and the
+    /// headless capture tool are unaffected. Once the editor starts supplying frames, the preview
+    /// sun is fully authoritative: its own colour, energy and world direction, and switching it off
+    /// (or the scene gaining a real DirectionalLight3D) leaves the scene unlit exactly as Godot's
+    /// preview does, instead of quietly substituting a different light.
+    void SetPreviewLightingUVE(const UVE::Scene::PreviewLightingFrameUVE& frame);
+
 private:
     [[nodiscard]] UVE::Scene::EntityUVE CreateCameraProxyEntityUVE();
     [[nodiscard]] UVE::Scene::EntityUVE CreateHeadlightEntityUVE();
@@ -82,6 +93,8 @@ private:
     UVE::Render::TextureHandleUVE depthTarget_ = UVE::Render::kInvalidTextureHandleUVE;
     std::uint32_t targetWidth_ = 0U;
     std::uint32_t targetHeight_ = 0U;
+    UVE::Scene::PreviewLightingFrameUVE previewLighting_{};
+    bool previewLightingSet_ = false;
 };
 
 } // namespace univex::integration

@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -13,6 +14,7 @@
 #include "uve/rhi/render_resource_descs_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/scene/particle_runtime_uve.h"
 #include "uve/ui/ui_runtime_uve.h"
 
@@ -351,6 +353,19 @@ public:
     /// post-process state.
     virtual void SetPostProcessSettingsUVE(const PostProcessSettingsUVE& settings) {
         static_cast<void>(settings);
+    }
+
+    /// Editor-only preview environment, the counterpart of Scene::PreviewLightingFrameUVE.
+    ///
+    /// Applied by the concrete renderer only when the scene itself resolves to NO WorldEnvironment,
+    /// which is exactly the rule Godot's "Preview Environment" follows: the preview fills the gap
+    /// and is displaced the instant the author adds a real one. It is per-frame view state - never
+    /// written into the entity manager, never saved into a scene, and never seen by an exported
+    /// build - so `std::nullopt` simply restores the authored/fallback path.
+    ///
+    /// The default implementation is a no-op, so renderer doubles in tests stay unaffected.
+    virtual void SetPreviewEnvironmentUVE(const std::optional<Scene::WorldEnvironmentFrameUVE>& frame) {
+        static_cast<void>(frame);
     }
 
     /// Sets the authored depth-bias and angle-aware normal-bias defaults used by directional lights whose
