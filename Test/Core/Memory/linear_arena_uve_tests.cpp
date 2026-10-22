@@ -7,6 +7,7 @@
 
 #include "uve/memory/heap_allocator_uve.h"
 #include "uve/memory/linear_arena_uve.h"
+#include "uve/platform/build_variant_uve.h"
 
 namespace UVE::Memory::Tests {
 namespace {
@@ -47,12 +48,20 @@ TEST(LinearArenaUVETest, Reset_ReleasesEverythingForReuse) {
 }
 
 TEST(LinearArenaUVEDeathTest, Exhaustion_Asserts) {
+    // A profile that compiles assertions out has nothing to observe here: the allocation would
+    // simply succeed past the arena's capacity instead of stopping the process.
+    if (!UVE::Build::kAssertionsEnabledUVE) {
+        GTEST_SKIP() << "Assertions are compiled out of this build profile";
+    }
     LinearArenaUVE arena{64U};
     (void)arena.AllocateUVE(64U, 8U, __FILE__, __LINE__);
     EXPECT_DEATH({ (void)arena.AllocateUVE(1U, 1U, __FILE__, __LINE__); }, "");
 }
 
 TEST(LinearArenaUVEDeathTest, DeallocateForeignPointer_Asserts) {
+    if (!UVE::Build::kAssertionsEnabledUVE) {
+        GTEST_SKIP() << "Assertions are compiled out of this build profile";
+    }
     LinearArenaUVE arena{64U};
     HeapAllocatorUVE heap;
     void* const foreign = heap.AllocateUVE(8U, 8U, __FILE__, __LINE__);
