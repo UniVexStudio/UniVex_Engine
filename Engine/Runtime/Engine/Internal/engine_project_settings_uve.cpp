@@ -930,22 +930,38 @@ struct EngineProjectSettingUVE final {
              config.pointSpotShadowResolutionUVE = std::get<std::int64_t>(value);
          }},
         {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeBoolSettingUVE(
-             "rendering.shadows.contactShadowsEnabled", defaults.contactShadowsEnabledUVE,
+             std::string(Id::kContactShadowsEnabledUVE), defaults.contactShadowsEnabledUVE,
              "Contact Shadows", "Rendering/Shadows"))),
          [](EngineConfigUVE& config, const SettingValueUVE& value) {
              config.contactShadowsEnabledUVE = std::get<bool>(value);
          }},
         {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeFloatSettingUVE(
-             "rendering.shadows.contactShadowsLength", defaults.contactShadowsLengthUVE, 0.01, 2.0,
+             std::string(Id::kContactShadowsLengthUVE), defaults.contactShadowsLengthUVE, 0.01, 2.0,
              "Contact Shadow Length", "Rendering/Shadows"))),
          [](EngineConfigUVE& config, const SettingValueUVE& value) {
              config.contactShadowsLengthUVE = std::get<double>(value);
          }},
         {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeIntSettingUVE(
-             "rendering.shadows.contactShadowsSteps", defaults.contactShadowsStepCountUVE, 4, 64,
+             std::string(Id::kContactShadowsStepsUVE), defaults.contactShadowsStepCountUVE, 1, 16,
              "Contact Shadow Steps", "Rendering/Shadows"))),
          [](EngineConfigUVE& config, const SettingValueUVE& value) {
              config.contactShadowsStepCountUVE = std::get<std::int64_t>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeFloatSettingUVE(
+             std::string(Id::kContactShadowsThicknessUVE), defaults.contactShadowsThicknessUVE, 0.0, 5.0,
+             "Contact Shadow Thickness", "Rendering/Shadows",
+             "How far behind the march a depth sample may sit and still count as touching geometry. Larger values "
+             "catch thicker contact and start darkening from geometry that is merely nearby."))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.contactShadowsThicknessUVE = std::get<double>(value);
+         }},
+        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeFloatSettingUVE(
+             std::string(Id::kContactShadowsStrengthUVE), defaults.contactShadowsStrengthUVE, 0.0, 1.0,
+             "Contact Shadow Strength", "Rendering/Shadows",
+             "Fraction of the direct light a fully occluded march removes. 1.0 reads as a hole; the default keeps "
+             "some lift so contact reads as a seam rather than a cut."))),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.contactShadowsStrengthUVE = std::get<double>(value);
          }},
         {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeBoolSettingUVE(
              "rendering.gi.ssilEnabled", defaults.ssilEnabledUVE, "Screen-Space Indirect Lighting",

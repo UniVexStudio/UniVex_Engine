@@ -686,6 +686,11 @@ struct EngineConfigUVE {
     bool contactShadowsEnabledUVE = false;
     double contactShadowsLengthUVE = 0.15;
     std::int64_t contactShadowsStepCountUVE = 16;
+    /// How far behind the ray a depth sample may sit and still count as touching geometry, in metres.
+    double contactShadowsThicknessUVE = 0.1;
+    /// Fraction of the light a fully occluded ray removes, 0..1. Below 1.0 on purpose: contact
+    /// shadow refines a real shadow, and at full strength the seam reads as a hole.
+    double contactShadowsStrengthUVE = 0.8;
 
     bool ssilEnabledUVE = false;
     std::int64_t ssilQualityUVE = 1;

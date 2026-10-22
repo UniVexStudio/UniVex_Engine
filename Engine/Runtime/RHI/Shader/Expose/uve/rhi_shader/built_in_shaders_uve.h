@@ -111,4 +111,7 @@ extern const std::string_view kSsaoSource;
 inline constexpr std::string_view kUIOverlayVirtualPath = "shaders/ui_overlay.glsl";
 extern const std::string_view kUIOverlaySource;
 
+inline constexpr std::string_view kContactShadowVirtualPath = "shaders/contact_shadow.glsl";
+extern const std::string_view kContactShadowSource;
+
 } // namespace UVE::Render::Shader::BuiltIn
