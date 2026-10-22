@@ -557,6 +557,16 @@ private:
     /// animation.
     void SyncBoneAttachment3DObjectsUVE();
 
+    /// Steps every ragdoll through Scene::UpdateRagdoll3DObjectsUVE() - that function owns the
+    /// rules (which bodies, which limit, which contact, fixed-step clock, when to sleep) and writes
+    /// the result into its skeleton's runtime pose.
+    ///
+    /// This seam owns the order: after every animation pass has composed a pose, before
+    /// SceneGraphUVE::UpdateUVE() propagates world transforms. A corpse that is still driven by a
+    /// clip must see the ragdoll win the pose for the frame, and a skinned mesh must follow it in
+    /// the same frame rather than a frame behind the body that is falling.
+    void SyncRagdoll3DObjectsUVE();
+
     /// Positions every root follow camera from its target through Scene::UpdateCameraFollowUVE() -
     /// that function owns the skip rules (parked, dead, transformless, parented) and the pose
     /// math. This seam owns the order: after every mover has stepped, before

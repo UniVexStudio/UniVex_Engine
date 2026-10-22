@@ -12,6 +12,7 @@
 #include "uve/math/quaternion_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/physics/physics_material_uve.h"
 
 namespace UVE::Physics::Detail {
 
@@ -31,6 +32,10 @@ struct ColliderWorldAabbUVE {
     Math::QuaternionUVE shapeRotation{};
     Math::Vector3UVE shapeSegmentStart{};
     Math::Vector3UVE shapeSegmentEnd{};
+    /// The collider's own surface properties, carried alongside the shape so a consumer that resolves
+    /// a contact (ragdoll bodies today) does not have to re-fetch the component it was built from.
+    /// Defaults are the zero the collision pair resolver already treats as "unset".
+    PhysicsMaterialUVE material{};
 };
 
 enum class DynamicColliderWorldAabbUpdateCodeUVE : std::uint8_t {

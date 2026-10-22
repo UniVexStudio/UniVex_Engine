@@ -148,6 +148,7 @@
 #include "uve/objects/3d/smart_object_3d_uve.h"
 #include "uve/objects/3d/spring_arm_3d_uve.h"
 #include "uve/objects/3d/spring_bone_simulator_3d_uve.h"
+#include "uve/objects/3d/ragdoll_3d_uve.h"
 #include "uve/objects/3d/sprite_3d_uve.h"
 #include "uve/objects/3d/state_tree_3d_uve.h"
 #include "uve/objects/3d/vehicle_3d_uve.h"
@@ -1969,6 +1970,15 @@ void EngineCoreUVE::SyncBoneAttachment3DObjectsUVE() {
         *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
 }
 
+void EngineCoreUVE::SyncRagdoll3DObjectsUVE() {
+    // The resolution rules live with the ragdolls they act on (Scene::UpdateRagdoll3DObjectsUVE).
+    // What this seam is for is the ORDER: after the animation pass that composed the skeleton's
+    // pose, and before the graph propagates world transforms, so the ragdoll wins the pose and the
+    // mesh follows it in the same frame.
+    static_cast<void>(Scene::UpdateRagdoll3DObjectsUVE(
+        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
+}
+
 void EngineCoreUVE::SyncCameraFollowUVE() {
     // The skip rules live with the cameras they act on (Scene::UpdateCameraFollowUVE). What this
     // seam is for is the ORDER: after every mover has stepped and before the graph propagates
@@ -3252,6 +3262,7 @@ void EngineCoreUVE::Update() {
     // propagates world transforms: a weapon on a hand is on the hand in the same frame the hand
     // moved, rather than a frame behind the animation that owns it.
     SyncBoneAttachment3DObjectsUVE();
+    SyncRagdoll3DObjectsUVE();
     SyncCameraFollowUVE();
     m_sceneGraph->UpdateUVE(*m_entityManager);
     // The fraction of a fixed step already elapsed, handed to the renderer so it can draw between
