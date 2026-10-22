@@ -78,6 +78,35 @@ volatile std::sig_atomic_t g_crashRecordedUVE = 0;
 #endif
 }
 
+/// Both helpers below build their string by appending instead of with `operator+`. GCC 12 at
+/// -O3 inlines `const char* + std::string&&` into `char_traits<char>::copy` through
+/// `insert`/`replace` and then reports a `-Wrestrict` overlap whose size it computed by
+/// subtraction - a false positive inside the standard library, but fatal under this project's
+/// `-Werror` policy, and one that appears only in the optimized profiles (Debug builds inline
+/// nothing). Appending with explicit sizes keeps every copy bound a value the compiler can see.
+[[nodiscard]] std::string MakeRetrySuffixUVE(const unsigned int attempt) {
+    if (attempt == 0U) {
+        return {};
+    }
+    const std::string digits = std::to_string(attempt);
+    std::string suffix;
+    suffix.reserve(digits.size() + 1U);
+    suffix.push_back('-');
+    suffix.append(digits);
+    return suffix;
+}
+
+/// Builds `<stem><suffix><extension>`; see the comment above for why it appends.
+[[nodiscard]] std::string MakeReportFileNameUVE(const std::string& stem, const std::string& suffix,
+                                                const std::string_view extension) {
+    std::string fileName;
+    fileName.reserve(stem.size() + suffix.size() + extension.size());
+    fileName.append(stem);
+    fileName.append(suffix);
+    fileName.append(extension);
+    return fileName;
+}
+
 #if defined(_WIN32)
 [[nodiscard]] std::filesystem::path MakePathFromAsciiUVE(const std::filesystem::path& directory,
                                                          const std::string& filename) {
@@ -402,9 +431,9 @@ CrashReporterResultUVE CrashReporterUVE::InstallUVE(const std::filesystem::path&
     std::filesystem::path reportPath;
     std::filesystem::path dumpPath;
     for (unsigned int suffix = 0U; suffix < 100U; ++suffix) {
-        const std::string suffixText = suffix == 0U ? std::string{} : "-" + std::to_string(suffix);
-        reportPath = MakePathFromAsciiUVE(dumpDirectory, fileStem + suffixText + ".log");
-        dumpPath = MakePathFromAsciiUVE(dumpDirectory, fileStem + suffixText + ".dmp");
+        const std::string suffixText = MakeRetrySuffixUVE(suffix);
+        reportPath = MakePathFromAsciiUVE(dumpDirectory, MakeReportFileNameUVE(fileStem, suffixText, ".log"));
+        dumpPath = MakePathFromAsciiUVE(dumpDirectory, MakeReportFileNameUVE(fileStem, suffixText, ".dmp"));
         candidate->windowsState.reportFile = CreateFileW(reportPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
                                                           nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (candidate->windowsState.reportFile == INVALID_HANDLE_VALUE) {
@@ -447,8 +476,8 @@ CrashReporterResultUVE CrashReporterUVE::InstallUVE(const std::filesystem::path&
     int reportFileDescriptor = -1;
     std::filesystem::path reportPath;
     for (unsigned int suffix = 0U; suffix < 100U; ++suffix) {
-        const std::string suffixText = suffix == 0U ? std::string{} : "-" + std::to_string(suffix);
-        reportPath = dumpDirectory / (fileStem + suffixText + ".log");
+        const std::string suffixText = MakeRetrySuffixUVE(suffix);
+        reportPath = dumpDirectory / MakeReportFileNameUVE(fileStem, suffixText, ".log");
         int flags = O_CREAT | O_EXCL | O_WRONLY | O_APPEND;
 #ifdef O_CLOEXEC
         flags |= O_CLOEXEC;
