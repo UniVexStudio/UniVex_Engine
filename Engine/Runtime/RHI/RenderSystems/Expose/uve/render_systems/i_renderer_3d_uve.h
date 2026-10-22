@@ -38,6 +38,20 @@ struct PostProcessSettingsUVE final {
     /// 0 = Low (4 samples), 1 = Medium (8), 2 = High (12).
     std::uint32_t ssaoQualityUVE = 2U;
     bool ssaoBlurEnabledUVE = false;
+
+    /// Screen-space contact shadows (see contact_shadows_uve.h). Off by default: the pass refines an
+    /// existing shadow map with a depth-buffer march, so a project opts in once it has shadows worth
+    /// refining, and the cost stays out of every frame that has not asked for it.
+    bool contactShadowsEnabledUVE = false;
+    /// How far along the light direction the ray marches, in metres.
+    float contactShadowLengthMetersUVE = 0.2F;
+    /// How far behind the ray a depth sample may sit and still count as touching geometry, in metres.
+    float contactShadowThicknessMetersUVE = 0.1F;
+    /// Fraction of the light the pass may remove at full occlusion, 0..1.
+    float contactShadowStrengthUVE = 0.8F;
+    /// Ray samples per pixel; clamped to [1, 16] by SanitizeContactShadowSettingsUVE().
+    std::uint32_t contactShadowStepCountUVE = 8U;
+
     bool fastApproximateAAEnabledUVE = false;
     std::uint32_t fastApproximateAAQualityUVE = 1U;
     bool nearestUpscalingEnabledUVE = false;
@@ -198,6 +212,10 @@ struct Renderer3DFrameDiagnosticsUVE final {
     /// programs were valid, and the camera's projection matrix was invertible this frame - not
     /// merely that SSAO was requested.
     bool ssaoPassRecorded = false;
+    /// True only when contact shadows were enabled (PostProcessSettingsUVE), their target and both
+    /// programs were valid, the camera's projection was invertible this frame, and the sun direction
+    /// was usable - not merely that the pass was requested.
+    bool contactShadowPassRecorded = false;
     /// True only when bloom was enabled by PostProcessSettingsUVE and the active WorldEnvironment,
     /// and the required targets/programs were valid this frame - not merely that bloom was requested.
     bool bloomPassRecorded = false;
