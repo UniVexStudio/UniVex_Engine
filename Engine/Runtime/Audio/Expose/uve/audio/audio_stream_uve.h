@@ -18,8 +18,14 @@ namespace UVE::Audio {
 inline constexpr std::size_t kAudioStreamRingFramesUVE = 8192U;
 /// Hard ceiling a caller may ask for. Beyond this a "ring" is just a decoded clip with extra steps.
 inline constexpr std::size_t kMaximumAudioStreamRingFramesUVE = 1U << 20U;
-/// Channels a stream may carry. Mono is upmixed by the backend exactly like a mono clip.
+/// Channels a DEVICE stream voice may carry. Mono is upmixed by the backend exactly like a mono
+/// clip, and stereo is played straight, because the device's output is two channels by definition.
 inline constexpr std::uint32_t kMaximumAudioStreamChannelsUVE = 2U;
+/// Channels a SOURCE may carry. Wider than a voice on purpose: a decoder can sit between the two,
+/// and the first-order ambisonic adapter (ambisonic_stream_source_uve.h) is exactly that case -
+/// four AmbiX channels in, two decoded channels out. A source this wide cannot be handed to a device
+/// directly; CreateStreamingSourceUVE() refuses its format with the same predicates a backend uses.
+inline constexpr std::uint32_t kMaximumAudioStreamSourceChannelsUVE = 4U;
 /// Sample rates a stream may declare, matching the DSP chain's accepted device range.
 inline constexpr std::uint32_t kMinimumAudioStreamSampleRateUVE = 8000U;
 inline constexpr std::uint32_t kMaximumAudioStreamSampleRateUVE = 384000U;
@@ -31,8 +37,18 @@ struct AudioStreamFormatUVE final {
     [[nodiscard]] bool operator==(const AudioStreamFormatUVE&) const noexcept = default;
 };
 
+/// Device-facing format check: what a stream voice may carry.
 [[nodiscard]] constexpr bool IsAudioStreamFormatValidUVE(const AudioStreamFormatUVE& format) noexcept {
     return format.channels >= 1U && format.channels <= kMaximumAudioStreamChannelsUVE &&
+           format.sampleRate >= kMinimumAudioStreamSampleRateUVE &&
+           format.sampleRate <= kMaximumAudioStreamSampleRateUVE;
+}
+
+/// Source-facing format check: what a stream SOURCE may carry before any decoder. Everything a
+/// device accepts is also a valid source (the stereo path is the special case with no decoder), so
+/// a caller never has to check both.
+[[nodiscard]] constexpr bool IsAudioStreamSourceFormatValidUVE(const AudioStreamFormatUVE& format) noexcept {
+    return format.channels >= 1U && format.channels <= kMaximumAudioStreamSourceChannelsUVE &&
            format.sampleRate >= kMinimumAudioStreamSampleRateUVE &&
            format.sampleRate <= kMaximumAudioStreamSampleRateUVE;
 }
@@ -110,7 +126,9 @@ public:
     [[nodiscard]] virtual bool SeekToFrameUVE(std::size_t frame) = 0;
 };
 
-/// A `.uvaudio` envelope read straight off disk, one bounded window at a time.
+/// A `.uvaudio` envelope read straight off disk, one bounded window at a time. Carries up to
+/// kMaximumAudioStreamSourceChannelsUVE channels, which is what lets a four-channel ambisonic bed
+/// be read as windows instead of being decoded whole.
 ///
 /// The full clip is never resident: the header is parsed once (magic, asset kind, version, channels,
 /// rate, frame count) and each ReadFramesUVE() seeks to the requested frame and reads only that
