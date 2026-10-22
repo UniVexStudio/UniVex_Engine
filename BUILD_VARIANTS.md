@@ -145,21 +145,29 @@ reference undeclared identifiers — such a probe fails in `Debug`, `Development
 `Release` (the argument is evaluated) and compiles only under `Shipping` (the call was
 removed before the compiler saw it).
 
-The `Release` profile is also built and tested end to end, not just configured: the whole
-engine and the core test binary compile at `-O3 -DNDEBUG` with assertions off, and the same
-test suite passes there. That run is what surfaced the three things an unexercised profile
-hides, and each is now handled at its source rather than by weakening a rule:
+The `Release` and `Shipping` profiles are also built end to end, not just configured.
+`Release`: the whole engine and the core test binary compile at `-O3 -DNDEBUG` with
+assertions off, and the same test suite passes there. `Shipping`: the engine and the runtime
+application compile at `-Os -DNDEBUG` with `UVE_COMPILED_LOG_LEVEL=3`, so stripping is
+exercised on real translation units rather than on a probe. Those runs are what surfaced the
+three things an unexercised profile hides, and each is handled at its source rather than by
+weakening a rule:
 
 - Two death tests (`LinearArenaUVEDeathTest`) had nothing to observe once assertions are
   compiled out, and failed by not dying. They now skip when `kAssertionsEnabledUVE` is
   false, which is the honest outcome: the property is real, this profile simply cannot
   demonstrate it.
 - GCC 12 reports false positives only in optimized builds, because that is the first time
-  the standard library's string and vector code is inlined. Two call sites were rewritten
+  the standard library's string and vector code is inlined. Three call sites were rewritten
   into a form the optimizer can bound (`crash_reporter_uve.cpp` appends instead of using a
-  chained `operator+`, `animation_graph_uve.cpp` fills an optional with an `if` instead of a
-  conditional expression), and `-Wno-restrict` is applied only for GCC < 13, the compiler
-  that has the bug. No warning class is disabled project-wide.
+  chained `operator+`; `animation_graph_uve.cpp` fills two optionals with an `if` instead of
+  a conditional expression; `network_shot_uve_tests.cpp` reserves before appending), and
+  `-Wno-restrict` is applied only for GCC < 13, the compiler that has the bug. No warning
+  class is disabled project-wide.
+- The script host's `print` builtin had a parameter that existed only to be formatted into
+  an `INFO` line. With the call stripped the parameter was unused, which `-Werror` rejects.
+  It is marked `[[maybe_unused]]` - the remedy this document recommends - rather than
+  keeping a statement alive that the profile would never emit.
 
 Two things this does **not** cover, and they are separate roadmap rows rather than
 oversights:

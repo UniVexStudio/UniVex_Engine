@@ -754,7 +754,13 @@ private:
                         const AnimationTransitionCurveUVE curve = AnimationTransitionCurveUVE::Linear,
                         const bool interruptible = true) {
         const std::uint32_t leaving = state.activeState;
-        const std::optional<std::size_t> entered = to < node.inputs.size() ? IndexOfUVE(node.inputs[to]) : std::nullopt;
+        // Filled with an `if` rather than a conditional expression for the same reason as
+        // `startPhase` below: GCC 12 at -Os/-O3 reports the copy of the resulting optional as
+        // possibly uninitialized once the standard library's storage handling is inlined.
+        std::optional<std::size_t> entered;
+        if (to < node.inputs.size()) {
+            entered = IndexOfUVE(node.inputs[to]);
+        }
         if (entered.has_value() && start != AnimationTransitionStartUVE::Continue) {
             ResetSubtreeUVE(*entered);
             if (start == AnimationTransitionStartUVE::InStep && showing.phase.has_value()) {

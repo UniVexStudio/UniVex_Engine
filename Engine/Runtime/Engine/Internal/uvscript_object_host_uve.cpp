@@ -1147,8 +1147,11 @@ void UVScriptObjectHostUVE::CallMethodUVE(const ObjectRefUVE target, const std::
     }
 }
 
-void UVScriptObjectHostUVE::PrintUVE(const std::string_view text) {
-    const std::string object = m_entityManager.HasComponentUVE<Scene::NameComponentUVE>(m_entity)
+void UVScriptObjectHostUVE::PrintUVE([[maybe_unused]] const std::string_view text) {
+    // `print` is a diagnostic: a shipping profile strips the statement below at compile time, and
+    // the profile's runtime level would have dropped it anyway. Both the parameter and the object
+    // name exist only for that message, so they are marked rather than left to warn as unused.
+    [[maybe_unused]] const std::string object = m_entityManager.HasComponentUVE<Scene::NameComponentUVE>(m_entity)
                                  ? m_entityManager.GetComponentUVE<Scene::NameComponentUVE>(m_entity).name
                                  : std::string{"object"};
     UVE_INFO("[{}] {}", object, text);
