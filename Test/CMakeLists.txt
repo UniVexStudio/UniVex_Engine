@@ -345,6 +345,7 @@ add_executable(uve_integration_tests
     Objects/3D/replicated_entity_uve_tests.cpp
     Objects/3D/interest_relevancy_uve_tests.cpp
     Objects/3D/hitbox_lag_wiring_uve_tests.cpp
+    Objects/3D/ragdoll_3d_uve_tests.cpp
     Samples/dedicated_server_sample_uve_tests.cpp
     Samples/lag_comp_server_sample_uve_tests.cpp
     Samples/packet_capture_sample_uve_tests.cpp
@@ -443,6 +444,7 @@ add_executable(uve_integration_tests
     Physics/ray_cast_3d_step_uve_tests.cpp
     Physics/raycast_system_uve_tests.cpp
     Physics/rigid_3d_uve_tests.cpp
+    Physics/ragdoll_solver_uve_tests.cpp
     Physics/projectile_3d_step_uve_tests.cpp
     Physics/shape_cast_system_uve_tests.cpp
     Physics/spring_arm_3d_uve_tests.cpp
