@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/vector3_uve.h"
@@ -13,6 +14,24 @@
 #include "uve/physics/deterministic_physics_uve.h"
 
 namespace UVE::Physics {
+
+/// Whether the step resolves collision pairs island-by-island on a worker pool.
+///
+/// This is a scheduling decision, not a simulation one: islands share no bodies, so solving them
+/// concurrently produces bit-identical state to solving them in sequence. What changes is only how
+/// long the step takes - which means the setting can be turned on per platform without touching
+/// determinism, replay, or netcode.
+struct ParallelStepSettingsUVE final {
+    /// Off by default. A caller that has not looked at its own scene should not pay dispatch and a
+    /// snapshot for a handful of contacts, and a small scene is the common case in tests and tools.
+    bool enabled = false;
+
+    /// Below this many resolvable collision pairs the step stays on the calling thread. Splitting
+    /// work has a fixed cost - a snapshot of every participating body, N job submissions and a
+    /// wait - so the break-even point is a property of the machine, not of the scene. 64 is
+    /// deliberately conservative: it is the point where the pair loop stops being noise.
+    std::uint32_t minimumPairCount = 64U;
+};
 
 /// Runtime solver, damping, sleeping, and contact-resolution parameters consumed by PhysicsSystemUVE.
 struct PhysicsSimulationSettingsUVE final {
@@ -31,6 +50,9 @@ struct PhysicsSimulationSettingsUVE final {
     /// two peers can compare. See DeterministicStepSettingsUVE for exactly what is and is not
     /// guaranteed.
     DeterministicStepSettingsUVE deterministic{};
+    /// Opt-in island-parallel contact resolution. Independent of `deterministic`: islands do not
+    /// change the result, so the two settings can be combined freely.
+    ParallelStepSettingsUVE parallelStepping{};
 };
 
 /// IPhysicsSystemUVE is the spec's `PhysicsSystemUVE` (Part 7.5): dynamics integration +

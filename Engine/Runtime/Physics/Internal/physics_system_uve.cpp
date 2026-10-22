@@ -9,6 +9,7 @@
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 #include "uve/logging/assert_uve.h"
@@ -19,6 +20,7 @@
 #include "uve/physics/continuous_collision_uve.h"
 #include "uve/physics/deterministic_physics_uve.h"
 #include "uve/physics/detail/collider_world_aabb_cache_uve.h"
+#include "uve/physics/physics_islands_uve.h"
 #include "uve/physics/physics_material_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/rigid_3d_component_uve.h"
@@ -26,6 +28,7 @@
 #include "uve/objects/3d/abstract_physics_objects_3d_uve.h"
 #include "uve/objects/3d/rigid_3d_uve.h"
 #include "uve/objects/3d/static_3d_uve.h"
+#include "uve/threading/parallel_for_uve.h"
 
 namespace UVE::Physics {
 
@@ -70,95 +73,41 @@ namespace {
     return IsFiniteVector3UVE(integratedPosition);
 }
 
-/// Moves `entity` by `positionDelta` (via SetLocalTransformUVE, so dirty-flag propagation stays
-/// correct) and, if it has a non-kinematic Rigid3DComponentUVE, applies `material`'s combined
-/// friction/restitution to the velocity component pointing toward `towardOtherBody`: the
-/// tangential (sliding) component is damped by `1 - friction`, and the into-surface component is
-/// reflected and scaled by `restitution` rather than simply zeroed. With `friction = 0,
-/// restitution = 0` (every collider's default), this reduces to exactly `velocity -=
-/// towardOtherBody * intoSurface` — bit-identical to Increment 15's pure vector-rejection formula
-/// — never touches velocity that's already separating.
-void MoveAndDeflectUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-                       Scene::EntityUVE entity, Math::Vector3UVE positionDelta, Math::Vector3UVE towardOtherBody,
-                       const PhysicsMaterialUVE& material) {
-    Scene::TransformComponentUVE transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
-    transform.localPosition += positionDelta;
-    sceneGraph.SetLocalTransformUVE(entityManager, entity, transform);
+/// Per-body state the island solver mutates.
+///
+/// The entity manager is explicitly single-threaded (see IEntityManagerUVE's contract), and so is
+/// the scene graph, so a worker thread may not read a component or write a transform. The step
+/// therefore takes a snapshot of exactly the fields the resolver touches, solves on plain values,
+/// and scatters the result from the calling thread.
+struct ResolutionBodyUVE final {
+    Scene::EntityUVE entity{};
+    Math::Vector3UVE localPosition{};
+    Math::Vector3UVE velocity{};
+    /// True when the body has a dynamic rigid body, i.e. when a correction is allowed to change its
+    /// velocity as well as its position.
+    bool dynamicUVE = false;
+    /// Set once the solver has written to this body. An untouched body is not scattered, so a step
+    /// whose pairs all resolve against static geometry does not dirty every transform it looked at.
+    bool touchedUVE = false;
+};
 
-    if (!entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(entity)) {
-        return;
-    }
-    Scene::Rigid3DComponentUVE& rigidBody = entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity);
-    if (!Scene::Rigid3DUVE::IsDynamicUVE(rigidBody)) {
-        return;
-    }
-    rigidBody.velocity = Scene::Rigid3DUVE::DeflectVelocityUVE(rigidBody.velocity, towardOtherBody,
-                                                              material.friction, material.restitution);
-}
-
-/// Resolves one overlapping pair: mass-weighted positional correction (a kinematic or
-/// collider-only-static side gets 0% of the correction; two dynamic bodies split proportionally
-/// to inverse mass) plus per-body velocity deflection using both sides' combined material.
-void ResolvePairUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-                    const CollisionPairUVE& pair, const PhysicsSimulationSettingsUVE& settings,
-                    float fixedDeltaTimeSeconds) {
-    const auto InverseMassOfUVE = [&entityManager](Scene::EntityUVE entity) {
-        if (!entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(entity)) {
-            return Scene::Static3DUVE::InverseMassUVE();
-        }
-        // An object the simulation may not move - a kinematically driven one, a PhysicsObject3D
-        // kept as a static obstacle, or one taken out of the world - has no inverse mass to give
-        // way with, exactly like a static collider.
-        if (!Scene::IsPhysicsObjectSimulatedUVE(entityManager, entity)) {
-            return 0.0F;
-        }
-        const Scene::Rigid3DComponentUVE& rigidBody =
-            entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity);
-        return Scene::Rigid3DUVE::InverseMassUVE(rigidBody);
-    };
-
-    // How much of the overlap each side takes: its inverse mass, divided by its authored collision
-    // priority, so heavier bodies and higher priorities yield less. With the default priority of 1
-    // this is the plain inverse-mass split it has always been.
-    const float firstWeight =
-        Scene::GetPhysicsObjectYieldWeightUVE(entityManager, pair.first, InverseMassOfUVE(pair.first));
-    const float secondWeight =
-        Scene::GetPhysicsObjectYieldWeightUVE(entityManager, pair.second, InverseMassOfUVE(pair.second));
-    const float totalWeight = firstWeight + secondWeight;
-    if (totalWeight <= 0.0F) {
-        return; // Both sides immovable (static/kinematic, or never yields) — nothing to resolve.
-    }
-
-    const float firstShare = firstWeight / totalWeight;
-    const float secondShare = secondWeight / totalWeight;
-
-    const float slop = (std::isfinite(settings.penetrationSlop) && settings.penetrationSlop > 0.0F)
-                           ? settings.penetrationSlop
-                           : 0.0F;
-    float effectivePenetration = std::max(0.0F, pair.penetrationDepth - slop);
-    if (std::isfinite(settings.maxDepenetrationVelocity) && settings.maxDepenetrationVelocity > 0.0F &&
-        std::isfinite(fixedDeltaTimeSeconds) && fixedDeltaTimeSeconds > 0.0F) {
-        effectivePenetration =
-            std::min(effectivePenetration, settings.maxDepenetrationVelocity * fixedDeltaTimeSeconds);
-    }
-
-    // Both entities in `pair` are guaranteed to have ColliderComponentUVE — DetectCollisionsUVE
-    // only ever returns pairs where both sides have one.
-    const PhysicsMaterialUVE combinedMaterial = CombineMaterialsUVE(
-        MaterialOfUVE(entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(pair.first)),
-        MaterialOfUVE(entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(pair.second)));
-
-    if (firstShare > 0.0F) {
-        MoveAndDeflectUVE(entityManager, sceneGraph, pair.first,
-                          -pair.separationAxis * (effectivePenetration * firstShare), pair.separationAxis,
-                          combinedMaterial);
-    }
-    if (secondShare > 0.0F) {
-        MoveAndDeflectUVE(entityManager, sceneGraph, pair.second,
-                          pair.separationAxis * (effectivePenetration * secondShare), -pair.separationAxis,
-                          combinedMaterial);
-    }
-}
+/// One pair's precomputed corrections, in the order the solver must apply them.
+struct ResolutionPairUVE final {
+    std::uint32_t firstBodyUVE = 0U;
+    std::uint32_t secondBodyUVE = 0U;
+    /// Unit vector from `first` toward `second`, as reported by the narrow phase.
+    Math::Vector3UVE separationAxis{};
+    /// Penetration left after the slop clamp. Kept separate from the shares so the solver performs
+    /// the exact same `(penetration * share)` multiplication, in the same order, as the sequential
+    /// resolver always has - a reassociated product would round differently and break the promise
+    /// that island order does not change the result.
+    float penetrationUVE = 0.0F;
+    /// How much of that penetration each side takes, from inverse mass and yield weight.
+    float firstShareUVE = 0.0F;
+    float secondShareUVE = 0.0F;
+    float frictionUVE = 0.0F;
+    float restitutionUVE = 0.0F;
+};
 
 } // namespace
 
@@ -185,6 +134,162 @@ void PhysicsSystemUVE::SetSimulationSettingsUVE(const PhysicsSimulationSettingsU
 
 PhysicsSimulationSettingsUVE PhysicsSystemUVE::GetSimulationSettingsUVE() const noexcept {
     return m_settings;
+}
+
+void PhysicsSystemUVE::SetThreadPoolUVE(Threading::IThreadPoolUVE* threadPool) noexcept {
+    m_threadPool = threadPool;
+}
+
+void PhysicsSystemUVE::ResolveCollisionPairsUVE(Scene::IEntityManagerUVE& entityManager,
+                                                Scene::ISceneGraphUVE& sceneGraph,
+                                                const std::vector<CollisionPairUVE>& pairs,
+                                                const float fixedDeltaTimeSeconds) {
+    m_lastStepIslandCountUVE = 0U;
+    m_lastStepParallelIslandCountUVE = 0U;
+    if (pairs.empty()) {
+        return;
+    }
+
+    const PhysicsIslandPartitionUVE partition = BuildPhysicsIslandPartitionUVE(pairs);
+    if (partition.IsEmptyUVE()) {
+        return;
+    }
+    m_lastStepIslandCountUVE = static_cast<std::uint32_t>(partition.islandsUVE.size());
+
+    // ---- snapshot: the only part that touches the ECS ------------------------------------------
+    std::vector<ResolutionBodyUVE> bodies;
+    bodies.reserve(partition.bodyCountUVE);
+    std::unordered_map<Scene::EntityUVE, std::uint32_t> bodyIndices;
+    bodyIndices.reserve(partition.bodyCountUVE);
+
+    const auto bodyIndexOfUVE = [&entityManager, &bodies, &bodyIndices](const Scene::EntityUVE entity) {
+        const auto inserted = bodyIndices.try_emplace(entity, static_cast<std::uint32_t>(bodies.size()));
+        if (inserted.second) {
+            ResolutionBodyUVE body;
+            body.entity = entity;
+            body.localPosition =
+                entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity).localPosition;
+            if (entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(entity)) {
+                const Scene::Rigid3DComponentUVE& rigidBody =
+                    entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity);
+                body.velocity = rigidBody.velocity;
+                body.dynamicUVE = Scene::Rigid3DUVE::IsDynamicUVE(rigidBody);
+            }
+            bodies.push_back(body);
+        }
+        return inserted.first->second;
+    };
+
+    const auto inverseMassOfUVE = [&entityManager](Scene::EntityUVE entity) {
+        if (!entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(entity)) {
+            return Scene::Static3DUVE::InverseMassUVE();
+        }
+        // An object the simulation may not move - a kinematically driven one, a PhysicsObject3D
+        // kept as a static obstacle, or one taken out of the world - has no inverse mass to give
+        // way with, exactly like a static collider.
+        if (!Scene::IsPhysicsObjectSimulatedUVE(entityManager, entity)) {
+            return 0.0F;
+        }
+        return Scene::Rigid3DUVE::InverseMassUVE(
+            entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity));
+    };
+
+    // Slot-indexed, in island order: slot `i` is pair `partition.pairOrderUVE[i]`. Building the
+    // resolution list in solve order (rather than in pair order) means the sequential and parallel
+    // paths walk the same sequence, so they cannot drift.
+    std::vector<ResolutionPairUVE> resolvedPairs(partition.pairOrderUVE.size());
+    for (std::size_t slot = 0U; slot < partition.pairOrderUVE.size(); ++slot) {
+        const CollisionPairUVE& source = pairs[partition.pairOrderUVE[slot]];
+        ResolutionPairUVE& entry = resolvedPairs[slot];
+        entry.firstBodyUVE = bodyIndexOfUVE(source.first);
+        entry.secondBodyUVE = bodyIndexOfUVE(source.second);
+        entry.separationAxis = source.separationAxis;
+
+        const float firstWeight =
+            Scene::GetPhysicsObjectYieldWeightUVE(entityManager, source.first, inverseMassOfUVE(source.first));
+        const float secondWeight =
+            Scene::GetPhysicsObjectYieldWeightUVE(entityManager, source.second, inverseMassOfUVE(source.second));
+        const float totalWeight = firstWeight + secondWeight;
+        if (totalWeight <= 0.0F) {
+            continue; // Both sides immovable (static/kinematic, or never yields).
+        }
+        entry.firstShareUVE = firstWeight / totalWeight;
+        entry.secondShareUVE = secondWeight / totalWeight;
+
+        const float slop = (std::isfinite(m_settings.penetrationSlop) && m_settings.penetrationSlop > 0.0F)
+                               ? m_settings.penetrationSlop
+                               : 0.0F;
+        float effectivePenetration = std::max(0.0F, source.penetrationDepth - slop);
+        if (std::isfinite(m_settings.maxDepenetrationVelocity) && m_settings.maxDepenetrationVelocity > 0.0F &&
+            std::isfinite(fixedDeltaTimeSeconds) && fixedDeltaTimeSeconds > 0.0F) {
+            effectivePenetration =
+                std::min(effectivePenetration, m_settings.maxDepenetrationVelocity * fixedDeltaTimeSeconds);
+        }
+        entry.penetrationUVE = effectivePenetration;
+
+        // Both entities in `source` are guaranteed to have ColliderComponentUVE - DetectCollisionsUVE
+        // only ever returns pairs where both sides have one.
+        const PhysicsMaterialUVE combinedMaterial = CombineMaterialsUVE(
+            MaterialOfUVE(entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(source.first)),
+            MaterialOfUVE(entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(source.second)));
+        entry.frictionUVE = combinedMaterial.friction;
+        entry.restitutionUVE = combinedMaterial.restitution;
+    }
+
+    // ---- solve: pure value math, safe to run from any thread -----------------------------------
+    const auto solvePairsUVE = [&bodies, &resolvedPairs](const std::uint32_t begin, const std::uint32_t end) {
+        for (std::uint32_t slot = begin; slot < end; ++slot) {
+            const ResolutionPairUVE& pair = resolvedPairs[slot];
+            ResolutionBodyUVE& first = bodies[pair.firstBodyUVE];
+            ResolutionBodyUVE& second = bodies[pair.secondBodyUVE];
+            if (pair.firstShareUVE > 0.0F) {
+                first.localPosition += -pair.separationAxis * (pair.penetrationUVE * pair.firstShareUVE);
+                if (first.dynamicUVE) {
+                    first.velocity = Scene::Rigid3DUVE::DeflectVelocityUVE(
+                        first.velocity, pair.separationAxis, pair.frictionUVE, pair.restitutionUVE);
+                }
+                first.touchedUVE = true;
+            }
+            if (pair.secondShareUVE > 0.0F) {
+                second.localPosition += pair.separationAxis * (pair.penetrationUVE * pair.secondShareUVE);
+                if (second.dynamicUVE) {
+                    second.velocity = Scene::Rigid3DUVE::DeflectVelocityUVE(
+                        second.velocity, -pair.separationAxis, pair.frictionUVE, pair.restitutionUVE);
+                }
+                second.touchedUVE = true;
+            }
+        }
+    };
+
+    const std::uint32_t pairSlots = static_cast<std::uint32_t>(resolvedPairs.size());
+    const bool poolUsable = m_threadPool != nullptr && m_threadPool->GetWorkerCountUVE() > 1U;
+    const bool worthSplitting = pairSlots >= m_settings.parallelStepping.minimumPairCount &&
+                                partition.islandsUVE.size() > 1U;
+    if (m_settings.parallelStepping.enabled && poolUsable && worthSplitting) {
+        Threading::ParallelForUVE(
+            *m_threadPool, 0U, partition.islandsUVE.size(),
+            [&partition, &solvePairsUVE](const std::size_t islandIndex) {
+                const PhysicsIslandUVE& island = partition.islandsUVE[islandIndex];
+                solvePairsUVE(island.firstPairUVE, island.firstPairUVE + island.pairCountUVE);
+            });
+        m_lastStepParallelIslandCountUVE = static_cast<std::uint32_t>(partition.islandsUVE.size());
+    } else {
+        solvePairsUVE(0U, pairSlots);
+    }
+
+    // ---- scatter: back on the calling thread ---------------------------------------------------
+    for (const ResolutionBodyUVE& body : bodies) {
+        if (!body.touchedUVE) {
+            continue;
+        }
+        Scene::TransformComponentUVE transform =
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(body.entity);
+        transform.localPosition = body.localPosition;
+        sceneGraph.SetLocalTransformUVE(entityManager, body.entity, transform);
+        if (body.dynamicUVE) {
+            entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body.entity).velocity = body.velocity;
+        }
+    }
 }
 
 void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
@@ -385,9 +490,7 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
         // would change nothing, which is the mistake this line exists to not make.
         CanonicalizeCollisionPairsUVE(pairs);
     }
-    for (const CollisionPairUVE& pair : pairs) {
-        ResolvePairUVE(entityManager, sceneGraph, pair, m_settings, fixedDeltaTimeSeconds);
-    }
+    ResolveCollisionPairsUVE(entityManager, sceneGraph, pairs, fixedDeltaTimeSeconds);
 
     if (m_constraintSystem != nullptr) {
         const std::size_t solverIterations =
