@@ -466,6 +466,8 @@ add_executable(uve_integration_tests
     Audio/audio_meter_uve_tests.cpp
     Audio/audio_occlusion_uve_tests.cpp
     Audio/audio_stream_uve_tests.cpp
+    Audio/audio_ambisonics_uve_tests.cpp
+    Audio/ambisonic_stream_source_uve_tests.cpp
     Audio/audio_source_system_uve_tests.cpp
     Audio/audio_system_uve_tests.cpp
     Audio/null_audio_device_uve_tests.cpp

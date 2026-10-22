@@ -40,6 +40,7 @@ add_library(uve_audio STATIC
     Internal/miniaudio_implementation_uve.cpp
     Internal/audio_system_uve.cpp
     Internal/audio_stream_uve.cpp
+    Internal/ambisonic_stream_source_uve.cpp
     Internal/audio_listener_orientation_validation_uve.cpp
     Internal/audio_source_system_uve.cpp
     Internal/wav_metadata_uve.cpp
