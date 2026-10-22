@@ -253,6 +253,23 @@ void ViewportRenderPass::DrawBones(const OrbitCamera& camera, int width, int hei
     gizmos_.Draw(mesh, params);
 }
 
+void ViewportRenderPass::DrawColliderWireframes(const OrbitCamera& camera, int width, int height) const {
+    univex::gizmo::GizmoMesh mesh;
+    mesh.lines = colliderLines_;
+    GizmoDrawParams params;
+    params.viewProjection = camera.ViewProjection(static_cast<float>(width) / static_cast<float>(height));
+    params.origin = Vec3{0.f, 0.f, 0.f}; // already in world space, like the bones
+    params.scale = 1.f;
+    params.viewDirection = Normalize(camera.Target() - camera.Eye());
+    params.viewportWidth = static_cast<float>(width);
+    params.viewportHeight = static_cast<float>(height);
+    // Depth-TESTED and not depth-writing: the shapes have to hide behind the geometry they belong
+    // to, and two colliders that overlap must not paint over each other depending on draw order.
+    params.depthTest = true;
+    params.depthWrite = false;
+    gizmos_.Draw(mesh, params);
+}
+
 void ViewportRenderPass::DrawTransformGizmo(const OrbitCamera& camera, int width, int height) const {
     const Vec3 viewDirection = Normalize(camera.Target() - camera.Eye());
     // Everything below is measured at the pivot the widget is actually drawn at, not at the
@@ -364,6 +381,11 @@ void ViewportRenderPass::RenderOverlayUVE(const OrbitCamera& camera,
                                           int framebufferWidth,
                                           int framebufferHeight) const {
     if (framebufferWidth <= 0 || framebufferHeight <= 0) return;
+    // Before the bones, because the bone pass clears depth to x-ray the rig through its mesh; a
+    // collider drawn after that would come out in front of the wall it is behind.
+    if (!colliderLines_.empty()) {
+        DrawColliderWireframes(camera, framebufferWidth, framebufferHeight);
+    }
     if (!bones_.empty()) {
         DrawBones(camera, framebufferWidth, framebufferHeight);
     }

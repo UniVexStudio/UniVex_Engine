@@ -135,6 +135,14 @@ public:
 
     void SetCameraFrustumMeshUVE(univex::gizmo::GizmoMesh mesh) { cameraFrustumMesh_ = std::move(mesh); }
 
+    // Collision shapes to draw this frame (Unreal's "Show Collision"): world-space line segments,
+    // empty for none. Unlike the bones, these are DEPTH-TESTED against the scene and drawn before
+    // the depth buffer is cleared - a collider behind a wall is behind a wall, which is the whole
+    // point of looking at it from the camera the player will use.
+    void SetColliderWireframesUVE(std::vector<univex::gizmo::GizmoLine> lines) {
+        colliderLines_ = std::move(lines);
+    }
+
     // ---- nav gizmo geometry, shared with input handling -------------------
     // The nav gizmo's own camera: the main camera's rotation, no translation.
     [[nodiscard]] static Mat4 NavViewMatrix(const OrbitCamera& camera);
@@ -147,6 +155,7 @@ private:
     void DrawBackground() const;
     void DrawTransformGizmo(const OrbitCamera& camera, int width, int height) const;
     void DrawBones(const OrbitCamera& camera, int width, int height) const;
+    void DrawColliderWireframes(const OrbitCamera& camera, int width, int height) const;
     void DrawCameraFrustums(const OrbitCamera& camera, int width, int height) const;
     void DrawNavGizmo(const OrbitCamera& camera, int width, int height) const;
     void Destroy() noexcept;
@@ -166,6 +175,7 @@ private:
     univex::gizmo::GizmoHandleUVE highlightedGizmoHandle_ = univex::gizmo::GizmoHandleUVE::None;
     std::optional<Vec3> gizmoPivotOverride_;
     std::vector<univex::gizmo::BoneOverlayUVE> bones_;
+    std::vector<univex::gizmo::GizmoLine> colliderLines_;
     univex::gizmo::GizmoMesh cameraFrustumMesh_;
 };
 

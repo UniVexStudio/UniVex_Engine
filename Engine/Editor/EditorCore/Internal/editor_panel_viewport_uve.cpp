@@ -252,8 +252,10 @@ void EditorUVE::DrawViewportImageUVE(const ViewportContextUVE context) {
                                      m_activeWorkspace == EditorWorkspaceUVE::Game;
         state->studioView = context == ViewportContextUVE::Retarget;
         state->bones.clear();
+        state->colliderLines.clear();
         if (!state->gameWorkspaceActive) {
             BuildSkeletonOverlayUVE(state->bones);
+            BuildColliderOverlayUVE(state->colliderLines);
         }
         const Math::Vector2UVE available{availableRegion.x, availableRegion.y};
         Math::Vector2UVE used{0.0F, 0.0F};
@@ -539,6 +541,18 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
                     ImGui::SetTooltip("%s", GetViewportViewShortcutUVE(view));
                 }
+            }
+            ImGui::Dummy(ImVec2{0.0F, 4.0F});
+            ImGui::TextDisabled("SHOW");
+            // The diagnostic overlays, one checkbox each. Collision shapes live here rather than in
+            // Preferences because it is a question about THIS view of THIS scene ("is the capsule
+            // where I think it is?"), asked for a minute and then turned off.
+            bool collisionShapes = m_viewportOverlayState.collisionShapesVisible;
+            if (ImGui::Checkbox("Collision shapes", &collisionShapes)) {
+                static_cast<void>(SetViewportCollisionShapesUVE(collisionShapes));
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("Draw every collider as its real shape: box, sphere, capsule, cylinder.");
             }
             ImGui::Dummy(ImVec2{0.0F, 2.0F});
             ImGui::TextDisabled("Orbit to return to a free view. Numpad or Alt+digit.");
