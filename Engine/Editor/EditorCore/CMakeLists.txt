@@ -178,6 +178,7 @@ add_library(uve_editor STATIC
     Internal/editor_panel_content_browser_uve.cpp
     Internal/editor_panel_content_create_uve.cpp
     Internal/editor_panel_viewport_uve.cpp
+    Internal/editor_collider_overlay_uve.cpp
     Internal/editor_panel_menu_dock_uve.cpp
     Internal/editor_panel_preferences_uve.cpp
     Internal/editor_panel_input_map_uve.cpp

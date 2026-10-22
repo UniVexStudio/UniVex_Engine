@@ -440,6 +440,18 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
   snaps in behind geometry so a camera never clips through a wall, springs back out at an authored
   rate once the way is clear, and carries its children by the change in length so authored poses
   round-trip without drift
+- [x] Collision shape debug visualization ("Show Collision") — `BuildColliderDebugLinesUVE` turns
+  one collider into world-space wireframe segments: 12 edges for a box, three great circles for a
+  sphere, two end rings plus four barrel lines plus a semicircle fan over each cap for a capsule
+  (so a capsule with no barrel draws as the sphere it is), two rings for a cylinder, and the
+  conservative AABB on request because that is what the broadphase actually sees. The pose comes
+  from the world transform and world SCALE is deliberately ignored, because this engine's colliders
+  are scale-independent — a debug view that disagreed with the simulation would be worse than none.
+  `BuildColliderDebugSceneUVE` walks the ECS through the same participation helpers the collision
+  system uses (`Collider3DUVE::IsParticipatingUVE`, `IsPhysicsObjectInWorldUVE`), so a shape is
+  drawn exactly when it can be hit; bounded and deterministic, whole shapes only. The editor's
+  Viewport view menu carries the toggle, and the wireframes draw depth-tested under the gizmos, so
+  a collider behind a wall stays behind it. 19 headless tests
 - [ ] Soft-body / cloth simulation
 - [ ] Vehicle physics (wheeled at minimum)
 - [x] Ragdoll physics (driven skeletal bodies + constraints layered over an animated
