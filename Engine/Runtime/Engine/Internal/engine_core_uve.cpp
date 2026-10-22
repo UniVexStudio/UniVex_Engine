@@ -940,6 +940,10 @@ void EngineCoreUVE::Init() {
     // EngineCore-owned constraint registry before publishing the system through EngineServices.
     auto physicsSystem = std::make_unique<Physics::PhysicsSystemUVE>(*m_collisionSystem, m_config.gravity);
     physicsSystem->SetConstraintSystemUVE(m_physicsConstraintSystem.get());
+    // Island-parallel contact resolution borrows the engine's pool, the same way the asset pipeline
+    // and the particle runtime do. It changes how long a step takes, never what it computes: the
+    // islands share no bodies, so their solve order cannot be observed in the result.
+    physicsSystem->SetThreadPoolUVE(m_threadPool.get());
     const auto isSettingCustomizedUVE = [&settings](const std::string_view settingId) noexcept {
         const auto resolved = settings.ResolveUVE(settingId);
         return resolved.has_value() && resolved->source != Config::SettingValueSourceUVE::EngineDefault;
@@ -992,6 +996,14 @@ void EngineCoreUVE::Init() {
         isSettingCustomizedUVE("physics.contacts.penetrationSlop") ||
         isSettingCustomizedUVE("physics.contacts.maxDepenetrationVelocity");
     syncPhysicsSimulationSettingsUVE(*physicsSystem, anyPhysicsSettingCustomized);
+    {
+        Physics::PhysicsSimulationSettingsUVE simSettings = physicsSystem->GetSimulationSettingsUVE();
+        // On by default here, off by default in the struct: the engine always owns a pool, and a
+        // tool that constructs a PhysicsSystemUVE directly usually does not. The step falls back to
+        // single-threaded execution on its own when the pool has one worker or the scene is small.
+        simSettings.parallelStepping.enabled = true;
+        physicsSystem->SetSimulationSettingsUVE(simSettings);
+    }
     m_physicsSystem = std::move(physicsSystem);
 
     // PhysicsQuerySystem twenty-eighth: stateless façade over existing shape-cast, overlap, and

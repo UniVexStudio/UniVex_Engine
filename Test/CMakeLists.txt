@@ -435,6 +435,7 @@ add_executable(uve_integration_tests
     Physics/kinematic_body_uve_tests.cpp
     Physics/projectile_3d_uve_tests.cpp
     Physics/physics_constraint_system_uve_tests.cpp
+    Physics/physics_islands_uve_tests.cpp
     Physics/physics_material_uve_tests.cpp
     Physics/physics_query_system_uve_tests.cpp
     Physics/physics_system_uve_tests.cpp

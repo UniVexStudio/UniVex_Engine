@@ -471,7 +471,31 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
   costs several times an integration, and a scene full of slow bodies would pay it to protect
   bodies that cannot tunnel. Layer/mask filtering reuses the collision system's two-way rule, so
   CCD can never stop a body against geometry the discrete resolver would have ignored.
-- [ ] Multi-threaded physics stepping for large scenes
+- [x] Multi-threaded physics stepping for large scenes - islands, not threads sprinkled over the
+  pair loop. The solver is sequential because every resolved pair writes positions the next pair
+  reads, so the only parallelism that cannot change the answer is between groups of bodies that
+  share nothing: the contact graph split into connected components. Pairs are grouped with a
+  serial union-find over a dense body index. Serial is the deliberate part: a lock-free merge - the
+  technique Jolt Physics uses to rebuild islands inside its parallel narrow phase - numbers islands
+  by whichever thread won the compare-and-swap, which is exactly the hidden order dependence
+  deterministic stepping forbids, and Box2D v3 reached the same conclusion and kept its merge
+  serial. Island ids follow first appearance in the pair list and every island's pairs keep their
+  original relative order, so the partition is a pure function of the list
+  `CanonicalizeCollisionPairsUVE` already sorted.
+  The harder half in this engine is that the entity manager and the scene graph are single-threaded
+  by contract: a worker may not read a component or write a transform. The step therefore snapshots
+  the fields the resolver touches - local position, velocity, inverse mass, yield weight, the
+  combined material, the penetration and the two shares - solves whole islands on the pool over
+  plain values, and scatters the result from the calling thread. That snapshot is also why the
+  sequential and parallel paths cannot drift: both walk the same slot-indexed list in the same
+  order, and the parallel version differs only in which thread runs which island. The promise is
+  bit-identical state, not approximately equal state, so the test that guards it compares digests
+  step by step and then compares the final floats exactly over thirty steps of a two-island scene.
+  Off by default in the settings struct and on in the engine, with a break-even pair count because
+  dispatch plus the snapshot cost more than the loop they split below a few dozen contacts; the step
+  falls back to one thread when there is no pool, one worker, one island, or too few pairs, and it
+  reports both the island count and how many islands actually ran on the pool so a caller can see
+  whether its scene is even shaped to benefit.
 - [x] Deterministic/networked-safe physics stepping (fixed-point or otherwise reproducible)
   for competitive multiplayer use cases. Two things make a fixed step reproducible, and the
   feature is only honest if both are stated separately. **Order** first: the solver is sequential -
