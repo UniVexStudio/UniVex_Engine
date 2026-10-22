@@ -30,6 +30,7 @@ add_library(uve_physics STATIC
     Internal/deterministic_physics_uve.cpp
     Internal/hinge_motor_limit_uve.cpp
     Internal/physics_constraint_system_uve.cpp
+    Internal/physics_islands_uve.cpp
     Internal/physics_query_system_uve.cpp
     Internal/physics_system_uve.cpp
     Internal/raycast_system_uve.cpp
@@ -37,6 +38,6 @@ add_library(uve_physics STATIC
     Internal/shape_narrow_phase_uve.cpp
 )
 target_include_directories(uve_physics PUBLIC Expose)
-target_link_libraries(uve_physics PUBLIC uve_platform uve_logging uve_math uve_scene)
+target_link_libraries(uve_physics PUBLIC uve_platform uve_logging uve_math uve_scene uve_threading)
 target_compile_features(uve_physics PUBLIC cxx_std_23)
 uve_set_warnings(uve_physics)
