@@ -197,7 +197,7 @@ bool AudioFileStreamSourceUVE::OpenUVE() {
     const AudioStreamFormatUVE format{sampleRate, static_cast<std::uint32_t>(channels)};
     const std::uint64_t expectedPayload = static_cast<std::uint64_t>(kAudioPayloadHeaderBytesUVE) +
                                           sampleCount * sizeof(float);
-    if (!IsAudioStreamFormatValidUVE(format) || sampleCount % format.channels != 0U ||
+    if (!IsAudioStreamSourceFormatValidUVE(format) || sampleCount % format.channels != 0U ||
         sampleCount > std::numeric_limits<std::size_t>::max() || payloadLength != expectedPayload) {
         UVE_ERROR("AudioFileStreamSourceUVE: \"{}\" declares an unusable format or a truncated body",
                   impl.path.string());
