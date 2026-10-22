@@ -355,7 +355,15 @@ void EditorUVE::DrawMenuBarUVE() {
             const ImVec2 tabMax{toolbarMin.x + tabWidth, toolbarMax.y};
             toolbarDrawList->AddRectFilled(tabMin, tabMax, IM_COL32(21, 25, 31, 255), 4.0F, ImDrawFlags_RoundCornersTop);
             const float midY = (tabMin.y + tabMax.y) * 0.5F;
-            if (const std::uintptr_t icon = m_uiAssets.GetObjectIconTextureIdUVE(Scene::Objects::SceneObjectKindUVE::Viewport3D); icon != 0U) {
+            // The level's file icon, exactly the one the Content Browser puts on the .scene asset:
+            // the tab names a file, so it wears the file's icon rather than the object-type icon
+            // the Outliner uses for the same thing. The object icon is the fallback.
+            std::uintptr_t icon = m_uiAssets.GetContentTypeIconTextureIdUVE(
+                GetContentBrowserItemTypeLabelUVE(ContentBrowserItemTypeUVE::Scene));
+            if (icon == 0U) {
+                icon = m_uiAssets.GetObjectIconTextureIdUVE(Scene::Objects::SceneObjectKindUVE::Viewport3D);
+            }
+            if (icon != 0U) {
                 toolbarDrawList->AddImage(static_cast<ImTextureID>(icon), ImVec2{tabMin.x + 12.0F, midY - kTabIconSizeUVE * 0.5F},
                                           ImVec2{tabMin.x + 12.0F + kTabIconSizeUVE, midY + kTabIconSizeUVE * 0.5F});
             }

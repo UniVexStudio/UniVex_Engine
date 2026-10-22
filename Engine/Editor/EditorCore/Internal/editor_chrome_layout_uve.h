@@ -221,6 +221,28 @@ inline void BuildDefaultDockingLayoutTreeUVE(const ImGuiID dockspaceId, const Im
     ImGui::DockBuilderFinish(dockspaceId);
 }
 
+/// Hides the dock tab strip of the node that holds the Inspector, and of nothing else.
+///
+/// The Inspector's own Inspector / Import / Events tab bar IS the panel's top edge, so a dock tab
+/// sitting above it would print the name a second time. Every other panel keeps its dock tab: that
+/// tab is the handle a docked window is dragged and re-docked by, and it is what a hidden panel
+/// comes back from, so removing it everywhere took away more than was asked for.
+///
+/// The flag is set every frame rather than only while building the default tree because an
+/// imgui.ini written by an earlier session keeps its node IDs - a build-time-only change would not
+/// appear until the user ran "Reset Default Layout".
+inline void HideInspectorDockTabUVE(ImGuiDockNode* const node) {
+    if (node == nullptr) {
+        return;
+    }
+    const ImGuiWindow* const inspector = ImGui::FindWindowByName(kPanelLabelInspectorUVE);
+    if (inspector != nullptr && node->Windows.Size == 1 && node->Windows[0] == inspector) {
+        node->LocalFlags |= ImGuiDockNodeFlags_AutoHideTabBar;
+    }
+    HideInspectorDockTabUVE(node->ChildNodes[0]);
+    HideInspectorDockTabUVE(node->ChildNodes[1]);
+}
+
 inline ImGuiID SetupMainDockSpaceUVE(const ImGuiViewport* const viewport, const bool forceReset = false) {
     const ImGuiID dockspaceId = ImGui::GetID(kMainDockSpaceIdUVE);
     if (forceReset || ImGui::DockBuilderGetNode(dockspaceId) == nullptr) {
@@ -228,7 +250,9 @@ inline ImGuiID SetupMainDockSpaceUVE(const ImGuiViewport* const viewport, const 
         const ImVec2 size = viewport != nullptr ? viewport->WorkSize : ImVec2{1920.0F, 1080.0F};
         BuildDefaultDockingLayoutTreeUVE(dockspaceId, pos, size);
     }
-    return ImGui::DockSpaceOverViewport(dockspaceId, viewport, ImGuiDockNodeFlags_PassthruCentralNode);
+    const ImGuiID dockspace = ImGui::DockSpaceOverViewport(dockspaceId, viewport, ImGuiDockNodeFlags_PassthruCentralNode);
+    HideInspectorDockTabUVE(ImGui::DockBuilderGetNode(dockspaceId));
+    return dockspace;
 }
 
 } // namespace UVE::Editor

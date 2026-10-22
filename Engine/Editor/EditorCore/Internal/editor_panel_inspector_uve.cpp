@@ -133,11 +133,16 @@ void EditorUVE::DrawInspectorPanelUVE() {
     // allowing the window to dock into the right dock node, tab, split, float, and persist in imgui.ini.
     ImGui::SetNextWindowPos(layout.inspectorPos, ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(layout.inspectorSize, ImGuiCond_FirstUseEver);
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
+    // No title row and no close button: the Inspector / Import / Events tabs ARE the panel's top
+    // edge, so the name is not said twice above them. Passing nullptr instead of
+    // &m_inspectorPanelVisible is what removes the X - ImGui only draws a close button when it is
+    // given a visibility flag to write back to. Hiding it is Window > Inspector, beside the other
+    // panel toggles, which is where a hidden panel is brought back from.
+    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
     // Match the Outliner panel's neutral charcoal surface. Inputs and nested fields keep the
     // darker FrameBg/ChildBg layers from the shared theme, so depth and editability remain clear.
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{0.106F, 0.118F, 0.129F, 1.0F});
-    ImGui::Begin(kPanelLabelInspectorUVE, &m_inspectorPanelVisible, flags);
+    ImGui::Begin(kPanelLabelInspectorUVE, nullptr, flags);
 
     // Real tabs rather than three selectable labels. The active tab can also be changed from
     // elsewhere (the Content Browser opens the Inspector), so a change made outside the strip is
