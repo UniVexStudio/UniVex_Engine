@@ -128,11 +128,13 @@ void EditorUVE::DrawInspectorPanelUVE() {
     }
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
-        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
-    // In native ImGui docking, FirstUseEver sets the initial fallback position and size,
-    // allowing the window to dock into the right dock node, tab, split, float, and persist in imgui.ini.
-    ImGui::SetNextWindowPos(layout.inspectorPos, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(layout.inspectorSize, ImGuiCond_FirstUseEver);
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth,
+                                     m_inspectorPanelWidth, m_scenePanelVisible,
+                                     m_inspectorPanelVisible);
+    // Always: the rect comes from the chrome layout every frame. Dragging happens on the seam in
+    // DrawEditorChromeHandlesUVE(), which writes m_inspectorPanelWidth - not on the window's edges.
+    ImGui::SetNextWindowPos(layout.inspectorPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.inspectorSize, ImGuiCond_Always);
     // No title row and no close button: the Inspector / Import / Events tabs ARE the panel's top
     // edge, so the name is not said twice above them. Passing nullptr instead of
     // &m_inspectorPanelVisible is what removes the X - ImGui only draws a close button when it is

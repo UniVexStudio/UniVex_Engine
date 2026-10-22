@@ -6,7 +6,6 @@
 #include <cstddef>
 
 #include <imgui.h>
-#include <imgui_internal.h>
 
 namespace UVE::Editor {
 
@@ -21,6 +20,15 @@ namespace UVE::Editor {
 ///
 /// So it moves here, once, before the first panel moves out. Copying it into each new file would
 /// have been the smaller diff and the worse decision.
+///
+/// WHY THIS IS THE ONLY AUTHORITY. A native ImGui dockspace used to run alongside it, laying a
+/// second set of rectangles over the same pixels with ratio-based splits of the whole window. The
+/// two never agreed: the bottom dock was cut from screen y=0 instead of from the editor's own
+/// frame, so it drew under the toolbar; every panel grew a dock tab and a close button on top of
+/// the header this layout already draws; and imgui.ini remembered a floating position that then
+/// overrode the computed rect. The content browser is not a separate window the user may park
+/// anywhere - it is a region of one editor - and the code that let it became one has been removed
+/// rather than merely switched off. Everything below is computed for exactly one frame.
 struct EditorChromeLayoutUVE final {
     ImVec2 scenePos;
     ImVec2 sceneSize;
@@ -43,6 +51,24 @@ struct EditorChromeLayoutUVE final {
     /// The Outliner's header row, beside the logo; the Outliner's tree starts under it.
     ImVec2 outlinerHeaderPos;
     ImVec2 outlinerHeaderSize;
+    /// Whether a hidable side panel is showing this frame. A hidden panel's rects are zero-width
+    /// and the space it used goes back to the viewport - hiding a panel must widen the canvas,
+    /// not leave a hole where the panel used to be.
+    bool sceneVisible = true;
+    bool inspectorVisible = true;
+    /// Drag handles straddling each seam. Zero-sized when the seam does not exist.
+    ImVec2 sceneSplitterPos;
+    ImVec2 sceneSplitterSize;
+    ImVec2 inspectorSplitterPos;
+    ImVec2 inspectorSplitterSize;
+    ImVec2 dockSplitterPos;
+    ImVec2 dockSplitterSize;
+    /// The way back for a hidden side panel: a strip on the edge it left behind, sized only while
+    /// the panel is hidden. A close button with no matching way back is the bug this fixes.
+    ImVec2 outlinerRestorePos;
+    ImVec2 outlinerRestoreSize;
+    ImVec2 inspectorRestorePos;
+    ImVec2 inspectorRestoreSize;
 };
 
 /// Shared across the editor's panel translation units.
@@ -64,27 +90,24 @@ constexpr const char* kContentItemPayloadUVE = "UVE_CONTENT_ITEM";
 /// Several files dragged out of Content together (a multi-selection): their content-relative
 /// paths, NUL-joined with a NUL after each. Acceptors that only take one path ignore this shape.
 constexpr const char* kContentItemsPayloadUVE = "UVE_CONTENT_ITEMS";
-constexpr const char* kMainDockSpaceIdUVE = "UVEMainDockSpace";
 constexpr const char* kPanelLabelViewportUVE = "\xEE\xA9\x94 Viewport##viewport";
 constexpr const char* kPanelLabelSceneUVE = "\xEF\xAB\xBA Outliner##scene-panel";
 constexpr const char* kPanelLabelInspectorUVE = "\xEE\xA8\x83 Inspector##right-panel";
-constexpr const char* kPanelLabelContentBrowserUVE = "\xEE\xAA\xAD Content Browser##content-browser-panel";
-constexpr const char* kPanelLabelDebugUVE = "Debug##lower-workspace";
-constexpr const char* kPanelLabelConsoleUVE = "Console##lower-workspace-console";
-constexpr const char* kPanelLabelCaptureUVE = "Capture##lower-workspace-capture";
-constexpr const char* kPanelLabelProfilerUVE = "Profiler##lower-workspace-profiler";
-constexpr const char* kPanelLabelAudioMixerUVE = "Audio##lower-workspace-audio";
+/// The one window every bottom-dock tab shares. See DrawBottomDockContentUVE()'s comment on why
+/// the dock is a region of the editor rather than six windows that take turns being visible - the
+/// six per-section names that used to live here are gone with the six windows they named.
+constexpr const char* kPanelLabelBottomDockUVE = "##bottom-dock";
+/// The full-width strip along the very bottom. It is drawn whether or not the dock body is, because
+/// it is also how a hidden dock is brought back.
+constexpr const char* kPanelLabelDockTabsUVE = "##bottom-dock-tabs";
 
-constexpr float kDockSplitRatioLeftUVE = 0.18F;
-constexpr float kDockSplitRatioRightUVE = 0.22F;
-constexpr float kDockSplitRatioBottomUVE = 0.28F;
 constexpr std::size_t kMaximumEntityNameBytesUVE = 96U;
 // An object icon is 16 px: its texture is 64 px, so 16 is an exact mip level and draws crisp.
 constexpr float kHierarchyObjectIconSizeUVE = 16.0F;
 
 constexpr float kMinimumViewportWidthUVE = 64.0F;
 constexpr float kMinimumViewportHeightUVE = 64.0F;
-/// The bottom dock's default height, and its limits while being dragged.
+/// The bottom dock's default height.
 constexpr float kAssetsPanelHeightUVE = 192.0F;
 constexpr float kMinimumBottomDockHeightUVE = 96.0F;
 constexpr float kDockTabBarHeightUVE = 24.0F;
@@ -98,6 +121,52 @@ constexpr float kInspectorPanelWidthFractionUVE = 0.18F;
 constexpr float kInspectorPanelWidthMinUVE = 220.0F;
 constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
 
+/// Resize limits - the one place they are written down.
+///
+/// WHY A SHARED PAIR OF NUMBERS AND NOT A MIN AND MAX IN THE DRAG HANDLER. The handle used to carry
+/// its own `std::clamp(..., 140.0F, totalWidth * 0.45F)` while the layout carried a different pair.
+/// Dragging then hit whatever the handler said, and the panel settled somewhere the layout had not
+/// agreed to - the handle appearing to slip under the cursor near the ends of its travel. The
+/// layout function and DrawEditorChromeHandlesUVE() now call these same clamps, so a drag can only
+/// ever land on a width the layout will reproduce on the next frame.
+///
+/// The maxima are fractions rather than pixels because the same editor runs at 1280 and at 4K, and
+/// a fixed 640px cap is generous on one and a third of the screen on the other.
+constexpr float kScenePanelResizeMinUVE = kScenePanelWidthMinUVE;
+constexpr float kScenePanelResizeMaxFractionUVE = 0.40F;
+constexpr float kInspectorPanelResizeMinUVE = kInspectorPanelWidthMinUVE;
+constexpr float kInspectorPanelResizeMaxFractionUVE = 0.40F;
+/// The dock may take most of the column, but never all of it: the viewport keeps this much.
+constexpr float kBottomDockMaxFractionUVE = 0.75F;
+/// The drag grip. It straddles the seam, so half of it lies over each neighbour; the visible
+/// divider is the 1px line the panels already draw, and the grip itself paints nothing until
+/// it is hovered or held.
+constexpr float kPanelSplitterThicknessUVE = 6.0F;
+/// A hidden side panel leaves this strip behind. Wide enough to hit, thin enough to read as an
+/// edge rather than a panel, and identified by a chevron pointing the way the panel returns.
+constexpr float kPanelRestoreStripWidthUVE = 14.0F;
+
+/// `requested` clamped to the widths a side panel may actually occupy at this window size.
+[[nodiscard]] inline float ClampScenePanelWidthUVE(const float totalWidth, const float requested) {
+    const float maximum = std::max(kScenePanelResizeMinUVE, totalWidth * kScenePanelResizeMaxFractionUVE);
+    return std::clamp(requested, kScenePanelResizeMinUVE, maximum);
+}
+
+[[nodiscard]] inline float ClampInspectorPanelWidthUVE(const float totalWidth, const float requested) {
+    const float maximum = std::max(kInspectorPanelResizeMinUVE, totalWidth * kInspectorPanelResizeMaxFractionUVE);
+    return std::clamp(requested, kInspectorPanelResizeMinUVE, maximum);
+}
+
+/// `requested` clamped to the heights the dock may occupy, given the column it shares with the
+/// viewport. Two ceilings apply and the tighter one wins: a fraction of the column, and whatever
+/// still leaves the viewport its minimum height.
+[[nodiscard]] inline float ClampBottomDockHeightUVE(const float columnHeight, const float requested) {
+    const float maximum = std::max(kMinimumBottomDockHeightUVE,
+                                   std::min(columnHeight * kBottomDockMaxFractionUVE,
+                                            columnHeight - kMinimumViewportHeightUVE));
+    return std::clamp(requested, kMinimumBottomDockHeightUVE, maximum);
+}
+
 /// The editor's panel rectangles.
 ///
 ///   [logo][ title bar: Menu, status ...................................................... ]
@@ -107,14 +176,21 @@ constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
 ///   [ dock tabs ............................................................................ ]
 ///
 /// The logo's box spans the title bar and the header row. The Inspector runs from under the title
-/// bar; the Outliner's tree and the viewport's image start under the header row. The tab strip spans the full width at the very bottom and stays when the dock is hidden,
-/// since it is how the dock is brought back. `dockHeight` is the dock body's height, clamped so the
-/// viewport keeps its minimum.
+/// bar; the Outliner's tree and the viewport's image start under the header row. The tab strip spans
+/// the full width at the very bottom and stays when the dock is hidden, since it is how the dock is
+/// brought back. `dockHeight` is the dock body's height, clamped so the viewport keeps its minimum.
+///
+/// `sceneVisible`/`inspectorVisible` are the panels' own visibility, passed rather than assumed: a
+/// hidden panel contributes zero width and the viewport takes the space, which is the whole point of
+/// hiding it. The width parameters above still apply when the panel is shown again, so hiding and
+/// restoring a panel returns it to the width the author dragged it to.
 [[nodiscard]] inline EditorChromeLayoutUVE ComputeEditorChromeLayoutUVE(const ImGuiViewport& viewport,
                                                                         const bool bottomDockVisible,
                                                                         const float dockHeight = kAssetsPanelHeightUVE,
                                                                         const float sceneWidthCustom = -1.0F,
-                                                                        const float inspectorWidthCustom = -1.0F) {
+                                                                        const float inspectorWidthCustom = -1.0F,
+                                                                        const bool sceneVisible = true,
+                                                                        const bool inspectorVisible = true) {
     const float originX = viewport.WorkPos.x;
     const float originY = viewport.WorkPos.y;
     const float totalWidth = viewport.WorkSize.x;
@@ -127,40 +203,37 @@ constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
     // The side columns also take the tool strip's height: they start right under the title bar.
     const float sideTop = originY + kEditorTitleBarHeightUVE;
     const float sideHeight = columnHeight + kEditorToolbarHeightUVE;
-    const float maximumDock = std::max(kMinimumBottomDockHeightUVE, columnHeight - kMinimumViewportHeightUVE);
-    const float dock =
-        bottomDockVisible ? std::clamp(dockHeight, kMinimumBottomDockHeightUVE, maximumDock) : 0.0F;
 
     const float defaultSceneWidth =
         std::clamp(totalWidth * kScenePanelWidthFractionUVE, kScenePanelWidthMinUVE, kScenePanelWidthMaxUVE);
     const float defaultInspectorWidth = std::clamp(totalWidth * kInspectorPanelWidthFractionUVE,
                                                    kInspectorPanelWidthMinUVE, kInspectorPanelWidthMaxUVE);
 
-    float sceneWidth = defaultSceneWidth;
-    if (sceneWidthCustom > 0.0F) {
-        const float minScene = 140.0F;
-        const float maxScene = std::max(minScene, totalWidth * 0.45F);
-        sceneWidth = std::clamp(sceneWidthCustom, minScene, maxScene);
-    }
-
-    float inspectorWidth = defaultInspectorWidth;
-    if (inspectorWidthCustom > 0.0F) {
-        const float minInspector = 180.0F;
-        const float maxInspector = std::max(minInspector, totalWidth * 0.45F);
-        inspectorWidth = std::clamp(inspectorWidthCustom, minInspector, maxInspector);
-    }
-    const float viewportWidth =
-        std::max(kMinimumViewportWidthUVE, totalWidth - sceneWidth - inspectorWidth);
+    const float sceneWidth =
+        !sceneVisible ? 0.0F
+                      : (sceneWidthCustom > 0.0F ? ClampScenePanelWidthUVE(totalWidth, sceneWidthCustom) : defaultSceneWidth);
+    const float inspectorWidth = !inspectorVisible
+                                     ? 0.0F
+                                     : (inspectorWidthCustom > 0.0F
+                                            ? ClampInspectorPanelWidthUVE(totalWidth, inspectorWidthCustom)
+                                            : defaultInspectorWidth);
+    const float viewportWidth = std::max(kMinimumViewportWidthUVE, totalWidth - sceneWidth - inspectorWidth);
     const float top = originY + chromeHeight;
+    const float dock = bottomDockVisible ? ClampBottomDockHeightUVE(columnHeight, dockHeight) : 0.0F;
 
     EditorChromeLayoutUVE layout{};
+    layout.sceneVisible = sceneVisible;
+    layout.inspectorVisible = inspectorVisible;
     layout.logoPos = ImVec2{originX, originY};
     layout.logoSize = ImVec2{kEditorTopChromeHeightUVE, kEditorTopChromeHeightUVE};
     layout.outlinerHeaderPos = ImVec2{originX + kEditorTopChromeHeightUVE, sideTop};
-    layout.outlinerHeaderSize = ImVec2{std::max(0.0F, sceneWidth - kEditorTopChromeHeightUVE), kEditorToolbarHeightUVE};
+    layout.outlinerHeaderSize =
+        ImVec2{std::max(0.0F, sceneWidth - kEditorTopChromeHeightUVE), kEditorToolbarHeightUVE};
     layout.scenePos = ImVec2{originX, top};
     layout.sceneSize = ImVec2{sceneWidth, columnHeight};
-    layout.viewportHeaderPos = ImVec2{originX + sceneWidth, sideTop};
+    // The header row starts past the logo even when the Outliner is hidden, so the logo never
+    // paints over the viewport's own tab and transport.
+    layout.viewportHeaderPos = ImVec2{originX + std::max(sceneWidth, kEditorTopChromeHeightUVE), sideTop};
     layout.viewportHeaderSize = ImVec2{viewportWidth, kEditorToolbarHeightUVE};
     layout.viewportPos = ImVec2{originX + sceneWidth, top};
     layout.viewportSize = ImVec2{viewportWidth, std::max(kMinimumViewportHeightUVE, columnHeight - dock)};
@@ -171,88 +244,26 @@ constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
     layout.dockTabBarPos = ImVec2{originX, top + columnHeight};
     layout.dockTabBarSize = ImVec2{std::max(totalWidth, sceneWidth + viewportWidth + inspectorWidth),
                                    kDockTabBarHeightUVE};
+
+    // The grips straddle their seam, so a drag that started on the divider keeps tracking when the
+    // pointer wanders a pixel or two onto either panel.
+    constexpr float halfGrip = kPanelSplitterThicknessUVE * 0.5F;
+    layout.sceneSplitterPos = ImVec2{originX + sceneWidth - halfGrip, top};
+    layout.sceneSplitterSize = sceneVisible ? ImVec2{kPanelSplitterThicknessUVE, columnHeight} : ImVec2{0.0F, 0.0F};
+    layout.inspectorSplitterPos = ImVec2{originX + sceneWidth + viewportWidth - halfGrip, sideTop};
+    layout.inspectorSplitterSize =
+        inspectorVisible ? ImVec2{kPanelSplitterThicknessUVE, sideHeight} : ImVec2{0.0F, 0.0F};
+    layout.dockSplitterPos = ImVec2{originX + sceneWidth, top + layout.viewportSize.y - halfGrip};
+    layout.dockSplitterSize =
+        bottomDockVisible ? ImVec2{viewportWidth, kPanelSplitterThicknessUVE} : ImVec2{0.0F, 0.0F};
+
+    layout.outlinerRestorePos = ImVec2{originX, top};
+    layout.outlinerRestoreSize =
+        sceneVisible ? ImVec2{0.0F, 0.0F} : ImVec2{kPanelRestoreStripWidthUVE, columnHeight};
+    layout.inspectorRestorePos = ImVec2{originX + totalWidth - kPanelRestoreStripWidthUVE, sideTop};
+    layout.inspectorRestoreSize =
+        inspectorVisible ? ImVec2{0.0F, 0.0F} : ImVec2{kPanelRestoreStripWidthUVE, sideHeight};
     return layout;
-}
-
-inline bool g_resetDockingLayoutRequestedUVE = false;
-
-inline void RequestResetDockingLayoutUVE() noexcept {
-    g_resetDockingLayoutRequestedUVE = true;
-}
-
-inline bool IsResetDockingLayoutRequestedUVE() noexcept {
-    return g_resetDockingLayoutRequestedUVE;
-}
-
-inline bool ConsumeResetDockingLayoutRequestUVE() noexcept {
-    const bool requested = g_resetDockingLayoutRequestedUVE;
-    g_resetDockingLayoutRequestedUVE = false;
-    return requested;
-}
-
-inline ImGuiID GetMainDockSpaceIdUVE() {
-    return ImGui::GetID(kMainDockSpaceIdUVE);
-}
-
-inline void BuildDefaultDockingLayoutTreeUVE(const ImGuiID dockspaceId, const ImVec2& workPos, const ImVec2& workSize) {
-    ImGui::DockBuilderRemoveNode(dockspaceId);
-    ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
-    ImGui::DockBuilderSetNodePos(dockspaceId, workPos);
-    ImGui::DockBuilderSetNodeSize(dockspaceId, workSize);
-
-    ImGuiID centerId = dockspaceId;
-    const ImGuiID leftId =
-        ImGui::DockBuilderSplitNode(centerId, ImGuiDir_Left, kDockSplitRatioLeftUVE, nullptr, &centerId);
-    const ImGuiID rightId =
-        ImGui::DockBuilderSplitNode(centerId, ImGuiDir_Right, kDockSplitRatioRightUVE, nullptr, &centerId);
-    const ImGuiID bottomId =
-        ImGui::DockBuilderSplitNode(centerId, ImGuiDir_Down, kDockSplitRatioBottomUVE, nullptr, &centerId);
-
-    ImGui::DockBuilderDockWindow(kPanelLabelSceneUVE, leftId);
-    ImGui::DockBuilderDockWindow(kPanelLabelInspectorUVE, rightId);
-    ImGui::DockBuilderDockWindow(kPanelLabelContentBrowserUVE, bottomId);
-    ImGui::DockBuilderDockWindow(kPanelLabelDebugUVE, bottomId);
-    ImGui::DockBuilderDockWindow(kPanelLabelConsoleUVE, bottomId);
-    ImGui::DockBuilderDockWindow(kPanelLabelCaptureUVE, bottomId);
-    ImGui::DockBuilderDockWindow(kPanelLabelProfilerUVE, bottomId);
-    ImGui::DockBuilderDockWindow(kPanelLabelAudioMixerUVE, bottomId);
-    ImGui::DockBuilderDockWindow(kPanelLabelViewportUVE, centerId);
-
-    ImGui::DockBuilderFinish(dockspaceId);
-}
-
-/// Hides the dock tab strip of the node that holds the Inspector, and of nothing else.
-///
-/// The Inspector's own Inspector / Import / Events tab bar IS the panel's top edge, so a dock tab
-/// sitting above it would print the name a second time. Every other panel keeps its dock tab: that
-/// tab is the handle a docked window is dragged and re-docked by, and it is what a hidden panel
-/// comes back from, so removing it everywhere took away more than was asked for.
-///
-/// The flag is set every frame rather than only while building the default tree because an
-/// imgui.ini written by an earlier session keeps its node IDs - a build-time-only change would not
-/// appear until the user ran "Reset Default Layout".
-inline void HideInspectorDockTabUVE(ImGuiDockNode* const node) {
-    if (node == nullptr) {
-        return;
-    }
-    const ImGuiWindow* const inspector = ImGui::FindWindowByName(kPanelLabelInspectorUVE);
-    if (inspector != nullptr && node->Windows.Size == 1 && node->Windows[0] == inspector) {
-        node->LocalFlags |= ImGuiDockNodeFlags_AutoHideTabBar;
-    }
-    HideInspectorDockTabUVE(node->ChildNodes[0]);
-    HideInspectorDockTabUVE(node->ChildNodes[1]);
-}
-
-inline ImGuiID SetupMainDockSpaceUVE(const ImGuiViewport* const viewport, const bool forceReset = false) {
-    const ImGuiID dockspaceId = ImGui::GetID(kMainDockSpaceIdUVE);
-    if (forceReset || ImGui::DockBuilderGetNode(dockspaceId) == nullptr) {
-        const ImVec2 pos = viewport != nullptr ? viewport->WorkPos : ImVec2{0.0F, 0.0F};
-        const ImVec2 size = viewport != nullptr ? viewport->WorkSize : ImVec2{1920.0F, 1080.0F};
-        BuildDefaultDockingLayoutTreeUVE(dockspaceId, pos, size);
-    }
-    const ImGuiID dockspace = ImGui::DockSpaceOverViewport(dockspaceId, viewport, ImGuiDockNodeFlags_PassthruCentralNode);
-    HideInspectorDockTabUVE(ImGui::DockBuilderGetNode(dockspaceId));
-    return dockspace;
 }
 
 } // namespace UVE::Editor

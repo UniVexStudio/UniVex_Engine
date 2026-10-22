@@ -54,7 +54,7 @@ TEST(EditorLayerMaskUVETest, UnnamedLayerDetectionAndSymmetricCollisionMatrixWor
 TEST(EditorLayerMaskUVETest, Part2EditorSettingsRegisterSearchFormatAndRoundTripThroughStore) {
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEditorSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 159U + 3U + std::size(kRenamedSettingIdsUVE));
+    EXPECT_EQ(registry.GetCountUVE(), 158U + 3U + std::size(kRenamedSettingIdsUVE));
     for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
         EXPECT_EQ(Config::ValidateSettingDescriptorUVE(*descriptor), "") << descriptor->id;
         EXPECT_TRUE(descriptor->id.starts_with("editor.")) << descriptor->id;
