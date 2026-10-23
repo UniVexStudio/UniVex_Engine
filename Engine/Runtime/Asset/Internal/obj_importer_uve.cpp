@@ -40,14 +40,18 @@ constexpr std::string_view kObjTemporarySuffixUVE = ".uve_obj_tmp";
 
     const std::string_view source(reinterpret_cast<const char*>(sourceBytes.data()), sourceBytes.size());
     MeshAssetUVE mesh;
-    if (!ConvertObjMeshUVE(source, mesh)) {
+    // The geometry converter also reports the `usemtl` runs it saw, so the imported model is split
+    // into the surfaces its author named rather than arriving as one buffer with one material.
+    std::vector<ObjSurfaceRangeUVE> surfaceRanges;
+    if (!ConvertObjMeshUVE(source, mesh, &surfaceRanges)) {
         UVE_ERROR("ObjImporterUVE: source \"{}\" failed bounded OBJ mesh conversion", sourcePath.string());
         return false;
     }
     // Materials and their textures are published BEFORE the mesh so a failure never leaves a
     // .uvmodel pointing at materials that do not exist. Recoverable material problems leave the
     // geometry intact; only the asset database refusing a published file aborts.
-    if (!Detail::ImportObjMaterialsUVE(source, sourcePath, destinationPath, assetDatabase, mesh)) {
+    if (!Detail::ImportObjMaterialsUVE(source, sourcePath, destinationPath, assetDatabase, mesh,
+                                       surfaceRanges)) {
         return false;
     }
     return Detail::PublishAssetAtomicallyUVE(

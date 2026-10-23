@@ -1949,6 +1949,16 @@ void MetadataPropertyWriteUVE(const Core::TypeMetadataEntryUVE& entry,
         std::int64_t value = 0;
         property.getValue(instance, &value);
         json[property.name] = value;
+    } else if (property.typeId == kPropertyTypeStringListUVE) {
+        std::vector<std::string> value;
+        property.getValue(instance, &value);
+        // Trailing empty entries say what an absent entry says, so they are not written: a list
+        // that grew for a mesh and shrank again saves the bytes it started with. Interior empties
+        // are meaningful (surface i has no override, surface i+1 does) and stay.
+        while (!value.empty() && value.back().empty()) {
+            value.pop_back();
+        }
+        json[property.name] = value;
     } else if (property.typeId == kPropertyTypeAssetGuidUVE) {
         Asset::AssetGuidUVE value{};
         property.getValue(instance, &value);
@@ -2022,6 +2032,20 @@ void MetadataPropertyReadUVE(const Core::TypeMetadataEntryUVE& entry,
     } else if (property.typeId == kPropertyTypeEnumUVE) {
         const std::int64_t value = json.at(property.name).get<std::int64_t>();
         property.setValue(instance, &value);
+    } else if (property.typeId == kPropertyTypeStringListUVE) {
+        std::vector<std::string> value;
+        property.getValue(instance, &value);
+        if (json.at(property.name).is_array()) {
+            value.clear();
+            for (const nlohmann::json& entry : json.at(property.name)) {
+                // A list of paths is read as text and nothing else: a non-string is skipped rather
+                // than coerced, because a number that became a path would name no file.
+                if (entry.is_string()) {
+                    value.push_back(entry.get<std::string>());
+                }
+            }
+        }
+        property.setValue(instance, &value);
     } else if (property.typeId == kPropertyTypeAssetGuidUVE) {
         const Asset::AssetGuidUVE value{json.at(property.name).get<std::uint64_t>()};
         property.setValue(instance, &value);
@@ -2065,7 +2089,7 @@ void MetadataPropertyReadUVE(const Core::TypeMetadataEntryUVE& entry,
            typeId == kPropertyTypeVector3UVE || typeId == kPropertyTypeColorUVE ||
            typeId == kPropertyTypeLinearColorUVE || typeId == kPropertyTypeQuaternionUVE ||
            typeId == kPropertyTypeEnumUVE || typeId == kPropertyTypeAssetGuidUVE ||
-           typeId == kPropertyTypeRectUVE;
+           typeId == kPropertyTypeRectUVE || typeId == kPropertyTypeStringListUVE;
 }
 
 /// An entry earns a generic registration when it is a component with a C++ name, a bound factory

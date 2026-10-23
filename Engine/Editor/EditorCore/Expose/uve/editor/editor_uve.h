@@ -2009,8 +2009,11 @@ private:
                                                                       const std::string& title = {});
     /// Standardized material slot drawer offering new standard/ORM/shader materials, browsing both
     /// .uvmat and .uvmaterial, quick import, clear, and inline PBR property editor when assigned.
+    /// `editInline` false shows the picker and its preview only: for a mesh with a dozen surfaces,
+    /// a full PBR editor under each row would bury the rows themselves, and the same materials are
+    /// already editable once in the mesh's own MATERIALS fold.
     bool DrawStandardMaterialSlotUVE(const char* label, const char* id,
-                                     std::string& inOutPath);
+                                     std::string& inOutPath, bool editInline = true);
     bool DrawStandardMaterialSlotUVE(const char* label, const char* id,
                                      Asset::AssetGuidUVE& inOutGuid);
     /// Inline expandable PBR property editor for an assigned material file. Saves immediately on edit.
@@ -2021,6 +2024,10 @@ private:
     void DrawMeshInstance3DInspectorUVE(Scene::EntityUVE entity);
     /// Auto-populates a SkinComponentUVE from an entity's assigned model or attached Skeleton3D.
     bool AutoPopulateSkinFromModelUVE(Scene::EntityUVE entity, Scene::SkinComponentUVE& skin);
+    /// The mesh asset an entity draws with, read through the `.uvmodel` the importer wrote beside a
+    /// model source. Empty when nothing is assigned, the file will not read, or the entity draws a
+    /// procedural primitive (which owns no asset).
+    [[nodiscard]] std::optional<Asset::MeshAssetUVE> LoadEntityMeshAssetUVE(Scene::EntityUVE entity);
     /// AnimationGraph's parameter table and its graph (objects, wiring, transitions). Every edit
     /// writes the whole list back through SetSelectedComponentPropertyUVE, so it is one undo step
     /// and the graph is re-validated before it lands.

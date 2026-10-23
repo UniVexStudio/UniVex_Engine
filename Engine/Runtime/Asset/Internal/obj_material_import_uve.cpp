@@ -92,10 +92,51 @@ void ImportTextureSlotUVE(const std::filesystem::path& sourceDirectory, const st
 
 } // namespace
 
+namespace {
+
+/// Turns the converter's `usemtl` runs into surface ranges, each pointing at the slot its material
+/// was published in. Names are matched exactly as both readers read them, so a name that survived
+/// geometry conversion but has no published material - it was absent from the library, or failed
+/// validation - leaves that surface's slot invalid on purpose.
+void ApplyObjSurfaceRangesUVE(const std::vector<std::string>& publishedNames,
+                              const std::vector<ObjSurfaceRangeUVE>& surfaceRanges,
+                              MeshAssetUVE& mesh) {
+    if (surfaceRanges.size() < 2U || mesh.materialGuids.empty()) {
+        return;
+    }
+    std::unordered_map<std::string, std::uint32_t> slotByName;
+    slotByName.reserve(publishedNames.size());
+    for (std::size_t slot = 0U; slot < publishedNames.size(); ++slot) {
+        slotByName.emplace(publishedNames[slot], static_cast<std::uint32_t>(slot));
+    }
+    std::vector<MeshSurfaceUVE> surfaces;
+    surfaces.reserve(surfaceRanges.size());
+    for (const ObjSurfaceRangeUVE& range : surfaceRanges) {
+        MeshSurfaceUVE surface{range.firstIndex, range.indexCount, kInvalidMeshSurfaceMaterialSlotUVE};
+        if (const auto found = slotByName.find(range.materialName); found != slotByName.end()) {
+            surface.materialSlot = found->second;
+        }
+        surfaces.push_back(surface);
+    }
+    mesh.surfaces = std::move(surfaces);
+    if (!IsMeshSurfaceDataValidUVE(mesh)) {
+        // The ranges come from the same index buffer the mesh holds, so this cannot happen unless
+        // one of the two readers changed; refusing them keeps a broken table out of the .uvmodel.
+        UVE_WARNING("{}: the {} converted surface ranges do not describe the index buffer; the mesh "
+                    "publishes without them",
+                    kObjImporterNameUVE, mesh.surfaces.size());
+        mesh.surfaces.clear();
+    }
+}
+
+} // namespace
+
 bool ImportObjMaterialsUVE(const std::string_view objSource, const std::filesystem::path& sourcePath,
                            const std::filesystem::path& destinationPath, IAssetDatabaseUVE& assetDatabase,
-                           MeshAssetUVE& inOutMesh) {
+                           MeshAssetUVE& inOutMesh,
+                           const std::vector<ObjSurfaceRangeUVE>& surfaceRanges) {
     inOutMesh.materialGuids.clear();
+    inOutMesh.surfaces.clear();
     try {
         // One pass over the OBJ for the two directives that matter: the library it names and the
         // materials it switches to, in the order the author wrote them.
@@ -216,6 +257,10 @@ bool ImportObjMaterialsUVE(const std::string_view objSource, const std::filesyst
 
         std::vector<AssetGuidUVE> materialGuids;
         materialGuids.reserve(publishOrder.size());
+        // Parallel to materialGuids: what each published slot is called, so a surface range can
+        // find the slot its `usemtl` name landed in.
+        std::vector<std::string> publishedNames;
+        publishedNames.reserve(publishOrder.size());
         for (const std::size_t index : publishOrder) {
             MtlLibraryMaterialUVE& source = library.materials[index];
             MaterialAssetUVE material = source.material;
@@ -259,8 +304,10 @@ bool ImportObjMaterialsUVE(const std::string_view objSource, const std::filesyst
                 return false;
             }
             materialGuids.push_back(guid);
+            publishedNames.push_back(source.name);
         }
         inOutMesh.materialGuids = std::move(materialGuids);
+        ApplyObjSurfaceRangesUVE(publishedNames, surfaceRanges, inOutMesh);
         return true;
     } catch (const std::bad_alloc&) {
         UVE_ERROR("{}: out of memory while importing OBJ materials", kObjImporterNameUVE);

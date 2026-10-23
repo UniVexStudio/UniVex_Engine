@@ -83,6 +83,34 @@ constexpr std::string_view kTwoMaterialsUVE = R"(	Material: 3500, "Material::Red
 	}
 )";
 
+// Two triangles that do not share a corner, with one material each - and the polygons written in
+// the order Blue, Red, Blue, so the published table's order comes from first use rather than from
+// the file's material list.
+constexpr std::string_view kTwoMaterialFacesUVE = R"(	Geometry: 1000, "Geometry::TwoFaces", "Mesh" {
+		Vertices: *27 {
+			a: 0,0,0,100,0,0,100,100,0,200,0,0,300,0,0,300,100,0,400,0,0,500,0,0,500,100,0
+		}
+		PolygonVertexIndex: *9 {
+			a: 0,1,-3,3,4,-6,6,7,-9
+		}
+		LayerElementMaterial: 0 {
+			Version: 101
+			Name: ""
+			MappingInformationType: "ByPolygon"
+			ReferenceInformationType: "IndexToDirect"
+			Materials: *3 {
+				a: 1,0,1
+			}
+		}
+		GeometryVersion: 124
+	}
+	Model: 2000, "Model::TwoFaces", "Mesh" {
+		Version: 232
+	}
+)";
+constexpr std::string_view kTwoMaterialFacesConnectionsUVE =
+    "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n\tC: \"OO\",3500,1000\n\tC: \"OO\",3501,1000\n";
+
 constexpr std::string_view kTexturedMaterialUVE = R"(	Material: 3100, "Material::BrushedSteel", "" {
 		Version: 102
 		ShadingModel: "phong"
@@ -164,6 +192,27 @@ TEST_F(FbxImporterUVETest, FbxImportPublishesOneUvmatPerMaterial) {
     ASSERT_TRUE(LoadMaterialAssetUVE(bluePath, blue));
     EXPECT_FLOAT_EQ(blue.albedoColor.b, 1.0F);
     EXPECT_TRUE(blue.isTransparent);
+}
+
+TEST_F(FbxImporterUVETest, FbxFacesGroupedByMaterialPublishSlotsTheModelCanDraw) {
+    // The converter reports file material positions; the importer is the only place that knows
+    // which of those became a slot, because it is the one publishing them. Blue is file material 1
+    // and Red is 0, so a table that skipped that remap would shade the model the wrong way round.
+    const std::filesystem::path source = ScratchUVE("two_faces.fbx");
+    const std::filesystem::path destination = ScratchUVE("two_faces.uvmodel");
+    WriteFixtureUVE(source, MakeFbxUVE(std::string(kTwoMaterialFacesUVE) + std::string(kTwoMaterialsUVE),
+                                       kTwoMaterialFacesConnectionsUVE));
+
+    ASSERT_NE(importer.ImportUVE(source, destination, database), kInvalidAssetGuidUVE);
+    MeshAssetUVE mesh;
+    ASSERT_TRUE(LoadMeshAssetUVE(destination, mesh));
+    ASSERT_EQ(mesh.materialGuids.size(), 2U);
+    EXPECT_EQ(database.ResolveUVE(mesh.materialGuids[0]).filename(), "two_faces.Red_Paint.uvmat");
+    EXPECT_EQ(database.ResolveUVE(mesh.materialGuids[1]).filename(), "two_faces.Blue.uvmat");
+
+    ASSERT_EQ(mesh.surfaces.size(), 2U);
+    EXPECT_EQ(mesh.surfaces[0], (MeshSurfaceUVE{0U, 6U, 1U}));
+    EXPECT_EQ(mesh.surfaces[1], (MeshSurfaceUVE{6U, 3U, 0U}));
 }
 
 TEST_F(FbxImporterUVETest, FbxImportWithoutMaterialsPublishesOnlyTheModel) {
