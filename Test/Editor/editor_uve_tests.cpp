@@ -41,6 +41,7 @@
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
+#include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
@@ -64,6 +65,11 @@ struct EditorUVEAccessUVE final {
     [[nodiscard]] static Scene::EntityUVE GetViewportUVE(EditorUVE& editor) { return editor.GetDocumentViewportUVE(); }
     /// The canvas the viewport actually draws through: set from the scene's own marker on open.
     [[nodiscard]] static bool IsViewport2DModeUVE(const EditorUVE& editor) { return editor.m_viewportOverlayState.is2DMode; }
+    /// A double-click's first stop: the row opens what it stands for, and only then may the
+    /// Double-Click preference act.
+    [[nodiscard]] static bool OpenHierarchyRowTargetUVE(EditorUVE& editor, const Scene::EntityUVE entity) {
+        return editor.OpenHierarchyRowTargetUVE(entity);
+    }
 
     [[nodiscard]] static std::string GetOutlinerTypeTagUVE(const EditorUVE& editor,
                                                             const Scene::EntityUVE entity) {
@@ -6161,6 +6167,97 @@ TEST(EditorUVETest, OpenSceneAsset_UsesTheScenesOwnDimensionNotItsFileName) {
         std::filesystem::rename(*solid, lying);
         ASSERT_TRUE(editor.OpenSceneAssetUVE(lying));
         EXPECT_FALSE(EditorUVEAccessUVE::IsViewport2DModeUVE(editor)) << "the file says 3D, so it opens 3D";
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(scratch);
+}
+
+
+TEST(EditorUVETest, HierarchyDoubleClick_OpensTheAssetBehindARowAndLeavesPlainObjectsToTheSetting) {
+    const std::filesystem::path scratch = ::UVE::Tests::MakeTestCaseDirectoryUVE("hierarchy_double_click");
+    const std::filesystem::path content = scratch / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    config.projectContentRootUVE = content;
+    config.projectSettingsFilePath = scratch / "project.uvsettings";
+    config.assetDatabaseFilePath = scratch / "assets.json";
+    config.logFilePath = scratch / "log.txt";
+    config.settingsFilePath = scratch / "settings.json";
+    config.inputMapFilePath = scratch / "input_map.json";
+    config.saveDirectoryPath = scratch / "saves";
+    config.shaderCachePath = scratch / "shader_cache";
+
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scratch / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+
+        // A plain object is the scene's own: there is no file behind it, so the row reports that it
+        // has nothing to open and the Double-Click preference keeps deciding for it.
+        const Scene::EntityUVE plain =
+            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Object3D);
+        ASSERT_NE(plain, Scene::kInvalidEntityUVE);
+        EXPECT_FALSE(EditorUVEAccessUVE::OpenHierarchyRowTargetUVE(editor, plain));
+
+        // An entity asset placed into the level is an instance: its row opens that asset.
+        const auto asset = editor.CreateContentCatalogueItemUVE("empty", content);
+        ASSERT_TRUE(asset.has_value());
+        const Scene::EntityUVE instance = editor.PlaceEntityAssetUVE(*asset);
+        ASSERT_NE(instance, Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(engine.GetServicesUVE().GetEntityManagerUVE().HasComponentUVE<Scene::PrefabInstanceComponentUVE>(
+            instance));
+        EXPECT_TRUE(EditorUVEAccessUVE::OpenHierarchyRowTargetUVE(editor, instance));
+        EXPECT_TRUE(editor.IsEntityEditorOpenUVE());
+        EXPECT_EQ(editor.GetEntityEditorAssetPathUVE(), *asset);
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(scratch);
+}
+
+TEST(EditorUVETest, HierarchyDoubleClick_TheViewportRowOpensTheLevelAndNeverDropsUnsavedWork) {
+    const std::filesystem::path scratch = ::UVE::Tests::MakeTestCaseDirectoryUVE("hierarchy_viewport_row");
+    const std::filesystem::path content = scratch / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    config.projectContentRootUVE = content;
+    config.projectSettingsFilePath = scratch / "project.uvsettings";
+    config.assetDatabaseFilePath = scratch / "assets.json";
+    config.logFilePath = scratch / "log.txt";
+    config.settingsFilePath = scratch / "settings.json";
+    config.inputMapFilePath = scratch / "input_map.json";
+    config.saveDirectoryPath = scratch / "saves";
+    config.shaderCachePath = scratch / "shader_cache";
+
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scratch / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE viewport = editor.GetDocumentViewportUVE();
+        ASSERT_NE(viewport, Scene::kInvalidEntityUVE);
+
+        // A saved, clean level: the row opens its .uvscene.
+        ASSERT_TRUE(editor.SaveSceneUVE());
+        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+        EXPECT_TRUE(std::filesystem::is_regular_file(scratch / "main.uvscene"));
+        EXPECT_TRUE(EditorUVEAccessUVE::OpenHierarchyRowTargetUVE(editor, viewport));
+
+        // With unsaved work the click is still the row's (it never falls through to a rename), but
+        // nothing is read back from disk: the object made a moment ago is still there.
+        const Scene::EntityUVE unsaved =
+            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Camera3D);
+        ASSERT_NE(unsaved, Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(editor.IsSceneDirtyUVE());
+        EXPECT_TRUE(EditorUVEAccessUVE::OpenHierarchyRowTargetUVE(editor, viewport));
+        EXPECT_TRUE(entityManager.IsAliveUVE(unsaved)) << "a double-click must not reload over edits";
         editor.ShutdownUVE();
     }
     engine.Shutdown();
