@@ -812,9 +812,9 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
                 entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
             std::string value;
             property.getValue(instance, &value);
-            const std::string preview = value.empty() ? std::string{"[ <Select Bone> ]"} : value;
+            const std::string preview = value.empty() ? std::string{"Empty"} : value;
             if (ImGui::BeginCombo("##value", preview.c_str())) {
-                if (ImGui::Selectable("[ <Clear / Unassigned> ]", value.empty())) {
+                if (ImGui::Selectable("Empty", value.empty())) {
                     std::string emptyName{};
                     edited = SetSelectedComponentPropertyUVE(entry, property, &emptyName);
                 }
@@ -1052,7 +1052,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
         m_assetPickerPendingPicks.erase(found);
     }
     const Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
-    std::string preview = "[ <Empty> ]";
+    std::string preview = "Empty";
     if (value != Asset::kInvalidAssetGuidUVE) {
         const std::filesystem::path path = database.ResolveUVE(value);
         preview = path.empty() ? "(missing asset)" : path.stem().string();
@@ -1152,7 +1152,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             OpenFilePickerUVE(std::move(request));
             ImGui::CloseCurrentPopup();
         }
-        if (ImGui::Selectable("[ <Clear / Empty> ]", value == Asset::kInvalidAssetGuidUVE) &&
+        if (ImGui::Selectable("Empty", value == Asset::kInvalidAssetGuidUVE) &&
             value != Asset::kInvalidAssetGuidUVE) {
             picked = Asset::kInvalidAssetGuidUVE;
         }
@@ -1515,7 +1515,7 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
     ImGui::TextUnformatted("Mesh");
     ImGui::SameLine();
 
-    std::string meshPreview = "[ <Empty> ]";
+    std::string meshPreview = "Empty";
     const bool hasPrimitive = entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
     if (hasPrimitive) {
         const auto& prim = entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
@@ -1597,7 +1597,7 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
             OpenFilePickerUVE(std::move(request));
             ImGui::CloseCurrentPopup();
         }
-        if (ImGui::Selectable("[ <Clear / Empty> ]")) {
+        if (ImGui::Selectable("Empty")) {
             meshComp.meshGuid = Asset::kInvalidAssetGuidUVE;
             if (entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
                 entityManager.RemoveComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
@@ -1669,7 +1669,7 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
     constexpr ImGuiTreeNodeFlags kSectionFlags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding;
     if (DrawInspectorFoldUVE("Skeleton", "meshinstance:skeleton", false, false, kSectionFlags)) {
         const bool hasSkin = entityManager.HasComponentUVE<Scene::SkinComponentUVE>(entity);
-        std::string skinPreview = "[ <Empty> ]";
+        std::string skinPreview = "Empty";
         if (hasSkin) {
             auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(entity);
             if (skin.bindCount == 0 && skin.boneBinds.empty()) {
@@ -1694,7 +1694,7 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
                     AutoPopulateSkinFromModelUVE(entity, skin);
                     entityManager.AddComponentUVE<Scene::SkinComponentUVE>(entity, skin);
                 }
-                if (ImGui::Selectable("[ <Clear / Empty> ]")) {
+                if (ImGui::Selectable("Empty")) {
                     entityManager.RemoveComponentUVE<Scene::SkinComponentUVE>(entity);
                 }
             }
