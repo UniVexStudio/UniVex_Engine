@@ -24,45 +24,6 @@ namespace {
 constexpr const char* kFbxImporterNameUVE = "FbxImporterUVE";
 constexpr std::string_view kFbxTemporarySuffixUVE = ".uve_fbx_tmp";
 
-/// `<model-stem>.<sanitised-material-name>.uvmat`: the material name reduced to
-/// [A-Za-z0-9_-], `material_<index>` when nothing survives, and `_<n>` appended on a clash so two
-/// FBX materials can never publish over each other. Deterministic for a given file, which is what
-/// makes a re-import land on the same paths (and therefore, through RegisterUVE, the same GUIDs).
-[[nodiscard]] std::string MakeMaterialFileStemUVE(const std::string_view modelStem,
-                                                  const std::string_view materialName,
-                                                  const std::size_t materialIndex,
-                                                  std::vector<std::string>& usedStems) {
-    std::string sanitised;
-    sanitised.reserve(materialName.size());
-    for (const char character : materialName) {
-        const auto value = static_cast<unsigned char>(character);
-        if (std::isalnum(value) != 0 || character == '_' || character == '-') {
-            sanitised.push_back(character);
-        } else if (character == ' ' || character == '.' || character == ':' || character == '/' || character == '\\') {
-            sanitised.push_back('_');
-        }
-    }
-    if (sanitised.empty()) {
-        sanitised = "material_" + std::to_string(materialIndex);
-    }
-    std::string candidate = std::string(modelStem) + "." + sanitised;
-    for (std::size_t suffix = 2U;; ++suffix) {
-        bool clash = false;
-        for (const std::string& used : usedStems) {
-            if (used == candidate) {
-                clash = true;
-                break;
-            }
-        }
-        if (!clash) {
-            break;
-        }
-        candidate = std::string(modelStem) + "." + sanitised + "_" + std::to_string(suffix);
-    }
-    usedStems.push_back(candidate);
-    return candidate;
-}
-
 /// Resolves one authored texture file into a texture slot, logging a diagnostic (never inventing
 /// a GUID) when no imported sibling texture matches.
 void ResolveTextureSlotUVE(const std::filesystem::path& destinationPath, const std::string_view authoredFile,
@@ -130,7 +91,7 @@ void ResolveTextureSlotUVE(const std::filesystem::path& destinationPath, const s
                         "cannot be referenced by file; that slot stays empty",
                         source.name, sourcePath.string());
         }
-        const std::string stem = MakeMaterialFileStemUVE(modelStem, source.name, materialIndex, usedStems);
+        const std::string stem = Detail::MakeMaterialFileStemUVE(modelStem, source.name, materialIndex, "material", usedStems);
         const std::filesystem::path materialPath = directory / (stem + ".uvmat");
         if (!Detail::PublishAssetAtomicallyUVE(materialPath, kFbxImporterNameUVE, kFbxTemporarySuffixUVE,
                                                [&material](const std::filesystem::path& temporaryPath) {

@@ -16,9 +16,13 @@
 
 #include <gtest/gtest.h>
 
+#include "Support/test_image_fixtures_uve.h"
+
 #include "uve/asset/asset_database_uve.h"
 #include "uve/asset/asset_import_sidecar_uve.h"
+#include "uve/asset/material_asset_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
+#include "uve/asset/texture_asset_uve.h"
 
 namespace UVE::Asset::Tests {
 namespace {
@@ -295,6 +299,189 @@ TEST(GltfImporterUVETest, ImportUVE_ValidGlbPublishesUveModelAndRegistersBothExt
     ASSERT_TRUE(LoadMeshAssetUVE(destinationPath, mesh));
     EXPECT_EQ(mesh.indices, (std::vector<std::uint32_t>{0U, 1U, 2U}));
     RemoveFilesUVE({sourcePath, destinationPath});
+}
+
+/// The triangle layout every fixture in this file uses, followed by an image blob at a 4-byte
+/// boundary: 102 bytes of geometry, two pad bytes, then whatever the test appends.
+constexpr std::size_t kGeometryBytesUVE = 104U;
+
+[[nodiscard]] std::string MakeGltfJsonWithMaterialUVE(const std::string_view bufferUri,
+                                                     const std::size_t imageByteLength) {
+    const std::string bufferUriJson =
+        bufferUri.empty() ? std::string{} : "\"uri\":\"" + std::string(bufferUri) + "\",\n    ";
+    return "{\n"
+           "  \"asset\": {\"version\": \"2.0\"},\n"
+           "  \"buffers\": [{" + bufferUriJson + "\"byteLength\": " +
+           std::to_string(kGeometryBytesUVE + imageByteLength) +
+           "}],\n"
+           "  \"bufferViews\": [\n"
+           "    {\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},\n"
+           "    {\"buffer\":0,\"byteOffset\":36,\"byteLength\":36},\n"
+           "    {\"buffer\":0,\"byteOffset\":72,\"byteLength\":24},\n"
+           "    {\"buffer\":0,\"byteOffset\":96,\"byteLength\":6},\n"
+           "    {\"buffer\":0,\"byteOffset\":104,\"byteLength\":" + std::to_string(imageByteLength) +
+           "}\n"
+           "  ],\n"
+           "  \"accessors\": [\n"
+           "    {\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},\n"
+           "    {\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},\n"
+           "    {\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"},\n"
+           "    {\"bufferView\":3,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}\n"
+           "  ],\n"
+           "  \"images\": [{\"bufferView\":4,\"mimeType\":\"image/png\",\"name\":\"brick\"}],\n"
+           "  \"textures\": [{\"source\":0}],\n"
+           "  \"materials\": [{\n"
+           "    \"name\": \"Brick\",\n"
+           "    \"pbrMetallicRoughness\": {\n"
+           "      \"baseColorFactor\": [0.8, 0.5, 0.25, 1.0],\n"
+           "      \"baseColorTexture\": {\"index\": 0},\n"
+           "      \"metallicFactor\": 0.25,\n"
+           "      \"roughnessFactor\": 0.75\n"
+           "    }\n"
+           "  }],\n"
+           "  \"meshes\": [{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2},"
+           "\"indices\":3,\"mode\":4,\"material\":0}]}]\n"
+           "}\n";
+}
+
+/// The geometry blob the material fixtures embed their image into, padded to the 4-byte boundary
+/// the JSON above declares.
+[[nodiscard]] std::vector<std::byte> MakePaddedTriangleBufferUVE() {
+    std::vector<std::byte> bytes = MakeTriangleBufferUVE();
+    while (bytes.size() < kGeometryBytesUVE) {
+        bytes.push_back(std::byte{0U});
+    }
+    return bytes;
+}
+
+TEST(GltfImporterUVETest, ImportUVE_GlbWithBakedMaterial_PublishesMaterialAndTextureAsAssets) {
+    const std::filesystem::path sourcePath = "uve_gltf_importer_tests_material.glb";
+    const std::filesystem::path destinationPath = "uve_gltf_importer_tests_material.uvmodel";
+    const std::filesystem::path materialPath = "uve_gltf_importer_tests_material.Brick.uvmat";
+    const std::filesystem::path texturePath = "uve_gltf_importer_tests_material.brick.uvtex";
+    RemoveFilesUVE({sourcePath, destinationPath, materialPath, texturePath});
+
+    const std::vector<std::byte> png = UVE::Tests::MakePngTwoByOneRgba8UVE();
+    ASSERT_FALSE(png.empty());
+    std::vector<std::byte> binary = MakePaddedTriangleBufferUVE();
+    binary.insert(binary.end(), png.begin(), png.end());
+    WriteGlbUVE(sourcePath, MakeGltfJsonWithMaterialUVE("", png.size()), binary);
+
+    AssetImporterUVE importer;
+    AssetDatabaseUVE database;
+    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, database);
+    ASSERT_NE(guid, kInvalidAssetGuidUVE);
+
+    // The mesh references the material the file carried, so a load of the model alone is enough:
+    // nothing has to be assigned by hand before it renders textured.
+    MeshAssetUVE mesh;
+    ASSERT_TRUE(LoadMeshAssetUVE(destinationPath, mesh));
+    ASSERT_EQ(mesh.materialGuids.size(), 1U);
+    EXPECT_EQ(database.ResolveUVE(mesh.materialGuids[0]), materialPath);
+
+    MaterialAssetUVE material;
+    ASSERT_TRUE(LoadMaterialAssetUVE(materialPath, material));
+    EXPECT_FLOAT_EQ(material.albedoColor.r, 0.8F);
+    EXPECT_FLOAT_EQ(material.albedoColor.g, 0.5F);
+    EXPECT_FLOAT_EQ(material.albedoColor.b, 0.25F);
+    EXPECT_FLOAT_EQ(material.albedoAlpha, 1.0F);
+    EXPECT_FLOAT_EQ(material.metallic, 0.25F);
+    EXPECT_FLOAT_EQ(material.roughness, 0.75F);
+    EXPECT_FALSE(material.isTransparent);
+
+    // The embedded image became a real texture asset whose pixels survive the round trip.
+    ASSERT_NE(material.albedoTexture, kInvalidAssetGuidUVE);
+    EXPECT_EQ(database.ResolveUVE(material.albedoTexture), texturePath);
+    TextureAssetUVE texture;
+    ASSERT_TRUE(LoadTextureAssetUVE(texturePath, texture));
+    EXPECT_EQ(texture.width, 2U);
+    EXPECT_EQ(texture.height, 1U);
+    EXPECT_EQ(texture.colorSpace, TextureAssetColorSpaceUVE::Srgb);
+    ASSERT_GE(texture.pixels.size(), 8U);
+    EXPECT_EQ(texture.pixels[0], std::byte{0xFF});
+    EXPECT_EQ(texture.pixels[3], std::byte{0xFF});
+
+    RemoveFilesUVE({sourcePath, destinationPath, materialPath, texturePath});
+}
+
+TEST(GltfImporterUVETest, ImportUVE_MaterialWithUndecodableImage_StillPublishesGeometryAndMaterial) {
+    const std::filesystem::path sourcePath = "uve_gltf_importer_tests_bad_image.glb";
+    const std::filesystem::path destinationPath = "uve_gltf_importer_tests_bad_image.uvmodel";
+    const std::filesystem::path materialPath = "uve_gltf_importer_tests_bad_image.Brick.uvmat";
+    RemoveFilesUVE({sourcePath, destinationPath, materialPath});
+
+    // The view points at geometry bytes, which are not an image at all. A texture that cannot be
+    // produced must not cost the author the mesh, the material factors or the PBR numbers.
+    std::vector<std::byte> binary = MakePaddedTriangleBufferUVE();
+    binary.insert(binary.end(), 16U, std::byte{0x5A});
+    WriteGlbUVE(sourcePath, MakeGltfJsonWithMaterialUVE("", 16U), binary);
+
+    AssetImporterUVE importer;
+    AssetDatabaseUVE database;
+    ASSERT_NE(importer.ImportUVE(sourcePath, destinationPath, database), kInvalidAssetGuidUVE);
+
+    MeshAssetUVE mesh;
+    ASSERT_TRUE(LoadMeshAssetUVE(destinationPath, mesh));
+    ASSERT_EQ(mesh.materialGuids.size(), 1U);
+    MaterialAssetUVE material;
+    ASSERT_TRUE(LoadMaterialAssetUVE(materialPath, material));
+    EXPECT_EQ(material.albedoTexture, kInvalidAssetGuidUVE);
+    EXPECT_FLOAT_EQ(material.metallic, 0.25F);
+    RemoveFilesUVE({sourcePath, destinationPath, materialPath});
+}
+
+TEST(GltfImporterUVETest, ImportUVE_MaterialSamplingExternalPng_ImportsThatTextureToo) {
+    const std::filesystem::path sourcePath = "uve_gltf_importer_tests_external_texture.gltf";
+    const std::filesystem::path bufferPath = "uve_gltf_importer_tests_external_texture.bin";
+    const std::filesystem::path textureSourcePath = "uve_gltf_importer_tests_paint.png";
+    const std::filesystem::path destinationPath = "uve_gltf_importer_tests_external_texture.uvmodel";
+    const std::filesystem::path materialPath = "uve_gltf_importer_tests_external_texture.Paint.uvmat";
+    const std::filesystem::path texturePath = "uve_gltf_importer_tests_paint.uvtex";
+    RemoveFilesUVE({sourcePath, bufferPath, textureSourcePath, destinationPath, materialPath, texturePath});
+
+    const std::vector<std::byte> png = UVE::Tests::MakePngTwoByOneRgba8UVE();
+    ASSERT_FALSE(png.empty());
+    WriteBytesUVE(textureSourcePath, png);
+    WriteBytesUVE(bufferPath, MakeTriangleBufferUVE());
+    const std::string json =
+        "{\n"
+        "  \"asset\": {\"version\": \"2.0\"},\n"
+        "  \"buffers\": [{\"uri\":\"" + bufferPath.filename().string() + "\",\"byteLength\": 102}],\n"
+        "  \"bufferViews\": [\n"
+        "    {\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},\n"
+        "    {\"buffer\":0,\"byteOffset\":36,\"byteLength\":36},\n"
+        "    {\"buffer\":0,\"byteOffset\":72,\"byteLength\":24},\n"
+        "    {\"buffer\":0,\"byteOffset\":96,\"byteLength\":6}\n"
+        "  ],\n"
+        "  \"accessors\": [\n"
+        "    {\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},\n"
+        "    {\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},\n"
+        "    {\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"},\n"
+        "    {\"bufferView\":3,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}\n"
+        "  ],\n"
+        "  \"images\": [{\"uri\":\"" + textureSourcePath.filename().string() + "\"}],\n"
+        "  \"textures\": [{\"source\":0}],\n"
+        "  \"materials\": [{\"name\":\"Paint\",\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}],\n"
+        "  \"meshes\": [{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2},"
+        "\"indices\":3,\"mode\":4,\"material\":0}]}]\n"
+        "}\n";
+    WriteTextUVE(sourcePath, json);
+
+    AssetImporterUVE importer;
+    AssetDatabaseUVE database;
+    ASSERT_NE(importer.ImportUVE(sourcePath, destinationPath, database), kInvalidAssetGuidUVE);
+
+    MaterialAssetUVE material;
+    ASSERT_TRUE(LoadMaterialAssetUVE(materialPath, material));
+    ASSERT_NE(material.albedoTexture, kInvalidAssetGuidUVE);
+    EXPECT_EQ(database.ResolveUVE(material.albedoTexture), texturePath);
+    TextureAssetUVE texture;
+    ASSERT_TRUE(LoadTextureAssetUVE(texturePath, texture));
+    EXPECT_EQ(texture.width, 2U);
+    // The source PNG stays where the author put it; the importer publishes the .uvtex beside the
+    // model, which is where every texture reference in the project is expected to live.
+    EXPECT_TRUE(std::filesystem::is_regular_file(textureSourcePath));
+    RemoveFilesUVE({sourcePath, bufferPath, textureSourcePath, destinationPath, materialPath, texturePath});
 }
 
 TEST(GltfImporterUVETest, ImportUVE_InvalidSourcePreservesExistingDestinationAndDoesNotRegister) {

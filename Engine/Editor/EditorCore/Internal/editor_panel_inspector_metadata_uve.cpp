@@ -1073,7 +1073,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
     if (BeginCenteredComboUVE(id, preview.c_str())) {
         if (isMaterial) {
             ImGui::TextDisabled("CREATE MATERIAL");
-            if (ImGui::Selectable("+ New StandardMaterial3D (PBR)")) {
+            if (ImGui::Selectable("New Standard Material")) {
                 const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
                 const std::filesystem::path matDir = project.contentRoot / "Materials";
                 std::error_code ec;
@@ -1085,7 +1085,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
                     RefreshProjectFileIndexUVE();
                 }
             }
-            if (ImGui::Selectable("+ New ORMMaterial3D")) {
+            if (ImGui::Selectable("New ORM Material")) {
                 const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
                 const std::filesystem::path matDir = project.contentRoot / "Materials";
                 std::error_code ec;
@@ -1100,7 +1100,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
                     RefreshProjectFileIndexUVE();
                 }
             }
-            if (ImGui::Selectable("+ New ShaderMaterial (Custom Shader)")) {
+            if (ImGui::Selectable("New Shader Material")) {
                 const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
                 const std::filesystem::path matDir = project.contentRoot / "Materials";
                 std::error_code ec;
@@ -1518,9 +1518,11 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
 
     std::string meshPreview = "Empty";
     const bool hasPrimitive = entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
+    const Scene::PrimitiveMeshKindUVE primitiveKind =
+        hasPrimitive ? entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity).kind
+                     : Scene::PrimitiveMeshKindUVE::Cube;
     if (hasPrimitive) {
-        const auto& prim = entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
-        switch (prim.kind) {
+        switch (primitiveKind) {
             case Scene::PrimitiveMeshKindUVE::Cube: meshPreview = "BoxMesh"; break;
             case Scene::PrimitiveMeshKindUVE::UVSphere: meshPreview = "SphereMesh"; break;
             case Scene::PrimitiveMeshKindUVE::Capsule: meshPreview = "CapsuleMesh"; break;
@@ -1666,8 +1668,107 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
         entityManager.AddComponentUVE<Scene::MeshComponentUVE>(entity, meshComp);
     }
 
-    // 2. Expandable Skeleton Section with Skin Slot
     constexpr ImGuiTreeNodeFlags kSectionFlags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding;
+
+    // 2. The mesh's own settings, folded under the mesh's own name. A mesh is a thing with a shape
+    // and a look of its own - a primitive is sized here, an imported model lists the materials it
+    // was authored with - so this reads as the asset's settings, not the object's. One click on the
+    // name opens it; nothing about it needs a double click or another window.
+    const bool hasAssignedMesh = hasPrimitive || meshComp.meshGuid != Asset::kInvalidAssetGuidUVE;
+    if (hasAssignedMesh) {
+        const std::string foldKey = hasPrimitive
+                                        ? "mesh_asset:primitive:" +
+                                              std::to_string(static_cast<int>(primitiveKind))
+                                        : "mesh_asset:" + std::to_string(meshComp.meshGuid.value);
+        // The fold is named after the file the author recognises: an imported model keeps the name
+        // it was authored as (`Swat.fbx`), not the derived `.uvmodel`'s stem, so the row in the
+        // Inspector and the file in the Content Browser read the same.
+        std::string meshFoldName = meshPreview;
+        if (!hasPrimitive && meshComp.meshGuid != Asset::kInvalidAssetGuidUVE) {
+            const std::filesystem::path resolvedMeshPath =
+                m_services->GetAssetDatabaseUVE().ResolveUVE(meshComp.meshGuid);
+            if (!resolvedMeshPath.empty()) {
+                meshFoldName = resolvedMeshPath.extension() == ".uvmodel"
+                                   ? resolvedMeshPath.stem().string()
+                                   : resolvedMeshPath.filename().string();
+            }
+        }
+        const std::string foldLabel = meshFoldName + "###meshinstance:mesh_asset";
+        if (DrawInspectorFoldUVE(foldLabel.c_str(), foldKey, false, false, kSectionFlags)) {
+            if (hasPrimitive) {
+                // PROCEDURAL SIZE: the primitive's geometry is authored at unit size, so the
+                // object's scale IS its size. Editing it here is the same number the Transform
+                // section shows, named in the units an author thinks in.
+                ImGui::TextDisabled("SIZE");
+                if (entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+                    Scene::TransformComponentUVE transform =
+                        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+                    float size[3] = {transform.localScale.x, transform.localScale.y, transform.localScale.z};
+                    if (ImGui::DragFloat3("##primitiveSize", size, 0.01F, 0.0001F, 10000.0F, "%.3f m")) {
+                        transform.localScale = Math::Vector3UVE{size[0], size[1], size[2]};
+                        entityManager.AddComponentUVE<Scene::TransformComponentUVE>(entity, transform);
+                    }
+                }
+                ImGui::Spacing();
+
+                // COLOUR: a procedural primitive is drawn by the engine's primitive pass, which is
+                // deliberately Lambert-only over this authored colour - it has no material maps, so
+                // a .uvmat on a primitive would be a control that changes nothing on screen. The
+                // colour is what the author actually sees, so it is what the panel offers.
+                ImGui::TextDisabled("COLOUR");
+                Scene::PrimitiveMeshComponentUVE primitive =
+                    entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
+                float color[3] = {primitive.baseColor.x, primitive.baseColor.y, primitive.baseColor.z};
+                if (ImGui::ColorEdit3("##primitiveColor", color)) {
+                    primitive.baseColor =
+                        Scene::ClampPrimitiveBaseColorUVE(Math::Vector3UVE{color[0], color[1], color[2]});
+                    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity, primitive);
+                }
+            } else {
+                // MATERIALS: the model carries its own. Each row is that material's file, edited in
+                // place, so what the Inspector changes is what the mesh references.
+                ImGui::TextDisabled("MATERIALS");
+                std::filesystem::path resolved = m_services->GetAssetDatabaseUVE().ResolveUVE(meshComp.meshGuid);
+                std::error_code ec;
+                if (resolved.extension() != ".uvmodel" || !std::filesystem::is_regular_file(resolved, ec)) {
+                    // A model source (.glb/.fbx/...) draws through the .uvmodel the importer wrote;
+                    // resolve that the same way the skin and material paths do.
+                    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                    const std::filesystem::path relative = resolved.lexically_relative(project.contentRoot);
+                    if (!relative.empty() && *relative.begin() != "..") {
+                        const std::filesystem::path imported = GetImportedModelPathUVE(relative);
+                        if (std::filesystem::is_regular_file(imported, ec)) {
+                            resolved = imported;
+                        }
+                    }
+                }
+                Asset::MeshAssetUVE meshAsset;
+                if (!resolved.empty() && std::filesystem::is_regular_file(resolved, ec) &&
+                    Asset::LoadMeshAssetUVE(resolved, meshAsset)) {
+                    if (meshAsset.materialGuids.empty()) {
+                        ImGui::TextDisabled("This model has no material of its own.");
+                    }
+                    for (std::size_t materialIndex = 0U; materialIndex < meshAsset.materialGuids.size();
+                         ++materialIndex) {
+                        const std::filesystem::path materialPath =
+                            m_services->GetAssetDatabaseUVE().ResolveUVE(meshAsset.materialGuids[materialIndex]);
+                        if (materialPath.empty()) {
+                            continue;
+                        }
+                        ImGui::PushID(static_cast<int>(materialIndex));
+                        const std::string idPrefix = "##meshOwnedMaterial" + std::to_string(materialIndex);
+                        DrawMaterialPbrEditorInlineUVE(materialPath, idPrefix.c_str());
+                        ImGui::PopID();
+                    }
+                } else {
+                    ImGui::TextDisabled("The mesh asset could not be read.");
+                }
+            }
+            ImGui::TreePop();
+        }
+    }
+
+    // 3. Expandable Skeleton Section with Skin Slot
     if (DrawInspectorFoldUVE("Skeleton", "meshinstance:skeleton", false, false, kSectionFlags)) {
         const bool hasSkin = entityManager.HasComponentUVE<Scene::SkinComponentUVE>(entity);
         std::string skinPreview = "Empty";
@@ -1776,7 +1877,7 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
         ImGui::TreePop();
     }
 
-    // 3. Expandable Surface Material Override Section
+    // 4. Expandable Surface Material Override Section
     if (DrawInspectorFoldUVE("Surface Material Override", "meshinstance:surface_override", false, false, kSectionFlags)) {
         if (!entityManager.HasComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity)) {
             entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, Scene::SurfaceInstanceComponentUVE{});
@@ -1803,7 +1904,7 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
         ImGui::TreePop();
     }
 
-    // 4. Visibility Layers
+    // 5. Visibility Layers
     ImGui::Spacing();
     std::uint32_t layers = meshComp.visibilityLayers;
     const Config::SettingsDocumentUVE& projectSettings = m_services->GetProjectSettingsUVE();

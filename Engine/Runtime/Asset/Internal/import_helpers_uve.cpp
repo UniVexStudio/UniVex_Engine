@@ -2,8 +2,10 @@
 
 #include "import_helpers_uve.h"
 
+#include <cctype>
 #include <fstream>
 #include <limits>
+#include <string>
 
 #include "uve/asset/texture_compression_uve.h"
 #include "uve/asset/texture_mipmap_uve.h"
@@ -72,6 +74,47 @@ AssetGuidUVE ResolveImportedSiblingTextureGuidUVE(const std::filesystem::path& d
         return false;
     }
     return IsTextureAssetValidUVE(texture);
+}
+
+std::string MakeMaterialFileStemUVE(const std::string_view modelStem, const std::string_view materialName,
+                                       const std::size_t materialIndex, const std::string_view fallbackPrefix,
+                                       std::vector<std::string>& usedStems) {
+    std::string sanitised;
+    sanitised.reserve(materialName.size());
+    for (const char character : materialName) {
+        const auto value = static_cast<unsigned char>(character);
+        if (std::isalnum(value) != 0 || character == '_' || character == '-') {
+            sanitised.push_back(character);
+        } else if (character == ' ' || character == '.' || character == ':' || character == '/' || character == '\\') {
+            sanitised.push_back('_');
+        }
+    }
+    if (sanitised.empty()) {
+        sanitised = std::string(fallbackPrefix) + "_" + std::to_string(materialIndex);
+    }
+    // A long authored name must not decide whether the model imports: every mainstream filesystem
+    // caps a single component at 255 bytes, and this stem gains a model prefix and an extension on
+    // top. Cutting here keeps the published path legal, and the cut is deterministic.
+    constexpr std::size_t kMaximumStemCharactersUVE = 64U;
+    if (sanitised.size() > kMaximumStemCharactersUVE) {
+        sanitised.resize(kMaximumStemCharactersUVE);
+    }
+    std::string candidate = std::string(modelStem) + "." + sanitised;
+    for (std::size_t suffix = 2U;; ++suffix) {
+        bool clash = false;
+        for (const std::string& used : usedStems) {
+            if (used == candidate) {
+                clash = true;
+                break;
+            }
+        }
+        if (!clash) {
+            break;
+        }
+        candidate = std::string(modelStem) + "." + sanitised + "_" + std::to_string(suffix);
+    }
+    usedStems.push_back(candidate);
+    return candidate;
 }
 
 [[nodiscard]] bool ReadBoundedSourceBytesUVE(const std::filesystem::path& sourcePath,
