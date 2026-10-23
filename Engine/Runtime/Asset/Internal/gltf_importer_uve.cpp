@@ -199,8 +199,84 @@ constexpr std::string_view kGltfTemporarySuffixUVE = ".uve_gltf_tmp";
     return true;
 }
 
+/// Sentinel in the per-surface material-index table: this primitive names no glTF material.
+constexpr std::uint32_t kInvalidGltfMaterialIndexUVE = 0xFFFFFFFFU;
+
+/// Builds the geometry-only source of ONE glTF primitive, plus the glTF material index it names
+/// (kInvalidGltfMaterialIndexUVE when it names none).
+///
+/// Every index it reads is checked against the document's own arrays, so a hostile or truncated
+/// file cannot walk past one; a primitive that breaks any of these rules fails the import rather
+/// than publishing a mesh with a hole in it.
+[[nodiscard]] bool BuildPrimitiveSourceUVE(const nlohmann::json& document, const std::vector<std::byte>& buffer,
+                                           const nlohmann::json& primitive, GltfPrimitiveSourceUVE& outSource,
+                                           std::uint32_t& outMaterialIndex) {
+    outMaterialIndex = kInvalidGltfMaterialIndexUVE;
+    if (!primitive.is_object() || !primitive.contains("attributes") || !primitive.at("attributes").is_object()) {
+        return false;
+    }
+    const auto& attributes = primitive.at("attributes");
+    const auto positionIndex = Detail::ReadJsonUintUVE(attributes, "POSITION", true);
+    if (!positionIndex) {
+        return false;
+    }
+    outSource.mode = primitive.contains("mode") ? Detail::ReadJsonU32UVE(primitive, "mode").value_or(0U) : 4U;
+    const auto positions = Detail::BuildAccessorViewUVE(document, buffer, *positionIndex, "VEC3", false);
+    if (!positions) {
+        return false;
+    }
+    outSource.positions = *positions;
+    if (attributes.contains("NORMAL")) {
+        const auto normalIndex = Detail::ReadJsonUintUVE(attributes, "NORMAL", true);
+        if (!normalIndex) return false;
+        const auto normals = Detail::BuildAccessorViewUVE(document, buffer, *normalIndex, "VEC3", false);
+        if (!normals) return false;
+        outSource.normals = *normals;
+    }
+    if (attributes.contains("TEXCOORD_0")) {
+        const auto texcoordIndex = Detail::ReadJsonUintUVE(attributes, "TEXCOORD_0", true);
+        if (!texcoordIndex) return false;
+        const auto texcoords = Detail::BuildAccessorViewUVE(document, buffer, *texcoordIndex, "VEC2", false);
+        if (!texcoords) return false;
+        outSource.texcoords0 = *texcoords;
+    }
+    if (primitive.contains("indices")) {
+        const auto indexAccessor = Detail::ReadJsonUintUVE(primitive, "indices", true);
+        if (!indexAccessor) return false;
+        const auto indices = Detail::BuildAccessorViewUVE(document, buffer, *indexAccessor, "SCALAR", true);
+        if (!indices) return false;
+        outSource.indices = *indices;
+    }
+    if (primitive.contains("material")) {
+        const auto materialIndex = Detail::ReadJsonUintUVE(primitive, "material", true);
+        if (!materialIndex) {
+            return false;
+        }
+        if (*materialIndex > static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max())) {
+            return false;
+        }
+        outMaterialIndex = static_cast<std::uint32_t>(*materialIndex);
+    }
+    return true;
+}
+
+/// Converts the document's single mesh into engine geometry.
+///
+/// A glTF mesh carries ONE OR MORE primitives, and every primitive is an independent vertex/index
+/// run with its own material - which is exactly a surface. They are merged into the one vertex and
+/// index buffer a `.uvmodel` holds, and each primitive's range is recorded as a surface so the
+/// renderer can draw each with its own material without splitting the asset into several files or
+/// buffers. A single-primitive mesh records no surfaces at all: it is the implicit
+/// whole-buffer surface, which keeps its serialized bytes identical to what this importer always
+/// produced.
+///
+/// `outSurfaceMaterialIndices` receives one glTF material index per primitive (kInvalid when the
+/// primitive names none), in surface order. The caller resolves them into slots once the
+/// materials have been published - the two orders are independent, so the mapping is done by
+/// material index rather than by position.
 [[nodiscard]] bool ConvertDocumentUVE(const nlohmann::json& document, const std::vector<std::byte>& buffer,
-                                      const bool importMorphTargets, MeshAssetUVE& outMesh) {
+                                      const bool importMorphTargets, MeshAssetUVE& outMesh,
+                                      std::vector<std::uint32_t>& outSurfaceMaterialIndices) {
     if (!document.contains("buffers") || !document.at("buffers").is_array() ||
         document.at("buffers").size() != 1U || !document.at("buffers").at(0).is_object()) {
         return false;
@@ -213,99 +289,145 @@ constexpr std::string_view kGltfTemporarySuffixUVE = ".uve_gltf_tmp";
     if (!document.contains("meshes") || !document.at("meshes").is_array() || document.at("meshes").size() != 1U ||
         !document.at("meshes").at(0).is_object() || !document.at("meshes").at(0).contains("primitives") ||
         !document.at("meshes").at(0).at("primitives").is_array() ||
-        document.at("meshes").at(0).at("primitives").size() != 1U) {
+        document.at("meshes").at(0).at("primitives").empty() ||
+        document.at("meshes").at(0).at("primitives").size() > kMaximumMeshSurfacesUVE) {
         return false;
     }
-    const auto& primitive = document.at("meshes").at(0).at("primitives").at(0);
-    if (!primitive.is_object() || !primitive.contains("attributes") || !primitive.at("attributes").is_object()) {
-        return false;
-    }
-    const auto& attributes = primitive.at("attributes");
-    const auto positionIndex = Detail::ReadJsonUintUVE(attributes, "POSITION", true);
-    if (!positionIndex) {
-        return false;
-    }
-    GltfPrimitiveSourceUVE source;
-    source.mode = primitive.contains("mode") ? Detail::ReadJsonU32UVE(primitive, "mode").value_or(0U) : 4U;
-    const auto positions = Detail::BuildAccessorViewUVE(document, buffer, *positionIndex, "VEC3", false);
-    if (!positions) {
-        return false;
-    }
-    source.positions = *positions;
-    if (attributes.contains("NORMAL")) {
-        const auto normalIndex = Detail::ReadJsonUintUVE(attributes, "NORMAL", true);
-        if (!normalIndex) return false;
-        const auto normals = Detail::BuildAccessorViewUVE(document, buffer, *normalIndex, "VEC3", false);
-        if (!normals) return false;
-        source.normals = *normals;
-    }
-    if (attributes.contains("TEXCOORD_0")) {
-        const auto texcoordIndex = Detail::ReadJsonUintUVE(attributes, "TEXCOORD_0", true);
-        if (!texcoordIndex) return false;
-        const auto texcoords = Detail::BuildAccessorViewUVE(document, buffer, *texcoordIndex, "VEC2", false);
-        if (!texcoords) return false;
-        source.texcoords0 = *texcoords;
-    }
-    if (primitive.contains("indices")) {
-        const auto indexAccessor = Detail::ReadJsonUintUVE(primitive, "indices", true);
-        if (!indexAccessor) return false;
-        const auto indices = Detail::BuildAccessorViewUVE(document, buffer, *indexAccessor, "SCALAR", true);
-        if (!indices) return false;
-        source.indices = *indices;
+    const nlohmann::json& meshJson = document.at("meshes").at(0);
+    const nlohmann::json& primitives = meshJson.at("primitives");
+    const bool multiplePrimitives = primitives.size() > 1U;
+
+    MeshAssetUVE merged;
+    merged.surfaces.reserve(multiplePrimitives ? primitives.size() : 0U);
+    std::vector<std::uint32_t> surfaceMaterialIndices;
+    surfaceMaterialIndices.reserve(primitives.size());
+
+    for (std::size_t primitiveIndex = 0U; primitiveIndex < primitives.size(); ++primitiveIndex) {
+        const nlohmann::json& primitive = primitives.at(primitiveIndex);
+        GltfPrimitiveSourceUVE source;
+        std::uint32_t materialIndex = kInvalidGltfMaterialIndexUVE;
+        if (!BuildPrimitiveSourceUVE(document, buffer, primitive, source, materialIndex)) {
+            return false;
+        }
+
+        MeshAssetUVE part;
+        if (multiplePrimitives) {
+            // Blend shapes are per-primitive data indexed by that primitive's own vertex array.
+            // Merging the arrays would need every primitive's targets to agree by name AND by
+            // vertex range, which glTF does not require them to do - so a multi-primitive mesh
+            // imports without shapes, with a diagnostic, rather than binding a target to the wrong
+            // vertices.
+            if (importMorphTargets && primitive.contains("targets")) {
+                UVE_WARNING("GltfImporterUVE: a multi-primitive mesh's morph targets are not "
+                            "imported; the mesh publishes without blend shapes");
+            }
+            if (!ConvertGltfPrimitiveUVE(source, part)) {
+                return false;
+            }
+        } else {
+            // Blend shapes. The setting is honoured here rather than after the fact: a user who
+            // turned morph-target import off gets the base mesh and pays nothing for the shapes
+            // they declined.
+            GltfMorphTargetSetUVE morphSet;
+            if (importMorphTargets && primitive.contains("targets")) {
+                if (!primitive.at("targets").is_array() ||
+                    primitive.at("targets").size() > kMaximumMeshMorphTargetsUVE) {
+                    return false;
+                }
+                morphSet.names = ReadMorphTargetNamesUVE(meshJson);
+                morphSet.targets.reserve(primitive.at("targets").size());
+                for (const auto& targetJson : primitive.at("targets")) {
+                    if (!targetJson.is_object()) {
+                        return false;
+                    }
+                    // POSITION is mandatory in a glTF morph target: a shape with no displacement is
+                    // not a shape, and accepting one would create a weight slot that moves nothing.
+                    const auto targetPositionIndex = Detail::ReadJsonUintUVE(targetJson, "POSITION", true);
+                    if (!targetPositionIndex) {
+                        return false;
+                    }
+                    const auto targetPositions =
+                        Detail::BuildAccessorViewUVE(document, buffer, *targetPositionIndex, "VEC3", false);
+                    if (!targetPositions) {
+                        return false;
+                    }
+                    GltfMorphTargetSourceUVE targetSource;
+                    targetSource.positions = *targetPositions;
+                    if (targetJson.contains("NORMAL")) {
+                        const auto normalIndex = Detail::ReadJsonUintUVE(targetJson, "NORMAL", true);
+                        if (!normalIndex) return false;
+                        const auto normals =
+                            Detail::BuildAccessorViewUVE(document, buffer, *normalIndex, "VEC3", false);
+                        if (!normals) return false;
+                        targetSource.normals = *normals;
+                    }
+                    if (targetJson.contains("TANGENT")) {
+                        const auto tangentIndex = Detail::ReadJsonUintUVE(targetJson, "TANGENT", true);
+                        if (!tangentIndex) return false;
+                        const auto tangents =
+                            Detail::BuildAccessorViewUVE(document, buffer, *tangentIndex, "VEC3", false);
+                        if (!tangents) return false;
+                        targetSource.tangents = *tangents;
+                    }
+                    morphSet.targets.push_back(std::move(targetSource));
+                }
+                if (!ReadDefaultMorphWeightsUVE(meshJson, morphSet.targets.size(), morphSet.defaultWeights)) {
+                    return false;
+                }
+            }
+            const bool converted = morphSet.IsEmptyUVE() ? ConvertGltfPrimitiveUVE(source, part)
+                                                         : ConvertGltfPrimitiveUVE(source, morphSet, part);
+            if (!converted) {
+                return false;
+            }
+        }
+
+        // Bounded before the merge, because a merged vertex offset is stored as a uint32 index and
+        // an asset that would need a wider one cannot be represented at all.
+        constexpr auto kMaximumIndexableCount =
+            static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max());
+        if (part.vertices.size() > kMaximumIndexableCount - merged.vertices.size() ||
+            part.indices.size() > kMaximumIndexableCount - merged.indices.size()) {
+            UVE_ERROR("GltfImporterUVE: the mesh's primitives exceed the addressable vertex or index "
+                      "count of a .uvmodel");
+            return false;
+        }
+        const auto vertexOffset = static_cast<std::uint32_t>(merged.vertices.size());
+        const auto firstIndex = static_cast<std::uint32_t>(merged.indices.size());
+        merged.vertices.insert(merged.vertices.end(), part.vertices.begin(), part.vertices.end());
+        merged.indices.reserve(merged.indices.size() + part.indices.size());
+        for (const std::uint32_t index : part.indices) {
+            merged.indices.push_back(index + vertexOffset);
+        }
+        if (multiplePrimitives) {
+            merged.surfaces.push_back(MeshSurfaceUVE{firstIndex,
+                                                     static_cast<std::uint32_t>(part.indices.size()),
+                                                     kInvalidMeshSurfaceMaterialSlotUVE});
+        }
+        surfaceMaterialIndices.push_back(materialIndex);
+        if (primitiveIndex == 0U) {
+            merged.localBounds = part.localBounds;
+        } else {
+            merged.localBounds.min.x = std::min(merged.localBounds.min.x, part.localBounds.min.x);
+            merged.localBounds.min.y = std::min(merged.localBounds.min.y, part.localBounds.min.y);
+            merged.localBounds.min.z = std::min(merged.localBounds.min.z, part.localBounds.min.z);
+            merged.localBounds.max.x = std::max(merged.localBounds.max.x, part.localBounds.max.x);
+            merged.localBounds.max.y = std::max(merged.localBounds.max.y, part.localBounds.max.y);
+            merged.localBounds.max.z = std::max(merged.localBounds.max.z, part.localBounds.max.z);
+        }
+        if (!multiplePrimitives) {
+            merged.morphTargets = std::move(part.morphTargets);
+            merged.defaultMorphWeights = std::move(part.defaultMorphWeights);
+        }
     }
 
-    // Blend shapes. The setting is honoured here rather than after the fact: a user who turned
-    // morph-target import off gets the base mesh and pays nothing for the shapes they declined.
-    GltfMorphTargetSetUVE morphSet;
-    if (importMorphTargets && primitive.contains("targets")) {
-        if (!primitive.at("targets").is_array() ||
-            primitive.at("targets").size() > kMaximumMeshMorphTargetsUVE) {
-            return false;
-        }
-        const auto& mesh = document.at("meshes").at(0);
-        morphSet.names = ReadMorphTargetNamesUVE(mesh);
-        morphSet.targets.reserve(primitive.at("targets").size());
-        for (const auto& targetJson : primitive.at("targets")) {
-            if (!targetJson.is_object()) {
-                return false;
-            }
-            // POSITION is mandatory in a glTF morph target: a shape with no displacement is not a
-            // shape, and accepting one would create a weight slot that moves nothing.
-            const auto targetPositionIndex = Detail::ReadJsonUintUVE(targetJson, "POSITION", true);
-            if (!targetPositionIndex) {
-                return false;
-            }
-            const auto targetPositions =
-                Detail::BuildAccessorViewUVE(document, buffer, *targetPositionIndex, "VEC3", false);
-            if (!targetPositions) {
-                return false;
-            }
-            GltfMorphTargetSourceUVE targetSource;
-            targetSource.positions = *targetPositions;
-            if (targetJson.contains("NORMAL")) {
-                const auto normalIndex = Detail::ReadJsonUintUVE(targetJson, "NORMAL", true);
-                if (!normalIndex) return false;
-                const auto normals = Detail::BuildAccessorViewUVE(document, buffer, *normalIndex, "VEC3", false);
-                if (!normals) return false;
-                targetSource.normals = *normals;
-            }
-            if (targetJson.contains("TANGENT")) {
-                const auto tangentIndex = Detail::ReadJsonUintUVE(targetJson, "TANGENT", true);
-                if (!tangentIndex) return false;
-                const auto tangents = Detail::BuildAccessorViewUVE(document, buffer, *tangentIndex, "VEC3", false);
-                if (!tangents) return false;
-                targetSource.tangents = *tangents;
-            }
-            morphSet.targets.push_back(std::move(targetSource));
-        }
-        if (!ReadDefaultMorphWeightsUVE(mesh, morphSet.targets.size(), morphSet.defaultWeights)) {
-            return false;
-        }
+    if (!IsMeshSurfaceDataValidUVE(merged)) {
+        UVE_ERROR("GltfImporterUVE: the merged primitive ranges do not tile the index buffer");
+        return false;
     }
-    if (morphSet.IsEmptyUVE()) {
-        return ConvertGltfPrimitiveUVE(source, outMesh);
-    }
-    return ConvertGltfPrimitiveUVE(source, morphSet, outMesh);
+    outMesh = std::move(merged);
+    outSurfaceMaterialIndices = std::move(surfaceMaterialIndices);
+    return true;
 }
 
 [[nodiscard]] bool ImportGltfSourceUVE(const std::filesystem::path& sourcePath,
@@ -332,9 +454,10 @@ constexpr std::string_view kGltfTemporarySuffixUVE = ".uve_gltf_tmp";
             return false;
         }
         MeshAssetUVE mesh;
-        if (!ConvertDocumentUVE(document, buffer, meshSettings.importMorphTargets, mesh)) {
-            UVE_ERROR("GltfImporterUVE: source \"{}\" failed bounded one-primitive mesh conversion",
-                      sourcePath.string());
+        std::vector<std::uint32_t> surfaceMaterialIndices;
+        if (!ConvertDocumentUVE(document, buffer, meshSettings.importMorphTargets, mesh,
+                                surfaceMaterialIndices)) {
+            UVE_ERROR("GltfImporterUVE: source \"{}\" failed bounded mesh conversion", sourcePath.string());
             return false;
         }
         // Materials and their textures are published BEFORE the mesh so a failure never leaves a
@@ -346,6 +469,21 @@ constexpr std::string_view kGltfTemporarySuffixUVE = ".uve_gltf_tmp";
             return false;
         }
         mesh.materialGuids = std::move(materials.materialGuids);
+        // Resolve each surface's glTF material index into the slot it occupies in the mesh's
+        // material table. A primitive whose material was not publishable keeps an invalid slot,
+        // which the renderer treats as "no material of its own" rather than as a broken reference.
+        for (std::size_t surfaceIndex = 0U; surfaceIndex < mesh.surfaces.size(); ++surfaceIndex) {
+            const std::uint32_t materialIndex = surfaceIndex < surfaceMaterialIndices.size()
+                                                    ? surfaceMaterialIndices[surfaceIndex]
+                                                    : kInvalidGltfMaterialIndexUVE;
+            if (materialIndex == kInvalidGltfMaterialIndexUVE) {
+                continue;
+            }
+            const auto slot = materials.materialIndexToSlot.find(materialIndex);
+            if (slot != materials.materialIndexToSlot.end()) {
+                mesh.surfaces[surfaceIndex].materialSlot = slot->second;
+            }
+        }
         return Detail::PublishAssetAtomicallyUVE(destinationPath, kGltfImporterNameUVE, kGltfTemporarySuffixUVE,
                                                  [&mesh](const std::filesystem::path& temporaryPath) {
                                                      return SaveMeshAssetUVE(mesh, temporaryPath);

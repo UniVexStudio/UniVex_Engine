@@ -3014,8 +3014,9 @@ public:
     void SetUniformMatrix4x4UVE(std::string_view name, const Math::Matrix4x4UVE& value) override {
         m_commands.emplace_back(SetUniformMatrix4x4CommandUVE{std::string(name), value});
     }
-    void DrawIndexedUVE(const std::uint32_t indexCount, const std::uint32_t instanceCount) override {
-        m_commands.emplace_back(DrawIndexedCommandUVE{indexCount, instanceCount});
+    void DrawIndexedUVE(const std::uint32_t indexCount, const std::uint32_t instanceCount,
+                        const std::uint32_t firstIndex) override {
+        m_commands.emplace_back(DrawIndexedCommandUVE{indexCount, instanceCount, firstIndex});
     }
     void DrawUVE(const std::uint32_t vertexCount, const std::uint32_t instanceCount) override {
         m_commands.emplace_back(DrawCommandUVE{vertexCount, instanceCount});
@@ -7014,7 +7015,7 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                         "pipeline bound; the draw is skipped (bind a graphics pipeline first)");
                 } else if (flushStateForActivePipelineUVE()) {
                     impl.vk.vkCmdDrawIndexed(impl.commandBuffer, op.indexCount, op.instanceCount,
-                                             0U, 0, 0U);
+                                             op.firstIndex, 0, 0U);
                 }
             } else if constexpr (std::is_same_v<OpT, DrawIndexedIndirectCommandRecordUVE>) {
                 // CS7. Validation happens HERE rather than at record time because this backend

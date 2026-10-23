@@ -5,8 +5,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <thread>
@@ -451,6 +453,159 @@ TEST(MeshAssetUVETest, LoadMeshAssetUVE_OutOfBoundsIndex_FailsAndLogsError) {
     EXPECT_TRUE(foundError);
 
     logger.Shutdown();
+    std::filesystem::remove(path);
+}
+
+/// A quad split into two triangles with one material per triangle: the smallest mesh that can
+/// carry a real surface split.
+[[nodiscard]] MeshAssetUVE MakeSurfaceTestMeshUVE() {
+    MeshAssetUVE mesh;
+    mesh.vertices = {
+        MeshVertexUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
+        MeshVertexUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F},
+        MeshVertexUVE{Math::Vector3UVE{1.0F, 1.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 1.0F, 1.0F},
+        MeshVertexUVE{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F},
+    };
+    mesh.indices = {0U, 1U, 2U, 0U, 2U, 3U};
+    mesh.localBounds = Math::AabbUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 0.0F}};
+    mesh.materialGuids = {AssetGuidUVE{11U}, AssetGuidUVE{12U}};
+    mesh.surfaces = {MeshSurfaceUVE{0U, 3U, 0U}, MeshSurfaceUVE{3U, 3U, 1U}};
+    return mesh;
+}
+
+TEST(MeshAssetUVETest, Surfaces_MeshWithoutExplicitSplitIsOneImplicitWholeBufferSurface) {
+    MeshAssetUVE mesh = MakeTestMeshUVE();
+    mesh.materialGuids = {AssetGuidUVE{7U}};
+
+    EXPECT_FALSE(mesh.HasExplicitSurfacesUVE());
+    ASSERT_EQ(mesh.SurfaceCountUVE(), 1U);
+    const MeshSurfaceUVE surface = mesh.GetSurfaceUVE(0U);
+    EXPECT_EQ(surface.firstIndex, 0U);
+    EXPECT_EQ(surface.indexCount, 3U);
+    EXPECT_EQ(surface.materialSlot, 0U);
+    EXPECT_EQ(mesh.SurfaceMaterialGuidUVE(0U), AssetGuidUVE{7U});
+
+    // A mesh with no materials still has its one surface - it is simply shaded by the object.
+    mesh.materialGuids.clear();
+    EXPECT_EQ(mesh.GetSurfaceUVE(0U).materialSlot, kInvalidMeshSurfaceMaterialSlotUVE);
+    EXPECT_EQ(mesh.SurfaceMaterialGuidUVE(0U), kInvalidAssetGuidUVE);
+
+    // An empty mesh has nothing to draw, and an out-of-range index answers an empty range rather
+    // than reading past the end.
+    MeshAssetUVE empty;
+    EXPECT_EQ(empty.SurfaceCountUVE(), 0U);
+    EXPECT_EQ(mesh.GetSurfaceUVE(1U), (MeshSurfaceUVE{}));
+}
+
+TEST(MeshAssetUVETest, Surfaces_ExplicitSplitAnswersPerSurfaceMaterial) {
+    const MeshAssetUVE mesh = MakeSurfaceTestMeshUVE();
+
+    EXPECT_TRUE(mesh.HasExplicitSurfacesUVE());
+    ASSERT_EQ(mesh.SurfaceCountUVE(), 2U);
+    EXPECT_EQ(mesh.GetSurfaceUVE(1U), (MeshSurfaceUVE{3U, 3U, 1U}));
+    EXPECT_EQ(mesh.SurfaceMaterialGuidUVE(0U), AssetGuidUVE{11U});
+    EXPECT_EQ(mesh.SurfaceMaterialGuidUVE(1U), AssetGuidUVE{12U});
+    // FirstSurfaceMaterialGuidUVE keeps meaning "the material an object with none of its own gets".
+    EXPECT_EQ(mesh.FirstSurfaceMaterialGuidUVE(), AssetGuidUVE{11U});
+}
+
+TEST(MeshAssetUVETest, SaveThenLoad_RoundTripsSurfacesAndTheirMaterialSlots) {
+    const std::filesystem::path path = "uve_mesh_asset_tests_surface_round_trip.uvmodel";
+    std::filesystem::remove(path);
+    const MeshAssetUVE original = MakeSurfaceTestMeshUVE();
+    ASSERT_TRUE(SaveMeshAssetUVE(original, path));
+
+    MeshAssetUVE loaded;
+    ASSERT_TRUE(LoadMeshAssetUVE(path, loaded));
+    EXPECT_EQ(loaded.surfaces, original.surfaces);
+    EXPECT_EQ(loaded.materialGuids, original.materialGuids);
+    EXPECT_EQ(loaded.indices, original.indices);
+    ASSERT_EQ(loaded.SurfaceCountUVE(), 2U);
+    EXPECT_EQ(loaded.SurfaceMaterialGuidUVE(1U), AssetGuidUVE{12U});
+    std::filesystem::remove(path);
+}
+
+TEST(MeshAssetUVETest, SaveThenLoad_MeshWithoutSurfacesKeepsItsOldBytes) {
+    // Surfaces are an optional trailing section: a single-material mesh must keep producing the
+    // exact bytes it always did, so an older build can still read the file and this one does not
+    // grow every asset in the project.
+    const std::filesystem::path plainPath = "uve_mesh_asset_tests_no_surfaces_a.uvmodel";
+    const std::filesystem::path againPath = "uve_mesh_asset_tests_no_surfaces_b.uvmodel";
+    std::filesystem::remove(plainPath);
+    std::filesystem::remove(againPath);
+    const MeshAssetUVE mesh = MakeSurfaceTestMeshUVE();
+    MeshAssetUVE plain = mesh;
+    plain.surfaces.clear();
+    ASSERT_TRUE(SaveMeshAssetUVE(plain, plainPath));
+    ASSERT_TRUE(SaveMeshAssetUVE(plain, againPath));
+
+    MeshAssetUVE loaded;
+    ASSERT_TRUE(LoadMeshAssetUVE(plainPath, loaded));
+    EXPECT_TRUE(loaded.surfaces.empty());
+    EXPECT_EQ(loaded.SurfaceCountUVE(), 1U);
+    EXPECT_EQ(std::filesystem::file_size(plainPath), std::filesystem::file_size(againPath));
+    std::filesystem::remove(plainPath);
+    std::filesystem::remove(againPath);
+}
+
+TEST(MeshAssetUVETest, IsMeshSurfaceDataValidUVE_EnforcesTilingAndSlotBounds) {
+    MeshAssetUVE mesh = MakeSurfaceTestMeshUVE();
+    EXPECT_TRUE(IsMeshSurfaceDataValidUVE(mesh));
+
+    // A mesh with no explicit surfaces is valid by definition: one implicit whole-buffer surface.
+    MeshAssetUVE implicit = mesh;
+    implicit.surfaces.clear();
+    EXPECT_TRUE(IsMeshSurfaceDataValidUVE(implicit));
+
+    MeshAssetUVE gap = mesh;
+    gap.surfaces[1].firstIndex = 4U;
+    EXPECT_FALSE(IsMeshSurfaceDataValidUVE(gap));
+
+    MeshAssetUVE overlap = mesh;
+    overlap.surfaces[1].firstIndex = 2U;
+    EXPECT_FALSE(IsMeshSurfaceDataValidUVE(overlap));
+
+    MeshAssetUVE shortCoverage = mesh;
+    shortCoverage.surfaces.pop_back();
+    EXPECT_FALSE(IsMeshSurfaceDataValidUVE(shortCoverage));
+
+    MeshAssetUVE partialTriangle = mesh;
+    partialTriangle.surfaces[1].indexCount = 4U;
+    EXPECT_FALSE(IsMeshSurfaceDataValidUVE(partialTriangle));
+
+    MeshAssetUVE outOfRangeSlot = mesh;
+    outOfRangeSlot.surfaces[1].materialSlot = 2U;
+    EXPECT_FALSE(IsMeshSurfaceDataValidUVE(outOfRangeSlot));
+
+    // A surface that names no material is not a defect: it means "the object's material".
+    MeshAssetUVE noSlot = mesh;
+    noSlot.surfaces[1].materialSlot = kInvalidMeshSurfaceMaterialSlotUVE;
+    EXPECT_TRUE(IsMeshSurfaceDataValidUVE(noSlot));
+}
+
+TEST(MeshAssetUVETest, LoadMeshAssetUVE_OverlappingSurfaces_FailsAndLeavesMeshUntouched) {
+    const std::filesystem::path path = "uve_mesh_asset_tests_bad_surfaces.uvmodel";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(SaveMeshAssetUVE(MakeSurfaceTestMeshUVE(), path));
+
+    // The surface section is last, so the second surface's index count is the uint32 at end - 8.
+    // Widening it to the whole buffer makes the second range both overlap the first and run past
+    // the end of the index buffer; the loader has to refuse that rather than draw the same
+    // triangles twice with two materials.
+    {
+        std::fstream file(path, std::ios::binary | std::ios::in | std::ios::out);
+        ASSERT_TRUE(file.is_open());
+        file.seekp(-8, std::ios::end);
+        const std::uint32_t overlappingCount = 6U;
+        file.write(reinterpret_cast<const char*>(&overlappingCount), sizeof(overlappingCount));
+        ASSERT_TRUE(file.good());
+    }
+
+    MeshAssetUVE loaded = MakeTestMeshUVE();
+    const MeshAssetUVE before = loaded;
+    EXPECT_FALSE(LoadMeshAssetUVE(path, loaded));
+    EXPECT_EQ(loaded.indices, before.indices);
+    EXPECT_EQ(loaded.surfaces, before.surfaces);
     std::filesystem::remove(path);
 }
 

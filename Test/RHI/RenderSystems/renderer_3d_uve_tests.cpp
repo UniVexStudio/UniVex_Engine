@@ -1249,6 +1249,95 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_VisiblePrimitive_RecordsGeometryAndAuth
     EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*renderLayers).value, 1);
 }
 
+TEST_F(Renderer3DUVETest, RenderFrameUVE_MeshWithExplicitSurfaces_DrawsOneRangePerSurfaceMaterial) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_two_surface_mesh.uvmodel");
+    const Asset::AssetGuidUVE redMaterialGuid = assetDatabase.RegisterUVE("renderer3d_surface_red.uvmat");
+    const Asset::AssetGuidUVE blueMaterialGuid = assetDatabase.RegisterUVE("renderer3d_surface_blue.uvmat");
+
+    // Two triangles, one material slot each, and a surface per triangle - a quad whose halves are
+    // different materials, which is what a two-material glTF mesh imports as.
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>(
+        [redMaterialGuid, blueMaterialGuid](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+            mesh.vertices = {
+                Asset::MeshVertexUVE{Math::Vector3UVE{-0.5F, -0.5F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
+                Asset::MeshVertexUVE{Math::Vector3UVE{0.5F, -0.5F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F},
+                Asset::MeshVertexUVE{Math::Vector3UVE{0.5F, 0.5F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 1.0F, 1.0F},
+                Asset::MeshVertexUVE{Math::Vector3UVE{-0.5F, 0.5F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F},
+            };
+            mesh.indices = {0U, 1U, 2U, 0U, 2U, 3U};
+            mesh.localBounds = Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{},
+                                                                   Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+            mesh.materialGuids = {redMaterialGuid, blueMaterialGuid};
+            mesh.surfaces = {Asset::MeshSurfaceUVE{0U, 3U, 0U}, Asset::MeshSurfaceUVE{3U, 3U, 1U}};
+            return true;
+        });
+    // Red and blue, so the recorded uniforms say which material shaded which index range.
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
+        [vertexGuid = vertexShaderGuid, fragmentGuid = fragmentShaderGuid](const std::filesystem::path& path,
+                                                                          Asset::MaterialAssetUVE& material) {
+            material.vertexShader = vertexGuid;
+            material.fragmentShader = fragmentGuid;
+            material.albedoColor = path.filename().string().contains("blue")
+                                       ? Math::ColorUVE{0.0F, 0.0F, 1.0F}
+                                       : Math::ColorUVE{1.0F, 0.0F, 0.0F};
+            return true;
+        });
+    // The OBJECT names no material: the mesh's own surface materials decide, surface by surface.
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, Asset::kInvalidAssetGuidUVE);
+
+    const Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle =
+        assetManager.LoadUVE<Asset::MeshAssetUVE>(meshGuid, assetDatabase);
+    const Asset::AssetHandleUVE<Asset::MaterialAssetUVE> redHandle =
+        assetManager.LoadUVE<Asset::MaterialAssetUVE>(redMaterialGuid, assetDatabase);
+    const Asset::AssetHandleUVE<Asset::MaterialAssetUVE> blueHandle =
+        assetManager.LoadUVE<Asset::MaterialAssetUVE>(blueMaterialGuid, assetDatabase);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
+        shaderManager.UpdateUVE(0.0);
+        if (meshHandle.IsReadyUVE() && redHandle.IsReadyUVE() && blueHandle.IsReadyUVE() &&
+            shaderManager.GetPendingJobCountUVE() == 0U) {
+            break;
+        }
+        std::this_thread::yield();
+    }
+    ASSERT_TRUE(meshHandle.IsReadyUVE());
+    ASSERT_TRUE(redHandle.IsReadyUVE());
+    ASSERT_TRUE(blueHandle.IsReadyUVE());
+    ASSERT_EQ(shaderManager.GetPendingJobCountUVE(), 0U);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().meshItemsExtracted, 2U);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    // uAlbedoColor is set immediately before each main-pass draw, so the value in effect when a
+    // draw is recorded names the material that draw used. Shadow draws record no albedo at all
+    // and are skipped by the has_value() guard.
+    std::optional<Math::Vector3UVE> lastAlbedo;
+    std::optional<Math::Vector3UVE> albedoAtZero;
+    std::optional<Math::Vector3UVE> albedoAtThree;
+    for (const RecordedCommandUVE& command : commands) {
+        if (std::holds_alternative<SetUniformVector3CommandUVE>(command)) {
+            const auto& uniform = std::get<SetUniformVector3CommandUVE>(command);
+            if (uniform.name == "uAlbedoColor") {
+                lastAlbedo = uniform.value;
+            }
+        } else if (std::holds_alternative<DrawIndexedCommandUVE>(command)) {
+            const auto& draw = std::get<DrawIndexedCommandUVE>(command);
+            if (draw.indexCount == 3U && lastAlbedo.has_value()) {
+                if (draw.firstIndex == 0U) {
+                    albedoAtZero = lastAlbedo;
+                } else if (draw.firstIndex == 3U) {
+                    albedoAtThree = lastAlbedo;
+                }
+            }
+        }
+    }
+    ASSERT_TRUE(albedoAtZero.has_value());
+    ASSERT_TRUE(albedoAtThree.has_value());
+    EXPECT_EQ(*albedoAtZero, (Math::Vector3UVE{1.0F, 0.0F, 0.0F}));
+    EXPECT_EQ(*albedoAtThree, (Math::Vector3UVE{0.0F, 0.0F, 1.0F}));
+}
+
 TEST_F(Renderer3DUVETest, RenderFrameUVE_PrimitiveWithAssignedMaterial_ShadesThroughThatMaterialsValues) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     // The fixture's material loader produces albedo (0.2, 0.4, 0.6), metallic 0.25, roughness 0.75.

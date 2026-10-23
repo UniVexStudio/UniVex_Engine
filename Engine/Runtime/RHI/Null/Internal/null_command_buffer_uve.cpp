@@ -176,11 +176,12 @@ void NullCommandBufferUVE::SetUniformMatrix4x4UVE(std::string_view name, const M
     m_commands.emplace_back(SetUniformMatrix4x4CommandUVE{std::string(name), value});
 }
 
-void NullCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t instanceCount) {
+void NullCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t instanceCount,
+                                          std::uint32_t firstIndex) {
     if (!RequireInsideRenderPassUVE(m_insideRenderPass, "DrawIndexedUVE")) {
         return;
     }
-    m_commands.emplace_back(DrawIndexedCommandUVE{indexCount, instanceCount});
+    m_commands.emplace_back(DrawIndexedCommandUVE{indexCount, instanceCount, firstIndex});
 }
 
 void NullCommandBufferUVE::DrawIndexedIndirectUVE(const BufferHandleUVE buffer,

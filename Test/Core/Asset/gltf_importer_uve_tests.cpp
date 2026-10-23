@@ -152,6 +152,59 @@ void AppendVector3UVE(std::vector<std::byte>& bytes, const float x, const float 
            "}\n";
 }
 
+/// Two triangles in one buffer, each its own glTF primitive with its own material - the shape a
+/// DCC tool exports for a model whose paint and glass are different material slots.
+/// Layout: [0,72) positions (6 vec3)  [72,144) normals (6 vec3)  [144,192) uvs (6 vec2)
+///         [192,204) indices (6 u16: two triangles).
+[[nodiscard]] std::vector<std::byte> MakeTwoPrimitiveBufferUVE() {
+    std::vector<std::byte> bytes;
+    for (const float value : {0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F,
+                              2.0F, 0.0F, 0.0F, 3.0F, 0.0F, 0.0F, 2.0F, 1.0F, 0.0F}) {
+        AppendFloatLittleEndianUVE(bytes, value);
+    }
+    for (int vertex = 0; vertex < 6; ++vertex) {
+        AppendVector3UVE(bytes, 0.0F, 0.0F, 1.0F);
+    }
+    for (int vertex = 0; vertex < 6; ++vertex) {
+        AppendFloatLittleEndianUVE(bytes, vertex % 2 == 0 ? 0.0F : 1.0F);
+        AppendFloatLittleEndianUVE(bytes, 0.0F);
+    }
+    for (const std::uint16_t index : {std::uint16_t{0U}, std::uint16_t{1U}, std::uint16_t{2U},
+                                      std::uint16_t{3U}, std::uint16_t{4U}, std::uint16_t{5U}}) {
+        AppendU16LittleEndianUVE(bytes, index);
+    }
+    return bytes;
+}
+
+[[nodiscard]] std::string MakeTwoPrimitiveGltfJsonUVE(const std::string_view uri) {
+    return "{\n"
+           "  \"asset\": {\"version\": \"2.0\"},\n"
+           "  \"buffers\": [{\"uri\":\"" + std::string(uri) + "\",\"byteLength\": 204}],\n"
+           "  \"bufferViews\": [\n"
+           "    {\"buffer\":0,\"byteOffset\":0,\"byteLength\":72},\n"
+           "    {\"buffer\":0,\"byteOffset\":72,\"byteLength\":72},\n"
+           "    {\"buffer\":0,\"byteOffset\":144,\"byteLength\":48},\n"
+           "    {\"buffer\":0,\"byteOffset\":192,\"byteLength\":6},\n"
+           "    {\"buffer\":0,\"byteOffset\":198,\"byteLength\":6}\n"
+           "  ],\n"
+           "  \"accessors\": [\n"
+           "    {\"bufferView\":0,\"componentType\":5126,\"count\":6,\"type\":\"VEC3\"},\n"
+           "    {\"bufferView\":1,\"componentType\":5126,\"count\":6,\"type\":\"VEC3\"},\n"
+           "    {\"bufferView\":2,\"componentType\":5126,\"count\":6,\"type\":\"VEC2\"},\n"
+           "    {\"bufferView\":3,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"},\n"
+           "    {\"bufferView\":4,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}\n"
+           "  ],\n"
+           "  \"materials\": [\n"
+           "    {\"name\":\"paint\",\"pbrMetallicRoughness\":{\"baseColorFactor\":[1,0,0,1]}},\n"
+           "    {\"name\":\"glass\",\"pbrMetallicRoughness\":{\"baseColorFactor\":[0,0,1,1]}}\n"
+           "  ],\n"
+           "  \"meshes\": [{\"primitives\":[\n"
+           "    {\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2},\"indices\":3,\"mode\":4,\"material\":0},\n"
+           "    {\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2},\"indices\":4,\"mode\":4,\"material\":1}\n"
+           "  ]}]\n"
+           "}\n";
+}
+
 void WriteBytesUVE(const std::filesystem::path& path, const std::vector<std::byte>& bytes) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     ASSERT_TRUE(output.is_open());
@@ -482,6 +535,44 @@ TEST(GltfImporterUVETest, ImportUVE_MaterialSamplingExternalPng_ImportsThatTextu
     // model, which is where every texture reference in the project is expected to live.
     EXPECT_TRUE(std::filesystem::is_regular_file(textureSourcePath));
     RemoveFilesUVE({sourcePath, bufferPath, textureSourcePath, destinationPath, materialPath, texturePath});
+}
+
+TEST(GltfImporterUVETest, ImportUVE_TwoPrimitives_BecomeTwoSurfacesWithTheirOwnMaterials) {
+    const std::filesystem::path sourcePath = "uve_gltf_importer_tests_two_primitives.gltf";
+    const std::filesystem::path bufferPath = "uve_gltf_importer_tests_two_primitives.bin";
+    const std::filesystem::path destinationPath = "uve_gltf_importer_tests_two_primitives.uvmodel";
+    const std::filesystem::path paintPath = "uve_gltf_importer_tests_two_primitives_paint.uvmat";
+    const std::filesystem::path glassPath = "uve_gltf_importer_tests_two_primitives_glass.uvmat";
+    RemoveFilesUVE({sourcePath, bufferPath, destinationPath, paintPath, glassPath});
+    WriteBytesUVE(bufferPath, MakeTwoPrimitiveBufferUVE());
+    WriteTextUVE(sourcePath, MakeTwoPrimitiveGltfJsonUVE(bufferPath.filename().string()));
+
+    AssetImporterUVE importer;
+    AssetDatabaseUVE database;
+    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, database);
+    ASSERT_NE(guid, kInvalidAssetGuidUVE);
+
+    MeshAssetUVE mesh;
+    ASSERT_TRUE(LoadMeshAssetUVE(destinationPath, mesh));
+    // Both primitives are merged into one vertex/index buffer...
+    ASSERT_EQ(mesh.vertices.size(), 6U);
+    ASSERT_EQ(mesh.indices.size(), 6U);
+    // ...and the split is preserved as two ranges that tile it, each naming its own material.
+    ASSERT_EQ(mesh.surfaces.size(), 2U);
+    EXPECT_EQ(mesh.surfaces[0], (MeshSurfaceUVE{0U, 3U, 0U}));
+    EXPECT_EQ(mesh.surfaces[1], (MeshSurfaceUVE{3U, 3U, 1U}));
+    ASSERT_EQ(mesh.materialGuids.size(), 2U);
+    EXPECT_NE(mesh.materialGuids[0], kInvalidAssetGuidUVE);
+    EXPECT_NE(mesh.materialGuids[1], kInvalidAssetGuidUVE);
+    EXPECT_NE(mesh.materialGuids[0], mesh.materialGuids[1]);
+    EXPECT_EQ(mesh.SurfaceMaterialGuidUVE(0U), mesh.materialGuids[0]);
+    EXPECT_EQ(mesh.SurfaceMaterialGuidUVE(1U), mesh.materialGuids[1]);
+    // The second primitive's indices are re-based into the merged vertex array, so its triangles
+    // reference its own three vertices rather than the first primitive's.
+    EXPECT_EQ(mesh.indices[3], 3U);
+    EXPECT_EQ(mesh.indices[4], 4U);
+    EXPECT_EQ(mesh.indices[5], 5U);
+    RemoveFilesUVE({sourcePath, bufferPath, destinationPath, paintPath, glassPath});
 }
 
 TEST(GltfImporterUVETest, ImportUVE_InvalidSourcePreservesExistingDestinationAndDoesNotRegister) {
