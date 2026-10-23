@@ -2,6 +2,9 @@
 
 #include "uve/objects/3d/skeleton_3d_uve.h"
 
+#include <algorithm>
+#include <cctype>
+
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/objects/3d/abstract_objects_3d_uve.h"
 
@@ -82,6 +85,94 @@ bool TryFindSkeletonBoneIndexUVE(const Skeleton3DComponentUVE& skeleton, const s
         }
     }
     return false;
+}
+
+namespace {
+
+/// The name without its namespace: everything after the last `:` or `|`. Exporters put one of those
+/// two between a namespace and a name, and a mesh and its skeleton routinely disagree about keeping
+/// it - so this is the spelling both sides can be compared in.
+[[nodiscard]] std::string_view UnqualifiedBoneNameUVE(const std::string_view name) noexcept {
+    const std::size_t separator = name.find_last_of(":|");
+    return separator == std::string_view::npos ? name : name.substr(separator + 1U);
+}
+
+[[nodiscard]] bool EqualsIgnoringCaseUVE(const std::string_view left, const std::string_view right) noexcept {
+    if (left.size() != right.size()) {
+        return false;
+    }
+    return std::equal(left.begin(), left.end(), right.begin(), [](const char a, const char b) {
+        return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+    });
+}
+
+} // namespace
+
+void SkeletonBoneLookupUVE::BuildUVE(const Skeleton3DComponentUVE& skeleton) {
+    m_skeleton = &skeleton;
+    m_boneOfName.clear();
+    m_boneOfName.reserve(skeleton.bones.size());
+    for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
+        // try_emplace, not emplace: the first bone of a duplicated name wins, which is the same
+        // answer TryFindSkeletonBoneIndexUVE() gives and the only one that does not depend on
+        // iteration order.
+        m_boneOfName.try_emplace(skeleton.bones[index].name, static_cast<std::uint32_t>(index));
+    }
+}
+
+bool SkeletonBoneLookupUVE::TryFindUVE(const std::string_view jointName,
+                                       std::uint32_t& outBoneIndex) const noexcept {
+    if (m_skeleton == nullptr || jointName.empty() || m_skeleton->bones.empty()) {
+        return false;
+    }
+    if (const auto exact = m_boneOfName.find(jointName); exact != m_boneOfName.end()) {
+        outBoneIndex = exact->second;
+        return true;
+    }
+    const std::string_view unqualified = UnqualifiedBoneNameUVE(jointName);
+    if (unqualified.empty()) {
+        return false;
+    }
+    for (std::size_t index = 0U; index < m_skeleton->bones.size(); ++index) {
+        if (EqualsIgnoringCaseUVE(UnqualifiedBoneNameUVE(m_skeleton->bones[index].name), unqualified)) {
+            outBoneIndex = static_cast<std::uint32_t>(index);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool TryBuildSkinFromMeshJointsUVE(const Asset::MeshAssetUVE& mesh, const Skeleton3DComponentUVE& skeleton,
+                                   SkinComponentUVE& outSkin) {
+    if (mesh.joints.empty() || skeleton.bones.empty()) {
+        return false;
+    }
+    SkeletonBoneLookupUVE lookup;
+    lookup.BuildUVE(skeleton);
+
+    SkinComponentUVE candidate;
+    candidate.boneBinds.reserve(mesh.joints.size());
+    std::size_t boundJointCount = 0U;
+    for (const Asset::MeshJointUVE& joint : mesh.joints) {
+        SkinBoneBindUVE bind;
+        bind.boneName = joint.name;
+        bind.inverseBindPose = joint.inverseBindMatrix;
+        std::uint32_t boneIndex = 0U;
+        if (lookup.TryFindUVE(joint.name, boneIndex)) {
+            bind.boneIndex = static_cast<std::int32_t>(boneIndex);
+            ++boundJointCount;
+        }
+        candidate.boneBinds.push_back(std::move(bind));
+    }
+    if (boundJointCount == 0U) {
+        // Not one name answered. Recording a Skin whose every entry is unbound would say the same
+        // thing an absent Skin says, and would make an author hunting a naming mismatch look at a
+        // binding that looks configured and draws nothing.
+        return false;
+    }
+    candidate.bindCount = static_cast<std::uint32_t>(candidate.boneBinds.size());
+    outSkin = std::move(candidate);
+    return true;
 }
 
 bool TryResolveSkeletonBoneWorldFrameUVE(const Skeleton3DComponentUVE& skeleton, const std::uint32_t boneIndex,

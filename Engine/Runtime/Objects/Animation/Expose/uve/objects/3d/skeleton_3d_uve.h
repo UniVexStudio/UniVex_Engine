@@ -7,10 +7,13 @@
 #include <limits>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include "uve/asset/mesh_asset_uve.h"
 #include "uve/component/entity_uve.h"
+#include "uve/component/skin_component_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/objects/3d/object_3d_common_uve.h"
@@ -93,6 +96,65 @@ struct ObjectWorldFrameUVE final {
 [[nodiscard]] bool TryFindSkeletonBoneIndexUVE(const Skeleton3DComponentUVE& skeleton,
                                                std::string_view boneName,
                                                std::uint32_t& outIndex) noexcept;
+
+/// A skeleton prepared for joint-name lookups.
+///
+/// A skinned mesh asks "which bone draws this joint?" once per joint, every frame, for every
+/// instance - so the question has to be answerable without walking every bone each time. Building
+/// the lookup is one pass over the bones; each lookup after that is a hash probe, and only a
+/// spelling the skeleton does not carry exactly falls back to the comparison loop.
+///
+/// The rules, in order, are the ones a DCC-tool export needs:
+///
+/// 1. Exact, case-sensitive match. This is the common case: a model and its armature were exported
+///    together, so one spelling is shared by both.
+/// 2. The part after the last `:` or `|`, compared case-insensitively. Those two characters are
+///    what exporters put between a namespace and a name (`mixamorig:Hips`, `Armature|Spine`), and
+///    a mesh and a skeleton routinely disagree about whether to keep it. A caller that saw the
+///    names in two different tools has seen both spellings.
+///
+/// The first bone that matches wins, because duplicate bone names are an asset defect and picking
+/// the first is the only answer that does not depend on iteration order.
+///
+/// The lookup borrows the skeleton: it must not outlive it, and it holds views into its bone
+/// names. Not thread-safe for concurrent mutation of the skeleton; read-only use from several
+/// threads is fine.
+class SkeletonBoneLookupUVE final {
+public:
+    /// Prepares the lookup. Cheap to call again after the skeleton's bones change; an empty
+    /// skeleton leaves it answering nothing.
+    void BuildUVE(const Skeleton3DComponentUVE& skeleton);
+
+    /// Writes the index of the bone `jointName` names, or leaves `outBoneIndex` untouched and
+    /// returns false. An empty name names no bone.
+    [[nodiscard]] bool TryFindUVE(std::string_view jointName,
+                                  std::uint32_t& outBoneIndex) const noexcept;
+
+private:
+    const Skeleton3DComponentUVE* m_skeleton = nullptr;
+    std::unordered_map<std::string_view, std::uint32_t> m_boneOfName;
+};
+
+/// Binds every joint of `mesh` to the bone that draws it, producing the Skin a MeshInstance3D
+/// carries: one bind per joint, in joint order, each pairing the mesh's inverse bind matrix with
+/// the index of the skeleton bone of the same name.
+///
+/// This is the single place the mesh-to-skeleton binding is decided. The renderer resolves a
+/// joint's bone through the same lookup every frame rather than trusting stored indices, so a
+/// skeleton that is re-authored or re-exported binds again on its own; this function is what
+/// produces the inspectable record of that binding, and what an importer or an editor offers as
+/// "auto skin" instead of an author hand-mapping joints to bones.
+///
+/// A joint with no bone of its name is still bound, with `boneIndex` left at -1: the renderer
+/// leaves such a joint at its rest pose, and dropping the entry instead would make the bind list
+/// disagree with the mesh's joint list that indexes it.
+///
+/// Returns false, leaving `outSkin` untouched, when the mesh has no joints, the skeleton has no
+/// bones, or not one joint's name answers a bone - in each of those cases there is no binding to
+/// record, and a Skin of all-invalid entries would only be a different way of saying so.
+[[nodiscard]] bool TryBuildSkinFromMeshJointsUVE(const Asset::MeshAssetUVE& mesh,
+                                                 const Skeleton3DComponentUVE& skeleton,
+                                                 SkinComponentUVE& outSkin);
 
 /// The world frame of one bone, given the skeleton object's own world frame.
 ///

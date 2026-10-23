@@ -1463,6 +1463,18 @@ bool EditorUVE::AutoPopulateSkinFromModelUVE(const Scene::EntityUVE entity, Scen
         }
     }
     if (skelComp != nullptr && !skelComp->bones.empty()) {
+        // A mesh and a skeleton in the same place are bound by NAME, through the same lookup the
+        // renderer poses with. Binding them by position instead - the skeleton's bone 3 to the
+        // mesh's joint 3 - is only right when the two lists came from one export in one order, and
+        // silently wrong in every other case: the Inspector would show a configured Skin that
+        // poses the model into a knot.
+        const std::optional<Asset::MeshAssetUVE> meshAsset = LoadEntityMeshAssetUVE(entity);
+        if (meshAsset.has_value() &&
+            Scene::TryBuildSkinFromMeshJointsUVE(*meshAsset, *skelComp, skin)) {
+            return true;
+        }
+        // Nothing to match against - a skeleton with no skinned mesh of its own - so the binds are
+        // the bones themselves, in order, with an identity inverse bind pose.
         skin.boneBinds.clear();
         skin.boneBinds.reserve(skelComp->bones.size());
         for (std::size_t i = 0; i < skelComp->bones.size(); ++i) {

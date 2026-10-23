@@ -42,7 +42,12 @@ namespace {
     if (extension == ".uvmodel") return Asset::AssetKindUVE::Mesh;
     if (extension == ".uvtex") return Asset::AssetKindUVE::Texture;
     if (extension == ".uvshader") return Asset::AssetKindUVE::Shader;
-    if (extension == ".uvmat") return Asset::AssetKindUVE::Material;
+    // Both spellings are materials, and both are written by the engine itself: the importers
+    // publish `.uvmat` beside a model, and the Inspector's "New Material" writes `.uvmaterial`.
+    // Knowing only one of them meant every material an author created from the Inspector was
+    // skipped by the check - never validated, never reported as unregistered - which is the exact
+    // silent hole this check exists to close.
+    if (extension == ".uvmat" || extension == ".uvmaterial") return Asset::AssetKindUVE::Material;
     if (extension == ".uvsave") return Asset::AssetKindUVE::Save;
     return std::nullopt;
 }
