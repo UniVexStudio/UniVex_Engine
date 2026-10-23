@@ -427,6 +427,16 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                              {{0, "Cube"}, {1, "UV Sphere"}, {2, "Plane"}, {3, "Capsule"}, {4, "Cylinder"}}),
                          DeclareUVE<&PrimitiveMeshComponentUVE::baseColor>("baseColor", "Base Color",
                                                                            kPropertyTypeColorUVE),
+                         // Same asset slot the mesh instance uses, so a primitive and an imported
+                         // mesh are shaded through one material path. Unassigned draws the built-in
+                         // lit material, which is what Base Color above shows while it is unset.
+                         WithTooltipUVE(
+                             WithCustomDrawerUVE(
+                                 DeclareUVE<&PrimitiveMeshComponentUVE::materialGuid>(
+                                     "materialGuid", "Material", kPropertyTypeAssetGuidUVE),
+                                 "asset:uvmat"),
+                             "The surface material. Without one the primitive is drawn with the "
+                             "engine's default lit material, tinted by Base Color."),
                      });
     primitive.sectionTitle = +[](const void* instance) -> const char* {
         switch (static_cast<const PrimitiveMeshComponentUVE*>(instance)->kind) {

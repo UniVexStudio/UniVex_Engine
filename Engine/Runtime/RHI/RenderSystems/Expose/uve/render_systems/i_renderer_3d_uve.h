@@ -112,6 +112,12 @@ struct Renderer3DFrameDiagnosticsUVE final {
     std::size_t primitivePlacementCacheHits = 0U;
     std::size_t primitivePlacementCacheMisses = 0U;
     std::size_t primitiveItemsExtracted = 0U;
+    /// Primitives skipped this frame because their assigned material was still loading
+    /// (`pending`) or had failed to load (`failed`). Separate from the mesh queue's
+    /// pendingAssetLoads/failedAssetLoads: those describe MeshRendererUVE's walk, and a scene can
+    /// have a healthy mesh path and a broken primitive material at the same time.
+    std::size_t primitiveMaterialPending = 0U;
+    std::size_t primitiveMaterialFailed = 0U;
     /// This frame's projected decals: how many decals were considered, how many produced a draw,
     /// and what those draws cost in polygons. Counted here rather than left to the pass's own
     /// struct because a decal that paints nothing has several entirely different causes - it
@@ -201,6 +207,8 @@ struct Renderer3DFrameDiagnosticsUVE final {
     std::size_t particleDrawCommandsSubmitted = 0U;
     std::size_t particleDrawCallsRecorded = 0U;
     std::size_t glDrawCallsIssued = 0U;
+    /// The built-in lit program primitives draw through is linked. The name predates that path:
+    /// primitives no longer have a shader of their own, so this is the default-material program.
     bool primitiveProgramReady = false;
     bool particleProgramReady = false;
     bool mainPassRecorded = false;

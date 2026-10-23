@@ -1955,9 +1955,27 @@ TEST(Expanded3DObjectComponentsUVETest, ComponentAndObjectHelpersValidateSanitiz
     EXPECT_GT(EstimateUITextBoundsSizePixelsUVE(uiText).x, 0.0F);
 
     PrimitiveMeshComponentUVE prim{.kind = PrimitiveMeshKindUVE::Plane, .baseColor = Math::Vector3UVE{2.0F, -1.0F, 0.5F}};
+    // No material by default: the built-in lit material is what an unauthored primitive draws.
+    EXPECT_FALSE(HasAssignedPrimitiveMaterialUVE(prim));
     const PrimitiveMeshComponentUVE sanitizedPrim = SanitizePrimitiveMeshComponentUVE(prim);
     EXPECT_TRUE(IsPrimitiveMeshComponentValidUVE(sanitizedPrim));
     EXPECT_EQ(GetPrimitiveMeshKindDisplayNameUVE(sanitizedPrim.kind), "Plane");
+    EXPECT_EQ(sanitizedPrim.baseColor, (Math::Vector3UVE{1.0F, 0.0F, 0.5F}));
+    EXPECT_FALSE(HasAssignedPrimitiveMaterialUVE(sanitizedPrim));
+
+    // A material reference is opaque here: sanitising clamps the colour and the kind, and must
+    // carry the reference through untouched rather than detaching the author's material.
+    PrimitiveMeshComponentUVE primWithMaterial{
+        .kind = PrimitiveMeshKindUVE::Capsule,
+        .baseColor = Math::Vector3UVE{-4.0F, 0.25F, 9.0F},
+        .materialGuid = Asset::AssetGuidUVE{77U},
+    };
+    EXPECT_TRUE(HasAssignedPrimitiveMaterialUVE(primWithMaterial));
+    const PrimitiveMeshComponentUVE sanitizedWithMaterial =
+        SanitizePrimitiveMeshComponentUVE(primWithMaterial);
+    EXPECT_EQ(sanitizedWithMaterial.materialGuid, (Asset::AssetGuidUVE{77U}));
+    EXPECT_EQ(sanitizedWithMaterial.baseColor, (Math::Vector3UVE{0.0F, 0.25F, 1.0F}));
+    EXPECT_TRUE(HasAssignedPrimitiveMaterialUVE(sanitizedWithMaterial));
 
     AudioSourceComponentUVE audio{};
     audio.audioAssetPath = "sfx/explosion.wav";

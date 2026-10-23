@@ -157,6 +157,10 @@ struct MeshGpuResourcesUVE {
 
 /// Renderer-owned primitive draw data. It deliberately contains no AssetHandleUVE: primitive
 /// geometry is immutable renderer cache data, while authored kind/color remain ECS component state.
+/// A primitive's MATERIAL reference is a plain GUID here for the same reason - the handle that
+/// keeps that material loaded for the frame lives in `primitiveMaterialHandles`, keyed by this
+/// GUID, because AssetHandleUVE has no default constructor and a draw item must be aggregate-
+/// initialisable without an asset manager.
 struct PrimitiveRenderItemUVE {
     Math::Matrix4x4UVE worldMatrix;
     Scene::PrimitiveMeshKindUVE kind = Scene::PrimitiveMeshKindUVE::Cube;
@@ -171,7 +175,23 @@ struct PrimitiveRenderItemUVE {
     const Asset::MeshAssetUVE* mesh = nullptr;
     /// Set for a skinned mesh posed by a skeleton this frame: that entity's own vertex buffer.
     const MeshGpuResourcesUVE* skinned = nullptr;
+    /// The material this primitive is shaded with, or kInvalidAssetGuidUVE for the built-in lit
+    /// material (kDefaultLitMaterialUVE). Only authored primitives set this; the unmaterialed-mesh
+    /// items above leave it unset, so they draw through the same default material a primitive with
+    /// no material assigned does.
+    Asset::AssetGuidUVE materialGuid = Asset::kInvalidAssetGuidUVE;
+    /// RenderInstance layers this item is on; 1 when the entity has no RenderInstance. Same value,
+    /// same meaning and same default as RenderItemUVE::renderLayers - the lit shader reads it for
+    /// reflection-probe layer filtering.
+    std::uint32_t renderLayers = 1U;
 };
+
+/// The material a primitive with no authored material is shaded with, and the same one an imported
+/// mesh with no material of its own draws through. It is a plain MaterialAssetUVE so the PBR path
+/// has exactly one input type: neutral white albedo, fully dielectric, mid roughness. `baseColor`
+/// on the primitive replaces the albedo, which is why this stays white rather than grey - a
+/// tinted default would silently darken every primitive whose author never touched the colour.
+inline const Asset::MaterialAssetUVE kDefaultLitMaterialUVE{};
 
 /// Identity of a primitive's placement inputs. Two placements with equal keys must produce equal
 /// world matrices and bounds, so every input the extraction reads appears here.
@@ -298,9 +318,13 @@ struct MaterialGpuResourcesUVE {
     std::shared_ptr<Shader::ShaderProgramUVE> blendedProgram;
 };
 
+/// Picks the program a material draws with. `blended` is true for anything that must not write
+/// depth - a fading SurfaceInstance, a SurfaceInstance overlay, or a primitive drawn at partial
+/// opacity - and is a plain flag rather than a RenderItemUVE so the primitive path (which has no
+/// RenderItemUVE) resolves it through the same rule the mesh path does.
 [[nodiscard]] Shader::ShaderProgramUVE* MeshColorProgramUVE(const MaterialGpuResourcesUVE& resources,
-                                                           const RenderItemUVE& item) noexcept {
-    if (item.opacity < 1.0F || item.overlay) {
+                                                           bool blended) noexcept {
+    if (blended) {
         if (resources.blendedProgram == nullptr || !resources.blendedProgram->IsValidUVE()) {
             return nullptr;
         }
@@ -1183,13 +1207,17 @@ struct Renderer3DUVE::ImplUVE {
         return rawPtr;
     }
 
-    /// Built-in primitive visualization program. Its Basic3D contract contains only model,
-    /// view-projection, and authored base-color uniforms; primitives intentionally do not bind
-    /// material, texture, light, or shadow state.
-    std::shared_ptr<Shader::ShaderProgramUVE> primitiveProgram;
-    /// Depth-write off, source-alpha blend. Used when SurfaceInstance3D fades or transparents a
-    /// primitive; the ordinary program stays opaque so solid cubes keep early-z.
-    std::shared_ptr<Shader::ShaderProgramUVE> primitiveBlendedProgram;
+    /// The built-in lit program plus white/normal fallback textures that stand in for a material
+    /// nobody assigned. One instance serves every primitive with no material AND every material
+    /// asset whose shader GUIDs are unset (the Standard preset), so those two cases cannot shade
+    /// differently. Its `.program` is null only before program creation has run.
+    MaterialGpuResourcesUVE defaultLitMaterialResources;
+    /// Material handles the primitive path is drawing this frame, keyed by GUID and pruned to the
+    /// GUIDs extraction named. Mirrors `unmaterialedMeshHandles`: the handle owns the reference
+    /// that keeps the payload loaded between extraction and the colour pass, which a
+    /// PrimitiveRenderItemUVE cannot do without an asset manager to construct it.
+    std::unordered_map<Asset::AssetGuidUVE, Asset::AssetHandleUVE<Asset::MaterialAssetUVE>>
+        primitiveMaterialHandles;
 
     /// Foundation WP3: the GPU occlusion stage's proxy program (built_in/occlusion_proxy.glsl).
     /// Depth-tested LessOrEqual against everything the main pass has written, no depth write, and
@@ -1690,10 +1718,11 @@ struct Renderer3DUVE::ImplUVE {
             return existingIt->second;
         }
 
-        const PrimitiveGeometryUVE& geometry = GetPrimitiveGeometryUVE(kind);
-        std::vector<Asset::MeshVertexUVE> vertices = geometry.vertices;
-        Asset::GenerateMeshTangentsUVE(vertices, geometry.indices);
-        const std::span<const Asset::MeshVertexUVE> vertexSpan(vertices);
+        // Tangent-complete geometry: the material path samples normal maps through the TBN basis,
+        // and the geometry tables themselves carry only a placeholder tangent. The derivation and
+        // its cache live in the geometry module, so every consumer of a primitive sees the same basis.
+        const PrimitiveGeometryUVE& geometry = GetPrimitiveLitGeometryUVE(kind);
+        const std::span<const Asset::MeshVertexUVE> vertexSpan(geometry.vertices);
         const std::span<const std::uint32_t> indexSpan(geometry.indices);
         const BufferHandleUVE vertexBuffer = renderDevice.CreateBufferUVE(
             BufferDescUVE{std::as_bytes(vertexSpan).size(), BufferUsageUVE::Vertex}, std::as_bytes(vertexSpan));
@@ -1784,31 +1813,30 @@ struct Renderer3DUVE::ImplUVE {
         return handle;
     }
 
-    /// Returns the cached (creating-if-needed) managed program + resolved textures for `item`'s
-    /// material, or nullptr if the material's source assets/textures have not finished loading yet.
-    /// The cached program may still be preprocessing or linking; RecordItemsUVE checks IsValidUVE()
-    /// and skips that frame without blocking, then renders automatically once ShaderManagerUVE
-    /// completes the request.
-
-    [[nodiscard]] const MaterialGpuResourcesUVE* ResolveMaterialGpuResourcesUVE(const RenderItemUVE& item) {
-        const Asset::AssetGuidUVE guid = item.materialHandle.GetGuidUVE();
+    /// Returns the cached (creating-if-needed) managed program + resolved textures for the
+    /// material behind `materialHandle`, or nullptr if that material's payload or textures have not
+    /// finished loading yet. The cached program may still be preprocessing or linking;
+    /// RecordItemsUVE checks IsValidUVE() and skips that frame without blocking, then renders
+    /// automatically once ShaderManagerUVE completes the request.
+    ///
+    /// A material that names no shader assets is NOT a broken reference: MaterialAssetUVE's own
+    /// contract treats an unset shader GUID as "intentionally unset", which is exactly what a
+    /// Standard material created from the Inspector looks like. Those materials shade through the
+    /// engine's built-in lit program - the same program a primitive with no material assigned uses -
+    /// so assigning a fresh material changes a surface's look instead of making it disappear.
+    [[nodiscard]] const MaterialGpuResourcesUVE* ResolveMaterialGpuResourcesUVE(
+        const Asset::AssetHandleUVE<Asset::MaterialAssetUVE>& materialHandle) {
+        const Asset::AssetGuidUVE guid = materialHandle.GetGuidUVE();
         const auto existingIt = materialCache.find(guid);
         if (existingIt != materialCache.end()) {
             return &existingIt->second;
         }
 
-        const Asset::MaterialAssetUVE* const material = item.materialHandle.TryGetUVE();
+        const Asset::MaterialAssetUVE* const material = materialHandle.TryGetUVE();
         const bool validMaterial = material != nullptr && Asset::IsMaterialAssetValidUVE(*material);
         UVE_ASSERT(validMaterial);
         if (!validMaterial) {
             UVE_ERROR("Renderer3DUVE: invalid material payload skipped before GPU uniform preparation");
-            return nullptr;
-        }
-        Asset::AssetHandleUVE<Asset::ShaderAssetUVE> vertexShaderHandle =
-            assetManager.LoadUVE<Asset::ShaderAssetUVE>(material->vertexShader, assetDatabase);
-        Asset::AssetHandleUVE<Asset::ShaderAssetUVE> fragmentShaderHandle =
-            assetManager.LoadUVE<Asset::ShaderAssetUVE>(material->fragmentShader, assetDatabase);
-        if (!vertexShaderHandle.IsReadyUVE() || !fragmentShaderHandle.IsReadyUVE()) {
             return nullptr;
         }
 
@@ -1827,8 +1855,46 @@ struct Renderer3DUVE::ImplUVE {
             return nullptr;
         }
 
+        // A Standard material carries no shader of its own: the built-in lit program IS its shader,
+        // shared with the default material so the two cannot shade differently. It also cannot be
+        // instanced through a project-authored instancing contract, hence the explicit false.
+        if (material->vertexShader == Asset::kInvalidAssetGuidUVE ||
+            material->fragmentShader == Asset::kInvalidAssetGuidUVE) {
+            if (defaultLitMaterialResources.program == nullptr) {
+                return nullptr; // Program creation has not run yet this session.
+            }
+            const auto insertResult = materialCache.emplace(
+                guid, MaterialGpuResourcesUVE{defaultLitMaterialResources.program,
+                                              false,
+                                              Asset::kInvalidAssetGuidUVE,
+                                              Asset::kInvalidAssetGuidUVE,
+                                              material->albedoTexture,
+                                              material->normalTexture,
+                                              material->aoTexture,
+                                              material->metallicRoughnessTexture,
+                                              material->emissiveTexture,
+                                              *albedoTexture,
+                                              *normalTexture,
+                                              *aoTexture,
+                                              *metallicRoughnessTexture,
+                                              *emissiveTexture,
+                                              defaultLitMaterialResources.blendedProgram});
+            return &insertResult.first->second;
+        }
+
+        Asset::AssetHandleUVE<Asset::ShaderAssetUVE> vertexShaderHandle =
+            assetManager.LoadUVE<Asset::ShaderAssetUVE>(material->vertexShader, assetDatabase);
+        Asset::AssetHandleUVE<Asset::ShaderAssetUVE> fragmentShaderHandle =
+            assetManager.LoadUVE<Asset::ShaderAssetUVE>(material->fragmentShader, assetDatabase);
+        if (!vertexShaderHandle.IsReadyUVE() || !fragmentShaderHandle.IsReadyUVE()) {
+            return nullptr;
+        }
+
         const Asset::ShaderAssetUVE* const vertexShaderAsset = vertexShaderHandle.TryGetUVE();
         const Asset::ShaderAssetUVE* const fragmentShaderAsset = fragmentShaderHandle.TryGetUVE();
+        if (vertexShaderAsset == nullptr || fragmentShaderAsset == nullptr) {
+            return nullptr;
+        }
 
         // `.uvshader` assets are envelope files rather than raw GLSL files, so their already
         // decoded source is supplied as the manager fallback and the root virtual path stays empty.
@@ -2244,6 +2310,11 @@ struct Renderer3DUVE::ImplUVE {
                                    std::vector<PrimitiveRenderItemUVE>& outItems) {
         outItems.clear();
         ++primitiveFrameIndex;
+        // Materials this walk actually referenced. Pruned after the walk so a material no primitive
+        // names any more is released, exactly like unmaterialedMeshHandles above it.
+        std::unordered_map<Asset::AssetGuidUVE, bool> namedMaterials;
+        std::size_t pendingMaterials = 0U;
+        std::size_t failedMaterials = 0U;
         std::vector<Scene::Occluder3DSnapshotUVE> occluders;
         Scene::CollectOccluder3DSnapshotsUVE(entityManager, occluders);
         entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::PrimitiveMeshComponentUVE>(
@@ -2258,12 +2329,15 @@ struct Renderer3DUVE::ImplUVE {
                     // a placement nobody can use.
                     return;
                 }
+                // Read once and reused: the probe view test and the shader's own reflection-probe
+                // layer filter must see the same layers, and an entity without a RenderInstance
+                // sits on layer 0 (value 1), exactly as RenderItemUVE::renderLayers defaults.
+                const std::uint32_t renderLayers =
+                    entityManager.HasComponentUVE<Scene::RenderInstanceComponentUVE>(entity)
+                        ? entityManager.GetComponentUVE<Scene::RenderInstanceComponentUVE>(entity).renderLayers
+                        : 1U;
                 if (probeCaptureViewActive) {
-                    const std::uint32_t entityLayers =
-                        entityManager.HasComponentUVE<Scene::RenderInstanceComponentUVE>(entity)
-                            ? entityManager.GetComponentUVE<Scene::RenderInstanceComponentUVE>(entity).renderLayers
-                            : 1U;
-                    if (!Scene::IsRenderInstance3DOnViewLayersUVE(entityLayers, probeCaptureVisibilityLayers)) {
+                    if (!Scene::IsRenderInstance3DOnViewLayersUVE(renderLayers, probeCaptureVisibilityLayers)) {
                         return;
                     }
                 }
@@ -2301,6 +2375,34 @@ struct Renderer3DUVE::ImplUVE {
                     return;
                 }
 
+                // Resolved here rather than at draw time for the same reason the mesh path resolves
+                // at extraction: the handle owns the reference that keeps the payload alive until
+                // the colour pass consumes it.
+                Asset::AssetGuidUVE materialGuid = Asset::kInvalidAssetGuidUVE;
+                if (Scene::HasAssignedPrimitiveMaterialUVE(primitive)) {
+                    materialGuid = primitive.materialGuid;
+                    namedMaterials[materialGuid] = true;
+                    auto materialIt = primitiveMaterialHandles.find(materialGuid);
+                    if (materialIt == primitiveMaterialHandles.end()) {
+                        materialIt =
+                            primitiveMaterialHandles
+                                .emplace(materialGuid, assetManager.LoadUVE<Asset::MaterialAssetUVE>(
+                                                           materialGuid, assetDatabase))
+                                .first;
+                    }
+                    if (materialIt->second.TryGetUVE() == nullptr) {
+                        // No silent fallback to the default material: a primitive whose material is
+                        // still loading would flash white and then pop into its real look. Skipping
+                        // is what the mesh path does for the same reason.
+                        if (materialIt->second.HasFailedUVE()) {
+                            ++failedMaterials;
+                        } else {
+                            ++pendingMaterials;
+                        }
+                        return;
+                    }
+                }
+
                 float opacity = 1.0F;
                 if (surface != nullptr) {
                     const float cameraDistance = Math::LengthUVE(worldTransform.worldPosition - viewPosition);
@@ -2335,9 +2437,22 @@ struct Renderer3DUVE::ImplUVE {
                 if (!std::isfinite(sortDepth)) {
                     return;
                 }
-                outItems.push_back(PrimitiveRenderItemUVE{cacheEntry.worldMatrix, primitive.kind, primitive.baseColor,
-                                                          sortDepth, opacity});
+                PrimitiveRenderItemUVE item{cacheEntry.worldMatrix, primitive.kind,
+                                            primitive.baseColor, sortDepth, opacity};
+                item.materialGuid = materialGuid;
+                item.renderLayers = renderLayers;
+                outItems.push_back(item);
             });
+
+        for (auto it = primitiveMaterialHandles.begin(); it != primitiveMaterialHandles.end();) {
+            if (namedMaterials.find(it->first) == namedMaterials.end()) {
+                it = primitiveMaterialHandles.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        lastFrameDiagnostics.primitiveMaterialPending = pendingMaterials;
+        lastFrameDiagnostics.primitiveMaterialFailed = failedMaterials;
 
         // Erase-while-iterating over an unordered_map, safe for the erased element only, so the
         // iterator is advanced before the erase and never after. Mirrors
@@ -2654,7 +2769,7 @@ struct Renderer3DUVE::ImplUVE {
         for (const RenderBatchUVE& batch : batchSet.batches) {
             const RenderItemUVE& representative = items[batch.firstItem];
             const MaterialGpuResourcesUVE* const materialResources =
-                ResolveMaterialGpuResourcesUVE(representative);
+                ResolveMaterialGpuResourcesUVE(representative.materialHandle);
             if (materialResources == nullptr) {
                 continue;
             }
@@ -2663,7 +2778,8 @@ struct Renderer3DUVE::ImplUVE {
                 continue;
             }
             const Asset::MaterialAssetUVE* const material = representative.materialHandle.TryGetUVE();
-            Shader::ShaderProgramUVE* const program = MeshColorProgramUVE(*materialResources, representative);
+            Shader::ShaderProgramUVE* const program = MeshColorProgramUVE(
+                *materialResources, representative.opacity < 1.0F || representative.overlay);
             if (material == nullptr || program == nullptr) {
                 continue; // Still compiling or invalid: never bind a stale raw material pipeline.
             }
@@ -2755,7 +2871,7 @@ struct Renderer3DUVE::ImplUVE {
         std::size_t drawCalls = 0U;
         for (std::size_t itemIndex = firstItem; itemIndex < firstItem + itemCount; ++itemIndex) {
             const RenderItemUVE& item = items[itemIndex];
-            const MaterialGpuResourcesUVE* const materialResources = ResolveMaterialGpuResourcesUVE(item);
+            const MaterialGpuResourcesUVE* const materialResources = ResolveMaterialGpuResourcesUVE(item.materialHandle);
             if (materialResources == nullptr) {
                 continue;
             }
@@ -2764,7 +2880,8 @@ struct Renderer3DUVE::ImplUVE {
                 continue;
             }
             const Asset::MaterialAssetUVE* const material = item.materialHandle.TryGetUVE();
-            Shader::ShaderProgramUVE* const program = MeshColorProgramUVE(*materialResources, item);
+            Shader::ShaderProgramUVE* const program = MeshColorProgramUVE(
+                *materialResources, item.opacity < 1.0F || item.overlay);
             if (material == nullptr || program == nullptr) {
                 continue; // Still compiling or invalid: never bind a stale raw material pipeline.
             }
@@ -3104,12 +3221,14 @@ struct Renderer3DUVE::ImplUVE {
         return issued;
     }
 
+    /// Draws one frame's primitive list through the lit material path: the same program selection,
+    /// the same frame + material uniforms and the same texture bindings an imported mesh uses, over
+    /// the primitive's own geometry. A primitive with no material - and every unmaterialed imported
+    /// mesh, which shares this list - draws through the built-in default lit material, so "no
+    /// material" is the PBR path with neutral inputs rather than a second, simpler shading model.
     [[nodiscard]] std::size_t RecordPrimitiveItemsUVE(const std::vector<PrimitiveRenderItemUVE>& items,
                                                        const FrameUniformsUVE& frameUniforms,
                                                        ICommandBufferUVE& commandBuffer) {
-        if (!primitiveProgram->IsValidUVE()) {
-            return 0U;
-        }
         std::size_t drawCalls = 0U;
         for (const PrimitiveRenderItemUVE& item : items) {
             const MeshGpuResourcesUVE& meshResources =
@@ -3119,26 +3238,46 @@ struct Renderer3DUVE::ImplUVE {
             if (!IsValidMeshGpuResourcesUVE(meshResources)) {
                 continue;
             }
-            Shader::ShaderProgramUVE* const program =
-                item.opacity < 1.0F ? primitiveBlendedProgram.get() : primitiveProgram.get();
-            if (program == nullptr || !program->IsValidUVE()) {
-                continue;
+
+            const bool usesDefaultMaterial = item.materialGuid == Asset::kInvalidAssetGuidUVE;
+            const Asset::MaterialAssetUVE* material = &kDefaultLitMaterialUVE;
+            const MaterialGpuResourcesUVE* materialResources = &defaultLitMaterialResources;
+            if (!usesDefaultMaterial) {
+                const auto materialIt = primitiveMaterialHandles.find(item.materialGuid);
+                if (materialIt == primitiveMaterialHandles.end()) {
+                    continue; // Never extracted this frame: nothing owns the reference.
+                }
+                material = materialIt->second.TryGetUVE();
+                if (material == nullptr) {
+                    continue; // Still loading or failed; extraction already counted it.
+                }
+                materialResources = ResolveMaterialGpuResourcesUVE(materialIt->second);
+                if (materialResources == nullptr) {
+                    continue;
+                }
             }
+
+            Shader::ShaderProgramUVE* const program =
+                MeshColorProgramUVE(*materialResources, item.opacity < 1.0F);
+            if (program == nullptr) {
+                continue; // Still compiling or invalid: never bind a stale pipeline.
+            }
+
             program->SetMatrix4x4UVE("uModel", item.worldMatrix);
             // Normal matrix = transpose(inverse(model)); see ComputeNormalMatrixUVE, shared with
             // the lit mesh path so the two cannot disagree under non-uniform scale.
             program->SetMatrix3x3UVE("uNormalMatrix", ComputeNormalMatrixUVE(item.worldMatrix));
-            program->SetVector3UVE("uColor", item.baseColor);
+            ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms);
+            // Base Color is the DEFAULT material's albedo, so it only replaces that material's own
+            // (white) albedo. An assigned material owns the surface outright - tinting it here would
+            // mean a primitive could never show the material an author picked.
+            if (usesDefaultMaterial) {
+                program->SetVector3UVE("uAlbedoColor", item.baseColor);
+            }
+            program->SetIntUVE("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
             program->SetFloatUVE("uSurfaceOpacity", item.opacity);
-            program->SetIntUVE("uShadingMode", shadingMode);
-            ApplyLightingUniformsUVE(*program, frameUniforms);
             program->ApplyToUVE(commandBuffer);
-            const TextureHandleUVE ambientEnvironmentTexture =
-                frameUniforms.ambientEnvironmentMapEnabled &&
-                        frameUniforms.ambientEnvironmentTexture != kInvalidTextureHandleUVE
-                    ? frameUniforms.ambientEnvironmentTexture
-                    : fallbackWhiteTexture;
-            commandBuffer.BindTextureUVE(ambientEnvironmentTexture, kAmbientEnvironmentTextureSlotUVE);
+            BindMaterialTexturesUVE(*materialResources, frameUniforms, commandBuffer);
             commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
             commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
             commandBuffer.DrawIndexedUVE(meshResources.indexCount);
@@ -3439,20 +3578,42 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     decalProgramDesc.debugNameUVE = "Decal";
     m_impl->decalProgram = shaderManager.CreateProgramUVE(decalProgramDesc);
 
-    Shader::ShaderProgramDescUVE primitiveProgramDesc;
-    primitiveProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kLitPrimitive3DVirtualPath);
-    primitiveProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kLitPrimitive3DSource);
-    primitiveProgramDesc.vertexLayout = MeshVertexLayoutUVE();
-    primitiveProgramDesc.vertexStride = static_cast<std::uint32_t>(sizeof(Asset::MeshVertexUVE));
-    primitiveProgramDesc.depthTestEnabled = true;
-    primitiveProgramDesc.depthWriteEnabled = true;
-    primitiveProgramDesc.debugNameUVE = "BuiltInPrimitiveVisual";
-    m_impl->primitiveProgram = shaderManager.CreateProgramUVE(primitiveProgramDesc);
-    Shader::ShaderProgramDescUVE primitiveBlendedDesc = primitiveProgramDesc;
-    primitiveBlendedDesc.depthWriteEnabled = false;
-    primitiveBlendedDesc.blendMode = PipelineBlendModeUVE::SourceAlphaOver;
-    primitiveBlendedDesc.debugNameUVE = "BuiltInPrimitiveVisual blended";
-    m_impl->primitiveBlendedProgram = shaderManager.CreateProgramUVE(primitiveBlendedDesc);
+    // The built-in lit material: `kLitShadowed3DSource` split into its two stages by the defines
+    // the source itself branches on. This is the PBR/texture/shadow path Standard materials shade
+    // through, so "no material" is not a second, simpler shading model - it is this one, with
+    // neutral inputs. Two variants, exactly like a material's own programs: the ordinary pipeline
+    // keeps depth writes for early-z, the blended one exists for SurfaceInstance fades.
+    Shader::ShaderProgramStagesDescUVE defaultLitDesc;
+    defaultLitDesc.vertexSource.stage = ShaderStageUVE::Vertex;
+    defaultLitDesc.vertexSource.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kLitShadowed3DSource);
+    defaultLitDesc.vertexSource.extraDefines = {{"VERTEX_SHADER", "1"}};
+    defaultLitDesc.vertexSource.debugNameUVE = "BuiltInLit vertex";
+    defaultLitDesc.fragmentSource.stage = ShaderStageUVE::Fragment;
+    defaultLitDesc.fragmentSource.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kLitShadowed3DSource);
+    defaultLitDesc.fragmentSource.extraDefines = {{"FRAGMENT_SHADER", "1"}};
+    defaultLitDesc.fragmentSource.debugNameUVE = "BuiltInLit fragment";
+    defaultLitDesc.vertexLayout = MeshVertexLayoutUVE();
+    defaultLitDesc.vertexStride = static_cast<std::uint32_t>(sizeof(Asset::MeshVertexUVE));
+    defaultLitDesc.depthTestEnabled = true;
+    defaultLitDesc.depthWriteEnabled = true;
+    defaultLitDesc.debugNameUVE = "BuiltInLit default material";
+    m_impl->defaultLitMaterialResources.program =
+        shaderManager.CreateProgramFromStagesUVE(defaultLitDesc);
+    Shader::ShaderProgramStagesDescUVE defaultLitBlendedDesc = defaultLitDesc;
+    defaultLitBlendedDesc.depthWriteEnabled = false;
+    defaultLitBlendedDesc.blendMode = PipelineBlendModeUVE::SourceAlphaOver;
+    // Overlays pass at EQUAL depth so coplanar blends survive the unified LESS default, the same
+    // choice the per-material blended pipeline makes.
+    defaultLitBlendedDesc.depthCompare = DepthCompareUVE::LessOrEqual;
+    defaultLitBlendedDesc.debugNameUVE = defaultLitDesc.debugNameUVE + " blended";
+    m_impl->defaultLitMaterialResources.blendedProgram =
+        shaderManager.CreateProgramFromStagesUVE(defaultLitBlendedDesc);
+    m_impl->defaultLitMaterialResources.supportsInstancing = false;
+    m_impl->defaultLitMaterialResources.albedoTexture = m_impl->fallbackWhiteTexture;
+    m_impl->defaultLitMaterialResources.normalTexture = m_impl->fallbackNormalTexture;
+    m_impl->defaultLitMaterialResources.aoTexture = m_impl->fallbackWhiteTexture;
+    m_impl->defaultLitMaterialResources.metallicRoughnessTexture = m_impl->fallbackWhiteTexture;
+    m_impl->defaultLitMaterialResources.emissiveTexture = m_impl->fallbackWhiteTexture;
 
     // WP3 occlusion proxy: the mesh vertex layout (only aPosition is read, like shadow_depth),
     // depth-tested but never written, and an additive zero colour so nothing visible changes.
@@ -3770,7 +3931,9 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->skyCameraRight = Math::RotateVectorUVE(viewRotation, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
     m_impl->skyCameraUp = Math::RotateVectorUVE(viewRotation, Math::Vector3UVE{0.0F, 1.0F, 0.0F});
     m_impl->skyCameraForward = Math::RotateVectorUVE(viewRotation, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
-    m_impl->lastFrameDiagnostics.primitiveProgramReady = m_impl->primitiveProgram->IsValidUVE();
+    m_impl->lastFrameDiagnostics.primitiveProgramReady =
+        m_impl->defaultLitMaterialResources.program != nullptr &&
+        m_impl->defaultLitMaterialResources.program->IsValidUVE();
     m_impl->lastFrameDiagnostics.particleProgramReady = m_impl->particleProgram->IsValidUVE();
     m_impl->lastFrameDiagnostics.toneMappingProgramReady = m_impl->toneMappingProgram->IsValidUVE();
 
