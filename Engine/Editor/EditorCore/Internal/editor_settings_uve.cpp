@@ -123,13 +123,6 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              editor.m_scenePanelVisible = std::get<bool>(value);
              return true;
          }},
-        {HiddenUVE(Config::MakeBoolSettingUVE(IdUVE(Id::kViewportPanelVisibleUVE), true, "Viewport Panel",
-                                              kSessionCategoryUVE)),
-         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_viewportPanelVisible; },
-         [](EditorUVE& editor, const SettingValueUVE& value) {
-             editor.m_viewportPanelVisible = std::get<bool>(value);
-             return true;
-         }},
         {HiddenUVE(Config::MakeBoolSettingUVE(IdUVE(Id::kInspectorPanelVisibleUVE), true, "Inspector Panel",
                                               kSessionCategoryUVE)),
          [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_inspectorPanelVisible; },

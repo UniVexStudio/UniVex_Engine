@@ -1063,7 +1063,7 @@ TEST(EditorUVETest, EditorSettingsUVE_DescriptorDefaultsMatchTheEditorsOwnDefaul
         const Config::SettingsRegistryUVE& registry = editor.GetSettingsRegistryUVE();
         // The declared preferences, and a primary and alternate shortcut for every command.
         ASSERT_EQ(registry.GetCountUVE(),
-                  162U + std::size(kRenamedSettingIdsUVE) + (2U * editor.GetEditorCommandsUVE().size()));
+                  161U + std::size(kRenamedSettingIdsUVE) + (2U * editor.GetEditorCommandsUVE().size()));
         for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
             // A renamed setting's old name is only a migration alias; the registry moves its value
             // to the replacement before normal settings are applied.

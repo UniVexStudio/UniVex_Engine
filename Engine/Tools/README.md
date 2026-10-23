@@ -118,13 +118,16 @@ python3 -c "from PIL import Image; Image.open('/tmp/editor_run/editor.ppm').save
 `UVE_FRAMEDUMP_FRAMES` takes `12`, `4,8,30` or `every:10` (several frames -> `editor_0012.ppm`
 etc.); `UVE_FRAMEDUMP_CLOSE=N` closes the window after swap N (for `univex_editor`,
 `univex_viewport_demo`, the runtime). Budget ~2 s per 1280x720 editor frame on softpipe; the
-first dumped frame should be >= 3 so ImGui's docking layout has settled. Two things the
-toolchain does to make this work, both in the script: `libGL.so.1` is a tiny GLX shim over
-OSMesa (`glXGetProcAddressARB` -> `OSMesaGetProcAddress`) because Dear ImGui's bundled loader
-refuses a `libGL` without it - the editor's UI silently never initialised before that - and
-`libGL.so` is a GNU ld script that links both the shim and `libOSMesa.so.8`. For *driving* the
-editor rather than just looking at it, `uve_editor --bridge-stdio` already exposes the
-editor's commands over JSON-RPC without any window.
+first dumped frame should be >= 3, so the panels have drawn through a full frame and the
+viewport's render target has something in it. (It used to say "so ImGui's docking layout has
+settled" - there is no dock layout to settle now: the frame computes its own rects on frame
+one.) Two things the toolchain does to make this work, both in the script: `libGL.so.1` is a
+tiny GLX shim over OSMesa (`glXGetProcAddressARB` -> `OSMesaGetProcAddress`) because Dear
+ImGui's bundled loader refuses a `libGL` without it - the editor's UI silently never
+initialised before that - and `libGL.so` is a GNU ld script that links both the shim and
+`libOSMesa.so.8`. For *driving* the editor rather than just looking at it,
+`uve_editor --bridge-stdio` already exposes the editor's commands over JSON-RPC without any
+window.
 
 Caveats: softpipe is a pure-CPU rasterizer (no LLVM JIT), so GL work is correct but slow -
 fine for tests and frame captures, not for interactive use. It also has no robust buffer

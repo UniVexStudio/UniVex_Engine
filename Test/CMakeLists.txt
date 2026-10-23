@@ -353,6 +353,7 @@ add_executable(uve_integration_tests
     Samples/interest_fanout_sample_uve_tests.cpp
     Objects/3D/health_uve_tests.cpp
     Objects/3D/world_environment_uve_tests.cpp
+    Objects/3D/preview_lighting_uve_tests.cpp
     Objects/3D/directional_light_3d_uve_tests.cpp
     Objects/3D/fog_volume_3d_uve_tests.cpp
     Objects/3D/world_partition_3d_uve_tests.cpp
@@ -692,7 +693,6 @@ add_executable(uve_editor_tests
     Editor/scene_component_authoring_uve_tests.cpp
     Editor/file_picker_uve_tests.cpp
     Editor/scene_object_editor_uve_tests.cpp
-    Editor/EditorCore/editor_docking_uve_tests.cpp
 )
 target_link_libraries(uve_editor_tests PRIVATE
     nlohmann_json::nlohmann_json
