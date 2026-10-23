@@ -310,7 +310,9 @@ struct TypeMetadataEntryUVE final {
     /// are listed in order of preference and the first one the entity carries draws it, so one
     /// type can belong to different objects (a collider sits in a primitive mesh's section on a
     /// BoxMesh3D and in PhysicsObject3D's on a body). On an entity with none of its hosts it stands
-    /// on its own, so nothing ever becomes unreachable.
+    /// on its own, so nothing ever becomes unreachable. A host may also keep the type's rows in its
+    /// own shape rather than draw the section - Character3D authors a collider's Layer and Mask as
+    /// the body's own rows, because a body's collision identity is not a separate part of it.
     std::vector<TypeIdUVE> nestedUnderTypeIds;
     /// Inspector presentation: draw the properties as rows in place, with no collapsible header,
     /// for a type that is conceptually one property of the object rather than a feature of it - a

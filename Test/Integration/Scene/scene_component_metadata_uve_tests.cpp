@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "uve/component/area_component_uve.h"
+#include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
@@ -621,6 +622,30 @@ TEST(SceneComponentMetadataUVETest, ConditionalVisibilityFollowsTheSiblingFieldI
     component.shapeType = ColliderShapeTypeUVE::Capsule;
     EXPECT_FALSE(halfExtents->isVisible(&component));
     EXPECT_TRUE(height->isVisible(&component));
+}
+
+// Character3D is the collider's first host and draws the two rows a body owns itself, so a
+// character's collider section never appears a second time under the body. That makes two things a
+// contract: the host link, and the two property names the body block resolves. A rename that broke
+// either would leave a character with no layer and mask anywhere.
+TEST(SceneComponentMetadataUVETest, CharacterSectionHostsTheColliderAndKeepsItsTwoBodyRows) {
+    const TypeMetadataEntryUVE* character =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(CharacterControllerComponentUVE)));
+    const TypeMetadataEntryUVE* collider =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(ColliderComponentUVE)));
+    ASSERT_NE(character, nullptr);
+    ASSERT_NE(collider, nullptr);
+
+    // First, because a host listed after another is only a fallback: a body also carries a
+    // PhysicsObject3D, and whichever host comes first is the section that represents its collider.
+    ASSERT_FALSE(collider->nestedUnderTypeIds.empty());
+    EXPECT_EQ(collider->nestedUnderTypeIds.front(), character->typeId);
+
+    for (const char* const name : {"collisionLayer", "collisionMask"}) {
+        const TypeMetadataPropertyUVE* const property = FindPropertyUVE(*collider, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_EQ(property->customDrawerId, std::string(kLayerMaskDrawerPhysicsUVE)) << name;
+    }
 }
 
 // Sections follow the class chain from most to least derived: the object's own, then Object3D's
