@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <set>
 #include <string>
 #include <vector>
@@ -23,6 +24,7 @@
 #include "uve/core/engine_project_settings_uve.h"
 #include "uve/editor/editor_content_catalogue_uve.h"
 #include "uve/editor/editor_uve.h"
+#include "uve/scene/i_scene_graph_uve.h"
 #include "uve/scene/objects/scene_folder_uve.h"
 #include "uve/scene/objects/scene_object_registry_uve.h"
 #include "uve/scene/objects/scene_object_type_uve.h"
@@ -601,6 +603,116 @@ Connections:  {
         editor.ShutdownUVE();
     }
     engine.Shutdown();
+}
+
+
+TEST(ContentCatalogueEditorUVETest, ANewSceneIsItsViewportAndTheWorldFolderWaitsForSomethingToHold) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("content_catalogue_scene_empty");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+        const auto created = editor.CreateContentCatalogueItemUVE("viewport_3d", content);
+        ASSERT_TRUE(created.has_value());
+        EXPECT_EQ(created->extension(), ".uvscene");
+        ASSERT_TRUE(editor.OpenSceneAssetUVE(*created));
+
+        // Root and Viewport, and nothing else: the empty "World" folder the old creation path made is
+        // gone, so a brand-new level does not open with a folder holding nothing.
+        const Scene::EntityUVE sceneRoot = editor.GetDocumentSceneRootUVE();
+        ASSERT_NE(sceneRoot, Scene::kInvalidEntityUVE);
+        const std::vector<Scene::EntityUVE> rootChildren = sceneGraph.GetChildrenUVE(entityManager, sceneRoot);
+        ASSERT_EQ(rootChildren.size(), 1U);
+        const Scene::EntityUVE viewport = editor.GetDocumentViewportUVE();
+        EXPECT_EQ(rootChildren[0], viewport);
+        EXPECT_TRUE(sceneGraph.GetChildrenUVE(entityManager, viewport).empty());
+
+        // The folder appears when it has something to hold, and only then.
+        const Scene::EntityUVE placed =
+            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Object3D);
+        ASSERT_NE(placed, Scene::kInvalidEntityUVE);
+        const Scene::EntityUVE folder = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(placed).parent;
+        ASSERT_NE(folder, Scene::kInvalidEntityUVE);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::FolderComponentUVE>(folder));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(folder).name, "World");
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(folder).parent, viewport);
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(root);
+}
+
+TEST(ContentCatalogueEditorUVETest, ASceneSaysWhetherItIs2DAndItsNameNoLongerDecides) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("content_catalogue_scene_2d");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+
+        const Scene::EntityUVE openViewport = editor.GetDocumentViewportUVE();
+        ASSERT_NE(openViewport, Scene::kInvalidEntityUVE);
+        const auto flat = editor.CreateContentCatalogueItemUVE("viewport_2d", content);
+        ASSERT_TRUE(flat.has_value());
+        EXPECT_EQ(flat->filename().string(), "Viewport2D.uvscene");
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::OutlinerViewport3DComponentUVE>(openViewport).dimension,
+                  Scene::ViewportDimensionUVE::ThreeD)
+            << "making the asset does not retype the document that is already open";
+
+        std::ifstream flatFile(*flat);
+        ASSERT_TRUE(flatFile.is_open());
+        const std::string flatText(std::istreambuf_iterator<char>(flatFile), {});
+        EXPECT_NE(flatText.find("\"dimension\""), std::string::npos) << "the dimension is in the file";
+        EXPECT_NE(flatText.find("\"2d\""), std::string::npos);
+
+        // Every add is its own file: nothing is shared, appended to or overwritten.
+        const auto second = editor.CreateContentCatalogueItemUVE("viewport_2d", content);
+        ASSERT_TRUE(second.has_value());
+        EXPECT_EQ(second->filename().string(), "Viewport2D 2.uvscene");
+        EXPECT_TRUE(std::filesystem::is_regular_file(*second));
+
+        ASSERT_TRUE(editor.OpenSceneAssetUVE(*flat));
+        const Scene::EntityUVE flatViewport = editor.GetDocumentViewportUVE();
+        ASSERT_NE(flatViewport, Scene::kInvalidEntityUVE);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::OutlinerViewport3DComponentUVE>(flatViewport));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::OutlinerViewport3DComponentUVE>(flatViewport).dimension,
+                  Scene::ViewportDimensionUVE::TwoD);
+
+        // A 3D level whose file name says "2D" is still 3D. The name used to be the only thing that
+        // was read, so this exact case used to open on the 2D canvas.
+        const auto solid = editor.CreateContentCatalogueItemUVE("viewport_3d", content);
+        ASSERT_TRUE(solid.has_value());
+        const std::filesystem::path lying = content / "Level2D.uvscene";
+        std::filesystem::rename(*solid, lying);
+        std::ifstream solidFile(lying);
+        ASSERT_TRUE(solidFile.is_open());
+        const std::string solidText(std::istreambuf_iterator<char>(solidFile), {});
+        EXPECT_EQ(solidText.find("\"dimension\""), std::string::npos)
+            << "a 3D level writes nothing, so every existing .uvscene keeps its bytes";
+
+        ASSERT_TRUE(editor.OpenSceneAssetUVE(lying));
+        const Scene::EntityUVE solidViewport = editor.GetDocumentViewportUVE();
+        ASSERT_NE(solidViewport, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::OutlinerViewport3DComponentUVE>(solidViewport).dimension,
+                  Scene::ViewportDimensionUVE::ThreeD)
+            << "the file decides, not the name";
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(root);
 }
 
 } // namespace

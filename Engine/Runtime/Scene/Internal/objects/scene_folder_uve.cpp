@@ -25,4 +25,19 @@ void ApplyViewport3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const 
     }
 }
 
+void ApplyViewport2DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                    const Viewport2DObjectDefinitionUVE& value) {
+    static_cast<void>(value);
+    EnsureObjectBaselineUVE(entityManager, entity, Viewport2DObjectDefinitionUVE::defaultName);
+    if (!entityManager.IsAliveUVE(entity)) {
+        return;
+    }
+    const OutlinerViewport3DComponentUVE viewport{ViewportDimensionUVE::TwoD};
+    if (entityManager.HasComponentUVE<OutlinerViewport3DComponentUVE>(entity)) {
+        entityManager.GetComponentUVE<OutlinerViewport3DComponentUVE>(entity) = viewport;
+        return;
+    }
+    entityManager.AddComponentUVE<OutlinerViewport3DComponentUVE>(entity, viewport);
+}
+
 } // namespace UVE::Scene

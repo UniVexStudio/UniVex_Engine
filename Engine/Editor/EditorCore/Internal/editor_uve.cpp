@@ -894,18 +894,25 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
         Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
         const Scene::EntityUVE root = CreateObjectDefinitionEntityInternalUVE(
             Scene::SceneRootObjectDefinitionUVE{}, Scene::ApplySceneRootObjectDefinitionUVE);
-        const Scene::EntityUVE viewport = CreateObjectDefinitionEntityInternalUVE(
-            Scene::Viewport3DObjectDefinitionUVE{}, Scene::ApplyViewport3DObjectDefinitionUVE);
-        const Scene::EntityUVE world = CreateObjectDefinitionEntityInternalUVE(
-            Scene::FolderObjectDefinitionUVE{}, Scene::ApplyFolderObjectDefinitionUVE);
-        if (root == Scene::kInvalidEntityUVE || viewport == Scene::kInvalidEntityUVE || world == Scene::kInvalidEntityUVE) {
+        // The dimension is part of the file, not of its name: a 2D item stamps its Viewport TwoD, and
+        // opening the result restores that instead of reading "2D" out of the path.
+        Scene::EntityUVE viewport = Scene::kInvalidEntityUVE;
+        if (item->sceneDimension == Scene::ViewportDimensionUVE::TwoD) {
+            viewport = CreateObjectDefinitionEntityInternalUVE(Scene::Viewport2DObjectDefinitionUVE{},
+                                                               Scene::ApplyViewport2DObjectDefinitionUVE);
+        } else {
+            viewport = CreateObjectDefinitionEntityInternalUVE(Scene::Viewport3DObjectDefinitionUVE{},
+                                                               Scene::ApplyViewport3DObjectDefinitionUVE);
+        }
+        // A new scene is its root and its Viewport, and nothing else. The World folder used to be
+        // created here, so every level opened with an empty folder above an empty level; it now
+        // appears with the first object that needs somewhere to live.
+        if (root == Scene::kInvalidEntityUVE || viewport == Scene::kInvalidEntityUVE) {
             if (root != Scene::kInvalidEntityUVE) DestroyDocumentSubtreeUVE(root);
             if (viewport != Scene::kInvalidEntityUVE) DestroyDocumentSubtreeUVE(viewport);
-            if (world != Scene::kInvalidEntityUVE) DestroyDocumentSubtreeUVE(world);
             return std::nullopt;
         }
         sceneGraph.SetParentUVE(entityManager, viewport, root);
-        sceneGraph.SetParentUVE(entityManager, world, viewport);
         const bool saved = m_services->GetSceneSerializerUVE().SaveUVE(entityManager, {root}, path, Scene::SceneAssetTypeUVE::Scene);
         DestroyDocumentSubtreeUVE(root);
         InvalidateHierarchyFilterCacheUVE();
@@ -1174,8 +1181,19 @@ bool EditorUVE::OpenSceneAssetUVE(const std::filesystem::path& path) {
     const std::filesystem::path previous = m_activeScenePath;
     m_activeScenePath = path;
     if (LoadSceneUVE()) {
-        const std::string stem = path.stem().string();
-        if (stem.find("2D") != std::string::npos || stem.find("2d") != std::string::npos) {
+        // The document's own Viewport marker decides how it opens. This used to search the file's
+        // NAME for "2D", so a level called "Level2D" opened flat and a genuinely flat scene called
+        // "Flat" opened on the 3D grid; the same scene could be 2D or 3D depending on what someone
+        // had saved it as. Legacy documents carry no dimension and read as 3D, which is what they are.
+        bool is2D = false;
+        if (const Scene::EntityUVE viewport = GetDocumentViewportUVE(); viewport != Scene::kInvalidEntityUVE) {
+            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+            if (entityManager.HasComponentUVE<Scene::OutlinerViewport3DComponentUVE>(viewport)) {
+                is2D = entityManager.GetComponentUVE<Scene::OutlinerViewport3DComponentUVE>(viewport).dimension ==
+                       Scene::ViewportDimensionUVE::TwoD;
+            }
+        }
+        if (is2D) {
             m_viewportOverlayState.is2DMode = true;
             m_viewportOverlayState.orthographic = true;
             RequestViewportViewUVE(ViewportViewUVE::Front);
@@ -3586,7 +3604,6 @@ bool EditorUVE::EnsureDocumentLayoutUVE() {
             strays.push_back(child);
         }
     }
-    const bool viewportEmpty = sceneGraph.GetChildrenUVE(entityManager, viewport).empty();
     Scene::EntityUVE world = Scene::kInvalidEntityUVE;
     for (const Scene::EntityUVE stray : strays) {
         if (entityManager.HasComponentUVE<Scene::FolderComponentUVE>(stray)) {
@@ -3599,11 +3616,9 @@ bool EditorUVE::EnsureDocumentLayoutUVE() {
         }
         changed = true;
     }
-    // A level always starts with a folder to put things in.
-    if (viewportEmpty && sceneGraph.GetChildrenUVE(entityManager, viewport).empty()) {
-        static_cast<void>(ResolveObjectFolderUVE());
-        changed = true;
-    }
+    // No folder is created for an empty level. Opening a scene added an empty "World" before the
+    // author had made anything; ResolveObjectFolderUVE() still makes one, but only when an object
+    // is actually placed and needs a folder to sit in.
     InvalidateHierarchyFilterCacheUVE();
     return changed;
 }

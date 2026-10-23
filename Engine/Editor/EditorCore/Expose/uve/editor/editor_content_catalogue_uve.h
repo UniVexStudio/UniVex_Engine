@@ -6,6 +6,7 @@
 #include <span>
 #include <string_view>
 
+#include "uve/scene/objects/scene_folder_uve.h"
 #include "uve/scene/objects/scene_object_registry_uve.h"
 
 namespace UVE::Editor {
@@ -41,6 +42,9 @@ struct ContentCatalogueItemUVE final {
     std::string_view tooltip;
     ContentCatalogueActionUVE action = ContentCatalogueActionUVE::EntityAsset;
     std::span<const ContentCatalogueObjectUVE> objects;
+    /// Which kind of scene a SceneAsset writes, and the dimension it is saved with. Ignored by every
+    /// other action, whose items leave it at the default.
+    Scene::ViewportDimensionUVE sceneDimension = Scene::ViewportDimensionUVE::ThreeD;
 };
 
 /// Every item, in menu order: items of one group are adjacent and groups appear in the order of
