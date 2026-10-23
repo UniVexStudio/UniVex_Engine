@@ -1971,6 +1971,10 @@ private:
     /// and no preferred host of it draws. Writes go through SetSelectedComponentPropertyUVE below.
     void DrawMetadataComponentDrawerUVE(Scene::EntityUVE entity, const Core::TypeMetadataEntryUVE& entry,
                                         const std::vector<NestedMetadataSectionUVE>& nested);
+    /// The collision rows a body authors on its own section: Layer and Mask, drawn from the
+    /// collider's declarations so the picker, the tooltip, the revert control and the undo entry are
+    /// the collider's own. Nothing is drawn when the body has no collider left to author them on.
+    void DrawCharacterCollisionRowsUVE(Scene::EntityUVE entity);
     /// Draws the visible properties of one component as label/value rows. Runtime-owned rows appear
     /// only during Play, where they describe something real; a row another property declares as its
     /// resolved answer is shown beside that property instead of on its own.

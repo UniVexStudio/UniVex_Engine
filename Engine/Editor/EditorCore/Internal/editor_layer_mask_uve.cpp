@@ -13,6 +13,10 @@
 #define UVE_HAS_IMGUI_HEADER_UVE 0
 #endif
 
+#if UVE_HAS_IMGUI_HEADER_UVE
+#include "editor_centered_combo_uve.h"
+#endif
+
 #include "editor_layer_mask_field_uve.h"
 
 namespace UVE::Editor {
@@ -95,7 +99,7 @@ LayerMaskFieldEventUVE DrawLayerMaskFieldUVE(const char* const id, std::uint32_t
     // Wide enough for two columns of names, whatever the field's own width.
     ImGui::SetNextWindowSizeConstraints(ImVec2{fontSize * 22.0F, 0.0F}, ImVec2{fontSize * 40.0F, fontSize * 40.0F});
     const std::string summary = FormatLayerMaskSummaryUVE(mask, names);
-    if (ImGui::BeginCombo(id, summary.c_str(), ImGuiComboFlags_HeightLargest)) {
+    if (BeginCenteredComboUVE(id, summary.c_str(), ImGuiComboFlags_HeightLargest)) {
         std::uint32_t edited = mask;
         if (ImGui::SmallButton("All")) {
             edited = 0xFFFFFFFFU;
