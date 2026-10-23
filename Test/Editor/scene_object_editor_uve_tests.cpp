@@ -314,16 +314,15 @@ TEST(SceneObjectEditorUVETest, OutlinerLayoutUVE_LevelTopIsViewportSunAndEnviron
         };
         const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
 
-        // A fresh level: the Viewport at the top holding one folder, and nothing to undo or save.
+        // A fresh level: the Viewport at the top, holding nothing, and nothing to undo or save.
+        // It used to hold an empty "World" folder made for it at open; a folder now appears only
+        // when an object is placed and needs somewhere to live.
         const std::vector<Scene::EntityUVE> top = sceneGraph.GetChildrenUVE(entityManager, root);
         ASSERT_EQ(top.size(), 1U);
         const Scene::EntityUVE viewport = top[0U];
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::OutlinerViewport3DComponentUVE>(viewport));
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(viewport).name, "uve_scene_object_editor_outliner_layout_tests"); // its asset's name
-        const std::vector<Scene::EntityUVE> folders = sceneGraph.GetChildrenUVE(entityManager, viewport);
-        ASSERT_EQ(folders.size(), 1U);
-        const Scene::EntityUVE world = folders[0U];
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::FolderComponentUVE>(world));
+        EXPECT_TRUE(sceneGraph.GetChildrenUVE(entityManager, viewport).empty());
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
         EXPECT_FALSE(editor.CanUndoUVE());
 
@@ -341,11 +340,16 @@ TEST(SceneObjectEditorUVETest, OutlinerLayoutUVE_LevelTopIsViewportSunAndEnviron
         EXPECT_FALSE(entityManager.IsAliveUVE(environment));
         ASSERT_NE(editor.CreateDocumentSceneObjectUVE(Kind::WorldEnvironment3D), Scene::kInvalidEntityUVE);
 
-        // Any other object goes into a folder, even with the sun selected.
+        // Any other object goes into a folder, even with the sun selected - and that placement is
+        // what makes the level's folder: it is created for the object, not left waiting empty.
         editor.SelectEntityUVE(sun);
         const Scene::EntityUVE mesh = editor.CreateDocumentSceneObjectUVE(Kind::BoxMesh3D);
         ASSERT_NE(mesh, Scene::kInvalidEntityUVE);
-        EXPECT_EQ(parentOf(mesh), world);
+        const Scene::EntityUVE world = parentOf(mesh);
+        ASSERT_NE(world, Scene::kInvalidEntityUVE);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::FolderComponentUVE>(world));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(world).name, "World");
+        EXPECT_EQ(parentOf(world), viewport);
         // A new folder with nothing selected goes into the Viewport.
         editor.ClearSelectionUVE();
         const Scene::EntityUVE props = editor.CreateDocumentSceneObjectUVE(Kind::Folder);
