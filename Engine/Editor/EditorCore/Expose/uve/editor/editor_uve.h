@@ -1949,6 +1949,10 @@ private:
     void DrawHierarchyRowBadgesUVE(const std::vector<std::string>& warnings, const std::optional<std::string>& script,
                                    float eyeColumns);
     void DrawHierarchyObjectUVE(Scene::EntityUVE entity);
+    /// A double-click on a row that stands for a file opens it: an entity asset behind an instance
+    /// (Entity Editor), or the .uvscene behind the level's Viewport. True when the row had something
+    /// to open, so the Double-Click preference must not also act on it.
+    [[nodiscard]] bool OpenHierarchyRowTargetUVE(Scene::EntityUVE entity);
     void AcceptHierarchyDropTargetUVE(Scene::EntityUVE targetParent);
     void DrawInspectorPanelUVE();
     void DrawInspectorContentUVE();
