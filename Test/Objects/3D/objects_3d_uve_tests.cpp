@@ -1686,6 +1686,21 @@ TEST(MeshAndPrimitiveNodePoliciesUVETest, MeshInstanceBoxSphereAndPlanePolicies)
     EXPECT_TRUE(MeshInstance3DUVE::HasSurfaceMaterialOverrideUVE(&surface));
     EXPECT_TRUE(MeshInstance3DUVE::ParticipatesInPassUVE(&surface, /*shadowPass=*/false));
     EXPECT_TRUE(MeshInstance3DUVE::ParticipatesInPassUVE(&surface, /*shadowPass=*/true));
+    // The per-surface list answers for one surface at a time, and a whole-object override mutes the
+    // whole list rather than being merged with it.
+    SurfaceInstanceComponentUVE perSurface{};
+    EXPECT_FALSE(MeshInstance3DUVE::HasPerSurfaceMaterialOverrideUVE(&perSurface));
+    EXPECT_FALSE(MeshInstance3DUVE::HasPerSurfaceMaterialOverrideUVE(nullptr));
+    perSurface.surfaceMaterialOverridePaths = {"", "materials/slot_one.uvmaterial"};
+    EXPECT_TRUE(MeshInstance3DUVE::HasPerSurfaceMaterialOverrideUVE(&perSurface));
+    EXPECT_TRUE(MeshInstance3DUVE::SurfaceMaterialOverridePathUVE(perSurface, 0U).empty());
+    EXPECT_EQ(MeshInstance3DUVE::SurfaceMaterialOverridePathUVE(perSurface, 1U),
+              "materials/slot_one.uvmaterial");
+    EXPECT_TRUE(MeshInstance3DUVE::SurfaceMaterialOverridePathUVE(perSurface, 2U).empty());
+    perSurface.materialOverridePath = "materials/all.uvmaterial";
+    EXPECT_TRUE(MeshInstance3DUVE::SurfaceMaterialOverridePathUVE(perSurface, 1U).empty());
+    EXPECT_FALSE(MeshInstance3DUVE::HasPerSurfaceMaterialOverrideUVE(&perSurface));
+
     surface.castShadow = SurfaceShadowModeUVE::ShadowsOnly;
     EXPECT_FALSE(MeshInstance3DUVE::ParticipatesInPassUVE(&surface, /*shadowPass=*/false));
     EXPECT_TRUE(MeshInstance3DUVE::ParticipatesInPassUVE(&surface, /*shadowPass=*/true));

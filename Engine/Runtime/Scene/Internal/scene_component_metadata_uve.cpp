@@ -2753,6 +2753,16 @@ void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                                          kPropertyTypeStringUVE),
                                                      "file:uvmat"),
                                "Material overlay: drawn over every surface, on top of whatever it already shows."),
+                // Per-surface overrides, index for index with the mesh's surfaces. Declared so the
+                // doc persists them, hidden because the rows belong beside the surfaces they name:
+                // the MeshInstance3D inspector draws one picker per surface, and a generic text row
+                // per entry would be a list of paths with nothing saying which surface each is.
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareUVE<&S::surfaceMaterialOverridePaths>(
+                        "surfaceMaterialOverridePaths", "Surface Overrides", kPropertyTypeStringListUVE);
+                    property.flags = TypeMetadataPropertyFlagsUVE::Hidden;
+                    return property;
+                }(),
                 WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::transparency>("transparency", "Transparency",
                                                                          kPropertyTypeFloatUVE),
                                             0.0, 1.0, 0.01),

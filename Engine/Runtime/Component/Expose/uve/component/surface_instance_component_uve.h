@@ -2,10 +2,17 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace UVE::Scene {
+
+/// Most per-surface material overrides a SurfaceInstance can carry. Matches the mesh surface bound
+/// (Asset::kMaximumMeshSurfacesUVE): an instance that could not name a material for every surface
+/// its mesh can hold would have a hole no author could fill.
+inline constexpr std::size_t kMaximumSurfaceMaterialOverridesUVE = 4096U;
 
 enum class SurfaceShadowModeUVE : std::uint8_t {
     Off = 0,
@@ -40,6 +47,14 @@ enum class SurfaceFadeModeUVE : std::uint8_t {
 struct SurfaceInstanceComponentUVE final {
     /// Replaces every surface's material when set. Project-relative, empty for none.
     std::string materialOverridePath;
+    /// Replaces ONE surface's material, index for index with the mesh's surfaces. An empty entry
+    /// keeps that surface's own material. Ignored while `materialOverridePath` is set, because that
+    /// one already replaces every surface - the same precedence a single override has over a
+    /// mesh's authored materials.
+    ///
+    /// This is book-keeping of the instance, not of the mesh: two objects sharing one imported
+    /// model can shade the same surface differently without duplicating the model.
+    std::vector<std::string> surfaceMaterialOverridePaths;
     /// Drawn over every surface in a second pass (outlines, damage flashes). Empty for none.
     std::string materialOverlayPath;
     /// 0 opaque, 1 invisible.
@@ -68,10 +83,14 @@ struct SurfaceInstanceComponentUVE final {
 [[nodiscard]] bool IsSurfaceFadeModeValidUVE(SurfaceFadeModeUVE mode) noexcept;
 
 /// Known enumerators; finite values; transparency within [0, 1]; a positive LOD bias; no negative
-/// margin or distance; and a range end, when set, not before its beginning.
+/// margin or distance; a range end, when set, not before its beginning; and no more per-surface
+/// material overrides than a mesh can have surfaces.
 [[nodiscard]] bool IsSurfaceInstanceComponentValidUVE(const SurfaceInstanceComponentUVE& component) noexcept;
 
-/// Clamps out-of-range transparency, distances, margins, and LOD bias into valid bounds.
+/// Clamps out-of-range transparency, distances, margins, and LOD bias into valid bounds, and
+/// shortens the per-surface override list to the bound. Trailing empty overrides are dropped: they
+/// say the same thing an absent entry does, so a list that grew and shrank again saves its old
+/// bytes back.
 [[nodiscard]] SurfaceInstanceComponentUVE SanitizeSurfaceInstanceComponentUVE(
     const SurfaceInstanceComponentUVE& component);
 

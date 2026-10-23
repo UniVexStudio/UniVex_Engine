@@ -42,7 +42,8 @@ bool IsSurfaceInstanceComponentValidUVE(const SurfaceInstanceComponentUVE& compo
            IsNonNegativeUVE(component.visibilityRangeEnd) &&
            IsNonNegativeUVE(component.visibilityRangeEndMargin) &&
            (component.visibilityRangeEnd == 0.0F ||
-            component.visibilityRangeEnd >= component.visibilityRangeBegin);
+            component.visibilityRangeEnd >= component.visibilityRangeBegin) &&
+           component.surfaceMaterialOverridePaths.size() <= kMaximumSurfaceMaterialOverridesUVE;
 }
 
 SurfaceInstanceComponentUVE SanitizeSurfaceInstanceComponentUVE(
@@ -69,6 +70,15 @@ SurfaceInstanceComponentUVE SanitizeSurfaceInstanceComponentUVE(
     }
     if (!IsSurfaceFadeModeValidUVE(out.visibilityRangeFadeMode)) {
         out.visibilityRangeFadeMode = SurfaceFadeModeUVE::Disabled;
+    }
+    if (out.surfaceMaterialOverridePaths.size() > kMaximumSurfaceMaterialOverridesUVE) {
+        out.surfaceMaterialOverridePaths.resize(kMaximumSurfaceMaterialOverridesUVE);
+    }
+    // An empty entry means "this surface keeps its own material". At the END of the list that is
+    // the same statement an absent entry makes, so trimming them keeps a list that grew and then
+    // shrank from saving a run of empties that mean nothing.
+    while (!out.surfaceMaterialOverridePaths.empty() && out.surfaceMaterialOverridePaths.back().empty()) {
+        out.surfaceMaterialOverridePaths.pop_back();
     }
     return out;
 }

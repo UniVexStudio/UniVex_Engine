@@ -151,9 +151,26 @@ void UpdateBoundsUVE(const Math::Vector3UVE& position, bool& hasBounds, Math::Aa
     return Math::IsFiniteUVE(normalized) ? normalized : Math::Vector3UVE{};
 }
 
+/// The `usemtl` argument: everything after the directive with the surrounding whitespace removed,
+/// which is the same reading ImportObjMaterialsUVE takes of the same line. Material names may
+/// contain spaces, so the remainder is kept whole.
+[[nodiscard]] std::string_view MaterialArgumentUVE(std::string_view rest) noexcept {
+    while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t')) {
+        rest.remove_prefix(1U);
+    }
+    while (!rest.empty() && (rest.back() == ' ' || rest.back() == '\t')) {
+        rest.remove_suffix(1U);
+    }
+    return rest;
+}
+
 } // namespace
 
-bool ConvertObjMeshUVE(const std::string_view source, MeshAssetUVE& outMesh) {
+bool ConvertObjMeshUVE(const std::string_view source, MeshAssetUVE& outMesh,
+                       std::vector<ObjSurfaceRangeUVE>* const outSurfaces) {
+    if (outSurfaces != nullptr) {
+        outSurfaces->clear();
+    }
     if (source.empty() || source.size() > kMaximumObjMeshSourceBytesUVE) {
         return false;
     }
@@ -167,6 +184,33 @@ bool ConvertObjMeshUVE(const std::string_view source, MeshAssetUVE& outMesh) {
 
     MeshAssetUVE candidate;
     bool hasBounds = false;
+
+    // Surface tracking. Runs are recorded only while they are still worth saving: once a file has
+    // more `usemtl` runs than a mesh can hold, `surfacesOverflowed` stops the bookkeeping and the
+    // result keeps the whole-buffer draw instead of a table that could never be saved.
+    std::string currentMaterial;
+    std::vector<ObjSurfaceRangeUVE> surfaceRanges;
+    bool surfacesOverflowed = false;
+    const auto beginSurfaceRunUVE = [&](const std::size_t firstIndex) {
+        if (outSurfaces == nullptr || surfacesOverflowed) {
+            return;
+        }
+        if (!surfaceRanges.empty()) {
+            surfaceRanges.back().indexCount =
+                static_cast<std::uint32_t>(firstIndex) - surfaceRanges.back().firstIndex;
+            if (surfaceRanges.back().materialName == currentMaterial) {
+                return; // same material continuing a run
+            }
+        }
+        if (surfaceRanges.size() >= kMaximumMeshSurfacesUVE) {
+            surfacesOverflowed = true;
+            surfaceRanges.clear();
+            return;
+        }
+        surfaceRanges.push_back(
+            ObjSurfaceRangeUVE{static_cast<std::uint32_t>(firstIndex), 0U, currentMaterial});
+    };
+
     std::size_t lineStart = 0U;
     while (lineStart <= source.size()) {
         const std::size_t lineEnd = source.find('\n', lineStart);
@@ -214,6 +258,8 @@ bool ConvertObjMeshUVE(const std::string_view source, MeshAssetUVE& outMesh) {
                     return false;
                 }
                 normals.push_back(Math::NormalizeUVE(normal));
+            } else if (directive == "usemtl") {
+                currentMaterial.assign(MaterialArgumentUVE(rest));
             } else if (directive == "f") {
                 std::vector<ObjFaceVertexUVE> faceVertices;
                 faceVertices.reserve(8U);
@@ -252,6 +298,10 @@ bool ConvertObjMeshUVE(const std::string_view source, MeshAssetUVE& outMesh) {
 
                     const std::array<Math::Vector3UVE, 3> trianglePositions{
                         firstPosition, secondPosition, thirdPosition};
+                    // One run per material, opened at the first index of the triangle that uses it.
+                    // A zero-length run cannot be emitted: the check happens before the three
+                    // indices are appended, so every run owns at least one whole triangle.
+                    beginSurfaceRunUVE(candidate.indices.size());
                     for (std::size_t corner = 0U; corner < triangle.size(); ++corner) {
                         const ObjFaceVertexUVE& faceVertex = triangle[corner];
                         MeshVertexUVE vertex;
@@ -280,6 +330,17 @@ bool ConvertObjMeshUVE(const std::string_view source, MeshAssetUVE& outMesh) {
 
     if (candidate.vertices.empty() || candidate.indices.size() != candidate.vertices.size() || !hasBounds) {
         return false;
+    }
+    if (outSurfaces != nullptr) {
+        if (!surfacesOverflowed && !surfaceRanges.empty()) {
+            surfaceRanges.back().indexCount = static_cast<std::uint32_t>(candidate.indices.size()) -
+                                              surfaceRanges.back().firstIndex;
+        }
+        // One run is the whole buffer, which is what having no ranges already means.
+        if (surfacesOverflowed || surfaceRanges.size() < 2U) {
+            surfaceRanges.clear();
+        }
+        outSurfaces->swap(surfaceRanges);
     }
     if (!TryGenerateMeshTangentsUVE(candidate.vertices, candidate.indices)) {
         return false;

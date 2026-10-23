@@ -128,6 +128,115 @@ TEST(FbxMeshConverterUVETest, EveryInstanceIsMergedWhereItsObjectPlacesItAndAMir
     }
 }
 
+// Three triangles whose material assignment alternates: the converter groups them so each material
+// is one contiguous run, because a run is what the renderer can draw with one material binding.
+// Note the PolygonVertexIndex encoding: the negative entry ends a polygon and means
+// -(lastVertex + 1), so a triangle's last index is -3, -6, -9... and never -2 with an index gap.
+constexpr std::string_view kTwoMaterialObjectsUVE = R"(	Geometry: 1000, "Geometry::TwoTris", "Mesh" {
+		Vertices: *27 {
+			a: 0,0,0,100,0,0,100,100,0,200,0,0,300,0,0,300,100,0,400,0,0,500,0,0,500,100,0
+		}
+		PolygonVertexIndex: *9 {
+			a: 0,1,-3,3,4,-6,6,7,-9
+		}
+		LayerElementMaterial: 0 {
+			Version: 101
+			Name: ""
+			MappingInformationType: "ByPolygon"
+			ReferenceInformationType: "IndexToDirect"
+			Materials: *3 {
+				a: 1,0,1
+			}
+		}
+		GeometryVersion: 124
+	}
+	Model: 2000, "Model::TwoTris", "Mesh" {
+		Version: 232
+	}
+	Material: 3500, "Material::Red", "" {
+		Version: 102
+		ShadingModel: "lambert"
+		Properties70:  {
+			P: "DiffuseColor", "Color", "", "A",1.0,0.0,0.0
+		}
+	}
+	Material: 3501, "Material::Blue", "" {
+		Version: 102
+		ShadingModel: "lambert"
+		Properties70:  {
+			P: "DiffuseColor", "Color", "", "A",0.0,0.0,1.0
+		}
+	}
+)";
+constexpr std::string_view kTwoMaterialConnectionsUVE =
+    "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n\tC: \"OO\",3500,1000\n\tC: \"OO\",3501,1000\n";
+
+TEST(FbxMeshConverterUVETest, FacesAreGroupedByMaterialInFirstUseOrder) {
+    const std::string fbx = MakeFbxUVE(kTwoMaterialObjectsUVE, kTwoMaterialConnectionsUVE);
+    MeshAssetUVE mesh;
+    std::vector<FbxSurfaceRangeUVE> surfaces;
+    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(fbx), mesh, &surfaces));
+
+    ASSERT_EQ(mesh.indices.size(), 9U);
+    // Blue (source index 1) is used by the first face the file lists, so it opens the buffer;
+    // the trailing Red face joins the earlier Red one rather than starting a third run.
+    ASSERT_EQ(surfaces.size(), 2U);
+    EXPECT_EQ(surfaces[0].firstIndex, 0U);
+    EXPECT_EQ(surfaces[0].indexCount, 6U);
+    EXPECT_EQ(surfaces[0].materialSourceIndex, 1U);
+    EXPECT_EQ(surfaces[1].firstIndex, 6U);
+    EXPECT_EQ(surfaces[1].indexCount, 3U);
+    EXPECT_EQ(surfaces[1].materialSourceIndex, 0U);
+    // Every index still points at a vertex, and every triangle is still a triangle: reordering
+    // must move whole triangles, never corners.
+    for (std::size_t first = 0U; first < mesh.indices.size(); first += 3U) {
+        for (std::size_t corner = 0U; corner < 3U; ++corner) {
+            ASSERT_LT(mesh.indices[first + corner], mesh.vertices.size());
+        }
+    }
+}
+
+TEST(FbxMeshConverterUVETest, OneMaterialForEveryFaceIsTheWholeBufferAndNotARange) {
+    // A single-material model drawing through a one-entry surface table would take the per-surface
+    // path for nothing, so the converter emits no table - the same bytes version 1 wrote.
+    const std::string objects = R"(	Geometry: 1000, "Geometry::OneMaterial", "Mesh" {
+		Vertices: *18 {
+			a: 0,0,0,100,0,0,100,100,0,200,0,0,300,0,0,300,100,0
+		}
+		PolygonVertexIndex: *6 {
+			a: 0,1,-3,3,4,-6
+		}
+		LayerElementMaterial: 0 {
+			Version: 101
+			Name: ""
+			MappingInformationType: "ByPolygon"
+			ReferenceInformationType: "IndexToDirect"
+			Materials: *2 {
+				a: 0,0
+			}
+		}
+		GeometryVersion: 124
+	}
+	Model: 2000, "Model::OneMaterial", "Mesh" {
+		Version: 232
+	}
+	Material: 3500, "Material::Red", "" {
+		Version: 102
+		ShadingModel: "lambert"
+		Properties70:  {
+			P: "DiffuseColor", "Color", "", "A",1.0,0.0,0.0
+		}
+	}
+)";
+    const std::string fbx = MakeFbxUVE(
+        objects, "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n\tC: \"OO\",3500,1000\n");
+    MeshAssetUVE mesh;
+    std::vector<FbxSurfaceRangeUVE> surfaces;
+    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(fbx), mesh, &surfaces));
+    EXPECT_EQ(mesh.indices.size(), 6U);
+    EXPECT_TRUE(surfaces.empty());
+}
+
 TEST(FbxMeshConverterUVETest, ASkinIsWhatMakesItRigged) {
     const std::string objects = std::string(kFloorGeometryUVE) + R"(	Model: 3000, "Model::Bone", "LimbNode" {
 		Version: 232

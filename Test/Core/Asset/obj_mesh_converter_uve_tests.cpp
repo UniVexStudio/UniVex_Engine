@@ -182,5 +182,105 @@ TEST(ObjMeshConverterUVETest, ConvertObjMeshUVE_RejectsFiniteNormalAndEdgeOverfl
     EXPECT_EQ(edgeOverflow.vertices[0].position, original.vertices[0].position);
 }
 
+TEST(ObjMeshConverterUVETest, ConvertObjMeshUVE_MaterialRunsTileTheIndexBufferInFileOrder) {
+    // The look of an OBJ is a sequence of usemtl runs, not a set of names: a face painted green,
+    // then red, then green again draws in that order, so the table keeps three ranges and the
+    // middle name repeating is not merged away.
+    constexpr std::string_view source = R"OBJ(
+mtllib looks.mtl
+v 0 0 0
+v 1 0 0
+v 0 1 0
+v 2 0 0
+v 3 0 0
+v 2 1 0
+v 4 0 0
+v 5 0 0
+v 4 1 0
+usemtl Green Paint
+f 1 2 3
+usemtl Red
+f 4 5 6
+usemtl Green Paint
+f 7 8 9
+)OBJ";
+
+    MeshAssetUVE mesh;
+    std::vector<ObjSurfaceRangeUVE> surfaces;
+    ASSERT_TRUE(ConvertObjMeshUVE(source, mesh, &surfaces));
+    ASSERT_EQ(mesh.indices.size(), 9U);
+    ASSERT_EQ(surfaces.size(), 3U);
+    EXPECT_EQ(surfaces[0].firstIndex, 0U);
+    EXPECT_EQ(surfaces[0].indexCount, 3U);
+    EXPECT_EQ(surfaces[0].materialName, "Green Paint");
+    EXPECT_EQ(surfaces[1].firstIndex, 3U);
+    EXPECT_EQ(surfaces[1].indexCount, 3U);
+    EXPECT_EQ(surfaces[1].materialName, "Red");
+    EXPECT_EQ(surfaces[2].firstIndex, 6U);
+    EXPECT_EQ(surfaces[2].indexCount, 3U);
+    EXPECT_EQ(surfaces[2].materialName, "Green Paint");
+}
+
+TEST(ObjMeshConverterUVETest, ConvertObjMeshUVE_ASingleMaterialIsTheWholeBufferAndNotARange) {
+    // One run covers everything, which is exactly what an empty surface table already means: a
+    // table with one entry would make every single-material model take the per-surface path.
+    constexpr std::string_view source = R"OBJ(
+v 0 0 0
+v 1 0 0
+v 0 1 0
+v 1 1 0
+usemtl OnlyOne
+f 1 2 3
+f 2 4 3
+)OBJ";
+
+    MeshAssetUVE mesh;
+    std::vector<ObjSurfaceRangeUVE> surfaces;
+    ASSERT_TRUE(ConvertObjMeshUVE(source, mesh, &surfaces));
+    EXPECT_TRUE(surfaces.empty());
+    EXPECT_TRUE(mesh.surfaces.empty());
+}
+
+TEST(ObjMeshConverterUVETest, ConvertObjMeshUVE_NamesASwitchNoFaceUsesAreNotSurfaces) {
+    // usemtl lines before the first face are how OBJ files declare what comes next; a name that
+    // never paints a triangle is not a surface, and cannot become a zero-length range.
+    constexpr std::string_view source = R"OBJ(
+usemtl Unused
+v 0 0 0
+v 1 0 0
+v 0 1 0
+usemtl Used
+f 1 2 3
+)OBJ";
+
+    MeshAssetUVE mesh;
+    std::vector<ObjSurfaceRangeUVE> surfaces;
+    ASSERT_TRUE(ConvertObjMeshUVE(source, mesh, &surfaces));
+    EXPECT_TRUE(surfaces.empty());
+}
+
+TEST(ObjMeshConverterUVETest, ConvertObjMeshUVE_TooManyRunsDropTheTableRatherThanHalfOfIt) {
+    // Past the format's surface cap there is no table that could be saved with the mesh, so the
+    // conversion keeps the whole-buffer draw instead of publishing a truncated split - every
+    // triangle still draws, with the object's material.
+    std::string source;
+    for (std::size_t triangle = 0U; triangle <= kMaximumMeshSurfacesUVE; ++triangle) {
+        const float offset = static_cast<float>(triangle) * 4.0F;
+        source += "v " + std::to_string(offset) + " 0 0\n";
+        source += "v " + std::to_string(offset + 1.0F) + " 0 0\n";
+        source += "v " + std::to_string(offset) + " 1 0\n";
+        source += "usemtl m" + std::to_string(triangle) + "\n";
+        const std::size_t first = triangle * 3U;
+        source += "f " + std::to_string(first + 1U) + " " + std::to_string(first + 2U) + " " +
+                  std::to_string(first + 3U) + "\n";
+    }
+
+    MeshAssetUVE mesh;
+    std::vector<ObjSurfaceRangeUVE> surfaces;
+    ASSERT_TRUE(ConvertObjMeshUVE(source, mesh, &surfaces));
+    EXPECT_EQ(mesh.indices.size(), (kMaximumMeshSurfacesUVE + 1U) * 3U);
+    EXPECT_TRUE(surfaces.empty());
+}
+
 } // namespace
 } // namespace UVE::Asset::Tests
