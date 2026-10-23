@@ -1950,14 +1950,12 @@ void MetadataPropertyWriteUVE(const Core::TypeMetadataEntryUVE& entry,
         property.getValue(instance, &value);
         json[property.name] = value;
     } else if (property.typeId == kPropertyTypeStringListUVE) {
+        // Written exactly as the component holds it: a save/load pair that changed a value would
+        // make every round-trip comparison a special case. The canonical form - no trailing
+        // empties - is enforced where the list is edited and by the component's sanitizer, not
+        // here, because a codec that rewrites its input is not a codec.
         std::vector<std::string> value;
         property.getValue(instance, &value);
-        // Trailing empty entries say what an absent entry says, so they are not written: a list
-        // that grew for a mesh and shrank again saves the bytes it started with. Interior empties
-        // are meaningful (surface i has no override, surface i+1 does) and stay.
-        while (!value.empty() && value.back().empty()) {
-            value.pop_back();
-        }
         json[property.name] = value;
     } else if (property.typeId == kPropertyTypeAssetGuidUVE) {
         Asset::AssetGuidUVE value{};
