@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <array>
 #include <cmath>
 #include <cstddef>
 
@@ -146,5 +147,33 @@ TEST(PrimitiveGeometryUVETest, CapsuleAndCylinder_AreTheirOwnShapesWithOutwardFa
     EXPECT_EQ(flatCapNormals, 2U * 26U);
 }
 
+TEST(PrimitiveGeometryUVETest, LitGeometry_CarriesAUnitTangentBasisForEveryPrimitiveKind) {
+    constexpr std::array<Scene::PrimitiveMeshKindUVE, 5U> kKindsUVE{
+        Scene::PrimitiveMeshKindUVE::Cube,     Scene::PrimitiveMeshKindUVE::UVSphere,
+        Scene::PrimitiveMeshKindUVE::Plane,    Scene::PrimitiveMeshKindUVE::Capsule,
+        Scene::PrimitiveMeshKindUVE::Cylinder,
+    };
+    for (const Scene::PrimitiveMeshKindUVE kind : kKindsUVE) {
+        const PrimitiveGeometryUVE& lit = GetPrimitiveLitGeometryUVE(kind);
+        const PrimitiveGeometryUVE& raw = GetPrimitiveGeometryUVE(kind);
+        // The lit variant is the same surface: only the tangent basis differs.
+        EXPECT_EQ(lit.vertices.size(), raw.vertices.size());
+        EXPECT_EQ(lit.indices.size(), raw.indices.size());
+        EXPECT_EQ(lit.localBounds.min, raw.localBounds.min);
+        EXPECT_EQ(lit.localBounds.max, raw.localBounds.max);
+
+        for (const Asset::MeshVertexUVE& vertex : lit.vertices) {
+            EXPECT_NEAR(Math::LengthUVE(vertex.tangent), 1.0F, 1.0e-4F);
+            // A tangent that is not perpendicular to the normal would skew every normal map
+            // sampled through the TBN basis this vertex builds.
+            EXPECT_NEAR(Math::DotUVE(vertex.tangent, vertex.normal), 0.0F, 1.0e-3F) << "kind "
+                                                                                     << static_cast<int>(kind);
+            EXPECT_TRUE(vertex.tangentHandedness == 1.0F || vertex.tangentHandedness == -1.0F);
+        }
+
+        // Derived once per kind, never per call.
+        EXPECT_EQ(&GetPrimitiveLitGeometryUVE(kind), &lit);
+    }
+}
 
 } // namespace UVE::Render::Tests
