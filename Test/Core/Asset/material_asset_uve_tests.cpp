@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -73,6 +74,7 @@ TEST(MaterialAssetUVETest, DefaultConstruction_HasSensibleDefaults) {
     EXPECT_EQ(material.uvOffset, (Math::Vector2UVE{0.0F, 0.0F}));
     EXPECT_FALSE(material.unshaded);
     EXPECT_EQ(material.alphaCutoff, 0.0F);
+    EXPECT_EQ(material.kind, MaterialKindUVE::Standard);
 }
 
 TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsFieldExact) {
@@ -105,6 +107,62 @@ TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsFieldExact) {
     EXPECT_EQ(loaded.unshaded, original.unshaded);
     EXPECT_EQ(loaded.alphaCutoff, original.alphaCutoff);
 
+    std::filesystem::remove(path);
+}
+
+TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsEveryKind) {
+    const std::filesystem::path path = "uve_material_asset_tests_round_trip_kind.uvmat";
+    for (const MaterialKindUVE kind : {MaterialKindUVE::Standard, MaterialKindUVE::Orm, MaterialKindUVE::Shader}) {
+        std::filesystem::remove(path);
+        MaterialAssetUVE original = MakeTestMaterialUVE();
+        original.kind = kind;
+        ASSERT_TRUE(SaveMaterialAssetUVE(original, path));
+
+        MaterialAssetUVE loaded;
+        ASSERT_TRUE(LoadMaterialAssetUVE(path, loaded));
+        EXPECT_EQ(loaded.kind, kind);
+    }
+    std::filesystem::remove(path);
+}
+
+TEST(MaterialAssetUVETest, SaveMaterialAssetUVE_WritesKindOnlyForNonStandardPresets) {
+    const std::filesystem::path path = "uve_material_asset_tests_kind_payload.uvmat";
+    std::filesystem::remove(path);
+    MaterialAssetUVE material = MakeTestMaterialUVE();
+    material.kind = MaterialKindUVE::Standard;
+    ASSERT_TRUE(SaveMaterialAssetUVE(material, path));
+
+    const auto payloadText = [&path]() {
+        const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
+        if (!file.has_value()) {
+            return std::string{};
+        }
+        const std::vector<std::byte>& payload = file->second;
+        return std::string(reinterpret_cast<const char*>(payload.data()), payload.size());
+    };
+    // A Standard material keeps the exact payload it had before the field existed.
+    EXPECT_EQ(payloadText().find("\"kind\""), std::string::npos);
+
+    material.kind = MaterialKindUVE::Orm;
+    ASSERT_TRUE(SaveMaterialAssetUVE(material, path));
+    EXPECT_NE(payloadText().find("\"kind\":1"), std::string::npos);
+    std::filesystem::remove(path);
+}
+
+TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_RejectsUnknownKind) {
+    const std::filesystem::path path = "uve_material_asset_tests_unknown_kind.uvmat";
+    std::filesystem::remove(path);
+    // Every required field is present, so the only reason this can fail is the unknown preset.
+    const std::string invalidJson =
+        R"({"albedoColor":{"x":1.0,"y":1.0,"z":1.0},"albedoTexture":0,"normalTexture":0,"metallic":0.0,"roughness":0.5,"aoTexture":0,"emissiveColor":{"x":0.0,"y":0.0,"z":0.0},"vertexShader":0,"fragmentShader":0,"isTransparent":false,"kind":7})";
+    const auto* const jsonBytes = reinterpret_cast<const std::byte*>(invalidJson.data());
+    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Material,
+                                 std::vector<std::byte>(jsonBytes, jsonBytes + invalidJson.size())));
+
+    MaterialAssetUVE output;
+    output.kind = MaterialKindUVE::Standard;
+    EXPECT_FALSE(LoadMaterialAssetUVE(path, output));
+    EXPECT_EQ(output.kind, MaterialKindUVE::Standard);
     std::filesystem::remove(path);
 }
 
