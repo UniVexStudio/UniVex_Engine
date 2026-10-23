@@ -2037,11 +2037,11 @@ void MetadataPropertyReadUVE(const Core::TypeMetadataEntryUVE& entry,
         property.getValue(instance, &value);
         if (json.at(property.name).is_array()) {
             value.clear();
-            for (const nlohmann::json& entry : json.at(property.name)) {
+            for (const nlohmann::json& element : json.at(property.name)) {
                 // A list of paths is read as text and nothing else: a non-string is skipped rather
                 // than coerced, because a number that became a path would name no file.
-                if (entry.is_string()) {
-                    value.push_back(entry.get<std::string>());
+                if (element.is_string()) {
+                    value.push_back(element.get<std::string>());
                 }
             }
         }
