@@ -6244,11 +6244,17 @@ TEST(EditorUVETest, HierarchyDoubleClick_TheViewportRowOpensTheLevelAndNeverDrop
         const Scene::EntityUVE viewport = editor.GetDocumentViewportUVE();
         ASSERT_NE(viewport, Scene::kInvalidEntityUVE);
 
-        // A saved, clean level: the row opens its .uvscene.
+        // A saved, clean level: the row opens its .uvscene, which reads the file back.
         ASSERT_TRUE(editor.SaveSceneUVE());
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
         EXPECT_TRUE(std::filesystem::is_regular_file(scratch / "main.uvscene"));
         EXPECT_TRUE(EditorUVEAccessUVE::OpenHierarchyRowTargetUVE(editor, viewport));
+
+        // Reading the file back rebuilds the document, so the handle taken before it is not the
+        // one the document has now. Everything from here on addresses the row through the current
+        // Viewport rather than the one captured before the reload.
+        const Scene::EntityUVE reloadedViewport = editor.GetDocumentViewportUVE();
+        ASSERT_NE(reloadedViewport, Scene::kInvalidEntityUVE);
 
         // With unsaved work the click is still the row's (it never falls through to a rename), but
         // nothing is read back from disk: the object made a moment ago is still there.
@@ -6256,7 +6262,7 @@ TEST(EditorUVETest, HierarchyDoubleClick_TheViewportRowOpensTheLevelAndNeverDrop
             editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Camera3D);
         ASSERT_NE(unsaved, Scene::kInvalidEntityUVE);
         ASSERT_TRUE(editor.IsSceneDirtyUVE());
-        EXPECT_TRUE(EditorUVEAccessUVE::OpenHierarchyRowTargetUVE(editor, viewport));
+        EXPECT_TRUE(EditorUVEAccessUVE::OpenHierarchyRowTargetUVE(editor, reloadedViewport));
         EXPECT_TRUE(entityManager.IsAliveUVE(unsaved)) << "a double-click must not reload over edits";
         editor.ShutdownUVE();
     }
