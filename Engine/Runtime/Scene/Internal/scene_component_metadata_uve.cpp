@@ -1035,8 +1035,11 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             });
     // A collider is always part of some object rather than a feature of its own: the collision a
     // BoxMesh3D/SphereMesh3D/PlaneMesh3D is created with sits in that object's section, and a body's
-    // or area's shape, layer and mask sit in PhysicsObject3D's.
-    collider.nestedUnderTypeIds = {"component.primitive_mesh", "component.physics_object"};
+    // or area's shape, layer and mask sit in PhysicsObject3D's. A character's collider is the body
+    // itself, so Character3D hosts it first: that section authors the two rows a body owns (Layer
+    // and Mask) from the collider's own declarations, and does not repeat the shape under it.
+    collider.nestedUnderTypeIds = {"component.character_controller", "component.primitive_mesh",
+                                   "component.physics_object"};
     AddValidatedUVE<ColliderComponentUVE, &IsColliderComponentValidUVE>(entries, std::move(collider));
 
     AddValidatedUVE<Rigid3DComponentUVE, &IsRigid3DComponentValidUVE>(

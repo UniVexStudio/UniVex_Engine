@@ -50,6 +50,8 @@
 #include "uve/asset/i_asset_database_uve.h"
 #include "uve/asset/i_project_file_index_uve.h"
 #include "uve/component/camera_component_uve.h"
+#include "uve/component/character_controller_component_uve.h"
+#include "uve/component/collider_component_uve.h"
 #include "uve/component/editor_description_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/component/transform_component_uve.h"
@@ -109,6 +111,23 @@ constexpr std::array<const char*, 3> kCustomDrawnComponentTypeIdsUVE{
     return std::find_if(kCustomDrawnComponentTypeIdsUVE.cbegin(), kCustomDrawnComponentTypeIdsUVE.cend(),
                         [&typeId](const char* const candidate) { return typeId == candidate; }) !=
            kCustomDrawnComponentTypeIdsUVE.cend();
+}
+
+/// A host section that describes its child in its own shape, so the child's section is not drawn
+/// under it as well: the same object is never described twice.
+///
+///   Mesh3D      - its skin, primitive shape and surface override are the mesh; one block draws
+///                 all four, so the three no longer appear as folds of their own.
+///   Character3D - Layer and Mask are authored as the body's own rows, from the collider's own
+///                 declarations, so a character reads as a body rather than as a body plus a
+///                 second, longer list of shape settings.
+[[nodiscard]] bool HostDrawsChildUVE(const TypeMetadataEntryUVE& host,
+                                     const TypeMetadataEntryUVE& child) noexcept {
+    if (host.typeId == "component.mesh") {
+        return child.typeId == "component.skin" || child.typeId == "component.primitive_mesh" ||
+               child.typeId == "component.surface_instance";
+    }
+    return host.typeId == "component.character_controller" && child.typeId == "component.collider";
 }
 
 /// "component.rigid_body" becomes "rigid-body": the stable drawer id the registry orders and the
@@ -398,6 +417,9 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
         if (entry.typeId == "component.mesh") {
             DrawMeshInstance3DInspectorUVE(entity);
         } else {
+            if (entry.typeIndex == std::type_index(typeid(Scene::CharacterControllerComponentUVE))) {
+                DrawCharacterCollisionRowsUVE(entity);
+            }
             DrawMetadataPropertyRowsUVE(entry, instance);
         }
         if (entry.typeIndex == std::type_index(typeid(Scene::CameraComponentUVE))) {
@@ -412,9 +434,7 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
         }
         for (const NestedMetadataSectionUVE& section : nested) {
             const TypeMetadataEntryUVE* const child = section.entry;
-            if (entry.typeId == "component.mesh" &&
-                (child->typeId == "component.skin" || child->typeId == "component.primitive_mesh" ||
-                 child->typeId == "component.surface_instance")) {
+            if (HostDrawsChildUVE(entry, *child)) {
                 continue;
             }
             if (!entityManager.HasComponentUVE(entity, child->typeIndex) ||
@@ -436,6 +456,45 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
         }
     }
     ImGui::PopID();
+}
+
+void EditorUVE::DrawCharacterCollisionRowsUVE(const Scene::EntityUVE entity) {
+    // Layer and Mask live on the collider, but they answer what the object is on and what it looks
+    // for - a property of the body, not of the shape it happens to have - so they are authored in
+    // the body's section. The rows are the collider's own declarations, drawn through the row
+    // drawer the collider section would use, so the layer picker, its tooltip, its revert control
+    // and its undo entry are the same ones, and the values still have exactly one home.
+    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Core::TypeMetadataRegistryUVE& registry = Scene::GetSceneComponentMetadataRegistryUVE();
+    const TypeMetadataEntryUVE* const collider =
+        registry.FindTypeByIndexUVE(std::type_index(typeid(Scene::ColliderComponentUVE)));
+    if (collider == nullptr || !entityManager.HasComponentUVE(entity, collider->typeIndex)) {
+        return;
+    }
+    const void* const instance = entityManager.GetComponentPointerUVE(entity, collider->typeIndex);
+    // Resolved before the table opens, so a declaration that hides one of them (or names it
+    // differently) leaves no empty rows behind.
+    constexpr std::array<const char*, 2> kBodyRowsUVE{"collisionLayer", "collisionMask"};
+    std::array<const TypeMetadataPropertyUVE*, kBodyRowsUVE.size()> rows{};
+    std::size_t rowCount = 0U;
+    for (const char* const name : kBodyRowsUVE) {
+        const auto property = std::find_if(collider->properties.cbegin(), collider->properties.cend(),
+                                           [name](const TypeMetadataPropertyUVE& candidate) {
+                                               return candidate.name == name;
+                                           });
+        if (property != collider->properties.cend() && IsPropertyVisibleUVE(*property, instance)) {
+            rows[rowCount++] = &*property;
+        }
+    }
+    if (rowCount == 0U || !BeginPropertyRowsUVE("##character-collision")) {
+        return;
+    }
+    for (std::size_t index = 0U; index < rowCount; ++index) {
+        ImGui::PushID(rows[index]->name.c_str());
+        DrawMetadataPropertyRowUVE(*collider, *rows[index], instance);
+        ImGui::PopID();
+    }
+    ImGui::EndTable();
 }
 
 void EditorUVE::DrawMetadataPropertyRowsUVE(const TypeMetadataEntryUVE& entry, const void* const instance) {
