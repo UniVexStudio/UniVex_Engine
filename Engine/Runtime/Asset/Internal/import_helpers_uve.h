@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -48,6 +49,17 @@ namespace UVE::Asset::Detail {
 [[nodiscard]] AssetGuidUVE ResolveImportedSiblingTextureGuidUVE(const std::filesystem::path& destinationPath,
                                                                 std::string_view authoredTextureFile,
                                                                 const IAssetDatabaseUVE& assetDatabase);
+
+/// `<model-stem>.<sanitised-name>`: the file stem a model importer publishes beside the model for
+/// one of the model's own materials. The name is reduced to [A-Za-z0-9_-], falls back to
+/// `fallbackPrefix_<index>` when nothing survives, and gains `_<n>` on a clash so two authored
+/// materials of one model can never publish over each other. Deterministic for a given file, which
+/// is what makes a re-import land on the same paths - and therefore, through RegisterUVE, on the
+/// same GUIDs. Lives here rather than in one importer because FBX, glTF and OBJ all publish
+/// per-material assets beside the model and must name them the same way.
+[[nodiscard]] std::string MakeMaterialFileStemUVE(std::string_view modelStem, std::string_view materialName,
+                                                  std::size_t materialIndex, std::string_view fallbackPrefix,
+                                                  std::vector<std::string>& usedStems);
 
 /// Applies the shared texture post-decode pipeline: generate configured mip levels, encode the
 /// optional portable Basis/KTX2 payload, then validate the complete asset before publication.

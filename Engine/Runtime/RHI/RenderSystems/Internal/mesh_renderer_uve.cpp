@@ -645,8 +645,25 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
         if (effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
             ++outVisibilitySet.invalidAssetReferences;
         }
-        // A mesh with no material is not a broken reference: the renderer draws it with the
-        // built-in lit shader (Renderer3DUVE's unmaterialed path), so only an unassigned pair
+
+        // The mesh decides the material when the object names none. A material belongs to the mesh
+        // it was authored with - an imported model carries its own look - so an object's material
+        // field is an override of that, not the only way for one to exist. Without this, a model
+        // with materials arrives grey and stays grey until somebody assigns one by hand.
+        // Only a real reference is looked up: resolving an unassigned GUID would ask the database
+        // for a path that cannot exist, logging a resolution failure for every materialless object
+        // on every frame.
+        if (effectiveMaterialGuid == Asset::kInvalidAssetGuidUVE &&
+            effectiveMeshGuid != Asset::kInvalidAssetGuidUVE) {
+            const ResolvedAssetUVE<Asset::MeshAssetUVE>& meshForFallback =
+                ResolveOnceUVE(resolvedMeshes, effectiveMeshGuid, assetManager, assetDatabase);
+            if (meshForFallback.IsUsableUVE()) {
+                effectiveMaterialGuid = meshForFallback.value->FirstSurfaceMaterialGuidUVE();
+            }
+        }
+
+        // A mesh with no material of any kind is not a broken reference: the renderer draws it with
+        // the built-in lit shader (Renderer3DUVE's unmaterialed path), so only an unassigned pair
         // counts its material as missing. An override path that resolved is a material.
         if (effectiveMaterialGuid == Asset::kInvalidAssetGuidUVE &&
             effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
@@ -657,6 +674,8 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
             continue;
         }
 
+        // Cached from the fallback lookup when the mesh supplied the material, so the failure and
+        // pending counts below still describe this entity's mesh load exactly once.
         const ResolvedAssetUVE<Asset::MeshAssetUVE>& resolvedMesh =
             ResolveOnceUVE(resolvedMeshes, effectiveMeshGuid, assetManager, assetDatabase);
         const ResolvedAssetUVE<Asset::MaterialAssetUVE>& resolvedMaterial =

@@ -152,6 +152,53 @@ TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_EntityOutsideFrustum_Excluded)
     EXPECT_TRUE(queue.transparentItems.empty());
 }
 
+// A model arrives with the materials it was authored with. The object's own material field is an
+// override of that, not the only way for one to exist: without this fallback, an imported model drew
+// grey until somebody assigned a material by hand, which is what every FBX and every imported
+// texture looked like before.
+TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_ObjectWithoutItsOwnMaterial_DrawsWithTheMeshesMaterial) {
+    const Asset::AssetGuidUVE materialGuid =
+        assetDatabase.RegisterUVE("mesh_renderer_tests_mesh_owned_material.uvmat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_mesh_owned.uvmodel");
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>(
+        [materialGuid](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+            mesh.localBounds = Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+                                                                   Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+            mesh.materialGuids = {materialGuid};
+            return true;
+        });
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
+        [](const std::filesystem::path&, Asset::MaterialAssetUVE&) { return true; });
+
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, Asset::kInvalidAssetGuidUVE);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    const RenderQueueUVE queue =
+        meshRenderer.ExtractRenderQueueUVE(entityManager, assetManager, assetDatabase, MakeTestFrustumUVE());
+
+    ASSERT_EQ(queue.opaqueItems.size(), 1U);
+    EXPECT_EQ(queue.opaqueItems.front().materialHandle.GetGuidUVE(), materialGuid);
+}
+
+// The other half of the same rule: a mesh with no material of its own still belongs to the
+// unmaterialed path, so the two paths never both draw it and never both skip it.
+TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_MeshWithNoMaterialOfItsOwn_StaysOffTheMaterialedPath) {
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_bare.uvmodel");
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>([](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+        mesh.localBounds = Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+                                                               Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+        return true;
+    });
+
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, Asset::kInvalidAssetGuidUVE);
+
+    const RenderQueueUVE queue =
+        meshRenderer.ExtractRenderQueueUVE(entityManager, assetManager, assetDatabase, MakeTestFrustumUVE());
+
+    EXPECT_TRUE(queue.opaqueItems.empty());
+    EXPECT_TRUE(queue.transparentItems.empty());
+}
+
 TEST(MeshComponentUVE, IsMeshComponentValidUVE_AllowsUnassignedPair) {
     EXPECT_TRUE(Scene::IsMeshComponentValidUVE(
         Scene::MeshComponentUVE{Asset::kInvalidAssetGuidUVE, Asset::kInvalidAssetGuidUVE}));
