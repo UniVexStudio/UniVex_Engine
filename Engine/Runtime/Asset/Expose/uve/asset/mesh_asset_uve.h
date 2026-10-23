@@ -121,6 +121,44 @@ struct MeshMorphTargetUVE {
     [[nodiscard]] bool operator==(const MeshMorphTargetUVE&) const noexcept = default;
 };
 
+/// Sentinel `materialSlot` for a surface that names no material of its own.
+inline constexpr std::uint32_t kInvalidMeshSurfaceMaterialSlotUVE = 0xFFFFFFFFU;
+
+/// One drawable range of a mesh: a run of triangles in the index buffer, shaded by one material.
+///
+/// WHY THIS EXISTS. A `.uvmodel` historically held ONE index buffer and a list of material
+/// references, which was enough to say which materials a model carried but not which triangles
+/// used them - every draw had to assume the whole buffer belonged to the first material. A model
+/// authored with several material slots (a glTF mesh with several primitives, a car body whose
+/// glass and paint are separate materials) could not be reproduced at all: the importer rejected
+/// it, and the renderer had no way to draw part of a mesh anyway.
+///
+/// Surfaces make that split explicit and cheap. Each surface is a contiguous index range plus the
+/// slot of the material that shades it, so a draw is still one indexed draw with an offset -
+/// no per-triangle material table, no reordering of the index buffer, and batching keeps working
+/// because a surface is just another (mesh, material, range) item.
+///
+/// RANGES TILE THE INDEX BUFFER EXACTLY: the first surface starts at 0, each one continues where
+/// the previous ended, and the last ends at `indices.size()`. That invariant is what lets the
+/// renderer draw every surface without a triangle-ownership table and what makes "some triangles
+/// belong to nobody" an unrepresentable state rather than a silently missing piece of a model.
+/// IsMeshSurfaceDataValidUVE() enforces it.
+///
+/// `materialSlot` indexes MeshAssetUVE::materialGuids. kInvalidMeshSurfaceMaterialSlotUVE means
+/// the surface has no material of its own, and the object's material - or the built-in lit
+/// material when the object has none either - shades it.
+struct MeshSurfaceUVE {
+    std::uint32_t firstIndex = 0U;
+    std::uint32_t indexCount = 0U;
+    std::uint32_t materialSlot = kInvalidMeshSurfaceMaterialSlotUVE;
+
+    [[nodiscard]] bool operator==(const MeshSurfaceUVE&) const noexcept = default;
+};
+
+/// How many surfaces one mesh may carry. The same bound the material table uses: a mesh with
+/// thousands of material slots is a corrupted import, not authored content.
+inline constexpr std::size_t kMaximumMeshSurfacesUVE = 4096U;
+
 /// The CPU-side, engine-native representation of a `.uvmodel` asset (Part 2's file-format
 /// table): triangle vertex/index data plus a precomputed local-space bounding box (used for
 /// frustum culling once `MeshRendererUVE` exists, Increment 13). Purely CPU-side data — turning
@@ -146,6 +184,18 @@ struct MeshAssetUVE {
     /// unchanged and a mesh without materials still writes byte-identical files.
     std::vector<AssetGuidUVE> materialGuids;
 
+    /// The drawable ranges of this mesh, in index-buffer order.
+    ///
+    /// EMPTY IS THE OVERWHELMINGLY COMMON CASE and it is not "no surfaces": a mesh without an
+    /// entry here draws as ONE implicit surface covering its whole index buffer, shaded by
+    /// materialGuids[0]. That is every asset written before surfaces existed and every
+    /// single-material mesh, so nothing that consumes a mesh has to special-case them - ask
+    /// SurfaceCountUVE()/GetSurfaceUVE() and both shapes answer the same question.
+    ///
+    /// Serialised as a tagged trailing section, written only when non-empty, so a mesh without
+    /// surfaces keeps writing the exact bytes every previous version of this engine produced.
+    std::vector<MeshSurfaceUVE> surfaces;
+
     /// The blend shapes this mesh carries, in the order the source declared them (glTF morph
     /// target order, which is the order a `weights` array indexes into). Empty for a mesh with no
     /// morph targets - the overwhelmingly common case, and the one that must keep writing the
@@ -169,6 +219,50 @@ struct MeshAssetUVE {
 
     /// True when this mesh carries blend shapes.
     [[nodiscard]] bool HasMorphTargetsUVE() const noexcept { return !morphTargets.empty(); }
+
+    /// How many drawable surfaces this mesh has. Never zero for a mesh with triangles: a mesh
+    /// without an explicit surface list reports the one implicit surface that covers its whole
+    /// index buffer. Zero only when the mesh has no indices at all (an empty asset).
+    [[nodiscard]] std::size_t SurfaceCountUVE() const noexcept {
+        if (!surfaces.empty()) {
+            return surfaces.size();
+        }
+        return indices.empty() ? 0U : 1U;
+    }
+
+    /// The surface at `surfaceIndex`, in the implicit-single-surface form when the mesh has no
+    /// explicit list. An out-of-range index answers an empty surface rather than reading past the
+    /// end, so a caller that misbehaves gets a draw that covers nothing instead of undefined
+    /// behavior.
+    [[nodiscard]] MeshSurfaceUVE GetSurfaceUVE(const std::size_t surfaceIndex) const noexcept {
+        if (surfaces.empty()) {
+            if (surfaceIndex != 0U || indices.empty()) {
+                return MeshSurfaceUVE{};
+            }
+            return MeshSurfaceUVE{0U, static_cast<std::uint32_t>(indices.size()),
+                                  materialGuids.empty() ? kInvalidMeshSurfaceMaterialSlotUVE : 0U};
+        }
+        if (surfaceIndex >= surfaces.size()) {
+            return MeshSurfaceUVE{};
+        }
+        return surfaces[surfaceIndex];
+    }
+
+    /// The GUID of the material that shades `surfaceIndex`, or kInvalidAssetGuidUVE when the
+    /// surface names no material, the slot is out of range, or the mesh has no materials at all.
+    [[nodiscard]] AssetGuidUVE SurfaceMaterialGuidUVE(const std::size_t surfaceIndex) const noexcept {
+        const MeshSurfaceUVE surface = GetSurfaceUVE(surfaceIndex);
+        if (surface.materialSlot == kInvalidMeshSurfaceMaterialSlotUVE ||
+            surface.materialSlot >= materialGuids.size()) {
+            return kInvalidAssetGuidUVE;
+        }
+        return materialGuids[surface.materialSlot];
+    }
+
+    /// True when this mesh carries an explicit surface split (more than the implicit single one).
+    [[nodiscard]] bool HasExplicitSurfacesUVE() const noexcept {
+        return !surfaces.empty();
+    }
 
     /// The material this mesh is drawn with when nothing on the object overrides it: the one the
     /// asset was authored with for its first surface, or kInvalidAssetGuidUVE for a mesh that has
@@ -215,6 +309,15 @@ inline constexpr std::size_t kMaximumMeshMorphTargetsUVE = 512U;
 /// production shapes (a full-body corrective) touch a few tens of thousands of vertices - so this
 /// bound only ever fires on corrupt or hostile input, never on authored content.
 inline constexpr std::size_t kMaximumMeshMorphTargetDeltasUVE = 1U << 20U;
+
+/// Full structural validation of `mesh`'s surface data, logging the specific defect found.
+///
+/// A mesh with an EMPTY surface list is valid: it draws as one implicit surface over its whole
+/// index buffer, which is every asset written before surfaces existed. When surfaces exist they
+/// must satisfy: at most kMaximumMeshSurfacesUVE entries, every range non-empty and a whole
+/// number of triangles, every range inside the index buffer, the ranges tiling it exactly with no
+/// gap and no overlap, and every material slot either invalid or below materialGuids.size().
+[[nodiscard]] bool IsMeshSurfaceDataValidUVE(const MeshAssetUVE& mesh);
 
 /// Full structural validation of `mesh`'s morph-target data, logging the specific defect found.
 ///

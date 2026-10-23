@@ -131,6 +131,12 @@ struct MeshVisibilityCandidateUVE final {
     float opacity = 1.0F;
     /// Second colour pass with materialOverlayPath. Never writes the shadow maps.
     bool overlay = false;
+    /// The index range of the mesh this candidate draws. One implicit whole-buffer surface for a
+    /// mesh without an explicit split, one range per surface for a mesh that has one - so this is
+    /// what turns a multi-material mesh into one candidate per material. `indexCount == 0` means
+    /// "the mesh's whole index buffer", which is what an overlay (and every pre-surface caller)
+    /// wants.
+    Asset::MeshSurfaceUVE surface{};
 };
 
 /// This frame's renderable set, built once and then culled against as many frusta as the frame

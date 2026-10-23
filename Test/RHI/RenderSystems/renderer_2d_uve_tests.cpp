@@ -98,7 +98,7 @@ public:
     void SetUniformVector3UVE(std::string_view, const Math::Vector3UVE&) override {}
     void SetUniformVector4UVE(std::string_view, const Math::Vector4UVE&) override {}
     void SetUniformMatrix4x4UVE(std::string_view, const Math::Matrix4x4UVE&) override {}
-    void DrawIndexedUVE(std::uint32_t, std::uint32_t = 1) override {}
+    void DrawIndexedUVE(std::uint32_t, std::uint32_t = 1, std::uint32_t = 0) override {}
     void DrawUVE(std::uint32_t vertexCount, std::uint32_t = 1) override {
         FakeCommandUVE command{};
         command.kind = FakeCommandUVE::Kind::Draw;

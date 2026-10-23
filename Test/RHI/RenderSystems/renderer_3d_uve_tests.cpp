@@ -1249,6 +1249,126 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_VisiblePrimitive_RecordsGeometryAndAuth
     EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*renderLayers).value, 1);
 }
 
+TEST_F(Renderer3DUVETest, RenderFrameUVE_MeshWithExplicitSurfaces_DrawsOneRangePerSurfaceMaterial) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_two_surface_mesh.uvmodel");
+    const Asset::AssetGuidUVE redMaterialGuid = assetDatabase.RegisterUVE("renderer3d_surface_red.uvmat");
+    const Asset::AssetGuidUVE blueMaterialGuid = assetDatabase.RegisterUVE("renderer3d_surface_blue.uvmat");
+
+    // Two triangles, one material slot each, and a surface per triangle - a quad whose halves are
+    // different materials, which is what a two-material glTF mesh imports as.
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>(
+        [redMaterialGuid, blueMaterialGuid](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+            mesh.vertices = {
+                Asset::MeshVertexUVE{Math::Vector3UVE{-0.5F, -0.5F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
+                Asset::MeshVertexUVE{Math::Vector3UVE{0.5F, -0.5F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F},
+                Asset::MeshVertexUVE{Math::Vector3UVE{0.5F, 0.5F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 1.0F, 1.0F},
+                Asset::MeshVertexUVE{Math::Vector3UVE{-0.5F, 0.5F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F},
+            };
+            mesh.indices = {0U, 1U, 2U, 0U, 2U, 3U};
+            mesh.localBounds = Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{},
+                                                                   Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+            mesh.materialGuids = {redMaterialGuid, blueMaterialGuid};
+            mesh.surfaces = {Asset::MeshSurfaceUVE{0U, 3U, 0U}, Asset::MeshSurfaceUVE{3U, 3U, 1U}};
+            return true;
+        });
+    // Red and blue, so the recorded uniforms say which material shaded which index range.
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
+        [vertexGuid = vertexShaderGuid, fragmentGuid = fragmentShaderGuid](const std::filesystem::path& path,
+                                                                          Asset::MaterialAssetUVE& material) {
+            material.vertexShader = vertexGuid;
+            material.fragmentShader = fragmentGuid;
+            material.albedoColor = path.filename().string().contains("blue")
+                                       ? Math::ColorUVE{0.0F, 0.0F, 1.0F}
+                                       : Math::ColorUVE{1.0F, 0.0F, 0.0F};
+            return true;
+        });
+    // The OBJECT names no material: the mesh's own surface materials decide, surface by surface.
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, Asset::kInvalidAssetGuidUVE);
+
+    // Both materials must be loaded before the renderer can resolve them, and the shader assets
+    // they reference must be loaded before the renderer can even create their programs - the
+    // fixture's helper does both and then renders one priming frame.
+    const Asset::AssetHandleUVE<Asset::MaterialAssetUVE> blueHandle =
+        assetManager.LoadUVE<Asset::MaterialAssetUVE>(blueMaterialGuid, assetDatabase);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
+        shaderManager.UpdateUVE(0.0);
+        if (blueHandle.IsReadyUVE() && shaderManager.GetPendingJobCountUVE() == 0U) {
+            break;
+        }
+        std::this_thread::yield();
+    }
+    ASSERT_TRUE(blueHandle.IsReadyUVE());
+
+    // The GPU frustum cull would collapse the two draws into one indirect command whose
+    // parameters are not visible in the recorded command stream, and those parameters are exactly
+    // what this test is about. Freezing culling keeps the direct path without changing what is
+    // drawn - a debug option, not a different renderer.
+    CullingSettingsUVE cullingSettings;
+    cullingSettings.frustumCullingEnabledUVE = false;
+    renderer3D->SetCullingSettingsUVE(cullingSettings);
+
+    // Materials' programs are created on first use and only become valid once the shader manager
+    // has processed the compile, so the frame that first sees them is a warm-up. The helper waits
+    // for the shader assets (a program cannot even be requested before them) and primes the red
+    // material; the second prime creates the blue material's program, which the first prime cannot
+    // have requested yet. Same shape every other material test in this file uses.
+    WaitUntilAssetsReadyUVE(meshGuid, redMaterialGuid);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().meshItemsExtracted, 2U);
+
+    // uAlbedoColor is set immediately before each main-pass draw, so the value in effect when a
+    // draw is recorded names the material that draw used. Only the two material colours count:
+    // the shadow, tone-mapping and UI passes record draws too, and none of them shade a material.
+    struct ShadedRangedDrawUVE {
+        std::uint32_t indexCount = 0U;
+        std::uint32_t firstIndex = 0U;
+        float red = 0.0F;
+        float green = 0.0F;
+        float blue = 0.0F;
+    };
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    std::optional<Math::Vector3UVE> lastAlbedo;
+    std::vector<ShadedRangedDrawUVE> shadedDraws;
+    for (const RecordedCommandUVE& command : commands) {
+        // A pipeline bind starts a new program's uniforms, so an albedo set for the previous one
+        // cannot name this draw. That is what keeps the post-processing and UI passes - which
+        // record draws but never shade a material - out of the list.
+        if (std::holds_alternative<BindPipelineCommandUVE>(command)) {
+            lastAlbedo.reset();
+        } else if (std::holds_alternative<SetUniformVector3CommandUVE>(command)) {
+            const auto& uniform = std::get<SetUniformVector3CommandUVE>(command);
+            if (uniform.name == "uAlbedoColor") {
+                lastAlbedo = uniform.value;
+            }
+        } else if (std::holds_alternative<DrawIndexedCommandUVE>(command) && lastAlbedo.has_value()) {
+            const auto& draw = std::get<DrawIndexedCommandUVE>(command);
+            shadedDraws.push_back(ShadedRangedDrawUVE{draw.indexCount, draw.firstIndex, lastAlbedo->x,
+                                                      lastAlbedo->y, lastAlbedo->z});
+        }
+    }
+    // One shaded draw per surface, each covering only that surface's three indices: a draw that
+    // covered the whole buffer would show six indices here, and a batch that merged the two
+    // surfaces would show one draw carrying both materials' triangles.
+    std::sort(shadedDraws.begin(), shadedDraws.end(),
+              [](const ShadedRangedDrawUVE& left, const ShadedRangedDrawUVE& right) {
+                  return left.firstIndex < right.firstIndex;
+              });
+    const std::vector<ShadedRangedDrawUVE> expectedDraws{
+        ShadedRangedDrawUVE{3U, 0U, 1.0F, 0.0F, 0.0F},
+        ShadedRangedDrawUVE{3U, 3U, 0.0F, 0.0F, 1.0F}};
+    ASSERT_EQ(shadedDraws.size(), expectedDraws.size());
+    for (std::size_t drawIndex = 0U; drawIndex < expectedDraws.size(); ++drawIndex) {
+        EXPECT_EQ(shadedDraws[drawIndex].indexCount, expectedDraws[drawIndex].indexCount);
+        EXPECT_EQ(shadedDraws[drawIndex].firstIndex, expectedDraws[drawIndex].firstIndex);
+        EXPECT_FLOAT_EQ(shadedDraws[drawIndex].red, expectedDraws[drawIndex].red);
+        EXPECT_FLOAT_EQ(shadedDraws[drawIndex].green, expectedDraws[drawIndex].green);
+        EXPECT_FLOAT_EQ(shadedDraws[drawIndex].blue, expectedDraws[drawIndex].blue);
+    }
+}
+
 TEST_F(Renderer3DUVETest, RenderFrameUVE_PrimitiveWithAssignedMaterial_ShadesThroughThatMaterialsValues) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     // The fixture's material loader produces albedo (0.2, 0.4, 0.6), metallic 0.25, roughness 0.75.

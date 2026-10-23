@@ -1239,7 +1239,8 @@ void GlCommandBufferUVE::SetUniformMatrix4x4UVE(std::string_view name, const Mat
 #endif
 }
 
-void GlCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t instanceCount) {
+void GlCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t instanceCount,
+                                        std::uint32_t firstIndex) {
     if (!RequireInsideRenderPassUVE(m_insideRenderPass, "DrawIndexedUVE")) {
         return;
     }
@@ -1258,8 +1259,13 @@ void GlCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t 
         return;
     }
     const std::uint64_t indexCapacity = indexBufferIt->second.sizeBytes / sizeof(std::uint32_t);
-    if (static_cast<std::uint64_t>(indexCount) > indexCapacity) {
-        UVE_ERROR("GlCommandBufferUVE: DrawIndexedUVE indexCount exceeds the bound index buffer");
+    // The whole range, not just its length: a surface at the tail of a large index buffer passes
+    // an indexCount check on its own and still reads past the binding.
+    const std::uint64_t rangeEnd = static_cast<std::uint64_t>(firstIndex) + indexCount;
+    if (rangeEnd > indexCapacity) {
+        UVE_ERROR("GlCommandBufferUVE: DrawIndexedUVE range [{}, {}) exceeds the bound index buffer "
+                  "of {} indices",
+                  firstIndex, rangeEnd, indexCapacity);
         return;
     }
     if (indexCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max())) {
@@ -1269,8 +1275,11 @@ void GlCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t 
     if (instanceCount > 1) {
         UVE_WARNING("GlCommandBufferUVE: DrawIndexedUVE instanceCount > 1 is not yet supported - drawing once");
     }
+    // GL takes a byte offset here, unlike every other API in this engine which speaks indices.
+    const auto indexOffsetBytes =
+        static_cast<std::uintptr_t>(firstIndex) * static_cast<std::uintptr_t>(sizeof(std::uint32_t));
     glDrawElements(ToGlDrawModeUVE(pipelineRecord->topology), static_cast<GLsizei>(indexCount),
-                     GL_UNSIGNED_INT, nullptr);
+                     GL_UNSIGNED_INT, reinterpret_cast<const void*>(indexOffsetBytes));
     UVE_GL_CHECK_ERROR_UVE("DrawIndexedUVE");
 }
 

@@ -89,6 +89,31 @@ TEST_F(RenderBatchUVETest, BuildRenderBatchesUVE_EmptyInput_ProducesNothing) {
     EXPECT_EQ(batches.GetTotalInstanceCountUVE(), 0U);
 }
 
+TEST_F(RenderBatchUVETest, BuildRenderBatchesUVE_DifferentSurfaceRanges_NeverMerge) {
+    // Two surfaces of the SAME mesh, SAME material - adjacent in the queue and identical in every
+    // other respect. They draw different triangles, so merging them would issue one draw for the
+    // first range and silently lose the second.
+    std::vector<RenderItemUVE> items;
+    RenderItemUVE first = MakeItemUVE("quad", "stone", 1.0F);
+    first.firstIndex = 0U;
+    first.indexCount = 3U;
+    RenderItemUVE second = MakeItemUVE("quad", "stone", 2.0F);
+    second.firstIndex = 3U;
+    second.indexCount = 3U;
+    items.push_back(first);
+    items.push_back(second);
+
+    RenderBatchSetUVE batches;
+    BuildRenderBatchesUVE(items, batches);
+    ASSERT_EQ(batches.batches.size(), 2U);
+    EXPECT_EQ(batches.batches[0].itemCount, 1U);
+    EXPECT_EQ(batches.batches[1].itemCount, 1U);
+
+    // The depth-only pass merges by mesh alone, but still not across ranges.
+    BuildShadowBatchesUVE(items, batches);
+    ASSERT_EQ(batches.batches.size(), 2U);
+}
+
 TEST_F(RenderBatchUVETest, BuildRenderBatchesUVE_IdenticalAdjacentItems_CollapseIntoOneBatch) {
     std::vector<RenderItemUVE> items;
     items.push_back(MakeItemUVE("cube", "stone", 1.0F));

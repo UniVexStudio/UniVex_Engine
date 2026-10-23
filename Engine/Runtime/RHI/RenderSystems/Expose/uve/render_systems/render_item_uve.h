@@ -33,6 +33,16 @@ struct RenderItemUVE {
     float opacity = 1.0F;
     /// Second colour pass (SurfaceInstance overlay). Drawn blended, never a shadow caster.
     bool overlay = false;
+    /// Index range this item draws, in indices into the mesh's index buffer. `indexCount == 0`
+    /// means the mesh's whole buffer, which is every item from a mesh without a surface split and
+    /// keeps the pre-surface behavior for callers that build items by hand.
+    ///
+    /// It lives on the ITEM rather than on the batch because a surface is a different draw of the
+    /// same buffers: batching therefore also requires the range to match, or two surfaces of one
+    /// mesh would be merged into a draw that covers the union of their triangles with whichever
+    /// material happened to start the batch.
+    std::uint32_t firstIndex = 0U;
+    std::uint32_t indexCount = 0U;
 };
 
 } // namespace UVE::Render
