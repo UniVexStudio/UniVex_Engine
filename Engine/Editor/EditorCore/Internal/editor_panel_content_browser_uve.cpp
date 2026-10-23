@@ -258,6 +258,13 @@ bool SidebarSectionUVE(const char* id, const char* icon, const std::string& titl
 } // namespace
 
 void EditorUVE::DrawContentBrowserBodyUVE() {
+    // Free previews the Inspector invalidated this frame before any card can ask for one again.
+    // ImGui submits its draw lists once the frame ends, so deleting a texture during the Inspector
+    // pass would leave an earlier card drawing a freed name; a frame boundary is the safe point.
+    for (std::uintptr_t& retiredTexture : m_retiredMaterialThumbnailTextures) {
+        EditorUiAssetsUVE::DeleteDynamicTextureUVE(retiredTexture);
+    }
+    m_retiredMaterialThumbnailTextures.clear();
 
     Asset::IProjectFileIndexUVE& projectFileIndex = m_services->GetProjectFileIndexUVE();
     const Asset::ProjectChangeSnapshotUVE changeSnapshot = m_services->GetProjectChangeWatcherUVE().GetSnapshotUVE();
@@ -1114,6 +1121,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             look.typeLabel = GetContentBrowserItemTypeLabelUVE(look.type);
             const std::uintptr_t preview =
                 look.type == ContentBrowserItemTypeUVE::Texture ? GetTextureThumbnailUVE(entry.relativePath)
+                : look.type == ContentBrowserItemTypeUVE::Material ? GetMaterialThumbnailUVE(entry.relativePath)
                 : look.type == ContentBrowserItemTypeUVE::Mesh || look.type == ContentBrowserItemTypeUVE::Model
                     ? GetMeshThumbnailUVE(entry.relativePath)
                     : 0U;

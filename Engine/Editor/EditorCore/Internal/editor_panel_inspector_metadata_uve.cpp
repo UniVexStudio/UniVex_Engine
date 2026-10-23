@@ -1334,6 +1334,8 @@ void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& abso
 
         if (changed) {
             static_cast<void>(Asset::SaveMaterialAssetUVE(mat, absolutePath));
+            // The Content Browser previews this file's own shading, so its cached image is stale now.
+            InvalidateMaterialThumbnailCacheUVE(absolutePath);
         }
         ImGui::TreePop();
     }

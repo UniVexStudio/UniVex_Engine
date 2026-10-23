@@ -50,6 +50,7 @@
 #include "uve/object/type_metadata_uve.h"
 #include "uve/scene/scene_component_metadata_uve.h"
 #include "uve/editor/mesh_thumbnail_renderer_uve.h"
+#include "uve/editor/material_thumbnail_renderer_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/component/animation_sequencer_component_uve.h"
@@ -2175,6 +2176,18 @@ private:
     /// generic per-type icon in that case.
     [[nodiscard]] std::uintptr_t GetMeshThumbnailUVE(const std::filesystem::path& relativePath);
     void ClearMeshThumbnailCacheUVE() noexcept;
+    /// Returns a GL texture id previewing relativePath's material: its albedo, normal,
+    /// metallic-roughness, occlusion and emissive inputs shaded with a physically based model on a
+    /// fixed preview sphere, rendered and cached on first request. Texture references resolve
+    /// through the asset database; an unset or unresolvable slot falls back to the material's flat
+    /// value. Returns 0 if the file cannot be loaded as a material asset - callers should fall
+    /// back to the generic per-type icon in that case.
+    [[nodiscard]] std::uintptr_t GetMaterialThumbnailUVE(const std::filesystem::path& relativePath);
+    void ClearMaterialThumbnailCacheUVE() noexcept;
+    /// Drops one material's cached preview after its asset was saved, so the Content Browser shows
+    /// the edit. `absolutePath` is the material file the Inspector wrote; it is matched against the
+    /// project content root and ignored when outside it.
+    void InvalidateMaterialThumbnailCacheUVE(const std::filesystem::path& absolutePath);
     /// The Content Browser inside the current window: the bottom dock and the Entity Editor's dock.
     void DrawContentBrowserBodyUVE();
     /// Refreshes the read-only project index after the engine-owned watcher observes a new
@@ -2398,6 +2411,16 @@ private:
     /// Content-derived thumbnail textures for Content Browser mesh entries, rendered on demand by
     /// m_meshThumbnailRenderer. Same caching/invalidation contract as m_textureThumbnailCache.
     std::map<std::string, std::uintptr_t> m_meshThumbnailCache;
+    /// Content-derived thumbnail textures for Content Browser material entries, rendered on demand
+    /// by m_materialThumbnailRenderer. Same caching contract as m_textureThumbnailCache, plus
+    /// targeted invalidation when the Inspector saves a material (InvalidateMaterialThumbnailCacheUVE).
+    std::map<std::string, std::uintptr_t> m_materialThumbnailCache;
+    /// Material thumbnails invalidated during this frame. The Inspector saves a material on every
+    /// edit - including every frame of a slider drag - so its preview is dropped from
+    /// m_materialThumbnailCache immediately but the GL texture is only freed at the start of the
+    /// next Content Browser pass. ImGui submits the previous frame's draw lists at the end of that
+    /// frame, so freeing during the Inspector pass would pull a card's texture out from under it.
+    std::vector<std::uintptr_t> m_retiredMaterialThumbnailTextures;
     /// Why the last Skeleton3D source bind failed; shown under the Source row until the next bind.
     std::string m_skeletonSourceStatus;
     /// The bone whose rest pose the Skeleton3D Inspector shows, by name.
@@ -2627,6 +2650,7 @@ private:
     /// Every content-relative model source, as the last project refresh read it.
     std::map<std::string, EditorModelSourceInfoUVE> m_modelSources;
     MeshThumbnailRendererUVE m_meshThumbnailRenderer;
+    MaterialThumbnailRendererUVE m_materialThumbnailRenderer;
     ContentBrowserTypeFocusUVE m_contentBrowserTypeFocus = ContentBrowserTypeFocusUVE::All;
     std::string m_assetFilter;
     /// One default-constructed instance per inspected component type, made on first use, so the
