@@ -17,6 +17,7 @@
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
+#include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/objects/3d/bone_attachment_3d_uve.h"
@@ -125,6 +126,27 @@ TEST(SceneComponentMetadataUVETest, DeclaredPropertiesReadAndWriteTheRealCompone
     SetPropertyValueUVE(*position, component, Math::Vector3UVE{3.0F, 4.0F, 5.0F});
     EXPECT_FLOAT_EQ(component.localPosition.y, 4.0F);
     EXPECT_FLOAT_EQ(GetPropertyValueUVE<Math::Vector3UVE>(*position, component).z, 5.0F);
+}
+
+TEST(SceneComponentMetadataUVETest, SurfaceOverridesArePersistedButDrawnByTheirOwnRows) {
+    // The per-surface override list is document data - the serializer writes it, and a reload has
+    // to bring it back - but it is not a generic row: the MeshInstance3D inspector draws one
+    // picker per surface beside the material that surface already uses. Declaring it Hidden is the
+    // difference between "persisted" and "appears as a wall of path strings".
+    const TypeMetadataEntryUVE* entry =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(SurfaceInstanceComponentUVE)));
+    ASSERT_NE(entry, nullptr);
+    const TypeMetadataPropertyUVE* overrides = FindPropertyUVE(*entry, "surfaceMaterialOverridePaths");
+    ASSERT_NE(overrides, nullptr);
+    EXPECT_EQ(overrides->typeId, kPropertyTypeStringListUVE);
+    EXPECT_TRUE(overrides->flags.HasUVE(TypeMetadataPropertyFlagsUVE::Hidden));
+    EXPECT_FALSE(overrides->flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState));
+
+    SurfaceInstanceComponentUVE component;
+    const std::vector<std::string> paths{"", "materials/one.uvmaterial"};
+    SetPropertyValueUVE(*overrides, component, paths);
+    EXPECT_EQ(component.surfaceMaterialOverridePaths, paths);
+    EXPECT_EQ(GetPropertyValueUVE<std::vector<std::string>>(*overrides, component), paths);
 }
 
 TEST(SceneComponentMetadataUVETest, EnumPropertiesRoundTripThroughInt64) {

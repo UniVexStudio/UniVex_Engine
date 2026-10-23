@@ -20,6 +20,16 @@ namespace UVE::Asset {
 inline constexpr std::size_t kMaximumFbxMeshSourceBytesUVE = 256U * 1024U * 1024U;
 inline constexpr std::uint32_t kMaximumFbxMeshVerticesUVE = 1'000'000U;
 
+/// One run of a converted FBX's index buffer that shares a material, in index-buffer order.
+/// `materialSourceIndex` is the material's position in the file's own material list - the order
+/// ReadFbxMaterialsUVE returns - not yet a slot in the mesh's `materialGuids`. The importer owns that
+/// remap, because only it knows which materials were publishable.
+struct FbxSurfaceRangeUVE final {
+    std::uint32_t firstIndex = 0U;
+    std::uint32_t indexCount = 0U;
+    std::uint32_t materialSourceIndex = kInvalidMeshSurfaceMaterialSlotUVE;
+};
+
 /// Converts an FBX file (binary or ASCII, any version the parser reads) into one failure-atomic
 /// static MeshAssetUVE.
 ///
@@ -37,7 +47,14 @@ inline constexpr std::uint32_t kMaximumFbxMeshVerticesUVE = 1'000'000U;
 /// converted here (ReadFbxAnimationsUVE reads the takes). Embedded and external files are never
 /// read. Returns false and leaves `outMesh` untouched when the bytes do not parse,
 /// hold no triangles, exceed kMaximumFbxMeshVerticesUVE or produce a non-finite value.
-[[nodiscard]] bool ConvertFbxMeshUVE(std::span<const std::byte> source, MeshAssetUVE& outMesh);
+///
+/// `outSurfaces`, when non-null, receives one range per material the file's faces actually use,
+/// with the triangles reordered so each material is one contiguous run. A file whose faces all use
+/// the same material - or none at all - gets an EMPTY list: that is what having no surface table
+/// already means, and the bytes stay identical to what earlier versions wrote. A file with more
+/// distinct materials than kMaximumMeshSurfacesUVE also gets an empty list.
+[[nodiscard]] bool ConvertFbxMeshUVE(std::span<const std::byte> source, MeshAssetUVE& outMesh,
+                                     std::vector<FbxSurfaceRangeUVE>* outSurfaces = nullptr);
 
 /// What an FBX holds, read without its geometry or animation curves - enough to tell a model from
 /// an animation-only file (a skeleton and its curves, the common shape of exported motion) before
@@ -81,6 +98,11 @@ struct FbxSourceSummaryUVE final {
 /// One FBX material: the engine's PBR material type plus the texture files it references.
 struct FbxMaterialUVE final {
     std::string name;
+
+    /// This material's position in the file's own material list. ReadFbxMaterialsUVE skips a
+    /// material it cannot validate, so this is what ties a surface range back to the slot the
+    /// material was published in - the position in THIS vector would shift after a skip.
+    std::uint32_t sourceIndex = 0U;
 
     /// Albedo, emission, metalness, roughness and transparency mapped from FBX's PBR values
     /// (ufbx derives them from the classic properties when a material is not authored as PBR).

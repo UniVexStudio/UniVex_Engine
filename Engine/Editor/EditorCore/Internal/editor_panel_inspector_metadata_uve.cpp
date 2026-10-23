@@ -1410,7 +1410,7 @@ bool EditorUVE::DrawStandardMaterialSlotUVE(const char* const label, const char*
 }
 
 bool EditorUVE::DrawStandardMaterialSlotUVE(const char* const label, const char* const id,
-                                           std::string& inOutPath) {
+                                           std::string& inOutPath, const bool editInline) {
     bool edited = false;
     if (label != nullptr && label[0] != '\0') {
         ImGui::TextUnformatted(label);
@@ -1439,7 +1439,7 @@ bool EditorUVE::DrawStandardMaterialSlotUVE(const char* const label, const char*
         edited = true;
     }
 
-    if (!inOutPath.empty()) {
+    if (editInline && !inOutPath.empty()) {
         std::filesystem::path absPath = inOutPath;
         if (absPath.is_relative()) {
             absPath = (project.contentRoot / absPath).lexically_normal();
@@ -1553,6 +1553,37 @@ bool EditorUVE::AutoPopulateSkinFromModelUVE(const Scene::EntityUVE entity, Scen
         }
     }
     return false;
+}
+
+std::optional<Asset::MeshAssetUVE> EditorUVE::LoadEntityMeshAssetUVE(const Scene::EntityUVE entity) {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
+        return std::nullopt;
+    }
+    const Scene::MeshComponentUVE meshComponent = entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity);
+    if (meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE) {
+        return std::nullopt;
+    }
+    std::filesystem::path resolved = m_services->GetAssetDatabaseUVE().ResolveUVE(meshComponent.meshGuid);
+    std::error_code ec;
+    if (resolved.extension() != ".uvmodel" || !std::filesystem::is_regular_file(resolved, ec)) {
+        // A model source (.glb/.fbx/...) draws through the .uvmodel the importer wrote; resolve
+        // that the same way the skin and material paths do.
+        const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        const std::filesystem::path relative = resolved.lexically_relative(project.contentRoot);
+        if (!relative.empty() && *relative.begin() != "..") {
+            const std::filesystem::path imported = GetImportedModelPathUVE(relative);
+            if (std::filesystem::is_regular_file(imported, ec)) {
+                resolved = imported;
+            }
+        }
+    }
+    Asset::MeshAssetUVE meshAsset;
+    if (resolved.empty() || !std::filesystem::is_regular_file(resolved, ec) ||
+        !Asset::LoadMeshAssetUVE(resolved, meshAsset)) {
+        return std::nullopt;
+    }
+    return meshAsset;
 }
 
 void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
@@ -1787,23 +1818,9 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
                 // MATERIALS: the model carries its own. Each row is that material's file, edited in
                 // place, so what the Inspector changes is what the mesh references.
                 ImGui::TextDisabled("MATERIALS");
-                std::filesystem::path resolved = m_services->GetAssetDatabaseUVE().ResolveUVE(meshComp.meshGuid);
-                std::error_code ec;
-                if (resolved.extension() != ".uvmodel" || !std::filesystem::is_regular_file(resolved, ec)) {
-                    // A model source (.glb/.fbx/...) draws through the .uvmodel the importer wrote;
-                    // resolve that the same way the skin and material paths do.
-                    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-                    const std::filesystem::path relative = resolved.lexically_relative(project.contentRoot);
-                    if (!relative.empty() && *relative.begin() != "..") {
-                        const std::filesystem::path imported = GetImportedModelPathUVE(relative);
-                        if (std::filesystem::is_regular_file(imported, ec)) {
-                            resolved = imported;
-                        }
-                    }
-                }
-                Asset::MeshAssetUVE meshAsset;
-                if (!resolved.empty() && std::filesystem::is_regular_file(resolved, ec) &&
-                    Asset::LoadMeshAssetUVE(resolved, meshAsset)) {
+                const std::optional<Asset::MeshAssetUVE> loadedMesh = LoadEntityMeshAssetUVE(entity);
+                if (loadedMesh.has_value()) {
+                    const Asset::MeshAssetUVE& meshAsset = *loadedMesh;
                     if (meshAsset.materialGuids.empty()) {
                         ImGui::TextDisabled("This model has no material of its own.");
                     }
@@ -1936,29 +1953,76 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
         ImGui::TreePop();
     }
 
-    // 4. Expandable Surface Material Override Section
+    // 4. Expandable Surface Material Override Section.
+    //
+    // Two levels: one material for EVERY surface, then one per surface. The whole-object row is
+    // the wider statement, so it silences the per-surface rows while it is set - they are drawn
+    // disabled with the reason beside them rather than accepting an edit that could not take
+    // effect. The rows deliberately stop at the picker: the same materials are already editable
+    // once in the mesh's own MATERIALS fold, and an inline PBR editor under each of a dozen surface
+    // rows would bury the rows themselves. Nothing is written to the Mesh component here: the
+    // surfaces override used to be copied onto `mesh.materialGuid`, which made two components hold
+    // the same decision and left clearing it unable to take effect.
     if (DrawInspectorFoldUVE("Surface Material Override", "meshinstance:surface_override", false, false, kSectionFlags)) {
         if (!entityManager.HasComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity)) {
             entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, Scene::SurfaceInstanceComponentUVE{});
         }
-        auto surfaceComp = entityManager.GetComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity);
-        if (surfaceComp.materialOverridePath.empty() && meshComp.materialGuid != Asset::kInvalidAssetGuidUVE) {
-            const std::filesystem::path absPath = m_services->GetAssetDatabaseUVE().ResolveUVE(meshComp.materialGuid);
-            const auto project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-            const std::filesystem::path rel = absPath.lexically_relative(project.contentRoot);
-            surfaceComp.materialOverridePath = (rel.empty() || *rel.begin() == "..") ? absPath.generic_string() : rel.generic_string();
+        Scene::SurfaceInstanceComponentUVE surfaceComp =
+            entityManager.GetComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity);
+        bool surfaceChanged = false;
+
+        ImGui::TextDisabled("ALL SURFACES");
+        surfaceChanged |= DrawStandardMaterialSlotUVE(nullptr, "##materialOverride", surfaceComp.materialOverridePath);
+        if (!surfaceComp.materialOverridePath.empty()) {
+            ImGui::TextDisabled("Drawn on every surface in place of the model's own materials.");
         }
-        if (DrawStandardMaterialSlotUVE("Material Override", "##materialOverride", surfaceComp.materialOverridePath)) {
-            entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surfaceComp);
-            if (!surfaceComp.materialOverridePath.empty()) {
-                const auto project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-                std::filesystem::path p = surfaceComp.materialOverridePath;
-                if (p.is_relative()) p = (project.contentRoot / p).lexically_normal();
-                meshComp.materialGuid = m_services->GetAssetDatabaseUVE().RegisterUVE(p);
+
+        const std::optional<Asset::MeshAssetUVE> meshAsset =
+            hasPrimitive ? std::nullopt : LoadEntityMeshAssetUVE(entity);
+        const std::size_t surfaceCount = meshAsset.has_value() ? meshAsset->SurfaceCountUVE() : 0U;
+        if (!hasPrimitive) {
+            ImGui::Spacing();
+            ImGui::TextDisabled("PER SURFACE");
+            if (surfaceCount == 0U) {
+                ImGui::TextDisabled(meshAsset.has_value() ? "This model has no geometry to override."
+                                                          : "Select a model to override its surfaces.");
             } else {
-                meshComp.materialGuid = Asset::kInvalidAssetGuidUVE;
+                if (surfaceComp.surfaceMaterialOverridePaths.size() < surfaceCount) {
+                    surfaceComp.surfaceMaterialOverridePaths.resize(surfaceCount);
+                }
+                // Ignored at runtime while a whole-object material is set - the override path
+                // above, or a material assigned on the mesh's own MATERIAL row, which draws every
+                // surface the same way - so they are shown disabled with the reason instead of
+                // accepting an edit that would do nothing.
+                const bool overriddenEverywhere = !surfaceComp.materialOverridePath.empty();
+                const bool meshMaterialSet =
+                    !overriddenEverywhere && meshComp.materialGuid != Asset::kInvalidAssetGuidUVE;
+                ImGui::BeginDisabled(overriddenEverywhere || meshMaterialSet);
+                for (std::size_t surfaceIndex = 0U; surfaceIndex < surfaceCount; ++surfaceIndex) {
+                    ImGui::PushID(static_cast<int>(surfaceIndex));
+                    const std::string label = "Surface " + std::to_string(surfaceIndex);
+                    surfaceChanged |= DrawStandardMaterialSlotUVE(
+                        label.c_str(), "##surfaceOverride",
+                        surfaceComp.surfaceMaterialOverridePaths[surfaceIndex], false);
+                    ImGui::PopID();
+                }
+                ImGui::EndDisabled();
+                if (overriddenEverywhere) {
+                    ImGui::TextDisabled("The all-surfaces override above replaces these.");
+                } else if (meshMaterialSet) {
+                    ImGui::TextDisabled("The mesh's MATERIAL above draws every surface; clear it to use these.");
+                }
             }
-            entityManager.AddComponentUVE<Scene::MeshComponentUVE>(entity, meshComp);
+        }
+
+        if (surfaceChanged) {
+            // A trailing empty entry says what an absent entry says, so the list is trimmed back to
+            // what the author actually set; an interior empty still marks the surface it belongs to.
+            while (!surfaceComp.surfaceMaterialOverridePaths.empty() &&
+                   surfaceComp.surfaceMaterialOverridePaths.back().empty()) {
+                surfaceComp.surfaceMaterialOverridePaths.pop_back();
+            }
+            entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surfaceComp);
         }
         ImGui::TreePop();
     }

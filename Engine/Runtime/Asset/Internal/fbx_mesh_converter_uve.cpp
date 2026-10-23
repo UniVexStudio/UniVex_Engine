@@ -196,7 +196,11 @@ struct FbxBoneObjectUVE final {
 
 } // namespace
 
-bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& outMesh) {
+bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& outMesh,
+                       std::vector<FbxSurfaceRangeUVE>* const outSurfaces) {
+    if (outSurfaces != nullptr) {
+        outSurfaces->clear();
+    }
     try {
         const ScenePtrUVE scene = LoadSceneUVE(source, true);
         if (!scene) {
@@ -205,6 +209,42 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
 
         MeshAssetUVE candidate;
         std::unordered_map<CornerKeyUVE, std::uint32_t, CornerKeyHashUVE> shared;
+
+        // Material index per file material, so a mesh part can name the material it draws with.
+        // Built from the scene's own list: a node's `materials` are pointers into it, possibly a
+        // different subset per instance, and only the file's order is what the importer publishes.
+        std::unordered_map<const ufbx_material*, std::uint32_t> materialSourceIndex;
+        if (outSurfaces != nullptr) {
+            materialSourceIndex.reserve(scene->materials.count);
+            for (std::size_t materialIndex = 0U; materialIndex < scene->materials.count; ++materialIndex) {
+                const ufbx_material* const material = scene->materials.data[materialIndex];
+                if (material != nullptr) {
+                    materialSourceIndex.emplace(material, static_cast<std::uint32_t>(materialIndex));
+                }
+            }
+        }
+
+        // Triangles are collected per material instead of straight into the index buffer. The file
+        // may interleave materials face by face, and a surface table has to be one contiguous run
+        // per material to be worth saving - so the runs are built here and concatenated below, in
+        // first-use order. Without `outSurfaces` there is a single bucket and the order is exactly
+        // the order the faces appear in, which is what this converter did before.
+        struct IndexBucketUVE final {
+            std::uint32_t materialSourceIndex = kInvalidMeshSurfaceMaterialSlotUVE;
+            std::vector<std::uint32_t> indices;
+        };
+        std::vector<IndexBucketUVE> indexBuckets(1U);
+        std::unordered_map<std::uint32_t, std::size_t> bucketOfMaterial;
+        const auto bucketForMaterialUVE = [&](const std::uint32_t material) -> std::size_t {
+            if (outSurfaces == nullptr) {
+                return 0U;
+            }
+            const auto [found, inserted] = bucketOfMaterial.try_emplace(material, indexBuckets.size());
+            if (inserted) {
+                indexBuckets.push_back(IndexBucketUVE{material, {}});
+            }
+            return found->second;
+        };
 
         // A skinned file keeps its skin: every bone becomes a joint (the same bones, order and
         // names the skeleton and its clips use), and each corner its strongest four influences.
@@ -263,7 +303,47 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
                 // A mirrored instance (negative scale) turns its triangles inside out; swapping two
                 // corners keeps them facing the way the surface does.
                 const bool mirrored = MatrixDeterminantUVE(toWorld) < 0.0;
-                for (const ufbx_face face : mesh->faces) {
+                // Which material each FACE draws with. ufbx splits a mesh into one part per
+                // material, and a part's index is the material index; the face list of each part
+                // is therefore the only place that association lives.
+                std::vector<std::uint32_t> faceMaterial;
+                if (outSurfaces != nullptr && mesh->material_parts.count > 0U) {
+                    faceMaterial.assign(mesh->num_faces, kInvalidMeshSurfaceMaterialSlotUVE);
+                    for (const ufbx_mesh_part& part : mesh->material_parts) {
+                        for (std::size_t faceSlot = 0U; faceSlot < part.face_indices.count; ++faceSlot) {
+                            const std::uint32_t faceIndex = part.face_indices.data[faceSlot];
+                            if (faceIndex < faceMaterial.size()) {
+                                faceMaterial[faceIndex] = part.index;
+                            }
+                        }
+                    }
+                }
+                const auto faceMaterialSourceIndexUVE = [&](const std::uint32_t faceIndex) -> std::uint32_t {
+                    if (faceMaterial.empty()) {
+                        return kInvalidMeshSurfaceMaterialSlotUVE;
+                    }
+                    const std::uint32_t part = faceMaterial[faceIndex];
+                    if (part == kInvalidMeshSurfaceMaterialSlotUVE) {
+                        return kInvalidMeshSurfaceMaterialSlotUVE;
+                    }
+                    // Per-instance materials first - the same mesh can be drawn with a different
+                    // set on each node - then the mesh's own list.
+                    const ufbx_material* material = nullptr;
+                    if (object->materials.count > part) {
+                        material = object->materials.data[part];
+                    } else if (mesh->materials.count > part) {
+                        material = mesh->materials.data[part];
+                    }
+                    if (material == nullptr) {
+                        return kInvalidMeshSurfaceMaterialSlotUVE;
+                    }
+                    const auto found = materialSourceIndex.find(material);
+                    return found == materialSourceIndex.end() ? kInvalidMeshSurfaceMaterialSlotUVE : found->second;
+                };
+                for (std::size_t faceIndex = 0U; faceIndex < mesh->num_faces; ++faceIndex) {
+                    const ufbx_face face = mesh->faces.data[faceIndex];
+                    const std::size_t bucket = bucketForMaterialUVE(
+                        faceMaterialSourceIndexUVE(static_cast<std::uint32_t>(faceIndex)));
                     const std::uint32_t triangles = ufbx_triangulate_face(triangle.data(), triangle.size(), mesh, face);
                     for (std::size_t corner = 0U; corner < static_cast<std::size_t>(triangles) * 3U; ++corner) {
                         // Mirrored: read each triangle as corners 0, 2, 1.
@@ -365,10 +445,38 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
                                                               std::max(bounds.max.z, vertex.position.z)};
                             }
                         }
-                        candidate.indices.push_back(found->second);
+                        indexBuckets[bucket].indices.push_back(found->second);
                     }
                 }
             }
+        }
+
+        // Concatenate the per-material runs, in the order their materials were first used. This is
+        // the index buffer from here on; tangents and every later check see the same triangles,
+        // just grouped.
+        std::vector<FbxSurfaceRangeUVE> surfaceRanges;
+        std::size_t indexTotal = 0U;
+        for (const IndexBucketUVE& bucket : indexBuckets) {
+            indexTotal += bucket.indices.size();
+        }
+        candidate.indices.reserve(indexTotal);
+        for (const IndexBucketUVE& bucket : indexBuckets) {
+            if (bucket.indices.empty()) {
+                continue;
+            }
+            if (outSurfaces != nullptr) {
+                surfaceRanges.push_back(FbxSurfaceRangeUVE{
+                    static_cast<std::uint32_t>(candidate.indices.size()),
+                    static_cast<std::uint32_t>(bucket.indices.size()), bucket.materialSourceIndex});
+            }
+            candidate.indices.insert(candidate.indices.end(), bucket.indices.begin(), bucket.indices.end());
+        }
+        if (outSurfaces != nullptr) {
+            // One run is the whole buffer, which is what having no surface table already means.
+            if (surfaceRanges.size() < 2U || surfaceRanges.size() > kMaximumMeshSurfacesUVE) {
+                surfaceRanges.clear();
+            }
+            outSurfaces->swap(surfaceRanges);
         }
 
         if (candidate.vertices.empty() || candidate.indices.empty() || candidate.indices.size() % 3U != 0U) {
@@ -650,6 +758,7 @@ std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsUVE(const std::span<c
                 continue;
             }
             FbxMaterialUVE converted;
+            converted.sourceIndex = static_cast<std::uint32_t>(index);
             converted.name = sourceMaterial->name.length != 0U
                                  ? std::string(sourceMaterial->name.data, sourceMaterial->name.length)
                                  : std::string{};

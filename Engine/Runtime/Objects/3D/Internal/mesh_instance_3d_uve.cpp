@@ -2,6 +2,9 @@
 
 #include "uve/objects/3d/mesh_instance_3d_uve.h"
 
+#include <algorithm>
+#include <string>
+
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/objects/3d/abstract_objects_3d_uve.h"
 
@@ -29,6 +32,23 @@ bool MeshInstance3DUVE::HasSurfaceMaterialOverrideUVE(
     const SurfaceInstanceComponentUVE* const surface) noexcept {
     return surface != nullptr && IsSurfaceInstanceComponentValidUVE(*surface) &&
            !surface->materialOverridePath.empty();
+}
+
+std::string_view MeshInstance3DUVE::SurfaceMaterialOverridePathUVE(
+    const SurfaceInstanceComponentUVE& surface, const std::size_t surfaceIndex) noexcept {
+    if (!surface.materialOverridePath.empty() || surfaceIndex >= surface.surfaceMaterialOverridePaths.size()) {
+        return {};
+    }
+    return surface.surfaceMaterialOverridePaths[surfaceIndex];
+}
+
+bool MeshInstance3DUVE::HasPerSurfaceMaterialOverrideUVE(
+    const SurfaceInstanceComponentUVE* const surface) noexcept {
+    return surface != nullptr && IsSurfaceInstanceComponentValidUVE(*surface) &&
+           surface->materialOverridePath.empty() &&
+           std::any_of(surface->surfaceMaterialOverridePaths.cbegin(),
+                       surface->surfaceMaterialOverridePaths.cend(),
+                       [](const std::string& path) { return !path.empty(); });
 }
 
 Asset::AssetGuidUVE MeshInstance3DUVE::ResolveEffectiveMaterialGuidUVE(

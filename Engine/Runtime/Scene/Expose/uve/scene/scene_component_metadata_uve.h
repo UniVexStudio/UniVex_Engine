@@ -62,6 +62,10 @@ inline const Strings::StringIdUVE kPropertyTypeAssetGuidListUVE{"AssetGuidList"}
 /// Same whole-array accessor contract as the other list types, and the same elementCount
 /// declaration. LODGroup3D's thresholds are the first user.
 inline const Strings::StringIdUVE kPropertyTypeFloatListUVE{"FloatList"};
+/// A variable-length list of strings, read and written whole like the other list types but with no
+/// elementCount: the value itself carries its length. A path per surface is the first user, so the
+/// list is indexed by the thing it describes rather than being a bag of names.
+inline const Strings::StringIdUVE kPropertyTypeStringListUVE{"StringList"};
 
 /// Section sort keys. A component's own section sorts by TypeMetadataEntryUVE::order. The order
 /// follows the object's class chain from most to least derived: what the concrete object brings, then

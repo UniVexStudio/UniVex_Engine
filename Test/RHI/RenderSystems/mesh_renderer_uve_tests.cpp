@@ -2010,6 +2010,209 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_MissingMaterialOverrideDoesNot
     EXPECT_GE(visibilitySet.invalidAssetReferences, 1U);
 }
 
+// Per-surface overrides are the instance's own words about the mesh's surfaces, so they belong to
+// the object rather than to the model: two MeshInstance3Ds sharing one imported mesh can shade the
+// same surface differently. Only the overridden surface changes; the rest keep the mesh's material.
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_PerSurfaceOverrideReplacesOnlyThatSurface) {
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_ps_mesh.uvmodel");
+    const Asset::AssetGuidUVE slotZero = assetDatabase.RegisterUVE("mesh_renderer_tests_ps_zero.uvmat");
+    const Asset::AssetGuidUVE slotOne = assetDatabase.RegisterUVE("mesh_renderer_tests_ps_one.uvmat");
+    const Asset::AssetGuidUVE override = assetDatabase.RegisterUVE("mesh_renderer_tests_ps_override.uvmat");
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>(
+        [slotZero, slotOne](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+            mesh.localBounds = Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+                                                                   Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+            mesh.materialGuids = {slotZero, slotOne};
+            mesh.indices = {0U, 1U, 2U, 2U, 1U, 3U};
+            mesh.surfaces = {Asset::MeshSurfaceUVE{0U, 3U, 0U}, Asset::MeshSurfaceUVE{3U, 3U, 1U}};
+            return true;
+        });
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
+        [](const std::filesystem::path&, Asset::MaterialAssetUVE&) { return true; });
+
+    const Scene::EntityUVE entity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, Asset::kInvalidAssetGuidUVE);
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.surfaceMaterialOverridePaths = {"", "mesh_renderer_tests_ps_override.uvmat"};
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+    WaitUntilAssetsReadyUVE(meshGuid, slotZero);
+    WaitUntilAssetsReadyUVE(meshGuid, slotOne);
+    WaitUntilAssetsReadyUVE(meshGuid, override);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), 2U);
+    // The set groups candidates spatially, so order is not part of the contract: each surface is
+    // found by the range it draws.
+    const auto findSurfaceUVE = [&visibilitySet](const std::uint32_t firstIndex) {
+        return std::find_if(visibilitySet.candidates.begin(), visibilitySet.candidates.end(),
+                            [firstIndex](const MeshVisibilityCandidateUVE& candidate) {
+                                return candidate.surface.firstIndex == firstIndex;
+                            });
+    };
+    const auto first = findSurfaceUVE(0U);
+    const auto second = findSurfaceUVE(3U);
+    ASSERT_NE(first, visibilitySet.candidates.end());
+    ASSERT_NE(second, visibilitySet.candidates.end());
+    EXPECT_EQ(first->surface.indexCount, 3U);
+    EXPECT_EQ(visibilitySet.assetPairs[first->assetPairIndex].materialHandle.GetGuidUVE(), slotZero);
+    EXPECT_EQ(second->surface.indexCount, 3U);
+    EXPECT_EQ(visibilitySet.assetPairs[second->assetPairIndex].materialHandle.GetGuidUVE(), override);
+}
+
+// The two levels are not alternatives: a whole-object override is one material for every surface,
+// so it outranks the per-surface list exactly the way it outranks the mesh's own materials.
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_WholeObjectOverrideOutranksPerSurfaceOverrides) {
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_ps2_mesh.uvmodel");
+    const Asset::AssetGuidUVE slotZero = assetDatabase.RegisterUVE("mesh_renderer_tests_ps2_zero.uvmat");
+    const Asset::AssetGuidUVE slotOne = assetDatabase.RegisterUVE("mesh_renderer_tests_ps2_one.uvmat");
+    const Asset::AssetGuidUVE whole = assetDatabase.RegisterUVE("mesh_renderer_tests_ps2_whole.uvmat");
+    const Asset::AssetGuidUVE perSurface = assetDatabase.RegisterUVE("mesh_renderer_tests_ps2_surface.uvmat");
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>(
+        [slotZero, slotOne](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+            mesh.localBounds = Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+                                                                   Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+            mesh.materialGuids = {slotZero, slotOne};
+            mesh.indices = {0U, 1U, 2U, 2U, 1U, 3U};
+            mesh.surfaces = {Asset::MeshSurfaceUVE{0U, 3U, 0U}, Asset::MeshSurfaceUVE{3U, 3U, 1U}};
+            return true;
+        });
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
+        [](const std::filesystem::path&, Asset::MaterialAssetUVE&) { return true; });
+
+    const Scene::EntityUVE entity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, Asset::kInvalidAssetGuidUVE);
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.materialOverridePath = "mesh_renderer_tests_ps2_whole.uvmat";
+    surface.surfaceMaterialOverridePaths = {"mesh_renderer_tests_ps2_surface.uvmat", ""};
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+    for (const Asset::AssetGuidUVE guid : {slotZero, slotOne, whole, perSurface}) {
+        WaitUntilAssetsReadyUVE(meshGuid, guid);
+    }
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    // One draw for the whole buffer, not one per surface.
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(visibilitySet.candidates[0].surface.indexCount, 6U);
+    EXPECT_EQ(visibilitySet.assetPairs[visibilitySet.candidates[0].assetPairIndex]
+                  .materialHandle.GetGuidUVE(),
+              whole);
+}
+
+// A per-surface override that no longer resolves must not quietly fall back to the mesh material:
+// the author asked for a specific material, and drawing something else makes a moved .uvmaterial
+// look like it still applies. The other surface still draws.
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_MissingPerSurfaceOverrideDropsOnlyThatSurface) {
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_ps3_mesh.uvmodel");
+    const Asset::AssetGuidUVE slotZero = assetDatabase.RegisterUVE("mesh_renderer_tests_ps3_zero.uvmat");
+    const Asset::AssetGuidUVE slotOne = assetDatabase.RegisterUVE("mesh_renderer_tests_ps3_one.uvmat");
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>(
+        [slotZero, slotOne](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+            mesh.localBounds = Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+                                                                   Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+            mesh.materialGuids = {slotZero, slotOne};
+            mesh.indices = {0U, 1U, 2U, 2U, 1U, 3U};
+            mesh.surfaces = {Asset::MeshSurfaceUVE{0U, 3U, 0U}, Asset::MeshSurfaceUVE{3U, 3U, 1U}};
+            return true;
+        });
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
+        [](const std::filesystem::path&, Asset::MaterialAssetUVE&) { return true; });
+
+    const Scene::EntityUVE entity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, Asset::kInvalidAssetGuidUVE);
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.surfaceMaterialOverridePaths = {"does_not_exist_surface.uvmat", ""};
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+    WaitUntilAssetsReadyUVE(meshGuid, slotZero);
+    WaitUntilAssetsReadyUVE(meshGuid, slotOne);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    // Only the second surface survives; the first one's override names nothing.
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(visibilitySet.candidates[0].surface.firstIndex, 3U);
+    EXPECT_GE(visibilitySet.invalidAssetReferences, 1U);
+}
+
+// A mesh with ONE implicit surface still has surface 0 to override: a single-material model does
+// not need an explicit split for the instance to shade it differently.
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_PerSurfaceOverrideWorksOnAnImplicitSingleSurface) {
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_ps4_mesh.uvmodel");
+    const Asset::AssetGuidUVE slotZero = assetDatabase.RegisterUVE("mesh_renderer_tests_ps4_zero.uvmat");
+    const Asset::AssetGuidUVE override = assetDatabase.RegisterUVE("mesh_renderer_tests_ps4_override.uvmat");
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>(
+        [slotZero](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+            mesh.localBounds = Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+                                                                   Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+            mesh.materialGuids = {slotZero};
+            mesh.indices = {0U, 1U, 2U};
+            return true;
+        });
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
+        [](const std::filesystem::path&, Asset::MaterialAssetUVE&) { return true; });
+
+    const Scene::EntityUVE entity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, Asset::kInvalidAssetGuidUVE);
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.surfaceMaterialOverridePaths = {"mesh_renderer_tests_ps4_override.uvmat"};
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+    WaitUntilAssetsReadyUVE(meshGuid, slotZero);
+    WaitUntilAssetsReadyUVE(meshGuid, override);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(visibilitySet.candidates[0].surface.firstIndex, 0U);
+    EXPECT_EQ(visibilitySet.candidates[0].surface.indexCount, 3U);
+    EXPECT_EQ(visibilitySet.assetPairs[visibilitySet.candidates[0].assetPairIndex]
+                  .materialHandle.GetGuidUVE(),
+              override);
+}
+
+// The override path the Inspector writes is relative to the content root ("Materials/M.uvmaterial"),
+// while the asset database stores whatever path it was registered with ("assets/Materials/..."). A
+// lookup that only compares whole strings never matches, which is exactly why an override authored
+// in the editor used to do nothing. The suffix match closes that gap.
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_OverridePathResolvesAgainstAContentRootRelativeSpelling) {
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>([](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+        mesh.localBounds = Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+                                                               Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+        return true;
+    });
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
+        [](const std::filesystem::path&, Asset::MaterialAssetUVE&) { return true; });
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("assets/Models/uve_ps5.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("assets/Models/uve_ps5.uvmat");
+    const Asset::AssetGuidUVE overrideGuid =
+        assetDatabase.RegisterUVE("assets/Materials/uve_ps5_override.uvmat");
+
+    const Scene::EntityUVE entity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    Scene::SurfaceInstanceComponentUVE surface{};
+    surface.materialOverridePath = "Materials/uve_ps5_override.uvmat";
+    entityManager.AddComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity, surface);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, overrideGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(visibilitySet.assetPairs[visibilitySet.candidates[0].assetPairIndex]
+                  .materialHandle.GetGuidUVE(),
+              overrideGuid);
+}
+
 TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_OffLayerMeshesAreCulledInTheirOwnCounter) {
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
     const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_ri_layer.uvmodel");

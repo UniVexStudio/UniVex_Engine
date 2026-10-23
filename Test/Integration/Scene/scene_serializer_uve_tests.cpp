@@ -1951,6 +1951,9 @@ TEST_F(SceneSerializerUVETest, RoundTripUVE_RenderInstanceFamilyKeepsEveryField)
     const EntityUVE source = entityManager.CreateEntityUVE();
     SurfaceInstanceComponentUVE surface{};
     surface.materialOverridePath = "materials/red.uvmat";
+    // An interior empty is the "this surface keeps its own material" entry, so the whole list has
+    // to survive a round trip entry for entry, not just its non-empty paths.
+    surface.surfaceMaterialOverridePaths = {"", "materials/slot_one.uvmat", ""};
     surface.transparency = 0.4F;
     surface.castShadow = SurfaceShadowModeUVE::ShadowsOnly;
     surface.visibilityRangeBegin = 2.0F;
@@ -1986,6 +1989,93 @@ TEST_F(SceneSerializerUVETest, RoundTripUVE_RenderInstanceFamilyKeepsEveryField)
     EXPECT_EQ(entityManager.GetComponentUVE<LightEmitterComponentUVE>(roots.front()), light);
     EXPECT_EQ(entityManager.GetComponentUVE<Decal3DComponentUVE>(roots.front()), decal);
     EXPECT_EQ(entityManager.GetComponentUVE<FogVolume3DComponentUVE>(roots.front()), fog);
+}
+
+TEST_F(SceneSerializerUVETest, MetadataDiscovery_SurfaceOverridesWriteAPlainStringArray) {
+    // The StringList codec is new, so its shape is pinned: a JSON array of strings and nothing
+    // else, which is what the inspector's per-surface path rows already look like on disk.
+    const EntityUVE entity = entityManager.CreateEntityUVE();
+    SurfaceInstanceComponentUVE surface{};
+    surface.surfaceMaterialOverridePaths = {"materials/zero.uvmat", "", "materials/two.uvmat"};
+    entityManager.AddComponentUVE<SurfaceInstanceComponentUVE>(entity, surface);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {entity}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    const auto envelope = Asset::DecodeUveFileEnvelopeUVE(snapshot->bytes, "surface override shape test");
+    ASSERT_TRUE(envelope.has_value());
+    const std::string payloadText(reinterpret_cast<const char*>(envelope->second.data()),
+                                  envelope->second.size());
+    const nlohmann::json payload = nlohmann::json::parse(payloadText);
+    const nlohmann::json& overridesJson = payload.at("entities")
+                                              .at(0)
+                                              .at("components")
+                                              .at("SurfaceInstanceComponentUVE")
+                                              .at("surfaceMaterialOverridePaths");
+    ASSERT_TRUE(overridesJson.is_array());
+    EXPECT_EQ(overridesJson,
+              nlohmann::json::array({"materials/zero.uvmat", "", "materials/two.uvmat"}));
+}
+
+TEST_F(SceneSerializerUVETest, SurfaceOverrides_AreSavedExactlyAsTheComponentHoldsThem) {
+    // A codec that rewrote its input - trimming trailing empties, say - would make every save/load
+    // comparison a special case, and a scene saved twice would differ from one saved once. The
+    // canonical form is the editing side's job (the Inspector trims, and the component's sanitizer
+    // does too); the document writes what it was handed and reads back the same list.
+    const EntityUVE entity = entityManager.CreateEntityUVE();
+    SurfaceInstanceComponentUVE surface{};
+    surface.surfaceMaterialOverridePaths.assign(6U, std::string{});
+    surface.surfaceMaterialOverridePaths[1] = "materials/one.uvmat";
+    entityManager.AddComponentUVE<SurfaceInstanceComponentUVE>(entity, surface);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {entity}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    const auto envelope = Asset::DecodeUveFileEnvelopeUVE(snapshot->bytes, "surface override exactness test");
+    ASSERT_TRUE(envelope.has_value());
+    const std::string payloadText(reinterpret_cast<const char*>(envelope->second.data()),
+                                  envelope->second.size());
+    const nlohmann::json payload = nlohmann::json::parse(payloadText);
+    EXPECT_EQ(payload.at("entities")
+                  .at(0)
+                  .at("components")
+                  .at("SurfaceInstanceComponentUVE")
+                  .at("surfaceMaterialOverridePaths"),
+              nlohmann::json::array({"", "materials/one.uvmat", "", "", "", ""}));
+
+    const std::vector<EntityUVE> restored = serializer.RestoreUVE(entityManager, *snapshot);
+    ASSERT_EQ(restored.size(), 1U);
+    EXPECT_EQ(entityManager.GetComponentUVE<SurfaceInstanceComponentUVE>(restored.front()),
+              surface);
+}
+
+TEST_F(SceneSerializerUVETest, SurfaceOverrides_NonStringEntriesAreSkippedNotCoerced) {
+    // A path is text. A number in that slot would become a path naming no file and then be
+    // reported as a missing asset, so it is dropped at the door and the remaining surfaces keep
+    // their positions relative to the other strings.
+    nlohmann::json overrides = nlohmann::json::array({"materials/zero.uvmat", 42, "materials/two.uvmat"});
+    nlohmann::json components = nlohmann::json::object();
+    components["SurfaceInstanceComponentUVE"] = {{"surfaceMaterialOverridePaths", overrides}};
+    nlohmann::json entityJson = nlohmann::json::object();
+    entityJson["localId"] = 0;
+    entityJson["components"] = std::move(components);
+    nlohmann::json payload = nlohmann::json::object();
+    payload["entities"] = nlohmann::json::array({std::move(entityJson)});
+    const std::string payloadText = payload.dump();
+    const auto* const bytes = reinterpret_cast<const std::byte*>(payloadText.data());
+    const std::vector<std::byte> payloadBytes{bytes, bytes + payloadText.size()};
+    const std::filesystem::path path = "uve_scene_serializer_tests_surface_override_types.uvscene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(Asset::WriteUveFileUVE(path, SceneAssetTypeUVE::Scene, payloadBytes));
+
+    EntityManagerUVE loadedManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    const std::vector<EntityUVE> roots = serializer.LoadUVE(loadedManager, path);
+    ASSERT_EQ(roots.size(), 1U);
+    EXPECT_EQ(loadedManager.GetComponentUVE<SurfaceInstanceComponentUVE>(roots[0])
+                  .surfaceMaterialOverridePaths,
+              (std::vector<std::string>{"materials/zero.uvmat", "materials/two.uvmat"}));
+
+    std::filesystem::remove(path);
 }
 
 TEST_F(SceneSerializerUVETest, Decal3DLifetimeIsReArmedOnLoadAndTheCountdownIsNotSaved) {
