@@ -1080,6 +1080,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
                 std::filesystem::create_directories(matDir, ec);
                 const std::filesystem::path matPath = MakeUniqueContentPathUVE(matDir, "M_Standard", ".uvmaterial");
                 Asset::MaterialAssetUVE mat{};
+                mat.kind = Asset::MaterialKindUVE::Standard;
                 if (Asset::SaveMaterialAssetUVE(mat, matPath)) {
                     picked = m_services->GetAssetDatabaseUVE().RegisterUVE(matPath);
                     RefreshProjectFileIndexUVE();
@@ -1092,6 +1093,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
                 std::filesystem::create_directories(matDir, ec);
                 const std::filesystem::path matPath = MakeUniqueContentPathUVE(matDir, "M_ORM", ".uvmaterial");
                 Asset::MaterialAssetUVE mat{};
+                mat.kind = Asset::MaterialKindUVE::Orm;
                 mat.roughness = 0.5F;
                 mat.metallic = 1.0F;
                 mat.occlusionStrength = 1.0F;
@@ -1107,6 +1109,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
                 std::filesystem::create_directories(matDir, ec);
                 const std::filesystem::path matPath = MakeUniqueContentPathUVE(matDir, "M_CustomShader", ".uvmaterial");
                 Asset::MaterialAssetUVE mat{};
+                mat.kind = Asset::MaterialKindUVE::Shader;
                 mat.useCustomShaderCode = true;
                 if (Asset::SaveMaterialAssetUVE(mat, matPath)) {
                     picked = m_services->GetAssetDatabaseUVE().RegisterUVE(matPath);
@@ -1239,6 +1242,45 @@ void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& abso
     if (DrawInspectorFoldUVE(foldLabel.c_str(), foldKey.c_str(), false, false, kFlags)) {
         bool changed = false;
 
+        // 0. Kind. A preset, not a separate shading path: picking one applies the same defaults the
+        // Content Browser's "New ... Material" entries use and leaves every texture reference
+        // alone, so switching back and forth never loses an author's maps.
+        ImGui::TextDisabled("KIND");
+        int kindIndex = static_cast<int>(mat.kind);
+        constexpr const char* kKindLabels[] = {"Standard", "ORM", "Custom Shader"};
+        ImGui::SetNextItemWidth(-1.0F);
+        if (ImGui::Combo("##materialKind", &kindIndex, kKindLabels, 3)) {
+            mat.kind = static_cast<Asset::MaterialKindUVE>(kindIndex);
+            switch (mat.kind) {
+                case Asset::MaterialKindUVE::Standard:
+                    mat.useCustomShaderCode = false;
+                    break;
+                case Asset::MaterialKindUVE::Orm:
+                    mat.useCustomShaderCode = false;
+                    // The packed map is the point of ORM: a fully metallic surface whose
+                    // roughness, metallic and occlusion all come from the texture.
+                    mat.metallic = 1.0F;
+                    mat.occlusionStrength = 1.0F;
+                    break;
+                case Asset::MaterialKindUVE::Shader:
+                    mat.useCustomShaderCode = true;
+                    break;
+            }
+            changed = true;
+        }
+        const char* kindHint = "Metallic and roughness scalars, scaled by the ORM map when one is set.";
+        switch (mat.kind) {
+            case Asset::MaterialKindUVE::Standard:
+                break;
+            case Asset::MaterialKindUVE::Orm:
+                kindHint = "The packed ORM map drives occlusion, roughness and metallic; the scalars multiply it.";
+                break;
+            case Asset::MaterialKindUVE::Shader:
+                kindHint = "Shades with the Shader Asset below; the inputs still describe its surface.";
+                break;
+        }
+        ImGui::TextDisabled("%s", kindHint);
+
         // 1. Albedo
         ImGui::TextDisabled("ALBEDO");
         float albedo[3] = {mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b};
@@ -1321,6 +1363,13 @@ void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& abso
         ImGui::Spacing();
         ImGui::TextDisabled("CUSTOM SHADER");
         if (ImGui::Checkbox("Use Custom Shader", &mat.useCustomShaderCode)) {
+            // The Kind selector above is the visible summary of this switch; flipping it directly
+            // must not leave the summary claiming a preset the material no longer matches.
+            if (!mat.useCustomShaderCode && mat.kind == Asset::MaterialKindUVE::Shader) {
+                mat.kind = Asset::MaterialKindUVE::Standard;
+            } else if (mat.useCustomShaderCode) {
+                mat.kind = Asset::MaterialKindUVE::Shader;
+            }
             changed = true;
         }
         if (mat.useCustomShaderCode) {

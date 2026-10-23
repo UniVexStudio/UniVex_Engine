@@ -59,6 +59,19 @@ enum class MaterialDepthDrawModeUVE : std::uint8_t {
     DepthPrePass = 3,
 };
 
+/// The authoring preset a material was created as. Every kind still shades through the same
+/// physically based path, so switching never changes how a material renders by itself:
+/// Standard uses the metallic/roughness scalars with an optional packed map multiplying them; ORM
+/// is the same path authored around the packed occlusion/roughness/metallic map (metallic 1,
+/// occlusion 1) with the scalars acting as multipliers; Shader means the material supplies its own
+/// shader code (`useCustomShaderCode`). Persisted so the Inspector can show which preset a file was
+/// authored with; files written before this field existed load as Standard.
+enum class MaterialKindUVE : std::uint8_t {
+    Standard = 0,
+    Orm = 1,
+    Shader = 2,
+};
+
 /// Per-slot texture binding with UV channel, source channel, tint, and UV scale/offset (Part 4.1).
 struct MaterialTextureSlotUVE final {
     AssetGuidUVE texture;
@@ -159,6 +172,10 @@ struct MaterialAssetUVE {
     Math::ColorUVE textureTint{1.0F, 1.0F, 1.0F};
     float textureTileX = 1.0F;
     float textureTileY = 1.0F;
+
+    /// The preset this material was authored as (see MaterialKindUVE). Appended so existing
+    /// aggregate initialisers stay valid.
+    MaterialKindUVE kind = MaterialKindUVE::Standard;
 };
 
 /// Returns true when the material should be bucketed into the transparent render pass (Part 3.7 / 4.1).
