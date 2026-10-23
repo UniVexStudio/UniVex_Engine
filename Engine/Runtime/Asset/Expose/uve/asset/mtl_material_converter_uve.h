@@ -36,6 +36,9 @@ struct MtlLibraryMaterialUVE final {
 
 struct MtlLibraryUVE final {
     std::vector<MtlLibraryMaterialUVE> materials;
+    /// Set when the source declared more `newmtl` blocks than kMaximumMtlLibraryMaterialsUVE. The
+    /// reported materials are still published; the rest are left out and the importer says so.
+    bool truncated = false;
     /// `newmtl` blocks whose own directives did not convert. They are dropped from `materials`,
     /// never silently rewritten: the importer reports the count so a half-understood library is
     /// visible instead of looking complete.

@@ -100,6 +100,7 @@ bool ImportObjMaterialsUVE(const std::string_view objSource, const std::filesyst
         // One pass over the OBJ for the two directives that matter: the library it names and the
         // materials it switches to, in the order the author wrote them.
         std::string libraryFile;
+        std::size_t libraryCount = 0U;
         std::vector<std::string> usedNames;
         std::size_t lineStart = 0U;
         while (lineStart <= objSource.size()) {
@@ -110,8 +111,11 @@ bool ImportObjMaterialsUVE(const std::string_view objSource, const std::filesyst
                                                                : lineEnd - lineStart));
             if (!line.empty()) {
                 const auto [directive, argument] = SplitDirectiveUVE(line);
-                if (directive == "mtllib" && libraryFile.empty() && !argument.empty()) {
-                    libraryFile = std::string(argument);
+                if (directive == "mtllib" && !argument.empty()) {
+                    ++libraryCount;
+                    if (libraryFile.empty()) {
+                        libraryFile = std::string(argument);
+                    }
                 } else if (directive == "usemtl" && !argument.empty() &&
                            usedNames.size() < kMaximumObjUsedMaterialsUVE) {
                     const std::string name(argument);
@@ -129,6 +133,14 @@ bool ImportObjMaterialsUVE(const std::string_view objSource, const std::filesyst
         if (libraryFile.empty()) {
             // No library is a valid, common OBJ: untextured geometry, nothing to publish.
             return true;
+        }
+        if (libraryCount > 1U) {
+            // One mesh wears the materials of the first library it names. Reading the others too
+            // would need the face-by-face material ranges this increment does not have, and
+            // silently taking the last one would make the choice depend on line order in a file
+            // the author never sees.
+            UVE_WARNING("{}: source \"{}\" names {} material libraries; only \"{}\" is read",
+                        kObjImporterNameUVE, sourcePath.string(), libraryCount, libraryFile);
         }
 
         const std::filesystem::path relativeLibrary = std::filesystem::path(NormalisedRelativeUVE(libraryFile));
@@ -161,6 +173,11 @@ bool ImportObjMaterialsUVE(const std::string_view objSource, const std::filesyst
             UVE_WARNING("{}: material library \"{}\" declared {} material(s) whose directives did not convert; "
                         "they are left out",
                         kObjImporterNameUVE, libraryPath.string(), library.skippedMaterials);
+        }
+        if (library.truncated) {
+            UVE_WARNING("{}: material library \"{}\" declares more than {} materials; the ones past the "
+                        "bound are left out",
+                        kObjImporterNameUVE, libraryPath.string(), kMaximumMtlLibraryMaterialsUVE);
         }
         if (library.materials.empty()) {
             return true;

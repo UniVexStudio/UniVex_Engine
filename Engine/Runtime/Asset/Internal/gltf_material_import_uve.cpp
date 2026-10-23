@@ -347,6 +347,12 @@ private:
                             kGltfImporterNameUVE, imageIndex);
                 return kInvalidAssetGuidUVE;
             }
+            if (view->byteLength > m_options.maximumImageBytes) {
+                UVE_WARNING("{}: image {} declares {} bytes, above the bounded image limit; the texture is "
+                            "skipped",
+                            kGltfImporterNameUVE, imageIndex, view->byteLength);
+                return kInvalidAssetGuidUVE;
+            }
             std::uint64_t viewEnd = 0U;
             if (!AddU64UVE(view->byteOffset, view->byteLength, viewEnd) || viewEnd > m_buffer.size()) {
                 UVE_WARNING("{}: image {} declares a bufferView past the end of the binary chunk; the texture "

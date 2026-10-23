@@ -75,5 +75,65 @@ TEST(MtlMaterialConverterUVETest, ConvertMtlMaterialUVE_RejectsInvalidDissolveAn
     EXPECT_FALSE(ConvertMtlMaterialUVE("Kd 1 1 1\n", material));
 }
 
+// A scene library is one file with many materials; the single-material converter refuses those by
+// design, so the library converter splits them and keeps the per-block validation intact.
+TEST(MtlMaterialConverterUVETest, ConvertMtlLibraryUVE_SplitsBlocksAndKeepsTheirTextureNames) {
+    constexpr std::string_view source = R"MTL(
+# exported by a DCC tool
+newmtl RedPaint
+Kd 0.9 0.2 0.1
+map_Kd paint/red.png
+
+newmtl GreenPaint
+Kd 0.1 0.8 0.2
+map_Kd paint/green.png
+map_Bump paint/green_normal.jpg
+bump paint/legacy_normal.png
+)MTL";
+
+    MtlLibraryUVE library;
+    ASSERT_TRUE(ConvertMtlLibraryUVE(source, library));
+    ASSERT_EQ(library.materials.size(), 2U);
+    EXPECT_EQ(library.skippedMaterials, 0U);
+    EXPECT_FALSE(library.truncated);
+
+    EXPECT_EQ(library.materials[0].name, "RedPaint");
+    EXPECT_EQ(library.materials[0].albedoTextureFile, "paint/red.png");
+    EXPECT_TRUE(library.materials[0].normalTextureFile.empty());
+    EXPECT_NEAR(library.materials[0].material.albedoColor.r, 0.7874123F, 1e-5F);
+
+    EXPECT_EQ(library.materials[1].name, "GreenPaint");
+    EXPECT_EQ(library.materials[1].albedoTextureFile, "paint/green.png");
+    // The first normal reference wins; the older `bump` spelling is the same slot, and it is not
+    // allowed to overwrite what the author wrote first.
+    EXPECT_EQ(library.materials[1].normalTextureFile, "paint/green_normal.jpg");
+}
+
+TEST(MtlMaterialConverterUVETest, ConvertMtlLibraryUVE_DropsOnlyTheBlockThatFails) {
+    constexpr std::string_view source = R"MTL(
+newmtl Good
+Kd 0.5 0.5 0.5
+newmtl Broken
+Kd 1 0
+newmtl AlsoGood
+Ke 0.1 0.1 0.1
+)MTL";
+
+    MtlLibraryUVE library;
+    ASSERT_TRUE(ConvertMtlLibraryUVE(source, library));
+    ASSERT_EQ(library.materials.size(), 2U);
+    EXPECT_EQ(library.skippedMaterials, 1U);
+    EXPECT_EQ(library.materials[0].name, "Good");
+    EXPECT_EQ(library.materials[1].name, "AlsoGood");
+}
+
+TEST(MtlMaterialConverterUVETest, ConvertMtlLibraryUVE_RejectsUnreadableSources) {
+    MtlLibraryUVE library;
+    EXPECT_FALSE(ConvertMtlLibraryUVE("", library));
+    std::string tooLarge(kMaximumMtlLibrarySourceBytesUVE + 1U, 'x');
+    EXPECT_FALSE(ConvertMtlLibraryUVE(tooLarge, library));
+    EXPECT_FALSE(ConvertMtlLibraryUVE(std::string_view{"newmtl A\0B\n", 11U}, library));
+}
+
 } // namespace
 } // namespace UVE::Asset::Tests

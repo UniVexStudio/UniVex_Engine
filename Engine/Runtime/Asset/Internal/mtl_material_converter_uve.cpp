@@ -245,8 +245,12 @@ bool ConvertMtlLibraryUVE(const std::string_view source, MtlLibraryUVE& outLibra
                 if (directive == "newmtl") {
                     if (outLibrary.materials.size() + outLibrary.skippedMaterials >=
                         kMaximumMtlLibraryMaterialsUVE) {
-                        // Bounded work: the remaining blocks are not read into a material at all.
-                        return false;
+                        // Bounded work: the blocks past the cap are not read into a material at all.
+                        // Stopping here keeps every material before the cap, which is strictly more
+                        // useful than dropping the whole library because it was large.
+                        flushBlock();
+                        outLibrary.truncated = true;
+                        return true;
                     }
                     flushBlock();
                     materialName = std::string(TrimmedLineUVE(rest));

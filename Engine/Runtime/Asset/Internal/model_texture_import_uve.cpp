@@ -125,6 +125,12 @@ std::string MakeTextureFileStemUVE(const std::string_view authoredName, const st
     if (sanitised.empty()) {
         sanitised = std::string(fallbackPrefix) + "_" + std::to_string(index);
     }
+    // One filesystem component has a 255-byte limit and the caller prefixes the model's own stem,
+    // so an image named by a 4 KB `name` in the source cannot be allowed to decide the file path.
+    constexpr std::size_t kMaximumStemCharactersUVE = 64U;
+    if (sanitised.size() > kMaximumStemCharactersUVE) {
+        sanitised.resize(kMaximumStemCharactersUVE);
+    }
     std::string candidate = sanitised;
     for (std::size_t suffix = 2U;; ++suffix) {
         bool clash = false;

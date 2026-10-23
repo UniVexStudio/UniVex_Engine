@@ -92,6 +92,13 @@ std::string MakeMaterialFileStemUVE(const std::string_view modelStem, const std:
     if (sanitised.empty()) {
         sanitised = std::string(fallbackPrefix) + "_" + std::to_string(materialIndex);
     }
+    // A long authored name must not decide whether the model imports: every mainstream filesystem
+    // caps a single component at 255 bytes, and this stem gains a model prefix and an extension on
+    // top. Cutting here keeps the published path legal, and the cut is deterministic.
+    constexpr std::size_t kMaximumStemCharactersUVE = 64U;
+    if (sanitised.size() > kMaximumStemCharactersUVE) {
+        sanitised.resize(kMaximumStemCharactersUVE);
+    }
     std::string candidate = std::string(modelStem) + "." + sanitised;
     for (std::size_t suffix = 2U;; ++suffix) {
         bool clash = false;
