@@ -1286,24 +1286,19 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_MeshWithExplicitSurfaces_DrawsOneRangeP
     // The OBJECT names no material: the mesh's own surface materials decide, surface by surface.
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, Asset::kInvalidAssetGuidUVE);
 
-    const Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle =
-        assetManager.LoadUVE<Asset::MeshAssetUVE>(meshGuid, assetDatabase);
-    const Asset::AssetHandleUVE<Asset::MaterialAssetUVE> redHandle =
-        assetManager.LoadUVE<Asset::MaterialAssetUVE>(redMaterialGuid, assetDatabase);
+    // Both materials must be loaded before the renderer can resolve them, and the shader assets
+    // they reference must be loaded before the renderer can even create their programs - the
+    // fixture's helper does both and then renders one priming frame.
     const Asset::AssetHandleUVE<Asset::MaterialAssetUVE> blueHandle =
         assetManager.LoadUVE<Asset::MaterialAssetUVE>(blueMaterialGuid, assetDatabase);
     for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
         shaderManager.UpdateUVE(0.0);
-        if (meshHandle.IsReadyUVE() && redHandle.IsReadyUVE() && blueHandle.IsReadyUVE() &&
-            shaderManager.GetPendingJobCountUVE() == 0U) {
+        if (blueHandle.IsReadyUVE() && shaderManager.GetPendingJobCountUVE() == 0U) {
             break;
         }
         std::this_thread::yield();
     }
-    ASSERT_TRUE(meshHandle.IsReadyUVE());
-    ASSERT_TRUE(redHandle.IsReadyUVE());
     ASSERT_TRUE(blueHandle.IsReadyUVE());
-    ASSERT_EQ(shaderManager.GetPendingJobCountUVE(), 0U);
 
     // The GPU frustum cull would collapse the two draws into one indirect command whose
     // parameters are not visible in the recorded command stream, and those parameters are exactly
@@ -1313,18 +1308,13 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_MeshWithExplicitSurfaces_DrawsOneRangeP
     cullingSettings.frustumCullingEnabledUVE = false;
     renderer3D->SetCullingSettingsUVE(cullingSettings);
 
-    // The materials' programs are created on first use and only become valid once the shader
-    // manager has processed the compile, so the frame that first sees them is a warm-up: the
-    // observable frame follows the drain. Same shape as the primitive material test above.
-    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
-    for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
-        shaderManager.UpdateUVE(0.0);
-        if (shaderManager.GetPendingJobCountUVE() == 0U) {
-            break;
-        }
-        std::this_thread::yield();
-    }
-    ASSERT_EQ(shaderManager.GetPendingJobCountUVE(), 0U);
+    // Materials' programs are created on first use and only become valid once the shader manager
+    // has processed the compile, so the frame that first sees them is a warm-up. The helper waits
+    // for the shader assets (a program cannot even be requested before them) and primes the red
+    // material; the second prime creates the blue material's program, which the first prime cannot
+    // have requested yet. Same shape every other material test in this file uses.
+    WaitUntilAssetsReadyUVE(meshGuid, redMaterialGuid);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
 
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
     EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().meshItemsExtracted, 2U);
