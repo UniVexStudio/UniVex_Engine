@@ -101,5 +101,48 @@ TEST_F(ProjectCheckerUVETest, RunUVE_IsolatesCorruptFilesAndAggregatesIndependen
     }));
 }
 
+// The Inspector's "New Standard / ORM / Shader Material" writes `.uvmaterial`, which is as much a
+// material as an importer's `.uvmat`. Not knowing the extension meant the check skipped every
+// material an author created by hand - never decoding it, never reporting it unregistered - so a
+// corrupt one went unnoticed until something tried to draw with it.
+TEST_F(ProjectCheckerUVETest, RunUVE_ChecksMaterialsWrittenByTheInspectorAsWellAsImportedOnes) {
+    static_cast<void>(WriteEnvelopeUVE("authored.uvmaterial", Asset::AssetKindUVE::Material));
+    static_cast<void>(WriteEnvelopeUVE("imported.uvmat", Asset::AssetKindUVE::Material));
+    static_cast<void>(WriteEnvelopeUVE("wrongkind.uvmaterial", Asset::AssetKindUVE::Blob));
+    {
+        std::ofstream corrupt(m_root / "corrupt.uvmaterial", std::ios::binary);
+        corrupt << "not-a-uve-envelope";
+    }
+
+    const ProjectCheckReportUVE report = ProjectCheckerUVE{}.RunUVE(ProjectCheckOptionsUVE{m_root, {}});
+    ASSERT_TRUE(report.HasErrorsUVE());
+    bool foundAuthoredUnregistered = false;
+    bool foundImportedUnregistered = false;
+    bool foundKindMismatch = false;
+    bool foundDecodeFailure = false;
+    for (const ProjectCheckDiagnosticUVE& diagnostic : report.diagnostics) {
+        const bool wellFormedMaterial = diagnostic.path.filename() == "authored.uvmaterial" ||
+                                        diagnostic.path.filename() == "imported.uvmat";
+        if (wellFormedMaterial) {
+            // A material envelope of the right kind is accepted under either spelling, which is
+            // what "the check knows this extension" means.
+            EXPECT_NE(diagnostic.code, "envelope.kind.mismatch") << diagnostic.path.filename();
+            EXPECT_NE(diagnostic.code, "envelope.decode.failed") << diagnostic.path.filename();
+        }
+        foundAuthoredUnregistered |=
+            diagnostic.code == "registry.file.unregistered" && diagnostic.path.filename() == "authored.uvmaterial";
+        foundImportedUnregistered |=
+            diagnostic.code == "registry.file.unregistered" && diagnostic.path.filename() == "imported.uvmat";
+        foundKindMismatch |=
+            diagnostic.code == "envelope.kind.mismatch" && diagnostic.path.filename() == "wrongkind.uvmaterial";
+        foundDecodeFailure |=
+            diagnostic.code == "envelope.decode.failed" && diagnostic.path.filename() == "corrupt.uvmaterial";
+    }
+    EXPECT_TRUE(foundAuthoredUnregistered) << "the authored material is a supported asset, so it is reported";
+    EXPECT_TRUE(foundImportedUnregistered);
+    EXPECT_TRUE(foundKindMismatch);
+    EXPECT_TRUE(foundDecodeFailure);
+}
+
 } // namespace
 } // namespace UVE::ProjectCheck::Tests

@@ -20,6 +20,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "uve/asset/asset_load_completed_event_uve.h"
 #include "uve/asset/asset_reloaded_event_uve.h"
 #include "uve/asset/material_asset_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
@@ -1349,6 +1350,10 @@ struct Renderer3DUVE::ImplUVE {
     std::uint64_t primitiveFrameIndex = 0U;
     ParticleDrawRecordingUVE particleDrawRecording;
     Events::EventSubscriptionUVE reloadSubscription;
+    /// Reloads announced by AssetReloadedEventUVE whose AssetLoadCompletedEventUVE has not arrived
+    /// yet. See OnAssetReloadedUVE for why the announcement alone cannot invalidate correctly.
+    Events::EventSubscriptionUVE loadCompletedSubscription;
+    std::unordered_set<Asset::AssetGuidUVE> reloadsInFlight;
     const Scene::ParticleRuntimeUVE* particleRuntimeForFrame = nullptr;
 
     /// Set only for the duration of a RenderFrameToRegionUVE() call (Phase 3's ViewportManagerUVE
@@ -1627,12 +1632,31 @@ struct Renderer3DUVE::ImplUVE {
         }
     }
 
-    void OnAssetReloadedUVE(const Asset::AssetReloadedEventUVE& event) {
-        if (event.guid == skyTextureGuid) {
+    /// True when anything this renderer has cached was derived from `guid`: the sky texture, a
+    /// mesh's GPU buffers, a material's resolved program plus texture handles (or the shaders one
+    /// of those materials is built from), a texture upload, or a failed-upload memo.
+    [[nodiscard]] bool CachedStateDependsOnUVE(const Asset::AssetGuidUVE guid) const {
+        if (guid == skyTextureGuid || meshCache.contains(guid) || textureCache.contains(guid) ||
+            failedTextureGuids.contains(guid) || materialCache.contains(guid)) {
+            return true;
+        }
+        // A shader asset has no cache entry of its own, but every material built from it does.
+        for (const auto& entry : materialCache) {
+            if (entry.second.vertexShaderGuid == guid || entry.second.fragmentShaderGuid == guid) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Drops every piece of cached GPU state derived from `guid`. Split out from the event
+    /// handlers because it is deliberately run twice per reload - see OnAssetReloadedUVE.
+    void InvalidateReloadedAssetUVE(const Asset::AssetGuidUVE guid) {
+        if (guid == skyTextureGuid) {
             skyTextureHandle = kInvalidTextureHandleUVE;
             skyTextureEnabled = false;
         }
-        const auto meshIt = meshCache.find(event.guid);
+        const auto meshIt = meshCache.find(guid);
         if (meshIt != meshCache.end()) {
             DestroyBufferIfValidUVE(renderDevice, meshIt->second.vertexBuffer);
             DestroyBufferIfValidUVE(renderDevice, meshIt->second.indexBuffer);
@@ -1645,17 +1669,17 @@ struct Renderer3DUVE::ImplUVE {
         bool materialAssetReloaded = false;
         for (auto materialIt = materialCache.begin(); materialIt != materialCache.end();) {
             const MaterialGpuResourcesUVE& resources = materialIt->second;
-            if (materialIt->first == event.guid || resources.vertexShaderGuid == event.guid ||
-                resources.fragmentShaderGuid == event.guid) {
-                materialAssetReloaded = materialAssetReloaded || materialIt->first == event.guid;
+            if (materialIt->first == guid || resources.vertexShaderGuid == guid ||
+                resources.fragmentShaderGuid == guid) {
+                materialAssetReloaded = materialAssetReloaded || materialIt->first == guid;
                 materialIt = materialCache.erase(materialIt);
             } else {
                 ++materialIt;
             }
         }
 
-        const bool textureFailureMemoErased = failedTextureGuids.erase(event.guid) > 0U;
-        const auto textureIt = textureCache.find(event.guid);
+        const bool textureFailureMemoErased = failedTextureGuids.erase(guid) > 0U;
+        const auto textureIt = textureCache.find(guid);
         if (textureIt != textureCache.end()) {
             DestroyTextureIfValidUVE(renderDevice, textureIt->second);
             textureCache.erase(textureIt);
@@ -1678,6 +1702,40 @@ struct Renderer3DUVE::ImplUVE {
             // asset gets one deliberate retry instead of remaining on a stale fallback forever.
             materialCache.clear();
         }
+    }
+
+    /// AssetReloadedEventUVE says a reload was *started*, and the reload runs on a worker thread:
+    /// the payload swap may still be minutes-of-code away when this arrives. Invalidating only here
+    /// therefore had a real failure mode - the caches were dropped, the very next frame rebuilt
+    /// them from the payload that was about to be replaced, and nothing ever told the renderer
+    /// again, so an edited material (a swapped albedo map, a shader GUID, a new `isTransparent`)
+    /// kept drawing the old files for the rest of the session. Invalidate now for responsiveness -
+    /// if the swap already landed this is the only invalidation needed - and register the GUID so
+    /// OnAssetLoadCompletedUVE can do it again once the new payload is actually installed.
+    void OnAssetReloadedUVE(const Asset::AssetReloadedEventUVE& event) {
+        // Only assets this renderer actually derived state from need to be remembered; that keeps
+        // the set bounded by the caches below instead of by every reload in the project.
+        if (!CachedStateDependsOnUVE(event.guid)) {
+            return;
+        }
+        reloadsInFlight.insert(event.guid);
+        InvalidateReloadedAssetUVE(event.guid);
+    }
+
+    /// The reload's real news: the manager has installed the new payload (or, failure-atomic, kept
+    /// the last-known-good one and reported the diagnostic). Re-invalidating here is what makes the
+    /// caches observe the bytes that were just loaded.
+    void OnAssetLoadCompletedUVE(const Asset::AssetLoadCompletedEventUVE& event) {
+        if (reloadsInFlight.erase(event.guid) == 0U) {
+            return; // A first load, not a reload: nothing cached under this GUID could be stale.
+        }
+        if (!event.success) {
+            // The manager only reaches this branch with the last-known-good payload still
+            // installed, so everything the caches were built from is still current. Dropping them
+            // would just rebuild identical entries from identical data.
+            return;
+        }
+        InvalidateReloadedAssetUVE(event.guid);
     }
 
     /// Returns the cached (creating-if-needed) GPU buffers for `item`'s mesh. `item.meshHandle`
@@ -2132,37 +2190,17 @@ struct Renderer3DUVE::ImplUVE {
             return nullptr;
         }
         const std::vector<Scene::SkeletonBonePoseUVE> pose = Scene::GetSkeletonCurrentPoseUVE(*skeleton);
-        std::unordered_map<std::string_view, std::size_t> boneOfName;
-        for (std::size_t index = 0U; index < skeleton->bones.size(); ++index) {
-            boneOfName.emplace(skeleton->bones[index].name, index);
-        }
+        // The same name rules the recorded Skin was built with, so an imported model and the
+        // skeleton an animator drives cannot bind differently. A joint the lookup cannot place -
+        // no bone of its name, or a pose that does not cover that bone - is left at its own rest
+        // pose rather than being skinned by whatever bone happened to sit at that index.
+        Scene::SkeletonBoneLookupUVE boneLookup;
+        boneLookup.BuildUVE(*skeleton);
         std::vector<Math::Matrix4x4UVE> locals;
         locals.reserve(mesh.joints.size());
         for (const Asset::MeshJointUVE& joint : mesh.joints) {
-            std::size_t foundIndex = std::numeric_limits<std::size_t>::max();
-            if (const auto bone = boneOfName.find(joint.name); bone != boneOfName.end()) {
-                foundIndex = bone->second;
-            } else {
-                std::string_view jointClean = joint.name;
-                if (const auto pos = jointClean.find_last_of(":|"); pos != std::string_view::npos) {
-                    jointClean = jointClean.substr(pos + 1U);
-                }
-                for (std::size_t index = 0U; index < skeleton->bones.size(); ++index) {
-                    std::string_view skelName = skeleton->bones[index].name;
-                    if (const auto pos = skelName.find_last_of(":|"); pos != std::string_view::npos) {
-                        skelName = skelName.substr(pos + 1U);
-                    }
-                    if (skelName.size() == jointClean.size() &&
-                        std::equal(skelName.begin(), skelName.end(), jointClean.begin(), [](char a, char b) {
-                            return std::tolower(static_cast<unsigned char>(a)) ==
-                                   std::tolower(static_cast<unsigned char>(b));
-                        })) {
-                        foundIndex = index;
-                        break;
-                    }
-                }
-            }
-            if (foundIndex >= pose.size()) {
+            std::uint32_t foundIndex = 0U;
+            if (!boneLookup.TryFindUVE(joint.name, foundIndex) || foundIndex >= pose.size()) {
                 locals.push_back(Math::Matrix4x4UVE::IdentityUVE());
                 continue;
             }
@@ -3672,10 +3710,13 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     static_cast<void>(m_impl->indirectCull.InitializeUVE());
     m_impl->reloadSubscription = eventSystem.Subscribe<Asset::AssetReloadedEventUVE>(
         [implPtr](const Asset::AssetReloadedEventUVE& event) { implPtr->OnAssetReloadedUVE(event); });
+    m_impl->loadCompletedSubscription = eventSystem.Subscribe<Asset::AssetLoadCompletedEventUVE>(
+        [implPtr](const Asset::AssetLoadCompletedEventUVE& event) { implPtr->OnAssetLoadCompletedUVE(event); });
 }
 
 Renderer3DUVE::~Renderer3DUVE() {
     m_impl->eventSystem.Unsubscribe(m_impl->reloadSubscription);
+    m_impl->eventSystem.Unsubscribe(m_impl->loadCompletedSubscription);
     m_impl->DestroyOcclusionProbesUVE();
     for (const auto& [guid, meshResources] : m_impl->meshCache) {
         DestroyBufferIfValidUVE(m_impl->renderDevice, meshResources.vertexBuffer);
