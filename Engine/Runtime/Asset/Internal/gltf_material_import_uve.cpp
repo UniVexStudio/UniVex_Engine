@@ -128,8 +128,15 @@ public:
         m_options.temporarySuffix = kGltfTemporarySuffixUVE;
     }
 
-    /// Publishes the material of the document's single imported primitive.
-    [[nodiscard]] bool PublishPrimitiveMaterialUVE(GltfMaterialImportResultUVE& outResult) {
+    /// Publishes every material the document's imported mesh references.
+    ///
+    /// The mesh's primitives are the authority on which materials exist for it: a document may
+    /// describe twenty materials and use three, and publishing the unused seventeen would put
+    /// files beside a model that nothing samples. Each distinct index is published once, in the
+    /// order the primitives reference it, which is exactly the order that turns into the mesh's
+    /// material slots - a surface stores the slot, not the glTF index, so the two have to agree by
+    /// construction rather than by a later lookup.
+    [[nodiscard]] bool PublishMeshMaterialsUVE(GltfMaterialImportResultUVE& outResult) {
         if (!m_document.contains("meshes") || !m_document.at("meshes").is_array() ||
             m_document.at("meshes").empty()) {
             return true;
@@ -139,33 +146,66 @@ public:
             mesh->at("primitives").empty()) {
             return true;
         }
-        const nlohmann::json* const primitive = CheckedElementUVE(*mesh, "primitives", 0U);
-        if (primitive == nullptr || !primitive->contains("material")) {
-            // No material on the primitive is a normal, valid glTF: the mesh has no authored look.
-            return true;
+        const nlohmann::json& primitives = mesh->at("primitives");
+        for (std::size_t primitiveIndex = 0U; primitiveIndex < primitives.size(); ++primitiveIndex) {
+            const nlohmann::json* const primitive = CheckedElementUVE(*mesh, "primitives", primitiveIndex);
+            if (primitive == nullptr || !primitive->contains("material")) {
+                // No material on a primitive is a normal, valid glTF: that surface has no authored
+                // look of its own and the object's material shades it.
+                continue;
+            }
+            const auto materialIndex = ReadJsonUintUVE(*primitive, "material", true);
+            if (!materialIndex || *materialIndex > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+                UVE_WARNING("{}: primitive {} names a material index that is not a bounded unsigned "
+                            "integer; that surface publishes without a material",
+                            kGltfImporterNameUVE, primitiveIndex);
+                continue;
+            }
+            if (const auto existing = outResult.materialIndexToSlot.find(*materialIndex);
+                existing != outResult.materialIndexToSlot.end()) {
+                if (primitiveIndex == 0U) {
+                    outResult.primitiveMaterialGuid = outResult.materialGuids[existing->second];
+                }
+                continue;
+            }
+            AssetGuidUVE publishedGuid = kInvalidAssetGuidUVE;
+            if (!TryPublishMaterialAtUVE(*materialIndex, publishedGuid)) {
+                return false;
+            }
+            if (publishedGuid == kInvalidAssetGuidUVE) {
+                continue; // Described badly and skipped; the surface falls back to the object's material.
+            }
+            const auto slot = static_cast<std::uint32_t>(outResult.materialGuids.size());
+            outResult.materialGuids.push_back(publishedGuid);
+            outResult.materialIndexToSlot.emplace(*materialIndex, slot);
+            if (primitiveIndex == 0U) {
+                outResult.primitiveMaterialGuid = publishedGuid;
+            }
         }
-        const auto materialIndex = ReadJsonUintUVE(*primitive, "material", true);
-        if (!materialIndex || *materialIndex > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
-            UVE_WARNING("{}: the imported primitive names a material index that is not a bounded unsigned "
-                        "integer; the mesh publishes without a material",
-                        kGltfImporterNameUVE);
-            return true;
-        }
+        return true;
+    }
+
+private:
+    /// Publishes one glTF material at `materialIndex`. Returns false only when the asset database
+    /// refuses the published file; a material the document merely describes badly leaves
+    /// `outGuid` invalid and returns true so the caller keeps importing the geometry.
+    [[nodiscard]] bool TryPublishMaterialAtUVE(const std::uint64_t materialIndex, AssetGuidUVE& outGuid) {
+        outGuid = kInvalidAssetGuidUVE;
         const nlohmann::json* const materialJson =
-            CheckedElementUVE(m_document, "materials", static_cast<std::size_t>(*materialIndex));
+            CheckedElementUVE(m_document, "materials", static_cast<std::size_t>(materialIndex));
         if (materialJson == nullptr) {
-            UVE_WARNING("{}: the imported primitive names material {} but the document has no such material; "
-                        "the mesh publishes without one",
-                        kGltfImporterNameUVE, *materialIndex);
+            UVE_WARNING("{}: a primitive names material {} but the document has no such material; "
+                        "that surface publishes without one",
+                        kGltfImporterNameUVE, materialIndex);
             return true;
         }
 
         MaterialAssetUVE material;
         PopulateMaterialUVE(*materialJson, material);
         if (!IsMaterialAssetValidUVE(material)) {
-            UVE_WARNING("{}: material {} describes values the material validator rejects; the mesh publishes "
-                        "without a material",
-                        kGltfImporterNameUVE, *materialIndex);
+            UVE_WARNING("{}: material {} describes values the material validator rejects; that "
+                        "surface publishes without a material",
+                        kGltfImporterNameUVE, materialIndex);
             return true;
         }
 
@@ -175,7 +215,7 @@ public:
         }
         const std::string modelStem = m_destinationPath.stem().string();
         const std::string stem = MakeMaterialFileStemUVE(
-            modelStem, authoredName, static_cast<std::size_t>(*materialIndex), "material", m_usedMaterialStems);
+            modelStem, authoredName, static_cast<std::size_t>(materialIndex), "material", m_usedMaterialStems);
         const std::filesystem::path materialPath = m_destinationPath.parent_path() / (stem + ".uvmat");
         if (!PublishAssetAtomicallyUVE(
                 materialPath, kGltfImporterNameUVE, kGltfTemporarySuffixUVE,
@@ -192,12 +232,10 @@ public:
                       materialPath.string());
             return false;
         }
-        outResult.materialGuids.push_back(guid);
-        outResult.primitiveMaterialGuid = guid;
+        outGuid = guid;
         return true;
     }
 
-private:
     void PopulateMaterialUVE(const nlohmann::json& materialJson, MaterialAssetUVE& material) {
         const nlohmann::json* const pbr =
             materialJson.contains("pbrMetallicRoughness") && materialJson.at("pbrMetallicRoughness").is_object()
@@ -422,7 +460,7 @@ bool ImportGltfMaterialsUVE(const nlohmann::json& document, const std::vector<st
     try {
         GltfMaterialPublisherUVE publisher(document, buffer, sourcePath.parent_path(), destinationPath,
                                            assetDatabase);
-        return publisher.PublishPrimitiveMaterialUVE(outResult);
+        return publisher.PublishMeshMaterialsUVE(outResult);
     } catch (const std::bad_alloc&) {
         UVE_ERROR("{}: out of memory while importing glTF materials", kGltfImporterNameUVE);
         return false;

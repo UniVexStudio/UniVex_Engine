@@ -57,6 +57,8 @@ struct BindStorageBufferCommandUVE {
 struct DrawIndexedCommandUVE {
     std::uint32_t indexCount = 0;
     std::uint32_t instanceCount = 1;
+    /// First index of the draw's range, in indices. Non-zero only for a mesh surface.
+    std::uint32_t firstIndex = 0;
 };
 struct DrawCommandUVE {
     std::uint32_t vertexCount = 0;

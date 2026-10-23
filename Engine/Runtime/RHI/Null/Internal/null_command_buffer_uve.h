@@ -62,7 +62,8 @@ public:
   void SetUniformVector3UVE(std::string_view name, const Math::Vector3UVE &value) override;
   void SetUniformVector4UVE(std::string_view name, const Math::Vector4UVE &value) override;
   void SetUniformMatrix4x4UVE(std::string_view name, const Math::Matrix4x4UVE &value) override;
-  void DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t instanceCount) override;
+  void DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t instanceCount,
+                      std::uint32_t firstIndex) override;
   void DrawIndexedIndirectUVE(BufferHandleUVE buffer, std::uint64_t offsetBytes) override;
   void DrawUVE(std::uint32_t vertexCount, std::uint32_t instanceCount) override;
   void DispatchUVE(std::uint32_t groupCountX, std::uint32_t groupCountY, std::uint32_t groupCountZ) override;

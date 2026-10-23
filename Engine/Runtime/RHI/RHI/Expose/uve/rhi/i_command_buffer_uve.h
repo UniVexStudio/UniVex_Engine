@@ -156,7 +156,15 @@ public:
 
     /// Draws using the currently bound index buffer. Must be called inside a render pass, after
     /// a pipeline and the buffers it needs are bound.
-    virtual void DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t instanceCount = 1) = 0;
+    ///
+    /// `firstIndex` is an index into the bound buffer - in INDICES, not bytes - where this draw's
+    /// range begins, the same parameter `glDrawElements`/`vkCmdDrawIndexed` take. It is what lets
+    /// one mesh asset hold several surfaces (index ranges with their own materials) and draw each
+    /// as an ordinary indexed draw over the same buffer, instead of the mesh having to be split
+    /// into one GPU buffer per material. A `firstIndex + indexCount` that runs past the bound
+    /// buffer is a loud no-op in every backend, exactly like an oversized `indexCount`.
+    virtual void DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t instanceCount = 1,
+                                std::uint32_t firstIndex = 0) = 0;
 
     /// Draws without an index buffer. Must be called inside a render pass, after a pipeline and
     /// the buffers it needs are bound.
