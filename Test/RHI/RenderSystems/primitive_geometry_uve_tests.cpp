@@ -88,4 +88,63 @@ TEST(PrimitiveGeometryUVETest, UVSphere_HasStableSeamPolesUnitNormalsAndNonDegen
     }
 }
 
+
+// A capsule and a cylinder used to fall back to the cube's geometry, so choosing either shape drew
+// a box. These tests pin the two things that made that fallback invisible: the shape's own bounds,
+// and triangle winding that would have shipped inside-out once the geometry existed.
+TEST(PrimitiveGeometryUVETest, CapsuleAndCylinder_AreTheirOwnShapesWithOutwardFaces) {
+    const PrimitiveGeometryUVE& capsule = GetPrimitiveGeometryUVE(Scene::PrimitiveMeshKindUVE::Capsule);
+    const PrimitiveGeometryUVE& cylinder = GetPrimitiveGeometryUVE(Scene::PrimitiveMeshKindUVE::Cylinder);
+    const PrimitiveGeometryUVE& cube = GetPrimitiveGeometryUVE(Scene::PrimitiveMeshKindUVE::Cube);
+
+    for (const PrimitiveGeometryUVE* geometry : {&capsule, &cylinder}) {
+        EXPECT_FALSE(geometry->vertices.empty());
+        EXPECT_EQ(geometry->indices.size() % 3U, 0U);
+        // The declared half extents: 0.5 wide, 1.0 tall. A cube answers {0.5, 0.5, 0.5}.
+        EXPECT_EQ(geometry->localBounds.min, (Math::Vector3UVE{-0.5F, -1.0F, -0.5F}));
+        EXPECT_EQ(geometry->localBounds.max, (Math::Vector3UVE{0.5F, 1.0F, 0.5F}));
+        EXPECT_NE(geometry->indices.size(), cube.indices.size());
+        EXPECT_GE(geometry->indices.size(), cube.indices.size());
+
+        for (std::size_t index = 0U; index < geometry->indices.size(); index += 3U) {
+            const Asset::MeshVertexUVE& first = geometry->vertices[geometry->indices[index]];
+            const Asset::MeshVertexUVE& second = geometry->vertices[geometry->indices[index + 1U]];
+            const Asset::MeshVertexUVE& third = geometry->vertices[geometry->indices[index + 2U]];
+            // No degenerate triangles: a ring collapsed onto a pole would show up here as zero area.
+            EXPECT_GT(TriangleTwiceAreaSquaredUVE(first, second, third), 0.00000001F) << index;
+            const Math::Vector3UVE faceNormal =
+                Math::CrossUVE(second.position - first.position, third.position - first.position);
+            EXPECT_GT(Math::DotUVE(faceNormal, first.normal + second.normal + third.normal), 0.0F) << index;
+        }
+    }
+
+    // A capsule is a barrel with hemispherical ends, so its widest ring sits at |y| = 0.5 and the
+    // ends reach the full half height. A cylinder is a barrel with flat ends all the way up.
+    bool capsuleHasBarrelRing = false;
+    bool capsuleHasPole = false;
+    for (const Asset::MeshVertexUVE& vertex : capsule.vertices) {
+        const float radius = std::sqrt((vertex.position.x * vertex.position.x) +
+                                       (vertex.position.z * vertex.position.z));
+        if (radius > 0.499F && std::fabs(vertex.position.y) < 0.51F) {
+            capsuleHasBarrelRing = true;
+        }
+        if (std::fabs(vertex.position.y) > 0.999F) {
+            capsuleHasPole = true;
+        }
+        EXPECT_LE(radius, 0.5001F);
+    }
+    EXPECT_TRUE(capsuleHasBarrelRing);
+    EXPECT_TRUE(capsuleHasPole);
+
+    std::size_t flatCapNormals = 0U;
+    for (const Asset::MeshVertexUVE& vertex : cylinder.vertices) {
+        if (std::fabs(std::fabs(vertex.normal.y) - 1.0F) < 0.0001F) {
+            ++flatCapNormals;
+        }
+    }
+    // Both caps, each a centre plus its ring.
+    EXPECT_EQ(flatCapNormals, 2U * 26U);
+}
+
+
 } // namespace UVE::Render::Tests

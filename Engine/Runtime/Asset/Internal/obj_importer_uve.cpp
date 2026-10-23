@@ -9,7 +9,9 @@
 #include <vector>
 
 #include "import_helpers_uve.h"
+#include "obj_material_import_uve.h"
 
+#include "uve/asset/i_asset_database_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
 #include "uve/asset/obj_mesh_converter_uve.h"
 #include "uve/logging/logging_macros_uve.h"
@@ -22,6 +24,7 @@ constexpr std::string_view kObjTemporarySuffixUVE = ".uve_obj_tmp";
 
 [[nodiscard]] bool ImportObjSourceUVE(const std::filesystem::path& sourcePath,
                                       const std::filesystem::path& destinationPath,
+                                      IAssetDatabaseUVE& assetDatabase,
                                       const AssetImportSettingsUVE& /*settings*/) {
     if (destinationPath.extension() != ".uvmodel") {
         UVE_ERROR("ObjImporterUVE: destination \"{}\" must use the .uvmodel extension",
@@ -41,6 +44,12 @@ constexpr std::string_view kObjTemporarySuffixUVE = ".uve_obj_tmp";
         UVE_ERROR("ObjImporterUVE: source \"{}\" failed bounded OBJ mesh conversion", sourcePath.string());
         return false;
     }
+    // Materials and their textures are published BEFORE the mesh so a failure never leaves a
+    // .uvmodel pointing at materials that do not exist. Recoverable material problems leave the
+    // geometry intact; only the asset database refusing a published file aborts.
+    if (!Detail::ImportObjMaterialsUVE(source, sourcePath, destinationPath, assetDatabase, mesh)) {
+        return false;
+    }
     return Detail::PublishAssetAtomicallyUVE(
         destinationPath, kObjImporterNameUVE, kObjTemporarySuffixUVE,
         [&mesh](const std::filesystem::path& temporaryPath) { return SaveMeshAssetUVE(mesh, temporaryPath); });
@@ -49,7 +58,9 @@ constexpr std::string_view kObjTemporarySuffixUVE = ".uve_obj_tmp";
 } // namespace
 
 void RegisterObjImporterUVE(IAssetImporterUVE& importer) {
-    importer.RegisterImporterUVE("obj", &ImportObjSourceUVE);
+    // Database-aware: the importer publishes the OBJ's MTL materials and textures beside the model
+    // and needs their GUIDs before it writes the .uvmodel that references them.
+    importer.RegisterDatabaseAwareImporterUVE("obj", &ImportObjSourceUVE);
 }
 
 } // namespace UVE::Asset

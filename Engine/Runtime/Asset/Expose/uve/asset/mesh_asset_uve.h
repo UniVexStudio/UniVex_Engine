@@ -169,6 +169,22 @@ struct MeshAssetUVE {
 
     /// True when this mesh carries blend shapes.
     [[nodiscard]] bool HasMorphTargetsUVE() const noexcept { return !morphTargets.empty(); }
+
+    /// The material this mesh is drawn with when nothing on the object overrides it: the one the
+    /// asset was authored with for its first surface, or kInvalidAssetGuidUVE for a mesh that has
+    /// none (a procedural primitive) or whose importer could not publish it.
+    ///
+    /// This is the answer to "a model arrives textured". The material belongs to the mesh, the way
+    /// an authored asset carries its own look; an object's material field is an override of it, not
+    /// the only way for it to exist. Both the renderer that draws the object and the one that draws
+    /// it without a material ask this question, so a mesh is never drawn twice or drawn grey while
+    /// it has a material of its own.
+    [[nodiscard]] AssetGuidUVE FirstSurfaceMaterialGuidUVE() const noexcept {
+        if (materialGuids.empty()) {
+            return kInvalidAssetGuidUVE;
+        }
+        return materialGuids.front();
+    }
 };
 
 /// Whether `influence`'s weights sum to 1 within `tolerance`. Callers decide what to do about a

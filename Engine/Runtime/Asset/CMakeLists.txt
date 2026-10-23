@@ -100,11 +100,14 @@ add_library(uve_asset STATIC
     Internal/jpeg_importer_uve.cpp
     Internal/jpeg_metadata_uve.cpp
     Internal/obj_importer_uve.cpp
+    Internal/obj_material_import_uve.cpp
     Internal/obj_mesh_converter_uve.cpp
     Internal/obj_metadata_uve.cpp
     Internal/fbx_importer_uve.cpp
     Internal/fbx_mesh_converter_uve.cpp
     Internal/gltf_importer_uve.cpp
+    Internal/gltf_material_import_uve.cpp
+    Internal/model_texture_import_uve.cpp
     Internal/gltf_mesh_converter_uve.cpp
     Internal/gltf_metadata_uve.cpp
     Internal/gltf_skeleton_uve.cpp

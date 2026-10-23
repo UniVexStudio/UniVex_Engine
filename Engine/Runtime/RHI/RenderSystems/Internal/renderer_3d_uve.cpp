@@ -2183,6 +2183,12 @@ struct Renderer3DUVE::ImplUVE {
                     !Math::IsFiniteUVE(worldTransform.worldPosition) || !Math::IsFiniteUVE(worldTransform.worldScale)) {
                     return;
                 }
+                // A mesh that carries a material of its own is drawn through the materialed path,
+                // which falls back to that material when the object names none. Drawing it here as
+                // well would put a grey shell under the textured one.
+                if (mesh->FirstSurfaceMaterialGuidUVE() != Asset::kInvalidAssetGuidUVE) {
+                    return;
+                }
                 Math::QuaternionUVE rotation;
                 if (!Math::TryNormalizeUVE(worldTransform.worldRotation, rotation)) {
                     return;

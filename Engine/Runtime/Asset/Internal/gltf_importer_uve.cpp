@@ -23,6 +23,7 @@
 
 #include "import_helpers_uve.h"
 #include "gltf_document_uve.h"
+#include "gltf_material_import_uve.h"
 #include "uve/asset/asset_import_sidecar_uve.h"
 
 #include "uve/asset/gltf_mesh_converter_uve.h"
@@ -309,6 +310,7 @@ constexpr std::string_view kGltfTemporarySuffixUVE = ".uve_gltf_tmp";
 
 [[nodiscard]] bool ImportGltfSourceUVE(const std::filesystem::path& sourcePath,
                                        const std::filesystem::path& destinationPath,
+                                       IAssetDatabaseUVE& assetDatabase,
                                        const AssetImportSettingsUVE& settings) {
     const MeshImportSettingsUVE meshSettings = ResolveMeshImportSettingsUVE(settings);
     try {
@@ -335,6 +337,15 @@ constexpr std::string_view kGltfTemporarySuffixUVE = ".uve_gltf_tmp";
                       sourcePath.string());
             return false;
         }
+        // Materials and their textures are published BEFORE the mesh so a failure never leaves a
+        // .uvmodel pointing at materials that do not exist. An unusable material is not a reason to
+        // lose the geometry: it is skipped with a diagnostic and the mesh publishes untextured.
+        Detail::GltfMaterialImportResultUVE materials;
+        if (!Detail::ImportGltfMaterialsUVE(document, buffer, sourcePath, destinationPath, assetDatabase,
+                                            materials)) {
+            return false;
+        }
+        mesh.materialGuids = std::move(materials.materialGuids);
         return Detail::PublishAssetAtomicallyUVE(destinationPath, kGltfImporterNameUVE, kGltfTemporarySuffixUVE,
                                                  [&mesh](const std::filesystem::path& temporaryPath) {
                                                      return SaveMeshAssetUVE(mesh, temporaryPath);
@@ -347,8 +358,10 @@ constexpr std::string_view kGltfTemporarySuffixUVE = ".uve_gltf_tmp";
 } // namespace
 
 void RegisterGltfImporterUVE(IAssetImporterUVE& importer) {
-    importer.RegisterImporterUVE("gltf", &ImportGltfSourceUVE);
-    importer.RegisterImporterUVE("glb", &ImportGltfSourceUVE);
+    // Database-aware: the importer publishes the primitive's material and its textures beside the
+    // model and needs their GUIDs before it writes the .uvmodel that references them.
+    importer.RegisterDatabaseAwareImporterUVE("gltf", &ImportGltfSourceUVE);
+    importer.RegisterDatabaseAwareImporterUVE("glb", &ImportGltfSourceUVE);
 }
 
 } // namespace UVE::Asset
