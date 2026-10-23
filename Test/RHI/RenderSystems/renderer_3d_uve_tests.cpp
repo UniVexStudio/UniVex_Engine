@@ -26,6 +26,7 @@
 #include "uve/asset/asset_bundle_uve.h"
 #include "uve/asset/asset_database_uve.h"
 #include "uve/asset/asset_manager_uve.h"
+#include "uve/asset/asset_load_completed_event_uve.h"
 #include "uve/asset/asset_reloaded_event_uve.h"
 #include "uve/asset/file_system_uve.h"
 #include "uve/asset/material_asset_uve.h"
@@ -1421,6 +1422,165 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_PrimitiveWithAssignedMaterial_ShadesThr
     EXPECT_FLOAT_EQ(*floatUniform("uMetallic"), 0.25F);
     ASSERT_TRUE(floatUniform("uRoughness").has_value());
     EXPECT_FLOAT_EQ(*floatUniform("uRoughness"), 0.75F);
+}
+
+// A primitive's material is its whole look, and an author editing that .uvmat expects the object
+// in the viewport to change without being reassigned. The mesh path rebuilds its GPU resources
+// from the asset every frame; the primitive path keeps a handle so the payload stays alive between
+// extraction and the colour pass, so this is the path where a reload could quietly leave the old
+// values on screen.
+TEST_F(Renderer3DUVETest, AssetReloadedEventUVE_ForAPrimitiveMaterial_RedrawsWithTheReloadedValues) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE unusedMeshGuid = assetDatabase.RegisterUVE("renderer3d_primitive_reload_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_primitive_reload.uvmat");
+    Scene::PrimitiveMeshComponentUVE component{Scene::PrimitiveMeshKindUVE::Cube,
+                                               Math::Vector3UVE{0.9F, 0.9F, 0.9F}};
+    component.materialGuid = materialGuid;
+    MakePrimitiveEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, component);
+    WaitUntilAssetsReadyUVE(unusedMeshGuid, materialGuid);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+
+    const auto drawnAlbedo = [this]() -> std::optional<Math::Vector3UVE> {
+        const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+        const auto found = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformVector3CommandUVE>(command) &&
+                   std::get<SetUniformVector3CommandUVE>(command).name == "uAlbedoColor";
+        });
+        return found == commands.cend() ? std::nullopt
+                                        : std::optional<Math::Vector3UVE>{
+                                              std::get<SetUniformVector3CommandUVE>(*found).value};
+    };
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveDrawCallsRecorded, 1U);
+    ASSERT_TRUE(drawnAlbedo().has_value());
+    EXPECT_EQ(*drawnAlbedo(), (Math::Vector3UVE{0.2F, 0.4F, 0.6F}));
+
+    // The author picks a new colour and saves.
+    Asset::AssetHandleUVE<Asset::MaterialAssetUVE> materialHandle =
+        assetManager.LoadUVE<Asset::MaterialAssetUVE>(materialGuid, assetDatabase);
+    ASSERT_TRUE(materialHandle.IsReadyUVE());
+    materialHandle.TryGetUVE()->albedoColor = Math::ColorUVE{0.15F, 0.85F, 0.35F};
+    eventSystem.Publish(Asset::AssetReloadedEventUVE{materialGuid});
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveDrawCallsRecorded, 1U);
+    ASSERT_TRUE(drawnAlbedo().has_value());
+    EXPECT_EQ(*drawnAlbedo(), (Math::Vector3UVE{0.15F, 0.85F, 0.35F}));
+}
+
+// The asset manager swaps a reloaded payload on a worker thread, so AssetReloadedEventUVE - which
+// is queued when the reload is *requested* - can reach the renderer before the new bytes are in
+// place. Invalidating only on that announcement let the renderer resolve the material again from
+// the payload that was about to be replaced, with no second notification ever arriving: the
+// primitive kept drawing the program the old file named for the rest of the session. This test
+// draws that exact ordering - announcement, a frame on the old payload, then the swap - and asserts
+// the completion event is what makes the primitive pick up what the reload installed.
+TEST_F(Renderer3DUVETest, AssetLoadCompletedEventUVE_ForAPrimitiveMaterial_RebuildsAfterTheSwap) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE unusedMeshGuid = assetDatabase.RegisterUVE("renderer3d_primitive_reload_mesh.uvmodel");
+    const Asset::AssetGuidUVE originalVertexGuid = assetDatabase.RegisterUVE("renderer3d_reload_vertex.uvshader");
+    const Asset::AssetGuidUVE originalFragmentGuid = assetDatabase.RegisterUVE("renderer3d_reload_fragment.uvshader");
+    const Asset::AssetGuidUVE replacedVertexGuid = assetDatabase.RegisterUVE("renderer3d_reload_vertex_alt.uvshader");
+    const Asset::AssetGuidUVE replacedFragmentGuid = assetDatabase.RegisterUVE("renderer3d_reload_fragment_alt.uvshader");
+    // The two shader pairs differ only in their source text, so "the reload was picked up" shows up
+    // as a newly linked program - the one piece of a material's resolved state that is not uploaded
+    // again every frame from the payload.
+    assetManager.RegisterLoaderUVE<Asset::ShaderAssetUVE>(
+        [](const std::filesystem::path& path, Asset::ShaderAssetUVE& shader) {
+            shader.sourceCode = path.filename().string().find("_alt") == std::string::npos
+                                    ? "void main() { }"
+                                    : "void main() { } // installed by the reload";
+            return true;
+        });
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
+        [vertexGuid = originalVertexGuid, fragmentGuid = originalFragmentGuid](
+            const std::filesystem::path&, Asset::MaterialAssetUVE& material) {
+            material.vertexShader = vertexGuid;
+            material.fragmentShader = fragmentGuid;
+            material.albedoColor = Math::ColorUVE{0.2F, 0.4F, 0.6F};
+            return true;
+        });
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_primitive_reload.uvmat");
+    Scene::PrimitiveMeshComponentUVE cube{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.9F, 0.9F, 0.9F}};
+    cube.materialGuid = materialGuid;
+    MakePrimitiveEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, cube);
+    WaitUntilAssetsReadyUVE(unusedMeshGuid, materialGuid);
+
+    const auto waitUntilShaderReady = [this](const Asset::AssetGuidUVE guid) {
+        Asset::AssetHandleUVE<Asset::ShaderAssetUVE> handle =
+            assetManager.LoadUVE<Asset::ShaderAssetUVE>(guid, assetDatabase);
+        for (int iteration = 0; iteration < kMaxPollIterationsUVE && !handle.IsReadyUVE(); ++iteration) {
+            std::this_thread::yield();
+        }
+        return handle.IsReadyUVE();
+    };
+    // The material's own shader pair; the helper above only waits for the fixture's.
+    ASSERT_TRUE(waitUntilShaderReady(originalVertexGuid));
+    ASSERT_TRUE(waitUntilShaderReady(originalFragmentGuid));
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+
+    // Every pipeline the main colour pass binds, in order. A cache rebuild links a new program, and
+    // the null device never recycles a pipeline handle, so this list changing between two frames is
+    // exactly "the renderer resolved the material again".
+    const auto drawnPipelines = [this]() -> std::vector<PipelineHandleUVE> {
+        std::vector<PipelineHandleUVE> pipelines;
+        bool insideMainPass = false;
+        for (const RecordedCommandUVE& command : renderDevice.GetLastSubmittedCommandsUVE()) {
+            if (const auto* const begin = std::get_if<BeginRenderPassCommandUVE>(&command); begin != nullptr) {
+                insideMainPass = begin->desc.colorAttachment != kInvalidTextureHandleUVE &&
+                                 begin->desc.depthAttachment != kInvalidTextureHandleUVE;
+                continue;
+            }
+            if (std::holds_alternative<EndRenderPassCommandUVE>(command)) {
+                insideMainPass = false;
+                continue;
+            }
+            if (!insideMainPass) {
+                continue;
+            }
+            if (const auto* const bind = std::get_if<BindPipelineCommandUVE>(&command); bind != nullptr) {
+                pipelines.push_back(bind->pipeline);
+            }
+        }
+        return pipelines;
+    };
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveDrawCallsRecorded, 1U);
+    const std::vector<PipelineHandleUVE> first = drawnPipelines();
+    ASSERT_FALSE(first.empty());
+
+    // The reload is announced while the old payload is still installed. The frame drawn here
+    // resolves the material again from the file that is about to be replaced - the race exactly.
+    eventSystem.Publish(Asset::AssetReloadedEventUVE{materialGuid});
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity); // links the program that rebuild asked for
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveDrawCallsRecorded, 1U);
+    const std::vector<PipelineHandleUVE> during = drawnPipelines();
+    ASSERT_FALSE(during.empty());
+    EXPECT_NE(during, first) << "the announcement alone already dropped the resolved material";
+
+    // The worker finishes: the payload now names the other shader pair, and the manager reports the
+    // load complete. That is the notification that carries the new payload's arrival.
+    Asset::AssetHandleUVE<Asset::MaterialAssetUVE> material =
+        assetManager.LoadUVE<Asset::MaterialAssetUVE>(materialGuid, assetDatabase);
+    ASSERT_TRUE(material.IsReadyUVE());
+    material.TryGetUVE()->vertexShader = replacedVertexGuid;
+    material.TryGetUVE()->fragmentShader = replacedFragmentGuid;
+    ASSERT_TRUE(waitUntilShaderReady(replacedVertexGuid));
+    ASSERT_TRUE(waitUntilShaderReady(replacedFragmentGuid));
+    eventSystem.Publish(Asset::AssetLoadCompletedEventUVE{materialGuid, true});
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveDrawCallsRecorded, 1U);
+    const std::vector<PipelineHandleUVE> after = drawnPipelines();
+    ASSERT_FALSE(after.empty());
+    // Without the completion-driven invalidation `after` is still the list the *old* payload
+    // produced, and the primitive keeps the program the reload replaced.
+    EXPECT_NE(after, during) << "the primitive draws what the reload installed, not the replaced program";
 }
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_HiddenPrimitiveIsNotDrawnAndReturnsWhenShown) {
