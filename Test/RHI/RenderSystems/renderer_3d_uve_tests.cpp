@@ -1305,37 +1305,78 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_MeshWithExplicitSurfaces_DrawsOneRangeP
     ASSERT_TRUE(blueHandle.IsReadyUVE());
     ASSERT_EQ(shaderManager.GetPendingJobCountUVE(), 0U);
 
+    // The GPU frustum cull would collapse the two draws into one indirect command whose
+    // parameters are not visible in the recorded command stream, and those parameters are exactly
+    // what this test is about. Freezing culling keeps the direct path without changing what is
+    // drawn - a debug option, not a different renderer.
+    CullingSettingsUVE cullingSettings;
+    cullingSettings.frustumCullingEnabledUVE = false;
+    renderer3D->SetCullingSettingsUVE(cullingSettings);
+
+    // The materials' programs are created on first use and only become valid once the shader
+    // manager has processed the compile, so the frame that first sees them is a warm-up: the
+    // observable frame follows the drain. Same shape as the primitive material test above.
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
+        shaderManager.UpdateUVE(0.0);
+        if (shaderManager.GetPendingJobCountUVE() == 0U) {
+            break;
+        }
+        std::this_thread::yield();
+    }
+    ASSERT_EQ(shaderManager.GetPendingJobCountUVE(), 0U);
+
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
     EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().meshItemsExtracted, 2U);
 
-    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
     // uAlbedoColor is set immediately before each main-pass draw, so the value in effect when a
-    // draw is recorded names the material that draw used. Shadow draws record no albedo at all
-    // and are skipped by the has_value() guard.
+    // draw is recorded names the material that draw used. Only the two material colours count:
+    // the shadow, tone-mapping and UI passes record draws too, and none of them shade a material.
+    struct ShadedRangedDrawUVE {
+        std::uint32_t indexCount = 0U;
+        std::uint32_t firstIndex = 0U;
+        float red = 0.0F;
+        float green = 0.0F;
+        float blue = 0.0F;
+    };
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
     std::optional<Math::Vector3UVE> lastAlbedo;
-    std::optional<Math::Vector3UVE> albedoAtZero;
-    std::optional<Math::Vector3UVE> albedoAtThree;
+    std::vector<ShadedRangedDrawUVE> shadedDraws;
     for (const RecordedCommandUVE& command : commands) {
-        if (std::holds_alternative<SetUniformVector3CommandUVE>(command)) {
+        // A pipeline bind starts a new program's uniforms, so an albedo set for the previous one
+        // cannot name this draw. That is what keeps the post-processing and UI passes - which
+        // record draws but never shade a material - out of the list.
+        if (std::holds_alternative<BindPipelineCommandUVE>(command)) {
+            lastAlbedo.reset();
+        } else if (std::holds_alternative<SetUniformVector3CommandUVE>(command)) {
             const auto& uniform = std::get<SetUniformVector3CommandUVE>(command);
             if (uniform.name == "uAlbedoColor") {
                 lastAlbedo = uniform.value;
             }
-        } else if (std::holds_alternative<DrawIndexedCommandUVE>(command)) {
+        } else if (std::holds_alternative<DrawIndexedCommandUVE>(command) && lastAlbedo.has_value()) {
             const auto& draw = std::get<DrawIndexedCommandUVE>(command);
-            if (draw.indexCount == 3U && lastAlbedo.has_value()) {
-                if (draw.firstIndex == 0U) {
-                    albedoAtZero = lastAlbedo;
-                } else if (draw.firstIndex == 3U) {
-                    albedoAtThree = lastAlbedo;
-                }
-            }
+            shadedDraws.push_back(ShadedRangedDrawUVE{draw.indexCount, draw.firstIndex, lastAlbedo->x,
+                                                      lastAlbedo->y, lastAlbedo->z});
         }
     }
-    ASSERT_TRUE(albedoAtZero.has_value());
-    ASSERT_TRUE(albedoAtThree.has_value());
-    EXPECT_EQ(*albedoAtZero, (Math::Vector3UVE{1.0F, 0.0F, 0.0F}));
-    EXPECT_EQ(*albedoAtThree, (Math::Vector3UVE{0.0F, 0.0F, 1.0F}));
+    // One shaded draw per surface, each covering only that surface's three indices: a draw that
+    // covered the whole buffer would show six indices here, and a batch that merged the two
+    // surfaces would show one draw carrying both materials' triangles.
+    std::sort(shadedDraws.begin(), shadedDraws.end(),
+              [](const ShadedRangedDrawUVE& left, const ShadedRangedDrawUVE& right) {
+                  return left.firstIndex < right.firstIndex;
+              });
+    const std::vector<ShadedRangedDrawUVE> expectedDraws{
+        ShadedRangedDrawUVE{3U, 0U, 1.0F, 0.0F, 0.0F},
+        ShadedRangedDrawUVE{3U, 3U, 0.0F, 0.0F, 1.0F}};
+    ASSERT_EQ(shadedDraws.size(), expectedDraws.size());
+    for (std::size_t drawIndex = 0U; drawIndex < expectedDraws.size(); ++drawIndex) {
+        EXPECT_EQ(shadedDraws[drawIndex].indexCount, expectedDraws[drawIndex].indexCount);
+        EXPECT_EQ(shadedDraws[drawIndex].firstIndex, expectedDraws[drawIndex].firstIndex);
+        EXPECT_FLOAT_EQ(shadedDraws[drawIndex].red, expectedDraws[drawIndex].red);
+        EXPECT_FLOAT_EQ(shadedDraws[drawIndex].green, expectedDraws[drawIndex].green);
+        EXPECT_FLOAT_EQ(shadedDraws[drawIndex].blue, expectedDraws[drawIndex].blue);
+    }
 }
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_PrimitiveWithAssignedMaterial_ShadesThroughThatMaterialsValues) {

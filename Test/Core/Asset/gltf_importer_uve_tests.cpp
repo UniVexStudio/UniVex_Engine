@@ -152,10 +152,10 @@ void AppendVector3UVE(std::vector<std::byte>& bytes, const float x, const float 
            "}\n";
 }
 
-/// Two triangles in one buffer, each its own glTF primitive with its own material - the shape a
+/// Two triangles, each its own glTF primitive with its own accessors and material - the shape a
 /// DCC tool exports for a model whose paint and glass are different material slots.
-/// Layout: [0,72) positions (6 vec3)  [72,144) normals (6 vec3)  [144,192) uvs (6 vec2)
-///         [192,204) indices (6 u16: two triangles).
+/// Layout: [0,36) positions 0  [36,72) positions 1  [72,108) normals 0  [108,144) normals 1
+///         [144,168) uvs 0      [168,192) uvs 1      [192,198) indices 0  [198,204) indices 1
 [[nodiscard]] std::vector<std::byte> MakeTwoPrimitiveBufferUVE() {
     std::vector<std::byte> bytes;
     for (const float value : {0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F,
@@ -170,7 +170,7 @@ void AppendVector3UVE(std::vector<std::byte>& bytes, const float x, const float 
         AppendFloatLittleEndianUVE(bytes, 0.0F);
     }
     for (const std::uint16_t index : {std::uint16_t{0U}, std::uint16_t{1U}, std::uint16_t{2U},
-                                      std::uint16_t{3U}, std::uint16_t{4U}, std::uint16_t{5U}}) {
+                                      std::uint16_t{0U}, std::uint16_t{1U}, std::uint16_t{2U}}) {
         AppendU16LittleEndianUVE(bytes, index);
     }
     return bytes;
@@ -181,26 +181,32 @@ void AppendVector3UVE(std::vector<std::byte>& bytes, const float x, const float 
            "  \"asset\": {\"version\": \"2.0\"},\n"
            "  \"buffers\": [{\"uri\":\"" + std::string(uri) + "\",\"byteLength\": 204}],\n"
            "  \"bufferViews\": [\n"
-           "    {\"buffer\":0,\"byteOffset\":0,\"byteLength\":72},\n"
-           "    {\"buffer\":0,\"byteOffset\":72,\"byteLength\":72},\n"
-           "    {\"buffer\":0,\"byteOffset\":144,\"byteLength\":48},\n"
+           "    {\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},\n"
+           "    {\"buffer\":0,\"byteOffset\":36,\"byteLength\":36},\n"
+           "    {\"buffer\":0,\"byteOffset\":72,\"byteLength\":36},\n"
+           "    {\"buffer\":0,\"byteOffset\":108,\"byteLength\":36},\n"
+           "    {\"buffer\":0,\"byteOffset\":144,\"byteLength\":24},\n"
+           "    {\"buffer\":0,\"byteOffset\":168,\"byteLength\":24},\n"
            "    {\"buffer\":0,\"byteOffset\":192,\"byteLength\":6},\n"
            "    {\"buffer\":0,\"byteOffset\":198,\"byteLength\":6}\n"
            "  ],\n"
            "  \"accessors\": [\n"
-           "    {\"bufferView\":0,\"componentType\":5126,\"count\":6,\"type\":\"VEC3\"},\n"
-           "    {\"bufferView\":1,\"componentType\":5126,\"count\":6,\"type\":\"VEC3\"},\n"
-           "    {\"bufferView\":2,\"componentType\":5126,\"count\":6,\"type\":\"VEC2\"},\n"
-           "    {\"bufferView\":3,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"},\n"
-           "    {\"bufferView\":4,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}\n"
+           "    {\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[0,0,0],\"max\":[1,1,0]},\n"
+           "    {\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[2,0,0],\"max\":[3,1,0]},\n"
+           "    {\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},\n"
+           "    {\"bufferView\":3,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},\n"
+           "    {\"bufferView\":4,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"},\n"
+           "    {\"bufferView\":5,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"},\n"
+           "    {\"bufferView\":6,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"},\n"
+           "    {\"bufferView\":7,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}\n"
            "  ],\n"
            "  \"materials\": [\n"
            "    {\"name\":\"paint\",\"pbrMetallicRoughness\":{\"baseColorFactor\":[1,0,0,1]}},\n"
            "    {\"name\":\"glass\",\"pbrMetallicRoughness\":{\"baseColorFactor\":[0,0,1,1]}}\n"
            "  ],\n"
            "  \"meshes\": [{\"primitives\":[\n"
-           "    {\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2},\"indices\":3,\"mode\":4,\"material\":0},\n"
-           "    {\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2},\"indices\":4,\"mode\":4,\"material\":1}\n"
+           "    {\"attributes\":{\"POSITION\":0,\"NORMAL\":2,\"TEXCOORD_0\":4},\"indices\":6,\"mode\":4,\"material\":0},\n"
+           "    {\"attributes\":{\"POSITION\":1,\"NORMAL\":3,\"TEXCOORD_0\":5},\"indices\":7,\"mode\":4,\"material\":1}\n"
            "  ]}]\n"
            "}\n";
 }
