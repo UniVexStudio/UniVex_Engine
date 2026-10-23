@@ -58,6 +58,7 @@ bool IsMaterialAssetValidUVE(const MaterialAssetUVE& material) noexcept {
            material.cullMode <= MaterialCullModeUVE::Disabled &&
            material.blendMode <= MaterialBlendModeUVE::Multiply &&
            material.depthDrawMode <= MaterialDepthDrawModeUVE::DepthPrePass &&
+           material.kind <= MaterialKindUVE::Shader &&
            std::isfinite(material.emissiveEnergy) && material.emissiveEnergy >= 0.0F &&
            std::isfinite(material.normalScale) && material.normalScale >= 0.0F &&
            IsFiniteUnitIntervalUVE(material.occlusionStrength) &&
@@ -190,6 +191,9 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
         if (payload.contains("useCustomShaderCode")) {
             material.useCustomShaderCode = payload.at("useCustomShaderCode").get<bool>();
         }
+        if (payload.contains("kind")) {
+            material.kind = static_cast<MaterialKindUVE>(payload.at("kind").get<std::uint8_t>());
+        }
         if (payload.contains("customShader")) {
             material.customShader = AssetGuidUVE{payload.at("customShader").get<std::uint64_t>()};
         }
@@ -267,6 +271,11 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     }
     if (material.useCustomShaderCode) {
         payload["useCustomShaderCode"] = material.useCustomShaderCode;
+    }
+    // Omitted for Standard so a material that never touched the selector keeps the same payload
+    // bytes it had before the field existed.
+    if (material.kind != MaterialKindUVE::Standard) {
+        payload["kind"] = static_cast<std::uint8_t>(material.kind);
     }
     if (material.customShader != kInvalidAssetGuidUVE) {
         payload["customShader"] = material.customShader.value;
