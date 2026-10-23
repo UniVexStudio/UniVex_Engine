@@ -610,6 +610,22 @@ TEST_F(Object3DDefinitionsUVETest, RenderInstanceFamilyComponentsRejectValuesThe
     surface.visibilityRangeBegin = 10.0F;
     surface.visibilityRangeEnd = 5.0F;
     EXPECT_FALSE(IsSurfaceInstanceComponentValidUVE(surface));
+    // One override per surface, and no more than a mesh can have surfaces.
+    surface = {};
+    surface.surfaceMaterialOverridePaths.assign(kMaximumSurfaceMaterialOverridesUVE, std::string{});
+    EXPECT_TRUE(IsSurfaceInstanceComponentValidUVE(surface));
+    surface.surfaceMaterialOverridePaths.push_back("one_too_many.uvmat");
+    EXPECT_FALSE(IsSurfaceInstanceComponentValidUVE(surface));
+    SurfaceInstanceComponentUVE overfilled{};
+    overfilled.surfaceMaterialOverridePaths.assign(kMaximumSurfaceMaterialOverridesUVE + 2U, "x.uvmat");
+    EXPECT_EQ(SanitizeSurfaceInstanceComponentUVE(overfilled).surfaceMaterialOverridePaths.size(),
+              kMaximumSurfaceMaterialOverridesUVE);
+    // Trailing empties say what an absent entry says, so they are trimmed; interior ones mark the
+    // surface they belong to and stay.
+    SurfaceInstanceComponentUVE trailing{};
+    trailing.surfaceMaterialOverridePaths = {"", "red.uvmat", "", ""};
+    EXPECT_EQ(SanitizeSurfaceInstanceComponentUVE(trailing).surfaceMaterialOverridePaths,
+              (std::vector<std::string>{"", "red.uvmat"}));
 
     EXPECT_FALSE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(SurfaceInstanceComponentUVE{}, 0.0F));
     EXPECT_FALSE(IsSurfaceInstance3DOutsideVisibilityRangeUVE(SurfaceInstanceComponentUVE{}, 1000.0F));

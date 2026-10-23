@@ -103,8 +103,10 @@ TEST(ObjImporterUVETest, ImportUVE_ObjWithMtl_PublishesItsMaterialsAndTextures) 
 
     MeshAssetUVE mesh;
     ASSERT_TRUE(LoadMeshAssetUVE(destinationPath, mesh));
-    // First-use order: the material the author switched to first is the object's default look,
-    // because the engine draws one material per object until per-surface ranges exist.
+    // First-use order: the material the author switched to first is the object's default look.
+    // GreenPaint only names a material here (no face uses it before the switch to RedPaint), so
+    // this file has ONE drawn material and therefore no surface table.
+    ASSERT_TRUE(mesh.surfaces.empty());
     ASSERT_EQ(mesh.materialGuids.size(), 2U);
     EXPECT_EQ(database.ResolveUVE(mesh.materialGuids[0]), greenPath);
     EXPECT_EQ(database.ResolveUVE(mesh.materialGuids[1]), redPath);
@@ -127,6 +129,51 @@ TEST(ObjImporterUVETest, ImportUVE_ObjWithMtl_PublishesItsMaterialsAndTextures) 
 
     for (const auto& path : {sourcePath, libraryPath, textureSourcePath, destinationPath, greenPath, redPath,
                              texturePath}) {
+        std::filesystem::remove(path);
+    }
+}
+
+// An OBJ that paints its faces with more than one material publishes those runs as surfaces, one
+// per usemtl run, so the object draws each part with the material the author named for it.
+TEST(ObjImporterUVETest, ImportUVE_MultipleUsemtlRuns_PublishOneSurfacePerRun) {
+    const std::filesystem::path sourcePath = "uve_obj_importer_tests_surfaces.obj";
+    const std::filesystem::path libraryPath = "uve_obj_importer_tests_surfaces.mtl";
+    const std::filesystem::path destinationPath = "uve_obj_importer_tests_surfaces.uvmodel";
+    const std::filesystem::path greenPath = "uve_obj_importer_tests_surfaces.Green.uvmat";
+    const std::filesystem::path redPath = "uve_obj_importer_tests_surfaces.Red.uvmat";
+    for (const auto& path : {sourcePath, libraryPath, destinationPath, greenPath, redPath}) {
+        std::filesystem::remove(path);
+    }
+    WriteObjFixtureUVE(libraryPath,
+                       "newmtl Green\n"
+                       "Kd 0.1 0.8 0.2\n"
+                       "newmtl Red\n"
+                       "Kd 0.9 0.2 0.1\n");
+    WriteObjFixtureUVE(sourcePath,
+                       "mtllib uve_obj_importer_tests_surfaces.mtl\n"
+                       "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                       "v 2 0 0\nv 3 0 0\nv 2 1 0\n"
+                       "v 4 0 0\nv 5 0 0\nv 4 1 0\n"
+                       "usemtl Green\nf 1 2 3\n"
+                       "usemtl Red\nf 4 5 6\n"
+                       "usemtl Green\nf 7 8 9\n");
+
+    AssetImporterUVE importer;
+    AssetDatabaseUVE database;
+    ASSERT_NE(importer.ImportUVE(sourcePath, destinationPath, database), kInvalidAssetGuidUVE);
+
+    MeshAssetUVE mesh;
+    ASSERT_TRUE(LoadMeshAssetUVE(destinationPath, mesh));
+    ASSERT_EQ(mesh.materialGuids.size(), 2U);
+    ASSERT_EQ(mesh.surfaces.size(), 3U);
+    EXPECT_EQ(mesh.surfaces[0], (MeshSurfaceUVE{0U, 3U, 0U}));
+    EXPECT_EQ(mesh.surfaces[1], (MeshSurfaceUVE{3U, 3U, 1U}));
+    // The third run returns to the first material's slot rather than publishing it twice.
+    EXPECT_EQ(mesh.surfaces[2], (MeshSurfaceUVE{6U, 3U, 0U}));
+    EXPECT_EQ(database.ResolveUVE(mesh.materialGuids[0]), greenPath);
+    EXPECT_EQ(database.ResolveUVE(mesh.materialGuids[1]), redPath);
+
+    for (const auto& path : {sourcePath, libraryPath, destinationPath, greenPath, redPath}) {
         std::filesystem::remove(path);
     }
 }

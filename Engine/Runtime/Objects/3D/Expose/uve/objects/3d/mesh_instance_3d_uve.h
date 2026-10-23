@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <string_view>
 
 #include "uve/asset/asset_guid_uve.h"
@@ -42,7 +43,21 @@ public:
     [[nodiscard]] static bool HasAssignedMaterialUVE(const MeshComponentUVE& mesh) noexcept;
 
     /// True when `surface` is present, valid, and names a non-empty `materialOverridePath`.
+    /// That one path replaces the material of EVERY surface, so it outranks the per-surface list.
     [[nodiscard]] static bool HasSurfaceMaterialOverrideUVE(
+        const SurfaceInstanceComponentUVE* surface) noexcept;
+
+    /// The override authored for one surface: the entry at `surfaceIndex`, or an empty view when
+    /// the list is shorter. Empty means the surface keeps its own material. Returns empty for
+    /// every surface while a whole-object override is set, because that one already covers them -
+    /// asking per surface would then be asking a question the object has answered for itself.
+    [[nodiscard]] static std::string_view SurfaceMaterialOverridePathUVE(
+        const SurfaceInstanceComponentUVE& surface, std::size_t surfaceIndex) noexcept;
+
+    /// True when `surface` overrides at least one surface individually and no whole-object
+    /// override outranks the list. That combination is what turns a mesh with a single implicit
+    /// surface into a per-surface draw, and what keeps a mesh with no material of its own drawable.
+    [[nodiscard]] static bool HasPerSurfaceMaterialOverrideUVE(
         const SurfaceInstanceComponentUVE* surface) noexcept;
 
     /// Returns `surfaceOverrideGuid` when valid, otherwise falls back to `mesh.materialGuid`.

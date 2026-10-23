@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -161,30 +162,72 @@ struct AssetPairKeyHashUVE final {
     return index;
 }
 
+/// Lookup table for `materialOverridePath` / `materialOverlayPath` strings, built once per walk.
+///
+/// An override is authored relative to the project's content root ("Materials/M_Steel.uvmaterial",
+/// what the Inspector writes), while the asset database stores whatever path it was registered
+/// with - commonly the same file with the content root already prefixed ("assets/Materials/...").
+/// Comparing those two strings directly never matches, so the index also holds every suffix that
+/// begins on a path separator. A suffix that two different GUIDs share is AMBIGUOUS and resolves
+/// nothing: drawing the wrong material is worse than drawing none, and the caller counts it as an
+/// invalid reference so the problem is visible rather than silent.
+struct MaterialOverridePathIndexUVE final {
+    std::unordered_map<std::string, Asset::AssetGuidUVE> exact;
+    std::unordered_map<std::string, Asset::AssetGuidUVE> suffixes;
+    std::unordered_set<std::string> ambiguousSuffixes;
+};
+
+void BuildMaterialOverridePathIndexUVE(Asset::IAssetDatabaseUVE& assetDatabase,
+                                       MaterialOverridePathIndexUVE& index) {
+    index.exact.clear();
+    index.suffixes.clear();
+    index.ambiguousSuffixes.clear();
+    for (const Asset::AssetRecordUVE& record : assetDatabase.GetRegisteredAssetsUVE()) {
+        const std::string path = record.path.lexically_normal().generic_string();
+        index.exact.emplace(path, record.guid);
+        for (std::size_t separator = path.find('/'); separator != std::string::npos;
+             separator = path.find('/', separator + 1U)) {
+            if (separator + 1U >= path.size()) {
+                continue;
+            }
+            const std::string suffix = path.substr(separator + 1U);
+            const auto [found, inserted] = index.suffixes.try_emplace(suffix, record.guid);
+            if (!inserted && found->second != record.guid) {
+                index.ambiguousSuffixes.insert(suffix);
+            }
+        }
+    }
+}
+
 /// Resolves a SurfaceInstance3D material override path to a loadable material GUID.
 /// Built once per walk, only if a surface actually names an override: a scene with none pays
 /// nothing. Empty path is "no override", not a failed lookup.
 [[nodiscard]] bool TryResolveMaterialOverridePathUVE(
-    const std::string& materialOverridePath, Asset::IAssetDatabaseUVE& assetDatabase,
-    std::unordered_map<std::string, Asset::AssetGuidUVE>& pathToGuidIndex, bool& indexBuilt,
-    Asset::AssetGuidUVE& outGuid) noexcept {
+    const std::string_view materialOverridePath, Asset::IAssetDatabaseUVE& assetDatabase,
+    MaterialOverridePathIndexUVE& index, bool& indexBuilt, Asset::AssetGuidUVE& outGuid) {
     if (materialOverridePath.empty()) {
         return false;
     }
     if (!indexBuilt) {
-        pathToGuidIndex.clear();
-        for (const Asset::AssetRecordUVE& record : assetDatabase.GetRegisteredAssetsUVE()) {
-            pathToGuidIndex.emplace(record.path.lexically_normal().generic_string(), record.guid);
-        }
+        BuildMaterialOverridePathIndexUVE(assetDatabase, index);
         indexBuilt = true;
     }
-    const std::string wanted = std::filesystem::path(materialOverridePath).lexically_normal().generic_string();
-    const auto found = pathToGuidIndex.find(wanted);
-    if (found == pathToGuidIndex.end()) {
+    const std::string wanted =
+        std::filesystem::path(materialOverridePath).lexically_normal().generic_string();
+    // The registered form wins outright: a project that registered both spellings has said which
+    // one it means, and the suffix below is only a convenience for the spelling it did not record.
+    if (const auto exact = index.exact.find(wanted); exact != index.exact.end()) {
+        outGuid = exact->second;
+        return true;
+    }
+    if (index.ambiguousSuffixes.find(wanted) != index.ambiguousSuffixes.end()) {
         return false;
     }
-    outGuid = found->second;
-    return true;
+    if (const auto suffix = index.suffixes.find(wanted); suffix != index.suffixes.end()) {
+        outGuid = suffix->second;
+        return true;
+    }
+    return false;
 }
 
 [[nodiscard]] Math::Vector3UVE TranslationFromWorldMatrixUVE(const Math::Matrix4x4UVE& matrix) noexcept {
@@ -515,7 +558,7 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
     std::vector<Scene::Occluder3DSnapshotUVE> occluders;
     Scene::CollectOccluder3DSnapshotsUVE(entityManager, occluders);
 
-    std::unordered_map<std::string, Asset::AssetGuidUVE> materialOverridePathIndex;
+    MaterialOverridePathIndexUVE materialOverridePathIndex;
     bool materialOverridePathIndexBuilt = false;
 
     for (const Scene::EntityUVE entity : survivingEntities) {
@@ -633,6 +676,11 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
         // path. When it is set the whole mesh draws with it, exactly as it always has. When it is
         // not, the mesh's own surface materials shade it, which is what an imported multi-material
         // model arrives with.
+        //
+        // The three levels, most specific first, are the priority `get_active_material()` states:
+        // the whole-object override, then a surface's own override, then the material the mesh was
+        // authored with. A whole-object override outranks the per-surface list entirely - it is
+        // one material for every surface, so asking surface by surface would contradict it.
         Asset::AssetGuidUVE objectMaterialGuid = meshComponent.materialGuid;
         if (Scene::MeshInstance3DUVE::HasSurfaceMaterialOverrideUVE(surface)) {
             Asset::AssetGuidUVE overrideGuid = Asset::kInvalidAssetGuidUVE;
@@ -645,6 +693,8 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
             objectMaterialGuid =
                 Scene::MeshInstance3DUVE::ResolveEffectiveMaterialGuidUVE(meshComponent, overrideGuid);
         }
+        const bool perSurfaceOverrides =
+            Scene::MeshInstance3DUVE::HasPerSurfaceMaterialOverrideUVE(surface);
 
         if (effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
             ++outVisibilitySet.invalidAssetReferences;
@@ -684,16 +734,23 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
                                                               : mesh->FirstSurfaceMaterialGuidUVE();
 
         // A mesh with no material of any kind is not drawn here: Renderer3DUVE's unmaterialed path
-        // draws it with the built-in lit shader instead.
-        if (!Scene::MeshInstance3DUVE::HasRenderableAssetPairUVE(effectiveMeshGuid, effectiveMaterialGuid)) {
+        // draws it with the built-in lit shader instead. A per-surface override is itself a way to
+        // have a material, so an instance that supplies one draws even when the mesh published
+        // none and the object names none - the surfaces it does not override are then skipped
+        // individually below, rather than the whole object disappearing.
+        if (!Scene::MeshInstance3DUVE::HasRenderableAssetPairUVE(effectiveMeshGuid, effectiveMaterialGuid) &&
+            !perSurfaceOverrides) {
             continue;
         }
 
-        // Surface by surface only when the mesh HAS a split and the object does not override it
-        // with one material. A single-material mesh keeps the one-draw path, and an object-level
-        // override keeps it too: that is the whole meaning of an override.
+        // Surface by surface when the mesh HAS a split, or when the instance overrides a surface of
+        // its own, and the object does not override the whole mesh with one material. A
+        // single-material mesh keeps the one-draw path, and an object-level override keeps it
+        // too: that is the whole meaning of an override. A mesh with one implicit surface still
+        // has surface 0 for an instance to override, which is why the list alone is enough.
         const bool drawPerSurface =
-            mesh->HasExplicitSurfacesUVE() && objectMaterialGuid == Asset::kInvalidAssetGuidUVE;
+            (mesh->HasExplicitSurfacesUVE() || perSurfaceOverrides) &&
+            objectMaterialGuid == Asset::kInvalidAssetGuidUVE;
 
         // The cache lookup. Placement is the frame's dominant cost - measured at roughly 29x
         // the price of comparing this key and reusing the answer - and most objects in most
@@ -809,12 +866,33 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
         };
 
         if (drawPerSurface) {
-            // Each surface is drawn with the material its own slot names. A slot the importer could
-            // not publish falls back to the mesh's first material rather than dropping the range: a
-            // piece of a model shaded by the wrong material is a defect the author can see, an
-            // invisible one is a defect they have to guess at.
+            // Each surface is drawn with the most specific material that names it: the instance's
+            // override for that surface, then the material the mesh's own slot names, then - for a
+            // slot the importer could not publish - the mesh's first material rather than dropping
+            // the range. A piece of a model shaded by the wrong material is a defect the author can
+            // see, an invisible one is a defect they have to guess at.
             for (std::size_t surfaceIndex = 0U; surfaceIndex < mesh->SurfaceCountUVE(); ++surfaceIndex) {
-                Asset::AssetGuidUVE surfaceMaterialGuid = mesh->SurfaceMaterialGuidUVE(surfaceIndex);
+                // The instance's word about THIS surface comes first: that is the whole point of
+                // overriding one. An override that no longer resolves drops the surface instead of
+                // falling back - the author asked for a specific material, and quietly drawing the
+                // authored one makes a moved or deleted .uvmaterial look like it still applies.
+                Asset::AssetGuidUVE surfaceMaterialGuid = Asset::kInvalidAssetGuidUVE;
+                if (perSurfaceOverrides && surface != nullptr) {
+                    const std::string_view overridePath =
+                        Scene::MeshInstance3DUVE::SurfaceMaterialOverridePathUVE(*surface, surfaceIndex);
+                    if (!overridePath.empty()) {
+                        if (!TryResolveMaterialOverridePathUVE(overridePath, assetDatabase,
+                                                               materialOverridePathIndex,
+                                                               materialOverridePathIndexBuilt,
+                                                               surfaceMaterialGuid)) {
+                            ++outVisibilitySet.invalidAssetReferences;
+                            continue;
+                        }
+                    }
+                }
+                if (surfaceMaterialGuid == Asset::kInvalidAssetGuidUVE) {
+                    surfaceMaterialGuid = mesh->SurfaceMaterialGuidUVE(surfaceIndex);
+                }
                 if (surfaceMaterialGuid == Asset::kInvalidAssetGuidUVE) {
                     surfaceMaterialGuid = mesh->FirstSurfaceMaterialGuidUVE();
                 }

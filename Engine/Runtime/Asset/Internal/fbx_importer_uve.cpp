@@ -4,10 +4,12 @@
 
 #include <cctype>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -57,7 +59,10 @@ void ResolveTextureSlotUVE(const std::filesystem::path& destinationPath, const s
     }
 
     MeshAssetUVE mesh;
-    if (!ConvertFbxMeshUVE(sourceBytes, mesh)) {
+    // The converter reports one range per material its faces use; which published slot each range
+    // belongs to is known here, because only this importer knows which materials were publishable.
+    std::vector<FbxSurfaceRangeUVE> surfaceRanges;
+    if (!ConvertFbxMeshUVE(sourceBytes, mesh, &surfaceRanges)) {
         UVE_ERROR("FbxImporterUVE: source \"{}\" failed FBX mesh conversion", sourcePath.string());
         return false;
     }
@@ -75,6 +80,11 @@ void ResolveTextureSlotUVE(const std::filesystem::path& destinationPath, const s
     std::vector<std::string> usedStems;
     std::vector<AssetGuidUVE> materialGuids;
     materialGuids.reserve(materials->size());
+    // File material position -> published slot. A material ReadFbxMaterialsUVE could not validate
+    // is left out of the published list, so the range's file position cannot be used as a slot
+    // directly; this is the one place both orders are known.
+    std::unordered_map<std::uint32_t, std::uint32_t> slotOfSourceIndex;
+    slotOfSourceIndex.reserve(materials->size());
     for (std::size_t materialIndex = 0U; materialIndex < materials->size(); ++materialIndex) {
         const FbxMaterialUVE& source = (*materials)[materialIndex];
         MaterialAssetUVE material = source.material;
@@ -104,9 +114,31 @@ void ResolveTextureSlotUVE(const std::filesystem::path& destinationPath, const s
             UVE_ERROR("FbxImporterUVE: asset database rejected material \"{}\"", materialPath.string());
             return false;
         }
+        slotOfSourceIndex.emplace(source.sourceIndex,
+                                  static_cast<std::uint32_t>(materialGuids.size()));
         materialGuids.push_back(guid);
     }
     mesh.materialGuids = std::move(materialGuids);
+
+    if (!surfaceRanges.empty() && !mesh.materialGuids.empty()) {
+        mesh.surfaces.reserve(surfaceRanges.size());
+        for (const FbxSurfaceRangeUVE& range : surfaceRanges) {
+            MeshSurfaceUVE surface{range.firstIndex, range.indexCount, kInvalidMeshSurfaceMaterialSlotUVE};
+            if (const auto found = slotOfSourceIndex.find(range.materialSourceIndex);
+                found != slotOfSourceIndex.end()) {
+                surface.materialSlot = found->second;
+            }
+            mesh.surfaces.push_back(surface);
+        }
+        if (!IsMeshSurfaceDataValidUVE(mesh)) {
+            // The ranges come from the same index buffer the mesh holds, so this cannot happen
+            // unless one of the two changed; refusing them keeps a broken table out of the .uvmodel.
+            UVE_WARNING("FbxImporterUVE: the converted surface ranges do not describe the index buffer; "
+                        "\"{}\" publishes without them",
+                        destinationPath.string());
+            mesh.surfaces.clear();
+        }
+    }
 
     return Detail::PublishAssetAtomicallyUVE(
         destinationPath, kFbxImporterNameUVE, kFbxTemporarySuffixUVE,
