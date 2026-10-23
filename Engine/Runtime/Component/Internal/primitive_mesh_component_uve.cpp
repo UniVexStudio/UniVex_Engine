@@ -44,12 +44,22 @@ namespace UVE::Scene {
     };
 }
 
+[[nodiscard]] bool HasAssignedPrimitiveMaterialUVE(
+    const PrimitiveMeshComponentUVE& component) noexcept {
+    // Exact equality, matching HasAssignedMaterialAssetUVE(): a material reference is either the
+    // sentinel or a real asset identifier. Nothing here resolves the GUID.
+    return component.materialGuid != Asset::kInvalidAssetGuidUVE;
+}
+
 [[nodiscard]] PrimitiveMeshComponentUVE SanitizePrimitiveMeshComponentUVE(
     const PrimitiveMeshComponentUVE& component) noexcept {
     return PrimitiveMeshComponentUVE{
         .kind = IsPrimitiveMeshKindValidUVE(component.kind) ? component.kind
                                                             : PrimitiveMeshKindUVE::Cube,
         .baseColor = ClampPrimitiveBaseColorUVE(component.baseColor),
+        // Carried through untouched: a reference is opaque to this layer, and dropping it here
+        // would silently detach a material from every primitive a sanitising boundary touches.
+        .materialGuid = component.materialGuid,
     };
 }
 

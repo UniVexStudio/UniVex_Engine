@@ -24,4 +24,13 @@ struct PrimitiveGeometryUVE final {
 /// cache is immutable, process-local, and never serialized into a scene document.
 [[nodiscard]] const PrimitiveGeometryUVE& GetPrimitiveGeometryUVE(Scene::PrimitiveMeshKindUVE kind) noexcept;
 
+/// The same geometry as GetPrimitiveGeometryUVE(), with a real tangent basis derived from the
+/// triangles and UVs (MeshAssetUVE's own GenerateMeshTangentsUVE(), the path every imported mesh
+/// takes). Normal mapping needs it: the raw geometry tables carry a placeholder tangent, which
+/// would make every normal map on a primitive look like it was mapped through the wrong axis.
+///
+/// The returned cache is immutable, process-local and never serialized, exactly like
+/// GetPrimitiveGeometryUVE(); the tangent derivation happens once per kind, on first request.
+[[nodiscard]] const PrimitiveGeometryUVE& GetPrimitiveLitGeometryUVE(Scene::PrimitiveMeshKindUVE kind) noexcept;
+
 } // namespace UVE::Render
