@@ -50,6 +50,7 @@
 #include "uve/asset/bmp_metadata_uve.h"
 #include "uve/asset/jpeg_metadata_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
+#include "uve/asset/material_asset_uve.h"
 #include "uve/asset/png_metadata_uve.h"
 #include "uve/asset/tga_metadata_uve.h"
 #include "uve/asset/texture_asset_uve.h"
@@ -166,6 +167,11 @@ constexpr float kEditorViewportToolCanvasHeightUVE = 30.0F;
 /// (uve_content_type_icon_bytes.inc) - plenty of detail at the grid card's much smaller display
 /// size without being wasteful to render per mesh.
 constexpr int kMeshThumbnailSizeUVE = 64;
+/// Square resolution rendered for each Content Browser material thumbnail. Deliberately 2x the
+/// 128 px the column preview draws: the browser samples the texture with linear filtering, so the
+/// extra resolution is free 2x2 supersampling (and 4x4 in a 64 px tile), which a preview sphere's
+/// curved silhouette needs - a 1:1 render shows a stair-stepped edge on every card.
+constexpr int kMaterialThumbnailSizeUVE = 256;
 constexpr float kScriptCanvasLongPressThresholdSecondsUVE = 0.55F;
 constexpr float kScriptCanvasLongPressMaxMovementPixelsUVE = 8.0F;
 constexpr float kMinimumViewportDistanceUVE = 0.5F;
@@ -332,6 +338,7 @@ void EditorUVE::InitUVE() {
         if (openglInitialized) {
             static_cast<void>(m_uiAssets.InitializeUVE());
             m_meshThumbnailRenderer.InitializeUVE();
+            m_materialThumbnailRenderer.InitializeUVE();
             m_uiInitialized = true;
         } else {
             if (glfwInitialized) {
@@ -4395,7 +4402,9 @@ void EditorUVE::ShutdownUVE() {
     if (m_uiInitialized) {
         ClearTextureThumbnailCacheUVE();
         ClearMeshThumbnailCacheUVE();
+        ClearMaterialThumbnailCacheUVE();
         m_meshThumbnailRenderer.ShutdownUVE();
+        m_materialThumbnailRenderer.ShutdownUVE();
         m_uiAssets.ShutdownUVE();
         if (ImGui::GetCurrentContext() != nullptr) {
             const char* const iniFilename = ImGui::GetIO().IniFilename;
@@ -5025,7 +5034,10 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     if (extension == ".uvshader") {
         return ContentBrowserItemTypeUVE::Shader;
     }
-    if (extension == ".uvmat") {
+    // Both spellings: every importer writes `.uvmat`, while the Inspector's own "New Material"
+    // flow creates `.uvmaterial`. A material the editor itself just created must still classify as
+    // one here or it would get a generic File icon and never a material preview.
+    if (extension == ".uvmat" || extension == ".uvmaterial") {
         return ContentBrowserItemTypeUVE::Material;
     }
     if (extension == ".uvsave") {
@@ -5318,6 +5330,53 @@ bool DecodeRawImageThumbnailPixelsUVE(const std::filesystem::path& absolutePath,
     return false;
 }
 
+/// Decodes one texture a material references into the RGBA8 bytes a material preview samples,
+/// reusing the exact lookup GetTextureThumbnailUVE uses: a `.uvtex` asset when the file is one,
+/// otherwise a raw PNG/JPEG/BMP/TGA source (the formats the material inspector's texture picker
+/// accepts, which stay un-imported until something needs them). `rawImageSrgb` is the colour space
+/// assumed only for those raw sources; a `.uvtex` carries its own. A missing, unreadable or
+/// unsupported file simply leaves `outImage` invalid, and the preview falls back to the material's
+/// flat value for that slot - a preview must never hide the rest of a material because one map is
+/// broken.
+[[nodiscard]] bool LoadMaterialPreviewImageUVE(const std::filesystem::path& absolutePath, const bool rawImageSrgb,
+                                               MaterialThumbnailImageUVE& outImage) {
+    std::error_code error;
+    if (absolutePath.empty() || !std::filesystem::is_regular_file(absolutePath, error)) {
+        return false;
+    }
+    // Every supported format's decoder refuses images far smaller than this; the cap exists only so
+    // the int narrowing below is provably safe.
+    constexpr std::uint32_t kMaximumPreviewImageDimensionUVE = 32768U;
+    Asset::TextureAssetUVE texture;
+    if (Asset::LoadTextureAssetUVE(absolutePath, texture)) {
+        if (texture.format != Asset::TextureAssetFormatUVE::RGBA8Unorm || texture.width == 0U ||
+            texture.height == 0U || texture.width > kMaximumPreviewImageDimensionUVE ||
+            texture.height > kMaximumPreviewImageDimensionUVE || texture.pixels.empty()) {
+            return false;
+        }
+        outImage.width = static_cast<int>(texture.width);
+        outImage.height = static_cast<int>(texture.height);
+        outImage.rgba8.resize(texture.pixels.size());
+        std::memcpy(outImage.rgba8.data(), texture.pixels.data(), texture.pixels.size());
+        outImage.srgb = texture.colorSpace == Asset::TextureAssetColorSpaceUVE::Srgb;
+        return outImage.IsValidUVE();
+    }
+    std::uint32_t rawWidth = 0U;
+    std::uint32_t rawHeight = 0U;
+    std::vector<std::byte> rawPixels;
+    if (!DecodeRawImageThumbnailPixelsUVE(absolutePath, rawWidth, rawHeight, rawPixels) || rawWidth == 0U ||
+        rawHeight == 0U || rawWidth > kMaximumPreviewImageDimensionUVE ||
+        rawHeight > kMaximumPreviewImageDimensionUVE || rawPixels.empty()) {
+        return false;
+    }
+    outImage.width = static_cast<int>(rawWidth);
+    outImage.height = static_cast<int>(rawHeight);
+    outImage.rgba8.resize(rawPixels.size());
+    std::memcpy(outImage.rgba8.data(), rawPixels.data(), rawPixels.size());
+    outImage.srgb = rawImageSrgb;
+    return outImage.IsValidUVE();
+}
+
 } // namespace
 
 std::uintptr_t EditorUVE::GetTextureThumbnailUVE(const std::filesystem::path& relativePath) {
@@ -5382,6 +5441,69 @@ void EditorUVE::ClearMeshThumbnailCacheUVE() noexcept {
         EditorUiAssetsUVE::DeleteDynamicTextureUVE(textureId);
     }
     m_meshThumbnailCache.clear();
+}
+
+std::uintptr_t EditorUVE::GetMaterialThumbnailUVE(const std::filesystem::path& relativePath) {
+    const std::string cacheKey = relativePath.generic_string();
+    const auto cachedIt = m_materialThumbnailCache.find(cacheKey);
+    if (cachedIt != m_materialThumbnailCache.end()) {
+        return cachedIt->second;
+    }
+    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    Asset::MaterialAssetUVE material;
+    std::uintptr_t textureId = 0U;
+    if (Asset::LoadMaterialAssetUVE(snapshot.contentRoot / relativePath, material)) {
+        // Only GUIDs resolve here: the material stores references, never paths, so a texture that
+        // is in the project but not in the asset database (e.g. never imported and never picked
+        // through the inspector) previews as its flat value rather than blocking the material.
+        Asset::IAssetDatabaseUVE& assetDatabase = m_services->GetAssetDatabaseUVE();
+        MaterialThumbnailTexturesUVE textures;
+        const auto loadSlot = [&assetDatabase](const Asset::AssetGuidUVE guid, const bool rawImageSrgb,
+                                               MaterialThumbnailImageUVE& image) {
+            if (guid == Asset::kInvalidAssetGuidUVE) {
+                return;
+            }
+            static_cast<void>(LoadMaterialPreviewImageUVE(assetDatabase.ResolveUVE(guid), rawImageSrgb, image));
+        };
+        loadSlot(material.albedoTexture, true, textures.albedo);
+        loadSlot(material.normalTexture, false, textures.normal);
+        // The runtime renderer only samples the packed metallic-roughness map; the separate
+        // metallicTexture/roughnessTexture slots are not consumed by it either, so the preview
+        // follows the renderer rather than promising a result the game will not show.
+        loadSlot(material.metallicRoughnessTexture, false, textures.metallicRoughness);
+        loadSlot(material.aoTexture, false, textures.ao);
+        loadSlot(material.emissiveTexture, true, textures.emissive);
+        textureId = m_materialThumbnailRenderer.RenderThumbnailUVE(material, textures, kMaterialThumbnailSizeUVE,
+                                                                   kMaterialThumbnailSizeUVE);
+    }
+    m_materialThumbnailCache.emplace(cacheKey, textureId);
+    return textureId;
+}
+
+void EditorUVE::ClearMaterialThumbnailCacheUVE() noexcept {
+    for (auto& [path, textureId] : m_materialThumbnailCache) {
+        EditorUiAssetsUVE::DeleteDynamicTextureUVE(textureId);
+    }
+    m_materialThumbnailCache.clear();
+    for (std::uintptr_t& textureId : m_retiredMaterialThumbnailTextures) {
+        EditorUiAssetsUVE::DeleteDynamicTextureUVE(textureId);
+    }
+    m_retiredMaterialThumbnailTextures.clear();
+}
+
+void EditorUVE::InvalidateMaterialThumbnailCacheUVE(const std::filesystem::path& absolutePath) {
+    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path relativePath = absolutePath.lexically_relative(snapshot.contentRoot);
+    if (relativePath.empty()) {
+        return;
+    }
+    const auto cachedIt = m_materialThumbnailCache.find(relativePath.generic_string());
+    if (cachedIt == m_materialThumbnailCache.end()) {
+        return;
+    }
+    // Retired, not deleted: see m_retiredMaterialThumbnailTextures.
+    m_retiredMaterialThumbnailTextures.push_back(cachedIt->second);
+    m_materialThumbnailCache.erase(cachedIt);
 }
 
 bool EditorUVE::IsModelSourcePathUVE(const std::filesystem::path& path) {
@@ -5600,6 +5722,7 @@ void EditorUVE::RefreshProjectFileIndexUVE() {
         // On-disk content may have changed since these were cached; re-decode lazily on next display.
         ClearTextureThumbnailCacheUVE();
         ClearMeshThumbnailCacheUVE();
+        ClearMaterialThumbnailCacheUVE();
         QueueModelAutoImportsUVE(projectFileIndex.GetSnapshotUVE());
     } else {
         m_projectFileRefreshAttemptedForRescan = changesBeforeRefresh.rescanRequired;

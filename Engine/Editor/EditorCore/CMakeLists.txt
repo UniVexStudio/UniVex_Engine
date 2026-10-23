@@ -140,6 +140,7 @@ add_library(uve_editor STATIC
     Internal/editor_ui_assets_uve.cpp
     Internal/editor_icon_set_uve.cpp
     Internal/mesh_thumbnail_renderer_uve.cpp
+    Internal/material_thumbnail_renderer_uve.cpp
     Internal/editor_uve.cpp
     Internal/editor_settings_uve.cpp
     Internal/editor_color_uve.cpp
