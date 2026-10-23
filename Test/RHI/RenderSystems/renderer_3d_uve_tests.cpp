@@ -1199,13 +1199,13 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_EmptyScene_MainPassBeginsAndEndsWithNoD
     EXPECT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(commands[1U]));
 }
 
-TEST_F(Renderer3DUVETest, RenderFrameUVE_VisiblePrimitive_RecordsCanonicalGeometryAndAuthoredColor) {
+TEST_F(Renderer3DUVETest, RenderFrameUVE_VisiblePrimitive_RecordsGeometryAndAuthorsColorThroughTheMaterialPath) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     const Math::Vector3UVE baseColor{0.15F, 0.45F, 0.85F};
     MakePrimitiveEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F},
                            Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, baseColor});
 
-    // The renderer-owned built-in program compiles asynchronously. The first frame triggers regular
+    // The built-in lit program compiles asynchronously. The first frame triggers regular
     // extraction; draining ShaderManagerUVE then makes the next frame’s primitive draw observable.
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
     for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
@@ -1223,12 +1223,84 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_VisiblePrimitive_RecordsCanonicalGeomet
         return std::holds_alternative<DrawIndexedCommandUVE>(command) &&
                std::get<DrawIndexedCommandUVE>(command).indexCount == 36U;
     }));
-    const auto primitiveColor = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+    // A primitive has no material assigned here, so it draws the built-in default material and the
+    // authored colour arrives as that material's albedo - not as the old Lambert-only uColor.
+    const auto primitiveAlbedo = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
         return std::holds_alternative<SetUniformVector3CommandUVE>(command) &&
-               std::get<SetUniformVector3CommandUVE>(command).name == "uColor";
+               std::get<SetUniformVector3CommandUVE>(command).name == "uAlbedoColor";
     });
-    ASSERT_NE(primitiveColor, commands.cend());
-    EXPECT_EQ(std::get<SetUniformVector3CommandUVE>(*primitiveColor).value, baseColor);
+    ASSERT_NE(primitiveAlbedo, commands.cend());
+    EXPECT_EQ(std::get<SetUniformVector3CommandUVE>(*primitiveAlbedo).value, baseColor);
+
+    // The rest of the material contract rides along, which is what proves this is the shared lit
+    // path rather than a primitive-specific shader: metallic/roughness come from the default
+    // material and the shader's own layer uniform is fed from the entity's RenderInstance.
+    for (const std::string_view uniform : {"uMetallic", "uRoughness"}) {
+        EXPECT_TRUE(std::any_of(commands.cbegin(), commands.cend(), [uniform](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformFloatCommandUVE>(command) &&
+                   std::get<SetUniformFloatCommandUVE>(command).name == uniform;
+        })) << uniform;
+    }
+    const auto renderLayers = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uMeshRenderLayers";
+    });
+    ASSERT_NE(renderLayers, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*renderLayers).value, 1);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_PrimitiveWithAssignedMaterial_ShadesThroughThatMaterialsValues) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    // The fixture's material loader produces albedo (0.2, 0.4, 0.6), metallic 0.25, roughness 0.75.
+    const Asset::AssetGuidUVE unusedMeshGuid = assetDatabase.RegisterUVE("renderer3d_primitive_material_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_primitive_material.uvmat");
+    Scene::PrimitiveMeshComponentUVE component{Scene::PrimitiveMeshKindUVE::Cube,
+                                               Math::Vector3UVE{0.9F, 0.9F, 0.9F}};
+    component.materialGuid = materialGuid;
+    MakePrimitiveEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, component);
+    WaitUntilAssetsReadyUVE(unusedMeshGuid, materialGuid);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
+        shaderManager.UpdateUVE(0.0);
+        if (shaderManager.GetPendingJobCountUVE() == 0U) {
+            break;
+        }
+        std::this_thread::yield();
+    }
+    ASSERT_EQ(shaderManager.GetPendingJobCountUVE(), 0U);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(diagnostics.primitiveMaterialPending, 0U);
+    EXPECT_EQ(diagnostics.primitiveMaterialFailed, 0U);
+    EXPECT_EQ(diagnostics.primitiveDrawCallsRecorded, 1U);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto vectorUniform = [&commands](const std::string_view name) -> std::optional<Math::Vector3UVE> {
+        const auto found = std::find_if(commands.cbegin(), commands.cend(), [name](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformVector3CommandUVE>(command) &&
+                   std::get<SetUniformVector3CommandUVE>(command).name == name;
+        });
+        return found == commands.cend() ? std::nullopt
+                                        : std::optional<Math::Vector3UVE>{
+                                              std::get<SetUniformVector3CommandUVE>(*found).value};
+    };
+    const auto floatUniform = [&commands](const std::string_view name) -> std::optional<float> {
+        const auto found = std::find_if(commands.cbegin(), commands.cend(), [name](const RecordedCommandUVE& command) {
+            return std::holds_alternative<SetUniformFloatCommandUVE>(command) &&
+                   std::get<SetUniformFloatCommandUVE>(command).name == name;
+        });
+        return found == commands.cend() ? std::nullopt
+                                        : std::optional<float>{std::get<SetUniformFloatCommandUVE>(*found).value};
+    };
+
+    // The material's own values reach the shader - not the component's base colour, which only
+    // stands in for the DEFAULT material's albedo.
+    ASSERT_TRUE(vectorUniform("uAlbedoColor").has_value());
+    EXPECT_EQ(*vectorUniform("uAlbedoColor"), (Math::Vector3UVE{0.2F, 0.4F, 0.6F}));
+    ASSERT_TRUE(floatUniform("uMetallic").has_value());
+    EXPECT_FLOAT_EQ(*floatUniform("uMetallic"), 0.25F);
+    ASSERT_TRUE(floatUniform("uRoughness").has_value());
+    EXPECT_FLOAT_EQ(*floatUniform("uRoughness"), 0.75F);
 }
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_HiddenPrimitiveIsNotDrawnAndReturnsWhenShown) {

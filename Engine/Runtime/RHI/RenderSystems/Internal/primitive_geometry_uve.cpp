@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <numbers>
+#include <optional>
 
 namespace UVE::Render {
 
@@ -334,6 +335,27 @@ const PrimitiveGeometryUVE& GetPrimitiveGeometryUVE(const Scene::PrimitiveMeshKi
             return cylinder;
     }
     return cube;
+}
+
+const PrimitiveGeometryUVE& GetPrimitiveLitGeometryUVE(const Scene::PrimitiveMeshKindUVE kind) noexcept {
+    // One tangent-complete copy per primitive, built on first use and never rebuilt: the geometry is
+    // immutable, so the only cost is the derivation itself. Keyed by the kind's underlying value so
+    // a future enumerator that outgrows the cache falls back to the cube instead of indexing out.
+    static std::array<std::optional<PrimitiveGeometryUVE>, 5U> litGeometry;
+    const auto slot = static_cast<std::size_t>(kind);
+    if (slot >= litGeometry.size()) {
+        return GetPrimitiveLitGeometryUVE(Scene::PrimitiveMeshKindUVE::Cube);
+    }
+    std::optional<PrimitiveGeometryUVE>& cached = litGeometry[slot];
+    if (!cached.has_value()) {
+        PrimitiveGeometryUVE geometry = GetPrimitiveGeometryUVE(kind);
+        // The material path is the shader's tangent-space normal mapping, so the basis has to come
+        // from the triangles and UVs - the same derivation every imported mesh goes through, rather
+        // than the placeholder (1,0,0) the geometry tables leave in place.
+        Asset::GenerateMeshTangentsUVE(geometry.vertices, geometry.indices);
+        cached.emplace(std::move(geometry));
+    }
+    return *cached;
 }
 
 } // namespace UVE::Render

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string_view>
 
+#include "uve/asset/asset_guid_uve.h"
 #include "uve/math/vector3_uve.h"
 
 namespace UVE::Scene {
@@ -22,13 +23,28 @@ enum class PrimitiveMeshKindUVE : std::uint8_t {
 };
 
 /// A serializable, editor-authored reference to one deterministic built-in primitive mesh.
-/// `baseColor` is bounded linear RGB used by the primitive lighting path; it is not a material
-/// asset and therefore does not imply texture, normal-map, or PBR authoring support.
+///
+/// The geometry itself is renderer-owned and never serialized; `kind` names it. `materialGuid`
+/// names the surface material the primitive is shaded with, on exactly the same asset path an
+/// imported mesh uses (albedo, normal, metallic-roughness, occlusion, emissive, custom shader) —
+/// `kInvalidAssetGuidUVE` means "no material", which draws the engine's built-in lit material
+/// rather than an unlit colour.
+///
+/// `baseColor` is that built-in material's albedo. It is deliberately NOT a tint over an assigned
+/// material: once `materialGuid` is set the material owns the surface completely, matching how a
+/// mesh instance behaves in the reference engines — a primitive must not keep altering a material
+/// its author picked. White is the neutral default.
 struct PrimitiveMeshComponentUVE final {
     PrimitiveMeshKindUVE kind = PrimitiveMeshKindUVE::Cube;
-    /// New primitives start neutral white; authored materials/colors can override this explicitly.
+    /// New primitives start neutral white, so an unassigned material reads as the material's own
+    /// albedo rather than an unexplained tint.
     Math::Vector3UVE baseColor{1.0F, 1.0F, 1.0F};
+    /// Surface material. Invalid (the default) draws the built-in lit material instead.
+    Asset::AssetGuidUVE materialGuid{};
 };
+
+/// True when `component.materialGuid` is assigned (`!= kInvalidAssetGuidUVE`).
+[[nodiscard]] bool HasAssignedPrimitiveMaterialUVE(const PrimitiveMeshComponentUVE& component) noexcept;
 
 [[nodiscard]] bool IsPrimitiveMeshKindValidUVE(const PrimitiveMeshKindUVE kind) noexcept;
 

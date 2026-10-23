@@ -1762,18 +1762,26 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
                 }
                 ImGui::Spacing();
 
-                // COLOUR: a procedural primitive is drawn by the engine's primitive pass, which is
-                // deliberately Lambert-only over this authored colour - it has no material maps, so
-                // a .uvmat on a primitive would be a control that changes nothing on screen. The
-                // colour is what the author actually sees, so it is what the panel offers.
-                ImGui::TextDisabled("COLOUR");
+                // MATERIAL: a primitive is shaded through the same material path an imported mesh
+                // uses, so this slot is the whole of its surface authoring. Unassigned draws the
+                // engine's built-in lit material, whose albedo is the COLOUR row below - which is
+                // why that row only appears while no material is assigned. A colour control that
+                // stopped doing anything the moment a material was picked would be dead weight.
                 Scene::PrimitiveMeshComponentUVE primitive =
                     entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
-                float color[3] = {primitive.baseColor.x, primitive.baseColor.y, primitive.baseColor.z};
-                if (ImGui::ColorEdit3("##primitiveColor", color)) {
-                    primitive.baseColor =
-                        Scene::ClampPrimitiveBaseColorUVE(Math::Vector3UVE{color[0], color[1], color[2]});
+                ImGui::TextDisabled("MATERIAL");
+                if (DrawStandardMaterialSlotUVE(nullptr, "##primitiveMaterial", primitive.materialGuid)) {
                     entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity, primitive);
+                }
+                if (!Scene::HasAssignedPrimitiveMaterialUVE(primitive)) {
+                    ImGui::Spacing();
+                    ImGui::TextDisabled("COLOUR");
+                    float color[3] = {primitive.baseColor.x, primitive.baseColor.y, primitive.baseColor.z};
+                    if (ImGui::ColorEdit3("##primitiveColor", color)) {
+                        primitive.baseColor =
+                            Scene::ClampPrimitiveBaseColorUVE(Math::Vector3UVE{color[0], color[1], color[2]});
+                        entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity, primitive);
+                    }
                 }
             } else {
                 // MATERIALS: the model carries its own. Each row is that material's file, edited in
