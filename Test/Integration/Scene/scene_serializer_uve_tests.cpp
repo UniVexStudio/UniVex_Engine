@@ -2017,10 +2017,11 @@ TEST_F(SceneSerializerUVETest, MetadataDiscovery_SurfaceOverridesWriteAPlainStri
               nlohmann::json::array({"materials/zero.uvmat", "", "materials/two.uvmat"}));
 }
 
-TEST_F(SceneSerializerUVETest, SurfaceOverrides_TrailingEmptiesAreNotWritten) {
-    // A list grows when a mesh gains surfaces and shrinks when it loses them. The entries past the
-    // last override carry no information, so writing them would leave every model's scene with a
-    // trailing run of empty strings, and diff noise for a change that is not one.
+TEST_F(SceneSerializerUVETest, SurfaceOverrides_AreSavedExactlyAsTheComponentHoldsThem) {
+    // A codec that rewrote its input - trimming trailing empties, say - would make every save/load
+    // comparison a special case, and a scene saved twice would differ from one saved once. The
+    // canonical form is the editing side's job (the Inspector trims, and the component's sanitizer
+    // does too); the document writes what it was handed and reads back the same list.
     const EntityUVE entity = entityManager.CreateEntityUVE();
     SurfaceInstanceComponentUVE surface{};
     surface.surfaceMaterialOverridePaths.assign(6U, std::string{});
@@ -2030,7 +2031,7 @@ TEST_F(SceneSerializerUVETest, SurfaceOverrides_TrailingEmptiesAreNotWritten) {
     const std::optional<SceneSnapshotUVE> snapshot =
         serializer.CaptureUVE(entityManager, {entity}, SceneAssetTypeUVE::Scene);
     ASSERT_TRUE(snapshot.has_value());
-    const auto envelope = Asset::DecodeUveFileEnvelopeUVE(snapshot->bytes, "surface override trim test");
+    const auto envelope = Asset::DecodeUveFileEnvelopeUVE(snapshot->bytes, "surface override exactness test");
     ASSERT_TRUE(envelope.has_value());
     const std::string payloadText(reinterpret_cast<const char*>(envelope->second.data()),
                                   envelope->second.size());
@@ -2040,13 +2041,12 @@ TEST_F(SceneSerializerUVETest, SurfaceOverrides_TrailingEmptiesAreNotWritten) {
                   .at("components")
                   .at("SurfaceInstanceComponentUVE")
                   .at("surfaceMaterialOverridePaths"),
-              nlohmann::json::array({"", "materials/one.uvmat"}));
+              nlohmann::json::array({"", "materials/one.uvmat", "", "", "", ""}));
 
     const std::vector<EntityUVE> restored = serializer.RestoreUVE(entityManager, *snapshot);
     ASSERT_EQ(restored.size(), 1U);
-    EXPECT_EQ(entityManager.GetComponentUVE<SurfaceInstanceComponentUVE>(restored.front())
-                  .surfaceMaterialOverridePaths,
-              (std::vector<std::string>{"", "materials/one.uvmat"}));
+    EXPECT_EQ(entityManager.GetComponentUVE<SurfaceInstanceComponentUVE>(restored.front()),
+              surface);
 }
 
 TEST_F(SceneSerializerUVETest, SurfaceOverrides_NonStringEntriesAreSkippedNotCoerced) {
