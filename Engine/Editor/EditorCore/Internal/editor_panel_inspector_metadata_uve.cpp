@@ -1073,7 +1073,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
     if (BeginCenteredComboUVE(id, preview.c_str())) {
         if (isMaterial) {
             ImGui::TextDisabled("CREATE MATERIAL");
-            if (ImGui::Selectable("+ New StandardMaterial3D (PBR)")) {
+            if (ImGui::Selectable("New Standard Material")) {
                 const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
                 const std::filesystem::path matDir = project.contentRoot / "Materials";
                 std::error_code ec;
@@ -1085,7 +1085,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
                     RefreshProjectFileIndexUVE();
                 }
             }
-            if (ImGui::Selectable("+ New ORMMaterial3D")) {
+            if (ImGui::Selectable("New ORM Material")) {
                 const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
                 const std::filesystem::path matDir = project.contentRoot / "Materials";
                 std::error_code ec;
@@ -1100,7 +1100,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
                     RefreshProjectFileIndexUVE();
                 }
             }
-            if (ImGui::Selectable("+ New ShaderMaterial (Custom Shader)")) {
+            if (ImGui::Selectable("New Shader Material")) {
                 const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
                 const std::filesystem::path matDir = project.contentRoot / "Materials";
                 std::error_code ec;

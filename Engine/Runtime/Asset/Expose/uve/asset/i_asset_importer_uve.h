@@ -75,8 +75,10 @@ struct TextImportSettingsUVE final : AssetImportSettingsUVE {
 /// register an import function per source file extension, then ImportUVE() any source file
 /// through whichever one matches. Built-in registrations include the bounded text parser for `.txt`,
 /// deterministic generic envelope copying for UVE-owned formats, including `.uvanim`, and bounded PNG/BMP/TGA-to-`.uvtex`,
-/// OBJ-to-`.uvmodel`, MTL-to-`.uvmat`, glTF/GLB-to-`.uvmodel`, and JPEG-to-`.uvtex` bridges. FBX/raw animation
-/// decoding and broader glTF scene/material/image conversion remain independently registered through RegisterImporterUVE().
+/// OBJ-to-`.uvmodel` (publishing the MTL materials and textures the OBJ uses), MTL-to-`.uvmat`,
+/// glTF/GLB-to-`.uvmodel` (publishing the primitive's material and every texture it samples), and
+/// JPEG-to-`.uvtex` bridges. FBX conversion, raw animation decoding, multi-primitive glTF scenes and
+/// dynamic material variants remain independently registered through RegisterImporterUVE().
 
 /// Thread-safety: thread-safe. Every method is guarded by an internal mutex, matching
 /// ConfigManagerUVE's/AssetDatabaseUVE's contract.

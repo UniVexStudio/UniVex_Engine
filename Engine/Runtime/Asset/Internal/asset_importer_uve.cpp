@@ -237,9 +237,11 @@ AssetImporterUVE::AssetImporterUVE() : m_impl(std::make_unique<ImplUVE>()) {
 
     // Typed UVE envelopes are already validated by their corresponding asset loaders. Importing
     // them here is an intentionally format-neutral, deterministic copy/re-register operation;
-    // bounded BMP/PNG/TGA, OBJ, FBX (static mesh), MTL, glTF/GLB one-primitive, JPEG, and explicit-stage
-    // shader source conversions are registered separately; audio, ambiguous combined GLSL, and broader glTF
-    // scene/material/image conversion, and raw animation clip decoding remain independently deferred parser-owned work.
+    // bounded BMP/PNG/TGA, OBJ (with its MTL materials), FBX (static mesh with materials), MTL,
+    // glTF/GLB one-primitive with the material and textures the primitive samples, JPEG, and
+    // explicit-stage shader source conversions are registered separately; audio, ambiguous
+    // combined GLSL, multi-primitive glTF scenes and raw animation clip decoding remain
+    // independently deferred parser-owned work.
     RegisterImporterUVE("uvmodel", &GenericFileImportUVE);
     RegisterImporterUVE("uvtex", &GenericFileImportUVE);
     RegisterImporterUVE("uvshader", &GenericFileImportUVE);
