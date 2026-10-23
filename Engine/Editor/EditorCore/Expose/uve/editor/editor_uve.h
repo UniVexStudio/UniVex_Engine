@@ -613,10 +613,10 @@ public:
     [[nodiscard]] bool SaveSelectedPrefabUVE(const std::filesystem::path& path);
 
     /// Makes what the Content catalogue item `itemId` stands for inside `directory`: a folder, a
-    /// `.uventity` holding the item's object tree, or a `.uvscene` with a SceneRoot, Viewport and
-    /// World folder. Names never collide ("Character", "Character 2", ...). The document is not
-    /// touched and no undo step is recorded. Returns the new path, or nothing in Play, for an
-    /// unknown item or a failed write.
+    /// `.uventity` holding the item's object tree, or a `.uvscene` with a SceneRoot and a Viewport -
+    /// 2D or 3D, as the item asks, and recorded in the file. Names never collide ("Character",
+    /// "Character 2", ...). The document is not touched and no undo step is recorded. Returns the new
+    /// path, or nothing in Play, for an unknown item or a failed write.
     [[nodiscard]] std::optional<std::filesystem::path> CreateContentCatalogueItemUVE(
         std::string_view itemId, const std::filesystem::path& directory);
 
@@ -2246,8 +2246,9 @@ private:
     //   +- WorldEnvironment    one at most
     /// Whether the layout applies: the level is the document (no entity, no Retarget preview open).
     [[nodiscard]] bool IsOutlinerLayoutActiveUVE() const noexcept;
-    /// Builds the layout if missing: the Viewport, a World folder in a fresh level, and anything a
-    /// level saved before the layout had at the top moved into World. True when it changed anything.
+    /// Builds the layout if missing: the Viewport, and anything a level saved before the layout had
+    /// at the top moved into a folder - one made only if there is a stray to put in it, so an empty
+    /// level opens with no folder holding nothing. True when it changed anything.
     bool EnsureDocumentLayoutUVE();
     /// The folder a new object goes into when none is selected: the last one used, else the Viewport's
     /// first, else a new "World".

@@ -62,6 +62,8 @@ struct EditorUVEAccessUVE final {
     // The folder new level objects go to (the Outliner allows objects only inside folders).
     [[nodiscard]] static Scene::EntityUVE GetObjectFolderUVE(EditorUVE& editor) { return editor.ResolveObjectFolderUVE(); }
     [[nodiscard]] static Scene::EntityUVE GetViewportUVE(EditorUVE& editor) { return editor.GetDocumentViewportUVE(); }
+    /// The canvas the viewport actually draws through: set from the scene's own marker on open.
+    [[nodiscard]] static bool IsViewport2DModeUVE(const EditorUVE& editor) { return editor.m_viewportOverlayState.is2DMode; }
 
     [[nodiscard]] static std::string GetOutlinerTypeTagUVE(const EditorUVE& editor,
                                                             const Scene::EntityUVE entity) {
@@ -6123,4 +6125,46 @@ TEST(EditorUVETest, Object3DInspectorUVE_IsTransformVisibilityAndTheObjectSectio
 }
 
 } // namespace
+
+TEST(EditorUVETest, OpenSceneAsset_UsesTheScenesOwnDimensionNotItsFileName) {
+    const std::filesystem::path scratch = ::UVE::Tests::MakeTestCaseDirectoryUVE("open_scene_dimension");
+    const std::filesystem::path content = scratch / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    config.projectContentRootUVE = content;
+    config.projectSettingsFilePath = scratch / "project.uvsettings";
+    config.assetDatabaseFilePath = scratch / "assets.json";
+    config.logFilePath = scratch / "log.txt";
+    config.settingsFilePath = scratch / "settings.json";
+    config.inputMapFilePath = scratch / "input_map.json";
+    config.saveDirectoryPath = scratch / "saves";
+    config.shaderCachePath = scratch / "shader_cache";
+
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scratch / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        EXPECT_FALSE(EditorUVEAccessUVE::IsViewport2DModeUVE(editor));
+
+        const auto flat = editor.CreateContentCatalogueItemUVE("viewport_2d", content);
+        ASSERT_TRUE(flat.has_value());
+        ASSERT_TRUE(editor.OpenSceneAssetUVE(*flat));
+        EXPECT_TRUE(EditorUVEAccessUVE::IsViewport2DModeUVE(editor)) << "a 2D scene opens on the 2D canvas";
+
+        // The name is not the authority: a 3D level that is called "2D" stays on the 3D grid.
+        const auto solid = editor.CreateContentCatalogueItemUVE("viewport_3d", content);
+        ASSERT_TRUE(solid.has_value());
+        const std::filesystem::path lying = content / "Level2D.uvscene";
+        std::filesystem::rename(*solid, lying);
+        ASSERT_TRUE(editor.OpenSceneAssetUVE(lying));
+        EXPECT_FALSE(EditorUVEAccessUVE::IsViewport2DModeUVE(editor)) << "the file says 3D, so it opens 3D";
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(scratch);
+}
+
 } // namespace UVE::Editor::Tests
