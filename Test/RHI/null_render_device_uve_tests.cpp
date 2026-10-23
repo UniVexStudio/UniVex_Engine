@@ -522,6 +522,40 @@ TEST(NullRenderDeviceUVETest, CommandBufferRecordingThenSubmit_ProducesExpectedC
     EXPECT_EQ(std::get<BindIndexBufferCommandUVE>(recorded[3]).buffer, indexBuffer);
     EXPECT_EQ(std::get<DrawIndexedCommandUVE>(recorded[4]).indexCount, 3U);
     EXPECT_EQ(std::get<DrawIndexedCommandUVE>(recorded[4]).instanceCount, 1U);
+    // Whole-buffer draws start at zero, which is what every caller predating surfaces relies on.
+    EXPECT_EQ(std::get<DrawIndexedCommandUVE>(recorded[4]).firstIndex, 0U);
+}
+
+TEST(NullRenderDeviceUVETest, DrawIndexedUVE_RecordsTheFirstIndexOfAnIndexRange) {
+    // A mesh surface is an index range of a shared buffer, so the offset has to survive recording
+    // intact - a silently dropped firstIndex draws the wrong triangles with the right count.
+    NullRenderDeviceUVE device;
+    const ShaderHandleUVE vertexShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, "vs"});
+    const ShaderHandleUVE fragmentShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Fragment, "fs"});
+    PipelineDescUVE pipelineDesc;
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    const PipelineHandleUVE pipeline = device.CreatePipelineUVE(pipelineDesc);
+    const BufferHandleUVE indexBuffer = device.CreateBufferUVE(BufferDescUVE{48, BufferUsageUVE::Index});
+    const TextureHandleUVE colorTarget = device.CreateTextureUVE(TextureDescUVE{16, 16, TextureFormatUVE::RGBA8Unorm});
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
+    RenderPassDescUVE passDesc;
+    passDesc.colorAttachment = colorTarget;
+    commandBuffer->BeginRenderPassUVE(passDesc);
+    commandBuffer->BindPipelineUVE(pipeline);
+    commandBuffer->BindIndexBufferUVE(indexBuffer);
+    commandBuffer->DrawIndexedUVE(3U, 1U, 9U);
+    commandBuffer->EndRenderPassUVE();
+    device.SubmitUVE(std::move(commandBuffer));
+
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    const auto draw = std::find_if(recorded.cbegin(), recorded.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<DrawIndexedCommandUVE>(command);
+    });
+    ASSERT_NE(draw, recorded.cend());
+    EXPECT_EQ(std::get<DrawIndexedCommandUVE>(*draw).indexCount, 3U);
+    EXPECT_EQ(std::get<DrawIndexedCommandUVE>(*draw).firstIndex, 9U);
 }
 
 // --- CS7: indirect indexed draw -------------------------------------------------------------

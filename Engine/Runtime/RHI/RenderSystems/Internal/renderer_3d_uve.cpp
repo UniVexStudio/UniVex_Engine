@@ -155,6 +155,20 @@ struct MeshGpuResourcesUVE {
            resources.indexCount > 0U;
 }
 
+/// How many indices an item draws. `indexCount == 0` on the item means the mesh's whole index
+/// buffer - the shape every item had before meshes could be split into surfaces - so the answer is
+/// the uploaded buffer's own count.
+[[nodiscard]] std::uint32_t ResolveItemIndexCountUVE(const RenderItemUVE& item,
+                                                     const MeshGpuResourcesUVE& meshResources) noexcept {
+    return item.indexCount == 0U ? meshResources.indexCount : item.indexCount;
+}
+
+/// Where an item's index range begins. Only meaningful together with ResolveItemIndexCountUVE: an
+/// item that draws the whole buffer starts at zero by definition.
+[[nodiscard]] std::uint32_t ResolveItemFirstIndexUVE(const RenderItemUVE& item) noexcept {
+    return item.indexCount == 0U ? 0U : item.firstIndex;
+}
+
 /// Renderer-owned primitive draw data. It deliberately contains no AssetHandleUVE: primitive
 /// geometry is immutable renderer cache data, while authored kind/color remain ECS component state.
 /// A primitive's MATERIAL reference is a plain GUID here for the same reason - the handle that
@@ -2015,8 +2029,10 @@ struct Renderer3DUVE::ImplUVE {
                         commandBuffer.BindStorageBufferUVE(instanceBaseBuffer, kInstanceBaseSlotUVE);
                         commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
                         commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
-                        commandBuffer.DrawIndexedUVE(meshResources.indexCount,
-                                                     static_cast<std::uint32_t>(batch.itemCount));
+                        commandBuffer.DrawIndexedUVE(
+                            ResolveItemIndexCountUVE(items[batch.firstItem], meshResources),
+                            static_cast<std::uint32_t>(batch.itemCount),
+                            ResolveItemFirstIndexUVE(items[batch.firstItem]));
                         ++*counters.instancedDrawCalls;
                         ++drawCalls;
                     }
@@ -2037,7 +2053,8 @@ struct Renderer3DUVE::ImplUVE {
                 shadowProgram->ApplyToUVE(commandBuffer);
                 commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
                 commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
-                commandBuffer.DrawIndexedUVE(meshResources.indexCount);
+                commandBuffer.DrawIndexedUVE(ResolveItemIndexCountUVE(item, meshResources), 1U,
+                                             ResolveItemFirstIndexUVE(item));
                 ++drawCalls;
             }
         }
@@ -2825,9 +2842,11 @@ struct Renderer3DUVE::ImplUVE {
                     const Math::FrustumUVE cullFrustum =
                         Math::FrustumUVE::FromViewProjectionUVE(frameUniforms.viewProjection);
                     DrawIndexedIndirectCommandUVE meshParams{};
-                    meshParams.indexCount = meshResources.indexCount;
+                    // The batch's range, not the buffer's: a surface is a window into the same
+                    // index buffer, and the indirect path must draw that window.
+                    meshParams.indexCount = ResolveItemIndexCountUVE(representative, meshResources);
                     meshParams.instanceCount = 0U;
-                    meshParams.firstIndex = 0U;
+                    meshParams.firstIndex = ResolveItemFirstIndexUVE(representative);
                     meshParams.vertexOffset = 0;
                     meshParams.firstInstance = 0U;
                     if (cullIndirect->PrepareUVE(instanceBoundsScratch, cullFrustum, meshParams)) {
@@ -2844,8 +2863,9 @@ struct Renderer3DUVE::ImplUVE {
             }
 
             if (!indirectRecorded) {
-                commandBuffer.DrawIndexedUVE(meshResources.indexCount,
-                                             static_cast<std::uint32_t>(batch.itemCount));
+                commandBuffer.DrawIndexedUVE(ResolveItemIndexCountUVE(representative, meshResources),
+                                             static_cast<std::uint32_t>(batch.itemCount),
+                                             ResolveItemFirstIndexUVE(representative));
                 ++drawCalls;
                 instancedDrawCallsThisFrame += 1U;
                 instancedObjectsThisFrame += batch.itemCount;
@@ -2897,7 +2917,8 @@ struct Renderer3DUVE::ImplUVE {
             BindMaterialTexturesUVE(*materialResources, frameUniforms, commandBuffer);
             commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
             commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
-            commandBuffer.DrawIndexedUVE(meshResources.indexCount);
+            commandBuffer.DrawIndexedUVE(ResolveItemIndexCountUVE(item, meshResources), 1U,
+                                         ResolveItemFirstIndexUVE(item));
             ++drawCalls;
         }
         return drawCalls;

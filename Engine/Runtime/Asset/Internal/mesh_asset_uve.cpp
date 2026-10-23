@@ -26,6 +26,14 @@ constexpr std::uint32_t kMaximumMeshMaterialSlotsUVE = 4096U;
 /// 1.3 billion, which fails the bound check on any file small enough to exist.
 constexpr std::uint32_t kMeshMorphSectionTagUVE = 0x504D5655U;
 
+/// Tag that opens the optional surface section ('UVMS' little-endian), written after the morph
+/// section. Same unambiguity argument again: as a joint count it is 1.4 billion, which no file
+/// that fits in memory can pass.
+constexpr std::uint32_t kMeshSurfaceSectionTagUVE = 0x534D5655U;
+
+/// One serialized surface: first index, index count, material slot.
+constexpr std::size_t kSerializedMeshSurfaceBytesUVE = sizeof(std::uint32_t) * 3U;
+
 /// Upper bound on a single target or joint NAME's serialized length. Names identify shapes and
 /// bones, not paragraphs; a longer one is corruption rather than content.
 constexpr std::uint32_t kMaximumMeshSectionNameBytesUVE = 256U;
@@ -48,8 +56,15 @@ constexpr std::size_t kSerializedMorphDeltaBytesUVE = sizeof(std::uint32_t) + si
 /// Whether a known tagged section starts here. Every "does anything trail this?" test must use
 /// this rather than one specific tag, or a file whose next section is a different one gets read as
 /// if it were not there at all.
+[[nodiscard]] bool PeeksSurfaceSectionUVE(const std::vector<std::byte>& payload, const std::size_t offset) {
+    std::size_t peekOffset = offset;
+    std::uint32_t tag = 0U;
+    return Utilities::ReadUint32LeFromBufferUVE(payload, peekOffset, tag) && tag == kMeshSurfaceSectionTagUVE;
+}
+
 [[nodiscard]] bool PeeksTrailingSectionUVE(const std::vector<std::byte>& payload, const std::size_t offset) {
-    return PeeksMaterialSectionUVE(payload, offset) || PeeksMorphSectionUVE(payload, offset);
+    return PeeksMaterialSectionUVE(payload, offset) || PeeksMorphSectionUVE(payload, offset) ||
+           PeeksSurfaceSectionUVE(payload, offset);
 }
 
 [[nodiscard]] bool ReadVector3FromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
@@ -333,6 +348,53 @@ bool IsMeshMorphTargetDataValidUVE(const MeshAssetUVE& mesh) {
                 return false;
             }
         }
+    }
+    return true;
+}
+
+bool IsMeshSurfaceDataValidUVE(const MeshAssetUVE& mesh) {
+    // No explicit list means one implicit surface over the whole index buffer, which is every
+    // asset from before surfaces existed and every single-material mesh. Nothing to check.
+    if (mesh.surfaces.empty()) {
+        return true;
+    }
+    if (mesh.surfaces.size() > kMaximumMeshSurfacesUVE) {
+        UVE_ERROR("MeshAssetUVE: {} surfaces exceeds the format's cap of {}", mesh.surfaces.size(),
+                  kMaximumMeshSurfacesUVE);
+        return false;
+    }
+    std::uint32_t expectedFirstIndex = 0U;
+    for (std::size_t surfaceIndex = 0U; surfaceIndex < mesh.surfaces.size(); ++surfaceIndex) {
+        const MeshSurfaceUVE& surface = mesh.surfaces[surfaceIndex];
+        if (surface.indexCount == 0U || surface.indexCount % 3U != 0U) {
+            UVE_ERROR("MeshAssetUVE: surface {} has an index count of {}, which is not a whole "
+                      "number of triangles", surfaceIndex, surface.indexCount);
+            return false;
+        }
+        if (surface.firstIndex != expectedFirstIndex) {
+            UVE_ERROR("MeshAssetUVE: surface {} starts at index {} but the previous surfaces end at "
+                      "{} - surfaces must tile the index buffer with no gap and no overlap",
+                      surfaceIndex, surface.firstIndex, expectedFirstIndex);
+            return false;
+        }
+        const auto rangeEnd = static_cast<std::uint64_t>(surface.firstIndex) + surface.indexCount;
+        if (rangeEnd > mesh.indices.size()) {
+            UVE_ERROR("MeshAssetUVE: surface {} ends at index {} but the mesh has {} indices",
+                      surfaceIndex, rangeEnd, mesh.indices.size());
+            return false;
+        }
+        if (surface.materialSlot != kInvalidMeshSurfaceMaterialSlotUVE &&
+            surface.materialSlot >= mesh.materialGuids.size()) {
+            UVE_ERROR("MeshAssetUVE: surface {} names material slot {} but the mesh has {} slots",
+                      surfaceIndex, surface.materialSlot, mesh.materialGuids.size());
+            return false;
+        }
+        expectedFirstIndex = static_cast<std::uint32_t>(rangeEnd);
+    }
+    if (static_cast<std::size_t>(expectedFirstIndex) != mesh.indices.size()) {
+        UVE_ERROR("MeshAssetUVE: surfaces cover {} of {} indices - the tail of the mesh would "
+                  "never be drawn", expectedFirstIndex, mesh.indices.size());
+        return false;
     }
     return true;
 }
@@ -638,6 +700,33 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
         }
     }
 
+    // Surfaces trail every other section, behind their own tag, for the same reason skinning,
+    // materials and shapes do: an asset written before surfaces existed simply ends, and a mesh
+    // without surfaces keeps writing the exact bytes it always did.
+    std::vector<MeshSurfaceUVE> surfaces;
+    if (offset < payload.size() && PeeksSurfaceSectionUVE(payload, offset)) {
+        std::uint32_t tag = 0U;
+        std::uint32_t surfaceCount = 0U;
+        if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, tag) ||
+            !Utilities::ReadUint32LeFromBufferUVE(payload, offset, surfaceCount) || surfaceCount == 0U ||
+            surfaceCount > kMaximumMeshSurfacesUVE ||
+            surfaceCount > (payload.size() - offset) / kSerializedMeshSurfaceBytesUVE) {
+            UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated or impossible surface table", path.string());
+            return false;
+        }
+        surfaces.reserve(surfaceCount);
+        for (std::uint32_t surfaceIndex = 0U; surfaceIndex < surfaceCount; ++surfaceIndex) {
+            MeshSurfaceUVE surface;
+            if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, surface.firstIndex) ||
+                !Utilities::ReadUint32LeFromBufferUVE(payload, offset, surface.indexCount) ||
+                !Utilities::ReadUint32LeFromBufferUVE(payload, offset, surface.materialSlot)) {
+                UVE_ERROR("MeshAssetUVE: \"{}\" has truncated surface data", path.string());
+                return false;
+            }
+            surfaces.push_back(surface);
+        }
+    }
+
     if (!TryGenerateMeshTangentsUVE(vertices, indices)) {
         UVE_ERROR("MeshAssetUVE: \"{}\" has non-finite generated tangent data", path.string());
         return false;
@@ -651,6 +740,7 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
     candidate.skinningInfluences = std::move(skinningInfluences);
     candidate.joints = std::move(joints);
     candidate.materialGuids = std::move(materialGuids);
+    candidate.surfaces = std::move(surfaces);
     candidate.morphTargets = std::move(morphTargets);
     candidate.defaultMorphWeights = std::move(defaultMorphWeights);
     if (!IsMeshSkinningDataValidUVE(candidate)) {
@@ -659,6 +749,10 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
     }
     if (!IsMeshMorphTargetDataValidUVE(candidate)) {
         UVE_ERROR("MeshAssetUVE: \"{}\" has structurally invalid morph target data", path.string());
+        return false;
+    }
+    if (!IsMeshSurfaceDataValidUVE(candidate)) {
+        UVE_ERROR("MeshAssetUVE: \"{}\" has structurally invalid surface data", path.string());
         return false;
     }
     outMesh = std::move(candidate);
@@ -769,6 +863,22 @@ bool SaveMeshAssetUVE(const MeshAssetUVE& mesh, const std::filesystem::path& pat
         Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(mesh.defaultMorphWeights.size()));
         for (const float weight : mesh.defaultMorphWeights) {
             Utilities::AppendFloatLeUVE(payload, weight);
+        }
+    }
+
+    // Surfaces, tagged and last, written only when the mesh has more than the implicit single
+    // one. A single-material mesh therefore keeps producing the exact bytes it always did.
+    if (!mesh.surfaces.empty()) {
+        if (!IsMeshSurfaceDataValidUVE(mesh)) {
+            UVE_ERROR("MeshAssetUVE: \"{}\" has invalid surface data; refusing to write it", path.string());
+            return false;
+        }
+        Utilities::AppendUint32LeUVE(payload, kMeshSurfaceSectionTagUVE);
+        Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(mesh.surfaces.size()));
+        for (const MeshSurfaceUVE& surface : mesh.surfaces) {
+            Utilities::AppendUint32LeUVE(payload, surface.firstIndex);
+            Utilities::AppendUint32LeUVE(payload, surface.indexCount);
+            Utilities::AppendUint32LeUVE(payload, surface.materialSlot);
         }
     }
 

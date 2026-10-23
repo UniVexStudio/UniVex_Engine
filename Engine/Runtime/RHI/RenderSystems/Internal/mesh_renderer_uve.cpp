@@ -629,7 +629,11 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
             }
         }
 
-        Asset::AssetGuidUVE effectiveMaterialGuid = meshComponent.materialGuid;
+        // The material the OBJECT names - the component's field or a SurfaceInstance override
+        // path. When it is set the whole mesh draws with it, exactly as it always has. When it is
+        // not, the mesh's own surface materials shade it, which is what an imported multi-material
+        // model arrives with.
+        Asset::AssetGuidUVE objectMaterialGuid = meshComponent.materialGuid;
         if (Scene::MeshInstance3DUVE::HasSurfaceMaterialOverrideUVE(surface)) {
             Asset::AssetGuidUVE overrideGuid = Asset::kInvalidAssetGuidUVE;
             if (!TryResolveMaterialOverridePathUVE(surface->materialOverridePath, assetDatabase,
@@ -638,64 +642,58 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
                 ++outVisibilitySet.invalidAssetReferences;
                 continue;
             }
-            effectiveMaterialGuid =
+            objectMaterialGuid =
                 Scene::MeshInstance3DUVE::ResolveEffectiveMaterialGuidUVE(meshComponent, overrideGuid);
         }
 
         if (effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
             ++outVisibilitySet.invalidAssetReferences;
         }
+        // A mesh with no material of any kind is not a broken reference: the renderer draws it with
+        // the built-in lit shader (Renderer3DUVE's unmaterialed path), so only an unassigned pair
+        // counts its material as missing. An override path that resolved is a material.
+        if (objectMaterialGuid == Asset::kInvalidAssetGuidUVE &&
+            effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
+            ++outVisibilitySet.invalidAssetReferences;
+        }
+        if (effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
+            continue;
+        }
+
+        // Resolved up-front because whether the mesh is split into surfaces decides HOW its
+        // material is chosen, and because the surface table that answers it lives on the mesh.
+        const ResolvedAssetUVE<Asset::MeshAssetUVE>& resolvedMesh =
+            ResolveOnceUVE(resolvedMeshes, effectiveMeshGuid, assetManager, assetDatabase);
+        // Counted per ENTITY, not per resolution. Sharing the resolution is an implementation
+        // detail of how the answer was obtained; the diagnostic answers "how many entities could
+        // not be drawn this frame". Mesh failures are counted here, material failures where the
+        // material is resolved below, so an entity that never gets that far cannot inflate them.
+        if (!resolvedMesh.IsUsableUVE()) {
+            outVisibilitySet.failedAssetLoads += static_cast<std::size_t>(resolvedMesh.failed);
+            outVisibilitySet.pendingAssetLoads += static_cast<std::size_t>(resolvedMesh.pending);
+            continue;
+        }
+        const Asset::MeshAssetUVE* const mesh = resolvedMesh.value;
 
         // The mesh decides the material when the object names none. A material belongs to the mesh
         // it was authored with - an imported model carries its own look - so an object's material
         // field is an override of that, not the only way for one to exist. Without this, a model
         // with materials arrives grey and stays grey until somebody assigns one by hand.
-        // Only a real reference is looked up: resolving an unassigned GUID would ask the database
-        // for a path that cannot exist, logging a resolution failure for every materialless object
-        // on every frame.
-        if (effectiveMaterialGuid == Asset::kInvalidAssetGuidUVE &&
-            effectiveMeshGuid != Asset::kInvalidAssetGuidUVE) {
-            const ResolvedAssetUVE<Asset::MeshAssetUVE>& meshForFallback =
-                ResolveOnceUVE(resolvedMeshes, effectiveMeshGuid, assetManager, assetDatabase);
-            if (meshForFallback.IsUsableUVE()) {
-                effectiveMaterialGuid = meshForFallback.value->FirstSurfaceMaterialGuidUVE();
-            }
-        }
+        const Asset::AssetGuidUVE effectiveMaterialGuid =
+            objectMaterialGuid != Asset::kInvalidAssetGuidUVE ? objectMaterialGuid
+                                                              : mesh->FirstSurfaceMaterialGuidUVE();
 
-        // A mesh with no material of any kind is not a broken reference: the renderer draws it with
-        // the built-in lit shader (Renderer3DUVE's unmaterialed path), so only an unassigned pair
-        // counts its material as missing. An override path that resolved is a material.
-        if (effectiveMaterialGuid == Asset::kInvalidAssetGuidUVE &&
-            effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
-            ++outVisibilitySet.invalidAssetReferences;
-        }
-        if (!Scene::MeshInstance3DUVE::HasRenderableAssetPairUVE(effectiveMeshGuid,
-                                                                 effectiveMaterialGuid)) {
+        // A mesh with no material of any kind is not drawn here: Renderer3DUVE's unmaterialed path
+        // draws it with the built-in lit shader instead.
+        if (!Scene::MeshInstance3DUVE::HasRenderableAssetPairUVE(effectiveMeshGuid, effectiveMaterialGuid)) {
             continue;
         }
 
-        // Cached from the fallback lookup when the mesh supplied the material, so the failure and
-        // pending counts below still describe this entity's mesh load exactly once.
-        const ResolvedAssetUVE<Asset::MeshAssetUVE>& resolvedMesh =
-            ResolveOnceUVE(resolvedMeshes, effectiveMeshGuid, assetManager, assetDatabase);
-        const ResolvedAssetUVE<Asset::MaterialAssetUVE>& resolvedMaterial =
-            ResolveOnceUVE(resolvedMaterials, effectiveMaterialGuid, assetManager, assetDatabase);
-
-        // Counted per ENTITY, not per resolution. Sharing the resolution is an implementation
-        // detail of how the answer was obtained; the diagnostic answers "how many entities
-        // could not be drawn this frame", and ten entities blocked on one pending mesh is ten
-        // entities that did not draw. Folding these into the resolution would silently change
-        // every one of these counters to mean something else.
-        outVisibilitySet.failedAssetLoads += static_cast<std::size_t>(resolvedMesh.failed) +
-                                             static_cast<std::size_t>(resolvedMaterial.failed);
-        outVisibilitySet.pendingAssetLoads += static_cast<std::size_t>(resolvedMesh.pending) +
-                                              static_cast<std::size_t>(resolvedMaterial.pending);
-        if (!resolvedMesh.IsUsableUVE() || !resolvedMaterial.IsUsableUVE()) {
-            continue;
-        }
-
-        const Asset::MeshAssetUVE* const mesh = resolvedMesh.value;
-        const Asset::MaterialAssetUVE* const material = resolvedMaterial.value;
+        // Surface by surface only when the mesh HAS a split and the object does not override it
+        // with one material. A single-material mesh keeps the one-draw path, and an object-level
+        // override keeps it too: that is the whole meaning of an override.
+        const bool drawPerSurface =
+            mesh->HasExplicitSurfacesUVE() && objectMaterialGuid == Asset::kInvalidAssetGuidUVE;
 
         // The cache lookup. Placement is the frame's dominant cost - measured at roughly 29x
         // the price of comparing this key and reusing the answer - and most objects in most
@@ -746,16 +744,6 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
             continue;
         }
 
-        // Bucketing is decided here, not per frustum: transparency is a property of the
-        // material and of SurfaceInstance3D, and no frustum can change it.
-        //
-        // The candidate stores an INDEX, not a pair of handles. The set holds one reference
-        // per distinct mesh+material pair and that is what keeps the assets alive across the
-        // frame; a reference per entity would be the same two records counted thousands of
-        // times, at a mutex and a hash each way.
-        const std::size_t assetPairIndex = ResolveAssetPairIndexUVE(
-            assetPairSlots, outVisibilitySet.assetPairs, effectiveMeshGuid, effectiveMaterialGuid,
-            resolvedMesh.handle, resolvedMaterial.handle);
         // Physics interpolation, applied to the CANDIDATE rather than to the cached placement.
         //
         // The placement cache is keyed on the simulated world transform, which changes once
@@ -770,12 +758,9 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
                                      *mesh, posedPlacement)) {
             ++outVisibilitySet.interpolatedCandidates;
         }
-        MeshRenderPlacementUVE candidatePlacement = posedPlacement;
-        ApplyMaterialBillboardToPlacementUVE(material->billboardMode, outVisibilitySet.cameraWorldPosition,
-                                             mesh->localBounds, candidatePlacement);
-        if (surface != nullptr) {
-            Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, candidatePlacement.worldBounds);
-        }
+
+        // SurfaceInstance3D's own verdicts, shared by every candidate this entity emits: they
+        // describe the OBJECT, not the material its surfaces happen to name.
         bool castsShadow = true;
         bool drawsInView = true;
         float opacity = 1.0F;
@@ -790,10 +775,76 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
                 drawsInView = false;
             }
         }
-        const bool isTransparent = material->isTransparent || opacity < 1.0F;
-        outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
-            assetPairIndex, candidatePlacement, isTransparent, entity, renderLayers, sortingOffset,
-            sortingUseAabbCenter, castsShadow, drawsInView, opacity, false});
+
+        // One candidate per material the object draws with: exactly one for a whole-mesh object,
+        // one per surface for a mesh split into surfaces. Everything that can be decided before
+        // the material is - placement, interpolation, cull bounds - is done once above; only the
+        // billboard pose and the transparent bucket depend on which material is being emitted.
+        //
+        // Bucketing is decided here, not per frustum: transparency is a property of the material
+        // and of SurfaceInstance3D, and no frustum can change it.
+        //
+        // The candidate stores an INDEX, not a pair of handles. The set holds one reference per
+        // distinct mesh+material pair and that is what keeps the assets alive across the frame; a
+        // reference per entity would be the same two records counted thousands of times, at a
+        // mutex and a hash each way.
+        const auto emitCandidateUVE = [&](const Asset::MaterialAssetUVE& material,
+                                          const Asset::AssetGuidUVE materialGuid,
+                                          const Asset::AssetHandleUVE<Asset::MaterialAssetUVE>& materialHandle,
+                                          const Asset::MeshSurfaceUVE surfaceRange) {
+            const std::size_t pairIndex = ResolveAssetPairIndexUVE(
+                assetPairSlots, outVisibilitySet.assetPairs, effectiveMeshGuid, materialGuid,
+                resolvedMesh.handle, materialHandle);
+            MeshRenderPlacementUVE emittedPlacement = posedPlacement;
+            ApplyMaterialBillboardToPlacementUVE(material.billboardMode,
+                                                 outVisibilitySet.cameraWorldPosition, mesh->localBounds,
+                                                 emittedPlacement);
+            if (surface != nullptr) {
+                Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, emittedPlacement.worldBounds);
+            }
+            const bool isTransparent = material.isTransparent || opacity < 1.0F;
+            outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
+                pairIndex, emittedPlacement, isTransparent, entity, renderLayers, sortingOffset,
+                sortingUseAabbCenter, castsShadow, drawsInView, opacity, false, surfaceRange});
+        };
+
+        if (drawPerSurface) {
+            // Each surface is drawn with the material its own slot names. A slot the importer could
+            // not publish falls back to the mesh's first material rather than dropping the range: a
+            // piece of a model shaded by the wrong material is a defect the author can see, an
+            // invisible one is a defect they have to guess at.
+            for (std::size_t surfaceIndex = 0U; surfaceIndex < mesh->SurfaceCountUVE(); ++surfaceIndex) {
+                Asset::AssetGuidUVE surfaceMaterialGuid = mesh->SurfaceMaterialGuidUVE(surfaceIndex);
+                if (surfaceMaterialGuid == Asset::kInvalidAssetGuidUVE) {
+                    surfaceMaterialGuid = mesh->FirstSurfaceMaterialGuidUVE();
+                }
+                if (surfaceMaterialGuid == Asset::kInvalidAssetGuidUVE) {
+                    continue;
+                }
+                const ResolvedAssetUVE<Asset::MaterialAssetUVE>& resolvedSurfaceMaterial =
+                    ResolveOnceUVE(resolvedMaterials, surfaceMaterialGuid, assetManager, assetDatabase);
+                outVisibilitySet.failedAssetLoads +=
+                    static_cast<std::size_t>(resolvedSurfaceMaterial.failed);
+                outVisibilitySet.pendingAssetLoads +=
+                    static_cast<std::size_t>(resolvedSurfaceMaterial.pending);
+                if (!resolvedSurfaceMaterial.IsUsableUVE()) {
+                    continue;
+                }
+                emitCandidateUVE(*resolvedSurfaceMaterial.value, surfaceMaterialGuid,
+                                 resolvedSurfaceMaterial.handle, mesh->GetSurfaceUVE(surfaceIndex));
+            }
+        } else {
+            const ResolvedAssetUVE<Asset::MaterialAssetUVE>& resolvedMaterial =
+                ResolveOnceUVE(resolvedMaterials, effectiveMaterialGuid, assetManager, assetDatabase);
+            outVisibilitySet.failedAssetLoads += static_cast<std::size_t>(resolvedMaterial.failed);
+            outVisibilitySet.pendingAssetLoads += static_cast<std::size_t>(resolvedMaterial.pending);
+            if (!resolvedMaterial.IsUsableUVE()) {
+                continue;
+            }
+            emitCandidateUVE(*resolvedMaterial.value, effectiveMaterialGuid, resolvedMaterial.handle,
+                             Asset::MeshSurfaceUVE{0U, static_cast<std::uint32_t>(mesh->indices.size()),
+                                                   Asset::kInvalidMeshSurfaceMaterialSlotUVE});
+        }
 
         if (surface == nullptr || !drawsInView || !Scene::SurfaceInstance3DHasOverlayUVE(*surface)) {
             continue;
@@ -812,6 +863,8 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
         if (!resolvedOverlay.IsUsableUVE()) {
             continue;
         }
+        // The overlay is ONE second pass over the whole mesh, not one per surface: it draws every
+        // triangle again with one material, which is exactly what a whole-buffer range means.
         MeshRenderPlacementUVE overlayPlacement = posedPlacement;
         ApplyMaterialBillboardToPlacementUVE(resolvedOverlay.value->billboardMode,
                                              outVisibilitySet.cameraWorldPosition, mesh->localBounds,
@@ -824,7 +877,9 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
             resolvedOverlay.handle);
         outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
             overlayPairIndex, overlayPlacement, true, entity, renderLayers, sortingOffset,
-            sortingUseAabbCenter, false, true, opacity, true});
+            sortingUseAabbCenter, false, true, opacity, true,
+            Asset::MeshSurfaceUVE{0U, static_cast<std::uint32_t>(mesh->indices.size()),
+                                  Asset::kInvalidMeshSurfaceMaterialSlotUVE}});
     }
 
     // Bound the cache. Without this it retains an entry for every entity the scene has ever had,
@@ -985,7 +1040,8 @@ void MeshRendererUVE::CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visib
                 continue;
             }
             RenderItemUVE item{eligibility.worldMatrix, assetPair.meshHandle, assetPair.materialHandle, sortDepth,
-                               candidate.renderLayers, candidate.opacity, candidate.overlay};
+                               candidate.renderLayers, candidate.opacity, candidate.overlay,
+                               candidate.surface.firstIndex, candidate.surface.indexCount};
             // Shadow cascades write depth only and consume opaqueItems. A faded or material-
             // transparent caster still belongs there; the colour view is what sorts it back-to-front.
             if (!visibilitySet.shadowPass && candidate.isTransparent) {
