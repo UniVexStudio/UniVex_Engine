@@ -16,7 +16,6 @@ namespace UVE::Editor {
 namespace EditorSettingIdUVE {
 // Session state the editor remembers for itself: Hidden, never offered as a preference.
 inline constexpr std::string_view kScenePanelVisibleUVE = "editor.panels.sceneVisible";
-inline constexpr std::string_view kViewportPanelVisibleUVE = "editor.panels.viewportVisible";
 inline constexpr std::string_view kInspectorPanelVisibleUVE = "editor.panels.inspectorVisible";
 inline constexpr std::string_view kBottomDockVisibleUVE = "editor.panels.bottomDockVisible";
 inline constexpr std::string_view kBottomDockHeightUVE = "editor.panels.bottomDockHeight";

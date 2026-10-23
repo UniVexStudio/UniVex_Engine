@@ -1153,9 +1153,13 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 ## 10. Editor & Tooling
 
 ### 10.1 What exists today
-- [x] A real, docked-looking ImGui-based editor shell: title bar with a consolidated menu, workspace tabs,
-  a real 3D/2D Viewport panel with gizmos, overlay bubbles, orbit/pan/zoom camera control,
-  and dedicated Viewport Toolbar controls:
+- [x] A real ImGui-based editor shell on one fixed frame: title bar with a consolidated menu,
+  workspace tabs, Outliner and Inspector beside a Viewport that fills what they leave between them,
+  and one bottom dock whose tab strip names the six panels inside it. The frame computes every
+  rect (ComputeEditorChromeLayoutUVE); the only things that move are three bounded seam grips
+  (Outliner/Viewport, Viewport/Inspector, Viewport/dock) and the two side panels, each of which
+  leaves a restore strip to come back through. A real 3D/2D Viewport panel with gizmos, overlay
+  bubbles, orbit/pan/zoom camera control, and dedicated Viewport Toolbar controls:
   - 2D / 3D mode segmented toggle
   - Shading Mode selector (Lit, Unlit, Wireframe, Lighting Only, Normals)
   - Physics simulation toggle (live pause/resume with visual indicator)
@@ -1191,10 +1195,14 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 - [x] A developer console / bridge for programmatic/scripted control of the editor
 - [x] Play-mode simulation with a real game-camera switch and correct state
   snapshot/restore on stop (a real crash in this exact path was found and fixed)
-- [ ] A true docking window system (drag a panel anywhere, split/tab it with any other
-  panel, save/restore arbitrary layouts) — every panel today is individually
-  positioned/sized by formula, not a real dock tree; this is a known, explicitly-scoped-out
-  architectural gap
+- **Not planned: a general docking window system** (drag a panel anywhere, split/tab it with
+  any other, save/restore arbitrary layouts). It was built, on Dear ImGui's docking branch, and
+  then removed: it laid a second layout authority over the frame's own, grew a tab row and a
+  close X above headers that already named the panel, and remembered rects in `imgui.ini` that
+  beat the computed ones. The editor is one fixed frame with bounded seams on purpose, and a
+  panel that genuinely needs to live outside it (the Entity Editor) already opens in its own OS
+  window through `ImGuiConfigFlags_ViewportsEnable`, which stayed. Re-enabling docking is a new
+  design decision with those three problems to solve, not a switch to flip
 - [ ] Multi-scene editing (open and edit more than one scene/level at once, or reference
   sub-scenes inside a parent scene)
 - [ ] A real prefab workflow with instance overrides that visibly diff against the prefab
@@ -1225,8 +1233,8 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 ### 10.2 Editor-adjacent cleanup
 - [ ] Retire or consolidate the older, now-redundant standalone editor scaffold binary that
   predates the real editor, once confirmed nothing still depends on it
-- [ ] A dockable "Output Log" and "Search" (find-in-project) panel, standard in every
-  mature content-creation editor
+- [ ] An "Output Log" and a "Search" (find-in-project) panel, tabbed into the bottom dock
+  beside the six that are there now; both are standard in every mature content-creation editor
 
 ---
 
@@ -1321,13 +1329,9 @@ this list, and are a reasonable place to resume work first:
    downstream of it (ragdoll, IK, cloth bones, proper retargeting) is blocked without it.
 2. A physically-based material model and cascaded shadows (section 1.1) — the single
    biggest visible quality gap against current-generation visual bars.
-3. A true docking window system for the editor (section 10.1) — every future editor tool
-   (material editor, sequencer, profiler) is more valuable once panels can be freely
-   arranged, and building each new tool against the current fixed-position system means
-   redoing layout work later.
-4. Navmesh + pathfinding (section 7.3) — DONE and checked above (bake, A*, string-pulling,
+3. Navmesh + pathfinding (section 7.3) — DONE and checked above (bake, A*, string-pulling,
    agents with separation steering, 48 tests green). Behavior trees and perception remain.
-5. A minimal real networking transport + replication slice (section 6) — currently the
+4. A minimal real networking transport + replication slice (section 6) — currently the
    least-built major system in the entire engine, and the one most games eventually need
    in some form.
 

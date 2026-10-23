@@ -150,11 +150,13 @@ void EditorUVE::DrawHierarchyPanelUVE() {
     }
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
-        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
-    // In native ImGui docking, FirstUseEver sets the initial fallback position and size,
-    // allowing the window to dock into the left dock node, tab, split, float, and persist in imgui.ini.
-    ImGui::SetNextWindowPos(layout.scenePos, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(layout.sceneSize, ImGuiCond_FirstUseEver);
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth,
+                                     m_inspectorPanelWidth, m_scenePanelVisible,
+                                     m_inspectorPanelVisible);
+    // Always: the rect comes from the chrome layout every frame. Dragging happens on the seam in
+    // DrawEditorChromeHandlesUVE(), which writes m_scenePanelWidth - not on the window's edges.
+    ImGui::SetNextWindowPos(layout.scenePos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.sceneSize, ImGuiCond_Always);
     ImGui::Begin(kPanelLabelSceneUVE, &m_scenePanelVisible, ImGuiWindowFlags_NoCollapse);
     DrawHierarchyBodyUVE();
     ImGui::End();

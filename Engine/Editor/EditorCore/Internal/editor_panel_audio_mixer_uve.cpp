@@ -102,19 +102,7 @@ void DrawAudioCurveMarkersUVE(const EditorAudioAttenuationMarkersUVE& markers, c
 
 } // namespace
 
-void EditorUVE::DrawAudioMixerDockUVE() {
-    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible,
-                                                                      m_bottomDockHeight, m_scenePanelWidth,
-                                                                      m_inspectorPanelWidth);
-    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_FirstUseEver);
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
-    if (!ImGui::Begin(kPanelLabelAudioMixerUVE, nullptr, flags)) {
-        ImGui::End();
-        return;
-    }
-
+void EditorUVE::DrawAudioMixerBodyUVE() {
     Audio::IAudioSystemUVE& audioSystem = m_services->GetAudioSystemUVE();
     const Audio::AudioMixerDiagnosticsUVE diagnostics = audioSystem.GetMixerDiagnosticsUVE();
     const EditorAudioMixerSnapshotUVE snapshot = BuildEditorAudioMixerSnapshotUVE(
@@ -146,7 +134,7 @@ void EditorUVE::DrawAudioMixerDockUVE() {
     ImGui::BeginChild("##audio-mixer-source", ImVec2{0.0F, 0.0F}, false);
     DrawAudioAttenuationEditorUVE();
     ImGui::EndChild();
-    ImGui::End();
+
 }
 
 void EditorUVE::DrawAudioMixerBusTableUVE(Audio::IAudioSystemUVE& audioSystem,

@@ -257,20 +257,6 @@ bool SidebarSectionUVE(const char* id, const char* icon, const std::string& titl
 
 } // namespace
 
-void EditorUVE::DrawContentBrowserPanelUVE() {
-    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const EditorChromeLayoutUVE layout =
-        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth, m_inspectorPanelWidth);
-    // In native ImGui docking, FirstUseEver sets the initial fallback position and size,
-    // allowing the window to dock into the bottom dock node, tab, split, float, and persist in imgui.ini.
-    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_FirstUseEver);
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
-    ImGui::Begin(kPanelLabelContentBrowserUVE, nullptr, flags);
-    DrawContentBrowserBodyUVE();
-    ImGui::End();
-}
-
 void EditorUVE::DrawContentBrowserBodyUVE() {
 
     Asset::IProjectFileIndexUVE& projectFileIndex = m_services->GetProjectFileIndexUVE();
