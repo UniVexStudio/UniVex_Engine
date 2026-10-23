@@ -43,6 +43,7 @@
 #include <imgui.h>
 
 #include "editor_axis_input_uve.h"
+#include "editor_centered_combo_uve.h"
 #include "editor_color_field_uve.h"
 #include "editor_layer_mask_field_uve.h"
 
@@ -620,7 +621,7 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
             !resolved.empty() && resolved != preview) {
             preview += " (" + resolved + ")";
         }
-        if (ImGui::BeginCombo("##value", preview.c_str())) {
+        if (BeginCenteredComboUVE("##value", preview.c_str())) {
             for (std::size_t index = 0; index < property.enumEntries.size(); ++index) {
                 const bool isSelected = index == selected;
                 if (ImGui::Selectable(property.enumEntries[index].label.c_str(), isSelected) && !isSelected) {
@@ -813,7 +814,7 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
             std::string value;
             property.getValue(instance, &value);
             const std::string preview = value.empty() ? std::string{"Empty"} : value;
-            if (ImGui::BeginCombo("##value", preview.c_str())) {
+            if (BeginCenteredComboUVE("##value", preview.c_str())) {
                 if (ImGui::Selectable("Empty", value.empty())) {
                     std::string emptyName{};
                     edited = SetSelectedComponentPropertyUVE(entry, property, &emptyName);
@@ -956,7 +957,7 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
         const std::string preview = value == Scene::kInvalidEntityUVE ? std::string{"(default)"}
                                     : dangling                        ? std::string{"(missing object)"}
                                                                       : GetEntityDisplayLabelUVE(value);
-        if (ImGui::BeginCombo("##value", preview.c_str())) {
+        if (BeginCenteredComboUVE("##value", preview.c_str())) {
             if (ImGui::Selectable("(default)", value == Scene::kInvalidEntityUVE) &&
                 value != Scene::kInvalidEntityUVE) {
                 const Scene::EntityUVE none = Scene::kInvalidEntityUVE;
@@ -1069,7 +1070,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
         return ext == extension;
     };
 
-    if (ImGui::BeginCombo(id, preview.c_str())) {
+    if (BeginCenteredComboUVE(id, preview.c_str())) {
         if (isMaterial) {
             ImGui::TextDisabled("CREATE MATERIAL");
             if (ImGui::Selectable("+ New StandardMaterial3D (PBR)")) {
@@ -1531,7 +1532,7 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
         meshPreview = p.empty() ? "(missing mesh)" : p.stem().string();
     }
 
-    if (ImGui::BeginCombo("##meshPicker", meshPreview.c_str())) {
+    if (BeginCenteredComboUVE("##meshPicker", meshPreview.c_str())) {
         ImGui::TextDisabled("PROCEDURAL SHAPES");
         const auto setProcedural = [&](Scene::PrimitiveMeshKindUVE kind) {
             Scene::PrimitiveMeshComponentUVE prim{kind};
@@ -1681,7 +1682,7 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
         }
         ImGui::TextUnformatted("Skin");
         ImGui::SameLine();
-        if (ImGui::BeginCombo("##skinSlot", skinPreview.c_str())) {
+        if (BeginCenteredComboUVE("##skinSlot", skinPreview.c_str())) {
             if (!hasSkin) {
                 if (ImGui::Selectable("Skin") || ImGui::Selectable("+ New Skin")) {
                     Scene::SkinComponentUVE skin{};
@@ -2393,7 +2394,7 @@ void EditorUVE::DrawEntityReferenceListPropertyUVE(const TypeMetadataEntryUVE& e
             const Scene::EntityUVE current = references[index];
             const std::string preview = IsDocumentEntityUVE(current) ? GetEntityDisplayLabelUVE(current)
                                                                      : std::string{"(missing object)"};
-            if (ImGui::BeginCombo("##reference", preview.c_str())) {
+            if (BeginCenteredComboUVE("##reference", preview.c_str())) {
                 if (ImGui::Selectable("(remove)")) {
                     removeIndex = index;
                 }
@@ -2424,7 +2425,7 @@ void EditorUVE::DrawEntityReferenceListPropertyUVE(const TypeMetadataEntryUVE& e
             ImGui::TextUnformatted("Add");
             ImGui::TableSetColumnIndex(1);
             ImGui::SetNextItemWidth(-FLT_MIN);
-            if (ImGui::BeginCombo("##reference", "(pick an object)")) {
+            if (BeginCenteredComboUVE("##reference", "(pick an object)")) {
                 for (const Scene::EntityUVE candidate : candidates) {
                     if (alreadyListed(candidate)) {
                         continue;
@@ -2553,7 +2554,7 @@ void EditorUVE::DrawFullBodyEffectorsPropertyUVE(const Core::TypeMetadataEntryUV
                 const std::string preview = effector.target != Scene::kInvalidEntityUVE && IsDocumentEntityUVE(effector.target)
                                                 ? GetEntityDisplayLabelUVE(effector.target)
                                                 : std::string{"(authored point)"};
-                if (ImGui::BeginCombo("##target", preview.c_str())) {
+                if (BeginCenteredComboUVE("##target", preview.c_str())) {
                     if (ImGui::Selectable("(authored point)")) {
                         effector.target = Scene::kInvalidEntityUVE;
                         edited = true;
