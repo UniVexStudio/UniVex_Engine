@@ -1818,14 +1818,11 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         const std::size_t objectIndex = indexById.at(view.selected.front());
         const AnimationGraphNodeUVE& node = nodes[objectIndex];
         const std::uint32_t id = node.id;
-        // The kind, with what it does on hover: the strip's height goes to the settings.
+        // The kind, with what it does on hover: the strip's height goes to the settings. The label
+        // carries the tooltip itself - there used to be a "(?)" beside it whose only job was to show
+        // the same sentence a second time, on a row too short to spend a word on saying it twice.
         ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(KindColourUVE(node.kind) | IM_COL32(50, 50, 50, 0)), "%s",
                            AnimationGraphKindLabelUVE(node.kind));
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("%s", AnimationGraphKindHelpUVE(node.kind));
-        }
-        ImGui::SameLine();
-        ImGui::TextDisabled("(?)");
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("%s", AnimationGraphKindHelpUVE(node.kind));
         }
