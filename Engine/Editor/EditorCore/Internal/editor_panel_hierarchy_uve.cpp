@@ -23,9 +23,11 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -41,12 +43,14 @@
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
+#include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
+#include "uve/scene/objects/scene_folder_uve.h"
 #include "uve/scene/objects/scene_object_registry_uve.h"
 #include "uve/scene/objects/scene_object_type_uve.h"
 
@@ -480,10 +484,13 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
         }
         return;
     }
-    // F2 renames the selected row. A double-click does what the Double-Click preference says:
-    // rename, focus the object in the viewport, or open and close the row (handled by the tree object).
+    // A double-click opens what the row stands for first - an entity asset behind an instance, or
+    // the .uvscene behind the level's Viewport. Only a row with nothing to open falls through to
+    // the Double-Click preference: rename, focus the object in the viewport, or open and close the
+    // row (handled by the tree object).
     const bool doubleClicked = !renaming && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
-    if (doubleClicked && m_hierarchyView.doubleClick == HierarchyDoubleClickUVE::FocusInViewport &&
+    const bool doubleClickOpened = doubleClicked && OpenHierarchyRowTargetUVE(entity);
+    if (doubleClicked && !doubleClickOpened && m_hierarchyView.doubleClick == HierarchyDoubleClickUVE::FocusInViewport &&
         CanFocusEntityInViewportUVE(entity)) {
         static_cast<void>(RequestViewportFocusUVE(entity));
     }
@@ -491,7 +498,7 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
         !renaming && HasSingleDocumentSelectionUVE() && entity == m_selectedEntity && IsAuthoringCommandAllowedUVE();
     if (canRenameSelected &&
         (ImGui::IsKeyPressed(ImGuiKey_F2) ||
-         (doubleClicked && m_hierarchyView.doubleClick == HierarchyDoubleClickUVE::Rename))) {
+         (doubleClicked && !doubleClickOpened && m_hierarchyView.doubleClick == HierarchyDoubleClickUVE::Rename))) {
         m_hierarchyRenameEntity = entity;
         m_hierarchyRenameBuffer = GetEntityDisplayLabelUVE(entity);
         m_hierarchyRenameFocusRequested = true;
@@ -661,6 +668,44 @@ bool EditorUVE::SetHierarchyBranchOpenUVE(const Scene::EntityUVE entity, const b
         }
     }
     return true;
+}
+
+bool EditorUVE::OpenHierarchyRowTargetUVE(const Scene::EntityUVE entity) {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.IsAliveUVE(entity) || !IsDocumentEntityUVE(entity)) {
+        return false;
+    }
+    // Rows that stand for a file open that file. Two of them exist: an instance placed from an
+    // entity asset, and the level's own Viewport. Everything else in the Outliner is a thing the
+    // scene owns, with nothing outside the scene to open, so the Double-Click preference keeps
+    // deciding for those (rename, focus in the viewport, open-and-close the row).
+    if (entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(entity) && IsAuthoringCommandAllowedUVE()) {
+        const Scene::PrefabInstanceComponentUVE& instance =
+            entityManager.GetComponentUVE<Scene::PrefabInstanceComponentUVE>(entity);
+        if (instance.sourcePrefabGuid != Asset::kInvalidAssetGuidUVE) {
+            // The path is read before anything opens: opening the Entity Editor replaces the
+            // document, and this handle would be dead by the time it returned.
+            const std::filesystem::path source =
+                m_services->GetAssetDatabaseUVE().ResolveUVE(instance.sourcePrefabGuid);
+            std::error_code error;
+            if (!source.empty() && std::filesystem::is_regular_file(source, error) && OpenEntityEditorUVE(source)) {
+                return true;
+            }
+        }
+    }
+    if (entityManager.HasComponentUVE<Scene::OutlinerViewport3DComponentUVE>(entity)) {
+        // The Viewport row is the level itself, so opening it means opening its .uvscene. A
+        // document with unsaved work is not reloaded from disk: a double-click must never be able
+        // to throw away edits. The click is still consumed, so it cannot fall through to a rename.
+        if (m_activeScenePath.empty()) {
+            return false;
+        }
+        if (m_sceneDirty) {
+            return true;
+        }
+        return OpenSceneAssetUVE(m_activeScenePath);
+    }
+    return false;
 }
 
 std::optional<bool> EditorUVE::GetPendingHierarchyRowOpenUVE(const Scene::EntityUVE entity) const {

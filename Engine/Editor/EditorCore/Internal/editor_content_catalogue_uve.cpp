@@ -64,8 +64,11 @@ constexpr std::array<std::string_view, 9> kGroups{"Basic",     "Entity",    "Sha
 constexpr std::array<ContentCatalogueItemUVE, 37> kItems{{
     {"folder", "Folder", "Basic", "A new folder here in Content", Action::Folder, {}},
     {"empty", "Empty Entity", "Basic", "A bare Object3D to build your own tree on", Action::EntityAsset, kEmpty},
-    {"viewport_3d", "Viewport3D", "Basic", "A new scene 3D Viewport with an empty World folder", Action::SceneAsset, kViewport3D},
-    {"viewport_2d", "Viewport2D", "Basic", "A new flat 2D Viewport scene with an empty World folder", Action::SceneAsset, kViewport2D},
+    {"viewport_3d", "Viewport3D", "Basic",
+     "A new 3D level: a Viewport ready for objects, empty until you add one", Action::SceneAsset, kViewport3D},
+    {"viewport_2d", "Viewport2D", "Basic",
+     "A new 2D scene: a Viewport authored flat on the XY plane, saved as 2D in the file",
+     Action::SceneAsset, kViewport2D, Scene::ViewportDimensionUVE::TwoD},
 
     {"character", "Character", "Entity",
      "A playable body: Character3D with a Mesh ready for animation", Action::EntityAsset,

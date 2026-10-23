@@ -505,7 +505,8 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
                                      EntryUVE(HierarchyDoubleClickUVE::FocusInViewport, "Focus in Viewport"),
                                      EntryUVE(HierarchyDoubleClickUVE::ExpandCollapse, "Expand or Collapse")},
                                     "Double-Click", kHierarchyCategoryUVE,
-                                    "What a double-click on a row does. F2 always renames."),
+                                    "What a double-click on a row does, unless the row opens something: an instance of an entity "
+                                    "asset opens that asset, and the level's Viewport opens its scene. F2 always renames."),
          [](const EditorUVE& editor) -> SettingValueUVE {
              return static_cast<std::int64_t>(editor.m_hierarchyView.doubleClick);
          },

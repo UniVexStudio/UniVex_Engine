@@ -956,7 +956,13 @@ template <typename VectorT>
     return nlohmann::json::object();
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const OutlinerViewport3DComponentUVE&) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const OutlinerViewport3DComponentUVE& component) {
+    // Only a 2D level says so. Writing nothing for 3D keeps every 3D .uvscene byte-for-byte what it
+    // was before dimensions were stored, and a file that says nothing is 3D by definition - which is
+    // exactly what every scene written before this existed is.
+    if (component.dimension == ViewportDimensionUVE::TwoD) {
+        return {{"dimension", "2d"}};
+    }
     return nlohmann::json::object();
 }
 
@@ -2547,8 +2553,13 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
         table.emplace("FolderComponentUVE", MakeRegistrationUVE<FolderComponentUVE>([](const nlohmann::json&) {
                           return FolderComponentUVE{};
                       }, IsFolderComponentValidUVE));
-        table.emplace("OutlinerViewport3DComponentUVE", MakeRegistrationUVE<OutlinerViewport3DComponentUVE>([](const nlohmann::json&) {
-                          return OutlinerViewport3DComponentUVE{};
+        table.emplace("OutlinerViewport3DComponentUVE", MakeRegistrationUVE<OutlinerViewport3DComponentUVE>([](const nlohmann::json& json) {
+                          // Anything but the one word this writer emits - absent, or a value some
+                          // hand-edit left behind - reads as 3D rather than failing the load.
+                          const bool is2D = json.contains("dimension") && json["dimension"].is_string() &&
+                                            json["dimension"].get<std::string>() == "2d";
+                          return OutlinerViewport3DComponentUVE{is2D ? ViewportDimensionUVE::TwoD
+                                                                      : ViewportDimensionUVE::ThreeD};
                       }, IsOutlinerViewport3DComponentValidUVE));
         table.emplace("SceneRootComponentUVE",
                     MakeRegistrationUVE<SceneRootComponentUVE>([](const nlohmann::json&) {
