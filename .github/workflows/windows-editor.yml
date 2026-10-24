@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - '.github/workflows/windows-editor.yml'
+      - 'Engine/**'
+      - 'CMakeLists.txt'
   workflow_dispatch:
 
 permissions:

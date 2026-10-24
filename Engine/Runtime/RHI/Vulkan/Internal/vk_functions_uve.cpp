@@ -4,7 +4,14 @@
 
 #include "vk_functions_uve.h"
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
 
 #include "uve/logging/logging_macros_uve.h"
 
@@ -63,11 +70,15 @@ bool VkFunctionsUVE::LoadGlobalUVE() {
     static constexpr const char* kLoaderNames[] = {
         "libvulkan.so.1",
         "libvulkan.so",
-        "vulkan-1.dll",       // Windows loader, for a future port — dlopen never matches here.
+        "vulkan-1.dll",
         "libvulkan.1.dylib",  // MoltenVK-era macOS, same future-port rationale.
     };
     for (const char* loaderName : kLoaderNames) {
+#if defined(_WIN32)
+        g_vulkanLibraryHandle = static_cast<void*>(LoadLibraryExA(loaderName, nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32));
+#else
         g_vulkanLibraryHandle = dlopen(loaderName, RTLD_NOW | RTLD_LOCAL);
+#endif
         if (g_vulkanLibraryHandle != nullptr) {
             break;
         }
@@ -77,7 +88,12 @@ bool VkFunctionsUVE::LoadGlobalUVE() {
                     "is an ICD such as mesa-vulkan-drivers installed?");
         return false;
     }
+#if defined(_WIN32)
+    void* gipaRaw = reinterpret_cast<void*>(
+        GetProcAddress(static_cast<HMODULE>(g_vulkanLibraryHandle), "vkGetInstanceProcAddr"));
+#else
     void* gipaRaw = dlsym(g_vulkanLibraryHandle, "vkGetInstanceProcAddr");
+#endif
     if (gipaRaw == nullptr) {
         UVE_WARNING("VkFunctionsUVE: Vulkan loader exports no vkGetInstanceProcAddr — unusable loader");
         return false;
