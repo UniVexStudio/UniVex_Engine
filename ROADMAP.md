@@ -49,6 +49,12 @@ status legend.
 ## 1. Rendering & Graphics
 
 ### 1.1 Core forward pipeline
+- [~] Low-memory editor/runtime hardening for PC and Android: occlusion filtering now
+  reuses scratch capacity across frames and clears asset references immediately after the
+  queue swap. This preserves the original queue for late query-failure rollback. Retained
+  high-water capacity is a tradeoff; allocator profiling and device memory/frame-time
+  benchmarks are still required. This does not establish 3 GB device readiness or complete
+  Android support.
 - [x] Real-time forward 3D rendering with a working render graph, render queue, and
   per-frame command buffer submission
 - [x] Camera system with perspective/orthographic projection

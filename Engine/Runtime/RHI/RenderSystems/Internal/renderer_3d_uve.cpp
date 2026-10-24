@@ -1263,6 +1263,9 @@ struct Renderer3DUVE::ImplUVE {
     };
     std::unordered_map<std::uint64_t, OcclusionProbeUVE> occlusionProbes;
     std::vector<OcclusionProxyDrawUVE> occlusionProxyDraws;
+    // Reuse filter capacity across frames. Clear elements after swapping so culled assets
+    // are released immediately; retaining capacity trades peak storage for fewer allocations.
+    std::vector<RenderItemUVE> occlusionKeptItems;
     std::uint64_t occlusionFrame = 0U;
     bool occlusionQueryCreationFailed = false;
 
@@ -3244,7 +3247,8 @@ struct Renderer3DUVE::ImplUVE {
         ++occlusionFrame;
         const std::uint32_t writeSlot = static_cast<std::uint32_t>(occlusionFrame & 1U);
         const std::uint32_t readSlot = writeSlot ^ 1U;
-        std::vector<RenderItemUVE> kept;
+        auto& kept = occlusionKeptItems;
+        kept.clear();
         kept.reserve(queue.opaqueItems.size());
         std::size_t skipped = 0U;
         for (const RenderItemUVE& item : queue.opaqueItems) {
@@ -3304,6 +3308,7 @@ struct Renderer3DUVE::ImplUVE {
             skipped = 0U;
         }
         queue.opaqueItems.swap(kept);
+        kept.clear();
         // Probes nobody referenced for two frames belong to objects that moved, left the view or
         // were destroyed; their queries go back to the device.
         for (auto it = occlusionProbes.begin(); it != occlusionProbes.end();) {
