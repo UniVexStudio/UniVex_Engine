@@ -54,3 +54,9 @@ storage with a 64 KiB copy buffer, validates relative paths and extraction bound
 loads the packaged startup scene. No source project, network access or external-storage permission
 is needed. Without `--cooked-project`, the existing demo remains available. APK signing is still the
 local debug workflow; store/release signing is separate.
+
+The portable Windows editor distribution also includes `uve_pack.exe`, `uve_runtime.exe` and
+`uve_asset_workload.exe`. Cooked Windows exports copy runtime DLLs colocated with the supplied
+runtime executable. Supply the runtime from that portable distribution (or stage its dependent
+DLLs beside a custom-built runtime); the packager does not search arbitrary system directories.
+Windows CI cooks the fixture and launches the exported runtime after relocating the source.
