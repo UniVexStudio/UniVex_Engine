@@ -22,7 +22,8 @@ to this build directory. This is local test signing, not store-ready release sig
 
 Lifecycle behavior:
 
-- Native event polling blocks while inactive; frames stop when paused or unfocused.
+- Native event polling blocks while paused. A resumed surface draws before focus arrives;
+  the engine applies its existing unfocused frame cap and input remains focus-gated.
 - Pause, focus loss and surface destruction cancel all active touch contacts.
 - Surface destruction detaches into a 1x1 EGL pbuffer while retaining the context and engine.
 - Surface recreation reattaches the native window and resumes the same scene.
