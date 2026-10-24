@@ -17,7 +17,8 @@ resizing. HDR metadata and precision remain intact. Profiles never change GUIDs.
 The cooker consumes **imported native assets**, not original model/image authoring formats. Run the
 existing importer first. It validates the native assets, includes scripts/shader includes/application
 resources, omits raw authoring files, and writes a relative `.uvassetdb` plus `cooked.json`.
-Registered missing files or missing GUID dependencies fail the cook. All native assets are retained;
+Unused authoring-source registry entries are omitted; runtime GUIDs targeting those sources are rejected.
+Registered missing native files or missing GUID dependencies fail the cook. All native assets are retained;
 this is not unused-content reachability stripping or world partitioning. Output must be fresh.
 
 Launch a relocated package with `uve_runtime --project game.uvproject`. The cooked catalog resolves

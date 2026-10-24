@@ -2,6 +2,7 @@
 #include "uve/pack/asset_cooker_uve.h"
 #include <algorithm>
 #include <cstdio>
+#include <cctype>
 #include <fstream>
 #include <set>
 #include <map>
@@ -29,8 +30,22 @@ std::filesystem::path Contained(const std::filesystem::path& root, const std::fi
     if (!Relative(full.lexically_relative(root))) throw std::runtime_error("Cook path leaves project root: " + p.string());
     return full;
 }
+std::string Extension(const std::filesystem::path& path) {
+    auto value = path.extension().string();
+    std::transform(value.begin(),value.end(),value.begin(),[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+bool RuntimePath(const std::filesystem::path& path) {
+    static const std::set<std::string> extensions{ ".uvtex", ".uvmodel", ".uvmat", ".uvshader", ".uvscene",
+        ".uvprefab", ".uvaudio", ".uvanim", ".uvskel", ".uvanimlib", ".uvfont", ".uvtable",
+        ".uvs", ".glsl", ".vert", ".frag", ".comp", ".glslinc" };
+    return extensions.contains(Extension(path));
+}
 void CheckGuid(Asset::AssetGuidUVE guid, const Asset::AssetDatabaseUVE& db) {
-    if (guid.value != 0 && !db.HasGuidUVE(guid)) throw std::runtime_error("Missing asset GUID dependency: " + std::to_string(guid.value));
+    if (guid.value == 0) return;
+    if (!db.HasGuidUVE(guid)) throw std::runtime_error("Missing asset GUID dependency: " + std::to_string(guid.value));
+    if (!RuntimePath(db.ResolveUVE(guid)))
+        throw std::runtime_error("GUID dependency references authoring source; import a native asset first");
 }
 void CheckJsonGuids(const Json& json, const Asset::AssetDatabaseUVE& db, const std::string& key = {}) {
     if (json.is_object()) {
@@ -43,7 +58,7 @@ void CheckJsonGuids(const Json& json, const Asset::AssetDatabaseUVE& db, const s
     }
 }
 bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
-    const auto extension = path.extension().string();
+    const auto extension = Extension(path);
     const std::set<std::string> text{ ".uvs", ".glsl", ".vert", ".frag", ".comp", ".glslinc" };
     if (text.contains(extension)) {
         if (std::filesystem::file_size(path) > 4U*1024U*1024U) return false;
@@ -183,6 +198,9 @@ AssetCookResultUVE CookProjectAssetsUVE(const std::filesystem::path& projectFile
             for (const auto& [size,p] : icons) { static_cast<void>(size); resource(p); }
         }
         for (const auto& record : db.GetRegisteredAssetsUVE()) {
+            // Editor registries can include authoring sources as well as imported outputs.
+            // Omit those source records; a runtime reference to one is rejected by CheckGuid.
+            if (!RuntimePath(record.path)) continue;
             std::filesystem::path source = record.path;
             if (!source.is_absolute()) source = root/source;
             source = Contained(root,source);
@@ -200,7 +218,7 @@ AssetCookResultUVE CookProjectAssetsUVE(const std::filesystem::path& projectFile
         for (const auto& entry : std::filesystem::recursive_directory_iterator(content)) {
             if (entry.is_symlink()) throw std::runtime_error("Cook does not accept symlinks");
             if (!entry.is_regular_file()) continue;
-            const auto extension = entry.path().extension().string();
+            const auto extension = Extension(entry.path());
             if (native.contains(extension) || text.contains(extension)) required.insert(entry.path().lexically_relative(root));
         }
         Json runtimeFiles = Json::array();
@@ -209,7 +227,7 @@ AssetCookResultUVE CookProjectAssetsUVE(const std::filesystem::path& projectFile
             const auto source = Contained(root,root/relative);
             const auto dest = stage/relative;
             std::filesystem::create_directories(dest.parent_path());
-            const auto extension = source.extension().string();
+            const auto extension = Extension(source);
             if ((native.contains(extension) || text.contains(extension)) && !Validate(source,db)) throw std::runtime_error("Corrupt native content: " + source.string());
             if (extension == ".uvtex") CookTexture(source,dest,target);
             else std::filesystem::copy_file(source,dest);
