@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "target": "android",
+  "assetBudgetBytes": 134217728,
+  "runtimeFiles": [
+    "content/main.uvscene",
+    "content/surface.uvmat",
+    "content/surface.uvtex",
+    "sample.uvproject",
+    ".uvassetdb",
+    "cooked.json"
+  ],
+  "sourceBytes": 1496,
+  "cookedBytes": 1716,
+  "files": 3
+}

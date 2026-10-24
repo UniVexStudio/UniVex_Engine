@@ -67,7 +67,7 @@ def main():
         if adb('shell', 'getprop', 'sys.boot_completed').strip() != '1':
             report['blocked'] = 'Android boot has not completed'
             return 2
-        adb('install', '--no-streaming', '-r', str(args.apk.resolve()), timeout=60)
+        adb('install', '--no-incremental', '-r', str(args.apk.resolve()), timeout=max(60, args.timeout))
         adb('shell', 'am', 'force-stop', 'com.univex.runtime')
         # Fresh test log for this dedicated device session.
         adb('logcat', '-c')
@@ -105,6 +105,16 @@ def main():
                 raise RuntimeError('Device screenshot is not a PNG')
             args.screenshot.parent.mkdir(parents=True, exist_ok=True)
             args.screenshot.write_bytes(shot)
+        if args.expect_cooked_project:
+            # The extracted content is replaced on process startup; application data must survive.
+            marker = 'files/user-data/cooked-smoke-marker'
+            adb('shell', 'run-as', 'com.univex.runtime', 'touch', marker)
+            adb('shell', 'am', 'force-stop', 'com.univex.runtime')
+            adb('shell', 'am', 'start', '-n', 'com.univex.runtime/android.app.NativeActivity')
+            wait_for('UVE_ANDROID_COOKED_PROJECT_LOADED', 2)
+            wait_for('UVE_ANDROID_RENDERED', 3)
+            adb('shell', 'run-as', 'com.univex.runtime', 'test', '-f', marker)
+            report['checks'].append('UVE_ANDROID_PERSISTENT_DATA_PRESERVED')
         adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
         wait_for('UVE_ANDROID_DESTROYED')
         report['passed'] = True

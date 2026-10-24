@@ -21,7 +21,7 @@
 #include "uve/threading/thread_pool_uve.h"
 namespace {
 void Require(bool success) {if(!success) throw std::runtime_error("Asset workload operation failed");}
-void Fixture(const std::filesystem::path& directory) {
+void Fixture(const std::filesystem::path& directory, bool small) {
     using namespace UVE;
     if(std::filesystem::exists(directory)) throw std::runtime_error("Fixture destination exists");
     std::filesystem::create_directories(directory/"content");
@@ -48,7 +48,7 @@ void Fixture(const std::filesystem::path& directory) {
     package.startupScenePath="main.uvscene"; package.assetDatabasePath=".uvassetdb"; package.settingsPath="project.uvsettings";
     Require(Platform::EditorProjectPackageCodecUVE::SaveUVE(directory/"sample.uvproject",package).IsAcceptedUVE());
     Asset::AssetDatabaseUVE db;
-    for(unsigned i=0;i<8;++i) {
+    for(unsigned i=0;i<(small ? 0U : 8U);++i) {
         Asset::TextureAssetUVE texture; texture.width=2048; texture.height=1024;
         texture.pixels.resize(static_cast<std::size_t>(texture.width)*texture.height*4);
         for(std::size_t j=0;j<texture.pixels.size();j+=4) {
@@ -79,7 +79,9 @@ void Fixture(const std::filesystem::path& directory) {
 int main(int argc,char** argv) {
     using namespace UVE;
     try {
-        if(argc==3 && std::string_view(argv[1])=="--create-fixture") {Fixture(std::filesystem::absolute(argv[2]));return 0;}
+        if(argc==3 && (std::string_view(argv[1])=="--create-fixture" || std::string_view(argv[1])=="--create-smoke-fixture")) {
+            Fixture(std::filesystem::absolute(argv[2]),std::string_view(argv[1])=="--create-smoke-fixture");return 0;
+        }
         if(argc!=4) {std::cerr<<"Usage: uve_asset_workload <catalog> <package-root> <report.json> OR --create-fixture <new-directory>\n";return 2;}
         Asset::AssetDatabaseUVE db; Require(db.LoadUVE(argv[1])); Require(db.RootPathsUVE(argv[2]));
         Threading::ThreadPoolUVE pool(2); Events::EventSystemUVE events; Asset::AssetManagerUVE manager(pool,events);
