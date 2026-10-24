@@ -1270,9 +1270,11 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   uses the engine core, an EGL/GLES window backend, stable multi-touch routing, pause/focus
   gating, memory-pressure asset collection and surface detach/reattach through a retained
   context. arm64 and x86_64 APKs cross-build with the NDK and pass signature/16 KB ZIP
-  alignment checks. Native CI and opt-in APK uploads are wired. Emulator/device rendering,
-  touch/lifecycle verification, complete GPU context-loss state restoration, and editor
-  touch-first UI/scaling remain unverified or incomplete. A lost context fails explicitly.
+  alignment checks. A local emulator smoke test verified actual GLES cube draws, native touch
+  delivery and engine consumption, pause/resume and surface reattachment without a second
+  engine initialization. Native CI and opt-in APK uploads are wired. Physical-device/3 GB
+  measurements, complete GPU context-loss state restoration, and editor touch-first UI/scaling
+  remain unverified or incomplete. A lost context fails explicitly.
 
 - [ ] Console platform support (each console's own certification requirements, controller
   input, and storage/save APIs) — a long-term goal gated behind actual console dev kit
@@ -1318,7 +1320,8 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   rather than tied to one storefront)
 - [~] Automated build pipelines (continuous integration building every target platform on
   every change) — Linux CI and a Windows editor package workflow exist; Windows verification
-  and Android build integration remain pending
+  remains pending across all desktop OSes; Android arm64/x86_64 APK jobs and native emulator
+  smoke checks are now wired
 
 ---
 

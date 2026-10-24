@@ -42,6 +42,7 @@ struct AssetManagerUVE::ImplUVE {
     std::unordered_map<std::type_index, AssetLoaderInfoUVE> loaders;
     std::unordered_map<AssetGuidUVE, AssetManagerRecordUVE> records;
     Threading::JobCounterUVE pendingJobs;
+    bool shuttingDown = false;
 };
 
 AssetManagerUVE::AssetManagerUVE(Threading::IThreadPoolUVE& threadPool, Events::IEventSystemUVE& eventSystem,
@@ -52,6 +53,19 @@ AssetManagerUVE::~AssetManagerUVE() {
     // Every in-flight job captures `this` — wait for all of them to finish before m_impl (and
     // this object) is torn down, or a still-running job would dereference a dangling pointer.
     m_impl->pendingJobs.WaitUVE();
+    decltype(m_impl->records) records;
+    {
+        const std::lock_guard<std::mutex> lock(m_impl->mutex);
+        m_impl->shuttingDown = true;
+        records.swap(m_impl->records);
+    }
+    // Destruction may release dependent AssetHandles back into this manager. Keep the
+    // implementation alive and ignore refcount changes during this final ownership drain.
+    for (auto& entry : records) {
+        auto& record = entry.second;
+        if (m_impl->hotReload != nullptr) m_impl->hotReload->UntrackUVE(entry.first);
+        if (record.data != nullptr && record.destroy) record.destroy(record.data);
+    }
 }
 
 void AssetManagerUVE::RegisterLoaderErased(std::type_index type, AssetLoaderInfoUVE info) {
@@ -281,6 +295,7 @@ void* AssetManagerUVE::TryGetErased(AssetGuidUVE guid) {
 
 void AssetManagerUVE::AddRefErased(AssetGuidUVE guid) {
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
+    if (m_impl->shuttingDown) return;
     const auto it = m_impl->records.find(guid);
     if (it == m_impl->records.end()) {
         UVE_ASSERT(it != m_impl->records.end());
@@ -291,6 +306,7 @@ void AssetManagerUVE::AddRefErased(AssetGuidUVE guid) {
 
 void AssetManagerUVE::ReleaseErased(AssetGuidUVE guid) {
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
+    if (m_impl->shuttingDown) return;
     const auto it = m_impl->records.find(guid);
     if (it == m_impl->records.end() || it->second.refCount == 0U) {
         UVE_ASSERT(it != m_impl->records.end());

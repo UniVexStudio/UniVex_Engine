@@ -3601,10 +3601,12 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     // rather than lazily: a shadow pass that stalls mid-frame waiting for a program is worse than
     // one extra compile at startup, and the non-instanced program remains the fallback if this one
     // fails to link.
+#if !defined(__ANDROID__)
     Shader::ShaderProgramDescUVE instancedShadowProgramDesc = shadowProgramDesc;
     instancedShadowProgramDesc.extraDefines.emplace_back("UVE_INSTANCED", "1");
     instancedShadowProgramDesc.debugNameUVE = "ShadowDepthInstanced";
     m_impl->instancedShadowProgram = shaderManager.CreateProgramUVE(instancedShadowProgramDesc);
+#endif
 
     Shader::ShaderProgramDescUVE toneMappingProgramDesc;
     toneMappingProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kFullscreenQuadVirtualPath);

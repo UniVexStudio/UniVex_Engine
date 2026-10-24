@@ -31,9 +31,12 @@ struct Host {
     bool focused = false;
     bool failed = false;
     bool frameReported = false;
+    unsigned frameAttempts = 0U;
+    bool previousTouch = false;
     void Cancel() { if (touch) touch->CancelUVE(); }
     void Focus(bool value) {
         focused = value;
+        __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_FOCUS %d", value ? 1 : 0);
         if (engine) {
             auto* window = dynamic_cast<UVE::Window::AndroidWindowManagerUVE*>(&engine->GetServicesUVE().GetWindowManagerUVE());
             if (window != nullptr) window->SetFocusedUVE(value);
@@ -50,9 +53,17 @@ struct Host {
         const auto snapshot = services.GetMobileInputSystemUVE().GetSnapshotUVE();
         bool touched = false;
         for (const auto& contact : snapshot.touches) touched = touched || contact.active;
+        if (previousTouch != touched) {
+            __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_TOUCH_APPLIED active=%d", touched ? 1 : 0);
+            previousTouch = touched;
+        }
         entities.GetComponentUVE<UVE::Scene::PrimitiveMeshComponentUVE>(cube).baseColor = touched
             ? UVE::Math::Vector3UVE{0.1F, 0.9F, 0.4F} : UVE::Math::Vector3UVE{0.2F, 0.5F, 0.9F};
         const auto diagnostics = services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+        if (frameAttempts++ < 3U) {
+            __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_FRAME primitives=%zu gl=%zu",
+                diagnostics.primitiveDrawCallsRecorded, diagnostics.glDrawCallsIssued);
+        }
         if (!frameReported && diagnostics.primitiveDrawCallsRecorded > 0U && diagnostics.glDrawCallsIssued > 0U) {
             __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_RENDERED");
             frameReported = true;
@@ -71,8 +82,11 @@ struct Host {
             config.ambientColor = {0.7F, 0.7F, 0.7F};
             config.shaderSourceRealDirectoryUVE = "shaders";
             engine = std::make_unique<UVE::Core::EngineCoreUVE>(config);
+            __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_INIT_BEGIN");
             engine->Init();
+            __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_INIT_DONE");
             if (!engine->Load()) { Stop(); failed = true; return; }
+            __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_LOAD_DONE");
             auto* graphics = dynamic_cast<UVE::Render::GlRenderDeviceUVE*>(&engine->GetServicesUVE().GetRenderDeviceUVE());
             if (graphics == nullptr || !graphics->IsUsableUVE()) throw std::runtime_error("GLES renderer unavailable");
             auto& entities = engine->GetServicesUVE().GetEntityManagerUVE();
@@ -128,7 +142,7 @@ void Command(android_app* app, int32_t command) {
     case APP_CMD_LOW_MEMORY:
         if (host.engine) host.engine->GetServicesUVE().GetAssetManagerUVE().CollectGarbageUVE();
         break;
-    case APP_CMD_DESTROY: host.Stop(); break;
+    case APP_CMD_DESTROY: host.Stop(); __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_DESTROYED"); break;
     default: break;
     }
 }

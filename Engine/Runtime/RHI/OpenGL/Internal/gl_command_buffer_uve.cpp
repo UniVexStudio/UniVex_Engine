@@ -1141,6 +1141,8 @@ const GlCommandBufferUVE::UniformRecordUVE* GlCommandBufferUVE::FindUniformUVE(s
     }
     const auto it = pipelineRecord->uniforms.find(name);
     if (it == pipelineRecord->uniforms.end()) {
+        const auto element = pipelineRecord->uniformElements.find(name);
+        if (element != pipelineRecord->uniformElements.end()) return &element->second;
         UVE_WARNING("GlCommandBufferUVE: SetUniform*UVE - \"{}\" is not an active uniform on the bound pipeline",
                      name);
         return nullptr;

@@ -22,6 +22,8 @@ endif()
 
 set(_uve_basis_root "${uve_basis_universal_SOURCE_DIR}")
 set(_uve_basis_common_definitions
+    # Use the upstream byte-safe read path; GCC UBSan does not define Clang's feature macro.
+    BASISD_USE_UNALIGNED_WORD_READS=0
     BASISD_SUPPORT_KTX2=1
     BASISD_SUPPORT_KTX2_ZSTD=0
     BASISU_SUPPORT_OPENCL=0
