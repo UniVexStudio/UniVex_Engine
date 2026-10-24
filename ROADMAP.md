@@ -1330,8 +1330,9 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   warnings-as-errors build of the whole tree and `ctest` under `xvfb-run` with lavapipe on every
   pull request, then asserts the Vulkan and software-GL device cases actually executed instead of
   silently skipping.
-- [ ] Automated static analysis / sanitizer runs (address/undefined-behavior sanitizers,
-  a linter pass) as part of the standard validation gate
+- [~] Automated static analysis / sanitizer runs: opt-in ASan/UBSan instrumentation
+  (`UVE_ENABLE_SANITIZERS`) and a separate standard CI matrix entry now exist. Full
+  instrumented-suite validation and a dedicated static-analysis/linter pass remain pending.
 - [~] Formal performance budgets and automated performance-regression testing: Linux process runtime/peak RSS runner and CI baseline artifact exist; device budgets, frame-time/GPU measurements, and regression thresholds remain pending (frame time,
   memory, load time tracked over time, not just correctness)
 - [ ] A public-facing API reference generated from source comments

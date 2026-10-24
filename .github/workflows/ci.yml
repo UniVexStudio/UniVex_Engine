@@ -23,9 +23,19 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: Ubuntu / GCC / Debug
+    name: Ubuntu / GCC / ${{ matrix.mode }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: Debug
+            sanitizers: 'OFF'
+          - mode: Sanitizers
+            sanitizers: 'ON'
+    env:
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
 
     steps:
       - name: Checkout
@@ -63,7 +73,7 @@ jobs:
         run: bash Engine/Tools/check_panel_includes.sh
 
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DUVE_BUILD_TESTS=ON
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DUVE_BUILD_TESTS=ON -DUVE_ENABLE_SANITIZERS=${{ matrix.sanitizers }}
 
       - name: Build
         # pipefail keeps the step's exit status the compiler's, not tee's: the log is captured so
@@ -184,7 +194,7 @@ jobs:
         if: failure() && ((github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true'))
         uses: actions/upload-artifact@v4
         with:
-          name: ctest-log
+          name: ctest-log-${{ matrix.mode }}
           path: build/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
           retention-days: 7
@@ -203,6 +213,6 @@ jobs:
         if: always() && ((github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true'))
         uses: actions/upload-artifact@v4
         with:
-          name: editor-process-baseline
+          name: editor-process-baseline-${{ matrix.mode }}
           path: build/editor-process-baseline.json
           if-no-files-found: ignore
