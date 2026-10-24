@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <string>
 #include <typeindex>
 #include <utility>
@@ -58,13 +59,9 @@ public:
     void RegisterLoaderUVE(std::function<bool(const std::filesystem::path&, T&)> loadFunc) {
         AssetLoaderInfoUVE info;
         info.load = [loadFunc](const std::filesystem::path& path, bool& outSuccess) -> void* {
-            auto* const value = new T();
+            auto value = std::make_unique<T>();
             outSuccess = loadFunc(path, *value);
-            if (!outSuccess) {
-                delete value;
-                return nullptr;
-            }
-            return value;
+            return outSuccess ? value.release() : nullptr;
         };
         info.destroy = [](void* pointer) { delete static_cast<T*>(pointer); };
         RegisterLoaderErased(std::type_index(typeid(T)), std::move(info));

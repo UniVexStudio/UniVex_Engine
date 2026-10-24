@@ -37,5 +37,15 @@ Desktop polygon wireframe is refused on GLES. Buffer readback uses GLES map/unma
 reports failure when either operation fails. Rendering targets are bounded to 720p pixels;
 this is a resource policy, not an FPS guarantee or proof of 3 GB device readiness.
 
-CI builds the APK on every normal CI run. Uploads follow the same opt-in artifact controls
+A reproducible smoke check is available for a booted test emulator/device:
+
+```sh
+python3 Engine/Tools/android/smoke_runtime.py --adb /path/to/adb --serial emulator-5554 --apk /tmp/univex-android/univex-runtime-x86_64.apk --report /tmp/android-smoke.json --screenshot /tmp/android-runtime.png
+```
+
+It requires actual GLES cube draws, touch receipt and engine consumption, pause/resume,
+and surface reattachment without a second engine initialization. It records no device FPS claim.
+The debug APK is debuggable for native diagnostics and uses private application storage.
+
+CI builds arm64 and x86_64 APKs on every normal CI run and exercises x86_64 on a KVM emulator. Uploads follow the same opt-in artifact controls
 as desktop CI (see `.github/CI_ARTIFACTS.md`). The manual checkbox enables an APK download.

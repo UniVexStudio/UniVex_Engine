@@ -317,8 +317,9 @@ struct GlTextureFormatUVE {
 void ReflectPipelineUniformsUVE(
     const Detail::GlFunctionsUVE& gl, GLuint glProgram,
     std::unordered_map<std::string, Detail::GlDeviceStateUVE::PipelineRecordUVE::UniformRecordUVE,
-                       Detail::TransparentStringHashUVE, Detail::TransparentStringEqualUVE>& outUniforms) {
+                       Detail::TransparentStringHashUVE, Detail::TransparentStringEqualUVE>& outUniforms, decltype(outUniforms) outElements) {
     outUniforms.clear();
+    outElements.clear();
 
     GLint activeUniformCount = 0;
     gl.glGetProgramiv(glProgram, GL_ACTIVE_UNIFORMS, &activeUniformCount);
@@ -336,15 +337,27 @@ void ReflectPipelineUniformsUVE(
         gl.glGetActiveUniform(glProgram, static_cast<GLuint>(index), maxNameLength, &writtenLength, &arraySize,
                                &glType, nameBuffer.data());
         std::string name(nameBuffer.data(), static_cast<std::size_t>(writtenLength));
-        if (name.size() > 3 && name.compare(name.size() - 3, 3, "[0]") == 0) {
+        const bool isArray = name.size() > 3 && name.compare(name.size() - 3, 3, "[0]") == 0;
+        if (isArray) {
             name.resize(name.size() - 3);
         }
 
         const GLint location = gl.glGetUniformLocation(glProgram, name.c_str());
-        outUniforms.emplace(std::move(name), Detail::GlDeviceStateUVE::PipelineRecordUVE::UniformRecordUVE{
-                                                  GlUniformTypeToShaderDataTypeUVE(glType), location,
-                                                  static_cast<std::uint32_t>(arraySize),
-                                                  glType == GL_IMAGE_2D});
+        const Detail::GlDeviceStateUVE::PipelineRecordUVE::UniformRecordUVE record{
+            GlUniformTypeToShaderDataTypeUVE(glType), location,
+            static_cast<std::uint32_t>(arraySize), glType == GL_IMAGE_2D};
+        outUniforms.emplace(name, record);
+        if (isArray && location >= 0) {
+            for (GLint element = 0; element < arraySize; ++element) {
+                const std::string elementName = name + "[" + std::to_string(element) + "]";
+                const GLint elementLocation = gl.glGetUniformLocation(glProgram, elementName.c_str());
+                if (elementLocation < 0) continue;
+                auto elementRecord = record;
+                elementRecord.location = elementLocation;
+                elementRecord.arraySize = 1U;
+                outElements.emplace(elementName, elementRecord);
+            }
+        }
     }
 }
 
@@ -1151,7 +1164,7 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
     record.depthCompare = desc.depthCompare;
     record.stencil = desc.stencil;
     record.topology = desc.topology;
-    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms);
+    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms, record.uniformElements);
 
     const std::uint32_t handleValue = m_impl->state.nextPipelineHandle++;
     m_impl->state.pipelines.emplace(handleValue, std::move(record));
@@ -1213,7 +1226,7 @@ PipelineHandleUVE GlRenderDeviceUVE::CreateComputePipelineUVE(const ComputePipel
     record.isCompute = true;
     // Active-uniform reflection works identically for compute programs, so SetUniform*UVE on a
     // compute pipeline needs no special-casing.
-    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms);
+    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms, record.uniformElements);
 
     const std::uint32_t handleValue = m_impl->state.nextPipelineHandle++;
     m_impl->state.pipelines.emplace(handleValue, std::move(record));
@@ -1382,7 +1395,7 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<const
     // Uniform locations are not guaranteed portable across a binary load even though behavior
     // is - reflection must always be re-run here, never assumed inherited from the original
     // compile that produced this binary.
-    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms);
+    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms, record.uniformElements);
 
     const std::uint32_t handleValue = m_impl->state.nextPipelineHandle++;
     m_impl->state.pipelines.emplace(handleValue, std::move(record));

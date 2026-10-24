@@ -7,6 +7,7 @@
 #include <atomic>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -96,6 +97,47 @@ protected:
 
     void SetUp() override { assetManager.RegisterLoaderUVE<BlobAssetUVE>(LoadBlobUVE); }
 };
+
+struct ShutdownTrackedAssetUVE {
+    std::atomic<int>* destroyed = nullptr;
+    std::optional<AssetHandleUVE<ShutdownTrackedAssetUVE>> dependency;
+    ~ShutdownTrackedAssetUVE() { if (destroyed != nullptr) destroyed->fetch_add(1); }
+};
+
+TEST_F(AssetManagerUVETest, ShutdownDestroysCachedPayloadsAndSafelyReleasesDependentHandles) {
+    std::atomic<int> destroyed{0};
+    {
+        AssetManagerUVE manager(threadPool, eventSystem);
+        const auto child = assetDatabase.RegisterUVE("shutdown-child.test");
+        const auto parent = assetDatabase.RegisterUVE("shutdown-parent.test");
+        manager.RegisterLoaderUVE<ShutdownTrackedAssetUVE>([&](const std::filesystem::path& path, auto& value) {
+            value.destroyed = &destroyed;
+            if (path.filename() == "shutdown-parent.test") value.dependency.emplace(manager.LoadUVE<ShutdownTrackedAssetUVE>(child, assetDatabase));
+            return true;
+        });
+        auto handle = manager.LoadUVE<ShutdownTrackedAssetUVE>(parent, assetDatabase);
+        ASSERT_TRUE(WaitForTerminalStateUVE(handle));
+        ASSERT_TRUE(handle.IsReadyUVE());
+        ASSERT_TRUE(handle.TryGetUVE()->dependency.has_value());
+        ASSERT_TRUE(WaitForTerminalStateUVE(*handle.TryGetUVE()->dependency));
+        EXPECT_EQ(destroyed.load(), 0);
+        // The handle dies before the manager; no explicit garbage collection is performed.
+    }
+    EXPECT_EQ(destroyed.load(), 2);
+}
+
+TEST_F(AssetManagerUVETest, ThrowingLoaderDestroysItsPartiallyInitializedPayload) {
+    std::atomic<int> destroyed{0};
+    assetManager.RegisterLoaderUVE<ShutdownTrackedAssetUVE>([&](const std::filesystem::path&, auto& value) -> bool {
+        value.destroyed = &destroyed;
+        throw std::runtime_error("injected loader failure");
+    });
+    const auto guid = assetDatabase.RegisterUVE("throwing-payload.test");
+    auto handle = assetManager.LoadUVE<ShutdownTrackedAssetUVE>(guid, assetDatabase);
+    ASSERT_TRUE(WaitForTerminalStateUVE(handle));
+    EXPECT_TRUE(handle.HasFailedUVE());
+    EXPECT_EQ(destroyed.load(), 1);
+}
 
 #if UVE_DEBUG
 TEST_F(AssetManagerUVETest, AddRefUVE_MissingRecord_Asserts) {
