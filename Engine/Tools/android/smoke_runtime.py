@@ -5,6 +5,7 @@ import json
 import math
 from pathlib import Path
 import subprocess
+import struct
 import time
 
 
@@ -41,6 +42,24 @@ def main():
             time.sleep(1)
         raise RuntimeError(f'Missing native evidence: {marker}')
 
+    def wait_for_visible_scene():
+        deadline = time.monotonic() + args.timeout
+        while time.monotonic() < deadline:
+            raw = subprocess.run([args.adb, '-s', args.serial, 'exec-out', 'screencap'],
+                                 capture_output=True, check=True, timeout=30).stdout
+            if len(raw) >= 12:
+                width, height, pixel_format = struct.unpack_from('<III', raw)
+                header = len(raw) - width * height * 4
+                if width > 0 and height > 0 and pixel_format in (1, 2) and header in (12, 16):
+                    offset = header + ((height // 2) * width + width // 2) * 4
+                    red, green, blue = raw[offset:offset + 3]
+                    if blue > green + 10 and green > red + 10 and blue > 80:
+                        report['checks'].append('UVE_ANDROID_VISIBLE_PIXELS')
+                        print('UVE_ANDROID_VISIBLE_PIXELS', flush=True)
+                        return
+            time.sleep(1)
+        raise RuntimeError('The resumed cube is not visible at the screen center')
+
     try:
         if adb('shell', 'getprop', 'sys.boot_completed').strip() != '1':
             report['blocked'] = 'Android boot has not completed'
@@ -66,6 +85,7 @@ def main():
         text = wait_for('UVE_ANDROID_RENDERED', 2)
         if text.count('UVE_ANDROID_INITIALIZED') != 1:
             raise RuntimeError('Engine was recreated instead of retaining its scene')
+        wait_for_visible_scene()
         if args.screenshot:
             shot = subprocess.run([args.adb, '-s', args.serial, 'exec-out', 'screencap', '-p'],
                                   capture_output=True, check=True, timeout=30).stdout

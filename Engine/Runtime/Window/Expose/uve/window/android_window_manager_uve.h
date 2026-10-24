@@ -17,6 +17,8 @@ public:
     bool IsFocusedUVE() const noexcept override;
     void SwapBuffersUVE() override;
     bool AttachNativeWindowUVE(void* window);
+    // Successful EGL swaps; visible pixels are verified separately by the native smoke test.
+    std::uint64_t GetPresentationCountUVE() const noexcept;
     void DetachNativeWindowUVE();
     bool TryRecoverSurfaceUVE() noexcept override;
     bool IsCloseRequestedUVE() const noexcept override { return false; }

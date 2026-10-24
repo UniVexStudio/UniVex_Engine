@@ -19,10 +19,12 @@ struct AndroidWindowManagerUVE::Impl {
     EGLConfig m_config = nullptr;
     bool m_vsync = true;
     bool m_contextLost = false;
+    std::uint64_t m_presentations = 0U;
 };
 AndroidWindowManagerUVE::AndroidWindowManagerUVE(Events::IEventSystemUVE& events, void* native,
                                                const WindowDescUVE& desc)
-    : m_impl(std::make_unique<Impl>(events, static_cast<ANativeWindow*>(native), desc.vsyncEnabled)) {
+    : m_impl(std::make_unique<Impl>(events, static_cast<ANativeWindow*>(native),
+          desc.vsyncModeExplicit ? desc.vsyncMode != Platform::VSyncModeUVE::Off : desc.vsyncEnabled)) {
     if (m_impl->m_window == nullptr) return;
     ANativeWindow_acquire(m_impl->m_window);
     m_impl->m_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
@@ -97,7 +99,10 @@ bool AndroidWindowManagerUVE::AttachNativeWindowUVE(void* window) {
 }
 void AndroidWindowManagerUVE::SwapBuffersUVE() {
     if (m_impl->m_surface == EGL_NO_SURFACE || !IsValidUVE()) return;
-    if (eglSwapBuffers(m_impl->m_display, m_impl->m_surface) == EGL_TRUE) return;
+    if (eglSwapBuffers(m_impl->m_display, m_impl->m_surface) == EGL_TRUE) {
+        ++m_impl->m_presentations;
+        return;
+    }
     m_impl->m_contextLost = eglGetError() == EGL_CONTEXT_LOST;
     eglMakeCurrent(m_impl->m_display, m_impl->m_idleSurface, m_impl->m_idleSurface, m_impl->m_context);
     eglDestroySurface(m_impl->m_display, m_impl->m_surface);
@@ -125,4 +130,10 @@ bool AndroidWindowManagerUVE::IsValidUVE() const noexcept {
 bool AndroidWindowManagerUVE::IsFocusedUVE() const noexcept { return m_impl->m_focused; }
 bool AndroidWindowManagerUVE::IsVSyncEnabledUVE() const noexcept { return m_impl->m_vsync; }
 void* AndroidWindowManagerUVE::GetNativeWindowHandleUVE() const noexcept { return m_impl->m_window; }
+}
+
+namespace UVE::Window {
+std::uint64_t AndroidWindowManagerUVE::GetPresentationCountUVE() const noexcept {
+    return m_impl->m_presentations;
+}
 }
