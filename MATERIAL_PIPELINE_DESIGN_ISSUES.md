@@ -43,8 +43,8 @@ Status markers follow the convention the other planning documents use:
 |---|---|---|
 | 1 | `dielectricSpecular` is never read; f0 is hardcoded to 0.04 in the lit shader, and the field's own default (0.5) is not a dielectric f0 | `[ ]` |
 | 2 | Separate `metallicTexture` / `roughnessTexture` are imported and saved, then dropped — only the packed ORM map reaches the shader | `[ ]` |
-| 3 | Four authored concepts of "alpha" (`blendMode`, `alphaSource`, `albedoAlpha`, `isTransparent`) collapse into one bool; the alpha channel never reaches the framebuffer | `[~]` |
-| 4 | Pipeline state comes from `isTransparent` alone; `cullMode`, `depthTestEnabled`, `depthWriteEnabled`, `depthDrawMode`, `renderPriority` are ignored by the 3D renderer | `[~]` |
+| 3 | Four authored concepts of "alpha" (`blendMode`, `alphaSource`, `albedoAlpha`, `isTransparent`) collapse into one bool; the alpha channel never reaches the framebuffer | **fixed** |
+| 4 | Pipeline state comes from `isTransparent` alone; `cullMode`, `depthTestEnabled`, `depthWriteEnabled`, `depthDrawMode` are ignored by the 3D renderer | **fixed** |
 | 5 | `useCustomShaderCode` / `customShader` are not wired: only `vertexShader`+`fragmentShader` GUIDs select a program | `[~]` |
 | 6 | Primitives receive shadows but never cast them, and `receiveShadows` cannot switch reception off | `[~]` |
 | 7 | The asset-health check knew `.uvmat` but not `.uvmaterial`, so Inspector-created materials were never checked | **fixed** |
@@ -108,75 +108,192 @@ slots, two more uniforms, work out the priority against the packed map — or (b
 remove the fields, since the packed form already covers the data. Leaving them
 authored-but-inert is the only option that is definitely wrong.
 
-## 3. Four authored concepts of alpha, one bool of behaviour
+## 3. Four authored concepts of alpha, one bool of behaviour — **fixed**
 
 The material exposes:
 
 - `isTransparent` — documented as driving opaque/transparent bucketing;
-- `blendMode` (`Opaque` / `Masked`(cutout) / `Blend` …);
-- `alphaSource` (`AlbedoAlpha`, `FromTexture`, …);
+- `blendMode` (`Opaque` / `AlphaBlend` / `PremultipliedAlpha` / `Additive` / `Subtractive` / `Multiply`);
+- `alphaSource` (`AlbedoAlpha`, `SeparateTextureChannel`, `None`);
 - `albedoAlpha` (a scalar the glTF importer fills from the base-colour alpha,
   `gltf_material_import_uve.cpp:253`);
 - `alphaCutoff`, `alphaHashingEnabled`.
 
-What the pipeline does:
+### What it used to do
 
-| Knob | Effect today |
+| Knob | Effect |
 |---|---|
-| `isTransparent` | The only one that changes anything: it selects the blended pipeline variant and turns depth writes off (`renderer_3d_uve.cpp:1989`, `:1993-1996`). |
-| `alphaCutoff` | Works: `discard` above 0 (`built_in_shaders_uve.cpp:1641`). |
-| `albedoAlpha`, `alphaSource`, `blendMode`, `alphaHashingEnabled` | Nothing. All four are `[ ]`. |
+| `isTransparent` | The only one that changed anything: it selected the blended pipeline variant and turned depth writes off. |
+| `alphaCutoff` | Worked: `discard` above 0 (`built_in_shaders_uve.cpp:1641`). |
+| `blendMode`, `alphaSource`, `albedoAlpha`, `alphaHashingEnabled` | Nothing. |
 
-More importantly, the fragment shader's output alpha is **not** the material's:
+The fragment shader dropped the sampled alpha outright:
 
 ```glsl
-vec3 albedo = albedoSample.rgb * uAlbedoColor;         // .a dropped
-float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0); // from the surface instance
+vec3 albedo = albedoSample.rgb * uAlbedoColor;          // .a discarded
+float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0); // the SurfaceInstance fade
 FragColor = vec4(finalColor, surfaceOpacity);
 ```
 
-`uSurfaceOpacity` is the *surface instance's* fade weight
-(`renderer_3d_uve.cpp:2860`, `:2953`, `:3337`), not the material's. A material with
-`isTransparent = true` therefore blends at whatever object opacity the instance
-carries — 1.0 by default, i.e. fully opaque, with depth writes off. Per-texel
-transparency (a gradient alpha card, tinted glass) cannot be expressed at all, and
-a glTF material with `baseColorFactor.a = 0.5` renders opaque.
+`uSurfaceOpacity` is the *surface instance's* fade weight, not the material's, so a material with
+`isTransparent = true` blended at whatever object opacity the instance carried — 1.0 by default,
+i.e. fully opaque, with depth writes off. Per-texel transparency was not expressible at all, and a
+glTF material with `baseColorFactor.a = 0.5` rendered opaque.
 
-The blending mode is straight alpha (`PipelineBlendModeUVE::SourceAlphaOver`) and no
-premultiplied option exists, so even after wiring the alpha channel there is no way
-to author an additive or premultiplied material — the modes a particle/VFX material
-needs.
+### What it does now
 
-## 4. Pipeline state is derived from one bool
+The shader composes the two sources instead of choosing one:
 
-`ResolveMaterialGpuResourcesUVE` builds the program description as:
+```glsl
+float materialAlpha = uAlphaSource == 0 ? clamp(albedoSample.a * uAlbedoAlpha, 0.0, 1.0) : 1.0;
+float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0) * materialAlpha;
+```
+
+and every exit path goes through one function, so the unshaded, matcap and normal-debug branches
+cannot drift from the lit one:
+
+```glsl
+vec4 ComposeFragmentUVE(vec3 color, float alpha) {
+    return vec4(uPremultiplyAlpha != 0 ? color * alpha : color, alpha);
+}
+```
+
+`alphaHashingEnabled` and `alphaSource == SeparateTextureChannel` remain unimplemented: hashing
+needs a dither in the shader and a depth-prepass contract to be meaningful, and there is no shader
+input carrying a separate alpha channel yet. Both are recorded here rather than silently ignored —
+`SeparateTextureChannel` behaves like `None` instead of guessing at a channel.
+
+## 4. Pipeline state is derived from one bool — **fixed**
+
+`ResolveMaterialGpuResourcesUVE` used to build every program with:
 
 ```cpp
 programDesc.depthTestEnabled = true;
 programDesc.depthWriteEnabled = !material->isTransparent;
-// blended variant:
 blendedDesc.depthWriteEnabled = false;
 blendedDesc.blendMode = PipelineBlendModeUVE::SourceAlphaOver;
-blendedDesc.depthCompare = DepthCompareUVE::LessOrEqual;
 ```
 
-Nothing reads `material->cullMode`, `depthTestEnabled`, `depthWriteEnabled`,
-`depthDrawMode` or `renderPriority`. Those four are consumed only by the Editor's
-own overlay/mesh preview path and by the importers
-(`obj_material_import_uve.cpp`, `mtl_material_converter_uve.cpp`), which is why
-they *look* alive: the asset round trips and the importers even derive them from
-the source format.
+Nothing read `cullMode`, `depthTestEnabled`, `depthWriteEnabled` or `depthDrawMode`. They were
+consumed only by the Editor's overlay path and by the importers — which is why they *looked* alive:
+the asset round-tripped and the glTF importer even wrote `cullMode = doubleSided ? Disabled : Back`
+(`gltf_material_import_uve.cpp:319`) into a field the renderer never read.
 
-Notes on what is missing concretely:
+### The fix
 
-- **Culling.** There is no per-material cull mode; back-face culling is the pipeline
-  default and `MaterialCullModeUVE::None` cannot be honoured. Two-sided foliage or
-  cloth is not expressible.
-- **Depth.** `depthWriteEnabled` cannot be turned off for an opaque material
-  (useful for depth-prepass-authored geometry), and `depthTestEnabled` cannot be
-  turned off at all.
-- **Ordering.** `renderPriority` has no consumer, so there is no way to order two
-  transparent materials against each other beyond the renderer's depth sort.
+`Engine/Runtime/RHI/RenderSystems/Expose/uve/render_systems/material_pipeline_state_uve.h` is now the
+single place a material turns into pipeline state:
+
+| Function | Answers |
+|---|---|
+| `ToPipelineBlendModeUVE` | every `MaterialBlendModeUVE` → a `PipelineBlendModeUVE` (total; no fallthrough) |
+| `ToCullModeUVE` | `Back`/`Front`/`Disabled` → `CullModeUVE::Back`/`Front`/`None` |
+| `MaterialWritesDepthUVE` | `depthDrawMode` **and** `depthWriteEnabled`, with `OpaqueOnly` meaning "opaque materials only" |
+| `EffectiveBlendModeUVE` | the blend mode actually used, with the two legacy spellings (`isTransparent`, `albedoAlpha < 1`) promoted to `SourceAlphaOver` |
+| `ResolveMaterialPipelineStateUVE` | all of the above, packed into a comparable key |
+
+Three consumers now agree because they ask the same question:
+
+1. **The render queue** buckets with `ShouldBucketMaterialTransparentUVE` (`mesh_renderer_uve.cpp`),
+   the predicate the material thumbnail renderer already used. Deciding from `isTransparent` alone
+   had put an additive material in the opaque pass.
+2. **The depth rule** is `MaterialWritesDepthUVE`, which folds the legacy spellings, so a material
+   cannot be translucent to the queue and opaque to the depth test.
+3. **The pipeline** is keyed by `MaterialPipelineStateUVE::PackUVE()`.
+
+The built-in lit program is no longer a single shared pipeline: `StandardLitProgramUVE` links the
+same source once per distinct state combination and caches it, with the ordinary
+Opaque/disabled-cull combination pre-registered to the existing shared program so the common case
+allocates nothing. A project-authored shader is built from the same table, so a custom material's
+blend and cull fields now mean something too.
+
+### RHI support
+
+Two of the six material modes had no pipeline equivalent, so the enum grew rather than mapping two
+authored choices onto a neighbour's behaviour:
+
+| `PipelineBlendModeUVE` | Equation |
+|---|---|
+| `Opaque` | none |
+| `SourceAlphaOver` | src·srcA + dst·(1−srcA) |
+| `Additive` | src + dst |
+| `Multiply` | src·dst |
+| **`PremultipliedAlpha`** (new) | src + dst·(1−srcA) |
+| **`Subtractive`** (new) | dst − src·srcA (reverse subtract) |
+
+Each is a complete (source factor, destination factor, equation) triple, which is why there is no
+separately authored equation field: factors and equation chosen independently can be combined into
+states no author meant. GL sets its equation on every pipeline bind rather than only when a mode
+needs one — GL keeps that state across binds, so a mode that never re-set it would inherit
+whichever mode came before. Vulkan sets `colorBlendOp`/`alphaBlendOp` per attachment and mirrors
+GL exactly, alpha included, so the two backends composite identically.
+
+### Authoring
+
+The Inspector had **no** transparency, culling or depth control at all — those fields were
+serialized, defaulted and unreachable. The material fold now carries a **RENDERING** block: Blend
+Mode, Culling, Depth Draw, Albedo Alpha and Alpha Source, and picking a blend mode keeps
+`isTransparent` in step so the two spellings can never disagree.
+
+### One visible change: default back-face culling
+
+The material default is `cullMode = Back`, and until now nothing read it, so every surface was drawn
+without culling. Honouring it means a default material now culls its back faces — which is what every
+other renderer does, and what the field already said, but it *is* a visible change for existing
+content: a single-sided plane is invisible from behind, and a mesh with inverted winding loses the
+face it used to show. The escape hatch is the field itself (`Disabled`), reachable from the new
+Inspector block; a model whose winding is wrong now fails visibly instead of shading inside-out.
+
+The same change means the built-in lit source is linked twice on a typical project: once with the
+cull-disabled state the "no material assigned" path has always used, once with `Back` for the first
+Standard material. That is the intended cost of the cache — programs are per state, not per material.
+
+### Persistence
+
+A pipeline state that the renderer honours but the serializer drops is the same lie one layer
+deeper, and `alphaSource`, `depthDrawMode`, `depthTestEnabled`, `depthWriteEnabled` and
+`alphaHashingEnabled` were all dropped on save — the Inspector could set them and the renderer would
+honour them for the session, then a reopen silently reverted them. All five now round-trip, written
+only when they differ from their defaults so an untouched material's payload stays byte-identical
+(see `SaveThenLoad_RoundTripsTheRenderingStateFields`).
+
+### What this does *not* change: shadows
+
+Shadow casting stays governed by the surface's own `castsShadow` flag, not by `depthDrawMode`.
+`depthDrawMode` describes the depth buffer of the *view* being drawn; a shadow cascade is a different
+buffer with a different question (does this object block light), and `castsShadow` is already the
+authored answer to it. Silently reinterpreting `Never` as "does not cast" would take a control away
+from the artist who set it for the colour pass.
+
+The consequence is worth stating plainly: a translucent caster still writes a solid shadow, because
+the shadow map consumes alpha only where the shader discards (cutout). Shadow-alpha support — either
+a second discard threshold in the depth pass or a dithered/hashed shadow write — is unbuilt, and is
+tracked as §4.1 below.
+
+### Tests
+
+`Test/RHI/RenderSystems/material_pipeline_state_uve_tests.cpp` (13 cases) pins the mapping table, the
+depth rule in both directions, the legacy spellings, the packed-key bijectivity across all
+6×4×2×2 = 96 states, and — the case that caught a real defect — that bucketing and blending answer
+the same question for every combination of mode × legacy flag × albedo alpha. Renderer tests assert
+that `uAlbedoAlpha`, `uAlphaSource` and `uPremultiplyAlpha` reach the draw with the material's values,
+and that a straight-alpha material does not ask for premultiplication.
+
+### 4.1 Open: shadow transparency
+
+The material now blends, the shadow map does not. A glass panel casts the shadow of an opaque slab
+until the artist unchecks `castsShadow` on it. Finishing this needs one of:
+
+- a shadow-pass discard at a *different* threshold than the colour pass (`alphaCutoff` is authored
+  for the colour pass), which is a second cutoff on the material;
+- dithered/alpha-hashed shadow writes (`alphaHashingEnabled` already exists as a field, unread),
+  which give correct-looking soft shadows for foliage and glass at the cost of noise that a
+  denoiser or a higher-resolution cascade has to absorb;
+- a translucent shadow-caster pass that blends into the shadow map, which is the accurate answer and
+  by far the most work.
+
+None of the three is a rendering path this engine currently has, so the flag remains the honest
+control in the meantime.
 
 ## 5. The custom shader path is not wired
 
@@ -324,19 +441,21 @@ For an accurate picture of the pipeline's real reach, the `[x]` list:
 | `uvScale` / `uvOffset` | `uUvScale`, `uUvOffset` |
 | `unshaded`, `shadingMode` (lit / unlit / normals / roughness debug) | `uUnshaded`, `uShadingMode` |
 | `alphaCutoff` (cutout) | `uAlphaCutoff` with `discard` |
-| `isTransparent` (blended pass, no depth write) | pipeline variant |
+| `isTransparent` (blended pass, no depth write) | pipeline variant, folded into `EffectiveBlendModeUVE` |
+| `blendMode` (all six) | pipeline variant, chosen per material state (§3/§4) |
+| `albedoAlpha` / `alphaSource` | `uAlbedoAlpha`, `uAlphaSource`, composed with the instance fade (§3) |
+| `cullMode`, `depthTestEnabled`, `depthWriteEnabled`, `depthDrawMode` | pipeline state (§4) |
 | `vertexShader` + `fragmentShader` GUID pair | program built from the two `.uvshader` sources |
 | Instancing eligibility | `VertexSourceSupportsInstancingUVE` scans the vertex source |
 | Reload invalidation | announcement **and** completion (§9) |
 
 ## Suggested order of work
 
-1. **§3 + §4 (alpha and pipeline state)** — they are the same file and the same
-   decision: what a material is allowed to say about its own blend/depth/cull state.
-   `albedoAlpha`, `alphaSource` and `blendMode` should either be honoured together
-   or removed together.
+1. ~~**§3 + §4 (alpha and pipeline state)**~~ — done. They were the same file and the
+   same decision, and honouring them together is what removed the mismatch where one
+   material answered "translucent" to the queue and "opaque" to the depth rule.
 2. **§5 (custom shader)** — either honour `customShader` or stop offering the
-   preset. Silent under-delivery is the worst of the three outcomes.
+   preset. Silent under-delivery is the worst of the remaining outcomes.
 3. **§2 (separate metallic/roughness)** — bind or delete the fields.
 4. **§1 (`dielectricSpecular`)** — wire it and fix the default to `0.04`, with a
    migration note for existing assets.

@@ -179,6 +179,26 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
         if (payload.contains("blendMode")) {
             material.blendMode = static_cast<MaterialBlendModeUVE>(payload.at("blendMode").get<std::uint8_t>());
         }
+        if (payload.contains("alphaSource")) {
+            material.alphaSource =
+                static_cast<MaterialAlphaSourceUVE>(payload.at("alphaSource").get<std::uint8_t>());
+        }
+        if (payload.contains("alphaHashingEnabled")) {
+            material.alphaHashingEnabled = payload.at("alphaHashingEnabled").get<bool>();
+        }
+        if (payload.contains("depthDrawMode")) {
+            material.depthDrawMode =
+                static_cast<MaterialDepthDrawModeUVE>(payload.at("depthDrawMode").get<std::uint8_t>());
+        }
+        if (payload.contains("depthTestEnabled")) {
+            material.depthTestEnabled = payload.at("depthTestEnabled").get<bool>();
+        }
+        if (payload.contains("depthWriteEnabled")) {
+            material.depthWriteEnabled = payload.at("depthWriteEnabled").get<bool>();
+        }
+        if (payload.contains("renderPriority")) {
+            material.renderPriority = payload.at("renderPriority").get<std::int32_t>();
+        }
         if (payload.contains("clearcoatAmount")) {
             material.clearcoatAmount = payload.at("clearcoatAmount").get<float>();
         }
@@ -259,6 +279,28 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     }
     if (material.blendMode != MaterialBlendModeUVE::Opaque) {
         payload["blendMode"] = static_cast<std::uint8_t>(material.blendMode);
+    }
+    // alphaSource, depthDrawMode, depthTestEnabled and depthWriteEnabled decide what the fragment
+    // shader emits and what the pipeline state is, and all four used to be dropped on save - the
+    // Inspector could set them, the renderer could honour them, and reopening the material silently
+    // reverted them to their defaults.
+    if (material.alphaSource != MaterialAlphaSourceUVE::AlbedoAlpha) {
+        payload["alphaSource"] = static_cast<std::uint8_t>(material.alphaSource);
+    }
+    if (material.alphaHashingEnabled) {
+        payload["alphaHashingEnabled"] = material.alphaHashingEnabled;
+    }
+    if (material.depthDrawMode != MaterialDepthDrawModeUVE::OpaqueOnly) {
+        payload["depthDrawMode"] = static_cast<std::uint8_t>(material.depthDrawMode);
+    }
+    if (!material.depthTestEnabled) {
+        payload["depthTestEnabled"] = material.depthTestEnabled;
+    }
+    if (!material.depthWriteEnabled) {
+        payload["depthWriteEnabled"] = material.depthWriteEnabled;
+    }
+    if (material.renderPriority != 0) {
+        payload["renderPriority"] = material.renderPriority;
     }
     if (material.clearcoatAmount != 0.0F) {
         payload["clearcoatAmount"] = material.clearcoatAmount;

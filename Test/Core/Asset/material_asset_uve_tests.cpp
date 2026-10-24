@@ -110,6 +110,58 @@ TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsFieldExact) {
     std::filesystem::remove(path);
 }
 
+// The Inspector writes these five fields and the renderer reads all of them, so losing any of them
+// on save is invisible until a material is reopened and quietly reverts to its default blend, cull
+// or depth behaviour. Also checks the two non-default orientations (cull Front, depth Test off) -
+// a serializer that writes a field but reads back only "was it set" would pass a Back/true check.
+TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsTheRenderingStateFields) {
+    const std::filesystem::path path = "uve_material_asset_tests_round_trip_rendering_state.uvmat";
+    std::filesystem::remove(path);
+
+    MaterialAssetUVE original = MakeTestMaterialUVE();
+    original.blendMode = MaterialBlendModeUVE::Subtractive;
+    original.cullMode = MaterialCullModeUVE::Front;
+    original.depthDrawMode = MaterialDepthDrawModeUVE::Never;
+    original.depthTestEnabled = false;
+    original.depthWriteEnabled = false;
+    original.alphaSource = MaterialAlphaSourceUVE::None;
+    original.alphaHashingEnabled = true;
+    original.renderPriority = 7;
+    original.albedoAlpha = 0.25F;
+    original.isTransparent = true;
+    ASSERT_TRUE(SaveMaterialAssetUVE(original, path));
+
+    MaterialAssetUVE loaded;
+    ASSERT_TRUE(LoadMaterialAssetUVE(path, loaded));
+    EXPECT_EQ(loaded.blendMode, MaterialBlendModeUVE::Subtractive);
+    EXPECT_EQ(loaded.cullMode, MaterialCullModeUVE::Front);
+    EXPECT_EQ(loaded.depthDrawMode, MaterialDepthDrawModeUVE::Never);
+    EXPECT_FALSE(loaded.depthTestEnabled);
+    EXPECT_FALSE(loaded.depthWriteEnabled);
+    EXPECT_EQ(loaded.alphaSource, MaterialAlphaSourceUVE::None);
+    EXPECT_TRUE(loaded.alphaHashingEnabled);
+    EXPECT_EQ(loaded.renderPriority, 7);
+    EXPECT_FLOAT_EQ(loaded.albedoAlpha, 0.25F);
+    EXPECT_TRUE(loaded.isTransparent);
+
+    // And the defaults have to survive the other direction: a material that never touched these
+    // must not acquire a non-default state by being saved once.
+    MaterialAssetUVE defaults = MakeTestMaterialUVE();
+    ASSERT_TRUE(SaveMaterialAssetUVE(defaults, path));
+    MaterialAssetUVE defaultsLoaded;
+    ASSERT_TRUE(LoadMaterialAssetUVE(path, defaultsLoaded));
+    EXPECT_EQ(defaultsLoaded.blendMode, MaterialBlendModeUVE::Opaque);
+    EXPECT_EQ(defaultsLoaded.cullMode, MaterialCullModeUVE::Back);
+    EXPECT_EQ(defaultsLoaded.depthDrawMode, MaterialDepthDrawModeUVE::OpaqueOnly);
+    EXPECT_TRUE(defaultsLoaded.depthTestEnabled);
+    EXPECT_TRUE(defaultsLoaded.depthWriteEnabled);
+    EXPECT_EQ(defaultsLoaded.alphaSource, MaterialAlphaSourceUVE::AlbedoAlpha);
+    EXPECT_FALSE(defaultsLoaded.alphaHashingEnabled);
+    EXPECT_EQ(defaultsLoaded.renderPriority, 0);
+
+    std::filesystem::remove(path);
+}
+
 TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsEveryKind) {
     const std::filesystem::path path = "uve_material_asset_tests_round_trip_kind.uvmat";
     for (const MaterialKindUVE kind : {MaterialKindUVE::Standard, MaterialKindUVE::Orm, MaterialKindUVE::Shader}) {

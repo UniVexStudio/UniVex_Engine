@@ -822,7 +822,28 @@ enum class PrimitiveTopologyUVE : std::uint8_t { Triangles, Lines, Points, LineS
 /// scene color; Multiply (destination *= source, `glBlendFunc(GL_DST_COLOR, GL_ZERO)`) composites
 /// the Phase 2b SSAO occlusion term the same way. All three remain opt-in so ordinary scene and
 /// tone-mapping pipelines preserve their existing opaque behavior.
-enum class PipelineBlendModeUVE : std::uint8_t { Opaque, SourceAlphaOver, Additive, Multiply };
+/// Each mode is a COMPLETE (source factor, destination factor, equation) triple, not a name the
+/// backends interpret loosely: "SourceAlphaOver" means src*srcA + dst*(1-srcA) and nothing else.
+/// That is why there is no separate equation field beside it - a factor pair and an equation chosen
+/// independently can be combined into states neither author meant, and every one of those states
+/// would look like a working pipeline that composites wrongly.
+enum class PipelineBlendModeUVE : std::uint8_t {
+    /// No blending; the source replaces the destination.
+    Opaque,
+    /// src*srcA + dst*(1-srcA) - straight (non-premultiplied) alpha.
+    SourceAlphaOver,
+    /// src + dst.
+    Additive,
+    /// src*dst.
+    Multiply,
+    /// Already-premultiplied source over the destination: src + dst*(1-srcA). The fragment shader
+    /// is expected to have multiplied rgb by alpha itself, which is why this cannot be expressed
+    /// as SourceAlphaOver with a different factor.
+    PremultipliedAlpha,
+    /// dst - src*srcA (reverse subtract), the opposite of Additive. Rounds to zero rather than
+    /// below it, which is what every 8-bit destination does anyway.
+    Subtractive,
+};
 
 [[nodiscard]] constexpr bool IsPipelineBlendModeValidUVE(const PipelineBlendModeUVE blendMode) noexcept {
     switch (blendMode) {
@@ -830,6 +851,8 @@ enum class PipelineBlendModeUVE : std::uint8_t { Opaque, SourceAlphaOver, Additi
         case PipelineBlendModeUVE::SourceAlphaOver:
         case PipelineBlendModeUVE::Additive:
         case PipelineBlendModeUVE::Multiply:
+        case PipelineBlendModeUVE::PremultipliedAlpha:
+        case PipelineBlendModeUVE::Subtractive:
             return true;
     }
     return false;
