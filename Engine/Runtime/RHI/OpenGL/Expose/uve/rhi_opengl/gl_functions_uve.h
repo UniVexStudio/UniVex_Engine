@@ -50,6 +50,7 @@ struct GlFunctionsUVE {
     PFNGLGETQUERYOBJECTUI64VPROC glGetQueryObjectui64v = nullptr;
 #endif
     // Core since GL 2.0; loaded like the other post-1.1 baseline entry points.
+    PFNGLBLENDEQUATIONPROC glBlendEquation = nullptr;
     PFNGLSTENCILFUNCSEPARATEPROC glStencilFuncSeparate = nullptr;
     PFNGLSTENCILOPSEPARATEPROC glStencilOpSeparate = nullptr;
     PFNGLSTENCILMASKSEPARATEPROC glStencilMaskSeparate = nullptr;
