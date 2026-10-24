@@ -34,7 +34,9 @@ struct Host {
     std::uint64_t presentationBaseline = 0U;
     unsigned frameAttempts = 0U;
     bool previousTouch = false;
-    void Cancel() { if (touch) touch->CancelUVE(); }
+    void Cancel() {
+        if (touch) UVE::Input::CancelAndroidInputUVE(*touch, engine->GetServicesUVE().GetMobileGestureSystemUVE());
+    }
     void ResetPresentationProof() {
         frameReported = false;
         if (engine) {
@@ -162,7 +164,8 @@ void Command(android_app* app, int32_t command) {
 int32_t Input(android_app* app, AInputEvent* event) {
     auto& host = *static_cast<Host*>(app->userData);
     const bool handled = host.touch && host.resumed && host.focused &&
-        UVE::Input::RouteAndroidMotionEventUVE(*host.touch, event);
+        UVE::Input::RouteAndroidMotionEventUVE(*host.touch, event,
+            &host.engine->GetServicesUVE().GetMobileGestureSystemUVE());
     if (handled) {
         const auto action = AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK;
         if (action != AMOTION_EVENT_ACTION_MOVE)

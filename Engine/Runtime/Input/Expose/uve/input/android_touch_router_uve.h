@@ -3,6 +3,7 @@
 #include "uve/input/i_mobile_input_system_uve.h"
 
 namespace UVE::Input {
+class IMobileGestureSystemUVE;
 // Single platform-thread adapter. Android pointer IDs are identities, not snapshot slots.
 class AndroidTouchRouterUVE final {
 public:
@@ -17,4 +18,6 @@ private:
     std::array<Contact, kMaximumTouchCountUVE> m_contacts{};
     std::uint64_t m_nextIdentifier = 0U;
 };
+// Cancellation clears gesture history so an interrupted contact cannot become a tap.
+void CancelAndroidInputUVE(AndroidTouchRouterUVE& router, IMobileGestureSystemUVE& gestures);
 } // namespace UVE::Input

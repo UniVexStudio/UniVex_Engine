@@ -1,4 +1,5 @@
 #include "uve/input/android_touch_router_uve.h"
+#include "uve/input/i_mobile_gesture_system_uve.h"
 
 namespace UVE::Input {
 bool AndroidTouchRouterUVE::DownUVE(const std::int32_t pointerId,
@@ -43,5 +44,9 @@ void AndroidTouchRouterUVE::CancelUVE() {
         m_sink.SetTouchStateUVE(slot, false, 0U, {}, 0.0F);
         m_contacts[slot] = Contact{};
     }
+}
+void CancelAndroidInputUVE(AndroidTouchRouterUVE& router, IMobileGestureSystemUVE& gestures) {
+    router.CancelUVE();
+    gestures.ResetUVE();
 }
 } // namespace UVE::Input

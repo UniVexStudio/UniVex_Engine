@@ -24,7 +24,8 @@ Lifecycle behavior:
 
 - Native event polling blocks while paused. A resumed surface draws before focus arrives;
   the engine applies its existing unfocused frame cap and input remains focus-gated.
-- Pause, focus loss and surface destruction cancel all active touch contacts.
+- Pause, focus loss and surface destruction cancel all active touch contacts and clear
+  gesture history, so an interrupted contact cannot become a tap.
 - Surface destruction detaches into a 1x1 EGL pbuffer while retaining the context and engine.
 - Surface recreation reattaches the native window and resumes the same scene.
 - A lost/unrecoverable EGL context stops the runtime with a clear error. It does not pretend

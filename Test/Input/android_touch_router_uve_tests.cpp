@@ -1,5 +1,6 @@
 #include "uve/input/android_touch_router_uve.h"
 #include "uve/input/mobile_input_system_uve.h"
+#include "uve/input/mobile_gesture_system_uve.h"
 #include <gtest/gtest.h>
 using namespace UVE::Input;
 TEST(AndroidTouchRouterUVETest, StableIdentitiesCancellationAndCapacity) {
@@ -27,4 +28,21 @@ TEST(AndroidTouchRouterUVETest, StableIdentitiesCancellationAndCapacity) {
     ASSERT_TRUE(!router.DownUVE(20,{},1));
     router.CancelUVE();
     ASSERT_TRUE(router.DownUVE(20,{},1));
+}
+
+TEST(AndroidTouchRouterUVETest, CancellationDropsGestureHistoryAndAllowsTheNextTap) {
+    MobileInputSystemUVE input;
+    AndroidTouchRouterUVE router(input);
+    MobileGestureSystemUVE gestures(input);
+    ASSERT_TRUE(router.DownUVE(0, {10.0F, 20.0F}, 1.0F));
+    input.UpdateUVE(); gestures.UpdateUVE(0.016F);
+    CancelAndroidInputUVE(router, gestures);
+    input.UpdateUVE(); gestures.UpdateUVE(0.016F);
+    EXPECT_EQ(gestures.GetLastReportUVE().count, 0U);
+    ASSERT_TRUE(router.DownUVE(0, {10.0F, 20.0F}, 1.0F));
+    input.UpdateUVE(); gestures.UpdateUVE(0.016F);
+    ASSERT_TRUE(router.UpUVE(0));
+    input.UpdateUVE(); gestures.UpdateUVE(0.016F);
+    ASSERT_EQ(gestures.GetLastReportUVE().count, 1U);
+    EXPECT_EQ(gestures.GetLastReportUVE().events[0].type, MobileGestureTypeUVE::Tap);
 }

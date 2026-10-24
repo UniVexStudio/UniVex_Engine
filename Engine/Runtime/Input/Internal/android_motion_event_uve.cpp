@@ -2,12 +2,17 @@
 #include <android/input.h>
 
 namespace UVE::Input {
-bool RouteAndroidMotionEventUVE(AndroidTouchRouterUVE& router, const AInputEvent* event) {
+bool RouteAndroidMotionEventUVE(AndroidTouchRouterUVE& router, const AInputEvent* event,
+                                IMobileGestureSystemUVE* gestures) {
     if (event == nullptr || AInputEvent_getType(event) != AINPUT_EVENT_TYPE_MOTION ||
         (static_cast<std::uint32_t>(AInputEvent_getSource(event)) & AINPUT_SOURCE_TOUCHSCREEN) != AINPUT_SOURCE_TOUCHSCREEN) return false;
     const auto rawAction = AMotionEvent_getAction(event);
     const auto action = rawAction & AMOTION_EVENT_ACTION_MASK;
-    if (action == AMOTION_EVENT_ACTION_CANCEL) { router.CancelUVE(); return true; }
+    if (action == AMOTION_EVENT_ACTION_CANCEL) {
+        if (gestures != nullptr) CancelAndroidInputUVE(router, *gestures);
+        else router.CancelUVE();
+        return true;
+    }
     const auto count = AMotionEvent_getPointerCount(event);
     const auto index = static_cast<std::size_t>((rawAction & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK)
                                                >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT);
