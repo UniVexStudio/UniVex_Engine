@@ -31,9 +31,17 @@ struct Host {
     bool focused = false;
     bool failed = false;
     bool frameReported = false;
+    std::uint64_t presentationBaseline = 0U;
     unsigned frameAttempts = 0U;
     bool previousTouch = false;
     void Cancel() { if (touch) touch->CancelUVE(); }
+    void ResetPresentationProof() {
+        frameReported = false;
+        if (engine) {
+            auto* window = dynamic_cast<UVE::Window::AndroidWindowManagerUVE*>(&engine->GetServicesUVE().GetWindowManagerUVE());
+            if (window != nullptr) presentationBaseline = window->GetPresentationCountUVE();
+        }
+    }
     void Focus(bool value) {
         focused = value;
         __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_FOCUS %d", value ? 1 : 0);
@@ -64,7 +72,9 @@ struct Host {
             __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_FRAME primitives=%zu gl=%zu",
                 diagnostics.primitiveDrawCallsRecorded, diagnostics.glDrawCallsIssued);
         }
-        if (!frameReported && diagnostics.primitiveDrawCallsRecorded > 0U && diagnostics.glDrawCallsIssued > 0U) {
+        const auto* window = dynamic_cast<UVE::Window::AndroidWindowManagerUVE*>(&services.GetWindowManagerUVE());
+        if (!frameReported && window != nullptr && window->GetPresentationCountUVE() > presentationBaseline &&
+            diagnostics.primitiveDrawCallsRecorded > 0U && diagnostics.glDrawCallsIssued > 0U) {
             __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_RENDERED");
             frameReported = true;
         }
@@ -130,7 +140,7 @@ void Command(android_app* app, int32_t command) {
         } else host.Start();
         break;
     case APP_CMD_TERM_WINDOW:
-        host.frameReported = false;
+        host.ResetPresentationProof();
         host.Cancel();
         if (host.engine) {
             auto* window = dynamic_cast<UVE::Window::AndroidWindowManagerUVE*>(&host.engine->GetServicesUVE().GetWindowManagerUVE());
@@ -139,7 +149,7 @@ void Command(android_app* app, int32_t command) {
         }
         break;
     case APP_CMD_RESUME: host.resumed = true; __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_RESUMED"); break;
-    case APP_CMD_PAUSE: host.resumed = false; host.frameReported = false; host.Cancel(); __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_PAUSED"); break;
+    case APP_CMD_PAUSE: host.resumed = false; host.ResetPresentationProof(); host.Cancel(); __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_PAUSED"); break;
     case APP_CMD_GAINED_FOCUS: host.Focus(true); break;
     case APP_CMD_LOST_FOCUS: host.Focus(false); break;
     case APP_CMD_LOW_MEMORY:
