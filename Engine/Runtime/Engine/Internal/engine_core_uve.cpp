@@ -1,3 +1,4 @@
+#include "uve/asset/asset_resident_size_uve.h"
 //                                      UVE
 //                                UniVex Engine
 //
@@ -379,12 +380,18 @@ void EngineCoreUVE::TransitionStateUVE(EngineStateUVE newState) {
 }
 
 void EngineCoreUVE::RegisterBuiltInAssetLoadersUVE() {
-    m_assetManager->RegisterLoaderUVE<Asset::MeshAssetUVE>(&Asset::LoadMeshAssetUVE);
-    m_assetManager->RegisterLoaderUVE<Asset::TextureAssetUVE>(&Asset::LoadTextureAssetUVE);
-    m_assetManager->RegisterLoaderUVE<Asset::ShaderAssetUVE>(&Asset::LoadShaderAssetUVE);
-    m_assetManager->RegisterLoaderUVE<Asset::MaterialAssetUVE>(&Asset::LoadMaterialAssetUVE);
-    m_assetManager->RegisterLoaderUVE<Asset::AudioAssetUVE>(&Asset::LoadAudioAssetUVE);
-    m_assetManager->RegisterLoaderUVE<Asset::AnimationClipAssetUVE>(&Asset::LoadAnimationClipAssetUVE);
+    m_assetManager->RegisterLoaderUVE<Asset::MeshAssetUVE>(&Asset::LoadMeshAssetUVE,
+        [](const Asset::MeshAssetUVE& value) { return Asset::AssetResidentBytesUVE(value); });
+    m_assetManager->RegisterLoaderUVE<Asset::TextureAssetUVE>(&Asset::LoadTextureAssetUVE,
+        [](const Asset::TextureAssetUVE& value) { return Asset::AssetResidentBytesUVE(value); });
+    m_assetManager->RegisterLoaderUVE<Asset::ShaderAssetUVE>(&Asset::LoadShaderAssetUVE,
+        [](const Asset::ShaderAssetUVE& value) { return Asset::AssetResidentBytesUVE(value); });
+    m_assetManager->RegisterLoaderUVE<Asset::MaterialAssetUVE>(&Asset::LoadMaterialAssetUVE,
+        [](const Asset::MaterialAssetUVE& value) { return Asset::AssetResidentBytesUVE(value); });
+    m_assetManager->RegisterLoaderUVE<Asset::AudioAssetUVE>(&Asset::LoadAudioAssetUVE,
+        [](const Asset::AudioAssetUVE& value) { return Asset::AssetResidentBytesUVE(value); });
+    m_assetManager->RegisterLoaderUVE<Asset::AnimationClipAssetUVE>(&Asset::LoadAnimationClipAssetUVE,
+        [](const Asset::AnimationClipAssetUVE& value) { return Asset::AssetResidentBytesUVE(value); });
 }
 
 void EngineCoreUVE::Init() {
@@ -624,7 +631,10 @@ void EngineCoreUVE::Init() {
     // LoadUVE() call logs its outcome (missing/malformed/success) the same
     // way ConfigManager's does below.
     auto assetDatabase = std::make_unique<Asset::AssetDatabaseUVE>();
-    assetDatabase->LoadUVE(m_config.assetDatabaseFilePath);
+    const bool catalogLoaded = assetDatabase->LoadUVE(m_config.assetDatabaseFilePath);
+    if (m_config.cookedAssetPathsUVE && !catalogLoaded) throw std::runtime_error("Cooked asset catalog unavailable");
+    if (m_config.cookedAssetPathsUVE && !assetDatabase->RootPathsUVE(m_config.projectRootDirectoryUVE))
+        throw std::runtime_error("Invalid cooked asset catalog paths");
     m_assetDatabase = std::move(assetDatabase);
 
     // ProjectFileIndex tenth: holds only an explicit configured content-root
@@ -658,7 +668,9 @@ void EngineCoreUVE::Init() {
     // given a real HotReloadUVE* (never null) — EngineConfigUVE::
     // hotReloadEnabledUVE only gates whether Update() calls PollUVE(), not
     // whether HotReloadUVE exists at all.
-    m_assetManager = std::make_unique<Asset::AssetManagerUVE>(*m_threadPool, *m_eventSystem, m_hotReload.get());
+    auto assetManager = std::make_unique<Asset::AssetManagerUVE>(*m_threadPool, *m_eventSystem, m_hotReload.get());
+    assetManager->SetResidentBudgetUVE(m_config.assetResidentBudgetBytesUVE);
+    m_assetManager = std::move(assetManager);
     RegisterBuiltInAssetLoadersUVE();
 
     // AssetImporter fourteenth: retains the existing extension-selected synchronous import behavior.

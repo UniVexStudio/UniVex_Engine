@@ -85,6 +85,7 @@ public:
     [[nodiscard]] bool ImportCsvUVE(std::string_view document);
     [[nodiscard]] bool ImportTsvUVE(std::string_view document);
     [[nodiscard]] bool ImportJsonUVE(std::string_view document);
+    [[nodiscard]] std::size_t GetResidentBytesUVE() const noexcept;
     [[nodiscard]] DataTableSnapshotUVE GetSnapshotUVE() const;
     [[nodiscard]] const DataTableRowUVE* FindRowUVE(std::string_view identifier) const noexcept;
 

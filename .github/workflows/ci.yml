@@ -82,6 +82,15 @@ jobs:
           set -o pipefail
           cmake --build build --parallel "$(nproc)" 2>&1 | tee build-output.log
 
+      - name: Cooked project and asset residency workload
+        run: |
+          build/Engine/Runtime/Pack/uve_asset_workload --create-fixture /tmp/uve-ci-cook-source
+          build/Engine/Runtime/Pack/uve_pack --project /tmp/uve-ci-cook-source/sample.uvproject --runtime build/Engine/App/uve_runtime --output /tmp/uve-ci-cooked --cook android
+          mv /tmp/uve-ci-cook-source /tmp/uve-ci-cook-source-unavailable
+          python3 Engine/Tools/performance/measure_process.py --runs 3 --timeout 120 --output /tmp/uve-ci-asset-rss.json -- build/Engine/Runtime/Pack/uve_asset_workload /tmp/uve-ci-cooked/.uvassetdb /tmp/uve-ci-cooked /tmp/uve-ci-asset-load.json
+          cd /tmp/uve-ci-cooked
+          ./uve_runtime --headless --project sample.uvproject --frames 3
+
       - name: Surface build errors as annotations
         # Same reason the test step annotates failing case names: the job log and the artifact
         # blob host are not reachable from every network, and a failed check that says nothing is
@@ -208,6 +217,18 @@ jobs:
           python3 Engine/Tools/performance/measure_process.py
           --runs 3 --timeout 60 --output build/editor-process-baseline.json
           -- build/Engine/App/uve_editor --headless --frames 300
+
+      - name: Upload asset workload measurements
+        if: always() && ((github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: asset-workload-${{ matrix.mode }}
+          path: |
+            /tmp/uve-ci-asset-rss.json
+            /tmp/uve-ci-asset-load.json
+            /tmp/uve-ci-cooked/cooked.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload process baseline
         if: always() && ((github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true'))

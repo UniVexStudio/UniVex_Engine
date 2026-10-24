@@ -444,3 +444,67 @@ TEST_F(AssetManagerUVETest, LoadCompletion_PublishesAssetLoadCompletedEvent) {
 
 } // namespace
 } // namespace UVE::Asset::Tests
+
+namespace UVE::Asset::Tests {
+namespace {
+TEST_F(AssetManagerUVETest, FiniteBudgetPinsPayloadAndRetriesAfterRelease) {
+    const auto a = assetDatabase.RegisterUVE("budget-a");
+    const auto b = assetDatabase.RegisterUVE("budget-b");
+    std::atomic<int> calls{0};
+    assetManager.RegisterLoaderUVE<BlobAssetUVE>([&](const auto&, auto& v) {
+        ++calls; v.resize(64); return true;
+    }, [](const auto& v) { return v.capacity(); });
+    assetManager.SetResidentBudgetUVE(64);
+    EXPECT_EQ(calls.load(), 0);
+    std::optional<AssetHandleUVE<BlobAssetUVE>> first(assetManager.LoadUVE<BlobAssetUVE>(a,assetDatabase));
+    ASSERT_TRUE(WaitForTerminalStateUVE(*first)); ASSERT_TRUE(first->IsReadyUVE());
+    {
+        const auto duplicate = assetManager.LoadUVE<BlobAssetUVE>(a,assetDatabase);
+        EXPECT_EQ(duplicate.TryGetUVE(),first->TryGetUVE()); EXPECT_EQ(calls.load(),1);
+    }
+    {
+        auto second = assetManager.LoadUVE<BlobAssetUVE>(b,assetDatabase);
+        ASSERT_TRUE(WaitForTerminalStateUVE(second)); EXPECT_TRUE(second.HasFailedUVE());
+        EXPECT_NE(second.GetFailureReasonUVE().find("budget exceeded"),std::string::npos);
+        EXPECT_TRUE(first->IsReadyUVE()); EXPECT_EQ(assetManager.GetResidentBytesUVE(),64U);
+    }
+    first.reset(); assetManager.CollectGarbageUVE(); EXPECT_EQ(assetManager.GetResidentBytesUVE(),0U);
+    auto retry = assetManager.LoadUVE<BlobAssetUVE>(b,assetDatabase);
+    ASSERT_TRUE(WaitForTerminalStateUVE(retry)); EXPECT_TRUE(retry.IsReadyUVE());
+    EXPECT_EQ(assetManager.GetPeakResidentBytesUVE(),64U);
+}
+TEST_F(AssetManagerUVETest, ConcurrentAdmissionsStayWithinBudgetAndReloadPreservesOldData) {
+    assetManager.RegisterLoaderUVE<BlobAssetUVE>([](const auto&, auto& v) {v.resize(32); return true;},
+        [](const auto& v) {return v.capacity();});
+    assetManager.SetResidentBudgetUVE(64);
+    std::vector<AssetHandleUVE<BlobAssetUVE>> handles;
+    for (unsigned i=0;i<12;++i) handles.push_back(assetManager.LoadUVE<BlobAssetUVE>(
+        assetDatabase.RegisterUVE("budget-"+std::to_string(i)),assetDatabase));
+    unsigned ready=0;
+    for (auto& h:handles) {ASSERT_TRUE(WaitForTerminalStateUVE(h)); if(h.IsReadyUVE()) ++ready;}
+    EXPECT_EQ(ready,2U); EXPECT_EQ(assetManager.GetResidentBytesUVE(),64U);
+    auto it=std::find_if(handles.begin(),handles.end(),[](const auto& h){return h.IsReadyUVE();});
+    ASSERT_NE(it,handles.end());
+    const auto* old=it->TryGetUVE();
+    assetManager.RegisterLoaderUVE<BlobAssetUVE>([](const auto&,auto& v){v.resize(96);return true;},
+        [](const auto& v){return v.capacity();});
+    assetManager.ReloadUVE(it->GetGuidUVE(),assetDatabase);
+    ASSERT_TRUE(WaitForTerminalStateUVE(*it)); EXPECT_TRUE(it->IsReadyUVE()); EXPECT_EQ(it->TryGetUVE(),old);
+    EXPECT_EQ(assetManager.GetResidentBytesUVE(),64U);
+}
+TEST_F(AssetManagerUVETest, FiniteBudgetRefusesUnknownSizerAndThrowingSizer) {
+    assetManager.SetResidentBudgetUVE(1024);
+    auto guid=assetDatabase.RegisterUVE("budget-unknown");
+    assetManager.RegisterLoaderUVE<BlobAssetUVE>([](const auto&,auto& v){v.resize(32);return true;});
+    auto h=assetManager.LoadUVE<BlobAssetUVE>(guid,assetDatabase);
+    ASSERT_TRUE(WaitForTerminalStateUVE(h)); EXPECT_TRUE(h.HasFailedUVE());
+    EXPECT_EQ(assetManager.GetResidentBytesUVE(),0U);
+    assetManager.RegisterLoaderUVE<BlobAssetUVE>([](const auto&,auto& v){v.resize(32);return true;},
+        [](const BlobAssetUVE&)->std::size_t{throw std::runtime_error("sizing failed");});
+    assetManager.ReloadUVE(guid,assetDatabase);
+    ASSERT_TRUE(WaitForTerminalStateUVE(h)); EXPECT_TRUE(h.HasFailedUVE());
+    EXPECT_NE(h.GetFailureReasonUVE().find("callback failed"),std::string::npos);
+}
+} // namespace UVE::Asset::Tests
+
+} // namespace

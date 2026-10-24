@@ -5,6 +5,7 @@
 #include <array>
 #include <cctype>
 #include <chrono>
+#include <charconv>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -73,6 +74,7 @@ namespace {
     }
     output << "\nValues: colors/vectors use comma-separated numbers; enums accept a label or integer.\n"
               "Unknown flags are ignored. In a headless project run, the runtime exits after its safety frame cap.\n"
+              "Project validation: --frames <1..216000> exits after a bounded frame count.\n"
               "Diagnostic option: --ui-overlay-demo [frame-count].\n";
     return output.str();
 }
@@ -418,6 +420,20 @@ int main(int argc, char** argv) {
         }
         const std::filesystem::path projectPath = *projectPathIt;
         config.commandLineArgs.erase(projectFlagIt, std::next(projectPathIt));
+        int frameLimit = 0;
+        const auto frames = std::find(config.commandLineArgs.begin(),config.commandLineArgs.end(),"--frames");
+        if (frames != config.commandLineArgs.end()) {
+            const auto value = std::next(frames);
+            if (value == config.commandLineArgs.end() ||
+                std::count(config.commandLineArgs.begin(),config.commandLineArgs.end(),"--frames") != 1) {
+                std::cerr << "uve_runtime: --frames requires one positive integer\n"; return 2;
+            }
+            const auto parsed = std::from_chars(value->data(),value->data()+value->size(),frameLimit);
+            if (parsed.ec != std::errc{} || parsed.ptr != value->data()+value->size() || frameLimit < 1 || frameLimit > 216000) {
+                std::cerr << "uve_runtime: --frames must be between 1 and 216000\n"; return 2;
+            }
+            config.commandLineArgs.erase(frames,std::next(value));
+        }
 
         const UVE::Pack::ProjectRuntimeSetupResultUVE setupResult =
             UVE::Pack::PrepareProjectRuntimeUVE(projectPath, config);
@@ -494,7 +510,8 @@ int main(int argc, char** argv) {
                                      !engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE();
             constexpr int kMaximumHeadlessFramesUVE = 216000; // one hour at 60 Hz
             int frame = 0;
-            while (!engine.IsQuitRequestedUVE() && (!headlessRun || frame < kMaximumHeadlessFramesUVE)) {
+            while (!engine.IsQuitRequestedUVE() && (!headlessRun || frame < kMaximumHeadlessFramesUVE) &&
+                   (frameLimit == 0 || frame < frameLimit)) {
                 engine.TickFrameUVE();
                 ++frame;
                 if (headlessRun) {

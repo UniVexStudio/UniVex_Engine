@@ -29,6 +29,7 @@ struct AssetLoaderInfoUVE {
     /// the result as `void*` with the bool out-parameter reflecting success. On failure the
     /// allocated object is destroyed before returning and the returned pointer is null.
     std::function<void*(const std::filesystem::path&, bool&)> load;
+    std::function<std::size_t(const void*)> residentBytes;
     /// Destroys a `void*` previously returned by `load`, equivalent to `delete static_cast<T*>(ptr)`.
     std::function<void(void*)> destroy;
 };
@@ -54,9 +55,12 @@ public:
     /// Registers the loader function used by every future LoadUVE<T>() call: reads the resolved
     /// file path and fills `outValue`, returning true on success or false on failure (a
     /// missing/corrupt file, say) — must never throw. Registering a second loader for the same
-    /// `T` replaces the first.
+    /// `T` replaces the first. The optional residentBytes callback counts all owned payload
+    /// capacities, including nested containers; finite-budget managers require it. Payloads must
+    /// remain immutable while resident: admission cannot track arbitrary caller-side mutations.
     template <typename T>
-    void RegisterLoaderUVE(std::function<bool(const std::filesystem::path&, T&)> loadFunc) {
+    void RegisterLoaderUVE(std::function<bool(const std::filesystem::path&, T&)> loadFunc,
+                           std::function<std::size_t(const T&)> residentBytes = {}) {
         AssetLoaderInfoUVE info;
         info.load = [loadFunc](const std::filesystem::path& path, bool& outSuccess) -> void* {
             auto value = std::make_unique<T>();
@@ -64,6 +68,9 @@ public:
             return outSuccess ? value.release() : nullptr;
         };
         info.destroy = [](void* pointer) { delete static_cast<T*>(pointer); };
+        if (residentBytes) info.residentBytes = [residentBytes](const void* value) {
+            return residentBytes(*static_cast<const T*>(value));
+        };
         RegisterLoaderErased(std::type_index(typeid(T)), std::move(info));
     }
 

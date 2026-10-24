@@ -120,6 +120,29 @@ bool AssetDatabaseUVE::LoadUVE(const std::filesystem::path& path) {
     }
 }
 
+bool AssetDatabaseUVE::RootPathsUVE(const std::filesystem::path& root) {
+    const std::lock_guard<std::mutex> lock(m_impl->mutex);
+    std::error_code error;
+    const auto canonicalRoot = std::filesystem::canonical(root, error);
+    if (error) return false;
+    auto candidate = m_impl->guidToPath;
+    std::unordered_map<std::string, AssetGuidUVE> reverse;
+    for (auto& [guid, path] : candidate) {
+        if (guid.value == 0 || path.empty() || path.is_absolute()) return false;
+        const auto resolved = std::filesystem::canonical(canonicalRoot / path, error);
+        if (error || !std::filesystem::is_regular_file(resolved, error) || error) return false;
+        const auto relative = resolved.lexically_relative(canonicalRoot);
+        if (relative.empty() || *relative.begin() == "..") return false;
+        path = resolved;
+        const auto key = AssetPathIdentityKeyUVE(path);
+        if (const auto it = reverse.find(key); it == reverse.end() || guid.value < it->second.value)
+            reverse.insert_or_assign(key, guid);
+    }
+    m_impl->guidToPath = std::move(candidate);
+    m_impl->pathToGuid = std::move(reverse);
+    return true;
+}
+
 bool AssetDatabaseUVE::SaveUVE() {
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
     if (m_impl->loadedPath.empty()) {
