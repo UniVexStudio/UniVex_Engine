@@ -1583,6 +1583,154 @@ TEST_F(Renderer3DUVETest, AssetLoadCompletedEventUVE_ForAPrimitiveMaterial_Rebui
     EXPECT_NE(after, during) << "the primitive draws what the reload installed, not the replaced program";
 }
 
+// The material's alpha used to stop at the MaterialAssetUVE: the fragment shader composited every
+// surface at the *instance* opacity, so a texture with a 40%-alpha edge drew fully opaque and a
+// glass material had no way to be translucent. These three uniforms are what carry it the rest of
+// the way, and the premultiply flag has to follow the blend mode rather than the alpha value -
+// premultiplying for a straight-alpha blend darkens the surface, and not premultiplying for a
+// premultiplied one brightens it.
+TEST_F(Renderer3DUVETest, RenderFrameUVE_PushesTheMaterialsAlphaAndPremultiplyFlag) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
+        [vertexGuid = vertexShaderGuid, fragmentGuid = fragmentShaderGuid](const std::filesystem::path&,
+                                                                             Asset::MaterialAssetUVE& material) {
+            material.vertexShader = vertexGuid;
+            material.fragmentShader = fragmentGuid;
+            material.blendMode = Asset::MaterialBlendModeUVE::PremultipliedAlpha;
+            material.alphaSource = Asset::MaterialAlphaSourceUVE::AlbedoAlpha;
+            material.albedoAlpha = 0.35F;
+            return true;
+        });
+    const Asset::AssetGuidUVE unusedMeshGuid = assetDatabase.RegisterUVE("renderer3d_alpha_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_alpha.uvmat");
+    Scene::PrimitiveMeshComponentUVE cube{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.9F, 0.9F, 0.9F}};
+    cube.materialGuid = materialGuid;
+    MakePrimitiveEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, cube);
+    WaitUntilAssetsReadyUVE(unusedMeshGuid, materialGuid);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
+        shaderManager.UpdateUVE(0.0);
+        if (shaderManager.GetPendingJobCountUVE() == 0U) {
+            break;
+        }
+        std::this_thread::yield();
+    }
+    ASSERT_EQ(shaderManager.GetPendingJobCountUVE(), 0U);
+
+    const auto uniform = [this](const std::string_view name) -> std::optional<float> {
+        for (const RecordedCommandUVE& command : renderDevice.GetLastSubmittedCommandsUVE()) {
+            if (const auto* const setFloat = std::get_if<SetUniformFloatCommandUVE>(&command);
+                setFloat != nullptr && setFloat->name == name) {
+                return setFloat->value;
+            }
+            if (const auto* const setInt = std::get_if<SetUniformIntCommandUVE>(&command);
+                setInt != nullptr && setInt->name == name) {
+                return static_cast<float>(setInt->value);
+            }
+        }
+        return std::nullopt;
+    };
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveDrawCallsRecorded, 1U);
+    const std::optional<float> albedoAlpha = uniform("uAlbedoAlpha");
+    const std::optional<float> alphaSource = uniform("uAlphaSource");
+    const std::optional<float> premultiply = uniform("uPremultiplyAlpha");
+    ASSERT_TRUE(albedoAlpha.has_value()) << "the material's alpha has to reach the shader at all";
+    EXPECT_FLOAT_EQ(*albedoAlpha, 0.35F);
+    ASSERT_TRUE(alphaSource.has_value());
+    EXPECT_FLOAT_EQ(*alphaSource, 0.0F) << "AlbedoAlpha is source 0";
+    ASSERT_TRUE(premultiply.has_value());
+    EXPECT_FLOAT_EQ(*premultiply, 1.0F) << "PremultipliedAlpha is the only mode that sets this";
+}
+
+// A straight-alpha material must NOT ask the shader to premultiply, even though it is just as
+// translucent - the flag belongs to the pipeline's factor choice, not to how see-through it is.
+// A cutout material is opaque: the discard makes the hole, and nothing blends. Its albedo map can
+// still carry alpha, and writing that alpha to the colour target would leave holes in the target's
+// alpha channel for every later fullscreen pass to composite through (bloom's additive copy, the
+// SSAO multiply). The pipeline is the thing that decides, so an opaque draw has to report "no alpha
+// source" to the shader no matter what the material authored.
+TEST_F(Renderer3DUVETest, RenderFrameUVE_AnOpaqueCutoutDrawEmitsNoMaterialAlpha) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
+        [vertexGuid = vertexShaderGuid, fragmentGuid = fragmentShaderGuid](const std::filesystem::path&,
+                                                                             Asset::MaterialAssetUVE& material) {
+            material.vertexShader = vertexGuid;
+            material.fragmentShader = fragmentGuid;
+            material.blendMode = Asset::MaterialBlendModeUVE::Opaque;
+            material.alphaSource = Asset::MaterialAlphaSourceUVE::AlbedoAlpha;
+            material.alphaCutoff = 0.5F;
+            return true;
+        });
+    const Asset::AssetGuidUVE unusedMeshGuid = assetDatabase.RegisterUVE("renderer3d_cutout_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_cutout.uvmat");
+    Scene::PrimitiveMeshComponentUVE cube{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.9F, 0.9F, 0.9F}};
+    cube.materialGuid = materialGuid;
+    MakePrimitiveEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, cube);
+    WaitUntilAssetsReadyUVE(unusedMeshGuid, materialGuid);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
+        shaderManager.UpdateUVE(0.0);
+        if (shaderManager.GetPendingJobCountUVE() == 0U) {
+            break;
+        }
+        std::this_thread::yield();
+    }
+    ASSERT_EQ(shaderManager.GetPendingJobCountUVE(), 0U);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveDrawCallsRecorded, 1U);
+    std::optional<std::int32_t> alphaSource;
+    for (const RecordedCommandUVE& command : renderDevice.GetLastSubmittedCommandsUVE()) {
+        if (const auto* const setInt = std::get_if<SetUniformIntCommandUVE>(&command);
+            setInt != nullptr && setInt->name == "uAlphaSource") {
+            alphaSource = setInt->value;
+        }
+    }
+    ASSERT_TRUE(alphaSource.has_value());
+    EXPECT_EQ(*alphaSource, static_cast<std::int32_t>(Asset::MaterialAlphaSourceUVE::None));
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_StraightAlphaMaterialDoesNotPremultiply) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
+        [vertexGuid = vertexShaderGuid, fragmentGuid = fragmentShaderGuid](const std::filesystem::path&,
+                                                                             Asset::MaterialAssetUVE& material) {
+            material.vertexShader = vertexGuid;
+            material.fragmentShader = fragmentGuid;
+            material.blendMode = Asset::MaterialBlendModeUVE::AlphaBlend;
+            material.albedoAlpha = 0.5F;
+            return true;
+        });
+    const Asset::AssetGuidUVE unusedMeshGuid = assetDatabase.RegisterUVE("renderer3d_alpha_mesh2.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_alpha2.uvmat");
+    Scene::PrimitiveMeshComponentUVE cube{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.9F, 0.9F, 0.9F}};
+    cube.materialGuid = materialGuid;
+    MakePrimitiveEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, cube);
+    WaitUntilAssetsReadyUVE(unusedMeshGuid, materialGuid);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
+        shaderManager.UpdateUVE(0.0);
+        if (shaderManager.GetPendingJobCountUVE() == 0U) {
+            break;
+        }
+        std::this_thread::yield();
+    }
+    ASSERT_EQ(shaderManager.GetPendingJobCountUVE(), 0U);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveDrawCallsRecorded, 1U);
+    bool sawPremultiply = false;
+    float premultiplyValue = -1.0F;
+    for (const RecordedCommandUVE& command : renderDevice.GetLastSubmittedCommandsUVE()) {
+        if (const auto* const setInt = std::get_if<SetUniformIntCommandUVE>(&command);
+            setInt != nullptr && setInt->name == "uPremultiplyAlpha") {
+            sawPremultiply = true;
+            premultiplyValue = static_cast<float>(setInt->value);
+        }
+    }
+    ASSERT_TRUE(sawPremultiply) << "the uniform is pushed for every material, not only this mode";
+    EXPECT_FLOAT_EQ(premultiplyValue, 0.0F);
+}
+
 TEST_F(Renderer3DUVETest, RenderFrameUVE_HiddenPrimitiveIsNotDrawnAndReturnsWhenShown) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     const Scene::EntityUVE parent = entityManager.CreateEntityUVE();

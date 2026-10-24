@@ -4442,6 +4442,27 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
             blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
             blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
             break;
+        case PipelineBlendModeUVE::PremultipliedAlpha: // GL: glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
+            blendAttachment.blendEnable = VK_TRUE;
+            blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+            blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            break;
+        case PipelineBlendModeUVE::Subtractive: // GL: glBlendFunc(GL_SRC_ALPHA, GL_ONE) + REVERSE_SUBTRACT
+            blendAttachment.blendEnable = VK_TRUE;
+            blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+            blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            // dst - src*srcA, the reverse of the additive pair above. Left as ADD the same
+            // factors would brighten instead of darken, which is the failure a shared equation
+            // default would produce. Alpha takes the same equation as colour, not a separate
+            // "over" rule, because GL's one-call glBlendFunc/glBlendEquation pair applies to both
+            // channels and the two backends have to composite identically.
+            blendAttachment.colorBlendOp = VK_BLEND_OP_REVERSE_SUBTRACT;
+            blendAttachment.alphaBlendOp = VK_BLEND_OP_REVERSE_SUBTRACT;
+            break;
     }
     VkPipelineColorBlendStateCreateInfo colorBlend{};
     colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -5071,6 +5092,22 @@ VkPipeline VulkanRenderDeviceUVE::ImplUVE::BuildGraphicsVkPipelineUVE(
             blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
             blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
             blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            break;
+        case PipelineBlendModeUVE::PremultipliedAlpha:
+            blendAttachment.blendEnable = VK_TRUE;
+            blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+            blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            break;
+        case PipelineBlendModeUVE::Subtractive:
+            blendAttachment.blendEnable = VK_TRUE;
+            blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+            blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            blendAttachment.colorBlendOp = VK_BLEND_OP_REVERSE_SUBTRACT;
+            blendAttachment.alphaBlendOp = VK_BLEND_OP_REVERSE_SUBTRACT;
             break;
     }
     std::array<VkPipelineColorBlendAttachmentState, 1U + kExtraColorAttachmentCountUVE> blendAttachments{};

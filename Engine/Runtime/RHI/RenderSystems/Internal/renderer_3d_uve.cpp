@@ -57,6 +57,7 @@
 #include "uve/render_systems/light_shadow_planner_uve.h"
 #include "uve/render_systems/particle_draw_command_uve.h"
 #include "uve/render_systems/particle_render_bridge_uve.h"
+#include "uve/render_systems/material_pipeline_state_uve.h"
 #include "uve/render_systems/primitive_geometry_uve.h"
 #include "uve/render_systems/render_batch_uve.h"
 #include "uve/render_systems/render_graph_uve.h"
@@ -1227,6 +1228,12 @@ struct Renderer3DUVE::ImplUVE {
     /// asset whose shader GUIDs are unset (the Standard preset), so those two cases cannot shade
     /// differently. Its `.program` is null only before program creation has run.
     MaterialGpuResourcesUVE defaultLitMaterialResources;
+    /// The stage description the shared built-in lit program is built from, kept so a material that
+    /// asks for a different blend/cull/depth state can have the SAME source linked with that state.
+    Shader::ShaderProgramStagesDescUVE defaultLitStagesDesc;
+    /// Built-in lit programs by pipeline state (see MaterialPipelineStateUVE). Bounded by the
+    /// number of distinct state combinations the project actually authors, not by material count.
+    std::unordered_map<std::uint32_t, std::shared_ptr<Shader::ShaderProgramUVE>> standardLitPrograms;
     /// Material handles the primitive path is drawing this frame, keyed by GUID and pruned to the
     /// GUIDs extraction named. Mirrors `unmaterialedMeshHandles`: the handle owns the reference
     /// that keeps the payload loaded between extraction and the colour pass, which a
@@ -1896,6 +1903,38 @@ struct Renderer3DUVE::ImplUVE {
     /// Standard material created from the Inspector looks like. Those materials shade through the
     /// engine's built-in lit program - the same program a primitive with no material assigned uses -
     /// so assigning a fresh material changes a surface's look instead of making it disappear.
+    ///
+    /// The shared built-in lit program for `material`'s pipeline state, created on first use.
+    ///
+    /// Returns null only before the session's program creation has run, which is the same contract
+    /// the single shared program had. The Opaque/disabled-cull combination is pre-registered to
+    /// that shared program, so the ordinary case allocates nothing.
+    [[nodiscard]] std::shared_ptr<Shader::ShaderProgramUVE> StandardLitProgramUVE(
+        const Asset::MaterialAssetUVE& material) {
+        const MaterialPipelineStateUVE state = ResolveMaterialPipelineStateUVE(material);
+        const std::uint32_t key = state.PackUVE();
+        if (const auto cached = standardLitPrograms.find(key); cached != standardLitPrograms.end()) {
+            return cached->second;
+        }
+        if (defaultLitStagesDesc.vertexLayout.empty()) {
+            return nullptr; // Program creation has not run yet this session.
+        }
+        Shader::ShaderProgramStagesDescUVE desc = defaultLitStagesDesc;
+        desc.blendMode = state.blendMode;
+        desc.cullMode = state.cullMode;
+        desc.depthTestEnabled = state.depthTestEnabled;
+        desc.depthWriteEnabled = state.depthWriteEnabled;
+        if (state.blendMode != PipelineBlendModeUVE::Opaque) {
+            // Coplanar translucent geometry at LESS loses one of the two surfaces; EQUAL keeps it,
+            // matching what the per-material blended variant has always done.
+            desc.depthCompare = DepthCompareUVE::LessOrEqual;
+        }
+        desc.debugNameUVE = "BuiltInLit material state " + std::to_string(key);
+        std::shared_ptr<Shader::ShaderProgramUVE> program = shaderManager.CreateProgramFromStagesUVE(desc);
+        standardLitPrograms.emplace(key, program);
+        return program;
+    }
+
     [[nodiscard]] const MaterialGpuResourcesUVE* ResolveMaterialGpuResourcesUVE(
         const Asset::AssetHandleUVE<Asset::MaterialAssetUVE>& materialHandle) {
         const Asset::AssetGuidUVE guid = materialHandle.GetGuidUVE();
@@ -1930,13 +1969,19 @@ struct Renderer3DUVE::ImplUVE {
         // A Standard material carries no shader of its own: the built-in lit program IS its shader,
         // shared with the default material so the two cannot shade differently. It also cannot be
         // instanced through a project-authored instancing contract, hence the explicit false.
+        //
+        // The program is chosen by the material's PIPELINE STATE, not handed the one shared opaque
+        // program: a material that asks for additive blending or two-sided culling needs the same
+        // source linked with that state, and the shared program would draw it opaque and
+        // back-face-culled - the authored control silently doing nothing.
         if (material->vertexShader == Asset::kInvalidAssetGuidUVE ||
             material->fragmentShader == Asset::kInvalidAssetGuidUVE) {
-            if (defaultLitMaterialResources.program == nullptr) {
+            const std::shared_ptr<Shader::ShaderProgramUVE> standardProgram = StandardLitProgramUVE(*material);
+            if (standardProgram == nullptr) {
                 return nullptr; // Program creation has not run yet this session.
             }
             const auto insertResult = materialCache.emplace(
-                guid, MaterialGpuResourcesUVE{defaultLitMaterialResources.program,
+                guid, MaterialGpuResourcesUVE{standardProgram,
                                               false,
                                               Asset::kInvalidAssetGuidUVE,
                                               Asset::kInvalidAssetGuidUVE,
@@ -1985,10 +2030,21 @@ struct Renderer3DUVE::ImplUVE {
             "Material fragment " + assetDatabase.ResolveUVE(material->fragmentShader).string();
         programDesc.vertexLayout = MeshVertexLayoutUVE();
         programDesc.vertexStride = static_cast<std::uint32_t>(sizeof(Asset::MeshVertexUVE));
-        programDesc.depthTestEnabled = true;
-        programDesc.depthWriteEnabled = !material->isTransparent;
+        // Same state table as the built-in path: a project-authored shader is still a material, and
+        // its blend/cull/depth fields meant nothing here either.
+        const MaterialPipelineStateUVE pipelineState = ResolveMaterialPipelineStateUVE(*material);
+        programDesc.depthTestEnabled = pipelineState.depthTestEnabled;
+        programDesc.depthWriteEnabled = pipelineState.depthWriteEnabled;
+        programDesc.blendMode = pipelineState.blendMode;
+        programDesc.cullMode = pipelineState.cullMode;
+        if (pipelineState.blendMode != PipelineBlendModeUVE::Opaque) {
+            programDesc.depthCompare = DepthCompareUVE::LessOrEqual;
+        }
         programDesc.debugNameUVE = "Material " + assetDatabase.ResolveUVE(guid).string();
         const std::shared_ptr<Shader::ShaderProgramUVE> program = shaderManager.CreateProgramFromStagesUVE(programDesc);
+        // The fade/overlay variant stays what it always was: a straight alpha blend that writes no
+        // depth, regardless of the material's own mode. An object fading out is translucent even if
+        // the material composites additively at full opacity.
         Shader::ShaderProgramStagesDescUVE blendedDesc = programDesc;
         blendedDesc.depthWriteEnabled = false;
         blendedDesc.blendMode = PipelineBlendModeUVE::SourceAlphaOver;
@@ -2658,9 +2714,20 @@ struct Renderer3DUVE::ImplUVE {
         }
     }
 
+    /// `blendedVariant` is whether the FADE/OVERLAY program was chosen - not whether the material
+    /// blends, which the material's own pipeline state already answers. The two together decide
+    /// whether the material's alpha may reach the colour target:
+    ///
+    /// - An OPAQUE pipeline must write alpha 1. A cutout material with an alpha-bearing albedo map
+    ///   has no blending to consume that alpha, and writing it anyway would leave holes in the
+    ///   target's alpha channel for every later fullscreen pass (bloom's additive copy, SSAO's
+    ///   multiply) to composite through.
+    /// - The blended variant is a straight-alpha pipeline whatever the material asked for, so it
+    ///   never asks the shader to premultiply, however the material composites at full opacity.
     void ApplyFrameAndMaterialUniformsUVE(Shader::ShaderProgramUVE& program,
                                           const Asset::MaterialAssetUVE& material,
-                                          const FrameUniformsUVE& frameUniforms) {
+                                          const FrameUniformsUVE& frameUniforms,
+                                          const bool blendedVariant) {
         ApplyLightingUniformsUVE(program, frameUniforms);
         program.SetVector3UVE("uViewPosition", frameUniforms.viewPosition);
         program.SetMatrix4x4UVE(uniformNames.legacyLightSpaceMatrix, frameUniforms.lightSpaceMatrices[0]);
@@ -2718,6 +2785,16 @@ struct Renderer3DUVE::ImplUVE {
         program.SetIntUVE("uUnshaded", material.unshaded ? 1 : 0);
         program.SetIntUVE("uShadingMode", shadingMode);
         program.SetFloatUVE("uAlphaCutoff", material.alphaCutoff);
+        // The material's own alpha, which until now reached nothing: only the pipeline state and
+        // the SurfaceInstance fade did. See the shader's ComposeFragmentUVE for what these feed.
+        program.SetFloatUVE("uAlbedoAlpha", material.albedoAlpha);
+        const bool blends = blendedVariant ||
+                            ResolveMaterialPipelineStateUVE(material).blendMode != PipelineBlendModeUVE::Opaque;
+        const Asset::MaterialAlphaSourceUVE alphaSource =
+            blends ? material.alphaSource : Asset::MaterialAlphaSourceUVE::None;
+        program.SetIntUVE("uAlphaSource", static_cast<std::int32_t>(alphaSource));
+        program.SetIntUVE("uPremultiplyAlpha",
+                          !blendedVariant && MaterialPremultipliesAlphaUVE(material) ? 1 : 0);
         program.SetIntUVE("uAlbedoTexture", static_cast<std::int32_t>(kAlbedoTextureSlotUVE));
         program.SetIntUVE("uNormalTexture", static_cast<std::int32_t>(kNormalTextureSlotUVE));
         program.SetIntUVE("uAOTexture", static_cast<std::int32_t>(kAoTextureSlotUVE));
@@ -2833,8 +2910,11 @@ struct Renderer3DUVE::ImplUVE {
                 continue;
             }
             const Asset::MaterialAssetUVE* const material = representative.materialHandle.TryGetUVE();
-            Shader::ShaderProgramUVE* const program = MeshColorProgramUVE(
-                *materialResources, representative.opacity < 1.0F || representative.overlay);
+            // Fade/overlay only: the material's own blend state is already baked into the program
+            // MeshColorProgramUVE returns, so folding it in here would swap an additive material for
+            // the straight-alpha fade variant at full opacity.
+            const bool blendedVariant = representative.opacity < 1.0F || representative.overlay;
+            Shader::ShaderProgramUVE* const program = MeshColorProgramUVE(*materialResources, blendedVariant);
             if (material == nullptr || program == nullptr) {
                 continue; // Still compiling or invalid: never bind a stale raw material pipeline.
             }
@@ -2855,7 +2935,7 @@ struct Renderer3DUVE::ImplUVE {
                 continue;
             }
 
-            ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms);
+            ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms, blendedVariant);
             program->SetIntUVE("uMeshRenderLayers", static_cast<std::int32_t>(representative.renderLayers));
             program->SetFloatUVE("uSurfaceOpacity", representative.opacity);
             program->ApplyToUVE(commandBuffer);
@@ -2938,8 +3018,8 @@ struct Renderer3DUVE::ImplUVE {
                 continue;
             }
             const Asset::MaterialAssetUVE* const material = item.materialHandle.TryGetUVE();
-            Shader::ShaderProgramUVE* const program = MeshColorProgramUVE(
-                *materialResources, item.opacity < 1.0F || item.overlay);
+            const bool blendedVariant = item.opacity < 1.0F || item.overlay;
+            Shader::ShaderProgramUVE* const program = MeshColorProgramUVE(*materialResources, blendedVariant);
             if (material == nullptr || program == nullptr) {
                 continue; // Still compiling or invalid: never bind a stale raw material pipeline.
             }
@@ -2948,7 +3028,7 @@ struct Renderer3DUVE::ImplUVE {
             // Normal matrix = transpose(inverse(model)); see ComputeNormalMatrixUVE, which the
             // instanced path shares so the two cannot disagree about how a normal is transformed.
             program->SetMatrix3x3UVE("uNormalMatrix", ComputeNormalMatrixUVE(item.worldMatrix));
-            ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms);
+            ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms, blendedVariant);
             program->SetIntUVE("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
             program->SetFloatUVE("uSurfaceOpacity", item.opacity);
             program->ApplyToUVE(commandBuffer);
@@ -3316,8 +3396,8 @@ struct Renderer3DUVE::ImplUVE {
                 }
             }
 
-            Shader::ShaderProgramUVE* const program =
-                MeshColorProgramUVE(*materialResources, item.opacity < 1.0F);
+            const bool blendedVariant = item.opacity < 1.0F;
+            Shader::ShaderProgramUVE* const program = MeshColorProgramUVE(*materialResources, blendedVariant);
             if (program == nullptr) {
                 continue; // Still compiling or invalid: never bind a stale pipeline.
             }
@@ -3326,7 +3406,7 @@ struct Renderer3DUVE::ImplUVE {
             // Normal matrix = transpose(inverse(model)); see ComputeNormalMatrixUVE, shared with
             // the lit mesh path so the two cannot disagree under non-uniform scale.
             program->SetMatrix3x3UVE("uNormalMatrix", ComputeNormalMatrixUVE(item.worldMatrix));
-            ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms);
+            ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms, blendedVariant);
             // Base Color is the DEFAULT material's albedo, so it only replaces that material's own
             // (white) albedo. An assigned material owns the surface outright - tinting it here would
             // mean a primitive could never show the material an author picked.
@@ -3658,6 +3738,19 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     defaultLitDesc.debugNameUVE = "BuiltInLit default material";
     m_impl->defaultLitMaterialResources.program =
         shaderManager.CreateProgramFromStagesUVE(defaultLitDesc);
+    // Kept so a material asking for another blend/cull/depth state can have this source linked
+    // with that state. The desc as written IS one of those states, so it is registered under its
+    // own key and a material that happens to ask for exactly it reuses this program.
+    m_impl->defaultLitStagesDesc = defaultLitDesc;
+    // The key is read back out of the desc that was just linked rather than written out again: a
+    // literal here would keep pointing at the shared program if the default desc ever changed its
+    // cull or depth state, and the shared program would then be reused for a state it does not have.
+    m_impl->standardLitPrograms.emplace(MaterialPipelineStateUVE{defaultLitDesc.blendMode,
+                                                                defaultLitDesc.cullMode,
+                                                                defaultLitDesc.depthTestEnabled,
+                                                                defaultLitDesc.depthWriteEnabled}
+                                            .PackUVE(),
+                                        m_impl->defaultLitMaterialResources.program);
     Shader::ShaderProgramStagesDescUVE defaultLitBlendedDesc = defaultLitDesc;
     defaultLitBlendedDesc.depthWriteEnabled = false;
     defaultLitBlendedDesc.blendMode = PipelineBlendModeUVE::SourceAlphaOver;

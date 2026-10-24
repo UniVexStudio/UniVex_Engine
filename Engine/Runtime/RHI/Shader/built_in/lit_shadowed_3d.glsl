@@ -127,6 +127,16 @@ uniform vec3 uUvOffset = vec3(0.0, 0.0, 0.0);
 uniform int uUnshaded = 0;
 uniform int uShadingMode = 0;
 uniform float uAlphaCutoff = 0.0;
+// The material's own alpha, kept separate from uSurfaceOpacity (the SurfaceInstance3D fade) so a
+// texture's alpha and an object fading out multiply instead of one silently replacing the other.
+uniform float uAlbedoAlpha = 1.0;
+// 0 = AlbedoAlpha (texture alpha times uAlbedoAlpha), 2 = None (alpha stays 1). 1 is reserved for
+// the separate-texture-channel source, which no shader input carries yet - it behaves like None
+// rather than guessing at a channel.
+uniform int uAlphaSource = 0;
+// Set only for a PremultipliedAlpha blend mode: the pipeline adds the source with a ONE factor, so
+// rgb has to arrive already multiplied by alpha or the surface composites too bright.
+uniform int uPremultiplyAlpha = 0;
 // Legacy Increment 27 pair retained for project-authored shaders and direct single-map tests.
 uniform sampler2D uShadowMapTexture;
 uniform mat4 uLightSpaceMatrix;
@@ -669,6 +679,11 @@ float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, floa
     float factor = mix(1.0, visibleSamples / float(max(sampleCount, 1)), clamp(uShadowOpacity, 0.0, 1.0));
     return (isnan(factor) || isinf(factor)) ? 1.0 : factor;
 }
+// One exit point for the colour/alpha pair, so the four debug and unshaded early-outs cannot drift
+// from the lit path on premultiplication. Only the pipeline state decides whether it is needed.
+vec4 ComposeFragmentUVE(vec3 color, float alpha) {
+    return vec4(uPremultiplyAlpha != 0 ? color * alpha : color, alpha);
+}
 void main() {
     vec2 uv = vTexCoord * uUvScale.xy + uUvOffset.xy;
     vec4 albedoSample = texture(uAlbedoTexture, uv);
@@ -676,13 +691,18 @@ void main() {
         discard;
     }
     vec3 albedo = albedoSample.rgb * uAlbedoColor;
-    float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0);
+    // Material alpha from the authored source, then the instance's fade on top of it. Before this,
+    // the material's alpha never reached the framebuffer at all: every surface composited at the
+    // instance opacity, so a 50%-alpha texture drew fully opaque and a tinted-glass material had
+    // no way to be translucent.
+    float materialAlpha = uAlphaSource == 0 ? clamp(albedoSample.a * uAlbedoAlpha, 0.0, 1.0) : 1.0;
+    float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0) * materialAlpha;
     if (uShadingMode == 1 || uUnshaded != 0) {
-        FragColor = vec4(albedo, surfaceOpacity);
+        FragColor = ComposeFragmentUVE(albedo, surfaceOpacity);
         return;
     }
     if (uShadingMode == 2) {
-        FragColor = vec4(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity);
+        FragColor = ComposeFragmentUVE(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity);
         return;
     }
     float ambientOcclusion = mix(1.0, texture(uAOTexture, uv).r, clamp(uOcclusionStrength, 0.0, 1.0));
@@ -705,7 +725,7 @@ void main() {
     normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
 
     if (uShadingMode == 4) {
-        FragColor = vec4(normal * 0.5 + 0.5, surfaceOpacity);
+        FragColor = ComposeFragmentUVE(normal * 0.5 + 0.5, surfaceOpacity);
         return;
     }
 
@@ -854,6 +874,6 @@ void main() {
     // Preserves the accumulated PBR direct lighting and highlights instead of discarding them.
     vec3 baselineAmbient = max(ambientColor, vec3(0.04)) * albedo * ambientOcclusion;
     vec3 finalColor = max(lighting, baselineAmbient);
-    FragColor = vec4(finalColor, surfaceOpacity);
+    FragColor = ComposeFragmentUVE(finalColor, surfaceOpacity);
 }
 #endif
