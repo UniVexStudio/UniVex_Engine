@@ -10,6 +10,12 @@ on:
   push:
     branches: [master, 'kosuke/**']
   pull_request:
+  workflow_dispatch:
+    inputs:
+      create_artifacts:
+        description: 'Create downloadable build and diagnostic artifacts'
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -175,7 +181,7 @@ jobs:
           fi
 
       - name: Upload test log
-        if: failure()
+        if: failure() && ((github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true'))
         uses: actions/upload-artifact@v4
         with:
           name: ctest-log
@@ -187,13 +193,14 @@ jobs:
         run: python3 -m unittest discover -s Engine/Tools/performance -p 'test_*.py'
 
       - name: Record headless editor process baseline
+        if: (github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true')
         run: >-
           python3 Engine/Tools/performance/measure_process.py
           --runs 3 --timeout 60 --output build/editor-process-baseline.json
           -- build/Engine/App/uve_editor --headless --frames 300
 
       - name: Upload process baseline
-        if: always()
+        if: always() && ((github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true'))
         uses: actions/upload-artifact@v4
         with:
           name: editor-process-baseline
