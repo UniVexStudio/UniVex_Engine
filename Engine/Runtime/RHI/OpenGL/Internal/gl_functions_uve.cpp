@@ -15,7 +15,7 @@ template <typename TFunctionPointer>
 } // namespace
 
 bool GlFunctionsUVE::IsCompleteUVE() const noexcept {
-    return glStencilFuncSeparate != nullptr && glStencilOpSeparate != nullptr &&
+    return glBlendEquation != nullptr && glStencilFuncSeparate != nullptr && glStencilOpSeparate != nullptr &&
            glStencilMaskSeparate != nullptr && glGenBuffers != nullptr && glDeleteBuffers != nullptr && glBindBuffer != nullptr &&
            glBufferData != nullptr && glBufferSubData != nullptr && glGetBufferSubData != nullptr &&
            glBindBufferBase != nullptr &&
@@ -57,6 +57,7 @@ GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
     functions.glGetQueryObjectui64v =
         LoadOneUVE<PFNGLGETQUERYOBJECTUI64VPROC>(getProcAddress, "glGetQueryObjectui64v");
 #endif
+    functions.glBlendEquation = LoadOneUVE<PFNGLBLENDEQUATIONPROC>(getProcAddress, "glBlendEquation");
     functions.glStencilFuncSeparate =
         LoadOneUVE<PFNGLSTENCILFUNCSEPARATEPROC>(getProcAddress, "glStencilFuncSeparate");
     functions.glStencilOpSeparate =

@@ -713,30 +713,30 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
     switch (pipelineIt->second.blendMode) {
         case PipelineBlendModeUVE::SourceAlphaOver:
             glEnable(GL_BLEND);
-            glBlendEquation(GL_FUNC_ADD);
+            m_state->gl.glBlendEquation(GL_FUNC_ADD);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             break;
         case PipelineBlendModeUVE::Additive:
             glEnable(GL_BLEND);
-            glBlendEquation(GL_FUNC_ADD);
+            m_state->gl.glBlendEquation(GL_FUNC_ADD);
             glBlendFunc(GL_ONE, GL_ONE);
             break;
         case PipelineBlendModeUVE::Multiply:
             glEnable(GL_BLEND);
-            glBlendEquation(GL_FUNC_ADD);
+            m_state->gl.glBlendEquation(GL_FUNC_ADD);
             glBlendFunc(GL_DST_COLOR, GL_ZERO);
             break;
         case PipelineBlendModeUVE::PremultipliedAlpha:
             // The source baked its alpha into rgb, so it is added as-is and only the destination is
             // attenuated.
             glEnable(GL_BLEND);
-            glBlendEquation(GL_FUNC_ADD);
+            m_state->gl.glBlendEquation(GL_FUNC_ADD);
             glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
             break;
         case PipelineBlendModeUVE::Subtractive:
             // dst - src*srcA. Reverse subtract, because GL's FUNC_SUBTRACT is src - dst.
             glEnable(GL_BLEND);
-            glBlendEquation(GL_FUNC_REVERSE_SUBTRACT);
+            m_state->gl.glBlendEquation(GL_FUNC_REVERSE_SUBTRACT);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE);
             break;
         case PipelineBlendModeUVE::Opaque:

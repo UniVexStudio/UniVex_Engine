@@ -40,7 +40,7 @@ jobs:
           -DUNIVEX_VIEWPORT_BUILD_TOOLS=OFF
       - name: Build editor
         shell: msys2 {0}
-        run: cmake --build build-windows --target uve_editor_app --parallel 2
+        run: cmake --build build-windows --target uve_editor_app --parallel 4
       - name: Package editor and runtime DLLs
         shell: msys2 {0}
         run: |
@@ -60,7 +60,7 @@ jobs:
               imports = subprocess.check_output(['objdump', '-p', str(binary)], text=True)
               for name in re.findall(r'DLL Name:\s*(\S+)', imports):
                   key = name.lower()
-                  source = pathlib.Path('C:/msys64/ucrt64/bin') / name
+                  source = pathlib.Path(shutil.which('g++')).parent / name
                   if key in copied or not source.is_file():
                       continue
                   copied.add(key)
