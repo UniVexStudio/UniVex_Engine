@@ -1,0 +1,81 @@
+name: Windows Editor
+
+on:
+  push:
+    paths:
+      - '.github/workflows/windows-editor.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  editor:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-glfw
+            mingw-w64-ucrt-x86_64-glew
+            mingw-w64-ucrt-x86_64-zlib
+            mingw-w64-ucrt-x86_64-libjpeg-turbo
+      - name: Configure editor
+        shell: msys2 {0}
+        run: >-
+          cmake -S . -B build-windows -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DUVE_BUILD_TESTS=OFF
+          -DUNIVEX_VIEWPORT_BUILD_TESTS=OFF
+          -DUNIVEX_VIEWPORT_BUILD_APP=OFF
+          -DUNIVEX_VIEWPORT_BUILD_TOOLS=OFF
+      - name: Build editor
+        shell: msys2 {0}
+        run: cmake --build build-windows --target uve_editor_app --parallel 2
+      - name: Package editor and runtime DLLs
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          mkdir -p package/UniVex-Editor/Content/Viewport
+          cp build-windows/Engine/App/uve_editor.exe package/UniVex-Editor/
+          python - <<'PY'
+          import pathlib
+          import re
+          import shutil
+          import subprocess
+          destination = pathlib.Path('package/UniVex-Editor')
+          pending = [destination / 'uve_editor.exe']
+          copied = set()
+          while pending:
+              binary = pending.pop()
+              imports = subprocess.check_output(['objdump', '-p', str(binary)], text=True)
+              for name in re.findall(r'DLL Name:\s*(\S+)', imports):
+                  key = name.lower()
+                  source = pathlib.Path('C:/msys64/ucrt64/bin') / name
+                  if key in copied or not source.is_file():
+                      continue
+                  copied.add(key)
+                  target = destination / name
+                  shutil.copy2(source, target)
+                  pending.append(target)
+          PY
+          printf '@echo off\r\ncd /d "%%~dp0"\r\nuve_editor.exe\r\n' > package/UniVex-Editor/Start-Editor.bat
+      - name: Verify executable starts
+        shell: msys2 {0}
+        run: |
+          cd package/UniVex-Editor
+          ./uve_editor.exe --bridge-stdio < /dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UniVex-Editor-Windows-x64
+          path: package/UniVex-Editor/
+          if-no-files-found: error
