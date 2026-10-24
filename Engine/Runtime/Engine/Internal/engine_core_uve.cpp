@@ -1824,9 +1824,14 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
     const Scene::AnimationProcessCallbackUVE callback =
         physicsStep ? Scene::AnimationProcessCallbackUVE::Physics : Scene::AnimationProcessCallbackUVE::Frame;
     // Clip events the playhead passed go to the player's script and to its target's.
+    // An event is gameplay, not authoring: it exists to run the author's code at a specific frame
+    // of a clip. The pose above evaluates while the editor is paused, so the playhead still moves
+    // through the clip - but raising the event then would run gameplay side effects (spawn,
+    // damage, sound) from an editor that is explicitly not simulating. Gate the events, not the
+    // pose.
     const auto raiseAnimationEvents = [this](const Scene::EntityUVE self, Scene::EntityUVE target,
                                              const std::vector<std::string>& events) {
-        if (events.empty()) {
+        if (events.empty() || m_simulationExecutionMode != SimulationExecutionModeUVE::Running) {
             return;
         }
         if (target == Scene::kInvalidEntityUVE || !m_entityManager->IsAliveUVE(target)) {
@@ -3231,6 +3236,11 @@ void EngineCoreUVE::Update() {
 
     const float fixedDeltaTimeSeconds =
         m_config.fixedUpdateFps > 0.0 ? static_cast<float>(1.0 / m_config.fixedUpdateFps) : 0.0F;
+    // ---- Simulation pass: only while the simulation clock runs -------------------------------
+    // Every one of these integrates over time - gravity, contacts, buoyancy, spring joints, the
+    // character controller's sweep - so every one of them is a fixed step or none at all. Frozen
+    // here means a body authored in mid-air stays authored in mid-air, which is the whole reason
+    // an editor can be used to place one.
     for (int step = 0; step < fixedStep.stepsToRun; ++step) {
         static_cast<void>(Scene::UpdateJoint3DObjectsUVE(
             *m_entityManager, *m_sceneGraph, fixedDeltaTimeSeconds));
@@ -3251,8 +3261,18 @@ void EngineCoreUVE::Update() {
         SyncNavigationUVE(fixedDeltaTimeSeconds);
     }
 
+    // ---- Authoring pass: every frame, simulated or not ----------------------------------------
+    // Animation evaluation is not simulation. Posing a skeleton, blending a clip, solving an IK
+    // target and skinning the mesh are all functions of the values the author just typed, and an
+    // editor that stops computing them the moment the simulation is paused has taken away the
+    // authoring tools in the name of stopping gravity. This call used to sit inside the Running
+    // check below, next to the AI and gameplay syncs it has nothing to do with, so pausing froze
+    // the pose: an IK target could be dragged with no result, and a character being edited could
+    // not be posed at all. It runs unconditionally now, on the frame clock, and the pose is the
+    // one thing in this function that survives a pause.
+    SyncAnimationUVE(static_cast<float>(m_timer->GetDeltaTimeUVE()), /*physicsStep=*/false);
+
     if (m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
-        SyncAnimationUVE(static_cast<float>(m_timer->GetDeltaTimeUVE()), /*physicsStep=*/false);
         SyncGameplayAttributesUVE(static_cast<float>(m_timer->GetDeltaTimeUVE()));
         SyncCinematicUVE(static_cast<float>(m_timer->GetDeltaTimeUVE()));
         SyncAiBrainsUVE(static_cast<float>(m_timer->GetDeltaTimeUVE()));
