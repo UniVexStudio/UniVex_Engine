@@ -45,32 +45,54 @@ void AddFacingDisc(GizmoMesh& mesh, const Vec3& center, float radius,
     }
 }
 
-// A filled disc with a clean, seamless dark rim - the same "slightly larger
-// disc behind a smaller one" trick AddFacingAnnulus uses, just with the roles
-// swapped (a mostly-color disc with a thin dark ring showing at its edge,
-// rather than a mostly-hole ring). Used for the positive (filled) nav balls,
-// which is the shape that previously grew the "hairy" stroke artifact.
+// A ring band between two radii, built as one closed strip of quads.
+//
+// This exists so a rim can be drawn WITHOUT laying a second disc on top of the first. Stacking two
+// coplanar discs and separating them by a hair of depth (the previous approach, and the reason this
+// helper is new) is a z-fight: at the ~9 px radius a nav ball is drawn at, each of the 48 fan
+// triangles is barely a pixel wide, and which of the two coplanar surfaces wins alternates from
+// triangle to triangle. The result is a radial starburst of the rim colour cutting through the
+// ball's face instead of a ring around its edge. A band shares no surface at all, so there is no
+// tie to break - and the depth nudge that used to paper over it is gone with it.
+void AddFacingBand(GizmoMesh& mesh, const Vec3& center, float innerRadius, float outerRadius,
+                   const Vec3& viewDirection, const Vec3& color, float alpha, int segments) {
+    Vec3 u, v;
+    PerpBasis(viewDirection, u, v);
+    const auto point = [&](int i, float radius) {
+        const float t = (2.f * kPi * static_cast<float>(i)) / static_cast<float>(segments);
+        return center + u * (std::cos(t) * radius) + v * (std::sin(t) * radius);
+    };
+    for (int i = 0; i < segments; ++i) {
+        const Vec3 innerCurrent = point(i, innerRadius);
+        const Vec3 innerNext = point(i + 1, innerRadius);
+        const Vec3 outerCurrent = point(i, outerRadius);
+        const Vec3 outerNext = point(i + 1, outerRadius);
+        mesh.triangles.push_back(GizmoTriangle{innerCurrent, outerCurrent, outerNext, color, alpha});
+        mesh.triangles.push_back(GizmoTriangle{innerCurrent, outerNext, innerNext, color, alpha});
+    }
+}
+
+// A filled disc with a clean dark rim: a band from (1 - rimFraction) to the
+// full radius, plus an interior disc that stops exactly where the band starts.
+// Used for the positive (filled) nav balls.
 void AddFacingDiscWithRim(GizmoMesh& mesh, const Vec3& center, float radius,
                           const Vec3& viewDirection, const Vec3& color, int segments,
                           float rimFraction = 0.12f) {
-    const Vec3 towardCamera = viewDirection * -0.002f;
-    AddFacingDisc(mesh, center, radius, viewDirection, color * 0.45f, 1.f, segments);
-    AddFacingDisc(mesh, center + towardCamera, radius * (1.f - rimFraction), viewDirection, color, 1.f,
-                 segments);
+    const float inner = radius * (1.f - rimFraction);
+    AddFacingDisc(mesh, center, inner, viewDirection, color, 1.f, segments);
+    AddFacingBand(mesh, center, inner, radius, viewDirection, color * 0.45f, 1.f, segments);
 }
 
-// A hollow ball is drawn as a coloured disc with a smaller dark disc laid on
-// top, rather than as a stroked circle. Stroking a small circle from
-// independent per-segment quads leaves gear teeth wherever the chord is
-// shorter than the stroke is wide; two discs are seamless at any size.
+// A hollow ball: a ring band with the dark core filling the hole. Stroking a
+// small circle from independent per-segment quads leaves gear teeth wherever
+// the chord is shorter than the stroke is wide; a band plus a disc is seamless
+// at any size, and - unlike two stacked discs - shares no surface, so it cannot
+// z-fight with itself.
 void AddFacingAnnulus(GizmoMesh& mesh, const Vec3& center, float outerRadius, float innerRadius,
                       const Vec3& viewDirection, const Vec3& ringColor, const Vec3& holeColor,
                       int segments) {
-    // Nudge the hole a hair toward the camera so it always wins the tie when
-    // both discs are coplanar and depth testing is off.
-    const Vec3 towardCamera = viewDirection * -0.002f;
-    AddFacingDisc(mesh, center, outerRadius, viewDirection, ringColor, 1.f, segments);
-    AddFacingDisc(mesh, center + towardCamera, innerRadius, viewDirection, holeColor, 1.f, segments);
+    AddFacingDisc(mesh, center, innerRadius, viewDirection, holeColor, 1.f, segments);
+    AddFacingBand(mesh, center, innerRadius, outerRadius, viewDirection, ringColor, 1.f, segments);
 }
 
 // X, Y and Z drawn as vector strokes rather than from a font. Three glyphs is
