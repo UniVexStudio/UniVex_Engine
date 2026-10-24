@@ -351,6 +351,18 @@ void EditorUVE::InitUVE() {
     m_state = EditorStateUVE::Running;
     LoadSessionSettingsUVE();
     LoadSharedShelvesUVE();
+    // An editor opens frozen. Physics is not a preview of the editor - it is the thing the author
+    // is trying to author around, and a level that starts shuffling under gravity the moment it is
+    // opened cannot be placed in: a Rigid3D spawned above the ground is on the floor before the
+    // next frame, with no snapshot to put it back and no undo entry that owns a simulation-driven
+    // transform. Unreal reaches the same place from the other direction - its physics ticks with a
+    // zero delta in edit mode, so nothing integrates - and this is that answer stated plainly.
+    // Play sets Running (EnterPlayModeUVE) and stopping Play restores this frozen state
+    // (StopPlayModeUVE), so the only way simulation runs is when the author asked for it.
+    if (m_simulationControl != nullptr) {
+        static_cast<void>(m_simulationControl->SetSimulationExecutionModeUVE(
+            Core::SimulationExecutionModeUVE::Paused));
+    }
     // A document always has exactly one scene root - the structural anchor at the top of the
     // hierarchy. A fresh editor start is an empty document with just the root.
     static_cast<void>(EnsureDocumentSceneRootUVE());
@@ -790,7 +802,11 @@ bool EditorUVE::StopPlayModeUVE() {
 
     RestoreSelectionUVE(ResolveSelectionPathsUVE(session.selectionBefore, restoredRoots));
     m_sceneDirty = session.dirtyBefore;
-    if (!m_simulationControl->SetSimulationExecutionModeUVE(Core::SimulationExecutionModeUVE::Running) ||
+    // Back to frozen, not back to Running. The simulation clock is the author's switch: Play turns
+    // it on, and everything that is not Play leaves it off. This used to restore Running, so
+    // pressing Stop left a live physics world running in an editor that had just told the author
+    // it was done simulating - the restored snapshot would begin drifting again the next frame.
+    if (!m_simulationControl->SetSimulationExecutionModeUVE(Core::SimulationExecutionModeUVE::Paused) ||
         !m_simulationControl->SetTransientSimulationSessionActiveUVE(false)) {
         return false;
     }
