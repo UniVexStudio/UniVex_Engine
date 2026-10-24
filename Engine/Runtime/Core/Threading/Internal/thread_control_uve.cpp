@@ -208,7 +208,10 @@ ThreadControlResultUVE GetPriorityUVE(HANDLE thread, ThreadPriorityUVE &out) noe
 #endif
 } // namespace
 ThreadControlCapabilitiesUVE GetThreadControlCapabilitiesUVE() noexcept {
-#if defined(__linux__)
+#if defined(__ANDROID__)
+    // Bionic does not expose the pthread affinity entry points used by this adapter.
+    return {false, true, true, true, 0U};
+#elif defined(__linux__)
     return {true, true, true, true, CPU_SETSIZE};
 #elif defined(_WIN32)
     ThreadControlCapabilitiesUVE capabilities;
