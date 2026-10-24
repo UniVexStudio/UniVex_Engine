@@ -632,6 +632,7 @@ add_executable(uve_engine_tests
     Engine/raycast_audio_occlusion_uve_tests.cpp
     Engine/input_map_document_uve_tests.cpp
     Pack/project_launcher_uve_tests.cpp
+    Pack/asset_cooker_uve_tests.cpp
     Pack/project_packager_uve_tests.cpp
 )
 target_link_libraries(uve_engine_tests PRIVATE
@@ -750,7 +751,8 @@ if(NOT UVE_HAS_DESKTOP_GL)
     add_executable(uve_engine_settings_integration_tests
         Support/test_scratch_uve.cpp
         Engine/engine_core_settings_layering_uve_tests.cpp
-        Pack/project_packager_uve_tests.cpp
+        Pack/asset_cooker_uve_tests.cpp
+    Pack/project_packager_uve_tests.cpp
         Pack/project_launcher_uve_tests.cpp
         ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_color_uve.cpp
         ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_settings_uve.cpp

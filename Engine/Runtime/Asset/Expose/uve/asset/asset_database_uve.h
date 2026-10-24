@@ -24,6 +24,9 @@ public:
     AssetDatabaseUVE(const AssetDatabaseUVE&) = delete;
     AssetDatabaseUVE& operator=(const AssetDatabaseUVE&) = delete;
 
+    /// Resolve a shipped relative catalog against its package root. Rejects escapes, missing
+    /// files and symlinks leaving the root; failure preserves the previous registry.
+    [[nodiscard]] bool RootPathsUVE(const std::filesystem::path& root);
     bool LoadUVE(const std::filesystem::path& path) override;
     bool SaveUVE() override;
     bool SaveUVE(const std::filesystem::path& path) override;

@@ -2,6 +2,10 @@
 #include <android/asset_manager.h>
 #include <android/log.h>
 #include <filesystem>
+#include <array>
+#include <optional>
+#include <sstream>
+#include "uve/pack/project_launcher_uve.h"
 #include <fstream>
 #include <memory>
 #include <string>
@@ -21,6 +25,7 @@
 #include "uve/render_systems/i_renderer_3d_uve.h"
 
 namespace {
+std::filesystem::path cookedProject;
 struct Host {
     android_app* app = nullptr;
     std::unique_ptr<UVE::Core::EngineCoreUVE> engine;
@@ -67,7 +72,7 @@ struct Host {
             __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_TOUCH_APPLIED active=%d", touched ? 1 : 0);
             previousTouch = touched;
         }
-        entities.GetComponentUVE<UVE::Scene::PrimitiveMeshComponentUVE>(cube).baseColor = touched
+        if (cube != UVE::Scene::kInvalidEntityUVE) entities.GetComponentUVE<UVE::Scene::PrimitiveMeshComponentUVE>(cube).baseColor = touched
             ? UVE::Math::Vector3UVE{0.1F, 0.9F, 0.4F} : UVE::Math::Vector3UVE{0.2F, 0.5F, 0.9F};
         const auto diagnostics = services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
         if (frameAttempts++ < 3U) {
@@ -76,10 +81,11 @@ struct Host {
         }
         const auto* window = dynamic_cast<UVE::Window::AndroidWindowManagerUVE*>(&services.GetWindowManagerUVE());
         if (!frameReported && window != nullptr && window->GetPresentationCountUVE() > presentationBaseline &&
-            diagnostics.primitiveDrawCallsRecorded > 0U && diagnostics.glDrawCallsIssued > 0U) {
+            diagnostics.glDrawCallsIssued > 0U) {
             __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_RENDERED");
             frameReported = true;
         }
+        if (label == UVE::Scene::kInvalidEntityUVE) return;
         auto& text = entities.GetComponentUVE<UVE::Scene::UITextComponentUVE>(label);
         text.positionPixels = {16.0F, static_cast<float>(app->contentRect.top) + 28.0F};
     }
@@ -93,6 +99,13 @@ struct Host {
             config.ssaoEnabledUVE = false;
             config.ambientColor = {0.7F, 0.7F, 0.7F};
             config.shaderSourceRealDirectoryUVE = "shaders";
+            std::optional<UVE::Pack::ProjectRuntimeSetupUVE> setup;
+            if (!cookedProject.empty()) {
+                auto prepared = UVE::Pack::PrepareProjectRuntimeUVE(cookedProject,config,
+                    std::filesystem::path(app->activity->internalDataPath)/"user-data");
+                if (!prepared.setup.has_value()) throw std::runtime_error(prepared.message);
+                setup = std::move(prepared.setup);
+            }
             engine = std::make_unique<UVE::Core::EngineCoreUVE>(config);
             __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_INIT_BEGIN");
             engine->Init();
@@ -105,6 +118,11 @@ struct Host {
             if (window != nullptr) window->SetFocusedUVE(focused);
             auto& entities = engine->GetServicesUVE().GetEntityManagerUVE();
             auto& graph = engine->GetServicesUVE().GetSceneGraphUVE();
+            if (setup.has_value()) {
+                const auto loaded = UVE::Pack::LoadAndActivateProjectSceneUVE(*engine,*setup);
+                if (!loaded.IsAcceptedUVE()) throw std::runtime_error(loaded.message);
+                __android_log_print(ANDROID_LOG_INFO,"UniVex","UVE_ANDROID_COOKED_PROJECT_LOADED");
+            } else {
             const auto camera = entities.CreateEntityUVE();
             UVE::Scene::TransformComponentUVE transform;
             transform.localPosition = {0.0F, 0.0F, 4.0F};
@@ -120,6 +138,7 @@ struct Host {
             text.positionPixels = {16.0F, 48.0F};
             text.fontSize = 18.0F;
             entities.AddComponentUVE<UVE::Scene::UITextComponentUVE>(label, text);
+            }
             touch = std::make_unique<UVE::Input::AndroidTouchRouterUVE>(
                 engine->GetServicesUVE().GetMobileInputSystemUVE());
             __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_INITIALIZED");
@@ -173,6 +192,55 @@ int32_t Input(android_app* app, AInputEvent* event) {
     }
     return handled ? 1 : 0;
 }
+void ExtractProject(android_app* app) {
+    AAsset* index = AAssetManager_open(app->activity->assetManager,"project-files.txt",AASSET_MODE_BUFFER);
+    if (index == nullptr) return;
+    const auto length = AAsset_getLength64(index);
+    if (length < 1 || length > 16*1024*1024) { AAsset_close(index); throw std::runtime_error("Invalid project index"); }
+    std::string names(static_cast<std::size_t>(length),'\0');
+    const auto read = AAsset_read(index,names.data(),names.size()); AAsset_close(index);
+    if (read != length) throw std::runtime_error("Truncated project index");
+    std::istringstream lines(names);
+    std::string manifest;
+    if (!std::getline(lines,manifest)) throw std::runtime_error("Missing project manifest");
+    const auto safe = [](const std::filesystem::path& p) {
+        if (p.empty() || p.is_absolute() || p.lexically_normal() != p) return false;
+        for (const auto& part : p) if (part == ".." || part == ".") return false;
+        return true;
+    };
+    if (!safe(manifest)) throw std::runtime_error("Invalid manifest path");
+    const std::filesystem::path stage = "cooked-project-extracting";
+    std::filesystem::remove_all(stage); std::filesystem::create_directory(stage);
+    std::uint64_t total = 0;
+    std::size_t count = 0;
+    std::string name;
+    while (std::getline(lines,name)) {
+        if (!safe(name) || ++count > 100000U) throw std::runtime_error("Invalid project entry");
+        const std::filesystem::path relative(name);
+        const auto packaged = "project/" + name;
+        AAsset* asset = AAssetManager_open(app->activity->assetManager,packaged.c_str(),AASSET_MODE_STREAMING);
+        if (!asset) throw std::runtime_error("Project entry missing: " + name);
+        const auto bytes = AAsset_getLength64(asset);
+        if (bytes < 0 || bytes > 512LL*1024*1024 || total+static_cast<std::uint64_t>(bytes) > 1024ULL*1024*1024) {
+            AAsset_close(asset); throw std::runtime_error("Project extraction budget exceeded");
+        }
+        total += static_cast<std::uint64_t>(bytes);
+        std::filesystem::create_directories((stage/relative).parent_path());
+        std::ofstream output(stage/relative,std::ios::binary);
+        std::array<char,65536> buffer{};
+        std::int64_t copied = 0;
+        int chunk = 0;
+        while ((chunk = AAsset_read(asset,buffer.data(),buffer.size())) > 0) {
+            output.write(buffer.data(),chunk); copied += chunk;
+        }
+        AAsset_close(asset);
+        if (chunk < 0 || copied != bytes || !output) throw std::runtime_error("Project extraction failed");
+    }
+    if (!std::filesystem::is_regular_file(stage/manifest) || !std::filesystem::is_regular_file(stage/"cooked.json"))
+        throw std::runtime_error("Cooked project metadata missing");
+    std::filesystem::remove_all("cooked-project"); std::filesystem::rename(stage,"cooked-project");
+    cookedProject = std::filesystem::absolute(std::filesystem::path("cooked-project")/manifest);
+}
 void CopyShaders(android_app* app) {
     const std::filesystem::path directory = std::filesystem::path(app->activity->internalDataPath) / "shaders";
     std::filesystem::create_directories(directory);
@@ -198,7 +266,7 @@ void CopyShaders(android_app* app) {
 extern "C" void android_main(android_app* app) {
     Host host; host.app = app;
     app->userData = &host; app->onAppCmd = Command; app->onInputEvent = Input;
-    try { CopyShaders(app); }
+    try { CopyShaders(app); ExtractProject(app); }
     catch (const std::exception& error) {
         __android_log_print(ANDROID_LOG_ERROR, "UniVex", "Assets failed: %s", error.what());
         host.failed = true;

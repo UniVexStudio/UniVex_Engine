@@ -374,6 +374,18 @@ void DataTableUVE::IncrementGenerationUVE() noexcept {
     }
 }
 
+std::size_t DataTableUVE::GetResidentBytesUVE() const noexcept {
+    auto n = sizeof(*this) + m_name.capacity() + 1 + m_columns.capacity()*sizeof(DataTableColumnUVE)
+        + m_rows.capacity()*sizeof(DataTableRowUVE) + m_diagnostics.capacity()*sizeof(DataTableDiagnosticUVE);
+    for (const auto& c : m_columns) n += c.name.capacity()+1;
+    for (const auto& r : m_rows) {
+        n += r.identifier.capacity()+1+r.values.capacity()*sizeof(DataTableValueUVE);
+        for (const auto& v : r.values) if (const auto* text = std::get_if<std::string>(&v)) n += text->capacity()+1;
+    }
+    for (const auto& d : m_diagnostics) n += d.message.capacity()+1;
+    return n;
+}
+
 DataTableSnapshotUVE DataTableUVE::GetSnapshotUVE() const {
     return DataTableSnapshotUVE{m_generation, m_name, m_columns, m_rows, m_diagnostics, m_diagnosticsTruncated};
 }

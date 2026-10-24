@@ -52,3 +52,20 @@ The debug APK is debuggable for native diagnostics and uses private application 
 
 CI builds arm64 and x86_64 APKs on every normal CI run and exercises x86_64 on a KVM emulator. Uploads follow the same opt-in artifact controls
 as desktop CI (see `.github/CI_ARTIFACTS.md`). The manual checkbox enables an APK download.
+
+## Cooked project content
+
+`build_apk.py --cooked-project /path/to/cooked/game.uvproject` embeds the exact runtime file index
+produced by `uve_pack --cook android`. Native startup streams those files into private storage and
+loads the manifest's startup scene with its rooted GUID catalog. The camera/material/texture content
+comes from the project. Without that option, the original touch demo remains available.
+
+Application saves, logs, shader cache and derived data use the native sandbox's separate
+`user-data` directory, so replacing extracted cooked content does not erase saved data. Extraction
+is bounded to 512 MiB per file, 1 GiB in total and 100,000 files, with relative-path validation.
+
+Use `smoke_runtime.py --expect-cooked-project` with the generated camera/cube workload fixture to
+require evidence that the actual project launched. The smoke still verifies rendered pixels, native
+touch consumption and pause/surface recovery. It is a correctness check, not physical-device
+memory or frame-rate certification. See `Engine/Tools/performance/ASSET_WORKLOAD.md` for the
+cooking profiles, residency budget contract and repeatable RAM/loading measurements.

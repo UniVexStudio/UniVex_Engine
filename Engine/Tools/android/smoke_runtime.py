@@ -17,6 +17,8 @@ def main():
     parser.add_argument('--report', type=Path, required=True)
     parser.add_argument('--timeout', type=float, default=120)
     parser.add_argument('--screenshot', type=Path)
+    parser.add_argument('--expect-cooked-project', action='store_true')
+    parser.add_argument('--memory-report', type=Path)
     args = parser.parse_args()
     if not math.isfinite(args.timeout) or args.timeout <= 0:
         parser.error('--timeout must be positive')
@@ -70,6 +72,8 @@ def main():
         adb('logcat', '-c')
         adb('shell', 'am', 'start', '-n', 'com.univex.runtime/android.app.NativeActivity')
         wait_for('UVE_ANDROID_INITIALIZED')
+        if args.expect_cooked_project:
+            wait_for('UVE_ANDROID_COOKED_PROJECT_LOADED')
         wait_for('UVE_ANDROID_RENDERED')
         adb('shell', 'input', 'swipe', '160', '300', '160', '300', '1500')
         wait_for('UVE_ANDROID_TOUCH action=0')
@@ -86,6 +90,13 @@ def main():
         if text.count('UVE_ANDROID_INITIALIZED') != 1:
             raise RuntimeError('Engine was recreated instead of retaining its scene')
         wait_for_visible_scene()
+        if args.memory_report:
+            memory = adb('shell', 'dumpsys', 'meminfo', 'com.univex.runtime')
+            if 'TOTAL' not in memory:
+                raise RuntimeError('Native process memory report unavailable')
+            args.memory_report.parent.mkdir(parents=True, exist_ok=True)
+            args.memory_report.write_text(memory, encoding='utf-8')
+            report['memory_measurement'] = 'Android dumpsys meminfo; emulator/device as supplied'
         if args.screenshot:
             shot = subprocess.run([args.adb, '-s', args.serial, 'exec-out', 'screencap', '-p'],
                                   capture_output=True, check=True, timeout=30).stdout

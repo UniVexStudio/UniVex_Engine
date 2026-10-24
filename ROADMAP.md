@@ -1116,10 +1116,17 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   on — by accident or deliberately.
 - [ ] SVG/vector asset support (a real rasterizer — confirmed not to exist anywhere in this
   codebase today, so raw vector source files fall back to a generic icon)
-- [ ] An asset "cooking"/bake step that produces a platform-optimized, shippable form of
-  content distinct from the editor-time source form
-- [ ] Addressable/streamable asset loading (load-by-reference at runtime without every
-  asset being a hard, always-loaded dependency)
+- [x] Asset cooking for imported native content: `uve_pack --cook windows|android` writes a
+  fresh package with stable GUIDs, a rooted relative catalog, validated dependencies, texture
+  dimension limits (2048/1024), generated mips and portable UASTC when the encoder is available.
+  Raw authoring files are omitted except explicit application resources. Scripts and shader
+  includes remain runtime content. This does not add raw-format importers or unused-asset stripping.
+- [x] Addressable demand loading through the existing asynchronous GUID/handle API: duplicate
+  requests coalesce; live handles pin data; released assets unload through collection. Optional
+  serialized admission limits count owned CPU payload capacities and reject oversized or
+  pinned-pressure loads with a diagnostic; failed reloads preserve last-known-good data. Cooked
+  profiles default to 256 MiB (Windows) / 128 MiB (Android). This is not a process/GPU cap or
+  progressive texture/mesh streaming: transient decoding and downstream copies are excluded.
 - [ ] Version-control-friendly asset diffing/merging tools for binary or semi-binary asset
   formats
 - [ ] An in-editor material editor / shader graph (author materials visually; currently
@@ -1311,8 +1318,11 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   variant - that stays the asset-cooking row below - and there is no per-platform
   packaging yet. The profile table, the precedence rules and the strip thresholds are
   documented in `BUILD_VARIANTS.md`.
-- [ ] Asset cooking integrated into packaging (see Asset Pipeline) so shipped builds don't
-  carry editor-only source formats
+- [x] Asset cooking integrated into `uve_pack` and Android APK assembly via `--cooked-project`.
+  APK startup streams indexed content into private storage and launches its actual startup scene;
+  persistent user data lives outside the replaced content directory. Native texture workloads
+  report loading latency and counted residency; the Linux process runner separately records peak
+  RSS. Physical 3 GB hardware and representative large-game performance remain unverified.
 - [ ] Crash reporting and basic telemetry/analytics hooks
 - [ ] An in-game patch/content-update mechanism (downloadable content, hotfixes) for
   live games
