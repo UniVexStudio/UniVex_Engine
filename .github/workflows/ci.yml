@@ -277,6 +277,7 @@ jobs:
       - name: Build and verify debug-signed APK
         run: >-
           python3 Engine/Tools/android/build_apk.py --sdk "$ANDROID_HOME"
+          --cooked-project Samples/CookedRuntimeSmoke/sample.uvproject
           --build-dir /tmp/univex-android-package --abi ${{ matrix.abi }} --jobs 2
       - name: Exercise Android lifecycle on accelerated emulator
         if: matrix.abi == 'x86_64'
@@ -302,7 +303,7 @@ jobs:
             tail -60 /tmp/univex-emulator.log
             exit 1
           fi
-          python3 Engine/Tools/android/smoke_runtime.py --adb "$ANDROID_HOME/platform-tools/adb" --serial emulator-5554 --apk /tmp/univex-android-package/univex-runtime-x86_64.apk --report /tmp/univex-android-smoke.json --screenshot /tmp/univex-android-runtime.png
+          python3 Engine/Tools/android/smoke_runtime.py --adb "$ANDROID_HOME/platform-tools/adb" --serial emulator-5554 --apk /tmp/univex-android-package/univex-runtime-x86_64.apk --report /tmp/univex-android-smoke.json --screenshot /tmp/univex-android-runtime.png --expect-cooked-project --memory-report /tmp/univex-android-meminfo.txt
           cat /tmp/univex-android-smoke.json
       - name: Upload Android APK
         if: (github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true')
