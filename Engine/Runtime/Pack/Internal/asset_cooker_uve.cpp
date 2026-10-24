@@ -169,6 +169,8 @@ AssetCookResultUVE CookProjectAssetsUVE(const std::filesystem::path& projectFile
             throw std::runtime_error("Cook output cannot be inside content root");
         stage = out; stage += ".cooking";
         if (std::filesystem::exists(stage)) throw std::runtime_error("Cook staging directory already exists");
+        std::filesystem::create_directories(stage.parent_path());
+        if (!std::filesystem::create_directory(stage)) throw std::runtime_error("Cook staging directory is not fresh");
         ownsStage = true;
         std::filesystem::create_directories(stage/package.contentRoot);
         Asset::AssetDatabaseUVE db;

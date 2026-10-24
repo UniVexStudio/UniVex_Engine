@@ -118,6 +118,15 @@ TEST_F(AssetCookerUVETest, OmitsRegisteredAuthoringSourcesButRejectsRuntimeRefer
     const auto rejected=CookProjectAssetsUVE(root/"game.uvproject",output,CookTargetUVE::Android);
     EXPECT_FALSE(rejected.success);EXPECT_NE(rejected.message.find("authoring source"),std::string::npos);
 }
+TEST_F(AssetCookerUVETest, ExistingDanglingStagingSymlinkIsNeverOwnedOrRemoved) {
+    const auto stage=std::filesystem::path(output.string()+".cooking");
+    std::error_code error;
+    std::filesystem::create_symlink(root/"missing-target",stage,error);
+    if(error) GTEST_SKIP()<<"Symlink creation unavailable";
+    const auto result=CookProjectAssetsUVE(root/"game.uvproject",output,CookTargetUVE::Android);
+    EXPECT_FALSE(result.success);EXPECT_TRUE(std::filesystem::is_symlink(std::filesystem::symlink_status(stage)));
+    std::filesystem::remove(stage);
+}
 TEST_F(AssetCookerUVETest, RootedCatalogRefusesTraversalWithoutChangingRecords) {
     std::ofstream(root/"bad-db")<<"{\"0000000000000001\":\"../outside\"}";
     Asset::AssetDatabaseUVE db; ASSERT_TRUE(db.LoadUVE(root/"bad-db"));
