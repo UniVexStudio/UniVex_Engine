@@ -186,6 +186,22 @@ TEST_F(GlRenderDeviceUVETest, BindGroupAppliesRealTextureSamplerAndBufferBinding
 // These sentinels are only used to check symbol resolution, never invoked as GL calls.
 void LoaderSentinelUVE() {}
 
+TEST(GlFunctionsUVETest, BlendEquationIsLoadedAndRequiredForTheBaseline) {
+    const auto resolve = +[](const char*) -> void* {
+        return reinterpret_cast<void*>(&LoaderSentinelUVE);
+    };
+    auto loaded = Detail::LoadGlFunctionsUVE(resolve);
+    ASSERT_TRUE(loaded.IsCompleteUVE());
+    ASSERT_NE(loaded.glBlendEquation, nullptr);
+    loaded.glBlendEquation = nullptr;
+    EXPECT_FALSE(loaded.IsCompleteUVE());
+    const auto missingBlend = +[](const char* name) -> void* {
+        if (std::string_view{name} == "glBlendEquation") return nullptr;
+        return reinterpret_cast<void*>(&LoaderSentinelUVE);
+    };
+    EXPECT_FALSE(Detail::LoadGlFunctionsUVE(missingBlend).IsCompleteUVE());
+}
+
 TEST(GlFunctionsUVETest, StencilSymbolsAreLoadedAndRequiredForTheBaseline) {
     const auto resolve = +[](const char*) -> void* {
         return reinterpret_cast<void*>(&LoaderSentinelUVE);
