@@ -40,6 +40,7 @@
 #include "editor_text_search_uve.h"
 
 #include "uve/asset/i_asset_database_uve.h"
+#include "uve/component/collider_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
@@ -1035,6 +1036,20 @@ std::vector<std::string> EditorUVE::GetObjectWarningsUVE(const Scene::EntityUVE 
     if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(entity) &&
         entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(entity).skeletonAssetPath.empty()) {
         warnings.emplace_back("No source model is set, so the skeleton has no bones.");
+    }
+    // A Character3D without a Collider3D is a controller with no body. The character component
+    // sweeps a shape through the world to decide what it stands on, what it can step over and
+    // where it stops; with no collider there is no shape, so the sweep finds nothing, the body is
+    // always falling, and it drops through every surface the level has. The failure is silent -
+    // the mesh draws, the object looks authored, and the only symptom is a character that keeps
+    // going down - which is exactly the kind of thing a row badge exists for. The warning is
+    // computed from the components every frame, so adding the Collider3D clears it with nothing
+    // to dismiss or acknowledge.
+    if (Scene::ResolveSceneObjectKindUVE(entityManager, entity) ==
+            Scene::Objects::SceneObjectKindUVE::Character3D &&
+        !entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity)) {
+        warnings.emplace_back("No Collider3D: this character has no body, so it falls through "
+                              "everything. Add a Collider3D to give it one.");
     }
     return warnings;
 }
