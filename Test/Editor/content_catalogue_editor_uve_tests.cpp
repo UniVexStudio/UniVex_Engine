@@ -340,7 +340,12 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSce
         ASSERT_TRUE(moveTo(editor.GetEntityEditorRootUVE(), 9.0F));
         ASSERT_TRUE(editor.CloseEntityEditorUVE(false));
         EXPECT_FALSE(editor.IsEntityEditorOpenUVE());
-        EXPECT_EQ(engine.GetSimulationExecutionModeUVE(), Core::SimulationExecutionModeUVE::Running);
+        // Closing the entity gives the mode back as Paused, not Running. An editor does not
+        // simulate: the clock stays off until Play turns it on, so the mode an entity is closed
+        // into is the same frozen one it was opened from. This used to expect Running, because the
+        // editor used to open with the simulation already going.
+        EXPECT_EQ(engine.GetSimulationExecutionModeUVE(), Core::SimulationExecutionModeUVE::Paused)
+            << "closing an entity leaves the editor frozen, not simulating";
 
         // The scene is back, with its placed Character in the level's object folder.
         Scene::EntityUVE character = Scene::kInvalidEntityUVE;
