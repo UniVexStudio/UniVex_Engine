@@ -26,9 +26,10 @@ def main():
     report = {'passed': False, 'checks': [], 'device': args.serial,
               'performance_verified': False}
 
-    def adb(*command, timeout=30):
+    def adb(*command, timeout=None):
         return subprocess.run([args.adb, '-s', args.serial, *command], check=True,
-                              capture_output=True, timeout=timeout).stdout.decode(errors='replace')
+                              capture_output=True,
+                              timeout=args.timeout if timeout is None else timeout).stdout.decode(errors='replace')
 
     def logs():
         return adb('logcat', '-d', '-s', 'UniVex:I', '*:S')

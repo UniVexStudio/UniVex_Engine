@@ -51,20 +51,23 @@ jobs:
           -DUNIVEX_VIEWPORT_BUILD_TOOLS=OFF
       - name: Build editor
         shell: msys2 {0}
-        run: cmake --build build-windows --target uve_editor_app --parallel 4
+        run: cmake --build build-windows --target uve_editor_app uve_pack uve_runtime uve_asset_workload --parallel 4
       - name: Package editor and runtime DLLs
         shell: msys2 {0}
         run: |
           set -euo pipefail
           mkdir -p package/UniVex-Editor/Content/Viewport
           cp build-windows/Engine/App/uve_editor.exe package/UniVex-Editor/
+          cp build-windows/Engine/App/uve_runtime.exe package/UniVex-Editor/
+          cp build-windows/Engine/Runtime/Pack/uve_pack.exe package/UniVex-Editor/
+          cp build-windows/Engine/Runtime/Pack/uve_asset_workload.exe package/UniVex-Editor/
           python - <<'PY'
           import pathlib
           import re
           import shutil
           import subprocess
           destination = pathlib.Path('package/UniVex-Editor')
-          pending = [destination / 'uve_editor.exe']
+          pending = list(destination.glob('*.exe'))
           copied = set()
           while pending:
               binary = pending.pop()
@@ -85,6 +88,10 @@ jobs:
         run: |
           cd package/UniVex-Editor
           ./uve_editor.exe --bridge-stdio < /dev/null
+          ./uve_asset_workload.exe --create-fixture ../cook-source
+          ./uve_pack.exe --project ../cook-source/sample.uvproject --runtime ./uve_runtime.exe --output ../cooked --cook windows
+          mv ../cook-source ../source-unavailable
+          ../cooked/uve_runtime.exe --headless --project ../cooked/sample.uvproject --frames 3
       - uses: actions/upload-artifact@v4
         if: (github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true')
         with:
