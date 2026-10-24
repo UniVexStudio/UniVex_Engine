@@ -859,7 +859,13 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
             if (surface != nullptr) {
                 Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, emittedPlacement.worldBounds);
             }
-            const bool isTransparent = material.isTransparent || opacity < 1.0F;
+            // The bucket is decided by ShouldBucketMaterialTransparentUVE, the same predicate the
+            // material thumbnail renderer already consulted: a material authored as additive or
+            // alpha-blended composites against what is already there, so it has to be drawn after
+            // the opaque pass and back to front. Deciding it from isTransparent alone put an
+            // additive material in the opaque pass, in whatever order the scene happened to have,
+            // and left its blend mode deciding nothing at all.
+            const bool isTransparent = Asset::ShouldBucketMaterialTransparentUVE(material) || opacity < 1.0F;
             outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
                 pairIndex, emittedPlacement, isTransparent, entity, renderLayers, sortingOffset,
                 sortingUseAabbCenter, castsShadow, drawsInView, opacity, false, surfaceRange});

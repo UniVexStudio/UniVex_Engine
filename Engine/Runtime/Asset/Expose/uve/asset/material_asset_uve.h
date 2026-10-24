@@ -52,6 +52,14 @@ enum class MaterialBlendModeUVE : std::uint8_t {
     Multiply = 5,
 };
 
+/// True for every mode that composites against what is already in the colour target. This is the
+/// single question both the render queue (which bucket draws after the opaque pass, back to front)
+/// and the renderer (which pipeline state, whether the material can cast into a shadow map) ask,
+/// so it lives here rather than being spelled out as `!= Opaque` in each of them.
+[[nodiscard]] constexpr bool IsMaterialBlendModeTranslucentUVE(const MaterialBlendModeUVE mode) noexcept {
+    return mode != MaterialBlendModeUVE::Opaque;
+}
+
 enum class MaterialDepthDrawModeUVE : std::uint8_t {
     OpaqueOnly = 0,
     Always = 1,

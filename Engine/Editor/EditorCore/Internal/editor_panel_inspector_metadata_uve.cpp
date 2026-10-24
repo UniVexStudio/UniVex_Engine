@@ -1359,6 +1359,60 @@ void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& abso
         ImGui::SameLine();
         ImGui::TextUnformatted("Emission Texture");
 
+        // 4b. Rendering state. These were the material fields with no authoring surface at all -
+        // serialized, defaulted, and unreachable - while the renderer derived every one of them
+        // from a single isTransparent flag. They are what decides whether a surface composites,
+        // whether it is two-sided, and whether it writes depth, so they belong next to the maps
+        // rather than behind a preset.
+        ImGui::Spacing();
+        ImGui::TextDisabled("RENDERING");
+        int blendIndex = static_cast<int>(mat.blendMode);
+        constexpr const char* kBlendLabels[] = {"Opaque", "Alpha Blend", "Premultiplied Alpha",
+                                                "Additive", "Subtractive", "Multiply"};
+        ImGui::SetNextItemWidth(-1.0F);
+        if (ImGui::Combo("##materialBlend", &blendIndex, kBlendLabels, 6)) {
+            mat.blendMode = static_cast<Asset::MaterialBlendModeUVE>(blendIndex);
+            // Kept in step so the two spellings of "translucent" can never disagree: the legacy
+            // flag is what old files and the mesh renderer's own queue still read.
+            mat.isTransparent = Asset::IsMaterialBlendModeTranslucentUVE(mat.blendMode);
+            changed = true;
+        }
+        ImGui::SameLine();
+        ImGui::TextUnformatted("Blend Mode");
+
+        int cullIndex = static_cast<int>(mat.cullMode);
+        constexpr const char* kCullLabels[] = {"Back Faces", "Front Faces", "Two-Sided"};
+        ImGui::SetNextItemWidth(-1.0F);
+        if (ImGui::Combo("##materialCull", &cullIndex, kCullLabels, 3)) {
+            mat.cullMode = static_cast<Asset::MaterialCullModeUVE>(cullIndex);
+            changed = true;
+        }
+        ImGui::SameLine();
+        ImGui::TextUnformatted("Culling");
+
+        int depthIndex = static_cast<int>(mat.depthDrawMode);
+        constexpr const char* kDepthLabels[] = {"Opaque Only", "Always", "Never", "Depth Pre-Pass"};
+        ImGui::SetNextItemWidth(-1.0F);
+        if (ImGui::Combo("##materialDepthDraw", &depthIndex, kDepthLabels, 4)) {
+            mat.depthDrawMode = static_cast<Asset::MaterialDepthDrawModeUVE>(depthIndex);
+            changed = true;
+        }
+        ImGui::SameLine();
+        ImGui::TextUnformatted("Depth Draw");
+
+        if (ImGui::SliderFloat("Albedo Alpha", &mat.albedoAlpha, 0.0F, 1.0F)) {
+            changed = true;
+        }
+        int alphaSourceIndex = static_cast<int>(mat.alphaSource);
+        constexpr const char* kAlphaSourceLabels[] = {"Albedo Alpha", "Separate Channel", "None"};
+        ImGui::SetNextItemWidth(-1.0F);
+        if (ImGui::Combo("##materialAlphaSource", &alphaSourceIndex, kAlphaSourceLabels, 3)) {
+            mat.alphaSource = static_cast<Asset::MaterialAlphaSourceUVE>(alphaSourceIndex);
+            changed = true;
+        }
+        ImGui::SameLine();
+        ImGui::TextUnformatted("Alpha Source");
+
         // 5. Custom Shader
         ImGui::Spacing();
         ImGui::TextDisabled("CUSTOM SHADER");

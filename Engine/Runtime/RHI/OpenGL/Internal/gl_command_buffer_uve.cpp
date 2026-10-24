@@ -706,18 +706,38 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
         glDisable(GL_DEPTH_TEST);
     }
     glDepthMask(pipelineIt->second.depthWriteEnabled ? GL_TRUE : GL_FALSE);
+    // Every mode sets its own equation, because a pipeline switch can leave the equation of the
+    // previous material behind: GL has no per-fragment state, so a batch of Additive draws followed
+    // by a plain SourceAlphaOver one would keep GL_FUNC_REVERSE_SUBTRACT if the equation were only
+    // ever set by the mode that needed it.
     switch (pipelineIt->second.blendMode) {
         case PipelineBlendModeUVE::SourceAlphaOver:
             glEnable(GL_BLEND);
+            glBlendEquation(GL_FUNC_ADD);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             break;
         case PipelineBlendModeUVE::Additive:
             glEnable(GL_BLEND);
+            glBlendEquation(GL_FUNC_ADD);
             glBlendFunc(GL_ONE, GL_ONE);
             break;
         case PipelineBlendModeUVE::Multiply:
             glEnable(GL_BLEND);
+            glBlendEquation(GL_FUNC_ADD);
             glBlendFunc(GL_DST_COLOR, GL_ZERO);
+            break;
+        case PipelineBlendModeUVE::PremultipliedAlpha:
+            // The source baked its alpha into rgb, so it is added as-is and only the destination is
+            // attenuated.
+            glEnable(GL_BLEND);
+            glBlendEquation(GL_FUNC_ADD);
+            glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+            break;
+        case PipelineBlendModeUVE::Subtractive:
+            // dst - src*srcA. Reverse subtract, because GL's FUNC_SUBTRACT is src - dst.
+            glEnable(GL_BLEND);
+            glBlendEquation(GL_FUNC_REVERSE_SUBTRACT);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
             break;
         case PipelineBlendModeUVE::Opaque:
             glDisable(GL_BLEND);

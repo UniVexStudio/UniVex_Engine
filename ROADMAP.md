@@ -16,8 +16,9 @@ primitives, containers, allocators, handles, resources and components every syst
 is built from — is catalogued in `FOUNDATION.md`, which follows the same status legend.
 
 The **settings** surfaces every system here eventually needs to expose — project settings,
-editor preferences, the colour picker, material and import options — are catalogued
-separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
+editor preferences, the colour picker, material and import options — do not have a document of
+their own; they are tracked under Editor (§10) and Asset Pipeline (§6) below, which follow the same
+status legend.
 
 ## How to read this document
 
@@ -174,7 +175,7 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
 - [ ] Ray-traced reflections/shadows/GI as an optional high-end path (long-term)
 
 ### 1.2 Scene scale & performance
-- [ ] GPU instancing for repeated meshes — the CPU half and the shader half have landed:
+- [x] GPU instancing for repeated meshes — the CPU half and the shader half have landed:
   BuildRenderBatchesUVE groups a sorted queue's ADJACENT mesh+material runs into instanced
   batches (never reordering, because the queue is already depth-sorted front-to-back for early-z
   and back-to-front for correct alpha, and regrouping to chase a lower batch count would silently
@@ -192,9 +193,9 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
   cascade, so an uninstanced 200-object scene issued 600 shadow draws against 200 main-pass ones.
   Shadow batching groups by MESH ALONE - a depth-only pass binds no material, so same-mesh objects
   write identical depth however differently they are painted - which makes it batch strictly
-  better than the main pass on the same queue. Remaining: pointing the instanceCount at CS8's
-  GPU-written draw command instead of a CPU-known batch size, which is the last step to giving the
-  indirect cull a consumer.
+  better than the main pass on the same queue. The last step landed as well: the instanced path asks
+  the compute cull to prepare the draw command and records `DrawIndexedIndirectUVE` against the
+  buffer the GPU wrote, so a batch's instance count is decided on the GPU instead of on the CPU.
 - [ ] Frustum culling at scale — the per-frame redundancy is gone: extraction is split into a
   frustum-INDEPENDENT build (asset resolution, transform compose, world-bounds transform) and a
   cheap per-frustum cull, so a frame that culls against four frusta (three shadow cascades plus the
@@ -979,12 +980,18 @@ real utility file) — networked multiplayer is a from-scratch, long-term projec
 - [x] Matchmaking lobby: room registry over direct RPC sessions (create/list/join/leave/roster over RPC, one room per client with auto-leave on move, unique names per room, empty rooms removed, roster-change push to survivors; typed client facade with room/roster cache and stale-push guards; script surface lobby.list/create/join/leave/roster/result_* plus lobby_result/lobby_roster)
 - [x] Relay rooms: routed fan-out by peer room tags (implicit rooms with no registry, the default room is exactly broadcast, room-skips silent like unestablished-skips; lobby rooms bind verbatim via a ClientRoomUVE sync loop)
 - [x] Relay interest: pairwise mute matrix over fan-out (default interested, one-way mutes, self-mutes stored but never consulted, removals prune both directions; composes with rooms; app syncs teams, proximity, or subscriptions)
-- [ ] Entity/state replication (which properties replicate, at what rate, to which clients)
+- [x] Entity/state replication (which properties replicate, at what rate, to which clients) —
+  the replication core below covers it: net-id registry, strict little-endian framing, authority
+  roles, per-entity relevancy filters, delta compression against scheduled fulls, non-position
+  property frames, and the Gameplay adapter that samples from and applies to the scene.
 - [x] Replication core: fixed-rate position snapshots over sessions (net-id registry with sampler/applier callbacks, strict little-endian framing, per-entity authority roles, per-entity relevancy filters, delta compression between fulls, non-position property frames with a shared wire-value codec)
 - [x] Ownership-transfer handshake: request/accept/deny control frames move authority over the wire (single-flight per entity, timeouts with retry, stale-answer guards, manual rebind still overrides)
 - [x] Replication deltas: changed-only sends between scheduled full snapshots (epsilon change detection, first-sighting ships, baselines survive authority flips, drops heal at the next full; period 1 keeps legacy fulls)
 - [x] Replication Gameplay adapter: sampler/applier wiring to the scene (world-read samplers with last-known hold, scene-graph appliers, net-id map with register/unregister/find/prune; predicted pawns ride as Owner)
-- [ ] A remote-procedure-call framework callable from the scripting/gameplay layer
+- [x] A remote-procedure-call framework callable from the scripting/gameplay layer — the RPC core
+  below exposes `rpc.begin/push/send/result_*` to UVScript and accepts script-registered methods, so
+  a script can call another peer's method without touching the session API. Only synchronous calls
+  remain open.
 - [x] RPC core: async calls over an owned session (method registry, per-call timeouts, at-most-once, 64-deep retained results, strict magic+version framing, ValueUVE args/results incl. collections; script surface rpc.begin/push/send/result_* plus rpc_response; script-registered methods, sync calls still open)
 - [x] Client-side prediction and server reconciliation for responsive movement
 - [x] Prediction core: per-tick input capture with immediate local stepping, triple-repeat input stream, ordered server apply with per-tick states, epsilon reconcile (snap + replay), gap-timeout skip, offline prediction across reconnects (u64 ticks per pawn, opaque app determinism word; multi-pawn streams with seeded spawns, per-input dt with stored-dt replay, server relay fan-out with pawn-tracking observers)
@@ -997,12 +1004,17 @@ real utility file) — networked multiplayer is a from-scratch, long-term projec
 - [x] Lag-comp scale rewind: recorded world scale with rewound half-extents (authored size times absolute scale; zero/non-finite unhittable, mirrors occupy the same box; scale lerps between snapshots)
 - [x] Lag-comp engine tick: per-frame auto-record with 1-based engine ticks, submitted-shot inbox merged pre-tracker, Shutdown drain (prediction ticks map app-side)
 - [x] Lag-comp server demo: headless server + lagged bot over loopback (prediction-ack views, rewound shot/ray saves, pre-tracker merge, fractional-tick coverage)
-- [ ] Interest management / relevancy (only replicate what a client can see or needs)
+- [x] Interest management / relevancy (only replicate what a client can see or needs) — the
+  interest core below is spatial relevance between viewers and entities (uniform grid, per-viewer
+  radii, hysteresis, always-relevant flags, priority tiers with per-entity send rates and per-viewer
+  budgets), and the Gameplay adapter feeds it from the scene and binds it to the replicator's
+  per-entity filters.
 - [x] Interest core: spatial relevance between viewers and entities (uniform grid, per-viewer radii, hysteresis band, always-relevant flags, fail-open unknowns with counters; feeds the replicator's per-entity relevancy filters; priority tiers with id-staggered send rates, per-entity rate overrides, multi-client fan-out with per-viewer budgets over tier-distance ranking, proven by a fan-out sample: one server, three budgeted bots, divergent views)
 - [x] Interest Gameplay adapter: scene <-> interest sync with filter binding (world-pose upserts that never flip always-relevant flags, viewer-follows-pawn moves, idempotent per-viewer binds; short counts surface map/core drift)
 - [ ] Voice chat
-- [ ] A matchmaking/lobby layer, or at minimum a clean integration point for a third-party
-  one
+- [x] A matchmaking/lobby layer, or at minimum a clean integration point for a third-party
+  one — the lobby below is a room registry over direct RPC sessions (create/list/join/leave/roster,
+  one room per client, roster-change push, typed client facade, script surface).
 - [x] Network debugging tools (packet inspector, simulated latency/loss for testing)
 - [x] Simulated transport conditions: deterministic drop periods + fixed delays per direction over any endpoint
 - [x] Packet inspector core: captured session datagrams decoded to structured records plus one-line summaries (hello version/token with mismatch flags, strict replication/RPC/prediction payload mirrors incl. RPC value args, `> [rpc] ...` log lines, malformed flagging, opaque unknown channels)
@@ -1089,8 +1101,13 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 - [x] A mesh/animation interchange format importer beyond glTF/OBJ (an FBX-class importer,
   with embedded texture extraction, folder searching across textures/, Textures/, and .fbm/, and skeleton/animation
   conversion — verified and production-grade in `ReadFbxSkeletonUVE`, `FbxMeshConverterUVE`, and import helpers).
-- [ ] Texture compression (BCn on desktop, ASTC/ETC on mobile) baked at import time, not
-  just raw decoded pixels
+- [x] Texture compression (BCn on desktop, ASTC/ETC on mobile) baked at import time, not
+  just raw decoded pixels — the Basis encode runs inside the import path
+  (`import_helpers_uve.cpp`) when `TextureImportSettingsUVE::compressionMode` is `BasisETC1S` or
+  `BasisUASTC`, and the renderer transcodes the portable payload to BC1/BC3/BC7/ETC2/ASTC per
+  device. Remaining, and the reason this sat unchecked: compression is opt-in (`None` by default)
+  and the Inspector exposes no control with a quality/memory preview, so no project ever turns it
+  on — by accident or deliberately.
 - [ ] SVG/vector asset support (a real rasterizer — confirmed not to exist anywhere in this
   codebase today, so raw vector source files fall back to a generic icon)
 - [ ] An asset "cooking"/bake step that produces a platform-optimized, shippable form of
@@ -1211,13 +1228,12 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   filling in)
 - [ ] A profiler / frame-debugger panel (CPU and GPU timings per system, a frame capture
   view for the render graph, a memory-usage view; capture panel landed: live snapshots over ProfilerCaptureUVE, Net category, network emitters, fan-out sample profiles itself - GPU timings, render-graph capture, memory view still open)
-- [ ] A material editor / shader graph (see also Asset Pipeline above)
+- A material editor / shader graph — tracked once, under Asset Pipeline above.
 - [ ] A terrain-sculpting tool
-- [ ] A particle-effect editor
+- A particle-effect editor — tracked once, under Asset Pipeline above.
 - [ ] An animation timeline/sequencer for previewing and authoring clips, blend spaces, and
   state machine transitions visually
-- [ ] A cinematic/sequencer tool (see also Gameplay Framework above) shared with animation
-  authoring where it makes sense
+- A cinematic/sequencer tool — done, and tracked once, under Gameplay Framework above.
 - [ ] Source-control integration (status indicators, checkout/add/revert from inside the
   editor) for at least one common version-control system
 - [ ] A real log/output console panel distinct from the developer console (build output,
@@ -1303,8 +1319,11 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 - [x] A documented module-boundary discipline (public/private split per module, plugin
   functionality kept out of core runtime) that has been enforced and corrected multiple
   times already
-- [ ] Continuous integration running the full test suite automatically on every change,
-  not just locally
+- [x] Continuous integration running the full test suite automatically on every change,
+  not just locally — `.github/workflows/ci.yml` runs the three boundary checks, a
+  warnings-as-errors build of the whole tree and `ctest` under `xvfb-run` with lavapipe on every
+  pull request, then asserts the Vulkan and software-GL device cases actually executed instead of
+  silently skipping.
 - [ ] Automated static analysis / sanitizer runs (address/undefined-behavior sanitizers,
   a linter pass) as part of the standard validation gate
 - [ ] Formal performance budgets and automated performance-regression testing (frame time,
@@ -1320,20 +1339,35 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   naming conventions, and PR workflow, accompanied by .github/PULL_REQUEST_TEMPLATE.md and
   issue templates (bug report and feature request)
 
-## Suggested near-term focus (once this document itself is in place)
+## Suggested near-term focus
 
-The items below are the ones most likely to unblock the largest number of *other* items on
-this list, and are a reasonable place to resume work first:
+This list was rewritten once its previous four entries had all landed (skinning, the PBR/cascaded
+shadow path, navmesh and the replication slice), because a "start here" list that points at finished
+work is worse than no list. The idea is the same: the items most likely to unblock the largest number of
+*other* items, and a reasonable place to resume work first.
 
-1. Real skeletal animation + skinning (section 4) — almost every "character game" feature
-   downstream of it (ragdoll, IK, cloth bones, proper retargeting) is blocked without it.
-2. A physically-based material model and cascaded shadows (section 1.1) — the single
-   biggest visible quality gap against current-generation visual bars.
-3. Navmesh + pathfinding (section 7.3) — DONE and checked above (bake, A*, string-pulling,
-   agents with separation steering, 48 tests green). Behavior trees and perception remain.
-4. A minimal real networking transport + replication slice (section 6) — currently the
-   least-built major system in the entire engine, and the one most games eventually need
-   in some form.
+1. **Improved transparency sorting (section 1.1)** — the natural successor to the blend-mode work
+   that just landed: every material can now ask for the blend it wants, but only *one* blend state
+   exists per object. Two glass panes crossing through each other still composite in object order,
+   because the queue sorts whole draws back to front. Per-triangle sorting, depth peeling or an
+   order-independent path is the missing half of "materials can be translucent".
+2. **Deferred / clustered lighting (section 1.1)** — the whole forward path is one shader with a
+   fixed light loop; the number of dynamic lights a scene can carry is bounded by what that loop can
+   afford, not by what the hardware can do. Everything downstream of it (many-light scenes, decals
+   interacting with lighting, SSR) gets easier once the light list is per-cluster.
+3. **Occlusion culling (section 1.2)** — the compute cull already produces a GPU-written draw
+   command, so the reader of that buffer exists. What is missing is the occluder side: a depth
+   pyramid from the previous frame and the two-phase test. This is the last large multiplier on
+   draw submission short of a full GPU-driven scene.
+4. **An in-editor material editor / shader graph (section 8)** — every material property now means
+   something in the renderer, and the Inspector exposes the ones that decide compositing. A visual
+   graph is the visible next step for authors; a preset/validation layer on top of the existing
+   material asset is the smaller version of it.
 
-This list is a starting suggestion, not a mandate — revisit it whenever priorities change,
-and keep the checkboxes above as the durable record either way.
+Beyond those four, the largest single gap by category is **platform support (section 11)**: there is
+no verified build on a second desktop OS, no mobile lifecycle path, no console or web target. That is
+a different kind of work — it is breadth rather than depth — but it is what separates "runs on the
+machine it was written on" from "ships".
+
+This list is a starting suggestion, not a mandate — revisit it whenever priorities change, and keep
+the checkboxes above as the durable record either way.

@@ -484,6 +484,7 @@ add_executable(uve_integration_tests
     Audio/compressed_audio_importer_uve_tests.cpp
     RHI/RenderSystems/camera_2d_system_uve_tests.cpp
     RHI/RenderSystems/camera_system_uve_tests.cpp
+    RHI/RenderSystems/material_pipeline_state_uve_tests.cpp
     RHI/RenderSystems/render_batch_uve_tests.cpp
     RHI/RenderSystems/compute_kernel_portability_uve_tests.cpp
     RHI/RenderSystems/compute_workloads_vulkan_uve_tests.cpp
