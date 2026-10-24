@@ -102,6 +102,22 @@ TEST_F(AssetCookerUVETest, OutputInsideContentIsRejectedBeforeCreatingStaging) {
     result=CookProjectAssetsUVE(root/"game.uvproject",root/"content-alias/build",CookTargetUVE::Android);
     EXPECT_FALSE(result.success);EXPECT_FALSE(std::filesystem::exists(root/"content/build.cooking"));
 }
+TEST_F(AssetCookerUVETest, OmitsRegisteredAuthoringSourcesButRejectsRuntimeReferencesToThem) {
+    Asset::AssetDatabaseUVE db;ASSERT_TRUE(db.LoadUVE(root/".uvassetdb"));
+    const auto sourceGuid=db.RegisterUVE("content/authoring.png");ASSERT_TRUE(db.SaveUVE());
+    const auto cooked=CookProjectAssetsUVE(root/"game.uvproject",output,CookTargetUVE::Android);
+    ASSERT_TRUE(cooked.success)<<cooked.message;
+    Asset::AssetDatabaseUVE shipped;ASSERT_TRUE(shipped.LoadUVE(output/".uvassetdb"));
+    EXPECT_TRUE(shipped.HasGuidUVE(guid));EXPECT_FALSE(shipped.HasGuidUVE(sourceGuid));
+    EXPECT_FALSE(std::filesystem::exists(output/"content/authoring.png"));
+    std::filesystem::remove_all(output);
+    const auto scene=nlohmann::json{{"entities",nlohmann::json::array({
+        {{"components",{{"PrimitiveMeshComponentUVE",{{"materialGuid",sourceGuid.value}}}}}}})}}.dump();
+    const auto* bytes=reinterpret_cast<const std::byte*>(scene.data());
+    ASSERT_TRUE(Asset::WriteUveFileUVE(root/"content/main.uvscene",Asset::AssetKindUVE::Scene,{bytes,bytes+scene.size()}));
+    const auto rejected=CookProjectAssetsUVE(root/"game.uvproject",output,CookTargetUVE::Android);
+    EXPECT_FALSE(rejected.success);EXPECT_NE(rejected.message.find("authoring source"),std::string::npos);
+}
 TEST_F(AssetCookerUVETest, RootedCatalogRefusesTraversalWithoutChangingRecords) {
     std::ofstream(root/"bad-db")<<"{\"0000000000000001\":\"../outside\"}";
     Asset::AssetDatabaseUVE db; ASSERT_TRUE(db.LoadUVE(root/"bad-db"));
