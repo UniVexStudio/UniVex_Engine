@@ -236,6 +236,17 @@ jobs:
           packages: 'platform-tools'
       - name: Install pinned Android toolchain
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865'
+      - name: Prepare accelerated Android emulator
+        if: matrix.abi == 'x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm
+          sudo chmod a+rw /dev/kvm
+          sdkmanager 'emulator' 'system-images;android-29;default;x86_64'
+          "$ANDROID_HOME/emulator/emulator" -version
+          "$ANDROID_HOME/emulator/emulator" -accel-check
+          echo no | avdmanager create avd --force --name univex-ci --package 'system-images;android-29;default;x86_64'
       - name: Build and verify debug-signed APK
         run: >-
           python3 Engine/Tools/android/build_apk.py --sdk "$ANDROID_HOME"
@@ -245,14 +256,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -e /dev/kvm
-          sudo chmod a+rw /dev/kvm
-          sdkmanager 'emulator' 'system-images;android-29;default;x86_64'
-          echo no | avdmanager create avd --force --name univex-ci --package 'system-images;android-29;default;x86_64'
           "$ANDROID_HOME/emulator/emulator" -avd univex-ci -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader -memory 2048 -cores 2 > /tmp/univex-emulator.log 2>&1 &
           emulator_pid=$!
           trap 'adb -s emulator-5554 emu kill || true; kill "$emulator_pid" 2>/dev/null || true' EXIT
-          timeout 120 adb -s emulator-5554 wait-for-device
+          if ! timeout 120 adb -s emulator-5554 wait-for-device; then
+            cat /tmp/univex-emulator.log
+            exit 1
+          fi
           booted=false
           for attempt in $(seq 1 240); do
             if [ "$(adb -s emulator-5554 shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; then
