@@ -24,8 +24,6 @@ constexpr GLsizei kSolidStride = static_cast<GLsizei>(sizeof(float) * 11);
 // At and above this alpha, blending leaves a triangle visually solid, so it is drawn in the
 // opaque pass and keeps its depth writes.
 constexpr float kOpaqueAlphaThreshold = 0.999f;
-// Visual-only scale: picking and the authored gizmo size remain unchanged.
-constexpr float kGizmoVisualThicknessScaleUVE = 0.20f;
 
 [[nodiscard]] Vec3 VividGizmoColorUVE(const Vec3& color) {
     return Vec3{std::min(1.0f, color.x * 1.25f), std::min(1.0f, color.y * 1.25f),
@@ -193,7 +191,15 @@ void GizmoRenderer::UploadAndDrawLines(const GizmoMesh& mesh, const GizmoDrawPar
     vertices.reserve(mesh.lines.size() * 6 * 11);
     for (const auto& line : mesh.lines) {
         const Vec3 vividColor = VividGizmoColorUVE(line.color);
-        const float width = line.widthPx * kGizmoVisualThicknessScaleUVE;
+        // GizmoStyle's widths are authored in pixels, and this shader lays the stroke out in
+        // pixels, so the authored value is the width. It used to be multiplied by a separate
+        // "visual thickness" factor of 0.20, which shrank every stroke in the widget to a fifth of
+        // what it says it is: the nav gizmo's 1.8 px axis letters became 0.36 px and fell apart
+        // into specks, a 2.0 px axis stub became 0.4 px, and the darker, wider outline copy behind
+        // each stroke (outlineExtraPx) became too thin to separate anything. Picking was never
+        // affected - it reads the authored hit radii, not this - so the only thing the factor
+        // changed was how small the widget could be drawn before it stopped being readable.
+        const float width = line.widthPx;
         // Quad corners: A-n, A+n, B+n, B-n. At B the computed normal is
         // flipped (its "other" end is A), so the side value flips with it.
         // The width's sign marks the end (A positive, B negative), so the shader can lay out a

@@ -32,10 +32,19 @@ void main() {
     vec3 toEye = -normalize(uViewDir);
     vec3 facing = dot(normal, toEye) < 0.0 ? -normal : normal;
     float key = max(dot(facing, keyLight), 0.0);
-    float head = max(dot(facing, toEye), 0.0);
+    // Clamped to 1.0, and not just for tidiness. A surface facing the camera - every disc and ring
+    // in this widget, since they are built camera-aligned - has dot(facing, toEye) == 1.0 up to
+    // rounding, and the rounding can land ON THE WRONG SIDE of it. `1.0 - head` then goes very
+    // slightly negative and pow(negative, 3.0) is undefined, which every driver here returns as
+    // NaN. That NaN used to survive the mix() below even for flat shapes (whose vLit is 0), because
+    // mix(x, y, 0) is x*(1-0) + y*0 and NaN*0 is still NaN - so the whole face wrote NaN, and a
+    // NaN colour lands in the framebuffer as black. That was the broken black pie-slicing across
+    // the nav gizmo's balls: not z-fighting, not a missing texture, just NaN out of a pow().
+    float head = clamp(dot(facing, toEye), 0.0, 1.0);
     float rim = pow(1.0 - head, 3.0);
     float litShade = 0.22 + 0.48 * key + 0.38 * head - 0.18 * rim;
 
-    float shade = mix(flatShade, litShade, clamp(vLit, 0.0, 1.0));
+    // Select rather than mix: a flat shape never reads litShade, so it can never be hurt by it.
+    float shade = vLit > 0.0 ? mix(flatShade, litShade, clamp(vLit, 0.0, 1.0)) : flatShade;
     fragColor = vec4(vColorAlpha.rgb * shade, vColorAlpha.a * uOpacity);
 }
