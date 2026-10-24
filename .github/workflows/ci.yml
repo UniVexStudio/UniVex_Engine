@@ -244,9 +244,10 @@ jobs:
           test -e /dev/kvm
           sudo chmod a+rw /dev/kvm
           sdkmanager 'emulator' 'system-images;android-29;default;x86_64'
-          "$ANDROID_HOME/emulator/emulator" -version
-          "$ANDROID_HOME/emulator/emulator" -accel-check
-          echo no | avdmanager create avd --force --name univex-ci --package 'system-images;android-29;default;x86_64'
+          "$ANDROID_HOME/emulator/emulator" -no-window -no-audio -version
+          "$ANDROID_HOME/emulator/emulator" -no-window -accel-check
+          echo no | avdmanager create avd --force --name univex-ci --path /tmp/univex-ci-avd --package 'system-images;android-29;default;x86_64'
+          sed -i 's/^disk.dataPartition.size=.*/disk.dataPartition.size=2G/' /tmp/univex-ci-avd/config.ini
       - name: Build and verify debug-signed APK
         run: >-
           python3 Engine/Tools/android/build_apk.py --sdk "$ANDROID_HOME"
