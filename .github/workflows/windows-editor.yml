@@ -7,6 +7,11 @@ on:
       - 'Engine/**'
       - 'CMakeLists.txt'
   workflow_dispatch:
+    inputs:
+      create_artifacts:
+        description: 'Create downloadable build and diagnostic artifacts'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -77,6 +82,7 @@ jobs:
           cd package/UniVex-Editor
           ./uve_editor.exe --bridge-stdio < /dev/null
       - uses: actions/upload-artifact@v4
+        if: (github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true')
         with:
           name: UniVex-Editor-Windows-x64
           path: package/UniVex-Editor/
