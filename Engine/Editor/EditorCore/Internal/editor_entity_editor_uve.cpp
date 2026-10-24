@@ -798,16 +798,72 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
     session.dockHeight = std::clamp(session.dockHeight, 90.0F, std::max(90.0F, available - 160.0F));
     const float height = std::max(80.0F, available - session.dockHeight - kSplitterUVE);
     const float width = ImGui::GetContentRegionAvail().x;
-    const float treeWidth = std::clamp(width * 0.22F, 200.0F, 320.0F);
-    const float inspectorWidth = std::clamp(width * 0.28F, 260.0F, 420.0F);
+
+    // ---- Three columns with draggable seams -------------------------------------------------
+    // The tree and the Inspector used to be fitted to fixed fractions of the window on every
+    // frame, which made the only two lists in the window un-resizable: an author who needed more
+    // room for long object names had nowhere to get it from, and the same 22% / 28% split was
+    // handed to a 1180 px window and a 2560 px one. The level's Outliner and Inspector have been
+    // draggable seams since the chrome layout was written, so the entity window now keeps its two
+    // widths in the same shape that those keep m_scenePanelWidth - a 0 meaning "never dragged,
+    // use the default ratio", replaced by the author's width from the first drag on.
+    //
+    // The seam is its own inline widget between the children rather than a border on either one,
+    // because a border belongs to a window that ImGui also uses for hit-testing and scrolling;
+    // a 5 px button drawn in the parent's layout takes the drag without either column having to
+    // give up a pixel of its content.
+    constexpr float kColumnSeamUVE = 5.0F;
+    const float columnGap = ImGui::GetStyle().ItemSpacing.x;
+    const auto clampTree = [width](const float requested) {
+        return std::clamp(requested, 160.0F, std::max(160.0F, width * 0.45F));
+    };
+    const auto clampInspector = [width](const float requested) {
+        return std::clamp(requested, 220.0F, std::max(220.0F, width * 0.50F));
+    };
+    const auto drawColumnSeam = [&](const char* const id, const auto&& applyDelta) {
+        ImGui::SameLine();
+        ImGui::InvisibleButton(id, ImVec2{kColumnSeamUVE, height});
+        const bool active = ImGui::IsItemActive();
+        if (active) {
+            if (ImGui::GetIO().MouseDelta.x != 0.0F) {
+                applyDelta(ImGui::GetIO().MouseDelta.x);
+            }
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+        } else if (ImGui::IsItemHovered()) {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+        }
+        // A hairline down the seam, so the column edge reads as a handle rather than as the gap
+        // between two panels. It brightens under the pointer the same way the level's seams do.
+        const ImVec2 seamMin = ImGui::GetItemRectMin();
+        const ImVec2 seamMax = ImGui::GetItemRectMax();
+        const float seamX = (seamMin.x + seamMax.x) * 0.5F;
+        ImGui::GetWindowDrawList()->AddLine(
+            ImVec2{seamX, seamMin.y}, ImVec2{seamX, seamMax.y},
+            ImGui::GetColorU32(active || ImGui::IsItemHovered() ? ImGuiCol_SeparatorHovered : ImGuiCol_Separator));
+    };
+
+    float treeWidth = clampTree(session.treeWidth > 0.0F ? session.treeWidth : width * 0.22F);
     ImGui::BeginChild("##entity-tree", ImVec2{treeWidth, height}, true);
     DrawHierarchyBodyUVE();
     ImGui::EndChild();
+    drawColumnSeam("##entity-tree-seam", [&](const float delta) {
+        treeWidth = clampTree(treeWidth + delta);
+        session.treeWidth = treeWidth;
+    });
+
+    float inspectorWidth = clampInspector(session.inspectorWidth > 0.0F ? session.inspectorWidth : width * 0.28F);
+    const float middleWidth = std::max(120.0F, width - treeWidth - inspectorWidth - (2.0F * kColumnSeamUVE) -
+                                                    (4.0F * columnGap));
     ImGui::SameLine();
-    ImGui::BeginChild("##entity-middle", ImVec2{std::max(120.0F, width - treeWidth - inspectorWidth - 16.0F), height},
-                      false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::BeginChild("##entity-middle", ImVec2{middleWidth, height}, false,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     DrawEntityEditorMiddleUVE(session);
     ImGui::EndChild();
+    drawColumnSeam("##entity-inspector-seam", [&](const float delta) {
+        inspectorWidth = clampInspector(inspectorWidth - delta);
+        session.inspectorWidth = inspectorWidth;
+    });
+
     ImGui::SameLine();
     ImGui::BeginChild("##entity-inspector", ImVec2{0.0F, height}, true);
     DrawInspectorContentUVE();

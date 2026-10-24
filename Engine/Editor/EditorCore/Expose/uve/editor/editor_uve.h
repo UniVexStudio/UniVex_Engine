@@ -534,6 +534,15 @@ public:
         // camera that faces the front and does not turn (the wheel still zooms). The camera is
         // placed on `studioTarget`, far enough to fit `studioRadius`, each time the serial changes.
         bool studioView = false;
+
+        // The Entity Editor's viewport: one entity, authored in isolation. It is a 3D object view
+        // with the level's camera controls, not a 2D canvas and not a level, so the two controls
+        // that only mean something for a level are hidden there - the preview sun/environment
+        // (which exists to light a scene that has no lights of its own, while an entity being
+        // authored is lit by its own) and the 2D/3D switch (an entity asset is a 3D object; the
+        // 2D viewport mode belongs to the level's canvas). Set by DrawViewportImageUVE from the
+        // viewport context it is drawing, never authored by the user.
+        bool entityAuthoringView = false;
         std::array<float, 3> studioTarget{0.0F, 1.0F, 0.0F};
         float studioRadius = 1.5F;
         std::uint32_t studioFramingSerial = 0U;
@@ -1395,6 +1404,14 @@ private:
         /// tab once, and the tab stays the user's choice until the selection moves again.
         Scene::EntityUVE dockFollowed = Scene::kInvalidEntityUVE;
         float dockHeight = 220.0F;
+        /// The tree's width, dragged from its seam. 0 means "not dragged yet": the window then
+        /// uses the fraction of its own width below, so the columns open at a sensible ratio on
+        /// any window size, and the author's own width takes over from the first drag until the
+        /// entity is closed. Same shape as the level's Outliner and Inspector panels, which keep
+        /// a 0-or-dragged width the same way.
+        float treeWidth = 0.0F;
+        /// The Inspector's width, dragged from its seam. 0 means "not dragged yet".
+        float inspectorWidth = 0.0F;
     };
     /// What the Retarget window's viewport shows while it is open: the scene is put aside (as the
     /// Entity Editor does) and a preview world stands in its place. Closing brings the scene back.

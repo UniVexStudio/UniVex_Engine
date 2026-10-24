@@ -256,6 +256,9 @@ void EditorUVE::DrawViewportImageUVE(const ViewportContextUVE context) {
         state->gameWorkspaceActive = context == ViewportContextUVE::Main &&
                                      m_activeWorkspace == EditorWorkspaceUVE::Game;
         state->studioView = context == ViewportContextUVE::Retarget;
+        // Which overlays this view is entitled to, decided by the caller that knows what it is
+        // drawing rather than guessed from state that is swapped underneath it.
+        state->entityAuthoringView = context == ViewportContextUVE::EntityEditor;
         state->bones.clear();
         state->colliderLines.clear();
         if (!state->gameWorkspaceActive) {
@@ -606,46 +609,27 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
         }
     }
 
-    // ---- Physics Simulation Toggle pill ----------------------------------------------------
-    const bool physicsPaused =
-        m_simulationControl != nullptr
-            ? m_simulationControl->GetSimulationExecutionModeUVE() == Core::SimulationExecutionModeUVE::Paused
-            : m_viewportOverlayState.physicsPaused;
-    const char* const physLabel = physicsPaused ? "Physics: OFF" : "Physics: ON";
-    const ImVec2 physTextSize = ImGui::CalcTextSize(physLabel);
-    constexpr float kIndicatorRadius = 3.5F;
-    const float physPillWidth = physTextSize.x + kBubblePaddingXUVE * 2.0F + kIndicatorRadius * 2.0F + 8.0F;
-    const ImVec2 physPillMin{shadingPillMax.x + kBubbleGapUVE, topY};
-    const ImVec2 physPillMax{physPillMin.x + physPillWidth, physPillMin.y + unifiedHeight};
-    {
-        ImGui::SetCursorScreenPos(physPillMin);
-        const bool pressedPhys =
-            ImGui::InvisibleButton("##physics-toggle-btn", ImVec2{physPillWidth, unifiedHeight});
-        const bool hoveredPhys = ImGui::IsItemHovered();
-        drawList->AddRectFilled(physPillMin, physPillMax,
-                                hoveredPhys ? IM_COL32(30, 34, 44, 220) : IM_COL32(18, 21, 28, 200),
-                                unifiedHeight * 0.5F);
-        drawList->AddRect(physPillMin, physPillMax, IM_COL32(255, 255, 255, 24), unifiedHeight * 0.5F);
-        const float dotY = (physPillMin.y + physPillMax.y) * 0.5F;
-        const float dotX = physPillMin.x + kBubblePaddingXUVE + kIndicatorRadius + 2.0F;
-        const ImU32 dotColor = physicsPaused ? IM_COL32(236, 172, 52, 255) : IM_COL32(76, 217, 100, 255);
-        drawList->AddCircleFilled(ImVec2{dotX, dotY}, kIndicatorRadius, dotColor, 12);
-        drawList->AddText(
-            ImVec2{dotX + kIndicatorRadius + 6.0F, physPillMin.y + (unifiedHeight - physTextSize.y) * 0.5F},
-            IM_COL32(224, 228, 236, 255), physLabel);
-        if (pressedPhys) {
-            const bool newPaused = !physicsPaused;
-            m_viewportOverlayState.physicsPaused = newPaused;
-            if (m_simulationControl != nullptr) {
-                static_cast<void>(m_simulationControl->SetSimulationExecutionModeUVE(
-                    newPaused ? Core::SimulationExecutionModeUVE::Paused : Core::SimulationExecutionModeUVE::Running));
-            }
-        }
-        if (hoveredPhys) {
-            ImGui::SetTooltip(physicsPaused ? "Resume physics and fixed simulation steps"
-                                            : "Pause physics simulation in the viewport");
-        }
-    }
+    // ---- No physics pill ----------------------------------------------------------------
+    // There used to be a "Physics: ON / OFF" pill here, and it was the wrong shape for the job in
+    // three separate ways.
+    //
+    // It was a *global* switch wearing a *per-viewport* face: it wrote the one engine-wide
+    // simulation mode, so pressing it in the Entity Editor also froze the level viewport behind
+    // it and the running game itself. It also lied about which way was safe - the editor used to
+    // open with the simulation already Running, so the pill showed "ON" and the first thing an
+    // author saw was their character falling before they had touched anything. And because
+    // nothing in edit mode kept a snapshot, that fall was permanent: Play has PlayModeSessionUVE
+    // to restore, the editor had nothing, and a simulation-driven transform is not the kind of
+    // change undo can own.
+    //
+    // The answer is not a better pill. It is that an editor does not simulate. The clock is off in
+    // edit (EditorUVE::Init), Play turns it on, Stop turns it back off - see StopPlayModeUVE,
+    // which now restores Paused rather than the Running it used to. With no state for an author to
+    // get wrong, there is no control to offer here, so the pill is gone rather than disabled.
+    //
+    // Animation is unaffected: pose, blend, IK and skinning moved to an unconditional authoring
+    // pass in EngineCoreUVE::Update, so pausing the clock no longer takes the authoring tools with
+    // it.
 
     // ---- Preview Sun & Environment (Godot 4 parity) -----------------------------------------
     // Godot's 3D viewport has exactly three controls here: a sun toggle, an environment toggle and
@@ -659,9 +643,13 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
     // controls need no explanation: a sun, a sky, and the menu that edits both.
     constexpr float kPreviewToggleWidthUVE = 26.0F;
     constexpr float kPreviewToggleGapUVE = 2.0F;
-    float previewCursorX = physPillMax.x + kBubbleGapUVE;
+    float previewCursorX = shadingPillMax.x + kBubbleGapUVE;
+    const bool levelOnlyOverlays = !m_viewportOverlayState.entityAuthoringView;
     const auto previewToggle = [&](const char* const id, const bool active, const char* const tooltip,
                                    const auto& drawIcon) {
+        if (!levelOnlyOverlays) {
+            return false;
+        }
         const ImVec2 minimum{previewCursorX, topY};
         const ImVec2 maximum{minimum.x + kPreviewToggleWidthUVE, minimum.y + unifiedHeight};
         ImGui::SetCursorScreenPos(minimum);
@@ -861,7 +849,7 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
     const float mode2DPillWidth = mode2DTextSize.x + kBubblePaddingXUVE * 2.0F + 8.0F;
     const ImVec2 mode2DPillMin{previewPillMax.x + kBubbleGapUVE, topY};
     const ImVec2 mode2DPillMax{mode2DPillMin.x + mode2DPillWidth, mode2DPillMin.y + unifiedHeight};
-    {
+    if (levelOnlyOverlays) {
         ImGui::SetCursorScreenPos(mode2DPillMin);
         const bool pressedMode2D =
             ImGui::InvisibleButton("##viewport-2d-mode-btn", ImVec2{mode2DPillWidth, unifiedHeight});
