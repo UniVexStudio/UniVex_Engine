@@ -62,7 +62,8 @@ def main():
         wait_for('UVE_ANDROID_SURFACE_DETACHED')
         adb('shell', 'am', 'start', '-n', 'com.univex.runtime/android.app.NativeActivity')
         wait_for('UVE_ANDROID_RESUMED', 2)
-        text = wait_for('UVE_ANDROID_SURFACE_ATTACHED')
+        wait_for('UVE_ANDROID_SURFACE_ATTACHED')
+        text = wait_for('UVE_ANDROID_RENDERED', 2)
         if text.count('UVE_ANDROID_INITIALIZED') != 1:
             raise RuntimeError('Engine was recreated instead of retaining its scene')
         if args.screenshot:

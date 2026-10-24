@@ -89,6 +89,8 @@ struct Host {
             __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_LOAD_DONE");
             auto* graphics = dynamic_cast<UVE::Render::GlRenderDeviceUVE*>(&engine->GetServicesUVE().GetRenderDeviceUVE());
             if (graphics == nullptr || !graphics->IsUsableUVE()) throw std::runtime_error("GLES renderer unavailable");
+            auto* window = dynamic_cast<UVE::Window::AndroidWindowManagerUVE*>(&engine->GetServicesUVE().GetWindowManagerUVE());
+            if (window != nullptr) window->SetFocusedUVE(focused);
             auto& entities = engine->GetServicesUVE().GetEntityManagerUVE();
             auto& graph = engine->GetServicesUVE().GetSceneGraphUVE();
             const auto camera = entities.CreateEntityUVE();
@@ -128,6 +130,7 @@ void Command(android_app* app, int32_t command) {
         } else host.Start();
         break;
     case APP_CMD_TERM_WINDOW:
+        host.frameReported = false;
         host.Cancel();
         if (host.engine) {
             auto* window = dynamic_cast<UVE::Window::AndroidWindowManagerUVE*>(&host.engine->GetServicesUVE().GetWindowManagerUVE());
@@ -136,7 +139,7 @@ void Command(android_app* app, int32_t command) {
         }
         break;
     case APP_CMD_RESUME: host.resumed = true; __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_RESUMED"); break;
-    case APP_CMD_PAUSE: host.resumed = false; host.Cancel(); __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_PAUSED"); break;
+    case APP_CMD_PAUSE: host.resumed = false; host.frameReported = false; host.Cancel(); __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_PAUSED"); break;
     case APP_CMD_GAINED_FOCUS: host.Focus(true); break;
     case APP_CMD_LOST_FOCUS: host.Focus(false); break;
     case APP_CMD_LOW_MEMORY:
@@ -188,12 +191,12 @@ extern "C" void android_main(android_app* app) {
         host.failed = true;
     }
     while (app->destroyRequested == 0) {
-        const bool active = host.engine && host.resumed && host.focused && app->window != nullptr;
+        const bool active = host.engine && host.resumed && app->window != nullptr;
         android_poll_source* source = nullptr;
         const int result = ALooper_pollOnce(active ? 0 : -1, nullptr, nullptr, reinterpret_cast<void**>(&source));
         if (result >= 0 && source != nullptr) source->process(app, source);
         if (app->destroyRequested != 0) break;
-        if (host.engine && host.resumed && host.focused && app->window != nullptr) {
+        if (host.engine && host.resumed && app->window != nullptr) {
             try {
                 host.engine->TickFrameUVE(); host.UpdateDemo();
                 if (!host.engine->GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {
