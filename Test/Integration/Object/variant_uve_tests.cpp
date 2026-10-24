@@ -11,6 +11,17 @@
 
 namespace UVE::Core::Tests {
 namespace {
+TEST(VariantUVETest, RecursiveDictionaryCopiesOwnTheirEntriesAndSurviveMoves) {
+    auto original = VariantUVE::MakeDefaultUVE(VariantTypeUVE::Dictionary);
+    original.TryGetMutableUVE<std::vector<VariantDictionaryEntryUVE>>()->push_back(
+        {"value", VariantUVE::MakeTextUVE(VariantTypeUVE::String, "original")});
+    VariantUVE copy = original;
+    copy.TryGetMutableUVE<std::vector<VariantDictionaryEntryUVE>>()->front().value = VariantUVE::MakeIntUVE(7);
+    VariantUVE moved = std::move(copy);
+    EXPECT_EQ(*moved.TryGetUVE<std::vector<VariantDictionaryEntryUVE>>()->front().value.TryGetUVE<std::int64_t>(), 7);
+    EXPECT_EQ(*original.TryGetUVE<std::vector<VariantDictionaryEntryUVE>>()->front().value.TryGetUVE<std::string>(), "original");
+}
+
 
 TEST(VariantUVETest, EveryTypeHasADistinctStableNameThatParsesBack) {
     std::set<std::string> names;

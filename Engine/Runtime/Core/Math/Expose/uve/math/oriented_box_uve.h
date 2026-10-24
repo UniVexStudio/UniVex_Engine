@@ -28,7 +28,7 @@ struct OrientedBoxUVE {
         // constant expressions, per the module's convention. NaN fails the self-compare;
         // infinity fails the magnitude bound.
         constexpr float kMaxUVE = 3.402823466e+38F;
-        const auto finite = [kMaxUVE](const Vector3UVE& v) constexpr {
+        const auto finite = [](const Vector3UVE& v) constexpr {
             return v.x == v.x && v.y == v.y && v.z == v.z && v.x <= kMaxUVE && v.x >= -kMaxUVE &&
                    v.y <= kMaxUVE && v.y >= -kMaxUVE && v.z <= kMaxUVE && v.z >= -kMaxUVE;
         };

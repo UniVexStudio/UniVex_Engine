@@ -3457,7 +3457,7 @@ struct Renderer3DUVE::ImplUVE {
             uiVertexStaging.push_back(makeVertex(x1, y1, quad.u1, quad.v1));
             uiVertexStaging.push_back(makeVertex(x0, y1, quad.u0, quad.v1));
         };
-        const auto drawQuads = [this, &appendQuad, &projection, &commandBuffer, maxVertices](
+        const auto drawQuads = [this, &appendQuad, &projection, &commandBuffer](
                                    const TextureHandleUVE texture,
                                    const std::vector<UI::UIQuadUVE>& quads) -> bool {
             uiVertexStaging.clear();

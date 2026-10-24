@@ -1266,11 +1266,14 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 - [x] A mobile input/gesture system exists at the input-abstraction level
 - [ ] Verified, tested builds on every major desktop operating system (not just the one
   this codebase has been developed on)
-- [~] A real mobile rendering + lifecycle path: Android motion-event routing now maps
-  stable pointer IDs into bounded touch slots, handles cancellation and uses new contact
-  identifiers when Android reuses IDs. Native motion-event code is Android-only and awaits
-  NDK validation. Native window/rendering, event-loop integration, suspend/resume, safe-area
-  handling, touch-first UI scaling and APK validation remain pending.
+- [~] A real mobile rendering + lifecycle path: the Android NativeActivity runtime now
+  uses the engine core, an EGL/GLES window backend, stable multi-touch routing, pause/focus
+  gating, memory-pressure asset collection and surface detach/reattach through a retained
+  context. arm64 and x86_64 APKs cross-build with the NDK and pass signature/16 KB ZIP
+  alignment checks. Native CI and opt-in APK uploads are wired. Emulator/device rendering,
+  touch/lifecycle verification, complete GPU context-loss state restoration, and editor
+  touch-first UI/scaling remain unverified or incomplete. A lost context fails explicitly.
+
 - [ ] Console platform support (each console's own certification requirements, controller
   input, and storage/save APIs) — a long-term goal gated behind actual console dev kit
   access

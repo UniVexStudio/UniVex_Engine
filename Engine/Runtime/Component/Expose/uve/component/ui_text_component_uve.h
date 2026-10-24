@@ -28,6 +28,7 @@ struct UITextComponentUVE final {
     float fontSize = kDefaultUIFontSizeUVE;
     Math::Vector3UVE color{1.0F, 1.0F, 1.0F};
     float alpha = 1.0F;
+    [[nodiscard]] bool operator==(const UITextComponentUVE&) const = default;
 };
 
 [[nodiscard]] bool IsUITextComponentValidUVE(const UITextComponentUVE& component) noexcept;

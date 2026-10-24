@@ -48,6 +48,11 @@ ThreadControlResultUVE ResultUVE(int error) noexcept {
     return {code, static_cast<std::uint32_t>(error)};
 }
 ThreadControlResultUVE SetAffinityUVE(pthread_t thread, std::span<const std::uint32_t> cpus) noexcept {
+#if defined(__ANDROID__)
+    static_cast<void>(thread);
+    static_cast<void>(cpus);
+    return {};
+#else
     cpu_set_t mask;
     CPU_ZERO(&mask);
     for (auto cpu : cpus) {
@@ -56,8 +61,14 @@ ThreadControlResultUVE SetAffinityUVE(pthread_t thread, std::span<const std::uin
         CPU_SET(cpu, &mask);
     }
     return ResultUVE(pthread_setaffinity_np(thread, sizeof(mask), &mask));
+#endif
 }
 ThreadControlResultUVE GetAffinityUVE(pthread_t thread, std::vector<std::uint32_t> &out) {
+#if defined(__ANDROID__)
+    static_cast<void>(thread);
+    static_cast<void>(out);
+    return {};
+#else
     cpu_set_t mask;
     CPU_ZERO(&mask);
     const auto result = ResultUVE(pthread_getaffinity_np(thread, sizeof(mask), &mask));
@@ -69,6 +80,7 @@ ThreadControlResultUVE GetAffinityUVE(pthread_t thread, std::vector<std::uint32_
             candidate.push_back(cpu);
     out = std::move(candidate);
     return result;
+#endif
 }
 ThreadControlResultUVE SetPriorityUVE(pthread_t thread, ThreadPriorityUVE priority) noexcept {
     int policy = SCHED_OTHER;

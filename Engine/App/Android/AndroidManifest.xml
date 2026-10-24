@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.univex.runtime" android:versionCode="1" android:versionName="0.1">
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35" />
+    <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+    <application android:label="UniVex Runtime" android:hasCode="false" android:allowBackup="false">
+        <activity android:name="android.app.NativeActivity" android:exported="true"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|density|uiMode">
+            <meta-data android:name="android.app.lib_name" android:value="univex_android" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -612,17 +612,34 @@ bool GlRenderDeviceUVE::ReadbackBufferUVE(BufferHandleUVE buffer, std::span<std:
     // and GL_SHADER_STORAGE_BARRIER_BIT (the SSBO writes themselves). glGetBufferSubData below
     // is then a blocking client read, which is itself a synchronization point - no glFinish is
     // needed on top of it, and issuing one would only widen the stall beyond this buffer.
-    if (m_impl->state.gl.glMemoryBarrier != nullptr) {
+    if (m_impl->state.supportsComputeShadersUVE && m_impl->state.gl.glMemoryBarrier != nullptr) {
         m_impl->state.gl.glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
     }
+#if defined(__ANDROID__)
+    std::vector<std::byte> candidate(outData.size());
+#endif
     GLint previousBufferBinding = 0;
     glGetIntegerv(bindingQuery, &previousBufferBinding);
     m_impl->state.gl.glBindBuffer(it->second.target, it->second.glBuffer);
+#if defined(__ANDROID__)
+    const void* mapped = glMapBufferRange(it->second.target, static_cast<GLintptr>(offsetBytes),
+                                        static_cast<GLsizeiptr>(outData.size()), GL_MAP_READ_BIT);
+    if (mapped == nullptr) {
+        m_impl->state.gl.glBindBuffer(it->second.target, static_cast<GLuint>(previousBufferBinding));
+        return false;
+    }
+    std::memcpy(candidate.data(), mapped, outData.size());
+    const bool unmapped = glUnmapBuffer(it->second.target) == GL_TRUE;
+    m_impl->state.gl.glBindBuffer(it->second.target, static_cast<GLuint>(previousBufferBinding));
+    if (unmapped) std::copy(candidate.begin(), candidate.end(), outData.begin());
+    return unmapped;
+#else
     m_impl->state.gl.glGetBufferSubData(it->second.target, static_cast<GLintptr>(offsetBytes),
                                           static_cast<GLsizeiptr>(outData.size()), outData.data());
     UVE_GL_CHECK_ERROR_UVE("ReadbackBufferUVE");
     m_impl->state.gl.glBindBuffer(it->second.target, static_cast<GLuint>(previousBufferBinding));
     return true;
+#endif
 }
 
 TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
@@ -1041,6 +1058,12 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown front-face winding");
         return kInvalidPipelineHandleUVE;
     }
+#if defined(__ANDROID__)
+    if (desc.fillMode == FillModeUVE::Wireframe) {
+        UVE_WARNING("GlRenderDeviceUVE: GLES does not support polygon wireframe mode");
+        return kInvalidPipelineHandleUVE;
+    }
+#endif
     if (!IsFillModeValidUVE(desc.fillMode)) {
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown fill mode");
         return kInvalidPipelineHandleUVE;
@@ -1287,6 +1310,12 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<const
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown front-face winding");
         return kInvalidPipelineHandleUVE;
     }
+#if defined(__ANDROID__)
+    if (desc.fillMode == FillModeUVE::Wireframe) {
+        UVE_WARNING("GlRenderDeviceUVE: GLES does not support polygon wireframe mode");
+        return kInvalidPipelineHandleUVE;
+    }
+#endif
     if (!IsFillModeValidUVE(desc.fillMode)) {
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown fill mode");
         return kInvalidPipelineHandleUVE;

@@ -149,9 +149,7 @@ target_link_libraries(uve_asset
     PUBLIC uve_logging uve_math uve_threading uve_events
     PRIVATE uve_utilities nlohmann_json::nlohmann_json ZLIB::ZLIB uve_ufbx uve_basisu_transcoder
 )
-if(NOT ANDROID)
-    target_link_libraries(uve_asset PRIVATE JPEG::JPEG)
-endif()
+target_link_libraries(uve_asset PRIVATE JPEG::JPEG)
 if(TARGET uve_jpeg_ep)
     add_dependencies(uve_asset uve_jpeg_ep)
 endif()

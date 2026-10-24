@@ -11,6 +11,9 @@ For push and pull-request runs, set the Actions repository variable
 unset to disable uploads. This is a variable, not a secret. Only lowercase
 `true` enables it. No repository settings are changed by these workflows.
 
+CI also builds the Android arm64 runtime. Its APK upload uses the same checkbox
+and repository variable. APKs use a generated debug signing key for local testing.
+
 When OFF, Linux skips the process baseline and all artifact uploads, including
 failure-log uploads. Errors and test results remain in the job log. Windows
 still prepares its runtime DLL folder and runs the packaged executable startup

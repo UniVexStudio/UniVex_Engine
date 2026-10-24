@@ -622,7 +622,11 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
 #if defined(__ANDROID__)
         glClearDepthf(renderPassDesc.clearDepth);
 #else
+#if defined(__ANDROID__)
+        glClearDepthf(renderPassDesc.clearDepth);
+#else
         glClearDepth(static_cast<GLdouble>(renderPassDesc.clearDepth));
+#endif
 #endif
         clearMask |= GL_DEPTH_BUFFER_BIT;
         const auto clearDepthIt = m_state->textures.find(renderPassDesc.depthAttachment.value);
@@ -771,6 +775,7 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
             glFrontFace(GL_CW);
             break;
     }
+#if !defined(__ANDROID__)
     switch (pipelineIt->second.fillMode) {
         case FillModeUVE::Fill:
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -779,6 +784,7 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
             break;
     }
+#endif
 #if !defined(__ANDROID__)
     // Points take their size from the vertex shader's gl_PointSize, which desktop GL ignores
     // unless program point size is enabled (GLES always honours it). Toggled per pipeline so a

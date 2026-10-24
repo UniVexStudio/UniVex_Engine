@@ -1,0 +1,7 @@
+add_library(uve_android_glue STATIC ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
+target_include_directories(uve_android_glue PUBLIC ${ANDROID_NDK}/sources/android/native_app_glue)
+add_library(univex_android SHARED main.cpp)
+target_link_libraries(univex_android PRIVATE uve_core uve_android_glue android log EGL GLESv3)
+target_link_options(univex_android PRIVATE -u ANativeActivity_onCreate)
+target_compile_features(univex_android PRIVATE cxx_std_23)
+uve_set_warnings(univex_android)

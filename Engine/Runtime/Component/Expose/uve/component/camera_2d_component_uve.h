@@ -19,6 +19,7 @@ struct Camera2DComponentUVE final {
     Math::Vector2UVE zoom = {1.0F, 1.0F};
     Math::Vector2UVE offset{};
     bool current = false;
+    [[nodiscard]] bool operator==(const Camera2DComponentUVE&) const = default;
 };
 
 [[nodiscard]] bool IsCamera2DComponentValidUVE(const Camera2DComponentUVE& camera) noexcept;
