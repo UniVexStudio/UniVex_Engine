@@ -1310,9 +1310,9 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   live games
 - [ ] Platform achievement/storefront SDK integration points (left generic/pluggable
   rather than tied to one storefront)
-- [ ] Automated build pipelines (continuous integration building every target platform on
-  every change) — this codebase currently validates locally per change, with no CI wired
-  up yet
+- [~] Automated build pipelines (continuous integration building every target platform on
+  every change) — Linux CI and a Windows editor package workflow exist; Windows verification
+  and Android build integration remain pending
 
 ---
 
@@ -1332,7 +1332,7 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   silently skipping.
 - [ ] Automated static analysis / sanitizer runs (address/undefined-behavior sanitizers,
   a linter pass) as part of the standard validation gate
-- [ ] Formal performance budgets and automated performance-regression testing (frame time,
+- [~] Formal performance budgets and automated performance-regression testing: Linux process runtime/peak RSS runner and CI baseline artifact exist; device budgets, frame-time/GPU measurements, and regression thresholds remain pending (frame time,
   memory, load time tracked over time, not just correctness)
 - [ ] A public-facing API reference generated from source comments
 - [ ] Getting-started and system-by-system guides for new contributors, generated/kept
