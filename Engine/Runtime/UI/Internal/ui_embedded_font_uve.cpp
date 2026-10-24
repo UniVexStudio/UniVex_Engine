@@ -2,6 +2,7 @@
 
 #include "uve/ui/ui_embedded_font_uve.h"
 
+#include <array>
 #include "ui_font_ttf_bytes.inc"
 
 namespace UVE::UI {

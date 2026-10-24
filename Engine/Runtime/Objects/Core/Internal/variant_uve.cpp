@@ -10,6 +10,15 @@
 #include <utility>
 
 namespace UVE::Core {
+// Define operations after the recursive dictionary entry is complete (required by libc++).
+VariantUVE::VariantUVE() noexcept = default;
+VariantUVE::~VariantUVE() = default;
+VariantUVE::VariantUVE(const VariantUVE&) = default;
+VariantUVE& VariantUVE::operator=(const VariantUVE&) = default;
+VariantUVE::VariantUVE(VariantUVE&&) noexcept = default;
+VariantUVE& VariantUVE::operator=(VariantUVE&&) noexcept = default;
+VariantUVE::VariantUVE(const VariantTypeUVE type, StorageUVE storage)
+    : m_type(type), m_storage(std::move(storage)) {}
 namespace {
 
 struct VariantTypeInfoUVE final {

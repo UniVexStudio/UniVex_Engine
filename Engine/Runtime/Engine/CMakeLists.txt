@@ -5,21 +5,9 @@
 # EngineServicesUVE (the seam every subsystem accessor goes through), EngineConfigUVE,
 # EngineStateUVE, FrameStatsUVE, IEditorViewportHostUVE/ISimulationControlUVE (the narrow
 # editor-facing control seams), and VersionUVE.
-#
-# Named Engine/Runtime/Engine (not nested under Core) to mirror real Unreal Engine's own module
-# layout, verified against Engine/Source/Runtime/Engine in the real Unreal source tree: UEngine
-# lives in a top-level Engine module, a sibling of Core, not inside it. This repo's
-# Core/{Logging,Memory,Threading,Math,Utilities,Scheduling,Diagnostics} split stays reserved for
-# the low-level HAL-like concerns Unreal's own Core module holds.
-#
-# EngineCoreUVE's dependency closure was surveyed three times this session as it grew: first
-# found to need the full Asset importer pipeline and mobile Input (previously excluded), then
-# the Android window backend was confirmed still safely excludable
-# (#if defined(__ANDROID__)-guarded at the exact construction site, non-Android path uses the
-# already-ported WindowManagerUVE). This final survey (after Asset and mobile Input both landed)
-# diffed every uve/* #include across engine_core_uve.h/.cpp and engine_services_uve.h/.cpp
-# against this repo - only the files in this module itself and the still-Android-guarded window
-# backend were missing, confirming the closure is genuinely complete.
+# EngineCoreUVE creates the Android EGL window backend under __ANDROID__ and the
+# GLFW backend on desktop. Both use the shared GLES/OpenGL render device interfaces.
+# A platform-specific native host owns event dispatch and application lifecycle.
 #
 # uve_render in the reference module maps to this repo's RHI/RenderSystems split: EngineCoreUVE
 # directly constructs both GlRenderDeviceUVE (real backend) and NullRenderDeviceUVE/
@@ -56,7 +44,7 @@ target_link_libraries(uve_core
     PRIVATE nlohmann_json::nlohmann_json uve_network
 )
 target_compile_features(uve_core PUBLIC cxx_std_23)
-if(UVE_HAS_DESKTOP_GL)
+if(UVE_HAS_DESKTOP_GL OR ANDROID)
     target_compile_definitions(uve_core PRIVATE UVE_HAS_DESKTOP_GL=1)
 else()
     target_compile_definitions(uve_core PRIVATE UVE_HAS_DESKTOP_GL=0)

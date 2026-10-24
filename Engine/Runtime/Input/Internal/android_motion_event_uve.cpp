@@ -4,7 +4,7 @@
 namespace UVE::Input {
 bool RouteAndroidMotionEventUVE(AndroidTouchRouterUVE& router, const AInputEvent* event) {
     if (event == nullptr || AInputEvent_getType(event) != AINPUT_EVENT_TYPE_MOTION ||
-        (AInputEvent_getSource(event) & AINPUT_SOURCE_TOUCHSCREEN) != AINPUT_SOURCE_TOUCHSCREEN) return false;
+        (static_cast<std::uint32_t>(AInputEvent_getSource(event)) & AINPUT_SOURCE_TOUCHSCREEN) != AINPUT_SOURCE_TOUCHSCREEN) return false;
     const auto rawAction = AMotionEvent_getAction(event);
     const auto action = rawAction & AMOTION_EVENT_ACTION_MASK;
     if (action == AMOTION_EVENT_ACTION_CANCEL) { router.CancelUVE(); return true; }
