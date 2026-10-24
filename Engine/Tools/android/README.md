@@ -35,7 +35,8 @@ Lifecycle behavior:
 - Shader assets are copied into private application storage; no external-storage permission is requested.
 
 GLES requires version 3.0. Optional compute paths require actual device capabilities.
-Desktop polygon wireframe is refused on GLES. Buffer readback uses GLES map/unmap and
+Desktop polygon wireframe is refused on GLES. Android pthread affinity operations are
+explicitly unsupported and the capability report reflects that; callers can choose a fallback. Buffer readback uses GLES map/unmap and
 reports failure when either operation fails. Rendering targets are bounded to 720p pixels;
 this is a resource policy, not an FPS guarantee or proof of 3 GB device readiness.
 

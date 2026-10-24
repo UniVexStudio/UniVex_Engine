@@ -129,7 +129,9 @@ bool AndroidWindowManagerUVE::IsValidUVE() const noexcept {
 }
 bool AndroidWindowManagerUVE::IsFocusedUVE() const noexcept { return m_impl->m_focused; }
 bool AndroidWindowManagerUVE::IsVSyncEnabledUVE() const noexcept { return m_impl->m_vsync; }
-void* AndroidWindowManagerUVE::GetNativeWindowHandleUVE() const noexcept { return m_impl->m_window; }
+void* AndroidWindowManagerUVE::GetNativeWindowHandleUVE() const noexcept {
+    return IsValidUVE() ? m_impl->m_window : nullptr;
+}
 }
 
 namespace UVE::Window {
