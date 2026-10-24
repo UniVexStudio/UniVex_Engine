@@ -161,7 +161,16 @@ void EditorUVE::DrawHierarchyPanelUVE() {
     // DrawEditorChromeHandlesUVE(), which writes m_scenePanelWidth - not on the window's edges.
     ImGui::SetNextWindowPos(layout.scenePos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.sceneSize, ImGuiCond_Always);
-    ImGui::Begin(kPanelLabelSceneUVE, &m_scenePanelVisible, ImGuiWindowFlags_NoCollapse);
+    // No title row and no close button, the same shape the Inspector panel already has: the
+    // Outliner's header row above this panel already says "Outliner" beside the logo, so a second
+    // "Outliner" with an X of its own directly under it named the panel twice and made the column
+    // start with a row that carried nothing but that repetition. Passing nullptr instead of
+    // &m_scenePanelVisible is what removes the X - ImGui only draws a close button when it is given
+    // a visibility flag to write back to. Hiding the panel is Window > Outliner, which is also how a
+    // hidden Outliner is brought back.
+    constexpr ImGuiWindowFlags hierarchyPanelFlags =
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
+    ImGui::Begin(kPanelLabelSceneUVE, nullptr, hierarchyPanelFlags);
     DrawHierarchyBodyUVE();
     ImGui::End();
 }
