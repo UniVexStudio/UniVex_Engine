@@ -48,4 +48,22 @@ struct ColliderComponentUVE final {
 /// retains its established defensive friction/restitution clamp for legacy hand-authored values.
 [[nodiscard]] bool IsColliderComponentValidUVE(const ColliderComponentUVE& collider) noexcept;
 
+/// The height below which a capsule has no barrel at all: its two hemispherical caps meet exactly
+/// and the shape is a sphere wearing a capsule's shape type.
+[[nodiscard]] float MinimumCapsuleHeightUVE(float radius) noexcept;
+
+/// Gives a collider the proportions the shape it now names actually implies.
+///
+/// Called when the author changes `shapeType`, not on every edit, because it only rescues a shape
+/// that cannot express itself with the numbers it inherited. Switching a Box to a Capsule is the
+/// case that matters: the field default is height 1.0 and radius 0.5, so the cap height equals the
+/// half height, the barrel is zero, and the author is shown a sphere while the Inspector says
+/// Capsule. A capsule with a barrel is the shape they asked for, so the height is raised until the
+/// barrel is as long as the capsule is wide - the proportion a capsule is drawn with everywhere -
+/// and an authored height that already has a barrel is left untouched.
+///
+/// Nothing about the other shapes changes: a Box, Sphere or Cylinder is already exactly what its
+/// numbers say.
+[[nodiscard]] ColliderComponentUVE FitColliderShapeUVE(const ColliderComponentUVE& collider) noexcept;
+
 } // namespace UVE::Scene

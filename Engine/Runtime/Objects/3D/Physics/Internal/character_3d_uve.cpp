@@ -1103,7 +1103,9 @@ CharacterMotionConfigUVE MakeCharacterMotionConfigUVE(
 bool IsCharacter3DObjectDefinitionValidUVE(const Character3DObjectDefinitionUVE& value) noexcept {
     ControllerComponentUVE authoredController;
     authoredController.kind = value.controllerKind;
-    return IsColliderComponentValidUVE(value.collider) &&
+    // No collider is a valid character: it is a controller waiting for the author to give it a
+    // body, which the Outliner flags. A collider that IS given must be a real one.
+    return (!value.collider.has_value() || IsColliderComponentValidUVE(*value.collider)) &&
            IsCharacterControllerComponentValidUVE(value.controller) &&
            IsControllerComponentValidUVE(authoredController);
 }
@@ -1114,8 +1116,12 @@ void ApplyCharacter3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const
         return;
     }
     ApplySolidBody3DBaseUVE(entityManager, entity, Character3DObjectDefinitionUVE::defaultName);
-    if (!entityManager.HasComponentUVE<ColliderComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<ColliderComponentUVE>(entity, value.collider);
+    // Only a definition that names a shape gets one. The default names none, so a Character3D
+    // authored from the object menu arrives with a controller and no body, and adding the
+    // Collider3D the author wants is the first shape it ever has rather than a second one
+    // overlapping a capsule it was born with.
+    if (value.collider.has_value() && !entityManager.HasComponentUVE<ColliderComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<ColliderComponentUVE>(entity, *value.collider);
     }
     if (!entityManager.HasComponentUVE<CharacterControllerComponentUVE>(entity)) {
         entityManager.AddComponentUVE<CharacterControllerComponentUVE>(entity, value.controller);
