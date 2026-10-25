@@ -291,10 +291,14 @@ struct ToICandidateUVE final {
         return false;
     }
 
-    const Scene::ColliderComponentUVE& movingCollider =
-        entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(controller);
     const Scene::WorldTransformComponentUVE& worldTransform =
         entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(controller);
+    // The sweeper's own shape is read at the scale the mesh is drawn at, exactly like the
+    // broadphase reads everyone else's: a controller that sweeps at unit size through a world that
+    // collides at full size is a body that walks into a floor it should be standing on.
+    const Scene::ColliderComponentUVE movingCollider = Scene::ScaleColliderUVE(
+        entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(controller),
+        worldTransform.worldScale);
     const Math::AabbUVE movingAabb = Math::AabbUVE::FromCenterExtentsUVE(
         worldTransform.worldPosition, Scene::GetColliderLocalHalfExtentsUVE(movingCollider));
     const std::vector<Detail::ColliderWorldAabbUVE> cache =
@@ -513,10 +517,11 @@ CharacterControllerMoveResultUVE CharacterControllerUVE::MoveWithToIUVE(
         const float consideredLength = std::min(remainingLength, maximumStepDistance);
         const Math::Vector3UVE consideredDisplacement =
             result.remainingDisplacement * (consideredLength / remainingLength);
-        const Scene::ColliderComponentUVE& movingCollider =
-            entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(input.entity);
         const Scene::WorldTransformComponentUVE& worldTransform =
             entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(input.entity);
+        const Scene::ColliderComponentUVE movingCollider = Scene::ScaleColliderUVE(
+            entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(input.entity),
+            worldTransform.worldScale);
         const Math::AabbUVE movingAabb = Math::AabbUVE::FromCenterExtentsUVE(
             worldTransform.worldPosition, Scene::GetColliderLocalHalfExtentsUVE(movingCollider));
         const std::vector<Detail::ColliderWorldAabbUVE> cache =

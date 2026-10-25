@@ -48,7 +48,8 @@ InteractionAreaScanResultUVE SyncInteractionAreasUVE(Scene::IEntityManagerUVE& e
             InteractorSnapshotUVE snapshot;
             snapshot.entity = entity;
             snapshot.center = worldTransform.worldPosition;
-            snapshot.halfExtents = Scene::GetColliderLocalHalfExtentsUVE(collider);
+            snapshot.halfExtents = Scene::GetColliderLocalHalfExtentsUVE(
+                Scene::ScaleColliderUVE(collider, worldTransform.worldScale));
             if (!Math::TryNormalizeUVE(worldTransform.worldRotation, snapshot.rotation)) {
                 snapshot.rotation = {};
             }

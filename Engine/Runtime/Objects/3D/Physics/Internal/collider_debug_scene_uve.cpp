@@ -54,7 +54,8 @@ ColliderDebugSceneStatsUVE BuildColliderDebugSceneUVE(IEntityManagerUVE& entityM
 
             const std::span<Physics::ColliderDebugLineUVE> remaining = outLines.subspan(stats.lineCount);
             Physics::ColliderDebugBuildResultUVE built = Physics::BuildColliderDebugLinesUVE(
-                collider, worldTransform.worldPosition, worldTransform.worldRotation, remaining, settings.style);
+                collider, worldTransform.worldPosition, worldTransform.worldRotation, remaining,
+                settings.style, worldTransform.worldScale);
             if (built.lineCount == 0U) return;
             stats.lineCount += built.lineCount;
             ++stats.colliderCount;

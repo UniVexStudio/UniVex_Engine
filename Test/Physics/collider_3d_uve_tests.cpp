@@ -155,11 +155,58 @@ TEST(Collider3DUVETest, IntersectRayUVE_CapsuleHitsTheSide) {
 
 TEST(Collider3DUVETest, GetWorldAabbUVE_UnrotatedBoxMatchesLocal) {
     const ColliderComponentUVE box = Collider3DUVE::MakeBoxUVE({1.0F, 2.0F, 3.0F});
-    const Math::AabbUVE world = Collider3DUVE::GetWorldAabbUVE(box, {10.0F, 0.0F, 0.0F}, {});
+    const Math::AabbUVE world =
+        Collider3DUVE::GetWorldAabbUVE(box, {10.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F});
     EXPECT_NEAR(world.min.x, 9.0F, kToleranceUVE);
     EXPECT_NEAR(world.max.x, 11.0F, kToleranceUVE);
     EXPECT_NEAR(world.min.y, -2.0F, kToleranceUVE);
     EXPECT_NEAR(world.max.y, 2.0F, kToleranceUVE);
+}
+
+TEST(Collider3DUVETest, GetWorldAabbUVE_FollowsTheScaleTheMeshIsDrawnAt) {
+    // The bug this pins: a cube scaled out to a 500 x 1 x 500 floor kept its authored 1 x 1 x 1
+    // collider, so anything standing on it at y = 1 fell through a surface that looked solid.
+    const ColliderComponentUVE box = Collider3DUVE::MakeBoxUVE({0.5F, 0.5F, 0.5F});
+    const Math::AabbUVE world = Collider3DUVE::GetWorldAabbUVE(
+        box, {}, {}, {500.0F, 1.0F, 500.0F});
+    EXPECT_NEAR(world.min.x, -250.0F, kToleranceUVE);
+    EXPECT_NEAR(world.max.x, 250.0F, kToleranceUVE);
+    EXPECT_NEAR(world.min.y, -0.5F, kToleranceUVE) << "an axis left alone must stay untouched";
+    EXPECT_NEAR(world.max.z, 250.0F, kToleranceUVE);
+}
+
+TEST(Collider3DUVETest, ScaleColliderUVE_ScalesEachShapeTheWayItCanBeScaled) {
+    const ColliderComponentUVE box = Collider3DUVE::MakeBoxUVE({1.0F, 2.0F, 3.0F});
+    const ColliderComponentUVE scaledBox = ScaleColliderUVE(box, {2.0F, 3.0F, 4.0F});
+    EXPECT_NEAR(scaledBox.halfExtents.x, 2.0F, kToleranceUVE);
+    EXPECT_NEAR(scaledBox.halfExtents.y, 6.0F, kToleranceUVE);
+    EXPECT_NEAR(scaledBox.halfExtents.z, 12.0F, kToleranceUVE);
+
+    // A sphere has one radius for three axes, so it takes the widest - never an ellipse the rest
+    // of the engine has no shape for.
+    const ColliderComponentUVE sphere = ScaleColliderUVE(Collider3DUVE::MakeSphereUVE(1.0F), {3.0F, 1.0F, 2.0F});
+    EXPECT_NEAR(sphere.radius, 3.0F, kToleranceUVE);
+    EXPECT_NEAR(sphere.halfExtents.y, 3.0F, kToleranceUVE);
+
+    // Capsule: the barrel follows its own axis, the cross-section follows the widest lateral one.
+    const ColliderComponentUVE capsule =
+        ScaleColliderUVE(Collider3DUVE::MakeCapsuleUVE(0.5F, 2.0F), {2.0F, 4.0F, 1.0F});
+    EXPECT_NEAR(capsule.radius, 1.0F, kToleranceUVE);
+    EXPECT_NEAR(capsule.height, 8.0F, kToleranceUVE);
+
+    // Squashed below its own caps, the capsule becomes the shortest one that still exists instead
+    // of a shape that fails validation and drops the body out of the world.
+    const ColliderComponentUVE squashed =
+        ScaleColliderUVE(Collider3DUVE::MakeCapsuleUVE(0.5F, 2.0F), {1.0F, 0.1F, 1.0F});
+    EXPECT_NEAR(squashed.height, 1.0F, kToleranceUVE) << "floored at 2 * radius";
+}
+
+TEST(Collider3DUVETest, ScaleColliderUVE_LeavesAnUnscaledShapeBitIdentical) {
+    const ColliderComponentUVE capsule = Collider3DUVE::MakeCapsuleUVE(0.4F, 1.8F);
+    const ColliderComponentUVE same = ScaleColliderUVE(capsule, {1.0F, 1.0F, 1.0F});
+    EXPECT_FLOAT_EQ(same.radius, capsule.radius);
+    EXPECT_FLOAT_EQ(same.height, capsule.height);
+    EXPECT_FLOAT_EQ(same.halfExtents.y, capsule.halfExtents.y);
 }
 
 TEST(Collider3DUVETest, GetVolumeUVE_BoxSphereCapsule) {
