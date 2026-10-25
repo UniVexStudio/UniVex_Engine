@@ -103,7 +103,9 @@ constexpr std::array<ContentCatalogueItemUVE, 38> kItems{{
      "and open it to build",
      Action::Montage, {}},
     {"character", "Character", "Entity",
-     "A playable body: Character3D, empty until you add what it wears", Action::EntityAsset,
+     "A playable body: Character3D, empty until you add what it wears - a mesh, an animation, a "
+     "collider",
+     Action::EntityAsset,
      kCharacter},
     {"player", "Player", "Entity",
      "The possessed body: a Player3D to build the view and the body on", Action::EntityAsset, kPlayer},

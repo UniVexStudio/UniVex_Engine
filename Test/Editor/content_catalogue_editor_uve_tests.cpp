@@ -480,6 +480,12 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorCompilesScriptsListsSignalsAndGo
         ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
         EXPECT_EQ(editor.GetEntityEditorTabUVE(), EditorUVE::EntityEditorTabUVE::Viewport);
 
+        // A body arrives empty - +Add makes one object and puts nothing inside it - so the mesh
+        // that hangs under it is authored here, the way an author spends their first minute with a
+        // new character. Everything below is unchanged by that.
+        const Scene::EntityUVE child = editor.CreateDocumentSceneObjectUVE(Kind::MeshInstance3D);
+        ASSERT_NE(child, Scene::kInvalidEntityUVE);
+
         // A fresh Character has no scripts: it compiles clean and answers to nothing.
         EXPECT_EQ(editor.CompileEntityEditorUVE(), 0U);
         EXPECT_TRUE(editor.HasEntityEditorCompiledUVE());
@@ -514,8 +520,6 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorCompilesScriptsListsSignalsAndGo
         EXPECT_EQ(editor.GetEntityEditorTabUVE(), EditorUVE::EntityEditorTabUVE::Scripting);
 
         // A script file that is gone is a problem, not a crash.
-        const Scene::EntityUVE child =
-            engine.GetServicesUVE().GetSceneGraphUVE().GetChildrenUVE(engine.GetServicesUVE().GetEntityManagerUVE(), entityRoot).front();
         engine.GetServicesUVE().GetEntityManagerUVE().GetComponentUVE<Scene::ScriptComponentUVE>(child).scriptAssetPath =
             "scripts/missing.uvs";
         editor.SetOpenUVScriptTextUVE("on ready:\n    pass\n");
