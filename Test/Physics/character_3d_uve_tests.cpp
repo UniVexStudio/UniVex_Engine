@@ -33,6 +33,7 @@
 #include "uve/math/vector3_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/character_3d_uve.h"
+#include "uve/objects/3d/collider_3d_uve.h"
 #include "uve/physics/character_world_query_uve.h"
 #include "uve/physics/collision_system_uve.h"
 #include "uve/scene/scene_graph_uve.h"
@@ -1468,6 +1469,47 @@ TEST_F(Character3DStepUVETest, AControllerWithNoShapeFallsInsteadOfStandingInThe
     EXPECT_LT(PositionUVE(shapeless).y, start.y) << "gravity reaches a body with no shape";
     EXPECT_LT(PositionUVE(shapeless).y, 0.0F) << "no shape means no floor: it falls through it";
     EXPECT_FALSE(ControllerUVE(shapeless).grounded);
+}
+
+TEST_F(Character3DStepUVETest, AShapeAuthoredUnderTheBodyPutsTheBodyWhereTheShapeIs) {
+    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+    static_cast<void>(floor);
+
+    // A character with no collider of its own and a Collider3D under it, offset 0.4 up - the shape
+    // is where the author put it, not where the body's origin is. The body falls until the SHAPE
+    // rests on the floor, which leaves the body 0.4 below the shape's centre. Taking the centre
+    // from the body instead would stop the body 0.4 higher and leave the shape hovering.
+    const Scene::EntityUVE body = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE bodyTransform;
+    bodyTransform.localPosition = {0.0F, 3.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, body, bodyTransform);
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
+        body, Scene::CharacterControllerComponentUVE{});
+
+    const Scene::EntityUVE shape = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE shapeTransform;
+    shapeTransform.localPosition = {0.0F, 0.4F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, shape, shapeTransform);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        shape, Scene::Collider3DUVE::MakeCapsuleUVE(0.4F, 1.8F));
+    sceneGraph.SetParentUVE(entityManager, shape, body);
+    sceneGraph.UpdateUVE(entityManager);
+
+    ASSERT_EQ(PositionUVE(body), (Math::Vector3UVE{0.0F, 3.0F, 0.0F}));
+
+    for (int step = 0; step < 240 && !ControllerUVE(body).grounded; ++step) {
+        const Character3DStepResultUVE report = StepUVE(body);
+        ASSERT_TRUE(report.stepped) << "step " << step;
+    }
+    ASSERT_TRUE(ControllerUVE(body).grounded) << "the body never reached the floor";
+
+    const Scene::WorldTransformComponentUVE shapeWorld =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(shape);
+    // A 1.8-tall capsule rests with its centre at half its height.
+    EXPECT_NEAR(shapeWorld.worldPosition.y, 0.9F, 0.02F)
+        << "the shape is what stands on the floor, so the shape is what must be at rest height";
+    EXPECT_NEAR(PositionUVE(body).y, 0.5F, 0.02F)
+        << "the body sits 0.4 under the shape it was authored with";
 }
 
 TEST_F(Character3DStepUVETest, BodiesTheStepCannotDriveAreRefusedWithAReason) {

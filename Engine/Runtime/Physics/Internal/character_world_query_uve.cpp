@@ -76,18 +76,26 @@ CharacterWorldQueryUVE::CharacterWorldQueryUVE(Scene::IEntityManagerUVE& entityM
     if (!IsUsableUveEntityTransformUVE(world)) {
         return;
     }
-    // The shape's numbers, the body's place. The centre is where the body stands; the extents,
-    // layer and mask are the collider's, wherever in the tree it is authored.
+    // The shape's numbers AND the shape's place. Everything about the body - size, layer and mask -
+    // is the collider's, and so is where it is: a Collider3D authored under a character sits
+    // wherever the author put it, and reading its centre off the body instead drew the shape in one
+    // place and collided in another. That is a capsule hovering over an invisible box, and it is
+    // what an author sees when they move the shape to where the body should stand.
     const Scene::ColliderComponentUVE& collider =
         entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(shape);
     // The shape carries the body's size at whatever scale its branch of the tree is drawn at; a
     // child already has its parents' scale folded into its world transform, so this is the whole
     // chain and not just the Collider3D's own local scale.
     Math::Vector3UVE shapeScale{1.0F, 1.0F, 1.0F};
-    if (entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(shape)) {
-        shapeScale = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(shape).worldScale;
-    }
     m_center = world.worldPosition;
+    if (entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(shape)) {
+        const Scene::WorldTransformComponentUVE& shapeWorld =
+            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(shape);
+        shapeScale = shapeWorld.worldScale;
+        if (IsUsableUveEntityTransformUVE(shapeWorld)) {
+            m_center = shapeWorld.worldPosition;
+        }
+    }
     m_halfExtents = WorldHalfExtentsUVE(Scene::ScaleColliderUVE(collider, shapeScale));
     m_layer = collider.collisionLayer;
     m_mask = collider.collisionMask;
