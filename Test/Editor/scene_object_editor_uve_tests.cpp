@@ -67,7 +67,9 @@ TEST(SceneObjectEditorUVETest, CentralizedRegistryCreationUVE_AttachesExpectedAu
         const Scene::EntityUVE character =
             editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Character3D);
         ASSERT_NE(character, Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(character));
+        // A Character3D is a controller and no shape: the collider is the author's to add, so
+        // adding one is the body's first shape instead of a second one in the same place.
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(character));
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(character));
         // The controller owns all of its motion: no rigid body for gravity to fight over.
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(character));
@@ -190,7 +192,8 @@ TEST(SceneObjectEditorUVETest, CharacterBodyCreationUVE_IsOneAtomicUndoRedoTrans
         const Scene::EntityUVE restored = editor.GetSelectedEntityUVE();
         ASSERT_NE(restored, Scene::kInvalidEntityUVE);
         EXPECT_NE(restored, created);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(restored));
+        // Redo rebuilds the same object the creation built: a controller and no collider.
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(restored));
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(restored));
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::SolidBodyComponentUVE>(restored));
         EXPECT_TRUE(editor.IsSceneDirtyUVE());
