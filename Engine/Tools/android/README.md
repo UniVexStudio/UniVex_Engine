@@ -55,11 +55,11 @@ screen that is not empty (see "A black screen" below), and `--label demo` names 
 failure annotation, which is how a red check says which of the two apks was black and why without
 anybody opening the log.
 
-The `android-runtime` job in `.github/workflows/ci.yml` builds both APKs for arm64 and x86_64 and
-exercises x86_64 on a KVM emulator. It is its own job rather than a step of the Linux build because
-the apk is a question about a device, not about whether the tree compiles, and answering it needs an
-emulator. Uploads follow the same opt-in artifact controls as the rest of CI (see
-`.github/CI_ARTIFACTS.md`).
+CI does not build the apk. It is a runtime with no editor in it, and building it for two ABIs plus
+watching it draw on an emulator cost about half an hour of every pull request - a price worth paying
+when the mobile runtime is what you are working on, and not otherwise. Build it locally with the two
+commands above and check it with `smoke_runtime.py`; both run anywhere the toolchain from the first
+section is installed, and neither needs anything from CI.
 
 ## How an apk is built
 
@@ -133,11 +133,11 @@ python3 Engine/Tools/android/build_apk.py --sdk "$ANDROID_HOME" --build-dir /tmp
     --cooked-project Samples/CookedRuntimeSmoke/sample.uvproject --abi arm64-v8a
 ```
 
-`smoke_runtime.py` now fails a run whose device screen has no content, and greps for
-`UVE_ANDROID_FAILED`. Brightness alone would not catch it - a frame containing only the clear colour
-is uniformly dark but not black - so the check asks for contrast across a 10x10 sample grid: a frame
-with geometry in it has pixels that differ from the background, an empty one does not. That check is
-what turns "the phone is black" into a red CI job instead of another install.
+`smoke_runtime.py` fails a run whose device screen has no content, and greps for `UVE_ANDROID_FAILED`.
+Brightness alone would not catch it - a frame containing only the clear colour is uniformly dark but
+not black - so the check asks for contrast across a 10x10 sample grid: a frame with geometry in it
+has pixels that differ from the background, an empty one does not. That check is what turns "the
+phone is black" into a failed run with a reason instead of another install.
 
 ## Cooked project content
 
