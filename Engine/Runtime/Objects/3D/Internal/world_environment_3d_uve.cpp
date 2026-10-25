@@ -8,6 +8,7 @@
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/scalar_uve.h"
 #include "uve/objects/3d/object_3d_uve.h"
+#include "uve/objects/3d/sky_3d_uve.h"
 
 namespace UVE::Scene {
 namespace {
@@ -153,6 +154,38 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
             frame.hasEnvironment = true;
             frame.skyAssetPath = environment.skyAssetPath;
         });
+
+    // The Sky's own fields win over the environment's. A scene that has both is saying two
+    // different things - "this is what the sky looks like" and "this is how the finished frame is
+    // processed" - and they are edited at different rates, so the sky half comes from the Sky and
+    // every other field above stays the environment's.
+    //
+    // Only sky fields are touched, and only by the first valid, enabled Sky: a second Sky in the
+    // same scene is not blended in, because two skies over one horizon has no meaning. A Sky with
+    // no enabled state or a field out of range is skipped rather than half-applied.
+    bool skyApplied = false;
+    entityManager.ForEachUVE<Sky3DComponentUVE>([&frame, &skyApplied](EntityUVE, const Sky3DComponentUVE& sky) {
+        if (skyApplied || !sky.enabled || !IsSky3DObjectComponentValidUVE(sky)) {
+            return;
+        }
+        // `Atmosphere` is reserved, and until the scattering model lands it draws the gradient.
+        // Naming a mode must never leave the sky blank, so the fallback is the mode that always
+        // renders rather than a special case for "not implemented yet".
+        const SkySourceUVE source =
+            sky.source == SkySourceUVE::Atmosphere ? SkySourceUVE::Gradient : sky.source;
+        if (source == SkySourceUVE::Panorama && sky.panoramaPath.empty()) {
+            return;
+        }
+        frame.skyColor = sky.skyColor;
+        frame.horizonColor = sky.horizonColor;
+        frame.groundColor = sky.groundColor;
+        frame.skyCurve = sky.skyCurve;
+        frame.groundCurve = sky.groundCurve;
+        frame.backgroundColor = sky.horizonColor;
+        frame.skyAssetPath = source == SkySourceUVE::Panorama ? sky.panoramaPath : std::string{};
+        frame.hasEnvironment = true;
+        skyApplied = true;
+    });
     return frame;
 }
 
