@@ -250,6 +250,57 @@ TEST(SkyLightingLinkUVETest, WithoutASunTheReflectionLinkDropsRatherThanGoingBla
 }
 
 // ---------------------------------------------------------------------------------------------
+// Output and behaviour. The whole-sky controls, which is why this file - nominally about the
+// lighting link - is also where the Sky component's own contract is pinned.
+// ---------------------------------------------------------------------------------------------
+
+TEST(SkyOutputUVETest, LuminanceAndAnimationAreNeutralByDefault) {
+    const Sky3DComponentUVE sky;
+    EXPECT_FLOAT_EQ(sky.luminance, 1.0F);
+    EXPECT_TRUE(sky.animate);
+}
+
+TEST(SkyOutputUVETest, TheFrameCarriesTheSkyOutputToTheRenderer) {
+    Memory::MemoryManagerUVE memoryManager;
+    Events::EventSystemUVE eventSystem;
+    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const Scene::EntityUVE skyEntity = entityManager.CreateEntityUVE();
+    Sky3DComponentUVE authored;
+    authored.luminance = 2.0F;
+    authored.animate = false;
+    entityManager.AddComponentUVE<Sky3DComponentUVE>(skyEntity, authored);
+
+    const WorldEnvironmentFrameUVE frame = ResolveWorldEnvironmentFrameUVE(entityManager, Math::Vector3UVE{});
+    EXPECT_FLOAT_EQ(frame.skyLuminance, 2.0F);
+    EXPECT_FALSE(frame.skyAnimated);
+
+    // No sky at all is the neutral frame: the renderer must not quietly fade a scene that has none.
+    Memory::MemoryManagerUVE emptyMemory;
+    Events::EventSystemUVE emptyEvents;
+    EntityManagerUVE emptyManager{emptyMemory.GetDefaultAllocatorUVE(), emptyEvents};
+    const WorldEnvironmentFrameUVE empty = ResolveWorldEnvironmentFrameUVE(emptyManager, Math::Vector3UVE{});
+    EXPECT_FLOAT_EQ(empty.skyLuminance, 1.0F);
+    EXPECT_TRUE(empty.skyAnimated);
+}
+
+TEST(SkyOutputUVETest, ZeroLuminanceIsBlackAndTheCeilingIsFinite) {
+    // Zero is a legal answer - a sky that contributes nothing - and it must survive validation so
+    // an author can fade a sky out instead of deleting it.
+    Sky3DComponentUVE sky;
+    sky.luminance = 0.0F;
+    EXPECT_TRUE(IsSky3DObjectComponentValidUVE(sky));
+    sky.luminance = 8.0F;
+    EXPECT_TRUE(IsSky3DObjectComponentValidUVE(sky));
+
+    sky.luminance = -0.01F;
+    EXPECT_FALSE(IsSky3DObjectComponentValidUVE(sky));
+    sky.luminance = 8.01F;
+    EXPECT_FALSE(IsSky3DObjectComponentValidUVE(sky));
+    sky.luminance = std::numeric_limits<float>::infinity();
+    EXPECT_FALSE(IsSky3DObjectComponentValidUVE(sky));
+}
+
+// ---------------------------------------------------------------------------------------------
 // Guard rails on the authored numbers.
 // ---------------------------------------------------------------------------------------------
 
