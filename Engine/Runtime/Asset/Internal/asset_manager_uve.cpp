@@ -233,7 +233,8 @@ void AssetManagerUVE::ExecuteLoadUVE(AssetGuidUVE guid, std::type_index type, st
                 it->second.sizeKnown = static_cast<bool>(sizeFunc);
                 destroyFunc = it->second.destroy;
                 it->second.data = newData;
-                it->second.state = AssetLoadStateUVE::Loaded;
+                // Keep Loading until tracking is installed. Otherwise a caller can observe
+                // Ready, change the file, and let the first poll baseline that newer version.
                 it->second.failureReason.clear();
             } else if (oldData != nullptr) {
                 // A failed reload is failure-atomic: retain the last-known-good data and expose
@@ -248,16 +249,29 @@ void AssetManagerUVE::ExecuteLoadUVE(AssetGuidUVE guid, std::type_index type, st
         }
     }
     if (rejectedData != nullptr && candidateDestroy) candidateDestroy(rejectedData);
-    // Free the previous value only after releasing the lock, and only on a successful reload.
-    if (oldData != nullptr && destroyFunc) {
-        destroyFunc(oldData);
-    }
-
+    const auto publishReady = [this, guid]() {
+        const std::lock_guard<std::mutex> lock(m_impl->mutex);
+        const auto it = m_impl->records.find(guid);
+        if (it != m_impl->records.end()) it->second.state = AssetLoadStateUVE::Loaded;
+    };
     if (!success) {
         UVE_ERROR("AssetManagerUVE: failed to load asset GUID {} from \"{}\"", guid.value, path.string());
-    } else if (m_impl->hotReload != nullptr) {
-        m_impl->hotReload->TrackUVE(guid);
+    } else {
+        // Tracking stays outside the manager lock, matching external hook semantics. Loading
+        // pins the record against collection during this handoff, even when no handle remains.
+        try {
+            if (m_impl->hotReload != nullptr) m_impl->hotReload->TrackUVE(guid);
+        } catch (...) {
+            // Retain the existing successful-payload semantics if an optional hook throws.
+            publishReady();
+            if (oldData != nullptr && destroyFunc) destroyFunc(oldData);
+            throw;
+        }
+        publishReady();
     }
+    // Keep destruction outside the mutex and after readiness publication, so dependent-handle
+    // destructors can query the replacement without waiting on this job's own completion.
+    if (oldData != nullptr && destroyFunc) destroyFunc(oldData);
 
     m_impl->eventSystem.QueueEvent(AssetLoadCompletedEventUVE{guid, success});
 }
