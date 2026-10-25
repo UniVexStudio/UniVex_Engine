@@ -305,7 +305,34 @@ void EditorUVE::DrawContentAssetCardInspectorUVE(const Asset::ProjectFileEntryUV
     ImGui::EndChild();
 }
 
+namespace {
+
+/// One width for every control in the Inspector, held for the whole content pass.
+///
+/// ImGui's default item width is a fraction of the window, and each row is free to override it, so
+/// a dropdown, a slider and a number field on neighbouring rows ended at different X positions and
+/// read as three unrelated panels rather than one list. "Full width" is the one rule that needs no
+/// per-row decision: the control starts where the row's label ends and runs to the panel's edge, so
+/// every row looks like every other row no matter how long its label is.
+///
+/// Scoped rather than pushed and popped by hand because the content has several early returns -
+/// an empty selection, a project file, a multi-selection - and a missed pop would leave every later
+/// panel drawing at this width.
+struct ScopedInspectorItemWidthUVE final {
+    ScopedInspectorItemWidthUVE() {
+        ImGui::PushItemWidth(-FLT_MIN);
+    }
+    ~ScopedInspectorItemWidthUVE() {
+        ImGui::PopItemWidth();
+    }
+    ScopedInspectorItemWidthUVE(const ScopedInspectorItemWidthUVE&) = delete;
+    ScopedInspectorItemWidthUVE& operator=(const ScopedInspectorItemWidthUVE&) = delete;
+};
+
+} // namespace
+
 void EditorUVE::DrawInspectorContentUVE() {
+    const ScopedInspectorItemWidthUVE uniformControlWidth;
     if (m_selectedEntities.empty()) {
         if (m_selectedProjectFile.has_value() && !m_selectedProjectFile->relativePath.empty()) {
             DrawContentAssetCardInspectorUVE(*m_selectedProjectFile);
