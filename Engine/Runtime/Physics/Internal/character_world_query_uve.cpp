@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "uve/physics/character_world_query_uve.h"
+#include "uve/objects/3d/character_3d_uve.h"
 
 #include <algorithm>
 #include <cmath>
@@ -46,11 +47,23 @@ constexpr float kMinimumSweepLengthUVE = 1.0e-6F;
 
 CharacterWorldQueryUVE::CharacterWorldQueryUVE(Scene::IEntityManagerUVE& entityManager,
                                                ICollisionSystemUVE& collisionSystem,
-                                               const Scene::EntityUVE entity)
+                                               const Scene::EntityUVE entity,
+                                               const Scene::EntityUVE shapeEntity)
     : m_entityManager(&entityManager), m_collisionSystem(&collisionSystem), m_entity(entity) {
+    // The body is the entity that moves; the shape is the entity that carries the collider. They
+    // are the same object unless the author gave the character its own Collider3D, in which case
+    // the shape sits under the body in the tree.
+    const Scene::EntityUVE shape =
+        shapeEntity != Scene::kInvalidEntityUVE ? shapeEntity : entity;
+    if (shape != entity) {
+        // A body must never collide with the shape it is built from: its own child would stop it
+        // dead on the first sweep, which reads as a character frozen in place the moment a
+        // collider is added.
+        m_ignoredEntity = shape;
+    }
     if (!entityManager.IsAliveUVE(entity) ||
         !entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity) ||
-        !entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity) ||
+        !entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(shape) ||
         !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
         return;
     }
@@ -63,8 +76,10 @@ CharacterWorldQueryUVE::CharacterWorldQueryUVE(Scene::IEntityManagerUVE& entityM
     if (!IsUsableUveEntityTransformUVE(world)) {
         return;
     }
+    // The shape's numbers, the body's place. The centre is where the body stands; the extents,
+    // layer and mask are the collider's, wherever in the tree it is authored.
     const Scene::ColliderComponentUVE& collider =
-        entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(entity);
+        entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(shape);
     m_center = world.worldPosition;
     m_halfExtents = WorldHalfExtentsUVE(collider);
     m_layer = collider.collisionLayer;
@@ -274,7 +289,12 @@ Character3DStepResultUVE StepCharacter3DUVE(Scene::IEntityManagerUVE& entityMana
         report.code = Character3DStepCodeUVE::PredictedElsewhere;
         return report;
     }
-    if (!entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity)) {
+    // The shape can be a Collider3D of the character's own under it, which is how an author gives
+    // a body a collider they can select and see. Resolved once here so every question below is
+    // asked about the right entity.
+    const Scene::EntityUVE shapeEntity =
+        Scene::ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, entity);
+    if (shapeEntity == Scene::kInvalidEntityUVE) {
         report.code = Character3DStepCodeUVE::MissingCollider;
         return report;
     }
@@ -309,7 +329,7 @@ Character3DStepResultUVE StepCharacter3DUVE(Scene::IEntityManagerUVE& entityMana
         controller.velocity.z = locks.lockMotionZ ? 0.0F : controller.velocity.z;
     }
 
-    CharacterWorldQueryUVE world(entityManager, collisionSystem, entity);
+    CharacterWorldQueryUVE world(entityManager, collisionSystem, entity, shapeEntity);
     if (!world.IsMovableCharacterUVE()) {
         report.code = Character3DStepCodeUVE::InvalidWorld;
         return report;

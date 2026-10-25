@@ -50,6 +50,7 @@
 #include "uve/component/visibility_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
+#include "uve/objects/3d/character_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/scene/objects/scene_folder_uve.h"
 #include "uve/scene/objects/scene_object_registry_uve.h"
@@ -1037,19 +1038,25 @@ std::vector<std::string> EditorUVE::GetObjectWarningsUVE(const Scene::EntityUVE 
         entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(entity).skeletonAssetPath.empty()) {
         warnings.emplace_back("No source model is set, so the skeleton has no bones.");
     }
-    // A Character3D without a Collider3D is a controller with no body. The character component
-    // sweeps a shape through the world to decide what it stands on, what it can step over and
-    // where it stops; with no collider there is no shape, so the sweep finds nothing, the body is
-    // always falling, and it drops through every surface the level has. The failure is silent -
-    // the mesh draws, the object looks authored, and the only symptom is a character that keeps
-    // going down - which is exactly the kind of thing a row badge exists for. The warning is
-    // computed from the components every frame, so adding the Collider3D clears it with nothing
-    // to dismiss or acknowledge.
-    if (Scene::ResolveSceneObjectKindUVE(entityManager, entity) ==
-            Scene::Objects::SceneObjectKindUVE::Character3D &&
-        !entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity)) {
-        warnings.emplace_back("No Collider3D: this character has no body, so it falls through "
-                              "everything. Add a Collider3D to give it one.");
+    // A character with no shape is a controller with no body. The controller sweeps a shape
+    // through the world to decide what it stands on, what it can step over and where it stops;
+    // with no shape the sweep finds nothing, so the body neither walks nor stands - it is simply
+    // refused, and the object looks authored while doing nothing. That silence is what a row badge
+    // is for.
+    //
+    // The shape counts whether it is on the character or on a Collider3D of its own under it, so
+    // this asks the same question the stepper asks. Both Character3D and Player3D are in the same
+    // position: neither is born with a collider, by design, because a built-in one made the
+    // Collider3D an author then added a second shape in the same place. Computed from the tree
+    // every frame, so adding the Collider3D clears it with nothing to dismiss.
+    const Scene::Objects::SceneObjectKindUVE kind = Scene::ResolveSceneObjectKindUVE(entityManager, entity);
+    if ((kind == Scene::Objects::SceneObjectKindUVE::Character3D ||
+         kind == Scene::Objects::SceneObjectKindUVE::Player3D) &&
+        Scene::ResolveCharacterShapeEntityUVE(m_services->GetEntityManagerUVE(),
+                                              m_services->GetSceneGraphUVE(), entity) ==
+            Scene::kInvalidEntityUVE) {
+        warnings.emplace_back("No Collider3D: this character has no body, so it cannot walk or "
+                              "stand. Add a Collider3D under it to give it one.");
     }
     return warnings;
 }
