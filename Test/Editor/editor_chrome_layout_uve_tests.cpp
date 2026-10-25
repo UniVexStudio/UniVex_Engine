@@ -57,7 +57,10 @@ TEST(EditorChromeLayoutUVETest, SidePanelsRunFullHeightAndTheDockSitsUnderTheVie
     EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.x + layout.outlinerHeaderSize.x, layout.scenePos.x + layout.sceneSize.x);
     EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, layout.viewportPos.x);
     EXPECT_FLOAT_EQ(layout.contentBrowserSize.x, layout.viewportSize.x);
-    EXPECT_FLOAT_EQ(layout.contentBrowserPos.y, layout.viewportPos.y + layout.viewportSize.y);
+    // The dock's body starts below the tab row, not at the viewport's edge: the row is the body's
+    // header and belongs to the dock.
+    EXPECT_FLOAT_EQ(layout.contentBrowserPos.y,
+                    layout.viewportPos.y + layout.viewportSize.y + kDockTabBarHeightUVE);
     // The tab strip is the dock's own header: the viewport column's width, directly on top of the
     // dock's body, and the block as a whole ends at the bottom edge.
     EXPECT_FLOAT_EQ(layout.dockTabBarPos.x, layout.viewportPos.x);
