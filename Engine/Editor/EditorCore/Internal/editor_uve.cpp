@@ -3267,6 +3267,11 @@ std::vector<Scene::EntityUVE> EditorUVE::GetEligibleReparentParentsUVE(const Sce
         if (std::find(excludedSubtree.begin(), excludedSubtree.end(), current) == excludedSubtree.end()) {
             candidates.push_back(current);
         }
+        // Never descend into a placed entity: its contents are not rows of this tree, so they
+        // cannot be offered as places to move something to.
+        if (IsSealedHierarchyRowUVE(current)) {
+            return;
+        }
         for (const Scene::EntityUVE child : m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, current)) {
             self(self, child);
         }
@@ -3540,7 +3545,9 @@ Scene::EntityUVE EditorUVE::ResolveNewObjectParentUVE() {
                     if (cursor == m_selectedEntity) {
                         m_lastUsedFolder = cursor;
                     }
-                    return m_selectedEntity;
+                    // A placed entity selected inside a folder is still a sealed row: the new object
+                    // goes in that folder, beside the entity, not behind its wall.
+                    return ResolvePlaceableParentUVE(m_selectedEntity);
                 }
             }
         }
@@ -3548,9 +3555,10 @@ Scene::EntityUVE EditorUVE::ResolveNewObjectParentUVE() {
     }
     if (m_newObjectsUnderSelection && m_selectedEntity != Scene::kInvalidEntityUVE &&
         IsDocumentSubtreeUVE(m_selectedEntity)) {
-        return m_selectedEntity;
+        return ResolvePlaceableParentUVE(m_selectedEntity);
     }
-    // In the Entity Editor, new objects belong to the entity.
+    // In the Entity Editor, new objects belong to the entity. Nothing is sealed there, so the root
+    // is returned as it stands - that is the whole point of opening the entity.
     if (m_entityEditSession.has_value()) {
         const Scene::EntityUVE entityRoot = GetEntityEditorRootUVE();
         if (entityRoot != Scene::kInvalidEntityUVE) {
@@ -3572,11 +3580,30 @@ Scene::EntityUVE EditorUVE::ResolveNewObjectParentForUVE(const Scene::Objects::S
         Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
         if (m_selectedEntity != Scene::kInvalidEntityUVE && IsDocumentSubtreeUVE(m_selectedEntity) &&
             entityManager.HasComponentUVE<Scene::FolderComponentUVE>(m_selectedEntity)) {
-            return m_selectedEntity;
+            return ResolvePlaceableParentUVE(m_selectedEntity);
         }
         return GetDocumentViewportUVE();
     }
     return ResolveNewObjectParentUVE();
+}
+
+Scene::EntityUVE EditorUVE::ResolvePlaceableParentUVE(const Scene::EntityUVE candidate) {
+    if (candidate == Scene::kInvalidEntityUVE) {
+        return candidate;
+    }
+    // An ordinary row - not a placed entity and not inside one - is already a legitimate parent.
+    const Scene::EntityUVE row = ResolveHierarchyRowOwnerUVE(candidate);
+    if (row == candidate && !IsSealedHierarchyRowUVE(candidate)) {
+        return candidate;
+    }
+    // Otherwise the request names a row the level does not own the inside of. The level parent of
+    // that row is the nearest place a new object can live and be seen; anything above it is already
+    // unsealed, so one step is enough.
+    Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+    if (TryGetDocumentParentUVE(row, parent) && parent != Scene::kInvalidEntityUVE) {
+        return parent;
+    }
+    return candidate;
 }
 
 bool EditorUVE::IsOutlinerLayoutActiveUVE() const noexcept {
@@ -3745,6 +3772,13 @@ bool EditorUVE::IsAllowedOutlinerParentUVE(const Scene::EntityUVE entity, const 
     }
     if (parent == viewport) {
         return entityManager.HasComponentUVE<Scene::FolderComponentUVE>(entity);
+    }
+    // A placed entity is one row and its contents belong to the Entity Editor. Moving something
+    // under it - or under anything already inside it - would hide that object from every window
+    // while it kept existing and colliding. The drop target is skipped in the panel; this is the
+    // rule behind it, so a menu, a script or a future caller cannot go around the wall.
+    if (IsSealedHierarchyRowUVE(parent) || ResolveHierarchyRowOwnerUVE(parent) != parent) {
+        return false;
     }
     // Anywhere else in the Viewport's tree is inside a folder.
     for (Scene::EntityUVE cursor = parent, up = Scene::kInvalidEntityUVE;
@@ -5075,7 +5109,8 @@ void EditorUVE::AcceptHierarchyDropTargetUVE(const Scene::EntityUVE targetParent
     if (asset != nullptr && asset->DataSize > 1) {
         const std::string path(static_cast<const char*>(asset->Data), static_cast<std::size_t>(asset->DataSize - 1));
         static_cast<void>(PlaceEntityAssetUVE(
-            path, targetParent != Scene::kInvalidEntityUVE ? targetParent : ResolveNewObjectParentUVE()));
+            path, ResolvePlaceableParentUVE(targetParent != Scene::kInvalidEntityUVE ? targetParent
+                                                                                   : ResolveNewObjectParentUVE())));
     }
     const ImGuiPayload* const item = ImGui::AcceptDragDropPayload(kContentItemPayloadUVE);
     if (item != nullptr && item->DataSize > 1) {
@@ -5083,7 +5118,8 @@ void EditorUVE::AcceptHierarchyDropTargetUVE(const Scene::EntityUVE targetParent
         const std::filesystem::path p{relativePath};
         if (IsModelSourcePathUVE(p) || p.extension() == ".uvmodel") {
             static_cast<void>(PlaceModelSourceUVE(
-                p, targetParent != Scene::kInvalidEntityUVE ? targetParent : ResolveNewObjectParentUVE()));
+                p, ResolvePlaceableParentUVE(targetParent != Scene::kInvalidEntityUVE ? targetParent
+                                                                                     : ResolveNewObjectParentUVE())));
         }
     }
     ImGui::EndDragDropTarget();
