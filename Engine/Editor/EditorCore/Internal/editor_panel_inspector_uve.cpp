@@ -390,6 +390,10 @@ void EditorUVE::DrawInspectorContentUVE() {
     // section. Objects are renamed and reparented from the Scene panel and get their parts from
     // their recipe, so there is no name field, hierarchy block, search box, Add Component or Remove
     // here.
+
+    // A section that asked for a component to be added or removed last frame gets it here, before
+    // this frame's sections are drawn from the entity's storage.
+    ApplyPendingComponentChangeUVE();
     RepairInspectorRecipeUVE(m_selectedEntity);
     ImGui::Separator();
     m_inspectorDrawerRegistry.DrawEligibleUVE(m_selectedEntity);

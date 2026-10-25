@@ -2026,6 +2026,9 @@ private:
         const Core::TypeMetadataEntryUVE* entry = nullptr;
         std::vector<const Core::TypeMetadataEntryUVE*> preferredHosts;
     };
+    /// Applies the component add or remove a row asked for on the previous frame, before this
+    /// frame's sections take any pointer into component storage. See m_pendingComponentChange.
+    void ApplyPendingComponentChangeUVE();
     /// Draws one component's section: a collapsible header (or, for a type presented inline, just
     /// its rows), its properties, and the section of each type in `nested` the entity also carries
     /// and no preferred host of it draws. Writes go through SetSelectedComponentPropertyUVE below.
@@ -2378,6 +2381,15 @@ private:
     /// consumed by its own drawer on the next frame.
     std::unordered_map<std::uint32_t, Asset::AssetGuidUVE> m_assetPickerPendingPicks;
     std::unordered_map<std::uint32_t, std::string> m_fileRowPendingPicks;
+    /// A structural edit the Inspector asked for while drawing a row.
+    ///
+    /// Adding or removing a component moves the entity into a different archetype, which frees the
+    /// chunk the row's payload pointer points into. Doing it inline would leave every row after the
+    /// button reading freed memory for the rest of the frame, so the request is recorded here and
+    /// applied at the top of the next component draw, before any payload pointer is taken.
+    enum class PendingComponentChangeUVE : std::uint8_t { None, AddSky, RemoveSky };
+    PendingComponentChangeUVE m_pendingComponentChange = PendingComponentChangeUVE::None;
+    Scene::EntityUVE m_pendingComponentChangeEntity = Scene::kInvalidEntityUVE;
     std::optional<RetargetPreviewUVE> m_retargetPreview;
     // Which workspace tab was active before EnterPlayModeUVE() switched to Game, so StopPlayModeUVE()
     // can restore it - mirrors Unity's own Scene<->Game auto-switch on Play/Stop.

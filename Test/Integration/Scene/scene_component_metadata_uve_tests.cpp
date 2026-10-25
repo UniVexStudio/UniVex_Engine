@@ -35,6 +35,7 @@
 #include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
 #include "uve/objects/3d/reflection_probe_3d_uve.h"
+#include "uve/objects/3d/sky_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
 #include "uve/objects/3d/health_uve.h"
 #include "uve/objects/3d/player_3d_uve.h"
@@ -747,6 +748,41 @@ TEST(SceneComponentMetadataUVETest, PrimitiveMeshIsDrawnByTheMeshSectionRatherTh
     const TypeMetadataPropertyUVE* const baseColor = FindPropertyUVE(*primitive, "baseColor");
     ASSERT_NE(baseColor, nullptr);
     EXPECT_TRUE(baseColor->flags.HasUVE(TypeMetadataPropertyFlagsUVE::Hidden));
+}
+
+// The environment's sky row was a bare path field with a Browse button: a level could have a sky
+// texture but had nowhere to say what the sky *is*. It is a slot now - it reads Empty until
+// something is put in it, and the menu behind it is where a Sky is added, so the Sky's bands,
+// atmosphere, stars and clouds are reachable from the environment they light. Nested under the
+// environment, those rows expand inside that section rather than becoming a second object in the
+// Outliner; the Sky still declares its own entry, so a standalone Sky object keeps its section.
+TEST(SceneComponentMetadataUVETest, TheEnvironmentSkySlotIsWhereASkyIsAdded) {
+    const TypeMetadataEntryUVE* environment =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(WorldEnvironment3DComponentUVE)));
+    const TypeMetadataEntryUVE* sky = FindSceneComponentMetadataUVE(std::type_index(typeid(Sky3DComponentUVE)));
+    ASSERT_NE(environment, nullptr);
+    ASSERT_NE(sky, nullptr);
+
+    // The slot: one row, named for the thing it holds rather than the field behind it, and drawn
+    // by the sky drawer - a row that fell back to a plain text field would have no Empty and no
+    // way to add anything.
+    const TypeMetadataPropertyUVE* const slot = FindPropertyUVE(*environment, "skyAssetPath");
+    ASSERT_NE(slot, nullptr);
+    EXPECT_EQ(slot->customDrawerId, std::string("sky:asset"));
+    EXPECT_EQ(slot->displayName, std::string("Sky"));
+
+    // Nested, so the environment section draws the Sky's rows itself instead of the Sky appearing
+    // as a section of its own on an object whose recipe never mentioned one.
+    ASSERT_FALSE(sky->nestedUnderTypeIds.empty());
+    EXPECT_EQ(sky->nestedUnderTypeIds.front(), environment->typeId);
+
+    // What the slot's New Sky puts there has to be readable where it lands: one row from each band
+    // of the section, so a fold that opened to nothing would fail here rather than in the editor.
+    for (const char* const name : {"source", "skyColor", "starDensity", "cloudsEnabled"}) {
+        const TypeMetadataPropertyUVE* const property = FindPropertyUVE(*sky, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_FALSE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::Hidden)) << name;
+    }
 }
 
 // Sections follow the class chain from most to least derived: the object's own, then Object3D's

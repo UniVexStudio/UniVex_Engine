@@ -935,12 +935,18 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 }(),
                 DeclareUVE<&WorldEnvironment3DComponentUVE::colorFilter>(
                     "colorFilter", "Color Filter", kPropertyTypeColorUVE),
+                // A slot, not a bare path field. It reads "Empty" until a sky is added, and the
+                // menu behind it is where a sky is created - the same shape as a material slot, so
+                // an author looks in one place for "what is on this surface" and for "what is over
+                // this level". The texture stays assignable from the same menu, because a
+                // panorama is one of the ways a sky can be made rather than a separate concept.
                 WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::skyAssetPath>(
-                                                       "skyAssetPath", "Sky Asset", kPropertyTypeStringUVE),
-                                                   "file:uvtex"),
-                               "Equirectangular sky texture. Empty keeps the procedural sky; Ambient Light Source "
-                               "uses this texture when set to Environment Map, and falls back to Sky while it "
-                               "is unavailable."),
+                                                       "skyAssetPath", "Sky", kPropertyTypeStringUVE),
+                                                   "sky:asset"),
+                               "The sky over this level. Empty keeps the procedural sky. New Sky adds a Sky "
+                               "to this environment, where its bands, atmosphere, stars and clouds are "
+                               "authored as a group; a Sky texture is an equirectangular image sampled "
+                               "instead of the bands."),
             }));
 
     AddValidatedUVE<ParticleEmitterComponentUVE, &IsParticleEmitterComponentValidUVE>(
@@ -1042,9 +1048,7 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         return property;
     };
 
-    AddValidatedUVE<S, &IsSky3DObjectComponentValidUVE>(
-        entries,
-        MakeEntryUVE("component.sky_3d", "Sky3DComponentUVE", "Sky", kSectionOrderTypeSpecificUVE,
+    TypeMetadataEntryUVE sky = MakeEntryUVE("component.sky_3d", "Sky3DComponentUVE", "Sky", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&S::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
                                "Off, the sky is not drawn and the scene falls back to its WorldEnvironment. "
@@ -1313,7 +1317,14 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                           "it is, so two frames can be compared without the sky moving "
                                           "underneath the difference."),
                            "Advanced"),
-            }));
+            });
+    // A Sky added from the environment's own Sky slot belongs to that environment, and its
+    // settings are that section's business. Nested, the environment draws them as one more
+    // expandable group inside itself; standalone - the Sky object from the object catalogue, which
+    // has no environment on its entity - it still draws as its own section, so neither way of
+    // making a sky is a dead end.
+    sky.nestedUnderTypeIds = {"component.world_environment"};
+    AddValidatedUVE<S, &IsSky3DObjectComponentValidUVE>(entries, std::move(sky));
 }
 
 void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
