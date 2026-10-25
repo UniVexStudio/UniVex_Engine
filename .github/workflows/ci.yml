@@ -6,11 +6,16 @@
 
 name: CI
 
-# Every upload below is gated on this one switch, on by default: a build nobody can download is a
-# build nobody can try. Set the repository variable CREATE_ARTIFACTS to 'false' to turn them off
-# again without editing this file; a manual run can still opt out with create_artifacts=false.
+# What a run publishes is what somebody can actually try: the editor's exe and the Android apk.
+# Every upload is gated on CREATE_ARTIFACTS, on by default, so those two are there without asking;
+# set the repository variable CREATE_ARTIFACTS to 'false' to turn even them off, or pass
+# create_artifacts=false on a manual run.
+#
+# The measurement and test-log uploads are a different thing - they answer questions about a run
+# rather than giving anybody a build - so they sit behind their own switch and are off by default.
 env:
   UNIVEX_CREATE_ARTIFACTS: ${{ vars.CREATE_ARTIFACTS != 'false' }}
+  UNIVEX_DIAGNOSTIC_ARTIFACTS: ${{ vars.DIAGNOSTIC_ARTIFACTS == 'true' }}
 
 on:
   push:
@@ -194,8 +199,7 @@ jobs:
           fi
 
       - name: Upload test log
-        if: failure() && env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
-            (github.event_name != 'workflow_dispatch' || inputs.create_artifacts)
+        if: failure() && env.UNIVEX_DIAGNOSTIC_ARTIFACTS == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ctest-log-${{ matrix.mode }}
@@ -221,8 +225,7 @@ jobs:
           -- build/Engine/App/uve_editor --headless --frames 300
 
       - name: Upload asset workload measurements
-        if: always() && env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
-            (github.event_name != 'workflow_dispatch' || inputs.create_artifacts)
+        if: always() && env.UNIVEX_DIAGNOSTIC_ARTIFACTS == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: asset-workload-${{ matrix.mode }}
@@ -234,8 +237,7 @@ jobs:
           retention-days: 7
 
       - name: Upload process baseline
-        if: always() && env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
-            (github.event_name != 'workflow_dispatch' || inputs.create_artifacts)
+        if: always() && env.UNIVEX_DIAGNOSTIC_ARTIFACTS == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: editor-process-baseline-${{ matrix.mode }}
