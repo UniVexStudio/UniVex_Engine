@@ -1105,6 +1105,19 @@ CharacterMotionConfigUVE MakeCharacterMotionConfigUVE(
 // the SolidBody3D base, then the body's collider and controller, each only where missing.
 // =================================================================================================
 
+bool IsLegacyCharacterCapsuleUVE(const ColliderComponentUVE& collider) noexcept {
+    // Compared with a tolerance rather than ==: these numbers survive a round trip through the
+    // scene file as text, and a value written as 1.8 can come back as the nearest float to it. The
+    // tolerance is far below anything an author types (a millimetre), so a capsule they sized
+    // themselves is not mistaken for this one.
+    constexpr float kToleranceUVE = 1.0e-3F;
+    return collider.shapeType == ColliderShapeTypeUVE::Capsule &&
+           std::fabs(collider.radius - Character3DObjectDefinitionUVE::MakeDefaultColliderUVE().radius) <=
+               kToleranceUVE &&
+           std::fabs(collider.height - Character3DObjectDefinitionUVE::MakeDefaultColliderUVE().height) <=
+               kToleranceUVE;
+}
+
 bool IsCharacter3DObjectDefinitionValidUVE(const Character3DObjectDefinitionUVE& value) noexcept {
     ControllerComponentUVE authoredController;
     authoredController.kind = value.controllerKind;
