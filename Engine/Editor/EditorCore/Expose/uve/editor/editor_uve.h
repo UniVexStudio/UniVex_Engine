@@ -2302,6 +2302,12 @@ private:
     /// Where a new object of `kind` goes: DirectionalLight3D and WorldEnvironment at the top, a folder
     /// in the selected folder or the Viewport, anything else in a folder (see ResolveObjectFolderUVE).
     [[nodiscard]] Scene::EntityUVE ResolveNewObjectParentForUVE(Scene::Objects::SceneObjectKindUVE kind);
+    /// The parent a new object may actually be given. A placed entity is one row in the level and
+    /// its contents are the Entity Editor's, so asking to put something under it - or under anything
+    /// already inside it - would create an object no window shows: it would exist, collide, and be
+    /// impossible to select. Such a request lands beside the entity instead, under the level parent
+    /// the row really has.
+    [[nodiscard]] Scene::EntityUVE ResolvePlaceableParentUVE(Scene::EntityUVE candidate);
     // ---- The level's Outliner layout ---------------------------------------------------------------
     //   (scene root, not shown)
     //   +- Viewport            folders only
