@@ -630,8 +630,15 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
                                                           IM_COL32(90, 150, 215, 130));
             }
             if (ImGui::IsItemActive()) {
-                const float from = m_scenePanelWidth > 0.0F ? m_scenePanelWidth : layout.sceneSize.x;
-                m_scenePanelWidth = ClampScenePanelWidthUVE(totalWidth, from + io.MouseDelta.x);
+                // The same shape the entity editor's column seams use: the width the author set is
+                // the starting point, the frame's movement is added to it, and the result is what
+                // the next frame reads. Guarding on a non-zero delta is not an optimisation - a
+                // held-but-still pointer must not write, or a stray frame without movement would
+                // re-clamp a width the author chose and quietly move the seam under them.
+                if (io.MouseDelta.x != 0.0F) {
+                    const float from = m_scenePanelWidth > 0.0F ? m_scenePanelWidth : layout.sceneSize.x;
+                    m_scenePanelWidth = ClampScenePanelWidthUVE(totalWidth, from + io.MouseDelta.x);
+                }
             }
         }
         ImGui::End();
@@ -646,8 +653,11 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
                                                           IM_COL32(90, 150, 215, 130));
             }
             if (ImGui::IsItemActive()) {
-                const float from = m_inspectorPanelWidth > 0.0F ? m_inspectorPanelWidth : layout.inspectorSize.x;
-                m_inspectorPanelWidth = ClampInspectorPanelWidthUVE(totalWidth, from - io.MouseDelta.x);
+                if (io.MouseDelta.x != 0.0F) {
+                    const float from =
+                        m_inspectorPanelWidth > 0.0F ? m_inspectorPanelWidth : layout.inspectorSize.x;
+                    m_inspectorPanelWidth = ClampInspectorPanelWidthUVE(totalWidth, from - io.MouseDelta.x);
+                }
             }
         }
         ImGui::End();
@@ -663,9 +673,12 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
             }
             if (ImGui::IsItemActive()) {
                 // Dragging up grows the dock, so the mouse delta is subtracted from its height.
-                const float column = layout.viewportSize.y + layout.contentBrowserSize.y;
-                const float from = m_bottomDockHeight > 0.0F ? m_bottomDockHeight : layout.contentBrowserSize.y;
-                m_bottomDockHeight = ClampBottomDockHeightUVE(column, from - io.MouseDelta.y);
+                if (io.MouseDelta.y != 0.0F) {
+                    const float column = layout.viewportSize.y + layout.contentBrowserSize.y;
+                    const float from =
+                        m_bottomDockHeight > 0.0F ? m_bottomDockHeight : layout.contentBrowserSize.y;
+                    m_bottomDockHeight = ClampBottomDockHeightUVE(column, from - io.MouseDelta.y);
+                }
             }
         }
         ImGui::End();
