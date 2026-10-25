@@ -1069,8 +1069,8 @@ std::vector<std::string> EditorUVE::GetObjectWarningsUVE(const Scene::EntityUVE 
         Scene::ResolveCharacterShapeEntityUVE(m_services->GetEntityManagerUVE(),
                                               m_services->GetSceneGraphUVE(), entity) ==
             Scene::kInvalidEntityUVE) {
-        warnings.emplace_back("No Collider3D: this character has no body, so it cannot walk or "
-                              "stand. Add a Collider3D under it to give it one.");
+        warnings.emplace_back("No Collider3D: this character has no body, so it falls through the "
+                              "level. A mesh it wears is not a shape - add a Collider3D under it.");
     }
     return warnings;
 }

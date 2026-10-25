@@ -376,6 +376,37 @@ TEST_F(Object3DDefinitionsUVETest, AShapeUnderTheCharacterIsTheCharactersBody) {
     EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), body);
 }
 
+TEST_F(Object3DDefinitionsUVETest, AMeshAModelWearsIsNotTheCharactersShape) {
+    // The authoring trap: a character with no Collider3D, and the mesh it wears under it. Every
+    // mesh in this engine carries a collider, because a mesh you can see is something you can hit -
+    // so adopting "the first child with a collider" made the model's own collider the body's shape.
+    // The author never added a shape, and the Inspector had none to show.
+    const EntityUVE body = CreateEntityUVE();
+    ApplyCharacter3DObjectDefinitionUVE(entityManager, body, Character3DObjectDefinitionUVE{});
+
+    const EntityUVE wornMesh = entityManager.CreateEntityUVE();
+    ApplyBoxMesh3DObjectDefinitionUVE(entityManager, wornMesh, BoxMesh3DObjectDefinitionUVE{});
+    ASSERT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(wornMesh))
+        << "a visible primitive is a solid - that is why it must not also be a body's shape";
+    sceneGraph.SetParentUVE(entityManager, wornMesh, body);
+
+    EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), kInvalidEntityUVE)
+        << "a mesh the body wears is not a description of the body";
+
+    // A MeshInstance3D the author gave a collider to is the same story: it is geometry.
+    const EntityUVE model = entityManager.CreateEntityUVE();
+    ApplyMeshInstance3DObjectDefinitionUVE(entityManager, model, MeshInstance3DObjectDefinitionUVE{});
+    entityManager.AddComponentUVE<ColliderComponentUVE>(model, Collider3DUVE::MakeBoxUVE({0.5F, 0.5F, 0.5F}));
+    sceneGraph.SetParentUVE(entityManager, model, body);
+    EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), kInvalidEntityUVE);
+
+    // A Collider3D is a shape and nothing else - it draws nothing - so it is the body's shape.
+    const EntityUVE shape = entityManager.CreateEntityUVE();
+    ApplyCollider3DObjectDefinitionUVE(entityManager, shape, Collider3DObjectDefinitionUVE{});
+    sceneGraph.SetParentUVE(entityManager, shape, body);
+    EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), shape);
+}
+
 TEST_F(Object3DDefinitionsUVETest, AShapeUnderTheCharacterIgnoresChildrenThatAreBodiesThemselves) {
     // A second body standing under a character is a neighbour, not a description of it: its
     // collider must never be adopted as the character's shape.

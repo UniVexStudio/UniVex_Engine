@@ -9,6 +9,8 @@
 #include <optional>
 #include <vector>
 
+#include "uve/component/mesh_component_uve.h"
+#include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/solid_body_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
@@ -1150,8 +1152,18 @@ EntityUVE ResolveCharacterShapeEntityUVE(IEntityManagerUVE& entityManager,
         return character;
     }
     // Otherwise the first child that is a shape and nothing else. "Nothing else" is the whole
-    // test: a Rigid3D, a Static3D or another Character3D also carries a collider, but each of them
-    // is a body of its own standing next to this one, not a description of it.
+    // test, and it has two halves.
+    //
+    // A body of its own is not a shape: a Rigid3D, a Static3D or another Character3D also carries
+    // a collider, but each of them is a neighbour standing next to this one, not a description of
+    // it.
+    //
+    // And neither is something the author can see. Every mesh this engine makes - a Box, Sphere or
+    // Plane primitive, a MeshInstance3D given a collider - carries a collider of its own, because a
+    // mesh you can see is something you can hit. Adopting that collider made the mesh a character's
+    // body by accident: a body with no Collider3D anywhere was held up by the shape of the model it
+    // wears, with nothing in the Inspector to show for it. A shape a character is built from is a
+    // Collider3D, which draws nothing.
     for (const EntityUVE child : sceneGraph.GetChildrenUVE(entityManager, character)) {
         if (!entityManager.HasComponentUVE<ColliderComponentUVE>(child)) {
             continue;
@@ -1159,6 +1171,10 @@ EntityUVE ResolveCharacterShapeEntityUVE(IEntityManagerUVE& entityManager,
         if (entityManager.HasComponentUVE<SolidBodyComponentUVE>(child) ||
             entityManager.HasComponentUVE<Rigid3DComponentUVE>(child) ||
             entityManager.HasComponentUVE<CharacterControllerComponentUVE>(child)) {
+            continue;
+        }
+        if (entityManager.HasComponentUVE<PrimitiveMeshComponentUVE>(child) ||
+            entityManager.HasComponentUVE<MeshComponentUVE>(child)) {
             continue;
         }
         return child;
