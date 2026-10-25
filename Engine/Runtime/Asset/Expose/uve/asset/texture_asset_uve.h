@@ -111,4 +111,23 @@ struct TextureAssetUVE {
 /// fails returns false and leaves `outTexture` untouched.
 [[nodiscard]] bool LoadTextureAssetSourceUVE(const std::filesystem::path& path, TextureAssetUVE& outTexture);
 
+/// Derives a tangent-space normal map from an image's own light and shade: height is the pixel's
+/// luminance, and the normal is the slope of that height across the pixel's neighbours.
+///
+/// A picture taken from anywhere - a photo, a scan, something drawn flat - carries its shape as
+/// brightness, not as geometry, so a material given only that picture shades like painted glass:
+/// the light slides across it and the surface stays visibly flat under any lighting. This is what
+/// turns the same picture into something a light can catch. It is a derivation, not a measurement:
+/// a cast shadow becomes a ridge, and a printed gradient becomes a slope.
+///
+/// `strength` scales the slope. At 2.0 an edge from black to white across two pixels tilts about
+/// 45 degrees; 0 gives a flat map and values above 16 are refused. Green is +Y in the image (the
+/// OpenGL tangent-space convention the lit shader samples), so the map is not flipped for DirectX.
+///
+/// The result is RGBA8, linear, usage Normal, with a full box-filtered mip chain: directly
+/// saveable as a `.uvtex` and interchangeable with an imported normal map. `outNormal` is left
+/// untouched when the source is not RGBA8, has no pixels, or `strength` is out of range.
+[[nodiscard]] bool DeriveNormalTextureUVE(const TextureAssetUVE& source, float strength,
+                                          TextureAssetUVE& outNormal);
+
 } // namespace UVE::Asset

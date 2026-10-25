@@ -756,5 +756,106 @@ TEST(TextureAssetUVETest, SourceAwareReaderStillReadsAPublishedEnvelopeUnchanged
     std::filesystem::remove(path);
 }
 
+namespace {
+
+/// A colour texture whose every channel holds the same value, so a test can state the height it
+/// implies without also stating a saturation.
+[[nodiscard]] TextureAssetUVE MakeGreyTextureUVE(const std::vector<std::uint8_t>& values,
+                                                const std::uint32_t width, const std::uint32_t height) {
+    TextureAssetUVE texture;
+    texture.width = width;
+    texture.height = height;
+    texture.format = TextureAssetFormatUVE::RGBA8Unorm;
+    texture.colorSpace = TextureAssetColorSpaceUVE::Srgb;
+    texture.usage = TextureUsageUVE::Color;
+    texture.pixels.resize(values.size() * 4U);
+    for (std::size_t index = 0U; index < values.size(); ++index) {
+        texture.pixels[index * 4U] = static_cast<std::byte>(values[index]);
+        texture.pixels[index * 4U + 1U] = static_cast<std::byte>(values[index]);
+        texture.pixels[index * 4U + 2U] = static_cast<std::byte>(values[index]);
+        texture.pixels[index * 4U + 3U] = std::byte{0xFF};
+    }
+    return texture;
+}
+
+} // namespace
+
+// A picture carries its shape as brightness, not as geometry. A material given only that picture
+// shades like painted glass: the light slides over it and the surface stays flat however it turns.
+// The derived normal map is what gives the same picture something for a light to catch, and it is
+// derived, not measured - which is why it stays a separate file the author can replace.
+TEST(TextureAssetUVETest, DerivedNormalMapGivesAFlatPictureSomethingToCatchTheLight) {
+    // Nothing to derive from a flat colour: the neutral map is the honest answer, and it is also
+    // what proves the routine leaves alone what it has nothing to say about.
+    TextureAssetUVE neutral;
+    ASSERT_TRUE(DeriveNormalTextureUVE(MakeGreyTextureUVE(std::vector<std::uint8_t>(16U, 128U), 4U, 4U), 2.0F,
+                                       neutral));
+    EXPECT_EQ(neutral.width, 4U);
+    EXPECT_EQ(neutral.height, 4U);
+    EXPECT_EQ(neutral.format, TextureAssetFormatUVE::RGBA8Unorm);
+    // Linear and Normal, not the sRGB colour map it came from: a normal map's bytes are vectors.
+    EXPECT_EQ(neutral.colorSpace, TextureAssetColorSpaceUVE::Linear);
+    EXPECT_EQ(neutral.usage, TextureUsageUVE::Normal);
+    ASSERT_TRUE(IsTextureAssetValidUVE(neutral));
+    ASSERT_EQ(neutral.pixels.size(), 16U * 4U);
+    for (std::size_t index = 0U; index < neutral.pixels.size(); index += 4U) {
+        EXPECT_EQ(neutral.pixels[index], std::byte{128});
+        EXPECT_EQ(neutral.pixels[index + 1U], std::byte{128});
+        EXPECT_EQ(neutral.pixels[index + 2U], std::byte{255});
+        EXPECT_EQ(neutral.pixels[index + 3U], std::byte{255});
+    }
+    ASSERT_FALSE(neutral.mipLevels.empty());
+    EXPECT_EQ(neutral.mipLevels.front().width, 2U);
+
+    // Dark on the left, bright on the right: the surface turns to face the dark side, so red sits
+    // under the neutral 128 and blue takes up the rest of the byte. A slope of one at strength two
+    // is a 45-degree turn.
+    TextureAssetUVE sloped;
+    ASSERT_TRUE(DeriveNormalTextureUVE(MakeGreyTextureUVE(std::vector<std::uint8_t>{0U, 128U, 255U}, 3U, 1U),
+                                       2.0F, sloped));
+    EXPECT_EQ(sloped.pixels[4], std::byte{37});
+    EXPECT_EQ(sloped.pixels[5], std::byte{128});
+    EXPECT_EQ(sloped.pixels[6], std::byte{218});
+
+    // Green is +Y in the image, the convention the lit shader samples, so bright over dark tilts
+    // the surface away from the viewer and reads as green under 128 rather than over it.
+    ASSERT_TRUE(DeriveNormalTextureUVE(MakeGreyTextureUVE(std::vector<std::uint8_t>{255U, 128U, 0U}, 1U, 3U),
+                                       2.0F, sloped));
+    EXPECT_EQ(sloped.pixels[4], std::byte{128});
+    EXPECT_EQ(sloped.pixels[5], std::byte{37});
+    EXPECT_EQ(sloped.pixels[6], std::byte{218});
+
+    // Strength is the slope and nothing else: zero derives the same map a flat picture would.
+    TextureAssetUVE unscaled;
+    ASSERT_TRUE(DeriveNormalTextureUVE(MakeGreyTextureUVE(std::vector<std::uint8_t>{0U, 128U, 255U}, 3U, 1U),
+                                       0.0F, unscaled));
+    EXPECT_EQ(unscaled.pixels[4], std::byte{128});
+    EXPECT_EQ(unscaled.pixels[6], std::byte{255});
+}
+
+// The refusals matter as much as the derivation: a caller that saved the untouched output would
+// write a texture with no pixels over whatever the author had.
+TEST(TextureAssetUVETest, DerivedNormalMapRefusesWhatItCannotDeriveFromAndLeavesTheOutputAlone) {
+    const TextureAssetUVE source = MakeGreyTextureUVE(std::vector<std::uint8_t>(4U, 128U), 2U, 2U);
+    TextureAssetUVE output;
+    EXPECT_FALSE(DeriveNormalTextureUVE(source, -1.0F, output));
+    EXPECT_FALSE(DeriveNormalTextureUVE(source, 17.0F, output));
+    EXPECT_TRUE(output.pixels.empty());
+
+    TextureAssetUVE ragged = source;
+    ragged.pixels.pop_back();
+    EXPECT_FALSE(DeriveNormalTextureUVE(ragged, 2.0F, output));
+
+    TextureAssetUVE halfFloat = source;
+    halfFloat.format = TextureAssetFormatUVE::RGBA16Float;
+    EXPECT_FALSE(DeriveNormalTextureUVE(halfFloat, 2.0F, output));
+
+    TextureAssetUVE empty = source;
+    empty.width = 0U;
+    empty.pixels.clear();
+    EXPECT_FALSE(DeriveNormalTextureUVE(empty, 2.0F, output));
+    EXPECT_TRUE(output.pixels.empty());
+}
+
 } // namespace
 } // namespace UVE::Asset::Tests

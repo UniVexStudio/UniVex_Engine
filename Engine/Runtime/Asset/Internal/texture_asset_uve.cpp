@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -533,6 +534,79 @@ bool LoadTextureAssetSourceUVE(const std::filesystem::path& path, TextureAssetUV
         return false;
     }
     outTexture = std::move(texture);
+    return true;
+}
+
+namespace {
+
+/// Past this the slope is a wall: every edge becomes a cliff and the surface reads as embossed
+/// metal rather than as the material the picture shows.
+constexpr float kMaximumDerivedNormalStrengthUVE = 16.0F;
+
+} // namespace
+
+bool DeriveNormalTextureUVE(const TextureAssetUVE& source, const float strength,
+                            TextureAssetUVE& outNormal) {
+    if (source.format != TextureAssetFormatUVE::RGBA8Unorm || source.width == 0U || source.height == 0U ||
+        source.pixels.size() != static_cast<std::size_t>(source.width) * source.height * 4U) {
+        return false;
+    }
+    if (!(strength >= 0.0F) || strength > kMaximumDerivedNormalStrengthUVE) {
+        return false;
+    }
+
+    // Height is read from the stored bytes, so the picture keeps the even weighting it has on
+    // screen; decoding a colour map to linear first would push every dark area towards flat.
+    const auto heightAtUVE = [&source](const std::uint32_t x, const std::uint32_t y) -> float {
+        // Clamped, not wrapped: a tileable map derives the same map it would without the seam,
+        // and a photo's border does not pull detail in from the opposite edge.
+        const std::uint32_t clampedX = std::min(x, source.width - 1U);
+        const std::uint32_t clampedY = std::min(y, source.height - 1U);
+        const std::size_t index = (static_cast<std::size_t>(clampedY) * source.width + clampedX) * 4U;
+        const float red = static_cast<float>(std::to_integer<unsigned char>(source.pixels[index]));
+        const float green = static_cast<float>(std::to_integer<unsigned char>(source.pixels[index + 1U]));
+        const float blue = static_cast<float>(std::to_integer<unsigned char>(source.pixels[index + 2U]));
+        return (0.299F * red + 0.587F * green + 0.114F * blue) / 255.0F;
+    };
+
+    TextureAssetUVE normal{};
+    normal.width = source.width;
+    normal.height = source.height;
+    normal.format = TextureAssetFormatUVE::RGBA8Unorm;
+    normal.colorSpace = TextureAssetColorSpaceUVE::Linear;
+    normal.usage = TextureUsageUVE::Normal;
+    normal.pixels.resize(source.pixels.size());
+
+    for (std::uint32_t y = 0U; y < source.height; ++y) {
+        for (std::uint32_t x = 0U; x < source.width; ++x) {
+            // Central difference over one pixel each way. Rows run downwards while the tangent
+            // space the shader samples has +Y up, which is where the green sign comes from.
+            const float slopeX = 0.5F * (heightAtUVE(x + 1U, y) - heightAtUVE(x - 1U, y)) * strength;
+            const float slopeY = 0.5F * (heightAtUVE(x, y + 1U) - heightAtUVE(x, y - 1U)) * strength;
+            const float normalX = -slopeX;
+            const float normalY = slopeY;
+            const float normalZ = 1.0F;
+            const float inverseLength = 1.0F / std::sqrt(normalX * normalX + normalY * normalY + normalZ * normalZ);
+            const std::size_t index = (static_cast<std::size_t>(y) * source.width + x) * 4U;
+            const auto encode = [](const float component) {
+                const float unbiased = component * 0.5F + 0.5F;
+                return static_cast<std::byte>(static_cast<unsigned char>(std::lround(unbiased * 255.0F)));
+            };
+            normal.pixels[index] = encode(normalX * inverseLength);
+            normal.pixels[index + 1U] = encode(normalY * inverseLength);
+            normal.pixels[index + 2U] = encode(normalZ * inverseLength);
+            normal.pixels[index + 3U] = std::byte{0xFF};
+        }
+    }
+
+    // The chain the importer would have built, so a derived map is not the one asset in the
+    // project that aliases when the surface turns away from the camera.
+    if (!IsTextureAssetValidUVE(normal) || !GenerateTextureMipmapsUVE(normal, TextureMipmapFilterUVE::Box, 0U)) {
+        UVE_ERROR("TextureAssetUVE: could not complete a derived normal map of {}x{}", normal.width,
+                  normal.height);
+        return false;
+    }
+    outNormal = std::move(normal);
     return true;
 }
 
