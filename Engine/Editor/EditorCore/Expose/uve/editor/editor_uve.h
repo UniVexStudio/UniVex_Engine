@@ -353,6 +353,18 @@ struct FilePickerStateUVE final {
     bool statusIsError = false;
 };
 
+/// The Montage's live state: where its body goes, what it has picked so far, and the last line it
+/// said. The list itself is not kept here - it is the catalogue's, read every frame.
+struct MontageStateUVE final {
+    /// Absolute: where the body's `.uventity` will be written.
+    std::filesystem::path directory;
+    std::string search;
+    /// The catalogue id of the picked body; empty picks nothing.
+    std::string pickedItemId;
+    std::string status;
+    bool statusIsError = false;
+};
+
 /// The picker's listing for one folder: content-relative subfolders and matching files, sorted.
 struct FilePickerListingUVE final {
     std::vector<std::filesystem::path> folders;
@@ -668,6 +680,17 @@ public:
     [[nodiscard]] bool IsFilePickerOpenUVE() const noexcept { return m_filePicker.has_value(); }
     void CloseFilePickerUVE();
     void DrawFilePickerUVE();
+
+    /// Opens the Montage over `directory` (absolute): the one window that offers the bodies an entity
+    /// can start as. Opening it writes nothing - it only asks.
+    void OpenMontageUVE(std::filesystem::path directory);
+    [[nodiscard]] bool IsMontageOpenUVE() const noexcept { return m_montage.has_value(); }
+    void CloseMontageUVE();
+    void DrawMontageUVE();
+    /// Makes the Montage body `itemId` in the open Montage's directory, selects it in Content and
+    /// opens it in the Entity Editor, as one step. Returns false - with the window saying why - for
+    /// anything that is not one of the Montage's bodies, and while authoring is not allowed.
+    [[nodiscard]] bool OpenMontageBodyUVE(std::string_view itemId);
     /// The picker's listing for `directory` (content-relative, empty is Content): its subfolders
     /// plus its files whose extension is one of `extensions` (empty matches every file) and whose
     /// stems contain `search` (case-insensitive). Sorted.
@@ -2349,6 +2372,7 @@ private:
     std::optional<RetargetWindowStateUVE> m_retargetWindow;
     std::optional<AnimationLibraryWindowStateUVE> m_animationLibraryWindow;
     std::optional<FilePickerStateUVE> m_filePicker;
+    std::optional<MontageStateUVE> m_montage;
     /// Browse picks waiting for their widget: widget id (ImGui::GetID, kept as uint32_t like
     /// m_inspectorTextEdits) to the pick. Asset combos take GUIDs, file rows take paths; each is
     /// consumed by its own drawer on the next frame.

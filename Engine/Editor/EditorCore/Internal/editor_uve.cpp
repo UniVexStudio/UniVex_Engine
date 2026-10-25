@@ -926,6 +926,13 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
         return std::nullopt;
     }
 
+    // The Montage asks before it makes anything, so it makes nothing here: the body picked in its
+    // window is what gets written (OpenMontageBodyUVE). A file from this call would be a body chosen
+    // for the author.
+    if (item->action == ContentCatalogueActionUVE::Montage) {
+        return std::nullopt;
+    }
+
     if (item->action == ContentCatalogueActionUVE::Folder) {
         const std::filesystem::path folder = MakeUniqueContentPathUVE(directory, "New Folder", "");
         if (!std::filesystem::create_directory(folder, error) || error) {

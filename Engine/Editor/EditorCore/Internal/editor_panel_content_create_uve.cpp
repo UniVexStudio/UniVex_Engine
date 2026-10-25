@@ -336,6 +336,13 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
 
     const bool allowed = IsAuthoringCommandAllowedUVE();
     const auto create = [&](const ContentCatalogueItemUVE& item) {
+        if (item.action == ContentCatalogueActionUVE::Montage) {
+            // The Montage asks which body first: nothing is written until its Open, so the menu's
+            // own line closes and the window takes over.
+            OpenMontageUVE(contentRoot / directory);
+            ImGui::CloseCurrentPopup();
+            return;
+        }
         std::error_code error;
         std::filesystem::create_directories(contentRoot / directory, error);
         const std::optional<std::filesystem::path> created =
