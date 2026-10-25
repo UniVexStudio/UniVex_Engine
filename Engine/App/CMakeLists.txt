@@ -45,3 +45,7 @@ if(UVE_HAS_DESKTOP_GL)
     target_compile_features(uve_editor_app PRIVATE cxx_std_23)
     uve_set_warnings(uve_editor_app)
 endif()
+
+if(ANDROID)
+    add_subdirectory(Android)
+endif()

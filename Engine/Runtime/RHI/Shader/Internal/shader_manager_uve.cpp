@@ -122,7 +122,11 @@ namespace {
     std::vector<std::pair<std::string, std::string>> defines;
     defines.reserve(extraDefines.size() + 4);
     defines.emplace_back("UVE_DEBUG", injectDebugDefine ? "1" : "0");
-    defines.emplace_back("UVE_MOBILE", "0"); // No mobile backend exists yet - reserved.
+#if defined(__ANDROID__)
+    defines.emplace_back("UVE_MOBILE", "1");
+#else
+    defines.emplace_back("UVE_MOBILE", "0");
+#endif
     defines.emplace_back("UVE_BACKEND_GL", "1"); // Reserved for a future non-GL backend to define its own instead.
     defines.emplace_back(ShaderStageDefineNameUVE(stage), "1");
     defines.insert(defines.end(), extraDefines.begin(), extraDefines.end());

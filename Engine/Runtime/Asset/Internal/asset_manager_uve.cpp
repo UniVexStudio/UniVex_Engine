@@ -4,6 +4,9 @@
 #include "uve/asset/asset_manager_uve.h"
 
 #include <exception>
+#include <algorithm>
+#include <limits>
+#include <stdexcept>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -30,6 +33,8 @@ struct AssetManagerRecordUVE {
     std::function<void(void*)> destroy;
     std::string failureReason;
     int refCount = 0;
+    std::size_t residentBytes = 0;
+    bool sizeKnown = false;
 };
 
 } // namespace
@@ -42,6 +47,10 @@ struct AssetManagerUVE::ImplUVE {
     std::unordered_map<std::type_index, AssetLoaderInfoUVE> loaders;
     std::unordered_map<AssetGuidUVE, AssetManagerRecordUVE> records;
     Threading::JobCounterUVE pendingJobs;
+    bool shuttingDown = false;
+    std::size_t residentBytes = 0;
+    std::size_t peakResidentBytes = 0;
+    std::size_t budget = 0;
 };
 
 AssetManagerUVE::AssetManagerUVE(Threading::IThreadPoolUVE& threadPool, Events::IEventSystemUVE& eventSystem,
@@ -52,6 +61,19 @@ AssetManagerUVE::~AssetManagerUVE() {
     // Every in-flight job captures `this` — wait for all of them to finish before m_impl (and
     // this object) is torn down, or a still-running job would dereference a dangling pointer.
     m_impl->pendingJobs.WaitUVE();
+    decltype(m_impl->records) records;
+    {
+        const std::lock_guard<std::mutex> lock(m_impl->mutex);
+        m_impl->shuttingDown = true;
+        records.swap(m_impl->records);
+    }
+    // Destruction may release dependent AssetHandles back into this manager. Keep the
+    // implementation alive and ignore refcount changes during this final ownership drain.
+    for (auto& entry : records) {
+        auto& record = entry.second;
+        if (m_impl->hotReload != nullptr) m_impl->hotReload->UntrackUVE(entry.first);
+        if (record.data != nullptr && record.destroy) record.destroy(record.data);
+    }
 }
 
 void AssetManagerUVE::RegisterLoaderErased(std::type_index type, AssetLoaderInfoUVE info) {
@@ -65,6 +87,7 @@ void AssetManagerUVE::LoadErased(AssetGuidUVE guid, std::type_index type, IAsset
         const std::lock_guard<std::mutex> lock(m_impl->mutex);
         const auto existingIt = m_impl->records.find(guid);
         if (existingIt != m_impl->records.end()) {
+            if (existingIt->second.type != type) throw std::invalid_argument("Asset GUID requested with a different payload type");
             ++existingIt->second.refCount;
             return;
         }
@@ -138,12 +161,19 @@ void AssetManagerUVE::ReloadUVE(AssetGuidUVE guid, IAssetDatabaseUVE& assetDatab
 }
 
 void AssetManagerUVE::ExecuteLoadUVE(AssetGuidUVE guid, std::type_index type, std::filesystem::path path) {
+    bool enforceBudget = false;
+    { const std::lock_guard<std::mutex> lock(m_impl->mutex); enforceBudget = m_impl->budget != 0; }
+    if (enforceBudget) CollectGarbageUVE();
     std::function<void*(const std::filesystem::path&, bool&)> loadFunc;
+    std::function<std::size_t(const void*)> sizeFunc;
+    std::function<void(void*)> candidateDestroy;
     {
         const std::lock_guard<std::mutex> lock(m_impl->mutex);
         const auto loaderIt = m_impl->loaders.find(type);
         if (loaderIt != m_impl->loaders.end()) {
             loadFunc = loaderIt->second.load;
+            sizeFunc = loaderIt->second.residentBytes;
+            candidateDestroy = loaderIt->second.destroy;
         }
     }
 
@@ -174,6 +204,12 @@ void AssetManagerUVE::ExecuteLoadUVE(AssetGuidUVE guid, std::type_index type, st
         }
     }
 
+    std::size_t newBytes = 0;
+    if (success && newData != nullptr) {
+        try { if (sizeFunc) newBytes = sizeFunc(newData); }
+        catch (...) { success = false; failureReason = "asset resident size callback failed"; }
+    }
+    void* rejectedData = nullptr;
     void* oldData = nullptr;
     std::function<void(void*)> destroyFunc;
     {
@@ -181,10 +217,24 @@ void AssetManagerUVE::ExecuteLoadUVE(AssetGuidUVE guid, std::type_index type, st
         const auto it = m_impl->records.find(guid);
         if (it != m_impl->records.end()) {
             oldData = it->second.data;
+            const auto remaining = m_impl->residentBytes - it->second.residentBytes;
+            if (success && ((m_impl->budget != 0 && (!sizeFunc ||
+                newBytes > m_impl->budget || remaining > m_impl->budget - newBytes)) ||
+                newBytes > std::numeric_limits<std::size_t>::max() - remaining)) {
+                success = false;
+                failureReason = !sizeFunc ? "finite asset budget requires a resident size callback"
+                                         : "asset resident memory budget exceeded; release unused handles and retry";
+            }
+            if (!success && newData != nullptr) rejectedData = newData;
             if (success) {
+                m_impl->residentBytes = remaining + newBytes;
+                m_impl->peakResidentBytes = std::max(m_impl->peakResidentBytes, m_impl->residentBytes);
+                it->second.residentBytes = newBytes;
+                it->second.sizeKnown = static_cast<bool>(sizeFunc);
                 destroyFunc = it->second.destroy;
                 it->second.data = newData;
-                it->second.state = AssetLoadStateUVE::Loaded;
+                // Keep Loading until tracking is installed. Otherwise a caller can observe
+                // Ready, change the file, and let the first poll baseline that newer version.
                 it->second.failureReason.clear();
             } else if (oldData != nullptr) {
                 // A failed reload is failure-atomic: retain the last-known-good data and expose
@@ -198,16 +248,30 @@ void AssetManagerUVE::ExecuteLoadUVE(AssetGuidUVE guid, std::type_index type, st
             }
         }
     }
-    // Free the previous value only after releasing the lock, and only on a successful reload.
-    if (oldData != nullptr && destroyFunc) {
-        destroyFunc(oldData);
-    }
-
+    if (rejectedData != nullptr && candidateDestroy) candidateDestroy(rejectedData);
+    const auto publishReady = [this, guid]() {
+        const std::lock_guard<std::mutex> lock(m_impl->mutex);
+        const auto it = m_impl->records.find(guid);
+        if (it != m_impl->records.end()) it->second.state = AssetLoadStateUVE::Loaded;
+    };
     if (!success) {
         UVE_ERROR("AssetManagerUVE: failed to load asset GUID {} from \"{}\"", guid.value, path.string());
-    } else if (m_impl->hotReload != nullptr) {
-        m_impl->hotReload->TrackUVE(guid);
+    } else {
+        // Tracking stays outside the manager lock, matching external hook semantics. Loading
+        // pins the record against collection during this handoff, even when no handle remains.
+        try {
+            if (m_impl->hotReload != nullptr) m_impl->hotReload->TrackUVE(guid);
+        } catch (...) {
+            // Retain the existing successful-payload semantics if an optional hook throws.
+            publishReady();
+            if (oldData != nullptr && destroyFunc) destroyFunc(oldData);
+            throw;
+        }
+        publishReady();
     }
+    // Keep destruction outside the mutex and after readiness publication, so dependent-handle
+    // destructors can query the replacement without waiting on this job's own completion.
+    if (oldData != nullptr && destroyFunc) destroyFunc(oldData);
 
     m_impl->eventSystem.QueueEvent(AssetLoadCompletedEventUVE{guid, success});
 }
@@ -236,6 +300,7 @@ void AssetManagerUVE::CollectGarbageUVE() {
                 if (m_impl->hotReload != nullptr) {
                     m_impl->hotReload->UntrackUVE(it->first);
                 }
+                m_impl->residentBytes -= record.residentBytes;
                 toDestroy.push_back(std::move(record));
                 it = m_impl->records.erase(it);
             } else {
@@ -250,6 +315,24 @@ void AssetManagerUVE::CollectGarbageUVE() {
     }
 }
 
+void AssetManagerUVE::SetResidentBudgetUVE(std::size_t bytes) {
+    {
+        const std::lock_guard<std::mutex> lock(m_impl->mutex);
+        if (bytes != 0) for (const auto& [guid, record] : m_impl->records) {
+            static_cast<void>(guid);
+            if (record.data != nullptr && !record.sizeKnown)
+                throw std::logic_error("Release unsized assets before enabling a finite budget");
+        }
+        m_impl->budget = bytes;
+    }
+    CollectGarbageUVE();
+}
+std::size_t AssetManagerUVE::GetResidentBytesUVE() const {
+    const std::lock_guard<std::mutex> lock(m_impl->mutex); return m_impl->residentBytes;
+}
+std::size_t AssetManagerUVE::GetPeakResidentBytesUVE() const {
+    const std::lock_guard<std::mutex> lock(m_impl->mutex); return m_impl->peakResidentBytes;
+}
 std::size_t AssetManagerUVE::GetLoadedAssetCountUVE() const {
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
     std::size_t count = 0;
@@ -281,6 +364,7 @@ void* AssetManagerUVE::TryGetErased(AssetGuidUVE guid) {
 
 void AssetManagerUVE::AddRefErased(AssetGuidUVE guid) {
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
+    if (m_impl->shuttingDown) return;
     const auto it = m_impl->records.find(guid);
     if (it == m_impl->records.end()) {
         UVE_ASSERT(it != m_impl->records.end());
@@ -291,6 +375,7 @@ void AssetManagerUVE::AddRefErased(AssetGuidUVE guid) {
 
 void AssetManagerUVE::ReleaseErased(AssetGuidUVE guid) {
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
+    if (m_impl->shuttingDown) return;
     const auto it = m_impl->records.find(guid);
     if (it == m_impl->records.end() || it->second.refCount == 0U) {
         UVE_ASSERT(it != m_impl->records.end());

@@ -15,7 +15,8 @@
 // used to keep a second hand-rolled copy of this loader (AUDIT 5.6). Any future consumer must be
 // equally small and self-contained; anything larger belongs behind IRenderDeviceUVE instead.
 #if defined(__ANDROID__)
-#include <GLES3/gl3.h>
+#include <GLES3/gl32.h>
+using PFNGLGETBUFFERSUBDATAPROC = void (GL_APIENTRYP)(GLenum, GLintptr, GLsizeiptr, void*);
 #include <GLES2/gl2ext.h>
 #else
 #include <GL/gl.h>
@@ -50,6 +51,7 @@ struct GlFunctionsUVE {
     PFNGLGETQUERYOBJECTUI64VPROC glGetQueryObjectui64v = nullptr;
 #endif
     // Core since GL 2.0; loaded like the other post-1.1 baseline entry points.
+    PFNGLBLENDEQUATIONPROC glBlendEquation = nullptr;
     PFNGLSTENCILFUNCSEPARATEPROC glStencilFuncSeparate = nullptr;
     PFNGLSTENCILOPSEPARATEPROC glStencilOpSeparate = nullptr;
     PFNGLSTENCILMASKSEPARATEPROC glStencilMaskSeparate = nullptr;

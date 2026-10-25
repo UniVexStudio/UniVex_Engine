@@ -186,6 +186,22 @@ TEST_F(GlRenderDeviceUVETest, BindGroupAppliesRealTextureSamplerAndBufferBinding
 // These sentinels are only used to check symbol resolution, never invoked as GL calls.
 void LoaderSentinelUVE() {}
 
+TEST(GlFunctionsUVETest, BlendEquationIsLoadedAndRequiredForTheBaseline) {
+    const auto resolve = +[](const char*) -> void* {
+        return reinterpret_cast<void*>(&LoaderSentinelUVE);
+    };
+    auto loaded = Detail::LoadGlFunctionsUVE(resolve);
+    ASSERT_TRUE(loaded.IsCompleteUVE());
+    ASSERT_NE(loaded.glBlendEquation, nullptr);
+    loaded.glBlendEquation = nullptr;
+    EXPECT_FALSE(loaded.IsCompleteUVE());
+    const auto missingBlend = +[](const char* name) -> void* {
+        if (std::string_view{name} == "glBlendEquation") return nullptr;
+        return reinterpret_cast<void*>(&LoaderSentinelUVE);
+    };
+    EXPECT_FALSE(Detail::LoadGlFunctionsUVE(missingBlend).IsCompleteUVE());
+}
+
 TEST(GlFunctionsUVETest, StencilSymbolsAreLoadedAndRequiredForTheBaseline) {
     const auto resolve = +[](const char*) -> void* {
         return reinterpret_cast<void*>(&LoaderSentinelUVE);
@@ -355,6 +371,52 @@ TEST_F(GlRenderDeviceUVETest, DepthStencilDiscardUsesSeparateAttachmentAspects) 
     EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
     renderDevice->DestroyTextureUVE(depth);
     renderDevice->DestroyTextureUVE(color);
+}
+
+TEST_F(GlRenderDeviceUVETest, IndexedUniformArrayUpdatesReachTheGpuWithoutDuplicatingReflection) {
+    const auto vertex = renderDevice->CreateShaderUVE({ShaderStageUVE::Vertex,
+        "#version 330 core\nvoid main() { vec2 p[3] = vec2[3](vec2(-1,-1),vec2(3,-1),vec2(-1,3)); gl_Position=vec4(p[gl_VertexID],0,1); }"});
+    const auto fragment = renderDevice->CreateShaderUVE({ShaderStageUVE::Fragment,
+        "#version 330 core\nuniform vec3 uPalette[2]; out vec4 color; void main() { color=vec4(uPalette[0]+uPalette[1],1); }"});
+    ASSERT_NE(vertex, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragment, kInvalidShaderHandleUVE);
+    PipelineDescUVE pipelineDesc;
+    pipelineDesc.vertexShader = vertex;
+    pipelineDesc.fragmentShader = fragment;
+    pipelineDesc.depthTestEnabled = false;
+    pipelineDesc.depthWriteEnabled = false;
+    const auto pipeline = renderDevice->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+    const auto reflected = renderDevice->GetPipelineUniformsUVE(pipeline);
+    ASSERT_EQ(reflected.size(), 1U);
+    EXPECT_EQ(reflected.front().name, "uPalette");
+    EXPECT_EQ(reflected.front().arraySize, 2U);
+    TextureDescUVE textureDesc{4U, 4U, TextureFormatUVE::RGBA8Unorm};
+    textureDesc.usage = TextureUsageUVE::RenderTarget | TextureUsageUVE::Sampled;
+    const auto color = renderDevice->CreateTextureUVE(textureDesc);
+    ASSERT_NE(color, kInvalidTextureHandleUVE);
+    auto commands = renderDevice->CreateCommandBufferUVE();
+    RenderPassDescUVE pass;
+    pass.colorAttachment = color;
+    commands->BeginRenderPassUVE(pass);
+    commands->BindPipelineUVE(pipeline);
+    commands->SetUniformVector3UVE("uPalette[0]", {0.0F, 0.0F, 0.0F});
+    commands->SetUniformVector3UVE("uPalette[1]", {0.8F, 0.2F, 0.1F});
+    commands->SetUniformVector3UVE("uPalette[2]", {0.0F, 1.0F, 0.0F});
+    commands->DrawUVE(3U);
+    std::array<std::uint8_t, 4> pixel{};
+    glReadPixels(2, 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel.data());
+    EXPECT_GT(pixel[0], 190U);
+    EXPECT_GE(pixel[1], 40U);
+    EXPECT_LE(pixel[1], 65U);
+    EXPECT_LE(pixel[2], 35U);
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+    commands->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commands));
+    renderDevice->DestroyTextureUVE(color);
+    renderDevice->DestroyPipelineUVE(pipeline);
+    renderDevice->DestroyShaderUVE(vertex);
+    renderDevice->DestroyShaderUVE(fragment);
 }
 
 TEST_F(GlRenderDeviceUVETest, StencilPipelineMasksSecondDrawThroughDepthStencilAttachment) {

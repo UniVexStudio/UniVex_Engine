@@ -3,6 +3,7 @@
 #include "uve/pack/project_launcher_uve.h"
 
 #include <algorithm>
+#include <nlohmann/json.hpp>
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
@@ -208,7 +209,8 @@ namespace {
 } // namespace
 
 ProjectRuntimeSetupResultUVE PrepareProjectRuntimeUVE(const std::filesystem::path& projectFile,
-                                                       Core::EngineConfigUVE& config) {
+                                                       Core::EngineConfigUVE& config,
+                                                       const std::filesystem::path& nativeUserDataRoot) {
     const Platform::EditorProjectPackageLoadResultUVE loaded =
         Platform::EditorProjectPackageCodecUVE::LoadUVE(projectFile);
     if (!loaded.IsAcceptedUVE()) {
@@ -256,8 +258,14 @@ ProjectRuntimeSetupResultUVE PrepareProjectRuntimeUVE(const std::filesystem::pat
         candidateConfig.bootSplashImagePathUVE.clear();
     }
 
-    const Platform::ApplicationUserDataDirectoryResultUVE dataDirectory =
-        Platform::ResolveApplicationUserDataDirectoryUVE(package, projectRoot);
+    Platform::ApplicationUserDataDirectoryResultUVE dataDirectory;
+    if (!nativeUserDataRoot.empty()) {
+        // Native mobile hosts own their sandbox path; it must survive cooked-content replacement.
+        if (!nativeUserDataRoot.is_absolute())
+            return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::UserDataDirectoryUnavailable,"Native user-data root must be absolute");
+        std::filesystem::create_directories(nativeUserDataRoot,error);
+        dataDirectory = {!error,nativeUserDataRoot,error.message()};
+    } else dataDirectory = Platform::ResolveApplicationUserDataDirectoryUVE(package, projectRoot);
     if (!dataDirectory.success) {
         return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::UserDataDirectoryUnavailable,
                                   dataDirectory.message);
@@ -341,6 +349,18 @@ ProjectRuntimeSetupResultUVE PrepareProjectRuntimeUVE(const std::filesystem::pat
     candidateConfig.projectSettingsFilePath = projectRoot / package.settingsPath;
     candidateConfig.inputMapFilePath = projectRoot / "project.uvinput";
     candidateConfig.assetDatabaseFilePath = projectRoot / package.assetDatabasePath;
+    if (std::filesystem::exists(projectRoot/"cooked.json")) {
+        try {
+            std::ifstream input(projectRoot/"cooked.json");
+            nlohmann::json metadata; input >> metadata;
+            if (metadata.at("schema") != 1) throw std::runtime_error("Unsupported cooked schema");
+            candidateConfig.cookedAssetPathsUVE = true;
+            candidateConfig.assetResidentBudgetBytesUVE = metadata.at("assetBudgetBytes").get<std::size_t>();
+            if (candidateConfig.assetResidentBudgetBytesUVE == 0) throw std::runtime_error("Cooked budget must be finite");
+        } catch (const std::exception& exception) {
+            return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::InvalidProjectFile, exception.what());
+        }
+    }
     candidateConfig.projectContentRootUVE = contentRoot;
     candidateConfig.projectRootDirectoryUVE = projectRoot;
     candidateConfig.derivedArtifactCacheRootUVE = dataDirectory.directory / "DerivedData" / "Import";

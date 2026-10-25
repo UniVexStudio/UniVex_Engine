@@ -402,7 +402,7 @@ NavPathUVE FindNavPathUVE(const NavmeshUVE& mesh, const NavPathRequestUVE& reque
     nodes.push_back(SearchNodeUVE{});
     const std::uint32_t startNode = 0U;
 
-    const auto polygonOfUVE = [&mesh, &nodes, startPolygon, startNode](const std::uint32_t node) {
+    const auto polygonOfUVE = [&mesh, &nodes, startPolygon](const std::uint32_t node) {
         return node == startNode ? startPolygon : static_cast<std::size_t>(mesh.portals[nodes[node].portal].to);
     };
 
@@ -416,7 +416,7 @@ NavPathUVE FindNavPathUVE(const NavmeshUVE& mesh, const NavPathRequestUVE& reque
 
     // The chain that reached a state, in walking order - the windows the funnel runs over to give
     // that state its path. Every state was created from a parent, so the walk always reaches the start.
-    const auto chainToUVE = [&mesh, &nodes, startNode](const std::uint32_t lastNode,
+    const auto chainToUVE = [&nodes](const std::uint32_t lastNode,
                                                        std::vector<std::uint32_t>& outChain) {
         outChain.clear();
         for (std::uint32_t node = lastNode; node != startNode; node = nodes[node].parent) {

@@ -119,24 +119,68 @@ uniform sampler2D uNormalTexture;
 uniform sampler2D uAOTexture;
 uniform sampler2D uMetallicRoughnessTexture;
 uniform sampler2D uEmissiveTexture;
+#if UVE_MOBILE
+uniform float uEmissiveEnergy;
+#else
 uniform float uEmissiveEnergy = 1.0;
+#endif
+#if UVE_MOBILE
+uniform float uNormalScale;
+#else
 uniform float uNormalScale = 1.0;
+#endif
+#if UVE_MOBILE
+uniform float uOcclusionStrength;
+#else
 uniform float uOcclusionStrength = 1.0;
+#endif
+#if UVE_MOBILE
+uniform vec3 uUvScale;
+#else
 uniform vec3 uUvScale = vec3(1.0, 1.0, 0.0);
+#endif
+#if UVE_MOBILE
+uniform vec3 uUvOffset;
+#else
 uniform vec3 uUvOffset = vec3(0.0, 0.0, 0.0);
+#endif
+#if UVE_MOBILE
+uniform int uUnshaded;
+#else
 uniform int uUnshaded = 0;
+#endif
+#if UVE_MOBILE
+uniform int uShadingMode;
+#else
 uniform int uShadingMode = 0;
+#endif
+#if UVE_MOBILE
+uniform float uAlphaCutoff;
+#else
 uniform float uAlphaCutoff = 0.0;
+#endif
 // The material's own alpha, kept separate from uSurfaceOpacity (the SurfaceInstance3D fade) so a
 // texture's alpha and an object fading out multiply instead of one silently replacing the other.
+#if UVE_MOBILE
+uniform float uAlbedoAlpha;
+#else
 uniform float uAlbedoAlpha = 1.0;
+#endif
 // 0 = AlbedoAlpha (texture alpha times uAlbedoAlpha), 2 = None (alpha stays 1). 1 is reserved for
 // the separate-texture-channel source, which no shader input carries yet - it behaves like None
 // rather than guessing at a channel.
+#if UVE_MOBILE
+uniform int uAlphaSource;
+#else
 uniform int uAlphaSource = 0;
+#endif
 // Set only for a PremultipliedAlpha blend mode: the pipeline adds the source with a ONE factor, so
 // rgb has to arrive already multiplied by alpha or the surface composites too bright.
+#if UVE_MOBILE
+uniform int uPremultiplyAlpha;
+#else
 uniform int uPremultiplyAlpha = 0;
+#endif
 // Legacy Increment 27 pair retained for project-authored shaders and direct single-map tests.
 uniform sampler2D uShadowMapTexture;
 uniform mat4 uLightSpaceMatrix;
@@ -182,8 +226,11 @@ uniform int uLightShadowEnabled[4];
 uniform vec2 uLightShadowDepthRange[4];
 // 1 / atlas resolution, so the PCF tap spacing has one source of truth. Declared with a default so
 // a direct RHI caller that never sets it keeps the spacing this shader has always assumed.
+#if UVE_MOBILE
+uniform vec2 uShadowAtlasTexelSize;
+#else
 uniform vec2 uShadowAtlasTexelSize = vec2(1.0 / 4096.0);
-
+#endif
 const float kPiUVE = 3.14159265359;
 const float kBrdfEpsilonUVE = 0.0001;
 /// The spot cone's bright inner region as a fraction of its authored outer half-angle; the band

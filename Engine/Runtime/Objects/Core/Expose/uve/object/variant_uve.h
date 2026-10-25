@@ -100,7 +100,12 @@ public:
                      std::vector<Math::Vector2UVE>, std::vector<Math::Vector3UVE>, std::vector<VariantColorUVE>>;
 
     /// A false Bool: the default of the default type.
-    VariantUVE() = default;
+    VariantUVE() noexcept;
+    ~VariantUVE();
+    VariantUVE(const VariantUVE&);
+    VariantUVE& operator=(const VariantUVE&);
+    VariantUVE(VariantUVE&&) noexcept;
+    VariantUVE& operator=(VariantUVE&&) noexcept;
 
     /// The value a freshly created property of `type` holds - zero, empty, or identity.
     [[nodiscard]] static VariantUVE MakeDefaultUVE(VariantTypeUVE type);
@@ -138,10 +143,10 @@ public:
     [[nodiscard]] bool operator==(const VariantUVE& other) const;
 
 private:
-    VariantUVE(const VariantTypeUVE type, StorageUVE storage) : m_type(type), m_storage(std::move(storage)) {}
+    VariantUVE(VariantTypeUVE type, StorageUVE storage);
 
     VariantTypeUVE m_type = VariantTypeUVE::Bool;
-    StorageUVE m_storage{false};
+    StorageUVE m_storage;
 };
 
 /// One entry of a Dictionary. Keys are strings: a key that is itself an arbitrary value buys

@@ -85,6 +85,30 @@ ProjectPackResultUVE ProjectPackagerUVE::PackUVE(const ProjectPackOptionsUVE& op
                              "Unable to create the output directory: " + options.outputDirectory.string());
     }
 
+    if (options.cookTarget.has_value()) {
+        // The cooker publishes a fresh directory atomically; remove only our newly-created,
+        // still-empty destination before handing publication to it.
+        std::filesystem::remove(options.outputDirectory, error);
+        const auto cooked = CookProjectAssetsUVE(options.projectFile, options.outputDirectory, *options.cookTarget);
+        if (!cooked.success) return MakeResultUVE(ProjectPackCodeUVE::CopyFailed, cooked.message);
+        std::filesystem::copy_file(options.runtimeExecutablePath,
+            options.outputDirectory/options.runtimeExecutablePath.filename(), error);
+        if (error) return MakeResultUVE(ProjectPackCodeUVE::CopyFailed, error.message());
+#if defined(_WIN32)
+        // Portable tool distributions keep the runtime's dependent DLLs beside its executable.
+        // Carry that runtime set into the game export; otherwise it only runs on the build PC.
+        const auto runtimeDirectory = options.runtimeExecutablePath.parent_path().empty()
+            ? std::filesystem::path(".") : options.runtimeExecutablePath.parent_path();
+        for (std::filesystem::directory_iterator it(runtimeDirectory,error), end; !error && it != end; it.increment(error)) {
+            if (it->path().extension() == ".dll" && it->is_regular_file(error))
+                std::filesystem::copy_file(it->path(),options.outputDirectory/it->path().filename(),error);
+            if (error) break;
+        }
+        if (error) return MakeResultUVE(ProjectPackCodeUVE::CopyFailed,"Cannot copy runtime DLLs: " + error.message());
+#endif
+        return MakeResultUVE(ProjectPackCodeUVE::Success, cooked.message);
+    }
+
     // Copy the runtime binary in, preserving its executable permission bits - copy_file alone
     // copies file content but not necessarily the source's mode bits on every platform/filesystem.
     const std::filesystem::path copiedRuntimePath =

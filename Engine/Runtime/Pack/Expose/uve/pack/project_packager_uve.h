@@ -3,6 +3,8 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
+#include "uve/pack/asset_cooker_uve.h"
 #include <filesystem>
 #include <string>
 
@@ -17,6 +19,7 @@ struct ProjectPackOptionsUVE final {
     /// must be empty or not yet exist (this is a "produce a fresh distributable" tool, not an
     /// incremental updater - see ProjectPackagerUVE::PackUVE's own doc comment).
     std::filesystem::path outputDirectory;
+    std::optional<CookTargetUVE> cookTarget;
 };
 
 enum class ProjectPackCodeUVE : std::uint8_t {

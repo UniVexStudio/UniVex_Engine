@@ -183,6 +183,9 @@ struct EngineConfigUVE {
     /// IAssetDatabaseUVE::LoadUVE()) — a first-run project has no asset
     /// registry yet.
     std::filesystem::path assetDatabaseFilePath = ".uvassetdb";
+    bool cookedAssetPathsUVE = false;
+    /// Optional admission limit for counted CPU asset payloads, not a process/GPU memory cap.
+    std::size_t assetResidentBudgetBytesUVE = 0;
 
     /// Root directory the read-only ProjectFileIndexUVE explicitly scans for
     /// editor Asset Browser presentation. Missing or empty roots are valid

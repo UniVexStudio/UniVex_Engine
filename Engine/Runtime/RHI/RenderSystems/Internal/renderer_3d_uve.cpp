@@ -1263,6 +1263,9 @@ struct Renderer3DUVE::ImplUVE {
     };
     std::unordered_map<std::uint64_t, OcclusionProbeUVE> occlusionProbes;
     std::vector<OcclusionProxyDrawUVE> occlusionProxyDraws;
+    // Reuse filter capacity across frames. Clear elements after swapping so culled assets
+    // are released immediately; retaining capacity trades peak storage for fewer allocations.
+    std::vector<RenderItemUVE> occlusionKeptItems;
     std::uint64_t occlusionFrame = 0U;
     bool occlusionQueryCreationFailed = false;
 
@@ -3244,7 +3247,8 @@ struct Renderer3DUVE::ImplUVE {
         ++occlusionFrame;
         const std::uint32_t writeSlot = static_cast<std::uint32_t>(occlusionFrame & 1U);
         const std::uint32_t readSlot = writeSlot ^ 1U;
-        std::vector<RenderItemUVE> kept;
+        auto& kept = occlusionKeptItems;
+        kept.clear();
         kept.reserve(queue.opaqueItems.size());
         std::size_t skipped = 0U;
         for (const RenderItemUVE& item : queue.opaqueItems) {
@@ -3304,6 +3308,7 @@ struct Renderer3DUVE::ImplUVE {
             skipped = 0U;
         }
         queue.opaqueItems.swap(kept);
+        kept.clear();
         // Probes nobody referenced for two frames belong to objects that moved, left the view or
         // were destroyed; their queries go back to the device.
         for (auto it = occlusionProbes.begin(); it != occlusionProbes.end();) {
@@ -3452,7 +3457,7 @@ struct Renderer3DUVE::ImplUVE {
             uiVertexStaging.push_back(makeVertex(x1, y1, quad.u1, quad.v1));
             uiVertexStaging.push_back(makeVertex(x0, y1, quad.u0, quad.v1));
         };
-        const auto drawQuads = [this, &appendQuad, &projection, &commandBuffer, maxVertices](
+        const auto drawQuads = [this, &appendQuad, &projection, &commandBuffer](
                                    const TextureHandleUVE texture,
                                    const std::vector<UI::UIQuadUVE>& quads) -> bool {
             uiVertexStaging.clear();
@@ -3596,10 +3601,12 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     // rather than lazily: a shadow pass that stalls mid-frame waiting for a program is worse than
     // one extra compile at startup, and the non-instanced program remains the fallback if this one
     // fails to link.
+#if !defined(__ANDROID__)
     Shader::ShaderProgramDescUVE instancedShadowProgramDesc = shadowProgramDesc;
     instancedShadowProgramDesc.extraDefines.emplace_back("UVE_INSTANCED", "1");
     instancedShadowProgramDesc.debugNameUVE = "ShadowDepthInstanced";
     m_impl->instancedShadowProgram = shaderManager.CreateProgramUVE(instancedShadowProgramDesc);
+#endif
 
     Shader::ShaderProgramDescUVE toneMappingProgramDesc;
     toneMappingProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kFullscreenQuadVirtualPath);

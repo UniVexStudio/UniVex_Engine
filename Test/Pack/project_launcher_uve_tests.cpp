@@ -3,6 +3,11 @@
 #include "uve/pack/project_launcher_uve.h"
 
 #include <array>
+#include <thread>
+#include "uve/pack/asset_cooker_uve.h"
+#include "uve/asset/asset_database_uve.h"
+#include "uve/asset/asset_handle_uve.h"
+#include "uve/asset/texture_asset_uve.h"
 #include <filesystem>
 #include <fstream>
 #include <vector>
@@ -147,6 +152,38 @@ protected:
 
     std::filesystem::path projectRoot;
 };
+
+TEST_F(ProjectLauncherUVETest, CookedProjectLaunchesAndDemandLoadsAfterOriginalProjectRemoved) {
+    Core::EngineCoreUVE author(MakeHeadlessConfigUVE(projectRoot)); author.Init();
+    ASSERT_TRUE(author.Load()); WriteProjectWithCameraSceneUVE(author); author.Shutdown();
+    Asset::TextureAssetUVE texture; texture.width=4;texture.height=4;texture.pixels.resize(64,std::byte{255});
+    ASSERT_TRUE(Asset::SaveTextureAssetUVE(texture,projectRoot/"content/hero.uvtex"));
+    ASSERT_TRUE(Asset::SaveTextureAssetUVE(texture,projectRoot/"content/branding/splash.uvtex"));
+    Asset::AssetDatabaseUVE db; const auto guid=db.RegisterUVE("content/hero.uvtex");
+    ASSERT_TRUE(db.SaveUVE(projectRoot/".uvassetdb"));
+    const auto cooked=::UVE::Tests::ScratchPathUVE("relocated-cooked");
+    const auto result=CookProjectAssetsUVE(projectFile(),cooked,CookTargetUVE::Android);
+    ASSERT_TRUE(result.success)<<result.message;
+    std::filesystem::remove_all(projectRoot);
+    auto config=MakeHeadlessConfigUVE(cooked);
+    const auto persistent=::UVE::Tests::ScratchPathUVE("native-persistent-data");
+    const auto setup=PrepareProjectRuntimeUVE(cooked/"project.uvproject",config,persistent);
+    ASSERT_TRUE(setup.IsReadyUVE())<<setup.message;
+    EXPECT_EQ(config.saveDirectoryPath,persistent/"saves");
+    EXPECT_TRUE(config.cookedAssetPathsUVE); EXPECT_EQ(config.assetResidentBudgetBytesUVE,128U*1024U*1024U);
+    Core::EngineCoreUVE runtime(config);runtime.Init();ASSERT_TRUE(runtime.Load());
+    ASSERT_TRUE(LoadAndActivateProjectSceneUVE(runtime,*setup.setup).IsAcceptedUVE());
+    auto& services=runtime.GetServicesUVE();auto& manager=services.GetAssetManagerUVE();
+    EXPECT_EQ(manager.GetLoadedAssetCountUVE(),0U);
+    {
+        auto h=manager.LoadUVE<Asset::TextureAssetUVE>(guid,services.GetAssetDatabaseUVE());
+        for(unsigned i=0;i<200000U&&!h.IsReadyUVE()&&!h.HasFailedUVE();++i) std::this_thread::yield();
+        ASSERT_TRUE(h.IsReadyUVE())<<h.GetFailureReasonUVE();EXPECT_EQ(h.TryGetUVE()->width,4U);
+    }
+    manager.CollectGarbageUVE();EXPECT_EQ(manager.GetLoadedAssetCountUVE(),0U);
+    runtime.Shutdown();std::filesystem::remove_all(cooked);
+    EXPECT_TRUE(std::filesystem::is_directory(persistent));std::filesystem::remove_all(persistent);
+}
 
 TEST_F(ProjectLauncherUVETest, LoadAndActivate_LoadsSceneAndActivatesItsCamera) {
     Core::EngineCoreUVE authoringEngine(MakeHeadlessConfigUVE(projectRoot));

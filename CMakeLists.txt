@@ -23,6 +23,7 @@ enable_testing()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Engine/CMake")
 
+include(UveSanitizers)
 include(UveCompilerWarnings)
 include(UveBuildConfiguration)
 include(UveFormatSupport)

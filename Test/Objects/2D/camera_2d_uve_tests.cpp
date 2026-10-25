@@ -1,3 +1,4 @@
+#include <concepts>
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include <limits>
@@ -14,6 +15,7 @@
 
 namespace UVE::Scene::Tests {
 namespace {
+static_assert(std::equality_comparable<Camera2DObjectDefinitionUVE>);
 
 // The 2D camera definition is reachable from the aggregate header, matching the Sprite2D
 // guarantee: no 2D kind's home file can be silently dropped without breaking this compile.

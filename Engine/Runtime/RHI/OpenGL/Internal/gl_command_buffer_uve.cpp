@@ -622,7 +622,11 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
 #if defined(__ANDROID__)
         glClearDepthf(renderPassDesc.clearDepth);
 #else
+#if defined(__ANDROID__)
+        glClearDepthf(renderPassDesc.clearDepth);
+#else
         glClearDepth(static_cast<GLdouble>(renderPassDesc.clearDepth));
+#endif
 #endif
         clearMask |= GL_DEPTH_BUFFER_BIT;
         const auto clearDepthIt = m_state->textures.find(renderPassDesc.depthAttachment.value);
@@ -713,30 +717,30 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
     switch (pipelineIt->second.blendMode) {
         case PipelineBlendModeUVE::SourceAlphaOver:
             glEnable(GL_BLEND);
-            glBlendEquation(GL_FUNC_ADD);
+            m_state->gl.glBlendEquation(GL_FUNC_ADD);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             break;
         case PipelineBlendModeUVE::Additive:
             glEnable(GL_BLEND);
-            glBlendEquation(GL_FUNC_ADD);
+            m_state->gl.glBlendEquation(GL_FUNC_ADD);
             glBlendFunc(GL_ONE, GL_ONE);
             break;
         case PipelineBlendModeUVE::Multiply:
             glEnable(GL_BLEND);
-            glBlendEquation(GL_FUNC_ADD);
+            m_state->gl.glBlendEquation(GL_FUNC_ADD);
             glBlendFunc(GL_DST_COLOR, GL_ZERO);
             break;
         case PipelineBlendModeUVE::PremultipliedAlpha:
             // The source baked its alpha into rgb, so it is added as-is and only the destination is
             // attenuated.
             glEnable(GL_BLEND);
-            glBlendEquation(GL_FUNC_ADD);
+            m_state->gl.glBlendEquation(GL_FUNC_ADD);
             glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
             break;
         case PipelineBlendModeUVE::Subtractive:
             // dst - src*srcA. Reverse subtract, because GL's FUNC_SUBTRACT is src - dst.
             glEnable(GL_BLEND);
-            glBlendEquation(GL_FUNC_REVERSE_SUBTRACT);
+            m_state->gl.glBlendEquation(GL_FUNC_REVERSE_SUBTRACT);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE);
             break;
         case PipelineBlendModeUVE::Opaque:
@@ -771,6 +775,7 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
             glFrontFace(GL_CW);
             break;
     }
+#if !defined(__ANDROID__)
     switch (pipelineIt->second.fillMode) {
         case FillModeUVE::Fill:
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -779,6 +784,7 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
             break;
     }
+#endif
 #if !defined(__ANDROID__)
     // Points take their size from the vertex shader's gl_PointSize, which desktop GL ignores
     // unless program point size is enabled (GLES always honours it). Toggled per pipeline so a
@@ -1135,6 +1141,8 @@ const GlCommandBufferUVE::UniformRecordUVE* GlCommandBufferUVE::FindUniformUVE(s
     }
     const auto it = pipelineRecord->uniforms.find(name);
     if (it == pipelineRecord->uniforms.end()) {
+        const auto element = pipelineRecord->uniformElements.find(name);
+        if (element != pipelineRecord->uniformElements.end()) return &element->second;
         UVE_WARNING("GlCommandBufferUVE: SetUniform*UVE - \"{}\" is not an active uniform on the bound pipeline",
                      name);
         return nullptr;

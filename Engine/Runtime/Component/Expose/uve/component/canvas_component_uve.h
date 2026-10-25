@@ -18,6 +18,7 @@ struct CanvasComponentUVE final {
     bool visible = true;
     /// Draw-order key when canvases overlap - higher draws later (on top).
     std::int32_t sortOrder = 0;
+    [[nodiscard]] bool operator==(const CanvasComponentUVE&) const = default;
 };
 
 /// A CanvasComponentUVE has no field combination that is ever invalid - this validator exists

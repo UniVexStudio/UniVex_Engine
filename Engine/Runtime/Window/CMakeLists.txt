@@ -1,15 +1,8 @@
 # Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#
-# Desktop-only port of the reference engine's Window module: the real GLFW3-backed
-# WindowManagerUVE, NullWindowManagerUVE (headless/testing), and the validation helpers both rely
-# on. The reference module also has an Android backend (android_window_manager_uve.*, EGL/GLESv3)
-# behind an ANDROID branch - not ported here since this project doesn't target Android; add it back
-# the same way the reference does if that ever changes.
-#
-# Uses the system glfw3 package (not FetchContent) so this target and
-# Engine/Editor/Viewport share one imported "glfw". UveFindSystemDeps.cmake
-# sets UVE_HAS_DESKTOP_GL; without GLFW we still ship NullWindowManagerUVE.
+# Native window backends: GLFW on desktop, EGL/ANativeWindow on Android,
+# and NullWindowManagerUVE for headless runs. Android lifecycle is driven by
+# the NativeActivity host in Engine/App/Android.
 
 set(_uve_window_sources
     Internal/null_window_manager_uve.cpp
@@ -51,3 +44,8 @@ endif()
 
 target_compile_features(uve_window PUBLIC cxx_std_23)
 uve_set_warnings(uve_window)
+
+if(ANDROID)
+    target_sources(uve_window PRIVATE Internal/android_window_manager_uve.cpp)
+    target_link_libraries(uve_window PRIVATE android EGL GLESv3)
+endif()

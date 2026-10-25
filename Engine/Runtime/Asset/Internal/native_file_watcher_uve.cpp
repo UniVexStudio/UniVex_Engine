@@ -48,8 +48,13 @@ void NativeFileWatcherUVE::SetDirectoriesUVE(const std::set<std::filesystem::pat
             m_rescanRequired = true; // old invalidation events may refer to an id no longer in next
         }
         // Multiple lexical aliases can share an inode/watch; do not remove a retained alias.
-        if (!reverse.contains(watch))
+        if (!reverse.contains(watch)) {
+#if defined(__ANDROID__)
+            static_cast<void>(inotify_rm_watch(m_descriptor, static_cast<std::uint32_t>(watch)));
+#else
             static_cast<void>(inotify_rm_watch(m_descriptor, watch));
+#endif
+        }
     }
     m_watches = std::move(next);
     m_directoriesByWatch = std::move(reverse);

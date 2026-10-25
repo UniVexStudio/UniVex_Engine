@@ -41,6 +41,7 @@ struct UIImageComponentUVE final {
     Math::Vector2UVE sliceMarginMax{0.0F, 0.0F};
     Math::Vector2UVE sliceUVMin{0.0F, 0.0F};
     Math::Vector2UVE sliceUVMax{0.0F, 0.0F};
+    [[nodiscard]] bool operator==(const UIImageComponentUVE&) const = default;
 };
 
 [[nodiscard]] bool IsUIImageComponentValidUVE(const UIImageComponentUVE& component) noexcept;

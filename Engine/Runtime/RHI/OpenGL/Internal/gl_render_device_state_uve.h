@@ -205,6 +205,8 @@ struct GlDeviceStateUVE {
             bool isImageUniform = false;
         };
         std::unordered_map<std::string, UniformRecordUVE, TransparentStringHashUVE, TransparentStringEqualUVE> uniforms;
+        // Indexed aliases stay separate so public reflection still reports one array record.
+        decltype(uniforms) uniformElements;
     };
     std::unordered_map<std::uint32_t, PipelineRecordUVE> pipelines;
     std::uint32_t nextPipelineHandle = 1;

@@ -2,6 +2,7 @@
 
 
 #include "uve/asset/texture_asset_uve.h"
+#include <utility>
 
 #include <algorithm>
 #include <array>
@@ -137,8 +138,8 @@ constexpr std::uint32_t kTexturePayloadVersionUVE = 3U;
         levelCount > maximumMipCount || (supercompressionScheme != 0U && supercompressionScheme != 1U)) {
         return false;
     }
-    if (levelCount > (std::numeric_limits<std::size_t>::max() - kKtx2HeaderSizeUVE) /
-                         kKtx2LevelIndexEntrySizeUVE) {
+    if (std::cmp_greater(levelCount, (std::numeric_limits<std::size_t>::max() - kKtx2HeaderSizeUVE) /
+                         kKtx2LevelIndexEntrySizeUVE)) {
         return false;
     }
     const std::size_t levelIndexEnd = kKtx2HeaderSizeUVE +
