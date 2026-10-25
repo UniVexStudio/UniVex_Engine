@@ -6,6 +6,12 @@
 
 name: CI
 
+# Every upload below is gated on this one switch, on by default: a build nobody can download is a
+# build nobody can try. Set the repository variable CREATE_ARTIFACTS to 'false' to turn them off
+# again without editing this file; a manual run can still opt out with create_artifacts=false.
+env:
+  UNIVEX_CREATE_ARTIFACTS: ${{ vars.CREATE_ARTIFACTS != 'false' }}
+
 on:
   push:
     branches: [master, 'kosuke/**']
@@ -13,9 +19,9 @@ on:
   workflow_dispatch:
     inputs:
       create_artifacts:
-        description: 'Create downloadable build and diagnostic artifacts'
+        description: 'Create downloadable build and diagnostic artifacts (on by default)'
         type: boolean
-        default: false
+        default: true
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -200,7 +206,8 @@ jobs:
           fi
 
       - name: Upload test log
-        if: failure() && ((github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true'))
+        if: failure() && env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
+            (github.event_name != 'workflow_dispatch' || inputs.create_artifacts)
         uses: actions/upload-artifact@v4
         with:
           name: ctest-log-${{ matrix.mode }}
@@ -212,14 +219,17 @@ jobs:
         run: python3 -m unittest discover -s Engine/Tools/performance -p 'test_*.py'
 
       - name: Record headless editor process baseline
-        if: (github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true')
+        # Still a deliberate measurement, not something every pull request pays three minutes of
+        # editor runtime for: the upload above turns artifacts on for everyone, this run does not.
+        if: github.event_name == 'workflow_dispatch' && inputs.create_artifacts
         run: >-
           python3 Engine/Tools/performance/measure_process.py
           --runs 3 --timeout 60 --output build/editor-process-baseline.json
           -- build/Engine/App/uve_editor --headless --frames 300
 
       - name: Upload asset workload measurements
-        if: always() && ((github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true'))
+        if: always() && env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
+            (github.event_name != 'workflow_dispatch' || inputs.create_artifacts)
         uses: actions/upload-artifact@v4
         with:
           name: asset-workload-${{ matrix.mode }}
@@ -231,12 +241,14 @@ jobs:
           retention-days: 7
 
       - name: Upload process baseline
-        if: always() && ((github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true'))
+        if: always() && env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
+            (github.event_name != 'workflow_dispatch' || inputs.create_artifacts)
         uses: actions/upload-artifact@v4
         with:
           name: editor-process-baseline-${{ matrix.mode }}
           path: build/editor-process-baseline.json
           if-no-files-found: ignore
+          retention-days: 7
 
   android-runtime:
     strategy:
@@ -306,7 +318,8 @@ jobs:
           python3 Engine/Tools/android/smoke_runtime.py --adb "$ANDROID_HOME/platform-tools/adb" --serial emulator-5554 --apk /tmp/univex-android-package/univex-runtime-x86_64.apk --report /tmp/univex-android-smoke.json --screenshot /tmp/univex-android-runtime.png --expect-cooked-project --memory-report /tmp/univex-android-meminfo.txt
           cat /tmp/univex-android-smoke.json
       - name: Upload Android APK
-        if: (github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true')
+        if: env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
+            (github.event_name != 'workflow_dispatch' || inputs.create_artifacts)
         uses: actions/upload-artifact@v4
         with:
           name: UniVex-Android-${{ matrix.abi }}
