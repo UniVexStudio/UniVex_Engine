@@ -206,6 +206,20 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
                                            std::sin(windRadians) * sky.cloudWindSpeed};
         frame.cloudSoftness = sky.cloudSoftness;
         frame.cloudSilverLining = sky.cloudSilverLining;
+        frame.skyAmbientLinked = sky.ambientFromSky;
+        frame.skyAmbientStrength = sky.ambientStrength;
+        frame.skyRayleighDensity = sky.atmosphereRayleigh;
+        frame.skyReflectionsLinked = sky.reflectionsFromSky;
+        // Fog is a blend, not a replacement: strength 0 leaves the environment's fog colour
+        // exactly as authored, which is what makes the switch safe to flip back and forth.
+        if (sky.fogFromSky) {
+            const Math::Vector3UVE skyFog = ResolveSkyFogColorUVE(sky.groundColor, sky.horizonColor);
+            const float amount = std::clamp(sky.fogStrength, 0.0F, 1.0F);
+            frame.fogColor = Math::Vector3UVE{frame.fogColor.x + (skyFog.x - frame.fogColor.x) * amount,
+                                              frame.fogColor.y + (skyFog.y - frame.fogColor.y) * amount,
+                                              frame.fogColor.z + (skyFog.z - frame.fogColor.z) * amount};
+            frame.skyFogLinked = true;
+        }
         frame.hasEnvironment = true;
         skyApplied = true;
     });
@@ -235,6 +249,48 @@ bool TryMakeSkyEquirectUvUVE(const Math::Vector3UVE& direction, Math::Vector2UVE
 
 void ApplySunToWorldEnvironmentFrameUVE(WorldEnvironmentFrameUVE& frame, const Math::Vector3UVE& sunDirection,
                                         const Math::Vector3UVE& sunColor, const float sunEnergy) noexcept {
+    const bool sunUsable = sunEnergy > 0.0F && Math::IsFiniteUVE(sunDirection) && Math::IsFiniteUVE(sunColor) &&
+                           Math::LengthSquaredUVE(sunDirection) >= 1.0e-8F;
+
+    // The Sky's link owns the ambient outright when it is on, and runs before the environment's own
+    // tuning below so the two cannot both write it. That tuning is a hand-picked dim-and-warm that
+    // approximates a sunset; this resolves the same thing from the bands and the sun's altitude
+    // through real air, so letting both run would apply the approximation on top of the answer.
+    //
+    // `ambientSource == None` still wins over the link: an environment that says "no ambient" has
+    // said something more specific than a Sky that offers some. Reflections are not ambient, so a
+    // None source does not turn them off - only the sun's altitude does.
+    const bool linkActive = (frame.skyAmbientLinked || frame.skyReflectionsLinked) && sunUsable;
+    bool reflectionsResolved = false;
+    if (linkActive) {
+        const Math::Vector3UVE sun = Math::NormalizeUVE(sunDirection);
+        const SkyAmbientUVE ambient = ResolveSkyAmbientUVE(frame.skyColor, frame.horizonColor, frame.groundColor,
+                                                           frame.skyRayleighDensity, frame.skyAmbientStrength, sun);
+        if (frame.skyAmbientLinked && frame.ambientSource != WorldEnvironmentAmbientSourceUVE::None) {
+            frame.skyAmbient = ambient.sky;
+            frame.groundAmbient = ambient.ground;
+        }
+        if (frame.skyReflectionsLinked) {
+            // Reflections show the sky's own radiance, not its irradiance: a reflective surface is
+            // a mirror, so it should show the colour that was drawn rather than the dimmer light
+            // that colour throws. Night drives all three to zero, which is what a mirror under a
+            // dark sky shows.
+            const float daylight = ambient.daylight;
+            frame.reflectionSky = Math::Vector3UVE{frame.skyColor.x * daylight, frame.skyColor.y * daylight,
+                                                   frame.skyColor.z * daylight};
+            frame.reflectionHorizon = Math::Vector3UVE{frame.horizonColor.x * daylight, frame.horizonColor.y * daylight,
+                                                       frame.horizonColor.z * daylight};
+            frame.reflectionGround = Math::Vector3UVE{frame.groundColor.x * daylight, frame.groundColor.y * daylight,
+                                                      frame.groundColor.z * daylight};
+            reflectionsResolved = true;
+        }
+    }
+
+    // With no sun to place the sky against there is no day or night, so the reflected bands would
+    // be zero - and a metal with a black environment is worse than one with the old hemisphere
+    // approximation. Drop the link instead of asserting a night that was never authored.
+    frame.skyReflectionsLinked = reflectionsResolved;
+
     if (!frame.hasEnvironment ||
         (frame.ambientSource != WorldEnvironmentAmbientSourceUVE::Sky &&
          frame.ambientSource != WorldEnvironmentAmbientSourceUVE::EnvironmentMap) ||

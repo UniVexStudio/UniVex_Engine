@@ -1230,6 +1230,43 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                "How strongly thin cloud brightens toward the sun - the rim that appears when a "
                                "cloud crosses it. 0 keeps the edge flat.")),
                            "Clouds"),
+
+                // The link between the sky above and the light on the ground. Off by default and on
+                // purpose: a sky that relights a level the moment it is added would break the rule
+                // that adding an object changes nothing until it is authored. Each strength is
+                // hidden behind its own switch - a dial that does nothing is worse than no dial.
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&S::ambientFromSky>("ambientFromSky", "Ambient From Sky",
+                                                                       kPropertyTypeBoolUVE),
+                                          "Take the scene's fill light from this sky instead of the World "
+                                          "Environment. Shadows go the colour of the sky rather than black, and "
+                                          "the fill rises and sets with the sun."),
+                           "Lighting Link"),
+                InGroupUVE(WhenOnUVE<&S::ambientFromSky>(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::ambientStrength>("ambientStrength", "Ambient Strength",
+                                                                          kPropertyTypeFloatUVE),
+                                            0.0, 1.0, 0.01),
+                               "Scales the fill the sky throws. A brightness dial, not a physical term.")),
+                           "Lighting Link"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&S::fogFromSky>("fogFromSky", "Fog From Sky",
+                                                                   kPropertyTypeBoolUVE),
+                                          "Tint the distance with this sky's horizon, so far geometry dissolves "
+                                          "into the sky it stands against - what aerial perspective actually is."),
+                           "Lighting Link"),
+                InGroupUVE(WhenOnUVE<&S::fogFromSky>(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::fogStrength>("fogStrength", "Fog Strength",
+                                                                      kPropertyTypeFloatUVE),
+                                            0.0, 1.0, 0.01),
+                               "How far the fog moves toward the sky's own colour. 0 leaves the environment's "
+                               "fog exactly as authored, 1 makes it the horizon.")),
+                           "Lighting Link"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&S::reflectionsFromSky>("reflectionsFromSky",
+                                                                           "Reflections From Sky",
+                                                                           kPropertyTypeBoolUVE),
+                                          "Reflect this sky in metallic surfaces, so a mirror outdoors shows a "
+                                          "horizon instead of one flat colour. No capture pass: the sky's three "
+                                          "bands are the reflection. A captured environment map or reflection "
+                                          "probe still wins where one is set."),
+                           "Lighting Link"),
             }));
 }
 
