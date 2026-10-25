@@ -1096,7 +1096,9 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                WithCustomDrawerUVE(
                                    DeclareUVE<&S::panoramaPath>("panoramaPath", "Panorama",
                                                                kPropertyTypeStringUVE),
-                                   "file:uvtex"),
+                                   // A published texture or the source image it would be imported
+                                   // from: the runtime loader reads both, so the row offers both.
+                                   "file:uvtex,png,jpg,jpeg,bmp,tga"),
                                "An equirectangular image: width twice its height, the horizon across the "
                                "middle. Empty leaves the gradient showing.")),
                            "Panorama"),

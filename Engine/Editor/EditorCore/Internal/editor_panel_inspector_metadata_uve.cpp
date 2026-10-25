@@ -49,7 +49,9 @@
 
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/asset/i_asset_database_uve.h"
+#include "uve/asset/i_asset_importer_uve.h"
 #include "uve/asset/i_project_file_index_uve.h"
+#include "uve/asset/texture_import_settings_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
@@ -1181,6 +1183,39 @@ namespace {
 
 } // namespace
 
+Asset::AssetGuidUVE EditorUVE::PublishTextureSourceUVE(const std::filesystem::path& absolutePath) {
+    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(absolutePath, error)) {
+        return Asset::kInvalidAssetGuidUVE;
+    }
+    std::string extension = absolutePath.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    if (extension == ".uvtex") {
+        return database.RegisterUVE(absolutePath);
+    }
+    // The published form of this source, beside it - where the model importers publish a model's
+    // textures too, and where the picker already looks for it when deciding which row to offer.
+    const std::filesystem::path publishedPath =
+        absolutePath.parent_path() / (absolutePath.stem().string() + ".uvtex");
+    if (std::filesystem::is_regular_file(publishedPath, error)) {
+        return database.RegisterUVE(publishedPath);
+    }
+    const Asset::AssetGuidUVE imported = m_services->GetAssetImporterUVE().ImportUVE(
+        absolutePath, publishedPath, database, Asset::TextureImportSettingsUVE{});
+    if (imported == Asset::kInvalidAssetGuidUVE) {
+        // No importer for this kind, or the decode refused it. Registering the source keeps the
+        // slot showing the picture it was given - the runtime texture loader decodes a source
+        // image itself - instead of emptying a slot the author had just filled.
+        return database.RegisterUVE(absolutePath);
+    }
+    // The published texture is a new file in the project; Content must show it now, not on the
+    // next rescan, or the author sees a slot pointing at something that does not appear to exist.
+    RefreshProjectFileIndexUVE();
+    return imported;
+}
+
 std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* const id, const Asset::AssetGuidUVE value,
                                                                 const std::string& extension,
                                                                 const std::string& title) {
@@ -1274,8 +1309,12 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
                                : std::vector<std::string>{extension};
             const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
             request.startDirectory = PickerStartDirectoryUVE(project, value);
-            request.onPick = [this, widget](const std::filesystem::path& absolute) {
-                m_assetPickerPendingPicks[widget] = m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
+            request.onPick = [this, widget, isTexture](const std::filesystem::path& absolute) {
+                // A texture pick lands on the published form of what was picked, so the material
+                // holds an asset the cook step will package rather than a raw source.
+                m_assetPickerPendingPicks[widget] = isTexture
+                                                        ? PublishTextureSourceUVE(absolute)
+                                                        : m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
             };
             OpenFilePickerUVE(std::move(request));
             ImGui::CloseCurrentPopup();
@@ -1291,7 +1330,16 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
                                  : std::vector<std::string>{extension};
             const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
             request.startDirectory = project.contentRoot;
-            request.onPick = [this, widget, isMaterial](const std::filesystem::path& absolute) {
+            request.onPick = [this, widget, isMaterial, isTexture](const std::filesystem::path& absolute) {
+                if (isTexture) {
+                    // Importing a texture into the project and using it are the same gesture here:
+                    // the publish step is what writes the .uvtex, and the slot takes it.
+                    const Asset::AssetGuidUVE textureGuid = PublishTextureSourceUVE(absolute);
+                    if (textureGuid != Asset::kInvalidAssetGuidUVE) {
+                        m_assetPickerPendingPicks[widget] = textureGuid;
+                    }
+                    return;
+                }
                 const auto guid = m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
                 RefreshProjectFileIndexUVE();
                 if (isMaterial && (absolute.extension() == ".uvmaterial" || absolute.extension() == ".uvmat")) {
@@ -1358,9 +1406,11 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             const bool isSelected = candidate.guid.has_value() && *candidate.guid == value;
             const std::string label = candidate.path.stem().string() + "##" + candidate.path.generic_string();
             if (ImGui::Selectable(label.c_str(), isSelected) && !isSelected) {
-                const Asset::AssetGuidUVE chosen = candidate.guid.has_value()
-                                                       ? *candidate.guid
-                                                       : m_services->GetAssetDatabaseUVE().RegisterUVE(candidate.path);
+                const Asset::AssetGuidUVE chosen =
+                    candidate.guid.has_value()
+                        ? *candidate.guid
+                        : (isTexture ? PublishTextureSourceUVE(candidate.path)
+                                     : m_services->GetAssetDatabaseUVE().RegisterUVE(candidate.path));
                 picked = chosen;
             }
             if (ImGui::IsItemHovered()) {

@@ -2069,6 +2069,15 @@ private:
     [[nodiscard]] std::optional<Asset::AssetGuidUVE> DrawAssetPickerUVE(const char* id, Asset::AssetGuidUVE value,
                                                                       const std::string& extension,
                                                                       const std::string& title = {});
+    /// The texture asset a slot should hold for the file the author picked: the published `.uvtex`
+    /// beside a source image when one is already there, otherwise the source imported to one now,
+    /// otherwise the source itself registered - the last case is a slot that still draws (the
+    /// runtime loader decodes a source image) rather than one silently left empty.
+    ///
+    /// A material stores a GUID, and a GUID that names a raw source is an authoring convenience the
+    /// cook step does not accept: publishing on pick is what makes what the picker writes and what
+    /// the project can ship the same thing.
+    [[nodiscard]] Asset::AssetGuidUVE PublishTextureSourceUVE(const std::filesystem::path& absolutePath);
     /// Standardized material slot drawer offering new standard/ORM/shader materials, browsing both
     /// .uvmat and .uvmaterial, quick import, clear, and inline PBR property editor when assigned.
     /// `editInline` false shows the picker and its preview only: for a mesh with a dozen surfaces,
