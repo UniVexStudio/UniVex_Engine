@@ -800,6 +800,9 @@ uniform float uGroundCurve;
 uniform vec3 uSunDirection;
 uniform vec3 uSunColor;
 uniform float uSunEnergy;
+uniform float uSunAngularDiameter;
+uniform float uSunDiscIntensity;
+uniform float uSunLimbDarkening;
 uniform sampler2D uSkyTexture;
 uniform int uSkyTextureEnabled;
 
@@ -834,7 +837,26 @@ vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
     vec3 sunCol = max(uSunColor, vec3(1.0)) * max(uSunEnergy, 1.0);
     sky += sunCol * mie * mix(0.012, 0.09, sunset) * day;
 
-    float disk = smoothstep(0.99945, 0.99982, mu) * smoothstep(-0.02, 0.04, sunY);
+    // The disc: a body of the light the scene is lit by, not a texture on the sky. Its size is the
+    // light's own angular diameter, so a moon and a sun over the same sky differ in this term and
+    // nothing else. cos() of the half-angle is the dot product at the rim, which is why the whole
+    // test is a comparison against mu and needs no branch or texture fetch.
+    //
+    // The rim is feathered over the outer 43% of the radius rather than drawn as a hard circle:
+    // at ordinary viewport sizes and with no anti-aliasing on this pass, an unfeathered disc at a
+    // realistic angular size flickers between frames as the view moves under it.
+    float sunRadius = radians(max(uSunAngularDiameter, 0.0)) * 0.5;
+    float disk = 0.0;
+    if (sunRadius > 0.0) {
+        float cosRim = cos(sunRadius);
+        float cosCore = cos(sunRadius * 0.57);
+        float mask = smoothstep(cosRim, cosCore, mu);
+        // Limb darkening: the disc's own surface is dimmer at its edge than at its centre, because
+        // the line of sight leaves the photosphere at a shallower angle there. 0 is a flat disc.
+        float rimT = clamp((1.0 - mu) / max(1.0 - cosRim, 1.0e-9), 0.0, 1.0);
+        float limb = 1.0 - clamp(uSunLimbDarkening, 0.0, 1.0) * (1.0 - sqrt(max(1.0 - rimT, 0.0)));
+        disk = mask * limb * smoothstep(-0.02, 0.04, sunY) * max(uSunDiscIntensity, 0.0);
+    }
     sky += sunCol * disk * mix(7.5, 16.0, sunset);
     return max(sky, vec3(0.0));
 }

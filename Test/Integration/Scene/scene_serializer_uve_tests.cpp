@@ -161,6 +161,9 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     directionalLight.shadowMaxDistance = 85.0F;
     directionalLight.shadowSplitBlend = 0.3F;
     directionalLight.shadowDistanceFadeRange = 7.0F;
+    directionalLight.discAngularDiameterDegrees = 1.25F;
+    directionalLight.discIntensity = 3.5F;
+    directionalLight.discLimbDarkening = 0.6F;
     entityManager.AddComponentUVE<DirectionalLight3DComponentUVE>(source, directionalLight);
     entityManager.AddComponentUVE<CameraComponentUVE>(source, CameraComponentUVE{75.0F, 0.2F, 250.0F});
     entityManager.AddComponentUVE<NameComponentUVE>(source, NameComponentUVE{"Complete Snapshot"});
@@ -366,6 +369,11 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_FLOAT_EQ(restoredDirectionalLight.shadowMaxDistance, 85.0F);
     EXPECT_FLOAT_EQ(restoredDirectionalLight.shadowSplitBlend, 0.3F);
     EXPECT_FLOAT_EQ(restoredDirectionalLight.shadowDistanceFadeRange, 7.0F);
+    // The disc is authored per light, so it has to survive the file as well: a sun that loses its
+    // size on load would come back as the default disc with no sign anything was wrong.
+    EXPECT_FLOAT_EQ(restoredDirectionalLight.discAngularDiameterDegrees, 1.25F);
+    EXPECT_FLOAT_EQ(restoredDirectionalLight.discIntensity, 3.5F);
+    EXPECT_FLOAT_EQ(restoredDirectionalLight.discLimbDarkening, 0.6F);
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<CameraComponentUVE>(restored).farPlane, 250.0F);
     EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(restored).name, "Complete Snapshot");
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<ColliderComponentUVE>(restored).friction, 0.25F);

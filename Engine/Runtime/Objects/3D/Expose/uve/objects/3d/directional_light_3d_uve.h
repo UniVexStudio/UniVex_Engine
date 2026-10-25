@@ -25,6 +25,24 @@ struct DirectionalLight3DComponentUVE final {
     /// Width, in metres, over which shadows fade to fully lit at the end of the final cascade. 0 disables it.
     float shadowDistanceFadeRange = 10.0F;
 
+    /// The sun disc the sky draws where this light's direction points - moon, sun, or neither.
+    ///
+    /// WHY THE DISC LIVES ON THE LIGHT AND NOT ON THE SKY. A disc is the visible body of a light
+    /// source. Two directional lights in one scene are two bodies in the sky, and a body must sit
+    /// where its own light points and be as bright as its own emitter says. Putting the disc on the
+    /// sky would make it belong to the background instead, so a moonlit night and a noon over the
+    /// same sky could not differ, and turning a light off would leave its disc behind.
+    ///
+    /// 3.8 degrees reproduces the disc the sky shader drew before this was authorable, so an
+    /// existing scene is unchanged. The real sun is 0.53; setting that gives a physically sized
+    /// disc, at the cost of it being small on screen. 0 hides the disc entirely.
+    float discAngularDiameterDegrees = 3.8F;
+    /// Peak brightness of the disc, multiplying what its colour and energy already give it.
+    float discIntensity = 1.0F;
+    /// How much dimmer the disc's rim is than its centre, 0 being a flat disc. The real sun is
+    /// around 0.6 at visible wavelengths; a moon is close to 0.85.
+    float discLimbDarkening = 0.0F;
+
     [[nodiscard]] bool operator==(const DirectionalLight3DComponentUVE&) const = default;
 };
 

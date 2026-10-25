@@ -102,6 +102,9 @@ namespace {
     outLight.shadowMaxDistance = directional.shadowMaxDistance;
     outLight.shadowSplitBlend = directional.shadowSplitBlend;
     outLight.shadowDistanceFadeRange = directional.shadowDistanceFadeRange;
+    outLight.discAngularDiameterDegrees = directional.discAngularDiameterDegrees;
+    outLight.discIntensity = directional.discIntensity;
+    outLight.discLimbDarkening = directional.discLimbDarkening;
     outLight.cullMask = emitter.cullMask;
     outLight.specular = emitter.specular;
     // Negative component values preserve the inherit sentinel for Renderer3DUVE's configured defaults;

@@ -53,7 +53,14 @@ void TryAddLightDirectionGizmoUVE(IEntityManagerUVE& entityManager, const Entity
 bool IsDirectionalLight3DComponentValidUVE(const DirectionalLight3DComponentUVE& value) noexcept {
     return std::isfinite(value.shadowMaxDistance) && value.shadowMaxDistance >= 0.0F &&
            std::isfinite(value.shadowSplitBlend) && value.shadowSplitBlend >= -1.0F && value.shadowSplitBlend <= 1.0F &&
-           std::isfinite(value.shadowDistanceFadeRange) && value.shadowDistanceFadeRange >= 0.0F;
+           std::isfinite(value.shadowDistanceFadeRange) && value.shadowDistanceFadeRange >= 0.0F &&
+           // Upper bounds on the disc as well as lower ones: a diameter near 180 degrees would put
+           // the disc's rim at the horizon in every direction, and a limb figure above 1 would make
+           // the rim negative. Neither is authorable, so neither is loadable.
+           std::isfinite(value.discAngularDiameterDegrees) && value.discAngularDiameterDegrees >= 0.0F &&
+           value.discAngularDiameterDegrees <= 90.0F && std::isfinite(value.discIntensity) &&
+           value.discIntensity >= 0.0F && std::isfinite(value.discLimbDarkening) &&
+           value.discLimbDarkening >= 0.0F && value.discLimbDarkening <= 1.0F;
 }
 
 void ApplyDirectionalLight3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
