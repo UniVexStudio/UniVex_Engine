@@ -1283,9 +1283,12 @@ void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& abso
 
         // 1. Albedo
         ImGui::TextDisabled("ALBEDO");
-        float albedo[3] = {mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b};
-        if (ImGui::ColorEdit3("Albedo Color", albedo)) {
-            mat.albedoColor = Math::ColorUVE{albedo[0], albedo[1], albedo[2]};
+        // Through the editor's one colour field, like every other colour row: the plain ImGui row
+        // this replaced opened a square picker, so the same engine showed two different ones.
+        EditorColorUVE albedoColor{mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b, 1.0F};
+        if (DrawColorFieldUVE("##albedoColor", "Albedo Color", albedoColor, false, m_colorPickerPreferences) !=
+            ColorFieldEventUVE::None) {
+            mat.albedoColor = Math::ColorUVE{albedoColor.r, albedoColor.g, albedoColor.b};
             changed = true;
         }
         if (const auto picked = DrawAssetPickerUVE("##albedoTex", mat.albedoTexture, ".png", "Pick Albedo Texture")) {
@@ -1344,9 +1347,10 @@ void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& abso
         // 4. Emission
         ImGui::Spacing();
         ImGui::TextDisabled("EMISSION");
-        float emissive[3] = {mat.emissiveColor.r, mat.emissiveColor.g, mat.emissiveColor.b};
-        if (ImGui::ColorEdit3("Emission Color", emissive)) {
-            mat.emissiveColor = Math::ColorUVE{emissive[0], emissive[1], emissive[2]};
+        EditorColorUVE emissiveColor{mat.emissiveColor.r, mat.emissiveColor.g, mat.emissiveColor.b, 1.0F};
+        if (DrawColorFieldUVE("##emissiveColor", "Emission Color", emissiveColor, false,
+                              m_colorPickerPreferences) != ColorFieldEventUVE::None) {
+            mat.emissiveColor = Math::ColorUVE{emissiveColor.r, emissiveColor.g, emissiveColor.b};
             changed = true;
         }
         if (ImGui::DragFloat("Emission Energy", &mat.emissiveEnergy, 0.1F, 0.0F, 100.0F)) {
@@ -1873,10 +1877,12 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
                 if (!Scene::HasAssignedPrimitiveMaterialUVE(primitive)) {
                     ImGui::Spacing();
                     ImGui::TextDisabled("COLOUR");
-                    float color[3] = {primitive.baseColor.x, primitive.baseColor.y, primitive.baseColor.z};
-                    if (ImGui::ColorEdit3("##primitiveColor", color)) {
-                        primitive.baseColor =
-                            Scene::ClampPrimitiveBaseColorUVE(Math::Vector3UVE{color[0], color[1], color[2]});
+                    EditorColorUVE primitiveColor{primitive.baseColor.x, primitive.baseColor.y,
+                                                 primitive.baseColor.z, 1.0F};
+                    if (DrawColorFieldUVE("##primitiveColor", "Colour", primitiveColor, false,
+                                          m_colorPickerPreferences) != ColorFieldEventUVE::None) {
+                        primitive.baseColor = Scene::ClampPrimitiveBaseColorUVE(
+                            Math::Vector3UVE{primitiveColor.r, primitiveColor.g, primitiveColor.b});
                         entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity, primitive);
                     }
                 }
@@ -2438,6 +2444,16 @@ bool EditorUVE::SetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entr
         return false;
     }
     property.setValue(instance, newValue);
+    // A collider that has just been switched to Capsule inherits a Box's numbers, and the fields'
+    // own defaults (height 1.0, radius 0.5) make the two caps meet exactly: no barrel, so the
+    // author picks Capsule and is shown a sphere. The fit runs here rather than on every height
+    // drag, so it only repairs a shape that cannot express itself and never overrules a height the
+    // author chose on purpose afterwards. It happens before the validity check and before the
+    // "after" clone, so the repaired value is what gets recorded and what undo puts back.
+    if (entry.typeIndex == std::type_index(typeid(Scene::ColliderComponentUVE))) {
+        auto* const collider = static_cast<Scene::ColliderComponentUVE*>(instance);
+        *collider = Scene::FitColliderShapeUVE(*collider);
+    }
     if (entry.isInstanceValid != nullptr && !entry.isInstanceValid(instance)) {
         // The component's own rule refuses this combination; put the prior value back.
         entry.assignInstance(instance, before.GetUVE());

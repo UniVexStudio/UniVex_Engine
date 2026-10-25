@@ -109,6 +109,7 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
                            OwnComponentUVE<Projectile3DComponentUVE>{Kind::Projectile3D},
                            OwnComponentUVE<InteractionArea3DComponentUVE>{Kind::InteractionArea3D},
                            OwnComponentUVE<WorldEnvironment3DComponentUVE>{Kind::WorldEnvironment3D},
+                           OwnComponentUVE<Sky3DComponentUVE>{Kind::Sky},
                            OwnComponentUVE<ReflectionProbe3DComponentUVE>{Kind::ReflectionProbe3D},
                            OwnComponentUVE<Decal3DComponentUVE>{Kind::Decal3D},
                            OwnComponentUVE<DirectionalLight3DComponentUVE>{Kind::DirectionalLight3D},

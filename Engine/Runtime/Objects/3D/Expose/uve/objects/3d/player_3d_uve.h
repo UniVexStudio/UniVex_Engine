@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include <string_view>
 
 #include "uve/component/character_controller_component_uve.h"
@@ -36,7 +38,11 @@ struct PlayerComponentUVE final {
 struct Player3DObjectDefinitionUVE final {
     static constexpr std::string_view defaultName = "Player3D";
 
-    ColliderComponentUVE collider = Character3DObjectDefinitionUVE::MakeDefaultColliderUVE();
+    /// No collider of its own, for the same reason a Character3D has none: the body's shape is a
+    /// Collider3D the author adds under it, where it can be seen, selected and given a shape. A
+    /// built-in capsule made that Collider3D a second shape in the same place, and the controller
+    /// pushed the body out of the one nobody had asked for.
+    std::optional<ColliderComponentUVE> collider = std::nullopt;
     CharacterControllerComponentUVE controller{};
     PlayerComponentUVE player{};
     HealthComponentUVE health{};

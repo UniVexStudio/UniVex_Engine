@@ -16,6 +16,8 @@
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
+#include "uve/component/mesh_component_uve.h"
+#include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/transform_component_uve.h"
@@ -102,6 +104,39 @@ TEST(SceneComponentMetadataUVETest, EveryLayerMaskNamesTheLayersItPicksFrom) {
     // the same drawer set rather than a second, hand-drawn one.
     EXPECT_EQ(physics, 16U);
     EXPECT_EQ(render, 5U); // mesh, render instance, light, decal and reflection probe
+}
+
+// A group is a fold, and a fold is one unbroken run of rows: the Inspector opens a new fold every
+// time the group name changes, so a row from a group that reappears further down the section opens
+// a second fold with the same name - and an ungrouped row in the middle cuts the first one in two.
+// Both read as a section that lost its order, and neither is visible from the declaration that
+// caused it. This walks every component so a later edit that moves one row across a boundary fails
+// here rather than in the panel.
+TEST(SceneComponentMetadataUVETest, EveryGroupIsOneUnbrokenRunOfRows) {
+    std::size_t groups = 0U;
+    for (const TypeMetadataEntryUVE& entry : GetSceneComponentMetadataRegistryUVE().GetSnapshotUVE().entries) {
+        std::vector<std::string> closed;
+        std::string run;
+        for (const TypeMetadataPropertyUVE& property : entry.properties) {
+            if (property.section == run) {
+                continue;
+            }
+            if (!run.empty()) {
+                closed.push_back(run);
+            }
+            run = property.section;
+            if (run.empty()) {
+                continue;
+            }
+            // A group that has already ended cannot start again. A group that is merely ungrouped
+            // between two members is this same failure seen from the other side: the run ended.
+            EXPECT_EQ(std::find(closed.begin(), closed.end(), run), closed.end())
+                << entry.typeId << "." << property.name << " reopens the group " << run;
+            ++groups;
+        }
+    }
+    // Guards against the walk passing because nothing is grouped at all.
+    EXPECT_GT(groups, 0U);
 }
 
 TEST(SceneComponentMetadataUVETest, FindSceneComponentMetadataUVE_ResolvesALiveComponentType) {
@@ -321,6 +356,8 @@ TEST(SceneComponentMetadataUVETest, BloomSoftKneeIsAuthorableAndOnlyShownForActi
     ASSERT_NE(softKnee->isVisible, nullptr);
 
     WorldEnvironment3DComponentUVE environment{};
+    // These rows belong to the effects stack, which is off until an author turns it on.
+    environment.postProcessingEnabled = true;
     EXPECT_TRUE(softKnee->isVisible(&environment));
     environment.bloomEnabled = false;
     EXPECT_FALSE(softKnee->isVisible(&environment));
@@ -350,6 +387,8 @@ TEST(SceneComponentMetadataUVETest, BloomMipCountIsAuthorableAndVisibleOnlyForAc
     ASSERT_NE(mipCount->isVisible, nullptr);
 
     WorldEnvironment3DComponentUVE environment{};
+    // These rows belong to the effects stack, which is off until an author turns it on.
+    environment.postProcessingEnabled = true;
     EXPECT_TRUE(mipCount->isVisible(&environment));
     environment.bloomEnabled = false;
     EXPECT_FALSE(mipCount->isVisible(&environment));
@@ -385,6 +424,8 @@ TEST(SceneComponentMetadataUVETest, VignetteControlsAreAuthorableAndShownWhenPos
     ASSERT_NE(radius->isVisible, nullptr);
 
     WorldEnvironment3DComponentUVE environment{};
+    // These rows belong to the effects stack, which is off until an author turns it on.
+    environment.postProcessingEnabled = true;
     EXPECT_TRUE(intensity->isVisible(&environment));
     EXPECT_FALSE(radius->isVisible(&environment));
     SetPropertyValueUVE(*intensity, environment, 0.7F);
@@ -413,6 +454,8 @@ TEST(SceneComponentMetadataUVETest, ChromaticAberrationIsAnAuthorablePostProcess
     ASSERT_NE(aberration->isVisible, nullptr);
 
     WorldEnvironment3DComponentUVE environment{};
+    // These rows belong to the effects stack, which is off until an author turns it on.
+    environment.postProcessingEnabled = true;
     EXPECT_TRUE(aberration->isVisible(&environment));
     SetPropertyValueUVE(*aberration, environment, 0.45F);
     EXPECT_FLOAT_EQ(environment.chromaticAberrationIntensity, 0.45F);
@@ -435,6 +478,8 @@ TEST(SceneComponentMetadataUVETest, FilmGrainIsAnAuthorablePostProcessingControl
     ASSERT_NE(grain->isVisible, nullptr);
 
     WorldEnvironment3DComponentUVE environment{};
+    // These rows belong to the effects stack, which is off until an author turns it on.
+    environment.postProcessingEnabled = true;
     EXPECT_TRUE(grain->isVisible(&environment));
     SetPropertyValueUVE(*grain, environment, 0.35F);
     EXPECT_FLOAT_EQ(environment.filmGrainIntensity, 0.35F);
@@ -458,6 +503,8 @@ TEST(SceneComponentMetadataUVETest, LensDistortionIsAnAuthorablePostProcessingCo
     ASSERT_NE(distortion->isVisible, nullptr);
 
     WorldEnvironment3DComponentUVE environment{};
+    // These rows belong to the effects stack, which is off until an author turns it on.
+    environment.postProcessingEnabled = true;
     EXPECT_TRUE(distortion->isVisible(&environment));
     SetPropertyValueUVE(*distortion, environment, 0.5F);
     EXPECT_FLOAT_EQ(environment.lensDistortionIntensity, 0.5F);
@@ -511,6 +558,8 @@ TEST(SceneComponentMetadataUVETest, DepthOfFieldControlsAreAuthorableAndConditio
     EXPECT_DOUBLE_EQ(quality->range.maximum, 2.0);
 
     WorldEnvironment3DComponentUVE environment{};
+    // These rows belong to the effects stack, which is off until an author turns it on.
+    environment.postProcessingEnabled = true;
     ASSERT_NE(enabled->isVisible, nullptr);
     ASSERT_NE(focusMode->isVisible, nullptr);
     ASSERT_NE(bokehShape->isVisible, nullptr);
@@ -667,6 +716,27 @@ TEST(SceneComponentMetadataUVETest, CharacterSectionHostsTheColliderAndKeepsItsT
         const TypeMetadataPropertyUVE* const property = FindPropertyUVE(*collider, name);
         ASSERT_NE(property, nullptr) << name;
         EXPECT_EQ(property->customDrawerId, std::string(kLayerMaskDrawerPhysicsUVE)) << name;
+    }
+}
+
+// A primitive mesh is the mesh, not a feature on top of it. On a MeshInstance3D the mesh section
+// already picks the shape and authors its material and colour, so the primitive's own section drew
+// all three rows a second time. Nesting it under the mesh component removes the duplicate; an
+// object that carries a primitive and no mesh component still gets the section, so nothing becomes
+// unreachable.
+TEST(SceneComponentMetadataUVETest, PrimitiveMeshIsDrawnByTheMeshSectionRatherThanTwice) {
+    const TypeMetadataEntryUVE* mesh = FindSceneComponentMetadataUVE(std::type_index(typeid(MeshComponentUVE)));
+    const TypeMetadataEntryUVE* primitive =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(PrimitiveMeshComponentUVE)));
+    ASSERT_NE(mesh, nullptr);
+    ASSERT_NE(primitive, nullptr);
+    ASSERT_FALSE(primitive->nestedUnderTypeIds.empty());
+    EXPECT_EQ(primitive->nestedUnderTypeIds.front(), mesh->typeId);
+
+    // The three rows the mesh section draws in its own shape. Resolved by name here so a rename
+    // that silently stopped one of them being drawn anywhere would fail rather than pass.
+    for (const char* const name : {"kind", "baseColor", "materialGuid"}) {
+        EXPECT_NE(FindPropertyUVE(*primitive, name), nullptr) << name;
     }
 }
 

@@ -144,6 +144,20 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              editor.m_bottomDockHeight = FloatUVE(value);
              return true;
          }},
+        {HiddenUVE(Config::MakeFloatSettingUVE(IdUVE(Id::kScenePanelWidthUVE), 240.0, 96.0, 4096.0,
+                                               "Outliner Width", kSessionCategoryUVE)),
+         [](const EditorUVE& editor) -> SettingValueUVE { return static_cast<double>(editor.m_scenePanelWidth); },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_scenePanelWidth = FloatUVE(value);
+             return true;
+         }},
+        {HiddenUVE(Config::MakeFloatSettingUVE(IdUVE(Id::kInspectorPanelWidthUVE), 320.0, 96.0, 4096.0,
+                                               "Inspector Width", kSessionCategoryUVE)),
+         [](const EditorUVE& editor) -> SettingValueUVE { return static_cast<double>(editor.m_inspectorPanelWidth); },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_inspectorPanelWidth = FloatUVE(value);
+             return true;
+         }},
         {HiddenUVE(Config::MakeEnumSettingUVE(
              IdUVE(Id::kContentBrowserViewModeUVE), static_cast<std::int64_t>(ViewMode::SmallTiles),
              {EntryUVE(ViewMode::SmallTiles, "Small Tiles"), EntryUVE(ViewMode::LargeTiles, "Large Tiles"),

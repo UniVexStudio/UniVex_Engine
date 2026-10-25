@@ -11,6 +11,7 @@
 //
 // Moved verbatim. Not one line of the three functions differs from what was in editor_uve.cpp.
 
+#include "editor_color_field_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/math/scalar_uve.h"
 
@@ -91,6 +92,15 @@ void DrawUniversalIconUVE(ImDrawList& drawList, const ImVec2 center, const float
     const float half = radius * 0.22F;
     drawList.AddRectFilled(ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half},
                            color);
+}
+
+/// The 2D/3D switch's mark: a square seen flat, with a horizon through it. Reads as a canvas
+/// rather than as a cube, because the button says which view you are IN.
+void DrawViewportModeIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    const float half = radius * 0.72F;
+    drawList.AddRect(ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half}, color,
+                     1.5F, 0, 1.4F);
+    drawList.AddLine(ImVec2{center.x - half, center.y}, ImVec2{center.x + half, center.y}, color, 1.2F);
 }
 
 void DrawGridIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
@@ -192,6 +202,9 @@ void EditorUVE::RenderOverlayUVE() {
     }
     if (m_filePicker.has_value()) {
         DrawFilePickerUVE();
+    }
+    if (m_montage.has_value()) {
+        DrawMontageUVE();
     }
     // Last, so it floats over every panel.
     DrawCommandPaletteUVE();
@@ -721,9 +734,15 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
         ImGui::TextDisabled("PREVIEW SUN");
         ImGui::Checkbox("Enable preview sun##preview-sun", &m_viewportOverlayState.previewSun);
         ImGui::BeginDisabled(!m_viewportOverlayState.previewSun);
-        ImGui::SetNextItemWidth(fieldWidth);
-        ImGui::ColorEdit3("Color##preview-sun-color", m_viewportOverlayState.previewSunColor.data(),
-                          ImGuiColorEditFlags_NoInputs);
+        // The preview colours are the author's colours too, so they open the same picker as every
+        // other colour row instead of the plain ImGui one.
+        EditorColorUVE sunColor{m_viewportOverlayState.previewSunColor[0],
+                                m_viewportOverlayState.previewSunColor[1],
+                                m_viewportOverlayState.previewSunColor[2], 1.0F};
+        if (DrawColorFieldUVE("##previewSunColor", "Color", sunColor, false, m_colorPickerPreferences) !=
+            ColorFieldEventUVE::None) {
+            m_viewportOverlayState.previewSunColor = {sunColor.r, sunColor.g, sunColor.b};
+        }
         ImGui::SetNextItemWidth(fieldWidth);
         ImGui::SliderFloat("Energy##preview-sun-energy", &m_viewportOverlayState.previewSunEnergy, 0.0F, 8.0F,
                            "%.2f");
@@ -786,15 +805,27 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
         ImGui::TextDisabled("PREVIEW ENVIRONMENT");
         ImGui::Checkbox("Enable preview environment##preview-env", &m_viewportOverlayState.previewEnvironment);
         ImGui::BeginDisabled(!m_viewportOverlayState.previewEnvironment);
-        ImGui::SetNextItemWidth(fieldWidth);
-        ImGui::ColorEdit3("Sky##preview-env-sky", m_viewportOverlayState.previewSkyColor.data(),
-                          ImGuiColorEditFlags_NoInputs);
-        ImGui::SetNextItemWidth(fieldWidth);
-        ImGui::ColorEdit3("Horizon##preview-env-horizon", m_viewportOverlayState.previewHorizonColor.data(),
-                          ImGuiColorEditFlags_NoInputs);
-        ImGui::SetNextItemWidth(fieldWidth);
-        ImGui::ColorEdit3("Ground##preview-env-ground", m_viewportOverlayState.previewGroundColor.data(),
-                          ImGuiColorEditFlags_NoInputs);
+        EditorColorUVE skyColor{m_viewportOverlayState.previewSkyColor[0],
+                                m_viewportOverlayState.previewSkyColor[1],
+                                m_viewportOverlayState.previewSkyColor[2], 1.0F};
+        if (DrawColorFieldUVE("##previewSkyColor", "Sky", skyColor, false, m_colorPickerPreferences) !=
+            ColorFieldEventUVE::None) {
+            m_viewportOverlayState.previewSkyColor = {skyColor.r, skyColor.g, skyColor.b};
+        }
+        EditorColorUVE horizonColor{m_viewportOverlayState.previewHorizonColor[0],
+                                    m_viewportOverlayState.previewHorizonColor[1],
+                                    m_viewportOverlayState.previewHorizonColor[2], 1.0F};
+        if (DrawColorFieldUVE("##previewHorizonColor", "Horizon", horizonColor, false,
+                              m_colorPickerPreferences) != ColorFieldEventUVE::None) {
+            m_viewportOverlayState.previewHorizonColor = {horizonColor.r, horizonColor.g, horizonColor.b};
+        }
+        EditorColorUVE groundColor{m_viewportOverlayState.previewGroundColor[0],
+                                   m_viewportOverlayState.previewGroundColor[1],
+                                   m_viewportOverlayState.previewGroundColor[2], 1.0F};
+        if (DrawColorFieldUVE("##previewGroundColor", "Ground", groundColor, false, m_colorPickerPreferences) !=
+            ColorFieldEventUVE::None) {
+            m_viewportOverlayState.previewGroundColor = {groundColor.r, groundColor.g, groundColor.b};
+        }
         ImGui::SetNextItemWidth(fieldWidth);
         ImGui::SliderFloat("Ambient##preview-env-ambient", &m_viewportOverlayState.previewAmbientEnergy, 0.0F,
                            4.0F, "%.2f");
@@ -825,7 +856,10 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
                                                        m_viewportOverlayState.previewGroundColor[1],
                                                        m_viewportOverlayState.previewGroundColor[2]};
                     env.ambientEnergy = m_viewportOverlayState.previewAmbientEnergy;
-                    env.postProcessingEnabled = true;
+                    // Exactly what the author was looking at. The preview draws no effects stack,
+                    // so an environment that switched them on here would change the picture at the
+                    // moment of adding - the one thing "Add Environment to Scene" must not do.
+                    env.postProcessingEnabled = false;
                 }
                 m_sceneDirty = true;
                 SelectEntityUVE(envEntity);
@@ -843,37 +877,26 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
         ImGui::EndPopup();
     }
 
-    // ---- 2D / 3D Mode Toggle & 2D Viewport Options Pill -------------------------------------
-    const char* const mode2DLabel = m_viewportOverlayState.is2DMode ? "2D \xe2\x96\xbe" : "3D";
-    const ImVec2 mode2DTextSize = ImGui::CalcTextSize(mode2DLabel);
-    const float mode2DPillWidth = mode2DTextSize.x + kBubblePaddingXUVE * 2.0F + 8.0F;
-    const ImVec2 mode2DPillMin{previewPillMax.x + kBubbleGapUVE, topY};
-    const ImVec2 mode2DPillMax{mode2DPillMin.x + mode2DPillWidth, mode2DPillMin.y + unifiedHeight};
+    // ---- 2D / 3D Mode Switch & 2D Viewport Options ------------------------------------------
+    // An icon bubble like the grid and gizmo controls beside it, not a wide text pill. The pill
+    // was the only control in this row that spelled itself out, so it sat there as a different
+    // kind of thing and pushed everything after it out of line.
+    const float modeBubbleDiameter = kViewportBubbleIconRadiusUVE * 2.0F;
+    const ImVec2 modeBubbleMin{previewPillMax.x + kBubbleGapUVE,
+                               topY + ((unifiedHeight - modeBubbleDiameter) * 0.5F)};
     if (levelOnlyOverlays) {
-        ImGui::SetCursorScreenPos(mode2DPillMin);
-        const bool pressedMode2D =
-            ImGui::InvisibleButton("##viewport-2d-mode-btn", ImVec2{mode2DPillWidth, unifiedHeight});
-        const bool rightClickedMode2D = ImGui::IsItemClicked(ImGuiMouseButton_Right);
-        const bool hoveredMode2D = ImGui::IsItemHovered();
-        drawList->AddRectFilled(
-            mode2DPillMin, mode2DPillMax,
-            m_viewportOverlayState.is2DMode
-                ? IM_COL32(64, 132, 214, 235)
-                : (hoveredMode2D ? IM_COL32(30, 34, 44, 220) : IM_COL32(18, 21, 28, 200)),
-            unifiedHeight * 0.5F);
-        drawList->AddRect(mode2DPillMin, mode2DPillMax,
-                          m_viewportOverlayState.is2DMode ? IM_COL32(120, 185, 255, 200) : IM_COL32(255, 255, 255, 24),
-                          unifiedHeight * 0.5F);
-        drawList->AddText(ImVec2{mode2DPillMin.x + kBubblePaddingXUVE + 4.0F,
-                                 mode2DPillMin.y + (unifiedHeight - mode2DTextSize.y) * 0.5F},
-                          IM_COL32(240, 245, 255, 255), mode2DLabel);
-        if (pressedMode2D) {
+        ImGui::SetCursorScreenPos(modeBubbleMin);
+        if (DrawViewportBubbleIconButtonUVE("##viewport-2d-mode-btn", m_viewportOverlayState.is2DMode,
+                                            DrawViewportModeIconUVE)) {
             m_viewportOverlayState.is2DMode = !m_viewportOverlayState.is2DMode;
         }
-        if (rightClickedMode2D && m_viewportOverlayState.is2DMode) {
+        // Click switches; right-click opens the 2D tool's own options, the same split the grid
+        // button uses so a toolbar stays one control wide per idea.
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && m_viewportOverlayState.is2DMode) {
             ImGui::OpenPopup("##viewport-2d-options-popup");
         }
-        if (hoveredMode2D && !ImGui::IsPopupOpen("##viewport-2d-options-popup")) {
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort) &&
+            !ImGui::IsPopupOpen("##viewport-2d-options-popup")) {
             ImGui::SetTooltip(m_viewportOverlayState.is2DMode
                                   ? "2D Viewport active (click for 3D, right-click for 2D options)"
                                   : "Switch to 2D Viewport");

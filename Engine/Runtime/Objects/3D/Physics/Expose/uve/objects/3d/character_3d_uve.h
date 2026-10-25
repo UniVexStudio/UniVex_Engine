@@ -18,23 +18,39 @@
 namespace UVE::Scene {
 
 class IEntityManagerUVE;
+class ISceneGraphUVE;
 
 /// Character3D: a body moved by its own code rather than by forces - a player, an NPC, an
 /// enemy. Object3D > PhysicsObject3D > SolidBody3D > Character3D.
 ///
-/// A new one is ready to walk: it comes with a person-sized capsule and the built-in movement on.
+/// A new one is a controller, not a shape. It comes with the built-in movement on and no collider
+/// of its own: the author adds the Collider3D the body should have, so the shape a character
+/// sweeps is one the author chose and can see, not one it arrived with.
+///
+/// It used to be born with a person-sized capsule. That made adding a collider destructive: the
+/// character already had one, so the Collider3D an author added became a second shape occupying
+/// the same space, and the controller - correctly - pushed the body out of it, which reads as the
+/// character being flung across the level the moment the collider is added. A shape the author
+/// cannot see, did not ask for, and cannot remove by adding another one is worse than no shape at
+/// all: with none, the Outliner says so in a row badge and the fix is the one the author already
+/// reached for.
+///
 /// It moves once something possesses it - drop a Player3D for keyboard play, or drive its pawn
 /// from any controller. No rigid body is attached - the controller owns all of its motion.
 struct Character3DObjectDefinitionUVE final {
     static constexpr std::string_view defaultName = "Character3D";
 
-    /// Person-sized: 1.8 m tall, 0.8 m across.
-    ColliderComponentUVE collider = MakeDefaultColliderUVE();
+    /// The shape its controller sweeps, if the caller wants one built in. Empty - the default -
+    /// means the author supplies it.
+    std::optional<ColliderComponentUVE> collider = std::nullopt;
     CharacterControllerComponentUVE controller{};
     // Only the kind is authored: possession links and pawn input are runtime state. AI by
     // default, so a definition-built body never answers the keyboard unless something opts it in.
     ControllerKindUVE controllerKind = ControllerKindUVE::AI;
 
+    /// The person-sized capsule this used to be born with: 1.8 m tall, 0.8 m across. Kept for
+    /// callers that do want a ready-made body - Player3D, the samples, and tests that walk a
+    /// character through a world - and as the shape an author would pick from the Collider3D menu.
     [[nodiscard]] static ColliderComponentUVE MakeDefaultColliderUVE() noexcept {
         ColliderComponentUVE collider{};
         collider.shapeType = ColliderShapeTypeUVE::Capsule;
@@ -42,9 +58,37 @@ struct Character3DObjectDefinitionUVE final {
         collider.height = 1.8F;
         return collider;
     }
+
+    /// A definition that carries the person-sized capsule, for callers that want a body ready to
+    /// walk without authoring one. The editor's object menu deliberately does not use this: there,
+    /// the collider is the author's to add.
+    [[nodiscard]] static Character3DObjectDefinitionUVE WithDefaultColliderUVE() noexcept {
+        Character3DObjectDefinitionUVE definition{};
+        definition.collider = MakeDefaultColliderUVE();
+        return definition;
+    }
 };
 
 [[nodiscard]] bool IsCharacter3DObjectDefinitionValidUVE(const Character3DObjectDefinitionUVE& value) noexcept;
+
+/// The entity whose ColliderComponentUVE is `character`'s body: the character itself when it
+/// carries a collider, otherwise the first child that is a shape and nothing else.
+///
+/// A character's shape is allowed to be its own separate object. A Collider3D is an object in the
+/// tree - it can be selected, given a shape type and shown as a wireframe - and putting one under
+/// a character is how an author says "this is the body this controller sweeps". Without this the
+/// shape was invisible: it could only live as a component on the character, where nothing in the
+/// tree listed it and nothing in the viewport drew it.
+///
+/// Only a shape that is nothing but a shape qualifies. A child that is itself a body - a Rigid3D,
+/// a Static3D, another Character3D - is a separate thing standing next to this one, not a
+/// description of it, and is skipped. A collider on the character still wins over any child, so an
+/// author who authored it directly never has it silently replaced by something below it.
+///
+/// Returns kInvalidEntityUVE when the character has no shape at all, which is a state the Outliner
+/// reports and the stepper refuses rather than guessing.
+[[nodiscard]] EntityUVE ResolveCharacterShapeEntityUVE(IEntityManagerUVE& entityManager,
+                                                       ISceneGraphUVE& sceneGraph, EntityUVE character);
 
 /// Applies the SolidBody3D base (and through it PhysicsObject3D and Object3D), then the collider
 /// and the controller, each only where the entity does not already have one.

@@ -201,29 +201,49 @@ void AddOutwardTriangleUVE(PrimitiveGeometryUVE& geometry, std::uint32_t first, 
     }
 
     for (const float side : {1.0F, -1.0F}) {
+        // The cap's own equator is the barrel's ring, so its centre is on the same side of the
+        // origin: +0.5 for the top cap, -0.5 for the bottom. Getting this sign wrong builds the
+        // bottom hemisphere inside the barrel and stretches a cone from it down to the pole, which
+        // reads as a capsule with its lower half torn out.
+        const float capCentre = side * kCapCentreUVE;
+        const std::uint32_t barrelRing = side > 0.0F ? topRing : bottomRing;
+
+        // Ring 0 of the cap is one polar step in from the equator, not at it: the pole's ring would
+        // be degenerate, and an equator ring would be a duplicate of the barrel's. The quad strip
+        // below therefore starts at the barrel ring itself, which is what closes the seam. Without
+        // that first strip the hemisphere floats one ring step above the barrel - a visible gap all
+        // the way round, and the reason a capsule rendered as three separate pieces.
         const std::uint32_t firstRing = static_cast<std::uint32_t>(geometry.vertices.size());
         for (std::uint32_t stack = 1U; stack <= kCapRingsUVE; ++stack) {
             const float step = static_cast<float>(stack) / static_cast<float>(kCapRingsUVE + 1U);
             const float polar = step * (std::numbers::pi_v<float> * 0.5F);
             const float ringRadius = kRadiusUVE * std::cos(polar);
-            const float y = kCapCentreUVE + (side * kRadiusUVE * std::sin(polar));
+            const float y = capCentre + (side * kRadiusUVE * std::sin(polar));
+            const float cosinePolar = std::cos(polar);
             for (std::uint32_t slice = 0U; slice <= kSlicesUVE; ++slice) {
                 const float u = static_cast<float>(slice) / static_cast<float>(kSlicesUVE);
                 const float angle = u * 2.0F * std::numbers::pi_v<float>;
                 const float cosine = std::cos(angle);
                 const float sine = std::sin(angle);
-                const float cosinePolar = std::cos(polar);
                 geometry.vertices.push_back(Asset::MeshVertexUVE{
                     {cosine * ringRadius, y, sine * ringRadius},
                     {cosine * cosinePolar, side * std::sin(polar), sine * cosinePolar}, u,
                     0.5F + (step * 0.5F)});
             }
         }
-        // Quad strip from the barrel to the last cap ring, then a fan to the pole.
-        for (std::uint32_t stack = 0U; stack + 1U < kCapRingsUVE; ++stack) {
+
+        // Quad strip from the barrel to the last cap ring, then a fan to the pole. Written as a
+        // list of rings so the barrel is just ring zero of the same walk: the seam and the cap
+        // cannot drift apart into two different winding rules.
+        std::array<std::uint32_t, kCapRingsUVE + 1U> rings{};
+        rings[0] = barrelRing;
+        for (std::uint32_t stack = 0U; stack < kCapRingsUVE; ++stack) {
+            rings[stack + 1U] = firstRing + (stack * kRingVerticesUVE);
+        }
+        for (std::uint32_t stack = 0U; stack + 1U < rings.size(); ++stack) {
             for (std::uint32_t slice = 0U; slice < kSlicesUVE; ++slice) {
-                const std::uint32_t inner = firstRing + (stack * kRingVerticesUVE) + slice;
-                const std::uint32_t outer = inner + kRingVerticesUVE;
+                const std::uint32_t inner = rings[stack] + slice;
+                const std::uint32_t outer = rings[stack + 1U] + slice;
                 const std::uint32_t corners[] = {inner, inner + 1U, outer, outer + 1U};
                 constexpr std::uint32_t kTopQuadUVE[] = {0U, 2U, 3U, 0U, 3U, 1U};
                 constexpr std::uint32_t kBottomQuadUVE[] = {0U, 3U, 2U, 0U, 1U, 3U};
@@ -233,6 +253,7 @@ void AddOutwardTriangleUVE(PrimitiveGeometryUVE& geometry, std::uint32_t first, 
                 }
             }
         }
+
         const std::uint32_t lastRing = firstRing + ((kCapRingsUVE - 1U) * kRingVerticesUVE);
         const std::uint32_t pole = static_cast<std::uint32_t>(geometry.vertices.size());
         geometry.vertices.push_back(

@@ -527,14 +527,23 @@ void EditorUVE::DrawBottomDockContentUVE() {
     // something anyone drags: dragging happens on the seams, in DrawEditorChromeHandlesUVE().
     ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
-    // No title row and no close button - the tab strip below the dock is what names it and what
-    // hides it. NoMove/NoResize/NoSavedSettings keep a stale imgui.ini from parking it anywhere but
-    // its computed rect.
+    // No title row and no close button - the tab strip at the top of the block is what names it and
+    // what hides it. NoMove/NoResize/NoSavedSettings keep a stale imgui.ini from parking it anywhere
+    // but its computed rect.
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                                       ImGuiWindowFlags_NoSavedSettings |
                                        ImGuiWindowFlags_NoBringToFrontOnFocus;
+    // Square and borderless, like the tab strip directly above it. The theme draws every panel as a
+    // rounded, 1px-outlined card; on a window that sits flush under the canvas those two things are
+    // exactly what makes it read as a separate frame that happens to be parked there. With the
+    // outline gone and the corners square, the strip and the body merge into one block that is
+    // visibly part of the editor instead of a window laid on top of it.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0F);
     if (!ImGui::Begin(kPanelLabelBottomDockUVE, nullptr, flags)) {
         ImGui::End();
+        ImGui::PopStyleVar(2);
         return;
     }
     switch (m_activeBottomDock) {
@@ -591,6 +600,7 @@ void EditorUVE::DrawBottomDockContentUVE() {
             break;
     }
     ImGui::End();
+    ImGui::PopStyleVar(2);
 }
 
 void EditorUVE::DrawEditorChromeHandlesUVE() {
@@ -630,8 +640,15 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
                                                           IM_COL32(90, 150, 215, 130));
             }
             if (ImGui::IsItemActive()) {
-                const float from = m_scenePanelWidth > 0.0F ? m_scenePanelWidth : layout.sceneSize.x;
-                m_scenePanelWidth = ClampScenePanelWidthUVE(totalWidth, from + io.MouseDelta.x);
+                // The same shape the entity editor's column seams use: the width the author set is
+                // the starting point, the frame's movement is added to it, and the result is what
+                // the next frame reads. Guarding on a non-zero delta is not an optimisation - a
+                // held-but-still pointer must not write, or a stray frame without movement would
+                // re-clamp a width the author chose and quietly move the seam under them.
+                if (io.MouseDelta.x != 0.0F) {
+                    const float from = m_scenePanelWidth > 0.0F ? m_scenePanelWidth : layout.sceneSize.x;
+                    m_scenePanelWidth = ClampScenePanelWidthUVE(totalWidth, from + io.MouseDelta.x);
+                }
             }
         }
         ImGui::End();
@@ -646,8 +663,11 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
                                                           IM_COL32(90, 150, 215, 130));
             }
             if (ImGui::IsItemActive()) {
-                const float from = m_inspectorPanelWidth > 0.0F ? m_inspectorPanelWidth : layout.inspectorSize.x;
-                m_inspectorPanelWidth = ClampInspectorPanelWidthUVE(totalWidth, from - io.MouseDelta.x);
+                if (io.MouseDelta.x != 0.0F) {
+                    const float from =
+                        m_inspectorPanelWidth > 0.0F ? m_inspectorPanelWidth : layout.inspectorSize.x;
+                    m_inspectorPanelWidth = ClampInspectorPanelWidthUVE(totalWidth, from - io.MouseDelta.x);
+                }
             }
         }
         ImGui::End();
@@ -663,9 +683,12 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
             }
             if (ImGui::IsItemActive()) {
                 // Dragging up grows the dock, so the mouse delta is subtracted from its height.
-                const float column = layout.viewportSize.y + layout.contentBrowserSize.y;
-                const float from = m_bottomDockHeight > 0.0F ? m_bottomDockHeight : layout.contentBrowserSize.y;
-                m_bottomDockHeight = ClampBottomDockHeightUVE(column, from - io.MouseDelta.y);
+                if (io.MouseDelta.y != 0.0F) {
+                    const float column = layout.viewportSize.y + layout.contentBrowserSize.y;
+                    const float from =
+                        m_bottomDockHeight > 0.0F ? m_bottomDockHeight : layout.contentBrowserSize.y;
+                    m_bottomDockHeight = ClampBottomDockHeightUVE(column, from - io.MouseDelta.y);
+                }
             }
         }
         ImGui::End();
@@ -731,10 +754,16 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
     // Always drawn, dock body or not: this strip is the dock's name, its switcher, and - when the
     // body is hidden - the only visible way back. Every tab toggles: click the one already showing
     // and the dock folds away, click any tab and it unfolds on that section.
+    //
+    // It sits at the top of the dock and takes the dock's own width, so it is the dock's header
+    // rather than an unrelated band across the bottom of the screen. Same square, borderless
+    // treatment as the body underneath, so the two read as one panel.
     ImGui::SetNextWindowPos(layout.dockTabBarPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.dockTabBarSize, ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{6.0F, 2.0F});
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{2.0F, 0.0F});
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0F);
     if (ImGui::Begin(kPanelLabelDockTabsUVE, nullptr, stripFlags)) {
         struct TabUVE final {
             const char* label;
@@ -777,7 +806,7 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
         ImGui::TextDisabled("%s", state);
     }
     ImGui::End();
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar(4);
 }
 
 void EditorUVE::DrawConsoleBodyUVE() {

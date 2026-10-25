@@ -40,7 +40,7 @@ TEST(EditorSettingsUVETest, EveryEditorSettingRegistersOnceWithALegalDefault) {
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEditorSettingsUVE(registry));
     // Every declared preference, the three viewport axis colours, and one alias per renamed id.
-    EXPECT_EQ(registry.GetCountUVE(), 158U + 3U + std::size(kRenamedSettingIdsUVE));
+    EXPECT_EQ(registry.GetCountUVE(), 160U + 3U + std::size(kRenamedSettingIdsUVE));
     for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
         EXPECT_EQ(Config::ValidateSettingDescriptorUVE(*descriptor), "") << descriptor->id;
         EXPECT_TRUE(descriptor->id.starts_with("editor.")) << descriptor->id;
@@ -49,7 +49,7 @@ TEST(EditorSettingsUVETest, EveryEditorSettingRegistersOnceWithALegalDefault) {
     }
     // A second declaration of the same settings is refused as duplicates.
     EXPECT_FALSE(RegisterEditorSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 158U + 3U + std::size(kRenamedSettingIdsUVE));
+    EXPECT_EQ(registry.GetCountUVE(), 160U + 3U + std::size(kRenamedSettingIdsUVE));
 }
 
 TEST(EditorSettingsUVETest, EveryIdIsDeclaredWithTheTypeTheEditorReadsItAs) {
@@ -61,6 +61,8 @@ TEST(EditorSettingsUVETest, EveryIdIsDeclaredWithTheTypeTheEditorReadsItAs) {
         {Id::kInspectorPanelVisibleUVE, SettingTypeUVE::Bool},
         {Id::kBottomDockVisibleUVE, SettingTypeUVE::Bool},
         {Id::kBottomDockHeightUVE, SettingTypeUVE::Float},
+        {Id::kScenePanelWidthUVE, SettingTypeUVE::Float},
+        {Id::kInspectorPanelWidthUVE, SettingTypeUVE::Float},
         {Id::kContentBrowserViewModeUVE, SettingTypeUVE::Enum},
         {Id::kContentBrowserModeUVE, SettingTypeUVE::Enum},
         {Id::kActiveWorkspaceUVE, SettingTypeUVE::Enum},

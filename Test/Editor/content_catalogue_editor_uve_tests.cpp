@@ -49,9 +49,11 @@ TEST(ContentCatalogueUVETest, EveryItemIsCreatableAndGroupsAreInOrder) {
             ++groupIndex;
         }
         ASSERT_LT(groupIndex, groups.size()) << item.id << " is out of group order";
-        // Folder and LibraryAsset make a file, not entities, so their items carry no objects.
+        // Folder and LibraryAsset make a file, not entities, and the Montage asks before it makes
+        // anything, so none of their items carry objects.
         if (item.action == ContentCatalogueActionUVE::Folder ||
-            item.action == ContentCatalogueActionUVE::LibraryAsset) {
+            item.action == ContentCatalogueActionUVE::LibraryAsset ||
+            item.action == ContentCatalogueActionUVE::Montage) {
             EXPECT_TRUE(item.objects.empty());
             continue;
         }
@@ -76,6 +78,44 @@ TEST(ContentCatalogueUVETest, EveryItemIsCreatableAndGroupsAreInOrder) {
                                 [group](const ContentCatalogueItemUVE& item) { return item.group == group; }))
             << group << " is empty";
     }
+}
+
+TEST(ContentCatalogueUVETest, MontageListsBodiesTheMenuAlreadyHas) {
+    const auto entries = GetContentCatalogueMontageEntriesUVE();
+    ASSERT_FALSE(entries.empty());
+    std::set<std::string_view> ids;
+    for (const ContentCatalogueMontageEntryUVE& entry : entries) {
+        EXPECT_TRUE(ids.insert(entry.itemId).second) << entry.itemId;
+        const ContentCatalogueItemUVE* const item = FindContentCatalogueItemUVE(entry.itemId);
+        ASSERT_NE(item, nullptr) << entry.itemId;
+        EXPECT_EQ(item->group, "Entity") << entry.itemId;
+        EXPECT_EQ(item->action, ContentCatalogueActionUVE::EntityAsset) << entry.itemId;
+        // A body is one object: the window promises what the item makes, and nothing rides along.
+        EXPECT_EQ(item->objects.size(), 1U) << entry.itemId;
+        EXPECT_FALSE(entry.summary.empty()) << entry.itemId;
+        EXPECT_FALSE(entry.detail.empty()) << entry.itemId;
+        EXPECT_TRUE(IsContentCatalogueMontageBodyUVE(entry.itemId)) << entry.itemId;
+    }
+    EXPECT_FALSE(IsContentCatalogueMontageBodyUVE(""));
+    EXPECT_FALSE(IsContentCatalogueMontageBodyUVE("folder")) << "a folder is not a body";
+    EXPECT_FALSE(IsContentCatalogueMontageBodyUVE("body-montage")) << "the Montage offers bodies, it is not one";
+
+    // The Montage is the way into the group: its own action, no objects, and it comes first.
+    const ContentCatalogueItemUVE* const montage = FindContentCatalogueItemUVE("body-montage");
+    ASSERT_NE(montage, nullptr);
+    EXPECT_EQ(montage->action, ContentCatalogueActionUVE::Montage);
+    EXPECT_EQ(montage->group, "Entity");
+    EXPECT_TRUE(montage->objects.empty());
+    EXPECT_EQ(GetContentCatalogueIconKindUVE(*montage), Kind::Skeleton3D);
+    const auto items = GetContentCatalogueItemsUVE();
+    const auto montageAt = std::find_if(items.begin(), items.end(), [](const ContentCatalogueItemUVE& item) {
+        return item.id == "body-montage";
+    });
+    const auto characterAt = std::find_if(items.begin(), items.end(), [](const ContentCatalogueItemUVE& item) {
+        return item.id == "character";
+    });
+    ASSERT_NE(characterAt, items.end()) << "the Character item stays: the Montage does not replace it";
+    EXPECT_LT(montageAt, characterAt) << "the Montage opens the group, the bodies follow";
 }
 
 TEST(ContentCatalogueUVETest, SearchMatchesEveryWordAnywhere) {
@@ -189,8 +229,10 @@ TEST(ContentCatalogueEditorUVETest, CharacterAssetPlacesAsItsWholeTreeWithOneUnd
         EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, placed), Kind::Character3D);
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(placed).name, "Character");
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(placed));
-        EXPECT_EQ(ChildKindsUVE(services, placed),
-                  (std::vector<Kind>{Kind::MeshInstance3D}));
+        // Nothing inside it: an entity asset is the object the author picked and no more. A
+        // Character that arrives with a Mesh is a child to look at, judge and delete before the
+        // body is theirs - the same rule that keeps a new entity out of the way of its own editor.
+        EXPECT_TRUE(ChildKindsUVE(services, placed).empty());
         EXPECT_TRUE(editor.IsSceneDirtyUVE());
 
         // A second placement is named apart from the first.
@@ -205,7 +247,7 @@ TEST(ContentCatalogueEditorUVETest, CharacterAssetPlacesAsItsWholeTreeWithOneUnd
         ASSERT_TRUE(editor.RedoUVE());
         const Scene::EntityUVE redone = editor.GetSelectedEntityUVE();
         EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, redone), Kind::Character3D);
-        EXPECT_EQ(ChildKindsUVE(services, redone).size(), 1U);
+        EXPECT_EQ(ChildKindsUVE(services, redone).size(), 0U);
 
         EXPECT_EQ(editor.PlaceEntityAssetUVE(root / "nothing.uventity"), Scene::kInvalidEntityUVE);
         EXPECT_EQ(editor.PlaceEntityAssetUVE(root / "log.txt"), Scene::kInvalidEntityUVE);
@@ -255,6 +297,52 @@ TEST(ContentCatalogueEditorUVETest, LibraryAssetCreatesAnEmptyAnimationLibrary) 
     engine.Shutdown();
 }
 
+TEST(ContentCatalogueEditorUVETest, MontageMakesOnlyTheBodyYouPick) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("montage");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+        Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+
+        // Opening the Montage writes nothing: it asks first.
+        editor.OpenMontageUVE(content);
+        ASSERT_TRUE(editor.IsMontageOpenUVE());
+        EXPECT_EQ(std::distance(std::filesystem::directory_iterator(content), std::filesystem::directory_iterator{}),
+                  0)
+            << "the window costs the project nothing until Open";
+
+        // Only the window's own bodies: the menu's other entries are not choices it can make.
+        EXPECT_FALSE(editor.OpenMontageBodyUVE("folder"));
+        EXPECT_FALSE(editor.OpenMontageBodyUVE("body-montage"));
+        EXPECT_FALSE(editor.OpenMontageBodyUVE("nothing"));
+        EXPECT_TRUE(editor.IsMontageOpenUVE()) << "a refusal leaves the question standing";
+
+        ASSERT_TRUE(editor.OpenMontageBodyUVE("character"));
+        EXPECT_FALSE(editor.IsMontageOpenUVE());
+        const std::filesystem::path created = content / "Character.uventity";
+        ASSERT_TRUE(std::filesystem::is_regular_file(created));
+        // Made and opened in one step: the body is a file in Content and the document in the editor.
+        EXPECT_TRUE(editor.IsEntityEditorOpenUVE());
+        EXPECT_EQ(editor.GetEntityEditorAssetPathUVE(), created);
+        const Scene::EntityUVE body = editor.GetEntityEditorRootUVE();
+        ASSERT_NE(body, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, body), Kind::Character3D);
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(body).name, "Character");
+        // The rule every "+ Add" follows, the Montage included: nothing inside the body it did not
+        // ask for.
+        EXPECT_TRUE(ChildKindsUVE(services, body).empty());
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
 TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSceneBack) {
     const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("entity_editor");
     const std::filesystem::path content = root / "Content";
@@ -298,7 +386,7 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSce
         EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, entityRoot), Kind::Character3D);
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(entityRoot))
             << "edited as itself, not as an instance of itself";
-        EXPECT_EQ(ChildKindsUVE(services, entityRoot).size(), 1U);
+        EXPECT_EQ(ChildKindsUVE(services, entityRoot).size(), 0U);
         EXPECT_FALSE(editor.EnterPlayModeUVE()) << "the scene plays, not an open entity";
         EXPECT_EQ(engine.GetSimulationExecutionModeUVE(), Core::SimulationExecutionModeUVE::Paused)
             << "an entity is edited as authored, not simulated";
@@ -392,6 +480,12 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorCompilesScriptsListsSignalsAndGo
         ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
         EXPECT_EQ(editor.GetEntityEditorTabUVE(), EditorUVE::EntityEditorTabUVE::Viewport);
 
+        // A body arrives empty - +Add makes one object and puts nothing inside it - so the mesh
+        // that hangs under it is authored here, the way an author spends their first minute with a
+        // new character. Everything below is unchanged by that.
+        const Scene::EntityUVE child = editor.CreateDocumentSceneObjectUVE(Kind::MeshInstance3D);
+        ASSERT_NE(child, Scene::kInvalidEntityUVE);
+
         // A fresh Character has no scripts: it compiles clean and answers to nothing.
         EXPECT_EQ(editor.CompileEntityEditorUVE(), 0U);
         EXPECT_TRUE(editor.HasEntityEditorCompiledUVE());
@@ -426,8 +520,6 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorCompilesScriptsListsSignalsAndGo
         EXPECT_EQ(editor.GetEntityEditorTabUVE(), EditorUVE::EntityEditorTabUVE::Scripting);
 
         // A script file that is gone is a problem, not a crash.
-        const Scene::EntityUVE child =
-            engine.GetServicesUVE().GetSceneGraphUVE().GetChildrenUVE(engine.GetServicesUVE().GetEntityManagerUVE(), entityRoot).front();
         engine.GetServicesUVE().GetEntityManagerUVE().GetComponentUVE<Scene::ScriptComponentUVE>(child).scriptAssetPath =
             "scripts/missing.uvs";
         editor.SetOpenUVScriptTextUVE("on ready:\n    pass\n");

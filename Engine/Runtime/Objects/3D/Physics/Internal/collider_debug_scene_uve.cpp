@@ -27,6 +27,7 @@ ColliderDebugSceneStatsUVE BuildColliderDebugSceneUVE(IEntityManagerUVE& entityM
         [&](const EntityUVE entity, const WorldTransformComponentUVE& worldTransform,
             const ColliderComponentUVE& collider) {
             if (stats.truncated) return;
+            if (entity == settings.excludedEntity) return;
             if (stats.colliderCount >= settings.maximumColliders) {
                 stats.reachedColliderLimit = true;
                 stats.truncated = true;
@@ -54,7 +55,8 @@ ColliderDebugSceneStatsUVE BuildColliderDebugSceneUVE(IEntityManagerUVE& entityM
 
             const std::span<Physics::ColliderDebugLineUVE> remaining = outLines.subspan(stats.lineCount);
             Physics::ColliderDebugBuildResultUVE built = Physics::BuildColliderDebugLinesUVE(
-                collider, worldTransform.worldPosition, worldTransform.worldRotation, remaining, settings.style);
+                collider, worldTransform.worldPosition, worldTransform.worldRotation, remaining,
+                settings.style, worldTransform.worldScale);
             if (built.lineCount == 0U) return;
             stats.lineCount += built.lineCount;
             ++stats.colliderCount;

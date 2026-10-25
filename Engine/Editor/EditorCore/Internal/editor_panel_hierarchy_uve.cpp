@@ -50,6 +50,7 @@
 #include "uve/component/visibility_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
+#include "uve/objects/3d/character_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/scene/objects/scene_folder_uve.h"
 #include "uve/scene/objects/scene_object_registry_uve.h"
@@ -274,8 +275,12 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
         return;
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    // A placed entity is one row. Its own scene is the Entity Editor's; drawing it here made the
+    // level's tree claim objects the level never authored and cannot sensibly address.
+    const bool sealed = IsSealedHierarchyRowUVE(entity);
     const std::vector<Scene::EntityUVE> children =
-        m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
+        sealed ? std::vector<Scene::EntityUVE>{}
+               : m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
     // The arrow always opens and closes a row. A double-click does too only when that is the chosen
     // double-click action; otherwise it renames or focuses (below).
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow;
@@ -540,7 +545,11 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
         ImGui::Text("Move %s", GetEntityDisplayLabelUVE(entity).c_str());
         ImGui::EndDragDropSource();
     }
-    AcceptHierarchyDropTargetUVE(entity);
+    if (!sealed) {
+        // Dropping onto a placed entity would add a child the level's tree cannot show - the object
+        // would exist and never appear anywhere. Its contents are edited in the Entity Editor.
+        AcceptHierarchyDropTargetUVE(entity);
+    }
     if (!renaming) {
         DrawHierarchyRowBadgesUVE(warnings, script, eyeColumns);
         DrawHierarchyVisibilityToggleUVE(entity, rowHovered);
@@ -569,7 +578,8 @@ void EditorUVE::DrawHierarchyObjectContextMenuUVE(const Scene::EntityUVE entity)
 
     ImGui::TextDisabled("%s", GetEntityDisplayLabelUVE(entity).c_str());
     ImGui::Separator();
-    ImGui::BeginDisabled(!authoring || !single);
+    const bool sealed = IsSealedHierarchyRowUVE(entity);
+    ImGui::BeginDisabled(!authoring || !single || sealed);
     // Opens the same searchable picker as the + button. New objects go under the single selection,
     // which the right-click has just made this row.
     if (ImGui::MenuItem("Add Child Object...")) {
@@ -581,6 +591,9 @@ void EditorUVE::DrawHierarchyObjectContextMenuUVE(const Scene::EntityUVE entity)
         m_hierarchyRenameFocusRequested = true;
     }
     ImGui::EndDisabled();
+    if (sealed && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Open this entity to add objects inside it.");
+    }
     ImGui::Separator();
     const bool focusable = CanFocusEntityInViewportUVE(entity);
     if (ImGui::MenuItem("Focus in Viewport", "F", false, focusable)) {
@@ -600,7 +613,9 @@ void EditorUVE::DrawHierarchyObjectContextMenuUVE(const Scene::EntityUVE entity)
         ImGui::SetTooltip("This object draws nothing, so there is nothing to hide.");
     }
     ImGui::Separator();
-    const std::vector<Scene::EntityUVE> children = m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
+    const std::vector<Scene::EntityUVE> children =
+        sealed ? std::vector<Scene::EntityUVE>{}
+               : m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
     const bool hasChildren = std::any_of(children.begin(), children.end(),
                                          [this](const Scene::EntityUVE child) { return IsDocumentEntityUVE(child); });
     if (ImGui::MenuItem("Expand Branch", nullptr, false, hasChildren)) {
@@ -1037,19 +1052,25 @@ std::vector<std::string> EditorUVE::GetObjectWarningsUVE(const Scene::EntityUVE 
         entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(entity).skeletonAssetPath.empty()) {
         warnings.emplace_back("No source model is set, so the skeleton has no bones.");
     }
-    // A Character3D without a Collider3D is a controller with no body. The character component
-    // sweeps a shape through the world to decide what it stands on, what it can step over and
-    // where it stops; with no collider there is no shape, so the sweep finds nothing, the body is
-    // always falling, and it drops through every surface the level has. The failure is silent -
-    // the mesh draws, the object looks authored, and the only symptom is a character that keeps
-    // going down - which is exactly the kind of thing a row badge exists for. The warning is
-    // computed from the components every frame, so adding the Collider3D clears it with nothing
-    // to dismiss or acknowledge.
-    if (Scene::ResolveSceneObjectKindUVE(entityManager, entity) ==
-            Scene::Objects::SceneObjectKindUVE::Character3D &&
-        !entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity)) {
-        warnings.emplace_back("No Collider3D: this character has no body, so it falls through "
-                              "everything. Add a Collider3D to give it one.");
+    // A character with no shape is a controller with no body. The controller sweeps a shape
+    // through the world to decide what it stands on, what it can step over and where it stops;
+    // with no shape the sweep finds nothing, so the body neither walks nor stands - it is simply
+    // refused, and the object looks authored while doing nothing. That silence is what a row badge
+    // is for.
+    //
+    // The shape counts whether it is on the character or on a Collider3D of its own under it, so
+    // this asks the same question the stepper asks. Both Character3D and Player3D are in the same
+    // position: neither is born with a collider, by design, because a built-in one made the
+    // Collider3D an author then added a second shape in the same place. Computed from the tree
+    // every frame, so adding the Collider3D clears it with nothing to dismiss.
+    const Scene::Objects::SceneObjectKindUVE kind = Scene::ResolveSceneObjectKindUVE(entityManager, entity);
+    if ((kind == Scene::Objects::SceneObjectKindUVE::Character3D ||
+         kind == Scene::Objects::SceneObjectKindUVE::Player3D) &&
+        Scene::ResolveCharacterShapeEntityUVE(m_services->GetEntityManagerUVE(),
+                                              m_services->GetSceneGraphUVE(), entity) ==
+            Scene::kInvalidEntityUVE) {
+        warnings.emplace_back("No Collider3D: this character has no body, so it cannot walk or "
+                              "stand. Add a Collider3D under it to give it one.");
     }
     return warnings;
 }

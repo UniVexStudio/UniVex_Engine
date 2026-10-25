@@ -107,6 +107,12 @@ uniform vec3 uAmbientColor;
 uniform vec3 uSkyAmbient;
 uniform vec3 uGroundAmbient;
 uniform int uAmbientSource; // 0=None, 1=FlatColor, 2=Sky, 3=EnvironmentMap
+// Sky reflections: what a mirror outdoors actually shows. Three bands instead of a captured cube,
+// because the sky is the one environment that is smooth enough for a gradient to be honest.
+uniform int uSkyReflectionsLinked;
+uniform vec3 uSkyReflectionSky;
+uniform vec3 uSkyReflectionHorizon;
+uniform vec3 uSkyReflectionGround;
 uniform sampler2D uAmbientEnvironmentMap;
 uniform int uAmbientEnvironmentMapEnabled;
 uniform vec3 uViewPosition;
@@ -289,6 +295,21 @@ vec3 SampleEnvironmentSpecularUVE(vec3 direction, float roughness) {
             SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection - tangent * spread)) +
             SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection + bitangent * spread)) +
             SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection - bitangent * spread))) * 0.15;
+}
+
+vec3 SkyReflectionUVE(vec3 direction, float roughness) {
+    // Direction picks the band: overhead, horizon, or the bounce off the ground. A mirror then reads
+    // as a gradient rather than one flat colour, which is the difference between chrome in a box and
+    // chrome under open sky. Roughness pulls it back toward the ambient - a rough surface integrates
+    // over a wide cone, and the diffuse-ish ambient already is that integral, so this avoids
+    // pretending a blurry surface still shows a crisp horizon line.
+    float up = clamp(direction.y, -1.0, 1.0);
+    vec3 sharp = up >= 0.0
+        ? mix(uSkyReflectionHorizon, uSkyReflectionSky, smoothstep(0.0, 0.30, up))
+        : mix(uSkyReflectionHorizon, uSkyReflectionGround, smoothstep(0.0, 0.22, -up));
+    float blur = roughness * roughness;
+    vec3 soft = mix(uSkyReflectionSky, uSkyReflectionHorizon, 0.5);
+    return mix(sharp, soft, blur);
 }
 
 vec3 AmbientFromSourceUVE(vec3 normal) {
@@ -815,6 +836,9 @@ void main() {
     vec3 ambientColor = AmbientFromSourceUVE(normal);
     vec3 reflection = reflect(-viewDirection, normal);
     vec3 specEnv = ambientColor;
+    if (uSkyReflectionsLinked != 0) {
+        specEnv = SkyReflectionUVE(reflection, roughness);
+    }
     if (uAmbientSource == 3 && uAmbientEnvironmentMapEnabled != 0) {
         specEnv = max(uAmbientColor, vec3(0.0)) * SampleEnvironmentSpecularUVE(reflection, roughness);
     }

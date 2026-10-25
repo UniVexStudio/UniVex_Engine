@@ -9,9 +9,12 @@
 #include <optional>
 #include <vector>
 
+#include "uve/component/rigid_3d_component_uve.h"
+#include "uve/component/solid_body_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/scalar_uve.h"
 #include "uve/objects/3d/abstract_physics_objects_3d_uve.h"
+#include "uve/scene/i_scene_graph_uve.h"
 
 namespace UVE::Scene {
 namespace {
@@ -1103,7 +1106,9 @@ CharacterMotionConfigUVE MakeCharacterMotionConfigUVE(
 bool IsCharacter3DObjectDefinitionValidUVE(const Character3DObjectDefinitionUVE& value) noexcept {
     ControllerComponentUVE authoredController;
     authoredController.kind = value.controllerKind;
-    return IsColliderComponentValidUVE(value.collider) &&
+    // No collider is a valid character: it is a controller waiting for the author to give it a
+    // body, which the Outliner flags. A collider that IS given must be a real one.
+    return (!value.collider.has_value() || IsColliderComponentValidUVE(*value.collider)) &&
            IsCharacterControllerComponentValidUVE(value.controller) &&
            IsControllerComponentValidUVE(authoredController);
 }
@@ -1114,8 +1119,12 @@ void ApplyCharacter3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const
         return;
     }
     ApplySolidBody3DBaseUVE(entityManager, entity, Character3DObjectDefinitionUVE::defaultName);
-    if (!entityManager.HasComponentUVE<ColliderComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<ColliderComponentUVE>(entity, value.collider);
+    // Only a definition that names a shape gets one. The default names none, so a Character3D
+    // authored from the object menu arrives with a controller and no body, and adding the
+    // Collider3D the author wants is the first shape it ever has rather than a second one
+    // overlapping a capsule it was born with.
+    if (value.collider.has_value() && !entityManager.HasComponentUVE<ColliderComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<ColliderComponentUVE>(entity, *value.collider);
     }
     if (!entityManager.HasComponentUVE<CharacterControllerComponentUVE>(entity)) {
         entityManager.AddComponentUVE<CharacterControllerComponentUVE>(entity, value.controller);
@@ -1128,6 +1137,33 @@ void ApplyCharacter3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const
         possession.kind = value.controllerKind;
         entityManager.AddComponentUVE<ControllerComponentUVE>(entity, possession);
     }
+}
+
+EntityUVE ResolveCharacterShapeEntityUVE(IEntityManagerUVE& entityManager,
+                                           ISceneGraphUVE& sceneGraph, const EntityUVE character) {
+    if (character == kInvalidEntityUVE || !entityManager.IsAliveUVE(character)) {
+        return kInvalidEntityUVE;
+    }
+    // A collider authored on the character itself is the body. Checked first, so an author who
+    // built the shape directly never has it replaced by something below it.
+    if (entityManager.HasComponentUVE<ColliderComponentUVE>(character)) {
+        return character;
+    }
+    // Otherwise the first child that is a shape and nothing else. "Nothing else" is the whole
+    // test: a Rigid3D, a Static3D or another Character3D also carries a collider, but each of them
+    // is a body of its own standing next to this one, not a description of it.
+    for (const EntityUVE child : sceneGraph.GetChildrenUVE(entityManager, character)) {
+        if (!entityManager.HasComponentUVE<ColliderComponentUVE>(child)) {
+            continue;
+        }
+        if (entityManager.HasComponentUVE<SolidBodyComponentUVE>(child) ||
+            entityManager.HasComponentUVE<Rigid3DComponentUVE>(child) ||
+            entityManager.HasComponentUVE<CharacterControllerComponentUVE>(child)) {
+            continue;
+        }
+        return child;
+    }
+    return kInvalidEntityUVE;
 }
 
 Physics::CharacterMotionInputUVE ResolveCharacterMotionUVE(IEntityManagerUVE& entityManager,

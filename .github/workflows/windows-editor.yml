@@ -1,7 +1,14 @@
 name: Windows Editor
 
+# Runs on pull requests too: this job is the only place the editor is built as an actual Windows
+# application, and a change nobody can download and click is a change nobody has really seen.
 on:
   push:
+    paths:
+      - '.github/workflows/windows-editor.yml'
+      - 'Engine/**'
+      - 'CMakeLists.txt'
+  pull_request:
     paths:
       - '.github/workflows/windows-editor.yml'
       - 'Engine/**'
@@ -9,9 +16,14 @@ on:
   workflow_dispatch:
     inputs:
       create_artifacts:
-        description: 'Create downloadable build and diagnostic artifacts'
+        description: 'Create downloadable build and diagnostic artifacts (on by default)'
         type: boolean
-        default: false
+        default: true
+
+# On by default: set the repository variable CREATE_ARTIFACTS to 'false' to stop the packaging
+# upload, or pass create_artifacts=false to a manual run.
+env:
+  UNIVEX_CREATE_ARTIFACTS: ${{ vars.CREATE_ARTIFACTS != 'false' }}
 
 permissions:
   contents: read
@@ -93,8 +105,10 @@ jobs:
           mv ../cook-source ../source-unavailable
           ../cooked/uve_runtime.exe --headless --project ../cooked/sample.uvproject --frames 3
       - uses: actions/upload-artifact@v4
-        if: (github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true')
+        if: env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
+            (github.event_name != 'workflow_dispatch' || inputs.create_artifacts)
         with:
           name: UniVex-Editor-Windows-x64
           path: package/UniVex-Editor/
           if-no-files-found: error
+          retention-days: 7

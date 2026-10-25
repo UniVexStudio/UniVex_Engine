@@ -77,6 +77,9 @@ enum class SceneObjectKindUVE : std::uint8_t {
     /// The whole body solved at once so several limbs can share one answer. Appended so no
     /// existing kind's value moves.
     FullBodyIK3D,
+    /// The sky over a scene: colour source, bands, and the panorama they replace. Appended so no
+    /// existing kind's value moves.
+    Sky,
 };
 
 struct SceneObjectDescriptorUVE final {

@@ -492,9 +492,11 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // 71 with FullBodyIK3D's: the root bone pair, its effector list (drawn by its own list
         // drawer rather than typed rows - each row is a bone, a target and a pull weight), the
         // solver's authored budget, and the answers one solve writes back.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 73U);  // +1: the Skin drawer from MeshInstance3D skinning, +1: Morph Targets
+        // +1: the Skin drawer from MeshInstance3D skinning, +1: Morph Targets, +1: the Sky section.
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 74U);
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "full-body-ik-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "directional-light-3d"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "sky-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-mixer"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "solid-body"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-tree"));
@@ -1071,7 +1073,7 @@ TEST(EditorUVETest, EditorSettingsUVE_DescriptorDefaultsMatchTheEditorsOwnDefaul
         const Config::SettingsRegistryUVE& registry = editor.GetSettingsRegistryUVE();
         // The declared preferences, and a primary and alternate shortcut for every command.
         ASSERT_EQ(registry.GetCountUVE(),
-                  161U + std::size(kRenamedSettingIdsUVE) + (2U * editor.GetEditorCommandsUVE().size()));
+                  163U + std::size(kRenamedSettingIdsUVE) + (2U * editor.GetEditorCommandsUVE().size()));
         for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
             // A renamed setting's old name is only a migration alias; the registry moves its value
             // to the replacement before normal settings are applied.
@@ -4571,6 +4573,18 @@ TEST(EditorUVETest, PlayModeSandbox_InstantiatesDefaultPlayerAndUsesItsCamera) {
 
         const auto created = editor.CreateContentCatalogueItemUVE("player", content);
         ASSERT_TRUE(created.has_value());
+        // A Player3D arrives on its own - +Add puts nothing inside what it makes - so the view is
+        // the author's to add. The test builds the same body an author would: a camera under the
+        // player, authored in the Entity Editor and saved into the asset.
+        ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
+        const Scene::EntityUVE playerBody = editor.GetEntityEditorRootUVE();
+        ASSERT_NE(playerBody, Scene::kInvalidEntityUVE);
+        const Scene::EntityUVE view =
+            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Camera3D);
+        ASSERT_NE(view, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(view).parent, playerBody);
+        ASSERT_TRUE(editor.CloseEntityEditorUVE(true));
+        EXPECT_FALSE(editor.IsEntityEditorOpenUVE());
         ASSERT_TRUE(editor.SetDefaultPlayerEntityUVE(created->filename()));
 
         const Scene::EntityUVE spawn = entityManager.CreateEntityUVE();
@@ -5530,7 +5544,8 @@ TEST(EditorUVETest, CharacterBodyInspectorUVE_IsItsChainToTheRootAndNothingElse)
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE body = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, body, Scene::TransformComponentUVE{});
-        Scene::ApplyCharacter3DObjectDefinitionUVE(entityManager, body, Scene::Character3DObjectDefinitionUVE{});
+        Scene::ApplyCharacter3DObjectDefinitionUVE(
+            entityManager, body, Scene::Character3DObjectDefinitionUVE::WithDefaultColliderUVE());
         // Character3D > SolidBody3D > PhysicsObject3D > Object3D > Object. The capsule, layer and mask
         // are drawn inside PhysicsObject3D, so the collider has no section of its own.
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, body),

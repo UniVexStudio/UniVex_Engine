@@ -78,7 +78,11 @@ TEST_F(WorldEnvironmentUVETest, AmbientSourceSelectsNoneFlatSkyAndEnvironmentMap
     EXPECT_NEAR(frame.skyAmbient.z, 0.56F, 1.0e-5F);
 }
 
-TEST_F(WorldEnvironmentUVETest, DefaultEnvironmentEnablesBloomSsaoAndARealSky) {
+// A default environment does not change the picture. Adding one used to switch the effects stack
+// on, so the act of adding an environment looked like a colour change; post-processing now starts
+// off, and an author turns on what they want. The sky and its ambient do resolve, because those are
+// the reason to add an environment in the first place.
+TEST_F(WorldEnvironmentUVETest, DefaultEnvironmentLightsTheSceneWithoutSwitchingTheEffectsOn) {
     EXPECT_TRUE(IsWorldEnvironment3DObjectComponentValidUVE(WorldEnvironment3DComponentUVE{}));
     const EntityUVE environment = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<WorldEnvironment3DComponentUVE>(environment, WorldEnvironment3DComponentUVE{});
@@ -86,7 +90,7 @@ TEST_F(WorldEnvironmentUVETest, DefaultEnvironmentEnablesBloomSsaoAndARealSky) {
     const WorldEnvironmentFrameUVE frame =
         ResolveWorldEnvironmentFrameUVE(entityManager, Math::Vector3UVE{0.05F, 0.05F, 0.05F});
     EXPECT_TRUE(frame.hasEnvironment);
-    EXPECT_TRUE(frame.postProcessingEnabled);
+    EXPECT_FALSE(frame.postProcessingEnabled);
     EXPECT_TRUE(frame.bloomEnabled);
     EXPECT_FLOAT_EQ(frame.bloomSoftKnee, 0.0F);
     EXPECT_EQ(frame.bloomMipCount, 1U);
