@@ -6,13 +6,23 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <limits>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
+#include "import_helpers_uve.h"
+
+#include "uve/asset/bmp_metadata_uve.h"
+#include "uve/asset/jpeg_metadata_uve.h"
+#include "uve/asset/png_metadata_uve.h"
+#include "uve/asset/tga_metadata_uve.h"
+#include "uve/asset/texture_mipmap_uve.h"
 #include "uve/asset/uve_file_envelope_uve.h"
 #include "uve/logging/logging_macros_uve.h"
 #include "uve/utilities/binary_buffer_uve.h"
@@ -445,6 +455,85 @@ bool SaveTextureAssetUVE(const TextureAssetUVE& texture, const std::filesystem::
         }
     }
     return WriteUveFileUVE(path, AssetKindUVE::Texture, payload);
+}
+
+namespace {
+
+/// One source image, bounded exactly as every image importer bounds it, so a load can never become
+/// a way around the limit the import path holds.
+constexpr std::uint64_t kMaximumSourceImageBytesUVE = 64ULL * 1024ULL * 1024ULL;
+
+/// The source images a texture reference may name instead of a published `.uvtex`: the same five
+/// forms the four decoders below read and the Inspector's picker offers.
+[[nodiscard]] bool IsSourceImageExtensionUVE(const std::string_view extension) noexcept {
+    return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp" ||
+           extension == ".tga";
+}
+
+/// Moves one decoder's result into `texture` under the metadata an importer would have stamped on
+/// it with default settings: RGBA8, sRGB, a colour map. A decoder that produced nothing usable
+/// leaves `texture` untouched and reports failure, so a half-decoded image never reaches the GPU as
+/// a texture with zero pixels in it.
+template <typename ImageUVE>
+[[nodiscard]] bool AdoptDecodedSourceImageUVE(ImageUVE& image, TextureAssetUVE& texture) {
+    if (image.width == 0U || image.height == 0U || image.pixels.empty()) {
+        return false;
+    }
+    texture.width = image.width;
+    texture.height = image.height;
+    texture.format = TextureAssetFormatUVE::RGBA8Unorm;
+    texture.colorSpace = TextureAssetColorSpaceUVE::Srgb;
+    texture.usage = TextureUsageUVE::Color;
+    texture.pixels = std::move(image.pixels);
+    return true;
+}
+
+} // namespace
+
+bool LoadTextureAssetSourceUVE(const std::filesystem::path& path, TextureAssetUVE& outTexture) {
+    std::string extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    if (!IsSourceImageExtensionUVE(extension)) {
+        // Everything else is either the envelope or not a texture at all; the envelope reader is
+        // the one that can say which, in the terms of the file it just opened.
+        return LoadTextureAssetUVE(path, outTexture);
+    }
+
+    std::vector<std::byte> sourceBytes;
+    if (!Detail::ReadBoundedSourceBytesUVE(path, "TextureAssetUVE", kMaximumSourceImageBytesUVE, sourceBytes)) {
+        return false;
+    }
+
+    TextureAssetUVE texture;
+    bool decoded = false;
+    if (extension == ".png") {
+        PngRgba8ImageUVE image;
+        decoded = DecodePngRgba8ImageUVE(sourceBytes, image) && AdoptDecodedSourceImageUVE(image, texture);
+    } else if (extension == ".jpg" || extension == ".jpeg") {
+        JpegRgba8ImageUVE image;
+        decoded = DecodeJpegRgba8ImageUVE(sourceBytes, image) && AdoptDecodedSourceImageUVE(image, texture);
+    } else if (extension == ".bmp") {
+        BmpRgba8ImageUVE image;
+        decoded = DecodeBmpRgba8ImageUVE(sourceBytes, image) && AdoptDecodedSourceImageUVE(image, texture);
+    } else {
+        TgaRgba8ImageUVE image;
+        decoded = DecodeTgaRgba8ImageUVE(sourceBytes, image) && AdoptDecodedSourceImageUVE(image, texture);
+    }
+    if (!decoded) {
+        UVE_ERROR("TextureAssetUVE: source image \"{}\" could not be decoded", path.string());
+        return false;
+    }
+
+    // Without a chain the map aliases badly the moment the surface is not facing the camera; the
+    // importer would have built one, and the importer's defaults are the ones taken above, so the
+    // two paths produce the same picture.
+    if (!GenerateTextureMipmapsUVE(texture, TextureMipmapFilterUVE::Box, 0U) || !IsTextureAssetValidUVE(texture)) {
+        UVE_ERROR("TextureAssetUVE: source image \"{}\" could not be completed into a texture", path.string());
+        return false;
+    }
+    outTexture = std::move(texture);
+    return true;
 }
 
 } // namespace UVE::Asset

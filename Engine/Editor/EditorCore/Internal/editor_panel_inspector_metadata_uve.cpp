@@ -940,9 +940,9 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
                         FilePickerRequestUVE request;
                         request.mode = FilePickerModeUVE::Open;
                         request.title = "Sky Texture";
-                        // The published texture, not a source image: this is the kind the row took
-                        // before it became a slot, and the renderer samples what the importer wrote.
-                        request.extensions = {".uvtex"};
+                        // Either form: a published .uvtex or the source image, which the texture
+                        // loader decodes itself - the panorama does not have to be imported first.
+                        request.extensions = {".uvtex", ".png", ".jpg", ".jpeg", ".bmp", ".tga"};
                         const Asset::ProjectFileSnapshotUVE project =
                             m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
                         const std::filesystem::path current =
@@ -1130,6 +1130,25 @@ namespace {
     return std::filesystem::path{};
 }
 
+/// The raw images a texture slot may name when nothing has imported them yet. The texture loader
+/// decodes each of these at read time, so a slot that holds one still draws the picture.
+[[nodiscard]] bool IsTextureSourceImagePathUVE(const std::filesystem::path& path) {
+    std::string extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp" ||
+           extension == ".tga";
+}
+
+/// The published form of a source image: `<stem>.uvtex` beside it. When it exists the picker offers
+/// that one row instead of both, because both are the same picture and the published file is the
+/// reference a material should hold.
+[[nodiscard]] bool HasPublishedTextureSiblingUVE(const std::filesystem::path& absoluteSource) {
+    std::error_code error;
+    return std::filesystem::is_regular_file(
+        absoluteSource.parent_path() / (absoluteSource.stem().string() + ".uvtex"), error);
+}
+
 /// "file:uvaudio,wav" -> {".uvaudio", ".wav"}.
 [[nodiscard]] std::vector<std::string> FileDrawerExtensionsUVE(std::string_view drawerId) {
     constexpr std::string_view kPrefix = "file:";
@@ -1180,12 +1199,17 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
         preview = path.empty() ? "(missing asset)" : path.stem().string();
     }
     const bool isMaterial = (extension == ".uvmaterial" || extension == ".uvmat");
-    const bool isTexture = (extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".tga");
+    // A texture reference names either the published .uvtex or the source image it came from, and
+    // the runtime reads both (see LoadTextureAssetSourceUVE), so the picker offers both. Offering
+    // only the sources is how a slot ended up pointing at a file the renderer could not open.
+    const bool isTexture = (extension == ".uvtex" || extension == ".png" || extension == ".jpg" ||
+                            extension == ".jpeg" || extension == ".bmp" || extension == ".tga");
     const bool isModel = (extension == ".uvmodel" || extension == ".glb" || extension == ".gltf" || extension == ".fbx" || extension == ".obj");
     const bool isShader = (extension == ".uvshader" || extension == ".glsl");
     const auto matchesExt = [&](const std::string& ext) {
         if (isMaterial) return ext == ".uvmaterial" || ext == ".uvmat";
-        if (isTexture) return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga";
+        if (isTexture) return ext == ".uvtex" || ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" ||
+                              ext == ".tga";
         if (isModel) return ext == ".uvmodel" || ext == ".glb" || ext == ".gltf" || ext == ".fbx" || ext == ".obj";
         if (isShader) return ext == ".uvshader" || ext == ".glsl";
         return ext == extension;
@@ -1244,7 +1268,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             request.mode = FilePickerModeUVE::Open;
             request.title = title.empty() ? (isMaterial ? "Browse Material" : ("Browse " + extension)) : title;
             request.extensions = isMaterial ? std::vector<std::string>{".uvmaterial", ".uvmat"}
-                               : isTexture ? std::vector<std::string>{".png", ".jpg", ".jpeg", ".tga"}
+                               : isTexture ? std::vector<std::string>{".uvtex", ".png", ".jpg", ".jpeg", ".bmp", ".tga"}
                                : isModel ? std::vector<std::string>{".glb", ".gltf", ".fbx", ".obj", ".uvmodel"}
                                : isShader ? std::vector<std::string>{".uvshader", ".glsl"}
                                : std::vector<std::string>{extension};
@@ -1261,7 +1285,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             request.mode = FilePickerModeUVE::Open;
             request.title = "Quick Import";
             request.extensions = isMaterial ? std::vector<std::string>{".uvmaterial", ".uvmat", ".mtl", ".png", ".jpg", ".jpeg", ".tga"}
-                                 : isTexture ? std::vector<std::string>{".png", ".jpg", ".jpeg", ".tga"}
+                                 : isTexture ? std::vector<std::string>{".png", ".jpg", ".jpeg", ".bmp", ".tga"}
                                  : isModel ? std::vector<std::string>{".fbx", ".glb", ".gltf", ".obj"}
                                  : isShader ? std::vector<std::string>{".uvshader", ".glsl"}
                                  : std::vector<std::string>{extension};
@@ -1309,6 +1333,11 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
                 if (!std::filesystem::is_regular_file(path, error)) {
                     continue;
                 }
+            } else if (isTexture && IsTextureSourceImagePathUVE(file.relativePath) &&
+                       HasPublishedTextureSiblingUVE(project.contentRoot / file.relativePath)) {
+                // Two rows for one picture would read as two textures. The .uvtex is offered on its
+                // own row, so the source stands down.
+                continue;
             } else if (matchesExt(file.relativePath.extension().string())) {
                 path = (project.contentRoot / file.relativePath).lexically_normal();
             } else {

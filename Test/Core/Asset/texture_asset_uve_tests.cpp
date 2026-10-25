@@ -8,8 +8,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <thread>
@@ -597,6 +599,159 @@ TEST(TextureAssetUVETest, EndToEnd_RegisterLoaderThenLoadUVE_ReachesLoadedWithMa
     EXPECT_EQ(loaded->colorSpace, original.colorSpace);
     EXPECT_EQ(loaded->usage, original.usage);
     EXPECT_EQ(loaded->pixels, original.pixels);
+
+    std::filesystem::remove(path);
+}
+
+namespace {
+
+void AppendBigEndianUint32UVE(std::vector<std::byte>& bytes, const std::uint32_t value) {
+    for (unsigned int shift = 24U;; shift -= 8U) {
+        bytes.push_back(std::byte{static_cast<unsigned char>((value >> shift) & 0xFFU)});
+        if (shift == 0U) {
+            break;
+        }
+    }
+}
+
+/// The CRC-32 a PNG chunk carries, computed here rather than pulled from zlib so this fixture
+/// stands on its own: the polynomial is the standard reflected one, seeded and finished the way
+/// the format states.
+[[nodiscard]] std::uint32_t PngCrc32UVE(const std::vector<std::byte>& bytes) {
+    std::uint32_t crc = 0xFFFFFFFFU;
+    for (const std::byte byte : bytes) {
+        crc ^= static_cast<std::uint32_t>(byte);
+        for (int bit = 0; bit < 8; ++bit) {
+            crc = (crc >> 1U) ^ ((crc & 1U) != 0U ? 0xEDB88320U : 0U);
+        }
+    }
+    return crc ^ 0xFFFFFFFFU;
+}
+
+void AppendPngChunkUVE(std::vector<std::byte>& png, const std::array<char, 4U>& type,
+                       const std::vector<std::byte>& payload) {
+    AppendBigEndianUint32UVE(png, static_cast<std::uint32_t>(payload.size()));
+    std::vector<std::byte> crcInput;
+    for (const char character : type) {
+        png.push_back(std::byte{static_cast<unsigned char>(character)});
+        crcInput.push_back(std::byte{static_cast<unsigned char>(character)});
+    }
+    png.insert(png.end(), payload.begin(), payload.end());
+    crcInput.insert(crcInput.end(), payload.begin(), payload.end());
+    AppendBigEndianUint32UVE(png, PngCrc32UVE(crcInput));
+}
+
+/// A 2x2 RGBA8 PNG whose four pixels are all different, so a decode that produced the fallback -
+/// or the wrong orientation, or one channel for another - cannot pass as the real picture.
+/// Lines: (16,32,48), (64,80,96) / (112,128,144), (160,176,192), each opaque.
+[[nodiscard]] std::vector<std::byte> MakeTwoByTwoRgba8PngUVE() {
+    std::vector<std::byte> png{std::byte{0x89}, std::byte{0x50}, std::byte{0x4E}, std::byte{0x47},
+                               std::byte{0x0D}, std::byte{0x0A}, std::byte{0x1A}, std::byte{0x0A}};
+    AppendPngChunkUVE(png, {'I', 'H', 'D', 'R'},
+                      {std::byte{0}, std::byte{0}, std::byte{0}, std::byte{2}, std::byte{0}, std::byte{0},
+                       std::byte{0}, std::byte{2}, std::byte{8}, std::byte{6}, std::byte{0}, std::byte{0},
+                       std::byte{0}});
+    const std::array<std::uint8_t, 18U> raw{0U,
+                                            16U, 32U, 48U, 255U, 64U, 80U, 96U, 255U,
+                                            0U,
+                                            112U, 128U, 144U, 255U, 160U, 176U, 192U, 255U};
+    // One stored (uncompressed) deflate block, so the fixture needs no compressor to build: a zlib
+    // stream header, the block header with its length pair, the scanlines, and the Adler-32 of the
+    // data. The decoder accepts stored blocks exactly as it accepts compressed ones.
+    std::uint32_t sumA = 1U;
+    std::uint32_t sumB = 0U;
+    for (const std::uint8_t value : raw) {
+        sumA = (sumA + value) % 65521U;
+        sumB = (sumB + sumA) % 65521U;
+    }
+    const auto lengthLow = static_cast<unsigned char>(raw.size() & 0xFFU);
+    const auto lengthHigh = static_cast<unsigned char>((raw.size() >> 8U) & 0xFFU);
+    std::vector<std::byte> compressed{std::byte{0x78}, std::byte{0x01}, std::byte{0x01},
+                                      std::byte{lengthLow}, std::byte{lengthHigh},
+                                      std::byte{static_cast<unsigned char>(~lengthLow & 0xFFU)},
+                                      std::byte{static_cast<unsigned char>(~lengthHigh & 0xFFU)}};
+    compressed.insert(compressed.end(), reinterpret_cast<const std::byte*>(raw.data()),
+                      reinterpret_cast<const std::byte*>(raw.data()) + raw.size());
+    AppendBigEndianUint32UVE(compressed, (sumB << 16U) | sumA);
+    AppendPngChunkUVE(png, {'I', 'D', 'A', 'T'}, compressed);
+    AppendPngChunkUVE(png, {'I', 'E', 'N', 'D'}, {});
+    return png;
+}
+
+[[nodiscard]] bool WriteTestBytesUVE(const std::filesystem::path& path, const std::vector<std::byte>& bytes) {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output.is_open()) {
+        return false;
+    }
+    output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    return output.good();
+}
+
+} // namespace
+
+// A texture slot may hold the source image the author picked rather than a published .uvtex: the
+// Inspector's picker offers both, and a raw PNG used to reach the renderer's strict envelope reader,
+// fail there, and be replaced by the 1x1 white fallback - a surface showing its flat albedo colour
+// where its albedo map should be. The source-aware reader decodes it into the texture the importer
+// would have written for it with default settings, mip chain included.
+TEST(TextureAssetUVETest, SourceAwareReaderDecodesARawPngTheStrictReaderRefuses) {
+    const std::filesystem::path path = "uve_texture_asset_tests_raw_source.png";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(WriteTestBytesUVE(path, MakeTwoByTwoRgba8PngUVE()));
+
+    // The envelope reader is still the strict one: this file is not a texture envelope, and saying
+    // so is the behavior cook and pack rely on.
+    TextureAssetUVE strict;
+    EXPECT_FALSE(LoadTextureAssetUVE(path, strict));
+    EXPECT_EQ(strict.width, 0U);
+
+    TextureAssetUVE decoded;
+    ASSERT_TRUE(LoadTextureAssetSourceUVE(path, decoded));
+    EXPECT_EQ(decoded.width, 2U);
+    EXPECT_EQ(decoded.height, 2U);
+    EXPECT_EQ(decoded.format, TextureAssetFormatUVE::RGBA8Unorm);
+    // What the importer stamps on a colour map by default, so a source read at load time and the
+    // same source imported first render identically.
+    EXPECT_EQ(decoded.colorSpace, TextureAssetColorSpaceUVE::Srgb);
+    EXPECT_EQ(decoded.usage, TextureUsageUVE::Color);
+    ASSERT_EQ(decoded.pixels.size(), 2U * 2U * 4U);
+    EXPECT_EQ(decoded.pixels[0], std::byte{16});
+    EXPECT_EQ(decoded.pixels[1], std::byte{32});
+    EXPECT_EQ(decoded.pixels[2], std::byte{48});
+    EXPECT_EQ(decoded.pixels[3], std::byte{255});
+    EXPECT_EQ(decoded.pixels[12], std::byte{160});
+    EXPECT_EQ(decoded.pixels[13], std::byte{176});
+    EXPECT_EQ(decoded.pixels[14], std::byte{192});
+    EXPECT_EQ(decoded.pixels[15], std::byte{255});
+    // 2x2 has one level below it; a map without a chain aliases as soon as the surface is not
+    // facing the camera, which is the whole reason the importer builds one.
+    ASSERT_EQ(decoded.mipLevels.size(), 1U);
+    EXPECT_EQ(decoded.mipLevels.front().width, 1U);
+    EXPECT_EQ(decoded.mipLevels.front().height, 1U);
+    EXPECT_TRUE(IsTextureAssetValidUVE(decoded));
+
+    std::filesystem::remove(path);
+}
+
+// A published .uvtex is what a material should hold, and the source-aware reader must not decode,
+// re-stamp or otherwise rewrite it: its colour space, usage and mip chain are the importer's answer
+// and are read back exactly as the envelope states them.
+TEST(TextureAssetUVETest, SourceAwareReaderStillReadsAPublishedEnvelopeUnchanged) {
+    const std::filesystem::path path = "uve_texture_asset_tests_published_source_reader.uvtex";
+    std::filesystem::remove(path);
+    TextureAssetUVE published = MakeTestTextureUVE();
+    ASSERT_TRUE(GenerateTextureMipmapsUVE(published, TextureMipmapFilterUVE::Box));
+    ASSERT_TRUE(SaveTextureAssetUVE(published, path));
+
+    TextureAssetUVE loaded;
+    ASSERT_TRUE(LoadTextureAssetSourceUVE(path, loaded));
+    EXPECT_EQ(loaded.width, published.width);
+    EXPECT_EQ(loaded.height, published.height);
+    EXPECT_EQ(loaded.colorSpace, published.colorSpace);
+    EXPECT_EQ(loaded.usage, published.usage);
+    EXPECT_EQ(loaded.pixels, published.pixels);
+    ASSERT_EQ(loaded.mipLevels.size(), published.mipLevels.size());
+    EXPECT_EQ(loaded.mipLevels.front().pixels, published.mipLevels.front().pixels);
 
     std::filesystem::remove(path);
 }

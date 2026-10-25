@@ -382,7 +382,12 @@ void EngineCoreUVE::TransitionStateUVE(EngineStateUVE newState) {
 void EngineCoreUVE::RegisterBuiltInAssetLoadersUVE() {
     m_assetManager->RegisterLoaderUVE<Asset::MeshAssetUVE>(&Asset::LoadMeshAssetUVE,
         [](const Asset::MeshAssetUVE& value) { return Asset::AssetResidentBytesUVE(value); });
-    m_assetManager->RegisterLoaderUVE<Asset::TextureAssetUVE>(&Asset::LoadTextureAssetUVE,
+    // The source-aware reader, not the strict envelope one: a material's texture slot may name the
+    // PNG the author picked as easily as a published .uvtex, and a loader that only understands the
+    // envelope turns the first case into the white fallback - a surface showing its flat colour
+    // where its albedo map should be. Cook-time and pack tools keep the strict reader, because a
+    // cooked project must reference published textures only.
+    m_assetManager->RegisterLoaderUVE<Asset::TextureAssetUVE>(&Asset::LoadTextureAssetSourceUVE,
         [](const Asset::TextureAssetUVE& value) { return Asset::AssetResidentBytesUVE(value); });
     m_assetManager->RegisterLoaderUVE<Asset::ShaderAssetUVE>(&Asset::LoadShaderAssetUVE,
         [](const Asset::ShaderAssetUVE& value) { return Asset::AssetResidentBytesUVE(value); });

@@ -94,4 +94,21 @@ struct TextureAssetUVE {
 /// rejected before opening the destination; publication failures are reported and return false.
 [[nodiscard]] bool SaveTextureAssetUVE(const TextureAssetUVE& texture, const std::filesystem::path& path);
 
+/// Loads `path` for a consumer that only holds a reference to a texture: a published `.uvtex` is
+/// read exactly as LoadTextureAssetUVE reads it, and a raw PNG/JPEG/BMP/TGA source image is decoded
+/// here and given a mip chain on the spot.
+///
+/// This exists next to the envelope reader because a texture reference can legitimately name either
+/// one. A material stores a GUID, and the Inspector's texture picker accepts the image the author
+/// actually has - which is usually the source, not something already imported. Handing that GUID to
+/// the strict reader meant the renderer could not read what the picker had just written: the map
+/// became the 1x1 white fallback and the surface showed its flat albedo colour instead of its
+/// albedo texture. The envelope stays the fast path, carrying the colour space, the usage and the
+/// mip chain the importer built; a source image is read as the importer would have read it with
+/// default settings - an sRGB colour map, box-filtered down to 1x1 - so the two agree.
+///
+/// Bounded like the importers: a source image over 64 MB, an unsupported form, or a decode that
+/// fails returns false and leaves `outTexture` untouched.
+[[nodiscard]] bool LoadTextureAssetSourceUVE(const std::filesystem::path& path, TextureAssetUVE& outTexture);
+
 } // namespace UVE::Asset
