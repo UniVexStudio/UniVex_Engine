@@ -1812,6 +1812,22 @@ private:
     [[nodiscard]] bool IsReparentModeChangeAllowedUVE() const noexcept;
     [[nodiscard]] bool IsHierarchyFilterActiveUVE() const noexcept;
     [[nodiscard]] bool IsHierarchyEntityVisibleUVE(Scene::EntityUVE entity) const;
+    /// True when an Outliner row stands for a whole entity asset that has been placed in the level,
+    /// rather than for an object the level itself owns.
+    ///
+    /// Such a row is a leaf here. The objects inside it are the entity's own scene - they belong to
+    /// the Entity Editor, and showing them in the level's tree made a placed entity look like a
+    /// folder whose contents were loose objects the level could select, move and delete. They are
+    /// still in the document, still drawn and still simulated; the level simply addresses the
+    /// entity as one thing, the same way it addresses a mesh as one thing rather than as its
+    /// triangles. While the Entity Editor has the entity open it IS the document, so nothing is
+    /// sealed and its own tree is drawn in full.
+    [[nodiscard]] bool IsSealedHierarchyRowUVE(Scene::EntityUVE entity) const noexcept;
+    /// The row that actually represents `entity` in the Outliner: the entity itself, or - when it
+    /// lives inside a placed entity - the instance that owns it. Selecting, focusing and inspecting
+    /// go through this, so a click that lands inside a placed entity cannot select an object the
+    /// tree does not show.
+    [[nodiscard]] Scene::EntityUVE ResolveHierarchyRowOwnerUVE(Scene::EntityUVE entity) const noexcept;
     void RebuildHierarchyFilterCacheUVE();
     void InvalidateHierarchyFilterCacheUVE() noexcept;
     void CancelHierarchyRenameUVE() noexcept;

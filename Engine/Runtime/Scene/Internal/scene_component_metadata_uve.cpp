@@ -454,6 +454,13 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         }
         return "BoxMesh3D";
     };
+    // A primitive is the MESH, not a second feature bolted to it. On a MeshInstance3D the mesh
+    // section already picks the shape and authors its material and colour, so drawing this section
+    // beside it showed every one of its three rows twice - the duplicate an author had to read
+    // past to find out which "Material" was the live one. Nested, the host draws it and drops the
+    // section; on an object that has a primitive and no mesh component (BoxMesh3D and friends) it
+    // still stands on its own, so nothing becomes unreachable.
+    primitive.nestedUnderTypeIds = {"component.mesh"};
     AddValidatedUVE<PrimitiveMeshComponentUVE, &IsPrimitiveMeshComponentValidUVE>(entries, std::move(primitive));
 
     AddValidatedUVE<WorldEnvironment3DComponentUVE, &IsWorldEnvironment3DObjectComponentValidUVE>(

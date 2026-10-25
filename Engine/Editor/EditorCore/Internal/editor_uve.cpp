@@ -153,6 +153,28 @@ constexpr ImWchar kIconFontGlyphRangesUVE[] = {
     }
     return Scene::BoxMesh3DUVE::DefaultColliderHalfExtentsUVE();
 }
+
+// Half-extents alone cannot describe a round shape. A capsule or cylinder collider carries radius
+// and height as well, and the field defaults (radius 0.5, height 1.0) put the two capsule caps
+// exactly together - a sphere with no barrel. A primitive mesh wrapped by a collider born on the
+// defaults is therefore wrapped in a ball, which is why picking a Capsule mesh used to produce a
+// collider that did not look like the thing on screen.
+//
+// One function for both paths that can create such a pairing - the mesh being changed under an
+// existing collider, and a collider being added to an existing mesh - so the two cannot drift into
+// different ideas of what "the size of the mesh" means.
+void FitColliderToPrimitiveKindUVE(Scene::ColliderComponentUVE& collider,
+                                   const Scene::PrimitiveMeshKindUVE kind) noexcept {
+    const Math::Vector3UVE halfExtents = PrimitiveColliderHalfExtentsUVE(kind);
+    collider.halfExtents = halfExtents;
+    if (collider.shapeType == Scene::ColliderShapeTypeUVE::Capsule ||
+        collider.shapeType == Scene::ColliderShapeTypeUVE::Cylinder) {
+        collider.radius = halfExtents.x;
+        collider.height = halfExtents.y * 2.0F;
+    } else if (collider.shapeType == Scene::ColliderShapeTypeUVE::Sphere) {
+        collider.radius = halfExtents.x;
+    }
+}
 constexpr float kGizmoAxisLengthUVE = 1.25F;
 constexpr float kGizmoHandleRadiusPixelsUVE = 12.0F;
 constexpr float kTrackballRadiusPixelsUVE = 42.0F;
@@ -1239,7 +1261,11 @@ void EditorUVE::SelectEntityUVE(const Scene::EntityUVE entity) noexcept {
         ClearSelectionUVE();
         return;
     }
-    RestoreSelectionUVE(EditorSelectionSnapshotUVE{{entity}, entity});
+    // An object inside a placed entity is not a row the Outliner shows, so selecting it would leave
+    // the tree with nothing highlighted and the Inspector describing something the author cannot
+    // see. The instance is the thing the level addresses, so that is what gets selected.
+    const Scene::EntityUVE row = ResolveHierarchyRowOwnerUVE(entity);
+    RestoreSelectionUVE(EditorSelectionSnapshotUVE{{row}, row});
 }
 
 void EditorUVE::ToggleEntitySelectionUVE(const Scene::EntityUVE entity) noexcept {
@@ -1247,15 +1273,16 @@ void EditorUVE::ToggleEntitySelectionUVE(const Scene::EntityUVE entity) noexcept
         return;
     }
 
-    const auto selectedIt = std::find(m_selectedEntities.begin(), m_selectedEntities.end(), entity);
+    const Scene::EntityUVE row = ResolveHierarchyRowOwnerUVE(entity);
+    const auto selectedIt = std::find(m_selectedEntities.begin(), m_selectedEntities.end(), row);
     if (selectedIt == m_selectedEntities.end()) {
-        m_selectedEntities.push_back(entity);
-        m_selectedEntity = entity;
+        m_selectedEntities.push_back(row);
+        m_selectedEntity = row;
         CancelHierarchyRenameUVE();
         return;
     }
 
-    const bool removedActive = entity == m_selectedEntity;
+    const bool removedActive = row == m_selectedEntity;
     m_selectedEntities.erase(selectedIt);
     if (m_selectedEntities.empty()) {
         m_selectedEntity = Scene::kInvalidEntityUVE;
@@ -1521,8 +1548,22 @@ bool EditorUVE::ApplySceneComponentStateUVE(
             return apply.template operator()<Scene::MeshComponentUVE>();
         case EditorSceneComponentKindUVE::Light:
             return apply.template operator()<Scene::LightComponentUVE>();
-        case EditorSceneComponentKindUVE::Collider:
-            return apply.template operator()<Scene::ColliderComponentUVE>();
+        case EditorSceneComponentKindUVE::Collider: {
+            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+            const bool existed = entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity);
+            const bool applied = apply.template operator()<Scene::ColliderComponentUVE>();
+            // Born on an object that is already a primitive mesh, the collider takes that mesh's
+            // shape rather than the field defaults - the same rule the Inspector applies when it is
+            // the mesh that changes. Only on the frame it is added: an author who then resizes it
+            // keeps what they set, because nothing here runs again for this entity.
+            if (applied && !existed && entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity) &&
+                entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
+                FitColliderToPrimitiveKindUVE(
+                    entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(entity),
+                    entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity).kind);
+            }
+            return applied;
+        }
         case EditorSceneComponentKindUVE::Rigid3D:
             return apply.template operator()<Scene::Rigid3DComponentUVE>();
         case EditorSceneComponentKindUVE::AudioSource:
@@ -2989,8 +3030,8 @@ bool EditorUVE::ApplyPrimitiveMeshStateUVE(const Scene::EntityUVE entity,
     }
     entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity) = primitive;
     if (entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity)) {
-        entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(entity).halfExtents =
-            PrimitiveColliderHalfExtentsUVE(primitive.kind);
+        FitColliderToPrimitiveKindUVE(entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(entity),
+                                      primitive.kind);
     }
     return true;
 }
@@ -4929,6 +4970,39 @@ bool EditorUVE::IsHierarchyEntityVisibleUVE(const Scene::EntityUVE entity) const
                m_cachedHierarchyVisibleEntities.end();
 }
 
+bool EditorUVE::IsSealedHierarchyRowUVE(const Scene::EntityUVE entity) const noexcept {
+    if (m_entityEditSession.has_value() || !IsDocumentEntityUVE(entity)) {
+        return false;
+    }
+    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(entity)) {
+        return false;
+    }
+    // A record that names no asset is not an instance of anything - a half-restored entity, or one
+    // whose source was never registered. It owns its children like any other object.
+    return entityManager.GetComponentUVE<Scene::PrefabInstanceComponentUVE>(entity).sourcePrefabGuid !=
+           Asset::kInvalidAssetGuidUVE;
+}
+
+Scene::EntityUVE EditorUVE::ResolveHierarchyRowOwnerUVE(const Scene::EntityUVE entity) const noexcept {
+    if (!IsDocumentEntityUVE(entity)) {
+        return entity;
+    }
+    Scene::EntityUVE cursor = entity;
+    Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+    // Bounded by the entity count so a malformed parent link cannot hang selection. The nearest
+    // sealed ancestor wins: a placed entity inside another placed entity belongs to the inner one.
+    for (std::size_t guard = 0U; guard < 4096U && TryGetDocumentParentUVE(cursor, parent) &&
+                                 parent != Scene::kInvalidEntityUVE;
+         ++guard) {
+        if (IsSealedHierarchyRowUVE(parent)) {
+            return parent;
+        }
+        cursor = parent;
+    }
+    return entity;
+}
+
 void EditorUVE::InvalidateHierarchyFilterCacheUVE() noexcept {
     m_hierarchyFilterCacheDirty = true;
 }
@@ -4966,8 +5040,12 @@ void EditorUVE::RebuildHierarchyFilterCacheUVE() {
                                  (m_hierarchyFilter == "root" && isRoot);
         bool visible = typeMatches && nameMatches;
         Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-        for (const Scene::EntityUVE child : m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity)) {
-            visible = self(self, child) || visible;
+        // A sealed row shows none of its children, so a search must not reveal it because one of
+        // them matched: the match would open a row that still draws nothing.
+        if (!IsSealedHierarchyRowUVE(entity)) {
+            for (const Scene::EntityUVE child : m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity)) {
+                visible = self(self, child) || visible;
+            }
         }
         if (visible) {
             m_cachedHierarchyVisibleEntities.push_back(entity);
