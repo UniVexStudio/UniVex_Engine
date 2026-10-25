@@ -8,6 +8,10 @@
 #include <iostream>
 #include <sstream>
 
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
+
 namespace UVE::Debug {
 
 namespace {
@@ -48,16 +52,59 @@ void WriteLineUVE(std::ostream& out, const LogMessageUVE& message, bool includeT
 
 } // namespace
 
+#if defined(__ANDROID__)
+
+namespace {
+
+/// The Android log priority a message level belongs to.
+[[nodiscard]] int AndroidPriorityUVE(const LogLevelUVE level) noexcept {
+    switch (level) {
+        case LogLevelUVE::Fatal:
+        case LogLevelUVE::Error:
+            return ANDROID_LOG_ERROR;
+        case LogLevelUVE::Warning:
+            return ANDROID_LOG_WARN;
+        case LogLevelUVE::Info:
+            return ANDROID_LOG_INFO;
+        case LogLevelUVE::Debug:
+            return ANDROID_LOG_DEBUG;
+        case LogLevelUVE::Trace:
+        default:
+            return ANDROID_LOG_VERBOSE;
+    }
+}
+
+} // namespace
+
+#endif
+
 void ConsoleSinkUVE::Write(const LogMessageUVE& message) {
-    std::ostream& out = (message.level >= LogLevelUVE::Warning) ? std::cerr : std::cout;
     const std::lock_guard<std::mutex> lock(m_mutex);
+#if defined(__ANDROID__)
+    // A process's stdout and stderr do not reach logcat: an Android app has no console, so every
+    // engine log written the desktop way went nowhere at all. That made a black screen on a phone
+    // unanswerable - the shader that failed to compile, the GL context that could not be created
+    // and the reason Load() returned false were all printed to a stream nobody could read.
+    std::ostringstream line;
+    WriteLineUVE(line, message, /*includeTimestamp=*/false);
+    std::string text = line.str();
+    // __android_log_write terminates the entry itself; keeping the shared writer's newline would
+    // put an empty line between every pair of logcat entries.
+    if (!text.empty() && text.back() == '\n') text.pop_back();
+    __android_log_write(AndroidPriorityUVE(message.level), "UniVex", text.c_str());
+#else
+    std::ostream& out = (message.level >= LogLevelUVE::Warning) ? std::cerr : std::cout;
     WriteLineUVE(out, message, /*includeTimestamp=*/false);
+#endif
 }
 
 void ConsoleSinkUVE::Flush() {
     const std::lock_guard<std::mutex> lock(m_mutex);
+#if !defined(__ANDROID__)
+    // Logcat has no client-side buffer to drain; std::cout is not used there at all.
     std::cout.flush();
     std::cerr.flush();
+#endif
 }
 
 FileSinkUVE::FileSinkUVE(const std::filesystem::path& filePath)

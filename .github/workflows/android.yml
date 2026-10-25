@@ -1,0 +1,227 @@
+name: Android Runtime
+
+# The Android runtime has its own workflow because it answers a different question from CI: not
+# "does the engine compile and pass its tests" but "does the APK somebody can install put a picture
+# on that person's screen". That question is about the file that gets installed, so every job here
+# builds a real signed APK and, on x86_64, installs it and looks at the pixels.
+#
+# Two APKs are built for every ABI, because a black screen has two very different causes:
+#
+#   Demo   - no cooked project. The runtime's own scene: a camera, a cube and the "touch the screen"
+#            label. If this one is black, the fault is the engine, the EGL surface or the driver.
+#   Cooked - Samples/CookedRuntimeSmoke packed into the asset index. If the demo renders and this one
+#            does not, the fault is the packed project rather than the runtime.
+#
+# Neither APK used to be checked for being visibly lit: the lifecycle markers could all be present
+# while the phone showed nothing. smoke_runtime.py now reads the framebuffer back and fails when it
+# is dark, and greps for the runtime's own UVE_ANDROID_FAILED marker, so a black screen turns this
+# workflow red instead of the phone.
+on:
+  push:
+    paths:
+      - '.github/workflows/android.yml'
+      - 'Engine/**'
+      - 'Samples/CookedRuntimeSmoke/**'
+      - 'CMakeLists.txt'
+  pull_request:
+    paths:
+      - '.github/workflows/android.yml'
+      - 'Engine/**'
+      - 'Samples/CookedRuntimeSmoke/**'
+      - 'CMakeLists.txt'
+  workflow_dispatch:
+    inputs:
+      create_artifacts:
+        description: 'Create downloadable APK and diagnostic artifacts (on by default)'
+        type: boolean
+        default: true
+
+# On by default: set the repository variable CREATE_ARTIFACTS to 'false' to stop the apk upload, or
+# pass create_artifacts=false to a manual run. Logcat and screenshots follow the same switch.
+env:
+  UNIVEX_CREATE_ARTIFACTS: ${{ vars.CREATE_ARTIFACTS != 'false' }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    name: Android / ${{ matrix.abi }} / Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, x86_64]
+    env:
+      ANDROID_AVD_HOME: /tmp/univex-android-avds
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Install pinned Android toolchain
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865'
+
+      - name: Build the demo apk
+        # No --cooked-project on purpose: this is the build a person can install and immediately
+        # see something in, without authoring a project first.
+        run: >-
+          python3 Engine/Tools/android/build_apk.py --sdk "$ANDROID_HOME"
+          --build-dir /tmp/univex-android-demo --abi ${{ matrix.abi }} --jobs 2
+
+      - name: Build the cooked apk
+        # --native-build-dir reuses the library the step above just built, so this is packaging: the
+        # asset index, aapt2, alignment and signing.
+        run: >-
+          python3 Engine/Tools/android/build_apk.py --sdk "$ANDROID_HOME"
+          --build-dir /tmp/univex-android-cooked
+          --native-build-dir /tmp/univex-android-demo/native
+          --cooked-project Samples/CookedRuntimeSmoke/sample.uvproject
+          --abi ${{ matrix.abi }} --jobs 2
+
+      - name: Check both apks carry this abi's library
+        # build_apk.py already verifies signature and alignment on the APK it writes. What it cannot
+        # know is whether a stale staging directory produced an APK for the other ABI, which installs
+        # cleanly and then fails at dlopen on a real phone - and the emulator job runs x86_64 only,
+        # so it would never see the arm64 mistake.
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variant in demo cooked; do
+            apk="/tmp/univex-android-${variant}/univex-runtime-${{ matrix.abi }}.apk"
+            test -f "${apk}"
+            unzip -l "${apk}" | grep -q "lib/${{ matrix.abi }}/libunivex_android.so"
+            echo "${variant}: $(stat -c%s "${apk}") bytes, lib/${{ matrix.abi }} present"
+          done
+
+      - name: Prepare the accelerated emulator
+        if: matrix.abi == 'x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm
+          sudo chmod a+rw /dev/kvm
+          sdkmanager 'emulator' 'system-images;android-29;default;x86_64'
+          "$ANDROID_HOME/emulator/emulator" -no-window -no-audio -version
+          "$ANDROID_HOME/emulator/emulator" -no-window -accel-check
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force --name univex-android --path "$ANDROID_AVD_HOME/univex-android.avd" --package 'system-images;android-29;default;x86_64'
+          sed -i 's/^disk.dataPartition.size=.*/disk.dataPartition.size=2G/' "$ANDROID_AVD_HOME/univex-android.avd/config.ini"
+          printf 'avd.ini.encoding=UTF-8\npath=/tmp/univex-android-avds/univex-android.avd\ntarget=android-29\n' > "$ANDROID_AVD_HOME/univex-android.ini"
+          "$ANDROID_HOME/emulator/emulator" -no-window -list-avds | grep -Fx univex-android
+
+      - name: Install and watch both apks on the emulator
+        # Boot, install, smoke and shut down in one step on purpose: the emulator is a child of this
+        # shell, and a later step would find it already dead. Both builds are smoked even when the
+        # first one fails - "the demo is black but the cooked one renders" and its opposite are two
+        # different bugs, and only running both tells them apart.
+        if: matrix.abi == 'x86_64'
+        shell: bash
+        run: |
+          set -uo pipefail
+          "$ANDROID_HOME/emulator/emulator" -avd univex-android -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader -memory 2048 -cores 2 > /tmp/univex-emulator.log 2>&1 &
+          emulator_pid=$!
+          trap 'adb -s emulator-5554 emu kill || true; kill "$emulator_pid" 2>/dev/null || true' EXIT
+          if ! timeout 120 adb -s emulator-5554 wait-for-device; then
+            cat /tmp/univex-emulator.log
+            exit 1
+          fi
+          booted=false
+          for attempt in $(seq 1 240); do
+            if [ "$(adb -s emulator-5554 shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; then
+              booted=true
+              break
+            fi
+            sleep 2
+          done
+          if [ "$booted" != true ]; then
+            tail -60 /tmp/univex-emulator.log
+            exit 1
+          fi
+          status=0
+          # The demo has no project content, so a failure here is the runtime itself.
+          python3 Engine/Tools/android/smoke_runtime.py \
+            --adb "$ANDROID_HOME/platform-tools/adb" --serial emulator-5554 \
+            --apk /tmp/univex-android-demo/univex-runtime-x86_64.apk \
+            --report /tmp/univex-android-demo-smoke.json \
+            --screenshot /tmp/univex-android-demo.png || status=1
+          # Same runtime, packed project. A failure here with a green demo is the content.
+          # The two apks are signed with the debug key of their own build directory, and Android
+          # refuses to replace an installed package whose signing key changed, so the demo has to go
+          # first. Nothing is lost: this is a fresh emulator in a fresh job.
+          adb -s emulator-5554 uninstall com.univex.runtime > /dev/null 2>&1 || true
+          python3 Engine/Tools/android/smoke_runtime.py \
+            --adb "$ANDROID_HOME/platform-tools/adb" --serial emulator-5554 \
+            --apk /tmp/univex-android-cooked/univex-runtime-x86_64.apk \
+            --report /tmp/univex-android-cooked-smoke.json \
+            --screenshot /tmp/univex-android-cooked.png \
+            --expect-cooked-project --memory-report /tmp/univex-android-meminfo.txt || status=1
+          # Dump the device log while the emulator is still alive; the trap above ends it.
+          adb -s emulator-5554 logcat -d -s UniVex:V '*:S' > /tmp/univex-android-univex.txt 2>&1 || true
+          adb -s emulator-5554 logcat -d > /tmp/univex-android-logcat.txt 2>&1 || true
+          cat /tmp/univex-android-univex.txt || true
+          # One annotation per apk, so the Checks tab names which build was black instead of making
+          # somebody open the raw log to find out. The report is written with json.dumps(indent=2),
+          # which is why these are single-line matches rather than a JSON parse in the shell.
+          for variant in demo cooked; do
+            report="/tmp/univex-android-${variant}-smoke.json"
+            if [ ! -f "${report}" ]; then
+              continue
+            fi
+            if grep -q '^  "passed": true$' "${report}"; then
+              echo "::notice::${variant} apk passed"
+            else
+              reason="$(sed -n 's/^  "error": "\(.*\)",*$/\1/p' "${report}" | head -1)"
+              echo "::error title=${variant} apk failed::${reason:-no reason recorded}"
+            fi
+          done
+          exit "$status"
+
+      - name: Upload the demo apk
+        if: env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
+            (github.event_name != 'workflow_dispatch' || inputs.create_artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: UniVex-Android-${{ matrix.abi }}-Demo
+          path: /tmp/univex-android-demo/univex-runtime-${{ matrix.abi }}.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload the cooked apk
+        if: env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
+            (github.event_name != 'workflow_dispatch' || inputs.create_artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: UniVex-Android-${{ matrix.abi }}-Cooked
+          path: /tmp/univex-android-cooked/univex-runtime-${{ matrix.abi }}.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload the smoke evidence
+        # Uploaded even when the smoke failed - especially then: the screenshot of the black screen
+        # and the logcat around it are the only things that explain it afterwards.
+        if: always() && matrix.abi == 'x86_64' && env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
+            (github.event_name != 'workflow_dispatch' || inputs.create_artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: UniVex-Android-${{ matrix.abi }}-Smoke
+          path: |
+            /tmp/univex-android-demo-smoke.json
+            /tmp/univex-android-cooked-smoke.json
+            /tmp/univex-android-demo.png
+            /tmp/univex-android-cooked.png
+            /tmp/univex-android-meminfo.txt
+            /tmp/univex-android-univex.txt
+            /tmp/univex-android-logcat.txt
+            /tmp/univex-emulator.log
+          if-no-files-found: ignore
+          retention-days: 7

@@ -38,6 +38,13 @@ def main():
         deadline = time.monotonic() + args.timeout
         while time.monotonic() < deadline:
             text = logs()
+            # A rejected cooked project still starts - the runtime falls back to its own scene - so
+            # waiting for the loaded marker would sit here until the timeout with the answer already
+            # on the device. Fail on it now, with the reason the runtime gave.
+            if 'UVE_ANDROID_COOKED_PROJECT_REJECTED' in text:
+                reason = next(line for line in text.splitlines()
+                              if 'UVE_ANDROID_COOKED_PROJECT_REJECTED' in line)
+                raise RuntimeError('The runtime rejected the cooked project: ' + reason.strip())
             if text.count(marker) >= minimum:
                 print(marker, flush=True)
                 report['checks'].append(marker)
@@ -45,23 +52,98 @@ def main():
             time.sleep(1)
         raise RuntimeError(f'Missing native evidence: {marker}')
 
-    def wait_for_visible_scene():
-        deadline = time.monotonic() + args.timeout
+    def sample_screen():
+        """Return (width, height, pixel reader) for a fresh device screenshot, or None."""
+        raw = subprocess.run([args.adb, '-s', args.serial, 'exec-out', 'screencap'],
+                             capture_output=True, check=True, timeout=30).stdout
+        if len(raw) < 12:
+            return None
+        width, height, pixel_format = struct.unpack_from('<III', raw)
+        header = len(raw) - width * height * 4
+        if width <= 0 or height <= 0 or pixel_format not in (1, 2) or header not in (12, 16):
+            return None
+
+        def pixel(x, y):
+            offset = header + (y * width + x) * 4
+            return raw[offset], raw[offset + 1], raw[offset + 2]
+
+        return width, height, pixel
+
+    def screen_samples():
+        """Read the device framebuffer.
+
+        Returns (luminance of a 10x10 sample grid, centre pixel) or None when the screencap cannot be
+        parsed. Format 1 is RGBA_8888 and 2 is RGBX_8888; anything else, or a header that does not
+        match the payload size, means this device's screencap is not something we can read.
+        """
+        raw = subprocess.run([args.adb, '-s', args.serial, 'exec-out', 'screencap'],
+                             capture_output=True, check=True, timeout=30).stdout
+        if len(raw) < 12:
+            return None
+        width, height, pixel_format = struct.unpack_from('<III', raw)
+        header = len(raw) - width * height * 4
+        if width <= 0 or height <= 0 or pixel_format not in (1, 2) or header not in (12, 16):
+            return None
+
+        def sample(x, y):
+            offset = header + (y * width + x) * 4
+            return raw[offset], raw[offset + 1], raw[offset + 2]
+
+        grid = []
+        for row in range(1, 11):
+            for column in range(1, 11):
+                red, green, blue = sample(width * column // 11, height * row // 11)
+                grid.append((red * 299 + green * 587 + blue * 114) // 1000)
+        return grid, sample(width // 2, height // 2)
+
+    def wait_for_screen_with_content():
+        """Fail when the device is showing an empty frame.
+
+        This is the shape of the report that started all of it: every lifecycle marker present, the
+        engine ticking, and the phone showing nothing. Brightness alone cannot detect that, because a
+        frame containing only the scene's clear colour is uniformly dark-but-not-black and would pass
+        any threshold. Contrast can: a frame with geometry in it has pixels that differ from the
+        background, an empty one does not. So the check asks for range, not for brightness.
+
+        The cooked sample has one more property worth asserting - its cube is blue - so a cooked run
+        also requires the centre pixel to stay blue-dominant. That is the check the sample exists
+        for, and it is skipped for the demo, whose scene is a neutral default cube.
+        """
+        deadline = time.monotonic() + min(args.timeout, 60)
+        darkest, brightest = 255, 0
+        readable = 0
         while time.monotonic() < deadline:
-            raw = subprocess.run([args.adb, '-s', args.serial, 'exec-out', 'screencap'],
-                                 capture_output=True, check=True, timeout=30).stdout
-            if len(raw) >= 12:
-                width, height, pixel_format = struct.unpack_from('<III', raw)
-                header = len(raw) - width * height * 4
-                if width > 0 and height > 0 and pixel_format in (1, 2) and header in (12, 16):
-                    offset = header + ((height // 2) * width + width // 2) * 4
-                    red, green, blue = raw[offset:offset + 3]
-                    if blue > green + 10 and green > red + 10 and blue > 80:
+            frame = screen_samples()
+            if frame is not None:
+                readable += 1
+                grid, centre = frame
+                darkest, brightest = min(grid), max(grid)
+                # 32/255 of range is roughly 12% - far more than dithering or a gradient in the
+                # clear colour can produce, and far less than a lit cube against the background.
+                if brightest >= 24 and brightest - darkest >= 32:
+                    red, green, blue = centre
+                    if args.expect_cooked_project:
+                        if not (blue > green + 10 and green > red + 10 and blue > 80):
+                            time.sleep(1)
+                            continue
                         report['checks'].append('UVE_ANDROID_VISIBLE_PIXELS')
-                        print('UVE_ANDROID_VISIBLE_PIXELS', flush=True)
-                        return
+                    report['checks'].append('UVE_ANDROID_SCREEN_WITH_CONTENT')
+                    print(f'UVE_ANDROID_SCREEN_WITH_CONTENT range={brightest - darkest}', flush=True)
+                    return
             time.sleep(1)
-        raise RuntimeError('The resumed cube is not visible at the screen center')
+        if not readable:
+            # A screencap that never parsed is a broken check, not a black screen; saying so is the
+            # difference between fixing the emulator and chasing a rendering bug that does not exist.
+            raise RuntimeError('Device screencaps could not be read; cannot judge what is on screen')
+        raise RuntimeError('The device screen has no content: '
+                           f'luminance {darkest}..{brightest} over a 10x10 sample grid')
+
+    def assert_no_failure_marker():
+        text = logs()
+        if 'UVE_ANDROID_FAILED' in text:
+            reason = next(line for line in text.splitlines() if 'UVE_ANDROID_FAILED' in line)
+            raise RuntimeError('The runtime reported a startup failure: ' + reason.strip())
+        report['checks'].append('UVE_ANDROID_NO_FAILURE')
 
     try:
         if adb('shell', 'getprop', 'sys.boot_completed').strip() != '1':
@@ -90,7 +172,8 @@ def main():
         text = wait_for('UVE_ANDROID_RENDERED', 2)
         if text.count('UVE_ANDROID_INITIALIZED') != 1:
             raise RuntimeError('Engine was recreated instead of retaining its scene')
-        wait_for_visible_scene()
+        assert_no_failure_marker()
+        wait_for_screen_with_content()
         if args.memory_report:
             memory = adb('shell', 'dumpsys', 'meminfo', 'com.univex.runtime')
             if 'TOTAL' not in memory:

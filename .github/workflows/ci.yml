@@ -6,10 +6,14 @@
 
 name: CI
 
-# What a run publishes is what somebody can actually try: the editor's exe and the Android apk.
-# Every upload is gated on CREATE_ARTIFACTS, on by default, so those two are there without asking;
-# set the repository variable CREATE_ARTIFACTS to 'false' to turn even them off, or pass
-# create_artifacts=false on a manual run.
+# What a run publishes is what somebody can actually try: the editor's exe, and the cooked project it
+# uses as a runtime fixture. Every upload is gated on CREATE_ARTIFACTS, on by default, so that build
+# is there without asking; set the repository variable CREATE_ARTIFACTS to 'false' to turn even it
+# off, or pass create_artifacts=false on a manual run.
+#
+# The Android apk lives in .github/workflows/android.yml instead. It is a different question - "does
+# the installed apk draw anything on a device" - and answering it needs an emulator, so it does not
+# belong in the job that exists to prove the tree compiles and the tests pass.
 #
 # The measurement and test-log uploads are a different thing - they answer questions about a run
 # rather than giving anybody a build - so they sit behind their own switch and are off by default.
@@ -244,79 +248,3 @@ jobs:
           path: build/editor-process-baseline.json
           if-no-files-found: ignore
           retention-days: 7
-
-  android-runtime:
-    strategy:
-      fail-fast: false
-      matrix:
-        abi: [arm64-v8a, x86_64]
-    name: Android / ${{ matrix.abi }} / Release
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      ANDROID_AVD_HOME: /tmp/univex-ci-avds
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools'
-      - name: Install pinned Android toolchain
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865'
-      - name: Prepare accelerated Android emulator
-        if: matrix.abi == 'x86_64'
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -e /dev/kvm
-          sudo chmod a+rw /dev/kvm
-          sdkmanager 'emulator' 'system-images;android-29;default;x86_64'
-          "$ANDROID_HOME/emulator/emulator" -no-window -no-audio -version
-          "$ANDROID_HOME/emulator/emulator" -no-window -accel-check
-          mkdir -p "$ANDROID_AVD_HOME"
-          echo no | avdmanager create avd --force --name univex-ci --path "$ANDROID_AVD_HOME/univex-ci.avd" --package 'system-images;android-29;default;x86_64'
-          sed -i 's/^disk.dataPartition.size=.*/disk.dataPartition.size=2G/' "$ANDROID_AVD_HOME/univex-ci.avd/config.ini"
-          printf 'avd.ini.encoding=UTF-8\npath=/tmp/univex-ci-avds/univex-ci.avd\ntarget=android-29\n' > "$ANDROID_AVD_HOME/univex-ci.ini"
-          "$ANDROID_HOME/emulator/emulator" -no-window -list-avds | grep -Fx univex-ci
-      - name: Build and verify debug-signed APK
-        run: >-
-          python3 Engine/Tools/android/build_apk.py --sdk "$ANDROID_HOME"
-          --cooked-project Samples/CookedRuntimeSmoke/sample.uvproject
-          --build-dir /tmp/univex-android-package --abi ${{ matrix.abi }} --jobs 2
-      - name: Exercise Android lifecycle on accelerated emulator
-        if: matrix.abi == 'x86_64'
-        shell: bash
-        run: |
-          set -euo pipefail
-          "$ANDROID_HOME/emulator/emulator" -avd univex-ci -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader -memory 2048 -cores 2 > /tmp/univex-emulator.log 2>&1 &
-          emulator_pid=$!
-          trap 'adb -s emulator-5554 emu kill || true; kill "$emulator_pid" 2>/dev/null || true' EXIT
-          if ! timeout 120 adb -s emulator-5554 wait-for-device; then
-            cat /tmp/univex-emulator.log
-            exit 1
-          fi
-          booted=false
-          for attempt in $(seq 1 240); do
-            if [ "$(adb -s emulator-5554 shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; then
-              booted=true
-              break
-            fi
-            sleep 2
-          done
-          if [ "$booted" != true ]; then
-            tail -60 /tmp/univex-emulator.log
-            exit 1
-          fi
-          python3 Engine/Tools/android/smoke_runtime.py --adb "$ANDROID_HOME/platform-tools/adb" --serial emulator-5554 --apk /tmp/univex-android-package/univex-runtime-x86_64.apk --report /tmp/univex-android-smoke.json --screenshot /tmp/univex-android-runtime.png --expect-cooked-project --memory-report /tmp/univex-android-meminfo.txt
-          cat /tmp/univex-android-smoke.json
-      - name: Upload Android APK
-        if: env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
-            (github.event_name != 'workflow_dispatch' || inputs.create_artifacts)
-        uses: actions/upload-artifact@v4
-        with:
-          name: UniVex-Android-${{ matrix.abi }}
-          path: /tmp/univex-android-package/univex-runtime-${{ matrix.abi }}.apk
-          if-no-files-found: error
