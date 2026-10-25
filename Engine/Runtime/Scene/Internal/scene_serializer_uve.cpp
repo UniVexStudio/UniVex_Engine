@@ -1508,6 +1508,34 @@ template <typename VectorT>
 
 
 
+[[nodiscard]] nlohmann::json ToJsonUVE(const Sky3DComponentUVE& value) {
+    return {{"source", static_cast<std::uint8_t>(value.source)},
+            {"skyColor", ToJsonUVE(value.skyColor)},
+            {"horizonColor", ToJsonUVE(value.horizonColor)},
+            {"groundColor", ToJsonUVE(value.groundColor)},
+            {"skyCurve", value.skyCurve},
+            {"groundCurve", value.groundCurve},
+            {"panoramaPath", value.panoramaPath},
+            {"panoramaRotationDegrees", value.panoramaRotationDegrees},
+            {"panoramaExposure", value.panoramaExposure},
+            {"enabled", value.enabled}};
+}
+
+[[nodiscard]] Sky3DComponentUVE Sky3DFromJsonUVE(const nlohmann::json& json) {
+    Sky3DComponentUVE value;
+    value.source = static_cast<SkySourceUVE>(json.value("source", std::uint8_t{0}));
+    value.skyColor = Vector3FromJsonUVE(json.at("skyColor"));
+    value.horizonColor = Vector3FromJsonUVE(json.at("horizonColor"));
+    value.groundColor = Vector3FromJsonUVE(json.at("groundColor"));
+    value.skyCurve = json.value("skyCurve", 0.15F);
+    value.groundCurve = json.value("groundCurve", 0.02F);
+    value.panoramaPath = json.value("panoramaPath", std::string{});
+    value.panoramaRotationDegrees = json.value("panoramaRotationDegrees", 0.0F);
+    value.panoramaExposure = json.value("panoramaExposure", 0.0F);
+    value.enabled = json.value("enabled", true);
+    return value;
+}
+
 [[nodiscard]] nlohmann::json ToJsonUVE(const ReflectionProbe3DComponentUVE& value) {
     return {{"size", ToJsonUVE(value.size)},
             {"visibilityLayers", value.visibilityLayers},
@@ -2680,6 +2708,14 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                 }
                 return value;
             }, IsInteractionArea3DObjectComponentValidUVE));
+        table.emplace("Sky3DComponentUVE", MakeRegistrationUVE<Sky3DComponentUVE>(
+            [](const nlohmann::json& json) {
+                const Sky3DComponentUVE value = Sky3DFromJsonUVE(json);
+                if (!IsSky3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid Sky3DComponentUVE payload");
+                }
+                return value;
+            }, IsSky3DObjectComponentValidUVE));
         table.emplace("ReflectionProbe3DComponentUVE", MakeRegistrationUVE<ReflectionProbe3DComponentUVE>(
             [](const nlohmann::json& json) {
                 const ReflectionProbe3DComponentUVE value = ReflectionProbe3DObjectFromJsonUVE(json);

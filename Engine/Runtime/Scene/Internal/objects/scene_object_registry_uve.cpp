@@ -53,8 +53,9 @@ constexpr std::array<std::string_view, 1U> kUIImageContracts{"UIImageComponentUV
 constexpr std::array<std::string_view, 1U> kUIButtonContracts{"UIButtonComponentUVE"};
 constexpr std::array<std::string_view, 1U> kSprite2DContracts{"Sprite2DComponentUVE"};
 constexpr std::array<std::string_view, 1U> kCamera2DContracts{"Camera2DComponentUVE"};
+constexpr std::array<std::string_view, 1U> kSkyContracts{"Sky3DComponentUVE"};
 
-constexpr std::array<SceneObjectDescriptorUVE, 52U> kDescriptors{
+constexpr std::array<SceneObjectDescriptorUVE, 53U> kDescriptors{
     // The document's structural root: created by the document lifecycle (new document,
     // load-time migration), never through the Add-Object library - libraryCreatable is false.
     SceneObjectDescriptorUVE{SceneObjectKindUVE::SceneRoot, "scene_root", "SceneRoot", "Scene", "Scene/SceneRootObjectDefinitionUVE", kNoContracts, false},
@@ -79,6 +80,7 @@ constexpr std::array<SceneObjectDescriptorUVE, 52U> kDescriptors{
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Projectile3D, "projectile_3d", "Projectile3D", "Combat", "Physics/Projectile3DComponentUVE", kProjectileContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::InteractionArea3D, "interaction_area_3d", "InteractionArea3D", "Gameplay", "Physics/AreaOverlapSystemUVE", kInteractionAreaContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::WorldEnvironment3D, "world_environment_3d", "WorldEnvironment", "Rendering", "Render/WorldEnvironment3DComponentUVE", kEnvironmentContracts, true},
+    SceneObjectDescriptorUVE{SceneObjectKindUVE::Sky, "sky", "Sky", "Rendering", "Render/Sky3DComponentUVE", kSkyContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::ReflectionProbe3D, "reflection_probe_3d", "ReflectionProbe3D", "Rendering", "Render/ReflectionProbe3DComponentUVE", kReflectionProbeContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Decal3D, "decal_3d", "Decal3D", "Rendering", "Render/Decal3DComponentUVE", kDecalContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::FogVolume3D, "fog_volume_3d", "FogVolume3D", "Rendering", "Render/FogVolume3DComponentUVE", kFogVolumeContracts, true},
