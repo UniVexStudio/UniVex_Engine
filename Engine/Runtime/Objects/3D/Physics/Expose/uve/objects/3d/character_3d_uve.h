@@ -80,13 +80,19 @@ struct Character3DObjectDefinitionUVE final {
 /// shape was invisible: it could only live as a component on the character, where nothing in the
 /// tree listed it and nothing in the viewport drew it.
 ///
-/// Only a shape that is nothing but a shape qualifies. A child that is itself a body - a Rigid3D,
-/// a Static3D, another Character3D - is a separate thing standing next to this one, not a
-/// description of it, and is skipped. A collider on the character still wins over any child, so an
-/// author who authored it directly never has it silently replaced by something below it.
+/// Only a shape that is nothing but a shape qualifies, which rules out two kinds of child. One that
+/// is itself a body - a Rigid3D, a Static3D, another Character3D - is a separate thing standing
+/// next to this one, not a description of it. And one that draws geometry - a Box, Sphere or Plane
+/// primitive, a MeshInstance3D given a collider - is the model the author can see, and every mesh
+/// in this engine carries a collider of its own. Adopting that made the model's collider the body's
+/// shape with nothing in the Inspector to show for it, so a character with no Collider3D anywhere
+/// was held up by the thing it wears.
+///
+/// A collider on the character still wins over any child, so an author who authored it directly
+/// never has it silently replaced by something below it.
 ///
 /// Returns kInvalidEntityUVE when the character has no shape at all, which is a state the Outliner
-/// reports and the stepper refuses rather than guessing.
+/// reports and the stepper steps through - falling, with nothing to hit - rather than guessing.
 [[nodiscard]] EntityUVE ResolveCharacterShapeEntityUVE(IEntityManagerUVE& entityManager,
                                                        ISceneGraphUVE& sceneGraph, EntityUVE character);
 
