@@ -4571,6 +4571,18 @@ TEST(EditorUVETest, PlayModeSandbox_InstantiatesDefaultPlayerAndUsesItsCamera) {
 
         const auto created = editor.CreateContentCatalogueItemUVE("player", content);
         ASSERT_TRUE(created.has_value());
+        // A Player3D arrives on its own - +Add puts nothing inside what it makes - so the view is
+        // the author's to add. The test builds the same body an author would: a camera under the
+        // player, authored in the Entity Editor and saved into the asset.
+        ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
+        const Scene::EntityUVE playerBody = editor.GetEntityEditorRootUVE();
+        ASSERT_NE(playerBody, Scene::kInvalidEntityUVE);
+        const Scene::EntityUVE view =
+            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Camera3D);
+        ASSERT_NE(view, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(view).parent, playerBody);
+        ASSERT_TRUE(editor.CloseEntityEditorUVE(true));
+        EXPECT_FALSE(editor.IsEntityEditorOpenUVE());
         ASSERT_TRUE(editor.SetDefaultPlayerEntityUVE(created->filename()));
 
         const Scene::EntityUVE spawn = entityManager.CreateEntityUVE();
