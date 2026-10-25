@@ -108,6 +108,17 @@ template <auto MemberPointer>
     return MakePropertyUVE<MemberPointer>(std::move(name), std::move(displayName), typeId, true);
 }
 
+/// Declares a property that is read and written but never drawn.
+///
+/// It is the middle ground between a property and a field that does not exist: the value stays in
+/// the file, the serializer and every accessor keep working, and the Inspector offers no row. That
+/// is what a control that has been replaced by a better one leaves behind - the data for scenes
+/// that already have it, and no new place to set it by accident.
+[[nodiscard]] TypeMetadataPropertyUVE HiddenUVE(TypeMetadataPropertyUVE property) {
+    property.flags = TypeMetadataPropertyFlagsUVE::Hidden;
+    return property;
+}
+
 /// Declares a property a runtime system owns. It is shown so an author can see what the simulation
 /// is doing, never written by authoring, and never persisted - saving it would restore a stale
 /// cache over whatever the system computed on load.
@@ -433,18 +444,22 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                          DeclareEnumUVE<&PrimitiveMeshComponentUVE::kind>(
                              "kind", "Shape",
                              {{0, "Cube"}, {1, "UV Sphere"}, {2, "Plane"}, {3, "Capsule"}, {4, "Cylinder"}}),
-                         DeclareUVE<&PrimitiveMeshComponentUVE::baseColor>("baseColor", "Base Color",
-                                                                           kPropertyTypeColorUVE),
+                         // Kept in the file, never offered: scenes saved while a primitive had its
+                         // own tint still carry the value, and the renderer still honours it, but
+                         // the Inspector no longer sets one. A surface has one colour - the
+                         // material's albedo - and a second control beside an empty material slot
+                         // meant two answers to the same question.
+                         HiddenUVE(DeclareUVE<&PrimitiveMeshComponentUVE::baseColor>(
+                             "baseColor", "Base Color", kPropertyTypeColorUVE)),
                          // Same asset slot the mesh instance uses, so a primitive and an imported
-                         // mesh are shaded through one material path. Unassigned draws the built-in
-                         // lit material, which is what Base Color above shows while it is unset.
+                         // mesh are shaded through one material path.
                          WithTooltipUVE(
                              WithCustomDrawerUVE(
                                  DeclareUVE<&PrimitiveMeshComponentUVE::materialGuid>(
                                      "materialGuid", "Material", kPropertyTypeAssetGuidUVE),
                                  "asset:uvmat"),
-                             "The surface material. Without one the primitive is drawn with the "
-                             "engine's default lit material, tinted by Base Color."),
+                             "The surface material: its albedo is this primitive's colour. Without "
+                             "one the primitive is drawn with the engine's default lit material."),
                      });
     primitive.sectionTitle = +[](const void* instance) -> const char* {
         switch (static_cast<const PrimitiveMeshComponentUVE*>(instance)->kind) {
@@ -2768,11 +2783,6 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// the Inspector can show the answer beside the choice rather than as a row of its own.
 [[nodiscard]] TypeMetadataPropertyUVE ResolvedByUVE(TypeMetadataPropertyUVE property, std::string resolvedProperty) {
     property.resolvedByProperty = std::move(resolvedProperty);
-    return property;
-}
-
-[[nodiscard]] TypeMetadataPropertyUVE HiddenUVE(TypeMetadataPropertyUVE property) {
-    property.flags = TypeMetadataPropertyFlagsUVE::Hidden;
     return property;
 }
 

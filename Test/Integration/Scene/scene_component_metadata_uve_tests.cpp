@@ -720,10 +720,9 @@ TEST(SceneComponentMetadataUVETest, CharacterSectionHostsTheColliderAndKeepsItsT
 }
 
 // A primitive mesh is the mesh, not a feature on top of it. On a MeshInstance3D the mesh section
-// already picks the shape and authors its material and colour, so the primitive's own section drew
-// all three rows a second time. Nesting it under the mesh component removes the duplicate; an
-// object that carries a primitive and no mesh component still gets the section, so nothing becomes
-// unreachable.
+// already picks the shape and authors its material, so the primitive's own section drew those rows
+// a second time. Nesting it under the mesh component removes the duplicate; an object that carries
+// a primitive and no mesh component still gets the section, so nothing becomes unreachable.
 TEST(SceneComponentMetadataUVETest, PrimitiveMeshIsDrawnByTheMeshSectionRatherThanTwice) {
     const TypeMetadataEntryUVE* mesh = FindSceneComponentMetadataUVE(std::type_index(typeid(MeshComponentUVE)));
     const TypeMetadataEntryUVE* primitive =
@@ -733,11 +732,21 @@ TEST(SceneComponentMetadataUVETest, PrimitiveMeshIsDrawnByTheMeshSectionRatherTh
     ASSERT_FALSE(primitive->nestedUnderTypeIds.empty());
     EXPECT_EQ(primitive->nestedUnderTypeIds.front(), mesh->typeId);
 
-    // The three rows the mesh section draws in its own shape. Resolved by name here so a rename
-    // that silently stopped one of them being drawn anywhere would fail rather than pass.
-    for (const char* const name : {"kind", "baseColor", "materialGuid"}) {
-        EXPECT_NE(FindPropertyUVE(*primitive, name), nullptr) << name;
+    // The rows the mesh section draws in its own shape. Resolved by name here so a rename that
+    // silently stopped one of them being drawn anywhere would fail rather than pass.
+    for (const char* const name : {"kind", "materialGuid"}) {
+        const TypeMetadataPropertyUVE* const property = FindPropertyUVE(*primitive, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_FALSE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::Hidden)) << name;
     }
+
+    // A primitive has no colour of its own: its surface is its material, and the colour row that
+    // used to sit under an empty material slot meant the same object had two answers. The property
+    // stays so scenes that already carry a tint still load, and it is hidden so no section can
+    // offer it again - asserting only that it disappeared would let a later change re-expose it.
+    const TypeMetadataPropertyUVE* const baseColor = FindPropertyUVE(*primitive, "baseColor");
+    ASSERT_NE(baseColor, nullptr);
+    EXPECT_TRUE(baseColor->flags.HasUVE(TypeMetadataPropertyFlagsUVE::Hidden));
 }
 
 // Sections follow the class chain from most to least derived: the object's own, then Object3D's

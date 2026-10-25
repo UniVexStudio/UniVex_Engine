@@ -1863,28 +1863,17 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
                 }
                 ImGui::Spacing();
 
-                // MATERIAL: a primitive is shaded through the same material path an imported mesh
-                // uses, so this slot is the whole of its surface authoring. Unassigned draws the
-                // engine's built-in lit material, whose albedo is the COLOUR row below - which is
-                // why that row only appears while no material is assigned. A colour control that
-                // stopped doing anything the moment a material was picked would be dead weight.
+                // MATERIAL: the whole of a primitive's surface authoring. It is shaded through the
+                // same material path an imported mesh uses, and the material's own albedo is where
+                // its colour is authored - which is why there is one surface control here and not
+                // two. A second COLOUR row used to sit under this slot while it was empty, and it
+                // meant the same object had two places to set a colour, one of which silently
+                // stopped existing the moment a material was picked.
                 Scene::PrimitiveMeshComponentUVE primitive =
                     entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
                 ImGui::TextDisabled("MATERIAL");
                 if (DrawStandardMaterialSlotUVE(nullptr, "##primitiveMaterial", primitive.materialGuid)) {
                     entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity, primitive);
-                }
-                if (!Scene::HasAssignedPrimitiveMaterialUVE(primitive)) {
-                    ImGui::Spacing();
-                    ImGui::TextDisabled("COLOUR");
-                    EditorColorUVE primitiveColor{primitive.baseColor.x, primitive.baseColor.y,
-                                                 primitive.baseColor.z, 1.0F};
-                    if (DrawColorFieldUVE("##primitiveColor", "Colour", primitiveColor, false,
-                                          m_colorPickerPreferences) != ColorFieldEventUVE::None) {
-                        primitive.baseColor = Scene::ClampPrimitiveBaseColorUVE(
-                            Math::Vector3UVE{primitiveColor.r, primitiveColor.g, primitiveColor.b});
-                        entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity, primitive);
-                    }
                 }
             } else {
                 // MATERIALS: the model carries its own. Each row is that material's file, edited in
