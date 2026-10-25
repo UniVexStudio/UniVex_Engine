@@ -803,6 +803,8 @@ TEST_F(Renderer3DUVETest, WorldEnvironmentBloomSoftKneeReachesTheBrightPassShade
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
     Scene::WorldEnvironment3DComponentUVE environment{};
+    // The effects stack is off until an author turns it on; this test wants it on.
+    environment.postProcessingEnabled = true;
     environment.ssaoEnabled = false;
     entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
 
@@ -847,6 +849,8 @@ TEST_F(Renderer3DUVETest, WorldEnvironmentBloomMipCountCreatesAndRunsDistinctSca
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
     Scene::WorldEnvironment3DComponentUVE environment{};
+    // The effects stack is off until an author turns it on; this test wants it on.
+    environment.postProcessingEnabled = true;
     environment.bloomMipCount = 3U;
     environment.ssaoEnabled = false;
     entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
@@ -888,6 +892,8 @@ TEST_F(Renderer3DUVETest, WorldEnvironmentSSAOEnableRadiusAndIntensityOverridesR
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
     Scene::WorldEnvironment3DComponentUVE environment{};
+    // The effects stack is off until an author turns it on; this test wants it on.
+    environment.postProcessingEnabled = true;
     environment.ssaoEnabled = true;
     environment.ssaoRadius = 0.65F;
     environment.ssaoIntensity = 1.4F;
@@ -988,6 +994,8 @@ TEST_F(Renderer3DUVETest, WorldEnvironmentLensControlsReachToneMappingAndRespect
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
     Scene::WorldEnvironment3DComponentUVE environment{};
+    // The effects stack is off until an author turns it on; this test wants it on.
+    environment.postProcessingEnabled = true;
     environment.bloomEnabled = false;
     environment.ssaoEnabled = false;
     environment.vignetteIntensity = 0.7F;
@@ -1078,6 +1086,8 @@ TEST_F(Renderer3DUVETest, WorldEnvironmentMotionBlurUsesOnlyValidCameraHistory) 
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
     Scene::WorldEnvironment3DComponentUVE environment{};
+    // The effects stack is off until an author turns it on; this test wants it on.
+    environment.postProcessingEnabled = true;
     environment.motionBlurEnabled = true;
     environment.motionBlurStrength = 0.75F;
     environment.motionBlurSampleCount = 12U;
