@@ -171,6 +171,22 @@ struct WorldEnvironmentFrameUVE final {
     float atmosphereMultiScatter = 1.0F;
     float atmosphereIntensity = 1.0F;
     std::uint32_t atmosphereSamples = 16U;
+
+    /// Night overlay: the stars behind everything and the band across them.
+    float starDensity = 420.0F;
+    float starBrightness = 0.0F;
+    float starSeed = 0.0F;
+    float milkyWayStrength = 0.0F;
+
+    /// Cloud deck over the sky. `cloudWind` is already resolved to metres per second in world XZ,
+    /// so the renderer never has to convert an angle while building its uniforms.
+    bool cloudsEnabled = false;
+    float cloudCoverage = 0.45F;
+    float cloudDensity = 1.0F;
+    float cloudAltitude = 1500.0F;
+    Math::Vector2UVE cloudWind{};
+    float cloudSoftness = 0.35F;
+    float cloudSilverLining = 1.0F;
 };
 
 [[nodiscard]] bool TryMakeSkyEquirectUvUVE(const Math::Vector3UVE& direction, Math::Vector2UVE& outUv) noexcept;

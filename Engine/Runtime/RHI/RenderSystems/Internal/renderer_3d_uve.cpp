@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cmath>
 #include <cstdint>
@@ -1011,6 +1012,11 @@ struct Renderer3DUVE::ImplUVE {
     Math::Vector3UVE sunDirection{0.0F, 1.0F, 0.0F};
     Math::Vector3UVE sunColor{1.0F, 1.0F, 1.0F};
     float sunEnergy = 0.0F;
+    /// Elapsed wall-clock seconds, advanced once per frame and clamped per step. The sky needs it
+    /// to move its cloud deck; nothing in the renderer otherwise keeps a clock, and a fixed step
+    /// per frame would make the wind speed depend on the frame rate.
+    float skyTimeSeconds = 0.0F;
+    std::chrono::steady_clock::time_point skyClockLast{};
     /// The disc the sky draws where `sunDirection` points. Seeded with the values the shader used
     /// to hard-code, so a frame with no authored directional light - the preview sun included -
     /// draws exactly the disc it drew before these were authorable.
@@ -3978,6 +3984,18 @@ void Renderer3DUVE::CaptureDueReflectionProbesUVE(Scene::IEntityManagerUVE& enti
 }
 
 void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity) {
+    // Advanced here rather than in the sky pass so a frame that skips the sky - a probe capture, a
+    // frame with no environment - does not stop time for the next one that draws it.
+    {
+        const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+        if (m_impl->skyClockLast.time_since_epoch().count() != 0) {
+            const float elapsed = std::chrono::duration<float>(now - m_impl->skyClockLast).count();
+            // Clamped: a breakpoint, a stall or a window drag must not teleport the clouds across
+            // the sky on the frame the program resumes.
+            m_impl->skyTimeSeconds += std::clamp(elapsed, 0.0F, 0.1F);
+        }
+        m_impl->skyClockLast = now;
+    }
     const bool capturingProbe = m_impl->probeCaptureViewActive;
     if (!capturingProbe) {
         m_impl->lastFrameDiagnostics = Renderer3DFrameDiagnosticsUVE{};
@@ -4715,6 +4733,22 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                                                            m_impl->environmentFrame.atmosphereIntensity);
                 m_impl->proceduralSkyProgram->SetIntUVE(
                     "uAtmosphereSteps", static_cast<std::int32_t>(m_impl->environmentFrame.atmosphereSamples));
+                m_impl->proceduralSkyProgram->SetVector3UVE("uCameraPosition", m_impl->environmentCameraPosition);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uSkyTime", m_impl->skyTimeSeconds);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uStarDensity", m_impl->environmentFrame.starDensity);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uStarBrightness", m_impl->environmentFrame.starBrightness);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uStarSeed", m_impl->environmentFrame.starSeed);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uMilkyWayStrength",
+                                                          m_impl->environmentFrame.milkyWayStrength);
+                m_impl->proceduralSkyProgram->SetIntUVE("uCloudsEnabled",
+                                                        m_impl->environmentFrame.cloudsEnabled ? 1 : 0);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uCloudCoverage", m_impl->environmentFrame.cloudCoverage);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uCloudDensity", m_impl->environmentFrame.cloudDensity);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uCloudAltitude", m_impl->environmentFrame.cloudAltitude);
+                m_impl->proceduralSkyProgram->SetVector2UVE("uCloudWind", m_impl->environmentFrame.cloudWind);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uCloudSoftness", m_impl->environmentFrame.cloudSoftness);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uCloudSilverLining",
+                                                          m_impl->environmentFrame.cloudSilverLining);
                 m_impl->proceduralSkyProgram->SetIntUVE("uSkyTexture", static_cast<std::int32_t>(kSkyTextureSlotUVE));
                 m_impl->proceduralSkyProgram->SetIntUVE("uSkyTextureEnabled", m_impl->skyTextureEnabled ? 1 : 0);
                 m_impl->proceduralSkyProgram->ApplyToUVE(commandBuffer);

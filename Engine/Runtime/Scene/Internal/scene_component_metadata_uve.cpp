@@ -1143,6 +1143,93 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                "gradient more finely; the cost is linear and this is the most expensive part "
                                "of the sky.")),
                            "Atmosphere"),
+
+                // Night and cloud are overlays on any source, not part of the scattering model, so
+                // they are not gated on `source` - a gradient sky gets the same stars and the same
+                // weather. Both start off, because a scene that had no stars before this object
+                // existed must not quietly gain some.
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::starBrightness>("starBrightness",
+                                                                                     "Star Brightness",
+                                                                                     kPropertyTypeFloatUVE),
+                                                       0.0, 100.0, 0.01),
+                                          "How bright the stars are. 0 draws none, which is the default; raise "
+                                          "it to open the sky at night. They fade out on their own as the sun "
+                                          "rises, so this is safe to leave set."),
+                           "Night"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::starDensity>("starDensity", "Star Density",
+                                                                                  kPropertyTypeFloatUVE),
+                                                       10.0, 1200.0, 1.0),
+                                          "How finely the sky is divided into cells that may hold a star. Higher "
+                                          "means more and smaller stars; low values give a handful of large "
+                                          "ones."),
+                           "Night"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::starSeed>("starSeed", "Star Seed",
+                                                                               kPropertyTypeFloatUVE),
+                                                       0.0, 1000.0, 1.0),
+                                          "Which stars are where. Changing it reshuffles the whole field, so two "
+                                          "levels can share a brightness and not the same constellations."),
+                           "Night"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::milkyWayStrength>("milkyWayStrength",
+                                                                                        "Milky Way",
+                                                                                        kPropertyTypeFloatUVE),
+                                                       0.0, 10.0, 0.01),
+                                          "Strength of the band of starlight across the sky. 0 hides it. It is "
+                                          "dusty rather than smooth on purpose: a clean band reads as a bright "
+                                          "smudge."),
+                           "Night"),
+
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&S::cloudsEnabled>("cloudsEnabled", "Clouds",
+                                                                       kPropertyTypeBoolUVE),
+                                          "Off by default. A flat deck at Cloud Height, sampled from noise and "
+                                          "moved by the wind."),
+                           "Clouds"),
+                InGroupUVE(WhenOnUVE<&S::cloudsEnabled>(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::cloudCoverage>("cloudCoverage", "Coverage",
+                                                                          kPropertyTypeFloatUVE),
+                                            0.0, 1.0, 0.01),
+                               "How much of the sky is covered: 0 bare, 1 overcast.")),
+                           "Clouds"),
+                InGroupUVE(WhenOnUVE<&S::cloudsEnabled>(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::cloudDensity>("cloudDensity", "Density",
+                                                                         kPropertyTypeFloatUVE),
+                                            0.0, 1.0, 0.01),
+                               "How opaque the covered part is. Below 1 the sky shows through the cloud, "
+                               "which is how a thin high deck looks.")),
+                           "Clouds"),
+                InGroupUVE(WhenOnUVE<&S::cloudsEnabled>(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::cloudAltitude>("cloudAltitude", "Height (m)",
+                                                                          kPropertyTypeFloatUVE),
+                                            10.0, 20000.0, 10.0),
+                               "Height of the deck above the eye, in metres. It sets how fast the cloud slides "
+                               "past as the camera moves, which is most of what makes a low deck feel close.")),
+                           "Clouds"),
+                InGroupUVE(WhenOnUVE<&S::cloudsEnabled>(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::cloudWindSpeed>("cloudWindSpeed", "Wind Speed",
+                                                                           kPropertyTypeFloatUVE),
+                                            -200.0, 200.0, 0.5),
+                               "How fast the deck drifts, in metres per second. Negative blows the other way.")),
+                           "Clouds"),
+                InGroupUVE(WhenOnUVE<&S::cloudsEnabled>(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::cloudWindDirectionDegrees>("cloudWindDirectionDegrees",
+                                                                                      "Wind Direction",
+                                                                                      kPropertyTypeFloatUVE),
+                                            -180.0, 180.0, 1.0),
+                               "Compass bearing the wind blows toward, in degrees. 0 is +X, 90 is +Z.")),
+                           "Clouds"),
+                InGroupUVE(WhenOnUVE<&S::cloudsEnabled>(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::cloudSoftness>("cloudSoftness", "Softness",
+                                                                          kPropertyTypeFloatUVE),
+                                            0.01, 1.0, 0.01),
+                               "Width of the fade at each cloud's edge. Small reads as hard-edged cumulus, "
+                               "large as haze.")),
+                           "Clouds"),
+                InGroupUVE(WhenOnUVE<&S::cloudsEnabled>(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::cloudSilverLining>("cloudSilverLining", "Silver Lining",
+                                                                              kPropertyTypeFloatUVE),
+                                            0.0, 20.0, 0.05),
+                               "How strongly thin cloud brightens toward the sun - the rim that appears when a "
+                               "cloud crosses it. 0 keeps the edge flat.")),
+                           "Clouds"),
             }));
 }
 

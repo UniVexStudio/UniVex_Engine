@@ -34,7 +34,21 @@ bool IsSky3DObjectComponentValidUVE(const Sky3DComponentUVE& value) noexcept {
            std::isfinite(value.atmosphereMultiScatter) && value.atmosphereMultiScatter >= 0.0F &&
            value.atmosphereMultiScatter <= 4.0F && std::isfinite(value.atmosphereIntensity) &&
            value.atmosphereIntensity >= 0.0F && value.atmosphereIntensity <= 100.0F &&
-           value.atmosphereSamples >= 4U && value.atmosphereSamples <= 64U;
+           value.atmosphereSamples >= 4U && value.atmosphereSamples <= 64U &&
+           std::isfinite(value.starDensity) && value.starDensity >= 0.0F && value.starDensity <= 2000.0F &&
+           std::isfinite(value.starBrightness) && value.starBrightness >= 0.0F &&
+           value.starBrightness <= 100.0F && std::isfinite(value.starSeed) && std::isfinite(value.milkyWayStrength) &&
+           value.milkyWayStrength >= 0.0F && value.milkyWayStrength <= 100.0F &&
+           // Coverage and density are fractions of the sky, so a value outside [0,1] has no
+           // meaning; softness must stay above zero because it divides the edge gradient.
+           std::isfinite(value.cloudCoverage) && value.cloudCoverage >= 0.0F && value.cloudCoverage <= 1.0F &&
+           std::isfinite(value.cloudDensity) && value.cloudDensity >= 0.0F && value.cloudDensity <= 1.0F &&
+           std::isfinite(value.cloudAltitude) && value.cloudAltitude > 1.0F &&
+           value.cloudAltitude <= 100000.0F && std::isfinite(value.cloudWindSpeed) &&
+           std::fabs(value.cloudWindSpeed) <= 1000.0F && std::isfinite(value.cloudWindDirectionDegrees) &&
+           std::isfinite(value.cloudSoftness) && value.cloudSoftness > 0.0F && value.cloudSoftness <= 1.0F &&
+           std::isfinite(value.cloudSilverLining) && value.cloudSilverLining >= 0.0F &&
+           value.cloudSilverLining <= 100.0F;
 }
 
 void ApplySky3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,

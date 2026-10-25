@@ -1525,6 +1525,18 @@ template <typename VectorT>
             {"atmosphereMultiScatter", value.atmosphereMultiScatter},
             {"atmosphereIntensity", value.atmosphereIntensity},
             {"atmosphereSamples", value.atmosphereSamples},
+            {"starDensity", value.starDensity},
+            {"starBrightness", value.starBrightness},
+            {"starSeed", value.starSeed},
+            {"milkyWayStrength", value.milkyWayStrength},
+            {"cloudsEnabled", value.cloudsEnabled},
+            {"cloudCoverage", value.cloudCoverage},
+            {"cloudDensity", value.cloudDensity},
+            {"cloudAltitude", value.cloudAltitude},
+            {"cloudWindSpeed", value.cloudWindSpeed},
+            {"cloudWindDirectionDegrees", value.cloudWindDirectionDegrees},
+            {"cloudSoftness", value.cloudSoftness},
+            {"cloudSilverLining", value.cloudSilverLining},
             {"enabled", value.enabled}};
 }
 
@@ -1549,6 +1561,18 @@ template <typename VectorT>
     value.atmosphereMultiScatter = json.value("atmosphereMultiScatter", 1.0F);
     value.atmosphereIntensity = json.value("atmosphereIntensity", 1.0F);
     value.atmosphereSamples = json.value("atmosphereSamples", std::uint32_t{16U});
+    value.starDensity = json.value("starDensity", 420.0F);
+    value.starBrightness = json.value("starBrightness", 0.0F);
+    value.starSeed = json.value("starSeed", 0.0F);
+    value.milkyWayStrength = json.value("milkyWayStrength", 0.0F);
+    value.cloudsEnabled = json.value("cloudsEnabled", false);
+    value.cloudCoverage = json.value("cloudCoverage", 0.45F);
+    value.cloudDensity = json.value("cloudDensity", 1.0F);
+    value.cloudAltitude = json.value("cloudAltitude", 1500.0F);
+    value.cloudWindSpeed = json.value("cloudWindSpeed", 8.0F);
+    value.cloudWindDirectionDegrees = json.value("cloudWindDirectionDegrees", 45.0F);
+    value.cloudSoftness = json.value("cloudSoftness", 0.35F);
+    value.cloudSilverLining = json.value("cloudSilverLining", 1.0F);
     value.enabled = json.value("enabled", true);
     return value;
 }
