@@ -191,9 +191,20 @@ constexpr float kPanelRestoreStripWidthUVE = 14.0F;
 /// NoSavedSettings is the same argument one frame earlier: uve_editor_layout.ini must never be able
 /// to park a panel somewhere the layout did not compute. NoMove is the same argument for dragging:
 /// a layout-owned panel cannot be moved away from its rect, only resized by the seam that owns it.
+///
+/// AND NoBringToFrontOnFocus IS THE HALF THAT MAKES THE OTHER HALF WORK. The seam grips are their
+/// own windows, created after every panel each frame so that they sit on top of both neighbours.
+/// ImGui's window stack is not redrawn-into-order: a window is raised by being clicked, and a click
+/// anywhere in the Viewport - orbiting the camera is the first thing anyone does - moved that panel
+/// above the grips and left it there. From then on the ten pixels of seam were the panel's, not the
+/// grip's: the seam looked pinned, and the only thing that ever answered a drag on it was ImGui's
+/// own edge resize on the panel, which is exactly the resize the layout puts back on the next frame.
+/// The editor's panels are fixed regions of one editor, not floating windows competing for the top,
+/// so they never need to raise - and with them refusing to, the grips stay where they were put.
 inline constexpr ImGuiWindowFlags kLayoutOwnedPanelFlagsUVE =
     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
-    ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings;
+    ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
+    ImGuiWindowFlags_NoBringToFrontOnFocus;
 
 /// The editor's panel rectangles.
 ///

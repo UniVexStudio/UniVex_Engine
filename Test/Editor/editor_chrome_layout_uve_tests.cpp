@@ -148,6 +148,11 @@ TEST(EditorChromeLayoutUVETest, LayoutOwnedPanelsRefuseImGuiResizeMoveAndIni) {
     EXPECT_NE(kLayoutOwnedPanelFlagsUVE & ImGuiWindowFlags_NoMove, 0) << "ImGui must not move a panel";
     EXPECT_NE(kLayoutOwnedPanelFlagsUVE & ImGuiWindowFlags_NoSavedSettings, 0)
         << "a stale uve_editor_layout.ini must not park a panel";
+    // And the panels must not be raisable over the grips: a click in the Viewport used to lift the
+    // panel above the seam windows and bury the only remaining resize handle for the rest of the
+    // session, which is what "the panel looks fixed" was.
+    EXPECT_NE(kLayoutOwnedPanelFlagsUVE & ImGuiWindowFlags_NoBringToFrontOnFocus, 0)
+        << "a raised panel covers its own seam grip";
     EXPECT_GE(kPanelSplitterThicknessUVE, 8.0F) << "the seam is the only grip left";
 }
 

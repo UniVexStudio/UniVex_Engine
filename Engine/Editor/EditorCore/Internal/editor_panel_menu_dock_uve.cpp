@@ -530,8 +530,7 @@ void EditorUVE::DrawBottomDockContentUVE() {
     // No title row and no close button - the tab strip at the top of the block is what names it and
     // what hides it. NoMove/NoResize/NoSavedSettings keep a stale imgui.ini from parking it anywhere
     // but its computed rect.
-    constexpr ImGuiWindowFlags flags =
-        kLayoutOwnedPanelFlagsUVE | ImGuiWindowFlags_NoBringToFrontOnFocus;
+    constexpr ImGuiWindowFlags flags = kLayoutOwnedPanelFlagsUVE;
     // Square and borderless, like the tab strip directly above it. The theme draws every panel as a
     // rounded, 1px-outlined card; on a window that sits flush under the canvas those two things are
     // exactly what makes it read as a separate frame that happens to be parked there. With the
