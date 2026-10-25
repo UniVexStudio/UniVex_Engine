@@ -98,9 +98,9 @@ void DrawUniversalIconUVE(ImDrawList& drawList, const ImVec2 center, const float
 /// rather than as a cube, because the button says which view you are IN.
 void DrawViewportModeIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
     const float half = radius * 0.72F;
-    drawList->AddRect(ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half}, color,
-                      1.5F, 0, 1.4F);
-    drawList->AddLine(ImVec2{center.x - half, center.y}, ImVec2{center.x + half, center.y}, color, 1.2F);
+    drawList.AddRect(ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half}, color,
+                     1.5F, 0, 1.4F);
+    drawList.AddLine(ImVec2{center.x - half, center.y}, ImVec2{center.x + half, center.y}, color, 1.2F);
 }
 
 void DrawGridIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
