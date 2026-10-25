@@ -2,17 +2,17 @@
 
 Artifacts default to OFF. Builds and correctness tests still run.
 
-For a manual run, open Actions, select CI, Windows Editor or Android Runtime, choose
-Run workflow, and turn on **Create downloadable build and diagnostic artifacts**.
-The manual checkbox overrides the repository default for that run.
+For a manual run, open Actions, select CI, choose Run workflow, and turn on
+**Create downloadable build and diagnostic artifacts**. The manual checkbox
+overrides the repository default for that run.
 
 For push and pull-request runs, set the Actions repository variable
 `CREATE_ARTIFACTS` to `true` to enable uploads. Set it to `false` or leave it
 unset to disable uploads. This is a variable, not a secret. Only lowercase
 `true` enables it. No repository settings are changed by these workflows.
 
-The Android Runtime workflow (`android.yml`) builds the apk for arm64 and x86_64
-and uploads it under the same checkbox and repository variable. APKs use a
+The workflow's `android-runtime` job builds the apk for arm64 and x86_64 and
+uploads it under the same checkbox and repository variable. APKs use a
 generated debug signing key for local testing.
 
 It uploads three things per run:

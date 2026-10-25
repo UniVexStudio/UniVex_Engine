@@ -52,10 +52,11 @@ and surface reattachment without a second engine initialization, plus a screen t
 red check says which of the two apks was black and why without anybody opening the log.
 The debug APK is debuggable for native diagnostics and uses private application storage.
 
-`.github/workflows/android.yml` builds both APKs for arm64 and x86_64 and exercises x86_64 on a KVM
-emulator. It is a separate workflow from `ci.yml` on purpose: the apk is a question about a device,
-not about whether the tree compiles, and answering it needs an emulator. Uploads follow the same
-opt-in artifact controls as desktop CI (see `.github/CI_ARTIFACTS.md`).
+The `android-runtime` job in `.github/workflows/ci.yml` builds both APKs for arm64 and x86_64 and
+exercises x86_64 on a KVM emulator. It is its own job rather than a step of the Linux build because
+the apk is a question about a device, not about whether the tree compiles, and answering it needs an
+emulator. Uploads follow the same opt-in artifact controls as the rest of CI (see
+`.github/CI_ARTIFACTS.md`).
 
 ## How an apk is built
 
