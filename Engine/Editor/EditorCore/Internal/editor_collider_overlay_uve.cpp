@@ -16,6 +16,9 @@
 
 #include "uve/editor/editor_uve.h"
 
+#include "uve/component/world_transform_component_uve.h"
+#include "uve/objects/3d/character_3d_uve.h"
+#include "uve/objects/3d/collider_3d_uve.h"
 #include "uve/objects/3d/collider_debug_scene_uve.h"
 
 namespace UVE::Editor {
@@ -34,6 +37,12 @@ constexpr std::size_t kMaximumOverlayLinesUVE = 16384U;
     return scratch;
 }
 
+/// One collider's worth of lines, reused. Sized for the most tessellated shape at the finest style.
+[[nodiscard]] std::vector<Physics::ColliderDebugLineUVE>& HighlightScratchUVE() {
+    static thread_local std::vector<Physics::ColliderDebugLineUVE> scratch(512U);
+    return scratch;
+}
+
 } // namespace
 
 void EditorUVE::BuildColliderOverlayUVE(std::vector<ViewportColliderLineUVE>& outLines) const {
@@ -48,16 +57,54 @@ void EditorUVE::BuildColliderOverlayUVE(std::vector<ViewportColliderLineUVE>& ou
     // The overlay is a view of the whole document, so the layer filter stays open: narrowing it is
     // a per-project need and belongs on the settings struct, not hard-coded here.
     settings.maximumColliders = 1024U;
+    // The selected collider is drawn by the second pass below, not by the bulk one. Asking the
+    // bulk pass to leave it out keeps a shape from being drawn twice at two widths in the same
+    // pixels, which is what a highlight drawn straight over the base colour would do.
+    const Scene::EntityUVE selected = GetSelectedEntityUVE();
+    settings.excludedEntity = selected;
 
     const Scene::ColliderDebugSceneStatsUVE stats = Scene::BuildColliderDebugSceneUVE(
         m_services->GetEntityManagerUVE(), settings,
         std::span<Physics::ColliderDebugLineUVE>{scratch.data(), kMaximumOverlayLinesUVE});
 
-    outLines.reserve(stats.lineCount);
+    outLines.reserve(stats.lineCount + 256U);
     for (std::size_t index = 0U; index < stats.lineCount; ++index) {
         const Physics::ColliderDebugLineUVE& line = scratch[index];
         outLines.push_back(ViewportColliderLineUVE{{line.from.x, line.from.y, line.from.z},
-                                                   {line.to.x, line.to.y, line.to.z}});
+                                                   {line.to.x, line.to.y, line.to.z}, false});
+    }
+
+    // Clicking the mesh marks its shape. The shape is resolved the same way the simulation
+    // resolves it, so a character whose body is the Collider3D under it highlights that one and a
+    // mesh with no collider highlights nothing at all - which is itself the useful answer.
+    if (selected == Scene::kInvalidEntityUVE) {
+        return;
+    }
+    Scene::IEntityManagerUVE& entities = m_services->GetEntityManagerUVE();
+    // A character's shape lives on a Collider3D under it, so the highlight has to ask the same
+    // question the stepper asks. For everything else this returns the entity itself.
+    const Scene::EntityUVE highlighted =
+        Scene::ResolveCharacterShapeEntityUVE(entities, m_services->GetSceneGraphUVE(), selected);
+    if (!entities.HasComponentUVE<Scene::ColliderComponentUVE>(highlighted) ||
+        !entities.HasComponentUVE<Scene::WorldTransformComponentUVE>(highlighted)) {
+        return;
+    }
+    const Scene::ColliderComponentUVE& collider =
+        entities.GetComponentUVE<Scene::ColliderComponentUVE>(highlighted);
+    if (!Scene::Collider3DUVE::IsParticipatingUVE(collider)) {
+        return;
+    }
+    const Scene::WorldTransformComponentUVE& worldTransform =
+        entities.GetComponentUVE<Scene::WorldTransformComponentUVE>(highlighted);
+    std::vector<Physics::ColliderDebugLineUVE>& highlight = HighlightScratchUVE();
+    const Physics::ColliderDebugBuildResultUVE built = Physics::BuildColliderDebugLinesUVE(
+        collider, worldTransform.worldPosition, worldTransform.worldRotation,
+        std::span<Physics::ColliderDebugLineUVE>{highlight.data(), highlight.size()}, settings.style,
+        worldTransform.worldScale);
+    for (std::size_t index = 0U; index < built.lineCount; ++index) {
+        const Physics::ColliderDebugLineUVE& line = highlight[index];
+        outLines.push_back(ViewportColliderLineUVE{{line.from.x, line.from.y, line.from.z},
+                                                   {line.to.x, line.to.y, line.to.z}, true});
     }
 }
 

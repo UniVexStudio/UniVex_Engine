@@ -28,6 +28,10 @@ struct ColliderDebugSceneSettingsUVE final {
     /// Draw a collider the author has switched off. Off by default, because a disabled collider is
     /// not part of the simulation and drawing it would misreport what is being tested.
     bool includeDisabled = false;
+    /// Leave this collider out of the bulk pass. A viewport that wants to draw one collider
+    /// differently - the selected one, in its own colour and width - builds it on the side and
+    /// names it here, so the shape is never drawn twice into the same pixels.
+    EntityUVE excludedEntity = kInvalidEntityUVE;
     Physics::ColliderDebugStyleUVE style{};
 
     [[nodiscard]] bool operator==(const ColliderDebugSceneSettingsUVE&) const noexcept = default;

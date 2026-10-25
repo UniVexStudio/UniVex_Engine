@@ -1284,13 +1284,21 @@ private:
             constexpr float kColliderWireGreenUVE = 0.95F;
             constexpr float kColliderWireBlueUVE = 0.45F;
             constexpr float kColliderWireWidthPixelsUVE = 1.5F;
+            // The selected object's own shape, lifted rather than recoloured: same family as every
+            // other wireframe, so it still reads as a collider, and still not the selection orange,
+            // so a highlight never looks like the object's outline.
+            constexpr float kColliderHighlightWidthPixelsUVE = 2.5F;
             const univex::math::Vec3 wireColour{kColliderWireRedUVE, kColliderWireGreenUVE,
                                                 kColliderWireBlueUVE};
+            const univex::math::Vec3 highlightColour{0.70F, 1.00F, 0.82F};
             std::vector<univex::gizmo::GizmoLine> colliderLines;
             colliderLines.reserve(overlayState.colliderLines.size());
             for (const auto& line : overlayState.colliderLines) {
-                colliderLines.push_back(univex::gizmo::GizmoLine{toVec3(line.from), toVec3(line.to),
-                                                                 wireColour, kColliderWireWidthPixelsUVE});
+                colliderLines.push_back(
+                    univex::gizmo::GizmoLine{toVec3(line.from), toVec3(line.to),
+                                             line.highlighted ? highlightColour : wireColour,
+                                             line.highlighted ? kColliderHighlightWidthPixelsUVE
+                                                              : kColliderWireWidthPixelsUVE});
             }
             renderPass_->SetColliderWireframesUVE(std::move(colliderLines));
         }
