@@ -2438,6 +2438,16 @@ bool EditorUVE::SetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entr
         return false;
     }
     property.setValue(instance, newValue);
+    // A collider that has just been switched to Capsule inherits a Box's numbers, and the fields'
+    // own defaults (height 1.0, radius 0.5) make the two caps meet exactly: no barrel, so the
+    // author picks Capsule and is shown a sphere. The fit runs here rather than on every height
+    // drag, so it only repairs a shape that cannot express itself and never overrules a height the
+    // author chose on purpose afterwards. It happens before the validity check and before the
+    // "after" clone, so the repaired value is what gets recorded and what undo puts back.
+    if (entry.typeIndex == std::type_index(typeid(Scene::ColliderComponentUVE))) {
+        auto* const collider = static_cast<Scene::ColliderComponentUVE*>(instance);
+        *collider = Scene::FitColliderShapeUVE(*collider);
+    }
     if (entry.isInstanceValid != nullptr && !entry.isInstanceValid(instance)) {
         // The component's own rule refuses this combination; put the prior value back.
         entry.assignInstance(instance, before.GetUVE());

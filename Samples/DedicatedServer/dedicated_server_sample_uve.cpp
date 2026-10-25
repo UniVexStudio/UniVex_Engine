@@ -135,7 +135,7 @@ struct BotUVE final {
         transform.localPosition = spawn;
         sceneGraph.AttachTransformUVE(entityManager, pawn, transform);
         Scene::ApplyCharacter3DObjectDefinitionUVE(entityManager, pawn,
-                                                   Scene::Character3DObjectDefinitionUVE{});
+                                                   Scene::Character3DObjectDefinitionUVE::WithDefaultColliderUVE());
         sceneGraph.UpdateUVE(entityManager);
         const Scene::EntityUVE driver = entityManager.CreateEntityUVE();
         Scene::ControllerComponentUVE controller;
@@ -279,7 +279,7 @@ struct ServerUVE final {
         walkTransform.localPosition = Math::Vector3UVE{10.0F, 3.0F, 10.0F};
         sceneGraph.AttachTransformUVE(entityManager, walker, walkTransform);
         Scene::ApplyCharacter3DObjectDefinitionUVE(entityManager, walker,
-                                                   Scene::Character3DObjectDefinitionUVE{});
+                                                   Scene::Character3DObjectDefinitionUVE::WithDefaultColliderUVE());
         sceneGraph.UpdateUVE(entityManager);
     }
 

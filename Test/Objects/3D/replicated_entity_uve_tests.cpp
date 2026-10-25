@@ -365,7 +365,8 @@ TEST_F(ReplicatedEntityUVETest, PredictedPawnRidesReplicationAsOwner) {
     const EntityUVE pawn = entityManagerA.CreateEntityUVE();
     TransformComponentUVE spawnTransform;
     sceneGraphA.AttachTransformUVE(entityManagerA, pawn, spawnTransform);
-    ApplyCharacter3DObjectDefinitionUVE(entityManagerA, pawn, Character3DObjectDefinitionUVE{});
+    ApplyCharacter3DObjectDefinitionUVE(entityManagerA, pawn,
+                                        Character3DObjectDefinitionUVE::WithDefaultColliderUVE());
     sceneGraphA.UpdateUVE(entityManagerA);
     const EntityUVE driver = entityManagerA.CreateEntityUVE();
     ControllerComponentUVE controller;

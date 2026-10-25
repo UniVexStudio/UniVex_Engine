@@ -5530,7 +5530,8 @@ TEST(EditorUVETest, CharacterBodyInspectorUVE_IsItsChainToTheRootAndNothingElse)
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE body = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, body, Scene::TransformComponentUVE{});
-        Scene::ApplyCharacter3DObjectDefinitionUVE(entityManager, body, Scene::Character3DObjectDefinitionUVE{});
+        Scene::ApplyCharacter3DObjectDefinitionUVE(
+            entityManager, body, Scene::Character3DObjectDefinitionUVE::WithDefaultColliderUVE());
         // Character3D > SolidBody3D > PhysicsObject3D > Object3D > Object. The capsule, layer and mask
         // are drawn inside PhysicsObject3D, so the collider has no section of its own.
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, body),
