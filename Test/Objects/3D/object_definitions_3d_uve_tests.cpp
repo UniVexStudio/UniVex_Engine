@@ -376,6 +376,28 @@ TEST_F(Object3DDefinitionsUVETest, AShapeUnderTheCharacterIsTheCharactersBody) {
     EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), body);
 }
 
+TEST_F(Object3DDefinitionsUVETest, TheCapsuleCharactersUsedToBeBornWithIsNamed) {
+    // A document saved before characters stopped carrying a shape still has this capsule in it, and
+    // the author never added it - so the Outliner has to be able to say where a body nobody asked
+    // for came from. The test is about telling that shape apart from one an author sized.
+    const ColliderComponentUVE legacy = Character3DObjectDefinitionUVE::MakeDefaultColliderUVE();
+    EXPECT_TRUE(IsLegacyCharacterCapsuleUVE(legacy));
+
+    // A capsule the author sized: same shape, different numbers.
+    ColliderComponentUVE authored = Collider3DUVE::MakeCapsuleUVE(0.5F, 2.0F);
+    EXPECT_FALSE(IsLegacyCharacterCapsuleUVE(authored));
+
+    // A box of the same size is not the capsule.
+    EXPECT_FALSE(IsLegacyCharacterCapsuleUVE(Collider3DUVE::MakeBoxUVE({0.4F, 0.9F, 0.4F})));
+
+    // Float noise from a file round trip is still the same capsule; a millimetre is not.
+    ColliderComponentUVE rounded = legacy;
+    rounded.height = 1.8F - 1.0e-6F;
+    EXPECT_TRUE(IsLegacyCharacterCapsuleUVE(rounded));
+    rounded.height = 1.8F - 0.01F;
+    EXPECT_FALSE(IsLegacyCharacterCapsuleUVE(rounded));
+}
+
 TEST_F(Object3DDefinitionsUVETest, AMeshAModelWearsIsNotTheCharactersShape) {
     // The authoring trap: a character with no Collider3D, and the mesh it wears under it. Every
     // mesh in this engine carries a collider, because a mesh you can see is something you can hit -

@@ -69,6 +69,20 @@ struct Character3DObjectDefinitionUVE final {
     }
 };
 
+/// True when `collider` is exactly the capsule Character3D and Player3D used to be born with:
+/// 1.8 m tall, 0.8 m across.
+///
+/// A shape is only ever the author's decision now, so a body carrying this one either asked for it
+/// through WithDefaultColliderUVE() - scripts and samples do - or had it saved into the asset by an
+/// older version, back when every character began life with it. Those two look identical in the
+/// file, and the second is the one that confuses: a character whose Inspector shows a shape nobody
+/// remembers adding, standing on a body nobody can see, because a Collider3D draws nothing.
+///
+/// The engine must not delete it - that would be guessing at an author's scene. Naming it is
+/// enough: the Outliner can then say "this capsule came from the old default" and leave the
+/// decision where it belongs.
+[[nodiscard]] bool IsLegacyCharacterCapsuleUVE(const ColliderComponentUVE& collider) noexcept;
+
 [[nodiscard]] bool IsCharacter3DObjectDefinitionValidUVE(const Character3DObjectDefinitionUVE& value) noexcept;
 
 /// The entity whose ColliderComponentUVE is `character`'s body: the character itself when it

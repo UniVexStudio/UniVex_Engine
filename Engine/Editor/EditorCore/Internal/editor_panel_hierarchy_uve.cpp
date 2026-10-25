@@ -1064,13 +1064,26 @@ std::vector<std::string> EditorUVE::GetObjectWarningsUVE(const Scene::EntityUVE 
     // Collider3D an author then added a second shape in the same place. Computed from the tree
     // every frame, so adding the Collider3D clears it with nothing to dismiss.
     const Scene::Objects::SceneObjectKindUVE kind = Scene::ResolveSceneObjectKindUVE(entityManager, entity);
-    if ((kind == Scene::Objects::SceneObjectKindUVE::Character3D ||
-         kind == Scene::Objects::SceneObjectKindUVE::Player3D) &&
-        Scene::ResolveCharacterShapeEntityUVE(m_services->GetEntityManagerUVE(),
-                                              m_services->GetSceneGraphUVE(), entity) ==
-            Scene::kInvalidEntityUVE) {
-        warnings.emplace_back("No Collider3D: this character has no body, so it falls through the "
-                              "level. A mesh it wears is not a shape - add a Collider3D under it.");
+    if (kind == Scene::Objects::SceneObjectKindUVE::Character3D ||
+        kind == Scene::Objects::SceneObjectKindUVE::Player3D) {
+        Scene::IEntityManagerUVE& entities = m_services->GetEntityManagerUVE();
+        const Scene::EntityUVE body =
+            Scene::ResolveCharacterShapeEntityUVE(entities, m_services->GetSceneGraphUVE(), entity);
+        if (body == Scene::kInvalidEntityUVE) {
+            warnings.emplace_back("No Collider3D: this character has no body, so it falls through the "
+                                  "level. A mesh it wears is not a shape - add a Collider3D under it.");
+        } else if (entities.HasComponentUVE<Scene::ColliderComponentUVE>(body) &&
+                   Scene::IsLegacyCharacterCapsuleUVE(
+                       entities.GetComponentUVE<Scene::ColliderComponentUVE>(body))) {
+            // The one shape an author is most likely to have forgotten, because they never added
+            // it: characters used to be born with this capsule, and a document saved back then
+            // still carries it. A Collider3D draws nothing, so it holds the body up invisibly -
+            // the body stands on a shape that is not in the Outliner and not in the viewport.
+            warnings.emplace_back("Body: the 0.4 m x 1.8 m capsule characters used to be born with. "
+                                  "If you did not add it, it was saved into this asset by an older "
+                                  "version - remove the Collider to let the body fall, or keep it and "
+                                  "move the mesh down to where it stands.");
+        }
     }
     return warnings;
 }
