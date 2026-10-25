@@ -1473,6 +1473,69 @@ TEST_F(Character3DStepUVETest, AControllerWithNoShapeFallsInsteadOfStandingInThe
     EXPECT_FALSE(ControllerUVE(shapeless).grounded);
 }
 
+TEST_F(Character3DStepUVETest, AMeshAndAShapeAuthoredAtTheSameHeightStandOnTheFloor) {
+    // The reported setup, both halves of it. A Player3D at the world origin with two children, each
+    // one metre up: the MeshInstance3D showing a CapsuleMesh, and the Collider3D that is its body.
+    // The floor's top is y = 0.
+    //
+    // The mesh capsule is 2.0 m tall (radius 0.5, half height 1.0) - the size the CapsuleShape3D
+    // fit produces - so a shape and a mesh authored at the same height have the same bottom, and a
+    // body standing on that shape puts the model exactly on the floor: body at 0, mesh 1 m up.
+    //
+    // It used to float a whole metre, because the mover read the collider's SIZE but took its
+    // CENTRE from the body. The shape was queried at the body's origin while the mesh was drawn one
+    // metre above it, which is a capsule hanging in the air over an invisible body.
+    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+    static_cast<void>(floor);
+
+    const Scene::EntityUVE body = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE bodyTransform;
+    bodyTransform.localPosition = {0.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, body, bodyTransform);
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
+        body, Scene::CharacterControllerComponentUVE{});
+
+    const Scene::EntityUVE mesh = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE meshTransform;
+    meshTransform.localPosition = {0.0F, 1.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, mesh, meshTransform);
+    entityManager.AddComponentUVE<Scene::MeshComponentUVE>(mesh, Scene::MeshComponentUVE{});
+    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
+        mesh, Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Capsule});
+    sceneGraph.SetParentUVE(entityManager, mesh, body);
+
+    const Scene::EntityUVE shape = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE shapeTransform;
+    shapeTransform.localPosition = {0.0F, 1.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, shape, shapeTransform);
+    Scene::ColliderComponentUVE capsule = Scene::Collider3DUVE::MakeCapsuleUVE(0.5F, 2.0F);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(shape, capsule);
+    sceneGraph.SetParentUVE(entityManager, shape, body);
+    sceneGraph.UpdateUVE(entityManager);
+
+    ASSERT_FALSE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(body))
+        << "the body itself carries no shape - the Collider3D under it does";
+
+    for (int step = 0; step < 240 && !ControllerUVE(body).grounded; ++step) {
+        const Character3DStepResultUVE report = StepUVE(body);
+        ASSERT_TRUE(report.stepped) << "step " << step;
+    }
+    ASSERT_TRUE(ControllerUVE(body).grounded) << "the body never reached the floor";
+
+    // The shape is what stands on the floor: its centre is half its height above it.
+    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(shape).worldPosition.y,
+                1.0F, 0.02F)
+        << "the Collider3D rests at its own half height, as authored";
+    // ...and the body, whose origin is a metre below the shape, lands at the floor.
+    EXPECT_NEAR(PositionUVE(body).y, 0.0F, 0.02F)
+        << "the body is not lifted by its child's offset, and not sunk by it either";
+    // ...which puts the bottom of the capsule the author sees exactly on the floor.
+    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(mesh).worldPosition.y -
+                    1.0F,
+                0.0F, 0.02F)
+        << "the mesh capsule is 2 m tall, centred 1 m up, so its bottom is the floor";
+}
+
 TEST_F(Character3DStepUVETest, ABodyWearingAMeshWithNoColliderFalls) {
     // The reported setup, exactly: a body with no Collider3D, and the mesh it wears under it as a
     // MeshInstance3D showing a CapsuleMesh. Neither carries a collider - a MeshInstance3D gets a
