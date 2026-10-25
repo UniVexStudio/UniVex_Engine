@@ -13,7 +13,7 @@ constexpr int kOperationalFailureExitCodeUVE = 3;
 
 void PrintUsageUVE() {
     std::cerr << "Usage: uve_pack --project <path-to.uvproject> --runtime <path-to-uve_runtime> "
-                 "--output <distributable-folder>\n";
+                 "--output <distributable-folder> [--cook windows|android]\n";
 }
 
 } // namespace
@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
     UVE::Pack::ProjectPackOptionsUVE options{};
     for (int index = 1; index < argc; ++index) {
         const std::string_view argument = argv[index];
-        if ((argument == "--project" || argument == "--runtime" || argument == "--output") && index + 1 >= argc) {
+        if ((argument == "--project" || argument == "--runtime" || argument == "--output" || argument == "--cook") && index + 1 >= argc) {
             PrintUsageUVE();
             return kUsageExitCodeUVE;
         }
@@ -32,6 +32,11 @@ int main(int argc, char** argv) {
             options.runtimeExecutablePath = argv[++index];
         } else if (argument == "--output") {
             options.outputDirectory = argv[++index];
+        } else if (argument == "--cook") {
+            const std::string_view target = argv[++index];
+            if (target == "windows") options.cookTarget = UVE::Pack::CookTargetUVE::Windows;
+            else if (target == "android") options.cookTarget = UVE::Pack::CookTargetUVE::Android;
+            else { PrintUsageUVE(); return kUsageExitCodeUVE; }
         } else {
             PrintUsageUVE();
             return kUsageExitCodeUVE;

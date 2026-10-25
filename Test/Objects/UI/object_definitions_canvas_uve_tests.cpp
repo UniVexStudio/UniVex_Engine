@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include <type_traits>
+#include <concepts>
 
 #include <gtest/gtest.h>
 
@@ -29,6 +30,11 @@
 
 namespace UVE::Scene::Tests {
 namespace {
+static_assert(std::equality_comparable<CanvasObjectDefinitionUVE>);
+static_assert(std::equality_comparable<UIButtonObjectDefinitionUVE>);
+static_assert(std::equality_comparable<UIImageObjectDefinitionUVE>);
+static_assert(std::equality_comparable<UITextObjectDefinitionUVE>);
+
 
 // All four promoted UI kinds' definitions are reachable from the aggregate header, mirroring
 // the registry test's guarantee: no Canvas kind's home file can be silently dropped.

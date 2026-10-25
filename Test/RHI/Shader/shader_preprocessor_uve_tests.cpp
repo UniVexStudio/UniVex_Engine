@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include "uve/asset/i_file_system_uve.h"
+#include "uve/rhi_shader/built_in_shaders_uve.h"
 
 namespace UVE::Render::Shader::Detail::Tests {
 namespace {
@@ -50,6 +51,22 @@ public:
 
     std::unordered_map<std::string, std::string> files;
 };
+
+TEST(ShaderPreprocessorUVETest, MobileLitMaterialUsesCpuUniformDefaultsAndDesktopKeepsInitializers) {
+    FakeFileSystemUVE files;
+    const std::string source{BuiltIn::kLitShadowed3DSource};
+    const auto mobile = PreprocessShaderSourceUVE(files, "", source,
+        {{"FRAGMENT_SHADER", "1"}, {"UVE_MOBILE", "1"}});
+    const auto desktop = PreprocessShaderSourceUVE(files, "", source,
+        {{"FRAGMENT_SHADER", "1"}, {"UVE_MOBILE", "0"}});
+    ASSERT_TRUE(mobile.success) << mobile.errorMessage;
+    ASSERT_TRUE(desktop.success) << desktop.errorMessage;
+    EXPECT_NE(mobile.resolvedSource.find("uniform float uNormalScale;"), std::string::npos);
+    EXPECT_EQ(mobile.resolvedSource.find("uniform float uNormalScale ="), std::string::npos);
+    EXPECT_NE(desktop.resolvedSource.find("uniform float uNormalScale = 1.0;"), std::string::npos);
+    EXPECT_NE(mobile.resolvedSource.find("uniform float uAlbedoAlpha;"), std::string::npos);
+    EXPECT_NE(desktop.resolvedSource.find("uniform float uAlbedoAlpha = 1.0;"), std::string::npos);
+}
 
 TEST(ShaderPreprocessorUVETest, LeadingBomAndComments_PreserveVersionOrderAndSourceLineMapping) {
     FakeFileSystemUVE fileSystem;

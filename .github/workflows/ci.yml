@@ -8,8 +8,14 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, 'kosuke/**']
   pull_request:
+  workflow_dispatch:
+    inputs:
+      create_artifacts:
+        description: 'Create downloadable build and diagnostic artifacts'
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -17,9 +23,19 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: Ubuntu / GCC / Debug
+    name: Ubuntu / GCC / ${{ matrix.mode }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: Debug
+            sanitizers: 'OFF'
+          - mode: Sanitizers
+            sanitizers: 'ON'
+    env:
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
 
     steps:
       - name: Checkout
@@ -57,7 +73,7 @@ jobs:
         run: bash Engine/Tools/check_panel_includes.sh
 
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DUVE_BUILD_TESTS=ON
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DUVE_BUILD_TESTS=ON -DUVE_ENABLE_SANITIZERS=${{ matrix.sanitizers }}
 
       - name: Build
         # pipefail keeps the step's exit status the compiler's, not tee's: the log is captured so
@@ -65,6 +81,15 @@ jobs:
         run: |
           set -o pipefail
           cmake --build build --parallel "$(nproc)" 2>&1 | tee build-output.log
+
+      - name: Cooked project and asset residency workload
+        run: |
+          build/Engine/Runtime/Pack/uve_asset_workload --create-fixture /tmp/uve-ci-cook-source
+          build/Engine/Runtime/Pack/uve_pack --project /tmp/uve-ci-cook-source/sample.uvproject --runtime build/Engine/App/uve_runtime --output /tmp/uve-ci-cooked --cook android
+          mv /tmp/uve-ci-cook-source /tmp/uve-ci-cook-source-unavailable
+          python3 Engine/Tools/performance/measure_process.py --runs 3 --timeout 120 --output /tmp/uve-ci-asset-rss.json -- build/Engine/Runtime/Pack/uve_asset_workload /tmp/uve-ci-cooked/.uvassetdb /tmp/uve-ci-cooked /tmp/uve-ci-asset-load.json
+          cd /tmp/uve-ci-cooked
+          ./uve_runtime --headless --project sample.uvproject --frames 3
 
       - name: Surface build errors as annotations
         # Same reason the test step annotates failing case names: the job log and the artifact
@@ -175,10 +200,115 @@ jobs:
           fi
 
       - name: Upload test log
-        if: failure()
+        if: failure() && ((github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true'))
         uses: actions/upload-artifact@v4
         with:
-          name: ctest-log
+          name: ctest-log-${{ matrix.mode }}
           path: build/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Validate process measurement runner
+        run: python3 -m unittest discover -s Engine/Tools/performance -p 'test_*.py'
+
+      - name: Record headless editor process baseline
+        if: (github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true')
+        run: >-
+          python3 Engine/Tools/performance/measure_process.py
+          --runs 3 --timeout 60 --output build/editor-process-baseline.json
+          -- build/Engine/App/uve_editor --headless --frames 300
+
+      - name: Upload asset workload measurements
+        if: always() && ((github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: asset-workload-${{ matrix.mode }}
+          path: |
+            /tmp/uve-ci-asset-rss.json
+            /tmp/uve-ci-asset-load.json
+            /tmp/uve-ci-cooked/cooked.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload process baseline
+        if: always() && ((github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: editor-process-baseline-${{ matrix.mode }}
+          path: build/editor-process-baseline.json
+          if-no-files-found: ignore
+
+  android-runtime:
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, x86_64]
+    name: Android / ${{ matrix.abi }} / Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ANDROID_AVD_HOME: /tmp/univex-ci-avds
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Install pinned Android toolchain
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865'
+      - name: Prepare accelerated Android emulator
+        if: matrix.abi == 'x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm
+          sudo chmod a+rw /dev/kvm
+          sdkmanager 'emulator' 'system-images;android-29;default;x86_64'
+          "$ANDROID_HOME/emulator/emulator" -no-window -no-audio -version
+          "$ANDROID_HOME/emulator/emulator" -no-window -accel-check
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force --name univex-ci --path "$ANDROID_AVD_HOME/univex-ci.avd" --package 'system-images;android-29;default;x86_64'
+          sed -i 's/^disk.dataPartition.size=.*/disk.dataPartition.size=2G/' "$ANDROID_AVD_HOME/univex-ci.avd/config.ini"
+          printf 'avd.ini.encoding=UTF-8\npath=/tmp/univex-ci-avds/univex-ci.avd\ntarget=android-29\n' > "$ANDROID_AVD_HOME/univex-ci.ini"
+          "$ANDROID_HOME/emulator/emulator" -no-window -list-avds | grep -Fx univex-ci
+      - name: Build and verify debug-signed APK
+        run: >-
+          python3 Engine/Tools/android/build_apk.py --sdk "$ANDROID_HOME"
+          --cooked-project Samples/CookedRuntimeSmoke/sample.uvproject
+          --build-dir /tmp/univex-android-package --abi ${{ matrix.abi }} --jobs 2
+      - name: Exercise Android lifecycle on accelerated emulator
+        if: matrix.abi == 'x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/emulator/emulator" -avd univex-ci -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader -memory 2048 -cores 2 > /tmp/univex-emulator.log 2>&1 &
+          emulator_pid=$!
+          trap 'adb -s emulator-5554 emu kill || true; kill "$emulator_pid" 2>/dev/null || true' EXIT
+          if ! timeout 120 adb -s emulator-5554 wait-for-device; then
+            cat /tmp/univex-emulator.log
+            exit 1
+          fi
+          booted=false
+          for attempt in $(seq 1 240); do
+            if [ "$(adb -s emulator-5554 shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; then
+              booted=true
+              break
+            fi
+            sleep 2
+          done
+          if [ "$booted" != true ]; then
+            tail -60 /tmp/univex-emulator.log
+            exit 1
+          fi
+          python3 Engine/Tools/android/smoke_runtime.py --adb "$ANDROID_HOME/platform-tools/adb" --serial emulator-5554 --apk /tmp/univex-android-package/univex-runtime-x86_64.apk --report /tmp/univex-android-smoke.json --screenshot /tmp/univex-android-runtime.png --expect-cooked-project --memory-report /tmp/univex-android-meminfo.txt
+          cat /tmp/univex-android-smoke.json
+      - name: Upload Android APK
+        if: (github.event_name == 'workflow_dispatch' && inputs.create_artifacts) || (github.event_name != 'workflow_dispatch' && vars.CREATE_ARTIFACTS == 'true')
+        uses: actions/upload-artifact@v4
+        with:
+          name: UniVex-Android-${{ matrix.abi }}
+          path: /tmp/univex-android-package/univex-runtime-${{ matrix.abi }}.apk
+          if-no-files-found: error

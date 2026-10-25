@@ -30,6 +30,7 @@ struct UIButtonComponentUVE final {
     /// Persisted runtime state: true for exactly the one tick the button was clicked (mouse
     /// pressed this frame while hovered) - callers must read it the same tick it's set.
     bool wasClickedThisFrame = false;
+    [[nodiscard]] bool operator==(const UIButtonComponentUVE&) const = default;
 };
 
 [[nodiscard]] bool IsUIButtonComponentValidUVE(const UIButtonComponentUVE& component) noexcept;

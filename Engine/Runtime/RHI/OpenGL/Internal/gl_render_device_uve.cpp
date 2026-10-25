@@ -317,8 +317,9 @@ struct GlTextureFormatUVE {
 void ReflectPipelineUniformsUVE(
     const Detail::GlFunctionsUVE& gl, GLuint glProgram,
     std::unordered_map<std::string, Detail::GlDeviceStateUVE::PipelineRecordUVE::UniformRecordUVE,
-                       Detail::TransparentStringHashUVE, Detail::TransparentStringEqualUVE>& outUniforms) {
+                       Detail::TransparentStringHashUVE, Detail::TransparentStringEqualUVE>& outUniforms, decltype(outUniforms) outElements) {
     outUniforms.clear();
+    outElements.clear();
 
     GLint activeUniformCount = 0;
     gl.glGetProgramiv(glProgram, GL_ACTIVE_UNIFORMS, &activeUniformCount);
@@ -336,15 +337,27 @@ void ReflectPipelineUniformsUVE(
         gl.glGetActiveUniform(glProgram, static_cast<GLuint>(index), maxNameLength, &writtenLength, &arraySize,
                                &glType, nameBuffer.data());
         std::string name(nameBuffer.data(), static_cast<std::size_t>(writtenLength));
-        if (name.size() > 3 && name.compare(name.size() - 3, 3, "[0]") == 0) {
+        const bool isArray = name.size() > 3 && name.compare(name.size() - 3, 3, "[0]") == 0;
+        if (isArray) {
             name.resize(name.size() - 3);
         }
 
         const GLint location = gl.glGetUniformLocation(glProgram, name.c_str());
-        outUniforms.emplace(std::move(name), Detail::GlDeviceStateUVE::PipelineRecordUVE::UniformRecordUVE{
-                                                  GlUniformTypeToShaderDataTypeUVE(glType), location,
-                                                  static_cast<std::uint32_t>(arraySize),
-                                                  glType == GL_IMAGE_2D});
+        const Detail::GlDeviceStateUVE::PipelineRecordUVE::UniformRecordUVE record{
+            GlUniformTypeToShaderDataTypeUVE(glType), location,
+            static_cast<std::uint32_t>(arraySize), glType == GL_IMAGE_2D};
+        outUniforms.emplace(name, record);
+        if (isArray && location >= 0) {
+            for (GLint element = 0; element < arraySize; ++element) {
+                const std::string elementName = name + "[" + std::to_string(element) + "]";
+                const GLint elementLocation = gl.glGetUniformLocation(glProgram, elementName.c_str());
+                if (elementLocation < 0) continue;
+                auto elementRecord = record;
+                elementRecord.location = elementLocation;
+                elementRecord.arraySize = 1U;
+                outElements.emplace(elementName, elementRecord);
+            }
+        }
     }
 }
 
@@ -612,17 +625,34 @@ bool GlRenderDeviceUVE::ReadbackBufferUVE(BufferHandleUVE buffer, std::span<std:
     // and GL_SHADER_STORAGE_BARRIER_BIT (the SSBO writes themselves). glGetBufferSubData below
     // is then a blocking client read, which is itself a synchronization point - no glFinish is
     // needed on top of it, and issuing one would only widen the stall beyond this buffer.
-    if (m_impl->state.gl.glMemoryBarrier != nullptr) {
+    if (m_impl->state.supportsComputeShadersUVE && m_impl->state.gl.glMemoryBarrier != nullptr) {
         m_impl->state.gl.glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
     }
+#if defined(__ANDROID__)
+    std::vector<std::byte> candidate(outData.size());
+#endif
     GLint previousBufferBinding = 0;
     glGetIntegerv(bindingQuery, &previousBufferBinding);
     m_impl->state.gl.glBindBuffer(it->second.target, it->second.glBuffer);
+#if defined(__ANDROID__)
+    const void* mapped = glMapBufferRange(it->second.target, static_cast<GLintptr>(offsetBytes),
+                                        static_cast<GLsizeiptr>(outData.size()), GL_MAP_READ_BIT);
+    if (mapped == nullptr) {
+        m_impl->state.gl.glBindBuffer(it->second.target, static_cast<GLuint>(previousBufferBinding));
+        return false;
+    }
+    std::memcpy(candidate.data(), mapped, outData.size());
+    const bool unmapped = glUnmapBuffer(it->second.target) == GL_TRUE;
+    m_impl->state.gl.glBindBuffer(it->second.target, static_cast<GLuint>(previousBufferBinding));
+    if (unmapped) std::copy(candidate.begin(), candidate.end(), outData.begin());
+    return unmapped;
+#else
     m_impl->state.gl.glGetBufferSubData(it->second.target, static_cast<GLintptr>(offsetBytes),
                                           static_cast<GLsizeiptr>(outData.size()), outData.data());
     UVE_GL_CHECK_ERROR_UVE("ReadbackBufferUVE");
     m_impl->state.gl.glBindBuffer(it->second.target, static_cast<GLuint>(previousBufferBinding));
     return true;
+#endif
 }
 
 TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
@@ -1041,6 +1071,12 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown front-face winding");
         return kInvalidPipelineHandleUVE;
     }
+#if defined(__ANDROID__)
+    if (desc.fillMode == FillModeUVE::Wireframe) {
+        UVE_WARNING("GlRenderDeviceUVE: GLES does not support polygon wireframe mode");
+        return kInvalidPipelineHandleUVE;
+    }
+#endif
     if (!IsFillModeValidUVE(desc.fillMode)) {
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineUVE received an unknown fill mode");
         return kInvalidPipelineHandleUVE;
@@ -1128,7 +1164,7 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
     record.depthCompare = desc.depthCompare;
     record.stencil = desc.stencil;
     record.topology = desc.topology;
-    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms);
+    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms, record.uniformElements);
 
     const std::uint32_t handleValue = m_impl->state.nextPipelineHandle++;
     m_impl->state.pipelines.emplace(handleValue, std::move(record));
@@ -1190,7 +1226,7 @@ PipelineHandleUVE GlRenderDeviceUVE::CreateComputePipelineUVE(const ComputePipel
     record.isCompute = true;
     // Active-uniform reflection works identically for compute programs, so SetUniform*UVE on a
     // compute pipeline needs no special-casing.
-    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms);
+    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms, record.uniformElements);
 
     const std::uint32_t handleValue = m_impl->state.nextPipelineHandle++;
     m_impl->state.pipelines.emplace(handleValue, std::move(record));
@@ -1287,6 +1323,12 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<const
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown front-face winding");
         return kInvalidPipelineHandleUVE;
     }
+#if defined(__ANDROID__)
+    if (desc.fillMode == FillModeUVE::Wireframe) {
+        UVE_WARNING("GlRenderDeviceUVE: GLES does not support polygon wireframe mode");
+        return kInvalidPipelineHandleUVE;
+    }
+#endif
     if (!IsFillModeValidUVE(desc.fillMode)) {
         UVE_ERROR("GlRenderDeviceUVE: CreatePipelineFromBinaryUVE received an unknown fill mode");
         return kInvalidPipelineHandleUVE;
@@ -1353,7 +1395,7 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<const
     // Uniform locations are not guaranteed portable across a binary load even though behavior
     // is - reflection must always be re-run here, never assumed inherited from the original
     // compile that produced this binary.
-    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms);
+    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms, record.uniformElements);
 
     const std::uint32_t handleValue = m_impl->state.nextPipelineHandle++;
     m_impl->state.pipelines.emplace(handleValue, std::move(record));

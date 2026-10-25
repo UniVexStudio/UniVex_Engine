@@ -36,6 +36,12 @@ public:
     AssetManagerUVE(const AssetManagerUVE&) = delete;
     AssetManagerUVE& operator=(const AssetManagerUVE&) = delete;
 
+    /// Zero disables admission limits. Counts loader-reported CPU payload capacities only;
+    /// excludes transient decoding, allocator overhead, renderer copies and GPU resources.
+    /// Live handles pin data. Lowering the limit never invalidates them.
+    void SetResidentBudgetUVE(std::size_t bytes);
+    [[nodiscard]] std::size_t GetResidentBytesUVE() const;
+    [[nodiscard]] std::size_t GetPeakResidentBytesUVE() const;
     void CollectGarbageUVE() override;
     void ReloadUVE(AssetGuidUVE guid, IAssetDatabaseUVE& assetDatabase) override;
     [[nodiscard]] std::size_t GetLoadedAssetCountUVE() const override;

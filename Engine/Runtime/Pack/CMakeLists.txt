@@ -12,11 +12,12 @@
 # tested without desktop GL.
 
 add_library(uve_pack_lib STATIC
+    Internal/asset_cooker_uve.cpp
     Internal/project_packager_uve.cpp
     Internal/project_launcher_uve.cpp
 )
 target_include_directories(uve_pack_lib PUBLIC Expose)
-target_link_libraries(uve_pack_lib PUBLIC uve_core)
+target_link_libraries(uve_pack_lib PUBLIC uve_core PRIVATE nlohmann_json::nlohmann_json)
 target_compile_features(uve_pack_lib PUBLIC cxx_std_23)
 uve_set_warnings(uve_pack_lib)
 
@@ -24,3 +25,10 @@ add_executable(uve_pack app/main.cpp)
 target_link_libraries(uve_pack PRIVATE uve_pack_lib)
 target_compile_features(uve_pack PRIVATE cxx_std_23)
 uve_set_warnings(uve_pack)
+
+if(NOT ANDROID)
+    add_executable(uve_asset_workload app/asset_workload.cpp)
+    target_link_libraries(uve_asset_workload PRIVATE uve_pack_lib nlohmann_json::nlohmann_json)
+    target_compile_features(uve_asset_workload PRIVATE cxx_std_23)
+    uve_set_warnings(uve_asset_workload)
+endif()

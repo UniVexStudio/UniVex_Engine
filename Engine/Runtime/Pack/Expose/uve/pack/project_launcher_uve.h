@@ -61,7 +61,8 @@ struct ProjectRuntimeSetupResultUVE final {
 /// become absolute, per-user/portable paths are resolved, current-target identity/icons are selected,
 /// and no partially configured EngineConfig escapes on failure.
 [[nodiscard]] ProjectRuntimeSetupResultUVE PrepareProjectRuntimeUVE(
-    const std::filesystem::path& projectFile, Core::EngineConfigUVE& config);
+    const std::filesystem::path& projectFile, Core::EngineConfigUVE& config,
+    const std::filesystem::path& nativeUserDataRoot = {});
 
 /// Roadmap item #7's "played project" bridge: loads `projectFile` (a `.uvproject` package, see
 /// Platform::EditorProjectPackageCodecUVE), loads its configured startup scene into `engine`'s own

@@ -32,35 +32,46 @@ if(NOT ZLIB_FOUND)
     endif()
 endif()
 
-if(NOT ANDROID)
-    find_package(JPEG QUIET)
-    if(NOT JPEG_FOUND)
-        # libjpeg-turbo refuses add_subdirectory()/FetchContent_MakeAvailable.
-        message(STATUS "UVE: JPEG not found - fetching libjpeg-turbo 3.0.3 via ExternalProject")
-        include(ExternalProject)
-        set(_uve_jpeg_install "${CMAKE_BINARY_DIR}/_deps/uve_jpeg-install")
-        ExternalProject_Add(uve_jpeg_ep
-            GIT_REPOSITORY https://github.com/libjpeg-turbo/libjpeg-turbo.git
-            GIT_TAG 3.0.3
-            GIT_SHALLOW TRUE
-            CMAKE_ARGS
-                -DCMAKE_INSTALL_PREFIX=${_uve_jpeg_install}
-                -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-                -DCMAKE_POSITION_INDEPENDENT_CODE=ON
-                -DENABLE_SHARED=OFF
-                -DENABLE_STATIC=ON
-                -DWITH_SIMD=OFF
-                -DWITH_TURBOJPEG=OFF
-            BUILD_BYPRODUCTS "${_uve_jpeg_install}/lib/libjpeg.a"
-        )
-        file(MAKE_DIRECTORY "${_uve_jpeg_install}/include")
-        add_library(JPEG::JPEG STATIC IMPORTED GLOBAL)
-        set_target_properties(JPEG::JPEG PROPERTIES
-            IMPORTED_LOCATION "${_uve_jpeg_install}/lib/libjpeg.a"
-            INTERFACE_INCLUDE_DIRECTORIES "${_uve_jpeg_install}/include"
-        )
-        add_dependencies(JPEG::JPEG uve_jpeg_ep)
+find_package(JPEG QUIET)
+if(NOT JPEG_FOUND)
+    # libjpeg-turbo refuses add_subdirectory()/FetchContent_MakeAvailable.
+    message(STATUS "UVE: JPEG not found - fetching libjpeg-turbo 3.0.3 via ExternalProject")
+    include(ExternalProject)
+    set(_uve_jpeg_install "${CMAKE_BINARY_DIR}/_deps/uve_jpeg-install")
+    set(_uve_jpeg_platform_args)
+    if(ANDROID)
+        list(APPEND _uve_jpeg_platform_args
+            -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
+            -DANDROID_ABI=${ANDROID_ABI}
+            -DANDROID_PLATFORM=${ANDROID_PLATFORM})
     endif()
+    ExternalProject_Add(uve_jpeg_ep
+        GIT_REPOSITORY https://github.com/libjpeg-turbo/libjpeg-turbo.git
+        GIT_TAG 3.0.3
+        GIT_SHALLOW TRUE
+        CMAKE_ARGS
+            ${_uve_jpeg_platform_args}
+            -DCMAKE_INSTALL_PREFIX=${_uve_jpeg_install}
+            -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+            -DENABLE_SHARED=OFF
+            -DENABLE_STATIC=ON
+            -DWITH_SIMD=OFF
+            -DWITH_TURBOJPEG=OFF
+        BUILD_BYPRODUCTS "${_uve_jpeg_install}/lib/libjpeg.a"
+    )
+    file(MAKE_DIRECTORY "${_uve_jpeg_install}/include")
+    add_library(JPEG::JPEG STATIC IMPORTED GLOBAL)
+    set_target_properties(JPEG::JPEG PROPERTIES
+        IMPORTED_LOCATION "${_uve_jpeg_install}/lib/libjpeg.a"
+        INTERFACE_INCLUDE_DIRECTORIES "${_uve_jpeg_install}/include"
+    )
+    add_dependencies(JPEG::JPEG uve_jpeg_ep)
+endif()
+
+if(ANDROID)
+    set(UVE_HAS_DESKTOP_GL OFF)
+    return()
 endif()
 
 find_package(glfw3 QUIET)

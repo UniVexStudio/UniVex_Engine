@@ -20,7 +20,6 @@
 namespace UVE::Scene {
 namespace {
 
-constexpr float kPiUVE = 3.14159265358979323846F;
 constexpr float kDirectionEpsilonUVE = 1.0e-6F;
 constexpr float kMinimumBoneLengthUVE = 0.02F;
 constexpr std::size_t kMaximumRagdollEntitiesPerUpdateUVE = 64U;

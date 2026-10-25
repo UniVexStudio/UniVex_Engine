@@ -361,7 +361,7 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
                             mesh->vertex_normal.exists
                                 ? ufbx_transform_direction(&normalToWorld,
                                                            ufbx_get_vertex_vec3(&mesh->vertex_normal, index))
-                                : ufbx_vec3{0.0, 1.0, 0.0};
+                                : ufbx_vec3{{{0.0, 1.0, 0.0}}};
                         vertex.normal = ToVectorUVE(normal);
                         const float length = std::sqrt((vertex.normal.x * vertex.normal.x) +
                                                        (vertex.normal.y * vertex.normal.y) +

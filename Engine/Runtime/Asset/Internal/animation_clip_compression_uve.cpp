@@ -635,7 +635,7 @@ bool IsCompressedAnimationClipValidUVE(const CompressedAnimationClipUVE& clip) n
             return false;
         }
     }
-    const auto trackIsValid = [&clip](const CompressedAnimationTrackUVE& track,
+    const auto trackIsValid = [](const CompressedAnimationTrackUVE& track,
                                       const bool requireKeys) {
         const std::size_t stride = track.KeyStrideBytesUVE();
         if (stride == 0U || (track.keyData.size() % stride) != 0U) {
