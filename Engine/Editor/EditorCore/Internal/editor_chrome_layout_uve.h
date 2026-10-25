@@ -39,7 +39,8 @@ struct EditorChromeLayoutUVE final {
     /// The bottom dock body (Content, Output, Console): under the viewport, between the side panels.
     ImVec2 contentBrowserPos;
     ImVec2 contentBrowserSize;
-    /// The strip of dock tabs along the very bottom, full width.
+    /// The strip of dock tabs: the dock's header, on the dock's own left and right edges. While the
+    /// dock is hidden it drops to the bottom edge of the frame, because it is then the way back.
     ImVec2 dockTabBarPos;
     ImVec2 dockTabBarSize;
     /// The viewport's header row, over its image: its name, the play controls, and the editor's tools.
@@ -171,14 +172,16 @@ constexpr float kPanelRestoreStripWidthUVE = 14.0F;
 ///
 ///   [logo][ title bar: Menu, status ...................................................... ]
 ///   [logo][ Outliner   ][ Viewport name  > []  tools ................... ][ Inspector tabs ]
-///   [ Outliner tree    ][ viewport image                                ][ Inspector      ]
-///   [                  ][ bottom dock                                   ][                ]
-///   [ dock tabs ............................................................................ ]
+///   [ Outliner tree    ][ dock tabs                                       ][ Inspector      ]
+///   [                  ][ bottom dock                                     ][                ]
 ///
 /// The logo's box spans the title bar and the header row. The Inspector runs from under the title
-/// bar; the Outliner's tree and the viewport's image start under the header row. The tab strip spans
-/// the full width at the very bottom and stays when the dock is hidden, since it is how the dock is
-/// brought back. `dockHeight` is the dock body's height, clamped so the viewport keeps its minimum.
+/// bar; the Outliner's tree and the viewport's image start under the header row. The dock tabs are
+/// the dock's header: same left and right edges as the dock body, directly above it, so the tabs and
+/// the body read as one block attached under the canvas. The strip stays when the dock is hidden,
+/// dropping to the bottom edge of the frame, since it is how the dock is brought back.
+/// `dockHeight` is the whole dock's height - tabs and body - clamped so the viewport keeps its
+/// minimum.
 ///
 /// `sceneVisible`/`inspectorVisible` are the panels' own visibility, passed rather than assumed: a
 /// hidden panel contributes zero width and the viewport takes the space, which is the whole point of
