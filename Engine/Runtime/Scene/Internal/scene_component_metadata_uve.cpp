@@ -3267,6 +3267,31 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
                                           "Fade shadows smoothly to fully lit over this many metres at the end of "
                                           "the final cascade. 0 disables the fade."),
                            "Shadow"),
+
+                // The disc is this light's visible body in the sky, so its rows belong here rather
+                // than on the Sky object: two directional lights are two bodies, each of which
+                // sits where its own light points and is as bright as its own emitter says.
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&DirectionalLight3DComponentUVE::discAngularDiameterDegrees>(
+                                                           "discAngularDiameterDegrees", "Angular Diameter",
+                                                           kPropertyTypeFloatUVE),
+                                                       0.0, 90.0, 0.05),
+                                          "How wide the disc appears, in degrees. 0 hides it. 3.8 is what the "
+                                          "viewport's sun has always looked like; the real sun is 0.53, which "
+                                          "is accurate and small."),
+                           "Sun Disc"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&DirectionalLight3DComponentUVE::discIntensity>(
+                                                           "discIntensity", "Disc Intensity", kPropertyTypeFloatUVE),
+                                                       0.0, 64.0, 0.05),
+                                          "Peak brightness of the disc, on top of the colour and energy the light "
+                                          "already gives the scene. Bright enough and it blooms."),
+                           "Sun Disc"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&DirectionalLight3DComponentUVE::discLimbDarkening>(
+                                                           "discLimbDarkening", "Limb Darkening",
+                                                           kPropertyTypeFloatUVE),
+                                                       0.0, 1.0, 0.01),
+                                          "How much dimmer the disc's rim is than its centre. 0 is a flat disc; the "
+                                          "real sun is about 0.6, a moon about 0.85."),
+                           "Sun Disc"),
             }));
 
     using D = Decal3DComponentUVE;

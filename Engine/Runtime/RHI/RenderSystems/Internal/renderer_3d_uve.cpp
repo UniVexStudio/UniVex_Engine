@@ -1011,6 +1011,12 @@ struct Renderer3DUVE::ImplUVE {
     Math::Vector3UVE sunDirection{0.0F, 1.0F, 0.0F};
     Math::Vector3UVE sunColor{1.0F, 1.0F, 1.0F};
     float sunEnergy = 0.0F;
+    /// The disc the sky draws where `sunDirection` points. Seeded with the values the shader used
+    /// to hard-code, so a frame with no authored directional light - the preview sun included -
+    /// draws exactly the disc it drew before these were authorable.
+    float sunDiscAngularDiameterDegrees = 3.8F;
+    float sunDiscIntensity = 1.0F;
+    float sunDiscLimbDarkening = 0.0F;
     float sunVolumetricFogEnergy = 1.0F;
     std::array<Scene::FogVolume3DFrameUVE, Scene::kMaximumFogVolumesPerFrameUVE> fogVolumes{};
     std::size_t fogVolumeCount = 0;
@@ -4120,6 +4126,9 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->sunVolumetricFogEnergy = 1.0F;
     m_impl->sunDirection = Math::NormalizeUVE(Math::Vector3UVE{0.35F, 0.80F, 0.48F});
     m_impl->sunColor = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+    m_impl->sunDiscAngularDiameterDegrees = 3.8F;
+    m_impl->sunDiscIntensity = 1.0F;
+    m_impl->sunDiscLimbDarkening = 0.0F;
     const LightDataUVE* fallbackInternalDirectional = nullptr;
     for (const LightDataUVE& light : lights) {
         if (light.type != Scene::LightTypeUVE::Directional || light.intensity <= 0.0F) {
@@ -4138,6 +4147,9 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         m_impl->sunDirection = Math::NormalizeUVE(incoming);
         m_impl->sunColor = Math::ToVector3UVE(light.color);
         m_impl->sunEnergy = light.intensity;
+        m_impl->sunDiscAngularDiameterDegrees = light.discAngularDiameterDegrees;
+        m_impl->sunDiscIntensity = light.discIntensity;
+        m_impl->sunDiscLimbDarkening = light.discLimbDarkening;
         m_impl->sunVolumetricFogEnergy = light.volumetricFogEnergy;
         fallbackInternalDirectional = nullptr;
         break;
@@ -4683,6 +4695,10 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->proceduralSkyProgram->SetVector3UVE("uSunDirection", m_impl->sunDirection);
                 m_impl->proceduralSkyProgram->SetVector3UVE("uSunColor", m_impl->sunColor);
                 m_impl->proceduralSkyProgram->SetFloatUVE("uSunEnergy", m_impl->sunEnergy);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uSunAngularDiameter",
+                                                          m_impl->sunDiscAngularDiameterDegrees);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uSunDiscIntensity", m_impl->sunDiscIntensity);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uSunLimbDarkening", m_impl->sunDiscLimbDarkening);
                 m_impl->proceduralSkyProgram->SetIntUVE("uSkyTexture", static_cast<std::int32_t>(kSkyTextureSlotUVE));
                 m_impl->proceduralSkyProgram->SetIntUVE("uSkyTextureEnabled", m_impl->skyTextureEnabled ? 1 : 0);
                 m_impl->proceduralSkyProgram->ApplyToUVE(commandBuffer);

@@ -72,6 +72,12 @@ struct LightDataUVE {
     float shadowSplitBlend = -1.0F;
     /// Directional only: width, in metres, of the fade-to-lit band at the last cascade.
     float shadowDistanceFadeRange = 0.0F;
+    /// Directional only: the sun disc the sky draws along this light's direction. Carried here so
+    /// the sky pass gets the disc from the same light the shadows and the scene lighting came from,
+    /// rather than looking up a second time and risking a different answer.
+    float discAngularDiameterDegrees = 0.0F;
+    float discIntensity = 0.0F;
+    float discLimbDarkening = 0.0F;
 
     /// Render layers this light illuminates. Default every layer, matching an unauthored emitter.
     std::uint32_t cullMask = 0xFFFFFFFFU;
