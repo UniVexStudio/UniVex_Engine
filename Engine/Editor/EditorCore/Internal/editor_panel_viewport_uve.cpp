@@ -844,7 +844,10 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
                                                        m_viewportOverlayState.previewGroundColor[1],
                                                        m_viewportOverlayState.previewGroundColor[2]};
                     env.ambientEnergy = m_viewportOverlayState.previewAmbientEnergy;
-                    env.postProcessingEnabled = true;
+                    // Exactly what the author was looking at. The preview draws no effects stack,
+                    // so an environment that switched them on here would change the picture at the
+                    // moment of adding - the one thing "Add Environment to Scene" must not do.
+                    env.postProcessingEnabled = false;
                 }
                 m_sceneDirty = true;
                 SelectEntityUVE(envEntity);
