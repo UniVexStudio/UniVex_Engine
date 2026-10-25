@@ -450,6 +450,9 @@ public:
     struct ViewportColliderLineUVE final {
         std::array<float, 3> from{};
         std::array<float, 3> to{};
+        /// This segment belongs to the selected object's collider. The overlay marks it rather than
+        /// colouring it, because what a highlight looks like is the viewport's decision.
+        bool highlighted = false;
     };
 
     struct ViewportOverlayStateUVE final {

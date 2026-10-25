@@ -27,6 +27,7 @@ ColliderDebugSceneStatsUVE BuildColliderDebugSceneUVE(IEntityManagerUVE& entityM
         [&](const EntityUVE entity, const WorldTransformComponentUVE& worldTransform,
             const ColliderComponentUVE& collider) {
             if (stats.truncated) return;
+            if (entity == settings.excludedEntity) return;
             if (stats.colliderCount >= settings.maximumColliders) {
                 stats.reachedColliderLimit = true;
                 stats.truncated = true;
