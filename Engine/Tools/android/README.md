@@ -46,12 +46,98 @@ A reproducible smoke check is available for a booted test emulator/device:
 python3 Engine/Tools/android/smoke_runtime.py --adb /path/to/adb --serial emulator-5554 --apk /tmp/univex-android/univex-runtime-x86_64.apk --report /tmp/android-smoke.json --screenshot /tmp/android-runtime.png
 ```
 
-It requires actual GLES cube draws, touch receipt and engine consumption, pause/resume,
-and surface reattachment without a second engine initialization. It records no device FPS claim.
-The debug APK is debuggable for native diagnostics and uses private application storage.
+It requires actual GLES cube draws, touch receipt and engine consumption, and a pause/resume that
+keeps the same engine - plus, when the platform does destroy the window on the way to the home
+screen, that the same engine reattaches the surface instead of starting over. Android is allowed to
+keep the window, and on this emulator it sometimes does, so the check is "detached implies
+reattached" rather than "detached", and the resumed scene has to draw either way. It also requires a
+screen that is not empty (see "A black screen" below), and `--label demo` names the run in the
+failure annotation, which is how a red check says which of the two apks was black and why without
+anybody opening the log.
 
-CI builds arm64 and x86_64 APKs on every normal CI run and exercises x86_64 on a KVM emulator. Uploads follow the same opt-in artifact controls
-as desktop CI (see `.github/CI_ARTIFACTS.md`). The manual checkbox enables an APK download.
+The `android-runtime` job in `.github/workflows/ci.yml` builds both APKs for arm64 and x86_64 and
+exercises x86_64 on a KVM emulator. It is its own job rather than a step of the Linux build because
+the apk is a question about a device, not about whether the tree compiles, and answering it needs an
+emulator. Uploads follow the same opt-in artifact controls as the rest of CI (see
+`.github/CI_ARTIFACTS.md`).
+
+## How an apk is built
+
+There is no Gradle in this project. `build_apk.py` is the whole build, and it is worth reading in the
+order it runs, because every step is a way an apk can come out wrong:
+
+1. **Native library.** CMake with the NDK's own toolchain file, `ANDROID_ABI` set from `--abi`,
+   `ANDROID_PLATFORM=android-28`, `UVE_BUILD_TESTS=OFF`, `CMAKE_BUILD_TYPE=Release`, building the one
+   target `univex_android`. The result is `libunivex_android.so`, which the manifest names through
+   `android.app.lib_name`.
+2. **Assets.** `Engine/Runtime/RHI/Shader/built_in` is staged as `assets/shaders`, because the runtime
+   loads its shader sources from files rather than from the binary. With `--cooked-project`, the
+   project's `runtimeFiles` list is copied into `assets/project` and written to
+   `assets/project-files.txt`, which is the index the runtime extracts at startup.
+3. **Resources.** `aapt2 link` with `Engine/App/Android/AndroidManifest.xml` and the staged asset
+   directory produces an unsigned apk. There is no Java source (`hasCode=false`); the activity is the
+   platform's `android.app.NativeActivity`.
+4. **Libraries.** The stripped `libunivex_android.so` and the NDK's `libc++_shared.so` are written into
+   `lib/<abi>/`, and every staged asset that `aapt2` skipped (it drops dotfiles such as `.uvassetdb`)
+   is added to the archive. A missing cooked file fails the build here rather than the phone later.
+5. **Alignment and signature.** `zipalign -P 16` for 16 KB page alignment, a generated debug keystore
+   (`android`/`android`) made with `keytool` if absent, then `apksigner sign` and `apksigner verify`.
+   The key belongs to the build directory: this is local test signing, not a release signature.
+
+The output is `<build-dir>/univex-runtime-<abi>.apk`. Anything that is not that file - a stale
+`--build-dir`, the other ABI's library, an unaligned archive - is a bug in the packaging step, which
+is why the workflow unpacks both apks and checks that `lib/<abi>/libunivex_android.so` is the one
+inside.
+
+## A black screen
+
+"Installed the apk and the phone shows nothing" has exactly one debugging surface on Android: logcat.
+Every engine log line is written to logcat under the tag `UniVex` (`ConsoleSinkUVE` routes to
+`__android_log_write` on Android; a process's stdout does not appear in logcat, so the desktop
+`std::cout` path is invisible there). Read it with:
+
+```sh
+adb logcat -d -s UniVex:V '*:S'
+```
+
+The markers in `main.cpp` say how far startup got:
+
+- `UVE_ANDROID_INIT_BEGIN` / `UVE_ANDROID_INIT_DONE` - the engine and its GLES context exist.
+- `UVE_ANDROID_LOAD_DONE` - resources and scene loading finished.
+- `UVE_ANDROID_COOKED_PROJECT_LOADED` - the packed project launched (cooked apks only).
+- `UVE_ANDROID_INITIALIZED`, then `UVE_ANDROID_RENDERED` - the first frame was presented.
+- `UVE_ANDROID_FAILED <reason>` - startup stopped, and the string after it is why. The window stays
+  black after this line by definition, because there is no engine left to draw into it.
+- `UVE_ANDROID_COOKED_PROJECT_REJECTED <reason>` - the packed project could not be prepared or
+  activated. The runtime does not die on this: it falls back to its own touch-cube scene, so the
+  phone shows something and the difference between "the runtime is broken" and "the content is
+  broken" is visible both on the screen and in the log. On a cooked apk the smoke script treats this
+  as a failure, because the apk exists to prove the project loads.
+
+The first marker missing tells you which stage failed. If `UVE_ANDROID_FAILED` never appears and
+`UVE_ANDROID_RENDERED` does, the engine is drawing and the frame is empty or invisible: no camera,
+geometry outside the frustum, or a clear colour the device shows as black. If `UVE_ANDROID_FAILED`
+appears before `UVE_ANDROID_INITIALIZED`, it is startup - missing shader assets, or a GLES driver that
+would not give the engine a usable context or config.
+
+Two builds exist because those two failures are indistinguishable from a phone:
+
+```sh
+# The runtime's own touch-cube scene. Black here means the runtime or the driver.
+python3 Engine/Tools/android/build_apk.py --sdk "$ANDROID_HOME" --build-dir /tmp/univex-demo --abi arm64-v8a
+
+# The same runtime with Samples/CookedRuntimeSmoke packed in. Renders here, black in the demo?
+# That is the content, not the engine.
+python3 Engine/Tools/android/build_apk.py --sdk "$ANDROID_HOME" --build-dir /tmp/univex-cooked \
+    --native-build-dir /tmp/univex-demo/native \
+    --cooked-project Samples/CookedRuntimeSmoke/sample.uvproject --abi arm64-v8a
+```
+
+`smoke_runtime.py` now fails a run whose device screen has no content, and greps for
+`UVE_ANDROID_FAILED`. Brightness alone would not catch it - a frame containing only the clear colour
+is uniformly dark but not black - so the check asks for contrast across a 10x10 sample grid: a frame
+with geometry in it has pixels that differ from the background, an empty one does not. That check is
+what turns "the phone is black" into a red CI job instead of another install.
 
 ## Cooked project content
 

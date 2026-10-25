@@ -51,6 +51,13 @@ public:
 
 /// Writes log messages as human-readable lines to stdout
 /// (Trace/Debug/Info) or stderr (Warning/Error/Fatal).
+///
+/// On Android there is no console to write to - a process's stdout does not reach logcat - so the
+/// same lines are written through __android_log_write under the tag "UniVex" instead, with the
+/// message level mapped to the matching logcat priority. That is the only place a device's engine
+/// logs can be read, so it is not optional there: `adb logcat -s UniVex:V` is the whole diagnostic
+/// surface of a phone build.
+///
 /// Thread-safety: thread-safe. Writes are serialized by an internal mutex
 /// so concurrent log calls never interleave mid-line.
 class ConsoleSinkUVE final : public ILogSinkUVE {

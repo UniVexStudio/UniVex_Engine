@@ -1,9 +1,58 @@
 #include "uve/window/android_window_manager_uve.h"
+#include <array>
 #include <android/native_window.h>
 #include <EGL/egl.h>
 #include "uve/events/i_event_system_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 #include "uve/window/window_events_uve.h"
+
 namespace UVE::Window {
+namespace {
+
+/// One candidate for the surface and context, most specific first.
+///
+/// The strict request - 8/8/8/8 colour, a 24-bit depth buffer and an 8-bit stencil buffer, for both
+/// a window and a pbuffer surface - is what nearly every device answers, and it is what the engine
+/// wants: the pbuffer is how a destroyed surface is survived, and the depth/stencil pair is what
+/// the 3D passes describe. A few drivers cannot satisfy all of it at once, and a driver that cannot
+/// is not a driver the engine has to refuse: it answers EGL with zero configurations, the surface is
+/// never created, and the app shows a black window with nothing in it.
+///
+/// Each entry below drops one requirement. The depth buffer stays the longest, because the 3D
+/// renderer needs one; only the last resort trades 24 bits for 16.
+struct EglConfigAttemptUVE {
+    const char* label;
+    EGLint redSize;
+    EGLint greenSize;
+    EGLint blueSize;
+    EGLint alphaSize;
+    EGLint depthSize;
+    EGLint stencilSize;
+};
+
+constexpr std::array<EglConfigAttemptUVE, 4> kEglConfigAttemptsUVE{{
+    {"rgba8 depth24 stencil8", 8, 8, 8, 8, 24, 8},
+    {"rgba8 depth24", 8, 8, 8, 8, 24, 0},
+    {"rgb8 depth24", 8, 8, 8, 0, 24, 0},
+    {"rgb8 depth16", 8, 8, 8, 0, 16, 0},
+}};
+
+[[nodiscard]] EGLConfig ChooseEglConfigUVE(const EGLDisplay display, const EglConfigAttemptUVE& attempt) {
+    const EGLint attributes[] = {EGL_SURFACE_TYPE, EGL_WINDOW_BIT | EGL_PBUFFER_BIT,
+                                 EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
+                                 EGL_RED_SIZE, attempt.redSize, EGL_GREEN_SIZE, attempt.greenSize,
+                                 EGL_BLUE_SIZE, attempt.blueSize, EGL_ALPHA_SIZE, attempt.alphaSize,
+                                 EGL_DEPTH_SIZE, attempt.depthSize, EGL_STENCIL_SIZE, attempt.stencilSize,
+                                 EGL_NONE};
+    EGLint count = 0;
+    EGLConfig config = nullptr;
+    if (eglChooseConfig(display, attributes, &config, 1, &count) == EGL_TRUE && count > 0) {
+        return config;
+    }
+    return nullptr;
+}
+
+} // namespace
 struct AndroidWindowManagerUVE::Impl {
     Impl(Events::IEventSystemUVE& events, ANativeWindow* window, bool vsync)
         : m_events(events), m_window(window), m_vsync(vsync) {}
@@ -30,11 +79,20 @@ AndroidWindowManagerUVE::AndroidWindowManagerUVE(Events::IEventSystemUVE& events
     m_impl->m_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     if (m_impl->m_display == EGL_NO_DISPLAY || eglInitialize(m_impl->m_display, nullptr, nullptr) != EGL_TRUE) return;
     if (eglBindAPI(EGL_OPENGL_ES_API) != EGL_TRUE) return;
-    const EGLint attributes[] = {EGL_SURFACE_TYPE, EGL_WINDOW_BIT | EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
-        EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
-        EGL_DEPTH_SIZE, 24, EGL_STENCIL_SIZE, 8, EGL_NONE};
-    EGLint count = 0;
-    if (eglChooseConfig(m_impl->m_display, attributes, &m_impl->m_config, 1, &count) != EGL_TRUE || count == 0) return;
+    for (const EglConfigAttemptUVE& attempt : kEglConfigAttemptsUVE) {
+        m_impl->m_config = ChooseEglConfigUVE(m_impl->m_display, attempt);
+        if (m_impl->m_config != nullptr) {
+            UVE_INFO("AndroidWindowManagerUVE: EGL config {}", attempt.label);
+            break;
+        }
+        UVE_WARNING("AndroidWindowManagerUVE: no EGL config for {}", attempt.label);
+    }
+    if (m_impl->m_config == nullptr) {
+        // Nothing matched: say so, because the only other symptom is a black window.
+        UVE_ERROR("AndroidWindowManagerUVE: no usable EGL config (EGL error 0x{:X}); the window will "
+                  "stay black", static_cast<unsigned>(eglGetError()));
+        return;
+    }
     const EGLint contextAttributes[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
     m_impl->m_context = eglCreateContext(m_impl->m_display, m_impl->m_config, EGL_NO_CONTEXT, contextAttributes);
     if (m_impl->m_context == EGL_NO_CONTEXT) return;

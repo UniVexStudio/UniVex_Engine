@@ -19,6 +19,8 @@
 #include <gtest/gtest.h>
 
 #include "uve/component/collider_component_uve.h"
+#include "uve/component/mesh_component_uve.h"
+#include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/physics_object_component_uve.h"
 #include "uve/component/predicted_character_component_uve.h"
@@ -33,6 +35,7 @@
 #include "uve/math/vector3_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/character_3d_uve.h"
+#include "uve/objects/3d/collider_3d_uve.h"
 #include "uve/physics/character_world_query_uve.h"
 #include "uve/physics/collision_system_uve.h"
 #include "uve/scene/scene_graph_uve.h"
@@ -1446,6 +1449,175 @@ TEST_F(Character3DStepUVETest, ALayerTheCharacterDoesNotCollideWithIsWalkedStrai
     EXPECT_GT(PositionUVE(character).x, 4.0F);
 }
 
+TEST_F(Character3DStepUVETest, AControllerWithNoShapeFallsInsteadOfStandingInTheAir) {
+    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+    static_cast<void>(floor);
+    // A Character3D authored without a Collider3D: a controller with nothing to stand on and
+    // nothing to hit. It used to be refused - missing collider - and left exactly where the editor
+    // placed it, which reads as a body born with an invisible collider of its own.
+    const Scene::EntityUVE shapeless = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = {0.0F, 3.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, shapeless, transform);
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
+        shapeless, Scene::CharacterControllerComponentUVE{});
+
+    const Math::Vector3UVE start = PositionUVE(shapeless);
+    for (int step = 0; step < 120; ++step) {
+        const Character3DStepResultUVE report = StepUVE(shapeless);
+        ASSERT_TRUE(report.stepped) << "step " << step << ": a shapeless body still moves";
+        ASSERT_EQ(report.code, Character3DStepCodeUVE::NoShape) << "step " << step;
+    }
+    EXPECT_LT(PositionUVE(shapeless).y, start.y) << "gravity reaches a body with no shape";
+    EXPECT_LT(PositionUVE(shapeless).y, 0.0F) << "no shape means no floor: it falls through it";
+    EXPECT_FALSE(ControllerUVE(shapeless).grounded);
+}
+
+TEST_F(Character3DStepUVETest, AMeshAndAShapeAuthoredAtTheSameHeightStandOnTheFloor) {
+    // The reported setup, both halves of it. A Player3D at the world origin with two children, each
+    // one metre up: the MeshInstance3D showing a CapsuleMesh, and the Collider3D that is its body.
+    // The floor's top is y = 0.
+    //
+    // The mesh capsule is 2.0 m tall (radius 0.5, half height 1.0) - the size the CapsuleShape3D
+    // fit produces - so a shape and a mesh authored at the same height have the same bottom, and a
+    // body standing on that shape puts the model exactly on the floor: body at 0, mesh 1 m up.
+    //
+    // It used to float a whole metre, because the mover read the collider's SIZE but took its
+    // CENTRE from the body. The shape was queried at the body's origin while the mesh was drawn one
+    // metre above it, which is a capsule hanging in the air over an invisible body.
+    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+    static_cast<void>(floor);
+
+    const Scene::EntityUVE body = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE bodyTransform;
+    bodyTransform.localPosition = {0.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, body, bodyTransform);
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
+        body, Scene::CharacterControllerComponentUVE{});
+
+    const Scene::EntityUVE mesh = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE meshTransform;
+    meshTransform.localPosition = {0.0F, 1.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, mesh, meshTransform);
+    entityManager.AddComponentUVE<Scene::MeshComponentUVE>(mesh, Scene::MeshComponentUVE{});
+    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
+        mesh, Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Capsule});
+    sceneGraph.SetParentUVE(entityManager, mesh, body);
+
+    const Scene::EntityUVE shape = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE shapeTransform;
+    shapeTransform.localPosition = {0.0F, 1.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, shape, shapeTransform);
+    Scene::ColliderComponentUVE capsule = Scene::Collider3DUVE::MakeCapsuleUVE(0.5F, 2.0F);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(shape, capsule);
+    sceneGraph.SetParentUVE(entityManager, shape, body);
+    sceneGraph.UpdateUVE(entityManager);
+
+    ASSERT_FALSE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(body))
+        << "the body itself carries no shape - the Collider3D under it does";
+
+    for (int step = 0; step < 240 && !ControllerUVE(body).grounded; ++step) {
+        const Character3DStepResultUVE report = StepUVE(body);
+        ASSERT_TRUE(report.stepped) << "step " << step;
+    }
+    ASSERT_TRUE(ControllerUVE(body).grounded) << "the body never reached the floor";
+
+    // The shape is what stands on the floor: its centre is half its height above it.
+    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(shape).worldPosition.y,
+                1.0F, 0.02F)
+        << "the Collider3D rests at its own half height, as authored";
+    // ...and the body, whose origin is a metre below the shape, lands at the floor.
+    EXPECT_NEAR(PositionUVE(body).y, 0.0F, 0.02F)
+        << "the body is not lifted by its child's offset, and not sunk by it either";
+    // ...which puts the bottom of the capsule the author sees exactly on the floor.
+    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(mesh).worldPosition.y -
+                    1.0F,
+                0.0F, 0.02F)
+        << "the mesh capsule is 2 m tall, centred 1 m up, so its bottom is the floor";
+}
+
+TEST_F(Character3DStepUVETest, ABodyWearingAMeshWithNoColliderFalls) {
+    // The reported setup, exactly: a body with no Collider3D, and the mesh it wears under it as a
+    // MeshInstance3D showing a CapsuleMesh. Neither carries a collider - a MeshInstance3D gets a
+    // MeshComponentUVE and nothing else - so there is no shape anywhere, and the body hangs in the
+    // air wearing a capsule. What looks like an invisible collider holding it up is the body being
+    // refused and left where it was placed.
+    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+    static_cast<void>(floor);
+
+    const Scene::EntityUVE body = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE bodyTransform;
+    bodyTransform.localPosition = {0.0F, 3.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, body, bodyTransform);
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
+        body, Scene::CharacterControllerComponentUVE{});
+
+    const Scene::EntityUVE worn = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE wornTransform;
+    sceneGraph.AttachTransformUVE(entityManager, worn, wornTransform);
+    entityManager.AddComponentUVE<Scene::MeshComponentUVE>(worn, Scene::MeshComponentUVE{});
+    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
+        worn, Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Capsule});
+    sceneGraph.SetParentUVE(entityManager, worn, body);
+    sceneGraph.UpdateUVE(entityManager);
+
+    ASSERT_FALSE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(body))
+        << "a Character3D is a controller, not a shape";
+    ASSERT_FALSE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(worn))
+        << "a MeshInstance3D draws a mesh; it is not a collider";
+
+    const Math::Vector3UVE start = PositionUVE(body);
+    for (int step = 0; step < 120; ++step) {
+        const Character3DStepResultUVE report = StepUVE(body);
+        ASSERT_TRUE(report.stepped) << "step " << step << ": a body wearing a mesh still moves";
+        ASSERT_EQ(report.code, Character3DStepCodeUVE::NoShape) << "step " << step;
+    }
+    EXPECT_LT(PositionUVE(body).y, start.y) << "the body falls instead of hanging in the air";
+    EXPECT_NEAR(PositionUVE(body).y, start.y - 0.5F * 9.81F * 2.0F * 2.0F, 0.35F)
+        << "and it falls at gravity, not slowly and not not-at-all";
+}
+
+TEST_F(Character3DStepUVETest, AShapeAuthoredUnderTheBodyPutsTheBodyWhereTheShapeIs) {
+    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+    static_cast<void>(floor);
+
+    // A character with no collider of its own and a Collider3D under it, offset 0.4 up - the shape
+    // is where the author put it, not where the body's origin is. The body falls until the SHAPE
+    // rests on the floor, which leaves the body 0.4 below the shape's centre. Taking the centre
+    // from the body instead would stop the body 0.4 higher and leave the shape hovering.
+    const Scene::EntityUVE body = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE bodyTransform;
+    bodyTransform.localPosition = {0.0F, 3.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, body, bodyTransform);
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
+        body, Scene::CharacterControllerComponentUVE{});
+
+    const Scene::EntityUVE shape = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE shapeTransform;
+    shapeTransform.localPosition = {0.0F, 0.4F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, shape, shapeTransform);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        shape, Scene::Collider3DUVE::MakeCapsuleUVE(0.4F, 1.8F));
+    sceneGraph.SetParentUVE(entityManager, shape, body);
+    sceneGraph.UpdateUVE(entityManager);
+
+    ASSERT_EQ(PositionUVE(body), (Math::Vector3UVE{0.0F, 3.0F, 0.0F}));
+
+    for (int step = 0; step < 240 && !ControllerUVE(body).grounded; ++step) {
+        const Character3DStepResultUVE report = StepUVE(body);
+        ASSERT_TRUE(report.stepped) << "step " << step;
+    }
+    ASSERT_TRUE(ControllerUVE(body).grounded) << "the body never reached the floor";
+
+    const Scene::WorldTransformComponentUVE shapeWorld =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(shape);
+    // A 1.8-tall capsule rests with its centre at half its height.
+    EXPECT_NEAR(shapeWorld.worldPosition.y, 0.9F, 0.02F)
+        << "the shape is what stands on the floor, so the shape is what must be at rest height";
+    EXPECT_NEAR(PositionUVE(body).y, 0.5F, 0.02F)
+        << "the body sits 0.4 under the shape it was authored with";
+}
+
 TEST_F(Character3DStepUVETest, BodiesTheStepCannotDriveAreRefusedWithAReason) {
     const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
     static_cast<void>(floor);
@@ -1453,15 +1625,6 @@ TEST_F(Character3DStepUVETest, BodiesTheStepCannotDriveAreRefusedWithAReason) {
     // Not a controller at all.
     const Scene::EntityUVE plain = MakeBoxUVE({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
     EXPECT_EQ(StepUVE(plain).code, Character3DStepCodeUVE::NotAController);
-
-    // A controller with no collider has nothing to collide with.
-    const Scene::EntityUVE noCollider = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transform;
-    transform.localPosition = {0.0F, 1.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, noCollider, transform);
-    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
-        noCollider, Scene::CharacterControllerComponentUVE{});
-    EXPECT_EQ(StepUVE(noCollider).code, Character3DStepCodeUVE::MissingCollider);
 
     // A predicted body belongs to the predictor: refused, and left exactly where it was.
     const Scene::EntityUVE predicted = MakeCharacterUVE({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
