@@ -68,6 +68,7 @@
 #include "uve/objects/3d/lod_group_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/reflection_probe_3d_uve.h"
+#include "uve/objects/3d/sky_3d_uve.h"
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
 #include "uve/objects/3d/interaction_area_3d_uve.h"
@@ -980,6 +981,99 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 InGroupUVE(DeclareRuntimeStateUVE<&LodGroup3DComponentUVE::culledByDistance>(
                                "culledByDistance", "Distance Culled", kPropertyTypeBoolUVE),
                            "Result"),
+            }));
+}
+
+void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    using S = Sky3DComponentUVE;
+    // Three groups, in the order an author settles them: what the sky is made of, the bands that
+    // only exist for one of those answers, and the image that only exists for the other. Visibility
+    // follows the source rather than every row being always-on, so the Inspector never offers a
+    // panorama path to a gradient sky - a value that is stored but cannot affect the picture is
+    // worse than a value that is not shown.
+    const auto sourceIsPanorama = [](const void* instance) {
+        return static_cast<const Sky3DComponentUVE*>(instance)->source == SkySourceUVE::Panorama;
+    };
+    const auto sourceIsNotPanorama = [](const void* instance) {
+        return static_cast<const Sky3DComponentUVE*>(instance)->source != SkySourceUVE::Panorama;
+    };
+    const auto coloredByCurve = [sourceIsNotPanorama](TypeMetadataPropertyUVE property) {
+        property.isVisible = sourceIsNotPanorama;
+        return property;
+    };
+    const auto coloredWithPanorama = [sourceIsPanorama](TypeMetadataPropertyUVE property) {
+        property.isVisible = sourceIsPanorama;
+        return property;
+    };
+
+    AddValidatedUVE<S, &IsSky3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE("component.sky_3d", "Sky3DComponentUVE", "Sky", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&S::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off, the sky is not drawn and the scene falls back to its WorldEnvironment. "
+                               "The object stays in the scene so its settings survive a toggle."),
+                WithTooltipUVE(
+                    DeclareEnumUVE<&S::source>(
+                        "source", "Source",
+                        {{static_cast<std::int64_t>(SkySourceUVE::Gradient), "Gradient"},
+                         {static_cast<std::int64_t>(SkySourceUVE::Panorama), "Panorama"},
+                         {static_cast<std::int64_t>(SkySourceUVE::Atmosphere), "Atmosphere (planned)"}}),
+                    "Gradient blends three authored bands. Panorama samples an equirectangular image. "
+                    "Atmosphere is the scattering model while it is still being built and draws the "
+                    "gradient until it lands."),
+
+                InGroupUVE(coloredByCurve(WithTooltipUVE(
+                               DeclareUVE<&S::skyColor>("skyColor", "Sky Color", kPropertyTypeColorUVE),
+                               "The colour overhead. Small refinements here change the light more than the "
+                               "colour: this is also the ambient that reaches upward faces.")),
+                           "Gradient"),
+                InGroupUVE(coloredByCurve(WithTooltipUVE(
+                               DeclareUVE<&S::horizonColor>("horizonColor", "Horizon Color", kPropertyTypeColorUVE),
+                               "The colour at eye level. It meets the ground band here, so this is the row "
+                               "that sets how far away the horizon reads.")),
+                           "Gradient"),
+                InGroupUVE(coloredByCurve(WithTooltipUVE(
+                               DeclareUVE<&S::groundColor>("groundColor", "Ground Color", kPropertyTypeColorUVE),
+                               "The colour below the horizon, seen where no geometry covers it. Match it to "
+                               "the level's floor or the seam becomes visible at the edges.")),
+                           "Gradient"),
+                InGroupUVE(coloredByCurve(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::skyCurve>("skyCurve", "Sky Curve", kPropertyTypeFloatUVE),
+                                            0.001, 4.0, 0.01),
+                               "How fast the zenit takes over from the horizon: small keeps a wide band of "
+                               "horizon colour, large compresses it into a line.")),
+                           "Gradient"),
+                InGroupUVE(coloredByCurve(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::groundCurve>("groundCurve", "Ground Curve",
+                                                                        kPropertyTypeFloatUVE),
+                                            0.001, 4.0, 0.01),
+                               "How fast the ground band takes over below the horizon. Large makes the "
+                               "transition abrupt, which suits a hard sea line.")),
+                           "Gradient"),
+
+                InGroupUVE(coloredWithPanorama(WithTooltipUVE(
+                               WithCustomDrawerUVE(
+                                   DeclareUVE<&S::panoramaPath>("panoramaPath", "Panorama",
+                                                               kPropertyTypeStringUVE),
+                                   "file:uvtex"),
+                               "An equirectangular image: width twice its height, the horizon across the "
+                               "middle. Empty leaves the gradient showing.")),
+                           "Panorama"),
+                InGroupUVE(coloredWithPanorama(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::panoramaRotationDegrees>(
+                                                "panoramaRotationDegrees", "Rotation", kPropertyTypeFloatUVE),
+                                            -180.0, 180.0, 0.5),
+                               "Spins the image about the world's up axis, in degrees, so the part worth "
+                               "looking at can be pointed at the scene.")),
+                           "Panorama"),
+                InGroupUVE(coloredWithPanorama(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::panoramaExposure>("panoramaExposure", "Exposure",
+                                                                             kPropertyTypeFloatUVE),
+                                            -10.0, 10.0, 0.05),
+                               "Brightness of the panorama in stops, so an image authored for one exposure "
+                               "can be matched to this scene without editing the file.")),
+                           "Panorama"),
             }));
 }
 
@@ -3490,6 +3584,7 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     DeclareGameplayUVE(entries);
     DeclareNavigationUVE(entries);
     DeclareObjectBasesUVE(entries);
+    DeclareSkyUVE(entries);
     DeclareRenderInstanceObjectsUVE(entries);
     DeclareSkeletonUVE(entries);
     DeclareBoneAttachmentUVE(entries);
