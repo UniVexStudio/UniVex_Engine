@@ -1,34 +1,51 @@
-# Optional CI artifacts
+# What CI uploads
 
-Artifacts default to OFF. Builds and correctness tests still run.
+One workflow (`.github/workflows/ci.yml`), two switches. They answer different
+questions, so they default differently.
 
-For a manual run, open Actions, select CI, choose Run workflow, and turn on
-**Create downloadable build and diagnostic artifacts**. The manual checkbox
-overrides the repository default for that run.
+## Builds somebody can run - on by default
 
-For push and pull-request runs, set the Actions repository variable
-`CREATE_ARTIFACTS` to `true` to enable uploads. Set it to `false` or leave it
-unset to disable uploads. This is a variable, not a secret. Only lowercase
-`true` enables it. No repository settings are changed by these workflows.
+`CREATE_ARTIFACTS` gates the uploads that are a build you can actually try:
 
-The workflow's `android-runtime` job builds the apk for arm64 and x86_64 and
-uploads it under the same checkbox and repository variable. APKs use a
-generated debug signing key for local testing.
+- `UniVex-Editor-Windows-x64` - the Windows editor package, with the DLLs its exe
+  imports collected beside it, from the `windows-editor` job.
+- `UniVex-Android-<abi>-Demo` - the runtime's own touch-cube scene, no project
+  content. Install this one first: a black screen here means the runtime, the EGL
+  surface or the GLES driver, and the logcat line that says which is
+  `UVE_ANDROID_FAILED <reason>`.
+- `UniVex-Android-<abi>-Cooked` - the same runtime with
+  `Samples/CookedRuntimeSmoke` packed in. Renders in the demo and black here means
+  the content, not the engine.
+- `UniVex-Android-<abi>-Smoke` - x86_64 only, and uploaded even when the run failed:
+  the device screenshot (including the black one), the smoke reports and the logcat
+  around them. This is the artifact that explains a black screen after the fact.
 
-It uploads three things per run:
+APKs use a generated debug signing key for local testing; that key belongs to the
+build directory and is not a release signature.
 
-- `UniVex-Android-<abi>-Demo` - the runtime's own touch-cube scene, no project content.
-  Install this one first: black here means the runtime, the EGL surface or the GLES
-  driver, and the logcat line saying which is `UVE_ANDROID_FAILED <reason>`.
-- `UniVex-Android-<abi>-Cooked` - the same runtime with `Samples/CookedRuntimeSmoke`
-  packed in. Renders in the demo and black here means the content, not the engine.
-- `UniVex-Android-<abi>-Smoke` - only for x86_64, and uploaded even when the run
-  failed: the device screenshot (including the black one), the two smoke reports,
-  and the logcat around them. This is the artifact that explains a black screen
-  after the fact.
+Set the Actions repository variable `CREATE_ARTIFACTS` to `false` to stop these, or
+pass `create_artifacts=false` on a manual run (Actions, select CI, Run workflow). The
+manual checkbox overrides the repository variable for that run. This is a variable,
+not a secret.
 
-When OFF, Linux skips the process baseline and all artifact uploads, including
-failure-log uploads. Errors and test results remain in the job log. Windows
-still prepares its runtime DLL folder and runs the packaged executable startup
-check; it skips uploading the downloadable ZIP. Keeping this startup check
-verifies the package dependencies even when no download is requested.
+## Measurements - off by default
+
+`DIAGNOSTIC_ARTIFACTS` gates the uploads that answer questions about a run instead of
+giving anybody something to run:
+
+- `ctest-<mode>` - the full GoogleTest log.
+- `asset-workload-<mode>` - the asset residency measurement.
+- `editor-process-baseline-<mode>` - the headless editor process measurement.
+
+Set the repository variable `DIAGNOSTIC_ARTIFACTS` to `true` to enable them. Nothing
+else changes when they are off; the measurements still run where they are part of a
+test, they are just not uploaded.
+
+## With both off
+
+Builds and correctness tests still run, and the checks still mean what they say. Linux
+skips the editor process baseline run and every upload, including failure-log uploads;
+errors and test results remain in the job log. Windows still prepares its runtime DLL
+folder and runs the packaged executable startup check; it skips uploading the ZIP.
+Android still builds and verifies both apks for both ABIs and still smokes them on the
+emulator - the APKs are just not kept afterwards.

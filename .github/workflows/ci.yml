@@ -339,7 +339,8 @@ jobs:
           ./uve_pack.exe --project ../cook-source/sample.uvproject --runtime ./uve_runtime.exe --output ../cooked --cook windows
           mv ../cook-source ../source-unavailable
           ../cooked/uve_runtime.exe --headless --project ../cooked/sample.uvproject --frames 3
-      - uses: actions/upload-artifact@v4
+      - name: Upload the Windows editor package
+        uses: actions/upload-artifact@v4
         if: env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
             (github.event_name != 'workflow_dispatch' || inputs.create_artifacts)
         with:
