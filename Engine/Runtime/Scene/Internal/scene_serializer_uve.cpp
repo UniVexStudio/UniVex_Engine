@@ -1518,6 +1518,13 @@ template <typename VectorT>
             {"panoramaPath", value.panoramaPath},
             {"panoramaRotationDegrees", value.panoramaRotationDegrees},
             {"panoramaExposure", value.panoramaExposure},
+            {"atmosphereRayleigh", value.atmosphereRayleigh},
+            {"atmosphereMie", value.atmosphereMie},
+            {"atmosphereOzone", value.atmosphereOzone},
+            {"atmosphereMieAnisotropy", value.atmosphereMieAnisotropy},
+            {"atmosphereMultiScatter", value.atmosphereMultiScatter},
+            {"atmosphereIntensity", value.atmosphereIntensity},
+            {"atmosphereSamples", value.atmosphereSamples},
             {"enabled", value.enabled}};
 }
 
@@ -1532,6 +1539,16 @@ template <typename VectorT>
     value.panoramaPath = json.value("panoramaPath", std::string{});
     value.panoramaRotationDegrees = json.value("panoramaRotationDegrees", 0.0F);
     value.panoramaExposure = json.value("panoramaExposure", 0.0F);
+    // Every atmosphere value falls back to its default, so a document written before the model
+    // existed loads as the calibrated Earth rather than as a zeroed atmosphere - which would
+    // render as a black sky with no hint that a field was missing.
+    value.atmosphereRayleigh = json.value("atmosphereRayleigh", 1.0F);
+    value.atmosphereMie = json.value("atmosphereMie", 1.0F);
+    value.atmosphereOzone = json.value("atmosphereOzone", 1.0F);
+    value.atmosphereMieAnisotropy = json.value("atmosphereMieAnisotropy", 0.76F);
+    value.atmosphereMultiScatter = json.value("atmosphereMultiScatter", 1.0F);
+    value.atmosphereIntensity = json.value("atmosphereIntensity", 1.0F);
+    value.atmosphereSamples = json.value("atmosphereSamples", std::uint32_t{16U});
     value.enabled = json.value("enabled", true);
     return value;
 }

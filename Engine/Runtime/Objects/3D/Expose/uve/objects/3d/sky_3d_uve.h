@@ -21,9 +21,10 @@ enum class SkySourceUVE : std::uint8_t {
     Gradient = 0,
     /// An equirectangular image, sampled along the view direction.
     Panorama = 1,
-    /// A scattering model: Rayleigh and Mie over a spherical atmosphere, with ozone absorption.
-    /// RESERVED. Selecting it keeps rendering the gradient until the model lands, so an authored
-    /// scene never has a mode that draws nothing.
+    /// Sunlight scattered and absorbed through a spherical shell of air: Rayleigh on the gas,
+    /// Mie on the aerosol, and ozone absorbing in the high stratosphere. This is why the zenith is
+    /// blue, why the horizon is pale, and why a setting sun is red - the shape of the sky comes
+    /// out of the physics rather than out of a hand-placed gradient.
     Atmosphere = 2,
 };
 
@@ -59,6 +60,32 @@ struct Sky3DComponentUVE final {
     std::string panoramaPath;
     float panoramaRotationDegrees = 0.0F;
     float panoramaExposure = 0.0F;
+
+    /// Atmosphere model. Each coefficient scales one physical term of the real atmosphere, so 1.0
+    /// is Earth and the numbers are not arbitrary art controls: Rayleigh density is the gas, Mie is
+    /// the haze and dust, ozone is the high-altitude absorber that makes twilight blue. 0 turns one
+    /// term off entirely, which is how you isolate what it was contributing.
+    float atmosphereRayleigh = 1.0F;
+    float atmosphereMie = 1.0F;
+    float atmosphereOzone = 1.0F;
+
+    /// Mie anisotropy: how strongly haze throws light forward. 0 scatters evenly, near 1 is a
+    /// tight bright halo around the sun. Earth's haze sits around 0.76, which is why the sky
+    /// brightens as you look toward the sun even away from the disc.
+    float atmosphereMieAnisotropy = 0.76F;
+
+    /// Light that scattered more than once before reaching the eye. Physically this is an
+    /// integral over every bounce, which is why the horizon is bright and shadows are not black;
+    /// here it is one approximation term, and this is its weight. 0 gives the hard, dark
+    /// single-scatter look, 1 is the calibrated default.
+    float atmosphereMultiScatter = 1.0F;
+
+    /// Brightness of the sky as a whole, for matching a scene whose exposure is not the default.
+    float atmosphereIntensity = 1.0F;
+
+    /// View samples along each ray. More samples resolve the horizon band and the twilight
+    /// gradient more finely; the cost is linear and this is the most expensive thing in the pass.
+    std::uint32_t atmosphereSamples = 16U;
 
     /// Off keeps the object in the scene without drawing it - the same courtesy a light's energy
     /// of zero extends, but explicit.

@@ -21,7 +21,20 @@ bool IsSky3DObjectComponentValidUVE(const Sky3DComponentUVE& value) noexcept {
            colorIsSane(value.groundColor) && std::isfinite(value.skyCurve) && value.skyCurve > 0.0F &&
            std::isfinite(value.groundCurve) && value.groundCurve > 0.0F &&
            IsBounded3DObjectStringUVE(value.panoramaPath) && std::isfinite(value.panoramaRotationDegrees) &&
-           std::isfinite(value.panoramaExposure);
+           std::isfinite(value.panoramaExposure) &&
+           // Densities are multipliers on real coefficients, so negative would mean negative air.
+           // The anisotropy bound is the Henyey-Greenstein singularity: at exactly +/-1 the phase
+           // function divides by zero at mu = 1, so one step inside it is the authorable limit.
+           std::isfinite(value.atmosphereRayleigh) && value.atmosphereRayleigh >= 0.0F &&
+           value.atmosphereRayleigh <= 10.0F && std::isfinite(value.atmosphereMie) &&
+           value.atmosphereMie >= 0.0F && value.atmosphereMie <= 10.0F &&
+           std::isfinite(value.atmosphereOzone) && value.atmosphereOzone >= 0.0F &&
+           value.atmosphereOzone <= 10.0F && std::isfinite(value.atmosphereMieAnisotropy) &&
+           value.atmosphereMieAnisotropy > -1.0F && value.atmosphereMieAnisotropy < 1.0F &&
+           std::isfinite(value.atmosphereMultiScatter) && value.atmosphereMultiScatter >= 0.0F &&
+           value.atmosphereMultiScatter <= 4.0F && std::isfinite(value.atmosphereIntensity) &&
+           value.atmosphereIntensity >= 0.0F && value.atmosphereIntensity <= 100.0F &&
+           value.atmosphereSamples >= 4U && value.atmosphereSamples <= 64U;
 }
 
 void ApplySky3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
