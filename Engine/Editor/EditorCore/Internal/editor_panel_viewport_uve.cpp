@@ -203,6 +203,9 @@ void EditorUVE::RenderOverlayUVE() {
     if (m_filePicker.has_value()) {
         DrawFilePickerUVE();
     }
+    if (m_montage.has_value()) {
+        DrawMontageUVE();
+    }
     // Last, so it floats over every panel.
     DrawCommandPaletteUVE();
     ImGui::PopStyleColor(tintedColors);
