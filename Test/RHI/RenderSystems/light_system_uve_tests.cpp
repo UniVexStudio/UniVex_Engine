@@ -105,8 +105,9 @@ TEST_F(LightSystemUVETest, DirectionalLight3DUVE_LightsTheFrameFromItsEmitterAnd
     // Shadows off on the emitter: still lights, no longer casts.
     entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sun).shadowEnabled = false;
     EXPECT_FALSE(lightSystem.ExtractActiveLightsUVE(entityManager)[0].castsShadows);
-    // A negative light is left out rather than drawn as a positive one.
-    entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sun).negative = true;
+    // Zero energy is the honest off switch, and the only one: a light that adds nothing is left
+    // out of the list rather than occupying a slot.
+    entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sun).energy = 0.0F;
     EXPECT_TRUE(lightSystem.ExtractActiveLightsUVE(entityManager).EmptyUVE());
 }
 

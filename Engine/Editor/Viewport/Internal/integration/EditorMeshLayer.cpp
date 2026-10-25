@@ -79,22 +79,9 @@ bool EditorMeshLayerUVE::SyncHeadlightUVE(const univex::camera::OrbitCamera& cam
         headlightEntity_ = CreateHeadlightEntityUVE();
     }
 
-    bool sceneHasItsOwnLight = false;
-    entityManager.ForEachUVE<UVE::Scene::LightComponentUVE>(
-        [this, &sceneHasItsOwnLight](const UVE::Scene::EntityUVE entity,
-                                     const UVE::Scene::LightComponentUVE& light) {
-            if (entity != headlightEntity_ && light.intensity > 0.0F) {
-                sceneHasItsOwnLight = true;
-            }
-        });
-    entityManager.ForEachUVE<UVE::Scene::DirectionalLight3DComponentUVE, UVE::Scene::LightEmitterComponentUVE>(
-        [this, &sceneHasItsOwnLight](const UVE::Scene::EntityUVE entity,
-                                     const UVE::Scene::DirectionalLight3DComponentUVE&,
-                                     const UVE::Scene::LightEmitterComponentUVE& emitter) {
-            if (entity != headlightEntity_ && !emitter.negative && emitter.energy > 0.0F) {
-                sceneHasItsOwnLight = true;
-            }
-        });
+    // "The scene has a light" is the renderer's answer, not the document's: a light it drops for
+    // any reason must not take the panel's only light down with it.
+    const bool sceneHasItsOwnLight = HasContributingSceneLightUVE(entityManager);
 
     UVE::Scene::LightComponentUVE& headlight =
         entityManager.GetComponentUVE<UVE::Scene::LightComponentUVE>(headlightEntity_);

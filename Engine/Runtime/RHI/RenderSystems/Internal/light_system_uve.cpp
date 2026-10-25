@@ -89,9 +89,9 @@ namespace {
     Scene::LightComponentUVE light{};
     light.type = Scene::LightTypeUVE::Directional;
     light.color = emitter.color;
-    // A negative light subtracts; the forward shader only adds, so it is left out rather than
-    // drawn as a positive one.
-    light.intensity = emitter.negative ? 0.0F : emitter.energy;
+    // Energy, and nothing else, decides whether it lights: the forward shader only adds, so there
+    // is no subtractive light to switch to - turning one off is energy zero, in plain sight.
+    light.intensity = emitter.energy;
     if (!TryBuildLightDataUVE(worldTransform, light, outLight)) {
         return false;
     }
@@ -177,7 +177,7 @@ LightListUVE LightSystemUVE::ExtractActiveLightsUVE(Scene::IEntityManagerUVE& en
     LightListUVE result;
 
     ForEachLightDataUVE(entityManager, [&](const LightDataUVE& light) {
-        // A light contributing nothing (a negative light zeroes its intensity when built) is left
+        // A light contributing nothing (zero energy, a zero cull mask, an invalid component) is left
         // out of the list rather than occupying a slot: the shader would skip it anyway, and
         // holding a slot open costs a real light its place. Same rule as the ranked path below.
         if (light.intensity <= 0.0F || result.FullUVE()) {
