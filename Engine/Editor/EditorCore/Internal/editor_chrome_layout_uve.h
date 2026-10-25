@@ -197,9 +197,14 @@ constexpr float kPanelRestoreStripWidthUVE = 14.0F;
     const float totalHeight = viewport.WorkSize.y;
 
     const float chromeHeight = kEditorTopChromeHeightUVE;
-    // The centre column, under the tool strip.
-    const float columnHeight =
-        std::max(kMinimumViewportHeightUVE, totalHeight - chromeHeight - kDockTabBarHeightUVE);
+    // The centre column, under the tool strip. The dock's tab row is reserved only while the dock
+    // is hidden, because that is the one state in which the row has to live at the bottom edge on
+    // its own. While the dock is showing, its tabs are the dock's header and cost the column
+    // nothing - which is why the panels reach the bottom of the frame instead of stopping 24px
+    // short above a band that belonged to no one.
+    const float columnHeight = std::max(
+        kMinimumViewportHeightUVE,
+        totalHeight - chromeHeight - (bottomDockVisible ? 0.0F : kDockTabBarHeightUVE));
     // The side columns also take the tool strip's height: they start right under the title bar.
     const float sideTop = originY + kEditorTitleBarHeightUVE;
     const float sideHeight = columnHeight + kEditorToolbarHeightUVE;
@@ -239,11 +244,17 @@ constexpr float kPanelRestoreStripWidthUVE = 14.0F;
     layout.viewportSize = ImVec2{viewportWidth, std::max(kMinimumViewportHeightUVE, columnHeight - dock)};
     layout.inspectorPos = ImVec2{originX + sceneWidth + viewportWidth, sideTop};
     layout.inspectorSize = ImVec2{inspectorWidth, sideHeight};
-    layout.contentBrowserPos = ImVec2{originX + sceneWidth, top + layout.viewportSize.y};
-    layout.contentBrowserSize = ImVec2{viewportWidth, dock};
-    layout.dockTabBarPos = ImVec2{originX, top + columnHeight};
-    layout.dockTabBarSize = ImVec2{std::max(totalWidth, sceneWidth + viewportWidth + inspectorWidth),
-                                   kDockTabBarHeightUVE};
+    // The dock is the bottom half of the viewport column, not a band across the whole editor. Its
+    // tab row is the top of that block and shares its left and right edges, so the row reads as
+    // the dock's own header: one thing attached under the canvas. Drawn full-width at the bottom
+    // edge of the screen, the row looked like a second window that had landed there by accident,
+    // and nothing connected it to the panel it controlled. When the dock is hidden the row drops
+    // to the reserved strip row, still on the column's edges, because it is the way back.
+    const float dockStripY = bottomDockVisible ? top + layout.viewportSize.y : top + columnHeight;
+    layout.dockTabBarPos = ImVec2{originX + sceneWidth, dockStripY};
+    layout.dockTabBarSize = ImVec2{viewportWidth, kDockTabBarHeightUVE};
+    layout.contentBrowserPos = ImVec2{originX + sceneWidth, dockStripY + kDockTabBarHeightUVE};
+    layout.contentBrowserSize = ImVec2{viewportWidth, std::max(0.0F, dock - kDockTabBarHeightUVE)};
 
     // The grips straddle their seam, so a drag that started on the divider keeps tracking when the
     // pointer wanders a pixel or two onto either panel.

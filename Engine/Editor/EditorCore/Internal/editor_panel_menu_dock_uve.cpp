@@ -527,14 +527,23 @@ void EditorUVE::DrawBottomDockContentUVE() {
     // something anyone drags: dragging happens on the seams, in DrawEditorChromeHandlesUVE().
     ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
-    // No title row and no close button - the tab strip below the dock is what names it and what
-    // hides it. NoMove/NoResize/NoSavedSettings keep a stale imgui.ini from parking it anywhere but
-    // its computed rect.
+    // No title row and no close button - the tab strip at the top of the block is what names it and
+    // what hides it. NoMove/NoResize/NoSavedSettings keep a stale imgui.ini from parking it anywhere
+    // but its computed rect.
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                                       ImGuiWindowFlags_NoSavedSettings |
                                        ImGuiWindowFlags_NoBringToFrontOnFocus;
+    // Square and borderless, like the tab strip directly above it. The theme draws every panel as a
+    // rounded, 1px-outlined card; on a window that sits flush under the canvas those two things are
+    // exactly what makes it read as a separate frame that happens to be parked there. With the
+    // outline gone and the corners square, the strip and the body merge into one block that is
+    // visibly part of the editor instead of a window laid on top of it.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0F);
     if (!ImGui::Begin(kPanelLabelBottomDockUVE, nullptr, flags)) {
         ImGui::End();
+        ImGui::PopStyleVar(2);
         return;
     }
     switch (m_activeBottomDock) {
@@ -591,6 +600,7 @@ void EditorUVE::DrawBottomDockContentUVE() {
             break;
     }
     ImGui::End();
+    ImGui::PopStyleVar(2);
 }
 
 void EditorUVE::DrawEditorChromeHandlesUVE() {
@@ -744,10 +754,16 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
     // Always drawn, dock body or not: this strip is the dock's name, its switcher, and - when the
     // body is hidden - the only visible way back. Every tab toggles: click the one already showing
     // and the dock folds away, click any tab and it unfolds on that section.
+    //
+    // It sits at the top of the dock and takes the dock's own width, so it is the dock's header
+    // rather than an unrelated band across the bottom of the screen. Same square, borderless
+    // treatment as the body underneath, so the two read as one panel.
     ImGui::SetNextWindowPos(layout.dockTabBarPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.dockTabBarSize, ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{6.0F, 2.0F});
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{2.0F, 0.0F});
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0F);
     if (ImGui::Begin(kPanelLabelDockTabsUVE, nullptr, stripFlags)) {
         struct TabUVE final {
             const char* label;
@@ -790,7 +806,7 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
         ImGui::TextDisabled("%s", state);
     }
     ImGui::End();
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar(4);
 }
 
 void EditorUVE::DrawConsoleBodyUVE() {
