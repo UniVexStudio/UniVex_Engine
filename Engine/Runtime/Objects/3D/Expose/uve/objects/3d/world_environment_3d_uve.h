@@ -54,7 +54,11 @@ struct WorldEnvironment3DComponentUVE final {
     WorldEnvironmentFogModeUVE fogMode = WorldEnvironmentFogModeUVE::Height;
     float fogStart = 0.0F;
     float fogEnd = 1000.0F;
-    bool postProcessingEnabled = true;
+    /// Off by default, so adding an environment to a level does not change what the level looks
+    /// like: the editor's preview environment - what an author sees before there is one - draws no
+    /// effects stack, and a default environment that turned bloom, vignette, grain and the rest on
+    /// the moment it was created made "I only added an environment" look like a colour change.
+    bool postProcessingEnabled = false;
     Math::Vector3UVE skyColor{0.31F, 0.54F, 0.91F};
     Math::Vector3UVE horizonColor{0.78F, 0.86F, 0.94F};
     Math::Vector3UVE groundColor{0.24F, 0.21F, 0.18F};
