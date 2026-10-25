@@ -34,9 +34,15 @@ public:
 
     [[nodiscard]] static bool IsParticipatingUVE(const ColliderComponentUVE& collider) noexcept;
     [[nodiscard]] static Math::AabbUVE GetLocalAabbUVE(const ColliderComponentUVE& collider) noexcept;
+    /// World bounds of the shape a mesh of `worldScale` actually occupies.
+    ///
+    /// The scale is a parameter rather than a field read off the collider because a collider does
+    /// not know where it lives: the same authored shape describes a pebble or a wall depending on
+    /// the transform above it. Omitting it is what let a 500x floor keep a 1x collider.
     [[nodiscard]] static Math::AabbUVE GetWorldAabbUVE(const ColliderComponentUVE& collider,
                                                        const Math::Vector3UVE& center,
-                                                       const Math::QuaternionUVE& rotation) noexcept;
+                                                       const Math::QuaternionUVE& rotation,
+                                                       const Math::Vector3UVE& worldScale) noexcept;
     [[nodiscard]] static float GetVolumeUVE(const ColliderComponentUVE& collider) noexcept;
 
     [[nodiscard]] static bool ContainsPointUVE(const ColliderComponentUVE& collider,

@@ -59,21 +59,23 @@ Math::AabbUVE Static3DUVE::ComputeWorldAabbUVE(
     const ColliderComponentUVE& collider,
     const WorldTransformComponentUVE& worldTransform) noexcept {
     return Collider3DUVE::GetWorldAabbUVE(collider, worldTransform.worldPosition,
-                                          worldTransform.worldRotation);
+                                          worldTransform.worldRotation, worldTransform.worldScale);
 }
 
 bool Static3DUVE::ContainsWorldPointUVE(const ColliderComponentUVE& collider,
                                         const WorldTransformComponentUVE& worldTransform,
                                         const Math::Vector3UVE& worldPoint) noexcept {
-    return Collider3DUVE::ContainsPointUVE(collider, worldTransform.worldPosition,
-                                           worldTransform.worldRotation, worldPoint);
+    return Collider3DUVE::ContainsPointUVE(ScaleColliderUVE(collider, worldTransform.worldScale),
+                                           worldTransform.worldPosition, worldTransform.worldRotation,
+                                           worldPoint);
 }
 
 std::optional<Math::RayHitUVE> Static3DUVE::IntersectWorldRayUVE(
     const ColliderComponentUVE& collider, const WorldTransformComponentUVE& worldTransform,
     const Math::RayUVE& ray, const float maxDistance) noexcept {
-    return Collider3DUVE::IntersectRayUVE(collider, worldTransform.worldPosition,
-                                          worldTransform.worldRotation, ray, maxDistance);
+    return Collider3DUVE::IntersectRayUVE(ScaleColliderUVE(collider, worldTransform.worldScale),
+                                          worldTransform.worldPosition, worldTransform.worldRotation, ray,
+                                          maxDistance);
 }
 
 } // namespace UVE::Scene

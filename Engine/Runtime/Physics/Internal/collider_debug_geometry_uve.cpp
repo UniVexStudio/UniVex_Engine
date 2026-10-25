@@ -90,8 +90,9 @@ void PushBarrelLinesUVE(const Math::Vector3UVE& topCenter, const Math::Vector3UV
     return center + Math::RotateVectorUVE(rotation, local);
 }
 
-/// Local half extents of a collider, matching what the narrow phase reads (never the transform's
-/// scale - see the header's note on why).
+/// Local half extents of a collider, matching what the narrow phase reads. The caller hands in the
+/// shape already scaled by the transform, so this stays one expression and cannot drift from the
+/// simulation the way a second scale rule would.
 [[nodiscard]] Math::Vector3UVE LocalHalfExtentsUVE(const Scene::ColliderComponentUVE& collider) noexcept {
     return Scene::GetColliderLocalHalfExtentsUVE(collider);
 }
@@ -155,18 +156,25 @@ ColliderDebugBuildResultUVE BuildColliderDebugLinesUVE(const Scene::ColliderComp
                                                        const Math::Vector3UVE& worldCenter,
                                                        const Math::QuaternionUVE& worldRotation,
                                                        const std::span<ColliderDebugLineUVE> outLines,
-                                                       const ColliderDebugStyleUVE& style) noexcept {
+                                                       const ColliderDebugStyleUVE& style,
+                                                       const Math::Vector3UVE& worldScale) noexcept {
     ColliderDebugBuildResultUVE result;
     if (outLines.empty()) return result;
-    if (!Math::IsFiniteUVE(worldCenter) || !Math::IsFiniteUVE(worldRotation)) return result;
+    if (!Math::IsFiniteUVE(worldCenter) || !Math::IsFiniteUVE(worldRotation) ||
+        !Math::IsFiniteUVE(worldScale)) {
+        return result;
+    }
+    // Everything below is written against the shape the simulation collides with, at the size the
+    // mesh is drawn at, so the wireframe can never disagree with either one.
+    const Scene::ColliderComponentUVE scaled = Scene::ScaleColliderUVE(collider, worldScale);
 
     if (style.drawBoundsOnly) {
         const Math::Vector3UVE halfExtents = LocalHalfExtentsUVE(collider);
-        if (!Scene::IsColliderComponentValidUVE(collider)) return result;
+        if (!Scene::IsColliderComponentValidUVE(scaled)) return result;
         BuildOrientedBoxDebugLinesUVE(worldCenter, halfExtents, worldRotation, outLines, result);
         return result;
     }
-    if (!Scene::IsColliderComponentValidUVE(collider)) return result;
+    if (!Scene::IsColliderComponentValidUVE(scaled)) return result;
 
     const std::size_t segments = ResolveColliderDebugSegmentsUVE(style);
     // The collider's own local axes, rotated into world space once. Capsules and cylinders stand
@@ -176,22 +184,22 @@ ColliderDebugBuildResultUVE BuildColliderDebugLinesUVE(const Scene::ColliderComp
     const Math::Vector3UVE lateralX = Math::RotateVectorUVE(worldRotation, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
     const Math::Vector3UVE lateralZ = Math::RotateVectorUVE(worldRotation, Math::Vector3UVE{0.0F, 0.0F, 1.0F});
 
-    switch (collider.shapeType) {
+    switch (scaled.shapeType) {
     case Scene::ColliderShapeTypeUVE::Box: {
-        BuildOrientedBoxDebugLinesUVE(worldCenter, collider.halfExtents, worldRotation, outLines, result);
+        BuildOrientedBoxDebugLinesUVE(worldCenter, scaled.halfExtents, worldRotation, outLines, result);
         return result;
     }
     case Scene::ColliderShapeTypeUVE::Sphere: {
-        const float radius = collider.radius;
+        const float radius = scaled.radius;
         PushCircleUVE(worldCenter, lateralX, barrelAxis, radius, segments, outLines, result);
         PushCircleUVE(worldCenter, lateralX, lateralZ, radius, segments, outLines, result);
         PushCircleUVE(worldCenter, lateralZ, barrelAxis, radius, segments, outLines, result);
         return result;
     }
     case Scene::ColliderShapeTypeUVE::Capsule: {
-        const float radius = collider.radius;
+        const float radius = scaled.radius;
         const float barrelHalfLength =
-            std::max(kMinimumCapsuleBarrelUVE, collider.height * 0.5F - radius);
+            std::max(kMinimumCapsuleBarrelUVE, scaled.height * 0.5F - radius);
         const Math::Vector3UVE topCenter = worldCenter + barrelAxis * barrelHalfLength;
         const Math::Vector3UVE bottomCenter = worldCenter - barrelAxis * barrelHalfLength;
         PushCircleUVE(topCenter, lateralX, lateralZ, radius, segments, outLines, result);
@@ -206,8 +214,8 @@ ColliderDebugBuildResultUVE BuildColliderDebugLinesUVE(const Scene::ColliderComp
         return result;
     }
     case Scene::ColliderShapeTypeUVE::Cylinder: {
-        const float radius = collider.radius;
-        const float halfHeight = collider.height * 0.5F;
+        const float radius = scaled.radius;
+        const float halfHeight = scaled.height * 0.5F;
         const Math::Vector3UVE topCenter = worldCenter + barrelAxis * halfHeight;
         const Math::Vector3UVE bottomCenter = worldCenter - barrelAxis * halfHeight;
         PushCircleUVE(topCenter, lateralX, lateralZ, radius, segments, outLines, result);

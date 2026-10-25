@@ -61,12 +61,11 @@ struct ColliderDebugBuildResultUVE final {
 
 /// World-space wireframe of one collider.
 ///
-/// `worldCenter` and `worldRotation` are the entity's world transform. World SCALE is deliberately
-/// not a parameter: this engine's colliders are scale-independent by convention -
-/// `GetColliderLocalHalfExtentsUVE` and every narrow phase read the authored extents and ignore the
-/// transform's scale - so a debug view that applied it would draw a shape the simulation does not
-/// use, which is worse than no debug view at all. Scaling is visible the other way round: the mesh
-/// scales and the wireframe does not, which is exactly the mismatch the author needs to see.
+/// `worldCenter`, `worldRotation` and `worldScale` are the entity's world transform. The scale is
+/// applied exactly as the simulation applies it - both go through `ScaleColliderUVE` - so the
+/// wireframe is the shape things are really colliding against. That matters more than it sounds:
+/// the previous convention ignored scale, so an object scaled up four times drew a wireframe a
+/// quarter of its collider, and a floor scaled 500x looked like it had no collider at all.
 ///
 /// Shape by shape, all in the collider's own local frame before `worldRotation` is applied:
 ///  * Box       - 12 edges of the authored half extents.
@@ -84,7 +83,8 @@ struct ColliderDebugBuildResultUVE final {
 [[nodiscard]] ColliderDebugBuildResultUVE BuildColliderDebugLinesUVE(
     const Scene::ColliderComponentUVE& collider, const Math::Vector3UVE& worldCenter,
     const Math::QuaternionUVE& worldRotation, std::span<ColliderDebugLineUVE> outLines,
-    const ColliderDebugStyleUVE& style = {}) noexcept;
+    const ColliderDebugStyleUVE& style = {},
+    const Math::Vector3UVE& worldScale = Math::Vector3UVE{1.0F, 1.0F, 1.0F}) noexcept;
 
 /// The 12 edges of an oriented box, as its own entry point.
 ///
