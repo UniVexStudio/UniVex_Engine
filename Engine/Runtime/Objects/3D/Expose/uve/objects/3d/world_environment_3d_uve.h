@@ -196,6 +196,10 @@ struct WorldEnvironmentFrameUVE final {
     float skyRayleighDensity = 1.0F;
     /// Fog is applied where it is resolved: the horizon band does not depend on the sun.
     bool skyFogLinked = false;
+    /// Output of the sky as a whole, straight from the component: the renderer multiplies the sky
+    /// pass by this and gates the sky clock on the second.
+    float skyLuminance = 1.0F;
+    bool skyAnimated = true;
     /// What a reflective surface shows, resolved alongside the ambient for the same reason.
     bool skyReflectionsLinked = false;
     Math::Vector3UVE reflectionSky{};

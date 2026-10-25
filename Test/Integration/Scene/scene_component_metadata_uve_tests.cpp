@@ -16,6 +16,8 @@
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
+#include "uve/component/mesh_component_uve.h"
+#include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/transform_component_uve.h"
@@ -667,6 +669,27 @@ TEST(SceneComponentMetadataUVETest, CharacterSectionHostsTheColliderAndKeepsItsT
         const TypeMetadataPropertyUVE* const property = FindPropertyUVE(*collider, name);
         ASSERT_NE(property, nullptr) << name;
         EXPECT_EQ(property->customDrawerId, std::string(kLayerMaskDrawerPhysicsUVE)) << name;
+    }
+}
+
+// A primitive mesh is the mesh, not a feature on top of it. On a MeshInstance3D the mesh section
+// already picks the shape and authors its material and colour, so the primitive's own section drew
+// all three rows a second time. Nesting it under the mesh component removes the duplicate; an
+// object that carries a primitive and no mesh component still gets the section, so nothing becomes
+// unreachable.
+TEST(SceneComponentMetadataUVETest, PrimitiveMeshIsDrawnByTheMeshSectionRatherThanTwice) {
+    const TypeMetadataEntryUVE* mesh = FindSceneComponentMetadataUVE(std::type_index(typeid(MeshComponentUVE)));
+    const TypeMetadataEntryUVE* primitive =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(PrimitiveMeshComponentUVE)));
+    ASSERT_NE(mesh, nullptr);
+    ASSERT_NE(primitive, nullptr);
+    ASSERT_FALSE(primitive->nestedUnderTypeIds.empty());
+    EXPECT_EQ(primitive->nestedUnderTypeIds.front(), mesh->typeId);
+
+    // The three rows the mesh section draws in its own shape. Resolved by name here so a rename
+    // that silently stopped one of them being drawn anywhere would fail rather than pass.
+    for (const char* const name : {"kind", "baseColor", "materialGuid"}) {
+        EXPECT_NE(FindPropertyUVE(*primitive, name), nullptr) << name;
     }
 }
 

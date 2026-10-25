@@ -53,7 +53,12 @@ bool IsSky3DObjectComponentValidUVE(const Sky3DComponentUVE& value) noexcept {
            // The link strengths are dials over an already-computed answer, so [0,1] is the whole
            // range: zero is exactly "off", one is exactly the sky's own value.
            std::isfinite(value.ambientStrength) && value.ambientStrength >= 0.0F && value.ambientStrength <= 1.0F &&
-           std::isfinite(value.fogStrength) && value.fogStrength >= 0.0F && value.fogStrength <= 1.0F;
+           std::isfinite(value.fogStrength) && value.fogStrength >= 0.0F && value.fogStrength <= 1.0F &&
+           // Bounded rather than merely non-negative: a sky at a thousand is a white screen that
+           // also blows out every bloom pass downstream, which is not a brightness an author can
+           // use. Eight is three stops, the same ceiling the Inspector offers, so a value written
+           // by a script cannot be one the panel refuses to show.
+           std::isfinite(value.luminance) && value.luminance >= 0.0F && value.luminance <= 8.0F;
 }
 
 namespace {

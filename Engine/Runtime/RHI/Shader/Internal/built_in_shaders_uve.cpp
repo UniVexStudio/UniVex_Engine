@@ -826,6 +826,10 @@ uniform float uCloudSoftness;
 uniform float uCloudSilverLining;
 uniform sampler2D uSkyTexture;
 uniform int uSkyTextureEnabled;
+// One multiplier over every source, applied at the end: how bright this sky is, whichever of the
+// three drew it. A source's own controls shape it; this is the only term that says "more" or
+// "less" without changing what the sky is.
+uniform float uSkyLuminance;
 
 // The disc: a body of the light the scene is lit by, not a texture on the sky. Its size is the
 // light's own angular diameter, so a moon and a sun over the same sky differ in this term and
@@ -1385,7 +1389,9 @@ void main() {
     } else {
         color = GradientSkyWithOverlaysUVE(worldDir, sunDir);
     }
-    FragColor = vec4(max(color, vec3(0.0)), 1.0);
+    // Clamped at zero and multiplied last, so a source can never come out negative and the dial
+    // means the same thing for a panorama, a gradient and a scattering sky.
+    FragColor = vec4(max(color, vec3(0.0)) * max(uSkyLuminance, 0.0), 1.0);
 }
 #endif
 )GLSLSRC";

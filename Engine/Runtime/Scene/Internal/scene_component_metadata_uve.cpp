@@ -1274,6 +1274,23 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                           "bands are the reflection. A captured environment map or reflection "
                                           "probe still wins where one is set."),
                            "Lighting Link"),
+
+                // Output and behaviour of the sky as a whole, after the Lighting Link because they
+                // are about the picture rather than about the scene it lights.
+                InGroupUVE(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::luminance>("luminance", "Luminance",
+                                                                    kPropertyTypeFloatUVE),
+                                            0.0, 8.0, 0.01),
+                               "How bright this sky is, whichever source is drawing it. 1 is as authored, 2 "
+                               "is one stop brighter, 0 is black. It does not change the light the sky throws "
+                               "on the scene - that is Ambient Strength, under Lighting Link."),
+                           "Output"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&S::animate>("animate", "Animate",
+                                                                 kPropertyTypeBoolUVE),
+                                          "Whether the sky's own clock runs. Off freezes the cloud drift where "
+                                          "it is, so two frames can be compared without the sky moving "
+                                          "underneath the difference."),
+                           "Advanced"),
             }));
 }
 

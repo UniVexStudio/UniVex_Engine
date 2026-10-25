@@ -1542,6 +1542,8 @@ template <typename VectorT>
             {"fogFromSky", value.fogFromSky},
             {"fogStrength", value.fogStrength},
             {"reflectionsFromSky", value.reflectionsFromSky},
+            {"luminance", value.luminance},
+            {"animate", value.animate},
             {"enabled", value.enabled}};
 }
 
@@ -1583,6 +1585,8 @@ template <typename VectorT>
     value.fogFromSky = json.value("fogFromSky", false);
     value.fogStrength = json.value("fogStrength", 1.0F);
     value.reflectionsFromSky = json.value("reflectionsFromSky", false);
+    value.luminance = json.value("luminance", 1.0F);
+    value.animate = json.value("animate", true);
     value.enabled = json.value("enabled", true);
     return value;
 }

@@ -3996,18 +3996,6 @@ void Renderer3DUVE::CaptureDueReflectionProbesUVE(Scene::IEntityManagerUVE& enti
 }
 
 void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity) {
-    // Advanced here rather than in the sky pass so a frame that skips the sky - a probe capture, a
-    // frame with no environment - does not stop time for the next one that draws it.
-    {
-        const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
-        if (m_impl->skyClockLast.time_since_epoch().count() != 0) {
-            const float elapsed = std::chrono::duration<float>(now - m_impl->skyClockLast).count();
-            // Clamped: a breakpoint, a stall or a window drag must not teleport the clouds across
-            // the sky on the frame the program resumes.
-            m_impl->skyTimeSeconds += std::clamp(elapsed, 0.0F, 0.1F);
-        }
-        m_impl->skyClockLast = now;
-    }
     const bool capturingProbe = m_impl->probeCaptureViewActive;
     if (!capturingProbe) {
         m_impl->lastFrameDiagnostics = Renderer3DFrameDiagnosticsUVE{};
@@ -4064,6 +4052,21 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         return;
     }
     m_impl->environmentFrame = Scene::ResolveWorldEnvironmentFrameUVE(entityManager, m_impl->ambientColor);
+    // The sky's clock. Advanced here, after the environment is resolved, rather than in the sky
+    // pass: a frame that skips the sky - a probe capture, a frame with no environment - must not
+    // stop time for the next one that draws it, and a sky told not to animate must not advance.
+    // The timestamp is recorded either way, so freezing and resuming does not accumulate the
+    // elapsed time into one jump.
+    {
+        const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+        if (m_impl->skyClockLast.time_since_epoch().count() != 0 && m_impl->environmentFrame.skyAnimated) {
+            const float elapsed = std::chrono::duration<float>(now - m_impl->skyClockLast).count();
+            // Clamped: a breakpoint, a stall or a window drag must not teleport the clouds across
+            // the sky on the frame the program resumes.
+            m_impl->skyTimeSeconds += std::clamp(elapsed, 0.0F, 0.1F);
+        }
+        m_impl->skyClockLast = now;
+    }
     // Editor preview environment, applied strictly in the gap a real WorldEnvironment would fill.
     // The check is on the RESOLVED frame rather than on the injected value so a scene that gains a
     // WorldEnvironment mid-frame immediately takes priority, with no editor bookkeeping to reset.
@@ -4766,6 +4769,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->proceduralSkyProgram->SetFloatUVE("uCloudSoftness", m_impl->environmentFrame.cloudSoftness);
                 m_impl->proceduralSkyProgram->SetFloatUVE("uCloudSilverLining",
                                                           m_impl->environmentFrame.cloudSilverLining);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uSkyLuminance", m_impl->environmentFrame.skyLuminance);
                 m_impl->proceduralSkyProgram->SetIntUVE("uSkyTexture", static_cast<std::int32_t>(kSkyTextureSlotUVE));
                 m_impl->proceduralSkyProgram->SetIntUVE("uSkyTextureEnabled", m_impl->skyTextureEnabled ? 1 : 0);
                 m_impl->proceduralSkyProgram->ApplyToUVE(commandBuffer);

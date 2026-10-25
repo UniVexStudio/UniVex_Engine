@@ -153,6 +153,19 @@ struct Sky3DComponentUVE final {
     /// Off, reflections fall back to the ambient hemisphere.
     bool reflectionsFromSky = false;
 
+    // Output and behaviour of the sky as a whole, rather than of any one thing it is made of.
+    //
+    /// Scales the sky's radiance once every source has had its say: the one number that answers
+    /// "how bright is this sky", whichever source is drawing it. 1 is as authored, 2 is one stop
+    /// brighter, 0 is black. It does not touch the light the sky throws on the scene - that is
+    /// Ambient Strength, in the Lighting Link, because a sky can be bright to look at and dim as a
+    /// lamp, and an author who wants one is not asking for the other.
+    float luminance = 1.0F;
+    /// Whether the sky's own clock runs. Off freezes the cloud drift where it is, so a frame can be
+    /// compared with the one before it without the sky moving underneath the difference. On is the
+    /// behaviour the sky has always had.
+    bool animate = true;
+
     /// Off keeps the object in the scene without drawing it - the same courtesy a light's energy
     /// of zero extends, but explicit.
     bool enabled = true;

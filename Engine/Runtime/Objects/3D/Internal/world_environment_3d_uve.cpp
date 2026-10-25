@@ -210,6 +210,8 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
         frame.skyAmbientStrength = sky.ambientStrength;
         frame.skyRayleighDensity = sky.atmosphereRayleigh;
         frame.skyReflectionsLinked = sky.reflectionsFromSky;
+        frame.skyLuminance = sky.luminance;
+        frame.skyAnimated = sky.animate;
         // Fog is a blend, not a replacement: strength 0 leaves the environment's fog colour
         // exactly as authored, which is what makes the switch safe to flip back and forth.
         if (sky.fogFromSky) {
@@ -275,7 +277,10 @@ void ApplySunToWorldEnvironmentFrameUVE(WorldEnvironmentFrameUVE& frame, const M
             // a mirror, so it should show the colour that was drawn rather than the dimmer light
             // that colour throws. Night drives all three to zero, which is what a mirror under a
             // dark sky shows.
-            const float daylight = ambient.daylight;
+            // Luminance is the sky's own brightness, so a mirror in front of it must dim with it.
+            // Applying it here rather than per-material keeps the two readings of the same sky
+            // consistent: the picture and the reflection cannot disagree about how bright it is.
+            const float daylight = ambient.daylight * frame.skyLuminance;
             frame.reflectionSky = Math::Vector3UVE{frame.skyColor.x * daylight, frame.skyColor.y * daylight,
                                                    frame.skyColor.z * daylight};
             frame.reflectionHorizon = Math::Vector3UVE{frame.horizonColor.x * daylight, frame.horizonColor.y * daylight,
