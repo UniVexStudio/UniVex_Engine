@@ -94,6 +94,15 @@ void DrawUniversalIconUVE(ImDrawList& drawList, const ImVec2 center, const float
                            color);
 }
 
+/// The 2D/3D switch's mark: a square seen flat, with a horizon through it. Reads as a canvas
+/// rather than as a cube, because the button says which view you are IN.
+void DrawViewportModeIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    const float half = radius * 0.72F;
+    drawList->AddRect(ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half}, color,
+                      1.5F, 0, 1.4F);
+    drawList->AddLine(ImVec2{center.x - half, center.y}, ImVec2{center.x + half, center.y}, color, 1.2F);
+}
+
 void DrawGridIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
     const float half = radius * 0.5F;
     const float third = half * 2.0F / 3.0F;
@@ -865,37 +874,26 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
         ImGui::EndPopup();
     }
 
-    // ---- 2D / 3D Mode Toggle & 2D Viewport Options Pill -------------------------------------
-    const char* const mode2DLabel = m_viewportOverlayState.is2DMode ? "2D \xe2\x96\xbe" : "3D";
-    const ImVec2 mode2DTextSize = ImGui::CalcTextSize(mode2DLabel);
-    const float mode2DPillWidth = mode2DTextSize.x + kBubblePaddingXUVE * 2.0F + 8.0F;
-    const ImVec2 mode2DPillMin{previewPillMax.x + kBubbleGapUVE, topY};
-    const ImVec2 mode2DPillMax{mode2DPillMin.x + mode2DPillWidth, mode2DPillMin.y + unifiedHeight};
+    // ---- 2D / 3D Mode Switch & 2D Viewport Options ------------------------------------------
+    // An icon bubble like the grid and gizmo controls beside it, not a wide text pill. The pill
+    // was the only control in this row that spelled itself out, so it sat there as a different
+    // kind of thing and pushed everything after it out of line.
+    const float modeBubbleDiameter = kViewportBubbleIconRadiusUVE * 2.0F;
+    const ImVec2 modeBubbleMin{previewPillMax.x + kBubbleGapUVE,
+                               topY + ((unifiedHeight - modeBubbleDiameter) * 0.5F)};
     if (levelOnlyOverlays) {
-        ImGui::SetCursorScreenPos(mode2DPillMin);
-        const bool pressedMode2D =
-            ImGui::InvisibleButton("##viewport-2d-mode-btn", ImVec2{mode2DPillWidth, unifiedHeight});
-        const bool rightClickedMode2D = ImGui::IsItemClicked(ImGuiMouseButton_Right);
-        const bool hoveredMode2D = ImGui::IsItemHovered();
-        drawList->AddRectFilled(
-            mode2DPillMin, mode2DPillMax,
-            m_viewportOverlayState.is2DMode
-                ? IM_COL32(64, 132, 214, 235)
-                : (hoveredMode2D ? IM_COL32(30, 34, 44, 220) : IM_COL32(18, 21, 28, 200)),
-            unifiedHeight * 0.5F);
-        drawList->AddRect(mode2DPillMin, mode2DPillMax,
-                          m_viewportOverlayState.is2DMode ? IM_COL32(120, 185, 255, 200) : IM_COL32(255, 255, 255, 24),
-                          unifiedHeight * 0.5F);
-        drawList->AddText(ImVec2{mode2DPillMin.x + kBubblePaddingXUVE + 4.0F,
-                                 mode2DPillMin.y + (unifiedHeight - mode2DTextSize.y) * 0.5F},
-                          IM_COL32(240, 245, 255, 255), mode2DLabel);
-        if (pressedMode2D) {
+        ImGui::SetCursorScreenPos(modeBubbleMin);
+        if (DrawViewportBubbleIconButtonUVE("##viewport-2d-mode-btn", m_viewportOverlayState.is2DMode,
+                                            DrawViewportModeIconUVE)) {
             m_viewportOverlayState.is2DMode = !m_viewportOverlayState.is2DMode;
         }
-        if (rightClickedMode2D && m_viewportOverlayState.is2DMode) {
+        // Click switches; right-click opens the 2D tool's own options, the same split the grid
+        // button uses so a toolbar stays one control wide per idea.
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && m_viewportOverlayState.is2DMode) {
             ImGui::OpenPopup("##viewport-2d-options-popup");
         }
-        if (hoveredMode2D && !ImGui::IsPopupOpen("##viewport-2d-options-popup")) {
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort) &&
+            !ImGui::IsPopupOpen("##viewport-2d-options-popup")) {
             ImGui::SetTooltip(m_viewportOverlayState.is2DMode
                                   ? "2D Viewport active (click for 3D, right-click for 2D options)"
                                   : "Switch to 2D Viewport");
