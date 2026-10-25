@@ -151,24 +151,12 @@ jobs:
               > build/failed-tests.txt || true
           fi
           sort -u -o build/failed-tests.txt build/failed-tests.txt
-          # Keep bounded assertion context accessible through the Checks API too. Artifact/log
-          # downloads use a different host and are not reachable on every restricted network.
-          details=$(awk '
-            /\*\*\*(Failed|Timeout|Exception|Subprocess aborted)/ { capture=1; lines=0 }
-            capture && lines++ < 160 {
-              line=substr($0 "\n", 1, 12000-bytes); printf "%s", line; bytes+=length(line)
-              if (bytes >= 12000) exit
-            }
-            capture && /\[  FAILED  \]/ { capture=0 }
-          ' build/ctest-output.txt)
-          if [ -n "$details" ]; then
-            details=${details//%/%25}
-            details=${details//$'\r'/%0D}
-            details=${details//$'\n'/%0A}
-            echo "::error title=ctest failure context::${details}"
-          fi
+          # One annotation per failing case, each carrying its own assertion. Artifact and log
+          # downloads use a different host and are not reachable on every restricted network, so
+          # what broke has to be legible from the Checks tab alone.
+          python3 Engine/Tools/ci/annotate_ctest_failures.py build/ctest-output.txt
           count=$(( $(wc -l < build/failed-tests.txt) + 0 ))
-          summary=$(paste -sd'; ' build/failed-tests.txt | cut -c1-900)
+          summary=$(paste -sd'; ' build/failed-tests.txt | cut -c1-3800)
           if [ "$count" -eq 0 ]; then
             echo "::error title=ctest failed (exit $status)::No '***Failed' line found in the ctest output; see the job log."
           else
@@ -217,6 +205,11 @@ jobs:
 
       - name: Validate process measurement runner
         run: python3 -m unittest discover -s Engine/Tools/performance -p 'test_*.py'
+
+      - name: Validate the CI annotation helper
+        # The step that explains a test failure is itself code: a parser that quietly stops
+        # matching leaves a red build saying only "Process completed with exit code 8".
+        run: python3 -m unittest discover -s Engine/Tools/ci -p 'test_*.py'
 
       - name: Record headless editor process baseline
         # Still a deliberate measurement, not something every pull request pays three minutes of
