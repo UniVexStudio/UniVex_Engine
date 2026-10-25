@@ -355,6 +355,7 @@ add_executable(uve_integration_tests
     Objects/3D/health_uve_tests.cpp
     Objects/3D/world_environment_uve_tests.cpp
     Objects/3D/preview_lighting_uve_tests.cpp
+    Objects/3D/sky_lighting_uve_tests.cpp
     Objects/3D/directional_light_3d_uve_tests.cpp
     Objects/3D/fog_volume_3d_uve_tests.cpp
     Objects/3D/world_partition_3d_uve_tests.cpp

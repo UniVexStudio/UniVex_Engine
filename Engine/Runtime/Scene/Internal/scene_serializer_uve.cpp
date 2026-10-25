@@ -1537,6 +1537,11 @@ template <typename VectorT>
             {"cloudWindDirectionDegrees", value.cloudWindDirectionDegrees},
             {"cloudSoftness", value.cloudSoftness},
             {"cloudSilverLining", value.cloudSilverLining},
+            {"ambientFromSky", value.ambientFromSky},
+            {"ambientStrength", value.ambientStrength},
+            {"fogFromSky", value.fogFromSky},
+            {"fogStrength", value.fogStrength},
+            {"reflectionsFromSky", value.reflectionsFromSky},
             {"enabled", value.enabled}};
 }
 
@@ -1573,6 +1578,11 @@ template <typename VectorT>
     value.cloudWindDirectionDegrees = json.value("cloudWindDirectionDegrees", 45.0F);
     value.cloudSoftness = json.value("cloudSoftness", 0.35F);
     value.cloudSilverLining = json.value("cloudSilverLining", 1.0F);
+    value.ambientFromSky = json.value("ambientFromSky", false);
+    value.ambientStrength = json.value("ambientStrength", 1.0F);
+    value.fogFromSky = json.value("fogFromSky", false);
+    value.fogStrength = json.value("fogStrength", 1.0F);
+    value.reflectionsFromSky = json.value("reflectionsFromSky", false);
     value.enabled = json.value("enabled", true);
     return value;
 }

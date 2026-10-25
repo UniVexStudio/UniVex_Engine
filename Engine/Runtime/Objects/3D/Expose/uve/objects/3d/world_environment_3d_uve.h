@@ -187,6 +187,20 @@ struct WorldEnvironmentFrameUVE final {
     Math::Vector2UVE cloudWind{};
     float cloudSoftness = 0.35F;
     float cloudSilverLining = 1.0F;
+
+    /// Lighting link from the Sky object. The ambient is applied later, by
+    /// ApplySunToWorldEnvironmentFrameUVE, because it depends on the sun's altitude and the sun is
+    /// not resolved until after this frame is built.
+    bool skyAmbientLinked = false;
+    float skyAmbientStrength = 1.0F;
+    float skyRayleighDensity = 1.0F;
+    /// Fog is applied where it is resolved: the horizon band does not depend on the sun.
+    bool skyFogLinked = false;
+    /// What a reflective surface shows, resolved alongside the ambient for the same reason.
+    bool skyReflectionsLinked = false;
+    Math::Vector3UVE reflectionSky{};
+    Math::Vector3UVE reflectionHorizon{};
+    Math::Vector3UVE reflectionGround{};
 };
 
 [[nodiscard]] bool TryMakeSkyEquirectUvUVE(const Math::Vector3UVE& direction, Math::Vector2UVE& outUv) noexcept;

@@ -126,12 +126,85 @@ struct Sky3DComponentUVE final {
     /// when a cloud passes in front of the sun.
     float cloudSilverLining = 1.0F;
 
+    // ---- Lighting ---------------------------------------------------------------------------
+    //
+    // The link between the sky the player sees and the light that falls on the scene. All three
+    // default to off, because a sky that silently relights a level the moment it is added breaks
+    // the rule that an added object changes nothing until it is authored.
+    //
+    /// Take the scene's ambient light from this sky instead of from the WorldEnvironment's
+    /// authored ambient triple. Two consequences are worth the switch on their own: the fill light
+    /// is the colour of the sky above (so shadows go blue rather than black) and it rises and sets
+    /// with the sun, because it is computed from the sun's altitude through the same air the sky
+    /// is drawn through.
+    bool ambientFromSky = false;
+    /// Scales that ambient. This is a brightness dial, not a physical term.
+    float ambientStrength = 1.0F;
+    /// Take the fog colour from this sky's horizon. Distant geometry then dissolves into the sky
+    /// it is in front of, which is what aerial perspective looks like.
+    bool fogFromSky = false;
+    /// How far the fog moves toward the sky's own colour, 0 none to 1 the horizon exactly.
+    float fogStrength = 1.0F;
+    /// Reflect this sky in metallic surfaces. The reflection is this sky's own three bands, which
+    /// gives a horizon line in a mirror without a capture pass - a cubemap of the equivalent sky
+    /// would cost a render per frame and look the same, because the sky is smooth enough that three
+    /// bands are the shape. A captured environment map or a ReflectionProbe still wins where one is
+    /// present, because a capture also contains the buildings the sky does not.
+    /// Off, reflections fall back to the ambient hemisphere.
+    bool reflectionsFromSky = false;
+
     /// Off keeps the object in the scene without drawing it - the same courtesy a light's energy
     /// of zero extends, but explicit.
     bool enabled = true;
 
     [[nodiscard]] bool operator==(const Sky3DComponentUVE&) const = default;
 };
+
+/// The ambient light a sky throws on a scene, split by hemisphere: the light arriving from above
+/// and the light arriving from below.
+///
+/// WHY IT IS COMPUTED RATHER THAN AUTHORED. Ambient is skylight, and skylight is the sky. An
+/// authored triple can only describe one hour of one day; this resolves from the sun's altitude
+/// through the same air the sky pass integrates, so the fill goes warm and dim at dusk, neutral at
+/// noon, and to nothing after astronomical twilight without a keyframe anywhere. It is a pure
+/// function of the sky and the sun, so it is testable without a GPU.
+struct SkyAmbientUVE final {
+    /// Irradiance from the upper hemisphere, in the same units the environment's ambient uses.
+    Math::Vector3UVE sky{};
+    /// Irradiance from the lower hemisphere: the ground band, dimmer than the sky above it.
+    Math::Vector3UVE ground{};
+    /// 0 at astronomical night and 1 in full daylight. Reported so a caller can fade other night
+    /// effects with the same curve instead of inventing a second one.
+    float daylight = 0.0F;
+};
+
+/// Sunlight left after a path through the air, per channel: 1 at the top of the atmosphere, and
+/// dimmer and redder as the sun approaches the horizon. `sunAltitudeRadians` is measured from the
+/// horizon, negative below it; `rayleighDensity` scales the gas, matching the atmosphere's own.
+[[nodiscard]] Math::Vector3UVE SkySunTransmittanceUVE(float sunAltitudeRadians, float rayleighDensity) noexcept;
+
+/// The ambient three bands provide for a given sun direction (a unit vector pointing toward the
+/// sun). Takes the bands rather than the component because the frame the renderer builds has
+/// already copied them - and by then the bands may be the Sky's, the environment's, or a mix, and
+/// this must describe whichever is actually being drawn rather than re-deciding it.
+///
+/// Sanitised: a non-finite direction is treated as the zenith, and every value is clamped to
+/// something the shader can use.
+[[nodiscard]] SkyAmbientUVE ResolveSkyAmbientUVE(const Math::Vector3UVE& skyColor,
+                                                 const Math::Vector3UVE& horizonColor,
+                                                 const Math::Vector3UVE& groundColor,
+                                                 float rayleighDensity, float strength,
+                                                 const Math::Vector3UVE& sunDirection) noexcept;
+
+/// The same, read straight off a Sky component.
+[[nodiscard]] SkyAmbientUVE ResolveSkyAmbientUVE(const Sky3DComponentUVE& sky,
+                                                 const Math::Vector3UVE& sunDirection) noexcept;
+
+/// The fog colour this sky implies: the light distant geometry would be seen through, which is the
+/// horizon band with a little of the ground under it. How far the scene actually moves toward it is
+/// the caller's blend, because that is an authoring choice and this is physics.
+[[nodiscard]] Math::Vector3UVE ResolveSkyFogColorUVE(const Math::Vector3UVE& groundColor,
+                                                     const Math::Vector3UVE& horizonColor) noexcept;
 
 /// True when every field is inside the range the renderer and the serializer can work with.
 /// A Sky that fails this is skipped, not clamped: a half-believed sky is worse than none, because

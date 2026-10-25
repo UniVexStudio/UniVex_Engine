@@ -840,6 +840,14 @@ struct FrameUniformsUVE {
     /// the shader that silently disagrees with the atlas the renderer actually allocated.
     Math::Vector2UVE shadowAtlasTexelSize{1.0F / static_cast<float>(kShadowAtlasResolutionUVE),
                                           1.0F / static_cast<float>(kShadowAtlasResolutionUVE)};
+
+    /// Sky reflections, appended rather than placed beside the other ambient fields so the long
+    /// positional aggregate initialiser at the build site keeps meaning what it says. Set right
+    /// after that initialiser, exactly like the shadow arrays above.
+    bool skyReflectionsLinked = false;
+    Math::Vector3UVE skyReflectionSky{};
+    Math::Vector3UVE skyReflectionHorizon{};
+    Math::Vector3UVE skyReflectionGround{};
 };
 
 } // namespace
@@ -2706,6 +2714,10 @@ struct Renderer3DUVE::ImplUVE {
         program.SetVector3UVE("uSkyAmbient", frameUniforms.skyAmbient);
         program.SetVector3UVE("uGroundAmbient", frameUniforms.groundAmbient);
         program.SetIntUVE("uAmbientSource", static_cast<std::int32_t>(frameUniforms.ambientSource));
+        program.SetIntUVE("uSkyReflectionsLinked", frameUniforms.skyReflectionsLinked ? 1 : 0);
+        program.SetVector3UVE("uSkyReflectionSky", frameUniforms.skyReflectionSky);
+        program.SetVector3UVE("uSkyReflectionHorizon", frameUniforms.skyReflectionHorizon);
+        program.SetVector3UVE("uSkyReflectionGround", frameUniforms.skyReflectionGround);
         program.SetIntUVE("uAmbientEnvironmentMap",
                           static_cast<std::int32_t>(kAmbientEnvironmentTextureSlotUVE));
         program.SetIntUVE("uAmbientEnvironmentMapEnabled", frameUniforms.ambientEnvironmentMapEnabled ? 1 : 0);
@@ -4407,6 +4419,11 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         shadowNormalBias,
         shadowOpacity,
         shadowPcfKernelRadius};
+
+    frameUniforms.skyReflectionsLinked = m_impl->environmentFrame.skyReflectionsLinked;
+    frameUniforms.skyReflectionSky = m_impl->environmentFrame.reflectionSky;
+    frameUniforms.skyReflectionHorizon = m_impl->environmentFrame.reflectionHorizon;
+    frameUniforms.skyReflectionGround = m_impl->environmentFrame.reflectionGround;
 
     // Indexed by uLights[] slot, which is exactly how the shader indexes its own arrays - a tile
     // for light 3 must land in slot 3 even when two other lights between them have none.
