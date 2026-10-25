@@ -53,7 +53,7 @@ bool IsPlayer3DObjectComponentValidUVE(const PlayerComponentUVE& value) noexcept
 bool IsPlayer3DObjectDefinitionValidUVE(const Player3DObjectDefinitionUVE& value) noexcept {
     ControllerComponentUVE authoredController;
     authoredController.kind = value.controllerKind;
-    return IsColliderComponentValidUVE(value.collider) &&
+    return (!value.collider.has_value() || IsColliderComponentValidUVE(*value.collider)) &&
            IsCharacterControllerComponentValidUVE(value.controller) &&
            IsPlayer3DObjectComponentValidUVE(value.player) && IsHealthComponentValidUVE(value.health) &&
            IsControllerComponentValidUVE(authoredController);

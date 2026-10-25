@@ -353,6 +353,18 @@ struct FilePickerStateUVE final {
     bool statusIsError = false;
 };
 
+/// The Montage's live state: where its body goes, what it has picked so far, and the last line it
+/// said. The list itself is not kept here - it is the catalogue's, read every frame.
+struct MontageStateUVE final {
+    /// Absolute: where the body's `.uventity` will be written.
+    std::filesystem::path directory;
+    std::string search;
+    /// The catalogue id of the picked body; empty picks nothing.
+    std::string pickedItemId;
+    std::string status;
+    bool statusIsError = false;
+};
+
 /// The picker's listing for one folder: content-relative subfolders and matching files, sorted.
 struct FilePickerListingUVE final {
     std::vector<std::filesystem::path> folders;
@@ -450,6 +462,9 @@ public:
     struct ViewportColliderLineUVE final {
         std::array<float, 3> from{};
         std::array<float, 3> to{};
+        /// This segment belongs to the selected object's collider. The overlay marks it rather than
+        /// colouring it, because what a highlight looks like is the viewport's decision.
+        bool highlighted = false;
     };
 
     struct ViewportOverlayStateUVE final {
@@ -665,6 +680,17 @@ public:
     [[nodiscard]] bool IsFilePickerOpenUVE() const noexcept { return m_filePicker.has_value(); }
     void CloseFilePickerUVE();
     void DrawFilePickerUVE();
+
+    /// Opens the Montage over `directory` (absolute): the one window that offers the bodies an entity
+    /// can start as. Opening it writes nothing - it only asks.
+    void OpenMontageUVE(std::filesystem::path directory);
+    [[nodiscard]] bool IsMontageOpenUVE() const noexcept { return m_montage.has_value(); }
+    void CloseMontageUVE();
+    void DrawMontageUVE();
+    /// Makes the Montage body `itemId` in the open Montage's directory, selects it in Content and
+    /// opens it in the Entity Editor, as one step. Returns false - with the window saying why - for
+    /// anything that is not one of the Montage's bodies, and while authoring is not allowed.
+    [[nodiscard]] bool OpenMontageBodyUVE(std::string_view itemId);
     /// The picker's listing for `directory` (content-relative, empty is Content): its subfolders
     /// plus its files whose extension is one of `extensions` (empty matches every file) and whose
     /// stems contain `search` (case-insensitive). Sorted.
@@ -1809,6 +1835,22 @@ private:
     [[nodiscard]] bool IsReparentModeChangeAllowedUVE() const noexcept;
     [[nodiscard]] bool IsHierarchyFilterActiveUVE() const noexcept;
     [[nodiscard]] bool IsHierarchyEntityVisibleUVE(Scene::EntityUVE entity) const;
+    /// True when an Outliner row stands for a whole entity asset that has been placed in the level,
+    /// rather than for an object the level itself owns.
+    ///
+    /// Such a row is a leaf here. The objects inside it are the entity's own scene - they belong to
+    /// the Entity Editor, and showing them in the level's tree made a placed entity look like a
+    /// folder whose contents were loose objects the level could select, move and delete. They are
+    /// still in the document, still drawn and still simulated; the level simply addresses the
+    /// entity as one thing, the same way it addresses a mesh as one thing rather than as its
+    /// triangles. While the Entity Editor has the entity open it IS the document, so nothing is
+    /// sealed and its own tree is drawn in full.
+    [[nodiscard]] bool IsSealedHierarchyRowUVE(Scene::EntityUVE entity) const noexcept;
+    /// The row that actually represents `entity` in the Outliner: the entity itself, or - when it
+    /// lives inside a placed entity - the instance that owns it. Selecting, focusing and inspecting
+    /// go through this, so a click that lands inside a placed entity cannot select an object the
+    /// tree does not show.
+    [[nodiscard]] Scene::EntityUVE ResolveHierarchyRowOwnerUVE(Scene::EntityUVE entity) const noexcept;
     void RebuildHierarchyFilterCacheUVE();
     void InvalidateHierarchyFilterCacheUVE() noexcept;
     void CancelHierarchyRenameUVE() noexcept;
@@ -2283,6 +2325,12 @@ private:
     /// Where a new object of `kind` goes: DirectionalLight3D and WorldEnvironment at the top, a folder
     /// in the selected folder or the Viewport, anything else in a folder (see ResolveObjectFolderUVE).
     [[nodiscard]] Scene::EntityUVE ResolveNewObjectParentForUVE(Scene::Objects::SceneObjectKindUVE kind);
+    /// The parent a new object may actually be given. A placed entity is one row in the level and
+    /// its contents are the Entity Editor's, so asking to put something under it - or under anything
+    /// already inside it - would create an object no window shows: it would exist, collide, and be
+    /// impossible to select. Such a request lands beside the entity instead, under the level parent
+    /// the row really has.
+    [[nodiscard]] Scene::EntityUVE ResolvePlaceableParentUVE(Scene::EntityUVE candidate);
     // ---- The level's Outliner layout ---------------------------------------------------------------
     //   (scene root, not shown)
     //   +- Viewport            folders only
@@ -2324,6 +2372,7 @@ private:
     std::optional<RetargetWindowStateUVE> m_retargetWindow;
     std::optional<AnimationLibraryWindowStateUVE> m_animationLibraryWindow;
     std::optional<FilePickerStateUVE> m_filePicker;
+    std::optional<MontageStateUVE> m_montage;
     /// Browse picks waiting for their widget: widget id (ImGui::GetID, kept as uint32_t like
     /// m_inspectorTextEdits) to the pick. Asset combos take GUIDs, file rows take paths; each is
     /// consumed by its own drawer on the next frame.

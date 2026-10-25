@@ -44,8 +44,13 @@ class ICollisionSystemUVE;
 /// while a move is in progress, and a step that never collides never pays for the cache at all.
 class CharacterWorldQueryUVE final : public Scene::ICharacterWorldQueryUVE {
 public:
+    /// `entity` is the body being moved. `shapeEntity` is the entity whose collider describes it,
+    /// when those are not the same object - a character whose shape is a Collider3D of its own
+    /// under it. It defaults to the body itself, and that entity is then always ignored by the
+    /// query's own sweeps, so a body never collides with the shape it is built from.
     CharacterWorldQueryUVE(Scene::IEntityManagerUVE& entityManager, ICollisionSystemUVE& collisionSystem,
-                           Scene::EntityUVE entity);
+                           Scene::EntityUVE entity,
+                           Scene::EntityUVE shapeEntity = Scene::kInvalidEntityUVE);
 
     /// An entity this query must never report - the body being carried, a trigger the caller has
     /// already decided to ignore. Never the query's own entity, which is always ignored.

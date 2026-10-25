@@ -1508,6 +1508,89 @@ template <typename VectorT>
 
 
 
+[[nodiscard]] nlohmann::json ToJsonUVE(const Sky3DComponentUVE& value) {
+    return {{"source", static_cast<std::uint8_t>(value.source)},
+            {"skyColor", ToJsonUVE(value.skyColor)},
+            {"horizonColor", ToJsonUVE(value.horizonColor)},
+            {"groundColor", ToJsonUVE(value.groundColor)},
+            {"skyCurve", value.skyCurve},
+            {"groundCurve", value.groundCurve},
+            {"panoramaPath", value.panoramaPath},
+            {"panoramaRotationDegrees", value.panoramaRotationDegrees},
+            {"panoramaExposure", value.panoramaExposure},
+            {"atmosphereRayleigh", value.atmosphereRayleigh},
+            {"atmosphereMie", value.atmosphereMie},
+            {"atmosphereOzone", value.atmosphereOzone},
+            {"atmosphereMieAnisotropy", value.atmosphereMieAnisotropy},
+            {"atmosphereMultiScatter", value.atmosphereMultiScatter},
+            {"atmosphereIntensity", value.atmosphereIntensity},
+            {"atmosphereSamples", value.atmosphereSamples},
+            {"starDensity", value.starDensity},
+            {"starBrightness", value.starBrightness},
+            {"starSeed", value.starSeed},
+            {"milkyWayStrength", value.milkyWayStrength},
+            {"cloudsEnabled", value.cloudsEnabled},
+            {"cloudCoverage", value.cloudCoverage},
+            {"cloudDensity", value.cloudDensity},
+            {"cloudAltitude", value.cloudAltitude},
+            {"cloudWindSpeed", value.cloudWindSpeed},
+            {"cloudWindDirectionDegrees", value.cloudWindDirectionDegrees},
+            {"cloudSoftness", value.cloudSoftness},
+            {"cloudSilverLining", value.cloudSilverLining},
+            {"ambientFromSky", value.ambientFromSky},
+            {"ambientStrength", value.ambientStrength},
+            {"fogFromSky", value.fogFromSky},
+            {"fogStrength", value.fogStrength},
+            {"reflectionsFromSky", value.reflectionsFromSky},
+            {"luminance", value.luminance},
+            {"animate", value.animate},
+            {"enabled", value.enabled}};
+}
+
+[[nodiscard]] Sky3DComponentUVE Sky3DFromJsonUVE(const nlohmann::json& json) {
+    Sky3DComponentUVE value;
+    value.source = static_cast<SkySourceUVE>(json.value("source", std::uint8_t{0}));
+    value.skyColor = Vector3FromJsonUVE(json.at("skyColor"));
+    value.horizonColor = Vector3FromJsonUVE(json.at("horizonColor"));
+    value.groundColor = Vector3FromJsonUVE(json.at("groundColor"));
+    value.skyCurve = json.value("skyCurve", 0.15F);
+    value.groundCurve = json.value("groundCurve", 0.02F);
+    value.panoramaPath = json.value("panoramaPath", std::string{});
+    value.panoramaRotationDegrees = json.value("panoramaRotationDegrees", 0.0F);
+    value.panoramaExposure = json.value("panoramaExposure", 0.0F);
+    // Every atmosphere value falls back to its default, so a document written before the model
+    // existed loads as the calibrated Earth rather than as a zeroed atmosphere - which would
+    // render as a black sky with no hint that a field was missing.
+    value.atmosphereRayleigh = json.value("atmosphereRayleigh", 1.0F);
+    value.atmosphereMie = json.value("atmosphereMie", 1.0F);
+    value.atmosphereOzone = json.value("atmosphereOzone", 1.0F);
+    value.atmosphereMieAnisotropy = json.value("atmosphereMieAnisotropy", 0.76F);
+    value.atmosphereMultiScatter = json.value("atmosphereMultiScatter", 1.0F);
+    value.atmosphereIntensity = json.value("atmosphereIntensity", 1.0F);
+    value.atmosphereSamples = json.value("atmosphereSamples", std::uint32_t{16U});
+    value.starDensity = json.value("starDensity", 420.0F);
+    value.starBrightness = json.value("starBrightness", 0.0F);
+    value.starSeed = json.value("starSeed", 0.0F);
+    value.milkyWayStrength = json.value("milkyWayStrength", 0.0F);
+    value.cloudsEnabled = json.value("cloudsEnabled", false);
+    value.cloudCoverage = json.value("cloudCoverage", 0.45F);
+    value.cloudDensity = json.value("cloudDensity", 1.0F);
+    value.cloudAltitude = json.value("cloudAltitude", 1500.0F);
+    value.cloudWindSpeed = json.value("cloudWindSpeed", 8.0F);
+    value.cloudWindDirectionDegrees = json.value("cloudWindDirectionDegrees", 45.0F);
+    value.cloudSoftness = json.value("cloudSoftness", 0.35F);
+    value.cloudSilverLining = json.value("cloudSilverLining", 1.0F);
+    value.ambientFromSky = json.value("ambientFromSky", false);
+    value.ambientStrength = json.value("ambientStrength", 1.0F);
+    value.fogFromSky = json.value("fogFromSky", false);
+    value.fogStrength = json.value("fogStrength", 1.0F);
+    value.reflectionsFromSky = json.value("reflectionsFromSky", false);
+    value.luminance = json.value("luminance", 1.0F);
+    value.animate = json.value("animate", true);
+    value.enabled = json.value("enabled", true);
+    return value;
+}
+
 [[nodiscard]] nlohmann::json ToJsonUVE(const ReflectionProbe3DComponentUVE& value) {
     return {{"size", ToJsonUVE(value.size)},
             {"visibilityLayers", value.visibilityLayers},
@@ -2680,6 +2763,14 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                 }
                 return value;
             }, IsInteractionArea3DObjectComponentValidUVE));
+        table.emplace("Sky3DComponentUVE", MakeRegistrationUVE<Sky3DComponentUVE>(
+            [](const nlohmann::json& json) {
+                const Sky3DComponentUVE value = Sky3DFromJsonUVE(json);
+                if (!IsSky3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid Sky3DComponentUVE payload");
+                }
+                return value;
+            }, IsSky3DObjectComponentValidUVE));
         table.emplace("ReflectionProbe3DComponentUVE", MakeRegistrationUVE<ReflectionProbe3DComponentUVE>(
             [](const nlohmann::json& json) {
                 const ReflectionProbe3DComponentUVE value = ReflectionProbe3DObjectFromJsonUVE(json);

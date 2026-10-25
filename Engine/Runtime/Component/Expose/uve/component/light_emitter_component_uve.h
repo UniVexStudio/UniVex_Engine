@@ -29,8 +29,6 @@ struct LightEmitterComponentUVE final {
     float volumetricFogEnergy = 1.0F;
     /// Strength of the highlight it leaves on shiny surfaces.
     float specular = 0.5F;
-    /// Subtracts light instead of adding it.
-    bool negative = false;
     LightBakeModeUVE bakeMode = LightBakeModeUVE::Dynamic;
     /// The render layers it lights.
     std::uint32_t cullMask = 0xFFFFFFFFU;

@@ -153,6 +153,28 @@ constexpr ImWchar kIconFontGlyphRangesUVE[] = {
     }
     return Scene::BoxMesh3DUVE::DefaultColliderHalfExtentsUVE();
 }
+
+// Half-extents alone cannot describe a round shape. A capsule or cylinder collider carries radius
+// and height as well, and the field defaults (radius 0.5, height 1.0) put the two capsule caps
+// exactly together - a sphere with no barrel. A primitive mesh wrapped by a collider born on the
+// defaults is therefore wrapped in a ball, which is why picking a Capsule mesh used to produce a
+// collider that did not look like the thing on screen.
+//
+// One function for both paths that can create such a pairing - the mesh being changed under an
+// existing collider, and a collider being added to an existing mesh - so the two cannot drift into
+// different ideas of what "the size of the mesh" means.
+void FitColliderToPrimitiveKindUVE(Scene::ColliderComponentUVE& collider,
+                                   const Scene::PrimitiveMeshKindUVE kind) noexcept {
+    const Math::Vector3UVE halfExtents = PrimitiveColliderHalfExtentsUVE(kind);
+    collider.halfExtents = halfExtents;
+    if (collider.shapeType == Scene::ColliderShapeTypeUVE::Capsule ||
+        collider.shapeType == Scene::ColliderShapeTypeUVE::Cylinder) {
+        collider.radius = halfExtents.x;
+        collider.height = halfExtents.y * 2.0F;
+    } else if (collider.shapeType == Scene::ColliderShapeTypeUVE::Sphere) {
+        collider.radius = halfExtents.x;
+    }
+}
 constexpr float kGizmoAxisLengthUVE = 1.25F;
 constexpr float kGizmoHandleRadiusPixelsUVE = 12.0F;
 constexpr float kTrackballRadiusPixelsUVE = 42.0F;
@@ -904,6 +926,13 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
         return std::nullopt;
     }
 
+    // The Montage asks before it makes anything, so it makes nothing here: the body picked in its
+    // window is what gets written (OpenMontageBodyUVE). A file from this call would be a body chosen
+    // for the author.
+    if (item->action == ContentCatalogueActionUVE::Montage) {
+        return std::nullopt;
+    }
+
     if (item->action == ContentCatalogueActionUVE::Folder) {
         const std::filesystem::path folder = MakeUniqueContentPathUVE(directory, "New Folder", "");
         if (!std::filesystem::create_directory(folder, error) || error) {
@@ -1239,7 +1268,11 @@ void EditorUVE::SelectEntityUVE(const Scene::EntityUVE entity) noexcept {
         ClearSelectionUVE();
         return;
     }
-    RestoreSelectionUVE(EditorSelectionSnapshotUVE{{entity}, entity});
+    // An object inside a placed entity is not a row the Outliner shows, so selecting it would leave
+    // the tree with nothing highlighted and the Inspector describing something the author cannot
+    // see. The instance is the thing the level addresses, so that is what gets selected.
+    const Scene::EntityUVE row = ResolveHierarchyRowOwnerUVE(entity);
+    RestoreSelectionUVE(EditorSelectionSnapshotUVE{{row}, row});
 }
 
 void EditorUVE::ToggleEntitySelectionUVE(const Scene::EntityUVE entity) noexcept {
@@ -1247,15 +1280,16 @@ void EditorUVE::ToggleEntitySelectionUVE(const Scene::EntityUVE entity) noexcept
         return;
     }
 
-    const auto selectedIt = std::find(m_selectedEntities.begin(), m_selectedEntities.end(), entity);
+    const Scene::EntityUVE row = ResolveHierarchyRowOwnerUVE(entity);
+    const auto selectedIt = std::find(m_selectedEntities.begin(), m_selectedEntities.end(), row);
     if (selectedIt == m_selectedEntities.end()) {
-        m_selectedEntities.push_back(entity);
-        m_selectedEntity = entity;
+        m_selectedEntities.push_back(row);
+        m_selectedEntity = row;
         CancelHierarchyRenameUVE();
         return;
     }
 
-    const bool removedActive = entity == m_selectedEntity;
+    const bool removedActive = row == m_selectedEntity;
     m_selectedEntities.erase(selectedIt);
     if (m_selectedEntities.empty()) {
         m_selectedEntity = Scene::kInvalidEntityUVE;
@@ -1521,8 +1555,22 @@ bool EditorUVE::ApplySceneComponentStateUVE(
             return apply.template operator()<Scene::MeshComponentUVE>();
         case EditorSceneComponentKindUVE::Light:
             return apply.template operator()<Scene::LightComponentUVE>();
-        case EditorSceneComponentKindUVE::Collider:
-            return apply.template operator()<Scene::ColliderComponentUVE>();
+        case EditorSceneComponentKindUVE::Collider: {
+            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+            const bool existed = entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity);
+            const bool applied = apply.template operator()<Scene::ColliderComponentUVE>();
+            // Born on an object that is already a primitive mesh, the collider takes that mesh's
+            // shape rather than the field defaults - the same rule the Inspector applies when it is
+            // the mesh that changes. Only on the frame it is added: an author who then resizes it
+            // keeps what they set, because nothing here runs again for this entity.
+            if (applied && !existed && entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity) &&
+                entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
+                FitColliderToPrimitiveKindUVE(
+                    entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(entity),
+                    entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity).kind);
+            }
+            return applied;
+        }
         case EditorSceneComponentKindUVE::Rigid3D:
             return apply.template operator()<Scene::Rigid3DComponentUVE>();
         case EditorSceneComponentKindUVE::AudioSource:
@@ -2447,6 +2495,10 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::WorldEnvironmentObjectDefinitionUVE{},
                                                             Scene::ApplyWorldEnvironmentObjectDefinitionUVE);
             break;
+        case Scene::Objects::SceneObjectKindUVE::Sky:
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::Sky3DObjectDefinitionUVE{},
+                                                            Scene::ApplySky3DObjectDefinitionUVE);
+            break;
         case Scene::Objects::SceneObjectKindUVE::DirectionalLight3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::DirectionalLight3DObjectDefinitionUVE{},
                                                             Scene::ApplyDirectionalLight3DObjectDefinitionUVE);
@@ -2985,8 +3037,8 @@ bool EditorUVE::ApplyPrimitiveMeshStateUVE(const Scene::EntityUVE entity,
     }
     entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity) = primitive;
     if (entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity)) {
-        entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(entity).halfExtents =
-            PrimitiveColliderHalfExtentsUVE(primitive.kind);
+        FitColliderToPrimitiveKindUVE(entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(entity),
+                                      primitive.kind);
     }
     return true;
 }
@@ -3221,6 +3273,11 @@ std::vector<Scene::EntityUVE> EditorUVE::GetEligibleReparentParentsUVE(const Sce
         visited.push_back(current);
         if (std::find(excludedSubtree.begin(), excludedSubtree.end(), current) == excludedSubtree.end()) {
             candidates.push_back(current);
+        }
+        // Never descend into a placed entity: its contents are not rows of this tree, so they
+        // cannot be offered as places to move something to.
+        if (IsSealedHierarchyRowUVE(current)) {
+            return;
         }
         for (const Scene::EntityUVE child : m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, current)) {
             self(self, child);
@@ -3495,7 +3552,9 @@ Scene::EntityUVE EditorUVE::ResolveNewObjectParentUVE() {
                     if (cursor == m_selectedEntity) {
                         m_lastUsedFolder = cursor;
                     }
-                    return m_selectedEntity;
+                    // A placed entity selected inside a folder is still a sealed row: the new object
+                    // goes in that folder, beside the entity, not behind its wall.
+                    return ResolvePlaceableParentUVE(m_selectedEntity);
                 }
             }
         }
@@ -3503,9 +3562,10 @@ Scene::EntityUVE EditorUVE::ResolveNewObjectParentUVE() {
     }
     if (m_newObjectsUnderSelection && m_selectedEntity != Scene::kInvalidEntityUVE &&
         IsDocumentSubtreeUVE(m_selectedEntity)) {
-        return m_selectedEntity;
+        return ResolvePlaceableParentUVE(m_selectedEntity);
     }
-    // In the Entity Editor, new objects belong to the entity.
+    // In the Entity Editor, new objects belong to the entity. Nothing is sealed there, so the root
+    // is returned as it stands - that is the whole point of opening the entity.
     if (m_entityEditSession.has_value()) {
         const Scene::EntityUVE entityRoot = GetEntityEditorRootUVE();
         if (entityRoot != Scene::kInvalidEntityUVE) {
@@ -3527,11 +3587,30 @@ Scene::EntityUVE EditorUVE::ResolveNewObjectParentForUVE(const Scene::Objects::S
         Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
         if (m_selectedEntity != Scene::kInvalidEntityUVE && IsDocumentSubtreeUVE(m_selectedEntity) &&
             entityManager.HasComponentUVE<Scene::FolderComponentUVE>(m_selectedEntity)) {
-            return m_selectedEntity;
+            return ResolvePlaceableParentUVE(m_selectedEntity);
         }
         return GetDocumentViewportUVE();
     }
     return ResolveNewObjectParentUVE();
+}
+
+Scene::EntityUVE EditorUVE::ResolvePlaceableParentUVE(const Scene::EntityUVE candidate) {
+    if (candidate == Scene::kInvalidEntityUVE) {
+        return candidate;
+    }
+    // An ordinary row - not a placed entity and not inside one - is already a legitimate parent.
+    const Scene::EntityUVE row = ResolveHierarchyRowOwnerUVE(candidate);
+    if (row == candidate && !IsSealedHierarchyRowUVE(candidate)) {
+        return candidate;
+    }
+    // Otherwise the request names a row the level does not own the inside of. The level parent of
+    // that row is the nearest place a new object can live and be seen; anything above it is already
+    // unsealed, so one step is enough.
+    Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+    if (TryGetDocumentParentUVE(row, parent) && parent != Scene::kInvalidEntityUVE) {
+        return parent;
+    }
+    return candidate;
 }
 
 bool EditorUVE::IsOutlinerLayoutActiveUVE() const noexcept {
@@ -3700,6 +3779,13 @@ bool EditorUVE::IsAllowedOutlinerParentUVE(const Scene::EntityUVE entity, const 
     }
     if (parent == viewport) {
         return entityManager.HasComponentUVE<Scene::FolderComponentUVE>(entity);
+    }
+    // A placed entity is one row and its contents belong to the Entity Editor. Moving something
+    // under it - or under anything already inside it - would hide that object from every window
+    // while it kept existing and colliding. The drop target is skipped in the panel; this is the
+    // rule behind it, so a menu, a script or a future caller cannot go around the wall.
+    if (IsSealedHierarchyRowUVE(parent) || ResolveHierarchyRowOwnerUVE(parent) != parent) {
+        return false;
     }
     // Anywhere else in the Viewport's tree is inside a folder.
     for (Scene::EntityUVE cursor = parent, up = Scene::kInvalidEntityUVE;
@@ -4925,6 +5011,39 @@ bool EditorUVE::IsHierarchyEntityVisibleUVE(const Scene::EntityUVE entity) const
                m_cachedHierarchyVisibleEntities.end();
 }
 
+bool EditorUVE::IsSealedHierarchyRowUVE(const Scene::EntityUVE entity) const noexcept {
+    if (m_entityEditSession.has_value() || !IsDocumentEntityUVE(entity)) {
+        return false;
+    }
+    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(entity)) {
+        return false;
+    }
+    // A record that names no asset is not an instance of anything - a half-restored entity, or one
+    // whose source was never registered. It owns its children like any other object.
+    return entityManager.GetComponentUVE<Scene::PrefabInstanceComponentUVE>(entity).sourcePrefabGuid !=
+           Asset::kInvalidAssetGuidUVE;
+}
+
+Scene::EntityUVE EditorUVE::ResolveHierarchyRowOwnerUVE(const Scene::EntityUVE entity) const noexcept {
+    if (!IsDocumentEntityUVE(entity)) {
+        return entity;
+    }
+    Scene::EntityUVE cursor = entity;
+    Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+    // Bounded by the entity count so a malformed parent link cannot hang selection. The nearest
+    // sealed ancestor wins: a placed entity inside another placed entity belongs to the inner one.
+    for (std::size_t guard = 0U; guard < 4096U && TryGetDocumentParentUVE(cursor, parent) &&
+                                 parent != Scene::kInvalidEntityUVE;
+         ++guard) {
+        if (IsSealedHierarchyRowUVE(parent)) {
+            return parent;
+        }
+        cursor = parent;
+    }
+    return entity;
+}
+
 void EditorUVE::InvalidateHierarchyFilterCacheUVE() noexcept {
     m_hierarchyFilterCacheDirty = true;
 }
@@ -4962,8 +5081,12 @@ void EditorUVE::RebuildHierarchyFilterCacheUVE() {
                                  (m_hierarchyFilter == "root" && isRoot);
         bool visible = typeMatches && nameMatches;
         Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-        for (const Scene::EntityUVE child : m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity)) {
-            visible = self(self, child) || visible;
+        // A sealed row shows none of its children, so a search must not reveal it because one of
+        // them matched: the match would open a row that still draws nothing.
+        if (!IsSealedHierarchyRowUVE(entity)) {
+            for (const Scene::EntityUVE child : m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity)) {
+                visible = self(self, child) || visible;
+            }
         }
         if (visible) {
             m_cachedHierarchyVisibleEntities.push_back(entity);
@@ -4993,7 +5116,8 @@ void EditorUVE::AcceptHierarchyDropTargetUVE(const Scene::EntityUVE targetParent
     if (asset != nullptr && asset->DataSize > 1) {
         const std::string path(static_cast<const char*>(asset->Data), static_cast<std::size_t>(asset->DataSize - 1));
         static_cast<void>(PlaceEntityAssetUVE(
-            path, targetParent != Scene::kInvalidEntityUVE ? targetParent : ResolveNewObjectParentUVE()));
+            path, ResolvePlaceableParentUVE(targetParent != Scene::kInvalidEntityUVE ? targetParent
+                                                                                   : ResolveNewObjectParentUVE())));
     }
     const ImGuiPayload* const item = ImGui::AcceptDragDropPayload(kContentItemPayloadUVE);
     if (item != nullptr && item->DataSize > 1) {
@@ -5001,7 +5125,8 @@ void EditorUVE::AcceptHierarchyDropTargetUVE(const Scene::EntityUVE targetParent
         const std::filesystem::path p{relativePath};
         if (IsModelSourcePathUVE(p) || p.extension() == ".uvmodel") {
             static_cast<void>(PlaceModelSourceUVE(
-                p, targetParent != Scene::kInvalidEntityUVE ? targetParent : ResolveNewObjectParentUVE()));
+                p, ResolvePlaceableParentUVE(targetParent != Scene::kInvalidEntityUVE ? targetParent
+                                                                                     : ResolveNewObjectParentUVE())));
         }
     }
     ImGui::EndDragDropTarget();

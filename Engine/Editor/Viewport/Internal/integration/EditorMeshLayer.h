@@ -25,6 +25,10 @@ namespace univex::camera {
 class OrbitCamera;
 }
 
+namespace UVE::Scene {
+class IEntityManagerUVE;
+}
+
 namespace univex::integration {
 
 /// Native GL texture names of one EditorMeshLayerUVE::RenderUVE() call's output. The colour
@@ -36,6 +40,22 @@ struct EditorMeshLayerResultUVE final {
     std::uint32_t colorTextureId = 0U;
     std::uint32_t depthTextureId = 0U;
 };
+
+/// True when the document lights something by itself: at least one light the light system would
+/// hand the renderer, that is not one of this layer's own and that still has colour to give.
+///
+/// Deliberately not "does the document contain a light". A light the renderer drops - an invalid
+/// component, a zero cull mask, a zeroed energy, a colour of pure black - reads
+/// as "the scene has lighting" to a naive check, and the headlight then switches itself off for a
+/// scene nothing lights: a black mesh with nothing on screen to explain it. Asking the light
+/// system what it would actually light closes that gap at its source.
+[[nodiscard]] bool HasContributingSceneLightUVE(UVE::Scene::IEntityManagerUVE& entityManager);
+
+/// True when the document's own DirectionalLight3D lights the scene: the same question as
+/// HasContributingSceneLightUVE(), narrowed to a sun, and asked for the same reason. The editor's
+/// preview sun stands down for an authored sun - so it must not stand down for one the renderer
+/// refuses, or the scene loses both lights at once.
+[[nodiscard]] bool HasContributingDirectionalLightUVE(UVE::Scene::IEntityManagerUVE& entityManager);
 
 class EditorMeshLayerUVE final {
 public:

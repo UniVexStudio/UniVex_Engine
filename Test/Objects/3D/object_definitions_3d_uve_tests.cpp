@@ -41,6 +41,7 @@
 #include "uve/math/quaternion_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
+#include "uve/objects/3d/collider_3d_uve.h"
 #include "uve/gameplay/pawn_uve.h"
 #include "uve/scene/objects/scene_object_registry_uve.h"
 #include "uve/scene/objects/scene_object_type_uve.h"
@@ -322,7 +323,7 @@ TEST_F(Object3DDefinitionsUVETest, Player3DIsACharacterMarkedAsThePossessedBody)
     EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, entity), Objects::SceneObjectKindUVE::Player3D);
 }
 
-TEST_F(Object3DDefinitionsUVETest, CharacterBodyIsItsChainPlusAReadyToWalkCapsule) {
+TEST_F(Object3DDefinitionsUVETest, CharacterBodyIsItsChainWithNoShapeOfItsOwn) {
     const EntityUVE entity = CreateEntityUVE();
     ApplyCharacter3DObjectDefinitionUVE(entityManager, entity, Character3DObjectDefinitionUVE{});
     // Object3D > PhysicsObject3D > SolidBody3D > Character3D, and nothing from another branch.
@@ -332,18 +333,73 @@ TEST_F(Object3DDefinitionsUVETest, CharacterBodyIsItsChainPlusAReadyToWalkCapsul
     ASSERT_TRUE(entityManager.HasComponentUVE<CharacterControllerComponentUVE>(entity));
     EXPECT_FALSE(entityManager.HasComponentUVE<Rigid3DComponentUVE>(entity));
     EXPECT_FALSE(entityManager.HasComponentUVE<RenderInstanceComponentUVE>(entity));
-    // A person-sized capsule, so it walks the moment Play starts.
+    EXPECT_TRUE(entityManager.GetComponentUVE<CharacterControllerComponentUVE>(entity).builtInMovement);
+
+    // No collider until the author adds one. A character born with a capsule made the Collider3D
+    // an author then added a second shape in the same place, and the controller pushed the body
+    // out of it - the character was flung the moment the collider appeared.
+    EXPECT_FALSE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity))
+        << "a Character3D is a controller, not a shape";
+
+    // And a collider the author does add is the only one there is: adding it is not a second body.
+    entityManager.AddComponentUVE<ColliderComponentUVE>(entity, Collider3DUVE::MakeCapsuleUVE(0.4F, 1.8F));
+    ASSERT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
+    EXPECT_EQ(entityManager.GetComponentUVE<ColliderComponentUVE>(entity).shapeType,
+              ColliderShapeTypeUVE::Capsule);
+
+    // Applying again keeps what was authored - the collider included.
+    entityManager.GetComponentUVE<CharacterControllerComponentUVE>(entity).moveSpeed = 9.0F;
+    ApplyCharacter3DObjectDefinitionUVE(entityManager, entity, Character3DObjectDefinitionUVE{});
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<CharacterControllerComponentUVE>(entity).moveSpeed, 9.0F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<ColliderComponentUVE>(entity).height, 1.8F);
+}
+
+TEST_F(Object3DDefinitionsUVETest, AShapeUnderTheCharacterIsTheCharactersBody) {
+    // The authoring shape: a character with no collider of its own, and a Collider3D under it.
+    // Resolving is what makes that shape the body's shape instead of an object standing next to
+    // it - and what makes the row badge's "no body" claim honest, since it asks the same question.
+    const EntityUVE body = CreateEntityUVE();
+    ApplyCharacter3DObjectDefinitionUVE(entityManager, body, Character3DObjectDefinitionUVE{});
+    EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), kInvalidEntityUVE)
+        << "no shape anywhere yet";
+
+    const EntityUVE shape = entityManager.CreateEntityUVE();
+    Collider3DObjectDefinitionUVE shapeDefinition{};
+    shapeDefinition.collider = Collider3DUVE::MakeCapsuleUVE(0.4F, 1.8F);
+    ApplyCollider3DObjectDefinitionUVE(entityManager, shape, shapeDefinition);
+    sceneGraph.SetParentUVE(entityManager, shape, body);
+
+    EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), shape);
+
+    // A collider authored on the body itself wins over anything under it.
+    entityManager.AddComponentUVE<ColliderComponentUVE>(body, Collider3DUVE::MakeBoxUVE({0.5F, 0.5F, 0.5F}));
+    EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), body);
+}
+
+TEST_F(Object3DDefinitionsUVETest, AShapeUnderTheCharacterIgnoresChildrenThatAreBodiesThemselves) {
+    // A second body standing under a character is a neighbour, not a description of it: its
+    // collider must never be adopted as the character's shape.
+    const EntityUVE body = CreateEntityUVE();
+    ApplyCharacter3DObjectDefinitionUVE(entityManager, body, Character3DObjectDefinitionUVE{});
+
+    const EntityUVE neighbour = entityManager.CreateEntityUVE();
+    ApplyRigid3DObjectDefinitionUVE(entityManager, neighbour, Rigid3DObjectDefinitionUVE{});
+    sceneGraph.SetParentUVE(entityManager, neighbour, body);
+
+    EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), kInvalidEntityUVE)
+        << "a Rigid3D under a character is not the character's shape";
+}
+
+TEST_F(Object3DDefinitionsUVETest, CharacterBodyStillBuildsAReadyToWalkCapsuleWhenAskedForOne) {
+    const EntityUVE entity = CreateEntityUVE();
+    ApplyCharacter3DObjectDefinitionUVE(entityManager, entity,
+                                        Character3DObjectDefinitionUVE::WithDefaultColliderUVE());
+    // A person-sized capsule, so a caller that wants a body out of the box still gets one.
     ASSERT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
     const ColliderComponentUVE& shape = entityManager.GetComponentUVE<ColliderComponentUVE>(entity);
     EXPECT_EQ(shape.shapeType, ColliderShapeTypeUVE::Capsule);
     EXPECT_FLOAT_EQ(shape.height, 1.8F);
     EXPECT_FLOAT_EQ(shape.radius, 0.4F);
-    EXPECT_TRUE(entityManager.GetComponentUVE<CharacterControllerComponentUVE>(entity).builtInMovement);
-
-    // Applying again keeps what was authored.
-    entityManager.GetComponentUVE<CharacterControllerComponentUVE>(entity).moveSpeed = 9.0F;
-    ApplyCharacter3DObjectDefinitionUVE(entityManager, entity, Character3DObjectDefinitionUVE{});
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<CharacterControllerComponentUVE>(entity).moveSpeed, 9.0F);
 }
 
 TEST_F(Object3DDefinitionsUVETest, CharacterBodyRefusesSettingsItCannotRunWith) {

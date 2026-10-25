@@ -26,7 +26,10 @@ protected:
     EntityUVE MakeCharacterUVE() {
         // The definition brings the transform, the pawn and the controller by itself.
         const EntityUVE entity = entityManager.CreateEntityUVE();
-        ApplyCharacter3DObjectDefinitionUVE(entityManager, entity, Character3DObjectDefinitionUVE{});
+        // A moving body needs the shape its controller sweeps; the definition no longer carries
+        // one by default, because the editor leaves that choice to the author.
+        ApplyCharacter3DObjectDefinitionUVE(entityManager, entity,
+                                            Character3DObjectDefinitionUVE::WithDefaultColliderUVE());
         return entity;
     }
 

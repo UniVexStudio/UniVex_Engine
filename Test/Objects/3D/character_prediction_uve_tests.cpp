@@ -49,7 +49,7 @@ protected:
         transform.localPosition = position;
         sceneGraph.AttachTransformUVE(entityManager, entity, transform);
         ApplyCharacter3DObjectDefinitionUVE(entityManager, entity,
-                                            Character3DObjectDefinitionUVE{});
+                                            Character3DObjectDefinitionUVE::WithDefaultColliderUVE());
         sceneGraph.UpdateUVE(entityManager);
         return entity;
     }
@@ -184,7 +184,7 @@ TEST_F(CharacterPredictionUVETest, MissingComponentsFailClosed) {
     // definition-built pawns pack and apply without ever touching the graph.
     const EntityUVE defined = entityManager.CreateEntityUVE();
     ApplyCharacter3DObjectDefinitionUVE(entityManager, defined,
-                                        Character3DObjectDefinitionUVE{});
+                                        Character3DObjectDefinitionUVE::WithDefaultColliderUVE());
     EXPECT_TRUE(PackPredictedStateUVE(entityManager, defined).has_value());
     EXPECT_TRUE(ApplyPredictedStateUVE(entityManager, sceneGraph, defined, state));
 

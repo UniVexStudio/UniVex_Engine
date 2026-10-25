@@ -38,14 +38,19 @@ std::vector<ColliderWorldAabbUVE> BuildColliderWorldAabbCacheUVE(Scene::IEntityM
                 !Scene::Collider3DUVE::IsParticipatingUVE(collider)) {
                 return;
             }
-            const bool isSphere = collider.shapeType == Scene::ColliderShapeTypeUVE::Sphere;
-            const bool isCapsule = collider.shapeType == Scene::ColliderShapeTypeUVE::Capsule;
-            const Math::Vector3UVE localHalfExtents = Scene::GetColliderLocalHalfExtentsUVE(collider);
+            // The shape the mesh is actually drawn at. Everything below - broad-phase bounds,
+            // narrow-phase extents, capsule segment - is read off this instead of the authored
+            // collider, so one place decides what scale means and no consumer can disagree.
+            const Scene::ColliderComponentUVE scaled =
+                Scene::ScaleColliderUVE(collider, worldTransform.worldScale);
+            const bool isSphere = scaled.shapeType == Scene::ColliderShapeTypeUVE::Sphere;
+            const bool isCapsule = scaled.shapeType == Scene::ColliderShapeTypeUVE::Capsule;
+            const Math::Vector3UVE localHalfExtents = Scene::GetColliderLocalHalfExtentsUVE(scaled);
             Math::QuaternionUVE shapeRotation{};
             if (!Math::TryNormalizeUVE(worldTransform.worldRotation, shapeRotation)) {
                 shapeRotation = {};
             }
-            const float capsuleHalfSegment = isCapsule ? collider.height * 0.5F - collider.radius : 0.0F;
+            const float capsuleHalfSegment = isCapsule ? scaled.height * 0.5F - scaled.radius : 0.0F;
             const Math::Vector3UVE localCapsuleOffset{0.0F, capsuleHalfSegment, 0.0F};
             const Math::Vector3UVE worldCapsuleOffset =
                 isCapsule ? Math::RotateVectorUVE(shapeRotation, localCapsuleOffset) : Math::Vector3UVE{};
@@ -53,9 +58,9 @@ std::vector<ColliderWorldAabbUVE> BuildColliderWorldAabbCacheUVE(Scene::IEntityM
             const Math::Vector3UVE capsuleSegmentEnd = worldTransform.worldPosition + worldCapsuleOffset;
             const Math::Vector3UVE worldHalfExtents = isCapsule
                                                           ? Math::Vector3UVE{
-                                                                collider.radius + std::fabs(worldCapsuleOffset.x),
-                                                                collider.radius + std::fabs(worldCapsuleOffset.y),
-                                                                collider.radius + std::fabs(worldCapsuleOffset.z),
+                                                                scaled.radius + std::fabs(worldCapsuleOffset.x),
+                                                                scaled.radius + std::fabs(worldCapsuleOffset.y),
+                                                                scaled.radius + std::fabs(worldCapsuleOffset.z),
                                                             }
                                                           : isSphere
                                                                 ? localHalfExtents
@@ -96,15 +101,15 @@ std::vector<ColliderWorldAabbUVE> BuildColliderWorldAabbCacheUVE(Scene::IEntityM
             cache.push_back(ColliderWorldAabbUVE{
                 entity,
                 worldAabb,
-                collider.collisionLayer,
-                collider.collisionMask,
-                collider.shapeType,
-                (isSphere || isCapsule) ? collider.radius : 0.0F,
+                scaled.collisionLayer,
+                scaled.collisionMask,
+                scaled.shapeType,
+                (isSphere || isCapsule) ? scaled.radius : 0.0F,
                 localHalfExtents,
                 shapeRotation,
                 capsuleSegmentStart,
                 capsuleSegmentEnd,
-                PhysicsMaterialUVE{collider.friction, collider.restitution, collider.density},
+                PhysicsMaterialUVE{scaled.friction, scaled.restitution, scaled.density},
             });
         });
     return cache;

@@ -761,8 +761,12 @@ EditorBridgeHierarchySnapshotUVE EditorBridgeUVE::CaptureHierarchyUVE() {
 
         Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
         const bool hasParent = m_editor->TryGetDocumentParentUVE(entity, parent) && parent != Scene::kInvalidEntityUVE;
+        // The same tree the panel draws: a placed entity is one row, so an automated reader sees
+        // the level as the author does rather than as a flatter tree that no window shows.
         const std::vector<Scene::EntityUVE> children =
-            m_editor->m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
+            m_editor->IsSealedHierarchyRowUVE(entity)
+                ? std::vector<Scene::EntityUVE>{}
+                : m_editor->m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
         snapshot.entries.push_back(EditorBridgeHierarchyEntryUVE{
             ToBridgeEntityUVE(entity),
             hasParent ? std::optional<EditorBridgeEntityRefUVE>{ToBridgeEntityUVE(parent)} : std::nullopt,

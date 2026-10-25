@@ -54,7 +54,11 @@ struct WorldEnvironment3DComponentUVE final {
     WorldEnvironmentFogModeUVE fogMode = WorldEnvironmentFogModeUVE::Height;
     float fogStart = 0.0F;
     float fogEnd = 1000.0F;
-    bool postProcessingEnabled = true;
+    /// Off by default, so adding an environment to a level does not change what the level looks
+    /// like: the editor's preview environment - what an author sees before there is one - draws no
+    /// effects stack, and a default environment that turned bloom, vignette, grain and the rest on
+    /// the moment it was created made "I only added an environment" look like a colour change.
+    bool postProcessingEnabled = false;
     Math::Vector3UVE skyColor{0.31F, 0.54F, 0.91F};
     Math::Vector3UVE horizonColor{0.78F, 0.86F, 0.94F};
     Math::Vector3UVE groundColor{0.24F, 0.21F, 0.18F};
@@ -155,6 +159,52 @@ struct WorldEnvironmentFrameUVE final {
     bool ssaoEnabled = true;
     bool hasEnvironment = false;
     std::string skyAssetPath;
+
+    /// True when the sky for this frame comes from a Sky object's scattering model instead of the
+    /// three-band gradient. The bands above are still filled - the model uses the ground colour
+    /// below the horizon - but they are no longer what paints the sky.
+    bool atmosphericSky = false;
+    float atmosphereRayleigh = 1.0F;
+    float atmosphereMie = 1.0F;
+    float atmosphereOzone = 1.0F;
+    float atmosphereMieAnisotropy = 0.76F;
+    float atmosphereMultiScatter = 1.0F;
+    float atmosphereIntensity = 1.0F;
+    std::uint32_t atmosphereSamples = 16U;
+
+    /// Night overlay: the stars behind everything and the band across them.
+    float starDensity = 420.0F;
+    float starBrightness = 0.0F;
+    float starSeed = 0.0F;
+    float milkyWayStrength = 0.0F;
+
+    /// Cloud deck over the sky. `cloudWind` is already resolved to metres per second in world XZ,
+    /// so the renderer never has to convert an angle while building its uniforms.
+    bool cloudsEnabled = false;
+    float cloudCoverage = 0.45F;
+    float cloudDensity = 1.0F;
+    float cloudAltitude = 1500.0F;
+    Math::Vector2UVE cloudWind{};
+    float cloudSoftness = 0.35F;
+    float cloudSilverLining = 1.0F;
+
+    /// Lighting link from the Sky object. The ambient is applied later, by
+    /// ApplySunToWorldEnvironmentFrameUVE, because it depends on the sun's altitude and the sun is
+    /// not resolved until after this frame is built.
+    bool skyAmbientLinked = false;
+    float skyAmbientStrength = 1.0F;
+    float skyRayleighDensity = 1.0F;
+    /// Fog is applied where it is resolved: the horizon band does not depend on the sun.
+    bool skyFogLinked = false;
+    /// Output of the sky as a whole, straight from the component: the renderer multiplies the sky
+    /// pass by this and gates the sky clock on the second.
+    float skyLuminance = 1.0F;
+    bool skyAnimated = true;
+    /// What a reflective surface shows, resolved alongside the ambient for the same reason.
+    bool skyReflectionsLinked = false;
+    Math::Vector3UVE reflectionSky{};
+    Math::Vector3UVE reflectionHorizon{};
+    Math::Vector3UVE reflectionGround{};
 };
 
 [[nodiscard]] bool TryMakeSkyEquirectUvUVE(const Math::Vector3UVE& direction, Math::Vector2UVE& outUv) noexcept;

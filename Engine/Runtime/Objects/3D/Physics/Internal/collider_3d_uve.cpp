@@ -228,19 +228,23 @@ Math::AabbUVE Collider3DUVE::GetLocalAabbUVE(const ColliderComponentUVE& collide
 
 Math::AabbUVE Collider3DUVE::GetWorldAabbUVE(const ColliderComponentUVE& collider,
                                             const Math::Vector3UVE& center,
-                                            const Math::QuaternionUVE& rotation) noexcept {
+                                            const Math::QuaternionUVE& rotation,
+                                            const Math::Vector3UVE& worldScale) noexcept {
     const Math::QuaternionUVE usable = UsableRotationUVE(rotation);
-    const Math::Vector3UVE local = GetColliderLocalHalfExtentsUVE(collider);
+    // Scale first, then rotate the already-scaled extents. The other order scales a rotated
+    // bounding box, which is neither what the shape is nor what the mesh looks like.
+    const ColliderComponentUVE scaled = ScaleColliderUVE(collider, worldScale);
+    const Math::Vector3UVE local = GetColliderLocalHalfExtentsUVE(scaled);
     Math::Vector3UVE worldHalf = local;
-    if (collider.shapeType == ColliderShapeTypeUVE::Capsule) {
+    if (scaled.shapeType == ColliderShapeTypeUVE::Capsule) {
         Math::Vector3UVE start{};
         Math::Vector3UVE end{};
-        if (CapsuleSegmentUVE(collider, center, usable, start, end)) {
+        if (CapsuleSegmentUVE(scaled, center, usable, start, end)) {
             const Math::Vector3UVE offset = end - center;
-            worldHalf = {collider.radius + std::fabs(offset.x), collider.radius + std::fabs(offset.y),
-                         collider.radius + std::fabs(offset.z)};
+            worldHalf = {scaled.radius + std::fabs(offset.x), scaled.radius + std::fabs(offset.y),
+                         scaled.radius + std::fabs(offset.z)};
         }
-    } else if (collider.shapeType == ColliderShapeTypeUVE::Box) {
+    } else if (scaled.shapeType == ColliderShapeTypeUVE::Box) {
         const Math::Vector3UVE x = Math::RotateVectorUVE(usable, Math::Vector3UVE{local.x, 0.0F, 0.0F});
         const Math::Vector3UVE y = Math::RotateVectorUVE(usable, Math::Vector3UVE{0.0F, local.y, 0.0F});
         const Math::Vector3UVE z = Math::RotateVectorUVE(usable, Math::Vector3UVE{0.0F, 0.0F, local.z});

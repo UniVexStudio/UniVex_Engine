@@ -42,10 +42,52 @@ struct ColliderComponentUVE final {
 [[nodiscard]] Math::Vector3UVE GetColliderLocalHalfExtentsUVE(
     const ColliderComponentUVE& collider) noexcept;
 
+/// Smallest magnitude any one axis of a collider's world scale is allowed to reach.
+///
+/// A zero-scaled object still has to be a shape: a degenerate extent fails
+/// `IsColliderComponentValidUVE` and the body would leave the world entirely, which reads as an
+/// object that ignores its own collider rather than as one the author shrank to nothing.
+inline constexpr float kMinimumColliderWorldScaleUVE = 1.0e-4F;
+
+/// The collider a body actually occupies once its world scale is taken into account.
+///
+/// The mesh is drawn at `worldScale`, so the shape has to be too - a scaled cube whose collider
+/// stayed unit-sized is a floor you fall through, which is the exact complaint this exists to
+/// answer. Rather than teach every reader of a collider about scale (mixing it up in any one of
+/// them is a silent, shape-specific bug), the scaled shape is produced once, here, and every
+/// consumer keeps reading a plain collider.
+///
+/// Shapes with a single major axis cannot follow a non-uniform scale exactly, so a round shape
+/// takes its widest cross-section axis and its own axis for length: a capsule squashed on X by 4
+/// and left alone on Y becomes a thinner-but-not-shorter capsule, never an ellipse nothing else in
+/// the engine could collide against. `Height` is floored at `2 * radius` for the same reason the
+/// authored value is validated that way - a capsule cannot be shorter than the two caps it is
+/// made of.
+[[nodiscard]] ColliderComponentUVE ScaleColliderUVE(const ColliderComponentUVE& collider,
+                                                    const Math::Vector3UVE& worldScale) noexcept;
+
 /// Validates the value-only collider contract before scene persistence and explicit validation
 /// consumers. Collision masks remain opaque bit fields; a zero layer is rejected because it would
 /// make the collider unreachable by the layer-mask raycast contract. Runtime material extraction
 /// retains its established defensive friction/restitution clamp for legacy hand-authored values.
 [[nodiscard]] bool IsColliderComponentValidUVE(const ColliderComponentUVE& collider) noexcept;
+
+/// The height below which a capsule has no barrel at all: its two hemispherical caps meet exactly
+/// and the shape is a sphere wearing a capsule's shape type.
+[[nodiscard]] float MinimumCapsuleHeightUVE(float radius) noexcept;
+
+/// Gives a collider the proportions the shape it now names actually implies.
+///
+/// Called when the author changes `shapeType`, not on every edit, because it only rescues a shape
+/// that cannot express itself with the numbers it inherited. Switching a Box to a Capsule is the
+/// case that matters: the field default is height 1.0 and radius 0.5, so the cap height equals the
+/// half height, the barrel is zero, and the author is shown a sphere while the Inspector says
+/// Capsule. A capsule with a barrel is the shape they asked for, so the height is raised until the
+/// barrel is as long as the capsule is wide - the proportion a capsule is drawn with everywhere -
+/// and an authored height that already has a barrel is left untouched.
+///
+/// Nothing about the other shapes changes: a Box, Sphere or Cylinder is already exactly what its
+/// numbers say.
+[[nodiscard]] ColliderComponentUVE FitColliderShapeUVE(const ColliderComponentUVE& collider) noexcept;
 
 } // namespace UVE::Scene
