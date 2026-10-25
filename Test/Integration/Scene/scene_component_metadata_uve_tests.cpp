@@ -106,6 +106,39 @@ TEST(SceneComponentMetadataUVETest, EveryLayerMaskNamesTheLayersItPicksFrom) {
     EXPECT_EQ(render, 5U); // mesh, render instance, light, decal and reflection probe
 }
 
+// A group is a fold, and a fold is one unbroken run of rows: the Inspector opens a new fold every
+// time the group name changes, so a row from a group that reappears further down the section opens
+// a second fold with the same name - and an ungrouped row in the middle cuts the first one in two.
+// Both read as a section that lost its order, and neither is visible from the declaration that
+// caused it. This walks every component so a later edit that moves one row across a boundary fails
+// here rather than in the panel.
+TEST(SceneComponentMetadataUVETest, EveryGroupIsOneUnbrokenRunOfRows) {
+    std::size_t groups = 0U;
+    for (const TypeMetadataEntryUVE& entry : GetSceneComponentMetadataRegistryUVE().GetSnapshotUVE().entries) {
+        std::vector<std::string> closed;
+        std::string run;
+        for (const TypeMetadataPropertyUVE& property : entry.properties) {
+            if (property.section == run) {
+                continue;
+            }
+            if (!run.empty()) {
+                closed.push_back(run);
+            }
+            run = property.section;
+            if (run.empty()) {
+                continue;
+            }
+            // A group that has already ended cannot start again. A group that is merely ungrouped
+            // between two members is this same failure seen from the other side: the run ended.
+            EXPECT_EQ(std::find(closed.begin(), closed.end(), run), closed.end())
+                << entry.typeId << "." << property.name << " reopens the group " << run;
+            ++groups;
+        }
+    }
+    // Guards against the walk passing because nothing is grouped at all.
+    EXPECT_GT(groups, 0U);
+}
+
 TEST(SceneComponentMetadataUVETest, FindSceneComponentMetadataUVE_ResolvesALiveComponentType) {
     const TypeMetadataEntryUVE* transform =
         FindSceneComponentMetadataUVE(std::type_index(typeid(TransformComponentUVE)));
