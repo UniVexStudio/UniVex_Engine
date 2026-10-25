@@ -6,19 +6,14 @@
 
 name: CI
 
-# What a run publishes is what somebody can actually try: the editor's exe, and the cooked project it
-# uses as a runtime fixture. Every upload is gated on CREATE_ARTIFACTS, on by default, so that build
-# is there without asking; set the repository variable CREATE_ARTIFACTS to 'false' to turn even it
-# off, or pass create_artifacts=false on a manual run.
+# Nothing here is a build anybody downloads. The editor's exe comes from windows-editor.yml and the
+# apk from android.yml; this workflow exists to prove the tree compiles and that both GoogleTest
+# suites pass, and a green run says exactly that and nothing more.
 #
-# The Android apk lives in .github/workflows/android.yml instead. It is a different question - "does
-# the installed apk draw anything on a device" - and answering it needs an emulator, so it does not
-# belong in the job that exists to prove the tree compiles and the tests pass.
-#
-# The measurement and test-log uploads are a different thing - they answer questions about a run
-# rather than giving anybody a build - so they sit behind their own switch and are off by default.
+# The uploads it does have - the test log, the asset workload measurements, the editor process
+# baseline - answer questions about a run rather than giving anybody something to try, so they sit
+# behind DIAGNOSTIC_ARTIFACTS and are off unless asked for.
 env:
-  UNIVEX_CREATE_ARTIFACTS: ${{ vars.CREATE_ARTIFACTS != 'false' }}
   UNIVEX_DIAGNOSTIC_ARTIFACTS: ${{ vars.DIAGNOSTIC_ARTIFACTS == 'true' }}
 
 on:

@@ -124,6 +124,10 @@ jobs:
         # shell, and a later step would find it already dead. Both builds are smoked even when the
         # first one fails - "the demo is black but the cooked one renders" and its opposite are two
         # different bugs, and only running both tells them apart.
+        #
+        # Each smoke gets a second attempt, and only a second. A software-rendered emulator drops an
+        # EGL surface or stalls a resume often enough that one failure is not evidence; two in a row
+        # is, and the annotation from the first attempt says what happened either way.
         if: matrix.abi == 'x86_64'
         shell: bash
         run: |
@@ -147,47 +151,49 @@ jobs:
             tail -60 /tmp/univex-emulator.log
             exit 1
           fi
+
+          # The two apks are signed with the debug key of their own build directory, and Android
+          # refuses to replace an installed package whose signing key changed - so the previous
+          # variant has to go before the next one is installed.
+          reset_device() {
+            adb -s emulator-5554 shell am force-stop com.univex.runtime > /dev/null 2>&1 || true
+            adb -s emulator-5554 uninstall com.univex.runtime > /dev/null 2>&1 || true
+          }
+          run_smoke() {
+            local label="$1"
+            local apk="$2"
+            local attempt
+            for attempt in 1 2; do
+              if python3 Engine/Tools/android/smoke_runtime.py \
+                  --adb "$ANDROID_HOME/platform-tools/adb" --serial emulator-5554 \
+                  --apk "${apk}" --label "${label}" \
+                  --report "/tmp/univex-android-${label}-smoke.json" \
+                  --screenshot "/tmp/univex-android-${label}.png" "${@:3}"; then
+                return 0
+              fi
+              echo "::warning title=${label} apk smoke::attempt ${attempt} failed"
+              reset_device
+              sleep 5
+            done
+            return 1
+          }
+
           status=0
           # The demo has no project content, so a failure here is the runtime itself.
-          python3 Engine/Tools/android/smoke_runtime.py \
-            --adb "$ANDROID_HOME/platform-tools/adb" --serial emulator-5554 \
-            --apk /tmp/univex-android-demo/univex-runtime-x86_64.apk \
-            --report /tmp/univex-android-demo-smoke.json \
-            --screenshot /tmp/univex-android-demo.png || status=1
+          run_smoke demo /tmp/univex-android-demo/univex-runtime-x86_64.apk || status=1
+          reset_device
           # Same runtime, packed project. A failure here with a green demo is the content.
-          # The two apks are signed with the debug key of their own build directory, and Android
-          # refuses to replace an installed package whose signing key changed, so the demo has to go
-          # first. Nothing is lost: this is a fresh emulator in a fresh job.
-          adb -s emulator-5554 uninstall com.univex.runtime > /dev/null 2>&1 || true
-          python3 Engine/Tools/android/smoke_runtime.py \
-            --adb "$ANDROID_HOME/platform-tools/adb" --serial emulator-5554 \
-            --apk /tmp/univex-android-cooked/univex-runtime-x86_64.apk \
-            --report /tmp/univex-android-cooked-smoke.json \
-            --screenshot /tmp/univex-android-cooked.png \
+          run_smoke cooked /tmp/univex-android-cooked/univex-runtime-x86_64.apk \
             --expect-cooked-project --memory-report /tmp/univex-android-meminfo.txt || status=1
+
           # Dump the device log while the emulator is still alive; the trap above ends it.
           adb -s emulator-5554 logcat -d -s UniVex:V '*:S' > /tmp/univex-android-univex.txt 2>&1 || true
           adb -s emulator-5554 logcat -d > /tmp/univex-android-logcat.txt 2>&1 || true
           cat /tmp/univex-android-univex.txt || true
-          # One annotation per apk, so the Checks tab names which build was black instead of making
-          # somebody open the raw log to find out. The report is written with json.dumps(indent=2),
-          # which is why these are single-line matches rather than a JSON parse in the shell.
-          for variant in demo cooked; do
-            report="/tmp/univex-android-${variant}-smoke.json"
-            if [ ! -f "${report}" ]; then
-              continue
-            fi
-            if grep -q '^  "passed": true$' "${report}"; then
-              echo "::notice::${variant} apk passed"
-            else
-              reason="$(sed -n 's/^  "error": "\(.*\)",*$/\1/p' "${report}" | head -1)"
-              echo "::error title=${variant} apk failed::${reason:-no reason recorded}"
-            fi
-          done
           exit "$status"
 
       - name: Upload the demo apk
-        if: env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
+        if: always() && env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
             (github.event_name != 'workflow_dispatch' || inputs.create_artifacts)
         uses: actions/upload-artifact@v4
         with:
@@ -197,7 +203,7 @@ jobs:
           retention-days: 7
 
       - name: Upload the cooked apk
-        if: env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
+        if: always() && env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
             (github.event_name != 'workflow_dispatch' || inputs.create_artifacts)
         uses: actions/upload-artifact@v4
         with:

@@ -3,6 +3,7 @@
 import argparse
 import json
 import math
+import os
 from pathlib import Path
 import subprocess
 import struct
@@ -19,12 +20,35 @@ def main():
     parser.add_argument('--screenshot', type=Path)
     parser.add_argument('--expect-cooked-project', action='store_true')
     parser.add_argument('--memory-report', type=Path)
+    parser.add_argument('--label', default='', help='Name for annotations, e.g. demo or cooked')
     args = parser.parse_args()
     if not math.isfinite(args.timeout) or args.timeout <= 0:
         parser.error('--timeout must be positive')
     args.report.unlink(missing_ok=True)
     report = {'passed': False, 'checks': [], 'device': args.serial,
               'performance_verified': False}
+    label = args.label or args.apk.name
+
+    def annotate(level, message):
+        """Make the failure readable where somebody is already looking.
+
+        The job log is the long version, but a red check with "Process completed with exit code 1"
+        and nothing else is how a black screen stays unexplained through three CI runs. The reason,
+        whether the app was even alive, and the end of the device log go into the annotation.
+        """
+        if not os.environ.get('GITHUB_ACTIONS'):
+            return
+        # Annotations are one line; GitHub escapes newlines but a wall of them is unreadable.
+        text = ' '.join(str(message).split())
+        if len(text) > 3500:
+            text = text[:3500] + ' ...'
+        print(f'::{level} title={label} apk smoke::{text}', flush=True)
+
+    def process_is_running():
+        try:
+            return bool(adb('shell', 'pidof', 'com.univex.runtime').strip())
+        except (subprocess.SubprocessError, OSError):
+            return False
 
     def adb(*command, timeout=None):
         return subprocess.run([args.adb, '-s', args.serial, *command], check=True,
@@ -45,6 +69,11 @@ def main():
                 reason = next(line for line in text.splitlines()
                               if 'UVE_ANDROID_COOKED_PROJECT_REJECTED' in line)
                 raise RuntimeError('The runtime rejected the cooked project: ' + reason.strip())
+            # Same reasoning for a stopped runtime: waiting out the timeout for a marker that
+            # cannot arrive turns "startup failed, here is why" into "something is missing".
+            if marker != 'UVE_ANDROID_FAILED' and 'UVE_ANDROID_FAILED' in text:
+                reason = next(line for line in text.splitlines() if 'UVE_ANDROID_FAILED' in line)
+                raise RuntimeError('The runtime stopped: ' + reason.strip())
             if text.count(marker) >= minimum:
                 print(marker, flush=True)
                 report['checks'].append(marker)
@@ -201,14 +230,19 @@ def main():
         adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
         wait_for('UVE_ANDROID_DESTROYED')
         report['passed'] = True
+        annotate('notice', f'passed {len(report["checks"])} checks, screen lit')
         return 0
     except (subprocess.SubprocessError, OSError, RuntimeError) as error:
         report['error'] = str(error)
+        running = process_is_running()
+        report['process_running'] = running
         try:
             report['native_log_tail'] = logs()[-6000:]
             print(report['native_log_tail'], flush=True)
         except (subprocess.SubprocessError, OSError):
-            pass
+            report['native_log_tail'] = ''
+        annotate('error', f'{error} | app running: {running} | log tail: '
+                          f'{report["native_log_tail"][-1200:]}')
         return 1
     finally:
         args.report.parent.mkdir(parents=True, exist_ok=True)
