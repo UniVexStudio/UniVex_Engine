@@ -354,6 +354,42 @@ TEST_F(Object3DDefinitionsUVETest, CharacterBodyIsItsChainWithNoShapeOfItsOwn) {
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<ColliderComponentUVE>(entity).height, 1.8F);
 }
 
+TEST_F(Object3DDefinitionsUVETest, AShapeUnderTheCharacterIsTheCharactersBody) {
+    // The authoring shape: a character with no collider of its own, and a Collider3D under it.
+    // Resolving is what makes that shape the body's shape instead of an object standing next to
+    // it - and what makes the row badge's "no body" claim honest, since it asks the same question.
+    const EntityUVE body = CreateEntityUVE();
+    ApplyCharacter3DObjectDefinitionUVE(entityManager, body, Character3DObjectDefinitionUVE{});
+    EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), kInvalidEntityUVE)
+        << "no shape anywhere yet";
+
+    const EntityUVE shape = entityManager.CreateEntityUVE();
+    Collider3DObjectDefinitionUVE shapeDefinition{};
+    shapeDefinition.collider = Collider3DUVE::MakeCapsuleUVE(0.4F, 1.8F);
+    ApplyCollider3DObjectDefinitionUVE(entityManager, shape, shapeDefinition);
+    sceneGraph.SetParentUVE(entityManager, shape, body);
+
+    EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), shape);
+
+    // A collider authored on the body itself wins over anything under it.
+    entityManager.AddComponentUVE<ColliderComponentUVE>(body, Collider3DUVE::MakeBoxUVE({0.5F, 0.5F, 0.5F}));
+    EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), body);
+}
+
+TEST_F(Object3DDefinitionsUVETest, AShapeUnderTheCharacterIgnoresChildrenThatAreBodiesThemselves) {
+    // A second body standing under a character is a neighbour, not a description of it: its
+    // collider must never be adopted as the character's shape.
+    const EntityUVE body = CreateEntityUVE();
+    ApplyCharacter3DObjectDefinitionUVE(entityManager, body, Character3DObjectDefinitionUVE{});
+
+    const EntityUVE neighbour = entityManager.CreateEntityUVE();
+    ApplyRigid3DObjectDefinitionUVE(entityManager, neighbour, Rigid3DObjectDefinitionUVE{});
+    sceneGraph.SetParentUVE(entityManager, neighbour, body);
+
+    EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), kInvalidEntityUVE)
+        << "a Rigid3D under a character is not the character's shape";
+}
+
 TEST_F(Object3DDefinitionsUVETest, CharacterBodyStillBuildsAReadyToWalkCapsuleWhenAskedForOne) {
     const EntityUVE entity = CreateEntityUVE();
     ApplyCharacter3DObjectDefinitionUVE(entityManager, entity,

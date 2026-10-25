@@ -9,9 +9,12 @@
 #include <optional>
 #include <vector>
 
+#include "uve/component/rigid_3d_component_uve.h"
+#include "uve/component/solid_body_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/scalar_uve.h"
 #include "uve/objects/3d/abstract_physics_objects_3d_uve.h"
+#include "uve/scene/i_scene_graph_uve.h"
 
 namespace UVE::Scene {
 namespace {
@@ -1134,6 +1137,33 @@ void ApplyCharacter3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const
         possession.kind = value.controllerKind;
         entityManager.AddComponentUVE<ControllerComponentUVE>(entity, possession);
     }
+}
+
+EntityUVE ResolveCharacterShapeEntityUVE(IEntityManagerUVE& entityManager,
+                                           ISceneGraphUVE& sceneGraph, const EntityUVE character) {
+    if (character == kInvalidEntityUVE || !entityManager.IsAliveUVE(character)) {
+        return kInvalidEntityUVE;
+    }
+    // A collider authored on the character itself is the body. Checked first, so an author who
+    // built the shape directly never has it replaced by something below it.
+    if (entityManager.HasComponentUVE<ColliderComponentUVE>(character)) {
+        return character;
+    }
+    // Otherwise the first child that is a shape and nothing else. "Nothing else" is the whole
+    // test: a Rigid3D, a Static3D or another Character3D also carries a collider, but each of them
+    // is a body of its own standing next to this one, not a description of it.
+    for (const EntityUVE child : sceneGraph.GetChildrenUVE(entityManager, character)) {
+        if (!entityManager.HasComponentUVE<ColliderComponentUVE>(child)) {
+            continue;
+        }
+        if (entityManager.HasComponentUVE<SolidBodyComponentUVE>(child) ||
+            entityManager.HasComponentUVE<Rigid3DComponentUVE>(child) ||
+            entityManager.HasComponentUVE<CharacterControllerComponentUVE>(child)) {
+            continue;
+        }
+        return child;
+    }
+    return kInvalidEntityUVE;
 }
 
 Physics::CharacterMotionInputUVE ResolveCharacterMotionUVE(IEntityManagerUVE& entityManager,

@@ -18,6 +18,7 @@
 namespace UVE::Scene {
 
 class IEntityManagerUVE;
+class ISceneGraphUVE;
 
 /// Character3D: a body moved by its own code rather than by forces - a player, an NPC, an
 /// enemy. Object3D > PhysicsObject3D > SolidBody3D > Character3D.
@@ -69,6 +70,25 @@ struct Character3DObjectDefinitionUVE final {
 };
 
 [[nodiscard]] bool IsCharacter3DObjectDefinitionValidUVE(const Character3DObjectDefinitionUVE& value) noexcept;
+
+/// The entity whose ColliderComponentUVE is `character`'s body: the character itself when it
+/// carries a collider, otherwise the first child that is a shape and nothing else.
+///
+/// A character's shape is allowed to be its own separate object. A Collider3D is an object in the
+/// tree - it can be selected, given a shape type and shown as a wireframe - and putting one under
+/// a character is how an author says "this is the body this controller sweeps". Without this the
+/// shape was invisible: it could only live as a component on the character, where nothing in the
+/// tree listed it and nothing in the viewport drew it.
+///
+/// Only a shape that is nothing but a shape qualifies. A child that is itself a body - a Rigid3D,
+/// a Static3D, another Character3D - is a separate thing standing next to this one, not a
+/// description of it, and is skipped. A collider on the character still wins over any child, so an
+/// author who authored it directly never has it silently replaced by something below it.
+///
+/// Returns kInvalidEntityUVE when the character has no shape at all, which is a state the Outliner
+/// reports and the stepper refuses rather than guessing.
+[[nodiscard]] EntityUVE ResolveCharacterShapeEntityUVE(IEntityManagerUVE& entityManager,
+                                                       ISceneGraphUVE& sceneGraph, EntityUVE character);
 
 /// Applies the SolidBody3D base (and through it PhysicsObject3D and Object3D), then the collider
 /// and the controller, each only where the entity does not already have one.
