@@ -159,6 +159,18 @@ struct WorldEnvironmentFrameUVE final {
     bool ssaoEnabled = true;
     bool hasEnvironment = false;
     std::string skyAssetPath;
+
+    /// True when the sky for this frame comes from a Sky object's scattering model instead of the
+    /// three-band gradient. The bands above are still filled - the model uses the ground colour
+    /// below the horizon - but they are no longer what paints the sky.
+    bool atmosphericSky = false;
+    float atmosphereRayleigh = 1.0F;
+    float atmosphereMie = 1.0F;
+    float atmosphereOzone = 1.0F;
+    float atmosphereMieAnisotropy = 0.76F;
+    float atmosphereMultiScatter = 1.0F;
+    float atmosphereIntensity = 1.0F;
+    std::uint32_t atmosphereSamples = 16U;
 };
 
 [[nodiscard]] bool TryMakeSkyEquirectUvUVE(const Math::Vector3UVE& direction, Math::Vector2UVE& outUv) noexcept;

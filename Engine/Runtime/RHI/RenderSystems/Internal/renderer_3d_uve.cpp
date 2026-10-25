@@ -4699,6 +4699,22 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                                                           m_impl->sunDiscAngularDiameterDegrees);
                 m_impl->proceduralSkyProgram->SetFloatUVE("uSunDiscIntensity", m_impl->sunDiscIntensity);
                 m_impl->proceduralSkyProgram->SetFloatUVE("uSunLimbDarkening", m_impl->sunDiscLimbDarkening);
+                m_impl->proceduralSkyProgram->SetIntUVE("uAtmosphericSky",
+                                                         m_impl->environmentFrame.atmosphericSky ? 1 : 0);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uAtmosphereRayleigh",
+                                                           m_impl->environmentFrame.atmosphereRayleigh);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uAtmosphereMie",
+                                                           m_impl->environmentFrame.atmosphereMie);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uAtmosphereOzone",
+                                                           m_impl->environmentFrame.atmosphereOzone);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uAtmosphereMieAnisotropy",
+                                                           m_impl->environmentFrame.atmosphereMieAnisotropy);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uAtmosphereMultiScatter",
+                                                           m_impl->environmentFrame.atmosphereMultiScatter);
+                m_impl->proceduralSkyProgram->SetFloatUVE("uAtmosphereIntensity",
+                                                           m_impl->environmentFrame.atmosphereIntensity);
+                m_impl->proceduralSkyProgram->SetIntUVE(
+                    "uAtmosphereSteps", static_cast<std::int32_t>(m_impl->environmentFrame.atmosphereSamples));
                 m_impl->proceduralSkyProgram->SetIntUVE("uSkyTexture", static_cast<std::int32_t>(kSkyTextureSlotUVE));
                 m_impl->proceduralSkyProgram->SetIntUVE("uSkyTextureEnabled", m_impl->skyTextureEnabled ? 1 : 0);
                 m_impl->proceduralSkyProgram->ApplyToUVE(commandBuffer);

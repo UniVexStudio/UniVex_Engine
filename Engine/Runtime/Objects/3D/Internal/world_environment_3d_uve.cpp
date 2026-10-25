@@ -168,11 +168,10 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
         if (skyApplied || !sky.enabled || !IsSky3DObjectComponentValidUVE(sky)) {
             return;
         }
-        // `Atmosphere` is reserved, and until the scattering model lands it draws the gradient.
-        // Naming a mode must never leave the sky blank, so the fallback is the mode that always
-        // renders rather than a special case for "not implemented yet".
-        const SkySourceUVE source =
-            sky.source == SkySourceUVE::Atmosphere ? SkySourceUVE::Gradient : sky.source;
+        const SkySourceUVE source = sky.source;
+        // A panorama with no image has nothing to sample. Falling through to the gradient would be
+        // a different sky than the one selected, so the whole Sky is skipped and the scene keeps
+        // whatever it had - the same answer as an empty Sky asset on the environment.
         if (source == SkySourceUVE::Panorama && sky.panoramaPath.empty()) {
             return;
         }
@@ -183,6 +182,14 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
         frame.groundCurve = sky.groundCurve;
         frame.backgroundColor = sky.horizonColor;
         frame.skyAssetPath = source == SkySourceUVE::Panorama ? sky.panoramaPath : std::string{};
+        frame.atmosphericSky = source == SkySourceUVE::Atmosphere;
+        frame.atmosphereRayleigh = sky.atmosphereRayleigh;
+        frame.atmosphereMie = sky.atmosphereMie;
+        frame.atmosphereOzone = sky.atmosphereOzone;
+        frame.atmosphereMieAnisotropy = sky.atmosphereMieAnisotropy;
+        frame.atmosphereMultiScatter = sky.atmosphereMultiScatter;
+        frame.atmosphereIntensity = sky.atmosphereIntensity;
+        frame.atmosphereSamples = sky.atmosphereSamples;
         frame.hasEnvironment = true;
         skyApplied = true;
     });

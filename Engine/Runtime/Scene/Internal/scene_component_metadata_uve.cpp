@@ -997,6 +997,13 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     const auto sourceIsNotPanorama = [](const void* instance) {
         return static_cast<const Sky3DComponentUVE*>(instance)->source != SkySourceUVE::Panorama;
     };
+    const auto sourceIsAtmosphere = [](const void* instance) {
+        return static_cast<const Sky3DComponentUVE*>(instance)->source == SkySourceUVE::Atmosphere;
+    };
+    const auto scattered = [sourceIsAtmosphere](TypeMetadataPropertyUVE property) {
+        property.isVisible = sourceIsAtmosphere;
+        return property;
+    };
     const auto coloredByCurve = [sourceIsNotPanorama](TypeMetadataPropertyUVE property) {
         property.isVisible = sourceIsNotPanorama;
         return property;
@@ -1018,10 +1025,10 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                         "source", "Source",
                         {{static_cast<std::int64_t>(SkySourceUVE::Gradient), "Gradient"},
                          {static_cast<std::int64_t>(SkySourceUVE::Panorama), "Panorama"},
-                         {static_cast<std::int64_t>(SkySourceUVE::Atmosphere), "Atmosphere (planned)"}}),
+                         {static_cast<std::int64_t>(SkySourceUVE::Atmosphere), "Atmosphere"}}),
                     "Gradient blends three authored bands. Panorama samples an equirectangular image. "
-                    "Atmosphere is the scattering model while it is still being built and draws the "
-                    "gradient until it lands."),
+                    "Atmosphere scatters sunlight through a model of the air, which is what makes the "
+                    "zenith blue and a setting sun red."),
 
                 InGroupUVE(coloredByCurve(WithTooltipUVE(
                                DeclareUVE<&S::skyColor>("skyColor", "Sky Color", kPropertyTypeColorUVE),
@@ -1074,6 +1081,68 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                "Brightness of the panorama in stops, so an image authored for one exposure "
                                "can be matched to this scene without editing the file.")),
                            "Panorama"),
+
+                // Each of these scales one physical term, so 1.0 is Earth and 0 removes the term.
+                // A row with a tooltip that says what the term DOES is worth more here than a
+                // range: nobody tunes ozone by feel, they tune it to get the twilight they want.
+                InGroupUVE(scattered(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::atmosphereRayleigh>("atmosphereRayleigh",
+                                                                               "Rayleigh", kPropertyTypeFloatUVE),
+                                            0.0, 10.0, 0.01),
+                               "Density of the gas itself. This is the blue: it scatters short wavelengths "
+                               "far more than long ones, so raising it deepens the zenith and reddens the "
+                               "sunset. 0 leaves a colourless sky.")),
+                           "Atmosphere"),
+                InGroupUVE(scattered(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::atmosphereMie>("atmosphereMie", "Mie",
+                                                                          kPropertyTypeFloatUVE),
+                                            0.0, 10.0, 0.01),
+                               "Density of haze and dust. It scatters almost evenly across colours, so "
+                               "raising it greys the sky out and thickens the glow around the sun - a "
+                               "humid day, or a sandstorm at the far end.")),
+                           "Atmosphere"),
+                InGroupUVE(scattered(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::atmosphereOzone>("atmosphereOzone", "Ozone",
+                                                                            kPropertyTypeFloatUVE),
+                                            0.0, 10.0, 0.01),
+                               "Ozone absorbs mostly green, high in the stratosphere. It is what keeps the "
+                               "twilight sky violet instead of brown-grey; removing it is the fastest way "
+                               "to see what it was doing.")),
+                           "Atmosphere"),
+                InGroupUVE(scattered(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::atmosphereMieAnisotropy>("atmosphereMieAnisotropy",
+                                                                                    "Haze Anisotropy",
+                                                                                    kPropertyTypeFloatUVE),
+                                            -0.95, 0.95, 0.01),
+                               "How tightly the haze throws light forward. Near 0 it scatters evenly; near "
+                               "1 the bright halo around the sun becomes a narrow beam and the rest of the "
+                               "sky darkens.")),
+                           "Atmosphere"),
+                InGroupUVE(scattered(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::atmosphereMultiScatter>("atmosphereMultiScatter",
+                                                                                   "Multiple Scatter",
+                                                                                   kPropertyTypeFloatUVE),
+                                            0.0, 4.0, 0.01),
+                               "Light that bounced before reaching the eye. This is why the horizon is bright "
+                               "and shadows are not black; 0 gives a hard single-scatter sky that goes dark "
+                               "away from the sun.")),
+                           "Atmosphere"),
+                InGroupUVE(scattered(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::atmosphereIntensity>("atmosphereIntensity",
+                                                                                "Sky Intensity",
+                                                                                kPropertyTypeFloatUVE),
+                                            0.0, 100.0, 0.05),
+                               "Brightness of the scattered sky as a whole, for matching a scene whose "
+                               "exposure is not the default. It scales the sky and not the sunlight.")),
+                           "Atmosphere"),
+                InGroupUVE(scattered(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::atmosphereSamples>("atmosphereSamples", "Quality",
+                                                                              kPropertyTypeUInt32UVE),
+                                            4.0, 64.0, 1.0),
+                               "Samples along each view ray. More resolves the horizon band and the twilight "
+                               "gradient more finely; the cost is linear and this is the most expensive part "
+                               "of the sky.")),
+                           "Atmosphere"),
             }));
 }
 
