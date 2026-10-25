@@ -8,6 +8,7 @@
 #include <chrono>
 #include <filesystem>
 #include <limits>
+#include <latch>
 #include <memory>
 #include <string>
 #include <thread>
@@ -64,6 +65,39 @@ protected:
 
     void SetUp() override { assetManager.RegisterLoaderUVE<BlobAssetUVE>(LoadBlobUVE); }
 };
+
+TEST_F(HotReloadUVETest, ReadyIsPublishedOnlyAfterTrackingCompletes) {
+    struct GatedTracking final : IHotReloadUVE {
+        HotReloadUVE& delegate;
+        std::latch entered{1};
+        std::latch release{1};
+        std::atomic<bool> tracked{false};
+        explicit GatedTracking(HotReloadUVE& value) : delegate(value) {}
+        void TrackUVE(AssetGuidUVE guid) override {
+            entered.count_down();
+            release.wait();
+            delegate.TrackUVE(guid);
+            tracked.store(true);
+        }
+        void UntrackUVE(AssetGuidUVE guid) override { delegate.UntrackUVE(guid); }
+        void PollUVE(IAssetManagerUVE& manager, IAssetDatabaseUVE& db, double delta) override {
+            delegate.PollUVE(manager,db,delta);
+        }
+    } tracking(hotReload);
+    AssetManagerUVE manager(threadPool,eventSystem,&tracking);
+    manager.RegisterLoaderUVE<BlobAssetUVE>([](const auto&,auto& data) { data.resize(8); return true; });
+    auto handle=manager.LoadUVE<BlobAssetUVE>(assetDatabase.RegisterUVE("tracking-publication.uvblob"),assetDatabase);
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+    while(!tracking.entered.try_wait() && std::chrono::steady_clock::now()<deadline) std::this_thread::yield();
+    const bool entered=tracking.entered.try_wait();
+    EXPECT_TRUE(entered);
+    if(entered) { EXPECT_FALSE(handle.IsReadyUVE()); }
+    // Always release before any assertion can return; the manager must join this load job.
+    tracking.release.count_down();
+    ASSERT_TRUE(WaitForTerminalStateUVE(handle));
+    EXPECT_TRUE(handle.IsReadyUVE());
+    EXPECT_TRUE(tracking.tracked.load());
+}
 
 TEST_F(HotReloadUVETest, PollUVE_DetectsOnDiskChange_ReloadsAssetAndPublishesEvent) {
     const std::filesystem::path path = "uve_hot_reload_tests_change.uvblob";
