@@ -113,7 +113,7 @@ def main():
             adb('shell', 'am', 'start', '-n', 'com.univex.runtime/android.app.NativeActivity')
             wait_for('UVE_ANDROID_COOKED_PROJECT_LOADED', 2)
             wait_for('UVE_ANDROID_RENDERED', 3)
-            adb('shell', 'run-as', 'com.univex.runtime', 'test', '-f', marker)
+            adb('shell', 'run-as', 'com.univex.runtime', 'cat', marker)
             report['checks'].append('UVE_ANDROID_PERSISTENT_DATA_PRESERVED')
         adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
         wait_for('UVE_ANDROID_DESTROYED')
