@@ -1216,6 +1216,48 @@ Asset::AssetGuidUVE EditorUVE::PublishTextureSourceUVE(const std::filesystem::pa
     return imported;
 }
 
+namespace {
+
+/// How far the derived slope is pushed. At 2.0 an edge from black to white across two pixels tilts
+/// about 45 degrees: strong enough that a photo reads as relief under a moving light, weak enough
+/// that its cast shadows stay shadows instead of becoming cliffs.
+constexpr float kDerivedNormalStrengthUVE = 2.0F;
+
+} // namespace
+
+std::optional<Asset::AssetGuidUVE> EditorUVE::DeriveNormalMapForAlbedoUVE(const Asset::AssetGuidUVE albedo) {
+    if (albedo == Asset::kInvalidAssetGuidUVE) {
+        return std::nullopt;
+    }
+    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+    const std::filesystem::path albedoPath = database.ResolveUVE(albedo);
+    if (albedoPath.empty()) {
+        return std::nullopt;
+    }
+    Asset::TextureAssetUVE albedoTexture;
+    if (!Asset::LoadTextureAssetSourceUVE(albedoPath, albedoTexture)) {
+        return std::nullopt;
+    }
+    // Beside the picture and named after it, so the map is an asset the author can see, move and
+    // edit like any other, and so picking the same picture again reuses the map it produced.
+    const std::filesystem::path normalPath =
+        albedoPath.parent_path() / (albedoPath.stem().string() + "_normal.uvtex");
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(normalPath, error)) {
+        Asset::TextureAssetUVE normal;
+        if (!Asset::DeriveNormalTextureUVE(albedoTexture, kDerivedNormalStrengthUVE, normal) ||
+            !Asset::SaveTextureAssetUVE(normal, normalPath)) {
+            return std::nullopt;
+        }
+        RefreshProjectFileIndexUVE();
+    }
+    const Asset::AssetGuidUVE derived = database.RegisterUVE(normalPath);
+    if (derived == Asset::kInvalidAssetGuidUVE) {
+        return std::nullopt;
+    }
+    return derived;
+}
+
 std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* const id, const Asset::AssetGuidUVE value,
                                                                 const std::string& extension,
                                                                 const std::string& title) {
@@ -1493,6 +1535,15 @@ void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& abso
         }
         if (const auto picked = DrawAssetPickerUVE("##albedoTex", mat.albedoTexture, ".png", "Pick Albedo Texture")) {
             mat.albedoTexture = *picked;
+            // The picture alone describes colour, not shape, so a material that had none is given
+            // the normal map its albedo implies. Only where the author has not supplied one: a
+            // normal map that overwrote an authored one would be this row editing a different row.
+            if (mat.normalTexture == Asset::kInvalidAssetGuidUVE &&
+                mat.kind != Asset::MaterialKindUVE::Shader) {
+                if (const auto derived = DeriveNormalMapForAlbedoUVE(*picked)) {
+                    mat.normalTexture = *derived;
+                }
+            }
             changed = true;
         }
         ImGui::SameLine();

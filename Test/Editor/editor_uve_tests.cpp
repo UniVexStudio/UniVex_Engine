@@ -247,6 +247,11 @@ struct EditorUVEAccessUVE final {
         return editor.PublishTextureSourceUVE(source);
     }
 
+    [[nodiscard]] static std::optional<Asset::AssetGuidUVE> DeriveNormalMapForAlbedoUVE(
+        EditorUVE& editor, const Asset::AssetGuidUVE albedo) {
+        return editor.DeriveNormalMapForAlbedoUVE(albedo);
+    }
+
     [[nodiscard]] static bool IsLibraryWorkspaceActiveUVE(const EditorUVE& editor) noexcept {
         return editor.m_activeWorkspace == EditorUVE::EditorWorkspaceUVE::Library;
     }
@@ -5288,6 +5293,23 @@ TEST(EditorUVETest, PickingASourceImagePublishesTheTextureBesideItAndReusesIt) {
         EXPECT_EQ(std::filesystem::file_size(publishedPath), publishedSize);
         // And a pick that already names the published file registers it as it stands.
         EXPECT_EQ(EditorUVEAccessUVE::PublishTextureSourceUVE(editor, publishedPath), published);
+
+        // The same pick is also what gives a flat picture something for the light to catch: the
+        // normal map is derived beside the albedo, as an asset in its own right, so the author can
+        // replace it without touching the picture it came from.
+        const std::optional<Asset::AssetGuidUVE> normal =
+            EditorUVEAccessUVE::DeriveNormalMapForAlbedoUVE(editor, published);
+        ASSERT_TRUE(normal.has_value());
+        const std::filesystem::path normalPath = content / "rock_normal.uvtex";
+        ASSERT_TRUE(std::filesystem::is_regular_file(normalPath));
+        Asset::TextureAssetUVE normalTexture;
+        ASSERT_TRUE(Asset::LoadTextureAssetUVE(normalPath, normalTexture));
+        EXPECT_EQ(normalTexture.usage, Asset::TextureUsageUVE::Normal);
+        EXPECT_EQ(normalTexture.colorSpace, Asset::TextureAssetColorSpaceUVE::Linear);
+        EXPECT_EQ(normalTexture.width, 2U);
+        // Picking the same picture again derives nothing new: the map beside it is the one it
+        // produced the first time.
+        EXPECT_EQ(EditorUVEAccessUVE::DeriveNormalMapForAlbedoUVE(editor, published), normal);
 
         editor.ShutdownUVE();
     }

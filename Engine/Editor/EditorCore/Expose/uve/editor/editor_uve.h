@@ -2078,6 +2078,11 @@ private:
     /// cook step does not accept: publishing on pick is what makes what the picker writes and what
     /// the project can ship the same thing.
     [[nodiscard]] Asset::AssetGuidUVE PublishTextureSourceUVE(const std::filesystem::path& absolutePath);
+    /// The normal map a colour picture implies, published beside it as <stem>_normal.uvtex: slope
+    /// derived from the picture's own light and shade, so a material that only has an albedo still
+    /// catches a light the way a surface does. An already derived map beside the albedo is reused
+    /// rather than derived again. Empty when the texture cannot be read or the map cannot be saved.
+    [[nodiscard]] std::optional<Asset::AssetGuidUVE> DeriveNormalMapForAlbedoUVE(Asset::AssetGuidUVE albedo);
     /// Standardized material slot drawer offering new standard/ORM/shader materials, browsing both
     /// .uvmat and .uvmaterial, quick import, clear, and inline PBR property editor when assigned.
     /// `editInline` false shows the picker and its preview only: for a mesh with a dozen surfaces,
