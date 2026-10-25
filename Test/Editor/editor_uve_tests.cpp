@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -239,6 +240,11 @@ struct EditorUVEAccessUVE final {
     }
     [[nodiscard]] static std::size_t GetMeshThumbnailCacheSizeUVE(const EditorUVE& editor) noexcept {
         return editor.m_meshThumbnailCache.size();
+    }
+
+    [[nodiscard]] static Asset::AssetGuidUVE PublishTextureSourceUVE(EditorUVE& editor,
+                                                                     const std::filesystem::path& source) {
+        return editor.PublishTextureSourceUVE(source);
     }
 
     [[nodiscard]] static bool IsLibraryWorkspaceActiveUVE(const EditorUVE& editor) noexcept {
@@ -5188,6 +5194,107 @@ TEST(EditorUVETest, RetargetPreviewUVE_PutsTheSceneAsideAndBringsItBack) {
 }
 
 } // namespace
+namespace {
+
+/// A 2x2 24-bit BMP: the smallest source image a picker can hand over, and one whose bytes this
+/// test can state without a codec dependency. The publish path is the same for every source image
+/// (the importer is chosen by extension), and the PNG/JPEG/TGA importers have their own tests.
+[[nodiscard]] std::vector<std::uint8_t> MakeTwoByTwoBmpUVE() {
+    std::vector<std::uint8_t> bytes;
+    const auto append16 = [&bytes](const std::uint16_t value) {
+        bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+        bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    };
+    const auto append32 = [&bytes](const std::uint32_t value) {
+        for (unsigned int shift = 0U; shift < 32U; shift += 8U) {
+            bytes.push_back(static_cast<std::uint8_t>((value >> shift) & 0xFFU));
+        }
+    };
+    append16(0x4D42U);            // "BM"
+    append32(70U);                // whole file: 14-byte header + 40-byte info + two padded rows
+    append16(0U);
+    append16(0U);
+    append32(54U);                // pixel data offset
+    append32(40U);                // BITMAPINFOHEADER
+    append32(2U);                 // width
+    append32(2U);                 // height
+    append16(1U);                 // planes
+    append16(24U);                // bits per pixel
+    append32(0U);                 // BI_RGB
+    append32(16U);                // pixel bytes
+    append32(2835U);
+    append32(2835U);
+    append32(0U);
+    append32(0U);
+    // Bottom row first, BGR, each row padded to a multiple of four bytes.
+    for (const std::array<std::uint8_t, 3U>& pixel : {std::array<std::uint8_t, 3U>{144U, 128U, 112U},
+                                                       std::array<std::uint8_t, 3U>{192U, 176U, 160U}}) {
+        bytes.insert(bytes.end(), pixel.begin(), pixel.end());
+    }
+    bytes.insert(bytes.end(), {0U, 0U});
+    for (const std::array<std::uint8_t, 3U>& pixel : {std::array<std::uint8_t, 3U>{48U, 32U, 16U},
+                                                       std::array<std::uint8_t, 3U>{96U, 80U, 64U}}) {
+        bytes.insert(bytes.end(), pixel.begin(), pixel.end());
+    }
+    bytes.insert(bytes.end(), {0U, 0U});
+    return bytes;
+}
+
+} // namespace
+
+// A texture slot must end up holding something the project can ship. The picker is handed whatever
+// file the author has - usually the source image, freshly dropped into Content - and the material
+// stores a GUID, so this is where the two have to be reconciled: publish the source to the .uvtex
+// beside it and hand back that GUID. Re-picking an image whose .uvtex already exists must reuse it,
+// or every pick would publish a second copy and change what the material points at.
+TEST(EditorUVETest, PickingASourceImagePublishesTheTextureBesideItAndReusesIt) {
+    const std::filesystem::path scratch = ::UVE::Tests::MakeTestCaseDirectoryUVE("texture_publish");
+    const std::filesystem::path content = scratch / "Content";
+    std::filesystem::create_directories(content);
+    const std::filesystem::path sourcePath = content / "rock.bmp";
+    const std::filesystem::path publishedPath = content / "rock.uvtex";
+    {
+        const std::vector<std::uint8_t> bytes = MakeTwoByTwoBmpUVE();
+        std::ofstream file(sourcePath, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(file.is_open());
+        file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+        ASSERT_TRUE(file.good());
+    }
+
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scratch / "main.uvscene");
+        editor.InitUVE();
+
+        const Asset::AssetGuidUVE published = EditorUVEAccessUVE::PublishTextureSourceUVE(editor, sourcePath);
+        ASSERT_NE(published, Asset::kInvalidAssetGuidUVE);
+        ASSERT_TRUE(std::filesystem::is_regular_file(publishedPath));
+        const std::uintmax_t publishedSize = std::filesystem::file_size(publishedPath);
+
+        // What the slot now holds is a real texture, not a path that happens to parse.
+        Asset::TextureAssetUVE texture;
+        ASSERT_TRUE(Asset::LoadTextureAssetUVE(publishedPath, texture));
+        EXPECT_EQ(texture.width, 2U);
+        EXPECT_EQ(texture.height, 2U);
+        ASSERT_EQ(texture.pixels.size(), 2U * 2U * 4U);
+        EXPECT_EQ(texture.pixels[0], std::byte{16});
+        EXPECT_EQ(texture.pixels[3], std::byte{255});
+
+        // The same picture picked again is the same asset: the .uvtex beside it is reused, not
+        // published a second time under another name.
+        EXPECT_EQ(EditorUVEAccessUVE::PublishTextureSourceUVE(editor, sourcePath), published);
+        EXPECT_EQ(std::filesystem::file_size(publishedPath), publishedSize);
+        // And a pick that already names the published file registers it as it stands.
+        EXPECT_EQ(EditorUVEAccessUVE::PublishTextureSourceUVE(editor, publishedPath), published);
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(scratch);
+}
+
 } // namespace UVE::Editor::Tests
 
 namespace UVE::Editor::Tests {
