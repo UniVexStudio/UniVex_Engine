@@ -47,7 +47,9 @@ python3 Engine/Tools/android/smoke_runtime.py --adb /path/to/adb --serial emulat
 ```
 
 It requires actual GLES cube draws, touch receipt and engine consumption, pause/resume,
-and surface reattachment without a second engine initialization. It records no device FPS claim.
+and surface reattachment without a second engine initialization, plus a screen that is not empty
+(see "A black screen" below). `--label demo` names the run in the failure annotation, which is how a
+red check says which of the two apks was black and why without anybody opening the log.
 The debug APK is debuggable for native diagnostics and uses private application storage.
 
 `.github/workflows/android.yml` builds both APKs for arm64 and x86_64 and exercises x86_64 on a KVM
