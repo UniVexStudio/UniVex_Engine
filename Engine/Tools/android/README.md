@@ -46,11 +46,14 @@ A reproducible smoke check is available for a booted test emulator/device:
 python3 Engine/Tools/android/smoke_runtime.py --adb /path/to/adb --serial emulator-5554 --apk /tmp/univex-android/univex-runtime-x86_64.apk --report /tmp/android-smoke.json --screenshot /tmp/android-runtime.png
 ```
 
-It requires actual GLES cube draws, touch receipt and engine consumption, pause/resume,
-and surface reattachment without a second engine initialization, plus a screen that is not empty
-(see "A black screen" below). `--label demo` names the run in the failure annotation, which is how a
-red check says which of the two apks was black and why without anybody opening the log.
-The debug APK is debuggable for native diagnostics and uses private application storage.
+It requires actual GLES cube draws, touch receipt and engine consumption, and a pause/resume that
+keeps the same engine - plus, when the platform does destroy the window on the way to the home
+screen, that the same engine reattaches the surface instead of starting over. Android is allowed to
+keep the window, and on this emulator it sometimes does, so the check is "detached implies
+reattached" rather than "detached", and the resumed scene has to draw either way. It also requires a
+screen that is not empty (see "A black screen" below), and `--label demo` names the run in the
+failure annotation, which is how a red check says which of the two apks was black and why without
+anybody opening the log.
 
 The `android-runtime` job in `.github/workflows/ci.yml` builds both APKs for arm64 and x86_64 and
 exercises x86_64 on a KVM emulator. It is its own job rather than a step of the Linux build because

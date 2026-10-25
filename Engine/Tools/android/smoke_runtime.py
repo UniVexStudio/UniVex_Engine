@@ -194,13 +194,23 @@ def main():
         wait_for('UVE_ANDROID_TOUCH_APPLIED active=0')
         adb('shell', 'input', 'keyevent', 'KEYCODE_HOME')
         wait_for('UVE_ANDROID_PAUSED')
-        wait_for('UVE_ANDROID_SURFACE_DETACHED')
         adb('shell', 'am', 'start', '-n', 'com.univex.runtime/android.app.NativeActivity')
         wait_for('UVE_ANDROID_RESUMED', 2)
-        wait_for('UVE_ANDROID_SURFACE_ATTACHED')
         text = wait_for('UVE_ANDROID_RENDERED', 2)
         if text.count('UVE_ANDROID_INITIALIZED') != 1:
             raise RuntimeError('Engine was recreated instead of retaining its scene')
+        # Android does not have to destroy the window when the app goes home. On a device that keeps
+        # it, the surface was never detached, so "wait for the reattach" is waiting for an event the
+        # platform is entitled not to send - which is exactly how this smoke failed once while the
+        # runtime was doing nothing wrong. What has to be true is conditional: if the surface went
+        # away it must come back, and either way the resumed scene has to draw again (the wait above
+        # is what proves the drawing).
+        if 'UVE_ANDROID_SURFACE_DETACHED' in text:
+            if 'UVE_ANDROID_SURFACE_ATTACHED' not in text:
+                raise RuntimeError('The surface was detached on pause and never reattached')
+            report['checks'].append('UVE_ANDROID_SURFACE_ATTACHED')
+        else:
+            report['checks'].append('UVE_ANDROID_SURFACE_KEPT')
         assert_no_failure_marker()
         wait_for_screen_with_content()
         if args.memory_report:
