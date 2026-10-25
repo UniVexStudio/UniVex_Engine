@@ -11,6 +11,7 @@
 //
 // Moved verbatim. Not one line of the three functions differs from what was in editor_uve.cpp.
 
+#include "editor_color_field_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/math/scalar_uve.h"
 
@@ -721,9 +722,15 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
         ImGui::TextDisabled("PREVIEW SUN");
         ImGui::Checkbox("Enable preview sun##preview-sun", &m_viewportOverlayState.previewSun);
         ImGui::BeginDisabled(!m_viewportOverlayState.previewSun);
-        ImGui::SetNextItemWidth(fieldWidth);
-        ImGui::ColorEdit3("Color##preview-sun-color", m_viewportOverlayState.previewSunColor.data(),
-                          ImGuiColorEditFlags_NoInputs);
+        // The preview colours are the author's colours too, so they open the same picker as every
+        // other colour row instead of the plain ImGui one.
+        EditorColorUVE sunColor{m_viewportOverlayState.previewSunColor[0],
+                                m_viewportOverlayState.previewSunColor[1],
+                                m_viewportOverlayState.previewSunColor[2], 1.0F};
+        if (DrawColorFieldUVE("##previewSunColor", "Color", sunColor, false, m_colorPickerPreferences) !=
+            ColorFieldEventUVE::None) {
+            m_viewportOverlayState.previewSunColor = {sunColor.r, sunColor.g, sunColor.b};
+        }
         ImGui::SetNextItemWidth(fieldWidth);
         ImGui::SliderFloat("Energy##preview-sun-energy", &m_viewportOverlayState.previewSunEnergy, 0.0F, 8.0F,
                            "%.2f");
@@ -786,15 +793,27 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
         ImGui::TextDisabled("PREVIEW ENVIRONMENT");
         ImGui::Checkbox("Enable preview environment##preview-env", &m_viewportOverlayState.previewEnvironment);
         ImGui::BeginDisabled(!m_viewportOverlayState.previewEnvironment);
-        ImGui::SetNextItemWidth(fieldWidth);
-        ImGui::ColorEdit3("Sky##preview-env-sky", m_viewportOverlayState.previewSkyColor.data(),
-                          ImGuiColorEditFlags_NoInputs);
-        ImGui::SetNextItemWidth(fieldWidth);
-        ImGui::ColorEdit3("Horizon##preview-env-horizon", m_viewportOverlayState.previewHorizonColor.data(),
-                          ImGuiColorEditFlags_NoInputs);
-        ImGui::SetNextItemWidth(fieldWidth);
-        ImGui::ColorEdit3("Ground##preview-env-ground", m_viewportOverlayState.previewGroundColor.data(),
-                          ImGuiColorEditFlags_NoInputs);
+        EditorColorUVE skyColor{m_viewportOverlayState.previewSkyColor[0],
+                                m_viewportOverlayState.previewSkyColor[1],
+                                m_viewportOverlayState.previewSkyColor[2], 1.0F};
+        if (DrawColorFieldUVE("##previewSkyColor", "Sky", skyColor, false, m_colorPickerPreferences) !=
+            ColorFieldEventUVE::None) {
+            m_viewportOverlayState.previewSkyColor = {skyColor.r, skyColor.g, skyColor.b};
+        }
+        EditorColorUVE horizonColor{m_viewportOverlayState.previewHorizonColor[0],
+                                    m_viewportOverlayState.previewHorizonColor[1],
+                                    m_viewportOverlayState.previewHorizonColor[2], 1.0F};
+        if (DrawColorFieldUVE("##previewHorizonColor", "Horizon", horizonColor, false,
+                              m_colorPickerPreferences) != ColorFieldEventUVE::None) {
+            m_viewportOverlayState.previewHorizonColor = {horizonColor.r, horizonColor.g, horizonColor.b};
+        }
+        EditorColorUVE groundColor{m_viewportOverlayState.previewGroundColor[0],
+                                   m_viewportOverlayState.previewGroundColor[1],
+                                   m_viewportOverlayState.previewGroundColor[2], 1.0F};
+        if (DrawColorFieldUVE("##previewGroundColor", "Ground", groundColor, false, m_colorPickerPreferences) !=
+            ColorFieldEventUVE::None) {
+            m_viewportOverlayState.previewGroundColor = {groundColor.r, groundColor.g, groundColor.b};
+        }
         ImGui::SetNextItemWidth(fieldWidth);
         ImGui::SliderFloat("Ambient##preview-env-ambient", &m_viewportOverlayState.previewAmbientEnergy, 0.0F,
                            4.0F, "%.2f");
