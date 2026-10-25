@@ -2447,6 +2447,10 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::WorldEnvironmentObjectDefinitionUVE{},
                                                             Scene::ApplyWorldEnvironmentObjectDefinitionUVE);
             break;
+        case Scene::Objects::SceneObjectKindUVE::Sky:
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::Sky3DObjectDefinitionUVE{},
+                                                            Scene::ApplySky3DObjectDefinitionUVE);
+            break;
         case Scene::Objects::SceneObjectKindUVE::DirectionalLight3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::DirectionalLight3DObjectDefinitionUVE{},
                                                             Scene::ApplyDirectionalLight3DObjectDefinitionUVE);

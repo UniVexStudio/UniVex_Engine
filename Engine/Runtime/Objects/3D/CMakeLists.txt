@@ -68,6 +68,7 @@ add_library(uve_objects_3d STATIC
     Internal/visible_on_screen_notifier_3d_uve.cpp
     Internal/preview_lighting_uve.cpp
     Internal/world_environment_3d_uve.cpp
+    Internal/sky_3d_uve.cpp
     Internal/reflection_probe_3d_uve.cpp
     Internal/decal_3d_uve.cpp
     Internal/directional_light_3d_uve.cpp

@@ -22,6 +22,7 @@
 #include "uve/objects/3d/path_follow_3d_uve.h"
 #include "uve/objects/3d/reflection_probe_3d_uve.h"
 #include "uve/objects/3d/remote_transform_3d_uve.h"
+#include "uve/objects/3d/sky_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
 #include "uve/objects/3d/sprite_3d_uve.h"
 #include "uve/objects/3d/health_uve.h"
