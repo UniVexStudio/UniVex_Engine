@@ -111,6 +111,7 @@ target_compile_options(univex_viewport_app_support PRIVATE -Wall -Wextra -Wpedan
 # ---------------------------------------------------------------------------
 add_library(univex_viewport_engine_bridge STATIC
     Internal/integration/EditorMeshLayer.cpp
+    Internal/integration/SceneLightRulesUVE.cpp
     Internal/integration/OverlayRasterStateToPipeline.cpp
     Internal/integration/EntityPicker.cpp
     Internal/integration/SelectionOutlineGeometry.cpp)

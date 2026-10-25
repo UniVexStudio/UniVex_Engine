@@ -117,22 +117,13 @@ void main() {
     return hasEnvironment;
 }
 
-/// True when the DOCUMENT carries a real DirectionalLight3D. Internal tooling entities (the
-/// mesh layer's own headlight) are excluded by their EditorInternalEntityComponentUVE tag, so the
-/// preview can never mistake its own stand-in for authored lighting and switch itself off.
+/// True when the DOCUMENT carries a real DirectionalLight3D - one the renderer will actually light
+/// with. Internal tooling entities (the mesh layer's own headlight) are excluded, and so is a sun
+/// the light system drops, so the preview can neither mistake its own stand-in for authored
+/// lighting nor stand down for a sun that lights nothing (which would leave the scene dark with no
+/// light at all - see HasContributingDirectionalLightUVE()'s own comment).
 [[nodiscard]] bool HasAuthoredDirectionalLightUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
-    bool hasDirectional = false;
-    entityManager.ForEachUVE<UVE::Scene::DirectionalLight3DComponentUVE, UVE::Scene::LightEmitterComponentUVE>(
-        [&hasDirectional, &entityManager](UVE::Scene::EntityUVE entity, const UVE::Scene::DirectionalLight3DComponentUVE&,
-                                          const UVE::Scene::LightEmitterComponentUVE& emitter) {
-            if (hasDirectional) {
-                return;
-            }
-            hasDirectional = entityManager.IsAliveUVE(entity) &&
-                             !entityManager.HasComponentUVE<UVE::Scene::EditorInternalEntityComponentUVE>(entity) &&
-                             !emitter.negative && emitter.energy > 0.0F;
-        });
-    return hasDirectional;
+    return univex::integration::HasContributingDirectionalLightUVE(entityManager);
 }
 
 [[nodiscard]] univex::gizmo::GizmoMesh BuildCameraFrustumMeshUVE(

@@ -3273,8 +3273,6 @@ void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 WithTooltipUVE(WithRangeUVE(DeclareUVE<&L::specular>("specular", "Specular", kPropertyTypeFloatUVE),
                                             0.0, 16.0, 0.01),
                                "Strength of the light's highlights on shiny surfaces."),
-                WithTooltipUVE(DeclareUVE<&L::negative>("negative", "Negative", kPropertyTypeBoolUVE),
-                               "Subtracts light instead of adding it - darkens what it touches."),
                 WithTooltipUVE(DeclareEnumUVE<&L::bakeMode>("bakeMode", "Bake Mode",
                                                             {{0, "Disabled"}, {1, "Static"}, {2, "Dynamic"}}),
                                "How baked lighting uses it: not at all, fully baked, or indirect only."),
