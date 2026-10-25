@@ -19,6 +19,8 @@
 #include <gtest/gtest.h>
 
 #include "uve/component/collider_component_uve.h"
+#include "uve/component/mesh_component_uve.h"
+#include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/physics_object_component_uve.h"
 #include "uve/component/predicted_character_component_uve.h"
@@ -1469,6 +1471,47 @@ TEST_F(Character3DStepUVETest, AControllerWithNoShapeFallsInsteadOfStandingInThe
     EXPECT_LT(PositionUVE(shapeless).y, start.y) << "gravity reaches a body with no shape";
     EXPECT_LT(PositionUVE(shapeless).y, 0.0F) << "no shape means no floor: it falls through it";
     EXPECT_FALSE(ControllerUVE(shapeless).grounded);
+}
+
+TEST_F(Character3DStepUVETest, ABodyWearingAMeshWithNoColliderFalls) {
+    // The reported setup, exactly: a body with no Collider3D, and the mesh it wears under it as a
+    // MeshInstance3D showing a CapsuleMesh. Neither carries a collider - a MeshInstance3D gets a
+    // MeshComponentUVE and nothing else - so there is no shape anywhere, and the body hangs in the
+    // air wearing a capsule. What looks like an invisible collider holding it up is the body being
+    // refused and left where it was placed.
+    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+    static_cast<void>(floor);
+
+    const Scene::EntityUVE body = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE bodyTransform;
+    bodyTransform.localPosition = {0.0F, 3.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, body, bodyTransform);
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
+        body, Scene::CharacterControllerComponentUVE{});
+
+    const Scene::EntityUVE worn = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE wornTransform;
+    sceneGraph.AttachTransformUVE(entityManager, worn, wornTransform);
+    entityManager.AddComponentUVE<Scene::MeshComponentUVE>(worn, Scene::MeshComponentUVE{});
+    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
+        worn, Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Capsule});
+    sceneGraph.SetParentUVE(entityManager, worn, body);
+    sceneGraph.UpdateUVE(entityManager);
+
+    ASSERT_FALSE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(body))
+        << "a Character3D is a controller, not a shape";
+    ASSERT_FALSE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(worn))
+        << "a MeshInstance3D draws a mesh; it is not a collider";
+
+    const Math::Vector3UVE start = PositionUVE(body);
+    for (int step = 0; step < 120; ++step) {
+        const Character3DStepResultUVE report = StepUVE(body);
+        ASSERT_TRUE(report.stepped) << "step " << step << ": a body wearing a mesh still moves";
+        ASSERT_EQ(report.code, Character3DStepCodeUVE::NoShape) << "step " << step;
+    }
+    EXPECT_LT(PositionUVE(body).y, start.y) << "the body falls instead of hanging in the air";
+    EXPECT_NEAR(PositionUVE(body).y, start.y - 0.5F * 9.81F * 2.0F * 2.0F, 0.35F)
+        << "and it falls at gravity, not slowly and not not-at-all";
 }
 
 TEST_F(Character3DStepUVETest, AShapeAuthoredUnderTheBodyPutsTheBodyWhereTheShapeIs) {
