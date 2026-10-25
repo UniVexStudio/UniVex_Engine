@@ -67,6 +67,7 @@
 #include "uve/math/vector3_uve.h"
 #include "uve/objects/3d/bone_attachment_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
+#include "uve/objects/3d/sky_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/two_bone_ik_3d_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
@@ -384,6 +385,30 @@ void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
     }
     if (!transformRegistered) {
         RegisterTransformInspectorDrawerUVE();
+    }
+}
+
+void EditorUVE::ApplyPendingComponentChangeUVE() {
+    // A structural edit a row asked for last frame runs here, once, before any section takes a
+    // pointer into an entity's component storage: adding or removing a component moves the entity
+    // into another archetype, which frees the chunk the row that asked was drawn from. The row
+    // therefore records the intent and this turns it into the edit - see the field's own comment.
+    const PendingComponentChangeUVE change = m_pendingComponentChange;
+    const Scene::EntityUVE target = m_pendingComponentChangeEntity;
+    m_pendingComponentChange = PendingComponentChangeUVE::None;
+    m_pendingComponentChangeEntity = Scene::kInvalidEntityUVE;
+    if (change == PendingComponentChangeUVE::None || target == Scene::kInvalidEntityUVE) {
+        return;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!IsDocumentEntityUVE(target) || !entityManager.IsAliveUVE(target)) {
+        return;
+    }
+    const bool hasSky = entityManager.HasComponentUVE<Scene::Sky3DComponentUVE>(target);
+    if (change == PendingComponentChangeUVE::AddSky && !hasSky) {
+        entityManager.AddComponentUVE<Scene::Sky3DComponentUVE>(target, Scene::Sky3DComponentUVE{});
+    } else if (change == PendingComponentChangeUVE::RemoveSky && hasSky) {
+        entityManager.RemoveComponentUVE<Scene::Sky3DComponentUVE>(target);
     }
 }
 
@@ -855,6 +880,102 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
                 property.getValue(instance, &value);
                 if (DrawStandardMaterialSlotUVE(nullptr, "##value", value)) {
                     edited = SetSelectedComponentPropertyUVE(entry, property, &value);
+                }
+            } else if (property.customDrawerId == "sky:asset") {
+                // The environment's sky, as one slot. It reads Empty while the level has none, and
+                // every way of giving it one starts here: New Sky puts a Sky on this environment -
+                // whose bands, atmosphere, stars and clouds then draw as the section right below
+                // this one - and Sky Texture samples a panorama instead of them. Both live in this
+                // row because they answer the same question, and because the Sky's own fields win
+                // over the environment's once it exists: a texture field left behind on the
+                // environment would be a setting that quietly stopped doing anything.
+                const std::uint32_t widget = ImGui::GetID("##value");
+                Scene::IEntityManagerUVE& skyManager = m_services->GetEntityManagerUVE();
+                const bool hasSky = IsDocumentEntityUVE(m_selectedEntity) &&
+                                    skyManager.HasComponentUVE<Scene::Sky3DComponentUVE>(m_selectedEntity);
+                Scene::Sky3DComponentUVE* const sky =
+                    hasSky ? &skyManager.GetComponentUVE<Scene::Sky3DComponentUVE>(m_selectedEntity) : nullptr;
+                // A browse that landed since last frame goes to whichever of the two holds the
+                // picture now: the Sky's own field when there is a Sky, the environment's otherwise.
+                if (const auto picked = m_fileRowPendingPicks.find(widget); picked != m_fileRowPendingPicks.end()) {
+                    if (sky != nullptr) {
+                        sky->source = Scene::SkySourceUVE::Panorama;
+                        sky->panoramaPath = picked->second;
+                    } else {
+                        edited = SetSelectedComponentPropertyUVE(entry, property, &picked->second);
+                    }
+                    m_fileRowPendingPicks.erase(picked);
+                }
+                std::string value;
+                property.getValue(instance, &value);
+                const auto sourceName = [](const Scene::SkySourceUVE source) -> const char* {
+                    switch (source) {
+                        case Scene::SkySourceUVE::Panorama: return "Panorama";
+                        case Scene::SkySourceUVE::Atmosphere: return "Atmosphere";
+                        case Scene::SkySourceUVE::Gradient: break;
+                    }
+                    return "Gradient";
+                };
+                // What the slot says is what the level's sky is, not which field happens to hold it.
+                std::string preview;
+                if (sky != nullptr) {
+                    preview = (sky->source == Scene::SkySourceUVE::Panorama && !sky->panoramaPath.empty())
+                                  ? std::filesystem::path{sky->panoramaPath}.stem().string()
+                                  : std::string{sourceName(sky->source)};
+                } else {
+                    preview = value.empty() ? std::string{"Empty"} : std::filesystem::path{value}.stem().string();
+                }
+                if (BeginCenteredComboUVE("##value", preview.c_str())) {
+                    if (sky != nullptr) {
+                        if (ImGui::Selectable("Remove Sky")) {
+                            m_pendingComponentChange = PendingComponentChangeUVE::RemoveSky;
+                            m_pendingComponentChangeEntity = m_selectedEntity;
+                        }
+                    } else if (ImGui::Selectable("New Sky")) {
+                        m_pendingComponentChange = PendingComponentChangeUVE::AddSky;
+                        m_pendingComponentChangeEntity = m_selectedEntity;
+                    }
+                    ImGui::Separator();
+                    if (ImGui::Selectable("Sky Texture...")) {
+                        FilePickerRequestUVE request;
+                        request.mode = FilePickerModeUVE::Open;
+                        request.title = "Sky Texture";
+                        // The published texture, not a source image: this is the kind the row took
+                        // before it became a slot, and the renderer samples what the importer wrote.
+                        request.extensions = {".uvtex"};
+                        const Asset::ProjectFileSnapshotUVE project =
+                            m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                        const std::filesystem::path current =
+                            (sky != nullptr && !sky->panoramaPath.empty()) ? std::filesystem::path{sky->panoramaPath}
+                                                                          : std::filesystem::path{value};
+                        request.startDirectory = ClampPickerStartDirectoryUVE(project, current.parent_path());
+                        request.onPick = [this, widget](const std::filesystem::path& absolute) {
+                            const Asset::ProjectFileSnapshotUVE currentProject =
+                                m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                            const std::filesystem::path relative =
+                                absolute.lexically_relative(currentProject.contentRoot);
+                            m_fileRowPendingPicks[widget] = (relative.empty() || *relative.begin() == "..")
+                                                                ? absolute.generic_string()
+                                                                : relative.generic_string();
+                        };
+                        OpenFilePickerUVE(std::move(request));
+                        ImGui::CloseCurrentPopup();
+                    }
+                    const bool empty = (sky != nullptr) ? (sky->source != Scene::SkySourceUVE::Panorama || sky->panoramaPath.empty())
+                                                        : value.empty();
+                    if (ImGui::Selectable("Empty", empty) && !empty) {
+                        if (sky != nullptr) {
+                            // No image: the bands are what a Panorama with nothing to sample
+                            // would have to fall back to, so say so instead of leaving a sky the
+                            // renderer would skip.
+                            sky->panoramaPath.clear();
+                            sky->source = Scene::SkySourceUVE::Gradient;
+                        } else {
+                            std::string cleared;
+                            edited = SetSelectedComponentPropertyUVE(entry, property, &cleared);
+                        }
+                    }
+                    ImGui::EndCombo();
                 }
             } else {
                 // A "file:ext,..." row also browses: the text stays editable, and Browse opens the
