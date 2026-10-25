@@ -117,6 +117,11 @@ enum class Character3DStepCodeUVE : std::uint8_t {
     /// through TickPredictedPawnUVE()/SyncPredictedPawnUVE() instead. The local mover never
     /// touches it, so the two cannot double-step it.
     PredictedElsewhere,
+    /// The body has no shape - no Collider3D of its own, and none under it - so there is nothing
+    /// for it to hit. The step ran anyway: gravity and the body's own velocity moved it, and it
+    /// falls through the level until an author gives it a collider. Reported apart from `Stepped`
+    /// because the fall is the thing an author sees, not a move that went wrong.
+    NoShape,
 };
 
 /// The step's outcome: the code, and the mover's own report when the move ran at all.

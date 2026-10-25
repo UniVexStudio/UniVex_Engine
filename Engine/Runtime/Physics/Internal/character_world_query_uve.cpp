@@ -270,6 +270,79 @@ std::optional<Math::Vector3UVE> CharacterWorldQueryUVE::TryGetEntityCenterUVE(
 }
 
 // =================================================================================================
+// One step of a character that has no shape.
+// =================================================================================================
+
+namespace {
+
+/// Moves a body that has nothing to collide with.
+///
+/// A controller is not a collider. A Character3D with no Collider3D of its own and none under it
+/// has no shape, and having no shape is not the same as being held up: the body falls - gravity
+/// and its own velocity, applied straight to the transform, no contacts - so it drops through the
+/// level until the author gives it a shape. Standing still instead was read, correctly, as an
+/// invisible collider the character had been born with.
+[[nodiscard]] Character3DStepResultUVE StepShapelessCharacterUVE(
+    Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
+    const Scene::EntityUVE entity, const CharacterMotionInputUVE& input, const float gravityY,
+    const float deltaTimeSeconds) {
+    Character3DStepResultUVE report;
+    if (!entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+        report.code = Character3DStepCodeUVE::MissingTransform;
+        return report;
+    }
+    Scene::CharacterControllerComponentUVE controller =
+        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+    // There is no floor to stand on: a body that was on one a moment ago is in the air now, and
+    // the intent step has to see that or it would cancel the gravity that is about to move it.
+    controller.grounded = false;
+    controller.isOnCeiling = false;
+    report.jumped = StepCharacterIntentUVE(controller, input, gravityY, deltaTimeSeconds);
+    // SolidBody3D's motion locks, the same way the shaped step applies them.
+    if (entityManager.HasComponentUVE<Scene::SolidBodyComponentUVE>(entity)) {
+        const Scene::SolidBodyComponentUVE& locks =
+            entityManager.GetComponentUVE<Scene::SolidBodyComponentUVE>(entity);
+        controller.velocity.x = locks.lockMotionX ? 0.0F : controller.velocity.x;
+        controller.velocity.y = locks.lockMotionY ? 0.0F : controller.velocity.y;
+        controller.velocity.z = locks.lockMotionZ ? 0.0F : controller.velocity.z;
+    }
+
+    report.motion.code = Scene::CharacterMoveCodeUVE::Moved;
+    report.motion.requestedMotion = controller.velocity * deltaTimeSeconds;
+    // Nothing is in the way, so everything that was asked for is what happens.
+    report.motion.appliedMotion = report.motion.requestedMotion;
+    report.motion.slideMotion = report.motion.appliedMotion;
+    report.motion.finalCenter =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).worldPosition +
+        report.motion.appliedMotion;
+    if (IsUsableUVE(report.motion.appliedMotion) && report.motion.appliedMotion != Math::Vector3UVE{}) {
+        Scene::TransformComponentUVE transform =
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+        transform.localPosition += report.motion.appliedMotion;
+        // Through the graph, so the world transform the next step reads is recomputed rather than
+        // stale - the same reason the shaped move writes its motion back this way.
+        sceneGraph.SetLocalTransformUVE(entityManager, entity, transform);
+        sceneGraph.UpdateUVE(entityManager);
+    }
+
+    Scene::CharacterMotionStateUVE state = Scene::MakeCharacterMotionStateUVE(controller);
+    state.grounded = false;
+    state.onWall = false;
+    state.onCeiling = false;
+    state.lastMotion = report.motion.appliedMotion;
+    Scene::StoreCharacterMotionStateUVE(controller, state);
+    FinishCharacterStepUVE(controller,
+                           Physics::CharacterMoveOutcomeUVE{false, controller.upDirection, false},
+                           report.jumped, deltaTimeSeconds);
+    entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity) = controller;
+    report.stepped = true;
+    report.code = Character3DStepCodeUVE::NoShape;
+    return report;
+}
+
+} // namespace
+
+// =================================================================================================
 // One step of one character.
 // =================================================================================================
 
@@ -302,8 +375,8 @@ Character3DStepResultUVE StepCharacter3DUVE(Scene::IEntityManagerUVE& entityMana
     const Scene::EntityUVE shapeEntity =
         Scene::ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, entity);
     if (shapeEntity == Scene::kInvalidEntityUVE) {
-        report.code = Character3DStepCodeUVE::MissingCollider;
-        return report;
+        return StepShapelessCharacterUVE(entityManager, sceneGraph, entity, input, gravityY,
+                                         deltaTimeSeconds);
     }
     if (!entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
         report.code = Character3DStepCodeUVE::MissingTransform;

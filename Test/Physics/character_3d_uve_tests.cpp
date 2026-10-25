@@ -1446,6 +1446,30 @@ TEST_F(Character3DStepUVETest, ALayerTheCharacterDoesNotCollideWithIsWalkedStrai
     EXPECT_GT(PositionUVE(character).x, 4.0F);
 }
 
+TEST_F(Character3DStepUVETest, AControllerWithNoShapeFallsInsteadOfStandingInTheAir) {
+    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+    static_cast<void>(floor);
+    // A Character3D authored without a Collider3D: a controller with nothing to stand on and
+    // nothing to hit. It used to be refused - missing collider - and left exactly where the editor
+    // placed it, which reads as a body born with an invisible collider of its own.
+    const Scene::EntityUVE shapeless = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = {0.0F, 3.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, shapeless, transform);
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
+        shapeless, Scene::CharacterControllerComponentUVE{});
+
+    const Math::Vector3UVE start = PositionUVE(shapeless);
+    for (int step = 0; step < 120; ++step) {
+        const Character3DStepResultUVE report = StepUVE(shapeless);
+        ASSERT_TRUE(report.stepped) << "step " << step << ": a shapeless body still moves";
+        ASSERT_EQ(report.code, Character3DStepCodeUVE::NoShape) << "step " << step;
+    }
+    EXPECT_LT(PositionUVE(shapeless).y, start.y) << "gravity reaches a body with no shape";
+    EXPECT_LT(PositionUVE(shapeless).y, 0.0F) << "no shape means no floor: it falls through it";
+    EXPECT_FALSE(ControllerUVE(shapeless).grounded);
+}
+
 TEST_F(Character3DStepUVETest, BodiesTheStepCannotDriveAreRefusedWithAReason) {
     const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
     static_cast<void>(floor);
@@ -1453,15 +1477,6 @@ TEST_F(Character3DStepUVETest, BodiesTheStepCannotDriveAreRefusedWithAReason) {
     // Not a controller at all.
     const Scene::EntityUVE plain = MakeBoxUVE({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
     EXPECT_EQ(StepUVE(plain).code, Character3DStepCodeUVE::NotAController);
-
-    // A controller with no collider has nothing to collide with.
-    const Scene::EntityUVE noCollider = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transform;
-    transform.localPosition = {0.0F, 1.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, noCollider, transform);
-    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
-        noCollider, Scene::CharacterControllerComponentUVE{});
-    EXPECT_EQ(StepUVE(noCollider).code, Character3DStepCodeUVE::MissingCollider);
 
     // A predicted body belongs to the predictor: refused, and left exactly where it was.
     const Scene::EntityUVE predicted = MakeCharacterUVE({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
