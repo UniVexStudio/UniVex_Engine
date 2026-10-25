@@ -356,6 +356,8 @@ TEST(SceneComponentMetadataUVETest, BloomSoftKneeIsAuthorableAndOnlyShownForActi
     ASSERT_NE(softKnee->isVisible, nullptr);
 
     WorldEnvironment3DComponentUVE environment{};
+    // These rows belong to the effects stack, which is off until an author turns it on.
+    environment.postProcessingEnabled = true;
     EXPECT_TRUE(softKnee->isVisible(&environment));
     environment.bloomEnabled = false;
     EXPECT_FALSE(softKnee->isVisible(&environment));
@@ -385,6 +387,8 @@ TEST(SceneComponentMetadataUVETest, BloomMipCountIsAuthorableAndVisibleOnlyForAc
     ASSERT_NE(mipCount->isVisible, nullptr);
 
     WorldEnvironment3DComponentUVE environment{};
+    // These rows belong to the effects stack, which is off until an author turns it on.
+    environment.postProcessingEnabled = true;
     EXPECT_TRUE(mipCount->isVisible(&environment));
     environment.bloomEnabled = false;
     EXPECT_FALSE(mipCount->isVisible(&environment));
@@ -420,6 +424,8 @@ TEST(SceneComponentMetadataUVETest, VignetteControlsAreAuthorableAndShownWhenPos
     ASSERT_NE(radius->isVisible, nullptr);
 
     WorldEnvironment3DComponentUVE environment{};
+    // These rows belong to the effects stack, which is off until an author turns it on.
+    environment.postProcessingEnabled = true;
     EXPECT_TRUE(intensity->isVisible(&environment));
     EXPECT_FALSE(radius->isVisible(&environment));
     SetPropertyValueUVE(*intensity, environment, 0.7F);
@@ -448,6 +454,8 @@ TEST(SceneComponentMetadataUVETest, ChromaticAberrationIsAnAuthorablePostProcess
     ASSERT_NE(aberration->isVisible, nullptr);
 
     WorldEnvironment3DComponentUVE environment{};
+    // These rows belong to the effects stack, which is off until an author turns it on.
+    environment.postProcessingEnabled = true;
     EXPECT_TRUE(aberration->isVisible(&environment));
     SetPropertyValueUVE(*aberration, environment, 0.45F);
     EXPECT_FLOAT_EQ(environment.chromaticAberrationIntensity, 0.45F);
@@ -470,6 +478,8 @@ TEST(SceneComponentMetadataUVETest, FilmGrainIsAnAuthorablePostProcessingControl
     ASSERT_NE(grain->isVisible, nullptr);
 
     WorldEnvironment3DComponentUVE environment{};
+    // These rows belong to the effects stack, which is off until an author turns it on.
+    environment.postProcessingEnabled = true;
     EXPECT_TRUE(grain->isVisible(&environment));
     SetPropertyValueUVE(*grain, environment, 0.35F);
     EXPECT_FLOAT_EQ(environment.filmGrainIntensity, 0.35F);
@@ -493,6 +503,8 @@ TEST(SceneComponentMetadataUVETest, LensDistortionIsAnAuthorablePostProcessingCo
     ASSERT_NE(distortion->isVisible, nullptr);
 
     WorldEnvironment3DComponentUVE environment{};
+    // These rows belong to the effects stack, which is off until an author turns it on.
+    environment.postProcessingEnabled = true;
     EXPECT_TRUE(distortion->isVisible(&environment));
     SetPropertyValueUVE(*distortion, environment, 0.5F);
     EXPECT_FLOAT_EQ(environment.lensDistortionIntensity, 0.5F);
@@ -546,6 +558,8 @@ TEST(SceneComponentMetadataUVETest, DepthOfFieldControlsAreAuthorableAndConditio
     EXPECT_DOUBLE_EQ(quality->range.maximum, 2.0);
 
     WorldEnvironment3DComponentUVE environment{};
+    // These rows belong to the effects stack, which is off until an author turns it on.
+    environment.postProcessingEnabled = true;
     ASSERT_NE(enabled->isVisible, nullptr);
     ASSERT_NE(focusMode->isVisible, nullptr);
     ASSERT_NE(bokehShape->isVisible, nullptr);
