@@ -1,8 +1,10 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -145,6 +147,113 @@ TEST(PrimitiveGeometryUVETest, CapsuleAndCylinder_AreTheirOwnShapesWithOutwardFa
     }
     // Both caps, each a centre plus its ring.
     EXPECT_EQ(flatCapNormals, 2U * 26U);
+}
+
+// The capsule shipped for one slice with two holes in it: the bottom hemisphere was built around
+// the TOP cap's centre, and neither hemisphere was stitched to its barrel ring. Both defects are
+// invisible to a test that only looks at triangles one at a time - every triangle was fine, there
+// was simply a band of nothing between the pieces - so this walks the edges instead. A closed
+// surface uses every edge exactly twice; a hole shows up as an edge used once.
+TEST(PrimitiveGeometryUVETest, EveryPrimitiveIsAClosedSurface) {
+    struct KeyUVE final {
+        long long x, y, z;
+        [[nodiscard]] bool operator<(const KeyUVE& other) const noexcept {
+            if (x != other.x) return x < other.x;
+            if (y != other.y) return y < other.y;
+            return z < other.z;
+        }
+        [[nodiscard]] bool operator==(const KeyUVE& other) const noexcept {
+            return x == other.x && y == other.y && z == other.z;
+        }
+    };
+    // Positions are snapped before comparing so the seam vertices that are deliberately duplicated
+    // for their own normals still count as one point. A tenth of a millimetre is far coarser than
+    // the closest two distinct vertices of any primitive and far finer than the geometry.
+    const auto quantise = [](const Math::Vector3UVE& position) {
+        constexpr double kScaleUVE = 10000.0;
+        return KeyUVE{static_cast<long long>(std::llround(position.x * kScaleUVE)),
+                      static_cast<long long>(std::llround(position.y * kScaleUVE)),
+                      static_cast<long long>(std::llround(position.z * kScaleUVE))};
+    };
+    struct EdgeUVE final {
+        KeyUVE a, b;
+        [[nodiscard]] bool operator<(const EdgeUVE& other) const noexcept {
+            if (a < other.a) return true;
+            if (other.a < a) return false;
+            return b < other.b;
+        }
+        [[nodiscard]] bool operator==(const EdgeUVE& other) const noexcept { return a == other.a && b == other.b; }
+    };
+
+    for (const Scene::PrimitiveMeshKindUVE kind : {Scene::PrimitiveMeshKindUVE::Cube, Scene::PrimitiveMeshKindUVE::Capsule,
+                                                   Scene::PrimitiveMeshKindUVE::Cylinder}) {
+        const PrimitiveGeometryUVE& geometry = GetPrimitiveGeometryUVE(kind);
+        std::vector<EdgeUVE> edges;
+        edges.reserve(geometry.indices.size());
+        for (std::size_t index = 0U; index + 2U < geometry.indices.size(); index += 3U) {
+            KeyUVE corner[3] = {quantise(geometry.vertices[geometry.indices[index]].position),
+                                quantise(geometry.vertices[geometry.indices[index + 1U]].position),
+                                quantise(geometry.vertices[geometry.indices[index + 2U]].position)};
+            // A collapsed triangle would make the edge walk lie about closure, so it is asserted
+            // rather than skipped.
+            ASSERT_TRUE(!(corner[0] == corner[1]) && !(corner[1] == corner[2]) && !(corner[0] == corner[2]))
+                << "degenerate triangle at " << index << " for kind " << static_cast<int>(kind);
+            for (std::size_t side = 0U; side < 3U; ++side) {
+                const KeyUVE& first = corner[side];
+                const KeyUVE& second = corner[(side + 1U) % 3U];
+                edges.push_back(first < second ? EdgeUVE{first, second} : EdgeUVE{second, first});
+            }
+        }
+        std::sort(edges.begin(), edges.end());
+        std::size_t openEdges = 0U;
+        std::size_t overusedEdges = 0U;
+        for (std::size_t begin = 0U; begin < edges.size();) {
+            std::size_t end = begin + 1U;
+            while (end < edges.size() && edges[end] == edges[begin]) {
+                ++end;
+            }
+            if (end - begin == 1U) {
+                ++openEdges;
+            } else if (end - begin > 2U) {
+                ++overusedEdges;
+            }
+            begin = end;
+        }
+        EXPECT_EQ(openEdges, 0U) << "kind " << static_cast<int>(kind);
+        EXPECT_EQ(overusedEdges, 0U) << "kind " << static_cast<int>(kind);
+    }
+}
+
+// The capsule is symmetric about y = 0 by construction. The bottom hemisphere used to be built
+// from the top cap's centre, which put its rings just under the top cap and left a cone running
+// down to the pole - so the assertion is about the shape, not about any one vertex.
+TEST(PrimitiveGeometryUVETest, CapsuleIsSymmetricAboutItsEquator) {
+    const PrimitiveGeometryUVE& capsule = GetPrimitiveGeometryUVE(Scene::PrimitiveMeshKindUVE::Capsule);
+    float lowest = 1.0e9F;
+    float highest = -1.0e9F;
+    for (const Asset::MeshVertexUVE& vertex : capsule.vertices) {
+        lowest = std::min(lowest, vertex.position.y);
+        highest = std::max(highest, vertex.position.y);
+    }
+    EXPECT_NEAR(lowest, -1.0F, 1.0e-5F);
+    EXPECT_NEAR(highest, 1.0F, 1.0e-5F);
+
+    // Every vertex on one cap has a mirror on the other at the same radius AND the opposite
+    // height. Radius alone would be satisfied by the vertex's own row, which is exactly the
+    // mistake being guarded against: the broken build had both caps near the top.
+    const auto radiusOf = [](const Asset::MeshVertexUVE& vertex) {
+        return std::sqrt((vertex.position.x * vertex.position.x) +
+                         (vertex.position.z * vertex.position.z));
+    };
+    for (const Asset::MeshVertexUVE& vertex : capsule.vertices) {
+        const float radius = radiusOf(vertex);
+        const bool mirrored = std::any_of(capsule.vertices.begin(), capsule.vertices.end(),
+                                          [&vertex, radius, &radiusOf](const Asset::MeshVertexUVE& candidate) {
+                                              return std::fabs(candidate.position.y + vertex.position.y) < 1.0e-5F &&
+                                                     std::fabs(radiusOf(candidate) - radius) < 1.0e-5F;
+                                          });
+        EXPECT_TRUE(mirrored) << "y " << vertex.position.y << " radius " << radius << " has no mirror";
+    }
 }
 
 TEST(PrimitiveGeometryUVETest, LitGeometry_CarriesAUnitTangentBasisForEveryPrimitiveKind) {

@@ -275,8 +275,12 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
         return;
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    // A placed entity is one row. Its own scene is the Entity Editor's; drawing it here made the
+    // level's tree claim objects the level never authored and cannot sensibly address.
+    const bool sealed = IsSealedHierarchyRowUVE(entity);
     const std::vector<Scene::EntityUVE> children =
-        m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
+        sealed ? std::vector<Scene::EntityUVE>{}
+               : m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
     // The arrow always opens and closes a row. A double-click does too only when that is the chosen
     // double-click action; otherwise it renames or focuses (below).
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow;
@@ -541,7 +545,11 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
         ImGui::Text("Move %s", GetEntityDisplayLabelUVE(entity).c_str());
         ImGui::EndDragDropSource();
     }
-    AcceptHierarchyDropTargetUVE(entity);
+    if (!sealed) {
+        // Dropping onto a placed entity would add a child the level's tree cannot show - the object
+        // would exist and never appear anywhere. Its contents are edited in the Entity Editor.
+        AcceptHierarchyDropTargetUVE(entity);
+    }
     if (!renaming) {
         DrawHierarchyRowBadgesUVE(warnings, script, eyeColumns);
         DrawHierarchyVisibilityToggleUVE(entity, rowHovered);
@@ -570,7 +578,8 @@ void EditorUVE::DrawHierarchyObjectContextMenuUVE(const Scene::EntityUVE entity)
 
     ImGui::TextDisabled("%s", GetEntityDisplayLabelUVE(entity).c_str());
     ImGui::Separator();
-    ImGui::BeginDisabled(!authoring || !single);
+    const bool sealed = IsSealedHierarchyRowUVE(entity);
+    ImGui::BeginDisabled(!authoring || !single || sealed);
     // Opens the same searchable picker as the + button. New objects go under the single selection,
     // which the right-click has just made this row.
     if (ImGui::MenuItem("Add Child Object...")) {
@@ -582,6 +591,9 @@ void EditorUVE::DrawHierarchyObjectContextMenuUVE(const Scene::EntityUVE entity)
         m_hierarchyRenameFocusRequested = true;
     }
     ImGui::EndDisabled();
+    if (sealed && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Open this entity to add objects inside it.");
+    }
     ImGui::Separator();
     const bool focusable = CanFocusEntityInViewportUVE(entity);
     if (ImGui::MenuItem("Focus in Viewport", "F", false, focusable)) {
@@ -601,7 +613,9 @@ void EditorUVE::DrawHierarchyObjectContextMenuUVE(const Scene::EntityUVE entity)
         ImGui::SetTooltip("This object draws nothing, so there is nothing to hide.");
     }
     ImGui::Separator();
-    const std::vector<Scene::EntityUVE> children = m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
+    const std::vector<Scene::EntityUVE> children =
+        sealed ? std::vector<Scene::EntityUVE>{}
+               : m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
     const bool hasChildren = std::any_of(children.begin(), children.end(),
                                          [this](const Scene::EntityUVE child) { return IsDocumentEntityUVE(child); });
     if (ImGui::MenuItem("Expand Branch", nullptr, false, hasChildren)) {
