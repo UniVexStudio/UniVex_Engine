@@ -30,14 +30,16 @@ enum class PrimitiveMeshKindUVE : std::uint8_t {
 /// `kInvalidAssetGuidUVE` means "no material", which draws the engine's built-in lit material
 /// rather than an unlit colour.
 ///
-/// `baseColor` is that built-in material's albedo. It is deliberately NOT a tint over an assigned
-/// material: once `materialGuid` is set the material owns the surface completely, matching how a
-/// mesh instance behaves in the reference engines — a primitive must not keep altering a material
-/// its author picked. White is the neutral default.
+/// `baseColor` is that built-in material's albedo, and it is legacy data: the Inspector no longer
+/// shows a colour control for it, because a primitive gets its colour from its material and a
+/// second control beside an empty material slot gave the same object two answers. It is not a tint
+/// over an assigned material either - once `materialGuid` is set the material owns the surface
+/// completely, matching how a mesh instance behaves. The field survives because scenes saved while
+/// it was authored still carry it, and the renderer still honours it; nothing new writes one.
 struct PrimitiveMeshComponentUVE final {
     PrimitiveMeshKindUVE kind = PrimitiveMeshKindUVE::Cube;
-    /// New primitives start neutral white, so an unassigned material reads as the material's own
-    /// albedo rather than an unexplained tint.
+    /// Neutral white by default, so a primitive with no material reads as the default material's
+    /// own albedo rather than an unexplained tint. Not editable from the Inspector.
     Math::Vector3UVE baseColor{1.0F, 1.0F, 1.0F};
     /// Surface material. Invalid (the default) draws the built-in lit material instead.
     Asset::AssetGuidUVE materialGuid{};
