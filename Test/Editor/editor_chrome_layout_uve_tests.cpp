@@ -137,6 +137,20 @@ TEST(EditorChromeLayoutUVETest, AHiddenSidePanelLeavesAStripToBringItBack) {
                     viewport.WorkPos.x + viewport.WorkSize.x - kPanelRestoreStripWidthUVE);
 }
 
+// The chrome layout is the only thing allowed to size a panel. ImGui's edge grip is a second
+// authority that looks like it works: it resizes the window for the frame the button is held, and
+// the next frame's SetNextWindowSize(..., ImGuiCond_Always) puts the panel back - the seam follows
+// the pointer and then snaps to where it was on release. These flags are what stop that, and the
+// grip has to be wide enough to be what the pointer actually lands on, because it is now the only
+// resize handle anywhere near a seam.
+TEST(EditorChromeLayoutUVETest, LayoutOwnedPanelsRefuseImGuiResizeMoveAndIni) {
+    EXPECT_NE(kLayoutOwnedPanelFlagsUVE & ImGuiWindowFlags_NoResize, 0) << "ImGui must not resize a panel";
+    EXPECT_NE(kLayoutOwnedPanelFlagsUVE & ImGuiWindowFlags_NoMove, 0) << "ImGui must not move a panel";
+    EXPECT_NE(kLayoutOwnedPanelFlagsUVE & ImGuiWindowFlags_NoSavedSettings, 0)
+        << "a stale uve_editor_layout.ini must not park a panel";
+    EXPECT_GE(kPanelSplitterThicknessUVE, 8.0F) << "the seam is the only grip left";
+}
+
 TEST(EditorChromeLayoutUVETest, SplitterGripsExistOnlyWhereThereIsASeam) {
     // A grip over a seam that does not exist is an invisible button that eats a click meant for the
     // viewport. Each one is sized only while both neighbours are on screen.
