@@ -190,6 +190,22 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
         frame.atmosphereMultiScatter = sky.atmosphereMultiScatter;
         frame.atmosphereIntensity = sky.atmosphereIntensity;
         frame.atmosphereSamples = sky.atmosphereSamples;
+        frame.starDensity = sky.starDensity;
+        frame.starBrightness = sky.starBrightness;
+        frame.starSeed = sky.starSeed;
+        frame.milkyWayStrength = sky.milkyWayStrength;
+        frame.cloudsEnabled = sky.cloudsEnabled;
+        frame.cloudCoverage = sky.cloudCoverage;
+        frame.cloudDensity = sky.cloudDensity;
+        frame.cloudAltitude = sky.cloudAltitude;
+        // Bearing resolved to metres per second here, once, rather than in the render path: the
+        // shader wants a velocity it can multiply by time, not an angle it would convert and
+        // convert again every frame.
+        const float windRadians = sky.cloudWindDirectionDegrees * 3.14159265358979323846F / 180.0F;
+        frame.cloudWind = Math::Vector2UVE{std::cos(windRadians) * sky.cloudWindSpeed,
+                                           std::sin(windRadians) * sky.cloudWindSpeed};
+        frame.cloudSoftness = sky.cloudSoftness;
+        frame.cloudSilverLining = sky.cloudSilverLining;
         frame.hasEnvironment = true;
         skyApplied = true;
     });

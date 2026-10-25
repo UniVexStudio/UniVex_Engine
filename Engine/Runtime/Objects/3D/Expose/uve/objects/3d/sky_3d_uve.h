@@ -87,6 +87,45 @@ struct Sky3DComponentUVE final {
     /// gradient more finely; the cost is linear and this is the most expensive thing in the pass.
     std::uint32_t atmosphereSamples = 16U;
 
+    // ---- Night ------------------------------------------------------------------------------
+    //
+    // Stars and the galactic band are drawn in every source, because they are not part of the
+    // atmosphere model - they are what is behind it, and they are occluded by cloud in all of
+    // them. Both default to off, so adding a Sky changes nothing until an author asks for a night
+    // sky, which is the same rule the gradient's defaults follow.
+    //
+    /// How many star cells cover the sky. Higher means more, smaller, and fainter stars.
+    float starDensity = 420.0F;
+    /// Overall star brightness. 0 draws none - the default, because a scene that had no stars
+    /// before this object existed should not quietly gain some.
+    float starBrightness = 0.0F;
+    /// Which stars are where. Changing it reshuffles the whole field, so two levels can share a
+    /// sky and not the same constellations.
+    float starSeed = 0.0F;
+    /// Strength of the galactic band. 0 hides it.
+    float milkyWayStrength = 0.0F;
+
+    // ---- Cloud -----------------------------------------------------------------------------
+    //
+    /// Off by default for the same reason the stars are.
+    bool cloudsEnabled = false;
+    /// Fraction of the sky the deck covers, 0 bare to 1 overcast.
+    float cloudCoverage = 0.45F;
+    /// How opaque the covered part is; below 1 the sky and the disc still show through.
+    float cloudDensity = 1.0F;
+    /// Height of the deck above the eye, in metres. It sets how fast the cloud moves past as the
+    /// camera travels, which is what makes a low deck feel close.
+    float cloudAltitude = 1500.0F;
+    /// Wind across the deck, in metres per second, and the compass bearing it blows toward.
+    float cloudWindSpeed = 8.0F;
+    float cloudWindDirectionDegrees = 45.0F;
+    /// Width of the fade from clear to overcast at each cloud's edge. Small reads as hard-edged
+    /// cumulus, large as haze.
+    float cloudSoftness = 0.35F;
+    /// How strongly thin cloud toward the sun brightens at its edge - the bright rim that appears
+    /// when a cloud passes in front of the sun.
+    float cloudSilverLining = 1.0F;
+
     /// Off keeps the object in the scene without drawing it - the same courtesy a light's energy
     /// of zero extends, but explicit.
     bool enabled = true;
