@@ -376,6 +376,59 @@ TEST_F(Object3DDefinitionsUVETest, AShapeUnderTheCharacterIsTheCharactersBody) {
     EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), body);
 }
 
+TEST_F(Object3DDefinitionsUVETest, TheCapsuleCharactersUsedToBeBornWithIsNamed) {
+    // A document saved before characters stopped carrying a shape still has this capsule in it, and
+    // the author never added it - so the Outliner has to be able to say where a body nobody asked
+    // for came from. The test is about telling that shape apart from one an author sized.
+    const ColliderComponentUVE legacy = Character3DObjectDefinitionUVE::MakeDefaultColliderUVE();
+    EXPECT_TRUE(IsLegacyCharacterCapsuleUVE(legacy));
+
+    // A capsule the author sized: same shape, different numbers.
+    ColliderComponentUVE authored = Collider3DUVE::MakeCapsuleUVE(0.5F, 2.0F);
+    EXPECT_FALSE(IsLegacyCharacterCapsuleUVE(authored));
+
+    // A box of the same size is not the capsule.
+    EXPECT_FALSE(IsLegacyCharacterCapsuleUVE(Collider3DUVE::MakeBoxUVE({0.4F, 0.9F, 0.4F})));
+
+    // Float noise from a file round trip is still the same capsule; a millimetre is not.
+    ColliderComponentUVE rounded = legacy;
+    rounded.height = 1.8F - 1.0e-6F;
+    EXPECT_TRUE(IsLegacyCharacterCapsuleUVE(rounded));
+    rounded.height = 1.8F - 0.01F;
+    EXPECT_FALSE(IsLegacyCharacterCapsuleUVE(rounded));
+}
+
+TEST_F(Object3DDefinitionsUVETest, AMeshAModelWearsIsNotTheCharactersShape) {
+    // The authoring trap: a character with no Collider3D, and the mesh it wears under it. Every
+    // mesh in this engine carries a collider, because a mesh you can see is something you can hit -
+    // so adopting "the first child with a collider" made the model's own collider the body's shape.
+    // The author never added a shape, and the Inspector had none to show.
+    const EntityUVE body = CreateEntityUVE();
+    ApplyCharacter3DObjectDefinitionUVE(entityManager, body, Character3DObjectDefinitionUVE{});
+
+    const EntityUVE wornMesh = entityManager.CreateEntityUVE();
+    ApplyBoxMesh3DObjectDefinitionUVE(entityManager, wornMesh, BoxMesh3DObjectDefinitionUVE{});
+    ASSERT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(wornMesh))
+        << "a visible primitive is a solid - that is why it must not also be a body's shape";
+    sceneGraph.SetParentUVE(entityManager, wornMesh, body);
+
+    EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), kInvalidEntityUVE)
+        << "a mesh the body wears is not a description of the body";
+
+    // A MeshInstance3D the author gave a collider to is the same story: it is geometry.
+    const EntityUVE model = entityManager.CreateEntityUVE();
+    ApplyMeshInstance3DObjectDefinitionUVE(entityManager, model, MeshInstance3DObjectDefinitionUVE{});
+    entityManager.AddComponentUVE<ColliderComponentUVE>(model, Collider3DUVE::MakeBoxUVE({0.5F, 0.5F, 0.5F}));
+    sceneGraph.SetParentUVE(entityManager, model, body);
+    EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), kInvalidEntityUVE);
+
+    // A Collider3D is a shape and nothing else - it draws nothing - so it is the body's shape.
+    const EntityUVE shape = entityManager.CreateEntityUVE();
+    ApplyCollider3DObjectDefinitionUVE(entityManager, shape, Collider3DObjectDefinitionUVE{});
+    sceneGraph.SetParentUVE(entityManager, shape, body);
+    EXPECT_EQ(ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, body), shape);
+}
+
 TEST_F(Object3DDefinitionsUVETest, AShapeUnderTheCharacterIgnoresChildrenThatAreBodiesThemselves) {
     // A second body standing under a character is a neighbour, not a description of it: its
     // collider must never be adopted as the character's shape.

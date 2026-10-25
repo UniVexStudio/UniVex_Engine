@@ -9,6 +9,8 @@
 #include <optional>
 #include <vector>
 
+#include "uve/component/mesh_component_uve.h"
+#include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/solid_body_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
@@ -1103,6 +1105,19 @@ CharacterMotionConfigUVE MakeCharacterMotionConfigUVE(
 // the SolidBody3D base, then the body's collider and controller, each only where missing.
 // =================================================================================================
 
+bool IsLegacyCharacterCapsuleUVE(const ColliderComponentUVE& collider) noexcept {
+    // Compared with a tolerance rather than ==: these numbers survive a round trip through the
+    // scene file as text, and a value written as 1.8 can come back as the nearest float to it. The
+    // tolerance is far below anything an author types (a millimetre), so a capsule they sized
+    // themselves is not mistaken for this one.
+    constexpr float kToleranceUVE = 1.0e-3F;
+    return collider.shapeType == ColliderShapeTypeUVE::Capsule &&
+           std::fabs(collider.radius - Character3DObjectDefinitionUVE::MakeDefaultColliderUVE().radius) <=
+               kToleranceUVE &&
+           std::fabs(collider.height - Character3DObjectDefinitionUVE::MakeDefaultColliderUVE().height) <=
+               kToleranceUVE;
+}
+
 bool IsCharacter3DObjectDefinitionValidUVE(const Character3DObjectDefinitionUVE& value) noexcept {
     ControllerComponentUVE authoredController;
     authoredController.kind = value.controllerKind;
@@ -1150,8 +1165,18 @@ EntityUVE ResolveCharacterShapeEntityUVE(IEntityManagerUVE& entityManager,
         return character;
     }
     // Otherwise the first child that is a shape and nothing else. "Nothing else" is the whole
-    // test: a Rigid3D, a Static3D or another Character3D also carries a collider, but each of them
-    // is a body of its own standing next to this one, not a description of it.
+    // test, and it has two halves.
+    //
+    // A body of its own is not a shape: a Rigid3D, a Static3D or another Character3D also carries
+    // a collider, but each of them is a neighbour standing next to this one, not a description of
+    // it.
+    //
+    // And neither is something the author can see. Every mesh this engine makes - a Box, Sphere or
+    // Plane primitive, a MeshInstance3D given a collider - carries a collider of its own, because a
+    // mesh you can see is something you can hit. Adopting that collider made the mesh a character's
+    // body by accident: a body with no Collider3D anywhere was held up by the shape of the model it
+    // wears, with nothing in the Inspector to show for it. A shape a character is built from is a
+    // Collider3D, which draws nothing.
     for (const EntityUVE child : sceneGraph.GetChildrenUVE(entityManager, character)) {
         if (!entityManager.HasComponentUVE<ColliderComponentUVE>(child)) {
             continue;
@@ -1159,6 +1184,10 @@ EntityUVE ResolveCharacterShapeEntityUVE(IEntityManagerUVE& entityManager,
         if (entityManager.HasComponentUVE<SolidBodyComponentUVE>(child) ||
             entityManager.HasComponentUVE<Rigid3DComponentUVE>(child) ||
             entityManager.HasComponentUVE<CharacterControllerComponentUVE>(child)) {
+            continue;
+        }
+        if (entityManager.HasComponentUVE<PrimitiveMeshComponentUVE>(child) ||
+            entityManager.HasComponentUVE<MeshComponentUVE>(child)) {
             continue;
         }
         return child;
