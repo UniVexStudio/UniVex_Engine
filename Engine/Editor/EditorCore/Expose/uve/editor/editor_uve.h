@@ -2126,6 +2126,18 @@ private:
     /// cook step does not accept: publishing on pick is what makes what the picker writes and what
     /// the project can ship the same thing.
     [[nodiscard]] Asset::AssetGuidUVE PublishTextureSourceUVE(const std::filesystem::path& absolutePath);
+    /// The mesh of a model file: a `.uvmodel` is registered as it stands, and a model source
+    /// (.fbx/.glb/.gltf/.obj) is copied into Content when it is outside it and then converted, so
+    /// the GUID a mesh slot receives is always one the mesh loader can actually read.
+    ///
+    /// This is the other half of the reason a mesh slot must never be handed a source file directly:
+    /// LoadMeshAssetUVE reads the `.uvmodel` envelope and nothing else, so registering an FBX put a
+    /// name in the slot that resolved to a path and then failed to load every frame - a mesh the
+    /// author could see assigned and never see drawn. Textures have the same shape of problem and
+    /// solve it the same way (see PublishTextureSourceUVE), except there the runtime can decode the
+    /// source as a fallback and here it cannot, so a conversion that fails yields no GUID at all
+    /// rather than a reference that is guaranteed to stay invisible.
+    [[nodiscard]] Asset::AssetGuidUVE PublishModelSourceUVE(const std::filesystem::path& absolutePath);
     /// The normal map a colour picture implies, published beside it as <stem>_normal.uvtex: slope
     /// derived from the picture's own light and shade, so a material that only has an albedo still
     /// catches a light the way a surface does. An already derived map beside the albedo is reused
