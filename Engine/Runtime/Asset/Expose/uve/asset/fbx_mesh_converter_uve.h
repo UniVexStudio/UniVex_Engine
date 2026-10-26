@@ -20,6 +20,11 @@ namespace UVE::Asset {
 inline constexpr std::size_t kMaximumFbxMeshSourceBytesUVE = 256U * 1024U * 1024U;
 inline constexpr std::uint32_t kMaximumFbxMeshVerticesUVE = 1'000'000U;
 
+/// Largest single image this reader will hand out of an FBX's own payload. The same 64 MiB ceiling
+/// the PNG importer applies to a file on disk - a texture no importer would accept from disk must
+/// not become acceptable just because it arrived inside a model.
+inline constexpr std::size_t kMaximumFbxEmbeddedTextureBytesUVE = 64U * 1024U * 1024U;
+
 /// One run of a converted FBX's index buffer that shares a material, in index-buffer order.
 /// `materialSourceIndex` is the material's position in the file's own material list - the order
 /// ReadFbxMaterialsUVE returns - not yet a slot in the mesh's `materialGuids`. The importer owns that
@@ -95,7 +100,39 @@ struct FbxSourceSummaryUVE final {
 [[nodiscard]] std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(std::span<const std::byte> source,
                                                                       std::size_t maximumBones);
 
-/// One FBX material: the engine's PBR material type plus the texture files it references.
+/// One FBX material's slot texture, wherever the file keeps it.
+///
+/// An FBX can supply a map three ways, and which one it is decides what the importer can do with
+/// it: the image can be *inside* the file (a Mixamo "With Skin" download embeds its diffuse map
+/// exactly this way), the file can merely name a path on the machine that exported it, or the map
+/// can be a layered / procedural / shader graph with no image behind it at all. This reader opens
+/// nothing and decodes nothing: it reports which of the three it found and hands over the bytes when
+/// there are any, so the import pipeline - which owns the asset database - can publish them.
+struct FbxTextureSourceUVE final {
+    /// The file the FBX names, as authored. Empty when the map names no file.
+    std::string file;
+
+    /// The image itself, byte for byte as the file carries it (PNG or JPEG). Empty when the FBX does
+    /// not embed it. Capped at kMaximumFbxEmbeddedTextureBytesUVE; a larger payload is reported and
+    /// dropped rather than copied into memory, because one broken texture must not decide whether a
+    /// character imports.
+    std::vector<std::byte> embedded;
+
+    /// The filename the embedded image had inside the file, when it had one. Only used to name the
+    /// derived texture when the material itself gives nothing to build a name from.
+    std::string embeddedName;
+
+    /// The map is a layered / procedural / shader texture, or a file texture the FBX does not name
+    /// and does not embed. Nothing can be extracted from it, so its slot stays empty.
+    bool procedural = false;
+
+    /// The image bytes are present, which is the only case the importer can turn into a texture
+    /// without touching the filesystem.
+    [[nodiscard]] bool HasImageUVE() const noexcept { return !embedded.empty(); }
+};
+
+/// One FBX material: the engine's PBR material type plus where each of its maps' images live.
+
 struct FbxMaterialUVE final {
     std::string name;
 
@@ -106,23 +143,19 @@ struct FbxMaterialUVE final {
 
     /// Albedo, emission, metalness, roughness and transparency mapped from FBX's PBR values
     /// (ufbx derives them from the classic properties when a material is not authored as PBR).
-    /// Texture GUID slots stay invalid on purpose: this reader never opens an external file and
-    /// never decodes an embedded payload (`ignore_embedded`), so turning a path into an asset
-    /// identity belongs to the import pipeline, not to a converter that must stay side-effect free.
+    /// Texture GUID slots stay invalid on purpose: this reader never opens an external file, and
+    /// turning bytes or a path into an asset identity belongs to the import pipeline, which owns
+    /// the asset database - not to a converter that has to stay a pure function of its input.
     MaterialAssetUVE material;
 
-    /// Authored references, taken from the texture element's relative filename. Empty when the
-    /// map is unconnected, disabled, or backed by a layered/procedural/shader texture.
-    std::string albedoTextureFile;
-    std::string normalTextureFile;
-    std::string emissiveTextureFile;
-    std::string ambientOcclusionTextureFile;
+    /// Where each map's image comes from. Empty when the map is unconnected or disabled.
+    FbxTextureSourceUVE albedo;
+    FbxTextureSourceUVE normal;
+    FbxTextureSourceUVE emissive;
+    FbxTextureSourceUVE ambientOcclusion;
 
-    /// True when at least one connected map has no usable file reference: it is a layered/
-    /// procedural/shader texture, or a file texture the FBX itself does not name — which is also
-    /// why the matching filename field above is empty. `albedoClamped` records that a channel had
-    /// to be clamped into `MaterialAssetUVE`'s validated [0,1] range rather than hiding it.
-    bool hasNonFileTexture = false;
+    /// `albedoClamped` records that a channel had to be clamped into `MaterialAssetUVE`'s validated
+    /// [0,1] range rather than hiding it.
     bool albedoClamped = false;
 };
 

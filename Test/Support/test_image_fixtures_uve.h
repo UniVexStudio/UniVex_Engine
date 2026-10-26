@@ -9,6 +9,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include <zlib.h>
@@ -58,6 +61,47 @@ inline void AppendPngChunkUVE(std::vector<std::byte>& png, const std::vector<std
     AppendPngChunkUVE(png, {std::byte{'I'}, std::byte{'D'}, std::byte{'A'}, std::byte{'T'}}, compressed);
     AppendPngChunkUVE(png, {std::byte{'I'}, std::byte{'E'}, std::byte{'N'}, std::byte{'D'}}, {});
     return png;
+}
+
+
+/// Standard base64 with padding, the encoding an FBX uses for the `Content` of a `Video` element
+/// that embeds a texture. Written here rather than borrowed so a fixture stays a pure function of
+/// its input and a test never depends on how a platform's base64 happens to pad.
+[[nodiscard]] inline std::string Base64EncodeUVE(const std::span<const std::byte> bytes) {
+    constexpr std::string_view kAlphabetUVE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string encoded;
+    encoded.reserve(((bytes.size() + 2U) / 3U) * 4U);
+    std::size_t index = 0U;
+    while (index + 3U <= bytes.size()) {
+        const auto b0 = static_cast<std::uint32_t>(bytes[index]);
+        const auto b1 = static_cast<std::uint32_t>(bytes[index + 1U]);
+        const auto b2 = static_cast<std::uint32_t>(bytes[index + 2U]);
+        const std::uint32_t triple = (b0 << 16U) | (b1 << 8U) | b2;
+        encoded.push_back(kAlphabetUVE[(triple >> 18U) & 0x3FU]);
+        encoded.push_back(kAlphabetUVE[(triple >> 12U) & 0x3FU]);
+        encoded.push_back(kAlphabetUVE[(triple >> 6U) & 0x3FU]);
+        encoded.push_back(kAlphabetUVE[triple & 0x3FU]);
+        index += 3U;
+    }
+    const std::size_t remaining = bytes.size() - index;
+    if (remaining == 1U) {
+        const auto b0 = static_cast<std::uint32_t>(bytes[index]);
+        encoded.push_back(kAlphabetUVE[(b0 >> 2U) & 0x3FU]);
+        encoded.push_back(kAlphabetUVE[(b0 << 4U) & 0x3FU]);
+        encoded += "==";
+    } else if (remaining == 2U) {
+        const auto b0 = static_cast<std::uint32_t>(bytes[index]);
+        const auto b1 = static_cast<std::uint32_t>(bytes[index + 1U]);
+        encoded.push_back(kAlphabetUVE[(b0 >> 2U) & 0x3FU]);
+        encoded.push_back(kAlphabetUVE[((b0 << 4U) | (b1 >> 4U)) & 0x3FU]);
+        encoded.push_back(kAlphabetUVE[(b1 << 2U) & 0x3FU]);
+        encoded.push_back('=');
+    }
+    return encoded;
+}
+
+[[nodiscard]] inline std::string Base64EncodeUVE(const std::vector<std::byte>& bytes) {
+    return Base64EncodeUVE(std::span<const std::byte>(bytes));
 }
 
 } // namespace UVE::Tests

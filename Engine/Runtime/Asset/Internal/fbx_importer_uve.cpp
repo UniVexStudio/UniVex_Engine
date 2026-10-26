@@ -26,19 +26,95 @@ namespace {
 constexpr const char* kFbxImporterNameUVE = "FbxImporterUVE";
 constexpr std::string_view kFbxTemporarySuffixUVE = ".uve_fbx_tmp";
 
-/// Resolves one authored texture file into a texture slot, logging a diagnostic (never inventing
-/// a GUID) when no imported sibling texture matches.
-void ResolveTextureSlotUVE(const std::filesystem::path& destinationPath, const std::string_view authoredFile,
-                           const IAssetDatabaseUVE& assetDatabase, const std::string_view materialName,
-                           const char* slotName, AssetGuidUVE& slot) {
-    if (authoredFile.empty()) {
+/// Import policy per slot kind. Colour maps are sRGB colour data; a normal map is linear and carries
+/// Normal usage; occlusion is linear data. Getting this wrong is the classic "normal maps look
+/// inverted and albedo looks washed out" import bug, so it is decided here once, by slot, rather
+/// than left to whatever the default happens to be.
+[[nodiscard]] TextureImportSettingsUVE ColorSlotSettingsUVE() {
+    TextureImportSettingsUVE settings;
+    settings.colorSpace = TextureAssetColorSpaceUVE::Srgb;
+    settings.usage = TextureUsageUVE::Color;
+    return settings;
+}
+
+[[nodiscard]] TextureImportSettingsUVE NormalSlotSettingsUVE() {
+    TextureImportSettingsUVE settings;
+    settings.colorSpace = TextureAssetColorSpaceUVE::Linear;
+    settings.usage = TextureUsageUVE::Normal;
+    return settings;
+}
+
+[[nodiscard]] TextureImportSettingsUVE DataSlotSettingsUVE() {
+    TextureImportSettingsUVE settings;
+    settings.colorSpace = TextureAssetColorSpaceUVE::Linear;
+    settings.usage = TextureUsageUVE::Data;
+    return settings;
+}
+
+/// Turns one material slot into an asset identity, in the order of how much the file itself knows.
+///
+/// 1. The image the FBX **embeds**. This is the file's own copy of its texture and the only source
+///    that cannot be missing, which is what makes a Mixamo "With Skin" download arrive coloured.
+/// 2. An image **beside the model** matching the authored name, which is how every DCC tool that
+///    references external maps exports.
+/// 3. A `.uvtex` the project **already has** by stem, so a texture the author imported by hand is
+///    not duplicated.
+///
+/// Nothing is invented: a slot that has none of the three stays empty and says exactly why. The
+/// published `.uvtex` is named after the material's own stem plus the slot, so a re-import lands on
+/// the same path - and therefore, through RegisterUVE, on the same GUID.
+void PublishTextureSlotUVE(const std::filesystem::path& destinationPath, const std::filesystem::path& sourceDirectory,
+                           const std::string_view modelStem, const FbxTextureSourceUVE& source,
+                           const std::string& materialStem, const std::string_view materialName,
+                           const std::string_view slotName, const TextureImportSettingsUVE& settings,
+                           IAssetDatabaseUVE& assetDatabase, AssetGuidUVE& slot) {
+    const std::filesystem::path texturePath =
+        destinationPath.parent_path() / (materialStem + "_" + std::string{slotName} + ".uvtex");
+    const auto publish = [&](const std::vector<std::byte>& bytes, const std::string_view describe) {
+        if (!Detail::PublishEmbeddedTextureUVE(texturePath, bytes, settings, kFbxImporterNameUVE, describe)) {
+            return false;
+        }
+        const AssetGuidUVE guid = assetDatabase.RegisterUVE(texturePath);
+        if (guid == kInvalidAssetGuidUVE) {
+            UVE_ERROR("FbxImporterUVE: asset database rejected texture \"{}\"", texturePath.string());
+            return false;
+        }
+        slot = guid;
+        return true;
+    };
+
+    if (source.HasImageUVE()) {
+        if (publish(source.embedded, "the " + std::string{slotName} + " map embedded in the FBX")) {
+            return;
+        }
+    } else if (!source.file.empty()) {
+        const std::optional<std::filesystem::path> imageFile =
+            Detail::ResolveAuthoredTextureFileUVE(sourceDirectory, modelStem, source.file);
+        if (imageFile.has_value()) {
+            std::vector<std::byte> bytes;
+            if (Detail::ReadBoundedSourceBytesUVE(*imageFile, kFbxImporterNameUVE, kMaximumFbxEmbeddedTextureBytesUVE,
+                                                  bytes) &&
+                publish(bytes, imageFile->filename().string())) {
+                return;
+            }
+        }
+    }
+
+    // Fall back to a `.uvtex` this project already holds, matched by stem. This is the path a
+    // texture imported by hand through a material slot takes.
+    slot = Detail::ResolveImportedSiblingTextureGuidUVE(destinationPath, source.file, assetDatabase);
+    if (slot != kInvalidAssetGuidUVE) {
         return;
     }
-    slot = Detail::ResolveImportedSiblingTextureGuidUVE(destinationPath, authoredFile, assetDatabase);
-    if (slot == kInvalidAssetGuidUVE) {
-        UVE_WARNING("FbxImporterUVE: material \"{}\" references {} texture \"{}\" but no imported sibling .uvtex "
-                    "with that stem is registered next to \"{}\"; the slot stays empty",
-                    materialName, slotName, authoredFile, destinationPath.string());
+    if (source.procedural) {
+        UVE_WARNING("FbxImporterUVE: material \"{}\" uses a layered/procedural/unnamed texture for its {} map that "
+                    "cannot be extracted; that slot stays empty",
+                    materialName, slotName);
+    } else if (!source.file.empty()) {
+        UVE_WARNING("FbxImporterUVE: material \"{}\" references {} texture \"{}\", but the FBX does not embed it, no "
+                    "file of that name sits beside \"{}\", and no .uvtex with that stem is registered; the slot stays "
+                    "empty",
+                    materialName, slotName, source.file, sourceDirectory.string());
     }
 }
 
@@ -87,21 +163,20 @@ void ResolveTextureSlotUVE(const std::filesystem::path& destinationPath, const s
     slotOfSourceIndex.reserve(materials->size());
     for (std::size_t materialIndex = 0U; materialIndex < materials->size(); ++materialIndex) {
         const FbxMaterialUVE& source = (*materials)[materialIndex];
-        MaterialAssetUVE material = source.material;
-        ResolveTextureSlotUVE(destinationPath, source.albedoTextureFile, assetDatabase, source.name, "albedo",
-                              material.albedoTexture);
-        ResolveTextureSlotUVE(destinationPath, source.normalTextureFile, assetDatabase, source.name, "normal",
-                              material.normalTexture);
-        ResolveTextureSlotUVE(destinationPath, source.emissiveTextureFile, assetDatabase, source.name, "emissive",
-                              material.emissiveTexture);
-        ResolveTextureSlotUVE(destinationPath, source.ambientOcclusionTextureFile, assetDatabase, source.name,
-                              "ambient occlusion", material.aoTexture);
-        if (source.hasNonFileTexture) {
-            UVE_WARNING("FbxImporterUVE: material \"{}\" in \"{}\" uses a layered/procedural/unnamed texture that "
-                        "cannot be referenced by file; that slot stays empty",
-                        source.name, sourcePath.string());
-        }
+        // The stem is needed before the materials are written now: the textures derived from this
+        // material are published first and named after it, so a re-import finds them by the same
+        // path and therefore the same GUID.
         const std::string stem = Detail::MakeMaterialFileStemUVE(modelStem, source.name, materialIndex, "material", usedStems);
+        MaterialAssetUVE material = source.material;
+        const std::filesystem::path sourceDirectory = sourcePath.parent_path();
+        PublishTextureSlotUVE(destinationPath, sourceDirectory, sourcePath.stem().string(), source.albedo, stem,
+                              source.name, "albedo", ColorSlotSettingsUVE(), assetDatabase, material.albedoTexture);
+        PublishTextureSlotUVE(destinationPath, sourceDirectory, sourcePath.stem().string(), source.normal, stem,
+                              source.name, "normal", NormalSlotSettingsUVE(), assetDatabase, material.normalTexture);
+        PublishTextureSlotUVE(destinationPath, sourceDirectory, sourcePath.stem().string(), source.emissive, stem,
+                              source.name, "emissive", ColorSlotSettingsUVE(), assetDatabase, material.emissiveTexture);
+        PublishTextureSlotUVE(destinationPath, sourceDirectory, sourcePath.stem().string(), source.ambientOcclusion, stem,
+                              source.name, "ambientOcclusion", DataSlotSettingsUVE(), assetDatabase, material.aoTexture);
         const std::filesystem::path materialPath = directory / (stem + ".uvmat");
         if (!Detail::PublishAssetAtomicallyUVE(materialPath, kFbxImporterNameUVE, kFbxTemporarySuffixUVE,
                                                [&material](const std::filesystem::path& temporaryPath) {
