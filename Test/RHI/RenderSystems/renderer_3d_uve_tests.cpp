@@ -4857,4 +4857,48 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_PointLightShadowSharesTheBudgetWithSpot
     EXPECT_GT(diagnostics.pointShadowTilesActive, 0U);
 }
 
+// An imported mesh names the materials the importer published beside it, and those are registered
+// by the importer as it writes them - so an import that was served from the cache registered
+// nothing, and the GUIDs the mesh carries resolve to no file at all. Both paths used to drop such
+// a mesh: the materialed one because its material would not load, and the built-in one because the
+// mesh appeared to have a material. That is how a model that used to draw grey vanished outright.
+// The built-in path must draw a mesh whose material cannot be RESOLVED, not merely one that has
+// none.
+TEST_F(Renderer3DUVETest, RenderFrameUVE_AMeshWhoseOwnMaterialCannotBeResolved_IsStillDrawn) {
+    const Asset::AssetGuidUVE unresolvableMaterial{0xDEADBEEFU};
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>(
+        [unresolvableMaterial](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+            mesh.vertices = {
+                Asset::MeshVertexUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
+                Asset::MeshVertexUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F},
+                Asset::MeshVertexUVE{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F},
+            };
+            mesh.indices = {0, 1, 2};
+            mesh.localBounds = Math::AabbUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 0.0F}};
+            mesh.materialGuids = {unresolvableMaterial};
+            return true;
+        });
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_unresolvable_material.uvmodel");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid,
+                                                          Asset::kInvalidAssetGuidUVE);
+    Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle = assetManager.LoadUVE<Asset::MeshAssetUVE>(meshGuid, assetDatabase);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE && !meshHandle.IsReadyUVE(); ++iteration) {
+        std::this_thread::yield();
+    }
+    ASSERT_TRUE(meshHandle.IsReadyUVE());
+    // The premise of the test: the mesh really does name a material, and that material really does
+    // not exist. Without both, this would pass for a mesh that never had a material at all.
+    ASSERT_EQ(meshHandle.TryGetUVE()->FirstSurfaceMaterialGuidUVE(), unresolvableMaterial);
+    ASSERT_TRUE(assetDatabase.ResolveUVE(unresolvableMaterial).empty());
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+
+    EXPECT_EQ(diagnostics.meshItemsExtracted, 0U)
+        << "the materialed path cannot draw it - the material will not load - and must not claim to";
+    EXPECT_GT(diagnostics.primitiveItemsExtracted, 0U)
+        << "the built-in path must draw the mesh untextured rather than drop it entirely";
+}
+
 } // namespace UVE::Render::Tests

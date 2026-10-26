@@ -203,7 +203,7 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         return entity;
     };
     const Asset::AssetGuidUVE meshGuid =
-        hasMesh ? m_services->GetAssetDatabaseUVE().RegisterUVE(importedModel) : Asset::kInvalidAssetGuidUVE;
+        hasMesh ? RegisterImportedModelArtifactsUVE(importedModel) : Asset::kInvalidAssetGuidUVE;
     const bool isParentCharacterOrEntityRoot =
         parent != Scene::kInvalidEntityUVE &&
         (Scene::ResolveSceneObjectKindUVE(entityManager, parent) == Scene::Objects::SceneObjectKindUVE::Character3D ||
