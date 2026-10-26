@@ -642,6 +642,10 @@ Connections:  {
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+        // Deliberately the plain index refresh, not the editor's, which also fills the model-source
+        // cache. Placing must work without that cache: it is an optimisation for panels that draw
+        // many entries, and when it was the only source of truth this placement saw "no information",
+        // read a bones-only file as a model whose mesh was still converting, and built nothing.
         ASSERT_TRUE(services.GetProjectFileIndexUVE().RefreshUVE(services.GetAssetDatabaseUVE()));
         const Scene::EntityUVE placed = editor.PlaceModelSourceUVE("Anims/Hero.FBX");
         ASSERT_NE(placed, Scene::kInvalidEntityUVE);

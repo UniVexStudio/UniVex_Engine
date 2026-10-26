@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -49,6 +50,36 @@ namespace UVE::Asset::Detail {
 [[nodiscard]] AssetGuidUVE ResolveImportedSiblingTextureGuidUVE(const std::filesystem::path& destinationPath,
                                                                 std::string_view authoredTextureFile,
                                                                 const IAssetDatabaseUVE& assetDatabase);
+
+/// Decodes image bytes that did not come from a file on disk - an FBX's embedded payload - by
+/// sniffing the format from the bytes themselves: PNG and JPEG are what the engine has bounded
+/// decoders for, and what model files embed. `outTexture` comes out as validated RGBA8 carrying the
+/// caller's colour space, usage and mip policy. False (and the reason logged) when the bytes are
+/// neither format or fail to decode.
+[[nodiscard]] bool DecodeImageBytesUVE(const std::vector<std::byte>& bytes,
+                                       const TextureImportSettingsUVE& settings,
+                                       TextureAssetUVE& outTexture);
+
+/// Publishes an image carried inside another file as a `.uvtex`, through the same decode -> mip
+/// chain -> validate -> atomic-publish path an image on disk takes, so a texture that arrived inside
+/// a model is indistinguishable from one the author imported by hand.
+[[nodiscard]] bool PublishEmbeddedTextureUVE(const std::filesystem::path& destinationPath,
+                                             const std::vector<std::byte>& bytes,
+                                             const TextureImportSettingsUVE& settings,
+                                             const char* importerName,
+                                             std::string_view describeSource);
+
+/// Finds the image file a model names, relative to the model's own folder.
+///
+/// The authored path is a path on the machine that exported the model - `C:/Users/.../wood.png`, or
+/// `textures/wood.png` from a folder this project has never seen - so only its *name* can be
+/// trusted. The name is looked for in the model's folder, `textures/`, `Textures/` and
+/// `<model-stem>.fbm/`, exactly first and then case-insensitively, because a Windows-authored model
+/// routinely names `Wood.PNG` while the file on a case-sensitive filesystem is `wood.png`.
+/// `std::nullopt` when no such file exists: nothing is guessed and nothing is created.
+[[nodiscard]] std::optional<std::filesystem::path> ResolveAuthoredTextureFileUVE(
+    const std::filesystem::path& modelDirectory, std::string_view modelFileStem,
+    std::string_view authoredTextureFile);
 
 /// `<model-stem>.<sanitised-name>`: the file stem a model importer publishes beside the model for
 /// one of the model's own materials. The name is reduced to [A-Za-z0-9_-], falls back to

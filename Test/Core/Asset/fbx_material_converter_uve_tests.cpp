@@ -15,6 +15,8 @@
 
 #include <gtest/gtest.h>
 
+#include "Support/test_image_fixtures_uve.h"
+
 namespace UVE::Asset::Tests {
 namespace {
 
@@ -87,6 +89,7 @@ constexpr std::string_view kLambertMaterialUVE = R"(	Material: 3000, "Material::
                      "\tC: \"OP\",3201,3100,\"NormalMap\"\n");
 }
 
+
 TEST(FbxMaterialConverterUVETest, AnEmptyOrMalformedFileFailsWithoutPublishingMaterials) {
     EXPECT_FALSE(ReadFbxMaterialsUVE({}).has_value());
     const std::string garbage = "not an fbx file at all";
@@ -116,9 +119,11 @@ TEST(FbxMaterialConverterUVETest, ClassicDiffuseAndTransparencyMapToThePbrMateri
     EXPECT_FLOAT_EQ(material.material.albedoColor.b, 0.75F);
     EXPECT_TRUE(material.material.isTransparent) << "TransparencyFactor 0.5 is a blending material";
     EXPECT_FLOAT_EQ(material.material.alphaCutoff, 0.0F) << "FBX has no cutoff to map";
-    EXPECT_TRUE(material.albedoTextureFile.empty());
-    EXPECT_TRUE(material.normalTextureFile.empty());
-    EXPECT_FALSE(material.hasNonFileTexture);
+    EXPECT_TRUE(material.albedo.file.empty());
+    EXPECT_TRUE(material.albedo.embedded.empty());
+    EXPECT_FALSE(material.albedo.procedural);
+    EXPECT_TRUE(material.normal.file.empty());
+    EXPECT_FALSE(material.normal.procedural);
     EXPECT_TRUE(IsMaterialAssetValidUVE(material.material));
 }
 
@@ -141,9 +146,10 @@ TEST(FbxMaterialConverterUVETest, PbrFactorsAndFileTextureReferencesSurviveTheCo
     EXPECT_FLOAT_EQ(material.material.metallic, 0.0F) << "a classic material has no metalness";
     EXPECT_FALSE(material.material.isTransparent);
     // The reference is the file's own relative filename; no GUID is invented here.
-    EXPECT_EQ(material.albedoTextureFile, "textures/steel_diffuse.png");
-    EXPECT_TRUE(material.normalTextureFile.empty());
-    EXPECT_TRUE(material.hasNonFileTexture) << "the unnamed procedural texture cannot be a file reference";
+    EXPECT_EQ(material.albedo.file, "textures/steel_diffuse.png");
+    EXPECT_FALSE(material.albedo.HasImageUVE()) << "a file reference carries no bytes of its own";
+    EXPECT_TRUE(material.normal.file.empty());
+    EXPECT_TRUE(material.normal.procedural) << "the procedural texture has neither a name nor bytes";
     EXPECT_EQ(material.material.albedoTexture, kInvalidAssetGuidUVE);
     EXPECT_EQ(material.material.normalTexture, kInvalidAssetGuidUVE);
     EXPECT_TRUE(IsMaterialAssetValidUVE(material.material));
@@ -200,6 +206,77 @@ TEST(FbxMaterialConverterUVETest, SeveralMaterialsKeepFileOrderAndIndependentVal
     EXPECT_FALSE((*materials)[0].material.isTransparent);
     EXPECT_TRUE((*materials)[1].material.isTransparent)
         << "TransparencyFactor 1 is fully transparent in FBX, so the material blends";
+}
+
+
+/// An FBX that carries its texture inside itself, the way a Mixamo "With Skin" download does: a
+/// `Video` element whose `Content` is the base64 image, connected to the `Texture` the material
+/// names. Nothing outside the bytes handed in is opened, so a test that sees the image come back out
+/// proves the whole embedded path rather than a file lookup.
+[[nodiscard]] std::string MakeEmbeddedTextureFbxUVE(const std::string& base64Image) {
+    std::string objects = R"(	Material: 3100, "Material::Agent", "" {
+		Version: 102
+		ShadingModel: "phong"
+		Properties70:  {
+			P: "DiffuseColor", "Color", "", "A",1,1,1
+		}
+	}
+	Video: 4000, "Video::AgentDiffuse", "Clip" {
+		Type: "Clip"
+		UseMipMap: 0
+		Filename: "agent_diffuse.png"
+		RelativeFilename: "agent_diffuse.png"
+		Content: , ")";
+    objects += base64Image;
+    objects += R"("
+	}
+	Texture: 4001, "Texture::AgentDiffuse", "" {
+		Type: "File"
+		FileName: "agent_diffuse.png"
+		RelativeFilename: "agent_diffuse.png"
+	}
+)";
+    return MakeFbxUVE(objects, "\tC: \"OO\",4000,4001\n"
+                               "\tC: \"OP\",4001,3100,\"DiffuseColor\"\n");
+}
+
+TEST(FbxMaterialConverterUVETest, AnImageEmbeddedInTheFileComesOutAsTheBytesItCarried) {
+    // The bytes are a real PNG and the assertion is byte-for-byte: the importer is going to decode
+    // exactly these, so anything that re-encodes, truncates or reinterprets them would publish a
+    // texture that is not the one the model was made with.
+    const std::vector<std::byte> png = UVE::Tests::MakePngTwoByOneRgba8UVE();
+    const auto materials = ReadFbxMaterialsUVE(BytesUVE(MakeEmbeddedTextureFbxUVE(UVE::Tests::Base64EncodeUVE(png))));
+    ASSERT_TRUE(materials.has_value());
+    ASSERT_EQ(materials->size(), 1U);
+    const FbxMaterialUVE& material = materials->front();
+    ASSERT_TRUE(material.albedo.HasImageUVE()) << "the file embeds this map";
+    EXPECT_EQ(material.albedo.embedded, png);
+    EXPECT_EQ(material.albedo.file, "agent_diffuse.png") << "the authored name survives alongside the bytes";
+    EXPECT_FALSE(material.albedo.procedural);
+    // Still side-effect free: reading the image does not invent an asset identity for it.
+    EXPECT_EQ(material.material.albedoTexture, kInvalidAssetGuidUVE);
+    EXPECT_TRUE(IsMaterialAssetValidUVE(material.material));
+}
+
+TEST(FbxMaterialConverterUVETest, AMapWithoutEmbeddedBytesAndWithoutANameIsProcedural) {
+    // A file texture the FBX neither names nor embeds cannot be followed anywhere, so it must be
+    // reported as procedural rather than looking like a reference that merely failed to resolve.
+    const std::string text = MakeFbxUVE(R"(	Material: 3600, "Material::Nameless", "" {
+		Version: 102
+		ShadingModel: "phong"
+	}
+	Texture: 3601, "Texture::Nameless", "" {
+		Type: "File"
+	}
+)",
+                                        "\tC: \"OP\",3601,3600,\"DiffuseColor\"\n");
+    const auto materials = ReadFbxMaterialsUVE(BytesUVE(text));
+    ASSERT_TRUE(materials.has_value());
+    ASSERT_EQ(materials->size(), 1U);
+    const FbxMaterialUVE& material = materials->front();
+    EXPECT_FALSE(material.albedo.HasImageUVE());
+    EXPECT_TRUE(material.albedo.file.empty());
+    EXPECT_TRUE(material.albedo.procedural);
 }
 
 } // namespace

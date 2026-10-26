@@ -20,6 +20,21 @@ namespace UVE::Asset {
 inline constexpr std::size_t kMaximumFbxMeshSourceBytesUVE = 256U * 1024U * 1024U;
 inline constexpr std::uint32_t kMaximumFbxMeshVerticesUVE = 1'000'000U;
 
+/// Largest single image this reader will hand out of an FBX's own payload. The same 64 MiB ceiling
+/// the PNG importer applies to a file on disk - a texture no importer would accept from disk must
+/// not become acceptable just because it arrived inside a model.
+inline constexpr std::size_t kMaximumFbxEmbeddedTextureBytesUVE = 64U * 1024U * 1024U;
+
+/// What a reader does when a file holds more bones than its caller can take.
+enum class FbxBoneOverflowUVE : std::uint8_t {
+    /// Refuse: the caller cannot represent a partial rig, so a partial answer would be a lie.
+    Fail = 0,
+    /// Keep the first `maximumBones` and report how many were left out. The mesh converter's
+    /// default, because a character that bends one finger wrong beats a character that does not
+    /// import at all.
+    Truncate,
+};
+
 /// One run of a converted FBX's index buffer that shares a material, in index-buffer order.
 /// `materialSourceIndex` is the material's position in the file's own material list - the order
 /// ReadFbxMaterialsUVE returns - not yet a slot in the mesh's `materialGuids`. The importer owns that
@@ -39,6 +54,12 @@ struct FbxSurfaceRangeUVE final {
 /// size and standing up. Faces are triangulated, missing normals are generated, the first UV set
 /// is kept, identical corners are shared and tangents are derived.
 ///
+/// A rig with more bones than `maximumJoints` still converts: the first `maximumJoints` bones are
+/// kept (depth-first order guarantees no kept bone's parent was left out), the rest are dropped with
+/// one warning, weights that referred to them are skipped and the remaining weights renormalized,
+/// and a rigid part that rode a dropped bone falls back to its nearest kept ancestor. A character
+/// that bends one finger wrong beats a character that does not import.
+///
 /// A file with a skin keeps it: every bone becomes a joint (the bones, order and names
 /// ReadFbxSkeletonUVE gives, so a skeleton's pose and a clip's tracks line up by name), each
 /// joint's inverse bind comes from its cluster, and every vertex keeps its four strongest weights,
@@ -54,7 +75,8 @@ struct FbxSurfaceRangeUVE final {
 /// already means, and the bytes stay identical to what earlier versions wrote. A file with more
 /// distinct materials than kMaximumMeshSurfacesUVE also gets an empty list.
 [[nodiscard]] bool ConvertFbxMeshUVE(std::span<const std::byte> source, MeshAssetUVE& outMesh,
-                                     std::vector<FbxSurfaceRangeUVE>* outSurfaces = nullptr);
+                                     std::vector<FbxSurfaceRangeUVE>* outSurfaces = nullptr,
+                                     std::size_t maximumJoints = kMaximumAnimationAssetBonesUVE);
 
 /// What an FBX holds, read without its geometry or animation curves - enough to tell a model from
 /// an animation-only file (a skeleton and its curves, the common shape of exported motion) before
@@ -81,10 +103,16 @@ struct FbxSourceSummaryUVE final {
 /// Every bone object counts, skinned or not, so an animation-only file (bones and takes, no mesh)
 /// has a skeleton too. Poses are in the engine's space, metres and +Y up; parents precede their
 /// children; a bone whose nearest bone ancestor is none is a root. Names are made unique the way
-/// the glTF reader does it. Returns std::nullopt when the bytes do not parse, hold no bones, or
-/// hold more than `maximumJoints`. skinCount is the number of skin deformers.
-[[nodiscard]] std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(std::span<const std::byte> source,
-                                                                std::size_t maximumJoints);
+/// the glTF reader does it. Returns std::nullopt when the bytes do not parse or hold no bones, and,
+/// when `overflow` is Fail, when the file holds more than `maximumJoints` bones.
+///
+/// `outDroppedBones`, when non-null, receives how many bones the cap excluded - zero for a rig that
+/// fit. Pass `FbxBoneOverflowUVE::Truncate` to read the same joint set ConvertFbxMeshUVE keeps for a
+/// wide rig, which is what a skeleton published beside a model has to be: a shared rig holding
+/// bones the mesh dropped would be a rig whose tracks point at nothing.
+[[nodiscard]] std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(
+    std::span<const std::byte> source, std::size_t maximumJoints, FbxBoneOverflowUVE overflow = FbxBoneOverflowUVE::Fail,
+    std::size_t* outDroppedBones = nullptr);
 
 /// Reads every take (animation stack) as one skeletal clip: a track per bone of ReadFbxSkeletonUVE's
 /// skeleton - same names, same local space (metres, +Y up, relative to the parent bone) - sampled
@@ -95,7 +123,39 @@ struct FbxSourceSummaryUVE final {
 [[nodiscard]] std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(std::span<const std::byte> source,
                                                                       std::size_t maximumBones);
 
-/// One FBX material: the engine's PBR material type plus the texture files it references.
+/// One FBX material's slot texture, wherever the file keeps it.
+///
+/// An FBX can supply a map three ways, and which one it is decides what the importer can do with
+/// it: the image can be *inside* the file (a Mixamo "With Skin" download embeds its diffuse map
+/// exactly this way), the file can merely name a path on the machine that exported it, or the map
+/// can be a layered / procedural / shader graph with no image behind it at all. This reader opens
+/// nothing and decodes nothing: it reports which of the three it found and hands over the bytes when
+/// there are any, so the import pipeline - which owns the asset database - can publish them.
+struct FbxTextureSourceUVE final {
+    /// The file the FBX names, as authored. Empty when the map names no file.
+    std::string file;
+
+    /// The image itself, byte for byte as the file carries it (PNG or JPEG). Empty when the FBX does
+    /// not embed it. Capped at kMaximumFbxEmbeddedTextureBytesUVE; a larger payload is reported and
+    /// dropped rather than copied into memory, because one broken texture must not decide whether a
+    /// character imports.
+    std::vector<std::byte> embedded;
+
+    /// The filename the embedded image had inside the file, when it had one. Only used to name the
+    /// derived texture when the material itself gives nothing to build a name from.
+    std::string embeddedName;
+
+    /// The map is a layered / procedural / shader texture, or a file texture the FBX does not name
+    /// and does not embed. Nothing can be extracted from it, so its slot stays empty.
+    bool procedural = false;
+
+    /// The image bytes are present, which is the only case the importer can turn into a texture
+    /// without touching the filesystem.
+    [[nodiscard]] bool HasImageUVE() const noexcept { return !embedded.empty(); }
+};
+
+/// One FBX material: the engine's PBR material type plus where each of its maps' images live.
+
 struct FbxMaterialUVE final {
     std::string name;
 
@@ -106,23 +166,19 @@ struct FbxMaterialUVE final {
 
     /// Albedo, emission, metalness, roughness and transparency mapped from FBX's PBR values
     /// (ufbx derives them from the classic properties when a material is not authored as PBR).
-    /// Texture GUID slots stay invalid on purpose: this reader never opens an external file and
-    /// never decodes an embedded payload (`ignore_embedded`), so turning a path into an asset
-    /// identity belongs to the import pipeline, not to a converter that must stay side-effect free.
+    /// Texture GUID slots stay invalid on purpose: this reader never opens an external file, and
+    /// turning bytes or a path into an asset identity belongs to the import pipeline, which owns
+    /// the asset database - not to a converter that has to stay a pure function of its input.
     MaterialAssetUVE material;
 
-    /// Authored references, taken from the texture element's relative filename. Empty when the
-    /// map is unconnected, disabled, or backed by a layered/procedural/shader texture.
-    std::string albedoTextureFile;
-    std::string normalTextureFile;
-    std::string emissiveTextureFile;
-    std::string ambientOcclusionTextureFile;
+    /// Where each map's image comes from. Empty when the map is unconnected or disabled.
+    FbxTextureSourceUVE albedo;
+    FbxTextureSourceUVE normal;
+    FbxTextureSourceUVE emissive;
+    FbxTextureSourceUVE ambientOcclusion;
 
-    /// True when at least one connected map has no usable file reference: it is a layered/
-    /// procedural/shader texture, or a file texture the FBX itself does not name — which is also
-    /// why the matching filename field above is empty. `albedoClamped` records that a channel had
-    /// to be clamped into `MaterialAssetUVE`'s validated [0,1] range rather than hiding it.
-    bool hasNonFileTexture = false;
+    /// `albedoClamped` records that a channel had to be clamped into `MaterialAssetUVE`'s validated
+    /// [0,1] range rather than hiding it.
     bool albedoClamped = false;
 };
 

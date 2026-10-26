@@ -95,6 +95,7 @@ add_executable(uve_core_tests
     Core/Asset/obj_importer_uve_tests.cpp
     Core/Asset/fbx_mesh_converter_uve_tests.cpp
     Core/Asset/fbx_material_converter_uve_tests.cpp
+    Core/Asset/embedded_texture_import_uve_tests.cpp
     Core/Asset/fbx_importer_uve_tests.cpp
     Core/Asset/obj_mesh_converter_uve_tests.cpp
     Core/Asset/obj_metadata_uve_tests.cpp
@@ -307,6 +308,12 @@ uve_set_warnings(uve_core_tests)
 # Support/ holds the suite's shared test-only helpers. Test/ itself goes on the include path
 # so they are reached as "Support/<name>.h" from any subdirectory.
 target_include_directories(uve_core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# The embedded-image helpers are module-private: they live in Engine/Runtime/Asset/Internal because
+# nothing outside the asset importers has any business decoding somebody else's bytes into a
+# texture. The tests that cover them need that directory on the include path, the same way the
+# editor's chrome-layout tests reach EditorCore/Internal.
+target_include_directories(uve_core_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Runtime/Asset/Internal)
 
 # shader_binary_cache_uve_tests.cpp/shader_diagnostics_parser_uve_tests.cpp/
 # shader_preprocessor_uve_tests.cpp unit-test uve_rhi_shader's module-private classes directly -
@@ -691,6 +698,7 @@ add_executable(uve_editor_tests
     Editor/content_catalogue_editor_uve_tests.cpp
     Editor/uvscript_highlight_uve_tests.cpp
     Editor/content_browser_model_uve_tests.cpp
+    Editor/model_source_placement_uve_tests.cpp
     Editor/retarget_plan_uve_tests.cpp
     Editor/animation_clip_editing_uve_tests.cpp
     Editor/animation_graph_editing_uve_tests.cpp

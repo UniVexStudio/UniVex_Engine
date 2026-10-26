@@ -274,6 +274,54 @@ struct EditorModelSourceInfoUVE final {
     std::size_t animationCount = 0U;
 };
 
+/// What placing a model source must do, decided BEFORE the first scene object exists.
+///
+/// Unreal's FBX pipeline never leaves an asset half-built: an import produces the skeletal mesh, its
+/// skeleton and its materials together, or it fails and says why. This enum is that promise written
+/// down in one place, because the state it rules out does not look like an error - a file whose
+/// converted mesh is not written yet can still be read for its bones, and building those alone
+/// produces an Armature that looks exactly like a deliberate animation-only import and never gains
+/// a mesh afterwards. "Bones only" stays reachable, but only for a source that has no geometry at
+/// all, which is the one case where it is the truth.
+enum class ModelSourcePlacementUVE : std::uint8_t {
+    /// The converted mesh exists: place the model with its skeleton.
+    PlaceModel = 0,
+    /// The source holds no geometry and does hold motion: a skeleton and its clips, by design.
+    PlaceAnimationOnly,
+    /// The source holds geometry and its converted form is not written yet.
+    WaitForImport,
+    /// The source holds geometry and the import refused it; the editor holds the importer's reason.
+    ImportFailed,
+};
+
+/// The placement decision for a model source. `convertedMeshExists` is whether the mesh the
+/// importer writes (beside the import cache, not beside the source) is on disk; `source` is what the
+/// last project refresh read from the file, or null when it has not read it; `importFailed` is
+/// whether the editor recorded a failed job for it.
+///
+/// A converted mesh always wins: whatever the file holds, there is a mesh to draw. Otherwise only a
+/// source that says it has no geometry may be placed as bones, and everything else waits or
+/// reports - never guesses.
+///
+/// `inline` because this lives in a header several translation units include: without it every one
+/// of them defines the same external symbol and the editor fails to link. It is here rather than in
+/// a .cpp because it is a decision, not an implementation - a caller must be able to read the whole
+/// table in one place.
+[[nodiscard]] inline ModelSourcePlacementUVE DecideModelSourcePlacementUVE(bool convertedMeshExists,
+                                                                          const EditorModelSourceInfoUVE* source,
+                                                                          bool importFailed) noexcept {
+    if (convertedMeshExists) {
+        return ModelSourcePlacementUVE::PlaceModel;
+    }
+    if (source != nullptr && source->animationOnly) {
+        return ModelSourcePlacementUVE::PlaceAnimationOnly;
+    }
+    if (importFailed) {
+        return ModelSourcePlacementUVE::ImportFailed;
+    }
+    return ModelSourcePlacementUVE::WaitForImport;
+}
+
 /// The Retarget window's state: the animations picked in Content, the character they are for, what
 /// conforming would do, and Generate's progress.
 struct RetargetWindowStateUVE final {
@@ -2078,6 +2126,18 @@ private:
     /// cook step does not accept: publishing on pick is what makes what the picker writes and what
     /// the project can ship the same thing.
     [[nodiscard]] Asset::AssetGuidUVE PublishTextureSourceUVE(const std::filesystem::path& absolutePath);
+    /// The mesh of a model file: a `.uvmodel` is registered as it stands, and a model source
+    /// (.fbx/.glb/.gltf/.obj) is copied into Content when it is outside it and then converted, so
+    /// the GUID a mesh slot receives is always one the mesh loader can actually read.
+    ///
+    /// This is the other half of the reason a mesh slot must never be handed a source file directly:
+    /// LoadMeshAssetUVE reads the `.uvmodel` envelope and nothing else, so registering an FBX put a
+    /// name in the slot that resolved to a path and then failed to load every frame - a mesh the
+    /// author could see assigned and never see drawn. Textures have the same shape of problem and
+    /// solve it the same way (see PublishTextureSourceUVE), except there the runtime can decode the
+    /// source as a fallback and here it cannot, so a conversion that fails yields no GUID at all
+    /// rather than a reference that is guaranteed to stay invisible.
+    [[nodiscard]] Asset::AssetGuidUVE PublishModelSourceUVE(const std::filesystem::path& absolutePath);
     /// The normal map a colour picture implies, published beside it as <stem>_normal.uvtex: slope
     /// derived from the picture's own light and shade, so a material that only has an albedo still
     /// catches a light the way a surface does. An already derived map beside the albedo is reused
@@ -2305,8 +2365,31 @@ private:
     void QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& snapshot);
     /// Collects finished auto-imports; a successful one refreshes the mesh thumbnails.
     void PollModelImportJobsUVE();
+    /// Registers the converted mesh at `importedModel` and every published asset beside it -
+    /// its `.uvmat` materials, its `.uvtex` textures, its `.uvskel` rig.
+    ///
+    /// The importer registers those as it writes them, but a cached import is a cache hit for the
+    /// CONVERSION, not for the asset database: the importer never runs, so nothing it would have
+    /// registered is registered. A mesh that names those GUIDs then draws nothing at all - the
+    /// materialed path drops it because the material will not resolve, and the built-in path
+    /// stands down because the mesh appears to have a material. Registering the folder closes
+    /// that gap whether or not this session ran the conversion.
+    /// Returns the converted mesh's GUID, or `kInvalidAssetGuidUVE` when it is not there.
+    [[nodiscard]] Asset::AssetGuidUVE RegisterImportedModelArtifactsUVE(const std::filesystem::path& importedModel);
     /// What the last project refresh read from a model source's file, or null if it is not one.
     [[nodiscard]] const EditorModelSourceInfoUVE* FindModelSourceInfoUVE(const std::filesystem::path& relativeSource) const;
+    /// What a model source's file holds, read now if the last refresh did not cover it.
+    ///
+    /// The refresh cache is an optimisation for the panels that draw many entries; it must never be
+    /// the reason an action fails. A placement that ran before the Content Browser had refreshed
+    /// used to see "no information" and treat a bones-only animation as a model whose mesh had not
+    /// been converted yet, so it placed nothing and said it was still importing. Reading the file
+    /// here is one bounded summary - no geometry, no curves - and it is remembered for next time.
+    [[nodiscard]] EditorModelSourceInfoUVE ReadModelSourceInfoForSourceUVE(const std::filesystem::path& relativeSource);
+    /// Why the last import of `relativeSource` failed - the importer's own diagnostic, the same text
+    /// the log file carries - or null when it has not failed. Kept after the job leaves the queue so
+    /// the editor can say what went wrong instead of only the log.
+    [[nodiscard]] const std::string* FindModelImportFailureUVE(const std::filesystem::path& relativeSource) const;
     /// True for a model source whose file declares a skeleton (read once per project refresh).
     [[nodiscard]] bool IsRiggedModelSourceUVE(const std::filesystem::path& relativeSource) const;
 
@@ -2746,6 +2829,10 @@ private:
                               const std::function<void(Scene::AnimationGraphComponentUVE&)>& change);
     /// In-flight automatic model imports, by content-relative source path.
     std::map<std::string, Asset::AssetImportJobIdUVE> m_modelImportJobs;
+    /// The last failure per model source, by content-relative source path. Survives a project
+    /// refresh on purpose: a file that fails to import stays failed until its bytes change, so the
+    /// reason has to outlive the queue job that produced it.
+    std::map<std::string, std::string> m_modelImportFailures;
     /// Every content-relative model source, as the last project refresh read it.
     std::map<std::string, EditorModelSourceInfoUVE> m_modelSources;
     MeshThumbnailRendererUVE m_meshThumbnailRenderer;

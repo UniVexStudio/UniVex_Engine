@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "uve/asset/gltf_skeleton_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
 
@@ -47,6 +48,20 @@ struct SkeletonAssetUVE final {
 /// NUL-free; every parent is -1 or a lower index (parents precede children, so pose resolution
 /// runs as one forward pass); TRS finite with a normalizable rotation.
 [[nodiscard]] bool IsSkeletonAssetValidUVE(const SkeletonAssetUVE& skeleton) noexcept;
+
+/// Adopts a skeleton read from a model file - a glTF skin or an FBX rig - as a standalone skeleton
+/// asset. `skeletonId` names it for logging and for a clip's `rest` to point at.
+///
+/// The two shapes differ in exactly two ways, and both are decided here, once, so every importer
+/// makes the same choice: `GltfJointUVE::parentIndex` becomes `SkeletonJointUVE::parent` (both -1 for
+/// a root, both parents-first), and a joint's resting pose is carried over as is. Nothing is
+/// re-oriented or re-scaled: a skeleton read by ReadGltfSkeletonUVE or ReadFbxSkeletonUVE is already
+/// in the engine's space, and a second conversion would move a character that is already upright.
+///
+/// Returns a descriptor that could hold the joints; `IsSkeletonAssetValidUVE` is what says whether
+/// it may be written. Names not unique in `source` keep their first occurrence - uniqueness is the
+/// source reader's job, and this bridge does not silently rename a bone a clip already tracks.
+[[nodiscard]] SkeletonAssetUVE MakeSkeletonAssetUVE(const GltfSkeletonUVE& source, std::string skeletonId);
 
 /// Loads `path` as a `.uve*` envelope with `AssetKindUVE::Skeleton`, filling `outSkeleton`.
 /// Returns false (logging the reason) if the file is missing/malformed, isn't actually a
