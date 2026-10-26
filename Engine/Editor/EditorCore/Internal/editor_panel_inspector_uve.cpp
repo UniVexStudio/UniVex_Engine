@@ -140,7 +140,8 @@ void EditorUVE::DrawInspectorPanelUVE() {
     // &m_inspectorPanelVisible is what removes the X - ImGui only draws a close button when it is
     // given a visibility flag to write back to. Hiding it is Window > Inspector, beside the other
     // panel toggles, which is where a hidden panel is brought back from.
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
+    // The layout owns this rect; ImGui's own edge grip must not (see kLayoutOwnedPanelFlagsUVE).
+    constexpr ImGuiWindowFlags flags = kLayoutOwnedPanelFlagsUVE;
     // Match the Outliner panel's neutral charcoal surface. Inputs and nested fields keep the
     // darker FrameBg/ChildBg layers from the shared theme, so depth and editability remain clear.
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{0.106F, 0.118F, 0.129F, 1.0F});
@@ -390,6 +391,10 @@ void EditorUVE::DrawInspectorContentUVE() {
     // section. Objects are renamed and reparented from the Scene panel and get their parts from
     // their recipe, so there is no name field, hierarchy block, search box, Add Component or Remove
     // here.
+
+    // A section that asked for a component to be added or removed last frame gets it here, before
+    // this frame's sections are drawn from the entity's storage.
+    ApplyPendingComponentChangeUVE();
     RepairInspectorRecipeUVE(m_selectedEntity);
     ImGui::Separator();
     m_inspectorDrawerRegistry.DrawEligibleUVE(m_selectedEntity);

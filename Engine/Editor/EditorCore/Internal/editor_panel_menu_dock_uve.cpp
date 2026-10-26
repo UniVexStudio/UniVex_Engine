@@ -530,10 +530,7 @@ void EditorUVE::DrawBottomDockContentUVE() {
     // No title row and no close button - the tab strip at the top of the block is what names it and
     // what hides it. NoMove/NoResize/NoSavedSettings keep a stale imgui.ini from parking it anywhere
     // but its computed rect.
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
-                                       ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-                                       ImGuiWindowFlags_NoSavedSettings |
-                                       ImGuiWindowFlags_NoBringToFrontOnFocus;
+    constexpr ImGuiWindowFlags flags = kLayoutOwnedPanelFlagsUVE;
     // Square and borderless, like the tab strip directly above it. The theme draws every panel as a
     // rounded, 1px-outlined card; on a window that sits flush under the canvas those two things are
     // exactly what makes it read as a separate frame that happens to be parked there. With the
@@ -636,8 +633,16 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
             const bool hot = ImGui::IsItemHovered() || ImGui::IsItemActive();
             if (hot) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                ImGui::GetWindowDrawList()->AddRectFilled(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
-                                                          IM_COL32(90, 150, 215, 130));
+                // The grip is wider than the divider it stands on, so what lights up is the divider:
+                // a two-pixel line down the seam, in the same blue the rest of the editor uses for
+                // "this is live". Filling the whole grip would paint a ten-pixel band over both
+                // neighbours' edges and read as a bar rather than as the divider being grabbed.
+                const ImVec2 gripMin = ImGui::GetItemRectMin();
+                const ImVec2 gripMax = ImGui::GetItemRectMax();
+                const float seamX = (gripMin.x + gripMax.x) * 0.5F;
+                ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{seamX - 1.0F, gripMin.y},
+                                                          ImVec2{seamX + 1.0F, gripMax.y},
+                                                          IM_COL32(90, 150, 215, 220));
             }
             if (ImGui::IsItemActive()) {
                 // The same shape the entity editor's column seams use: the width the author set is
@@ -678,8 +683,13 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
             const bool hot = ImGui::IsItemHovered() || ImGui::IsItemActive();
             if (hot) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-                ImGui::GetWindowDrawList()->AddRectFilled(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
-                                                          IM_COL32(90, 150, 215, 130));
+                // Same as the side seams: the divider lights up, not the whole grip.
+                const ImVec2 gripMin = ImGui::GetItemRectMin();
+                const ImVec2 gripMax = ImGui::GetItemRectMax();
+                const float seamY = (gripMin.y + gripMax.y) * 0.5F;
+                ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{gripMin.x, seamY - 1.0F},
+                                                          ImVec2{gripMax.x, seamY + 1.0F},
+                                                          IM_COL32(90, 150, 215, 220));
             }
             if (ImGui::IsItemActive()) {
                 // Dragging up grows the dock, so the mouse delta is subtracted from its height.

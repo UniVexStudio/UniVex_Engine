@@ -244,8 +244,7 @@ void EditorUVE::DrawViewportPanelUVE() {
     // names it and carries the transport, so a second title row cost a line of image and - worse -
     // put a close X directly under the top bar, where it read as an X on the top bar itself. The
     // viewport is fixed, not hidable; there is no state in which hiding the canvas is useful.
-    if (!ImGui::Begin(kPanelLabelViewportUVE, nullptr,
-                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar)) {
+    if (!ImGui::Begin(kPanelLabelViewportUVE, nullptr, kLayoutOwnedPanelFlagsUVE)) {
         ImGui::End();
         ImGui::PopStyleVar();
         return;
