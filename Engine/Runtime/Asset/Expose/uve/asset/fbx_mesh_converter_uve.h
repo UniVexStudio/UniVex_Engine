@@ -44,6 +44,12 @@ struct FbxSurfaceRangeUVE final {
 /// size and standing up. Faces are triangulated, missing normals are generated, the first UV set
 /// is kept, identical corners are shared and tangents are derived.
 ///
+/// A rig with more bones than `maximumJoints` still converts: the first `maximumJoints` bones are
+/// kept (depth-first order guarantees no kept bone's parent was left out), the rest are dropped with
+/// one warning, weights that referred to them are skipped and the remaining weights renormalized,
+/// and a rigid part that rode a dropped bone falls back to its nearest kept ancestor. A character
+/// that bends one finger wrong beats a character that does not import.
+///
 /// A file with a skin keeps it: every bone becomes a joint (the bones, order and names
 /// ReadFbxSkeletonUVE gives, so a skeleton's pose and a clip's tracks line up by name), each
 /// joint's inverse bind comes from its cluster, and every vertex keeps its four strongest weights,
@@ -59,7 +65,8 @@ struct FbxSurfaceRangeUVE final {
 /// already means, and the bytes stay identical to what earlier versions wrote. A file with more
 /// distinct materials than kMaximumMeshSurfacesUVE also gets an empty list.
 [[nodiscard]] bool ConvertFbxMeshUVE(std::span<const std::byte> source, MeshAssetUVE& outMesh,
-                                     std::vector<FbxSurfaceRangeUVE>* outSurfaces = nullptr);
+                                     std::vector<FbxSurfaceRangeUVE>* outSurfaces = nullptr,
+                                     std::size_t maximumJoints = kMaximumAnimationAssetBonesUVE);
 
 /// What an FBX holds, read without its geometry or animation curves - enough to tell a model from
 /// an animation-only file (a skeleton and its curves, the common shape of exported motion) before
