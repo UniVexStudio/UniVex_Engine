@@ -133,14 +133,31 @@ struct FbxBoneObjectUVE final {
     std::vector<const ufbx_node*> between;
 };
 
+/// What to do when a file holds more bones than the caller can take.
+enum class FbxBoneOverflowUVE : std::uint8_t {
+    /// Refuse: the caller cannot represent a partial rig, so a partial answer would be a lie.
+    Fail = 0,
+    /// Keep the first `maximumBones` and report how many were left out. A mesh whose skin refers to
+    /// a dropped bone does not break: its weights are skipped and the rest renormalized, and a part
+    /// riding a dropped bone falls back to the nearest kept ancestor. Bending a hand wrong is a far
+    /// better outcome than a character that does not import at all.
+    Truncate,
+};
+
 /// Every bone object, depth first from the root, with unique names - the one walk both the skeleton
-/// and its clips use, so a clip's track names always match the skeleton's bones. Empty optional
-/// when there are more than `maximumBones`.
-[[nodiscard]] std::optional<std::vector<FbxBoneObjectUVE>> CollectFbxBonesUVE(const ufbx_scene& scene,
-                                                                             const std::size_t maximumBones) {
+/// and its clips use, so a clip's track names always match the skeleton's bones.
+///
+/// Depth first order is what makes truncation safe: a parent is always collected before its
+/// children, so the first `maximumBones` bones never contain one whose parent was left out.
+/// `outDropped`, when non-null, receives the number of bones the cap excluded. Empty optional when
+/// the cap is exceeded and `overflow` is Fail.
+[[nodiscard]] std::optional<std::vector<FbxBoneObjectUVE>> CollectFbxBonesUVE(
+    const ufbx_scene& scene, const std::size_t maximumBones,
+    const FbxBoneOverflowUVE overflow = FbxBoneOverflowUVE::Fail, std::size_t* const outDropped = nullptr) {
     std::vector<FbxBoneObjectUVE> bones;
     std::unordered_map<const ufbx_node*, std::int32_t> boneOfObject;
     std::set<std::string> usedNames;
+    std::size_t dropped = 0U;
     std::vector<const ufbx_node*> pending{scene.root_node};
     while (!pending.empty()) {
         const ufbx_node* const object = pending.back();
@@ -152,8 +169,15 @@ struct FbxBoneObjectUVE final {
             continue;
         }
         if (bones.size() >= maximumBones) {
-            UVE_ERROR("FbxMeshConverterUVE: more than {} bones", maximumBones);
-            return std::nullopt;
+            if (overflow == FbxBoneOverflowUVE::Fail) {
+                UVE_ERROR("FbxMeshConverterUVE: more than {} bones", maximumBones);
+                if (outDropped != nullptr) {
+                    *outDropped = 0U;
+                }
+                return std::nullopt;
+            }
+            ++dropped; // still walked, so the count is every bone the cap excluded
+            continue;
         }
         FbxBoneObjectUVE bone;
         bone.object = object;
@@ -174,6 +198,9 @@ struct FbxBoneObjectUVE final {
         bone.name = std::move(unique);
         boneOfObject.emplace(object, static_cast<std::int32_t>(bones.size()));
         bones.push_back(std::move(bone));
+    }
+    if (outDropped != nullptr) {
+        *outDropped = dropped;
     }
     return bones;
 }
@@ -197,7 +224,7 @@ struct FbxBoneObjectUVE final {
 } // namespace
 
 bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& outMesh,
-                       std::vector<FbxSurfaceRangeUVE>* const outSurfaces) {
+                       std::vector<FbxSurfaceRangeUVE>* const outSurfaces, const std::size_t maximumJoints) {
     if (outSurfaces != nullptr) {
         outSurfaces->clear();
     }
@@ -251,10 +278,19 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
         std::unordered_map<const ufbx_node*, std::uint32_t> jointOfObject;
         const bool skinned = scene->skin_deformers.count > 0U;
         if (skinned) {
+            // Truncating rather than refusing: a rig with more bones than a joint list can hold
+            // still produces a usable mesh, and the alternative - failing the whole conversion -
+            // leaves a character that does not import at all.
+            std::size_t droppedBones = 0U;
             const std::optional<std::vector<FbxBoneObjectUVE>> bones =
-                CollectFbxBonesUVE(*scene, kMaximumAnimationAssetBonesUVE);
+                CollectFbxBonesUVE(*scene, maximumJoints, FbxBoneOverflowUVE::Truncate, &droppedBones);
             if (!bones.has_value() || bones->empty()) {
                 return false;
+            }
+            if (droppedBones > 0U) {
+                UVE_WARNING("FbxMeshConverterUVE: the rig holds {} bones, over the {} bone limit; the mesh keeps "
+                            "the first {} and drops {}, whose weights are renormalized onto the bones that remain",
+                            maximumJoints + droppedBones, maximumJoints, bones->size(), droppedBones);
             }
             for (const FbxBoneObjectUVE& bone : *bones) {
                 MeshJointUVE joint;

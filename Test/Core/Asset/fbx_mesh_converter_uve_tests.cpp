@@ -332,6 +332,71 @@ TEST(FbxMeshConverterUVETest, ASkinIsWhatMakesItRigged) {
     std::filesystem::remove(path);
 }
 
+TEST(FbxMeshConverterUVETest, ARigOverTheBoneLimitLosesBonesNotTheWholeMesh) {
+    // A two-bone chain skinned to its SECOND bone. The joint cap is one, so the bone the skin
+    // actually names is the one that has to go - the harshest version of the case, and the one that
+    // decides whether a character imports at all.
+    const std::string objects = std::string(kFloorGeometryUVE) + R"(	Model: 3000, "Model::Root", "LimbNode" {
+		Version: 232
+	}
+	NodeAttribute: 3100, "NodeAttribute::Root", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	Model: 3001, "Model::Finger", "LimbNode" {
+		Version: 232
+	}
+	NodeAttribute: 3101, "NodeAttribute::Finger", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	Deformer: 4000, "Deformer::Skin", "Skin" {
+		Version: 101
+	}
+	Deformer: 4100, "SubDeformer::Cluster", "Cluster" {
+		Version: 100
+		Indexes: *4 {
+			a: 0,1,2,3
+		}
+		Weights: *4 {
+			a: 1,1,1,1
+		}
+		Transform: *16 {
+			a: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1
+		}
+		TransformLink: *16 {
+			a: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1
+		}
+	}
+)";
+    const std::string rigged = MakeFbxUVE(
+        objects, std::string(kFloorConnectionsUVE) +
+                     "\tC: \"OO\",4000,1000\n\tC: \"OO\",4100,4000\n\tC: \"OO\",3001,4100\n"
+                     "\tC: \"OO\",3000,0\n\tC: \"OO\",3001,3000\n\tC: \"OO\",3100,3000\n\tC: \"OO\",3101,3001\n");
+
+    // Refuse by default: a caller that cannot represent a partial rig must not be handed one.
+    EXPECT_FALSE(ReadFbxSkeletonUVE(BytesUVE(rigged), 1U).has_value());
+
+    // Convert with a cap of one: the mesh still comes out, and it is still valid to skin.
+    MeshAssetUVE mesh;
+    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(rigged), mesh, nullptr, 1U)) << "a wide rig must not fail the mesh";
+    EXPECT_EQ(mesh.vertices.size(), 4U);
+    ASSERT_EQ(mesh.joints.size(), 1U) << "the first bone is kept";
+    EXPECT_EQ(mesh.joints[0].name, "Root");
+    ASSERT_TRUE(mesh.IsSkinnedUVE());
+    EXPECT_TRUE(IsMeshSkinningDataValidUVE(mesh)) << "dropping a bone must leave normalised weights behind";
+    // The skin named the dropped bone, so its weight was skipped: the vertex still has a weight, on
+    // the bone that remains, and the mesh still moves with the rig.
+    for (const MeshSkinningInfluenceUVE& influence : mesh.skinningInfluences) {
+        EXPECT_EQ(influence.joints[0], 0U);
+        EXPECT_FLOAT_EQ(influence.weights[0], 1.0F);
+    }
+
+    // A cap of two is the whole rig, unchanged.
+    MeshAssetUVE full;
+    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(rigged), full, nullptr, 8U));
+    EXPECT_EQ(full.joints.size(), 2U);
+    EXPECT_EQ(full.joints[1].name, "Finger");
+}
+
 TEST(FbxMeshConverterUVETest, ASkeletonWithAnimationAndNoMeshIsAnAnimationNotAModel) {
     // The shape exported motion usually takes: bones and a take, nothing to draw. One second long
     // (FBX time counts 46186158000 ticks a second).
