@@ -664,12 +664,17 @@ void AppendPngChunkUVE(std::vector<std::byte>& png, const std::array<char, 4U>& 
         sumA = (sumA + value) % 65521U;
         sumB = (sumB + sumA) % 65521U;
     }
-    const auto lengthLow = static_cast<unsigned char>(raw.size() & 0xFFU);
-    const auto lengthHigh = static_cast<unsigned char>((raw.size() >> 8U) & 0xFFU);
+    // LEN and its one's complement, little-endian. Taken as a 16-bit pair first: complementing the
+    // two bytes separately is only the same thing while the length is under 256, and a fixture that
+    // is quietly wrong for the one size it is used at is a trap for the next size.
+    const std::uint16_t blockLength = static_cast<std::uint16_t>(raw.size());
+    const auto complement = static_cast<std::uint16_t>(~blockLength);
+    const auto byteAtUVE = [](const std::uint16_t value, const unsigned int shift) {
+        return std::byte{static_cast<unsigned char>((value >> shift) & 0xFFU)};
+    };
     std::vector<std::byte> compressed{std::byte{0x78}, std::byte{0x01}, std::byte{0x01},
-                                      std::byte{lengthLow}, std::byte{lengthHigh},
-                                      std::byte{static_cast<unsigned char>(~lengthLow & 0xFFU)},
-                                      std::byte{static_cast<unsigned char>(~lengthHigh & 0xFFU)}};
+                                      byteAtUVE(blockLength, 0U), byteAtUVE(blockLength, 8U),
+                                      byteAtUVE(complement, 0U), byteAtUVE(complement, 8U)};
     compressed.insert(compressed.end(), reinterpret_cast<const std::byte*>(raw.data()),
                       reinterpret_cast<const std::byte*>(raw.data()) + raw.size());
     AppendBigEndianUint32UVE(compressed, (sumB << 16U) | sumA);
