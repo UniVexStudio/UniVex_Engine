@@ -17,6 +17,7 @@
 
 #include "uve/asset/material_asset_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
+#include "uve/asset/skeleton_asset_uve.h"
 #include "uve/asset/fbx_mesh_converter_uve.h"
 #include "uve/logging/logging_macros_uve.h"
 
@@ -215,9 +216,60 @@ void PublishTextureSlotUVE(const std::filesystem::path& destinationPath, const s
         }
     }
 
-    return Detail::PublishAssetAtomicallyUVE(
-        destinationPath, kFbxImporterNameUVE, kFbxTemporarySuffixUVE,
-        [&mesh](const std::filesystem::path& temporaryPath) { return SaveMeshAssetUVE(mesh, temporaryPath); });
+    if (!Detail::PublishAssetAtomicallyUVE(
+            destinationPath, kFbxImporterNameUVE, kFbxTemporarySuffixUVE,
+            [&mesh](const std::filesystem::path& temporaryPath) { return SaveMeshAssetUVE(mesh, temporaryPath); })) {
+        return false;
+    }
+
+    // A rigged model also publishes its rig as its own `.uvskel` beside it - Unreal's split of a
+    // Skeletal Mesh from its Skeleton, and for the same reason: one rig is shared by every clip
+    // made for it and by every mesh skinned to it, instead of each consumer re-parsing the model
+    // (a 30 MB FBX) to rediscover bones that were already read once here.
+    //
+    // Only a model that actually has a skin gets one: a static mesh has no rig to share, and a file
+    // that is bones-only is an animation, which the editor imports down a different path.
+    //
+    // Failure here does not fail the import. The mesh is already on disk and is what the scene
+    // draws; losing the shared skeleton costs a re-read, not the character.
+    if (mesh.IsSkinnedUVE() && !mesh.joints.empty()) {
+        // Truncating, with the same cap the mesh used, so the two joint lists cannot disagree: a
+        // `.uvskel` holding bones the mesh dropped would be a rig whose tracks point at nothing.
+        // The mesh was converted with the bone cap; reading the rig with the same cap is what makes
+        // the two walks agree on which bones exist. A `.uvskel` holds at least as many joints as a
+        // mesh holds bones, so the rig can always be published whole.
+        static_assert(kMaximumSkeletonAssetJointsUVE >= kMaximumAnimationAssetBonesUVE,
+                      "a published rig must be able to hold every bone a mesh can hold");
+        std::size_t droppedBones = 0U;
+        const std::optional<GltfSkeletonUVE> skeleton =
+            ReadFbxSkeletonUVE(sourceBytes, kMaximumAnimationAssetBonesUVE, FbxBoneOverflowUVE::Truncate, &droppedBones);
+        if (skeleton.has_value() && droppedBones > 0U) {
+            UVE_WARNING("FbxImporterUVE: \"{}\" holds {} bones over the {} cap; the published .uvskel keeps the {} "
+                        "the model kept",
+                        sourcePath.string(), kMaximumAnimationAssetBonesUVE + droppedBones,
+                        kMaximumAnimationAssetBonesUVE, skeleton->joints.size());
+        }
+        if (skeleton.has_value() && skeleton->joints.size() == mesh.joints.size()) {
+            const std::filesystem::path skeletonPath = directory / (modelStem + ".uvskel");
+            const SkeletonAssetUVE asset = MakeSkeletonAssetUVE(*skeleton, modelStem);
+            if (Detail::PublishAssetAtomicallyUVE(
+                    skeletonPath, kFbxImporterNameUVE, kFbxTemporarySuffixUVE,
+                    [&asset](const std::filesystem::path& temporaryPath) {
+                        return SaveSkeletonAssetUVE(asset, temporaryPath);
+                    })) {
+                if (assetDatabase.RegisterUVE(skeletonPath) == kInvalidAssetGuidUVE) {
+                    UVE_WARNING("FbxImporterUVE: asset database rejected skeleton \"{}\"; the model keeps its own "
+                                "joints and nothing else can share the rig",
+                                skeletonPath.string());
+                }
+            }
+        } else {
+            UVE_WARNING("FbxImporterUVE: the rig read back for \"{}\" does not match the {} joints the model holds; "
+                        "no .uvskel is published",
+                        destinationPath.string(), mesh.joints.size());
+        }
+    }
+    return true;
 }
 
 } // namespace

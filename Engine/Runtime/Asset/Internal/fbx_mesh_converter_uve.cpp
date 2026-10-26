@@ -133,24 +133,14 @@ struct FbxBoneObjectUVE final {
     std::vector<const ufbx_node*> between;
 };
 
-/// What to do when a file holds more bones than the caller can take.
-enum class FbxBoneOverflowUVE : std::uint8_t {
-    /// Refuse: the caller cannot represent a partial rig, so a partial answer would be a lie.
-    Fail = 0,
-    /// Keep the first `maximumBones` and report how many were left out. A mesh whose skin refers to
-    /// a dropped bone does not break: its weights are skipped and the rest renormalized, and a part
-    /// riding a dropped bone falls back to the nearest kept ancestor. Bending a hand wrong is a far
-    /// better outcome than a character that does not import at all.
-    Truncate,
-};
-
 /// Every bone object, depth first from the root, with unique names - the one walk both the skeleton
 /// and its clips use, so a clip's track names always match the skeleton's bones.
 ///
 /// Depth first order is what makes truncation safe: a parent is always collected before its
 /// children, so the first `maximumBones` bones never contain one whose parent was left out.
-/// `outDropped`, when non-null, receives the number of bones the cap excluded. Empty optional when
-/// the cap is exceeded and `overflow` is Fail.
+/// `outDropped`, when non-null, receives the number of bones the cap excluded - it counts the bones
+/// left over, so the file's own bone count is `maximumBones + *outDropped`. Empty optional when the
+/// cap is exceeded and `overflow` is Fail.
 [[nodiscard]] std::optional<std::vector<FbxBoneObjectUVE>> CollectFbxBonesUVE(
     const ufbx_scene& scene, const std::size_t maximumBones,
     const FbxBoneOverflowUVE overflow = FbxBoneOverflowUVE::Fail, std::size_t* const outDropped = nullptr) {
@@ -559,13 +549,16 @@ std::optional<FbxSourceSummaryUVE> DescribeFbxSourceUVE(const std::span<const st
 
 
 std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(const std::span<const std::byte> source,
-                                                  const std::size_t maximumJoints) {
+                                                  const std::size_t maximumJoints,
+                                                  const FbxBoneOverflowUVE overflow,
+                                                  std::size_t* const outDroppedBones) {
     try {
         const ScenePtrUVE scene = LoadSceneUVE(source, false);
         if (!scene) {
             return std::nullopt;
         }
-        const std::optional<std::vector<FbxBoneObjectUVE>> bones = CollectFbxBonesUVE(*scene, maximumJoints);
+        const std::optional<std::vector<FbxBoneObjectUVE>> bones =
+            CollectFbxBonesUVE(*scene, maximumJoints, overflow, outDroppedBones);
         if (!bones.has_value() || bones->empty()) {
             return std::nullopt;
         }
