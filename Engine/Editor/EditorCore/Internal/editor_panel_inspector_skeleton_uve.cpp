@@ -142,8 +142,11 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
     // A retry in flight outranks the previous attempt's reason: the file may already be fixed, and
     // "still importing" is the truth about this moment.
     const bool importInFlight = m_modelImportJobs.contains(relativeSource.generic_string());
-    switch (DecideModelSourcePlacementUVE(hasMesh, FindModelSourceInfoUVE(relativeSource),
-                                          importFailure != nullptr && !importInFlight)) {
+    // Read on demand rather than only from the refresh cache: a placement that ran first used to see
+    // "no information" and wait forever for a mesh that was never going to be converted, because a
+    // bones-only file is an animation and is never queued as a mesh at all.
+    const EditorModelSourceInfoUVE sourceInfo = ReadModelSourceInfoForSourceUVE(relativeSource);
+    switch (DecideModelSourcePlacementUVE(hasMesh, &sourceInfo, importFailure != nullptr && !importInFlight)) {
     case ModelSourcePlacementUVE::PlaceModel:
     case ModelSourcePlacementUVE::PlaceAnimationOnly:
         break;

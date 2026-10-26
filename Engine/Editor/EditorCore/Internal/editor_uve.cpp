@@ -5794,6 +5794,17 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
     return written;
 }
 
+EditorModelSourceInfoUVE EditorUVE::ReadModelSourceInfoForSourceUVE(const std::filesystem::path& relativeSource) {
+    const std::string key = relativeSource.generic_string();
+    if (const auto found = m_modelSources.find(key); found != m_modelSources.end()) {
+        return found->second;
+    }
+    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    EditorModelSourceInfoUVE info = ReadModelSourceInfoUVE(project.contentRoot / relativeSource);
+    m_modelSources.emplace(key, info);
+    return info;
+}
+
 void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& snapshot) {
     Asset::IAssetImportQueueUVE& queue = m_services->GetAssetImportQueueUVE();
     m_modelSources.clear();

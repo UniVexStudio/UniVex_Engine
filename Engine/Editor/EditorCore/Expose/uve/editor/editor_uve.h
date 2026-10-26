@@ -2355,6 +2355,14 @@ private:
     void PollModelImportJobsUVE();
     /// What the last project refresh read from a model source's file, or null if it is not one.
     [[nodiscard]] const EditorModelSourceInfoUVE* FindModelSourceInfoUVE(const std::filesystem::path& relativeSource) const;
+    /// What a model source's file holds, read now if the last refresh did not cover it.
+    ///
+    /// The refresh cache is an optimisation for the panels that draw many entries; it must never be
+    /// the reason an action fails. A placement that ran before the Content Browser had refreshed
+    /// used to see "no information" and treat a bones-only animation as a model whose mesh had not
+    /// been converted yet, so it placed nothing and said it was still importing. Reading the file
+    /// here is one bounded summary - no geometry, no curves - and it is remembered for next time.
+    [[nodiscard]] EditorModelSourceInfoUVE ReadModelSourceInfoForSourceUVE(const std::filesystem::path& relativeSource);
     /// Why the last import of `relativeSource` failed - the importer's own diagnostic, the same text
     /// the log file carries - or null when it has not failed. Kept after the job leaves the queue so
     /// the editor can say what went wrong instead of only the log.
