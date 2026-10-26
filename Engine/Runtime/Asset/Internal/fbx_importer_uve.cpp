@@ -233,11 +233,9 @@ void PublishTextureSlotUVE(const std::filesystem::path& destinationPath, const s
     // Failure here does not fail the import. The mesh is already on disk and is what the scene
     // draws; losing the shared skeleton costs a re-read, not the character.
     if (mesh.IsSkinnedUVE() && !mesh.joints.empty()) {
-        // Truncating, with the same cap the mesh used, so the two joint lists cannot disagree: a
+        // Read the rig back with the same cap, and the same truncating policy, the mesh was
+        // converted with: that is what makes the two bone walks agree on which bones exist. A
         // `.uvskel` holding bones the mesh dropped would be a rig whose tracks point at nothing.
-        // The mesh was converted with the bone cap; reading the rig with the same cap is what makes
-        // the two walks agree on which bones exist. A `.uvskel` holds at least as many joints as a
-        // mesh holds bones, so the rig can always be published whole.
         static_assert(kMaximumSkeletonAssetJointsUVE >= kMaximumAnimationAssetBonesUVE,
                       "a published rig must be able to hold every bone a mesh can hold");
         std::size_t droppedBones = 0U;
@@ -263,10 +261,14 @@ void PublishTextureSlotUVE(const std::filesystem::path& destinationPath, const s
                                 skeletonPath.string());
                 }
             }
+        } else if (!skeleton.has_value()) {
+            UVE_WARNING("FbxImporterUVE: \"{}\" holds a skin whose bones could not be read back; no .uvskel is "
+                        "published, so nothing else can share the rig",
+                        destinationPath.string());
         } else {
-            UVE_WARNING("FbxImporterUVE: the rig read back for \"{}\" does not match the {} joints the model holds; "
+            UVE_WARNING("FbxImporterUVE: the rig read back for \"{}\" has {} bones but the model holds {} joints; "
                         "no .uvskel is published",
-                        destinationPath.string(), mesh.joints.size());
+                        destinationPath.string(), skeleton->joints.size(), mesh.joints.size());
         }
     }
     return true;
