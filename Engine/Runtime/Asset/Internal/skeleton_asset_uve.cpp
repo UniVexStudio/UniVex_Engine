@@ -56,6 +56,22 @@ constexpr std::string_view kSkeletonSchemaUVE = "uve-skeleton-v1";
 
 } // namespace
 
+SkeletonAssetUVE MakeSkeletonAssetUVE(const GltfSkeletonUVE& source, std::string skeletonId) {
+    SkeletonAssetUVE asset;
+    asset.skeletonId = std::move(skeletonId);
+    asset.joints.reserve(source.joints.size());
+    for (const GltfJointUVE& joint : source.joints) {
+        SkeletonJointUVE converted;
+        converted.name = joint.name;
+        converted.parent = joint.parentIndex;
+        converted.position = joint.translation;
+        converted.rotation = joint.rotation;
+        converted.scale = joint.scale;
+        asset.joints.push_back(std::move(converted));
+    }
+    return asset;
+}
+
 bool IsSkeletonAssetValidUVE(const SkeletonAssetUVE& skeleton) noexcept {
     if (skeleton.skeletonId.empty() || skeleton.skeletonId.size() > kMaximumSkeletonAssetIdentifierBytesUVE ||
         skeleton.skeletonId.contains('\0') || skeleton.joints.empty() ||

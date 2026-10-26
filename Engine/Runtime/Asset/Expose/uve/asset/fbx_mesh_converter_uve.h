@@ -25,6 +25,16 @@ inline constexpr std::uint32_t kMaximumFbxMeshVerticesUVE = 1'000'000U;
 /// not become acceptable just because it arrived inside a model.
 inline constexpr std::size_t kMaximumFbxEmbeddedTextureBytesUVE = 64U * 1024U * 1024U;
 
+/// What a reader does when a file holds more bones than its caller can take.
+enum class FbxBoneOverflowUVE : std::uint8_t {
+    /// Refuse: the caller cannot represent a partial rig, so a partial answer would be a lie.
+    Fail = 0,
+    /// Keep the first `maximumBones` and report how many were left out. The mesh converter's
+    /// default, because a character that bends one finger wrong beats a character that does not
+    /// import at all.
+    Truncate,
+};
+
 /// One run of a converted FBX's index buffer that shares a material, in index-buffer order.
 /// `materialSourceIndex` is the material's position in the file's own material list - the order
 /// ReadFbxMaterialsUVE returns - not yet a slot in the mesh's `materialGuids`. The importer owns that
@@ -93,10 +103,16 @@ struct FbxSourceSummaryUVE final {
 /// Every bone object counts, skinned or not, so an animation-only file (bones and takes, no mesh)
 /// has a skeleton too. Poses are in the engine's space, metres and +Y up; parents precede their
 /// children; a bone whose nearest bone ancestor is none is a root. Names are made unique the way
-/// the glTF reader does it. Returns std::nullopt when the bytes do not parse, hold no bones, or
-/// hold more than `maximumJoints`. skinCount is the number of skin deformers.
-[[nodiscard]] std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(std::span<const std::byte> source,
-                                                                std::size_t maximumJoints);
+/// the glTF reader does it. Returns std::nullopt when the bytes do not parse or hold no bones, and,
+/// when `overflow` is Fail, when the file holds more than `maximumJoints` bones.
+///
+/// `outDroppedBones`, when non-null, receives how many bones the cap excluded - zero for a rig that
+/// fit. Pass `FbxBoneOverflowUVE::Truncate` to read the same joint set ConvertFbxMeshUVE keeps for a
+/// wide rig, which is what a skeleton published beside a model has to be: a shared rig holding
+/// bones the mesh dropped would be a rig whose tracks point at nothing.
+[[nodiscard]] std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(
+    std::span<const std::byte> source, std::size_t maximumJoints, FbxBoneOverflowUVE overflow = FbxBoneOverflowUVE::Fail,
+    std::size_t* outDroppedBones = nullptr);
 
 /// Reads every take (animation stack) as one skeletal clip: a track per bone of ReadFbxSkeletonUVE's
 /// skeleton - same names, same local space (metres, +Y up, relative to the parent bone) - sampled
