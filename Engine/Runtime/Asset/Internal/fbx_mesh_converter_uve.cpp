@@ -687,27 +687,44 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
 namespace {
 
 /// The reading side of the material conversion, in the same file as the mesh/skeleton/animation
-/// readers so it shares their loader options: no external file is opened, no embedded payload is
-/// decoded, and every value stays a pure function of the bytes handed in.
-[[nodiscard]] std::string TextureFileUVE(const ufbx_material_map& map, bool& outNonFileTexture) {
+/// readers so it shares their loader options: no external file is opened, every value stays a pure
+/// function of the bytes handed in, and an embedded image is copied out as the file stored it rather
+/// than decoded here - decoding is the import pipeline's job, and a converter that stays pure is one
+/// that can be tested by handing it bytes.
+[[nodiscard]] FbxTextureSourceUVE ReadTextureSourceUVE(const ufbx_material_map& map) {
+    FbxTextureSourceUVE source;
     const ufbx_texture* const texture = map.texture;
     if (texture == nullptr || !map.texture_enabled) {
-        return {};
+        return source;
     }
     if (texture->type != UFBX_TEXTURE_FILE) {
-        outNonFileTexture = true; // layered/procedural/shader: no filename to report
-        return {};
+        source.procedural = true; // layered/procedural/shader: nothing to extract
+        return source;
     }
-    const std::string filename = texture->relative_filename.length != 0U
-                                     ? std::string(texture->relative_filename.data,
-                                                   texture->relative_filename.length)
-                                     : (texture->filename.length != 0U
-                                            ? std::string(texture->filename.data, texture->filename.length)
-                                            : std::string{});
-    if (filename.empty()) {
-        outNonFileTexture = true; // a file texture the file itself does not name
+    const auto asString = [](const ufbx_string& value) {
+        return value.length != 0U ? std::string(value.data, value.length) : std::string{};
+    };
+    source.file = texture->relative_filename.length != 0U ? asString(texture->relative_filename) : asString(texture->filename);
+    if (source.file.empty()) {
+        // The name to fall back on when the material gives nothing to build a stem from.
+        source.embeddedName = asString(texture->filename);
     }
-    return filename;
+    if (const ufbx_blob& content = texture->content; content.data != nullptr && content.size > 0U) {
+        if (content.size > kMaximumFbxEmbeddedTextureBytesUVE) {
+            UVE_WARNING("FbxMeshConverterUVE: embedded texture \\\"{}\\\" is {} bytes, over the {} byte ceiling; it is "
+                        "dropped and its slot stays empty",
+                        source.file.empty() ? source.embeddedName : source.file, content.size,
+                        kMaximumFbxEmbeddedTextureBytesUVE);
+        } else {
+            const auto* const begin = static_cast<const std::byte*>(content.data);
+            source.embedded.assign(begin, begin + content.size);
+        }
+    }
+    if (source.file.empty() && source.embedded.empty()) {
+        // A file texture the file itself neither names nor carries: there is nothing to follow.
+        source.procedural = true;
+    }
+    return source;
 }
 
 /// Reads a color map into MaterialAssetUVE's validated range: channels are clamped to [0,1] and
@@ -820,12 +837,10 @@ std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsUVE(const std::span<c
                 converted.material.isTransparent = true;
             }
 
-            converted.albedoTextureFile = TextureFileUVE(sourceMaterial->pbr.base_color, converted.hasNonFileTexture);
-            converted.normalTextureFile = TextureFileUVE(sourceMaterial->pbr.normal_map, converted.hasNonFileTexture);
-            converted.emissiveTextureFile =
-                TextureFileUVE(sourceMaterial->pbr.emission_color, converted.hasNonFileTexture);
-            converted.ambientOcclusionTextureFile =
-                TextureFileUVE(sourceMaterial->pbr.ambient_occlusion, converted.hasNonFileTexture);
+            converted.albedo = ReadTextureSourceUVE(sourceMaterial->pbr.base_color);
+            converted.normal = ReadTextureSourceUVE(sourceMaterial->pbr.normal_map);
+            converted.emissive = ReadTextureSourceUVE(sourceMaterial->pbr.emission_color);
+            converted.ambientOcclusion = ReadTextureSourceUVE(sourceMaterial->pbr.ambient_occlusion);
 
             if (!IsMaterialAssetValidUVE(converted.material)) {
                 UVE_WARNING("FbxMeshConverterUVE: material \"{}\" produced an invalid PBR descriptor; skipped",

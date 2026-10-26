@@ -2,15 +2,166 @@
 
 #include "import_helpers_uve.h"
 
+#include <algorithm>
+#include <array>
 #include <cctype>
+#include <cstdint>
 #include <fstream>
 #include <limits>
+#include <span>
 #include <string>
+#include <vector>
 
+#include "uve/asset/jpeg_metadata_uve.h"
+#include "uve/asset/png_metadata_uve.h"
 #include "uve/asset/texture_compression_uve.h"
 #include "uve/asset/texture_mipmap_uve.h"
 
 namespace UVE::Asset::Detail {
+
+namespace {
+
+/// The signature bytes each supported embedded image format starts with. Sniffing beats trusting a
+/// filename because the name inside an FBX is routinely wrong or missing entirely.
+[[nodiscard]] bool StartsWithUVE(const std::vector<std::byte>& bytes, const std::span<const std::byte> signature) {
+    return bytes.size() >= signature.size() &&
+           std::equal(signature.begin(), signature.end(), bytes.begin());
+}
+
+constexpr std::array<std::byte, 8U> kPngSignatureUVE{std::byte{0x89}, std::byte{0x50}, std::byte{0x4E},
+                                                      std::byte{0x47}, std::byte{0x0D}, std::byte{0x0A},
+                                                      std::byte{0x1A}, std::byte{0x0A}};
+constexpr std::array<std::byte, 3U> kJpegSignatureUVE{std::byte{0xFF}, std::byte{0xD8}, std::byte{0xFF}};
+
+/// The decoded pixels of whichever format the bytes turned out to be.
+struct DecodedImageUVE final {
+    std::uint32_t width = 0U;
+    std::uint32_t height = 0U;
+    std::vector<std::byte> pixels;
+};
+
+/// Matches a filename ignoring case, which is what a Windows-authored model's reference needs on a
+/// case-sensitive filesystem.
+[[nodiscard]] bool EqualsIgnoringCaseUVE(const std::string_view lhs, const std::string_view rhs) {
+    return lhs.size() == rhs.size() && std::equal(lhs.begin(), lhs.end(), rhs.begin(), [](const char a, const char b) {
+               return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+           });
+}
+
+} // namespace
+
+bool DecodeImageBytesUVE(const std::vector<std::byte>& bytes, const TextureImportSettingsUVE& settings,
+                         TextureAssetUVE& outTexture) {
+    if (bytes.empty()) {
+        return false;
+    }
+    DecodedImageUVE decoded;
+    if (StartsWithUVE(bytes, std::span<const std::byte>(kPngSignatureUVE))) {
+        PngRgba8ImageUVE png;
+        if (!DecodePngRgba8ImageUVE(bytes, png)) {
+            return false;
+        }
+        decoded = DecodedImageUVE{png.width, png.height, std::move(png.pixels)};
+    } else if (StartsWithUVE(bytes, std::span<const std::byte>(kJpegSignatureUVE))) {
+        JpegRgba8ImageUVE jpeg;
+        if (!DecodeJpegRgba8ImageUVE(bytes, jpeg)) {
+            return false;
+        }
+        decoded = DecodedImageUVE{jpeg.width, jpeg.height, std::move(jpeg.pixels)};
+    } else {
+        return false; // neither format this engine can decode from bytes
+    }
+
+    const std::uint64_t expectedPixelBytes =
+        static_cast<std::uint64_t>(decoded.width) * static_cast<std::uint64_t>(decoded.height) * 4ULL;
+    if (decoded.width == 0U || decoded.height == 0U || expectedPixelBytes != decoded.pixels.size()) {
+        return false;
+    }
+
+    TextureAssetUVE texture;
+    texture.width = decoded.width;
+    texture.height = decoded.height;
+    texture.format = TextureAssetFormatUVE::RGBA8Unorm;
+    texture.colorSpace = settings.colorSpace;
+    texture.usage = settings.usage;
+    texture.pixels = std::move(decoded.pixels);
+    if (!PrepareTextureForImportUVE(texture, settings)) {
+        return false;
+    }
+    outTexture = std::move(texture);
+    return true;
+}
+
+bool PublishEmbeddedTextureUVE(const std::filesystem::path& destinationPath, const std::vector<std::byte>& bytes,
+                               const TextureImportSettingsUVE& settings, const char* importerName,
+                               const std::string_view describeSource) {
+    TextureAssetUVE texture;
+    if (!DecodeImageBytesUVE(bytes, settings, texture)) {
+        UVE_WARNING("{}: {} is not a PNG or JPEG this engine can decode; the slot stays empty", importerName,
+                    describeSource);
+        return false;
+    }
+    return PublishAssetAtomicallyUVE(
+        destinationPath, importerName, std::string_view{".uve_embedded_tex_tmp"},
+        [&texture](const std::filesystem::path& temporaryPath) { return SaveTextureAssetUVE(texture, temporaryPath); });
+}
+
+std::optional<std::filesystem::path> ResolveAuthoredTextureFileUVE(const std::filesystem::path& modelDirectory,
+                                                                   const std::string_view modelFileStem,
+                                                                   const std::string_view authoredTextureFile) {
+    if (authoredTextureFile.empty() || modelDirectory.empty()) {
+        return std::nullopt;
+    }
+    // A model authored on Windows names its textures with backslashes and often with the exporting
+    // machine's whole directory in front of them; only the tail can mean anything here.
+    std::string authored{authoredTextureFile};
+    std::replace(authored.begin(), authored.end(), '\\', '/');
+    const std::size_t lastSeparator = authored.find_last_of('/');
+    const std::string_view baseName{authored.data() + (lastSeparator == std::string::npos ? 0U : lastSeparator + 1U),
+                                    authored.size() - (lastSeparator == std::string::npos ? 0U : lastSeparator + 1U)};
+    if (baseName.empty()) {
+        return std::nullopt;
+    }
+
+    std::error_code error;
+    // Exact first: the whole authored tail relative to the model, then the name in the places a
+    // model's maps actually live. Both are cheap and neither touches a directory listing.
+    const std::vector<std::filesystem::path> candidates{
+        (modelDirectory / authored).lexically_normal(),
+        modelDirectory / baseName,
+        modelDirectory / "textures" / baseName,
+        modelDirectory / "Textures" / baseName,
+        modelDirectory / (std::string{modelFileStem} + ".fbm") / baseName,
+    };
+    for (const std::filesystem::path& candidate : candidates) {
+        if (std::filesystem::is_regular_file(candidate, error)) {
+            return candidate;
+        }
+        error.clear();
+    }
+
+    // Then the same places, matched by name ignoring case: `Wood.PNG` and `wood.png` are one file
+    // to the tool that wrote the model, and must be one file here too.
+    for (const std::filesystem::path& directory :
+         {modelDirectory, modelDirectory / "textures", modelDirectory / "Textures",
+          modelDirectory / (std::string{modelFileStem} + ".fbm")}) {
+        std::filesystem::directory_iterator entries(directory, error);
+        if (error) {
+            error.clear();
+            continue;
+        }
+        for (const std::filesystem::directory_entry& entry : entries) {
+            std::error_code entryError;
+            if (!entry.is_regular_file(entryError)) {
+                continue;
+            }
+            if (EqualsIgnoringCaseUVE(entry.path().filename().string(), baseName)) {
+                return entry.path();
+            }
+        }
+    }
+    return std::nullopt;
+}
 
 AssetGuidUVE ResolveImportedSiblingTextureGuidUVE(const std::filesystem::path& destinationPath,
                                                   const std::string_view authoredTextureFile,
