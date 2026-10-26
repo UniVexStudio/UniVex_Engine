@@ -274,6 +274,49 @@ struct EditorModelSourceInfoUVE final {
     std::size_t animationCount = 0U;
 };
 
+/// What placing a model source must do, decided BEFORE the first scene object exists.
+///
+/// Unreal's FBX pipeline never leaves an asset half-built: an import produces the skeletal mesh, its
+/// skeleton and its materials together, or it fails and says why. This enum is that promise written
+/// down in one place, because the state it rules out does not look like an error - a file whose
+/// converted mesh is not written yet can still be read for its bones, and building those alone
+/// produces an Armature that looks exactly like a deliberate animation-only import and never gains
+/// a mesh afterwards. "Bones only" stays reachable, but only for a source that has no geometry at
+/// all, which is the one case where it is the truth.
+enum class ModelSourcePlacementUVE : std::uint8_t {
+    /// The converted mesh exists: place the model with its skeleton.
+    PlaceModel = 0,
+    /// The source holds no geometry and does hold motion: a skeleton and its clips, by design.
+    PlaceAnimationOnly,
+    /// The source holds geometry and its converted form is not written yet.
+    WaitForImport,
+    /// The source holds geometry and the import refused it; the editor holds the importer's reason.
+    ImportFailed,
+};
+
+/// The placement decision for a model source. `convertedMeshExists` is whether the mesh the
+/// importer writes (beside the import cache, not beside the source) is on disk; `source` is what the
+/// last project refresh read from the file, or null when it has not read it; `importFailed` is
+/// whether the editor recorded a failed job for it.
+///
+/// A converted mesh always wins: whatever the file holds, there is a mesh to draw. Otherwise only a
+/// source that says it has no geometry may be placed as bones, and everything else waits or
+/// reports - never guesses.
+[[nodiscard]] ModelSourcePlacementUVE DecideModelSourcePlacementUVE(bool convertedMeshExists,
+                                                                    const EditorModelSourceInfoUVE* source,
+                                                                    bool importFailed) noexcept {
+    if (convertedMeshExists) {
+        return ModelSourcePlacementUVE::PlaceModel;
+    }
+    if (source != nullptr && source->animationOnly) {
+        return ModelSourcePlacementUVE::PlaceAnimationOnly;
+    }
+    if (importFailed) {
+        return ModelSourcePlacementUVE::ImportFailed;
+    }
+    return ModelSourcePlacementUVE::WaitForImport;
+}
+
 /// The Retarget window's state: the animations picked in Content, the character they are for, what
 /// conforming would do, and Generate's progress.
 struct RetargetWindowStateUVE final {
@@ -2307,6 +2350,10 @@ private:
     void PollModelImportJobsUVE();
     /// What the last project refresh read from a model source's file, or null if it is not one.
     [[nodiscard]] const EditorModelSourceInfoUVE* FindModelSourceInfoUVE(const std::filesystem::path& relativeSource) const;
+    /// Why the last import of `relativeSource` failed - the importer's own diagnostic, the same text
+    /// the log file carries - or null when it has not failed. Kept after the job leaves the queue so
+    /// the editor can say what went wrong instead of only the log.
+    [[nodiscard]] const std::string* FindModelImportFailureUVE(const std::filesystem::path& relativeSource) const;
     /// True for a model source whose file declares a skeleton (read once per project refresh).
     [[nodiscard]] bool IsRiggedModelSourceUVE(const std::filesystem::path& relativeSource) const;
 
@@ -2746,6 +2793,10 @@ private:
                               const std::function<void(Scene::AnimationGraphComponentUVE&)>& change);
     /// In-flight automatic model imports, by content-relative source path.
     std::map<std::string, Asset::AssetImportJobIdUVE> m_modelImportJobs;
+    /// The last failure per model source, by content-relative source path. Survives a project
+    /// refresh on purpose: a file that fails to import stays failed until its bytes change, so the
+    /// reason has to outlive the queue job that produced it.
+    std::map<std::string, std::string> m_modelImportFailures;
     /// Every content-relative model source, as the last project refresh read it.
     std::map<std::string, EditorModelSourceInfoUVE> m_modelSources;
     MeshThumbnailRendererUVE m_meshThumbnailRenderer;
