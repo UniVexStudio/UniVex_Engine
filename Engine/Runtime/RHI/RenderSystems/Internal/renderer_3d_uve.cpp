@@ -2384,9 +2384,18 @@ struct Renderer3DUVE::ImplUVE {
                     return;
                 }
                 // A mesh that carries a material of its own is drawn through the materialed path,
-                // which falls back to that material when the object names none. Drawing it here as
-                // well would put a grey shell under the textured one.
-                if (mesh->FirstSurfaceMaterialGuidUVE() != Asset::kInvalidAssetGuidUVE) {
+                // which falls back to that material when the object names none - but only when
+                // that material can actually be RESOLVED. A GUID the asset database cannot turn
+                // into a file makes the materialed path drop the mesh, and dropping it here too is
+                // how an imported model that used to draw grey stopped drawing altogether: the
+                // .uvmat beside a converted mesh is registered by the importer, and an import that
+                // was a cache hit never ran it. So the built-in path stands down only for a
+                // material that exists; for one that does not, it draws the mesh untextured
+                // rather than not at all. A mesh on screen in the wrong colour is a defect the
+                // author can see and fix - a mesh that is simply gone is one they have to guess at.
+                const Asset::AssetGuidUVE meshOwnMaterial = mesh->FirstSurfaceMaterialGuidUVE();
+                if (meshOwnMaterial != Asset::kInvalidAssetGuidUVE &&
+                    !assetDatabase.ResolveUVE(meshOwnMaterial).empty()) {
                     return;
                 }
                 Math::QuaternionUVE rotation;

@@ -5841,6 +5841,37 @@ void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& sn
     }
 }
 
+Asset::AssetGuidUVE EditorUVE::RegisterImportedModelArtifactsUVE(const std::filesystem::path& importedModel) {
+    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(importedModel, error)) {
+        return Asset::kInvalidAssetGuidUVE;
+    }
+    const Asset::AssetGuidUVE meshGuid = database.RegisterUVE(importedModel);
+    const std::filesystem::path directory = importedModel.parent_path();
+    std::filesystem::directory_iterator it(directory, error);
+    if (error) {
+        return meshGuid;
+    }
+    const std::filesystem::directory_iterator end{};
+    while (it != end) {
+        std::string extension = it->path().extension().string();
+        std::transform(extension.begin(), extension.end(), extension.begin(),
+                       [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+        // Everything an import publishes beside the mesh it converted. Registering a GUID twice is
+        // how the database answers an existing path, so this is idempotent by construction.
+        if (extension == ".uvmat" || extension == ".uvmaterial" || extension == ".uvtex" ||
+            extension == ".uvskel") {
+            static_cast<void>(database.RegisterUVE(it->path()));
+        }
+        it.increment(error);
+        if (error) {
+            return meshGuid;
+        }
+    }
+    return meshGuid;
+}
+
 void EditorUVE::PollModelImportJobsUVE() {
     if (m_modelImportJobs.empty()) {
         return;
@@ -5865,6 +5896,10 @@ void EditorUVE::PollModelImportJobsUVE() {
             }
             it = m_modelImportJobs.erase(it);
         } else if (job->state == Asset::AssetImportJobStateUVE::Succeeded) {
+            // A cache hit ran no importer, so the materials and textures it would have registered
+            // are registered here instead - this is the only place that knows a conversion is
+            // accounted for whether or not it executed.
+            static_cast<void>(RegisterImportedModelArtifactsUVE(GetImportedModelPathUVE(it->first)));
             imported = imported || !job->cacheHit;
             m_modelImportFailures.erase(it->first);
             it = m_modelImportJobs.erase(it);

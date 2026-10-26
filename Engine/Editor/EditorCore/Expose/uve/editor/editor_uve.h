@@ -2365,6 +2365,17 @@ private:
     void QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& snapshot);
     /// Collects finished auto-imports; a successful one refreshes the mesh thumbnails.
     void PollModelImportJobsUVE();
+    /// Registers the converted mesh at `importedModel` and every published asset beside it -
+    /// its `.uvmat` materials, its `.uvtex` textures, its `.uvskel` rig.
+    ///
+    /// The importer registers those as it writes them, but a cached import is a cache hit for the
+    /// CONVERSION, not for the asset database: the importer never runs, so nothing it would have
+    /// registered is registered. A mesh that names those GUIDs then draws nothing at all - the
+    /// materialed path drops it because the material will not resolve, and the built-in path
+    /// stands down because the mesh appears to have a material. Registering the folder closes
+    /// that gap whether or not this session ran the conversion.
+    /// Returns the converted mesh's GUID, or `kInvalidAssetGuidUVE` when it is not there.
+    [[nodiscard]] Asset::AssetGuidUVE RegisterImportedModelArtifactsUVE(const std::filesystem::path& importedModel);
     /// What the last project refresh read from a model source's file, or null if it is not one.
     [[nodiscard]] const EditorModelSourceInfoUVE* FindModelSourceInfoUVE(const std::filesystem::path& relativeSource) const;
     /// What a model source's file holds, read now if the last refresh did not cover it.
