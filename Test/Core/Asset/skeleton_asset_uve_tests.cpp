@@ -55,6 +55,44 @@ TEST(SkeletonAssetUVETest, ValidationAcceptsMinimalSingleJoint) {
     EXPECT_TRUE(IsSkeletonAssetValidUVE(MakeValidSkeletonUVE()));
 }
 
+TEST(SkeletonAssetUVETest, AModelSkeletonBecomesAStandaloneSkeletonUnchanged) {
+    // What a model file reads as a skeleton and what the engine persists as one are two shapes, and
+    // the bridge between them is the only place the mapping is decided. A bone that comes back
+    // re-oriented, re-scaled or re-parented would move every character already standing up.
+    GltfSkeletonUVE source;
+    source.skinCount = 2U;
+    GltfJointUVE hips;
+    hips.name = "Hips";
+    hips.parentIndex = -1;
+    hips.translation = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    GltfJointUVE spine;
+    spine.name = "Spine";
+    spine.parentIndex = 0;
+    spine.translation = Math::Vector3UVE{0.0F, 0.25F, 0.0F};
+    spine.rotation = Math::QuaternionUVE{0.0F, 0.0F, 0.7071068F, 0.7071068F};
+    spine.scale = Math::Vector3UVE{1.5F, 1.5F, 1.5F};
+    source.joints = {hips, spine};
+
+    const SkeletonAssetUVE asset = MakeSkeletonAssetUVE(source, "mixamo_hero");
+    EXPECT_EQ(asset.skeletonId, "mixamo_hero");
+    ASSERT_EQ(asset.joints.size(), source.joints.size());
+    for (std::size_t index = 0U; index < source.joints.size(); ++index) {
+        EXPECT_EQ(asset.joints[index].name, source.joints[index].name);
+        EXPECT_EQ(asset.joints[index].parent, source.joints[index].parentIndex);
+        EXPECT_EQ(asset.joints[index].position, source.joints[index].translation);
+        EXPECT_EQ(asset.joints[index].rotation, source.joints[index].rotation);
+        EXPECT_EQ(asset.joints[index].scale, source.joints[index].scale);
+    }
+    // Same numbers, and a descriptor the engine will accept for persistence - a bridge that mapped
+    // the fields right but produced something unwritable would be no use to an importer.
+    EXPECT_TRUE(IsSkeletonAssetValidUVE(asset));
+
+    // A skeleton with nothing in it maps to nothing, and validation is what refuses to write it.
+    const SkeletonAssetUVE empty = MakeSkeletonAssetUVE(GltfSkeletonUVE{}, "empty");
+    EXPECT_TRUE(empty.joints.empty());
+    EXPECT_FALSE(IsSkeletonAssetValidUVE(empty));
+}
+
 TEST(SkeletonAssetUVETest, SaveThenLoad_RoundTripsJointsVerbatim) {
     const std::filesystem::path path = TestPathUVE("uve_skeleton_asset_round_trip.uvskel");
     std::filesystem::remove(path);

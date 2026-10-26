@@ -18,6 +18,7 @@
 #include "uve/asset/asset_database_uve.h"
 #include "uve/asset/material_asset_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
+#include "uve/asset/skeleton_asset_uve.h"
 
 namespace UVE::Asset::Tests {
 namespace {
@@ -126,6 +127,41 @@ constexpr std::string_view kTexturedMaterialUVE = R"(	Material: 3100, "Material:
 	}
 )";
 constexpr std::string_view kTexturedConnectionsUVE = "\tC: \"OP\",3200,3100,\"DiffuseColor\"\n";
+
+/// A floor skinned to one bone: the shape a rigged character imports as. The bone sits two metres up
+/// the file's own up axis, which is +Z here, so a skeleton read from the published asset can be told
+/// apart from one guessed at - and the axis conversion is exercised rather than assumed.
+constexpr std::string_view kSkinnedFloorUVE = R"(	Model: 3000, "Model::Hips", "LimbNode" {
+		Version: 232
+		Properties70:  {
+			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,200
+		}
+	}
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	Deformer: 4000, "Deformer::Skin", "Skin" {
+		Version: 101
+	}
+	Deformer: 4100, "SubDeformer::Cluster", "Cluster" {
+		Version: 100
+		Indexes: *4 {
+			a: 0,1,2,3
+		}
+		Weights: *4 {
+			a: 1,1,1,1
+		}
+		Transform: *16 {
+			a: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1
+		}
+		TransformLink: *16 {
+			a: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1
+		}
+	}
+)";
+constexpr std::string_view kSkinnedFloorConnectionsUVE =
+    "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n\tC: \"OO\",4000,1000\n\tC: \"OO\",4100,4000\n"
+    "\tC: \"OO\",3000,4100\n\tC: \"OO\",3100,3000\n\tC: \"OO\",3000,0\n";
 
 class FbxImporterUVETest : public ::testing::Test {
 protected:
@@ -290,4 +326,70 @@ TEST_F(FbxImporterUVETest, FbxImportIsIdempotentAcrossReimport) {
 }
 
 } // namespace
+TEST_F(FbxImporterUVETest, ARiggedModelPublishesItsRigBesideIt) {
+    // Unreal splits a Skeletal Mesh from its Skeleton for a reason: one rig, shared. The published
+    // `.uvskel` has to name the same joints, in the same order, with the same rest pose the model
+    // carries - otherwise a clip made for one and played on the other finds nothing.
+    const std::filesystem::path source = ScratchUVE("hero.fbx");
+    const std::filesystem::path destination = ScratchUVE("hero.uvmodel");
+    WriteFixtureUVE(source, MakeFbxUVE(std::string(kFloorGeometryUVE) + std::string(kSkinnedFloorUVE),
+                                       std::string(kFloorConnectionsUVE) + std::string(kSkinnedFloorConnectionsUVE)));
+
+    ASSERT_NE(importer.ImportUVE(source, destination, database), kInvalidAssetGuidUVE);
+
+    const std::filesystem::path skeletonPath = ScratchUVE("hero.uvskel");
+    ASSERT_TRUE(std::filesystem::is_regular_file(skeletonPath)) << "a rigged model publishes its rig";
+
+    SkeletonAssetUVE skeleton;
+    ASSERT_TRUE(LoadSkeletonAssetUVE(skeletonPath, skeleton));
+    EXPECT_EQ(skeleton.skeletonId, "hero");
+    ASSERT_EQ(skeleton.joints.size(), 1U);
+
+    MeshAssetUVE mesh;
+    ASSERT_TRUE(LoadMeshAssetUVE(destination, mesh));
+    ASSERT_EQ(mesh.joints.size(), skeleton.joints.size()) << "the rig and the model cannot disagree on bones";
+    EXPECT_EQ(mesh.joints[0].name, skeleton.joints[0].name);
+    EXPECT_EQ(skeleton.joints[0].parent, -1);
+    EXPECT_NEAR(skeleton.joints[0].position.y, 2.0F, 1.0e-3F) << "the bone's own rest position, in metres";
+
+    // Registered, so a clip or another mesh can point at it by GUID without a path.
+    const AssetGuidUVE skeletonGuid = database.RegisterUVE(skeletonPath);
+    ASSERT_NE(skeletonGuid, kInvalidAssetGuidUVE);
+    EXPECT_EQ(database.ResolveUVE(skeletonGuid), skeletonPath);
+}
+
+TEST_F(FbxImporterUVETest, AStaticModelPublishesNoRig) {
+    // Nothing to share: a static mesh has no bones, and writing an empty skeleton asset would only
+    // teach the content browser to offer a rig with nothing in it.
+    const std::filesystem::path source = ScratchUVE("crate.fbx");
+    const std::filesystem::path destination = ScratchUVE("crate.uvmodel");
+    WriteFixtureUVE(source, MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE));
+
+    ASSERT_NE(importer.ImportUVE(source, destination, database), kInvalidAssetGuidUVE);
+    EXPECT_FALSE(std::filesystem::exists(ScratchUVE("crate.uvskel")));
+}
+
+TEST_F(FbxImporterUVETest, ARigsReimportKeepsTheSameSkeletonFile) {
+    // The rig is rewritten in place, not duplicated, so its GUID survives - the property every clip
+    // that points at it depends on.
+    const std::filesystem::path source = ScratchUVE("hero.fbx");
+    const std::filesystem::path destination = ScratchUVE("hero.uvmodel");
+    WriteFixtureUVE(source, MakeFbxUVE(std::string(kFloorGeometryUVE) + std::string(kSkinnedFloorUVE),
+                                       std::string(kFloorConnectionsUVE) + std::string(kSkinnedFloorConnectionsUVE)));
+
+    ASSERT_NE(importer.ImportUVE(source, destination, database), kInvalidAssetGuidUVE);
+    const AssetGuidUVE first = database.RegisterUVE(ScratchUVE("hero.uvskel"));
+    ASSERT_NE(importer.ImportUVE(source, destination, database), kInvalidAssetGuidUVE);
+    const AssetGuidUVE second = database.RegisterUVE(ScratchUVE("hero.uvskel"));
+    EXPECT_EQ(first, second);
+
+    std::size_t skeletonCount = 0U;
+    for (const auto& entry : std::filesystem::directory_iterator(kScratchDirectoryUVE)) {
+        if (entry.path().extension() == ".uvskel") {
+            ++skeletonCount;
+        }
+    }
+    EXPECT_EQ(skeletonCount, 1U) << "one rig per model, however many times it is imported";
+}
+
 } // namespace UVE::Asset::Tests

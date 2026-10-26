@@ -285,6 +285,37 @@ void EditorUVE::DrawContentAssetCardInspectorUVE(const Asset::ProjectFileEntryUV
     ImGui::Separator();
     ImGui::Spacing();
 
+    // Unreal shows an import's outcome on the asset itself; here the closest thing to the asset is
+    // the source file's card, and without this the only record of a failed conversion was the log.
+    if (IsModelSourcePathUVE(entry.relativePath)) {
+        ImGui::TextDisabled("MODEL IMPORT");
+        const std::filesystem::path converted = GetImportedModelPathUVE(entry.relativePath);
+        std::error_code convertedError;
+        const bool convertedExists = std::filesystem::is_regular_file(converted, convertedError);
+        if (const std::string* const failure = FindModelImportFailureUVE(entry.relativePath); failure != nullptr) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.95F, 0.45F, 0.40F, 1.0F});
+            ImGui::TextWrapped("Failed: %s", failure->c_str());
+            ImGui::PopStyleColor();
+            ImGui::TextWrapped("Reimport retries it; the log line names the same reason.");
+        } else if (convertedExists) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.48F, 0.82F, 0.52F, 1.0F});
+            ImGui::TextUnformatted("Converted");
+            ImGui::PopStyleColor();
+            ImGui::TextWrapped("%s", converted.generic_string().c_str());
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.95F, 0.78F, 0.40F, 1.0F});
+            ImGui::TextUnformatted("Waiting for the import queue");
+            ImGui::PopStyleColor();
+        }
+        if (const EditorModelSourceInfoUVE* const info = FindModelSourceInfoUVE(entry.relativePath);
+            info != nullptr && !info->summary.empty()) {
+            ImGui::TextWrapped("%s", info->summary.c_str());
+        }
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+    }
+
     // Action buttons
     ImGui::TextDisabled("ACTIONS");
     if (type == ContentBrowserItemTypeUVE::Entity || type == ContentBrowserItemTypeUVE::Prefab) {

@@ -1216,6 +1216,59 @@ Asset::AssetGuidUVE EditorUVE::PublishTextureSourceUVE(const std::filesystem::pa
     return imported;
 }
 
+Asset::AssetGuidUVE EditorUVE::PublishModelSourceUVE(const std::filesystem::path& absolutePath) {
+    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(absolutePath, error)) {
+        return Asset::kInvalidAssetGuidUVE;
+    }
+    std::string extension = absolutePath.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    if (extension == ".uvmodel") {
+        return database.RegisterUVE(absolutePath);
+    }
+    // Not a model at all - a picker that was opened for some other asset kind. Registering it is
+    // still the right answer: this is the published form of what the author picked.
+    if (extension != ".fbx" && extension != ".glb" && extension != ".gltf" && extension != ".obj") {
+        return database.RegisterUVE(absolutePath);
+    }
+
+    // A source outside the project must come inside it first. The converted mesh is keyed on the
+    // content-relative path, so a file imported straight from the Desktop would convert to a
+    // .uvmodel outside the project - a mesh that works today and is gone the moment the project
+    // folder is moved or shared.
+    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    std::filesystem::path relative = absolutePath.lexically_relative(project.contentRoot);
+    if (relative.empty() || *relative.begin() == "..") {
+        const std::filesystem::path modelDirectory = project.contentRoot / "Models";
+        std::filesystem::create_directories(modelDirectory, error);
+        const std::filesystem::path destination =
+            MakeUniqueContentPathUVE(modelDirectory, absolutePath.stem().string(), extension);
+        std::filesystem::copy_file(absolutePath, destination, error);
+        if (error) {
+            UVE_ERROR("EditorUVE: could not copy model \"{}\" into Content: {}", absolutePath.string(),
+                      error.message());
+            return Asset::kInvalidAssetGuidUVE;
+        }
+        relative = destination.lexically_relative(project.contentRoot);
+    }
+
+    const std::filesystem::path importedPath = GetImportedModelPathUVE(relative);
+    std::filesystem::create_directories(importedPath.parent_path(), error);
+    const Asset::AssetGuidUVE imported = m_services->GetAssetImporterUVE().ImportUVE(
+        project.contentRoot / relative, importedPath, database, Asset::AssetImportSettingsUVE{});
+    if (imported == Asset::kInvalidAssetGuidUVE) {
+        // No GUID rather than the source's. A slot naming a file the mesh loader cannot read looks
+        // filled and draws nothing forever; an unchanged slot at least tells the truth.
+        return Asset::kInvalidAssetGuidUVE;
+    }
+    // The source is new to Content, and the .uvmodel is new to the project; both must appear now,
+    // not on the next rescan, or the author sees a slot pointing at something that is not listed.
+    RefreshProjectFileIndexUVE();
+    return imported;
+}
+
 namespace {
 
 /// How far the derived slope is pushed. At 2.0 an edge from black to white across two pixels tilts
@@ -1351,12 +1404,15 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
                                : std::vector<std::string>{extension};
             const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
             request.startDirectory = PickerStartDirectoryUVE(project, value);
-            request.onPick = [this, widget, isTexture](const std::filesystem::path& absolute) {
-                // A texture pick lands on the published form of what was picked, so the material
-                // holds an asset the cook step will package rather than a raw source.
-                m_assetPickerPendingPicks[widget] = isTexture
-                                                        ? PublishTextureSourceUVE(absolute)
-                                                        : m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
+            request.onPick = [this, widget, isTexture, isModel](const std::filesystem::path& absolute) {
+                // A texture pick and a model pick land on the published form of what was picked, so
+                // the slot holds an asset the runtime can read rather than the source file it came
+                // from. Registering an FBX here is what put a mesh's name in a slot that then drew
+                // nothing: LoadMeshAssetUVE reads the .uvmodel envelope and nothing else.
+                m_assetPickerPendingPicks[widget] =
+                    isTexture ? PublishTextureSourceUVE(absolute)
+                              : (isModel ? PublishModelSourceUVE(absolute)
+                                         : m_services->GetAssetDatabaseUVE().RegisterUVE(absolute));
             };
             OpenFilePickerUVE(std::move(request));
             ImGui::CloseCurrentPopup();
@@ -1372,13 +1428,23 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
                                  : std::vector<std::string>{extension};
             const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
             request.startDirectory = project.contentRoot;
-            request.onPick = [this, widget, isMaterial, isTexture](const std::filesystem::path& absolute) {
+            request.onPick = [this, widget, isMaterial, isTexture, isModel](const std::filesystem::path& absolute) {
                 if (isTexture) {
                     // Importing a texture into the project and using it are the same gesture here:
                     // the publish step is what writes the .uvtex, and the slot takes it.
                     const Asset::AssetGuidUVE textureGuid = PublishTextureSourceUVE(absolute);
                     if (textureGuid != Asset::kInvalidAssetGuidUVE) {
                         m_assetPickerPendingPicks[widget] = textureGuid;
+                    }
+                    return;
+                }
+                if (isModel) {
+                    // The same gesture for a mesh: convert it into the project and take the
+                    // .uvmodel. Only assigned on success - a GUID that cannot load is worse than
+                    // none, because it makes a slot look filled that will never draw.
+                    const Asset::AssetGuidUVE modelGuid = PublishModelSourceUVE(absolute);
+                    if (modelGuid != Asset::kInvalidAssetGuidUVE) {
+                        m_assetPickerPendingPicks[widget] = modelGuid;
                     }
                     return;
                 }
@@ -1414,15 +1480,14 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             if (file.kind == Asset::ProjectFileEntryKindUVE::Directory) {
                 continue;
             }
-            // A model source (.glb/.gltf/.obj) stands for the mesh it was imported to, once
-            // that import has produced it; the author picks the file they know.
+            // A model source (.glb/.gltf/.obj/.fbx) stands for the mesh it was imported to; the
+            // author picks the file they know. The row is offered even when that import has not
+            // produced its .uvmodel yet - picking it converts it then and there, which is the
+            // whole point of offering the source. Dropping the row instead made a model the
+            // author had just added simply absent from the list, with nothing said about why.
             std::filesystem::path path;
             if (isModel && IsModelSourcePathUVE(file.relativePath)) {
-                path = GetImportedModelPathUVE(file.relativePath);
-                std::error_code error;
-                if (!std::filesystem::is_regular_file(path, error)) {
-                    continue;
-                }
+                path = (project.contentRoot / file.relativePath).lexically_normal();
             } else if (isTexture && IsTextureSourceImagePathUVE(file.relativePath) &&
                        HasPublishedTextureSiblingUVE(project.contentRoot / file.relativePath)) {
                 // Two rows for one picture would read as two textures. The .uvtex is offered on its
@@ -1448,11 +1513,14 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             const bool isSelected = candidate.guid.has_value() && *candidate.guid == value;
             const std::string label = candidate.path.stem().string() + "##" + candidate.path.generic_string();
             if (ImGui::Selectable(label.c_str(), isSelected) && !isSelected) {
+                // An unregistered file is published on the way in, so the slot never ends up
+                // holding a source format the runtime cannot open.
                 const Asset::AssetGuidUVE chosen =
                     candidate.guid.has_value()
                         ? *candidate.guid
                         : (isTexture ? PublishTextureSourceUVE(candidate.path)
-                                     : m_services->GetAssetDatabaseUVE().RegisterUVE(candidate.path));
+                                     : (isModel ? PublishModelSourceUVE(candidate.path)
+                                                : m_services->GetAssetDatabaseUVE().RegisterUVE(candidate.path)));
                 picked = chosen;
             }
             if (ImGui::IsItemHovered()) {

@@ -134,13 +134,20 @@ struct FbxBoneObjectUVE final {
 };
 
 /// Every bone object, depth first from the root, with unique names - the one walk both the skeleton
-/// and its clips use, so a clip's track names always match the skeleton's bones. Empty optional
-/// when there are more than `maximumBones`.
-[[nodiscard]] std::optional<std::vector<FbxBoneObjectUVE>> CollectFbxBonesUVE(const ufbx_scene& scene,
-                                                                             const std::size_t maximumBones) {
+/// and its clips use, so a clip's track names always match the skeleton's bones.
+///
+/// Depth first order is what makes truncation safe: a parent is always collected before its
+/// children, so the first `maximumBones` bones never contain one whose parent was left out.
+/// `outDropped`, when non-null, receives the number of bones the cap excluded - it counts the bones
+/// left over, so the file's own bone count is `maximumBones + *outDropped`. Empty optional when the
+/// cap is exceeded and `overflow` is Fail.
+[[nodiscard]] std::optional<std::vector<FbxBoneObjectUVE>> CollectFbxBonesUVE(
+    const ufbx_scene& scene, const std::size_t maximumBones,
+    const FbxBoneOverflowUVE overflow = FbxBoneOverflowUVE::Fail, std::size_t* const outDropped = nullptr) {
     std::vector<FbxBoneObjectUVE> bones;
     std::unordered_map<const ufbx_node*, std::int32_t> boneOfObject;
     std::set<std::string> usedNames;
+    std::size_t dropped = 0U;
     std::vector<const ufbx_node*> pending{scene.root_node};
     while (!pending.empty()) {
         const ufbx_node* const object = pending.back();
@@ -152,8 +159,15 @@ struct FbxBoneObjectUVE final {
             continue;
         }
         if (bones.size() >= maximumBones) {
-            UVE_ERROR("FbxMeshConverterUVE: more than {} bones", maximumBones);
-            return std::nullopt;
+            if (overflow == FbxBoneOverflowUVE::Fail) {
+                UVE_ERROR("FbxMeshConverterUVE: more than {} bones", maximumBones);
+                if (outDropped != nullptr) {
+                    *outDropped = 0U;
+                }
+                return std::nullopt;
+            }
+            ++dropped; // still walked, so the count is every bone the cap excluded
+            continue;
         }
         FbxBoneObjectUVE bone;
         bone.object = object;
@@ -174,6 +188,9 @@ struct FbxBoneObjectUVE final {
         bone.name = std::move(unique);
         boneOfObject.emplace(object, static_cast<std::int32_t>(bones.size()));
         bones.push_back(std::move(bone));
+    }
+    if (outDropped != nullptr) {
+        *outDropped = dropped;
     }
     return bones;
 }
@@ -197,7 +214,7 @@ struct FbxBoneObjectUVE final {
 } // namespace
 
 bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& outMesh,
-                       std::vector<FbxSurfaceRangeUVE>* const outSurfaces) {
+                       std::vector<FbxSurfaceRangeUVE>* const outSurfaces, const std::size_t maximumJoints) {
     if (outSurfaces != nullptr) {
         outSurfaces->clear();
     }
@@ -251,10 +268,19 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
         std::unordered_map<const ufbx_node*, std::uint32_t> jointOfObject;
         const bool skinned = scene->skin_deformers.count > 0U;
         if (skinned) {
+            // Truncating rather than refusing: a rig with more bones than a joint list can hold
+            // still produces a usable mesh, and the alternative - failing the whole conversion -
+            // leaves a character that does not import at all.
+            std::size_t droppedBones = 0U;
             const std::optional<std::vector<FbxBoneObjectUVE>> bones =
-                CollectFbxBonesUVE(*scene, kMaximumAnimationAssetBonesUVE);
+                CollectFbxBonesUVE(*scene, maximumJoints, FbxBoneOverflowUVE::Truncate, &droppedBones);
             if (!bones.has_value() || bones->empty()) {
                 return false;
+            }
+            if (droppedBones > 0U) {
+                UVE_WARNING("FbxMeshConverterUVE: the rig holds {} bones, over the {} bone limit; the mesh keeps "
+                            "the first {} and drops {}, whose weights are renormalized onto the bones that remain",
+                            maximumJoints + droppedBones, maximumJoints, bones->size(), droppedBones);
             }
             for (const FbxBoneObjectUVE& bone : *bones) {
                 MeshJointUVE joint;
@@ -523,13 +549,16 @@ std::optional<FbxSourceSummaryUVE> DescribeFbxSourceUVE(const std::span<const st
 
 
 std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(const std::span<const std::byte> source,
-                                                  const std::size_t maximumJoints) {
+                                                  const std::size_t maximumJoints,
+                                                  const FbxBoneOverflowUVE overflow,
+                                                  std::size_t* const outDroppedBones) {
     try {
         const ScenePtrUVE scene = LoadSceneUVE(source, false);
         if (!scene) {
             return std::nullopt;
         }
-        const std::optional<std::vector<FbxBoneObjectUVE>> bones = CollectFbxBonesUVE(*scene, maximumJoints);
+        const std::optional<std::vector<FbxBoneObjectUVE>> bones =
+            CollectFbxBonesUVE(*scene, maximumJoints, overflow, outDroppedBones);
         if (!bones.has_value() || bones->empty()) {
             return std::nullopt;
         }
@@ -687,27 +716,44 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
 namespace {
 
 /// The reading side of the material conversion, in the same file as the mesh/skeleton/animation
-/// readers so it shares their loader options: no external file is opened, no embedded payload is
-/// decoded, and every value stays a pure function of the bytes handed in.
-[[nodiscard]] std::string TextureFileUVE(const ufbx_material_map& map, bool& outNonFileTexture) {
+/// readers so it shares their loader options: no external file is opened, every value stays a pure
+/// function of the bytes handed in, and an embedded image is copied out as the file stored it rather
+/// than decoded here - decoding is the import pipeline's job, and a converter that stays pure is one
+/// that can be tested by handing it bytes.
+[[nodiscard]] FbxTextureSourceUVE ReadTextureSourceUVE(const ufbx_material_map& map) {
+    FbxTextureSourceUVE source;
     const ufbx_texture* const texture = map.texture;
     if (texture == nullptr || !map.texture_enabled) {
-        return {};
+        return source;
     }
     if (texture->type != UFBX_TEXTURE_FILE) {
-        outNonFileTexture = true; // layered/procedural/shader: no filename to report
-        return {};
+        source.procedural = true; // layered/procedural/shader: nothing to extract
+        return source;
     }
-    const std::string filename = texture->relative_filename.length != 0U
-                                     ? std::string(texture->relative_filename.data,
-                                                   texture->relative_filename.length)
-                                     : (texture->filename.length != 0U
-                                            ? std::string(texture->filename.data, texture->filename.length)
-                                            : std::string{});
-    if (filename.empty()) {
-        outNonFileTexture = true; // a file texture the file itself does not name
+    const auto asString = [](const ufbx_string& value) {
+        return value.length != 0U ? std::string(value.data, value.length) : std::string{};
+    };
+    source.file = texture->relative_filename.length != 0U ? asString(texture->relative_filename) : asString(texture->filename);
+    if (source.file.empty()) {
+        // The name to fall back on when the material gives nothing to build a stem from.
+        source.embeddedName = asString(texture->filename);
     }
-    return filename;
+    if (const ufbx_blob& content = texture->content; content.data != nullptr && content.size > 0U) {
+        if (content.size > kMaximumFbxEmbeddedTextureBytesUVE) {
+            UVE_WARNING("FbxMeshConverterUVE: embedded texture \\\"{}\\\" is {} bytes, over the {} byte ceiling; it is "
+                        "dropped and its slot stays empty",
+                        source.file.empty() ? source.embeddedName : source.file, content.size,
+                        kMaximumFbxEmbeddedTextureBytesUVE);
+        } else {
+            const auto* const begin = static_cast<const std::byte*>(content.data);
+            source.embedded.assign(begin, begin + content.size);
+        }
+    }
+    if (source.file.empty() && source.embedded.empty()) {
+        // A file texture the file itself neither names nor carries: there is nothing to follow.
+        source.procedural = true;
+    }
+    return source;
 }
 
 /// Reads a color map into MaterialAssetUVE's validated range: channels are clamped to [0,1] and
@@ -820,12 +866,10 @@ std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsUVE(const std::span<c
                 converted.material.isTransparent = true;
             }
 
-            converted.albedoTextureFile = TextureFileUVE(sourceMaterial->pbr.base_color, converted.hasNonFileTexture);
-            converted.normalTextureFile = TextureFileUVE(sourceMaterial->pbr.normal_map, converted.hasNonFileTexture);
-            converted.emissiveTextureFile =
-                TextureFileUVE(sourceMaterial->pbr.emission_color, converted.hasNonFileTexture);
-            converted.ambientOcclusionTextureFile =
-                TextureFileUVE(sourceMaterial->pbr.ambient_occlusion, converted.hasNonFileTexture);
+            converted.albedo = ReadTextureSourceUVE(sourceMaterial->pbr.base_color);
+            converted.normal = ReadTextureSourceUVE(sourceMaterial->pbr.normal_map);
+            converted.emissive = ReadTextureSourceUVE(sourceMaterial->pbr.emission_color);
+            converted.ambientOcclusion = ReadTextureSourceUVE(sourceMaterial->pbr.ambient_occlusion);
 
             if (!IsMaterialAssetValidUVE(converted.material)) {
                 UVE_WARNING("FbxMeshConverterUVE: material \"{}\" produced an invalid PBR descriptor; skipped",

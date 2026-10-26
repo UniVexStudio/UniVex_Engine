@@ -5734,6 +5734,11 @@ const EditorModelSourceInfoUVE* EditorUVE::FindModelSourceInfoUVE(
     return found != m_modelSources.end() ? &found->second : nullptr;
 }
 
+const std::string* EditorUVE::FindModelImportFailureUVE(const std::filesystem::path& relativeSource) const {
+    const auto found = m_modelImportFailures.find(relativeSource.generic_string());
+    return found != m_modelImportFailures.end() ? &found->second : nullptr;
+}
+
 bool EditorUVE::IsRiggedModelSourceUVE(const std::filesystem::path& relativeSource) const {
     const EditorModelSourceInfoUVE* const info = FindModelSourceInfoUVE(relativeSource);
     return info != nullptr && info->rigged;
@@ -5789,6 +5794,17 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
     return written;
 }
 
+EditorModelSourceInfoUVE EditorUVE::ReadModelSourceInfoForSourceUVE(const std::filesystem::path& relativeSource) {
+    const std::string key = relativeSource.generic_string();
+    if (const auto found = m_modelSources.find(key); found != m_modelSources.end()) {
+        return found->second;
+    }
+    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    EditorModelSourceInfoUVE info = ReadModelSourceInfoUVE(project.contentRoot / relativeSource);
+    m_modelSources.emplace(key, info);
+    return info;
+}
+
 void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& snapshot) {
     Asset::IAssetImportQueueUVE& queue = m_services->GetAssetImportQueueUVE();
     m_modelSources.clear();
@@ -5816,9 +5832,44 @@ void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& sn
         request.settings = std::make_shared<const Asset::AssetImportSettingsUVE>();
         if (const std::optional<Asset::AssetImportJobIdUVE> job = queue.EnqueueUVE(std::move(request));
             job.has_value()) {
+            // Deliberately NOT cleared here. A refresh re-queues whatever is not in flight, so a
+            // file that keeps failing is retried on every refresh; clearing the reason on each
+            // attempt would make the editor's message blink in and out of existence instead of
+            // staying on the file that is broken. Only a success clears it.
             m_modelImportJobs.emplace(key, *job);
         }
     }
+}
+
+Asset::AssetGuidUVE EditorUVE::RegisterImportedModelArtifactsUVE(const std::filesystem::path& importedModel) {
+    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(importedModel, error)) {
+        return Asset::kInvalidAssetGuidUVE;
+    }
+    const Asset::AssetGuidUVE meshGuid = database.RegisterUVE(importedModel);
+    const std::filesystem::path directory = importedModel.parent_path();
+    std::filesystem::directory_iterator it(directory, error);
+    if (error) {
+        return meshGuid;
+    }
+    const std::filesystem::directory_iterator end{};
+    while (it != end) {
+        std::string extension = it->path().extension().string();
+        std::transform(extension.begin(), extension.end(), extension.begin(),
+                       [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+        // Everything an import publishes beside the mesh it converted. Registering a GUID twice is
+        // how the database answers an existing path, so this is idempotent by construction.
+        if (extension == ".uvmat" || extension == ".uvmaterial" || extension == ".uvtex" ||
+            extension == ".uvskel") {
+            static_cast<void>(database.RegisterUVE(it->path()));
+        }
+        it.increment(error);
+        if (error) {
+            return meshGuid;
+        }
+    }
+    return meshGuid;
 }
 
 void EditorUVE::PollModelImportJobsUVE() {
@@ -5832,11 +5883,25 @@ void EditorUVE::PollModelImportJobsUVE() {
                                       [&it](const Asset::AssetImportJobUVE& candidate) { return candidate.id == it->second; });
         if (job == jobs.end() || job->state == Asset::AssetImportJobStateUVE::Failed) {
             if (job != jobs.end()) {
-                UVE_WARNING("EditorUVE: could not import model {}", it->first);
+                // The importer's own last error is the reason a reader needs; the log file has the
+                // same text, but a log the editor never shows is the same as no message at all.
+                std::string reason = "the importer reported no reason";
+                for (const Asset::AssetImportDiagnosticUVE& diagnostic : job->diagnostics) {
+                    if (diagnostic.severity == Asset::AssetImportDiagnosticSeverityUVE::Error && !diagnostic.message.empty()) {
+                        reason = diagnostic.message;
+                    }
+                }
+                m_modelImportFailures[it->first] = std::move(reason);
+                UVE_WARNING("EditorUVE: could not import model {}: {}", it->first, m_modelImportFailures[it->first]);
             }
             it = m_modelImportJobs.erase(it);
         } else if (job->state == Asset::AssetImportJobStateUVE::Succeeded) {
+            // A cache hit ran no importer, so the materials and textures it would have registered
+            // are registered here instead - this is the only place that knows a conversion is
+            // accounted for whether or not it executed.
+            static_cast<void>(RegisterImportedModelArtifactsUVE(GetImportedModelPathUVE(it->first)));
             imported = imported || !job->cacheHit;
+            m_modelImportFailures.erase(it->first);
             it = m_modelImportJobs.erase(it);
         } else {
             ++it;
