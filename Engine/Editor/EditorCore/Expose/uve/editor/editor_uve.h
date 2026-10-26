@@ -2026,6 +2026,9 @@ private:
         const Core::TypeMetadataEntryUVE* entry = nullptr;
         std::vector<const Core::TypeMetadataEntryUVE*> preferredHosts;
     };
+    /// Applies the component add or remove a row asked for on the previous frame, before this
+    /// frame's sections take any pointer into component storage. See m_pendingComponentChange.
+    void ApplyPendingComponentChangeUVE();
     /// Draws one component's section: a collapsible header (or, for a type presented inline, just
     /// its rows), its properties, and the section of each type in `nested` the entity also carries
     /// and no preferred host of it draws. Writes go through SetSelectedComponentPropertyUVE below.
@@ -2066,6 +2069,20 @@ private:
     [[nodiscard]] std::optional<Asset::AssetGuidUVE> DrawAssetPickerUVE(const char* id, Asset::AssetGuidUVE value,
                                                                       const std::string& extension,
                                                                       const std::string& title = {});
+    /// The texture asset a slot should hold for the file the author picked: the published `.uvtex`
+    /// beside a source image when one is already there, otherwise the source imported to one now,
+    /// otherwise the source itself registered - the last case is a slot that still draws (the
+    /// runtime loader decodes a source image) rather than one silently left empty.
+    ///
+    /// A material stores a GUID, and a GUID that names a raw source is an authoring convenience the
+    /// cook step does not accept: publishing on pick is what makes what the picker writes and what
+    /// the project can ship the same thing.
+    [[nodiscard]] Asset::AssetGuidUVE PublishTextureSourceUVE(const std::filesystem::path& absolutePath);
+    /// The normal map a colour picture implies, published beside it as <stem>_normal.uvtex: slope
+    /// derived from the picture's own light and shade, so a material that only has an albedo still
+    /// catches a light the way a surface does. An already derived map beside the albedo is reused
+    /// rather than derived again. Empty when the texture cannot be read or the map cannot be saved.
+    [[nodiscard]] std::optional<Asset::AssetGuidUVE> DeriveNormalMapForAlbedoUVE(Asset::AssetGuidUVE albedo);
     /// Standardized material slot drawer offering new standard/ORM/shader materials, browsing both
     /// .uvmat and .uvmaterial, quick import, clear, and inline PBR property editor when assigned.
     /// `editInline` false shows the picker and its preview only: for a mesh with a dozen surfaces,
@@ -2378,6 +2395,15 @@ private:
     /// consumed by its own drawer on the next frame.
     std::unordered_map<std::uint32_t, Asset::AssetGuidUVE> m_assetPickerPendingPicks;
     std::unordered_map<std::uint32_t, std::string> m_fileRowPendingPicks;
+    /// A structural edit the Inspector asked for while drawing a row.
+    ///
+    /// Adding or removing a component moves the entity into a different archetype, which frees the
+    /// chunk the row's payload pointer points into. Doing it inline would leave every row after the
+    /// button reading freed memory for the rest of the frame, so the request is recorded here and
+    /// applied at the top of the next component draw, before any payload pointer is taken.
+    enum class PendingComponentChangeUVE : std::uint8_t { None, AddSky, RemoveSky };
+    PendingComponentChangeUVE m_pendingComponentChange = PendingComponentChangeUVE::None;
+    Scene::EntityUVE m_pendingComponentChangeEntity = Scene::kInvalidEntityUVE;
     std::optional<RetargetPreviewUVE> m_retargetPreview;
     // Which workspace tab was active before EnterPlayModeUVE() switched to Game, so StopPlayModeUVE()
     // can restore it - mirrors Unity's own Scene<->Game auto-switch on Play/Stop.

@@ -49,7 +49,9 @@
 
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/asset/i_asset_database_uve.h"
+#include "uve/asset/i_asset_importer_uve.h"
 #include "uve/asset/i_project_file_index_uve.h"
+#include "uve/asset/texture_import_settings_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
@@ -67,6 +69,7 @@
 #include "uve/math/vector3_uve.h"
 #include "uve/objects/3d/bone_attachment_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
+#include "uve/objects/3d/sky_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/two_bone_ik_3d_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
@@ -384,6 +387,30 @@ void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
     }
     if (!transformRegistered) {
         RegisterTransformInspectorDrawerUVE();
+    }
+}
+
+void EditorUVE::ApplyPendingComponentChangeUVE() {
+    // A structural edit a row asked for last frame runs here, once, before any section takes a
+    // pointer into an entity's component storage: adding or removing a component moves the entity
+    // into another archetype, which frees the chunk the row that asked was drawn from. The row
+    // therefore records the intent and this turns it into the edit - see the field's own comment.
+    const PendingComponentChangeUVE change = m_pendingComponentChange;
+    const Scene::EntityUVE target = m_pendingComponentChangeEntity;
+    m_pendingComponentChange = PendingComponentChangeUVE::None;
+    m_pendingComponentChangeEntity = Scene::kInvalidEntityUVE;
+    if (change == PendingComponentChangeUVE::None || target == Scene::kInvalidEntityUVE) {
+        return;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!IsDocumentEntityUVE(target) || !entityManager.IsAliveUVE(target)) {
+        return;
+    }
+    const bool hasSky = entityManager.HasComponentUVE<Scene::Sky3DComponentUVE>(target);
+    if (change == PendingComponentChangeUVE::AddSky && !hasSky) {
+        entityManager.AddComponentUVE<Scene::Sky3DComponentUVE>(target, Scene::Sky3DComponentUVE{});
+    } else if (change == PendingComponentChangeUVE::RemoveSky && hasSky) {
+        entityManager.RemoveComponentUVE<Scene::Sky3DComponentUVE>(target);
     }
 }
 
@@ -856,6 +883,102 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
                 if (DrawStandardMaterialSlotUVE(nullptr, "##value", value)) {
                     edited = SetSelectedComponentPropertyUVE(entry, property, &value);
                 }
+            } else if (property.customDrawerId == "sky:asset") {
+                // The environment's sky, as one slot. It reads Empty while the level has none, and
+                // every way of giving it one starts here: New Sky puts a Sky on this environment -
+                // whose bands, atmosphere, stars and clouds then draw as the section right below
+                // this one - and Sky Texture samples a panorama instead of them. Both live in this
+                // row because they answer the same question, and because the Sky's own fields win
+                // over the environment's once it exists: a texture field left behind on the
+                // environment would be a setting that quietly stopped doing anything.
+                const std::uint32_t widget = ImGui::GetID("##value");
+                Scene::IEntityManagerUVE& skyManager = m_services->GetEntityManagerUVE();
+                const bool hasSky = IsDocumentEntityUVE(m_selectedEntity) &&
+                                    skyManager.HasComponentUVE<Scene::Sky3DComponentUVE>(m_selectedEntity);
+                Scene::Sky3DComponentUVE* const sky =
+                    hasSky ? &skyManager.GetComponentUVE<Scene::Sky3DComponentUVE>(m_selectedEntity) : nullptr;
+                // A browse that landed since last frame goes to whichever of the two holds the
+                // picture now: the Sky's own field when there is a Sky, the environment's otherwise.
+                if (const auto picked = m_fileRowPendingPicks.find(widget); picked != m_fileRowPendingPicks.end()) {
+                    if (sky != nullptr) {
+                        sky->source = Scene::SkySourceUVE::Panorama;
+                        sky->panoramaPath = picked->second;
+                    } else {
+                        edited = SetSelectedComponentPropertyUVE(entry, property, &picked->second);
+                    }
+                    m_fileRowPendingPicks.erase(picked);
+                }
+                std::string value;
+                property.getValue(instance, &value);
+                const auto sourceName = [](const Scene::SkySourceUVE source) -> const char* {
+                    switch (source) {
+                        case Scene::SkySourceUVE::Panorama: return "Panorama";
+                        case Scene::SkySourceUVE::Atmosphere: return "Atmosphere";
+                        case Scene::SkySourceUVE::Gradient: break;
+                    }
+                    return "Gradient";
+                };
+                // What the slot says is what the level's sky is, not which field happens to hold it.
+                std::string preview;
+                if (sky != nullptr) {
+                    preview = (sky->source == Scene::SkySourceUVE::Panorama && !sky->panoramaPath.empty())
+                                  ? std::filesystem::path{sky->panoramaPath}.stem().string()
+                                  : std::string{sourceName(sky->source)};
+                } else {
+                    preview = value.empty() ? std::string{"Empty"} : std::filesystem::path{value}.stem().string();
+                }
+                if (BeginCenteredComboUVE("##value", preview.c_str())) {
+                    if (sky != nullptr) {
+                        if (ImGui::Selectable("Remove Sky")) {
+                            m_pendingComponentChange = PendingComponentChangeUVE::RemoveSky;
+                            m_pendingComponentChangeEntity = m_selectedEntity;
+                        }
+                    } else if (ImGui::Selectable("New Sky")) {
+                        m_pendingComponentChange = PendingComponentChangeUVE::AddSky;
+                        m_pendingComponentChangeEntity = m_selectedEntity;
+                    }
+                    ImGui::Separator();
+                    if (ImGui::Selectable("Sky Texture...")) {
+                        FilePickerRequestUVE request;
+                        request.mode = FilePickerModeUVE::Open;
+                        request.title = "Sky Texture";
+                        // Either form: a published .uvtex or the source image, which the texture
+                        // loader decodes itself - the panorama does not have to be imported first.
+                        request.extensions = {".uvtex", ".png", ".jpg", ".jpeg", ".bmp", ".tga"};
+                        const Asset::ProjectFileSnapshotUVE project =
+                            m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                        const std::filesystem::path current =
+                            (sky != nullptr && !sky->panoramaPath.empty()) ? std::filesystem::path{sky->panoramaPath}
+                                                                          : std::filesystem::path{value};
+                        request.startDirectory = ClampPickerStartDirectoryUVE(project, current.parent_path());
+                        request.onPick = [this, widget](const std::filesystem::path& absolute) {
+                            const Asset::ProjectFileSnapshotUVE currentProject =
+                                m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                            const std::filesystem::path relative =
+                                absolute.lexically_relative(currentProject.contentRoot);
+                            m_fileRowPendingPicks[widget] = (relative.empty() || *relative.begin() == "..")
+                                                                ? absolute.generic_string()
+                                                                : relative.generic_string();
+                        };
+                        OpenFilePickerUVE(std::move(request));
+                        ImGui::CloseCurrentPopup();
+                    }
+                    const bool empty = (sky != nullptr) ? (sky->source != Scene::SkySourceUVE::Panorama || sky->panoramaPath.empty())
+                                                        : value.empty();
+                    if (ImGui::Selectable("Empty", empty) && !empty) {
+                        if (sky != nullptr) {
+                            // No image: the bands are what a Panorama with nothing to sample
+                            // would have to fall back to, so say so instead of leaving a sky the
+                            // renderer would skip.
+                            sky->panoramaPath.clear();
+                            sky->source = Scene::SkySourceUVE::Gradient;
+                        } else {
+                            std::string cleared;
+                            edited = SetSelectedComponentPropertyUVE(entry, property, &cleared);
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
             } else {
                 // A "file:ext,..." row also browses: the text stays editable, and Browse opens the
                 // floating picker on the file kinds the property declares.
@@ -1009,6 +1132,25 @@ namespace {
     return std::filesystem::path{};
 }
 
+/// The raw images a texture slot may name when nothing has imported them yet. The texture loader
+/// decodes each of these at read time, so a slot that holds one still draws the picture.
+[[nodiscard]] bool IsTextureSourceImagePathUVE(const std::filesystem::path& path) {
+    std::string extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp" ||
+           extension == ".tga";
+}
+
+/// The published form of a source image: `<stem>.uvtex` beside it. When it exists the picker offers
+/// that one row instead of both, because both are the same picture and the published file is the
+/// reference a material should hold.
+[[nodiscard]] bool HasPublishedTextureSiblingUVE(const std::filesystem::path& absoluteSource) {
+    std::error_code error;
+    return std::filesystem::is_regular_file(
+        absoluteSource.parent_path() / (absoluteSource.stem().string() + ".uvtex"), error);
+}
+
 /// "file:uvaudio,wav" -> {".uvaudio", ".wav"}.
 [[nodiscard]] std::vector<std::string> FileDrawerExtensionsUVE(std::string_view drawerId) {
     constexpr std::string_view kPrefix = "file:";
@@ -1041,6 +1183,81 @@ namespace {
 
 } // namespace
 
+Asset::AssetGuidUVE EditorUVE::PublishTextureSourceUVE(const std::filesystem::path& absolutePath) {
+    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(absolutePath, error)) {
+        return Asset::kInvalidAssetGuidUVE;
+    }
+    std::string extension = absolutePath.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    if (extension == ".uvtex") {
+        return database.RegisterUVE(absolutePath);
+    }
+    // The published form of this source, beside it - where the model importers publish a model's
+    // textures too, and where the picker already looks for it when deciding which row to offer.
+    const std::filesystem::path publishedPath =
+        absolutePath.parent_path() / (absolutePath.stem().string() + ".uvtex");
+    if (std::filesystem::is_regular_file(publishedPath, error)) {
+        return database.RegisterUVE(publishedPath);
+    }
+    const Asset::AssetGuidUVE imported = m_services->GetAssetImporterUVE().ImportUVE(
+        absolutePath, publishedPath, database, Asset::TextureImportSettingsUVE{});
+    if (imported == Asset::kInvalidAssetGuidUVE) {
+        // No importer for this kind, or the decode refused it. Registering the source keeps the
+        // slot showing the picture it was given - the runtime texture loader decodes a source
+        // image itself - instead of emptying a slot the author had just filled.
+        return database.RegisterUVE(absolutePath);
+    }
+    // The published texture is a new file in the project; Content must show it now, not on the
+    // next rescan, or the author sees a slot pointing at something that does not appear to exist.
+    RefreshProjectFileIndexUVE();
+    return imported;
+}
+
+namespace {
+
+/// How far the derived slope is pushed. At 2.0 an edge from black to white across two pixels tilts
+/// about 45 degrees: strong enough that a photo reads as relief under a moving light, weak enough
+/// that its cast shadows stay shadows instead of becoming cliffs.
+constexpr float kDerivedNormalStrengthUVE = 2.0F;
+
+} // namespace
+
+std::optional<Asset::AssetGuidUVE> EditorUVE::DeriveNormalMapForAlbedoUVE(const Asset::AssetGuidUVE albedo) {
+    if (albedo == Asset::kInvalidAssetGuidUVE) {
+        return std::nullopt;
+    }
+    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+    const std::filesystem::path albedoPath = database.ResolveUVE(albedo);
+    if (albedoPath.empty()) {
+        return std::nullopt;
+    }
+    Asset::TextureAssetUVE albedoTexture;
+    if (!Asset::LoadTextureAssetSourceUVE(albedoPath, albedoTexture)) {
+        return std::nullopt;
+    }
+    // Beside the picture and named after it, so the map is an asset the author can see, move and
+    // edit like any other, and so picking the same picture again reuses the map it produced.
+    const std::filesystem::path normalPath =
+        albedoPath.parent_path() / (albedoPath.stem().string() + "_normal.uvtex");
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(normalPath, error)) {
+        Asset::TextureAssetUVE normal;
+        if (!Asset::DeriveNormalTextureUVE(albedoTexture, kDerivedNormalStrengthUVE, normal) ||
+            !Asset::SaveTextureAssetUVE(normal, normalPath)) {
+            return std::nullopt;
+        }
+        RefreshProjectFileIndexUVE();
+    }
+    const Asset::AssetGuidUVE derived = database.RegisterUVE(normalPath);
+    if (derived == Asset::kInvalidAssetGuidUVE) {
+        return std::nullopt;
+    }
+    return derived;
+}
+
 std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* const id, const Asset::AssetGuidUVE value,
                                                                 const std::string& extension,
                                                                 const std::string& title) {
@@ -1059,12 +1276,17 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
         preview = path.empty() ? "(missing asset)" : path.stem().string();
     }
     const bool isMaterial = (extension == ".uvmaterial" || extension == ".uvmat");
-    const bool isTexture = (extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".tga");
+    // A texture reference names either the published .uvtex or the source image it came from, and
+    // the runtime reads both (see LoadTextureAssetSourceUVE), so the picker offers both. Offering
+    // only the sources is how a slot ended up pointing at a file the renderer could not open.
+    const bool isTexture = (extension == ".uvtex" || extension == ".png" || extension == ".jpg" ||
+                            extension == ".jpeg" || extension == ".bmp" || extension == ".tga");
     const bool isModel = (extension == ".uvmodel" || extension == ".glb" || extension == ".gltf" || extension == ".fbx" || extension == ".obj");
     const bool isShader = (extension == ".uvshader" || extension == ".glsl");
     const auto matchesExt = [&](const std::string& ext) {
         if (isMaterial) return ext == ".uvmaterial" || ext == ".uvmat";
-        if (isTexture) return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga";
+        if (isTexture) return ext == ".uvtex" || ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" ||
+                              ext == ".tga";
         if (isModel) return ext == ".uvmodel" || ext == ".glb" || ext == ".gltf" || ext == ".fbx" || ext == ".obj";
         if (isShader) return ext == ".uvshader" || ext == ".glsl";
         return ext == extension;
@@ -1123,14 +1345,18 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             request.mode = FilePickerModeUVE::Open;
             request.title = title.empty() ? (isMaterial ? "Browse Material" : ("Browse " + extension)) : title;
             request.extensions = isMaterial ? std::vector<std::string>{".uvmaterial", ".uvmat"}
-                               : isTexture ? std::vector<std::string>{".png", ".jpg", ".jpeg", ".tga"}
+                               : isTexture ? std::vector<std::string>{".uvtex", ".png", ".jpg", ".jpeg", ".bmp", ".tga"}
                                : isModel ? std::vector<std::string>{".glb", ".gltf", ".fbx", ".obj", ".uvmodel"}
                                : isShader ? std::vector<std::string>{".uvshader", ".glsl"}
                                : std::vector<std::string>{extension};
             const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
             request.startDirectory = PickerStartDirectoryUVE(project, value);
-            request.onPick = [this, widget](const std::filesystem::path& absolute) {
-                m_assetPickerPendingPicks[widget] = m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
+            request.onPick = [this, widget, isTexture](const std::filesystem::path& absolute) {
+                // A texture pick lands on the published form of what was picked, so the material
+                // holds an asset the cook step will package rather than a raw source.
+                m_assetPickerPendingPicks[widget] = isTexture
+                                                        ? PublishTextureSourceUVE(absolute)
+                                                        : m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
             };
             OpenFilePickerUVE(std::move(request));
             ImGui::CloseCurrentPopup();
@@ -1140,13 +1366,22 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             request.mode = FilePickerModeUVE::Open;
             request.title = "Quick Import";
             request.extensions = isMaterial ? std::vector<std::string>{".uvmaterial", ".uvmat", ".mtl", ".png", ".jpg", ".jpeg", ".tga"}
-                                 : isTexture ? std::vector<std::string>{".png", ".jpg", ".jpeg", ".tga"}
+                                 : isTexture ? std::vector<std::string>{".png", ".jpg", ".jpeg", ".bmp", ".tga"}
                                  : isModel ? std::vector<std::string>{".fbx", ".glb", ".gltf", ".obj"}
                                  : isShader ? std::vector<std::string>{".uvshader", ".glsl"}
                                  : std::vector<std::string>{extension};
             const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
             request.startDirectory = project.contentRoot;
-            request.onPick = [this, widget, isMaterial](const std::filesystem::path& absolute) {
+            request.onPick = [this, widget, isMaterial, isTexture](const std::filesystem::path& absolute) {
+                if (isTexture) {
+                    // Importing a texture into the project and using it are the same gesture here:
+                    // the publish step is what writes the .uvtex, and the slot takes it.
+                    const Asset::AssetGuidUVE textureGuid = PublishTextureSourceUVE(absolute);
+                    if (textureGuid != Asset::kInvalidAssetGuidUVE) {
+                        m_assetPickerPendingPicks[widget] = textureGuid;
+                    }
+                    return;
+                }
                 const auto guid = m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
                 RefreshProjectFileIndexUVE();
                 if (isMaterial && (absolute.extension() == ".uvmaterial" || absolute.extension() == ".uvmat")) {
@@ -1188,6 +1423,11 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
                 if (!std::filesystem::is_regular_file(path, error)) {
                     continue;
                 }
+            } else if (isTexture && IsTextureSourceImagePathUVE(file.relativePath) &&
+                       HasPublishedTextureSiblingUVE(project.contentRoot / file.relativePath)) {
+                // Two rows for one picture would read as two textures. The .uvtex is offered on its
+                // own row, so the source stands down.
+                continue;
             } else if (matchesExt(file.relativePath.extension().string())) {
                 path = (project.contentRoot / file.relativePath).lexically_normal();
             } else {
@@ -1208,9 +1448,11 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             const bool isSelected = candidate.guid.has_value() && *candidate.guid == value;
             const std::string label = candidate.path.stem().string() + "##" + candidate.path.generic_string();
             if (ImGui::Selectable(label.c_str(), isSelected) && !isSelected) {
-                const Asset::AssetGuidUVE chosen = candidate.guid.has_value()
-                                                       ? *candidate.guid
-                                                       : m_services->GetAssetDatabaseUVE().RegisterUVE(candidate.path);
+                const Asset::AssetGuidUVE chosen =
+                    candidate.guid.has_value()
+                        ? *candidate.guid
+                        : (isTexture ? PublishTextureSourceUVE(candidate.path)
+                                     : m_services->GetAssetDatabaseUVE().RegisterUVE(candidate.path));
                 picked = chosen;
             }
             if (ImGui::IsItemHovered()) {
@@ -1293,6 +1535,15 @@ void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& abso
         }
         if (const auto picked = DrawAssetPickerUVE("##albedoTex", mat.albedoTexture, ".png", "Pick Albedo Texture")) {
             mat.albedoTexture = *picked;
+            // The picture alone describes colour, not shape, so a material that had none is given
+            // the normal map its albedo implies. Only where the author has not supplied one: a
+            // normal map that overwrote an authored one would be this row editing a different row.
+            if (mat.normalTexture == Asset::kInvalidAssetGuidUVE &&
+                mat.kind != Asset::MaterialKindUVE::Shader) {
+                if (const auto derived = DeriveNormalMapForAlbedoUVE(*picked)) {
+                    mat.normalTexture = *derived;
+                }
+            }
             changed = true;
         }
         ImGui::SameLine();
@@ -1863,28 +2114,17 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
                 }
                 ImGui::Spacing();
 
-                // MATERIAL: a primitive is shaded through the same material path an imported mesh
-                // uses, so this slot is the whole of its surface authoring. Unassigned draws the
-                // engine's built-in lit material, whose albedo is the COLOUR row below - which is
-                // why that row only appears while no material is assigned. A colour control that
-                // stopped doing anything the moment a material was picked would be dead weight.
+                // MATERIAL: the whole of a primitive's surface authoring. It is shaded through the
+                // same material path an imported mesh uses, and the material's own albedo is where
+                // its colour is authored - which is why there is one surface control here and not
+                // two. A second COLOUR row used to sit under this slot while it was empty, and it
+                // meant the same object had two places to set a colour, one of which silently
+                // stopped existing the moment a material was picked.
                 Scene::PrimitiveMeshComponentUVE primitive =
                     entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
                 ImGui::TextDisabled("MATERIAL");
                 if (DrawStandardMaterialSlotUVE(nullptr, "##primitiveMaterial", primitive.materialGuid)) {
                     entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity, primitive);
-                }
-                if (!Scene::HasAssignedPrimitiveMaterialUVE(primitive)) {
-                    ImGui::Spacing();
-                    ImGui::TextDisabled("COLOUR");
-                    EditorColorUVE primitiveColor{primitive.baseColor.x, primitive.baseColor.y,
-                                                 primitive.baseColor.z, 1.0F};
-                    if (DrawColorFieldUVE("##primitiveColor", "Colour", primitiveColor, false,
-                                          m_colorPickerPreferences) != ColorFieldEventUVE::None) {
-                        primitive.baseColor = Scene::ClampPrimitiveBaseColorUVE(
-                            Math::Vector3UVE{primitiveColor.r, primitiveColor.g, primitiveColor.b});
-                        entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity, primitive);
-                    }
                 }
             } else {
                 // MATERIALS: the model carries its own. Each row is that material's file, edited in

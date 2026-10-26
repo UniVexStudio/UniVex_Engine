@@ -170,9 +170,9 @@ void EditorUVE::DrawHierarchyPanelUVE() {
     // &m_scenePanelVisible is what removes the X - ImGui only draws a close button when it is given
     // a visibility flag to write back to. Hiding the panel is Window > Outliner, which is also how a
     // hidden Outliner is brought back.
-    constexpr ImGuiWindowFlags hierarchyPanelFlags =
-        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
-    ImGui::Begin(kPanelLabelSceneUVE, nullptr, hierarchyPanelFlags);
+    // NoResize matters as much as NoTitleBar here: without it ImGui hands the panel's own border to
+    // its resize grip, which fights the seam that straddles it - see kLayoutOwnedPanelFlagsUVE.
+    ImGui::Begin(kPanelLabelSceneUVE, nullptr, kLayoutOwnedPanelFlagsUVE);
     DrawHierarchyBodyUVE();
     ImGui::End();
 }

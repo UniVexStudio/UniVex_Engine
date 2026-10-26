@@ -108,6 +108,17 @@ template <auto MemberPointer>
     return MakePropertyUVE<MemberPointer>(std::move(name), std::move(displayName), typeId, true);
 }
 
+/// Declares a property that is read and written but never drawn.
+///
+/// It is the middle ground between a property and a field that does not exist: the value stays in
+/// the file, the serializer and every accessor keep working, and the Inspector offers no row. That
+/// is what a control that has been replaced by a better one leaves behind - the data for scenes
+/// that already have it, and no new place to set it by accident.
+[[nodiscard]] TypeMetadataPropertyUVE HiddenUVE(TypeMetadataPropertyUVE property) {
+    property.flags = TypeMetadataPropertyFlagsUVE::Hidden;
+    return property;
+}
+
 /// Declares a property a runtime system owns. It is shown so an author can see what the simulation
 /// is doing, never written by authoring, and never persisted - saving it would restore a stale
 /// cache over whatever the system computed on load.
@@ -433,18 +444,22 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                          DeclareEnumUVE<&PrimitiveMeshComponentUVE::kind>(
                              "kind", "Shape",
                              {{0, "Cube"}, {1, "UV Sphere"}, {2, "Plane"}, {3, "Capsule"}, {4, "Cylinder"}}),
-                         DeclareUVE<&PrimitiveMeshComponentUVE::baseColor>("baseColor", "Base Color",
-                                                                           kPropertyTypeColorUVE),
+                         // Kept in the file, never offered: scenes saved while a primitive had its
+                         // own tint still carry the value, and the renderer still honours it, but
+                         // the Inspector no longer sets one. A surface has one colour - the
+                         // material's albedo - and a second control beside an empty material slot
+                         // meant two answers to the same question.
+                         HiddenUVE(DeclareUVE<&PrimitiveMeshComponentUVE::baseColor>(
+                             "baseColor", "Base Color", kPropertyTypeColorUVE)),
                          // Same asset slot the mesh instance uses, so a primitive and an imported
-                         // mesh are shaded through one material path. Unassigned draws the built-in
-                         // lit material, which is what Base Color above shows while it is unset.
+                         // mesh are shaded through one material path.
                          WithTooltipUVE(
                              WithCustomDrawerUVE(
                                  DeclareUVE<&PrimitiveMeshComponentUVE::materialGuid>(
                                      "materialGuid", "Material", kPropertyTypeAssetGuidUVE),
                                  "asset:uvmat"),
-                             "The surface material. Without one the primitive is drawn with the "
-                             "engine's default lit material, tinted by Base Color."),
+                             "The surface material: its albedo is this primitive's colour. Without "
+                             "one the primitive is drawn with the engine's default lit material."),
                      });
     primitive.sectionTitle = +[](const void* instance) -> const char* {
         switch (static_cast<const PrimitiveMeshComponentUVE*>(instance)->kind) {
@@ -920,12 +935,18 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 }(),
                 DeclareUVE<&WorldEnvironment3DComponentUVE::colorFilter>(
                     "colorFilter", "Color Filter", kPropertyTypeColorUVE),
+                // A slot, not a bare path field. It reads "Empty" until a sky is added, and the
+                // menu behind it is where a sky is created - the same shape as a material slot, so
+                // an author looks in one place for "what is on this surface" and for "what is over
+                // this level". The texture stays assignable from the same menu, because a
+                // panorama is one of the ways a sky can be made rather than a separate concept.
                 WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::skyAssetPath>(
-                                                       "skyAssetPath", "Sky Asset", kPropertyTypeStringUVE),
-                                                   "file:uvtex"),
-                               "Equirectangular sky texture. Empty keeps the procedural sky; Ambient Light Source "
-                               "uses this texture when set to Environment Map, and falls back to Sky while it "
-                               "is unavailable."),
+                                                       "skyAssetPath", "Sky", kPropertyTypeStringUVE),
+                                                   "sky:asset"),
+                               "The sky over this level. Empty keeps the procedural sky. New Sky adds a Sky "
+                               "to this environment, where its bands, atmosphere, stars and clouds are "
+                               "authored as a group; a Sky texture is an equirectangular image sampled "
+                               "instead of the bands."),
             }));
 
     AddValidatedUVE<ParticleEmitterComponentUVE, &IsParticleEmitterComponentValidUVE>(
@@ -1027,9 +1048,7 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         return property;
     };
 
-    AddValidatedUVE<S, &IsSky3DObjectComponentValidUVE>(
-        entries,
-        MakeEntryUVE("component.sky_3d", "Sky3DComponentUVE", "Sky", kSectionOrderTypeSpecificUVE,
+    TypeMetadataEntryUVE sky = MakeEntryUVE("component.sky_3d", "Sky3DComponentUVE", "Sky", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&S::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
                                "Off, the sky is not drawn and the scene falls back to its WorldEnvironment. "
@@ -1077,7 +1096,9 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                WithCustomDrawerUVE(
                                    DeclareUVE<&S::panoramaPath>("panoramaPath", "Panorama",
                                                                kPropertyTypeStringUVE),
-                                   "file:uvtex"),
+                                   // A published texture or the source image it would be imported
+                                   // from: the runtime loader reads both, so the row offers both.
+                                   "file:uvtex,png,jpg,jpeg,bmp,tga"),
                                "An equirectangular image: width twice its height, the horizon across the "
                                "middle. Empty leaves the gradient showing.")),
                            "Panorama"),
@@ -1298,7 +1319,14 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                           "it is, so two frames can be compared without the sky moving "
                                           "underneath the difference."),
                            "Advanced"),
-            }));
+            });
+    // A Sky added from the environment's own Sky slot belongs to that environment, and its
+    // settings are that section's business. Nested, the environment draws them as one more
+    // expandable group inside itself; standalone - the Sky object from the object catalogue, which
+    // has no environment on its entity - it still draws as its own section, so neither way of
+    // making a sky is a dead end.
+    sky.nestedUnderTypeIds = {"component.world_environment"};
+    AddValidatedUVE<S, &IsSky3DObjectComponentValidUVE>(entries, std::move(sky));
 }
 
 void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
@@ -2768,11 +2796,6 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// the Inspector can show the answer beside the choice rather than as a row of its own.
 [[nodiscard]] TypeMetadataPropertyUVE ResolvedByUVE(TypeMetadataPropertyUVE property, std::string resolvedProperty) {
     property.resolvedByProperty = std::move(resolvedProperty);
-    return property;
-}
-
-[[nodiscard]] TypeMetadataPropertyUVE HiddenUVE(TypeMetadataPropertyUVE property) {
-    property.flags = TypeMetadataPropertyFlagsUVE::Hidden;
     return property;
 }
 

@@ -6,13 +6,24 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
+#include "import_helpers_uve.h"
+
+#include "uve/asset/bmp_metadata_uve.h"
+#include "uve/asset/jpeg_metadata_uve.h"
+#include "uve/asset/png_metadata_uve.h"
+#include "uve/asset/tga_metadata_uve.h"
+#include "uve/asset/texture_mipmap_uve.h"
 #include "uve/asset/uve_file_envelope_uve.h"
 #include "uve/logging/logging_macros_uve.h"
 #include "uve/utilities/binary_buffer_uve.h"
@@ -445,6 +456,158 @@ bool SaveTextureAssetUVE(const TextureAssetUVE& texture, const std::filesystem::
         }
     }
     return WriteUveFileUVE(path, AssetKindUVE::Texture, payload);
+}
+
+namespace {
+
+/// One source image, bounded exactly as every image importer bounds it, so a load can never become
+/// a way around the limit the import path holds.
+constexpr std::uint64_t kMaximumSourceImageBytesUVE = 64ULL * 1024ULL * 1024ULL;
+
+/// The source images a texture reference may name instead of a published `.uvtex`: the same five
+/// forms the four decoders below read and the Inspector's picker offers.
+[[nodiscard]] bool IsSourceImageExtensionUVE(const std::string_view extension) noexcept {
+    return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp" ||
+           extension == ".tga";
+}
+
+/// Moves one decoder's result into `texture` under the metadata an importer would have stamped on
+/// it with default settings: RGBA8, sRGB, a colour map. A decoder that produced nothing usable
+/// leaves `texture` untouched and reports failure, so a half-decoded image never reaches the GPU as
+/// a texture with zero pixels in it.
+template <typename ImageUVE>
+[[nodiscard]] bool AdoptDecodedSourceImageUVE(ImageUVE& image, TextureAssetUVE& texture) {
+    if (image.width == 0U || image.height == 0U || image.pixels.empty()) {
+        return false;
+    }
+    texture.width = image.width;
+    texture.height = image.height;
+    texture.format = TextureAssetFormatUVE::RGBA8Unorm;
+    texture.colorSpace = TextureAssetColorSpaceUVE::Srgb;
+    texture.usage = TextureUsageUVE::Color;
+    texture.pixels = std::move(image.pixels);
+    return true;
+}
+
+} // namespace
+
+bool LoadTextureAssetSourceUVE(const std::filesystem::path& path, TextureAssetUVE& outTexture) {
+    std::string extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    if (!IsSourceImageExtensionUVE(extension)) {
+        // Everything else is either the envelope or not a texture at all; the envelope reader is
+        // the one that can say which, in the terms of the file it just opened.
+        return LoadTextureAssetUVE(path, outTexture);
+    }
+
+    std::vector<std::byte> sourceBytes;
+    if (!Detail::ReadBoundedSourceBytesUVE(path, "TextureAssetUVE", kMaximumSourceImageBytesUVE, sourceBytes)) {
+        return false;
+    }
+
+    TextureAssetUVE texture;
+    bool decoded = false;
+    if (extension == ".png") {
+        PngRgba8ImageUVE image;
+        decoded = DecodePngRgba8ImageUVE(sourceBytes, image) && AdoptDecodedSourceImageUVE(image, texture);
+    } else if (extension == ".jpg" || extension == ".jpeg") {
+        JpegRgba8ImageUVE image;
+        decoded = DecodeJpegRgba8ImageUVE(sourceBytes, image) && AdoptDecodedSourceImageUVE(image, texture);
+    } else if (extension == ".bmp") {
+        BmpRgba8ImageUVE image;
+        decoded = DecodeBmpRgba8ImageUVE(sourceBytes, image) && AdoptDecodedSourceImageUVE(image, texture);
+    } else {
+        TgaRgba8ImageUVE image;
+        decoded = DecodeTgaRgba8ImageUVE(sourceBytes, image) && AdoptDecodedSourceImageUVE(image, texture);
+    }
+    if (!decoded) {
+        UVE_ERROR("TextureAssetUVE: source image \"{}\" could not be decoded", path.string());
+        return false;
+    }
+
+    // Without a chain the map aliases badly the moment the surface is not facing the camera; the
+    // importer would have built one, and the importer's defaults are the ones taken above, so the
+    // two paths produce the same picture.
+    if (!GenerateTextureMipmapsUVE(texture, TextureMipmapFilterUVE::Box, 0U) || !IsTextureAssetValidUVE(texture)) {
+        UVE_ERROR("TextureAssetUVE: source image \"{}\" could not be completed into a texture", path.string());
+        return false;
+    }
+    outTexture = std::move(texture);
+    return true;
+}
+
+namespace {
+
+/// Past this the slope is a wall: every edge becomes a cliff and the surface reads as embossed
+/// metal rather than as the material the picture shows.
+constexpr float kMaximumDerivedNormalStrengthUVE = 16.0F;
+
+} // namespace
+
+bool DeriveNormalTextureUVE(const TextureAssetUVE& source, const float strength,
+                            TextureAssetUVE& outNormal) {
+    if (source.format != TextureAssetFormatUVE::RGBA8Unorm || source.width == 0U || source.height == 0U ||
+        source.pixels.size() != static_cast<std::size_t>(source.width) * source.height * 4U) {
+        return false;
+    }
+    if (!(strength >= 0.0F) || strength > kMaximumDerivedNormalStrengthUVE) {
+        return false;
+    }
+
+    // Height is read from the stored bytes, so the picture keeps the even weighting it has on
+    // screen; decoding a colour map to linear first would push every dark area towards flat.
+    const auto heightAtUVE = [&source](const std::uint32_t x, const std::uint32_t y) -> float {
+        // Clamped, not wrapped: a tileable map derives the same map it would without the seam,
+        // and a photo's border does not pull detail in from the opposite edge.
+        const std::uint32_t clampedX = std::min(x, source.width - 1U);
+        const std::uint32_t clampedY = std::min(y, source.height - 1U);
+        const std::size_t index = (static_cast<std::size_t>(clampedY) * source.width + clampedX) * 4U;
+        const float red = static_cast<float>(std::to_integer<unsigned char>(source.pixels[index]));
+        const float green = static_cast<float>(std::to_integer<unsigned char>(source.pixels[index + 1U]));
+        const float blue = static_cast<float>(std::to_integer<unsigned char>(source.pixels[index + 2U]));
+        return (0.299F * red + 0.587F * green + 0.114F * blue) / 255.0F;
+    };
+
+    TextureAssetUVE normal{};
+    normal.width = source.width;
+    normal.height = source.height;
+    normal.format = TextureAssetFormatUVE::RGBA8Unorm;
+    normal.colorSpace = TextureAssetColorSpaceUVE::Linear;
+    normal.usage = TextureUsageUVE::Normal;
+    normal.pixels.resize(source.pixels.size());
+
+    for (std::uint32_t y = 0U; y < source.height; ++y) {
+        for (std::uint32_t x = 0U; x < source.width; ++x) {
+            // Central difference over one pixel each way. Rows run downwards while the tangent
+            // space the shader samples has +Y up, which is where the green sign comes from.
+            const float slopeX = 0.5F * (heightAtUVE(x + 1U, y) - heightAtUVE(x - 1U, y)) * strength;
+            const float slopeY = 0.5F * (heightAtUVE(x, y + 1U) - heightAtUVE(x, y - 1U)) * strength;
+            const float normalX = -slopeX;
+            const float normalY = slopeY;
+            const float normalZ = 1.0F;
+            const float inverseLength = 1.0F / std::sqrt(normalX * normalX + normalY * normalY + normalZ * normalZ);
+            const std::size_t index = (static_cast<std::size_t>(y) * source.width + x) * 4U;
+            const auto encode = [](const float component) {
+                const float unbiased = component * 0.5F + 0.5F;
+                return static_cast<std::byte>(static_cast<unsigned char>(std::lround(unbiased * 255.0F)));
+            };
+            normal.pixels[index] = encode(normalX * inverseLength);
+            normal.pixels[index + 1U] = encode(normalY * inverseLength);
+            normal.pixels[index + 2U] = encode(normalZ * inverseLength);
+            normal.pixels[index + 3U] = std::byte{0xFF};
+        }
+    }
+
+    // The chain the importer would have built, so a derived map is not the one asset in the
+    // project that aliases when the surface turns away from the camera.
+    if (!IsTextureAssetValidUVE(normal) || !GenerateTextureMipmapsUVE(normal, TextureMipmapFilterUVE::Box, 0U)) {
+        UVE_ERROR("TextureAssetUVE: could not complete a derived normal map of {}x{}", normal.width,
+                  normal.height);
+        return false;
+    }
+    outNormal = std::move(normal);
+    return true;
 }
 
 } // namespace UVE::Asset

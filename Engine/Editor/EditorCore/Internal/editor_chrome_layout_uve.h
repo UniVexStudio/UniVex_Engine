@@ -141,8 +141,15 @@ constexpr float kInspectorPanelResizeMaxFractionUVE = 0.40F;
 constexpr float kBottomDockMaxFractionUVE = 0.75F;
 /// The drag grip. It straddles the seam, so half of it lies over each neighbour; the visible
 /// divider is the 1px line the panels already draw, and the grip itself paints nothing until
-/// it is hovered or held.
-constexpr float kPanelSplitterThicknessUVE = 6.0F;
+/// it is hovered or held - then a 2px line on the seam lights up.
+///
+/// WHY TEN AND NOT SIX. Six was the width ImGui's own edge grip used to cover anyway, so the two
+/// never had to be told apart. They do now: the layout-owned panels are NoResize (see
+/// kLayoutOwnedPanelFlagsUVE), so this grip is the only thing near a seam that takes the pointer,
+/// and the pointer that misses it by four pixels does nothing at all. Ten is +/-5 either side of
+/// the divider - the band the eye treats as "the line" - and it costs a panel five pixels of
+/// clickable margin at its edge, which is inside the padding every panel already keeps clear.
+constexpr float kPanelSplitterThicknessUVE = 10.0F;
 /// A hidden side panel leaves this strip behind. Wide enough to hit, thin enough to read as an
 /// edge rather than a panel, and identified by a chevron pointing the way the panel returns.
 constexpr float kPanelRestoreStripWidthUVE = 14.0F;
@@ -167,6 +174,37 @@ constexpr float kPanelRestoreStripWidthUVE = 14.0F;
                                             columnHeight - kMinimumViewportHeightUVE));
     return std::clamp(requested, kMinimumBottomDockHeightUVE, maximum);
 }
+
+/// The window flags every panel whose rect comes from ComputeEditorChromeLayoutUVE() is created
+/// with.
+///
+/// WHY THIS IS SHARED, AND WHY NoResize IS LOAD-BEARING. ImGui resizes a window from its own
+/// edges by default - io.ConfigWindowsResizeFromEdges is on out of the box - so any panel created
+/// without NoResize hands its outer few pixels to ImGui instead of to the seam grip that straddles
+/// the same pixels. Outliner, Viewport and Inspector were created with only NoCollapse|NoTitleBar,
+/// which meant the border of every one of them was a rival resize handle: dragging there resized
+/// the ImGui window for exactly one frame, and the next frame's
+/// SetNextWindowSize(..., ImGuiCond_Always) put it back. The panel followed the pointer while the
+/// button was held and jumped to where it had been the moment it was released - "the editor does
+/// not resize", from the outside, while the seam grip straddling that same border worked all along.
+///
+/// NoSavedSettings is the same argument one frame earlier: uve_editor_layout.ini must never be able
+/// to park a panel somewhere the layout did not compute. NoMove is the same argument for dragging:
+/// a layout-owned panel cannot be moved away from its rect, only resized by the seam that owns it.
+///
+/// AND NoBringToFrontOnFocus IS THE HALF THAT MAKES THE OTHER HALF WORK. The seam grips are their
+/// own windows, created after every panel each frame so that they sit on top of both neighbours.
+/// ImGui's window stack is not redrawn-into-order: a window is raised by being clicked, and a click
+/// anywhere in the Viewport - orbiting the camera is the first thing anyone does - moved that panel
+/// above the grips and left it there. From then on the ten pixels of seam were the panel's, not the
+/// grip's: the seam looked pinned, and the only thing that ever answered a drag on it was ImGui's
+/// own edge resize on the panel, which is exactly the resize the layout puts back on the next frame.
+/// The editor's panels are fixed regions of one editor, not floating windows competing for the top,
+/// so they never need to raise - and with them refusing to, the grips stay where they were put.
+inline constexpr ImGuiWindowFlags kLayoutOwnedPanelFlagsUVE =
+    ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
+    ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
+    ImGuiWindowFlags_NoBringToFrontOnFocus;
 
 /// The editor's panel rectangles.
 ///
