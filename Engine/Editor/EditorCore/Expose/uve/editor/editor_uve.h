@@ -302,9 +302,14 @@ enum class ModelSourcePlacementUVE : std::uint8_t {
 /// A converted mesh always wins: whatever the file holds, there is a mesh to draw. Otherwise only a
 /// source that says it has no geometry may be placed as bones, and everything else waits or
 /// reports - never guesses.
-[[nodiscard]] ModelSourcePlacementUVE DecideModelSourcePlacementUVE(bool convertedMeshExists,
-                                                                    const EditorModelSourceInfoUVE* source,
-                                                                    bool importFailed) noexcept {
+///
+/// `inline` because this lives in a header several translation units include: without it every one
+/// of them defines the same external symbol and the editor fails to link. It is here rather than in
+/// a .cpp because it is a decision, not an implementation - a caller must be able to read the whole
+/// table in one place.
+[[nodiscard]] inline ModelSourcePlacementUVE DecideModelSourcePlacementUVE(bool convertedMeshExists,
+                                                                          const EditorModelSourceInfoUVE* source,
+                                                                          bool importFailed) noexcept {
     if (convertedMeshExists) {
         return ModelSourcePlacementUVE::PlaceModel;
     }
