@@ -48,8 +48,9 @@ inline void AppendPngChunkUVE(std::vector<std::byte>& png, const std::vector<std
                       {std::byte{0}, std::byte{0}, std::byte{0}, std::byte{2}, std::byte{0}, std::byte{0},
                        std::byte{0}, std::byte{1}, std::byte{8}, std::byte{6}, std::byte{0}, std::byte{0},
                        std::byte{0}});
+    // One filter byte, then two opaque texels: red, then white.
     const std::vector<std::byte> raw{std::byte{0}, std::byte{0xFF}, std::byte{0}, std::byte{0}, std::byte{0xFF},
-                                     std::byte{0}, std::byte{0}, std::byte{0xFF}, std::byte{0xFF}};
+                                     std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}};
     uLongf compressedSize = compressBound(static_cast<uLong>(raw.size()));
     std::vector<std::byte> compressed(static_cast<std::size_t>(compressedSize));
     if (compress2(reinterpret_cast<Bytef*>(compressed.data()), &compressedSize,

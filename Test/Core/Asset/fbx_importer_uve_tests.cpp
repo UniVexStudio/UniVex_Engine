@@ -128,12 +128,13 @@ constexpr std::string_view kTexturedMaterialUVE = R"(	Material: 3100, "Material:
 )";
 constexpr std::string_view kTexturedConnectionsUVE = "\tC: \"OP\",3200,3100,\"DiffuseColor\"\n";
 
-/// A floor skinned to one bone: the shape a rigged character imports as. The bone is two metres up
-/// so a skeleton read from the published asset can be told apart from one guessed at.
+/// A floor skinned to one bone: the shape a rigged character imports as. The bone sits two metres up
+/// the file's own up axis, which is +Z here, so a skeleton read from the published asset can be told
+/// apart from one guessed at - and the axis conversion is exercised rather than assumed.
 constexpr std::string_view kSkinnedFloorUVE = R"(	Model: 3000, "Model::Hips", "LimbNode" {
 		Version: 232
 		Properties70:  {
-			P: "Lcl Translation", "Lcl Translation", "", "A",0,200,0
+			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,200
 		}
 	}
 	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
