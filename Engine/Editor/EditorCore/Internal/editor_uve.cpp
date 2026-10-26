@@ -5734,6 +5734,11 @@ const EditorModelSourceInfoUVE* EditorUVE::FindModelSourceInfoUVE(
     return found != m_modelSources.end() ? &found->second : nullptr;
 }
 
+const std::string* EditorUVE::FindModelImportFailureUVE(const std::filesystem::path& relativeSource) const {
+    const auto found = m_modelImportFailures.find(relativeSource.generic_string());
+    return found != m_modelImportFailures.end() ? &found->second : nullptr;
+}
+
 bool EditorUVE::IsRiggedModelSourceUVE(const std::filesystem::path& relativeSource) const {
     const EditorModelSourceInfoUVE* const info = FindModelSourceInfoUVE(relativeSource);
     return info != nullptr && info->rigged;
@@ -5816,6 +5821,10 @@ void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& sn
         request.settings = std::make_shared<const Asset::AssetImportSettingsUVE>();
         if (const std::optional<Asset::AssetImportJobIdUVE> job = queue.EnqueueUVE(std::move(request));
             job.has_value()) {
+            // Deliberately NOT cleared here. A refresh re-queues whatever is not in flight, so a
+            // file that keeps failing is retried on every refresh; clearing the reason on each
+            // attempt would make the editor's message blink in and out of existence instead of
+            // staying on the file that is broken. Only a success clears it.
             m_modelImportJobs.emplace(key, *job);
         }
     }
@@ -5832,11 +5841,21 @@ void EditorUVE::PollModelImportJobsUVE() {
                                       [&it](const Asset::AssetImportJobUVE& candidate) { return candidate.id == it->second; });
         if (job == jobs.end() || job->state == Asset::AssetImportJobStateUVE::Failed) {
             if (job != jobs.end()) {
-                UVE_WARNING("EditorUVE: could not import model {}", it->first);
+                // The importer's own last error is the reason a reader needs; the log file has the
+                // same text, but a log the editor never shows is the same as no message at all.
+                std::string reason = "the importer reported no reason";
+                for (const Asset::AssetImportDiagnosticUVE& diagnostic : job->diagnostics) {
+                    if (diagnostic.severity == Asset::AssetImportDiagnosticSeverityUVE::Error && !diagnostic.message.empty()) {
+                        reason = diagnostic.message;
+                    }
+                }
+                m_modelImportFailures[it->first] = std::move(reason);
+                UVE_WARNING("EditorUVE: could not import model {}: {}", it->first, m_modelImportFailures[it->first]);
             }
             it = m_modelImportJobs.erase(it);
         } else if (job->state == Asset::AssetImportJobStateUVE::Succeeded) {
             imported = imported || !job->cacheHit;
+            m_modelImportFailures.erase(it->first);
             it = m_modelImportJobs.erase(it);
         } else {
             ++it;

@@ -135,8 +135,30 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
     const std::optional<Asset::GltfSkeletonUVE> skeleton = ReadSkeletonForSourceUVE(relativeSource, Scene::kMaximumSkeletonBonesUVE);
     const std::filesystem::path importedModel = GetImportedModelPathUVE(relativeSource);
     const bool hasMesh = std::filesystem::is_regular_file(importedModel, error);
+    // An object is built only from a finished import. What used to happen here - a file that could
+    // be read for bones but whose converted mesh was not written yet - produced an Armature with no
+    // mesh, indistinguishable from an animation-only import, and nothing ever gave it one.
+    const std::string* const importFailure = FindModelImportFailureUVE(relativeSource);
+    // A retry in flight outranks the previous attempt's reason: the file may already be fixed, and
+    // "still importing" is the truth about this moment.
+    const bool importInFlight = m_modelImportJobs.contains(relativeSource.generic_string());
+    switch (DecideModelSourcePlacementUVE(hasMesh, FindModelSourceInfoUVE(relativeSource),
+                                          importFailure != nullptr && !importInFlight)) {
+    case ModelSourcePlacementUVE::PlaceModel:
+    case ModelSourcePlacementUVE::PlaceAnimationOnly:
+        break;
+    case ModelSourcePlacementUVE::ImportFailed:
+        m_contentStatusMessage = relativeSource.filename().string() + " could not be imported: " +
+                                 (importFailure != nullptr ? *importFailure : std::string{"unknown reason"});
+        return Scene::kInvalidEntityUVE;
+    case ModelSourcePlacementUVE::WaitForImport:
+        m_contentStatusMessage = relativeSource.filename().string() +
+                                 " is still importing; nothing was placed. Try again once its mesh is converted.";
+        return Scene::kInvalidEntityUVE;
+    }
     if (!hasMesh && !skeleton.has_value()) {
-        m_contentStatusMessage = relativeSource.filename().string() + " is still importing.";
+        // The source claims motion but no bone survived the read, so there is nothing to build.
+        m_contentStatusMessage = relativeSource.filename().string() + " has no baked motion to place.";
         return Scene::kInvalidEntityUVE;
     }
     // The file's takes, imported beside it as <file>_<take>.uvanim (importing them now if needed).
