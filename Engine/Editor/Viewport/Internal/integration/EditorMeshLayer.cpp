@@ -184,6 +184,9 @@ void EditorMeshLayerUVE::SyncCameraFromOrbitUVE(const univex::camera::OrbitCamer
 }
 
 bool EditorMeshLayerUVE::EnsureTargetsUVE(const std::uint32_t width, const std::uint32_t height) {
+    if (width == 0U || height == 0U) {
+        return false;
+    }
     if (width == targetWidth_ && height == targetHeight_ && colorTarget_ != UVE::Render::kInvalidTextureHandleUVE) {
         return true;
     }

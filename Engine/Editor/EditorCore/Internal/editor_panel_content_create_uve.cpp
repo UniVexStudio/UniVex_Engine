@@ -591,7 +591,7 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         if (ImGui::MenuItem("Use as Mesh on selected object")) {
             Scene::MeshComponentUVE mesh =
                 m_services->GetEntityManagerUVE().GetComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
-            mesh.meshGuid = modelReady ? m_services->GetAssetDatabaseUVE().RegisterUVE(importedModel)
+            mesh.meshGuid = modelReady ? RegisterImportedModelArtifactsUVE(importedModel)
                                        : *contextEntry.registeredAssetGuid;
             static_cast<void>(SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Mesh, mesh));
         }

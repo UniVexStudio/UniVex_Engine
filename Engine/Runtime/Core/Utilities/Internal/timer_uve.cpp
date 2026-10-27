@@ -25,6 +25,12 @@ void TimerUVE::Tick() {
     m_totalTime += rawDelta;
     m_deltaTime = std::min(rawDelta, m_maxDeltaTime);
     m_accumulator += m_deltaTime;
+
+    // Prevent accumulator bloat (spiral-of-death guard): never buffer more time than maxStepsPerTick can process.
+    const double maxBufferedTime = m_fixedDeltaTime * static_cast<double>(m_maxStepsPerTick);
+    if (m_accumulator > maxBufferedTime) {
+        m_accumulator = maxBufferedTime;
+    }
 }
 
 double TimerUVE::GetDeltaTimeUVE() const {

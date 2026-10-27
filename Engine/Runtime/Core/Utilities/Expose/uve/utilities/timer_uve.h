@@ -36,7 +36,7 @@ private:
     std::chrono::steady_clock::time_point m_lastTickTime;
     double m_deltaTime = 0.0;
     double m_totalTime = 0.0;
-    double m_maxDeltaTime = 0.25;
+    double m_maxDeltaTime = 0.10;
 
     double m_fixedDeltaTime = 1.0 / 60.0;
     double m_accumulator = 0.0;
@@ -47,7 +47,7 @@ private:
     /// sustained run of low frame rates could otherwise let the accumulator
     /// grow forever if steps consistently take longer to run than they
     /// simulate.
-    static constexpr int kDefaultMaxStepsPerTick = 8;
+    static constexpr int kDefaultMaxStepsPerTick = 4;
     int m_maxStepsPerTick = kDefaultMaxStepsPerTick;
 };
 

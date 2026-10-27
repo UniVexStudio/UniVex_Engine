@@ -64,7 +64,7 @@ bool EditorUVE::BeginRetargetPreviewUVE() {
     if (m_retargetPreview.has_value()) {
         return true;
     }
-    if (!IsAuthoringCommandAllowedUVE()) {
+    if (!IsAuthoringCommandAllowedUVE() || m_entityEditSession.has_value()) {
         return false;
     }
     if (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE()) {
@@ -212,7 +212,26 @@ void EditorUVE::RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std
     preview.builtFor = modelFile;
     Asset::MeshAssetUVE mesh;
     std::error_code error;
-    if (!modelFile.empty() && std::filesystem::is_regular_file(modelFile, error) && Asset::LoadMeshAssetUVE(modelFile, mesh)) {
+    const auto loadPreviewMesh = [&]() -> bool {
+        if (modelFile.empty() || !std::filesystem::is_regular_file(modelFile, error)) {
+            return false;
+        }
+        const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(modelFile, error);
+        if (!error && m_inspectorMeshAssetCache.has_value() &&
+            m_inspectorMeshAssetCache->resolvedPath == modelFile &&
+            m_inspectorMeshAssetCache->lastWriteTime == writeTime) {
+            mesh = m_inspectorMeshAssetCache->meshAsset;
+            return true;
+        }
+        if (!Asset::LoadMeshAssetUVE(modelFile, mesh)) {
+            return false;
+        }
+        if (!error) {
+            m_inspectorMeshAssetCache = EntityEditorMeshCacheEntryUVE{modelFile, writeTime, mesh};
+        }
+        return true;
+    };
+    if (loadPreviewMesh()) {
         const Scene::EntityUVE figure = shell("Character");
         Scene::ApplyObject3DObjectDefinitionUVE(entityManager, figure, Scene::Object3DObjectDefinitionUVE{});
         place(figure, "Character", Kind::Object3D, figures, Math::Vector3UVE{kFigureOffsetUVE, 0.0F, 0.0F});
@@ -227,7 +246,7 @@ void EditorUVE::RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std
             meshParent = preview.targetSkeleton;
         }
         Scene::MeshInstance3DObjectDefinitionUVE meshDefinition;
-        meshDefinition.mesh.meshGuid = m_services->GetAssetDatabaseUVE().RegisterUVE(modelFile);
+        meshDefinition.mesh.meshGuid = RegisterImportedModelArtifactsUVE(modelFile);
         const Scene::EntityUVE meshEntity = shell("Character Mesh");
         Scene::ApplyMeshInstance3DObjectDefinitionUVE(entityManager, meshEntity, meshDefinition);
         place(meshEntity, "Character Mesh", Kind::MeshInstance3D, meshParent);

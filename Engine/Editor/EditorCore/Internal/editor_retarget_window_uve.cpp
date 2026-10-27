@@ -154,10 +154,6 @@ void EditorUVE::OpenRetargetWindowUVE(std::vector<std::filesystem::path> animati
         const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
         if (IsModelSourcePathUVE(target)) {
             const std::filesystem::path absSource = project.contentRoot / target;
-            const std::vector<std::filesystem::path> importedTakes = ImportModelAnimationsUVE(absSource);
-            for (const std::filesystem::path& take : importedTakes) {
-                animations.push_back(take);
-            }
             const std::filesystem::path parentDir = absSource.parent_path();
             const std::string stem = absSource.stem().string();
             std::error_code dirError;
@@ -221,22 +217,7 @@ std::filesystem::path EditorUVE::ResolveRetargetModelFileUVE(const std::filesyst
         info != nullptr && info->animationOnly) {
         return {};
     }
-    const std::filesystem::path imported = GetImportedModelPathUVE(target);
-    std::error_code existsError;
-    if (!std::filesystem::is_regular_file(imported, existsError) && LowerUVE(target.extension().string()) == ".fbx") {
-        const std::filesystem::path absSource = project.contentRoot / target;
-        std::ifstream file(absSource, std::ios::binary);
-        const std::uintmax_t size = std::filesystem::file_size(absSource, existsError);
-        if (file && !existsError && size <= Asset::kMaximumFbxMeshSourceBytesUVE) {
-            const std::vector<char> bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-            Asset::MeshAssetUVE mesh;
-            if (Asset::ConvertFbxMeshUVE(std::as_bytes(std::span<const char>(bytes)), mesh)) {
-                std::filesystem::create_directories(imported.parent_path(), existsError);
-                static_cast<void>(Asset::SaveMeshAssetUVE(mesh, imported));
-            }
-        }
-    }
-    return imported;
+    return GetImportedModelPathUVE(target);
 }
 
 std::size_t EditorUVE::RefreshSkeletonsForRetargetedModelUVE(const std::filesystem::path& modelFile) {
@@ -319,6 +300,7 @@ void EditorUVE::DrawRetargetWindowUVE() {
     // Its own OS window, like the Entity Editor: never merged into the main one, never docked.
     ImGuiWindowClass windowClass;
     windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_NoAutoMerge;
+    windowClass.ViewportFlagsOverrideClear = ImGuiViewportFlags_NoDecoration | ImGuiViewportFlags_NoTaskBarIcon;
     ImGui::SetNextWindowClass(&windowClass);
     ImGui::SetNextWindowPos(ImVec2{mainViewport->GetCenter().x, mainViewport->GetCenter().y}, ImGuiCond_FirstUseEver,
                             ImVec2{0.5F, 0.5F});
@@ -367,17 +349,6 @@ void EditorUVE::DrawRetargetWindowUVE() {
         ImGui::SetTooltip("The character the animations are for. Its bones, its rest pose and its skin are conformed to the UniVex humanoid (missing bones are auto-generated).");
     }
     if (window.planStale) {
-        if (window.animations.empty()) {
-            for (const Asset::ProjectFileEntryUVE& entry : project.entries) {
-                if (entry.kind != Asset::ProjectFileEntryKindUVE::Directory &&
-                    LowerUVE(entry.relativePath.extension().string()) == ".uvanim") {
-                    const std::filesystem::path full = project.contentRoot / entry.relativePath;
-                    if (std::ranges::find(window.animations, full) == window.animations.end()) {
-                        window.animations.push_back(full);
-                    }
-                }
-            }
-        }
         const std::filesystem::path modelFile = ResolveRetargetModelFileUVE(window.target);
         window.plan = PlanRetargetUVE(modelFile, window.animations);
         window.planStale = false;

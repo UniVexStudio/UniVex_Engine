@@ -538,14 +538,23 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
                          {"entryPosition", {object.entryPosition.x, object.entryPosition.y}},
                          {"anyPosition", {object.anyPosition.x, object.anyPosition.y}}});
     }
-    return {{"parameters", std::move(parameters)},
+    nlohmann::json root = {{"parameters", std::move(parameters)},
             {"nodes", std::move(nodes)}};
+    if (component.sequencer != kInvalidEntityUVE) {
+        root["sequencer"] = {{"index", component.sequencer.index}, {"generation", component.sequencer.generation}};
+    }
+    return root;
 }
 
 /// Reads a tree. A tree saved as the earlier two-clip blend becomes the same thing as a graph:
 /// Output fed by a Blend2 of Clip A and Clip B, weighted by a "blend" parameter.
 [[nodiscard]] AnimationGraphComponentUVE AnimationGraphFromJsonUVE(const nlohmann::json& json) {
     AnimationGraphComponentUVE tree;
+    if (json.contains("sequencer") && json["sequencer"].is_object()) {
+        tree.sequencer = EntityUVE{
+            json["sequencer"].value("index", std::numeric_limits<std::uint32_t>::max()),
+            json["sequencer"].value("generation", 0U)};
+    }
     if (!json.contains("nodes") && (json.contains("clipA") || json.contains("clipB"))) {
         tree.parameters = {AnimationParameterUVE{"blend", AnimationParameterTypeUVE::Float, json.value("blend", 0.0F)}};
         const auto makeObject = [](const std::uint32_t id, const AnimationGraphNodeKindUVE kind, std::string name) {

@@ -521,16 +521,22 @@ bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, const doubl
     }
     const double time = std::clamp(timeSeconds, 0.0, std::max(clip.durationSeconds, 0.0));
     const Retarget::ConformedPlaybackUVE conformed = PlanConformedPlaybackForUVE(clip, skeleton);
+
+    std::unordered_map<std::string_view, const Asset::AnimationAssetBoneTrackUVE*> tracks;
+    tracks.reserve(clip.bones.size());
+    for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
+        if (!track.samples.empty()) {
+            tracks.emplace(track.bone, &track);
+        }
+    }
+
     std::vector<SkeletonBonePoseUVE> pose(skeleton.bones.size());
     for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
         const SkeletonBoneUVE& bone = skeleton.bones[index];
         SkeletonBonePoseUVE& out = pose[index];
         out = SkeletonBonePoseUVE{bone.localPosition, bone.localRotation, bone.localScale};
-        for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
-            if (track.bone != bone.name || track.samples.empty()) {
-                continue;
-            }
-            const PoseUVE sampled = SampleTrackUVE(track.samples, time);
+        if (const auto* track = FindTrackForBoneUVE(tracks, bone.name); track != nullptr) {
+            const PoseUVE sampled = SampleTrackUVE(track->samples, time);
             if (mixer.animatePosition) {
                 out.position = conformed.PositionUVE(bone.name, sampled.position, bone.localPosition);
             }
@@ -541,18 +547,15 @@ bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, const doubl
             if (mixer.animateScale) {
                 out.scale = conformed.ScaleUVE(sampled.scale, bone.localScale);
             }
-            break;
         }
     }
     if (mixer.rootMotion != AnimationRootMotionModeUVE::Off && mixer.animatePosition) {
         if (const std::optional<std::size_t> rootIndex = ResolveRootMotionBoneUVE(skeleton, clip, mixer.rootMotionBone)) {
-            for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
-                if (track.bone == skeleton.bones[*rootIndex].name && !track.samples.empty()) {
-                    const Math::Vector3UVE first = conformed.PositionUVE(track.bone, SampleTrackUVE(track.samples, 0.0).position, Math::Vector3UVE{});
-                    pose[*rootIndex].position.x = first.x;
-                    pose[*rootIndex].position.z = first.z;
-                    break;
-                }
+            const std::string& rootName = skeleton.bones[*rootIndex].name;
+            if (const auto* track = FindTrackForBoneUVE(tracks, rootName); track != nullptr && !track->samples.empty()) {
+                const Math::Vector3UVE first = conformed.PositionUVE(track->bone, SampleTrackUVE(track->samples, 0.0).position, Math::Vector3UVE{});
+                pose[*rootIndex].position.x = first.x;
+                pose[*rootIndex].position.z = first.z;
             }
         }
     }

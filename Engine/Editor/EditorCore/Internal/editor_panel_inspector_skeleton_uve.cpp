@@ -81,7 +81,10 @@ void ReadOnlyRowUVE(const char* const label, const char* const value) {
     if (error || size > Asset::kMaximumFbxMeshSourceBytesUVE || !file) {
         return std::nullopt;
     }
-    const std::vector<char> bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    std::vector<char> bytes(static_cast<std::size_t>(size));
+    if (size > 0U && !file.read(bytes.data(), static_cast<std::streamsize>(size))) {
+        return std::nullopt;
+    }
     return Asset::ReadFbxSkeletonUVE(std::as_bytes(std::span<const char>(bytes)), maximumBones);
 }
 
@@ -89,18 +92,29 @@ void ReadOnlyRowUVE(const char* const label, const char* const value) {
 
 std::optional<Asset::GltfSkeletonUVE> EditorUVE::ReadSkeletonForSourceUVE(const std::filesystem::path& relativeSource,
                                                                           const std::size_t maximumBones) const {
-    // A character that has been through Retarget is the humanoid's, and so are its clips: its
-    // skeleton comes from the imported model that was conformed, not from the original file.
+    // Use the imported .uvmodel skeleton directly whenever available so we never re-parse the raw
+    // multi-megabyte .fbx on the UI thread, and so characters conformed by Retarget retain their
+    // humanoid rig.
     if (IsModelSourcePathUVE(relativeSource)) {
-        Asset::MeshAssetUVE mesh;
-        if (Asset::LoadMeshAssetUVE(GetImportedModelPathUVE(relativeSource), mesh)) {
-            if (const std::optional<Retarget::RetargetSkeletonUVE> rig = Retarget::RigFromMeshUVE(mesh);
-                rig.has_value() && rig->bones.size() <= maximumBones) {
-                std::vector<std::string> names;
-                for (const Retarget::RetargetBoneUVE& bone : rig->bones) {
-                    names.push_back(bone.name);
+        const std::filesystem::path importedPath = GetImportedModelPathUVE(relativeSource);
+        std::error_code ec;
+        if (std::filesystem::is_regular_file(importedPath, ec)) {
+            const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(importedPath, ec);
+            const Asset::MeshAssetUVE* meshPtr = nullptr;
+            Asset::MeshAssetUVE loadedMesh;
+            if (!ec && m_inspectorMeshAssetCache.has_value() &&
+                m_inspectorMeshAssetCache->resolvedPath == importedPath &&
+                m_inspectorMeshAssetCache->lastWriteTime == writeTime) {
+                meshPtr = &m_inspectorMeshAssetCache->meshAsset;
+            } else if (Asset::LoadMeshAssetUVE(importedPath, loadedMesh)) {
+                if (!ec) {
+                    m_inspectorMeshAssetCache = EntityEditorMeshCacheEntryUVE{importedPath, writeTime, loadedMesh};
                 }
-                if (Retarget::AreHumanoidNamesUVE(names, Retarget::GetHumanoidReferenceUVE())) {
+                meshPtr = &loadedMesh;
+            }
+            if (meshPtr != nullptr) {
+                if (const std::optional<Retarget::RetargetSkeletonUVE> rig = Retarget::RigFromMeshUVE(*meshPtr);
+                    rig.has_value() && !rig->bones.empty() && rig->bones.size() <= maximumBones) {
                     Asset::GltfSkeletonUVE skeleton;
                     skeleton.skinCount = 1U;
                     for (const Retarget::RetargetBoneUVE& bone : rig->bones) {
@@ -167,7 +181,9 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
     // The file's takes, imported beside it as <file>_<take>.uvanim (importing them now if needed).
     std::vector<std::filesystem::path> clips;
     if (skeleton.has_value()) {
-        static_cast<void>(ImportModelAnimationsUVE(source));
+        if (sourceInfo.animationCount > 0U) {
+            static_cast<void>(ImportModelAnimationsUVE(source));
+        }
         const std::string prefix = source.stem().string() + "_";
         for (const std::filesystem::directory_entry& entry :
              std::filesystem::directory_iterator(source.parent_path(), error)) {
@@ -228,24 +244,22 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
                 Scene::MeshComponentUVE meshComp = entityManager.GetComponentUVE<Scene::MeshComponentUVE>(existingMesh);
                 meshComp.meshGuid = meshGuid;
                 entityManager.AddComponentUVE<Scene::MeshComponentUVE>(existingMesh, meshComp);
-                root = existingMesh;
-            } else {
-                Scene::MeshInstance3DObjectDefinitionUVE definition;
-                definition.mesh.meshGuid = meshGuid;
-                root = make(stem, Kind::MeshInstance3D, definition, Scene::ApplyMeshInstance3DObjectDefinitionUVE, parent);
+                InvalidateHierarchyFilterCacheUVE();
+                SelectEntityUVE(existingMesh);
+                m_sceneDirty = true;
+                return existingMesh;
             }
-        } else {
-            Scene::MeshInstance3DObjectDefinitionUVE definition;
-            definition.mesh.meshGuid = meshGuid;
-            root = make(stem, Kind::MeshInstance3D, definition, Scene::ApplyMeshInstance3DObjectDefinitionUVE, parent);
         }
+        Scene::MeshInstance3DObjectDefinitionUVE definition;
+        definition.mesh.meshGuid = meshGuid;
+        root = make(stem, Kind::MeshInstance3D, definition, Scene::ApplyMeshInstance3DObjectDefinitionUVE, parent);
     } else {
         const Scene::EntityUVE rootContainer = isParentCharacterOrEntityRoot
             ? parent
             : make(stem, Kind::Object3D, Scene::Object3DObjectDefinitionUVE{}, Scene::ApplyObject3DObjectDefinitionUVE, parent);
-        root = rootContainer;
         const Scene::EntityUVE modelEntity =
             make(hasMesh ? "model" : "Armature", Kind::Object3D, Scene::Object3DObjectDefinitionUVE{}, Scene::ApplyObject3DObjectDefinitionUVE, rootContainer);
+        root = isParentCharacterOrEntityRoot ? modelEntity : rootContainer;
         Scene::Skeleton3DObjectDefinitionUVE skeletonDefinition;
         skeletonDefinition.skeleton.skeletonAssetPath = relativeSource.generic_string();
         for (const Asset::GltfJointUVE& joint : skeleton->joints) {
@@ -278,7 +292,9 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         return Scene::kInvalidEntityUVE;
     }
     InvalidateHierarchyFilterCacheUVE();
-    PlaceNewDocumentObjectUVE(root);
+    if (!isParentCharacterOrEntityRoot) {
+        PlaceNewDocumentObjectUVE(root);
+    }
     const std::optional<Scene::SceneSnapshotUVE> snapshot = CaptureSubtreeUVE(root);
     if (!snapshot.has_value()) {
         DestroyDocumentSubtreeUVE(root);

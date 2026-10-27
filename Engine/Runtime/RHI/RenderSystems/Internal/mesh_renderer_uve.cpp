@@ -725,6 +725,12 @@ void MeshRendererUVE::BuildCandidatesFromSurvivingEntitiesUVE(
         }
         const Asset::MeshAssetUVE* const mesh = resolvedMesh.value;
 
+        // Skinned meshes require per-entity dynamic buffers and skeleton pose evaluation;
+        // they are drawn through the dedicated skinned path in Renderer3DUVE.
+        if (mesh->IsSkinnedUVE()) {
+            continue;
+        }
+
         // The mesh decides the material when the object names none. A material belongs to the mesh
         // it was authored with - an imported model carries its own look - so an object's material
         // field is an override of that, not the only way for one to exist. Without this, a model

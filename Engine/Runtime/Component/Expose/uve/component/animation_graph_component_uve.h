@@ -273,6 +273,8 @@ struct AnimationGraphNodeStateUVE final {
 /// AnimationGraph's own state: an animation graph evaluated every frame. What it moves, which
 /// channels and whether it runs live in its AnimationDriver base (AnimationDriverComponentUVE).
 struct AnimationGraphComponentUVE final {
+    /// Outliner entity with AnimationSequencerComponentUVE supplying clips to this graph.
+    EntityUVE sequencer = kInvalidEntityUVE;
     std::vector<AnimationParameterUVE> parameters;
     /// A new tree starts as Output fed by one Clip, so picking a clip is all it takes to play.
     std::vector<AnimationGraphNodeUVE> nodes = MakeDefaultAnimationGraphUVE();
@@ -302,7 +304,7 @@ struct AnimationGraphComponentUVE final {
 
     /// Authored data only: runtime state is ignored.
     [[nodiscard]] bool HasSameSettingsUVE(const AnimationGraphComponentUVE& other) const {
-        return parameters == other.parameters && nodes == other.nodes;
+        return sequencer == other.sequencer && parameters == other.parameters && nodes == other.nodes;
     }
 
     [[nodiscard]] bool operator==(const AnimationGraphComponentUVE&) const = default;

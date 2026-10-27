@@ -884,34 +884,56 @@ public:
 
         const univex::integration::EditorMeshLayerResultUVE meshResult = meshLayer_.RenderUVE(
             camera_, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), lookThroughCamera);
-        if (!gameWorkspaceActive_ && !studioView_ && !previewing_) {
+        const bool wantOverlay = !gameWorkspaceActive_ && !studioView_ && !previewing_;
+        if (wantOverlay) {
             const float aspect = static_cast<float>(width) / static_cast<float>(height);
-            univex::gizmo::GizmoMesh overlay = BuildCameraFrustumMeshUVE(
-                entityManager_, lookThroughCamera.value_or(UVE::Scene::kInvalidEntityUVE), aspect);
-            univex::gizmo::GizmoMesh lights = BuildLightDirectionMeshUVE(entityManager_);
-            overlay.lines.insert(overlay.lines.end(), lights.lines.begin(), lights.lines.end());
-            overlay.triangles.insert(overlay.triangles.end(), lights.triangles.begin(), lights.triangles.end());
-            univex::gizmo::GizmoMesh fog = BuildFogVolumeMeshUVE(entityManager_);
-            overlay.lines.insert(overlay.lines.end(), fog.lines.begin(), fog.lines.end());
-            overlay.triangles.insert(overlay.triangles.end(), fog.triangles.begin(), fog.triangles.end());
-            univex::gizmo::GizmoMesh probes = BuildReflectionProbeMeshUVE(entityManager_);
-            overlay.lines.insert(overlay.lines.end(), probes.lines.begin(), probes.lines.end());
-            overlay.triangles.insert(overlay.triangles.end(), probes.triangles.begin(), probes.triangles.end());
-            univex::gizmo::GizmoMesh partitions = BuildWorldPartitionMeshUVE(entityManager_);
-            overlay.lines.insert(overlay.lines.end(), partitions.lines.begin(), partitions.lines.end());
-            overlay.triangles.insert(overlay.triangles.end(), partitions.triangles.begin(), partitions.triangles.end());
-            univex::gizmo::GizmoMesh regions = BuildVisibilityRegionMeshUVE(entityManager_);
-            overlay.lines.insert(overlay.lines.end(), regions.lines.begin(), regions.lines.end());
-            overlay.triangles.insert(overlay.triangles.end(), regions.triangles.begin(), regions.triangles.end());
-            univex::gizmo::GizmoMesh occluders = BuildOccluderMeshUVE(entityManager_);
-            overlay.lines.insert(overlay.lines.end(), occluders.lines.begin(), occluders.lines.end());
-            overlay.triangles.insert(overlay.triangles.end(), occluders.triangles.begin(), occluders.triangles.end());
-            univex::gizmo::GizmoMesh colliders = BuildColliderMeshUVE(entityManager_);
-            overlay.lines.insert(overlay.lines.end(), colliders.lines.begin(), colliders.lines.end());
-            overlay.triangles.insert(overlay.triangles.end(), colliders.triangles.begin(), colliders.triangles.end());
-            renderPass_->SetCameraFrustumMeshUVE(std::move(overlay));
+            const UVE::Scene::EntityUVE lookThrough = lookThroughCamera.value_or(UVE::Scene::kInvalidEntityUVE);
+            const std::size_t entityCount = entityManager_.GetEntityCountUVE();
+
+            overlayRefreshTimerSeconds_ += ImGui::GetIO().DeltaTime;
+            const bool timerElapsed = overlayRefreshTimerSeconds_ >= 0.10F;
+            const bool stateChanged = !cachedOverlayActive_ ||
+                                      std::fabs(aspect - cachedOverlayAspect_) > 0.001F ||
+                                      lookThrough != cachedLookThroughCamera_ ||
+                                      entityCount != cachedOverlayEntityCount_ ||
+                                      dragHandle_ != univex::gizmo::GizmoHandleUVE::None;
+            if (stateChanged || timerElapsed) {
+                overlayRefreshTimerSeconds_ = 0.0F;
+                cachedOverlayActive_ = true;
+                cachedOverlayAspect_ = aspect;
+                cachedLookThroughCamera_ = lookThrough;
+                cachedOverlayEntityCount_ = entityCount;
+
+                univex::gizmo::GizmoMesh overlay = BuildCameraFrustumMeshUVE(
+                    entityManager_, lookThrough, aspect);
+                univex::gizmo::GizmoMesh lights = BuildLightDirectionMeshUVE(entityManager_);
+                overlay.lines.insert(overlay.lines.end(), lights.lines.begin(), lights.lines.end());
+                overlay.triangles.insert(overlay.triangles.end(), lights.triangles.begin(), lights.triangles.end());
+                univex::gizmo::GizmoMesh fog = BuildFogVolumeMeshUVE(entityManager_);
+                overlay.lines.insert(overlay.lines.end(), fog.lines.begin(), fog.lines.end());
+                overlay.triangles.insert(overlay.triangles.end(), fog.triangles.begin(), fog.triangles.end());
+                univex::gizmo::GizmoMesh probes = BuildReflectionProbeMeshUVE(entityManager_);
+                overlay.lines.insert(overlay.lines.end(), probes.lines.begin(), probes.lines.end());
+                overlay.triangles.insert(overlay.triangles.end(), probes.triangles.begin(), probes.triangles.end());
+                univex::gizmo::GizmoMesh partitions = BuildWorldPartitionMeshUVE(entityManager_);
+                overlay.lines.insert(overlay.lines.end(), partitions.lines.begin(), partitions.lines.end());
+                overlay.triangles.insert(overlay.triangles.end(), partitions.triangles.begin(), partitions.triangles.end());
+                univex::gizmo::GizmoMesh regions = BuildVisibilityRegionMeshUVE(entityManager_);
+                overlay.lines.insert(overlay.lines.end(), regions.lines.begin(), regions.lines.end());
+                overlay.triangles.insert(overlay.triangles.end(), regions.triangles.begin(), regions.triangles.end());
+                univex::gizmo::GizmoMesh occluders = BuildOccluderMeshUVE(entityManager_);
+                overlay.lines.insert(overlay.lines.end(), occluders.lines.begin(), occluders.lines.end());
+                overlay.triangles.insert(overlay.triangles.end(), occluders.triangles.begin(), occluders.triangles.end());
+                univex::gizmo::GizmoMesh colliders = BuildColliderMeshUVE(entityManager_);
+                overlay.lines.insert(overlay.lines.end(), colliders.lines.begin(), colliders.lines.end());
+                overlay.triangles.insert(overlay.triangles.end(), colliders.triangles.begin(), colliders.triangles.end());
+                renderPass_->SetCameraFrustumMeshUVE(std::move(overlay));
+            }
         } else {
-            renderPass_->SetCameraFrustumMeshUVE({});
+            if (cachedOverlayActive_) {
+                renderPass_->SetCameraFrustumMeshUVE({});
+                cachedOverlayActive_ = false;
+            }
         }
         outUsedSize = UVE::Math::Vector2UVE{static_cast<float>(width), static_cast<float>(height)};
 
@@ -942,10 +964,42 @@ public:
         // The selection outline sits over the scene and the grid, under the gizmos. The Game tab
         // previews what a player sees, so no editor outline there.
         if (!gameWorkspaceActive_ && !studioView_ && !previewing_) {
-            renderPass_->RenderSelectionOutlineUVE(
-                camera_, width, height,
-                univex::integration::CollectSelectionOutlineTrianglesUVE(
-                    entityManager_, editor_.GetSelectedEntitiesUVE(), editor_.GetSelectedEntityUVE()));
+            const auto& selected = editor_.GetSelectedEntitiesUVE();
+            const auto active = editor_.GetSelectedEntityUVE();
+            if (selected.empty()) {
+                cachedSelectionTriangles_.clear();
+                lastSelectedEntities_.clear();
+                lastSelectedEntity_ = UVE::Scene::kInvalidEntityUVE;
+                lastSelectedSnapshots_.clear();
+            } else {
+                bool needsRebuild = false;
+                if (selected != lastSelectedEntities_ || active != lastSelectedEntity_) {
+                    needsRebuild = true;
+                } else if (dragHandle_ != univex::gizmo::GizmoHandleUVE::None) {
+                    needsRebuild = true;
+                } else if (AnySelectedEntityMoved()) {
+                    needsRebuild = true;
+                }
+
+                if (needsRebuild) {
+                    cachedSelectionTriangles_ = univex::integration::CollectSelectionOutlineTrianglesUVE(
+                        entityManager_, selected, active);
+                    lastSelectedEntities_ = selected;
+                    lastSelectedEntity_ = active;
+                    lastSelectedSnapshots_.clear();
+                    lastSelectedSnapshots_.reserve(selected.size());
+                    for (const auto ent : selected) {
+                        if (entityManager_.IsAliveUVE(ent) &&
+                            entityManager_.HasComponentUVE<UVE::Scene::WorldTransformComponentUVE>(ent)) {
+                            const auto& wt = entityManager_.GetComponentUVE<UVE::Scene::WorldTransformComponentUVE>(ent);
+                            lastSelectedSnapshots_.push_back({ent, wt.worldPosition, wt.worldRotation});
+                        }
+                    }
+                }
+            }
+            if (!cachedSelectionTriangles_.empty()) {
+                renderPass_->RenderSelectionOutlineUVE(camera_, width, height, cachedSelectionTriangles_);
+            }
         }
         renderPass_->RenderOverlayUVE(camera_, width, height);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
@@ -994,6 +1048,9 @@ private:
     }
 
     [[nodiscard]] bool EnsureFramebuffersUVE(const int width, const int height) {
+        if (width <= 0 || height <= 0) {
+            return false;
+        }
         if (width == framebufferWidth_ && height == framebufferHeight_ && resolveFbo_ != 0U) {
             return true;
         }
@@ -2186,6 +2243,41 @@ private:
     // never runs - see EditorMeshLayerUVE::RenderUVE()'s own call site comment).
     GLuint uiFontAtlasTexture_ = 0U;
     std::optional<UVE::App::Viewport2DIntegration::Viewport2DHostUVE> viewport2dHost_;
+
+    // Gizmo overlay geometry cache (WP-P4: eliminates per-frame heap churn while orbiting/swiping).
+    float cachedOverlayAspect_ = 0.0F;
+    UVE::Scene::EntityUVE cachedLookThroughCamera_ = UVE::Scene::kInvalidEntityUVE;
+    std::size_t cachedOverlayEntityCount_ = 0;
+    bool cachedOverlayActive_ = false;
+    float overlayRefreshTimerSeconds_ = 0.0F;
+
+    // Selection outline geometry cache (WP-P4: avoids re-scanning scene & transforming vertices on idle/orbit frames).
+    std::vector<UVE::Scene::EntityUVE> lastSelectedEntities_;
+    UVE::Scene::EntityUVE lastSelectedEntity_ = UVE::Scene::kInvalidEntityUVE;
+    std::vector<univex::render::SelectionOutlineVertex> cachedSelectionTriangles_;
+    struct SelectedEntitySnapshotUVE {
+        UVE::Scene::EntityUVE entity;
+        UVE::Math::Vector3UVE position;
+        UVE::Math::QuaternionUVE rotation;
+    };
+    std::vector<SelectedEntitySnapshotUVE> lastSelectedSnapshots_;
+
+    [[nodiscard]] bool AnySelectedEntityMoved() const {
+        for (const auto& snap : lastSelectedSnapshots_) {
+            if (!entityManager_.IsAliveUVE(snap.entity) ||
+                !entityManager_.HasComponentUVE<UVE::Scene::WorldTransformComponentUVE>(snap.entity)) {
+                return true;
+            }
+            const auto& wt = entityManager_.GetComponentUVE<UVE::Scene::WorldTransformComponentUVE>(snap.entity);
+            if (wt.dirty) {
+                return true;
+            }
+            if (snap.position != wt.worldPosition || snap.rotation != wt.worldRotation) {
+                return true;
+            }
+        }
+        return false;
+    }
 };
 
 } // namespace

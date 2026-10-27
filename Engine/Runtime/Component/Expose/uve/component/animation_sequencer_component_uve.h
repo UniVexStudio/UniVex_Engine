@@ -55,7 +55,7 @@ struct AnimationSequencerComponentUVE final {
     /// Where in the clip playback starts, in seconds.
     float startOffsetSeconds = 0.0F;
     /// Eases from wherever the target is into the clip over this many seconds, instead of snapping.
-    float blendInSeconds = 0.0F;
+    float blendInSeconds = 0.15F;
     /// Plays the clip on top of where the target already is, so one clip (a bob, a sway, a door
     /// swing) works on any object wherever it was placed. Off, the clip's poses are absolute.
     bool relative = false;
