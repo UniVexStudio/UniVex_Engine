@@ -27,6 +27,8 @@ struct BaselineEntryUVE final {
     ProjectFileEntryKindUVE kind = ProjectFileEntryKindUVE::File;
     std::optional<AssetGuidUVE> registeredAssetGuid;
     std::optional<AssetContentFingerprintUVE> contentFingerprint;
+    std::filesystem::file_time_type lastWriteTime{};
+    std::uintmax_t fileSize = 0U;
 };
 
 [[nodiscard]] bool PhysicalIdentityMatchesUVE(const BaselineEntryUVE& left,
@@ -47,6 +49,7 @@ struct BaselineEntryUVE final {
 
 [[nodiscard]] std::optional<std::map<std::string, BaselineEntryUVE>>
 BuildBaselineUVE(const std::filesystem::path& configuredContentRoot, const IAssetDatabaseUVE& assetDatabase,
+                 const std::map<std::string, BaselineEntryUVE>* const previousBaseline,
                  std::string& outDiagnostic) {
     outDiagnostic.clear();
     std::map<std::string, BaselineEntryUVE> baseline;
@@ -85,7 +88,8 @@ BuildBaselineUVE(const std::filesystem::path& configuredContentRoot, const IAsse
     // The traversal itself - iterator lifecycle, symlink fencing, root-boundary checks - is
     // shared with ProjectFileIndexUVE (Detail::WalkProjectContentTreeUVE); the fingerprint
     // failure stays this walker's sole per-entry abort, keeping its original diagnostic.
-    const auto baselineOneEntry = [&baseline, &registeredAssetsByRelativePath, &outDiagnostic](
+    const auto baselineOneEntry = [&baseline, &registeredAssetsByRelativePath, &outDiagnostic,
+                                   previousBaseline](
                                       const std::filesystem::path& absoluteEntryPath,
                                       const std::filesystem::path& relativePath,
                                       const ProjectFileEntryKindUVE kind) {
@@ -93,12 +97,42 @@ BuildBaselineUVE(const std::filesystem::path& configuredContentRoot, const IAsse
         baselineEntry.relativePath = relativePath;
         baselineEntry.kind = kind;
         if (kind == ProjectFileEntryKindUVE::File) {
+            std::error_code metaError;
+            const auto writeTime = std::filesystem::last_write_time(absoluteEntryPath, metaError);
+            const auto size = !metaError ? std::filesystem::file_size(absoluteEntryPath, metaError) : 0U;
+
+            const std::string key = relativePath.generic_string();
+            if (previousBaseline != nullptr) {
+                const auto prevIt = previousBaseline->find(key);
+                if (prevIt != previousBaseline->end() && prevIt->second.kind == kind) {
+                    if (!metaError && prevIt->second.lastWriteTime == writeTime && prevIt->second.fileSize == size &&
+                        prevIt->second.contentFingerprint.has_value()) {
+                        // Fast path: file metadata (timestamp and size) is unchanged since the last baseline.
+                        // Reuse the cached fingerprint without reading the file from disk!
+                        baselineEntry.lastWriteTime = writeTime;
+                        baselineEntry.fileSize = size;
+                        baselineEntry.contentFingerprint = prevIt->second.contentFingerprint;
+                        const auto registeredIt = registeredAssetsByRelativePath.find(key);
+                        if (registeredIt != registeredAssetsByRelativePath.end()) {
+                            baselineEntry.registeredAssetGuid = registeredIt->second;
+                        } else {
+                            baselineEntry.registeredAssetGuid = prevIt->second.registeredAssetGuid;
+                        }
+                        baseline.emplace(key, std::move(baselineEntry));
+                        return true;
+                    }
+                }
+            }
+
+            // Fingerprint from disk when new, missing from previous baseline, or modified.
+            baselineEntry.lastWriteTime = writeTime;
+            baselineEntry.fileSize = size;
             baselineEntry.contentFingerprint = ComputeAssetContentFingerprintUVE(absoluteEntryPath);
             if (!baselineEntry.contentFingerprint.has_value()) {
                 outDiagnostic = "Unable to fingerprint a project content file.";
                 return false;
             }
-            const auto registeredIt = registeredAssetsByRelativePath.find(relativePath.generic_string());
+            const auto registeredIt = registeredAssetsByRelativePath.find(key);
             if (registeredIt != registeredAssetsByRelativePath.end()) {
                 baselineEntry.registeredAssetGuid = registeredIt->second;
             }
@@ -144,7 +178,8 @@ bool ProjectChangeWatcherUVE::ScanNowLockedUVE(const IAssetDatabaseUVE& assetDat
                                                 IDerivedArtifactCacheUVE& derivedArtifactCache) {
     std::string diagnostic;
     std::optional<std::map<std::string, BaselineEntryUVE>> refreshedBaseline =
-        BuildBaselineUVE(m_impl->contentRoot, assetDatabase, diagnostic);
+        BuildBaselineUVE(m_impl->contentRoot, assetDatabase,
+                         m_impl->baselineInitialized ? &m_impl->baseline : nullptr, diagnostic);
     if (!refreshedBaseline.has_value()) {
         m_impl->snapshot.lastScanDiagnostic = std::move(diagnostic);
         return false;

@@ -664,8 +664,12 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
             const bool hot = ImGui::IsItemHovered() || ImGui::IsItemActive();
             if (hot) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                ImGui::GetWindowDrawList()->AddRectFilled(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
-                                                          IM_COL32(90, 150, 215, 130));
+                const ImVec2 gripMin = ImGui::GetItemRectMin();
+                const ImVec2 gripMax = ImGui::GetItemRectMax();
+                const float seamX = (gripMin.x + gripMax.x) * 0.5F;
+                ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{seamX - 1.0F, gripMin.y},
+                                                          ImVec2{seamX + 1.0F, gripMax.y},
+                                                          IM_COL32(90, 150, 215, 220));
             }
             if (ImGui::IsItemActive()) {
                 if (io.MouseDelta.x != 0.0F) {
@@ -694,9 +698,10 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
             if (ImGui::IsItemActive()) {
                 // Dragging up grows the dock, so the mouse delta is subtracted from its height.
                 if (io.MouseDelta.y != 0.0F) {
-                    const float column = layout.viewportSize.y + layout.contentBrowserSize.y;
+                    const float column = layout.viewportSize.y + layout.dockTabBarSize.y + layout.contentBrowserSize.y;
+                    const float currentDockHeight = layout.dockTabBarSize.y + layout.contentBrowserSize.y;
                     const float from =
-                        m_bottomDockHeight > 0.0F ? m_bottomDockHeight : layout.contentBrowserSize.y;
+                        m_bottomDockHeight > 0.0F ? m_bottomDockHeight : currentDockHeight;
                     m_bottomDockHeight = ClampBottomDockHeightUVE(column, from - io.MouseDelta.y);
                 }
             }

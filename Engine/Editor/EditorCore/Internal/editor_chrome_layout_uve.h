@@ -115,12 +115,12 @@ constexpr float kDockTabBarHeightUVE = 24.0F;
 constexpr float kEditorTitleBarHeightUVE = 24.0F;
 constexpr float kEditorToolbarHeightUVE = 26.0F;
 constexpr float kEditorTopChromeHeightUVE = kEditorTitleBarHeightUVE + kEditorToolbarHeightUVE;
-constexpr float kScenePanelWidthFractionUVE = 0.15F;
+constexpr float kScenePanelWidthFractionUVE = 0.16F;
 constexpr float kScenePanelWidthMinUVE = 184.0F;
-constexpr float kScenePanelWidthMaxUVE = 264.0F;
-constexpr float kInspectorPanelWidthFractionUVE = 0.18F;
-constexpr float kInspectorPanelWidthMinUVE = 220.0F;
-constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
+constexpr float kScenePanelWidthMaxUVE = 600.0F;
+constexpr float kInspectorPanelWidthFractionUVE = 0.22F;
+constexpr float kInspectorPanelWidthMinUVE = 240.0F;
+constexpr float kInspectorPanelWidthMaxUVE = 800.0F;
 
 /// Resize limits - the one place they are written down.
 ///
@@ -134,11 +134,11 @@ constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
 /// The maxima are fractions rather than pixels because the same editor runs at 1280 and at 4K, and
 /// a fixed 640px cap is generous on one and a third of the screen on the other.
 constexpr float kScenePanelResizeMinUVE = kScenePanelWidthMinUVE;
-constexpr float kScenePanelResizeMaxFractionUVE = 0.40F;
+constexpr float kScenePanelResizeMaxFractionUVE = 0.45F;
 constexpr float kInspectorPanelResizeMinUVE = kInspectorPanelWidthMinUVE;
-constexpr float kInspectorPanelResizeMaxFractionUVE = 0.40F;
+constexpr float kInspectorPanelResizeMaxFractionUVE = 0.60F;
 /// The dock may take most of the column, but never all of it: the viewport keeps this much.
-constexpr float kBottomDockMaxFractionUVE = 0.75F;
+constexpr float kBottomDockMaxFractionUVE = 0.80F;
 /// The drag grip. It straddles the seam, so half of it lies over each neighbour; the visible
 /// divider is the 1px line the panels already draw, and the grip itself paints nothing until
 /// it is hovered or held - then a 2px line on the seam lights up.

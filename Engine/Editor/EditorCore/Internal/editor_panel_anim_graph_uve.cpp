@@ -32,8 +32,10 @@
 #include "editor_animation_graph_widgets_uve.h"
 
 #include "uve/asset/animation_clip_asset_uve.h"
+#include "uve/asset/animation_library_asset_uve.h"
 #include "uve/component/animation_driver_component_uve.h"
 #include "uve/component/animation_graph_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"
 #include "uve/objects/3d/animation_graph_uve.h"
@@ -813,6 +815,270 @@ bool EditorUVE::EditAnimationGraphUVE(const Scene::EntityUVE tree,
     return true;
 }
 
+std::vector<Asset::AssetGuidUVE> EditorUVE::GetSequencerClipsUVE(const Scene::EntityUVE sequencerEntity) const {
+    std::vector<Asset::AssetGuidUVE> clips;
+    if (sequencerEntity == Scene::kInvalidEntityUVE) {
+        return clips;
+    }
+    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.IsAliveUVE(sequencerEntity) ||
+        !entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(sequencerEntity)) {
+        return clips;
+    }
+    const auto& comp = entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(sequencerEntity);
+    if (comp.clip != Asset::AssetGuidUVE{}) {
+        clips.push_back(comp.clip);
+    }
+    for (const Asset::AssetGuidUVE guid : comp.library) {
+        if (guid != Asset::AssetGuidUVE{} && std::ranges::find(clips, guid) == clips.end()) {
+            clips.push_back(guid);
+        }
+    }
+    if (comp.libraryRef != Asset::AssetGuidUVE{}) {
+        const std::filesystem::path libPath = m_services->GetAssetDatabaseUVE().ResolveUVE(comp.libraryRef);
+        if (!libPath.empty()) {
+            Asset::AnimationLibraryAssetUVE libAsset;
+            if (Asset::LoadAnimationLibraryAssetUVE(libPath, libAsset)) {
+                for (const auto& item : libAsset.entries) {
+                    if (item.clip != Asset::AssetGuidUVE{} && std::ranges::find(clips, item.clip) == clips.end()) {
+                        clips.push_back(item.clip);
+                    }
+                }
+            }
+        }
+    }
+    return clips;
+}
+
+Scene::EntityUVE EditorUVE::ResolveActiveSequencerForGraphUVE(const Scene::EntityUVE treeEntity) const {
+    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    // 1. Explicitly assigned on the AnimationGraphComponentUVE
+    if (treeEntity != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(treeEntity) &&
+        entityManager.HasComponentUVE<Scene::AnimationGraphComponentUVE>(treeEntity)) {
+        const auto& graphComp = entityManager.GetComponentUVE<Scene::AnimationGraphComponentUVE>(treeEntity);
+        if (graphComp.sequencer != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(graphComp.sequencer) &&
+            entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(graphComp.sequencer)) {
+            return graphComp.sequencer;
+        }
+    }
+    // 2. View state
+    if (m_animGraph.sequencer != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(m_animGraph.sequencer) &&
+        entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(m_animGraph.sequencer)) {
+        return m_animGraph.sequencer;
+    }
+    // 3. Tree entity itself
+    if (treeEntity != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(treeEntity) &&
+        entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(treeEntity)) {
+        return treeEntity;
+    }
+    // 4. Target or parent entity
+    if (treeEntity != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(treeEntity)) {
+        if (entityManager.HasComponentUVE<Scene::AnimationDriverComponentUVE>(treeEntity)) {
+            const auto target = entityManager.GetComponentUVE<Scene::AnimationDriverComponentUVE>(treeEntity).target;
+            if (target != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(target) &&
+                entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(target)) {
+                return target;
+            }
+        }
+        if (entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(treeEntity)) {
+            const auto parent = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(treeEntity).parent;
+            if (parent != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(parent) &&
+                entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(parent)) {
+                return parent;
+            }
+        }
+    }
+    // 5. Timeline player
+    if (m_timeline.player != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(m_timeline.player) &&
+        entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(m_timeline.player)) {
+        return m_timeline.player;
+    }
+    return Scene::kInvalidEntityUVE;
+}
+
+void EditorUVE::DrawAnimationSequencerPickerSlotUVE(const char* const id, const Scene::EntityUVE treeEntity,
+                                                   const Scene::EntityUVE currentSequencer,
+                                                   const std::function<void(Scene::EntityUVE)>& onPicked) {
+    (void)treeEntity;
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const bool isBound = currentSequencer != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(currentSequencer) &&
+                         entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(currentSequencer);
+    std::string displayName = "Empty";
+    if (isBound) {
+        if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(currentSequencer)) {
+            displayName = entityManager.GetComponentUVE<Scene::NameComponentUVE>(currentSequencer).name;
+        } else {
+            displayName = "Sequencer #" + std::to_string(currentSequencer.index);
+        }
+    }
+
+    ImGui::PushID(id);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("Sequencer:");
+    ImGui::SameLine(0.0F, 6.0F);
+
+    const std::string label = displayName + "  ▼";
+    if (!isBound) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55F, 0.55F, 0.58F, 1.0F));
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35F, 0.85F, 1.0F, 1.0F));
+    }
+
+    const float btnWidth = std::clamp(ImGui::CalcTextSize(label.c_str()).x + 20.0F, 90.0F, 220.0F);
+    if (ImGui::Button(label.c_str(), ImVec2{btnWidth, 0.0F})) {
+        m_animGraph.openSequencerPickerModal = true;
+    }
+    ImGui::PopStyleColor();
+
+    if (ImGui::IsItemHovered()) {
+        if (isBound) {
+            const std::vector<Asset::AssetGuidUVE> clips = GetSequencerClipsUVE(currentSequencer);
+            ImGui::SetTooltip("Bound Animation Sequencer: %s\n%zu animation clips accessible.\nClick to change sequencer from Outliner.",
+                              displayName.c_str(), clips.size());
+        } else {
+            ImGui::SetTooltip("No Animation Sequencer assigned.\nClick to pick an Animation Sequencer from the Outliner to access its clips.");
+        }
+    }
+
+    if (isBound) {
+        ImGui::SameLine(0.0F, 4.0F);
+        if (ImGui::SmallButton("✕##clear-seq")) {
+            if (onPicked) {
+                onPicked(Scene::kInvalidEntityUVE);
+            }
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Clear / Unbind Animation Sequencer");
+        }
+    }
+
+    ImGui::PopID();
+}
+
+void EditorUVE::DrawAnimationSequencerPickerModalUVE(const Scene::EntityUVE currentSequencer,
+                                                    const std::function<void(Scene::EntityUVE)>& onPicked) {
+    if (m_animGraph.openSequencerPickerModal) {
+        ImGui::OpenPopup("Select Animation Sequencer##seq-picker-modal");
+        m_animGraph.openSequencerPickerModal = false;
+        m_animGraph.sequencerSearch.clear();
+    }
+
+    ImGui::SetNextWindowSize(ImVec2{460.0F, 340.0F}, ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("Select Animation Sequencer##seq-picker-modal", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+
+        ImGui::TextUnformatted("Animation Sequencers in Outliner:");
+        ImGui::TextDisabled("Select an Animation Sequencer so this Animation Graph can access its animation clips.");
+        ImGui::Separator();
+
+        // Search bar
+        std::array<char, 64> searchBuffer{};
+        std::strncpy(searchBuffer.data(), m_animGraph.sequencerSearch.c_str(), searchBuffer.size() - 1U);
+        ImGui::SetNextItemWidth(-1.0F);
+        if (ImGui::InputTextWithHint("##seq-search-input", "Search sequencer entity name...", searchBuffer.data(), searchBuffer.size())) {
+            m_animGraph.sequencerSearch = searchBuffer.data();
+        }
+        const std::string needle = LowerUVE(m_animGraph.sequencerSearch);
+
+        // Collect outliner entities with AnimationSequencerComponentUVE
+        struct OutlinerSequencerEntryUVE {
+            Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+            std::string name;
+            std::size_t clipCount = 0;
+            std::string activeClipName;
+        };
+        std::vector<OutlinerSequencerEntryUVE> entries;
+
+        entityManager.ForEachUVE<Scene::AnimationSequencerComponentUVE>(
+            [&](const Scene::EntityUVE entity, const Scene::AnimationSequencerComponentUVE& comp) {
+                if (!entityManager.IsAliveUVE(entity)) {
+                    return;
+                }
+                OutlinerSequencerEntryUVE entry;
+                entry.entity = entity;
+                entry.name = entityManager.HasComponentUVE<Scene::NameComponentUVE>(entity)
+                                 ? entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name
+                                 : ("Entity #" + std::to_string(entity.index));
+                if (entry.name.empty()) {
+                    entry.name = "Entity #" + std::to_string(entity.index);
+                }
+                const std::vector<Asset::AssetGuidUVE> clips = GetSequencerClipsUVE(entity);
+                entry.clipCount = clips.size();
+                if (comp.clip != Asset::AssetGuidUVE{}) {
+                    const std::filesystem::path p = m_services->GetAssetDatabaseUVE().ResolveUVE(comp.clip);
+                    entry.activeClipName = p.empty() ? "(clip)" : p.stem().string();
+                }
+                entries.push_back(std::move(entry));
+            });
+
+        // Filter
+        if (!needle.empty()) {
+            std::erase_if(entries, [&needle](const OutlinerSequencerEntryUVE& e) {
+                return LowerUVE(e.name).find(needle) == std::string::npos;
+            });
+        }
+
+        // List
+        ImGui::BeginChild("##seq-picker-scroll", ImVec2{440.0F, 180.0F}, true);
+
+        // Option 1: Empty / Unbind
+        const bool isEmptySelected = (currentSequencer == Scene::kInvalidEntityUVE);
+        if (ImGui::Selectable("  [ Empty ] - (None / Unbind)", isEmptySelected)) {
+            if (onPicked) {
+                onPicked(Scene::kInvalidEntityUVE);
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Disconnect animation sequencer; graph operates without a linked sequencer.");
+        }
+        ImGui::Separator();
+
+        if (entries.empty()) {
+            ImGui::Spacing();
+            ImGui::TextDisabled("No AnimationSequencer found in the Scene Outliner.");
+            ImGui::TextDisabled("Add an AnimationSequencerComponent to your character entity.");
+        } else {
+            for (const auto& item : entries) {
+                const bool isCurrent = (item.entity == currentSequencer);
+                std::string itemText = item.name + " (" + std::to_string(item.clipCount) +
+                                       (item.clipCount == 1 ? " clip" : " clips") + ")";
+                if (isCurrent) {
+                    itemText += "  [Active]";
+                }
+                if (!item.activeClipName.empty()) {
+                    itemText += "  [" + item.activeClipName + "]";
+                }
+
+                if (ImGui::Selectable(itemText.c_str(), isCurrent)) {
+                    if (onPicked) {
+                        onPicked(item.entity);
+                    }
+                    ImGui::CloseCurrentPopup();
+                }
+                if (ImGui::IsItemHovered()) {
+                    const std::vector<Asset::AssetGuidUVE> clips = GetSequencerClipsUVE(item.entity);
+                    std::string tip = "Entity ID: " + std::to_string(item.entity.index) + "\nClips in library:";
+                    for (const auto& c : clips) {
+                        const std::filesystem::path cp = m_services->GetAssetDatabaseUVE().ResolveUVE(c);
+                        tip += "\n  • " + (cp.empty() ? "(clip)" : cp.stem().string());
+                    }
+                    ImGui::SetTooltip("%s", tip.c_str());
+                }
+            }
+        }
+
+        ImGui::EndChild();
+
+        ImGui::Separator();
+        if (ImGui::Button("Cancel", ImVec2{100.0F, 0.0F}) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
 void EditorUVE::DrawAnimationGraphCanvasUVE() {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     AnimationGraphViewStateUVE& view = m_animGraph;
@@ -846,6 +1112,10 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         auto clips = std::move(view.clips);
         view = AnimationGraphViewStateUVE{};
         view.tree = tree;
+        if (tree != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(tree) &&
+            entityManager.HasComponentUVE<Scene::AnimationGraphComponentUVE>(tree)) {
+            view.sequencer = entityManager.GetComponentUVE<Scene::AnimationGraphComponentUVE>(tree).sequencer;
+        }
         view.previewing = previewing;
         view.clips = std::move(clips);
     }
@@ -865,6 +1135,17 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
             root = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(tree)
                        ? entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(tree).parent
                        : Scene::kInvalidEntityUVE;
+        }
+        if (root == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(root)) {
+            const Scene::EntityUVE activeSeq = ResolveActiveSequencerForGraphUVE(tree);
+            if (activeSeq != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(activeSeq)) {
+                if (entityManager.HasComponentUVE<Scene::AnimationDriverComponentUVE>(activeSeq)) {
+                    root = entityManager.GetComponentUVE<Scene::AnimationDriverComponentUVE>(activeSeq).target;
+                }
+                if (root == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(root)) {
+                    root = activeSeq;
+                }
+            }
         }
         std::vector<Scene::EntityUVE> queue;
         if (root != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(root)) {
@@ -971,6 +1252,14 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         ImGui::SameLine();
         ImGui::TextDisabled("(Esc goes back)");
     }
+    ImGui::SameLine(0.0F, 16.0F);
+    DrawAnimationSequencerPickerSlotUVE("##canvas-seq-picker", tree, component.sequencer,
+        [&](const Scene::EntityUVE picked) {
+            edit = [picked](Scene::AnimationGraphComponentUVE& t) {
+                t.sequencer = picked;
+            };
+            view.sequencer = picked;
+        });
     const float pathHeight = ImGui::GetCursorPosY() - pathTop;
     const float graphHeight = std::max(60.0F, canvasHeight - pathHeight);
 
@@ -1808,6 +2097,65 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         ImGui::EndChild();
     }
 
+    const Scene::EntityUVE activeSeq = ResolveActiveSequencerForGraphUVE(tree);
+    if (activeSeq != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(activeSeq)) {
+        const std::vector<Asset::AssetGuidUVE> seqClips = GetSequencerClipsUVE(activeSeq);
+        const std::string seqName = entityManager.HasComponentUVE<Scene::NameComponentUVE>(activeSeq)
+                                        ? entityManager.GetComponentUVE<Scene::NameComponentUVE>(activeSeq).name
+                                        : "Sequencer";
+        ImGui::Spacing();
+        const std::string headerTitle = "Sequencer Clips: " + seqName + " (" + std::to_string(seqClips.size()) + ")";
+        if (ImGui::CollapsingHeader(headerTitle.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (seqClips.empty()) {
+                ImGui::TextDisabled("No clips in library.");
+            } else {
+                for (const Asset::AssetGuidUVE clipGuid : seqClips) {
+                    const std::filesystem::path clipPath = m_services->GetAssetDatabaseUVE().ResolveUVE(clipGuid);
+                    const std::string clipName = clipPath.empty() ? "(clip)" : clipPath.stem().string();
+                    ImGui::PushID(static_cast<int>(clipGuid.value & 0x7FFFFFFF));
+                    ImGui::BulletText("%s", clipName.c_str());
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("+ Node")) {
+                        edit = [clipGuid, clipName](Scene::AnimationGraphComponentUVE& t) {
+                            AnimationGraphNodeUVE newNode;
+                            newNode.id = Scene::NextAnimationGraphNodeIdUVE(t.nodes);
+                            newNode.kind = Kind::Clip;
+                            newNode.name = clipName;
+                            newNode.clip = clipGuid;
+                            newNode.position = Math::Vector2UVE{120.0F, 80.0F};
+                            t.nodes.push_back(newNode);
+                        };
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Add '%s' as a Clip node in the graph", clipName.c_str());
+                    }
+                    if (!view.selected.empty()) {
+                        const auto selIt = std::ranges::find(nodes, view.selected.front(), &AnimationGraphNodeUVE::id);
+                        if (selIt != nodes.end() && selIt->kind == Kind::Clip) {
+                            ImGui::SameLine();
+                            if (ImGui::SmallButton("Set")) {
+                                const std::uint32_t selId = selIt->id;
+                                edit = [selId, clipGuid, clipName](Scene::AnimationGraphComponentUVE& t) {
+                                    const auto it = std::ranges::find(t.nodes, selId, &AnimationGraphNodeUVE::id);
+                                    if (it != t.nodes.end()) {
+                                        it->clip = clipGuid;
+                                        if (it->name.empty() || it->name == "Clip") {
+                                            it->name = clipName;
+                                        }
+                                    }
+                                };
+                            }
+                            if (ImGui::IsItemHovered()) {
+                                ImGui::SetTooltip("Assign '%s' to selected node '%s'", clipName.c_str(), selIt->name.c_str());
+                            }
+                        }
+                    }
+                    ImGui::PopID();
+                }
+            }
+        }
+    }
+
     ImGui::Separator();
     if (focusedMachine) {
         DrawStateMachineSelectionUVE(tree, focusIt->second, edit);
@@ -2168,6 +2516,14 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         view.status.clear();
         static_cast<void>(EditAnimationGraphUVE(tree, *edit));
     }
+
+    DrawAnimationSequencerPickerModalUVE(component.sequencer,
+        [&](const Scene::EntityUVE picked) {
+            static_cast<void>(EditAnimationGraphUVE(tree, [picked](Scene::AnimationGraphComponentUVE& t) {
+                t.sequencer = picked;
+            }));
+            view.sequencer = picked;
+        });
 }
 
 } // namespace UVE::Editor
