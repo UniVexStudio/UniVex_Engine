@@ -75,6 +75,7 @@
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/morph_target_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
+#include "uve/component/name_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/skin_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
@@ -1226,6 +1227,7 @@ Asset::AssetGuidUVE EditorUVE::PublishModelSourceUVE(const std::filesystem::path
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
     if (extension == ".uvmodel") {
+        static_cast<void>(RegisterImportedModelArtifactsUVE(absolutePath));
         return database.RegisterUVE(absolutePath);
     }
     // Not a model at all - a picker that was opened for some other asset kind. Registering it is
@@ -1255,6 +1257,19 @@ Asset::AssetGuidUVE EditorUVE::PublishModelSourceUVE(const std::filesystem::path
     }
 
     const std::filesystem::path importedPath = GetImportedModelPathUVE(relative);
+    // If the imported .uvmodel is already present and up to date, reuse it directly.
+    if (std::filesystem::is_regular_file(importedPath, error)) {
+        std::error_code timeError;
+        const auto sourceTime = std::filesystem::last_write_time(project.contentRoot / relative, timeError);
+        const auto importedTime = timeError ? std::filesystem::file_time_type::min()
+                                            : std::filesystem::last_write_time(importedPath, timeError);
+        if (!timeError && importedTime >= sourceTime) {
+            static_cast<void>(RegisterImportedModelArtifactsUVE(importedPath));
+            RefreshProjectFileIndexUVE();
+            return database.RegisterUVE(importedPath);
+        }
+    }
+
     std::filesystem::create_directories(importedPath.parent_path(), error);
     const Asset::AssetGuidUVE imported = m_services->GetAssetImporterUVE().ImportUVE(
         project.contentRoot / relative, importedPath, database, Asset::AssetImportSettingsUVE{});
@@ -1263,6 +1278,7 @@ Asset::AssetGuidUVE EditorUVE::PublishModelSourceUVE(const std::filesystem::path
         // filled and draws nothing forever; an unchanged slot at least tells the truth.
         return Asset::kInvalidAssetGuidUVE;
     }
+    static_cast<void>(RegisterImportedModelArtifactsUVE(importedPath));
     // The source is new to Content, and the .uvmodel is new to the project; both must appear now,
     // not on the next rescan, or the author sees a slot pointing at something that is not listed.
     RefreshProjectFileIndexUVE();
@@ -1462,6 +1478,32 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             picked = Asset::kInvalidAssetGuidUVE;
         }
         ImGui::Separator();
+        if (extension == ".uvanim") {
+            const Scene::EntityUVE seqEntity = ResolveActiveSequencerForGraphUVE(
+                m_animGraph.tree != Scene::kInvalidEntityUVE ? m_animGraph.tree : m_selectedEntity);
+            if (seqEntity != Scene::kInvalidEntityUVE) {
+                const std::vector<Asset::AssetGuidUVE> seqClips = GetSequencerClipsUVE(seqEntity);
+                if (!seqClips.empty()) {
+                    const std::string seqName =
+                        m_services->GetEntityManagerUVE().HasComponentUVE<Scene::NameComponentUVE>(seqEntity)
+                            ? m_services->GetEntityManagerUVE().GetComponentUVE<Scene::NameComponentUVE>(seqEntity).name
+                            : "Sequencer";
+                    ImGui::TextColored(ImVec4(0.35F, 0.75F, 0.95F, 1.0F), "FROM SEQUENCER: %s", seqName.c_str());
+                    for (const Asset::AssetGuidUVE clipGuid : seqClips) {
+                        const std::filesystem::path clipPath = database.ResolveUVE(clipGuid);
+                        const std::string clipLabel = clipPath.empty() ? "(clip)" : clipPath.stem().string();
+                        const bool isCurrent = (value == clipGuid);
+                        if (ImGui::Selectable(clipLabel.c_str(), isCurrent)) {
+                            picked = clipGuid;
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("From sequencer '%s': %s", seqName.c_str(), clipPath.generic_string().c_str());
+                        }
+                    }
+                    ImGui::Separator();
+                }
+            }
+        }
         ImGui::TextDisabled(isMaterial ? "PROJECT MATERIALS" : "PROJECT ASSETS");
         // Registered assets plus every project file of the kind, so a model imported in an
         // earlier session is offered too; picking an unregistered file registers it.
@@ -1514,13 +1556,18 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             const std::string label = candidate.path.stem().string() + "##" + candidate.path.generic_string();
             if (ImGui::Selectable(label.c_str(), isSelected) && !isSelected) {
                 // An unregistered file is published on the way in, so the slot never ends up
-                // holding a source format the runtime cannot open.
+                // holding a source format the runtime cannot open. Even if a model or texture source
+                // was previously registered in the database, the slot receives its published canonical
+                // form (.uvmodel / .uvtex) so the runtime loader can actually read and render it.
                 const Asset::AssetGuidUVE chosen =
-                    candidate.guid.has_value()
-                        ? *candidate.guid
-                        : (isTexture ? PublishTextureSourceUVE(candidate.path)
-                                     : (isModel ? PublishModelSourceUVE(candidate.path)
-                                                : m_services->GetAssetDatabaseUVE().RegisterUVE(candidate.path)));
+                    (isModel && candidate.path.extension() != ".uvmodel")
+                        ? PublishModelSourceUVE(candidate.path)
+                        : (isTexture && !candidate.path.extension().string().empty() &&
+                           candidate.path.extension() != ".uvtex")
+                              ? PublishTextureSourceUVE(candidate.path)
+                              : (candidate.guid.has_value()
+                                     ? *candidate.guid
+                                     : m_services->GetAssetDatabaseUVE().RegisterUVE(candidate.path));
                 picked = chosen;
             }
             if (ImGui::IsItemHovered()) {
@@ -1556,27 +1603,35 @@ void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& abso
         // Content Browser's "New ... Material" entries use and leaves every texture reference
         // alone, so switching back and forth never loses an author's maps.
         ImGui::TextDisabled("KIND");
-        int kindIndex = static_cast<int>(mat.kind);
-        constexpr const char* kKindLabels[] = {"Standard", "ORM", "Custom Shader"};
-        ImGui::SetNextItemWidth(-1.0F);
-        if (ImGui::Combo("##materialKind", &kindIndex, kKindLabels, 3)) {
-            mat.kind = static_cast<Asset::MaterialKindUVE>(kindIndex);
-            switch (mat.kind) {
-                case Asset::MaterialKindUVE::Standard:
-                    mat.useCustomShaderCode = false;
-                    break;
-                case Asset::MaterialKindUVE::Orm:
-                    mat.useCustomShaderCode = false;
-                    // The packed map is the point of ORM: a fully metallic surface whose
-                    // roughness, metallic and occlusion all come from the texture.
-                    mat.metallic = 1.0F;
-                    mat.occlusionStrength = 1.0F;
-                    break;
-                case Asset::MaterialKindUVE::Shader:
-                    mat.useCustomShaderCode = true;
-                    break;
+        if (BeginPropertyRowsUVE("##table_mat_kind")) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Preset");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            int kindIndex = static_cast<int>(mat.kind);
+            constexpr const char* kKindLabels[] = {"Standard", "ORM", "Custom Shader"};
+            if (ImGui::Combo("##materialKind", &kindIndex, kKindLabels, 3)) {
+                mat.kind = static_cast<Asset::MaterialKindUVE>(kindIndex);
+                switch (mat.kind) {
+                    case Asset::MaterialKindUVE::Standard:
+                        mat.useCustomShaderCode = false;
+                        break;
+                    case Asset::MaterialKindUVE::Orm:
+                        mat.useCustomShaderCode = false;
+                        // The packed map is the point of ORM: a fully metallic surface whose
+                        // roughness, metallic and occlusion all come from the texture.
+                        mat.metallic = 1.0F;
+                        mat.occlusionStrength = 1.0F;
+                        break;
+                    case Asset::MaterialKindUVE::Shader:
+                        mat.useCustomShaderCode = true;
+                        break;
+                }
+                changed = true;
             }
-            changed = true;
+            ImGui::EndTable();
         }
         const char* kindHint = "Metallic and roughness scalars, scaled by the ORM map when one is set.";
         switch (mat.kind) {
@@ -1592,95 +1647,181 @@ void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& abso
         ImGui::TextDisabled("%s", kindHint);
 
         // 1. Albedo
+        ImGui::Spacing();
         ImGui::TextDisabled("ALBEDO");
-        // Through the editor's one colour field, like every other colour row: the plain ImGui row
-        // this replaced opened a square picker, so the same engine showed two different ones.
-        EditorColorUVE albedoColor{mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b, 1.0F};
-        if (DrawColorFieldUVE("##albedoColor", "Albedo Color", albedoColor, false, m_colorPickerPreferences) !=
-            ColorFieldEventUVE::None) {
-            mat.albedoColor = Math::ColorUVE{albedoColor.r, albedoColor.g, albedoColor.b};
-            changed = true;
-        }
-        if (const auto picked = DrawAssetPickerUVE("##albedoTex", mat.albedoTexture, ".png", "Pick Albedo Texture")) {
-            mat.albedoTexture = *picked;
-            // The picture alone describes colour, not shape, so a material that had none is given
-            // the normal map its albedo implies. Only where the author has not supplied one: a
-            // normal map that overwrote an authored one would be this row editing a different row.
-            if (mat.normalTexture == Asset::kInvalidAssetGuidUVE &&
-                mat.kind != Asset::MaterialKindUVE::Shader) {
-                if (const auto derived = DeriveNormalMapForAlbedoUVE(*picked)) {
-                    mat.normalTexture = *derived;
-                }
+        if (BeginPropertyRowsUVE("##table_mat_albedo")) {
+            // Through the editor's one colour field, like every other colour row: the plain ImGui row
+            // this replaced opened a square picker, so the same engine showed two different ones.
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Albedo Color");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            EditorColorUVE albedoColor{mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b, 1.0F};
+            if (DrawColorFieldUVE("##albedoColor", "Albedo Color", albedoColor, false, m_colorPickerPreferences) !=
+                ColorFieldEventUVE::None) {
+                mat.albedoColor = Math::ColorUVE{albedoColor.r, albedoColor.g, albedoColor.b};
+                changed = true;
             }
-            changed = true;
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Albedo Map");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (const auto picked = DrawAssetPickerUVE("##albedoTex", mat.albedoTexture, ".png", "Pick Albedo Texture")) {
+                mat.albedoTexture = *picked;
+                // The picture alone describes colour, not shape, so a material that had none is given
+                // the normal map its albedo implies. Only where the author has not supplied one: a
+                // normal map that overwrote an authored one would be this row editing a different row.
+                if (mat.normalTexture == Asset::kInvalidAssetGuidUVE &&
+                    mat.kind != Asset::MaterialKindUVE::Shader) {
+                    if (const auto derived = DeriveNormalMapForAlbedoUVE(*picked)) {
+                        mat.normalTexture = *derived;
+                    }
+                }
+                changed = true;
+            }
+            ImGui::EndTable();
         }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("Albedo Texture");
 
         // 2. Normal Map & Scale
         ImGui::Spacing();
         ImGui::TextDisabled("NORMAL");
-        if (const auto picked = DrawAssetPickerUVE("##normalTex", mat.normalTexture, ".png", "Pick Normal Texture")) {
-            mat.normalTexture = *picked;
-            changed = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("Normal Map");
-        if (ImGui::SliderFloat("Normal Scale", &mat.normalScale, 0.0F, 4.0F)) {
-            changed = true;
+        if (BeginPropertyRowsUVE("##table_mat_normal")) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Normal Map");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (const auto picked = DrawAssetPickerUVE("##normalTex", mat.normalTexture, ".png", "Pick Normal Texture")) {
+                mat.normalTexture = *picked;
+                changed = true;
+            }
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Normal Scale");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::SliderFloat("##normalScale", &mat.normalScale, 0.0F, 4.0F)) {
+                changed = true;
+            }
+            ImGui::EndTable();
         }
 
         // 3. Roughness & Metallic & ORM Map
         ImGui::Spacing();
         ImGui::TextDisabled("SURFACE / PBR");
-        if (ImGui::SliderFloat("Roughness", &mat.roughness, 0.0F, 1.0F)) {
-            changed = true;
-        }
-        if (const auto picked = DrawAssetPickerUVE("##roughnessTex", mat.roughnessTexture, ".png", "Pick Roughness Texture")) {
-            mat.roughnessTexture = *picked;
-            changed = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("Roughness Map");
+        if (BeginPropertyRowsUVE("##table_mat_surface")) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Roughness");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::SliderFloat("##roughness", &mat.roughness, 0.0F, 1.0F)) {
+                changed = true;
+            }
 
-        if (ImGui::SliderFloat("Metallic", &mat.metallic, 0.0F, 1.0F)) {
-            changed = true;
-        }
-        if (const auto picked = DrawAssetPickerUVE("##metallicTex", mat.metallicTexture, ".png", "Pick Metallic Texture")) {
-            mat.metallicTexture = *picked;
-            changed = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("Metallic Map");
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Roughness Map");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (const auto picked = DrawAssetPickerUVE("##roughnessTex", mat.roughnessTexture, ".png", "Pick Roughness Texture")) {
+                mat.roughnessTexture = *picked;
+                changed = true;
+            }
 
-        if (const auto picked = DrawAssetPickerUVE("##ormTex", mat.metallicRoughnessTexture, ".png", "Pick ORM Texture")) {
-            mat.metallicRoughnessTexture = *picked;
-            changed = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("ORM Map (AO/Rough/Metal)");
-        if (ImGui::SliderFloat("Occlusion Strength", &mat.occlusionStrength, 0.0F, 2.0F)) {
-            changed = true;
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Metallic");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::SliderFloat("##metallic", &mat.metallic, 0.0F, 1.0F)) {
+                changed = true;
+            }
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Metallic Map");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (const auto picked = DrawAssetPickerUVE("##metallicTex", mat.metallicTexture, ".png", "Pick Metallic Texture")) {
+                mat.metallicTexture = *picked;
+                changed = true;
+            }
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("ORM Map");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (const auto picked = DrawAssetPickerUVE("##ormTex", mat.metallicRoughnessTexture, ".png", "Pick ORM Texture")) {
+                mat.metallicRoughnessTexture = *picked;
+                changed = true;
+            }
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Occlusion");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::SliderFloat("##occlusionStrength", &mat.occlusionStrength, 0.0F, 2.0F)) {
+                changed = true;
+            }
+            ImGui::EndTable();
         }
 
         // 4. Emission
         ImGui::Spacing();
         ImGui::TextDisabled("EMISSION");
-        EditorColorUVE emissiveColor{mat.emissiveColor.r, mat.emissiveColor.g, mat.emissiveColor.b, 1.0F};
-        if (DrawColorFieldUVE("##emissiveColor", "Emission Color", emissiveColor, false,
-                              m_colorPickerPreferences) != ColorFieldEventUVE::None) {
-            mat.emissiveColor = Math::ColorUVE{emissiveColor.r, emissiveColor.g, emissiveColor.b};
-            changed = true;
+        if (BeginPropertyRowsUVE("##table_mat_emission")) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Emission Color");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            EditorColorUVE emissiveColor{mat.emissiveColor.r, mat.emissiveColor.g, mat.emissiveColor.b, 1.0F};
+            if (DrawColorFieldUVE("##emissiveColor", "Emission Color", emissiveColor, false,
+                                  m_colorPickerPreferences) != ColorFieldEventUVE::None) {
+                mat.emissiveColor = Math::ColorUVE{emissiveColor.r, emissiveColor.g, emissiveColor.b};
+                changed = true;
+            }
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Emission Energy");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::DragFloat("##emissiveEnergy", &mat.emissiveEnergy, 0.1F, 0.0F, 100.0F)) {
+                changed = true;
+            }
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Emission Map");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (const auto picked = DrawAssetPickerUVE("##emissiveTex", mat.emissiveTexture, ".png", "Pick Emission Texture")) {
+                mat.emissiveTexture = *picked;
+                changed = true;
+            }
+            ImGui::EndTable();
         }
-        if (ImGui::DragFloat("Emission Energy", &mat.emissiveEnergy, 0.1F, 0.0F, 100.0F)) {
-            changed = true;
-        }
-        if (const auto picked = DrawAssetPickerUVE("##emissiveTex", mat.emissiveTexture, ".png", "Pick Emission Texture")) {
-            mat.emissiveTexture = *picked;
-            changed = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("Emission Texture");
 
         // 4b. Rendering state. These were the material fields with no authoring surface at all -
         // serialized, defaulted, and unreachable - while the renderer derived every one of them
@@ -1689,52 +1830,74 @@ void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& abso
         // rather than behind a preset.
         ImGui::Spacing();
         ImGui::TextDisabled("RENDERING");
-        int blendIndex = static_cast<int>(mat.blendMode);
-        constexpr const char* kBlendLabels[] = {"Opaque", "Alpha Blend", "Premultiplied Alpha",
-                                                "Additive", "Subtractive", "Multiply"};
-        ImGui::SetNextItemWidth(-1.0F);
-        if (ImGui::Combo("##materialBlend", &blendIndex, kBlendLabels, 6)) {
-            mat.blendMode = static_cast<Asset::MaterialBlendModeUVE>(blendIndex);
-            // Kept in step so the two spellings of "translucent" can never disagree: the legacy
-            // flag is what old files and the mesh renderer's own queue still read.
-            mat.isTransparent = Asset::IsMaterialBlendModeTranslucentUVE(mat.blendMode);
-            changed = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("Blend Mode");
+        if (BeginPropertyRowsUVE("##table_mat_rendering")) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Blend Mode");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            int blendIndex = static_cast<int>(mat.blendMode);
+            constexpr const char* kBlendLabels[] = {"Opaque", "Alpha Blend", "Premultiplied Alpha",
+                                                    "Additive", "Subtractive", "Multiply"};
+            if (ImGui::Combo("##materialBlend", &blendIndex, kBlendLabels, 6)) {
+                mat.blendMode = static_cast<Asset::MaterialBlendModeUVE>(blendIndex);
+                // Kept in step so the two spellings of "translucent" can never disagree: the legacy
+                // flag is what old files and the mesh renderer's own queue still read.
+                mat.isTransparent = Asset::IsMaterialBlendModeTranslucentUVE(mat.blendMode);
+                changed = true;
+            }
 
-        int cullIndex = static_cast<int>(mat.cullMode);
-        constexpr const char* kCullLabels[] = {"Back Faces", "Front Faces", "Two-Sided"};
-        ImGui::SetNextItemWidth(-1.0F);
-        if (ImGui::Combo("##materialCull", &cullIndex, kCullLabels, 3)) {
-            mat.cullMode = static_cast<Asset::MaterialCullModeUVE>(cullIndex);
-            changed = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("Culling");
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Culling");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            int cullIndex = static_cast<int>(mat.cullMode);
+            constexpr const char* kCullLabels[] = {"Back Faces", "Front Faces", "Two-Sided"};
+            if (ImGui::Combo("##materialCull", &cullIndex, kCullLabels, 3)) {
+                mat.cullMode = static_cast<Asset::MaterialCullModeUVE>(cullIndex);
+                changed = true;
+            }
 
-        int depthIndex = static_cast<int>(mat.depthDrawMode);
-        constexpr const char* kDepthLabels[] = {"Opaque Only", "Always", "Never", "Depth Pre-Pass"};
-        ImGui::SetNextItemWidth(-1.0F);
-        if (ImGui::Combo("##materialDepthDraw", &depthIndex, kDepthLabels, 4)) {
-            mat.depthDrawMode = static_cast<Asset::MaterialDepthDrawModeUVE>(depthIndex);
-            changed = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("Depth Draw");
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Depth Draw");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            int depthIndex = static_cast<int>(mat.depthDrawMode);
+            constexpr const char* kDepthLabels[] = {"Opaque Only", "Always", "Never", "Depth Pre-Pass"};
+            if (ImGui::Combo("##materialDepthDraw", &depthIndex, kDepthLabels, 4)) {
+                mat.depthDrawMode = static_cast<Asset::MaterialDepthDrawModeUVE>(depthIndex);
+                changed = true;
+            }
 
-        if (ImGui::SliderFloat("Albedo Alpha", &mat.albedoAlpha, 0.0F, 1.0F)) {
-            changed = true;
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Albedo Alpha");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::SliderFloat("##albedoAlpha", &mat.albedoAlpha, 0.0F, 1.0F)) {
+                changed = true;
+            }
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Alpha Source");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            int alphaSourceIndex = static_cast<int>(mat.alphaSource);
+            constexpr const char* kAlphaSourceLabels[] = {"Albedo Alpha", "Separate Channel", "None"};
+            if (ImGui::Combo("##materialAlphaSource", &alphaSourceIndex, kAlphaSourceLabels, 3)) {
+                mat.alphaSource = static_cast<Asset::MaterialAlphaSourceUVE>(alphaSourceIndex);
+                changed = true;
+            }
+            ImGui::EndTable();
         }
-        int alphaSourceIndex = static_cast<int>(mat.alphaSource);
-        constexpr const char* kAlphaSourceLabels[] = {"Albedo Alpha", "Separate Channel", "None"};
-        ImGui::SetNextItemWidth(-1.0F);
-        if (ImGui::Combo("##materialAlphaSource", &alphaSourceIndex, kAlphaSourceLabels, 3)) {
-            mat.alphaSource = static_cast<Asset::MaterialAlphaSourceUVE>(alphaSourceIndex);
-            changed = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("Alpha Source");
 
         // 5. Custom Shader
         ImGui::Spacing();
@@ -1750,12 +1913,19 @@ void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& abso
             changed = true;
         }
         if (mat.useCustomShaderCode) {
-            if (const auto picked = DrawAssetPickerUVE("##customShaderAsset", mat.customShader, ".uvshader", "Pick Shader Asset")) {
-                mat.customShader = *picked;
-                changed = true;
+            if (BeginPropertyRowsUVE("##table_mat_custom_shader")) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted("Shader Asset");
+                ImGui::TableSetColumnIndex(1);
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                if (const auto picked = DrawAssetPickerUVE("##customShaderAsset", mat.customShader, ".uvshader", "Pick Shader Asset")) {
+                    mat.customShader = *picked;
+                    changed = true;
+                }
+                ImGui::EndTable();
             }
-            ImGui::SameLine();
-            ImGui::TextUnformatted("Shader Asset");
         }
 
         if (changed) {
@@ -1771,13 +1941,27 @@ void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& abso
 bool EditorUVE::DrawStandardMaterialSlotUVE(const char* const label, const char* const id,
                                            Asset::AssetGuidUVE& inOutGuid) {
     bool edited = false;
-    if (label != nullptr && label[0] != '\0') {
-        ImGui::TextUnformatted(label);
-        ImGui::SameLine();
-    }
-    if (const std::optional<Asset::AssetGuidUVE> picked = DrawAssetPickerUVE(id, inOutGuid, ".uvmaterial", label ? label : "Material")) {
-        inOutGuid = *picked;
-        edited = true;
+    const bool hasLabel = (label != nullptr && label[0] != '\0');
+    if (hasLabel) {
+        if (BeginPropertyRowsUVE(id)) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(label);
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (const std::optional<Asset::AssetGuidUVE> picked = DrawAssetPickerUVE(id, inOutGuid, ".uvmaterial", label)) {
+                inOutGuid = *picked;
+                edited = true;
+            }
+            ImGui::EndTable();
+        }
+    } else {
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (const std::optional<Asset::AssetGuidUVE> picked = DrawAssetPickerUVE(id, inOutGuid, ".uvmaterial", "Material")) {
+            inOutGuid = *picked;
+            edited = true;
+        }
     }
     if (inOutGuid != Asset::kInvalidAssetGuidUVE) {
         const std::filesystem::path absPath = m_services->GetAssetDatabaseUVE().ResolveUVE(inOutGuid);
@@ -1789,10 +1973,6 @@ bool EditorUVE::DrawStandardMaterialSlotUVE(const char* const label, const char*
 bool EditorUVE::DrawStandardMaterialSlotUVE(const char* const label, const char* const id,
                                            std::string& inOutPath, const bool editInline) {
     bool edited = false;
-    if (label != nullptr && label[0] != '\0') {
-        ImGui::TextUnformatted(label);
-        ImGui::SameLine();
-    }
     const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
 
@@ -1805,15 +1985,39 @@ bool EditorUVE::DrawStandardMaterialSlotUVE(const char* const label, const char*
         guid = database.RegisterUVE(absPath);
     }
 
-    if (const std::optional<Asset::AssetGuidUVE> picked = DrawAssetPickerUVE(id, guid, ".uvmaterial", label ? label : "Material")) {
-        if (*picked == Asset::kInvalidAssetGuidUVE) {
-            inOutPath.clear();
-        } else {
-            const std::filesystem::path absPath = database.ResolveUVE(*picked);
-            const std::filesystem::path rel = absPath.lexically_relative(project.contentRoot);
-            inOutPath = (rel.empty() || *rel.begin() == "..") ? absPath.generic_string() : rel.generic_string();
+    const bool hasLabel = (label != nullptr && label[0] != '\0');
+    if (hasLabel) {
+        if (BeginPropertyRowsUVE(id)) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(label);
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (const std::optional<Asset::AssetGuidUVE> picked = DrawAssetPickerUVE(id, guid, ".uvmaterial", label)) {
+                if (*picked == Asset::kInvalidAssetGuidUVE) {
+                    inOutPath.clear();
+                } else {
+                    const std::filesystem::path absPath = database.ResolveUVE(*picked);
+                    const std::filesystem::path rel = absPath.lexically_relative(project.contentRoot);
+                    inOutPath = (rel.empty() || *rel.begin() == "..") ? absPath.generic_string() : rel.generic_string();
+                }
+                edited = true;
+            }
+            ImGui::EndTable();
         }
-        edited = true;
+    } else {
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (const std::optional<Asset::AssetGuidUVE> picked = DrawAssetPickerUVE(id, guid, ".uvmaterial", "Material")) {
+            if (*picked == Asset::kInvalidAssetGuidUVE) {
+                inOutPath.clear();
+            } else {
+                const std::filesystem::path absPath = database.ResolveUVE(*picked);
+                const std::filesystem::path rel = absPath.lexically_relative(project.contentRoot);
+                inOutPath = (rel.empty() || *rel.begin() == "..") ? absPath.generic_string() : rel.generic_string();
+            }
+            edited = true;
+        }
     }
 
     if (editInline && !inOutPath.empty()) {
@@ -1964,6 +2168,11 @@ std::optional<Asset::MeshAssetUVE> EditorUVE::LoadEntityMeshAssetUVE(const Scene
             const std::filesystem::path imported = GetImportedModelPathUVE(relative);
             if (std::filesystem::is_regular_file(imported, ec)) {
                 resolved = imported;
+            } else if (IsModelSourcePathUVE(resolved)) {
+                const Asset::AssetGuidUVE published = PublishModelSourceUVE(resolved);
+                if (published != Asset::kInvalidAssetGuidUVE) {
+                    resolved = m_services->GetAssetDatabaseUVE().ResolveUVE(published);
+                }
             }
         }
     }
@@ -1982,11 +2191,28 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
     }
     Scene::MeshComponentUVE meshComp = entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity);
     bool meshChanged = false;
+    auto& database = m_services->GetAssetDatabaseUVE();
+
+    // Self-heal: if meshComp.meshGuid resolves to a raw model source (.fbx, .glb, etc.),
+    // automatically publish/convert it to the canonical .uvmodel so the runtime and viewport
+    // can load and render the mesh instead of rendering nothing.
+    if (meshComp.meshGuid != Asset::kInvalidAssetGuidUVE) {
+        const std::filesystem::path currentPath = database.ResolveUVE(meshComp.meshGuid);
+        if (!currentPath.empty() && currentPath.extension() != ".uvmodel" && IsModelSourcePathUVE(currentPath)) {
+            const Asset::AssetGuidUVE publishedGuid = PublishModelSourceUVE(currentPath);
+            if (publishedGuid != Asset::kInvalidAssetGuidUVE && publishedGuid != meshComp.meshGuid) {
+                meshComp.meshGuid = publishedGuid;
+                meshChanged = true;
+                if (entityManager.HasComponentUVE<Scene::SkinComponentUVE>(entity)) {
+                    auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(entity);
+                    AutoPopulateSkinFromModelUVE(entity, skin);
+                    entityManager.AddComponentUVE<Scene::SkinComponentUVE>(entity, skin);
+                }
+            }
+        }
+    }
 
     // 1. Mesh Picker
-    ImGui::TextUnformatted("Mesh");
-    ImGui::SameLine();
-
     std::string meshPreview = "Empty";
     const bool hasPrimitive = entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
     const Scene::PrimitiveMeshKindUVE primitiveKind =
@@ -2001,11 +2227,24 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
             case Scene::PrimitiveMeshKindUVE::Plane: meshPreview = "PlaneMesh"; break;
         }
     } else if (meshComp.meshGuid != Asset::kInvalidAssetGuidUVE) {
-        const std::filesystem::path p = m_services->GetAssetDatabaseUVE().ResolveUVE(meshComp.meshGuid);
-        meshPreview = p.empty() ? "(missing mesh)" : p.stem().string();
+        const std::filesystem::path p = database.ResolveUVE(meshComp.meshGuid);
+        if (p.empty()) {
+            meshPreview = "(missing mesh)";
+        } else if (p.extension() == ".uvmodel" && p.stem().has_extension()) {
+            meshPreview = p.stem().string();
+        } else {
+            meshPreview = p.stem().string();
+        }
     }
 
-    if (BeginCenteredComboUVE("##meshPicker", meshPreview.c_str())) {
+    if (BeginPropertyRowsUVE("##meshinstance-mesh-picker-table")) {
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Mesh");
+        ImGui::TableSetColumnIndex(1);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (BeginCenteredComboUVE("##meshPicker", meshPreview.c_str())) {
         ImGui::TextDisabled("PROCEDURAL SHAPES");
         const auto setProcedural = [&](Scene::PrimitiveMeshKindUVE kind) {
             Scene::PrimitiveMeshComponentUVE prim{kind};
@@ -2038,7 +2277,11 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
             const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
             request.startDirectory = PickerStartDirectoryUVE(project, meshComp.meshGuid);
             request.onPick = [this, entity](const std::filesystem::path& absolute) {
-                const Asset::AssetGuidUVE guid = m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
+                const Asset::AssetGuidUVE guid = PublishModelSourceUVE(absolute);
+                if (guid == Asset::kInvalidAssetGuidUVE) {
+                    UVE_WARN("DrawMeshInstance3DInspectorUVE: could not publish picked model \"{}\"", absolute.string());
+                    return;
+                }
                 Scene::IEntityManagerUVE& em = m_services->GetEntityManagerUVE();
                 if (em.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
                     auto mesh = em.GetComponentUVE<Scene::MeshComponentUVE>(entity);
@@ -2064,9 +2307,24 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
             request.extensions = {".fbx", ".glb", ".gltf", ".obj"};
             const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
             request.startDirectory = project.contentRoot;
-            request.onPick = [this](const std::filesystem::path& absolute) {
-                m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
-                RefreshProjectFileIndexUVE();
+            request.onPick = [this, entity](const std::filesystem::path& absolute) {
+                const Asset::AssetGuidUVE guid = PublishModelSourceUVE(absolute);
+                if (guid != Asset::kInvalidAssetGuidUVE) {
+                    Scene::IEntityManagerUVE& em = m_services->GetEntityManagerUVE();
+                    if (em.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
+                        auto mesh = em.GetComponentUVE<Scene::MeshComponentUVE>(entity);
+                        mesh.meshGuid = guid;
+                        em.AddComponentUVE<Scene::MeshComponentUVE>(entity, mesh);
+                        if (em.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
+                            em.RemoveComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
+                        }
+                        if (em.HasComponentUVE<Scene::SkinComponentUVE>(entity)) {
+                            auto skin = em.GetComponentUVE<Scene::SkinComponentUVE>(entity);
+                            AutoPopulateSkinFromModelUVE(entity, skin);
+                            em.AddComponentUVE<Scene::SkinComponentUVE>(entity, skin);
+                        }
+                    }
+                }
             };
             OpenFilePickerUVE(std::move(request));
             ImGui::CloseCurrentPopup();
@@ -2086,14 +2344,17 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
             std::optional<Asset::AssetGuidUVE> guid;
         };
         std::vector<ModelCandidateUVE> candidates;
-        auto& database = m_services->GetAssetDatabaseUVE();
+        const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        const std::filesystem::path currentMeshPath =
+            meshComp.meshGuid != Asset::kInvalidAssetGuidUVE ? database.ResolveUVE(meshComp.meshGuid)
+                                                            : std::filesystem::path{};
+
         for (const Asset::AssetRecordUVE& record : database.GetRegisteredAssetsUVE()) {
             const std::string ext = record.path.extension().string();
             if (ext == ".uvmodel" || ext == ".glb" || ext == ".gltf" || ext == ".fbx" || ext == ".obj") {
                 candidates.push_back({record.path.lexically_normal(), record.guid});
             }
         }
-        const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
         for (const Asset::ProjectFileEntryUVE& file : project.entries) {
             if (file.kind == Asset::ProjectFileEntryKindUVE::Directory) continue;
             std::filesystem::path p;
@@ -2109,23 +2370,68 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
                 candidates.push_back({p, std::nullopt});
             }
         }
-        std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
+
+        // Deduplicate: If candidates contains both the source model (e.g. Models/Hero.fbx)
+        // and its internal derived cache artifact (e.g. Imported/Models/Hero.fbx.uvmodel),
+        // prioritize the source model row so the author sees the file they recognise and authored.
+        std::vector<ModelCandidateUVE> displayCandidates;
+        displayCandidates.reserve(candidates.size());
+        for (const auto& c : candidates) {
+            if (c.path.extension() == ".uvmodel") {
+                const bool hasSourceSibling = std::any_of(candidates.begin(), candidates.end(),
+                    [&](const ModelCandidateUVE& other) {
+                        if (other.path == c.path || other.path.extension() == ".uvmodel") {
+                            return false;
+                        }
+                        const std::filesystem::path rel = other.path.lexically_relative(project.contentRoot);
+                        if (!rel.empty() && *rel.begin() != "..") {
+                            return GetImportedModelPathUVE(rel) == c.path;
+                        }
+                        return false;
+                    });
+                if (hasSourceSibling) {
+                    continue;
+                }
+            }
+            displayCandidates.push_back(c);
+        }
+
+        std::sort(displayCandidates.begin(), displayCandidates.end(), [](const auto& a, const auto& b) {
             return a.path.generic_string() < b.path.generic_string();
         });
-        for (const auto& c : candidates) {
-            const bool isSelected = c.guid.has_value() && *c.guid == meshComp.meshGuid;
+
+        for (const auto& c : displayCandidates) {
+            bool isSelected = false;
+            if (c.guid.has_value() && *c.guid == meshComp.meshGuid) {
+                isSelected = true;
+            } else if (!currentMeshPath.empty()) {
+                if (c.path == currentMeshPath) {
+                    isSelected = true;
+                } else if (c.path.extension() != ".uvmodel") {
+                    const std::filesystem::path rel = c.path.lexically_relative(project.contentRoot);
+                    if (!rel.empty() && *rel.begin() != ".." && GetImportedModelPathUVE(rel) == currentMeshPath) {
+                        isSelected = true;
+                    }
+                }
+            }
+
             const std::string label = c.path.stem().string() + " (" + c.path.extension().string() + ")##" + c.path.generic_string();
             if (ImGui::Selectable(label.c_str(), isSelected) && !isSelected) {
-                const Asset::AssetGuidUVE chosen = c.guid.has_value() ? *c.guid : database.RegisterUVE(c.path);
-                meshComp.meshGuid = chosen;
-                if (entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
-                    entityManager.RemoveComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
-                }
-                meshChanged = true;
-                if (entityManager.HasComponentUVE<Scene::SkinComponentUVE>(entity)) {
-                    auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(entity);
-                    AutoPopulateSkinFromModelUVE(entity, skin);
-                    entityManager.AddComponentUVE<Scene::SkinComponentUVE>(entity, skin);
+                const Asset::AssetGuidUVE chosen =
+                    (c.path.extension() == ".uvmodel")
+                        ? (c.guid.has_value() ? *c.guid : database.RegisterUVE(c.path))
+                        : PublishModelSourceUVE(c.path);
+                if (chosen != Asset::kInvalidAssetGuidUVE) {
+                    meshComp.meshGuid = chosen;
+                    if (entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
+                        entityManager.RemoveComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
+                    }
+                    meshChanged = true;
+                    if (entityManager.HasComponentUVE<Scene::SkinComponentUVE>(entity)) {
+                        auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(entity);
+                        AutoPopulateSkinFromModelUVE(entity, skin);
+                        entityManager.AddComponentUVE<Scene::SkinComponentUVE>(entity, skin);
+                    }
                 }
             }
             if (ImGui::IsItemHovered()) {
@@ -2133,6 +2439,8 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
             }
         }
         ImGui::EndCombo();
+        }
+        ImGui::EndTable();
     }
 
     if (meshChanged) {
@@ -2172,12 +2480,21 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
                 // section shows, named in the units an author thinks in.
                 ImGui::TextDisabled("SIZE");
                 if (entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
-                    Scene::TransformComponentUVE transform =
-                        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
-                    float size[3] = {transform.localScale.x, transform.localScale.y, transform.localScale.z};
-                    if (ImGui::DragFloat3("##primitiveSize", size, 0.01F, 0.0001F, 10000.0F, "%.3f m")) {
-                        transform.localScale = Math::Vector3UVE{size[0], size[1], size[2]};
-                        entityManager.AddComponentUVE<Scene::TransformComponentUVE>(entity, transform);
+                    if (BeginPropertyRowsUVE("##primitive-size-table")) {
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::AlignTextToFramePadding();
+                        ImGui::TextUnformatted("Size");
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::SetNextItemWidth(-FLT_MIN);
+                        Scene::TransformComponentUVE transform =
+                            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+                        float size[3] = {transform.localScale.x, transform.localScale.y, transform.localScale.z};
+                        if (ImGui::DragFloat3("##primitiveSize", size, 0.01F, 0.0001F, 10000.0F, "%.3f m")) {
+                            transform.localScale = Math::Vector3UVE{size[0], size[1], size[2]};
+                            entityManager.AddComponentUVE<Scene::TransformComponentUVE>(entity, transform);
+                        }
+                        ImGui::EndTable();
                     }
                 }
                 ImGui::Spacing();
@@ -2191,7 +2508,7 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
                 Scene::PrimitiveMeshComponentUVE primitive =
                     entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
                 ImGui::TextDisabled("MATERIAL");
-                if (DrawStandardMaterialSlotUVE(nullptr, "##primitiveMaterial", primitive.materialGuid)) {
+                if (DrawStandardMaterialSlotUVE("Material", "##primitiveMaterial", primitive.materialGuid)) {
                     entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity, primitive);
                 }
             } else {
@@ -2237,26 +2554,33 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
             }
             skinPreview = "Skin (" + std::to_string(skin.bindCount) + " binds)";
         }
-        ImGui::TextUnformatted("Skin");
-        ImGui::SameLine();
-        if (BeginCenteredComboUVE("##skinSlot", skinPreview.c_str())) {
-            if (!hasSkin) {
-                if (ImGui::Selectable("Skin") || ImGui::Selectable("+ New Skin")) {
-                    Scene::SkinComponentUVE skin{};
-                    AutoPopulateSkinFromModelUVE(entity, skin);
-                    entityManager.AddComponentUVE<Scene::SkinComponentUVE>(entity, skin);
+        if (BeginPropertyRowsUVE("##meshinstance-skin-picker-table")) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Skin");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (BeginCenteredComboUVE("##skinSlot", skinPreview.c_str())) {
+                if (!hasSkin) {
+                    if (ImGui::Selectable("Skin") || ImGui::Selectable("+ New Skin")) {
+                        Scene::SkinComponentUVE skin{};
+                        AutoPopulateSkinFromModelUVE(entity, skin);
+                        entityManager.AddComponentUVE<Scene::SkinComponentUVE>(entity, skin);
+                    }
+                } else {
+                    if (ImGui::Selectable("Re-populate from Model / Skeleton")) {
+                        auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(entity);
+                        AutoPopulateSkinFromModelUVE(entity, skin);
+                        entityManager.AddComponentUVE<Scene::SkinComponentUVE>(entity, skin);
+                    }
+                    if (ImGui::Selectable("Empty")) {
+                        entityManager.RemoveComponentUVE<Scene::SkinComponentUVE>(entity);
+                    }
                 }
-            } else {
-                if (ImGui::Selectable("Re-populate from Model / Skeleton")) {
-                    auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(entity);
-                    AutoPopulateSkinFromModelUVE(entity, skin);
-                    entityManager.AddComponentUVE<Scene::SkinComponentUVE>(entity, skin);
-                }
-                if (ImGui::Selectable("Empty")) {
-                    entityManager.RemoveComponentUVE<Scene::SkinComponentUVE>(entity);
-                }
+                ImGui::EndCombo();
             }
-            ImGui::EndCombo();
+            ImGui::EndTable();
         }
 
         // When assigned, expanding skin settings shows bindCount and boneBinds:
@@ -2265,18 +2589,27 @@ void EditorUVE::DrawMeshInstance3DInspectorUVE(const Scene::EntityUVE entity) {
             bool skinChanged = false;
             if (DrawInspectorFoldUVE("Skin Settings", "meshinstance:skin_settings", true, false, kSectionFlags)) {
                 int bindCountInt = static_cast<int>(skin.bindCount);
-                if (ImGui::InputInt("Bind Count", &bindCountInt)) {
-                    const std::uint32_t newCount = static_cast<std::uint32_t>(std::max(0, bindCountInt));
-                    if (newCount != skin.bindCount) {
-                        skin.bindCount = newCount;
-                        skin.boneBinds.resize(newCount);
-                        for (std::size_t i = 0; i < skin.boneBinds.size(); ++i) {
-                            if (skin.boneBinds[i].inverseBindPose == Math::Matrix4x4UVE{}) {
-                                skin.boneBinds[i].inverseBindPose = Math::Matrix4x4UVE::IdentityUVE();
+                if (BeginPropertyRowsUVE("##skin-bind-count-table")) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::TextUnformatted("Bind Count");
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    if (ImGui::InputInt("##bindCount", &bindCountInt)) {
+                        const std::uint32_t newCount = static_cast<std::uint32_t>(std::max(0, bindCountInt));
+                        if (newCount != skin.bindCount) {
+                            skin.bindCount = newCount;
+                            skin.boneBinds.resize(newCount);
+                            for (std::size_t i = 0; i < skin.boneBinds.size(); ++i) {
+                                if (skin.boneBinds[i].inverseBindPose == Math::Matrix4x4UVE{}) {
+                                    skin.boneBinds[i].inverseBindPose = Math::Matrix4x4UVE::IdentityUVE();
+                                }
                             }
+                            skinChanged = true;
                         }
-                        skinChanged = true;
                     }
+                    ImGui::EndTable();
                 }
 
                 if (ImGui::Button("+ Add Bone Bind")) {

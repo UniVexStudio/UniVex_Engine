@@ -436,13 +436,6 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
                                         value /= total;
                                     }
                                     influence = picked;
-                                    // In bind pose: where the skin puts it when every bone is at its bind.
-                                    const ufbx_skin_cluster* const strongest =
-                                        skin->clusters.data[skin->weights.data[weights.weight_begin].cluster_index];
-                                    const ufbx_matrix bind = ufbx_matrix_mul(&strongest->bind_to_world,
-                                                                             &strongest->geometry_to_bone);
-                                    vertex.position = ToVectorUVE(
-                                        ufbx_transform_position(&bind, ufbx_get_vertex_vec3(&mesh->vertex_position, index)));
                                 }
                             }
                         }

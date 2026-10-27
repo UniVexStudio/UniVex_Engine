@@ -19,6 +19,8 @@
 
 #include <imgui.h>
 
+#include "editor_window_chrome_uve.h"
+
 #include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/name_component_uve.h"
@@ -735,20 +737,49 @@ void EditorUVE::DrawEntityEditorPlaceholderUVE() {
 }
 
 void EditorUVE::DrawEntityEditorWindowUVE() {
+    if (!m_entityEditSession.has_value()) {
+        return;
+    }
     EntityEditSessionUVE& session = *m_entityEditSession;
+    if (session.isMinimized) {
+        return;
+    }
+
     // Its own OS window: never merged back into the main one, never docked.
     ImGuiWindowClass windowClass;
     windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_NoAutoMerge;
     ImGui::SetNextWindowClass(&windowClass);
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2{mainViewport->Pos.x + 60.0F, mainViewport->Pos.y + 60.0F}, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2{1180.0F, 720.0F}, ImGuiCond_FirstUseEver);
+
+    if (!session.isMaximized) {
+        ImGui::SetNextWindowPos(ImVec2{session.restoredPosX, session.restoredPosY}, ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2{session.restoredWidth, session.restoredHeight}, ImGuiCond_FirstUseEver);
+    } else {
+        ImGui::SetNextWindowPos(mainViewport->WorkPos, ImGuiCond_Always);
+        ImGui::SetNextWindowSize(mainViewport->WorkSize, ImGuiCond_Always);
+    }
+
     const bool unsaved = HasEntityEditorUnsavedChangesUVE();
     const std::string title = "Entity Editor - " + session.assetPath.filename().string() + (unsaved ? " *" : "") +
                               "###entity-editor";
     ImGui::GetIO().ConfigWindowsMoveFromTitleBarOnly = true;
-    bool open = true;
-    ImGui::Begin(title.c_str(), &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0F);
+    ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(50, 58, 70, 255));
+    ImGui::Begin(title.c_str(), nullptr,
+                 ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
+
+    const OSWindowChromeActionUVE chromeAction = DrawOSWindowTitleBarUVE(
+        ("Entity Editor - " + session.assetPath.filename().string() + (unsaved ? " *" : "")).c_str(),
+        "[E]", IM_COL32(80, 160, 240, 255),
+        session.isMinimized, session.isMaximized,
+        session.restoredPosX, session.restoredPosY, session.restoredWidth, session.restoredHeight);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{8.0F, 6.0F});
+    ImGui::BeginChild("##entity-editor-content-area", ImVec2{0.0F, 0.0F}, false);
 
     // Toolbar.
     if (ImGui::Button("Compile")) {
@@ -800,18 +831,6 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
     const float width = ImGui::GetContentRegionAvail().x;
 
     // ---- Three columns with draggable seams -------------------------------------------------
-    // The tree and the Inspector used to be fitted to fixed fractions of the window on every
-    // frame, which made the only two lists in the window un-resizable: an author who needed more
-    // room for long object names had nowhere to get it from, and the same 22% / 28% split was
-    // handed to a 1180 px window and a 2560 px one. The level's Outliner and Inspector have been
-    // draggable seams since the chrome layout was written, so the entity window now keeps its two
-    // widths in the same shape that those keep m_scenePanelWidth - a 0 meaning "never dragged,
-    // use the default ratio", replaced by the author's width from the first drag on.
-    //
-    // The seam is its own inline widget between the children rather than a border on either one,
-    // because a border belongs to a window that ImGui also uses for hit-testing and scrolling;
-    // a 5 px button drawn in the parent's layout takes the drag without either column having to
-    // give up a pixel of its content.
     constexpr float kColumnSeamUVE = 5.0F;
     const float columnGap = ImGui::GetStyle().ItemSpacing.x;
     const auto clampTree = [width](const float requested) {
@@ -832,8 +851,6 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
         } else if (ImGui::IsItemHovered()) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
         }
-        // A hairline down the seam, so the column edge reads as a handle rather than as the gap
-        // between two panels. It brightens under the pointer the same way the level's seams do.
         const ImVec2 seamMin = ImGui::GetItemRectMin();
         const ImVec2 seamMax = ImGui::GetItemRectMax();
         const float seamX = (seamMin.x + seamMax.x) * 0.5F;
@@ -889,8 +906,11 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
     DrawEntityEditorDockUVE(session);
     ImGui::EndChild();
 
-    // The X with unsaved changes asks first; without them it just closes.
-    if (!open) {
+    ImGui::EndChild(); // ##entity-editor-content-area
+    ImGui::PopStyleVar(); // WindowPadding
+
+    // Close requested via Titlebar Close button (✕)
+    if (chromeAction.closed) {
         if (unsaved) {
             session.confirmClose = true;
         } else {
@@ -928,6 +948,70 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
     if (closeNow) {
         static_cast<void>(CloseEntityEditorUVE(saveFirst));
     }
+}
+
+void EditorUVE::DrawMinimizedWindowsBarUVE() {
+    const bool entityMinimized = m_entityEditSession.has_value() && m_entityEditSession->isMinimized;
+    const bool retargetMinimized = m_retargetWindow.has_value() && m_retargetWindow->isMinimized;
+    if (!entityMinimized && !retargetMinimized) {
+        return;
+    }
+
+    const ImGuiViewport* const vp = ImGui::GetMainViewport();
+    constexpr float kBarHeight = 32.0F;
+    const float posX = vp->WorkPos.x + 16.0F;
+    const float posY = vp->WorkPos.y + vp->WorkSize.y - kBarHeight - 8.0F;
+    ImGui::SetNextWindowPos(ImVec2{posX, posY}, ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.90F);
+    constexpr ImGuiWindowFlags kBarFlags =
+        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoNav;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{6.0F, 4.0F});
+    if (ImGui::Begin("##minimized_windows_tray", nullptr, kBarFlags)) {
+        if (entityMinimized) {
+            const std::string entityName = m_entityEditSession->assetPath.filename().string();
+            const std::string label = "  \xEF\x86\xB3 " + entityName + " ##restore_entity";
+            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(35, 45, 60, 240));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(50, 75, 110, 255));
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(110, 180, 255, 255));
+            if (ImGui::Button(label.c_str())) {
+                m_entityEditSession->isMinimized = false;
+                ImGuiViewport* const evp = ImGui::GetWindowViewport();
+                if (evp && evp->PlatformHandle && evp != vp) {
+                    glfwRestoreWindow(static_cast<GLFWwindow*>(evp->PlatformHandle));
+                    glfwFocusWindow(static_cast<GLFWwindow*>(evp->PlatformHandle));
+                }
+            }
+            ImGui::PopStyleColor(3);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Click to restore Entity Editor: %s", entityName.c_str());
+            }
+        }
+        if (retargetMinimized) {
+            if (entityMinimized) {
+                ImGui::SameLine();
+            }
+            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(50, 40, 30, 240));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(85, 65, 45, 255));
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(245, 160, 70, 255));
+            if (ImGui::Button("  \xEF\x9B\x9E Animation Retarget ##restore_retarget")) {
+                m_retargetWindow->isMinimized = false;
+                ImGuiViewport* const rvp = ImGui::GetWindowViewport();
+                if (rvp && rvp->PlatformHandle && rvp != vp) {
+                    glfwRestoreWindow(static_cast<GLFWwindow*>(rvp->PlatformHandle));
+                    glfwFocusWindow(static_cast<GLFWwindow*>(rvp->PlatformHandle));
+                }
+            }
+            ImGui::PopStyleColor(3);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Click to restore Animation Retarget window");
+            }
+        }
+    }
+    ImGui::End();
+    ImGui::PopStyleVar(2);
 }
 
 } // namespace UVE::Editor

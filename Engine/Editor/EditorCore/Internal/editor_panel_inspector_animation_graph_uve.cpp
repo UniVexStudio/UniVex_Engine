@@ -203,6 +203,18 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
         }
     }
 
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Animation Sequencer:");
+    ImGui::SameLine();
+    DrawAnimationSequencerPickerSlotUVE("##inspector-seq-slot", m_selectedEntity, tree.sequencer,
+        [this](const Scene::EntityUVE picked) {
+            EditAnimationGraphUVE(m_selectedEntity, [picked](Scene::AnimationGraphComponentUVE& t) {
+                t.sequencer = picked;
+            });
+            m_animGraph.sequencer = picked;
+        });
+    ImGui::Separator();
+
     const std::string problem = Scene::DescribeAnimationGraphProblemUVE(tree);
     if (!problem.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95F, 0.55F, 0.45F, 1.0F));
@@ -712,6 +724,14 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
     } else if (changed) {
         static_cast<void>(SetSelectedComponentPropertyUVE(entry, property, &nodes));
     }
+
+    DrawAnimationSequencerPickerModalUVE(tree.sequencer,
+        [this](const Scene::EntityUVE picked) {
+            EditAnimationGraphUVE(m_selectedEntity, [picked](Scene::AnimationGraphComponentUVE& t) {
+                t.sequencer = picked;
+            });
+            m_animGraph.sequencer = picked;
+        });
 }
 
 } // namespace UVE::Editor

@@ -259,6 +259,10 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
                 make("character", Kind::MeshInstance3D, mesh, Scene::ApplyMeshInstance3DObjectDefinitionUVE, modelEntity);
             static_cast<void>(
                 make("skeleton3d", Kind::Skeleton3D, skeletonDefinition, Scene::ApplySkeleton3DObjectDefinitionUVE, characterEntity));
+            Scene::SkinComponentUVE skinComp{};
+            if (AutoPopulateSkinFromModelUVE(characterEntity, skinComp)) {
+                entityManager.AddComponentUVE<Scene::SkinComponentUVE>(characterEntity, skinComp);
+            }
         } else {
             static_cast<void>(
                 make("Skeleton3D", Kind::Skeleton3D, skeletonDefinition, Scene::ApplySkeleton3DObjectDefinitionUVE, modelEntity));

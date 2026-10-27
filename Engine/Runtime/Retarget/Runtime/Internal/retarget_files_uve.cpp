@@ -125,14 +125,14 @@ struct PlannedFileUVE final {
 }
 
 [[nodiscard]] RetargetAnimationCheckUVE CheckClipUVE(const Asset::AnimationClipAssetUVE& clip) {
-    if (clip.conformed) {
-        return {RetargetAnimationStateUVE::AlreadyConformed, "already conformed"};
-    }
     if (clip.rest.empty()) {
         return {RetargetAnimationStateUVE::NoSkeleton, "it has no skeleton, import the FBX again"};
     }
     if (!clip.IsSkeletalUVE()) {
         return {RetargetAnimationStateUVE::NoBones, "it moves no bones"};
+    }
+    if (clip.conformed) {
+        return {RetargetAnimationStateUVE::AlreadyConformed, "conformed (ready to re-generate)"};
     }
     return {RetargetAnimationStateUVE::Ready, {}};
 }
@@ -206,7 +206,8 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         const RetargetAnimationCheckUVE check = Asset::LoadAnimationClipAssetUVE(path, clip)
                                                      ? CheckClipUVE(clip)
                                                      : RetargetAnimationCheckUVE{RetargetAnimationStateUVE::Unreadable, "cannot read it"};
-        if (check.state != RetargetAnimationStateUVE::Ready) {
+        if (check.state != RetargetAnimationStateUVE::Ready &&
+            check.state != RetargetAnimationStateUVE::AlreadyConformed) {
             animation.note = "left alone: " + check.note;
         } else {
             std::string error;

@@ -13,8 +13,14 @@
 namespace UVE::Editor {
 
 std::size_t RetargetPlanUVE::ReadyAnimationsUVE() const noexcept {
-    return static_cast<std::size_t>(std::ranges::count(animations, Retarget::RetargetAnimationStateUVE::Ready,
-                                                       &RetargetAnimationRowUVE::state));
+    std::size_t count = 0U;
+    for (const auto& anim : animations) {
+        if (anim.state == Retarget::RetargetAnimationStateUVE::Ready ||
+            anim.state == Retarget::RetargetAnimationStateUVE::AlreadyConformed) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 const char* GetRetargetStatusLabelUVE(const Retarget::JointStatusUVE status) noexcept {

@@ -475,6 +475,7 @@ bool EditorUVE::EnterPlayModeUVE() {
     m_workspaceBeforePlayMode = m_activeWorkspace;
     if (m_playSwitchToGame) {
         m_activeWorkspace = EditorWorkspaceUVE::Game;
+        SetGameMouseCapturedUVE(true);
     }
     if (m_playPauseOnStart) {
         static_cast<void>(PausePlayModeUVE());
@@ -771,6 +772,7 @@ bool EditorUVE::PausePlayModeUVE() {
         !m_simulationControl->SetSimulationExecutionModeUVE(Core::SimulationExecutionModeUVE::Paused)) {
         return false;
     }
+    SetGameMouseCapturedUVE(false);
     m_playModeState = EditorPlayModeStateUVE::Paused;
     return true;
 }
@@ -782,6 +784,9 @@ bool EditorUVE::ResumePlayModeUVE() {
         return false;
     }
     m_playModeState = EditorPlayModeStateUVE::Playing;
+    if (m_activeWorkspace == EditorWorkspaceUVE::Game) {
+        SetGameMouseCapturedUVE(true);
+    }
     return true;
 }
 
@@ -835,6 +840,7 @@ bool EditorUVE::StopPlayModeUVE() {
 
     m_playModeSession.reset();
     m_playModeState = EditorPlayModeStateUVE::Edit;
+    SetGameMouseCapturedUVE(false);
     static_cast<void>(m_simulationControl->SetEditorPlaySceneNameUVE({}));
     m_playBootSplashActive = false;
     if (m_activeWorkspace == EditorWorkspaceUVE::Game) {
@@ -845,6 +851,35 @@ bool EditorUVE::StopPlayModeUVE() {
 
 EditorPlayModeStateUVE EditorUVE::GetPlayModeStateUVE() const noexcept {
     return m_playModeState;
+}
+
+void EditorUVE::SetGameMouseCapturedUVE(const bool captured) {
+    if (m_gameMouseCaptured == captured) {
+        return;
+    }
+    m_gameMouseCaptured = captured;
+    if (m_services == nullptr) {
+        return;
+    }
+    Window::IWindowManagerUVE& windowManager = m_services->GetWindowManagerUVE();
+    if (!windowManager.IsValidUVE()) {
+        return;
+    }
+    auto* const nativeWindow = static_cast<GLFWwindow*>(windowManager.GetNativeWindowHandleUVE());
+    if (nativeWindow == nullptr) {
+        return;
+    }
+    if (captured) {
+        glfwSetInputMode(nativeWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        if (glfwRawMouseMotionSupported()) {
+            glfwSetInputMode(nativeWindow, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+        }
+    } else {
+        glfwSetInputMode(nativeWindow, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        if (glfwRawMouseMotionSupported()) {
+            glfwSetInputMode(nativeWindow, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
+        }
+    }
 }
 
 
@@ -3614,7 +3649,7 @@ Scene::EntityUVE EditorUVE::ResolvePlaceableParentUVE(const Scene::EntityUVE can
 }
 
 bool EditorUVE::IsOutlinerLayoutActiveUVE() const noexcept {
-    return !m_entityEditSession.has_value() && !m_retargetPreview.has_value();
+    return m_activeWorkspace != EditorWorkspaceUVE::Scripting;
 }
 
 Scene::EntityUVE EditorUVE::GetDocumentViewportUVE() {
@@ -5744,6 +5779,23 @@ bool EditorUVE::IsRiggedModelSourceUVE(const std::filesystem::path& relativeSour
     return info != nullptr && info->rigged;
 }
 
+namespace {
+
+[[nodiscard]] bool IsGenericTakeNameUVE(const std::string_view name) noexcept {
+    std::string clean;
+    clean.reserve(name.size());
+    for (const char c : name) {
+        if (c != ' ' && c != '_' && c != '-' && c != '|' && c != ':') {
+            clean.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        }
+    }
+    return clean == "take001" || clean == "take1" || clean == "take" ||
+           clean == "defaulttake" || clean == "baseanimation" || clean == "scene" ||
+           clean == "mixamocom" || clean == "armature" || clean == "unnamed";
+}
+
+} // namespace
+
 std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std::filesystem::path& absoluteSource) {
     std::vector<std::filesystem::path> written;
     std::error_code error;
@@ -5757,17 +5809,59 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
         return written;
     }
     const std::vector<char> bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-    const std::vector<Asset::AnimationClipAssetUVE> takes =
+    const std::vector<Asset::AnimationClipAssetUVE> rawTakes =
         Asset::ReadFbxAnimationsUVE(std::as_bytes(std::span<const char>(bytes)), Asset::kMaximumAnimationAssetBonesUVE);
+
+    // Suppress generic exporter takes (e.g. "Take 001") if named takes exist in the FBX.
+    // If only generic takes exist, keep only the first one to avoid duplicate files.
+    std::vector<Asset::AnimationClipAssetUVE> takes;
+    bool hasNonGeneric = false;
+    for (const auto& take : rawTakes) {
+        const std::size_t bar = take.clipId.find_last_of('|');
+        const std::string id = bar == std::string::npos ? take.clipId : take.clipId.substr(bar + 1U);
+        if (!IsGenericTakeNameUVE(id)) {
+            hasNonGeneric = true;
+            break;
+        }
+    }
+    for (const auto& take : rawTakes) {
+        const std::size_t bar = take.clipId.find_last_of('|');
+        const std::string id = bar == std::string::npos ? take.clipId : take.clipId.substr(bar + 1U);
+        if (hasNonGeneric && IsGenericTakeNameUVE(id)) {
+            continue; // Drop redundant generic "Take 001"
+        }
+        takes.push_back(take);
+    }
+    if (takes.empty() && !rawTakes.empty()) {
+        takes.push_back(rawTakes.front());
+    }
+
+    // Clean up any stale duplicate take001 files that might have been created previously
+    {
+        const std::filesystem::path p1 = absoluteSource.parent_path() / "take001.uvanim";
+        const std::filesystem::path p2 = absoluteSource.parent_path() / "Take 001.uvanim";
+        const std::filesystem::path p3 = absoluteSource.parent_path() / (absoluteSource.stem().string() + "_Take 001.uvanim");
+        const std::filesystem::path p4 = absoluteSource.parent_path() / (absoluteSource.stem().string() + "_take001.uvanim");
+        for (const auto& stale : {p1, p2, p3, p4}) {
+            std::error_code rmErr;
+            if (std::filesystem::exists(stale, rmErr)) {
+                std::filesystem::remove(stale, rmErr);
+            }
+        }
+    }
+
     // The animation is named after its file, everywhere: one take is "<FBX>.uvanim"; several are
     // "<FBX>_<take>.uvanim", the take without its "Armature|"-style prefix. The DCC tool's own take
-    // label ("Take 001", an exporter's name) is not a name anyone chose.
+    // label ("Take 001", an exporter's name) is suppressed or mapped to <FBX>.uvanim.
     const auto clipPath = [&absoluteSource, &takes](const std::string& clipId) {
         if (takes.size() == 1U) {
             return absoluteSource.parent_path() / (absoluteSource.stem().string() + ".uvanim");
         }
         const std::size_t bar = clipId.find_last_of('|');
         const std::string take = bar == std::string::npos ? clipId : clipId.substr(bar + 1U);
+        if (IsGenericTakeNameUVE(take)) {
+            return absoluteSource.parent_path() / (absoluteSource.stem().string() + ".uvanim");
+        }
         std::string safe;
         for (const char character : take) {
             const bool keep = (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
@@ -5874,7 +5968,12 @@ Asset::AssetGuidUVE EditorUVE::RegisterImportedModelArtifactsUVE(const std::file
 
 void EditorUVE::PollModelImportJobsUVE() {
     if (m_modelImportJobs.empty()) {
+        m_importBatchTotal = 0U;
+        m_importBatchCompleted = 0U;
         return;
+    }
+    if (m_importBatchTotal < m_modelImportJobs.size() + m_importBatchCompleted) {
+        m_importBatchTotal = m_modelImportJobs.size() + m_importBatchCompleted;
     }
     const std::vector<Asset::AssetImportJobUVE> jobs = m_services->GetAssetImportQueueUVE().GetJobsUVE();
     bool imported = false;
@@ -5894,6 +5993,7 @@ void EditorUVE::PollModelImportJobsUVE() {
                 m_modelImportFailures[it->first] = std::move(reason);
                 UVE_WARNING("EditorUVE: could not import model {}: {}", it->first, m_modelImportFailures[it->first]);
             }
+            ++m_importBatchCompleted;
             it = m_modelImportJobs.erase(it);
         } else if (job->state == Asset::AssetImportJobStateUVE::Succeeded) {
             // A cache hit ran no importer, so the materials and textures it would have registered
@@ -5902,6 +6002,7 @@ void EditorUVE::PollModelImportJobsUVE() {
             static_cast<void>(RegisterImportedModelArtifactsUVE(GetImportedModelPathUVE(it->first)));
             imported = imported || !job->cacheHit;
             m_modelImportFailures.erase(it->first);
+            ++m_importBatchCompleted;
             it = m_modelImportJobs.erase(it);
         } else {
             ++it;

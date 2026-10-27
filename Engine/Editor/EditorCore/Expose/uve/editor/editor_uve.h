@@ -352,6 +352,12 @@ struct RetargetWindowStateUVE final {
     /// Characters conformed or restored while the window was open: the scene put aside by the
     /// preview still holds their old bones until it is back.
     std::vector<std::filesystem::path> changedModels;
+    bool isMinimized = false;
+    bool isMaximized = false;
+    float restoredPosX = 100.0F;
+    float restoredPosY = 100.0F;
+    float restoredWidth = 1320.0F;
+    float restoredHeight = 760.0F;
 };
 
 /// The Animation Library window's state: one open `.uvanimlib`, saved on every edit.
@@ -450,6 +456,8 @@ public:
     [[nodiscard]] bool StepPlayModeUVE();
     [[nodiscard]] bool StopPlayModeUVE();
     [[nodiscard]] EditorPlayModeStateUVE GetPlayModeStateUVE() const noexcept;
+    void SetGameMouseCapturedUVE(bool captured);
+    [[nodiscard]] bool IsGameMouseCapturedUVE() const noexcept { return m_gameMouseCaptured; }
 
     /// Draws the private editor overlay. EngineCoreUVE invokes this from its post-render callback
     /// before PresentUVE(), after the HDR scene has passed through the standard tone-mapping path.
@@ -1486,6 +1494,12 @@ private:
         float treeWidth = 0.0F;
         /// The Inspector's width, dragged from its seam. 0 means "not dragged yet".
         float inspectorWidth = 0.0F;
+        bool isMinimized = false;
+        bool isMaximized = false;
+        float restoredPosX = 60.0F;
+        float restoredPosY = 60.0F;
+        float restoredWidth = 1180.0F;
+        float restoredHeight = 720.0F;
     };
     /// What the Retarget window's viewport shows while it is open: the scene is put aside (as the
     /// Entity Editor does) and a preview world stands in its place. Closing brings the scene back.
@@ -1524,7 +1538,9 @@ private:
     /// The Entity Editor's own window, and what the main window shows meanwhile.
     void DrawEntityEditorWindowUVE();
     void DrawRetargetWindowUVE();
+    void DrawMinimizedWindowsBarUVE();
     void DrawAnimationLibraryWindowUVE();
+    void DrawImportProgressModalUVE();
     void FinishRetargetJobUVE(RetargetWindowStateUVE& window, Retarget::RetargetFilesResultUVE result);
     /// Gives every Skeleton3D bound to `modelFile`'s source the bones of the conformed model; the
     /// number changed.
@@ -2491,6 +2507,7 @@ private:
     // Which workspace tab was active before EnterPlayModeUVE() switched to Game, so StopPlayModeUVE()
     // can restore it - mirrors Unity's own Scene<->Game auto-switch on Play/Stop.
     EditorWorkspaceUVE m_workspaceBeforePlayMode = EditorWorkspaceUVE::Library;
+    bool m_gameMouseCaptured = false;
     // 0 = plain Play triangle, 1 = Pause bars; eased toward the target each frame in
     // DrawMenuBarUVE() so the icon animates instead of instantly swapping shape.
     float m_playButtonMorphProgress = 0.0F;
@@ -2804,8 +2821,23 @@ private:
         std::unordered_map<std::uint64_t, std::string> clipNames;
         /// Clips the preview has read, by guid; null for one that could not be read.
         std::unordered_map<std::uint64_t, std::shared_ptr<const Asset::AnimationClipAssetUVE>> clips;
+        /// Assigned or active AnimationSequencer in Outliner whose library feeds this graph.
+        Scene::EntityUVE sequencer = Scene::kInvalidEntityUVE;
+        /// Modal picker open trigger
+        bool openSequencerPickerModal = false;
+        std::string sequencerSearch;
     };
     AnimationGraphViewStateUVE m_animGraph;
+    /// Gets all unique clips available to an AnimationSequencer (current clip, library list, and linked library).
+    [[nodiscard]] std::vector<Asset::AssetGuidUVE> GetSequencerClipsUVE(Scene::EntityUVE sequencerEntity) const;
+    /// Resolves the active AnimationSequencer for an AnimationGraph: explicit reference, tree entity, target, parent, or timeline player.
+    [[nodiscard]] Scene::EntityUVE ResolveActiveSequencerForGraphUVE(Scene::EntityUVE treeEntity) const;
+    /// Draws the picker slot for AnimationSequencer: shows "Empty" if none, or entity name, opening the picker modal.
+    void DrawAnimationSequencerPickerSlotUVE(const char* id, Scene::EntityUVE treeEntity, Scene::EntityUVE currentSequencer,
+                                            const std::function<void(Scene::EntityUVE)>& onPicked);
+    /// Draws the small picker modal listing all AnimationSequencer entities in the Outliner.
+    void DrawAnimationSequencerPickerModalUVE(Scene::EntityUVE currentSequencer,
+                                             const std::function<void(Scene::EntityUVE)>& onPicked);
     /// Notes what the preview's last step did: clip events, state changes, parameter values.
     void RecordAnimationGraphPreviewUVE(const Scene::AnimationGraphComponentUVE& tree);
     /// Puts the previewed skeleton back at rest and the tree back at its start.
@@ -2829,6 +2861,8 @@ private:
                               const std::function<void(Scene::AnimationGraphComponentUVE&)>& change);
     /// In-flight automatic model imports, by content-relative source path.
     std::map<std::string, Asset::AssetImportJobIdUVE> m_modelImportJobs;
+    std::size_t m_importBatchTotal = 0U;
+    std::size_t m_importBatchCompleted = 0U;
     /// The last failure per model source, by content-relative source path. Survives a project
     /// refresh on purpose: a file that fails to import stays failed until its bytes change, so the
     /// reason has to outlive the queue job that produced it.

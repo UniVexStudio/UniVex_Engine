@@ -370,15 +370,16 @@ bool StepSkeletalAnimationSequencerUVE(AnimationSequencerComponentUVE& player, c
     const Retarget::ConformedPlaybackUVE conformed = PlanConformedPlaybackForUVE(clip, skeleton);
     // Blend In eases from where the skeleton was: each step covers this step's share of what is
     // left of the blend, so the pose arrives exactly when the blend ends.
+    const float transitionDuration = player.blendInSeconds > 0.0F ? player.blendInSeconds : 0.12F;
     float weight = 1.0F;
-    if (player.blendInSeconds > 0.0F && blendBefore < player.blendInSeconds) {
-        const float remaining = player.blendInSeconds - blendBefore;
+    if (transitionDuration > 0.0F && blendBefore < transitionDuration) {
+        const float remaining = transitionDuration - blendBefore;
         weight = remaining > 0.0F ? std::clamp(deltaSeconds / remaining, 0.0F, 1.0F) : 1.0F;
     }
     const double time = static_cast<double>(player.currentTimeSeconds);
     // Inertialization: on the blend's first step, remember how far the pose that was there is from
     // the new clip; then play the clip at full weight with that difference fading out.
-    const bool inertial = mixer.transition == AnimationTransitionModeUVE::Inertialize && player.blendInSeconds > 0.0F;
+    const bool inertial = mixer.transition == AnimationTransitionModeUVE::Inertialize && transitionDuration > 0.0F;
     const std::size_t boneCount = skeleton.bones.size();
     const bool captureOffsets = inertial && blendBefore <= 0.0F;
     if (captureOffsets) {
@@ -388,7 +389,7 @@ bool StepSkeletalAnimationSequencerUVE(AnimationSequencerComponentUVE& player, c
     }
     const bool haveOffsets = inertial && player.inertialPosition.size() == boneCount &&
                              player.inertialRotation.size() == boneCount && player.inertialScale.size() == boneCount;
-    const float decay = haveOffsets ? InertialDecayUVE(player.blendElapsedSeconds / player.blendInSeconds) : 0.0F;
+    const float decay = haveOffsets ? InertialDecayUVE(player.blendElapsedSeconds / transitionDuration) : 0.0F;
     for (std::size_t index = 0U; index < boneCount; ++index) {
         const SkeletonBoneUVE& bone = skeleton.bones[index];
         PoseUVE target{bone.localPosition, bone.localRotation, bone.localScale};
@@ -433,7 +434,7 @@ bool StepSkeletalAnimationSequencerUVE(AnimationSequencerComponentUVE& player, c
             out.scale = blended.scale;
         }
     }
-    if (haveOffsets && player.blendElapsedSeconds >= player.blendInSeconds) {
+    if (haveOffsets && player.blendElapsedSeconds >= transitionDuration) {
         player.inertialPosition.clear();
         player.inertialRotation.clear();
         player.inertialScale.clear();
@@ -521,16 +522,22 @@ bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, const doubl
     }
     const double time = std::clamp(timeSeconds, 0.0, std::max(clip.durationSeconds, 0.0));
     const Retarget::ConformedPlaybackUVE conformed = PlanConformedPlaybackForUVE(clip, skeleton);
+
+    std::unordered_map<std::string_view, const Asset::AnimationAssetBoneTrackUVE*> tracks;
+    tracks.reserve(clip.bones.size());
+    for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
+        if (!track.samples.empty()) {
+            tracks.emplace(track.bone, &track);
+        }
+    }
+
     std::vector<SkeletonBonePoseUVE> pose(skeleton.bones.size());
     for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
         const SkeletonBoneUVE& bone = skeleton.bones[index];
         SkeletonBonePoseUVE& out = pose[index];
         out = SkeletonBonePoseUVE{bone.localPosition, bone.localRotation, bone.localScale};
-        for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
-            if (track.bone != bone.name || track.samples.empty()) {
-                continue;
-            }
-            const PoseUVE sampled = SampleTrackUVE(track.samples, time);
+        if (const auto* track = FindTrackForBoneUVE(tracks, bone.name); track != nullptr) {
+            const PoseUVE sampled = SampleTrackUVE(track->samples, time);
             if (mixer.animatePosition) {
                 out.position = conformed.PositionUVE(bone.name, sampled.position, bone.localPosition);
             }
@@ -541,18 +548,15 @@ bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, const doubl
             if (mixer.animateScale) {
                 out.scale = conformed.ScaleUVE(sampled.scale, bone.localScale);
             }
-            break;
         }
     }
     if (mixer.rootMotion != AnimationRootMotionModeUVE::Off && mixer.animatePosition) {
         if (const std::optional<std::size_t> rootIndex = ResolveRootMotionBoneUVE(skeleton, clip, mixer.rootMotionBone)) {
-            for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
-                if (track.bone == skeleton.bones[*rootIndex].name && !track.samples.empty()) {
-                    const Math::Vector3UVE first = conformed.PositionUVE(track.bone, SampleTrackUVE(track.samples, 0.0).position, Math::Vector3UVE{});
-                    pose[*rootIndex].position.x = first.x;
-                    pose[*rootIndex].position.z = first.z;
-                    break;
-                }
+            const std::string& rootName = skeleton.bones[*rootIndex].name;
+            if (const auto* track = FindTrackForBoneUVE(tracks, rootName); track != nullptr && !track->samples.empty()) {
+                const Math::Vector3UVE first = conformed.PositionUVE(track->bone, SampleTrackUVE(track->samples, 0.0).position, Math::Vector3UVE{});
+                pose[*rootIndex].position.x = first.x;
+                pose[*rootIndex].position.z = first.z;
             }
         }
     }

@@ -58,9 +58,9 @@ struct RetargetPlanUVE final {
     }
     /// How many of the animations Generate will conform.
     [[nodiscard]] std::size_t ReadyAnimationsUVE() const noexcept;
-    /// Generate needs a character it can conform and something to do.
+    /// Generate needs a character or animations it can conform/regenerate.
     [[nodiscard]] bool CanGenerateUVE() const noexcept {
-        return modelReadable && (ReadyAnimationsUVE() > 0U || !modelAlreadyConformed);
+        return modelReadable || ReadyAnimationsUVE() > 0U;
     }
 };
 

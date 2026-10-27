@@ -19,11 +19,15 @@
 
 #include <imgui.h>
 
+#include "editor_window_chrome_uve.h"
+
 #include "uve/asset/fbx_mesh_converter_uve.h"
 #include "uve/asset/i_asset_database_uve.h"
 #include "uve/asset/i_asset_manager_uve.h"
 #include "uve/asset/i_project_file_index_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
+#include "uve/component/mesh_component_uve.h"
+#include "uve/component/skin_component_uve.h"
 #include "uve/core/engine_services_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
@@ -139,10 +143,10 @@ void DrawBoneUVE(const RetargetPlanUVE& plan, const std::int32_t bone, const std
 [[nodiscard]] const char* AnimationStateLabelUVE(const Retarget::RetargetAnimationStateUVE state) {
     switch (state) {
         case Retarget::RetargetAnimationStateUVE::Ready: return "ready (auto-generates missing bones)";
-        case Retarget::RetargetAnimationStateUVE::AlreadyConformed: return "already conformed";
-        case Retarget::RetargetAnimationStateUVE::NoSkeleton: return "no skeleton";
-        case Retarget::RetargetAnimationStateUVE::NoBones: return "moves no bones";
-        case Retarget::RetargetAnimationStateUVE::Unreadable: return "cannot read";
+        case Retarget::RetargetAnimationStateUVE::AlreadyConformed: return "ready (conformed, can re-generate)";
+        case Retarget::RetargetAnimationStateUVE::NoSkeleton: return "unsupported: no skeleton data (re-import FBX)";
+        case Retarget::RetargetAnimationStateUVE::NoBones: return "unsupported: animation moves no bones";
+        case Retarget::RetargetAnimationStateUVE::Unreadable: return "cannot read: file corrupted";
     }
     return "";
 }
@@ -265,6 +269,21 @@ std::size_t EditorUVE::RefreshSkeletonsForRetargetedModelUVE(const std::filesyst
             skeleton.pose.clear();
             ++changed;
         });
+    // Synchronize SkinComponentUVE bindings for any entity referencing this model so bone binds stay valid.
+    entityManager.ForEachUVE<Scene::MeshComponentUVE>(
+        [&](const Scene::EntityUVE entity, Scene::MeshComponentUVE& meshComp) {
+            if (meshComp.meshGuid == Asset::kInvalidAssetGuidUVE) {
+                return;
+            }
+            const std::filesystem::path meshPath = m_services->GetAssetDatabaseUVE().ResolveUVE(meshComp.meshGuid);
+            if (meshPath.empty() || meshPath.lexically_normal() != wanted) {
+                return;
+            }
+            if (entityManager.HasComponentUVE<Scene::SkinComponentUVE>(entity)) {
+                auto& skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(entity);
+                AutoPopulateSkinFromModelUVE(entity, skin);
+            }
+        });
     if (changed > 0U) {
         m_sceneDirty = true;
     }
@@ -309,6 +328,9 @@ void EditorUVE::FinishRetargetJobUVE(RetargetWindowStateUVE& window, Retarget::R
 
 void EditorUVE::DrawRetargetWindowUVE() {
     RetargetWindowStateUVE& window = *m_retargetWindow;
+    if (window.isMinimized) {
+        return;
+    }
     // A finished job hands its result back here, on the editor's thread.
     if (window.job.valid() && window.job.wait_for(std::chrono::seconds{0}) == std::future_status::ready) {
         FinishRetargetJobUVE(window, window.job.get());
@@ -320,11 +342,30 @@ void EditorUVE::DrawRetargetWindowUVE() {
     ImGuiWindowClass windowClass;
     windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_NoAutoMerge;
     ImGui::SetNextWindowClass(&windowClass);
-    ImGui::SetNextWindowPos(ImVec2{mainViewport->GetCenter().x, mainViewport->GetCenter().y}, ImGuiCond_FirstUseEver,
-                            ImVec2{0.5F, 0.5F});
-    ImGui::SetNextWindowSize(ImVec2{1320.0F, 760.0F}, ImGuiCond_FirstUseEver);
-    bool open = true;
-    ImGui::Begin("Retarget###retarget-window", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
+    if (!window.isMaximized) {
+        ImGui::SetNextWindowPos(ImVec2{window.restoredPosX, window.restoredPosY}, ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2{window.restoredWidth, window.restoredHeight}, ImGuiCond_FirstUseEver);
+    } else {
+        ImGui::SetNextWindowPos(mainViewport->WorkPos, ImGuiCond_Always);
+        ImGui::SetNextWindowSize(mainViewport->WorkSize, ImGuiCond_Always);
+    }
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0F);
+    ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(50, 58, 70, 255));
+    ImGui::Begin("Retarget###retarget-window", nullptr,
+                 ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
+
+    const OSWindowChromeActionUVE chromeAction = DrawOSWindowTitleBarUVE(
+        "Animation Retarget Tool###retarget-window",
+        "[R]", IM_COL32(230, 140, 50, 255),
+        window.isMinimized, window.isMaximized,
+        window.restoredPosX, window.restoredPosY, window.restoredWidth, window.restoredHeight);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{10.0F, 8.0F});
+    ImGui::BeginChild("##retarget-content-area", ImVec2{0.0F, 0.0F}, false);
 
     // ---- The character ---------------------------------------------------------------------------
     const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
@@ -414,13 +455,21 @@ void EditorUVE::DrawRetargetWindowUVE() {
     ImGui::BeginChild("##retarget-left", ImVec2{leftWidth, bodyHeight}, true);
     ImGui::TextDisabled("Animations (%zu)", plan.animations.size());
     for (const RetargetAnimationRowUVE& row : plan.animations) {
-        const bool ready = row.state == Retarget::RetargetAnimationStateUVE::Ready;
-        DotUVE(ready ? kGoodUVE : kMissingUVE);
+        const bool ready = row.state == Retarget::RetargetAnimationStateUVE::Ready ||
+                           row.state == Retarget::RetargetAnimationStateUVE::AlreadyConformed;
+        const bool broken = row.state == Retarget::RetargetAnimationStateUVE::NoSkeleton ||
+                            row.state == Retarget::RetargetAnimationStateUVE::NoBones ||
+                            row.state == Retarget::RetargetAnimationStateUVE::Unreadable;
+        DotUVE(ready ? kGoodUVE : (broken ? kBrokenUVE : kMissingUVE));
         ImGui::TextUnformatted(row.file.filename().string().c_str());
         ImGui::SameLine();
         ImGui::TextDisabled("%s", AnimationStateLabelUVE(row.state));
-        if (!ready && ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Left alone: %s", row.note.c_str());
+        if (ImGui::IsItemHovered()) {
+            if (broken) {
+                ImGui::SetTooltip("Unsupported file: %s", row.note.c_str());
+            } else if (!row.note.empty()) {
+                ImGui::SetTooltip("%s", row.note.c_str());
+            }
         }
     }
     if (!plan.keptBones.empty()) {
@@ -538,13 +587,15 @@ void EditorUVE::DrawRetargetWindowUVE() {
         ImGui::TextColored(window.statusIsError ? kBrokenUVE : kGoodUVE, "%s", window.status.c_str());
     } else if (plan.modelReadable) {
         ImGui::AlignTextToFramePadding();
-        ImGui::TextDisabled("%zu of %zu animations will be conformed; %zu missing humanoid bones will be auto-generated.", plan.ReadyAnimationsUVE(),
+        ImGui::TextDisabled("%zu of %zu animations ready to conform; %zu missing humanoid bones will be auto-generated.", plan.ReadyAnimationsUVE(),
                             plan.animations.size(), plan.CountUVE(Retarget::JointStatusUVE::Missing));
     }
     ImGui::TextDisabled("Files change in place. Originals are saved in .retarget-backup beside the content folder.");
+    ImGui::EndChild();
+    ImGui::PopStyleVar(); // WindowPadding
     ImGui::End();
 
-    if (!open) {
+    if (chromeAction.closed) {
         CloseRetargetWindowUVE();
     }
 }
