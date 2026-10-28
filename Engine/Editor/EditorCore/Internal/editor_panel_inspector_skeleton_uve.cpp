@@ -7,7 +7,9 @@
 // is pointed at a rigged model, and pointing it again (Reload) picks up an edited rig.
 
 #include "uve/editor/editor_uve.h"
+#include "uve/asset/skeleton_asset_uve.h"
 #include "uve/retarget/retarget_conform_uve.h"
+#include "uve/retarget/retarget_humanoid_uve.h"
 
 #include <algorithm>
 #include <array>
@@ -112,22 +114,43 @@ std::optional<Asset::GltfSkeletonUVE> EditorUVE::ReadSkeletonForSourceUVE(const 
                 }
                 meshPtr = &loadedMesh;
             }
-            if (meshPtr != nullptr) {
-                if (const std::optional<Retarget::RetargetSkeletonUVE> rig = Retarget::RigFromMeshUVE(*meshPtr);
-                    rig.has_value() && !rig->bones.empty() && rig->bones.size() <= maximumBones) {
-                    Asset::GltfSkeletonUVE skeleton;
-                    skeleton.skinCount = 1U;
-                    for (const Retarget::RetargetBoneUVE& bone : rig->bones) {
-                        Asset::GltfJointUVE joint;
-                        joint.name = bone.name;
-                        joint.parentIndex = bone.parent;
-                        joint.translation = bone.position;
-                        joint.rotation = bone.rotation;
-                        joint.scale = Math::Vector3UVE{bone.scale, bone.scale, bone.scale};
-                        skeleton.joints.push_back(std::move(joint));
-                    }
-                    return skeleton;
+            if (meshPtr != nullptr && !meshPtr->joints.empty()) {
+                std::vector<std::string> jointNames;
+                jointNames.reserve(meshPtr->joints.size());
+                for (const Asset::MeshJointUVE& joint : meshPtr->joints) {
+                    jointNames.push_back(joint.name);
                 }
+                if (Retarget::AreHumanoidNamesUVE(jointNames, Retarget::GetHumanoidReferenceUVE())) {
+                    if (const std::optional<Retarget::RetargetSkeletonUVE> rig = Retarget::RigFromMeshUVE(*meshPtr);
+                        rig.has_value() && !rig->bones.empty() && rig->bones.size() <= maximumBones) {
+                        Asset::GltfSkeletonUVE skeleton;
+                        skeleton.skinCount = 1U;
+                        for (const Retarget::RetargetBoneUVE& bone : rig->bones) {
+                            Asset::GltfJointUVE joint;
+                            joint.name = bone.name;
+                            joint.parentIndex = bone.parent;
+                            joint.translation = bone.position;
+                            joint.rotation = bone.rotation;
+                            joint.scale = Math::Vector3UVE{bone.scale, bone.scale, bone.scale};
+                            skeleton.joints.push_back(std::move(joint));
+                        }
+                        return skeleton;
+                    }
+                }
+            }
+            std::filesystem::path skelPath = importedPath;
+            skelPath.replace_extension(".uvskel");
+            Asset::SkeletonAssetUVE skelAsset;
+            if (std::filesystem::is_regular_file(skelPath, ec) && Asset::LoadSkeletonAssetUVE(skelPath, skelAsset) &&
+                !skelAsset.joints.empty() && skelAsset.joints.size() <= maximumBones) {
+                Asset::GltfSkeletonUVE skeleton;
+                skeleton.skinCount = 1U;
+                skeleton.joints.reserve(skelAsset.joints.size());
+                for (const Asset::SkeletonJointUVE& joint : skelAsset.joints) {
+                    skeleton.joints.push_back(
+                        Asset::GltfJointUVE{joint.name, joint.parent, joint.position, joint.rotation, joint.scale});
+                }
+                return skeleton;
             }
         }
     }

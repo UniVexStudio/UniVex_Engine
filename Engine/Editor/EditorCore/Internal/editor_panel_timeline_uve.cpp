@@ -150,6 +150,7 @@ void EditorUVE::StopAnimationTimelinePreviewUVE() {
         player.currentTimeSeconds = 0.0F;
         player.hasStartPose = false;
     }
+    m_timeline.player = Scene::kInvalidEntityUVE;
     if (m_timeline.previewSkeleton == Scene::kInvalidEntityUVE) {
         return;
     }
