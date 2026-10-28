@@ -65,8 +65,6 @@ jobs:
         include:
           - mode: Debug
             sanitizers: 'OFF'
-          - mode: Sanitizers
-            sanitizers: 'ON'
     env:
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
 

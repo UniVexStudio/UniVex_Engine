@@ -2293,10 +2293,24 @@ struct Renderer3DUVE::ImplUVE {
         boneLookup.BuildUVE(*skeleton);
         std::vector<Math::Matrix4x4UVE> locals;
         locals.reserve(mesh.joints.size());
-        for (const Asset::MeshJointUVE& joint : mesh.joints) {
+        for (std::size_t jointIndex = 0U; jointIndex < mesh.joints.size(); ++jointIndex) {
+            const Asset::MeshJointUVE& joint = mesh.joints[jointIndex];
             std::uint32_t foundIndex = 0U;
             if (!boneLookup.TryFindUVE(joint.name, foundIndex) || foundIndex >= pose.size()) {
-                locals.push_back(Math::Matrix4x4UVE::IdentityUVE());
+                // The joint's own rest pose, relative to its parent joint: bind(parent)^-1 * bind(joint),
+                // with bind = inverse(inverseBindMatrix). An identity local is NOT the rest pose - it
+                // drops the joint onto its parent and pulls every vertex it holds off the model, which
+                // is how a character whose rig names only partly match the skeleton lost its skin and
+                // left nothing but bones on screen.
+                Math::Matrix4x4UVE bind;
+                Math::Matrix4x4UVE rest = Math::Matrix4x4UVE::IdentityUVE();
+                if (Math::TryInverseUVE(joint.inverseBindMatrix, bind)) {
+                    rest = bind;
+                    if (joint.parentIndex != Asset::kInvalidJointParentUVE && joint.parentIndex < jointIndex) {
+                        rest = mesh.joints[joint.parentIndex].inverseBindMatrix * bind;
+                    }
+                }
+                locals.push_back(rest);
                 continue;
             }
             const Scene::SkeletonBonePoseUVE& local = pose[foundIndex];
@@ -2344,7 +2358,7 @@ struct Renderer3DUVE::ImplUVE {
                 Math::Matrix4x4UVE correctedModel = modelSpace[index];
                 const float invScale = 1.0F / skinScale;
                 for (std::size_t row = 0U; row < 3U; ++row) {
-                    for (std::size_t col = 0U; col < 3U; ++col) {
+                    for (std::size_t col = 0U; col < 4U; ++col) {
                         correctedModel.m[row][col] *= invScale;
                     }
                 }
@@ -2465,7 +2479,18 @@ struct Renderer3DUVE::ImplUVE {
                     isSkinned
                         ? SkinForEntityUVE(entityManager, entity, meshComponent.meshGuid, *mesh, localBounds)
                         : nullptr;
+                if (isSkinned) {
+                    localBounds.min = Math::Vector3UVE{std::min(localBounds.min.x, mesh->localBounds.min.x),
+                                                       std::min(localBounds.min.y, mesh->localBounds.min.y),
+                                                       std::min(localBounds.min.z, mesh->localBounds.min.z)};
+                    localBounds.max = Math::Vector3UVE{std::max(localBounds.max.x, mesh->localBounds.max.x),
+                                                       std::max(localBounds.max.y, mesh->localBounds.max.y),
+                                                       std::max(localBounds.max.z, mesh->localBounds.max.z)};
+                }
                 Math::AabbUVE worldBounds = localBounds.TransformUVE(worldMatrix);
+                if (!IsOrderedFiniteAabbUVE(worldBounds)) {
+                    worldBounds = mesh->localBounds.TransformUVE(worldMatrix);
+                }
 
                 const Scene::SurfaceInstanceComponentUVE* surfaceInstance =
                     entityManager.HasComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity)

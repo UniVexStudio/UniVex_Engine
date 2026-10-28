@@ -4395,6 +4395,73 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ASkinnedMeshUnderASkeletonIsDrawnInTheS
     EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().skinnedMeshesDrawn, 0U);
 }
 
+TEST_F(Renderer3DUVETest, RenderFrameUVE_AJointTheSkeletonDoesNotNameStaysAtItsRestPoseInsteadOfLeavingTheModel) {
+    // Hips at y = 1 and Spine (a child) at y = 2 in the bind pose; a vertex sits on Spine at y = 2.
+    // The skeleton only names "Hips", so Spine has no bone of its name. It must stay where the model
+    // authored it (y = 2), not fall to its parent's origin - which is where an identity local put it.
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>([](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+        mesh.vertices = {
+            Asset::MeshVertexUVE{Math::Vector3UVE{0.0F, 2.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
+            Asset::MeshVertexUVE{Math::Vector3UVE{1.0F, 2.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F},
+            Asset::MeshVertexUVE{Math::Vector3UVE{0.0F, 3.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F},
+        };
+        mesh.indices = {0, 1, 2};
+        mesh.localBounds = Math::AabbUVE{Math::Vector3UVE{0.0F, 2.0F, 0.0F}, Math::Vector3UVE{1.0F, 3.0F, 0.0F}};
+        Asset::MeshJointUVE hips;
+        hips.name = "Hips";
+        hips.inverseBindMatrix = Math::Matrix4x4UVE::IdentityUVE();
+        hips.inverseBindMatrix.m[1][3] = -1.0F;
+        Asset::MeshJointUVE spine;
+        spine.name = "Spine";
+        spine.parentIndex = 0U;
+        spine.inverseBindMatrix = Math::Matrix4x4UVE::IdentityUVE();
+        spine.inverseBindMatrix.m[1][3] = -2.0F;
+        mesh.joints = {hips, spine};
+        Asset::MeshSkinningInfluenceUVE influence;
+        influence.joints[0] = 1U;
+        influence.weights[0] = 1.0F;
+        mesh.skinningInfluences = {influence, influence, influence};
+        return true;
+    });
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_partial_rig.uvmodel");
+    const Scene::EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE skeletonTransform;
+    skeletonTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -10.0F};
+    sceneGraph.AttachTransformUVE(entityManager, skeletonEntity, skeletonTransform);
+    Scene::Skeleton3DComponentUVE skeleton;
+    skeleton.skeletonAssetPath = "Hero.fbx";
+    Scene::SkeletonBoneUVE bone;
+    bone.name = "Hips";
+    bone.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    skeleton.bones = {bone};
+    entityManager.AddComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity, skeleton);
+    const Scene::EntityUVE meshEntity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, meshEntity, Scene::TransformComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, meshEntity, skeletonEntity);
+    entityManager.AddComponentUVE<Scene::MeshComponentUVE>(meshEntity, Scene::MeshComponentUVE{meshGuid, Asset::kInvalidAssetGuidUVE});
+    sceneGraph.UpdateUVE(entityManager);
+    Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle = assetManager.LoadUVE<Asset::MeshAssetUVE>(meshGuid, assetDatabase);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE && !meshHandle.IsReadyUVE(); ++iteration) {
+        std::this_thread::yield();
+    }
+    ASSERT_TRUE(meshHandle.IsReadyUVE());
+
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().skinnedMeshesDrawn, 1U);
+    std::vector<Asset::MeshVertexUVE> vertices(3U);
+    BufferHandleUVE bound{};
+    for (const RecordedCommandUVE& command : renderDevice.GetLastSubmittedCommandsUVE()) {
+        if (std::holds_alternative<BindVertexBufferCommandUVE>(command)) {
+            bound = std::get<BindVertexBufferCommandUVE>(command).buffer;
+        }
+    }
+    ASSERT_TRUE(renderDevice.ReadbackBufferUVE(bound, std::as_writable_bytes(std::span(vertices))));
+    EXPECT_NEAR(vertices[0].position.y, 2.0F, 1e-4F);
+    EXPECT_NEAR(vertices[2].position.y, 3.0F, 1e-4F);
+}
+
 TEST_F(Renderer3DUVETest, RenderFrameUVE_EmptySkyAssetKeepsProceduralSky) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     const Scene::EntityUVE environment = entityManager.CreateEntityUVE();
