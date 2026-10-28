@@ -4433,7 +4433,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_AJointTheSkeletonDoesNotNameStaysAtItsR
     skeleton.skeletonAssetPath = "Hero.fbx";
     Scene::SkeletonBoneUVE bone;
     bone.name = "Hips";
-    bone.position = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    bone.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
     skeleton.bones = {bone};
     entityManager.AddComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity, skeleton);
     const Scene::EntityUVE meshEntity = entityManager.CreateEntityUVE();
