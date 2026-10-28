@@ -3572,7 +3572,16 @@ struct Renderer3DUVE::ImplUVE {
             }
 
             const bool blendedVariant = item.opacity < 1.0F;
-            Shader::ShaderProgramUVE* const program = MeshColorProgramUVE(*materialResources, blendedVariant);
+            Shader::ShaderProgramUVE* program = MeshColorProgramUVE(*materialResources, blendedVariant);
+            if (program == nullptr && item.mesh != nullptr && materialResources != &defaultLitMaterialResources) {
+                // The material's own program is still compiling on a worker. Dropping the draw here
+                // made an imported mesh show for a frame on the default material and then vanish
+                // the moment its material finished loading; draw it with the default lit program
+                // until the material's program is linked instead.
+                material = &kDefaultLitMaterialUVE;
+                materialResources = &defaultLitMaterialResources;
+                program = MeshColorProgramUVE(*materialResources, blendedVariant);
+            }
             if (program == nullptr) {
                 continue; // Still compiling or invalid: never bind a stale pipeline.
             }
