@@ -147,8 +147,13 @@ std::optional<Asset::GltfSkeletonUVE> EditorUVE::ReadSkeletonForSourceUVE(const 
                 skeleton.skinCount = 1U;
                 skeleton.joints.reserve(skelAsset.joints.size());
                 for (const Asset::SkeletonJointUVE& joint : skelAsset.joints) {
-                    skeleton.joints.push_back(
-                        Asset::GltfJointUVE{joint.name, joint.parent, joint.position, joint.rotation, joint.scale});
+                    Asset::GltfJointUVE gltfJoint;
+                    gltfJoint.name = joint.name;
+                    gltfJoint.parentIndex = joint.parent;
+                    gltfJoint.translation = joint.position;
+                    gltfJoint.rotation = joint.rotation;
+                    gltfJoint.scale = joint.scale;
+                    skeleton.joints.push_back(std::move(gltfJoint));
                 }
                 return skeleton;
             }
