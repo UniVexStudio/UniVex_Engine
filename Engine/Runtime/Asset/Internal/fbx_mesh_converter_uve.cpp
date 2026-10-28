@@ -851,18 +851,28 @@ std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsUVE(const std::span<c
             }
 
             // Two honest authoring styles mean "this material blends": the classic FBX
-            // TransparencyFactor (0 opaque, 1 fully transparent, verified against the parser) and
-            // an explicit PBR opacity below one, which is what glTF/OSL-style materials carry.
+            // TransparencyFactor scaled by TransparencyColor (0 opaque, 1 fully transparent, verified
+            // against the parser and DCC defaults) and an explicit PBR opacity below one.
             // MaterialAssetUVE records it as a flag (RenderQueueUVE buckets on it) and keeps
             // alphaCutoff at zero, because an FBX material holds no cutoff value.
             const ufbx_material_map& opacity = sourceMaterial->pbr.opacity;
             const ufbx_material_map& transparency = sourceMaterial->fbx.transparency_factor;
+            const ufbx_material_map& transparencyColor = sourceMaterial->fbx.transparency_color;
+            const bool hasOpacityTexture = (opacity.texture != nullptr) ||
+                                          (transparency.texture != nullptr) ||
+                                          (transparencyColor.texture != nullptr);
             const bool pbrBlends = opacity.has_value && std::isfinite(opacity.value_real) &&
-                                   opacity.value_real >= 0.0 && opacity.value_real < 1.0;
+                                   opacity.value_real >= 0.0 && opacity.value_real < 0.999;
+            const float transColorMax = transparencyColor.has_value
+                                            ? std::max({static_cast<float>(transparencyColor.value_vec3.x),
+                                                        static_cast<float>(transparencyColor.value_vec3.y),
+                                                        static_cast<float>(transparencyColor.value_vec3.z)})
+                                            : 0.0F;
             const bool classicBlends = transparency.has_value &&
                                        std::isfinite(transparency.value_real) &&
-                                       transparency.value_real > 0.0;
-            if (pbrBlends || classicBlends) {
+                                       transparency.value_real > 0.01 &&
+                                       transColorMax > 0.01F;
+            if (hasOpacityTexture || pbrBlends || classicBlends) {
                 converted.material.isTransparent = true;
             }
 
