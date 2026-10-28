@@ -1892,7 +1892,8 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             }
             Scene::Skeleton3DComponentUVE& skeleton =
                 m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
-            if (!player.hasStartPose && player.autoplay) {
+            if (!player.hasStartPose && player.autoplay &&
+                m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
                 Scene::PlayAnimationSequencerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
             } else if (player.isPlaying && player.playingClip != player.clip) {
                 // Switched mid-play (a script, a state change): the new clip takes over from the
@@ -1915,7 +1916,8 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         if (target == nullptr) {
             continue;
         }
-        if (!player.hasStartPose && player.autoplay) {
+        if (!player.hasStartPose && player.autoplay &&
+            m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
             Scene::PlayAnimationSequencerUVE(player, *target, clip->durationSeconds);
         }
         static_cast<void>(

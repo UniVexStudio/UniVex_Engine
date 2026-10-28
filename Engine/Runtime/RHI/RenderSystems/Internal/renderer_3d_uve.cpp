@@ -2320,8 +2320,38 @@ struct Renderer3DUVE::ImplUVE {
         }
         std::vector<Math::Matrix4x4UVE> skinning;
         std::vector<Asset::MeshVertexUVE> vertices;
-        if (!Asset::TryResolvePoseUVE(mesh.joints, locals, skinning) || !Asset::TrySkinMeshUVE(mesh, skinning, vertices) ||
-            vertices.empty()) {
+        if (!Asset::TryResolvePoseUVE(mesh.joints, locals, skinning)) {
+            return nullptr;
+        }
+        // Reconcile 100x / 0.01x FBX unit-scale mismatches between the skeleton pose and the mesh's
+        // inverseBindMatrix (e.g. a unit-scale RigFromMeshUVE skeleton on a cm-scaled FBX bind matrix,
+        // or a cm-scaled FBX animation clip playing on a conformed unit-scale mesh).
+        std::vector<Math::Matrix4x4UVE> modelSpace;
+        for (std::size_t index = 0U; index < skinning.size(); ++index) {
+            const Math::Matrix4x4UVE& sk = skinning[index];
+            const float skinScale =
+                std::sqrt(sk.m[0][0] * sk.m[0][0] + sk.m[1][0] * sk.m[1][0] + sk.m[2][0] * sk.m[2][0]);
+            if (skinScale > 1e-6F && (skinScale < 0.1F || skinScale > 10.0F)) {
+                if (modelSpace.empty()) {
+                    modelSpace.reserve(mesh.joints.size());
+                    for (std::size_t j = 0U; j < mesh.joints.size(); ++j) {
+                        const std::uint32_t parent = mesh.joints[j].parentIndex;
+                        modelSpace.push_back(parent == Asset::kInvalidJointParentUVE
+                                                 ? locals[j]
+                                                 : modelSpace[parent] * locals[j]);
+                    }
+                }
+                Math::Matrix4x4UVE correctedModel = modelSpace[index];
+                const float invScale = 1.0F / skinScale;
+                for (std::size_t row = 0U; row < 3U; ++row) {
+                    for (std::size_t col = 0U; col < 3U; ++col) {
+                        correctedModel.m[row][col] *= invScale;
+                    }
+                }
+                skinning[index] = correctedModel * mesh.joints[index].inverseBindMatrix;
+            }
+        }
+        if (!Asset::TrySkinMeshUVE(mesh, skinning, vertices) || vertices.empty()) {
             return nullptr;
         }
         outBounds = Math::AabbUVE{vertices.front().position, vertices.front().position};
