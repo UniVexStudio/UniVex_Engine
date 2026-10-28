@@ -42,10 +42,12 @@ RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile, const st
         std::error_code exists;
         if (!std::filesystem::is_regular_file(modelFile, exists) || !Asset::LoadMeshAssetUVE(modelFile, mesh)) {
             plan.modelError = "cannot read " + modelFile.filename().string();
-        } else if (std::string error; !Retarget::RigFromMeshUVE(mesh, &error).has_value()) {
-            plan.modelError = error;
         } else {
-            resolvedRig = *Retarget::RigFromMeshUVE(mesh);
+            std::string error;
+            resolvedRig = Retarget::RigFromMeshUVE(mesh, &error);
+            if (!resolvedRig.has_value()) {
+                plan.modelError = std::move(error);
+            }
         }
     } else {
         for (const std::filesystem::path& file : animations) {

@@ -3519,6 +3519,11 @@ struct Renderer3DUVE::ImplUVE {
             const Asset::MaterialAssetUVE* material = &kDefaultLitMaterialUVE;
             const MaterialGpuResourcesUVE* materialResources = &defaultLitMaterialResources;
             if (!usesDefaultMaterial) {
+                // Start unresolved: a material still loading on a worker returns nullptr from
+                // TryGetUVE, and leaving the default resources in place here used to let that
+                // nullptr reach ApplyFrameAndMaterialUniformsUVE and crash the frame.
+                material = nullptr;
+                materialResources = nullptr;
                 const auto materialIt = primitiveMaterialHandles.find(item.materialGuid);
                 if (materialIt != primitiveMaterialHandles.end()) {
                     material = materialIt->second.TryGetUVE();
@@ -3526,7 +3531,7 @@ struct Renderer3DUVE::ImplUVE {
                         materialResources = ResolveMaterialGpuResourcesUVE(materialIt->second);
                     }
                 }
-                if (materialResources == nullptr) {
+                if (material == nullptr || materialResources == nullptr) {
                     if (item.mesh != nullptr) {
                         material = &kDefaultLitMaterialUVE;
                         materialResources = &defaultLitMaterialResources;

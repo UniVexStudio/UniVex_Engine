@@ -236,7 +236,15 @@ constexpr float kMaximum2DCanvasZoomUVE = 4.00F;
     return recoveryPath;
 }
 
-[[nodiscard]] bool DecodeRawImageThumbnailPixelsUVE(const std::filesystem::path& absolutePath,
+[[nodiscard]] bool IsRawSourceImagePathUVE(const std::filesystem::path& path) {
+    std::string extension = path.extension().generic_string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp" ||
+           extension == ".tga";
+}
+
+bool DecodeRawImageThumbnailPixelsUVE(const std::filesystem::path& absolutePath,
                                                      std::uint32_t& outWidth, std::uint32_t& outHeight,
                                                      std::vector<std::byte>& outPixels);
 
@@ -5471,10 +5479,16 @@ bool DecodeRawImageThumbnailPixelsUVE(const std::filesystem::path& absolutePath,
     if (!file) {
         return false;
     }
-    const std::vector<char> rawBytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    std::vector<std::byte> bytes(rawBytes.size());
-    std::transform(rawBytes.begin(), rawBytes.end(), bytes.begin(),
-                   [](const char byte) { return static_cast<std::byte>(byte); });
+    file.seekg(0, std::ios::end);
+    const std::streamoff fileSize = file.tellg();
+    if (fileSize <= 0) {
+        return false;
+    }
+    file.seekg(0, std::ios::beg);
+    std::vector<std::byte> bytes(static_cast<std::size_t>(fileSize));
+    if (!file.read(reinterpret_cast<char*>(bytes.data()), fileSize)) {
+        return false;
+    }
 
     std::string extension = absolutePath.extension().generic_string();
     std::transform(extension.begin(), extension.end(), extension.begin(),
@@ -5525,7 +5539,7 @@ bool DecodeRawImageThumbnailPixelsUVE(const std::filesystem::path& absolutePath,
     // the int narrowing below is provably safe.
     constexpr std::uint32_t kMaximumPreviewImageDimensionUVE = 32768U;
     Asset::TextureAssetUVE texture;
-    if (Asset::LoadTextureAssetUVE(absolutePath, texture)) {
+    if (!IsRawSourceImagePathUVE(absolutePath) && Asset::LoadTextureAssetUVE(absolutePath, texture)) {
         if (texture.format != Asset::TextureAssetFormatUVE::RGBA8Unorm || texture.width == 0U ||
             texture.height == 0U || texture.width > kMaximumPreviewImageDimensionUVE ||
             texture.height > kMaximumPreviewImageDimensionUVE || texture.pixels.empty()) {
@@ -5566,7 +5580,8 @@ std::uintptr_t EditorUVE::GetTextureThumbnailUVE(const std::filesystem::path& re
     const std::filesystem::path absolutePath = snapshot.contentRoot / relativePath;
     std::uintptr_t textureId = 0U;
     Asset::TextureAssetUVE texture;
-    if (Asset::LoadTextureAssetUVE(absolutePath, texture) && texture.width > 0U && texture.height > 0U &&
+    if (!IsRawSourceImagePathUVE(absolutePath) && Asset::LoadTextureAssetUVE(absolutePath, texture) &&
+        texture.width > 0U && texture.height > 0U &&
         texture.format == Asset::TextureAssetFormatUVE::RGBA8Unorm) {
         textureId = EditorUiAssetsUVE::UploadDynamicTextureUVE(reinterpret_cast<const std::uint8_t*>(texture.pixels.data()),
                                                                 static_cast<int>(texture.width),
@@ -5827,6 +5842,26 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
     if (error) {
         return written;
     }
+    struct CachedAnimationImportUVE {
+        std::filesystem::file_time_type sourceTime{};
+        std::vector<std::filesystem::path> files;
+    };
+    static std::unordered_map<std::string, CachedAnimationImportUVE> s_importedAnimCache;
+    const std::string cacheKey = absoluteSource.generic_string();
+    if (const auto cacheIt = s_importedAnimCache.find(cacheKey);
+        cacheIt != s_importedAnimCache.end() && cacheIt->second.sourceTime == sourceTime) {
+        bool allPresent = true;
+        for (const std::filesystem::path& expectedFile : cacheIt->second.files) {
+            std::error_code existsErr;
+            if (!std::filesystem::is_regular_file(expectedFile, existsErr)) {
+                allPresent = false;
+                break;
+            }
+        }
+        if (allPresent) {
+            return written;
+        }
+    }
     const std::string stem = absoluteSource.stem().string();
     const std::string prefix = stem + "_";
     const std::filesystem::path primaryDestination =
@@ -5922,20 +5957,24 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
         }
         return absoluteSource.parent_path() / (absoluteSource.stem().string() + "_" + safe + ".uvanim");
     };
+    std::vector<std::filesystem::path> allDestinations;
     for (Asset::AnimationClipAssetUVE clip : takes) {
         const std::filesystem::path destination = clipPath(clip.clipId);
         clip.clipId = destination.stem().string();
         const std::filesystem::file_time_type existing = std::filesystem::last_write_time(destination, error);
         if (!error && existing >= sourceTime) {
+            allDestinations.push_back(destination);
             continue; // imported since the FBX last changed
         }
         error.clear();
         if (Asset::SaveAnimationClipAssetUVE(clip, destination)) {
             written.push_back(destination);
+            allDestinations.push_back(destination);
         } else {
             UVE_WARNING("EditorUVE: could not write animation {}", destination.string());
         }
     }
+    s_importedAnimCache[cacheKey] = CachedAnimationImportUVE{sourceTime, std::move(allDestinations)};
     return written;
 }
 
