@@ -156,6 +156,7 @@ void EditorUVE::DrawAnimationLibraryWindowUVE() {
     // Its own OS window, like Retarget: never merged into the main one, never docked.
     ImGuiWindowClass windowClass;
     windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_NoAutoMerge;
+    windowClass.ViewportFlagsOverrideClear = ImGuiViewportFlags_NoDecoration | ImGuiViewportFlags_NoTaskBarIcon;
     ImGui::SetNextWindowClass(&windowClass);
     ImGui::SetNextWindowPos(ImVec2{mainViewport->GetCenter().x, mainViewport->GetCenter().y}, ImGuiCond_FirstUseEver,
                             ImVec2{0.5F, 0.5F});

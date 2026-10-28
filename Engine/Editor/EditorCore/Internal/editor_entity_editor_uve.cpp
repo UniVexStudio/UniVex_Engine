@@ -739,6 +739,7 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
     // Its own OS window: never merged back into the main one, never docked.
     ImGuiWindowClass windowClass;
     windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_NoAutoMerge;
+    windowClass.ViewportFlagsOverrideClear = ImGuiViewportFlags_NoDecoration | ImGuiViewportFlags_NoTaskBarIcon;
     ImGui::SetNextWindowClass(&windowClass);
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2{mainViewport->Pos.x + 60.0F, mainViewport->Pos.y + 60.0F}, ImGuiCond_FirstUseEver);

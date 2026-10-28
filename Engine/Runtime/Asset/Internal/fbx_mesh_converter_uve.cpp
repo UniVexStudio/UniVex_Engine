@@ -871,6 +871,20 @@ std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsUVE(const std::span<c
             converted.emissive = ReadTextureSourceUVE(sourceMaterial->pbr.emission_color);
             converted.ambientOcclusion = ReadTextureSourceUVE(sourceMaterial->pbr.ambient_occlusion);
 
+            // Exporters routinely write a zero base colour when the look lives in a texture (or in a
+            // texture they did not embed). The shader multiplies the albedo map by this colour, so a
+            // zero here draws the whole character pitch black - indistinguishable from "gone" in a
+            // dark viewport. Treat an all-zero colour as "unset": white under a map, neutral grey
+            // without one.
+            {
+                const Math::ColorUVE& albedo = converted.material.albedoColor;
+                if (albedo.r <= 1.0e-4F && albedo.g <= 1.0e-4F && albedo.b <= 1.0e-4F) {
+                    const bool hasAlbedoMap = converted.albedo.HasImageUVE() || !converted.albedo.file.empty();
+                    const float value = hasAlbedoMap ? 1.0F : 0.8F;
+                    converted.material.albedoColor = Math::ColorUVE{value, value, value};
+                }
+            }
+
             if (!IsMaterialAssetValidUVE(converted.material)) {
                 UVE_WARNING("FbxMeshConverterUVE: material \"{}\" produced an invalid PBR descriptor; skipped",
                             converted.name);

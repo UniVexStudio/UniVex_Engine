@@ -201,6 +201,10 @@ struct PrimitiveRenderItemUVE {
     /// same meaning and same default as RenderItemUVE::renderLayers - the lit shader reads it for
     /// reflection-probe layer filtering.
     std::uint32_t renderLayers = 1U;
+    /// First index in the index buffer for this surface draw.
+    std::uint32_t firstIndex = 0U;
+    /// Number of indices for this surface draw, or 0U to draw the whole index buffer.
+    std::uint32_t indexCount = 0U;
 };
 
 /// The material a primitive with no authored material is shaded with, and the same one an imported
@@ -1260,6 +1264,9 @@ struct Renderer3DUVE::ImplUVE {
     /// PrimitiveRenderItemUVE cannot do without an asset manager to construct it.
     std::unordered_map<Asset::AssetGuidUVE, Asset::AssetHandleUVE<Asset::MaterialAssetUVE>>
         primitiveMaterialHandles;
+    std::unordered_map<Asset::AssetGuidUVE, bool> namedPrimitiveMaterials;
+    std::size_t pendingPrimitiveMaterials = 0U;
+    std::size_t failedPrimitiveMaterials = 0U;
 
     /// Foundation WP3: the GPU occlusion stage's proxy program (built_in/occlusion_proxy.glsl).
     /// Depth-tested LessOrEqual against everything the main pass has written, no depth write, and
@@ -1312,6 +1319,9 @@ struct Renderer3DUVE::ImplUVE {
         MeshGpuResourcesUVE resources;
         std::size_t vertexBytes = 0U;
         std::uint64_t frame = 0U;
+        Asset::AssetGuidUVE meshGuid = Asset::kInvalidAssetGuidUVE;
+        std::vector<Math::Matrix4x4UVE> lastLocals;
+        Math::AabbUVE localBounds;
     };
     std::unordered_map<std::uint64_t, SkinnedMeshGpuUVE> skinnedMeshCache;
     std::uint64_t skinnedFrame = 0U;
@@ -1691,6 +1701,12 @@ struct Renderer3DUVE::ImplUVE {
             DestroyBufferIfValidUVE(renderDevice, meshIt->second.vertexBuffer);
             DestroyBufferIfValidUVE(renderDevice, meshIt->second.indexBuffer);
             meshCache.erase(meshIt);
+        }
+        for (auto& [entityKey, skinned] : skinnedMeshCache) {
+            static_cast<void>(entityKey);
+            if (skinned.meshGuid == guid) {
+                skinned.lastLocals.clear();
+            }
         }
         // A material asset reload, or a reload of either of its separate shader assets, drops the
         // renderer cache entry. The shared managed program then releases naturally; ShaderManagerUVE
@@ -2286,13 +2302,58 @@ struct Renderer3DUVE::ImplUVE {
             const Scene::SkeletonBonePoseUVE& local = pose[foundIndex];
             locals.push_back(Math::Matrix4x4UVE::ComposeTrsUVE(local.position, local.rotation, local.scale));
         }
-        std::vector<Math::Matrix4x4UVE> skinning;
-        std::vector<Asset::MeshVertexUVE> vertices;
-        if (!Asset::TryResolvePoseUVE(mesh.joints, locals, skinning) || !Asset::TrySkinMeshUVE(mesh, skinning, vertices) ||
-            vertices.empty()) {
+        const MeshGpuResourcesUVE& shared = ResolveMeshGpuResourcesUVE(guid, &mesh);
+        if (!IsValidMeshGpuResourcesUVE(shared)) {
             return nullptr;
         }
-        Asset::GenerateMeshTangentsUVE(vertices, mesh.indices);
+        const std::uint64_t key = (static_cast<std::uint64_t>(entity.generation) << 32U) | entity.index;
+        SkinnedMeshGpuUVE& entry = skinnedMeshCache[key];
+        if (entry.resources.vertexBuffer.value != 0U && entry.meshGuid == guid &&
+            entry.lastLocals.size() == locals.size() &&
+            std::memcmp(entry.lastLocals.data(), locals.data(), locals.size() * sizeof(Math::Matrix4x4UVE)) == 0) {
+            entry.resources.indexBuffer = shared.indexBuffer;
+            entry.resources.indexCount = shared.indexCount;
+            entry.frame = skinnedFrame;
+            outBounds = entry.localBounds;
+            ++skinnedMeshesThisFrame;
+            return &entry.resources;
+        }
+        std::vector<Math::Matrix4x4UVE> skinning;
+        std::vector<Asset::MeshVertexUVE> vertices;
+        if (!Asset::TryResolvePoseUVE(mesh.joints, locals, skinning)) {
+            return nullptr;
+        }
+        // Reconcile 100x / 0.01x FBX unit-scale mismatches between the skeleton pose and the mesh's
+        // inverseBindMatrix (e.g. a unit-scale RigFromMeshUVE skeleton on a cm-scaled FBX bind matrix,
+        // or a cm-scaled FBX animation clip playing on a conformed unit-scale mesh).
+        std::vector<Math::Matrix4x4UVE> modelSpace;
+        for (std::size_t index = 0U; index < skinning.size(); ++index) {
+            const Math::Matrix4x4UVE& sk = skinning[index];
+            const float skinScale =
+                std::sqrt(sk.m[0][0] * sk.m[0][0] + sk.m[1][0] * sk.m[1][0] + sk.m[2][0] * sk.m[2][0]);
+            if (skinScale > 1e-6F && (skinScale < 0.1F || skinScale > 10.0F)) {
+                if (modelSpace.empty()) {
+                    modelSpace.reserve(mesh.joints.size());
+                    for (std::size_t j = 0U; j < mesh.joints.size(); ++j) {
+                        const std::uint32_t parent = mesh.joints[j].parentIndex;
+                        modelSpace.push_back(parent == Asset::kInvalidJointParentUVE
+                                                 ? locals[j]
+                                                 : modelSpace[parent] * locals[j]);
+                    }
+                }
+                Math::Matrix4x4UVE correctedModel = modelSpace[index];
+                const float invScale = 1.0F / skinScale;
+                for (std::size_t row = 0U; row < 3U; ++row) {
+                    for (std::size_t col = 0U; col < 3U; ++col) {
+                        correctedModel.m[row][col] *= invScale;
+                    }
+                }
+                skinning[index] = correctedModel * mesh.joints[index].inverseBindMatrix;
+            }
+        }
+        if (!Asset::TrySkinMeshUVE(mesh, skinning, vertices) || vertices.empty()) {
+            return nullptr;
+        }
         outBounds = Math::AabbUVE{vertices.front().position, vertices.front().position};
         for (const Asset::MeshVertexUVE& vertex : vertices) {
             outBounds.min = Math::Vector3UVE{std::min(outBounds.min.x, vertex.position.x),
@@ -2303,13 +2364,7 @@ struct Renderer3DUVE::ImplUVE {
                                              std::max(outBounds.max.z, vertex.position.z)};
         }
 
-        const MeshGpuResourcesUVE& shared = ResolveMeshGpuResourcesUVE(guid, &mesh);
-        if (!IsValidMeshGpuResourcesUVE(shared)) {
-            return nullptr;
-        }
         const std::span<const std::byte> bytes = std::as_bytes(std::span<const Asset::MeshVertexUVE>(vertices));
-        const std::uint64_t key = (static_cast<std::uint64_t>(entity.generation) << 32U) | entity.index;
-        SkinnedMeshGpuUVE& entry = skinnedMeshCache[key];
         if (entry.resources.vertexBuffer.value == 0U || entry.vertexBytes != bytes.size()) {
             DestroyBufferIfValidUVE(renderDevice, entry.resources.vertexBuffer);
             entry.resources.vertexBuffer =
@@ -2321,6 +2376,9 @@ struct Renderer3DUVE::ImplUVE {
         entry.resources.indexBuffer = shared.indexBuffer;
         entry.resources.indexCount = shared.indexCount;
         entry.frame = skinnedFrame;
+        entry.meshGuid = guid;
+        entry.lastLocals = std::move(locals);
+        entry.localBounds = outBounds;
         if (!IsValidMeshGpuResourcesUVE(entry.resources)) {
             return nullptr;
         }
@@ -2354,8 +2412,7 @@ struct Renderer3DUVE::ImplUVE {
         entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
             [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
                 const Scene::MeshComponentUVE& meshComponent) {
-                if (meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE ||
-                    meshComponent.materialGuid != Asset::kInvalidAssetGuidUVE || worldTransform.dirty ||
+                if (meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE || worldTransform.dirty ||
                     IsHiddenInHierarchyUVE(entityManager, entity) ||
                     Scene::IsWorldPartition3DDrawHiddenUVE(entityManager, entity) ||
                     Scene::IsVisibilityRegion3DDrawHiddenUVE(entityManager, entity)) {
@@ -2383,20 +2440,16 @@ struct Renderer3DUVE::ImplUVE {
                     !Math::IsFiniteUVE(worldTransform.worldPosition) || !Math::IsFiniteUVE(worldTransform.worldScale)) {
                     return;
                 }
-                // A mesh that carries a material of its own is drawn through the materialed path,
-                // which falls back to that material when the object names none - but only when
-                // that material can actually be RESOLVED. A GUID the asset database cannot turn
-                // into a file makes the materialed path drop the mesh, and dropping it here too is
-                // how an imported model that used to draw grey stopped drawing altogether: the
-                // .uvmat beside a converted mesh is registered by the importer, and an import that
-                // was a cache hit never ran it. So the built-in path stands down only for a
-                // material that exists; for one that does not, it draws the mesh untextured
-                // rather than not at all. A mesh on screen in the wrong colour is a defect the
-                // author can see and fix - a mesh that is simply gone is one they have to guess at.
-                const Asset::AssetGuidUVE meshOwnMaterial = mesh->FirstSurfaceMaterialGuidUVE();
-                if (meshOwnMaterial != Asset::kInvalidAssetGuidUVE &&
-                    !assetDatabase.ResolveUVE(meshOwnMaterial).empty()) {
-                    return;
+                const bool isSkinned = mesh->IsSkinnedUVE();
+                if (!isSkinned) {
+                    if (meshComponent.materialGuid != Asset::kInvalidAssetGuidUVE) {
+                        return;
+                    }
+                    const Asset::AssetGuidUVE meshOwnMaterial = mesh->FirstSurfaceMaterialGuidUVE();
+                    if (meshOwnMaterial != Asset::kInvalidAssetGuidUVE &&
+                        !assetDatabase.ResolveUVE(meshOwnMaterial).empty()) {
+                        return;
+                    }
                 }
                 Math::QuaternionUVE rotation;
                 if (!Math::TryNormalizeUVE(worldTransform.worldRotation, rotation)) {
@@ -2409,24 +2462,103 @@ struct Renderer3DUVE::ImplUVE {
                 }
                 Math::AabbUVE localBounds = mesh->localBounds;
                 const MeshGpuResourcesUVE* const skinned =
-                    mesh->IsSkinnedUVE()
+                    isSkinned
                         ? SkinForEntityUVE(entityManager, entity, meshComponent.meshGuid, *mesh, localBounds)
                         : nullptr;
-                const Math::AabbUVE worldBounds = localBounds.TransformUVE(worldMatrix);
+                Math::AabbUVE worldBounds = localBounds.TransformUVE(worldMatrix);
+
+                const Scene::SurfaceInstanceComponentUVE* surfaceInstance =
+                    entityManager.HasComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity)
+                        ? &entityManager.GetComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity)
+                        : nullptr;
+
+                float opacity = 1.0F;
+                if (surfaceInstance != nullptr) {
+                    if (surfaceInstance->extraCullMargin > 0.0F) {
+                        worldBounds.min -= Math::Vector3UVE{surfaceInstance->extraCullMargin, surfaceInstance->extraCullMargin, surfaceInstance->extraCullMargin};
+                        worldBounds.max += Math::Vector3UVE{surfaceInstance->extraCullMargin, surfaceInstance->extraCullMargin, surfaceInstance->extraCullMargin};
+                    }
+                    const float cameraDistance = Math::LengthUVE(worldTransform.worldPosition - viewPosition);
+                    if (Scene::IsSurfaceInstance3DOutsideVisibilityRangeUVE(*surfaceInstance, cameraDistance) ||
+                        !Scene::SurfaceInstance3DDrawsInViewUVE(*surfaceInstance)) {
+                        return;
+                    }
+                    opacity = Scene::SurfaceInstance3DOpacityUVE(*surfaceInstance) *
+                              Scene::SurfaceInstance3DVisibilityFadeWeightUVE(*surfaceInstance, cameraDistance);
+                    if (opacity <= 0.0F) {
+                        return;
+                    }
+                }
+
                 if (!IsOrderedFiniteAabbUVE(worldBounds) ||
                     (!frustumCullingFrozen && !frustum.IntersectsUVE(worldBounds)) ||
-                    Scene::IsOccluder3DAabbDrawHiddenUVE(occluders, viewPosition, worldBounds)) {
+                    (!(surfaceInstance != nullptr && surfaceInstance->ignoreOcclusionCulling) &&
+                     Scene::IsOccluder3DAabbDrawHiddenUVE(occluders, viewPosition, worldBounds))) {
                     return;
                 }
                 const float sortDepth = frustum.planes[4U].GetSignedDistanceUVE(worldBounds.GetCenterUVE());
                 if (!std::isfinite(sortDepth)) {
                     return;
                 }
-                PrimitiveRenderItemUVE item{worldMatrix, Scene::PrimitiveMeshKindUVE::Cube, kUnmaterialedColor, sortDepth};
-                item.meshGuid = meshComponent.meshGuid;
-                item.mesh = mesh;
-                item.skinned = skinned;
-                outItems.push_back(item);
+
+                const std::uint32_t renderLayers =
+                    entityManager.HasComponentUVE<Scene::RenderInstanceComponentUVE>(entity)
+                        ? entityManager.GetComponentUVE<Scene::RenderInstanceComponentUVE>(entity).renderLayers
+                        : meshComponent.visibilityLayers;
+
+                Asset::AssetGuidUVE objectMaterialGuid = meshComponent.materialGuid;
+                if (surfaceInstance != nullptr && !surfaceInstance->materialOverridePath.empty()) {
+                    const Asset::AssetGuidUVE overrideGuid = assetDatabase.RegisterUVE(surfaceInstance->materialOverridePath);
+                    if (overrideGuid != Asset::kInvalidAssetGuidUVE) {
+                        objectMaterialGuid = overrideGuid;
+                    }
+                }
+
+                const std::size_t surfaceCount = mesh->SurfaceCountUVE();
+                for (std::size_t surfaceIndex = 0U; surfaceIndex < surfaceCount; ++surfaceIndex) {
+                    const Asset::MeshSurfaceUVE surface = mesh->GetSurfaceUVE(surfaceIndex);
+                    Asset::AssetGuidUVE materialGuid = objectMaterialGuid;
+                    if (materialGuid == Asset::kInvalidAssetGuidUVE && surfaceInstance != nullptr &&
+                        surfaceIndex < surfaceInstance->surfaceMaterialOverridePaths.size() &&
+                        !surfaceInstance->surfaceMaterialOverridePaths[surfaceIndex].empty()) {
+                        materialGuid = assetDatabase.RegisterUVE(surfaceInstance->surfaceMaterialOverridePaths[surfaceIndex]);
+                    }
+                    if (materialGuid == Asset::kInvalidAssetGuidUVE) {
+                        materialGuid = mesh->SurfaceMaterialGuidUVE(surfaceIndex);
+                    }
+                    if (materialGuid != Asset::kInvalidAssetGuidUVE) {
+                        if (assetDatabase.ResolveUVE(materialGuid).empty()) {
+                            materialGuid = Asset::kInvalidAssetGuidUVE;
+                        } else {
+                            namedPrimitiveMaterials[materialGuid] = true;
+                            auto materialIt = primitiveMaterialHandles.find(materialGuid);
+                            if (materialIt == primitiveMaterialHandles.end()) {
+                                materialIt = primitiveMaterialHandles
+                                                 .emplace(materialGuid, assetManager.LoadUVE<Asset::MaterialAssetUVE>(
+                                                                            materialGuid, assetDatabase))
+                                                 .first;
+                            }
+                            if (materialIt->second.TryGetUVE() == nullptr) {
+                                if (materialIt->second.HasFailedUVE()) {
+                                    ++failedPrimitiveMaterials;
+                                } else {
+                                    ++pendingPrimitiveMaterials;
+                                }
+                            }
+                        }
+                    }
+
+                    PrimitiveRenderItemUVE item{worldMatrix, Scene::PrimitiveMeshKindUVE::Cube, kUnmaterialedColor,
+                                                sortDepth, opacity};
+                    item.meshGuid = meshComponent.meshGuid;
+                    item.mesh = mesh;
+                    item.skinned = skinned;
+                    item.materialGuid = materialGuid;
+                    item.renderLayers = renderLayers;
+                    item.firstIndex = surface.firstIndex;
+                    item.indexCount = surface.indexCount;
+                    outItems.push_back(item);
+                }
             });
         for (auto it = unmaterialedMeshHandles.begin(); it != unmaterialedMeshHandles.end();) {
             if (named.find(it->first) == named.end()) {
@@ -2435,6 +2567,15 @@ struct Renderer3DUVE::ImplUVE {
                 ++it;
             }
         }
+        for (auto it = primitiveMaterialHandles.begin(); it != primitiveMaterialHandles.end();) {
+            if (namedPrimitiveMaterials.find(it->first) == namedPrimitiveMaterials.end()) {
+                it = primitiveMaterialHandles.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        lastFrameDiagnostics.primitiveMaterialPending = pendingPrimitiveMaterials;
+        lastFrameDiagnostics.primitiveMaterialFailed = failedPrimitiveMaterials;
         std::sort(outItems.begin(), outItems.end(),
                   [](const PrimitiveRenderItemUVE& lhs, const PrimitiveRenderItemUVE& rhs) {
                       const bool lhsTransparent = lhs.opacity < 1.0F;
@@ -2452,12 +2593,10 @@ struct Renderer3DUVE::ImplUVE {
                                    const Math::Vector3UVE& viewPosition, bool frustumCullingFrozen,
                                    std::vector<PrimitiveRenderItemUVE>& outItems) {
         outItems.clear();
+        namedPrimitiveMaterials.clear();
+        pendingPrimitiveMaterials = 0U;
+        failedPrimitiveMaterials = 0U;
         ++primitiveFrameIndex;
-        // Materials this walk actually referenced. Pruned after the walk so a material no primitive
-        // names any more is released, exactly like unmaterialedMeshHandles above it.
-        std::unordered_map<Asset::AssetGuidUVE, bool> namedMaterials;
-        std::size_t pendingMaterials = 0U;
-        std::size_t failedMaterials = 0U;
         std::vector<Scene::Occluder3DSnapshotUVE> occluders;
         Scene::CollectOccluder3DSnapshotsUVE(entityManager, occluders);
         entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::PrimitiveMeshComponentUVE>(
@@ -2524,7 +2663,7 @@ struct Renderer3DUVE::ImplUVE {
                 Asset::AssetGuidUVE materialGuid = Asset::kInvalidAssetGuidUVE;
                 if (Scene::HasAssignedPrimitiveMaterialUVE(primitive)) {
                     materialGuid = primitive.materialGuid;
-                    namedMaterials[materialGuid] = true;
+                    namedPrimitiveMaterials[materialGuid] = true;
                     auto materialIt = primitiveMaterialHandles.find(materialGuid);
                     if (materialIt == primitiveMaterialHandles.end()) {
                         materialIt =
@@ -2538,9 +2677,9 @@ struct Renderer3DUVE::ImplUVE {
                         // still loading would flash white and then pop into its real look. Skipping
                         // is what the mesh path does for the same reason.
                         if (materialIt->second.HasFailedUVE()) {
-                            ++failedMaterials;
+                            ++failedPrimitiveMaterials;
                         } else {
-                            ++pendingMaterials;
+                            ++pendingPrimitiveMaterials;
                         }
                         return;
                     }
@@ -2586,16 +2725,6 @@ struct Renderer3DUVE::ImplUVE {
                 item.renderLayers = renderLayers;
                 outItems.push_back(item);
             });
-
-        for (auto it = primitiveMaterialHandles.begin(); it != primitiveMaterialHandles.end();) {
-            if (namedMaterials.find(it->first) == namedMaterials.end()) {
-                it = primitiveMaterialHandles.erase(it);
-            } else {
-                ++it;
-            }
-        }
-        lastFrameDiagnostics.primitiveMaterialPending = pendingMaterials;
-        lastFrameDiagnostics.primitiveMaterialFailed = failedMaterials;
 
         // Erase-while-iterating over an unordered_map, safe for the erased element only, so the
         // iterator is advanced before the erase and never after. Mirrors
@@ -3420,22 +3549,39 @@ struct Renderer3DUVE::ImplUVE {
             const Asset::MaterialAssetUVE* material = &kDefaultLitMaterialUVE;
             const MaterialGpuResourcesUVE* materialResources = &defaultLitMaterialResources;
             if (!usesDefaultMaterial) {
+                // Start unresolved: a material still loading on a worker returns nullptr from
+                // TryGetUVE, and leaving the default resources in place here used to let that
+                // nullptr reach ApplyFrameAndMaterialUniformsUVE and crash the frame.
+                material = nullptr;
+                materialResources = nullptr;
                 const auto materialIt = primitiveMaterialHandles.find(item.materialGuid);
-                if (materialIt == primitiveMaterialHandles.end()) {
-                    continue; // Never extracted this frame: nothing owns the reference.
+                if (materialIt != primitiveMaterialHandles.end()) {
+                    material = materialIt->second.TryGetUVE();
+                    if (material != nullptr) {
+                        materialResources = ResolveMaterialGpuResourcesUVE(materialIt->second);
+                    }
                 }
-                material = materialIt->second.TryGetUVE();
-                if (material == nullptr) {
-                    continue; // Still loading or failed; extraction already counted it.
-                }
-                materialResources = ResolveMaterialGpuResourcesUVE(materialIt->second);
-                if (materialResources == nullptr) {
-                    continue;
+                if (material == nullptr || materialResources == nullptr) {
+                    if (item.mesh != nullptr) {
+                        material = &kDefaultLitMaterialUVE;
+                        materialResources = &defaultLitMaterialResources;
+                    } else {
+                        continue;
+                    }
                 }
             }
 
             const bool blendedVariant = item.opacity < 1.0F;
-            Shader::ShaderProgramUVE* const program = MeshColorProgramUVE(*materialResources, blendedVariant);
+            Shader::ShaderProgramUVE* program = MeshColorProgramUVE(*materialResources, blendedVariant);
+            if (program == nullptr && item.mesh != nullptr && materialResources != &defaultLitMaterialResources) {
+                // The material's own program is still compiling on a worker. Dropping the draw here
+                // made an imported mesh show for a frame on the default material and then vanish
+                // the moment its material finished loading; draw it with the default lit program
+                // until the material's program is linked instead.
+                material = &kDefaultLitMaterialUVE;
+                materialResources = &defaultLitMaterialResources;
+                program = MeshColorProgramUVE(*materialResources, blendedVariant);
+            }
             if (program == nullptr) {
                 continue; // Still compiling or invalid: never bind a stale pipeline.
             }
@@ -3448,7 +3594,7 @@ struct Renderer3DUVE::ImplUVE {
             // Base Color is the DEFAULT material's albedo, so it only replaces that material's own
             // (white) albedo. An assigned material owns the surface outright - tinting it here would
             // mean a primitive could never show the material an author picked.
-            if (usesDefaultMaterial) {
+            if (usesDefaultMaterial || materialResources == &defaultLitMaterialResources) {
                 program->SetVector3UVE("uAlbedoColor", item.baseColor);
             }
             program->SetIntUVE("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
@@ -3457,7 +3603,9 @@ struct Renderer3DUVE::ImplUVE {
             BindMaterialTexturesUVE(*materialResources, frameUniforms, commandBuffer);
             commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
             commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
-            commandBuffer.DrawIndexedUVE(meshResources.indexCount);
+            const std::uint32_t count = item.indexCount == 0U ? meshResources.indexCount : item.indexCount;
+            const std::uint32_t first = item.indexCount == 0U ? 0U : item.firstIndex;
+            commandBuffer.DrawIndexedUVE(count, 1U, first);
             ++drawCalls;
         }
         return drawCalls;

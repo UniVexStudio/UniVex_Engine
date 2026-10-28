@@ -36,6 +36,7 @@
 #include "editor_fonts_uve.h"
 #include "editor_object_icons_uve.h"
 
+#include "uve/asset/i_asset_import_queue_uve.h"
 #include "uve/component/light_emitter_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
@@ -176,11 +177,9 @@ void EditorUVE::RenderOverlayUVE() {
     DrawKeyboardShortcutsWindowUVE();
 
     if (m_entityEditSession.has_value()) {
-        // The main window rests while an entity is open in its own window.
         DrawEntityEditorPlaceholderUVE();
         DrawEntityEditorWindowUVE();
     } else if (m_retargetPreview.has_value()) {
-        // The scene rests while the Retarget window shows its own world.
         DrawRetargetPlaceholderUVE();
     } else if (m_activeWorkspace == EditorWorkspaceUVE::Scripting) {
         DrawScriptingWorkspaceUVE();
@@ -208,6 +207,7 @@ void EditorUVE::RenderOverlayUVE() {
     }
     // Last, so it floats over every panel.
     DrawCommandPaletteUVE();
+    DrawImportProgressModalUVE();
     ImGui::PopStyleColor(tintedColors);
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -219,6 +219,85 @@ void EditorUVE::RenderOverlayUVE() {
         ImGui::RenderPlatformWindowsDefault();
         glfwMakeContextCurrent(mainContext);
     }
+}
+
+void EditorUVE::DrawImportProgressModalUVE() {
+    if (m_services == nullptr) {
+        return;
+    }
+    Asset::IAssetImportQueueUVE& queue = m_services->GetAssetImportQueueUVE();
+    const std::vector<Asset::AssetImportJobUVE> jobs = queue.GetJobsUVE();
+
+    std::vector<const Asset::AssetImportJobUVE*> activeJobs;
+    for (const Asset::AssetImportJobUVE& job : jobs) {
+        if (job.state == Asset::AssetImportJobStateUVE::Queued || job.state == Asset::AssetImportJobStateUVE::Running) {
+            activeJobs.push_back(&job);
+        }
+    }
+
+    const bool hasModelImports = !m_modelImportJobs.empty();
+    if (!hasModelImports && activeJobs.empty()) {
+        return;
+    }
+
+    // Determine current item being processed
+    std::string currentItem = "Processing assets...";
+    if (!m_modelImportJobs.empty()) {
+        currentItem = m_modelImportJobs.begin()->first;
+    } else if (!activeJobs.empty()) {
+        currentItem = activeJobs.front()->request.sourcePath.filename().string();
+    }
+
+    const ImGuiIO& io = ImGui::GetIO();
+    const ImVec2 center = ImVec2(io.DisplaySize.x * 0.5F, io.DisplaySize.y * 0.5F);
+    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5F, 0.5F));
+    ImGui::SetNextWindowSize(ImVec2(440.0F, 0.0F), ImGuiCond_Always);
+
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
+                                   ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoSavedSettings;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(22.0F, 18.0F));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08F, 0.10F, 0.14F, 0.96F));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.28F, 0.52F, 0.85F, 0.80F));
+
+    if (ImGui::Begin("Asset Pipeline & Importer##ImportProgressModal", nullptr, flags)) {
+        ImGui::TextColored(ImVec4(0.35F, 0.72F, 1.0F, 1.0F), "Importing & Converting Assets...");
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::TextDisabled("Extracting textures, optimizing geometry, and publishing assets.");
+        ImGui::Spacing();
+
+        ImGui::Text("Current: %s", currentItem.c_str());
+        ImGui::Spacing();
+
+        // Calculate progress
+        const std::size_t total = std::max(m_importBatchTotal, m_modelImportJobs.size() + m_importBatchCompleted);
+        float fraction = 0.0F;
+        char progressBuf[64];
+        if (total > 0U) {
+            fraction = std::clamp(static_cast<float>(m_importBatchCompleted) / static_cast<float>(total), 0.0F, 0.95F);
+            std::snprintf(progressBuf, sizeof(progressBuf), "%zu / %zu (%d%%)",
+                          m_importBatchCompleted + 1U, total, static_cast<int>(fraction * 100.0F));
+        } else {
+            // Indeterminate animation pulse
+            fraction = std::sin(static_cast<float>(ImGui::GetTime()) * 3.0F) * 0.45F + 0.5F;
+            std::snprintf(progressBuf, sizeof(progressBuf), "Importing...");
+        }
+
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.22F, 0.55F, 0.95F, 1.0F));
+        ImGui::ProgressBar(fraction, ImVec2(-1.0F, 20.0F), progressBuf);
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        const char* const dots[4] = {"", ".", "..", "..."};
+        const int dotIdx = static_cast<int>(ImGui::GetTime() * 2.5) % 4;
+        ImGui::TextDisabled("Engine pipeline active%s Please wait.", dots[dotIdx]);
+    }
+    ImGui::End();
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(2);
 }
 
 void EditorUVE::SetViewportPanelRendererUVE(ViewportPanelRendererUVE renderer) {
@@ -244,7 +323,12 @@ void EditorUVE::DrawViewportPanelUVE() {
     // names it and carries the transport, so a second title row cost a line of image and - worse -
     // put a close X directly under the top bar, where it read as an X on the top bar itself. The
     // viewport is fixed, not hidable; there is no state in which hiding the canvas is useful.
-    if (!ImGui::Begin(kPanelLabelViewportUVE, nullptr, kLayoutOwnedPanelFlagsUVE)) {
+    // Prohibit scrollbars and mouse-wheel scrolling on the panel window: mouse wheel and touch swipe
+    // are consumed by camera dolly/orbit gestures on the 3D canvas. Allowing ImGui to scroll the
+    // window would cause content-region fluctuations that destroy and recreate GPU framebuffers.
+    constexpr ImGuiWindowFlags kViewportPanelFlags =
+        kLayoutOwnedPanelFlagsUVE | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+    if (!ImGui::Begin(kPanelLabelViewportUVE, nullptr, kViewportPanelFlags)) {
         ImGui::End();
         ImGui::PopStyleVar();
         return;
@@ -304,6 +388,42 @@ void EditorUVE::DrawViewportImageUVE(const ViewportContextUVE context) {
                          ImVec2{1.0F, 0.0F});
             // An entity asset dropped on the view goes under the scene root.
             AcceptContentEntityDropUVE(Scene::kInvalidEntityUVE);
+
+            if (m_viewportOverlayState.gameWorkspaceActive && m_playModeState == EditorPlayModeStateUVE::Playing) {
+                if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                    SetGameMouseCapturedUVE(true);
+                }
+                if (m_gameMouseCaptured && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+                    SetGameMouseCapturedUVE(false);
+                }
+                if (m_gameMouseCaptured && m_services != nullptr && !m_services->GetWindowManagerUVE().IsFocusedUVE()) {
+                    SetGameMouseCapturedUVE(false);
+                }
+
+                ImDrawList* const drawList = ImGui::GetWindowDrawList();
+                const char* const bannerText = m_gameMouseCaptured
+                                                   ? "Mouse Captured | Press [ESC] to release"
+                                                   : "Click viewport to capture mouse for gameplay";
+                const ImVec2 textSize = ImGui::CalcTextSize(bannerText);
+                constexpr float kPadX = 14.0F;
+                constexpr float kPadY = 6.0F;
+                const float pillW = textSize.x + kPadX * 2.0F;
+                const float pillH = textSize.y + kPadY * 2.0F;
+                const float pillX = cursorBeforeImage.x + (used.x - pillW) * 0.5F;
+                const float pillY = cursorBeforeImage.y + used.y - pillH - 16.0F;
+
+                const ImVec2 pillMin{pillX, pillY};
+                const ImVec2 pillMax{pillX + pillW, pillY + pillH};
+
+                const ImU32 bgCol = m_gameMouseCaptured ? IM_COL32(18, 22, 28, 190) : IM_COL32(32, 68, 128, 220);
+                const ImU32 borderCol = m_gameMouseCaptured ? IM_COL32(65, 75, 90, 210) : IM_COL32(85, 145, 235, 255);
+                const ImU32 textCol = m_gameMouseCaptured ? IM_COL32(205, 210, 220, 230) : IM_COL32(255, 255, 255, 255);
+
+                drawList->AddRectFilled(pillMin, pillMax, bgCol, 8.0F);
+                drawList->AddRect(pillMin, pillMax, borderCol, 8.0F, 0, 1.2F);
+                drawList->AddText(ImVec2{pillX + kPadX, pillY + kPadY}, textCol, bannerText);
+            }
+
             // The projection/gizmo-mode overlay bubbles are editor-authoring chrome - hidden while
             // the Game workspace tab is active, matching Unity's own Scene/Game split where the
             // Game view previews what a player would see with no editor overlays on top.

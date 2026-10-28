@@ -183,8 +183,13 @@ bool EditorUVE::AddClipToAnimationSequencerUVE(const Scene::EntityUVE player, co
             component.library.push_back(guid);
         }
         component.clip = guid;
+        component.isPlaying = false;
+        component.currentTimeSeconds = 0.0F;
+        component.hasStartPose = false;
     });
     if (changed) {
+        m_timeline.playing = false;
+        m_timeline.timeSeconds = 0.0;
         m_timeline.status = "Added " + probe.clipId;
         m_timeline.clipCards.erase(guid.value);
     }
@@ -648,7 +653,12 @@ void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scen
                     p.library.push_back(guid);
                 }
                 p.clip = guid;
+                p.isPlaying = false;
+                p.currentTimeSeconds = 0.0F;
+                p.hasStartPose = false;
             }));
+            m_timeline.playing = false;
+            m_timeline.timeSeconds = 0.0;
             ImGui::CloseCurrentPopup();
         }
         if (quickAddPath.has_value()) {
@@ -733,7 +743,14 @@ void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scen
         if (renameGuid.has_value()) {
             if (*renameGuid != component.clip) {
                 const Asset::AssetGuidUVE guid = *renameGuid;
-                static_cast<void>(EditAnimationSequencerUVE(player, [guid](Scene::AnimationSequencerComponentUVE& p) { p.clip = guid; }));
+                static_cast<void>(EditAnimationSequencerUVE(player, [guid](Scene::AnimationSequencerComponentUVE& p) {
+                    p.clip = guid;
+                    p.isPlaying = false;
+                    p.currentTimeSeconds = 0.0F;
+                    p.hasStartPose = false;
+                }));
+                m_timeline.playing = false;
+                m_timeline.timeSeconds = 0.0;
             }
             m_timeline.renameClipRequested = true;
         }
