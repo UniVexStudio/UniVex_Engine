@@ -1711,6 +1711,9 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
     if (!(deltaSeconds >= 0.0F)) {
         return;
     }
+    // Clamping per-frame animation step delta prevents the playhead from leaping across
+    // multiple frames or producing sudden frame pops whenever an OS hitch occurs.
+    const float animDeltaSeconds = physicsStep ? deltaSeconds : std::min(deltaSeconds, 0.066F);
     const Scene::AnimationClipResolverUVE clipFor = [this](const Asset::AssetGuidUVE guid)
         -> const Asset::AnimationClipAssetUVE* {
         if (guid == Asset::kInvalidAssetGuidUVE) {
@@ -1889,21 +1892,22 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             }
             Scene::Skeleton3DComponentUVE& skeleton =
                 m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
-            if (!player.hasStartPose && player.autoplay) {
+            if (!player.hasStartPose && player.autoplay &&
+                m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
                 Scene::PlayAnimationSequencerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
             } else if (player.isPlaying && player.playingClip != player.clip) {
                 // Switched mid-play (a script, a state change): the new clip takes over from the
                 // pose that is there, through the mixer's transition.
                 Scene::PlayAnimationSequencerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
             }
-            const bool posed = Scene::StepSkeletalAnimationSequencerUVE(player, *clip, deltaSeconds * mixer.speedScale,
+            const bool posed = Scene::StepSkeletalAnimationSequencerUVE(player, *clip, animDeltaSeconds * mixer.speedScale,
                                                                      skeleton, mixer);
             if (posed) {
                 posedSkeletons.push_back(skeletonEntity);
             }
             raiseAnimationEvents(entity, mixer.target, player.firedEvents);
             if (posed && mixer.rootMotion == Scene::AnimationRootMotionModeUVE::ApplyToTarget) {
-                applyRootMotion(entity, mixer.target, skeletonEntity, player.rootMotionDelta, deltaSeconds);
+                applyRootMotion(entity, mixer.target, skeletonEntity, player.rootMotionDelta, animDeltaSeconds);
             }
             continue;
         }
@@ -1912,11 +1916,12 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         if (target == nullptr) {
             continue;
         }
-        if (!player.hasStartPose && player.autoplay) {
+        if (!player.hasStartPose && player.autoplay &&
+            m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
             Scene::PlayAnimationSequencerUVE(player, *target, clip->durationSeconds);
         }
         static_cast<void>(
-            Scene::StepAnimationSequencerUVE(player, *clip, deltaSeconds * mixer.speedScale, *target, mixer));
+            Scene::StepAnimationSequencerUVE(player, *clip, animDeltaSeconds * mixer.speedScale, *target, mixer));
         raiseAnimationEvents(entity, mixer.target, player.firedEvents);
     }
 
@@ -1933,21 +1938,21 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         if (skeletonEntity != Scene::kInvalidEntityUVE) {
             Scene::Skeleton3DComponentUVE& skeleton =
                 m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
-            const bool posed = Scene::StepSkeletalAnimationGraphUVE(tree, clipFor, deltaSeconds * mixer.speedScale,
+            const bool posed = Scene::StepSkeletalAnimationGraphUVE(tree, clipFor, animDeltaSeconds * mixer.speedScale,
                                                                    skeleton, mixer);
             if (posed) {
                 posedSkeletons.push_back(skeletonEntity);
             }
             raiseAnimationEvents(entity, mixer.target, tree.firedEvents);
             if (posed && mixer.rootMotion == Scene::AnimationRootMotionModeUVE::ApplyToTarget) {
-                applyRootMotion(entity, mixer.target, skeletonEntity, tree.rootMotionDelta, deltaSeconds);
+                applyRootMotion(entity, mixer.target, skeletonEntity, tree.rootMotionDelta, animDeltaSeconds);
             }
             continue;
         }
         Scene::TransformComponentUVE* const target = resolveTarget(entity, mixer.target);
         if (target != nullptr) {
             static_cast<void>(
-                Scene::StepAnimationGraphUVE(tree, clipFor, deltaSeconds * mixer.speedScale, *target, mixer));
+                Scene::StepAnimationGraphUVE(tree, clipFor, animDeltaSeconds * mixer.speedScale, *target, mixer));
             raiseAnimationEvents(entity, mixer.target, tree.firedEvents);
         }
     }
@@ -1962,18 +1967,41 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
     // discarded for the same reason - a refused solve recorded why in its own runtime fields.
     static_cast<void>(Scene::SyncFullBodyIK3DObjectsUVE(*m_entityManager, *m_sceneGraph, posedSkeletons));
 
-    if (!physicsStep) {
-
-        // Drop clips nothing references any more, so a swapped clip does not stay loaded.
+    if (!physicsStep && m_animationClips.size() > 64U) {
+        // Drop clips nothing references any more, so an unused clip does not stay loaded indefinitely.
         std::unordered_set<std::uint64_t> referenced;
         m_entityManager->ForEachUVE<Scene::AnimationSequencerComponentUVE>(
             [&referenced](const Scene::EntityUVE, const Scene::AnimationSequencerComponentUVE& player) {
-                referenced.insert(player.clip.value);
+                if (player.clip != Asset::kInvalidAssetGuidUVE) {
+                    referenced.insert(player.clip.value);
+                }
+                if (player.playingClip != Asset::kInvalidAssetGuidUVE) {
+                    referenced.insert(player.playingClip.value);
+                }
+                for (const Asset::AssetGuidUVE& libClip : player.library) {
+                    if (libClip != Asset::kInvalidAssetGuidUVE) {
+                        referenced.insert(libClip.value);
+                    }
+                }
             });
         m_entityManager->ForEachUVE<Scene::AnimationGraphComponentUVE>(
-            [&referenced](const Scene::EntityUVE, const Scene::AnimationGraphComponentUVE& tree) {
+            [&referenced, this](const Scene::EntityUVE, const Scene::AnimationGraphComponentUVE& tree) {
                 for (const Scene::AnimationGraphNodeUVE& node : tree.nodes) {
-                    referenced.insert(node.clip.value);
+                    if (node.clip != Asset::kInvalidAssetGuidUVE) {
+                        referenced.insert(node.clip.value);
+                    }
+                }
+                if (tree.sequencer != Scene::kInvalidEntityUVE && m_entityManager->IsAliveUVE(tree.sequencer) &&
+                    m_entityManager->HasComponentUVE<Scene::AnimationSequencerComponentUVE>(tree.sequencer)) {
+                    const auto& seq = m_entityManager->GetComponentUVE<Scene::AnimationSequencerComponentUVE>(tree.sequencer);
+                    if (seq.clip != Asset::kInvalidAssetGuidUVE) {
+                        referenced.insert(seq.clip.value);
+                    }
+                    for (const Asset::AssetGuidUVE& libClip : seq.library) {
+                        if (libClip != Asset::kInvalidAssetGuidUVE) {
+                            referenced.insert(libClip.value);
+                        }
+                    }
                 }
             });
         std::erase_if(m_animationClips, [&referenced](const auto& entry) { return !referenced.contains(entry.first); });

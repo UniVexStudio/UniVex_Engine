@@ -142,14 +142,19 @@ void EditorUVE::StopAnimationTimelinePreviewUVE() {
     // The blend shapes first, and unconditionally: a skin-less facial clip has no preview skeleton
     // at all, so tying the restore to one would leave a face frozen mid-word.
     StopAnimationTimelineMorphPreviewUVE();
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (m_timeline.player != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(m_timeline.player) &&
+        entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(m_timeline.player)) {
+        auto& player = entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(m_timeline.player);
+        player.isPlaying = false;
+        player.currentTimeSeconds = 0.0F;
+        player.hasStartPose = false;
+    }
+    m_timeline.player = Scene::kInvalidEntityUVE;
     if (m_timeline.previewSkeleton == Scene::kInvalidEntityUVE) {
         return;
     }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (entityManager.IsAliveUVE(m_timeline.previewSkeleton) &&
-        entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(m_timeline.previewSkeleton)) {
-        entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(m_timeline.previewSkeleton).pose.clear();
-    }
+    // Hold the evaluated pose instead of popping to bind pose (pose.clear()).
     m_timeline.previewSkeleton = Scene::kInvalidEntityUVE;
 }
 
@@ -350,6 +355,11 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         m_timeline.loadError.clear();
         m_timeline.timeSeconds = 0.0;
         m_timeline.scrollSeconds = 0.0;
+        m_timeline.loop = player.loopMode != Scene::AnimationLoopModeUVE::Once;
+        auto& mutablePlayer = entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(playerEntity);
+        mutablePlayer.isPlaying = false;
+        mutablePlayer.currentTimeSeconds = 0.0F;
+        mutablePlayer.hasStartPose = false;
         if ((player.clip != Asset::AssetGuidUVE{})) {
             auto loaded = std::make_shared<Asset::AnimationClipAssetUVE>();
             const std::filesystem::path path = m_services->GetAssetDatabaseUVE().ResolveUVE(player.clip);
@@ -494,9 +504,11 @@ void EditorUVE::DrawAnimationTimelineUVE() {
 
     // ---- Transport ---------------------------------------------------------------------------------
     const bool canPlay = clip != nullptr;
+    auto& mutablePlayer = entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(playerEntity);
     ImGui::BeginDisabled(!canPlay);
     if (ImGui::SmallButton("|<##tl-start")) {
         m_timeline.timeSeconds = 0.0;
+        mutablePlayer.currentTimeSeconds = 0.0F;
     }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("First frame (Home)");
@@ -505,6 +517,8 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     if (ImGui::SmallButton("<##tl-prev")) {
         m_timeline.playing = false;
         m_timeline.timeSeconds = std::max(0.0, (static_cast<double>(frameOf(m_timeline.timeSeconds)) - 1.0) * frame);
+        mutablePlayer.isPlaying = false;
+        mutablePlayer.currentTimeSeconds = static_cast<float>(m_timeline.timeSeconds);
     }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Previous frame (Left)");
@@ -515,6 +529,8 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         if (m_timeline.playing && !m_timeline.loop && m_timeline.timeSeconds >= duration) {
             m_timeline.timeSeconds = 0.0;
         }
+        mutablePlayer.isPlaying = m_timeline.playing;
+        mutablePlayer.currentTimeSeconds = static_cast<float>(m_timeline.timeSeconds);
     }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Preview the clip on this entity (Space)");
@@ -523,11 +539,15 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     if (ImGui::SmallButton("Stop##tl-stop")) {
         m_timeline.playing = false;
         m_timeline.timeSeconds = 0.0;
+        mutablePlayer.isPlaying = false;
+        mutablePlayer.currentTimeSeconds = 0.0F;
     }
     ImGui::SameLine();
     if (ImGui::SmallButton(">##tl-next")) {
         m_timeline.playing = false;
         m_timeline.timeSeconds = std::min(duration, (static_cast<double>(frameOf(m_timeline.timeSeconds)) + 1.0) * frame);
+        mutablePlayer.isPlaying = false;
+        mutablePlayer.currentTimeSeconds = static_cast<float>(m_timeline.timeSeconds);
     }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Next frame (Right)");
@@ -535,12 +555,15 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     ImGui::SameLine();
     if (ImGui::SmallButton(">|##tl-end")) {
         m_timeline.timeSeconds = duration;
+        mutablePlayer.currentTimeSeconds = static_cast<float>(duration);
     }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Last frame (End)");
     }
     ImGui::SameLine();
-    ImGui::Checkbox("Loop##tl-loop", &m_timeline.loop);
+    if (ImGui::Checkbox("Loop##tl-loop", &m_timeline.loop)) {
+        mutablePlayer.loopMode = m_timeline.loop ? Scene::AnimationLoopModeUVE::Loop : Scene::AnimationLoopModeUVE::Once;
+    }
     ImGui::EndDisabled();
 
     ImGui::SameLine();
@@ -600,6 +623,8 @@ void EditorUVE::DrawAnimationTimelineUVE() {
             m_timeline.timeSeconds = std::clamp(m_timeline.timeSeconds, 0.0, duration);
             m_timeline.playing = false;
         }
+        mutablePlayer.isPlaying = m_timeline.playing;
+        mutablePlayer.currentTimeSeconds = static_cast<float>(m_timeline.timeSeconds);
     }
 
     // ---- Rows: events, the clip's own transform, the bones, the blend shapes -----------------------
@@ -751,6 +776,8 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         m_timeline.playing = false;
         const double snapped = std::round(toSeconds(ImGui::GetIO().MousePos.x) * frameRate) / frameRate;
         m_timeline.timeSeconds = std::clamp(snapped, 0.0, duration);
+        mutablePlayer.isPlaying = false;
+        mutablePlayer.currentTimeSeconds = static_cast<float>(m_timeline.timeSeconds);
     }
 
     // Key selection and dragging. A drag shows the keys where they would land, snapped to frames.
@@ -1409,20 +1436,31 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     if (m_timelineOwnsKeys) {
         if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) {
             m_timeline.playing = !m_timeline.playing;
+            if (m_timeline.playing && !m_timeline.loop && m_timeline.timeSeconds >= duration) {
+                m_timeline.timeSeconds = 0.0;
+            }
+            mutablePlayer.isPlaying = m_timeline.playing;
+            mutablePlayer.currentTimeSeconds = static_cast<float>(m_timeline.timeSeconds);
         }
         if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
             m_timeline.playing = false;
             m_timeline.timeSeconds = std::max(0.0, (static_cast<double>(frameOf(m_timeline.timeSeconds)) - 1.0) * frame);
+            mutablePlayer.isPlaying = false;
+            mutablePlayer.currentTimeSeconds = static_cast<float>(m_timeline.timeSeconds);
         }
         if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
             m_timeline.playing = false;
             m_timeline.timeSeconds = std::min(duration, (static_cast<double>(frameOf(m_timeline.timeSeconds)) + 1.0) * frame);
+            mutablePlayer.isPlaying = false;
+            mutablePlayer.currentTimeSeconds = static_cast<float>(m_timeline.timeSeconds);
         }
         if (ImGui::IsKeyPressed(ImGuiKey_Home, false)) {
             m_timeline.timeSeconds = 0.0;
+            mutablePlayer.currentTimeSeconds = 0.0F;
         }
         if (ImGui::IsKeyPressed(ImGuiKey_End, false)) {
             m_timeline.timeSeconds = duration;
+            mutablePlayer.currentTimeSeconds = static_cast<float>(duration);
         }
         if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
             m_timeline.selectedKeys.clear();

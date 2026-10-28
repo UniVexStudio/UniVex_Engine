@@ -236,7 +236,15 @@ constexpr float kMaximum2DCanvasZoomUVE = 4.00F;
     return recoveryPath;
 }
 
-[[nodiscard]] bool DecodeRawImageThumbnailPixelsUVE(const std::filesystem::path& absolutePath,
+[[nodiscard]] bool IsRawSourceImagePathUVE(const std::filesystem::path& path) {
+    std::string extension = path.extension().generic_string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp" ||
+           extension == ".tga";
+}
+
+bool DecodeRawImageThumbnailPixelsUVE(const std::filesystem::path& absolutePath,
                                                      std::uint32_t& outWidth, std::uint32_t& outHeight,
                                                      std::vector<std::byte>& outPixels);
 
@@ -313,6 +321,7 @@ void EditorUVE::InitUVE() {
         // then beat the computed ones. The editor's panels are regions of one fixed frame, so the
         // frame computes them and nothing else is allowed to move them.
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+        ImGui::GetIO().ConfigViewportsNoDecoration = false;
         // A NEW ini name, not a rename in place. The old imgui.ini still holds dock node ids and
         // floating rects from the docking build, and ImGui would happily apply them to windows that
         // no longer dock. Pointing at a fresh file means the first run after this change starts
@@ -475,6 +484,7 @@ bool EditorUVE::EnterPlayModeUVE() {
     m_workspaceBeforePlayMode = m_activeWorkspace;
     if (m_playSwitchToGame) {
         m_activeWorkspace = EditorWorkspaceUVE::Game;
+        SetGameMouseCapturedUVE(true);
     }
     if (m_playPauseOnStart) {
         static_cast<void>(PausePlayModeUVE());
@@ -771,6 +781,7 @@ bool EditorUVE::PausePlayModeUVE() {
         !m_simulationControl->SetSimulationExecutionModeUVE(Core::SimulationExecutionModeUVE::Paused)) {
         return false;
     }
+    SetGameMouseCapturedUVE(false);
     m_playModeState = EditorPlayModeStateUVE::Paused;
     return true;
 }
@@ -782,6 +793,9 @@ bool EditorUVE::ResumePlayModeUVE() {
         return false;
     }
     m_playModeState = EditorPlayModeStateUVE::Playing;
+    if (m_activeWorkspace == EditorWorkspaceUVE::Game) {
+        SetGameMouseCapturedUVE(true);
+    }
     return true;
 }
 
@@ -835,6 +849,7 @@ bool EditorUVE::StopPlayModeUVE() {
 
     m_playModeSession.reset();
     m_playModeState = EditorPlayModeStateUVE::Edit;
+    SetGameMouseCapturedUVE(false);
     static_cast<void>(m_simulationControl->SetEditorPlaySceneNameUVE({}));
     m_playBootSplashActive = false;
     if (m_activeWorkspace == EditorWorkspaceUVE::Game) {
@@ -845,6 +860,35 @@ bool EditorUVE::StopPlayModeUVE() {
 
 EditorPlayModeStateUVE EditorUVE::GetPlayModeStateUVE() const noexcept {
     return m_playModeState;
+}
+
+void EditorUVE::SetGameMouseCapturedUVE(const bool captured) {
+    if (m_gameMouseCaptured == captured) {
+        return;
+    }
+    m_gameMouseCaptured = captured;
+    if (m_services == nullptr) {
+        return;
+    }
+    Window::IWindowManagerUVE& windowManager = m_services->GetWindowManagerUVE();
+    if (!windowManager.IsValidUVE()) {
+        return;
+    }
+    auto* const nativeWindow = static_cast<GLFWwindow*>(windowManager.GetNativeWindowHandleUVE());
+    if (nativeWindow == nullptr) {
+        return;
+    }
+    if (captured) {
+        glfwSetInputMode(nativeWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        if (glfwRawMouseMotionSupported()) {
+            glfwSetInputMode(nativeWindow, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+        }
+    } else {
+        glfwSetInputMode(nativeWindow, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        if (glfwRawMouseMotionSupported()) {
+            glfwSetInputMode(nativeWindow, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
+        }
+    }
 }
 
 
@@ -5435,10 +5479,16 @@ bool DecodeRawImageThumbnailPixelsUVE(const std::filesystem::path& absolutePath,
     if (!file) {
         return false;
     }
-    const std::vector<char> rawBytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    std::vector<std::byte> bytes(rawBytes.size());
-    std::transform(rawBytes.begin(), rawBytes.end(), bytes.begin(),
-                   [](const char byte) { return static_cast<std::byte>(byte); });
+    file.seekg(0, std::ios::end);
+    const std::streamoff fileSize = file.tellg();
+    if (fileSize <= 0) {
+        return false;
+    }
+    file.seekg(0, std::ios::beg);
+    std::vector<std::byte> bytes(static_cast<std::size_t>(fileSize));
+    if (!file.read(reinterpret_cast<char*>(bytes.data()), fileSize)) {
+        return false;
+    }
 
     std::string extension = absolutePath.extension().generic_string();
     std::transform(extension.begin(), extension.end(), extension.begin(),
@@ -5489,7 +5539,7 @@ bool DecodeRawImageThumbnailPixelsUVE(const std::filesystem::path& absolutePath,
     // the int narrowing below is provably safe.
     constexpr std::uint32_t kMaximumPreviewImageDimensionUVE = 32768U;
     Asset::TextureAssetUVE texture;
-    if (Asset::LoadTextureAssetUVE(absolutePath, texture)) {
+    if (!IsRawSourceImagePathUVE(absolutePath) && Asset::LoadTextureAssetUVE(absolutePath, texture)) {
         if (texture.format != Asset::TextureAssetFormatUVE::RGBA8Unorm || texture.width == 0U ||
             texture.height == 0U || texture.width > kMaximumPreviewImageDimensionUVE ||
             texture.height > kMaximumPreviewImageDimensionUVE || texture.pixels.empty()) {
@@ -5530,7 +5580,8 @@ std::uintptr_t EditorUVE::GetTextureThumbnailUVE(const std::filesystem::path& re
     const std::filesystem::path absolutePath = snapshot.contentRoot / relativePath;
     std::uintptr_t textureId = 0U;
     Asset::TextureAssetUVE texture;
-    if (Asset::LoadTextureAssetUVE(absolutePath, texture) && texture.width > 0U && texture.height > 0U &&
+    if (!IsRawSourceImagePathUVE(absolutePath) && Asset::LoadTextureAssetUVE(absolutePath, texture) &&
+        texture.width > 0U && texture.height > 0U &&
         texture.format == Asset::TextureAssetFormatUVE::RGBA8Unorm) {
         textureId = EditorUiAssetsUVE::UploadDynamicTextureUVE(reinterpret_cast<const std::uint8_t*>(texture.pixels.data()),
                                                                 static_cast<int>(texture.width),
@@ -5669,6 +5720,20 @@ namespace {
 /// .gltf (it is the JSON), the header and JSON chunk for a .glb - never the binary payload - and
 /// the scene without its geometry or curves for an .fbx.
 [[nodiscard]] EditorModelSourceInfoUVE ReadModelSourceInfoUVE(const std::filesystem::path& path) {
+    struct CachedModelInfoUVE {
+        std::filesystem::file_time_type writeTime{};
+        EditorModelSourceInfoUVE info{};
+    };
+    static std::unordered_map<std::string, CachedModelInfoUVE> s_modelInfoCache;
+    std::error_code timeError;
+    const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(path, timeError);
+    const std::string cacheKey = path.generic_string();
+    if (!timeError) {
+        if (const auto it = s_modelInfoCache.find(cacheKey); it != s_modelInfoCache.end() && it->second.writeTime == writeTime) {
+            return it->second.info;
+        }
+    }
+
     EditorModelSourceInfoUVE info;
     std::ifstream file(path, std::ios::binary);
     if (!file) {
@@ -5699,7 +5764,10 @@ namespace {
         if (error || size > Asset::kMaximumFbxMeshSourceBytesUVE) {
             return info;
         }
-        const std::vector<char> bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+        std::vector<char> bytes(static_cast<std::size_t>(size));
+        if (size > 0U && !file.read(bytes.data(), static_cast<std::streamsize>(size))) {
+            return info;
+        }
         const std::optional<Asset::FbxSourceSummaryUVE> summary =
             Asset::DescribeFbxSourceUVE(std::as_bytes(std::span<const char>(bytes)));
         if (!summary.has_value()) {
@@ -5716,6 +5784,9 @@ namespace {
                            std::to_string(summary->animationCount) +
                            (summary->animationCount == 1U ? " animation, " : " animations, ") + length;
         }
+        if (!timeError) {
+            s_modelInfoCache[cacheKey] = CachedModelInfoUVE{writeTime, info};
+        }
         return info;
     } else {
         return info; // OBJ has no skeleton.
@@ -5723,6 +5794,9 @@ namespace {
     const std::optional<Asset::GltfMetadataUVE> metadata = Asset::ParseGltfMetadataUVE(json);
     info.rigged = metadata.has_value() && metadata->skinCount > 0U;
     info.hasSkeleton = info.rigged; // A glTF skeleton is read from its skin.
+    if (!timeError) {
+        s_modelInfoCache[cacheKey] = CachedModelInfoUVE{writeTime, info};
+    }
     return info;
 }
 
@@ -5744,6 +5818,23 @@ bool EditorUVE::IsRiggedModelSourceUVE(const std::filesystem::path& relativeSour
     return info != nullptr && info->rigged;
 }
 
+namespace {
+
+[[nodiscard]] bool IsGenericTakeNameUVE(const std::string_view name) noexcept {
+    std::string clean;
+    clean.reserve(name.size());
+    for (const char c : name) {
+        if (c != ' ' && c != '_' && c != '-' && c != '|' && c != ':') {
+            clean.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        }
+    }
+    return clean == "take001" || clean == "take1" || clean == "take" ||
+           clean == "defaulttake" || clean == "baseanimation" || clean == "scene" ||
+           clean == "mixamocom" || clean == "armature" || clean == "unnamed";
+}
+
+} // namespace
+
 std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std::filesystem::path& absoluteSource) {
     std::vector<std::filesystem::path> written;
     std::error_code error;
@@ -5751,23 +5842,112 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
     if (error) {
         return written;
     }
+    struct CachedAnimationImportUVE {
+        std::filesystem::file_time_type sourceTime{};
+        std::vector<std::filesystem::path> files;
+    };
+    static std::unordered_map<std::string, CachedAnimationImportUVE> s_importedAnimCache;
+    const std::string cacheKey = absoluteSource.generic_string();
+    if (const auto cacheIt = s_importedAnimCache.find(cacheKey);
+        cacheIt != s_importedAnimCache.end() && cacheIt->second.sourceTime == sourceTime) {
+        bool allPresent = true;
+        for (const std::filesystem::path& expectedFile : cacheIt->second.files) {
+            std::error_code existsErr;
+            if (!std::filesystem::is_regular_file(expectedFile, existsErr)) {
+                allPresent = false;
+                break;
+            }
+        }
+        if (allPresent) {
+            return written;
+        }
+    }
+    const std::string stem = absoluteSource.stem().string();
+    const std::string prefix = stem + "_";
+    const std::filesystem::path primaryDestination =
+        absoluteSource.parent_path() / (stem + ".uvanim");
+    const std::filesystem::file_time_type existingPrimary = std::filesystem::last_write_time(primaryDestination, error);
+    if (!error && existingPrimary >= sourceTime) {
+        return written; // fast-path: primary clip already imported since FBX last changed
+    }
+    error.clear();
+    for (const std::filesystem::directory_entry& entry :
+         std::filesystem::directory_iterator(absoluteSource.parent_path(), error)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".uvanim") {
+            continue;
+        }
+        const std::string entryStem = entry.path().stem().string();
+        if (entryStem == stem || entryStem.starts_with(prefix)) {
+            std::error_code entryErr;
+            const auto entryTime = std::filesystem::last_write_time(entry.path(), entryErr);
+            if (!entryErr && entryTime >= sourceTime) {
+                return written; // fast-path: multi-take clip already imported since FBX last changed
+            }
+        }
+    }
+    error.clear();
     std::ifstream file(absoluteSource, std::ios::binary);
     const std::uintmax_t size = std::filesystem::file_size(absoluteSource, error);
     if (!file || error || size > Asset::kMaximumFbxMeshSourceBytesUVE) {
         return written;
     }
-    const std::vector<char> bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-    const std::vector<Asset::AnimationClipAssetUVE> takes =
+    std::vector<char> bytes(static_cast<std::size_t>(size));
+    if (size > 0U && !file.read(bytes.data(), static_cast<std::streamsize>(size))) {
+        return written;
+    }
+    const std::vector<Asset::AnimationClipAssetUVE> rawTakes =
         Asset::ReadFbxAnimationsUVE(std::as_bytes(std::span<const char>(bytes)), Asset::kMaximumAnimationAssetBonesUVE);
+
+    // Suppress generic exporter takes (e.g. "Take 001") if named takes exist in the FBX.
+    // If only generic takes exist, keep only the first one to avoid duplicate files.
+    std::vector<Asset::AnimationClipAssetUVE> takes;
+    bool hasNonGeneric = false;
+    for (const auto& take : rawTakes) {
+        const std::size_t bar = take.clipId.find_last_of('|');
+        const std::string id = bar == std::string::npos ? take.clipId : take.clipId.substr(bar + 1U);
+        if (!IsGenericTakeNameUVE(id)) {
+            hasNonGeneric = true;
+            break;
+        }
+    }
+    for (const auto& take : rawTakes) {
+        const std::size_t bar = take.clipId.find_last_of('|');
+        const std::string id = bar == std::string::npos ? take.clipId : take.clipId.substr(bar + 1U);
+        if (hasNonGeneric && IsGenericTakeNameUVE(id)) {
+            continue; // Drop redundant generic "Take 001"
+        }
+        takes.push_back(take);
+    }
+    if (takes.empty() && !rawTakes.empty()) {
+        takes.push_back(rawTakes.front());
+    }
+
+    // Clean up any stale duplicate take001 files that might have been created previously
+    {
+        const std::filesystem::path p1 = absoluteSource.parent_path() / "take001.uvanim";
+        const std::filesystem::path p2 = absoluteSource.parent_path() / "Take 001.uvanim";
+        const std::filesystem::path p3 = absoluteSource.parent_path() / (absoluteSource.stem().string() + "_Take 001.uvanim");
+        const std::filesystem::path p4 = absoluteSource.parent_path() / (absoluteSource.stem().string() + "_take001.uvanim");
+        for (const auto& stale : {p1, p2, p3, p4}) {
+            std::error_code rmErr;
+            if (std::filesystem::exists(stale, rmErr)) {
+                std::filesystem::remove(stale, rmErr);
+            }
+        }
+    }
+
     // The animation is named after its file, everywhere: one take is "<FBX>.uvanim"; several are
     // "<FBX>_<take>.uvanim", the take without its "Armature|"-style prefix. The DCC tool's own take
-    // label ("Take 001", an exporter's name) is not a name anyone chose.
+    // label ("Take 001", an exporter's name) is suppressed or mapped to <FBX>.uvanim.
     const auto clipPath = [&absoluteSource, &takes](const std::string& clipId) {
         if (takes.size() == 1U) {
             return absoluteSource.parent_path() / (absoluteSource.stem().string() + ".uvanim");
         }
         const std::size_t bar = clipId.find_last_of('|');
         const std::string take = bar == std::string::npos ? clipId : clipId.substr(bar + 1U);
+        if (IsGenericTakeNameUVE(take)) {
+            return absoluteSource.parent_path() / (absoluteSource.stem().string() + ".uvanim");
+        }
         std::string safe;
         for (const char character : take) {
             const bool keep = (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
@@ -5777,20 +5957,24 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
         }
         return absoluteSource.parent_path() / (absoluteSource.stem().string() + "_" + safe + ".uvanim");
     };
+    std::vector<std::filesystem::path> allDestinations;
     for (Asset::AnimationClipAssetUVE clip : takes) {
         const std::filesystem::path destination = clipPath(clip.clipId);
         clip.clipId = destination.stem().string();
         const std::filesystem::file_time_type existing = std::filesystem::last_write_time(destination, error);
         if (!error && existing >= sourceTime) {
+            allDestinations.push_back(destination);
             continue; // imported since the FBX last changed
         }
         error.clear();
         if (Asset::SaveAnimationClipAssetUVE(clip, destination)) {
             written.push_back(destination);
+            allDestinations.push_back(destination);
         } else {
             UVE_WARNING("EditorUVE: could not write animation {}", destination.string());
         }
     }
+    s_importedAnimCache[cacheKey] = CachedAnimationImportUVE{sourceTime, std::move(allDestinations)};
     return written;
 }
 
@@ -5816,8 +6000,7 @@ void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& sn
         const std::filesystem::path source = snapshot.contentRoot / entry.relativePath;
         const EditorModelSourceInfoUVE& info = m_modelSources[key] = ReadModelSourceInfoUVE(source);
         // An FBX's takes (the extension is compared as the model check compares it: any case).
-        // Also extract a static T-pose .uvanim when a skeleton-bearing FBX has 0 AnimStacks.
-        if (info.animationCount > 0U || info.hasSkeleton) {
+        if (info.animationCount > 0U) {
             static_cast<void>(ImportModelAnimationsUVE(source));
         }
         if (info.animationOnly) {
@@ -5874,7 +6057,12 @@ Asset::AssetGuidUVE EditorUVE::RegisterImportedModelArtifactsUVE(const std::file
 
 void EditorUVE::PollModelImportJobsUVE() {
     if (m_modelImportJobs.empty()) {
+        m_importBatchTotal = 0U;
+        m_importBatchCompleted = 0U;
         return;
+    }
+    if (m_importBatchTotal < m_modelImportJobs.size() + m_importBatchCompleted) {
+        m_importBatchTotal = m_modelImportJobs.size() + m_importBatchCompleted;
     }
     const std::vector<Asset::AssetImportJobUVE> jobs = m_services->GetAssetImportQueueUVE().GetJobsUVE();
     bool imported = false;
@@ -5894,6 +6082,7 @@ void EditorUVE::PollModelImportJobsUVE() {
                 m_modelImportFailures[it->first] = std::move(reason);
                 UVE_WARNING("EditorUVE: could not import model {}: {}", it->first, m_modelImportFailures[it->first]);
             }
+            ++m_importBatchCompleted;
             it = m_modelImportJobs.erase(it);
         } else if (job->state == Asset::AssetImportJobStateUVE::Succeeded) {
             // A cache hit ran no importer, so the materials and textures it would have registered
@@ -5902,6 +6091,7 @@ void EditorUVE::PollModelImportJobsUVE() {
             static_cast<void>(RegisterImportedModelArtifactsUVE(GetImportedModelPathUVE(it->first)));
             imported = imported || !job->cacheHit;
             m_modelImportFailures.erase(it->first);
+            ++m_importBatchCompleted;
             it = m_modelImportJobs.erase(it);
         } else {
             ++it;
