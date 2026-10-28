@@ -114,6 +114,28 @@ std::optional<Asset::GltfSkeletonUVE> EditorUVE::ReadSkeletonForSourceUVE(const 
                 }
                 meshPtr = &loadedMesh;
             }
+            // First, prefer the model importer's exact .uvskel rig authored directly for this model
+            // with matching joint hierarchy, binds, and scale.
+            std::filesystem::path skelPath = importedPath;
+            skelPath.replace_extension(".uvskel");
+            Asset::SkeletonAssetUVE skelAsset;
+            if (std::filesystem::is_regular_file(skelPath, ec) && Asset::LoadSkeletonAssetUVE(skelPath, skelAsset) &&
+                !skelAsset.joints.empty() && skelAsset.joints.size() <= maximumBones) {
+                Asset::GltfSkeletonUVE skeleton;
+                skeleton.skinCount = 1U;
+                skeleton.joints.reserve(skelAsset.joints.size());
+                for (const Asset::SkeletonJointUVE& joint : skelAsset.joints) {
+                    Asset::GltfJointUVE gltfJoint;
+                    gltfJoint.name = joint.name;
+                    gltfJoint.parentIndex = joint.parent;
+                    gltfJoint.translation = joint.position;
+                    gltfJoint.rotation = joint.rotation;
+                    gltfJoint.scale = joint.scale;
+                    skeleton.joints.push_back(std::move(gltfJoint));
+                }
+                return skeleton;
+            }
+
             if (meshPtr != nullptr && !meshPtr->joints.empty()) {
                 std::vector<std::string> jointNames;
                 jointNames.reserve(meshPtr->joints.size());
@@ -137,25 +159,6 @@ std::optional<Asset::GltfSkeletonUVE> EditorUVE::ReadSkeletonForSourceUVE(const 
                         return skeleton;
                     }
                 }
-            }
-            std::filesystem::path skelPath = importedPath;
-            skelPath.replace_extension(".uvskel");
-            Asset::SkeletonAssetUVE skelAsset;
-            if (std::filesystem::is_regular_file(skelPath, ec) && Asset::LoadSkeletonAssetUVE(skelPath, skelAsset) &&
-                !skelAsset.joints.empty() && skelAsset.joints.size() <= maximumBones) {
-                Asset::GltfSkeletonUVE skeleton;
-                skeleton.skinCount = 1U;
-                skeleton.joints.reserve(skelAsset.joints.size());
-                for (const Asset::SkeletonJointUVE& joint : skelAsset.joints) {
-                    Asset::GltfJointUVE gltfJoint;
-                    gltfJoint.name = joint.name;
-                    gltfJoint.parentIndex = joint.parent;
-                    gltfJoint.translation = joint.position;
-                    gltfJoint.rotation = joint.rotation;
-                    gltfJoint.scale = joint.scale;
-                    skeleton.joints.push_back(std::move(gltfJoint));
-                }
-                return skeleton;
             }
         }
     }
