@@ -2,6 +2,7 @@
 
 #include "uve/asset/fbx_importer_uve.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
@@ -269,6 +270,60 @@ void PublishTextureSlotUVE(const std::filesystem::path& destinationPath, const s
             UVE_WARNING("FbxImporterUVE: the rig read back for \"{}\" has {} bones but the model holds {} joints; "
                         "no .uvskel is published",
                         destinationPath.string(), skeleton->joints.size(), mesh.joints.size());
+        }
+    }
+
+    // A file with several mesh nodes (a body and its joints, a head and its eyes) also publishes each one as
+    // a model of its own, `<model>.part-<node>.uvmodel`, so the scene can place one mesh instance per node
+    // the way Godot and Unity do, each with the node's own name and materials. The merged model above stays:
+    // it is what the Retarget window and every older scene refer to. A part shares the merged model's joints
+    // and bind poses, so it binds to the same skeleton by name. Parts never fail the import - without them
+    // the merged model still draws the whole character.
+    std::vector<FbxMeshPartUVE> parts;
+    if (ConvertFbxMeshPartsUVE(sourceBytes, parts) && parts.size() >= 2U) {
+        std::vector<std::string> usedPartStems;
+        for (std::size_t partIndex = 0U; partIndex < parts.size(); ++partIndex) {
+            FbxMeshPartUVE& part = parts[partIndex];
+            MeshAssetUVE partMesh = std::move(part.mesh);
+            if (!part.surfaces.empty() && !mesh.materialGuids.empty()) {
+                partMesh.materialGuids = mesh.materialGuids;
+                for (const FbxSurfaceRangeUVE& range : part.surfaces) {
+                    MeshSurfaceUVE surface{range.firstIndex, range.indexCount, kInvalidMeshSurfaceMaterialSlotUVE};
+                    if (const auto found = slotOfSourceIndex.find(range.materialSourceIndex);
+                        found != slotOfSourceIndex.end()) {
+                        surface.materialSlot = found->second;
+                    }
+                    partMesh.surfaces.push_back(surface);
+                }
+                if (!IsMeshSurfaceDataValidUVE(partMesh)) {
+                    partMesh.surfaces.clear();
+                }
+            } else if (const auto found = slotOfSourceIndex.find(part.onlyMaterialSourceIndex);
+                       found != slotOfSourceIndex.end() && found->second < mesh.materialGuids.size()) {
+                // The one material the whole part draws with is its slot 0, where a mesh without a surface
+                // table looks for it.
+                partMesh.materialGuids = {mesh.materialGuids[found->second]};
+            }
+            std::string partStem;
+            for (const char c : part.name) {
+                partStem += (std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_' || c == '-') ? c : '_';
+            }
+            if (partStem.empty()) {
+                partStem = "Mesh";
+            }
+            const std::string uniqueStem = std::ranges::find(usedPartStems, partStem) == usedPartStems.end()
+                                               ? partStem
+                                               : partStem + "_" + std::to_string(partIndex);
+            usedPartStems.push_back(uniqueStem);
+            const std::filesystem::path partPath = directory / (modelStem + ".part-" + uniqueStem + ".uvmodel");
+            if (!Detail::PublishAssetAtomicallyUVE(
+                    partPath, kFbxImporterNameUVE, kFbxTemporarySuffixUVE,
+                    [&partMesh](const std::filesystem::path& temporaryPath) { return SaveMeshAssetUVE(partMesh, temporaryPath); }) ||
+                assetDatabase.RegisterUVE(partPath) == kInvalidAssetGuidUVE) {
+                UVE_WARNING("FbxImporterUVE: mesh node \"{}\" of \"{}\" could not be published on its own; the \
+merged model still draws it",
+                            part.name, sourcePath.string());
+            }
         }
     }
     return true;
