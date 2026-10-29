@@ -2269,6 +2269,27 @@ struct Renderer3DUVE::ImplUVE {
                     }
                 });
         }
+        if (skeleton == nullptr && entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
+            // A mesh inside a group (Geo > Soldier_head) with the skeleton beside the group: the nearest
+            // ancestor that has a skeleton as a child. Nearest first, so two characters in one scene each bind to
+            // their own rig, and the far ancestors are only a last resort.
+            Scene::EntityUVE ancestor = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent;
+            for (std::size_t depth = 0U; depth < 64U && skeleton == nullptr && ancestor != Scene::kInvalidEntityUVE; ++depth) {
+                entityManager.ForEachUVE<Scene::Skeleton3DComponentUVE>(
+                    [&](const Scene::EntityUVE skelEntity, const Scene::Skeleton3DComponentUVE& skelComp) {
+                        if (skeleton != nullptr || !skelComp.enabled || skelComp.bones.empty() ||
+                            !entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(skelEntity)) {
+                            return;
+                        }
+                        if (entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(skelEntity).parent == ancestor) {
+                            skeleton = &skelComp;
+                        }
+                    });
+                ancestor = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(ancestor)
+                               ? entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(ancestor).parent
+                               : Scene::kInvalidEntityUVE;
+            }
+        }
         if (skeleton == nullptr) {
             Scene::EntityUVE cursor = entity;
             for (std::size_t depth = 0U; depth < 256U && cursor != Scene::kInvalidEntityUVE; ++depth) {

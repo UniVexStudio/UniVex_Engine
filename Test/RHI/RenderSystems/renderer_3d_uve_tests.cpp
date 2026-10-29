@@ -4462,6 +4462,63 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_AJointTheSkeletonDoesNotNameStaysAtItsR
     EXPECT_NEAR(vertices[2].position.y, 3.0F, 1e-4F);
 }
 
+TEST_F(Renderer3DUVETest, RenderFrameUVE_ASkinnedMeshInsideAGroupBindsToTheSkeletonBesideTheGroup) {
+    // The tree a DCC file has: Character > { Skeleton3D, Geo > Mesh }. The mesh is not a child or a sibling of the
+    // skeleton - its grandparent is the skeleton's parent - and it still has to be skinned by it.
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>([](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+        mesh.vertices = {
+            Asset::MeshVertexUVE{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
+            Asset::MeshVertexUVE{Math::Vector3UVE{1.0F, 1.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F},
+            Asset::MeshVertexUVE{Math::Vector3UVE{0.0F, 2.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F},
+        };
+        mesh.indices = {0, 1, 2};
+        mesh.localBounds = Math::AabbUVE{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::Vector3UVE{1.0F, 2.0F, 0.0F}};
+        Asset::MeshJointUVE hips;
+        hips.name = "Hips";
+        hips.inverseBindMatrix = Math::Matrix4x4UVE::IdentityUVE();
+        hips.inverseBindMatrix.m[1][3] = -1.0F;
+        mesh.joints = {hips};
+        Asset::MeshSkinningInfluenceUVE influence;
+        influence.joints[0] = 0U;
+        influence.weights[0] = 1.0F;
+        mesh.skinningInfluences = {influence, influence, influence};
+        return true;
+    });
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_grouped_mesh.uvmodel");
+    const Scene::EntityUVE characterEntity = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE characterTransform;
+    characterTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -10.0F};
+    sceneGraph.AttachTransformUVE(entityManager, characterEntity, characterTransform);
+    const Scene::EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, skeletonEntity, Scene::TransformComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, skeletonEntity, characterEntity);
+    Scene::Skeleton3DComponentUVE skeleton;
+    skeleton.skeletonAssetPath = "Hero.fbx";
+    Scene::SkeletonBoneUVE bone;
+    bone.name = "Hips";
+    bone.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    skeleton.bones = {bone};
+    entityManager.AddComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity, skeleton);
+    const Scene::EntityUVE groupEntity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, groupEntity, Scene::TransformComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, groupEntity, characterEntity);
+    const Scene::EntityUVE meshEntity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, meshEntity, Scene::TransformComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, meshEntity, groupEntity);
+    entityManager.AddComponentUVE<Scene::MeshComponentUVE>(meshEntity, Scene::MeshComponentUVE{meshGuid, Asset::kInvalidAssetGuidUVE});
+    sceneGraph.UpdateUVE(entityManager);
+    Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle = assetManager.LoadUVE<Asset::MeshAssetUVE>(meshGuid, assetDatabase);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE && !meshHandle.IsReadyUVE(); ++iteration) {
+        std::this_thread::yield();
+    }
+    ASSERT_TRUE(meshHandle.IsReadyUVE());
+
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().skinnedMeshesDrawn, 1U);
+}
+
 TEST_F(Renderer3DUVETest, RenderFrameUVE_EmptySkyAssetKeepsProceduralSky) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     const Scene::EntityUVE environment = entityManager.CreateEntityUVE();

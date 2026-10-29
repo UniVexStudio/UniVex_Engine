@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -14,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include <nlohmann/json.hpp>
 #include "import_helpers_uve.h"
 
 #include "uve/asset/material_asset_uve.h"
@@ -280,7 +282,12 @@ void PublishTextureSlotUVE(const std::filesystem::path& destinationPath, const s
     // and bind poses, so it binds to the same skeleton by name. Parts never fail the import - without them
     // the merged model still draws the whole character.
     std::vector<FbxMeshPartUVE> parts;
-    if (ConvertFbxMeshPartsUVE(sourceBytes, parts) && parts.size() >= 2U) {
+    const bool partsKnown = ConvertFbxMeshPartsUVE(sourceBytes, parts);
+    // The `.part-` file stem of each part, empty for a part that is not published on its own (the merged model
+    // is then that part: a file with one mesh node has nothing to split).
+    std::vector<std::string> publishedPartStems(parts.size());
+    bool allPartsPublished = partsKnown;
+    if (partsKnown && parts.size() >= 2U) {
         std::vector<std::string> usedPartStems;
         for (std::size_t partIndex = 0U; partIndex < parts.size(); ++partIndex) {
             FbxMeshPartUVE& part = parts[partIndex];
@@ -320,11 +327,48 @@ void PublishTextureSlotUVE(const std::filesystem::path& destinationPath, const s
                     partPath, kFbxImporterNameUVE, kFbxTemporarySuffixUVE,
                     [&partMesh](const std::filesystem::path& temporaryPath) { return SaveMeshAssetUVE(partMesh, temporaryPath); }) ||
                 assetDatabase.RegisterUVE(partPath) == kInvalidAssetGuidUVE) {
+                allPartsPublished = false;
                 UVE_WARNING("FbxImporterUVE: mesh node \"{}\" of \"{}\" could not be published on its own; the \
 merged model still draws it",
                             part.name, sourcePath.string());
+            } else {
+                publishedPartStems[partIndex] = uniqueStem;
             }
         }
+    }
+    // The file's own node tree (`Geo` > `Soldier_head`, `Soldier_body`), written beside the model so a scene is
+    // built from what the DCC tool authored instead of from a shape the engine makes up. Written only when
+    // every part it names exists; otherwise the stale one, if any, goes.
+    const std::filesystem::path nodesPath = directory / (modelStem + ".uvnodes");
+    std::vector<FbxNodeEntryUVE> nodes;
+    if (allPartsPublished && ReadFbxNodeTreeUVE(sourceBytes, nodes) && !nodes.empty()) {
+        nlohmann::json document;
+        document["version"] = 1;
+        nlohmann::json list = nlohmann::json::array();
+        for (const FbxNodeEntryUVE& node : nodes) {
+            nlohmann::json entry;
+            entry["name"] = node.name;
+            entry["parent"] = node.parent;
+            entry["part"] = (node.part >= 0 && static_cast<std::size_t>(node.part) < publishedPartStems.size())
+                                ? publishedPartStems[static_cast<std::size_t>(node.part)]
+                                : std::string{};
+            entry["mesh"] = node.part >= 0;
+            list.push_back(std::move(entry));
+        }
+        document["nodes"] = std::move(list);
+        const std::string text = document.dump(1);
+        if (!Detail::PublishAssetAtomicallyUVE(nodesPath, kFbxImporterNameUVE, kFbxTemporarySuffixUVE,
+                                               [&text](const std::filesystem::path& temporaryPath) {
+                                                   std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
+                                                   output.write(text.data(), static_cast<std::streamsize>(text.size()));
+                                                   return output.good();
+                                               })) {
+            UVE_WARNING("FbxImporterUVE: the node tree of \"{}\" could not be written; scenes fall back to the mesh list",
+                        sourcePath.string());
+        }
+    } else {
+        std::error_code removeError;
+        std::filesystem::remove(nodesPath, removeError);
     }
     return true;
 }

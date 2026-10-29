@@ -96,6 +96,22 @@ struct FbxMeshPartUVE final {
 [[nodiscard]] bool ConvertFbxMeshPartsUVE(std::span<const std::byte> source, std::vector<FbxMeshPartUVE>& outParts,
                                           std::size_t maximumJoints = kMaximumAnimationAssetBonesUVE);
 
+/// One node of the file's scene tree that is not part of the skeleton: a mesh node, or a group (an empty such as
+/// `Geo`) that holds mesh nodes. This is the tree the DCC tool's outliner shows, which a scene should mirror
+/// instead of inventing its own.
+struct FbxNodeEntryUVE final {
+    std::string name;
+    /// Index of the parent in the same list (parents come first), or -1 for a top-level node.
+    std::int32_t parent = -1;
+    /// Index of the mesh part (ConvertFbxMeshPartsUVE's order) this node draws, or -1 for a group.
+    std::int32_t part = -1;
+};
+
+/// The non-skeleton node tree of the file: every mesh node that has triangles and the groups above it. Bones are
+/// left out (they are the skeleton); a mesh's own transform is also left out, because its vertices already carry it.
+/// False when the file cannot be read; an empty list for a file with no mesh nodes.
+[[nodiscard]] bool ReadFbxNodeTreeUVE(std::span<const std::byte> source, std::vector<FbxNodeEntryUVE>& outNodes);
+
 /// What an FBX holds, read without its geometry or animation curves - enough to tell a model from
 /// an animation-only file (a skeleton and its curves, the common shape of exported motion) before
 /// anything is imported.
