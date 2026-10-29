@@ -117,6 +117,8 @@
 #include "uve/objects/3d/camera_3d_uve.h"
 #include "uve/objects/3d/csg_shape_3d_uve.h"
 #include "uve/objects/3d/grid_map_3d_uve.h"
+#include "uve/objects/3d/two_bone_ik_3d_uve.h"
+#include "uve/objects/3d/full_body_ik_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/animation_graph_uve.h"
 #include "uve/objects/3d/decal_3d_events_uve.h"
@@ -1961,11 +1963,70 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
     // pulls a limb onto the target its animation cannot know about (a foot on uneven ground, a hand
     // on a moving prop), and it has to happen before the attachment pass puts anything in that hand.
     // The report is discarded on purpose - a refused chain recorded why in its own runtime fields.
+    //
+    // IK is authoring too. A skeleton no clip animates - a rig being edited, a prop with no player - is not
+    // "posed" by any driver, and the IK passes used to skip it: the limb only followed its target in the game,
+    // where a clip was running, and could not be set up in the editor at all. Such a skeleton is now solved from
+    // the pose the author left (see AuthoredIkPoseUVE), on the frame clock, with nothing about gravity or the
+    // simulation involved.
+    std::vector<Scene::EntityUVE> authoredSkeletons;
+    if (!physicsStep) {
+        const auto consider = [&](const Scene::EntityUVE skeletonEntity) {
+            if (!m_entityManager->IsAliveUVE(skeletonEntity) ||
+                !m_entityManager->HasComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity) ||
+                std::find(posedSkeletons.begin(), posedSkeletons.end(), skeletonEntity) != posedSkeletons.end() ||
+                std::find(authoredSkeletons.begin(), authoredSkeletons.end(), skeletonEntity) != authoredSkeletons.end()) {
+                return;
+            }
+            Scene::Skeleton3DComponentUVE& skeleton = m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
+            if (!skeleton.enabled || skeleton.bones.empty()) {
+                return;
+            }
+            const auto samePose = [](const std::vector<Scene::SkeletonBonePoseUVE>& left,
+                                     const std::vector<Scene::SkeletonBonePoseUVE>& right) {
+                if (left.size() != right.size()) {
+                    return false;
+                }
+                for (std::size_t index = 0U; index < left.size(); ++index) {
+                    const Scene::SkeletonBonePoseUVE& a = left[index];
+                    const Scene::SkeletonBonePoseUVE& b = right[index];
+                    if (a.position.x != b.position.x || a.position.y != b.position.y || a.position.z != b.position.z ||
+                        a.rotation.x != b.rotation.x || a.rotation.y != b.rotation.y || a.rotation.z != b.rotation.z ||
+                        a.rotation.w != b.rotation.w || a.scale.x != b.scale.x || a.scale.y != b.scale.y ||
+                        a.scale.z != b.scale.z) {
+                        return false;
+                    }
+                }
+                return true;
+            };
+            AuthoredIkPoseUVE& entry = m_authoredIkPoses[skeletonEntity];
+            if (samePose(skeleton.pose, entry.written)) {
+                skeleton.pose = entry.base;
+            } else {
+                entry.base = skeleton.pose;
+            }
+            authoredSkeletons.push_back(skeletonEntity);
+        };
+        m_entityManager->ForEachUVE<Scene::TwoBoneIK3DComponentUVE>(
+            [&consider](const Scene::EntityUVE, const Scene::TwoBoneIK3DComponentUVE& chain) { consider(chain.skeleton); });
+        m_entityManager->ForEachUVE<Scene::FullBodyIK3DComponentUVE>(
+            [&consider](const Scene::EntityUVE, const Scene::FullBodyIK3DComponentUVE& solve) { consider(solve.skeleton); });
+        for (auto it = m_authoredIkPoses.begin(); it != m_authoredIkPoses.end();) {
+            it = std::find(authoredSkeletons.begin(), authoredSkeletons.end(), it->first) == authoredSkeletons.end()
+                     ? m_authoredIkPoses.erase(it)
+                     : std::next(it);
+        }
+        posedSkeletons.insert(posedSkeletons.end(), authoredSkeletons.begin(), authoredSkeletons.end());
+    }
     static_cast<void>(Scene::SyncTwoBoneIK3DObjectsUVE(*m_entityManager, *m_sceneGraph, posedSkeletons));
     // The whole-body solve runs after the limb chains: the chains have planted what they were asked
     // to, and this reconciles those placements with every other pull in one pose. Its report is
     // discarded for the same reason - a refused solve recorded why in its own runtime fields.
     static_cast<void>(Scene::SyncFullBodyIK3DObjectsUVE(*m_entityManager, *m_sceneGraph, posedSkeletons));
+    for (const Scene::EntityUVE skeletonEntity : authoredSkeletons) {
+        m_authoredIkPoses[skeletonEntity].written =
+            m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity).pose;
+    }
 
     if (!physicsStep && m_animationClips.size() > 64U) {
         // Drop clips nothing references any more, so an unused clip does not stay loaded indefinitely.

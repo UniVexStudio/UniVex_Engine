@@ -2158,12 +2158,23 @@ private:
     /// `editInline` false shows the picker and its preview only: for a mesh with a dozen surfaces,
     /// a full PBR editor under each row would bury the rows themselves, and the same materials are
     /// already editable once in the mesh's own MATERIALS fold.
+    /// `deferInline` is for a slot drawn inside a narrow table cell (a component's property row): the
+    /// picker stays in the cell, and the PBR editor is queued to be drawn at full width under the table
+    /// (FlushPendingMaterialEditorsUVE). Drawn inside the value column it was squeezed into 58% of the
+    /// panel, with its own tables nested in the cell.
     bool DrawStandardMaterialSlotUVE(const char* label, const char* id,
-                                     std::string& inOutPath, bool editInline = true);
+                                     std::string& inOutPath, bool editInline = true, bool deferInline = false);
     bool DrawStandardMaterialSlotUVE(const char* label, const char* id,
-                                     Asset::AssetGuidUVE& inOutGuid);
+                                     Asset::AssetGuidUVE& inOutGuid, bool deferInline = false);
+    /// Draws the PBR editors queued by slots drawn with `deferInline`, once the table they were in is closed.
+    void FlushPendingMaterialEditorsUVE();
     /// Inline expandable PBR property editor for an assigned material file. Saves immediately on edit.
     void DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& absolutePath, const char* idPrefix);
+    struct PendingMaterialEditorUVE final {
+        std::filesystem::path absolutePath;
+        std::string id;
+    };
+    std::vector<PendingMaterialEditorUVE> m_pendingMaterialEditors;
     /// Specialized MeshInstance3D inspector drawer: procedural shapes/models picker, expandable
     /// Skeleton section with Skin slot and auto-populated bone binds, expandable Surface Material
     /// Override section, and mesh material slot.

@@ -297,7 +297,37 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
             skeletonDefinition.skeleton.bones.push_back(
                 Scene::SkeletonBoneUVE{joint.name, joint.parentIndex, joint.translation, joint.rotation, joint.scale});
         }
+        // A file with several mesh nodes was imported as a model per node (`<model>.part-<node>.uvmodel`):
+        // placed the way another engine places it, one MeshInstance3D per node under the model, each with
+        // its own mesh and materials, and ONE Skeleton3D beside them that they all bind to by name. The
+        // renderer finds a skeleton that shares the mesh's parent.
+        std::vector<std::pair<std::string, std::filesystem::path>> parts;
         if (hasMesh) {
+            const std::string partPrefix = importedModel.stem().string() + ".part-";
+            std::error_code listError;
+            for (const std::filesystem::directory_entry& entry :
+                 std::filesystem::directory_iterator(importedModel.parent_path(), listError)) {
+                const std::string name = entry.path().filename().string();
+                if (entry.is_regular_file(listError) && entry.path().extension() == ".uvmodel" &&
+                    name.rfind(partPrefix, 0U) == 0U) {
+                    const std::string partName = entry.path().stem().string().substr(partPrefix.size());
+                    if (!partName.empty()) {
+                        parts.emplace_back(partName, entry.path());
+                    }
+                }
+            }
+            std::ranges::sort(parts);
+        }
+        if (parts.size() >= 2U) {
+            for (const auto& [partName, partPath] : parts) {
+                Scene::MeshInstance3DObjectDefinitionUVE mesh;
+                mesh.mesh.meshGuid = RegisterImportedModelArtifactsUVE(partPath);
+                static_cast<void>(
+                    make(partName, Kind::MeshInstance3D, mesh, Scene::ApplyMeshInstance3DObjectDefinitionUVE, modelEntity));
+            }
+            static_cast<void>(
+                make("skeleton3d", Kind::Skeleton3D, skeletonDefinition, Scene::ApplySkeleton3DObjectDefinitionUVE, modelEntity));
+        } else if (hasMesh) {
             Scene::MeshInstance3DObjectDefinitionUVE mesh;
             mesh.mesh.meshGuid = meshGuid;
             const Scene::EntityUVE characterEntity =
@@ -381,7 +411,7 @@ void EditorUVE::DrawSkeletonSourcePropertyUVE(const Core::TypeMetadataEntryUVE& 
     }
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
-    // No revert icon: resetting the path alone would leave the bones behind. Clear does both.
+    // No revert icon: resetting the path alone would leave the bones behind.
     static_cast<void>(DrawMetadataPropertyLabelUVE(entry, property, instance, false));
     ImGui::TableSetColumnIndex(1);
     ImGui::BeginDisabled(!writable);
@@ -423,7 +453,8 @@ void EditorUVE::DrawSkeletonSourcePropertyUVE(const Core::TypeMetadataEntryUVE& 
     ImGui::EndDisabled();
     ImGui::EndTable();
 
-    // Reload re-reads the same file, for a rig edited and re-exported; Clear empties the object.
+    // Reload re-reads the same file, for a rig edited and re-exported. There is no Clear: the bones belong
+    // to the Source, and a different Source replaces them.
     if (!skeleton.skeletonAssetPath.empty()) {
         ImGui::BeginDisabled(!writable);
         if (ImGui::SmallButton("Reload Bones")) {
@@ -433,11 +464,6 @@ void EditorUVE::DrawSkeletonSourcePropertyUVE(const Core::TypeMetadataEntryUVE& 
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Read the bones again from %s, after the rig was edited and re-exported.",
                               skeleton.skeletonAssetPath.c_str());
-        }
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Clear")) {
-            chosen.clear();
-            picked = true;
         }
         ImGui::EndDisabled();
     }
@@ -467,45 +493,22 @@ void EditorUVE::DrawSkeletonBonesPropertyUVE(const Core::TypeMetadataEntryUVE&,
         return;
     }
 
-    // Children by parent, once per draw: bones are ordered parent-first, so one pass builds it.
-    std::vector<std::vector<std::size_t>> children(skeleton.bones.size());
-    std::vector<std::size_t> roots;
-    for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
-        const std::int32_t parent = skeleton.bones[index].parentIndex;
-        if (parent < 0) {
-            roots.push_back(index);
-        } else {
-            children[static_cast<std::size_t>(parent)].push_back(index);
-        }
-    }
+    // One flat column, in file order (parents come first). No nesting: a deep rig used to indent itself
+    // off the right edge of the inspector.
     const float listHeight = std::min(220.0F, (static_cast<float>(skeleton.bones.size()) + 1.0F) *
                                                   ImGui::GetTextLineHeightWithSpacing());
-    if (ImGui::BeginChild("##bone-tree", ImVec2{0.0F, listHeight}, ImGuiChildFlags_Borders)) {
-        const std::function<void(std::size_t)> drawBone = [&](const std::size_t index) {
-            const Scene::SkeletonBoneUVE& bone = skeleton.bones[index];
-            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen |
-                                       ImGuiTreeNodeFlags_OpenOnArrow;
-            if (children[index].empty()) {
-                flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-            }
-            if (bone.name == m_selectedSkeletonBone) {
-                flags |= ImGuiTreeNodeFlags_Selected;
-            }
-            ImGui::PushID(static_cast<int>(index));
-            const bool open = ImGui::TreeNodeEx("##bone", flags, "%s", bone.name.c_str());
-            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-                m_selectedSkeletonBone = bone.name;
-            }
-            ImGui::PopID();
-            if (open && !children[index].empty()) {
-                for (const std::size_t child : children[index]) {
-                    drawBone(child);
+    if (ImGui::BeginChild("##bone-list", ImVec2{0.0F, listHeight}, ImGuiChildFlags_Borders)) {
+        ImGuiListClipper clipper;
+        clipper.Begin(static_cast<int>(skeleton.bones.size()));
+        while (clipper.Step()) {
+            for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
+                const Scene::SkeletonBoneUVE& bone = skeleton.bones[static_cast<std::size_t>(row)];
+                ImGui::PushID(row);
+                if (ImGui::Selectable(bone.name.c_str(), bone.name == m_selectedSkeletonBone)) {
+                    m_selectedSkeletonBone = bone.name;
                 }
-                ImGui::TreePop();
+                ImGui::PopID();
             }
-        };
-        for (const std::size_t root : roots) {
-            drawBone(root);
         }
     }
     ImGui::EndChild();

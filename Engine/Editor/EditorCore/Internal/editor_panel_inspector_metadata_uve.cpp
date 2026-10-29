@@ -525,6 +525,7 @@ void EditorUVE::DrawCharacterCollisionRowsUVE(const Scene::EntityUVE entity) {
         ImGui::PopID();
     }
     ImGui::EndTable();
+    FlushPendingMaterialEditorsUVE();
 }
 
 void EditorUVE::DrawMetadataPropertyRowsUVE(const TypeMetadataEntryUVE& entry, const void* const instance) {
@@ -534,11 +535,13 @@ void EditorUVE::DrawMetadataPropertyRowsUVE(const TypeMetadataEntryUVE& entry, c
     enum class TableStateUVE : std::uint8_t { Closed, Open, Clipped };
     TableStateUVE table = TableStateUVE::Closed;
     int tableIndex = 0;
-    const auto closeTable = [&table] {
+    const auto closeTable = [&table, this] {
         if (table == TableStateUVE::Open) {
             ImGui::EndTable();
         }
         table = TableStateUVE::Closed;
+        // A material picked inside the table gets its PBR editor here, at the panel's full width.
+        FlushPendingMaterialEditorsUVE();
     };
     // Sub-groups: consecutive properties naming the same `section` sit under one collapsible
     // header inside the type's section, so a long section reads as a few labelled blocks. A
@@ -882,7 +885,7 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
             if (isMaterialRow) {
                 std::string value;
                 property.getValue(instance, &value);
-                if (DrawStandardMaterialSlotUVE(nullptr, "##value", value)) {
+                if (DrawStandardMaterialSlotUVE(nullptr, "##value", value, true, true)) {
                     edited = SetSelectedComponentPropertyUVE(entry, property, &value);
                 }
             } else if (property.customDrawerId == "sky:asset") {
@@ -1058,7 +1061,7 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
         };
         const bool isMaterialGuid = isMaterialProperty(property);
         if (isMaterialGuid) {
-            if (DrawStandardMaterialSlotUVE(nullptr, "##value", value)) {
+            if (DrawStandardMaterialSlotUVE(nullptr, "##value", value, true)) {
                 edited = SetSelectedComponentPropertyUVE(entry, property, &value);
             }
         } else if (property.customDrawerId.rfind(kAssetPrefix, 0U) != 0U) {
@@ -1941,7 +1944,7 @@ void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& abso
 }
 
 bool EditorUVE::DrawStandardMaterialSlotUVE(const char* const label, const char* const id,
-                                           Asset::AssetGuidUVE& inOutGuid) {
+                                           Asset::AssetGuidUVE& inOutGuid, const bool deferInline) {
     bool edited = false;
     const bool hasLabel = (label != nullptr && label[0] != '\0');
     if (hasLabel) {
@@ -1967,13 +1970,18 @@ bool EditorUVE::DrawStandardMaterialSlotUVE(const char* const label, const char*
     }
     if (inOutGuid != Asset::kInvalidAssetGuidUVE) {
         const std::filesystem::path absPath = m_services->GetAssetDatabaseUVE().ResolveUVE(inOutGuid);
-        DrawMaterialPbrEditorInlineUVE(absPath, id);
+        if (deferInline) {
+            m_pendingMaterialEditors.push_back(
+                PendingMaterialEditorUVE{absPath, "##pending-material-" + std::to_string(ImGui::GetID(id))});
+        } else {
+            DrawMaterialPbrEditorInlineUVE(absPath, id);
+        }
     }
     return edited;
 }
 
 bool EditorUVE::DrawStandardMaterialSlotUVE(const char* const label, const char* const id,
-                                           std::string& inOutPath, const bool editInline) {
+                                           std::string& inOutPath, const bool editInline, const bool deferInline) {
     bool edited = false;
     const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
@@ -2027,9 +2035,22 @@ bool EditorUVE::DrawStandardMaterialSlotUVE(const char* const label, const char*
         if (absPath.is_relative()) {
             absPath = (project.contentRoot / absPath).lexically_normal();
         }
-        DrawMaterialPbrEditorInlineUVE(absPath, id);
+        if (deferInline) {
+            m_pendingMaterialEditors.push_back(
+                PendingMaterialEditorUVE{absPath, "##pending-material-" + std::to_string(ImGui::GetID(id))});
+        } else {
+            DrawMaterialPbrEditorInlineUVE(absPath, id);
+        }
     }
     return edited;
+}
+
+void EditorUVE::FlushPendingMaterialEditorsUVE() {
+    std::vector<PendingMaterialEditorUVE> pending = std::move(m_pendingMaterialEditors);
+    m_pendingMaterialEditors.clear();
+    for (const PendingMaterialEditorUVE& editor : pending) {
+        DrawMaterialPbrEditorInlineUVE(editor.absolutePath, editor.id.c_str());
+    }
 }
 
 bool EditorUVE::AutoPopulateSkinFromModelUVE(const Scene::EntityUVE entity, Scene::SkinComponentUVE& skin) {

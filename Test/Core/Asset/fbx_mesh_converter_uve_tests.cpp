@@ -332,6 +332,66 @@ TEST(FbxMeshConverterUVETest, ASkinIsWhatMakesItRigged) {
     std::filesystem::remove(path);
 }
 
+TEST(FbxMeshConverterUVETest, ASkinnedVertexIsLitByTheSameBindThatPlacesIt) {
+    // The mesh node is turned 90 degrees about X, but the skin binds the floor with an identity matrix, so
+    // the skin - not the node - decides where the floor stands: flat on the ground. Its normals have to
+    // follow the same bind, and point up; turning them by the node's rotation would light it from the side.
+    const std::string objects = R"(	Geometry: 1000, "Geometry::Floor", "Mesh" {
+		Vertices: *12 {
+			a: 0,0,0,100,0,0,100,100,0,0,100,0
+		}
+		PolygonVertexIndex: *4 {
+			a: 0,1,2,-4
+		}
+		GeometryVersion: 124
+	}
+	Model: 2000, "Model::Floor", "Mesh" {
+		Version: 232
+		Properties70:  {
+			P: "Lcl Rotation", "Lcl Rotation", "", "A",90,0,0
+		}
+	}
+	Model: 3000, "Model::Bone", "LimbNode" {
+		Version: 232
+	}
+	NodeAttribute: 3100, "NodeAttribute::Bone", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	Deformer: 4000, "Deformer::Skin", "Skin" {
+		Version: 101
+	}
+	Deformer: 4100, "SubDeformer::Cluster", "Cluster" {
+		Version: 100
+		Indexes: *4 {
+			a: 0,1,2,3
+		}
+		Weights: *4 {
+			a: 1,1,1,1
+		}
+		Transform: *16 {
+			a: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1
+		}
+		TransformLink: *16 {
+			a: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1
+		}
+	}
+)";
+    const std::string fbx = MakeFbxUVE(
+        objects, std::string(kFloorConnectionsUVE) +
+                     "\tC: \"OO\",4000,1000\n\tC: \"OO\",4100,4000\n\tC: \"OO\",3000,4100\n\tC: \"OO\",3100,3000\n"
+                     "\tC: \"OO\",3000,0\n");
+    MeshAssetUVE mesh;
+    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(fbx), mesh));
+    ASSERT_TRUE(mesh.IsSkinnedUVE());
+    ASSERT_EQ(mesh.vertices.size(), 4U);
+    for (const MeshVertexUVE& vertex : mesh.vertices) {
+        EXPECT_NEAR(vertex.position.y, 0.0F, 1.0e-4F);
+        EXPECT_NEAR(vertex.normal.x, 0.0F, 1.0e-4F);
+        EXPECT_NEAR(vertex.normal.y, 1.0F, 1.0e-4F);
+        EXPECT_NEAR(vertex.normal.z, 0.0F, 1.0e-4F);
+    }
+}
+
 TEST(FbxMeshConverterUVETest, ARigOverTheBoneLimitLosesBonesNotTheWholeMesh) {
     // A two-bone chain skinned to its SECOND bone. The joint cap is one, so the bone the skin
     // actually names is the one that has to go - the harshest version of the case, and the one that
@@ -600,6 +660,87 @@ TEST(FbxMeshConverterUVETest, EveryTakeBecomesASkeletalClipOnTheSkeletonsBones) 
     EXPECT_TRUE(ReadFbxAnimationsUVE(BytesUVE(MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE)), 16U).empty());
     const std::string garbage = "not an fbx";
     EXPECT_TRUE(ReadFbxAnimationsUVE(BytesUVE(garbage), 16U).empty());
+}
+
+[[nodiscard]] std::string MakeTwoMeshFbxUVE() {
+    const std::string objects = R"(	Geometry: 1000, "Geometry::Left", "Mesh" {
+		Vertices: *12 {
+			a: 0,0,0,100,0,0,100,100,0,0,100,0
+		}
+		PolygonVertexIndex: *4 {
+			a: 0,1,2,-4
+		}
+		GeometryVersion: 124
+	}
+	Model: 2000, "Model::Left", "Mesh" {
+		Version: 232
+	}
+	Geometry: 1001, "Geometry::Right", "Mesh" {
+		Vertices: *9 {
+			a: 200,0,0,300,0,0,300,100,0
+		}
+		PolygonVertexIndex: *3 {
+			a: 0,1,-3
+		}
+		GeometryVersion: 124
+	}
+	Model: 2001, "Model::Right", "Mesh" {
+		Version: 232
+	}
+)";
+    return MakeFbxUVE(objects, "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n\tC: \"OO\",1001,2001\n\tC: \"OO\",2001,0\n");
+}
+
+TEST(FbxMeshConverterUVETest, EveryMeshNodeIsAPartOfItsOwnAndTheMergedMeshIsTheirSum) {
+    const std::string fbx = MakeTwoMeshFbxUVE();
+    std::vector<FbxMeshPartUVE> parts;
+    ASSERT_TRUE(ConvertFbxMeshPartsUVE(BytesUVE(fbx), parts));
+    ASSERT_EQ(parts.size(), 2U);
+    EXPECT_EQ(parts[0].name, "Left");
+    EXPECT_EQ(parts[1].name, "Right");
+    EXPECT_EQ(parts[0].mesh.vertices.size(), 4U);
+    EXPECT_EQ(parts[0].mesh.indices.size(), 6U);
+    EXPECT_EQ(parts[1].mesh.vertices.size(), 3U);
+    EXPECT_EQ(parts[1].mesh.indices.size(), 3U);
+    MeshAssetUVE merged;
+    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(fbx), merged));
+    EXPECT_EQ(merged.vertices.size(), parts[0].mesh.vertices.size() + parts[1].mesh.vertices.size());
+    // A file with nothing to draw has no parts, and says so by failing.
+    EXPECT_FALSE(ConvertFbxMeshPartsUVE(BytesUVE(MakeFbxUVE("", "")), parts));
+    EXPECT_TRUE(parts.empty());
+}
+
+TEST(FbxMeshConverterUVETest, TheImporterPublishesOneModelPerMeshNodeBesideTheMergedOne) {
+    const std::filesystem::path sourcePath = "uve_fbx_importer_tests_two.fbx";
+    const std::filesystem::path destinationPath = "uve_fbx_importer_tests_two.uvmodel";
+    const std::filesystem::path leftPath = "uve_fbx_importer_tests_two.part-Left.uvmodel";
+    const std::filesystem::path rightPath = "uve_fbx_importer_tests_two.part-Right.uvmodel";
+    for (const std::filesystem::path& path : {destinationPath, leftPath, rightPath}) {
+        std::filesystem::remove(path);
+    }
+    {
+        const std::string fbx = MakeTwoMeshFbxUVE();
+        std::ofstream output(sourcePath, std::ios::binary | std::ios::trunc);
+        output.write(fbx.data(), static_cast<std::streamsize>(fbx.size()));
+        ASSERT_TRUE(output.good());
+    }
+    AssetImporterUVE importer;
+    AssetDatabaseUVE database;
+    ASSERT_NE(importer.ImportUVE(sourcePath, destinationPath, database), kInvalidAssetGuidUVE);
+    MeshAssetUVE merged;
+    ASSERT_TRUE(LoadMeshAssetUVE(destinationPath, merged));
+    EXPECT_EQ(merged.vertices.size(), 7U);
+    MeshAssetUVE left;
+    MeshAssetUVE right;
+    ASSERT_TRUE(LoadMeshAssetUVE(leftPath, left));
+    ASSERT_TRUE(LoadMeshAssetUVE(rightPath, right));
+    EXPECT_EQ(left.vertices.size(), 4U);
+    EXPECT_EQ(right.vertices.size(), 3U);
+    EXPECT_NE(database.RegisterUVE(leftPath), kInvalidAssetGuidUVE);
+    // One mesh node is just the model: nothing extra is published for it.
+    for (const std::filesystem::path& path : {sourcePath, destinationPath, leftPath, rightPath}) {
+        std::filesystem::remove(path);
+    }
 }
 
 TEST(FbxMeshConverterUVETest, WhatIsNotAnFbxWithTrianglesIsRefusedAndLeavesTheMeshAlone) {
