@@ -78,6 +78,27 @@ TEST(RetargetFilesUVETest, RetargetFilesUVE_ConformsTheModelAndEveryAnimationInP
     }
 }
 
+TEST(RetargetFilesUVETest, RetargetFilesUVE_ConformsTheMeshNodesPublishedBesideTheCharacterToo) {
+    FilesFixtureUVE fixture;
+    // A character imported from a file with several mesh nodes has a model per node beside it.
+    const fs::path body = fixture.dir / "hero.part-Body.uvmodel";
+    const fs::path joints = fixture.dir / "hero.part-Joints.uvmodel";
+    ASSERT_TRUE(Asset::SaveMeshAssetUVE(MakeMeshUVE(fixture.rig), body));
+    ASSERT_TRUE(Asset::SaveMeshAssetUVE(MakeMeshUVE(fixture.rig), joints));
+    const RetargetFilesResultUVE result = RetargetFilesUVE(fixture.request, GetHumanoidReferenceUVE(), {});
+    ASSERT_TRUE(result.ok) << result.error;
+    ASSERT_EQ(result.files.size(), 5U) << "the model, its two mesh nodes and the two animations";
+    Asset::MeshAssetUVE model;
+    ASSERT_TRUE(Asset::LoadMeshAssetUVE(fixture.request.model, model));
+    for (const fs::path& path : {body, joints}) {
+        Asset::MeshAssetUVE part;
+        ASSERT_TRUE(Asset::LoadMeshAssetUVE(path, part));
+        ASSERT_TRUE(Asset::IsMeshSkinningDataValidUVE(part));
+        ASSERT_EQ(part.joints.size(), model.joints.size()) << "a mesh node binds to the same conformed skeleton";
+        EXPECT_EQ(part.joints[1].name, "Hips");
+    }
+}
+
 TEST(RetargetFilesUVETest, RestoreRetargetBackupUVE_PutsTheOriginalsBackByteForByte) {
     FilesFixtureUVE fixture;
     const std::string modelBefore = ReadAllUVE(fixture.request.model);

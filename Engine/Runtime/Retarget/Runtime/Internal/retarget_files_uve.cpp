@@ -3,6 +3,7 @@
 #include "uve/retarget/retarget_files_uve.h"
 
 #include <chrono>
+#include <algorithm>
 #include <cstdio>
 #include <ctime>
 #include <fstream>
@@ -151,7 +152,23 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
                                         const RetargetProgressUVE& progress) {
     RetargetFilesResultUVE result;
     const bool hasModel = !request.model.empty();
-    const std::size_t total = (hasModel ? 1U : 0U) + request.animations.size();
+    // The mesh nodes of the character published beside it (`<model>.part-<node>.uvmodel`): each is a mesh of
+    // its own that binds to the same skeleton, so it is conformed with the model or the scene would draw
+    // old meshes on the conformed rig.
+    std::vector<fs::path> partFiles;
+    if (hasModel) {
+        const std::string partPrefix = request.model.stem().string() + ".part-";
+        std::error_code listError;
+        for (const fs::directory_entry& entry : fs::directory_iterator(request.model.parent_path(), listError)) {
+            const std::string name = entry.path().filename().string();
+            if (entry.path().extension() == ".uvmodel" && name.rfind(partPrefix, 0U) == 0U &&
+                entry.is_regular_file(listError)) {
+                partFiles.push_back(entry.path());
+            }
+        }
+        std::sort(partFiles.begin(), partFiles.end());
+    }
+    const std::size_t total = (hasModel ? 1U : 0U) + partFiles.size() + request.animations.size();
     const auto report = [&](const std::size_t done, const std::string& what) {
         if (progress) {
             progress(done, total, what);
@@ -196,6 +213,19 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         model.note = std::to_string(conformed->skeleton.bones.size() - rig->bones.size()) + " bones added" + distortion;
         model.mesh = std::move(mesh);
         planned.push_back(std::move(model));
+        for (const fs::path& partFile : partFiles) {
+            PlannedFileUVE part;
+            part.file = partFile;
+            Asset::MeshAssetUVE partMesh;
+            std::string partError;
+            if (!Asset::LoadMeshAssetUVE(partFile, partMesh) || !ConformMeshUVE(partMesh, *conformed, &partError)) {
+                result.error = partFile.filename().string() + ": " + (partError.empty() ? "cannot read it" : partError);
+                return result;
+            }
+            part.note = "conformed with the character";
+            part.mesh = std::move(partMesh);
+            planned.push_back(std::move(part));
+        }
     }
     for (std::size_t index = 0U; index < request.animations.size(); ++index) {
         const fs::path& path = request.animations[index];

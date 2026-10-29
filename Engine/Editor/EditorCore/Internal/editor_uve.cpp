@@ -1101,6 +1101,16 @@ Scene::EntityUVE EditorUVE::PlaceEntityAssetUVE(const std::filesystem::path& pat
     if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(root)) {
         entityManager.GetComponentUVE<Scene::NameComponentUVE>(root).name = rootName;
     }
+    // Where the entity sat in the Entity Editor is where its author put it to look at it, not part of the
+    // entity: the level places it, so it starts at its parent's origin and the placement rule below moves it.
+    // Without this an entity saved after a nudge in its editor landed that far from where it was dropped.
+    // (Rotation and scale are the entity's own and stay. Inside an Entity Editor session the offset of a nested
+    // entity is the author's layout, so it is left alone there.)
+    if (!m_entityEditSession.has_value() && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(root)) {
+        Scene::TransformComponentUVE rootTransform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(root);
+        rootTransform.localPosition = Math::Vector3UVE{};
+        m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, root, rootTransform);
+    }
     InvalidateHierarchyFilterCacheUVE();
     PlaceNewDocumentObjectUVE(root);
 

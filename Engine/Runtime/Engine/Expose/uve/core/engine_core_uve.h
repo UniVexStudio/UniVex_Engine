@@ -84,6 +84,7 @@
 #include "uve/save/i_checkpoint_manager_uve.h"
 #include "uve/save/i_save_game_system_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/scene/particle_runtime_uve.h"
 #include "uve/scene/i_prefab_system_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
@@ -928,6 +929,16 @@ private:
     /// release before the manager is destroyed; clips no object references any more are dropped
     /// each frame.
     std::unordered_map<std::uint64_t, Asset::AssetHandleUVE<Asset::AnimationClipAssetUVE>> m_animationClips;
+    /// IK on a skeleton nothing animates (an editor authoring a rig, a prop with no clip). A modifier blends over
+    /// the pose a driver wrote, so applying it to a pose that is not rewritten each frame would blend the same
+    /// solve again every frame and creep. `base` is the pose the author left; `written` is what the modifiers
+    /// last wrote over it. While the pose still equals `written` the author has not touched it, so the next solve
+    /// starts again from `base`; any other pose is the author's new base.
+    struct AuthoredIkPoseUVE final {
+        std::vector<Scene::SkeletonBonePoseUVE> base;
+        std::vector<Scene::SkeletonBonePoseUVE> written;
+    };
+    std::unordered_map<Scene::EntityUVE, AuthoredIkPoseUVE> m_authoredIkPoses;
     std::unique_ptr<Save::ISaveGameSystemUVE> m_saveGameSystem;
     std::unique_ptr<Save::ICheckpointManagerUVE> m_checkpointManager;
     std::unique_ptr<Config::IConfigManagerUVE> m_configManager;
