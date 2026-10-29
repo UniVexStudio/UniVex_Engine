@@ -78,6 +78,24 @@ struct FbxSurfaceRangeUVE final {
                                      std::vector<FbxSurfaceRangeUVE>* outSurfaces = nullptr,
                                      std::size_t maximumJoints = kMaximumAnimationAssetBonesUVE);
 
+/// One mesh node of an FBX, converted on its own: the unit a DCC tool's outliner shows and another engine
+/// imports as one mesh instance (Godot's MeshInstance3D, Unity's SkinnedMeshRenderer). `mesh` carries the
+/// same joint list and bind poses as ConvertFbxMeshUVE's merged mesh, so it binds to the same skeleton by
+/// name; `surfaces` are its material runs, in the form ConvertFbxMeshUVE reports them.
+struct FbxMeshPartUVE final {
+    std::string name;
+    MeshAssetUVE mesh;
+    std::vector<FbxSurfaceRangeUVE> surfaces;
+    /// The file material the whole part draws with, when `surfaces` is empty because it uses just one;
+    /// kInvalidMeshSurfaceMaterialSlotUVE when it uses none, or several (then `surfaces` names them).
+    std::uint32_t onlyMaterialSourceIndex = kInvalidMeshSurfaceMaterialSlotUVE;
+};
+
+/// Converts every mesh of the file into a part of its own, in the scene's order, instead of merging them.
+/// False (and `outParts` empty) when the file cannot be read or any part cannot be converted.
+[[nodiscard]] bool ConvertFbxMeshPartsUVE(std::span<const std::byte> source, std::vector<FbxMeshPartUVE>& outParts,
+                                          std::size_t maximumJoints = kMaximumAnimationAssetBonesUVE);
+
 /// What an FBX holds, read without its geometry or animation curves - enough to tell a model from
 /// an animation-only file (a skeleton and its curves, the common shape of exported motion) before
 /// anything is imported.

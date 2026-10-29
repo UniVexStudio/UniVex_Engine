@@ -213,8 +213,17 @@ struct FbxBoneObjectUVE final {
 
 } // namespace
 
-bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& outMesh,
-                       std::vector<FbxSurfaceRangeUVE>* const outSurfaces, const std::size_t maximumJoints) {
+namespace {
+/// Every mesh of the file, merged: the whole-file conversion.
+constexpr std::size_t kAllFbxMeshesUVE = static_cast<std::size_t>(-1);
+} // namespace
+
+/// Converts the file's meshes into one MeshAssetUVE: all of them (`onlyMeshIndex` is kAllFbxMeshesUVE) or
+/// just the one at that index in the scene's mesh list. The joint list is the rig's, whichever meshes are
+/// taken, so the parts of one file share their joints and bind poses exactly.
+static bool ConvertFbxMeshImplUVE(const std::span<const std::byte> source, MeshAssetUVE& outMesh,
+                                  std::vector<FbxSurfaceRangeUVE>* const outSurfaces, const std::size_t maximumJoints,
+                                  const std::size_t onlyMeshIndex, std::uint32_t* const outOnlyMaterial = nullptr) {
     if (outSurfaces != nullptr) {
         outSurfaces->clear();
     }
@@ -308,7 +317,11 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
         std::vector<std::uint32_t> triangle;
         bool hasBounds = false;
 
-        for (const ufbx_mesh* const mesh : scene->meshes) {
+        for (std::size_t meshIndex = 0U; meshIndex < scene->meshes.count; ++meshIndex) {
+            if (onlyMeshIndex != kAllFbxMeshesUVE && meshIndex != onlyMeshIndex) {
+                continue;
+            }
+            const ufbx_mesh* const mesh = scene->meshes.data[meshIndex];
             if (mesh == nullptr || !mesh->vertex_position.exists || mesh->num_triangles == 0U) {
                 continue;
             }
@@ -383,19 +396,26 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
                         MeshVertexUVE vertex;
                         vertex.position = ToVectorUVE(
                             ufbx_transform_position(&toWorld, ufbx_get_vertex_vec3(&mesh->vertex_position, index)));
-                        const ufbx_vec3 normal =
-                            mesh->vertex_normal.exists
-                                ? ufbx_transform_direction(&normalToWorld,
-                                                           ufbx_get_vertex_vec3(&mesh->vertex_normal, index))
-                                : ufbx_vec3{{{0.0, 1.0, 0.0}}};
-                        vertex.normal = ToVectorUVE(normal);
-                        const float length = std::sqrt((vertex.normal.x * vertex.normal.x) +
-                                                       (vertex.normal.y * vertex.normal.y) +
-                                                       (vertex.normal.z * vertex.normal.z));
-                        vertex.normal = length > 0.0F && std::isfinite(length)
-                                            ? Math::Vector3UVE{vertex.normal.x / length, vertex.normal.y / length,
-                                                               vertex.normal.z / length}
-                                            : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+                        // A skinned vertex is put where its bind says (below), so its normal has to be turned by
+                        // that same bind: the node's geometry_to_world is not what the skin uses, and the two
+                        // differ whenever the mesh node carries its own transform (a Blender or Maya export with
+                        // a rotated or scaled armature). Position from one matrix and normal from the other
+                        // shades the whole skin wrong.
+                        const auto shadeNormalUVE = [&](const ufbx_matrix& normalMatrix) {
+                            const ufbx_vec3 normal =
+                                mesh->vertex_normal.exists
+                                    ? ufbx_transform_direction(&normalMatrix, ufbx_get_vertex_vec3(&mesh->vertex_normal, index))
+                                    : ufbx_vec3{{{0.0, 1.0, 0.0}}};
+                            vertex.normal = ToVectorUVE(normal);
+                            const float length = std::sqrt((vertex.normal.x * vertex.normal.x) +
+                                                           (vertex.normal.y * vertex.normal.y) +
+                                                           (vertex.normal.z * vertex.normal.z));
+                            vertex.normal = length > 0.0F && std::isfinite(length)
+                                                ? Math::Vector3UVE{vertex.normal.x / length, vertex.normal.y / length,
+                                                                   vertex.normal.z / length}
+                                                : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+                        };
+                        shadeNormalUVE(normalToWorld);
                         if (mesh->vertex_uv.exists) {
                             const ufbx_vec2 uv = ufbx_get_vertex_vec2(&mesh->vertex_uv, index);
                             vertex.u = static_cast<float>(uv.x);
@@ -443,6 +463,8 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
                                                                              &strongest->geometry_to_bone);
                                     vertex.position = ToVectorUVE(
                                         ufbx_transform_position(&bind, ufbx_get_vertex_vec3(&mesh->vertex_position, index)));
+                                    const ufbx_matrix bindNormal = ufbx_matrix_for_normals(&bind);
+                                    shadeNormalUVE(bindNormal);
                                 }
                             }
                         }
@@ -498,7 +520,12 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
             candidate.indices.insert(candidate.indices.end(), bucket.indices.begin(), bucket.indices.end());
         }
         if (outSurfaces != nullptr) {
-            // One run is the whole buffer, which is what having no surface table already means.
+            // One run is the whole buffer, which is what having no surface table already means. A caller that
+            // wants to know which material that one run draws with (a mesh part) is told here.
+            if (outOnlyMaterial != nullptr) {
+                *outOnlyMaterial = surfaceRanges.size() == 1U ? surfaceRanges.front().materialSourceIndex
+                                                              : kInvalidMeshSurfaceMaterialSlotUVE;
+            }
             if (surfaceRanges.size() < 2U || surfaceRanges.size() > kMaximumMeshSurfacesUVE) {
                 surfaceRanges.clear();
             }
@@ -520,6 +547,53 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
         return true;
     } catch (const std::bad_alloc&) {
         UVE_ERROR("FbxMeshConverterUVE: out of memory");
+        return false;
+    }
+}
+
+bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& outMesh,
+                       std::vector<FbxSurfaceRangeUVE>* const outSurfaces, const std::size_t maximumJoints) {
+    return ConvertFbxMeshImplUVE(source, outMesh, outSurfaces, maximumJoints, kAllFbxMeshesUVE);
+}
+
+bool ConvertFbxMeshPartsUVE(const std::span<const std::byte> source, std::vector<FbxMeshPartUVE>& outParts,
+                            const std::size_t maximumJoints) {
+    outParts.clear();
+    try {
+        const ScenePtrUVE scene = LoadSceneUVE(source, true);
+        if (!scene) {
+            return false;
+        }
+        std::vector<FbxMeshPartUVE> parts;
+        for (std::size_t meshIndex = 0U; meshIndex < scene->meshes.count; ++meshIndex) {
+            const ufbx_mesh* const mesh = scene->meshes.data[meshIndex];
+            if (mesh == nullptr || !mesh->vertex_position.exists || mesh->num_triangles == 0U) {
+                continue;
+            }
+            FbxMeshPartUVE part;
+            // The node that places the mesh names it, as a DCC tool's outliner does; the mesh's own name
+            // is the fallback.
+            if (mesh->instances.count > 0U && mesh->instances.data[0] != nullptr && mesh->instances.data[0]->name.length > 0U) {
+                part.name.assign(mesh->instances.data[0]->name.data, mesh->instances.data[0]->name.length);
+            } else if (mesh->name.length > 0U) {
+                part.name.assign(mesh->name.data, mesh->name.length);
+            } else {
+                part.name = "Mesh" + std::to_string(parts.size());
+            }
+            if (!ConvertFbxMeshImplUVE(source, part.mesh, &part.surfaces, maximumJoints, meshIndex, &part.onlyMaterialSourceIndex)) {
+                return false;
+            }
+            parts.push_back(std::move(part));
+        }
+        if (parts.empty()) {
+            UVE_ERROR("FbxMeshConverterUVE: the file holds no triangles");
+            return false;
+        }
+        outParts = std::move(parts);
+        return true;
+    } catch (const std::exception& error) {
+        UVE_ERROR("FbxMeshConverterUVE: {}", error.what());
+        outParts.clear();
         return false;
     }
 }

@@ -55,27 +55,13 @@ void DotUVE(const ImVec4& colour, const float diameter = 9.0F) {
     ImGui::SameLine(0.0F, 2.0F);
 }
 
-/// The humanoid's children lists, from its parents: built once.
-[[nodiscard]] const std::vector<std::vector<std::int32_t>>& HumanoidChildrenUVE() {
-    static const std::vector<std::vector<std::int32_t>> children = [] {
-        const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
-        std::vector<std::vector<std::int32_t>> result(reference.skeleton.bones.size());
-        for (std::size_t bone = 0U; bone < reference.skeleton.bones.size(); ++bone) {
-            if (const std::int32_t parent = reference.skeleton.bones[bone].parent; parent >= 0) {
-                result[static_cast<std::size_t>(parent)].push_back(static_cast<std::int32_t>(bone));
-            }
-        }
-        return result;
-    }();
-    return children;
-}
-
 [[nodiscard]] std::string LowerUVE(std::string text) {
     std::ranges::transform(text, text.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return text;
 }
 
-/// Does this row, or anything under it, pass the filter? Cached per frame by the caller's rows.
+/// Does this row pass the filter? The list is flat (one row per humanoid bone, parent-first), so a row
+/// is judged on its own: nothing nests under it any more.
 [[nodiscard]] bool RowShownUVE(const RetargetPlanUVE& plan, const std::int32_t bone, const std::string& filter,
                                const bool problemsOnly) {
     const RetargetJointRowUVE& row = plan.joints[static_cast<std::size_t>(bone)];
@@ -84,15 +70,7 @@ void DotUVE(const ImVec4& colour, const float diameter = 9.0F) {
     const bool matchesText =
         filter.empty() || LowerUVE(reference.skeleton.bones[static_cast<std::size_t>(bone)].name).find(filter) != std::string::npos ||
         LowerUVE(row.characterName).find(filter) != std::string::npos;
-    if (matchesText && (!problemsOnly || problem)) {
-        return true;
-    }
-    for (const std::int32_t child : HumanoidChildrenUVE()[static_cast<std::size_t>(bone)]) {
-        if (RowShownUVE(plan, child, filter, problemsOnly)) {
-            return true;
-        }
-    }
-    return false;
+    return matchesText && (!problemsOnly || problem);
 }
 
 void DrawBoneUVE(const RetargetPlanUVE& plan, const std::int32_t bone, const std::string& filter, const bool problemsOnly) {
@@ -102,20 +80,7 @@ void DrawBoneUVE(const RetargetPlanUVE& plan, const std::int32_t bone, const std
     const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
     const auto index = static_cast<std::size_t>(bone);
     const RetargetJointRowUVE& row = plan.joints[index];
-    const std::vector<std::int32_t>& children = HumanoidChildrenUVE()[index];
-    const Retarget::HumanoidBoneKindUVE kind = reference.info[index].kind;
-    const bool opensByDefault = kind == Retarget::HumanoidBoneKindUVE::Root || kind == Retarget::HumanoidBoneKindUVE::Body;
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_OpenOnArrow;
-    if (children.empty()) {
-        flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-    }
-    // A filter or the problems switch opens everything that leads to a match.
-    if (opensByDefault || !filter.empty() || problemsOnly) {
-        ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-    }
     ImGui::PushID(bone);
-    const bool open = ImGui::TreeNodeEx("##bone", flags);
-    ImGui::SameLine(0.0F, 4.0F);
     DotUVE(ColourOfUVE(row.status));
     ImGui::TextUnformatted(reference.skeleton.bones[index].name.c_str());
     if (!row.characterName.empty() && row.characterName != reference.skeleton.bones[index].name) {
@@ -126,12 +91,6 @@ void DrawBoneUVE(const RetargetPlanUVE& plan, const std::int32_t bone, const std
         ImGui::SetTooltip("%s%s%s", GetRetargetStatusLabelUVE(row.status), row.reason.empty() ? "" : ": ",
                           row.status == Retarget::JointStatusUVE::Missing ? "not in this character; Generate adds it"
                                                                           : row.reason.c_str());
-    }
-    if (open && !children.empty()) {
-        for (const std::int32_t child : children) {
-            DrawBoneUVE(plan, child, filter, problemsOnly);
-        }
-        ImGui::TreePop();
     }
     ImGui::PopID();
 }
@@ -425,7 +384,10 @@ void EditorUVE::DrawRetargetWindowUVE() {
     ImGui::Separator();
     if (plan.modelReadable) {
         ImGui::BeginChild("##retarget-tree", ImVec2{0.0F, 0.0F}, false);
-        DrawBoneUVE(plan, 0, LowerUVE(window.boneFilter), window.problemsOnly);
+        const std::string filter = LowerUVE(window.boneFilter);
+        for (std::size_t bone = 0U; bone < plan.joints.size(); ++bone) {
+            DrawBoneUVE(plan, static_cast<std::int32_t>(bone), filter, window.problemsOnly);
+        }
         ImGui::EndChild();
     } else {
         ImGui::TextDisabled("The UniVex humanoid's bones appear here, coloured by how the character answers them.");
