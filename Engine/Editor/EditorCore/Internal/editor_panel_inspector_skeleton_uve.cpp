@@ -33,6 +33,7 @@
 #include <vector>
 
 #include <imgui.h>
+#include <nlohmann/json.hpp>
 
 #include "uve/asset/fbx_mesh_converter_uve.h"
 #include "uve/asset/gltf_skeleton_uve.h"
@@ -301,8 +302,41 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         // placed the way another engine places it, one MeshInstance3D per node under the model, each with
         // its own mesh and materials, and ONE Skeleton3D beside them that they all bind to by name. The
         // renderer finds a skeleton that shares the mesh's parent.
-        std::vector<std::pair<std::string, std::filesystem::path>> parts;
+        // The importer wrote the file's own node tree beside the model (`<model>.uvnodes`: Geo > Soldier_head,
+        // Soldier_body). When it is there the scene mirrors it - the model decides the hierarchy, the engine does
+        // not invent one. A node tree that names a part file that is not there is not used.
+        struct ModelNodeUVE final {
+            std::string name;
+            std::int32_t parent = -1;
+            bool mesh = false;
+            std::filesystem::path partPath;
+        };
+        std::vector<ModelNodeUVE> modelNodes;
         if (hasMesh) {
+            std::ifstream nodesFile(importedModel.parent_path() / (importedModel.stem().string() + ".uvnodes"));
+            const nlohmann::json document = nlohmann::json::parse(nodesFile, nullptr, false);
+            if (document.is_object() && document.contains("nodes") && document["nodes"].is_array()) {
+                bool usable = true;
+                for (const nlohmann::json& entry : document["nodes"]) {
+                    ModelNodeUVE node;
+                    node.name = entry.value("name", std::string{});
+                    node.parent = entry.value("parent", -1);
+                    node.mesh = entry.value("mesh", false);
+                    const std::string part = entry.value("part", std::string{});
+                    if (!part.empty()) {
+                        node.partPath = importedModel.parent_path() / (importedModel.stem().string() + ".part-" + part + ".uvmodel");
+                        usable = usable && std::filesystem::is_regular_file(node.partPath, error);
+                    }
+                    usable = usable && !node.name.empty() && node.parent < static_cast<std::int32_t>(modelNodes.size());
+                    modelNodes.push_back(std::move(node));
+                }
+                if (!usable) {
+                    modelNodes.clear();
+                }
+            }
+        }
+        std::vector<std::pair<std::string, std::filesystem::path>> parts;
+        if (hasMesh && modelNodes.empty()) {
             const std::string partPrefix = importedModel.stem().string() + ".part-";
             std::error_code listError;
             for (const std::filesystem::directory_entry& entry :
@@ -318,7 +352,28 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
             }
             std::ranges::sort(parts);
         }
-        if (parts.size() >= 2U) {
+        if (!modelNodes.empty()) {
+            // A node's transform is not applied: a mesh's vertices already carry it, so the nodes are the
+            // outliner's names and grouping, and every one sits at its parent's origin.
+            std::vector<Scene::EntityUVE> built(modelNodes.size(), Scene::kInvalidEntityUVE);
+            for (std::size_t index = 0U; index < modelNodes.size(); ++index) {
+                const ModelNodeUVE& node = modelNodes[index];
+                const Scene::EntityUVE under =
+                    node.parent >= 0 ? built[static_cast<std::size_t>(node.parent)] : modelEntity;
+                if (node.mesh) {
+                    Scene::MeshInstance3DObjectDefinitionUVE mesh;
+                    mesh.mesh.meshGuid = node.partPath.empty() ? meshGuid : RegisterImportedModelArtifactsUVE(node.partPath);
+                    built[index] = make(node.name, Kind::MeshInstance3D, mesh, Scene::ApplyMeshInstance3DObjectDefinitionUVE, under);
+                } else {
+                    built[index] = make(node.name, Kind::Object3D, Scene::Object3DObjectDefinitionUVE{},
+                                        Scene::ApplyObject3DObjectDefinitionUVE, under);
+                }
+            }
+            // Beside the top-level nodes, as in the DCC file (the skeleton and `Geo` are siblings there); the
+            // renderer binds a skinned mesh to the nearest skeleton under any of its ancestors.
+            static_cast<void>(
+                make("skeleton3d", Kind::Skeleton3D, skeletonDefinition, Scene::ApplySkeleton3DObjectDefinitionUVE, modelEntity));
+        } else if (parts.size() >= 2U) {
             for (const auto& [partName, partPath] : parts) {
                 Scene::MeshInstance3DObjectDefinitionUVE mesh;
                 mesh.mesh.meshGuid = RegisterImportedModelArtifactsUVE(partPath);
