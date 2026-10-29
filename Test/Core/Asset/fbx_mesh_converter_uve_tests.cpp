@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <span>
 #include <string>
@@ -710,6 +711,58 @@ TEST(FbxMeshConverterUVETest, EveryMeshNodeIsAPartOfItsOwnAndTheMergedMeshIsThei
     EXPECT_TRUE(parts.empty());
 }
 
+TEST(FbxMeshConverterUVETest, TheNodeTreeIsTheFilesOwnGroupsAndMeshesWithoutTheSkeleton) {
+    // Group > { Left, Right }, the shape of a character with a `Geo` node over its head and body.
+    const std::string objects = R"(	Geometry: 1000, "Geometry::Left", "Mesh" {
+		Vertices: *12 {
+			a: 0,0,0,100,0,0,100,100,0,0,100,0
+		}
+		PolygonVertexIndex: *4 {
+			a: 0,1,2,-4
+		}
+		GeometryVersion: 124
+	}
+	Model: 2000, "Model::Left", "Mesh" {
+		Version: 232
+	}
+	Geometry: 1001, "Geometry::Right", "Mesh" {
+		Vertices: *9 {
+			a: 200,0,0,300,0,0,300,100,0
+		}
+		PolygonVertexIndex: *3 {
+			a: 0,1,-3
+		}
+		GeometryVersion: 124
+	}
+	Model: 2001, "Model::Right", "Mesh" {
+		Version: 232
+	}
+	Model: 2500, "Model::Group", "Null" {
+		Version: 232
+	}
+	Model: 3000, "Model::Hips", "LimbNode" {
+		Version: 232
+	}
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+)";
+    const std::string fbx = MakeFbxUVE(objects, "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,2500\n\tC: \"OO\",1001,2001\n\tC: \"OO\",2001,2500\n"
+                                               "\tC: \"OO\",2500,0\n\tC: \"OO\",3100,3000\n\tC: \"OO\",3000,0\n");
+    std::vector<FbxNodeEntryUVE> nodes;
+    ASSERT_TRUE(ReadFbxNodeTreeUVE(BytesUVE(fbx), nodes));
+    ASSERT_EQ(nodes.size(), 3U) << "the group and its two meshes; the bone is the skeleton's";
+    EXPECT_EQ(nodes[0].name, "Group");
+    EXPECT_EQ(nodes[0].parent, -1);
+    EXPECT_EQ(nodes[0].part, -1);
+    EXPECT_EQ(nodes[1].name, "Left");
+    EXPECT_EQ(nodes[1].parent, 0);
+    EXPECT_EQ(nodes[1].part, 0);
+    EXPECT_EQ(nodes[2].name, "Right");
+    EXPECT_EQ(nodes[2].parent, 0);
+    EXPECT_EQ(nodes[2].part, 1);
+}
+
 TEST(FbxMeshConverterUVETest, TheImporterPublishesOneModelPerMeshNodeBesideTheMergedOne) {
     const std::filesystem::path sourcePath = "uve_fbx_importer_tests_two.fbx";
     const std::filesystem::path destinationPath = "uve_fbx_importer_tests_two.uvmodel";
@@ -737,6 +790,13 @@ TEST(FbxMeshConverterUVETest, TheImporterPublishesOneModelPerMeshNodeBesideTheMe
     EXPECT_EQ(left.vertices.size(), 4U);
     EXPECT_EQ(right.vertices.size(), 3U);
     EXPECT_NE(database.RegisterUVE(leftPath), kInvalidAssetGuidUVE);
+    // The file's node tree is written beside them, naming each part.
+    const std::filesystem::path nodesPath = "uve_fbx_importer_tests_two.uvnodes";
+    std::ifstream nodesFile(nodesPath);
+    const std::string nodesText((std::istreambuf_iterator<char>(nodesFile)), std::istreambuf_iterator<char>());
+    EXPECT_NE(nodesText.find("\"Left\""), std::string::npos);
+    EXPECT_NE(nodesText.find("\"Right\""), std::string::npos);
+    std::filesystem::remove(nodesPath);
     // One mesh node is just the model: nothing extra is published for it.
     for (const std::filesystem::path& path : {sourcePath, destinationPath, leftPath, rightPath}) {
         std::filesystem::remove(path);
