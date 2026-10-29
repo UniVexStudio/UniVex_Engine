@@ -598,14 +598,14 @@ bool ConvertFbxMeshPartsUVE(const std::span<const std::byte> source, std::vector
     }
 }
 
-bool ReadFbxNodeTreeUVE(const std::span<const std::byte> source, std::vector<FbxNodeEntryUVE>& outNodes) {
-    outNodes.clear();
+bool ReadFbxHierarchyUVE(const std::span<const std::byte> source, std::vector<FbxHierarchyEntryUVE>& outHierarchy) {
+    outHierarchy.clear();
     try {
         const ScenePtrUVE scene = LoadSceneUVE(source, true);
         if (!scene) {
             return false;
         }
-        // The same meshes, in the same order, as ConvertFbxMeshPartsUVE: a node's `part` indexes its list.
+        // The same meshes, in the same order, as ConvertFbxMeshPartsUVE: an entry's `part` indexes its list.
         std::unordered_map<const ufbx_mesh*, std::int32_t> partOfMesh;
         for (std::size_t meshIndex = 0U; meshIndex < scene->meshes.count; ++meshIndex) {
             const ufbx_mesh* const mesh = scene->meshes.data[meshIndex];
@@ -625,38 +625,63 @@ bool ReadFbxNodeTreeUVE(const std::span<const std::byte> source, std::vector<Fbx
                 }
             }
         }
-        std::vector<std::int32_t> indexOfNode(scene->nodes.count, -1);
-        std::vector<FbxNodeEntryUVE> nodes;
+
+        const auto findKeptParent = [&](const ufbx_node* start) -> const ufbx_node* {
+            for (const ufbx_node* cursor = start->parent; cursor != nullptr && !cursor->is_root; cursor = cursor->parent) {
+                if (keep[cursor->typed_id] != 0) {
+                    return cursor;
+                }
+            }
+            return nullptr;
+        };
+
+        // Build child adjacency among kept nodes so traversal is parent-first regardless of file node order.
+        std::unordered_map<const ufbx_node*, std::vector<const ufbx_node*>> childrenOf;
+        std::vector<const ufbx_node*> roots;
         for (std::size_t nodeIndex = 0U; nodeIndex < scene->nodes.count; ++nodeIndex) {
             const ufbx_node* const node = scene->nodes.data[nodeIndex];
             if (node == nullptr || keep[node->typed_id] == 0) {
                 continue;
             }
-            FbxNodeEntryUVE entry;
+            const ufbx_node* const parent = findKeptParent(node);
+            if (parent != nullptr) {
+                childrenOf[parent].push_back(node);
+            } else {
+                roots.push_back(node);
+            }
+        }
+
+        std::vector<std::int32_t> indexOfNode(scene->nodes.count, -1);
+        std::vector<FbxHierarchyEntryUVE> entries;
+        std::vector<const ufbx_node*> queue = roots;
+        for (std::size_t q = 0U; q < queue.size(); ++q) {
+            const ufbx_node* const node = queue[q];
+            FbxHierarchyEntryUVE entry;
             entry.name.assign(node->name.data, node->name.length);
             if (entry.name.empty()) {
-                entry.name = "Node" + std::to_string(nodes.size());
+                entry.name = "Object" + std::to_string(entries.size());
             }
-            // The nearest kept ancestor: a bone or the scene root between them does not break the chain.
-            for (const ufbx_node* cursor = node->parent; cursor != nullptr && !cursor->is_root; cursor = cursor->parent) {
-                if (keep[cursor->typed_id] != 0) {
-                    entry.parent = indexOfNode[cursor->typed_id];
-                    break;
-                }
-            }
+            const ufbx_node* const parent = findKeptParent(node);
+            entry.parent = (parent != nullptr) ? indexOfNode[parent->typed_id] : -1;
             if (node->mesh != nullptr) {
                 if (const auto found = partOfMesh.find(node->mesh); found != partOfMesh.end()) {
                     entry.part = found->second;
                 }
             }
-            indexOfNode[node->typed_id] = static_cast<std::int32_t>(nodes.size());
-            nodes.push_back(std::move(entry));
+            indexOfNode[node->typed_id] = static_cast<std::int32_t>(entries.size());
+            entries.push_back(std::move(entry));
+
+            if (const auto found = childrenOf.find(node); found != childrenOf.end()) {
+                for (const ufbx_node* const child : found->second) {
+                    queue.push_back(child);
+                }
+            }
         }
-        outNodes = std::move(nodes);
+        outHierarchy = std::move(entries);
         return true;
     } catch (const std::exception& error) {
         UVE_ERROR("FbxMeshConverterUVE: {}", error.what());
-        outNodes.clear();
+        outHierarchy.clear();
         return false;
     }
 }
