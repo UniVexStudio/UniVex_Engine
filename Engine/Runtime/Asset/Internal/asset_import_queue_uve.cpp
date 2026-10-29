@@ -41,6 +41,22 @@ namespace {
         return false;
     }
 
+    // For model files (.uvmodel) imported from FBX, verify that the companion .uvhierarchy
+    // derived artifact exists beside the model. If an older cache lacks it, invalidate the
+    // cache record so the importer re-runs and produces the authored hierarchy automatically.
+    if (request.destinationPath.extension() == ".uvmodel") {
+        const std::string ext = request.sourcePath.extension().string();
+        const bool isFbx = (ext == ".fbx" || ext == ".FBX");
+        if (isFbx) {
+            const std::filesystem::path hierarchyPath =
+                request.destinationPath.parent_path() / (request.destinationPath.stem().string() + ".uvhierarchy");
+            std::error_code existsError;
+            if (!std::filesystem::is_regular_file(hierarchyPath, existsError)) {
+                return false;
+            }
+        }
+    }
+
     outDestinationFingerprint = *destinationFingerprint;
     return true;
 }
