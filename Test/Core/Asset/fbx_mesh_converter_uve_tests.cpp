@@ -749,18 +749,18 @@ TEST(FbxMeshConverterUVETest, TheNodeTreeIsTheFilesOwnGroupsAndMeshesWithoutTheS
 )";
     const std::string fbx = MakeFbxUVE(objects, "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,2500\n\tC: \"OO\",1001,2001\n\tC: \"OO\",2001,2500\n"
                                                "\tC: \"OO\",2500,0\n\tC: \"OO\",3100,3000\n\tC: \"OO\",3000,0\n");
-    std::vector<FbxNodeEntryUVE> nodes;
-    ASSERT_TRUE(ReadFbxNodeTreeUVE(BytesUVE(fbx), nodes));
-    ASSERT_EQ(nodes.size(), 3U) << "the group and its two meshes; the bone is the skeleton's";
-    EXPECT_EQ(nodes[0].name, "Group");
-    EXPECT_EQ(nodes[0].parent, -1);
-    EXPECT_EQ(nodes[0].part, -1);
-    EXPECT_EQ(nodes[1].name, "Left");
-    EXPECT_EQ(nodes[1].parent, 0);
-    EXPECT_EQ(nodes[1].part, 0);
-    EXPECT_EQ(nodes[2].name, "Right");
-    EXPECT_EQ(nodes[2].parent, 0);
-    EXPECT_EQ(nodes[2].part, 1);
+    std::vector<FbxHierarchyEntryUVE> hierarchy;
+    ASSERT_TRUE(ReadFbxHierarchyUVE(BytesUVE(fbx), hierarchy));
+    ASSERT_EQ(hierarchy.size(), 3U) << "the group and its two meshes; the bone is the skeleton's";
+    EXPECT_EQ(hierarchy[0].name, "Group");
+    EXPECT_EQ(hierarchy[0].parent, -1);
+    EXPECT_EQ(hierarchy[0].part, -1);
+    EXPECT_EQ(hierarchy[1].name, "Left");
+    EXPECT_EQ(hierarchy[1].parent, 0);
+    EXPECT_EQ(hierarchy[1].part, 0);
+    EXPECT_EQ(hierarchy[2].name, "Right");
+    EXPECT_EQ(hierarchy[2].parent, 0);
+    EXPECT_EQ(hierarchy[2].part, 1);
 }
 
 TEST(FbxMeshConverterUVETest, TheImporterPublishesOneModelPerMeshNodeBesideTheMergedOne) {
@@ -790,13 +790,13 @@ TEST(FbxMeshConverterUVETest, TheImporterPublishesOneModelPerMeshNodeBesideTheMe
     EXPECT_EQ(left.vertices.size(), 4U);
     EXPECT_EQ(right.vertices.size(), 3U);
     EXPECT_NE(database.RegisterUVE(leftPath), kInvalidAssetGuidUVE);
-    // The file's node tree is written beside them, naming each part.
-    const std::filesystem::path nodesPath = "uve_fbx_importer_tests_two.uvnodes";
-    std::ifstream nodesFile(nodesPath);
-    const std::string nodesText((std::istreambuf_iterator<char>(nodesFile)), std::istreambuf_iterator<char>());
-    EXPECT_NE(nodesText.find("\"Left\""), std::string::npos);
-    EXPECT_NE(nodesText.find("\"Right\""), std::string::npos);
-    std::filesystem::remove(nodesPath);
+    // The file's object hierarchy is written beside them, naming each part.
+    const std::filesystem::path hierarchyPath = "uve_fbx_importer_tests_two.uvhierarchy";
+    std::ifstream hierarchyFile(hierarchyPath);
+    const std::string hierarchyText((std::istreambuf_iterator<char>(hierarchyFile)), std::istreambuf_iterator<char>());
+    EXPECT_NE(hierarchyText.find("\"Left\""), std::string::npos);
+    EXPECT_NE(hierarchyText.find("\"Right\""), std::string::npos);
+    std::filesystem::remove(hierarchyPath);
     // One mesh node is just the model: nothing extra is published for it.
     for (const std::filesystem::path& path : {sourcePath, destinationPath, leftPath, rightPath}) {
         std::filesystem::remove(path);

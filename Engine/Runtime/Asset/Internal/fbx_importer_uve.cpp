@@ -336,39 +336,42 @@ merged model still draws it",
             }
         }
     }
-    // The file's own node tree (`Geo` > `Soldier_head`, `Soldier_body`), written beside the model so a scene is
+    // The file's own object hierarchy (`Geo` > `Soldier_head`, `Soldier_body`), written beside the model so a scene is
     // built from what the DCC tool authored instead of from a shape the engine makes up. Written only when
     // every part it names exists; otherwise the stale one, if any, goes.
-    const std::filesystem::path nodesPath = directory / (modelStem + ".uvnodes");
-    std::vector<FbxNodeEntryUVE> nodes;
-    if (allPartsPublished && ReadFbxNodeTreeUVE(sourceBytes, nodes) && !nodes.empty()) {
+    const std::filesystem::path hierarchyPath = directory / (modelStem + ".uvhierarchy");
+    const std::filesystem::path legacyNodesPath = directory / (modelStem + ".uvnodes");
+    std::error_code cleanError;
+    std::filesystem::remove(legacyNodesPath, cleanError);
+    std::vector<FbxHierarchyEntryUVE> hierarchy;
+    if (allPartsPublished && ReadFbxHierarchyUVE(sourceBytes, hierarchy) && !hierarchy.empty()) {
         nlohmann::json document;
         document["version"] = 1;
         nlohmann::json list = nlohmann::json::array();
-        for (const FbxNodeEntryUVE& node : nodes) {
+        for (const FbxHierarchyEntryUVE& item : hierarchy) {
             nlohmann::json entry;
-            entry["name"] = node.name;
-            entry["parent"] = node.parent;
-            entry["part"] = (node.part >= 0 && static_cast<std::size_t>(node.part) < publishedPartStems.size())
-                                ? publishedPartStems[static_cast<std::size_t>(node.part)]
+            entry["name"] = item.name;
+            entry["parent"] = item.parent;
+            entry["part"] = (item.part >= 0 && static_cast<std::size_t>(item.part) < publishedPartStems.size())
+                                ? publishedPartStems[static_cast<std::size_t>(item.part)]
                                 : std::string{};
-            entry["mesh"] = node.part >= 0;
+            entry["mesh"] = item.part >= 0;
             list.push_back(std::move(entry));
         }
-        document["nodes"] = std::move(list);
+        document["objects"] = std::move(list);
         const std::string text = document.dump(1);
-        if (!Detail::PublishAssetAtomicallyUVE(nodesPath, kFbxImporterNameUVE, kFbxTemporarySuffixUVE,
+        if (!Detail::PublishAssetAtomicallyUVE(hierarchyPath, kFbxImporterNameUVE, kFbxTemporarySuffixUVE,
                                                [&text](const std::filesystem::path& temporaryPath) {
                                                    std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
                                                    output.write(text.data(), static_cast<std::streamsize>(text.size()));
                                                    return output.good();
                                                })) {
-            UVE_WARNING("FbxImporterUVE: the node tree of \"{}\" could not be written; scenes fall back to the mesh list",
+            UVE_WARNING("FbxImporterUVE: the object hierarchy of \"{}\" could not be written; scenes fall back to the mesh list",
                         sourcePath.string());
         }
     } else {
         std::error_code removeError;
-        std::filesystem::remove(nodesPath, removeError);
+        std::filesystem::remove(hierarchyPath, removeError);
     }
     return true;
 }
