@@ -97,6 +97,36 @@ namespace {
            bounds.min.y <= bounds.max.y && bounds.min.z <= bounds.max.z;
 }
 
+/// True when `skinned` - the bounds of a freshly skinned mesh - can be trusted as a description of
+/// that mesh, judged against the bind-pose bounds `rest` of the same mesh. A pose whose bone
+/// translations or scale disagree with the mesh's inverse-bind matrices (an FBX in centimetres on a
+/// metre rig, 100x or 0.01x) skins every vertex to a finite but absurd place: the box is
+/// ordered and finite, yet hundreds of times the model's size or collapsed to a point, so the mesh
+/// is drawn off screen and the frustum test then rejects it. Bounds that are not ordered and finite,
+/// or that differ from the bind pose by more than animation plausibly explains, are not trusted.
+[[nodiscard]] bool IsPlausibleSkinnedBoundsUVE(const Math::AabbUVE& skinned, const Math::AabbUVE& rest) noexcept {
+    if (!IsOrderedFiniteAabbUVE(skinned)) {
+        return false;
+    }
+    if (!IsOrderedFiniteAabbUVE(rest)) {
+        return true; // Nothing sound to compare against; the caller falls back on its own checks.
+    }
+    const float restDiagonal = Math::LengthUVE(rest.max - rest.min);
+    if (!std::isfinite(restDiagonal) || restDiagonal <= 1.0e-4F) {
+        return true; // A point-sized bind pose has no scale to compare the pose's against.
+    }
+    const float skinnedDiagonal = Math::LengthUVE(skinned.max - skinned.min);
+    constexpr float kMinimumSizeRatio = 0.05F; // 20x smaller than the bind pose
+    constexpr float kMaximumSizeRatio = 20.0F; // 20x larger than the bind pose
+    constexpr float kMaximumCenterDriftInDiagonals = 10.0F;
+    if (!std::isfinite(skinnedDiagonal) || skinnedDiagonal < restDiagonal * kMinimumSizeRatio ||
+        skinnedDiagonal > restDiagonal * kMaximumSizeRatio) {
+        return false;
+    }
+    return Math::LengthUVE(skinned.GetCenterUVE() - rest.GetCenterUVE()) <=
+           restDiagonal * kMaximumCenterDriftInDiagonals;
+}
+
 [[nodiscard]] Math::AabbUVE ComputeLightSpaceCameraBoundsUVE(const CameraFrustumCornersUVE& cameraCorners,
                                                               const Math::Matrix4x4UVE& lightView) noexcept {
     Math::Vector3UVE minimum = Math::TransformPointUVE(lightView, cameraCorners[0]);
@@ -2235,6 +2265,10 @@ struct Renderer3DUVE::ImplUVE {
                                                               const Scene::EntityUVE entity,
                                                               const Asset::AssetGuidUVE guid,
                                                               const Asset::MeshAssetUVE& mesh, Math::AabbUVE& outBounds) {
+        // Every return below leaves outBounds describing what will actually be drawn: the bind
+        // pose's own bounds unless a skinned result replaces them, so a caller that gets nullptr
+        // never inherits a half-written box.
+        outBounds = mesh.localBounds;
         const Scene::Skeleton3DComponentUVE* skeleton = nullptr;
         // Search entity itself, child, sibling, or parent
         if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(entity)) {
@@ -2371,7 +2405,9 @@ struct Renderer3DUVE::ImplUVE {
                     modelSpace.reserve(mesh.joints.size());
                     for (std::size_t j = 0U; j < mesh.joints.size(); ++j) {
                         const std::uint32_t parent = mesh.joints[j].parentIndex;
-                        modelSpace.push_back(parent == Asset::kInvalidJointParentUVE
+                        // A parent at or after its child (or out of range) is a malformed table: treat the
+                        // joint as a root rather than indexing past what has been built so far.
+                        modelSpace.push_back(parent == Asset::kInvalidJointParentUVE || parent >= j
                                                  ? locals[j]
                                                  : modelSpace[parent] * locals[j]);
                     }
@@ -2389,15 +2425,29 @@ struct Renderer3DUVE::ImplUVE {
         if (!Asset::TrySkinMeshUVE(mesh, skinning, vertices) || vertices.empty()) {
             return nullptr;
         }
-        outBounds = Math::AabbUVE{vertices.front().position, vertices.front().position};
+        Math::AabbUVE skinnedBounds{vertices.front().position, vertices.front().position};
+        bool verticesFinite = true;
         for (const Asset::MeshVertexUVE& vertex : vertices) {
-            outBounds.min = Math::Vector3UVE{std::min(outBounds.min.x, vertex.position.x),
-                                             std::min(outBounds.min.y, vertex.position.y),
-                                             std::min(outBounds.min.z, vertex.position.z)};
-            outBounds.max = Math::Vector3UVE{std::max(outBounds.max.x, vertex.position.x),
-                                             std::max(outBounds.max.y, vertex.position.y),
-                                             std::max(outBounds.max.z, vertex.position.z)};
+            if (!Math::IsFiniteUVE(vertex.position)) {
+                verticesFinite = false;
+                break;
+            }
+            skinnedBounds.min = Math::Vector3UVE{std::min(skinnedBounds.min.x, vertex.position.x),
+                                                 std::min(skinnedBounds.min.y, vertex.position.y),
+                                                 std::min(skinnedBounds.min.z, vertex.position.z)};
+            skinnedBounds.max = Math::Vector3UVE{std::max(skinnedBounds.max.x, vertex.position.x),
+                                                 std::max(skinnedBounds.max.y, vertex.position.y),
+                                                 std::max(skinnedBounds.max.z, vertex.position.z)};
         }
+        if (!verticesFinite || !IsPlausibleSkinnedBoundsUVE(skinnedBounds, mesh.localBounds)) {
+            // NaN / infinite vertices, or a pose whose scale or translation disagrees with the mesh's
+            // bind matrices and flings the skin far from (or collapses it onto) the model. Uploading
+            // that buffer is what made a character vanish a frame after it first appeared, leaving only
+            // its bones on screen. The bind pose is always a valid picture of the model, so draw that.
+            outBounds = mesh.localBounds;
+            return nullptr;
+        }
+        outBounds = skinnedBounds;
 
         const std::span<const std::byte> bytes = std::as_bytes(std::span<const Asset::MeshVertexUVE>(vertices));
         if (entry.resources.vertexBuffer.value == 0U || entry.vertexBytes != bytes.size()) {
@@ -2500,13 +2550,19 @@ struct Renderer3DUVE::ImplUVE {
                     isSkinned
                         ? SkinForEntityUVE(entityManager, entity, meshComponent.meshGuid, *mesh, localBounds)
                         : nullptr;
-                if (isSkinned) {
+                if (skinned != nullptr && IsOrderedFiniteAabbUVE(localBounds)) {
+                    // The posed bounds, grown to keep the bind pose's: the culling box then never
+                    // shrinks away from where the model was authored, whatever the pose does.
                     localBounds.min = Math::Vector3UVE{std::min(localBounds.min.x, mesh->localBounds.min.x),
                                                        std::min(localBounds.min.y, mesh->localBounds.min.y),
                                                        std::min(localBounds.min.z, mesh->localBounds.min.z)};
                     localBounds.max = Math::Vector3UVE{std::max(localBounds.max.x, mesh->localBounds.max.x),
                                                        std::max(localBounds.max.y, mesh->localBounds.max.y),
                                                        std::max(localBounds.max.z, mesh->localBounds.max.z)};
+                } else {
+                    // Drawn in bind pose (no skeleton yet, or the pose was rejected as implausible): the
+                    // bind pose's own bounds are exactly the geometry on screen.
+                    localBounds = mesh->localBounds;
                 }
                 Math::AabbUVE worldBounds = localBounds.TransformUVE(worldMatrix);
                 if (!IsOrderedFiniteAabbUVE(worldBounds)) {
@@ -3617,15 +3673,26 @@ struct Renderer3DUVE::ImplUVE {
                 }
             }
 
-            const bool blendedVariant = item.opacity < 1.0F;
+            // Only an imported mesh (every skinned mesh is one) is held on screen by the fallbacks
+            // below. A built-in primitive keeps the strict rule: it is drawn when its own program is
+            // linked and not before.
+            const bool isImportedMesh = item.mesh != nullptr;
+            bool blendedVariant = item.opacity < 1.0F;
             Shader::ShaderProgramUVE* program = MeshColorProgramUVE(*materialResources, blendedVariant);
-            if (program == nullptr && item.mesh != nullptr && materialResources != &defaultLitMaterialResources) {
-                // The material's own program is still compiling on a worker. Dropping the draw here
-                // made an imported mesh show for a frame on the default material and then vanish
-                // the moment its material finished loading; draw it with the default lit program
-                // until the material's program is linked instead.
+            if (program == nullptr && isImportedMesh && materialResources != &defaultLitMaterialResources) {
+                // The material's own program is not usable - still compiling on a worker, a texture
+                // binding / metallic-roughness / normal-map variant that did not link, or a program that
+                // failed. Dropping the draw here made an imported mesh show for a frame on the default
+                // material and then vanish the moment its material finished loading; draw it with the
+                // default lit program instead, so a mesh never disappears because its material resolved.
                 material = &kDefaultLitMaterialUVE;
                 materialResources = &defaultLitMaterialResources;
+                program = MeshColorProgramUVE(*materialResources, blendedVariant);
+            }
+            if (program == nullptr && isImportedMesh && blendedVariant) {
+                // Even the default lit blended variant is not linked yet: an opaque draw of the mesh is
+                // better than none, and the blended one takes over as soon as it is ready.
+                blendedVariant = false;
                 program = MeshColorProgramUVE(*materialResources, blendedVariant);
             }
             if (program == nullptr) {
