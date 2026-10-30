@@ -388,8 +388,15 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
             static_cast<void>(
                 make("Skeleton3D", Kind::Skeleton3D, skeletonDefinition, Scene::ApplySkeleton3DObjectDefinitionUVE, characterEntity));
         } else {
-            static_cast<void>(
-                make("Skeleton3D", Kind::Skeleton3D, skeletonDefinition, Scene::ApplySkeleton3DObjectDefinitionUVE, rootContainer));
+            // An animation / rigged file with no mesh: Hero > Armature > Skeleton3D. The "Armature"
+            // container is what a DCC tool exports for the rig and what the outliner shows for it; a
+            // mesh-carrying import binds its parts to a Skeleton3D beside them instead (above).
+            const Scene::EntityUVE armature =
+                make("Armature", Kind::Object3D, Scene::Object3DObjectDefinitionUVE{},
+                     Scene::ApplyObject3DObjectDefinitionUVE, rootContainer);
+            static_cast<void>(make("Skeleton3D", Kind::Skeleton3D, skeletonDefinition,
+                                   Scene::ApplySkeleton3DObjectDefinitionUVE,
+                                   armature != Scene::kInvalidEntityUVE ? armature : rootContainer));
         }
         if (!clips.empty()) {
             Scene::AnimationSequencerObjectDefinitionUVE player;
