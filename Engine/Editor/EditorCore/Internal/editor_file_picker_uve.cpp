@@ -128,28 +128,20 @@ void EditorUVE::DrawFilePickerUVE() {
 
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     // Its own OS window, like the library window: never merged into the main one, never docked.
-    // TopMost ensures modal dialogs stay above the main editor.
     ImGuiWindowClass windowClass;
-    windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_NoAutoMerge | ImGuiViewportFlags_TopMost;
+    windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_NoAutoMerge;
     windowClass.ViewportFlagsOverrideClear = ImGuiViewportFlags_NoDecoration | ImGuiViewportFlags_NoTaskBarIcon;
     ImGui::SetNextWindowClass(&windowClass);
     ImGui::SetNextWindowPos(ImVec2{mainViewport->GetCenter().x, mainViewport->GetCenter().y}, ImGuiCond_FirstUseEver,
                             ImVec2{0.5F, 0.5F});
     ImGui::SetNextWindowSize(ImVec2{520.0F, 460.0F}, ImGuiCond_FirstUseEver);
     if (picker.focusPending) {
+        picker.focusPending = false;
         ImGui::SetNextWindowFocus();
     }
     bool open = true;
     const std::string title = picker.request.title + "###file-picker";
     ImGui::Begin(title.c_str(), &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
-    if (picker.focusPending) {
-        picker.focusPending = false;
-        if (const ImGuiViewport* const vp = ImGui::GetWindowViewport(); vp != nullptr && vp != mainViewport) {
-            if (ImGui::GetPlatformIO().Platform_SetWindowFocus != nullptr) {
-                ImGui::GetPlatformIO().Platform_SetWindowFocus(const_cast<ImGuiViewport*>(vp));
-            }
-        }
-    }
 
     // Breadcrumb: Content / Animations / ... - every crumb jumps there.
     if (ImGui::SmallButton("Content")) {

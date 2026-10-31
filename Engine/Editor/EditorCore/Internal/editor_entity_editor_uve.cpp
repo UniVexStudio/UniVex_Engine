@@ -752,18 +752,11 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
                               "###entity-editor";
     ImGui::GetIO().ConfigWindowsMoveFromTitleBarOnly = true;
     if (session.focusPending) {
+        session.focusPending = false;
         ImGui::SetNextWindowFocus();
     }
     bool open = true;
     ImGui::Begin(title.c_str(), &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
-    if (session.focusPending) {
-        session.focusPending = false;
-        if (const ImGuiViewport* const vp = ImGui::GetWindowViewport(); vp != nullptr && vp != mainViewport) {
-            if (ImGui::GetPlatformIO().Platform_SetWindowFocus != nullptr) {
-                ImGui::GetPlatformIO().Platform_SetWindowFocus(const_cast<ImGuiViewport*>(vp));
-            }
-        }
-    }
 
     // Toolbar.
     if (ImGui::Button("Compile")) {
