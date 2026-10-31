@@ -12,6 +12,8 @@ struct MeshAssetUVE;
 
 namespace UVE::Editor {
 
+struct MaterialThumbnailImageUVE;
+
 /// Renders a small preview image of a mesh asset's own geometry - fixed default camera angle
 /// auto-framed to the mesh's bounding box, flat directional-key-light shading, no material -
 /// directly into a standalone GL texture, for Content Browser mesh thumbnails.
@@ -54,7 +56,8 @@ public:
     /// image id (exactly like EditorUiAssetsUVE::UploadDynamicTextureUVE()'s return value).
     /// Returns 0 if `mesh` has no vertices/indices, `width`/`height` is not positive, InitializeUVE()
     /// previously failed, or any GL step fails. The caller owns the returned texture's lifetime.
-    [[nodiscard]] std::uintptr_t RenderThumbnailUVE(const Asset::MeshAssetUVE& mesh, int width, int height);
+    [[nodiscard]] std::uintptr_t RenderThumbnailUVE(const Asset::MeshAssetUVE& mesh, int width, int height,
+                                                    const MaterialThumbnailImageUVE* albedoTexture = nullptr);
 
     /// Opaque - defined only in mesh_thumbnail_renderer_uve.cpp, which is the sole translation
     /// unit allowed to name its members. Public (rather than private) purely so that file's own
