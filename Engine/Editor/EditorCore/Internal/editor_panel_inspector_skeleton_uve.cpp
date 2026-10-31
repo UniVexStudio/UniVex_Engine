@@ -286,9 +286,8 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         definition.mesh.meshGuid = meshGuid;
         root = make(stem, Kind::MeshInstance3D, definition, Scene::ApplyMeshInstance3DObjectDefinitionUVE, parent);
     } else {
-        const Scene::EntityUVE rootContainer = isParentCharacterOrEntityRoot
-            ? parent
-            : make(stem, Kind::Object3D, Scene::Object3DObjectDefinitionUVE{}, Scene::ApplyObject3DObjectDefinitionUVE, parent);
+        const Scene::EntityUVE rootContainer =
+            make(stem, Kind::Object3D, Scene::Object3DObjectDefinitionUVE{}, Scene::ApplyObject3DObjectDefinitionUVE, parent);
         root = rootContainer;
         Scene::Skeleton3DObjectDefinitionUVE skeletonDefinition;
         skeletonDefinition.skeleton.skeletonAssetPath = relativeSource.generic_string();
@@ -413,7 +412,7 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         return Scene::kInvalidEntityUVE;
     }
     InvalidateHierarchyFilterCacheUVE();
-    if (!isParentCharacterOrEntityRoot) {
+    if (!m_entityEditSession.has_value()) {
         PlaceNewDocumentObjectUVE(root);
     }
     const std::optional<Scene::SceneSnapshotUVE> snapshot = CaptureSubtreeUVE(root);

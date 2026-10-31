@@ -99,6 +99,44 @@ TEST(FbxMeshConverterUVETest, AZUpCentimetreFileArrivesInMetresStandingOnY) {
     }
 }
 
+TEST(FbxMeshConverterUVETest, TextureCoordinatesInvertVToReconcileBottomLeftFBXOriginWithTopLeftImageMemory) {
+    constexpr std::string_view kUvGeometryUVE = R"(	Geometry: 1000, "Geometry::Quad", "Mesh" {
+		Vertices: *12 {
+			a: 0,0,0,100,0,0,100,100,0,0,100,0
+		}
+		PolygonVertexIndex: *4 {
+			a: 0,1,2,-4
+		}
+		GeometryVersion: 124
+		LayerElementUV: 0 {
+			Version: 101
+			Name: "UVMap"
+			MappingInformationType: "ByPolygonVertex"
+			ReferenceInformationType: "Direct"
+			UV: *8 {
+				a: 0.0,0.25,1.0,0.25,1.0,0.75,0.0,0.75
+			}
+		}
+	}
+	Model: 2000, "Model::Quad", "Mesh" {
+		Version: 232
+	}
+)";
+    const std::string fbx = MakeFbxUVE(kUvGeometryUVE, "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n");
+    MeshAssetUVE mesh;
+    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(fbx), mesh));
+    ASSERT_EQ(mesh.vertices.size(), 4U);
+    // FBX authors V=0.25 at the bottom; top-row-first image buffers sample that at V=0.75 (1.0 - 0.25).
+    EXPECT_TRUE(NearUVE(mesh.vertices[0].u, 0.0F));
+    EXPECT_TRUE(NearUVE(mesh.vertices[0].v, 0.75F));
+    EXPECT_TRUE(NearUVE(mesh.vertices[1].u, 1.0F));
+    EXPECT_TRUE(NearUVE(mesh.vertices[1].v, 0.75F));
+    EXPECT_TRUE(NearUVE(mesh.vertices[2].u, 1.0F));
+    EXPECT_TRUE(NearUVE(mesh.vertices[2].v, 0.25F));
+    EXPECT_TRUE(NearUVE(mesh.vertices[3].u, 0.0F));
+    EXPECT_TRUE(NearUVE(mesh.vertices[3].v, 0.25F));
+}
+
 TEST(FbxMeshConverterUVETest, EveryInstanceIsMergedWhereItsObjectPlacesItAndAMirroredOneStaysFacingOut) {
     const std::string objects = std::string(kFloorGeometryUVE) + R"(	Model: 2001, "Model::Mirrored", "Mesh" {
 		Version: 232

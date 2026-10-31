@@ -40,7 +40,7 @@ struct HierarchyViewSettingsUVE final {
     HierarchyVisibilityColumnUVE visibilityColumn = HierarchyVisibilityColumnUVE::Always;
     HierarchyDoubleClickUVE doubleClick = HierarchyDoubleClickUVE::Rename;
     bool dragToReparent = true;
-    HierarchyTreeLinesUVE treeLines = HierarchyTreeLinesUVE::None;
+    HierarchyTreeLinesUVE treeLines = HierarchyTreeLinesUVE::ToEachChild;
     /// Pixels each level is indented by.
     float indentWidth = 12.0F;
 };

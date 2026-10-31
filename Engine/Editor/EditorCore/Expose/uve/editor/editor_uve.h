@@ -21,6 +21,7 @@
 #include <string_view>
 #include <typeindex>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -938,6 +939,10 @@ public:
     /// eye toggle works on a row without changing the selection. Returns false without mutation
     /// when editing is not allowed, the entity has no Visibility component, or nothing changes.
     [[nodiscard]] bool SetEntityVisibleUVE(Scene::EntityUVE entity, bool visible);
+    /// Locks or unlocks `entity` (such as a Folder in the Outliner) from modification or drop/drag.
+    [[nodiscard]] bool IsEntityLockedUVE(Scene::EntityUVE entity) const noexcept;
+    void SetEntityLockedUVE(Scene::EntityUVE entity, bool locked) noexcept;
+    void ToggleEntityLockUVE(Scene::EntityUVE entity) noexcept;
     /// Asks the viewport to bring `entity` into view: a Marker3D flies into its viewpoint, any
     /// other object with a world position becomes the orbit pivot. Returns false and requests
     /// nothing when CanFocusEntityInViewportUVE() says no.
@@ -2061,6 +2066,7 @@ private:
     bool DrawInspectorFoldUVE(const char* label, const std::string& key, bool defaultOpen, bool asHeader,
                               int flags);
     void DrawHierarchyVisibilityToggleUVE(Scene::EntityUVE entity, bool rowHovered);
+    void DrawHierarchyFolderLockToggleUVE(Scene::EntityUVE entity, bool rowHovered);
     // Right-click menu on an Inspector section header: Copy / Paste / Reset. `entry` null means
     // the Transform section.
     void DrawInspectorSectionMenuUVE(const Core::TypeMetadataEntryUVE* entry, const char* sectionName);
@@ -2434,6 +2440,7 @@ private:
     float m_playTintStrength = kDefaultPlayTintStrengthUVE;
     // Hierarchy panel preferences (editor_settings_uve.cpp).
     HierarchyViewSettingsUVE m_hierarchyView;
+    std::unordered_set<Scene::EntityUVE> m_lockedFolders;
     // Each editor setting's descriptor and its reads and writes of the state above, in one table
     // (editor_settings_uve.cpp) that loading, saving and the preferences window all use.
     [[nodiscard]] static const std::vector<EditorSettingBindingUVE>& GetSettingBindingsUVE();
