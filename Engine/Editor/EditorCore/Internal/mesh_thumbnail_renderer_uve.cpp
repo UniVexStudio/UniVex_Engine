@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 // See uve/rhi_opengl/gl_functions_uve.h for why glext.h is safe to include here: it only
 // supplies Khronos PFNGL*PROC typedefs and GL_* constants, never a loader library. The GL proc
@@ -20,6 +21,7 @@
 #include "uve/rhi_opengl/gl_functions_uve.h"
 
 #include "uve/asset/mesh_asset_uve.h"
+#include "uve/editor/material_thumbnail_renderer_uve.h"
 #include "uve/math/aabb_uve.h"
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
@@ -38,32 +40,83 @@ constexpr float kMinimumBoundingRadiusUVE = 1.0e-4F;
 // by a fixed near plane and a large one keeps the same depth precision.
 constexpr float kNearPlaneFractionUVE = 0.05F;
 
-// Fixed default viewing angle (a gentle 3/4 elevated view) and a single fixed key light -
-// deliberately not derived from the mesh's own assigned material (there may not be one; see this
-// class's header comment), matching a generic asset-browser preview rather than an accurate
-// material render.
-constexpr Math::Vector3UVE kBaseColorUVE{0.65F, 0.68F, 0.72F};
+// Default neutral tone when no texture is available.
+constexpr Math::Vector3UVE kBaseColorUVE{0.70F, 0.72F, 0.76F};
 
 constexpr const char* kVertexShaderSourceUVE = R"GLSL(#version 450 core
 layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec2 aTexCoord;
 uniform mat4 uViewProjection;
 out vec3 vNormal;
+out vec2 vTexCoord;
+out vec3 vWorldPosition;
 void main() {
     vNormal = aNormal;
+    vTexCoord = aTexCoord;
+    vWorldPosition = aPosition;
     gl_Position = uViewProjection * vec4(aPosition, 1.0);
 }
 )GLSL";
 
 constexpr const char* kFragmentShaderSourceUVE = R"GLSL(#version 450 core
 in vec3 vNormal;
+in vec2 vTexCoord;
+in vec3 vWorldPosition;
 out vec4 FragColor;
 uniform vec3 uLightDirection;
 uniform vec3 uBaseColor;
+uniform bool uHasAlbedoTexture;
+uniform sampler2D uAlbedoTexture;
+uniform vec3 uCameraPosition;
 void main() {
     vec3 normal = normalize(vNormal);
-    float diffuse = max(dot(normal, -uLightDirection), 0.0);
-    FragColor = vec4(uBaseColor * (0.35 + 0.65 * diffuse), 1.0);
+    vec3 albedo = uBaseColor;
+    if (uHasAlbedoTexture) {
+        vec4 sampled = texture(uAlbedoTexture, vTexCoord);
+        if (sampled.a < 0.05) {
+            discard;
+        }
+        albedo = sampled.rgb;
+    }
+
+    vec3 keyDir = normalize(-uLightDirection);
+    float keyDiff = max(dot(normal, keyDir), 0.0);
+
+    vec3 fillDir = normalize(vec3(0.5, 0.4, 0.8));
+    float fillDiff = max(dot(normal, fillDir), 0.0) * 0.35;
+
+    vec3 viewDir = normalize(uCameraPosition - vWorldPosition);
+    float rim = 1.0 - max(dot(viewDir, normal), 0.0);
+    rim = pow(rim, 3.0) * 0.35;
+
+    float hemi = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
+    vec3 ambient = mix(vec3(0.18, 0.19, 0.22), vec3(0.40, 0.43, 0.48), hemi);
+
+    vec3 halfVec = normalize(keyDir + viewDir);
+    float spec = pow(max(dot(normal, halfVec), 0.0), 32.0) * 0.22;
+
+    vec3 litColor = albedo * (ambient + keyDiff * 0.75 + fillDiff) + vec3(spec + rim);
+
+    // ACES filmic tonemapping for vivid, crisp rendering
+    litColor = litColor / (litColor + vec3(0.12)) * 1.12;
+    FragColor = vec4(clamp(litColor, 0.0, 1.0), 1.0);
+}
+)GLSL";
+
+constexpr const char* kBoneVertexShaderSourceUVE = R"GLSL(#version 450 core
+layout(location = 0) in vec3 aPosition;
+uniform mat4 uViewProjection;
+void main() {
+    gl_Position = uViewProjection * vec4(aPosition, 1.0);
+}
+)GLSL";
+
+constexpr const char* kBoneFragmentShaderSourceUVE = R"GLSL(#version 450 core
+out vec4 FragColor;
+uniform vec4 uBoneColor;
+void main() {
+    FragColor = uBoneColor;
 }
 )GLSL";
 
@@ -103,7 +156,15 @@ struct MeshThumbnailRendererUVE::GlStateUVE {
     GLint viewProjectionUniform = -1;
     GLint lightDirectionUniform = -1;
     GLint baseColorUniform = -1;
+    GLint hasAlbedoTextureUniform = -1;
+    GLint albedoTextureUniform = -1;
+    GLint cameraPositionUniform = -1;
     bool programLinked = false;
+
+    GLuint boneShaderProgram = 0U;
+    GLint boneViewProjectionUniform = -1;
+    GLint boneColorUniform = -1;
+    bool boneProgramLinked = false;
 
     GLuint scratchFramebuffer = 0U;
     GLuint scratchDepthRenderbuffer = 0U;
@@ -204,7 +265,32 @@ void MeshThumbnailRendererUVE::InitializeUVE() {
     gl.viewProjectionUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uViewProjection");
     gl.lightDirectionUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uLightDirection");
     gl.baseColorUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uBaseColor");
+    gl.hasAlbedoTextureUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uHasAlbedoTexture");
+    gl.albedoTextureUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uAlbedoTexture");
+    gl.cameraPositionUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uCameraPosition");
     gl.programLinked = true;
+
+    GLuint boneVertexShader = 0U;
+    GLuint boneFragmentShader = 0U;
+    if (CompileShaderStageUVE(gl, GL_VERTEX_SHADER, kBoneVertexShaderSourceUVE, boneVertexShader) &&
+        CompileShaderStageUVE(gl, GL_FRAGMENT_SHADER, kBoneFragmentShaderSourceUVE, boneFragmentShader)) {
+        gl.boneShaderProgram = gl.table.glCreateProgram();
+        gl.table.glAttachShader(gl.boneShaderProgram, boneVertexShader);
+        gl.table.glAttachShader(gl.boneShaderProgram, boneFragmentShader);
+        gl.table.glLinkProgram(gl.boneShaderProgram);
+        GLint boneLinked = GL_FALSE;
+        gl.table.glGetProgramiv(gl.boneShaderProgram, GL_LINK_STATUS, &boneLinked);
+        gl.table.glDeleteShader(boneVertexShader);
+        gl.table.glDeleteShader(boneFragmentShader);
+        if (boneLinked == GL_TRUE) {
+            gl.boneViewProjectionUniform = gl.table.glGetUniformLocation(gl.boneShaderProgram, "uViewProjection");
+            gl.boneColorUniform = gl.table.glGetUniformLocation(gl.boneShaderProgram, "uBoneColor");
+            gl.boneProgramLinked = true;
+        } else {
+            gl.table.glDeleteProgram(gl.boneShaderProgram);
+            gl.boneShaderProgram = 0U;
+        }
+    }
 }
 
 void MeshThumbnailRendererUVE::ShutdownUVE() noexcept {
@@ -225,13 +311,19 @@ void MeshThumbnailRendererUVE::ShutdownUVE() noexcept {
             gl.table.glDeleteProgram(gl.shaderProgram);
             gl.shaderProgram = 0U;
         }
+        if (gl.boneShaderProgram != 0U) {
+            gl.table.glDeleteProgram(gl.boneShaderProgram);
+            gl.boneShaderProgram = 0U;
+        }
     }
     gl.programLinked = false;
+    gl.boneProgramLinked = false;
     m_gl.reset();
 }
 
 std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAssetUVE& mesh, const int width,
-                                                             const int height) {
+                                                             const int height,
+                                                             const MaterialThumbnailImageUVE* albedoTexture) {
     if (!m_gl || !m_gl->functionsLoaded || !m_gl->programLinked) {
         return 0U;
     }
@@ -247,7 +339,7 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
                  std::sqrt(extents.x * extents.x + extents.y * extents.y + extents.z * extents.z));
     const float distance = (boundingRadius / std::sin(kFieldOfViewYRadiansUVE * 0.5F)) * kCameraDistanceMarginUVE;
 
-    const Math::Vector3UVE viewDirection = Math::NormalizeUVE(Math::Vector3UVE{1.0F, 0.85F, 1.0F});
+    const Math::Vector3UVE viewDirection = Math::NormalizeUVE(Math::Vector3UVE{0.6F, 0.35F, 1.0F});
     const Math::Vector3UVE cameraPosition = center + viewDirection * distance;
 
     Math::QuaternionUVE cameraRotation{};
@@ -259,8 +351,10 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         Math::Matrix4x4UVE::ViewFromPositionAndRotationUVE(cameraPosition, cameraRotation);
     const float nearPlane = distance * kNearPlaneFractionUVE;
     const float farPlane = distance + boundingRadius * 2.0F + nearPlane;
-    const Math::Matrix4x4UVE projection = Math::Matrix4x4UVE::PerspectiveUVE(
+    Math::Matrix4x4UVE projection = Math::Matrix4x4UVE::PerspectiveUVE(
         kFieldOfViewYRadiansUVE, static_cast<float>(width) / static_cast<float>(height), nearPlane, farPlane);
+    // Invert Y in projection so OpenGL's bottom-up FBO maps right-side up to ImGui's top-down (0,0)-(1,1) UV coordinates!
+    projection.m[1][1] = -projection.m[1][1];
     const Math::Matrix4x4UVE viewProjection = projection * view;
     const Math::Vector3UVE lightDirection = Math::NormalizeUVE(Math::Vector3UVE{-0.5F, -1.0F, -0.35F});
 
@@ -309,12 +403,27 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         succeeded = gl.table.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
     }
 
+    GLuint albedoTex = 0U;
+    if (succeeded && albedoTexture != nullptr && albedoTexture->IsValidUVE()) {
+        glGenTextures(1, &albedoTex);
+        if (albedoTex != 0U) {
+            glBindTexture(GL_TEXTURE_2D, albedoTex);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, albedoTexture->width, albedoTexture->height, 0,
+                         GL_RGBA, GL_UNSIGNED_BYTE, albedoTexture->rgba8.data());
+        }
+    }
+
     GLuint vao = 0U;
     GLuint vertexBuffer = 0U;
     GLuint indexBuffer = 0U;
     if (succeeded) {
         glViewport(0, 0, width, height);
-        glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
+        // Sleek dark slate charcoal studio background
+        glClearColor(0.12F, 0.13F, 0.16F, 1.0F);
         SetGlCapabilityUVE(GL_DEPTH_TEST, GL_TRUE);
         glDepthMask(GL_TRUE);
         SetGlCapabilityUVE(GL_CULL_FACE, GL_FALSE);
@@ -340,18 +449,118 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         gl.table.glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Asset::MeshVertexUVE),
                                   reinterpret_cast<const void*>(offsetof(Asset::MeshVertexUVE, normal)));
         gl.table.glEnableVertexAttribArray(1);
+        gl.table.glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Asset::MeshVertexUVE),
+                                  reinterpret_cast<const void*>(offsetof(Asset::MeshVertexUVE, u)));
+        gl.table.glEnableVertexAttribArray(2);
 
         gl.table.glUseProgram(gl.shaderProgram);
         gl.table.glUniformMatrix4fv(gl.viewProjectionUniform, 1, GL_TRUE, &viewProjection.m[0][0]);
         gl.table.glUniform3fv(gl.lightDirectionUniform, 1, &lightDirection.x);
         gl.table.glUniform3fv(gl.baseColorUniform, 1, &kBaseColorUVE.x);
+        gl.table.glUniform3fv(gl.cameraPositionUniform, 1, &cameraPosition.x);
+
+        if (albedoTex != 0U) {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, albedoTex);
+            gl.table.glUniform1i(gl.hasAlbedoTextureUniform, 1);
+            gl.table.glUniform1i(gl.albedoTextureUniform, 0);
+        } else {
+            gl.table.glUniform1i(gl.hasAlbedoTextureUniform, 0);
+        }
 
         glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.indices.size()), GL_UNSIGNED_INT, nullptr);
         succeeded = glGetError() == GL_NO_ERROR;
 
         gl.table.glBindVertexArray(0);
+
+        // Render skeleton bones if the model has a joint hierarchy
+        if (succeeded && !mesh.joints.empty() && gl.boneProgramLinked) {
+            std::vector<Math::Vector3UVE> jointPositions(mesh.joints.size(), Math::Vector3UVE{});
+            std::vector<bool> jointValid(mesh.joints.size(), false);
+            for (std::size_t i = 0U; i < mesh.joints.size(); ++i) {
+                Math::Matrix4x4UVE bindMatrix{};
+                if (Math::TryInverseUVE(mesh.joints[i].inverseBindMatrix, bindMatrix)) {
+                    jointPositions[i] = Math::Vector3UVE{bindMatrix.m[0][3], bindMatrix.m[1][3], bindMatrix.m[2][3]};
+                    jointValid[i] = true;
+                }
+            }
+
+            std::vector<Math::Vector3UVE> boneLineVertices;
+            for (std::size_t i = 0U; i < mesh.joints.size(); ++i) {
+                const std::uint32_t p = mesh.joints[i].parentIndex;
+                if (p < mesh.joints.size() && jointValid[p] && jointValid[i]) {
+                    const Math::Vector3UVE head = jointPositions[p];
+                    const Math::Vector3UVE tail = jointPositions[i];
+                    const Math::Vector3UVE dir = tail - head;
+                    const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+                    if (len > 1.0e-3F) {
+                        const Math::Vector3UVE normDir = dir * (1.0F / len);
+                        Math::Vector3UVE perp1 = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+                        if (std::abs(normDir.y) > 0.9F) {
+                            perp1 = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+                        }
+                        const Math::Vector3UVE right = Math::NormalizeUVE(Math::CrossUVE(normDir, perp1));
+                        const Math::Vector3UVE up = Math::NormalizeUVE(Math::CrossUVE(right, normDir));
+                        const float r = std::clamp(len * 0.08F, 0.01F, 0.06F);
+                        const Math::Vector3UVE mid = head + normDir * (len * 0.25F);
+                        const Math::Vector3UVE m0 = mid + right * r;
+                        const Math::Vector3UVE m1 = mid + up * r;
+                        const Math::Vector3UVE m2 = mid - right * r;
+                        const Math::Vector3UVE m3 = mid - up * r;
+
+                        boneLineVertices.push_back(head); boneLineVertices.push_back(m0);
+                        boneLineVertices.push_back(head); boneLineVertices.push_back(m1);
+                        boneLineVertices.push_back(head); boneLineVertices.push_back(m2);
+                        boneLineVertices.push_back(head); boneLineVertices.push_back(m3);
+
+                        boneLineVertices.push_back(m0); boneLineVertices.push_back(m1);
+                        boneLineVertices.push_back(m1); boneLineVertices.push_back(m2);
+                        boneLineVertices.push_back(m2); boneLineVertices.push_back(m3);
+                        boneLineVertices.push_back(m3); boneLineVertices.push_back(m0);
+
+                        boneLineVertices.push_back(m0); boneLineVertices.push_back(tail);
+                        boneLineVertices.push_back(m1); boneLineVertices.push_back(tail);
+                        boneLineVertices.push_back(m2); boneLineVertices.push_back(tail);
+                        boneLineVertices.push_back(m3); boneLineVertices.push_back(tail);
+                    }
+                }
+            }
+
+            if (!boneLineVertices.empty()) {
+                GLuint boneVao = 0U;
+                GLuint boneVbo = 0U;
+                gl.table.glGenVertexArrays(1, &boneVao);
+                gl.table.glBindVertexArray(boneVao);
+                gl.table.glGenBuffers(1, &boneVbo);
+                gl.table.glBindBuffer(GL_ARRAY_BUFFER, boneVbo);
+                gl.table.glBufferData(GL_ARRAY_BUFFER,
+                                      static_cast<GLsizeiptr>(boneLineVertices.size() * sizeof(Math::Vector3UVE)),
+                                      boneLineVertices.data(), GL_STREAM_DRAW);
+                gl.table.glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Math::Vector3UVE), nullptr);
+                gl.table.glEnableVertexAttribArray(0);
+
+                gl.table.glUseProgram(gl.boneShaderProgram);
+                gl.table.glUniformMatrix4fv(gl.boneViewProjectionUniform, 1, GL_TRUE, &viewProjection.m[0][0]);
+                constexpr float boneColor[4] = {0.95F, 0.65F, 0.15F, 0.90F};
+                gl.table.glUniform4fv(gl.boneColorUniform, 1, boneColor);
+
+                SetGlCapabilityUVE(GL_DEPTH_TEST, GL_FALSE);
+                SetGlCapabilityUVE(GL_BLEND, GL_TRUE);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glLineWidth(1.5F);
+
+                glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(boneLineVertices.size()));
+
+                gl.table.glBindVertexArray(0);
+                gl.table.glDeleteBuffers(1, &boneVbo);
+                gl.table.glDeleteVertexArrays(1, &boneVao);
+            }
+        }
     }
 
+    if (albedoTex != 0U) {
+        glDeleteTextures(1, &albedoTex);
+    }
     if (vertexBuffer != 0U) {
         gl.table.glDeleteBuffers(1, &vertexBuffer);
     }
