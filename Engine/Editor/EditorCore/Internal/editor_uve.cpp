@@ -188,7 +188,7 @@ constexpr float kEditorViewportToolCanvasHeightUVE = 30.0F;
 /// EditorUVE::GetMeshThumbnailUVE). Matches the content-type badge icons' own baked resolution
 /// (uve_content_type_icon_bytes.inc) - plenty of detail at the grid card's much smaller display
 /// size without being wasteful to render per mesh.
-constexpr int kMeshThumbnailSizeUVE = 64;
+constexpr int kMeshThumbnailSizeUVE = 128;
 /// Square resolution rendered for each Content Browser material thumbnail. Deliberately 2x the
 /// 128 px the column preview draws: the browser samples the texture with linear filtering, so the
 /// extra resolution is free 2x2 supersampling (and 4x4 in a 64 px tile), which a preview sphere's
@@ -5632,7 +5632,73 @@ std::uintptr_t EditorUVE::GetMeshThumbnailUVE(const std::filesystem::path& relat
     Asset::MeshAssetUVE mesh;
     std::uintptr_t textureId = 0U;
     if (Asset::LoadMeshAssetUVE(absolutePath, mesh)) {
-        textureId = m_meshThumbnailRenderer.RenderThumbnailUVE(mesh, kMeshThumbnailSizeUVE, kMeshThumbnailSizeUVE);
+        MaterialThumbnailImageUVE albedoImage;
+        bool hasAlbedo = false;
+        Asset::IAssetDatabaseUVE& assetDatabase = m_services->GetAssetDatabaseUVE();
+
+        // 1. Check mesh.materialGuids
+        for (const Asset::AssetGuidUVE& matGuid : mesh.materialGuids) {
+            if (matGuid != Asset::kInvalidAssetGuidUVE) {
+                const std::filesystem::path matPath = assetDatabase.ResolveUVE(matGuid);
+                Asset::MaterialAssetUVE mat;
+                if (!matPath.empty() && Asset::LoadMaterialAssetUVE(matPath, mat)) {
+                    if (mat.albedoTexture != Asset::kInvalidAssetGuidUVE) {
+                        const std::filesystem::path texPath = assetDatabase.ResolveUVE(mat.albedoTexture);
+                        if (!texPath.empty() && LoadMaterialPreviewImageUVE(texPath, true, albedoImage)) {
+                            hasAlbedo = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. If no texture from materials, check directory of imported model for .uvmat / .uvtex
+        if (!hasAlbedo) {
+            std::error_code ec;
+            const std::filesystem::path importedDir = absolutePath.parent_path();
+            if (std::filesystem::is_directory(importedDir, ec)) {
+                for (const auto& entry : std::filesystem::directory_iterator(importedDir, ec)) {
+                    const std::string ext = entry.path().extension().string();
+                    if (ext == ".uvmat" || ext == ".uvmaterial") {
+                        Asset::MaterialAssetUVE mat;
+                        if (Asset::LoadMaterialAssetUVE(entry.path(), mat)) {
+                            if (mat.albedoTexture != Asset::kInvalidAssetGuidUVE) {
+                                const std::filesystem::path texPath = assetDatabase.ResolveUVE(mat.albedoTexture);
+                                if (!texPath.empty() && LoadMaterialPreviewImageUVE(texPath, true, albedoImage)) {
+                                    hasAlbedo = true;
+                                    break;
+                                }
+                            }
+                        }
+                    } else if (ext == ".uvtex") {
+                        if (LoadMaterialPreviewImageUVE(entry.path(), true, albedoImage)) {
+                            hasAlbedo = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. If still no texture, check source directory for raw image files (diffuse/albedo/textures)
+        if (!hasAlbedo) {
+            std::error_code ec;
+            const std::filesystem::path sourceDir = (snapshot.contentRoot / relativePath).parent_path();
+            if (std::filesystem::is_directory(sourceDir, ec)) {
+                for (const auto& entry : std::filesystem::directory_iterator(sourceDir, ec)) {
+                    if (IsRawSourceImagePathUVE(entry.path())) {
+                        if (LoadMaterialPreviewImageUVE(entry.path(), true, albedoImage)) {
+                            hasAlbedo = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        textureId = m_meshThumbnailRenderer.RenderThumbnailUVE(
+            mesh, kMeshThumbnailSizeUVE, kMeshThumbnailSizeUVE, hasAlbedo ? &albedoImage : nullptr);
     }
     m_meshThumbnailCache.emplace(cacheKey, textureId);
     return textureId;
