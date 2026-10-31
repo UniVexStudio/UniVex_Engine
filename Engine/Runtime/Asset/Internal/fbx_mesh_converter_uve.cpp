@@ -419,7 +419,12 @@ static bool ConvertFbxMeshImplUVE(const std::span<const std::byte> source, MeshA
                         if (mesh->vertex_uv.exists) {
                             const ufbx_vec2 uv = ufbx_get_vertex_vec2(&mesh->vertex_uv, index);
                             vertex.u = static_cast<float>(uv.x);
-                            vertex.v = static_cast<float>(uv.y);
+                            // FBX authors texture coordinates with the origin at the bottom-left of the texture image (V=0 at
+                            // bottom, V=1 at top). Real-time image loaders (PNG, JPEG) and GPU texture upload place row 0 at the
+                            // top of memory (sampled at V=0 in OpenGL), which inverts the vertical axis: the vest maps to the
+                            // legs, textures appear upside-down, and vertical text reads backwards. Inverting V reconciles the
+                            // FBX bottom-left origin with top-row-first texture storage.
+                            vertex.v = 1.0F - static_cast<float>(uv.y);
                         }
                         if (!IsFiniteVertexUVE(vertex)) {
                             return false;
@@ -1021,9 +1026,22 @@ std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsUVE(const std::span<c
             const ufbx_material_map& transparency = sourceMaterial->fbx.transparency_factor;
             const bool pbrBlends = opacity.has_value && std::isfinite(opacity.value_real) &&
                                    opacity.value_real >= 0.0 && opacity.value_real < 1.0;
+            // FBX defines the effective transparency as TransparentColor * TransparencyFactor. Maya,
+            // 3ds Max and Mixamo all write "TransparencyFactor 1" beside a BLACK TransparentColor for a
+            // fully OPAQUE material, so the factor alone calls every such character translucent: the
+            // whole body lands in the blended pass with depth writes off and its limbs and gear
+            // draw in the wrong order. A factor of 1 whose colour is explicitly authored as black is
+            // therefore opaque; any other factor keeps blending, as does a factor with no colour at all.
+            const ufbx_material_map& transparencyColor = sourceMaterial->fbx.transparency_color;
+            const bool opaqueByBlackTransparentColor =
+                transparency.has_value && transparency.value_real >= 0.999 && transparencyColor.has_value &&
+                std::isfinite(transparencyColor.value_vec3.x) && std::isfinite(transparencyColor.value_vec3.y) &&
+                std::isfinite(transparencyColor.value_vec3.z) &&
+                std::max({transparencyColor.value_vec3.x, transparencyColor.value_vec3.y,
+                          transparencyColor.value_vec3.z}) <= 1.0e-4;
             const bool classicBlends = transparency.has_value &&
                                        std::isfinite(transparency.value_real) &&
-                                       transparency.value_real > 0.0;
+                                       transparency.value_real > 0.0 && !opaqueByBlackTransparentColor;
             if (pbrBlends || classicBlends) {
                 converted.material.isTransparent = true;
             }

@@ -706,6 +706,111 @@ Connections:  {
     engine.Shutdown();
 }
 
+TEST(ContentCatalogueEditorUVETest, EntityEditorPlacingModelSourceBuildsCompleteModelContainerUnderEntityRoot) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("place_model_entity_editor");
+    const std::string fbx = R"(; FBX 7.4.0 project file
+FBXHeaderExtension:  {
+	FBXVersion: 7400
+}
+Objects:  {
+	Model: 3000, "Model::Hips", "LimbNode" {
+		Version: 232
+	}
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	AnimationStack: 5000, "AnimStack::Armature|Run", "" {
+		Properties70:  {
+			P: "LocalStart", "KTime", "Time", "",0
+			P: "LocalStop", "KTime", "Time", "",46186158000
+		}
+	}
+	AnimationLayer: 5100, "AnimLayer::Base", "" {
+	}
+}
+Connections:  {
+	C: "OO",3100,3000
+	C: "OO",3000,0
+	C: "OO",5100,5000
+}
+)";
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    const std::filesystem::path content = engine.GetServicesUVE().GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+    std::filesystem::create_directories(content / "Anims");
+    {
+        std::ofstream out(content / "Anims" / "Hero.FBX", std::ios::binary);
+        out << fbx;
+    }
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+        Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+        ASSERT_TRUE(services.GetProjectFileIndexUVE().RefreshUVE(services.GetAssetDatabaseUVE()));
+
+        const auto created = editor.CreateContentCatalogueItemUVE("character", content);
+        ASSERT_TRUE(created.has_value());
+        ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
+        EXPECT_TRUE(editor.IsEntityEditorOpenUVE());
+        const Scene::EntityUVE entityRoot = editor.GetEntityEditorRootUVE();
+        ASSERT_NE(entityRoot, Scene::kInvalidEntityUVE);
+
+        const Scene::EntityUVE placed = editor.PlaceModelSourceUVE("Anims/Hero.FBX", entityRoot);
+        ASSERT_NE(placed, Scene::kInvalidEntityUVE);
+
+        const auto nameOf = [&entityManager](const Scene::EntityUVE entity) {
+            return entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name;
+        };
+        EXPECT_EQ(nameOf(placed), "Hero");
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, placed), Kind::Object3D);
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(placed).parent, entityRoot);
+
+        const std::vector<Scene::EntityUVE> children = services.GetSceneGraphUVE().GetChildrenUVE(entityManager, placed);
+        ASSERT_EQ(children.size(), 2U);
+        EXPECT_EQ(nameOf(children[0]), "Armature");
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, children[0]), Kind::Object3D);
+        const std::vector<Scene::EntityUVE> skeletons = services.GetSceneGraphUVE().GetChildrenUVE(entityManager, children[0]);
+        ASSERT_EQ(skeletons.size(), 1U);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(skeletons[0]));
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(children[1]));
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(root);
+}
+
+TEST(ContentCatalogueEditorUVETest, OutlinerFolderLockToggle) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("folder_lock");
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        const Scene::EntityUVE folder =
+            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Folder);
+        ASSERT_NE(folder, Scene::kInvalidEntityUVE);
+
+        EXPECT_FALSE(editor.IsEntityLockedUVE(folder));
+        editor.ToggleEntityLockUVE(folder);
+        EXPECT_TRUE(editor.IsEntityLockedUVE(folder));
+        editor.ToggleEntityLockUVE(folder);
+        EXPECT_FALSE(editor.IsEntityLockedUVE(folder));
+
+        editor.SetEntityLockedUVE(folder, true);
+        EXPECT_TRUE(editor.IsEntityLockedUVE(folder));
+        editor.SetEntityLockedUVE(folder, false);
+        EXPECT_FALSE(editor.IsEntityLockedUVE(folder));
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(root);
+}
+
 
 TEST(ContentCatalogueEditorUVETest, ANewSceneIsItsViewportAndTheWorldFolderWaitsForSomethingToHold) {
     const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("content_catalogue_scene_empty");

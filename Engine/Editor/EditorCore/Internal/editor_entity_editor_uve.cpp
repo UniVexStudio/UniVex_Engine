@@ -123,6 +123,7 @@ bool EditorUVE::OpenEntityEditorUVE(const std::filesystem::path& assetPath) {
         return false;
     }
     m_entityEditSession->rootEntity = loadedRoot;
+    m_entityEditSession->focusPending = true;
     ClearHistoryUVE();
     m_sceneDirty = false;
     // The script editor worked on scene objects; the entity brings its own.
@@ -189,6 +190,7 @@ bool EditorUVE::RevertEntityEditorUVE() {
         return false;
     }
     m_entityEditSession->rootEntity = loadedRoot;
+    m_entityEditSession->focusPending = true;
     ClearHistoryUVE();
     m_sceneDirty = false;
     // Object handles are new; the script text goes back to what is on disk.
@@ -730,6 +732,7 @@ void EditorUVE::DrawEntityEditorPlaceholderUVE() {
     ImGui::SetCursorPosX((area.x - 180.0F) * 0.5F);
     if (ImGui::Button("Show the Entity Editor", ImVec2{180.0F, 0.0F})) {
         ImGui::SetWindowFocus("###entity-editor");
+        m_entityEditSession->focusPending = true;
     }
     ImGui::End();
 }
@@ -748,8 +751,19 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
     const std::string title = "Entity Editor - " + session.assetPath.filename().string() + (unsaved ? " *" : "") +
                               "###entity-editor";
     ImGui::GetIO().ConfigWindowsMoveFromTitleBarOnly = true;
+    if (session.focusPending) {
+        ImGui::SetNextWindowFocus();
+    }
     bool open = true;
     ImGui::Begin(title.c_str(), &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
+    if (session.focusPending) {
+        session.focusPending = false;
+        if (const ImGuiViewport* const vp = ImGui::GetWindowViewport(); vp != nullptr && vp != mainViewport) {
+            if (ImGui::GetPlatformIO().Platform_SetWindowFocus != nullptr) {
+                ImGui::GetPlatformIO().Platform_SetWindowFocus(const_cast<ImGuiViewport*>(vp));
+            }
+        }
+    }
 
     // Toolbar.
     if (ImGui::Button("Compile")) {

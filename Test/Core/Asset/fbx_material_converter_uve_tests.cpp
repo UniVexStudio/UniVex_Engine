@@ -208,6 +208,40 @@ TEST(FbxMaterialConverterUVETest, SeveralMaterialsKeepFileOrderAndIndependentVal
         << "TransparencyFactor 1 is fully transparent in FBX, so the material blends";
 }
 
+TEST(FbxMaterialConverterUVETest, TransparencyFactorOneBesideABlackTransparentColorIsOpaque) {
+    // What Maya, 3ds Max and Mixamo write for a solid character: the factor is 1 but the transparent
+    // colour is black, so TransparentColor * TransparencyFactor is 0. Reading the factor alone made the
+    // whole soldier a blended, depth-write-off material.
+    std::string objects;
+    objects += R"(	Material: 3500, "Material::Solid", "" {
+		Version: 102
+		ShadingModel: "lambert"
+		Properties70:  {
+			P: "DiffuseColor", "Color", "", "A",0.5,0.5,0.5
+			P: "TransparentColor", "Color", "", "A",0.0,0.0,0.0
+			P: "TransparencyFactor", "Number", "", "A",1.0
+		}
+	}
+)";
+    objects += R"(	Material: 3501, "Material::Glass", "" {
+		Version: 102
+		ShadingModel: "lambert"
+		Properties70:  {
+			P: "DiffuseColor", "Color", "", "A",0.5,0.5,0.5
+			P: "TransparentColor", "Color", "", "A",1.0,1.0,1.0
+			P: "TransparencyFactor", "Number", "", "A",0.5
+		}
+	}
+)";
+    const std::string text = MakeFbxUVE(objects, "");
+    const auto materials = ReadFbxMaterialsUVE(BytesUVE(text));
+    ASSERT_TRUE(materials.has_value());
+    ASSERT_EQ(materials->size(), 2U);
+    EXPECT_FALSE((*materials)[0].material.isTransparent)
+        << "factor 1 with a black TransparentColor is how an exporter writes fully opaque";
+    EXPECT_TRUE((*materials)[1].material.isTransparent) << "a real translucent material still blends";
+}
+
 
 /// An FBX that carries its texture inside itself, the way a Mixamo "With Skin" download does: a
 /// `Video` element whose `Content` is the base64 image, connected to the `Texture` the material

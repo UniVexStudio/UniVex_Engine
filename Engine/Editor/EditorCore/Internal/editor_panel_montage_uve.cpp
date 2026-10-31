@@ -212,16 +212,27 @@ void EditorUVE::DrawMontageUVE() {
 
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     // Its own OS window, like the file picker and the library window: never merged into the main
-    // one, never docked, and the same size wherever it opens.
+    // one, never docked, and the same size wherever it opens. TopMost ensures popups never fall behind.
     ImGuiWindowClass windowClass;
-    windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_NoAutoMerge;
+    windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_NoAutoMerge | ImGuiViewportFlags_TopMost;
     windowClass.ViewportFlagsOverrideClear = ImGuiViewportFlags_NoDecoration | ImGuiViewportFlags_NoTaskBarIcon;
     ImGui::SetNextWindowClass(&windowClass);
     ImGui::SetNextWindowPos(ImVec2{mainViewport->GetCenter().x, mainViewport->GetCenter().y}, ImGuiCond_FirstUseEver,
                             ImVec2{0.5F, 0.5F});
     ImGui::SetNextWindowSize(ImVec2{kMontageWindowWidthUVE, kMontageWindowHeightUVE}, ImGuiCond_FirstUseEver);
+    if (montage.focusPending) {
+        ImGui::SetNextWindowFocus();
+    }
     bool open = true;
     ImGui::Begin("3D Body Montage###body-montage", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
+    if (montage.focusPending) {
+        montage.focusPending = false;
+        if (const ImGuiViewport* const vp = ImGui::GetWindowViewport(); vp != nullptr && vp != mainViewport) {
+            if (ImGui::GetPlatformIO().Platform_SetWindowFocus != nullptr) {
+                ImGui::GetPlatformIO().Platform_SetWindowFocus(const_cast<ImGuiViewport*>(vp));
+            }
+        }
+    }
 
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
     ImGui::TextWrapped("Pick the body this entity starts as. It opens in the Entity Editor, and everything it wears - "
