@@ -3532,9 +3532,11 @@ void DeclareFullBodyIKUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                "the pose exactly as the animation wrote it.")),
                 WithTooltipUVE(DeclareUVE<&A::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
                                "Off stops solving without removing the object."),
-                WithTooltipUVE(DeclareUVE<&A::effectors>("effectors", "Effectors", "FullBodyIKEffectors"),
-                               "Where each limb should end up, and how hard it pulls. Sweeps run in "
-                               "list order, so an earlier effector is answered first."),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&A::effectors>("effectors", "Effectors", "FullBodyIKEffectors"),
+                                   "Where each limb should end up, and how hard it pulls. Sweeps run in "
+                                   "list order, so an earlier effector is answered first."),
+                    "full-body-effectors"),
                 InGroupUVE(WithTooltipUVE(DeclareUVE<&A::rootBoneName>("rootBoneName", "Root Bone",
                                                                       kPropertyTypeStringUVE),
                                           "The joint the solve pivots around and may translate - the "

@@ -353,12 +353,14 @@ struct RetargetWindowStateUVE final {
     /// Characters conformed or restored while the window was open: the scene put aside by the
     /// preview still holds their old bones until it is back.
     std::vector<std::filesystem::path> changedModels;
+    bool focusPending = true;
 };
 
 /// The Animation Library window's state: one open `.uvanimlib`, saved on every edit.
 struct AnimationLibraryWindowStateUVE final {
     /// The library file (absolute path).
     std::filesystem::path assetPath;
+    bool focusPending = true;
     /// The library as last loaded or saved. Every mutation writes the file at once.
     Asset::AnimationLibraryAssetUVE library;
     /// The last result, one line.
@@ -400,6 +402,7 @@ struct FilePickerStateUVE final {
     /// The last result, one line.
     std::string status;
     bool statusIsError = false;
+    bool focusPending = true;
 };
 
 /// The Montage's live state: where its body goes, what it has picked so far, and the last line it
@@ -412,6 +415,7 @@ struct MontageStateUVE final {
     std::string pickedItemId;
     std::string status;
     bool statusIsError = false;
+    bool focusPending = true;
 };
 
 /// The picker's listing for one folder: content-relative subfolders and matching files, sorted.
@@ -1493,6 +1497,7 @@ private:
         float treeWidth = 0.0F;
         /// The Inspector's width, dragged from its seam. 0 means "not dragged yet".
         float inspectorWidth = 0.0F;
+        bool focusPending = true;
     };
     /// What the Retarget window's viewport shows while it is open: the scene is put aside (as the
     /// Entity Editor does) and a preview world stands in its place. Closing brings the scene back.
