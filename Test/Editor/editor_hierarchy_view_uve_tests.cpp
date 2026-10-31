@@ -37,7 +37,7 @@ TEST(EditorHierarchyViewUVETest, DefaultsAreThePanelsBehaviourBeforeItHadPrefere
     EXPECT_EQ(view.visibilityColumn, HierarchyVisibilityColumnUVE::Always);
     EXPECT_EQ(view.doubleClick, HierarchyDoubleClickUVE::Rename);
     EXPECT_TRUE(view.dragToReparent);
-    EXPECT_EQ(view.treeLines, HierarchyTreeLinesUVE::None);
+    EXPECT_EQ(view.treeLines, HierarchyTreeLinesUVE::ToEachChild);
     EXPECT_GE(view.indentWidth, kMinimumHierarchyIndentUVE);
     EXPECT_LE(view.indentWidth, kMaximumHierarchyIndentUVE);
 }
