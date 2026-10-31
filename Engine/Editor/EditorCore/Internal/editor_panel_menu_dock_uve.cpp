@@ -525,6 +525,7 @@ void EditorUVE::DrawBottomDockContentUVE() {
     //
     // Always, never FirstUseEver. The rect comes from the chrome layout every frame and is not
     // something anyone drags: dragging happens on the seams, in DrawEditorChromeHandlesUVE().
+    ImGui::SetNextWindowViewport(mainViewport->ID);
     ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
     // No title row and no close button - the tab strip at the top of the block is what names it and
@@ -764,7 +765,7 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
     constexpr ImGuiWindowFlags stripFlags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse |
-        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoDocking;
 
     // Always drawn, dock body or not: this strip is the dock's name, its switcher, and - when the
     // body is hidden - the only visible way back. Every tab toggles: click the one already showing
@@ -773,6 +774,7 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
     // It sits at the top of the dock and takes the dock's own width, so it is the dock's header
     // rather than an unrelated band across the bottom of the screen. Same square, borderless
     // treatment as the body underneath, so the two read as one panel.
+    ImGui::SetNextWindowViewport(mainViewport->ID);
     ImGui::SetNextWindowPos(layout.dockTabBarPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.dockTabBarSize, ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{6.0F, 2.0F});

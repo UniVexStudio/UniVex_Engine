@@ -204,7 +204,7 @@ constexpr float kPanelRestoreStripWidthUVE = 14.0F;
 inline constexpr ImGuiWindowFlags kLayoutOwnedPanelFlagsUVE =
     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
     ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
-    ImGuiWindowFlags_NoBringToFrontOnFocus;
+    ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoDocking;
 
 /// The editor's panel rectangles.
 ///
