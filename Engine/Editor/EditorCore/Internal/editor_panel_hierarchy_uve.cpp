@@ -93,6 +93,62 @@ void DrawEyeGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float size
     }
 }
 
+/// A padlock, drawn with vector strokes so it never depends on font glyphs.
+/// Locked: shackle is down and closed into both sides of the body.
+/// Unlocked: shackle is raised and open on the right side.
+void DrawLockGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float size, const bool locked, const ImU32 color) {
+    const float bodyWidth = size * 0.44F;
+    const float bodyHeight = size * 0.36F;
+    const float thickness = std::max(1.0F, size * 0.08F);
+    const float bodyTop = center.y - (bodyHeight * 0.10F);
+    const float bodyBottom = bodyTop + bodyHeight;
+    const float bodyLeft = center.x - (bodyWidth * 0.5F);
+    const float bodyRight = center.x + (bodyWidth * 0.5F);
+
+    const float shackleRadius = bodyWidth * 0.30F;
+    const float shackleCenterX = center.x;
+    const float shackleBottom = bodyTop;
+    const float shackleTop = bodyTop - (shackleRadius * 1.5F);
+
+    if (locked) {
+        const float leftX = shackleCenterX - shackleRadius;
+        const float rightX = shackleCenterX + shackleRadius;
+        drawList.AddLine(ImVec2{leftX, shackleBottom}, ImVec2{leftX, shackleTop + shackleRadius}, color, thickness);
+        drawList.AddLine(ImVec2{rightX, shackleBottom}, ImVec2{rightX, shackleTop + shackleRadius}, color, thickness);
+        constexpr int kArcSegments = 8;
+        for (int i = 0; i < kArcSegments; ++i) {
+            const float a0 = Math::kPiUVE + (static_cast<float>(i) * Math::kPiUVE / static_cast<float>(kArcSegments));
+            const float a1 = Math::kPiUVE + (static_cast<float>(i + 1) * Math::kPiUVE / static_cast<float>(kArcSegments));
+            const ImVec2 p0{shackleCenterX + (shackleRadius * std::cos(a0)), (shackleTop + shackleRadius) + (shackleRadius * std::sin(a0))};
+            const ImVec2 p1{shackleCenterX + (shackleRadius * std::cos(a1)), (shackleTop + shackleRadius) + (shackleRadius * std::sin(a1))};
+            drawList.AddLine(p0, p1, color, thickness);
+        }
+    } else {
+        const float leftX = shackleCenterX - shackleRadius;
+        const float openLift = size * 0.16F;
+        const float openTop = shackleTop - openLift;
+        drawList.AddLine(ImVec2{leftX, shackleBottom}, ImVec2{leftX, openTop + shackleRadius}, color, thickness);
+        constexpr int kArcSegments = 8;
+        for (int i = 0; i < kArcSegments; ++i) {
+            const float a0 = Math::kPiUVE + (static_cast<float>(i) * Math::kPiUVE / static_cast<float>(kArcSegments));
+            const float a1 = Math::kPiUVE + (static_cast<float>(i + 1) * Math::kPiUVE / static_cast<float>(kArcSegments));
+            const ImVec2 p0{shackleCenterX + (shackleRadius * std::cos(a0)), (openTop + shackleRadius) + (shackleRadius * std::sin(a0))};
+            const ImVec2 p1{shackleCenterX + (shackleRadius * std::cos(a1)), (openTop + shackleRadius) + (shackleRadius * std::sin(a1))};
+            drawList.AddLine(p0, p1, color, thickness);
+        }
+        const float rightX = shackleCenterX + shackleRadius;
+        drawList.AddLine(ImVec2{rightX, openTop + shackleRadius}, ImVec2{rightX, openTop + (shackleRadius * 1.5F)}, color, thickness);
+    }
+
+    const float rounding = 2.0F;
+    drawList.AddRectFilled(ImVec2{bodyLeft, bodyTop}, ImVec2{bodyRight, bodyBottom}, color, rounding);
+
+    const ImU32 keyholeColor = IM_COL32(20, 20, 24, 255);
+    const float keyholeCenterY = bodyTop + (bodyHeight * 0.45F);
+    drawList.AddCircleFilled(ImVec2{center.x, keyholeCenterY}, thickness * 0.9F, keyholeColor, 8);
+    drawList.AddLine(ImVec2{center.x, keyholeCenterY}, ImVec2{center.x, keyholeCenterY + (bodyHeight * 0.3F)}, keyholeColor, thickness * 0.8F);
+}
+
 // `text` cut at a character boundary and ended with "..." so it fits `maxWidth` in the current
 // font; unchanged when it already fits, and just "..." when nothing else does.
 std::string FitTextToWidthUVE(const std::string& text, const float maxWidth) {
@@ -337,9 +393,11 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
     // shown in full on hover, instead of being painted over by the badges.
     const std::vector<std::string> warnings = GetObjectWarningsUVE(entity);
     const std::optional<std::string> script = GetObjectScriptPathUVE(entity);
+    const bool isFolder = entityManager.HasComponentUVE<Scene::FolderComponentUVE>(entity) ||
+                          Scene::ResolveSceneObjectKindUVE(entityManager, entity) == Scene::Objects::SceneObjectKindUVE::Folder;
     // With the eyes hidden their column is given back, and the badges move over into it.
     const float eyeColumns = m_hierarchyView.visibilityColumn == HierarchyVisibilityColumnUVE::Hidden ? 0.0F : 1.0F;
-    float usedColumns = entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity) ? eyeColumns : 0.0F;
+    float usedColumns = (entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity) || isFolder) ? eyeColumns : 0.0F;
     if (!warnings.empty()) {
         usedColumns = eyeColumns + 1.0F;
     }
@@ -540,12 +598,12 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
     }
     // The scene root is the document itself: it has no parent to leave, so it is never a drag source.
     if (m_hierarchyView.dragToReparent && IsLifecycleCommandAllowedUVE() && IsDocumentEntityUVE(entity) &&
-        !IsStructuralRootUVE(entity) && ImGui::BeginDragDropSource()) {
+        !IsStructuralRootUVE(entity) && !IsEntityLockedUVE(entity) && ImGui::BeginDragDropSource()) {
         ImGui::SetDragDropPayload(kHierarchyEntityPayloadUVE, &entity, sizeof(entity));
         ImGui::Text("Move %s", GetEntityDisplayLabelUVE(entity).c_str());
         ImGui::EndDragDropSource();
     }
-    if (!sealed) {
+    if (!sealed && !IsEntityLockedUVE(entity)) {
         // Dropping onto a placed entity would add a child the level's tree cannot show - the object
         // would exist and never appear anywhere. Its contents are edited in the Entity Editor.
         AcceptHierarchyDropTargetUVE(entity);
@@ -553,6 +611,7 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
     if (!renaming) {
         DrawHierarchyRowBadgesUVE(warnings, script, eyeColumns);
         DrawHierarchyVisibilityToggleUVE(entity, rowHovered);
+        DrawHierarchyFolderLockToggleUVE(entity, rowHovered);
     }
     if (open) {
         for (const Scene::EntityUVE child : children) {
@@ -1017,6 +1076,63 @@ void EditorUVE::DrawHierarchyVisibilityToggleUVE(const Scene::EntityUVE entity, 
     }
     if (clicked) {
         static_cast<void>(SetEntityVisibleUVE(entity, !visibility.visible));
+    }
+}
+
+bool EditorUVE::IsEntityLockedUVE(const Scene::EntityUVE entity) const noexcept {
+    return entity != Scene::kInvalidEntityUVE && m_lockedFolders.contains(entity);
+}
+
+void EditorUVE::SetEntityLockedUVE(const Scene::EntityUVE entity, const bool locked) noexcept {
+    if (entity == Scene::kInvalidEntityUVE) {
+        return;
+    }
+    if (locked) {
+        m_lockedFolders.insert(entity);
+    } else {
+        m_lockedFolders.erase(entity);
+    }
+}
+
+void EditorUVE::ToggleEntityLockUVE(const Scene::EntityUVE entity) noexcept {
+    SetEntityLockedUVE(entity, !IsEntityLockedUVE(entity));
+}
+
+void EditorUVE::DrawHierarchyFolderLockToggleUVE(const Scene::EntityUVE entity, const bool rowHovered) {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const bool isFolder = entityManager.HasComponentUVE<Scene::FolderComponentUVE>(entity) ||
+                          Scene::ResolveSceneObjectKindUVE(entityManager, entity) == Scene::Objects::SceneObjectKindUVE::Folder;
+    if (!isFolder) {
+        return;
+    }
+    const bool locked = IsEntityLockedUVE(entity);
+    if (!locked && !rowHovered && m_hierarchyView.visibilityColumn != HierarchyVisibilityColumnUVE::Always) {
+        return;
+    }
+    const float size = ImGui::GetFrameHeight();
+    const float rightEdge = ImGui::GetWindowContentRegionMax().x;
+    ImGui::SameLine(std::max(ImGui::GetCursorPosX(), rightEdge - size));
+    ImGui::PushID("##folder-lock");
+    const bool clicked = ImGui::InvisibleButton("##lock", ImVec2{size, ImGui::GetTextLineHeight()});
+    const bool hovered = ImGui::IsItemHovered();
+    ImGui::PopID();
+    const ImVec2 min = ImGui::GetItemRectMin();
+    const ImVec2 max = ImGui::GetItemRectMax();
+
+    ImU32 color = ImGui::GetColorU32(ImGuiCol_Text);
+    if (!locked) {
+        color = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+    }
+    if (hovered) {
+        color = ImGui::GetColorU32(ImGuiCol_Text);
+    }
+    DrawLockGlyphUVE(*ImGui::GetWindowDrawList(), ImVec2{(min.x + max.x) * 0.5F, (min.y + max.y) * 0.5F},
+                     ImGui::GetTextLineHeight(), locked, color);
+    if (hovered) {
+        ImGui::SetTooltip(locked ? "Locked - click to unlock folder" : "Unlocked - click to lock folder");
+    }
+    if (clicked) {
+        ToggleEntityLockUVE(entity);
     }
 }
 

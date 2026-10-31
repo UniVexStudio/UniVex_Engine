@@ -264,8 +264,19 @@ void EditorUVE::DrawRetargetWindowUVE() {
     ImGui::SetNextWindowPos(ImVec2{mainViewport->GetCenter().x, mainViewport->GetCenter().y}, ImGuiCond_FirstUseEver,
                             ImVec2{0.5F, 0.5F});
     ImGui::SetNextWindowSize(ImVec2{1320.0F, 760.0F}, ImGuiCond_FirstUseEver);
+    if (window.focusPending) {
+        ImGui::SetNextWindowFocus();
+    }
     bool open = true;
     ImGui::Begin("Retarget###retarget-window", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
+    if (window.focusPending) {
+        window.focusPending = false;
+        if (const ImGuiViewport* const vp = ImGui::GetWindowViewport(); vp != nullptr && vp != mainViewport) {
+            if (ImGui::GetPlatformIO().Platform_SetWindowFocus != nullptr) {
+                ImGui::GetPlatformIO().Platform_SetWindowFocus(const_cast<ImGuiViewport*>(vp));
+            }
+        }
+    }
 
     // ---- The character ---------------------------------------------------------------------------
     const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();

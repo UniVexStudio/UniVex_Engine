@@ -21,6 +21,7 @@
 #include <string_view>
 #include <typeindex>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -352,12 +353,14 @@ struct RetargetWindowStateUVE final {
     /// Characters conformed or restored while the window was open: the scene put aside by the
     /// preview still holds their old bones until it is back.
     std::vector<std::filesystem::path> changedModels;
+    bool focusPending = true;
 };
 
 /// The Animation Library window's state: one open `.uvanimlib`, saved on every edit.
 struct AnimationLibraryWindowStateUVE final {
     /// The library file (absolute path).
     std::filesystem::path assetPath;
+    bool focusPending = true;
     /// The library as last loaded or saved. Every mutation writes the file at once.
     Asset::AnimationLibraryAssetUVE library;
     /// The last result, one line.
@@ -399,6 +402,7 @@ struct FilePickerStateUVE final {
     /// The last result, one line.
     std::string status;
     bool statusIsError = false;
+    bool focusPending = true;
 };
 
 /// The Montage's live state: where its body goes, what it has picked so far, and the last line it
@@ -411,6 +415,7 @@ struct MontageStateUVE final {
     std::string pickedItemId;
     std::string status;
     bool statusIsError = false;
+    bool focusPending = true;
 };
 
 /// The picker's listing for one folder: content-relative subfolders and matching files, sorted.
@@ -938,6 +943,10 @@ public:
     /// eye toggle works on a row without changing the selection. Returns false without mutation
     /// when editing is not allowed, the entity has no Visibility component, or nothing changes.
     [[nodiscard]] bool SetEntityVisibleUVE(Scene::EntityUVE entity, bool visible);
+    /// Locks or unlocks `entity` (such as a Folder in the Outliner) from modification or drop/drag.
+    [[nodiscard]] bool IsEntityLockedUVE(Scene::EntityUVE entity) const noexcept;
+    void SetEntityLockedUVE(Scene::EntityUVE entity, bool locked) noexcept;
+    void ToggleEntityLockUVE(Scene::EntityUVE entity) noexcept;
     /// Asks the viewport to bring `entity` into view: a Marker3D flies into its viewpoint, any
     /// other object with a world position becomes the orbit pivot. Returns false and requests
     /// nothing when CanFocusEntityInViewportUVE() says no.
@@ -1488,6 +1497,7 @@ private:
         float treeWidth = 0.0F;
         /// The Inspector's width, dragged from its seam. 0 means "not dragged yet".
         float inspectorWidth = 0.0F;
+        bool focusPending = true;
     };
     /// What the Retarget window's viewport shows while it is open: the scene is put aside (as the
     /// Entity Editor does) and a preview world stands in its place. Closing brings the scene back.
@@ -2061,6 +2071,7 @@ private:
     bool DrawInspectorFoldUVE(const char* label, const std::string& key, bool defaultOpen, bool asHeader,
                               int flags);
     void DrawHierarchyVisibilityToggleUVE(Scene::EntityUVE entity, bool rowHovered);
+    void DrawHierarchyFolderLockToggleUVE(Scene::EntityUVE entity, bool rowHovered);
     // Right-click menu on an Inspector section header: Copy / Paste / Reset. `entry` null means
     // the Transform section.
     void DrawInspectorSectionMenuUVE(const Core::TypeMetadataEntryUVE* entry, const char* sectionName);
@@ -2434,6 +2445,7 @@ private:
     float m_playTintStrength = kDefaultPlayTintStrengthUVE;
     // Hierarchy panel preferences (editor_settings_uve.cpp).
     HierarchyViewSettingsUVE m_hierarchyView;
+    std::unordered_set<Scene::EntityUVE> m_lockedFolders;
     // Each editor setting's descriptor and its reads and writes of the state above, in one table
     // (editor_settings_uve.cpp) that loading, saving and the preferences window all use.
     [[nodiscard]] static const std::vector<EditorSettingBindingUVE>& GetSettingBindingsUVE();
