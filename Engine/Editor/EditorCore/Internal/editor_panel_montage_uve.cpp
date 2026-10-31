@@ -60,15 +60,40 @@ constexpr float kMontageIconGapUVE = 8.0F;
     return false;
 }
 
+/// The display name for bodies inside the Montage list: Player 3D, Character 3D, etc.
+[[nodiscard]] std::string MontageItemDisplayNameUVE(const ContentCatalogueItemUVE& item) {
+    if (item.label == "Character") {
+        return "Character 3D";
+    }
+    if (item.label == "Player") {
+        return "Player 3D";
+    }
+    if (item.label == "Prop") {
+        return "Prop 3D";
+    }
+    if (item.label == "Physics Prop") {
+        return "Physics Prop 3D";
+    }
+    if (item.label == "Trigger") {
+        return "Trigger 3D";
+    }
+    if (item.label == "Spawner") {
+        return "Spawner 3D";
+    }
+    return std::string{item.label};
+}
+
 /// Every space-separated word of `query` appears in the body's name or in what the window says about
 /// it. An empty query matches every body.
 [[nodiscard]] bool DoesMontageEntryMatchUVE(const ContentCatalogueItemUVE& item,
                                             const ContentCatalogueMontageEntryUVE& entry,
                                             std::string_view query) noexcept {
+    const std::string displayName = MontageItemDisplayNameUVE(item);
     while (!query.empty()) {
         const std::size_t space = query.find(' ');
         const std::string_view word = query.substr(0U, space);
         if (!word.empty() && !ContainsMontageTextUVE(item.label, word) &&
+            !ContainsMontageTextUVE(displayName, word) &&
             !ContainsMontageTextUVE(entry.summary, word) && !ContainsMontageTextUVE(entry.detail, word)) {
             return false;
         }
@@ -111,14 +136,15 @@ constexpr float kMontageIconGapUVE = 8.0F;
     }
     const float textY = std::floor(rowMin.y + ((rowHeight - ImGui::GetTextLineHeight()) * 0.5F));
     const float labelX = iconMin.x + kMontageIconSizeUVE + kMontageIconGapUVE;
-    drawList.AddText(ImVec2{labelX, textY}, textColor, std::string{item.label}.c_str());
+    const std::string displayName = MontageItemDisplayNameUVE(item);
+    drawList.AddText(ImVec2{labelX, textY}, textColor, displayName.c_str());
     // The type rides at the far edge, dimmed, and only when all of it fits: a type cut to "Cha..."
     // says nothing the name above has not already said.
     if (!typeName.empty()) {
         const std::string hint{typeName};
         const float hintWidth = ImGui::CalcTextSize(hint.c_str()).x;
         const float hintRight = rowMin.x + rowWidth - kMontageRowInsetUVE;
-        const float nameRight = labelX + ImGui::CalcTextSize(std::string{item.label}.c_str()).x;
+        const float nameRight = labelX + ImGui::CalcTextSize(displayName.c_str()).x;
         if (hintRight - hintWidth > nameRight + (style.ItemSpacing.x * 2.0F)) {
             drawList.AddText(ImVec2{hintRight - hintWidth, textY}, hintColor, hint.c_str());
         }
@@ -324,7 +350,7 @@ void EditorUVE::DrawMontageUVE() {
     if (pickedItem == nullptr || pickedEntry == nullptr) {
         ImGui::TextDisabled("Pick a body on the left to see what it is.");
     } else {
-        const std::string name{pickedItem->label};
+        const std::string name = MontageItemDisplayNameUVE(*pickedItem);
         ImGui::TextUnformatted(name.c_str());
         const std::string typeName{MontageRootTypeNameUVE(*pickedItem)};
         if (!typeName.empty()) {
@@ -368,7 +394,7 @@ void EditorUVE::DrawMontageUVE() {
     } else if (!allowed) {
         ImGui::TextDisabled("Stop Play to make an entity.");
     } else if (pickedItem != nullptr) {
-        ImGui::TextDisabled("You selected %s.", std::string{pickedItem->label}.c_str());
+        ImGui::TextDisabled("You selected %s.", MontageItemDisplayNameUVE(*pickedItem).c_str());
     } else {
         ImGui::TextDisabled("You selected nothing.");
     }

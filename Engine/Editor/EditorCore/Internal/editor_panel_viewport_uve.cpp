@@ -311,6 +311,7 @@ void EditorUVE::DrawViewportPanelUVE() {
                                      m_inspectorPanelWidth, m_scenePanelVisible, m_inspectorPanelVisible);
     // Always: this rect is recomputed from the chrome layout every frame and the viewport never
     // floats, so there is nothing for ImGui to remember and nothing a stale imgui.ini may override.
+    ImGui::SetNextWindowViewport(mainViewport->ID);
     ImGui::SetNextWindowPos(layout.viewportPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.viewportSize, ImGuiCond_Always);
     // Zero interior padding for the viewport window so the rendered 3D image fills the panel

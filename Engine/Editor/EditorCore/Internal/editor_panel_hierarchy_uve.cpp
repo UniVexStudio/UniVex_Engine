@@ -217,6 +217,7 @@ void EditorUVE::DrawHierarchyPanelUVE() {
                                      m_inspectorPanelVisible);
     // Always: the rect comes from the chrome layout every frame. Dragging happens on the seam in
     // DrawEditorChromeHandlesUVE(), which writes m_scenePanelWidth - not on the window's edges.
+    ImGui::SetNextWindowViewport(mainViewport->ID);
     ImGui::SetNextWindowPos(layout.scenePos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.sceneSize, ImGuiCond_Always);
     // No title row and no close button, the same shape the Inspector panel already has: the
