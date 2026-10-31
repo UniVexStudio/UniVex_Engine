@@ -460,7 +460,9 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         gl.table.glUniform3fv(gl.cameraPositionUniform, 1, &cameraPosition.x);
 
         if (albedoTex != 0U) {
-            glActiveTexture(GL_TEXTURE0);
+            // glActiveTexture is a GL 1.3 entry point: Windows' opengl32 <GL/gl.h> only declares
+            // GL 1.1, so it must come from the shared loaded proc table like every other post-1.1 call.
+            gl.table.glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, albedoTex);
             gl.table.glUniform1i(gl.hasAlbedoTextureUniform, 1);
             gl.table.glUniform1i(gl.albedoTextureUniform, 0);
