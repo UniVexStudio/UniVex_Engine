@@ -428,6 +428,12 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
                 ImGui::Separator();
                 continue;
             }
+            if (group == "Entity") {
+                if (const ContentCatalogueItemUVE* const montageItem = FindContentCatalogueItemUVE("body-montage")) {
+                    drawItem(*montageItem, false);
+                }
+                continue;
+            }
             DrawObjectPickerIconUVE(m_uiAssets.GetObjectIconTextureIdUVE(GetContentCatalogueIconKindUVE(*firstInGroup)));
             const std::string groupLabel{group};
             if (ImGui::BeginMenu(groupLabel.c_str())) {
