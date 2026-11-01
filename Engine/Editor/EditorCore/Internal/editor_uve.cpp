@@ -720,6 +720,20 @@ bool EditorUVE::ApplyPlayEntrySpawnUVE() {
     }
     if (player == Scene::kInvalidEntityUVE) {
         player = Scene::ResolvePlayCharacterUVE(entityManager);
+        if (player != Scene::kInvalidEntityUVE) {
+            if (!entityManager.HasComponentUVE<Scene::PlayerComponentUVE>(player)) {
+                entityManager.AddComponentUVE<Scene::PlayerComponentUVE>(player, Scene::PlayerComponentUVE{});
+            }
+            if (!entityManager.HasComponentUVE<Scene::PawnComponentUVE>(player)) {
+                entityManager.AddComponentUVE<Scene::PawnComponentUVE>(player, Scene::PawnComponentUVE{});
+            }
+            if (!entityManager.HasComponentUVE<Scene::ControllerComponentUVE>(player)) {
+                Scene::ControllerComponentUVE possession{};
+                possession.kind = Scene::ControllerKindUVE::Player;
+                entityManager.AddComponentUVE<Scene::ControllerComponentUVE>(player, possession);
+            }
+            static_cast<void>(Scene::PossessControllerUVE(entityManager, player, player));
+        }
     }
     if (player == Scene::kInvalidEntityUVE) {
         return false;
