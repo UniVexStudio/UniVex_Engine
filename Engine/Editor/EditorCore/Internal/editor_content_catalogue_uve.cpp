@@ -98,7 +98,7 @@ constexpr std::array<ContentCatalogueItemUVE, 38> kItems{{
 
     // First in the group: the Montage is the way in, and the six items under it are the shortcut
     // for when the author already knows which body they want.
-    {"body-montage", "3D Body Montage", "Entity",
+    {"body-montage", "3D Montage", "Entity",
      "Pick the body an entity is built on - Player, Character, Prop, Physics Prop, Trigger or Spawner - "
      "and open it to build",
      Action::Montage, {}},

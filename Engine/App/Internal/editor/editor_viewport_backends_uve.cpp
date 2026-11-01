@@ -48,6 +48,7 @@
 #include "uve/objects/3d/camera_3d_uve.h"
 #include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/objects/3d/preview_lighting_uve.h"
+#include "uve/objects/3d/player_3d_uve.h"
 #include "uve/objects/3d/fog_volume_3d_uve.h"
 #include "uve/objects/3d/occluder_3d_uve.h"
 #include "uve/objects/3d/reflection_probe_3d_uve.h"
@@ -851,7 +852,9 @@ public:
         // where an editor convenience must never appear, so it opts out entirely - which is also
         // why a scene with no lights of its own looks dark there, honestly.
         {
-            const bool previewAllowed = !overlayState.gameWorkspaceActive;
+            const bool hasAuthoredSun = HasAuthoredDirectionalLightUVE(entityManager_);
+            const bool hasAuthoredEnv = HasActiveWorldEnvironmentUVE(entityManager_);
+            const bool previewAllowed = !overlayState.gameWorkspaceActive || (!hasAuthoredSun && !hasAuthoredEnv);
             UVE::Scene::PreviewLightingSettingsUVE previewSettings{};
             previewSettings.sunEnabled = overlayState.previewSun && previewAllowed;
             previewSettings.environmentEnabled = overlayState.previewEnvironment && previewAllowed;
@@ -1953,6 +1956,59 @@ private:
     // IsMouseDragging(Left) check would ALSO orbit the camera from the same drag, double-applying
     // the same mouse delta on top of the nav gizmo's own orbit-while-dragging behavior.
     void UpdateCameraFromMouseUVE(const int framebufferHeight, const bool suppressOrbit) {
+        const bool isGamePlaying =
+            gameWorkspaceActive_ && (editor_.GetPlayModeStateUVE() == UVE::Editor::EditorPlayModeStateUVE::Playing);
+        const bool isMouseCaptured = editor_.IsGameMouseCapturedUVE();
+
+        if (isGamePlaying && isMouseCaptured) {
+            const ImGuiIO& io = ImGui::GetIO();
+            const auto& prefs = editor_.GetExtendedPreferencesUVE();
+            const float orbitSens = static_cast<float>(std::clamp(prefs.orbitSensitivity, 0.05, 10.0));
+
+            // Smooth free-look from mouse delta when captured in game mode
+            if (std::abs(io.MouseDelta.x) > 0.0F || std::abs(io.MouseDelta.y) > 0.0F) {
+                camera_.Orbit(io.MouseDelta.x * orbitSens, io.MouseDelta.y * orbitSens);
+                editor_.NotifyViewportOrbitedUVE();
+            }
+
+            // If there is an active possessed player character, smoothly follow it
+            const UVE::Scene::EntityUVE player = UVE::Scene::ResolvePossessedPlayerUVE(entityManager_);
+            if (player != UVE::Scene::kInvalidEntityUVE &&
+                entityManager_.HasComponentUVE<UVE::Scene::WorldTransformComponentUVE>(player)) {
+                const auto& wt = entityManager_.GetComponentUVE<UVE::Scene::WorldTransformComponentUVE>(player);
+                if (UVE::Math::IsFiniteUVE(wt.worldPosition)) {
+                    camera_.SetTarget(univex::math::Vec3{wt.worldPosition.x, wt.worldPosition.y + 1.2F, wt.worldPosition.z});
+                }
+            } else {
+                // Free-fly spectator camera using WASD + Space/Ctrl/Shift
+                univex::math::Vec3 forward = camera_.Target() - camera_.Eye();
+                forward = univex::math::Normalize(forward);
+                if (univex::math::Length(forward) < 0.001F) {
+                    forward = univex::math::Vec3{0.0F, 0.0F, -1.0F};
+                }
+
+                const univex::math::Vec3 up{0.0F, 1.0F, 0.0F};
+                univex::math::Vec3 right = univex::math::Normalize(univex::math::Cross(forward, up));
+
+                univex::math::Vec3 moveDir{0.0F, 0.0F, 0.0F};
+                if (ImGui::IsKeyDown(ImGuiKey_W)) { moveDir = moveDir + forward; }
+                if (ImGui::IsKeyDown(ImGuiKey_S)) { moveDir = moveDir - forward; }
+                if (ImGui::IsKeyDown(ImGuiKey_D)) { moveDir = moveDir + right; }
+                if (ImGui::IsKeyDown(ImGuiKey_A)) { moveDir = moveDir - right; }
+                if (ImGui::IsKeyDown(ImGuiKey_Space)) { moveDir = moveDir + up; }
+                if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_C)) { moveDir = moveDir - up; }
+
+                const float moveLen = univex::math::Length(moveDir);
+                if (moveLen > 0.001F) {
+                    const float flySpeed =
+                        (ImGui::IsKeyDown(ImGuiKey_LeftShift) ? 22.0F : 8.0F) * std::max(0.001F, io.DeltaTime);
+                    moveDir = moveDir * (flySpeed / moveLen);
+                    camera_.SetTarget(camera_.Target() + moveDir);
+                }
+            }
+            return;
+        }
+
         // Same overlay guard as selection and the handle drag: pressing a toolbar bubble must not
         // also start orbiting the scene behind it.
         if (pointerOverOverlay_ || !ImGui::IsWindowHovered()) {

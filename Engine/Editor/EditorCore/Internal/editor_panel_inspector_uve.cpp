@@ -133,6 +133,7 @@ void EditorUVE::DrawInspectorPanelUVE() {
                                      m_inspectorPanelVisible);
     // Always: the rect comes from the chrome layout every frame. Dragging happens on the seam in
     // DrawEditorChromeHandlesUVE(), which writes m_inspectorPanelWidth - not on the window's edges.
+    ImGui::SetNextWindowViewport(mainViewport->ID);
     ImGui::SetNextWindowPos(layout.inspectorPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.inspectorSize, ImGuiCond_Always);
     // No title row and no close button: the Inspector / Import / Events tabs ARE the panel's top
