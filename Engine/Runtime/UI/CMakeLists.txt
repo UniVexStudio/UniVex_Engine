@@ -25,6 +25,7 @@ add_library(uve_ui STATIC
     Internal/prism/prism_widget_uve.cpp
     Internal/prism/prism_event_router_uve.cpp
     Internal/prism/prism_button_uve.cpp
+    Internal/prism/prism_dock_node_uve.cpp
 )
 
 # ui_font_ttf_bytes.inc is generated at build time from the module's own canonical
