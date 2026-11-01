@@ -34,7 +34,6 @@ void PrismWidgetUVE::ClearChildren() {
 }
 
 Math::Vector2UVE PrismWidgetUVE::OnMeasureContentUVE(Math::Vector2UVE availableSize) {
-    // Default content measurement computes bounding union of children flex flow
     float mainAxisContent = 0.0F;
     float crossAxisContent = 0.0F;
     const bool isRow = (m_style.flexDirection == PrismFlexDirectionUVE::Row);
@@ -72,7 +71,6 @@ Math::Vector2UVE PrismWidgetUVE::OnMeasureContentUVE(Math::Vector2UVE availableS
 Math::Vector2UVE PrismWidgetUVE::MeasureUVE(Math::Vector2UVE availableSize) {
     const Math::Vector2UVE contentSize = OnMeasureContentUVE(availableSize);
 
-    // Resolve width and height against constraints
     float resolvedW = m_style.width.Resolve(availableSize.x, contentSize.x);
     float resolvedH = m_style.height.Resolve(availableSize.y, contentSize.y);
 
@@ -99,7 +97,6 @@ void PrismWidgetUVE::ArrangeUVE(const Math::RectUVE& finalRect) {
     const float containerMain = isRow ? contentW : contentH;
     const float containerCross = isRow ? contentH : contentW;
 
-    // Calculate total base main axis size and total flex grow
     float totalBaseMain = 0.0F;
     float totalFlexGrow = 0.0F;
 
@@ -117,7 +114,6 @@ void PrismWidgetUVE::ArrangeUVE(const Math::RectUVE& finalRect) {
 
     const float remainingSpace = std::max(0.0F, containerMain - totalBaseMain);
 
-    // Initial offset along main axis according to JustifyContent
     float mainCursor = isRow ? contentX : contentY;
     float gapOffset = m_style.gap;
 
@@ -131,7 +127,6 @@ void PrismWidgetUVE::ArrangeUVE(const Math::RectUVE& finalRect) {
         }
     }
 
-    // Arrange children
     for (std::size_t i = 0; i < m_children.size(); ++i) {
         auto& child = m_children[i];
         if (!child) continue;
@@ -140,12 +135,10 @@ void PrismWidgetUVE::ArrangeUVE(const Math::RectUVE& finalRect) {
         float childMain = isRow ? desired.x : desired.y;
         float childCross = isRow ? desired.y : desired.x;
 
-        // Apply flex grow expansion
         if (totalFlexGrow > 0.0001F && child->GetStyle().flexGrow > 0.0F) {
             childMain += (child->GetStyle().flexGrow / totalFlexGrow) * remainingSpace;
         }
 
-        // Apply cross axis alignment
         float crossCursor = isRow ? contentY : contentX;
         if (m_style.alignItems == PrismAlignUVE::Stretch) {
             childCross = containerCross;
@@ -165,11 +158,9 @@ void PrismWidgetUVE::ArrangeUVE(const Math::RectUVE& finalRect) {
 }
 
 void PrismWidgetUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
-    // Draw background if visible
     if (m_style.backgroundColor.a > 0.0F) {
         drawList.AddRectFilled(m_layoutRect, m_style.backgroundColor, m_style.cornerRadii);
     }
-    // Draw border if visible
     if (m_style.borderWidth > 0.0F && m_style.borderColor.a > 0.0F) {
         drawList.AddRectStroke(m_layoutRect, m_style.borderColor, m_style.borderWidth, m_style.cornerRadii);
     }
@@ -205,6 +196,65 @@ void PrismWidgetUVE::PaintUVE(PrismDrawListUVE& drawList) {
 
 bool PrismWidgetUVE::HitTestUVE(Math::Vector2UVE screenPoint) const noexcept {
     return Math::ContainsUVE(m_layoutRect, screenPoint);
+}
+
+void PrismWidgetUVE::OnPointerEnter(const PrismPointerEventUVE&) {
+    m_isHovered = true;
+}
+
+void PrismWidgetUVE::OnPointerLeave(const PrismPointerEventUVE&) {
+    m_isHovered = false;
+    m_isPressed = false;
+}
+
+PrismEventResultUVE PrismWidgetUVE::OnPointerMove(const PrismPointerEventUVE&) {
+    return PrismEventResultUVE::Unhandled;
+}
+
+PrismEventResultUVE PrismWidgetUVE::OnPointerDown(const PrismPointerEventUVE& event) {
+    if (event.button == Input::MouseButtonUVE::Left) {
+        m_isPressed = true;
+    }
+    return PrismEventResultUVE::Unhandled;
+}
+
+PrismEventResultUVE PrismWidgetUVE::OnPointerUp(const PrismPointerEventUVE& event) {
+    if (event.button == Input::MouseButtonUVE::Left) {
+        m_isPressed = false;
+    }
+    return PrismEventResultUVE::Unhandled;
+}
+
+PrismEventResultUVE PrismWidgetUVE::OnScroll(const PrismScrollEventUVE&) {
+    return PrismEventResultUVE::Unhandled;
+}
+
+void PrismWidgetUVE::OnFocusGained() {
+    m_isFocused = true;
+}
+
+void PrismWidgetUVE::OnFocusLost() {
+    m_isFocused = false;
+}
+
+PrismEventResultUVE PrismWidgetUVE::OnKeyDown(const PrismKeyEventUVE&) {
+    return PrismEventResultUVE::Unhandled;
+}
+
+PrismEventResultUVE PrismWidgetUVE::OnKeyUp(const PrismKeyEventUVE&) {
+    return PrismEventResultUVE::Unhandled;
+}
+
+PrismEventResultUVE PrismWidgetUVE::OnCharInput(char32_t) {
+    return PrismEventResultUVE::Unhandled;
+}
+
+PrismEventResultUVE PrismWidgetUVE::OnDragOver(PrismDragDropEventUVE&) {
+    return PrismEventResultUVE::Unhandled;
+}
+
+PrismEventResultUVE PrismWidgetUVE::OnDragDrop(const PrismDragDropEventUVE&) {
+    return PrismEventResultUVE::Unhandled;
 }
 
 } // namespace UVE::UI::Prism
