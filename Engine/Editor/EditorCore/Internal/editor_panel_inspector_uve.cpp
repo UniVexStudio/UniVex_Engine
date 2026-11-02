@@ -30,6 +30,7 @@
 #include <system_error>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -102,16 +103,33 @@ namespace {
 /// A class-chain heading: the ancestor the sections below it come from. A quiet label with a rule
 /// to the edge, so it groups without competing with the section headers.
 void DrawInspectorChainHeaderUVE(const std::string& label) {
-    ImGui::Dummy(ImVec2(0.0F, 4.0F));
+    ImGui::Dummy(ImVec2(0.0F, 5.0F));
     const ImVec2 start = ImGui::GetCursorScreenPos();
     const float width = ImGui::GetContentRegionAvail().x;
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55F, 0.66F, 0.80F, 1.0F));
-    ImGui::TextUnformatted(label.c_str());
-    ImGui::PopStyleColor();
-    const float textWidth = ImGui::CalcTextSize(label.c_str()).x;
-    const float ruleY = start.y + ImGui::GetTextLineHeight() * 0.5F;
-    ImGui::GetWindowDrawList()->AddLine(ImVec2(start.x + textWidth + 6.0F, ruleY), ImVec2(start.x + width, ruleY),
-                                        IM_COL32(88, 104, 128, 160), 1.0F);
+    ImDrawList* const drawList = ImGui::GetWindowDrawList();
+
+    const ImVec2 textSize = ImGui::CalcTextSize(label.c_str());
+    constexpr float badgePaddingX = 7.0F;
+    constexpr float badgeHeight = 18.0F;
+    const float badgeWidth = textSize.x + (badgePaddingX * 2.0F);
+
+    const ImVec2 badgeMin{start.x, start.y};
+    const ImVec2 badgeMax{start.x + badgeWidth, start.y + badgeHeight};
+    constexpr float rounding = 3.5F;
+
+    // Soft studio category tag
+    drawList->AddRectFilled(badgeMin, badgeMax, IM_COL32(23, 28, 38, 220), rounding);
+    drawList->AddRect(badgeMin, badgeMax, IM_COL32(45, 55, 75, 200), rounding, 0, 1.0F);
+
+    const float textY = start.y + ((badgeHeight - textSize.y) * 0.5F);
+    drawList->AddText(ImVec2{start.x + badgePaddingX, textY}, IM_COL32(135, 170, 215, 240), label.c_str());
+
+    // Subtle gradient rule to the panel edge
+    const float ruleY = start.y + (badgeHeight * 0.5F);
+    drawList->AddLine(ImVec2{badgeMax.x + 8.0F, ruleY}, ImVec2{start.x + width, ruleY},
+                      IM_COL32(45, 53, 72, 170), 1.0F);
+
+    ImGui::Dummy(ImVec2(0.0F, badgeHeight + 2.0F));
 }
 
 } // namespace
@@ -145,8 +163,16 @@ void EditorUVE::DrawInspectorPanelUVE() {
     constexpr ImGuiWindowFlags flags = kLayoutOwnedPanelFlagsUVE;
     // Match the Outliner panel's neutral charcoal surface. Inputs and nested fields keep the
     // darker FrameBg/ChildBg layers from the shared theme, so depth and editability remain clear.
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{0.106F, 0.118F, 0.129F, 1.0F});
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{0.075F, 0.082F, 0.102F, 1.0F});
     ImGui::Begin(kPanelLabelInspectorUVE, nullptr, flags);
+
+    // Soft modern styling for the tab bar
+    ImGui::PushStyleColor(ImGuiCol_Tab, ImVec4{0.095F, 0.106F, 0.133F, 1.0F});
+    ImGui::PushStyleColor(ImGuiCol_TabHovered, ImVec4{0.145F, 0.165F, 0.212F, 1.0F});
+    ImGui::PushStyleColor(ImGuiCol_TabSelected, ImVec4{0.125F, 0.141F, 0.180F, 1.0F});
+    ImGui::PushStyleColor(ImGuiCol_TabDimmed, ImVec4{0.082F, 0.090F, 0.114F, 1.0F});
+    ImGui::PushStyleColor(ImGuiCol_TabDimmedSelected, ImVec4{0.110F, 0.122F, 0.153F, 1.0F});
+    ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 4.0F);
 
     // Real tabs rather than three selectable labels. The active tab can also be changed from
     // elsewhere (the Content Browser opens the Inspector), so a change made outside the strip is
@@ -168,6 +194,8 @@ void EditorUVE::DrawInspectorPanelUVE() {
         drawTab("Events", EditorRightPanelTabUVE::Events);
         ImGui::EndTabBar();
     }
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(5);
     m_drawnRightPanelTab = m_activeRightPanelTab;
 
     switch (m_activeRightPanelTab) {
@@ -371,10 +399,16 @@ void EditorUVE::DrawInspectorContentUVE() {
             DrawContentAssetCardInspectorUVE(*m_selectedProjectFile);
             return;
         }
-        ImGui::BeginChild("##inspector-empty-state", ImVec2{0.0F, 64.0F}, true);
-        ImGui::TextColored(ImVec4{0.80F, 0.82F, 0.85F, 1.0F}, "NO ENTITY SELECTED");
-        ImGui::TextDisabled("Select an entity in the Outliner or the Viewport to inspect it.");
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4{0.086F, 0.098F, 0.125F, 0.8F});
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4{0.16F, 0.18F, 0.24F, 0.6F});
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0F);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{12.0F, 12.0F});
+        ImGui::BeginChild("##inspector-empty-state", ImVec2{0.0F, 68.0F}, true);
+        ImGui::TextColored(ImVec4{0.82F, 0.85F, 0.90F, 1.0F}, "NO ENTITY SELECTED");
+        ImGui::TextDisabled("Select an entity in the Outliner or Viewport to inspect properties.");
         ImGui::EndChild();
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor(2);
         return;
     }
     if (!HasSingleDocumentSelectionUVE()) {
@@ -519,6 +553,7 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
     bool rotationChanged = false;
     bool scaleChanged = false;
     bool gestureEnded = false;
+    ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2{4.0F, 3.5F});
     if (ImGui::BeginTable("##transform", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings)) {
         ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthStretch, 0.26F);
         ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthStretch, 0.74F);
@@ -547,6 +582,7 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
         scaleChanged = row("Scale", "##local-scale", scale, 0.01F, EditorToolSessionModeUVE::Scale);
         ImGui::EndTable();
     }
+    ImGui::PopStyleVar();
     if (positionChanged || rotationChanged || scaleChanged) {
         edited.localPosition = Math::Vector3UVE{position[0], position[1], position[2]};
         if (rotationChanged) {
@@ -631,9 +667,85 @@ bool EditorUVE::DrawInspectorFoldUVE(const char* const label, const std::string&
     // The editor, not Dear ImGui's per-window storage, owns the state: that storage is lost on
     // exit, and the Inspector should reopen the way it was left.
     const bool open = IsInspectorFoldOpenUVE(key, defaultOpen);
+
+    if (asHeader) {
+        const float width = ImGui::GetContentRegionAvail().x;
+        constexpr float headerHeight = 27.0F;
+        constexpr float rounding = 4.5F;
+        const ImVec2 origin = ImGui::GetCursorScreenPos();
+        const ImVec2 maxPos{origin.x + width, origin.y + headerHeight};
+
+        // InvisibleButton with the exact label so ID hashing and BeginPopupContextItem work seamlessly
+        const bool clicked = ImGui::InvisibleButton(label, ImVec2{width, headerHeight});
+        const bool hovered = ImGui::IsItemHovered();
+        const bool active = ImGui::IsItemActive();
+
+        bool nowOpen = open;
+        if (clicked) {
+            nowOpen = !open;
+            SetInspectorFoldOpenUVE(key, nowOpen);
+        }
+
+        ImDrawList& drawList = *ImGui::GetWindowDrawList();
+
+        // 1. Soft surface card background
+        const ImU32 bgColor = active
+            ? IM_COL32(32, 38, 54, 255)
+            : (hovered ? IM_COL32(26, 31, 44, 255)
+                       : (nowOpen ? IM_COL32(19, 22, 32, 255) : IM_COL32(15, 17, 24, 255)));
+        drawList.AddRectFilled(origin, maxPos, bgColor, rounding);
+
+        // 2. Soft subtle 1px border
+        const ImU32 borderColor = hovered
+            ? IM_COL32(65, 75, 105, 255)
+            : (nowOpen ? IM_COL32(44, 52, 72, 255) : IM_COL32(28, 32, 44, 255));
+        drawList.AddRect(origin, maxPos, borderColor, rounding, 0, 1.0F);
+
+        // 3. Soft left accent pill (Soft Indigo) when open
+        if (nowOpen) {
+            constexpr float pillWidth = 2.5F;
+            constexpr float pillInset = 5.0F;
+            const ImVec2 pillMin{origin.x + 2.0F, origin.y + pillInset};
+            const ImVec2 pillMax{origin.x + 2.0F + pillWidth, origin.y + headerHeight - pillInset};
+            drawList.AddRectFilled(pillMin, pillMax, IM_COL32(99, 102, 241, 245), 1.25F);
+        }
+
+        // 4. Sleek procedural chevron (> / v)
+        const float chevronCenterX = origin.x + 14.0F;
+        const float chevronCenterY = origin.y + (headerHeight * 0.5F);
+        const ImU32 chevronColor = hovered ? IM_COL32(240, 245, 255, 255) : IM_COL32(160, 172, 195, 220);
+        constexpr float chSize = 3.5F;
+        if (nowOpen) {
+            drawList.AddLine(ImVec2{chevronCenterX - chSize, chevronCenterY - 1.5F},
+                             ImVec2{chevronCenterX, chevronCenterY + 2.0F}, chevronColor, 1.5F);
+            drawList.AddLine(ImVec2{chevronCenterX, chevronCenterY + 2.0F},
+                             ImVec2{chevronCenterX + chSize, chevronCenterY - 1.5F}, chevronColor, 1.5F);
+        } else {
+            drawList.AddLine(ImVec2{chevronCenterX - 1.5F, chevronCenterY - chSize},
+                             ImVec2{chevronCenterX + 2.0F, chevronCenterY}, chevronColor, 1.5F);
+            drawList.AddLine(ImVec2{chevronCenterX + 2.0F, chevronCenterY},
+                             ImVec2{chevronCenterX - 1.5F, chevronCenterY + chSize}, chevronColor, 1.5F);
+        }
+
+        // 5. Clean, centered typography
+        const std::string_view fullLabel{label};
+        std::string_view displayLabel = fullLabel;
+        if (const auto hashPos = fullLabel.find("##"); hashPos != std::string_view::npos) {
+            displayLabel = fullLabel.substr(0, hashPos);
+        }
+        const ImVec2 textSize = ImGui::CalcTextSize(displayLabel.data(), displayLabel.data() + displayLabel.size());
+        const float textY = origin.y + ((headerHeight - textSize.y) * 0.5F);
+        const ImU32 textColor = nowOpen ? IM_COL32(245, 248, 252, 255) : IM_COL32(195, 202, 215, 230);
+        drawList.AddText(ImVec2{origin.x + 27.0F, textY}, textColor, displayLabel.data(),
+                         displayLabel.data() + displayLabel.size());
+
+        return nowOpen;
+    }
+
+    // Nested fold (asHeader == false)
     ImGui::SetNextItemOpen(open, ImGuiCond_Always);
     const auto treeFlags = static_cast<ImGuiTreeNodeFlags>(flags);
-    const bool nowOpen = asHeader ? ImGui::CollapsingHeader(label, treeFlags) : ImGui::TreeNodeEx(label, treeFlags);
+    const bool nowOpen = ImGui::TreeNodeEx(label, treeFlags);
     if (nowOpen != open) {
         SetInspectorFoldOpenUVE(key, nowOpen);
     }
