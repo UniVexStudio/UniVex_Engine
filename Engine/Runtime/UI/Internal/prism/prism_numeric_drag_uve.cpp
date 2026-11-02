@@ -16,7 +16,7 @@ PrismNumericDragUVE::PrismNumericDragUVE(
     std::string badge,
     float initialValue,
     float speed,
-    Math::ColorUVE badgeColor
+    PrismColorUVE badgeColor
 )
     : PrismWidgetUVE("PrismNumericDrag"),
       m_value(initialValue),
@@ -167,11 +167,11 @@ void PrismNumericDragUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
     const auto& theme = PrismThemeUVE::Dark();
 
     // 1. Container background card
-    const Math::ColorUVE bg = m_isDragging ? theme.bgWidgetActive : (m_isHovered ? theme.bgWidgetHover : theme.bgWidget);
+    const PrismColorUVE bg = m_isDragging ? theme.bgWidgetActive : (m_isHovered ? theme.bgWidgetHover : theme.bgWidget);
     drawList.AddRectFilled(m_layoutRect, bg, theme.radiusSmall);
 
     // Border or focus ring
-    const Math::ColorUVE border = (m_isFocused || m_isEditingText) ? theme.accentFocusRing : theme.borderSubtle;
+    const PrismColorUVE border = (m_isFocused || m_isEditingText) ? theme.accentFocusRing : theme.borderSubtle;
     drawList.AddRectStroke(m_layoutRect, border, 1.0F, theme.radiusSmall);
 
     // 2. Left colored badge
@@ -188,7 +188,7 @@ void PrismNumericDragUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
         const float badgeCharY = badgeRect.position.y + (badgeRect.size.y - 12.0F) * 0.5F;
         drawList.AddRectFilled(
             Math::RectUVE{{badgeCharX, badgeCharY}, {7.5F, 12.0F}},
-            Math::ColorUVE{1.0F, 1.0F, 1.0F, 1.0F}
+            PrismColorUVE{1.0F, 1.0F, 1.0F, 1.0F}
         );
     }
 

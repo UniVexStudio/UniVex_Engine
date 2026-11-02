@@ -112,7 +112,7 @@ void PrismDrawListUVE::AppendQuad(const PrismVertexUVE& v0, const PrismVertexUVE
     m_commands.back().indexCount += 6;
 }
 
-void PrismDrawListUVE::AddRectFilled(const Math::RectUVE& rect, Math::ColorUVE color, PrismCornerRadiiUVE radii) {
+void PrismDrawListUVE::AddRectFilled(const Math::RectUVE& rect, PrismColorUVE color, PrismCornerRadiiUVE radii) {
     if (rect.size.x <= 0.0F || rect.size.y <= 0.0F) {
         return;
     }
@@ -176,7 +176,7 @@ void PrismDrawListUVE::AddRectFilled(const Math::RectUVE& rect, Math::ColorUVE c
     }
 }
 
-void PrismDrawListUVE::AddRectStroke(const Math::RectUVE& rect, Math::ColorUVE color, float strokeWidth, PrismCornerRadiiUVE radii) {
+void PrismDrawListUVE::AddRectStroke(const Math::RectUVE& rect, PrismColorUVE color, float strokeWidth, PrismCornerRadiiUVE radii) {
     if (rect.size.x <= 0.0F || rect.size.y <= 0.0F || strokeWidth <= 0.0F) {
         return;
     }
@@ -256,7 +256,7 @@ void PrismDrawListUVE::AddRectStroke(const Math::RectUVE& rect, Math::ColorUVE c
 }
 
 void PrismDrawListUVE::AddTexturedQuad(const Math::RectUVE& rect, const Math::RectUVE& uvRect,
-                                       Math::ColorUVE tint, std::uint64_t textureId) {
+                                       PrismColorUVE tint, std::uint64_t textureId) {
     if (rect.size.x <= 0.0F || rect.size.y <= 0.0F) {
         return;
     }
@@ -284,7 +284,7 @@ void PrismDrawListUVE::AddTexturedQuad(const Math::RectUVE& rect, const Math::Re
 }
 
 void PrismDrawListUVE::AddDropShadow(const Math::RectUVE& rect, float blurRadius, float spread,
-                                      Math::ColorUVE shadowColor, Math::Vector2UVE offset,
+                                      PrismColorUVE shadowColor, Math::Vector2UVE offset,
                                       PrismCornerRadiiUVE radii) {
     if (shadowColor.a <= 0.0F || (blurRadius <= 0.0F && spread <= 0.0F)) {
         return;
@@ -300,14 +300,14 @@ void PrismDrawListUVE::AddDropShadow(const Math::RectUVE& rect, float blurRadius
     SetPipelineMode(PrismPipelineModeUVE::DropShadow);
 
     // Multi-layer gaussian approximation
-    Math::ColorUVE c = shadowColor;
+    PrismColorUVE c = shadowColor;
     c.a *= 0.5F;
     AddRectFilled(shadowRect, c, PrismCornerRadiiUVE{radii.topLeft + expand, radii.topRight + expand, radii.bottomRight + expand, radii.bottomLeft + expand});
 
     SetPipelineMode(savedMode);
 }
 
-void PrismDrawListUVE::AddLine(Math::Vector2UVE p0, Math::Vector2UVE p1, Math::ColorUVE color, float thickness) {
+void PrismDrawListUVE::AddLine(Math::Vector2UVE p0, Math::Vector2UVE p1, PrismColorUVE color, float thickness) {
     const Math::Vector2UVE d = p1 - p0;
     const float len = std::sqrt(d.x * d.x + d.y * d.y);
     if (len <= 0.0001F || thickness <= 0.0F) {

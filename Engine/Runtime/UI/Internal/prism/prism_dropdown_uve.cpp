@@ -170,10 +170,10 @@ void PrismDropdownUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
     const auto& theme = PrismThemeUVE::Dark();
 
     // 1. Header Card
-    const Math::ColorUVE headerBg = m_isOpen ? theme.bgWidgetActive : (m_isHovered ? theme.bgWidgetHover : theme.bgWidget);
+    const PrismColorUVE headerBg = m_isOpen ? theme.bgWidgetActive : (m_isHovered ? theme.bgWidgetHover : theme.bgWidget);
     drawList.AddRectFilled(m_layoutRect, headerBg, theme.radiusSmall);
 
-    const Math::ColorUVE border = (m_isFocused || m_isOpen) ? theme.accentFocusRing : theme.borderSubtle;
+    const PrismColorUVE border = (m_isFocused || m_isOpen) ? theme.accentFocusRing : theme.borderSubtle;
     drawList.AddRectStroke(m_layoutRect, border, 1.0F, theme.radiusSmall);
 
     // Selected Text
@@ -214,7 +214,7 @@ void PrismDropdownUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
             const bool isSelected = (static_cast<int>(i) == m_selectedIndex);
 
             if (isSelected) {
-                drawList.AddRectFilled(itemRect, Math::ColorUVE{theme.accentPrimary.r, theme.accentPrimary.g, theme.accentPrimary.b, 0.3F}, theme.radiusSmall);
+                drawList.AddRectFilled(itemRect, PrismColorUVE{theme.accentPrimary.r, theme.accentPrimary.g, theme.accentPrimary.b, 0.3F}, theme.radiusSmall);
             } else if (isHovered) {
                 drawList.AddRectFilled(itemRect, theme.bgWidgetHover, theme.radiusSmall);
             }

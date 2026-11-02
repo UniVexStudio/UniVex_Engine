@@ -27,8 +27,8 @@ public:
     void SetFontSize(float size) noexcept;
     [[nodiscard]] float GetFontSize() const noexcept { return m_fontSize; }
 
-    void SetTextColor(Math::ColorUVE color) noexcept { m_textColor = color; }
-    [[nodiscard]] Math::ColorUVE GetTextColor() const noexcept { return m_textColor; }
+    void SetTextColor(PrismColorUVE color) noexcept { m_textColor = color; }
+    [[nodiscard]] PrismColorUVE GetTextColor() const noexcept { return m_textColor; }
 
     void SetAlignment(PrismTextAlignUVE align) noexcept { m_alignment = align; }
     [[nodiscard]] PrismTextAlignUVE GetAlignment() const noexcept { return m_alignment; }
@@ -39,7 +39,7 @@ protected:
 
     std::string       m_text;
     float             m_fontSize = 14.0F;
-    Math::ColorUVE    m_textColor{0.95F, 0.96F, 0.98F, 1.0F};
+    PrismColorUVE    m_textColor{0.95F, 0.96F, 0.98F, 1.0F};
     PrismTextAlignUVE m_alignment = PrismTextAlignUVE::Left;
 };
 

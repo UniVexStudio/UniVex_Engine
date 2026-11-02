@@ -18,7 +18,7 @@ public:
         std::string badge = "X",
         float initialValue = 0.0F,
         float speed = 0.05F,
-        Math::ColorUVE badgeColor = Math::ColorUVE{0.85F, 0.25F, 0.25F, 1.0F}
+        PrismColorUVE badgeColor = PrismColorUVE{0.85F, 0.25F, 0.25F, 1.0F}
     );
 
     void SetValue(float value) noexcept;
@@ -34,8 +34,8 @@ public:
     void SetBadge(std::string badge) { m_badge = std::move(badge); }
     [[nodiscard]] const std::string& GetBadge() const noexcept { return m_badge; }
 
-    void SetBadgeColor(Math::ColorUVE color) noexcept { m_badgeColor = color; }
-    [[nodiscard]] Math::ColorUVE GetBadgeColor() const noexcept { return m_badgeColor; }
+    void SetBadgeColor(PrismColorUVE color) noexcept { m_badgeColor = color; }
+    [[nodiscard]] PrismColorUVE GetBadgeColor() const noexcept { return m_badgeColor; }
 
     void SetPrecision(int decimalPlaces) noexcept { m_precision = decimalPlaces; }
 
@@ -69,7 +69,7 @@ private:
     int   m_precision = 2;
 
     std::string   m_badge;
-    Math::ColorUVE m_badgeColor;
+    PrismColorUVE m_badgeColor;
 
     bool  m_isDragging = false;
     float m_dragStartX = 0.0F;

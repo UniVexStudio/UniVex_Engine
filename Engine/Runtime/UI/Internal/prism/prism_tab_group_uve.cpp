@@ -224,7 +224,7 @@ void PrismTabGroupUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
         const bool isHovered = (static_cast<int>(i) == m_hoveredTabIndex);
 
         // Tab Pill Background
-        const Math::ColorUVE tabBg = isActive ? theme.bgPanel : (isHovered ? theme.bgWidgetHover : theme.bgSurface);
+        const PrismColorUVE tabBg = isActive ? theme.bgPanel : (isHovered ? theme.bgWidgetHover : theme.bgSurface);
         drawList.AddRectFilled(geom.tabRect, tabBg, PrismCornerRadiiUVE{4.0F, 4.0F, 0.0F, 0.0F});
 
         if (isActive) {
@@ -255,13 +255,13 @@ void PrismTabGroupUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
         // Tab Close Button ('x')
         if (m_tabs[i].closable) {
             const bool isCloseHovered = isHovered && m_hoveredCloseButton;
-            const Math::ColorUVE closeBg = isCloseHovered ? theme.accentDanger : Math::ColorUVE{0.0F, 0.0F, 0.0F, 0.0F};
+            const PrismColorUVE closeBg = isCloseHovered ? theme.accentDanger : PrismColorUVE{0.0F, 0.0F, 0.0F, 0.0F};
             if (isCloseHovered) {
                 drawList.AddRectFilled(geom.closeRect, closeBg, PrismCornerRadiiUVE{3.0F});
             }
 
             // Close 'x' icon
-            const Math::ColorUVE xColor = isCloseHovered ? Math::ColorUVE{1.0F, 1.0F, 1.0F, 1.0F} : theme.textMuted;
+            const PrismColorUVE xColor = isCloseHovered ? PrismColorUVE{1.0F, 1.0F, 1.0F, 1.0F} : theme.textMuted;
             drawList.AddRectFilled(
                 Math::RectUVE{
                     {geom.closeRect.position.x + 3.0F, geom.closeRect.position.y + (geom.closeRect.size.y - 2.0F) * 0.5F},

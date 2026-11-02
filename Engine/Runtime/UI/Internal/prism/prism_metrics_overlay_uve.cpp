@@ -51,17 +51,17 @@ void PrismMetricsOverlayUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
     const auto& theme = PrismThemeUVE::Dark();
 
     // Subtle drop shadow behind overlay window
-    drawList.AddDropShadow(m_layoutRect, 10.0F, 2.0F, Math::ColorUVE{0.0F, 0.0F, 0.0F, 0.4F}, {0.0F, 4.0F}, m_style.cornerRadii);
+    drawList.AddDropShadow(m_layoutRect, 10.0F, 2.0F, PrismColorUVE{0.0F, 0.0F, 0.0F, 0.4F}, {0.0F, 4.0F}, m_style.cornerRadii);
 
     // Background panel
     PrismWidgetUVE::OnPaintContentUVE(drawList);
 
     // Performance bar indicator (Green/Cyan if > 50 FPS, Yellow if 30-50, Red if < 30)
-    Math::ColorUVE indicatorColor = theme.accentPrimary;
+    PrismColorUVE indicatorColor = theme.accentPrimary;
     if (m_fps > 0.0 && m_fps < 30.0) {
-        indicatorColor = Math::ColorUVE{0.95F, 0.25F, 0.25F, 1.0F};
+        indicatorColor = PrismColorUVE{0.95F, 0.25F, 0.25F, 1.0F};
     } else if (m_fps >= 30.0 && m_fps < 50.0) {
-        indicatorColor = Math::ColorUVE{0.95F, 0.80F, 0.25F, 1.0F};
+        indicatorColor = PrismColorUVE{0.95F, 0.80F, 0.25F, 1.0F};
     }
 
     const Math::RectUVE headerBar{

@@ -205,7 +205,7 @@ void PrismTreeViewUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
 
         // Expand arrow indicator (if not leaf)
         if (!row.node->IsLeaf()) {
-            const Math::ColorUVE arrowColor = isSelected ? theme.accentPrimary : theme.textSecondary;
+            const PrismColorUVE arrowColor = isSelected ? theme.accentPrimary : theme.textSecondary;
             drawList.AddRectFilled(row.arrowRect, arrowColor, PrismCornerRadiiUVE{2.0F});
         }
 

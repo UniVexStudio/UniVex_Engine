@@ -119,8 +119,8 @@ struct PrismStyleUVE final {
     float flexShrink = 1.0F; // Shrink weight
 
     // Visual appearance
-    Math::ColorUVE      backgroundColor{0.0F, 0.0F, 0.0F, 0.0F};
-    Math::ColorUVE      borderColor{0.0F, 0.0F, 0.0F, 0.0F};
+    PrismColorUVE      backgroundColor{0.0F, 0.0F, 0.0F, 0.0F};
+    PrismColorUVE      borderColor{0.0F, 0.0F, 0.0F, 0.0F};
     float               borderWidth = 0.0F;
     PrismCornerRadiiUVE cornerRadii{};
 

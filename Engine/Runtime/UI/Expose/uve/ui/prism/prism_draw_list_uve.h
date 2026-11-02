@@ -40,19 +40,19 @@ public:
 
     // --- Geometry Generators ---
     /// Solid flat rectangle (with optional independent corner radii).
-    void AddRectFilled(const Math::RectUVE& rect, Math::ColorUVE color, PrismCornerRadiiUVE radii = {});
+    void AddRectFilled(const Math::RectUVE& rect, PrismColorUVE color, PrismCornerRadiiUVE radii = {});
 
     /// Outlined stroked rectangle with thickness and inner/outer alignment.
-    void AddRectStroke(const Math::RectUVE& rect, Math::ColorUVE color, float strokeWidth = 1.0F, PrismCornerRadiiUVE radii = {});
+    void AddRectStroke(const Math::RectUVE& rect, PrismColorUVE color, float strokeWidth = 1.0F, PrismCornerRadiiUVE radii = {});
 
     /// Textured quad (e.g. icons, images, font atlas glyphs).
-    void AddTexturedQuad(const Math::RectUVE& rect, const Math::RectUVE& uvRect, Math::ColorUVE tint, std::uint64_t textureId);
+    void AddTexturedQuad(const Math::RectUVE& rect, const Math::RectUVE& uvRect, PrismColorUVE tint, std::uint64_t textureId);
 
     /// Drop shadow around a rectangle (uses analytical quad expansion).
-    void AddDropShadow(const Math::RectUVE& rect, float blurRadius, float spread, Math::ColorUVE shadowColor, Math::Vector2UVE offset = {}, PrismCornerRadiiUVE radii = {});
+    void AddDropShadow(const Math::RectUVE& rect, float blurRadius, float spread, PrismColorUVE shadowColor, Math::Vector2UVE offset = {}, PrismCornerRadiiUVE radii = {});
 
     /// 2D Line segment with thickness.
-    void AddLine(Math::Vector2UVE p0, Math::Vector2UVE p1, Math::ColorUVE color, float thickness = 1.0F);
+    void AddLine(Math::Vector2UVE p0, Math::Vector2UVE p1, PrismColorUVE color, float thickness = 1.0F);
 
     // --- Output Accessors ---
     [[nodiscard]] const std::vector<PrismVertexUVE>& GetVertices() const noexcept { return m_vertices; }

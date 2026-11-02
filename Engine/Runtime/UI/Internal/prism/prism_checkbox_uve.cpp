@@ -61,15 +61,15 @@ void PrismCheckboxUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
     const Math::RectUVE boxRect{{boxX, boxY}, {kBoxSizeUVE, kBoxSizeUVE}};
 
     // Checkbox square background & border
-    const Math::ColorUVE boxBg = m_checked ? theme.accentPrimary : theme.bgApp;
-    const Math::ColorUVE boxBorder = m_isFocused ? theme.accentFocusRing : theme.borderProminent;
+    const PrismColorUVE boxBg = m_checked ? theme.accentPrimary : theme.bgApp;
+    const PrismColorUVE boxBorder = m_isFocused ? theme.accentFocusRing : theme.borderProminent;
     drawList.AddRectFilled(boxRect, boxBg, theme.radiusSmall);
     drawList.AddRectStroke(boxRect, boxBorder, 1.0F, theme.radiusSmall);
 
     // Inner checkmark glyph
     if (m_checked) {
         const Math::RectUVE markRect{{boxX + 4.0F, boxY + 4.0F}, {kBoxSizeUVE - 8.0F, kBoxSizeUVE - 8.0F}};
-        drawList.AddRectFilled(markRect, Math::ColorUVE{1.0F, 1.0F, 1.0F, 1.0F}, PrismCornerRadiiUVE{2.0F});
+        drawList.AddRectFilled(markRect, PrismColorUVE{1.0F, 1.0F, 1.0F, 1.0F}, PrismCornerRadiiUVE{2.0F});
     }
 
     // Label text

@@ -107,13 +107,13 @@ void PrismConsoleWidgetUVE::RebuildLogContent() {
         if (m_filter == PrismLogFilterUVE::Warning && log.severity != PrismLogSeverityUVE::Warning) continue;
         if (m_filter == PrismLogFilterUVE::Error && log.severity != PrismLogSeverityUVE::Error) continue;
 
-        Math::ColorUVE textColor = theme.textPrimary;
+        PrismColorUVE textColor = theme.textPrimary;
         std::string prefix;
         if (log.severity == PrismLogSeverityUVE::Warning) {
-            textColor = Math::ColorUVE{0.95F, 0.72F, 0.30F, 1.0F};
+            textColor = PrismColorUVE{0.95F, 0.72F, 0.30F, 1.0F};
             prefix = "[WARN] ";
         } else if (log.severity == PrismLogSeverityUVE::Error) {
-            textColor = Math::ColorUVE{0.95F, 0.45F, 0.40F, 1.0F};
+            textColor = PrismColorUVE{0.95F, 0.45F, 0.40F, 1.0F};
             prefix = "[ERROR] ";
         } else {
             textColor = theme.textSecondary;

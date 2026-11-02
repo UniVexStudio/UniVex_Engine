@@ -137,7 +137,7 @@ void PrismSliderUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
         {kThumbRadiusUVE * 2.0F, kThumbRadiusUVE * 2.0F}
     };
 
-    Math::ColorUVE thumbColor = m_isDragging ? theme.accentHover : (m_isHovered ? theme.textPrimary : theme.accentPrimary);
+    PrismColorUVE thumbColor = m_isDragging ? theme.accentHover : (m_isHovered ? theme.textPrimary : theme.accentPrimary);
     drawList.AddRectFilled(thumbRect, thumbColor, PrismCornerRadiiUVE{kThumbRadiusUVE});
 
     // Focus ring if focused
