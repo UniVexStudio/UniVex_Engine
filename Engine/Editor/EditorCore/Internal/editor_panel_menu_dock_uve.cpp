@@ -337,9 +337,9 @@ void EditorUVE::DrawMenuBarUVE() {
         ImDrawList* const toolbarDrawList = ImGui::GetWindowDrawList();
         const ImVec2 toolbarMin = ImGui::GetWindowPos();
         const ImVec2 toolbarMax{toolbarMin.x + ImGui::GetWindowWidth(), toolbarMin.y + kEditorToolbarHeightUVE};
-        toolbarDrawList->AddRectFilled(toolbarMin, toolbarMax, IM_COL32(32, 37, 43, 255));
+        toolbarDrawList->AddRectFilled(toolbarMin, toolbarMax, IM_COL32(15, 18, 25, 255));
         toolbarDrawList->AddLine(ImVec2{toolbarMin.x, toolbarMax.y - 1.0F}, ImVec2{toolbarMax.x, toolbarMax.y - 1.0F},
-                                 IM_COL32(48, 55, 64, 235), 1.0F);
+                                 IM_COL32(32, 38, 52, 235), 1.0F);
 
         constexpr float kTransportButtonWidthUVE = 32.0F;
         constexpr float kTransportButtonHeightUVE = 20.0F;
@@ -356,7 +356,10 @@ void EditorUVE::DrawMenuBarUVE() {
             const float tabWidth = ImGui::CalcTextSize(name.c_str()).x + kTabIconSizeUVE + 34.0F;
             const ImVec2 tabMin{toolbarMin.x, toolbarMin.y + 3.0F};
             const ImVec2 tabMax{toolbarMin.x + tabWidth, toolbarMax.y};
-            toolbarDrawList->AddRectFilled(tabMin, tabMax, IM_COL32(21, 25, 31, 255), 4.0F, ImDrawFlags_RoundCornersTop);
+            toolbarDrawList->AddRectFilled(tabMin, tabMax, IM_COL32(23, 27, 38, 255), 4.0F, ImDrawFlags_RoundCornersTop);
+            toolbarDrawList->AddRect(tabMin, tabMax, IM_COL32(38, 45, 62, 220), 4.0F, ImDrawFlags_RoundCornersTop, 1.0F);
+            toolbarDrawList->AddRectFilled(ImVec2{tabMin.x + 4.0F, tabMax.y - 2.0F}, ImVec2{tabMax.x - 4.0F, tabMax.y},
+                                           IM_COL32(99, 102, 241, 240), 1.0F);
             const float midY = (tabMin.y + tabMax.y) * 0.5F;
             // The level's file icon, exactly the one the Content Browser puts on the .scene asset:
             // the tab names a file, so it wears the file's icon rather than the object-type icon
@@ -458,8 +461,8 @@ void EditorUVE::DrawMenuBarUVE() {
             ImDrawList* const drawList = ImGui::GetWindowDrawList();
             const ImVec2 min = ImGui::GetWindowPos();
             const ImVec2 max{min.x + ImGui::GetWindowWidth(), min.y + kEditorToolbarHeightUVE};
-            drawList->AddRectFilled(min, max, IM_COL32(32, 37, 43, 255));
-            drawList->AddLine(ImVec2{min.x, max.y - 1.0F}, ImVec2{max.x, max.y - 1.0F}, IM_COL32(48, 55, 64, 235), 1.0F);
+            drawList->AddRectFilled(min, max, IM_COL32(18, 21, 29, 255));
+            drawList->AddLine(ImVec2{min.x, max.y - 1.0F}, ImVec2{max.x, max.y - 1.0F}, IM_COL32(32, 38, 52, 235), 1.0F);
             drawList->AddText(ImVec2{min.x + 8.0F, min.y + (kEditorToolbarHeightUVE - ImGui::GetTextLineHeight()) * 0.5F},
                               ImGui::GetColorU32(ImGuiCol_Text), "Outliner");
             ImGui::End();
@@ -474,13 +477,13 @@ void EditorUVE::DrawMenuBarUVE() {
         ImDrawList* const drawList = ImGui::GetWindowDrawList();
         const ImVec2 min = ImGui::GetWindowPos();
         const ImVec2 max{min.x + stripLayout.logoSize.x, min.y + stripLayout.logoSize.y};
-        drawList->AddRectFilled(min, max, IM_COL32(17, 21, 26, 255));
-        drawList->AddLine(ImVec2{max.x - 1.0F, min.y}, ImVec2{max.x - 1.0F, max.y}, IM_COL32(48, 55, 64, 235), 1.0F);
-        drawList->AddLine(ImVec2{min.x, max.y - 1.0F}, ImVec2{max.x, max.y - 1.0F}, IM_COL32(48, 55, 64, 235), 1.0F);
+        drawList->AddRectFilled(min, max, IM_COL32(13, 16, 22, 255));
+        drawList->AddLine(ImVec2{max.x - 1.0F, min.y}, ImVec2{max.x - 1.0F, max.y}, IM_COL32(32, 38, 52, 235), 1.0F);
+        drawList->AddLine(ImVec2{min.x, max.y - 1.0F}, ImVec2{max.x, max.y - 1.0F}, IM_COL32(32, 38, 52, 235), 1.0F);
         constexpr float kInsetUVE = 7.0F;
         const ImVec2 markMin{min.x + kInsetUVE, min.y + kInsetUVE};
         const ImVec2 markMax{max.x - kInsetUVE, max.y - kInsetUVE};
-        drawList->AddRectFilled(markMin, markMax, IM_COL32(66, 120, 184, 255), 6.0F);
+        drawList->AddRectFilled(markMin, markMax, IM_COL32(99, 102, 241, 255), 6.0F);
         const float fontSize = ImGui::GetFontSize() * 1.6F;
         const ImVec2 markSize = ImGui::GetFont()->CalcTextSizeA(fontSize, FLT_MAX, 0.0F, "U");
         drawList->AddText(ImGui::GetFont(), fontSize,
