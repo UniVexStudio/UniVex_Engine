@@ -35,8 +35,9 @@ Math::Vector2UVE PrismTextUVE::OnMeasureContentUVE(Math::Vector2UVE availableSiz
 
     if (availableSize.x > 0.0F && singleLineWidth > availableSize.x) {
         // Multi-line wrapping calculation
-        const auto charsPerLine = std::max(1, static_cast<int>(availableSize.x / charWidth));
-        const int lineCount = static_cast<int>((m_text.length() + charsPerLine - 1) / charsPerLine);
+        const std::size_t charsPerLine =
+            std::max<std::size_t>(1U, static_cast<std::size_t>(availableSize.x / charWidth));
+        const std::size_t lineCount = (m_text.length() + charsPerLine - 1U) / charsPerLine;
         return Math::Vector2UVE{availableSize.x, static_cast<float>(lineCount) * lineHeight};
     }
 
