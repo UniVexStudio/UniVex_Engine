@@ -154,8 +154,9 @@ bool GlyphButtonUVE(const char* id, const GlyphUVE glyph, const bool enabled, co
     const ImVec2 min = ImGui::GetItemRectMin();
     const ImVec2 max = ImGui::GetItemRectMax();
     if (enabled && (hovered || ImGui::IsItemActive())) {
-        drawList.AddRectFilled(min, max, ImGui::GetColorU32(ImGui::IsItemActive() ? ImGuiCol_ButtonActive : ImGuiCol_ButtonHovered),
-                               ImGui::GetStyle().FrameRounding);
+        drawList.AddRectFilled(min, max, ImGui::IsItemActive() ? IM_COL32(36, 42, 60, 240) : IM_COL32(255, 255, 255, 18),
+                               4.0F);
+        drawList.AddRect(min, max, IM_COL32(65, 75, 105, 180), 4.0F, 0, 1.0F);
     }
     DrawGlyphUVE(drawList, glyph, ImVec2{(min.x + max.x) * 0.5F, (min.y + max.y) * 0.5F}, side * 0.62F,
                  ImGui::GetColorU32(enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled));
@@ -177,11 +178,13 @@ bool GlyphTextButtonUVE(const char* id, const GlyphUVE glyph, const char* label,
     const ImVec2 min = ImGui::GetItemRectMin();
     const ImVec2 max = ImGui::GetItemRectMax();
     ImDrawList& drawList = *ImGui::GetWindowDrawList();
-    const ImU32 fill = accent ? ImGui::GetColorU32(hovered || active ? kAccentHoveredUVE : kAccentUVE)
-                              : ImGui::GetColorU32(active    ? ImGuiCol_ButtonActive
-                                                   : hovered ? ImGuiCol_ButtonHovered
-                                                             : ImGuiCol_Button);
-    drawList.AddRectFilled(min, max, fill, style.FrameRounding);
+    const ImU32 fill = accent
+        ? (hovered || active ? IM_COL32(115, 118, 250, 255) : IM_COL32(99, 102, 241, 240))
+        : (active ? IM_COL32(34, 40, 56, 255) : (hovered ? IM_COL32(28, 33, 46, 255) : IM_COL32(20, 23, 33, 220)));
+    drawList.AddRectFilled(min, max, fill, 4.0F);
+    if (!accent) {
+        drawList.AddRect(min, max, hovered ? IM_COL32(65, 75, 105, 220) : IM_COL32(40, 46, 64, 180), 4.0F, 0, 1.0F);
+    }
     const ImU32 text = ImGui::GetColorU32(ImGuiCol_Text);
     DrawGlyphUVE(drawList, glyph, ImVec2{min.x + style.FramePadding.x + glyphSize * 0.5F, (min.y + max.y) * 0.5F},
                  glyphSize, text);
@@ -216,14 +219,21 @@ bool SidebarSectionUVE(const char* id, const char* icon, const std::string& titl
     const float width = std::max(1.0F, ImGui::GetContentRegionAvail().x);
     const ImVec2 min = ImGui::GetCursorScreenPos();
     ImDrawList& drawList = *ImGui::GetWindowDrawList();
-    drawList.AddRectFilled(min, ImVec2{min.x + width, min.y + height}, IM_COL32(40, 44, 52, 255));
+    constexpr float rounding = 4.0F;
+    const ImU32 headerBg = open ? IM_COL32(22, 26, 36, 255) : IM_COL32(17, 20, 28, 255);
+    drawList.AddRectFilled(min, ImVec2{min.x + width, min.y + height}, headerBg, rounding);
+    drawList.AddRect(min, ImVec2{min.x + width, min.y + height}, IM_COL32(36, 42, 58, 180), rounding, 0, 1.0F);
+    if (open) {
+        drawList.AddRectFilled(ImVec2{min.x, min.y + 3.0F}, ImVec2{min.x + 2.5F, min.y + height - 3.0F},
+                               IM_COL32(99, 102, 241, 240), 1.0F);
+    }
     if (ImGui::InvisibleButton(id, ImVec2{std::max(1.0F, width - trailingWidth), height})) {
         open = !open;
         storage.SetBool(key, open);
     }
     if (ImGui::IsItemHovered()) {
         drawList.AddRectFilled(min, ImVec2{min.x + width - trailingWidth, min.y + height},
-                               ImGui::GetColorU32(ImGuiCol_HeaderHovered, 0.35F));
+                               IM_COL32(255, 255, 255, 14), rounding);
     }
     const float midY = min.y + height * 0.5F;
     DrawGlyphUVE(drawList, open ? GlyphUVE::ChevronDown : GlyphUVE::ChevronRight, ImVec2{min.x + 10.0F, midY}, 8.0F,
@@ -1240,6 +1250,16 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             const bool clicked = ImGui::Selectable("##row", selected, ImGuiSelectableFlags_AllowDoubleClick, ImVec2{width, rowHeight});
             interact(entry, look, clicked);
             ImDrawList& drawList = *ImGui::GetWindowDrawList();
+
+            // Soft studio row styling
+            if (selected) {
+                drawList.AddRectFilled(rowMin, ImVec2{rowMin.x + width, rowMin.y + rowHeight}, IM_COL32(28, 34, 52, 240), 3.5F);
+                drawList.AddRect(rowMin, ImVec2{rowMin.x + width, rowMin.y + rowHeight}, IM_COL32(99, 102, 241, 200), 3.5F, 0, 1.0F);
+                drawList.AddRectFilled(ImVec2{rowMin.x, rowMin.y + 2.0F}, ImVec2{rowMin.x + 2.5F, rowMin.y + rowHeight - 2.0F},
+                                       IM_COL32(99, 102, 241, 255), 1.0F);
+            } else if (ImGui::IsItemHovered()) {
+                drawList.AddRectFilled(rowMin, ImVec2{rowMin.x + width, rowMin.y + rowHeight}, IM_COL32(255, 255, 255, 12), 3.5F);
+            }
             const float iconSize = std::min(18.0F, rowHeight - 2.0F);
             const float iconY = std::floor(rowMin.y + (rowHeight - iconSize) * 0.5F);
             if (look.icon != 0U) {
@@ -1270,21 +1290,23 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             interact(entry, look, clicked);
             ImDrawList& drawList = *ImGui::GetWindowDrawList();
 
-            // 1. Unreal-style card background
+            // 1. Soft Prism card background
             constexpr float rounding = 5.0F;
-            const ImU32 cardBg = selected ? IM_COL32(38, 52, 78, 240)
-                                          : (hovered ? IM_COL32(34, 38, 48, 220) : IM_COL32(24, 26, 32, 200));
-            const ImU32 cardBorder = selected ? IM_COL32(80, 150, 250, 255)
-                                              : (hovered ? IM_COL32(65, 80, 105, 180) : IM_COL32(40, 44, 52, 140));
+            const ImU32 cardBg = selected
+                ? IM_COL32(28, 34, 52, 245)
+                : (hovered ? IM_COL32(25, 29, 41, 230) : IM_COL32(17, 19, 27, 210));
+            const ImU32 cardBorder = selected
+                ? IM_COL32(99, 102, 241, 255) // Soft Indigo active ring
+                : (hovered ? IM_COL32(65, 75, 105, 200) : IM_COL32(34, 38, 52, 160));
             drawList.AddRectFilled(cardMin, cardMax, cardBg, rounding);
             drawList.AddRect(cardMin, cardMax, cardBorder, rounding, 0, selected ? 1.5F : 1.0F);
 
             // 2. Inset frame for thumbnail/icon (darker recessed box)
-            constexpr float thumbPadding = 3.0F;
+            constexpr float thumbPadding = 3.5F;
             const float thumbHeight = iconSize + 8.0F;
             const ImVec2 thumbMin{cardMin.x + thumbPadding, cardMin.y + thumbPadding};
             const ImVec2 thumbMax{cardMax.x - thumbPadding, cardMin.y + thumbHeight};
-            constexpr ImU32 thumbBg = IM_COL32(16, 17, 21, 255);
+            constexpr ImU32 thumbBg = IM_COL32(11, 13, 18, 255);
             drawList.AddRectFilled(thumbMin, thumbMax, thumbBg, rounding * 0.8F);
 
             if (look.icon != 0U) {
@@ -1294,53 +1316,55 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                                   ImVec2{iconX + iconSize, iconY + iconSize});
             }
 
-            // 3. UE5-style accent color bar separating thumbnail from text
+            // 3. Soft Studio accent bar separating thumbnail from text
             ImU32 accentColor = IM_COL32(100, 116, 139, 255);
             switch (look.type) {
                 case ContentBrowserItemTypeUVE::Mesh:
                 case ContentBrowserItemTypeUVE::Model:
-                    accentColor = IM_COL32(0, 168, 255, 255);
+                    accentColor = IM_COL32(56, 150, 245, 255); // Soft Sky Cobalt
                     break;
                 case ContentBrowserItemTypeUVE::Texture:
-                    accentColor = IM_COL32(230, 81, 0, 255);
+                    accentColor = IM_COL32(245, 130, 50, 255); // Soft Tangerine
                     break;
                 case ContentBrowserItemTypeUVE::Material:
                 case ContentBrowserItemTypeUVE::Shader:
-                    accentColor = IM_COL32(76, 175, 80, 255);
+                    accentColor = IM_COL32(46, 185, 115, 255); // Soft Emerald Mint
                     break;
                 case ContentBrowserItemTypeUVE::Animation:
                 case ContentBrowserItemTypeUVE::AnimationLibrary:
-                    accentColor = IM_COL32(171, 71, 188, 255);
+                    accentColor = IM_COL32(165, 95, 225, 255); // Soft Violet Iris
                     break;
                 case ContentBrowserItemTypeUVE::Scene:
                 case ContentBrowserItemTypeUVE::Prefab:
                 case ContentBrowserItemTypeUVE::Entity:
                 case ContentBrowserItemTypeUVE::Bundle:
-                    accentColor = IM_COL32(255, 179, 0, 255);
+                    accentColor = IM_COL32(245, 180, 45, 255); // Soft Amber Gold
                     break;
                 case ContentBrowserItemTypeUVE::Script:
-                    accentColor = IM_COL32(38, 198, 218, 255);
+                    accentColor = IM_COL32(40, 200, 215, 255); // Soft Cyan Teal
                     break;
                 case ContentBrowserItemTypeUVE::Audio:
-                    accentColor = IM_COL32(239, 83, 80, 255);
+                    accentColor = IM_COL32(235, 85, 95, 255);  // Soft Crimson Rose
                     break;
                 case ContentBrowserItemTypeUVE::Folder:
-                    accentColor = IM_COL32(120, 144, 156, 255);
+                    accentColor = IM_COL32(125, 145, 175, 255); // Soft Slate Steel
                     break;
                 default:
                     break;
             }
             const float barY = thumbMax.y + 1.0F;
-            drawList.AddLine(ImVec2{cardMin.x + 2.0F, barY}, ImVec2{cardMax.x - 2.0F, barY}, accentColor, 2.0F);
+            drawList.AddLine(ImVec2{cardMin.x + 3.0F, barY}, ImVec2{cardMax.x - 3.0F, barY}, accentColor, 1.8F);
 
             // 4. Text labels: Name and Type
             const float textMax = cardSize.x - 8.0F;
             const float nameY = barY + 4.0F;
             if (!DrawContentRenameFieldUVE(snapshot.contentRoot, entry, cardMin.x + 4.0F, nameY - 2.0F, textMax)) {
-                drawList.AddText(ImVec2{cardMin.x + 5.0F, nameY}, ImGui::GetColorU32(ImGuiCol_Text),
+                const ImU32 nameColor = selected ? IM_COL32(245, 248, 255, 255)
+                                                 : (hovered ? IM_COL32(235, 240, 250, 245) : IM_COL32(215, 222, 235, 235));
+                drawList.AddText(ImVec2{cardMin.x + 5.0F, nameY}, nameColor,
                                  FitLabelUVE(entry.relativePath.filename().generic_string(), textMax).c_str());
             }
-            drawList.AddText(ImVec2{cardMin.x + 5.0F, nameY + line}, ImGui::GetColorU32(ImGuiCol_TextDisabled),
+            drawList.AddText(ImVec2{cardMin.x + 5.0F, nameY + line}, IM_COL32(125, 135, 155, 210),
                              FitLabelUVE(look.typeLabel, textMax).c_str());
         };
         const auto formatSize = [](const std::uintmax_t bytes) {
