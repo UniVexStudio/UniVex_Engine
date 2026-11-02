@@ -48,7 +48,7 @@ public:
     PrismEventResultUVE OnPointerMove(const PrismPointerEventUVE& event) override;
     PrismEventResultUVE OnPointerUp(const PrismPointerEventUVE& event) override;
     PrismEventResultUVE OnKeyDown(const PrismKeyEventUVE& event) override;
-    PrismEventResultUVE OnCharInput(const PrismCharInputEventUVE& event) override;
+    PrismEventResultUVE OnCharInput(char32_t codepoint) override;
 
     void OnFocusGained() override;
     void OnFocusLost() override;

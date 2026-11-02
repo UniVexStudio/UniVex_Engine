@@ -80,12 +80,12 @@ TEST(PrismTreeViewTest, TreeExpandCollapseAndSelection) {
 
     // Click on 4th row (child1, y = 2 + 3 * 22 + 10 = 78)
     router.DispatchPointerDown(PrismPointerEventUVE{{50.0F, 78.0F}, {}, Input::MouseButtonUVE::Left});
-    EXPECT_EQ(selectedEntity, 104);
+    EXPECT_EQ(selectedEntity, 104ULL);
     EXPECT_EQ(tree->GetSelectedNode(), child1);
 
     // Keyboard arrow up moves to parent (entity 103)
     router.DispatchKeyDown(PrismKeyEventUVE{Input::KeyCodeUVE::Up});
-    EXPECT_EQ(selectedEntity, 103);
+    EXPECT_EQ(selectedEntity, 103ULL);
     EXPECT_EQ(tree->GetSelectedNode(), parent);
 
     // Left arrow collapses parent

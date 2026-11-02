@@ -107,6 +107,7 @@ namespace UVE::Editor {
 struct EditorSettingBindingUVE;
 
 class EditorBridgeUVE;
+class PrismImGuiViewportBridgeUVE;
 
 /// EditorStateUVE is the lifecycle state of one editor session. The editor owns session data only;
 /// EngineCoreUVE remains the owner of the ECS, renderer, window, and every engine service.

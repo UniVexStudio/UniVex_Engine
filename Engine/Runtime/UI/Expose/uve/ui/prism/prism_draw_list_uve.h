@@ -21,6 +21,7 @@ public:
 
     /// Clears vertex, index, and command buffers for the next frame.
     void Reset();
+    void Clear() noexcept { Reset(); }
 
     /// Reserve memory ahead of time to avoid mid-frame reallocations.
     void Reserve(std::size_t vertexCount, std::size_t indexCount, std::size_t commandCount);
@@ -61,6 +62,7 @@ public:
 
     [[nodiscard]] std::size_t GetTotalVertexCount() const noexcept { return m_vertices.size(); }
     [[nodiscard]] std::size_t GetTotalIndexCount() const noexcept { return m_indices.size(); }
+    [[nodiscard]] std::size_t GetCommandCount() const noexcept { return m_commands.size(); }
 
 private:
     void EnsureCommandState();

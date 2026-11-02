@@ -146,15 +146,15 @@ PrismEventResultUVE PrismNumericDragUVE::OnKeyDown(const PrismKeyEventUVE& event
     return PrismWidgetUVE::OnKeyDown(event);
 }
 
-PrismEventResultUVE PrismNumericDragUVE::OnCharInput(const PrismCharInputEventUVE& event) {
+PrismEventResultUVE PrismNumericDragUVE::OnCharInput(char32_t codepoint) {
     if (m_isEditingText) {
-        const char32_t c = event.codepoint;
+        const char32_t c = codepoint;
         if ((c >= U'0' && c <= U'9') || c == U'.' || c == U'-' || c == U'+') {
             m_textBuffer.push_back(static_cast<char>(c));
             return PrismEventResultUVE::Handled;
         }
     }
-    return PrismWidgetUVE::OnCharInput(event);
+    return PrismWidgetUVE::OnCharInput(codepoint);
 }
 
 Math::Vector2UVE PrismNumericDragUVE::OnMeasureContentUVE(Math::Vector2UVE /*availableSize*/) {

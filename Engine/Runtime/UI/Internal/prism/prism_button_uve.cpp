@@ -18,6 +18,11 @@ PrismButtonUVE::PrismButtonUVE(std::string text)
     m_style.height = PrismLengthUVE::Px(28.0F);
 }
 
+PrismButtonUVE::PrismButtonUVE(std::string text, std::function<void()> onClick)
+    : PrismButtonUVE(std::move(text)) {
+    m_onClick = std::move(onClick);
+}
+
 void PrismButtonUVE::SetText(std::string text) {
     m_text = std::move(text);
 }

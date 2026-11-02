@@ -243,7 +243,11 @@ void EditorUVE::DrawHierarchyBodyUVE() {
         if (!m_prismHierarchyWidget) {
             m_prismHierarchyWidget = std::make_shared<UI::Prism::PrismHierarchyWidgetUVE>("EditorPrismHierarchy");
             m_prismHierarchyWidget->SetOnEntitySelected([this](std::uint64_t entityId) {
-                SetSelectedEntityUVE(static_cast<Scene::EntityUVE>(entityId));
+                const Scene::EntityUVE e{
+                    static_cast<std::uint32_t>(entityId >> 32),
+                    static_cast<std::uint32_t>(entityId & 0xFFFFFFFFULL)
+                };
+                SelectEntityUVE(e);
             });
             m_prismHierarchyWidget->SetOnAddObjectRequested([this]() {
                 if (IsAuthoringCommandAllowedUVE()) {
@@ -267,8 +271,8 @@ void EditorUVE::DrawHierarchyBodyUVE() {
             for (const Scene::EntityUVE child : sg.GetChildrenUVE(em, parent)) {
                 if (!IsHierarchyEntityVisibleUVE(child)) continue;
                 UI::Prism::PrismHierarchyItemUVE childItem;
-                childItem.id = static_cast<std::uint64_t>(child);
-                childItem.name = GetDocumentNameUVE(child);
+                childItem.id = (static_cast<std::uint64_t>(child.index) << 32) | static_cast<std::uint64_t>(child.generation);
+                childItem.name = GetEntityDisplayLabelUVE(child);
                 appendChildren(child, childItem);
                 parentItem.children.push_back(std::move(childItem));
             }
@@ -303,14 +307,15 @@ void EditorUVE::DrawHierarchyBodyUVE() {
             for (const Scene::EntityUVE root : roots) {
                 if (!IsHierarchyEntityVisibleUVE(root)) continue;
                 UI::Prism::PrismHierarchyItemUVE rootItem;
-                rootItem.id = static_cast<std::uint64_t>(root);
-                rootItem.name = GetDocumentNameUVE(root);
+                rootItem.id = (static_cast<std::uint64_t>(root.index) << 32) | static_cast<std::uint64_t>(root.generation);
+                rootItem.name = GetEntityDisplayLabelUVE(root);
                 appendChildren(root, rootItem);
                 items.push_back(std::move(rootItem));
             }
         }
 
-        m_prismHierarchyWidget->SyncTree(items, static_cast<std::uint64_t>(m_selectedEntity));
+        const std::uint64_t selectedId = (static_cast<std::uint64_t>(m_selectedEntity.index) << 32) | static_cast<std::uint64_t>(m_selectedEntity.generation);
+        m_prismHierarchyWidget->SyncTree(items, selectedId);
         DrawObjectPickerUVE();
         m_prismHierarchyBridge->RenderImGuiHost();
         return;

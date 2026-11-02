@@ -20,6 +20,7 @@ enum class PrismTextAlignUVE : std::uint8_t {
 class PrismTextUVE : public PrismWidgetUVE {
 public:
     explicit PrismTextUVE(std::string text = "", float fontSize = 14.0F);
+    PrismTextUVE(std::string text, float fontSize, PrismColorUVE color);
 
     void SetText(std::string text);
     [[nodiscard]] const std::string& GetText() const noexcept { return m_text; }

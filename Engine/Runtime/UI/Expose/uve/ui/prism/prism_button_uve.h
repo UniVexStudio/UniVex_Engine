@@ -13,6 +13,7 @@ namespace UVE::UI::Prism {
 class PrismButtonUVE : public PrismWidgetUVE {
 public:
     explicit PrismButtonUVE(std::string text = "Button");
+    PrismButtonUVE(std::string text, std::function<void()> onClick);
 
     void SetText(std::string text);
     [[nodiscard]] const std::string& GetText() const noexcept { return m_text; }

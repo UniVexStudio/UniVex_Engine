@@ -16,11 +16,14 @@ struct PrismThemeUVE final {
     PrismColorUVE bgWidget{0.14F, 0.15F, 0.18F, 1.0F};    // Button/Input background (#24262e)
     PrismColorUVE bgWidgetHover{0.18F, 0.20F, 0.24F, 1.0F};
     PrismColorUVE bgWidgetActive{0.22F, 0.25F, 0.30F, 1.0F};
+    PrismColorUVE bgSurface{0.12F, 0.13F, 0.16F, 1.0F};
+    PrismColorUVE bgSurfaceElevated{0.15F, 0.17F, 0.20F, 1.0F};
 
     // Accent / Brand (Prism Cyan/Blue)
     PrismColorUVE accentPrimary{0.16F, 0.52F, 0.95F, 1.0F}; // #2985f2
     PrismColorUVE accentHover{0.25F, 0.60F, 1.00F, 1.0F};
     PrismColorUVE accentFocusRing{0.30F, 0.65F, 1.00F, 0.6F};
+    PrismColorUVE accentDanger{0.88F, 0.28F, 0.28F, 1.0F};
 
     // Text & Foreground
     PrismColorUVE textPrimary{0.95F, 0.96F, 0.98F, 1.0F};
