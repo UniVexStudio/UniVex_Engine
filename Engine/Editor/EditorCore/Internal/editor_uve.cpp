@@ -16,6 +16,7 @@
 #include "editor_fonts_uve.h"
 #include "editor_object_icons_uve.h"
 #include "uve/editor/editor_theme_uve.h"
+#include "uve/editor/prism_imgui_viewport_bridge_uve.h"
 #include <algorithm>
 #include <chrono>
 #include <array>
