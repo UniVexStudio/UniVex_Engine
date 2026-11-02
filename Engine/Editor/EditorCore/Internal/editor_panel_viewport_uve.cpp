@@ -132,10 +132,19 @@ template <typename DrawIconUVE>
     const ImVec2 maximum = ImGui::GetItemRectMax();
     const ImVec2 center{(minimum.x + maximum.x) * 0.5F, (minimum.y + maximum.y) * 0.5F};
     ImDrawList& drawList = *ImGui::GetWindowDrawList();
-    const ImU32 backgroundColor = active ? IM_COL32(64, 132, 214, 235)
-                                         : (hovered ? IM_COL32(255, 255, 255, 28) : IM_COL32(255, 255, 255, 10));
-    drawList.AddCircleFilled(center, kViewportBubbleIconRadiusUVE, backgroundColor, 20);
-    const ImU32 iconColor = active ? IM_COL32(255, 255, 255, 255) : IM_COL32(214, 220, 230, 220);
+    const ImU32 backgroundColor = active
+        ? IM_COL32(99, 102, 241, 235) // Soft Indigo active accent
+        : (hovered ? IM_COL32(255, 255, 255, 30) : IM_COL32(255, 255, 255, 12));
+    drawList.AddCircleFilled(center, kViewportBubbleIconRadiusUVE, backgroundColor, 24);
+
+    // Soft subtle border
+    if (active) {
+        drawList.AddCircle(center, kViewportBubbleIconRadiusUVE, IM_COL32(165, 180, 252, 255), 24, 1.2F);
+    } else if (hovered) {
+        drawList.AddCircle(center, kViewportBubbleIconRadiusUVE, IM_COL32(255, 255, 255, 45), 24, 1.0F);
+    }
+
+    const ImU32 iconColor = active ? IM_COL32(255, 255, 255, 255) : (hovered ? IM_COL32(240, 245, 255, 245) : IM_COL32(185, 195, 212, 210));
     drawIcon(drawList, center, kViewportBubbleIconRadiusUVE, iconColor);
     ImGui::PopID();
     return pressed;
@@ -504,8 +513,8 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
     const ImVec2 gizmoBubbleMin{imageOrigin.x + kBubbleMarginUVE + rulerInset, topY};
     const ImVec2 gizmoBubbleMax{gizmoBubbleMin.x + gizmoBubbleWidth, gizmoBubbleMin.y + unifiedHeight};
     {
-        drawList->AddRectFilled(gizmoBubbleMin, gizmoBubbleMax, IM_COL32(18, 21, 28, 200), unifiedHeight * 0.5F);
-        drawList->AddRect(gizmoBubbleMin, gizmoBubbleMax, IM_COL32(255, 255, 255, 24), unifiedHeight * 0.5F);
+        drawList->AddRectFilled(gizmoBubbleMin, gizmoBubbleMax, IM_COL32(14, 17, 24, 215), unifiedHeight * 0.5F);
+        drawList->AddRect(gizmoBubbleMin, gizmoBubbleMax, IM_COL32(45, 52, 70, 180), unifiedHeight * 0.5F, 0, 1.0F);
 
         const float iconY = gizmoBubbleMin.y + (unifiedHeight - diameter) * 0.5F;
         ImGui::SetCursorScreenPos(ImVec2{gizmoBubbleMin.x + kBubblePaddingXUVE, iconY});
@@ -609,9 +618,10 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
         const bool pressed = ImGui::InvisibleButton("##pill", ImVec2{pillWidth, unifiedHeight});
         const bool hovered = ImGui::IsItemHovered();
         ImGui::PopID();
-        drawList->AddRectFilled(pillMin, pillMax, hovered ? IM_COL32(30, 34, 44, 220) : IM_COL32(18, 21, 28, 200),
+        drawList->AddRectFilled(pillMin, pillMax, hovered ? IM_COL32(26, 31, 44, 230) : IM_COL32(14, 17, 24, 215),
                                 unifiedHeight * 0.5F);
-        drawList->AddRect(pillMin, pillMax, IM_COL32(255, 255, 255, 24), unifiedHeight * 0.5F);
+        drawList->AddRect(pillMin, pillMax, hovered ? IM_COL32(75, 85, 115, 220) : IM_COL32(45, 52, 70, 180),
+                          unifiedHeight * 0.5F, 0, 1.0F);
         const float pillCenterY = (pillMin.y + pillMax.y) * 0.5F;
         const float dotsCenterX = pillMin.x + kBubblePaddingXUVE + kDotsWidthUVE * 0.5F;
         constexpr float kDotRadiusUVE = 1.4F;
@@ -1061,6 +1071,37 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
             }
             ImGui::EndPopup();
         }
+    }
+
+    // ---- Prism Floating Metrics HUD (Top-Right of Viewport) -------------------------------
+    const float fps = ImGui::GetIO().Framerate;
+    const float ms = ImGui::GetIO().DeltaTime * 1000.0F;
+    std::array<char, 64> metricsBuffer{};
+    const int written = std::snprintf(metricsBuffer.data(), metricsBuffer.size(), "%.1f FPS  %.1f ms",
+                                      static_cast<double>(fps), static_cast<double>(ms));
+    if (written > 0) {
+        const ImVec2 metricsTextSize = ImGui::CalcTextSize(metricsBuffer.data());
+        constexpr float kHudPaddingX = 9.0F;
+        const float hudWidth = metricsTextSize.x + (kHudPaddingX * 2.0F) + 12.0F;
+        const float hudRight = imageOrigin.x + imageSizeUVE.x - kBubbleMarginUVE;
+        const ImVec2 hudMin{hudRight - hudWidth, topY};
+        const ImVec2 hudMax{hudRight, topY + unifiedHeight};
+
+        // Soft studio translucent pill
+        drawList->AddRectFilled(hudMin, hudMax, IM_COL32(14, 17, 24, 215), unifiedHeight * 0.5F);
+        drawList->AddRect(hudMin, hudMax, IM_COL32(45, 52, 70, 180), unifiedHeight * 0.5F, 0, 1.0F);
+
+        // Soft Sage Green pulse indicator dot for healthy framerate
+        constexpr float dotRadius = 3.0F;
+        const ImVec2 dotCenter{hudMin.x + kHudPaddingX + dotRadius, topY + (unifiedHeight * 0.5F)};
+        const ImU32 dotColor = fps >= 55.0F ? IM_COL32(52, 199, 89, 240)
+                                            : (fps >= 30.0F ? IM_COL32(255, 179, 64, 240) : IM_COL32(255, 69, 58, 240));
+        drawList->AddCircleFilled(dotCenter, dotRadius, dotColor, 12);
+
+        // Crisp metrics typography
+        const float textX = dotCenter.x + dotRadius + 6.0F;
+        const float textY = topY + ((unifiedHeight - metricsTextSize.y) * 0.5F);
+        drawList->AddText(ImVec2{textX, textY}, IM_COL32(230, 235, 245, 235), metricsBuffer.data());
     }
 }
 
