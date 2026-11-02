@@ -539,6 +539,7 @@ add_executable(uve_integration_tests
     UI/prism_render_bridge_uve_tests.cpp
     UI/prism_text_widgets_uve_tests.cpp
     UI/prism_scroll_and_toggle_uve_tests.cpp
+    UI/prism_numeric_widgets_uve_tests.cpp
 )
 if(UVE_HAS_DESKTOP_GL)
     target_sources(uve_integration_tests PRIVATE

@@ -32,6 +32,8 @@ add_library(uve_ui STATIC
     Internal/prism/prism_text_input_uve.cpp
     Internal/prism/prism_scroll_container_uve.cpp
     Internal/prism/prism_checkbox_uve.cpp
+    Internal/prism/prism_slider_uve.cpp
+    Internal/prism/prism_numeric_drag_uve.cpp
 )
 
 # ui_font_ttf_bytes.inc is generated at build time from the module's own canonical
