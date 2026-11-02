@@ -77,13 +77,26 @@ void PrismRenderBridgeUVE::RecordDrawCommandsUVE(const PrismDrawListUVE& drawLis
     // Orthographic projection matrix: maps (0,0) at Top-Left to (targetWidth, targetHeight) at Bottom-Right
     const float w = static_cast<float>(targetWidth);
     const float h = static_cast<float>(targetHeight);
-    Math::Matrix4x4UVE ortho = Math::Matrix4x4UVE::ZeroUVE();
-    ortho[0][0] = 2.0F / w;
-    ortho[1][1] = -2.0F / h; // Y-flip for screen coordinates
-    ortho[2][2] = -1.0F;
-    ortho[3][0] = -1.0F;
-    ortho[3][1] = 1.0F;
-    ortho[3][3] = 1.0F;
+    Math::Matrix4x4UVE ortho{};
+    ortho.m[0][0] = 2.0F / w;
+    ortho.m[0][1] = 0.0F;
+    ortho.m[0][2] = 0.0F;
+    ortho.m[0][3] = 0.0F;
+
+    ortho.m[1][0] = 0.0F;
+    ortho.m[1][1] = -2.0F / h; // Y-flip for screen coordinates
+    ortho.m[1][2] = 0.0F;
+    ortho.m[1][3] = 0.0F;
+
+    ortho.m[2][0] = 0.0F;
+    ortho.m[2][1] = 0.0F;
+    ortho.m[2][2] = -1.0F;
+    ortho.m[2][3] = 0.0F;
+
+    ortho.m[3][0] = -1.0F;
+    ortho.m[3][1] = 1.0F;
+    ortho.m[3][2] = 0.0F;
+    ortho.m[3][3] = 1.0F;
 
     if (m_pipeline != Render::kInvalidPipelineHandleUVE) {
         commandBuffer.BindPipelineUVE(m_pipeline);

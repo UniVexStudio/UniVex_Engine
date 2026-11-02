@@ -60,7 +60,7 @@ PrismEventResultUVE PrismButtonUVE::OnPointerUp(const PrismPointerEventUVE& even
     return PrismEventResultUVE::Unhandled;
 }
 
-Math::Vector2UVE PrismButtonUVE::OnMeasureContentUVE(Math::Vector2UVE availableSize) {
+Math::Vector2UVE PrismButtonUVE::OnMeasureContentUVE(Math::Vector2UVE /*availableSize*/) {
     // Content width approximates text extent (approx 7px per character + padding)
     const float textW = static_cast<float>(m_text.length()) * 7.5F;
     const float totalW = textW + m_style.padding.Horizontal();

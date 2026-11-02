@@ -46,7 +46,7 @@ PrismEventResultUVE PrismCheckboxUVE::OnKeyDown(const PrismKeyEventUVE& event) {
     return PrismWidgetUVE::OnKeyDown(event);
 }
 
-Math::Vector2UVE PrismCheckboxUVE::OnMeasureContentUVE(Math::Vector2UVE availableSize) {
+Math::Vector2UVE PrismCheckboxUVE::OnMeasureContentUVE(Math::Vector2UVE /*availableSize*/) {
     const float labelWidth = static_cast<float>(m_label.length()) * 7.5F;
     const float totalW = kBoxSizeUVE + 8.0F + labelWidth + m_style.padding.Horizontal();
     return Math::Vector2UVE{totalW, 22.0F};

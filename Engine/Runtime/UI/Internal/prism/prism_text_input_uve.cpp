@@ -98,7 +98,7 @@ PrismEventResultUVE PrismTextInputUVE::OnCharInput(char32_t codepoint) {
     return PrismEventResultUVE::Unhandled;
 }
 
-Math::Vector2UVE PrismTextInputUVE::OnMeasureContentUVE(Math::Vector2UVE availableSize) {
+Math::Vector2UVE PrismTextInputUVE::OnMeasureContentUVE(Math::Vector2UVE /*availableSize*/) {
     const float textW = static_cast<float>(std::max(m_text.length(), m_placeholder.length())) * 8.0F;
     const float totalW = textW + m_style.padding.Horizontal() + 16.0F;
     return Math::Vector2UVE{std::max(120.0F, totalW), 28.0F};

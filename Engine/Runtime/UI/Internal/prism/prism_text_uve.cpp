@@ -19,7 +19,7 @@ void PrismTextUVE::SetFontSize(float size) noexcept {
     m_fontSize = std::max(6.0F, size);
 }
 
-Math::Vector2UVE PrismTextUVE::OnMeasureContentUVE(Math::Vector2UVE availableSize) {
+Math::Vector2UVE PrismTextUVE::OnMeasureContentUVE(Math::Vector2UVE /*availableSize*/) {
     if (m_text.empty()) {
         return Math::Vector2UVE{0.0F, m_fontSize * 1.2F};
     }
