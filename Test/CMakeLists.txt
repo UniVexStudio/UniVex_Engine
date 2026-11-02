@@ -531,6 +531,11 @@ add_executable(uve_integration_tests
     UI/ui_text_input_uve_tests.cpp
     UI/ui_focus_navigation_uve_tests.cpp
     UI/ui_scroll_uve_tests.cpp
+    UI/prism_draw_list_uve_tests.cpp
+    UI/prism_widget_uve_tests.cpp
+    UI/prism_event_router_uve_tests.cpp
+    UI/prism_button_uve_tests.cpp
+    UI/prism_dock_node_uve_tests.cpp
 )
 if(UVE_HAS_DESKTOP_GL)
     target_sources(uve_integration_tests PRIVATE
