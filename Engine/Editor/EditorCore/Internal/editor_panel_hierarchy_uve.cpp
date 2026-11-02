@@ -274,10 +274,30 @@ void EditorUVE::DrawHierarchyBodyUVE() {
         };
 
         if (m_services) {
-            const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
-            const std::vector<Scene::EntityUVE> roots = (sceneRoot != Scene::kInvalidEntityUVE)
-                ? m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), sceneRoot)
-                : GetDocumentRootsUVE();
+            auto& em = m_services->GetEntityManagerUVE();
+            std::vector<Scene::EntityUVE> roots;
+
+            // Support both Entity Editor sessions (prefabs/entity documents) and Level Editor sessions
+            if (m_entityEditSession.has_value()) {
+                const Scene::EntityUVE entityRoot = (m_entityEditSession->rootEntity != Scene::kInvalidEntityUVE &&
+                                                     em.IsAliveUVE(m_entityEditSession->rootEntity))
+                                                        ? m_entityEditSession->rootEntity
+                                                        : GetEntityEditorRootUVE();
+                if (entityRoot != Scene::kInvalidEntityUVE) {
+                    roots.push_back(entityRoot);
+                } else {
+                    roots = GetDocumentRootsUVE();
+                }
+            } else if (GetDocumentViewportUVE() != Scene::kInvalidEntityUVE) {
+                const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
+                if (sceneRoot != Scene::kInvalidEntityUVE) {
+                    roots = m_services->GetSceneGraphUVE().GetChildrenUVE(em, sceneRoot);
+                } else {
+                    roots = GetDocumentRootsUVE();
+                }
+            } else {
+                roots = GetDocumentRootsUVE();
+            }
 
             for (const Scene::EntityUVE root : roots) {
                 if (!IsHierarchyEntityVisibleUVE(root)) continue;
