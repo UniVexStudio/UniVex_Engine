@@ -39,6 +39,9 @@ public:
 
     void OnFocusLost() override;
 
+    /// While open, the popup list (drawn below the header) is part of the widget's hit area.
+    [[nodiscard]] bool HitTestUVE(Math::Vector2UVE screenPoint) const noexcept override;
+
 protected:
     Math::Vector2UVE OnMeasureContentUVE(Math::Vector2UVE availableSize) override;
     void OnPaintContentUVE(PrismDrawListUVE& drawList) override;

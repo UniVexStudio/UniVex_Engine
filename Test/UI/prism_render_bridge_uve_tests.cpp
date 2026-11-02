@@ -32,7 +32,10 @@ TEST(PrismRenderBridgeTest, DrawListUploadsAndRecordsDrawCalls) {
     auto cmdBuffer = renderDevice.CreateCommandBufferUVE();
     ASSERT_NE(cmdBuffer, nullptr);
 
+    // The bridge records into a render pass owned by the caller (draws are only legal inside one).
+    cmdBuffer->BeginRenderPassUVE({});
     bridge.RecordDrawCommandsUVE(drawList, *cmdBuffer, 1280U, 720U);
+    cmdBuffer->EndRenderPassUVE();
     const PrismRenderDiagnosticsUVE diag = bridge.GetLastDiagnostics();
 
     // 2 rects with same pipeline/clip/texture batch into 1 draw call of 12 indices

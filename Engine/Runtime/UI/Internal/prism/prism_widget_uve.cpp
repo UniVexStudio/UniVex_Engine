@@ -12,7 +12,10 @@ void PrismWidgetUVE::AddChild(std::shared_ptr<PrismWidgetUVE> child) {
     if (!child || child.get() == this) {
         return;
     }
-    child->m_parent = shared_from_this();
+    // weak_from_this() (not shared_from_this()) so composite widgets can AddChild() from their own
+    // constructor, before any shared_ptr owns them: the link is then empty and ArrangeUVE() fills
+    // it in once the parent is owned, instead of throwing std::bad_weak_ptr.
+    child->m_parent = weak_from_this();
     m_children.push_back(std::move(child));
 }
 
@@ -83,6 +86,7 @@ Math::Vector2UVE PrismWidgetUVE::MeasureUVE(Math::Vector2UVE availableSize) {
 
 void PrismWidgetUVE::ArrangeUVE(const Math::RectUVE& finalRect) {
     m_layoutRect = finalRect;
+    RelinkChildrenUVE();
 
     if (m_children.empty()) {
         return;
@@ -191,6 +195,19 @@ void PrismWidgetUVE::PaintUVE(PrismDrawListUVE& drawList) {
 
     if (m_style.clipChildren) {
         drawList.PopClipRect();
+    }
+}
+
+void PrismWidgetUVE::RelinkChildrenUVE() {
+    const std::weak_ptr<PrismWidgetUVE> self = weak_from_this();
+    if (self.expired()) {
+        return;
+    }
+    for (auto& child : m_children) {
+        if (child && child->m_parent.expired()) {
+            child->m_parent = self;
+            child->RelinkChildrenUVE();
+        }
     }
 }
 

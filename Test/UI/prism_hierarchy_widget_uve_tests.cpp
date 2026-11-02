@@ -38,7 +38,8 @@ TEST(PrismHierarchyWidgetTest, SyncTreeAndSelection) {
     // Paint generates commands
     PrismDrawListUVE drawList;
     hierarchy->PaintUVE(drawList);
-    EXPECT_GT(drawList.GetCommandCount(), 2u);
+    // Same-state quads batch into one command, so assert on emitted geometry (more than 2 quads).
+    EXPECT_GT(drawList.GetTotalIndexCount(), 2u * 6u);
 }
 
 TEST(PrismHierarchyWidgetTest, AddButtonCallback) {

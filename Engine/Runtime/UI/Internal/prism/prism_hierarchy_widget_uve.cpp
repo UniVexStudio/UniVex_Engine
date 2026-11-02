@@ -89,6 +89,7 @@ void PrismHierarchyWidgetUVE::SyncTree(
 }
 
 void PrismHierarchyWidgetUVE::ArrangeUVE(const Math::RectUVE& finalRect) {
+    RelinkChildrenUVE();
     m_layoutRect = finalRect;
 
     const float startX = finalRect.position.x + m_style.padding.left;

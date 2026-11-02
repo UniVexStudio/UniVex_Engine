@@ -10,6 +10,9 @@ void PrismEventRouterUVE::SetRoot(std::shared_ptr<PrismWidgetUVE> root) {
         ReleasePointer();
         m_hoveredWidget.reset();
         m_root = std::move(root);
+        if (m_root) {
+            m_root->RelinkChildrenUVE();
+        }
     }
 }
 
@@ -94,6 +97,9 @@ void PrismEventRouterUVE::DispatchPointerDown(const PrismPointerEventUVE& event)
     }
 
     const auto target = HitTestDeepest(event.position);
+    // A press is also a pointer position: hover must follow it, otherwise a click delivered without
+    // a preceding move (touch, synthetic/test input) never sees its widget as hovered.
+    UpdateHoveredChain(target, event);
 
     // Update focus if clicking on a focusable widget or its children
     auto focusCandidate = target;
@@ -115,6 +121,7 @@ void PrismEventRouterUVE::DispatchPointerUp(const PrismPointerEventUVE& event) {
     }
 
     const auto target = HitTestDeepest(event.position);
+    UpdateHoveredChain(target, event);
     if (target) {
         BubblePointerEvent(target, event, &PrismWidgetUVE::OnPointerUp);
     }

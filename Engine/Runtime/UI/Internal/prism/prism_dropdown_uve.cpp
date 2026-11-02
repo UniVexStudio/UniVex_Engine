@@ -76,6 +76,13 @@ int PrismDropdownUVE::GetItemIndexAtPosition(Math::Vector2UVE pos) const noexcep
     return -1;
 }
 
+bool PrismDropdownUVE::HitTestUVE(Math::Vector2UVE screenPoint) const noexcept {
+    if (PrismWidgetUVE::HitTestUVE(screenPoint)) {
+        return true;
+    }
+    return m_isOpen && !m_items.empty() && Math::ContainsUVE(GetDropdownListRect(), screenPoint);
+}
+
 void PrismDropdownUVE::OnFocusLost() {
     m_isOpen = false;
     PrismWidgetUVE::OnFocusLost();

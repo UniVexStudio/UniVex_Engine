@@ -84,6 +84,10 @@ protected:
     virtual Math::Vector2UVE OnMeasureContentUVE(Math::Vector2UVE availableSize);
     virtual void OnPaintContentUVE(PrismDrawListUVE& drawList);
 
+    /// Restores children's parent links that were added before this widget was owned by a
+    /// shared_ptr (e.g. AddChild() called from a composite widget's constructor).
+    void RelinkChildrenUVE();
+
     std::string                                     m_debugName;
     PrismStyleUVE                                   m_style;
     std::weak_ptr<PrismWidgetUVE>                   m_parent;
