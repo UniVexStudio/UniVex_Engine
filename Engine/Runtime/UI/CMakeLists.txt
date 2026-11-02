@@ -65,7 +65,7 @@ target_include_directories(uve_ui PRIVATE "${_uve_ui_generated_dir}")
 
 target_include_directories(uve_ui PUBLIC Expose)
 target_include_directories(uve_ui PRIVATE thirdparty)
-target_link_libraries(uve_ui PUBLIC uve_math uve_asset uve_component uve_entity uve_objects_canvas uve_input uve_localization uve_rhi uve_engine)
+target_link_libraries(uve_ui PUBLIC uve_math uve_asset uve_component uve_entity uve_objects_canvas uve_input uve_localization uve_rhi)
 target_compile_features(uve_ui PUBLIC cxx_std_23)
 uve_set_warnings(uve_ui)
 

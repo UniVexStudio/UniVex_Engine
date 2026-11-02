@@ -16,7 +16,7 @@ TEST(PrismDrawListTest, InitialStateIsEmpty) {
 TEST(PrismDrawListTest, FastPathQuadAppendsCorrectTopology) {
     PrismDrawListUVE drawList;
     const Math::RectUVE rect{{10.0F, 20.0F}, {100.0F, 50.0F}};
-    const Math::ColorUVE color{1.0F, 0.0F, 0.0F, 1.0F};
+    const PrismColorUVE color{1.0F, 0.0F, 0.0F, 1.0F};
 
     drawList.AddRectFilled(rect, color);
 
@@ -55,7 +55,7 @@ TEST(PrismDrawListTest, HierarchicalScissorClippingInvariant) {
     EXPECT_EQ(drawList.GetCurrentClipRect(), parentClip);
 
     // Draw first item under parent clip
-    drawList.AddRectFilled(Math::RectUVE{{0.0F, 0.0F}, {50.0F, 50.0F}}, Math::ColorUVE{1.0F, 1.0F, 1.0F, 1.0F});
+    drawList.AddRectFilled(Math::RectUVE{{0.0F, 0.0F}, {50.0F, 50.0F}}, PrismColorUVE{1.0F, 1.0F, 1.0F, 1.0F});
     ASSERT_EQ(drawList.GetCommands().size(), 1U);
     EXPECT_EQ(drawList.GetCommands()[0].clipRect, parentClip);
 
@@ -68,7 +68,7 @@ TEST(PrismDrawListTest, HierarchicalScissorClippingInvariant) {
     EXPECT_EQ(drawList.GetCurrentClipRect(), expectedIntersection);
 
     // Draw second item under child clip - should split command batch due to clip boundary
-    drawList.AddRectFilled(Math::RectUVE{{60.0F, 60.0F}, {20.0F, 20.0F}}, Math::ColorUVE{0.0F, 1.0F, 0.0F, 1.0F});
+    drawList.AddRectFilled(Math::RectUVE{{60.0F, 60.0F}, {20.0F, 20.0F}}, PrismColorUVE{0.0F, 1.0F, 0.0F, 1.0F});
     ASSERT_EQ(drawList.GetCommands().size(), 2U);
     EXPECT_EQ(drawList.GetCommands()[1].clipRect, expectedIntersection);
 
@@ -85,14 +85,14 @@ TEST(PrismDrawListTest, TextureBatchingSplitsCommands) {
     PrismDrawListUVE drawList;
 
     // Draw solid color quad
-    drawList.AddRectFilled(Math::RectUVE{{0.0F, 0.0F}, {10.0F, 10.0F}}, Math::ColorUVE{1.0F, 1.0F, 1.0F, 1.0F});
+    drawList.AddRectFilled(Math::RectUVE{{0.0F, 0.0F}, {10.0F, 10.0F}}, PrismColorUVE{1.0F, 1.0F, 1.0F, 1.0F});
     EXPECT_EQ(drawList.GetCommands().size(), 1U);
     EXPECT_EQ(drawList.GetCommands()[0].textureId, 0U);
 
     // Draw textured quad with texture ID 42
     drawList.AddTexturedQuad(Math::RectUVE{{10.0F, 10.0F}, {20.0F, 20.0F}},
                              Math::RectUVE{{0.0F, 0.0F}, {1.0F, 1.0F}},
-                             Math::ColorUVE{1.0F, 1.0F, 1.0F, 1.0F},
+                             PrismColorUVE{1.0F, 1.0F, 1.0F, 1.0F},
                              42U);
     EXPECT_EQ(drawList.GetCommands().size(), 2U);
     EXPECT_EQ(drawList.GetCommands()[1].textureId, 42U);
@@ -100,7 +100,7 @@ TEST(PrismDrawListTest, TextureBatchingSplitsCommands) {
     // Draw another textured quad with the SAME texture ID 42 - should BATCH into the same command!
     drawList.AddTexturedQuad(Math::RectUVE{{30.0F, 30.0F}, {20.0F, 20.0F}},
                              Math::RectUVE{{0.0F, 0.0F}, {1.0F, 1.0F}},
-                             Math::ColorUVE{1.0F, 1.0F, 1.0F, 1.0F},
+                             PrismColorUVE{1.0F, 1.0F, 1.0F, 1.0F},
                              42U);
     EXPECT_EQ(drawList.GetCommands().size(), 2U);
     EXPECT_EQ(drawList.GetCommands()[1].indexCount, 12U); // 2 quads = 12 indices
@@ -111,7 +111,7 @@ TEST(PrismDrawListTest, RoundedRectangleTessellationProducesValidFan) {
     const Math::RectUVE rect{{0.0F, 0.0F}, {100.0F, 100.0F}};
     const PrismCornerRadiiUVE radii{10.0F};
 
-    drawList.AddRectFilled(rect, Math::ColorUVE{1.0F, 1.0F, 1.0F, 1.0F}, radii);
+    drawList.AddRectFilled(rect, PrismColorUVE{1.0F, 1.0F, 1.0F, 1.0F}, radii);
 
     // Rounded rectangle with tessellation must generate vertices > 4 and valid triangles
     EXPECT_GT(drawList.GetTotalVertexCount(), 4U);
@@ -121,7 +121,7 @@ TEST(PrismDrawListTest, RoundedRectangleTessellationProducesValidFan) {
 
 TEST(PrismDrawListTest, ResetClearsAllBuffers) {
     PrismDrawListUVE drawList;
-    drawList.AddRectFilled(Math::RectUVE{{0.0F, 0.0F}, {10.0F, 10.0F}}, Math::ColorUVE{1.0F, 1.0F, 1.0F, 1.0F});
+    drawList.AddRectFilled(Math::RectUVE{{0.0F, 0.0F}, {10.0F, 10.0F}}, PrismColorUVE{1.0F, 1.0F, 1.0F, 1.0F});
     EXPECT_GT(drawList.GetTotalVertexCount(), 0U);
 
     drawList.Reset();

@@ -38,11 +38,11 @@ void PrismMetricsOverlayUVE::ToggleMinimized() noexcept {
     }
 }
 
-void PrismMetricsOverlayUVE::UpdateMetricsUVE(const Core::FrameStatsUVE& stats,
+void PrismMetricsOverlayUVE::UpdateMetricsUVE(double fps, double frameTimeMs,
                                               std::uint32_t drawCallsRecorded,
                                               std::size_t memoryUsageBytes) {
-    m_fps = stats.fps;
-    m_frameTimeMs = stats.frameTimeSeconds * 1000.0;
+    m_fps = fps;
+    m_frameTimeMs = frameTimeMs;
     m_drawCalls = drawCallsRecorded;
     m_memoryBytes = memoryUsageBytes;
 }

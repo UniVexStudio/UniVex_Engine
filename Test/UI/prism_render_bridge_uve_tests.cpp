@@ -26,8 +26,8 @@ TEST(PrismRenderBridgeTest, DrawListUploadsAndRecordsDrawCalls) {
     PrismRenderBridgeUVE bridge(renderDevice);
 
     PrismDrawListUVE drawList;
-    drawList.AddRectFilled(Math::RectUVE{{10.0F, 10.0F}, {100.0F, 50.0F}}, Math::ColorUVE{1.0F, 0.0F, 0.0F, 1.0F});
-    drawList.AddRectFilled(Math::RectUVE{{120.0F, 10.0F}, {50.0F, 50.0F}}, Math::ColorUVE{0.0F, 1.0F, 0.0F, 1.0F});
+    drawList.AddRectFilled(Math::RectUVE{{10.0F, 10.0F}, {100.0F, 50.0F}}, PrismColorUVE{1.0F, 0.0F, 0.0F, 1.0F});
+    drawList.AddRectFilled(Math::RectUVE{{120.0F, 10.0F}, {50.0F, 50.0F}}, PrismColorUVE{0.0F, 1.0F, 0.0F, 1.0F});
 
     auto cmdBuffer = renderDevice.CreateCommandBufferUVE();
     ASSERT_NE(cmdBuffer, nullptr);

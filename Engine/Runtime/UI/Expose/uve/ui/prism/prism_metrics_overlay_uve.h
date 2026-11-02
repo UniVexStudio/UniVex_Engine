@@ -4,7 +4,6 @@
 
 #include <memory>
 #include <string>
-#include "uve/core/frame_stats_uve.h"
 #include "uve/ui/prism/prism_button_uve.h"
 #include "uve/ui/prism/prism_theme_uve.h"
 #include "uve/ui/prism/prism_widget_uve.h"
@@ -18,7 +17,7 @@ public:
     PrismMetricsOverlayUVE();
 
     /// Updates live frame statistics.
-    void UpdateMetricsUVE(const Core::FrameStatsUVE& stats, std::uint32_t drawCallsRecorded, std::size_t memoryUsageBytes);
+    void UpdateMetricsUVE(double fps, double frameTimeMs, std::uint32_t drawCallsRecorded = 0, std::size_t memoryUsageBytes = 0);
 
     [[nodiscard]] bool IsMinimized() const noexcept { return m_minimized; }
     void ToggleMinimized() noexcept;
