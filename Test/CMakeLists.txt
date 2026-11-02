@@ -693,6 +693,7 @@ add_executable(uve_editor_tests
     Editor/editor_render_stats_uve_tests.cpp
     Editor/editor_audio_mixer_uve_tests.cpp
     Editor/editor_chrome_layout_uve_tests.cpp
+    Editor/prism_imgui_viewport_bridge_uve_tests.cpp
     Editor/editor_icon_set_uve_tests.cpp
     Editor/editor_uve_tests.cpp
     Editor/editor_color_uve_tests.cpp

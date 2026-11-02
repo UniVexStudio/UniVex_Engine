@@ -34,6 +34,8 @@
 #include "editor_color_field_uve.h"
 #include "editor_fonts_uve.h"
 #include "editor_object_icons_uve.h"
+#include "uve/editor/prism_imgui_viewport_bridge_uve.h"
+#include "uve/ui/prism/prism_console_widget_uve.h"
 
 #include "uve/diagnostics/profiler_view_uve.h"
 #include "uve/editor/editor_render_stats_uve.h"
@@ -827,6 +829,35 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
 }
 
 void EditorUVE::DrawConsoleBodyUVE() {
+    if (m_usePrismConsole) {
+        if (!m_prismConsoleWidget) {
+            m_prismConsoleWidget = std::make_shared<UI::Prism::PrismConsoleWidgetUVE>("EditorPrismConsole");
+            m_prismConsoleWidget->SetOnCommandSubmitted([this](const std::string& cmd) {
+                static_cast<void>(m_developerConsole.ExecuteUVE(cmd));
+            });
+            m_prismConsoleBridge = std::make_unique<PrismImGuiViewportBridgeUVE>();
+            m_prismConsoleBridge->SetRootWidget(m_prismConsoleWidget);
+        }
+
+        const DeveloperConsoleSnapshotUVE snapshot = m_developerConsole.GetSnapshotUVE();
+        if (snapshot.generation != m_prismConsoleLastGen) {
+            m_prismConsoleLastGen = snapshot.generation;
+            m_prismConsoleWidget->ClearLogs();
+            for (const DeveloperConsoleEntryUVE& entry : snapshot.output) {
+                UI::Prism::PrismLogSeverityUVE sev = UI::Prism::PrismLogSeverityUVE::Info;
+                if (entry.severity == DeveloperConsoleSeverityUVE::Warning) {
+                    sev = UI::Prism::PrismLogSeverityUVE::Warning;
+                } else if (entry.severity == DeveloperConsoleSeverityUVE::Error) {
+                    sev = UI::Prism::PrismLogSeverityUVE::Error;
+                }
+                m_prismConsoleWidget->AddLog(sev, entry.text);
+            }
+        }
+
+        m_prismConsoleBridge->RenderImGuiHost();
+        return;
+    }
+
     const DeveloperConsoleSnapshotUVE snapshot = m_developerConsole.GetSnapshotUVE();
     const float inputHeight = ImGui::GetFrameHeightWithSpacing();
     ImGui::BeginChild("##console-output", ImVec2{0.0F, -inputHeight}, false);
@@ -858,7 +889,6 @@ void EditorUVE::DrawConsoleBodyUVE() {
         }
         ImGui::SetKeyboardFocusHere(-1);
     }
-
 }
 
 void EditorUVE::CapturePacketUVE(const std::vector<std::uint8_t>& datagram,

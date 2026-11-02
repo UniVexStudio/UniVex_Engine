@@ -93,6 +93,10 @@ namespace UVE::Asset {
 struct AnimationClipAssetUVE;
 } // namespace UVE::Asset
 
+namespace UVE::UI::Prism {
+class PrismConsoleWidgetUVE;
+}
+
 namespace UVE::Editor::Tests {
 struct EditorUVEAccessUVE;
 }
@@ -2560,6 +2564,10 @@ private:
     EditorRightPanelTabUVE m_drawnRightPanelTab = EditorRightPanelTabUVE::Inspector;
     InspectorDrawerRegistryUVE m_inspectorDrawerRegistry;
     DeveloperConsoleUVE m_developerConsole;
+    bool m_usePrismConsole = true;
+    std::uint64_t m_prismConsoleLastGen = 0;
+    std::shared_ptr<UI::Prism::PrismConsoleWidgetUVE> m_prismConsoleWidget;
+    std::unique_ptr<PrismImGuiViewportBridgeUVE> m_prismConsoleBridge;
     EditorBottomDockUVE m_activeBottomDock = EditorBottomDockUVE::FileSystem;
     /// Empty is the ProjectFileIndexUVE content root. This value is session-only and must name a
     /// directory in the latest successful copied snapshot before it is used as a browser location.
