@@ -38,6 +38,8 @@
 #include "editor_chrome_layout_uve.h"
 #include "editor_object_icons_uve.h"
 #include "editor_text_search_uve.h"
+#include "uve/editor/prism_imgui_viewport_bridge_uve.h"
+#include "uve/ui/prism/prism_hierarchy_widget_uve.h"
 
 #include "uve/asset/i_asset_database_uve.h"
 #include "uve/component/collider_component_uve.h"
@@ -235,6 +237,63 @@ void EditorUVE::DrawHierarchyPanelUVE() {
 }
 
 void EditorUVE::DrawHierarchyBodyUVE() {
+
+    if (m_usePrismHierarchy) {
+        if (!m_prismHierarchyWidget) {
+            m_prismHierarchyWidget = std::make_shared<UI::Prism::PrismHierarchyWidgetUVE>("EditorPrismHierarchy");
+            m_prismHierarchyWidget->SetOnEntitySelected([this](std::uint64_t entityId) {
+                SetSelectedEntityUVE(static_cast<Scene::EntityUVE>(entityId));
+            });
+            m_prismHierarchyWidget->SetOnAddObjectRequested([this]() {
+                if (IsAuthoringCommandAllowedUVE()) {
+                    m_objectPickerOpenRequested = true;
+                }
+            });
+            m_prismHierarchyWidget->SetOnFilterChanged([this](const std::string& filter) {
+                m_hierarchyFilter = filter;
+                InvalidateHierarchyFilterCacheUVE();
+            });
+            m_prismHierarchyBridge = std::make_unique<PrismImGuiViewportBridgeUVE>();
+            m_prismHierarchyBridge->SetRootWidget(m_prismHierarchyWidget);
+        }
+
+        std::vector<UI::Prism::PrismHierarchyItemUVE> items;
+        std::function<void(Scene::EntityUVE, UI::Prism::PrismHierarchyItemUVE&)> appendChildren;
+        appendChildren = [&](Scene::EntityUVE parent, UI::Prism::PrismHierarchyItemUVE& parentItem) {
+            if (!m_services) return;
+            auto& em = m_services->GetEntityManagerUVE();
+            auto& sg = m_services->GetSceneGraphUVE();
+            for (const Scene::EntityUVE child : sg.GetChildrenUVE(em, parent)) {
+                if (!IsHierarchyEntityVisibleUVE(child)) continue;
+                UI::Prism::PrismHierarchyItemUVE childItem;
+                childItem.id = static_cast<std::uint64_t>(child);
+                childItem.name = GetDocumentNameUVE(child);
+                appendChildren(child, childItem);
+                parentItem.children.push_back(std::move(childItem));
+            }
+        };
+
+        if (m_services) {
+            const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
+            const std::vector<Scene::EntityUVE> roots = (sceneRoot != Scene::kInvalidEntityUVE)
+                ? m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), sceneRoot)
+                : GetDocumentRootsUVE();
+
+            for (const Scene::EntityUVE root : roots) {
+                if (!IsHierarchyEntityVisibleUVE(root)) continue;
+                UI::Prism::PrismHierarchyItemUVE rootItem;
+                rootItem.id = static_cast<std::uint64_t>(root);
+                rootItem.name = GetDocumentNameUVE(root);
+                appendChildren(root, rootItem);
+                items.push_back(std::move(rootItem));
+            }
+        }
+
+        m_prismHierarchyWidget->SyncTree(items, static_cast<std::uint64_t>(m_selectedEntity));
+        DrawObjectPickerUVE();
+        m_prismHierarchyBridge->RenderImGuiHost();
+        return;
+    }
     std::array<char, 256> filterBuffer{};
     m_hierarchyFilter.copy(filterBuffer.data(), filterBuffer.size() - 1U);
     const float addObjectButtonWidth = ImGui::GetFrameHeight();

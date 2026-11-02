@@ -95,6 +95,7 @@ struct AnimationClipAssetUVE;
 
 namespace UVE::UI::Prism {
 class PrismConsoleWidgetUVE;
+class PrismHierarchyWidgetUVE;
 }
 
 namespace UVE::Editor::Tests {
@@ -2568,6 +2569,9 @@ private:
     std::uint64_t m_prismConsoleLastGen = 0;
     std::shared_ptr<UI::Prism::PrismConsoleWidgetUVE> m_prismConsoleWidget;
     std::unique_ptr<PrismImGuiViewportBridgeUVE> m_prismConsoleBridge;
+    bool m_usePrismHierarchy = true;
+    std::shared_ptr<UI::Prism::PrismHierarchyWidgetUVE> m_prismHierarchyWidget;
+    std::unique_ptr<PrismImGuiViewportBridgeUVE> m_prismHierarchyBridge;
     EditorBottomDockUVE m_activeBottomDock = EditorBottomDockUVE::FileSystem;
     /// Empty is the ProjectFileIndexUVE content root. This value is session-only and must name a
     /// directory in the latest successful copied snapshot before it is used as a browser location.
