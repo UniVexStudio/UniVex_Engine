@@ -47,11 +47,11 @@ struct PrismColorUVE final {
     constexpr PrismColorUVE() noexcept = default;
     constexpr PrismColorUVE(float r_, float g_, float b_, float a_ = 1.0F) noexcept
         : r(r_), g(g_), b(b_), a(a_) {}
-    constexpr PrismColorUVE(PrismColorUVE rgb, float a_ = 1.0F) noexcept
+    constexpr PrismColorUVE(Math::ColorUVE rgb, float a_ = 1.0F) noexcept
         : r(rgb.r), g(rgb.g), b(rgb.b), a(a_) {}
 
-    [[nodiscard]] constexpr PrismColorUVE ToRGB() const noexcept {
-        return PrismColorUVE{r, g, b};
+    [[nodiscard]] constexpr Math::ColorUVE ToRGB() const noexcept {
+        return Math::ColorUVE{r, g, b};
     }
 
     [[nodiscard]] constexpr bool operator==(const PrismColorUVE&) const noexcept = default;
