@@ -797,12 +797,20 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
             {"Profiler", EditorBottomDockUVE::Profiler, "Capture spans, counters, and breadcrumbs."},
             {"Audio", EditorBottomDockUVE::Audio, "Mixer tree with live meters, and the selected source's falloff."},
         }};
-        const ImGuiStyle& style = ImGui::GetStyle();
         for (const TabUVE& tab : kTabs) {
             const bool active = m_bottomDockVisible && m_activeBottomDock == tab.dock;
-            ImGui::PushStyleColor(ImGuiCol_Button, active ? style.Colors[ImGuiCol_TabSelected] : ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
-            ImGui::PushStyleColor(ImGuiCol_Text, active ? style.Colors[ImGuiCol_Text] : style.Colors[ImGuiCol_TextDisabled]);
-            if (ImGui::Button(tab.label, ImVec2{0.0F, layout.dockTabBarSize.y - 4.0F})) {
+            const float tabHeight = layout.dockTabBarSize.y - 4.0F;
+            const ImVec2 textSize = ImGui::CalcTextSize(tab.label);
+            constexpr float padX = 10.0F;
+            const float tabWidth = textSize.x + (padX * 2.0F);
+            const ImVec2 origin = ImGui::GetCursorScreenPos();
+            const ImVec2 maxPos{origin.x + tabWidth, origin.y + tabHeight};
+
+            const bool clicked = ImGui::InvisibleButton(tab.label, ImVec2{tabWidth, tabHeight});
+            const bool hovered = ImGui::IsItemHovered();
+            const bool buttonActive = ImGui::IsItemActive();
+
+            if (clicked) {
                 // Clicking the tab already showing folds the dock away; any other tab shows it.
                 if (active) {
                     m_bottomDockVisible = false;
@@ -811,7 +819,29 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
                     m_bottomDockVisible = true;
                 }
             }
-            ImGui::PopStyleColor(2);
+
+            ImDrawList& drawList = *ImGui::GetWindowDrawList();
+            constexpr float rounding = 4.0F;
+
+            // Soft studio tab background
+            if (active) {
+                drawList.AddRectFilled(origin, maxPos, buttonActive ? IM_COL32(30, 36, 52, 255) : IM_COL32(24, 28, 40, 255), rounding);
+                drawList.AddRect(origin, maxPos, IM_COL32(46, 54, 75, 255), rounding, 0, 1.0F);
+                // Soft Indigo bottom accent line
+                drawList.AddRectFilled(ImVec2{origin.x + 4.0F, maxPos.y - 2.0F}, ImVec2{maxPos.x - 4.0F, maxPos.y},
+                                       IM_COL32(99, 102, 241, 240), 1.0F);
+            } else if (hovered) {
+                drawList.AddRectFilled(origin, maxPos, IM_COL32(255, 255, 255, 14), rounding);
+            }
+
+            // Tab label text centered
+            const ImU32 textColor = active
+                ? IM_COL32(245, 248, 255, 255)
+                : (hovered ? IM_COL32(215, 225, 240, 240) : IM_COL32(145, 155, 175, 210));
+            const float textX = origin.x + padX;
+            const float textY = origin.y + ((tabHeight - textSize.y) * 0.5F);
+            drawList.AddText(ImVec2{textX, textY}, textColor, tab.label);
+
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
                 ImGui::SetTooltip("%s%s", tab.tooltip, active ? " Click again to hide the dock." : "");
             }
@@ -819,10 +849,22 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
         }
         // Right end: the scene's save state, where the eye rests when looking for it.
         const char* const state = m_sceneDirty ? "unsaved changes" : "saved";
-        const float stateWidth = ImGui::CalcTextSize(state).x;
+        const float stateWidth = ImGui::CalcTextSize(state).x + 14.0F;
         ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - stateWidth));
         ImGui::AlignTextToFramePadding();
-        ImGui::TextDisabled("%s", state);
+
+        const ImVec2 stateOrigin = ImGui::GetCursorScreenPos();
+        constexpr float stateDotRadius = 2.5F;
+        const float dotCenterY = stateOrigin.y + (ImGui::GetFrameHeight() * 0.5F);
+        const ImU32 dotColor = m_sceneDirty ? IM_COL32(245, 166, 35, 230) : IM_COL32(110, 120, 140, 180);
+        ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2{stateOrigin.x + stateDotRadius, dotCenterY}, stateDotRadius, dotColor, 8);
+        ImGui::Dummy(ImVec2{stateDotRadius * 2.0F + 4.0F, 0.0F});
+        ImGui::SameLine(0.0F, 0.0F);
+        if (m_sceneDirty) {
+            ImGui::TextColored(ImVec4{0.96F, 0.70F, 0.25F, 1.0F}, "%s", state);
+        } else {
+            ImGui::TextDisabled("%s", state);
+        }
     }
     ImGui::End();
     ImGui::PopStyleVar(4);
