@@ -933,6 +933,8 @@ public:
     [[nodiscard]] bool CanPasteSelectedTransformUVE() const noexcept { return m_transformClipboard.has_value(); }
     [[nodiscard]] bool PasteSelectedTransformUVE();
     [[nodiscard]] bool ResetSelectedTransformUVE();
+    [[nodiscard]] bool IsUniformScaleLockedUVE() const noexcept { return m_uniformScaleLocked; }
+    void SetUniformScaleLockedUVE(const bool locked) noexcept { m_uniformScaleLocked = locked; }
 
     /// Adds or updates persistent human-readable metadata for the selected live document entity.
     /// Returns false without mutation for invalid editor/selection state, an empty or whitespace-only
@@ -2578,6 +2580,8 @@ private:
     };
     std::optional<ComponentClipboardUVE> m_componentClipboard;
     std::optional<Scene::TransformComponentUVE> m_transformClipboard;
+    /// Whether scale axes are linked/proportional (Uniform Scaling / Magnet mode). Defaults to true.
+    bool m_uniformScaleLocked = true;
     /// The shelf the Content item area shows instead of m_contentBrowserDirectory, or empty.
     std::string m_contentBrowserShelf;
     /// The user's shelves; saved with the session like the pinned paths.
