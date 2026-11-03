@@ -114,6 +114,120 @@ void DrawInspectorChainHeaderUVE(const std::string& label) {
                                         IM_COL32(88, 104, 128, 160), 1.0F);
 }
 
+
+/// A counter-clockwise circular arrow glyph for resetting a property to its default value.
+void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float size, const ImU32 color) {
+    constexpr float kPi = std::numbers::pi_v<float>;
+    const float radius = size * 0.36F;
+    const float thickness = std::max(1.2F, size * 0.12F);
+    constexpr int kSegments = 16;
+    constexpr float kStartAngle = 0.35F * kPi;
+    constexpr float kEndAngle = 1.85F * kPi;
+    for (int i = 0; i < kSegments; ++i) {
+        const float a0 = kStartAngle + (static_cast<float>(i) * (kEndAngle - kStartAngle) / static_cast<float>(kSegments));
+        const float a1 = kStartAngle + (static_cast<float>(i + 1) * (kEndAngle - kStartAngle) / static_cast<float>(kSegments));
+        const ImVec2 p0{center.x + (radius * std::cos(a0)), center.y + (radius * std::sin(a0))};
+        const ImVec2 p1{center.x + (radius * std::cos(a1)), center.y + (radius * std::sin(a1))};
+        drawList.AddLine(p0, p1, color, thickness);
+    }
+    const ImVec2 tip{center.x + (radius * std::cos(kStartAngle)), center.y + (radius * std::sin(kStartAngle))};
+    const float arrowLen = size * 0.28F;
+    drawList.AddLine(tip, ImVec2{tip.x - (arrowLen * 0.85F), tip.y - (arrowLen * 0.15F)}, color, thickness);
+    drawList.AddLine(tip, ImVec2{tip.x + (arrowLen * 0.15F), tip.y - (arrowLen * 0.85F)}, color, thickness);
+}
+
+/// A horseshoe magnet glyph for proportional/uniform scaling toggle.
+void DrawMagnetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float size, const bool active) {
+    constexpr float kPi = std::numbers::pi_v<float>;
+    const float halfWidth = size * 0.38F;
+    const float halfHeight = size * 0.42F;
+    const float thickness = std::max(1.8F, size * 0.20F);
+    const float topY = center.y - halfHeight;
+    const float leftX = center.x - halfWidth + (thickness * 0.5F);
+    const float rightX = center.x + halfWidth - (thickness * 0.5F);
+    const float bendY = center.y + (halfHeight * 0.12F);
+
+    const ImU32 bodyColor = active ? IM_COL32(235, 75, 75, 255) : IM_COL32(130, 130, 140, 200);
+    const ImU32 capColor = active ? IM_COL32(110, 195, 255, 255) : IM_COL32(170, 170, 180, 180);
+
+    const float capHeight = size * 0.26F;
+    drawList.AddLine(ImVec2{leftX, bendY}, ImVec2{leftX, topY + capHeight}, bodyColor, thickness);
+    drawList.AddLine(ImVec2{rightX, bendY}, ImVec2{rightX, topY + capHeight}, bodyColor, thickness);
+
+    const float arcRadius = (rightX - leftX) * 0.5F;
+    const ImVec2 arcCenter{(leftX + rightX) * 0.5F, bendY};
+    constexpr int kSegments = 10;
+    for (int i = 0; i < kSegments; ++i) {
+        const float a0 = static_cast<float>(i) * kPi / static_cast<float>(kSegments);
+        const float a1 = static_cast<float>(i + 1) * kPi / static_cast<float>(kSegments);
+        const ImVec2 p0{arcCenter.x - (arcRadius * std::cos(a0)), arcCenter.y + (arcRadius * std::sin(a0))};
+        const ImVec2 p1{arcCenter.x - (arcRadius * std::cos(a1)), arcCenter.y + (arcRadius * std::sin(a1))};
+        drawList.AddLine(p0, p1, bodyColor, thickness);
+    }
+
+    drawList.AddLine(ImVec2{leftX, topY + capHeight}, ImVec2{leftX, topY}, capColor, thickness);
+    drawList.AddLine(ImVec2{rightX, topY + capHeight}, ImVec2{rightX, topY}, capColor, thickness);
+
+    if (active) {
+        const float waveY = topY - 1.5F;
+        drawList.AddLine(ImVec2{leftX + (thickness * 0.3F), waveY},
+                         ImVec2{rightX - (thickness * 0.3F), waveY},
+                         IM_COL32(255, 215, 75, 220), 1.2F);
+    }
+}
+
+/// A compact reset icon button for inspector rows.
+bool DrawResetButtonUVE(const char* const id, const char* const tooltip) {
+    const float size = ImGui::GetFrameHeight();
+    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(70, 70, 85, 120));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(90, 90, 110, 180));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{0.0F, 0.0F});
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const bool pressed = ImGui::Button(id, ImVec2{size, size});
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(3);
+    const bool hovered = ImGui::IsItemHovered();
+    ImDrawList& drawList = *ImGui::GetWindowDrawList();
+    const ImVec2 center{pos.x + (size * 0.5F), pos.y + (size * 0.5F)};
+    const ImU32 color = hovered ? IM_COL32(255, 215, 90, 255) : IM_COL32(160, 160, 175, 190);
+    DrawResetGlyphUVE(drawList, center, size * 0.65F, color);
+    if (hovered && tooltip != nullptr) {
+        ImGui::SetTooltip("%s", tooltip);
+    }
+    return pressed;
+}
+
+/// A compact magnet toggle button for proportional/uniform scaling.
+bool DrawMagnetButtonUVE(const char* const id, const bool active) {
+    const float size = ImGui::GetFrameHeight();
+    if (active) {
+        ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(45, 75, 110, 200));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(65, 105, 150, 240));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(85, 125, 180, 255));
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(60, 60, 75, 120));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(80, 80, 95, 180));
+    }
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{0.0F, 0.0F});
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const bool pressed = ImGui::Button(id, ImVec2{size, size});
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(3);
+    const bool hovered = ImGui::IsItemHovered();
+    ImDrawList& drawList = *ImGui::GetWindowDrawList();
+    const ImVec2 center{pos.x + (size * 0.5F), pos.y + (size * 0.5F)};
+    DrawMagnetGlyphUVE(drawList, center, size * 0.65F, active);
+    if (hovered) {
+        ImGui::SetTooltip("%s", active ? "Uniform Scale Locked (Magnet ON)
+Scaling any axis scales all axes together."
+                                       : "Uniform Scale Unlocked (Magnet OFF)
+Each axis scales independently.");
+    }
+    return pressed;
+}
+
 } // namespace
 
 void EditorUVE::DrawInspectorPanelUVE() {
@@ -512,41 +626,155 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
                              haveEuler ? eulerRadians.z * kRadiansToDegreesUVE : 0.0F};
     float scale[3]{edited.localScale.x, edited.localScale.y, edited.localScale.z};
 
-    // Label beside value, the layout every other Inspector row uses, with one axis-tagged field per
-    // component sharing the value column. Each field clips its own number, so a narrow panel shows
-    // fewer digits rather than digits spilling over the box.
     bool positionChanged = false;
     bool rotationChanged = false;
     bool scaleChanged = false;
     bool gestureEnded = false;
-    if (ImGui::BeginTable("##transform", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings)) {
-        ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthStretch, 0.26F);
-        ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthStretch, 0.74F);
-        // Each row is dragged (double-click or Ctrl+click types). A drag is a transform gesture:
-        // it starts when a field is taken hold of and ends as one undo step when it is let go.
-        const auto row = [this, &gestureEnded](const char* const label, const char* const id, float* const values,
-                                               const float speed, const EditorToolSessionModeUVE mode) {
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted(label);
-            ImGui::TableSetColumnIndex(1);
-            const bool changed = DrawAxisVectorInputUVE(id, values, 3, speed);
-            if (ImGui::IsItemActivated()) {
-                // Tabbing from one field to the next ends the first edit and starts another.
-                if (GetToolSessionPhaseUVE() == EditorToolSessionPhaseUVE::Previewing) {
-                    static_cast<void>(CommitTransformGestureUVE());
-                }
-                static_cast<void>(BeginTransformGestureUVE(mode));
+
+    // Reset All quick button
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("Local Transform");
+    const float resetAllBtnWidth = 64.0F;
+    ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - resetAllBtnWidth));
+    if (ImGui::SmallButton("Reset All")) {
+        position[0] = 0.0F;
+        position[1] = 0.0F;
+        position[2] = 0.0F;
+        positionChanged = true;
+
+        rotationDegrees[0] = 0.0F;
+        rotationDegrees[1] = 0.0F;
+        rotationDegrees[2] = 0.0F;
+        rotationChanged = true;
+
+        scale[0] = 1.0F;
+        scale[1] = 1.0F;
+        scale[2] = 1.0F;
+        scaleChanged = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Reset all transform properties to defaults:
+Position -> (0, 0, 0)
+Rotation -> (0, 0, 0)
+Scale -> (1, 1, 1)");
+    }
+
+    const float resetBtnWidth = ImGui::GetFrameHeight();
+    if (ImGui::BeginTable("##transform", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings)) {
+        ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthFixed, 72.0F);
+        ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("##actions", ImGuiTableColumnFlags_WidthFixed, resetBtnWidth);
+
+        // Position row
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Position");
+        ImGui::TableSetColumnIndex(1);
+        const bool posInputChanged = DrawAxisVectorInputUVE("##local-position", position, 3, 0.01F);
+        if (ImGui::IsItemActivated()) {
+            if (GetToolSessionPhaseUVE() == EditorToolSessionPhaseUVE::Previewing) {
+                static_cast<void>(CommitTransformGestureUVE());
             }
-            gestureEnded = (ImGui::IsItemDeactivated() && !ImGui::IsItemActive()) || gestureEnded;
-            return changed;
-        };
-        positionChanged = row("Position", "##local-position", position, 0.01F, EditorToolSessionModeUVE::Translate);
-        rotationChanged = row("Rotation", "##local-rotation", rotationDegrees, 0.5F, EditorToolSessionModeUVE::Rotate);
-        scaleChanged = row("Scale", "##local-scale", scale, 0.01F, EditorToolSessionModeUVE::Scale);
+            static_cast<void>(BeginTransformGestureUVE(EditorToolSessionModeUVE::Translate));
+        }
+        gestureEnded = (ImGui::IsItemDeactivated() && !ImGui::IsItemActive()) || gestureEnded;
+        ImGui::TableSetColumnIndex(2);
+        bool posResetClicked = false;
+        if (DrawResetButtonUVE("##reset-position", "Reset Position to (0, 0, 0)")) {
+            position[0] = 0.0F;
+            position[1] = 0.0F;
+            position[2] = 0.0F;
+            posResetClicked = true;
+        }
+        positionChanged = posInputChanged || posResetClicked;
+
+        // Rotation row
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Rotation");
+        ImGui::TableSetColumnIndex(1);
+        const bool rotInputChanged = DrawAxisVectorInputUVE("##local-rotation", rotationDegrees, 3, 0.5F);
+        if (ImGui::IsItemActivated()) {
+            if (GetToolSessionPhaseUVE() == EditorToolSessionPhaseUVE::Previewing) {
+                static_cast<void>(CommitTransformGestureUVE());
+            }
+            static_cast<void>(BeginTransformGestureUVE(EditorToolSessionModeUVE::Rotate));
+        }
+        gestureEnded = (ImGui::IsItemDeactivated() && !ImGui::IsItemActive()) || gestureEnded;
+        ImGui::TableSetColumnIndex(2);
+        bool rotResetClicked = false;
+        if (DrawResetButtonUVE("##reset-rotation", "Reset Rotation to (0, 0, 0)")) {
+            rotationDegrees[0] = 0.0F;
+            rotationDegrees[1] = 0.0F;
+            rotationDegrees[2] = 0.0F;
+            rotResetClicked = true;
+        }
+        rotationChanged = rotInputChanged || rotResetClicked;
+
+        // Scale row
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Scale");
+        ImGui::SameLine(0.0F, 3.0F);
+        if (DrawMagnetButtonUVE("##scale-magnet", m_uniformScaleLocked)) {
+            m_uniformScaleLocked = !m_uniformScaleLocked;
+        }
+        ImGui::TableSetColumnIndex(1);
+        const float oldScale[3]{scale[0], scale[1], scale[2]};
+        const bool scaleInputChanged = DrawAxisVectorInputUVE("##local-scale", scale, 3, 0.01F);
+        if (ImGui::IsItemActivated()) {
+            if (GetToolSessionPhaseUVE() == EditorToolSessionPhaseUVE::Previewing) {
+                static_cast<void>(CommitTransformGestureUVE());
+            }
+            static_cast<void>(BeginTransformGestureUVE(EditorToolSessionModeUVE::Scale));
+        }
+        gestureEnded = (ImGui::IsItemDeactivated() && !ImGui::IsItemActive()) || gestureEnded;
+
+        // When uniform scale / magnet is locked, adjust all axes in sync
+        if (scaleInputChanged && m_uniformScaleLocked) {
+            int changedAxis = -1;
+            for (int i = 0; i < 3; ++i) {
+                if (scale[i] != oldScale[i]) {
+                    changedAxis = i;
+                    break;
+                }
+            }
+            if (changedAxis >= 0) {
+                const float oldVal = oldScale[changedAxis];
+                const float newVal = scale[changedAxis];
+                if (std::abs(oldVal) > 1.0e-5F) {
+                    const float ratio = newVal / oldVal;
+                    for (int j = 0; j < 3; ++j) {
+                        if (j != changedAxis) {
+                            scale[j] = oldScale[j] * ratio;
+                        }
+                    }
+                } else {
+                    const float delta = newVal - oldVal;
+                    for (int j = 0; j < 3; ++j) {
+                        if (j != changedAxis) {
+                            scale[j] = (oldScale[j] == 0.0F) ? newVal : (oldScale[j] + delta);
+                        }
+                    }
+                }
+            }
+        }
+        ImGui::TableSetColumnIndex(2);
+        bool scaleResetClicked = false;
+        if (DrawResetButtonUVE("##reset-scale", "Reset Scale to (1, 1, 1)")) {
+            scale[0] = 1.0F;
+            scale[1] = 1.0F;
+            scale[2] = 1.0F;
+            scaleResetClicked = true;
+        }
+        scaleChanged = scaleInputChanged || scaleResetClicked;
+
         ImGui::EndTable();
     }
+
     if (positionChanged || rotationChanged || scaleChanged) {
         edited.localPosition = Math::Vector3UVE{position[0], position[1], position[2]};
         if (rotationChanged) {
@@ -556,6 +784,8 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
                                            rotationDegrees[2] * kDegreesToRadiansUVE};
             if (Math::TryMakeEulerUVE(radians, newRotation)) {
                 edited.localRotation = newRotation;
+                edited.localEulerRadians = radians;
+                edited.rotationEditMode = Scene::RotationEditModeUVE::Euler;
             }
         }
         edited.localScale = Math::Vector3UVE{scale[0], scale[1], scale[2]};
