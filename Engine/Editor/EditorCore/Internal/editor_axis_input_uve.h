@@ -16,28 +16,32 @@ inline constexpr std::array<const char*, 4> kDefaultAxisNamesUVE{"X", "Y", "Z", 
 /// Axis tags for a rect extent row: width/height instead of X/Y (only the first two are read).
 inline constexpr std::array<const char*, 4> kRectSizeAxisNamesUVE{"W", "H", "", ""};
 
-/// One vector field per axis, sharing the available width equally, each led by a coloured axis tag
-/// (X red, Y green, Z blue, W grey) drawn inside the field's own frame. The number is drawn after
-/// the tag and clipped to the field, so it can never spill over the box or into its neighbour -
-/// which is what happened when three fixed-width fields were squeezed into a narrow panel.
+/// High-performance, modern, soft vector input field inspired by Prism UI and AAA studio tools.
+/// Features a unified rounded capsule, soft non-neon axis badges, subtle dark slate surface,
+/// and smooth hover/active glow borders.
 ///
-/// Returns true when any component changed this frame. `count` is 2, 3 or 4. The fields form one
-/// group, so ImGui::IsItemActive() and IsItemDeactivated() after the call describe the whole
-/// vector: a drag on any axis is one edit, which callers record as one undo step when it ends.
-/// `axisNames` overrides the per-axis tags (a rect extent row shows W/H instead of X/Y).
+/// Returns true when any component changed this frame. `count` is 2, 3 or 4.
 inline bool DrawAxisVectorInputUVE(const char* const id, float* const values, const int count, const float speed,
                                    const float minimum = 0.0F, const float maximum = 0.0F,
                                    const std::array<const char*, 4>& axisNames = kDefaultAxisNamesUVE) {
-    static constexpr std::array<ImU32, 4> kAxisColors{IM_COL32(214, 72, 72, 255), IM_COL32(96, 180, 72, 255),
-                                                      IM_COL32(72, 128, 222, 255), IM_COL32(140, 140, 150, 255)};
+    // Soft, refined modern studio palette (Soft Crimson Rose, Emerald Sage, Sky Cobalt, Muted Slate)
+    static constexpr std::array<ImU32, 4> kAxisColors{
+        IM_COL32(228, 86, 98, 235),  // X: Soft Rose
+        IM_COL32(52, 178, 108, 235), // Y: Soft Sage
+        IM_COL32(68, 142, 238, 235), // Z: Soft Cobalt
+        IM_COL32(115, 125, 145, 235) // W: Soft Slate
+    };
+
     ImGui::PushID(id);
     ImGui::BeginGroup();
     const ImGuiStyle& style = ImGui::GetStyle();
     const float spacing = 3.0F;
     const float total = ImGui::GetContentRegionAvail().x;
     const float width = std::max(24.0F, (total - (spacing * static_cast<float>(count - 1))) / static_cast<float>(count));
-    const float tagWidth = ImGui::CalcTextSize("X").x + 6.0F;
+    const float tagWidth = ImGui::CalcTextSize("X").x + 7.0F;
+    const float rounding = std::clamp(style.FrameRounding, 3.5F, 5.5F);
     bool changed = false;
+
     for (int axis = 0; axis < count; ++axis) {
         if (axis > 0) {
             ImGui::SameLine(0.0F, spacing);
@@ -45,31 +49,41 @@ inline bool DrawAxisVectorInputUVE(const char* const id, float* const values, co
         ImGui::PushID(axis);
         const ImVec2 origin = ImGui::GetCursorScreenPos();
         const float height = ImGui::GetFrameHeight();
-        // The tag is its own small block joined to the field's left edge. Dear ImGui centres a drag
-        // field's number in the whole frame whatever the padding, so a tag drawn inside the frame
-        // would sit under the number; beside it, the number always has the field to itself.
-        ImGui::Dummy(ImVec2{tagWidth, height});
+        const ImVec2 cellMax{origin.x + width, origin.y + height};
+
         ImDrawList& drawList = *ImGui::GetWindowDrawList();
-        drawList.AddRectFilled(origin, ImVec2{origin.x + tagWidth, origin.y + height},
-                               kAxisColors[static_cast<std::size_t>(axis)], style.FrameRounding,
-                               ImDrawFlags_RoundCornersLeft);
+
+        // 1. Soft unified capsule background card
+        drawList.AddRectFilled(origin, cellMax, IM_COL32(17, 18, 25, 255), rounding);
+
+        // 2. Soft left axis pill tag
+        const ImVec2 tagMax{origin.x + tagWidth, origin.y + height};
+        drawList.AddRectFilled(origin, tagMax, kAxisColors[static_cast<std::size_t>(axis)], rounding, ImDrawFlags_RoundCornersLeft);
+
+        // 3. Crisp centered letter
         const char* const name = axisNames[static_cast<std::size_t>(axis)];
         const ImVec2 labelSize = ImGui::CalcTextSize(name);
         drawList.AddText(ImVec2{origin.x + ((tagWidth - labelSize.x) * 0.5F), origin.y + ((height - labelSize.y) * 0.5F)},
-                         IM_COL32(255, 255, 255, 240), name);
+                         IM_COL32(255, 255, 255, 250), name);
+
+        // Tag dummy spacer for ImGui cursor
+        ImGui::Dummy(ImVec2{tagWidth, height});
         ImGui::SameLine(0.0F, 0.0F);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{2.0F, style.FramePadding.y});
+
+        // 4. Input numeric drag field with transparent background (showing our soft capsule card)
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{3.0F, style.FramePadding.y});
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4{0.13F, 0.15F, 0.20F, 1.0F});
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4{0.16F, 0.20F, 0.28F, 1.0F});
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
+
         const float fieldWidth = std::max(8.0F, width - tagWidth);
         ImGui::SetNextItemWidth(fieldWidth);
-        // As many decimals as the field can show whole: a narrow panel shows "1.25" rather than a
-        // cut-off "1.250" - but never so few that the number shown is a different one. The exact
-        // value is always in the tooltip, and typing is never limited.
+
         const char* fieldFormat = "%.3f";
         static constexpr std::array<const char*, 4> kFallbacks{"%.3f", "%.2f", "%.1f", "%.0f"};
         std::array<char, 64> preview{};
         for (const char* const candidate : kFallbacks) {
-            // Whole numbers only when the value is one: 0.5 shown as "0" is a wrong number, while a
-            // clipped "0.5" is merely cut short (and the tooltip has it exactly).
             if (candidate == kFallbacks.back() && fieldFormat != nullptr &&
                 std::abs(values[axis] - std::round(values[axis])) > 1.0e-4F) {
                 break;
@@ -80,10 +94,22 @@ inline bool DrawAxisVectorInputUVE(const char* const id, float* const values, co
                 break;
             }
         }
-        // Drag to scrub; double-click or Ctrl+click to type.
+
         changed = ImGui::DragFloat("##axis", &values[axis], speed, minimum, maximum, fieldFormat) || changed;
+
+        const bool isFieldActive = ImGui::IsItemActive();
+        const bool isFieldHovered = ImGui::IsItemHovered();
+
+        ImGui::PopStyleColor(4);
         ImGui::PopStyleVar();
-        if (ImGui::IsItemHovered()) {
+
+        // 5. Soft border stroke & reactive active glow
+        const ImU32 borderColor = isFieldActive
+            ? IM_COL32(52, 82, 132, 255) // Solid studio slate-blue active ring
+            : (isFieldHovered ? IM_COL32(56, 68, 92, 255) : IM_COL32(34, 38, 50, 255));
+        drawList.AddRect(origin, cellMax, borderColor, rounding, 0, isFieldActive ? 1.5F : 1.0F);
+
+        if (isFieldHovered) {
             ImGui::SetTooltip("%s: %.6g", name, static_cast<double>(values[axis]));
         }
         ImGui::PopID();

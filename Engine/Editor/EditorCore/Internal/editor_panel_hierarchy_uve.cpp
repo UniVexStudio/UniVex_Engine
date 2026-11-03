@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -38,6 +39,8 @@
 #include "editor_chrome_layout_uve.h"
 #include "editor_object_icons_uve.h"
 #include "editor_text_search_uve.h"
+#include "uve/editor/prism_imgui_viewport_bridge_uve.h"
+#include "uve/ui/prism/prism_hierarchy_widget_uve.h"
 
 #include "uve/asset/i_asset_database_uve.h"
 #include "uve/component/collider_component_uve.h"
@@ -211,10 +214,12 @@ void EditorUVE::DrawHierarchyPanelUVE() {
         return;
     }
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+    const EditorLayoutModeUVE layoutMode =
+        m_entityEditSession.has_value() ? EditorLayoutModeUVE::Classic : EditorLayoutModeUVE::Level;
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth,
                                      m_inspectorPanelWidth, m_scenePanelVisible,
-                                     m_inspectorPanelVisible);
+                                     m_inspectorPanelVisible, layoutMode, m_outlinerHeightFraction);
     // Always: the rect comes from the chrome layout every frame. Dragging happens on the seam in
     // DrawEditorChromeHandlesUVE(), which writes m_scenePanelWidth - not on the window's edges.
     ImGui::SetNextWindowViewport(mainViewport->ID);
@@ -235,6 +240,90 @@ void EditorUVE::DrawHierarchyPanelUVE() {
 }
 
 void EditorUVE::DrawHierarchyBodyUVE() {
+
+    if (m_usePrismHierarchy) {
+        if (!m_prismHierarchyWidget) {
+            m_prismHierarchyWidget = std::make_shared<UI::Prism::PrismHierarchyWidgetUVE>("EditorPrismHierarchy");
+            m_prismHierarchyWidget->SetOnEntitySelected([this](std::uint64_t entityId) {
+                const Scene::EntityUVE e{
+                    static_cast<std::uint32_t>(entityId >> 32),
+                    static_cast<std::uint32_t>(entityId & 0xFFFFFFFFULL)
+                };
+                SelectEntityUVE(e);
+            });
+            m_prismHierarchyWidget->SetOnAddObjectRequested([this]() {
+                if (IsAuthoringCommandAllowedUVE()) {
+                    m_objectPickerOpenRequested = true;
+                }
+            });
+            m_prismHierarchyWidget->SetOnFilterChanged([this](const std::string& filter) {
+                m_hierarchyFilter = filter;
+                InvalidateHierarchyFilterCacheUVE();
+            });
+            m_prismHierarchyBridge = std::make_unique<PrismImGuiViewportBridgeUVE>();
+            m_prismHierarchyBridge->SetRootWidget(m_prismHierarchyWidget);
+        }
+
+        std::vector<UI::Prism::PrismHierarchyItemUVE> items;
+        std::function<void(Scene::EntityUVE, UI::Prism::PrismHierarchyItemUVE&)> appendChildren;
+        appendChildren = [&](Scene::EntityUVE parent, UI::Prism::PrismHierarchyItemUVE& parentItem) {
+            if (!m_services) return;
+            auto& em = m_services->GetEntityManagerUVE();
+            auto& sg = m_services->GetSceneGraphUVE();
+            for (const Scene::EntityUVE child : sg.GetChildrenUVE(em, parent)) {
+                if (!IsHierarchyEntityVisibleUVE(child)) continue;
+                UI::Prism::PrismHierarchyItemUVE childItem;
+                childItem.id = (static_cast<std::uint64_t>(child.index) << 32) | static_cast<std::uint64_t>(child.generation);
+                childItem.name = GetEntityDisplayLabelUVE(child);
+                appendChildren(child, childItem);
+                parentItem.children.push_back(std::move(childItem));
+            }
+        };
+
+        RebuildHierarchyFilterCacheUVE();
+
+        if (m_services) {
+            auto& em = m_services->GetEntityManagerUVE();
+            std::vector<Scene::EntityUVE> roots;
+
+            // Support both Entity Editor sessions (prefabs/entity documents) and Level Editor sessions
+            if (m_entityEditSession.has_value()) {
+                const Scene::EntityUVE entityRoot = (m_entityEditSession->rootEntity != Scene::kInvalidEntityUVE &&
+                                                     em.IsAliveUVE(m_entityEditSession->rootEntity))
+                                                        ? m_entityEditSession->rootEntity
+                                                        : GetEntityEditorRootUVE();
+                if (entityRoot != Scene::kInvalidEntityUVE) {
+                    roots.push_back(entityRoot);
+                } else {
+                    roots = GetDocumentRootsUVE();
+                }
+            } else if (GetDocumentViewportUVE() != Scene::kInvalidEntityUVE) {
+                const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
+                if (sceneRoot != Scene::kInvalidEntityUVE) {
+                    roots = m_services->GetSceneGraphUVE().GetChildrenUVE(em, sceneRoot);
+                } else {
+                    roots = GetDocumentRootsUVE();
+                }
+            } else {
+                roots = GetDocumentRootsUVE();
+            }
+
+            for (const Scene::EntityUVE root : roots) {
+                if (!IsHierarchyEntityVisibleUVE(root)) continue;
+                UI::Prism::PrismHierarchyItemUVE rootItem;
+                rootItem.id = (static_cast<std::uint64_t>(root.index) << 32) | static_cast<std::uint64_t>(root.generation);
+                rootItem.name = GetEntityDisplayLabelUVE(root);
+                appendChildren(root, rootItem);
+                items.push_back(std::move(rootItem));
+            }
+        }
+
+        const std::uint64_t selectedId = (static_cast<std::uint64_t>(m_selectedEntity.index) << 32) | static_cast<std::uint64_t>(m_selectedEntity.generation);
+        m_prismHierarchyWidget->SyncTree(items, selectedId);
+        DrawObjectPickerUVE();
+        m_prismHierarchyBridge->RenderImGuiHost();
+        return;
+    }
     std::array<char, 256> filterBuffer{};
     m_hierarchyFilter.copy(filterBuffer.data(), filterBuffer.size() - 1U);
     const float addObjectButtonWidth = ImGui::GetFrameHeight();

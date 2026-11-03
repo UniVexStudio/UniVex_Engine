@@ -185,6 +185,7 @@ add_library(uve_editor STATIC
     Internal/editor_panel_preferences_uve.cpp
     Internal/editor_panel_input_map_uve.cpp
     Internal/inspector_drawer_registry_uve.cpp
+    Internal/prism_imgui_viewport_bridge_uve.cpp
     ${_uve_editor_font_incs}
     "${_uve_editor_generated_dir}/uve_editor_icon_set.inc"
 )
@@ -193,6 +194,6 @@ target_include_directories(uve_editor PRIVATE "${_uve_editor_generated_dir}")
 target_compile_features(uve_editor PUBLIC cxx_std_23)
 target_link_libraries(uve_editor
     PUBLIC uve_core uve_diagnostics uve_network uve_plugins uve_retarget
-    PRIVATE uve_editor_imgui nlohmann_json::nlohmann_json glfw uve_strings
+    PRIVATE uve_editor_imgui nlohmann_json::nlohmann_json glfw uve_strings uve_ui
 )
 uve_set_warnings(uve_editor)

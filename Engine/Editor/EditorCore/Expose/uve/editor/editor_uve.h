@@ -93,6 +93,11 @@ namespace UVE::Asset {
 struct AnimationClipAssetUVE;
 } // namespace UVE::Asset
 
+namespace UVE::UI::Prism {
+class PrismConsoleWidgetUVE;
+class PrismHierarchyWidgetUVE;
+}
+
 namespace UVE::Editor::Tests {
 struct EditorUVEAccessUVE;
 }
@@ -102,6 +107,7 @@ namespace UVE::Editor {
 struct EditorSettingBindingUVE;
 
 class EditorBridgeUVE;
+class PrismImGuiViewportBridgeUVE;
 
 /// EditorStateUVE is the lifecycle state of one editor session. The editor owns session data only;
 /// EngineCoreUVE remains the owner of the ECS, renderer, window, and every engine service.
@@ -2560,6 +2566,13 @@ private:
     EditorRightPanelTabUVE m_drawnRightPanelTab = EditorRightPanelTabUVE::Inspector;
     InspectorDrawerRegistryUVE m_inspectorDrawerRegistry;
     DeveloperConsoleUVE m_developerConsole;
+    bool m_usePrismConsole = true;
+    std::uint64_t m_prismConsoleLastGen = 0;
+    std::shared_ptr<UI::Prism::PrismConsoleWidgetUVE> m_prismConsoleWidget;
+    std::unique_ptr<PrismImGuiViewportBridgeUVE> m_prismConsoleBridge;
+    bool m_usePrismHierarchy = true;
+    std::shared_ptr<UI::Prism::PrismHierarchyWidgetUVE> m_prismHierarchyWidget;
+    std::unique_ptr<PrismImGuiViewportBridgeUVE> m_prismHierarchyBridge;
     EditorBottomDockUVE m_activeBottomDock = EditorBottomDockUVE::FileSystem;
     /// Empty is the ProjectFileIndexUVE content root. This value is session-only and must name a
     /// directory in the latest successful copied snapshot before it is used as a browser location.
@@ -3035,8 +3048,9 @@ private:
     bool m_bottomDockVisible = true;
     /// The dock body's height, dragged from its top edge; the layout clamps it (kAssetsPanelHeightUVE default).
     float m_bottomDockHeight = 192.0F;
-    float m_scenePanelWidth = 240.0F;
+    float m_scenePanelWidth = 300.0F;
     float m_inspectorPanelWidth = 320.0F;
+    float m_outlinerHeightFraction = 0.45F;
     std::array<char, 512> m_consoleInput{};
     bool m_consoleScrollToBottom = false;
     ViewportPanelRendererUVE m_viewportPanelRenderer;

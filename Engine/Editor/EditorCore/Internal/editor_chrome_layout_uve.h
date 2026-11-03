@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 
 #include <imgui.h>
 
@@ -70,6 +71,16 @@ struct EditorChromeLayoutUVE final {
     ImVec2 outlinerRestoreSize;
     ImVec2 inspectorRestorePos;
     ImVec2 inspectorRestoreSize;
+    /// Outliner / Details horizontal seam splitter (in Level editor layout).
+    ImVec2 outlinerDetailsSplitterPos;
+    ImVec2 outlinerDetailsSplitterSize;
+    /// Flag indicating whether Level Editor layout was applied.
+    bool isLevelLayout = true;
+};
+
+enum class EditorLayoutModeUVE : std::uint8_t {
+    Level,   ///< Modern Level Editor: Left stacked (Outliner top + Details bottom), Viewport spans to right edge.
+    Classic, ///< Classic 3-column: Outliner left, Viewport center, Inspector right.
 };
 
 /// Shared across the editor's panel translation units.
@@ -94,6 +105,7 @@ constexpr const char* kContentItemsPayloadUVE = "UVE_CONTENT_ITEMS";
 constexpr const char* kPanelLabelViewportUVE = "\xEE\xA9\x94 Viewport##viewport";
 constexpr const char* kPanelLabelSceneUVE = "\xEF\xAB\xBA Outliner##scene-panel";
 constexpr const char* kPanelLabelInspectorUVE = "\xEE\xA8\x83 Inspector##right-panel";
+constexpr const char* kPanelLabelDetailsUVE = "\xEE\xA8\x83 Details##details-panel";
 /// The one window every bottom-dock tab shares. See DrawBottomDockContentUVE()'s comment on why
 /// the dock is a region of the editor rather than six windows that take turns being visible - the
 /// six per-section names that used to live here are gone with the six windows they named.
@@ -115,9 +127,9 @@ constexpr float kDockTabBarHeightUVE = 24.0F;
 constexpr float kEditorTitleBarHeightUVE = 24.0F;
 constexpr float kEditorToolbarHeightUVE = 26.0F;
 constexpr float kEditorTopChromeHeightUVE = kEditorTitleBarHeightUVE + kEditorToolbarHeightUVE;
-constexpr float kScenePanelWidthFractionUVE = 0.16F;
-constexpr float kScenePanelWidthMinUVE = 184.0F;
-constexpr float kScenePanelWidthMaxUVE = 600.0F;
+constexpr float kScenePanelWidthFractionUVE = 0.22F;
+constexpr float kScenePanelWidthMinUVE = 260.0F;
+constexpr float kScenePanelWidthMaxUVE = 650.0F;
 constexpr float kInspectorPanelWidthFractionUVE = 0.22F;
 constexpr float kInspectorPanelWidthMinUVE = 240.0F;
 constexpr float kInspectorPanelWidthMaxUVE = 800.0F;
@@ -225,28 +237,25 @@ inline constexpr ImGuiWindowFlags kLayoutOwnedPanelFlagsUVE =
 /// hidden panel contributes zero width and the viewport takes the space, which is the whole point of
 /// hiding it. The width parameters above still apply when the panel is shown again, so hiding and
 /// restoring a panel returns it to the width the author dragged it to.
-[[nodiscard]] inline EditorChromeLayoutUVE ComputeEditorChromeLayoutUVE(const ImGuiViewport& viewport,
-                                                                        const bool bottomDockVisible,
-                                                                        const float dockHeight = kAssetsPanelHeightUVE,
-                                                                        const float sceneWidthCustom = -1.0F,
-                                                                        const float inspectorWidthCustom = -1.0F,
-                                                                        const bool sceneVisible = true,
-                                                                        const bool inspectorVisible = true) {
+[[nodiscard]] inline EditorChromeLayoutUVE ComputeEditorChromeLayoutUVE(
+    const ImGuiViewport& viewport,
+    const bool bottomDockVisible,
+    const float dockHeight = kAssetsPanelHeightUVE,
+    const float sceneWidthCustom = -1.0F,
+    const float inspectorWidthCustom = -1.0F,
+    const bool sceneVisible = true,
+    const bool inspectorVisible = true,
+    const EditorLayoutModeUVE layoutMode = EditorLayoutModeUVE::Level,
+    const float outlinerHeightFraction = 0.45F) {
     const float originX = viewport.WorkPos.x;
     const float originY = viewport.WorkPos.y;
     const float totalWidth = viewport.WorkSize.x;
     const float totalHeight = viewport.WorkSize.y;
 
     const float chromeHeight = kEditorTopChromeHeightUVE;
-    // The centre column, under the tool strip. The dock's tab row is reserved only while the dock
-    // is hidden, because that is the one state in which the row has to live at the bottom edge on
-    // its own. While the dock is showing, its tabs are the dock's header and cost the column
-    // nothing - which is why the panels reach the bottom of the frame instead of stopping 24px
-    // short above a band that belonged to no one.
     const float columnHeight = std::max(
         kMinimumViewportHeightUVE,
         totalHeight - chromeHeight - (bottomDockVisible ? 0.0F : kDockTabBarHeightUVE));
-    // The side columns also take the tool strip's height: they start right under the title bar.
     const float sideTop = originY + kEditorTitleBarHeightUVE;
     const float sideHeight = columnHeight + kEditorToolbarHeightUVE;
 
@@ -263,58 +272,127 @@ inline constexpr ImGuiWindowFlags kLayoutOwnedPanelFlagsUVE =
                                      : (inspectorWidthCustom > 0.0F
                                             ? ClampInspectorPanelWidthUVE(totalWidth, inspectorWidthCustom)
                                             : defaultInspectorWidth);
-    const float viewportWidth = std::max(kMinimumViewportWidthUVE, totalWidth - sceneWidth - inspectorWidth);
-    const float top = originY + chromeHeight;
-    const float dock = bottomDockVisible ? ClampBottomDockHeightUVE(columnHeight, dockHeight) : 0.0F;
 
     EditorChromeLayoutUVE layout{};
     layout.sceneVisible = sceneVisible;
     layout.inspectorVisible = inspectorVisible;
+    layout.isLevelLayout = (layoutMode == EditorLayoutModeUVE::Level);
+
+    // The logo sits cleanly in the title bar (28px wide, 24px high), allowing the toolbar row below
+    // to extend continuously with clean, flush panel boundaries.
     layout.logoPos = ImVec2{originX, originY};
-    layout.logoSize = ImVec2{kEditorTopChromeHeightUVE, kEditorTopChromeHeightUVE};
-    layout.outlinerHeaderPos = ImVec2{originX + kEditorTopChromeHeightUVE, sideTop};
-    layout.outlinerHeaderSize =
-        ImVec2{std::max(0.0F, sceneWidth - kEditorTopChromeHeightUVE), kEditorToolbarHeightUVE};
-    layout.scenePos = ImVec2{originX, top};
-    layout.sceneSize = ImVec2{sceneWidth, columnHeight};
-    // The header row starts past the logo even when the Outliner is hidden, so the logo never
-    // paints over the viewport's own tab and transport.
-    layout.viewportHeaderPos = ImVec2{originX + std::max(sceneWidth, kEditorTopChromeHeightUVE), sideTop};
-    layout.viewportHeaderSize = ImVec2{viewportWidth, kEditorToolbarHeightUVE};
-    layout.viewportPos = ImVec2{originX + sceneWidth, top};
-    layout.viewportSize = ImVec2{viewportWidth, std::max(kMinimumViewportHeightUVE, columnHeight - dock)};
-    layout.inspectorPos = ImVec2{originX + sceneWidth + viewportWidth, sideTop};
-    layout.inspectorSize = ImVec2{inspectorWidth, sideHeight};
-    // The dock is the bottom half of the viewport column, not a band across the whole editor. Its
-    // tab row is the top of that block and shares its left and right edges, so the row reads as
-    // the dock's own header: one thing attached under the canvas. Drawn full-width at the bottom
-    // edge of the screen, the row looked like a second window that had landed there by accident,
-    // and nothing connected it to the panel it controlled. When the dock is hidden the row drops
-    // to the reserved strip row, still on the column's edges, because it is the way back.
-    const float dockStripY = bottomDockVisible ? top + layout.viewportSize.y : top + columnHeight;
-    layout.dockTabBarPos = ImVec2{originX + sceneWidth, dockStripY};
-    layout.dockTabBarSize = ImVec2{viewportWidth, kDockTabBarHeightUVE};
-    layout.contentBrowserPos = ImVec2{originX + sceneWidth, dockStripY + kDockTabBarHeightUVE};
-    layout.contentBrowserSize = ImVec2{viewportWidth, std::max(0.0F, dock - kDockTabBarHeightUVE)};
+    layout.logoSize = ImVec2{kEditorTitleBarHeightUVE + 4.0F, kEditorTitleBarHeightUVE};
 
-    // The grips straddle their seam, so a drag that started on the divider keeps tracking when the
-    // pointer wanders a pixel or two onto either panel.
     constexpr float halfGrip = kPanelSplitterThicknessUVE * 0.5F;
-    layout.sceneSplitterPos = ImVec2{originX + sceneWidth - halfGrip, top};
-    layout.sceneSplitterSize = sceneVisible ? ImVec2{kPanelSplitterThicknessUVE, columnHeight} : ImVec2{0.0F, 0.0F};
-    layout.inspectorSplitterPos = ImVec2{originX + sceneWidth + viewportWidth - halfGrip, sideTop};
-    layout.inspectorSplitterSize =
-        inspectorVisible ? ImVec2{kPanelSplitterThicknessUVE, sideHeight} : ImVec2{0.0F, 0.0F};
-    layout.dockSplitterPos = ImVec2{originX + sceneWidth, top + layout.viewportSize.y - halfGrip};
-    layout.dockSplitterSize =
-        bottomDockVisible ? ImVec2{viewportWidth, kPanelSplitterThicknessUVE} : ImVec2{0.0F, 0.0F};
+    const float top = originY + chromeHeight;
+    const float dock = bottomDockVisible ? ClampBottomDockHeightUVE(columnHeight, dockHeight) : 0.0F;
 
-    layout.outlinerRestorePos = ImVec2{originX, top};
-    layout.outlinerRestoreSize =
-        sceneVisible ? ImVec2{0.0F, 0.0F} : ImVec2{kPanelRestoreStripWidthUVE, columnHeight};
-    layout.inspectorRestorePos = ImVec2{originX + totalWidth - kPanelRestoreStripWidthUVE, sideTop};
-    layout.inspectorRestoreSize =
-        inspectorVisible ? ImVec2{0.0F, 0.0F} : ImVec2{kPanelRestoreStripWidthUVE, sideHeight};
+    if (layoutMode == EditorLayoutModeUVE::Level) {
+        // Modern Level Editor layout:
+        // Left column holds Outliner (top) and Details (bottom).
+        // The right side has NO panel - it is completely reclaimed by the Viewport.
+        const bool anyLeftVisible = sceneVisible || inspectorVisible;
+        const float leftWidth = anyLeftVisible ? (sceneWidth > 0.0F ? sceneWidth : defaultSceneWidth) : 0.0F;
+        const float viewportWidth = std::max(kMinimumViewportWidthUVE, totalWidth - leftWidth);
+
+        layout.outlinerHeaderPos = ImVec2{originX, sideTop};
+        layout.outlinerHeaderSize = ImVec2{leftWidth, kEditorToolbarHeightUVE};
+
+        layout.viewportHeaderPos = ImVec2{originX + leftWidth, sideTop};
+        layout.viewportHeaderSize = ImVec2{viewportWidth, kEditorToolbarHeightUVE};
+
+        layout.viewportPos = ImVec2{originX + leftWidth, top};
+        layout.viewportSize = ImVec2{viewportWidth, std::max(kMinimumViewportHeightUVE, columnHeight - dock)};
+
+        const float dockStripY = bottomDockVisible ? top + layout.viewportSize.y : top + columnHeight;
+        layout.dockTabBarPos = ImVec2{originX + leftWidth, dockStripY};
+        layout.dockTabBarSize = ImVec2{viewportWidth, kDockTabBarHeightUVE};
+        layout.contentBrowserPos = ImVec2{originX + leftWidth, dockStripY + kDockTabBarHeightUVE};
+        layout.contentBrowserSize = ImVec2{viewportWidth, std::max(0.0F, dock - kDockTabBarHeightUVE)};
+
+        if (sceneVisible && inspectorVisible) {
+            constexpr float kMinOutlinerH = 80.0F;
+            constexpr float kMinDetailsH = 80.0F;
+            const float outlinerH = std::clamp(columnHeight * outlinerHeightFraction, kMinOutlinerH,
+                                               std::max(kMinOutlinerH, columnHeight - kMinDetailsH));
+            const float detailsH = std::max(0.0F, columnHeight - outlinerH);
+
+            layout.scenePos = ImVec2{originX, top};
+            layout.sceneSize = ImVec2{leftWidth, outlinerH};
+            layout.inspectorPos = ImVec2{originX, top + outlinerH};
+            layout.inspectorSize = ImVec2{leftWidth, detailsH};
+
+            layout.outlinerDetailsSplitterPos = ImVec2{originX, top + outlinerH - halfGrip};
+            layout.outlinerDetailsSplitterSize = ImVec2{leftWidth, kPanelSplitterThicknessUVE};
+        } else if (sceneVisible && !inspectorVisible) {
+            layout.scenePos = ImVec2{originX, top};
+            layout.sceneSize = ImVec2{leftWidth, columnHeight};
+            layout.inspectorPos = ImVec2{originX, top + columnHeight};
+            layout.inspectorSize = ImVec2{0.0F, 0.0F};
+            layout.outlinerDetailsSplitterSize = ImVec2{0.0F, 0.0F};
+        } else if (!sceneVisible && inspectorVisible) {
+            layout.scenePos = ImVec2{originX, top};
+            layout.sceneSize = ImVec2{0.0F, 0.0F};
+            layout.inspectorPos = ImVec2{originX, top};
+            layout.inspectorSize = ImVec2{leftWidth, columnHeight};
+            layout.outlinerDetailsSplitterSize = ImVec2{0.0F, 0.0F};
+        } else {
+            layout.scenePos = ImVec2{originX, top};
+            layout.sceneSize = ImVec2{0.0F, 0.0F};
+            layout.inspectorPos = ImVec2{originX, top};
+            layout.inspectorSize = ImVec2{0.0F, 0.0F};
+            layout.outlinerDetailsSplitterSize = ImVec2{0.0F, 0.0F};
+        }
+
+        layout.sceneSplitterPos = ImVec2{originX + leftWidth - halfGrip, top};
+        layout.sceneSplitterSize = anyLeftVisible ? ImVec2{kPanelSplitterThicknessUVE, columnHeight} : ImVec2{0.0F, 0.0F};
+
+        layout.inspectorSplitterPos = ImVec2{0.0F, 0.0F};
+        layout.inspectorSplitterSize = ImVec2{0.0F, 0.0F};
+
+        layout.dockSplitterPos = ImVec2{originX + leftWidth, top + layout.viewportSize.y - halfGrip};
+        layout.dockSplitterSize = bottomDockVisible ? ImVec2{viewportWidth, kPanelSplitterThicknessUVE} : ImVec2{0.0F, 0.0F};
+
+        layout.outlinerRestorePos = ImVec2{originX, top};
+        layout.outlinerRestoreSize = (!anyLeftVisible) ? ImVec2{kPanelRestoreStripWidthUVE, columnHeight} : ImVec2{0.0F, 0.0F};
+        layout.inspectorRestorePos = ImVec2{0.0F, 0.0F};
+        layout.inspectorRestoreSize = ImVec2{0.0F, 0.0F};
+    } else {
+        // Classic 3-column layout:
+        const float viewportWidth = std::max(kMinimumViewportWidthUVE, totalWidth - sceneWidth - inspectorWidth);
+        layout.outlinerHeaderPos = ImVec2{originX, sideTop};
+        layout.outlinerHeaderSize = ImVec2{sceneWidth, kEditorToolbarHeightUVE};
+        layout.scenePos = ImVec2{originX, top};
+        layout.sceneSize = ImVec2{sceneWidth, columnHeight};
+
+        layout.viewportHeaderPos = ImVec2{originX + sceneWidth, sideTop};
+        layout.viewportHeaderSize = ImVec2{viewportWidth, kEditorToolbarHeightUVE};
+        layout.viewportPos = ImVec2{originX + sceneWidth, top};
+        layout.viewportSize = ImVec2{viewportWidth, std::max(kMinimumViewportHeightUVE, columnHeight - dock)};
+        layout.inspectorPos = ImVec2{originX + sceneWidth + viewportWidth, sideTop};
+        layout.inspectorSize = ImVec2{inspectorWidth, sideHeight};
+
+        const float dockStripY = bottomDockVisible ? top + layout.viewportSize.y : top + columnHeight;
+        layout.dockTabBarPos = ImVec2{originX + sceneWidth, dockStripY};
+        layout.dockTabBarSize = ImVec2{viewportWidth, kDockTabBarHeightUVE};
+        layout.contentBrowserPos = ImVec2{originX + sceneWidth, dockStripY + kDockTabBarHeightUVE};
+        layout.contentBrowserSize = ImVec2{viewportWidth, std::max(0.0F, dock - kDockTabBarHeightUVE)};
+
+        layout.sceneSplitterPos = ImVec2{originX + sceneWidth - halfGrip, top};
+        layout.sceneSplitterSize = sceneVisible ? ImVec2{kPanelSplitterThicknessUVE, columnHeight} : ImVec2{0.0F, 0.0F};
+        layout.inspectorSplitterPos = ImVec2{originX + sceneWidth + viewportWidth - halfGrip, sideTop};
+        layout.inspectorSplitterSize = inspectorVisible ? ImVec2{kPanelSplitterThicknessUVE, sideHeight} : ImVec2{0.0F, 0.0F};
+        layout.dockSplitterPos = ImVec2{originX + sceneWidth, top + layout.viewportSize.y - halfGrip};
+        layout.dockSplitterSize = bottomDockVisible ? ImVec2{viewportWidth, kPanelSplitterThicknessUVE} : ImVec2{0.0F, 0.0F};
+
+        layout.outlinerDetailsSplitterSize = ImVec2{0.0F, 0.0F};
+
+        layout.outlinerRestorePos = ImVec2{originX, top};
+        layout.outlinerRestoreSize = sceneVisible ? ImVec2{0.0F, 0.0F} : ImVec2{kPanelRestoreStripWidthUVE, columnHeight};
+        layout.inspectorRestorePos = ImVec2{originX + totalWidth - kPanelRestoreStripWidthUVE, sideTop};
+        layout.inspectorRestoreSize = inspectorVisible ? ImVec2{0.0F, 0.0F} : ImVec2{kPanelRestoreStripWidthUVE, sideHeight};
+    }
+
     return layout;
 }
 

@@ -21,6 +21,24 @@ add_library(uve_ui STATIC
     Internal/ui_anchors_uve.cpp
     Internal/ui_tween_uve.cpp
     Internal/ui_runtime_uve.cpp
+    Internal/prism/prism_draw_list_uve.cpp
+    Internal/prism/prism_widget_uve.cpp
+    Internal/prism/prism_event_router_uve.cpp
+    Internal/prism/prism_button_uve.cpp
+    Internal/prism/prism_dock_node_uve.cpp
+    Internal/prism/prism_render_bridge_uve.cpp
+    Internal/prism/prism_metrics_overlay_uve.cpp
+    Internal/prism/prism_text_uve.cpp
+    Internal/prism/prism_text_input_uve.cpp
+    Internal/prism/prism_scroll_container_uve.cpp
+    Internal/prism/prism_checkbox_uve.cpp
+    Internal/prism/prism_slider_uve.cpp
+    Internal/prism/prism_numeric_drag_uve.cpp
+    Internal/prism/prism_dropdown_uve.cpp
+    Internal/prism/prism_tree_view_uve.cpp
+    Internal/prism/prism_tab_group_uve.cpp
+    Internal/prism/prism_console_widget_uve.cpp
+    Internal/prism/prism_hierarchy_widget_uve.cpp
 )
 
 # ui_font_ttf_bytes.inc is generated at build time from the module's own canonical
@@ -47,7 +65,7 @@ target_include_directories(uve_ui PRIVATE "${_uve_ui_generated_dir}")
 
 target_include_directories(uve_ui PUBLIC Expose)
 target_include_directories(uve_ui PRIVATE thirdparty)
-target_link_libraries(uve_ui PUBLIC uve_math uve_asset uve_component uve_entity uve_objects_canvas uve_input uve_localization)
+target_link_libraries(uve_ui PUBLIC uve_math uve_asset uve_component uve_entity uve_objects_canvas uve_input uve_localization uve_rhi)
 target_compile_features(uve_ui PUBLIC cxx_std_23)
 uve_set_warnings(uve_ui)
 

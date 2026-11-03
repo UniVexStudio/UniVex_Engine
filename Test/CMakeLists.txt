@@ -531,6 +531,19 @@ add_executable(uve_integration_tests
     UI/ui_text_input_uve_tests.cpp
     UI/ui_focus_navigation_uve_tests.cpp
     UI/ui_scroll_uve_tests.cpp
+    UI/prism_draw_list_uve_tests.cpp
+    UI/prism_widget_uve_tests.cpp
+    UI/prism_event_router_uve_tests.cpp
+    UI/prism_button_uve_tests.cpp
+    UI/prism_dock_node_uve_tests.cpp
+    UI/prism_render_bridge_uve_tests.cpp
+    UI/prism_text_widgets_uve_tests.cpp
+    UI/prism_scroll_and_toggle_uve_tests.cpp
+    UI/prism_numeric_widgets_uve_tests.cpp
+    UI/prism_dropdown_and_tree_uve_tests.cpp
+    UI/prism_tab_group_uve_tests.cpp
+    UI/prism_console_widget_uve_tests.cpp
+    UI/prism_hierarchy_widget_uve_tests.cpp
 )
 if(UVE_HAS_DESKTOP_GL)
     target_sources(uve_integration_tests PRIVATE
@@ -681,6 +694,7 @@ add_executable(uve_editor_tests
     Editor/editor_render_stats_uve_tests.cpp
     Editor/editor_audio_mixer_uve_tests.cpp
     Editor/editor_chrome_layout_uve_tests.cpp
+    Editor/prism_imgui_viewport_bridge_uve_tests.cpp
     Editor/editor_icon_set_uve_tests.cpp
     Editor/editor_uve_tests.cpp
     Editor/editor_color_uve_tests.cpp
