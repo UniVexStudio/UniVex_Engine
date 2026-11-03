@@ -56,9 +56,13 @@ TEST(EditorChromeLayoutUVETest, ClassicSidePanelsRunFullHeightAndTheDockSitsUnde
     EXPECT_FLOAT_EQ(layout.contentBrowserPos.y + layout.contentBrowserSize.y, 1080.0F);
 }
 
-TEST(EditorChromeLayoutUVETest, HidingTheBottomDockGivesItsHeightBackToTheViewport) {
-    const EditorChromeLayoutUVE shown = ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), true);
-    const EditorChromeLayoutUVE hidden = ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), false);
+TEST(EditorChromeLayoutUVETest, ClassicHidingTheBottomDockGivesItsHeightBackToTheViewport) {
+    const EditorChromeLayoutUVE shown =
+        ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), true, kAssetsPanelHeightUVE,
+                                     -1.0F, -1.0F, true, true, EditorLayoutModeUVE::Classic);
+    const EditorChromeLayoutUVE hidden =
+        ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), false, kAssetsPanelHeightUVE,
+                                     -1.0F, -1.0F, true, true, EditorLayoutModeUVE::Classic);
 
     // The dock body's height goes back to the viewport; the tab row stays, because with the dock
     // hidden it is the only way back to it.
