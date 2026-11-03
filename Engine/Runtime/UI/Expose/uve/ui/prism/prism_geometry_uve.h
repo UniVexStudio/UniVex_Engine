@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include "uve/math/color_uve.h"
 #include "uve/math/rect_int_uve.h"
 #include "uve/math/rect_uve.h"
@@ -76,6 +77,18 @@ struct PrismDrawCmdUVE final {
     PrismPipelineModeUVE pipeline = PrismPipelineModeUVE::SolidOrTextured;
 
     [[nodiscard]] constexpr bool operator==(const PrismDrawCmdUVE&) const noexcept = default;
+};
+
+/// High-level text render command emitted for backend font atlas rasterization.
+struct PrismTextCommandUVE final {
+    Math::Vector2UVE pos{0.0F, 0.0F};
+    std::string      text;
+    PrismColorUVE   color{1.0F, 1.0F, 1.0F, 1.0F};
+    float            fontSize = 13.0F;
+    Math::RectIntUVE clipRect{};
+    bool             hasClip = false;
+
+    [[nodiscard]] bool operator==(const PrismTextCommandUVE&) const noexcept = default;
 };
 
 } // namespace UVE::UI::Prism

@@ -33,6 +33,12 @@ void PrismImGuiViewportBridgeUVE::RenderImGuiHost() {
     const Math::Vector2UVE cursorPos{io.MousePos.x, io.MousePos.y};
 
     const bool isHovered = Math::ContainsUVE(hostRect, cursorPos);
+    const bool hasFocus = (m_eventRouter.GetFocusedWidget() != nullptr);
+
+    if (hasFocus) {
+        io.WantCaptureKeyboard = true;
+    }
+
     if (isHovered || io.MouseDown[0] || io.MouseDown[1]) {
         // Pointer Move
         m_eventRouter.DispatchPointerMove(UI::Prism::PrismPointerEventUVE{
@@ -59,14 +65,15 @@ void PrismImGuiViewportBridgeUVE::RenderImGuiHost() {
                 Math::Vector2UVE{io.MouseWheelH, io.MouseWheel}
             });
         }
+    }
 
-        // Character Input
+    // Key & Character input: dispatch whenever hovered or focused
+    if (isHovered || hasFocus) {
         for (int i = 0; i < io.InputQueueCharacters.Size; ++i) {
             const char32_t c = io.InputQueueCharacters[i];
             m_eventRouter.DispatchCharInput(c);
         }
 
-        // Key Down / Navigation
         if (ImGui::IsKeyPressed(ImGuiKey_Enter)) {
             m_eventRouter.DispatchKeyDown(UI::Prism::PrismKeyEventUVE{Input::KeyCodeUVE::Enter});
         }
@@ -142,6 +149,28 @@ void PrismImGuiViewportBridgeUVE::RenderImGuiHost() {
         }
 
         if (hasClip) {
+            imDraw->PopClipRect();
+        }
+    }
+
+    // 5. Render High-Resolution Font Text Commands
+    for (const auto& textCmd : m_drawList.GetTextCommands()) {
+        if (textCmd.hasClip) {
+            imDraw->PushClipRect(
+                ImVec2{static_cast<float>(textCmd.clipRect.position.x), static_cast<float>(textCmd.clipRect.position.y)},
+                ImVec2{static_cast<float>(textCmd.clipRect.position.x + textCmd.clipRect.size.x),
+                       static_cast<float>(textCmd.clipRect.position.y + textCmd.clipRect.size.y)},
+                true
+            );
+        }
+        const ImU32 col = IM_COL32(
+            static_cast<int>(textCmd.color.r * 255.0F),
+            static_cast<int>(textCmd.color.g * 255.0F),
+            static_cast<int>(textCmd.color.b * 255.0F),
+            static_cast<int>(textCmd.color.a * 255.0F)
+        );
+        imDraw->AddText(ImVec2{textCmd.pos.x, textCmd.pos.y}, col, textCmd.text.c_str());
+        if (textCmd.hasClip) {
             imDraw->PopClipRect();
         }
     }

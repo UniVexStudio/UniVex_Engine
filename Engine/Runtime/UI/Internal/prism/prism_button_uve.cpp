@@ -76,10 +76,19 @@ Math::Vector2UVE PrismButtonUVE::OnMeasureContentUVE(Math::Vector2UVE /*availabl
 void PrismButtonUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
     PrismWidgetUVE::OnPaintContentUVE(drawList);
 
-    // If focused, render glow/focus ring
+    const auto& theme = PrismThemeUVE::Dark();
+
+    if (!m_text.empty()) {
+        const float charW = 7.0F;
+        const float approxW = static_cast<float>(m_text.length()) * charW;
+        const float textX = m_layoutRect.position.x + std::max(4.0F, (m_layoutRect.size.x - approxW) * 0.5F);
+        const float textY = m_layoutRect.position.y + (m_layoutRect.size.y - 14.0F) * 0.5F;
+        const PrismColorUVE textColor = m_isPressed ? theme.textPrimary : (m_isHovered ? theme.textPrimary : theme.textSecondary);
+        drawList.AddText(Math::Vector2UVE{textX, textY}, m_text, textColor, 13.0F);
+    }
+
     if (m_isFocused) {
-        const auto& theme = PrismThemeUVE::Dark();
-        drawList.AddRectStroke(m_layoutRect, theme.accentFocusRing, 2.0F, m_style.cornerRadii);
+        drawList.AddRectStroke(m_layoutRect, theme.accentFocusRing, 1.5F, m_style.cornerRadii);
     }
 }
 

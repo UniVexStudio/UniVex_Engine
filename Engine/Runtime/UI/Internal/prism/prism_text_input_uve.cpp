@@ -112,23 +112,15 @@ void PrismTextInputUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
     const float contentY = m_layoutRect.position.y + (m_layoutRect.size.y - 14.0F) * 0.5F;
     const float charWidth = 8.0F;
 
-    // Draw text or placeholder
     if (m_text.empty() && !m_placeholder.empty()) {
-        for (std::size_t i = 0; i < m_placeholder.length(); ++i) {
-            const float x = contentX + static_cast<float>(i) * charWidth;
-            drawList.AddRectFilled(Math::RectUVE{{x, contentY}, {charWidth, 14.0F}}, theme.textMuted);
-        }
-    } else {
-        for (std::size_t i = 0; i < m_text.length(); ++i) {
-            const float x = contentX + static_cast<float>(i) * charWidth;
-            drawList.AddRectFilled(Math::RectUVE{{x, contentY}, {charWidth, 14.0F}}, theme.textPrimary);
-        }
+        drawList.AddText(Math::Vector2UVE{contentX, contentY}, m_placeholder, theme.textMuted, 13.0F);
+    } else if (!m_text.empty()) {
+        drawList.AddText(Math::Vector2UVE{contentX, contentY}, m_text, theme.textPrimary, 13.0F);
     }
 
-    // Draw cursor when focused
     if (m_isFocused) {
         const float cursorX = contentX + static_cast<float>(m_cursorIndex) * charWidth;
-        const Math::RectUVE cursorRect{{cursorX, contentY - 2.0F}, {2.0F, 18.0F}};
+        const Math::RectUVE cursorRect{{cursorX, contentY - 1.0F}, {1.5F, 16.0F}};
         drawList.AddRectFilled(cursorRect, theme.accentPrimary);
     }
 }

@@ -55,6 +55,9 @@ public:
     /// 2D Line segment with thickness.
     void AddLine(Math::Vector2UVE p0, Math::Vector2UVE p1, PrismColorUVE color, float thickness = 1.0F);
 
+    /// Renders text with font rasterization on supported backends.
+    void AddText(Math::Vector2UVE pos, std::string text, PrismColorUVE color, float fontSize = 13.0F);
+
     // --- Output Accessors ---
     [[nodiscard]] const std::vector<PrismVertexUVE>& GetVertices() const noexcept { return m_vertices; }
     [[nodiscard]] const std::vector<std::uint32_t>&   GetIndices() const noexcept { return m_indices; }
@@ -63,6 +66,7 @@ public:
     [[nodiscard]] std::size_t GetTotalVertexCount() const noexcept { return m_vertices.size(); }
     [[nodiscard]] std::size_t GetTotalIndexCount() const noexcept { return m_indices.size(); }
     [[nodiscard]] std::size_t GetCommandCount() const noexcept { return m_commands.size(); }
+    [[nodiscard]] const std::vector<PrismTextCommandUVE>& GetTextCommands() const noexcept { return m_textCommands; }
 
 private:
     void EnsureCommandState();
@@ -71,6 +75,7 @@ private:
     std::vector<PrismVertexUVE>  m_vertices;
     std::vector<std::uint32_t>    m_indices;
     std::vector<PrismDrawCmdUVE>  m_commands;
+    std::vector<PrismTextCommandUVE> m_textCommands;
 
     std::vector<Math::RectIntUVE> m_clipStack;
     std::vector<std::uint64_t>    m_textureStack;

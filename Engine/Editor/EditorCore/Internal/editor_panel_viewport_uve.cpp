@@ -133,13 +133,13 @@ template <typename DrawIconUVE>
     const ImVec2 center{(minimum.x + maximum.x) * 0.5F, (minimum.y + maximum.y) * 0.5F};
     ImDrawList& drawList = *ImGui::GetWindowDrawList();
     const ImU32 backgroundColor = active
-        ? IM_COL32(99, 102, 241, 235) // Soft Indigo active accent
+        ? IM_COL32(45, 68, 112, 235) // Soft studio slate-blue active accent
         : (hovered ? IM_COL32(255, 255, 255, 30) : IM_COL32(255, 255, 255, 12));
     drawList.AddCircleFilled(center, kViewportBubbleIconRadiusUVE, backgroundColor, 24);
 
     // Soft subtle border
     if (active) {
-        drawList.AddCircle(center, kViewportBubbleIconRadiusUVE, IM_COL32(165, 180, 252, 255), 24, 1.2F);
+        drawList.AddCircle(center, kViewportBubbleIconRadiusUVE, IM_COL32(75, 110, 178, 255), 24, 1.2F);
     } else if (hovered) {
         drawList.AddCircle(center, kViewportBubbleIconRadiusUVE, IM_COL32(255, 255, 255, 45), 24, 1.0F);
     }

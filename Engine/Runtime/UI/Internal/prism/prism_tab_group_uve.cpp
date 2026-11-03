@@ -224,33 +224,22 @@ void PrismTabGroupUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
         const bool isHovered = (static_cast<int>(i) == m_hoveredTabIndex);
 
         // Tab Pill Background
-        const PrismColorUVE tabBg = isActive ? theme.bgPanel : (isHovered ? theme.bgWidgetHover : theme.bgSurface);
+        const PrismColorUVE tabBg = isActive
+            ? PrismColorUVE{0.18F, 0.23F, 0.35F, 0.95F}
+            : (isHovered ? theme.bgWidgetHover : theme.bgSurface);
         drawList.AddRectFilled(geom.tabRect, tabBg, PrismCornerRadiiUVE{4.0F, 4.0F, 0.0F, 0.0F});
 
         if (isActive) {
-            // Active tab accent top line or bottom border
-            const Math::RectUVE activeIndicator{
-                {geom.tabRect.position.x, geom.tabRect.position.y},
-                {geom.tabRect.size.x, 2.0F}
-            };
-            drawList.AddRectFilled(activeIndicator, theme.accentPrimary);
+            // Full ambient wash over the active tab, subtle stroke (no harsh 2px lines!)
+            drawList.AddRectFilled(geom.tabRect, PrismColorUVE{0.22F, 0.32F, 0.52F, 0.28F}, PrismCornerRadiiUVE{4.0F, 4.0F, 0.0F, 0.0F});
+            drawList.AddRectStroke(geom.tabRect, PrismColorUVE{0.28F, 0.38F, 0.60F, 0.60F}, 1.0F, PrismCornerRadiiUVE{4.0F, 4.0F, 0.0F, 0.0F});
         }
 
         // Tab Title Text
         const auto& title = m_tabs[i].title;
         const float textX = geom.tabRect.position.x + 8.0F;
-        const float textY = geom.tabRect.position.y + (geom.tabRect.size.y - 12.0F) * 0.5F;
-        const float charW = 7.5F;
-
-        for (std::size_t c = 0; c < title.length(); ++c) {
-            const float x = textX + static_cast<float>(c) * charW;
-            if (x + charW < geom.closeRect.position.x) {
-                drawList.AddRectFilled(
-                    Math::RectUVE{{x, textY}, {charW, 12.0F}},
-                    isActive ? theme.textPrimary : theme.textSecondary
-                );
-            }
-        }
+        const float textY = geom.tabRect.position.y + (geom.tabRect.size.y - 14.0F) * 0.5F;
+        drawList.AddText(Math::Vector2UVE{textX, textY}, title, isActive ? theme.textPrimary : theme.textSecondary, 12.0F);
 
         // Tab Close Button ('x')
         if (m_tabs[i].closable) {
@@ -262,13 +251,10 @@ void PrismTabGroupUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
 
             // Close 'x' icon
             const PrismColorUVE xColor = isCloseHovered ? PrismColorUVE{1.0F, 1.0F, 1.0F, 1.0F} : theme.textMuted;
-            drawList.AddRectFilled(
-                Math::RectUVE{
-                    {geom.closeRect.position.x + 3.0F, geom.closeRect.position.y + (geom.closeRect.size.y - 2.0F) * 0.5F},
-                    {geom.closeRect.size.x - 6.0F, 2.0F}
-                },
-                xColor
-            );
+            const float midX = geom.closeRect.position.x + geom.closeRect.size.x * 0.5F;
+            const float midY = geom.closeRect.position.y + geom.closeRect.size.y * 0.5F;
+            drawList.AddLine(Math::Vector2UVE{midX - 3.5F, midY - 3.5F}, Math::Vector2UVE{midX + 3.5F, midY + 3.5F}, xColor, 1.5F);
+            drawList.AddLine(Math::Vector2UVE{midX + 3.5F, midY - 3.5F}, Math::Vector2UVE{midX - 3.5F, midY + 3.5F}, xColor, 1.5F);
         }
     }
 

@@ -100,6 +100,12 @@ void PrismTreeViewUVE::BuildFlatRows(
     }
 }
 
+void PrismTreeViewUVE::ArrangeUVE(const Math::RectUVE& finalRect) {
+    PrismWidgetUVE::ArrangeUVE(finalRect);
+    m_flatRows.clear();
+    BuildFlatRows(m_roots, 0, m_flatRows);
+}
+
 PrismEventResultUVE PrismTreeViewUVE::OnPointerDown(const PrismPointerEventUVE& event) {
     PrismWidgetUVE::OnPointerDown(event);
 
@@ -195,33 +201,52 @@ void PrismTreeViewUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
         const bool isSelected = (row.node == m_selectedNode);
         const bool isHovered = (static_cast<int>(i) == m_hoveredRowIndex);
 
-        // Row background
+        // 1. Subtle Hierarchy Guide Lines (Unreal Engine 5 style)
+        if (row.depth > 0) {
+            const float startX = m_layoutRect.position.x + m_style.padding.left;
+            for (int d = 1; d <= row.depth; ++d) {
+                const float guideX = startX + static_cast<float>(d - 1) * kIndentWidthUVE + 7.0F;
+                drawList.AddLine(
+                    Math::Vector2UVE{guideX, row.rowRect.position.y},
+                    Math::Vector2UVE{guideX, row.rowRect.position.y + kRowHeightUVE},
+                    PrismColorUVE{1.0F, 1.0F, 1.0F, 0.06F},
+                    1.0F
+                );
+            }
+        }
+
+        // 2. Full-Box Ambient Fade Selection / Hover (No 1px/2px harsh slop lines!)
         if (isSelected) {
-            drawList.AddRectFilled(row.rowRect, theme.bgWidgetActive, theme.radiusSmall);
-            drawList.AddRectStroke(row.rowRect, theme.accentPrimary, 1.0F, theme.radiusSmall);
+            // Full box soft ambient wash
+            drawList.AddRectFilled(row.rowRect, PrismColorUVE{0.18F, 0.26F, 0.42F, 0.42F}, theme.radiusSmall);
+            drawList.AddRectStroke(row.rowRect, PrismColorUVE{0.32F, 0.48F, 0.78F, 0.38F}, 1.0F, theme.radiusSmall);
         } else if (isHovered) {
-            drawList.AddRectFilled(row.rowRect, theme.bgWidgetHover, theme.radiusSmall);
+            drawList.AddRectFilled(row.rowRect, PrismColorUVE{1.0F, 1.0F, 1.0F, 0.04F}, theme.radiusSmall);
         }
 
-        // Expand arrow indicator (if not leaf)
+        // 3. Crisp Chevron Arrow Indicator
         if (!row.node->IsLeaf()) {
-            const PrismColorUVE arrowColor = isSelected ? theme.accentPrimary : theme.textSecondary;
-            drawList.AddRectFilled(row.arrowRect, arrowColor, PrismCornerRadiiUVE{2.0F});
+            const PrismColorUVE chevronCol = isSelected ? theme.accentPrimary : theme.textSecondary;
+            const float midX = row.arrowRect.position.x + kArrowSizeUVE * 0.5F;
+            const float midY = row.arrowRect.position.y + kArrowSizeUVE * 0.5F;
+            if (row.node->IsExpanded()) {
+                // Expanded downward chevron: \/
+                drawList.AddLine(Math::Vector2UVE{midX - 3.5F, midY - 2.0F}, Math::Vector2UVE{midX, midY + 2.0F}, chevronCol, 1.25F);
+                drawList.AddLine(Math::Vector2UVE{midX, midY + 2.0F}, Math::Vector2UVE{midX + 3.5F, midY - 2.0F}, chevronCol, 1.25F);
+            } else {
+                // Collapsed rightward chevron: >
+                drawList.AddLine(Math::Vector2UVE{midX - 2.0F, midY - 3.5F}, Math::Vector2UVE{midX + 2.0F, midY}, chevronCol, 1.25F);
+                drawList.AddLine(Math::Vector2UVE{midX + 2.0F, midY}, Math::Vector2UVE{midX - 2.0F, midY + 3.5F}, chevronCol, 1.25F);
+            }
         }
 
-        // Label text
+        // 4. Crisp Real Typography (Zero placeholder blocks!)
         const float labelX = row.arrowRect.position.x + kArrowSizeUVE + 6.0F;
-        const float labelY = row.rowRect.position.y + (kRowHeightUVE - 12.0F) * 0.5F;
-        const float charW = 7.5F;
-        const auto& text = row.node->GetLabel();
-
-        for (std::size_t c = 0; c < text.length(); ++c) {
-            const float x = labelX + static_cast<float>(c) * charW;
-            drawList.AddRectFilled(
-                Math::RectUVE{{x, labelY}, {charW, 12.0F}},
-                isSelected ? theme.textPrimary : theme.textSecondary
-            );
-        }
+        const float labelY = row.rowRect.position.y + (kRowHeightUVE - 14.0F) * 0.5F;
+        const PrismColorUVE textCol = isSelected
+            ? theme.textPrimary
+            : (isHovered ? theme.textPrimary : theme.textSecondary);
+        drawList.AddText(Math::Vector2UVE{labelX, labelY}, row.node->GetLabel(), textCol, 13.0F);
     }
 }
 

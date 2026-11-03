@@ -184,30 +184,23 @@ void PrismNumericDragUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
 
     // Badge text letter
     if (!m_badge.empty()) {
-        const float badgeCharX = badgeRect.position.x + (badgeRect.size.x - 7.5F) * 0.5F;
-        const float badgeCharY = badgeRect.position.y + (badgeRect.size.y - 12.0F) * 0.5F;
-        drawList.AddRectFilled(
-            Math::RectUVE{{badgeCharX, badgeCharY}, {7.5F, 12.0F}},
-            PrismColorUVE{1.0F, 1.0F, 1.0F, 1.0F}
-        );
+        const float badgeCharX = badgeRect.position.x + (badgeRect.size.x - 8.0F) * 0.5F;
+        const float badgeCharY = badgeRect.position.y + (badgeRect.size.y - 13.0F) * 0.5F;
+        drawList.AddText(Math::Vector2UVE{badgeCharX, badgeCharY}, m_badge, PrismColorUVE{1.0F, 1.0F, 1.0F, 1.0F}, 12.0F);
     }
 
     // 3. Numeric value text / edit buffer
     const std::string textToShow = m_isEditingText ? m_textBuffer : FormatValue();
     const float textStartX = badgeRect.position.x + badgeRect.size.x + 6.0F;
-    const float textY = m_layoutRect.position.y + (m_layoutRect.size.y - 12.0F) * 0.5F;
-    const float charW = 7.5F;
-
-    for (std::size_t i = 0; i < textToShow.length(); ++i) {
-        const float x = textStartX + static_cast<float>(i) * charW;
-        drawList.AddRectFilled(Math::RectUVE{{x, textY}, {charW, 12.0F}}, theme.textPrimary);
-    }
+    const float textY = m_layoutRect.position.y + (m_layoutRect.size.y - 14.0F) * 0.5F;
+    drawList.AddText(Math::Vector2UVE{textStartX, textY}, textToShow, theme.textPrimary, 13.0F);
 
     // Caret when editing text
     if (m_isEditingText) {
+        const float charW = 7.5F;
         const float caretX = textStartX + static_cast<float>(textToShow.length()) * charW + 1.0F;
         drawList.AddRectFilled(
-            Math::RectUVE{{caretX, textY}, {1.5F, 12.0F}},
+            Math::RectUVE{{caretX, textY}, {1.5F, 14.0F}},
             theme.accentPrimary
         );
     }

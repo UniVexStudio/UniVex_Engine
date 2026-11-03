@@ -278,6 +278,8 @@ void EditorUVE::DrawHierarchyBodyUVE() {
             }
         };
 
+        RebuildHierarchyFilterCacheUVE();
+
         if (m_services) {
             auto& em = m_services->GetEntityManagerUVE();
             std::vector<Scene::EntityUVE> roots;

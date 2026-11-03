@@ -186,21 +186,14 @@ void PrismDropdownUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
     // Selected Text
     const std::string text = GetSelectedItem().empty() ? "Select..." : GetSelectedItem();
     const float textX = m_layoutRect.position.x + m_style.padding.left;
-    const float textY = m_layoutRect.position.y + (m_layoutRect.size.y - 12.0F) * 0.5F;
-    const float charW = 7.5F;
-    for (std::size_t i = 0; i < text.length(); ++i) {
-        const float x = textX + static_cast<float>(i) * charW;
-        drawList.AddRectFilled(Math::RectUVE{{x, textY}, {charW, 12.0F}}, theme.textPrimary);
-    }
+    const float textY = m_layoutRect.position.y + (m_layoutRect.size.y - 14.0F) * 0.5F;
+    drawList.AddText(Math::Vector2UVE{textX, textY}, text, GetSelectedItem().empty() ? theme.textSecondary : theme.textPrimary, 13.0F);
 
     // Caret Indicator (Down chevron)
-    const float caretX = m_layoutRect.position.x + m_layoutRect.size.x - kCaretSizeUVE - 8.0F;
-    const float caretY = m_layoutRect.position.y + (m_layoutRect.size.y - kCaretSizeUVE) * 0.5F;
-    drawList.AddRectFilled(
-        Math::RectUVE{{caretX, caretY}, {kCaretSizeUVE, kCaretSizeUVE}},
-        theme.textSecondary,
-        PrismCornerRadiiUVE{2.0F}
-    );
+    const float caretX = m_layoutRect.position.x + m_layoutRect.size.x - 16.0F;
+    const float caretY = m_layoutRect.position.y + m_layoutRect.size.y * 0.5F;
+    drawList.AddLine(Math::Vector2UVE{caretX - 4.0F, caretY - 2.0F}, Math::Vector2UVE{caretX, caretY + 2.5F}, theme.textSecondary, 1.5F);
+    drawList.AddLine(Math::Vector2UVE{caretX, caretY + 2.5F}, Math::Vector2UVE{caretX + 4.0F, caretY - 2.0F}, theme.textSecondary, 1.5F);
 
     // 2. Open Popup List
     if (m_isOpen && !m_items.empty()) {
@@ -221,19 +214,17 @@ void PrismDropdownUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
             const bool isSelected = (static_cast<int>(i) == m_selectedIndex);
 
             if (isSelected) {
-                drawList.AddRectFilled(itemRect, PrismColorUVE{theme.accentPrimary.r, theme.accentPrimary.g, theme.accentPrimary.b, 0.3F}, theme.radiusSmall);
+                drawList.AddRectFilled(itemRect, PrismColorUVE{0.18F, 0.28F, 0.46F, 0.45F}, theme.radiusSmall);
+                drawList.AddRectStroke(itemRect, PrismColorUVE{0.32F, 0.48F, 0.78F, 0.35F}, 1.0F, theme.radiusSmall);
             } else if (isHovered) {
                 drawList.AddRectFilled(itemRect, theme.bgWidgetHover, theme.radiusSmall);
             }
 
             // Item text
             const auto& itemStr = m_items[i];
-            const float itTextX = itemRect.position.x + 6.0F;
-            const float itTextY = itemRect.position.y + (kItemHeightUVE - 12.0F) * 0.5F;
-            for (std::size_t j = 0; j < itemStr.length(); ++j) {
-                const float x = itTextX + static_cast<float>(j) * charW;
-                drawList.AddRectFilled(Math::RectUVE{{x, itTextY}, {charW, 12.0F}}, isSelected ? theme.textPrimary : theme.textSecondary);
-            }
+            const float itTextX = itemRect.position.x + 8.0F;
+            const float itTextY = itemRect.position.y + (kItemHeightUVE - 14.0F) * 0.5F;
+            drawList.AddText(Math::Vector2UVE{itTextX, itTextY}, itemStr, isSelected ? theme.textPrimary : theme.textSecondary, 13.0F);
         }
     }
 }

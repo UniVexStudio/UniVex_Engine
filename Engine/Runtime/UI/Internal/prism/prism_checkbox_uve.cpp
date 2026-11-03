@@ -68,17 +68,15 @@ void PrismCheckboxUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
 
     // Inner checkmark glyph
     if (m_checked) {
-        const Math::RectUVE markRect{{boxX + 4.0F, boxY + 4.0F}, {kBoxSizeUVE - 8.0F, kBoxSizeUVE - 8.0F}};
-        drawList.AddRectFilled(markRect, PrismColorUVE{1.0F, 1.0F, 1.0F, 1.0F}, PrismCornerRadiiUVE{2.0F});
+        drawList.AddLine(Math::Vector2UVE{boxX + 4.0F, boxY + 8.5F}, Math::Vector2UVE{boxX + 7.0F, boxY + 12.0F}, PrismColorUVE{1.0F, 1.0F, 1.0F, 1.0F}, 1.8F);
+        drawList.AddLine(Math::Vector2UVE{boxX + 7.0F, boxY + 12.0F}, Math::Vector2UVE{boxX + 13.0F, boxY + 4.5F}, PrismColorUVE{1.0F, 1.0F, 1.0F, 1.0F}, 1.8F);
     }
 
     // Label text
-    const float labelX = boxX + kBoxSizeUVE + 8.0F;
-    const float labelY = m_layoutRect.position.y + (m_layoutRect.size.y - 12.0F) * 0.5F;
-    const float charW = 7.5F;
-    for (std::size_t i = 0; i < m_label.length(); ++i) {
-        const float x = labelX + static_cast<float>(i) * charW;
-        drawList.AddRectFilled(Math::RectUVE{{x, labelY}, {charW, 12.0F}}, theme.textPrimary);
+    if (!m_label.empty()) {
+        const float labelX = boxX + kBoxSizeUVE + 8.0F;
+        const float labelY = m_layoutRect.position.y + (m_layoutRect.size.y - 14.0F) * 0.5F;
+        drawList.AddText(Math::Vector2UVE{labelX, labelY}, m_label, theme.textPrimary, 13.0F);
     }
 }
 

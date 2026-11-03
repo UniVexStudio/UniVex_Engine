@@ -22,6 +22,7 @@ void PrismDrawListUVE::Reset() {
     m_vertices.clear();
     m_indices.clear();
     m_commands.clear();
+    m_textCommands.clear();
     m_clipStack.clear();
     m_textureStack.clear();
     m_currentPipeline = PrismPipelineModeUVE::SolidOrTextured;
@@ -323,6 +324,18 @@ void PrismDrawListUVE::AddLine(Math::Vector2UVE p0, Math::Vector2UVE p1, PrismCo
     PrismVertexUVE v3{p0 - normal, {0.0F, 1.0F}, color};
 
     AppendQuad(v0, v1, v2, v3);
+}
+
+void PrismDrawListUVE::AddText(Math::Vector2UVE pos, std::string text, PrismColorUVE color, float fontSize) {
+    if (text.empty() || color.a <= 0.0F) {
+        return;
+    }
+    PrismTextCommandUVE cmd{pos, std::move(text), color, fontSize, {}, false};
+    if (!m_clipStack.empty()) {
+        cmd.clipRect = m_clipStack.back();
+        cmd.hasClip = true;
+    }
+    m_textCommands.push_back(std::move(cmd));
 }
 
 } // namespace UVE::UI::Prism

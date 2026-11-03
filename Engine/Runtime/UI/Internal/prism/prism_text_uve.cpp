@@ -68,14 +68,7 @@ void PrismTextUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
 
     const float startY = m_layoutRect.position.y + (m_layoutRect.size.y - m_fontSize) * 0.5F;
 
-    for (std::size_t i = 0; i < m_text.length(); ++i) {
-        const float x = startX + static_cast<float>(i) * charWidth;
-        if (x + charWidth > m_layoutRect.position.x + m_layoutRect.size.x) {
-            break; // Respect boundary
-        }
-        const Math::RectUVE charRect{{x, startY}, {charWidth, m_fontSize}};
-        drawList.AddRectFilled(charRect, m_textColor);
-    }
+    drawList.AddText(Math::Vector2UVE{startX, startY}, m_text, m_textColor, m_fontSize);
 
     drawList.SetPipelineMode(savedMode);
 }

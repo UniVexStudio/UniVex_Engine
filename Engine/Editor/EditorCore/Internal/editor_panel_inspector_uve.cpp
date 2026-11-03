@@ -688,27 +688,21 @@ bool EditorUVE::DrawInspectorFoldUVE(const char* const label, const std::string&
 
         ImDrawList& drawList = *ImGui::GetWindowDrawList();
 
-        // 1. Soft surface card background
+        // 1. Soft surface card background with ambient wash over open header
         const ImU32 bgColor = active
             ? IM_COL32(32, 38, 54, 255)
             : (hovered ? IM_COL32(26, 31, 44, 255)
-                       : (nowOpen ? IM_COL32(19, 22, 32, 255) : IM_COL32(15, 17, 24, 255)));
+                       : (nowOpen ? IM_COL32(23, 27, 38, 255) : IM_COL32(16, 18, 25, 255)));
         drawList.AddRectFilled(origin, maxPos, bgColor, rounding);
+        if (nowOpen) {
+            drawList.AddRectFilled(origin, maxPos, IM_COL32(56, 80, 130, 32), rounding);
+        }
 
         // 2. Soft subtle 1px border
         const ImU32 borderColor = hovered
-            ? IM_COL32(65, 75, 105, 255)
-            : (nowOpen ? IM_COL32(44, 52, 72, 255) : IM_COL32(28, 32, 44, 255));
+            ? IM_COL32(65, 80, 120, 255)
+            : (nowOpen ? IM_COL32(48, 60, 88, 255) : IM_COL32(28, 32, 44, 255));
         drawList.AddRect(origin, maxPos, borderColor, rounding, 0, 1.0F);
-
-        // 3. Soft left accent pill (Soft Indigo) when open
-        if (nowOpen) {
-            constexpr float pillWidth = 2.5F;
-            constexpr float pillInset = 5.0F;
-            const ImVec2 pillMin{origin.x + 2.0F, origin.y + pillInset};
-            const ImVec2 pillMax{origin.x + 2.0F + pillWidth, origin.y + headerHeight - pillInset};
-            drawList.AddRectFilled(pillMin, pillMax, IM_COL32(99, 102, 241, 245), 1.25F);
-        }
 
         // 4. Sleek procedural chevron (> / v)
         const float chevronCenterX = origin.x + 14.0F;

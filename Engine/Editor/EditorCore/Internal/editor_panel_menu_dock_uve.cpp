@@ -356,10 +356,9 @@ void EditorUVE::DrawMenuBarUVE() {
             const float tabWidth = ImGui::CalcTextSize(name.c_str()).x + kTabIconSizeUVE + 34.0F;
             const ImVec2 tabMin{toolbarMin.x, toolbarMin.y + 3.0F};
             const ImVec2 tabMax{toolbarMin.x + tabWidth, toolbarMax.y};
-            toolbarDrawList->AddRectFilled(tabMin, tabMax, IM_COL32(23, 27, 38, 255), 4.0F, ImDrawFlags_RoundCornersTop);
-            toolbarDrawList->AddRect(tabMin, tabMax, IM_COL32(38, 45, 62, 220), 4.0F, ImDrawFlags_RoundCornersTop, 1.0F);
-            toolbarDrawList->AddRectFilled(ImVec2{tabMin.x + 4.0F, tabMax.y - 2.0F}, ImVec2{tabMax.x - 4.0F, tabMax.y},
-                                           IM_COL32(99, 102, 241, 240), 1.0F);
+            toolbarDrawList->AddRectFilled(tabMin, tabMax, IM_COL32(26, 32, 46, 255), 4.0F, ImDrawFlags_RoundCornersTop);
+            toolbarDrawList->AddRectFilled(tabMin, tabMax, IM_COL32(56, 80, 130, 40), 4.0F, ImDrawFlags_RoundCornersTop);
+            toolbarDrawList->AddRect(tabMin, tabMax, IM_COL32(56, 80, 130, 200), 4.0F, ImDrawFlags_RoundCornersTop, 1.0F);
             const float midY = (tabMin.y + tabMax.y) * 0.5F;
             // The level's file icon, exactly the one the Content Browser puts on the .scene asset:
             // the tab names a file, so it wears the file's icon rather than the object-type icon
@@ -483,7 +482,10 @@ void EditorUVE::DrawMenuBarUVE() {
         constexpr float kInsetUVE = 7.0F;
         const ImVec2 markMin{min.x + kInsetUVE, min.y + kInsetUVE};
         const ImVec2 markMax{max.x - kInsetUVE, max.y - kInsetUVE};
-        drawList->AddRectFilled(markMin, markMax, IM_COL32(99, 102, 241, 255), 6.0F);
+        drawList->AddRectFilledMultiColor(markMin, markMax,
+                                          IM_COL32(48, 62, 108, 255), IM_COL32(40, 52, 92, 255),
+                                          IM_COL32(26, 34, 62, 255), IM_COL32(32, 42, 76, 255));
+        drawList->AddRect(markMin, markMax, IM_COL32(70, 96, 160, 180), 6.0F, 0, 1.0F);
         const float fontSize = ImGui::GetFontSize() * 1.6F;
         const ImVec2 markSize = ImGui::GetFont()->CalcTextSizeA(fontSize, FLT_MAX, 0.0F, "U");
         drawList->AddText(ImGui::GetFont(), fontSize,
@@ -826,13 +828,11 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
             ImDrawList& drawList = *ImGui::GetWindowDrawList();
             constexpr float rounding = 4.0F;
 
-            // Soft studio tab background
+            // Soft studio tab background with full-box ambient wash
             if (active) {
-                drawList.AddRectFilled(origin, maxPos, buttonActive ? IM_COL32(30, 36, 52, 255) : IM_COL32(24, 28, 40, 255), rounding);
-                drawList.AddRect(origin, maxPos, IM_COL32(46, 54, 75, 255), rounding, 0, 1.0F);
-                // Soft Indigo bottom accent line
-                drawList.AddRectFilled(ImVec2{origin.x + 4.0F, maxPos.y - 2.0F}, ImVec2{maxPos.x - 4.0F, maxPos.y},
-                                       IM_COL32(99, 102, 241, 240), 1.0F);
+                drawList.AddRectFilled(origin, maxPos, buttonActive ? IM_COL32(32, 42, 64, 255) : IM_COL32(26, 34, 52, 255), rounding);
+                drawList.AddRectFilled(origin, maxPos, IM_COL32(56, 80, 130, 45), rounding);
+                drawList.AddRect(origin, maxPos, IM_COL32(58, 82, 130, 200), rounding, 0, 1.0F);
             } else if (hovered) {
                 drawList.AddRectFilled(origin, maxPos, IM_COL32(255, 255, 255, 14), rounding);
             }

@@ -113,12 +113,8 @@ void PrismSliderUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
     // 1. Draw Label if provided
     if (!m_label.empty()) {
         const float labelX = m_layoutRect.position.x + m_style.padding.left;
-        const float labelY = m_layoutRect.position.y + (m_layoutRect.size.y - 12.0F) * 0.5F;
-        const float charW = 7.5F;
-        for (std::size_t i = 0; i < m_label.length(); ++i) {
-            const float x = labelX + static_cast<float>(i) * charW;
-            drawList.AddRectFilled(Math::RectUVE{{x, labelY}, {charW, 12.0F}}, theme.textSecondary);
-        }
+        const float labelY = m_layoutRect.position.y + (m_layoutRect.size.y - 14.0F) * 0.5F;
+        drawList.AddText(Math::Vector2UVE{labelX, labelY}, m_label, theme.textSecondary, 13.0F);
     }
 
     // 2. Track Background

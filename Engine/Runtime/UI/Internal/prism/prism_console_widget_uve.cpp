@@ -172,6 +172,17 @@ void PrismConsoleWidgetUVE::ArrangeUVE(const Math::RectUVE& finalRect) {
 }
 
 Math::Vector2UVE PrismConsoleWidgetUVE::OnMeasureContentUVE(Math::Vector2UVE availableSize) {
+    const float padH = m_style.padding.Horizontal();
+    const float padV = m_style.padding.Vertical();
+    const float innerW = std::max(10.0F, availableSize.x - padH);
+    const float innerH = std::max(10.0F, availableSize.y - padV);
+
+    m_clearButton->MeasureUVE(Math::Vector2UVE{55.0F, 22.0F});
+    m_commandInput->MeasureUVE(Math::Vector2UVE{innerW, kInputHeightUVE});
+
+    const float logH = std::max(10.0F, innerH - kToolbarHeightUVE - kInputHeightUVE - 8.0F);
+    m_scrollContainer->MeasureUVE(Math::Vector2UVE{innerW, logH});
+
     return availableSize;
 }
 

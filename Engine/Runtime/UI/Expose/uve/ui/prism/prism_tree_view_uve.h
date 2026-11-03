@@ -67,6 +67,7 @@ public:
     }
 
     // --- State overrides ---
+    void ArrangeUVE(const Math::RectUVE& finalRect) override;
     PrismEventResultUVE OnPointerDown(const PrismPointerEventUVE& event) override;
     PrismEventResultUVE OnPointerMove(const PrismPointerEventUVE& event) override;
     PrismEventResultUVE OnKeyDown(const PrismKeyEventUVE& event) override;

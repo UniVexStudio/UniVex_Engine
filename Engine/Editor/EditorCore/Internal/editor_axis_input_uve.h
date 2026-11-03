@@ -105,7 +105,7 @@ inline bool DrawAxisVectorInputUVE(const char* const id, float* const values, co
 
         // 5. Soft border stroke & reactive active glow
         const ImU32 borderColor = isFieldActive
-            ? IM_COL32(99, 102, 241, 230) // Soft Indigo active ring
+            ? IM_COL32(58, 86, 138, 230) // Soft studio slate-blue active ring
             : (isFieldHovered ? IM_COL32(65, 70, 95, 255) : IM_COL32(36, 39, 54, 255));
         drawList.AddRect(origin, cellMax, borderColor, rounding, 0, isFieldActive ? 1.5F : 1.0F);
 

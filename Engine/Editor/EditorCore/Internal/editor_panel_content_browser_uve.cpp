@@ -179,12 +179,10 @@ bool GlyphTextButtonUVE(const char* id, const GlyphUVE glyph, const char* label,
     const ImVec2 max = ImGui::GetItemRectMax();
     ImDrawList& drawList = *ImGui::GetWindowDrawList();
     const ImU32 fill = accent
-        ? (hovered || active ? IM_COL32(115, 118, 250, 255) : IM_COL32(99, 102, 241, 240))
+        ? (hovered || active ? IM_COL32(48, 70, 115, 255) : IM_COL32(38, 56, 95, 240))
         : (active ? IM_COL32(34, 40, 56, 255) : (hovered ? IM_COL32(28, 33, 46, 255) : IM_COL32(20, 23, 33, 220)));
     drawList.AddRectFilled(min, max, fill, 4.0F);
-    if (!accent) {
-        drawList.AddRect(min, max, hovered ? IM_COL32(65, 75, 105, 220) : IM_COL32(40, 46, 64, 180), 4.0F, 0, 1.0F);
-    }
+    drawList.AddRect(min, max, hovered ? IM_COL32(75, 108, 175, 220) : (accent ? IM_COL32(56, 82, 138, 200) : IM_COL32(40, 46, 64, 180)), 4.0F, 0, 1.0F);
     const ImU32 text = ImGui::GetColorU32(ImGuiCol_Text);
     DrawGlyphUVE(drawList, glyph, ImVec2{min.x + style.FramePadding.x + glyphSize * 0.5F, (min.y + max.y) * 0.5F},
                  glyphSize, text);
@@ -220,12 +218,13 @@ bool SidebarSectionUVE(const char* id, const char* icon, const std::string& titl
     const ImVec2 min = ImGui::GetCursorScreenPos();
     ImDrawList& drawList = *ImGui::GetWindowDrawList();
     constexpr float rounding = 4.0F;
-    const ImU32 headerBg = open ? IM_COL32(22, 26, 36, 255) : IM_COL32(17, 20, 28, 255);
+    const ImU32 headerBg = open ? IM_COL32(26, 32, 46, 255) : IM_COL32(17, 20, 28, 255);
     drawList.AddRectFilled(min, ImVec2{min.x + width, min.y + height}, headerBg, rounding);
-    drawList.AddRect(min, ImVec2{min.x + width, min.y + height}, IM_COL32(36, 42, 58, 180), rounding, 0, 1.0F);
     if (open) {
-        drawList.AddRectFilled(ImVec2{min.x, min.y + 3.0F}, ImVec2{min.x + 2.5F, min.y + height - 3.0F},
-                               IM_COL32(99, 102, 241, 240), 1.0F);
+        drawList.AddRectFilled(min, ImVec2{min.x + width, min.y + height}, IM_COL32(56, 80, 130, 36), rounding);
+        drawList.AddRect(min, ImVec2{min.x + width, min.y + height}, IM_COL32(56, 80, 130, 180), rounding, 0, 1.0F);
+    } else {
+        drawList.AddRect(min, ImVec2{min.x + width, min.y + height}, IM_COL32(36, 42, 58, 180), rounding, 0, 1.0F);
     }
     if (ImGui::InvisibleButton(id, ImVec2{std::max(1.0F, width - trailingWidth), height})) {
         open = !open;
@@ -1251,12 +1250,10 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             interact(entry, look, clicked);
             ImDrawList& drawList = *ImGui::GetWindowDrawList();
 
-            // Soft studio row styling
+            // Soft studio row styling with full-box ambient wash
             if (selected) {
-                drawList.AddRectFilled(rowMin, ImVec2{rowMin.x + width, rowMin.y + rowHeight}, IM_COL32(28, 34, 52, 240), 3.5F);
-                drawList.AddRect(rowMin, ImVec2{rowMin.x + width, rowMin.y + rowHeight}, IM_COL32(99, 102, 241, 200), 3.5F, 0, 1.0F);
-                drawList.AddRectFilled(ImVec2{rowMin.x, rowMin.y + 2.0F}, ImVec2{rowMin.x + 2.5F, rowMin.y + rowHeight - 2.0F},
-                                       IM_COL32(99, 102, 241, 255), 1.0F);
+                drawList.AddRectFilled(rowMin, ImVec2{rowMin.x + width, rowMin.y + rowHeight}, IM_COL32(32, 44, 68, 220), 3.5F);
+                drawList.AddRect(rowMin, ImVec2{rowMin.x + width, rowMin.y + rowHeight}, IM_COL32(58, 86, 138, 200), 3.5F, 0, 1.0F);
             } else if (ImGui::IsItemHovered()) {
                 drawList.AddRectFilled(rowMin, ImVec2{rowMin.x + width, rowMin.y + rowHeight}, IM_COL32(255, 255, 255, 12), 3.5F);
             }
@@ -1296,7 +1293,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                 ? IM_COL32(28, 34, 52, 245)
                 : (hovered ? IM_COL32(25, 29, 41, 230) : IM_COL32(17, 19, 27, 210));
             const ImU32 cardBorder = selected
-                ? IM_COL32(99, 102, 241, 255) // Soft Indigo active ring
+                ? IM_COL32(58, 86, 138, 220) // Studio soft slate-blue border
                 : (hovered ? IM_COL32(65, 75, 105, 200) : IM_COL32(34, 38, 52, 160));
             drawList.AddRectFilled(cardMin, cardMax, cardBg, rounding);
             drawList.AddRect(cardMin, cardMax, cardBorder, rounding, 0, selected ? 1.5F : 1.0F);

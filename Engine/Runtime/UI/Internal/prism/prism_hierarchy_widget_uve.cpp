@@ -111,6 +111,18 @@ void PrismHierarchyWidgetUVE::ArrangeUVE(const Math::RectUVE& finalRect) {
 }
 
 Math::Vector2UVE PrismHierarchyWidgetUVE::OnMeasureContentUVE(Math::Vector2UVE availableSize) {
+    const float padH = m_style.padding.Horizontal();
+    const float padV = m_style.padding.Vertical();
+    const float innerW = std::max(10.0F, availableSize.x - padH);
+    const float innerH = std::max(10.0F, availableSize.y - padV);
+
+    m_addButton->MeasureUVE(Math::Vector2UVE{kAddButtonWidthUVE, 22.0F});
+    const float searchW = std::max(10.0F, innerW - kAddButtonWidthUVE - 4.0F);
+    m_searchInput->MeasureUVE(Math::Vector2UVE{searchW, 22.0F});
+
+    const float scrollH = std::max(10.0F, innerH - kToolbarHeightUVE - 4.0F);
+    m_scrollContainer->MeasureUVE(Math::Vector2UVE{innerW, scrollH});
+
     return availableSize;
 }
 
