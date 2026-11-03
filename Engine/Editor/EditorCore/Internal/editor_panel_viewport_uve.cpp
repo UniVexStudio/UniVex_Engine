@@ -133,16 +133,14 @@ template <typename DrawIconUVE>
     const ImVec2 center{(minimum.x + maximum.x) * 0.5F, (minimum.y + maximum.y) * 0.5F};
     ImDrawList& drawList = *ImGui::GetWindowDrawList();
     const ImU32 backgroundColor = active
-        ? IM_COL32(45, 68, 112, 235) // Soft studio slate-blue active accent
-        : (hovered ? IM_COL32(255, 255, 255, 30) : IM_COL32(255, 255, 255, 12));
+        ? IM_COL32(38, 58, 96, 255)
+        : (hovered ? IM_COL32(28, 33, 44, 255) : IM_COL32(18, 21, 28, 255));
     drawList.AddCircleFilled(center, kViewportBubbleIconRadiusUVE, backgroundColor, 24);
 
-    // Soft subtle border
-    if (active) {
-        drawList.AddCircle(center, kViewportBubbleIconRadiusUVE, IM_COL32(75, 110, 178, 255), 24, 1.2F);
-    } else if (hovered) {
-        drawList.AddCircle(center, kViewportBubbleIconRadiusUVE, IM_COL32(255, 255, 255, 45), 24, 1.0F);
-    }
+    const ImU32 borderColor = active
+        ? IM_COL32(65, 98, 160, 255)
+        : (hovered ? IM_COL32(45, 54, 72, 255) : IM_COL32(32, 38, 50, 255));
+    drawList.AddCircle(center, kViewportBubbleIconRadiusUVE, borderColor, 24, 1.0F);
 
     const ImU32 iconColor = active ? IM_COL32(255, 255, 255, 255) : (hovered ? IM_COL32(240, 245, 255, 245) : IM_COL32(185, 195, 212, 210));
     drawIcon(drawList, center, kViewportBubbleIconRadiusUVE, iconColor);

@@ -223,16 +223,14 @@ void PrismTabGroupUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
         const bool isActive = (i == m_activeTabIndex);
         const bool isHovered = (static_cast<int>(i) == m_hoveredTabIndex);
 
-        // Tab Pill Background
+        // Tab Pill Background (Solid matte, no glassy wash)
         const PrismColorUVE tabBg = isActive
-            ? PrismColorUVE{0.18F, 0.23F, 0.35F, 0.95F}
+            ? theme.bgSelectedRow
             : (isHovered ? theme.bgWidgetHover : theme.bgSurface);
         drawList.AddRectFilled(geom.tabRect, tabBg, PrismCornerRadiiUVE{4.0F, 4.0F, 0.0F, 0.0F});
 
         if (isActive) {
-            // Full ambient wash over the active tab, subtle stroke (no harsh 2px lines!)
-            drawList.AddRectFilled(geom.tabRect, PrismColorUVE{0.22F, 0.32F, 0.52F, 0.28F}, PrismCornerRadiiUVE{4.0F, 4.0F, 0.0F, 0.0F});
-            drawList.AddRectStroke(geom.tabRect, PrismColorUVE{0.28F, 0.38F, 0.60F, 0.60F}, 1.0F, PrismCornerRadiiUVE{4.0F, 4.0F, 0.0F, 0.0F});
+            drawList.AddRectStroke(geom.tabRect, theme.borderSelectedRow, 1.0F, PrismCornerRadiiUVE{4.0F, 4.0F, 0.0F, 0.0F});
         }
 
         // Tab Title Text

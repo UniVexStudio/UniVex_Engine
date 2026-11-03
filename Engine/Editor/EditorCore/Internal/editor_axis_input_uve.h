@@ -73,8 +73,8 @@ inline bool DrawAxisVectorInputUVE(const char* const id, float* const values, co
         // 4. Input numeric drag field with transparent background (showing our soft capsule card)
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{3.0F, style.FramePadding.y});
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4{1.0F, 1.0F, 1.0F, 0.03F});
-        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4{0.39F, 0.40F, 0.95F, 0.10F});
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4{0.13F, 0.15F, 0.20F, 1.0F});
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4{0.16F, 0.20F, 0.28F, 1.0F});
         ImGui::PushStyleColor(ImGuiCol_Border, ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
 
         const float fieldWidth = std::max(8.0F, width - tagWidth);
@@ -105,8 +105,8 @@ inline bool DrawAxisVectorInputUVE(const char* const id, float* const values, co
 
         // 5. Soft border stroke & reactive active glow
         const ImU32 borderColor = isFieldActive
-            ? IM_COL32(58, 86, 138, 230) // Soft studio slate-blue active ring
-            : (isFieldHovered ? IM_COL32(65, 70, 95, 255) : IM_COL32(36, 39, 54, 255));
+            ? IM_COL32(52, 82, 132, 255) // Solid studio slate-blue active ring
+            : (isFieldHovered ? IM_COL32(56, 68, 92, 255) : IM_COL32(34, 38, 50, 255));
         drawList.AddRect(origin, cellMax, borderColor, rounding, 0, isFieldActive ? 1.5F : 1.0F);
 
         if (isFieldHovered) {

@@ -140,8 +140,8 @@ void PrismScrollContainerUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
         const Math::RectUVE track = GetScrollbarTrackRect();
         const Math::RectUVE thumb = GetScrollbarThumbRect();
 
-        // Subtle track
-        drawList.AddRectFilled(track, PrismColorUVE{0.0F, 0.0F, 0.0F, 0.2F}, PrismCornerRadiiUVE{4.0F});
+        // Subtle solid matte track
+        drawList.AddRectFilled(track, PrismColorUVE{0.06F, 0.07F, 0.09F, 1.0F}, PrismCornerRadiiUVE{4.0F});
 
         // Thumb
         PrismColorUVE thumbColor = m_isDraggingThumb ? theme.accentPrimary : theme.bgWidgetHover;

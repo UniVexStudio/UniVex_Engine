@@ -688,20 +688,17 @@ bool EditorUVE::DrawInspectorFoldUVE(const char* const label, const std::string&
 
         ImDrawList& drawList = *ImGui::GetWindowDrawList();
 
-        // 1. Soft surface card background with ambient wash over open header
+        // 1. Solid matte header background (UE5/Blender style, no glassy wash)
         const ImU32 bgColor = active
-            ? IM_COL32(32, 38, 54, 255)
-            : (hovered ? IM_COL32(26, 31, 44, 255)
-                       : (nowOpen ? IM_COL32(23, 27, 38, 255) : IM_COL32(16, 18, 25, 255)));
+            ? IM_COL32(34, 42, 58, 255)
+            : (hovered ? IM_COL32(28, 34, 47, 255)
+                       : (nowOpen ? IM_COL32(25, 30, 42, 255) : IM_COL32(17, 20, 27, 255)));
         drawList.AddRectFilled(origin, maxPos, bgColor, rounding);
-        if (nowOpen) {
-            drawList.AddRectFilled(origin, maxPos, IM_COL32(56, 80, 130, 32), rounding);
-        }
 
-        // 2. Soft subtle 1px border
+        // 2. Crisp subtle 1px border
         const ImU32 borderColor = hovered
-            ? IM_COL32(65, 80, 120, 255)
-            : (nowOpen ? IM_COL32(48, 60, 88, 255) : IM_COL32(28, 32, 44, 255));
+            ? IM_COL32(56, 72, 102, 255)
+            : (nowOpen ? IM_COL32(44, 56, 80, 255) : IM_COL32(30, 35, 47, 255));
         drawList.AddRect(origin, maxPos, borderColor, rounding, 0, 1.0F);
 
         // 4. Sleek procedural chevron (> / v)

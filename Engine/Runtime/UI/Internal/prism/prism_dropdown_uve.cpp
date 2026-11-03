@@ -214,8 +214,9 @@ void PrismDropdownUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
             const bool isSelected = (static_cast<int>(i) == m_selectedIndex);
 
             if (isSelected) {
-                drawList.AddRectFilled(itemRect, PrismColorUVE{0.18F, 0.28F, 0.46F, 0.45F}, theme.radiusSmall);
-                drawList.AddRectStroke(itemRect, PrismColorUVE{0.32F, 0.48F, 0.78F, 0.35F}, 1.0F, theme.radiusSmall);
+                // Solid matte selected item
+                drawList.AddRectFilled(itemRect, theme.bgSelectedRow, theme.radiusSmall);
+                drawList.AddRectStroke(itemRect, theme.borderSelectedRow, 1.0F, theme.radiusSmall);
             } else if (isHovered) {
                 drawList.AddRectFilled(itemRect, theme.bgWidgetHover, theme.radiusSmall);
             }

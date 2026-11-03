@@ -19,11 +19,14 @@ struct PrismThemeUVE final {
     PrismColorUVE bgSurface{0.12F, 0.13F, 0.16F, 1.0F};
     PrismColorUVE bgSurfaceElevated{0.15F, 0.17F, 0.20F, 1.0F};
 
-    // Accent / Brand (Prism Cyan/Blue)
+    // Accent / Brand (Prism Cyan/Blue - Solid Matte)
     PrismColorUVE accentPrimary{0.16F, 0.52F, 0.95F, 1.0F}; // #2985f2
     PrismColorUVE accentHover{0.25F, 0.60F, 1.00F, 1.0F};
-    PrismColorUVE accentFocusRing{0.30F, 0.65F, 1.00F, 0.6F};
+    PrismColorUVE accentFocusRing{0.26F, 0.48F, 0.78F, 1.0F};
     PrismColorUVE accentDanger{0.88F, 0.28F, 0.28F, 1.0F};
+    PrismColorUVE bgSelectedRow{0.15F, 0.20F, 0.29F, 1.0F};
+    PrismColorUVE borderSelectedRow{0.24F, 0.33F, 0.48F, 1.0F};
+    PrismColorUVE bgHoverRow{0.13F, 0.16F, 0.22F, 1.0F};
 
     // Text & Foreground
     PrismColorUVE textPrimary{0.95F, 0.96F, 0.98F, 1.0F};

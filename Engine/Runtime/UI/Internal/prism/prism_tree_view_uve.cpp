@@ -209,19 +209,18 @@ void PrismTreeViewUVE::OnPaintContentUVE(PrismDrawListUVE& drawList) {
                 drawList.AddLine(
                     Math::Vector2UVE{guideX, row.rowRect.position.y},
                     Math::Vector2UVE{guideX, row.rowRect.position.y + kRowHeightUVE},
-                    PrismColorUVE{1.0F, 1.0F, 1.0F, 0.06F},
+                    theme.borderSubtle,
                     1.0F
                 );
             }
         }
 
-        // 2. Full-Box Ambient Fade Selection / Hover (No 1px/2px harsh slop lines!)
+        // 2. Solid Matte Selection / Hover (Unreal Engine 5 style, zero glassiness)
         if (isSelected) {
-            // Full box soft ambient wash
-            drawList.AddRectFilled(row.rowRect, PrismColorUVE{0.18F, 0.26F, 0.42F, 0.42F}, theme.radiusSmall);
-            drawList.AddRectStroke(row.rowRect, PrismColorUVE{0.32F, 0.48F, 0.78F, 0.38F}, 1.0F, theme.radiusSmall);
+            drawList.AddRectFilled(row.rowRect, theme.bgSelectedRow, theme.radiusSmall);
+            drawList.AddRectStroke(row.rowRect, theme.borderSelectedRow, 1.0F, theme.radiusSmall);
         } else if (isHovered) {
-            drawList.AddRectFilled(row.rowRect, PrismColorUVE{1.0F, 1.0F, 1.0F, 0.04F}, theme.radiusSmall);
+            drawList.AddRectFilled(row.rowRect, theme.bgHoverRow, theme.radiusSmall);
         }
 
         // 3. Crisp Chevron Arrow Indicator
