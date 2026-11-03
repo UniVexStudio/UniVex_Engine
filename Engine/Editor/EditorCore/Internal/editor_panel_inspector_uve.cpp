@@ -118,10 +118,10 @@ void DrawInspectorChainHeaderUVE(const std::string& label) {
 /// A counter-clockwise circular arrow glyph for resetting a property to its default value.
 void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float size, const ImU32 color) {
     constexpr float kPi = std::numbers::pi_v<float>;
-    const float radius = size * 0.36F;
-    const float thickness = std::max(1.2F, size * 0.12F);
+    const float radius = size * 0.35F;
+    const float thickness = std::max(1.5F, size * 0.13F);
     constexpr int kSegments = 16;
-    constexpr float kStartAngle = 0.35F * kPi;
+    constexpr float kStartAngle = 0.40F * kPi;
     constexpr float kEndAngle = 1.85F * kPi;
     for (int i = 0; i < kSegments; ++i) {
         const float a0 = kStartAngle + (static_cast<float>(i) * (kEndAngle - kStartAngle) / static_cast<float>(kSegments));
@@ -131,7 +131,7 @@ void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float si
         drawList.AddLine(p0, p1, color, thickness);
     }
     const ImVec2 tip{center.x + (radius * std::cos(kStartAngle)), center.y + (radius * std::sin(kStartAngle))};
-    const float arrowLen = size * 0.28F;
+    const float arrowLen = size * 0.30F;
     drawList.AddLine(tip, ImVec2{tip.x - (arrowLen * 0.85F), tip.y - (arrowLen * 0.15F)}, color, thickness);
     drawList.AddLine(tip, ImVec2{tip.x + (arrowLen * 0.15F), tip.y - (arrowLen * 0.85F)}, color, thickness);
 }
@@ -179,9 +179,9 @@ void DrawMagnetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float s
 /// A compact reset icon button for inspector rows.
 bool DrawResetButtonUVE(const char* const id, const char* const tooltip) {
     const float size = ImGui::GetFrameHeight();
-    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(70, 70, 85, 120));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(90, 90, 110, 180));
+    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(38, 42, 50, 180));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(65, 72, 90, 240));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(95, 105, 130, 255));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{0.0F, 0.0F});
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     const bool pressed = ImGui::Button(id, ImVec2{size, size});
@@ -190,7 +190,7 @@ bool DrawResetButtonUVE(const char* const id, const char* const tooltip) {
     const bool hovered = ImGui::IsItemHovered();
     ImDrawList& drawList = *ImGui::GetWindowDrawList();
     const ImVec2 center{pos.x + (size * 0.5F), pos.y + (size * 0.5F)};
-    const ImU32 color = hovered ? IM_COL32(255, 215, 90, 255) : IM_COL32(160, 160, 175, 190);
+    const ImU32 color = hovered ? IM_COL32(255, 215, 80, 255) : IM_COL32(185, 190, 205, 220);
     DrawResetGlyphUVE(drawList, center, size * 0.65F, color);
     if (hovered && tooltip != nullptr) {
         ImGui::SetTooltip("%s", tooltip);
@@ -202,13 +202,13 @@ bool DrawResetButtonUVE(const char* const id, const char* const tooltip) {
 bool DrawMagnetButtonUVE(const char* const id, const bool active) {
     const float size = ImGui::GetFrameHeight();
     if (active) {
-        ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(45, 75, 110, 200));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(65, 105, 150, 240));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(85, 125, 180, 255));
+        ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(40, 80, 125, 230));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(60, 110, 165, 255));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(80, 130, 190, 255));
     } else {
-        ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(60, 60, 75, 120));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(80, 80, 95, 180));
+        ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(38, 42, 50, 180));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(60, 65, 78, 220));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(80, 85, 100, 255));
     }
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{0.0F, 0.0F});
     const ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -631,41 +631,13 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
     bool scaleChanged = false;
     bool gestureEnded = false;
 
-    // Reset All quick button
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled("Local Transform");
-    const float resetAllBtnWidth = 64.0F;
-    ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - resetAllBtnWidth));
-    if (ImGui::SmallButton("Reset All")) {
-        position[0] = 0.0F;
-        position[1] = 0.0F;
-        position[2] = 0.0F;
-        positionChanged = true;
-
-        rotationDegrees[0] = 0.0F;
-        rotationDegrees[1] = 0.0F;
-        rotationDegrees[2] = 0.0F;
-        rotationChanged = true;
-
-        scale[0] = 1.0F;
-        scale[1] = 1.0F;
-        scale[2] = 1.0F;
-        scaleChanged = true;
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Reset all transform properties to defaults:
-Position -> (0, 0, 0)
-Rotation -> (0, 0, 0)
-Scale -> (1, 1, 1)");
-    }
-
     const float resetBtnWidth = ImGui::GetFrameHeight();
-    if (ImGui::BeginTable("##transform", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings)) {
+    if (ImGui::BeginTable("##transform", 3, ImGuiTableFlags_NoSavedSettings)) {
         ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthFixed, 72.0F);
         ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("##actions", ImGuiTableColumnFlags_WidthFixed, resetBtnWidth);
 
-        // Position row
+        // Position row: individual circular-arrow reset button resets position to (0, 0, 0)
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
         ImGui::AlignTextToFramePadding();
@@ -689,7 +661,7 @@ Scale -> (1, 1, 1)");
         }
         positionChanged = posInputChanged || posResetClicked;
 
-        // Rotation row
+        // Rotation row: individual circular-arrow reset button resets rotation to (0, 0, 0)
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
         ImGui::AlignTextToFramePadding();
@@ -713,7 +685,7 @@ Scale -> (1, 1, 1)");
         }
         rotationChanged = rotInputChanged || rotResetClicked;
 
-        // Scale row
+        // Scale row: magnet button toggles uniform scaling; circular-arrow reset button resets scale to (1, 1, 1)
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
         ImGui::AlignTextToFramePadding();
