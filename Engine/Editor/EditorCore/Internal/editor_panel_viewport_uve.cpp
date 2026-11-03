@@ -313,9 +313,12 @@ void EditorUVE::SetViewportPanelRendererUVE(ViewportPanelRendererUVE renderer) {
 
 void EditorUVE::DrawViewportPanelUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+    const EditorLayoutModeUVE layoutMode =
+        m_entityEditSession.has_value() ? EditorLayoutModeUVE::Classic : EditorLayoutModeUVE::Level;
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth,
-                                     m_inspectorPanelWidth, m_scenePanelVisible, m_inspectorPanelVisible);
+                                     m_inspectorPanelWidth, m_scenePanelVisible, m_inspectorPanelVisible,
+                                     layoutMode, m_outlinerHeightFraction);
     // Always: this rect is recomputed from the chrome layout every frame and the viewport never
     // floats, so there is nothing for ImGui to remember and nothing a stale imgui.ini may override.
     ImGui::SetNextWindowViewport(mainViewport->ID);

@@ -15,54 +15,41 @@ namespace {
     return viewport;
 }
 
-TEST(EditorChromeLayoutUVETest, ThreeColumnsExactlyFillTheWidthWithNoGapOrOverlap) {
-    // The invariant the whole helper exists for, and the reason it is now a shared header rather
-    // than a copy per panel: the scene, viewport and inspector must tile the width exactly. A gap
-    // shows the window behind; an overlap hides one panel's edge under another.
+TEST(EditorChromeLayoutUVETest, ClassicThreeColumnsExactlyFillTheWidthWithNoGapOrOverlap) {
     for (const float width : {1280.0F, 1920.0F, 2560.0F, 3840.0F}) {
-        const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(MakeViewportUVE(width, 1080.0F), true);
+        const EditorChromeLayoutUVE layout =
+            ComputeEditorChromeLayoutUVE(MakeViewportUVE(width, 1080.0F), true, kAssetsPanelHeightUVE,
+                                         -1.0F, -1.0F, true, true, EditorLayoutModeUVE::Classic);
         EXPECT_FLOAT_EQ(layout.sceneSize.x + layout.viewportSize.x + layout.inspectorSize.x, width)
             << "at width " << width;
-        // Adjacency, not just total: three widths can sum correctly while the panels sit in the
-        // wrong places.
         EXPECT_FLOAT_EQ(layout.viewportPos.x, layout.scenePos.x + layout.sceneSize.x) << "at width " << width;
         EXPECT_FLOAT_EQ(layout.inspectorPos.x, layout.viewportPos.x + layout.viewportSize.x)
             << "at width " << width;
     }
 }
 
-TEST(EditorChromeLayoutUVETest, SidePanelsRunFullHeightAndTheDockSitsUnderTheViewport) {
-    // Outliner and Inspector run from under the title bar down to the dock tab strip; the centre
-    // column holds the tool strip, the viewport under it and the dock under that.
-    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), true);
+TEST(EditorChromeLayoutUVETest, ClassicSidePanelsRunFullHeightAndTheDockSitsUnderTheViewport) {
+    const EditorChromeLayoutUVE layout =
+        ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), true, kAssetsPanelHeightUVE,
+                                     -1.0F, -1.0F, true, true, EditorLayoutModeUVE::Classic);
 
-    // Header row: the Outliner's name beside the logo, the viewport's header, the Inspector's tabs.
     EXPECT_FLOAT_EQ(layout.inspectorPos.y, kEditorTitleBarHeightUVE);
     EXPECT_FLOAT_EQ(layout.viewportHeaderPos.y, kEditorTitleBarHeightUVE);
     EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.y, kEditorTitleBarHeightUVE);
     EXPECT_FLOAT_EQ(layout.scenePos.y, kEditorTopChromeHeightUVE);
     EXPECT_FLOAT_EQ(layout.viewportPos.y, kEditorTopChromeHeightUVE);
-    // The side columns reach the bottom edge of the frame: the dock's tab row belongs to the dock,
-    // not to a band shared with the panels beside it.
     EXPECT_FLOAT_EQ(layout.inspectorSize.y, 1080.0F - kEditorTitleBarHeightUVE);
     EXPECT_FLOAT_EQ(layout.sceneSize.y + kEditorToolbarHeightUVE, layout.inspectorSize.y);
-    // The centre column holds the viewport, then the dock's tab row, then the dock's body.
     EXPECT_FLOAT_EQ(layout.viewportSize.y + kDockTabBarHeightUVE + layout.contentBrowserSize.y, layout.sceneSize.y);
-    // The viewport's header spans exactly its column; the logo spans both top rows, and the
-    // Outliner's header fills the rest of its column beside it.
     EXPECT_FLOAT_EQ(layout.viewportHeaderPos.x, layout.viewportPos.x);
     EXPECT_FLOAT_EQ(layout.viewportHeaderSize.x, layout.viewportSize.x);
-    EXPECT_FLOAT_EQ(layout.logoSize.y, kEditorTopChromeHeightUVE);
-    EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.x, layout.logoPos.x + layout.logoSize.x);
-    EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.x + layout.outlinerHeaderSize.x, layout.scenePos.x + layout.sceneSize.x);
+    EXPECT_FLOAT_EQ(layout.logoSize.y, kEditorTitleBarHeightUVE);
+    EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.x, layout.scenePos.x);
+    EXPECT_FLOAT_EQ(layout.outlinerHeaderSize.x, layout.sceneSize.x);
     EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, layout.viewportPos.x);
     EXPECT_FLOAT_EQ(layout.contentBrowserSize.x, layout.viewportSize.x);
-    // The dock's body starts below the tab row, not at the viewport's edge: the row is the body's
-    // header and belongs to the dock.
     EXPECT_FLOAT_EQ(layout.contentBrowserPos.y,
                     layout.viewportPos.y + layout.viewportSize.y + kDockTabBarHeightUVE);
-    // The tab strip is the dock's own header: the viewport column's width, directly on top of the
-    // dock's body, and the block as a whole ends at the bottom edge.
     EXPECT_FLOAT_EQ(layout.dockTabBarPos.x, layout.viewportPos.x);
     EXPECT_FLOAT_EQ(layout.dockTabBarSize.x, layout.viewportSize.x);
     EXPECT_FLOAT_EQ(layout.dockTabBarPos.y + layout.dockTabBarSize.y, layout.contentBrowserPos.y);
@@ -102,16 +89,17 @@ TEST(EditorChromeLayoutUVETest, TheDockHeightIsDraggableWithinLimits) {
     EXPECT_GE(huge.viewportSize.y, kMinimumViewportHeightUVE);
 }
 
-TEST(EditorChromeLayoutUVETest, HidingASidePanelGivesItsWidthToTheViewport) {
-    // The point of hiding an Outliner is a wider canvas, not a hole where the Outliner was. This is
-    // the assertion that would have caught the old layout, which had no visibility input at all and
-    // left the space reserved.
+TEST(EditorChromeLayoutUVETest, ClassicHidingASidePanelGivesItsWidthToTheViewport) {
     const ImGuiViewport viewport = MakeViewportUVE(1920.0F, 1080.0F);
-    const EditorChromeLayoutUVE both = ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE);
+    const EditorChromeLayoutUVE both =
+        ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE, -1.0F, -1.0F, true, true,
+                                     EditorLayoutModeUVE::Classic);
     const EditorChromeLayoutUVE noOutliner =
-        ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE, -1.0F, -1.0F, false, true);
+        ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE, -1.0F, -1.0F, false, true,
+                                     EditorLayoutModeUVE::Classic);
     const EditorChromeLayoutUVE noInspector =
-        ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE, -1.0F, -1.0F, true, false);
+        ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE, -1.0F, -1.0F, true, false,
+                                     EditorLayoutModeUVE::Classic);
 
     EXPECT_FLOAT_EQ(noOutliner.sceneSize.x, 0.0F);
     EXPECT_FLOAT_EQ(noOutliner.viewportSize.x - both.viewportSize.x, both.sceneSize.x);
@@ -120,13 +108,14 @@ TEST(EditorChromeLayoutUVETest, HidingASidePanelGivesItsWidthToTheViewport) {
     EXPECT_FLOAT_EQ(noOutliner.viewportPos.x, viewport.WorkPos.x);
 }
 
-TEST(EditorChromeLayoutUVETest, AHiddenSidePanelLeavesAStripToBringItBack) {
-    // A close button with no visible way back is a dead end. The strip exists only while the panel
-    // is hidden, and it takes the edge the panel left behind.
+TEST(EditorChromeLayoutUVETest, ClassicAHiddenSidePanelLeavesAStripToBringItBack) {
     const ImGuiViewport viewport = MakeViewportUVE(1920.0F, 1080.0F);
-    const EditorChromeLayoutUVE shown = ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE);
+    const EditorChromeLayoutUVE shown =
+        ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE, -1.0F, -1.0F, true, true,
+                                     EditorLayoutModeUVE::Classic);
     const EditorChromeLayoutUVE hidden =
-        ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE, -1.0F, -1.0F, false, false);
+        ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE, -1.0F, -1.0F, false, false,
+                                     EditorLayoutModeUVE::Classic);
 
     EXPECT_FLOAT_EQ(shown.outlinerRestoreSize.x, 0.0F) << "nothing to restore while the panel is showing";
     EXPECT_FLOAT_EQ(shown.inspectorRestoreSize.x, 0.0F);
@@ -156,27 +145,27 @@ TEST(EditorChromeLayoutUVETest, LayoutOwnedPanelsRefuseImGuiResizeMoveAndIni) {
     EXPECT_GE(kPanelSplitterThicknessUVE, 8.0F) << "the seam is the only grip left";
 }
 
-TEST(EditorChromeLayoutUVETest, SplitterGripsExistOnlyWhereThereIsASeam) {
-    // A grip over a seam that does not exist is an invisible button that eats a click meant for the
-    // viewport. Each one is sized only while both neighbours are on screen.
+TEST(EditorChromeLayoutUVETest, ClassicSplitterGripsExistOnlyWhereThereIsASeam) {
     const ImGuiViewport viewport = MakeViewportUVE(1920.0F, 1080.0F);
-    const EditorChromeLayoutUVE full = ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE);
+    const EditorChromeLayoutUVE full =
+        ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE, -1.0F, -1.0F, true, true,
+                                     EditorLayoutModeUVE::Classic);
     EXPECT_FLOAT_EQ(full.sceneSplitterSize.x, kPanelSplitterThicknessUVE);
     EXPECT_FLOAT_EQ(full.inspectorSplitterSize.x, kPanelSplitterThicknessUVE);
     EXPECT_FLOAT_EQ(full.dockSplitterSize.y, kPanelSplitterThicknessUVE);
 
-    // The Outliner | viewport seam still exists when the Outliner is showing, and is at the
-    // Outliner's right edge.
     EXPECT_FLOAT_EQ(full.sceneSplitterPos.x + (kPanelSplitterThicknessUVE * 0.5F),
                     full.scenePos.x + full.sceneSize.x);
 
     const EditorChromeLayoutUVE noOutliner =
-        ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE, -1.0F, -1.0F, false, true);
+        ComputeEditorChromeLayoutUVE(viewport, true, kAssetsPanelHeightUVE, -1.0F, -1.0F, false, true,
+                                     EditorLayoutModeUVE::Classic);
     EXPECT_FLOAT_EQ(noOutliner.sceneSplitterSize.x, 0.0F) << "no Outliner, no seam";
     EXPECT_FLOAT_EQ(noOutliner.inspectorSplitterSize.x, kPanelSplitterThicknessUVE);
 
     const EditorChromeLayoutUVE noDock =
-        ComputeEditorChromeLayoutUVE(viewport, false, kAssetsPanelHeightUVE);
+        ComputeEditorChromeLayoutUVE(viewport, false, kAssetsPanelHeightUVE, -1.0F, -1.0F, true, true,
+                                     EditorLayoutModeUVE::Classic);
     EXPECT_FLOAT_EQ(noDock.dockSplitterSize.y, 0.0F) << "no dock, no grab line above it";
 }
 
@@ -196,7 +185,7 @@ TEST(EditorChromeLayoutUVETest, PanelResizeClampsAgreeWithTheLayout) {
     // The layout honours the same numbers, so a width the handle produced survives the next frame.
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(MakeViewportUVE(kTotalWidth, 1080.0F), true, kAssetsPanelHeightUVE, 100000.0F,
-                                     100000.0F);
+                                     100000.0F, true, true, EditorLayoutModeUVE::Classic);
     EXPECT_FLOAT_EQ(layout.sceneSize.x, sceneMax);
     EXPECT_FLOAT_EQ(layout.inspectorSize.x, inspectorMax);
     EXPECT_GE(layout.viewportSize.x, kMinimumViewportWidthUVE);
@@ -212,13 +201,17 @@ TEST(EditorChromeLayoutUVETest, PanelResizeClampsAgreeWithTheLayout) {
 TEST(EditorChromeLayoutUVETest, SidePanelsStayWithinTheirClampsOnExtremeWidths) {
     // The side panels are a fraction of the width, clamped. On a very narrow window the fraction
     // would otherwise leave no viewport at all; on a very wide one the panels would grow absurd.
-    const EditorChromeLayoutUVE narrow = ComputeEditorChromeLayoutUVE(MakeViewportUVE(640.0F, 480.0F), true);
+    const EditorChromeLayoutUVE narrow =
+        ComputeEditorChromeLayoutUVE(MakeViewportUVE(640.0F, 480.0F), true, kAssetsPanelHeightUVE,
+                                     -1.0F, -1.0F, true, true, EditorLayoutModeUVE::Classic);
     EXPECT_GE(narrow.sceneSize.x, kScenePanelWidthMinUVE);
     EXPECT_GE(narrow.inspectorSize.x, kInspectorPanelWidthMinUVE);
     EXPECT_GE(narrow.viewportSize.x, kMinimumViewportWidthUVE)
         << "the viewport must never be squeezed out of existence";
 
-    const EditorChromeLayoutUVE wide = ComputeEditorChromeLayoutUVE(MakeViewportUVE(5120.0F, 1440.0F), true);
+    const EditorChromeLayoutUVE wide =
+        ComputeEditorChromeLayoutUVE(MakeViewportUVE(5120.0F, 1440.0F), true, kAssetsPanelHeightUVE,
+                                     -1.0F, -1.0F, true, true, EditorLayoutModeUVE::Classic);
     EXPECT_LE(wide.sceneSize.x, kScenePanelWidthMaxUVE);
     EXPECT_LE(wide.inspectorSize.x, kInspectorPanelWidthMaxUVE);
 }
@@ -252,4 +245,55 @@ TEST(EditorChromeLayoutUVETest, LayoutIsOffsetByTheViewportOrigin) {
 }
 
 } // namespace
+
+TEST(EditorChromeLayoutUVETest, LevelEditorStacksOutlinerAndDetailsInLeftColumn) {
+    const float totalWidth = 1920.0F;
+    const float totalHeight = 1080.0F;
+    const ImGuiViewport viewport = MakeViewportUVE(totalWidth, totalHeight);
+    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(viewport, true);
+
+    EXPECT_TRUE(layout.isLevelLayout);
+    // Outliner is at top of left column
+    EXPECT_FLOAT_EQ(layout.scenePos.x, 0.0F);
+    EXPECT_FLOAT_EQ(layout.scenePos.y, kEditorTopChromeHeightUVE);
+    // Details sits directly under Outliner
+    EXPECT_FLOAT_EQ(layout.inspectorPos.x, 0.0F);
+    EXPECT_FLOAT_EQ(layout.inspectorPos.y, layout.scenePos.y + layout.sceneSize.y);
+    // Both share the left column width
+    EXPECT_FLOAT_EQ(layout.sceneSize.x, layout.inspectorSize.x);
+    // Total height of left column equals column height
+    const float columnHeight = totalHeight - kEditorTopChromeHeightUVE;
+    EXPECT_FLOAT_EQ(layout.sceneSize.y + layout.inspectorSize.y, columnHeight);
+    // Horizontal splitter between Outliner and Details exists
+    EXPECT_FLOAT_EQ(layout.outlinerDetailsSplitterSize.x, layout.sceneSize.x);
+    EXPECT_FLOAT_EQ(layout.outlinerDetailsSplitterSize.y, kPanelSplitterThicknessUVE);
+}
+
+TEST(EditorChromeLayoutUVETest, LevelEditorViewportReclaimsRightSideCompletely) {
+    const float totalWidth = 2560.0F;
+    const float totalHeight = 1440.0F;
+    const ImGuiViewport viewport = MakeViewportUVE(totalWidth, totalHeight);
+    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(viewport, true);
+
+    // Viewport starts right after left column and expands all the way to totalWidth
+    EXPECT_FLOAT_EQ(layout.viewportPos.x, layout.scenePos.x + layout.sceneSize.x);
+    EXPECT_FLOAT_EQ(layout.sceneSize.x + layout.viewportSize.x, totalWidth);
+    // Right side has no inspector splitter
+    EXPECT_FLOAT_EQ(layout.inspectorSplitterSize.x, 0.0F);
+}
+
+TEST(EditorChromeLayoutUVETest, LevelEditorLogoSitsNeatlyInTitleBar) {
+    const ImGuiViewport viewport = MakeViewportUVE(1920.0F, 1080.0F);
+    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(viewport, true);
+
+    EXPECT_FLOAT_EQ(layout.logoPos.y, 0.0F);
+    EXPECT_FLOAT_EQ(layout.logoSize.y, kEditorTitleBarHeightUVE);
+    // Outliner header is full width above left column
+    EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.x, layout.scenePos.x);
+    EXPECT_FLOAT_EQ(layout.outlinerHeaderSize.x, layout.sceneSize.x);
+    // Viewport header spans viewport width
+    EXPECT_FLOAT_EQ(layout.viewportHeaderPos.x, layout.viewportPos.x);
+    EXPECT_FLOAT_EQ(layout.viewportHeaderSize.x, layout.viewportSize.x);
+}
+
 } // namespace UVE::Editor::Tests

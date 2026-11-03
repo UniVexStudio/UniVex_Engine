@@ -214,10 +214,12 @@ void EditorUVE::DrawHierarchyPanelUVE() {
         return;
     }
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+    const EditorLayoutModeUVE layoutMode =
+        m_entityEditSession.has_value() ? EditorLayoutModeUVE::Classic : EditorLayoutModeUVE::Level;
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth,
                                      m_inspectorPanelWidth, m_scenePanelVisible,
-                                     m_inspectorPanelVisible);
+                                     m_inspectorPanelVisible, layoutMode, m_outlinerHeightFraction);
     // Always: the rect comes from the chrome layout every frame. Dragging happens on the seam in
     // DrawEditorChromeHandlesUVE(), which writes m_scenePanelWidth - not on the window's edges.
     ImGui::SetNextWindowViewport(mainViewport->ID);

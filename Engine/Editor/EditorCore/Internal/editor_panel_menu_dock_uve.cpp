@@ -192,8 +192,8 @@ void EditorUVE::DrawMenuBarUVE() {
             ImGui::End();
             return;
         }
-        // The logo's box covers the corner (drawn after this row); the row starts beside it.
-        ImGui::Dummy(ImVec2{kEditorTopChromeHeightUVE - ImGui::GetCursorPosX() + 4.0F, 1.0F});
+        // The logo sits cleanly in the title bar; the menu row starts beside it.
+        ImGui::Dummy(ImVec2{kEditorTitleBarHeightUVE + 8.0F - ImGui::GetCursorPosX(), 1.0F});
         ImGui::SameLine(0.0F, 0.0F);
 
         // File/Edit/Assets/GameObject/Plugin/Window/Help all fold into one "Menu" dropdown here in
@@ -264,7 +264,7 @@ void EditorUVE::DrawMenuBarUVE() {
                 // hiding them leaves an editor you can still work in. The three below are regions
                 // beside that canvas, each with a visible way back once hidden.
                 ImGui::MenuItem("Outliner", nullptr, &m_scenePanelVisible);
-                ImGui::MenuItem("Inspector", nullptr, &m_inspectorPanelVisible);
+                ImGui::MenuItem(!m_entityEditSession.has_value() ? "Details" : "Inspector", nullptr, &m_inspectorPanelVisible);
                 ImGui::MenuItem("Content Browser + Debug Dock", nullptr, &m_bottomDockVisible);
                 ImGui::MenuItem("Plugin Tools", nullptr, &m_pluginWindowVisible);
                 ImGui::Separator();
@@ -324,10 +324,12 @@ void EditorUVE::DrawMenuBarUVE() {
     // open Entity Editor, the Retarget preview) gets a plain full-width strip with the play controls.
     const bool sidePanelsShown = m_activeWorkspace != EditorWorkspaceUVE::Scripting && !m_entityEditSession.has_value() &&
                                  !m_retargetPreview.has_value();
+    const EditorLayoutModeUVE layoutMode =
+        m_entityEditSession.has_value() ? EditorLayoutModeUVE::Classic : EditorLayoutModeUVE::Level;
     const EditorChromeLayoutUVE stripLayout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth,
                                      m_inspectorPanelWidth, m_scenePanelVisible,
-                                     m_inspectorPanelVisible);
+                                     m_inspectorPanelVisible, layoutMode, m_outlinerHeightFraction);
     const ImVec2 stripPos = sidePanelsShown ? stripLayout.viewportHeaderPos
                                             : ImVec2{mainViewport->WorkPos.x, mainViewport->WorkPos.y + kEditorTitleBarHeightUVE};
     const ImVec2 stripSize = sidePanelsShown ? stripLayout.viewportHeaderSize : ImVec2{mainViewport->WorkSize.x, kEditorToolbarHeightUVE};
@@ -451,7 +453,7 @@ void EditorUVE::DrawMenuBarUVE() {
         ImGui::End();
     }
 
-    // The Outliner's header, beside the logo: its name where a title row used to be.
+    // The Outliner's header, full width above the left column.
     if (sidePanelsShown && m_scenePanelVisible && stripLayout.outlinerHeaderSize.x > 0.0F) {
         ImGui::SetNextWindowPos(stripLayout.outlinerHeaderPos, ImGuiCond_Always);
         ImGui::SetNextWindowSize(stripLayout.outlinerHeaderSize, ImGuiCond_Always);
@@ -461,33 +463,37 @@ void EditorUVE::DrawMenuBarUVE() {
             const ImVec2 max{min.x + ImGui::GetWindowWidth(), min.y + kEditorToolbarHeightUVE};
             drawList->AddRectFilled(min, max, IM_COL32(18, 21, 29, 255));
             drawList->AddLine(ImVec2{min.x, max.y - 1.0F}, ImVec2{max.x, max.y - 1.0F}, IM_COL32(32, 38, 52, 235), 1.0F);
+            drawList->AddLine(ImVec2{max.x - 1.0F, min.y}, ImVec2{max.x - 1.0F, max.y}, IM_COL32(32, 38, 52, 235), 1.0F);
             drawList->AddText(ImVec2{min.x + 8.0F, min.y + (kEditorToolbarHeightUVE - ImGui::GetTextLineHeight()) * 0.5F},
                               ImGui::GetColorU32(ImGuiCol_Text), "Outliner");
             ImGui::End();
         }
     }
 
-    // The logo's box: the top-left corner, as tall as the title bar and the header row together,
-    // drawn last so it sits over both. A square mark stands in until the studio's logo file exists.
+    // The studio logo mark in the title bar.
     ImGui::SetNextWindowPos(stripLayout.logoPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(stripLayout.logoSize, ImGuiCond_Always);
     if (beginChromeWindow("##uve-logo", chromeFlags & ~ImGuiWindowFlags_NoBringToFrontOnFocus)) {
         ImDrawList* const drawList = ImGui::GetWindowDrawList();
         const ImVec2 min = ImGui::GetWindowPos();
         const ImVec2 max{min.x + stripLayout.logoSize.x, min.y + stripLayout.logoSize.y};
-        drawList->AddRectFilled(min, max, IM_COL32(13, 16, 22, 255));
-        drawList->AddLine(ImVec2{max.x - 1.0F, min.y}, ImVec2{max.x - 1.0F, max.y}, IM_COL32(32, 38, 52, 235), 1.0F);
-        drawList->AddLine(ImVec2{min.x, max.y - 1.0F}, ImVec2{max.x, max.y - 1.0F}, IM_COL32(32, 38, 52, 235), 1.0F);
-        constexpr float kInsetUVE = 7.0F;
-        const ImVec2 markMin{min.x + kInsetUVE, min.y + kInsetUVE};
-        const ImVec2 markMax{max.x - kInsetUVE, max.y - kInsetUVE};
-        drawList->AddRectFilled(markMin, markMax, IM_COL32(32, 48, 80, 255), 5.0F);
-        drawList->AddRect(markMin, markMax, IM_COL32(52, 78, 128, 255), 5.0F, 0, 1.0F);
-        const float fontSize = ImGui::GetFontSize() * 1.6F;
-        const ImVec2 markSize = ImGui::GetFont()->CalcTextSizeA(fontSize, FLT_MAX, 0.0F, "U");
-        drawList->AddText(ImGui::GetFont(), fontSize,
-                          ImVec2{(markMin.x + markMax.x - markSize.x) * 0.5F, (markMin.y + markMax.y - markSize.y) * 0.5F},
-                          IM_COL32(255, 255, 255, 255), "U");
+        drawList->AddRectFilled(min, max, IM_COL32(16, 19, 26, 255));
+        drawList->AddLine(ImVec2{max.x - 1.0F, min.y + 3.0F}, ImVec2{max.x - 1.0F, max.y - 3.0F}, IM_COL32(38, 44, 58, 255), 1.0F);
+        const ImVec2 markCenter{(min.x + max.x - 1.0F) * 0.5F, (min.y + max.y) * 0.5F};
+        const ImVec2 markMin{markCenter.x - 8.0F, markCenter.y - 8.0F};
+        const ImVec2 markMax{markCenter.x + 8.0F, markCenter.y + 8.0F};
+        const std::uintptr_t logoTex = m_uiAssets.GetLogoTextureIdUVE();
+        if (logoTex != 0U) {
+            drawList->AddImage(static_cast<ImTextureID>(logoTex), markMin, markMax);
+        } else {
+            drawList->AddRectFilled(markMin, markMax, IM_COL32(36, 56, 92, 255), 3.0F);
+            drawList->AddRect(markMin, markMax, IM_COL32(60, 95, 155, 255), 3.0F, 0, 1.0F);
+            const float fontSize = ImGui::GetFontSize() * 0.85F;
+            const ImVec2 markSize = ImGui::GetFont()->CalcTextSizeA(fontSize, FLT_MAX, 0.0F, "U");
+            drawList->AddText(ImGui::GetFont(), fontSize,
+                              ImVec2{markCenter.x - markSize.x * 0.5F, markCenter.y - markSize.y * 0.5F},
+                              IM_COL32(245, 248, 255, 255), "U");
+        }
         if (ImGui::IsWindowHovered()) {
             ImGui::SetTooltip("UniVex Engine");
         }
@@ -519,7 +525,9 @@ void EditorUVE::DrawBottomDockContentUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth,
-                                     m_inspectorPanelWidth, m_scenePanelVisible, m_inspectorPanelVisible);
+                                     m_inspectorPanelWidth, m_scenePanelVisible, m_inspectorPanelVisible,
+                                     m_entityEditSession.has_value() ? EditorLayoutModeUVE::Classic : EditorLayoutModeUVE::Level,
+                                     m_outlinerHeightFraction);
     // ONE window, and this is the point of the merge. Content, Output, Console, Capture, Profiler
     // and Audio used to be six differently-named windows taking turns being visible. That is a
     // different window rather than a different tab: switching tabs threw away each one's scroll
@@ -612,7 +620,9 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth,
-                                     m_inspectorPanelWidth, m_scenePanelVisible, m_inspectorPanelVisible);
+                                     m_inspectorPanelWidth, m_scenePanelVisible, m_inspectorPanelVisible,
+                                     m_entityEditSession.has_value() ? EditorLayoutModeUVE::Classic : EditorLayoutModeUVE::Level,
+                                     m_outlinerHeightFraction);
     constexpr ImGuiWindowFlags handleFlags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse |
@@ -632,6 +642,33 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
     // ---- The three seams. Each grip straddles its divider, so a drag keeps tracking when the
     // pointer wanders a pixel or two onto either neighbour. The width the layout will use next
     // frame comes from the same clamp the drag applies, so the handle cannot outrun the panel.
+    if (layout.outlinerDetailsSplitterSize.x > 0.0F) {
+        if (beginHandle("##outliner-details-splitter", layout.outlinerDetailsSplitterPos,
+                        layout.outlinerDetailsSplitterSize)) {
+            ImGui::InvisibleButton("##grip-outliner-details", layout.outlinerDetailsSplitterSize);
+            const bool hot = ImGui::IsItemHovered() || ImGui::IsItemActive();
+            if (hot) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+                const ImVec2 gripMin = ImGui::GetItemRectMin();
+                const ImVec2 gripMax = ImGui::GetItemRectMax();
+                const float seamY = (gripMin.y + gripMax.y) * 0.5F;
+                ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{gripMin.x, seamY - 1.0F},
+                                                          ImVec2{gripMax.x, seamY + 1.0F},
+                                                          IM_COL32(90, 150, 215, 220));
+            }
+            if (ImGui::IsItemActive()) {
+                if (io.MouseDelta.y != 0.0F) {
+                    const float columnHeight = layout.sceneSize.y + layout.inspectorSize.y;
+                    if (columnHeight > 180.0F) {
+                        const float newOutlinerH =
+                            std::clamp(layout.sceneSize.y + io.MouseDelta.y, 80.0F, columnHeight - 80.0F);
+                        m_outlinerHeightFraction = newOutlinerH / columnHeight;
+                    }
+                }
+            }
+        }
+        ImGui::End();
+    }
     if (layout.sceneSplitterSize.x > 0.0F) {
         if (beginHandle("##left-scene-splitter", layout.sceneSplitterPos, layout.sceneSplitterSize)) {
             ImGui::InvisibleButton("##grip-left", layout.sceneSplitterSize);
@@ -764,8 +801,9 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth,
-                                     m_inspectorPanelWidth, m_scenePanelVisible,
-                                     m_inspectorPanelVisible);
+                                     m_inspectorPanelWidth, m_scenePanelVisible, m_inspectorPanelVisible,
+                                     m_entityEditSession.has_value() ? EditorLayoutModeUVE::Classic : EditorLayoutModeUVE::Level,
+                                     m_outlinerHeightFraction);
     constexpr ImGuiWindowFlags stripFlags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse |

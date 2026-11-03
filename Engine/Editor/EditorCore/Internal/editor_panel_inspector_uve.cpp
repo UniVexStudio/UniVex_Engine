@@ -145,10 +145,12 @@ void EditorUVE::DrawInspectorPanelUVE() {
         return;
     }
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+    const EditorLayoutModeUVE layoutMode =
+        m_entityEditSession.has_value() ? EditorLayoutModeUVE::Classic : EditorLayoutModeUVE::Level;
     const EditorChromeLayoutUVE layout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth,
                                      m_inspectorPanelWidth, m_scenePanelVisible,
-                                     m_inspectorPanelVisible);
+                                     m_inspectorPanelVisible, layoutMode, m_outlinerHeightFraction);
     // Always: the rect comes from the chrome layout every frame. Dragging happens on the seam in
     // DrawEditorChromeHandlesUVE(), which writes m_inspectorPanelWidth - not on the window's edges.
     ImGui::SetNextWindowViewport(mainViewport->ID);
@@ -163,8 +165,9 @@ void EditorUVE::DrawInspectorPanelUVE() {
     constexpr ImGuiWindowFlags flags = kLayoutOwnedPanelFlagsUVE;
     // Match the Outliner panel's neutral charcoal surface. Inputs and nested fields keep the
     // darker FrameBg/ChildBg layers from the shared theme, so depth and editability remain clear.
+    const bool isLevelEditor = !m_entityEditSession.has_value();
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{0.075F, 0.082F, 0.102F, 1.0F});
-    ImGui::Begin(kPanelLabelInspectorUVE, nullptr, flags);
+    ImGui::Begin(isLevelEditor ? kPanelLabelDetailsUVE : kPanelLabelInspectorUVE, nullptr, flags);
 
     // Soft modern styling for the tab bar
     ImGui::PushStyleColor(ImGuiCol_Tab, ImVec4{0.095F, 0.106F, 0.133F, 1.0F});
@@ -189,7 +192,7 @@ void EditorUVE::DrawInspectorPanelUVE() {
                 ImGui::EndTabItem();
             }
         };
-        drawTab("Inspector", EditorRightPanelTabUVE::Inspector);
+        drawTab(isLevelEditor ? "Details" : "Inspector", EditorRightPanelTabUVE::Inspector);
         drawTab("Import", EditorRightPanelTabUVE::Import);
         drawTab("Events", EditorRightPanelTabUVE::Events);
         ImGui::EndTabBar();
