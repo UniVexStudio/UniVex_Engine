@@ -267,16 +267,12 @@ bool EditorUVE::OpenUVScriptPathUVE(const std::filesystem::path& path) {
     }
     m_openUVScript->entity = Scene::kInvalidEntityUVE;
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    for (const Scene::EntityUVE entity : entityManager.AliveEntitiesUVE()) {
-        if (entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
-            const std::string& scriptPath =
-                entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath;
-            if (scriptPath == pathStr || pathStr.ends_with(scriptPath)) {
-                m_openUVScript->entity = entity;
-                break;
-            }
+    entityManager.ForEachUVE<Scene::ScriptComponentUVE>([&](const Scene::EntityUVE entity, const Scene::ScriptComponentUVE& script) {
+        if (m_openUVScript->entity == Scene::kInvalidEntityUVE &&
+            (script.scriptAssetPath == pathStr || pathStr.ends_with(script.scriptAssetPath))) {
+            m_openUVScript->entity = entity;
         }
-    }
+    });
     RecheckUVScriptUVE(*m_openUVScript, entityManager);
     m_activeWorkspace = EditorWorkspaceUVE::Scripting;
     return true;
