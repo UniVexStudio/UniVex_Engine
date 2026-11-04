@@ -848,7 +848,7 @@ bool EditorUVE::DrawInspectorFoldUVE(const char* const label, const std::string&
         const float arrowOffset = ImGui::GetFontSize() + ImGui::GetStyle().ItemInnerSpacing.x + 4.0F;
         const float iconX = rectMin.x + arrowOffset;
         const float iconY = std::floor(rectMin.y + (rectMax.y - rectMin.y - iconSize) * 0.5F);
-        ImGui::GetWindowDrawList()->AddImage(reinterpret_cast<ImTextureID>(iconTextureId),
+        ImGui::GetWindowDrawList()->AddImage(static_cast<ImTextureID>(iconTextureId),
                                              ImVec2{iconX, iconY},
                                              ImVec2{iconX + iconSize, iconY + iconSize});
     }
