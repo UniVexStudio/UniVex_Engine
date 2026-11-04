@@ -15,18 +15,41 @@ import sys
 from pathlib import Path
 
 # Directory name -> EditorIconGroupUVE enumerator, in the enum's order.
-GROUPS = {"objects": "Object", "object_categories": "ObjectCategory", "content_types": "ContentType"}
+GROUPS = {
+    "objects": "Object",
+    "object_categories": "ObjectCategory",
+    "content_types": "ContentType",
+    "object_cards": "ObjectCard",
+    "content_type_cards": "ContentTypeCard",
+    "components": "Component",
+}
 BYTES_PER_LINE = 16
 
 
 def main():
-    if len(sys.argv) < 4:
+    if len(sys.argv) < 3:
         print(__doc__, file=sys.stderr)
         return 2
     output, root = Path(sys.argv[1]), Path(sys.argv[2]).resolve()
     entries = []
-    for argument in sys.argv[3:]:
-        path = Path(argument).resolve()
+    png_paths = []
+    if len(sys.argv) == 3:
+        for group in GROUPS:
+            group_dir = root / group
+            if group_dir.is_dir():
+                png_paths.extend(group_dir.glob("*.png"))
+    else:
+        for argument in sys.argv[3:]:
+            if argument.startswith("@"):
+                for line in Path(argument[1:]).read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line:
+                        png_paths.append(Path(line))
+            else:
+                png_paths.append(Path(argument))
+
+    for path in png_paths:
+        path = path.resolve()
         group = path.parent.name
         if path.parent.parent != root or group not in GROUPS or path.suffix != ".png":
             print(f"embed_editor_icons.py: {path} is not <icon_root>/<group>/<id>.png", file=sys.stderr)

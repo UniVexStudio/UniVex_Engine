@@ -51,6 +51,7 @@
 #include "uve/asset/jpeg_metadata_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
 #include "uve/asset/material_asset_uve.h"
+#include "uve/asset/shader_asset_uve.h"
 #include "uve/asset/png_metadata_uve.h"
 #include "uve/asset/tga_metadata_uve.h"
 #include "uve/asset/texture_asset_uve.h"
@@ -998,8 +999,39 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
         }
         return folder;
     }
+    if (item->action == ContentCatalogueActionUVE::ScriptAsset) {
+        const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
+        const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvs");
+        const std::string text = "entity " + path.stem().generic_string() + " : Object\n\non ready:\n    print(\"Ready\")\n\non tick(dt):\n    pass\n";
+        if (!WriteProjectTextFileUVE(path.generic_string(), text)) {
+            return std::nullopt;
+        }
+        return path;
+    }
+    if (item->action == ContentCatalogueActionUVE::MaterialAsset) {
+        const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
+        const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvmaterial");
+        Asset::MaterialAssetUVE mat{};
+        mat.kind = Asset::MaterialKindUVE::Standard;
+        if (!Asset::SaveMaterialAssetUVE(mat, path)) {
+            return std::nullopt;
+        }
+        m_services->GetAssetDatabaseUVE().RegisterUVE(path);
+        return path;
+    }
+    if (item->action == ContentCatalogueActionUVE::ShaderAsset) {
+        const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
+        const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvshader");
+        Asset::ShaderAssetUVE shader{};
+        if (!Asset::SaveShaderAssetUVE(shader, path)) {
+            return std::nullopt;
+        }
+        m_services->GetAssetDatabaseUVE().RegisterUVE(path);
+        return path;
+    }
     if (item->action == ContentCatalogueActionUVE::SceneAsset) {
-        const std::filesystem::path path = MakeUniqueContentPathUVE(directory, item->label, ".uvscene");
+        const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
+        const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvscene");
         Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
         Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
         const Scene::EntityUVE root = CreateObjectDefinitionEntityInternalUVE(
@@ -1030,7 +1062,8 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
     }
 
     if (item->action == ContentCatalogueActionUVE::LibraryAsset) {
-        const std::filesystem::path path = MakeUniqueContentPathUVE(directory, item->label, ".uvanimlib");
+        const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
+        const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvanimlib");
         Asset::AnimationLibraryAssetUVE library;
         library.libraryId = path.stem().generic_string();
         if (library.libraryId.empty()) {
@@ -1048,7 +1081,8 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
 
     // The tree is built in the live entity manager, saved, and destroyed again in this call: it is
     // never a document object, never selected and never in the undo history.
-    const std::filesystem::path path = MakeUniqueContentPathUVE(directory, item->label, ".uventity");
+    const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
+    const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uventity");
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
     std::vector<Scene::EntityUVE> built;

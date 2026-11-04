@@ -2071,7 +2071,7 @@ private:
     void DrawObjectPickerUVE();
     // A collapsing header (`asHeader`) or tree object whose open state lives in m_inspectorFoldOpen.
     bool DrawInspectorFoldUVE(const char* label, const std::string& key, bool defaultOpen, bool asHeader,
-                              int flags);
+                              int flags, std::uintptr_t iconTextureId = 0U);
     void DrawHierarchyVisibilityToggleUVE(Scene::EntityUVE entity, bool rowHovered);
     void DrawHierarchyFolderLockToggleUVE(Scene::EntityUVE entity, bool rowHovered);
     // Right-click menu on an Inspector section header: Copy / Paste / Reset. `entry` null means

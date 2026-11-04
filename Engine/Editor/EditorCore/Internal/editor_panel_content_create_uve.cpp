@@ -365,7 +365,21 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
     };
     const auto drawItem = [&](const ContentCatalogueItemUVE& item, const bool showGroup) {
         ImGui::PushID(item.id.data(), item.id.data() + item.id.size());
-        DrawObjectPickerIconUVE(m_uiAssets.GetObjectIconTextureIdUVE(GetContentCatalogueIconKindUVE(item)));
+        std::uintptr_t iconId = 0U;
+        if (item.action == ContentCatalogueActionUVE::MaterialAsset) {
+            iconId = m_uiAssets.GetContentTypeCardIconTextureIdUVE("Material");
+        } else if (item.action == ContentCatalogueActionUVE::ShaderAsset) {
+            iconId = m_uiAssets.GetContentTypeCardIconTextureIdUVE("Shader");
+        } else if (item.action == ContentCatalogueActionUVE::ScriptAsset) {
+            iconId = m_uiAssets.GetContentTypeCardIconTextureIdUVE("Script");
+        } else if (item.action == ContentCatalogueActionUVE::Folder) {
+            iconId = m_uiAssets.GetContentTypeCardIconTextureIdUVE("folder");
+        } else if (item.action == ContentCatalogueActionUVE::LibraryAsset) {
+            iconId = m_uiAssets.GetContentTypeCardIconTextureIdUVE("AnimationLibrary");
+        } else {
+            iconId = m_uiAssets.GetObjectCardIconTextureIdUVE(GetContentCatalogueIconKindUVE(item));
+        }
+        DrawObjectPickerIconUVE(iconId);
         const std::string label{item.label};
         const std::string group = showGroup ? std::string{item.group} : std::string{};
         ImGui::BeginDisabled(!allowed);
@@ -411,7 +425,7 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
             }
             ImGui::Separator();
         }
-        // "Basic" stays open at the top; every other group is a submenu with its first item's icon.
+        // "CREATE BASIC ASSET" stays open at the top; every other group is a submenu with its first item's icon.
         for (const std::string_view group : GetContentCatalogueGroupsUVE()) {
             const std::span<const ContentCatalogueItemUVE> items = GetContentCatalogueItemsUVE();
             const auto firstInGroup = std::find_if(items.begin(), items.end(),
@@ -419,7 +433,8 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
             if (firstInGroup == items.end()) {
                 continue;
             }
-            if (group == "Basic") {
+            if (group == "CREATE BASIC ASSET" || group == "Basic") {
+                ImGui::TextDisabled("CREATE BASIC ASSET");
                 for (const ContentCatalogueItemUVE& item : items) {
                     if (item.group == group) {
                         drawItem(item, false);
@@ -434,7 +449,7 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
                 }
                 continue;
             }
-            DrawObjectPickerIconUVE(m_uiAssets.GetObjectIconTextureIdUVE(GetContentCatalogueIconKindUVE(*firstInGroup)));
+            DrawObjectPickerIconUVE(m_uiAssets.GetObjectCardIconTextureIdUVE(GetContentCatalogueIconKindUVE(*firstInGroup)));
             const std::string groupLabel{group};
             if (ImGui::BeginMenu(groupLabel.c_str())) {
                 for (const ContentCatalogueItemUVE& item : items) {

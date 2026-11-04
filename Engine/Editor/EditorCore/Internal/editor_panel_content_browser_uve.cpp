@@ -1108,6 +1108,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             const char* typeLabel = "";
             const EditorModelSourceInfoUVE* modelSource = nullptr;
             std::uintptr_t icon = 0U;
+            std::uintptr_t cardIcon = 0U;
         };
         const auto lookOf = [this](const Asset::ProjectFileEntryUVE& entry) {
             ItemLookUVE look;
@@ -1127,14 +1128,17 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                     : 0U;
             if (preview != 0U) {
                 look.icon = preview;
+                look.cardIcon = preview;
             } else if (look.type == ContentBrowserItemTypeUVE::Entity ||
                        look.type == ContentBrowserItemTypeUVE::Prefab) {
                 const std::optional<Scene::Objects::SceneObjectKindUVE> objectKind =
                     GetEntityAssetIconKindUVE(entry.relativePath);
-                look.icon = m_uiAssets.GetObjectIconTextureIdUVE(
-                    objectKind.value_or(Scene::Objects::SceneObjectKindUVE::Object3D));
+                const auto kind = objectKind.value_or(Scene::Objects::SceneObjectKindUVE::Object3D);
+                look.icon = m_uiAssets.GetObjectIconTextureIdUVE(kind);
+                look.cardIcon = m_uiAssets.GetObjectCardIconTextureIdUVE(kind);
             } else {
                 look.icon = m_uiAssets.GetContentTypeIconTextureIdUVE(look.typeLabel);
+                look.cardIcon = m_uiAssets.GetContentTypeCardIconTextureIdUVE(look.typeLabel);
             }
             return look;
         };
@@ -1287,10 +1291,11 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             constexpr ImU32 thumbBg = IM_COL32(16, 17, 21, 255);
             drawList.AddRectFilled(thumbMin, thumbMax, thumbBg, rounding * 0.8F);
 
-            if (look.icon != 0U) {
+            const std::uintptr_t tileTexture = look.cardIcon != 0U ? look.cardIcon : look.icon;
+            if (tileTexture != 0U) {
                 const float iconX = std::floor(thumbMin.x + (thumbMax.x - thumbMin.x - iconSize) * 0.5F);
                 const float iconY = std::floor(thumbMin.y + (thumbMax.y - thumbMin.y - iconSize) * 0.5F);
-                drawList.AddImage(static_cast<ImTextureID>(look.icon), ImVec2{iconX, iconY},
+                drawList.AddImage(static_cast<ImTextureID>(tileTexture), ImVec2{iconX, iconY},
                                   ImVec2{iconX + iconSize, iconY + iconSize});
             }
 
