@@ -155,7 +155,7 @@ constexpr std::array<ContentCatalogueItemUVE, 41> kItems{{
     {"animation-tree", "Animation Graph", "Animation", "Blends clips with a graph and a state machine",
      Action::EntityAsset, kAnimationGraph, Scene::ViewportDimensionUVE::ThreeD, "AnimationGraph"},
     {"animation-library", "Animation Library", "Animation", "A named collection of animation clips that sequencers load from",
-     Action::LibraryAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "AnimationLibrary"},
+     Action::LibraryAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "Animation Library"},
 
     {"audio", "Audio Source 3D", "Audio, VFX & UI", "An AudioSource3D that plays a clip in 3D", Action::EntityAsset,
      kAudio, Scene::ViewportDimensionUVE::ThreeD, "AudioSource"},

@@ -93,6 +93,55 @@ def build(key):
     return ic.svg()
 
 
+def accent_for_key(key):
+    group, icon_id = key
+    title, section, _ = ICONS[key]
+    if group == CONTENT_TYPES:
+        if icon_id in ("mesh", "model"):
+            return "#F59E0B"
+        if icon_id in ("material",):
+            return "#22C55E"
+        if icon_id in ("shader",):
+            return "#06B6D4"
+        if icon_id in ("texture",):
+            return "#EF4444"
+        if icon_id in ("script",):
+            return "#3B82F6"
+        if icon_id in ("audio",):
+            return "#14B8A6"
+        if icon_id in ("font",):
+            return "#8B5CF6"
+        if icon_id in ("animation",):
+            return "#EC4899"
+        if icon_id in ("folder", "folder_open"):
+            return "#F59E0B"
+        if icon_id in ("entity", "prefab"):
+            return "#0284C7"
+        if icon_id in ("viewport", "viewport_3d", "viewport_2d"):
+            return "#06B6D4"
+        return "#71717A"
+
+    if "mesh" in icon_id or "csg" in icon_id or section == "Mesh" or icon_id in ("box_mesh_3d", "sphere_mesh_3d", "plane_mesh_3d", "mesh_instance_3d"):
+        return "#F59E0B"
+    if section == "Physics" or "body" in icon_id or "joint" in icon_id or "collider" in icon_id or "ray_cast" in icon_id or "shape" in icon_id:
+        return "#F97316"
+    if section == "Lighting" or "light" in icon_id or "sun" in icon_id or "reflection" in icon_id or "probe" in icon_id or "fog" in icon_id or "decal" in icon_id:
+        return "#FACC15"
+    if section == "Camera" or "camera" in icon_id or "spring_arm" in icon_id:
+        return "#8B5CF6"
+    if section == "Animation" or "animation" in icon_id or "skeleton" in icon_id or "bone" in icon_id or "ik" in icon_id:
+        return "#EC4899"
+    if section == "Audio" or "audio" in icon_id or "listener" in icon_id:
+        return "#14B8A6"
+    if section == "UI" or "ui" in icon_id or "canvas" in icon_id or "label" in icon_id:
+        return "#6366F1"
+    if section == "World" or "world" in icon_id or "environment" in icon_id or "level" in icon_id or "partition" in icon_id or "nav" in icon_id or "occluder" in icon_id:
+        return "#10B981"
+    if section == "Gameplay" or icon_id in ("character_3d", "player_3d", "spawn_point_3d", "projectile_3d"):
+        return "#0284C7"
+    return "#38BDF8"
+
+
 def build_card(key):
     group, icon_id = key
     title, section, fn = ICONS[key]
@@ -101,7 +150,8 @@ def build_card(key):
     badge = badge_for_object(icon_id, section) if group == OBJECTS else (
         "3D" if icon_id == "viewport_3d" else ("2D" if icon_id == "viewport_2d" else None)
     )
-    return ic.card_svg(badge=badge)
+    accent = accent_for_key(key)
+    return ic.card_svg(badge=badge, accent_color=accent)
 
 
 # =============================================================================================
@@ -1179,6 +1229,11 @@ def viewport_asset(ic):
 
 @content_type("viewport_3d", "Viewport 3D")
 def viewport_3d_asset(ic):
+    viewport_3d(ic)
+
+
+@content_type("Viewport3D", "Viewport3D")
+def viewport_3d_camel_asset(ic):
     viewport_3d(ic)
 
 
