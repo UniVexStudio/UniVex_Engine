@@ -141,9 +141,9 @@ constexpr std::array<ContentCatalogueItemUVE, 41> kItems{{
      Action::EntityAsset, kFollowCamera, Scene::ViewportDimensionUVE::ThreeD, "Follow Camera"},
 
     {"static-body", "Static 3D", "Physics", "A Static3D: collides but never moves", Action::EntityAsset,
-     kStaticBody, Scene::ViewportDimensionUVE::ThreeD, "StaticBody"},
+     kStaticBody, Scene::ViewportDimensionUVE::ThreeD, "Static 3D"},
     {"rigid-body", "Rigid 3D", "Physics", "A Rigid3D: moved by gravity and forces", Action::EntityAsset,
-     kRigid3D, Scene::ViewportDimensionUVE::ThreeD, "RigidBody"},
+     kRigid3D, Scene::ViewportDimensionUVE::ThreeD, "Rigid 3D"},
     {"collider", "Collider 3D", "Physics", "A Collider3D shape for the body it is placed under", Action::EntityAsset,
      kCollider, Scene::ViewportDimensionUVE::ThreeD, "Collider"},
     {"area", "Area 3D", "Physics", "An Area3D: detects overlaps without blocking", Action::EntityAsset, kArea, Scene::ViewportDimensionUVE::ThreeD, "Area"},
