@@ -220,10 +220,8 @@ bool DrawMagnetButtonUVE(const char* const id, const bool active) {
     const ImVec2 center{pos.x + (size * 0.5F), pos.y + (size * 0.5F)};
     DrawMagnetGlyphUVE(drawList, center, size * 0.65F, active);
     if (hovered) {
-        ImGui::SetTooltip("%s", active ? "Uniform Scale Locked (Magnet ON)
-Scaling any axis scales all axes together."
-                                       : "Uniform Scale Unlocked (Magnet OFF)
-Each axis scales independently.");
+        ImGui::SetTooltip("%s", active ? "Uniform Scale Locked (Magnet ON)\nScaling any axis scales all axes together."
+                                       : "Uniform Scale Unlocked (Magnet OFF)\nEach axis scales independently.");
     }
     return pressed;
 }
@@ -508,8 +506,9 @@ void EditorUVE::DrawInspectorContentUVE() {
     }
 
     if (Scene::IsDocumentCameraEntityUVE(m_services->GetEntityManagerUVE(), m_selectedEntity)) {
+        const std::uintptr_t camIcon = m_uiAssets.GetComponentIconTextureIdUVE("camera");
         const bool previewOpen = DrawInspectorFoldUVE("Camera Preview###camera-preview-section",
-                                                      "section:camera-preview", true, true, 0);
+                                                      "section:camera-preview", true, true, 0, camIcon);
         if (previewOpen) {
             const ImVec2 available = ImGui::GetContentRegionAvail();
             const float previewWidth = std::max(160.0F, available.x);
@@ -607,7 +606,8 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
 
     Scene::TransformComponentUVE edited = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
     // A collapsible section like every other one; its open state is remembered across sessions.
-    const bool transformOpen = DrawInspectorFoldUVE("Transform##transform-section", "section:transform", true, true, 0);
+    const std::uintptr_t transIcon = m_uiAssets.GetComponentIconTextureIdUVE("transform");
+    const bool transformOpen = DrawInspectorFoldUVE("Transform##transform-section", "section:transform", true, true, 0, transIcon);
     DrawInspectorSectionMenuUVE(nullptr, "Transform");
     if (!transformOpen) {
         return;
@@ -829,13 +829,29 @@ bool EditorUVE::IsInspectorFoldOpenUVE(const std::string& key, const bool defaul
 }
 
 bool EditorUVE::DrawInspectorFoldUVE(const char* const label, const std::string& key, const bool defaultOpen,
-                                     const bool asHeader, const int flags) {
+                                     const bool asHeader, const int flags, const std::uintptr_t iconTextureId) {
     // The editor, not Dear ImGui's per-window storage, owns the state: that storage is lost on
     // exit, and the Inspector should reopen the way it was left.
     const bool open = IsInspectorFoldOpenUVE(key, defaultOpen);
     ImGui::SetNextItemOpen(open, ImGuiCond_Always);
     const auto treeFlags = static_cast<ImGuiTreeNodeFlags>(flags);
-    const bool nowOpen = asHeader ? ImGui::CollapsingHeader(label, treeFlags) : ImGui::TreeNodeEx(label, treeFlags);
+    std::string displayLabel;
+    if (iconTextureId != 0U) {
+        displayLabel = "      " + std::string(label);
+    }
+    const char* const renderText = iconTextureId != 0U ? displayLabel.c_str() : label;
+    const bool nowOpen = asHeader ? ImGui::CollapsingHeader(renderText, treeFlags) : ImGui::TreeNodeEx(renderText, treeFlags);
+    if (iconTextureId != 0U) {
+        const ImVec2 rectMin = ImGui::GetItemRectMin();
+        const ImVec2 rectMax = ImGui::GetItemRectMax();
+        const float iconSize = 16.0F;
+        const float arrowOffset = ImGui::GetFontSize() + ImGui::GetStyle().ItemInnerSpacing.x + 4.0F;
+        const float iconX = rectMin.x + arrowOffset;
+        const float iconY = std::floor(rectMin.y + (rectMax.y - rectMin.y - iconSize) * 0.5F);
+        ImGui::GetWindowDrawList()->AddImage(reinterpret_cast<ImTextureID>(iconTextureId),
+                                             ImVec2{iconX, iconY},
+                                             ImVec2{iconX + iconSize, iconY + iconSize});
+    }
     if (nowOpen != open) {
         SetInspectorFoldOpenUVE(key, nowOpen);
     }

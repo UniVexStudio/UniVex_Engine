@@ -441,7 +441,8 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
     const std::string sectionTitle{entry.sectionTitle != nullptr ? entry.sectionTitle(instance)
                                                                  : entry.displayName.c_str()};
     const std::string header = sectionTitle + "###" + std::string(entry.typeId.ToStringUVE());
-    const bool sectionOpen = DrawInspectorFoldUVE(header.c_str(), "section:" + std::string(entry.typeId.ToStringUVE()), true, true, 0);
+    const std::uintptr_t compIcon = m_uiAssets.GetComponentIconTextureIdUVE(entry.typeId.ToStringUVE());
+    const bool sectionOpen = DrawInspectorFoldUVE(header.c_str(), "section:" + std::string(entry.typeId.ToStringUVE()), true, true, 0, compIcon);
     DrawInspectorSectionMenuUVE(&entry, sectionTitle.c_str());
     if (sectionOpen) {
         if (entry.typeId == "component.mesh") {
@@ -477,8 +478,9 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
             ImGui::PushID(child->typeId.ToCStringUVE());
             constexpr ImGuiTreeNodeFlags kNestedFlags = ImGuiTreeNodeFlags_SpanAvailWidth |
                                                         ImGuiTreeNodeFlags_FramePadding;
+            const std::uintptr_t childIcon = m_uiAssets.GetComponentIconTextureIdUVE(child->typeId.ToStringUVE());
             if (DrawInspectorFoldUVE(child->displayName.c_str(), "nested:" + std::string(child->typeId.ToStringUVE()), true, false,
-                                     kNestedFlags)) {
+                                     kNestedFlags, childIcon)) {
                 DrawMetadataPropertyRowsUVE(*child, entityManager.GetComponentPointerUVE(entity, child->typeIndex));
                 ImGui::TreePop();
             }

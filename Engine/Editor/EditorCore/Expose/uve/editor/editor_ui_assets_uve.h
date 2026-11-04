@@ -28,11 +28,17 @@ public:
     [[nodiscard]] std::uintptr_t GetGeneralIconTextureIdUVE(std::string_view iconId) const noexcept;
     /// The icon of a scene object type. Every object type has one; 0 only before InitializeUVE().
     [[nodiscard]] std::uintptr_t GetObjectIconTextureIdUVE(Scene::Objects::SceneObjectKindUVE kind) const noexcept;
+    /// The studio card icon of a scene object type (rectangular frame + auto badge, used in +Add and thumbnails).
+    [[nodiscard]] std::uintptr_t GetObjectCardIconTextureIdUVE(Scene::Objects::SceneObjectKindUVE kind) const noexcept;
     /// The icon of an object palette category, by its display name ("Physics"). 0 when unknown.
     [[nodiscard]] std::uintptr_t GetObjectCategoryIconTextureIdUVE(std::string_view category) const noexcept;
     /// The icon of a Content Browser type, by its ContentBrowserItemTypeUVE label (editor_uve.h),
     /// e.g. "Mesh" or "Folder", or "folder_open" for an expanded folder. 0 when unknown.
     [[nodiscard]] std::uintptr_t GetContentTypeIconTextureIdUVE(std::string_view typeId) const noexcept;
+    /// The studio card icon of a Content Browser type (used in thumbnails and +Add).
+    [[nodiscard]] std::uintptr_t GetContentTypeCardIconTextureIdUVE(std::string_view typeId) const noexcept;
+    /// The icon of an ECS component by component type name ("component_transform", "Transform", etc.).
+    [[nodiscard]] std::uintptr_t GetComponentIconTextureIdUVE(std::string_view componentId) const noexcept;
 
     /// Uploads an arbitrary RGBA8 image (e.g. a decoded Asset::TextureAssetUVE) as a standalone GL
     /// texture, for editor-owned dynamic content the fixed baked-icon set above doesn't cover
@@ -51,6 +57,7 @@ private:
     std::vector<std::uintptr_t> m_iconTextureIds;
     // The same textures again, indexed by object kind: the hierarchy asks once per row per frame.
     std::array<std::uintptr_t, Scene::Objects::kMaximumSceneObjectDescriptorsUVE> m_objectIconTextureIds{};
+    std::array<std::uintptr_t, Scene::Objects::kMaximumSceneObjectDescriptorsUVE> m_objectCardIconTextureIds{};
 };
 
 } // namespace UVE::Editor

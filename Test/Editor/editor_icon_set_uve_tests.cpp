@@ -42,6 +42,18 @@ TEST(EditorIconSetUVETest, AnOpenFolderHasItsOwnIcon) {
               FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "folder"));
 }
 
+TEST(EditorIconSetUVETest, ObjectCardsAndContentTypeCardsAndComponentsExist) {
+    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ObjectCard, "character_3d"), nullptr);
+    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ObjectCard, "player_3d"), nullptr);
+    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ObjectCard, "camera_3d"), nullptr);
+    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentTypeCard, "material"), nullptr);
+    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentTypeCard, "shader"), nullptr);
+    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentTypeCard, "folder"), nullptr);
+    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Component, "component_transform"), nullptr);
+    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Component, "component_mesh"), nullptr);
+    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Component, "component_collider"), nullptr);
+}
+
 TEST(EditorIconSetUVETest, LookupIsPerGroupAndIgnoresOnlyCase) {
     // "script" is both an object and a content type; the group decides which picture comes back.
     const EditorIconSourceUVE* const object = FindEditorIconSourceUVE(EditorIconGroupUVE::Object, "script");
