@@ -571,6 +571,29 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
                               "Game > Player).");
         }
     }
+    std::string extLower = contextEntry.relativePath.extension().string();
+    std::ranges::transform(extLower, extLower.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const bool isScript = extLower == ".uvs";
+    const bool isShader = extLower == ".uvshader";
+    if (isScript) {
+        ImGui::BeginDisabled(!allowed);
+        if (ImGui::MenuItem("Edit Script")) {
+            static_cast<void>(OpenUVScriptPathUVE(absolute));
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
+            ImGui::SetTooltip("Open this UVScript in the Script Editor (also: double-click)");
+        }
+    }
+    if (isShader) {
+        if (ImGui::MenuItem("Edit Shader")) {
+            m_selectedProjectFile = contextEntry;
+            m_selectedAsset.reset();
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+            ImGui::SetTooltip("Inspect and edit shader source code in the Inspector (also: double-click)");
+        }
+    }
     if (directory && ImGui::MenuItem("Open")) {
         m_contentBrowserDirectory = contextEntry.relativePath;
         m_contentBrowserShelf.clear();
@@ -619,8 +642,6 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         }
         ImGui::EndDisabled();
     }
-    std::string extLower = contextEntry.relativePath.extension().string();
-    std::ranges::transform(extLower, extLower.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     const bool isUvanim = extLower == ".uvanim";
     const bool canRetargetItem = isUvanim || uvmodel || (sourceInfo != nullptr && (sourceInfo->rigged || sourceInfo->hasSkeleton));
     if (canRetargetItem) {
@@ -637,7 +658,7 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
             ImGui::SetTooltip("Conform skeleton and animations to the UniVex humanoid (auto-generating any missing bones).");
         }
     }
-    if (entityAsset || directory || modelReady || uvmodel || placeable || canRetargetItem) {
+    if (entityAsset || directory || modelReady || uvmodel || placeable || canRetargetItem || isScript || isShader) {
         ImGui::Separator();
     }
 

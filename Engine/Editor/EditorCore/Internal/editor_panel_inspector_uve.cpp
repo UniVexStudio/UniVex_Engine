@@ -25,6 +25,8 @@
 #include <array>
 #include <cfloat>
 #include <cmath>
+#include <cstddef>
+#include <cstdio>
 #include <cstdint>
 #include <filesystem>
 #include <system_error>
@@ -42,6 +44,8 @@
 #include "editor_object_icons_uve.h"
 
 #include "uve/asset/asset_import_queue_uve.h"
+#include "uve/asset/material_asset_uve.h"
+#include "uve/asset/shader_asset_uve.h"
 #include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
@@ -429,6 +433,94 @@ void EditorUVE::DrawContentAssetCardInspectorUVE(const Asset::ProjectFileEntryUV
         ImGui::Spacing();
     }
 
+    if (type == ContentBrowserItemTypeUVE::Shader) {
+        if (!m_openShaderAsset.has_value() || m_openShaderAsset->path != fullPath) {
+            ShaderAssetEditStateUVE editState;
+            editState.path = fullPath;
+            if (!Asset::LoadShaderAssetUVE(fullPath, editState.shader)) {
+                editState.shader.stage = Asset::ShaderStageKindUVE::Fragment;
+                editState.shader.entryPointName = "main";
+                editState.shader.sourceCode =
+                    "// UniVex Custom Shader\n"
+                    "#version 450\n\n"
+                    "layout(location = 0) in vec2 v_TexCoord;\n"
+                    "layout(location = 0) out vec4 outColor;\n\n"
+                    "void main() {\n"
+                    "    outColor = vec4(1.0, 1.0, 1.0, 1.0);\n"
+                    "}\n";
+            }
+            editState.isDirty = false;
+            m_openShaderAsset = std::move(editState);
+        }
+
+        ShaderAssetEditStateUVE& edit = *m_openShaderAsset;
+        ImGui::TextDisabled("SHADER CONFIGURATION");
+
+        const char* const stages[] = {"Vertex", "Fragment", "Compute"};
+        int stageIndex = static_cast<int>(edit.shader.stage);
+        if (stageIndex < 0 || stageIndex > 2) stageIndex = 1;
+        if (ImGui::Combo("Stage", &stageIndex, stages, 3)) {
+            edit.shader.stage = static_cast<Asset::ShaderStageKindUVE>(stageIndex);
+            edit.isDirty = true;
+        }
+
+        char entryBuf[128];
+        std::snprintf(entryBuf, sizeof(entryBuf), "%s", edit.shader.entryPointName.c_str());
+        if (ImGui::InputText("Entry Point", entryBuf, sizeof(entryBuf))) {
+            edit.shader.entryPointName = entryBuf;
+            edit.isDirty = true;
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::TextDisabled("SHADER SOURCE CODE");
+        if (edit.isDirty) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4{0.95F, 0.75F, 0.25F, 1.0F}, "(Unsaved Changes)");
+        }
+
+        struct ShaderInputTextState final {
+            std::string* buffer = nullptr;
+        } state{&edit.shader.sourceCode};
+
+        const auto resizeCallback = [](ImGuiInputTextCallbackData* data) -> int {
+            if (data->EventFlag == ImGuiInputTextFlags_CallbackResize) {
+                auto* cbState = static_cast<ShaderInputTextState*>(data->UserData);
+                cbState->buffer->resize(static_cast<std::size_t>(data->BufTextLen));
+                data->Buf = cbState->buffer->data();
+            }
+            return 0;
+        };
+
+        const float boxHeight = std::clamp(ImGui::GetContentRegionAvail().y - 80.0F, 160.0F, 360.0F);
+        if (ImGui::InputTextMultiline("##shaderSourceText", edit.shader.sourceCode.data(),
+                                      edit.shader.sourceCode.capacity() + 1U,
+                                      ImVec2{-1.0F, boxHeight},
+                                      ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_CallbackResize,
+                                      resizeCallback, &state)) {
+            edit.isDirty = true;
+        }
+
+        const bool saveKey = ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S);
+        if (ImGui::Button("Save Shader Code", ImVec2{-1.0F, 28.0F}) || (saveKey && edit.isDirty)) {
+            if (Asset::SaveShaderAssetUVE(edit.shader, fullPath)) {
+                edit.isDirty = false;
+                m_services->GetAssetDatabaseUVE().RegisterUVE(fullPath);
+                m_contentStatusMessage = "Saved shader " + filename;
+            } else {
+                m_contentStatusMessage = "Failed to save shader " + filename;
+            }
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Save shader changes (Ctrl+S)");
+        }
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+    }
+
     // Action buttons
     ImGui::TextDisabled("ACTIONS");
     if (type == ContentBrowserItemTypeUVE::Entity || type == ContentBrowserItemTypeUVE::Prefab) {
@@ -444,6 +536,27 @@ void EditorUVE::DrawContentAssetCardInspectorUVE(const Asset::ProjectFileEntryUV
     } else if (type == ContentBrowserItemTypeUVE::Scene) {
         if (ImGui::Button("Open Scene", ImVec2{-1.0F, 28.0F})) {
             static_cast<void>(OpenSceneAssetUVE(fullPath));
+        }
+    } else if (type == ContentBrowserItemTypeUVE::Script) {
+        if (ImGui::Button("Edit Script", ImVec2{-1.0F, 28.0F})) {
+            static_cast<void>(OpenUVScriptPathUVE(fullPath));
+        }
+    } else if (type == ContentBrowserItemTypeUVE::Shader) {
+        if (ImGui::Button("Create Material with this Shader", ImVec2{-1.0F, 28.0F})) {
+            const std::filesystem::path matDir = fullPath.parent_path();
+            const std::filesystem::path matPath =
+                MakeUniqueContentPathUVE(matDir, "M_" + entry.relativePath.stem().string(), ".uvmaterial");
+            Asset::MaterialAssetUVE mat{};
+            mat.kind = Asset::MaterialKindUVE::Shader;
+            mat.useCustomShaderCode = true;
+            if (entry.registeredAssetGuid.has_value()) {
+                mat.customShader = *entry.registeredAssetGuid;
+            }
+            if (Asset::SaveMaterialAssetUVE(mat, matPath)) {
+                m_services->GetAssetDatabaseUVE().RegisterUVE(matPath);
+                RefreshProjectFileIndexUVE();
+                m_contentStatusMessage = "Created material " + matPath.filename().string();
+            }
         }
     }
 

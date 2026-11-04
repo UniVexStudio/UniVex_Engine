@@ -250,6 +250,38 @@ bool EditorUVE::OpenUVScriptForEntityUVE(const Scene::EntityUVE entity) {
     return true;
 }
 
+bool EditorUVE::OpenUVScriptPathUVE(const std::filesystem::path& path) {
+    if (m_state != EditorStateUVE::Running || m_services == nullptr) {
+        return false;
+    }
+    const std::string pathStr = path.generic_string();
+    if (!pathStr.ends_with(".uvs")) {
+        return false;
+    }
+    if (!m_openUVScript.has_value() || m_openUVScript->path != pathStr) {
+        UVScriptDocumentUVE document;
+        document.path = pathStr;
+        document.text = ReadProjectTextFileUVE(path).value_or(std::string{});
+        document.savedText = document.text;
+        m_openUVScript = std::move(document);
+    }
+    m_openUVScript->entity = Scene::kInvalidEntityUVE;
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    for (const Scene::EntityUVE entity : entityManager.AliveEntitiesUVE()) {
+        if (entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
+            const std::string& scriptPath =
+                entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath;
+            if (scriptPath == pathStr || pathStr.ends_with(scriptPath)) {
+                m_openUVScript->entity = entity;
+                break;
+            }
+        }
+    }
+    RecheckUVScriptUVE(*m_openUVScript, entityManager);
+    m_activeWorkspace = EditorWorkspaceUVE::Scripting;
+    return true;
+}
+
 const std::optional<EditorUVE::UVScriptDocumentUVE>& EditorUVE::GetOpenUVScriptUVE() const noexcept {
     return m_openUVScript;
 }

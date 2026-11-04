@@ -89,14 +89,14 @@ constexpr std::array<ContentCatalogueMontageEntryUVE, 6> kMontageEntries{{
 
 constexpr std::array<ContentCatalogueItemUVE, 41> kItems{{
     {"folder", "Folder", "CREATE BASIC ASSET", "A new folder here in Content", Action::Folder, {}, Scene::ViewportDimensionUVE::ThreeD, "Folder"},
-    {"basic_script", "Basic Script", "CREATE BASIC ASSET", "A new UVScript file (.uvs) ready to edit", Action::ScriptAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "Script"},
+    {"basic_script", "New Script", "CREATE BASIC ASSET", "A new UVScript file (.uvs) ready to edit", Action::ScriptAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "Script"},
     {"viewport_3d", "Viewport 3D", "CREATE BASIC ASSET",
      "A new 3D level: a Viewport ready for objects, empty until you add one", Action::SceneAsset, kViewport3D, Scene::ViewportDimensionUVE::ThreeD, "Viewport3D"},
     {"viewport_2d", "Viewport 2D", "CREATE BASIC ASSET",
      "A new 2D scene: a Viewport authored flat on the XY plane, saved as 2D in the file",
      Action::SceneAsset, kViewport2D, Scene::ViewportDimensionUVE::TwoD, "Viewport2D"},
     {"material", "Material", "CREATE BASIC ASSET", "A new standard PBR material asset", Action::MaterialAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "M_Standard"},
-    {"shader_script", "Shader Script", "CREATE BASIC ASSET", "A new custom shader code asset", Action::ShaderAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "NewShader"},
+    {"shader_script", "New Shader", "CREATE BASIC ASSET", "A new custom shader code asset", Action::ShaderAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "NewShader"},
     {"empty", "Empty Entity 3D", "CREATE BASIC ASSET", "A bare Object3D to build your own tree on", Action::EntityAsset, kEmpty, Scene::ViewportDimensionUVE::ThreeD, "Empty"},
 
     // First in the group: the Montage is the way in, and the six items under it are the shortcut
