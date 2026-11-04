@@ -39,6 +39,7 @@
 #include "uve/editor/editor_audio_mixer_uve.h"
 #include "uve/editor/editor_settings_uve.h"
 #include "uve/asset/animation_library_asset_uve.h"
+#include "uve/asset/shader_asset_uve.h"
 #include "uve/asset/gltf_skeleton_uve.h"
 #include "uve/editor/editor_content_browser_model_uve.h"
 #include "uve/editor/editor_retarget_plan_uve.h"
@@ -1280,6 +1281,8 @@ public:
     /// Opens `entity`'s `.uvs` script in the text editor and switches to the Scripting workspace.
     /// A missing file opens empty; saving creates it. False when the entity has no `.uvs` script.
     [[nodiscard]] bool OpenUVScriptForEntityUVE(Scene::EntityUVE entity);
+    /// Opens a `.uvs` script file by path in the text editor and switches to the Scripting workspace.
+    [[nodiscard]] bool OpenUVScriptPathUVE(const std::filesystem::path& path);
     [[nodiscard]] const std::optional<UVScriptDocumentUVE>& GetOpenUVScriptUVE() const noexcept;
     /// Replaces the open script's text and re-checks it. No effect when nothing is open.
     void SetOpenUVScriptTextUVE(std::string text);
@@ -2912,6 +2915,13 @@ private:
     std::optional<std::string> m_scriptLoadCheckedPath;
     std::string m_scriptLoadProblem;
     std::optional<UVScriptDocumentUVE> m_openUVScript;
+    /// A `.uvshader` asset currently open for in-inspector editing.
+    struct ShaderAssetEditStateUVE final {
+        std::filesystem::path path;
+        Asset::ShaderAssetUVE shader;
+        bool isDirty = false;
+    };
+    std::optional<ShaderAssetEditStateUVE> m_openShaderAsset;
     /// A caret move the text editor applies on its next frame (1-based line), set by GoTo.
     std::uint32_t m_uvscriptJumpLine = 0U;
     /// The export rows the Inspector last drew, reused until the object, its script or its values

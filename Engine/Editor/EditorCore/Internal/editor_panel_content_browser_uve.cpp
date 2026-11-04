@@ -1212,6 +1212,13 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                                !OpenAnimationLibraryUVE(snapshot.contentRoot / entry.relativePath)) {
                         m_contentStatusMessage = "Could not open " + entry.relativePath.filename().string() +
                                                  " as an animation library.";
+                    } else if (look.type == ContentBrowserItemTypeUVE::Script &&
+                               !OpenUVScriptPathUVE(snapshot.contentRoot / entry.relativePath)) {
+                        m_contentStatusMessage = "Could not open " + entry.relativePath.filename().string() +
+                                                 " in the Script Editor.";
+                    } else if (look.type == ContentBrowserItemTypeUVE::Shader) {
+                        m_selectedProjectFile = entry;
+                        m_selectedAsset.reset();
                     }
                 }
             }

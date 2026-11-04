@@ -1023,6 +1023,16 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
         const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
         const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvshader");
         Asset::ShaderAssetUVE shader{};
+        shader.stage = Asset::ShaderStageKindUVE::Fragment;
+        shader.entryPointName = "main";
+        shader.sourceCode =
+            "// UniVex Custom Shader\n"
+            "#version 450\n\n"
+            "layout(location = 0) in vec2 v_TexCoord;\n"
+            "layout(location = 0) out vec4 outColor;\n\n"
+            "void main() {\n"
+            "    outColor = vec4(1.0, 1.0, 1.0, 1.0);\n"
+            "}\n";
         if (!Asset::SaveShaderAssetUVE(shader, path)) {
             return std::nullopt;
         }
