@@ -205,6 +205,7 @@ void EditorUVE::RenderOverlayUVE() {
     if (m_montage.has_value()) {
         DrawMontageUVE();
     }
+    DrawCreateScriptModalUVE();
     // Last, so it floats over every panel.
     DrawCommandPaletteUVE();
     DrawImportProgressModalUVE();

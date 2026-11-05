@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <cctype>
 #include <cfloat>
 #include <filesystem>
@@ -305,7 +306,10 @@ void EditorUVE::DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entr
     };
     if (path.empty()) {
         if (action("New UVScript", "Create a text script (.uvs) for this object and open it.")) {
-            closeMenu = CreateUVScriptForSelectedEntityUVE();
+            const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+            const std::filesystem::path scriptsDir = project.contentRoot / "Scripts";
+            OpenCreateScriptModalUVE(scriptsDir, entity);
+            closeMenu = true;
         }
     } else if (action("Open", "Open this object's script in Scripting.")) {
         closeMenu = OpenScriptGraphForEntityUVE(entity);
@@ -420,6 +424,228 @@ void EditorUVE::DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entr
     if (closeMenu) {
         ImGui::CloseCurrentPopup();
     }
+    ImGui::EndPopup();
+}
+
+
+void EditorUVE::OpenCreateScriptModalUVE(const std::filesystem::path& targetDirectory, const Scene::EntityUVE entity) {
+    m_createScriptModal = CreateScriptModalStateUVE{};
+    m_createScriptModal.openRequested = true;
+    m_createScriptModal.targetDirectory = targetDirectory.empty() ? m_contentBrowserDirectory : targetDirectory;
+    m_createScriptModal.targetEntity = entity;
+
+    if (entity != Scene::kInvalidEntityUVE && m_services != nullptr) {
+        Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+        if (entityManager.IsAliveUVE(entity)) {
+            const std::string entityLabel = GetEntityDisplayLabelUVE(entity);
+            m_createScriptModal.scriptName = ScriptIdentifierUVE(entityLabel, "Script");
+            const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
+                Scene::Objects::FindSceneObjectDescriptorUVE(Scene::ResolveSceneObjectKindUVE(entityManager, entity));
+            m_createScriptModal.inheritsClass =
+                descriptor != nullptr ? ScriptIdentifierUVE(descriptor->displayName, "Object") : "Object";
+        }
+    } else {
+        m_createScriptModal.scriptName = "NewScript";
+        m_createScriptModal.inheritsClass = "Object";
+    }
+}
+
+void EditorUVE::DrawCreateScriptModalUVE() {
+    constexpr const char* kModalId = "Create Script##uve_script_modal";
+    if (m_createScriptModal.openRequested) {
+        ImGui::OpenPopup(kModalId);
+        m_createScriptModal.openRequested = false;
+    }
+
+    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(mainViewport->GetCenter(), ImGuiCond_Appearing, ImVec2{0.5F, 0.5F});
+    ImGui::SetNextWindowSize(ImVec2{460.0F, 0.0F}, ImGuiCond_Appearing);
+
+    constexpr ImGuiWindowFlags modalFlags =
+        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
+    if (!ImGui::BeginPopupModal(kModalId, nullptr, modalFlags)) {
+        return;
+    }
+
+    CreateScriptModalStateUVE& modal = m_createScriptModal;
+
+    ImGui::TextColored(ImVec4{0.95F, 0.95F, 0.98F, 1.0F}, "Attach / Create Script");
+    ImGui::TextDisabled("Configure language, inheritance and starting template.");
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    if (ImGui::BeginTable("##create_script_table", 2, ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthFixed, 100.0F);
+        ImGui::TableSetupColumn("##field", ImGuiTableColumnFlags_WidthStretch);
+
+        // 1. Language (UVScript)
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Language");
+        ImGui::TableSetColumnIndex(1);
+        ImGui::BeginDisabled();
+        ImGui::Button("UVScript (.uvs)", ImVec2{-FLT_MIN, 0.0F});
+        ImGui::EndDisabled();
+
+        // 2. Inherits / Base Class
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Inherits");
+        ImGui::TableSetColumnIndex(1);
+        constexpr const char* kClassCandidates[] = {
+            "Object", "Character3D", "Static3D", "Rigid3D", "Player3D", "Area3D", "Camera3D", "Light3D", "SpawnPoint3D"
+        };
+        char inheritsBuffer[64];
+        std::snprintf(inheritsBuffer, sizeof(inheritsBuffer), "%s", modal.inheritsClass.c_str());
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::InputText("##inherits_input", inheritsBuffer, sizeof(inheritsBuffer))) {
+            modal.inheritsClass = inheritsBuffer;
+        }
+        if (ImGui::BeginCombo("##inherits_combo", modal.inheritsClass.c_str(), ImGuiComboFlags_HeightRegular)) {
+            for (const char* candidate : kClassCandidates) {
+                const bool selected = modal.inheritsClass == candidate;
+                if (ImGui::Selectable(candidate, selected)) {
+                    modal.inheritsClass = candidate;
+                }
+                if (selected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        // 3. Class / Script Name
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Class Name");
+        ImGui::TableSetColumnIndex(1);
+        char nameBuffer[128];
+        std::snprintf(nameBuffer, sizeof(nameBuffer), "%s", modal.scriptName.c_str());
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::InputText("##script_name_input", nameBuffer, sizeof(nameBuffer))) {
+            modal.scriptName = nameBuffer;
+        }
+
+        // 4. Template
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Template");
+        ImGui::TableSetColumnIndex(1);
+        constexpr const char* kTemplates[] = {
+            "Default (ready + tick)",
+            "Minimal (ready only)",
+            "Empty (Blank)"
+        };
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::Combo("##template_combo", &modal.templateIndex, kTemplates, 3);
+
+        // 5. Target Path
+        std::string fileName = modal.scriptName;
+        if (!fileName.ends_with(".uvs")) {
+            fileName += ".uvs";
+        }
+        const std::filesystem::path fullPath = modal.targetDirectory / fileName;
+        const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        const std::filesystem::path relative = fullPath.lexically_relative(snapshot.contentRoot);
+        const std::string displayPath = (relative.empty() || *relative.begin() == "..") ? fullPath.string() : relative.generic_string();
+
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Path");
+        ImGui::TableSetColumnIndex(1);
+        ImGui::TextDisabled("%s", displayPath.c_str());
+
+        ImGui::EndTable();
+    }
+
+    // Validation
+    std::string problem;
+    if (modal.scriptName.empty()) {
+        problem = "Script name cannot be empty.";
+    } else {
+        std::string fileName = modal.scriptName;
+        if (!fileName.ends_with(".uvs")) {
+            fileName += ".uvs";
+        }
+        std::error_code ec;
+        if (std::filesystem::exists(modal.targetDirectory / fileName, ec)) {
+            problem = "A file with this name already exists in this folder.";
+        }
+    }
+
+    if (!problem.empty()) {
+        ImGui::TextColored(ImVec4{0.95F, 0.62F, 0.35F, 1.0F}, "%s", problem.c_str());
+    } else {
+        ImGui::TextColored(ImVec4{0.45F, 0.80F, 0.55F, 1.0F}, "Ready to create.");
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Buttons: Cancel & Create
+    const bool cancel = ImGui::Button("Cancel", ImVec2{110.0F, 28.0F}) || ImGui::IsKeyPressed(ImGuiKey_Escape);
+    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 110.0F);
+
+    ImGui::BeginDisabled(!problem.empty());
+    const bool create = ImGui::Button("Create", ImVec2{110.0F, 28.0F}) ||
+                        (problem.empty() && ImGui::IsKeyPressed(ImGuiKey_Enter));
+    ImGui::EndDisabled();
+
+    if (create && problem.empty()) {
+        std::string stem = modal.scriptName;
+        if (stem.ends_with(".uvs")) {
+            stem = stem.substr(0, stem.size() - 4);
+        }
+        const std::string baseClass = modal.inheritsClass.empty() ? "Object" : modal.inheritsClass;
+        std::string sourceCode;
+        if (modal.templateIndex == 0) {
+            sourceCode = "entity " + stem + " : " + baseClass +
+                         "\n\non ready:\n    print(\"" + stem + " is ready\")\n\non tick(dt):\n    pass\n";
+        } else if (modal.templateIndex == 1) {
+            sourceCode = "entity " + stem + " : " + baseClass +
+                         "\n\non ready:\n    pass\n";
+        } else {
+            sourceCode = "entity " + stem + " : " + baseClass + "\n";
+        }
+
+        std::error_code dirErr;
+        std::filesystem::create_directories(modal.targetDirectory, dirErr);
+        const std::filesystem::path scriptFilePath = modal.targetDirectory / (stem + ".uvs");
+        if (WriteProjectTextFileUVE(scriptFilePath, sourceCode)) {
+            m_services->GetAssetDatabaseUVE().RegisterUVE(scriptFilePath);
+            m_projectFileSnapshotInitialized = false;
+            RefreshProjectFileIndexUVE();
+
+            if (modal.targetEntity != Scene::kInvalidEntityUVE && m_services != nullptr) {
+                Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+                if (entityManager.IsAliveUVE(modal.targetEntity)) {
+                    if (!entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(modal.targetEntity)) {
+                        entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(modal.targetEntity);
+                    }
+                    const Asset::ProjectFileSnapshotUVE currentSnap = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                    const std::filesystem::path rel = scriptFilePath.lexically_relative(currentSnap.contentRoot);
+                    const std::string pathStr = (rel.empty() || *rel.begin() == "..") ? scriptFilePath.filename().generic_string() : rel.generic_string();
+                    Scene::ScriptComponentUVE& scriptComp = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(modal.targetEntity);
+                    scriptComp.scriptAssetPath = pathStr;
+                }
+            }
+
+            OpenUVScriptPathUVE(scriptFilePath);
+            m_contentStatusMessage = "Created script " + stem + ".uvs";
+        } else {
+            m_contentStatusMessage = "Could not write " + stem + ".uvs";
+        }
+        ImGui::CloseCurrentPopup();
+    } else if (cancel) {
+        ImGui::CloseCurrentPopup();
+    }
+
     ImGui::EndPopup();
 }
 

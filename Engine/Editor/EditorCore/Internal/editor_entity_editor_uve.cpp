@@ -653,9 +653,9 @@ void EditorUVE::DrawEntityEditorScriptingTabUVE() {
     ImGui::SetCursorPosX((area.x - 160.0F) * 0.5F);
     ImGui::BeginDisabled(!canCreate);
     if (ImGui::Button("New UVScript", ImVec2{160.0F, 0.0F})) {
-        if (CreateUVScriptForSelectedEntityUVE()) {
-            m_activeWorkspace = EditorWorkspaceUVE::Library;
-        }
+        const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        const std::filesystem::path scriptsDir = project.contentRoot / "Scripts";
+        OpenCreateScriptModalUVE(scriptsDir, entity);
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {

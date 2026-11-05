@@ -1298,12 +1298,13 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             constexpr ImU32 thumbBg = IM_COL32(16, 17, 21, 255);
             drawList.AddRectFilled(thumbMin, thumbMax, thumbBg, rounding * 0.8F);
 
-            const std::uintptr_t tileTexture = look.cardIcon != 0U ? look.cardIcon : look.icon;
+            const std::uintptr_t tileTexture = look.icon != 0U ? look.icon : look.cardIcon;
             if (tileTexture != 0U) {
-                const float iconX = std::floor(thumbMin.x + (thumbMax.x - thumbMin.x - iconSize) * 0.5F);
-                const float iconY = std::floor(thumbMin.y + (thumbMax.y - thumbMin.y - iconSize) * 0.5F);
+                const float drawSize = std::min(thumbMax.x - thumbMin.x - 4.0F, thumbMax.y - thumbMin.y - 4.0F);
+                const float iconX = std::floor(thumbMin.x + (thumbMax.x - thumbMin.x - drawSize) * 0.5F);
+                const float iconY = std::floor(thumbMin.y + (thumbMax.y - thumbMin.y - drawSize) * 0.5F);
                 drawList.AddImage(static_cast<ImTextureID>(tileTexture), ImVec2{iconX, iconY},
-                                  ImVec2{iconX + iconSize, iconY + iconSize});
+                                  ImVec2{iconX + drawSize, iconY + drawSize});
             }
 
             // 3. UE5-style accent color bar separating thumbnail from text

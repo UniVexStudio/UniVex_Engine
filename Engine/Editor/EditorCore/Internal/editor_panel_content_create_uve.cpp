@@ -344,6 +344,11 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
             ImGui::CloseCurrentPopup();
             return;
         }
+        if (item.action == ContentCatalogueActionUVE::ScriptAsset) {
+            OpenCreateScriptModalUVE(contentRoot / directory);
+            ImGui::CloseCurrentPopup();
+            return;
+        }
         std::error_code error;
         std::filesystem::create_directories(contentRoot / directory, error);
         const std::optional<std::filesystem::path> created =
