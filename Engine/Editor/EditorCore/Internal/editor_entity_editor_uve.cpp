@@ -741,7 +741,6 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
     EntityEditSessionUVE& session = *m_entityEditSession;
     // Floating entity editor window: smooth dragging, resizable, fully responsive.
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2{mainViewport->Pos.x + 60.0F, mainViewport->Pos.y + 60.0F}, ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2{1180.0F, 720.0F}, ImGuiCond_FirstUseEver);
     const bool unsaved = HasEntityEditorUnsavedChangesUVE();
