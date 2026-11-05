@@ -21,7 +21,7 @@ namespace UVE::Editor {
         categoryOrGroup == "Model" || categoryOrGroup == "Geometry" || categoryOrGroup == "Entity") {
         return IM_COL32(0, 168, 255, 255); // Cyan / Unreal Sky Blue
     }
-    if (categoryOrGroup == "Lighting" || categoryOrGroup == "Lights" || categoryOrGroup == "Environment") {
+    if (categoryOrGroup == "Lighting" || categoryOrGroup == "Lights") {
         return IM_COL32(245, 158, 11, 255); // Amber Gold
     }
     if (categoryOrGroup == "Material" || categoryOrGroup == "Shader" || categoryOrGroup == "Materials") {
@@ -42,125 +42,45 @@ namespace UVE::Editor {
     if (categoryOrGroup == "UI" || categoryOrGroup == "Canvas" || categoryOrGroup == "2D") {
         return IM_COL32(99, 102, 241, 255); // Indigo / Violet
     }
-    if (categoryOrGroup == "Script" || categoryOrGroup == "Code") {
+    if (categoryOrGroup == "Script" || categoryOrGroup == "Logic" || categoryOrGroup == "Code") {
         return IM_COL32(56, 189, 248, 255); // Sky Blue
     }
-    if (categoryOrGroup == "Folder" || categoryOrGroup == "Directory") {
+    if (categoryOrGroup == "Folder" || categoryOrGroup == "Directory" || categoryOrGroup == "Scene") {
         return IM_COL32(245, 158, 11, 255); // Folder Amber
     }
     if (categoryOrGroup == "Camera") {
         return IM_COL32(59, 130, 246, 255); // Bright Blue
     }
-    if (categoryOrGroup == "World") {
+    if (categoryOrGroup == "World" || categoryOrGroup == "Navigation") {
         return IM_COL32(34, 197, 94, 255); // Forest / World Green
     }
-    return IM_COL32(148, 163, 184, 255); // Slate
+    if (categoryOrGroup == "Combat" || categoryOrGroup == "Gameplay") {
+        return IM_COL32(244, 63, 94, 255); // Rose / Red
+    }
+    if (categoryOrGroup == "VFX") {
+        return IM_COL32(249, 115, 22, 255); // VFX Orange
+    }
+    if (categoryOrGroup == "Rendering") {
+        return IM_COL32(0, 168, 255, 255); // Rendering Cyan
+    }
+    if (categoryOrGroup == "Optimization") {
+        return IM_COL32(100, 116, 139, 255); // Slate
+    }
+    return IM_COL32(148, 163, 184, 255); // Default Slate
 }
 
 [[nodiscard]] inline ImU32 GetSceneObjectIndicatorColorUVE(const Scene::Objects::SceneObjectKindUVE kind) noexcept {
-    switch (kind) {
-        case Scene::Objects::SceneObjectKindUVE::MeshInstance3D:
-        case Scene::Objects::SceneObjectKindUVE::BoxMesh3D:
-        case Scene::Objects::SceneObjectKindUVE::SphereMesh3D:
-        case Scene::Objects::SceneObjectKindUVE::CylinderMesh3D:
-        case Scene::Objects::SceneObjectKindUVE::CapsuleMesh3D:
-        case Scene::Objects::SceneObjectKindUVE::PlaneMesh3D:
-        case Scene::Objects::SceneObjectKindUVE::MultiMeshInstance3D:
-        case Scene::Objects::SceneObjectKindUVE::CsgBox3D:
-        case Scene::Objects::SceneObjectKindUVE::CsgCylinder3D:
-        case Scene::Objects::SceneObjectKindUVE::CsgSphere3D:
-        case Scene::Objects::SceneObjectKindUVE::CsgMesh3D:
-        case Scene::Objects::SceneObjectKindUVE::CsgCombiner3D:
-        case Scene::Objects::SceneObjectKindUVE::Object3D:
-            return IM_COL32(0, 168, 255, 255); // Blue
-
-        case Scene::Objects::SceneObjectKindUVE::Light3D:
-        case Scene::Objects::SceneObjectKindUVE::DirectionalLight3D:
-        case Scene::Objects::SceneObjectKindUVE::PointLight3D:
-        case Scene::Objects::SceneObjectKindUVE::SpotLight3D:
-        case Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D:
-        case Scene::Objects::SceneObjectKindUVE::ReflectionProbe3D:
-        case Scene::Objects::SceneObjectKindUVE::FogVolume3D:
-        case Scene::Objects::SceneObjectKindUVE::Decal3D:
-        case Scene::Objects::SceneObjectKindUVE::VoxelGI3D:
-        case Scene::Objects::SceneObjectKindUVE::LightmapGI3D:
-            return IM_COL32(245, 158, 11, 255); // Amber
-
-        case Scene::Objects::SceneObjectKindUVE::Camera3D:
-        case Scene::Objects::SceneObjectKindUVE::Camera2D:
-        case Scene::Objects::SceneObjectKindUVE::SpringArm3D:
-        case Scene::Objects::SceneObjectKindUVE::XrCamera3D:
-            return IM_COL32(59, 130, 246, 255); // Blue
-
-        case Scene::Objects::SceneObjectKindUVE::Static3D:
-        case Scene::Objects::SceneObjectKindUVE::Rigid3D:
-        case Scene::Objects::SceneObjectKindUVE::Character3D:
-        case Scene::Objects::SceneObjectKindUVE::Player3D:
-        case Scene::Objects::SceneObjectKindUVE::Area3D:
-        case Scene::Objects::SceneObjectKindUVE::Collider3D:
-        case Scene::Objects::SceneObjectKindUVE::CollisionPolygon3D:
-        case Scene::Objects::SceneObjectKindUVE::RayCast3D:
-        case Scene::Objects::SceneObjectKindUVE::ShapeCast3D:
-        case Scene::Objects::SceneObjectKindUVE::PinJoint3D:
-        case Scene::Objects::SceneObjectKindUVE::HingeJoint3D:
-        case Scene::Objects::SceneObjectKindUVE::SliderJoint3D:
-        case Scene::Objects::SceneObjectKindUVE::ConeTwistJoint3D:
-        case Scene::Objects::SceneObjectKindUVE::Generic6DOFJoint3D:
-        case Scene::Objects::SceneObjectKindUVE::VehicleBody3D:
-        case Scene::Objects::SceneObjectKindUVE::VehicleWheel3D:
-            return IM_COL32(6, 182, 212, 255); // Teal / Cyan
-
-        case Scene::Objects::SceneObjectKindUVE::AnimationSequencer:
-        case Scene::Objects::SceneObjectKindUVE::AnimationGraph:
-        case Scene::Objects::SceneObjectKindUVE::Skeleton3D:
-        case Scene::Objects::SceneObjectKindUVE::BoneAttachment3D:
-        case Scene::Objects::SceneObjectKindUVE::PhysicalBone3D:
-        case Scene::Objects::SceneObjectKindUVE::PhysicalBoneSimulator3D:
-        case Scene::Objects::SceneObjectKindUVE::LookAtModifier3D:
-        case Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D:
-        case Scene::Objects::SceneObjectKindUVE::Fabrik3D:
-        case Scene::Objects::SceneObjectKindUVE::SpringBone3D:
-        case Scene::Objects::SceneObjectKindUVE::PoseModifier3D:
-        case Scene::Objects::SceneObjectKindUVE::AimModifier3D:
-        case Scene::Objects::SceneObjectKindUVE::ChainIK3D:
-        case Scene::Objects::SceneObjectKindUVE::SplineIK3D:
-        case Scene::Objects::SceneObjectKindUVE::StateTree3D:
-        case Scene::Objects::SceneObjectKindUVE::AnimatedSprite3D:
-            return IM_COL32(168, 85, 247, 255); // Purple
-
-        case Scene::Objects::SceneObjectKindUVE::AudioSource3D:
-        case Scene::Objects::SceneObjectKindUVE::AudioListener3D:
-            return IM_COL32(239, 68, 68, 255); // Coral Red
-
-        case Scene::Objects::SceneObjectKindUVE::ParticleEmitter3D:
-        case Scene::Objects::SceneObjectKindUVE::GpuParticles3D:
-        case Scene::Objects::SceneObjectKindUVE::CpuParticles3D:
-            return IM_COL32(249, 115, 22, 255); // Orange
-
-        case Scene::Objects::SceneObjectKindUVE::Canvas:
-        case Scene::Objects::SceneObjectKindUVE::UiText:
-        case Scene::Objects::SceneObjectKindUVE::UiImage:
-        case Scene::Objects::SceneObjectKindUVE::UiButton:
-            return IM_COL32(99, 102, 241, 255); // Indigo
-
-        case Scene::Objects::SceneObjectKindUVE::Folder:
-            return IM_COL32(245, 158, 11, 255); // Folder Amber
-
-        case Scene::Objects::SceneObjectKindUVE::LevelStreamer3D:
-        case Scene::Objects::SceneObjectKindUVE::WorldPartition3D:
-        case Scene::Objects::SceneObjectKindUVE::NavMeshVolume3D:
-        case Scene::Objects::SceneObjectKindUVE::Occluder3D:
-        case Scene::Objects::SceneObjectKindUVE::WorldQuery3D:
-        case Scene::Objects::SceneObjectKindUVE::LodGroup3D:
-            return IM_COL32(34, 197, 94, 255); // Green
-
-        default:
-            return IM_COL32(0, 168, 255, 255);
+    if (kind == Scene::Objects::SceneObjectKindUVE::Light3D ||
+        kind == Scene::Objects::SceneObjectKindUVE::DirectionalLight3D) {
+        return IM_COL32(245, 158, 11, 255); // Amber Gold for lights
     }
+    const Scene::Objects::SceneObjectDescriptorUVE* const desc =
+        Scene::Objects::FindSceneObjectDescriptorUVE(kind);
+    if (desc != nullptr) {
+        return GetCategoryIndicatorColorUVE(desc->category);
+    }
+    return IM_COL32(0, 168, 255, 255);
 }
-
-/// Draws a sleek slot box indicator with a dynamic category color strip on its left edge and
-/// the crisp monochrome icon centered inside. Followed on the same line by whatever is drawn next.
 inline void DrawSlotIndicatorIconUVE(const std::uintptr_t textureId, const ImU32 indicatorColor = 0U) {
     const float line = ImGui::GetTextLineHeight();
     const float slotSize = std::max(20.0F, std::floor(line + 2.0F));
