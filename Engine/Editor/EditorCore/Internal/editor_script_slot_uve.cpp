@@ -435,20 +435,30 @@ void EditorUVE::OpenCreateScriptModalUVE(const std::filesystem::path& targetDire
     m_createScriptModal.targetDirectory = targetDirectory.empty() ? m_contentBrowserDirectory : targetDirectory;
     m_createScriptModal.targetEntity = entity;
 
+    std::string defaultName = "NewScript";
     if (entity != Scene::kInvalidEntityUVE && m_services != nullptr) {
         Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
         if (entityManager.IsAliveUVE(entity)) {
             const std::string entityLabel = GetEntityDisplayLabelUVE(entity);
-            m_createScriptModal.scriptName = ScriptIdentifierUVE(entityLabel, "Script");
+            defaultName = ScriptIdentifierUVE(entityLabel, "Script");
             const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
                 Scene::Objects::FindSceneObjectDescriptorUVE(Scene::ResolveSceneObjectKindUVE(entityManager, entity));
             m_createScriptModal.inheritsClass =
                 descriptor != nullptr ? ScriptIdentifierUVE(descriptor->displayName, "Object") : "Object";
         }
     } else {
-        m_createScriptModal.scriptName = "NewScript";
         m_createScriptModal.inheritsClass = "Object";
     }
+
+    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path contentRoot = snapshot.contentRoot;
+    std::filesystem::path fullDir = m_createScriptModal.targetDirectory;
+    if (fullDir.is_relative()) {
+        fullDir = contentRoot / fullDir;
+    }
+    const std::filesystem::path fullDefault = fullDir / (defaultName + ".uvs");
+    const std::filesystem::path relDefault = fullDefault.lexically_relative(contentRoot);
+    m_createScriptModal.scriptPathText = (relDefault.empty() || *relDefault.begin() == "..") ? fullDefault.generic_string() : relDefault.generic_string();
 }
 
 void EditorUVE::DrawCreateScriptModalUVE() {
@@ -475,7 +485,7 @@ void EditorUVE::DrawCreateScriptModalUVE() {
     CreateScriptModalStateUVE& modal = m_createScriptModal;
 
     ImGui::TextColored(ImVec4{0.95F, 0.95F, 0.98F, 1.0F}, "Attach / Create Script");
-    ImGui::TextDisabled("Configure language, inheritance, class name and target file path.");
+    ImGui::TextDisabled("Configure language, inheritance, starting template and script path.");
     ImGui::Separator();
     ImGui::Spacing();
 
@@ -524,20 +534,7 @@ void EditorUVE::DrawCreateScriptModalUVE() {
             ImGui::EndCombo();
         }
 
-        // 3. Class / Script Name
-        ImGui::TableNextRow();
-        ImGui::TableSetColumnIndex(0);
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("Class Name");
-        ImGui::TableSetColumnIndex(1);
-        char nameBuffer[128];
-        std::snprintf(nameBuffer, sizeof(nameBuffer), "%s", modal.scriptName.c_str());
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::InputText("##script_name_input", nameBuffer, sizeof(nameBuffer))) {
-            modal.scriptName = nameBuffer;
-        }
-
-        // 4. Template
+        // 3. Template
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
         ImGui::AlignTextToFramePadding();
@@ -551,15 +548,7 @@ void EditorUVE::DrawCreateScriptModalUVE() {
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::Combo("##template_combo", &modal.templateIndex, kTemplates, 3);
 
-        // 5. Target Path & Content Picker
-        std::string fileName = modal.scriptName;
-        if (!fileName.ends_with(".uvs")) {
-            fileName += ".uvs";
-        }
-        const std::filesystem::path fullPath = modal.targetDirectory / fileName;
-        const std::filesystem::path relative = fullPath.lexically_relative(contentRoot);
-        const std::string displayPath = (relative.empty() || *relative.begin() == "..") ? fullPath.string() : relative.generic_string();
-
+        // 4. Path & Rename (Directly editable path with Picker button)
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
         ImGui::AlignTextToFramePadding();
@@ -568,10 +557,16 @@ void EditorUVE::DrawCreateScriptModalUVE() {
 
         const float pickerBtnWidth = 84.0F;
         const float pathWidth = std::max(120.0F, ImGui::GetContentRegionAvail().x - pickerBtnWidth - 6.0F);
+
         char pathBuf[512];
-        std::snprintf(pathBuf, sizeof(pathBuf), "%s", displayPath.c_str());
+        std::snprintf(pathBuf, sizeof(pathBuf), "%s", modal.scriptPathText.c_str());
         ImGui::SetNextItemWidth(pathWidth);
-        ImGui::InputText("##path_display", pathBuf, sizeof(pathBuf), ImGuiInputTextFlags_ReadOnly);
+        if (ImGui::InputText("##path_input", pathBuf, sizeof(pathBuf))) {
+            modal.scriptPathText = pathBuf;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Edit the script path and filename directly to rename it");
+        }
 
         ImGui::SameLine(0.0F, 6.0F);
         if (ImGui::Button("📁 Picker##script_picker_btn", ImVec2{pickerBtnWidth, 0.0F})) {
@@ -608,10 +603,9 @@ void EditorUVE::DrawCreateScriptModalUVE() {
                             }
                         }
                         ++scriptCount;
-                        const bool selected = (entry.relativePath.stem().string() == modal.scriptName);
+                        const bool selected = (modal.scriptPathText == relStr);
                         if (ImGui::Selectable(relStr.c_str(), selected)) {
-                            modal.targetDirectory = contentRoot / entry.relativePath.parent_path();
-                            modal.scriptName = entry.relativePath.stem().string();
+                            modal.scriptPathText = relStr;
                             ImGui::CloseCurrentPopup();
                         }
                     }
@@ -622,8 +616,16 @@ void EditorUVE::DrawCreateScriptModalUVE() {
                 }
 
                 if (ImGui::BeginTabItem("Folders")) {
-                    if (ImGui::Selectable("Content (Root)", modal.targetDirectory == contentRoot)) {
-                        modal.targetDirectory = contentRoot;
+                    std::filesystem::path currentInput(modal.scriptPathText);
+                    std::string currentFileName = currentInput.filename().generic_string();
+                    if (currentFileName.empty() || currentFileName == ".") {
+                        currentFileName = "NewScript.uvs";
+                    } else if (!currentFileName.ends_with(".uvs")) {
+                        currentFileName += ".uvs";
+                    }
+
+                    if (ImGui::Selectable("Content (Root)", false)) {
+                        modal.scriptPathText = currentFileName;
                         ImGui::CloseCurrentPopup();
                     }
                     for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
@@ -640,9 +642,8 @@ void EditorUVE::DrawCreateScriptModalUVE() {
                                 continue;
                             }
                         }
-                        const bool selected = (modal.targetDirectory == (contentRoot / entry.relativePath));
-                        if (ImGui::Selectable(relStr.c_str(), selected)) {
-                            modal.targetDirectory = contentRoot / entry.relativePath;
+                        if (ImGui::Selectable(relStr.c_str(), false)) {
+                            modal.scriptPathText = (entry.relativePath / currentFileName).generic_string();
                             ImGui::CloseCurrentPopup();
                         }
                     }
@@ -656,17 +657,27 @@ void EditorUVE::DrawCreateScriptModalUVE() {
         ImGui::EndTable();
     }
 
-    // Validation
+    // Resolve path & filename
+    std::string text = modal.scriptPathText;
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front()))) {
+        text.erase(text.begin());
+    }
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back()))) {
+        text.pop_back();
+    }
+
+    std::filesystem::path inputPath(text.empty() ? "NewScript.uvs" : text);
+    if (inputPath.extension() != ".uvs") {
+        inputPath += ".uvs";
+    }
+    const std::filesystem::path fullPath = inputPath.is_relative() ? (contentRoot / inputPath) : inputPath;
+    const std::string stem = fullPath.stem().string();
+
     std::string problem;
     bool isExistingFile = false;
-    if (modal.scriptName.empty()) {
+    if (stem.empty()) {
         problem = "Script name cannot be empty.";
     } else {
-        std::string fileName = modal.scriptName;
-        if (!fileName.ends_with(".uvs")) {
-            fileName += ".uvs";
-        }
-        const std::filesystem::path fullPath = modal.targetDirectory / fileName;
         std::error_code ec;
         if (std::filesystem::exists(fullPath, ec) && std::filesystem::is_regular_file(fullPath, ec)) {
             isExistingFile = true;
@@ -700,12 +711,6 @@ void EditorUVE::DrawCreateScriptModalUVE() {
     ImGui::EndDisabled();
 
     if (doAction && problem.empty()) {
-        std::string stem = modal.scriptName;
-        if (stem.ends_with(".uvs")) {
-            stem = stem.substr(0, stem.size() - 4);
-        }
-        const std::filesystem::path scriptFilePath = modal.targetDirectory / (stem + ".uvs");
-
         if (isExistingFile) {
             // Attach existing script if targetEntity is valid
             if (modal.targetEntity != Scene::kInvalidEntityUVE && m_services != nullptr) {
@@ -715,14 +720,14 @@ void EditorUVE::DrawCreateScriptModalUVE() {
                         entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(modal.targetEntity);
                     }
                     const Asset::ProjectFileSnapshotUVE currentSnap = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-                    const std::filesystem::path rel = scriptFilePath.lexically_relative(currentSnap.contentRoot);
-                    const std::string pathStr = (rel.empty() || *rel.begin() == "..") ? scriptFilePath.filename().generic_string() : rel.generic_string();
+                    const std::filesystem::path rel = fullPath.lexically_relative(currentSnap.contentRoot);
+                    const std::string pathStr = (rel.empty() || *rel.begin() == "..") ? fullPath.filename().generic_string() : rel.generic_string();
                     Scene::ScriptComponentUVE& scriptComp = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(modal.targetEntity);
                     scriptComp.scriptAssetPath = pathStr;
                 }
             }
-            static_cast<void>(OpenUVScriptPathUVE(scriptFilePath));
-            m_contentStatusMessage = "Opened script " + scriptFilePath.filename().string();
+            static_cast<void>(OpenUVScriptPathUVE(fullPath));
+            m_contentStatusMessage = "Opened script " + fullPath.filename().string();
             modal.isOpen = false;
         } else {
             const std::string baseClass = modal.inheritsClass.empty() ? "Object" : modal.inheritsClass;
@@ -738,9 +743,9 @@ void EditorUVE::DrawCreateScriptModalUVE() {
             }
 
             std::error_code dirErr;
-            std::filesystem::create_directories(modal.targetDirectory, dirErr);
-            if (WriteProjectTextFileUVE(scriptFilePath, sourceCode)) {
-                m_services->GetAssetDatabaseUVE().RegisterUVE(scriptFilePath);
+            std::filesystem::create_directories(fullPath.parent_path(), dirErr);
+            if (WriteProjectTextFileUVE(fullPath, sourceCode)) {
+                m_services->GetAssetDatabaseUVE().RegisterUVE(fullPath);
                 m_projectFileSnapshotInitialized = false;
                 RefreshProjectFileIndexUVE();
 
@@ -751,14 +756,14 @@ void EditorUVE::DrawCreateScriptModalUVE() {
                             entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(modal.targetEntity);
                         }
                         const Asset::ProjectFileSnapshotUVE currentSnap = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-                        const std::filesystem::path rel = scriptFilePath.lexically_relative(currentSnap.contentRoot);
-                        const std::string pathStr = (rel.empty() || *rel.begin() == "..") ? scriptFilePath.filename().generic_string() : rel.generic_string();
+                        const std::filesystem::path rel = fullPath.lexically_relative(currentSnap.contentRoot);
+                        const std::string pathStr = (rel.empty() || *rel.begin() == "..") ? fullPath.filename().generic_string() : rel.generic_string();
                         Scene::ScriptComponentUVE& scriptComp = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(modal.targetEntity);
                         scriptComp.scriptAssetPath = pathStr;
                     }
                 }
 
-                static_cast<void>(OpenUVScriptPathUVE(scriptFilePath));
+                static_cast<void>(OpenUVScriptPathUVE(fullPath));
                 m_contentStatusMessage = "Created script " + stem + ".uvs";
             } else {
                 m_contentStatusMessage = "Could not write " + stem + ".uvs";
