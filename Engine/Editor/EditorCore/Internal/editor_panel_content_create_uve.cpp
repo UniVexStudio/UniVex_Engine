@@ -46,6 +46,23 @@
 namespace UVE::Editor {
 namespace {
 
+#if defined(_WIN32)
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type"
+#endif
+using GetOpenFileNameWFn = BOOL (WINAPI *)(LPOPENFILENAMEW);
+inline GetOpenFileNameWFn LoadGetOpenFileNameW(HMODULE comdlg) noexcept {
+    if (comdlg == nullptr) {
+        return nullptr;
+    }
+    return reinterpret_cast<GetOpenFileNameWFn>(GetProcAddress(comdlg, "GetOpenFileNameW"));
+}
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+#endif
+
 constexpr std::size_t kMaximumContentRecentUVE = 5U;
 constexpr std::size_t kMaximumContentNameBytesUVE = 96U;
 
@@ -789,11 +806,11 @@ bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirector
 #if defined(_WIN32)
     HMODULE comdlg = LoadLibraryA("comdlg32.dll");
     if (comdlg != nullptr) {
-        typedef BOOL (WINAPI *GetOpenFileNameWFn)(LPOPENFILENAMEW);
-        auto pGetOpenFileNameW = reinterpret_cast<GetOpenFileNameWFn>(GetProcAddress(comdlg, "GetOpenFileNameW"));
+        const GetOpenFileNameWFn pGetOpenFileNameW = LoadGetOpenFileNameW(comdlg);
         if (pGetOpenFileNameW != nullptr) {
             std::vector<wchar_t> buffer(65536, 0);
-            OPENFILENAMEW ofn = {0};
+            OPENFILENAMEW ofn;
+            std::memset(&ofn, 0, sizeof(ofn));
             ofn.lStructSize = sizeof(ofn);
             ofn.lpstrFile = buffer.data();
             ofn.nMaxFile = static_cast<DWORD>(buffer.size());
@@ -924,11 +941,11 @@ void EditorUVE::DrawQuickImportModalUVE() {
 #if defined(_WIN32)
         HMODULE comdlg = LoadLibraryA("comdlg32.dll");
         if (comdlg != nullptr) {
-            typedef BOOL (WINAPI *GetOpenFileNameWFn)(LPOPENFILENAMEW);
-            auto pGetOpenFileNameW = reinterpret_cast<GetOpenFileNameWFn>(GetProcAddress(comdlg, "GetOpenFileNameW"));
+            const GetOpenFileNameWFn pGetOpenFileNameW = LoadGetOpenFileNameW(comdlg);
             if (pGetOpenFileNameW != nullptr) {
                 wchar_t buf[2048] = {0};
-                OPENFILENAMEW ofn = {0};
+                OPENFILENAMEW ofn;
+                std::memset(&ofn, 0, sizeof(ofn));
                 ofn.lStructSize = sizeof(ofn);
                 ofn.lpstrFile = buf;
                 ofn.nMaxFile = sizeof(buf) / sizeof(wchar_t);
