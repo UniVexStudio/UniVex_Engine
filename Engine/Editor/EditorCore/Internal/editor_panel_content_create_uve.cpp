@@ -782,8 +782,6 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
     ImGui::EndPopup();
 }
 
-} // namespace UVE::Editor
-
 bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirectory) {
     const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     const std::filesystem::path destDir = targetDirectory.empty() ? (snapshot.contentRoot / m_contentBrowserDirectory) : targetDirectory;
@@ -1199,3 +1197,5 @@ void EditorUVE::DrawCreateShaderModalUVE() {
 
     ImGui::EndPopup();
 }
+
+} // namespace UVE::Editor
