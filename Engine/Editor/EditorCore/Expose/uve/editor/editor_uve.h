@@ -2948,7 +2948,7 @@ private:
         bool openRequested = false;
         std::filesystem::path targetDirectory;
         Scene::EntityUVE targetEntity = Scene::kInvalidEntityUVE;
-        std::string scriptName = "NewScript";
+        std::string scriptPathText = "NewScript.uvs";
         std::string inheritsClass = "Object";
         int templateIndex = 0;
     };
@@ -2967,7 +2967,7 @@ private:
         bool isOpen = false;
         bool openRequested = false;
         std::filesystem::path targetDirectory;
-        std::string shaderName = "NewShader";
+        std::string shaderPathText = "NewShader.uvshader";
         int shaderTypeIndex = 0;
         std::function<void(const std::filesystem::path&)> onShaderCreated = nullptr;
     };

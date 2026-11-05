@@ -1001,9 +1001,18 @@ void EditorUVE::OpenCreateShaderModalUVE(const std::filesystem::path& targetDire
     m_createShaderModal.isOpen = true;
     m_createShaderModal.openRequested = true;
     m_createShaderModal.targetDirectory = targetDirectory.empty() ? m_contentBrowserDirectory : targetDirectory;
-    m_createShaderModal.shaderName = "NewShader";
     m_createShaderModal.shaderTypeIndex = 0;
     m_createShaderModal.onShaderCreated = std::move(onCreated);
+
+    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path contentRoot = snapshot.contentRoot;
+    std::filesystem::path fullDir = m_createShaderModal.targetDirectory;
+    if (fullDir.is_relative()) {
+        fullDir = contentRoot / fullDir;
+    }
+    const std::filesystem::path fullDefault = fullDir / "NewShader.uvshader";
+    const std::filesystem::path relDefault = fullDefault.lexically_relative(contentRoot);
+    m_createShaderModal.shaderPathText = (relDefault.empty() || *relDefault.begin() == "..") ? fullDefault.generic_string() : relDefault.generic_string();
 }
 
 void EditorUVE::DrawCreateShaderModalUVE() {
@@ -1030,7 +1039,7 @@ void EditorUVE::DrawCreateShaderModalUVE() {
     CreateShaderModalStateUVE& modal = m_createShaderModal;
 
     ImGui::TextColored(ImVec4{0.95F, 0.95F, 0.98F, 1.0F}, "Create / Assign Shader");
-    ImGui::TextDisabled("Configure shader type, entry point and target file path.");
+    ImGui::TextDisabled("Configure shader type, starting template and shader path.");
     ImGui::Separator();
     ImGui::Spacing();
 
@@ -1066,28 +1075,7 @@ void EditorUVE::DrawCreateShaderModalUVE() {
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::Combo("##shader_type_combo", &modal.shaderTypeIndex, kShaderTypes, 4);
 
-        // 3. Shader Name
-        ImGui::TableNextRow();
-        ImGui::TableSetColumnIndex(0);
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("Shader Name");
-        ImGui::TableSetColumnIndex(1);
-        char nameBuffer[128];
-        std::snprintf(nameBuffer, sizeof(nameBuffer), "%s", modal.shaderName.c_str());
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::InputText("##shader_name_input", nameBuffer, sizeof(nameBuffer))) {
-            modal.shaderName = nameBuffer;
-        }
-
-        // 4. Target Path & Content Picker
-        std::string fileName = modal.shaderName;
-        if (!fileName.ends_with(".uvshader")) {
-            fileName += ".uvshader";
-        }
-        const std::filesystem::path fullPath = modal.targetDirectory / fileName;
-        const std::filesystem::path relative = fullPath.lexically_relative(contentRoot);
-        const std::string displayPath = (relative.empty() || *relative.begin() == "..") ? fullPath.string() : relative.generic_string();
-
+        // 3. Path & Rename (Directly editable path with Picker button)
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
         ImGui::AlignTextToFramePadding();
@@ -1096,10 +1084,16 @@ void EditorUVE::DrawCreateShaderModalUVE() {
 
         const float pickerBtnWidth = 84.0F;
         const float pathWidth = std::max(120.0F, ImGui::GetContentRegionAvail().x - pickerBtnWidth - 6.0F);
+
         char pathBuf[512];
-        std::snprintf(pathBuf, sizeof(pathBuf), "%s", displayPath.c_str());
+        std::snprintf(pathBuf, sizeof(pathBuf), "%s", modal.shaderPathText.c_str());
         ImGui::SetNextItemWidth(pathWidth);
-        ImGui::InputText("##path_display", pathBuf, sizeof(pathBuf), ImGuiInputTextFlags_ReadOnly);
+        if (ImGui::InputText("##path_input", pathBuf, sizeof(pathBuf))) {
+            modal.shaderPathText = pathBuf;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Edit the shader path and filename directly to rename it");
+        }
 
         ImGui::SameLine(0.0F, 6.0F);
         if (ImGui::Button("📁 Picker##shader_picker_btn", ImVec2{pickerBtnWidth, 0.0F})) {
@@ -1137,10 +1131,9 @@ void EditorUVE::DrawCreateShaderModalUVE() {
                             }
                         }
                         ++shaderCount;
-                        const bool selected = (entry.relativePath.stem().string() == modal.shaderName);
+                        const bool selected = (modal.shaderPathText == relStr);
                         if (ImGui::Selectable(relStr.c_str(), selected)) {
-                            modal.targetDirectory = contentRoot / entry.relativePath.parent_path();
-                            modal.shaderName = entry.relativePath.stem().string();
+                            modal.shaderPathText = relStr;
                             ImGui::CloseCurrentPopup();
                         }
                     }
@@ -1151,8 +1144,16 @@ void EditorUVE::DrawCreateShaderModalUVE() {
                 }
 
                 if (ImGui::BeginTabItem("Folders")) {
-                    if (ImGui::Selectable("Content (Root)", modal.targetDirectory == contentRoot)) {
-                        modal.targetDirectory = contentRoot;
+                    std::filesystem::path currentInput(modal.shaderPathText);
+                    std::string currentFileName = currentInput.filename().generic_string();
+                    if (currentFileName.empty() || currentFileName == ".") {
+                        currentFileName = "NewShader.uvshader";
+                    } else if (!currentFileName.ends_with(".uvshader") && !currentFileName.ends_with(".glsl")) {
+                        currentFileName += ".uvshader";
+                    }
+
+                    if (ImGui::Selectable("Content (Root)", false)) {
+                        modal.shaderPathText = currentFileName;
                         ImGui::CloseCurrentPopup();
                     }
                     for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
@@ -1169,9 +1170,8 @@ void EditorUVE::DrawCreateShaderModalUVE() {
                                 continue;
                             }
                         }
-                        const bool selected = (modal.targetDirectory == (contentRoot / entry.relativePath));
-                        if (ImGui::Selectable(relStr.c_str(), selected)) {
-                            modal.targetDirectory = contentRoot / entry.relativePath;
+                        if (ImGui::Selectable(relStr.c_str(), false)) {
+                            modal.shaderPathText = (entry.relativePath / currentFileName).generic_string();
                             ImGui::CloseCurrentPopup();
                         }
                     }
@@ -1185,17 +1185,28 @@ void EditorUVE::DrawCreateShaderModalUVE() {
         ImGui::EndTable();
     }
 
-    // Validation
+    // Resolve path & filename
+    std::string text = modal.shaderPathText;
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front()))) {
+        text.erase(text.begin());
+    }
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back()))) {
+        text.pop_back();
+    }
+
+    std::filesystem::path inputPath(text.empty() ? "NewShader.uvshader" : text);
+    if (!inputPath.filename().generic_string().ends_with(".uvshader") &&
+        !inputPath.filename().generic_string().ends_with(".glsl")) {
+        inputPath += ".uvshader";
+    }
+    const std::filesystem::path fullPath = inputPath.is_relative() ? (contentRoot / inputPath) : inputPath;
+    const std::string stem = fullPath.stem().string();
+
     std::string problem;
     bool isExistingFile = false;
-    if (modal.shaderName.empty()) {
+    if (stem.empty()) {
         problem = "Shader name cannot be empty.";
     } else {
-        std::string fileName = modal.shaderName;
-        if (!fileName.ends_with(".uvshader")) {
-            fileName += ".uvshader";
-        }
-        const std::filesystem::path fullPath = modal.targetDirectory / fileName;
         std::error_code ec;
         if (std::filesystem::exists(fullPath, ec) && std::filesystem::is_regular_file(fullPath, ec)) {
             isExistingFile = true;
@@ -1230,20 +1241,15 @@ void EditorUVE::DrawCreateShaderModalUVE() {
             const std::filesystem::path rel = fullPath.lexically_relative(projSnapshot.contentRoot);
             m_selectedProjectFile = Asset::ProjectFileEntryUVE{rel, Asset::ProjectFileEntryKindUVE::File, std::nullopt};
             m_selectedAsset.reset();
-            m_contentStatusMessage = "Selected shader " + fileName;
+            m_contentStatusMessage = "Selected shader " + fullPath.filename().string();
 
             if (modal.onShaderCreated != nullptr) {
                 modal.onShaderCreated(fullPath);
             }
             modal.isOpen = false;
         } else {
-            std::string fileName = modal.shaderName;
-            if (!fileName.ends_with(".uvshader")) {
-                fileName += ".uvshader";
-            }
             std::error_code ec;
-            std::filesystem::create_directories(modal.targetDirectory, ec);
-            const std::filesystem::path fullPath = modal.targetDirectory / fileName;
+            std::filesystem::create_directories(fullPath.parent_path(), ec);
 
             Asset::ShaderAssetUVE shader{};
             shader.stage = Asset::ShaderStageKindUVE::Fragment;
@@ -1310,13 +1316,13 @@ void EditorUVE::DrawCreateShaderModalUVE() {
                 const std::filesystem::path rel = fullPath.lexically_relative(projSnapshot.contentRoot);
                 m_selectedProjectFile = Asset::ProjectFileEntryUVE{rel, Asset::ProjectFileEntryKindUVE::File, std::nullopt};
                 m_selectedAsset.reset();
-                m_contentStatusMessage = "Created shader " + fileName;
+                m_contentStatusMessage = "Created shader " + fullPath.filename().string();
 
                 if (modal.onShaderCreated != nullptr) {
                     modal.onShaderCreated(fullPath);
                 }
             } else {
-                m_contentStatusMessage = "Could not create shader file " + fileName;
+                m_contentStatusMessage = "Could not create shader file " + fullPath.filename().string();
             }
             modal.isOpen = false;
         }
