@@ -3726,7 +3726,7 @@ Scene::EntityUVE EditorUVE::ResolvePlaceableParentUVE(const Scene::EntityUVE can
 }
 
 bool EditorUVE::IsOutlinerLayoutActiveUVE() const noexcept {
-    return !m_entityEditSession.has_value() && !m_retargetPreview.has_value();
+    return !m_retargetPreview.has_value();
 }
 
 Scene::EntityUVE EditorUVE::GetDocumentViewportUVE() {

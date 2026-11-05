@@ -53,29 +53,31 @@ def shade(hexcolor, lightness=0.0, saturation=0.0):
     return _hex(colorsys.hls_to_rgb(h, l, 0.02))
 
 
-def tones(base=SILVER):
+def tones(base=SLATE):
     """(top, left, right, edge) monochrome tones for a solid lit from the upper left."""
     b = to_monochrome(base)
-    return shade(b, 0.16), b, shade(b, -0.18), BRIGHT
+    return shade(b, 0.22), b, shade(b, -0.20), SILVER
 
 
 COMMON_STUDIO_DEFS = (
     '<linearGradient id="uv_bright" x1="0.15" y1="0" x2="0.85" y2="1">'
-    '<stop offset="0%" stop-color="#FFFFFF"/><stop offset="55%" stop-color="#E4E4E7"/>'
-    '<stop offset="100%" stop-color="#D4D4D8"/></linearGradient>'
+    '<stop offset="0%" stop-color="#E4E4E7"/><stop offset="50%" stop-color="#A1A1AA"/>'
+    '<stop offset="100%" stop-color="#52525B"/></linearGradient>'
     '<linearGradient id="uv_mid" x1="0" y1="0" x2="0" y2="1">'
-    '<stop offset="0%" stop-color="#E4E4E7"/><stop offset="50%" stop-color="#D4D4D8"/>'
-    '<stop offset="100%" stop-color="#A1A1AA"/></linearGradient>'
+    '<stop offset="0%" stop-color="#A1A1AA"/><stop offset="50%" stop-color="#71717A"/>'
+    '<stop offset="100%" stop-color="#3F3F46"/></linearGradient>'
     '<linearGradient id="uv_slate" x1="0" y1="0" x2="0" y2="1">'
-    '<stop offset="0%" stop-color="#D4D4D8"/><stop offset="100%" stop-color="#71717A"/></linearGradient>'
+    '<stop offset="0%" stop-color="#71717A"/><stop offset="60%" stop-color="#52525B"/>'
+    '<stop offset="100%" stop-color="#27272A"/></linearGradient>'
     '<linearGradient id="uv_dark" x1="0" y1="0" x2="0" y2="1">'
-    '<stop offset="0%" stop-color="#71717A"/><stop offset="100%" stop-color="#3F3F46"/></linearGradient>'
+    '<stop offset="0%" stop-color="#52525B"/><stop offset="65%" stop-color="#3F3F46"/>'
+    '<stop offset="100%" stop-color="#18181B"/></linearGradient>'
     '<radialGradient id="uv_head_lit" cx="35%" cy="25%" r="72%">'
-    '<stop offset="0%" stop-color="#FFFFFF"/><stop offset="55%" stop-color="#E4E4E7"/>'
-    '<stop offset="100%" stop-color="#A1A1AA"/></radialGradient>'
+    '<stop offset="0%" stop-color="#E4E4E7"/><stop offset="45%" stop-color="#A1A1AA"/>'
+    '<stop offset="100%" stop-color="#3F3F46"/></radialGradient>'
     '<radialGradient id="uv_sphere" cx="35%" cy="30%" r="68%">'
-    '<stop offset="0%" stop-color="#FFFFFF"/><stop offset="48%" stop-color="#D4D4D8"/>'
-    '<stop offset="100%" stop-color="#71717A"/></radialGradient>'
+    '<stop offset="0%" stop-color="#E4E4E7"/><stop offset="40%" stop-color="#71717A"/>'
+    '<stop offset="100%" stop-color="#27272A"/></radialGradient>'
     '<linearGradient id="card_bg" x1="0" y1="0" x2="0" y2="1">'
     '<stop offset="0%" stop-color="#27272A"/><stop offset="65%" stop-color="#1C1C1F"/>'
     '<stop offset="100%" stop-color="#141417"/></linearGradient>'
