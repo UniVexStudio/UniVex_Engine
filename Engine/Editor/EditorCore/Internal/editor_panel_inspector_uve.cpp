@@ -372,6 +372,10 @@ void EditorUVE::DrawContentAssetCardInspectorUVE(const Asset::ProjectFileEntryUV
     ImGui::TextColored(ImVec4{0.95F, 0.95F, 0.98F, 1.0F}, "%s", filename.c_str());
     ImGui::TextColored(ImVec4{0.4F, 0.75F, 0.95F, 1.0F}, "[ %s ]", typeLabel);
     ImGui::EndGroup();
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Rename (F2)")) {
+        BeginContentRenameUVE(entry.relativePath);
+    }
 
     ImGui::Separator();
     ImGui::Spacing();
@@ -516,6 +520,13 @@ void EditorUVE::DrawContentAssetCardInspectorUVE(const Asset::ProjectFileEntryUV
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Save shader changes (Ctrl+S)");
         }
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+    }
+
+    if (type == ContentBrowserItemTypeUVE::Material) {
+        DrawMaterialPbrEditorInlineUVE(fullPath, "##card_mat_editor");
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();

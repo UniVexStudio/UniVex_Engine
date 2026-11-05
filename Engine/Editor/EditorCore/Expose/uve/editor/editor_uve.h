@@ -1287,6 +1287,20 @@ public:
     void OpenCreateScriptModalUVE(const std::filesystem::path& targetDirectory, Scene::EntityUVE entity = Scene::kInvalidEntityUVE);
     /// Draws the Godot-style "Create Script" modal dialog when open.
     void DrawCreateScriptModalUVE();
+    /// Opens the Godot-style "Create Shader" modal dialog for configuring and creating a new shader.
+    void OpenCreateShaderModalUVE(const std::filesystem::path& targetDirectory,
+                                  std::function<void(const std::filesystem::path&)> onCreated = nullptr);
+    /// Draws the Godot-style "Create Shader" modal dialog when open.
+    void DrawCreateShaderModalUVE();
+    /// Prompts the user to pick external asset files (models, textures, audio, scripts) and imports them.
+    bool PromptImportFilesUVE(const std::filesystem::path& targetDirectory = {});
+    /// Imports external files from disk into the project's content directory.
+    bool ImportExternalFilesUVE(const std::vector<std::filesystem::path>& sourceFiles,
+                                const std::filesystem::path& targetDirectory = {});
+    /// Opens the Quick Import modal dialog.
+    void OpenQuickImportModalUVE(const std::filesystem::path& targetDirectory = {});
+    /// Draws the Quick Import modal dialog when open.
+    void DrawQuickImportModalUVE();
     [[nodiscard]] const std::optional<UVScriptDocumentUVE>& GetOpenUVScriptUVE() const noexcept;
     /// Replaces the open script's text and re-checks it. No effect when nothing is open.
     void SetOpenUVScriptTextUVE(std::string text);
@@ -2186,6 +2200,8 @@ private:
                                      std::string& inOutPath, bool editInline = true, bool deferInline = false);
     bool DrawStandardMaterialSlotUVE(const char* label, const char* id,
                                      Asset::AssetGuidUVE& inOutGuid, bool deferInline = false);
+    /// Draws a shader property slot with picker menu: [New Shader...], [Browse...], [Quick Import...], [Open/Edit], [Clear].
+    bool DrawStandardShaderSlotUVE(const char* label, const char* id, Asset::AssetGuidUVE& inOutGuid);
     /// Draws the PBR editors queued by slots drawn with `deferInline`, once the table they were in is closed.
     void FlushPendingMaterialEditorsUVE();
     /// Inline expandable PBR property editor for an assigned material file. Saves immediately on edit.
@@ -2936,6 +2952,24 @@ private:
         int templateIndex = 0;
     };
     CreateScriptModalStateUVE m_createScriptModal;
+    /// State of the Quick Import modal dialog.
+    struct QuickImportModalStateUVE final {
+        bool openRequested = false;
+        std::filesystem::path targetDirectory;
+        std::string sourcePath;
+        int filterPreset = 0;
+        std::string statusMessage;
+    };
+    QuickImportModalStateUVE m_quickImportModal;
+    /// State of the Godot-style "Create Shader" modal dialog.
+    struct CreateShaderModalStateUVE final {
+        bool openRequested = false;
+        std::filesystem::path targetDirectory;
+        std::string shaderName = "NewShader";
+        int shaderTypeIndex = 0;
+        std::function<void(const std::filesystem::path&)> onShaderCreated = nullptr;
+    };
+    CreateShaderModalStateUVE m_createShaderModal;
     /// A caret move the text editor applies on its next frame (1-based line), set by GoTo.
     std::uint32_t m_uvscriptJumpLine = 0U;
     /// The export rows the Inspector last drew, reused until the object, its script or its values

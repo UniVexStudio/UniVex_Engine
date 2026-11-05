@@ -21,25 +21,25 @@ from kit import (
     glyph, iso, page, pts, shade, shadow, slab, sphere, stroke_line, tile, tones, wire_box
 )
 
-# Strictly Monochrome Studio Tones (All constants map to pure neutral slate-gray/white)
-STEEL = SILVER
-AMBER = LIGHT
-TEAL = SILVER
-SUN = BRIGHT
-BLUE = SILVER
-MINT = LIGHT
-NAV = SILVER
-PURPLE = SILVER
-RED = LIGHT
-GOLD = LIGHT
-PINK = SILVER
-MAGENTA = LIGHT
-CODE = LIGHT
-LIME = SILVER
-WORLD = SILVER
-SKY_TONE = LIGHT
-IVORY = BRIGHT
-AXIS_X, AXIS_Y, AXIS_Z = BRIGHT, LIGHT, MID
+# Balanced Studio Palette (Dark Gray bodies vs White-Gray focal accents)
+STEEL = SLATE       # Structural bodies, meshes, rigid bodies, mechanics
+AMBER = DARK        # Containers, colliders, physics shapes
+TEAL = SLATE        # Auxiliary tools, springs, joints, cameras
+SUN = BRIGHT        # Light emitters, sun rays, highlights
+BLUE = MID          # Viewports, secondary glyphs
+MINT = SLATE        # Spatial volumes, audio, environments
+NAV = DARK          # Heavy structural bases, anchors
+PURPLE = MID        # Animations, skeletons, sequences
+RED = DARK          # Combat, occluders, killzones, boundaries
+GOLD = SLATE        # Generic objects, markers
+PINK = MID          # Bones, IK chains
+MAGENTA = SLATE     # Specialized nodes
+CODE = MID          # Scripts, code text
+LIME = SLATE        # Navmesh, pathways
+WORLD = DARK        # World partitions, terrain, background
+SKY_TONE = SLATE    # Sky, fog, atmosphere
+IVORY = SILVER      # Key focal foreground points
+AXIS_X, AXIS_Y, AXIS_Z = SILVER, MID, DARK
 COS = math.cos(math.radians(30))
 
 OBJECTS = "objects"

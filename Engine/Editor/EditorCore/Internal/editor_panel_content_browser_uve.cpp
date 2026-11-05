@@ -283,6 +283,21 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
 
     m_contentShownOrderPrevious.swap(m_contentShownOrder);
     m_contentShownOrder.clear();
+
+    // Keyboard shortcuts for Content Browser: F2 (Rename), Ctrl+I (Import)
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+        if (ImGui::IsKeyPressed(ImGuiKey_F2)) {
+            if (m_selectedProjectFile.has_value()) {
+                BeginContentRenameUVE(m_selectedProjectFile->relativePath);
+            } else if (!m_contentSelection.ItemsUVE().empty()) {
+                const std::string firstKey = *m_contentSelection.ItemsUVE().begin();
+                BeginContentRenameUVE(firstKey);
+            }
+        }
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_I)) {
+            PromptImportFilesUVE(snapshot.contentRoot / m_contentBrowserDirectory);
+        }
+    }
     if (m_selectedProjectFile.has_value()) {
         const auto selectedIt = std::find_if(
             snapshot.entries.begin(), snapshot.entries.end(), [this](const Asset::ProjectFileEntryUVE& entry) {
@@ -446,8 +461,8 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
         ImGui::SameLine(0.0F, 4.0F);
     }
     if (GlyphTextButtonUVE("##content-import", GlyphUVE::Import, "Import", false,
-                           "Rescan the content folder to pick up newly added files")) {
-        refreshNow();
+                           "Import assets from your computer into this folder (Ctrl+I)")) {
+        PromptImportFilesUVE(snapshot.contentRoot / m_contentBrowserDirectory);
     }
     ImGui::SameLine(0.0F, 4.0F);
     if (GlyphTextButtonUVE("##content-save-all", GlyphUVE::Save, "Save All", false,
@@ -1307,48 +1322,9 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                                   ImVec2{iconX + drawSize, iconY + drawSize});
             }
 
-            // 3. UE5-style accent color bar separating thumbnail from text
-            ImU32 accentColor = IM_COL32(100, 116, 139, 255);
-            switch (look.type) {
-                case ContentBrowserItemTypeUVE::Mesh:
-                case ContentBrowserItemTypeUVE::Model:
-                    accentColor = IM_COL32(0, 168, 255, 255);
-                    break;
-                case ContentBrowserItemTypeUVE::Texture:
-                    accentColor = IM_COL32(230, 81, 0, 255);
-                    break;
-                case ContentBrowserItemTypeUVE::Material:
-                case ContentBrowserItemTypeUVE::Shader:
-                    accentColor = IM_COL32(76, 175, 80, 255);
-                    break;
-                case ContentBrowserItemTypeUVE::Animation:
-                case ContentBrowserItemTypeUVE::AnimationLibrary:
-                    accentColor = IM_COL32(171, 71, 188, 255);
-                    break;
-                case ContentBrowserItemTypeUVE::Scene:
-                case ContentBrowserItemTypeUVE::Prefab:
-                case ContentBrowserItemTypeUVE::Entity:
-                case ContentBrowserItemTypeUVE::Bundle:
-                    accentColor = IM_COL32(255, 179, 0, 255);
-                    break;
-                case ContentBrowserItemTypeUVE::Script:
-                    accentColor = IM_COL32(38, 198, 218, 255);
-                    break;
-                case ContentBrowserItemTypeUVE::Audio:
-                    accentColor = IM_COL32(239, 83, 80, 255);
-                    break;
-                case ContentBrowserItemTypeUVE::Folder:
-                    accentColor = IM_COL32(120, 144, 156, 255);
-                    break;
-                default:
-                    break;
-            }
-            const float barY = thumbMax.y + 1.0F;
-            drawList.AddLine(ImVec2{cardMin.x + 2.0F, barY}, ImVec2{cardMax.x - 2.0F, barY}, accentColor, 2.0F);
-
-            // 4. Text labels: Name and Type
+            // 3. Text labels: Name and Type (clean native thumbnail presentation without artificial accent line)
             const float textMax = cardSize.x - 8.0F;
-            const float nameY = barY + 4.0F;
+            const float nameY = thumbMax.y + 5.0F;
             if (!DrawContentRenameFieldUVE(snapshot.contentRoot, entry, cardMin.x + 4.0F, nameY - 2.0F, textMax)) {
                 drawList.AddText(ImVec2{cardMin.x + 5.0F, nameY}, ImGui::GetColorU32(ImGuiCol_Text),
                                  FitLabelUVE(entry.relativePath.filename().generic_string(), textMax).c_str());
