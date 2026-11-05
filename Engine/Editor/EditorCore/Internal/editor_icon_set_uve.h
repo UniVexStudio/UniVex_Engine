@@ -22,8 +22,6 @@ enum class EditorIconGroupUVE : std::uint8_t {
     Object,          // objects/          - one per scene object type, by typeId ("box_mesh_3d")
     ObjectCategory,  // object_categories/ - one per object palette category ("physics")
     ContentType,     // content_types/  - one per content browser type ("mesh", "folder_open")
-    ObjectCard,      // object_cards/     - studio card with 3D/2D/UI badge
-    ContentTypeCard, // content_type_cards/ - studio card for asset types
     Component,       // components/       - one per ECS component
 };
 

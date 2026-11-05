@@ -19,8 +19,6 @@ GROUPS = {
     "objects": "Object",
     "object_categories": "ObjectCategory",
     "content_types": "ContentType",
-    "object_cards": "ObjectCard",
-    "content_type_cards": "ContentTypeCard",
     "components": "Component",
 }
 BYTES_PER_LINE = 16
