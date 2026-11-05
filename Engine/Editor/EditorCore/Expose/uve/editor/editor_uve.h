@@ -1283,6 +1283,10 @@ public:
     [[nodiscard]] bool OpenUVScriptForEntityUVE(Scene::EntityUVE entity);
     /// Opens a `.uvs` script file by path in the text editor and switches to the Scripting workspace.
     [[nodiscard]] bool OpenUVScriptPathUVE(const std::filesystem::path& path);
+    /// Opens the Godot-style "Create Script" modal dialog for configuring and creating a new UVScript.
+    void OpenCreateScriptModalUVE(const std::filesystem::path& targetDirectory, Scene::EntityUVE entity = Scene::kInvalidEntityUVE);
+    /// Draws the Godot-style "Create Script" modal dialog when open.
+    void DrawCreateScriptModalUVE();
     [[nodiscard]] const std::optional<UVScriptDocumentUVE>& GetOpenUVScriptUVE() const noexcept;
     /// Replaces the open script's text and re-checks it. No effect when nothing is open.
     void SetOpenUVScriptTextUVE(std::string text);
@@ -2922,6 +2926,16 @@ private:
         bool isDirty = false;
     };
     std::optional<ShaderAssetEditStateUVE> m_openShaderAsset;
+    /// State of the Godot-style "Create Script" modal dialog.
+    struct CreateScriptModalStateUVE final {
+        bool openRequested = false;
+        std::filesystem::path targetDirectory;
+        Scene::EntityUVE targetEntity = Scene::kInvalidEntityUVE;
+        std::string scriptName = "NewScript";
+        std::string inheritsClass = "Object";
+        int templateIndex = 0;
+    };
+    CreateScriptModalStateUVE m_createScriptModal;
     /// A caret move the text editor applies on its next frame (1-based line), set by GoTo.
     std::uint32_t m_uvscriptJumpLine = 0U;
     /// The export rows the Inspector last drew, reused until the object, its script or its values

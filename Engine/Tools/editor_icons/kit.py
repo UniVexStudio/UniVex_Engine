@@ -127,7 +127,7 @@ class Icon:
                 f'<title>{self.name}</title><defs>{"".join(self.defs)}</defs>'
                 f'<g filter="url(#soft_drop)">{"".join(self.body)}</g></svg>')
 
-    def card_svg(self, badge=None, accent_color=None):
+    def card_svg(self, badge=None):
         badge_xml = ""
         if badge:
             badge_xml = (
@@ -136,13 +136,6 @@ class Icon:
                 f'<text x="45.5" y="16.6" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="6.8" '
                 f'font-weight="800" fill="#D4D4D8" text-anchor="middle" letter-spacing="0.3">{badge}</text>'
             )
-        accent_xml = ""
-        if accent_color:
-            accent_xml = (
-                f'<path d="M 5 53.5 A 6 6 0 0 0 11 57.5 L 53 57.5 A 6 6 0 0 0 59 53.5 L 59 53 L 5 53 Z" '
-                f'fill="{accent_color}"/>'
-                f'<line x1="5" y1="53" x2="59" y2="53" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="0.6"/>'
-            )
         return (
             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">'
             f'<title>{self.name}</title><defs>{"".join(self.defs)}</defs>'
@@ -150,8 +143,7 @@ class Icon:
             '<rect x="6.2" y="7.7" width="51.6" height="48.6" rx="5" fill="none" stroke="#FFFFFF" stroke-opacity="0.05" stroke-width="0.8"/>'
             '<ellipse cx="32" cy="49" rx="18" ry="4.5" fill="url(#card_floor)"/>'
             f'<g transform="translate(32, 33) scale(0.68) translate(-32, -32)" filter="url(#soft_drop)">{"".join(self.body)}</g>'
-            f'{badge_xml}'
-            f'{accent_xml}</svg>'
+            f'{badge_xml}</svg>'
         )
 
 

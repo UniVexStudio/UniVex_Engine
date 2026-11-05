@@ -150,8 +150,7 @@ def build_card(key):
     badge = badge_for_object(icon_id, section) if group == OBJECTS else (
         "3D" if icon_id == "viewport_3d" else ("2D" if icon_id == "viewport_2d" else None)
     )
-    accent = accent_for_key(key)
-    return ic.card_svg(badge=badge, accent_color=accent)
+    return ic.card_svg(badge=badge)
 
 
 # =============================================================================================
