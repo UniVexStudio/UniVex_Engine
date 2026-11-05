@@ -57,7 +57,6 @@ private:
     std::vector<std::uintptr_t> m_iconTextureIds;
     // The same textures again, indexed by object kind: the hierarchy asks once per row per frame.
     std::array<std::uintptr_t, Scene::Objects::kMaximumSceneObjectDescriptorsUVE> m_objectIconTextureIds{};
-    std::array<std::uintptr_t, Scene::Objects::kMaximumSceneObjectDescriptorsUVE> m_objectCardIconTextureIds{};
 };
 
 } // namespace UVE::Editor

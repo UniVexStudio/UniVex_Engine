@@ -781,7 +781,7 @@ void EditorUVE::DrawObjectPickerUVE() {
     ImGui::Separator();
     const auto item = [this](const Scene::Objects::SceneObjectKindUVE kind, const char* const label,
                              const char* const shortcut, const char* const tooltip) {
-        DrawObjectPickerIconUVE(m_uiAssets.GetObjectIconTextureIdUVE(kind));
+        DrawSlotIndicatorIconUVE(m_uiAssets.GetObjectIconTextureIdUVE(kind), GetSceneObjectIndicatorColorUVE(kind));
         const bool picked = ImGui::MenuItem(label, shortcut);
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("%s", tooltip);

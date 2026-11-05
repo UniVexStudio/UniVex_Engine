@@ -417,20 +417,28 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
     const auto drawItem = [&](const ContentCatalogueItemUVE& item, const bool showGroup) {
         ImGui::PushID(item.id.data(), item.id.data() + item.id.size());
         std::uintptr_t iconId = 0U;
+        ImU32 indicatorColor = 0U;
         if (item.action == ContentCatalogueActionUVE::MaterialAsset) {
-            iconId = m_uiAssets.GetContentTypeCardIconTextureIdUVE("Material");
+            iconId = m_uiAssets.GetContentTypeIconTextureIdUVE("Material");
+            indicatorColor = IM_COL32(16, 185, 129, 255);
         } else if (item.action == ContentCatalogueActionUVE::ShaderAsset) {
-            iconId = m_uiAssets.GetContentTypeCardIconTextureIdUVE("Shader");
+            iconId = m_uiAssets.GetContentTypeIconTextureIdUVE("Shader");
+            indicatorColor = IM_COL32(16, 185, 129, 255);
         } else if (item.action == ContentCatalogueActionUVE::ScriptAsset) {
-            iconId = m_uiAssets.GetContentTypeCardIconTextureIdUVE("Script");
+            iconId = m_uiAssets.GetContentTypeIconTextureIdUVE("Script");
+            indicatorColor = IM_COL32(56, 189, 248, 255);
         } else if (item.action == ContentCatalogueActionUVE::Folder) {
-            iconId = m_uiAssets.GetContentTypeCardIconTextureIdUVE("folder");
+            iconId = m_uiAssets.GetContentTypeIconTextureIdUVE("folder");
+            indicatorColor = IM_COL32(245, 158, 11, 255);
         } else if (item.action == ContentCatalogueActionUVE::LibraryAsset) {
-            iconId = m_uiAssets.GetContentTypeCardIconTextureIdUVE("AnimationLibrary");
+            iconId = m_uiAssets.GetContentTypeIconTextureIdUVE("AnimationLibrary");
+            indicatorColor = IM_COL32(168, 85, 247, 255);
         } else {
-            iconId = m_uiAssets.GetObjectCardIconTextureIdUVE(GetContentCatalogueIconKindUVE(item));
+            const auto kind = GetContentCatalogueIconKindUVE(item);
+            iconId = m_uiAssets.GetObjectIconTextureIdUVE(kind);
+            indicatorColor = GetSceneObjectIndicatorColorUVE(kind);
         }
-        DrawObjectPickerIconUVE(iconId);
+        DrawSlotIndicatorIconUVE(iconId, indicatorColor);
         const std::string label{item.label};
         const std::string group = showGroup ? std::string{item.group} : std::string{};
         ImGui::BeginDisabled(!allowed);
@@ -500,7 +508,8 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
                 }
                 continue;
             }
-            DrawObjectPickerIconUVE(m_uiAssets.GetObjectCardIconTextureIdUVE(GetContentCatalogueIconKindUVE(*firstInGroup)));
+            const auto firstKind = GetContentCatalogueIconKindUVE(*firstInGroup);
+            DrawSlotIndicatorIconUVE(m_uiAssets.GetObjectIconTextureIdUVE(firstKind), GetCategoryIndicatorColorUVE(group));
             const std::string groupLabel{group};
             if (ImGui::BeginMenu(groupLabel.c_str())) {
                 for (const ContentCatalogueItemUVE& item : items) {

@@ -42,13 +42,13 @@ TEST(EditorIconSetUVETest, AnOpenFolderHasItsOwnIcon) {
               FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "folder"));
 }
 
-TEST(EditorIconSetUVETest, ObjectCardsAndContentTypeCardsAndComponentsExist) {
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ObjectCard, "character_3d"), nullptr);
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ObjectCard, "player_3d"), nullptr);
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ObjectCard, "camera_3d"), nullptr);
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentTypeCard, "material"), nullptr);
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentTypeCard, "shader"), nullptr);
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentTypeCard, "folder"), nullptr);
+TEST(EditorIconSetUVETest, ObjectsAndContentTypesAndComponentsExist) {
+    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Object, "character_3d"), nullptr);
+    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Object, "player_3d"), nullptr);
+    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Object, "camera_3d"), nullptr);
+    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "material"), nullptr);
+    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "shader"), nullptr);
+    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "folder"), nullptr);
     EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Component, "component_transform"), nullptr);
     EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Component, "component_mesh"), nullptr);
     EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Component, "component_collider"), nullptr);

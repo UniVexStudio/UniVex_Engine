@@ -188,13 +188,7 @@ bool EditorUiAssetsUVE::InitializeUVE() noexcept {
                 descriptor.kind == Scene::Objects::SceneObjectKindUVE::Folder
                     ? FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ContentType, "folder")
                     : FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::Object, descriptor.typeId);
-            m_objectCardIconTextureIds[kind] =
-                descriptor.kind == Scene::Objects::SceneObjectKindUVE::Folder
-                    ? FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ContentTypeCard, "folder")
-                    : FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ObjectCard, descriptor.typeId);
-            if (m_objectCardIconTextureIds[kind] == 0U) {
-                m_objectCardIconTextureIds[kind] = m_objectIconTextureIds[kind];
-            }
+
         }
     }
 
@@ -213,7 +207,6 @@ void EditorUiAssetsUVE::ShutdownUVE() noexcept {
     }
     m_iconTextureIds.clear();
     m_objectIconTextureIds.fill(0U);
-    m_objectCardIconTextureIds.fill(0U);
 }
 
 bool EditorUiAssetsUVE::IsReadyUVE() const noexcept {
@@ -239,10 +232,6 @@ std::uintptr_t EditorUiAssetsUVE::GetObjectIconTextureIdUVE(const Scene::Objects
 }
 
 std::uintptr_t EditorUiAssetsUVE::GetObjectCardIconTextureIdUVE(const Scene::Objects::SceneObjectKindUVE kind) const noexcept {
-    const auto index = static_cast<std::size_t>(kind);
-    if (index < m_objectCardIconTextureIds.size() && m_objectCardIconTextureIds[index] != 0U) {
-        return m_objectCardIconTextureIds[index];
-    }
     return GetObjectIconTextureIdUVE(kind);
 }
 
@@ -260,12 +249,7 @@ std::uintptr_t EditorUiAssetsUVE::GetContentTypeIconTextureIdUVE(const std::stri
 }
 
 std::uintptr_t EditorUiAssetsUVE::GetContentTypeCardIconTextureIdUVE(const std::string_view typeId) const noexcept {
-    if (typeId == "Viewport3D") {
-        const std::uintptr_t card = FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ContentTypeCard, "viewport_3d");
-        return card != 0U ? card : GetContentTypeIconTextureIdUVE(typeId);
-    }
-    const std::uintptr_t card = FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ContentTypeCard, typeId);
-    return card != 0U ? card : GetContentTypeIconTextureIdUVE(typeId);
+    return GetContentTypeIconTextureIdUVE(typeId);
 }
 
 std::uintptr_t EditorUiAssetsUVE::GetComponentIconTextureIdUVE(const std::string_view componentId) const noexcept {
