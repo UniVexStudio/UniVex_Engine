@@ -2942,8 +2942,9 @@ private:
         bool isDirty = false;
     };
     std::optional<ShaderAssetEditStateUVE> m_openShaderAsset;
-    /// State of the Godot-style "Create Script" modal dialog.
+    /// State of the Godot-style "Create Script" dialog.
     struct CreateScriptModalStateUVE final {
+        bool isOpen = false;
         bool openRequested = false;
         std::filesystem::path targetDirectory;
         Scene::EntityUVE targetEntity = Scene::kInvalidEntityUVE;
@@ -2961,8 +2962,9 @@ private:
         std::string statusMessage;
     };
     QuickImportModalStateUVE m_quickImportModal;
-    /// State of the Godot-style "Create Shader" modal dialog.
+    /// State of the Godot-style "Create Shader" dialog.
     struct CreateShaderModalStateUVE final {
+        bool isOpen = false;
         bool openRequested = false;
         std::filesystem::path targetDirectory;
         std::string shaderName = "NewShader";
