@@ -908,7 +908,7 @@ void EditorUVE::DrawQuickImportModalUVE() {
     ImGui::SetNextWindowSize(ImVec2{520.0F, 0.0F}, ImGuiCond_Appearing);
 
     constexpr ImGuiWindowFlags modalFlags =
-        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
+        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings;
     if (!ImGui::BeginPopupModal(kModalId, nullptr, modalFlags)) {
         return;
     }
@@ -998,6 +998,7 @@ void EditorUVE::DrawQuickImportModalUVE() {
 void EditorUVE::OpenCreateShaderModalUVE(const std::filesystem::path& targetDirectory,
                                         std::function<void(const std::filesystem::path&)> onCreated) {
     m_createShaderModal = CreateShaderModalStateUVE{};
+    m_createShaderModal.isOpen = true;
     m_createShaderModal.openRequested = true;
     m_createShaderModal.targetDirectory = targetDirectory.empty() ? m_contentBrowserDirectory : targetDirectory;
     m_createShaderModal.shaderName = "NewShader";
@@ -1006,28 +1007,35 @@ void EditorUVE::OpenCreateShaderModalUVE(const std::filesystem::path& targetDire
 }
 
 void EditorUVE::DrawCreateShaderModalUVE() {
-    constexpr const char* kModalId = "Create Shader##uve_shader_modal";
-    if (m_createShaderModal.openRequested) {
-        ImGui::OpenPopup(kModalId);
-        m_createShaderModal.openRequested = false;
+    if (!m_createShaderModal.isOpen && !m_createShaderModal.openRequested) {
+        return;
     }
 
-    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(mainViewport->GetCenter(), ImGuiCond_Appearing, ImVec2{0.5F, 0.5F});
-    ImGui::SetNextWindowSize(ImVec2{480.0F, 0.0F}, ImGuiCond_Appearing);
+    if (m_createShaderModal.openRequested) {
+        m_createShaderModal.isOpen = true;
+        m_createShaderModal.openRequested = false;
+        const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(mainViewport->GetCenter(), ImGuiCond_Appearing, ImVec2{0.5F, 0.5F});
+    }
 
-    constexpr ImGuiWindowFlags modalFlags =
-        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
-    if (!ImGui::BeginPopupModal(kModalId, nullptr, modalFlags)) {
+    ImGui::SetNextWindowSize(ImVec2{520.0F, 0.0F}, ImGuiCond_Appearing);
+
+    constexpr ImGuiWindowFlags windowFlags =
+        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse;
+    if (!ImGui::Begin("Create / Assign Shader##uve_shader_window", &m_createShaderModal.isOpen, windowFlags)) {
+        ImGui::End();
         return;
     }
 
     CreateShaderModalStateUVE& modal = m_createShaderModal;
 
-    ImGui::TextColored(ImVec4{0.95F, 0.95F, 0.98F, 1.0F}, "Create New Shader");
-    ImGui::TextDisabled("Configure shader type, entry point and starting template.");
+    ImGui::TextColored(ImVec4{0.95F, 0.95F, 0.98F, 1.0F}, "Create / Assign Shader");
+    ImGui::TextDisabled("Configure shader type, entry point and target file path.");
     ImGui::Separator();
     ImGui::Spacing();
+
+    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path contentRoot = snapshot.contentRoot;
 
     if (ImGui::BeginTable("##create_shader_table", 2, ImGuiTableFlags_SizingStretchProp)) {
         ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthFixed, 100.0F);
@@ -1071,14 +1079,13 @@ void EditorUVE::DrawCreateShaderModalUVE() {
             modal.shaderName = nameBuffer;
         }
 
-        // 4. Target Path
+        // 4. Target Path & Content Picker
         std::string fileName = modal.shaderName;
         if (!fileName.ends_with(".uvshader")) {
             fileName += ".uvshader";
         }
         const std::filesystem::path fullPath = modal.targetDirectory / fileName;
-        const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-        const std::filesystem::path relative = fullPath.lexically_relative(snapshot.contentRoot);
+        const std::filesystem::path relative = fullPath.lexically_relative(contentRoot);
         const std::string displayPath = (relative.empty() || *relative.begin() == "..") ? fullPath.string() : relative.generic_string();
 
         ImGui::TableNextRow();
@@ -1086,13 +1093,101 @@ void EditorUVE::DrawCreateShaderModalUVE() {
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("Path");
         ImGui::TableSetColumnIndex(1);
-        ImGui::TextDisabled("%s", displayPath.c_str());
+
+        const float pickerBtnWidth = 84.0F;
+        const float pathWidth = std::max(120.0F, ImGui::GetContentRegionAvail().x - pickerBtnWidth - 6.0F);
+        char pathBuf[512];
+        std::snprintf(pathBuf, sizeof(pathBuf), "%s", displayPath.c_str());
+        ImGui::SetNextItemWidth(pathWidth);
+        ImGui::InputText("##path_display", pathBuf, sizeof(pathBuf), ImGuiInputTextFlags_ReadOnly);
+
+        ImGui::SameLine(0.0F, 6.0F);
+        if (ImGui::Button("📁 Picker##shader_picker_btn", ImVec2{pickerBtnWidth, 0.0F})) {
+            ImGui::OpenPopup("##shader_path_picker_popup");
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Choose destination folder or select an existing shader from Content");
+        }
+
+        ImGui::SetNextWindowSizeConstraints(ImVec2{360.0F, 220.0F}, ImVec2{540.0F, 420.0F});
+        if (ImGui::BeginPopup("##shader_path_picker_popup")) {
+            ImGui::TextColored(ImVec4{0.95F, 0.95F, 0.98F, 1.0F}, "Select Shader or Folder in Content");
+            ImGui::Separator();
+
+            static char s_shaderPickerFilter[64] = {0};
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputTextWithHint("##filter_shaders", "Filter content...", s_shaderPickerFilter, sizeof(s_shaderPickerFilter));
+
+            if (ImGui::BeginTabBar("##shader_picker_tabs")) {
+                if (ImGui::BeginTabItem("Shaders (.uvshader)")) {
+                    std::size_t shaderCount = 0U;
+                    for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
+                        const std::string ext = entry.relativePath.extension().string();
+                        if (ext != ".uvshader" && ext != ".glsl") {
+                            continue;
+                        }
+                        const std::string relStr = entry.relativePath.generic_string();
+                        if (s_shaderPickerFilter[0] != '\0') {
+                            std::string lowerFilter = s_shaderPickerFilter;
+                            std::string lowerItem = relStr;
+                            std::transform(lowerFilter.begin(), lowerFilter.end(), lowerFilter.begin(), ::tolower);
+                            std::transform(lowerItem.begin(), lowerItem.end(), lowerItem.begin(), ::tolower);
+                            if (lowerItem.find(lowerFilter) == std::string::npos) {
+                                continue;
+                            }
+                        }
+                        ++shaderCount;
+                        const bool selected = (entry.relativePath.stem().string() == modal.shaderName);
+                        if (ImGui::Selectable(relStr.c_str(), selected)) {
+                            modal.targetDirectory = contentRoot / entry.relativePath.parent_path();
+                            modal.shaderName = entry.relativePath.stem().string();
+                            ImGui::CloseCurrentPopup();
+                        }
+                    }
+                    if (shaderCount == 0U) {
+                        ImGui::TextDisabled("No shaders found in project.");
+                    }
+                    ImGui::EndTabItem();
+                }
+
+                if (ImGui::BeginTabItem("Folders")) {
+                    if (ImGui::Selectable("Content (Root)", modal.targetDirectory == contentRoot)) {
+                        modal.targetDirectory = contentRoot;
+                        ImGui::CloseCurrentPopup();
+                    }
+                    for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
+                        if (entry.kind != Asset::ProjectFileEntryKindUVE::Directory) {
+                            continue;
+                        }
+                        const std::string relStr = entry.relativePath.generic_string();
+                        if (s_shaderPickerFilter[0] != '\0') {
+                            std::string lowerFilter = s_shaderPickerFilter;
+                            std::string lowerItem = relStr;
+                            std::transform(lowerFilter.begin(), lowerFilter.end(), lowerFilter.begin(), ::tolower);
+                            std::transform(lowerItem.begin(), lowerItem.end(), lowerItem.begin(), ::tolower);
+                            if (lowerItem.find(lowerFilter) == std::string::npos) {
+                                continue;
+                            }
+                        }
+                        const bool selected = (modal.targetDirectory == (contentRoot / entry.relativePath));
+                        if (ImGui::Selectable(relStr.c_str(), selected)) {
+                            modal.targetDirectory = contentRoot / entry.relativePath;
+                            ImGui::CloseCurrentPopup();
+                        }
+                    }
+                    ImGui::EndTabItem();
+                }
+                ImGui::EndTabBar();
+            }
+            ImGui::EndPopup();
+        }
 
         ImGui::EndTable();
     }
 
     // Validation
     std::string problem;
+    bool isExistingFile = false;
     if (modal.shaderName.empty()) {
         problem = "Shader name cannot be empty.";
     } else {
@@ -1100,14 +1195,17 @@ void EditorUVE::DrawCreateShaderModalUVE() {
         if (!fileName.ends_with(".uvshader")) {
             fileName += ".uvshader";
         }
+        const std::filesystem::path fullPath = modal.targetDirectory / fileName;
         std::error_code ec;
-        if (std::filesystem::exists(modal.targetDirectory / fileName, ec)) {
-            problem = "A file with this name already exists in this folder.";
+        if (std::filesystem::exists(fullPath, ec) && std::filesystem::is_regular_file(fullPath, ec)) {
+            isExistingFile = true;
         }
     }
 
     if (!problem.empty()) {
-        ImGui::TextColored(ImVec4{0.95F, 0.62F, 0.35F, 1.0F}, "%s", problem.c_str());
+        ImGui::TextColored(ImVec4{0.95F, 0.45F, 0.40F, 1.0F}, "%s", problem.c_str());
+    } else if (isExistingFile) {
+        ImGui::TextColored(ImVec4{0.45F, 0.75F, 0.95F, 1.0F}, "Existing shader found in Content. Ready to assign and open.");
     } else {
         ImGui::TextColored(ImVec4{0.45F, 0.80F, 0.55F, 1.0F}, "Ready to create.");
     }
@@ -1116,103 +1214,117 @@ void EditorUVE::DrawCreateShaderModalUVE() {
     ImGui::Separator();
     ImGui::Spacing();
 
-    // Buttons: Cancel & Create
+    // Buttons: Cancel & Action
     const bool cancel = ImGui::Button("Cancel", ImVec2{110.0F, 28.0F}) || ImGui::IsKeyPressed(ImGuiKey_Escape);
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 110.0F);
+    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 130.0F);
 
+    const char* actionLabel = isExistingFile ? "Assign / Open" : "Create";
     ImGui::BeginDisabled(!problem.empty());
-    const bool create = ImGui::Button("Create", ImVec2{110.0F, 28.0F}) ||
-                        (problem.empty() && ImGui::IsKeyPressed(ImGuiKey_Enter));
+    const bool doAction = ImGui::Button(actionLabel, ImVec2{130.0F, 28.0F}) ||
+                          (problem.empty() && ImGui::IsKeyPressed(ImGuiKey_Enter));
     ImGui::EndDisabled();
 
-    if (create && problem.empty()) {
-        std::string fileName = modal.shaderName;
-        if (!fileName.ends_with(".uvshader")) {
-            fileName += ".uvshader";
-        }
-        std::error_code ec;
-        std::filesystem::create_directories(modal.targetDirectory, ec);
-        const std::filesystem::path fullPath = modal.targetDirectory / fileName;
-
-        Asset::ShaderAssetUVE shader{};
-        shader.stage = Asset::ShaderStageKindUVE::Fragment;
-        shader.entryPointName = "main";
-
-        if (modal.shaderTypeIndex == 0) {
-            // Spatial PBR Surface
-            shader.sourceCode =
-                "// UniVex Spatial PBR Surface Shader\n"
-                "#version 450\n\n"
-                "layout(location = 0) in vec3 v_Position;\n"
-                "layout(location = 1) in vec3 v_Normal;\n"
-                "layout(location = 2) in vec2 v_TexCoord;\n\n"
-                "layout(location = 0) out vec4 outColor;\n\n"
-                "layout(binding = 0) uniform sampler2D u_AlbedoMap;\n"
-                "layout(binding = 1) uniform sampler2D u_NormalMap;\n\n"
-                "void main() {\n"
-                "    vec4 albedo = texture(u_AlbedoMap, v_TexCoord);\n"
-                "    vec3 N = normalize(v_Normal);\n"
-                "    outColor = vec4(albedo.rgb, 1.0);\n"
-                "}\n";
-        } else if (modal.shaderTypeIndex == 1) {
-            // Unlit Canvas / UI
-            shader.sourceCode =
-                "// UniVex Unlit Canvas/UI Shader\n"
-                "#version 450\n\n"
-                "layout(location = 0) in vec2 v_TexCoord;\n"
-                "layout(location = 1) in vec4 v_Color;\n\n"
-                "layout(location = 0) out vec4 outColor;\n\n"
-                "layout(binding = 0) uniform sampler2D u_Texture;\n\n"
-                "void main() {\n"
-                "    outColor = texture(u_Texture, v_TexCoord) * v_Color;\n"
-                "}\n";
-        } else if (modal.shaderTypeIndex == 2) {
-            // Post-Process / Screen Effect
-            shader.sourceCode =
-                "// UniVex Post-Processing Quad Shader\n"
-                "#version 450\n\n"
-                "layout(location = 0) in vec2 v_TexCoord;\n\n"
-                "layout(location = 0) out vec4 outColor;\n\n"
-                "layout(binding = 0) uniform sampler2D u_SceneColor;\n\n"
-                "void main() {\n"
-                "    vec3 scene = texture(u_SceneColor, v_TexCoord).rgb;\n"
-                "    outColor = vec4(scene, 1.0);\n"
-                "}\n";
-        } else {
-            // Custom GLSL
-            shader.sourceCode =
-                "// UniVex Custom Shader\n"
-                "#version 450\n\n"
-                "layout(location = 0) in vec2 v_TexCoord;\n"
-                "layout(location = 0) out vec4 outColor;\n\n"
-                "void main() {\n"
-                "    outColor = vec4(1.0, 1.0, 1.0, 1.0);\n"
-                "}\n";
-        }
-
-        if (Asset::SaveShaderAssetUVE(shader, fullPath)) {
-            m_services->GetAssetDatabaseUVE().RegisterUVE(fullPath);
-            m_projectFileSnapshotInitialized = false;
-            RefreshProjectFileIndexUVE();
-
+    if (doAction && problem.empty()) {
+        if (isExistingFile) {
             const Asset::ProjectFileSnapshotUVE projSnapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
             const std::filesystem::path rel = fullPath.lexically_relative(projSnapshot.contentRoot);
             m_selectedProjectFile = Asset::ProjectFileEntryUVE{rel, Asset::ProjectFileEntryKindUVE::File, std::nullopt};
             m_selectedAsset.reset();
-            m_contentStatusMessage = "Created shader " + fileName;
+            m_contentStatusMessage = "Selected shader " + fileName;
 
             if (modal.onShaderCreated != nullptr) {
                 modal.onShaderCreated(fullPath);
             }
+            modal.isOpen = false;
         } else {
-            m_contentStatusMessage = "Could not create shader file " + fileName;
+            std::string fileName = modal.shaderName;
+            if (!fileName.ends_with(".uvshader")) {
+                fileName += ".uvshader";
+            }
+            std::error_code ec;
+            std::filesystem::create_directories(modal.targetDirectory, ec);
+            const std::filesystem::path fullPath = modal.targetDirectory / fileName;
+
+            Asset::ShaderAssetUVE shader{};
+            shader.stage = Asset::ShaderStageKindUVE::Fragment;
+            shader.entryPointName = "main";
+
+            if (modal.shaderTypeIndex == 0) {
+                // Spatial PBR Surface
+                shader.sourceCode =
+                    "// UniVex Spatial PBR Surface Shader\n"
+                    "#version 450\n\n"
+                    "layout(location = 0) in vec3 v_Position;\n"
+                    "layout(location = 1) in vec3 v_Normal;\n"
+                    "layout(location = 2) in vec2 v_TexCoord;\n\n"
+                    "layout(location = 0) out vec4 outColor;\n\n"
+                    "layout(binding = 0) uniform sampler2D u_AlbedoMap;\n"
+                    "layout(binding = 1) uniform sampler2D u_NormalMap;\n\n"
+                    "void main() {\n"
+                    "    vec4 albedo = texture(u_AlbedoMap, v_TexCoord);\n"
+                    "    vec3 N = normalize(v_Normal);\n"
+                    "    outColor = vec4(albedo.rgb, 1.0);\n"
+                    "}\n";
+            } else if (modal.shaderTypeIndex == 1) {
+                // Unlit Canvas / UI
+                shader.sourceCode =
+                    "// UniVex Unlit Canvas/UI Shader\n"
+                    "#version 450\n\n"
+                    "layout(location = 0) in vec2 v_TexCoord;\n"
+                    "layout(location = 1) in vec4 v_Color;\n\n"
+                    "layout(location = 0) out vec4 outColor;\n\n"
+                    "layout(binding = 0) uniform sampler2D u_Texture;\n\n"
+                    "void main() {\n"
+                    "    outColor = texture(u_Texture, v_TexCoord) * v_Color;\n"
+                    "}\n";
+            } else if (modal.shaderTypeIndex == 2) {
+                // Post-Process / Screen Effect
+                shader.sourceCode =
+                    "// UniVex Post-Processing Quad Shader\n"
+                    "#version 450\n\n"
+                    "layout(location = 0) in vec2 v_TexCoord;\n\n"
+                    "layout(location = 0) out vec4 outColor;\n\n"
+                    "layout(binding = 0) uniform sampler2D u_SceneColor;\n\n"
+                    "void main() {\n"
+                    "    vec3 scene = texture(u_SceneColor, v_TexCoord).rgb;\n"
+                    "    outColor = vec4(scene, 1.0);\n"
+                    "}\n";
+            } else {
+                // Custom GLSL
+                shader.sourceCode =
+                    "// UniVex Custom Shader\n"
+                    "#version 450\n\n"
+                    "layout(location = 0) in vec2 v_TexCoord;\n\n"
+                    "layout(location = 0) out vec4 outColor;\n\n"
+                    "void main() {\n"
+                    "    outColor = vec4(1.0, 1.0, 1.0, 1.0);\n"
+                    "}\n";
+            }
+
+            if (Asset::SaveShaderAssetUVE(shader, fullPath)) {
+                m_services->GetAssetDatabaseUVE().RegisterUVE(fullPath);
+                m_projectFileSnapshotInitialized = false;
+                RefreshProjectFileIndexUVE();
+
+                const Asset::ProjectFileSnapshotUVE projSnapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                const std::filesystem::path rel = fullPath.lexically_relative(projSnapshot.contentRoot);
+                m_selectedProjectFile = Asset::ProjectFileEntryUVE{rel, Asset::ProjectFileEntryKindUVE::File, std::nullopt};
+                m_selectedAsset.reset();
+                m_contentStatusMessage = "Created shader " + fileName;
+
+                if (modal.onShaderCreated != nullptr) {
+                    modal.onShaderCreated(fullPath);
+                }
+            } else {
+                m_contentStatusMessage = "Could not create shader file " + fileName;
+            }
+            modal.isOpen = false;
         }
-        ImGui::CloseCurrentPopup();
     } else if (cancel) {
-        ImGui::CloseCurrentPopup();
+        modal.isOpen = false;
     }
 
-    ImGui::EndPopup();
+    ImGui::End();
 }
 
 } // namespace UVE::Editor
