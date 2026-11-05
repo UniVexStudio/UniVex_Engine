@@ -636,7 +636,7 @@ void EditorUVE::DrawCreateScriptModalUVE() {
                 }
             }
 
-            OpenUVScriptPathUVE(scriptFilePath);
+            static_cast<void>(OpenUVScriptPathUVE(scriptFilePath));
             m_contentStatusMessage = "Created script " + stem + ".uvs";
         } else {
             m_contentStatusMessage = "Could not write " + stem + ".uvs";
